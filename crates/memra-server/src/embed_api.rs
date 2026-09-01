@@ -26,7 +26,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::worker::{CaptureSpec, Cmd, Event};
-use crate::{AppState, Envelope, auth, metering, worker};
+use crate::{AppState, Envelope, auth, ledger, worker};
 
 /// OpenAI `/v1/embeddings` request. `input` accepts a string or an array of strings
 /// (token-id arrays are not accepted — the worker owns tokenization on this surface).
@@ -118,7 +118,9 @@ async fn run_capture(
     // interactive load), and an interactive-lane capture request would tax the paying
     // decode lanes (measured: -8%/req/s to -50%, coresident lane cells 1/3). The
     // header/key lane resolution still runs so its 403s and validation stay identical.
-    crate::lane_for_tenant(headers, tenant)?;
+    if let Err(resp) = crate::lane_for_tenant(headers, tenant) {
+        return Err(resp);
+    }
     let lane = crate::lanes::Lane::Harvest;
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
     let mut request = worker::Request {
@@ -139,8 +141,6 @@ async fn run_capture(
         sampler_cfg: memra_engine::sampler::SamplerConfig::default(),
         stop_strings: Vec::new(),
         trace_id: None,
-        request_id: env.id.clone(),
-        admit_predict_logged: false,
         max_prompt_tokens: None,
         cache_ns,
         affinity: None,
@@ -153,13 +153,8 @@ async fn run_capture(
         prepared_prompt: None,
         images: Vec::new(),
         gemma_images: Vec::new(),
-        glm5_images: Vec::new(),
-        step_images: Vec::new(),
         capture: Some(capture),
         vision_memory: None,
-        // Capture requests never enter the first-token deadline gate (their prime IS
-        // the product), so no wire deadline is carried.
-        wire_deadline: None,
         ttft: None,
         tx,
     };
@@ -171,18 +166,8 @@ async fn run_capture(
         return Err(crate::bad_request(&message, Some(param)));
     }
     if crate::draining() {
-        let receipt = crate::start_request_receipt(
-            st,
-            env,
-            tenant,
-            model,
-            route,
-            lane,
-            false,
-            crate::effective_max_tokens(&request),
-            None,
-            None,
-        );
+        let receipt =
+            crate::start_request_receipt(st, env, tenant, model, route, lane, false, None);
         return Err(crate::ledger_rejected(
             receipt,
             crate::drain_response(),
@@ -190,39 +175,19 @@ async fn run_capture(
             &env.id,
         ));
     }
-    let budget = match crate::admit_tenant_budget(st, tenant, &mut request) {
-        Ok(budget) => budget,
+    let budget_permit = match crate::admit_tenant_budget(st, tenant, &mut request) {
+        Ok(permit) => permit,
         Err(rejection) => {
             let (response, error_code) = rejection.into_response();
-            let receipt = crate::start_request_receipt(
-                st,
-                env,
-                tenant,
-                model,
-                route,
-                lane,
-                false,
-                crate::effective_max_tokens(&request),
-                None,
-                None,
-            );
+            let receipt =
+                crate::start_request_receipt(st, env, tenant, model, route, lane, false, None);
             return Err(crate::ledger_rejected(
                 receipt, response, error_code, &env.id,
             ));
         }
     };
-    let receipt = crate::start_request_receipt(
-        st,
-        env,
-        tenant,
-        model,
-        route,
-        lane,
-        false,
-        crate::effective_max_tokens(&request),
-        budget.reserved_ctx,
-        budget.permit,
-    );
+    let receipt =
+        crate::start_request_receipt(st, env, tenant, model, route, lane, false, budget_permit);
     let (guard, rl) = match crate::acquire_request_slot(st, lane, tenant, env) {
         Ok(slot) => slot,
         Err(resp) => {
@@ -285,7 +250,7 @@ async fn run_capture(
 /// (completion_tokens is 0 by construction), `Error` settles it rejected.
 async fn collect_capture(
     mut rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
-    mut receipt: Option<Box<dyn crate::metering::Receipt>>,
+    mut receipt: Option<ledger::PendingReceipt>,
     _guard: crate::InflightGuard,
     rl: crate::RateLimit,
     env: &Envelope,
@@ -294,7 +259,7 @@ async fn collect_capture(
     let mut hidden: Option<Vec<f32>> = None;
     let mut logits: Vec<f32> = Vec::new();
     let mut got_capture = false;
-    let n_prompt;
+    let mut n_prompt;
     loop {
         let ev = match tokio::time::timeout_at(deadline.at, rx.recv()).await {
             Ok(Some(ev)) => ev,
@@ -345,7 +310,7 @@ async fn collect_capture(
                 n_prompt = np;
                 if let Some(receipt) = receipt.as_mut()
                     && let Err(err) = receipt.complete(
-                        metering::UsageCounts {
+                        ledger::Usage {
                             prompt_tokens: np as u64,
                             cached_prompt_tokens: n_cached as u64,
                             completion_tokens: 0,

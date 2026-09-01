@@ -5,7 +5,7 @@
 set -u
 cd /home/ubuntu/arc5
 OUT=/home/ubuntu/arc5/research/spec-serving-20260801
-MODEL=/opt/scratch/nvme/models/Qwen3.6-27B-Q4_K_M.gguf
+MODEL=/opt/dl-image/nvme/models/Qwen3.6-27B-Q4_K_M.gguf
 BIN_POST=/home/ubuntu/arc5/target/release/memra-server
 BIN_PRE=/home/ubuntu/arc5/target/release/memra-server-pre
 LS=/home/ubuntu/arc5/tools/load-serve.py

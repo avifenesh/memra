@@ -50,7 +50,7 @@ fn load_draft_isolated(
         unsafe { std::env::set_var("MEMRA_GEMMA_DRAFT_RANKS", dst.to_str().unwrap()) };
     }
     let dg = memra_gguf::GgufFile::open(dpath)?;
-    GemmaDraft::load(e, &dg)
+    Ok(GemmaDraft::load(e, &dg)?)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

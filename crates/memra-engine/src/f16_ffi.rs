@@ -50,20 +50,6 @@ unsafe extern "C" {
         ws_bytes: usize,
         stream: *mut core::ffi::c_void,
     ) -> i32;
-    /// One BF16 prefill GEMM on a RESIDENT bf16 weight (no mirror): f32->bf16 activation
-    /// convert + cublasLtMatmul TN (CUDA_R_16BF) on one stream.
-    fn memra_bf16_pp_gemm(
-        w_bf16: *const core::ffi::c_void,
-        x_f32: *const f32,
-        xb_bf16: *mut core::ffi::c_void,
-        y_f32: *mut f32,
-        m: i32,
-        n: i32,
-        k: i32,
-        ws: *mut core::ffi::c_void,
-        ws_bytes: usize,
-        stream: *mut core::ffi::c_void,
-    ) -> i32;
     /// GGUF Q8_0 34B blocks -> row-major fp16 mirror (load-time).
     fn memra_q8_0_dequant_f16(
         w_q8: *const core::ffi::c_void,
@@ -135,49 +121,6 @@ pub fn pp_f16_capacity_ok(free: usize, need: usize) -> bool {
     need > 0 && free >= need + (8usize << 30)
 }
 
-/// MEMRA_PP_BF16 gate, read once — the resident-BF16 tensor-core prefill GEMM.
-///
-/// WHY IT EXISTS (2026-08-28, step37 prime): a BF16 checkpoint has no Q8_0 fp16 mirror, so every
-/// prefill projection fell to `linear_bf16_chunked_inner`, which dequants the FULL weight to f32
-/// and runs an f32 GEMM — no tensor cores, and a fresh 2x-weight f32 buffer per call. cuBLASLt
-/// consumes CUDA_R_16BF directly and the checkpoint bytes are already the operand layout the TN
-/// form wants, so this path costs no mirror and no VRAM.
-///
-/// DEFAULT (explicit, per the new-flag law): OFF until this lane's A/B + argmax receipts land;
-/// the flip to family-default-ON carries its FLAGS.md row and receipts in the same PR.
-/// Decode never reaches it — callers gate on m >= 16.
-pub fn pp_bf16_enabled() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| {
-        let on = matches!(std::env::var("MEMRA_PP_BF16").as_deref(), Ok("1"));
-        // ANNOUNCE PER FLAG VALUE, printed in BOTH arms (the moe-grouped-prefill pattern):
-        // an A/B grep must distinguish "flag off" from "flag on but never consulted" without
-        // the line being an arm-local cost. First consult happens on the first bf16-resident
-        // prefill GEMM (the door's own condition chain), so a boot that never primes a
-        // bf16-resident weight prints nothing, which is itself the honest reading.
-        eprintln!(
-            "[bf16-tc] flag={} (MEMRA_PP_BF16; engagement is the per-shape ENGAGED line + \
-             the dispatch counter)",
-            if on { "on" } else { "off" }
-        );
-        on
-    })
-}
-
-/// Engagement counter for the resident-BF16 tensor-core prefill GEMM (`MEMRA_PP_BF16`),
-/// incremented once per ACCEPTED `bf16_tc_gemm` launch at the invocation itself, after the
-/// cuBLASLt decline check, so a declined shape does not count. Same reason the
-/// moe-grouped-prefill counter exists: the per-shape ENGAGED eprintln dedups by shape, so a
-/// gate that must assert "the door ran N times for this workload" needs a counter at the
-/// invocation, not a log grep (LAW:wiring-assertions-match-prose).
-pub static BF16_TC_DISPATCHES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-/// Snapshot of [`BF16_TC_DISPATCHES`]. Gates take a before/after pair around a workload and
-/// assert on the delta.
-pub fn bf16_tc_dispatches() -> u64 {
-    BF16_TC_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
-}
-
 /// Resident scratch (fp8_ffi::Fp8Scratch pattern): fp16 activation (grown to the largest m*k
 /// seen) + the cuBLASLt workspace. Single GPU worker; the Mutex guards lazy build/grow only.
 pub struct F16Scratch {
@@ -201,7 +144,7 @@ impl F16Scratch {
     }
 }
 
-pub(crate) const F16_WS_BYTES: usize = 64 << 20;
+const F16_WS_BYTES: usize = 64 << 20;
 
 impl crate::Engine {
     /// Swap the resident f16 scratch (task #14 capture isolation). Returns the previous
@@ -255,104 +198,6 @@ impl crate::Engine {
         };
         if scale != 1.0 {
             self.scale_inplace(&mut y, scale, m * out_f)?;
-        }
-        Ok(Some(y))
-    }
-
-    /// BF16 tensor-core prefill GEMM on RESIDENT checkpoint bytes: y[m,out] = x[m,in] @ W^T,
-    /// f32 accumulate. `data` is the untouched row-major [out_f, in_f] bf16 weight — no mirror,
-    /// no dequant, no extra VRAM. Shares the fp16 scratch (a bf16 activation is the same 2 B/elem).
-    pub fn bf16_tc_gemm(
-        &self,
-        data: &CudaSlice<u8>,
-        x: &CudaSlice<f32>,
-        m: usize,
-        in_f: usize,
-        out_f: usize,
-    ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
-        let need_xh = m * in_f * 2;
-        let mut guard = self.f16_scratch.lock().unwrap();
-        if guard.is_none() {
-            *guard = Some(F16Scratch {
-                xh: self.alloc_u8_uninit(need_xh)?,
-                ws: self.alloc_u8_uninit(F16_WS_BYTES)?,
-                cap_xh: need_xh,
-            });
-        }
-        let s = guard.as_mut().unwrap();
-        if need_xh > s.cap_xh {
-            s.xh = self.alloc_u8_uninit(need_xh)?;
-            s.cap_xh = need_xh;
-        }
-        let mut y = self.uninit(m * out_f)?; // full-overwrite GEMM output: skip memset
-        let rc = {
-            let stream = self.gpu.stream();
-            let (w_p, _gw) = data.device_ptr(&stream);
-            let (x_p, _gx) = x.device_ptr(&stream);
-            let (h_p, _gh) = s.xh.device_ptr_mut(&stream);
-            let (y_p, _gy) = y.device_ptr_mut(&stream);
-            let (ws_p, _gws) = s.ws.device_ptr_mut(&stream);
-            // cuBLASLt wants 16B-aligned operands and its heuristic does not inspect the
-            // pointer, so an unaligned resident slice reaches cublasLtMatmul and comes back
-            // NOT_SUPPORTED. Decline it here instead.
-            if !(w_p as usize).is_multiple_of(16) {
-                -1
-            } else {
-                unsafe {
-                    memra_bf16_pp_gemm(
-                        w_p as *const core::ffi::c_void,
-                        x_p as *const f32,
-                        h_p as *mut core::ffi::c_void,
-                        y_p as *mut f32,
-                        m as i32,
-                        out_f as i32,
-                        in_f as i32,
-                        ws_p as *mut core::ffi::c_void,
-                        F16_WS_BYTES,
-                        stream.cu_stream() as *mut core::ffi::c_void,
-                    )
-                }
-            }
-        };
-        // NOT a hard error: cuBLASLt refuses some (m,n,k)/alignment combinations that its own
-        // heuristic accepted (measured 2026-08-28: rc=30014 = CUBLAS_STATUS_NOT_SUPPORTED at
-        // m=43 n=4096 k=1024, after the same door served every 4096-token prime shape). The f32
-        // dequant path below this door is always correct, so a refusal DECLINES the shape rather
-        // than failing the request. Announced once per shape so the decline can never be silent —
-        // a door that quietly stops engaging reads exactly like a door that never helped.
-        if rc != 0 {
-            static SAID: std::sync::Mutex<
-                Option<std::collections::HashSet<(usize, usize, usize)>>,
-            > = std::sync::Mutex::new(None);
-            let mut g = SAID.lock().unwrap();
-            let seen = g.get_or_insert_with(std::collections::HashSet::new);
-            if seen.insert((m, out_f, in_f)) {
-                eprintln!(
-                    "[bf16-tc] DECLINED m={m} n={out_f} k={in_f} rc={rc} \
-                     (1xxxx=cudaError convert, 2xxxx=no cublasLt algo, 3xxxx=matmul status, \
-                     4xxxx=cublasLtCreate, -1=weight not 16B-aligned) — this shape falls back to \
-                     the f32 dequant GEMM; every other shape keeps the tensor-core path"
-                );
-            }
-            return Ok(None);
-        }
-        // ENGAGEMENT RECEIPT, and it is not optional. Only the DECLINE was announced, so an arm
-        // with MEMRA_PP_BF16=1 that never actually took this path was indistinguishable from one
-        // that did -- and a correctness gate whose two arms ran the SAME code reports a
-        // byte-identical MATCH for the wrong reason. Announced once per shape, same as the
-        // decline, so it costs one line per distinct GEMM and nothing per token.
-        BF16_TC_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        {
-            static ACCEPTED: std::sync::Mutex<
-                Option<std::collections::HashSet<(usize, usize, usize)>>,
-            > = std::sync::Mutex::new(None);
-            let mut g = ACCEPTED.lock().unwrap();
-            let seen = g.get_or_insert_with(std::collections::HashSet::new);
-            if seen.insert((m, out_f, in_f)) {
-                eprintln!(
-                    "[bf16-tc] ENGAGED m={m} n={out_f} k={in_f} (bf16 tensor-core GEMM on resident checkpoint bytes)"
-                );
-            }
         }
         Ok(Some(y))
     }
@@ -416,7 +261,6 @@ impl crate::Engine {
     /// f32 -> fp16 activation convert into a fresh buffer (matmul_group: ONE convert feeds
     /// every mirror-carrying weight in the group; the standalone per-GEMM converts were ~250
     /// launches/prime of gap-cluster fuel, nsys 2026-07-26).
-    #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
     pub fn f16_act(
         &self,
         x: &CudaSlice<f32>,
@@ -686,7 +530,7 @@ impl crate::Engine {
         in_f: usize,
         out_f: usize,
     ) -> Result<CudaSlice<u8>, Box<dyn std::error::Error>> {
-        assert!(in_f.is_multiple_of(32));
+        assert!(in_f % 32 == 0);
         let nblk = in_f / 32;
         let mut dst = self.alloc_u8_uninit(out_f * in_f * 2)?;
         let rc = {
@@ -884,7 +728,7 @@ impl crate::Engine {
         in_f: usize,
         out_f: usize,
     ) -> Result<CudaSlice<u8>, Box<dyn std::error::Error>> {
-        assert!(in_f.is_multiple_of(32));
+        assert!(in_f % 32 == 0);
         let nblk = in_f / 32;
         let mut dst = self.alloc_u8_uninit(out_f * in_f * 2)?;
         let rc = {
@@ -915,7 +759,7 @@ impl crate::Engine {
         in_f: usize,
         out_f: usize,
     ) -> Result<CudaSlice<u8>, Box<dyn std::error::Error>> {
-        assert!(in_f.is_multiple_of(256));
+        assert!(in_f % 256 == 0);
         let nsb = in_f / 256;
         let mut dst = self.alloc_u8_uninit(out_f * in_f * 2)?;
         let rc = {
@@ -946,7 +790,7 @@ impl crate::Engine {
         in_f: usize,
         out_f: usize,
     ) -> Result<CudaSlice<u8>, Box<dyn std::error::Error>> {
-        assert!(in_f.is_multiple_of(256));
+        assert!(in_f % 256 == 0);
         let nsb = in_f / 256;
         let mut dst = self.alloc_u8_uninit(out_f * in_f * 2)?;
         let rc = {
@@ -975,7 +819,7 @@ impl crate::Engine {
         in_f: usize,
         out_f: usize,
     ) -> Result<CudaSlice<u8>, Box<dyn std::error::Error>> {
-        assert!(in_f.is_multiple_of(256));
+        assert!(in_f % 256 == 0);
         let nsb = in_f / 256;
         let mut dst = self.alloc_u8_uninit(out_f * in_f * 2)?;
         let rc = {

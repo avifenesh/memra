@@ -1,6 +1,6 @@
 # B200 block arm matrix (owner allocation: 3 arms x 2 cards + 2 cards memra recon)
 
-Box: `b200-1` (8x B200 183GB, nvirginia-az-c, block <capacity-block>,
+Box: `b200-1` (8x B200 183GB, N-Virginia-c, block <capacity-block>,
 window ends 2026-08-16T11:30Z). Phase 1 (regen) borrows all 8 cards; arms start after.
 
 | Arm | Cards | Init | Geometry | Corpus | Bet it tests |
@@ -173,7 +173,7 @@ clean-license drafter. gsm8k bar expected to cross at cum-875 (last in-block che
 ## BLOCK END (box terminated ~09:05Z 2026-08-16 — earlier than the 11:30Z expectation)
 
 The capacity block reclaimed the box between the cum-750 evals and the cum-875 checkpoint. No
-response on TCP/ICMP; the provider API unavailable (credentials invalid since ~2026-08-15 15:00Z — owner
+response on TCP/ICMP; hyperscaler API unavailable (credentials invalid since ~2026-08-15 15:00Z — owner
 action needed there regardless).
 
 SAVED LOCALLY (/home/avifenesh/models/dspark-q38-20260815/):

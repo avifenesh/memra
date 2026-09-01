@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# One-shot bring-up for a fresh rented PRO 6000 box (stock GPU image) (spot-safe, idempotent, all attempt-1 fixes baked).
+# One-shot bring-up for a fresh sbox DL-image box (spot-safe, idempotent, all attempt-1 fixes baked).
 # Usage on box: bash bootstrap-box.sh   (expects ~/.hf_token pushed first)
 # Logs: ~/bootstrap.log. After this: tmux sessions `serve` (GPU0 DSPARK server) ready to start.
 set -ux
 exec >> /home/ubuntu/bootstrap.log 2>&1
 export PATH="$HOME/.local/bin:$PATH"
 
-# scratch -> stock-image LVM NVMe (do NOT mkfs nvme1n1 — it is LVM-owned, mounted at /opt/scratch/nvme)
-sudo chown ubuntu:ubuntu /opt/scratch/nvme
-[ -L /scratch ] || { sudo rm -rf /scratch; sudo ln -s /opt/scratch/nvme /scratch; }
+# scratch -> DL-image LVM NVMe (do NOT mkfs nvme1n1 — it is LVM-owned, mounted at /opt/dl-image/nvme)
+sudo chown ubuntu:ubuntu /opt/dl-image/nvme
+[ -L /scratch ] || { sudo rm -rf /scratch; sudo ln -s /opt/dl-image/nvme /scratch; }
 mkdir -p /scratch/{models,repos,ckpt,receipts,corpus,venvs} /scratch/receipts/g1
 
 sudo apt-get update -y && sudo apt-get install -y tmux jq git-lfs ninja-build

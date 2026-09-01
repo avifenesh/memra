@@ -7,9 +7,8 @@ pub mod hidden_trace;
 
 use memra_gguf::config::AttentionGateKind;
 use memra_gguf::model_plan::{
-    ActivationPlan, AttentionPlan, AttentionScale, GdnGateActivation, GemmaLayerScale, HcCollapse,
-    LogitsTransform, MicroBlockIndexPlan, MlpPlan, ModelPlan, PleEmbeddingPlan, ResidualTopology,
-    RopePlan, ValueNorm, ValueProjection,
+    ActivationPlan, AttentionPlan, AttentionScale, GemmaLayerScale, HcCollapse, LogitsTransform,
+    MlpPlan, ModelPlan, ResidualTopology, ValueNorm, ValueProjection,
 };
 use memra_gguf::tensor_contract::{DsparkTensor, LayerTensor, MtpTensor, TensorId, VisionTensor};
 use std::collections::BTreeMap;
@@ -19,11 +18,6 @@ pub struct ReferenceTensor {
     /// Logical row-major shape, outermost dimension first.
     pub shape: Vec<usize>,
     pub data: Vec<f32>,
-    /// Exact payload for checkpoint I64 index tensors (qwen4_exp n-gram multipliers /
-    /// vocab sizes / offsets). f32 cannot carry them (the vocab primes >= 2e7 exceed the
-    /// 24-bit mantissa and the hash multipliers fill i64), so integer tensors keep `data`
-    /// empty and executors read them through `tensor_i64` only.
-    pub ints: Option<Vec<i64>>,
 }
 
 impl ReferenceTensor {
@@ -36,27 +30,7 @@ impl ReferenceTensor {
                 actual_elements: data.len(),
             });
         }
-        Ok(Self {
-            shape,
-            data,
-            ints: None,
-        })
-    }
-
-    pub fn new_i64(shape: Vec<usize>, ints: Vec<i64>) -> Result<Self, ReferenceError> {
-        let expected = shape.iter().product();
-        if ints.len() != expected {
-            return Err(ReferenceError::TensorShape {
-                id: None,
-                expected: shape,
-                actual_elements: ints.len(),
-            });
-        }
-        Ok(Self {
-            shape,
-            data: Vec::new(),
-            ints: Some(ints),
-        })
+        Ok(Self { shape, data })
     }
 }
 
@@ -72,17 +46,8 @@ pub struct ReferenceFixture {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReferenceVisionInput {
-    /// Patch rows, row-major `[patches, patch_row_width]`. The pixel contract is per
-    /// tower program:
-    /// - `VisionPlan::Factored` (gemma-4): raw pixels in `[0, 1]`, width
-    ///   `3 * patch_size^2`; the executor applies the graph's `2x - 1`.
-    /// - `VisionPlan::Glm5Fused`: PREPROCESSED pixels (rescale 1/255 then CLIP mean/std
-    ///   normalize, done by the image processor), width
-    ///   `in_channels * temporal_patch_size * patch_size^2` in `(c, t, ph, pw)` flat
-    ///   order, token sequence in spatial-merge block-major order.
+    /// Raw patch pixels in `[0, 1]`, row-major `[patches, 3 * patch_size^2]`.
     pub patches: ReferenceTensor,
-    /// Per-patch 2D position. Factored: `[x, y]`. Glm5Fused: `[h, w]` (the upstream
-    /// `get_vision_position_ids` column order), block-major over merge blocks.
     pub positions: Vec<[u32; 2]>,
     pub output_tokens: usize,
 }
@@ -151,21 +116,12 @@ pub struct ReferenceOutput {
     pub state: ReferenceState,
     pub mtp: Vec<ReferenceMtpOutput>,
     pub draft: Option<ReferenceDraftOutput>,
-    /// Post-layer residual state per TRUNK layer, `[tokens, hidden]`, or the
-    /// WIDE `[tokens, streams * hidden]` stream for gated-residual (qwen4_exp)
-    /// and HyperConnections trunks. Parity-gate localization surface: layer i
-    /// here compares directly against a forward hook on decoder layer i of the
-    /// upstream Python implementation.
-    pub layer_hidden: Vec<Vec<f32>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReferenceMtpOutput {
     pub depth: u32,
     pub logits: Vec<f32>,
-    /// Post-block hidden state, `[tokens, hidden]` — except gated-residual (qwen4_exp)
-    /// drafts, where it is the WIDE stream `[tokens, streams * hidden]`: the post-layer
-    /// wide state is the multi-step K>1 carrier (SEMANTICS.md §MTP).
     pub hidden: Vec<f32>,
     pub state: ReferenceLayerState,
 }
@@ -188,9 +144,6 @@ pub enum ReferenceError {
         vocab: usize,
     },
     MissingTensor(TensorId),
-    /// An I64 checkpoint tensor arrived without its exact integer payload — an f32 copy
-    /// would silently corrupt the n-gram hash arithmetic, so this refuses instead.
-    IntegerTensorRequired(TensorId),
     TensorShape {
         id: Option<TensorId>,
         expected: Vec<usize>,
@@ -214,9 +167,6 @@ impl std::fmt::Display for ReferenceError {
                 write!(f, "token {token} is outside vocabulary size {vocab}")
             }
             Self::MissingTensor(id) => write!(f, "missing reference tensor {id:?}"),
-            Self::IntegerTensorRequired(id) => {
-                write!(f, "reference tensor {id:?} must carry an exact I64 payload")
-            }
             Self::TensorShape {
                 id,
                 expected,
@@ -262,37 +212,19 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
         TensorId::TokenEmbedding,
         generated_tensor(&[vocab, hidden], 1, 0.2)?,
     );
-    let vision = match plan.vision.as_ref() {
-        Some(memra_gguf::model_plan::VisionPlan::Factored(vision)) => Some(add_vision_fixture(
+    let vision = if let Some(vision) = plan.vision.as_ref() {
+        Some(add_vision_fixture(
             &mut weights,
             vision,
-            plan.multimodal
-                .and_then(|injection| injection.tokens_per_image),
-        )?),
-        Some(memra_gguf::model_plan::VisionPlan::Glm5Fused(vision)) => {
-            Some(add_vision_fixture_glm5(&mut weights, vision)?)
-        }
-        None => None,
-    };
-    if let Some(mixer) = plan.exit_mixer {
-        // qwen4_exp exits through the hyper_connection_mixer read gate — the census has NO
-        // final norm module (SEMANTICS.md §Layer stack), so no OutputNorm row here either.
-        add_exit_mixer_fixture(&mut weights, LayerScope::Trunk, &mixer, hidden, 240)?;
-        if !plan.mtp_blocks.is_empty() {
-            add_exit_mixer_fixture(
-                &mut weights,
-                LayerScope::Mtp { depth: 0 },
-                &mixer,
-                hidden,
-                245,
-            )?;
-        }
+            plan.multimodal.map(|injection| injection.tokens_per_image),
+        )?)
     } else {
-        weights.insert(
-            TensorId::OutputNorm,
-            ReferenceTensor::new(vec![hidden], vec![1.0; hidden])?,
-        );
-    }
+        None
+    };
+    weights.insert(
+        TensorId::OutputNorm,
+        ReferenceTensor::new(vec![hidden], vec![1.0; hidden])?,
+    );
     let checkpoint_factor_width = executable_layers
         .iter()
         .copied()
@@ -355,54 +287,12 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
             ResidualTopology::HyperConnections { streams, .. } => {
                 add_hyper_fixture(&mut weights, layer.index, streams as usize, hidden)?;
             }
-            ResidualTopology::GatedResidual {
-                streams,
-                bottleneck_rank,
-            } => {
-                add_gated_residual_fixture(
-                    &mut weights,
-                    layer_scope(plan, layer.index),
-                    layer.index,
-                    streams as usize,
-                    bottleneck_rank as usize,
-                    hidden,
-                )?;
-            }
         }
-        // qwen4_exp has no input_layernorm/post_attention_layernorm modules — the read
-        // gate's grouped hc_norm IS the sublayer normalization (SEMANTICS.md §Layer stack).
-        if !matches!(layer.residual, ResidualTopology::GatedResidual { .. }) {
-            for tensor in [LayerTensor::PreAttentionNorm, LayerTensor::PreMlpNorm] {
-                weights.insert(
-                    layer_id(layer.index, tensor),
-                    ReferenceTensor::new(vec![hidden], vec![1.0; hidden])?,
-                );
-            }
-        }
-        if let Some(overlay) = layer.sparse_overlay.as_ref() {
-            add_micro_block_index_fixture(
-                &mut weights,
-                layer_scope(plan, layer.index),
-                layer.index,
-                overlay,
-                hidden,
-            )?;
-        }
-        if let Some(ple) = layer.ple.as_ref() {
-            let ResidualTopology::GatedResidual { streams, .. } = layer.residual else {
-                return Err(ReferenceError::InvalidPlan {
-                    layer: Some(layer.index),
-                    reason: "PLE fixtures require the gated-residual wide stream",
-                });
-            };
-            add_ple_fixture(
-                &mut weights,
-                layer_scope(plan, layer.index),
-                layer.index,
-                ple,
-                streams as usize,
-                hidden,
-            )?;
+        for tensor in [LayerTensor::PreAttentionNorm, LayerTensor::PreMlpNorm] {
+            weights.insert(
+                layer_id(layer.index, tensor),
+                ReferenceTensor::new(vec![hidden], vec![1.0; hidden])?,
+            );
         }
         match &layer.attention {
             AttentionPlan::Full(attention) | AttentionPlan::SlidingWindow { attention, .. } => {
@@ -437,94 +327,38 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
         }
     }
     for block in &plan.mtp_blocks {
-        match block.input.fusion {
-            memra_gguf::model_plan::MtpFusionPlan::ConcatenateProjection => {
-                for tensor in [MtpTensor::EmbeddingNorm, MtpTensor::HiddenNorm] {
-                    weights.insert(
-                        TensorId::Mtp {
-                            depth: block.depth,
-                            tensor,
-                        },
-                        ReferenceTensor::new(vec![hidden], vec![1.0; hidden])?,
-                    );
-                }
-                weights.insert(
-                    TensorId::Mtp {
-                        depth: block.depth,
-                        tensor: MtpTensor::FusionProjection,
-                    },
-                    generated_tensor(
-                        &[hidden, 2 * hidden],
-                        100 + block.depth as u64,
-                        1.0 / ((2 * hidden) as f32).sqrt(),
-                    )?,
-                );
-            }
-            // qwen4_exp: two separate projections; the hidden-side norm covers the WIDE
-            // stream (census mtp.pre_fc_norm_hidden [10240] — SEMANTICS.md §MTP).
-            memra_gguf::model_plan::MtpFusionPlan::SeparateProjections => {
-                let ResidualTopology::GatedResidual { streams, .. } = block.layer.residual else {
-                    return Err(ReferenceError::InvalidPlan {
-                        layer: Some(block.layer.index),
-                        reason: "separate-projection MTP fusion requires a gated-residual block",
-                    });
-                };
-                weights.insert(
-                    TensorId::Mtp {
-                        depth: block.depth,
-                        tensor: MtpTensor::EmbeddingNorm,
-                    },
-                    ReferenceTensor::new(vec![hidden], vec![1.0; hidden])?,
-                );
-                weights.insert(
-                    TensorId::Mtp {
-                        depth: block.depth,
-                        tensor: MtpTensor::HiddenNorm,
-                    },
-                    ReferenceTensor::new(
-                        vec![streams as usize * hidden],
-                        vec![1.0; streams as usize * hidden],
-                    )?,
-                );
-                for (tensor, salt) in [
-                    (MtpTensor::EmbeddingProjection, 230),
-                    (MtpTensor::HiddenProjection, 231),
-                ] {
-                    weights.insert(
-                        TensorId::Mtp {
-                            depth: block.depth,
-                            tensor,
-                        },
-                        generated_tensor(
-                            &[hidden, hidden],
-                            salt + block.depth as u64,
-                            1.0 / (hidden as f32).sqrt(),
-                        )?,
-                    );
-                }
-            }
+        for tensor in [MtpTensor::EmbeddingNorm, MtpTensor::HiddenNorm] {
+            weights.insert(
+                TensorId::Mtp {
+                    depth: block.depth,
+                    tensor,
+                },
+                ReferenceTensor::new(vec![hidden], vec![1.0; hidden])?,
+            );
         }
+        weights.insert(
+            TensorId::Mtp {
+                depth: block.depth,
+                tensor: MtpTensor::FusionProjection,
+            },
+            generated_tensor(
+                &[hidden, 2 * hidden],
+                100 + block.depth as u64,
+                1.0 / ((2 * hidden) as f32).sqrt(),
+            )?,
+        );
     }
     if let Some(memra_gguf::model_plan::DrafterPlan::Dspark(dspark)) = plan.drafter.as_ref() {
         add_dspark_fixture(&mut weights, dspark, hidden, vocab)?;
     }
     let token_ids = (1..=3.min(vocab - 1)).map(|token| token as u32).collect();
     let multimodal_token_ids = plan.multimodal.map(|injection| {
-        // Grid-derived injection (glm5_next) takes the fixture image's own token count;
-        // fixed injection (gemma-4) takes the config-declared count.
-        let per_image = injection
-            .tokens_per_image
-            .map(|count| count as usize)
-            .or(vision.as_ref().map(|vision| vision.output_tokens))
-            .unwrap_or(1);
-        let mut tokens = Vec::with_capacity(per_image + 4);
+        let mut tokens = Vec::with_capacity(injection.tokens_per_image as usize + 2);
         tokens.push(1);
-        tokens.extend(injection.start_token_id);
         tokens.extend(std::iter::repeat_n(
             injection.placeholder_token_id,
-            per_image,
+            injection.tokens_per_image as usize,
         ));
-        tokens.extend(injection.end_token_id);
         tokens.push(if injection.placeholder_token_id == 2 {
             3
         } else {
@@ -757,154 +591,6 @@ fn add_vision_fixture(
     })
 }
 
-/// Deterministic tiny fixture for the glm5_next tower program. A 2-wide x 1-tall grid of
-/// spatial-merge blocks (`n = 2 * merge^2` patches, 2 output tokens) exercises both rope
-/// axes, the block-major position order, the downsample block gather and the merger.
-fn add_vision_fixture_glm5(
-    weights: &mut ReferenceWeights,
-    plan: &memra_gguf::model_plan::Glm5VisionPlan,
-) -> Result<ReferenceVisionInput, ReferenceError> {
-    let hidden = plan.hidden_size as usize;
-    let head_dim = plan.head_dim as usize;
-    let ff = plan.intermediate_size as usize;
-    let out = plan.out_hidden_size as usize;
-    let proj_inter = plan.projection_intermediate_size as usize;
-    let merge = plan.spatial_merge_size as usize;
-    let patch_width = plan.patch_input_width as usize;
-    let id = |layer: Option<u32>, tensor| TensorId::Vision { layer, tensor };
-    weights.insert(id(None, VisionTensor::PatchProjection), {
-        let mut tensor = generated_tensor(
-            &[hidden, patch_width],
-            150,
-            1.0 / (patch_width as f32).sqrt(),
-        )?;
-        // Census truth is the 5-d conv shape; row-major layout is identical.
-        tensor.shape = vec![
-            hidden,
-            plan.in_channels as usize,
-            plan.temporal_patch_size as usize,
-            plan.patch_size as usize,
-            plan.patch_size as usize,
-        ];
-        tensor
-    });
-    weights.insert(
-        id(None, VisionTensor::PatchProjectionBias),
-        generated_tensor(&[hidden], 151, 0.05)?,
-    );
-    for layer in 0..plan.depth {
-        let l = Some(layer);
-        let salt = layer as u64 * 23;
-        for (tensor, shape, input, seed) in [
-            (
-                VisionTensor::FusedQkv,
-                vec![3 * hidden, hidden],
-                hidden,
-                250,
-            ),
-            (
-                VisionTensor::AttentionOutput,
-                vec![hidden, hidden],
-                hidden,
-                251,
-            ),
-            (VisionTensor::MlpGate, vec![ff, hidden], hidden, 252),
-            (VisionTensor::MlpUp, vec![ff, hidden], hidden, 253),
-            (VisionTensor::MlpDown, vec![hidden, ff], ff, 254),
-        ] {
-            weights.insert(
-                id(l, tensor),
-                generated_tensor(&shape, seed + salt, 1.0 / (input as f32).sqrt())?,
-            );
-        }
-        for (tensor, width, seed) in [
-            (VisionTensor::FusedQkvBias, 3 * hidden, 255),
-            (VisionTensor::AttentionOutputBias, hidden, 256),
-            (VisionTensor::MlpGateBias, ff, 257),
-            (VisionTensor::MlpUpBias, ff, 258),
-            (VisionTensor::MlpDownBias, hidden, 259),
-        ] {
-            weights.insert(
-                id(l, tensor),
-                generated_tensor(&[width], seed + salt, 0.02)?,
-            );
-        }
-        for (tensor, width) in [
-            (VisionTensor::InputNorm, hidden),
-            (VisionTensor::PreMlpNorm, hidden),
-            (VisionTensor::QueryNorm, head_dim),
-            (VisionTensor::KeyNorm, head_dim),
-        ] {
-            weights.insert(
-                id(l, tensor),
-                ReferenceTensor::new(vec![width], vec![1.0; width])?,
-            );
-        }
-    }
-    weights.insert(
-        id(None, VisionTensor::PostEncoderNorm),
-        ReferenceTensor::new(vec![hidden], vec![1.0; hidden])?,
-    );
-    weights.insert(id(None, VisionTensor::Downsample), {
-        let mut tensor = generated_tensor(
-            &[out, hidden * merge * merge],
-            260,
-            1.0 / ((hidden * merge * merge) as f32).sqrt(),
-        )?;
-        tensor.shape = vec![out, hidden, merge, merge];
-        tensor
-    });
-    weights.insert(
-        id(None, VisionTensor::DownsampleBias),
-        generated_tensor(&[out], 261, 0.02)?,
-    );
-    weights.insert(
-        id(None, VisionTensor::MergerProjection),
-        generated_tensor(&[out, out], 262, 1.0 / (out as f32).sqrt())?,
-    );
-    weights.insert(
-        id(None, VisionTensor::MergerPostProjectionNorm),
-        ReferenceTensor::new(vec![out], vec![1.0; out])?,
-    );
-    weights.insert(
-        id(None, VisionTensor::MergerPostProjectionNormBias),
-        generated_tensor(&[out], 263, 0.02)?,
-    );
-    weights.insert(
-        id(None, VisionTensor::MergerGate),
-        generated_tensor(&[proj_inter, out], 264, 1.0 / (out as f32).sqrt())?,
-    );
-    weights.insert(
-        id(None, VisionTensor::MergerUp),
-        generated_tensor(&[proj_inter, out], 265, 1.0 / (out as f32).sqrt())?,
-    );
-    weights.insert(
-        id(None, VisionTensor::MergerDown),
-        generated_tensor(&[out, proj_inter], 266, 1.0 / (proj_inter as f32).sqrt())?,
-    );
-    // 1 x 2 blocks of merge x merge patches, block-major (block_row, block_col, in_row,
-    // in_col) — the upstream patchify/pos-id order.
-    let output_tokens = 2usize;
-    let patch_count = output_tokens * merge * merge;
-    let mut patches = generated_tensor(&[patch_count, patch_width], 270, 0.5)?;
-    for value in &mut patches.data {
-        *value += 0.5;
-    }
-    let mut positions = Vec::with_capacity(patch_count);
-    for block_col in 0..output_tokens {
-        for in_row in 0..merge {
-            for in_col in 0..merge {
-                positions.push([in_row as u32, (block_col * merge + in_col) as u32]);
-            }
-        }
-    }
-    Ok(ReferenceVisionInput {
-        patches,
-        positions,
-        output_tokens,
-    })
-}
-
 fn add_hyper_head_fixture(
     weights: &mut ReferenceWeights,
     streams: usize,
@@ -974,269 +660,6 @@ fn add_hyper_fixture(
     Ok(())
 }
 
-/// Which checkpoint namespace a qwen4_exp layer's family-bound tensors live in. The pack
-/// binds gated-residual / indexer / PLE / mixer tensors as `TensorId::Family` keyed by
-/// `semantic_key` (crates/memra-gguf/src/model_packs/qwen4_exp: trunk rows strip the
-/// `model.language_model.` wrapper to `trunk.*`, MTP rows keep their `mtp.*` names). The
-/// key formats below MUST mirror that mapping — drift fails loudly as MissingTensor.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LayerScope {
-    Trunk,
-    Mtp { depth: u32 },
-}
-
-impl LayerScope {
-    fn layer_prefix(self, index: u32) -> String {
-        match self {
-            Self::Trunk => format!("trunk.layers.{index}."),
-            Self::Mtp { depth } => format!("mtp.layers.{depth}."),
-        }
-    }
-
-    fn mixer_prefix(self) -> &'static str {
-        match self {
-            Self::Trunk => "trunk.hyper_connection_mixer.",
-            Self::Mtp { .. } => "mtp.hyper_connection_mixer.",
-        }
-    }
-}
-
-/// Scope for a layer taken from `deterministic_fixture`'s combined trunk+MTP walk: the
-/// plan compiles MTP block `depth` at global index `trunk_len + depth`.
-fn layer_scope(plan: &ModelPlan, index: u32) -> LayerScope {
-    let trunk = plan.layers.len() as u32;
-    if index < trunk {
-        LayerScope::Trunk
-    } else {
-        LayerScope::Mtp {
-            depth: index - trunk,
-        }
-    }
-}
-
-fn qwen4exp_family_id(key: String) -> TensorId {
-    TensorId::Family {
-        family: "qwen4_exp",
-        key,
-    }
-}
-
-fn add_gated_residual_fixture(
-    weights: &mut ReferenceWeights,
-    scope: LayerScope,
-    layer: u32,
-    streams: usize,
-    rank: usize,
-    hidden: usize,
-) -> Result<(), ReferenceError> {
-    if streams == 0 || rank == 0 {
-        return Err(ReferenceError::InvalidPlan {
-            layer: Some(layer),
-            reason: "gated residual requires streams and a bottleneck rank",
-        });
-    }
-    let wide = streams * hidden;
-    let prefix = scope.layer_prefix(layer);
-    for (sublayer, salt) in [
-        ("attn_hyper_connection.", 200u64),
-        ("mlp_hyper_connection.", 204),
-    ] {
-        weights.insert(
-            qwen4exp_family_id(format!("{prefix}{sublayer}hc_norm.weight")),
-            ReferenceTensor::new(vec![wide], vec![1.0; wide])?,
-        );
-        weights.insert(
-            qwen4exp_family_id(format!("{prefix}{sublayer}input_mix_weight_down.weight")),
-            generated_tensor(
-                &[rank, wide],
-                salt + 1 + layer as u64 * 211,
-                1.0 / (wide as f32).sqrt(),
-            )?,
-        );
-        weights.insert(
-            qwen4exp_family_id(format!("{prefix}{sublayer}input_mix_weight_up.weight")),
-            generated_tensor(
-                &[wide, rank],
-                salt + 2 + layer as u64 * 211,
-                1.0 / (rank as f32).sqrt(),
-            )?,
-        );
-        weights.insert(
-            qwen4exp_family_id(format!("{prefix}{sublayer}block_inject_weight.weight")),
-            generated_tensor(
-                &[streams, wide],
-                salt + 3 + layer as u64 * 211,
-                1.0 / (wide as f32).sqrt(),
-            )?,
-        );
-    }
-    Ok(())
-}
-
-fn add_exit_mixer_fixture(
-    weights: &mut ReferenceWeights,
-    scope: LayerScope,
-    mixer: &memra_gguf::model_plan::GatedResidualMixerPlan,
-    hidden: usize,
-    salt: u64,
-) -> Result<(), ReferenceError> {
-    let streams = mixer.streams as usize;
-    let rank = mixer.bottleneck_rank as usize;
-    if streams == 0 || rank == 0 {
-        return Err(ReferenceError::InvalidPlan {
-            layer: None,
-            reason: "exit mixer requires streams and a bottleneck rank",
-        });
-    }
-    let wide = streams * hidden;
-    let prefix = scope.mixer_prefix();
-    // Read half only: the census mixer carries NO block_inject row (use_combine=false).
-    weights.insert(
-        qwen4exp_family_id(format!("{prefix}hc_norm.weight")),
-        ReferenceTensor::new(vec![wide], vec![1.0; wide])?,
-    );
-    weights.insert(
-        qwen4exp_family_id(format!("{prefix}input_mix_weight_down.weight")),
-        generated_tensor(&[rank, wide], salt + 1, 1.0 / (wide as f32).sqrt())?,
-    );
-    weights.insert(
-        qwen4exp_family_id(format!("{prefix}input_mix_weight_up.weight")),
-        generated_tensor(&[wide, rank], salt + 2, 1.0 / (rank as f32).sqrt())?,
-    );
-    Ok(())
-}
-
-fn add_micro_block_index_fixture(
-    weights: &mut ReferenceWeights,
-    scope: LayerScope,
-    layer: u32,
-    overlay: &MicroBlockIndexPlan,
-    hidden: usize,
-) -> Result<(), ReferenceError> {
-    let heads = overlay.query_heads as usize;
-    let kv_heads = overlay.kv_heads as usize;
-    let head_dim = overlay.head_dim as usize;
-    if heads == 0 || kv_heads == 0 || head_dim == 0 || overlay.block_size == 0 {
-        return Err(ReferenceError::InvalidPlan {
-            layer: Some(layer),
-            reason: "micro-block indexer requires heads, head_dim, and a block size",
-        });
-    }
-    let prefix = scope.layer_prefix(layer);
-    weights.insert(
-        qwen4exp_family_id(format!("{prefix}self_attn.indexer.index_qk_proj.weight")),
-        generated_tensor(
-            &[(heads + kv_heads) * head_dim, hidden],
-            210 + layer as u64 * 211,
-            1.0 / (hidden as f32).sqrt(),
-        )?,
-    );
-    for norm in ["q_layernorm", "k_layernorm"] {
-        weights.insert(
-            qwen4exp_family_id(format!("{prefix}self_attn.indexer.{norm}.weight")),
-            ReferenceTensor::new(vec![head_dim], vec![1.0; head_dim])?,
-        );
-    }
-    Ok(())
-}
-
-fn add_ple_fixture(
-    weights: &mut ReferenceWeights,
-    scope: LayerScope,
-    layer: u32,
-    ple: &PleEmbeddingPlan,
-    streams: usize,
-    hidden: usize,
-) -> Result<(), ReferenceError> {
-    let heads = ple.ngram_heads as usize;
-    let head_dim = ple.head_embed_dim as usize;
-    let embed_dim = ple.embed_dim as usize;
-    let kernel = ple.conv_kernel as usize;
-    let max_ngram = ple.max_ngram as usize;
-    if heads == 0
-        || head_dim == 0
-        || kernel == 0
-        || max_ngram < 2
-        || embed_dim != heads * head_dim
-        || !heads.is_multiple_of(max_ngram - 1)
-    {
-        return Err(ReferenceError::InvalidPlan {
-            layer: Some(layer),
-            reason: "PLE fixture requires consistent n-gram head geometry",
-        });
-    }
-    let wide = streams * hidden;
-    let prefix = scope.layer_prefix(layer);
-    weights.insert(
-        qwen4exp_family_id(format!("{prefix}ple.key_proj.weight")),
-        generated_tensor(
-            &[wide, embed_dim],
-            215 + layer as u64 * 211,
-            1.0 / (embed_dim as f32).sqrt(),
-        )?,
-    );
-    weights.insert(
-        qwen4exp_family_id(format!("{prefix}ple.value_proj.weight")),
-        generated_tensor(
-            &[hidden, embed_dim],
-            216 + layer as u64 * 211,
-            1.0 / (embed_dim as f32).sqrt(),
-        )?,
-    );
-    for norm in ["norm_key", "norm_query", "norm_conv"] {
-        weights.insert(
-            qwen4exp_family_id(format!("{prefix}ple.{norm}.weight")),
-            ReferenceTensor::new(vec![wide], vec![1.0; wide])?,
-        );
-    }
-    // Checkpoint ships [wide, 1, kernel]; the reference consumes the squeezed depthwise
-    // form like the GDN conv row.
-    weights.insert(
-        qwen4exp_family_id(format!("{prefix}ple.conv1d.weight")),
-        generated_tensor(
-            &[wide, kernel],
-            217 + layer as u64 * 211,
-            1.0 / (kernel as f32).sqrt(),
-        )?,
-    );
-    // Synthetic I64 index buffers. Real checkpoints LOAD these (SEMANTICS.md §PLE — never
-    // re-derived); the fixture only needs deterministic, structurally valid values: odd
-    // multipliers, distinct per-head vocab sizes with prefix-sum offsets, and a table with
-    // a few pad rows past the addressable range.
-    let multipliers: Vec<i64> = (0..max_ngram)
-        .map(|index| 1_000_003 + 2 * (layer as i64 * 97 + index as i64 * 31))
-        .collect();
-    let sizes: Vec<i64> = (0..heads).map(|head| 17 + 2 * head as i64).collect();
-    let mut offsets = Vec::with_capacity(heads);
-    let mut total = 0i64;
-    for &size in &sizes {
-        offsets.push(total);
-        total += size;
-    }
-    weights.insert(
-        qwen4exp_family_id(format!("{prefix}ple.ple_embedding.layer_multipliers")),
-        ReferenceTensor::new_i64(vec![max_ngram], multipliers)?,
-    );
-    weights.insert(
-        qwen4exp_family_id(format!("{prefix}ple.ple_embedding.ngram_heads_vocab_sizes")),
-        ReferenceTensor::new_i64(vec![heads], sizes)?,
-    );
-    weights.insert(
-        qwen4exp_family_id(format!("{prefix}ple.ple_embedding.ngram_heads_offsets")),
-        ReferenceTensor::new_i64(vec![heads], offsets)?,
-    );
-    weights.insert(
-        qwen4exp_family_id(format!("{prefix}ple.ple_embedding.ngram_embedding")),
-        generated_tensor(
-            &[total as usize + 3, head_dim],
-            218 + layer as u64 * 211,
-            0.2,
-        )?,
-    );
-    Ok(())
-}
-
-#[allow(clippy::unusual_byte_groupings)] // allow: mnemonic grouping of a pinned seed/magic constant
 fn generated_tensor(
     shape: &[usize],
     salt: u64,
@@ -1582,7 +1005,6 @@ fn add_mla_fixture(
     Ok(())
 }
 
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn add_compressed_mla_fixture(
     weights: &mut ReferenceWeights,
     layer: u32,
@@ -1943,9 +1365,7 @@ pub fn execute_multimodal(
         reason: "multimodal input requires a vision-token injection plan",
     })?;
     let vision = execute_vision(plan, weights, vision_input)?;
-    if let Some(tokens_per_image) = injection.tokens_per_image
-        && vision.output_tokens != tokens_per_image as usize
-    {
+    if vision.output_tokens != injection.tokens_per_image as usize {
         return Err(ReferenceError::InvalidPlan {
             layer: None,
             reason: "vision output token count does not match the injection plan",
@@ -2022,97 +1442,50 @@ fn execute_embedded(
         });
     }
     let hyper = hyper_topology(plan)?;
-    let gated = gated_residual_topology(plan)?;
-    let mut x = if let Some((streams, _)) = gated {
-        // qwen4_exp entry: the wide stream starts as `streams` copies of the embedding
-        // (modular L1012 `repeat(1, 1, hc_count)`).
-        let wide = streams * hidden;
-        let mut expanded = vec![0.0; tokens * wide];
-        for token in 0..tokens {
-            for stream in 0..streams {
-                expanded[token * wide + stream * hidden..token * wide + (stream + 1) * hidden]
-                    .copy_from_slice(&embedded[token * hidden..(token + 1) * hidden]);
-            }
-        }
-        expanded
-    } else if let Some((streams, _, _, _)) = hyper {
+    let mut x = hyper.map_or(embedded.clone(), |(streams, _, _, _)| {
         memra_gguf::dsv4_forward::hc_expand(&embedded, tokens, streams, hidden)
-    } else {
-        embedded.clone()
-    };
+    });
 
     let mut state = Vec::with_capacity(plan.layers.len());
-    let mut layer_hidden = Vec::with_capacity(plan.layers.len());
     let dspark = plan.drafter.as_ref().map(|drafter| match drafter {
         memra_gguf::model_plan::DrafterPlan::Dspark(plan) => plan,
     });
     let mut draft_taps = dspark.map(|plan| vec![None; plan.target_layer_ids.len()]);
     for layer in &plan.layers {
-        let (next, layer_state) = execute_layer(
-            layer,
-            weights,
-            &x,
-            token_ids,
-            tokens,
-            hidden,
-            vocab,
-            LayerScope::Trunk,
-        )?;
+        let (next, layer_state) =
+            execute_layer(layer, weights, &x, token_ids, tokens, hidden, vocab)?;
         x = next;
-        layer_hidden.push(x.clone());
-        if let (Some(dspark), Some(taps)) = (dspark, draft_taps.as_mut())
-            && let Some(target) = dspark
+        if let (Some(dspark), Some(taps)) = (dspark, draft_taps.as_mut()) {
+            if let Some(target) = dspark
                 .target_layer_ids
                 .iter()
                 .position(|&target| target == layer.index)
-        {
-            taps[target] = Some(collapse_stream_mean(
-                &x,
-                tokens,
-                hidden,
-                hyper.map(|topology| topology.0),
-            )?);
+            {
+                taps[target] = Some(collapse_stream_mean(
+                    &x,
+                    tokens,
+                    hidden,
+                    hyper.map(|topology| topology.0),
+                )?);
+            }
         }
         state.push(layer_state);
     }
-    let trunk_hidden = x.clone();
+    let trunk_hidden = x;
+    let logits = project_trunk_logits(
+        plan,
+        weights,
+        &trunk_hidden,
+        tokens,
+        hidden,
+        vocab,
+        embedding,
+    )?;
     let output = weights
         .get(&TensorId::OutputProjection)
         .map(|tensor| tensor_checked(&TensorId::OutputProjection, tensor, &[vocab, hidden]))
         .transpose()?
         .unwrap_or(embedding);
-    let logits = if let Some((streams, rank)) = gated {
-        // Exit downmix replaces the final norm: the mixer read gate (use_combine=false)
-        // collapses the wide stream and its grouped hc_norm IS the exit normalization
-        // (SEMANTICS.md §Layer stack; census has no model.language_model.norm), so this
-        // arm bypasses project_trunk_logits' OutputNorm rms_norm.
-        let collapsed = gated_residual_read(
-            weights,
-            LayerScope::Trunk.mixer_prefix(),
-            "",
-            &trunk_hidden,
-            tokens,
-            streams,
-            hidden,
-            rank,
-            plan.output_norm.epsilon,
-            false,
-        )?
-        .0;
-        let mut logits = linear(&collapsed, output, tokens, hidden, vocab);
-        apply_logits_transforms(&mut logits, vocab, &plan.logits);
-        logits
-    } else {
-        project_trunk_logits(
-            plan,
-            weights,
-            &trunk_hidden,
-            tokens,
-            hidden,
-            vocab,
-            embedding,
-        )?
-    };
     let draft = match (dspark, draft_taps) {
         (Some(dspark), Some(taps)) => Some(execute_dspark(
             dspark,
@@ -2128,19 +1501,12 @@ fn execute_embedded(
         )?),
         _ => None,
     };
-    // MTP fusion consumes the COLLAPSED pre-output_norm hidden — the same collapse the
-    // LM-head projection above just applied and the same quantity the engine hands over as
-    // `h_seed` (MTP-PLAN §A). Passing the raw `[tokens, streams*hidden]` stream stack was
-    // the reference-side refusal that kept `execute_mtp` erroring on every hc plan
-    // ("HyperConnections MTP fusion") while the plan, the contract, and the checkpoint all
-    // carried the NextN block.
-    let mtp_hidden = collapse_trunk_hidden(plan, weights, &trunk_hidden, tokens, hidden)?;
     let mtp = execute_mtp(
         plan,
         weights,
         token_ids,
         embedding,
-        mtp_hidden.as_deref().unwrap_or(&trunk_hidden),
+        &trunk_hidden,
         tokens,
         hidden,
         vocab,
@@ -2153,7 +1519,6 @@ fn execute_embedded(
         state: ReferenceState { layers: state },
         mtp,
         draft,
-        layer_hidden,
     })
 }
 
@@ -2161,36 +1526,6 @@ fn execute_embedded(
 /// norm, LM-head projection, and logits transforms. `embedding` is the tied-head
 /// fallback when `OutputProjection` is absent. Kept as one function so the two paths
 /// cannot drift; the checkpoint runner's `--self-test` pins them bit-for-bit.
-/// The trunk-exit stream collapse: `[tokens, streams*hidden]` -> `[tokens, hidden]` for an
-/// hc plan, identity for a serial one. ONE function for both consumers — the LM-head
-/// projection and the MTP fusion input — because the engine's `h_seed` contract (MTP-PLAN
-/// §A) is "the PRE-output_norm hidden, taken from the collapsed stack so it means the same
-/// thing it does on the serial path": if the two collapses could drift, the MTP oracle
-/// would gate the draft against a hidden the trunk never hands over.
-fn collapse_trunk_hidden(
-    plan: &ModelPlan,
-    weights: &ReferenceWeights,
-    trunk_hidden: &[f32],
-    tokens: usize,
-    hidden: usize,
-) -> Result<Option<Vec<f32>>, ReferenceError> {
-    let Some((streams, epsilon, _, collapse)) = hyper_topology(plan)? else {
-        return Ok(None);
-    };
-    Ok(Some(match collapse {
-        HcCollapse::GatedHead => collapse_hyper_head(
-            weights,
-            trunk_hidden,
-            tokens,
-            streams,
-            hidden,
-            plan,
-            epsilon,
-        )?,
-        HcCollapse::Mean => collapse_stream_mean(trunk_hidden, tokens, hidden, Some(streams))?,
-    }))
-}
-
 fn project_trunk_logits(
     plan: &ModelPlan,
     weights: &ReferenceWeights,
@@ -2200,8 +1535,25 @@ fn project_trunk_logits(
     vocab: usize,
     embedding: &[f32],
 ) -> Result<Vec<f32>, ReferenceError> {
-    let collapsed = collapse_trunk_hidden(plan, weights, trunk_hidden, tokens, hidden)?;
-    let x: &[f32] = collapsed.as_deref().unwrap_or(trunk_hidden);
+    let hyper = hyper_topology(plan)?;
+    let collapsed: Vec<f32>;
+    let x: &[f32] = if let Some((streams, epsilon, _, collapse)) = hyper {
+        collapsed = match collapse {
+            HcCollapse::GatedHead => collapse_hyper_head(
+                weights,
+                trunk_hidden,
+                tokens,
+                streams,
+                hidden,
+                plan,
+                epsilon,
+            )?,
+            HcCollapse::Mean => collapse_stream_mean(trunk_hidden, tokens, hidden, Some(streams))?,
+        };
+        &collapsed
+    } else {
+        trunk_hidden
+    };
     if crate::hidden_trace::enabled() {
         crate::hidden_trace::emit_last_row("collapse", -1, tokens, hidden, x);
     }
@@ -2314,7 +1666,6 @@ impl<'a> StreamedTrunkExecution<'a> {
             self.tokens,
             self.hidden,
             self.vocab,
-            LayerScope::Trunk,
         )?;
         self.x = next;
         self.states.push(layer_state);
@@ -2353,10 +1704,6 @@ impl<'a> StreamedTrunkExecution<'a> {
             },
             mtp: Vec::new(),
             draft: None,
-            // Streamed runs are checkpoint-scale by definition; retaining every
-            // layer's residual would defeat the memory bound. Parity localization
-            // uses the in-memory [`execute`] path.
-            layer_hidden: Vec::new(),
         })
     }
 }
@@ -2371,12 +1718,6 @@ pub fn execute_vision(
             layer: None,
             reason: "vision input requires a vision subplan",
         });
-    };
-    let vision = match vision {
-        memra_gguf::model_plan::VisionPlan::Factored(vision) => vision,
-        memra_gguf::model_plan::VisionPlan::Glm5Fused(vision) => {
-            return execute_vision_glm5(vision, weights, input);
-        }
     };
     if vision.clipped_linears {
         return Err(ReferenceError::UnsupportedOperation {
@@ -2507,360 +1848,6 @@ pub fn execute_vision(
     })
 }
 
-/// glm5_next tower forward. Semantics pinned against transformers 5.16.1
-/// `Glm5NextVisionModel.forward` (vision classes diffed byte-identical to transformers
-/// main; lane research/glm5-vision-20260830): patch conv as a linear over `(c, t, ph, pw)`
-/// rows, per-head q/k RMS norms BEFORE the 2D rope, rope-only positions (theta 10000,
-/// h-half then w-half, NeoX pairs `(d, d + head_dim/2)`), scaled non-causal attention,
-/// biased clamped-SwiGLU block MLPs, post-encoder RMS norm, conv `merge x merge`
-/// downsample over block-major token groups, gated clamped merger
-/// (proj -> LayerNorm -> exact GELU -> clamp(gate,up) -> silu(gate)*up -> down).
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
-fn execute_vision_glm5(
-    vision: &memra_gguf::model_plan::Glm5VisionPlan,
-    weights: &ReferenceWeights,
-    input: &ReferenceVisionInput,
-) -> Result<ReferenceVisionOutput, ReferenceError> {
-    let hidden = vision.hidden_size as usize;
-    let heads = vision.heads as usize;
-    let head_dim = vision.head_dim as usize;
-    let ff = vision.intermediate_size as usize;
-    let out_width = vision.out_hidden_size as usize;
-    let proj_inter = vision.projection_intermediate_size as usize;
-    let merge = vision.spatial_merge_size as usize;
-    let merge_area = merge * merge;
-    let patch_width = vision.patch_input_width as usize;
-    let limit = vision.swiglu_limit;
-    let eps = vision.norm.epsilon;
-    let tokens = input.positions.len();
-    if input.patches.shape != [tokens, patch_width]
-        || tokens == 0
-        || tokens % merge_area != 0
-        || input.output_tokens != tokens / merge_area
-    {
-        return Err(ReferenceError::InvalidPlan {
-            layer: None,
-            reason: "glm5 vision patch input shape, merge alignment or token count is invalid",
-        });
-    }
-    let id = |layer: Option<u32>, tensor| TensorId::Vision { layer, tensor };
-    let tensor_5d = |tensor, expected: &[usize]| -> Result<&[f32], ReferenceError> {
-        tensor_checked(
-            &id(None, tensor),
-            weights
-                .get(&id(None, tensor))
-                .ok_or(ReferenceError::MissingTensor(id(None, tensor)))?,
-            expected,
-        )
-    };
-    // Patch embed: conv3d [hidden, c, t, ph, pw] row-major == linear rows over the
-    // processor's (c, t, ph, pw) flat patch order.
-    let patch_weight = tensor_5d(
-        VisionTensor::PatchProjection,
-        &[
-            hidden,
-            vision.in_channels as usize,
-            vision.temporal_patch_size as usize,
-            vision.patch_size as usize,
-            vision.patch_size as usize,
-        ],
-    )?;
-    let patch_bias = tensor(
-        weights,
-        &id(None, VisionTensor::PatchProjectionBias),
-        &[hidden],
-    )?;
-    let mut x = linear(
-        &input.patches.data,
-        patch_weight,
-        tokens,
-        patch_width,
-        hidden,
-    );
-    for row in x.chunks_exact_mut(hidden) {
-        add_in_place(row, patch_bias);
-    }
-    // 2D rope tables: half rotates by h, half by w; inv_freq[i] = theta^(-2i/half),
-    // NeoX pairs (d, d + half) share cos/sin (upstream cat((rotary, rotary), -1)).
-    let half = head_dim / 2;
-    let quarter = half / 2;
-    let inv_freq: Vec<f32> = (0..quarter)
-        .map(|index| vision.rope_theta.powf(-((2 * index) as f32) / half as f32))
-        .collect();
-    let mut rope_cos = vec![0.0f32; tokens * half];
-    let mut rope_sin = vec![0.0f32; tokens * half];
-    for (token, position) in input.positions.iter().enumerate() {
-        for dim in 0..half {
-            let angle = if dim < quarter {
-                position[0] as f32 * inv_freq[dim]
-            } else {
-                position[1] as f32 * inv_freq[dim - quarter]
-            };
-            rope_cos[token * half + dim] = angle.cos();
-            rope_sin[token * half + dim] = angle.sin();
-        }
-    }
-    for layer in 0..vision.depth {
-        let l = Some(layer);
-        let layer_tensor =
-            |tensor: VisionTensor, expected: &[usize]| -> Result<&[f32], ReferenceError> {
-                self::tensor(weights, &id(l, tensor), expected)
-            };
-        // attn: rms(norm1) -> fused qkv+bias -> per-head q/k RMS -> rope -> sdpa -> proj+bias
-        let attention_input = rms_norm(
-            &x,
-            tokens,
-            hidden,
-            layer_tensor(VisionTensor::InputNorm, &[hidden])?,
-            eps,
-        );
-        let mut qkv = linear(
-            &attention_input,
-            layer_tensor(VisionTensor::FusedQkv, &[3 * hidden, hidden])?,
-            tokens,
-            hidden,
-            3 * hidden,
-        );
-        let qkv_bias = layer_tensor(VisionTensor::FusedQkvBias, &[3 * hidden])?;
-        for row in qkv.chunks_exact_mut(3 * hidden) {
-            add_in_place(row, qkv_bias);
-        }
-        let query_norm = layer_tensor(VisionTensor::QueryNorm, &[head_dim])?;
-        let key_norm = layer_tensor(VisionTensor::KeyNorm, &[head_dim])?;
-        let mut query = vec![0.0f32; tokens * hidden];
-        let mut key = vec![0.0f32; tokens * hidden];
-        let mut value = vec![0.0f32; tokens * hidden];
-        for token in 0..tokens {
-            let row = &qkv[token * 3 * hidden..(token + 1) * 3 * hidden];
-            value[token * hidden..(token + 1) * hidden]
-                .copy_from_slice(&row[2 * hidden..3 * hidden]);
-            for head in 0..heads {
-                let offset = head * head_dim;
-                let normed_query = rms_norm(
-                    &row[offset..offset + head_dim],
-                    1,
-                    head_dim,
-                    query_norm,
-                    eps,
-                );
-                let normed_key = rms_norm(
-                    &row[hidden + offset..hidden + offset + head_dim],
-                    1,
-                    head_dim,
-                    key_norm,
-                    eps,
-                );
-                let destination = token * hidden + offset;
-                for dim in 0..half {
-                    let cos = rope_cos[token * half + dim];
-                    let sin = rope_sin[token * half + dim];
-                    let (query_a, query_b) = (normed_query[dim], normed_query[dim + half]);
-                    query[destination + dim] = query_a * cos - query_b * sin;
-                    query[destination + dim + half] = query_b * cos + query_a * sin;
-                    let (key_a, key_b) = (normed_key[dim], normed_key[dim + half]);
-                    key[destination + dim] = key_a * cos - key_b * sin;
-                    key[destination + dim + half] = key_b * cos + key_a * sin;
-                }
-            }
-        }
-        let scale = 1.0 / (head_dim as f32).sqrt();
-        let mut attended = vec![0.0f32; tokens * hidden];
-        for token in 0..tokens {
-            for head in 0..heads {
-                let mut scores = Vec::with_capacity(tokens);
-                for source in 0..tokens {
-                    let mut score = 0.0f32;
-                    for dim in 0..head_dim {
-                        score += query[token * hidden + head * head_dim + dim]
-                            * key[source * hidden + head * head_dim + dim];
-                    }
-                    scores.push(score * scale);
-                }
-                softmax_in_place(&mut scores);
-                for (source, probability) in scores.into_iter().enumerate() {
-                    for dim in 0..head_dim {
-                        attended[token * hidden + head * head_dim + dim] +=
-                            probability * value[source * hidden + head * head_dim + dim];
-                    }
-                }
-            }
-        }
-        let mut attention = linear(
-            &attended,
-            layer_tensor(VisionTensor::AttentionOutput, &[hidden, hidden])?,
-            tokens,
-            hidden,
-            hidden,
-        );
-        let attention_bias = layer_tensor(VisionTensor::AttentionOutputBias, &[hidden])?;
-        for row in attention.chunks_exact_mut(hidden) {
-            add_in_place(row, attention_bias);
-        }
-        add_in_place(&mut x, &attention);
-        // mlp: rms(norm2) -> gate+bias (max-clamp) / up+bias (+/- clamp) -> silu(g)*u -> down+bias
-        let mlp_input = rms_norm(
-            &x,
-            tokens,
-            hidden,
-            layer_tensor(VisionTensor::PreMlpNorm, &[hidden])?,
-            eps,
-        );
-        let mut gate = linear(
-            &mlp_input,
-            layer_tensor(VisionTensor::MlpGate, &[ff, hidden])?,
-            tokens,
-            hidden,
-            ff,
-        );
-        let gate_bias = layer_tensor(VisionTensor::MlpGateBias, &[ff])?;
-        let mut up = linear(
-            &mlp_input,
-            layer_tensor(VisionTensor::MlpUp, &[ff, hidden])?,
-            tokens,
-            hidden,
-            ff,
-        );
-        let up_bias = layer_tensor(VisionTensor::MlpUpBias, &[ff])?;
-        for row in 0..tokens {
-            for column in 0..ff {
-                let index = row * ff + column;
-                let gated = (gate[index] + gate_bias[column]).min(limit);
-                let carried = (up[index] + up_bias[column]).clamp(-limit, limit);
-                gate[index] = silu(gated) * carried;
-            }
-        }
-        let _ = up.drain(..);
-        let mut down = linear(
-            &gate,
-            layer_tensor(VisionTensor::MlpDown, &[hidden, ff])?,
-            tokens,
-            ff,
-            hidden,
-        );
-        let down_bias = layer_tensor(VisionTensor::MlpDownBias, &[hidden])?;
-        for row in down.chunks_exact_mut(hidden) {
-            add_in_place(row, down_bias);
-        }
-        add_in_place(&mut x, &down);
-    }
-    let encoder_hidden = rms_norm(
-        &x,
-        tokens,
-        hidden,
-        tensor(weights, &id(None, VisionTensor::PostEncoderNorm), &[hidden])?,
-        eps,
-    );
-    // Downsample: block-major token groups of merge^2 form the conv2d input
-    // [hidden, merge, merge]; group rows are (in_row, in_col) row-major by construction.
-    let downsample_weight =
-        tensor_5d(VisionTensor::Downsample, &[out_width, hidden, merge, merge])?;
-    let downsample_bias = tensor(
-        weights,
-        &id(None, VisionTensor::DownsampleBias),
-        &[out_width],
-    )?;
-    let groups = tokens / merge_area;
-    let mut pooled_hidden = vec![0.0f32; groups * out_width];
-    for group in 0..groups {
-        for out in 0..out_width {
-            let mut sum = downsample_bias[out];
-            for channel in 0..hidden {
-                for kernel_row in 0..merge {
-                    for kernel_col in 0..merge {
-                        let token = group * merge_area + kernel_row * merge + kernel_col;
-                        sum += downsample_weight
-                            [((out * hidden + channel) * merge + kernel_row) * merge + kernel_col]
-                            * encoder_hidden[token * hidden + channel];
-                    }
-                }
-            }
-            pooled_hidden[group * out_width + out] = sum;
-        }
-    }
-    // Merger: proj (no bias) -> LayerNorm (weight + bias, torch nn.LayerNorm default
-    // eps 1e-5) -> exact-erf GELU -> clamped gate/up -> silu(gate)*up -> down.
-    let mut merged = linear(
-        &pooled_hidden,
-        tensor(
-            weights,
-            &id(None, VisionTensor::MergerProjection),
-            &[out_width, out_width],
-        )?,
-        groups,
-        out_width,
-        out_width,
-    );
-    let norm_weight = tensor(
-        weights,
-        &id(None, VisionTensor::MergerPostProjectionNorm),
-        &[out_width],
-    )?;
-    let norm_bias = tensor(
-        weights,
-        &id(None, VisionTensor::MergerPostProjectionNormBias),
-        &[out_width],
-    )?;
-    const LAYER_NORM_EPS: f32 = 1e-5; // torch nn.LayerNorm default (upstream passes none)
-    for row in merged.chunks_exact_mut(out_width) {
-        let mean = row.iter().sum::<f32>() / out_width as f32;
-        let variance = row
-            .iter()
-            .map(|value| (value - mean) * (value - mean))
-            .sum::<f32>()
-            / out_width as f32;
-        let inverse = 1.0 / (variance + LAYER_NORM_EPS).sqrt();
-        for (column, value) in row.iter_mut().enumerate() {
-            *value = gelu_erf((*value - mean) * inverse * norm_weight[column] + norm_bias[column]);
-        }
-    }
-    let mut merger_gate = linear(
-        &merged,
-        tensor(
-            weights,
-            &id(None, VisionTensor::MergerGate),
-            &[proj_inter, out_width],
-        )?,
-        groups,
-        out_width,
-        proj_inter,
-    );
-    let merger_up = linear(
-        &merged,
-        tensor(
-            weights,
-            &id(None, VisionTensor::MergerUp),
-            &[proj_inter, out_width],
-        )?,
-        groups,
-        out_width,
-        proj_inter,
-    );
-    for (gate_value, up_value) in merger_gate.iter_mut().zip(merger_up.iter()) {
-        *gate_value = silu(gate_value.min(limit)) * up_value.clamp(-limit, limit);
-    }
-    let projected_hidden = linear(
-        &merger_gate,
-        tensor(
-            weights,
-            &id(None, VisionTensor::MergerDown),
-            &[out_width, proj_inter],
-        )?,
-        groups,
-        proj_inter,
-        out_width,
-    );
-    Ok(ReferenceVisionOutput {
-        encoder_hidden,
-        pooled_hidden,
-        projected_hidden,
-        patch_count: tokens,
-        output_tokens: groups,
-        hidden_size: hidden,
-        projection_size: out_width,
-    })
-}
-
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn execute_vision_layer(
     plan: &memra_gguf::model_plan::VisionLayerPlan,
     weights: &ReferenceWeights,
@@ -3050,7 +2037,6 @@ fn execute_vision_layer(
     Ok(residual)
 }
 
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn apply_vision_rope(
     values: &mut [f32],
     tokens: usize,
@@ -3061,20 +2047,16 @@ fn apply_vision_rope(
 ) -> Result<(), ReferenceError> {
     let axes = 2;
     let chunk = head_dim / axes;
-    if head_dim % axes != 0 || !chunk.is_multiple_of(2) || positions.len() != tokens {
+    if head_dim % axes != 0 || chunk % 2 != 0 || positions.len() != tokens {
         return Err(ReferenceError::InvalidPlan {
             layer: None,
             reason: "vision 2D RoPE requires even per-axis head chunks",
         });
     }
     let half = chunk / 2;
-    #[allow(clippy::needless_range_loop)]
-    // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
     for token in 0..tokens {
         for head in 0..heads {
             let row = (token * heads + head) * head_dim;
-            #[allow(clippy::needless_range_loop)]
-            // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
             for axis in 0..axes {
                 let start = row + axis * chunk;
                 let position = positions[token][axis] as f32;
@@ -3092,7 +2074,6 @@ fn apply_vision_rope(
     Ok(())
 }
 
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn vision_pool(
     hidden_states: &[f32],
     positions: &[[u32; 2]],
@@ -3416,7 +2397,7 @@ fn dspark_prime_ring(
     }
     let head_dim = *latent_head_dim as usize;
     let rope_dim = *rope_head_dim as usize;
-    if head_dim <= rope_dim || !(head_dim - rope_dim).is_multiple_of(64) {
+    if head_dim <= rope_dim || (head_dim - rope_dim) % 64 != 0 {
         return Err(ReferenceError::InvalidPlan {
             layer: Some(layer.index),
             reason: "DSpark block has invalid KV quantization geometry",
@@ -3605,7 +2586,6 @@ fn execute_dspark_layer(
 }
 
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn dspark_attention(
     layer: &memra_gguf::model_plan::LayerPlan,
     weights: &ReferenceWeights,
@@ -3651,7 +2631,7 @@ fn dspark_attention(
     let window = *window as usize;
     if start_position == 0
         || head_dim <= rope_dim
-        || !(head_dim - rope_dim).is_multiple_of(64)
+        || (head_dim - rope_dim) % 64 != 0
         || groups == 0
         || heads % groups != 0
         || ring.len() != window * head_dim
@@ -3867,62 +2847,6 @@ fn hyper_topology(
     Ok(Some(topology))
 }
 
-/// qwen4_exp gated-residual topology: `(streams, bottleneck_rank)` when the trunk runs the
-/// 4-branch wide stream. Requires topology consistency across trunk AND MTP blocks, plus a
-/// matching exit mixer — the model has no final norm to fall back to (SEMANTICS.md).
-fn gated_residual_topology(plan: &ModelPlan) -> Result<Option<(usize, usize)>, ReferenceError> {
-    let topology = plan.layers.iter().find_map(|layer| match layer.residual {
-        ResidualTopology::GatedResidual {
-            streams,
-            bottleneck_rank,
-        } => Some((streams as usize, bottleneck_rank as usize)),
-        _ => None,
-    });
-    let Some((streams, rank)) = topology else {
-        if plan.exit_mixer.is_some() {
-            return Err(ReferenceError::InvalidPlan {
-                layer: None,
-                reason: "exit mixer requires a gated-residual trunk",
-            });
-        }
-        return Ok(None);
-    };
-    if streams == 0 || rank == 0 {
-        return Err(ReferenceError::InvalidPlan {
-            layer: None,
-            reason: "gated residual requires streams and a bottleneck rank",
-        });
-    }
-    for layer in plan
-        .layers
-        .iter()
-        .chain(plan.mtp_blocks.iter().map(|block| &block.layer))
-    {
-        if layer.residual
-            != (ResidualTopology::GatedResidual {
-                streams: streams as u32,
-                bottleneck_rank: rank as u32,
-            })
-        {
-            return Err(ReferenceError::InvalidPlan {
-                layer: Some(layer.index),
-                reason: "gated-residual topology must be consistent across trunk and MTP blocks",
-            });
-        }
-    }
-    match plan.exit_mixer {
-        Some(mixer)
-            if mixer.streams as usize == streams && mixer.bottleneck_rank as usize == rank => {}
-        _ => {
-            return Err(ReferenceError::InvalidPlan {
-                layer: None,
-                reason: "gated-residual trunk requires a matching exit mixer",
-            });
-        }
-    }
-    Ok(Some((streams, rank)))
-}
-
 fn collapse_hyper_head(
     weights: &ReferenceWeights,
     x: &[f32],
@@ -3975,7 +2899,6 @@ fn apply_logits_transforms(logits: &mut [f32], vocab: usize, transforms: &[Logit
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn execute_layer(
     layer: &memra_gguf::model_plan::LayerPlan,
     weights: &ReferenceWeights,
@@ -3984,34 +2907,7 @@ fn execute_layer(
     tokens: usize,
     hidden: usize,
     vocab: usize,
-    scope: LayerScope,
 ) -> Result<(Vec<f32>, ReferenceLayerState), ReferenceError> {
-    if let ResidualTopology::GatedResidual {
-        streams,
-        bottleneck_rank,
-    } = layer.residual
-    {
-        return execute_gated_residual_layer(
-            layer,
-            weights,
-            input,
-            token_ids,
-            tokens,
-            hidden,
-            vocab,
-            streams as usize,
-            bottleneck_rank as usize,
-            scope,
-        );
-    }
-    // The QSA overlay and PLE are programs of the gated-residual layer; running them
-    // through any other residual arm would silently drop them.
-    if layer.sparse_overlay.is_some() || layer.ple.is_some() {
-        return Err(ReferenceError::UnsupportedOperation {
-            layer: Some(layer.index),
-            operation: "sparse overlay / PLE outside the gated-residual program",
-        });
-    }
     if let ResidualTopology::HyperConnections {
         streams,
         epsilon,
@@ -4073,7 +2969,6 @@ fn execute_layer(
             &pre_attn,
             tokens,
             hidden,
-            None,
         )?,
         AttentionPlan::SlidingWindow { attention, window } => full_attention(
             layer.index,
@@ -4084,7 +2979,6 @@ fn execute_layer(
             &pre_attn,
             tokens,
             hidden,
-            None,
         )?,
         AttentionPlan::Mla(mla) => mla_attention(
             layer.index,
@@ -4182,7 +3076,6 @@ fn execute_gemma_parallel_moe_layer(
             &pre_attention,
             tokens,
             hidden,
-            None,
         )?,
         AttentionPlan::SlidingWindow { attention, window } => full_attention(
             layer.index,
@@ -4193,7 +3086,6 @@ fn execute_gemma_parallel_moe_layer(
             &pre_attention,
             tokens,
             hidden,
-            None,
         )?,
         _ => {
             return Err(ReferenceError::UnsupportedOperation {
@@ -4481,7 +3373,6 @@ fn execute_hyper_layer(
             &attention_input,
             tokens,
             hidden,
-            None,
         )?,
         AttentionPlan::SlidingWindow { attention, window } => full_attention(
             layer.index,
@@ -4492,7 +3383,6 @@ fn execute_hyper_layer(
             &attention_input,
             tokens,
             hidden,
-            None,
         )?,
         AttentionPlan::Mla(mla) => mla_attention(
             layer.index,
@@ -4626,727 +3516,6 @@ fn hyper_set(
     })
 }
 
-/// One qwen4_exp gated-residual decoder layer (modular_qwen4_exp.py L796-833): optional
-/// PLE add into the wide stream, attention read gate -> token mixer (QSA full attention
-/// under the indexer mask, or GDN) -> per-stream write injection, then the same read /
-/// mix / write around the MoE. There are NO input_layernorm modules in this family — the
-/// read gate's grouped hc_norm IS the sublayer normalization.
-#[allow(clippy::too_many_arguments)]
-fn execute_gated_residual_layer(
-    layer: &memra_gguf::model_plan::LayerPlan,
-    weights: &ReferenceWeights,
-    input: &[f32],
-    token_ids: &[u32],
-    tokens: usize,
-    hidden: usize,
-    vocab: usize,
-    streams: usize,
-    rank: usize,
-    scope: LayerScope,
-) -> Result<(Vec<f32>, ReferenceLayerState), ReferenceError> {
-    let wide = streams * hidden;
-    if streams == 0 || rank == 0 || input.len() != tokens * wide {
-        return Err(ReferenceError::InvalidPlan {
-            layer: Some(layer.index),
-            reason: "gated-residual input does not match tokens x streams x hidden",
-        });
-    }
-    let prefix = scope.layer_prefix(layer.index);
-    let epsilon = layer.pre_attention_norm.epsilon;
-    let mut wide_state = input.to_vec();
-    if let Some(ple) = layer.ple.as_ref() {
-        // PLE adds to the wide stream BEFORE the attention read gate (modular L806-809);
-        // the write gates below re-read the PLE-augmented stream as their hyper input.
-        let ple_out = ple_block(
-            layer.index,
-            ple,
-            epsilon,
-            weights,
-            &prefix,
-            &wide_state,
-            token_ids,
-            tokens,
-            streams,
-            hidden,
-        )?;
-        add_in_place(&mut wide_state, &ple_out);
-    }
-    let (mixed, inject) = gated_residual_read(
-        weights,
-        &prefix,
-        "attn_hyper_connection.",
-        &wide_state,
-        tokens,
-        streams,
-        hidden,
-        rank,
-        epsilon,
-        true,
-    )?;
-    let (block_out, state) = match &layer.attention {
-        AttentionPlan::Full(attention) => {
-            let selection = layer
-                .sparse_overlay
-                .as_ref()
-                .map(|overlay| {
-                    micro_block_selection_mask(
-                        layer.index,
-                        overlay,
-                        &attention.rope,
-                        epsilon,
-                        weights,
-                        &prefix,
-                        &mixed,
-                        tokens,
-                        hidden,
-                    )
-                })
-                .transpose()?;
-            full_attention(
-                layer.index,
-                attention,
-                None,
-                epsilon,
-                weights,
-                &mixed,
-                tokens,
-                hidden,
-                selection.as_deref(),
-            )?
-        }
-        AttentionPlan::GatedDeltaNet(gdn) => {
-            gated_delta_net(layer.index, gdn, epsilon, weights, &mixed, tokens, hidden)?
-        }
-        _ => {
-            return Err(ReferenceError::UnsupportedOperation {
-                layer: Some(layer.index),
-                operation: "gated-residual token mixer other than QSA/GDN",
-            });
-        }
-    };
-    gated_residual_write(
-        &mut wide_state,
-        &block_out,
-        &inject,
-        tokens,
-        streams,
-        hidden,
-    );
-    let (mixed, inject) = gated_residual_read(
-        weights,
-        &prefix,
-        "mlp_hyper_connection.",
-        &wide_state,
-        tokens,
-        streams,
-        hidden,
-        rank,
-        layer.pre_mlp_norm.epsilon,
-        true,
-    )?;
-    let mlp = match &layer.mlp {
-        MlpPlan::Dense(mlp) => dense_mlp(layer.index, mlp, weights, &mixed, tokens, hidden)?,
-        MlpPlan::Moe(moe) => moe_mlp(
-            layer.index,
-            moe,
-            weights,
-            &mixed,
-            token_ids,
-            tokens,
-            hidden,
-            vocab,
-        )?,
-    };
-    gated_residual_write(&mut wide_state, &mlp, &inject, tokens, streams, hidden);
-    Ok((wide_state, state))
-}
-
-/// Qwen4ExpTextGatedResidual read gate (modular L541-558): grouped (1+w) RMSNorm of the
-/// wide stream, `w = sigmoid(up(silu(down(normed) / streams)))`, `mixed = mean over
-/// streams of (w * normed)`, and — when `with_inject` — the write-injection scalars
-/// `2 * sigmoid(block_inject(normed) / streams)` from the SAME normed input. The exit /
-/// MTP mixer is the same read with `with_inject = false` (use_combine=False). Returned
-/// inject is `[tokens, streams]` (empty when not requested).
-#[allow(clippy::too_many_arguments)]
-fn gated_residual_read(
-    weights: &ReferenceWeights,
-    prefix: &str,
-    sublayer: &str,
-    x: &[f32],
-    tokens: usize,
-    streams: usize,
-    hidden: usize,
-    rank: usize,
-    epsilon: f32,
-    with_inject: bool,
-) -> Result<(Vec<f32>, Vec<f32>), ReferenceError> {
-    let wide = streams * hidden;
-    if x.len() != tokens * wide || streams == 0 || rank == 0 {
-        return Err(ReferenceError::InvalidPlan {
-            layer: None,
-            reason: "gated-residual read requires tokens x streams x hidden input",
-        });
-    }
-    let norm = tensor(
-        weights,
-        &qwen4exp_family_id(format!("{prefix}{sublayer}hc_norm.weight")),
-        &[wide],
-    )?;
-    let down = tensor(
-        weights,
-        &qwen4exp_family_id(format!("{prefix}{sublayer}input_mix_weight_down.weight")),
-        &[rank, wide],
-    )?;
-    let up = tensor(
-        weights,
-        &qwen4exp_family_id(format!("{prefix}{sublayer}input_mix_weight_up.weight")),
-        &[wide, rank],
-    )?;
-    let inject_weight = with_inject
-        .then(|| {
-            tensor(
-                weights,
-                &qwen4exp_family_id(format!("{prefix}{sublayer}block_inject_weight.weight")),
-                &[streams, wide],
-            )
-        })
-        .transpose()?;
-    let normed = grouped_rms_norm(x, tokens, streams, hidden, norm, epsilon);
-    let mut mixed = vec![0.0; tokens * hidden];
-    let mut inject = vec![0.0; if with_inject { tokens * streams } else { 0 }];
-    for token in 0..tokens {
-        let row = &normed[token * wide..(token + 1) * wide];
-        let mut low = vec![0.0; rank];
-        for index in 0..rank {
-            let mut sum = 0.0;
-            for dim in 0..wide {
-                sum += down[index * wide + dim] * row[dim];
-            }
-            low[index] = silu(sum / streams as f32);
-        }
-        for column in 0..hidden {
-            let mut sum = 0.0;
-            for stream in 0..streams {
-                let dim = stream * hidden + column;
-                let mut gate = 0.0;
-                for index in 0..rank {
-                    gate += up[dim * rank + index] * low[index];
-                }
-                sum += sigmoid(gate) * row[dim];
-            }
-            mixed[token * hidden + column] = sum / streams as f32;
-        }
-        if let Some(inject_weight) = inject_weight {
-            for stream in 0..streams {
-                let mut sum = 0.0;
-                for dim in 0..wide {
-                    sum += inject_weight[stream * wide + dim] * row[dim];
-                }
-                inject[token * streams + stream] = 2.0 * sigmoid(sum / streams as f32);
-            }
-        }
-    }
-    Ok((mixed, inject))
-}
-
-/// Write half of the gated residual (modular L825-826): the wide stream gains the outer
-/// product `block_out ⊗ inject` — stream s receives `block_out * inject[s]` — on top of
-/// the PRE-norm hyper input.
-fn gated_residual_write(
-    wide_state: &mut [f32],
-    block_out: &[f32],
-    inject: &[f32],
-    tokens: usize,
-    streams: usize,
-    hidden: usize,
-) {
-    for token in 0..tokens {
-        for stream in 0..streams {
-            let weight = inject[token * streams + stream];
-            let offset = token * streams * hidden + stream * hidden;
-            for column in 0..hidden {
-                wide_state[offset + column] += block_out[token * hidden + column] * weight;
-            }
-        }
-    }
-}
-
-/// Qwen4ExpTextRMSNorm with group_size = hidden (modular L298-309): every stream group of
-/// the wide vector normalizes independently; `weight` spans the FULL wide width. Weights
-/// are EFFECTIVE (1+w) — the checkpoint ships zero-centered values (the family convention,
-/// modular L859-861 zero-init receipt) folded at binding, like every norm in this crate.
-fn grouped_rms_norm(
-    x: &[f32],
-    tokens: usize,
-    streams: usize,
-    hidden: usize,
-    weight: &[f32],
-    epsilon: f32,
-) -> Vec<f32> {
-    let wide = streams * hidden;
-    let mut result = vec![0.0; x.len()];
-    for token in 0..tokens {
-        for stream in 0..streams {
-            let offset = token * wide + stream * hidden;
-            let group = &x[offset..offset + hidden];
-            let mean_square = group.iter().map(|value| value * value).sum::<f32>() / hidden as f32;
-            let inverse = 1.0 / (mean_square + epsilon).sqrt();
-            for column in 0..hidden {
-                result[offset + column] =
-                    group[column] * inverse * weight[stream * hidden + column];
-            }
-        }
-    }
-    result
-}
-
-/// QSA indexer selection (modular L367-473): the fused `index_qk_proj` splits into
-/// per-head queries (per-head RMSNorm, then the MAIN partial rope at the query position)
-/// and ONE shared RAW key per token (cached pre-norm, pre-rope). Per query token the
-/// visible tokens (causal here — the reference sees the whole prompt) form complete
-/// blocks of `block_size`; each block pools its raw keys by fp32 mean -> k_layernorm ->
-/// rope at the block's FIRST position; `score = Σ_heads relu(q·k) / sqrt(head_dim)`; the
-/// top `min(budget_blocks, complete)` blocks stay visible plus the always-visible
-/// incomplete tail.
-///
-/// Tie rule — DELIBERATE PIN: score descending, then block index ascending. torch.topk's
-/// tie order is implementation-defined (SEMANTICS.md §QSA indexer), so the reference pins
-/// a total order; parity fixtures must be tie-free (dsv4-lane lesson).
-#[allow(clippy::too_many_arguments)]
-fn micro_block_selection_mask(
-    layer: u32,
-    overlay: &MicroBlockIndexPlan,
-    rope: &RopePlan,
-    epsilon: f32,
-    weights: &ReferenceWeights,
-    prefix: &str,
-    x: &[f32],
-    tokens: usize,
-    hidden: usize,
-) -> Result<Vec<bool>, ReferenceError> {
-    let heads = overlay.query_heads as usize;
-    let kv_heads = overlay.kv_heads as usize;
-    let head_dim = overlay.head_dim as usize;
-    let block_size = overlay.block_size as usize;
-    let budget_blocks = overlay.budget_blocks as usize;
-    if heads == 0 || head_dim == 0 || block_size == 0 || budget_blocks == 0 {
-        return Err(ReferenceError::InvalidPlan {
-            layer: Some(layer),
-            reason: "micro-block indexer requires heads, head_dim, block size, and budget",
-        });
-    }
-    if kv_heads != 1 {
-        // modular L406 squeezes exactly one shared key head; more is a different program.
-        return Err(ReferenceError::UnsupportedOperation {
-            layer: Some(layer),
-            operation: "micro-block indexer with more than one key head",
-        });
-    }
-    let qk_width = (heads + kv_heads) * head_dim;
-    let projected = linear(
-        x,
-        tensor(
-            weights,
-            &qwen4exp_family_id(format!("{prefix}self_attn.indexer.index_qk_proj.weight")),
-            &[qk_width, hidden],
-        )?,
-        tokens,
-        hidden,
-        qk_width,
-    );
-    let q_norm_weight = tensor(
-        weights,
-        &qwen4exp_family_id(format!("{prefix}self_attn.indexer.q_layernorm.weight")),
-        &[head_dim],
-    )?;
-    let k_norm_weight = tensor(
-        weights,
-        &qwen4exp_family_id(format!("{prefix}self_attn.indexer.k_layernorm.weight")),
-        &[head_dim],
-    )?;
-    let mut query = vec![0.0; tokens * heads * head_dim];
-    let mut raw_keys = vec![0.0; tokens * head_dim];
-    for token in 0..tokens {
-        query[token * heads * head_dim..(token + 1) * heads * head_dim]
-            .copy_from_slice(&projected[token * qk_width..token * qk_width + heads * head_dim]);
-        raw_keys[token * head_dim..(token + 1) * head_dim].copy_from_slice(
-            &projected[token * qk_width + heads * head_dim..(token + 1) * qk_width],
-        );
-    }
-    let mut query = rms_norm(&query, tokens * heads, head_dim, q_norm_weight, epsilon);
-    // The indexer consumes the MAIN rotary cos/sin, partial over rope_dimensions of the
-    // (wider) index head; text-only mrope degenerates to plain partial rope.
-    let rope_dims = overlay.rope_dimensions as usize;
-    let (factors, mscale) = rope_factor_values(rope, weights)?;
-    apply_rope(
-        &mut query,
-        tokens,
-        heads,
-        head_dim,
-        rope_dims,
-        rope.base,
-        factors.as_deref(),
-        mscale,
-    );
-
-    let mut mask = vec![false; tokens * tokens];
-    let scale = (head_dim as f32).sqrt();
-    for token in 0..tokens {
-        let visible = token + 1;
-        let complete = visible / block_size;
-        let mut scored: Vec<(usize, f32)> = Vec::with_capacity(complete);
-        for block in 0..complete {
-            let start = block * block_size;
-            // fp32 mean of the RAW keys (modular L437), then k_layernorm, then rope at
-            // the block-start position (group_starts, L439-444).
-            let mut pooled = vec![0.0f32; head_dim];
-            for offset in 0..block_size {
-                for dim in 0..head_dim {
-                    pooled[dim] += raw_keys[(start + offset) * head_dim + dim];
-                }
-            }
-            for value in &mut pooled {
-                *value /= block_size as f32;
-            }
-            let mut pooled = rms_norm(&pooled, 1, head_dim, k_norm_weight, epsilon);
-            apply_rope_at_position(
-                &mut pooled,
-                1,
-                head_dim,
-                rope_dims,
-                rope.base,
-                factors.as_deref(),
-                mscale,
-                start,
-            );
-            let mut score = 0.0f32;
-            for head in 0..heads {
-                let mut dot = 0.0f32;
-                for dim in 0..head_dim {
-                    dot += query[(token * heads + head) * head_dim + dim] * pooled[dim];
-                }
-                score += dot.max(0.0);
-            }
-            scored.push((block, score / scale));
-        }
-        scored.sort_by(|left, right| right.1.total_cmp(&left.1).then(left.0.cmp(&right.0)));
-        for &(block, _) in scored.iter().take(budget_blocks.min(complete)) {
-            for offset in 0..block_size {
-                mask[token * tokens + block * block_size + offset] = true;
-            }
-        }
-        // The incomplete tail block is always selected (modular L456-457) — this is also
-        // what guarantees every query keeps at least one visible source when its own
-        // block is complete but unselected... except at exact block boundaries, where
-        // topk >= 1 block always fires (complete >= 1).
-        for source in complete * block_size..visible {
-            mask[token * tokens + source] = true;
-        }
-    }
-    Ok(mask)
-}
-
-/// qwen4_exp PLE block (modular L706-778): gather the hashed n-gram rows, key them
-/// against the wide stream per-stream (signed-sqrt sigmoid gates), then add a dilated
-/// depthwise causal conv refinement. The reference processes the whole prompt in one
-/// pass; the token-history semantics stay exact (the first max_ngram-1 context positions
-/// read EOS).
-#[allow(clippy::too_many_arguments)]
-fn ple_block(
-    layer: u32,
-    plan: &PleEmbeddingPlan,
-    epsilon: f32,
-    weights: &ReferenceWeights,
-    prefix: &str,
-    wide_state: &[f32],
-    token_ids: &[u32],
-    tokens: usize,
-    streams: usize,
-    hidden: usize,
-) -> Result<Vec<f32>, ReferenceError> {
-    let heads = plan.ngram_heads as usize;
-    let head_dim = plan.head_embed_dim as usize;
-    let embed_dim = plan.embed_dim as usize;
-    let kernel = plan.conv_kernel as usize;
-    let max_ngram = plan.max_ngram as usize;
-    let wide = streams * hidden;
-    if heads == 0
-        || head_dim == 0
-        || kernel == 0
-        || max_ngram < 2
-        || embed_dim != heads * head_dim
-        || !heads.is_multiple_of(max_ngram - 1)
-    {
-        return Err(ReferenceError::InvalidPlan {
-            layer: Some(layer),
-            reason: "PLE requires consistent n-gram head geometry",
-        });
-    }
-    let multipliers = tensor_i64(
-        weights,
-        &qwen4exp_family_id(format!("{prefix}ple.ple_embedding.layer_multipliers")),
-        &[max_ngram],
-    )?;
-    let sizes = tensor_i64(
-        weights,
-        &qwen4exp_family_id(format!("{prefix}ple.ple_embedding.ngram_heads_vocab_sizes")),
-        &[heads],
-    )?;
-    let offsets = tensor_i64(
-        weights,
-        &qwen4exp_family_id(format!("{prefix}ple.ple_embedding.ngram_heads_offsets")),
-        &[heads],
-    )?;
-    let ids = ngram_ids(
-        token_ids,
-        multipliers,
-        sizes,
-        offsets,
-        max_ngram,
-        heads / (max_ngram - 1),
-        plan.eos_token_id,
-        layer,
-    )?;
-    let table_id = qwen4exp_family_id(format!("{prefix}ple.ple_embedding.ngram_embedding"));
-    let table = weights
-        .get(&table_id)
-        .ok_or_else(|| ReferenceError::MissingTensor(table_id.clone()))?;
-    let rows = table.shape.first().copied().unwrap_or(0);
-    if table.shape.len() != 2 || table.shape[1] != head_dim || table.data.len() != rows * head_dim {
-        return Err(ReferenceError::TensorShape {
-            id: Some(table_id),
-            expected: vec![rows, head_dim],
-            actual_elements: table.data.len(),
-        });
-    }
-    let mut embeddings = vec![0.0; tokens * embed_dim];
-    for token in 0..tokens {
-        for head in 0..heads {
-            let id = ids[token * heads + head];
-            if id < 0 || id as usize >= rows {
-                return Err(ReferenceError::InvalidPlan {
-                    layer: Some(layer),
-                    reason: "n-gram id addressed outside the embedding table",
-                });
-            }
-            let target = token * embed_dim + head * head_dim;
-            embeddings[target..target + head_dim]
-                .copy_from_slice(&table.data[id as usize * head_dim..(id as usize + 1) * head_dim]);
-        }
-    }
-    let key = linear(
-        &embeddings,
-        tensor(
-            weights,
-            &qwen4exp_family_id(format!("{prefix}ple.key_proj.weight")),
-            &[wide, embed_dim],
-        )?,
-        tokens,
-        embed_dim,
-        wide,
-    );
-    let key = grouped_rms_norm(
-        &key,
-        tokens,
-        streams,
-        hidden,
-        tensor(
-            weights,
-            &qwen4exp_family_id(format!("{prefix}ple.norm_key.weight")),
-            &[wide],
-        )?,
-        epsilon,
-    );
-    let value = linear(
-        &embeddings,
-        tensor(
-            weights,
-            &qwen4exp_family_id(format!("{prefix}ple.value_proj.weight")),
-            &[hidden, embed_dim],
-        )?,
-        tokens,
-        embed_dim,
-        hidden,
-    );
-    let query = grouped_rms_norm(
-        wide_state,
-        tokens,
-        streams,
-        hidden,
-        tensor(
-            weights,
-            &qwen4exp_family_id(format!("{prefix}ple.norm_query.weight")),
-            &[wide],
-        )?,
-        epsilon,
-    );
-    let mut gated_value = vec![0.0; tokens * wide];
-    for token in 0..tokens {
-        for stream in 0..streams {
-            let offset = token * wide + stream * hidden;
-            let mut dot = 0.0;
-            for column in 0..hidden {
-                dot += key[offset + column] * query[offset + column];
-            }
-            let gate = dot / (hidden as f32).sqrt();
-            // signed sqrt (modular L770): sqrt(clamp_min(|g|, 1e-6)) * sign(g); torch
-            // sign(0) = 0, so a zero gate stays zero (f32::signum would say +1).
-            let magnitude = gate.abs().max(1e-6).sqrt();
-            let gate = if gate > 0.0 {
-                magnitude
-            } else if gate < 0.0 {
-                -magnitude
-            } else {
-                0.0
-            };
-            let gate = sigmoid(gate);
-            for column in 0..hidden {
-                gated_value[offset + column] = gate * value[token * hidden + column];
-            }
-        }
-    }
-    let normed = grouped_rms_norm(
-        &gated_value,
-        tokens,
-        streams,
-        hidden,
-        tensor(
-            weights,
-            &qwen4exp_family_id(format!("{prefix}ple.norm_conv.weight")),
-            &[wide],
-        )?,
-        epsilon,
-    );
-    // Depthwise causal conv over the NORMED gated value: kernel taps sit `dilation`
-    // (= max_ngram) apart, left-pad (kernel-1)*dilation (modular L739-756: conv weight
-    // [wide, 1, kernel] — consumed squeezed like the GDN conv row).
-    let conv_weight = tensor(
-        weights,
-        &qwen4exp_family_id(format!("{prefix}ple.conv1d.weight")),
-        &[wide, kernel],
-    )?;
-    let dilation = max_ngram;
-    let mut output = gated_value;
-    for token in 0..tokens {
-        for channel in 0..wide {
-            let mut sum = 0.0;
-            for tap in 0..kernel {
-                let reach = ((kernel - 1 - tap) * dilation) as isize;
-                let source = token as isize - reach;
-                if source >= 0 {
-                    sum += normed[source as usize * wide + channel]
-                        * conv_weight[channel * kernel + tap];
-                }
-            }
-            output[token * wide + channel] += silu(sum);
-        }
-    }
-    Ok(output)
-}
-
-/// N-gram ids (modular L642-703): token history = (max_ngram-1) EOS context positions ++
-/// prompt; `shifted[j]` shifts right by j with EOS-segment reset; for n in 2..=max_ngram
-/// the shifted ids mix by wrapping-i64 multiply + XOR, and each of that n-gram's heads
-/// takes `mixed mod head_vocab_size + head_offset` (torch.remainder = floor mod; the
-/// divisors are positive so rem_euclid matches). Multipliers / sizes / offsets are
-/// checkpoint I64 buffers — LOADED, never re-derived (SEMANTICS.md §PLE). Returns
-/// `[tokens, total_heads]` (history context rows dropped).
-#[allow(clippy::too_many_arguments)]
-fn ngram_ids(
-    token_ids: &[u32],
-    multipliers: &[i64],
-    sizes: &[i64],
-    offsets: &[i64],
-    max_ngram: usize,
-    heads_per_ngram: usize,
-    eos_token_id: u32,
-    layer: u32,
-) -> Result<Vec<i64>, ReferenceError> {
-    let context = max_ngram - 1;
-    let eos = eos_token_id as i64;
-    let total_heads = (max_ngram - 1) * heads_per_ngram;
-    if multipliers.len() != max_ngram || sizes.len() != total_heads || offsets.len() != total_heads
-    {
-        return Err(ReferenceError::InvalidPlan {
-            layer: Some(layer),
-            reason: "n-gram index buffers do not match the head geometry",
-        });
-    }
-    if sizes.iter().any(|&size| size <= 0) || offsets.iter().any(|&offset| offset < 0) {
-        return Err(ReferenceError::InvalidPlan {
-            layer: Some(layer),
-            reason: "n-gram head vocab sizes must be positive and offsets non-negative",
-        });
-    }
-    let mut history = Vec::with_capacity(context + token_ids.len());
-    history.extend(std::iter::repeat_n(eos, context));
-    history.extend(token_ids.iter().map(|&token| token as i64));
-    let shifted: Vec<Vec<i64>> = (0..max_ngram)
-        .map(|shift| shift_right_ignore_eos(&history, shift, eos))
-        .collect();
-    let tokens = token_ids.len();
-    let mut ids = vec![0i64; tokens * total_heads];
-    for ngram in 2..=max_ngram {
-        let head_start = (ngram - 2) * heads_per_ngram;
-        for token in 0..tokens {
-            let position = context + token;
-            let mut mixed = shifted[0][position].wrapping_mul(multipliers[0]);
-            for shift in 1..ngram {
-                mixed ^= shifted[shift][position].wrapping_mul(multipliers[shift]);
-            }
-            for head in 0..heads_per_ngram {
-                let index = head_start + head;
-                ids[token * total_heads + index] = mixed.rem_euclid(sizes[index]) + offsets[index];
-            }
-        }
-    }
-    Ok(ids)
-}
-
-/// modular L642-656: positions whose in-segment index (counted from the token after the
-/// EOS strictly before them) is smaller than the shift — or whose shifted source
-/// underflows the history — read EOS instead of a cross-segment token.
-fn shift_right_ignore_eos(history: &[i64], shift: usize, eos: i64) -> Vec<i64> {
-    if shift == 0 {
-        return history.to_vec();
-    }
-    let mut last_eos_inclusive: i64 = -1;
-    let mut output = Vec::with_capacity(history.len());
-    for (position, &token) in history.iter().enumerate() {
-        let previous_eos = last_eos_inclusive;
-        if token == eos {
-            last_eos_inclusive = position as i64;
-        }
-        let segment_start = previous_eos + 1;
-        let position_in_segment = position as i64 - segment_start;
-        let source = position as i64 - shift as i64;
-        let valid = position_in_segment >= shift as i64 && source >= 0;
-        output.push(if valid { history[source as usize] } else { eos });
-    }
-    output
-}
-
-fn tensor_i64<'a>(
-    weights: &'a ReferenceWeights,
-    id: &TensorId,
-    expected: &[usize],
-) -> Result<&'a [i64], ReferenceError> {
-    let tensor = weights
-        .get(id)
-        .ok_or_else(|| ReferenceError::MissingTensor(id.clone()))?;
-    let Some(ints) = tensor.ints.as_ref() else {
-        return Err(ReferenceError::IntegerTensorRequired(id.clone()));
-    };
-    if tensor.shape != expected {
-        return Err(ReferenceError::TensorShape {
-            id: Some(id.clone()),
-            expected: expected.to_vec(),
-            actual_elements: ints.len(),
-        });
-    }
-    Ok(ints)
-}
-
 fn execute_gemma_dense_layer(
     layer: &memra_gguf::model_plan::LayerPlan,
     weights: &ReferenceWeights,
@@ -5387,7 +3556,6 @@ fn execute_gemma_dense_layer(
             &pre_attn,
             tokens,
             hidden,
-            None,
         )?,
         AttentionPlan::SlidingWindow { attention, window } => full_attention(
             layer.index,
@@ -5398,7 +3566,6 @@ fn execute_gemma_dense_layer(
             &pre_attn,
             tokens,
             hidden,
-            None,
         )?,
         _ => {
             return Err(ReferenceError::UnsupportedOperation {
@@ -5465,44 +3632,6 @@ fn execute_gemma_dense_layer(
 }
 
 #[allow(clippy::too_many_arguments)]
-/// Execute ONLY the MTP draft arm on CALLER-PROVIDED trunk wide states — the
-/// real-checkpoint draft-parity instrument (mtp-spec lane): the full-trunk host
-/// reference cannot hold the 360 GB artifact, but the MTP block's rows fit host f32,
-/// so the engine's captured trunk wide state feeds this host twin and the draft
-/// programs are compared row for row. `trunk_hidden` is [tokens, streams*hidden]
-/// (gated-residual plans) or [tokens, hidden]; row i seeds token_ids[i] — the same
-/// pairing `execute` uses internally.
-pub fn execute_mtp_standalone(
-    plan: &ModelPlan,
-    weights: &ReferenceWeights,
-    token_ids: &[u32],
-    trunk_hidden: &[f32],
-) -> Result<Vec<ReferenceMtpOutput>, ReferenceError> {
-    let hidden = plan.hidden_size as usize;
-    let vocab = plan.vocab_size as usize;
-    let tokens = token_ids.len();
-    let embedding = tensor(weights, &TensorId::TokenEmbedding, &[vocab, hidden])?;
-    let output = weights
-        .get(&TensorId::OutputProjection)
-        .map(|tensor| tensor_checked(&TensorId::OutputProjection, tensor, &[vocab, hidden]))
-        .transpose()?
-        .unwrap_or(embedding);
-    execute_mtp(
-        plan,
-        weights,
-        token_ids,
-        embedding,
-        trunk_hidden,
-        tokens,
-        hidden,
-        vocab,
-        output,
-    )
-}
-
-// too_many_arguments: the MTP executor takes exactly the seams the trunk hands it;
-// bundling them into a struct would reshape the oracle's call surface for a lint.
-#[allow(clippy::too_many_arguments)]
 fn execute_mtp(
     plan: &ModelPlan,
     weights: &ReferenceWeights,
@@ -5517,13 +3646,10 @@ fn execute_mtp(
     if plan.mtp_blocks.is_empty() {
         return Ok(Vec::new());
     }
-    let gated = gated_residual_topology(plan)?;
-    if gated.is_some() && plan.mtp_blocks.len() > 1 {
-        // The checkpoint has ONE mtp.* namespace (glue + mixer); a second depth would
-        // alias its tensors.
+    if trunk_hidden.len() != tokens * hidden {
         return Err(ReferenceError::UnsupportedOperation {
             layer: None,
-            operation: "multi-depth gated-residual MTP",
+            operation: "HyperConnections MTP fusion",
         });
     }
     let mut embedded = vec![0.0; tokens * hidden];
@@ -5535,150 +3661,55 @@ fn execute_mtp(
     let mut source_hidden = trunk_hidden.to_vec();
     let mut outputs = Vec::with_capacity(plan.mtp_blocks.len());
     for block in &plan.mtp_blocks {
-        let fused = match block.input.fusion {
-            memra_gguf::model_plan::MtpFusionPlan::ConcatenateProjection => {
-                if source_hidden.len() != tokens * hidden {
-                    return Err(ReferenceError::UnsupportedOperation {
-                        layer: None,
-                        operation: "HyperConnections MTP fusion",
-                    });
-                }
-                let embedding_norm = rms_norm(
-                    &embedded,
-                    tokens,
-                    hidden,
-                    tensor(
-                        weights,
-                        &TensorId::Mtp {
-                            depth: block.depth,
-                            tensor: MtpTensor::EmbeddingNorm,
-                        },
-                        &[hidden],
-                    )?,
-                    block.input.embedding_norm.epsilon,
-                );
-                let hidden_norm = rms_norm(
-                    &source_hidden,
-                    tokens,
-                    hidden,
-                    tensor(
-                        weights,
-                        &TensorId::Mtp {
-                            depth: block.depth,
-                            tensor: MtpTensor::HiddenNorm,
-                        },
-                        &[hidden],
-                    )?,
-                    block.input.hidden_norm.epsilon,
-                );
-                let mut concatenated = vec![0.0; tokens * 2 * hidden];
-                for token in 0..tokens {
-                    concatenated[token * 2 * hidden..token * 2 * hidden + hidden]
-                        .copy_from_slice(&embedding_norm[token * hidden..(token + 1) * hidden]);
-                    concatenated[token * 2 * hidden + hidden..(token + 1) * 2 * hidden]
-                        .copy_from_slice(&hidden_norm[token * hidden..(token + 1) * hidden]);
-                }
-                linear(
-                    &concatenated,
-                    tensor(
-                        weights,
-                        &TensorId::Mtp {
-                            depth: block.depth,
-                            tensor: MtpTensor::FusionProjection,
-                        },
-                        &[hidden, 2 * hidden],
-                    )?,
-                    tokens,
-                    2 * hidden,
-                    hidden,
-                )
-            }
-            memra_gguf::model_plan::MtpFusionPlan::SeparateProjections => {
-                // qwen4_exp (SEMANTICS.md §MTP, sglang_qwen4_exp_mtp.py L105-115): the
-                // draft input is the trunk's WIDE state, normed FLAT over the full wide
-                // vector (GemmaRMSNorm(hc_count*hidden) — not grouped), viewed per stream
-                // through fc_hidden, plus fc_embedding(norm(embed)) broadcast over streams.
-                let Some((streams, _)) = gated else {
-                    return Err(ReferenceError::InvalidPlan {
-                        layer: Some(block.layer.index),
-                        reason: "separate-projection MTP fusion requires a gated-residual trunk",
-                    });
-                };
-                let wide = streams * hidden;
-                if source_hidden.len() != tokens * wide {
-                    return Err(ReferenceError::InvalidPlan {
-                        layer: Some(block.layer.index),
-                        reason: "separate-projection MTP fusion requires the wide trunk state",
-                    });
-                }
-                let embedding_norm = rms_norm(
-                    &embedded,
-                    tokens,
-                    hidden,
-                    tensor(
-                        weights,
-                        &TensorId::Mtp {
-                            depth: block.depth,
-                            tensor: MtpTensor::EmbeddingNorm,
-                        },
-                        &[hidden],
-                    )?,
-                    block.input.embedding_norm.epsilon,
-                );
-                let embedding_projected = linear(
-                    &embedding_norm,
-                    tensor(
-                        weights,
-                        &TensorId::Mtp {
-                            depth: block.depth,
-                            tensor: MtpTensor::EmbeddingProjection,
-                        },
-                        &[hidden, hidden],
-                    )?,
-                    tokens,
-                    hidden,
-                    hidden,
-                );
-                let hidden_norm = rms_norm(
-                    &source_hidden,
-                    tokens,
-                    wide,
-                    tensor(
-                        weights,
-                        &TensorId::Mtp {
-                            depth: block.depth,
-                            tensor: MtpTensor::HiddenNorm,
-                        },
-                        &[wide],
-                    )?,
-                    block.input.hidden_norm.epsilon,
-                );
-                let hidden_projected = linear(
-                    &hidden_norm,
-                    tensor(
-                        weights,
-                        &TensorId::Mtp {
-                            depth: block.depth,
-                            tensor: MtpTensor::HiddenProjection,
-                        },
-                        &[hidden, hidden],
-                    )?,
-                    tokens * streams,
-                    hidden,
-                    hidden,
-                );
-                let mut fused = hidden_projected;
-                for token in 0..tokens {
-                    for stream in 0..streams {
-                        for column in 0..hidden {
-                            fused[(token * streams + stream) * hidden + column] +=
-                                embedding_projected[token * hidden + column];
-                        }
-                    }
-                }
-                fused
-            }
-        };
+        let embedding_norm = rms_norm(
+            &embedded,
+            tokens,
+            hidden,
+            tensor(
+                weights,
+                &TensorId::Mtp {
+                    depth: block.depth,
+                    tensor: MtpTensor::EmbeddingNorm,
+                },
+                &[hidden],
+            )?,
+            block.input.embedding_norm.epsilon,
+        );
+        let hidden_norm = rms_norm(
+            &source_hidden,
+            tokens,
+            hidden,
+            tensor(
+                weights,
+                &TensorId::Mtp {
+                    depth: block.depth,
+                    tensor: MtpTensor::HiddenNorm,
+                },
+                &[hidden],
+            )?,
+            block.input.hidden_norm.epsilon,
+        );
+        let mut concatenated = vec![0.0; tokens * 2 * hidden];
+        for token in 0..tokens {
+            concatenated[token * 2 * hidden..token * 2 * hidden + hidden]
+                .copy_from_slice(&embedding_norm[token * hidden..(token + 1) * hidden]);
+            concatenated[token * 2 * hidden + hidden..(token + 1) * 2 * hidden]
+                .copy_from_slice(&hidden_norm[token * hidden..(token + 1) * hidden]);
+        }
+        let fused = linear(
+            &concatenated,
+            tensor(
+                weights,
+                &TensorId::Mtp {
+                    depth: block.depth,
+                    tensor: MtpTensor::FusionProjection,
+                },
+                &[hidden, 2 * hidden],
+            )?,
+            tokens,
+            2 * hidden,
+            hidden,
+        );
         let (hidden_next, state) = execute_layer(
             &block.layer,
             weights,
@@ -5687,35 +3718,16 @@ fn execute_mtp(
             tokens,
             hidden,
             vocab,
-            LayerScope::Mtp { depth: block.depth },
         )?;
         let norm_id = TensorId::Mtp {
             depth: block.depth,
             tensor: MtpTensor::OutputNorm,
         };
-        let final_hidden = if let Some((streams, rank)) = gated {
-            // The draft exits through its OWN hyper_connection_mixer (SEMANTICS.md §MTP);
-            // there is no MTP final norm and no model OutputNorm to fall back to.
-            gated_residual_read(
-                weights,
-                LayerScope::Mtp { depth: block.depth }.mixer_prefix(),
-                "",
-                &hidden_next,
-                tokens,
-                streams,
-                hidden,
-                rank,
-                plan.output_norm.epsilon,
-                false,
-            )?
-            .0
-        } else {
-            let norm = match weights.get(&norm_id) {
-                Some(tensor) => tensor_checked(&norm_id, tensor, &[hidden])?,
-                None => tensor(weights, &TensorId::OutputNorm, &[hidden])?,
-            };
-            rms_norm(&hidden_next, tokens, hidden, norm, plan.output_norm.epsilon)
+        let norm = match weights.get(&norm_id) {
+            Some(tensor) => tensor_checked(&norm_id, tensor, &[hidden])?,
+            None => tensor(weights, &TensorId::OutputNorm, &[hidden])?,
         };
+        let final_hidden = rms_norm(&hidden_next, tokens, hidden, norm, plan.output_norm.epsilon);
         let head_id = TensorId::Mtp {
             depth: block.depth,
             tensor: MtpTensor::OutputProjection,
@@ -5899,7 +3911,7 @@ fn mla_attention(
                 .copy_from_slice(&query[source + nope_dim..source + qk_dim]);
         }
     }
-    let (rope_factors, rope_mscale) = rope_factor_values(&rope, weights)?;
+    let rope_factors = rope_factor_values(&rope, weights)?;
     apply_rope(
         &mut query_rope,
         tokens,
@@ -5908,7 +3920,6 @@ fn mla_attention(
         rope.dimensions as usize,
         rope.base,
         rope_factors.as_deref(),
-        rope_mscale,
     );
     let mut key_rope = vec![0.0; tokens * rope_dim];
     for token in 0..tokens {
@@ -5923,7 +3934,6 @@ fn mla_attention(
         rope.dimensions as usize,
         rope.base,
         rope_factors.as_deref(),
-        rope_mscale,
     );
     for token in 0..tokens {
         latent[token * latent_dim + kv_rank..(token + 1) * latent_dim]
@@ -6188,7 +4198,6 @@ pub fn kpool_allowed_tokens(
     Ok(allowed)
 }
 
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn compressed_mla_attention(
     layer: u32,
     plan: &memra_gguf::model_plan::MlaAttentionPlan,
@@ -6231,7 +4240,7 @@ fn compressed_mla_attention(
         || head_dim == 0
         || rope_dim == 0
         || rope_dim > head_dim
-        || !(head_dim - rope_dim).is_multiple_of(64)
+        || (head_dim - rope_dim) % 64 != 0
         || groups == 0
         || heads % groups != 0
         || window == 0
@@ -6389,10 +4398,7 @@ fn compressed_mla_attention(
                 }
                 let index_heads = *index_heads as usize;
                 let index_dim = *index_dim as usize;
-                if index_dim < rope_dim
-                    || !index_dim.is_multiple_of(32)
-                    || !index_dim.is_power_of_two()
-                {
+                if index_dim < rope_dim || index_dim % 32 != 0 || !index_dim.is_power_of_two() {
                     return Err(ReferenceError::InvalidPlan {
                         layer: Some(layer),
                         reason: "compressed sparse index has invalid head geometry",
@@ -6745,13 +4751,7 @@ fn gated_delta_net(
     let normalized = rms_norm(&mixed, tokens * value_heads, value_dim, norm, epsilon);
     let mut gated = normalized;
     for index in 0..gated.len() {
-        // qwen4_exp declares sigmoid here (config output_gate_type) — the ONE numeric
-        // divergence from the qwen3_5 GDN program (SEMANTICS.md §GDN); every other
-        // family is the silu arm.
-        gated[index] *= match plan.gate_activation {
-            GdnGateActivation::Silu => silu(gate[index]),
-            GdnGateActivation::Sigmoid => sigmoid(gate[index]),
-        };
+        gated[index] *= silu(gate[index]);
     }
     let output = linear(
         &gated,
@@ -6786,7 +4786,6 @@ fn gated_delta_net(
     ))
 }
 
-#[allow(clippy::too_many_arguments)]
 /// Kimi Delta Attention (recurrent_kimi_delta_attention + Glm5NextTextLinearAttention),
 /// all f32, sequential over tokens. Only the lower-bound forget-gate branch exists:
 /// GLM-5.3-Flash always configures `gate_lower_bound`, so the softplus branch of
@@ -6900,8 +4899,6 @@ fn kimi_delta_net(
     let dt_bias = tensor(weights, &layer_id(layer, LayerTensor::KdaDtBias), &[qkv])?;
     let a_log = tensor(weights, &layer_id(layer, LayerTensor::KdaALog), &[heads])?;
     for token in 0..tokens {
-        #[allow(clippy::needless_range_loop)]
-        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
         for head in 0..heads {
             let decay_rate = a_log[head].exp();
             for dim in 0..head_dim {
@@ -7040,9 +5037,6 @@ fn kimi_delta_net(
     ))
 }
 
-#[allow(clippy::too_many_arguments)]
-// allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn full_attention(
     layer: u32,
     plan: &memra_gguf::model_plan::FullAttentionPlan,
@@ -7052,9 +5046,6 @@ fn full_attention(
     x: &[f32],
     tokens: usize,
     hidden: usize,
-    // qwen4_exp QSA: indexer visibility overlay, `[tokens, tokens]` row-major (query,
-    // source); attention runs dense under causal AND selection (SEMANTICS.md §QSA).
-    selection: Option<&[bool]>,
 ) -> Result<(Vec<f32>, ReferenceLayerState), ReferenceError> {
     let query_heads = plan.query_heads as usize;
     let kv_heads = plan.kv_heads as usize;
@@ -7064,12 +5055,6 @@ fn full_attention(
         return Err(ReferenceError::InvalidPlan {
             layer: Some(layer),
             reason: "query heads must be a positive multiple of KV heads",
-        });
-    }
-    if selection.is_some_and(|selection| selection.len() != tokens * tokens) {
-        return Err(ReferenceError::InvalidPlan {
-            layer: Some(layer),
-            reason: "attention selection mask does not match tokens x tokens",
         });
     }
     let fused = plan.output_gate == AttentionGateKind::FusedQ;
@@ -7156,7 +5141,7 @@ fn full_attention(
         plan.qk_norm,
         norm_epsilon,
     )?;
-    let (rope_factors, rope_mscale) = rope_factor_values(&plan.rope, weights)?;
+    let rope_factors = rope_factor_values(&plan.rope, weights)?;
     apply_rope(
         &mut query,
         tokens,
@@ -7165,7 +5150,6 @@ fn full_attention(
         plan.rope.dimensions as usize,
         plan.rope.base,
         rope_factors.as_deref(),
-        rope_mscale,
     );
     apply_rope(
         &mut key,
@@ -7175,7 +5159,6 @@ fn full_attention(
         plan.rope.dimensions as usize,
         plan.rope.base,
         rope_factors.as_deref(),
-        rope_mscale,
     );
 
     let mut attended = vec![0.0; tokens * query_heads * value_dim];
@@ -7189,31 +5172,18 @@ fn full_attention(
             let first_source = window
                 .map(|window| (token + 1).saturating_sub(window))
                 .unwrap_or(0);
-            let mut sources = Vec::with_capacity(token + 1 - first_source);
             let mut scores = Vec::with_capacity(token + 1 - first_source);
             for source in first_source..=token {
-                if selection.is_some_and(|selection| !selection[token * tokens + source]) {
-                    continue;
-                }
                 let mut score = 0.0;
                 for dim in 0..key_dim {
                     score += query[(token * query_heads + head) * key_dim + dim]
                         * key[(source * kv_heads + kv_head) * key_dim + dim];
                 }
-                sources.push(source);
                 scores.push(score * scale);
             }
-            if scores.is_empty() {
-                // The QSA tail rule guarantees every query keeps at least its own block's
-                // incomplete tail; an empty row means a malformed selection mask.
-                return Err(ReferenceError::InvalidPlan {
-                    layer: Some(layer),
-                    reason: "attention selection left a query with no visible source",
-                });
-            }
             softmax_in_place(&mut scores);
-            for (index, probability) in scores.into_iter().enumerate() {
-                let source = sources[index];
+            for (offset, probability) in scores.into_iter().enumerate() {
+                let source = first_source + offset;
                 for dim in 0..value_dim {
                     attended[(token * query_heads + head) * value_dim + dim] +=
                         probability * value[(source * kv_heads + kv_head) * value_dim + dim];
@@ -7326,7 +5296,6 @@ fn dense_mlp(
     ))
 }
 
-#[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
 fn moe_mlp(
     layer: u32,
     plan: &memra_gguf::model_plan::MoeMlpPlan,
@@ -7808,32 +5777,27 @@ fn apply_optional_head_norm(
     Ok(())
 }
 
-/// Per-dim frequency divisors + the cos/sin attention scale (YaRN mscale; 1.0 for every
-/// other factor kind — an exact multiplicative identity).
 fn rope_factor_values(
     plan: &memra_gguf::model_plan::RopePlan,
     weights: &ReferenceWeights,
-) -> Result<(Option<Vec<f32>>, f32), ReferenceError> {
+) -> Result<Option<Vec<f32>>, ReferenceError> {
     use memra_gguf::model_plan::RopeFactors;
 
     let width = plan.dimensions as usize / 2;
     Ok(match plan.factors {
-        RopeFactors::None => (None, 1.0),
+        RopeFactors::None => None,
         RopeFactors::PartialRotary { factor } => {
             let keep = (width as f32 * factor.clamp(0.0, 1.0)).round() as usize;
-            (
-                Some(
-                    (0..width)
-                        .map(|index| if index < keep { 1.0 } else { 1.0e30 })
-                        .collect(),
-                ),
-                1.0,
+            Some(
+                (0..width)
+                    .map(|index| if index < keep { 1.0 } else { 1.0e30 })
+                    .collect(),
             )
         }
         RopeFactors::Checkpoint => {
             let tensor = weights
                 .get(&TensorId::RopeFactors)
-                .ok_or(ReferenceError::MissingTensor(TensorId::RopeFactors))?;
+                .ok_or_else(|| ReferenceError::MissingTensor(TensorId::RopeFactors))?;
             if tensor.shape.len() != 1 || tensor.data.len() < width {
                 return Err(ReferenceError::TensorShape {
                     id: Some(TensorId::RopeFactors),
@@ -7841,32 +5805,17 @@ fn rope_factor_values(
                     actual_elements: tensor.data.len(),
                 });
             }
-            (Some(tensor.data[..width].to_vec()), 1.0)
+            Some(tensor.data[..width].to_vec())
         }
-        // YaRN on full attention (qwen4_exp long-context lane): the transformers-twin
-        // frequency divisors + the derived attention factor on cos/sin. The divisor table
-        // shares the Checkpoint-factors convention, so every consumer below (QSA q/k AND
-        // the indexer's q/pooled-k rope) rides the same path.
-        RopeFactors::Yarn {
-            factor,
-            original_context,
-            beta_fast,
-            beta_slow,
-        } => (
-            Some(memra_gguf::model_plan::yarn_frequency_divisors(
-                plan.dimensions,
-                plan.base,
-                factor,
-                original_context,
-                beta_fast,
-                beta_slow,
-            )),
-            memra_gguf::model_plan::yarn_attention_factor(factor),
-        ),
+        RopeFactors::Yarn { .. } => {
+            return Err(ReferenceError::UnsupportedOperation {
+                layer: None,
+                operation: "YaRN on non-compressed attention",
+            });
+        }
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 fn apply_rope(
     values: &mut [f32],
     tokens: usize,
@@ -7875,51 +5824,22 @@ fn apply_rope(
     dimensions: usize,
     base: f32,
     factors: Option<&[f32]>,
-    mscale: f32,
-) {
-    for token in 0..tokens {
-        apply_rope_at_position(
-            &mut values[token * heads * head_dim..(token + 1) * heads * head_dim],
-            heads,
-            head_dim,
-            dimensions,
-            base,
-            factors,
-            mscale,
-            token,
-        );
-    }
-}
-
-/// One row of NeoX split-half rope at an EXPLICIT position — the QSA indexer rotates
-/// pooled block keys at the block-start position, not their row index. `mscale` is the
-/// YaRN attention factor on cos/sin (transformers `attention_scaling`; 1.0 elsewhere —
-/// an exact multiplicative identity, so the non-yarn arms are byte-unchanged).
-#[allow(clippy::too_many_arguments)]
-fn apply_rope_at_position(
-    values: &mut [f32],
-    heads: usize,
-    head_dim: usize,
-    dimensions: usize,
-    base: f32,
-    factors: Option<&[f32]>,
-    mscale: f32,
-    position: usize,
 ) {
     let dimensions = dimensions.min(head_dim) / 2 * 2;
     let half = dimensions / 2;
-    for head in 0..heads {
-        let offset = head * head_dim;
-        for index in 0..half {
-            let factor = factors.map_or(1.0, |factors| factors[index]);
-            let frequency = base.powf(-2.0 * index as f32 / dimensions as f32) / factor;
-            let angle = position as f32 * frequency;
-            let (sin, cos) = angle.sin_cos();
-            let (sin, cos) = (sin * mscale, cos * mscale);
-            let first = values[offset + index];
-            let second = values[offset + index + half];
-            values[offset + index] = first * cos - second * sin;
-            values[offset + index + half] = first * sin + second * cos;
+    for token in 0..tokens {
+        for head in 0..heads {
+            let offset = (token * heads + head) * head_dim;
+            for index in 0..half {
+                let factor = factors.map_or(1.0, |factors| factors[index]);
+                let frequency = base.powf(-2.0 * index as f32 / dimensions as f32) / factor;
+                let angle = token as f32 * frequency;
+                let (sin, cos) = angle.sin_cos();
+                let first = values[offset + index];
+                let second = values[offset + index + half];
+                values[offset + index] = first * cos - second * sin;
+                values[offset + index + half] = first * sin + second * cos;
+            }
         }
     }
 }
@@ -7960,22 +5880,6 @@ fn softplus(value: f32) -> f32 {
 
 fn gelu_tanh(value: f32) -> f32 {
     0.5 * value * (1.0 + (0.797_884_6 * (value + 0.044_715 * value * value * value)).tanh())
-}
-
-/// Exact-erf GELU (torch `nn.GELU()` default, used by the glm5_next vision merger — NOT
-/// the tanh approximation). erf via Abramowitz & Stegun 7.1.26 in f64 (max abs error
-/// 1.5e-7, below f32 resolution at these magnitudes).
-fn gelu_erf(value: f32) -> f32 {
-    let x = value as f64 / std::f64::consts::SQRT_2;
-    let sign = if x < 0.0 { -1.0 } else { 1.0 };
-    let x = x.abs();
-    let t = 1.0 / (1.0 + 0.327_591_1 * x);
-    let poly = t
-        * (0.254_829_592
-            + t * (-0.284_496_736
-                + t * (1.421_413_741 + t * (-1.453_152_027 + t * 1.061_405_429))));
-    let erf = sign * (1.0 - poly * (-x * x).exp());
-    (0.5 * value as f64 * (1.0 + erf)) as f32
 }
 
 #[cfg(test)]
@@ -8667,13 +6571,13 @@ mod tests {
         use memra_gguf::model_plan::{RopeFactors, RopePlan};
 
         let mut values = vec![1.0, 2.0, 3.0, 4.0];
-        apply_rope(&mut values, 1, 1, 4, 4, 10_000.0, None, 1.0);
+        apply_rope(&mut values, 1, 1, 4, 4, 10_000.0, None);
         // Position zero is deliberately unchanged.
         assert_eq!(values, vec![1.0, 2.0, 3.0, 4.0]);
 
         let mut values = vec![0.0; 8];
         values[4..].copy_from_slice(&[1.0, 2.0, 3.0, 4.0]);
-        apply_rope(&mut values, 2, 1, 4, 4, 10_000.0, None, 1.0);
+        apply_rope(&mut values, 2, 1, 4, 4, 10_000.0, None);
         let (sin0, cos0) = 1.0f32.sin_cos();
         let (sin1, cos1) = 0.01f32.sin_cos();
         let row = &values[4..];
@@ -8690,548 +6594,9 @@ mod tests {
                 },
                 &ReferenceWeights::new(),
             )
+            .unwrap()
             .unwrap(),
-            (Some(vec![1.0, 1.0e30]), 1.0)
-        );
-
-        // YaRN factors resolve to the transformers-twin divisors + attention factor
-        // (values pinned in memra-gguf's yarn_divisors test against the banked receipt).
-        let (yarn_factors, yarn_mscale) = rope_factor_values(
-            &RopePlan {
-                dimensions: 4,
-                base: 10_000.0,
-                factors: RopeFactors::Yarn {
-                    factor: 2.0,
-                    original_context: 8,
-                    beta_fast: 32.0,
-                    beta_slow: 1.0,
-                },
-            },
-            &ReferenceWeights::new(),
-        )
-        .unwrap();
-        let yarn_factors = yarn_factors.unwrap();
-        assert_eq!(yarn_factors[0], 1.0);
-        assert!((yarn_factors[1] - 2.0).abs() < 1e-6);
-        assert!((yarn_mscale - 1.069_314_7).abs() < 1e-6);
-    }
-
-    /// Every expected number below is hand-derived from the modular_qwen4_exp.py math
-    /// (SEMANTICS.md §Gated residual), NOT read back from the code under test.
-    #[test]
-    // excessive_precision: the assert literals quote the hand derivation digits verbatim.
-    #[allow(clippy::excessive_precision)]
-    fn gated_residual_read_and_write_match_hand_derived_two_stream_toy() {
-        let (streams, hidden, rank, tokens) = (2usize, 2usize, 1usize, 1usize);
-        let wide = streams * hidden;
-        let prefix = "trunk.layers.0.";
-        let sublayer = "attn_hyper_connection.";
-        let insert =
-            |weights: &mut ReferenceWeights, suffix: &str, shape: &[usize], data: &[f32]| {
-                weights.insert(
-                    qwen4exp_family_id(format!("{prefix}{sublayer}{suffix}")),
-                    weight(shape, data),
-                );
-            };
-        // x = [3,4 | 6,8]: both stream groups are parallel, so grouped normalization maps
-        // them to the SAME direction — n = (3,4)/sqrt(12.5+1e-6) per group. That equality
-        // is itself the group-independence assertion.
-        let x = [3.0, 4.0, 6.0, 8.0];
-
-        // Case A: zero down/up/inject weights => w = sigmoid(0) = 0.5 everywhere and
-        // inject = 2*sigmoid(0) = 1; mixed[c] = 0.5*(n0[c]+n1[c])/2.
-        let mut weights = ReferenceWeights::new();
-        insert(&mut weights, "hc_norm.weight", &[wide], &[1.0; 4]);
-        insert(
-            &mut weights,
-            "input_mix_weight_down.weight",
-            &[rank, wide],
-            &[0.0; 4],
-        );
-        insert(
-            &mut weights,
-            "input_mix_weight_up.weight",
-            &[wide, rank],
-            &[0.0; 4],
-        );
-        insert(
-            &mut weights,
-            "block_inject_weight.weight",
-            &[streams, wide],
-            &[0.0; 8],
-        );
-        let (mixed, inject) = gated_residual_read(
-            &weights, prefix, sublayer, &x, tokens, streams, hidden, rank, 1e-6, true,
-        )
-        .unwrap();
-        // Hand: n = (0.84852810, 1.13137080); mixed = (0.42426406, 0.56568541).
-        assert!((mixed[0] - 0.424_264_06).abs() < 1e-5, "{mixed:?}");
-        assert!((mixed[1] - 0.565_685_41).abs() < 1e-5, "{mixed:?}");
-        assert!((inject[0] - 1.0).abs() < 1e-6 && (inject[1] - 1.0).abs() < 1e-6);
-
-        // Case B: down = [1,0,0,0], up = ones, inject row0 = [1,0,0,0], row1 = 0.
-        // low  = silu(n[0]/2)           = silu(0.42426406)   = 0.25646896
-        // w    = sigmoid(low)           = 0.56376809 for every dim
-        // mixed[c] = w*(n0[c]+n1[c])/2  = (0.47837307, 0.63783076)
-        // inject   = (2*sigmoid(n[0]/2), 2*sigmoid(0)) = (1.20900630, 1.0)
-        insert(
-            &mut weights,
-            "input_mix_weight_down.weight",
-            &[rank, wide],
-            &[1.0, 0.0, 0.0, 0.0],
-        );
-        insert(
-            &mut weights,
-            "input_mix_weight_up.weight",
-            &[wide, rank],
-            &[1.0; 4],
-        );
-        insert(
-            &mut weights,
-            "block_inject_weight.weight",
-            &[streams, wide],
-            &[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        );
-        let (mixed, inject) = gated_residual_read(
-            &weights, prefix, sublayer, &x, tokens, streams, hidden, rank, 1e-6, true,
-        )
-        .unwrap();
-        assert!((mixed[0] - 0.478_373_07).abs() < 1e-5, "{mixed:?}");
-        assert!((mixed[1] - 0.637_830_76).abs() < 1e-5, "{mixed:?}");
-        assert!((inject[0] - 1.208_999_4).abs() < 1e-4, "{inject:?}");
-        assert!((inject[1] - 1.0).abs() < 1e-6, "{inject:?}");
-
-        // Write: out = PRE-norm wide + block_out ⊗ inject, block_out = (1, -1)
-        // => (3+1.209, 4-1.209, 6+1, 8-1).
-        let mut wide_state = x.to_vec();
-        gated_residual_write(
-            &mut wide_state,
-            &[1.0, -1.0],
-            &inject,
-            tokens,
-            streams,
-            hidden,
-        );
-        assert!((wide_state[0] - 4.209_006_3).abs() < 1e-4, "{wide_state:?}");
-        assert!((wide_state[1] - 2.790_993_7).abs() < 1e-4, "{wide_state:?}");
-        assert!((wide_state[2] - 7.0).abs() < 1e-6, "{wide_state:?}");
-        assert!((wide_state[3] - 7.0).abs() < 1e-6, "{wide_state:?}");
-    }
-
-    /// GDN with the qwen4_exp sigmoid z-gate — the ONE divergence from qwen3_5. Single
-    /// token, identity-shaped projections, gate logit 2.0:
-    ///   conv (k=1, w=1) => q=k=(silu(1),0), v=(silu(2),0); l2norm makes q~=k unit;
-    ///   beta=sigmoid(0)=0.5, one step from zero state => mixed = (k.q)*v*beta/sqrt(2);
-    ///   rms_norm => (1.41420992, 0); out = norm * act(2).
-    /// Hand: sigmoid arm (1.24563196, 0); silu arm would be (2.49126392, 0).
-    #[test]
-    // excessive_precision: the assert literals quote the hand derivation digits verbatim.
-    #[allow(clippy::excessive_precision)]
-    fn gdn_sigmoid_gate_matches_hand_derived_single_token() {
-        use memra_gguf::model_plan::GatedDeltaNetPlan;
-
-        let hidden = 2usize;
-        let mut weights = ReferenceWeights::new();
-        weights.insert(
-            layer_id(0, LayerTensor::GdnQkv),
-            weight(
-                &[6, 2],
-                &[1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 2.0, 0.0, 0.0, 2.0],
-            ),
-        );
-        weights.insert(
-            layer_id(0, LayerTensor::GdnGate),
-            weight(&[2, 2], &[2.0, 0.0, 0.0, 1.0]),
-        );
-        weights.insert(
-            layer_id(0, LayerTensor::GdnBeta),
-            weight(&[1, 2], &[0.0, 0.0]),
-        );
-        weights.insert(
-            layer_id(0, LayerTensor::GdnAlpha),
-            weight(&[1, 2], &[0.0, 0.0]),
-        );
-        weights.insert(layer_id(0, LayerTensor::GdnA), weight(&[1], &[0.0]));
-        weights.insert(layer_id(0, LayerTensor::GdnDtBias), weight(&[1], &[0.0]));
-        weights.insert(layer_id(0, LayerTensor::GdnNorm), weight(&[2], &[1.0, 1.0]));
-        weights.insert(
-            layer_id(0, LayerTensor::GdnConv1d),
-            weight(&[6, 1], &[1.0; 6]),
-        );
-        weights.insert(
-            layer_id(0, LayerTensor::GdnOutput),
-            weight(&[2, 2], &[1.0, 0.0, 0.0, 1.0]),
-        );
-        let plan = GatedDeltaNetPlan {
-            key_heads: 1,
-            value_heads: 1,
-            key_head_dim: 2,
-            value_head_dim: 2,
-            conv_kernel: 1,
-            gate_activation: GdnGateActivation::Sigmoid,
-        };
-        let (sigmoid_out, _) =
-            gated_delta_net(0, &plan, 1e-6, &weights, &[1.0, 0.0], 1, hidden).unwrap();
-        assert!(
-            (sigmoid_out[0] - 1.245_632_0).abs() < 1e-4,
-            "{sigmoid_out:?}"
-        );
-        assert!(sigmoid_out[1].abs() < 1e-6, "{sigmoid_out:?}");
-
-        let silu_plan = GatedDeltaNetPlan {
-            gate_activation: GdnGateActivation::Silu,
-            ..plan
-        };
-        let (silu_out, _) =
-            gated_delta_net(0, &silu_plan, 1e-6, &weights, &[1.0, 0.0], 1, hidden).unwrap();
-        assert!((silu_out[0] - 2.491_263_9).abs() < 1e-4, "{silu_out:?}");
-    }
-
-    /// Crafted 12-token sequence with an unambiguous top-k choice: only tokens 4..8 carry
-    /// key mass (block 1); every other block pools to the ZERO vector, which rope and
-    /// normalization preserve, so its relu score is exactly 0 while block 1 scores
-    /// strictly positive (2*cos(Δpos) with Δpos ∈ {5, 7} rad, both cos > 0). budget = 1
-    /// block. Also pins the tail rule, including the boundary case where a query's own
-    /// unselected complete block makes the query NOT see itself.
-    #[test]
-    fn micro_block_indexer_selects_unambiguous_block_and_always_keeps_the_tail() {
-        let tokens = 12usize;
-        let hidden = 2usize;
-        let overlay = MicroBlockIndexPlan {
-            query_heads: 1,
-            kv_heads: 1,
-            head_dim: 2,
-            rope_dimensions: 2,
-            block_size: 4,
-            budget_blocks: 1,
-            budget_tokens: 4,
-        };
-        let rope = RopePlan {
-            dimensions: 2,
-            base: 10_000.0,
-            factors: memra_gguf::model_plan::RopeFactors::None,
-        };
-        let prefix = "trunk.layers.0.";
-        let mut weights = ReferenceWeights::new();
-        // q rows = identity (q = x); k rows read only x[1] scaled by 10.
-        weights.insert(
-            qwen4exp_family_id(format!("{prefix}self_attn.indexer.index_qk_proj.weight")),
-            weight(&[4, 2], &[1.0, 0.0, 0.0, 1.0, 0.0, 10.0, 0.0, 0.0]),
-        );
-        for norm in ["q_layernorm", "k_layernorm"] {
-            weights.insert(
-                qwen4exp_family_id(format!("{prefix}self_attn.indexer.{norm}.weight")),
-                weight(&[2], &[1.0, 1.0]),
-            );
-        }
-        let mut x = vec![0.0; tokens * hidden];
-        for token in 0..tokens {
-            x[token * hidden] = 1.0; // every query is (1, 0)
-            if (4..8).contains(&token) {
-                x[token * hidden + 1] = 1.0; // block-1 keys become (10, 0)
-            }
-        }
-        let mask = micro_block_selection_mask(
-            0, &overlay, &rope, 1e-6, &weights, prefix, &x, tokens, hidden,
-        )
-        .unwrap();
-        let row = |token: usize| &mask[token * tokens..(token + 1) * tokens];
-        // t=0: no complete block, tail = {0}.
-        assert_eq!(
-            row(0),
-            &[
-                true, false, false, false, false, false, false, false, false, false, false, false
-            ]
-        );
-        // t=5: one complete block (0..4, the only candidate) + tail {4,5}.
-        assert_eq!(
-            row(5),
-            &[
-                true, true, true, true, true, true, false, false, false, false, false, false
-            ]
-        );
-        // t=9: blocks {0,1} complete, block 1 wins (score>0 vs 0), tail {8,9}.
-        assert_eq!(
-            row(9),
-            &[
-                false, false, false, false, true, true, true, true, true, true, false, false
-            ]
-        );
-        // t=11: blocks {0,1,2} complete, tail EMPTY; only block 1 selected — the query
-        // does not even see itself (blocks-only selection at exact boundaries).
-        assert_eq!(
-            row(11),
-            &[
-                false, false, false, false, true, true, true, true, false, false, false, false
-            ]
-        );
-    }
-
-    /// The selection mask gates full attention to exactly the selected sources: a query
-    /// restricted to itself must return its own VALUE row bit-for-bit reasoning
-    /// (softmax over one score = 1), with identity projections output == input.
-    #[test]
-    fn full_attention_selection_mask_restricts_sources_to_hand_derived_rows() {
-        use memra_gguf::model_plan::{FullAttentionPlan, RopeFactors, TensorPresence};
-
-        let plan = FullAttentionPlan {
-            query_heads: 1,
-            kv_heads: 1,
-            key_head_dim: 2,
-            value_head_dim: 2,
-            rope: RopePlan {
-                dimensions: 2,
-                base: 10_000.0,
-                factors: RopeFactors::None,
-            },
-            qk_norm: TensorPresence::Absent,
-            output_gate: memra_gguf::config::AttentionGateKind::None,
-            scale: AttentionScale::InverseSqrtKeyDim,
-            value_projection: ValueProjection::Separate,
-            value_norm: ValueNorm::None,
-        };
-        let identity = [1.0, 0.0, 0.0, 1.0];
-        let mut weights = ReferenceWeights::new();
-        for tensor in [
-            LayerTensor::Query,
-            LayerTensor::Key,
-            LayerTensor::Value,
-            LayerTensor::AttentionOutput,
-        ] {
-            weights.insert(layer_id(0, tensor), weight(&[2, 2], &identity));
-        }
-        // Orthogonal rows keep the causal softmax far from saturation (score gap ~1.3),
-        // so the unmasked row visibly mixes ~21% of source 0.
-        let x = [1.0, 0.0, 0.0, 1.0];
-        let diagonal = [true, false, false, true];
-        let (masked, _) =
-            full_attention(0, &plan, None, 1e-6, &weights, &x, 2, 2, Some(&diagonal)).unwrap();
-        for index in 0..4 {
-            assert!((masked[index] - x[index]).abs() < 1e-6, "{masked:?}");
-        }
-        let (unmasked, _) = full_attention(0, &plan, None, 1e-6, &weights, &x, 2, 2, None).unwrap();
-        assert!(
-            (unmasked[2] - x[2]).abs() > 1e-3,
-            "causal row must mix sources"
-        );
-
-        let starving = [true, false, false, false];
-        let error =
-            full_attention(0, &plan, None, 1e-6, &weights, &x, 2, 2, Some(&starving)).unwrap_err();
-        assert!(matches!(error, ReferenceError::InvalidPlan { .. }));
-    }
-
-    /// N-gram id math recomputed independently below (wrapping i64 multiply, XOR, floor
-    /// mod, offset — SEMANTICS.md §PLE), with a multiplier big enough that the product
-    /// wraps negative and exercises the floor-mod arm.
-    #[test]
-    fn ngram_ids_match_independently_computed_hash_chain() {
-        let multipliers = [0x4000_0000_0000_0001_i64, 1_000_003, 7_777_777];
-        let sizes = [97_i64, 89, 83, 79];
-        let offsets = [0_i64, 97, 186, 269];
-        let (max_ngram, heads_per_ngram, eos) = (3usize, 2usize, 9u32);
-        let token_ids = [5u32, 7];
-        let ids = ngram_ids(
-            &token_ids,
-            &multipliers,
-            &sizes,
-            &offsets,
-            max_ngram,
-            heads_per_ngram,
-            eos,
-            0,
-        )
-        .unwrap();
-
-        // history = [9, 9, 5, 7]; shifted[1] = [9,9,9,5]; shifted[2] = [9,9,9,9]
-        // (the two context positions read EOS; position 3 shifted-by-1 reads token 5).
-        let expect = |mixed: i64, head: usize| mixed.rem_euclid(sizes[head]) + offsets[head];
-        let bigram_t0 = 5_i64.wrapping_mul(multipliers[0]) ^ 9_i64.wrapping_mul(multipliers[1]);
-        let trigram_t0 = bigram_t0 ^ 9_i64.wrapping_mul(multipliers[2]);
-        let bigram_t1 = 7_i64.wrapping_mul(multipliers[0]) ^ 5_i64.wrapping_mul(multipliers[1]);
-        let trigram_t1 = bigram_t1 ^ 9_i64.wrapping_mul(multipliers[2]);
-        // 7 * (2^62 + 1) wraps to 2^63 + 2^62 + 7, i.e. negative i64; floor mod must
-        // still land non-negative (torch.remainder semantics).
-        assert!(7_i64.wrapping_mul(multipliers[0]) < 0);
-        assert_eq!(
-            ids,
-            vec![
-                expect(bigram_t0, 0),
-                expect(bigram_t0, 1),
-                expect(trigram_t0, 2),
-                expect(trigram_t0, 3),
-                expect(bigram_t1, 0),
-                expect(bigram_t1, 1),
-                expect(trigram_t1, 2),
-                expect(trigram_t1, 3),
-            ]
-        );
-        assert!(ids.iter().all(|&id| id >= 0));
-    }
-
-    /// Hand-derived shift vectors for history [E,E,5,6,E,7,8] (E = 63):
-    ///   eos strictly-before: [-1,0,1,1,1,4,4]; segment starts [0,1,2,2,2,5,5];
-    ///   in-segment positions [0,0,0,1,2,0,1].
-    /// shift=1 keeps positions {3,4,6} (note position 4 — the EOS itself — reads 6, its
-    /// in-segment index counts within the PREVIOUS segment); shift=2 keeps only {4}.
-    #[test]
-    fn eos_segment_reset_reads_eos_across_boundaries() {
-        let eos = 63i64;
-        let history = [eos, eos, 5, 6, eos, 7, 8];
-        assert_eq!(shift_right_ignore_eos(&history, 0, eos), history.to_vec());
-        assert_eq!(
-            shift_right_ignore_eos(&history, 1, eos),
-            vec![eos, eos, eos, 5, 6, eos, 7]
-        );
-        assert_eq!(
-            shift_right_ignore_eos(&history, 2, eos),
-            vec![eos, eos, eos, eos, 5, eos, eos]
-        );
-    }
-
-    /// Scalar-channel PLE block pinning the gather -> gate -> dilated-conv chain by hand:
-    /// wide stream 0 => query norm 0 => gate = sigmoid(0) = 0.5, so gated = 0.5*value;
-    /// normed scalars n_t = g_t/sqrt(g_t^2+1e-6); conv (kernel 2, dilation = max_ngram
-    /// = 2, taps w = [10, 1]) reads out[t] = g_t + silu(10*n_{t-2} + n_t) with the
-    /// out-of-range tap dropped. Hand values below; a REVERSED tap order would give
-    /// out[2] = 11.5068593 instead of 8.8685460, so this pins conv orientation AND the
-    /// dilation reach (t-2, not t-1).
-    #[test]
-    // excessive_precision: the assert literals quote the hand derivation digits verbatim.
-    #[allow(clippy::excessive_precision)]
-    fn ple_block_matches_hand_derived_scalar_gather_gate_and_dilated_conv() {
-        let prefix = "trunk.layers.1.";
-        let mut weights = ReferenceWeights::new();
-        let family = |suffix: &str| qwen4exp_family_id(format!("{prefix}{suffix}"));
-        weights.insert(
-            family("ple.ple_embedding.layer_multipliers"),
-            ReferenceTensor::new_i64(vec![2], vec![1, 0]).unwrap(),
-        );
-        weights.insert(
-            family("ple.ple_embedding.ngram_heads_vocab_sizes"),
-            ReferenceTensor::new_i64(vec![1], vec![5]).unwrap(),
-        );
-        weights.insert(
-            family("ple.ple_embedding.ngram_heads_offsets"),
-            ReferenceTensor::new_i64(vec![1], vec![0]).unwrap(),
-        );
-        // ids = token mod 5 = [1, 2, 3] -> values [0.002, 0.4, 1.6]
-        weights.insert(
-            family("ple.ple_embedding.ngram_embedding"),
-            weight(&[5, 1], &[0.0, 0.002, 0.4, 1.6, 0.0]),
-        );
-        weights.insert(family("ple.key_proj.weight"), weight(&[1, 1], &[1.0]));
-        weights.insert(family("ple.value_proj.weight"), weight(&[1, 1], &[1.0]));
-        for norm in ["norm_key", "norm_query", "norm_conv"] {
-            weights.insert(family(&format!("ple.{norm}.weight")), weight(&[1], &[1.0]));
-        }
-        weights.insert(family("ple.conv1d.weight"), weight(&[1, 2], &[10.0, 1.0]));
-        let plan = memra_gguf::model_plan::PleEmbeddingPlan {
-            ngram_heads: 1,
-            head_embed_dim: 1,
-            vocab_shards: 1,
-            embed_dim: 1,
-            conv_kernel: 2,
-            max_ngram: 2,
-            eos_token_id: 4,
-        };
-        let wide_state = [0.0; 3];
-        let output = ple_block(
-            1,
-            &plan,
-            1e-6,
-            &weights,
-            prefix,
-            &wide_state,
-            &[1, 2, 3],
-            3,
-            1,
-            1,
-        )
-        .unwrap();
-        assert!((output[0] - 0.474_592_9).abs() < 1e-4, "{output:?}");
-        assert!((output[1] - 0.931_047_0).abs() < 1e-4, "{output:?}");
-        assert!((output[2] - 8.868_546_0).abs() < 1e-3, "{output:?}");
-    }
-
-    /// The qwen4_exp pack's tiny plan executes end-to-end through `execute`: gated
-    /// residual entry/exit, GDN + QSA trunk, PLE on layer 1, MoE with the gated shared
-    /// expert, and the separate-projection MTP block. 16 tokens so the indexer budget
-    /// (2 blocks) actually BINDS (3-4 complete blocks at the last queries).
-    #[test]
-    fn qwen4exp_tiny_plan_executes_gated_residual_qsa_ple_moe_and_mtp() {
-        let pack = memra_gguf::model_packs::by_alias("qwen4_exp").expect("qwen4_exp pack");
-        let plan = pack.compile_tiny_plan().expect("tiny plan compiles");
-        assert_eq!(plan.layers.len(), 4);
-        assert_eq!(plan.mtp_blocks.len(), 1);
-        let fixture = deterministic_fixture(&plan).unwrap();
-        assert!(
-            !fixture.weights.contains_key(&TensorId::OutputNorm),
-            "exit-mixer plans must not fabricate a final norm"
-        );
-        let token_ids: Vec<u32> = (1..=16).collect();
-        let first = execute(&plan, &fixture.weights, &token_ids).unwrap();
-        let second = execute(&plan, &fixture.weights, &token_ids).unwrap();
-        assert_eq!(first, second, "reference must be bit-deterministic");
-        assert_eq!((first.tokens, first.vocab), (16, 64));
-        assert!(first.logits.iter().all(|value| value.is_finite()));
-        for (index, state) in first.state.layers.iter().enumerate() {
-            if index == 3 {
-                assert!(matches!(state, ReferenceLayerState::Kv { .. }));
-            } else {
-                assert!(matches!(state, ReferenceLayerState::Recurrent { .. }));
-            }
-        }
-        // MTP: wide (streams*hidden) post-layer state is the K>1 carrier.
-        assert_eq!(first.mtp.len(), 1);
-        assert_eq!(first.mtp[0].hidden.len(), 16 * 2 * 16);
-        assert_eq!(first.mtp[0].logits.len(), 16 * 64);
-        assert!(first.mtp[0].logits.iter().all(|value| value.is_finite()));
-
-        // The QSA selection binds: zeroing the indexer projection makes every block
-        // score exactly 0, so the pinned tie rule keeps the LOWEST-indexed blocks —
-        // a different selection than the trained-shaped fixture picks. (A sign flip
-        // would NOT work here: negating q and k together preserves every score.)
-        let mut perturbed = fixture.weights.clone();
-        perturbed
-            .get_mut(&qwen4exp_family_id(
-                "trunk.layers.3.self_attn.indexer.index_qk_proj.weight".into(),
-            ))
-            .expect("trunk indexer weights")
-            .data
-            .fill(0.0);
-        let reindexed = execute(&plan, &perturbed, &token_ids).unwrap();
-        assert_ne!(
-            first.logits, reindexed.logits,
-            "indexer selection must gate attention"
-        );
-
-        // PLE binds: a different n-gram table moves the logits.
-        let mut retabled = fixture.weights.clone();
-        retabled
-            .get_mut(&qwen4exp_family_id(
-                "trunk.layers.1.ple.ple_embedding.ngram_embedding".into(),
-            ))
-            .expect("ngram table")
-            .data
-            .fill(0.25);
-        let regathered = execute(&plan, &retabled, &token_ids).unwrap();
-        assert_ne!(
-            first.logits, regathered.logits,
-            "PLE gather must feed layer 1"
-        );
-
-        // The sigmoid-gated shared expert binds (MoE deliverable check).
-        let mut regated = fixture.weights.clone();
-        regated
-            .get_mut(&layer_id(0, LayerTensor::SharedMlpInputGate))
-            .expect("shared expert gate")
-            .data
-            .fill(4.0);
-        let reshared = execute(&plan, &regated, &token_ids).unwrap();
-        assert_ne!(
-            first.logits, reshared.logits,
-            "shared-expert sigmoid gate must scale the shared branch"
+            vec![1.0, 1.0e30]
         );
     }
 
@@ -9609,8 +6974,6 @@ mod tests {
             ];
             let beta = sig(b_proj[0][0] * x[token][0] + b_proj[0][1] * x[token][1]);
             for key_index in 0..2 {
-                #[allow(clippy::needless_range_loop)]
-                // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
                 for value_index in 0..2 {
                     state[key_index][value_index] *= g[key_index].exp();
                 }

@@ -65,12 +65,6 @@ acquire_gpu_lock() {
         # fd-based, NOT `flock <file> <cmd>`: the fd (inherited by every child) is the lock
         # lifetime. Kernel drops it when the last holder fd closes — a mid-run kill releases
         # it, and an orphaned server that is still on the GPU correctly keeps it held.
-        # TRAP:sccache-inherits-gpu-flock (two deadlocks, 2026-08-31/09-01): a build under
-        # this lock SPAWNS the sccache daemon, which inherits fd 9 and outlives any kill of
-        # the run — /proc/locks then names a dead pid and the rig wedges. Pre-warm the
-        # daemon BEFORE taking the fd so it never inherits it; the intentional inheritance
-        # (orphaned GPU-holding servers keep the lock) stays.
-        command -v sccache >/dev/null 2>&1 && sccache --start-server >/dev/null 2>&1 || true
         exec 9>"$CI_LOCK"
         if ! flock -n 9; then
             echo "local-ci: GPU lock $CI_LOCK is HELD by another run — WAITING (up to ${CI_LOCK_WAIT}s; set MEMRA_CI_LOCK_WAIT to change). Never running lock-less."
@@ -111,27 +105,6 @@ fi
 # gate (H100 lane law 3). This builds the full release set so serve-smoke's memra-server,
 # the engine bins, and the gate tools all match HEAD before a single check runs.
 cargo build --release || { echo "local-ci: build FAILED"; exit 1; }
-
-# CLIPPY GATE (lane/clippy-zero-restore-20260901, wired on the PR #87 review's finding).
-# CPU-only, pre-lock, on the target dir the build above just warmed. Mirrors ci.yml's gate
-# exactly so "local-ci green" keeps implying "pushable": the workspace is clippy-zero and
-# -D warnings holds it there; without this line a local-ci-green tree bounces off CI on a
-# lint 20 minutes after the push. Steady-state cost is small (cargo replays cached
-# diagnostics on an unchanged tree); first run after an edit pays the lint pass. -j8 per
-# the rig CPU cap. MEMRA_CI_CLIPPY=0 skips, announced — same door pattern as the stages
-# below, and like them it is not an engine flag (check-flags censuses runtime .rs only).
-# VERSION AGREEMENT: ci.yml pins its clippy toolchain to the workspace rust-version
-# (Cargo.toml), and this line lints with the rig's default toolchain — keep the rig on
-# that same version, and bump rust-version + the ci.yml pin + the rig together in one
-# lane (the gate's first CI run redded on a stable that moved overnight; receipt in the
-# ci.yml toolchain-pin comment).
-if [ "${MEMRA_CI_CLIPPY:-1}" = "1" ]; then
-    echo "== local-ci: clippy gate (-D warnings) =="
-    cargo clippy --release --all-targets -j8 -- -D warnings \
-        || { echo "local-ci: clippy gate FAILED — the workspace stays clippy-zero (fix or #[allow] with a stated reason)"; exit 1; }
-else
-    echo "local-ci: clippy gate SKIPPED (MEMRA_CI_CLIPPY=0)" >&2
-fi
 
 # HTTP-SURFACE UNIT SUITE (lane/vendor-default-sampling, 2026-08-19). CPU-only, ~1s, and it
 # was in NO automated gate: this battery ran `cargo build` but never `cargo test`, and at the

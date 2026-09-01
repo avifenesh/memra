@@ -95,10 +95,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut samples: Vec<Vec<f64>> = vec![Vec::with_capacity(n_iter); n_arms];
     for it in 0..(warmup + n_iter) {
         for arm in 0..n_arms {
-            if let Some(o) = only
-                && arm != o
-            {
-                continue;
+            if let Some(o) = only {
+                if arm != o {
+                    continue;
+                }
             }
             e.stream().synchronize()?;
             let t0 = std::time::Instant::now();
@@ -130,8 +130,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "{{\"probe\":\"spec-econ\",\"model\":\"{path}\",\"prompt_tokens\":{},\"pos\":{pos0},\"n\":{n_iter},\"arms\":{{",
         prompt.len()
     );
-    #[allow(clippy::needless_range_loop)]
-    // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
     for arm in 0..n_arms {
         if samples[arm].is_empty() {
             continue;

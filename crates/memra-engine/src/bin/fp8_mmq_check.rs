@@ -264,11 +264,7 @@ fn run_shape(
     exact_arm: bool,
     seed: u64,
 ) -> Result<(ArmResult, u32, usize), Box<dyn std::error::Error>> {
-    #[allow(clippy::manual_div_ceil)]
-    // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
     let srows = (out_f + 127) / 128;
-    #[allow(clippy::manual_div_ceil)]
-    // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
     let scols = (in_f + 127) / 128;
     let mut rng = Rng(seed);
 

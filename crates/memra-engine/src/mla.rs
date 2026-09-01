@@ -201,8 +201,6 @@ pub fn mla_attend_absorbed(d: &MlaDims, x: &MlaInputs) -> Vec<f32> {
                 }
             }
             // MQA scores against the 576-wide latent rows
-            #[allow(clippy::needless_range_loop)]
-            // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
             for t in 0..visible {
                 let c = &x.c_kv[t * r..(t + 1) * r];
                 let mut s = 0.0f32;
@@ -218,8 +216,6 @@ pub fn mla_attend_absorbed(d: &MlaDims, x: &MlaInputs) -> Vec<f32> {
             softmax(&mut scores[..visible]);
             // latent-space AV
             o_lat.iter_mut().for_each(|v| *v = 0.0);
-            #[allow(clippy::needless_range_loop)]
-            // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
             for t in 0..visible {
                 let p = scores[t];
                 let c = &x.c_kv[t * r..(t + 1) * r];
@@ -327,7 +323,6 @@ mod tests {
 
     /// Build random inputs at unit-ish scale: weights ~ 1/sqrt(rank) so decompressed values and
     /// scores stay O(1) and the f32 tolerance is meaningful.
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     fn random_case(
         d: &MlaDims,
         t_q: usize,

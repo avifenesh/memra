@@ -5,8 +5,8 @@
 //!   - `mtp_head_forward`  (§A, T=1): one NextN draft-token forward.
 //!   - `decode_step_t`     (§D.3, T=K+1): batched target verify forward, all-column logits.
 //!   - `generate_spec`     (§B): the draft/verify/accept/rollback orchestrator.
-//!     Cache snapshot/rollback lives in cache.rs (§D.4). The MTP head uses its OWN scratch KV (§D.6),
-//!     PERSISTENT over the committed sequence (see `MtpScratch`).
+//! Cache snapshot/rollback lives in cache.rs (§D.4). The MTP head uses its OWN scratch KV (§D.6),
+//! PERSISTENT over the committed sequence (see `MtpScratch`).
 
 use crate::Engine;
 use crate::cache::{Cache, KvLayer};
@@ -27,56 +27,6 @@ pub fn spec_replay_env_on(value: Option<&str>) -> bool {
 pub fn spec_replay_env_enabled() -> bool {
     let value = std::env::var("MEMRA_SPEC_REPLAY").ok();
     spec_replay_env_on(value.as_deref())
-}
-
-/// step35 dcw draft-chain door (lane/step37-draft-graph-20260829). ON routes the step35 MTP
-/// block's draft attention through the WINDOWED device-counter family
-/// (`append_kv_quantized_dcw` + `fa_decode_dcw`, the step TP graph arc's kernels), which
-/// derives the SWA view entirely from device state (len_d, base_d, window): exactly the view
-/// offset the old capture refusal said `fa_decode_dc` could not express. BOTH draft modes
-/// switch together: eager and captured run the ONE launcher at the ONE bucket
-/// (min(cap, window)), so graph-vs-eager draft parity holds by construction (the
-/// `mtp_full_attn_dc` precedent).
-///
-/// DEFAULT ON since lane/step37-draft-graph-serving-20260830: the 20260829 lane shipped it
-/// OFF because it enabled nothing at the shipping head count (capture was structurally
-/// unreachable at heads=3); with the multi-head chain capture and the in-graph filtered
-/// sampler landed, this door is the kernel prerequisite for the captured chain on the
-/// QUALIFIED serving shape, and the exactness battery (greedy K=1..8 identity, per-K
-/// acceptance identity, seeded sampled twins) banks on the ON arm. Rollback seam:
-/// MEMRA_STEP35_DRAFT_DCW=0 restores the host-len eager arm (`mtp_step35_attn`) plus the
-/// named capture refusal, byte-for-byte the pre-lane serving; no state survives restart.
-fn step35_draft_dcw_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_STEP35_DRAFT_DCW").as_deref() != Ok("0"))
-}
-
-/// Multi-head MTP draft-chain capture door (lane/step37-draft-graph-serving-20260830,
-/// default ON — receipts in the lane RESULTS). ON lets the step-modulo prefix-replay chain
-/// (`mtp_extra` non-empty, the step37 3-head shipping shape) capture per-head single-row
-/// CUDA graphs and replay them in the exact eager launch order; the chain POLICY (head
-/// selection, prefix length, seed history) stays host-side, so graph-vs-eager drafts are
-/// bit-identical by construction. A failed capture degrades LOUDLY to the eager chain (the
-/// draft-graph WARN contract). OFF (=0) keeps the eager chain as the only multi-head path —
-/// the pre-lane serving byte-for-byte. Single-head capture is untouched by this door.
-fn mtp_chain_graph_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_MTP_CHAIN_GRAPH").as_deref() != Ok("0"))
-}
-
-/// In-graph FILTERED sampled draft door (lane/step37-draft-graph-serving-20260830, default
-/// ON — receipts in the lane RESULTS). ON widens the sampled draft-graph capture from the
-/// pure-temp regime to every truncation-filtered regime (top_k / top_p / min_p): the capture
-/// body runs `filter_stats` + `gumbel_perturb_filtered_ctr` IN-GRAPH, so the draft draws
-/// from the SAME filtered distribution the verify's accept test reconstructs (the
-/// graph-s-key exactness law, now satisfied inside the graph instead of by refusing it).
-/// Penalties stay eager either way (the history varies per round and cannot be baked).
-/// The pure-temp capture body is UNTOUCHED by this door (byte-identical to the pre-lane
-/// graph). OFF (=0) restores the pure-temp-only capture guard: filtered requests draft
-/// eager, byte-for-byte the pre-lane behavior.
-fn spec_graph_filtered_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_SPEC_GRAPH_FILTERED").as_deref() != Ok("0"))
 }
 
 fn parse_prime_trows_width(value: Option<&str>) -> Result<usize, String> {
@@ -122,7 +72,6 @@ pub struct DsparkAnchorRecord {
     pub target_tail_probs: Vec<f32>,
 }
 
-#[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
 fn dspark_sparse_softmax_topk(
     logits: &[f32],
     top_k: usize,
@@ -184,45 +133,6 @@ fn flatten_dspark_rows<T>(
 /// SGLang's qwen3_5_mtp (spec_info.hidden_states = the target model's post-norm output). memra's
 /// historical convention (default, MTP-PLAN §A) is PRE-norm x. Draft-quality-only: exactness is
 /// the verify's job either way; acceptance arbitrates. OnceLock: read once, hot-loop safe.
-/// `MEMRA_SPEC_HEAD_ROWS=1` — batch the verify tail's LM head over its t columns instead of running
-/// it at m=1 once per column. See the call site in `decode_step_t_core_stream` for why the batched
-/// form is the same per-row arithmetic (the bf16/q8 rows twins, not cuBLASLt) and what it costs
-/// today: the head is re-streamed t times per verify pass. Default off until the byte tape says so.
-pub(crate) fn head_rows_on() -> bool {
-    static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
-    crate::step37_door(&ENV, "MEMRA_SPEC_HEAD_ROWS")
-}
-
-/// The serving walk's own doors, tri-stated the same way (owner flip 2026-08-27): env forces,
-/// unset takes the step37 family default. Call sites are the t-row verify walk itself.
-pub(crate) fn spec_verify_eager_on() -> bool {
-    static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
-    crate::step37_door(&ENV, "MEMRA_SPEC_VERIFY_EAGER")
-}
-
-pub(crate) fn spec_verify_tcol_on() -> bool {
-    static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
-    crate::step37_door(&ENV, "MEMRA_SPEC_VERIFY_TCOL")
-}
-
-/// NOT family-armed (2026-08-27): the walk's prime leaves its sub-32 TAIL chunk out of the
-/// DISTRIBUTED kv, so the server refuses before decode with "cache lengths diverged
-/// local=N distributed=floor(N/32)*32" for every prompt whose token count is not a multiple of
-/// 32 — i.e. nearly all real traffic. Isolated on the server route: defaults ERR (local=445
-/// distributed=416), MEMRA_PRIME_TROWS=0 OK. It was default-OFF before the 2026-08-27 flip and
-/// goes back to opt-in until the tail append is fixed and gated ON THE SERVER ROUTE, not just
-/// run-gen (run-gen calls decode_step_t on the whole prompt and never exercises this path — the
-/// reason a run-gen-only receipt could not see it). The GEMM prime supersedes it on this route.
-pub(crate) fn prime_trows_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_PRIME_TROWS").as_deref() == Ok("1"))
-}
-
-pub(crate) fn tcol_ffn_on() -> bool {
-    static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
-    crate::step37_door(&ENV, "MEMRA_TCOL_FFN")
-}
-
 pub(crate) fn spec_hpost() -> bool {
     static H: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *H.get_or_init(|| {
@@ -373,8 +283,8 @@ pub(crate) fn dspark_verify_graph_on() -> bool {
 ///     tok/s — **+19.7%**, no overlap, sub-1% spread per arm; per-round 6.9 -> 5.7 ms.
 ///   * Zen 3 host: +3-9% (that rig's own clock drift is wider than the effect, so the ratio
 ///     comes from per-round phase totals, which are internal to each boot).
-///     The ON arm lands at ~320 tok/s on BOTH hosts while OFF tracks host speed — the arm moves
-///     the round off the host and onto the device, which is the whole point.
+/// The ON arm lands at ~320 tok/s on BOTH hosts while OFF tracks host speed — the arm moves
+/// the round off the host and onto the device, which is the whole point.
 ///
 /// EXACTNESS is structural (same kernels, same order) and gated anyway: a fixed-seed SAMPLED
 /// completion hashes identically ON vs OFF **and across both hosts** (`08941d5bb9762b21`),
@@ -488,162 +398,6 @@ pub fn dspark_vg_debt_projection(
             .min(reserved_bytes),
     }
 }
-/// PRE-CAPTURE VRAM RESERVE CHECK door (lane/step37-vram-admission-20260830), DEFAULT ON.
-/// A draft-graph capture attempt on a tight card used to be try-and-fail: the 2 warmup
-/// forwards + instantiate grew the pool to the edge BEFORE the OOM surfaced, and the
-/// "eager fallback" then ran on a card the failed attempt had just exhausted (the owner's
-/// single-session second-prompt OOM: capture WARN followed by 28 step-OOM engine errors,
-/// device at 5 MiB free). With the gate ON, a capture is attempted only when the device's
-/// effective free (driver free + async-pool cached) covers the capture's expected appetite
-/// PLUS a post-capture safety floor — otherwise the session falls back to eager EARLY,
-/// with headroom intact, through the same LOUD once-per-flip WARN. `=0` restores
-/// try-and-fail (diagnostics door; the trim-on-OOM recovery below stays active either way).
-pub fn spec_capture_gate_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_SPEC_CAPTURE_GATE").as_deref() != Ok("0"))
-}
-
-/// Post-capture safety floor the reserve check keeps free ON TOP of the capture's own
-/// appetite: the same measured constant class as the admission transient floor
-/// (capture arenas + verify activations — the admit-oom control fit). A capture that
-/// would leave less than this behind is not worth its eager-coverage risk.
-pub(crate) const CAPTURE_HEADROOM_FLOOR: usize = 1536 << 20;
-
-/// Pure verdict half of the pre-capture reserve check (unit-testable): given the device's
-/// driver-free and pool-cached bytes and the capture's expected `need`, returns
-/// `Some((required, effective))` when the capture must be REFUSED, `None` when it fits.
-pub(crate) fn capture_headroom_verdict(
-    driver_free: usize,
-    pool_cached: usize,
-    need: usize,
-    floor: usize,
-) -> Option<(usize, usize)> {
-    let effective = driver_free.saturating_add(pool_cached);
-    let required = need.saturating_add(floor);
-    (effective < required).then_some((required, effective))
-}
-
-/// Expected device appetite of a draft-graph capture attempt when no measurement exists
-/// yet (bootstrap only — the model-owned high-water gauge takes over after the first
-/// observed capture). Deliberately conservative and shape-derived, never a per-family
-/// constant: per (head, mode) capture the two warmups + capture each walk one head
-/// forward whose dominant transients are a handful of `n_embd` rows and one `d_vocab`
-/// logits row, retained by the keeper; the sampled tail additionally parks
-/// `k` q-slots + perturb/q buffers of `d_vocab` each.
-pub(crate) fn draft_capture_bootstrap_estimate(
-    heads: usize,
-    k: usize,
-    d_vocab: usize,
-    n_embd: usize,
-) -> usize {
-    let per_capture = 3usize // 2 warmups + capture body, each retaining its transients
-        .saturating_mul(d_vocab.saturating_add(8 * n_embd))
-        .saturating_mul(4)
-        .max(32 << 20); // instantiate + driver-side graph backing per capture, floor
-    let captures = heads.max(1).saturating_mul(2); // interior + last per head
-    let sampled_slots = (k.saturating_add(2))
-        .saturating_mul(d_vocab)
-        .saturating_mul(4);
-    captures
-        .saturating_mul(per_capture)
-        .saturating_add(sampled_slots)
-        .max(64 << 20)
-}
-
-/// OOM predicate for capture-failure recovery (engine-side twin of the worker's
-/// `is_cuda_oom` — the same quoted-text contract).
-pub(crate) fn capture_err_is_oom(reason: &str) -> bool {
-    reason.contains("CUDA_ERROR_OUT_OF_MEMORY") || reason.contains("out of memory")
-}
-
-/// Impure half of the pre-capture reserve check: reads the device, trims the async pool
-/// when the driver alone is short but cached blocks would cover it (graph instantiate and
-/// cuBLAS workspaces allocate from the DRIVER, not from our pool — a pool sitting on freed
-/// blocks starves them), and returns the refusal reason line when the capture must not be
-/// attempted. `None` = go ahead.
-pub(crate) fn capture_headroom_refusal(e: &Engine, need: usize) -> Option<String> {
-    let Ok((driver_free, _total)) = e.ctx().mem_get_info() else {
-        return None; // unreadable device: keep the historical try-and-fail behavior
-    };
-    let pool_cached = e.pool_cached_bytes();
-    // A capture may take AT MOST HALF the discretionary headroom: required =
-    // 2x appetite + two floors (owner's contract: "fall back to eager EARLY with headroom
-    // intact"). Measured escalation on the owner-shape cells: one floor of slack let the
-    // capture walk the card to the edge and the burst step-OOM'd immediately; two floors
-    // still allowed a capture whose session then OOM'd on its own admission-charged work,
-    // because the capture had consumed the memory the charge was counting on. Requiring
-    // the appetite TWICE means the card retains a whole capture's worth of room after the
-    // capture lands - enough for the session's charged classes and its peers' bursts. The
-    // capture is an optimization worth ~2-3 ms of TTFT (draft-graph lane receipts); at the
-    // margin it is never worth an OOM incident.
-    let floor = CAPTURE_HEADROOM_FLOOR.saturating_mul(2);
-    let required_need = need.saturating_mul(2);
-    let required = required_need.saturating_add(floor);
-    match capture_headroom_verdict(driver_free, pool_cached, required_need, floor) {
-        Some((required, effective)) => Some(format!(
-            "insufficient VRAM headroom for capture: effective free {}MB (driver {}MB + pool-cached \
-             {}MB) < required {}MB (2x appetite {}MB + floor {}MB); capture skipped pre-attempt",
-            effective / (1 << 20),
-            driver_free / (1 << 20),
-            pool_cached / (1 << 20),
-            required / (1 << 20),
-            need / (1 << 20),
-            floor / (1 << 20),
-        )),
-        None => {
-            if driver_free < required && pool_cached > 0 {
-                let trimmed = e.pool_trim_to_zero();
-                if trimmed > 0 {
-                    eprintln!(
-                        "[spec] pre-capture pool trim: released {}MB cached back to the driver \
-                         (driver free {}MB < required {}MB; instantiate allocates from the driver)",
-                        trimmed / (1 << 20),
-                        driver_free / (1 << 20),
-                        required / (1 << 20),
-                    );
-                }
-            }
-            None
-        }
-    }
-}
-
-/// GRAPH-LAUNCH HEADROOM FLOOR (lane/step37-vram-admission-20260830, defect 3 root
-/// cause): `cuGraphLaunch` SEGFAULTS inside libcuda (offset +0x27c87f, a null internal
-/// dereference at address 0x60) when a captured graph is dispatched into a
-/// driver-exhausted card — reproduced on this lane's box with core dumps on BOTH the
-/// pre-lane and lane binaries (multi-active step-OOM squeeze; the crashing thread sits in
-/// `CudaGraph::launch` inside `generate_spec_inner2`). The eager arms fail RECOVERABLY on
-/// the same card (a quoted CUDA OOM the park path handles), so below this driver-free
-/// floor every graph arm yields to eager for the round. A named constant, not a knob: the
-/// winning value is the default and the guard exists to make a driver segfault
-/// unreachable, not to tune anything.
-pub(crate) const GRAPH_LAUNCH_MIN_FREE: usize = 256 << 20;
-
-/// Per-round guard for the floor above. Read failure keeps serving (never a false
-/// refusal from an unreadable device); one `mem_get_info` (~microseconds) per ~25ms round.
-pub(crate) fn graph_launch_headroom_ok(e: &Engine) -> bool {
-    match e.ctx().mem_get_info() {
-        Ok((free, _total)) => free >= GRAPH_LAUNCH_MIN_FREE,
-        Err(_) => true,
-    }
-}
-
-/// One grep-stable suspension line per ROUTE (each call site holds its own
-/// process-lifetime `Once`): every captured-graph launch route below the floor names
-/// itself in the tag while keeping the same `graph replay suspended:` key the step37
-/// admission lane's squeeze cell greps for. The spec-round guard keeps its original
-/// per-generation `[spec]` line; the sweep routes (graph-launch-guard-sweep lane,
-/// 2026-08-31) note once per process — presence is what the gates assert, and a
-/// suspended round is otherwise byte-identical to its eager twin.
-pub(crate) fn graph_replay_suspended_note(route: &str) {
-    eprintln!(
-        "[{route}] graph replay suspended: driver free below the {}MB launch floor \
-         (eager arms serve; cuGraphLaunch segfaults into an exhausted card)",
-        GRAPH_LAUNCH_MIN_FREE / (1 << 20)
-    );
-}
-
 /// Engine-bundle slice 4 (fa-execupdate lane, DSF-ROUNDCOST-20260820 §6 close: "the
 /// residual gap lives in the FULL-ATTENTION per-row section"), DEFAULT ON —
 /// `MEMRA_DSPARK_FA_ROWS=0` reverts to the per-row loop: when every row of a verify
@@ -847,262 +601,6 @@ pub(crate) fn spec_fused_t() -> bool {
 
 /// zeros/uninit switch for verify-path buffers that are FULLY OVERWRITTEN before any read.
 /// Only call this on such buffers — the lean contract is "identical bytes by construction".
-/// TOKEN-ID GUARD for every id that reaches an embed gather (#87 family).
-///
-/// A device argmax seeds its running index with 0x7FFFFFFF and replaces it only through
-/// comparisons, all of which are FALSE against NaN. An all-NaN logits row therefore returns
-/// the sentinel, and the next thing done with a token id is `embed_row(id)` — table +
-/// ~4.6 TB, never mapped, an MMU fault that kills the CUDA context for the whole process
-/// (research/pp2spec-crash-20260807). The draft chain and the GREEDY verify walk already
-/// trap this; the SAMPLED verify bonus, the boundary sampler and the replay arm's last_pred
-/// did not, which is why the recoverable fault on the greedy instrument is a TERMINAL one on
-/// the vendor-default sampled shape we actually serve.
-pub(crate) fn guard_vocab_token(
-    tok: u32,
-    n_vocab: usize,
-    what: &str,
-) -> Result<u32, Box<dyn std::error::Error>> {
-    if (tok as usize) >= n_vocab {
-        return Err(format!(
-            "{what}: token id 0x{tok:08x} >= n_vocab {n_vocab} — an all-NaN logits row left \
-             the device argmax's init sentinel in place; refusing to dereference the embed \
-             row (#87 trap)"
-        )
-        .into());
-    }
-    Ok(tok)
-}
-
-/// SPEC NaN-ORIGIN SCAN (`MEMRA_SPEC_NAN_SCAN=1`, DEFAULT OFF, diagnostic only).
-///
-/// The `#87` trap reports an all-NaN VERIFY logits column, which says the poison reached the
-/// head but not where it entered. With the scan armed the verify walk syncs and reads back
-/// every layer's output, so the FIRST layer whose residual carries a NaN names itself with the
-/// round's row and position. Off by default and never on a serving path: it costs one host
-/// sync + one `t*n_embd` D2H per layer, and the syncs change scheduling (so a run that stops
-/// reproducing under the scan is itself a datum, not an all-clear).
-///
-/// Rollback seam: unset `MEMRA_SPEC_NAN_SCAN` (or set it to 0). Every call site is behind
-/// `spec_nan_scan()`, so the default path keeps the exact launch sequence it had.
-pub(crate) fn spec_nan_scan() -> bool {
-    spec_nan_scan_level() > 0
-}
-
-/// `MEMRA_SPEC_NAN_SCAN` as a LEVEL, not a boolean. `1` scans each layer's residual, which
-/// names the layer. `2` also scans INSIDE the t-column layer body — the per-column attention
-/// output, the deferred-column o-proj/fa2 join, the post-attention norm and the routed-MoE
-/// output — because "layer 20 poisons row 0" does not say whether the attention or the routed
-/// MoE produced it, and those are different bugs with different fixes.
-pub(crate) fn spec_nan_scan_level() -> u8 {
-    static LVL: std::sync::OnceLock<u8> = std::sync::OnceLock::new();
-    *LVL.get_or_init(|| match std::env::var("MEMRA_SPEC_NAN_SCAN").as_deref() {
-        Ok("1") => 1,
-        Ok("2") => 2,
-        _ => 0,
-    })
-}
-
-/// Read back `[rows, cols]` and fail with the first NaN's coordinates. `what` names the
-/// producer (layer index, walk arm) so the error line is the localization.
-/// VERIFY-ARM RECEIPT (rides `MEMRA_SPEC_NAN_SCAN>=1`, bounded to 200 lines).
-///
-/// Names, per trunk layer, WHICH attention arm the t-column walk actually took. This exists
-/// because the level-1 residual scan below sat only on the non-fused tail: the fused
-/// rope+append+fa arm ends in `continue`, so every layer that fused was NEVER SCANNED and
-/// silently read as "clean". A poisoned residual therefore first reported at the next
-/// non-fused layer, which is how "layer 20 creates the poison" could be true of the scan and
-/// false of the engine. Also carries the row-table lookup counter, so "the fused path never
-/// ran" is distinguishable from "it ran and was innocent".
-/// KV-PLANE SCAN (`MEMRA_KV_PLANE_SCAN=1`, DEFAULT OFF, diagnostic only).
-///
-/// Reads back the STAGED rows of a layer's distributed K/V planes and reports the first row
-/// whose quantization scale is not finite. No kernel required: q8_0 blocks are
-/// `[half d][32 x i8]` and q5_1 blocks carry `half d` then `half m`, so the fp16 scale at the
-/// head of each block is host-checkable straight out of the byte plane.
-///
-/// It exists because the level-2 bad-row bitmap says EVERY verify row is non-finite at a
-/// global-attention layer's join, and row r attends a strict superset of row r-1's keys: that
-/// implicates the shared KV history those rows walk, not per-column staging. "The attention
-/// output is NaN" and "the KV history it attends is already NaN" are different bugs with
-/// different owners, and nothing measured so far separates them. A first-corrupt-row index
-/// also dates the corruption against the prime/decode boundary.
-///
-/// Bounded hard: only layers whose geometry has NO window (the global planes), only the first
-/// `MEMRA_KV_PLANE_SCAN_ROUNDS` verify rounds of a process (default 2), and it copies only
-/// `[0, staged_len)`, which is ~1.6 MB at the 1480-token repro rather than the 262144-row
-/// provision. It still syncs per layer, so it is never a serving or a measured-perf arm.
-pub(crate) fn kv_plane_scan_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_KV_PLANE_SCAN").as_deref() == Ok("1"))
-}
-
-fn kv_plane_scan_rounds() -> usize {
-    static R: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-    *R.get_or_init(|| {
-        std::env::var("MEMRA_KV_PLANE_SCAN_ROUNDS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(2)
-    })
-}
-
-/// First non-finite fp16 block scale in `bytes`, as (block index, raw u16), scanning one
-/// scale every `stride` bytes. Returns None when every block scale is finite.
-fn first_bad_scale(bytes: &[u8], stride: usize) -> Option<(usize, u16)> {
-    if stride == 0 {
-        return None;
-    }
-    for (i, blk) in bytes.chunks_exact(stride).enumerate() {
-        let raw = u16::from_le_bytes([blk[0], blk[1]]);
-        if half_is_non_finite(raw) {
-            return Some((i, raw));
-        }
-    }
-    None
-}
-
-/// IEEE binary16: exponent all ones is Inf or NaN, whatever the mantissa says.
-fn half_is_non_finite(raw: u16) -> bool {
-    (raw & 0x7C00) == 0x7C00
-}
-
-/// Scan one layer's staged K/V planes for a non-finite quantization scale. Returns the
-/// receipt line, or None when the layer is out of scope or every scale is finite.
-pub(crate) fn scan_kv_plane(
-    e: &crate::Engine,
-    distributed: &memra_kv::ResidentTpKvCache,
-    il: usize,
-    pos0: usize,
-) -> Result<(), Box<dyn std::error::Error>> {
-    // One "round" is one pos0, not one layer: the walk visits 45 layers per verify. The
-    // default of 2 rounds is for a fault that shows up immediately; the step37 repro does not
-    // fire until rep 3 or later, i.e. round ~60 of the process, so that arm MUST raise
-    // MEMRA_KV_PLANE_SCAN_ROUNDS or it will scan only the two rounds that were never going to
-    // be poisoned and report a clean history it never looked at.
-    static ROUNDS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    static LAST_POS: std::sync::atomic::AtomicUsize =
-        std::sync::atomic::AtomicUsize::new(usize::MAX);
-    if LAST_POS.swap(pos0, std::sync::atomic::Ordering::Relaxed) != pos0 {
-        ROUNDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    }
-    if ROUNDS.load(std::sync::atomic::Ordering::Relaxed) > kv_plane_scan_rounds() {
-        return Ok(());
-    }
-    let staged = distributed.staged_len();
-    if staged == 0 {
-        return Ok(());
-    }
-    // ENGAGEMENT RECEIPT. This scan prints only on corruption, so `kvbad=0` in a cell would
-    // read the same whether the history was clean or the scan never ran once. Bounded so a
-    // 45-layer walk cannot flood the log.
-    static SEEN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    let seen = SEEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let (ktb, vtb) = (distributed.k_tok_bytes(), distributed.v_tok_bytes());
-    if seen < 4 {
-        eprintln!(
-            "[kv-plane] engaged #{seen} layer {il} pos0={pos0} staged={staged} \
-             ktok={ktb} vtok={vtb} (scan armed; a corrupt plane prints its own line)"
-        );
-    }
-    for rank in 0..distributed.ranks().len() {
-        let Some(rc) = distributed.rank(rank) else {
-            continue;
-        };
-        // q8_0 K blocks are [half d][32 x i8] = 34B; q5_1 V blocks lead with half d then half m.
-        let kbytes = e.dtoh_u8_view(&rc.k().slice(0..staged * ktb))?;
-        let vbytes = e.dtoh_u8_view(&rc.v().slice(0..staged * vtb))?;
-        let kbad = first_bad_scale(&kbytes, 34);
-        let vbad = first_bad_scale(&vbytes, 24);
-        if kbad.is_some() || vbad.is_some() {
-            let row = |b: Option<(usize, u16)>, tok: usize| {
-                b.map(|(i, raw)| format!("blk {i} (row {}) raw={raw:#06x}", i * 34 / tok.max(1)))
-                    .unwrap_or_else(|| "clean".into())
-            };
-            eprintln!(
-                "[kv-plane] layer {il} rank {rank} pos0={pos0} staged={staged}                  K={} V={} - the attended KV history is ALREADY non-finite, so a non-finite                  attention output here is a symptom and not the origin",
-                row(kbad, ktb),
-                row(vbad, vtb)
-            );
-            return Ok(());
-        }
-    }
-    Ok(())
-}
-
-pub(crate) fn verify_arm_receipt(
-    arm: &str,
-    il: usize,
-    pos0: usize,
-    t: usize,
-    staged: Option<usize>,
-) {
-    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    if N.fetch_add(1, std::sync::atomic::Ordering::Relaxed) >= 200 {
-        return;
-    }
-    eprintln!(
-        "[verify-arm] layer {il} arm={arm} pos0={pos0} t={t} staged_len={} rows_tab_lookups={}",
-        staged.map(|v| v as i64).unwrap_or(-1),
-        crate::tp::ROWS_TAB_ENGAGED.load(std::sync::atomic::Ordering::Relaxed)
-    );
-}
-
-pub(crate) fn nan_scan_rows(
-    e: &Engine,
-    buf: &CudaSlice<f32>,
-    rows: usize,
-    cols: usize,
-    what: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    // The readback is also the ATTRIBUTION point for an asynchronous fault: a
-    // CUDA_ERROR_ILLEGAL_ADDRESS raised by any launch since the previous scan surfaces on this
-    // sync, and the bare DriverError names nothing. Wrapping it with `what` turns "the process
-    // died somewhere" into "it died at or before this layer, on this row, at this position".
-    let host = e.dtoh(buf).map_err(|err| -> Box<dyn std::error::Error> {
-        format!(
-            "spec nan-scan: sync at {what} FAILED: {err} — the fault is at or before \
-                     this point in the walk"
-        )
-        .into()
-    })?;
-    if host.len() < rows * cols {
-        return Err(format!(
-            "nan-scan {what}: buffer holds {} < {rows}x{cols}",
-            host.len()
-        )
-        .into());
-    }
-    // SCAN EVERY ROW BEFORE REPORTING. A first-hit return says "row 0 is bad" and leaves the
-    // other rows UNEXAMINED, which is exactly the bit that discriminates the two mechanisms: in
-    // the t-column verify, row 0 attends keys [0..p+1) and row 1 attends [0..p+2), a strict
-    // superset, so poison in the SHARED KV history must appear in BOTH rows, while poison in
-    // per-column staging can appear in one. Report the whole map.
-    let mut per_row: Vec<usize> = Vec::with_capacity(rows);
-    let mut first_bad: Option<(usize, usize)> = None;
-    for r in 0..rows {
-        let row = &host[r * cols..(r + 1) * cols];
-        let bad = row.iter().filter(|v| !v.is_finite()).count();
-        per_row.push(bad);
-        if bad > 0 && first_bad.is_none() {
-            first_bad = Some((r, row.iter().position(|v| !v.is_finite()).unwrap_or(0)));
-        }
-    }
-    if let Some((r0, c0)) = first_bad {
-        let map: String = per_row
-            .iter()
-            .map(|&b| if b == 0 { '.' } else { 'X' })
-            .collect();
-        return Err(format!(
-            "spec nan-scan: {what} produced non-finite values — rows[{rows}] map={map} \
-             counts={per_row:?} of {cols} each; first at row {r0} element {c0}. Both rows bad \
-             implicates shared state (the KV history this layer reads); one row bad implicates \
-             per-column staging."
-        )
-        .into());
-    }
-    Ok(())
-}
-
 fn vbuf(e: &Engine, n: usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
     if spec_lean() { e.uninit(n) } else { e.zeros(n) }
 }
@@ -1118,14 +616,14 @@ fn vbuf(e: &Engine, n: usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Erro
 ///     hidden chain-approximate — the reference engine accepts the same);
 ///   - `mtp_kv_fill` batches: prompt positions + the last-draft position on full accept, computed
 ///     from EXACT trunk hiddens (K/V-only MTP-block pass, no attention/FFN/lm_head).
-///     Rejected drafts / p-min extras / pseudo-seed appends are all discarded by the round-start
-///     `set_len` truncation (the KvLayer len mechanism — §C rollback for the draft side).
-///     Multi-turn spec-decode session (2026-07-05): trunk Cache + persistent MTP draft scratch +
-///     the committed token list, alive across generate_spec_session calls. Turn N+1 primes ONLY its
-///     suffix (chunked continuation prime over the quantized past) and mtp_kv_fill's its suffix rows,
-///     then the round loop runs unchanged. `last_h` carries the pre-output_norm hidden of the last
-///     committed row across turns (the predecessor-pairing seed + fill anchor).
-///     Per-request sampling config for the sampled-spec serve path.
+/// Rejected drafts / p-min extras / pseudo-seed appends are all discarded by the round-start
+/// `set_len` truncation (the KvLayer len mechanism — §C rollback for the draft side).
+/// Multi-turn spec-decode session (2026-07-05): trunk Cache + persistent MTP draft scratch +
+/// the committed token list, alive across generate_spec_session calls. Turn N+1 primes ONLY its
+/// suffix (chunked continuation prime over the quantized past) and mtp_kv_fill's its suffix rows,
+/// then the round loop runs unchanged. `last_h` carries the pre-output_norm hidden of the last
+/// committed row across turns (the predecessor-pairing seed + fill anchor).
+/// Per-request sampling config for the sampled-spec serve path.
 #[derive(Clone, Copy, Debug)]
 pub struct SpecSampling {
     pub temp: f32,
@@ -1150,136 +648,6 @@ impl SpecSampling {
                 || self.penalty_freq != 0.0
                 || self.penalty_present != 0.0)
     }
-}
-
-/// Which draft source a spec session is pinned to. The ENGINE-LEVEL half of
-/// `DraftSourcePlan` (memra-gguf `model_plan.rs`, always general): the plan states what the
-/// model DECLARES, this states what actually LOADED and therefore what the session runs.
-/// Pinned at session creation for the session's lifetime.
-///
-/// Family-agnostic on purpose (lane/glm5-extract2, the DraftSource seam): glm5 is today's
-/// consumer with NativeMtp | Dflash2; the hy3/qwen-next spec lanes select through the same
-/// three-way law instead of re-deriving it. What each family still owns is the per-session
-/// STATE behind the kind (see `dflash.rs`'s seam note for why that half is not a trait yet).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DraftSourceKind {
-    /// The model's own embedded NextN/MTP head.
-    NativeMtp,
-    /// A separately loaded DFlash2 block-diffusion drafter
-    /// ([`crate::dflash::DflashDrafter`]).
-    Dflash2,
-}
-
-/// The uniform draft-source selection law. Pure — no env, no engine, no family types — so it
-/// is CPU-gateable and so every spec family answers "which source" the same way.
-///
-/// THE LAW, in precedence order:
-/// 1. A LOADED DFlash2 drafter IS the source. The operator asked for it by name (a set
-///    drafter flag that cannot load is already a loud boot failure, never a silent
-///    fallback), and the family's embedded head is deliberately NOT loaded for this source —
-///    it is a full trunk layer of VRAM.
-/// 2. Otherwise the embedded head, and only when the PLAN declares an embedded source: a
-///    loaded head under a plan that does not declare `Embedded` is a load-path bug, not a
-///    draft source, and it is refused by name rather than drafted from.
-/// 3. Otherwise there is no draft source and speculative decode must refuse before drafting.
-pub fn resolve_draft_source_kind(
-    plan: memra_gguf::model_plan::DraftSourcePlan,
-    embedded_head_loaded: bool,
-    dflash_loaded: bool,
-) -> Result<DraftSourceKind, String> {
-    use memra_gguf::model_plan::DraftSourcePlan as P;
-    if dflash_loaded {
-        return Ok(DraftSourceKind::Dflash2);
-    }
-    if embedded_head_loaded {
-        if plan != P::Embedded {
-            return Err(format!(
-                "an embedded draft head is loaded but the ModelPlan declares \
-                 draft_source={plan:?} — refused rather than drafting from a head the plan \
-                 does not claim"
-            ));
-        }
-        return Ok(DraftSourceKind::NativeMtp);
-    }
-    Err(format!(
-        "no draft source loaded (ModelPlan declares draft_source={plan:?}): speculative \
-         decode has nothing to draft from"
-    ))
-}
-
-#[cfg(test)]
-mod draft_source_kind_tests {
-    use super::{DraftSourceKind, resolve_draft_source_kind};
-    use memra_gguf::model_plan::DraftSourcePlan as P;
-
-    #[test]
-    fn a_loaded_drafter_wins_over_a_co_loaded_embedded_head() {
-        // The operator asked for the drafter BY NAME (a set drafter flag that cannot load is
-        // already a loud boot failure), so it takes precedence under every plan value —
-        // including ExternalArtifact, which is what a pack declares when the draft weights
-        // are not in the model file.
-        for plan in [P::Embedded, P::ExternalArtifact, P::None] {
-            assert_eq!(
-                resolve_draft_source_kind(plan, true, true).unwrap(),
-                DraftSourceKind::Dflash2,
-                "plan {plan:?}: a loaded drafter must win"
-            );
-            assert_eq!(
-                resolve_draft_source_kind(plan, false, true).unwrap(),
-                DraftSourceKind::Dflash2
-            );
-        }
-    }
-
-    #[test]
-    fn the_embedded_head_is_the_source_only_under_a_plan_that_claims_it() {
-        assert_eq!(
-            resolve_draft_source_kind(P::Embedded, true, false).unwrap(),
-            DraftSourceKind::NativeMtp
-        );
-        // A head loaded under a plan that does not declare Embedded is a LOAD-PATH BUG, not a
-        // draft source. Unreachable on glm5 today (its pack hardcodes Embedded and the head
-        // only loads under it) — which is exactly why it is pinned here: an unreachable
-        // refusal with no arm is an untested refusal, and the next family is the one that
-        // makes it reachable.
-        for plan in [P::ExternalArtifact, P::None] {
-            let err = resolve_draft_source_kind(plan, true, false)
-                .expect_err("a head under a non-Embedded plan must refuse");
-            assert!(err.contains("does not claim"), "{err}");
-            assert!(err.contains(&format!("{plan:?}")), "{err}");
-        }
-    }
-
-    #[test]
-    fn nothing_loaded_refuses_before_drafting_and_names_the_plan() {
-        for plan in [P::Embedded, P::ExternalArtifact, P::None] {
-            let err =
-                resolve_draft_source_kind(plan, false, false).expect_err("no source must refuse");
-            assert!(err.contains("no draft source loaded"), "{err}");
-            assert!(err.contains(&format!("{plan:?}")), "{err}");
-        }
-    }
-}
-
-/// `MEMRA_SPEC_PMIN` break semantics over per-slot draft confidences (the chain break this
-/// module's drafting loops apply inline: `p < p_min && (j > 0 || pmin0)`): keep the longest
-/// prefix whose every slot clears `p_min`; slot 0 survives a miss unless PMIN0 arms
-/// zero-draft rounds. Prefix truncation is forced by the accept rule anyway (a kept slot
-/// after a dropped one could never commit — the dspark confidence-slot argument). Pure so
-/// the rule is CPU-gateable; the SHARED K-policy surface every spec family consumes
-/// (hoisted from the glm5 loop, lane/glm5-extract-general).
-pub fn spec_conf_keep(q: &[f32], p_min: f32, pmin0: bool) -> usize {
-    if p_min <= 0.0 {
-        return q.len();
-    }
-    let mut kept = 0usize;
-    for (j, &qj) in q.iter().enumerate() {
-        if qj < p_min && (j > 0 || pmin0) {
-            break;
-        }
-        kept += 1;
-    }
-    kept
 }
 
 /// Host Philox4x32-10 uniform in (0,1) — mirrors spec_sample.cu's `philox4`/`u01` with the
@@ -1497,13 +865,6 @@ pub struct SpecSession {
     /// research/multiturn-cache-20260821 B4). One-shot, `capture_at` convention; None = legacy
     /// prompt-end capture.
     pub ckpt_at: Option<usize>,
-    /// FAIL-SAFE (lane/step37-vram-admission-20260830, external-review corroboration): set
-    /// by the worker on a session serving a step-OOM park REPLAY. The burst entry pre-marks
-    /// the draft-graph fallback so the replay never re-enters the capture path — the capture
-    /// appetite is part of what drove the card to the OOM, and a replay that recaptures
-    /// re-runs the incident. If the eager replay still cannot fit, the bounded retry budget
-    /// exhausts into the honest recoverable Overloaded error instead of looping.
-    pub capture_disabled: bool,
 }
 impl SpecSession {
     /// Context capacity of the session's caches (the server's ContextFull guard).
@@ -1591,7 +952,7 @@ impl SpecSession {
     /// one-way by design — there is no cheap symmetric re-promotion (rebuilding the draft KV
     /// would mean an `mtp_kv_fill` over the whole committed history).
     pub fn into_demoted(self) -> Option<(Cache, u32)> {
-        if self.pending_tok.is_some() || self.cache.tainted {
+        if self.pending_tok.is_some() {
             return None;
         }
         let np = self.next_pred?;
@@ -1663,19 +1024,12 @@ pub struct SpecBoundaryCapture {
     /// (the `SpecSession::last_h` convention). Empty = unavailable (capture stays valid;
     /// the fill's zeros row-0 fallback covers it at a bounded acceptance cost).
     pub last_h: Vec<f32>,
-    /// Per-layer latent boundary tails (lane/glm5-prefix-latent2, 2026-09-01): the
-    /// generation-destroyed slice of each MLA/DSA layer's boundary state, captured eagerly
-    /// so the worker's DEFERRED publication can slice the append-only planes from the live
-    /// cache (`LatentKvLayer::snapshot_plane_at`). EMPTY on every two-plane model — the
-    /// pre-field captures are byte-identical; a latent-bearing cache with an EMPTY vec here
-    /// keeps the publisher's loud refusal (the fail-closed door stays shut).
-    pub latent_tails: Vec<Option<crate::cache::LatentTailCapture>>,
 }
 
 /// D2H one hidden row out of a `[T, n_embd]` prime hidden stack — the boundary anchor a
 /// spec boundary capture carries for later restored-session fills. Failure is silent
 /// (`turn_ckpt` convention): the capture publishes without an anchor.
-pub(crate) fn capture_boundary_hidden(
+fn capture_boundary_hidden(
     e: &Engine,
     h_rows: &CudaSlice<f32>,
     pos: usize,
@@ -1860,11 +1214,7 @@ pub fn sample_boundary_token_dev(
     e.gumbel_perturb_filtered(&col, &mut perturb, n_vocab, sp.seed, *sctr, sp.temp, mx, th)?;
     *sctr = sctr.wrapping_add(1);
     let td = e.argmax_token_device(&perturb, n_vocab)?;
-    let tok = guard_vocab_token(
-        e.dtoh_u32_one(&td)?,
-        n_vocab,
-        &format!("sampled boundary token (site={site})"),
-    )?;
+    let tok = e.dtoh_u32_one(&td)?;
     if spec_boundary_trace() {
         // the pre-lane token, from the SAME row, so the deviation rate is measurable.
         let raw = e.argmax_token_device(logits, n_vocab)?;
@@ -2011,13 +1361,6 @@ impl SpecPipeSync {
 struct SpecPipeLane {
     sync: std::sync::Arc<SpecPipeSync>,
     lane: usize,
-    rt: &'static crate::pp::PpNRt,
-    walk_permit: crate::pp::PpWalkPermit,
-}
-
-struct SpecPipePrimaryGuard<'a> {
-    _primary: std::sync::MutexGuard<'a, ()>,
-    _walk: crate::pp::PpWalkBorrowGuard,
 }
 
 impl SpecPipeLane {
@@ -2037,7 +1380,7 @@ impl SpecPipeLane {
         })
     }
 
-    fn setup_begin(&self) -> Result<crate::pp::PpWalkBorrowGuard, Box<dyn std::error::Error>> {
+    fn setup_begin(&self) -> Result<(), Box<dyn std::error::Error>> {
         let mut p = self.sync.progress.lock().unwrap();
         while !p.aborted && self.lane == 1 && !p.setup_done[0] && !p.finished[0] {
             p = self.sync.changed.wait(p).unwrap();
@@ -2045,8 +1388,7 @@ impl SpecPipeLane {
         if p.aborted {
             Err(Self::aborted())
         } else {
-            drop(p);
-            self.rt.borrow_walk(&self.walk_permit, "spec_pipe/setup")
+            Ok(())
         }
     }
 
@@ -2059,7 +1401,7 @@ impl SpecPipeLane {
     fn draft_begin(
         &self,
         round: usize,
-    ) -> Result<SpecPipePrimaryGuard<'_>, Box<dyn std::error::Error>> {
+    ) -> Result<std::sync::MutexGuard<'_, ()>, Box<dyn std::error::Error>> {
         let peer = self.peer();
         let mut p = self.sync.progress.lock().unwrap();
         loop {
@@ -2081,12 +1423,7 @@ impl SpecPipeLane {
             p = self.sync.changed.wait(p).unwrap();
         }
         drop(p);
-        let primary = self.sync.primary.lock().unwrap();
-        let walk = self.rt.borrow_walk(&self.walk_permit, "spec_pipe/draft")?;
-        Ok(SpecPipePrimaryGuard {
-            _primary: primary,
-            _walk: walk,
-        })
+        Ok(self.sync.primary.lock().unwrap())
     }
 
     fn draft_end(&self, round: usize) {
@@ -2148,7 +1485,7 @@ impl SpecPipeLane {
     fn accept_begin(
         &self,
         round: usize,
-    ) -> Result<SpecPipePrimaryGuard<'_>, Box<dyn std::error::Error>> {
+    ) -> Result<std::sync::MutexGuard<'_, ()>, Box<dyn std::error::Error>> {
         let mut p = self.sync.progress.lock().unwrap();
         loop {
             if p.aborted {
@@ -2165,12 +1502,7 @@ impl SpecPipeLane {
             p = self.sync.changed.wait(p).unwrap();
         }
         drop(p);
-        let primary = self.sync.primary.lock().unwrap();
-        let walk = self.rt.borrow_walk(&self.walk_permit, "spec_pipe/accept")?;
-        Ok(SpecPipePrimaryGuard {
-            _primary: primary,
-            _walk: walk,
-        })
+        Ok(self.sync.primary.lock().unwrap())
     }
 
     fn accept_end(&self, round: usize) {
@@ -2179,18 +1511,8 @@ impl SpecPipeLane {
         self.sync.changed.notify_all();
     }
 
-    fn primary(&self) -> Result<SpecPipePrimaryGuard<'_>, Box<dyn std::error::Error>> {
-        let primary = self.sync.primary.lock().unwrap();
-        let walk = self.rt.borrow_walk(&self.walk_permit, "spec_pipe/tail")?;
-        Ok(SpecPipePrimaryGuard {
-            _primary: primary,
-            _walk: walk,
-        })
-    }
-
-    fn coordinated_walk(&self) -> Result<crate::pp::PpWalkBorrowGuard, Box<dyn std::error::Error>> {
-        self.rt
-            .borrow_walk(&self.walk_permit, "spec_pipe/coordinated_verify")
+    fn primary(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.sync.primary.lock().unwrap()
     }
 
     fn finish(&self, failed: bool) {
@@ -2306,84 +1628,16 @@ impl SampledGraphKey {
         }
     }
 
-    /// The one regime the PURE-TEMP in-graph sampled chain may stand in for the eager one:
-    /// nothing but temperature shapes `q`. Computed FROM THE KEY so the capture guard, the
-    /// launch guard and the key can never drift apart (they were three separate expressions
-    /// before this lane, and the launch site simply forgot to ask).
+    /// The one regime the in-graph sampled chain may stand in for the eager one: nothing but
+    /// temperature shapes `q`. Computed FROM THE KEY so the capture guard, the launch guard and
+    /// the key can never drift apart (they were three separate expressions before this lane, and
+    /// the launch site simply forgot to ask).
     pub(crate) fn pure_temp(&self) -> bool {
         self.top_k == 0
             && f32::from_bits(self.top_p_bits) >= 1.0
             && f32::from_bits(self.min_p_bits) <= 0.0
             && !self.pen_on
     }
-
-    /// Truncation filters active — the capture body needs the IN-GRAPH filter nodes
-    /// (`filter_stats` + `gumbel_perturb_filtered_ctr`) so the draft draws from the same
-    /// filtered distribution the accept test reconstructs. Meaningful only when
-    /// `graph_capturable`; penalties never reach a capture body.
-    pub(crate) fn filtered(&self) -> bool {
-        !self.pure_temp()
-    }
-
-    /// May the sampled draft graph be CAPTURED (and a parked one LAUNCHED) for this regime?
-    /// Pure-temp always; filtered regimes when the filtered-capture door is on
-    /// (lane/step37-draft-graph-serving-20260830); penalties never — the per-round history
-    /// cannot be baked into a graph, and composing a raw-softmax (or stale-history) draw
-    /// with a penalized accept test is the unconditional-accept exactness bug. Computed FROM
-    /// THE KEY for the same no-drift reason as `pure_temp`.
-    pub(crate) fn graph_capturable(&self) -> bool {
-        !self.pen_on && (self.pure_temp() || spec_graph_filtered_on())
-    }
-}
-
-/// Per-head captured graphs for the MULTI-HEAD MTP draft chain (step-modulo prefix-replay,
-/// lane/step37-draft-graph-serving-20260830). The chain POLICY — which head serves step j,
-/// how long the replayed prefix is, which stored seed feeds row r — stays HOST-SIDE in the
-/// launch loop, exactly `mtp_chain_forward_dev`'s order; the graphs capture ONE head-row
-/// forward each, on the head's OWN scratch plane:
-/// - `interior[i]`: head i, `with_head=false` — KV append + carrier only. Interior rows'
-///   logits are dead in the eager chain too (`mtp_chain_forward_dev` keeps only the last
-///   row), so skipping the head matmul changes no consumed byte and removes the eager
-///   chain's per-replay-row full-vocab matmul.
-/// - `last[i]`: head i, `with_head=true` + the mode's tail (greedy argmax, or the sampled
-///   gumbel draw — filtered in-graph when the request carries filters).
-///
-/// One `DraftChainGraphs` per MODE (greedy vs sampled), owning its keeper: dropping the
-/// sampled chain on an s_key change never invalidates the greedy one.
-struct DraftChainGraphs {
-    interior: Vec<cudarc::driver::CudaGraph>,
-    last: Vec<cudarc::driver::CudaGraph>,
-    /// Never read: exists to OWN the captured graphs' backing buffers for as long as the
-    /// graphs replay (the capture-retain law; same class as `DsparkSegGraph::_keeper`).
-    _keeper: Vec<Box<dyn std::any::Any + Send>>,
-}
-
-/// Sampled-tail capture pack for `mtp_head_forward_cap`: the persistent buffers and baked
-/// constants of the in-graph categorical draw. `filt: None` = the PURE-TEMP body (gumbel
-/// over the raw softmax), byte-identical to the pre-lane capture; `Some` adds the in-graph
-/// truncation filter (`filter_stats` + `gumbel_perturb_filtered_ctr`) so the draft draws
-/// from the same filtered distribution the accept test reconstructs
-/// (lane/step37-draft-graph-serving-20260830).
-struct SampledCapArgs<'a> {
-    ctr: &'a mut CudaSlice<u32>,
-    perturb: &'a mut CudaSlice<f32>,
-    q_out: &'a mut CudaSlice<f32>,
-    seed: u64,
-    temp: f32,
-    filt: Option<SampledCapFilter<'a>>,
-}
-
-/// In-graph truncation-filter nodes: the stat slots `filter_stats` fills and the perturb
-/// reads, plus the filter constants baked into the capture (they live in `s_key`, so a
-/// request whose filters differ drops the parked graph before this ever goes stale).
-struct SampledCapFilter<'a> {
-    rows0: &'a CudaSlice<i32>,
-    th: &'a mut CudaSlice<f32>,
-    z: &'a mut CudaSlice<f32>,
-    mx: &'a mut CudaSlice<f32>,
-    top_k: i32,
-    top_p: f32,
-    min_p: f32,
 }
 
 pub(crate) struct DraftGraphCtx {
@@ -2394,15 +1648,6 @@ pub(crate) struct DraftGraphCtx {
     g_ctr: CudaSlice<u32>,
     g_q: CudaSlice<f32>,
     g_perturb: CudaSlice<f32>,
-    /// IN-GRAPH filter-stat slots (filtered sampled capture): `filter_stats` writes
-    /// (th, z, mx) here inside the graph; `gumbel_perturb_filtered_ctr` reads (mx, th) from
-    /// the same slots. Persistent so the baked pointers survive replays. `g_rows0` is the
-    /// constant row-index-0 the single-row `filter_stats` launch reads (a captured memcpy
-    /// source must not be a host temporary).
-    g_rows0: CudaSlice<i32>,
-    g_th: CudaSlice<f32>,
-    g_z: CudaSlice<f32>,
-    g_mx: CudaSlice<f32>,
     q_slots: Vec<CudaSlice<f32>>,
     /// DRAFT-SIDE GRAMMAR MASK (lane/draft-mask): packed allowed-set words over the DRAFT
     /// head's vocab, at a STABLE address so the captured draft graph's mask node reads the
@@ -2410,17 +1655,9 @@ pub(crate) struct DraftGraphCtx {
     /// pattern from decode.rs). Empty unless the session drafts under a grammar.
     g_dmask: CudaSlice<u32>,
     /// was `graph` captured WITH the mask node? A parked graph of the wrong shape is dropped.
-    /// Covers the multi-head `chain` too (single-head and chain are mutually exclusive for a
-    /// given model, so one flag serves whichever is active).
     graph_masked: bool,
     graph: Option<cudarc::driver::CudaGraph>,
     graph_s: Option<cudarc::driver::CudaGraph>,
-    /// Multi-head chain graphs (see [`DraftChainGraphs`]): greedy and sampled chains, the
-    /// chain twins of `graph` / `graph_s`. `chain_s`'s capture identity is `s_key` (shared
-    /// with `graph_s` — a session is either single-head or chain, never both), and it obeys
-    /// the same drop rules (key mismatch, penalty regime, mask-shape change).
-    chain: Option<DraftChainGraphs>,
-    chain_s: Option<DraftChainGraphs>,
     /// Failed-capture memoization for both graphs — LOUD on flip, cleared on pool resume
     /// (audit Q2, the TRT #16072 silent-permanent-coverage-loss class).
     failed: DraftGraphFallback,
@@ -2519,17 +1756,11 @@ impl DraftGraphCtx {
             g_ctr: e.alloc_u32_zeroed(1)?,
             g_q: e.zeros(qlen)?,
             g_perturb: e.zeros(qlen)?,
-            g_rows0: e.htod_i32(&[0])?,
-            g_th: e.zeros(1)?,
-            g_z: e.zeros(1)?,
-            g_mx: e.zeros(1)?,
             q_slots: Vec::new(),
             g_dmask: e.alloc_u32_zeroed(1)?,
             graph_masked: false,
             graph: None,
             graph_s: None,
-            chain: None,
-            chain_s: None,
             failed: DraftGraphFallback::default(),
             s_key: None,
             keeper: Vec::new(),
@@ -2562,7 +1793,7 @@ fn mtp_scratch_layout(
     let head_dim_k = cfg.head_dim_k as usize;
     let head_dim_v = cfg.head_dim_v as usize;
     assert!(
-        head_dim_k.is_multiple_of(32) && head_dim_v.is_multiple_of(32),
+        head_dim_k % 32 == 0 && head_dim_v % 32 == 0,
         "KVQUANT requires head_dim%32==0 (MTP scratch)"
     );
     let kv_dim_k = head_dim_k * n_head_kv;
@@ -2611,13 +1842,6 @@ impl MtpScratch {
             None
         };
         let alloc_rows = ring.as_ref().map(crate::cache::KvRing::rows).unwrap_or(cap);
-        // Ring-backed planes arm the device base mirror for the dcw draft arm (see
-        // KvLayer::base_d): the captured chain derives its physical rows from
-        // (len_d, base_d, window) with zero per-token node updates.
-        let base_d = match ring.as_ref() {
-            Some(_) => Some(e.htod_i32(&[0])?),
-            None => None,
-        };
         Ok(MtpScratchPlane {
             kv: KvLayer {
                 k: e.alloc_u8(alloc_rows * k_tok_bytes)?,
@@ -2629,7 +1853,6 @@ impl MtpScratch {
                 len: 0,
                 ring,
                 len_d: e.htod_i32(&[0])?,
-                base_d,
             },
             cap,
         })
@@ -2688,36 +1911,15 @@ impl MtpScratch {
         }
     }
 
-    // #[track_caller]: set_len/set_plane_len have eight call sites (checkpoint restore, spec
-    // rollback, session grow, seed replay ...) and the lap failure needs to say WHICH one, not
-    // just that a rewind was refused.
-    #[track_caller]
     fn set_plane_len(
         &mut self,
         e: &Engine,
         index: usize,
         n: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let caller = std::panic::Location::caller();
-        let (kv, cap) = self.plane_mut(index);
-        if let Some(ring) = kv.ring.as_ref()
-            && !ring.can_rewind_to(n)
-        {
-            // NAME THE NUMBERS (2026-08-28). This error is a step37 serving blocker on the
-            // vendor-default shape and it fires from more than one call path with more than
-            // one trigger: a long generation walks the checkpoint out of the ring, but a
-            // ~4.5k-token prompt also fails within 5 s of prime, which accumulation cannot
-            // explain. A bare message forced two rounds of guessing; the operands make each
-            // trigger name itself.
-            let raw = n.saturating_sub(ring.window().saturating_sub(1));
-            return Err(format!(
-                    "SWA ring MTP checkpoint has been lapped; full re-prime required (plane={index} rewind_to={n} window={} base={} rows={} cap={cap} needed_view_start={} < base, called from {caller})",
-                    ring.window(),
-                    ring.base(),
-                    ring.rows(),
-                    raw & !31usize,
-                )
-                .into());
+        let (kv, _) = self.plane_mut(index);
+        if kv.ring.as_ref().is_some_and(|ring| !ring.can_rewind_to(n)) {
+            return Err("SWA ring MTP checkpoint has been lapped; full re-prime required".into());
         }
         kv.len = n;
         e.set_i32_one(&mut kv.len_d, n as i32)
@@ -2726,19 +1928,9 @@ impl MtpScratch {
     /// Set BOTH length counters: the host mirror AND the device len_d the captured append/fa read
     /// (a 4-byte in-place htod — the counter pointer is baked into the graph, never realloc'd).
     /// This is the ONLY truncation/rollback mechanism the persistent draft KV needs.
-    #[track_caller]
     fn set_len(&mut self, e: &Engine, n: usize) -> Result<(), Box<dyn std::error::Error>> {
-        let caller = std::panic::Location::caller();
         if !self.can_rewind_to(n) {
-            // set_plane_len re-checks and reports the operands; call it so the failure carries
-            // which plane refused and why, instead of this bare aggregate.
-            for index in 0..self.plane_count() {
-                self.set_plane_len(e, index, n)?;
-            }
-            return Err(format!(
-                "SWA ring MTP checkpoint has been lapped; full re-prime required (aggregate rewind_to={n}, no single plane reported, called from {caller})"
-            )
-            .into());
+            return Err("SWA ring MTP checkpoint has been lapped; full re-prime required".into());
         }
         for index in 0..self.plane_count() {
             self.set_plane_len(e, index, n)?;
@@ -2755,27 +1947,6 @@ impl MtpScratch {
                 .is_none_or(|ring| ring.can_rewind_to(n))
         })
     }
-
-    /// Pre-arm ring headroom for `rows` upcoming DEVICE-COUNTER appends (the dcw draft arm):
-    /// a captured chain cannot rebase mid-replay, so any rebase the coming appends could need
-    /// happens HERE, host-side, before the capture warmups or the round's replays (the rebase
-    /// arm of `prepare_kv_append` also refreshes the plane's `base_d` device mirror). No-op on
-    /// flat planes and when the ring already has room; `len` is untouched either way.
-    fn ensure_dcw_headroom(
-        &mut self,
-        e: &Engine,
-        rows: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        for index in 0..self.plane_count() {
-            let (kv, _) = self.plane_mut(index);
-            let Some(ring) = kv.ring.as_ref() else {
-                continue;
-            };
-            let retain = memra_kv::swa_retain_from(kv.len, ring.window(), ring.base());
-            e.prepare_kv_append(kv, retain, rows)?;
-        }
-        Ok(())
-    }
 }
 
 /// Retained verify intermediates for the REPLAY-FREE partial accept (2026-07-03, the profiled
@@ -2791,8 +1962,8 @@ impl MtpScratch {
 /// - PER-COLUMN-path layers (`cols`): dtod clones of (conv_state, ssm_state) taken after each
 ///   column 0..t-2 — pure copies of the actual chain states (the last column is never a rebuild
 ///   target: j <= t-1).
-///   Full-attn layers need nothing: their verify KV rows are bit-identical to eager's (the
-///   decode-exact contract; verify-probe pins it), so rollback = len truncation.
+/// Full-attn layers need nothing: their verify KV rows are bit-identical to eager's (the
+/// decode-exact contract; verify-probe pins it), so rollback = len truncation.
 struct GdnStash {
     qkv_mixed: CudaSlice<f32>, // [t, conv_dim] token-major (conv input)
     q_l2: CudaSlice<f32>,
@@ -2803,8 +1974,6 @@ struct GdnStash {
 }
 pub(crate) struct VerifyCkpt {
     gdn: Vec<Option<GdnStash>>, // [n_layer], Some iff batched linear path ran
-    #[allow(clippy::type_complexity)]
-    // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     cols: Vec<Option<Vec<(CudaSlice<f32>, CudaSlice<f32>)>>>, // [n_layer][col] = (conv, ssm) after col
 }
 /// Opaque handle for the dspark round (dflash.rs) — VerifyCkpt stays spec-private.
@@ -3061,12 +2230,12 @@ impl DsparkVerifyGraphs {
                 let (p0, _g1) = rl.ssm_state.device_ptr(s);
                 let (p1, _g2) = rl.ssm_state_alt.device_ptr(s);
                 let o = k * 6;
-                self.host_table[o] = pc;
-                self.host_table[o + 1] = p0;
-                self.host_table[o + 2] = p1;
-                self.host_table[o + 3] = pc;
-                self.host_table[o + 4] = p1;
-                self.host_table[o + 5] = p0;
+                self.host_table[o] = pc as u64;
+                self.host_table[o + 1] = p0 as u64;
+                self.host_table[o + 2] = p1 as u64;
+                self.host_table[o + 3] = pc as u64;
+                self.host_table[o + 4] = p1 as u64;
+                self.host_table[o + 5] = p0 as u64;
             }
             for (k, &il) in self.fa.iter().enumerate() {
                 let kvl = cache.kv[il].as_ref().unwrap();
@@ -3074,8 +2243,8 @@ impl DsparkVerifyGraphs {
                 let (pv, _g1) = kvl.v.device_ptr(s);
                 let o = k * 2 * self.t_cap;
                 for z in 0..self.t_cap {
-                    self.fa_host_table[o + 2 * z] = pk;
-                    self.fa_host_table[o + 2 * z + 1] = pv;
+                    self.fa_host_table[o + 2 * z] = pk as u64;
+                    self.fa_host_table[o + 2 * z + 1] = pv as u64;
                 }
             }
         }
@@ -3164,7 +2333,6 @@ impl DsparkVerifyGraphs {
     /// the host bookkeeping the captured body skipped (per-linear-layer parity swap for
     /// odd t, per-fa-layer len bump). Returns the fresh residual.
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::map_entry)] // allow: the init body is fallible (`?`); Entry::or_insert_with cannot propagate errors
     pub(crate) fn run_full(
         &mut self,
         model: &crate::hybrid::HybridModel,
@@ -3312,10 +2480,10 @@ impl DsparkVerifyGraphs {
                     e.copy_view_into(&mut rl.ssm_state, 0, &win, sw)?;
                 }
             }
-            if std::env::var("MEMRA_GRAPH_CENSUS").as_deref() == Ok("1")
-                && let Ok(c) = crate::graph_update::node_census(&graph)
-            {
-                eprintln!("[dspark-vg-census] full vt={t} rung={rung} {c:?}");
+            if std::env::var("MEMRA_GRAPH_CENSUS").as_deref() == Ok("1") {
+                if let Ok(c) = crate::graph_update::node_census(&graph) {
+                    eprintln!("[dspark-vg-census] full vt={t} rung={rung} {c:?}");
+                }
             }
             self.full.insert(
                 key,
@@ -3356,7 +2524,6 @@ impl DsparkVerifyGraphs {
     /// bracketed by a segment state save/restore), launch, then apply the host parity
     /// bookkeeping the captured body would have done. Returns the fresh residual.
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::map_entry)] // allow: the init body is fallible (`?`); Entry::or_insert_with cannot propagate errors
     fn run_segment(
         &mut self,
         model: &crate::hybrid::HybridModel,
@@ -3472,10 +2639,10 @@ impl DsparkVerifyGraphs {
                     e.copy_view_into(&mut rl.ssm_state, 0, &win, sw)?;
                 }
             }
-            if std::env::var("MEMRA_GRAPH_CENSUS").as_deref() == Ok("1")
-                && let Ok(c) = crate::graph_update::node_census(&graph)
-            {
-                eprintln!("[dspark-vg-census] seg={start}..{end} vt={t} {c:?}");
+            if std::env::var("MEMRA_GRAPH_CENSUS").as_deref() == Ok("1") {
+                if let Ok(c) = crate::graph_update::node_census(&graph) {
+                    eprintln!("[dspark-vg-census] seg={start}..{end} vt={t} {c:?}");
+                }
             }
             self.graphs.insert(
                 key,
@@ -3559,8 +2726,8 @@ impl DsparkVerifyGraphs {
         let (pc, _g0) = self.stash_conv[k].device_ptr(s);
         let (ps, _g1) = self.stash_ssm[k].device_ptr(s);
         Some((
-            pc + (row * self.conv_words * 4) as u64,
-            ps + (row * self.ssm_words * 4) as u64,
+            pc as u64 + (row * self.conv_words * 4) as u64,
+            ps as u64 + (row * self.ssm_words * 4) as u64,
             self.conv_words,
             self.ssm_words,
         ))
@@ -3594,7 +2761,6 @@ struct VerifyBoundaryTicket {
     stage0_ms: f64,
     tx_ms: f64,
     trace: Option<SpecPipeTraceCtx>,
-    _walk_owner: crate::pp::PpWalkLease,
 }
 
 /// Explicit OPTIPIPE diagnostic control. Forced modes are set only by `optipipe-gate`; the
@@ -4410,12 +3576,6 @@ fn rewind_tp_kv_verified_prefix(
     Ok(())
 }
 
-/// MEMRA_SPEC_ROUND_PROF counters: whole-round wall, so the round can be weighed against the
-/// draft-step ([spec-anatomy]) and verify-walk ([tcol-prof]) splits we already print.
-static ROUND_PROF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-static ROUND_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-static ROUND_N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
 impl HybridModel {
     fn mtp_head_count(&self) -> usize {
         usize::from(self.mtp.is_some()) + self.mtp_extra.len()
@@ -4455,11 +3615,6 @@ impl HybridModel {
         scratch: &mut MtpScratch,
         d_vocab: usize,
     ) -> Result<(u32, f32), Box<dyn std::error::Error>> {
-        // dcw door: one replay appends one device-counter row; pre-arm ring headroom
-        // host-side before launching (no-op on flat planes).
-        if step35_draft_dcw_on() {
-            scratch.ensure_dcw_headroom(e, 2)?;
-        }
         dctx.graph
             .as_ref()
             .ok_or("optipipe controller requires the greedy draft graph")?
@@ -4496,15 +3651,8 @@ impl HybridModel {
         eager_state: &mut Option<(u32, CudaSlice<f32>)>,
         eager_pos: usize,
         embd_dev: Option<(&CudaSlice<u8>, i32, usize)>,
-        round_graph_ok: bool,
     ) -> Result<(u32, f32), Box<dyn std::error::Error>> {
-        // GRAPH-LAUNCH HEADROOM GUARD (see GRAPH_LAUNCH_MIN_FREE): `round_graph_ok` is
-        // the round's headroom snapshot. Below the floor the main draft arm already ran
-        // eager (13651-class gate), which seeded `eager_state`, so the controller probe
-        // rides its eager twin below instead of replaying the draft graph into an
-        // exhausted card. The seed-unavailable Err beneath stays the recoverable
-        // fail-closed for the shapes that never seed it.
-        if dctx.graph.is_some() && round_graph_ok {
+        if dctx.graph.is_some() {
             return self.opti_graph_draft_step(e, mtp, dctx, scratch, d_vocab);
         }
         let (input_token, input_seed) = eager_state
@@ -4603,9 +3751,9 @@ impl HybridModel {
         }
         let t_all = std::time::Instant::now();
         let mut t_ph = std::time::Instant::now();
-        let anat_mark = |i: usize,
-                         e: &Engine,
-                         t: &mut std::time::Instant|
+        let mut anat_mark = |i: usize,
+                             e: &Engine,
+                             t: &mut std::time::Instant|
          -> Result<(), Box<dyn std::error::Error>> {
             if anat {
                 e.stream().synchronize()?;
@@ -4653,32 +3801,10 @@ impl HybridModel {
         // bit-for-bit at any t_kv (the parity gate). Host len mirrored here (the dc append
         // advances only the device counter).
         let attn_out = match (&mtp.mixer, mtp.step35.as_ref()) {
-            // step35 MTP block, dcw door armed: the SAME windowed device-counter launcher as
-            // the captured chain (draft parity by construction). Per-step ring headroom runs
-            // HERE (eager is host-len work, a rebase is legal); host len mirrored like the
-            // plain dc arm below.
-            (Mixer::Full(fa), Some(g))
-                if self.step35_dcw_eligible(g, scratch.plane(scratch_index).1) =>
-            {
-                {
-                    let (kv, _) = scratch.plane_mut(scratch_index);
-                    let retain = match kv.ring.as_ref() {
-                        Some(ring) => memra_kv::swa_retain_from(kv.len, ring.window(), ring.base()),
-                        None => 0,
-                    };
-                    e.prepare_kv_append(kv, retain, 1)?;
-                }
-                let out =
-                    self.mtp_step35_attn_dcw(e, fa, g, &a_norm, &pos_d, scratch, scratch_index)?;
-                scratch.plane_mut(scratch_index).0.len += 1;
-                out
-            }
-            // step35 MTP block, door off (MEMRA_STEP35_DRAFT_DCW=0 rollback) or class-
-            // ineligible: PER-LAYER geometry + a separate head-wise gate + an SWA window,
-            // none of which the plain dc launcher can express (see `mtp_step35_attn`).
-            // Host-len arm. Advances BOTH the
-            // host len and the device counter itself (unlike the dc arm, whose host-side
-            // mirror the caller does).
+            // step35 MTP block: PER-LAYER geometry + a separate head-wise gate + an SWA window,
+            // none of which the dc launcher can express (see `mtp_step35_attn`). Host-len arm.
+            // Advances BOTH the host len and the device counter itself (unlike the dc arm,
+            // whose host-side mirror the caller does).
             (Mixer::Full(fa), Some(g)) => {
                 self.mtp_step35_attn(e, fa, g, &a_norm, &pos_d, scratch, scratch_index)?
             }
@@ -4791,7 +3917,7 @@ impl HybridModel {
         if anat {
             ANAT_NS[4].fetch_add(t_all.elapsed().as_nanos() as u64, Relaxed);
             let n = ANAT_STEPS.fetch_add(1, Relaxed) + 1;
-            if n.is_multiple_of(128) {
+            if n % 128 == 0 {
                 let us = |i: usize| ANAT_NS[i].load(Relaxed) / n / 1000;
                 eprintln!(
                     "[spec-anatomy] steps={n} avg us/step: glue={} attn={} ffn={} head={} total={}",
@@ -4805,141 +3931,6 @@ impl HybridModel {
         }
         // Chain recurrence hand-over: pre-norm h_nextn (default) or post-norm final_h
         // (MEMRA_SPEC_HPOST — llama.cpp #24025's t_h_nextn is taken AFTER the head norm).
-        Ok((logits, if spec_hpost() { final_h } else { h_nextn }))
-    }
-
-    /// One NextN/MTP draft step for an **MLA-mixer** MTP block (glm5_next class: MLA + own
-    /// k-pool indexer + MoE, serial residual — the NextN layer carries no hc_* tensors), on
-    /// the model `Cache`'s own MTP latent plane rather than the full-attn `MtpScratch` the
-    /// qwen35/step35 chain uses. Gate: `glm5_mtp_head_gpu` (engine vs `memra_reference`
-    /// `execute_mtp`, teacher-forced walk, eh_proj-transpose and h_seed-off-by-one red arms).
-    ///
-    /// The interface, stated precisely for the verify arc:
-    /// - `h_seed`: `[n_embd]` f32 device — the trunk's COLLAPSED PRE-output_norm hidden of
-    ///   the position whose next token is being drafted (MTP-PLAN §A; exactly what
-    ///   `prime_cache`/`decode_step` return for hc models). `MEMRA_SPEC_HPOST` flips both
-    ///   this producer and the returned carrier to the post-norm variant, same as the dev path.
-    /// - `e_tok`: the token at the seeded position's SUCCESSOR — the token the trunk just
-    ///   sampled/accepted (reference oracle pairing: `fused[i] = eh_proj([enorm(embed(ids[i]));
-    ///   hnorm(trunk_hidden[i])])`, i.e. this call with `e_tok = ids[i]`, `h_seed = h[i]`,
-    ///   `mtp_pos = i` reproduces the reference's row `i`).
-    /// - `mtp_pos`: the absolute position this step appends to the MTP block's latent plane;
-    ///   must equal that plane's current length (the plane advances by ONE row per call inside
-    ///   `mla_attn_cached`; rollback on rejection = the verify arc's latent-plane len reset).
-    /// - returns `(draft_logits [n_vocab], carrier [n_embd])` on device. glm5_next ships no
-    ///   private MTP head, so the logits ride the trunk `lm_head` (full vocab, no d2t).
-    pub fn mtp_head_forward_mla_cached(
-        &self,
-        e: &Engine,
-        depth: usize,
-        e_tok: u32,
-        h_seed: &CudaSlice<f32>,
-        cache: &mut Cache,
-        mtp_pos: usize,
-    ) -> Result<(CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
-        if depth >= self.mtp_head_count() {
-            return Err(format!(
-                "MTP depth {depth} out of range: {} embedded head(s) loaded \
-                 (is MEMRA_GLM5_MTP=1 set for a glm5_next model?)",
-                self.mtp_head_count()
-            )
-            .into());
-        }
-        let mtp = self.mtp_head_at(depth);
-        let block = self
-            .plan
-            .mtp_blocks
-            .get(depth)
-            .ok_or_else(|| format!("ModelPlan declares no MTP block at depth {depth}"))?;
-        let il = block.layer.index as usize;
-        let Mixer::Mla(mla) = &mtp.mixer else {
-            return Err(
-                "mtp_head_forward_mla_cached serves MLA-mixer MTP blocks only; full-attn \
-                 blocks take mtp_head_forward_dev's scratch path"
-                    .into(),
-            );
-        };
-        if matches!(mtp.ffn, crate::hybrid::Ffn::Dense { .. }) {
-            return Err(
-                "MLA-mixer MTP block with a Dense FFN has no gated arm yet (glm5_next and \
-                 glm-dsa NextN blocks are MoE); refusing rather than running ungated math"
-                    .into(),
-            );
-        }
-        let plane_len = cache
-            .latent
-            .get(il)
-            .and_then(|plane| plane.as_ref())
-            .map(|plane| plane.len)
-            .ok_or_else(|| {
-                format!(
-                    "MTP block layer {il} has no latent cache plane — the Cache must be \
-                     built from a plan whose mtp_blocks declare StatePlan::LatentKvCache"
-                )
-            })?;
-        if mtp_pos != plane_len {
-            return Err(format!(
-                "MTP draft position {mtp_pos} != the MTP latent plane's length {plane_len} — \
-                 the plane advances one row per draft step and rolls back by len reset; a \
-                 skipped or repeated position would attend the wrong horizon"
-            )
-            .into());
-        }
-
-        let cfg = &self.cfg;
-        let n_embd = cfg.n_embd as usize;
-        let eps = cfg.rms_eps;
-        let pos_d = e.htod_i32(&[mtp_pos as i32])?;
-
-        // Same op chain as `mtp_head_forward_dev_at` (ops 1-12), same kernels — only the
-        // attention arm differs: `mla_attn_cached` on the plan's own MTP plane instead of
-        // `mtp_full_attn_dc` on the MtpScratch.
-        let e_emb = e.htod(&self.embd.gather(n_embd, &[e_tok]))?;
-        let mut e_norm = e.zeros(n_embd)?;
-        e.rms_norm(&e_emb, mtp.enorm.float_data(), &mut e_norm, n_embd, 1, eps)?;
-        let mut h_norm = e.zeros(n_embd)?;
-        e.rms_norm(h_seed, mtp.hnorm.float_data(), &mut h_norm, n_embd, 1, eps)?;
-
-        let mut concat = e.zeros(2 * n_embd)?;
-        e.copy_into(&mut concat, 0, &e_norm, n_embd)?;
-        e.copy_into(&mut concat, n_embd, &h_norm, n_embd)?;
-        let inp_sa = e.matmul(&mtp.eh_proj, &concat, 1)?;
-
-        let mut a_norm = e.zeros(n_embd)?;
-        e.rms_norm(
-            &inp_sa,
-            mtp.attn_norm.float_data(),
-            &mut a_norm,
-            n_embd,
-            1,
-            eps,
-        )?;
-        let attn_out = self.mla_attn_cached(e, mla, &a_norm, &pos_d, 1, il, cache)?;
-
-        let mut x1 = e.zeros(n_embd)?;
-        e.add(&inp_sa, &attn_out, &mut x1, n_embd)?;
-        let mut z = e.zeros(n_embd)?;
-        e.rms_norm(&x1, mtp.post_attn_norm.float_data(), &mut z, n_embd, 1, eps)?;
-        let ffn_out = match &mtp.ffn {
-            // Distinct block — key its experts off the trunk layers' cache keys (dev-path rule).
-            crate::hybrid::Ffn::Moe(m) => self.moe_ffn_il(e, m, &z, 1, u16::MAX)?,
-            crate::hybrid::Ffn::Dense { .. } => unreachable!("refused above"),
-        };
-        let mut h_nextn = e.zeros(n_embd)?;
-        e.add(&x1, &ffn_out, &mut h_nextn, n_embd)?;
-
-        let final_norm = mtp.shared_head_norm.as_ref().unwrap_or(&self.output_norm);
-        let mut final_h = e.zeros(n_embd)?;
-        e.rms_norm(
-            &h_nextn,
-            final_norm.float_data(),
-            &mut final_h,
-            n_embd,
-            1,
-            eps,
-        )?;
-        let head = mtp.shared_head_head.as_ref().unwrap_or(&self.output);
-        let logits = e.matmul(head, &final_h, 1)?;
         Ok((logits, if spec_hpost() { final_h } else { h_nextn }))
     }
 
@@ -4988,10 +3979,8 @@ impl HybridModel {
     ///    cache (the gemma4 R6 / `step35_decode_attn` pattern: keys carry absolute rope and the
     ///    mask is purely positional, so one query at `len-1` attending the last `win` rows IS the
     ///    windowed result). `fa_decode_dc` takes the key count from a DEVICE counter and always
-    ///    starts at row 0 — it cannot express a nonzero offset. The windowed dc arm is
-    ///    `mtp_step35_attn_dcw` (`fa_decode_dcw`, doored via MEMRA_STEP35_DRAFT_DCW —
-    ///    default ON since lane/step37-draft-graph-serving-20260830); this host-len arm is
-    ///    the =0 rollback and the class-ineligibility fallback.
+    ///    starts at row 0 — it cannot express a nonzero offset, so a windowed dc arm would need a
+    ///    new kernel. That is deliberately not built here: see the CUDA-graph note below.
     /// 2. **Per-layer head count.** 96 q heads over 8 KV (GQA 12) at this block, vs the trunk's 64
     ///    on its full-attn layers. The trunk cfg's `n_head` scalar is the MAX over layers, and the
     ///    trunk ARTIFACT's per-layer arrays stop at index 44 — so the count must come from the
@@ -5000,15 +3989,13 @@ impl HybridModel {
     ///    sigmoid scalar per head (broadcast over head_dim) — `attn_head_gate`, not the qwen35
     ///    fused-into-wq `q_gate_split` form the dc arm handles.
     ///
-    /// DOOR STATE: with MEMRA_STEP35_DRAFT_DCW=0 (or a sub-eligible kernel class),
-    /// `mtp_head_forward_cap` refuses step35 heads explicitly (rather than silently capturing
-    /// a window-less, wrong-past-`win` graph) and this eager chain IS the served path. With
-    /// the door armed (the default), BOTH draft modes run the `mtp_step35_attn_dcw` twin
-    /// instead of this arm.
+    /// WHY EAGER-ONLY IS NOT A GAP TODAY: `mtp_head_forward_cap` refuses step35 heads
+    /// explicitly (the SWA-window refusal below), so the graph draft never engages for step35
+    /// models regardless of eligibility — the eager chain IS the served path. `mtp_head_forward_cap` refuses step35 explicitly rather
+    /// than silently capturing a window-less (wrong past `win` draft rows) graph.
     ///
     /// Unlike the dc arm this advances BOTH the host `kv.len` and the device counter, so the
     /// caller must not mirror.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn mtp_step35_attn(
         &self,
         e: &Engine,
@@ -5020,25 +4007,6 @@ impl HybridModel {
         scratch_index: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let (nh, nkv, hd) = (g.n_head, g.n_head_kv, self.cfg.head_dim_k as usize);
-        // MTP-GEOM RECEIPT, once per process, on the SERVED draft path. Slot-0 acceptance is
-        // 0.725 here against 0.994 for vLLM MTP3 on the same checkpoint family and card class, and
-        // the first three explanations for that gap were all wrong: head assignment (step-modulo
-        // is index 0 at K=1, correct), MEMRA_SPEC_HPOST (identical 84/116 both arms), and this
-        // block's geometry. Geometry was the one that could have failed SILENTLY — a wrong window
-        // makes the draft attend the whole context instead of Step-3.7's 512, stays fluent, and
-        // shows up only as acceptance — so it gets a standing receipt rather than another reading
-        // of the source. Prints the resolved Step35MtpGeom the served path actually runs on;
-        // `full_attention_geometry_at`'s missing-row fallback (window: None) does NOT reach here.
-        {
-            static ONCE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-            ONCE.get_or_init(|| {
-                eprintln!(
-                    "[mtp-geom] arm=eager block={} swa={} window={} n_head={nh} n_head_kv={nkv} \
-                     head_dim_k={hd} n_rot={} rope_base={} clamp_shexp={:?}",
-                    g.il, g.swa, g.window, g.n_rot, g.rope_base, g.clamp_shexp,
-                );
-            });
-        }
         let eps = self.cfg.rms_eps;
         let scale = 1.0 / (hd as f32).sqrt(); // step35.cpp:255 kq_scale
         let n_embd = self.cfg.n_embd as usize;
@@ -5118,15 +4086,7 @@ impl HybridModel {
         } else {
             (0, next_len)
         };
-        // `off`/`t_kv` stay the ATTENTION view; the retain is a separate, lower bound so the
-        // rewind that follows this append is still resident. THIS is the only site that rebases
-        // this plane (MEMRA_KV_REBASE_TRACE, one run: 1 rebase, all from here), so it is the site
-        // that decides `base` for everyone.
-        let retain_from = match kv.ring.as_ref() {
-            Some(ring) => memra_kv::swa_retain_from(kv.len, ring.window(), ring.base()),
-            None => off & !31usize,
-        };
-        let write_row = e.prepare_kv_append(kv, retain_from, 1)?;
+        let write_row = e.prepare_kv_append(kv, off & !31usize, 1)?;
         e.append_kv_quantized(
             &k,
             &v0,
@@ -5174,189 +4134,7 @@ impl HybridModel {
 
         let mut ag = e.uninit(nh * hd)?;
         e.attn_head_gate(&attn, &gt, &mut ag, None, hd, nh, 1)?;
-        e.matmul(&fa.wo, &ag, 1)
-    }
-
-    /// The dcw draft arm's kernel-class precondition, mirrored from `fa_decode_dcw`'s own
-    /// refusal plus the v3 walk's format contract (`fa_v3_active`), so the DEV dispatch can
-    /// never pick an arm the launcher would refuse mid-chain (the eager chain has no graceful
-    /// fallback point) and the CAP site refuses with the named reason instead.
-    ///
-    /// `cap` = the SESSION's scratch-plane row capacity: the launcher's vec gate reads
-    /// `bucket_max = min(window, cap)`, so a SMALL session (tiny prompt + tiny max_tokens,
-    /// e.g. a max_tokens=8 probe: cap ~62 < the 96 vec floor) is OUTSIDE the dcw domain even
-    /// though the WINDOW clears the floor. Mirroring the window alone shipped exactly that
-    /// hole when the door default flipped ON (2026-08-30, vision-cell receipt: sampled
-    /// capture WARN + `[engine-error] fa_decode_dcw supports the default v3-vec class only`
-    /// hard-failing the burst — the eager dcw arm has no graceful fallback point). Sub-floor
-    /// sessions now take the host-len kvmod arm, byte-for-byte the door-off serving.
-    fn step35_dcw_eligible(&self, g: &crate::hybrid::Step35MtpGeom, cap: usize) -> bool {
-        let hd = self.cfg.head_dim_k as usize;
-        step35_draft_dcw_on()
-            && g.swa
-            && g.window.min(cap) >= crate::fa_vec_min_tkv()
-            && std::env::var("MEMRA_NO_FA_VEC").is_err()
-            && crate::fa_v3_active(hd)
-            && hd <= 256
-            && hd.is_multiple_of(32)
-    }
-
-    /// step35 MTP-block attention, T=1, on the scratch KV: the WINDOWED DEVICE-COUNTER twin
-    /// of `mtp_step35_attn`, serving BOTH draft paths when `step35_draft_dcw_on`. Write slot,
-    /// key bound and SWA view offset all derive from device state (`len_d`, `base_d` written
-    /// only at host-side rebases, and the block's `window`), so ONE captured graph serves the
-    /// whole chain and replays see KV growth through the counter: the `mtp_full_attn_dc`
-    /// contract plus the view offset the plain `_dc` kernel could not express (the old
-    /// capture-refusal root cause). The three step35 properties stay per-geom exactly as in
-    /// the eager twin: nh/nkv from `Step35MtpGeom`, the separate head-wise gate
-    /// (`attn_head_gate`), per-layer rope width/base with SWA passing null freqs.
-    ///
-    /// bucket_max = min(cap, window): the windowed view never exceeds `window` rows, so the
-    /// capture-time grid stays valid for every replayed len, and the kernel derives ns_eff
-    /// from the LIVE T_kv at the fixed split_keys (one-partition law). Both arms call THIS
-    /// launcher at THIS bucket, so eager and captured drafts are bit-identical by
-    /// construction; vs the retired-by-flag `mtp_step35_attn` the only numeric-class deltas
-    /// are the sub-vec-floor region (t_kv < 96: kvmod ran scalar, dcw stays vec) and any
-    /// live-len split-ladder rung below the bucket's, both draft-side only (the verify
-    /// arbitrates emitted bytes; acceptance is gated by the battery).
-    ///
-    /// Host len is NOT advanced here (graph contract); callers mirror. The EAGER caller runs
-    /// `prepare_kv_append` per step (ring headroom, rebase legal there); the CAPTURED path
-    /// pre-arms headroom at capture time and round start (`MtpScratch::ensure_dcw_headroom`)
-    /// because a rebase is host work no captured chain may contain.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the capture/call contract; bundling into a struct is a refactor, not a lint fix
-    fn mtp_step35_attn_dcw(
-        &self,
-        e: &Engine,
-        fa: &FullAttnLayer,
-        g: &crate::hybrid::Step35MtpGeom,
-        h: &CudaSlice<f32>,
-        pos_d: &CudaSlice<i32>,
-        scratch: &mut MtpScratch,
-        scratch_index: usize,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let (nh, nkv, hd) = (g.n_head, g.n_head_kv, self.cfg.head_dim_k as usize);
-        // MTP-GEOM RECEIPT (dcw twin of the `mtp_step35_attn` receipt): once per process,
-        // naming the arm, so a serving log proves WHICH draft attention program ran (the
-        // engagement receipt for the flag door, both directions).
-        {
-            static ONCE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-            ONCE.get_or_init(|| {
-                eprintln!(
-                    "[mtp-geom] arm=dcw block={} swa={} window={} n_head={nh} n_head_kv={nkv} \
-                     head_dim_k={hd} n_rot={} rope_base={} clamp_shexp={:?}",
-                    g.il, g.swa, g.window, g.n_rot, g.rope_base, g.clamp_shexp,
-                );
-            });
-        }
-        let eps = self.cfg.rms_eps;
-        let scale = 1.0 / (hd as f32).sqrt(); // step35.cpp:255 kq_scale
-        let n_embd = self.cfg.n_embd as usize;
-        let gw = fa
-            .attn_gate
-            .as_ref()
-            .ok_or("step35 MTP block is missing attn_gate.weight (head-wise attention gate)")?;
-
-        let (q0, k0, v0, gt) = if e.uses_q8_1_fast(&fa.wq)
-            && e.uses_q8_1_fast(&fa.wk)
-            && e.uses_q8_1_fast(&fa.wv)
-            && e.uses_q8_1_fast(gw)
-        {
-            let (hq, hdq) = e.quantize_q8_1(h, 1, n_embd)?;
-            let (a, b, c) = match e.matmul_q8_fused3(&fa.wq, &fa.wk, &fa.wv, &hq, &hdq)? {
-                Some(t3) => t3,
-                None => (
-                    e.matmul_pre(&fa.wq, &hq, &hdq, h, 1)?,
-                    e.matmul_pre(&fa.wk, &hq, &hdq, h, 1)?,
-                    e.matmul_pre(&fa.wv, &hq, &hdq, h, 1)?,
-                ),
-            };
-            (a, b, c, e.matmul_pre(gw, &hq, &hdq, h, 1)?)
-        } else {
-            (
-                e.matmul(&fa.wq, h, 1)?,
-                e.matmul(&fa.wk, h, 1)?,
-                e.matmul(&fa.wv, h, 1)?,
-                e.matmul(gw, h, 1)?,
-            )
-        };
-
-        let mut q = e.zeros(nh * hd)?;
-        e.rms_norm(&q0, fa.q_norm.float_data(), &mut q, hd, nh, eps)?;
-        let mut k = e.zeros(nkv * hd)?;
-        e.rms_norm(&k0, fa.k_norm.float_data(), &mut k, hd, nkv, eps)?;
-        // rope_freqs (llama3 factors) apply to the FULL-attn layers ONLY; SWA passes null
-        // (the eager twin's rule, resolved from the flag, not the constant).
-        let ff = if g.swa {
-            None
-        } else {
-            self.step35_aux.as_ref().and_then(|a| a.rope_freqs(e))
-        };
-        #[cfg(debug_assertions)]
-        if let Some(ff) = ff {
-            crate::debug_assert_tensor_stream_device(
-                ff,
-                &e.stream(),
-                "mtp_step35_attn_dcw.rope_freqs",
-            );
-        }
-        e.rope_neox2(
-            &mut q,
-            &mut k,
-            pos_d,
-            hd,
-            g.n_rot,
-            nh,
-            nkv,
-            1,
-            g.rope_base,
-            1.0,
-            ff,
-        )?;
-
-        let (kv, cap) = scratch.plane_mut(scratch_index);
-        // Append at the DEVICE slot's PHYSICAL row (len_d - base_d), then advance the counter
-        // in-graph. Physical room is the callers' headroom contract (see the fn doc).
-        e.append_kv_quantized_dcw(
-            &k,
-            &v0,
-            &mut kv.k,
-            &mut kv.v,
-            &kv.len_d,
-            kv.base_d.as_ref(),
-            kv.kv_dim_k,
-            kv.kv_dim_v,
-            kv.k_tok_bytes,
-            kv.v_tok_bytes,
-        )?;
-        e.inc_seqlen(&mut kv.len_d)?;
-        // Full-buffer views (any in-round physical row stays in range under the headroom
-        // contract); the kernel bounds and offsets the key range from (len_d, base_d, window).
-        let k_view = e.view_u8(&kv.k, kv.k.len());
-        let v_view = e.view_u8(&kv.v, kv.v.len());
-        let bucket = g.window.min(cap);
-        let mut attn = e.zeros(nh * hd)?;
-        e.fa_decode_dcw(
-            &q,
-            &k_view,
-            &v_view,
-            &mut attn,
-            hd,
-            nh,
-            nkv,
-            &kv.len_d,
-            kv.base_d.as_ref(),
-            if g.swa { g.window } else { 0 },
-            bucket,
-            scale,
-            kv.k_tok_bytes,
-            kv.v_tok_bytes,
-            None,
-        )?;
-
-        let mut ag = e.zeros(nh * hd)?;
-        e.attn_head_gate(&attn, &gt, &mut ag, None, hd, nh, 1)?;
-        e.matmul(&fa.wo, &ag, 1)
+        Ok(e.matmul(&fa.wo, &ag, 1)?)
     }
 
     /// MTP-block full attention, T=1, on the scratch KV (BOTH draft paths — eager and graph):
@@ -5368,7 +4146,6 @@ impl HybridModel {
     /// (fa_decode_dc bit-correct-for-any-t_kv<=bucket_max contract). The eager path uses the SAME
     /// launcher with the SAME bucket_max -> identical dispatch -> bit-identical draft tokens (the
     /// graph-vs-eager parity gate). Host len is NOT advanced here (graph contract); callers mirror.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn mtp_full_attn_dc(
         &self,
         e: &Engine,
@@ -5489,7 +4266,7 @@ impl HybridModel {
             }
             None => attn,
         };
-        e.matmul(&fa.wo, &attn_g, 1)
+        Ok(e.matmul(&fa.wo, &attn_g, 1)?)
     }
 
     /// PERSISTENT-DRAFT-KV fill (the reference engine's "mtp_update" analogue): compute the MTP
@@ -5620,7 +4397,7 @@ impl HybridModel {
         let retain_from = kv
             .ring
             .as_ref()
-            .map(|ring| memra_kv::swa_retain_from(pos0, ring.window(), ring.base()))
+            .map(|ring| pos0.saturating_sub(ring.window() - 1) & !31usize)
             .unwrap_or(0);
         let write_row = e.prepare_kv_append(kv, retain_from, t)?;
         for i in 0..t {
@@ -5677,21 +4454,20 @@ impl HybridModel {
     ///   - h_seed from the persistent `h_seed_d` (h_nextn is copied BACK into it at the end),
     ///   - rope pos from the persistent `pos_d` counter (inc'd in-graph),
     ///   - scratch KV slot/bound from `scratch.kv.len_d` (see mtp_full_attn_dc).
-    ///     The p-min confidence lands in the persistent `p_d` iff `with_prob` (env is fixed per run).
-    ///     Same kernels, same dispatch as the eager mtp_head_forward_dev chain -> same draft tokens
-    ///     (exactness never depends on drafts — the verify arbitrates — but acceptance parity does).
-    ///     `with_head=false` captures the HEAD-LESS twin for the pseudo-seed replay (2026-07-03):
-    ///     the pseudo pass only needs h_nextn (op 10) + the scratch append — the lm_head read
-    ///     (~1.06ms q6_K on the 9B), argmax and prob are dead weight there. h_nextn's inputs are
-    ///     untouched, so the seed value is identical; round-start resets overwrite tok_d/p_d anyway.
-    ///     `sampled_cap` = Some((ctr_d, perturb_d, q_out_d, seed, temp)) captures the SAMPLED twin
-    ///     (step 3 of the sampled-spec arc): head logits are retained in the persistent `q_out_d`
-    ///     (host D2Ds them to the round's q slot after each replay), the DEVICE event counter is
-    ///     bumped in-graph, and the argmax reads GUMBEL-PERTURBED logits — one categorical draw per
-    ///     replay, bit-identical to the eager arm's gumbel_perturb at the same (seed, sctr, temp).
-    ///     seed/temp are capture-time constants (fixed per generate call, like p_min).
+    /// The p-min confidence lands in the persistent `p_d` iff `with_prob` (env is fixed per run).
+    /// Same kernels, same dispatch as the eager mtp_head_forward_dev chain -> same draft tokens
+    /// (exactness never depends on drafts — the verify arbitrates — but acceptance parity does).
+    /// `with_head=false` captures the HEAD-LESS twin for the pseudo-seed replay (2026-07-03):
+    /// the pseudo pass only needs h_nextn (op 10) + the scratch append — the lm_head read
+    /// (~1.06ms q6_K on the 9B), argmax and prob are dead weight there. h_nextn's inputs are
+    /// untouched, so the seed value is identical; round-start resets overwrite tok_d/p_d anyway.
+    /// `sampled_cap` = Some((ctr_d, perturb_d, q_out_d, seed, temp)) captures the SAMPLED twin
+    /// (step 3 of the sampled-spec arc): head logits are retained in the persistent `q_out_d`
+    /// (host D2Ds them to the round's q slot after each replay), the DEVICE event counter is
+    /// bumped in-graph, and the argmax reads GUMBEL-PERTURBED logits — one categorical draw per
+    /// replay, bit-identical to the eager arm's gumbel_perturb at the same (seed, sctr, temp).
+    /// seed/temp are capture-time constants (fixed per generate call, like p_min).
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     fn mtp_head_forward_cap(
         &self,
         e: &Engine,
@@ -5701,17 +4477,19 @@ impl HybridModel {
         h_seed_d: &mut CudaSlice<f32>,
         p_d: &mut CudaSlice<f32>,
         scratch: &mut MtpScratch,
-        // Which scratch plane this head appends to / attends over: 0 for the single-head
-        // chain (every pre-lane caller), the head's own plane index for the multi-head
-        // chain graphs (each head owns one plane — `mtp_chain_forward_dev`'s contract).
-        scratch_index: usize,
         with_prob: bool,
         with_head: bool,
         embd_gpu: &CudaSlice<u8>,
         embd_qt: i32,
         embd_rb: usize,
         d_vocab: usize,
-        sampled_cap: Option<SampledCapArgs<'_>>,
+        sampled_cap: Option<(
+            &mut CudaSlice<u32>,
+            &mut CudaSlice<f32>,
+            &mut CudaSlice<f32>,
+            u64,
+            f32,
+        )>,
         stream_pack: Option<(&mut CudaSlice<u32>, usize, Option<&CudaSlice<u32>>)>,
         // DRAFT-SIDE GRAMMAR MASK (lane/draft-mask): (packed draft-vocab allowed-set buffer,
         // word count). Captured as ONE mask_logits_f32 node between the head matmul and the
@@ -5722,36 +4500,21 @@ impl HybridModel {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let cfg = &self.cfg;
         let n_embd = cfg.n_embd as usize;
-        // step35: capturable through the WINDOWED device-counter arm (`mtp_step35_attn_dcw`)
-        // once the dcw door is armed and the v3-vec class is live. Without the door this stays
-        // the deliberate, named refusal: the plain `_dc` attention's key bound always starts at
-        // row 0, cannot express this block's SWA view offset, and a captured chain would
-        // silently attend OUTSIDE the window once the persistent scratch passes 512 rows.
-        // Returning Err (not a panic) is what the capture sites already handle by degrading to
-        // the eager chain (`mtp_head_forward_dev` -> `mtp_step35_attn`).
-        // ROUND-STREAM stays refused EITHER WAY: the stream VERIFY has no step35 twin (see the
-        // step35_verify refusal), so a stream capture that succeeded here would only move the
-        // failure from capture time (graceful stream-off) to serve time (a failed round).
-        if let Some(g) = mtp.step35.as_ref() {
-            if stream_pack.is_some() {
-                return Err(
-                    "step35 has no ROUND-STREAM draft arm (the stream verify has no step35 \
-                     twin); stream off"
-                        .into(),
-                );
-            }
-            if !self.step35_dcw_eligible(g, scratch.plane(scratch_index).1) {
-                return Err(format!(
-                    "step35 has no captured draft chain (fa_decode_dc cannot express the MTP \
-                        block's SWA view offset; the windowed dcw capture needs \
-                        MEMRA_STEP35_DRAFT_DCW armed [default ON, =0 disarms] and the v3-vec \
-                        class live at bucket=min(window {}, scratch cap {})) - the eager draft \
-                        chain serves this shape",
-                    g.window,
-                    scratch.plane(scratch_index).1,
-                )
-                .into());
-            }
+        // step35 REFUSAL (deliberate, named): the graph body's attention is `mtp_full_attn_dc`,
+        // whose device-counter key bound always starts at row 0 — it cannot express this block's
+        // SWA view offset, so a captured chain would silently attend OUTSIDE the window once the
+        // persistent scratch passes 512 rows. Nothing is lost today: `mtp_head_forward_cap`
+        // refuses step35 heads explicitly (SWA refusal), so the eager chain
+        // (`mtp_head_forward_dev` -> `mtp_step35_attn`) is the served path. Returning Err (not a
+        // panic) is what the two capture sites and the round-stream capture already handle by
+        // degrading to eager / stream-off.
+        if mtp.step35.is_some() {
+            return Err(
+                "step35 has no captured draft chain (fa_decode_dc cannot express the MTP \
+                        block's SWA view offset; same root cause as the dc decode refusal) — the \
+                        eager draft chain serves this arch"
+                    .into(),
+            );
         }
         // student inner width (see mtp_head_forward_dev) — interface dims stay n_embd.
         let di = mtp.geom.as_ref().map(|g| g.d_inner).unwrap_or(n_embd);
@@ -5774,31 +4537,15 @@ impl HybridModel {
         let inp_sa = e.matmul(&mtp.eh_proj, &concat, 1)?;
         let mut a_norm = e.zeros(di)?;
         e.rms_norm(&inp_sa, mtp.attn_norm.float_data(), &mut a_norm, di, 1, eps)?;
-        let attn_out = match (&mtp.mixer, mtp.step35.as_ref()) {
-            // step35 (eligibility already enforced by the refusal above): the windowed dcw
-            // arm, the SAME launcher the eager dev arm runs when the door is armed. No host
-            // work here (this is the capture body); headroom is the callers' pre-arm.
-            (Mixer::Full(fa), Some(g)) => {
-                self.mtp_step35_attn_dcw(e, fa, g, &a_norm, pos_d, scratch, scratch_index)?
+        let attn_out = match &mtp.mixer {
+            Mixer::Full(fa) => {
+                self.mtp_full_attn_dc(e, fa, &a_norm, pos_d, scratch, 0, mtp.geom.as_ref())?
             }
-            (Mixer::Full(fa), None) => self.mtp_full_attn_dc(
-                e,
-                fa,
-                &a_norm,
-                pos_d,
-                scratch,
-                scratch_index,
-                mtp.geom.as_ref(),
-            )?,
-            (Mixer::Linear(_), _) => {
+            Mixer::Linear(_) => {
                 panic!("MTP block is full-attn in qwen35; linear MTP not supported")
             }
-            (Mixer::Mla(_), _) => {
-                crate::hybrid::mla_path_unimplemented("captured MTP head forward")
-            }
-            (Mixer::Kda(_), _) => {
-                crate::hybrid::kda_path_unimplemented("captured MTP head forward")
-            }
+            Mixer::Mla(_) => crate::hybrid::mla_path_unimplemented("captured MTP head forward"),
+            Mixer::Kda(_) => crate::hybrid::kda_path_unimplemented("captured MTP head forward"),
         };
         let mut x1 = e.zeros(di)?;
         e.add(&inp_sa, &attn_out, &mut x1, di)?;
@@ -5821,40 +4568,18 @@ impl HybridModel {
                     (e.matmul(ffn_gate, &z, 1)?, e.matmul(ffn_up, &z, 1)?)
                 };
                 let mut act = e.zeros(n_ff)?;
-                // step35: the dense FFN reads the per-layer SHEXP clamp, resolved for the MTP
-                // block's own index (the mtp_head_forward_dev rule; None for every other arch,
-                // which is `ffn_act`'s dispatch verbatim). The eager and captured chains must
-                // run the ONE activation program.
-                Self::ffn_act_lim(
-                    e,
-                    &self.cfg,
-                    &gate,
-                    &up,
-                    1.0,
-                    1.0,
-                    mtp.step35
-                        .as_ref()
-                        .and_then(|s| s.clamp_shexp)
-                        .map(SwigluClamp::Post),
-                    &mut act,
-                    n_ff,
-                )?;
+                Self::ffn_act(e, &self.cfg, &gate, &up, &mut act, n_ff)?;
                 e.matmul(ffn_down, &act, 1)?
             }
-            // ROUND-STREAM: a softmax-routed resident MoE takes the zero-D2H device router +
-            // expert program and is capture-legal. Sigmoid-routed MoE (Hy3/M3/Step) still
-            // selects through the host-visible sigmoid router; capturing that stream sync
-            // invalidates CUDA capture, so it stays on the eager draft chain even when every
-            // expert is resident. Non-resident (SLRU-lock) is likewise rejected.
-            crate::hybrid::Ffn::Moe(m)
-                if m.dev_exps.is_some() && self.cfg.sigmoid_router().is_none() =>
-            {
+            // ROUND-STREAM: the 35B NextN block carries a MoE FFN. With RESIDENT experts the
+            // dev path is pure device launches (device top-k + rows kernels, ZERO-DtoH by
+            // design) — capture-legal. Non-resident (SLRU-lock) stays rejected: the capture
+            // error arm degrades the caller to eager/stream-off.
+            crate::hybrid::Ffn::Moe(m) if m.dev_exps.is_some() => {
                 self.moe_ffn_il(e, m, &z, 1, u16::MAX)?
             }
             crate::hybrid::Ffn::Moe(_) => {
-                return Err(
-                    "graph draft requires a Dense or device-routed resident-MoE MTP FFN".into(),
-                );
+                return Err("graph draft requires a Dense (or resident-MoE) MTP FFN".into());
             }
         };
         let mut h_inner = e.zeros(di)?;
@@ -5882,42 +4607,14 @@ impl HybridModel {
             if let Some((mask_d, mw)) = mask_cap {
                 e.mask_logits_col(&mut logits, mask_d, 0, d_vocab, mw)?;
             }
-            if let Some(SampledCapArgs {
-                ctr: ctr_d,
-                perturb: perturb_d,
-                q_out: q_out_d,
-                seed,
-                temp,
-                filt,
-            }) = sampled_cap
-            {
+            if let Some((ctr_d, perturb_d, q_out_d, seed, temp)) = sampled_cap {
                 // SAMPLED chain: retain q (raw head logits -> persistent q_out_d; the matmul's
                 // own buffer is pool-recycled after the capture body returns, so it can't be the
                 // retention target), bump the device event counter, gumbel-perturb reading it,
                 // and argmax the PERTURBED logits into tok_d — the in-graph categorical draw.
                 e.copy_into(q_out_d, 0, &logits, d_vocab)?;
                 e.sctr_inc(ctr_d)?;
-                match filt {
-                    // PURE-TEMP: gumbel over the raw softmax — byte-identical to the
-                    // pre-lane capture body.
-                    None => e.gumbel_perturb_ctr(&logits, perturb_d, d_vocab, seed, ctr_d, temp)?,
-                    // FILTERED (lane/step37-draft-graph-serving-20260830): the SAME
-                    // filter_stats program the eager arm and the accept path run (the
-                    // wrapper's coop/plain choice is deployment-keyed, never per-call), then
-                    // the device-stat/device-counter perturb twin — the draft draws from the
-                    // exact filtered distribution the verify gathers `q` from. q was
-                    // retained ABOVE, pre-perturb, so the accept path's post-replay stats
-                    // recompute (same kernel, same bits) reconstructs these th/z exactly.
-                    Some(f) => {
-                        e.filter_stats(
-                            &logits, d_vocab, f.rows0, f.th, f.z, f.mx, d_vocab, 1, temp, f.top_k,
-                            f.top_p, f.min_p,
-                        )?;
-                        e.gumbel_perturb_filtered_ctr(
-                            &logits, perturb_d, d_vocab, seed, ctr_d, temp, f.mx, f.th,
-                        )?;
-                    }
-                }
+                e.gumbel_perturb_ctr(&logits, perturb_d, d_vocab, seed, ctr_d, temp)?;
                 e.argmax_token_device_into(perturb_d, tok_d, d_vocab)?;
                 // p-min prob = the head's RAW softmax confidence in the SAMPLED pick — same
                 // semantics as the eager sampled arm's prob_of_token_device(dl_d, tok_d).
@@ -6016,7 +4713,6 @@ impl HybridModel {
         cache: &mut Cache,
         embd_dev: Option<(&CudaSlice<u8>, i32, usize)>,
     ) -> Result<(CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
-        cache.ensure_usable("decode_step_t")?;
         let n_embd = self.cfg.n_embd as usize;
         let t = tokens.len();
         let (logits, x) = self.decode_step_t_core(e, tokens, pos0, cache, embd_dev, None)?;
@@ -6057,7 +4753,6 @@ impl HybridModel {
     /// [`Self::decode_step_t_core`] with the MTP route's verify-graph pool armed
     /// (`MEMRA_SPEC_VERIFY_GRAPH`). `graphs: None` reproduces `decode_step_t_core`
     /// argument-for-argument, so the eager walk stays the byte-identical fallback.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn decode_step_t_core_vg(
         &self,
         e: &Engine,
@@ -6084,7 +4779,6 @@ impl HybridModel {
 
     /// Increment-0 two-session PP seam: release the peer after this lane's stage-0 boundary TX.
     /// The two independent sessions keep their own cache/checkpoint state; only issue order moves.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn decode_step_t_core_pipelined(
         &self,
         e: &Engine,
@@ -6102,7 +4796,6 @@ impl HybridModel {
             return Err("two-session speculative pipeline requires the PP verify split".into());
         }
         let interval_fence = pipe.stage0_begin(round)?;
-        let _walk = pipe.coordinated_walk()?;
         let ticket = self.verify_stage0_issue(
             e,
             tokens,
@@ -6156,29 +4849,28 @@ impl HybridModel {
         // The refusal below survives to cover the residue — MEMRA_SPEC_PP=0, MEMRA_PP_STREAMS=0,
         // or a placement whose PpNRt fails to build — so a config that would still walk the
         // whole trunk on one stream refuses instead of regressing 28x.
-        if let Some(fence) = crate::pp::pp_cuts(self.layers.len())
-            && !crate::pp::pp2_streams_off()
-            && crate::pp::spec_pp_on()
-        {
-            if vtok_dev.is_some() {
-                return Err(
-                    "device-token dspark verify (slice-2 deferred readback) has no PP \
+        if let Some(fence) = crate::pp::pp_cuts(self.layers.len()) {
+            if !crate::pp::pp2_streams_off() && crate::pp::spec_pp_on() {
+                if vtok_dev.is_some() {
+                    return Err(
+                        "device-token dspark verify (slice-2 deferred readback) has no PP \
                          stage-split arm; set MEMRA_DSPARK_DEFER_READBACK=0 or run the dspark \
                          route on one device"
-                        .into(),
+                            .into(),
+                    );
+                }
+                return self.decode_step_t_core_ppn(
+                    e,
+                    tokens,
+                    pos0,
+                    cache,
+                    embd_dev,
+                    ckpt.take(),
+                    stream,
+                    &fence,
+                    pp_pipe,
                 );
             }
-            return self.decode_step_t_core_ppn(
-                e,
-                tokens,
-                pos0,
-                cache,
-                embd_dev,
-                ckpt.take(),
-                stream,
-                &fence,
-                pp_pipe,
-            );
         }
         crate::pp::refuse_unsplit_if_remote(
             "decode_step_t (spec verify)",
@@ -6237,48 +4929,16 @@ impl HybridModel {
             stream,
             graphs,
         )?;
-        if spec_nan_scan() {
-            nan_scan_rows(e, &x, t, n_embd, &format!("verify trunk exit pos0={pos0}"))?;
-        }
 
         let mut hn = vbuf(e, t * n_embd)?;
         // Stage-A door: with the serving-class row-outer verify walk, the TAIL must be the
         // t=1 decode program per row too (rms_norm t=1 + the single-row bf16 head — the
         // split head's concat is receipted bit-identical to it). The batched cuBLASLt head
         // is a different ULP class and flips near-tie argmaxes off the greedy tape.
-        let eager_tail = self.sliding_gated_moe_batch_program() && spec_verify_eager_on();
+        let eager_tail = self.sliding_gated_moe_batch_program()
+            && std::env::var("MEMRA_SPEC_VERIFY_EAGER").as_deref() == Ok("1");
         if eager_tail {
             let n_vocab = self.cfg.n_vocab as usize;
-            // MEMRA_SPEC_HEAD_ROWS=1 — THE VERIFY TAIL'S REDUNDANT HEAD READ.
-            //
-            // The loop below runs the head at m=1 once PER COLUMN, so the LM head's weights are
-            // streamed t times per verify pass. On step37 that head is ~0.49 GiB per card after the
-            // rank split, ~1.07 ms of pure re-read at t=2 and worse at every wider t — which is a
-            // large part of why the fixed K ladder LOSES (K=1 81.2 > K=2 73.1 > K=3 62.7 tok/s).
-            //
-            // The loop's justification is the comment above: the batched cuBLASLt head is a
-            // different ULP class and flips near-tie argmaxes off the greedy tape. That is true of
-            // cuBLASLt and it does NOT apply here, because a FloatBf16 head at 1..=32 rows never
-            // reaches cuBLASLt: `matmul` routes it to `matvec_bf16_rows_into` (lib.rs:12248), whose
-            // own doc says `matvec_bf16_f32acc_x4_rows` "runs the t=1 decode head program PER ROW
-            // (identical dot + reduce), so decode/verify tiers keep the t=1 numeric class". Under
-            // the W8 doors both widths route to the q8 mirror instead, and the t-column mirror is
-            // documented "bit-identical to t single-row calls". So the batched form is the SAME
-            // arithmetic per row on both paths, with one weight read instead of t.
-            //
-            // rms_norm is row-wise, so norm(t) is per-row identical to t x norm(1) by construction.
-            //
-            // DEFAULT OFF for exactly one turn of the crank: "bit-identical by two documented
-            // claims" is still an argument. The greedy byte tape decides, and the door flips only
-            // once the tape is a receipt.
-            if head_rows_on() {
-                e.rms_norm(&x, self.output_norm.float_data(), &mut hn, n_embd, t, eps)?;
-                let logits = e.matmul(&self.output, &hn, t)?;
-                if stream.is_none() {
-                    cache.pos += t;
-                }
-                return Ok((logits, if spec_hpost() { hn } else { x }));
-            }
             let mut logits = vbuf(e, t * n_vocab)?;
             for r in 0..t {
                 let mut row = e.uninit(n_embd)?;
@@ -6407,7 +5067,7 @@ impl HybridModel {
         pos0: usize,
         cache: &mut Cache,
         embd_dev: Option<(&CudaSlice<u8>, i32, usize)>,
-        ckpt: Option<&mut VerifyCkpt>,
+        mut ckpt: Option<&mut VerifyCkpt>,
         stream: Option<(&CudaSlice<u32>, &CudaSlice<i32>)>,
         fence: &[usize],
         pp_pipe: Option<bool>,
@@ -6428,9 +5088,6 @@ impl HybridModel {
             );
         }
         let rt = crate::pp::PpNRt::get(e)?;
-        // Pipelined callers do not bypass ownership: their explicit coordinator borrow makes
-        // this acquire clone the same active generation. Ordinary callers acquire a fresh lease.
-        let walk_owner = rt.acquire_walk("verify_stage0_issue")?;
         let n_st = fence.len() - 1;
         assert_eq!(
             rt.n_stages(),
@@ -6515,7 +5172,17 @@ impl HybridModel {
                 _ => e0.htod(&self.embd.gather(n_embd, tokens))?,
             };
             let x = self.verify_layers(
-                e0, x, fence[0], fence[1], &pos_d, pos0, t, cache, ckpt, stream, None,
+                e0,
+                x,
+                fence[0],
+                fence[1],
+                &pos_d,
+                pos0,
+                t,
+                cache,
+                ckpt.as_deref_mut(),
+                stream,
+                None,
             )?;
             if pp_anatomy {
                 e0.stream().synchronize()?;
@@ -6551,7 +5218,6 @@ impl HybridModel {
             stage0_ms,
             tx_ms,
             trace,
-            _walk_owner: walk_owner,
         })
     }
 
@@ -6583,7 +5249,6 @@ impl HybridModel {
             stage0_ms,
             tx_ms,
             trace,
-            _walk_owner,
         } = ticket;
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
@@ -6650,7 +5315,7 @@ impl HybridModel {
             pos0,
             t,
             cache,
-            ckpt,
+            ckpt.as_deref_mut(),
             stream,
             None,
         )?;
@@ -6720,14 +5385,14 @@ impl HybridModel {
     ) -> Result<Option<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>)>, Box<dyn std::error::Error>>
     {
         let dbg = std::env::var("MEMRA_SPEC_FA2_DEBUG").as_deref() == Ok("1");
-        if !prime_trows_on() {
+        if std::env::var("MEMRA_PRIME_TROWS").as_deref() != Ok("1") {
             return Ok(None);
         }
         if !self.uses_sliding_gated_moe_program()
             || cache.pos != 0
             || cache.dflash_taps.is_some()
-            || !spec_verify_eager_on()
-            || !spec_verify_tcol_on()
+            || std::env::var("MEMRA_SPEC_VERIFY_EAGER").as_deref() != Ok("1")
+            || std::env::var("MEMRA_SPEC_VERIFY_TCOL").as_deref() != Ok("1")
         {
             if dbg {
                 eprintln!(
@@ -6807,7 +5472,6 @@ impl HybridModel {
         Ok(Some((logits, h_seed, hiddens)))
     }
 
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn step35_verify_batch_layers(
         &self,
         e: &Engine,
@@ -6830,8 +5494,10 @@ impl HybridModel {
         // plain greedy by construction. Only the unsplit full-range walk qualifies; PP splits
         // and the tap path keep the batch-layer class.
         static VE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let eager_verify =
-            *VE.get_or_init(spec_verify_eager_on) && lo == 0 && hi == self.layers.len();
+        let eager_verify = *VE
+            .get_or_init(|| std::env::var("MEMRA_SPEC_VERIFY_EAGER").as_deref() == Ok("1"))
+            && lo == 0
+            && hi == self.layers.len();
         if eager_verify {
             // T-COLUMN LAYER-OUTER WALK (MEMRA_SPEC_VERIFY_TCOL=1): per layer, one t-grid
             // attn norm + ONE weight-amortized QKV(+gate) over all T columns, then each
@@ -6841,17 +5507,14 @@ impl HybridModel {
             // (kernel_check identity), the tcol kernel's per-column FP order == the t=1
             // kernel, and every downstream op IS the t=1 program.
             static TCOL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-            let tcol = *TCOL.get_or_init(spec_verify_tcol_on);
+            let tcol =
+                *TCOL.get_or_init(|| std::env::var("MEMRA_SPEC_VERIFY_TCOL").as_deref() == Ok("1"));
             // T > 32 (prefill-class): run the SAME walk in 32-row chunks — each chunk's
             // rows are the t=1 program bit-for-bit and the rope pass advances the cache,
             // so a chunked call is value-identical to the row-outer loop it replaces.
             static TROWS_PREFILL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-            // MEMRA_STEP_GEMM_PRIME outranks the walk: with the grouped GEMM prime armed, the
-            // t-row walk defers so the batch path (GEMM trunk + grouped MoE) takes the prompt —
-            // flag precedence between two existing doors, not a new flag. Without this, both
-            // doors ON meant the walk still won and the GEMM prime needed PRIME_TROWS=0 by hand.
-            let trows_prefill =
-                *TROWS_PREFILL.get_or_init(|| prime_trows_on() && !crate::step_gemm_prime_on());
+            let trows_prefill = *TROWS_PREFILL
+                .get_or_init(|| std::env::var("MEMRA_PRIME_TROWS").as_deref() == Ok("1"));
             // MEMRA_PRIME_TROWS_T=<w>: chunk width, default 8 = the REAL cap of this walk.
             // The workspace slabs go to 32 rows, but `matvec_bf16_qkvg_tcol_into` refuses
             // t > 8 (compile-time-T twins exist for 2/4/8 only; the runtime-t kernel spills
@@ -6897,7 +5560,7 @@ impl HybridModel {
                 }
                 return Ok(out);
             }
-            if tcol && (2..=32).contains(&t) {
+            if tcol && t >= 2 && t <= 32 {
                 // MEMRA_TCOL_PROF=1: synchronized per-segment wall profile of the walk
                 // (norm+QKV precompute / per-col attention / per-col residual+FFN). The
                 // syncs serialize the stream, so the split is for TARGETING amortization
@@ -6921,15 +5584,14 @@ impl HybridModel {
                 // stashes `gated` instead of joining per column; one b4_tcol per rank +
                 // one slab join produce every column's `mixed` after the attention pass.
                 // Bit-exact per column (t=1 b4 program per column; elementwise join).
-                // MEMRA_TCOL_FFN=1: today this only IMPLIES the o_proj defer above. Its
-                // named feature, the two-column device-routed FFN sweep, rode the
-                // slot-major v2 TP banks and was REMOVED with the MEMRA_NVFP4_BANK_V2 door
-                // (2026-08-29, research/step37-bankv2-removal-20260829): the v2 layout
-                // changed generated text in serving. The flag itself stays because it is
-                // family-armed in the step37 serving defaults and killing it here would
-                // silently drop the o_proj defer from the qualified serving shape.
+                // MEMRA_TCOL_FFN=1 (implies the o_proj defer): when every column of a
+                // MoE layer deferred, the residual norm runs as one t-grid launch
+                // (per-row program == t=1) and the FFN as ONE two-column device-routed
+                // sweep + per-column shexp — the two columns' expert weights dedup
+                // through L2 instead of reading HBM twice.
                 static FFN2: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-                let ffn_batch = *FFN2.get_or_init(tcol_ffn_on);
+                let ffn_batch =
+                    *FFN2.get_or_init(|| std::env::var("MEMRA_TCOL_FFN").as_deref() == Ok("1"));
                 let oproj_batch = crate::tp::tcol_oproj_on() || ffn_batch;
                 // MEMRA_SPEC_FA2=1 (T=2 only): eligible layers defer BOTH columns' fa —
                 // the per-column pass norms/ropes/appends and stashes q+gate, then one
@@ -6941,15 +5603,6 @@ impl HybridModel {
                 let mut pos_staged = false;
                 for il in lo..hi {
                     let layer = &self.layers[il];
-                    // BEFORE this layer touches its planes: is the history it is about to
-                    // attend already poisoned? Global (non-ring) layers only, which are the
-                    // ones the level-2 bitmap implicates.
-                    if kv_plane_scan_on()
-                        && self.step35_geom(il).window.is_none()
-                        && let Some(distributed) = cache.tp_kv[il].as_ref()
-                    {
-                        scan_kv_plane(e, distributed, il, pos0)?;
-                    }
                     let fa2_layer = fa2 && self.step35_fa_rows_precheck(cache, il, pos0, t)?;
                     let mut seg = std::time::Instant::now();
                     e.rms_norm(&x_t, layer.attn_norm.float_data(), &mut h_t, n_embd, t, eps)?;
@@ -6960,92 +5613,98 @@ impl HybridModel {
                     // FULL t-row attention pass (rope/append + fa + combine + o_proj in
                     // 3 launches/rank): same-session rows, slot = len-base+r, one len
                     // advance by t. Host cache bookkeeping mirrors the per-column tail.
-                    if fa2_layer
-                        && let Some(mixed_t) =
+                    if fa2_layer {
+                        if let Some(mixed_t) =
                             self.step35_verify_rope_fa_pass(e, il, cache, pos0, t, !pos_staged)?
-                    {
-                        pos_staged = true;
                         {
-                            let tp_kv = cache.tp_kv[il]
-                                .as_mut()
-                                .expect("precheck verified the distributed cache");
-                            let transaction = tp_kv.begin_transaction()?;
-                            let crate::hybrid::Mixer::Full(fa) = &layer.mixer else {
-                                return Err("verify rope pass expects full attention".into());
-                            };
-                            let tp = fa
-                                .step_tp_qkv
-                                .as_ref()
-                                .ok_or("verify rope pass lost its TP state")?;
-                            let empty: [CudaSlice<f32>; 0] = [];
-                            tp.runtime.append_tp_kv_transaction_inner(
-                                tp_kv,
-                                transaction,
-                                &empty,
-                                &empty,
-                                t,
-                                true,
-                            )?;
-                            tp.runtime
-                                .commit_tp_kv_transaction_external(tp_kv, transaction, t)?;
-                            if let Some(local) = cache.kv[il].as_mut() {
-                                local.len = pos0 + t;
-                                if !crate::tp::len_mirror_lazy_on() {
-                                    e.set_i32_one(&mut local.len_d, local.len as i32)?;
+                            pos_staged = true;
+                            {
+                                let tp_kv = cache.tp_kv[il]
+                                    .as_mut()
+                                    .expect("precheck verified the distributed cache");
+                                let transaction = tp_kv.begin_transaction()?;
+                                let crate::hybrid::Mixer::Full(fa) = &layer.mixer else {
+                                    return Err("verify rope pass expects full attention".into());
+                                };
+                                let tp = fa
+                                    .step_tp_qkv
+                                    .as_ref()
+                                    .ok_or("verify rope pass lost its TP state")?;
+                                let empty: [CudaSlice<f32>; 0] = [];
+                                tp.runtime.append_tp_kv_transaction_inner(
+                                    tp_kv,
+                                    transaction,
+                                    &empty,
+                                    &empty,
+                                    t,
+                                    true,
+                                )?;
+                                tp.runtime.commit_tp_kv_transaction_external(
+                                    tp_kv,
+                                    transaction,
+                                    t,
+                                )?;
+                                if let Some(local) = cache.kv[il].as_mut() {
+                                    local.len = pos0 + t;
+                                    if !crate::tp::len_mirror_lazy_on() {
+                                        e.set_i32_one(&mut local.len_d, local.len as i32)?;
+                                    }
                                 }
                             }
-                        }
-                        if prof {
-                            e.stream().synchronize()?;
-                            prof_ms[1] += seg.elapsed().as_secs_f64() * 1e3;
-                            seg = std::time::Instant::now();
-                        }
-                        let o_out = mixed_t.len() / t;
-                        let mut next = e.uninit(t * n_embd)?;
-                        {
-                            for r in 0..t {
-                                e.dtod_copy_view(
-                                    &mixed_t.slice(r * o_out..(r + 1) * o_out),
-                                    &mut mixed_row,
-                                )?;
-                                let mut x_row = e.uninit(n_embd)?;
-                                e.dtod_copy_view(
-                                    &x_t.slice(r * n_embd..(r + 1) * n_embd),
-                                    &mut x_row,
-                                )?;
-                                let (x1, ffn_out) = self.residual_norm_ffn(
-                                    e, layer, &x_row, &mixed_row, n_embd, il, eps,
-                                )?;
-                                let mut x2 = e.uninit(n_embd)?;
-                                e.add(&x1, &ffn_out, &mut x2, n_embd)?;
-                                e.dtod_copy_into(&x2, &mut next, r * n_embd)?;
+                            if prof {
+                                e.stream().synchronize()?;
+                                prof_ms[1] += seg.elapsed().as_secs_f64() * 1e3;
+                                seg = std::time::Instant::now();
                             }
+                            let o_out = mixed_t.len() / t;
+                            let mut next = e.uninit(t * n_embd)?;
+                            let mut batched = false;
+                            if ffn_batch && o_out == n_embd {
+                                let mut x1_t = e.uninit(t * n_embd)?;
+                                let mut z_t = e.uninit(t * n_embd)?;
+                                e.add_rms_norm(
+                                    &x_t,
+                                    &mixed_t,
+                                    layer.post_attn_norm.float_data(),
+                                    &mut x1_t,
+                                    &mut z_t,
+                                    n_embd,
+                                    t,
+                                    eps,
+                                )?;
+                                if let Some(ffn_t) = self.step35_verify_moe_tn(e, il, &z_t, t)? {
+                                    let mut x2_t = e.uninit(t * n_embd)?;
+                                    e.add(&x1_t, &ffn_t, &mut x2_t, t * n_embd)?;
+                                    next = x2_t;
+                                    batched = true;
+                                }
+                            }
+                            if !batched {
+                                for r in 0..t {
+                                    e.dtod_copy_view(
+                                        &mixed_t.slice(r * o_out..(r + 1) * o_out),
+                                        &mut mixed_row,
+                                    )?;
+                                    let mut x_row = e.uninit(n_embd)?;
+                                    e.dtod_copy_view(
+                                        &x_t.slice(r * n_embd..(r + 1) * n_embd),
+                                        &mut x_row,
+                                    )?;
+                                    let (x1, ffn_out) = self.residual_norm_ffn(
+                                        e, layer, &x_row, &mixed_row, n_embd, il, eps,
+                                    )?;
+                                    let mut x2 = e.uninit(n_embd)?;
+                                    e.add(&x1, &ffn_out, &mut x2, n_embd)?;
+                                    e.dtod_copy_into(&x2, &mut next, r * n_embd)?;
+                                }
+                            }
+                            if prof {
+                                e.stream().synchronize()?;
+                                prof_ms[2] += seg.elapsed().as_secs_f64() * 1e3;
+                            }
+                            x_t = next;
+                            continue;
                         }
-                        if prof {
-                            e.stream().synchronize()?;
-                            prof_ms[2] += seg.elapsed().as_secs_f64() * 1e3;
-                        }
-                        x_t = next;
-                        if spec_nan_scan() {
-                            // The scan MUST sit on this arm too. It used to live only on
-                            // the non-fused tail, so a fused layer's poison was first
-                            // reported by the next non-fused layer.
-                            verify_arm_receipt(
-                                "fused",
-                                il,
-                                pos0,
-                                t,
-                                cache.tp_kv[il].as_ref().map(|d| d.staged_len()),
-                            );
-                            nan_scan_rows(
-                                e,
-                                &x_t,
-                                t,
-                                n_embd,
-                                &format!("tcol layer {il} pos0={pos0} arm=fused"),
-                            )?;
-                        }
-                        continue;
                     }
                     if prof {
                         e.stream().synchronize()?;
@@ -7059,30 +5718,20 @@ impl HybridModel {
                     // residual_norm_ffn consumes before the next column's finish.
                     let mut deferred: Vec<usize> = Vec::new();
                     let mut fa2_deferred: Vec<usize> = Vec::new();
-                    let ffn_col = |r: usize,
-                                   mixed: &CudaSlice<f32>,
-                                   next: &mut CudaSlice<f32>|
-                     -> Result<(), Box<dyn std::error::Error>> {
-                        let mut x_row = e.uninit(n_embd)?;
-                        e.dtod_copy_view(&x_t.slice(r * n_embd..(r + 1) * n_embd), &mut x_row)?;
-                        let (x1, ffn_out) =
-                            self.residual_norm_ffn(e, layer, &x_row, mixed, n_embd, il, eps)?;
-                        if spec_nan_scan_level() >= 2 {
-                            nan_scan_rows(
-                                e,
-                                &ffn_out,
-                                1,
-                                n_embd,
-                                &format!("tcol layer {il} col {r} per-column FFN out"),
-                            )?;
-                        }
-                        let mut x2 = e.uninit(n_embd)?;
-                        e.add(&x1, &ffn_out, &mut x2, n_embd)?;
-                        e.dtod_copy_into(&x2, next, r * n_embd)?;
-                        Ok(())
-                    };
-                    #[allow(clippy::needless_range_loop)]
-                    // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
+                    let mut ffn_col =
+                        |r: usize,
+                         mixed: &CudaSlice<f32>,
+                         next: &mut CudaSlice<f32>|
+                         -> Result<(), Box<dyn std::error::Error>> {
+                            let mut x_row = e.uninit(n_embd)?;
+                            e.dtod_copy_view(&x_t.slice(r * n_embd..(r + 1) * n_embd), &mut x_row)?;
+                            let (x1, ffn_out) =
+                                self.residual_norm_ffn(e, layer, &x_row, mixed, n_embd, il, eps)?;
+                            let mut x2 = e.uninit(n_embd)?;
+                            e.add(&x1, &ffn_out, &mut x2, n_embd)?;
+                            e.dtod_copy_into(&x2, next, r * n_embd)?;
+                            Ok(())
+                        };
                     for r in 0..t {
                         e.dtod_copy_view(&h_t.slice(r * n_embd..(r + 1) * n_embd), &mut h_row)?;
                         let row_pos = &pos_rows[r];
@@ -7107,16 +5756,6 @@ impl HybridModel {
                         } else if oproj_batch && crate::tp::take_tcol_oproj_stashed() {
                             deferred.push(r);
                         } else {
-                            if spec_nan_scan_level() >= 2 {
-                                let cols = mixed.len();
-                                nan_scan_rows(
-                                    e,
-                                    &mixed,
-                                    1,
-                                    cols,
-                                    &format!("tcol layer {il} col {r} per-column ATTN out"),
-                                )?;
-                            }
                             ffn_col(r, &mixed, &mut next)?;
                         }
                     }
@@ -7140,21 +5779,33 @@ impl HybridModel {
                             self.step35_verify_oproj_tcol(e, il, t)?
                         };
                         let o_out = mixed_t.len() / t;
-                        if spec_nan_scan_level() >= 2 {
-                            nan_scan_rows(
-                                e,
-                                &mixed_t,
-                                t,
-                                o_out,
-                                &format!("tcol layer {il} JOINED attn over deferred cols"),
-                            )?;
-                        }
                         // Batched t=2 residual+MoE: one t-grid add_rms_norm (per-row
                         // program == t=1; bit-identical to the oproj-tail join per the
                         // M2 verbatim-program contract) feeding the two-column routed
                         // sweep. Ineligible layers (dense FFN, non-nvfp4) fall through
                         // to the per-column body.
-                        {
+                        let mut batched = false;
+                        if ffn_batch && deferred.len() == t && o_out == n_embd {
+                            let mut x1_t = e.uninit(t * n_embd)?;
+                            let mut z_t = e.uninit(t * n_embd)?;
+                            e.add_rms_norm(
+                                &x_t,
+                                &mixed_t,
+                                layer.post_attn_norm.float_data(),
+                                &mut x1_t,
+                                &mut z_t,
+                                n_embd,
+                                t,
+                                eps,
+                            )?;
+                            if let Some(ffn_t) = self.step35_verify_moe_tn(e, il, &z_t, t)? {
+                                let mut x2_t = e.uninit(t * n_embd)?;
+                                e.add(&x1_t, &ffn_t, &mut x2_t, t * n_embd)?;
+                                next = x2_t;
+                                batched = true;
+                            }
+                        }
+                        if !batched {
                             for &r in &deferred {
                                 e.dtod_copy_view(
                                     &mixed_t.slice(r * o_out..(r + 1) * o_out),
@@ -7168,26 +5819,8 @@ impl HybridModel {
                         e.stream().synchronize()?;
                         prof_ms[2] += seg.elapsed().as_secs_f64() * 1e3;
                     }
+                    drop(ffn_col);
                     x_t = next;
-                    if spec_nan_scan() {
-                        verify_arm_receipt(
-                            if fa2_layer { "join" } else { "percol" },
-                            il,
-                            pos0,
-                            t,
-                            cache.tp_kv[il].as_ref().map(|d| d.staged_len()),
-                        );
-                        nan_scan_rows(
-                            e,
-                            &x_t,
-                            t,
-                            n_embd,
-                            &format!(
-                                "tcol layer {il} pos0={pos0} arm={}",
-                                if fa2_layer { "join" } else { "percol" }
-                            ),
-                        )?;
-                    }
                 }
                 if prof {
                     eprintln!(
@@ -7202,46 +5835,11 @@ impl HybridModel {
                 x = x_t;
             }
             let mut next = e.uninit(t * n_embd)?;
-            let scan = spec_nan_scan();
             for r in 0..t {
                 let mut row = e.uninit(n_embd)?;
                 e.dtod_copy_view(&x.slice(r * n_embd..(r + 1) * n_embd), &mut row)?;
                 let row_pos = e.htod_i32(&[(pos0 + r) as i32])?;
-                let out = if scan {
-                    // Diagnostic arm: the same range walked one layer at a time so the first
-                    // poisoned layer names itself. `decode_layers_eager(lo, hi)` is range-scoped
-                    // and executes its trailing residual add, so a per-layer chain is the same
-                    // program with the cross-layer add+norm fusion unrolled.
-                    nan_scan_rows(
-                        e,
-                        &row,
-                        1,
-                        n_embd,
-                        &format!("embed row r={r} pos={}", pos0 + r),
-                    )?;
-                    let mut acc = row;
-                    for il in lo..hi {
-                        acc = self.decode_layers_eager(
-                            e,
-                            acc,
-                            il,
-                            il + 1,
-                            &row_pos,
-                            pos0 + r,
-                            cache,
-                        )?;
-                        nan_scan_rows(
-                            e,
-                            &acc,
-                            1,
-                            n_embd,
-                            &format!("row-outer layer {il} r={r} pos={}", pos0 + r),
-                        )?;
-                    }
-                    acc
-                } else {
-                    self.decode_layers_eager(e, row, lo, hi, &row_pos, pos0 + r, cache)?
-                };
+                let out = self.decode_layers_eager(e, row, lo, hi, &row_pos, pos0 + r, cache)?;
                 e.dtod_copy_into(&out, &mut next, r * n_embd)?;
             }
             // dflash taps are NOT produced on this arm (they need per-layer hiddens the
@@ -7273,9 +5871,6 @@ impl HybridModel {
             }
             self.dflash_tap(e, cache, il, &next, t)?;
             x = next;
-            if spec_nan_scan() {
-                nan_scan_rows(e, &x, t, n_embd, &format!("batch-layer {il} pos0={pos0}"))?;
-            }
         }
         Ok(x)
     }
@@ -7301,7 +5896,7 @@ impl HybridModel {
         for r in 0..t {
             e.argmax_token_device_col(&logits, r, v, &mut am_d, r)?;
         }
-        e.dtoh_u32(&am_d)
+        Ok(e.dtoh_u32(&am_d)?)
     }
 
     /// DSpark verify returning the RAW verify logits [t, n_vocab] (device-resident) instead
@@ -7360,7 +5955,6 @@ impl HybridModel {
     /// rows to the host arm), so the host never blocks on the draft chain before dispatching
     /// verify. Returns the device per-row argmax buffer; the caller merges its readback with
     /// the chain's into ONE sync. Forward, ckpt fill and argmax walk are `_ckpt` verbatim.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub(crate) fn dspark_verify_t_am_ckpt_dev(
         &self,
         e: &Engine,
@@ -7477,8 +6071,8 @@ impl HybridModel {
                 let st = &e.gpu.stream();
                 let (dc, _g0) = rl.conv_state.device_ptr(st);
                 let (ds, _g1) = rl.ssm_state.device_ptr(st);
-                conv_dst.push(dc);
-                ssm_dst.push(ds);
+                conv_dst.push(dc as u64);
+                ssm_dst.push(ds as u64);
             }
         }
         let n = conv_src.len();
@@ -7624,16 +6218,16 @@ impl HybridModel {
                     }
                 };
                 e.dtod_copy_into(&out, &mut next, r * n_embd)?;
-                if r + 1 < t
-                    && let Some(states) = col_states.as_mut()
-                {
-                    let recur = cache.recur[il]
-                        .as_ref()
-                        .ok_or("Qwen35-MoE linear verify layer has no recurrent state")?;
-                    states.push((
-                        e.clone_dtod(&recur.conv_state)?,
-                        e.clone_dtod(&recur.ssm_state)?,
-                    ));
+                if r + 1 < t {
+                    if let Some(states) = col_states.as_mut() {
+                        let recur = cache.recur[il]
+                            .as_ref()
+                            .ok_or("Qwen35-MoE linear verify layer has no recurrent state")?;
+                        states.push((
+                            e.clone_dtod(&recur.conv_state)?,
+                            e.clone_dtod(&recur.ssm_state)?,
+                        ));
+                    }
                 }
             }
             if let (Some(checkpoint), Some(states)) = (ckpt.as_deref_mut(), col_states) {
@@ -7656,13 +6250,13 @@ impl HybridModel {
     ///   * row-indexed norms/elementwise (`rms_norm`, `quantize_q8_1`, `add_rms_norm`,
     ///     `gated_rmsnorm[_q8_1]`, `silu_mul`, `rope_neox` with per-row positions): the T-row
     ///     launch is the per-row program (same pin the generic verify's fused norms rely on).
-    ///     The sequential dependencies keep their exact serving order: the conv ring / gdn scan
-    ///     chain state row -> row through the `_b` kernels at b_n=1 (ping-pong via a 6-entry
-    ///     alternating pointer table, host handles swapped per row so VerifyCkpt clones the
-    ///     canonical state exactly as the rowwise arm does), and each row's KV append + fa decode
-    ///     picks its arm from ITS OWN t_kv (append: format-only; fa: `fa_seqs_eligible` + its own
-    ///     `fa_split_keys` rung at b_n=1) — the straddle law per row, so every row executes the
-    ///     program its isolated B=1 serving step would.
+    /// The sequential dependencies keep their exact serving order: the conv ring / gdn scan
+    /// chain state row -> row through the `_b` kernels at b_n=1 (ping-pong via a 6-entry
+    /// alternating pointer table, host handles swapped per row so VerifyCkpt clones the
+    /// canonical state exactly as the rowwise arm does), and each row's KV append + fa decode
+    /// picks its arm from ITS OWN t_kv (append: format-only; fa: `fa_seqs_eligible` + its own
+    /// `fa_split_keys` rung at b_n=1) — the straddle law per row, so every row executes the
+    /// program its isolated B=1 serving step would.
     ///
     /// Cost: 1 weight read per layer per round + T state micro-launches, vs the rowwise arm's
     /// T weight reads. Gated bit-identical vs the rowwise arm by spec-serve-gate + canary.
@@ -7709,22 +6303,6 @@ impl HybridModel {
         //  - fallback (straddle rounds, below the vec floor, partial walks): runs of
         //    consecutive LINEAR layers replay the slice-3 per-(segment, vt) graphs and
         //    the full-attention layers run eager (batched rows when eligible).
-        //
-        // GRAPH-LAUNCH HEADROOM GUARD (see GRAPH_LAUNCH_MIN_FREE): the dspark verify
-        // graphs replay through this walk from THREE callers — the MTP spec round's vg
-        // door (already dropped per round by `graph_round_ok` before it gets here), the
-        // dspark one-shot, and the dspark SERVE round (default ON since v0.108). Below
-        // the driver-free floor the WHOLE round takes the byte-identical eager
-        // cols-ckpt walk — the same drop-the-ctx fallback the pool ceiling already
-        // takes — instead of feeding cuGraphLaunch a card it segfaults on.
-        if let Some(g) = graphs.as_deref_mut()
-            && !graph_launch_headroom_ok(e)
-        {
-            g.round_slab = false;
-            graphs = None;
-            static NOTED: std::sync::Once = std::sync::Once::new();
-            NOTED.call_once(|| graph_replay_suspended_note("dspark-vg"));
-        }
         if let Some(g) = graphs.as_deref_mut() {
             g.refresh_tables(e, cache)?;
             g.round_slab = false;
@@ -7846,18 +6424,19 @@ impl HybridModel {
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let n_ff = ffn_gate.out_features();
         let (zq, zd) = e.quantize_q8_1(zn, t, n_embd)?;
-        if Engine::tk_ffn_dual_on()
-            && let Some(((g, gs), (u, us))) =
+        if Engine::tk_ffn_dual_on() {
+            if let Some(((g, gs), (u, us))) =
                 e.matmul_decode_exact_dual_pre(ffn_gate, ffn_up, &zq, &zd, t)?
-        {
-            if e.uses_q8_1_fast(ffn_down) {
-                let (aq, ad) = e.silu_mul_scaled_q8_1(&g, &u, gs, us, t * n_ff)?;
-                return e.matmul_decode_exact_pre(ffn_down, &aq, &ad, t);
+            {
+                if e.uses_q8_1_fast(ffn_down) {
+                    let (aq, ad) = e.silu_mul_scaled_q8_1(&g, &u, gs, us, t * n_ff)?;
+                    return e.matmul_decode_exact_pre(ffn_down, &aq, &ad, t);
+                }
+                let mut act = e.uninit(t * n_ff)?;
+                e.silu_mul_scaled(&g, &u, gs, us, &mut act, t * n_ff)?;
+                let (aq, ad) = e.quantize_q8_1(&act, t, n_ff)?;
+                return e.matmul_pre(ffn_down, &aq, &ad, &act, t);
             }
-            let mut act = e.uninit(t * n_ff)?;
-            e.silu_mul_scaled(&g, &u, gs, us, &mut act, t * n_ff)?;
-            let (aq, ad) = e.quantize_q8_1(&act, t, n_ff)?;
-            return e.matmul_pre(ffn_down, &aq, &ad, &act, t);
         }
         // v1 singles chain (seam off or dual-refused) — the pre-slice-B body verbatim.
         let g = e.matmul_pre(ffn_gate, &zq, &zd, zn, t)?;
@@ -7884,8 +6463,8 @@ impl HybridModel {
     ///   round whose rows all sit inside the rung;
     /// - the host len bump moves to the replay caller (captured host code does not
     ///   re-run at replay).
-    ///   Graph mode REFUSES any round the batched arm cannot take: the per-row fallback
-    ///   host-branches on t_kv and must never be captured.
+    /// Graph mode REFUSES any round the batched arm cannot take: the per-row fallback
+    /// host-branches on t_kv and must never be captured.
     #[allow(clippy::too_many_arguments)]
     fn qwen35_tparallel_fa_layer(
         &self,
@@ -7910,7 +6489,7 @@ impl HybridModel {
             batch_fa_on,
             graph_cap,
             stream,
-            ckpt,
+            mut ckpt,
         } = args;
 
         // ---- attn_norm + q8_1 quantize at m=T (row-indexed == per-row) ----
@@ -7942,7 +6521,7 @@ impl HybridModel {
                 let want = ckpt.is_some();
                 let (out, stash) =
                     self.linear_attn_verify_t(e, la, &xn, Some((&hq, &hd)), t, cache, il, want)?;
-                if let (Some(ck), Some(st)) = (ckpt, stash) {
+                if let (Some(ck), Some(st)) = (ckpt.as_deref_mut(), stash) {
                     ck.gdn[il] = Some(st);
                 }
                 out
@@ -8035,8 +6614,8 @@ impl HybridModel {
                             let (pv, _g2) = kvl.v.device_ptr(s);
                             let mut tbl = Vec::with_capacity(2 * t);
                             for _ in 0..t {
-                                tbl.push(pk);
-                                tbl.push(pv);
+                                tbl.push(pk as u64);
+                                tbl.push(pv as u64);
                             }
                             Some(e.htod_u64(&tbl)?)
                         }
@@ -8184,8 +6763,6 @@ impl HybridModel {
                         });
                     }
                     let pos_rows = pos_rows.as_ref().unwrap();
-                    #[allow(clippy::needless_range_loop)]
-                    // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
                     for r in 0..t {
                         // Owned per-row scratch: the b_n=1 kernels take packed batch buffers
                         // whose row 0 is this row (arithmetic-free materialization copies,
@@ -8322,8 +6899,8 @@ impl HybridModel {
     ///   legacy post-swap clone read.
     /// - `stash` (slice-3 ctx): persistent per-layer slabs written by copy_into instead of
     ///   per-row clone_dtod allocs — same bytes, capture-legal (no per-round host objects).
-    ///   `table_src` = (persistent pointer table, offset) when the ctx owns the tables;
-    ///   None builds the per-verify table exactly as before.
+    /// `table_src` = (persistent pointer table, offset) when the ctx owns the tables;
+    /// None builds the per-verify table exactly as before.
     #[allow(clippy::too_many_arguments)]
     fn qwen35_tparallel_linear_layer(
         &self,
@@ -8332,7 +6909,7 @@ impl HybridModel {
         x: &CudaSlice<f32>,
         t: usize,
         cache: &mut Cache,
-        ckpt: Option<&mut VerifyCkpt>,
+        mut ckpt: Option<&mut VerifyCkpt>,
         stash: Option<(&mut CudaSlice<f32>, &mut CudaSlice<f32>)>,
         table_src: Option<(&CudaSlice<u64>, usize)>,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
@@ -8399,7 +6976,9 @@ impl HybridModel {
                 let (pc, _g0) = rl.conv_state.device_ptr(s);
                 let (p0, _g1) = rl.ssm_state.device_ptr(s);
                 let (p1, _g2) = rl.ssm_state_alt.device_ptr(s);
-                Some(e.htod_u64(&[pc, p0, p1, pc, p1, p0])?)
+                Some(e.htod_u64(&[
+                    pc as u64, p0 as u64, p1 as u64, pc as u64, p1 as u64, p0 as u64,
+                ])?)
             }
         };
         let (table, toff): (&CudaSlice<u64>, usize) = match table_src {
@@ -8514,7 +7093,7 @@ impl HybridModel {
             let rl = cache.recur[il].as_mut().unwrap();
             std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
         }
-        if let (Some(checkpoint), Some(states)) = (ckpt, col_states) {
+        if let (Some(checkpoint), Some(states)) = (ckpt.as_deref_mut(), col_states) {
             checkpoint.cols[il] = Some(states);
         }
 
@@ -8760,14 +7339,14 @@ impl HybridModel {
                             // REPLAY-FREE ckpt: clone the chain's ACTUAL state after this column
                             // (pure dtod — cannot change any computed value). Last column skipped:
                             // rebuild targets are j <= t-1 columns.
-                            if let Some(cs) = col_states.as_mut()
-                                && col + 1 < t
-                            {
-                                let rl = cache.recur[il].as_ref().unwrap();
-                                cs.push((
-                                    e.clone_dtod(&rl.conv_state)?,
-                                    e.clone_dtod(&rl.ssm_state)?,
-                                ));
+                            if let Some(cs) = col_states.as_mut() {
+                                if col + 1 < t {
+                                    let rl = cache.recur[il].as_ref().unwrap();
+                                    cs.push((
+                                        e.clone_dtod(&rl.conv_state)?,
+                                        e.clone_dtod(&rl.ssm_state)?,
+                                    ));
+                                }
                             }
                         }
                         if let (Some(ck), Some(cs)) = (ckpt.as_deref_mut(), col_states) {
@@ -8788,16 +7367,6 @@ impl HybridModel {
                     }
                 }
             };
-            if spec_nan_scan_level() >= 2 {
-                let mixed_width = mixed.len() / t;
-                nan_scan_rows(
-                    e,
-                    &mixed,
-                    t,
-                    mixed_width,
-                    &format!("verify layer {il} batched ATTN out pos0={pos0}"),
-                )?;
-            }
 
             // DISPATCH-MIRRORED post-attn norm: eager residual_norm_ffn fuses add+norm+quant
             // (1024-thread add_rms_norm_q8_1) only for Dense FFNs whose gate+up are q8_1-fast;
@@ -8864,15 +7433,6 @@ impl HybridModel {
                 z = zf;
                 None
             };
-            if spec_nan_scan_level() >= 2 && !z.is_empty() {
-                nan_scan_rows(
-                    e,
-                    &z,
-                    t,
-                    n_embd,
-                    &format!("verify layer {il} post-attn norm z pos0={pos0}"),
-                )?;
-            }
             // DECODE-EXACT FFN projections: force MMVQ for gate/up/down at any T to match the
             // T=1 decode FP accumulation order. At T>=5 the generic matmul/matmul_pre falls to dp4a
             // (128-thread, different FP sum order). At T=2-4 the batched MMVQ is already bit-identical.
@@ -8890,9 +7450,11 @@ impl HybridModel {
                         // NVFP4 macro-scales folded (deferred-scale dual: y*s inline == the
                         // scale_inplace store, value-exact) — the exact m=1 decode epilogue
                         // structure at nrows=t.
-                        let pair = e
-                            .matmul_decode_exact_dual_pre(ffn_gate, ffn_up, zq, zd, t)?
-                            .map(|((g, gs), (u, us))| (g, gs, u, us));
+                        let pair =
+                            match e.matmul_decode_exact_dual_pre(ffn_gate, ffn_up, zq, zd, t)? {
+                                Some(((g, gs), (u, us))) => Some((g, gs, u, us)),
+                                None => None,
+                            };
                         let (gate, gs, up, us) = match pair {
                             Some(x4) => x4,
                             None => (
@@ -8941,26 +7503,6 @@ impl HybridModel {
                 }
                 crate::hybrid::Ffn::Moe(m) => self.moe_ffn_il(e, m, &z, t, il as u16)?,
             };
-            if spec_nan_scan_level() >= 2 {
-                nan_scan_rows(
-                    e,
-                    &ffn_out,
-                    t,
-                    n_embd,
-                    &format!("verify layer {il} batched FFN out pos0={pos0}"),
-                )?;
-            }
-            if spec_nan_scan() {
-                let mut residual = vbuf(e, t * n_embd)?;
-                e.add(&x1, &ffn_out, &mut residual, t * n_embd)?;
-                nan_scan_rows(
-                    e,
-                    &residual,
-                    t,
-                    n_embd,
-                    &format!("verify layer {il} residual pos0={pos0}"),
-                )?;
-            }
             // CROSS-LAYER fusion: defer this layer's post-FFN residual add — the next layer's
             // fused-q8 attn norm folds it in (add_rms_norm_q8_1 == add; rms_norm; quantize,
             // kernel-check-pinned at nrows=T). Non-fused next layers add explicitly above.
@@ -9040,11 +7582,10 @@ impl HybridModel {
             if t == 1 && e.uses_q8_1_fast(&la.wqkv) && e.uses_q8_1_fast(&la.wqkv_gate) {
                 let (hq, hd) = e.quantize_q8_1(h, 1, cfg.n_embd as usize)?;
                 fused = e.matmul_q8_fused2(&la.wqkv, &la.wqkv_gate, &hq, &hd)?;
-            } else if let Some((hq, hd)) = hq8_any
-                && spec_fused_t()
-                && (2..=4).contains(&t)
-            {
-                fused = e.matmul_q8_fused2_t(&la.wqkv, &la.wqkv_gate, hq, hd, t)?;
+            } else if let Some((hq, hd)) = hq8_any {
+                if spec_fused_t() && (2..=4).contains(&t) {
+                    fused = e.matmul_q8_fused2_t(&la.wqkv, &la.wqkv_gate, hq, hd, t)?;
+                }
             }
             match (fused, hq8_any) {
                 (Some(pair), _) => pair,
@@ -9244,8 +7785,7 @@ impl HybridModel {
     ///   registers and writes it once at the end, so iterations 0..j-1 are independent of T:
     ///   bit-identical to the verify's own state after j tokens == the eager chain state.
     /// - Linear layers, per-column path: restore the cloned actual state after column j-1.
-    ///   Caller guarantees 1 <= j <= t-1 (j==0 rounds take the legacy rollback; j==t is full accept).
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
+    /// Caller guarantees 1 <= j <= t-1 (j==0 rounds take the legacy rollback; j==t is full accept).
     fn commit_verified_prefix(
         &self,
         e: &Engine,
@@ -9294,8 +7834,8 @@ impl HybridModel {
                 let (dc, _g1) = rl.conv_state.device_ptr(s);
                 let (ps, _g2) = st.device_ptr(s);
                 let (ds, _g3) = rl.ssm_state.device_ptr(s);
-                conv_pairs.push((pc, dc));
-                ssm_pairs.push((ps, ds));
+                conv_pairs.push((pc as u64, dc as u64));
+                ssm_pairs.push((ps as u64, ds as u64));
             }
             if uniform && !conv_pairs.is_empty() {
                 let n = conv_pairs.len();
@@ -9409,7 +7949,6 @@ impl HybridModel {
 
     /// ROUND-STREAM: recur restore with device-j (the _dc twins; full accept early-exits
     /// in-kernel). Requires the batched-linear stash on every linear layer (stream gate).
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn commit_verified_prefix_stream(
         &self,
         e: &Engine,
@@ -9473,7 +8012,6 @@ impl HybridModel {
     /// stream hiddens (blocks in `aux_layers`) for TWO columns: the LAST column (always) and the
     /// optional `pred_col` (the EAGLE seed = bonus's predecessor). Returns
     /// (all_T_logits host, last_col_aux, pred_col_aux?). Used by the EAGLE3 orchestrator's commit.
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn decode_step_t_aux2(
         &self,
         e: &Engine,
@@ -9486,7 +8024,6 @@ impl HybridModel {
         (Vec<f32>, Vec<CudaSlice<f32>>, Option<Vec<CudaSlice<f32>>>),
         Box<dyn std::error::Error>,
     > {
-        cache.ensure_usable("decode_step_t_aux2")?;
         let cfg = &self.cfg;
         let n_embd = cfg.n_embd as usize;
         let eps = cfg.rms_eps;
@@ -9754,15 +8291,7 @@ impl HybridModel {
         // form emitted by the fused rms_norm_q8_1 (bit-identical to rms_norm_decode ->
         // quantize_q8_1, kernel-check-pinned). When present (caller checked mixer q8_1-fast),
         // every projection consumes it — `h` may be a zero-len placeholder and must not be read.
-        let (qf, mut k, v) = if let Some(mut qkv) = self.full_attn_tp_qkv(e, fa, h, t)? {
-            let v = qkv.pop().ok_or("full-attention TP verify QKV omitted V")?;
-            let k = qkv.pop().ok_or("full-attention TP verify QKV omitted K")?;
-            let q = qkv.pop().ok_or("full-attention TP verify QKV omitted Q")?;
-            if !qkv.is_empty() {
-                return Err("full-attention TP verify QKV returned extra projections".into());
-            }
-            (q, k, v)
-        } else {
+        let (qf, mut k, v) = {
             let mut fused = None;
             let qkv_fast =
                 e.uses_q8_1_fast(&fa.wq) && e.uses_q8_1_fast(&fa.wk) && e.uses_q8_1_fast(&fa.wv);
@@ -10035,10 +8564,7 @@ impl HybridModel {
         };
         // DECODE-EXACT wo projection: at m>=5 (K=4+ with pending) the generic matmul would use dp4a
         // (128-thread, different FP sum order than MMVQ). Force MMVQ for bit-identity with decode.
-        match self.full_attn_tp_o(e, fa, &attn_g, t)? {
-            Some(output) => Ok(output),
-            None => Ok(e.matmul_decode_exact(&fa.wo, &attn_g, t)?),
-        }
+        Ok(e.matmul_decode_exact(&fa.wo, &attn_g, t)?)
     }
 
     /// Context-linear bytes for a plain serving session's trunk cache.
@@ -10149,7 +8675,6 @@ impl HybridModel {
             capture_at: None,
             boundary_captures: Vec::new(),
             ckpt_at: None,
-            capture_disabled: false,
         })
     }
 
@@ -10198,7 +8723,6 @@ impl HybridModel {
     /// UNUSABLE; the worker serves the request cold-plain (correct, slower) and the
     /// entry stays published for the next request.
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::result_large_err)] // allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
     pub fn spec_session_from_restored(
         &self,
         e: &Engine,
@@ -10234,10 +8758,6 @@ impl HybridModel {
         let fail = |cache: Cache, msg: String| -> Result<SpecSession, (Option<Cache>, String)> {
             Err((Some(cache), msg))
         };
-        if let Err(error) = cache.ensure_usable("spec_session_from_restored") {
-            drop(cache);
-            return Err((None, error.to_string()));
-        }
         if self.mtp.is_none() {
             return fail(cache, "no MTP head attached (nothing to draft with)".into());
         }
@@ -10315,15 +8835,15 @@ impl HybridModel {
                 ),
             );
         }
-        if kb > 0
-            && let Err(err) = e.copy_u8_into(&mut scratch.kv.k, 0, draft_k, kb)
-        {
-            return fail(cache, format!("draft K restore copy failed: {err}"));
+        if kb > 0 {
+            if let Err(err) = e.copy_u8_into(&mut scratch.kv.k, 0, draft_k, kb) {
+                return fail(cache, format!("draft K restore copy failed: {err}"));
+            }
         }
-        if vb > 0
-            && let Err(err) = e.copy_u8_into(&mut scratch.kv.v, 0, draft_v, vb)
-        {
-            return fail(cache, format!("draft V restore copy failed: {err}"));
+        if vb > 0 {
+            if let Err(err) = e.copy_u8_into(&mut scratch.kv.v, 0, draft_v, vb) {
+                return fail(cache, format!("draft V restore copy failed: {err}"));
+            }
         }
         if let Err(err) = scratch.set_len(e, pos) {
             return fail(cache, format!("draft scratch len set failed: {err}"));
@@ -10426,16 +8946,15 @@ impl HybridModel {
                         pos + seg_end,
                         "stable-boundary capture off the feed split"
                     );
-                    if spec_restore_republish_on()
-                        && let Ok(snap) = cache.snapshot(e)
-                    {
-                        boundary_captures.push(SpecBoundaryCapture {
-                            snap,
-                            pos: pos + seg_end,
-                            logits: feed_logits.clone(),
-                            last_h: capture_boundary_hidden(e, &h_rows, seg_end, n_embd),
-                            latent_tails: Vec::new(),
-                        });
+                    if spec_restore_republish_on() {
+                        if let Ok(snap) = cache.snapshot(e) {
+                            boundary_captures.push(SpecBoundaryCapture {
+                                snap,
+                                pos: pos + seg_end,
+                                logits: feed_logits.clone(),
+                                last_h: capture_boundary_hidden(e, &h_rows, seg_end, n_embd),
+                            });
+                        }
                     }
                     let anchor: Result<CudaSlice<f32>, Box<dyn std::error::Error>> =
                         e.uninit(n_embd).and_then(|mut a| {
@@ -10461,7 +8980,7 @@ impl HybridModel {
             // reads h_rows[i-1]. Chunked like the generate path's fill (transients scale
             // with T). Fill failures are acceptance-only — truncate to the restored rows
             // and continue; the burst's own set_len keeps the invariant.
-            let _mtp = self.mtp.as_ref().expect("mtp checked above"); // invariant check only; the fill below re-reads self.mtp
+            let mtp = self.mtp.as_ref().expect("mtp checked above");
             let (embd_qt, embd_rb) = self.embd.qt_and_row_bytes(n_embd);
             let embd_gpu = if spec_host_embd() {
                 None
@@ -10487,12 +9006,13 @@ impl HybridModel {
                 } else {
                     ((start - 1) * n_embd, 0, tc * n_embd)
                 };
-                if start == 0
-                    && let Some(lh) = last_h_dev.as_ref()
-                    && e.copy_into(&mut phs, 0, lh, n_embd).is_err()
-                {
-                    filled = false;
-                    break 'fill;
+                if start == 0 {
+                    if let Some(lh) = last_h_dev.as_ref() {
+                        if e.copy_into(&mut phs, 0, lh, n_embd).is_err() {
+                            filled = false;
+                            break 'fill;
+                        }
+                    }
                 }
                 if n_copy > 0
                     && e.copy_view_into(
@@ -10564,7 +9084,6 @@ impl HybridModel {
                         pos: pos + t,
                         logits: feed_logits.clone(),
                         last_h: capture_boundary_hidden(e, &h_rows, t, n_embd),
-                        latent_tails: Vec::new(),
                     });
                 }
             }
@@ -10662,7 +9181,6 @@ impl HybridModel {
             capture_at: None,
             boundary_captures,
             ckpt_at: None,
-            capture_disabled: false,
         })
     }
 
@@ -10959,56 +9477,13 @@ impl HybridModel {
                 )
                 .into());
             }
-            match (&src.ring, dst.ring.as_ref()) {
-                (Some(sring), Some(_)) => {
-                    // Ring-backed draft plane (step35): `ckpt.pos` is absolute and exceeds the
-                    // physical rows once lapped — same class as the trunk-KV restore panic
-                    // (2026-08-29 warm-turn-at-40k). Copy the aligned live window, rebase.
-                    let (new_base, phys) = sring.restore_plan(ckpt.pos).map_err(|err| {
-                        format!("checkpoint draft plane {index} SWA restore refused: {err}")
-                    })?;
-                    let rows = phys.len();
-                    let kb = rows * src.k_tok_bytes;
-                    let vb = rows * src.v_tok_bytes;
-                    if kb > 0 {
-                        e.copy_u8_range_into(
-                            &mut dst.k,
-                            0,
-                            &src.k,
-                            phys.start * src.k_tok_bytes,
-                            kb,
-                        )?;
-                    }
-                    if vb > 0 {
-                        e.copy_u8_range_into(
-                            &mut dst.v,
-                            0,
-                            &src.v,
-                            phys.start * src.v_tok_bytes,
-                            vb,
-                        )?;
-                    }
-                    dst.ring
-                        .as_mut()
-                        .expect("ring presence checked above")
-                        .apply_rebase(new_base);
-                    if let Some(base_d) = dst.base_d.as_mut() {
-                        e.set_i32_one(base_d, new_base as i32)?;
-                    }
-                }
-                (None, None) => {
-                    let kb = ckpt.pos * src.k_tok_bytes;
-                    let vb = ckpt.pos * src.v_tok_bytes;
-                    if kb > 0 {
-                        e.copy_u8_into(&mut dst.k, 0, &src.k, kb)?;
-                    }
-                    if vb > 0 {
-                        e.copy_u8_into(&mut dst.v, 0, &src.v, vb)?;
-                    }
-                }
-                _ => {
-                    return Err(format!("checkpoint draft plane {index} ring/flat mismatch").into());
-                }
+            let kb = ckpt.pos * src.k_tok_bytes;
+            let vb = ckpt.pos * src.v_tok_bytes;
+            if kb > 0 {
+                e.copy_u8_into(&mut dst.k, 0, &src.k, kb)?;
+            }
+            if vb > 0 {
+                e.copy_u8_into(&mut dst.v, 0, &src.v, vb)?;
             }
         }
         grown_scratch.set_len(e, ckpt.pos)?;
@@ -11052,7 +9527,6 @@ impl HybridModel {
         sess: &mut SpecSession,
         sampling: Option<SpecSampling>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        sess.cache.ensure_usable("spec_flush_pending")?;
         let Some(b) = sess.pending_tok.take() else {
             return Ok(());
         };
@@ -11101,7 +9575,6 @@ impl HybridModel {
         token: u32,
         cache: &mut Cache,
     ) -> Result<(Vec<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
-        cache.ensure_usable("spec_target_step_h")?;
         if !self.sliding_gated_moe_batch_program() && !self.batched_serving_numeric_class() {
             return self.decode_step_h(e, token, cache);
         }
@@ -11118,36 +9591,19 @@ impl HybridModel {
     /// carries the drift until a near-tie flips deep in generation. One predicate so the five
     /// dispatch sites cannot drift apart again.
     /// Draft-graph head admissibility (lane/draftcost-moe, 2026-08-20): the capture body
-    /// (`mtp_head_forward_cap`) supports Dense heads and SOFTMAX device-routed resident-MoE
-    /// heads. Residency alone is insufficient: Hy3/M3/Step sigmoid routing returns selected
-    /// experts through a host synchronization, which is capture-illegal. Those heads use the
-    /// exact eager draft chain until a device-only sigmoid expert program lands. Trunk FFN class
-    /// is irrelevant — the graph body is the HEAD forward only. One predicate for all three
+    /// (`mtp_head_forward_cap`) supports Dense heads AND resident-MoE heads
+    /// (`Ffn::Moe(m) if m.dev_exps.is_some()`); non-resident MoE still refuses inside the
+    /// capture and the caller falls back to the eager chain by design. Trunk FFN class is
+    /// irrelevant — the graph body is the HEAD forward only. One predicate for all three
     /// eligibility sites so they cannot drift (the serving numeric-class lesson).
     fn mtp_graph_capturable(&self) -> bool {
-        let sigmoid_router = self.cfg.sigmoid_router().is_some();
-        for head in self.mtp.iter().chain(self.mtp_extra.iter()) {
-            let reason = match &head.ffn {
-                crate::hybrid::Ffn::Dense { .. } => None,
-                crate::hybrid::Ffn::Moe(mo) if mo.dev_exps.is_none() => {
-                    Some("non-resident MoE MTP head")
-                }
-                crate::hybrid::Ffn::Moe(_) if sigmoid_router => {
-                    Some("sigmoid-router MoE MTP head requires host-visible routing")
-                }
-                crate::hybrid::Ffn::Moe(_) => None,
-            };
-            if let Some(reason) = reason {
-                static NOTICE: std::sync::Once = std::sync::Once::new();
-                NOTICE.call_once(|| {
-                    eprintln!(
-                        "[spec] draft graph unavailable: {reason}; eager draft chain engaged"
-                    );
-                });
-                return false;
-            }
-        }
-        self.mtp.is_some()
+        self.mtp
+            .as_ref()
+            .map(|m| match &m.ffn {
+                crate::hybrid::Ffn::Dense { .. } => true,
+                crate::hybrid::Ffn::Moe(mo) => mo.dev_exps.is_some(),
+            })
+            .unwrap_or(false)
     }
 
     fn batched_serving_numeric_class(&self) -> bool {
@@ -11161,9 +9617,7 @@ impl HybridModel {
     /// server-side twin of this test is `model_forces_spec_replay` (GatedDeltaNet + MoeMlp);
     /// keeping the engine's own version structural rather than name-based means a new
     /// checkpoint of the same shape inherits the default, and a different shape does not.
-    /// pub(crate) since lane/graph-launch-guard-sweep-20260831: `dspark_vg_admission_debt`
-    /// consults it so the MTP-route pool stops escaping the admission charge.
-    pub(crate) fn vgraph_family_default(&self) -> bool {
+    fn vgraph_family_default(&self) -> bool {
         let has_linear = self
             .layers
             .iter()
@@ -11203,11 +9657,6 @@ impl HybridModel {
             || self.gemma_batch_program()
             || self.mtp.is_none()
             || !self.mtp_extra.is_empty()
-            // Both paired lanes would otherwise hold the model-global verify-graph mutex across
-            // setup and wait for each other. Independent graph pools are future work; the pair
-            // requires the explicit eager-verify arm today.
-            || crate::spec::spec_verify_graph_env()
-                .unwrap_or_else(|| self.vgraph_family_default())
         {
             return false;
         }
@@ -11226,7 +9675,6 @@ impl HybridModel {
     /// `generate_spec_inner2` call stacks own all per-session round locals; only phase issue order
     /// changes. No callback is accepted in increment 1 — the worker publishes each completed burst.
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn generate_spec_session_pair(
         &self,
         e: &Engine,
@@ -11242,9 +9690,6 @@ impl HybridModel {
         if !self.spec_pipe_available(e) {
             return Err("two-session speculative pipeline is outside its reduced matrix".into());
         }
-        let rt = crate::pp::PpNRt::get(e)?;
-        let pp_walk = rt.acquire_walk("generate_spec_session_pair")?;
-        let pp_permit = rt.walk_permit(&pp_walk, "generate_spec_session_pair")?;
         if max_new_a == 0 || max_new_b == 0 || k_a == 0 || k_b == 0 {
             return Err(
                 "two-session speculative pipeline requires non-empty positive-K bursts".into(),
@@ -11281,37 +9726,33 @@ impl HybridModel {
         let lane_a = SpecPipeLane {
             sync: sync.clone(),
             lane: 0,
-            rt,
-            walk_permit: pp_permit.clone(),
         };
-        let lane_b = SpecPipeLane {
-            sync,
-            lane: 1,
-            rt,
-            walk_permit: pp_permit,
-        };
+        let lane_b = SpecPipeLane { sync, lane: 1 };
         let mut sess_b_ptr = SpecPipeSessionPtr(sess_b as *mut SpecSession);
         let (result_a, result_b) = std::thread::scope(|scope| {
             let b = scope.spawn(move || {
                 let mut finish = SpecPipeFinish::new(&lane_b);
                 let sess_b = unsafe { sess_b_ptr.get_mut() };
-                let result = (|| -> Result<_, String> {
-                    e.ctx().bind_to_thread().map_err(|err| err.to_string())?;
-                    self.generate_spec_inner2(
-                        e,
-                        &[],
-                        max_new_b,
-                        k_b,
-                        graph_b,
-                        Some(sess_b),
-                        None,
-                        None,
-                        None,
-                        None,
-                        Some(&lane_b),
-                    )
+                let result = e
+                    .ctx()
+                    .bind_to_thread()
                     .map_err(|err| err.to_string())
-                })();
+                    .and_then(|_| {
+                        self.generate_spec_inner2(
+                            e,
+                            &[],
+                            max_new_b,
+                            k_b,
+                            graph_b,
+                            Some(sess_b),
+                            None,
+                            None,
+                            None,
+                            None,
+                            Some(&lane_b),
+                        )
+                        .map_err(|err| err.to_string())
+                    });
                 finish.close(result.is_err());
                 result
             });
@@ -11379,7 +9820,6 @@ impl HybridModel {
     /// never what tokens say. The slice may be EMPTY (a poll-only boundary — round-stream
     /// drains and the defensive tail flush can land with nothing new committed).
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn generate_spec_session_sampled(
         &self,
         e: &Engine,
@@ -11399,7 +9839,6 @@ impl HybridModel {
     /// plain worker would honor before entering its sub-floor tokenwise tail; warm continuations
     /// pass `None` and stay on the existing zero-prime path.
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn generate_spec_session_sampled_prime_split(
         &self,
         e: &Engine,
@@ -11432,7 +9871,6 @@ impl HybridModel {
     /// worker routes sampled constrained to plain decode). Acceptance under tight grammars
     /// may drop (drafter is unconstrained); that is measured, not hidden.
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn generate_spec_session_constrained(
         &self,
         e: &Engine,
@@ -11450,7 +9888,6 @@ impl HybridModel {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn generate_spec_session_constrained_prime_split(
         &self,
         e: &Engine,
@@ -11475,7 +9912,7 @@ impl HybridModel {
         // round-0 accept needs the commit pass's logits). Empty-suffix greedy bursts — the
         // serve continuation case — consume the carry in-loop with zero solo passes.
         if sess.pending_tok.is_some()
-            && (!suffix.is_empty() || sampling.is_some_and(|s| s.temp > 0.0))
+            && (!suffix.is_empty() || sampling.map_or(false, |s| s.temp > 0.0))
         {
             self.spec_flush_pending(e, sess, sampling)?;
         }
@@ -11483,11 +9920,10 @@ impl HybridModel {
         // FULL_PREC forces the EAGER draft: the graph capture would enclose cuBLASLt f32 GEMV
         // (the FloatBf16 else-branches) and a bf16_to_f32 dequant alloc — neither is stream-capture
         // safe. Eager rides matmul/matmul_decode_exact, which dequant FloatBf16 on use. (§item 2.)
-        // Multi-head MTP (mtp_extra non-empty) no longer disqualifies: the chain captures
-        // per-head graphs (lane/step37-draft-graph-serving-20260830, MEMRA_MTP_CHAIN_GRAPH).
         let graph_draft = std::env::var("MEMRA_SPEC_NOGRAPH").is_err()
             && !spec_host_embd()
             && self.mtp_graph_capturable()
+            && self.mtp_extra.is_empty()
             && k + 2 < 96
             && !crate::model::full_prec_enabled();
         let was_tracking = e.ctx().is_event_tracking();
@@ -11525,22 +9961,6 @@ impl HybridModel {
         max_new: usize,
         k: usize,
     ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
-        // glm5 T-parallel verify door (lane/glm5-tparallel-verify): an hc trunk with a
-        // loaded DRAFT SOURCE — the embedded MTP head OR the DFlash2 drafter
-        // (lane/glm5-dflash-draft-src) — routes to the glm5 draft->verify->rollback loop —
-        // MEMRA_GLM5_SPEC=1 only (default OFF; flag row in FLAGS.md). Unset/0 falls
-        // through to the standing named refusal below, byte-identical to the pre-lane
-        // binary. Same fail-closed manifest stance as the generic path: an unqualified
-        // MtpSpec rewrite refuses before any drafting.
-        if self.hyper.is_some()
-            && crate::glm_spec::glm5_spec_on()
-            && (self.mtp.is_some() || self.glm5_dflash.is_some())
-        {
-            if !self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::MtpSpec) {
-                return Err("speculative rewrite is not qualified for this ModelPlan".into());
-            }
-            return self.generate_spec_glm5(e, prompt, max_new, k);
-        }
         self.refuse_hyper("generate_spec")?;
         if crate::pp::pp_cuts(self.layers.len()).is_some()
             && !self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::Pipeline)
@@ -11552,10 +9972,10 @@ impl HybridModel {
         }
         // FULL_PREC forces eager (see generate_spec_session note): CUDA graph capture cannot
         // enclose cuBLASLt f32 GEMV or the bf16_to_f32 dequant alloc the FloatBf16 path needs.
-        // Multi-head MTP no longer disqualifies (chain graphs; see generate_spec_session).
         let graph_draft = std::env::var("MEMRA_SPEC_NOGRAPH").is_err()
             && !spec_host_embd()
             && self.mtp_graph_capturable()
+            && self.mtp_extra.is_empty()
             && k + 2 < 96
             && !crate::model::full_prec_enabled();
         if !graph_draft {
@@ -11580,8 +10000,6 @@ impl HybridModel {
         r
     }
 
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn generate_spec_inner2(
         &self,
         e: &Engine,
@@ -11597,10 +10015,9 @@ impl HybridModel {
         pipe: Option<&SpecPipeLane>,
     ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
         assert!(k >= 1, "k must be >= 1");
-        let pipe_setup_walk = match pipe {
-            Some(p) => Some(p.setup_begin()?),
-            None => None,
-        };
+        if let Some(p) = pipe {
+            p.setup_begin()?;
+        }
         // sse-cadence flush cursor: everything in out[..flushed] has been handed to on_commit.
         let mut flushed = 0usize;
         // admission yield (2026-08-06): on_commit's continue-verdict; false = end the burst
@@ -11623,17 +10040,14 @@ impl HybridModel {
         if !self.mtp_extra.is_empty() {
             if self.plan.draft_source != memra_gguf::model_plan::DraftSourcePlan::Embedded
                 || self.plan.mtp_blocks.len() != self.mtp_head_count()
+                || mtp.d2t.is_some()
             {
                 return Err(
                     "multi-head MTP requires one embedded canonical block per loaded head".into(),
                 );
             }
-            // TRIMMED chains (2026-08-27): every head must carry the SAME d2t — the ranking is
-            // token-frequency and head-independent, and every downstream remap (per-step argmax,
-            // stream pack, sampled d2t_dev) reads head 0's map, so equality is what makes that
-            // single map correct for the whole chain. Mixed trimmed/untrimmed is refused.
             for (offset, head) in self.mtp_extra.iter().enumerate() {
-                if head.d2t != mtp.d2t
+                if head.d2t.is_some()
                     || head
                         .shared_head_head
                         .as_ref()
@@ -11670,8 +10084,6 @@ impl HybridModel {
         // committed-length position; consumed one-shot like `capture_at`. None = legacy
         // prompt-end capture below.
         let mut ckpt_req: Option<usize> = None;
-        // FAIL-SAFE bit threaded out of the session (see `SpecSession::capture_disabled`).
-        let mut sess_capture_disabled = false;
         let (
             cache,
             scratch,
@@ -11711,9 +10123,7 @@ impl HybridModel {
                     capture_at,
                     boundary_captures,
                     ckpt_at,
-                    capture_disabled,
                 } = sr;
-                sess_capture_disabled = *capture_disabled;
                 sess_capture = Some((capture_at.take(), boundary_captures));
                 ckpt_req = ckpt_at.take();
                 (
@@ -11743,7 +10153,6 @@ impl HybridModel {
                 )
             }
         };
-        cache.ensure_usable("generate_spec")?;
         if scratch.plane_count() != self.mtp_head_count() {
             return Err(format!(
                 "MTP scratch/head count mismatch ({}/{})",
@@ -11826,7 +10235,7 @@ impl HybridModel {
             assert!(
                 sess_tail
                     .as_ref()
-                    .is_some_and(|(c, lh, np, _, _)| !c.is_empty()
+                    .map_or(false, |(c, lh, np, _, _)| !c.is_empty()
                         && lh.is_some()
                         && (np.is_some() || carried_pending.is_some())),
                 "empty-suffix continuation needs a primed session (committed + last_h + next_pred|pending)"
@@ -11874,15 +10283,14 @@ impl HybridModel {
         if continuation {
             prime_logits = Vec::new();
         } else if !stops.is_empty() {
-            if let Some(&first) = stops.first()
-                && prime_split == Some(first)
-                && first < crate::hybrid_forward::PRIME_MIN_T
-            {
-                return Err(format!(
-                    "spec prime split {first} is below PRIME_MIN_T {}",
-                    crate::hybrid_forward::PRIME_MIN_T,
-                )
-                .into());
+            if let Some(&first) = stops.first() {
+                if prime_split == Some(first) && first < crate::hybrid_forward::PRIME_MIN_T {
+                    return Err(format!(
+                        "spec prime split {first} is below PRIME_MIN_T {}",
+                        crate::hybrid_forward::PRIME_MIN_T,
+                    )
+                    .into());
+                }
             }
             // Mirror the plain worker's boundary stops exactly. Each segment is a
             // request-level prime (`queued_after` keeps Step35 arm selection independent of
@@ -11926,28 +10334,27 @@ impl HybridModel {
                 // worker requested exactly this stop (cold sessions only — `capture_at` is
                 // never armed warm). A failed snapshot is silent (turn_ckpt convention) —
                 // publication is an optimization, never a correctness dependency.
-                if base == 0
-                    && let Some((requested, slot)) = sess_capture.as_mut()
-                {
-                    // Publish at the requested miss-LCP stop (the shared-prefix class)
-                    // AND at the stable-boundary stop (the next-turn re-render class,
-                    // lane/frspec-multiturn-cache) — the same boundary set the plain
-                    // prefill tick learns. Without the second entry, the turn after a
-                    // cold re-park could only hit the OLDER lcp entry (the measured
-                    // one-turn transient: t3 restored 607 of 24122 while the plain arm
-                    // rewound to 15222). Dedupe is the worker sweep's has_key.
-                    if (*requested == Some(seg_end) || ckpt_rel == Some(seg_end))
-                        && let Ok(snap) = cache.snapshot(e)
-                    {
-                        slot.push(SpecBoundaryCapture {
-                            snap,
-                            pos: seg_end,
-                            logits: prime_logits.clone(),
-                            // rows [0..seg_end) of h_all are primed — the following
-                            // segments append, never overwrite.
-                            last_h: capture_boundary_hidden(e, &h_all, seg_end, n_embd),
-                            latent_tails: Vec::new(),
-                        });
+                if base == 0 {
+                    if let Some((requested, slot)) = sess_capture.as_mut() {
+                        // Publish at the requested miss-LCP stop (the shared-prefix class)
+                        // AND at the stable-boundary stop (the next-turn re-render class,
+                        // lane/frspec-multiturn-cache) — the same boundary set the plain
+                        // prefill tick learns. Without the second entry, the turn after a
+                        // cold re-park could only hit the OLDER lcp entry (the measured
+                        // one-turn transient: t3 restored 607 of 24122 while the plain arm
+                        // rewound to 15222). Dedupe is the worker sweep's has_key.
+                        if *requested == Some(seg_end) || ckpt_rel == Some(seg_end) {
+                            if let Ok(snap) = cache.snapshot(e) {
+                                slot.push(SpecBoundaryCapture {
+                                    snap,
+                                    pos: seg_end,
+                                    logits: prime_logits.clone(),
+                                    // rows [0..seg_end) of h_all are primed — the following
+                                    // segments append, never overwrite.
+                                    last_h: capture_boundary_hidden(e, &h_all, seg_end, n_embd),
+                                });
+                            }
+                        }
                     }
                 }
                 // SESSION-AFFINITY TURN CHECKPOINT at the STABLE boundary (see `ckpt_at`):
@@ -12002,24 +10409,22 @@ impl HybridModel {
         // cache.pos == base + prompt.len() and the recurrent state IS the boundary state;
         // prime_logits are the boundary logits. Cold sessions only (base == 0) — same law as
         // prime_split. The mid-prompt capture above already consumed the request if it matched.
-        if !continuation
-            && base == 0
-            && let Some((requested, slot)) = sess_capture.as_mut()
-            && *requested == Some(prompt.len())
-            && slot.is_empty()
-        {
-            debug_assert_eq!(cache.pos, prompt.len(), "seed capture off prompt end");
-            if let Ok(snap) = cache.snapshot(e) {
-                slot.push(SpecBoundaryCapture {
-                    snap,
-                    pos: prompt.len(),
-                    logits: prime_logits.clone(),
-                    last_h: prompt_h
-                        .as_ref()
-                        .map(|ph| capture_boundary_hidden(e, ph, prompt.len(), n_embd))
-                        .unwrap_or_default(),
-                    latent_tails: Vec::new(),
-                });
+        if !continuation && base == 0 {
+            if let Some((requested, slot)) = sess_capture.as_mut() {
+                if *requested == Some(prompt.len()) && slot.is_empty() {
+                    debug_assert_eq!(cache.pos, prompt.len(), "seed capture off prompt end");
+                    if let Ok(snap) = cache.snapshot(e) {
+                        slot.push(SpecBoundaryCapture {
+                            snap,
+                            pos: prompt.len(),
+                            logits: prime_logits.clone(),
+                            last_h: prompt_h
+                                .as_ref()
+                                .map(|ph| capture_boundary_hidden(e, ph, prompt.len(), n_embd))
+                                .unwrap_or_default(),
+                        });
+                    }
+                }
             }
         }
         // Harness timing contract (see crate::PRIME_NANOS): gen-only throughput without the
@@ -12200,7 +10605,6 @@ impl HybridModel {
         // round commit — emission timing only, token bytes untouched. The slice may be EMPTY
         // (poll-only boundary: zero-round folds commit nothing new); returns the caller's
         // continue-verdict (admission yield, 2026-08-06) — false ends the burst at this round.
-        #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
         fn flush_commit(
             cb: &mut Option<&mut dyn FnMut(&[u32]) -> bool>,
             out: &[u32],
@@ -12396,11 +10800,12 @@ impl HybridModel {
                     &ph.slice((np - 1) * n_embd..np * n_embd),
                     n_embd,
                 )?;
-            } else if continuation
-                && let Some((_, lh, _, _, _)) = sess_tail.as_ref()
-                && let Some(lh) = lh.as_ref()
-            {
-                e.copy_into(&mut h_seed_buf, 0, lh, n_embd)?;
+            } else if continuation {
+                if let Some((_, lh, _, _, _)) = sess_tail.as_ref() {
+                    if let Some(lh) = lh.as_ref() {
+                        e.copy_into(&mut h_seed_buf, 0, lh, n_embd)?;
+                    }
+                }
             }
         }
         // Persistent device prediction slots for the accept walk (max k+1 verify columns).
@@ -12453,17 +10858,6 @@ impl HybridModel {
             Some(c) => c,
             None => DraftGraphCtx::new(e, n_embd, if sampled { d_vocab } else { 1 })?,
         };
-        // FAIL-SAFE (step-OOM park replay): pre-mark both fallback flags so no capture arm
-        // below can fire — LOUD once per replayed session through the standard WARN line.
-        if sess_capture_disabled {
-            let reason =
-                "session replayed after a step-OOM park; draft capture disabled (fail-safe)";
-            let flip = dctx.failed.mark_greedy(reason);
-            let flip_s = dctx.failed.mark_sampled(reason);
-            if let Some(line) = flip.or(flip_s) {
-                eprintln!("{line}");
-            }
-        }
         // A session that ran greedy bursts first sized g_q/g_perturb at 1; a sampled resume
         // needs d_vocab. Realloc is legal exactly while graph_s is None (nothing baked them).
         if sampled && dctx.g_q.len() < d_vocab {
@@ -12482,229 +10876,15 @@ impl HybridModel {
         if dmask_on && dctx.g_dmask.len() < dmask_words {
             dctx.g_dmask = e.alloc_u32_zeroed(dmask_words)?;
             dctx.graph = None; // the old capture baked the old (or no) mask pointer
-            dctx.chain = None; // chain last-row graphs bake the same pointer
             dctx.failed.clear_greedy();
             dctx.keeper.clear();
         }
-        if (dctx.graph.is_some() || dctx.chain.is_some()) && dctx.graph_masked != dmask_on {
+        if dctx.graph.is_some() && dctx.graph_masked != dmask_on {
             dctx.graph = None;
-            dctx.chain = None;
             dctx.failed.clear_greedy();
             dctx.keeper.clear();
         }
-        // MULTI-HEAD CHAIN mode (mtp_extra non-empty — step37's 3-head shipping shape): the
-        // step-modulo prefix-replay chain captures PER-HEAD single-row graphs
-        // (`DraftChainGraphs`) instead of the one self-feeding graph below; the single-head
-        // capture arms are untouched and unreachable in this mode (the launch arms branch the
-        // same way). This removes the historical `mtp_extra.is_empty()` capture exclusion —
-        // and with it the silent no-attempt hole: a chain capture that FAILS now trips the
-        // same LOUD draft-graph WARN as a single-head failure.
-        let chain_mode = !self.mtp_extra.is_empty();
-        // ---- PRE-CAPTURE VRAM RESERVE CHECK + PER-SESSION DRAFT-STATE MEASUREMENT ----
-        // (lane/step37-vram-admission-20260830). `cap_eff0` opens the measurement bracket:
-        // when any capture succeeds in THIS call, the effective-free delta across the whole
-        // capture section is recorded as the model's per-session draft-state high-water
-        // (admission charges it per spec-capable session — this state was charged at ZERO
-        // before the lane). The reserve check runs BEFORE any capture arm can allocate: a
-        // refused capture trips the same LOUD once-per-flip WARN class as a failed one, but
-        // with the card's headroom still intact (the owner's single-session OOM was a capture
-        // attempt walking the card to the edge and stranding the eager fallback at 5 MiB free).
-        let cap_eff0 = e
-            .ctx()
-            .mem_get_info()
-            .ok()
-            .map(|(f, _)| f.saturating_add(e.pool_cached_bytes()));
-        // Peak instrument for the same bracket: the CAPTURE-TIME peak (warmup transients +
-        // instantiate scratch, alive together) dwarfs the parked delta — measured on the
-        // owner shape: a capture whose PARKED state reads ~2.6GB walked a ~7GB-free card to
-        // OOM mid-capture. Reset the pool watermark here; read it at bracket end.
-        let _ = e.pool_high_water_reset();
-        let cap_used0 = e.pool_reserved_used().1;
-        let mut captured_now = false;
-        let mut capture_oom_entry_eff: Option<usize> = None;
-        let capture_need = {
-            let observed = self.draft_session_admission_bytes();
-            if observed > 0 {
-                observed
-            } else {
-                draft_capture_bootstrap_estimate(
-                    if chain_mode { self.mtp_head_count() } else { 1 },
-                    k,
-                    d_vocab,
-                    n_embd,
-                )
-            }
-        };
-        if spec_capture_gate_on()
-            && graph_draft
-            && !sampled
-            && !dctx.failed.greedy_failed()
-            && ((chain_mode && dctx.chain.is_none() && mtp_chain_graph_on())
-                || (!chain_mode && dctx.graph.is_none()))
-            && let Some(reason) = capture_headroom_refusal(e, capture_need)
-            && let Some(line) = dctx.failed.mark_greedy(&reason)
-        {
-            eprintln!("{line}");
-        }
-        if graph_draft
-            && !sampled
-            && chain_mode
-            && dctx.chain.is_none()
-            && !dctx.failed.greedy_failed()
-        {
-            if mtp_chain_graph_on() {
-                let heads_n = self.mtp_head_count();
-                let DraftGraphCtx {
-                    g_tok,
-                    g_pos,
-                    g_seed,
-                    g_p,
-                    g_dmask,
-                    ..
-                } = &mut dctx;
-                if dmask_on {
-                    e.htod_u32_into(g_dmask, &vec![u32::MAX; dmask_words])?;
-                }
-                let g_dmask_ro: &CudaSlice<u32> = &*g_dmask;
-                let with_prob = p_min > 0.0;
-                // CAPTURE-RETAIN (#68 fix): one keeper for the whole chain — every graph's
-                // warmup transients stay pinned as long as any of them replays.
-                let cap_res = (|| -> Result<DraftChainGraphs, Box<dyn std::error::Error>> {
-                    // dcw door: same warmup headroom pre-arm as the single-head capture
-                    // below — every plane, because each head's capture warmups append on
-                    // its OWN plane. INSIDE the fallible closure (vram-admission lane): an
-                    // OOM here used to `?` out of the whole burst as a step error; now it
-                    // is a capture failure — LOUD WARN, eager chain serves.
-                    if step35_draft_dcw_on() {
-                        scratch.ensure_dcw_headroom(e, k + 2)?;
-                    }
-                    let mut interior = Vec::with_capacity(heads_n);
-                    let mut last = Vec::with_capacity(heads_n);
-                    let mut keeper: Vec<Box<dyn std::any::Any + Send>> = Vec::new();
-                    for hi in 0..heads_n {
-                        let head = self.mtp_head_at(hi);
-                        // interior row: KV append + carrier only (`with_head=false` — the
-                        // eager chain discards interior logits too, so this is the same
-                        // consumed-byte program minus the dead full-vocab head matmul).
-                        let (g, keep) = e.capture_graph_retained(|e| {
-                            self.mtp_head_forward_cap(
-                                e,
-                                head,
-                                g_tok,
-                                g_pos,
-                                g_seed,
-                                g_p,
-                                &mut *scratch,
-                                hi,
-                                false,
-                                false,
-                                embd_gpu.expect("graph draft requires resident embedding"),
-                                embd_qt,
-                                embd_rb,
-                                d_vocab,
-                                None,
-                                None,
-                                None,
-                            )
-                        })?;
-                        // the warmups appended rows on plane hi; rewind before the next
-                        // capture so successive warmups never outrun the pre-armed headroom.
-                        scratch.set_plane_len(e, hi, base)?;
-                        interior.push(g);
-                        keeper.extend(keep);
-                        // last row: head matmul + greedy argmax tail (+ p when the policy
-                        // reads it, + the grammar-mask node when constrained).
-                        let (g2, keep2) = e.capture_graph_retained(|e| {
-                            self.mtp_head_forward_cap(
-                                e,
-                                head,
-                                g_tok,
-                                g_pos,
-                                g_seed,
-                                g_p,
-                                &mut *scratch,
-                                hi,
-                                with_prob,
-                                true,
-                                embd_gpu.expect("graph draft requires resident embedding"),
-                                embd_qt,
-                                embd_rb,
-                                d_vocab,
-                                None,
-                                None,
-                                if dmask_on {
-                                    Some((g_dmask_ro, dmask_words))
-                                } else {
-                                    None
-                                },
-                            )
-                        })?;
-                        scratch.set_plane_len(e, hi, base)?;
-                        last.push(g2);
-                        keeper.extend(keep2);
-                    }
-                    Ok(DraftChainGraphs {
-                        interior,
-                        last,
-                        _keeper: keeper,
-                    })
-                })();
-                match cap_res {
-                    Ok(cg) => {
-                        scratch.set_len(e, base)?;
-                        // POSITIVE engagement receipt (the 3a lesson: a WARN-free boot is
-                        // NOT evidence of capture — the captured state must name itself).
-                        eprintln!(
-                            "[mtp-chain-graph] captured mode=greedy heads={heads_n} \
-                             interior={heads_n} last={heads_n} masked={}",
-                            dmask_on as u8
-                        );
-                        dctx.chain = Some(cg);
-                        dctx.graph_masked = dmask_on;
-                        captured_now = true;
-                    }
-                    Err(err) => {
-                        scratch.set_len(e, base)?;
-                        // LOUD flip (audit Q2): a dropped draft graph is a coverage loss,
-                        // never silent — now including the multi-head shipping shape.
-                        // OOM RECOVERY (vram-admission lane): a failed attempt's freed
-                        // transients sit CACHED in the async pool where the driver cannot
-                        // see them; trim them back so the eager fallback (and any driver-
-                        // side allocation) actually has the headroom the free suggests.
-                        let mut reason = err.to_string();
-                        if capture_err_is_oom(&reason) {
-                            capture_oom_entry_eff = capture_oom_entry_eff.max(cap_eff0);
-                            let trimmed = e.pool_trim_to_zero();
-                            if trimmed > 0 {
-                                reason.push_str(&format!(
-                                    "; pool trimmed {}MB back to the driver",
-                                    trimmed / (1 << 20)
-                                ));
-                            }
-                        }
-                        if let Some(line) = dctx.failed.mark_greedy(&reason) {
-                            eprintln!("{line}");
-                        }
-                    }
-                }
-            } else {
-                // Disarmed by MEMRA_MTP_CHAIN_GRAPH=0: say so once per process — the OFF arm
-                // must be attributable in a boot log, never inferable from silence.
-                static NOTE: std::sync::Once = std::sync::Once::new();
-                NOTE.call_once(|| {
-                    eprintln!(
-                        "[spec] multi-head draft-chain capture disarmed \
-                         (MEMRA_MTP_CHAIN_GRAPH=0); eager chain serves this shape"
-                    );
-                });
-            }
-        }
-        if graph_draft
-            && !sampled
-            && !chain_mode
-            && dctx.graph.is_none()
-            && !dctx.failed.greedy_failed()
-        {
+        if graph_draft && !sampled && dctx.graph.is_none() && !dctx.failed.greedy_failed() {
             let DraftGraphCtx {
                 g_tok,
                 g_pos,
@@ -12725,65 +10905,42 @@ impl HybridModel {
             // the pool between replays) but WRONG for sessions: burst-boundary prime/fill/commit
             // passes (and, in serve, other sessions) recycle those addresses and the replay then
             // clobbers live buffers — the ST serve-spec corruption (research/serve-st-20260803).
-            let cap_res = (|| {
-                // dcw door: the capture warmups append device-counter rows the capture body
-                // cannot rebase for; pre-arm ring headroom host-side (no-op on flat planes /
-                // room-enough rings, and the door-off path is untouched). INSIDE the fallible
-                // closure (vram-admission lane): an OOM here is a capture failure, not a
-                // burst-killing step error.
-                if step35_draft_dcw_on() {
-                    scratch.ensure_dcw_headroom(e, k + 2)?;
-                }
-                e.capture_graph_retained(|e| {
-                    self.mtp_head_forward_cap(
-                        e,
-                        mtp,
-                        g_tok,
-                        g_pos,
-                        g_seed,
-                        g_p,
-                        &mut *scratch,
-                        0,
-                        p_min > 0.0 || fork_mode == OptiForkGateMode::Controller,
-                        true,
-                        embd_gpu.expect("graph draft requires resident embedding"),
-                        embd_qt,
-                        embd_rb,
-                        d_vocab,
-                        None,
-                        None,
-                        if dmask_on {
-                            Some((g_dmask_ro, dmask_words))
-                        } else {
-                            None
-                        },
-                    )
-                })
-            })();
+            let cap_res = e.capture_graph_retained(|e| {
+                self.mtp_head_forward_cap(
+                    e,
+                    mtp,
+                    g_tok,
+                    g_pos,
+                    g_seed,
+                    g_p,
+                    &mut *scratch,
+                    p_min > 0.0 || fork_mode == OptiForkGateMode::Controller,
+                    true,
+                    embd_gpu.expect("graph draft requires resident embedding"),
+                    embd_qt,
+                    embd_rb,
+                    d_vocab,
+                    None,
+                    None,
+                    if dmask_on {
+                        Some((g_dmask_ro, dmask_words))
+                    } else {
+                        None
+                    },
+                )
+            });
             match cap_res {
                 Ok((g, keep)) => {
                     scratch.set_len(e, base)?;
                     dctx.graph = Some(g);
                     dctx.graph_masked = dmask_on;
                     dctx.keeper = keep;
-                    captured_now = true;
                 }
                 Err(err) => {
                     scratch.set_len(e, base)?;
                     // LOUD flip (audit Q2): a dropped draft graph is a coverage loss, never
                     // silent. Once per flip — mark returns None on an already-failed ctx.
-                    let mut reason = err.to_string();
-                    if capture_err_is_oom(&reason) {
-                        capture_oom_entry_eff = capture_oom_entry_eff.max(cap_eff0);
-                        let trimmed = e.pool_trim_to_zero();
-                        if trimmed > 0 {
-                            reason.push_str(&format!(
-                                "; pool trimmed {}MB back to the driver",
-                                trimmed / (1 << 20)
-                            ));
-                        }
-                    }
-                    if let Some(line) = dctx.failed.mark_greedy(&reason) {
+                    if let Some(line) = dctx.failed.mark_greedy(&err.to_string()) {
                         eprintln!("{line}");
                     }
                 }
@@ -12820,229 +10977,19 @@ impl HybridModel {
         // the request shape the vendor-default flip makes the majority).
         let s_key = SampledGraphKey::new(sp_seed, sp_temp, k, sp.top_k, sp.top_p, sp.min_p, pen_on);
         let pure_temp = s_key.pure_temp();
-        // The regime the sampled graph may be captured/launched in: pure-temp always;
-        // truncation-filtered when the filtered-capture door is on (the filter runs
-        // IN-GRAPH — lane/step37-draft-graph-serving-20260830); penalties never.
-        let s_capturable = s_key.graph_capturable();
         if sampled && dctx.s_key.is_some_and(|old| old != s_key) {
             dctx.graph_s = None;
-            dctx.chain_s = None;
             dctx.failed.clear_sampled();
             dctx.s_key = None;
             dctx.q_slots.clear();
             dctx.keeper_s.clear();
         }
-        // PRE-CAPTURE VRAM RESERVE CHECK, sampled arms (vram-admission lane): same contract
-        // as the greedy check above — refuse BEFORE allocating, LOUD once, eager serves.
-        if spec_capture_gate_on()
-            && graph_draft
-            && sampled
-            && s_capturable
-            && !dctx.failed.sampled_failed()
-            && ((chain_mode && dctx.chain_s.is_none() && mtp_chain_graph_on())
-                || (!chain_mode && dctx.graph_s.is_none()))
-            && let Some(reason) = capture_headroom_refusal(e, capture_need)
-            && let Some(line) = dctx.failed.mark_sampled(&reason)
-        {
-            eprintln!("{line}");
-        }
-        // FILTERED capture nodes need q slots sized d_vocab AND the stat slots; the pure-temp
-        // body leaves g_th/g_z/g_mx untouched (they exist from ctx creation either way).
         if graph_draft
             && sampled
-            && s_capturable
-            && chain_mode
-            && dctx.chain_s.is_none()
-            && !dctx.failed.sampled_failed()
-        {
-            if mtp_chain_graph_on() {
-                let heads_n = self.mtp_head_count();
-                let filtered = s_key.filtered();
-                let DraftGraphCtx {
-                    g_tok,
-                    g_pos,
-                    g_seed,
-                    g_p,
-                    g_ctr,
-                    g_perturb,
-                    g_q,
-                    g_rows0,
-                    g_th,
-                    g_z,
-                    g_mx,
-                    ..
-                } = &mut dctx;
-                let with_prob = p_min > 0.0;
-                let cap_res = (|| -> Result<DraftChainGraphs, Box<dyn std::error::Error>> {
-                    // dcw pre-arm INSIDE the fallible closure (vram-admission lane): an OOM
-                    // here is a capture failure with the LOUD WARN, never a step error.
-                    if step35_draft_dcw_on() {
-                        scratch.ensure_dcw_headroom(e, k + 2)?;
-                    }
-                    let mut interior = Vec::with_capacity(heads_n);
-                    let mut last = Vec::with_capacity(heads_n);
-                    let mut keeper: Vec<Box<dyn std::any::Any + Send>> = Vec::new();
-                    for hi in 0..heads_n {
-                        let head = self.mtp_head_at(hi);
-                        // interior row: no head, no draw — shared shape with the greedy
-                        // chain's interior, captured per mode for keeper-lifetime hygiene.
-                        let (g, keep) = e.capture_graph_retained(|e| {
-                            self.mtp_head_forward_cap(
-                                e,
-                                head,
-                                g_tok,
-                                g_pos,
-                                g_seed,
-                                g_p,
-                                &mut *scratch,
-                                hi,
-                                false,
-                                false,
-                                embd_gpu.expect("graph draft requires resident embedding"),
-                                embd_qt,
-                                embd_rb,
-                                d_vocab,
-                                None,
-                                None,
-                                None,
-                            )
-                        })?;
-                        scratch.set_plane_len(e, hi, base)?;
-                        interior.push(g);
-                        keeper.extend(keep);
-                        // last row: head matmul + the in-graph categorical draw (filtered
-                        // nodes when the request carries filters).
-                        let (g2, keep2) = e.capture_graph_retained(|e| {
-                            self.mtp_head_forward_cap(
-                                e,
-                                head,
-                                g_tok,
-                                g_pos,
-                                g_seed,
-                                g_p,
-                                &mut *scratch,
-                                hi,
-                                with_prob,
-                                true,
-                                embd_gpu.expect("graph draft requires resident embedding"),
-                                embd_qt,
-                                embd_rb,
-                                d_vocab,
-                                Some(SampledCapArgs {
-                                    ctr: &mut *g_ctr,
-                                    perturb: &mut *g_perturb,
-                                    q_out: &mut *g_q,
-                                    seed: sp_seed,
-                                    temp: sp_temp,
-                                    filt: if filtered {
-                                        Some(SampledCapFilter {
-                                            rows0: &*g_rows0,
-                                            th: &mut *g_th,
-                                            z: &mut *g_z,
-                                            mx: &mut *g_mx,
-                                            top_k: sp.top_k,
-                                            top_p: sp.top_p,
-                                            min_p: sp.min_p,
-                                        })
-                                    } else {
-                                        None
-                                    },
-                                }),
-                                None,
-                                None, // constrained spec is greedy-only
-                            )
-                        })?;
-                        scratch.set_plane_len(e, hi, base)?;
-                        last.push(g2);
-                        keeper.extend(keep2);
-                    }
-                    Ok(DraftChainGraphs {
-                        interior,
-                        last,
-                        _keeper: keeper,
-                    })
-                })();
-                match cap_res {
-                    Ok(cg) => {
-                        scratch.set_len(e, base)?;
-                        // NO STRANDED PARTIAL STATE (vram-admission lane): the q-slot allocs
-                        // after a successful capture are themselves fallible on a tight card.
-                        // A mid-loop failure used to `?` out as a step error, leaving orphan
-                        // slots parked on the ctx (wrong count, stale contents) for the next
-                        // capture attempt to stack onto. Allocate all-or-nothing: on failure
-                        // drop the fresh graphs AND the partial slots, mark the LOUD fallback.
-                        dctx.q_slots.clear();
-                        let slots = (0..k)
-                            .map(|_| e.zeros(d_vocab))
-                            .collect::<Result<Vec<_>, _>>();
-                        match slots {
-                            Ok(slots) => {
-                                dctx.q_slots = slots;
-                                eprintln!(
-                                    "[mtp-chain-graph] captured mode=sampled heads={heads_n} \
-                                     interior={heads_n} last={heads_n} filtered={} key={s_key:?}",
-                                    s_key.filtered() as u8
-                                );
-                                dctx.chain_s = Some(cg);
-                                dctx.s_key = Some(s_key);
-                                captured_now = true;
-                            }
-                            Err(err) => {
-                                drop(cg);
-                                dctx.q_slots.clear();
-                                let mut reason = format!("q-slot alloc failed: {err}");
-                                if capture_err_is_oom(&reason) {
-                                    capture_oom_entry_eff = capture_oom_entry_eff.max(cap_eff0);
-                                    let trimmed = e.pool_trim_to_zero();
-                                    if trimmed > 0 {
-                                        reason.push_str(&format!(
-                                            "; pool trimmed {}MB back to the driver",
-                                            trimmed / (1 << 20)
-                                        ));
-                                    }
-                                }
-                                if let Some(line) = dctx.failed.mark_sampled(&reason) {
-                                    eprintln!("{line}");
-                                }
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        scratch.set_len(e, base)?;
-                        let mut reason = err.to_string();
-                        if capture_err_is_oom(&reason) {
-                            capture_oom_entry_eff = capture_oom_entry_eff.max(cap_eff0);
-                            let trimmed = e.pool_trim_to_zero();
-                            if trimmed > 0 {
-                                reason.push_str(&format!(
-                                    "; pool trimmed {}MB back to the driver",
-                                    trimmed / (1 << 20)
-                                ));
-                            }
-                        }
-                        if let Some(line) = dctx.failed.mark_sampled(&reason) {
-                            eprintln!("{line}");
-                        }
-                    }
-                }
-            } else {
-                static NOTE_S: std::sync::Once = std::sync::Once::new();
-                NOTE_S.call_once(|| {
-                    eprintln!(
-                        "[spec] multi-head draft-chain capture disarmed \
-                         (MEMRA_MTP_CHAIN_GRAPH=0); eager chain serves this shape"
-                    );
-                });
-            }
-        }
-        if graph_draft
-            && sampled
-            && s_capturable
-            && !chain_mode
+            && pure_temp
             && dctx.graph_s.is_none()
             && !dctx.failed.sampled_failed()
         {
-            let filtered = s_key.filtered();
             let DraftGraphCtx {
                 g_tok,
                 g_pos,
@@ -13051,204 +10998,87 @@ impl HybridModel {
                 g_ctr,
                 g_perturb,
                 g_q,
-                g_rows0,
-                g_th,
-                g_z,
-                g_mx,
                 ..
             } = &mut dctx;
             // CAPTURE-RETAIN (#68 fix): same keeper contract as the greedy capture above.
-            let cap_res = (|| {
-                // dcw pre-arm INSIDE the fallible closure (vram-admission lane): an OOM
-                // here is a capture failure with the LOUD WARN, never a step error.
-                if step35_draft_dcw_on() {
-                    scratch.ensure_dcw_headroom(e, k + 2)?;
-                }
-                e.capture_graph_retained(|e| {
-                    self.mtp_head_forward_cap(
-                        e,
-                        mtp,
-                        g_tok,
-                        g_pos,
-                        g_seed,
-                        g_p,
-                        &mut *scratch,
-                        0,
-                        p_min > 0.0,
-                        true,
-                        embd_gpu.expect("graph draft requires resident embedding"),
-                        embd_qt,
-                        embd_rb,
-                        d_vocab,
-                        Some(SampledCapArgs {
-                            ctr: &mut *g_ctr,
-                            perturb: &mut *g_perturb,
-                            q_out: &mut *g_q,
-                            seed: sp_seed,
-                            temp: sp_temp,
-                            filt: if filtered {
-                                Some(SampledCapFilter {
-                                    rows0: &*g_rows0,
-                                    th: &mut *g_th,
-                                    z: &mut *g_z,
-                                    mx: &mut *g_mx,
-                                    top_k: sp.top_k,
-                                    top_p: sp.top_p,
-                                    min_p: sp.min_p,
-                                })
-                            } else {
-                                None
-                            },
-                        }),
-                        None,
-                        None, // constrained spec is greedy-only — sampled never carries a hook
-                    )
-                })
-            })();
+            let cap_res = e.capture_graph_retained(|e| {
+                self.mtp_head_forward_cap(
+                    e,
+                    mtp,
+                    g_tok,
+                    g_pos,
+                    g_seed,
+                    g_p,
+                    &mut *scratch,
+                    p_min > 0.0,
+                    true,
+                    embd_gpu.expect("graph draft requires resident embedding"),
+                    embd_qt,
+                    embd_rb,
+                    d_vocab,
+                    Some((g_ctr, g_perturb, g_q, sp_seed, sp_temp)),
+                    None,
+                    None, // constrained spec is greedy-only — sampled never carries a hook
+                )
+            });
             match cap_res {
                 Ok((g, keep)) => {
                     scratch.set_len(e, base)?;
-                    // NO STRANDED PARTIAL STATE: all-or-nothing q slots, same contract as
-                    // the chain arm above.
-                    dctx.q_slots.clear();
-                    let slots = (0..k)
-                        .map(|_| e.zeros(d_vocab))
-                        .collect::<Result<Vec<_>, _>>();
-                    match slots {
-                        Ok(slots) => {
-                            dctx.q_slots = slots;
-                            dctx.graph_s = Some(g);
-                            dctx.s_key = Some(s_key);
-                            dctx.keeper_s = keep;
-                            captured_now = true;
-                        }
-                        Err(err) => {
-                            drop(g);
-                            drop(keep);
-                            dctx.q_slots.clear();
-                            let mut reason = format!("q-slot alloc failed: {err}");
-                            if capture_err_is_oom(&reason) {
-                                capture_oom_entry_eff = capture_oom_entry_eff.max(cap_eff0);
-                                let trimmed = e.pool_trim_to_zero();
-                                if trimmed > 0 {
-                                    reason.push_str(&format!(
-                                        "; pool trimmed {}MB back to the driver",
-                                        trimmed / (1 << 20)
-                                    ));
-                                }
-                            }
-                            if let Some(line) = dctx.failed.mark_sampled(&reason) {
-                                eprintln!("{line}");
-                            }
-                        }
+                    for _ in 0..k {
+                        dctx.q_slots.push(e.zeros(d_vocab)?);
                     }
+                    dctx.graph_s = Some(g);
+                    dctx.s_key = Some(s_key);
+                    dctx.keeper_s = keep;
                 }
                 Err(err) => {
                     scratch.set_len(e, base)?;
                     // LOUD flip (audit Q2): same contract as the greedy capture above.
-                    let mut reason = err.to_string();
-                    if capture_err_is_oom(&reason) {
-                        capture_oom_entry_eff = capture_oom_entry_eff.max(cap_eff0);
-                        let trimmed = e.pool_trim_to_zero();
-                        if trimmed > 0 {
-                            reason.push_str(&format!(
-                                "; pool trimmed {}MB back to the driver",
-                                trimmed / (1 << 20)
-                            ));
-                        }
-                    }
-                    if let Some(line) = dctx.failed.mark_sampled(&reason) {
+                    if let Some(line) = dctx.failed.mark_sampled(&err.to_string()) {
                         eprintln!("{line}");
                     }
                 }
             }
         }
-        // ---- PER-SESSION DRAFT-STATE MEASUREMENT bracket end (vram-admission lane): when a
-        // capture landed in THIS call, the effective-free delta across the capture section is
-        // this session's parked draft-graph state (keepers + q slots + instantiated graphs'
-        // backing). Recorded as a model-owned high-water; admission charges it per
-        // spec-capable session (see `draft_session_admission_bytes`).
-        if captured_now
-            && let Some(eff0) = cap_eff0
-            && let Ok((f1, _)) = e.ctx().mem_get_info()
-        {
-            let eff1 = f1.saturating_add(e.pool_cached_bytes());
-            let parked_delta = eff0.saturating_sub(eff1);
-            let (_res_high, used_high) = e.pool_high_water_reset();
-            let peak_delta = used_high.saturating_sub(cap_used0);
-            let observed = parked_delta.max(peak_delta);
-            if observed > 0
-                && let Some(hw) = self.record_draft_state_bytes(observed)
-            {
-                eprintln!(
-                    "[spec] draft-session state high-water: {}MB (max of parked delta {}MB \
-                     and capture-time pool peak {}MB; charged per spec admission and gating \
-                     future captures)",
-                    hw / (1 << 20),
-                    parked_delta / (1 << 20),
-                    peak_delta / (1 << 20),
-                );
-            }
-        }
-        // FAILURE IS AN OBSERVATION TOO: a capture that OOM'd at entry-effective E proved
-        // the capture-time peak exceeds E. Feed E into the gauge so every future gate
-        // refuses at or below the headroom that just failed (self-healing even when the
-        // boot probe is disarmed and the bootstrap estimate was blind).
-        if let Some(entry_eff) = capture_oom_entry_eff
-            && let Some(hw) = self.record_draft_state_bytes(entry_eff)
-        {
-            eprintln!(
-                "[spec] draft-session capture appetite floor raised to {}MB: a capture \
-                 attempt OOM'd with that much effective free (failure-observed bound)",
-                hw / (1 << 20)
-            );
-        }
-        // ---- EXACTNESS GUARD, the enforceable half (lane/graph-s-key-exactness-20260819,
-        // widened by lane/step37-draft-graph-serving-20260830) ----
+        // ---- EXACTNESS GUARD, the enforceable half (lane/graph-s-key-exactness-20260819) ----
         // With the filters and penalties in `s_key`, a graph that SURVIVED the drop above was
-        // captured under THIS request's exact regime, and capture requires `graph_capturable`
-        // (pure-temp, or filtered with the in-graph filter nodes; never penalties) — so a
-        // parked graph implies both. That implication is the whole exactness argument for the
-        // graph arm, so it is asserted here rather than assumed: a future change that widens
+        // captured under this request's exact regime, and capture requires `pure_temp` — so a
+        // parked graph implies `pure_temp`. That implication is the whole exactness argument for
+        // the graph arm, so it is asserted here rather than assumed: a future change that widens
         // the capture condition, narrows the key, or copies a `DraftGraphCtx` across regimes
-        // fails LOUDLY at this line instead of silently drafting from a distribution the
-        // verify never reconstructs. Release builds refuse the graph (drop it, draft eager)
-        // rather than launching it; the launch site re-tests the regime independently.
-        if sampled
-            && (dctx.graph_s.is_some() || dctx.chain_s.is_some())
-            && (!s_capturable || dctx.s_key != Some(s_key))
-        {
+        // fails LOUDLY at this line instead of silently drafting from the raw softmax while the
+        // verify applies filter stats. Release builds refuse the graph (drop it, draft eager)
+        // rather than launching it; the launch site re-tests `pure_temp` independently.
+        if sampled && !pure_temp && dctx.graph_s.is_some() {
             debug_assert!(
                 false,
-                "sampled draft graph parked under {:?} survived into a request outside its \
-                 capture regime (top_k={} top_p={} min_p={} pen_on={} capturable={}): the \
-                 in-graph draw and the verify's accept test would see different distributions",
-                dctx.s_key, sp.top_k, sp.top_p, sp.min_p, pen_on, s_capturable,
+                "sampled draft graph parked under {:?} survived into a FILTERED request \
+                 (top_k={} top_p={} min_p={} pen_on={}): the in-graph chain draws from the RAW \
+                 softmax, so the verify's filtered q would test a distribution the draft was \
+                 never sampled from",
+                dctx.s_key, sp.top_k, sp.top_p, sp.min_p, pen_on,
             );
             eprintln!(
                 "[spec] BUG: dropping a parked sampled draft graph that outlived its capture \
-                 regime (s_key={:?}, request top_k={} top_p={} min_p={} pen_on={} \
-                 capturable={}); drafting EAGER — the key must carry every field that shapes q",
-                dctx.s_key, sp.top_k, sp.top_p, sp.min_p, pen_on, s_capturable,
+                 regime (s_key={:?}, request top_k={} top_p={} min_p={} pen_on={}); drafting \
+                 EAGER — the key must carry every field that shapes q",
+                dctx.s_key, sp.top_k, sp.top_p, sp.min_p, pen_on,
             );
             dctx.graph_s = None;
-            dctx.chain_s = None;
             dctx.s_key = None;
             dctx.q_slots.clear();
             dctx.keeper_s.clear();
         }
         // SKEY PROBE (MEMRA_SKEY_PROBE=1): the burst-entry facts the reachability question turns
-        // on — is this request sampled, is it in a regime the sampled graph is legal in, and is
-        // a graph PARKED from an earlier request of the same session? The launch arms below
-        // print which chain actually ran, so the probe never restates the condition.
+        // on — is this request sampled, is it in the pure-temp regime the sampled graph is only
+        // legal in, and is a graph PARKED from an earlier request of the same session? The launch
+        // arms below print which chain actually ran, so the probe never restates the condition.
         if skey_probe() {
             eprintln!(
-                "[skey] burst sampled={} pure_temp={} capturable={} temp={} top_k={} top_p={} \
-                 min_p={} pen_on={} k={} graph_draft={} graph_s_parked={} chain_s_parked={} \
-                 s_key_parked={:?}",
+                "[skey] burst sampled={} pure_temp={} temp={} top_k={} top_p={} min_p={} \
+                 pen_on={} k={} graph_draft={} graph_s_parked={} s_key_parked={:?}",
                 sampled as u8,
                 pure_temp as u8,
-                s_capturable as u8,
                 sp_temp,
                 sp.top_k,
                 sp.top_p,
@@ -13257,7 +11087,6 @@ impl HybridModel {
                 k,
                 graph_draft as u8,
                 dctx.graph_s.is_some() as u8,
-                dctx.chain_s.is_some() as u8,
                 dctx.s_key,
             );
         }
@@ -13287,12 +11116,6 @@ impl HybridModel {
                     .unwrap_or(4096)
             };
             let fill_chunk = if fill_chunk == 0 { tp } else { fill_chunk };
-            // CUDA launch wall (same class as the trunk prime's PRIME_CHUNK_LAUNCH_CAP):
-            // a fill call's matmuls can land on the grid.y=m dp4a family, and grid.y caps
-            // at 65,535. This loop has no tail fold, so the raw limit is exact:
-            // tp <= 65,535 keeps the legacy schedule (monolithic included) byte-for-byte,
-            // and larger fills — unreachable before the trunk prime's own cap fix — chunk.
-            let fill_chunk = fill_chunk.min(crate::hybrid_forward::CUDA_GRID_YZ_MAX);
             let mut start = 0usize;
             while start < tp {
                 let end = (start + fill_chunk).min(tp);
@@ -13313,11 +11136,12 @@ impl HybridModel {
                     } else {
                         tc * n_embd
                     };
-                    if start == 0
-                        && let Some((_, lh, _, _, _)) = sess_tail.as_ref()
-                        && let Some(lh) = lh.as_ref()
-                    {
-                        e.copy_into(&mut phs, 0, lh, n_embd)?;
+                    if start == 0 {
+                        if let Some((_, lh, _, _, _)) = sess_tail.as_ref() {
+                            if let Some(lh) = lh.as_ref() {
+                                e.copy_into(&mut phs, 0, lh, n_embd)?;
+                            }
+                        }
                     }
                     if n_copy > 0 {
                         e.copy_view_into(
@@ -13380,7 +11204,6 @@ impl HybridModel {
                         &mut dctx.g_seed,
                         &mut dctx.g_p,
                         &mut *scratch,
-                        0,
                         true,
                         true,
                         embd_gpu.expect("round stream requires resident embedding"),
@@ -13509,8 +11332,6 @@ impl HybridModel {
         let k_cap = k.min(cap_max).max(1);
         let mut kc = k_cap;
         let mut opti_fork: Option<OptiForkState> = None;
-        let mut _opti_walk: Option<crate::pp::PpWalkLease> = None;
-        let mut _opti_walk_borrow: Option<crate::pp::PpWalkBorrowGuard> = None;
         let mut fork_snapshot: Option<crate::cache::CacheSnapshot> = None;
         if fork_mode != OptiForkGateMode::Disabled {
             let fence = crate::pp::pp_cuts(self.layers.len());
@@ -13555,12 +11376,6 @@ impl HybridModel {
                     OPTI_FORK_REFUSALS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     eprintln!("[opti-fork] refused reason=requires-supported-primary-cross-device");
                 } else {
-                    // The optimistic controller can keep two boundary tickets in flight. Give
-                    // every nested verify an explicit borrow of one whole-walk generation; no
-                    // `pp_pipe` boolean is allowed to bypass ownership on its own.
-                    let walk = rt.acquire_walk("opti_fork_coordinator")?;
-                    let permit = rt.walk_permit(&walk, "opti_fork_coordinator")?;
-                    let borrow = rt.borrow_walk(&permit, "opti_fork_coordinator")?;
                     // Both recurrent snapshots and both seed generations are allocated before
                     // the first fork, each through its owning PP stage. Allocation failure
                     // therefore happens before any optimistic state mutation can occur.
@@ -13587,8 +11402,6 @@ impl HybridModel {
                     );
                     fork_snapshot = Some(current_snapshot);
                     opti_fork = Some(fork);
-                    _opti_walk = Some(walk);
-                    _opti_walk_borrow = Some(borrow);
                 }
             }
         }
@@ -13621,15 +11434,6 @@ impl HybridModel {
         // the verify accept readback). Printed once at loop end via spec-stats.
         let anatomy_on = std::env::var("MEMRA_SPEC_PP_ANATOMY").as_deref() == Ok("1");
         let phase_on = anatomy_on || std::env::var("MEMRA_SPEC_PHASE").as_deref() == Ok("1");
-        // MEMRA_SPEC_PHASE_SYNC=1 — reads the phase split correctly, and proves it. `ph_mark` is a
-        // bare Instant, so `verify-issue` is the host QUEUEING the walk (the GPU is already running
-        // under it) and `verify-wait` is only the residual drain at the accept readback: one
-        // overlapped interval cut at the first blocking call, NOT "GPU time" beside "host time".
-        // Syncing right after the walk is issued moves the whole GPU wall into `verify-issue`. If
-        // the walk's GPU total is really issue+wait, then with this on verify-issue jumps to that
-        // sum, verify-wait collapses to the readback alone, and the ROUND WALL DOES NOT MOVE —
-        // which is what says the queueing time was hidden and is not a target. Diagnostic only.
-        let phase_sync = std::env::var("MEMRA_SPEC_PHASE_SYNC").as_deref() == Ok("1");
         // DRAFT-MASK receipt (lane/draft-mask): speculative-clone wall + rounds, printed with
         // spec-stats. The clone is the one cost the design adds per round — measured, not assumed.
         let (mut dm_clone_ns, mut dm_rounds) = (0u128, 0usize);
@@ -13700,33 +11504,11 @@ impl HybridModel {
         if let Some(p) = pipe {
             p.setup_end();
         }
-        drop(pipe_setup_walk);
-        let mut graph_guard_noted = false;
         while keep_going && out.len() < max_new {
-            // GRAPH-LAUNCH HEADROOM GUARD (see GRAPH_LAUNCH_MIN_FREE): below the floor,
-            // every captured-graph arm in this round yields to its byte-identical eager
-            // twin instead of feeding cuGraphLaunch a card it segfaults on.
-            let graph_round_ok = graph_launch_headroom_ok(e);
-            if !graph_round_ok && !graph_guard_noted {
-                graph_guard_noted = true;
-                eprintln!(
-                    "[spec] graph replay suspended: driver free below the {}MB launch floor \
-                     (eager arms serve; cuGraphLaunch segfaults into an exhausted card)",
-                    GRAPH_LAUNCH_MIN_FREE / (1 << 20)
-                );
-            }
-            // MEMRA_SPEC_ROUND_PROF=1: wall of the WHOLE round against the pieces we already
-            // instrument. Needed because the parts do not add up: the draft step measures 1.27 ms
-            // ([spec-anatomy] glue 92 / attn 280 / ffn 222 / head 670 us) and the t=2 verify walk
-            // 25.6 ms ([tcol-prof] attn 10.1 + ffn 15.3), yet a K=1 round takes 177 ms on the
-            // step37 TP2 stack. This prints where the other ~150 ms lives.
-            let round_prof = ROUND_PROF
-                .get_or_init(|| std::env::var("MEMRA_SPEC_ROUND_PROF").as_deref() == Ok("1"));
-            let round_t0 = round_prof.then(std::time::Instant::now);
             // ROUND-STREAM BURST: from round 1 (pending guaranteed by every non-replay arm),
             // issue M rounds with zero readbacks, then drain the ring + reconcile mirrors.
             if let (true, Some(sg), Some(ptrs)) = (
-                stream_active && round >= 1 && pending.is_some() && graph_round_ok,
+                stream_active && round >= 1 && pending.is_some(),
                 &stream_graph,
                 &stream_ptrs,
             ) {
@@ -13893,18 +11675,6 @@ impl HybridModel {
                 // base0 - 1); this single set_len IS the draft-side rollback (drops last round's
                 // rejected drafts and p-min extras via the len mechanism).
                 scratch.set_len(e, pos + base0 - 1)?;
-                // dcw door: a captured chain appends k_this device-counter rows (plus the
-                // pseudo-seed replay) with no host intervention; any ring rebase those appends
-                // could need happens HERE, host-side, before the replays. The eager arm keeps
-                // its own per-step prepare, so this is graph-path-only work.
-                if step35_draft_dcw_on()
-                    && (dctx.graph.is_some()
-                        || dctx.graph_s.is_some()
-                        || dctx.chain.is_some()
-                        || dctx.chain_s.is_some())
-                {
-                    scratch.ensure_dcw_headroom(e, k_this + 2)?;
-                }
                 if pen_on {
                     // PEN_WINDOW_MAX also bounds the per-round upload and the O(n_hist^2)
                     // device dedup: the serve window is already PEN_WINDOW_MAX, and this
@@ -13932,234 +11702,7 @@ impl HybridModel {
                     dm_clone_ns += t_c.elapsed().as_nanos();
                     dm_rounds += 1;
                 }
-                if let (false, Some(cg)) = (sampled || pen_on || !graph_round_ok, &dctx.chain) {
-                    // GREEDY CHAIN GRAPH (lane/step37-draft-graph-serving-20260830): the
-                    // eager multi-head chain's EXACT launch order — step j rewinds head
-                    // (j % heads)'s plane to the committed length and replays rows 0..=j —
-                    // with each row's whole head-forward as ONE graph launch. The chain
-                    // POLICY (head choice, prefix length, stored-seed feed) is host-side,
-                    // identical to `mtp_chain_forward_dev`, so graph-vs-eager drafts are
-                    // bit-identical by construction (same launcher, same bucket — the dcw
-                    // parity contract). Interior rows launch the head-less graph: their
-                    // logits are dead in the eager chain too, so the consumed bytes match.
-                    let heads_n = self.mtp_head_count();
-                    let committed = pos + base0 - 1;
-                    let mut chain_tokens: Vec<u32> = vec![last_token];
-                    let mut chain_seed_bufs: Vec<CudaSlice<f32>> = vec![e.clone_dtod(&h_seed_buf)?];
-                    for j in 0..k_this {
-                        let index = mtp_chain_head_index(j, heads_n);
-                        if debug_spec {
-                            eprintln!(
-                                "[mtp-chain-step] round={round} j={j} head={index} \
-                                 replay_rows={} arm=graph",
-                                chain_tokens.len(),
-                            );
-                        }
-                        scratch.set_plane_len(e, index, committed)?;
-                        e.set_i32_one(&mut dctx.g_pos, (committed + 1) as i32)?;
-                        for row in 0..=j {
-                            e.set_u32_one(&mut dctx.g_tok, chain_tokens[row])?;
-                            e.copy_into(&mut dctx.g_seed, 0, &chain_seed_bufs[row], n_embd)?;
-                            if row < j {
-                                cg.interior[index].launch()?;
-                            } else {
-                                // per-position mask upload before the LAST row only — the
-                                // eager chain applies the mask on is_last exactly the same.
-                                if dmask_live
-                                    && !upload_draft_mask(
-                                        e,
-                                        constraint.as_deref_mut().unwrap(),
-                                        &mut dctx.g_dmask,
-                                        mtp.d2t.as_ref(),
-                                        d_vocab,
-                                        dmask_words,
-                                    )?
-                                {
-                                    e.htod_u32_into(
-                                        &mut dctx.g_dmask,
-                                        &vec![u32::MAX; dmask_words],
-                                    )?;
-                                    dmask_live = false;
-                                }
-                                cg.last[index].launch()?;
-                            }
-                            // host mirror (len_d advanced in-graph by the dcw append)
-                            scratch.plane_mut(index).0.len += 1;
-                        }
-                        let idx = e.dtoh_u32_one(&dctx.g_tok)?;
-                        // #87 SENTINEL TRAP (see the single-head graph arm below).
-                        if (idx as usize) >= d_vocab {
-                            let seed_h = e.dtoh(&dctx.g_seed)?;
-                            let seed_nan = seed_h.iter().filter(|v| v.is_nan()).count();
-                            return Err(format!(
-                                "draft(chain-graph) argmax sentinel 0x{idx:08x} >= d_vocab \
-                             {d_vocab} at round {round} j={j} head={index} pos={pos}: \
-                             head-out NaN {seed_nan}/{n_embd} — refusing to dereference \
-                             the embed row (#87 trap)"
-                            )
-                            .into());
-                        }
-                        // multi-head MTP forbids a trimmed head (validated at entry), so the
-                        // draft index IS the target id; keep the map for uniformity.
-                        let d = match &mtp.d2t {
-                            Some(map) => map[idx as usize],
-                            None => idx,
-                        };
-                        let draft_p = if p_min > 0.0 {
-                            Some(e.dtoh(&dctx.g_p)?[0])
-                        } else {
-                            None
-                        };
-                        if j == 0 {
-                            controller_draft_prob = draft_p;
-                        }
-                        if let Some(p) = draft_p.filter(|_| p_min > 0.0)
-                            && p < p_min
-                            && (j > 0 || (pmin0 && base0 == 1))
-                        {
-                            break;
-                        }
-                        draft.push(d);
-                        chain_tokens.push(d);
-                        // step j's h_nextn: the last-row graph self-fed it into g_seed —
-                        // snapshot it as the chain history seed for row j+1 (stream-ordered
-                        // after the launch, exactly the eager chain's chain_seeds push).
-                        chain_seed_bufs.push(e.clone_dtod(&dctx.g_seed)?);
-                        // speculative grammar advance (see the single-head graph arm).
-                        if dmask_live
-                            && !constraint
-                                .as_deref_mut()
-                                .unwrap()
-                                .draft_advance(d)
-                                .map_err(|e2| format!("constraint: {e2}"))?
-                        {
-                            e.htod_u32_into(&mut dctx.g_dmask, &vec![u32::MAX; dmask_words])?;
-                            break;
-                        }
-                    }
-                } else if let (true, Some(cg)) = (
-                    sampled && s_capturable && dctx.s_key == Some(s_key) && graph_round_ok,
-                    &dctx.chain_s,
-                ) {
-                    if skey_probe() {
-                        eprintln!(
-                            "[skey] chain=graph_chain_s round={round} capturable={} top_k={} \
-                             top_p={} min_p={} s_key_parked={:?}",
-                            s_capturable as u8, sp.top_k, sp.top_p, sp.min_p, dctx.s_key,
-                        );
-                    }
-                    // SAMPLED CHAIN GRAPH: the greedy chain arm's launch order with the
-                    // sampled last-row graphs — in-graph counter bump + (filtered) gumbel
-                    // draw + argmax; q retained per step into q_slots exactly like the
-                    // single-head sampled graph arm. Counter continuity: g_ctr host-seeded
-                    // to sctr-1 once per ROUND; each step's last-row graph bumps it BEFORE
-                    // the perturb, so step j consumes counter sctr+j — the eager Philox
-                    // stream (interior rows never draw, never bump).
-                    let heads_n = self.mtp_head_count();
-                    let committed = pos + base0 - 1;
-                    let filtered_stats_in_graph = s_key.filtered();
-                    let mut chain_tokens: Vec<u32> = vec![last_token];
-                    let mut chain_seed_bufs: Vec<CudaSlice<f32>> = vec![e.clone_dtod(&h_seed_buf)?];
-                    e.set_u32_one(&mut dctx.g_ctr, sctr.wrapping_sub(1))?;
-                    for j in 0..k_this {
-                        let index = mtp_chain_head_index(j, heads_n);
-                        if debug_spec {
-                            eprintln!(
-                                "[mtp-chain-step] round={round} j={j} head={index} \
-                                 replay_rows={} arm=graph_s",
-                                chain_tokens.len(),
-                            );
-                        }
-                        scratch.set_plane_len(e, index, committed)?;
-                        e.set_i32_one(&mut dctx.g_pos, (committed + 1) as i32)?;
-                        for row in 0..=j {
-                            e.set_u32_one(&mut dctx.g_tok, chain_tokens[row])?;
-                            e.copy_into(&mut dctx.g_seed, 0, &chain_seed_bufs[row], n_embd)?;
-                            if row < j {
-                                cg.interior[index].launch()?;
-                            } else {
-                                cg.last[index].launch()?;
-                            }
-                            scratch.plane_mut(index).0.len += 1;
-                        }
-                        sctr += 1; // mirrors the in-graph g_ctr bump (eager parity:
-                        // counts the p-min-discarded token too)
-                        // q retention: ONE async D2D of the persistent head-logits buffer
-                        // into this round's slot j (stream-ordered after the replay).
-                        e.copy_into(&mut dctx.q_slots[j], 0, &dctx.g_q, d_vocab)?;
-                        // FILTERED capture: read the in-graph filter_stats scalars back per
-                        // replay instead of a second full-vocab filter_stats per slot post-
-                        // chain — bit-exact (the values the in-graph perturb consumed) and
-                        // measured worth ~5% of vendor-default serving tok/s at K=3. Before
-                        // the p-min break so the discarded slot's stats land too.
-                        if filtered_stats_in_graph {
-                            draft_stats.push((
-                                e.dtoh(&dctx.g_mx)?[0],
-                                e.dtoh(&dctx.g_th)?[0],
-                                e.dtoh(&dctx.g_z)?[0],
-                            ));
-                        }
-                        let idx = e.dtoh_u32_one(&dctx.g_tok)?;
-                        // #87 SENTINEL TRAP (see the single-head graph arms).
-                        if (idx as usize) >= d_vocab {
-                            let seed_h = e.dtoh(&dctx.g_seed)?;
-                            let seed_nan = seed_h.iter().filter(|v| v.is_nan()).count();
-                            return Err(format!(
-                                "draft(chain-graph-sampled) argmax sentinel 0x{idx:08x} >= \
-                             d_vocab {d_vocab} at round {round} j={j} head={index} pos={pos}: \
-                             head-out NaN {seed_nan}/{n_embd} — refusing to dereference the \
-                             embed row (#87 trap)"
-                            )
-                            .into());
-                        }
-                        let d = match &mtp.d2t {
-                            Some(map) => map[idx as usize],
-                            None => idx,
-                        };
-                        draft_idx.push(idx);
-                        if p_min > 0.0 {
-                            let p = e.dtoh(&dctx.g_p)?[0];
-                            if p < p_min && (j > 0 || (pmin0 && base0 == 1)) {
-                                break;
-                            }
-                        }
-                        draft.push(d);
-                        chain_tokens.push(d);
-                        chain_seed_bufs.push(e.clone_dtod(&dctx.g_seed)?);
-                    }
-                    // PURE-TEMP accept path: stats per used slot recomputed from the RETAINED
-                    // q with the SAME filter_stats program the eager arm runs (deployment-
-                    // keyed coop/plain choice, same input bits). The FILTERED graph read its
-                    // stats back per replay above.
-                    if !filtered_stats_in_graph {
-                        for j in 0..draft.len().max(draft_idx.len()) {
-                            let rows0 = e.htod_i32(&[0])?;
-                            let (mut th_d, mut z_d, mut mx_d) =
-                                (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
-                            e.filter_stats(
-                                &dctx.q_slots[j],
-                                d_vocab,
-                                &rows0,
-                                &mut th_d,
-                                &mut z_d,
-                                &mut mx_d,
-                                d_vocab,
-                                1,
-                                sp_temp,
-                                sp.top_k,
-                                sp.top_p,
-                                sp.min_p,
-                            )?;
-                            draft_stats.push((
-                                e.dtoh(&mx_d)?[0],
-                                e.dtoh(&th_d)?[0],
-                                e.dtoh(&z_d)?[0],
-                            ));
-                        }
-                    }
-                } else if let (false, Some(gr)) =
-                    (sampled || pen_on || !graph_round_ok, &dctx.graph)
-                {
+                if let (false, Some(gr)) = (sampled || pen_on, &dctx.graph) {
                     // GRAPH DRAFT: one dispatch per drafted token. The chain feeds itself on-device
                     // (in-graph argmax -> tok_d -> next replay's embed; h_nextn -> h_seed_d; pos_d
                     // inc'd in-graph); the host only reads 4B token (+4B p) and decides the break.
@@ -14230,11 +11773,10 @@ impl HybridModel {
                         if j == 0 {
                             controller_draft_prob = draft_p;
                         }
-                        if let Some(p) = draft_p.filter(|_| p_min > 0.0)
-                            && p < p_min
-                            && (j > 0 || (pmin0 && base0 == 1))
-                        {
-                            break;
+                        if let Some(p) = draft_p.filter(|_| p_min > 0.0) {
+                            if p < p_min && (j > 0 || (pmin0 && base0 == 1)) {
+                                break;
+                            }
                         }
                         draft.push(d);
                         // with a trimmed head the NEXT embed must read the TARGET id, not the draft
@@ -14258,27 +11800,17 @@ impl HybridModel {
                             break;
                         }
                     }
-                // REGIME RE-TEST (lane/graph-s-key-exactness-20260819, widened by
-                // lane/step37-draft-graph-serving-20260830): the sampled graph is legal ONLY
-                // in the regime it was captured in. The condition used to read
-                // `(sampled, &dctx.graph_s)` and trusted `s_key` to have dropped anything
-                // else — which it could not, because the key omitted the filters. Both
-                // halves are enforced: the key drops a stale graph, and this site refuses to
-                // launch one whose key differs or whose regime is uncapturable (penalties).
-                } else if let (true, Some(gr)) = (
-                    sampled && s_capturable && dctx.s_key == Some(s_key) && graph_round_ok,
-                    &dctx.graph_s,
-                ) {
+                // PURE-TEMP RE-TEST (lane/graph-s-key-exactness-20260819): the sampled graph is
+                // legal ONLY in the regime it was captured in. The condition used to read
+                // `(sampled, &dctx.graph_s)` and trusted `s_key` to have dropped anything else —
+                // which it could not, because the key omitted the filters. Both halves are now
+                // enforced: the key drops a stale graph, and this site refuses to launch one.
+                } else if let (true, Some(gr)) = (sampled && pure_temp, &dctx.graph_s) {
                     if skey_probe() {
                         eprintln!(
-                            "[skey] chain=graph_s round={round} pure_temp={} capturable={} \
-                             top_k={} top_p={} min_p={} s_key_parked={:?}",
-                            pure_temp as u8,
-                            s_capturable as u8,
-                            sp.top_k,
-                            sp.top_p,
-                            sp.min_p,
-                            dctx.s_key,
+                            "[skey] chain=graph_s round={round} pure_temp={} top_k={} \
+                             top_p={} min_p={} s_key_parked={:?}",
+                            pure_temp as u8, sp.top_k, sp.top_p, sp.min_p, dctx.s_key,
                         );
                     }
                     // SAMPLED GRAPH DRAFT: one replay per drafted token — head forward + gumbel +
@@ -14291,7 +11823,6 @@ impl HybridModel {
                     e.set_u32_one(&mut dctx.g_tok, last_token)?;
                     e.copy_into(&mut dctx.g_seed, 0, &h_seed_buf, n_embd)?;
                     e.set_u32_one(&mut dctx.g_ctr, sctr.wrapping_sub(1))?;
-                    let filtered_stats_in_graph = s_key.filtered();
                     for j in 0..k_this {
                         gr.launch()?;
                         scratch.kv.len += 1; // host mirror (len_d advanced in-graph)
@@ -14300,19 +11831,6 @@ impl HybridModel {
                         // q retention: ONE async D2D of the persistent head-logits buffer into this
                         // round's slot j (stream-ordered after the replay, before the next one).
                         e.copy_into(&mut dctx.q_slots[j], 0, &dctx.g_q, d_vocab)?;
-                        // FILTERED capture: the replay's own filter_stats node already computed
-                        // (th, z, mx) — read the three scalars back instead of paying a SECOND
-                        // full-vocab filter_stats per slot post-chain (measured ~5% of vendor-
-                        // default serving tok/s at K=3). Bit-exact by construction: these are
-                        // the very values the in-graph perturb consumed. Read BEFORE the p-min
-                        // break so the discarded slot's stats land too (accept-path indexing).
-                        if filtered_stats_in_graph {
-                            draft_stats.push((
-                                e.dtoh(&dctx.g_mx)?[0],
-                                e.dtoh(&dctx.g_th)?[0],
-                                e.dtoh(&dctx.g_z)?[0],
-                            ));
-                        }
                         let idx = e.dtoh_u32_one(&dctx.g_tok)?;
                         // #87 SENTINEL TRAP (see the greedy graph arm above).
                         if (idx as usize) >= d_vocab {
@@ -14343,34 +11861,26 @@ impl HybridModel {
                             e.set_u32_one(&mut dctx.g_tok, d)?;
                         }
                     }
-                    // PURE-TEMP accept path: fill draft_stats per used slot post-chain (the
-                    // stats degenerate to th=0 / full-Z; one filter_stats launch per slot).
-                    // The FILTERED graph read its stats back per replay above.
-                    if !filtered_stats_in_graph {
-                        for j in 0..draft.len().max(draft_idx.len()) {
-                            let rows0 = e.htod_i32(&[0])?;
-                            let (mut th_d, mut z_d, mut mx_d) =
-                                (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
-                            e.filter_stats(
-                                &dctx.q_slots[j],
-                                d_vocab,
-                                &rows0,
-                                &mut th_d,
-                                &mut z_d,
-                                &mut mx_d,
-                                d_vocab,
-                                1,
-                                sp_temp,
-                                sp.top_k,
-                                sp.top_p,
-                                sp.min_p,
-                            )?;
-                            draft_stats.push((
-                                e.dtoh(&mx_d)?[0],
-                                e.dtoh(&th_d)?[0],
-                                e.dtoh(&z_d)?[0],
-                            ));
-                        }
+                    // uniform accept path: fill draft_stats per used slot (pure-temp regime — the
+                    // stats degenerate to th=0 / full-Z; one filter_stats launch per slot, tiny).
+                    for j in 0..draft.len().max(draft_idx.len()) {
+                        let rows0 = e.htod_i32(&[0])?;
+                        let (mut th_d, mut z_d, mut mx_d) = (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
+                        e.filter_stats(
+                            &dctx.q_slots[j],
+                            d_vocab,
+                            &rows0,
+                            &mut th_d,
+                            &mut z_d,
+                            &mut mx_d,
+                            d_vocab,
+                            1,
+                            sp_temp,
+                            sp.top_k,
+                            sp.top_p,
+                            sp.min_p,
+                        )?;
+                        draft_stats.push((e.dtoh(&mx_d)?[0], e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0]));
                     }
                 } else {
                     if skey_probe() && sampled {
@@ -14526,11 +12036,10 @@ impl HybridModel {
                         if j == 0 {
                             controller_draft_prob = draft_p;
                         }
-                        if let Some(p) = draft_p.filter(|_| p_min > 0.0)
-                            && p < p_min
-                            && (j > 0 || (pmin0 && base0 == 1))
-                        {
-                            break;
+                        if let Some(p) = draft_p.filter(|_| p_min > 0.0) {
+                            if p < p_min && (j > 0 || (pmin0 && base0 == 1)) {
+                                break;
+                            }
                         }
                         draft.push(d);
                         if chain_heads {
@@ -14615,7 +12124,6 @@ impl HybridModel {
                     &mut controller_eager_state,
                     eager_pos,
                     embd_dev,
-                    graph_round_ok,
                 )?;
                 let first_probability = controller_draft_prob
                     .ok_or("optipipe controller probe lost first-token probability")?;
@@ -14640,7 +12148,6 @@ impl HybridModel {
                             &mut controller_eager_state,
                             eager_pos,
                             embd_dev,
-                            graph_round_ok,
                         )?;
                     OPTI_SHADOW_DRAFT_TOKENS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     let eager_seed = controller_eager_state.take().map(|(token, seed)| {
@@ -14879,12 +12386,8 @@ impl HybridModel {
                 // The serial verify every non-fork round takes — the MTP route's
                 // verify-graph door. The pool is None unless MEMRA_SPEC_VERIFY_GRAPH armed
                 // a pool above, and then the walk replays the captured trunk instead of
-                // re-issuing it launch by launch. `graph_round_ok` is the round's
-                // headroom snapshot (see GRAPH_LAUNCH_MIN_FREE): below the floor the
-                // round declines the pool exactly like an over-cap round and rides the
-                // byte-identical eager walk — the `[spec]` suspension line above
-                // already named the round.
-                let vg_round = if verify_tokens.len() <= vg_t_cap && graph_round_ok {
+                // re-issuing it launch by launch.
+                let vg_round = if verify_tokens.len() <= vg_t_cap {
                     vg_guard.as_mut().and_then(|g| g.as_mut())
                 } else {
                     if let Some(g) = vg_guard.as_mut().and_then(|g| g.as_mut()) {
@@ -14909,9 +12412,6 @@ impl HybridModel {
                 None => None,
             };
 
-            if phase_sync {
-                e.stream().synchronize()?;
-            }
             ph_mark(&mut ph_verify, phase_on);
             // --- 3. GREEDY ACCEPT (walk prefix, stop at first mismatch) ---
             // DEVICE-ARGMAX ACCEPT: argmax every verify column ON DEVICE (same 2-pass kernels +
@@ -14940,12 +12440,7 @@ impl HybridModel {
                     return Err(format!(
                         "verify argmax sentinel 0x{:08x} >= n_vocab {n_vocab} at round {round} \
                          col {bad}/{t_v} pos={pos}: verify-logits col NaN {col_nan}/{n_vocab} \
-                         — the verify TRUNK produced a poisoned column (#87 trap). Run \
-                         MEMRA_SPEC_NAN_SCAN=1 to name the layer that creates it (=2 to split \
-                         that layer into attention and routed MoE). NOT the draft head, and NOT \
-                         the PP stage split this message used to name: pp_cuts() returns None \
-                         without MEMRA_PP_STAGES, so decode_step_t_core_ppn never runs unless \
-                         that variable is set.",
+                         — the stage-split verify produced a poisoned column (#87 trap)",
                         preds[bad]
                     )
                     .into());
@@ -15021,8 +12516,6 @@ impl HybridModel {
                     (ab[0] as usize, ab[1])
                 } else {
                     let mut n_acc = 0usize;
-                    #[allow(clippy::needless_range_loop)]
-                    // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
                     for j in 0..k_round {
                         if t_pred(j) == draft[j] {
                             n_acc += 1;
@@ -15046,8 +12539,6 @@ impl HybridModel {
                 if k_round > 0 {
                     let mut ids: Vec<u32> = Vec::new();
                     let mut rows: Vec<i32> = Vec::new();
-                    #[allow(clippy::needless_range_loop)]
-                    // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
                     for j in 0..k_round {
                         if j > 0 || base == 1 {
                             ids.push(draft[j]);
@@ -15113,8 +12604,6 @@ impl HybridModel {
                         let outv = e.dtoh(&outd)?;
                         let (thv, zv, mxv) = (e.dtoh(&th_d)?, e.dtoh(&z_d)?, e.dtoh(&mx_d)?);
                         let mut oi = 0usize;
-                        #[allow(clippy::needless_range_loop)]
-                        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
                         for j in 0..k_round {
                             if j > 0 || base == 1 {
                                 pj[j] = outv[oi];
@@ -15170,14 +12659,12 @@ impl HybridModel {
                             Some((e.dtoh(&mx_d)?[0], e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0]));
                     }
                 }
-                // q source: the graph arms (single-head AND chain) retained the head logits
-                // in the persistent q_slots; the eager arm in per-round draft_logits clones.
-                // Same raw-logit values either way. FILTERED q_j: stats from draft_stats
-                // (eager pushes in-chain; the graph arms compute them post-replay from the
-                // retained q with the same filter_stats program — bit-identical to the
-                // in-graph stats that shaped the draw, keeping ONE accept path).
-                let q_bufs: &[CudaSlice<f32>] = if dctx.graph_s.is_some() || dctx.chain_s.is_some()
-                {
+                // q source: the graph arm retained the head logits in the persistent q_slots;
+                // the eager arm in per-round draft_logits clones. Same raw-logit values either way.
+                // FILTERED q_j: stats from draft_stats (eager pushes in-chain; the graph arm
+                // computes them post-replay — graph engages only filter/penalty-free, so the
+                // stats degenerate to th=0/full-Z there, keeping ONE accept path).
+                let q_bufs: &[CudaSlice<f32>] = if dctx.graph_s.is_some() {
                     &dctx.q_slots
                 } else {
                     &draft_logits
@@ -15313,7 +12800,7 @@ impl HybridModel {
                     let p_stats = if n_acc > 0 || base == 1 {
                         // col index within the gathered set == number of gathered cols before n_acc
                         let gi = if base == 1 { n_acc } else { n_acc - 1 };
-                        col_stats.get(gi).copied().unwrap_or({
+                        col_stats.get(gi).copied().unwrap_or_else(|| {
                             (0.0, 0.0, 1.0) // unreachable: gathered cols always cover the reject slot
                         })
                     } else {
@@ -15353,14 +12840,7 @@ impl HybridModel {
                     }
                     e.dtoh_u32(&sample_tok)?[0]
                 };
-                (
-                    n_acc,
-                    guard_vocab_token(
-                        bonus,
-                        n_vocab,
-                        &format!("sampled verify bonus at round {round} pos={pos} n_acc={n_acc}"),
-                    )?,
-                )
+                (n_acc, bonus)
             };
             // --- 3b. GRAMMAR TRUNCATION (constrained spec, 2026-08-03): the grammar is
             // an extra rejection rule AFTER the exactness verify (the batched-verify-twins
@@ -15466,13 +12946,9 @@ impl HybridModel {
             }
             if spec_stats {
                 st_len_hist[k_round] += 1;
-                #[allow(clippy::needless_range_loop)]
-                // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
                 for j in 0..k_round {
                     st_drafted[j] += 1;
                 }
-                #[allow(clippy::needless_range_loop)]
-                // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
                 for j in 0..n_acc {
                     st_accepted[j] += 1;
                 }
@@ -15499,8 +12975,6 @@ impl HybridModel {
             // of them (overshoot past max_new included) or `committed` under-counts the cache rows
             // and the next turn's continuation seeds one token off (gate-caught 2026-07-05). The
             // single-shot path keeps the cap (its caller truncates + drops the cache anyway).
-            #[allow(clippy::needless_range_loop)]
-            // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
             for j in 0..n_acc {
                 if !session_mode && out.len() >= max_new {
                     break;
@@ -15739,11 +13213,7 @@ impl HybridModel {
                 // last_pred = argmax of the LAST column's logits (predicts the token after `bonus`)
                 // — device argmax + one 4-byte read instead of the full-vocab column dtoh.
                 e.argmax_token_device_col(&rl_d, replay.len() - 1, n_vocab, &mut preds_d, 0)?;
-                last_pred = guard_vocab_token(
-                    e.dtoh_u32(&preds_d)?[0],
-                    n_vocab,
-                    &format!("replay last_pred at round {round} pos={pos}"),
-                )?;
+                last_pred = e.dtoh_u32(&preds_d)?[0];
                 if sampled {
                     let lr0 = replay.len();
                     let lc = last_col_logits
@@ -15835,18 +13305,6 @@ impl HybridModel {
                 p.accept_end(round);
             }
             drop(pipe_accept);
-            if let Some(t0) = round_t0 {
-                let ms = t0.elapsed().as_secs_f64() * 1e3;
-                ROUND_MS.fetch_add((ms * 1e3) as u64, std::sync::atomic::Ordering::Relaxed);
-                let n = ROUND_N.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-                if n.is_multiple_of(32) {
-                    eprintln!(
-                        "[spec-round] rounds={n} avg round wall={:.2} ms (emitted={} drafted so far)",
-                        ROUND_MS.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e3 / n as f64,
-                        out.len()
-                    );
-                }
-            }
             round += 1;
             // sse-cadence: this round's accepted drafts + bonus are committed (out is
             // append-only past step 4) — flush at round cadence.
@@ -15925,7 +13383,7 @@ impl HybridModel {
                 other * 1e3 / rounds_f,
             );
         }
-        let _pipe_tail = pipe.map(|p| p.primary()).transpose()?;
+        let _pipe_tail = pipe.map(|p| p.primary());
         // SESSION TAIL: leave the session in the exact invariant the next turn's suffix prime
         // expects — every row in `committed` has trunk KV/recur state AND an exact draft-KV row.
         // Park the draft-graph ctx back on the session (the serve-burst fixed-cost fix): the next
@@ -16081,7 +13539,6 @@ impl HybridModel {
     /// Anchor-bounded DSpark target extraction. The trunk sees the exact generated token tape;
     /// only requested hidden rows and target-logit rows cross PCIe. An anchor token at p pairs
     /// with the pre-output-norm h[p-1] carrier, exactly as the existing replay/NextN path does.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub fn extract_dspark_anchors(
         &self,
         e: &Engine,
@@ -16241,7 +13698,6 @@ impl HybridModel {
     /// the head-distillation extraction (hqmtp): the ENGINE is the source of truth for trunk
     /// hiddens (HF torch reproductions of the hybrid trunk measured only ~0.5 greedy
     /// agreement vs this path — not usable as a training-data source).
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn replay_acceptance(
         &self,
         e: &Engine,
@@ -16504,87 +13960,6 @@ mod vg_debt_tests {
         assert_eq!(d(6, 256, 10 * MIB, Some((4, 99 * MIB))), 0);
         // a stale observation at the same capture count falls back to bootstrap.
         assert_eq!(d(4, 256, 80 * MIB, Some((4, 80 * MIB))), 80 * MIB);
-    }
-}
-
-#[cfg(test)]
-mod capture_headroom_tests {
-    use super::{
-        CAPTURE_HEADROOM_FLOOR, capture_err_is_oom, capture_headroom_verdict,
-        draft_capture_bootstrap_estimate,
-    };
-
-    /// TOOTH for the pre-capture reserve check (lane/step37-vram-admission-20260830): a
-    /// capture attempt must be refused BEFORE it allocates when the device cannot cover its
-    /// appetite plus the post-capture floor — and pool-cached bytes count as headroom
-    /// (driver `free` alone under-counts, the wrong direction for a gate that drops
-    /// coverage).
-    #[test]
-    fn capture_reserve_check_refuses_short_devices_and_counts_pool_cache() {
-        const MIB: usize = 1 << 20;
-        let need = 900 * MIB;
-        // Plenty of room: no refusal.
-        assert_eq!(
-            capture_headroom_verdict(8_000 * MIB, 0, need, CAPTURE_HEADROOM_FLOOR),
-            None
-        );
-        // The owner's shape: capture appetite would walk the card to the edge — refused,
-        // with the arithmetic surfaced for the WARN line.
-        let (required, effective) =
-            capture_headroom_verdict(1_200 * MIB, 0, need, CAPTURE_HEADROOM_FLOOR)
-                .expect("short device must refuse");
-        assert_eq!(required, need + CAPTURE_HEADROOM_FLOOR);
-        assert_eq!(effective, 1_200 * MIB);
-        // Pool-cached bytes are real headroom (the trim path makes them driver-visible).
-        assert_eq!(
-            capture_headroom_verdict(1_200 * MIB, 7_000 * MIB, need, CAPTURE_HEADROOM_FLOOR),
-            None
-        );
-        // Boundary: exactly enough is enough (>=, never a fencepost refusal).
-        assert_eq!(
-            capture_headroom_verdict(
-                need + CAPTURE_HEADROOM_FLOOR,
-                0,
-                need,
-                CAPTURE_HEADROOM_FLOOR
-            ),
-            None
-        );
-        // POLICY at the call site (owner-shape receipts, escalated twice on-box): the
-        // refusal fn is handed 2x the appetite plus TWO floors — a capture may take at
-        // most half the discretionary headroom, so the card retains a whole capture's
-        // worth of room after it lands. One floor of slack above one appetite (the shape
-        // that step-OOM'd on the owner cell) must therefore REFUSE under the call-site
-        // requirement.
-        assert!(
-            capture_headroom_verdict(
-                need + CAPTURE_HEADROOM_FLOOR + (100 << 20),
-                0,
-                2 * need,
-                CAPTURE_HEADROOM_FLOOR * 2
-            )
-            .is_some()
-        );
-    }
-
-    #[test]
-    fn bootstrap_estimate_scales_with_heads_and_never_underflows() {
-        // 3-head chain on a step37-shaped vocab must expect strictly more than one head.
-        let one = draft_capture_bootstrap_estimate(1, 3, 128_896, 4_096);
-        let three = draft_capture_bootstrap_estimate(3, 3, 128_896, 4_096);
-        assert!(three > one);
-        // Degenerate shapes keep a sane minimum (the estimate feeds a refusal gate; a
-        // zero-need gate refuses nothing).
-        assert!(draft_capture_bootstrap_estimate(0, 0, 0, 0) >= 64 << 20);
-    }
-
-    #[test]
-    fn capture_oom_predicate_matches_the_quoted_driver_text() {
-        assert!(capture_err_is_oom(
-            "DriverError(CUDA_ERROR_OUT_OF_MEMORY, \"out of memory\")"
-        ));
-        assert!(capture_err_is_oom("allocation failed: out of memory"));
-        assert!(!capture_err_is_oom("capture produced no graph"));
     }
 }
 
@@ -17080,33 +14455,6 @@ mod sampled_graph_key_tests {
         // still the unfiltered regime, matching the original `sp.top_p >= 1.0` test.
         assert!(SampledGraphKey::new(7, 0.8, 3, 0, 1.0, 0.0, false).pure_temp());
         assert!(SampledGraphKey::new(7, 0.8, 3, 0, 1.5, -1.0, false).pure_temp());
-    }
-
-    /// The WIDENED capture regime (lane/step37-draft-graph-serving-20260830): truncation-
-    /// filtered shapes are capturable — the filter runs IN-GRAPH (`filter_stats` +
-    /// `gumbel_perturb_filtered_ctr`), so the draft draws from the same filtered
-    /// distribution the accept test reconstructs. Penalties never are: the per-round
-    /// history cannot be baked. The step37 vendor-default shape (temp 0.5 / top_p 0.9) is
-    /// exactly the previously-excluded regime this lane exists to capture.
-    #[test]
-    fn filtered_regimes_are_capturable_penalties_never() {
-        let vendor = SampledGraphKey::new(12345, 0.5, 3, 0, 0.9, 0.0, false);
-        assert!(!vendor.pure_temp());
-        assert!(vendor.filtered());
-        assert!(
-            vendor.graph_capturable(),
-            "the vendor-default filtered shape must be capturable (default door state)",
-        );
-        assert!(pure_temp_key().graph_capturable());
-        assert!(
-            !pure_temp_key().filtered(),
-            "pure-temp takes the legacy (filterless) capture body",
-        );
-        let pen = SampledGraphKey::new(12345, 0.5, 3, 0, 0.9, 0.0, true);
-        assert!(
-            !pen.graph_capturable(),
-            "penalty history varies per round and can never be baked into a graph",
-        );
     }
 
     /// MEMRA_DEBUG_SPEC on a SAMPLED spec request past round 0: the print must render without

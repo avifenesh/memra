@@ -297,18 +297,19 @@ where
         // Never replace a caller-provided link or a hard-linked service inode. If a race swaps the
         // final entry after this check, renameat only replaces that directory entry; it cannot
         // write through the swapped inode, and the temporary remains private to this directory.
-        if let Ok(metadata) = std::fs::symlink_metadata(path)
-            && (metadata.file_type().is_symlink()
+        if let Ok(metadata) = std::fs::symlink_metadata(path) {
+            if metadata.file_type().is_symlink()
                 || !metadata.is_file()
-                || std::os::unix::fs::MetadataExt::nlink(&metadata) > 1)
-        {
-            unsafe {
-                libc::unlinkat(dir.as_raw_fd(), temp_name.as_ptr(), 0);
+                || std::os::unix::fs::MetadataExt::nlink(&metadata) > 1
+            {
+                unsafe {
+                    libc::unlinkat(dir.as_raw_fd(), temp_name.as_ptr(), 0);
+                }
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("repack cache target is not a private regular file: {path:?}"),
+                ));
             }
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("repack cache target is not a private regular file: {path:?}"),
-            ));
         }
         let status = unsafe {
             libc::renameat(
@@ -360,7 +361,6 @@ where
 /// A weight tensor resident on GPU. Quantized weights stay in GGUF block bytes (`Quant`);
 /// small non-quant tensors (norms, sometimes embed/lm_head) are kept dequantized as f32 (`Float`).
 /// This keeps VRAM ~= on-disk quant size (fixes the f32-on-load OOM).
-#[allow(clippy::large_enum_variant)] // allow: variant size asymmetry is deliberate; these enums live in per-layer tables, not hot moves
 pub enum GpuTensor {
     Quant {
         bytes: CudaSlice<u8>,
@@ -659,14 +659,14 @@ impl GpuTensor {
         if let GpuTensor::Quant {
             qtype, bytes, ne, ..
         } = &t
-            && ne.len() == 2
         {
-            residency_census_note(*qtype, bytes.len());
+            if ne.len() == 2 {
+                residency_census_note(*qtype, bytes.len());
+            }
         }
         Ok(t)
     }
 
-    #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
     fn load_from_source_inner(
         e: &Engine,
         src: &dyn TensorSource,
@@ -683,36 +683,35 @@ impl GpuTensor {
         let st_direct = std::env::var("MEMRA_ST_DIRECT")
             .map(|v| v != "0")
             .unwrap_or(true);
-        if rp_enabled()
-            && st_direct
-            && !cutlass_wants_raw
-            && let Some(nv) = src.find_nvfp4_native(name)
-            && nv.in_f % 64 == 0
-            && nv.out_f > 0
-        {
-            // Same post-matmul macro-scale sibling lookup as the GGUF-layout arm below.
-            let stem = name.strip_suffix(".weight").unwrap_or(name);
-            let scale = match src.find(&format!("{stem}.scale")) {
-                Some(sv) => f32::from_le_bytes(sv.bytes[..4].try_into().unwrap()),
-                None => 1.0,
-            };
-            let bytes = e.htod_bytes(&memra_gguf::nvfp4_repack::repack_modelopt_to_split(
-                nv.wbytes, nv.wscale, nv.out_f, nv.in_f,
-            ))?;
-            return Ok(GpuTensor::Quant {
-                bytes,
-                qtype: QT_NVFP4,
-                row_bytes: nv.in_f / 64 * 36,
-                ne: vec![nv.in_f as u64, nv.out_f as u64],
-                scale,
-                rp: true,
-                #[cfg(memra_cutlass)]
-                cutlass: None,
-                fp8: None,
-                blk: None,
-                f16: None,
-                rp4: None,
-            });
+        if rp_enabled() && st_direct && !cutlass_wants_raw {
+            if let Some(nv) = src.find_nvfp4_native(name) {
+                if nv.in_f % 64 == 0 && nv.out_f > 0 {
+                    // Same post-matmul macro-scale sibling lookup as the GGUF-layout arm below.
+                    let stem = name.strip_suffix(".weight").unwrap_or(name);
+                    let scale = match src.find(&format!("{stem}.scale")) {
+                        Some(sv) => f32::from_le_bytes(sv.bytes[..4].try_into().unwrap()),
+                        None => 1.0,
+                    };
+                    let bytes =
+                        e.htod_bytes(&memra_gguf::nvfp4_repack::repack_modelopt_to_split(
+                            nv.wbytes, nv.wscale, nv.out_f, nv.in_f,
+                        ))?;
+                    return Ok(GpuTensor::Quant {
+                        bytes,
+                        qtype: QT_NVFP4,
+                        row_bytes: nv.in_f / 64 * 36,
+                        ne: vec![nv.in_f as u64, nv.out_f as u64],
+                        scale,
+                        rp: true,
+                        #[cfg(memra_cutlass)]
+                        cutlass: None,
+                        fp8: None,
+                        blk: None,
+                        f16: None,
+                        rp4: None,
+                    });
+                }
+            }
         }
         // E4M3-DIRECT (DEFAULT since lane/fp8-decode-v1 2026-08-05; MEMRA_ST_E4M3=0 rolls back to the
         // Q8_0 slab. Introduced default-off by lane e4m3dec 2026-07-08): F8-E4M3-origin 2D projections keep
@@ -728,26 +727,25 @@ impl GpuTensor {
         // see the second arm below. It must not enter the per-tensor arm: the QT_F8_E4M3 kernel
         // family consumes ONE scalar weight scale, so a block-128 operand through it would
         // silently dequant every tile at scale 1.0.
-        if crate::fp8_ffi::st_e4m3_enabled()
-            && let Some(f8) = src.find_fp8_native(name)
-            && f8.blk.is_none()
-            && f8.in_f % 32 == 0
-            && f8.out_f > 0
-        {
-            return Ok(GpuTensor::Quant {
-                bytes: e.htod_bytes(&f8.bytes)?,
-                qtype: crate::QT_F8_E4M3,
-                row_bytes: f8.in_f,
-                ne: vec![f8.in_f as u64, f8.out_f as u64],
-                scale: f8.scale,
-                rp: false,
-                #[cfg(memra_cutlass)]
-                cutlass: None,
-                fp8: None,
-                blk: None,
-                f16: None,
-                rp4: None,
-            });
+        if crate::fp8_ffi::st_e4m3_enabled() {
+            if let Some(f8) = src.find_fp8_native(name) {
+                if f8.blk.is_none() && f8.in_f % 32 == 0 && f8.out_f > 0 {
+                    return Ok(GpuTensor::Quant {
+                        bytes: e.htod_bytes(&f8.bytes)?,
+                        qtype: crate::QT_F8_E4M3,
+                        row_bytes: f8.in_f,
+                        ne: vec![f8.in_f as u64, f8.out_f as u64],
+                        scale: f8.scale,
+                        rp: false,
+                        #[cfg(memra_cutlass)]
+                        cutlass: None,
+                        fp8: None,
+                        blk: None,
+                        f16: None,
+                        rp4: None,
+                    });
+                }
+            }
         }
         // E4M3-BLK-DIRECT (lane/fp8-blk128-decode, 2026-08-05) — the block-128 twin of the arm
         // above, and the Qwen-3.8 day-one path. A block-128 FP8 checkpoint (Qwen3.6-FP8's
@@ -775,47 +773,48 @@ impl GpuTensor {
         // prefill MMQ arm uses) and a non-zero count declines to the Q8_0 floor for THAT tensor.
         // Real Qwen FP8 checkpoints carry none (the exporter saturates at +-448), so this is a
         // guard, not a cost centre: one linear pass over bytes already on the device.
-        if crate::fp8_ffi::st_e4m3_blk_enabled()
-            && let Some(f8) = src.find_fp8_native(name)
-            && let Some(grid) = f8.blk.as_ref()
-        {
-            let (in_f, out_f) = (f8.in_f, f8.out_f);
-            // in_f % 32: the q8_1 activation block gate (and the kernel's 2x LDG.128 line).
-            // The grid dims must match the shape — a mismatch means operand and grid came
-            // from different tensors; refuse rather than index a wrong block. scale == 1.0
-            // is the block class's identity (source.rs sets it alongside a grid); anything
-            // else would be a second, unapplied factor.
-            if in_f % 32 == 0
-                && out_f > 0
-                && f8.bytes.len() == out_f * in_f
-                && grid.rows == out_f.div_ceil(128)
-                && grid.cols == in_f.div_ceil(128)
-                && grid.scales.len() == grid.rows * grid.cols
-                && f8.scale == 1.0
-            {
-                let bytes = e.htod_bytes(&f8.bytes)?;
-                if e.fp8_blk_nan_count(&bytes)? == 0 {
-                    let scales = e.htod(&grid.scales)?;
-                    return Ok(GpuTensor::Quant {
-                        bytes,
-                        qtype: crate::QT_F8_E4M3_BLK,
-                        row_bytes: in_f,
-                        ne: vec![in_f as u64, out_f as u64],
-                        scale: 1.0,
-                        rp: false,
-                        #[cfg(memra_cutlass)]
-                        cutlass: None,
-                        fp8: None,
-                        blk: Some(Fp8BlockScales {
-                            scales,
-                            rows: grid.rows,
-                            cols: grid.cols,
-                        }),
-                        f16: None,
-                        rp4: None,
-                    });
+        if crate::fp8_ffi::st_e4m3_blk_enabled() {
+            if let Some(f8) = src.find_fp8_native(name) {
+                if let Some(grid) = f8.blk.as_ref() {
+                    let (in_f, out_f) = (f8.in_f, f8.out_f);
+                    // in_f % 32: the q8_1 activation block gate (and the kernel's 2x LDG.128 line).
+                    // The grid dims must match the shape — a mismatch means operand and grid came
+                    // from different tensors; refuse rather than index a wrong block. scale == 1.0
+                    // is the block class's identity (source.rs sets it alongside a grid); anything
+                    // else would be a second, unapplied factor.
+                    if in_f % 32 == 0
+                        && out_f > 0
+                        && f8.bytes.len() == out_f * in_f
+                        && grid.rows == out_f.div_ceil(128)
+                        && grid.cols == in_f.div_ceil(128)
+                        && grid.scales.len() == grid.rows * grid.cols
+                        && f8.scale == 1.0
+                    {
+                        let bytes = e.htod_bytes(&f8.bytes)?;
+                        if e.fp8_blk_nan_count(&bytes)? == 0 {
+                            let scales = e.htod(&grid.scales)?;
+                            return Ok(GpuTensor::Quant {
+                                bytes,
+                                qtype: crate::QT_F8_E4M3_BLK,
+                                row_bytes: in_f,
+                                ne: vec![in_f as u64, out_f as u64],
+                                scale: 1.0,
+                                rp: false,
+                                #[cfg(memra_cutlass)]
+                                cutlass: None,
+                                fp8: None,
+                                blk: Some(Fp8BlockScales {
+                                    scales,
+                                    rows: grid.rows,
+                                    cols: grid.cols,
+                                }),
+                                f16: None,
+                                rp4: None,
+                            });
+                        }
+                        crate::fp8_ffi::note_blk_native_nan_refused();
+                    }
                 }
-                crate::fp8_ffi::note_blk_native_nan_refused();
             }
         }
         // ARM B' — GPU BLOCK-128 DEQUANT (MEMRA_FP8_BLK_GPU=1, default OFF; lane fp8-gemm-arm
@@ -843,27 +842,28 @@ impl GpuTensor {
         // forbids. The two arms are already disjoint by construction and need no cross-gate: the
         // arm above returns only when `f8.blk.is_none()`, this one runs only when `f8.blk` is
         // Some, so a tensor that reaches here was never eligible for native residency.
-        if crate::fp8_ffi::fp8_blk_gpu_enabled()
-            && let Some(f8) = src.find_fp8_native(name)
-            && let Some(grid) = f8.blk.as_ref()
-        {
-            let (in_f, out_f) = (f8.in_f, f8.out_f);
-            if in_f % 32 == 0 && out_f > 0 && f8.bytes.len() == out_f * in_f {
-                let bytes = e.fp8_blk_dequant_q8_0(&f8.bytes, &grid.scales, out_f, in_f)?;
-                return Ok(GpuTensor::Quant {
-                    bytes,
-                    qtype: QT_Q8_0,
-                    row_bytes: in_f / 32 * 34,
-                    ne: vec![in_f as u64, out_f as u64],
-                    scale: 1.0,
-                    rp: false,
-                    #[cfg(memra_cutlass)]
-                    cutlass: None,
-                    fp8: None,
-                    blk: None,
-                    f16: None,
-                    rp4: None,
-                });
+        if crate::fp8_ffi::fp8_blk_gpu_enabled() {
+            if let Some(f8) = src.find_fp8_native(name) {
+                if let Some(grid) = f8.blk.as_ref() {
+                    let (in_f, out_f) = (f8.in_f, f8.out_f);
+                    if in_f % 32 == 0 && out_f > 0 && f8.bytes.len() == out_f * in_f {
+                        let bytes = e.fp8_blk_dequant_q8_0(&f8.bytes, &grid.scales, out_f, in_f)?;
+                        return Ok(GpuTensor::Quant {
+                            bytes,
+                            qtype: QT_Q8_0,
+                            row_bytes: in_f / 32 * 34,
+                            ne: vec![in_f as u64, out_f as u64],
+                            scale: 1.0,
+                            rp: false,
+                            #[cfg(memra_cutlass)]
+                            cutlass: None,
+                            fp8: None,
+                            blk: None,
+                            f16: None,
+                            rp4: None,
+                        });
+                    }
+                }
             }
         }
         let mut v = src
@@ -889,7 +889,7 @@ impl GpuTensor {
             .unwrap_or(0);
         if (kq >= 1 && v.ggml_type == GgmlType::Q4_K || kq >= 2 && v.ggml_type == GgmlType::Q5_K)
             && v.ne.len() == 2
-            && v.ne[0].is_multiple_of(64)
+            && v.ne[0] % 64 == 0
             && !name.starts_with("output")
         {
             let n: u64 = v.ne.iter().product();
@@ -960,9 +960,9 @@ impl GpuTensor {
                 // construction). Every consumer kernel dispatches its `_rp` twin off the flag.
                 let rp = qt == QT_NVFP4
                     && v.ne.len() == 2
-                    && (v.ne[0] as usize).is_multiple_of(64)
+                    && (v.ne[0] as usize) % 64 == 0
                     && v.bytes.len() % out_f == 0
-                    && (v.bytes.len() / out_f).is_multiple_of(36)
+                    && (v.bytes.len() / out_f) % 36 == 0
                     && rp_enabled();
                 let bytes = if rp {
                     e.htod_bytes(&repack_nvfp4_split(&v.bytes, out_f))?
@@ -1111,24 +1111,6 @@ impl GpuTensor {
                     };
                     if v.ggml_type == GgmlType::BF16 && v.ne.len() == 2 && n >= threshold {
                         let data = e.htod_bytes(&v.bytes)?; // raw bf16 bytes, u16 LE pairs
-                        // LOAD-TIME ENGAGEMENT RECEIPT. This is the only DOOR-GATED producer of
-                        // FloatBf16 residency, so counting this line per arm is the door's own
-                        // announce: it must be 0 with MEMRA_BF16_MMV=0 (and MEMRA_FULL_PREC off)
-                        // and >0 with =1. It is NOT the only FloatBf16 producer in the engine --
-                        // the masked-vocab trimmed head arms in hybrid.rs make FloatBf16
-                        // unconditionally -- so this counts the door, not bf16 residency at large.
-                        // Added because the 2026-08-28 sweep's `grep -c 'bf16.mmv'` returned 0 in
-                        // BOTH arms: no such line existed anywhere in the tree, which is a RECEIPT
-                        // DEFECT, not a no-engagement result.
-                        eprintln!(
-                            "[bf16-mmv] RESIDENT {name} ne={:?} n={n} admit={}",
-                            v.ne,
-                            if full_prec_enabled() {
-                                "full_prec"
-                            } else {
-                                "bf16_mmv"
-                            }
-                        );
                         return Ok(GpuTensor::FloatBf16 {
                             data,
                             ne: v.ne.clone(),
@@ -1150,7 +1132,7 @@ impl GpuTensor {
                 // 35B: 100 dot+reduce launches/token). Q8_0 of an F32 source is the same
                 // class-lossless step every 9B GGUF already ships for these tensors.
                 if v.ne.len() == 2
-                    && v.ne[0].is_multiple_of(32)
+                    && v.ne[0] % 32 == 0
                     && (name.ends_with("ssm_beta.weight") || name.ends_with("ssm_alpha.weight")
                         // E4B per_layer_model_proj (F16 [2560, 10752]): matmul-class — the
                         // loader-law recipe (2026-07-12). As Float it rode cuBLAS f32 whose
@@ -1216,10 +1198,7 @@ impl GpuTensor {
         let row_bytes = bytes.len() / ne1 as usize;
         // Same A6 repack as load_from_source: callers pass GGUF-layout host bytes (the FR-Spec
         // self-trim row-gathers from the source file bytes, which are always original layout).
-        let rp = qt == QT_NVFP4
-            && ne0.is_multiple_of(64)
-            && row_bytes.is_multiple_of(36)
-            && rp_enabled();
+        let rp = qt == QT_NVFP4 && ne0 % 64 == 0 && row_bytes % 36 == 0 && rp_enabled();
         let dev = if rp {
             e.htod_bytes(&repack_nvfp4_split(bytes, ne1 as usize))?
         } else {
@@ -1458,7 +1437,7 @@ impl Model {
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let n_embd = self.cfg.n_embd as usize;
         let x = self.embd.gather(n_embd, tokens);
-        e.htod(&x)
+        Ok(e.htod(&x)?)
     }
 }
 
@@ -1536,7 +1515,6 @@ impl HostBuf {
         }
     }
     #[inline]
-    #[allow(clippy::len_without_is_empty)] // allow: HostBuf is a sized byte slab; zero length is not a state callers name
     pub fn len(&self) -> usize {
         match self {
             HostBuf::Paged(v) => v.len(),
@@ -1794,7 +1772,7 @@ impl HostExps {
                 let dst = pn.as_mut_slice()?;
                 dst.copy_from_slice(&buf);
             }
-            let base = pn.as_ptr()?;
+            let base = pn.as_ptr()? as *const u8;
             let len = buf.len();
             HostBuf::Pinned {
                 slice: std::sync::Arc::new(pn),
@@ -2180,7 +2158,7 @@ impl HostExps {
                 let dst = p.as_mut_slice()?;
                 dst.copy_from_slice(raw);
             }
-            let base = p.as_ptr()?; // syncs once here at load; stable afterward
+            let base = p.as_ptr()? as *const u8; // syncs once here at load; stable afterward
             let len = raw.len();
             HostBuf::Pinned {
                 slice: std::sync::Arc::new(p),
@@ -2338,11 +2316,10 @@ impl HostExps {
             }
         }
         let mixed_layout = signatures.windows(2).any(|pair| pair[0] != pair[1]);
-        if src.preserve_expert_encodings()
-            && !mixed_layout
-            && let Some(uniform) = Self::load_uniform_mmap_from_source(src, il, proj, n_expert)?
-        {
-            return Ok(uniform);
+        if src.preserve_expert_encodings() && !mixed_layout {
+            if let Some(uniform) = Self::load_uniform_mmap_from_source(src, il, proj, n_expert)? {
+                return Ok(uniform);
+            }
         }
         if src.preserve_expert_encodings() || mixed_layout {
             return Self::load_mixed_from_source(src, il, proj, n_expert);
@@ -2380,8 +2357,6 @@ impl HostExps {
                 let total = n_expert * expert_stride;
                 let mut macros = vec![1.0f32; n_expert];
                 let read_macros = |macros: &mut Vec<f32>| {
-                    #[allow(clippy::needless_range_loop)]
-                    // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
                     for ex in 0..n_expert {
                         let stem = format!("blk.{il}.ffn_{proj}_exps.{ex}");
                         if let Some(sv) = src.find(&format!("{stem}.scale")) {
@@ -2467,7 +2442,7 @@ impl HostExps {
                                 let dst = pn.as_mut_slice()?;
                                 dst.copy_from_slice(&map[..slab_len]);
                             }
-                            let base = pn.as_ptr()?;
+                            let base = pn.as_ptr()? as *const u8;
                             *rem -= slab_len;
                             let slab = std::sync::Arc::new(HostBuf::Pinned {
                                 slice: std::sync::Arc::new(pn),
@@ -2552,7 +2527,7 @@ impl HostExps {
                             let dst = p.as_mut_slice()?;
                             dst.copy_from_slice(&buf);
                         }
-                        let base = p.as_ptr()?;
+                        let base = p.as_ptr()? as *const u8;
                         let len = buf.len();
                         HostBuf::Pinned {
                             slice: std::sync::Arc::new(p),
@@ -2637,7 +2612,7 @@ impl HostExps {
                 let dst = p.as_mut_slice()?;
                 dst.copy_from_slice(&buf);
             }
-            let base = p.as_ptr()?;
+            let base = p.as_ptr()? as *const u8;
             let len = buf.len();
             HostBuf::Pinned {
                 slice: std::sync::Arc::new(p),
@@ -2687,8 +2662,6 @@ impl HostExps {
         let mut qtype = 0i32;
         let mut row_bytes = 0usize;
         let mut macros = vec![1.0f32; n_expert];
-        #[allow(clippy::needless_range_loop)]
-        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
         for ex in 0..n_expert {
             let stem = format!("blk.{il}.ffn_{proj}_exps.{ex}");
             let name = format!("{stem}.weight");

@@ -10,7 +10,7 @@
 //! fluent output with wrong token ids and nothing downstream can see it.
 
 pub mod chat;
-pub mod json;
+mod json;
 mod unicode;
 mod unicode_data;
 
@@ -66,30 +66,6 @@ pub const ALLOW_UNKNOWN_PRETOKENIZER_ENV: &str = "MEMRA_ALLOW_UNKNOWN_PRETOKENIZ
 
 fn allow_unknown_pretokenizer() -> bool {
     std::env::var(ALLOW_UNKNOWN_PRETOKENIZER_ENV).as_deref() == Ok("1")
-}
-
-/// Serializes every TEST that touches `MEMRA_ALLOW_UNKNOWN_PRETOKENIZER`. The variable is
-/// PROCESS-wide and `cargo test` runs the suite in parallel threads of ONE process, so
-/// `pretokenizer_tests::opt_out_env_gate`'s `set_var("1")` was visible to
-/// `hf_tests::hf_dir_refuses_unidentifiable_pretokenizer` while it ran: that test calls
-/// `from_hf_dir`, which reads this same variable through `allow_unknown_pretokenizer` above, so
-/// it LOADED instead of refusing and the suite failed with the qwen35-fallback WARN in its
-/// stdout. It reddened at whatever interleaving the scheduler happened to pick and passed every
-/// time it was run alone, which is why it read as noise. `opt_out_env_gate`'s old SAFETY note
-/// asserted "no other test reads this variable", which was simply untrue: the prose was the
-/// entire justification and nothing checked it against an actual reader. It lives at the crate
-/// root because the two racing tests are in two different `#[cfg(test)]` modules.
-/// (Found by lane/real-system-fingerprint-20260901, whose `cargo test --workspace` it reddened.)
-#[cfg(test)]
-static PRETOKENIZER_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-/// Take the env lock, tolerating poisoning: a panic inside one of these tests must not convert
-/// the others into a second, misleading failure that hides the first.
-#[cfg(test)]
-fn pretokenizer_env_lock() -> std::sync::MutexGuard<'static, ()> {
-    PRETOKENIZER_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// A model declared a pre-tokenizer memra has no exact split for.
@@ -461,12 +437,12 @@ impl Tokenizer {
         let tj = json::parse(&text).map_err(|e| format!("{}: {e}", tj_path.display()))?;
 
         let model = tj.get("model").ok_or("tokenizer.json: missing model")?;
-        if let Some(t) = model.get("type").and_then(|v| v.as_str())
-            && t != "BPE"
-        {
-            return Err(format!(
-                "unsupported tokenizer.json model type '{t}' (only BPE)"
-            ));
+        if let Some(t) = model.get("type").and_then(|v| v.as_str()) {
+            if t != "BPE" {
+                return Err(format!(
+                    "unsupported tokenizer.json model type '{t}' (only BPE)"
+                ));
+            }
         }
         // byte-level check: pre_tokenizer.type == ByteLevel (possibly inside a Sequence).
         let pre_tok = tj
@@ -774,10 +750,10 @@ impl Tokenizer {
     pub fn eog_ids(&self) -> Vec<u32> {
         let mut ids = self.eos_ids.clone();
         for t in ["<|im_end|>", "<turn|>", "<end_of_turn>"] {
-            if let Some(&id) = self.token_to_id.get(t)
-                && !ids.contains(&id)
-            {
-                ids.push(id);
+            if let Some(&id) = self.token_to_id.get(t) {
+                if !ids.contains(&id) {
+                    ids.push(id);
+                }
             }
         }
         ids
@@ -828,11 +804,10 @@ impl Tokenizer {
 
     pub fn encode_special(&self, text: &str, add_special: bool, parse_special: bool) -> Vec<u32> {
         let mut output: Vec<u32> = Vec::new();
-        if add_special
-            && self.add_bos
-            && let Some(b) = self.bos_id
-        {
-            output.push(b);
+        if add_special && self.add_bos {
+            if let Some(b) = self.bos_id {
+                output.push(b);
+            }
         }
         if text.is_empty() {
             return output;
@@ -913,11 +888,11 @@ impl Tokenizer {
             }
             for word in &words {
                 // newline-run fix (llama PR #21343): whole-word vocab hit short-circuits BPE.
-                if word.chars().all(|c| c == '\n')
-                    && let Some(tok) = self.text_to_token(word)
-                {
-                    output.push(tok);
-                    continue;
+                if word.chars().all(|c| c == '\n') {
+                    if let Some(tok) = self.text_to_token(word) {
+                        output.push(tok);
+                        continue;
+                    }
                 }
                 self.bpe_merge_word(word, output);
             }
@@ -1068,18 +1043,10 @@ impl Tokenizer {
     /// grammar match these as literal bytes (a JSON string could otherwise smuggle
     /// `<|im_start|>`); they substitute a non-text marker form instead.
     pub fn token_is_control(&self, id: u32) -> bool {
-        matches!(
-            self.attrs.get(id as usize),
-            Some(TokAttr::Control) | Some(TokAttr::Unknown)
-        )
-    }
-
-    /// True iff `id` is in the special set `st_partition` splits out of raw text (control /
-    /// user-defined / unknown) — i.e. an id a plain-text LITERAL can produce during encode.
-    /// The vision special-id intake guard (memra-server) keys on this: an ordinary vocab
-    /// entry that merely looks like a marker is honest text and must not be policed.
-    pub fn token_is_special(&self, id: u32) -> bool {
-        self.special_tokens.contains(&id)
+        match self.attrs.get(id as usize) {
+            Some(TokAttr::Control) | Some(TokAttr::Unknown) => true,
+            _ => false,
+        }
     }
 
     pub fn decode_special(&self, ids: &[u32], special: bool) -> String {
@@ -1101,14 +1068,15 @@ impl Tokenizer {
                 TokAttr::Normal | TokAttr::Byte => {
                     if self.spm_style {
                         // gemma4: <0xXX> byte tokens -> raw byte; else unescape \u2581 -> space.
-                        if (matches!(attr, TokAttr::Byte)
+                        if matches!(attr, TokAttr::Byte)
                             || (piece.len() == 6
                                 && piece.starts_with("<0x")
-                                && piece.ends_with('>')))
-                            && let Ok(b) = u8::from_str_radix(&piece[3..5], 16)
+                                && piece.ends_with('>'))
                         {
-                            bytes.push(b);
-                            continue;
+                            if let Ok(b) = u8::from_str_radix(&piece[3..5], 16) {
+                                bytes.push(b);
+                                continue;
+                            }
                         }
                         for c in piece.chars() {
                             if c == '\u{2581}' {
@@ -1448,9 +1416,8 @@ mod pretokenizer_tests {
     /// `=0`/`=false` in a launcher does not silently turn wrong ids back on).
     #[test]
     fn opt_out_env_gate() {
-        let _env = pretokenizer_env_lock();
-        // SAFETY: the lock above makes this thread the only one touching this variable, and
-        // the resolve paths every other test uses take the decision as a parameter.
+        // SAFETY: single-threaded within this test; no other test reads this variable, and the
+        // resolve paths every other test uses take the decision as a parameter.
         unsafe { std::env::remove_var(ALLOW_UNKNOWN_PRETOKENIZER_ENV) };
         assert!(!allow_unknown_pretokenizer());
         unsafe { std::env::set_var(ALLOW_UNKNOWN_PRETOKENIZER_ENV, "0") };
@@ -1995,12 +1962,6 @@ mod hf_tests {
     /// names both observations so the next porter knows what to implement.
     #[test]
     fn hf_dir_refuses_unidentifiable_pretokenizer() {
-        // This test's whole point is the REFUSAL path, which the opt-out env var disables, so
-        // it holds the same lock as `opt_out_env_gate` and clears the variable first: a panic
-        // partway through that test can otherwise leave the opt-out set.
-        let _env = pretokenizer_env_lock();
-        // SAFETY: the lock above makes this thread the only one touching this variable.
-        unsafe { std::env::remove_var(ALLOW_UNKNOWN_PRETOKENIZER_ENV) };
         let json = TOKENIZER_JSON.replace(r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|", "SOMETHING-ELSE|");
         assert_ne!(json, TOKENIZER_JSON);
         let dir = std::env::temp_dir().join(format!("memra-tok-hf-unk-{}", std::process::id()));

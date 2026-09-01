@@ -93,8 +93,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let mut cache = memra_engine::cache::Cache::new(&e, &m.cfg, p + g + 8)?;
         let mut next = 0u32;
-        #[allow(clippy::needless_range_loop)]
-        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
         for step in 0..p + g {
             let tok = if step < p { prompt[step] } else { next };
             inputs.push(tok);

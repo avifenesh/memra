@@ -522,7 +522,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if symbol.is_null() {
                 None
             } else {
-                Some(std::mem::transmute::<*mut libc::c_void, PrefetchFn>(symbol))
+                Some(std::mem::transmute(symbol))
             }
         };
         if let Some(prefetch) = prefetch {
@@ -647,7 +647,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if symbol.is_null() {
                 None
             } else {
-                Some(std::mem::transmute::<*mut libc::c_void, RowsFn>(symbol))
+                Some(std::mem::transmute(symbol))
             }
         };
         if let Some(rows_fn) = rows_fn {

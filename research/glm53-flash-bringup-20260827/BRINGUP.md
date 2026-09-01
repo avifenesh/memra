@@ -192,7 +192,7 @@ to f32; the serving path rides MMVQ/W4A8 and is gated separately).
 
 Release build, warmup 3 + 11 trials, `NVIDIA_TF32_OVERRIDE=0`, shipped shape
 (index_topk 2048, pool 4, 32 index heads, d 128, kv_rank 512). Raw:
-kpool-bench-frankfurt.txt. Per MLA layer; a forward runs 12 of them.
+kpool-bench-Frankfurt.txt. Per MLA layer; a forward runs 12 of them.
 
 DECODE (t_q=1), ms:
 
@@ -241,7 +241,7 @@ new scorer sets (a max-shared carveout) is per-FUNCTION, so it does not reach th
 ## Indexer scoring, re-measured after the tiled rewrite (2026-08-28)
 
 Same box, same release harness, old and new kernels timed in ONE run so the ratio is
-one clock. Raw: kpool-bench-frankfurt-tiled.txt.
+one clock. Raw: kpool-bench-Frankfurt-tiled.txt.
 
 PREFILL (t_q=512), score ms, per MLA layer:
 
@@ -278,7 +278,7 @@ two curves at every size.
 
 ## Crossover dispatch CONFIRMED (2026-08-28, same box, gate 12 re-run green there)
 
-Raw: kpool-bench-frankfurt-crossover.txt. Decode now takes the better of the two
+Raw: kpool-bench-Frankfurt-crossover.txt. Decode now takes the better of the two
 kernels at every size, and prefill is unchanged.
 
 DECODE (t_q=1) score ms: ref / dispatched
@@ -359,7 +359,7 @@ Not yet measured, therefore not claimed: any tok/s number, TTFT, or throughput.
 
 ## 2026-08-28 — the stall is root-caused and fixed (two defects, two fixes)
 
-Box: rented cloud bench box (2 x RTX PRO 6000 Blackwell 96 GB, 499 GB RAM, ext4 on a **provider SSD-class network
+Box: sbox bench box (2 x RTX PRO 6000 Blackwell 96 GB, 499 GB RAM, ext4 on a **ssd-vol EBS
 root volume**). Artifact `~/models/glm53-nvfp4`. All timing on the box; the rig is
 correctness-only.
 
@@ -398,7 +398,7 @@ Cold device characterisation (caches dropped, single stream):
 | 4.72 MiB expert-stride pread | **331 MB/s** |
 | 16 parallel 1 MiB readers | **69 MiB/s aggregate** (contention, not scaling) |
 
-The volume is a ~125 MiB/s network volume. `TIMEOUT_MS_MAX` is a hard 90 s platform ceiling.
+The volume is a ~125 MiB/s ssd-vol. `TIMEOUT_MS_MAX` is a hard 90 s platform ceiling.
 
 ### Root cause 1 — the stall
 
@@ -539,8 +539,8 @@ before any customer-facing claim. **GLM-5.3-Flash is not servable until that lan
   yet; it is the follow-up, not this increment.
 - `[spill-pread] falling back to mmap: worker read ring is busy` at `depth=2`
   (`buffer_bytes=4718592`): the ring is one expert deep, so a rolling window cannot form.
-- Deploy smell: `.memra-repack` on a 125 MiB/s network root volume. This box has an idle 3.5 TB
-  local NVMe at `/opt/scratch/nvme`; the slab belongs there, which turns the 22 min populate into
+- Deploy smell: `.memra-repack` on a 125 MiB/s ssd-vol root volume. This box has an idle 3.5 TB
+  local NVMe at `/opt/dl-image/nvme`; the slab belongs there, which turns the 22 min populate into
   roughly a minute.
 - 159.5 GiB of experts against 2 x 96 GB VRAM with GPU1 idle at 3 MiB and
   `MEMRA_MOE_RESIDENT=0` forced. TP2 / multi-device expert residency would remove the disk tier
@@ -1051,94 +1051,3 @@ context/session shape, not a new default.
 Receipts, decomposition, the residency arithmetic, and a measurement gap that had to be worked
 around (`moe_cache_stats` is not wired through PP stage engines, so two-card staging counters
 read 0.0 whether or not staging happened): `residency-cell/RESIDENCY-CELL.md`.
-
-## THE SERVING SHAPE WAS 2-CARD (adopted 2026-08-30, owner acceptance — SUPERSEDED the same day; the ruling chain and the 3-CARD adoption are the next section. Kept as history.)
-
-Owner ruling on the L2 bundle, verbatim: "accept if it can really work well on 2 cards. if
-the ttft and the tok/s will be too slow, we will be back for bigger fleet. but as it seems,
-4 card for this model economy is not justifiable, just for the noise of supporting new
-model."
-
-The adopted recipe (the shape every subsequent A/B measures against; L3 is already based on
-it):
-
-```
-MEMRA_PP_STAGES=2 MEMRA_PP_SPLITS=24 MEMRA_PP_DEVICES=0,1 CUDA_VISIBLE_DEVICES=0,1
-MEMRA_BF16_MMV=1 MEMRA_PP_BF16=1            # owner-accepted 2026-08-30, rows in FLAGS.md
-MEMRA_MOE_GROUPED_PREFILL=1                 # family default ON since dd7f1d11d; pin stays for the receipt
-MEMRA_MOE_RESIDENT_GB=98 MEMRA_MOE_SLOTS=16
-MEMRA_CTX=8192 MEMRA_MAX_SESSIONS=4 MEMRA_PREFIX_CACHE_MB=0 NVIDIA_TF32_OVERRIDE=0
-```
-
-Receipts (`tc-trunk-prefill-20260829/BOX-AB-L2.md`, engine `bac42f759d`, binary
-`aab0a0a859...`): both stages RESIDENT at load (88,659 / 88,949 MiB of 97,887, about 9 GiB
-free where the f32 trunk missed by 650 MiB), session admission proven to 95.8 / 95.5 GiB
-with zero OOM, and the greedy 32-token output shas byte-identical to the 3-card arm-C
-placement on all three real prompts (PP2-vs-PP3 cross-placement identity:
-`0908061a3fdaddab` / `3ad5d2889683a115` / `dfab5cc3dfbfda25`).
-
-The honest numbers of this snapshot, stated next to the owner's condition so the condition
-is checkable: TTFD 7.14 / 8.01 / 9.29 s at 4,626 / 5,547 / 6,467-token prompts, sampled
-vendor-default twin 6.54 s TTFD at 707 tok/s prefill, greedy prefill 648-696 tok/s, decode
-26.1-26.3 tok/s. If TTFD or tok/s prove too slow in practice, the fleet grows back (the
-ruling's own escape hatch).
-
-The condition is evaluated against a MOVING base, not this snapshot; the stacking plan that
-improves the same 2 cards, in order:
-
-1. **L3, the chunked KDA prefill scan** (its lane runs next on the same window; the
-   PRIME_PROF split shows the post-L2 residual ~5.9 s of the 6.8 s TTFD sits in the scan +
-   attention + glue, with grouped MoE already down to ~0.96 s).
-2. **L4, the prefill launch diet** (host-sync and per-layer hook removal; sized after L3
-   by the nsys phase profile, which needs a newer nsys CLI than this box image packages).
-3. **Native MTP head for dspark** on the 2-card shape (decode lever; spec-admission is
-   currently off for pp-cross-device placements).
-
-Not re-derived here: the 2026-08-28 STEP 3 residency cell above measured a 2-card fit on
-the glm53-pp lane's FRACTIONAL residency, which never merged; this adoption is on the
-merged all-or-nothing head, made to fit by the bf16-resident trunk instead.
-
-## THE SERVING SHAPE IS 3-CARD RESIDENT (owner ruling, 2026-08-30 — supersedes the 2-card adoption above)
-
-The 2-card posture died the same day it was adopted, on receipts, in three steps
-(`research/glm5-prefix-latent-20260830/box-window/WINDOW-STATUS.md`):
-
-1. **r92 (coordinator-ordered rerun, `MEMRA_MOE_RESIDENT_GB=92`): FALSIFIED by its OFF arm.**
-   The knob is a per-device all-or-nothing residency gate, not a headroom setter: at the
-   24-split, budget 92 rejects dev0's 97.84 GB of experts wholesale and streams them through
-   the SLRU cache; "every C2/C3 row, including C2 turn0 (1521 tok) which had SERVED at 98,
-   died with HTTP 408 Request Timeout". "No value of this knob yields dev0 residency AND
-   multi-GiB headroom" (receipts `out-plx-off-r92/`).
-2. **s23 (`MEMRA_PP_SPLITS=23`, residency 98): ABORTED at the pre-registered boot gate.**
-   Both devices decided `-> RESIDENT` (93.77 GB each), then the load itself died before READY:
-   `[server] FATAL: worker init failed: load zai/glm-5.3-flash: DriverError(CUDA_ERROR_OUT_OF_MEMORY,
-   "out of memory")`. From the banked numbers: "There is no MEMRA_PP_SPLITS value at
-   MEMRA_MOE_RESIDENT_GB=98 with both stages resident AND multi-GiB headroom on this 2-card
-   shape; the bytes do not exist" (receipts `out-plx-off-s23/`).
-3. **2-card SLRU: closed post-boot by OWNER RULING, zero rows.** Verbatim (OWNER-RULING.txt):
-   "we are not fast enogh ffor 2 card slru" — 2-card SLRU is not a serving posture
-   (receipts `out-plx-off-slru/`).
-
-The owner-ruled posture is **3-card resident**: `MEMRA_PP_STAGES=3 MEMRA_PP_SPLITS=15,30
-MEMRA_PP_DEVICES=0,1,2` + the runbook residency pins (98/16), box-ab precedent. Boot gate
-PASS both arms: all three devs `-> RESIDENT` (61.15/61.15/65.23 GB experts), VRAM at ready
-54547/65651/68085 MiB (~42/31/29 GiB free/card — the owner's session-capacity receipt),
-READY 81 s (OFF) / 104 s (ON). The decision battery re-ran on the pinned recipe (the
-`-3cr` dirs); every subsequent A/B (MLA-TC flip, spec-battery, the 3way drafter decision)
-measures against this shape.
-
-Two corrections to the 2-card section's stacking plan, banked since:
-
-- **L3 (chunked KDA prefill scan) is ATTRIBUTED-NEGATIVE, shelved.** The box prefill census
-  put the whole kda family at 3.4% of a 98%-GPU-busy cold prime ("confirms L3's
-  ATTRIBUTED-NEGATIVE: scan ~2.4%") with mla-prefill-attn owning 75.8% — which became the
-  MLA-TC prefill lane instead (`launch-diet-20260830/WINDOW-20260830.md` §4). The
-  `MEMRA_KDA_CHUNKED` twin stays on its unmerged branch (lane/glm5-kda-chunk-scan).
-- **The 1M context claim is NOT a 3-card claim.** On this shape the 1M deep prime FAILED:
-  `[engine-error] class=Overloaded prefill error: layer 31: DSA k-pool selection failed:
-  DriverError(CUDA_ERROR_OUT_OF_MEMORY)`, per-card peaks 65048/77688/97242 MiB — "the 3-card
-  RESIDENT recipe is NOT a 1M-context config. ... the demo's PP4 + arena-capped SLRU ...
-  remains the only demonstrated 1M configuration of this artifact"
-  (`box-window/WINDOW-STATUS.md`, boxb/out-1m-b/). The demonstrated 1M receipt itself is the
-  4-card PP4 demo: a real 1,035,357-token prompt primed through the serving surface and
-  decoded to EOS (`1m-demo-20260829/`, branch lane/glm53-1m-demo).

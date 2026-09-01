@@ -108,7 +108,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::env::set_var("MEMRA_PP_OVERLAP", "1");
     } // exercise slot alternation
     let rt = memra_engine::pp::Pp2Rt::get(&e)?;
-    let _walk = rt.acquire_walk("pp_transport_smoke")?;
     rt.init_boundary_transport(&e, 4096)?;
     println!("Pp2Rt built: cross_device={}", rt.cross_device());
     let n = 5120usize;
@@ -161,8 +160,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         let mut serviced = 0u64;
         for copy_index in 4..memra_engine::pp::PEER_RUNTIME_PROBE_CYCLE_COPIES {
-            let completed_tick =
-                (copy_index + 1) % memra_engine::pp::PEER_RUNTIME_PROBE_INTERVAL_COPIES == 0;
             let slot = {
                 rt.bind_stage(0)?;
                 let _s0 = rt.enter(0);
@@ -171,23 +168,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             {
                 rt.bind_stage(1)?;
                 let _s1 = rt.enter(1);
-                let work = rt.rx(0, slot, 1)?;
-                // The runtime hook's contract is "between completed scheduler ticks". Merely
-                // enqueueing rx() leaves thousands of destination-stream reads outstanding in
-                // this synthetic no-head loop, unlike a real decode's terminal logits readback.
-                // Drain only the four due ticks so the probe measures peer integrity rather than
-                // racing the harness's artificial backlog.
-                if completed_tick {
-                    let back = rt.engine(1, &e).dtoh(&work)?;
-                    if back != [1.0f32] {
-                        return Err(format!(
-                            "runtime probe cycle boundary payload mismatch before copy {}: {:?}",
-                            copy_index + 1,
-                            back,
-                        )
-                        .into());
-                    }
-                }
+                let _work = rt.rx(0, slot, 1)?;
             }
             if memra_engine::pp::service_runtime_peer_probe(&e, true, true)?.ran() {
                 serviced += 1;

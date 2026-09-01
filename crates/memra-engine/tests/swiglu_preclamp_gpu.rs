@@ -15,8 +15,8 @@
 //!   * the PLAIN form — the bug itself;
 //!   * the POST form — step35's `min(silu(gate), l) * clamp(up, ±l)`, the wrong answer a one-line
 //!     "make the accessors return glm5's limit" fix would have produced.
-//!     Both are measured against the SAME GPU output the passing assertions use, so a gate that
-//!     stopped binding fails loudly instead of passing three ways.
+//! Both are measured against the SAME GPU output the passing assertions use, so a gate that
+//! stopped binding fails loudly instead of passing three ways.
 //!
 //! NON-VACUITY IS ENFORCED, NOT ASSUMED. A limit only binds where activations cross it, and on
 //! small random weights the shipped 10.0 never would. `MLP_NORM_GAIN` scales each layer's pre-MLP
@@ -44,19 +44,19 @@
 //!   * clamp neutralized (`swiglu_limit` 1e30, both sides plain): 2.3e-1;
 //!   * every routed expert weight set to one Q8_0-exact constant, which removes both the q8
 //!     quantization error and any top-k selection disagreement: 7.5e-2.
-//!     Neither number moved with the activation form and both scaled with `routed_scaling_factor`,
-//!     which is what named the router rather than the clamp. ROOT-CAUSED 2026-08-28:
-//!     `ModelConfig::sigmoid_router()` had no `cfg.glm5` arm, so it answered `None` for every
-//!     glm5_next model and the routed branch rode the SOFTMAX router — no sigmoid, no
-//!     `e_score_correction_bias`, weights normalized to 1 instead of `routed_scaling_factor` 2.5.
-//!     (The constant-expert figure is exactly that: with every expert computing the same value the
-//!     routed output is `sum(weights) * expert`, so 1.0-vs-2.5 survives even when selection cannot
-//!     matter.) The fix is the accessor arm; the end-to-end routed gate, its four wrong-router
-//!     mutations and the vendor-semantics receipts are `glm5_routed_router_gpu.rs`. This file keeps
-//!     its dispatch-and-kernel routed coverage — the two gates are complementary, and this one still
-//!     zeroes the routed banks so the shared branch can be gated at TOL. (The house's other
-//!     reference-parity gates — `hyper_connections_gpu`, `kda_fixture_gpu` — are dense-only for
-//!     adjacent reasons.)
+//! Neither number moved with the activation form and both scaled with `routed_scaling_factor`,
+//! which is what named the router rather than the clamp. ROOT-CAUSED 2026-08-28:
+//! `ModelConfig::sigmoid_router()` had no `cfg.glm5` arm, so it answered `None` for every
+//! glm5_next model and the routed branch rode the SOFTMAX router — no sigmoid, no
+//! `e_score_correction_bias`, weights normalized to 1 instead of `routed_scaling_factor` 2.5.
+//! (The constant-expert figure is exactly that: with every expert computing the same value the
+//! routed output is `sum(weights) * expert`, so 1.0-vs-2.5 survives even when selection cannot
+//! matter.) The fix is the accessor arm; the end-to-end routed gate, its four wrong-router
+//! mutations and the vendor-semantics receipts are `glm5_routed_router_gpu.rs`. This file keeps
+//! its dispatch-and-kernel routed coverage — the two gates are complementary, and this one still
+//! zeroes the routed banks so the shared branch can be gated at TOL. (The house's other
+//! reference-parity gates — `hyper_connections_gpu`, `kda_fixture_gpu` — are dense-only for
+//! adjacent reasons.)
 //!
 //! Mixers are KDA under glm5_next's mHC residual; both have their own gates (`kda_fixture_gpu`,
 //! `hyper_connections_gpu`), so a failure here is the activation's.

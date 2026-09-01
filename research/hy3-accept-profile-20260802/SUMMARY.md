@@ -10,7 +10,7 @@ matters — the nextn=1 head never chains)? Six classes, K=1, NGEN=128, greedy, 
 - Box: Mumbai <bench-instance> H100 80GB (shared; **every** GPU-touching process under
   `flock /tmp/gpu-h100.lock`). GPU otherwise idle in every pre/post bracket (in-log),
   temps 35-40 C, same-night regime, all runs 20:03:36Z - 23:22:04Z Aug 1 (GPU span 3 h 18 m, 20 runs).
-- Build: REUSED the K-sweep lane tree `/opt/scratch/nvme/hy3-spec-sweep/memra` at
+- Build: REUSED the K-sweep lane tree `/opt/dl-image/nvme/hy3-spec-sweep/memra` at
   `2b9a6aa6` (kernel-check 206/206 ALL GREEN on the K-sweep receipts, same binary,
   byte-untouched). Branch base `restructure/public-split` tip is `c654329f`, 21 commits
   ahead; the delta does not touch `spec.rs`/`run_spec.rs` (it is concat batch-prime
@@ -18,7 +18,7 @@ matters — the nextn=1 head never chains)? Six classes, K=1, NGEN=128, greedy, 
   proved acceptance on this artifact is bit-identical across builds. Reusing the K-sweep
   binary keeps every floor number here directly comparable to the K-sweep's
   2.49 tok/s / 0.84x rows.
-- Artifact: `/opt/scratch/nvme/models/hy3-layer103p5-bw24-runtime` (manifest sha
+- Artifact: `/opt/dl-image/nvme/models/hy3-layer103p5-bw24-runtime` (manifest sha
   `b8bdd684…` re-verified), bytes untouched; staged dirs left exactly per
   `research/hy3-hopper-20260801/box-state.md`.
 - One run = ONE fresh `run-spec` process: `MEMRA_CHAT=1 MEMRA_NGEN=128 MEMRA_SPEC_K=1
@@ -156,7 +156,7 @@ Guidance for the PP-2 spike:
   GPU brackets + exit codes in-log; `logs/master.log` — batch timeline.
 - `table.md` — machine-parsed per-rep + median tables (`parse-profile.py logs`).
 - `prompts/` — the exact six prompt files; `accept-profile-driver.sh`, `run-all.sh`,
-  `run-topup{,2,3,4}.sh` — on-box drivers (copies of `/opt/scratch/nvme/hy3-accept-profile/`'s;
+  `run-topup{,2,3,4}.sh` — on-box drivers (copies of `/opt/dl-image/nvme/hy3-accept-profile/`'s;
   topup/topup2 are the superseded queue-wait runners documented above).
 - Box left clean: no GPU processes, staged artifact + K-sweep dirs untouched; lane
-  additions live only under `/opt/scratch/nvme/hy3-accept-profile/` (mirrored here).
+  additions live only under `/opt/dl-image/nvme/hy3-accept-profile/` (mirrored here).

@@ -15,7 +15,7 @@ the production B=1 call and cache-allocation seams.
 
 | item | pinned value |
 |---|---|
-| rig | rented cloud-2card `<private-host-redacted>`, 2x RTX PRO 6000 Blackwell Server Edition |
+| rig | hyperscaler sbox-2card `<private-host-redacted>`, 2x RTX PRO 6000 Blackwell Server Edition |
 | power / clocks | stock 600 W limits; no application clock, power cap, or NCU clock control |
 | source | clean `1808220ead39d515a0854df49d1bb6452b558209`; full release rebuild, 3m53s |
 | profile binary | measurement-only `ncuspike-profile`, SHA-256 `5339bc01dfbcfd21d1e8e9c36df68b2485f508db2c4b09955f5eef8fc5746268` |

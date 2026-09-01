@@ -13,46 +13,6 @@ use crate::Engine;
 use cudarc::driver::{CudaSlice, DevicePtr, DevicePtrMut};
 use std::os::raw::c_void;
 
-/// Engagement counter for the MLA decode-split door (`MEMRA_MLA_DECODE_SPLIT`): counted at
-/// the arm's own call site, announced once per boot — the receipt a box A/B arm must show.
-pub static MLA_DECODE_SPLIT_DISPATCHES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
-/// `MEMRA_MLA_DECODE_SPLIT=1` (default OFF, read per call — rollback seam): the absorb /
-/// decompress launchers split each (token, head) block's output range across several blocks.
-/// PURE LAUNCH GEOMETRY: every output element keeps the same one-thread serial dot, so the
-/// bytes are identical for every split value (asserted in `tests/mla_decode_split_gpu.rs`);
-/// only occupancy changes — 64 blocks at t=1 on the glm5 geometry is single-digit-percent
-/// occupancy on the serving card class, the census's ~211 us/layer absorb+decompress pair.
-fn mla_decode_split_on() -> bool {
-    std::env::var("MEMRA_MLA_DECODE_SPLIT").as_deref() == Ok("1")
-}
-
-/// The split policy: engage only in the block-starved regime (fewer than 1024 (token, head)
-/// blocks — decode and short verify widths; prefill widths already fill the card and the TC
-/// prefill chain owns them anyway), aiming for ~1024 blocks while keeping at least 32 outputs
-/// per block. The OUTPUT BYTES ARE SPLIT-INVARIANT by construction, so this arithmetic is a
-/// throughput policy, never a numerics decision.
-fn mla_decode_split_for(blocks: usize, out_dim: usize) -> Option<i32> {
-    if !mla_decode_split_on() || blocks == 0 || blocks >= 1024 {
-        return None;
-    }
-    let want = 1024usize.div_ceil(blocks);
-    let cap = (out_dim / 32).max(1);
-    let split = want.min(cap);
-    if split <= 1 { None } else { Some(split as i32) }
-}
-
-fn mla_split_announce(kind: &str, t_q: usize, n_head: usize, split: i32) {
-    use std::sync::atomic::Ordering;
-    if MLA_DECODE_SPLIT_DISPATCHES.fetch_add(1, Ordering::Relaxed) == 0 {
-        eprintln!(
-            "[mla-decode-split] engaged {kind} t={t_q} heads={n_head} split={split} \
-             (output-range split of the (token, head) blocks; MEMRA_MLA_DECODE_SPLIT=1)"
-        );
-    }
-}
-
 unsafe extern "C" {
     pub fn memra_mla_rope_interleaved_f32(
         x: *mut f32,
@@ -100,34 +60,6 @@ unsafe extern "C" {
         n_head: i32,
         d_v: i32,
         kv_rank: i32,
-        stream: *mut c_void,
-    ) -> i32;
-    /// Decode-split twin of `memra_mla_absorb_q_f32` (MEMRA_MLA_DECODE_SPLIT): the same
-    /// per-output serial dot, its output range split across `split` blocks — bit-identical
-    /// by construction, gated in `tests/mla_decode_split_gpu.rs`.
-    #[allow(clippy::too_many_arguments)]
-    pub fn memra_mla_absorb_q_split_f32(
-        q_nope: *const f32,
-        wk_b: *const f32,
-        q_lat: *mut f32,
-        t_q: i32,
-        n_head: i32,
-        d_nope: i32,
-        kv_rank: i32,
-        split: i32,
-        stream: *mut c_void,
-    ) -> i32;
-    /// Decode-split twin of `memra_mla_decompress_v_f32` (see above).
-    #[allow(clippy::too_many_arguments)]
-    pub fn memra_mla_decompress_v_split_f32(
-        o_lat: *const f32,
-        wv_b: *const f32,
-        out: *mut f32,
-        t_q: i32,
-        n_head: i32,
-        d_v: i32,
-        kv_rank: i32,
-        split: i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_mla_attn_absorbed_f32(
@@ -233,27 +165,6 @@ unsafe extern "C" {
         scale: f32,
         stream: *mut c_void,
     ) -> i32;
-    /// Strided-batched BF16 tensor-core GEMM (cu/f16_prefill.cu): per batch b,
-    /// `y_b[m, n] = x_b[m, k] @ w_b[n, k]^T`, f32 accumulate, y f32 or bf16 by flag.
-    /// The MEMRA_MLA_TC_PREFILL absorb/decompress engine (one launch replaces the
-    /// per-position absorb_q / decompress_v kernels at prefill widths).
-    fn memra_bf16_gemm_sb(
-        w_bf16: *const c_void,
-        x_bf16: *const c_void,
-        y: *mut c_void,
-        m: i32,
-        n: i32,
-        k: i32,
-        x_rs: i64,
-        x_bs: i64,
-        y_rs: i64,
-        y_bs: i64,
-        batch: i32,
-        y_is_bf16: i32,
-        ws: *mut c_void,
-        ws_bytes: usize,
-        stream: *mut c_void,
-    ) -> i32;
 }
 
 type Res<T> = Result<T, Box<dyn std::error::Error>>;
@@ -279,7 +190,7 @@ fn ck(what: &str, rc: i32) -> Res<()> {
         }
         40014 => " (index-list width is narrower than select_k * pool + pool - 1)",
         40015 => " (empty gathered candidate list — a zero softmax denominator)",
-        r if (10000..20000).contains(&r) => " (cudaError)",
+        r if r >= 10000 && r < 20000 => " (cudaError)",
         _ => "",
     };
     Err(format!("mla kernel `{what}` failed: rc {rc}{detail}").into())
@@ -347,7 +258,6 @@ impl Engine {
     }
 
     /// Append `t` latent rows `[c_kv | k_pe]` to the cache plane starting at row `slot`.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub fn mla_append_latent(
         &self,
         cache: &mut CudaSlice<f32>,
@@ -377,7 +287,6 @@ impl Engine {
     }
 
     /// Absorb: `q_lat[i][h][:] = w_uk[h]ᵀ · q_nope[i][h][:]` (rank space).
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub fn mla_absorb_q(
         &self,
         q_nope: &CudaSlice<f32>,
@@ -389,26 +298,6 @@ impl Engine {
         kv_rank: usize,
     ) -> Res<()> {
         let s = self.stream();
-        // MEMRA_MLA_DECODE_SPLIT door: same bytes at any split (see mla_decode_split_for).
-        if let Some(split) = mla_decode_split_for(t_q * n_head, kv_rank) {
-            mla_split_announce("absorb_q", t_q, n_head, split);
-            return unsafe {
-                ck(
-                    "absorb_q_split",
-                    memra_mla_absorb_q_split_f32(
-                        q_nope.device_ptr(&s).0 as *const f32,
-                        wk_b.device_ptr(&s).0 as *const f32,
-                        q_lat.device_ptr_mut(&s).0 as *mut f32,
-                        t_q as i32,
-                        n_head as i32,
-                        d_nope as i32,
-                        kv_rank as i32,
-                        split,
-                        s.cu_stream() as *mut c_void,
-                    ),
-                )
-            };
-        }
         unsafe {
             ck(
                 "absorb_q",
@@ -427,7 +316,6 @@ impl Engine {
     }
 
     /// Decompress: `out[i][h][:] = w_uv[h] · o_lat[i][h][:]`.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub fn mla_decompress_v(
         &self,
         o_lat: &CudaSlice<f32>,
@@ -439,26 +327,6 @@ impl Engine {
         kv_rank: usize,
     ) -> Res<()> {
         let s = self.stream();
-        // MEMRA_MLA_DECODE_SPLIT door: same bytes at any split (see mla_decode_split_for).
-        if let Some(split) = mla_decode_split_for(t_q * n_head, d_v) {
-            mla_split_announce("decompress_v", t_q, n_head, split);
-            return unsafe {
-                ck(
-                    "decompress_v_split",
-                    memra_mla_decompress_v_split_f32(
-                        o_lat.device_ptr(&s).0 as *const f32,
-                        wv_b.device_ptr(&s).0 as *const f32,
-                        out.device_ptr_mut(&s).0 as *mut f32,
-                        t_q as i32,
-                        n_head as i32,
-                        d_v as i32,
-                        kv_rank as i32,
-                        split,
-                        s.cu_stream() as *mut c_void,
-                    ),
-                )
-            };
-        }
         unsafe {
             ck(
                 "decompress_v",
@@ -478,7 +346,6 @@ impl Engine {
 
     /// Absorbed-form MQA attention over the latent cache. `q_pe` is ignored when
     /// `d_rope == 0`; callers on the NoPE path may pass any allocated slice.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub fn mla_attn_absorbed(
         &self,
         q_lat: &CudaSlice<f32>,
@@ -568,16 +435,11 @@ impl Engine {
     /// every later query through the gathered attention walk and is NOT a ring, so the two planes
     /// must not share a row-addressing contract even though they share a row shape.
     #[allow(clippy::too_many_arguments)]
-    ///
-    /// `src_row` is the first SOURCE row of `a`/`b` to append: the call's `k_norm`/`gate` are
-    /// computed once for the whole call, and the tail-ring drain (`mla_kpool_indices`) walks them
-    /// in sub-ranges. `src_row` 0 is the whole-call append.
     pub fn mla_index_append(
         &self,
         plane: &mut CudaSlice<f32>,
         a: &CudaSlice<f32>,
         b: &CudaSlice<f32>,
-        src_row: usize,
         slot: usize,
         t: usize,
         wa: usize,
@@ -590,8 +452,8 @@ impl Engine {
                 "index_append_ring",
                 memra_mla_index_append_ring_f32(
                     plane.device_ptr_mut(&s).0 as *mut f32,
-                    (a.device_ptr(&s).0 as *const f32).add(src_row * wa),
-                    (b.device_ptr(&s).0 as *const f32).add(src_row * wb),
+                    a.device_ptr(&s).0 as *const f32,
+                    b.device_ptr(&s).0 as *const f32,
                     slot as i32,
                     t as i32,
                     wa as i32,
@@ -768,135 +630,6 @@ impl Engine {
                     s.cu_stream() as *mut c_void,
                 ),
             )
-        }
-    }
-
-    /// Strided-batched BF16 tensor-core GEMM over per-head planes — the
-    /// MEMRA_MLA_TC_PREFILL absorb/decompress engine. Per head `b` in `0..batch`:
-    /// `y_b[m, n] = x_b[m, k] @ w_b[n, k]^T`, f32 accumulate.
-    ///
-    /// `w` is the bf16 conversion-split weight plane: per-head `[n, k]` row-major,
-    /// batch stride `n * k` (baked into the C side). `x` is a bf16 VIEW of a
-    /// `[m, batch, k]` activation plane: per-head row stride `x_rs`, per-head base
-    /// offset `x_bs` — for the canonical `[t, n_head, d]` layout that is
-    /// `x_rs = batch * k`, `x_bs = k`. `y` mirrors that with `y_rs`/`y_bs` over `n`.
-    ///
-    /// `y_bf16` selects the output dtype: `true` writes bf16 (feeds the TC attention
-    /// kernel directly, one fewer convert), `false` writes f32 (re-enters the f32
-    /// stream). The caller passes `y` as raw bytes either way; an f32 output slice
-    /// is viewed through its byte layout by the caller (`mla_bf16_gemm_sb_f32out`).
-    ///
-    /// rc 2xxxx (no cuBLASLt heuristic for the shape) is a DECLINE class the caller
-    /// may fall back on; everything else is a hard error.
-    #[allow(clippy::too_many_arguments)]
-    pub fn mla_bf16_gemm_sb_raw(
-        &self,
-        w_bf16: &CudaSlice<u8>,
-        x_bf16: &CudaSlice<u8>,
-        y_ptr: u64,
-        m: usize,
-        n: usize,
-        k: usize,
-        x_rs: usize,
-        x_bs: usize,
-        y_rs: usize,
-        y_bs: usize,
-        batch: usize,
-        y_bf16: bool,
-    ) -> Res<i32> {
-        // Workspace from the shared f16/bf16 Lt scratch (bf16_tc_gemm pattern).
-        let mut guard = self.f16_scratch.lock().unwrap();
-        if guard.is_none() {
-            *guard = Some(crate::f16_ffi::F16Scratch::with_capacity(self, 2)?);
-        }
-        let s_scr = guard.as_mut().unwrap();
-        let s = self.stream();
-        let rc = unsafe {
-            memra_bf16_gemm_sb(
-                w_bf16.device_ptr(&s).0 as *const c_void,
-                x_bf16.device_ptr(&s).0 as *const c_void,
-                y_ptr as *mut c_void,
-                m as i32,
-                n as i32,
-                k as i32,
-                x_rs as i64,
-                x_bs as i64,
-                y_rs as i64,
-                y_bs as i64,
-                batch as i32,
-                i32::from(y_bf16),
-                s_scr.ws.device_ptr_mut(&s).0 as *mut c_void,
-                crate::f16_ffi::F16_WS_BYTES,
-                s.cu_stream() as *mut c_void,
-            )
-        };
-        Ok(rc)
-    }
-
-    /// [`Engine::mla_bf16_gemm_sb_raw`] with a bf16 output plane (absorb: feeds the TC
-    /// attention kernel). Non-decline errors are named; a 2xxxx decline is returned as
-    /// `Ok(false)` so the door can fall back to the per-position kernels.
-    #[allow(clippy::too_many_arguments)]
-    pub fn mla_bf16_gemm_sb_bf16out(
-        &self,
-        w_bf16: &CudaSlice<u8>,
-        x_bf16: &CudaSlice<u8>,
-        y_bf16: &mut CudaSlice<u8>,
-        m: usize,
-        n: usize,
-        k: usize,
-        x_rs: usize,
-        x_bs: usize,
-        y_rs: usize,
-        y_bs: usize,
-        batch: usize,
-    ) -> Res<bool> {
-        let s = self.stream();
-        let (y_ptr, _gy) = y_bf16.device_ptr_mut(&s);
-        let rc = self.mla_bf16_gemm_sb_raw(
-            w_bf16, x_bf16, y_ptr, m, n, k, x_rs, x_bs, y_rs, y_bs, batch, true,
-        )?;
-        match rc {
-            0 => Ok(true),
-            r if (20000..30000).contains(&r) => Ok(false),
-            r => Err(format!(
-                "mla bf16 strided-batched GEMM (bf16 out) failed: rc {r} \
-                 (m={m} n={n} k={k} batch={batch})"
-            )
-            .into()),
-        }
-    }
-
-    /// [`Engine::mla_bf16_gemm_sb_raw`] with an f32 output plane (decompress: re-enters
-    /// the f32 stream). Same decline contract as the bf16-out twin.
-    #[allow(clippy::too_many_arguments)]
-    pub fn mla_bf16_gemm_sb_f32out(
-        &self,
-        w_bf16: &CudaSlice<u8>,
-        x_bf16: &CudaSlice<u8>,
-        y_f32: &mut CudaSlice<f32>,
-        m: usize,
-        n: usize,
-        k: usize,
-        x_rs: usize,
-        x_bs: usize,
-        y_rs: usize,
-        y_bs: usize,
-        batch: usize,
-    ) -> Res<bool> {
-        let s = self.stream();
-        let (y_ptr, _gy) = y_f32.device_ptr_mut(&s);
-        let rc = self.mla_bf16_gemm_sb_raw(
-            w_bf16, x_bf16, y_ptr, m, n, k, x_rs, x_bs, y_rs, y_bs, batch, false,
-        )?;
-        match rc {
-            0 => Ok(true),
-            r if (20000..30000).contains(&r) => Ok(false),
-            r => Err(format!(
-                "mla bf16 strided-batched GEMM (f32 out) failed: rc {r} \
-                 (m={m} n={n} k={k} batch={batch})"
-            )
-            .into()),
         }
     }
 

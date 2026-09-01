@@ -240,7 +240,7 @@ replicas. (Consistent with why the field keeps consolidating to big hosts.)
    (docs fetched 2026-08-02, last_updated 2026-07-08) — routing pool is chosen by Vercel.
    Being on OpenRouter partially covers these anyway (several gateways resell OR). **Passive.**
 6. **AVOID at our size — committed-supply / stake / marketplace-partnership channels:**
-   - **the cloud-vendor model marketplace, Azure AI Foundry, GCP Vertex Model Garden** — partnership/
+   - **hyperscaler managed-model API Marketplace, Azure AI Foundry, GCP Vertex Model Garden** — partnership/
      marketplace programs where the model runs on *their* managed infra or under enterprise
      agreements; nothing for a 2–4 replica independent host.
    - **Bittensor/Chutes-style decentralized networks** — capacity commitment via stake and

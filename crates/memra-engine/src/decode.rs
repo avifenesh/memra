@@ -64,23 +64,6 @@ impl GraphSession {
         if self.cache.pos + 1 >= self.bucket_max {
             return Err("GraphSession: past bucket_max (generation budget exceeded)".into());
         }
-        // GRAPH-LAUNCH HEADROOM GUARD (see spec::GRAPH_LAUNCH_MIN_FREE): a captured
-        // session has NO per-tick eager twin — the session IS the graph — so below the
-        // driver-free floor the step refuses RECOVERABLY. The worker ends THIS session
-        // with an error event and every peer session (and the process) lives; unguarded,
-        // cuGraphLaunch segfaults inside libcuda with zero log lines
-        // (lane/graph-launch-guard-sweep-20260831, extending step37 defect 3).
-        if !crate::spec::graph_launch_headroom_ok(e) {
-            static NOTED: std::sync::Once = std::sync::Once::new();
-            NOTED.call_once(|| crate::spec::graph_replay_suspended_note("graph-session"));
-            return Err(format!(
-                "graph-session replay refused: driver free below the {}MB launch floor \
-                 (no eager twin for a captured session; ending the session recoverably \
-                 instead of segfaulting cuGraphLaunch)",
-                crate::spec::GRAPH_LAUNCH_MIN_FREE >> 20
-            )
-            .into());
-        }
         if self.cache.pos + 1 > self.seg_end {
             m.graph_session_recapture(e, self)?;
         }
@@ -237,8 +220,8 @@ impl HybridModel {
     ///    epilogue EMITS the q8_1 quantization of `act` directly (`silu_mul_scaled_q8_1`) and feeds
     ///    ffn_down via `matmul_pre`, removing ffn_down's standalone `quantize_q8_1` launch (the
     ///    down-proj activation has one consumer, so the quant folds into its producer for free).
-    ///    BIT-IDENTICAL to matmul_pre(gate)+matmul_pre(up)+silu_mul+quantize_q8_1+matmul(down): same
-    ///    float silu*mul, same amax/127 q8_1 rounding, same dp4a/mmvq dot. Falls back to the f32 `act`
+    /// BIT-IDENTICAL to matmul_pre(gate)+matmul_pre(up)+silu_mul+quantize_q8_1+matmul(down): same
+    /// float silu*mul, same amax/127 q8_1 rounding, same dp4a/mmvq dot. Falls back to the f32 `act`
     /// + plain matmul(down) path whenever any of the three is off the fast path.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn ffn_swiglu_decode(
@@ -262,7 +245,7 @@ impl HybridModel {
             let up = e.matmul_pre(ffn_up, &zq, &zd, z, 1)?;
             let mut act = e.uninit(n_ff)?;
             Self::ffn_act_lim(e, &self.cfg, &gate, &up, 1.0, 1.0, lim, &mut act, n_ff)?;
-            return e.matmul(ffn_down, &act, 1);
+            return Ok(e.matmul(ffn_down, &act, 1)?);
         }
         if e.uses_q8_1_fast(ffn_gate) && e.uses_q8_1_fast(ffn_up) {
             let (zq, zd) = e.quantize_q8_1(z, 1, n_embd)?;
@@ -280,13 +263,13 @@ impl HybridModel {
                     // standalone quantize_q8_1 before ffn_down.
                     if e.uses_q8_1_fast(ffn_down) {
                         let (aq, ad) = e.silu_mul_scaled_q8_1(&gate, &up, gs, us, n_ff)?;
-                        return e.matmul_pre(
+                        return Ok(e.matmul_pre(
                             ffn_down, &aq, &ad, /*x_fallback unused on fast path*/ &gate, 1,
-                        );
+                        )?);
                     }
                     let mut act = e.uninit(n_ff)?;
                     e.silu_mul_scaled(&gate, &up, gs, us, &mut act, n_ff)?;
-                    return e.matmul(ffn_down, &act, 1);
+                    return Ok(e.matmul(ffn_down, &act, 1)?);
                 }
                 _ => {
                     // one (or both) not on the separable-scale fast path: scaled matmul + plain silu_mul.
@@ -294,7 +277,7 @@ impl HybridModel {
                     let up = e.matmul_pre(ffn_up, &zq, &zd, z, 1)?;
                     let mut act = e.uninit(n_ff)?;
                     Self::ffn_act(e, &self.cfg, &gate, &up, &mut act, n_ff)?;
-                    return e.matmul(ffn_down, &act, 1);
+                    return Ok(e.matmul(ffn_down, &act, 1)?);
                 }
             }
         }
@@ -302,7 +285,7 @@ impl HybridModel {
         let up = e.matmul(ffn_up, z, 1)?;
         let mut act = e.uninit(n_ff)?;
         Self::ffn_act(e, &self.cfg, &gate, &up, &mut act, n_ff)?;
-        e.matmul(ffn_down, &act, 1)
+        Ok(e.matmul(ffn_down, &act, 1)?)
     }
 
     /// Like `ffn_swiglu_decode` but the input is ALREADY q8_1-quantized `(zq, zd)` — used by the
@@ -311,7 +294,6 @@ impl HybridModel {
     /// ffn_gate and ffn_up are q8_1-fast (so `matmul_pre_noscale` returns Some at m=1). BIT-IDENTICAL
     /// to ffn_swiglu_decode(z) when (zq,zd) == quantize_q8_1(z): same matmul_pre_noscale, same
     /// silu_mul_scaled_q8_1 / silu_mul_scaled, same ffn_down dot.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn ffn_swiglu_decode_pre(
         &self,
         e: &Engine,
@@ -393,7 +375,6 @@ impl HybridModel {
 
     /// attn_norm + mixer for the EAGER loop, with the attn-input NORM-FUSION. MEMRA_NO_FUSE_NORMQ
     /// forces the unfused (separate rms_norm + mixer-internal quantize) path.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn attn_in_norm_mixer(
         &self,
         e: &Engine,
@@ -437,7 +418,6 @@ impl HybridModel {
 
     /// attn_norm + mixer for the DEVICE-COUNTER loop (decode_step_dc). Full-attn uses the dc path;
     /// linear uses the eager-state path (persistent=false), same as decode_step_dc. NORM-FUSED.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn attn_in_norm_mixer_dc(
         &self,
         e: &Engine,
@@ -482,7 +462,6 @@ impl HybridModel {
     /// attn_norm + mixer for the CAPTURE loop (decode_step_dc_cap). Full-attn uses the dc_cap path
     /// (fixed bucket_max); linear uses the persistent-state path. NORM-FUSED; capture-safe (rms_norm_q8_1
     /// + the *_pre mixers enqueue the same kernels every replay, stable buffers).
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn attn_in_norm_mixer_dc_cap(
         &self,
         e: &Engine,
@@ -531,7 +510,6 @@ impl HybridModel {
         }
     }
 
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub(crate) fn residual_norm_ffn(
         &self,
         e: &Engine,
@@ -618,7 +596,6 @@ impl HybridModel {
     /// one device buffer per requested aux layer, in `aux_layers` order. The captured tensor is the
     /// residual `x` produced by that block (`x2` at the loop tail), cloned before the next block
     /// overwrites it — cheap (one clone_dtod of [n_embd] per aux layer). T=1 decode regime.
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn decode_step_aux(
         &self,
         e: &Engine,
@@ -627,7 +604,6 @@ impl HybridModel {
         aux_layers: &[usize],
     ) -> Result<(Vec<f32>, Vec<CudaSlice<f32>>), Box<dyn std::error::Error>> {
         self.refuse_hyper("decode_step_aux")?;
-        cache.ensure_usable("decode_step_aux")?;
         let (logits, aux, _) = self.decode_step_aux_inner(e, token, cache, aux_layers, false)?;
         Ok((logits, aux))
     }
@@ -642,7 +618,6 @@ impl HybridModel {
         cache: &mut Cache,
     ) -> Result<(Vec<f32>, Hy3Layer0Stages), Box<dyn std::error::Error>> {
         self.refuse_hyper("decode_step_hy3_layer0_stages")?;
-        cache.ensure_usable("decode_step_hy3_layer0_stages")?;
         if self.cfg.hy3.is_none() {
             return Err("decode_step_hy3_layer0_stages requires a Hy3 model".into());
         }
@@ -659,7 +634,6 @@ impl HybridModel {
         ))
     }
 
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     fn decode_step_aux_inner(
         &self,
         e: &Engine,
@@ -745,7 +719,6 @@ impl HybridModel {
         token: u32,
         cache: &mut Cache,
     ) -> Result<(Vec<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
-        cache.ensure_usable("decode_step_h")?;
         if self.hyper.is_some() {
             return self.decode_step_hyper(e, token, cache);
         }
@@ -763,16 +736,14 @@ impl HybridModel {
             if !self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::Pipeline) {
                 return Err("pipeline rewrite is not qualified for this ModelPlan".into());
             }
-            let rt = crate::pp::PpNRt::get(e)?;
-            let _walk = rt.acquire_walk("decode_step_h_ppn")?;
             return self.decode_step_h_ppn(e, token, cache, &fence);
         }
         // Whole-token decode graph (step TP graph increment B, MEMRA_STEP_TP_GRAPH=1 +
         // the dcw/fused/router doors): one stitched multi-device launch per token.
-        if self.uses_sliding_gated_moe_program()
-            && let Some(result) = self.step35_token_graph_step(e, token, cache)?
-        {
-            return Ok(result);
+        if self.uses_sliding_gated_moe_program() {
+            if let Some(result) = self.step35_token_graph_step(e, token, cache)? {
+                return Ok(result);
+            }
         }
         let cfg = &self.cfg;
         let n_embd = cfg.n_embd as usize;
@@ -999,11 +970,10 @@ impl HybridModel {
                 static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
                 *ON.get_or_init(|| std::env::var("MEMRA_HEAD_SPLIT").as_deref() == Ok("1"))
             };
-            if split_on
-                && self.uses_sliding_gated_moe_program()
-                && let Some(host) = self.head_split_matvec(e, &hn)?
-            {
-                break 'head host;
+            if split_on && self.uses_sliding_gated_moe_program() {
+                if let Some(host) = self.head_split_matvec(e, &hn)? {
+                    break 'head host;
+                }
             }
             let logits = e.matmul(&self.output, &hn, 1)?;
             e.dtoh(&logits)?
@@ -1012,7 +982,7 @@ impl HybridModel {
         if timing {
             use std::sync::atomic::Ordering;
             let tokens = B_TOKENS.fetch_add(1, Ordering::Relaxed) + 1;
-            if tokens.is_multiple_of(10) {
+            if tokens % 10 == 0 {
                 let per = |t: &std::sync::atomic::AtomicU64| {
                     t.load(Ordering::Relaxed) as f64 / tokens as f64 / 1.0e6
                 };
@@ -1052,7 +1022,6 @@ impl HybridModel {
     /// `token_d` — so a sampled stream keeps the chain's whole point, which is that no host
     /// sync happens between tokens. The per-step counter advances so each token draws its own
     /// Gumbel noise. Without `MEMRA_HEAD_SPLIT`, the same draw runs on the plain head row.
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn decode_step_chain(
         &self,
         e: &Engine,
@@ -1062,7 +1031,6 @@ impl HybridModel {
         samp: Option<&crate::decode_batch::DevSamp>,
     ) -> Result<Option<(Vec<u32>, Vec<f32>)>, Box<dyn std::error::Error>> {
         self.refuse_hyper("decode_step_chain")?;
-        cache.ensure_usable("decode_step_chain")?;
         if !self.uses_sliding_gated_moe_program() {
             return Ok(None);
         }
@@ -1081,7 +1049,6 @@ impl HybridModel {
         let (embd_qt, embd_rb) = self.embd.qt_and_row_bytes(n_embd);
 
         // Resident chain state (token id, id history ring, ring index), one set per device.
-        #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
         static CHAIN: std::sync::Mutex<
             Option<(usize, CudaSlice<u32>, CudaSlice<u32>, CudaSlice<i32>)>,
         > = std::sync::Mutex::new(None);
@@ -1125,8 +1092,6 @@ impl HybridModel {
             *PHASE_ON.get_or_init(|| std::env::var("MEMRA_CHAIN_PHASE").as_deref() == Ok("1"));
 
         let mut last_logits: Option<Option<CudaSlice<f32>>> = None;
-        #[allow(clippy::needless_range_loop)]
-        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
         for step in 0..k {
             let _phase_ov = if phase_on {
                 let (ps, pb) = e.gpu.phase_pair(step & 1)?;
@@ -1547,7 +1512,6 @@ impl HybridModel {
         cache: &mut Cache,
     ) -> Result<crate::pp::PendingLogits, Box<dyn std::error::Error>> {
         self.refuse_hyper("decode_step_h_ppn_deferred")?;
-        cache.ensure_usable("decode_step_h_ppn_deferred")?;
         let fence = crate::pp::pp_cuts(self.layers.len())
             .ok_or("ppn deferred: pp door closed (MEMRA_PP_STAGES unset)")?;
         if crate::pp::pp2_streams_off() {
@@ -1569,7 +1533,6 @@ impl HybridModel {
             );
         }
         let rt = crate::pp::PpNRt::get(e)?;
-        let walk = rt.acquire_deferred_walk("decode_step_h_ppn_deferred")?;
         let n_st = fence.len() - 1;
         assert_eq!(
             rt.n_stages(),
@@ -1617,7 +1580,6 @@ impl HybridModel {
             logits,
             ev,
             rt.readback_stream().clone(),
-            walk,
         ))
     }
 
@@ -1635,9 +1597,6 @@ impl HybridModel {
         caches: &mut [Cache],
     ) -> Result<Vec<Vec<f32>>, Box<dyn std::error::Error>> {
         self.refuse_hyper("decode_step_lockstep")?;
-        for cache in caches.iter() {
-            cache.ensure_usable("decode_step_lockstep")?;
-        }
         if tokens.len() != caches.len() || tokens.is_empty() {
             return Err("lockstep needs one token per stream cache".into());
         }
@@ -1798,32 +1757,34 @@ impl HybridModel {
                     }
                 }
             }
-            if grouped && let crate::hybrid::Ffn::Moe(moe_weights) = &layer.ffn {
-                // Per-stream add+norm (identical math to residual_norm_ffn's MoE arm),
-                // rows batched for the cross-stream MoE stage, outputs split back.
-                let pnorm = layer.post_attn_norm.float_data();
-                let mut zbatch = e.uninit(n_embd_total)?;
-                let mut x1s: Vec<CudaSlice<f32>> = Vec::with_capacity(m);
-                for s in 0..m {
-                    let mixed = mixed_rows[s].take().expect("grouped MoE row missing");
-                    let mut x1 = e.uninit(n_embd)?;
-                    let mut z = e.uninit(n_embd)?;
-                    e.add_rms_norm(&x[s], &mixed, pnorm, &mut x1, &mut z, n_embd, 1, eps)?;
-                    e.copy_view_into(&mut zbatch, s * n_embd, &z.slice(0..n_embd), n_embd)?;
-                    x1s.push(x1);
-                }
-                let max_block = self.max_moe_block();
-                let ffn_all =
-                    self.moe_ffn_lockstep(e, moe_weights, &zbatch, m, il as u16, max_block)?;
-                for (s, x1) in x1s.into_iter().enumerate() {
-                    let mut out = e.uninit(n_embd)?;
-                    e.copy_view_into(
-                        &mut out,
-                        0,
-                        &ffn_all.slice(s * n_embd..(s + 1) * n_embd),
-                        n_embd,
-                    )?;
-                    pending[s] = Some((x1, out));
+            if grouped {
+                if let crate::hybrid::Ffn::Moe(moe_weights) = &layer.ffn {
+                    // Per-stream add+norm (identical math to residual_norm_ffn's MoE arm),
+                    // rows batched for the cross-stream MoE stage, outputs split back.
+                    let pnorm = layer.post_attn_norm.float_data();
+                    let mut zbatch = e.uninit(n_embd_total)?;
+                    let mut x1s: Vec<CudaSlice<f32>> = Vec::with_capacity(m);
+                    for s in 0..m {
+                        let mixed = mixed_rows[s].take().expect("grouped MoE row missing");
+                        let mut x1 = e.uninit(n_embd)?;
+                        let mut z = e.uninit(n_embd)?;
+                        e.add_rms_norm(&x[s], &mixed, pnorm, &mut x1, &mut z, n_embd, 1, eps)?;
+                        e.copy_view_into(&mut zbatch, s * n_embd, &z.slice(0..n_embd), n_embd)?;
+                        x1s.push(x1);
+                    }
+                    let max_block = self.max_moe_block();
+                    let ffn_all =
+                        self.moe_ffn_lockstep(e, moe_weights, &zbatch, m, il as u16, max_block)?;
+                    for (s, x1) in x1s.into_iter().enumerate() {
+                        let mut out = e.uninit(n_embd)?;
+                        e.copy_view_into(
+                            &mut out,
+                            0,
+                            &ffn_all.slice(s * n_embd..(s + 1) * n_embd),
+                            n_embd,
+                        )?;
+                        pending[s] = Some((x1, out));
+                    }
                 }
             }
         }
@@ -1855,15 +1816,14 @@ impl HybridModel {
     /// the two per-step VARYING host kernel-args by reading them from device counters:
     ///   1. the KV-append write slot  -> per-layer `kvl.len_d` (device i32[1])
     ///   2. the fa_decode t_kv bound   -> the same `kvl.len_d` after `inc_seqlen`
-    ///      plus it keeps the token id + rope pos DEVICE-RESIDENT (embed_gather_device, device rope pos,
-    ///      argmax_token_device). NO graph capture yet — runs the kernels eagerly through the counter
-    ///      path. Must be BIT-IDENTICAL to `decode_step_h`'s token stream (the gate).
+    /// plus it keeps the token id + rope pos DEVICE-RESIDENT (embed_gather_device, device rope pos,
+    /// argmax_token_device). NO graph capture yet — runs the kernels eagerly through the counter
+    /// path. Must be BIT-IDENTICAL to `decode_step_h`'s token stream (the gate).
     ///
     /// Args: `token_d` = resident device token id [1] (this step's input token); `pos_d` = resident
     /// device rope pos i32[1] (== cache.pos at entry; INCREMENTED in-path); `embd_gpu` = resident embed
     /// table; (qt,row_bytes) from EmbedHost::qt_and_row_bytes. Returns the NEXT token id device buffer.
     /// `cache.pos` and each `kvl.len`/`kvl.len_d` are advanced to match `decode_step_h`.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub fn decode_step_dc(
         &self,
         e: &Engine,
@@ -1876,7 +1836,6 @@ impl HybridModel {
         n_vocab: usize,
     ) -> Result<CudaSlice<u32>, Box<dyn std::error::Error>> {
         self.refuse_hyper("decode_step_dc")?;
-        cache.ensure_usable("decode_step_dc")?;
         // Route gemma4 to ITS dc twin (mirrors decode_step_h): the generic walk below is the
         // qwen-class layer stack — running gemma weights through it produced the argmax-INIT
         // passthrough the round-45 g12 gate caught (first Hopper gating of this lane).
@@ -1973,9 +1932,8 @@ impl HybridModel {
     ///   - lm_head -> parallel 2-pass argmax (`argmax_partial_f32`+`argmax_final_f32`) writes the
     ///     next id into the PERSISTENT `token_d`.
     ///   - `inc_seqlen(pos_d)` advances the rope-pos device counter in-graph.
-    ///     Captured ONCE per `bucket_max`; replayed for every t_kv in that bucket. Bit-identical to eager
-    ///     when `bucket_max` reproduces eager's n_splits for the replayed t_kv (the bucket-key contract).
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
+    /// Captured ONCE per `bucket_max`; replayed for every t_kv in that bucket. Bit-identical to eager
+    /// when `bucket_max` reproduces eager's n_splits for the replayed t_kv (the bucket-key contract).
     pub fn decode_step_dc_cap(
         &self,
         e: &Engine,
@@ -2023,7 +1981,6 @@ impl HybridModel {
         mask: Option<(&CudaSlice<u32>, usize)>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         self.refuse_hyper("decode_step_dc_cap_masked")?;
-        cache.ensure_usable("decode_step_dc_cap")?;
         let cfg = &self.cfg;
         let n_embd = cfg.n_embd as usize;
         let eps = cfg.rms_eps;
@@ -2139,7 +2096,6 @@ impl HybridModel {
         r
     }
 
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn generate_graph_inner(
         &self,
         e: &Engine,
@@ -2260,8 +2216,6 @@ impl HybridModel {
             let (graph, mut plan, seg_end) = self
                 .graph_capture_segment(e, cache, gs, embd_gpu, qt, row_bytes, n_vocab, final_max)?;
 
-            #[allow(clippy::int_plus_one)]
-            // allow: the +1 form states the documented boundary, not an off-by-one
             while done < max_new && cache.pos + 1 <= seg_end {
                 // retune fa geometry to the live t_kv AFTER this replay's in-graph append.
                 crate::graph_update::fa_apply(
@@ -2385,7 +2339,6 @@ impl HybridModel {
         max_new: usize,
         mask_init: Option<&[u32]>,
     ) -> Result<(GraphSession, u32), Box<dyn std::error::Error>> {
-        cache.ensure_usable("graph_session_from_cache")?;
         if e.ctx().is_event_tracking() {
             return Err(
                 "graph_session_from_cache requires event tracking OFF (MEMRA_EVT unset)".into(),
@@ -2645,7 +2598,6 @@ impl HybridModel {
     }
 
     /// PRE-QUANTIZED-INPUT dc full-attn (device-counter path). See full_attn_decode_pre. BIT-IDENTICAL.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub(crate) fn full_attn_decode_dc_pre(
         &self,
         e: &Engine,
@@ -2661,7 +2613,6 @@ impl HybridModel {
     }
 
     /// PRE-QUANTIZED-INPUT CAPTURE dc full-attn (graph path, fixed bucket_max). BIT-IDENTICAL.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub(crate) fn full_attn_decode_dc_cap_pre(
         &self,
         e: &Engine,
@@ -2683,7 +2634,6 @@ impl HybridModel {
     /// which is captured and replays each launch). Views the FULL K/V cache buffer so the kernel may
     /// safely read up to any t_kv within the bucket on replay. Bit-identical to eager when
     /// `bucket_max` yields the same n_splits as eager for the replayed t_kv (the bucket-key contract).
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub(crate) fn full_attn_decode_dc_cap(
         &self,
         e: &Engine,
@@ -2697,9 +2647,6 @@ impl HybridModel {
         self.full_attn_decode_dc_inner(e, fa, h, None, pos_d, cache, il, Some(bucket_max))
     }
 
-    #[allow(clippy::too_many_arguments)]
-    // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     fn full_attn_decode_dc_inner(
         &self,
         e: &Engine,
@@ -2751,29 +2698,22 @@ impl HybridModel {
                 e.matmul_pre(&fa.wv, hq, hd, h, 1)?,
             ))
         };
-        let (qf, mut k, v) = if let Some(mut qkv) = self.full_attn_tp_qkv(e, fa, h, 1)? {
-            let v = qkv.pop().ok_or("full-attention TP QKV omitted V")?;
-            let k = qkv.pop().ok_or("full-attention TP QKV omitted K")?;
-            let q = qkv.pop().ok_or("full-attention TP QKV omitted Q")?;
-            if !qkv.is_empty() {
-                return Err("full-attention TP QKV returned extra projections".into());
-            }
-            (q, k, v)
-        } else if e.uses_q8_1_fast(&fa.wq) && e.uses_q8_1_fast(&fa.wk) && e.uses_q8_1_fast(&fa.wv) {
-            match pre_q {
-                Some((hq, hd)) => qkv_fused(e, hq, hd)?,
-                None => {
-                    let (hq, hd) = e.quantize_q8_1(h, 1, n_embd)?;
-                    qkv_fused(e, &hq, &hd)?
+        let (qf, mut k, v) =
+            if e.uses_q8_1_fast(&fa.wq) && e.uses_q8_1_fast(&fa.wk) && e.uses_q8_1_fast(&fa.wv) {
+                match pre_q {
+                    Some((hq, hd)) => qkv_fused(e, hq, hd)?,
+                    None => {
+                        let (hq, hd) = e.quantize_q8_1(h, 1, n_embd)?;
+                        qkv_fused(e, &hq, &hd)?
+                    }
                 }
-            }
-        } else {
-            (
-                e.matmul(&fa.wq, h, 1)?,
-                e.matmul(&fa.wk, h, 1)?,
-                e.matmul(&fa.wv, h, 1)?,
-            )
-        };
+            } else {
+                (
+                    e.matmul(&fa.wq, h, 1)?,
+                    e.matmul(&fa.wk, h, 1)?,
+                    e.matmul(&fa.wv, h, 1)?,
+                )
+            };
         // M3/Hy3 have no attention output gate — wq out is exactly q; skip the split.
         let gated = geometry.attention_gate == memra_gguf::config::AttentionGateKind::FusedQ;
         let (mut q, gate) = if gated {
@@ -2895,10 +2835,7 @@ impl HybridModel {
             }
             None => attn,
         };
-        match self.full_attn_tp_o(e, fa, &attn_g, 1)? {
-            Some(output) => Ok(output),
-            None => Ok(e.matmul(&fa.wo, &attn_g, 1)?),
-        }
+        Ok(e.matmul(&fa.wo, &attn_g, 1)?)
     }
 
     /// Greedy generation: prime with prompt tokens (decode them in sequence to build state),
@@ -3567,7 +3504,6 @@ impl HybridModel {
 
     /// Full-attention decode: project q/gate/k/v for the new token, QK-norm, RoPE at pos,
     /// append k,v to the layer KV cache, attend over the full [0..=pos] context.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub(crate) fn full_attn_decode(
         &self,
         e: &Engine,
@@ -3584,9 +3520,6 @@ impl HybridModel {
     /// PRE-QUANTIZED-INPUT eager full-attn (attn-input NORM-FUSION lever): caller passes the
     /// attn-normed activation already q8_1 `(hq,hd)` (rms_norm_q8_1) -> skips internal quantize_q8_1.
     /// `None` = quantize h here (the spec / non-fused path). BIT-IDENTICAL.
-    #[allow(clippy::too_many_arguments)]
-    // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub(crate) fn full_attn_decode_pre(
         &self,
         e: &Engine,
@@ -3603,34 +3536,6 @@ impl HybridModel {
         }
         let cfg = &self.cfg;
         let geometry = cfg.full_attention_geometry_at(il as u32);
-        if fa
-            .step_tp_qkv
-            .as_ref()
-            .is_some_and(|tp| tp.attention.is_some())
-        {
-            if pre_q.is_some() {
-                return Err(
-                    "rank-local generic TP attention preserves BF16 activations and refuses the \
-                     q8_1 pre-quantized decode path"
-                        .into(),
-                );
-            }
-            if geometry.attention_gate != memra_gguf::config::AttentionGateKind::None {
-                return Err(
-                    "rank-local generic TP attention currently requires an ungated attention \
-                     plan; fused-Q and separate-head gates retain their existing qualified paths"
-                        .into(),
-                );
-            }
-            if !crate::tp::step_tp_decode_v2_enabled()? {
-                return Err(
-                    "MEMRA_PARALLEL_TP_ATTENTION=1 requires MEMRA_STEP_TP_DECODE_V2=1 for \
-                     generic decode; the v1 driver is Step-gate-specific"
-                        .into(),
-                );
-            }
-            return self.step35_tp_decode_attn_resident_v2(e, fa, il, h, pos_d, cache);
-        }
         let n_head = geometry.n_head as usize;
         let n_head_kv = geometry.n_head_kv as usize;
         let head_dim = geometry.head_dim_k as usize;
@@ -3789,7 +3694,7 @@ impl HybridModel {
             }
             None => attn,
         };
-        e.matmul(&fa.wo, &attn_g, 1)
+        Ok(e.matmul(&fa.wo, &attn_g, 1)?)
     }
 
     /// BATCHED full-attention decode over `m` independent streams (one token each).
@@ -3984,7 +3889,6 @@ impl HybridModel {
     /// the attn_norm + the mixer's internal quantize_q8_1). Skips the internal quantize. Caller
     /// GUARANTEES the projections are q8_1-fast. `persistent` selects the capture-safe state plumbing.
     /// BIT-IDENTICAL to linear_attn_decode(h) when (hq,hd)==quantize_q8_1(rms_norm(x)*w).
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub fn linear_attn_decode_pre(
         &self,
         e: &Engine,
@@ -4017,7 +3921,6 @@ impl HybridModel {
         self.linear_attn_decode_inner(e, la, h, None, cache, il, true)
     }
 
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn linear_attn_decode_inner(
         &self,
         e: &Engine,
@@ -4228,7 +4131,7 @@ impl HybridModel {
             let (gq, gd) =
                 e.gated_rmsnorm_q8_1(&o, la.ssm_norm.float_data(), &z, d_state, num_v, eps)?;
             let g0 = e.zeros(0)?;
-            return e.matmul_pre(&la.ssm_out, &gq, &gd, &g0, 1);
+            return Ok(e.matmul_pre(&la.ssm_out, &gq, &gd, &g0, 1)?);
         }
         let mut gn = e.uninit(d_state * num_v)?;
         e.gated_rmsnorm(
@@ -4240,6 +4143,6 @@ impl HybridModel {
             num_v,
             eps,
         )?;
-        e.matmul(&la.ssm_out, &gn, 1)
+        Ok(e.matmul(&la.ssm_out, &gn, 1)?)
     }
 }

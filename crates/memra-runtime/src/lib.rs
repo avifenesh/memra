@@ -12,7 +12,6 @@ pub use memra_gguf;
 /// `out` rows of `in` contiguous elements — i.e. W[o*in + i]. A linear layer computes
 /// y[o] = sum_i x[i] * W[o*in + i], for each of `out` outputs. Batched over `m` tokens:
 ///   x: [m, in] row-major (x[t*in + i]); w: [out, in] row-major (w[o*in + i]); y: [m, out].
-#[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
 pub fn cpu_linear(x: &[f32], w: &[f32], m: usize, in_f: usize, out_f: usize) -> Vec<f32> {
     assert_eq!(x.len(), m * in_f);
     assert_eq!(w.len(), out_f * in_f);
@@ -42,8 +41,6 @@ pub struct Gpu {
     /// TOKEN-PIPELINE phase streams (step37 chain): two extra stream/cuBLASLt pairs so
     /// alternate tokens' host-issue rides disjoint streams. Lazily built (first
     /// enter_main under an active decode phase); None everywhere else — zero cost.
-    #[allow(clippy::type_complexity)]
-    // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     phase: std::sync::Mutex<Option<[(Arc<CudaStream>, Arc<CudaBlasLT>); 2]>>,
 }
 
@@ -83,7 +80,6 @@ thread_local! {
     /// on the MATCHING context binds THIS stream instead of the gpu's own main stream —
     /// the same-device rank's work then rides the model engine's stream and every
     /// e<->rank0 event hop becomes same-stream program order.
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     static RANK0_REDIRECT: std::cell::RefCell<Option<(usize, Arc<CudaStream>, Arc<CudaBlasLT>)>> =
         const { std::cell::RefCell::new(None) };
 }
@@ -330,11 +326,11 @@ impl Gpu {
     /// We want y[m,out] row-major = y^T[out,m] column-major. Treat:
     ///   - x[m,in] row-major == x^T[in,m] col-major  (an in×m col-major matrix)
     ///   - w[out,in] row-major == w^T[in,out] col-major (an in×out col-major matrix)
-    ///     Compute C[out,m] col-major = W_colmajor(out×in) * X_colmajor(in×m)
-    ///     => set A = w (interpreted col-major as in×out, so transa to get out×in),
-    ///     B = x (col-major in×m), C = y (col-major out×m == y[m,out] row-major).
-    ///     cfg: m_=out, n_=m_tokens, k=in. A is in×out (lda=in, transa=true -> out×in),
-    ///     B is in×m (ldb=in), C is out×m (ldc=out).
+    /// Compute C[out,m] col-major = W_colmajor(out×in) * X_colmajor(in×m)
+    ///   => set A = w (interpreted col-major as in×out, so transa to get out×in),
+    ///      B = x (col-major in×m), C = y (col-major out×m == y[m,out] row-major).
+    /// cfg: m_=out, n_=m_tokens, k=in. A is in×out (lda=in, transa=true -> out×in),
+    ///      B is in×m (ldb=in), C is out×m (ldc=out).
     pub fn linear_f32(
         &self,
         x: &cudarc::driver::CudaSlice<f32>,

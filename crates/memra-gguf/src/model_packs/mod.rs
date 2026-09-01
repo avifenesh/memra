@@ -14,12 +14,10 @@ pub mod gemma4_dense;
 pub mod gemma4_moe;
 pub mod glm5_next;
 pub mod glm_dsa;
-pub mod hy3;
 pub mod qwen3;
 pub mod qwen35;
 pub mod qwen35_moe;
 pub mod qwen3_moe;
-pub mod qwen4_exp;
 pub mod step35;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,7 +99,6 @@ impl ModelPack {
         (self.plan_builder)(config)
     }
 
-    #[allow(clippy::result_large_err)] // allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
     pub fn compile_tensor_contract(
         &self,
         config: &ModelConfig,
@@ -129,19 +126,12 @@ pub const PACKS: &[&ModelPack] = &[
     &gemma4_moe::PACK,
     &deepseek_v4::PACK,
     &deepseek_v4::DSPARK_PACK,
-    &qwen4_exp::PACK,
     &step35::PACK,
-    &hy3::PACK,
 ];
-
-/// Explicit artifact-storage profiles used by `model inspect`. They never participate in
-/// automatic family selection because several profiles can intentionally share one ModelPlan.
-pub const ONBOARDING_PROFILES: &[&ModelPack] = &[&hy3::NVFP4_PACK];
 
 pub fn by_alias(alias: &str) -> Option<&'static ModelPack> {
     PACKS
         .iter()
-        .chain(ONBOARDING_PROFILES)
         .copied()
         .find(|pack| pack.family == alias || pack.aliases.contains(&alias))
 }
@@ -157,7 +147,6 @@ pub(super) fn canonical_plan(config: &ModelConfig) -> Result<ModelPlan, PlanComp
     ModelPlan::compile(config)
 }
 
-#[allow(clippy::result_large_err)] // allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
 pub(super) fn canonical_tensor_schema(
     _config: &ModelConfig,
     plan: &ModelPlan,
@@ -176,7 +165,7 @@ mod tests {
     #[test]
     fn pack_aliases_are_unique_and_manifests_are_complete() {
         let mut aliases = BTreeSet::new();
-        for pack in PACKS.iter().chain(ONBOARDING_PROFILES) {
+        for pack in PACKS {
             assert!(!pack.family.is_empty());
             assert!(!pack.aliases.is_empty());
             assert!(!pack.tokenizer_sources.is_empty());
@@ -198,28 +187,16 @@ mod tests {
                 assert_eq!(by_alias(alias).unwrap().family, pack.family);
             }
             if pack.support.is_none() {
-                // A loader-lane pack may still carry a tiny fixture (it protects the family's
-                // from_hf parse before any native execution exists) — but never a parity gate.
-                match pack.tiny_plan {
-                    Some(_) => {
-                        pack.compile_tiny_plan()
-                            .expect("loader-lane tiny fixture must compile");
-                    }
-                    None => assert!(matches!(
-                        pack.compile_tiny_plan(),
-                        Err(PlanCompileError::MissingTinyFixture { .. })
-                    )),
-                }
+                assert!(matches!(
+                    pack.compile_tiny_plan(),
+                    Err(PlanCompileError::MissingTinyFixture { .. })
+                ));
                 assert!(pack.checkpoint_parity.is_none());
             } else {
                 let gate = pack
                     .checkpoint_parity
                     .expect("native reference packs require a checkpoint parity gate");
-                assert!(gate.max_abs >= 0.0 && gate.max_rel >= 0.0);
-                assert!(
-                    gate.max_abs > 0.0 || gate.max_rel > 0.0,
-                    "checkpoint parity gate must carry a positive absolute or relative bound"
-                );
+                assert!(gate.max_abs > 0.0 && gate.max_rel > 0.0);
             }
         }
     }

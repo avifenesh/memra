@@ -4,7 +4,7 @@ set -u
 cd ~/memra
 OUT=~/receipts/m2-pp8/soak-singledev
 mkdir -p "$OUT"
-Q9=/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
+Q9=/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
 for i in $(seq 1 20); do
   flock /tmp/gpu-box.lock ./target/release/ppn-gate "$Q9" 2 16 32 > "$OUT/r$i.log" 2>&1
 done

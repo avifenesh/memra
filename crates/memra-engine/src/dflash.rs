@@ -163,47 +163,11 @@ pub fn dflash2_walk_greedy(
     anchor: u32,
     nd: usize,
 ) -> Vec<u32> {
-    dflash2_walk_greedy_q(
-        pred_codebook,
-        succ_codebook,
-        vocab,
-        rank,
-        top_k,
-        unary,
-        cand,
-        hproj,
-        anchor,
-        nd,
-    )
-    .0
-}
-
-/// [`dflash2_walk_greedy`] with the per-slot CONFIDENCE recorded (lane/glm5-loop-port,
-/// 2026-08-30): q[p] = softmax over the slot's candidate-set scores at T=1, of the chosen
-/// candidate — the greedy twin of `dflash2_walk_sampled`'s recorded `q_chosen` (same
-/// statistic family the owner's "take only high confidence offers" tau gate thresholds on
-/// the dspark route). The argmax selection is UNCHANGED (q is bookkeeping over the same
-/// scores, ~top_k exps per slot on host), so every existing greedy caller is byte-identical
-/// through the delegating wrapper. Pure, CPU-gateable like its siblings.
-#[allow(clippy::too_many_arguments)]
-pub fn dflash2_walk_greedy_q(
-    pred_codebook: &[u8],
-    succ_codebook: &[u8],
-    vocab: usize,
-    rank: usize,
-    top_k: usize,
-    unary: &[f32],
-    cand: &[u32],
-    hproj: &[f32],
-    anchor: u32,
-    nd: usize,
-) -> (Vec<u32>, Vec<f32>) {
     let (kk, r) = (top_k, rank);
     assert_eq!(unary.len(), nd * kk, "walk: unary shape");
     assert_eq!(cand.len(), nd * kk, "walk: candidate shape");
     assert_eq!(hproj.len(), nd * r, "walk: hidden-projection shape");
     let mut path = Vec::with_capacity(nd);
-    let mut q_chosen = Vec::with_capacity(nd);
     let mut prev = anchor;
     for p in 0..nd {
         assert!(
@@ -214,33 +178,24 @@ pub fn dflash2_walk_greedy_q(
         let hp = &hproj[p * r..(p + 1) * r];
         // gate = pred_row .* hidden_proj (shared across the candidate set)
         let gate: Vec<f32> = pr.iter().zip(hp).map(|(a, b)| a * b).collect();
-        let mut scores = vec![0f32; kk];
         let (mut best, mut bi) = (f32::NEG_INFINITY, 0usize);
-        for (k, s) in scores.iter_mut().enumerate() {
+        for k in 0..kk {
             let c = cand[p * kk + k] as usize;
             assert!(c < vocab, "walk: candidate {c} outside codebook vocab");
             let sr = cb_row(succ_codebook, c, r);
-            let mut acc = unary[p * kk + k];
+            let mut s = unary[p * kk + k];
             for j in 0..r {
-                acc += gate[j] * sr[j];
+                s += gate[j] * sr[j];
             }
-            *s = acc;
-            if acc > best {
-                best = acc;
+            if s > best {
+                best = s;
                 bi = k;
             }
         }
-        // Recorded confidence: softmax at T=1 over the candidate set (f64 accumulation,
-        // the sampled walk's numeric discipline), of the argmaxed candidate.
-        let mut z = 0f64;
-        for &s in &scores {
-            z += ((s - best) as f64).exp();
-        }
-        q_chosen.push(if z > 0.0 { (1.0 / z) as f32 } else { 1.0 });
         prev = cand[p * kk + bi];
         path.push(prev);
     }
-    (path, q_chosen)
+    path
 }
 
 impl Dflash2Head {
@@ -254,29 +209,6 @@ impl Dflash2Head {
         nd: usize,
     ) -> Vec<u32> {
         dflash2_walk_greedy(
-            &self.pred_codebook,
-            &self.succ_codebook,
-            self.vocab,
-            self.rank,
-            self.top_k,
-            unary,
-            cand,
-            hproj,
-            anchor,
-            nd,
-        )
-    }
-
-    /// Greedy walk with the per-slot confidence recorded — see `dflash2_walk_greedy_q`.
-    pub fn walk_greedy_q(
-        &self,
-        unary: &[f32],
-        cand: &[u32],
-        hproj: &[f32],
-        anchor: u32,
-        nd: usize,
-    ) -> (Vec<u32>, Vec<f32>) {
-        dflash2_walk_greedy_q(
             &self.pred_codebook,
             &self.succ_codebook,
             self.vocab,
@@ -1386,7 +1318,7 @@ impl DflashDraft {
             let (_info, bytes) = st
                 .raw(name)
                 .ok_or_else(|| format!("missing tensor {name}"))?;
-            e.htod(&bf16_to_f32(bytes))
+            Ok(e.htod(&bf16_to_f32(bytes))?)
         };
         // Precision policy (MEMRA_DFLASH_PREC seam): "q4" = all q4_0 (DEFAULT since
         // lane/dflash2-head-trim 2026-08-25, owner-ratified): measured on BOTH engaging
@@ -1399,7 +1331,10 @@ impl DflashDraft {
         // the 31B trunk); "bf16" = all bf16 (parity runs, no target). The asymmetric
         // "q5" arm was measured DEFECTIVE (acceptance 0.656 -> 0.424) and never landed.
         let prec_env = std::env::var("MEMRA_DFLASH_PREC").ok();
-        let prec = dflash_precision(prec_env.as_deref())?;
+        let prec = match dflash_precision(prec_env.as_deref()) {
+            Ok(prec) => prec,
+            Err(err) => return Err(err.into()),
+        };
         let upw = |name: &str| -> Result<GpuTensor, Box<dyn std::error::Error>> {
             let (info, bytes) = st
                 .raw(name)
@@ -1810,13 +1745,13 @@ impl DflashDraft {
         _in_f: usize,
         _out_f: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        e.matmul(w, x, t)
+        Ok(e.matmul(w, x, t)?)
     }
 
     /// DFlash2 conv `prepare` (reference GroupedDynamicCausalConv.prepare): projects
     /// the pre-conv rows to BOTH dynamic kernels, convolves the rows with base half 0
     /// + dyn half 0, and returns (convolved rows, the dyn projection) — `finish`
-    ///   reuses the SAME projection's half 1. Block-local causal shift (row 0 zero-pads).
+    /// reuses the SAME projection's half 1. Block-local causal shift (row 0 zero-pads).
     pub fn d2_conv_prepare(
         &self,
         e: &Engine,
@@ -1881,7 +1816,6 @@ impl DflashDraft {
     /// (~nd*(2k+rank) floats — the same per-round sync slot the markov chain's token
     /// readback occupies), then the host codebook walk. Returns the nd drafted tokens
     /// (mask-fill rows 1..b-1; the anchor row is not a draft).
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub fn dflash2_propose_greedy(
         &self,
         e: &Engine,
@@ -1892,27 +1826,6 @@ impl DflashDraft {
         anchor: u32,
         d2t: Option<&[u32]>,
     ) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
-        Ok(self
-            .dflash2_propose_greedy_q(e, dl, rows, nd, n_vocab, anchor, d2t)?
-            .0)
-    }
-
-    /// [`Self::dflash2_propose_greedy`] with the walk's per-slot confidence returned
-    /// (lane/glm5-loop-port, 2026-08-30): q[p] = the chosen candidate's softmax mass over
-    /// its slot's candidate set at T=1 — the statistic the glm5 loop's MEMRA_SPEC_PMIN
-    /// tau-slot truncation thresholds on. Same walk, same path, same one-DtoH sync slot.
-    #[allow(clippy::too_many_arguments)]
-    // allow: mirrors the greedy propose contract it wraps
-    pub fn dflash2_propose_greedy_q(
-        &self,
-        e: &Engine,
-        dl: &CudaSlice<f32>,
-        rows: &CudaSlice<f32>,
-        nd: usize,
-        n_vocab: usize,
-        anchor: u32,
-        d2t: Option<&[u32]>,
-    ) -> Result<(Vec<u32>, Vec<f32>), Box<dyn std::error::Error>> {
         let d2 = self
             .dflash2
             .as_ref()
@@ -1937,7 +1850,7 @@ impl DflashDraft {
             }
         }
         let hproj = e.dtoh(&hproj_d)?;
-        Ok(d2.walk_greedy_q(&unary, &cand, &hproj, anchor, nd))
+        Ok(d2.walk_greedy(&unary, &cand, &hproj, anchor, nd))
     }
 
     /// DFlash2 proposal, SAMPLED arm (reference `DFlash2DraftModel.propose` at T>0): same
@@ -2198,23 +2111,23 @@ impl DflashDraft {
             e.copy_into(&mut v, 0, &v0c, ctx * nkv * hd)?;
             e.copy_into(&mut v, ctx * nkv * hd, &v0b, b * nkv * hd)?;
 
-            if li == 0
-                && let Ok(dir) = std::env::var("MEMRA_DFLASH_DUMP")
-            {
-                let v = e.dtoh(&q0)?;
-                let bytes: Vec<u8> = v.iter().flat_map(|f| f.to_le_bytes()).collect();
-                std::fs::write(format!("{dir}/memra-l0_q0.f32"), bytes)?;
+            if li == 0 {
+                if let Ok(dir) = std::env::var("MEMRA_DFLASH_DUMP") {
+                    let v = e.dtoh(&q0)?;
+                    let bytes: Vec<u8> = v.iter().flat_map(|f| f.to_le_bytes()).collect();
+                    std::fs::write(format!("{dir}/memra-l0_q0.f32"), bytes)?;
+                }
             }
             let mut q = e.uninit(b * nh * hd)?;
             let mut k = e.uninit((ctx + b) * nkv * hd)?;
             // rms over head_dim rows: q has b*nh rows, k has (ctx+b)*nkv rows.
             e.rms_norm(&q0, &l.q_norm, &mut q, hd, b * nh, c.eps)?;
-            if li == 0
-                && let Ok(dir) = std::env::var("MEMRA_DFLASH_DUMP")
-            {
-                let v = e.dtoh(&q)?;
-                let bytes: Vec<u8> = v.iter().flat_map(|f| f.to_le_bytes()).collect();
-                std::fs::write(format!("{dir}/memra-l0_qn.f32"), bytes)?;
+            if li == 0 {
+                if let Ok(dir) = std::env::var("MEMRA_DFLASH_DUMP") {
+                    let v = e.dtoh(&q)?;
+                    let bytes: Vec<u8> = v.iter().flat_map(|f| f.to_le_bytes()).collect();
+                    std::fs::write(format!("{dir}/memra-l0_qn.f32"), bytes)?;
+                }
             }
             e.rms_norm(&k0, &l.k_norm, &mut k, hd, (ctx + b) * nkv, c.eps)?;
 
@@ -2223,19 +2136,19 @@ impl DflashDraft {
             if !norope {
                 self.rope_rows(e, &mut q, &pos_blk, nh, b)?;
             }
-            if li == 0
-                && let Ok(dir) = std::env::var("MEMRA_DFLASH_DUMP")
-            {
-                let dump = |name: &str,
-                            t: &cudarc::driver::CudaSlice<f32>|
-                 -> Result<(), Box<dyn std::error::Error>> {
-                    let v = e.dtoh(t)?;
-                    let bytes: Vec<u8> = v.iter().flat_map(|f| f.to_le_bytes()).collect();
-                    std::fs::write(format!("{dir}/memra-l0_{name}.f32"), bytes)?;
-                    Ok(())
-                };
-                dump("xn", &xn)?;
-                dump("q_prerope", &q)?;
+            if li == 0 {
+                if let Ok(dir) = std::env::var("MEMRA_DFLASH_DUMP") {
+                    let dump = |name: &str,
+                                t: &cudarc::driver::CudaSlice<f32>|
+                     -> Result<(), Box<dyn std::error::Error>> {
+                        let v = e.dtoh(t)?;
+                        let bytes: Vec<u8> = v.iter().flat_map(|f| f.to_le_bytes()).collect();
+                        std::fs::write(format!("{dir}/memra-l0_{name}.f32"), bytes)?;
+                        Ok(())
+                    };
+                    dump("xn", &xn)?;
+                    dump("q_prerope", &q)?;
+                }
             }
             // k rows are laid out [row, nkv, hd] with row-major tokens — rope_neox expects
             // (n_heads, n_tokens); ctx and block ropes run as one call over ctx+b tokens.
@@ -2273,21 +2186,21 @@ impl DflashDraft {
             }
             let mut x1 = e.uninit(b * h)?;
             e.add(&o, &x, &mut x1, b * h)?;
-            if li == 0
-                && let Ok(dir) = std::env::var("MEMRA_DFLASH_DUMP")
-            {
-                let dump = |name: &str,
-                            t: &cudarc::driver::CudaSlice<f32>|
-                 -> Result<(), Box<dyn std::error::Error>> {
-                    let v = e.dtoh(t)?;
-                    let bytes: Vec<u8> = v.iter().flat_map(|f| f.to_le_bytes()).collect();
-                    std::fs::write(format!("{dir}/memra-l0_{name}.f32"), bytes)?;
-                    Ok(())
-                };
-                dump("q", &q)?;
-                dump("k", &k)?;
-                dump("attn", &attn)?;
-                dump("x1", &x1)?;
+            if li == 0 {
+                if let Ok(dir) = std::env::var("MEMRA_DFLASH_DUMP") {
+                    let dump = |name: &str,
+                                t: &cudarc::driver::CudaSlice<f32>|
+                     -> Result<(), Box<dyn std::error::Error>> {
+                        let v = e.dtoh(t)?;
+                        let bytes: Vec<u8> = v.iter().flat_map(|f| f.to_le_bytes()).collect();
+                        std::fs::write(format!("{dir}/memra-l0_{name}.f32"), bytes)?;
+                        Ok(())
+                    };
+                    dump("q", &q)?;
+                    dump("k", &k)?;
+                    dump("attn", &attn)?;
+                    dump("x1", &x1)?;
+                }
             }
 
             // mlp (DFlash2: the same conv wrap — prepare on the post-ln rows, mlp on
@@ -2533,154 +2446,6 @@ fn emit_accepted_run(out: &mut Vec<u32>, accepted: &[u32], eos: &[u32], max_new:
     false
 }
 
-// ===== THE DRAFT-SOURCE SEAM (lane/glm5-extract2, phase 2 of the extraction program) ======
-//
-// `DraftSourcePlan` (memra-gguf `model_plan.rs`) has always been general: it is the PLAN's
-// statement of where a family's drafts come from. What was glm5-named was everything on the
-// ENGINE side of it — the loaded-drafter holder, the flag-to-drafter load contract, and the
-// tap-layer resolution. All three are family-agnostic by content, so they live here, in the
-// general DFlash module, and glm5 is a CONSUMER.
-//
-// WHAT IS DELIBERATELY *NOT* HERE, and why (phase-1 discipline, restated):
-// the PER-SESSION draft state (`glm_spec::Glm5DraftState`) and the source-keyed round /
-// maintenance walks. Those are not family-agnostic today: each arm reaches into the family's
-// own cache planes (glm5's MLA latent plane, `HcTapSink` hc-contract taps, the KDA rollback
-// stash) and the retained-q type carries the family's rank space. A trait over them would have
-// exactly ONE implementor whose associated types are all glm5 types — a decorative trait cut
-// blind, on the hottest file in the lane program. The trigger for that cut is the SECOND
-// hybrid spec family's session state, which is what tells us which half of the state is
-// shared. The trait sketch is banked in the lane doc so the second consumer starts from it,
-// not from scratch.
-
-/// A loaded alternate draft source: the drafter weights plus the byte identity they were
-/// pinned by. Model-level (loaded ONCE per model, on the head engine where the trunk lm_head
-/// it projects through lives — the MTP-head placement law); per-session state is the family's.
-///
-/// Generalized from `glm_spec::Glm5DflashDrafter`, which stays re-exported under its old name
-/// for the glm5 call sites and gates.
-pub struct DflashDrafter {
-    pub draft: DflashDraft,
-    /// First 8 hex of sha256(model.safetensors) — the boot-receipt identity pin
-    /// (`b33c0347` for the probe-pinned incoai/GLM-5.3-Flash-DFlash2 @ dc77ff1c bytes).
-    pub sha8: String,
-}
-
-/// Resolve a drafter's tap layers against the trunk it will read features from.
-///
-/// PURE (no env, no engine): the drafter's own `target_layer_ids`, plus a caller-supplied
-/// `shift` and the trunk bound. `shift` exists because the tap-shift RED ARM is a GATE
-/// INSTRUMENT owned by the family that runs the gate (`MEMRA_GLM5_*_GATE_RED` is classified
-/// as an instrument, never a serving flag, and never generalized) — the family reads its own
-/// red-arm env, prints its own tag, and passes the shift in here.
-pub fn resolve_tap_layers(
-    target_layer_ids: &[usize],
-    n_trunk: usize,
-    shift: usize,
-    what: &str,
-) -> Result<Vec<usize>, String> {
-    if target_layer_ids.is_empty() {
-        return Err(format!("{what} drafter config carries no target_layer_ids"));
-    }
-    let taps: Vec<usize> = target_layer_ids.iter().map(|t| t + shift).collect();
-    if let Some(&bad) = taps.iter().find(|&&t| t >= n_trunk) {
-        return Err(format!(
-            "{what} tap layer {bad} is outside the {n_trunk}-layer trunk"
-        ));
-    }
-    Ok(taps)
-}
-
-/// Load a DFlash2 drafter named by `flag` from `dir`, validating every contract that binds a
-/// drafter to a TARGET — family-agnostic, because each one is a property of the pair, not of
-/// the family:
-///
-/// * the checkpoint is a `DFlash2DraftModel` (the selector family is the only draft source
-///   this seam serves);
-/// * `cfg.hidden == n_embd` (the drafter consumes the target's features and projects through
-///   the target's embed/lm_head);
-/// * `cfg.target_layer_ids` name valid trunk layers;
-/// * `cfg.mask_token_id` is inside the target vocab.
-///
-/// A set flag that cannot load is a LOUD failure, never a silent plain fallback. Every error
-/// is prefixed `{flag}={dir}` so the operator sees the flag they typed; the glm5 call site's
-/// message bytes are unchanged by construction.
-pub fn load_drafter(
-    e: &Engine,
-    dir: &std::path::Path,
-    flag: &str,
-    n_trunk: usize,
-    n_embd: usize,
-    n_vocab: usize,
-) -> Result<DflashDrafter, String> {
-    let dpath = dir.display();
-    let draft = DflashDraft::load(e, dir)
-        .map_err(|err| format!("{flag}={dpath}: drafter load failed: {err}"))?;
-    if draft.dflash2.is_none() {
-        return Err(format!(
-            "{flag}={dpath}: checkpoint is not a DFlash2DraftModel \
-             (the glm5 draft source is the selector family only)"
-        ));
-    }
-    if draft.cfg.hidden != n_embd {
-        return Err(format!(
-            "{flag}={dpath}: drafter hidden {} != target n_embd {n_embd} \
-             (the drafter consumes target features and the target's embed/lm_head)",
-            draft.cfg.hidden
-        ));
-    }
-    if draft.cfg.target_layer_ids.is_empty()
-        || draft.cfg.target_layer_ids.iter().any(|&t| t >= n_trunk)
-    {
-        return Err(format!(
-            "{flag}={dpath}: target_layer_ids {:?} do not name valid \
-             trunk layers (n_trunk {n_trunk})",
-            draft.cfg.target_layer_ids
-        ));
-    }
-    if draft.cfg.mask_token_id as usize >= n_vocab {
-        return Err(format!(
-            "{flag}={dpath}: mask token {} outside the target vocab {n_vocab}",
-            draft.cfg.mask_token_id
-        ));
-    }
-    let sha8 = crate::hybrid::sha256_file_hex8(&dir.join("model.safetensors"))
-        .map_err(|err| format!("{flag}={dpath}: sha256 pin: {err}"))?;
-    Ok(DflashDrafter { draft, sha8 })
-}
-
-#[cfg(test)]
-mod draft_source_seam_tests {
-    use super::resolve_tap_layers;
-
-    #[test]
-    fn taps_resolve_and_the_shift_is_the_callers() {
-        assert_eq!(
-            resolve_tap_layers(&[1, 12, 23], 46, 0, "glm5 DFlash2").unwrap(),
-            vec![1, 12, 23]
-        );
-        // the red arm's +1 rides in as a parameter, not as an env read in here
-        assert_eq!(
-            resolve_tap_layers(&[1, 12, 23], 46, 1, "glm5 DFlash2").unwrap(),
-            vec![2, 13, 24]
-        );
-    }
-
-    #[test]
-    fn empty_and_out_of_trunk_taps_refuse_by_name() {
-        let err = resolve_tap_layers(&[], 46, 0, "glm5 DFlash2").unwrap_err();
-        assert!(err.contains("no target_layer_ids"), "{err}");
-        let err = resolve_tap_layers(&[1, 46], 46, 0, "glm5 DFlash2").unwrap_err();
-        assert!(
-            err.contains("tap layer 46 is outside the 46-layer trunk"),
-            "{err}"
-        );
-        // the SHIFTED tap is what gets bounds-checked — the red arm must not be able to
-        // walk off the trunk silently
-        let err = resolve_tap_layers(&[45], 46, 1, "glm5 DFlash2").unwrap_err();
-        assert!(err.contains("tap layer 46 is outside"), "{err}");
-    }
-}
-
 #[cfg(test)]
 mod emit_budget_tests {
     use super::emit_accepted_run;
@@ -2900,7 +2665,7 @@ impl crate::hybrid::HybridModel {
                 eprintln!(
                     "[dflash r] start={start} last={last}\n  draft={:?}\n  vam  ={:?}",
                     &block[1..],
-                    vam
+                    &vam
                 );
             }
 
@@ -2918,7 +2683,7 @@ impl crate::hybrid::HybridModel {
             if emit_accepted_run(&mut out, &block[1..=m], eos, max_new) {
                 break 'outer;
             }
-            let next = vam[m];
+            let next = vam[m] as u32;
 
             // ---- commit/rollback: keep m+1 of the b appended rows ----
             let keep = m + 1;
@@ -3015,10 +2780,10 @@ impl DsparkSnapBatch {
                 let (ps, _g1) = rl.ssm_state.device_ptr(s);
                 let (dc, _g2) = snap.conv[il].as_ref().unwrap().device_ptr(s);
                 let (ds, _g3) = snap.ssm[il].as_ref().unwrap().device_ptr(s);
-                host_conv[k] = pc;
-                host_conv[n + k] = dc;
-                host_ssm[k] = ps;
-                host_ssm[n + k] = ds;
+                host_conv[k] = pc as u64;
+                host_conv[n + k] = dc as u64;
+                host_ssm[k] = ps as u64;
+                host_ssm[n + k] = ds as u64;
             }
         }
         let conv_table = e.htod_u64(&host_conv)?;
@@ -3053,7 +2818,7 @@ impl DsparkSnapBatch {
             for (k, &il) in self.lin.iter().enumerate() {
                 let rl = cache.recur[il].as_ref().unwrap();
                 let (ps, _g) = rl.ssm_state.device_ptr(s);
-                self.host_ssm[k] = ps;
+                self.host_ssm[k] = ps as u64;
             }
         }
         e.htod_u64_into(&self.host_ssm, &mut self.ssm_table)?;
@@ -3071,7 +2836,6 @@ impl DsparkSnapBatch {
 // Exactness contract unchanged: identical stream to plain greedy BY CONSTRUCTION (the
 // target's verify argmax decides every committed token).
 impl crate::hybrid::HybridModel {
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn generate_spec_dspark(
         &self,
         e: &Engine,
@@ -3096,15 +2860,14 @@ impl crate::hybrid::HybridModel {
         // non-identity penalties would silently serve the UNPENALIZED greedy stream —
         // exactly the H-class silent-program-switch this route refuses everywhere else.
         // Penalized greedy stays on the plain path (worker admission owns the exclusion).
-        if let Some(s) = sampling
-            && s.temp <= 0.0
-            && s.pen_on()
-        {
-            return Err(
-                "dspark spec at temp==0 is the greedy route and would silently drop \
+        if let Some(s) = sampling {
+            if s.temp <= 0.0 && s.pen_on() {
+                return Err(
+                    "dspark spec at temp==0 is the greedy route and would silently drop \
                      the request's penalties; penalized greedy is served on the plain path"
-                    .into(),
-            );
+                        .into(),
+                );
+            }
         }
         // Penalized-sampled state: the session window (pen_window_seed — one definition
         // across both spec routes), extended with every committed token; each round's
@@ -3288,10 +3051,6 @@ impl crate::hybrid::HybridModel {
                     .as_ref()
                     .filter(|m| m.d2t_from_target_head)
                     .and_then(|m| m.shared_head_head.as_ref().zip(m.d2t.as_ref()))
-                    // MEMRA_MTP_SKIP stub: the same target-head trimmed rows, parked in
-                    // `dflash_trim` because the embedded MTP block was skipped (hybrid.rs;
-                    // rows are target-head by construction; the loader refuses otherwise).
-                    .or_else(|| self.dflash_trim.as_ref().map(|t| (&t.head, &t.d2t)))
                     .filter(|(_, d2t)| !d2t.is_empty())
             } else {
                 None
@@ -3434,12 +3193,12 @@ impl crate::hybrid::HybridModel {
             // proposals built `cand` at the walk; deferred greedy rounds build it after
             // the merged readback — the bytes are identical (chain_d is written before
             // either sync).
-            if let Some(chain_d) = chain_dev.as_ref()
-                && !deferred
-            {
-                let chain = e.dtoh_u32(chain_d)?;
-                cand.push(last);
-                cand.extend_from_slice(&chain[1..]);
+            if let Some(chain_d) = chain_dev.as_ref() {
+                if !deferred {
+                    let chain = e.dtoh_u32(chain_d)?;
+                    cand.push(last);
+                    cand.extend_from_slice(&chain[1..]);
+                }
             }
             ns_draft += clock(stats, e).duration_since(t0).as_nanos() as u64;
 
@@ -3641,8 +3400,6 @@ impl crate::hybrid::HybridModel {
                     }
                     // host-side state capture (NO device snapshot copies — two extra
                     // device snapshots per round OOM'd beside the 15GB trunk)
-                    #[allow(clippy::type_complexity)]
-                    // allow: one-shot composite type; naming it would hide the shape that matters at the call site
                     let capture = |cache: &Cache| -> Result<
                         (usize, Vec<Option<usize>>, Vec<(Vec<f32>, Vec<f32>)>),
                         Box<dyn std::error::Error>,
@@ -4081,8 +3838,8 @@ impl DsparkSpecSession {
     /// and nothing else does. `last` is the verify argmax at the LAST committed row — and
     /// verify-column argmax equality with plain decode is the very property the dspark E2E
     /// byte-identity gate pins (`dspark_q38_gate`: ALL EXACT). Handing (cache, last) to the
-    ///   batched path therefore continues the stream from a state indistinguishable from one
-    ///   the batched path produced itself.
+    /// batched path therefore continues the stream from a state indistinguishable from one
+    /// the batched path produced itself.
     ///
     /// Unlike the MTP twin there is no carried-pending shape: the round commits its bonus
     /// inside the burst, so a session at a burst boundary is ALWAYS in handoff shape. The
@@ -4122,15 +3879,14 @@ impl crate::hybrid::HybridModel {
         // accept walk's penalty arm). Penalties at temp==0 stay a LOUD refusal: the greedy
         // walk argmaxes RAW columns and would silently drop them — penalized greedy is
         // served exactly on the plain path (worker admission owns that exclusion).
-        if let Some(sp) = sampling.as_ref()
-            && sp.temp <= 0.0
-            && sp.pen_on()
-        {
-            return Err(
-                "dspark spec at temp==0 is the greedy route and would silently drop \
+        if let Some(sp) = sampling.as_ref() {
+            if sp.temp <= 0.0 && sp.pen_on() {
+                return Err(
+                    "dspark spec at temp==0 is the greedy route and would silently drop \
                      the request's penalties; penalized greedy is served on the plain path"
-                    .into(),
-            );
+                        .into(),
+                );
+            }
         }
         let n_embd = self.cfg.n_embd as usize;
         let c = &draft.cfg;
@@ -4217,7 +3973,6 @@ impl crate::hybrid::HybridModel {
                     pos: tp,
                     logits: logits.clone(),
                     last_h: Vec::new(),
-                    latent_tails: Vec::new(),
                 })
         } else {
             None
@@ -4255,28 +4010,18 @@ impl crate::hybrid::HybridModel {
     /// public budget, which may be larger than the per-tick scheduler quantum. Returns
     /// (tokens, drafted, accepted) for this burst — mid-request quantum overshoot stays
     /// public, while only the true request boundary clamps the committed cache prefix.
-    /// ADMISSION DEBT of this model's verify-graph pool, in bytes (lane/
+    /// ADMISSION DEBT of this model's dspark verify-graph pool, in bytes (lane/
     /// hermes-perf-fixes, 2026-08-23): the projected remaining growth the serve admission
     /// gate must reserve so sessions admitted while the pool is cold do not overcommit VRAM
-    /// the pool will hold (it grows monotonically with no eviction by design — the pool's
-    /// high-water is per-export and unknown until observed on the serving box; the 1.5 GiB
+    /// the pool will hold (it grows monotonically to a measured multi-GiB high-water —
+    /// 8,852 MiB on the q38 export — with no eviction by design; the 1.5 GiB
     /// SPEC_SHRINK_RESERVE never covered it). Projection contract and the self-measuring
     /// arithmetic live on [`crate::spec::dspark_vg_debt_projection`]; the observed bytes
-    /// come from the device graph mem pool (`Engine::device_graph_mem_reserved`).
-    ///
-    /// CHARGED BY STRUCT, not by which route filled it (lane/graph-launch-guard-sweep-
-    /// 20260831, fleet-peer refuted-read fix): the MTP spec route's verify-graph door
-    /// (`MEMRA_SPEC_VERIFY_GRAPH`, family default for GDN+MoE) fills the SAME
-    /// `dspark_vgraphs` pool with the same monotonic growth, and used to escape charging
-    /// because the door check named only the dspark flags. 0 when EVERY door is closed
-    /// (`MEMRA_DSPARK_VERIFY_GRAPH=0` and the MTP door off), frozen
-    /// (`MEMRA_DSPARK_VG_MAX=0`), or the pool has not captured yet.
+    /// come from the device graph mem pool (`Engine::device_graph_mem_reserved`). 0 when
+    /// the door is closed (`MEMRA_DSPARK_VERIFY_GRAPH=0`), frozen (`MEMRA_DSPARK_VG_MAX=0`),
+    /// or the pool has not captured yet.
     pub fn dspark_vg_admission_debt(&self, e: &Engine) -> usize {
-        let dspark_door =
-            crate::spec::dspark_verify_graph_serve_on() || crate::spec::dspark_verify_graph_on();
-        let mtp_door =
-            crate::spec::spec_verify_graph_env().unwrap_or_else(|| self.vgraph_family_default());
-        if !dspark_door && !mtp_door {
+        if !crate::spec::dspark_verify_graph_serve_on() && !crate::spec::dspark_verify_graph_on() {
             return 0;
         }
         let reserved = e.device_graph_mem_reserved();
@@ -4356,11 +4101,10 @@ impl crate::hybrid::HybridModel {
             !self.uses_gemma_program(),
             "gemma4 targets use the assistant-drafter route; dspark is the qwen-hybrid arm"
         );
-        if let Some(sp) = sampling.as_ref()
-            && sp.temp <= 0.0
-            && sp.pen_on()
-        {
-            return Err("penalized greedy is served on the plain path".into());
+        if let Some(sp) = sampling.as_ref() {
+            if sp.temp <= 0.0 && sp.pen_on() {
+                return Err("penalized greedy is served on the plain path".into());
+            }
         }
         let c = &draft.cfg;
         let b = c.block_size;
@@ -4500,7 +4244,8 @@ impl crate::hybrid::HybridModel {
         });
         let (logits, _h_seed, _hiddens) = self.prime_cache(e, suffix, &mut sess.cache, 0)?;
         let sp_pen = sess.sampling.filter(|s| s.temp > 0.0 && s.pen_on());
-        if let Some(sp) = sp_pen.as_ref() {
+        if sp_pen.is_some() {
+            let sp = sp_pen.as_ref().unwrap();
             sess.pen_hist = crate::spec::pen_window_seed(&sess.pen_hist, suffix, sp.penalty_last_n);
         }
         let last = match sess.sampling.filter(|s| s.temp > 0.0) {
@@ -4661,10 +4406,6 @@ impl crate::hybrid::HybridModel {
                     .as_ref()
                     .filter(|m| m.d2t_from_target_head)
                     .and_then(|m| m.shared_head_head.as_ref().zip(m.d2t.as_ref()))
-                    // MEMRA_MTP_SKIP stub: the same target-head trimmed rows, parked in
-                    // `dflash_trim` because the embedded MTP block was skipped (hybrid.rs;
-                    // rows are target-head by construction; the loader refuses otherwise).
-                    .or_else(|| self.dflash_trim.as_ref().map(|t| (&t.head, &t.d2t)))
                     .filter(|(_, d2t)| !d2t.is_empty())
             } else {
                 None
@@ -4782,12 +4523,12 @@ impl crate::hybrid::HybridModel {
             // Non-deferred greedy chain readback (the sampled and DFlash2 proposals
             // built `cand` at the walk; deferred rounds build it after the merged
             // readback — bytes identical, chain_d written before either sync).
-            if let Some(chain_d) = chain_dev.as_ref()
-                && !deferred
-            {
-                let chain = e.dtoh_u32(chain_d)?;
-                cand.push(sess.last);
-                cand.extend_from_slice(&chain[1..]);
+            if let Some(chain_d) = chain_dev.as_ref() {
+                if !deferred {
+                    let chain = e.dtoh_u32(chain_d)?;
+                    cand.push(sess.last);
+                    cand.extend_from_slice(&chain[1..]);
+                }
             }
 
             // ---- snapshot, then verify t=vt (ckpt stash default; oracle arms kept) ----
@@ -4844,7 +4585,6 @@ impl crate::hybrid::HybridModel {
             // the error escapes, or the next session's replayed tap copies write
             // freed memory. The bin arm has no such path (a gate-binary error ends
             // the process).
-            #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
             let verify_out = (|| -> Result<
                 (
                     Vec<u32>,
@@ -4909,10 +4649,10 @@ impl crate::hybrid::HybridModel {
             let (vam, tl, vck) = match verify_out {
                 Ok(v) => v,
                 Err(err) => {
-                    if let Some(taps) = sess.cache.dflash_taps.take()
-                        && let Some(g) = vgraphs.as_mut()
-                    {
-                        g.tap_bufs.insert(vt, taps.buf);
+                    if let Some(taps) = sess.cache.dflash_taps.take() {
+                        if let Some(g) = vgraphs.as_mut() {
+                            g.tap_bufs.insert(vt, taps.buf);
+                        }
                     }
                     return Err(err);
                 }
@@ -5158,7 +4898,6 @@ mod dflash2_tests {
 
     /// Codebooks for the chain tests: pred rows are one-hot-ish, succ rows chosen so
     /// the slot-1 winner FLIPS with the slot-0 choice.
-    #[allow(clippy::identity_op)] // allow: the explicit +0/*1/>>0 terms document the lane/byte symmetry of the reference layout
     fn books() -> (Vec<u8>, Vec<u8>) {
         let mut pred = vec![0f32; V * R];
         pred[0] = 1.0; // tok 0: [1, 0]  (the anchor)
@@ -5422,7 +5161,6 @@ mod dflash2_tests {
     }
 
     /// One composed trial with an injectable accept rule; returns the committed token.
-    #[allow(clippy::neg_cmp_op_on_partial_ord)] // allow: NaN must take this branch; !(a > b) is not a <= b under IEEE comparisons
     fn compose_once(
         p: &[f32],
         q: &[f32],
@@ -5476,7 +5214,7 @@ mod dflash2_tests {
         // target p: a spread-out 8-token distribution
         let p: Vec<f32> = vec![0.30, 0.22, 0.15, 0.12, 0.09, 0.06, 0.04, 0.02];
         let trials = 200_000usize;
-        let mut counts = [0f64; V];
+        let mut counts = vec![0f64; V];
         for t in 0..trials {
             // three independent uniforms per trial off the host Philox stream
             let u_draw = crate::spec::host_u01(7, (t * 3) as u32);
@@ -6334,7 +6072,6 @@ mod dspark_prefix_capture_tests {
             pos: prompt_len,
             logits: vec![1.0, 2.0],
             last_h: Vec::new(),
-            latent_tails: Vec::new(),
         });
 
         let capture = take_dspark_prefix_capture(&mut slot).expect("first drain gets capture");

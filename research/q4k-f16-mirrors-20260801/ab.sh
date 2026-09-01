@@ -8,7 +8,7 @@ cd $HOME/arc4
 D=$HOME/arc4/research/q4k-f16-mirrors-20260801
 LOGD=$D/ab-logs
 mkdir -p $LOGD
-M=/opt/scratch/nvme/models/Qwen3.6-27B-Q4_K_M.gguf
+M=/opt/dl-image/nvme/models/Qwen3.6-27B-Q4_K_M.gguf
 for r in 1 2 3; do
   for bin in base new; do
     B=$HOME/arc4/target/release/run-spec

@@ -68,8 +68,6 @@ fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
             width: 6,
             index_width: 0,
         },
-        sparse_overlay: None,
-        ple: None,
     };
     Ok(ModelPlan {
         arch: Arch::GlmDsa,
@@ -114,7 +112,6 @@ fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
             ),
         ],
         output_norm: norm,
-        exit_mixer: None,
         logits: Vec::new(),
         mtp_blocks: Vec::new(),
         drafter: None,

@@ -109,9 +109,9 @@ numbers exist; [issue-receipt] = GitHub issue with reproducible protocol.
   quantifies restart cost of spec. Convergent with our K→0-subsumes-the-gate design
   (HARVEST 3.3); cite as third independent confirmation (with SpecDec++/Not-a-Bandit).
 
-### 1.10 P-EAGLE — STATUS: vendor pre-trained checkpoints published [shipped]
-- cloud-vendor ML blog 2026-03-13 (link scrubbed 2026-09-01) + vLLM blog https://vllm.ai/blog/2026-03-13-p-eagle
-- Delta vs HARVEST 2A.4: the same vendor released pre-trained P-EAGLE checkpoints and the vLLM
+### 1.10 P-EAGLE — STATUS: hyperscaler pre-trained checkpoints published [shipped]
+- hyperscaler ML blog 2026-03-13 + vLLM blog https://vllm.ai/blog/2026-03-13-p-eagle
+- Delta vs HARVEST 2A.4: hyperscaler released pre-trained P-EAGLE checkpoints and the vLLM
   integration recipe (v0.16.0, PR#32887). B200 receipts 1.05–1.69x over vanilla EAGLE-3
   (GPT-OSS-20B, MT-Bench/HumanEval/SpeedBench). Training-cost barrier for one-pass
   drafters is now partially externalized.
@@ -431,7 +431,7 @@ numbers exist; [issue-receipt] = GitHub issue with reproducible protocol.
 |---|---|
 | 2A.1 DSpark | paper → SHIPPED (SGLang v0.5.16, PR#30261) with prod flags + B300 receipt |
 | 2A.3 suffix decoding (in-flight #5) | Oilbird (2608.03839) defines the v2: semantic re-key, +24–29% accepted len on tool-calling |
-| 2A.4 P-EAGLE | vendor pre-trained checkpoints + recipe published (vLLM v0.16.0) |
+| 2A.4 P-EAGLE | hyperscaler pre-trained checkpoints + recipe published (vLLM v0.16.0) |
 | 2B.4 NVFP4 KV | unchanged; fp8-KV receipts (vLLM 04-22) sharpen the K8/V-low split argument |
 | 2B.7 TriAttention | infra problems solved + documented (NVIDIA EAI blog); still lossy, still watch |
 | 1.5 KV quant | WitCert runtime gating (Lean-proved) is a new serve-ready-shaped alternative to offline evals |

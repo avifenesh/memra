@@ -2,9 +2,9 @@
 # One-lock Step-3.7 correctness battery for the downkernel arm.
 set -euo pipefail
 
-REPO=${DOWNKERNEL_REPO:-/opt/scratch/nvme/memra-cx-downkernel-base}
-BIN=${DOWNKERNEL_BIN:-/opt/scratch/nvme/cx-downkernel-target/release}
-OUT=${DOWNKERNEL_OUT:-/opt/scratch/nvme/cx-downkernel-20260812/gates}
+REPO=${DOWNKERNEL_REPO:-/opt/dl-image/nvme/memra-cx-downkernel-base}
+BIN=${DOWNKERNEL_BIN:-/opt/dl-image/nvme/cx-downkernel-target/release}
+OUT=${DOWNKERNEL_OUT:-/opt/dl-image/nvme/cx-downkernel-20260812/gates}
 MODEL_ROOT=${DOWNKERNEL_MODEL_ROOT:-/home/ubuntu/step37/models/step-3.7-flash}
 MODEL=$MODEL_ROOT/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
 DRAFT=$MODEL_ROOT/Step3.7-flash-mtp-Q8_0.gguf

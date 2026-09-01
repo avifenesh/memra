@@ -512,7 +512,6 @@ impl TransformKind {
     /// `in_proj_a`/`in_proj_b` (out_f = nv <= 128 = one grid row, so every row shares one scale and
     /// the grid is unchanged). The test is on the permutation itself, not on those coincidences, so
     /// a future model with a different head_dim gets a correct refusal instead of wrong numbers.
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn apply_fp8_blk(
         &self,
         codes: &[u8],
@@ -585,7 +584,6 @@ impl TransformKind {
 /// (they all write `out[dst] = data[src]` with `dst_head = j*nk + g`, `src_head = g*vpk + j`), so a
 /// permute driven by this is the same relabeling those functions perform. `None` when the band does
 /// not match `nv*head_dim` — the same debug_assert the primitives carry, promoted to a refusal.
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn v_perm(
     n: usize,
     nv: usize,
@@ -741,38 +739,44 @@ fn f32_to_le(v: &[f32]) -> Vec<u8> {
 /// Order: per-expert MoE name -> dense plain map -> qwen35 SSM map / norm `+1`.
 pub fn resolve_ggml(ggml: &str, cfg: &ModelConfig) -> Option<HfTarget> {
     // 1. Per-expert MoE: blk.{il}.ffn_{gate,up,down}_exps.{e}.weight (gathered one expert at a time).
-    if let Some(rest) = ggml.strip_prefix("blk.")
-        && let Some((il, suffix)) = rest.split_once('.')
-    {
-        for (tag, proj) in [
-            ("ffn_gate_exps.", "gate"),
-            ("ffn_up_exps.", "up"),
-            ("ffn_down_exps.", "down"),
-        ] {
-            if let Some(e_part) = suffix.strip_prefix(tag)
-                && let Some(e) = e_part.strip_suffix(".weight")
-                && let Ok(eid) = e.parse::<u32>()
-                && let Ok(ilid) = il.parse::<u32>()
-            {
-                let n_trunk = cfg.n_layer - cfg.nextn_predict_layers;
-                if ilid < n_trunk {
-                    return Some(HfTarget::Plain(hf_expert_name(ilid, eid, proj, &cfg.arch)));
+    if let Some(rest) = ggml.strip_prefix("blk.") {
+        if let Some((il, suffix)) = rest.split_once('.') {
+            for (tag, proj) in [
+                ("ffn_gate_exps.", "gate"),
+                ("ffn_up_exps.", "up"),
+                ("ffn_down_exps.", "down"),
+            ] {
+                if let Some(e_part) = suffix.strip_prefix(tag) {
+                    if let Some(e) = e_part.strip_suffix(".weight") {
+                        if let Ok(eid) = e.parse::<u32>() {
+                            if let Ok(ilid) = il.parse::<u32>() {
+                                let n_trunk = cfg.n_layer - cfg.nextn_predict_layers;
+                                if ilid < n_trunk {
+                                    return Some(HfTarget::Plain(hf_expert_name(
+                                        ilid, eid, proj, &cfg.arch,
+                                    )));
+                                }
+                                // Qwen stores appended MTP blocks under a separate `mtp.layers`
+                                // namespace. Hy3 appends its MTP block to `model.layers` instead.
+                                if matches!(cfg.arch, Arch::Qwen35 | Arch::Qwen35Moe) {
+                                    let mtp_il = ilid - n_trunk;
+                                    let projection = match proj {
+                                        "gate" => "gate_proj",
+                                        "up" => "up_proj",
+                                        "down" => "down_proj",
+                                        _ => unreachable!(),
+                                    };
+                                    return Some(HfTarget::Plain(format!(
+                                        "mtp.layers.{mtp_il}.mlp.experts.{eid}.{projection}.weight"
+                                    )));
+                                }
+                                return Some(HfTarget::Plain(hf_expert_name(
+                                    ilid, eid, proj, &cfg.arch,
+                                )));
+                            }
+                        }
+                    }
                 }
-                // Qwen stores appended MTP blocks under a separate `mtp.layers`
-                // namespace. Hy3 appends its MTP block to `model.layers` instead.
-                if matches!(cfg.arch, Arch::Qwen35 | Arch::Qwen35Moe) {
-                    let mtp_il = ilid - n_trunk;
-                    let projection = match proj {
-                        "gate" => "gate_proj",
-                        "up" => "up_proj",
-                        "down" => "down_proj",
-                        _ => unreachable!(),
-                    };
-                    return Some(HfTarget::Plain(format!(
-                        "mtp.layers.{mtp_il}.mlp.experts.{eid}.{projection}.weight"
-                    )));
-                }
-                return Some(HfTarget::Plain(hf_expert_name(ilid, eid, proj, &cfg.arch)));
             }
         }
     }
@@ -785,17 +789,18 @@ pub fn resolve_ggml(ggml: &str, cfg: &ModelConfig) -> Option<HfTarget> {
         if let Some((il, suffix)) = ggml
             .strip_prefix("blk.")
             .and_then(|rest| rest.split_once('.'))
-            && il.parse::<u32>().ok().is_some_and(|il| il >= n_trunk)
         {
-            let hf_suffix = match suffix {
-                "nextn.enorm.weight" => Some("enorm.weight"),
-                "nextn.hnorm.weight" => Some("hnorm.weight"),
-                "nextn.eh_proj.weight" => Some("eh_proj.weight"),
-                "nextn.shared_head_norm.weight" => Some("final_layernorm.weight"),
-                _ => None,
-            };
-            if let Some(hf_suffix) = hf_suffix {
-                return Some(HfTarget::Plain(format!("model.layers.{il}.{hf_suffix}")));
+            if il.parse::<u32>().ok().is_some_and(|il| il >= n_trunk) {
+                let hf_suffix = match suffix {
+                    "nextn.enorm.weight" => Some("enorm.weight"),
+                    "nextn.hnorm.weight" => Some("hnorm.weight"),
+                    "nextn.eh_proj.weight" => Some("eh_proj.weight"),
+                    "nextn.shared_head_norm.weight" => Some("final_layernorm.weight"),
+                    _ => None,
+                };
+                if let Some(hf_suffix) = hf_suffix {
+                    return Some(HfTarget::Plain(format!("model.layers.{il}.{hf_suffix}")));
+                }
             }
         }
     }
@@ -822,42 +827,43 @@ pub fn resolve_ggml(ggml: &str, cfg: &ModelConfig) -> Option<HfTarget> {
         if ggml == "rope_freqs.weight" {
             return None;
         }
-        if let Some(rest) = ggml.strip_prefix("blk.")
-            && let Some((il, suffix)) = rest.split_once('.')
-        {
-            let plain =
-                |hf_suffix: &str| Some(HfTarget::Plain(format!("model.layers.{il}.{hf_suffix}")));
-            return match suffix {
-                // norms — PLAIN passthrough (measured: raw, no +1 on this checkpoint)
-                "attn_norm.weight" => plain("input_layernorm.weight"),
-                "post_attention_norm.weight" => plain("post_attention_layernorm.weight"),
-                "ffn_norm.weight" => plain("pre_feedforward_layernorm.weight"),
-                "post_ffw_norm.weight" => plain("post_feedforward_layernorm.weight"),
-                "attn_q_norm.weight" => plain("self_attn.q_norm.weight"),
-                "attn_k_norm.weight" => plain("self_attn.k_norm.weight"),
-                // projections — plain renames (v_proj absent on the K=V globals in HF
-                // exactly as in GGUF; the loader's wv:=wk dedup handles the miss)
-                "attn_q.weight" => plain("self_attn.q_proj.weight"),
-                "attn_k.weight" => plain("self_attn.k_proj.weight"),
-                "attn_v.weight" => plain("self_attn.v_proj.weight"),
-                "attn_output.weight" => plain("self_attn.o_proj.weight"),
-                "ffn_gate.weight" => plain("mlp.gate_proj.weight"),
-                "ffn_up.weight" => plain("mlp.up_proj.weight"),
-                "ffn_down.weight" => plain("mlp.down_proj.weight"),
-                // per-layer output scalar: HF stores it WITHOUT a .weight suffix
-                "layer_output_scale.weight" => plain("layer_scalar"),
-                // NORM backstop (the fold-sensitive class): an unrecognized *norm.weight
-                // must fail loudly rather than fall through to a wrong/absent mapping —
-                // this is the checked invariant that guards the fold decision above.
-                other if other.ends_with("norm.weight") => panic!(
-                    "gemma-4 norm blk.N.{other:?} has no native mapping — add it to the \
+        if let Some(rest) = ggml.strip_prefix("blk.") {
+            if let Some((il, suffix)) = rest.split_once('.') {
+                let plain = |hf_suffix: &str| {
+                    Some(HfTarget::Plain(format!("model.layers.{il}.{hf_suffix}")))
+                };
+                return match suffix {
+                    // norms — PLAIN passthrough (measured: raw, no +1 on this checkpoint)
+                    "attn_norm.weight" => plain("input_layernorm.weight"),
+                    "post_attention_norm.weight" => plain("post_attention_layernorm.weight"),
+                    "ffn_norm.weight" => plain("pre_feedforward_layernorm.weight"),
+                    "post_ffw_norm.weight" => plain("post_feedforward_layernorm.weight"),
+                    "attn_q_norm.weight" => plain("self_attn.q_norm.weight"),
+                    "attn_k_norm.weight" => plain("self_attn.k_norm.weight"),
+                    // projections — plain renames (v_proj absent on the K=V globals in HF
+                    // exactly as in GGUF; the loader's wv:=wk dedup handles the miss)
+                    "attn_q.weight" => plain("self_attn.q_proj.weight"),
+                    "attn_k.weight" => plain("self_attn.k_proj.weight"),
+                    "attn_v.weight" => plain("self_attn.v_proj.weight"),
+                    "attn_output.weight" => plain("self_attn.o_proj.weight"),
+                    "ffn_gate.weight" => plain("mlp.gate_proj.weight"),
+                    "ffn_up.weight" => plain("mlp.up_proj.weight"),
+                    "ffn_down.weight" => plain("mlp.down_proj.weight"),
+                    // per-layer output scalar: HF stores it WITHOUT a .weight suffix
+                    "layer_output_scale.weight" => plain("layer_scalar"),
+                    // NORM backstop (the fold-sensitive class): an unrecognized *norm.weight
+                    // must fail loudly rather than fall through to a wrong/absent mapping —
+                    // this is the checked invariant that guards the fold decision above.
+                    other if other.ends_with("norm.weight") => panic!(
+                        "gemma-4 norm blk.N.{other:?} has no native mapping — add it to the \
                          exhaustive norm arm and decide its fold from a GGUF-vs-HF compare"
-                ),
-                // Optional/absent tensors (MoE expert stacks + router on the dense 31B,
-                // any future extra): return None so the loader's presence probe reads
-                // 'absent' and takes the dense path. Not a norm, so no fold risk.
-                _ => None,
-            };
+                    ),
+                    // Optional/absent tensors (MoE expert stacks + router on the dense 31B,
+                    // any future extra): return None so the loader's presence probe reads
+                    // 'absent' and takes the dense path. Not a norm, so no fold risk.
+                    _ => None,
+                };
+            }
         }
         // token_embd falls through to the arch-independent top-level map (tied embeddings:
         // gemma-4 ships no lm_head; the loader's tied-output path reads token_embd).
@@ -872,27 +878,32 @@ pub fn resolve_ggml(ggml: &str, cfg: &ModelConfig) -> Option<HfTarget> {
         if let Some((il, suffix)) = ggml
             .strip_prefix("blk.")
             .and_then(|rest| rest.split_once('.'))
-            && il.parse::<u32>().ok().is_some_and(|il| il >= n_trunk)
         {
-            let target = match suffix {
-                "nextn.enorm.weight" => Some(("enorm.weight", Some(TransformKind::NormPlusOne))),
-                "nextn.hnorm.weight" => Some(("hnorm.weight", Some(TransformKind::NormPlusOne))),
-                "nextn.eh_proj.weight" => Some(("eh_proj.weight", None)),
-                "nextn.shared_head_norm.weight" => Some((
-                    "transformer.shared_head.norm.weight",
-                    Some(TransformKind::NormPlusOne),
-                )),
-                "nextn.shared_head_head.weight" | "nextn.shared_head.weight" => {
-                    Some(("transformer.shared_head.output.weight", None))
+            if il.parse::<u32>().ok().is_some_and(|il| il >= n_trunk) {
+                let target = match suffix {
+                    "nextn.enorm.weight" => {
+                        Some(("enorm.weight", Some(TransformKind::NormPlusOne)))
+                    }
+                    "nextn.hnorm.weight" => {
+                        Some(("hnorm.weight", Some(TransformKind::NormPlusOne)))
+                    }
+                    "nextn.eh_proj.weight" => Some(("eh_proj.weight", None)),
+                    "nextn.shared_head_norm.weight" => Some((
+                        "transformer.shared_head.norm.weight",
+                        Some(TransformKind::NormPlusOne),
+                    )),
+                    "nextn.shared_head_head.weight" | "nextn.shared_head.weight" => {
+                        Some(("transformer.shared_head.output.weight", None))
+                    }
+                    _ => None,
+                };
+                if let Some((hf_suffix, transform)) = target {
+                    let hf = format!("model.layers.{il}.{hf_suffix}");
+                    return Some(match transform {
+                        Some(kind) => HfTarget::Transform { hf, kind },
+                        None => HfTarget::Plain(hf),
+                    });
                 }
-                _ => None,
-            };
-            if let Some((hf_suffix, transform)) = target {
-                let hf = format!("model.layers.{il}.{hf_suffix}");
-                return Some(match transform {
-                    Some(kind) => HfTarget::Transform { hf, kind },
-                    None => HfTarget::Plain(hf),
-                });
             }
         }
     }
@@ -901,14 +912,13 @@ pub fn resolve_ggml(ggml: &str, cfg: &ModelConfig) -> Option<HfTarget> {
     // output norms. Fold the +1 at HF load so the engine's plain RMSNorm remains the one numeric
     // program used by eager, prime, verify, and PP stage walkers. This is independent of Qwen3.5's
     // identically-shaped convention and deliberately excludes Hy3's verbatim norm weights.
-    if cfg.arch.is_step35()
-        && is_plusone_norm(ggml)
-        && let Some(hf) = ggml_to_hf(ggml, &cfg.arch)
-    {
-        return Some(HfTarget::Transform {
-            hf,
-            kind: TransformKind::NormPlusOne,
-        });
+    if cfg.arch.is_step35() && is_plusone_norm(ggml) {
+        if let Some(hf) = ggml_to_hf(ggml, &cfg.arch) {
+            return Some(HfTarget::Transform {
+                hf,
+                kind: TransformKind::NormPlusOne,
+            });
+        }
     }
 
     // 2. qwen35 norm +1: every `*norm.weight` EXCEPT linear_attn (ssm_norm). The dense map below
@@ -929,13 +939,13 @@ pub fn resolve_ggml(ggml: &str, cfg: &ModelConfig) -> Option<HfTarget> {
             return Some(t);
         }
         // norm +1 on the dense-mapped norms (attn_norm / ffn_norm / q_norm / k_norm / output_norm).
-        if is_plusone_norm(ggml)
-            && let Some(hf) = ggml_to_hf(ggml, &cfg.arch)
-        {
-            return Some(HfTarget::Transform {
-                hf,
-                kind: TransformKind::NormPlusOne,
-            });
+        if is_plusone_norm(ggml) {
+            if let Some(hf) = ggml_to_hf(ggml, &cfg.arch) {
+                return Some(HfTarget::Transform {
+                    hf,
+                    kind: TransformKind::NormPlusOne,
+                });
+            }
         }
     }
 
@@ -943,14 +953,13 @@ pub fn resolve_ggml(ggml: &str, cfg: &ModelConfig) -> Option<HfTarget> {
     //    engine's plain RMSNorm runs unchanged (exact; same fold the qwen35 converter applies).
     //    Applies to EVERY norm in the text model (input/post_attention layernorm, q/k_norm,
     //    model.norm — and index_q/k_norm when the MSA arc lands).
-    if cfg.m3.as_ref().is_some_and(|m| m.use_gemma_norm)
-        && is_plusone_norm(ggml)
-        && let Some(hf) = ggml_to_hf(ggml, &cfg.arch)
-    {
-        return Some(HfTarget::Transform {
-            hf,
-            kind: TransformKind::NormPlusOne,
-        });
+    if cfg.m3.as_ref().is_some_and(|m| m.use_gemma_norm) && is_plusone_norm(ggml) {
+        if let Some(hf) = ggml_to_hf(ggml, &cfg.arch) {
+            return Some(HfTarget::Transform {
+                hf,
+                kind: TransformKind::NormPlusOne,
+            });
+        }
     }
 
     // 3b. glm5_next MLA/DSA layers. Arch-scoped and placed AFTER the KDA map inside `ggml_to_hf`
@@ -965,57 +974,47 @@ pub fn resolve_ggml(ggml: &str, cfg: &ModelConfig) -> Option<HfTarget> {
     // (both the Q8_0 and the F8 re-encodes in `source.rs` gate on `ne.len() == 2`), which is the
     // only layout `mla_absorb_q`/`mla_decompress_v` can read. `attn_output` and the norms fall
     // through to the generic dense map below, which already spells them correctly.
-    if cfg.arch.is_glm5_next()
-        && let Some((il, suffix)) = ggml
+    if cfg.arch.is_glm5_next() {
+        if let Some((il, suffix)) = ggml
             .strip_prefix("blk.")
             .and_then(|rest| rest.split_once('.'))
-    {
-        let name = |s: &str| format!("model.layers.{il}.{s}");
-        let plain: Option<&str> = match suffix {
-            "attn_q_a.weight" => Some("self_attn.q_a_proj.weight"),
-            "attn_q_b.weight" => Some("self_attn.q_b_proj.weight"),
-            "attn_kv_a_mqa.weight" => Some("self_attn.kv_a_proj_with_mqa.weight"),
-            "attn_q_a_norm.weight" => Some("self_attn.q_a_layernorm.weight"),
-            "attn_kv_a_norm.weight" => Some("self_attn.kv_a_layernorm.weight"),
-            // The fused source itself: censused and loadable, unused by the absorbed v1 core.
-            "attn_kv_b.weight" => Some("self_attn.kv_b_proj.weight"),
-            // DSA k-pool indexer. Every one of these is REQUIRED on a layer whose plan
-            // declares `SparseIndexPlan::Own { kpool: Some(..) }`: a missing name makes
-            // `MlaAttnLayer::load` refuse the layer by name rather than fall back to dense
-            // attention, which above `index_topk` is a different function.
-            "indexer.attn_q_b.weight" => Some("self_attn.indexer.wq_b.weight"),
-            "indexer.attn_k.weight" => Some("self_attn.indexer.wk.weight"),
-            "indexer.proj.weight" => Some("self_attn.indexer.weights_proj.weight"),
-            "indexer.k_norm.weight" => Some("self_attn.indexer.k_norm.weight"),
-            "indexer.k_norm.bias" => Some("self_attn.indexer.k_norm.bias"),
-            "indexer.kpool_gate.weight" => Some("self_attn.indexer.index_kpool_compress_gate"),
-            "indexer.kpool_ape.weight" => Some("self_attn.indexer.index_kpool_compress_ape"),
-            // NextN/MTP glue. glm5_next stores the MTP scaffolding FLAT under the appended
-            // layer (census: `layers.45.{enorm,hnorm,eh_proj,shared_head.norm}`), with the
-            // norms VERBATIM (no +1 fold anywhere in this family) — so every row is a plain
-            // rename, unlike the step35/qwen35 arms above. `nextn.shared_head_head.weight`
-            // is deliberately NOT mapped: this checkpoint ships no private MTP head (the
-            // NextN block projects through the trunk `lm_head`), and an unmapped name reads
-            // as ABSENT, which is exactly the loader's trunk-head fallback.
-            "nextn.enorm.weight" => Some("enorm.weight"),
-            "nextn.hnorm.weight" => Some("hnorm.weight"),
-            "nextn.eh_proj.weight" => Some("eh_proj.weight"),
-            "nextn.shared_head_norm.weight" => Some("shared_head.norm.weight"),
-            _ => None,
-        };
-        if let Some(hf) = plain {
-            return Some(HfTarget::Plain(name(hf)));
-        }
-        let split: Option<TransformKind> = match suffix {
-            "attn_k_b.weight" => Some(TransformKind::MlaKeyUpSplit),
-            "attn_v_b.weight" => Some(TransformKind::MlaValueUpSplit),
-            _ => None,
-        };
-        if let Some(kind) = split {
-            return Some(HfTarget::Transform {
-                hf: name("self_attn.kv_b_proj.weight"),
-                kind,
-            });
+        {
+            let name = |s: &str| format!("model.layers.{il}.{s}");
+            let plain: Option<&str> = match suffix {
+                "attn_q_a.weight" => Some("self_attn.q_a_proj.weight"),
+                "attn_q_b.weight" => Some("self_attn.q_b_proj.weight"),
+                "attn_kv_a_mqa.weight" => Some("self_attn.kv_a_proj_with_mqa.weight"),
+                "attn_q_a_norm.weight" => Some("self_attn.q_a_layernorm.weight"),
+                "attn_kv_a_norm.weight" => Some("self_attn.kv_a_layernorm.weight"),
+                // The fused source itself: censused and loadable, unused by the absorbed v1 core.
+                "attn_kv_b.weight" => Some("self_attn.kv_b_proj.weight"),
+                // DSA k-pool indexer. Every one of these is REQUIRED on a layer whose plan
+                // declares `SparseIndexPlan::Own { kpool: Some(..) }`: a missing name makes
+                // `MlaAttnLayer::load` refuse the layer by name rather than fall back to dense
+                // attention, which above `index_topk` is a different function.
+                "indexer.attn_q_b.weight" => Some("self_attn.indexer.wq_b.weight"),
+                "indexer.attn_k.weight" => Some("self_attn.indexer.wk.weight"),
+                "indexer.proj.weight" => Some("self_attn.indexer.weights_proj.weight"),
+                "indexer.k_norm.weight" => Some("self_attn.indexer.k_norm.weight"),
+                "indexer.k_norm.bias" => Some("self_attn.indexer.k_norm.bias"),
+                "indexer.kpool_gate.weight" => Some("self_attn.indexer.index_kpool_compress_gate"),
+                "indexer.kpool_ape.weight" => Some("self_attn.indexer.index_kpool_compress_ape"),
+                _ => None,
+            };
+            if let Some(hf) = plain {
+                return Some(HfTarget::Plain(name(hf)));
+            }
+            let split: Option<TransformKind> = match suffix {
+                "attn_k_b.weight" => Some(TransformKind::MlaKeyUpSplit),
+                "attn_v_b.weight" => Some(TransformKind::MlaValueUpSplit),
+                _ => None,
+            };
+            if let Some(kind) = split {
+                return Some(HfTarget::Transform {
+                    hf: name("self_attn.kv_b_proj.weight"),
+                    kind,
+                });
+            }
         }
     }
 
@@ -1209,14 +1208,11 @@ mod tests {
                     conv_kernel: 4,
                     state_width: 32768,
                 },
-                ple: None,
-                sparse_overlay: None,
             }],
             output_norm: norm,
             logits: Vec::new(),
             mtp_blocks: Vec::new(),
             drafter: None,
-            exit_mixer: None,
             draft_source: DraftSourcePlan::Embedded,
             sampling_defaults: None,
             partition_boundaries: Vec::new(),
@@ -1508,190 +1504,6 @@ mod tests {
             "the fixture's compiled contract changed size. Raise this number when the plan grows \
              a tensor; NEVER lower it to make a red pin green — a shrinking count is the surface \
              this gate exists to cover going unwatched"
-        );
-    }
-
-    /// The NextN/MTP twin of the completeness pin above: with `num_nextn_predict_layers: 1` the
-    /// contract grows the appended MTP block (MLA + k-pool indexer + MoE at index n_trunk, plus
-    /// the enorm/hnorm/eh_proj/shared_head.norm glue), and EVERY GGUF spelling the embedded MTP
-    /// loader asks for must resolve through `resolve_ggml` onto the HF contract's name for the
-    /// same `TensorId`. Written 2026-08-30 with the glm5 MTP-execution lane: the four
-    /// `nextn.*` glue names had no glm5_next mapping row, so `src.has("blk.N.nextn.eh_proj.weight")`
-    /// answered false and the embedded-MTP loop silently loaded NO head (`break` at offset 0) —
-    /// the artifact carries every MTP tensor; the ggml->HF resolver was the refusal.
-    #[test]
-    fn glm5_next_mtp_block_resolves_through_the_engine_map() {
-        use crate::tensor_contract::{
-            CheckpointDialect, ContractOptions, LayerTensor, MtpTensor, OutputHead, TensorContract,
-            TensorId,
-        };
-
-        let json = mla_mini_config_json()
-            .replace(
-                r#""mlp_layer_types": ["dense", "dense"]"#,
-                r#""mlp_layer_types": ["dense", "sparse"]"#,
-            )
-            .replace(
-                r#""first_k_dense_replace": 2"#,
-                r#""first_k_dense_replace": 1"#,
-            )
-            .replace(
-                r#""num_nextn_predict_layers": 0"#,
-                r#""num_nextn_predict_layers": 1"#,
-            );
-        let cfg = ModelConfig::from_hf(&crate::config::HfConfig::parse(&json));
-        assert_eq!(cfg.nextn_predict_layers, 1);
-        assert_eq!(
-            cfg.n_layer, 3,
-            "n_layer counts trunk + the appended MTP block"
-        );
-        let plan = crate::model_packs::for_config(&cfg)
-            .expect("glm5_next model pack matches the mini config")
-            .compile_plan(&cfg)
-            .expect("mini glm5_next plan with an MTP block compiles");
-        assert_eq!(plan.mtp_blocks.len(), 1);
-        let block = &plan.mtp_blocks[0];
-        assert_eq!(block.layer.index, 2, "the MTP block is the appended layer");
-        assert!(
-            matches!(
-                block.layer.attention,
-                crate::model_plan::AttentionPlan::Mla(
-                    crate::model_plan::MlaAttentionPlan::LatentKv {
-                        sparse_index: crate::model_plan::SparseIndexPlan::Own {
-                            kpool: Some(_),
-                            ..
-                        },
-                        ..
-                    }
-                )
-            ),
-            "the glm5_next MTP block is MLA with its OWN k-pool indexer (census: the 12th \
-             indexer tensor set lives on the MTP layer)"
-        );
-        assert!(
-            matches!(block.layer.mlp, crate::model_plan::MlpPlan::Moe(_)),
-            "the glm5_next MTP block mirrors a MoE trunk layer"
-        );
-        assert!(
-            matches!(
-                block.layer.residual,
-                crate::model_plan::ResidualTopology::Serial
-            ),
-            "the NextN layer carries NO hc_* tensors (census: 45 trunk rows only) — serial \
-             residual outside the stream stack"
-        );
-
-        let opts = ContractOptions {
-            output_head: OutputHead::TiedToEmbedding,
-        };
-        let gguf =
-            TensorContract::for_plan(&plan, CheckpointDialect::Gguf, opts).expect("gguf contract");
-        let hf = TensorContract::for_plan(&plan, CheckpointDialect::HfSafetensors, opts)
-            .expect("hf contract");
-
-        // Structural exceptions, asserted rather than assumed (same law as the trunk pin):
-        // 1. the MLA conversion split (HF ships only the fused kv_b_proj);
-        // 2. the MTP OutputProjection: a GGUF artifact may carry a private
-        //    `nextn.shared_head_head.weight`, but this HF checkpoint family ships none — the
-        //    HF dialect declares NO name for it and the loader's trunk-head fallback is the
-        //    correct read, so the GGUF spelling must NOT resolve.
-        let head_id = TensorId::Mtp {
-            depth: 0,
-            tensor: MtpTensor::OutputProjection,
-        };
-        assert!(
-            !hf.requirements.iter().any(|h| h.id == head_id),
-            "the HF dialect must not declare a private MTP head for glm5_next"
-        );
-        assert!(
-            resolve_ggml("blk.2.nextn.shared_head_head.weight", &cfg).is_none(),
-            "nextn.shared_head_head must stay UNMAPPED for glm5_next: absent is the \
-             trunk-head fallback, and a mapped-but-missing name would still read absent \
-             while a wrong mapping would project through the wrong matrix"
-        );
-
-        let expert_bank = |tensor: LayerTensor| -> Option<&'static str> {
-            match tensor {
-                LayerTensor::MoeExpertGateBank => Some("gate"),
-                LayerTensor::MoeExpertUpBank => Some("up"),
-                LayerTensor::MoeExpertDownBank => Some("down"),
-                _ => None,
-            }
-        };
-
-        let mut checked_mtp = 0usize;
-        for requirement in &gguf.requirements {
-            // Only the MTP block's requirements: the trunk rows are the previous pin's.
-            let mtp_owned = matches!(requirement.id, TensorId::Mtp { .. })
-                || matches!(requirement.id, TensorId::Layer { index: 2, .. });
-            if !mtp_owned {
-                continue;
-            }
-            if requirement.id == head_id {
-                continue; // exception 2 above
-            }
-            if matches!(requirement.id, TensorId::QuantAux { .. }) {
-                continue;
-            }
-            if matches!(
-                requirement.id,
-                TensorId::Layer {
-                    tensor: LayerTensor::MlaKeyUp | LayerTensor::MlaValueUp,
-                    ..
-                }
-            ) {
-                continue; // exception 1 above, pinned by the MLA name test
-            }
-            let ggml = requirement
-                .names
-                .first()
-                .unwrap_or_else(|| {
-                    panic!("GGUF contract requirement {:?} has no name", requirement.id)
-                })
-                .clone();
-            let want = hf
-                .requirements
-                .iter()
-                .find(|h| h.id == requirement.id)
-                .unwrap_or_else(|| {
-                    panic!(
-                        "HF contract declares no {:?} (GGUF names it {ggml})",
-                        requirement.id
-                    )
-                });
-            let ask = match requirement.id {
-                TensorId::Layer { index, tensor } if expert_bank(tensor).is_some() => {
-                    format!(
-                        "blk.{index}.ffn_{}_exps.0.weight",
-                        expert_bank(tensor).unwrap()
-                    )
-                }
-                _ => ggml.clone(),
-            };
-            let got = match resolve_ggml(&ask, &cfg) {
-                Some(HfTarget::Plain(hf)) | Some(HfTarget::Transform { hf, .. }) => hf,
-                None => panic!(
-                    "no glm5_next ggml->HF mapping for {ask} ({:?}) — the embedded MTP loader \
-                     reads through resolve_ggml, and an unmapped name reads as ABSENT, which \
-                     for `nextn.eh_proj.weight` silently loads NO MTP head at all. The HF \
-                     contract declares this tensor as {:?}",
-                    requirement.id, want.names
-                ),
-            };
-            assert!(
-                want.names.contains(&got),
-                "{ask} ({:?}) resolves to {got}, which is not one of the HF contract's names \
-                 {:?} for the same tensor",
-                requirement.id,
-                want.names
-            );
-            checked_mtp += 1;
-        }
-
-        assert_eq!(
-            checked_mtp, 28,
-            "the MTP block's compiled contract changed size. Raise this number when the block \
-             grows a tensor; NEVER lower it to make a red pin green"
         );
     }
 
@@ -2341,12 +2153,7 @@ mod tests {
 
         // Reference: dequant, then permute the f32 rows with the existing primitive.
         let mut f32w: Vec<f32> = (0..out_f * in_f)
-            .map(|i| {
-                deq(
-                    codes[i],
-                    scales[((i / in_f) >> 7) * cols + ((i % in_f) >> 7)],
-                )
-            })
+            .map(|i| deq(codes[i], scales[(i / in_f >> 7) * cols + ((i % in_f) >> 7)]))
             .collect();
         let want = reorder_rows_v(&f32w, nv, nk, hd, in_f, 0, out_f);
         f32w.clear();

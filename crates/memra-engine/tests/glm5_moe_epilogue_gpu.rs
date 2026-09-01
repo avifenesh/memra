@@ -41,9 +41,9 @@
 //!     expert is a separate branch that must still run and still be summed in.
 //!   * `softmax-for-sigmoid` — the router half, denied by the same predicate the fusion has to
 //!     relax.
-//!     Each is a plan mutation read by the REFERENCE only; the engine always runs the real plan, so
-//!     every distance is measured against the SAME engine output the passing assertion uses
-//!     (GATE:pin-against-truth — the truth arm is anchored outside the feature under test).
+//! Each is a plan mutation read by the REFERENCE only; the engine always runs the real plan, so
+//! every distance is measured against the SAME engine output the passing assertion uses
+//! (GATE:pin-against-truth — the truth arm is anchored outside the feature under test).
 //!
 //! A FIFTH RED ARM CANNOT BE EXPRESSED AS A PLAN MUTATION. The per-expert macro scale is a
 //! checkpoint artifact, not a `ModelPlan` knob, so `macro-scale-dropped` is minted into the
@@ -79,8 +79,8 @@
 //!     `the_two_arms_agree` 1.251e-1 with 32/32 elements differing in bits;
 //!   * the fused arm's macro scales replaced with 1.0 — `fused` 1.624e-1, `the_two_arms_agree`
 //!     7.698e-2 with 32/32 elements differing in bits.
-//!     In both the unfused control stayed at its 4.822e-3 floor and PASSED, so each failure is
-//!     attributable to the fused arm rather than to the harness.
+//! In both the unfused control stayed at its 4.822e-3 floor and PASSED, so each failure is
+//! attributable to the fused arm rather than to the harness.
 //!
 //! NOTE ON THE OBSERVATION MODES. `MEMRA_MOE_STATS` / `MEMRA_MOE_TRACE` /
 //! `MEMRA_MOE_WEIGHT_TRACE` / `MEMRA_MOE_INPUT_TRACE_DIR` set `observe_routes` in
@@ -160,7 +160,7 @@ const ROUTER_BIAS_GAIN: f32 = 12.0;
 ///   * below the layer's live block count `EXPERTS * 3` = 24, so evictions RECUR after warm-up
 ///     and the arm is exercised with real MISSES rather than only on a warm layer — the property
 ///     that distinguishes it from gdec, which cannot fire on a miss at all.
-///     `MoeCache::new` floors the count at 8.
+/// `MoeCache::new` floors the count at 8.
 const SLOTS: usize = 12;
 
 /// Scale-relative bound, CALIBRATED FROM THE MEASURED UNFUSED CONTROL — the shipped sequential
@@ -741,7 +741,6 @@ fn tokens(n: usize, seed: u64) -> Vec<u32> {
 /// Every fused-arm predicate in `hybrid_forward` keys off these, so pinning them is half of what
 /// is under test.
 #[test]
-#[allow(clippy::assertions_on_constants)] // allow: const pins; fail the suite loudly if the fixture constants drift out of the gated window
 fn the_plan_declares_the_epilogue_under_gate() {
     let config = mini_config();
     let plan = mini_plan(&config);
@@ -1033,12 +1032,6 @@ fn run_arm_at(arm: Arm, mutation: FixtureMutation, placement: Placement) -> Run 
             Arm::Unfused => std::env::set_var("MEMRA_MOE_FUSED_EPI", "0"),
             Arm::Fused => std::env::set_var("MEMRA_MOE_FUSED_EPI", "1"),
         }
-        // MEMRA_MOE_GROUPED_PREFILL went DEFAULT ON on 2026-08-29 and takes the T=65 prefill
-        // row at t > 16, which would silently subtract those token-layer opportunities from the
-        // fused-epilogue engagement this gate asserts (GATE D counts 89/89 on slabs). This gate
-        // measures the fused-epi seam in ISOLATION, so the grouped-prefill seam is pinned off
-        // in both arms, exactly as `glm5_moe_grouped_prefill_gpu.rs` pins MEMRA_MOE_FUSED_EPI=0.
-        std::env::set_var("MEMRA_MOE_GROUPED_PREFILL", "0");
     }
 
     let config = mini_config();
@@ -1071,8 +1064,6 @@ fn run_arm_at(arm: Arm, mutation: FixtureMutation, placement: Placement) -> Run 
 
     let prompt = 6usize;
     let steps = 6usize;
-    #[allow(clippy::unusual_byte_groupings)]
-    // allow: mnemonic grouping of a pinned seed/magic constant
     let ids = tokens(prompt + steps, 0x_E9_10_6E_DEC0);
     let mut cache = memra_engine::cache::Cache::new_planned(&engine, &model.cfg, &plan, 64)
         .expect("cache for the mini glm5_next model");
@@ -1111,8 +1102,6 @@ fn reference_rows(
     }
     let prompt = 6usize;
     let steps = 6usize;
-    #[allow(clippy::unusual_byte_groupings)]
-    // allow: mnemonic grouping of a pinned seed/magic constant
     let ids = tokens(prompt + steps, 0x_E9_10_6E_DEC0);
     let full = memra_reference::execute(plan, weights, &ids)
         .expect("reference execute")

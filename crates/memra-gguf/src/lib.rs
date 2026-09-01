@@ -41,7 +41,6 @@ pub mod micro_gguf;
 pub mod model_packs;
 pub mod model_plan;
 pub mod nvfp4_repack;
-pub mod placement;
 pub mod safetensors;
 pub mod source;
 pub mod spec_oracle;
@@ -527,8 +526,6 @@ fn aligned_data_start(header_end: u64, alignment: u64, path: &Path) -> io::Resul
 
 /// Parse ONE physical GGUF file: `(shard, version, metadata, tensor infos with shard=usize::MAX)`.
 /// `TensorInfo::shard` is patched by the caller once the shard's index is known.
-#[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn parse_one(
     path: PathBuf,
 ) -> std::io::Result<(Shard, u32, BTreeMap<String, MetaValue>, Vec<TensorInfo>)> {
@@ -1054,10 +1051,10 @@ impl GgufFile {
 
     /// Get a metadata value, trying `{arch}.{suffix}` then the literal key.
     pub fn meta_arch(&self, suffix: &str) -> Option<&MetaValue> {
-        if let Some(arch) = self.arch()
-            && let Some(v) = self.metadata.get(&format!("{arch}.{suffix}"))
-        {
-            return Some(v);
+        if let Some(arch) = self.arch() {
+            if let Some(v) = self.metadata.get(&format!("{arch}.{suffix}")) {
+                return Some(v);
+            }
         }
         self.metadata.get(suffix)
     }

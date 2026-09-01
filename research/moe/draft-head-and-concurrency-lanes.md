@@ -17,7 +17,7 @@ Plan:
    pairs, sized to Hy3's 4096 hidden. Reuse the existing MTP serving path in bw24 (the spec
    plumbing is arch-agnostic given a draft head that emits logits) — the head replaces the
    layer-80 weights, keeping the verify machinery untouched.
-3. **Compute**: training runs on a rented research GPU (vast/cloudbox class per project rules —
+3. **Compute**: training runs on a rented research GPU (vast/Sbox class per project rules —
    never the serving rig). Head is ~0.5-1B params: single-GPU trainable.
 4. **Gate**: gated acceptance ≥0.80 at PMIN 0.7-0.85 AND net ≥1.15x vs plain at NGEN≥64,
    N=3 interleaved, before any default flip.

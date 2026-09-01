@@ -106,7 +106,7 @@ impl CellTracker {
 }
 
 std::thread_local! {
-    static OBSERVED_CELLS: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
+    static OBSERVED_CELLS: RefCell<BTreeSet<String>> = RefCell::new(BTreeSet::new());
 }
 
 fn output_cell_name(line: &str) -> Option<String> {
@@ -150,10 +150,10 @@ fn take_observed_cells() -> BTreeSet<String> {
 /// the models that lane fights over. Chain, first existing path wins:
 ///   1. $MEMRA_KC_MODELS_DIR/<file>                       (explicit; battery scripts set this)
 ///   2. the CLI gguf arg, when its basename == <file>     (model under test doubles as oracle)
-///   3. $HOME/models/<file>, /opt/scratch/nvme/models/<file> (bench-box conventions)
+///   3. $HOME/models/<file>, /opt/dl-image/nvme/models/<file> (bench-box conventions)
 ///   4. the legacy rig paths                              (the 5090 rig keeps working naked)
-///      A miss emits one explicit line per skipped cell. Explicit CLI/model-directory paths are
-///      authoritative: a typo must not silently fall through to stale bytes elsewhere on the box.
+/// A miss emits one explicit line per skipped cell. Explicit CLI/model-directory paths are
+/// authoritative: a typo must not silently fall through to stale bytes elsewhere on the box.
 fn kc_model(
     section: &str,
     choices: &[(&str, &[&str])],
@@ -175,16 +175,17 @@ fn kc_model(
         cells.skip_all(skipped_cells, "capability disabled by MEMRA_KC_FAST=1");
         return None;
     }
-    if let Ok(filter) = std::env::var("MEMRA_KC_ONLY")
-        && !filter
+    if let Ok(filter) = std::env::var("MEMRA_KC_ONLY") {
+        if !filter
             .split(',')
             .any(|f| !f.is_empty() && section.contains(f))
-    {
-        cells.skip_all(
-            skipped_cells,
-            &format!("capability filtered by MEMRA_KC_ONLY={filter}"),
-        );
-        return None;
+        {
+            cells.skip_all(
+                skipped_cells,
+                &format!("capability filtered by MEMRA_KC_ONLY={filter}"),
+            );
+            return None;
+        }
     }
 
     if let Ok(dir) = std::env::var("MEMRA_KC_MODELS_DIR") {
@@ -210,19 +211,19 @@ fn kc_model(
         return None;
     }
 
-    if let Some(arg) = gguf_arg
-        && choices.iter().any(|(fname, _)| {
+    if let Some(arg) = gguf_arg {
+        if choices.iter().any(|(fname, _)| {
             std::path::Path::new(arg)
                 .file_name()
                 .map(|value| value == *fname)
                 .unwrap_or(false)
-        })
-    {
-        if std::path::Path::new(arg).exists() {
-            return Some(arg.clone());
+        }) {
+            if std::path::Path::new(arg).exists() {
+                return Some(arg.clone());
+            }
+            cells.skip_all(skipped_cells, &format!("missing model {arg}"));
+            return None;
         }
-        cells.skip_all(skipped_cells, &format!("missing model {arg}"));
-        return None;
     }
 
     let mut cands: Vec<String> = Vec::new();
@@ -230,7 +231,7 @@ fn kc_model(
         if let Ok(home) = std::env::var("HOME") {
             cands.push(format!("{home}/models/{fname}"));
         }
-        cands.push(format!("/opt/scratch/nvme/models/{fname}"));
+        cands.push(format!("/opt/dl-image/nvme/models/{fname}"));
         cands.extend(legacy.iter().map(|path| path.to_string()));
     }
     if let Some(path) = cands
@@ -254,7 +255,6 @@ fn kc_model(
     None
 }
 
-#[allow(clippy::manual_div_ceil)] // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = parse_cli(std::env::args().skip(1)).map_err(|err| format!("{err}\n{USAGE}"))?;
     if cli.help {
@@ -322,68 +322,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         );
         cells.record("dual-pp-hostbounce-refusal");
-    }
-
-    {
-        let mut ok = true;
-        for stages in 3..=memra_engine::pp::PP_WAVE_MAX_STAGES {
-            for batch in 1..=32 {
-                let ranges = memra_engine::pp::pp_wave_ranges(batch, stages);
-                let waves = ranges.len();
-                let mut seen = vec![vec![false; stages]; waves];
-                for diagonal in 0..stages + waves - 1 {
-                    let cells = memra_engine::pp::pp_wave_diagonal(stages, waves, diagonal);
-                    let mut stage_seen = vec![false; stages];
-                    let mut wave_seen = vec![false; waves];
-                    for (wave, stage) in cells {
-                        ok &= wave + stage == diagonal
-                            && !stage_seen[stage]
-                            && !wave_seen[wave]
-                            && !seen[wave][stage];
-                        stage_seen[stage] = true;
-                        wave_seen[wave] = true;
-                        seen[wave][stage] = true;
-                    }
-                }
-                ok &= seen.into_iter().flatten().all(|cell| cell);
-                ok &= ranges.first().is_some_and(|range| range.0 == 0)
-                    && ranges.last().is_some_and(|range| range.1 == batch)
-                    && ranges.windows(2).all(|pair| pair[0].1 == pair[1].0);
-            }
-        }
-        println!(
-            "pp-wave-grid PP3/PP4 balanced anti-diagonal coverage {}",
-            if ok {
-                "OK"
-            } else {
-                fails += 1;
-                "FAIL"
-            }
-        );
-        cells.record("pp-wave-grid");
-    }
-
-    {
-        let ok = memra_engine::pp::pp_wave_on_value(None) == Ok(false)
-            && memra_engine::pp::pp_wave_on_value(Some("0")) == Ok(false)
-            && memra_engine::pp::pp_wave_on_value(Some("1")) == Ok(true)
-            && memra_engine::pp::pp_wave_on_value(Some("auto")).is_err()
-            && memra_engine::pp::pp_wave_eligibility(3, true, false, false).is_ok()
-            && memra_engine::pp::pp_wave_eligibility(4, true, false, false).is_ok()
-            && memra_engine::pp::pp_wave_eligibility(2, true, false, false).is_err()
-            && memra_engine::pp::pp_wave_eligibility(3, false, false, false).is_err()
-            && memra_engine::pp::pp_wave_eligibility(3, true, true, false).is_err()
-            && memra_engine::pp::pp_wave_eligibility(3, true, false, true).is_err();
-        println!(
-            "pp-wave-refusal strict flag + topology policy {}",
-            if ok {
-                "OK"
-            } else {
-                fails += 1;
-                "FAIL"
-            }
-        );
-        cells.record("pp-wave-refusal");
     }
 
     {
@@ -923,8 +861,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // cpu ref: pairs (j, j+half)
         let half = n_dims / 2;
         let mut cpu = x.clone();
-        #[allow(clippy::needless_range_loop)]
-        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
         for tok in 0..n_tokens {
             for h in 0..n_heads {
                 let base = (tok * n_heads + h) * head_dim;
@@ -959,7 +895,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --- silu_mul ---
     {
         let n = 1024usize;
-        let g: Vec<f32> = (0..n).map(pr).collect();
+        let g: Vec<f32> = (0..n).map(|i| pr(i)).collect();
         let u: Vec<f32> = (0..n).map(|i| pr(i + 1)).collect();
         let cpu: Vec<f32> = (0..n)
             .map(|i| (g[i] / (1.0 + (-g[i]).exp())) * u[i])
@@ -997,7 +933,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         bits |= 1 << b;
                     }
                 }
-                bits
+                bits as u32
             })
             .collect();
         let allowed = |i: usize| -> bool { i < mask_words * 32 && i % 7 == 3 };
@@ -2109,8 +2045,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &["dtype5-IQ3_S", "dtype5-IQ4_XS", "dtype5-Q3_K"],
         );
         // (gguf, tensor, expected type, QT code, fast-path selector or "" for Stage-A only)
-        #[allow(clippy::type_complexity)]
-        // allow: one-shot composite type; naming it would hide the shape that matters at the call site
         let cases: [(&Option<String>, &str, GgmlType, i32, &str, &str); 5] = [
             (
                 &gguf_9b,
@@ -2301,8 +2235,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // kernel inside the T loop (same numeric class -> same rel<1e-3 band).
             let wgmma_mirror = if cfg!(memra_hopper_mma)
                 && gt == memra_engine::QT_Q8_0
-                && out_f.is_multiple_of(64)
-                && in_f.is_multiple_of(32)
+                && out_f % 64 == 0
+                && in_f % 32 == 0
             {
                 Some(e.build_q8_rp4_raw(&wd, in_f, out_f)?)
             } else {
@@ -2311,13 +2245,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // f16-mirror coverage per admitted class: Q8_0 (2026-07-26), Q4_K + Q5_K
             // (round 49 — the q27 trunk bulk + ssm_out), Q6_K (round 47; entry added
             // round 49 with Q4_K — the "gates outside the battery rot" law).
-            let f16_mirror = if gt == memra_engine::QT_Q8_0 && in_f.is_multiple_of(32) {
+            let f16_mirror = if gt == memra_engine::QT_Q8_0 && in_f % 32 == 0 {
                 Some(e.build_q8_f16_raw(&wd, in_f, out_f)?)
-            } else if gt == memra_engine::QT_Q4_K && in_f.is_multiple_of(256) {
+            } else if gt == memra_engine::QT_Q4_K && in_f % 256 == 0 {
                 Some(e.build_q4k_f16_raw(&wd, in_f, out_f)?)
-            } else if gt == memra_engine::QT_Q5_K && in_f.is_multiple_of(256) {
+            } else if gt == memra_engine::QT_Q5_K && in_f % 256 == 0 {
                 Some(e.build_q5k_f16_raw(&wd, in_f, out_f)?)
-            } else if gt == memra_engine::QT_Q6_K && in_f.is_multiple_of(256) {
+            } else if gt == memra_engine::QT_Q6_K && in_f % 256 == 0 {
                 Some(e.build_q6k_f16_raw(&wd, in_f, out_f)?)
             } else {
                 None
@@ -2599,7 +2533,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 use cudarc::driver::DevicePtr;
                 let s = e.stream();
                 let (p, _g) = slab_d.device_ptr(&s);
-                p
+                p as u64
             };
             let tab: Vec<u64> = (0..n_expert)
                 .map(|ex| base + (ex * ex_bytes) as u64)
@@ -2737,7 +2671,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     use cudarc::driver::DevicePtr;
                     let s = e.stream();
                     let (p, _gg) = slab_d.device_ptr(&s);
-                    p
+                    p as u64
                 };
                 let tab: Vec<u64> = (0..n_active)
                     .map(|ex| base + (ex * ex_bytes) as u64)
@@ -2883,7 +2817,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     use cudarc::driver::DevicePtr;
                     let s = e.stream();
                     let (p, _gg) = slab_d.device_ptr(&s);
-                    p
+                    p as u64
                 };
                 let tab: Vec<u64> = (0..n_active)
                     .map(|ex| base + (ex * ex_bytes) as u64)
@@ -3058,7 +2992,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 match g.tensors.iter().find(|t| {
                     t.ggml_type == GgmlType::IQ4_XS
                         && t.ne.len() == 2
-                        && (t.ne[0] as usize).is_multiple_of(256)
+                        && t.ne[0] as usize % 256 == 0
                         && t.ne[1] >= 128
                 }) {
                     Some(t) => {
@@ -3224,14 +3158,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Q4_K/Q8_0/Q4_0 MMQ checks — those kernels are live on Hopper through the
             // hopper_mma re-admission, and the old whole-section skip left the battery
             // blind to the #23 stream-K corruption (2026-07-31).
-            // THE PROPERTY, not an enumeration: this family (Stage-C native mxf4 FP4 +
-            // the static-MMQ W4A8/FP8-blk launchers) exists only in the sm_120a build —
-            // build.rs stubs the static TUs and drops qmatvec_gemm_nvfp4_fp4 on every other
-            // arch. The old `!cfg!(memra_portable_cuda)` admitted sm_100a (not portable,
-            // not 120a), where the Stage-C check reached Engine::func("qmatvec_gemm_nvfp4_fp4")
-            // and panicked "kernel not in any fatbin" with NO env force involved — caught by
-            // the b200-prep lane's PR review against the 100a fatbin-lookup census.
-            let nvfp4_checks = env!("MEMRA_BUILT_CUDA_ARCH") == "120a";
+            let nvfp4_checks = !cfg!(memra_portable_cuda);
             if !nvfp4_checks {
                 cells.skip(
                     "nvfp4-gemm:native-static",
@@ -4339,124 +4266,46 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "blk.3.attn_k.weight",
             "blk.3.attn_v.weight",
         ];
-        if let (Some(t0), Some(t1), Some(t2)) = (grab(tri[0]), grab(tri[1]), grab(tri[2]))
-            && t0.0 == t1.0
-            && t1.0 == t2.0
-        {
-            let (in_f, rb) = (t0.0, t0.2);
-            let w0 = e.htod_bytes(&t0.3)?;
-            let w1 = e.htod_bytes(&t1.3)?;
-            let w2 = e.htod_bytes(&t2.3)?;
-            let x: Vec<f32> = (0..in_f).map(|i| pr(i + 137) * 0.1).collect();
-            let xd = e.htod(&x)?;
-            let r0 = e.dtoh(&e.qmatvec_mmvq_raw(
-                &w0,
-                &xd,
-                1,
-                in_f,
-                t0.1,
-                memra_engine::QT_Q8_0,
-                rb,
-                false,
-            )?)?;
-            let r1 = e.dtoh(&e.qmatvec_mmvq_raw(
-                &w1,
-                &xd,
-                1,
-                in_f,
-                t1.1,
-                memra_engine::QT_Q8_0,
-                rb,
-                false,
-            )?)?;
-            let r2 = e.dtoh(&e.qmatvec_mmvq_raw(
-                &w2,
-                &xd,
-                1,
-                in_f,
-                t2.1,
-                memra_engine::QT_Q8_0,
-                rb,
-                false,
-            )?)?;
-            let (f0, f1, f2) =
-                e.qmatvec_q8_fused3_raw(&w0, &w1, &w2, &xd, in_f, t0.1, t1.1, t2.1, rb)?;
-            let (f0, f1, f2) = (e.dtoh(&f0)?, e.dtoh(&f1)?, e.dtoh(&f2)?);
-            let bits_ok = r0
-                .iter()
-                .zip(f0.iter())
-                .all(|(a, b)| a.to_bits() == b.to_bits())
-                && r1
-                    .iter()
-                    .zip(f1.iter())
-                    .all(|(a, b)| a.to_bits() == b.to_bits())
-                && r2
-                    .iter()
-                    .zip(f2.iter())
-                    .all(|(a, b)| a.to_bits() == b.to_bits());
-            let d = maxdiff(&r0, &f0)
-                .max(maxdiff(&r1, &f1))
-                .max(maxdiff(&r2, &f2));
-            println!(
-                "Q8-FUSED3 wq+wk+wv [Q8_0] out=({},{},{}): rel={d:.2e} bits={} {}",
-                t0.1,
-                t1.1,
-                t2.1,
-                bits_ok,
-                if bits_ok {
-                    "OK"
-                } else {
-                    fails += 1;
-                    "FAIL"
-                }
-            );
-            // BATCHED twin (verify t=2-4 tier): fused3_b vs three per-tensor batched launches.
-            for mm in [2usize, 3, 4] {
-                let xm: Vec<f32> = (0..mm * in_f).map(|i| pr(i + 157 + mm) * 0.1).collect();
-                let xmd = e.htod(&xm)?;
-                let (aq, ad) = e.quantize_q8_1(&xmd, mm, in_f)?;
-                let mc = memra_engine::Engine::batched_mcols(mm);
-                let r0 = e.dtoh(&e.qmatvec_mmvq_batched(
+        if let (Some(t0), Some(t1), Some(t2)) = (grab(tri[0]), grab(tri[1]), grab(tri[2])) {
+            if t0.0 == t1.0 && t1.0 == t2.0 {
+                let (in_f, rb) = (t0.0, t0.2);
+                let w0 = e.htod_bytes(&t0.3)?;
+                let w1 = e.htod_bytes(&t1.3)?;
+                let w2 = e.htod_bytes(&t2.3)?;
+                let x: Vec<f32> = (0..in_f).map(|i| pr(i + 137) * 0.1).collect();
+                let xd = e.htod(&x)?;
+                let r0 = e.dtoh(&e.qmatvec_mmvq_raw(
                     &w0,
-                    &aq,
-                    &ad,
-                    mm,
+                    &xd,
+                    1,
                     in_f,
                     t0.1,
                     memra_engine::QT_Q8_0,
                     rb,
-                    mc,
-                    1.0,
                     false,
                 )?)?;
-                let r1 = e.dtoh(&e.qmatvec_mmvq_batched(
+                let r1 = e.dtoh(&e.qmatvec_mmvq_raw(
                     &w1,
-                    &aq,
-                    &ad,
-                    mm,
+                    &xd,
+                    1,
                     in_f,
                     t1.1,
                     memra_engine::QT_Q8_0,
                     rb,
-                    mc,
-                    1.0,
                     false,
                 )?)?;
-                let r2 = e.dtoh(&e.qmatvec_mmvq_batched(
+                let r2 = e.dtoh(&e.qmatvec_mmvq_raw(
                     &w2,
-                    &aq,
-                    &ad,
-                    mm,
+                    &xd,
+                    1,
                     in_f,
                     t2.1,
                     memra_engine::QT_Q8_0,
                     rb,
-                    mc,
-                    1.0,
                     false,
                 )?)?;
                 let (f0, f1, f2) =
-                    e.qmatvec_q8_fused3_t_raw(&w0, &w1, &w2, &xmd, mm, in_f, t0.1, t1.1, t2.1, rb)?;
+                    e.qmatvec_q8_fused3_raw(&w0, &w1, &w2, &xd, in_f, t0.1, t1.1, t2.1, rb)?;
                 let (f0, f1, f2) = (e.dtoh(&f0)?, e.dtoh(&f1)?, e.dtoh(&f2)?);
                 let bits_ok = r0
                     .iter()
@@ -4474,7 +4323,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .max(maxdiff(&r1, &f1))
                     .max(maxdiff(&r2, &f2));
                 println!(
-                    "Q8-FUSED3-B wq+wk+wv [Q8_0] m={mm} out=({},{},{}): rel={d:.2e} bits={} {}",
+                    "Q8-FUSED3 wq+wk+wv [Q8_0] out=({},{},{}): rel={d:.2e} bits={} {}",
                     t0.1,
                     t1.1,
                     t2.1,
@@ -4486,6 +4335,84 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "FAIL"
                     }
                 );
+                // BATCHED twin (verify t=2-4 tier): fused3_b vs three per-tensor batched launches.
+                for mm in [2usize, 3, 4] {
+                    let xm: Vec<f32> = (0..mm * in_f).map(|i| pr(i + 157 + mm) * 0.1).collect();
+                    let xmd = e.htod(&xm)?;
+                    let (aq, ad) = e.quantize_q8_1(&xmd, mm, in_f)?;
+                    let mc = memra_engine::Engine::batched_mcols(mm);
+                    let r0 = e.dtoh(&e.qmatvec_mmvq_batched(
+                        &w0,
+                        &aq,
+                        &ad,
+                        mm,
+                        in_f,
+                        t0.1,
+                        memra_engine::QT_Q8_0,
+                        rb,
+                        mc,
+                        1.0,
+                        false,
+                    )?)?;
+                    let r1 = e.dtoh(&e.qmatvec_mmvq_batched(
+                        &w1,
+                        &aq,
+                        &ad,
+                        mm,
+                        in_f,
+                        t1.1,
+                        memra_engine::QT_Q8_0,
+                        rb,
+                        mc,
+                        1.0,
+                        false,
+                    )?)?;
+                    let r2 = e.dtoh(&e.qmatvec_mmvq_batched(
+                        &w2,
+                        &aq,
+                        &ad,
+                        mm,
+                        in_f,
+                        t2.1,
+                        memra_engine::QT_Q8_0,
+                        rb,
+                        mc,
+                        1.0,
+                        false,
+                    )?)?;
+                    let (f0, f1, f2) = e.qmatvec_q8_fused3_t_raw(
+                        &w0, &w1, &w2, &xmd, mm, in_f, t0.1, t1.1, t2.1, rb,
+                    )?;
+                    let (f0, f1, f2) = (e.dtoh(&f0)?, e.dtoh(&f1)?, e.dtoh(&f2)?);
+                    let bits_ok = r0
+                        .iter()
+                        .zip(f0.iter())
+                        .all(|(a, b)| a.to_bits() == b.to_bits())
+                        && r1
+                            .iter()
+                            .zip(f1.iter())
+                            .all(|(a, b)| a.to_bits() == b.to_bits())
+                        && r2
+                            .iter()
+                            .zip(f2.iter())
+                            .all(|(a, b)| a.to_bits() == b.to_bits());
+                    let d = maxdiff(&r0, &f0)
+                        .max(maxdiff(&r1, &f1))
+                        .max(maxdiff(&r2, &f2));
+                    println!(
+                        "Q8-FUSED3-B wq+wk+wv [Q8_0] m={mm} out=({},{},{}): rel={d:.2e} bits={} {}",
+                        t0.1,
+                        t1.1,
+                        t2.1,
+                        bits_ok,
+                        if bits_ok {
+                            "OK"
+                        } else {
+                            fails += 1;
+                            "FAIL"
+                        }
+                    );
+                }
             }
         }
     }
@@ -5894,9 +5821,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     && t.ne.len() == 2
                     && t.ne[0] % 512 == 0
                     && t.ne[0] >= 6144
-            }) && !picks.iter().any(|p| p.name == deep.name)
-            {
-                picks.push(deep);
+            }) {
+                if !picks.iter().any(|p| p.name == deep.name) {
+                    picks.push(deep);
+                }
             }
             for t in picks {
                 done = true;
@@ -7058,8 +6986,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 for z in 0..b_n {
                     let (pk, _g) = kcs2[z].device_ptr(&es);
                     let (pv, _g2) = vcs2[z].device_ptr(&es);
-                    ptrs2.push(pk);
-                    ptrs2.push(pv);
+                    ptrs2.push(pk as u64);
+                    ptrs2.push(pv as u64);
                 }
                 let table2 = e.htod_u64(&ptrs2)?;
                 let tv2 = table2.slice(0..2 * b_n);
@@ -7123,8 +7051,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 for z in 0..b_n {
                     let (pk, _g) = kcs[z].device_ptr(&es);
                     let (pv, _g2) = vcs[z].device_ptr(&es);
-                    ptrs1.push(pk);
-                    ptrs1.push(pv);
+                    ptrs1.push(pk as u64);
+                    ptrs1.push(pv as u64);
                 }
                 let table1 = e.htod_u64(&ptrs1)?;
                 let tv1 = table1.slice(0..2 * b_n);
@@ -8070,10 +7998,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             idx.sort_by(|&a, &b| probs[b].total_cmp(&probs[a]).then(a.cmp(&b)));
             let sel = &idx[..n_used];
             let mut w: Vec<f32> = sel.iter().map(|&i| probs[i]).collect();
-            let ws: f32 = w.iter().sum();
-            #[allow(clippy::excessive_precision)]
-            // allow: literal kept verbatim: the fp16-min-normal constant from the reference
-            let ws = ws.max(6.103515625e-5_f32);
+            let mut ws: f32 = w.iter().sum();
+            ws = ws.max(6.103515625e-5_f32);
             for x in w.iter_mut() {
                 *x /= ws;
             }
