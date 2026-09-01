@@ -9871,10 +9871,16 @@ struct ReplayPlan {
 /// towers always run on `engine` (that is where their weights are resident, ~2.3 GiB f32 for
 /// glm5); `EmbedOverlay::new_published` then publishes the finished rows into `intake`'s
 /// context when the two differ. Once per session, prefill only (lane/glm53-vision-ppn).
+///
+/// `publish` is the door RESOLVED AT BOOT and passed down (memra-next#25) rather than re-read
+/// from the environment per session: it governs every vision family that reaches this function,
+/// so an unrecognized value must refuse once at startup instead of erroring mid-prefill on
+/// whichever family happens to receive the first image request.
 #[allow(clippy::too_many_arguments)] // allow: one tower parameter per vision family plus the two engines the publication needs; bundling them hides which engine owns which side of the copy
 fn build_vision_overlay(
     engine: &Engine,
     intake: &Engine,
+    publish: memra_engine::vision::OverlayPublish,
     tower: Option<&memra_engine::vision::VisionTower>,
     gemma_tower: Option<&memra_engine::vision_gemma::GemmaVisionTower>,
     glm5_tower: Option<&memra_engine::vision_glm5::Glm5VisionTower>,
@@ -9899,6 +9905,7 @@ fn build_vision_overlay(
         v.overlay = Some(memra_engine::vision::EmbedOverlay::new_published(
             engine,
             intake,
+            publish,
             rows,
             v.spans.clone(),
         )?);
@@ -9920,6 +9927,7 @@ fn build_vision_overlay(
         v.overlay = Some(memra_engine::vision::EmbedOverlay::new_published(
             engine,
             intake,
+            publish,
             rows,
             v.spans.clone(),
         )?);
@@ -9943,6 +9951,7 @@ fn build_vision_overlay(
         v.overlay = Some(memra_engine::vision::EmbedOverlay::new_published(
             engine,
             intake,
+            publish,
             rows,
             v.spans.clone(),
         )?);
@@ -9988,6 +9997,7 @@ fn build_vision_overlay(
     v.overlay = Some(memra_engine::vision::EmbedOverlay::new_published(
         engine,
         intake,
+        publish,
         rows,
         v.spans.clone(),
     )?);
@@ -11765,6 +11775,18 @@ pub fn run(
     // combination of default/flag/dir produced it — AND the placement can actually deliver
     // the overlay to embedding intake.
     //
+    // THE OVERLAY-PUBLISH DOOR IS RESOLVED HERE, ONCE, FOR EVERY VISION FAMILY
+    // (memra-next#25). It is the first input `EmbedOverlay::new_published` consumes and every
+    // family's overlay goes through that function, so an unrecognized value is a BOOT death —
+    // the same shape as an unloadable tower above. It used to be read per session inside
+    // new_published while only the glm5 branch below validated anything, which meant a typo'd
+    // door on a gemma / qwen-VL / step37 deployment (step37 serves vision in production) booted
+    // clean and then 500'd mid-prefill on the first image request: exactly the failure this lane
+    // removed for glm5, left live for the others. A family-scoped guard on a family-agnostic
+    // door is how that recurs, so the resolution is unconditional and the value is threaded.
+    let overlay_publish = memra_engine::vision::overlay_publish_mode()
+        .unwrap_or_else(|e| panic!("vision overlay publish door: {e}"));
+
     // PLACEMENT ADMISSIBILITY (lane/glm53-vision-ppn, 2026-09-01). A loaded tower is not
     // sufficient. The overlay's rows have to be resident in the context of the engine that
     // embeds (pp stage 0 under a per-stage-stream split), which the tower's own engine is NOT
@@ -11772,32 +11794,53 @@ pub fn run(
     // pinned to `MEMRA_VISION_OVERLAY_PUBLISH=0` it cannot, and the refusal would land
     // MID-PREFILL on a live request (a 500, which is exactly what the launch window saw).
     // Decide it ONCE here and refuse at the HTTP waist instead — the same named 4xx the
-    // `MEMRA_GLM5_VISION=0` kill switch produces. An unrecognized door value is a BOOT death,
-    // the same shape as an unloadable tower above: a mistyped correctness door must never
-    // resolve to a default.
+    // `MEMRA_GLM5_VISION=0` kill switch produces.
     let glm5_vision_servable = match glm5_tower.as_ref() {
         None => false,
         Some(_) => {
-            let publish = memra_engine::vision::overlay_publish_mode()
-                .unwrap_or_else(|e| panic!("glm5 vision: {e}"));
             match loaded
                 .values()
                 .find(|lm| lm.model.cfg.arch.is_glm5_next())
                 .map(|lm| lm.model.vision_intake_engine(&engine))
             {
-                None => true,
+                // FAIL CLOSED (memra-next#24). This used to be `true`, and it is REACHABLE: the
+                // `MEMRA_GLM5_VISION_DIR` branch loads a tower with no requirement that a
+                // glm5_next model be loaded at all, so DIR-set-and-no-glm5-model advertised
+                // image serving on a placement whose intake was never checked. Refusing costs
+                // nothing — no glm5 model means no glm5 image traffic to serve.
+                None => {
+                    eprintln!(
+                        "[glm5-vision] IMAGE INPUT DISABLED: a glm5 tower is loaded but no \
+                         glm5_next model is, so the embedding-intake placement cannot be \
+                         checked. Refusing at intake rather than advertising an unverified path"
+                    );
+                    false
+                }
                 Some(Err(e)) => panic!(
                     "glm5 vision: the embedding-intake engine for this placement could not be \
                      resolved: {e}"
                 ),
                 Some(Ok(intake)) => {
                     let cross = intake.ctx().cu_ctx() != engine.ctx().cu_ctx();
-                    let servable = !cross || publish != memra_engine::vision::OverlayPublish::Never;
+                    let servable =
+                        !cross || overlay_publish != memra_engine::vision::OverlayPublish::Never;
+                    // NOTE, and it is a real limit: `find` takes the FIRST glm5_next model while
+                    // `vision_intake_engine` keys on that model's own layer count via
+                    // `pp_cuts`. A deployment serving TWO glm5_next models decides from one of
+                    // them, so the other can still meet the prime's named refusal mid-request.
+                    // One vision family per deployment is the standing law; two glm5 TRUNKS
+                    // under one tower is outside what this check covers, and it is stated rather
+                    // than silently assumed away.
                     eprintln!(
                         "[glm5-vision] overlay intake: tower dev{} -> intake dev{} \
-                         (cross_context={cross}) publish={publish:?} servable={servable}",
+                         (cross_context={cross}) publish={overlay_publish:?} \
+                         servable={servable} glm5_models={}",
                         engine.ctx().ordinal(),
-                        intake.ctx().ordinal()
+                        intake.ctx().ordinal(),
+                        loaded
+                            .values()
+                            .filter(|lm| lm.model.cfg.arch.is_glm5_next())
+                            .count(),
                     );
                     if !servable {
                         eprintln!(
@@ -14880,6 +14923,7 @@ pub fn run(
                     gemma_tower.as_ref(),
                     glm5_tower.as_ref(),
                     step_tower.as_ref(),
+                    overlay_publish,
                 ) {
                     Ok(consumed) => {
                         if consumed > 0 {
@@ -15316,6 +15360,7 @@ pub fn run(
                     gemma_tower.as_ref(),
                     glm5_tower.as_ref(),
                     step_tower.as_ref(),
+                    overlay_publish,
                 ) {
                     let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                         "prefill error: {err}"
@@ -20028,6 +20073,7 @@ fn prefill_tick(
     gemma_tower: Option<&memra_engine::vision_gemma::GemmaVisionTower>,
     glm5_tower: Option<&memra_engine::vision_glm5::Glm5VisionTower>,
     step_tower: Option<&memra_engine::vision_step::StepVisionTower>,
+    overlay_publish: memra_engine::vision::OverlayPublish,
 ) -> Result<usize, Box<dyn std::error::Error>> {
     if let Some(trace) = s.ttft.as_ref() {
         trace.mark_prime_start();
@@ -20051,6 +20097,7 @@ fn prefill_tick(
         build_vision_overlay(
             engine,
             lm.model.vision_intake_engine(engine)?,
+            overlay_publish,
             vision_tower,
             gemma_tower,
             glm5_tower,

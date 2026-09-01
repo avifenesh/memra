@@ -114,6 +114,13 @@ primitive is missing.)*
 serving shape at all; the driver stops and no row from it may be cited. A green run that measured
 the wrong shape is worse than a red one.
 
+**Which program the battery measures.** The hardened one, deliberately: the merged tree's
+`EmbedOverlay::window` deep-copied the whole rows buffer on every prefill tick and every prime
+chunk (memra-next#23), so a multi-chunk image prompt paid copies the cost story did not mention.
+Fixed before the window at the coordinator's preference, so arm A's prefill numbers describe the
+program that would actually ship. It does not move arm D's bar — that path is prefill, and decode
+never touches an overlay — but a receipt should say which program it measured.
+
 **Rows and the bar.** Vendor-default sampled (no sampling params), `reasoning_effort` pinned,
 tok/s from each response's own `usage.elapsed_s` so the number is the server's. The verdict passes
 when the between-arm median gap sits inside the arms' own within-arm spread, and it is written as

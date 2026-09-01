@@ -646,7 +646,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     let overlay =
-        memra_engine::vision::EmbedOverlay::new(&e, m.embed(&e, &subs)?, overlay_spans.clone());
+        memra_engine::vision::EmbedOverlay::new(&e, m.embed(&e, &subs)?, overlay_spans.clone())?;
     let red_shift = std::env::var("MEMRA_GLM5V_GATE_RED").as_deref() == Ok("span-shift");
     let arm_overlay = if red_shift {
         println!(
@@ -655,14 +655,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         memra_engine::vision::EmbedOverlay::new(
             &e,
-            overlay.rows.clone(),
+            e.clone_dtod(&overlay.rows)?,
             overlay_spans
                 .iter()
                 .map(|&(pos, row_off, n_rows)| (pos + 1, row_off, n_rows))
                 .collect(),
-        )
+        )?
     } else {
-        memra_engine::vision::EmbedOverlay::new(&e, overlay.rows.clone(), overlay.spans.clone())
+        memra_engine::vision::EmbedOverlay::new(
+            &e,
+            e.clone_dtod(&overlay.rows)?,
+            overlay.spans.clone(),
+        )?
     };
 
     eprintln!("[phase] reference D: door OFF, substituted-token prime + decode (overlay truth)");
@@ -830,23 +834,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("[phase] arm 5d: door ON, PUBLISHED overlay, monolithic splice");
     let intake = m.vision_intake_engine(&e)?;
     let published = {
-        // SAFETY: single-threaded (same contract as the MEMRA_PP_STAGES set_var above).
-        unsafe { std::env::set_var("MEMRA_VISION_OVERLAY_PUBLISH", "force") };
+        // The mode is passed as a VALUE (memra-next#25 threaded the door through the call
+        // chain), so this arm no longer mutates process-global environment to steer a library
+        // call — it exercises the Force path directly and is immune to whatever the ambient
+        // MEMRA_VISION_OVERLAY_PUBLISH happens to be. Env PARSING is covered by
+        // `vision::tests::overlay_publish_arm_matrix_is_pinned` instead.
         let before = memra_engine::vision::overlay_publications();
         let rows = e.clone_dtod(&arm_overlay.rows)?;
         let ov = memra_engine::vision::EmbedOverlay::new_published(
             &e,
             intake,
+            memra_engine::vision::OverlayPublish::Force,
             rows,
             arm_overlay.spans.clone(),
         )?;
         let after = memra_engine::vision::overlay_publications();
-        // SAFETY: single-threaded.
-        unsafe { std::env::remove_var("MEMRA_VISION_OVERLAY_PUBLISH") };
         assert_eq!(
             after,
             before + 1,
-            "arm 5d is VACUOUS: MEMRA_VISION_OVERLAY_PUBLISH=force performed no publication \
+            "arm 5d is VACUOUS: OverlayPublish::Force performed no publication \
              (overlay_publications stayed at {before}) — the arm would re-run arm 5b under a \
              different name"
         );

@@ -96,21 +96,61 @@ pub fn overlay_publications() -> u64 {
 /// real 3-card serving shape, where the worker's primary engine follows the LAST pp stage and
 /// stage 0's intake engine is a different device). Context identity is the exact condition.
 pub struct EmbedOverlay {
-    pub rows: CudaSlice<f32>,
+    /// `Arc` SO A WINDOW REALLY ALIASES (lane/glm53-vision-ppn follow-up, memra-next#23).
+    /// This field was a bare `CudaSlice<f32>` and `window()` cloned it, on the belief — stated
+    /// in two comments here and one on `Engine::clone_dtod` — that `CudaSlice::clone()` bumps a
+    /// refcount. It does not: cudarc 0.19.9 `impl Clone for CudaSlice` is
+    /// `try_clone().unwrap()` -> `stream.clone_dtod(self)`, i.e. a full device allocation plus
+    /// D2D copy of every row, and an `unwrap` that PANICS in the GPU worker thread — which exits
+    /// the process and takes every in-flight session on the box with it. `window()` runs once
+    /// per prefill tick AND once per chunk of a chunked ppN prime, so the old code also paid
+    /// several whole-buffer copies per multi-chunk image prompt while the docs claimed zero.
+    /// With an `Arc`, a window is a refcount bump for real, and the buffer is freed once when
+    /// the last window drops.
+    pub rows: Arc<CudaSlice<f32>>,
     pub spans: Vec<(usize, usize, usize)>,
-    /// The CUDA context `rows` live in. Held as an `Arc` so the context cannot outlive the
-    /// pointer it owns, and so the struct stays `Send` (a raw `CUcontext` would not).
+    /// The CUDA context `rows` ACTUALLY live in — read from the slice itself
+    /// (`CudaSlice::context()`), never from whichever engine the caller thought it used, so the
+    /// label cannot disagree with the pointer (memra-next#24). Held as an `Arc` so the context
+    /// cannot outlive the pointer it owns, and so the struct stays `Send`.
     ctx: Arc<CudaContext>,
 }
 
 impl EmbedOverlay {
-    /// Wrap rows that were built on `e`, recording `e`'s context as their residency.
-    pub fn new(e: &Engine, rows: CudaSlice<f32>, spans: Vec<(usize, usize, usize)>) -> Self {
-        Self {
-            rows,
-            spans,
-            ctx: e.ctx().clone(),
+    /// Wrap rows built on `e`, taking residency FROM THE SLICE and refusing if that disagrees
+    /// with `e`.
+    ///
+    /// WHY NOT JUST RECORD `e.ctx()` (memra-next#24). Allocation goes through
+    /// `Engine::stream()` -> `Gpu::stream()`, which returns the THREAD-LOCAL stream override
+    /// when one is pushed — and that override is not keyed to an engine. So a caller that
+    /// allocates inside a `PpNRt::enter(s)` scope gets a buffer in STAGE s's context while
+    /// believing it used `e`; recording `e.ctx()` would then hand `require_resident` a label
+    /// that vouches for a foreign pointer, which is this lane's own hazard with the label
+    /// inverted. `CudaSlice::context()` is the ground truth, so it is what gets recorded, and a
+    /// disagreement with `e` is a REFUSAL rather than a silently relabelled buffer.
+    pub fn new(
+        e: &Engine,
+        rows: CudaSlice<f32>,
+        spans: Vec<(usize, usize, usize)>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let ctx = rows.context().clone();
+        if ctx.cu_ctx() != e.ctx().cu_ctx() {
+            return Err(format!(
+                "vision embedding overlay refused at construction: the rows were allocated in \
+                 the CUDA context of dev{} but the caller believes it used dev{}. An ambient pp \
+                 stage-stream override redirects allocation to the stage's stream (and its \
+                 context) regardless of which engine is called, so build the overlay OUTSIDE \
+                 any stage scope",
+                ctx.ordinal(),
+                e.ctx().ordinal(),
+            )
+            .into());
         }
+        Ok(Self {
+            rows: Arc::new(rows),
+            spans,
+            ctx,
+        })
     }
 
     /// The context `rows` live in.
@@ -157,6 +197,12 @@ impl EmbedOverlay {
     /// q/k/v and the merger input in EVERY block — a peer D2D twin is a named follow-up, not
     /// a correctness question. Nothing here is per token: decode never touches an overlay.
     ///
+    /// THAT COST SENTENCE IS ONLY TRUE SINCE memra-next#23. When this was first written,
+    /// `window()` deep-copied the whole rows buffer on every prefill tick and every prime
+    /// chunk (see the `rows` field), so a multi-chunk image prompt paid several D2D copies that
+    /// the sentence did not mention. `rows` is now an `Arc` and a window is a refcount bump, so
+    /// the publication really is the only copy on this path.
+    ///
     /// The bytes are moved, never transformed: f32 through the host is bit-exact, which is
     /// what makes `MEMRA_VISION_OVERLAY_PUBLISH=force` a byte-identity gate arm.
     ///
@@ -166,24 +212,39 @@ impl EmbedOverlay {
     /// serving caller (`build_vision_overlay`, at the first prefill tick) and the gate arms both
     /// run outside stage scopes.
     ///
-    /// THE FREE IS ORDERED TOO, and by the same host boundary the reads are. `rows` is dropped
-    /// when the session's overlay is dropped, and cudarc enqueues that free on the stream the
-    /// buffer was allocated on. Every prime call that could have read it ends with a
-    /// host-synchronizing `dtoh` of its logits (`hyper_prime_tail`) plus `publish_all_to` over
-    /// every stage stream, so all stage-side reads have retired before any later host code —
-    /// including the drop — runs. This is the same argument the pre-lane path relied on for
-    /// rows allocated on the caller's stream; it is written here because the accrace lane
-    /// (`MEMRA_PP_EXIT_PUBLISH`) is what happens when it is only assumed.
+    /// THE FREE IS ORDERED TOO — but not by what an earlier version of this comment claimed,
+    /// and this is the sentence a future lane will lean on, so it is worth stating exactly.
+    /// Published rows are freed with `free_async` ON THEIR ALLOCATION STREAM (the intake
+    /// engine's ambient stream), while the splice reads them on pp stage 0's STAGE stream:
+    /// two streams, one context. What orders the reads before the free is (a) the pipeline
+    /// chain itself — stage 0 feeds stage 1 feeds ... feeds the last stage — and (b) the
+    /// host-synchronizing `dtoh` every prime call ends with in `hyper_prime_tail`, which
+    /// retires all of it before any later host code, including the drop, runs.
+    ///
+    /// It is NOT `publish_all_to`: that orders the CALLER behind stage compute (the other
+    /// direction), and it is `MEMRA_PP_EXIT_PUBLISH`-gated, so leaning on it would make this
+    /// argument evaporate at `=0`. And there is no implicit safety net underneath: cudarc event
+    /// tracking is DISABLED in `Engine::new` unless `MEMRA_EVT=1`, so a drop carries no read
+    /// guard — the manual argument above is all there is. (Corrected by the memra-next peer
+    /// review; the accrace lane, `MEMRA_PP_EXIT_PUBLISH`, is what happens when an ordering
+    /// claim in a comment is merely assumed.)
+    /// `mode` is PASSED IN, not read from the environment here (memra-next#25). The door is a
+    /// FAMILY-AGNOSTIC correctness input — every vision family's overlay comes through this
+    /// function — so an unrecognized value has to refuse at BOOT, once, for all of them. When
+    /// this read the env itself, the only boot-time validation was glm5-scoped, so a typo'd
+    /// door on a gemma/qwen/step37 deployment booted clean and then 500'd mid-prefill on the
+    /// first image request: exactly the failure this lane removed for glm5, still live for the
+    /// others. Resolve with `overlay_publish_mode()` at startup and thread the value.
     pub fn new_published(
         tower: &Engine,
         intake: &Engine,
+        mode: OverlayPublish,
         rows: CudaSlice<f32>,
         spans: Vec<(usize, usize, usize)>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let mode = overlay_publish_mode()?;
         let same_ctx = tower.ctx().cu_ctx() == intake.ctx().cu_ctx();
         if mode == OverlayPublish::Never || (mode == OverlayPublish::Auto && same_ctx) {
-            return Ok(Self::new(tower, rows, spans));
+            return Self::new(tower, rows, spans);
         }
         let host = tower.dtoh(&rows)?;
         drop(rows);
@@ -203,13 +264,17 @@ impl EmbedOverlay {
             host.len(),
             (host.len() * std::mem::size_of::<f32>()) as f64 / (1024.0 * 1024.0),
         );
-        Ok(Self::new(intake, published, spans))
+        // The upload's landing context is CHECKED, not assumed (memra-next#24): `Self::new`
+        // reads it off the slice and refuses a disagreement with `intake`, which is what makes
+        // the residency label evidence rather than a claim.
+        Self::new(intake, published, spans)
     }
 
     /// Sub-window for a prime call covering prompt-relative `[off, off+len)`: spans clipped
     /// and rebased so the callee sees call-relative positions (the serve prefill tick primes
-    /// a prompt across multiple `prime_cache_overlaid` calls). `rows` is an Arc clone, not a
-    /// copy. None = no image rows in this window (caller may prime plain).
+    /// a prompt across multiple `prime_cache_overlaid` calls). `rows` is an `Arc` clone — a
+    /// refcount bump, which since memra-next#23 is TRUE rather than merely documented. None =
+    /// no image rows in this window (caller may prime plain).
     pub fn window(&self, off: usize, len: usize) -> Option<EmbedOverlay> {
         let spans: Vec<(usize, usize, usize)> = self
             .spans
@@ -221,10 +286,12 @@ impl EmbedOverlay {
             })
             .collect();
         (!spans.is_empty()).then(|| EmbedOverlay {
-            rows: self.rows.clone(),
+            // Arc::clone: the window ALIASES the parent's rows (no allocation, no D2D copy, no
+            // `unwrap` that could panic the GPU worker), so it necessarily carries the parent's
+            // residency too.
+            rows: Arc::clone(&self.rows),
             spans,
-            // A window aliases the SAME device rows, so it carries the same residency.
-            ctx: self.ctx.clone(),
+            ctx: Arc::clone(&self.ctx),
         })
     }
 
@@ -761,8 +828,23 @@ mod tests {
         let rows = stream
             .alloc_zeros::<f32>(8 * 4)
             .expect("rows in the foreign context");
+
+        // `EmbedOverlay::new` REFUSES this construction outright since memra-next#24 — it takes
+        // residency from `rows.context()` and rejects a disagreement with the engine — so that
+        // is asserted first, and only then is the struct fabricated through the private field to
+        // reach the consumers behind it. Two layers, both executed: a caller cannot build the
+        // mislabelled overlay, and if one ever existed the splice would still refuse it.
+        let refused = match EmbedOverlay::new(&e, rows, vec![(0, 0, 2)]) {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("new() must refuse rows allocated in another context"),
+        };
+        assert!(refused.contains("refused at construction"), "{refused}");
+
+        let rows = stream
+            .alloc_zeros::<f32>(8 * 4)
+            .expect("rows in the foreign context");
         let ov = EmbedOverlay {
-            rows,
+            rows: std::sync::Arc::new(rows),
             spans: vec![(0, 0, 2)],
             ctx: foreign.clone(),
         };
@@ -789,7 +871,8 @@ mod tests {
 
         // The primary-context twin of the same shape is accepted, so the assertion above is
         // about RESIDENCY and not about the arguments.
-        let ok = EmbedOverlay::new(&e, e.zeros(8 * 4).unwrap(), vec![(0, 0, 2)]);
+        let ok = EmbedOverlay::new(&e, e.zeros(8 * 4).unwrap(), vec![(0, 0, 2)])
+            .expect("a same-context overlay constructs");
         assert!(ok.resident_in(&e));
         ok.splice_into(&e, &mut embedded, 0, 8, 4)
             .expect("a same-context overlay splices");

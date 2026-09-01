@@ -5750,9 +5750,17 @@ impl Engine {
         Ok(())
     }
 
-    /// Real device-to-device COPY of `src` into a freshly allocated buffer (NOT an Arc clone).
-    /// Used for cache snapshots (MTP-PLAN §D.4): `CudaSlice::clone()` only bumps a refcount and
-    /// would alias the live buffer; this allocs new device memory and memcpy_dtod's the contents.
+    /// Real device-to-device COPY of `src` into a freshly allocated buffer. Used for cache
+    /// snapshots (MTP-PLAN §D.4), where a snapshot must not alias the live buffer.
+    ///
+    /// CORRECTION (memra-next#23, verified against cudarc 0.19.9): this comment used to say
+    /// "`CudaSlice::clone()` only bumps a refcount and would alias the live buffer". That is
+    /// FALSE and it propagated — `impl Clone for CudaSlice` is `try_clone().unwrap()`, and
+    /// `try_clone` is `self.stream.clone_dtod(self)`, so a plain `.clone()` already performs
+    /// exactly this allocation and copy, differing only in that its `unwrap` PANICS on failure
+    /// instead of returning an Err (fatal in the GPU worker thread). Prefer this method, or
+    /// `try_clone()`, over `.clone()` for that reason — not because `.clone()` aliases. Code
+    /// that wants real aliasing needs an `Arc<CudaSlice<T>>` (see `vision::EmbedOverlay::rows`).
     pub fn clone_dtod(
         &self,
         src: &CudaSlice<f32>,

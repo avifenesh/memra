@@ -1,0 +1,19 @@
+glm5-hyper-ppn-gate matrix, PORTED tree 9e93ef733 on the NEW repo history 2026-09-01T14:41:19Z
+base: origin/main 49d1d6f65 (catch-up sync of memra@469c8898e, purge re-applied) — UNRELATED
+history to the pre-port clone; the fix was re-applied as CONTENT, and the 6 touched files
+were verified byte-identical to the pre-port versions (zero overlap with the purge diff).
+rig: RTX 5090 laptop, exactness only, flock, NVIDIA_TF32_OVERRIDE=0
+binary: sha256 e0a954b835fa942353d7669b59fca3d6
+closes memra#23 (Arc rows: window aliases, no unwrap panic), memra#25 (door resolved once
+at boot for ALL four vision families, threaded), memra#24 (residency read from
+CudaSlice::context() + fail-closed None arm).
+
+n2 (stages=2 P=6 N=8 default): exit=0 pass_lines=8 fails=0 publications=1
+n3 (stages=3 P=6 N=8 default): exit=0 pass_lines=8 fails=0 publications=1
+n4 (stages=4 P=6 N=8 default): exit=0 pass_lines=8 fails=0 publications=1
+n2-streams0 (stages=2 P=6 N=8 MEMRA_PP_STREAMS=0): exit=0 pass_lines=8 fails=0 publications=1
+n2-long (stages=2 P=16 N=24 default): exit=0 pass_lines=8 fails=0 publications=1
+n3-chunked (stages=3 P=192 N=8 MEMRA_PRIME_CHUNK=64): exit=0 pass_lines=8 fails=0 publications=1
+RED span-shift: exit=1 (MUST be non-zero) fails=5 published_arms_red=2
+ambient-door immunity, n3 with MEMRA_VISION_OVERLAY_PUBLISH=0: exit=0 pass_lines=8 publications=1 (arm 5d takes a VALUE, so the ambient door cannot silence it)
+unit tests: test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 330 filtered out; finished in 0.29s

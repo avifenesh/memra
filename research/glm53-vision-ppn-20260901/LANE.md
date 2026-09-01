@@ -276,8 +276,119 @@ bitten:
   branches of that assertion were executed before the window.
 * Rebuilt and re-gated on the rebased tree — a pre-rebase green does not carry across 12 commits.
 
+## 8c. PEER REVIEW OF THE MERGED PR, AND THE THREE FINDINGS FIXED (memra-next#23/#24/#25)
+
+PR #104 merged as `77a4d1249` before the peer review returned, so these are fix-forward. The
+review CONFIRMED the core fix (context equality is the right validity condition, verified against
+cudarc's primary-context retain; nothing loosened; the same-device case is ordered by the existing
+`fence_stages_behind`) and found three things worth fixing plus one comment to correct. All are
+now closed on this tree. **Every claim below was verified against cudarc 0.19.9's source, not
+taken on the reviewer's word — and two of them contradicted comments already in this repo.**
+
+### #23 FLEET-FATAL, and two of my own comments were false
+
+`EmbedOverlay::window` did `rows: self.rows.clone()`. cudarc 0.19.9 `impl Clone for CudaSlice` is
+`try_clone().unwrap()`, and `try_clone` is `self.stream.clone_dtod(self)` (core.rs:856-865). So a
+"window" was a full device allocation plus a D2D copy of every row, with an `unwrap` that PANICS
+in the GPU worker thread — which exits the process and kills every in-flight session on the box
+(the banked engine-panics-are-fleet-fatal law). It ran once per prefill TICK and once per prime
+CHUNK, so a multi-chunk image prompt paid several whole-buffer copies.
+
+Three things were wrong at once, and all three are fixed:
+
+* `rows` is now `Arc<CudaSlice<f32>>`, so a window is a refcount bump **for real** — no
+  allocation, no copy, no panic path — and the buffer frees once when the last window drops.
+* The **false belief was corrected at every site that stated it**, not just mine: this file's two
+  comments, `Engine::clone_dtod`'s doc in `crates/memra-engine/src/lib.rs` (which asserted
+  "`CudaSlice::clone()` only bumps a refcount and would alias the live buffer"), and
+  `crates/memra-kv/src/lib.rs`'s snapshot comment (which reached the right action from the wrong
+  reason). One site already had it right (`lib.rs:28670`), which is how a repo ends up believing
+  both things at once.
+* **The published cost story is restated honestly.** "ONE round trip per session, nothing per
+  token" was true of the publication and silent about `window()`'s copies. It is true as written
+  only since this fix, and the doc comment now says so.
+
+### #25 LIVE EXPOSURE: a family-scoped guard on a family-agnostic door
+
+`overlay_publish_mode()?` was the FIRST line of `new_published`, which **all four** vision
+families reach (qwen-VL, gemma4, glm5, step37) — while the boot-time validation ran only under
+`glm5_tower.is_some()`. So `MEMRA_VISION_OVERLAY_PUBLISH=yes` on a step37 deployment — step37
+serves vision in production TODAY — booted clean and 500'd mid-prefill on the first image
+request: precisely the failure this lane removed for glm5, left live for the others. Fixed by
+resolving the door **once at boot, unconditionally**, and threading the resolved `OverlayPublish`
+through `prefill_tick` -> `build_vision_overlay` -> `new_published`. The env is no longer read
+per session at all.
+
+### #24 The residency label could LIE, and the fail-open arm was reachable
+
+`new_published` recorded `intake.ctx()` while allocating through `intake.htod`, which resolves the
+stream via the THREAD-LOCAL `STREAM_OVERRIDE` — not keyed to an engine. Inside a `PpNRt::enter(s)`
+scope the upload would therefore land in STAGE s's context while the struct claimed intake's, and
+`require_resident` would then PASS and vouch for a foreign pointer: this lane's own hazard with
+the label inverted. My "call outside any stage scope" comment was correct and load-bearing, i.e. a
+convention where an invariant was two lines away.
+
+Fixed by taking residency from the **pointer** instead of the caller: `EmbedOverlay::new` reads
+`rows.context()` (cudarc core.rs:844) and REFUSES when it disagrees with the engine the caller
+believes it used, so a mislabelled overlay cannot be constructed; `new_published` routes its
+uploaded buffer through the same constructor, making the label evidence rather than a claim. The
+GPU test now asserts BOTH layers (construction refuses; and a fabricated mislabel still refuses at
+the splice). Also fixed the reachable fail-open: the boot check's `None => true` is now
+`false` — the `MEMRA_GLM5_VISION_DIR` branch loads a tower with no requirement that a glm5_next
+model exists, so DIR-set-and-no-glm5-model advertised image serving on an unchecked placement.
+The remaining multi-glm5-trunk limit (`find()` takes the first model while `vision_intake_engine`
+keys on that model's layer count) is now STATED in the boot block rather than assumed away.
+
+### The ordering sentence, corrected
+
+The merged comment credited `publish_all_to` for ordering the published rows' free before the
+stage-0 reads. That is wrong in a way worth recording: `publish_all_to` orders the CALLER behind
+stage compute (the other direction) and is `MEMRA_PP_EXIT_PUBLISH`-gated, so the argument would
+evaporate at `=0`. What actually orders it is the pipeline chain plus the host-synchronizing
+`dtoh` every prime ends with in `hyper_prime_tail`. And there is no implicit net underneath:
+cudarc event tracking is DISABLED in `Engine::new` unless `MEMRA_EVT=1`, so a drop carries no read
+guard. The comment now says exactly that — it is the sentence a future lane will lean on.
+
+### Re-gated on the hardened tree (`receipts/rig/SUMMARY-hardening.txt`)
+
+6/6 cells green at 8 `gate PASS` lines with the publication asserted in each, span-shift RED exits
+1 with both new arms among its 5 failures, unit tests 3/3. Plus a NEW arm the fix made possible:
+**n3 with `MEMRA_VISION_OVERLAY_PUBLISH=0` in the ambient environment still publishes and passes**
+— arm 5d now takes `OverlayPublish::Force` as a VALUE instead of mutating process-global env, so
+the gate is immune to whatever the operator's environment says (and the env PARSING is covered by
+the pure resolver's unit tests instead). fmt clean, clippy zero lints across memra-engine,
+memra-server and memra-kv, check-flags clean at 795 reads.
+
+### PORTED to the fresh repo (owner's all-clear, 2026-09-01)
+
+The archives were deleted and `avifenesh/memra` is a NEW repo on the same name with UNRELATED
+history — `git merge-base HEAD origin/main` returns EMPTY, and the roots differ
+(`68b66bb7d` vs `49d1d6f65`). Nothing was merged across that boundary. The fix was re-applied as
+CONTENT onto a fresh anchor off the new `origin/main` (`49d1d6f65`, "catch-up sync:
+memra@469c8898e (purge re-applied)"), which already carries PR #104.
+
+Two checks before trusting the port, because "it applied cleanly" is not the same as "it is the
+same change":
+
+* all **6 touched files were byte-identical** between the new main and my pre-port base
+  (`469c8898e`), so the patch was not silently adapting to purged content; and after the port,
+  the changed files are byte-identical to the pre-port versions.
+* the snapshot's own tree differs from mine in **38 unrelated files** (the purge's redactions,
+  e.g. `research/gateway-20260812/raw/.../models-openrouter.json`). **Zero overlap** with my
+  change set, verified by set intersection rather than by eye.
+
+Re-gated ON THE PORTED TREE — a green from the pre-port clone does not carry across an unrelated
+history: same 6/6 cells at 8 `gate PASS` lines, RED still exits 1 with both new arms failing,
+ambient-door immunity arm green, unit tests 3/3, fmt/clippy/check-flags clean.
+
 ## 9. STATUS LOG
 
+* **2026-09-01 (latest)** — PR #104 MERGED as `77a4d1249` (main then `469c8898e`); merge verified
+  against main's own blobs and the lane's gates re-run green on the COMBINED main. Peer review
+  returned after the merge with three real findings (#23 fleet-fatal `unwrap` + false aliasing
+  comments + the cost story, #25 the family-agnostic door guarded per-family with step37 live,
+  #24 the residency label that could lie + a reachable fail-open) — all fixed locally and
+  re-gated (§8c). Held unpushed per the owner's no-merge window; ports to the fresh repos.
 * **2026-09-01 (later)** — coordinator relayed WINDOW GRANTED, second in the queue, with two
   conditions; both folded in and verified on the rig (fixture sha pins + 17 executed refusal
   paths; boot-level interleave driver whose own identity assertion was caught false-greening and
