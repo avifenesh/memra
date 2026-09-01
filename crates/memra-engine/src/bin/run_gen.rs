@@ -596,26 +596,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .and_then(|v| v.parse::<usize>().ok())
                 .filter(|&k| k > 0)
             {
-                // generate_spec PRIMES INSIDE the call, while the plain arm below times only
-                // its decode loop (its prime is the separate [ttft] line). Reporting the raw
-                // span therefore compared 400 tokens of decode against decode PLUS a ~37 s
-                // 4k-token prime, and made spec look like 9.9 tok/s against 76: with
-                // MEMRA_SPEC_PHASE=1 the round loop was 6.66 s of a 40.55 s wall (16%), i.e.
-                // 60.1 tok/s. Same fix and same reason as the GGUF path's "gen-only; prime"
-                // line — subtract the engine's published prime wall.
-                let prime_before =
-                    memra_engine::PRIME_NANOS.load(std::sync::atomic::Ordering::Relaxed);
                 let t0 = std::time::Instant::now();
                 let (out, drafted, accepted) = model.generate_spec(&e, &prompt, n_new, k)?;
                 e.stream().synchronize()?;
-                let dt_total = t0.elapsed().as_secs_f64();
-                let prime_s = memra_engine::PRIME_NANOS
-                    .load(std::sync::atomic::Ordering::Relaxed)
-                    .saturating_sub(prime_before) as f64
-                    / 1e9;
-                let dt = (dt_total - prime_s).max(1e-9);
+                let dt = t0.elapsed().as_secs_f64();
                 println!(
-                    "generated {} tokens in {dt:.3}s = {:.2} tok/s (ST spec K={k} gen-only; prime {prime_s:.3}s of {dt_total:.3}s wall) drafted={drafted} accepted={accepted})",
+                    "generated {} tokens in {dt:.3}s = {:.2} tok/s (ST spec K={k}                      drafted={drafted} accepted={accepted})",
                     out.len(),
                     out.len() as f64 / dt,
                 );
@@ -631,18 +617,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let decode_profiler_range = DecodeProfilerRange::start_if_requested(&e);
             let t0 = std::time::Instant::now();
             for step in 0..n_new {
-                if let Some((at, path)) = &forced_logits_dump
-                    && step == *at
-                {
-                    let mut raw = Vec::with_capacity(logits.len() * 4);
-                    for value in &logits {
-                        raw.extend_from_slice(&value.to_le_bytes());
+                if let Some((at, path)) = &forced_logits_dump {
+                    if step == *at {
+                        let mut raw = Vec::with_capacity(logits.len() * 4);
+                        for value in &logits {
+                            raw.extend_from_slice(&value.to_le_bytes());
+                        }
+                        std::fs::write(path, raw)?;
+                        println!(
+                            "teacher-forced logits at step {step} -> {path} ({} f32)",
+                            logits.len()
+                        );
                     }
-                    std::fs::write(path, raw)?;
-                    println!(
-                        "teacher-forced logits at step {step} -> {path} ({} f32)",
-                        logits.len()
-                    );
                 }
                 // Keep the ordinary host argmax cost inside teacher-forced A/B windows; only the
                 // token fed into the next decode step changes.
@@ -1323,18 +1309,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut out = Vec::with_capacity(n_new);
         let t0 = std::time::Instant::now();
         for (step, &next) in forced_tokens.iter().take(n_new).enumerate() {
-            if let Some((at, path)) = &forced_logits_dump
-                && step == *at
-            {
-                let mut raw = Vec::with_capacity(logits.len() * 4);
-                for value in &logits {
-                    raw.extend_from_slice(&value.to_le_bytes());
+            if let Some((at, path)) = &forced_logits_dump {
+                if step == *at {
+                    let mut raw = Vec::with_capacity(logits.len() * 4);
+                    for value in &logits {
+                        raw.extend_from_slice(&value.to_le_bytes());
+                    }
+                    std::fs::write(path, raw)?;
+                    println!(
+                        "teacher-forced logits at step {step} -> {path} ({} f32)",
+                        logits.len()
+                    );
                 }
-                std::fs::write(path, raw)?;
-                println!(
-                    "teacher-forced logits at step {step} -> {path} ({} f32)",
-                    logits.len()
-                );
             }
             let greedy = argmax(&logits) as u32;
             if greedy != next {

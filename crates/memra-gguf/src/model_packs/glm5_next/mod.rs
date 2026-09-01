@@ -1,9 +1,8 @@
 use super::*;
 use crate::model_plan::{
-    ActivationPlan, AttentionPlan, Glm5VisionPlan, HcCollapse, KimiDeltaNetPlan, KpoolPlan,
-    LayerPlan, MlaAttentionPlan, MlpPlan, MoeMlpPlan, NormKind, NormPlan, ResidualTopology,
-    RopeFactors, RopePlan, RouterPlan, SharedMlpPlan, SparseIndexPlan, StatePlan, VisionPlan,
-    VisionTokenInjectionPlan, WeightTransform,
+    ActivationPlan, AttentionPlan, HcCollapse, KimiDeltaNetPlan, KpoolPlan, LayerPlan,
+    MlaAttentionPlan, MlpPlan, MoeMlpPlan, NormKind, NormPlan, ResidualTopology, RopeFactors,
+    RopePlan, RouterPlan, SharedMlpPlan, SparseIndexPlan, StatePlan, WeightTransform,
 };
 
 /// GLM-5.3-Flash (glm5_next): 34 KDA + 11 MLA/DSA hybrid, NoPE, k-pool indexer,
@@ -53,43 +52,15 @@ fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
         collapse: HcCollapse::Mean,
     };
     Ok(ModelPlan {
-        // glm5_next's mHC exit is its own program; the qwen4_exp exit-mixer field stays unset.
-        exit_mixer: None,
         arch: Arch::Glm5Next,
         hidden_size: 8,
         vocab_size: 32,
         context_length: 32,
         embedding_scale: 1.0,
-        // Tiny twin of the glm5_next tower program (lane/glm5-vision): every element the
-        // real tower exercises — fused qkv + biases, per-head q/k RMS, 2D rope, clamped
-        // SwiGLU, downsample conv, gated merger, grid-derived splice with delimiters.
-        vision: Some(VisionPlan::Glm5Fused(Glm5VisionPlan {
-            depth: 2,
-            hidden_size: 8,
-            heads: 2,
-            head_dim: 4,
-            intermediate_size: 16,
-            patch_size: 2,
-            temporal_patch_size: 2,
-            spatial_merge_size: 2,
-            out_hidden_size: 8,
-            projection_intermediate_size: 16,
-            swiglu_limit: 10.0,
-            rope_theta: 10_000.0,
-            norm,
-            in_channels: 3,
-            patch_input_width: 3 * 2 * 2 * 2,
-        })),
-        multimodal: Some(VisionTokenInjectionPlan {
-            placeholder_token_id: 3,
-            tokens_per_image: None,
-            start_token_id: Some(4),
-            end_token_id: Some(5),
-        }),
+        vision: None,
+        multimodal: None,
         layers: vec![
             LayerPlan {
-                ple: None,
-                sparse_overlay: None,
                 index: 0,
                 pre_attention_norm: norm,
                 attention: AttentionPlan::KimiDeltaNet(KimiDeltaNetPlan {
@@ -111,8 +82,6 @@ fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
                 },
             },
             LayerPlan {
-                ple: None,
-                sparse_overlay: None,
                 index: 1,
                 pre_attention_norm: norm,
                 attention: AttentionPlan::Mla(MlaAttentionPlan::LatentKv {
@@ -177,7 +146,6 @@ fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
 /// tower is censused here by hand from artifact truth (shard headers, banked in the lane:
 /// 24 blocks, hidden 1024, fused qkv 3072 with bias, gated MLP 4096, conv patch embed
 /// [1024,3,2,14,14], conv downsample [4096,1024,2,2], gated merger 4096->10240->4096).
-#[allow(clippy::result_large_err)] // allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
 fn glm5_tensor_schema(
     config: &crate::config::ModelConfig,
     plan: &ModelPlan,
@@ -191,29 +159,6 @@ fn glm5_tensor_schema(
     let mut contract = canonical_tensor_schema(config, plan, dialect, options)?;
     if dialect != crate::tensor_contract::CheckpointDialect::HfSafetensors {
         return Ok(contract);
-    }
-    // The tower census applies only when the plan carries the tower (a text-only
-    // glm5_next config censusing visual tensors would fail every shard). The hand-census
-    // constants below are ARTIFACT truth; a plan disagreeing with them is a different
-    // artifact, refused rather than re-derived.
-    let Some(VisionPlan::Glm5Fused(vision)) = plan.vision.as_ref() else {
-        return Ok(contract);
-    };
-    if vision.depth != 24
-        || vision.hidden_size != 1024
-        || vision.intermediate_size != 4096
-        || vision.head_dim != 64
-        || vision.out_hidden_size != 4096
-        || vision.projection_intermediate_size != 10_240
-        || vision.patch_size != 14
-        || vision.temporal_patch_size != 2
-        || vision.spatial_merge_size != 2
-    {
-        return Err(
-            crate::tensor_contract::TensorContractError::UnsupportedPlanOperation {
-                operation: "glm5_next vision census only covers the GLM-5.3-Flash tower geometry",
-            },
-        );
     }
     let mut push = |layer: Option<u32>, tensor: VisionTensor, name: String, shape: Vec<u64>| {
         contract.requirements.push(TensorRequirement {

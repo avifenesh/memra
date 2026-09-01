@@ -221,7 +221,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         use cudarc::driver::DevicePtr;
         let stream = engine.stream();
         let (ptr, _guard) = buf.device_ptr(&stream);
-        ptr
+        ptr as u64
     };
     let p_input_e = {
         let _main = e.gpu.enter_main()?;
@@ -351,7 +351,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         unsafe {
             let _main = e.gpu.enter_main()?;
-
+            use cudarc::driver::DevicePtr;
             let _ = &e; // stream handle below
             cu_try(
                 sys::cuGraphLaunch(exec, e.stream().cu_stream() as sys::CUstream),
@@ -802,7 +802,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let raw_f = e.raw_kernel_function("scale_f32")?;
         let stream = e.stream();
         let (ptr, _g) = bufs.input_e.device_ptr(&stream);
-        let mut dptr = ptr;
+        let mut dptr = ptr as u64;
         let mut scale = 1.0000001f32;
         let mut nn = 64i32;
         let mut params = [

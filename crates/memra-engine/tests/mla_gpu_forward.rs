@@ -21,8 +21,8 @@ use memra_engine::hybrid::HybridModel;
 use memra_gguf::GgufFile;
 use memra_gguf::micro_gguf::write_glm_dsa_micro;
 
-// BEFORE-RECEIPT gate: the glm-dsa micro fixture must run a real prefill through
-// `Mixer::Mla`. Before increment 4 this panics in `mla_forward_unimplemented()`.
+/// BEFORE-RECEIPT gate: the glm-dsa micro fixture must run a real prefill through
+/// `Mixer::Mla`. Before increment 4 this panics in `mla_forward_unimplemented()`.
 
 /// Process-wide GPU serialization for the cases in this file. `flock` serializes across
 /// PROCESSES; this serializes the threads inside one test binary.
@@ -33,7 +33,6 @@ fn gpu_guard() -> std::sync::MutexGuard<'static, ()> {
 
 #[test]
 #[ignore = "needs a CUDA device — run under flock /tmp/memra-5090.lock"]
-#[allow(clippy::unusual_byte_groupings)] // allow: mnemonic grouping of a pinned seed/magic constant
 fn gpu_glm_dsa_micro_block_forward_runs() {
     let _gpu = gpu_guard();
     let p = std::env::temp_dir().join(format!("memra-mla-fwd-gpu-{}.gguf", std::process::id()));
@@ -310,7 +309,7 @@ fn gpu_mla_decode_stepwise_parity_vs_cpu_oracle() {
         let wv_b = e.htod(&c.w_uv).unwrap();
 
         // append helper: rows [lo, hi) of the c_kv / k_pe planes into the cache at slot lo
-        let append = |lo: usize, hi: usize, cache: &mut _| {
+        let mut append = |lo: usize, hi: usize, cache: &mut _| {
             let n = hi - lo;
             let c_kv = e.htod(&c.c_kv[lo * r..hi * r]).unwrap();
             let k_pe = e
@@ -413,8 +412,6 @@ fn gpu_mla_rope_interleaved_matches_cpu() {
         let positions: Vec<i32> = (0..n_pos as i32).map(|p| p * 13).collect();
 
         let mut want = host.clone();
-        #[allow(clippy::needless_range_loop)]
-        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
         for p in 0..n_pos {
             for v in 0..n_vec {
                 let off = (p * n_vec + v) * d_rope;
@@ -457,7 +454,6 @@ fn gpu_mla_rope_interleaved_matches_cpu() {
 /// same token sequence — the two arms share the core, so any disagreement is cache plumbing.
 #[test]
 #[ignore = "needs a CUDA device — run under flock /tmp/memra-5090.lock"]
-#[allow(clippy::unusual_byte_groupings)] // allow: mnemonic grouping of a pinned seed/magic constant
 fn gpu_mla_cached_prime_decode_matches_stateless_forward() {
     let _gpu = gpu_guard();
     let p = std::env::temp_dir().join(format!("memra-mla-cached-{}.gguf", std::process::id()));

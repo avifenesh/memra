@@ -1,6 +1,6 @@
 {
  "format": "bw24-expert-tier-plan-v2",
- "description": "importance-fused candidate: plain-arm routed mass x cloudbox big-corpus prior; no pruning; byte-bounded to the uniform Q3_K baseline per layer",
+ "description": "importance-fused candidate: plain-arm routed mass x Sbox big-corpus prior; no pruning; byte-bounded to the uniform Q3_K baseline per layer",
  "recipe": "fused-mass-prior-q8-q3-q2-noprune",
  "model": {
   "expert_count": 192,
@@ -17509,7 +17509,7 @@
     "traces": 24,
     "corpus": "private-24"
    },
-   "prior_plan": "/data/backups/boxes/bw24-cloudbox/receipts/recovery/bw24-hy3-110gb/coverage110-v1-20260717T001444Z/plans/layer-balanced100.frozen.json"
+   "prior_plan": "/data/backups/boxes/bw24-sbox/receipts/recovery/bw24-hy3-110gb/coverage110-v1-20260717T001444Z/plans/layer-balanced100.frozen.json"
   }
  }
 }

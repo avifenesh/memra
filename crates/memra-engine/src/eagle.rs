@@ -358,7 +358,6 @@ impl Eagle3Scratch {
                 len: 0,
                 ring: None,
                 len_d: e.htod_i32(&[0])?,
-                base_d: None,
             },
         })
     }
@@ -458,8 +457,6 @@ impl HybridModel {
                 }
             };
             let mut n_acc = 0usize;
-            #[allow(clippy::needless_range_loop)]
-            // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
             for j in 0..k {
                 if t_pred(j) == draft_toks[j] {
                     n_acc += 1;
@@ -472,8 +469,6 @@ impl HybridModel {
             total_accepted += n_acc;
 
             // --- 5. COMMIT draft[0..n_acc] then bonus ---
-            #[allow(clippy::needless_range_loop)]
-            // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
             for j in 0..n_acc {
                 if out.len() >= max_new {
                     break;
@@ -574,7 +569,9 @@ impl EagleConfig {
             let rest = &txt[i..];
             let c = rest.find(':')? + 1;
             let tail = rest[c..].trim_start();
-            let end = tail.find([',', '}', '\n']).unwrap_or(tail.len());
+            let end = tail
+                .find(|ch: char| ch == ',' || ch == '}' || ch == '\n')
+                .unwrap_or(tail.len());
             tail[..end].trim().parse::<f64>().ok()
         };
         let aux_layers: Vec<usize> = {

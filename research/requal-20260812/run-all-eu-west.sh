@@ -2,7 +2,7 @@
 # Hold the shared GPU flock continuously across the fixed sellgate gates and campaign.
 set -euo pipefail
 
-ROOT=${REQUAL_ROOT:-/opt/scratch/nvme/cx-requal}
+ROOT=${REQUAL_ROOT:-/opt/dl-image/nvme/cx-requal}
 MODELS=$ROOT/models
 DRIVER=$ROOT/harness/run-eu-west.sh
 STAMP=${REQUAL_STAMP:-$(date -u +%Y%m%dT%H%M%SZ)}

@@ -602,7 +602,6 @@ mod tests {
         valley: Arc<AtomicBool>,
         busy: Arc<AtomicBool>,
     }
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     fn sigs() -> (
         Sig,
         Arc<dyn Fn() -> bool + Send + Sync>,
@@ -675,16 +674,12 @@ mod tests {
         wait_for("job running", 1000, || {
             matches!(proc_state(pid), Some('R' | 'S'))
         });
-        // busy edge -> SIGSTOP. The wiring claim is the yield itself plus the counters;
-        // wall-clock tightness is poll_ms config, not an OS promise — a 500ms bound
-        // starved out under a co-running perf battery (2026-08-30, local-ci full load:
-        // the runner thread didn't get scheduled for >500ms). 3s keeps the gate loud on
-        // real wiring breaks without asserting scheduler latency.
+        // busy edge -> SIGSTOP within the bound (poll 5ms; assert well under 500ms).
         sig.valley.store(false, Ordering::Release);
         sig.busy.store(true, Ordering::Release);
         let t0 = std::time::Instant::now();
-        wait_for("yield to T", 3000, || proc_state(pid) == Some('T'));
-        println!("yield latency: {}ms", t0.elapsed().as_millis());
+        wait_for("yield to T", 500, || proc_state(pid) == Some('T'));
+        assert!(t0.elapsed().as_millis() < 500);
         assert_eq!(st.state.load(Ordering::Acquire), BG_YIELDED);
         assert_eq!(st.yields.load(Ordering::Relaxed), 1);
         // back to valley -> SIGCONT.

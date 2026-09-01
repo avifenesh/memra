@@ -83,7 +83,7 @@
 - Merged origin/main (fused3 QKV) into the lane; box rebuilt. All receipts in
   /scratch/receipts/memra-sm100/ + memra-b200-tune/cells.jsonl, synced to raw/b200/.
 - Ops: transient WARP flap killed the pull-loop (box was fine) — restarted with 3-strike tolerance.
-  The provider CLI credentials now return InvalidClientTokenId (key rotated/revoked?) — OWNER INPUT NEEDED;
+  hyperscaler CLI credentials now return InvalidClientTokenId (key rotated/revoked?) — OWNER INPUT NEEDED;
   SSH to the box is unaffected.
 
 ## ~15:40-20:30Z — decode wall mapped; NVFP4 exact + 8.5 PF; arms step-250 evals; eval automation
@@ -106,7 +106,7 @@
 - Ops: ckpt-watch-v2 deployed (fires eval for EVERY new checkpoint, serialized, mid-write guard,
   per-step receipt archiving). Training ETA: arms will NOT finish 10 epochs before the block ends
   2026-08-16T11:30Z — a/b land ~step 860, c ~step 580; ship best checkpoint per curves at block
-  end. Provider CLI creds invalid (InvalidClientTokenId) — owner input needed; SSH unaffected.
+  end. hyperscaler CLI creds invalid (InvalidClientTokenId) — owner input needed; SSH unaffected.
 
 ## BLOCK CLOSED (2026-08-16 ~09:05Z termination)
 
@@ -126,7 +126,7 @@ Final state of the three workstreams this block carried:
    semantics pinned. Decode e4m3-blk MMVQ wall mapped (I2F-bound; no bit-identity fix exists).
 3. **Baselines**: vLLM 0.27.1 B200 best-practice numbers banked pre-block (103/613/1269 tok/s).
 
-Owner items outstanding: provider credentials invalid (InvalidClientTokenId) — cannot query/launch
+Owner items outstanding: hyperscaler credentials invalid (InvalidClientTokenId) — cannot query/launch
 until rotated; DP2-trainer batch question moot with box gone; lane/sm100a-fp8-bringup merge is
 an owner call (pre-merge battery on a PRO 6000 verifier per doctrine); next training block
 decision (cum-625 -> bar-plus weights ≈ 3-4h of B200-class time using the saved checkpoint).

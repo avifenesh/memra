@@ -480,14 +480,6 @@ fn run_arm(regime: Regime, mutation: Mutation) -> Arm {
                 std::env::set_var("MEMRA_MOE_SLOTS", SLOTS.to_string());
             }
         }
-        // MEMRA_MOE_GROUPED_PREFILL went DEFAULT ON on 2026-08-29. It is slab-only and fails
-        // closed on the SLRU placement, so with it live the two regimes here would run
-        // DIFFERENT dispatch classes at t > 16 (grouped f16 GEMM vs the staged loop) and the
-        // §B.3 bit-identity this gate exists to pin would be comparing programs, not
-        // placements. The gate measures placement provenance in ISOLATION; pin the grouped
-        // seam off in both regimes (`glm5_moe_grouped_prefill_gpu.rs` owns the grouped arm's
-        // own placement gates, including the SLRU fail-closed one).
-        std::env::set_var("MEMRA_MOE_GROUPED_PREFILL", "0");
     }
 
     let config = mini_config();
@@ -667,7 +659,6 @@ fn the_residency_gate_actually_binds() {
 /// non-NVFP4 bank, slots that no longer force eviction) fails on any machine rather than
 /// silently turning the GPU gates into tautologies.
 #[test]
-#[allow(clippy::assertions_on_constants)] // allow: const pins; fail the suite loudly if the fixture constants drift out of the gated window
 fn the_fixture_is_the_nvfp4_macro_carrying_shape() {
     let config = mini_config();
     let plan = mini_plan(&config);
@@ -687,7 +678,7 @@ fn the_fixture_is_the_nvfp4_macro_carrying_shape() {
         .find(|l| matches!(l.mlp, MlpPlan::Moe(_)))
         .expect("the mini plan must carry a routed-MoE layer");
     assert!(
-        config.swiglu_clamped_at(moe_layer.index),
+        config.swiglu_clamped_at(moe_layer.index as u32),
         "the MoE layer must report a live SwiGLU clamp — that is what denies glm5_next the \
          fused grouped-decode arm and forces the per-expert staged loop this gate compares"
     );

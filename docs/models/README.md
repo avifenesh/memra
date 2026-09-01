@@ -18,7 +18,6 @@ support matrix remains [docs/MODELS.md](../MODELS.md); measurements remain
 - [Gemma 4 E4B](gemma4-e4b.md)
 - [Step 3.7 Flash 196B-A11B](step37-flash.md)
 - [DeepSeek V4 Flash](deepseek-v4-flash.md) — experimental
-- [Hy3](hy3.md) — NativeReference; checkpoint and serving qualification pending
 
 Support is checkpoint-, quantization-, drafter-, and hardware-specific. A card is a route into
 the authoritative docs, not a promise about adjacent checkpoints.

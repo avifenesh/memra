@@ -244,18 +244,19 @@ pub fn split_qwen35(text: &str) -> Vec<String> {
         }
 
         // regex: [^\r\n\p{L}\p{N}]?[\p{L}\p{M}]+
-        if !(cpt == '\r' as u32 || cpt == '\n' as u32 || flags.is_number())
-            && (flags.is_letter()
+        if !(cpt == '\r' as u32 || cpt == '\n' as u32 || flags.is_number()) {
+            if flags.is_letter()
                 || flags.is_accent_mark()
                 || get_flags(pos + 1).is_accent_mark()
-                || get_flags(pos + 1).is_letter())
-        {
-            pos += 1;
-            while get_flags(pos).is_letter() || get_flags(pos).is_accent_mark() {
+                || get_flags(pos + 1).is_letter()
+            {
                 pos += 1;
+                while get_flags(pos).is_letter() || get_flags(pos).is_accent_mark() {
+                    pos += 1;
+                }
+                add_token(pos, &mut prev_end, &mut lens);
+                continue;
             }
-            add_token(pos, &mut prev_end, &mut lens);
-            continue;
         }
 
         // regex: \p{N}

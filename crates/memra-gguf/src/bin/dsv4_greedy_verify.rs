@@ -9,8 +9,8 @@
 //!   - the first disagreement position is exactly the first greedy divergence (the
 //!     prefix up to it is identical), and both logit rows exist for analysis: the CPU
 //!     row from this run, the GPU row from dsv4-gpu-greedy's banked logits bin.
-//!     The CPU forward is the lane-3 oracle (memra_gguf::dsv4_forward) — the same program
-//!     that passed the fixture gate 15/15 at max-abs ≤ 1.9e-5.
+//! The CPU forward is the lane-3 oracle (memra_gguf::dsv4_forward) — the same program
+//! that passed the fixture gate 15/15 at max-abs ≤ 1.9e-5.
 //!
 //! Usage: dsv4-greedy-verify <model-dir> <gpu_greedy.json> <out-dir>
 //!   exit 0 = full agreement; exit 1 = divergence found (rows banked, analysis printed)

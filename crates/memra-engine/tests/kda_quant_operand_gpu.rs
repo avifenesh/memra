@@ -139,8 +139,6 @@ fn one_kda_layer_plan() -> ModelPlan {
                 activation: ActivationPlan::Silu,
             }),
             residual: ResidualTopology::Serial,
-            ple: None,
-            sparse_overlay: None,
             state: StatePlan::Recurrent {
                 conv_width: CONV_WIDTH as u32,
                 conv_kernel: CONV_KERNEL,
@@ -151,7 +149,6 @@ fn one_kda_layer_plan() -> ModelPlan {
         logits: Vec::new(),
         mtp_blocks: Vec::new(),
         drafter: None,
-        exit_mixer: None,
         draft_source: DraftSourcePlan::Embedded,
         sampling_defaults: None,
         partition_boundaries: Vec::new(),
@@ -412,8 +409,6 @@ fn kda_q8_0_operands_match_the_float_twin_within_the_quantization_floor() {
     let mut worst = 0.0f32;
     let mut worst_at = 0usize;
     for &tokens in &[1usize, 7, 16, 65, 130] {
-        #[allow(clippy::unusual_byte_groupings)]
-        // allow: mnemonic grouping of a pinned seed/magic constant
         let x = hidden_states(tokens, 0x9_11A_57 ^ tokens as u64);
         let want = h.run(&h.float, &x, tokens);
         let got = h.run(&h.quant, &x, tokens);

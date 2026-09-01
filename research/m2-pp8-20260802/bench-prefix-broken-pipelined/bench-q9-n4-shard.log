@@ -1,4 +1,4 @@
-ppn-bench M2 config: stages=4 devices=1,2,3,4 splits=default(even) shard=per-stage streams=per-stage P=32 G=128 reps=1 model=/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
+ppn-bench M2 config: stages=4 devices=1,2,3,4 splits=default(even) shard=per-stage streams=per-stage P=32 G=128 reps=1 model=/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
 [pp] cross-device transport: stage0=dev1 stage1=dev2 stage2=dev3 stage3=dev4 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [1, 2, 3, 4]; weight home: per-stage (sharded loader))
 [q8rp] split-plane decode mirrors built: 249 tensors
 stage fence: [0, 8, 16, 24, 32] over 32 layers
@@ -7,7 +7,7 @@ stage fence: [0, 8, 16, 24, 32] over 32 layers
 ---- medians (us/token over 128 gen steps, N=1 reps, interleaved) ----
 serial-pp: median 5422.47 us/tok (184.42 tok/s)  all=[5422.47]
 pipelined-pp: median 2385.04 us/tok (419.28 tok/s)  all=[2385.04]
-ppn-bench M2 config: stages=4 devices=1,2,3,4 splits=default(even) shard=per-stage streams=per-stage P=32 G=128 reps=1 model=/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
+ppn-bench M2 config: stages=4 devices=1,2,3,4 splits=default(even) shard=per-stage streams=per-stage P=32 G=128 reps=1 model=/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
 [pp] cross-device transport: stage0=dev1 stage1=dev2 stage2=dev3 stage3=dev4 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [1, 2, 3, 4]; weight home: per-stage (sharded loader))
 [q8rp] split-plane decode mirrors built: 249 tensors
 stage fence: [0, 8, 16, 24, 32] over 32 layers
@@ -16,7 +16,7 @@ stage fence: [0, 8, 16, 24, 32] over 32 layers
 ---- medians (us/token over 128 gen steps, N=1 reps, interleaved) ----
 serial-pp: median 5416.58 us/tok (184.62 tok/s)  all=[5416.58]
 pipelined-pp: median 2392.68 us/tok (417.94 tok/s)  all=[2392.68]
-ppn-bench M2 config: stages=4 devices=1,2,3,4 splits=default(even) shard=per-stage streams=per-stage P=32 G=128 reps=1 model=/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
+ppn-bench M2 config: stages=4 devices=1,2,3,4 splits=default(even) shard=per-stage streams=per-stage P=32 G=128 reps=1 model=/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
 [pp] cross-device transport: stage0=dev1 stage1=dev2 stage2=dev3 stage3=dev4 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [1, 2, 3, 4]; weight home: per-stage (sharded loader))
 [q8rp] split-plane decode mirrors built: 249 tensors
 stage fence: [0, 8, 16, 24, 32] over 32 layers
@@ -25,7 +25,7 @@ stage fence: [0, 8, 16, 24, 32] over 32 layers
 ---- medians (us/token over 128 gen steps, N=1 reps, interleaved) ----
 serial-pp: median 5433.47 us/tok (184.04 tok/s)  all=[5433.47]
 pipelined-pp: median 2384.92 us/tok (419.30 tok/s)  all=[2384.92]
-ppn-bench M2 config: stages=4 devices=1,2,3,4 splits=default(even) shard=per-stage streams=per-stage P=32 G=128 reps=1 model=/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
+ppn-bench M2 config: stages=4 devices=1,2,3,4 splits=default(even) shard=per-stage streams=per-stage P=32 G=128 reps=1 model=/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
 [pp] cross-device transport: stage0=dev1 stage1=dev2 stage2=dev3 stage3=dev4 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [1, 2, 3, 4]; weight home: per-stage (sharded loader))
 [q8rp] split-plane decode mirrors built: 249 tensors
 stage fence: [0, 8, 16, 24, 32] over 32 layers
@@ -34,7 +34,7 @@ stage fence: [0, 8, 16, 24, 32] over 32 layers
 ---- medians (us/token over 128 gen steps, N=1 reps, interleaved) ----
 serial-pp: median 5438.89 us/tok (183.86 tok/s)  all=[5438.89]
 pipelined-pp: median 2396.52 us/tok (417.27 tok/s)  all=[2396.52]
-ppn-bench M2 config: stages=4 devices=1,2,3,4 splits=default(even) shard=per-stage streams=per-stage P=32 G=128 reps=1 model=/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
+ppn-bench M2 config: stages=4 devices=1,2,3,4 splits=default(even) shard=per-stage streams=per-stage P=32 G=128 reps=1 model=/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
 [pp] cross-device transport: stage0=dev1 stage1=dev2 stage2=dev3 stage3=dev4 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [1, 2, 3, 4]; weight home: per-stage (sharded loader))
 [q8rp] split-plane decode mirrors built: 249 tensors
 stage fence: [0, 8, 16, 24, 32] over 32 layers

@@ -215,6 +215,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "SMOKE FAILED"
             }
         );
-        Ok(())
+        return Ok(());
     }
 }

@@ -387,7 +387,7 @@ fn validate_grouped_fp8_workspace_shape(
         || out_features == 0
         || n_tokens == 0
         || n_pairs == 0
-        || !in_features.is_multiple_of(16)
+        || in_features % 16 != 0
         || in_features > i32::MAX as usize
         || out_features > i32::MAX as usize
         || n_tokens > i32::MAX as usize
@@ -737,7 +737,6 @@ mod grouped_fp8_tests {
 }
 
 unsafe extern "C" {
-    fn memra_bind_device(dev: i32) -> i32;
     /// Bytes needed for the block_fp4_mmq activation scratch for (in_f, n_tokens).
     pub fn memra_mmq_nvfp4_act_bytes(in_f: i32, n_tokens: i32) -> usize;
     /// Run the NVFP4 W4A4 MMQ prefill GEMM. y[n_tokens, out_f] = act[n_tokens, in_f] @ W[out_f, in_f]^T.
@@ -1280,34 +1279,32 @@ impl Engine {
             // sm_120a-only. On every portable build (incl. the 90a Hopper-MMA lane) they are
             // fail-closed link stubs (build.rs), so never offer them here.
             GpuTensor::Quant { qtype, rp, .. } if *qtype == crate::QT_NVFP4 && *rp => {
-                !cfg!(memra_portable_cuda)
-                    && mmq_w4a8_enabled()
-                    && w.in_features().is_multiple_of(64)
+                !cfg!(memra_portable_cuda) && mmq_w4a8_enabled() && w.in_features() % 64 == 0
             }
             // GGUF-layout NVFP4 (MEMRA_RP=0): W4A8 (default-on) or the explicit W4A4 opt-in.
             GpuTensor::Quant { qtype, .. } if *qtype == crate::QT_NVFP4 => {
                 !cfg!(memra_portable_cuda)
                     && (mmq_w4a8_enabled() || mmq_opt_in)
-                    && w.in_features().is_multiple_of(64)
+                    && w.in_features() % 64 == 0
             }
             GpuTensor::Quant { qtype, .. }
                 if *qtype == crate::QT_Q4_K || *qtype == crate::QT_Q5_K =>
             {
-                (mmq_w4a8_enabled() || mmq_opt_in) && w.in_features().is_multiple_of(256)
+                (mmq_w4a8_enabled() || mmq_opt_in) && w.in_features() % 256 == 0
             }
             // Q8_0 dense projections (35B attn/ssm/shexp): opt-in only (MEMRA_PP_Q8MMQ=1), its own
             // numeric config vs qmatvec_gemm_q8_0. in_f % 256 == 0: MMQ_ITER_K=256 loads 8-block
             // groups, so a non-multiple row would read a garbage weight tail (fp16 d bytes can be
             // NaN-pattern, and NaN * 0-padded-activation = NaN — the 26B ffn_down lesson).
             GpuTensor::Quant { qtype, .. } if *qtype == crate::QT_Q8_0 => {
-                mmq_q8_enabled() && w.in_features().is_multiple_of(256)
+                mmq_q8_enabled() && w.in_features() % 256 == 0
             }
             // Q4_0 dense projections (gemma QAT ggufs): MEMRA_PP_Q4MMQ seam. Both weight layouts
             // (raw 18B blocks and the MEMRA_Q4RP split-plane repack) have loader arms. Same
             // in_f % 256 == 0 tail rule as Q8_0 (26B ffn_down in_f=2112 NaN'd on the %32 gate);
             // non-multiples fall back to the hand-rolled qmatvec_gemm_q4_0[_rp].
             GpuTensor::Quant { qtype, .. } if *qtype == crate::QT_Q4_0 => {
-                mmq_q4_enabled() && w.in_features().is_multiple_of(256)
+                mmq_q4_enabled() && w.in_features() % 256 == 0
             }
             // IQ4_XS dense projections (KAT-Coder trunk): m>=16 prefill only — decode and
             // spec-verify (m<16) keep the qmatvec_iq4_XS_dp4a per-column program (the
@@ -1315,9 +1312,7 @@ impl Engine {
             // MEMRA_IQ_FAST=0 (the Stage-A oracle rollback) must also kill this arm so the
             // rollback stays a full-path seam. in_f % 256: MMQ_ITER_K walks whole superblocks.
             GpuTensor::Quant { qtype, .. } if *qtype == crate::QT_IQ4_XS => {
-                mmq_iq4xs_enabled()
-                    && Self::iq_fast_enabled()
-                    && w.in_features().is_multiple_of(256)
+                mmq_iq4xs_enabled() && Self::iq_fast_enabled() && w.in_features() % 256 == 0
             }
             _ => false,
         }
@@ -1372,17 +1367,16 @@ impl Engine {
                 // the pipelined wgmma wins. Reads the rp4 split-plane mirror + the engine's
                 // q8_1 activation planes. Same numeric class as MMQ (exact s32 per 32-block,
                 // one f32 fold per block, ascending K) — kernel-check tolerance-gated.
-                if cfg!(memra_hopper_mma)
-                    && out_f % 64 == 0
-                    && crate::wgmma_gemm_enabled()
-                    && let GpuTensor::Quant { rp4: Some(m4), .. } = w
-                {
-                    let (aq, ad) = self.quantize_q8_1(x, m, in_f)?;
-                    let mut y = self.qmatvec_gemm_q8_0_wgmma_raw(m4, &aq, &ad, m, in_f, out_f)?;
-                    if *scale != 1.0 {
-                        self.scale_inplace(&mut y, *scale, m * out_f)?;
+                if cfg!(memra_hopper_mma) && out_f % 64 == 0 && crate::wgmma_gemm_enabled() {
+                    if let GpuTensor::Quant { rp4: Some(m4), .. } = w {
+                        let (aq, ad) = self.quantize_q8_1(x, m, in_f)?;
+                        let mut y =
+                            self.qmatvec_gemm_q8_0_wgmma_raw(m4, &aq, &ad, m, in_f, out_f)?;
+                        if *scale != 1.0 {
+                            self.scale_inplace(&mut y, *scale, m * out_f)?;
+                        }
+                        return Ok(y);
                     }
-                    return Ok(y);
                 }
                 let mut y = self.qmatvec_mmq_q8_0_raw(bytes, x, m, in_f, out_f)?;
                 if *scale != 1.0 {
@@ -1422,7 +1416,7 @@ impl Engine {
         row_bytes: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         assert!(
-            in_f.is_multiple_of(256),
+            in_f % 256 == 0,
             "MMQ IQ4_XS requires in_f % 256 == 0, got {in_f}"
         );
         let act_bytes = unsafe { memra_mmq_iq_experts_act_bytes(in_f as i32, m as i32) };
@@ -1468,7 +1462,7 @@ impl Engine {
         qtype: i32,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         assert!(
-            in_f.is_multiple_of(256),
+            in_f % 256 == 0,
             "MMQ Q4_K/Q5_K requires in_f % 256 == 0, got {in_f}"
         );
         let act_bytes = unsafe { memra_mmq_q45k_act_bytes(in_f as i32, m as i32) };
@@ -1515,7 +1509,7 @@ impl Engine {
         out_f: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         assert!(
-            in_f.is_multiple_of(32),
+            in_f % 32 == 0,
             "MMQ Q8_0 requires in_f % 32 == 0, got {in_f}"
         );
         let act_bytes = unsafe { memra_mmq_q8_0_act_bytes(in_f as i32, m as i32) };
@@ -1568,7 +1562,7 @@ impl Engine {
         f32acc: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         assert!(
-            in_f.is_multiple_of(32),
+            in_f % 32 == 0,
             "accprobe requires in_f % 32 == 0, got {in_f}"
         );
         assert!(
@@ -1632,7 +1626,7 @@ impl Engine {
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         use std::sync::atomic::Ordering;
         assert!(
-            in_f.is_multiple_of(32),
+            in_f % 32 == 0,
             "MMQ Q4_0 requires in_f % 32 == 0, got {in_f}"
         );
         let mut y = self.alloc_uninit::<f32>(m * out_f)?;
@@ -1642,7 +1636,7 @@ impl Engine {
         // quantize-once: reuse the window's scratch when the SAME activation comes back.
         let mut slot = MMQ_ACT_SLOT.lock().unwrap();
         let hit = matches!(&*slot,
-            Some((e, p, mm, inf, _)) if *e == epoch && *p == x_p && *mm == m && *inf == in_f);
+            Some((e, p, mm, inf, _)) if *e == epoch && *p == x_p as u64 && *mm == m && *inf == in_f);
         if !hit {
             let act_bytes = unsafe { memra_mmq_q4_0_act_bytes(in_f as i32, m as i32) };
             let mut scratch = self.alloc_uninit::<u8>(act_bytes)?;
@@ -1663,7 +1657,7 @@ impl Engine {
                     );
                 }
             }
-            *slot = Some((epoch, x_p, m, in_f, scratch));
+            *slot = Some((epoch, x_p as u64, m, in_f, scratch));
         }
         let scratch = &slot.as_ref().unwrap().4;
         {
@@ -1815,7 +1809,6 @@ impl Engine {
         self.qmatvec_mmq_nvfp4_inner(bytes, x, m, in_f, out_f, scale, true, mmq_residual_k())
     }
 
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn qmatvec_mmq_nvfp4_inner(
         &self,
         bytes: &CudaSlice<u8>,
@@ -1828,7 +1821,7 @@ impl Engine {
         residual_k: i32,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         assert!(
-            in_f.is_multiple_of(64),
+            in_f % 64 == 0,
             "MMQ NVFP4 requires in_f % 64 == 0, got {in_f}"
         );
         let act_bytes = unsafe { memra_mmq_nvfp4_act_bytes(in_f as i32, m as i32) };
@@ -1866,7 +1859,6 @@ impl Engine {
     /// int8 at tile-load and the activation stays q8_1 int8 — the accuracy-safe rung. Macro-scale
     /// folded into the write-back epilogue (bit-identical to a post-matmul scale_inplace).
     /// `rp` selects the weight layout (A6 split-plane vs GGUF blocks) — bit-identical output.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub fn qmatvec_mmq_nvfp4_w4a8(
         &self,
         bytes: &CudaSlice<u8>,
@@ -1905,7 +1897,6 @@ impl Engine {
         self.qmatvec_mmq_nvfp4_w4a8_scaled(bytes, x, m, in_f, out_f, 1.0, true)
     }
 
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn qmatvec_mmq_nvfp4_w4a8_scaled(
         &self,
         bytes: &CudaSlice<u8>,
@@ -1917,7 +1908,7 @@ impl Engine {
         rp: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         assert!(
-            in_f.is_multiple_of(64),
+            in_f % 64 == 0,
             "MMQ NVFP4 W4A8 requires in_f % 64 == 0, got {in_f}"
         );
         let act_bytes = unsafe { memra_mmq_nvfp4_w4a8_act_bytes(in_f as i32, m as i32) };
@@ -1984,7 +1975,6 @@ impl Engine {
         self.qmatvec_mmq_fp8_blk_scaled(w_e4m3, blk_scales, x, m, in_f, out_f, 1.0)
     }
 
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub fn qmatvec_mmq_fp8_blk_scaled(
         &self,
         w_e4m3: &CudaSlice<u8>,
@@ -1996,11 +1986,9 @@ impl Engine {
         scale: f32,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         assert!(
-            in_f.is_multiple_of(16),
+            in_f % 16 == 0,
             "per-block FP8 MMQ requires in_f % 16 == 0, got {in_f}"
         );
-        #[allow(clippy::manual_div_ceil)]
-        // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
         let want_scales = ((out_f + 127) / 128) * ((in_f + 127) / 128);
         assert!(
             blk_scales.len() >= want_scales,
@@ -2058,7 +2046,7 @@ impl Engine {
         out_f: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         assert!(
-            in_f.is_multiple_of(16),
+            in_f % 16 == 0,
             "per-block FP8 MMQ requires in_f % 16 == 0, got {in_f}"
         );
         let want_scales = out_f.div_ceil(128) * in_f.div_ceil(128);
@@ -2319,21 +2307,6 @@ impl Engine {
     /// construction). f16-MIRROR numeric class either way (argmax/spec gated, not
     /// byte-identity). Errors on unsupported qtype (caller keeps the MMQ arm as fallback).
     #[allow(clippy::too_many_arguments)]
-    /// Bind the RUNTIME API's current device to `ordinal`. Every raw `<<<>>>` launch in the
-    /// grouped-MoE FFI follows this, not cudarc's pushed driver context — mandatory before
-    /// calling the FFI on a non-root rank engine (the TP2 grouped prime), a mismatch is
-    /// cudaErrorInvalidValue.
-    pub fn bind_runtime_device(&self, ordinal: i32) -> Result<(), Box<dyn std::error::Error>> {
-        let rc = unsafe { memra_bind_device(ordinal) };
-        if rc != 0 {
-            return Err(format!("cudaSetDevice({ordinal}) rc={rc}").into());
-        }
-        Ok(())
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
-    #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
     pub fn moe_f16_grouped(
         &self,
         table: &CudaSlice<u64>,
@@ -2351,7 +2324,7 @@ impl Engine {
         qtype: i32,
         row_bytes: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let sk = crate::moe_f16g_mode() >= 2 && in_f.is_multiple_of(32);
+        let sk = crate::moe_f16g_mode() >= 2 && in_f % 32 == 0;
         // DIRECT-FROM-QUANT lane (lane/kquant-tile-loaders + lane/iq-direct-loaders, default
         // ON — MEMRA_F16G_DIRECT=0 is the rollback seam): Q4_K/Q6_K/IQ4_XS/IQ3_S expert
         // projections skip the dequant-workspace pass entirely; the sk visitor forms dequant
@@ -2367,14 +2340,10 @@ impl Engine {
                 || qtype == crate::QT_Q6_K
                 || qtype == crate::QT_IQ4_XS
                 || qtype == crate::QT_IQ3_S
-                || qtype == crate::QT_NVFP4
-                // v2 slot-major banks read through the same direct lane (kq_fetch's v2 branch),
-                // which is what keeps the grouped prime off the 1.5 GB/projection dequant
-                // workspace it otherwise falls back to.
-                || qtype == crate::QT_NVFP4_V2)
+                || qtype == crate::QT_NVFP4)
             // NVFP4 walks 64-value blocks (its 16-value window is one UE4M3 sub-block);
             // the kq/IQ classes walk 256-value superblocks. Mirrors the C-side guard.
-            && in_f % (if qtype == crate::QT_NVFP4 || qtype == crate::QT_NVFP4_V2 { 64 } else { 256 }) == 0
+            && in_f % (if qtype == crate::QT_NVFP4 { 64 } else { 256 }) == 0
             && n_active <= 512
             && n_active > 0
         {
@@ -2738,7 +2707,6 @@ impl Engine {
     /// Raw dequant-workspace entry for kernel-check: dequant the active experts' rows to a
     /// fresh f16 workspace via the same kernel `moe_f16_grouped` uses (the direct loaders'
     /// bitwise reference).
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub fn moe_f16g_dequant_raw(
         &self,
         table: &CudaSlice<u64>,

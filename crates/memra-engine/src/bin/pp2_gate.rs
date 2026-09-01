@@ -71,8 +71,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut inputs: Vec<u32> = Vec::with_capacity(p + n);
     let mut ref_logits: Vec<Vec<f32>> = Vec::with_capacity(p + n);
     let mut next = 0u32;
-    #[allow(clippy::needless_range_loop)]
-    // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
     for step in 0..p + n {
         let tok = if step < p { prompt[step] } else { next };
         inputs.push(tok);

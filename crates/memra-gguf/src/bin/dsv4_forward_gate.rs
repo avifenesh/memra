@@ -372,10 +372,10 @@ fn main() {
             if let Ok(n) = rest.split('_').next().unwrap_or("").parse::<u32>() {
                 cap160.insert(n);
             }
-        } else if let Some(rest) = name.strip_prefix("layer")
-            && let Ok(n) = rest.split('_').next().unwrap_or("").parse::<u32>()
-        {
-            cap32.insert(n);
+        } else if let Some(rest) = name.strip_prefix("layer") {
+            if let Ok(n) = rest.split('_').next().unwrap_or("").parse::<u32>() {
+                cap32.insert(n);
+            }
         }
     }
     println!("capture layers: 32-token {cap32:?}, 160-token {cap160:?}");

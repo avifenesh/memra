@@ -57,7 +57,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let report = |name: &str, l: &[f32], base: Option<&[f32]>| {
         let am = argmax(l);
-        let mut top: Vec<(usize, f32)> = l.iter().cloned().enumerate().collect();
+        let mut top: Vec<(usize, f32)> =
+            l.iter().cloned().enumerate().map(|(i, v)| (i, v)).collect();
         top.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
         let md = base.map(|b| {
             l.iter()
@@ -154,8 +155,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let n_embd = model.cfg.n_embd as usize;
     let eps = model.cfg.rms_eps;
     println!("norm+quant pair check (fused vs unfused) on per-layer inputs:");
-    #[allow(clippy::needless_range_loop)]
-    // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
     for il in 0..aux_e.len().min(8) {
         let x_in = &aux_e[il]; // input to layer il+1
         let w = model.layers[il + 1].attn_norm.float_data();

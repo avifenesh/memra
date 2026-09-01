@@ -25,20 +25,20 @@ Terminated
 {"cached_tokens": 71203, "completion_tokens": 384, "decode_s_after_first": 6.640361, "decode_tok_s_after_first": 57.677588, "finish_reason": "length", "history_rewritten": false, "kept_text_sha256": "5cf1904cf8ddb866408030610a3ec3e8a39e7461781e1b887fcd9f42131484f0", "phase": "sequential", "phase_index": 5, "prompt_chars": 218980, "prompt_sha256": "4b9f436051e6d53c4903c9322ee5b4ed98d7dbe44f398f5576d1847c9797573c", "prompt_tokens": 72033, "request_index": 5, "session_id": "cachespec-main", "started_at": "2026-08-09T14:58:58.144694+00:00", "text_chars": 1336, "text_sha256": "5cf1904cf8ddb866408030610a3ec3e8a39e7461781e1b887fcd9f42131484f0", "ttft_s": 2.73607, "type": "request", "wall_s": 9.393899}
 {"cached_tokens": 72027, "completion_tokens": 384, "decode_s_after_first": 6.728395, "decode_tok_s_after_first": 56.922939, "finish_reason": "length", "history_rewritten": false, "kept_text_sha256": "8e19f677dfee3c591794183d3e641629cc6f55f4c15c6f43729686eebc907d60", "phase": "sequential", "phase_index": 6, "prompt_chars": 221201, "prompt_sha256": "774d389f83f810a4c5578f8d15a4c54fa9b0d876b1c7e43f51087740ae9db17a", "prompt_tokens": 72857, "request_index": 6, "session_id": "cachespec-main", "started_at": "2026-08-09T14:59:07.540310+00:00", "text_chars": 1324, "text_sha256": "8e19f677dfee3c591794183d3e641629cc6f55f4c15c6f43729686eebc907d60", "ttft_s": 2.742951, "type": "request", "wall_s": 9.488965}
 {"cached_tokens": 72851, "completion_tokens": 384, "decode_s_after_first": 6.743275, "decode_tok_s_after_first": 56.797328, "finish_reason": "length", "history_rewritten": false, "kept_text_sha256": "1367adb82b37108692fef278bd191bd7531efa0af6297391c62b74a1c1cc1a3e", "phase": "sequential", "phase_index": 7, "prompt_chars": 223410, "prompt_sha256": "8562399e43067df0300fa4ae1b8a63e0dc95fe526fc3b680a41b3782bf094438", "prompt_tokens": 73681, "request_index": 7, "session_id": "cachespec-main", "started_at": "2026-08-09T14:59:17.031017+00:00", "text_chars": 1372, "text_sha256": "1367adb82b37108692fef278bd191bd7531efa0af6297391c62b74a1c1cc1a3e", "ttft_s": 2.752119, "type": "request", "wall_s": 9.513142}
-[server] starting; models config = [("step", "/opt/scratch/nvme/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", Some("/opt/scratch/nvme/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"))]
+[server] starting; models config = [("step", "/opt/dl-image/nvme/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", Some("/opt/dl-image/nvme/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"))]
 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
 [gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
 [worker] Engine ready (device=1, MEMRA_FAST=true)
 [spec-gate] policy placement=pp2-cross-device LOW=0 HIGH=1 source=placement-default spec-admission=off
 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
-[worker] loading model "step" <- /opt/scratch/nvme/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+[worker] loading model "step" <- /opt/dl-image/nvme/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
 [pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
 [moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
 [moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.72GB (expert budget 94.80GB) -> RESIDENT
 [fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
 [mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
 [mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
-[worker] step: regime draft attached (/opt/scratch/nvme/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf)
+[worker] step: regime draft attached (/opt/dl-image/nvme/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf)
 [worker]   loaded "step": 45 layers, eos=128007
 [worker] step: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true gemma_think=false ctx=262144 tok="deepseek-v3" instruct=Some("chatml") chat_defaults=Some(0.5)/Some(0.9)
 [worker] step: decode chunk cap 8

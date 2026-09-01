@@ -16,8 +16,8 @@ D = R_32F and R_16BF both probed.
 | 5 | VEC128_32F | VEC128_32F | 15 | 0 | NOT_SUPPORTED |
 
 Identical status at every m and both D dtypes — this is an arch/library gate, not a shape or
-epilogue miss. Consistent with the July cloudbox finding (OUTER_VEC status=7 nh=0 on sm120,
-cloud-rtx6000.jsonl:39): sm_120's cuBLASLt FP8 exposes ONLY per-tensor scalar scales in this
+epilogue miss. Consistent with the July sbox finding (OUTER_VEC status=7 nh=0 on sm120,
+sbox-rtx6000.jsonl:39): sm_120's cuBLASLt FP8 exposes ONLY per-tensor scalar scales in this
 CUDA release. The CUDA 12.9+ block-scaled FP8 modes are documented for sm_90; they do not
 reach sm_120 in cublasLt 130201.
 

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Interleaved x5 PP-2 tail receipt. Requires the measurement-only source patch captured in
-# raw/cloudbox/source.diff; that patch arms only the max rung immediately before a queued request.
+# raw/sbox/source.diff; that patch arms only the max rung immediately before a queued request.
 set -uo pipefail
 
-REPO=${REPO:-/opt/scratch/nvme/cx-probehitch/memra}
+REPO=${REPO:-/opt/dl-image/nvme/cx-probehitch/memra}
 BIN=${BIN:-$REPO/target/release/memra-server}
-MODEL=${MODEL:-/opt/scratch/nvme/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf}
+MODEL=${MODEL:-/opt/dl-image/nvme/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf}
 PROMPT=${PROMPT:-$REPO/research/e2e/prompts/pp512.txt}
-RAW=${RAW:-$REPO/research/probehitch-20260812/raw/cloudbox}
+RAW=${RAW:-$REPO/research/probehitch-20260812/raw/sbox}
 N=${N:-5}
 PORT=${PORT:-18371}
 BASE="http://127.0.0.1:$PORT"

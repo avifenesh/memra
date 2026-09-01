@@ -871,10 +871,10 @@ impl MoeSlotCache {
 
     fn reserve_slot(&mut self, required: usize) -> Option<usize> {
         for class in &mut self.classes {
-            if class.capacity >= required
-                && let Some(slot) = class.free.pop()
-            {
-                return Some(slot);
+            if class.capacity >= required {
+                if let Some(slot) = class.free.pop() {
+                    return Some(slot);
+                }
             }
         }
         self.evict_one(required)
@@ -1025,10 +1025,10 @@ impl MoeSlotCache {
         let mut promoted = 0usize;
         for &id in order {
             if self.table.contains_key(&id) || self.pending.contains_key(&id) {
-                if let Some(read) = self.worker_reads.remove(&id)
-                    && let Some(pool) = self.pread.as_mut()
-                {
-                    let _ = pool.cancel_worker(read.ticket);
+                if let Some(read) = self.worker_reads.remove(&id) {
+                    if let Some(pool) = self.pread.as_mut() {
+                        let _ = pool.cancel_worker(read.ticket);
+                    }
                 }
                 continue;
             }
@@ -1300,10 +1300,10 @@ impl MoeSlotCache {
 
     fn reserve_prefetch_slot(&mut self, required: usize, keep: &[BlockId]) -> Option<usize> {
         for class in &mut self.classes {
-            if class.capacity >= required
-                && let Some(slot) = class.free.pop()
-            {
-                return Some(slot);
+            if class.capacity >= required {
+                if let Some(slot) = class.free.pop() {
+                    return Some(slot);
+                }
             }
         }
         self.evict_one_excluding(required, keep)
@@ -1568,7 +1568,7 @@ impl MoeSlotCache {
                     };
                     let __s_ev = e.stream();
                     let (p, _ev) = self.slots[s].device_ptr(&__s_ev);
-                    host[proj as usize * n_expert + ex] = p;
+                    host[proj as usize * n_expert + ex] = p as u64;
                 }
             }
             let row = e.stream().clone_htod(&host)?;

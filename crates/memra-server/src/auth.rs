@@ -140,12 +140,6 @@ pub struct TenantCtx {
     pub tenant: String,
     pub lane_class: LaneClass,
     pub rate_limit: Option<usize>,
-    /// The authenticated KEY's identification prefix (`mk-<tenant>-<12 hex>` — the
-    /// same non-secret revoke handle stored in the keyring). None on the single-key /
-    /// open-server paths, which have no per-key identity. This is what lets a
-    /// metering implementation enforce per-key policy (spend caps) without the seam
-    /// ever seeing a credential.
-    pub key_prefix: Option<String>,
 }
 
 impl TenantCtx {
@@ -155,7 +149,6 @@ impl TenantCtx {
             tenant: "default".into(),
             lane_class: LaneClass::Interactive,
             rate_limit: None,
-            key_prefix: None,
         }
     }
 }
@@ -186,7 +179,7 @@ fn valid_tenant(t: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
-pub fn tenant_is_valid(tenant: &str) -> bool {
+pub(crate) fn tenant_is_valid(tenant: &str) -> bool {
     valid_tenant(tenant)
 }
 
@@ -225,13 +218,13 @@ impl Keyring {
                     e.tenant
                 ));
             }
-            if let Some(lane) = e.lane.as_deref()
-                && LaneClass::parse(lane).is_none()
-            {
-                return Err(format!(
-                    "key entry {i} (tenant {:?}): bad lane {lane:?} (interactive|batch)",
-                    e.tenant
-                ));
+            if let Some(lane) = e.lane.as_deref() {
+                if LaneClass::parse(lane).is_none() {
+                    return Err(format!(
+                        "key entry {i} (tenant {:?}): bad lane {lane:?} (interactive|batch)",
+                        e.tenant
+                    ));
+                }
             }
             if e.rate_limit == Some(0) {
                 return Err(format!(
@@ -288,10 +281,6 @@ impl Keyring {
         self.keys.len()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
     /// Authenticate a plaintext bearer key against the ring.
     pub fn lookup(&self, key: &str) -> Result<TenantCtx, AuthDenied> {
         let digest = sha256_digest(key);
@@ -312,7 +301,6 @@ impl Keyring {
                     .and_then(LaneClass::parse)
                     .unwrap_or_default(),
                 rate_limit: e.rate_limit,
-                key_prefix: Some(e.prefix.clone()).filter(|p| !p.is_empty()),
             }),
         }
     }
@@ -452,16 +440,13 @@ impl KeyStore {
         ))
     }
 
-    /// Override how often the key file is re-statted for hot reload. Public as a
-    /// real knob: deployment-side tests (and unusual deployments) set it; the
-    /// default poll is right for production.
-    pub fn with_poll(mut self, poll: Duration) -> KeyStore {
+    #[cfg(test)]
+    pub(crate) fn with_poll(mut self, poll: Duration) -> KeyStore {
         self.poll = poll;
         self
     }
 
-    /// `pub`: a deployment admin surface provisions keys against this file.
-    pub fn file_path(&self) -> Option<&Path> {
+    pub(crate) fn file_path(&self) -> Option<&Path> {
         match &self.source {
             Source::File(path) => Some(path),
             Source::Inline => None,

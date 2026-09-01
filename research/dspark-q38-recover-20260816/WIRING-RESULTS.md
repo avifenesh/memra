@@ -146,7 +146,7 @@ vs the trimmed MTP head runs on the serving box per the sizing doc's sequence.
 
 # BOX2 QUALIFICATION — cum1000 (owner's final export), 2026-08-19
 
-Box: rented cloud 2× RTX PRO 6000 Blackwell Server 96GB (box-2), CUDA 13.2,
+Box: hyperscaler 2× RTX PRO 6000 Blackwell Server 96GB (box-2), CUDA 13.2,
 MEMRA_CUDA_ARCH=120a. Branch REBASED onto v0.92.0 (only conflicts:
 research/tune-data/perf-ci.jsonl append-append journal rows, keep-both). Trunk =
 the PRODUCTION artifact `Qwen3.8-27B-NVFP4-Q5K-mtp.gguf` sha256 `1facf36c2db359dc…`

@@ -314,11 +314,7 @@ impl Sampler {
             .collect();
 
         // 1. Penalties (operate on logits, over the last-n history window).
-        // `cand` is DENSE and INDEX-ALIGNED here by construction (built from
-        // `logits.iter().enumerate()` immediately above, nothing has filtered it yet), so the
-        // penalty pass indexes straight into it instead of hashing every candidate. See
-        // `apply_penalties_dense`.
-        self.apply_penalties_dense(&mut cand);
+        self.apply_penalties(&mut cand);
 
         // Greedy-with-penalties: argmax after penalties, no sampling.
         if self.is_greedy() {
@@ -386,87 +382,9 @@ impl Sampler {
         cand.last().unwrap().0
     }
 
-    /// llama.cpp penalty over a DENSE, INDEX-ALIGNED candidate slice: `cand[i].0 == i`.
-    ///
-    /// Same arithmetic as `apply_penalties_scan_reference`, on exactly the same elements, in the
-    /// same order — but O(distinct penalized tokens) instead of O(n_vocab) hash lookups.
-    ///
-    /// WHY (lane/glm5-host-audit, 2026-09-01). The scan form did one `HashMap<u32,u32>` SipHash
-    /// probe PER CANDIDATE, i.e. one per vocabulary entry: ~152k probes per token on the Qwen
-    /// class. `penalty_counts` holds at most `PEN_WINDOW_MAX` distinct ids and in practice the
-    /// number of distinct generated tokens so far, so the loop was inverted the expensive way
-    /// round. This matters in production, not in theory: `devsample_meta` refuses the device
-    /// sampler for any penalized config unless `MEMRA_SERVE_DEVPENALTY=1`, the whole fleet runs
-    /// it at 0, and a served model whose VENDOR-RECOMMENDED non-thinking arm carries
-    /// `presence_penalty` therefore lands every token of every request on this function.
-    ///
-    /// BIT-IDENTICAL BY CONSTRUCTION, and gated as such rather than asserted in prose: the set of
-    /// touched entries is identical (`penalty_counts` covers exactly the window, which the
-    /// debug_assert below re-checks), the per-entry arithmetic is copied unchanged, and each
-    /// entry is touched exactly once in both forms, so no float re-association is possible.
-    /// `apply_penalties_scan_reference` is kept as the ORACLE and
-    /// `dense_penalties_match_the_scan_reference_bitwise` compares them over randomized inputs.
-    fn apply_penalties_dense(&self, cand: &mut [(u32, f32)]) {
-        let n = self.cfg.penalty_last_n;
-        if n == 0 {
-            return;
-        }
-        if self.cfg.penalty_repeat == 1.0
-            && self.cfg.penalty_freq == 0.0
-            && self.cfg.penalty_present == 0.0
-        {
-            return;
-        }
-        let start = self.history.len().saturating_sub(n);
-        let window = &self.history[start..];
-        if window.is_empty() {
-            return;
-        }
-        debug_assert_eq!(
-            self.penalty_counts
-                .values()
-                .map(|&n| n as usize)
-                .sum::<usize>(),
-            window.len(),
-            "incremental penalty counts must cover the active history window"
-        );
-        for (&id, &cnt) in self.penalty_counts.iter() {
-            let Some(c) = cand.get_mut(id as usize) else {
-                // A count for an id outside the logits row: a vocab/count mismatch, which is a
-                // caller bug rather than something to silently skip. Loud in debug, inert in
-                // release (dropping the penalty is strictly safer than indexing out of bounds).
-                debug_assert!(
-                    false,
-                    "penalty count for id {id} is outside the {} candidate row",
-                    cand.len()
-                );
-                continue;
-            };
-            debug_assert_eq!(
-                c.0, id,
-                "apply_penalties_dense requires an index-aligned candidate slice"
-            );
-            // repeat: llama divides if logit>0 else multiplies (penalize toward 0)
-            if self.cfg.penalty_repeat != 1.0 {
-                if c.1 > 0.0 {
-                    c.1 /= self.cfg.penalty_repeat;
-                } else {
-                    c.1 *= self.cfg.penalty_repeat;
-                }
-            }
-            c.1 -= cnt as f32 * self.cfg.penalty_freq;
-            c.1 -= self.cfg.penalty_present; // presence: applied once if count>0
-        }
-    }
-
     /// llama.cpp penalty: for each token in the last-n history, repeat-divide/multiply its logit
     /// and apply frequency*count + presence. (llama-sampler.cpp penalties.)
-    ///
-    /// THE ORACLE, not the serving path. `apply_penalties_dense` replaced it on the hot path
-    /// 2026-09-01; this form is retained verbatim so the replacement has something to be proven
-    /// bit-identical against, which is worth more than deleting it.
-    #[cfg(test)]
-    fn apply_penalties_scan_reference(&self, cand: &mut [(u32, f32)]) {
+    fn apply_penalties(&self, cand: &mut [(u32, f32)]) {
         let n = self.cfg.penalty_last_n;
         if n == 0 {
             return;
@@ -569,114 +487,6 @@ mod tests {
         counts
     }
 
-    /// THE GATE for the 2026-09-01 host-cost fix (lane/glm5-host-audit): the dense penalty pass
-    /// must reproduce the O(n_vocab) scan reference BIT FOR BIT, not merely closely.
-    ///
-    /// Compared as raw bit patterns (`to_bits`), because `==` on f32 would call two different
-    /// NaNs equal and would call `-0.0` and `0.0` equal — and `penalty_present` subtraction can
-    /// produce exactly `-0.0`. The inputs deliberately include negative logits (the repeat rule
-    /// branches on sign), repeated tokens (frequency count > 1), a token never generated (must be
-    /// untouched), and the three penalty coefficients both neutral and active.
-    #[test]
-    fn dense_penalties_match_the_scan_reference_bitwise() {
-        // A small deterministic LCG: this gate must not depend on a dev-dependency.
-        let mut state: u64 = 0x9E3779B97F4A7C15;
-        let mut next = || {
-            state = state
-                .wrapping_mul(6364136223846793005)
-                .wrapping_add(1442695040888963407);
-            ((state >> 33) as u32) as f32 / (u32::MAX >> 1) as f32 - 1.0
-        };
-
-        let vocab = 257usize; // prime-ish, and > any window used below
-        let mut cases = 0;
-        for &(repeat, freq, present) in &[
-            (1.0f32, 0.0f32, 0.0f32), // all neutral: both forms must no-op
-            (1.1, 0.0, 0.0),          // repeat only (exercises the sign branch)
-            (1.0, 0.5, 0.0),          // frequency only (count-scaled)
-            (1.0, 0.0, 1.5),          // presence only — the q38 non-thinking vendor arm
-            (1.1, 0.5, 1.5),          // all three together
-            (0.8, -0.25, -0.5),       // below/negative coefficients are legal API values
-        ] {
-            for &window in &[1usize, 3, 64, 8192] {
-                let cfg = SamplerConfig {
-                    temperature: 1.0,
-                    penalty_last_n: window,
-                    penalty_repeat: repeat,
-                    penalty_freq: freq,
-                    penalty_present: present,
-                    ..SamplerConfig::default()
-                };
-                let mut s = Sampler::new(cfg);
-                // Feed a history with repeats, and never feed id 0 or id 256 so the "untouched
-                // candidate" case is covered at both ends of the row.
-                for step in 0..40u32 {
-                    s.accept(1 + (step * 7) % 200);
-                    s.accept(1 + (step * 3) % 50); // guarantees counts > 1
-                }
-
-                let base: Vec<(u32, f32)> = (0..vocab).map(|i| (i as u32, next() * 8.0)).collect();
-                let mut dense = base.clone();
-                let mut reference = base.clone();
-                s.apply_penalties_dense(&mut dense);
-                s.apply_penalties_scan_reference(&mut reference);
-
-                assert_eq!(dense.len(), reference.len());
-                for (i, (d, r)) in dense.iter().zip(reference.iter()).enumerate() {
-                    assert_eq!(d.0, r.0, "candidate id moved at {i}");
-                    assert_eq!(
-                        d.1.to_bits(),
-                        r.1.to_bits(),
-                        "BIT DIVERGENCE at id {i} (repeat={repeat} freq={freq} \
-                         present={present} window={window}): dense {} vs reference {}",
-                        d.1,
-                        r.1
-                    );
-                }
-                // Ids never generated must be untouched — otherwise "identical" could be two
-                // equally-wrong passes.
-                assert_eq!(
-                    dense[0].1.to_bits(),
-                    base[0].1.to_bits(),
-                    "id 0 was penalized"
-                );
-                assert_eq!(
-                    dense[256].1.to_bits(),
-                    base[256].1.to_bits(),
-                    "id 256 was penalized"
-                );
-                cases += 1;
-            }
-        }
-        assert_eq!(cases, 24, "the coefficient x window matrix must all run");
-    }
-
-    /// The precondition the dense form trades correctness for speed on: the candidate row it is
-    /// handed is dense and index-aligned. Asserted on the REAL call path (`sample`), so a future
-    /// caller that filters before penalizing cannot quietly pass.
-    #[test]
-    fn the_sampled_path_penalizes_the_token_it_generated() {
-        let cfg = SamplerConfig {
-            temperature: 1.0,
-            penalty_last_n: 64,
-            penalty_present: 100.0, // large enough that the penalized id cannot win
-            seed: 7,
-            ..SamplerConfig::default()
-        };
-        let mut s = Sampler::new(cfg);
-        // Logits that make id 2 the runaway favourite, then penalize exactly id 2.
-        let logits = vec![0.0, 0.0, 20.0, 0.0];
-        s.accept(2);
-        for _ in 0..32 {
-            assert_ne!(
-                s.sample(&logits),
-                2,
-                "presence penalty on the generated id must move the draw off it, which only \
-                 happens if the dense pass indexed the right candidate"
-            );
-        }
-    }
-
     #[test]
     fn greedy_is_argmax() {
         let mut s = Sampler::new(SamplerConfig::default()); // temp 0
@@ -732,11 +542,9 @@ mod tests {
     #[test]
     fn repeat_penalty_suppresses_recent() {
         // greedy + heavy repeat penalty: id 1 is argmax but recently emitted -> should drop it.
-        let cfg = SamplerConfig {
-            penalty_last_n: 8,
-            penalty_repeat: 100.0,
-            ..Default::default()
-        };
+        let mut cfg = SamplerConfig::default();
+        cfg.penalty_last_n = 8;
+        cfg.penalty_repeat = 100.0;
         let mut s = Sampler::new(cfg);
         s.accept(1); // 1 was just emitted
         let logits = vec![4.0, 5.0, 4.5, 1.0]; // raw argmax = 1

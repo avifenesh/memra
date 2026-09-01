@@ -239,10 +239,7 @@ fn expected_census_0731(
         assert!(prev.is_none(), "0731 census: duplicate spec for {name}");
     }
     fn fp8(m: &mut BTreeMap<String, TensorSpec>, stem: String, out: u64, inn: u64) {
-        assert!(
-            out.is_multiple_of(128) && inn.is_multiple_of(128),
-            "fp8 blk128 dims: {stem}"
-        );
+        assert!(out % 128 == 0 && inn % 128 == 0, "fp8 blk128 dims: {stem}");
         t(m, format!("{stem}.weight"), "F8_E4M3", vec![out, inn]);
         t(
             m,
@@ -260,12 +257,12 @@ fn expected_census_0731(
     ) {
         match recipe {
             ExpertRecipe::Mxfp4 => {
-                assert!(inn.is_multiple_of(32));
+                assert!(inn % 32 == 0);
                 t(m, format!("{stem}.weight"), "I8", vec![out, inn / 2]);
                 t(m, format!("{stem}.scale"), "F8_E8M0", vec![out, inn / 32]);
             }
             ExpertRecipe::Nvfp4NoInputScale => {
-                assert!(inn.is_multiple_of(16));
+                assert!(inn % 16 == 0);
                 t(m, format!("{stem}.weight"), "U8", vec![out, inn / 2]);
                 t(
                     m,
@@ -550,7 +547,7 @@ fn write_safetensors(path: &Path, entries: &[OutEntry]) -> std::io::Result<u64> 
         off += n;
     }
     header.push('}');
-    while !header.len().is_multiple_of(8) {
+    while header.len() % 8 != 0 {
         header.push(' ');
     }
     let f = std::fs::File::create(path)?;
@@ -599,9 +596,9 @@ fn par_run<T: Sync>(
     });
     let mut lines = Vec::with_capacity(items.len());
     for m in out {
-        {
-            let l = m.into_inner().unwrap().expect("worker skipped an item")?;
-            lines.push(l)
+        match m.into_inner().unwrap().expect("worker skipped an item") {
+            Ok(l) => lines.push(l),
+            Err(e) => return Err(e),
         }
     }
     Ok(lines)

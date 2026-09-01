@@ -74,7 +74,7 @@ Correctness verified on this rig: argmax MATCH per arm and bit-identical output 
 ten runs — the mirrors compute the same numbers, they're just slower on this GDDR7 memory
 system for the 35B's mirror-eligible trunk slice (191 tensors ≈ 1.12 GiB of a 19.7 GiB
 model). The Hopper-only default is CORRECT for this card; no default change, no serving flag.
-The layout-v2 q27-class check stays owed to a box that has the q27 gguf (/opt/scratch/nvme).
+The layout-v2 q27-class check stays owed to a box that has the q27 gguf (/opt/dl-image/nvme).
 
 ## 3. Ornith-35B plain vs llama — same-session restatement (idle regime)
 

@@ -236,7 +236,7 @@ pub struct PlannedVideo {
 }
 
 fn gif_need(bytes: &[u8], pos: usize, len: usize, what: &str) -> Result<(), String> {
-    if pos.checked_add(len).is_none_or(|end| end > bytes.len()) {
+    if pos.checked_add(len).map_or(true, |end| end > bytes.len()) {
         return Err(format!("truncated GIF {what}"));
     }
     Ok(())
@@ -493,30 +493,7 @@ pub fn prep_video_gif(bytes: &[u8]) -> Result<PreppedVideo, String> {
     Ok(PreppedVideo { groups, timestamps })
 }
 
-/// Per-image RAW byte cap, enforced AT the data-URI decode (hermes review finding
-/// 48f96cb4cd37e436): the decode runs in the HTTP content walkers BEFORE slot admission,
-/// and until this cap only `MAX_BODY_BYTES` (192 MiB) bounded it, so one oversized image
-/// could expand ~144 MiB of host bytes pre-check. 12 MiB raw is the per-image line item
-/// the memra-server `MAX_BODY_BYTES` budget has always itemized (8 images x 12 MiB raw
-/// x 4/3 base64); this constant makes that line item enforced rather than aspirational.
-pub const IMG_MAX_RAW_BYTES: usize = 12 * 1024 * 1024;
-
-/// The exact base64 length ceiling for `IMG_MAX_RAW_BYTES` raw bytes: base64 emits 4
-/// chars per 3 raw bytes and the cap is a multiple of 3, so any longer payload decodes
-/// past the cap. Checking the payload LENGTH refuses oversized input before ANY decode
-/// allocation. Shared by the qwen and gemma data-URI decoders.
-pub(crate) fn data_uri_payload_over_cap(payload: &str) -> Option<String> {
-    if payload.len() > IMG_MAX_RAW_BYTES / 3 * 4 {
-        return Some(format!(
-            "image data exceeds {} MiB (per-image raw limit, refused before decode)",
-            IMG_MAX_RAW_BYTES / (1024 * 1024)
-        ));
-    }
-    None
-}
-
-/// Parse a base64 data URI into raw bytes (any `data:*;base64,` media type). Refuses a
-/// payload past `IMG_MAX_RAW_BYTES` (by encoded length, before decoding anything).
+/// Parse a base64 data URI into raw bytes (any `data:*;base64,` media type).
 pub fn decode_data_uri(uri: &str) -> Result<Vec<u8>, String> {
     let rest = uri
         .strip_prefix("data:")
@@ -527,12 +504,8 @@ pub fn decode_data_uri(uri: &str) -> Result<Vec<u8>, String> {
     if !meta.ends_with(";base64") {
         return Err("data URI must be base64-encoded".into());
     }
-    let payload = payload.trim();
-    if let Some(err) = data_uri_payload_over_cap(payload) {
-        return Err(err);
-    }
     base64::engine::general_purpose::STANDARD
-        .decode(payload)
+        .decode(payload.trim())
         .map_err(|e| format!("base64 decode: {e}"))
 }
 
@@ -727,31 +700,5 @@ mod tests {
         let prep = prep_data_uri(&uri).unwrap();
         assert_eq!(prep.n_tokens(), prep.gh * prep.gw / 4);
         assert!(decode_data_uri("http://x/y.png").is_err());
-    }
-
-    /// The per-image raw cap is enforced at the decode, BY ENCODED LENGTH, so an
-    /// oversized data URI is refused by name before a single byte is decoded (hermes
-    /// review finding 48f96cb4cd37e436: only MAX_BODY_BYTES bounded this, letting one
-    /// image expand ~144 MiB of host bytes pre-admission).
-    #[test]
-    fn data_uri_per_image_raw_cap() {
-        let cap_chars = IMG_MAX_RAW_BYTES / 3 * 4;
-        // One base64 quad past the cap: refused, and the error names the limit.
-        let over = format!("data:image/png;base64,{}", "A".repeat(cap_chars + 4));
-        let err = decode_data_uri(&over).unwrap_err();
-        assert!(
-            err.contains("12 MiB"),
-            "cap refusal must name the limit: {err}"
-        );
-        // Exactly at the cap: the size gate admits and the decode yields cap bytes
-        // (the image decoder then judges the content, as before).
-        let at = format!("data:image/png;base64,{}", "A".repeat(cap_chars));
-        assert_eq!(decode_data_uri(&at).unwrap().len(), IMG_MAX_RAW_BYTES);
-        // The gemma mirror carries the identical cap.
-        let gerr = crate::vision_gemma::gemma_decode_data_uri(&over).unwrap_err();
-        assert!(
-            gerr.contains("12 MiB"),
-            "gemma cap refusal must name the limit: {gerr}"
-        );
     }
 }

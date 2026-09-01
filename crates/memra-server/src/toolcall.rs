@@ -69,8 +69,6 @@ enum State {
     /// deepseek-v4: inside a `<｜DSML｜tool_calls>...` block, buffering until
     /// `</｜DSML｜tool_calls>`.
     Dsv4Call,
-    /// Tencent HY3: inside `<tool_calls:opensource>...`, buffering until its suffixed close.
-    Hy3Call,
 }
 
 const OPEN: &str = "<tool_call>";
@@ -120,17 +118,6 @@ const DSV4_INVOKE: &str = "<\u{ff5c}DSML\u{ff5c}invoke name=\"";
 const DSV4_PARAM: &str = "<\u{ff5c}DSML\u{ff5c}parameter name=\"";
 const DSV4_PARAM_END: &str = "</\u{ff5c}DSML\u{ff5c}parameter>";
 const DSV4_INVOKE_END: &str = "</\u{ff5c}DSML\u{ff5c}invoke>";
-/// Tencent HY3 shipping tool protocol (the `:opensource` suffix is part of every token).
-const HY3_THINK_END: &str = "</think:opensource>";
-const HY3_OPEN: &str = "<tool_calls:opensource>";
-const HY3_CLOSE: &str = "</tool_calls:opensource>";
-const HY3_CALL_OPEN: &str = "<tool_call:opensource>";
-const HY3_CALL_CLOSE: &str = "</tool_call:opensource>";
-const HY3_TOOL_SEP: &str = "<tool_sep:opensource>";
-const HY3_ARG_KEY_OPEN: &str = "<arg_key:opensource>";
-const HY3_ARG_KEY_CLOSE: &str = "</arg_key:opensource>";
-const HY3_ARG_VALUE_OPEN: &str = "<arg_value:opensource>";
-const HY3_ARG_VALUE_CLOSE: &str = "</arg_value:opensource>";
 
 pub struct ToolStreamParser {
     state: State,
@@ -155,42 +142,8 @@ pub struct ToolStreamParser {
     /// this template puts content directly after `</think>`), and the `<tool_call>` body is
     /// the `<arg_key>`/`<arg_value>` grammar rather than qwen's `<function=`/`<parameter=`.
     glm5: bool,
-    /// Tencent HY3 dialect: reasoning closes with `</think:opensource>` and calls use the
-    /// suffixed `<tool_calls:opensource>` protocol.
-    hy3: bool,
     /// Separator-newline budget right after `</think>` (the template emits `</think>\n\n`).
     postthink_nl: u8,
-}
-
-/// AGENT-PAUSE TAIL PREDICATE (lane/kv-pause-demote-20260831, tiering spec Arc E): does a
-/// generation tail END with a completed tool-call block in one of the served dialects
-/// (qwen `</tool_call>`, gemma tooluse `<tool_call|>`, deepseek-v4 `</｜DSML｜tool_calls>`)?
-/// The markers live HERE so this predicate and the streaming parser can never disagree on
-/// what a close tag looks like.
-///
-/// This is the WORKER-SIDE PREDICTOR of the HTTP layer's `finish_reason: "tool_calls"`
-/// verdict (the authoritative parse lives in `ToolStreamParser`, between the worker's token
-/// stream and the response; the worker never sees it). The two can diverge, and both
-/// directions are safe because nothing correctness-bearing rides on the prediction: it only
-/// times an eager host-tier demotion whose round trip is byte-exact either way:
-/// - a call followed by trailing prose finishes `tool_calls` upstream but fails the tail
-///   check here (no pause demote armed: conservative, the entry just waits for SLRU);
-/// - a malformed block that happens to end in a close tag fails to parse upstream but
-///   passes here (one wasted demotion timer; PCIe cost only, bounded by the delay filter).
-///
-/// NOT a divergence any more (battery-20260831 pause-gates FINDING 1): the NATURAL
-/// tool_calls finish lands the request's stop id AFTER the close marker
-/// (`...</tool_call><eos>`), and on qwen3.8 that shape was 6 of 6 real tool pauses: a
-/// "conservative miss" that covered the entire target workload. The arm site strips
-/// trailing stop ids at the TOKEN-ID level before decoding (`pause_tail_window` in
-/// worker.rs, driven by the session's exact stop set), so this predicate stays text-only
-/// and marker-only; it never guesses at per-model stop-token spellings.
-///
-/// Exact finish-reason plumb-through (an HTTP->worker per-session backchannel) is the named
-/// v2 refinement in `research/kv-pause-20260831/REPORT.md`.
-pub fn tail_ends_with_tool_call(tail: &str) -> bool {
-    let t = tail.trim_end();
-    t.ends_with(CLOSE) || t.ends_with(GEMMA_CALL_CLOSE) || t.ends_with(DSV4_CLOSE)
 }
 
 /// Length of the longest PROPER prefix of `tag` that `s` ends with. NOTE: byte-indexed —
@@ -227,7 +180,6 @@ impl ToolStreamParser {
             gemma_tools: false,
             dsv4: false,
             glm5: false,
-            hy3: false,
             postthink_nl: 0,
         }
     }
@@ -259,15 +211,6 @@ impl ToolStreamParser {
         let mut p = Self::new(schemas, skip_think);
         p.scan_tools = tools;
         p.glm5 = true;
-        p
-    }
-
-    /// Tencent HY3 parser: optional open reasoning tail, then one-or-more native tool calls.
-    /// The declaration schemas drive the same typed argument coercion as the qwen parser.
-    pub fn hy3(schemas: HashMap<String, HashMap<String, String>>, skip_think: bool) -> Self {
-        let mut p = Self::new(schemas, skip_think);
-        p.scan_tools = false;
-        p.hy3 = true;
         p
     }
 
@@ -311,15 +254,13 @@ impl ToolStreamParser {
         loop {
             match self.state {
                 State::Prethink => {
-                    let think_end = if self.hy3 { HY3_THINK_END } else { THINK_END };
-                    if let Some(i) = self.buf.find(think_end) {
+                    if let Some(i) = self.buf.find(THINK_END) {
                         // think text -> reasoning; the tag itself is syntax, not output.
                         self.emit_reasoning(&mut out, self.buf[..i].to_string());
-                        self.buf.drain(..i + think_end.len());
+                        self.buf.drain(..i + THINK_END.len());
                         // dsv4 content starts IMMEDIATELY after `</think>` (no separator
                         // newlines, unlike the qwen `</think>\n\n`); go straight to Scan.
-                        // glm5 and HY3 share that shape.
-                        if self.dsv4 || self.glm5 || self.hy3 {
+                        if self.dsv4 || self.glm5 {
                             self.state = State::Scan;
                         } else {
                             self.state = State::PostThink;
@@ -327,7 +268,7 @@ impl ToolStreamParser {
                         }
                         continue;
                     }
-                    let keep = partial_suffix_len(&self.buf, think_end);
+                    let keep = partial_suffix_len(&self.buf, THINK_END);
                     let emit_to = self.buf.len() - keep;
                     if emit_to > 0 {
                         self.emit_reasoning(&mut out, self.buf[..emit_to].to_string());
@@ -348,23 +289,6 @@ impl ToolStreamParser {
                     continue;
                 }
                 State::Scan => {
-                    if self.hy3 {
-                        if let Some(i) = self.buf.find(HY3_OPEN) {
-                            if i > 0 {
-                                emit_content(&mut out, self.buf[..i].to_string());
-                            }
-                            self.buf.drain(..i + HY3_OPEN.len());
-                            self.state = State::Hy3Call;
-                            continue;
-                        }
-                        let keep = partial_suffix_len(&self.buf, HY3_OPEN);
-                        let emit_to = self.buf.len() - keep;
-                        if emit_to > 0 {
-                            emit_content(&mut out, self.buf[..emit_to].to_string());
-                            self.buf.drain(..emit_to);
-                        }
-                        break;
-                    }
                     if self.gemma_tools {
                         // content until the EARLIER of a `<|channel>` (thought) or a
                         // `<|tool_call>` (call). Both start with `<|`; a partial suffix of
@@ -579,23 +503,6 @@ impl ToolStreamParser {
                     }
                     continue;
                 }
-                State::Hy3Call => {
-                    let Some(i) = self.buf.find(HY3_CLOSE) else {
-                        break;
-                    };
-                    let inner: String = self.buf[..i].to_string();
-                    self.buf.drain(..i + HY3_CLOSE.len());
-                    self.state = State::Scan;
-                    match self.parse_hy3_calls(&inner) {
-                        Some(calls) if !calls.is_empty() => {
-                            for call in calls {
-                                out.push(Piece::Call(call));
-                            }
-                        }
-                        _ => emit_content(&mut out, format!("{HY3_OPEN}{inner}{HY3_CLOSE}")),
-                    }
-                    continue;
-                }
             }
         }
         out
@@ -624,7 +531,6 @@ impl ToolStreamParser {
                 State::GemmaCall => emit_content(&mut out, format!("{GEMMA_CALL_OPEN}{tail}")),
                 // dsv4 unterminated `<｜DSML｜tool_calls>` block: surfaced raw (open restored).
                 State::Dsv4Call => emit_content(&mut out, format!("{DSV4_OPEN}{tail}")),
-                State::Hy3Call => emit_content(&mut out, format!("{HY3_OPEN}{tail}")),
                 _ => emit_content(&mut out, tail),
             }
         }
@@ -872,63 +778,6 @@ impl ToolStreamParser {
             return None;
         }
         Some(calls)
-    }
-
-    /// Parse HY3's `<tool_calls:opensource>` body into OpenAI calls. Each call carries the
-    /// function name before `<tool_sep:opensource>`, followed by ordered arg-key/value pairs.
-    fn parse_hy3_calls(&mut self, inner: &str) -> Option<Vec<ParsedToolCall>> {
-        let mut calls = Vec::new();
-        let mut rest = inner;
-        loop {
-            rest = rest.trim_start_matches(['\n', '\r']);
-            if rest.trim().is_empty() {
-                break;
-            }
-            let body = rest.strip_prefix(HY3_CALL_OPEN)?;
-            let call_end = body.find(HY3_CALL_CLOSE)?;
-            let call = &body[..call_end];
-            rest = &body[call_end + HY3_CALL_CLOSE.len()..];
-
-            let sep = call.find(HY3_TOOL_SEP)?;
-            let name = call[..sep].trim();
-            if name.is_empty() || name.contains(['<', '>', '\n']) {
-                return None;
-            }
-            let mut fields = call[sep + HY3_TOOL_SEP.len()..].trim_start_matches(['\n', '\r']);
-            let mut args = serde_json::Map::new();
-            while !fields.trim().is_empty() {
-                fields = fields.trim_start_matches(['\n', '\r']);
-                let keyed = fields.strip_prefix(HY3_ARG_KEY_OPEN)?;
-                let key_end = keyed.find(HY3_ARG_KEY_CLOSE)?;
-                let key = &keyed[..key_end];
-                if key.is_empty() || key.contains(['<', '>', '\n']) || args.contains_key(key) {
-                    return None;
-                }
-                let after_key =
-                    keyed[key_end + HY3_ARG_KEY_CLOSE.len()..].trim_start_matches(['\n', '\r']);
-                let valued = after_key.strip_prefix(HY3_ARG_VALUE_OPEN)?;
-                let value_end = valued.find(HY3_ARG_VALUE_CLOSE)?;
-                let value = &valued[..value_end];
-                args.insert(key.to_string(), self.coerce(name, key, value));
-                fields = &valued[value_end + HY3_ARG_VALUE_CLOSE.len()..];
-            }
-            let arguments = serde_json::to_string(&serde_json::Value::Object(args)).ok()?;
-            let id = format!(
-                "call_{:016x}",
-                fnv1a64(&[
-                    &self.n_calls.to_le_bytes(),
-                    name.as_bytes(),
-                    arguments.as_bytes(),
-                ])
-            );
-            self.n_calls += 1;
-            calls.push(ParsedToolCall {
-                id,
-                name: name.to_string(),
-                arguments,
-            });
-        }
-        (!calls.is_empty()).then_some(calls)
     }
 
     /// Coercion law: a parameter whose declared schema type is non-"string" is parsed as
@@ -1734,62 +1583,6 @@ flexible:true,note:<|\"|>a{b,c}:d<|\"|>,workdir:None}<tool_call|>";
     }
 
     #[test]
-    fn hy3_splits_reasoning_and_parses_multiple_typed_calls() {
-        let mut parser = ToolStreamParser::hy3(weather_schema(), true);
-        let emission = concat!(
-            "Need current data.</think:opensource>Checking.",
-            "<tool_calls:opensource>\n",
-            "<tool_call:opensource>get_weather<tool_sep:opensource>\n",
-            "<arg_key:opensource>city</arg_key:opensource>\n",
-            "<arg_value:opensource>Paris</arg_value:opensource>\n",
-            "<arg_key:opensource>days</arg_key:opensource>\n",
-            "<arg_value:opensource>3</arg_value:opensource>\n",
-            "<arg_key:opensource>metric</arg_key:opensource>\n",
-            "<arg_value:opensource>false</arg_value:opensource>\n",
-            "</tool_call:opensource>\n",
-            "<tool_call:opensource>get_weather<tool_sep:opensource>\n",
-            "<arg_key:opensource>city</arg_key:opensource>\n",
-            "<arg_value:opensource>Rome</arg_value:opensource>\n",
-            "</tool_call:opensource>\n",
-            "</tool_calls:opensource>",
-        );
-        let mut pieces = Vec::new();
-        for ch in emission.chars() {
-            pieces.extend(parser.push(&ch.to_string()));
-        }
-        pieces.extend(parser.finish());
-        let (content, reasoning, calls) = reassemble3(&pieces);
-        assert_eq!(reasoning, "Need current data.");
-        assert_eq!(content, "Checking.");
-        assert_eq!(calls.len(), 2);
-        assert_eq!(calls[0].name, "get_weather");
-        assert_eq!(
-            calls[0].arguments,
-            r#"{"city":"Paris","days":3,"metric":false}"#
-        );
-        assert_eq!(calls[1].arguments, r#"{"city":"Rome"}"#);
-        assert_ne!(calls[0].id, calls[1].id);
-    }
-
-    #[test]
-    fn hy3_malformed_and_unterminated_calls_surface_verbatim() {
-        let bad = "<tool_calls:opensource><tool_call:opensource>missing-separator\
-                   </tool_call:opensource></tool_calls:opensource>";
-        let mut parser = ToolStreamParser::hy3(weather_schema(), false);
-        let pieces = parser.push(bad);
-        let (content, calls) = reassemble(&pieces);
-        assert_eq!(content, bad);
-        assert!(calls.is_empty());
-
-        let tail = "<tool_calls:opensource><tool_call:opensource>get_weather";
-        let mut parser = ToolStreamParser::hy3(weather_schema(), false);
-        assert!(parser.push(tail).is_empty());
-        let (content, calls) = reassemble(&parser.finish());
-        assert_eq!(content, tail);
-        assert!(calls.is_empty());
-    }
-
-    #[test]
     fn dsv4_parses_a_call_in_thinking_mode_split_from_reasoning() {
         // real wire from artifact test_output_1: reasoning then a get_weather call. `</think>`
         // routes reasoning; content is empty; the `\n\n` before the block is syntax.
@@ -1957,30 +1750,5 @@ flexible:true,note:<|\"|>a{b,c}:d<|\"|>,workdir:None}<tool_call|>";
         let (content, _r, calls) = reassemble3(&pieces);
         assert_eq!(content, "cost note\n\n<\u{ff5c}DSML\u{ff5c}took a while");
         assert!(calls.is_empty());
-    }
-
-    #[test]
-    fn pause_tail_predicate_matches_all_three_close_dialects_and_nothing_else() {
-        // The three served close markers, with and without trailing whitespace/newlines
-        // (models commonly emit `</tool_call>\n` before EOS).
-        assert!(tail_ends_with_tool_call(EMISSION));
-        assert!(tail_ends_with_tool_call("</tool_call>"));
-        assert!(tail_ends_with_tool_call("...args}</tool_call>\n\n"));
-        assert!(tail_ends_with_tool_call(
-            "call:get_weather{city}<tool_call|>  "
-        ));
-        assert!(tail_ends_with_tool_call(&format!("body{DSV4_CLOSE}\n")));
-        // Divergence direction that must stay CONSERVATIVE: a completed call followed by
-        // trailing prose parses as tool_calls upstream but does not arm a pause demote.
-        assert!(!tail_ends_with_tool_call(
-            "</tool_call>\nAnd one more thing."
-        ));
-        // Plain prose / open tags / partial closes never match.
-        assert!(!tail_ends_with_tool_call("The weather in Paris is 21C."));
-        assert!(!tail_ends_with_tool_call(
-            "<tool_call>\n<function=get_weather>"
-        ));
-        assert!(!tail_ends_with_tool_call("</tool_cal"));
-        assert!(!tail_ends_with_tool_call(""));
     }
 }

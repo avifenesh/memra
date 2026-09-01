@@ -13,8 +13,8 @@ set -euo pipefail
 OLD=${1:?usage: provision-8x.sh <old-box-ip>}
 KEY=~/.ssh/<bench-instance>.pem
 
-# 1. The stock GPU image pre-mounts the ephemeral NVMe set as one LVM at /opt/scratch/nvme (28T on this shape).
-SCRATCH=/opt/scratch/nvme
+# 1. The stock GPU image pre-mounts the ephemeral NVMe set as one LVM at /opt/dl-image/nvme (28T on this shape).
+SCRATCH=/opt/dl-image/nvme
 sudo chown ubuntu $SCRATCH 2>/dev/null || true
 mkdir -p $SCRATCH/models $SCRATCH/hf
 export HF_HOME=$SCRATCH/hf
@@ -25,7 +25,7 @@ source ~/.cargo/env
 rsync -az -e "ssh -i $KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" ubuntu@$OLD:~/cuda-13.3.1/ ~/cuda-13.3.1/ &
 rsync -az -e "ssh -i $KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" --exclude 'target*' ubuntu@$OLD:~/memra/ ~/memra/ &
 rsync -az -e "ssh -i $KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" ubuntu@$OLD:~/models/ $SCRATCH/models/ &
-rsync -az -e "ssh -i $KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" ubuntu@$OLD:/opt/scratch/nvme/models/ $SCRATCH/models/ &
+rsync -az -e "ssh -i $KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" ubuntu@$OLD:/opt/dl-image/nvme/models/ $SCRATCH/models/ &
 wait
 ln -sfn $SCRATCH/models ~/models
 

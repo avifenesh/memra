@@ -3,15 +3,15 @@
 # One invocation = ONE run-spec process for ONE prompt: plain greedy oracle + spec K=1,
 # MEMRA_CHAT=1 (single user turn, serving shape), MEMRA_NGEN=128, greedy (exactness gate on).
 # Entire GPU-touching process held under flock /tmp/gpu-h100.lock (shared-box rule).
-# Build REUSED from the K-sweep lane: /opt/scratch/nvme/hy3-spec-sweep/memra @ 2b9a6aa6
+# Build REUSED from the K-sweep lane: /opt/dl-image/nvme/hy3-spec-sweep/memra @ 2b9a6aa6
 # (spec.rs / run_spec.rs identical to restructure/public-split tip c654329f).
 # Usage: accept-profile-driver.sh <prompt-file> <tag>
 set -u
 PROMPT=${1:?usage: accept-profile-driver.sh <prompt-file> <tag>}
 TAG=${2:?usage: accept-profile-driver.sh <prompt-file> <tag>}
-TREE=/opt/scratch/nvme/hy3-spec-sweep/memra
-ART=/opt/scratch/nvme/models/hy3-layer103p5-bw24-runtime
-BASE=/opt/scratch/nvme/hy3-accept-profile
+TREE=/opt/dl-image/nvme/hy3-spec-sweep/memra
+ART=/opt/dl-image/nvme/models/hy3-layer103p5-bw24-runtime
+BASE=/opt/dl-image/nvme/hy3-accept-profile
 LOG=$BASE/logs/$TAG.log
 
 {

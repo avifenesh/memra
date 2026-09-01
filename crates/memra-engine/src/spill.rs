@@ -177,7 +177,7 @@ pub fn place_expert(
             let dst = p.as_mut_slice()?;
             dst.copy_from_slice(raw);
         }
-        let base = p.as_ptr()?;
+        let base = p.as_ptr()? as *const u8;
         Ok(HostBuf::Pinned {
             slice: std::sync::Arc::new(p),
             base,

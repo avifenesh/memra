@@ -30,273 +30,9 @@ use crate::Engine;
 use crate::cache::Cache;
 use crate::hybrid::{HybridModel, Mixer};
 use cudarc::driver::{CudaEvent, CudaSlice};
-use std::collections::VecDeque;
 use std::sync::Arc;
 
 type DualPpCudaSpan = Option<(CudaEvent, CudaEvent)>;
-
-/// One disjoint request wave moving through the PP3/PP4 anti-diagonal schedule. The activation
-/// itself lives in `PpNRt`'s persistent boundary slot; this host state carries only ownership of
-/// the request caches and the slot selected by the preceding stage.
-struct PpDecodeWave<'slice, 'cache> {
-    row_lo: usize,
-    tokens: &'slice [u32],
-    caches: &'slice mut [&'cache mut Cache],
-    phase_last: std::time::Instant,
-    #[allow(clippy::type_complexity)]
-    // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-    result: Option<(Vec<Vec<f32>>, Vec<Option<u32>>)>,
-    committed: bool,
-}
-
-impl Drop for PpDecodeWave<'_, '_> {
-    fn drop(&mut self) {
-        if !self.committed {
-            for cache in self.caches.iter_mut() {
-                cache.mark_tainted();
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct PpWaveTransfer {
-    boundary: usize,
-    wave: usize,
-    slot: usize,
-}
-
-#[derive(Debug)]
-enum PpWaveMessage {
-    Transfer(PpWaveTransfer),
-    WorkerError {
-        boundary: usize,
-        wave: usize,
-        error: String,
-    },
-}
-
-struct PpWaveIncoming {
-    boundary: usize,
-    transfers: std::sync::mpsc::Receiver<PpWaveMessage>,
-    acknowledgements: std::sync::mpsc::Sender<PpWaveTransfer>,
-}
-
-impl PpWaveIncoming {
-    fn receive(&self, expected_wave: usize) -> Result<PpWaveTransfer, String> {
-        match self.transfers.recv() {
-            Ok(PpWaveMessage::Transfer(transfer)) => {
-                if transfer.boundary != self.boundary || transfer.wave != expected_wave {
-                    return Err(format!(
-                        "PP wave boundary {} expected wave {expected_wave}, got boundary {} wave {} slot {}",
-                        self.boundary, transfer.boundary, transfer.wave, transfer.slot,
-                    ));
-                }
-                if transfer.slot >= 2 {
-                    return Err(format!(
-                        "PP wave boundary {} wave {expected_wave} carried invalid slot {}",
-                        self.boundary, transfer.slot,
-                    ));
-                }
-                Ok(transfer)
-            }
-            Ok(PpWaveMessage::WorkerError {
-                boundary,
-                wave,
-                error,
-            }) => {
-                if boundary != self.boundary {
-                    return Err(format!(
-                        "PP wave boundary {} received worker failure for boundary {boundary} wave {wave}: {error}",
-                        self.boundary,
-                    ));
-                }
-                Err(format!(
-                    "PP wave boundary {boundary} upstream worker failed at wave {wave} while receiver expected wave {expected_wave}: {error}"
-                ))
-            }
-            Err(_) => Err(format!(
-                "PP wave boundary {} transfer channel closed before wave {expected_wave}",
-                self.boundary,
-            )),
-        }
-    }
-
-    fn acknowledge(&self, transfer: PpWaveTransfer) -> Result<(), String> {
-        if transfer.boundary != self.boundary {
-            return Err(format!(
-                "PP wave acknowledgement boundary mismatch: receiver {} transfer {}",
-                self.boundary, transfer.boundary,
-            ));
-        }
-        self.acknowledgements.send(transfer).map_err(|_| {
-            format!(
-                "PP wave boundary {} acknowledgement channel closed at wave {} slot {}",
-                self.boundary, transfer.wave, transfer.slot,
-            )
-        })
-    }
-}
-
-struct PpWaveOutgoing {
-    boundary: usize,
-    transfers: std::sync::mpsc::Sender<PpWaveMessage>,
-    acknowledgements: std::sync::mpsc::Receiver<PpWaveTransfer>,
-    slot_owner: [Option<PpWaveTransfer>; 2],
-    pending: VecDeque<PpWaveTransfer>,
-    next_slot: Option<usize>,
-    next_wave: usize,
-}
-
-impl PpWaveOutgoing {
-    fn new(
-        boundary: usize,
-        transfers: std::sync::mpsc::Sender<PpWaveMessage>,
-        acknowledgements: std::sync::mpsc::Receiver<PpWaveTransfer>,
-    ) -> Self {
-        Self {
-            boundary,
-            transfers,
-            acknowledgements,
-            slot_owner: [None, None],
-            pending: VecDeque::new(),
-            next_slot: None,
-            next_wave: 0,
-        }
-    }
-
-    fn receive_ack(&mut self, expected: PpWaveTransfer) -> Result<(), String> {
-        let actual = self.acknowledgements.recv().map_err(|_| {
-            format!(
-                "PP wave boundary {} acknowledgement channel closed waiting for wave {} slot {}",
-                self.boundary, expected.wave, expected.slot,
-            )
-        })?;
-        if actual != expected {
-            return Err(format!(
-                "PP wave boundary {} expected acknowledgement wave {} slot {}, got boundary {} wave {} slot {}",
-                self.boundary,
-                expected.wave,
-                expected.slot,
-                actual.boundary,
-                actual.wave,
-                actual.slot,
-            ));
-        }
-        let pending = self.pending.pop_front().ok_or_else(|| {
-            "PP wave acknowledgement arrived with no pending transfer".to_string()
-        })?;
-        if pending != expected {
-            return Err(format!(
-                "PP wave boundary {} acknowledgement order mismatch: pending wave {} slot {}, expected wave {} slot {}",
-                self.boundary, pending.wave, pending.slot, expected.wave, expected.slot,
-            ));
-        }
-        self.slot_owner[expected.slot] = None;
-        Ok(())
-    }
-
-    /// Return the slot `tx_pipelined` must select next. If that slot still belongs to an older
-    /// wave, wait for the exact downstream acknowledgement proving `rx` recorded `ev_rx` for it.
-    fn prepare(&mut self, wave: usize) -> Result<Option<usize>, String> {
-        if wave != self.next_wave {
-            return Err(format!(
-                "PP wave boundary {} producer order mismatch: expected wave {}, got {wave}",
-                self.boundary, self.next_wave,
-            ));
-        }
-        if let Some(slot) = self.next_slot
-            && let Some(owner) = self.slot_owner[slot]
-        {
-            self.receive_ack(owner)?;
-        }
-        Ok(self.next_slot)
-    }
-
-    fn publish(
-        &mut self,
-        wave: usize,
-        slot: usize,
-        expected_slot: Option<usize>,
-    ) -> Result<(), String> {
-        if wave != self.next_wave {
-            return Err(format!(
-                "PP wave boundary {} publish order mismatch: expected wave {}, got {wave}",
-                self.boundary, self.next_wave,
-            ));
-        }
-        if slot >= 2 {
-            return Err(format!(
-                "PP wave boundary {} wave {wave} selected invalid slot {slot}",
-                self.boundary,
-            ));
-        }
-        if let Some(expected) = expected_slot
-            && slot != expected
-        {
-            return Err(format!(
-                "PP wave boundary {} wave {wave} broke slot alternation: expected {expected}, got {slot}",
-                self.boundary,
-            ));
-        }
-        if let Some(owner) = self.slot_owner[slot] {
-            return Err(format!(
-                "PP wave boundary {} attempted to reuse slot {slot} for wave {wave} before acknowledgement of wave {}",
-                self.boundary, owner.wave,
-            ));
-        }
-        let transfer = PpWaveTransfer {
-            boundary: self.boundary,
-            wave,
-            slot,
-        };
-        self.slot_owner[slot] = Some(transfer);
-        self.pending.push_back(transfer);
-        self.next_slot = Some(slot ^ 1);
-        self.next_wave += 1;
-        self.transfers
-            .send(PpWaveMessage::Transfer(transfer))
-            .map_err(|_| {
-                format!(
-                    "PP wave boundary {} transfer channel closed publishing wave {wave} slot {slot}",
-                    self.boundary,
-                )
-            })
-    }
-
-    fn finish(&mut self) -> Result<(), String> {
-        while let Some(expected) = self.pending.front().copied() {
-            self.receive_ack(expected)?;
-        }
-        Ok(())
-    }
-
-    fn publish_worker_error(&self, error: &str) {
-        let _ = self.transfers.send(PpWaveMessage::WorkerError {
-            boundary: self.boundary,
-            wave: self.next_wave,
-            error: error.to_string(),
-        });
-    }
-}
-
-fn pp_wave_channels(
-    boundaries: usize,
-) -> (Vec<Option<PpWaveOutgoing>>, Vec<Option<PpWaveIncoming>>) {
-    let mut outgoing = Vec::with_capacity(boundaries);
-    let mut incoming = Vec::with_capacity(boundaries);
-    for boundary in 0..boundaries {
-        let (transfer_tx, transfer_rx) = std::sync::mpsc::channel();
-        let (ack_tx, ack_rx) = std::sync::mpsc::channel();
-        outgoing.push(Some(PpWaveOutgoing::new(boundary, transfer_tx, ack_rx)));
-        incoming.push(Some(PpWaveIncoming {
-            boundary,
-            transfers: transfer_rx,
-            acknowledgements: ack_tx,
-        }));
-    }
-    (outgoing, incoming)
-}
 
 fn dual_pp_timing_event(e: &Engine, context: &str) -> Option<CudaEvent> {
     if !crate::pp::dual_pp_timing_on() {
@@ -392,7 +128,6 @@ pub struct PendingBatchStep {
 }
 
 impl PendingBatchStep {
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn new(
         logits: CudaSlice<f32>,
         pristine: Vec<Option<CudaSlice<f32>>>,
@@ -417,7 +152,6 @@ impl PendingBatchStep {
 
     /// Wait for this step only, then perform one ordered readback of its host-visible results.
     /// The compute stream may already be carrying the following step when this runs.
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn wait(self) -> Result<(Vec<Vec<f32>>, Vec<Option<u32>>), Box<dyn std::error::Error>> {
         self.readback.wait(&self.done)?;
         // Lean device-sampled rows already parked their pristine logits in the session cache;
@@ -768,14 +502,15 @@ impl HybridModel {
                         }
                         false
                     } else {
-                        match (&m.gate_shexp, &m.up_shexp, &m.down_shexp) {
+                        let shexp_ok = match (&m.gate_shexp, &m.up_shexp, &m.down_shexp) {
                             (Some(g), Some(u), Some(d)) => {
                                 chk!(g, format!("L{li}.gate_shexp"))
                                     && chk!(u, format!("L{li}.up_shexp"))
                                     && chk!(d, format!("L{li}.down_shexp"))
                             }
                             _ => true,
-                        }
+                        };
+                        shexp_ok
                     }
                 }
             };
@@ -844,7 +579,6 @@ impl HybridModel {
     /// `decode_step_h`/the ppN stages) plus the batched path's own serving epilogue
     /// (grammar mask, device sample, lean-logits park). See the call-site comment in
     /// `decode_step_batch_sampled_lean_masked` for why this is bit-identical.
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     fn decode_step_b1_fast(
         &self,
         e: &Engine,
@@ -988,6 +722,7 @@ impl HybridModel {
         tokens: &[u32],
         caches: &mut [&mut Cache],
     ) -> Result<Vec<Vec<f32>>, Box<dyn std::error::Error>> {
+        self.refuse_hyper("decode_step_batch")?;
         let (rows, _) = self.decode_step_batch_sampled(e, tokens, caches, &[])?;
         Ok(rows)
     }
@@ -1007,7 +742,6 @@ impl HybridModel {
     ///     host draws) — greedy rows are unchanged bit-exact.
     /// `samp[bi] = Some(DevSamp { .. })` requests a device sample for row bi; the full
     /// logits rows are still returned (worker keeps last_logits semantics + fallback rows).
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn decode_step_batch_sampled(
         &self,
         e: &Engine,
@@ -1015,6 +749,7 @@ impl HybridModel {
         caches: &mut [&mut Cache],
         samp: &[Option<DevSamp>],
     ) -> Result<(Vec<Vec<f32>>, Vec<Option<u32>>), Box<dyn std::error::Error>> {
+        self.refuse_hyper("decode_step_batch_sampled")?;
         self.decode_step_batch_sampled_lean(e, tokens, caches, samp, false)
     }
 
@@ -1027,7 +762,6 @@ impl HybridModel {
     /// device park: the row is dtod-copied into `cache.last_logits_dev` (device bandwidth)
     /// and D2H'd ONCE at retire by the worker. Rows without a device sample keep a per-row
     /// D2H. `lean=false` is bit-for-bit the previous method (gates + non-serving callers).
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn decode_step_batch_sampled_lean(
         &self,
         e: &Engine,
@@ -1036,6 +770,7 @@ impl HybridModel {
         samp: &[Option<DevSamp>],
         lean: bool,
     ) -> Result<(Vec<Vec<f32>>, Vec<Option<u32>>), Box<dyn std::error::Error>> {
+        self.refuse_hyper("decode_step_batch_sampled_lean")?;
         self.decode_step_batch_sampled_lean_masked(e, tokens, caches, samp, &[], lean)
     }
 
@@ -1049,7 +784,6 @@ impl HybridModel {
     /// retire-time reuse-pool park stays unmasked — continuations resume grammar-free, the
     /// v1 host-path contract), non-lean rows D2H the unmasked row. `masks = &[]` is
     /// bit-for-bit the unmasked method.
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn decode_step_batch_sampled_lean_masked(
         &self,
         e: &Engine,
@@ -1059,6 +793,7 @@ impl HybridModel {
         masks: &[Option<(&CudaSlice<u32>, usize)>],
         lean: bool,
     ) -> Result<(Vec<Vec<f32>>, Vec<Option<u32>>), Box<dyn std::error::Error>> {
+        self.refuse_hyper("decode_step_batch_sampled_lean_masked")?;
         self.decode_step_batch_sampled_lean_masked_schedule(
             e, tokens, caches, samp, masks, lean, None, None,
         )
@@ -1071,10 +806,6 @@ impl HybridModel {
     pub fn decode_step_overlap_eligible(&self) -> bool {
         !batch_phase_on()
             && crate::pp::pp_cuts(self.layers.len()).is_none()
-            // mHC trunks are excluded: the pending (deferred-readback) epilogue is only
-            // wired for the generic trunk body, and the hyper walk keeps the synchronous
-            // readback contract (see the named refusal in `_pending`).
-            && self.hyper.is_none()
             && !Self::b1_fast_on()
             && self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::DecodeBatch)
             && crate::plan_backend::decode_batch_program(&self.plan)
@@ -1093,17 +824,7 @@ impl HybridModel {
         masks: &[Option<(&CudaSlice<u32>, usize)>],
         lean: bool,
     ) -> Result<PendingBatchStep, Box<dyn std::error::Error>> {
-        if self.hyper.is_some() {
-            return Err(
-                "decode_step_batch_sampled_lean_masked_pending: the overlap scheduler's \
-                 deferred-readback step is not wired for the HyperConnections residual — \
-                 the hyper batched walk keeps the synchronous epilogue (its `pending_out` \
-                 plumbing through `decode_step_batch_hyper` does not exist yet). Serve mHC \
-                 sessions through the synchronous batched chain or the eager per-session \
-                 loop; `decode_step_overlap_eligible` already reports false for this trunk."
-                    .into(),
-            );
-        }
+        self.refuse_hyper("decode_step_batch_sampled_lean_masked_pending")?;
         if tokens.len() != 1 || caches.len() != 1 {
             return Err("overlap scheduler requires a single decode row".into());
         }
@@ -1131,8 +852,6 @@ impl HybridModel {
     /// supplies the balanced dual-wave boundary it used when forming this tick. Direct engine
     /// callers keep the automatic midpoint above; the explicit seam makes scheduler chunking and
     /// engine execution one checked contract instead of two coincident width calculations.
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub fn decode_step_batch_sampled_lean_masked_scheduled(
         &self,
         e: &Engine,
@@ -1143,17 +862,7 @@ impl HybridModel {
         lean: bool,
         dual_wave_mid: usize,
     ) -> Result<(Vec<Vec<f32>>, Vec<Option<u32>>), Box<dyn std::error::Error>> {
-        if self.hyper.is_some() {
-            return Err(
-                "decode_step_batch_sampled_lean_masked_scheduled: the dual-active PP-2 \
-                 wave schedule has no HyperConnections trunk — `decode_step_batch_dual`'s \
-                 two host walkers drive the generic/step35 layer bodies only, and no \
-                 dual-wave twin of `hyper_batch_range_decode` exists. mHC chunks are \
-                 serial ticks: the worker's chunk policy must not form dual waves for \
-                 this topology (decode_step_batch_hyper owns the serial PP-N split)."
-                    .into(),
-            );
-        }
+        self.refuse_hyper("decode_step_batch_sampled_lean_masked_scheduled")?;
         self.decode_step_batch_sampled_lean_masked_schedule(
             e,
             tokens,
@@ -1167,7 +876,6 @@ impl HybridModel {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     fn decode_step_batch_sampled_lean_masked_schedule(
         &self,
         e: &Engine,
@@ -1179,9 +887,6 @@ impl HybridModel {
         scheduled_dual_mid: Option<usize>,
         pending_out: Option<&mut Option<PendingBatchStep>>,
     ) -> Result<(Vec<Vec<f32>>, Vec<Option<u32>>), Box<dyn std::error::Error>> {
-        for cache in caches.iter() {
-            cache.ensure_usable("decode_step_batch")?;
-        }
         if crate::pp::pp_cuts(self.layers.len()).is_some()
             && !self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::Pipeline)
         {
@@ -1224,39 +929,6 @@ impl HybridModel {
             b_n >= 1 && b_n == caches.len(),
             "tokens/caches length mismatch"
         );
-        // ---- mHC DOOR (lane/glm53-batched-decode, 2026-08-28): the HyperConnections trunk
-        // takes its OWN batched walk. Every body below this point runs the serial residual —
-        // on an hc model that is a DIFFERENT function computed fluently (the failure class
-        // `refuse_hyper` exists for) — so the hyper route must come before the pp door, the
-        // b1 fast path, and the width tiers, and it owns its own PP-N stage split inside.
-        // The dual-wave and pending entries refused above with named reasons; this guard is
-        // the defense-in-depth backstop for a future caller that reaches here with either.
-        if self.hyper.is_some() {
-            if scheduled_dual_mid.is_some() {
-                return Err(
-                    "decode_step_batch: a dual-wave schedule reached the hyper trunk — \
-                     no dual-wave twin of hyper_batch_range_decode exists; mHC chunks are \
-                     serial ticks"
-                        .into(),
-                );
-            }
-            if pending_out.is_some() {
-                return Err(
-                    "decode_step_batch: the pending (deferred-readback) epilogue reached \
-                     the hyper trunk — the hyper walk keeps the synchronous readback \
-                     contract"
-                        .into(),
-                );
-            }
-            return self.decode_step_batch_hyper(e, tokens, caches, samp, masks, lean);
-        }
-        let _pp_walk =
-            if crate::pp::pp_cuts(self.layers.len()).is_some() && !crate::pp::pp2_streams_off() {
-                let rt = crate::pp::PpNRt::get(e)?;
-                Some(rt.acquire_walk("decode_step_batch")?)
-            } else {
-                None
-            };
         // ---- PP DOOR: THE BATCHED STAGE SPLIT (pp2-batch 2026-08-06) ----------------------
         // Until this increment this body had NO pp arm: it walked lo=0..n_layers on the
         // primary engine's stream, with no stage split, no boundary, and no `rt.enter()`. With
@@ -1277,41 +949,27 @@ impl HybridModel {
         // `pp2_streams_off` both make `pp_sharded_cross_device()` false) or a placement whose
         // PpNRt fails to build. Keeping the call means a future path that reaches here in a
         // remote regime still refuses instead of regressing 28x.
-        if let Some(fence) = crate::pp::pp_cuts(self.layers.len())
-            && !crate::pp::pp2_streams_off()
-            && crate::pp::batch_pp_on()
-        {
-            let n_stages = fence.len() - 1;
-            let wave_on = crate::pp::pp_wave_on()
-                .map_err(|reason| -> Box<dyn std::error::Error> { reason.into() })?;
-            if crate::pp::pp_wave_route_enabled(wave_on, crate::pp::pp2_overlap(), n_stages, b_n) {
-                if scheduled_dual_mid.is_some() {
-                    return Err(
-                        "decode_step_batch: worker supplied a PP2 midpoint to a PP3/PP4 wavefront"
-                            .into(),
-                    );
+        if let Some(fence) = crate::pp::pp_cuts(self.layers.len()) {
+            if !crate::pp::pp2_streams_off() && crate::pp::batch_pp_on() {
+                // Auto (flipped default) routes dual only in the re-gated regime and
+                // degrades serially elsewhere; Forced keeps every ineligible placement on
+                // the refusing dual body so the binding negative cells stay reachable.
+                let route_dual = crate::pp::dual_pp_route(
+                    crate::pp::dual_pp_mode(),
+                    b_n,
+                    fence.len() - 1,
+                    crate::pp::pp2_overlap(),
+                    crate::pp::pp_host_bounce_active(),
+                );
+                if route_dual {
+                    let mid = scheduled_dual_mid
+                        .or_else(|| crate::pp::dual_pp_wave_mid(b_n))
+                        .expect("dual PP B>=2 must have a wave midpoint");
+                    return self
+                        .decode_step_batch_dual(e, tokens, caches, samp, masks, lean, &fence, mid);
                 }
-                return self
-                    .decode_step_batch_wavefront(e, tokens, caches, samp, masks, lean, &fence);
+                return self.decode_step_batch_ppn(e, tokens, caches, samp, masks, lean, &fence);
             }
-            // Auto (flipped default) routes dual only in the re-gated regime and
-            // degrades serially elsewhere; Forced keeps every ineligible placement on
-            // the refusing dual body so the binding negative cells stay reachable.
-            let route_dual = crate::pp::dual_pp_route(
-                crate::pp::dual_pp_mode(),
-                b_n,
-                fence.len() - 1,
-                crate::pp::pp2_overlap(),
-                crate::pp::pp_host_bounce_active(),
-            );
-            if route_dual {
-                let mid = scheduled_dual_mid
-                    .or_else(|| crate::pp::dual_pp_wave_mid(b_n))
-                    .expect("dual PP B>=2 must have a wave midpoint");
-                return self
-                    .decode_step_batch_dual(e, tokens, caches, samp, masks, lean, &fence, mid);
-            }
-            return self.decode_step_batch_ppn(e, tokens, caches, samp, masks, lean, &fence);
         }
         if scheduled_dual_mid.is_some() {
             return Err(
@@ -1529,484 +1187,6 @@ impl HybridModel {
         )
     }
 
-    /// PP3/PP4 WAVEFRONT DECODE: split one scheduler tick into up to one wave per stage and drive
-    /// the `(wave, stage)` grid through one persistent host worker per non-head stage. The caller
-    /// owns the head stage. Explicit boundary messages carry `(wave, slot)` forward and exact
-    /// post-rx acknowledgements carry slot credit back; every simultaneous cell owns distinct
-    /// request caches and a distinct stage Engine. The arithmetic inside every cell remains the
-    /// existing stage-scoped batched program verbatim.
-    #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-    fn decode_step_batch_wavefront<'cache>(
-        &self,
-        e: &Engine,
-        tokens: &[u32],
-        caches: &mut [&'cache mut Cache],
-        samp: &[Option<DevSamp>],
-        masks: &[Option<(&CudaSlice<u32>, usize)>],
-        lean: bool,
-        fence: &[usize],
-    ) -> Result<(Vec<Vec<f32>>, Vec<Option<u32>>), Box<dyn std::error::Error>> {
-        let batch = tokens.len();
-        if batch < 2 || batch != caches.len() {
-            return Err("PP wavefront requires matching token/cache batches with B>=2".into());
-        }
-        if !samp.is_empty() && samp.len() != batch {
-            return Err("PP wavefront sampling metadata must be empty or match B".into());
-        }
-        if !masks.is_empty() && masks.len() != batch {
-            return Err("PP wavefront grammar masks must be empty or match B".into());
-        }
-        let stages = fence.len().saturating_sub(1);
-        let rt = crate::pp::PpNRt::get(e)?;
-        crate::pp::pp_wave_eligibility(
-            stages,
-            crate::pp::pp2_overlap(),
-            rt.host_bounce_active(),
-            rt.repeated_stage_device(),
-        )
-        .map_err(|reason| -> Box<dyn std::error::Error> { reason.into() })?;
-        crate::pp::pp_wave_numeric_eligibility(
-            self.cfg
-                .hy3
-                .as_ref()
-                .is_some_and(|hy3| hy3.weight_only_nvfp4),
-            Engine::bf16_mmv_on(),
-        )
-        .map_err(|reason| -> Box<dyn std::error::Error> { reason.into() })?;
-        if self.is_gemma4_e4b()
-            || crate::plan_backend::decode_batch_program(&self.plan)
-                == crate::plan_backend::DecodeBatchProgram::Gemma
-        {
-            return Err(
-                "PP wavefront has no Gemma batched arm; use the model's qualified eager path"
-                    .into(),
-            );
-        }
-
-        let ranges = crate::pp::pp_wave_ranges(batch, stages);
-        let max_wave = ranges.iter().map(|(lo, hi)| hi - lo).max().unwrap_or(0);
-        let cap = Self::decode_batch_cap();
-        let exact16 = max_wave > 8 && max_wave <= 16 && self.decode_batch_exact16_ok();
-        if max_wave > cap && !exact16 {
-            return Err(format!(
-                "PP wavefront B={batch} produces a {max_wave}-row wave above cap {cap} with no exact tier"
-            )
-            .into());
-        }
-        let step35_batched = crate::plan_backend::decode_batch_program(&self.plan)
-            == crate::plan_backend::DecodeBatchProgram::SlidingGatedMoe;
-        if step35_batched && !Self::step35_batch_on() {
-            return Err(
-                "step35 batched decode is disabled; PP wavefront has no correct fallback trunk"
-                    .into(),
-            );
-        }
-
-        if rt.n_stages() != stages {
-            return Err(format!(
-                "PpNRt stage count {} != PP wavefront stages {stages}",
-                rt.n_stages()
-            )
-            .into());
-        }
-        let caller_stream = e.stream();
-        let primary_context = crate::pp::PrimaryContextRestore::new(e);
-        rt.fence_stages_behind(&caller_stream)?;
-        let n_embd = self.cfg.n_embd as usize;
-        let slot_capacity = max_wave.saturating_mul(n_embd);
-        for boundary in 0..stages - 1 {
-            rt.prepare_overlap_slots(boundary, slot_capacity)?;
-        }
-
-        let _exact_scopes = if exact16 {
-            let engines: Vec<&Engine> = (0..stages).map(|stage| rt.engine(stage, e)).collect();
-            engines
-                .into_iter()
-                .map(|engine| engine.exact_scope(true))
-                .collect::<Vec<_>>()
-        } else {
-            Vec::new()
-        };
-
-        let mut cache_tail: &mut [&'cache mut Cache] = caches;
-        let mut waves = Vec::with_capacity(ranges.len());
-        for &(lo, hi) in &ranges {
-            let width = hi - lo;
-            let (wave_caches, tail) = cache_tail.split_at_mut(width);
-            cache_tail = tail;
-            waves.push(std::sync::Mutex::new(PpDecodeWave {
-                row_lo: lo,
-                tokens: &tokens[lo..hi],
-                caches: wave_caches,
-                phase_last: std::time::Instant::now(),
-                result: None,
-                committed: false,
-            }));
-        }
-        debug_assert!(cache_tail.is_empty());
-
-        let (mut outgoing, mut incoming) = pp_wave_channels(stages - 1);
-        let walk_result = std::thread::scope(|scope| -> Result<(), Box<dyn std::error::Error>> {
-            let mut workers = Vec::with_capacity(stages - 1);
-            for stage in 0..stages - 1 {
-                let stage_incoming = if stage == 0 {
-                    None
-                } else {
-                    Some(
-                        incoming[stage - 1]
-                            .take()
-                            .expect("PP wave incoming endpoint already moved"),
-                    )
-                };
-                let stage_outgoing = outgoing[stage]
-                    .take()
-                    .expect("PP wave outgoing endpoint already moved");
-                let wave_states = &waves;
-                workers.push(scope.spawn(move || {
-                    self.decode_step_batch_wave_worker(
-                        e,
-                        rt,
-                        wave_states,
-                        stage,
-                        stage_incoming,
-                        stage_outgoing,
-                        fence,
-                        step35_batched,
-                    )
-                }));
-            }
-
-            let head_incoming = incoming[stages - 2]
-                .take()
-                .expect("PP wave head incoming endpoint already moved");
-            let head_result = self.decode_step_batch_wave_head(
-                e,
-                rt,
-                &waves,
-                head_incoming,
-                fence,
-                step35_batched,
-                samp,
-                masks,
-                lean,
-            );
-
-            let mut worker_errors = Vec::new();
-            let mut worker_panic = None;
-            for worker in workers {
-                match worker.join() {
-                    Ok(Ok(())) => {}
-                    Ok(Err(error)) => {
-                        worker_errors.push(error);
-                    }
-                    Err(payload) => {
-                        if worker_panic.is_none() {
-                            worker_panic = Some(payload);
-                        }
-                    }
-                }
-            }
-            if let Some(payload) = worker_panic {
-                std::panic::resume_unwind(payload);
-            }
-            if let Some(error) = worker_errors.iter().find(|error| {
-                !error.contains("channel closed") && !error.contains("upstream worker failed")
-            }) {
-                return Err(error.clone().into());
-            }
-            match head_result {
-                Err(error) => Err(error),
-                Ok(()) => match worker_errors.into_iter().next() {
-                    Some(error) => Err(error.into()),
-                    None => Ok(()),
-                },
-            }
-        });
-        let publish_result = if walk_result.is_ok() {
-            Some(rt.publish_to(stages - 1, &caller_stream))
-        } else {
-            None
-        };
-        let restore_result = primary_context.restore();
-        walk_result?;
-        if let Some(result) = publish_result {
-            result?;
-        }
-        restore_result?;
-        static LOGGED: std::sync::Once = std::sync::Once::new();
-        LOGGED.call_once(|| {
-            eprintln!(
-                "[pp-wave] PP{stages} decode wavefront engaged: waves={} max_wave={} (experimental, MEMRA_PP_WAVE=1)",
-                ranges.len(),
-                max_wave,
-            );
-        });
-
-        let mut completed = Vec::with_capacity(waves.len());
-        for wave in waves {
-            let state = wave
-                .into_inner()
-                .map_err(|_| "PP wave state lock poisoned")?;
-            if state.result.is_none() {
-                return Err("PP wavefront completed without a head-stage result".into());
-            }
-            completed.push(state);
-        }
-        let mut rows = Vec::with_capacity(batch);
-        let mut next = Vec::with_capacity(batch);
-        for state in &mut completed {
-            let (wave_rows, wave_next) = state.result.take().expect("validated PP wave result");
-            rows.extend(wave_rows);
-            next.extend(wave_next);
-            state.committed = true;
-        }
-        crate::pp::record_pp_wave_tick();
-        Ok((rows, next))
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn decode_step_batch_wave_worker<'slice, 'cache>(
-        &self,
-        e: &Engine,
-        rt: &crate::pp::PpNRt,
-        waves: &[std::sync::Mutex<PpDecodeWave<'slice, 'cache>>],
-        stage: usize,
-        incoming: Option<PpWaveIncoming>,
-        mut outgoing: PpWaveOutgoing,
-        fence: &[usize],
-        step35_batched: bool,
-    ) -> Result<(), String> {
-        let result = (|| -> Result<(), String> {
-            if (stage == 0) != incoming.is_none() {
-                return Err(format!(
-                    "PP wave stage {stage} incoming endpoint shape is invalid"
-                ));
-            }
-            for (wave_index, state) in waves.iter().enumerate() {
-                let transfer = match incoming.as_ref() {
-                    Some(incoming) => Some(incoming.receive(wave_index)?),
-                    None => None,
-                };
-                let mut state = state
-                    .lock()
-                    .map_err(|_| "PP wave state lock poisoned".to_string())?;
-                self.decode_step_batch_wave_stage(
-                    e,
-                    rt,
-                    &mut state,
-                    wave_index,
-                    stage,
-                    transfer,
-                    incoming.as_ref(),
-                    &mut outgoing,
-                    fence,
-                    step35_batched,
-                )
-                .map_err(|error| error.to_string())?;
-            }
-            outgoing.finish()
-        })();
-        if let Err(error) = &result {
-            outgoing.publish_worker_error(error);
-        }
-        result
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn decode_step_batch_wave_head<'slice, 'cache>(
-        &self,
-        e: &Engine,
-        rt: &crate::pp::PpNRt,
-        waves: &[std::sync::Mutex<PpDecodeWave<'slice, 'cache>>],
-        incoming: PpWaveIncoming,
-        fence: &[usize],
-        step35_batched: bool,
-        samp: &[Option<DevSamp>],
-        masks: &[Option<(&CudaSlice<u32>, usize)>],
-        lean: bool,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        for (wave_index, state) in waves.iter().enumerate() {
-            let transfer = incoming
-                .receive(wave_index)
-                .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
-            let mut state = state.lock().map_err(|_| "PP wave state lock poisoned")?;
-            self.decode_step_batch_wave_final(
-                e,
-                rt,
-                &mut state,
-                transfer,
-                &incoming,
-                fence,
-                step35_batched,
-                samp,
-                masks,
-                lean,
-            )?;
-        }
-        Ok(())
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn decode_step_batch_wave_stage(
-        &self,
-        e: &Engine,
-        rt: &crate::pp::PpNRt,
-        wave: &mut PpDecodeWave<'_, '_>,
-        wave_index: usize,
-        stage: usize,
-        transfer: Option<PpWaveTransfer>,
-        incoming: Option<&PpWaveIncoming>,
-        outgoing: &mut PpWaveOutgoing,
-        fence: &[usize],
-        step35_batched: bool,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        debug_assert!(stage + 1 < fence.len() - 1);
-        rt.bind_stage(stage)?;
-        let _stage = rt.enter(stage);
-        let engine = rt.engine(stage, e);
-        wave.phase_last = std::time::Instant::now();
-        let width = wave.tokens.len();
-        let n_embd = self.cfg.n_embd as usize;
-        let payload = width * n_embd;
-        let positions: Vec<i32> = wave.caches.iter().map(|cache| cache.pos as i32).collect();
-        let positions_d = engine.htod_i32(&positions)?;
-        let x = if stage == 0 {
-            if transfer.is_some() || incoming.is_some() {
-                return Err("PP wave stage 0 received an incoming transfer".into());
-            }
-            let x = engine.htod(&self.embd.gather(n_embd, wave.tokens))?;
-            ph_mark(engine, 0, &mut wave.phase_last)?;
-            x
-        } else {
-            let transfer = transfer.ok_or("PP wavefront stage has no incoming transfer")?;
-            let incoming = incoming.ok_or("PP wavefront stage has no incoming endpoint")?;
-            let x = rt.rx(stage - 1, transfer.slot, payload)?;
-            incoming
-                .acknowledge(transfer)
-                .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
-            x
-        };
-        let expected_slot = outgoing
-            .prepare(wave_index)
-            .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
-        let _active = crate::pp::enter_pp_wave_cell();
-        let x = if step35_batched {
-            self.step35_decode_batch_layers(
-                engine,
-                x,
-                wave.caches,
-                &positions,
-                &positions_d,
-                fence[stage],
-                fence[stage + 1],
-                &mut wave.phase_last,
-            )?
-        } else {
-            let ctx = self.batch_layer_ctx(engine, wave.caches, fence[stage], fence[stage + 1])?;
-            self.decode_batch_layers(
-                engine,
-                x,
-                wave.caches,
-                &ctx,
-                &positions_d,
-                &mut wave.phase_last,
-            )?
-        };
-        let slot = rt.tx_pipelined(stage, &x, payload)?;
-        outgoing
-            .publish(wave_index, slot, expected_slot)
-            .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
-        Ok(())
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn decode_step_batch_wave_final(
-        &self,
-        e: &Engine,
-        rt: &crate::pp::PpNRt,
-        wave: &mut PpDecodeWave<'_, '_>,
-        transfer: PpWaveTransfer,
-        incoming: &PpWaveIncoming,
-        fence: &[usize],
-        step35_batched: bool,
-        samp: &[Option<DevSamp>],
-        masks: &[Option<(&CudaSlice<u32>, usize)>],
-        lean: bool,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let stage = fence.len() - 2;
-        rt.bind_stage(stage)?;
-        let _stage = rt.enter(stage);
-        let engine = rt.engine(stage, e);
-        wave.phase_last = std::time::Instant::now();
-        let width = wave.tokens.len();
-        let n_embd = self.cfg.n_embd as usize;
-        let payload = width * n_embd;
-        let positions: Vec<i32> = wave.caches.iter().map(|cache| cache.pos as i32).collect();
-        let positions_d = engine.htod_i32(&positions)?;
-        let x = rt.rx(stage - 1, transfer.slot, payload)?;
-        incoming
-            .acknowledge(transfer)
-            .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
-        let _active = crate::pp::enter_pp_wave_cell();
-        let x = if step35_batched {
-            self.step35_decode_batch_layers(
-                engine,
-                x,
-                wave.caches,
-                &positions,
-                &positions_d,
-                fence[stage],
-                fence[stage + 1],
-                &mut wave.phase_last,
-            )?
-        } else {
-            let ctx = self.batch_layer_ctx(engine, wave.caches, fence[stage], fence[stage + 1])?;
-            self.decode_batch_layers(
-                engine,
-                x,
-                wave.caches,
-                &ctx,
-                &positions_d,
-                &mut wave.phase_last,
-            )?
-        };
-        let mut normalized = engine.uninit(payload)?;
-        engine.rms_norm(
-            &x,
-            self.output_norm.float_data(),
-            &mut normalized,
-            n_embd,
-            width,
-            self.cfg.rms_eps,
-        )?;
-        let logits = engine.matmul(&self.output, &normalized, width)?;
-        ph_mark(engine, 10, &mut wave.phase_last)?;
-        let hi = wave.row_lo + width;
-        let wave_samp = if samp.is_empty() {
-            &[][..]
-        } else {
-            &samp[wave.row_lo..hi]
-        };
-        let wave_masks = if masks.is_empty() {
-            &[][..]
-        } else {
-            &masks[wave.row_lo..hi]
-        };
-        wave.result = Some(self.decode_batch_epilogue(
-            engine,
-            wave.caches,
-            wave_samp,
-            wave_masks,
-            lean,
-            logits,
-            width,
-            &mut wave.phase_last,
-            None,
-        )?);
-        Ok(())
-    }
-
     /// DUAL-ACTIVE PP-2 DECODE (increment 0): split one batch into wave A/B and drive
     /// stage 0(B) from a scoped host walker while this thread drives stage 1(A). Step's
     /// per-layer router readback synchronizes the host, so two CUDA streams issued by one
@@ -2016,7 +1196,6 @@ impl HybridModel {
     /// unset = Auto; `0` is the serial rollback seam). It is fail-closed unless the
     /// double-slot door is open, prewarms both slots, and uses `tx_pipelined` exclusively.
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     fn decode_step_batch_dual(
         &self,
         e: &Engine,
@@ -2092,14 +1271,22 @@ impl HybridModel {
 
         // EXACT-16 is a property of either scheduled wave, not the combined live width. Keep
         // the scope live across both host walkers and set it on both stage-owned Engines.
-        let _exact_scopes = if exact16 {
+        struct ExactScopeN<'a>(Vec<&'a Engine>);
+        impl Drop for ExactScopeN<'_> {
+            fn drop(&mut self) {
+                for eng in &self.0 {
+                    eng.set_verify_exact(false);
+                }
+            }
+        }
+        let _exact_scope = if exact16 {
             let engines: Vec<&Engine> = (0..n_st).map(|s| rt.engine(s, e)).collect();
-            engines
-                .into_iter()
-                .map(|engine| engine.exact_scope(true))
-                .collect::<Vec<_>>()
+            for eng in &engines {
+                eng.set_verify_exact(true);
+            }
+            Some(ExactScopeN(engines))
         } else {
-            Vec::new()
+            None
         };
 
         let step35_batched = crate::plan_backend::decode_batch_program(&self.plan)
@@ -2251,13 +1438,13 @@ impl HybridModel {
                 self.decode_batch_layers(e0, x, caches, &ctx, &pos_d, &mut ph_last)?
             }
         };
-        let timing = timing_start.zip(dual_pp_timing_event(e0, "stage0 end event"));
+        let timing = timing_start
+            .and_then(|start| dual_pp_timing_event(e0, "stage0 end event").map(|end| (start, end)));
         let slot = rt.tx_pipelined(0, &x, b_n * n_embd)?;
         Ok((slot, ph_last, timing))
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     fn decode_step_batch_dual_stage1(
         &self,
         e: &Engine,
@@ -2301,7 +1488,8 @@ impl HybridModel {
                 self.decode_batch_layers(e1, x, caches, &ctx, &pos_d, &mut ph_last)?
             }
         };
-        let timing = timing_start.zip(dual_pp_timing_event(e1, "stage1 end event"));
+        let timing = timing_start
+            .and_then(|start| dual_pp_timing_event(e1, "stage1 end event").map(|end| (start, end)));
         let mut hn = e1.uninit(b_n * n_embd)?;
         e1.rms_norm(&x, self.output_norm.float_data(), &mut hn, n_embd, b_n, eps)?;
         let logits = e1.matmul(&self.output, &hn, b_n)?;
@@ -2378,7 +1566,6 @@ impl HybridModel {
     /// same trade the eager arm's own ppn step makes, and the reason the pp2 lane measured
     /// B=1 door-open at 0.854x (the lost fusion chain), not a cliff.
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     fn decode_step_batch_ppn(
         &self,
         e: &Engine,
@@ -2442,14 +1629,22 @@ impl HybridModel {
         // GEMM/MMQ arms while stage 0 used the exact b16 tier. That is a silent per-stage
         // numeric split (the failure this tier exists to prevent), so the flag is set on
         // every stage engine and cleared on all of them at scope exit.
-        let _exact_scopes = if exact16 {
+        struct ExactScopeN<'a>(Vec<&'a Engine>);
+        impl Drop for ExactScopeN<'_> {
+            fn drop(&mut self) {
+                for eng in &self.0 {
+                    eng.set_verify_exact(false);
+                }
+            }
+        }
+        let _exact_scope = if exact16 {
             let engines: Vec<&Engine> = (0..n_st).map(|s| rt.engine(s, e)).collect();
-            engines
-                .into_iter()
-                .map(|engine| engine.exact_scope(true))
-                .collect::<Vec<_>>()
+            for eng in &engines {
+                eng.set_verify_exact(true);
+            }
+            Some(ExactScopeN(engines))
         } else {
-            Vec::new()
+            None
         };
 
         let mut ph_last = std::time::Instant::now();
@@ -2615,349 +1810,6 @@ impl HybridModel {
         )
     }
 
-    /// The mHC (HyperConnections) batched decode arm (lane/glm53-batched-decode,
-    /// 2026-08-28). DEFAULT ON since 2026-08-31, on the hbatch-battery box receipts
-    /// (research/glm53-flash-bringup-20260827/hbatch-battery-20260831/): interleaved x3
-    /// ladder on the 3-card serving shape — ON wins every rung c>=2 (aggregate 1.095x at
-    /// c=2 up to 1.214x at c=12, plateau ~1.20x from c=8), B=1 cost -0.30%, TTFT under
-    /// load ON <= OFF at every rung, 36/36 concurrent tapes byte-identical to solo (incl.
-    /// ON-solo == OFF-solo), admission clean to c=20, loop-law 0/448. `MEMRA_HYPER_BATCH=0`
-    /// is the rollback seam (eager per-session decode). Any OTHER value REFUSES LOUD at
-    /// first use — a mis-typed serving switch must not silently pick a path.
-    pub fn hyper_batch_on() -> bool {
-        static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        *ON.get_or_init(|| match std::env::var("MEMRA_HYPER_BATCH").as_deref() {
-            Ok("0") => false,
-            Err(_) | Ok("1") => true,
-            Ok(v) => panic!(
-                "MEMRA_HYPER_BATCH={v:?} is not a recognized value (want unset/0 = eager \
-                 per-session decode, 1 = batched mHC decode chunks) — refusing to guess a \
-                 serving path"
-            ),
-        })
-    }
-
-    /// The mHC batched-decode width cap, DERIVED rather than inherited (owner challenge,
-    /// 2026-08-28: "why 8?"). The audit of every term that grows with B found exactly ONE
-    /// numeric-class knee, and it is not memory, not the boundary payload, and not the
-    /// per-session mixer loop:
-    ///
-    ///   * per-session mixers (KDA + MLA/kpool): step latency grows ~linearly in B on that
-    ///     segment — a throughput term, no correctness wall at any width; per-session state
-    ///     is ~104 MB MLA latent at 8k ctx + trivial KDA, so memory does not bind either.
-    ///   * hc glue: block-per-token kernels (grid.y chunked at 65535 — B=64 is 256 rows on
-    ///     `hc_post`), and the hc-mix GEMM runs per-row m=1 by construction (`pre_exact`).
-    ///   * lm_head via `matmul_decode_exact`: per-row exact at every m (float per-token
-    ///     m=1; quant b-tier to 16, grid.y=m mmvq above — re-reads, not rounding).
-    ///   * MoE router (`router_gemv`): m-invariant at every t under defaults; sigmoid
-    ///     top-k and routed-expert execution are per-token programs at any t.
-    ///   * MoE SHARED EXPERT — THE BINDER: `hybrid_forward.rs` shexp trio,
-    ///     `verify_t = t > 1 && t < PRIME_MIN_T`. At t >= 16 gate/up/down cross from
-    ///     `matmul_decode_exact` onto the plain prefill matmul (cuBLASLt n-dependent for
-    ///     float; the m>16 MMQ/GEMM block-scale class for quant) and per-row bit-identity
-    ///     vs the isolated t=1 chain breaks — measured, not argued: the gate's knee probe
-    ///     at B=16 mismatches from the first tick (`31-KNEE-b16-forced.log`), B=15 is green.
-    ///
-    /// So the exact tier is `1..=PRIME_MIN_T-1` = 15. Widening to 32/64 needs a
-    /// decode-exact shexp arm for t >= 16 — which must NOT be flipped inside the shared
-    /// `!prefill` branch, because step35's MoESD target forward (t up to 256) rides the
-    /// same branch and its banked spec receipts pin the current bytes. Named follow-up.
-    /// `MEMRA_DECODE_BATCH_CAP` narrows only, never widens past the knee.
-    pub fn hyper_batch_cap() -> usize {
-        let knee = crate::hybrid_forward::PRIME_MIN_T - 1;
-        std::env::var("MEMRA_DECODE_BATCH_CAP")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .map(|c| c.clamp(1, knee))
-            .unwrap_or(knee)
-    }
-
-    /// THE mHC BATCHED DECODE STEP (lane/glm53-batched-decode, 2026-08-28): B sessions,
-    /// one walk over the `[B, streams, n_embd]` stream state. This is the production
-    /// blocker this lane lifts — with every batched entry refusing the hc residual,
-    /// GLM-5.3-Flash served SINGLE-STREAM ONLY at any `MEMRA_MAX_SESSIONS`.
-    ///
-    /// The trunk is `hyper_batch_range_decode` (hybrid_forward.rs — see its doc for the
-    /// batched/per-session/decode-exact shape law); the exit is `hyper::collapse` +
-    /// output_norm + a DECODE-EXACT lm_head at m=B (each row's head program is the m=1
-    /// program its solo step runs — `matmul_decode_exact`); the tail is the SAME
-    /// `decode_batch_epilogue` every other batched arm serves (masks, device sampling,
-    /// lean park, pos bump), so the serving contract is shared rather than duplicated.
-    ///
-    /// CONCURRENCY SHAPES: sessions may sit at DIFFERENT positions with different KDA
-    /// recurrent states and different kpool index planes — each row carries its own
-    /// single-position buffer and its own cache, which is what the gate's staggered-depth
-    /// arm pins. One token per session per tick (pure decode); there is no mixed
-    /// prefill/decode shape at this entry by construction. Width: B <= 8, the per-row
-    /// exactness tier — there is NO exact16 tier here (`decode_batch_exact16_ok` refuses
-    /// the Mla/Kda mixers), and the MoE router's fixed per-row program is only the decode
-    /// arm below PRIME_MIN_T; wider concurrency is the scheduler's job to chunk.
-    ///
-    /// EXACTNESS BAR AND GATE: row b of a B-row tick is BIT-IDENTICAL (full logits, every
-    /// step) to session b decoding alone through `decode_step_hyper`, including B=1 — one
-    /// numeric class at every live width, the step35/Q35 class-crossing law. Gate:
-    /// `glm5-hyper-batch-gate`, red-armed with a swapped-row and a wrong-cache-slot
-    /// mutation (cross-session contamination is the silent-corruption failure mode).
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-    pub(crate) fn decode_step_batch_hyper(
-        &self,
-        e: &Engine,
-        tokens: &[u32],
-        caches: &mut [&mut Cache],
-        samp: &[Option<DevSamp>],
-        masks: &[Option<(&CudaSlice<u32>, usize)>],
-        lean: bool,
-    ) -> Result<(Vec<Vec<f32>>, Vec<Option<u32>>), Box<dyn std::error::Error>> {
-        let topology = *self
-            .hyper
-            .as_ref()
-            .ok_or("decode_step_batch_hyper on a model with no HyperConnections topology")?;
-        if !Self::hyper_batch_on() {
-            return Err(
-                "mHC batched decode is disabled (MEMRA_HYPER_BATCH unset/0, the fail-closed \
-                 default until serving-box receipts land) — serve hyper-connection sessions \
-                 on the eager per-session path, or set MEMRA_HYPER_BATCH=1"
-                    .into(),
-            );
-        }
-        let b_n = tokens.len();
-        if b_n == 0 || b_n != caches.len() {
-            return Err("decode_step_batch_hyper: tokens/caches length mismatch".into());
-        }
-        // Width: Err, never assert — a request must not kill the worker (the gemma4
-        // process-FATAL lesson). The cap is DERIVED, not inherited — see `hyper_batch_cap`.
-        let cap = Self::hyper_batch_cap();
-        if b_n > cap {
-            return Err(format!(
-                "decode_step_batch_hyper: B={b_n} > cap {cap} — at t >= PRIME_MIN_T (16) \
-                 the MoE shared-expert trio crosses from matmul_decode_exact onto the \
-                 prefill matmul class (cuBLASLt n-dependent / m>16 MMQ-GEMM), so per-row \
-                 bit-identity vs isolated decode breaks at exactly B=16 (gate knee probe \
-                 31-KNEE-b16-forced). Every other term is width-safe; widening needs a \
-                 decode-exact shexp arm for t>=16 (named follow-up — the shared !prefill \
-                 branch also carries step35 MoESD bytes and must not be flipped). Chunk \
-                 wider concurrency into <={cap} groups"
-            )
-            .into());
-        }
-        let n_embd = self.cfg.n_embd as usize;
-        let eps = self.cfg.rms_eps;
-
-        // M2 ppN door — the batched hc walk owns its own stage split, exactly as the
-        // serial hc walks do (forward_hyper's note). Loud refusal on an unqualified
-        // pipeline rewrite, never a single-engine walk over stage-sharded weights.
-        if let Some(fence) = crate::pp::pp_cuts(self.layers.len()) {
-            if !self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::Pipeline) {
-                return Err("pipeline rewrite is not qualified for this ModelPlan".into());
-            }
-            return self.decode_step_batch_hyper_ppn(
-                e, tokens, caches, samp, masks, lean, &topology, &fence,
-            );
-        }
-
-        let mut ph_last = std::time::Instant::now();
-        let pos_rows = Self::hyper_batch_pos_rows(e, caches)?;
-        let embedded = e.htod(&self.embd.gather(n_embd, tokens))?;
-        let mut x = crate::hyper::expand(e, &topology, &embedded, b_n, n_embd)?;
-        ph_mark(e, 0, &mut ph_last)?;
-        x = self.hyper_batch_range_decode(
-            e,
-            &topology,
-            x,
-            0,
-            self.layers.len(),
-            &pos_rows,
-            caches,
-        )?;
-        let logits = self.hyper_batch_head_logits(e, &topology, &x, b_n, n_embd, eps)?;
-        ph_mark(e, 10, &mut ph_last)?;
-        self.decode_batch_epilogue(
-            e,
-            caches,
-            samp,
-            masks,
-            lean,
-            logits,
-            b_n,
-            &mut ph_last,
-            None,
-        )
-    }
-
-    /// Per-row single-position device buffers, uploaded through THIS engine (under a pp
-    /// split, the stage's engine — the per-stage pos_d law). The mixers take a t=1 `pos_d`
-    /// exactly as their solo step does, so each session's row is a one-element buffer, not
-    /// a shared [B] table.
-    fn hyper_batch_pos_rows(
-        e: &Engine,
-        caches: &[&mut Cache],
-    ) -> Result<Vec<CudaSlice<i32>>, Box<dyn std::error::Error>> {
-        caches.iter().map(|c| e.htod_i32(&[c.pos as i32])).collect()
-    }
-
-    /// The batched hc trunk exit: mean/gated collapse + output_norm + DECODE-EXACT lm_head.
-    /// `matmul_decode_exact` at m=B runs each row through the m=1 head program the serial
-    /// `hyper_decode_tail` runs (float: per-token m=1 cuBLASLt; quant: the per-(token,row)
-    /// bit-exact batched mmvq tier), so the head cannot be the arm that breaks per-row
-    /// identity. Returns device logits `[B, n_vocab]` for the shared epilogue.
-    fn hyper_batch_head_logits(
-        &self,
-        e: &Engine,
-        topology: &crate::hyper::HyperTopology,
-        x: &CudaSlice<f32>,
-        b_n: usize,
-        n_embd: usize,
-        eps: f32,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let collapsed =
-            crate::hyper::collapse(e, topology, self.hyper_head.as_ref(), x, b_n, n_embd)?;
-        let mut hn = e.uninit(b_n * n_embd)?;
-        e.rms_norm(
-            &collapsed,
-            self.output_norm.float_data(),
-            &mut hn,
-            n_embd,
-            b_n,
-            eps,
-        )?;
-        e.matmul_decode_exact(&self.output, &hn, b_n)
-    }
-
-    /// ppN twin of `decode_step_batch_hyper`: the batched hc tick as N stage subgraphs,
-    /// mirroring `decode_step_hyper_ppn` (per-stage engine, per-stage pos uploads, a
-    /// `[B, streams, n_embd]` boundary payload) and `decode_step_batch_ppn` (the #87 entry
-    /// fence, head + epilogue on the LAST stage's engine, where the loader put the head and
-    /// where `cache.last_logits_dev` must live). No exact16 scope (no exact16 tier here)
-    /// and no B=1 fast path (one numeric class at every width).
-    #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-    fn decode_step_batch_hyper_ppn(
-        &self,
-        e: &Engine,
-        tokens: &[u32],
-        caches: &mut [&mut Cache],
-        samp: &[Option<DevSamp>],
-        masks: &[Option<(&CudaSlice<u32>, usize)>],
-        lean: bool,
-        topology: &crate::hyper::HyperTopology,
-        fence: &[usize],
-    ) -> Result<(Vec<Vec<f32>>, Vec<Option<u32>>), Box<dyn std::error::Error>> {
-        let b_n = tokens.len();
-        let n_embd = self.cfg.n_embd as usize;
-        let eps = self.cfg.rms_eps;
-        let payload = b_n * topology.streams * n_embd;
-        let mut ph_last = std::time::Instant::now();
-
-        // The same-stream seam (MEMRA_PP_STREAMS=0 also disables the sharded loader, so
-        // nothing is remote): one engine, boundary copies between ranges — the shape the
-        // serial hc ppn walk uses for this knob.
-        if crate::pp::pp2_streams_off() {
-            let pos_rows = Self::hyper_batch_pos_rows(e, caches)?;
-            let embedded = e.htod(&self.embd.gather(n_embd, tokens))?;
-            let mut x = crate::hyper::expand(e, topology, &embedded, b_n, n_embd)?;
-            ph_mark(e, 0, &mut ph_last)?;
-            x = self
-                .hyper_batch_range_decode(e, topology, x, fence[0], fence[1], &pos_rows, caches)?;
-            for s in 1..fence.len() - 1 {
-                let boundary_tx = e.clone_dtod(&x)?;
-                let boundary_rx = e.clone_dtod(&boundary_tx)?;
-                x = self.hyper_batch_range_decode(
-                    e,
-                    topology,
-                    boundary_rx,
-                    fence[s],
-                    fence[s + 1],
-                    &pos_rows,
-                    caches,
-                )?;
-            }
-            let logits = self.hyper_batch_head_logits(e, topology, &x, b_n, n_embd, eps)?;
-            ph_mark(e, 10, &mut ph_last)?;
-            return self.decode_batch_epilogue(
-                e,
-                caches,
-                samp,
-                masks,
-                lean,
-                logits,
-                b_n,
-                &mut ph_last,
-                None,
-            );
-        }
-
-        let rt = crate::pp::PpNRt::get(e)?;
-        let n_st = fence.len() - 1;
-        assert_eq!(
-            rt.n_stages(),
-            n_st,
-            "PpNRt stage count {} != fence stages {n_st}",
-            rt.n_stages()
-        );
-        // #87 reverse publication (see decode_step_batch_ppn): order every stage stream
-        // behind the caller before this body's first stage allocation.
-        rt.fence_stages_behind(&e.stream())?;
-
-        // ---- STAGE 0: embed + expand (no weights) + layers [0, fence[1]) + TX ----
-        let mut slot = {
-            let _st0 = rt.enter(0);
-            let e0 = rt.engine(0, e);
-            let pos_rows = Self::hyper_batch_pos_rows(e0, caches)?;
-            let embedded = e0.htod(&self.embd.gather(n_embd, tokens))?;
-            let x = crate::hyper::expand(e0, topology, &embedded, b_n, n_embd)?;
-            ph_mark(e0, 0, &mut ph_last)?;
-            let x = self
-                .hyper_batch_range_decode(e0, topology, x, fence[0], fence[1], &pos_rows, caches)?;
-            rt.tx(0, &x, payload)?
-        };
-
-        // ---- MIDDLE STAGES: RX -> range -> TX ----
-        for s in 1..n_st - 1 {
-            let _st = rt.enter(s);
-            let es = rt.engine(s, e);
-            let pos_rows = Self::hyper_batch_pos_rows(es, caches)?;
-            let x = rt.rx(s - 1, slot, payload)?;
-            let x = self.hyper_batch_range_decode(
-                es,
-                topology,
-                x,
-                fence[s],
-                fence[s + 1],
-                &pos_rows,
-                caches,
-            )?;
-            slot = rt.tx(s, &x, payload)?;
-        }
-
-        // ---- LAST STAGE: RX + final range + collapse/head + the shared epilogue ----
-        let _stl = rt.enter(n_st - 1);
-        let el = rt.engine(n_st - 1, e);
-        let pos_rows = Self::hyper_batch_pos_rows(el, caches)?;
-        let x = rt.rx(n_st - 2, slot, payload)?;
-        let x = self.hyper_batch_range_decode(
-            el,
-            topology,
-            x,
-            fence[n_st - 1],
-            fence[n_st],
-            &pos_rows,
-            caches,
-        )?;
-        let logits = self.hyper_batch_head_logits(el, topology, &x, b_n, n_embd, eps)?;
-        ph_mark(el, 10, &mut ph_last)?;
-        self.decode_batch_epilogue(
-            el,
-            caches,
-            samp,
-            masks,
-            lean,
-            logits,
-            b_n,
-            &mut ph_last,
-            None,
-        )
-    }
-
     /// Build the per-step layer context for layers `[lo, hi)`: the device state-pointer
     /// table plus the step's arm picks. See [`BatchLayerCtx`] for why this is RANGE-scoped
     /// (the table holds device addresses and must be uploaded through the engine whose
@@ -2998,17 +1850,17 @@ impl HybridModel {
                         for c in caches.iter() {
                             let rl = c.recur[il].as_ref().unwrap();
                             let (p, _g) = rl.conv_state.device_ptr(s);
-                            ptrs.push(p);
+                            ptrs.push(p as u64);
                         }
                         for c in caches.iter() {
                             let rl = c.recur[il].as_ref().unwrap();
                             let (p, _g) = rl.ssm_state.device_ptr(s);
-                            ptrs.push(p);
+                            ptrs.push(p as u64);
                         }
                         for c in caches.iter() {
                             let rl = c.recur[il].as_ref().unwrap();
                             let (p, _g) = rl.ssm_state_alt.device_ptr(s);
-                            ptrs.push(p);
+                            ptrs.push(p as u64);
                         }
                     }
                     Mixer::Full(_) => {
@@ -3017,8 +1869,8 @@ impl HybridModel {
                             let kvl = c.kv[il].as_ref().unwrap();
                             let (pk, _g) = kvl.k.device_ptr(s);
                             let (pv, _g2) = kvl.v.device_ptr(s);
-                            ptrs.push(pk);
-                            ptrs.push(pv);
+                            ptrs.push(pk as u64);
+                            ptrs.push(pv as u64);
                         }
                     }
                     Mixer::Mla(_) => crate::hybrid::mla_path_unimplemented("batched PP decode"),
@@ -3184,10 +2036,10 @@ impl HybridModel {
                     )?;
                     k = kn;
                     e.rope_neox(
-                        &mut q, pos_d, head_dim, rope_dims, n_head, b_n, rope_base, 1.0,
+                        &mut q, &pos_d, head_dim, rope_dims, n_head, b_n, rope_base, 1.0,
                     )?;
                     e.rope_neox(
-                        &mut k, pos_d, head_dim, rope_dims, n_head_kv, b_n, rope_base, 1.0,
+                        &mut k, &pos_d, head_dim, rope_dims, n_head_kv, b_n, rope_base, 1.0,
                     )?;
                     ph_mark(e, 1, ph_last)?;
 
@@ -3212,7 +2064,7 @@ impl HybridModel {
                         let table = ptr_table.as_ref().expect("pointer table missing");
                         let kv_view = table.slice(base..base + 2 * b_n);
                         e.append_kv_quantized_seqs(
-                            &k, &v, &kv_view, pos_d, b_n, kdk, kdv, ktb, vtb,
+                            &k, &v, &kv_view, &pos_d, b_n, kdk, kdv, ktb, vtb,
                         )?;
                         for cache in caches.iter_mut() {
                             let kvl = cache.kv[il].as_mut().unwrap();
@@ -3250,7 +2102,7 @@ impl HybridModel {
                         let table = ptr_table.as_ref().expect("pointer table missing");
                         let kv_view = table.slice(base..base + 2 * b_n);
                         e.fa_decode_batch_seqs_v4(
-                            &q, &kv_view, pos_d, &mut attn, head_dim, n_head, n_head_kv, b_n,
+                            &q, &kv_view, &pos_d, &mut attn, head_dim, n_head, n_head_kv, b_n,
                             t_kv_max, scale, sp0, ktb, vtb,
                         )?;
                         ph_mark(e, 4, ph_last)?;
@@ -3533,10 +2385,10 @@ impl HybridModel {
     ///   * MoE (`moe_ffn_il_zq8` at t=B): the router is per-column decode-exact at
     ///     t < PRIME_MIN_T (m=1 program per column), sigmoid routing + expert dispatch are
     ///     per-token — a session's experts are a function of its own row only.
-    ///     The known eager-vs-batched FP gap is why PP-N Step35 deliberately serves THIS walk at
-    ///     B=1 too: the scheduler can change width during a session, so one numeric class must
-    ///     cover every live width. `b2geo35` pins static widths and an explicit B=1 -> B>1
-    ///     transition under live defaults.
+    /// The known eager-vs-batched FP gap is why PP-N Step35 deliberately serves THIS walk at
+    /// B=1 too: the scheduler can change width during a session, so one numeric class must
+    /// cover every live width. `b2geo35` pins static widths and an explicit B=1 -> B>1
+    /// transition under live defaults.
     ///
     /// STAGE-SCOPED FROM BIRTH: `[lo, hi)` + caller-supplied engine/pos_d, so
     /// `decode_step_batch_ppn` calls it per stage (per-stage engine, per-stage pos_d, the
@@ -3687,7 +2539,7 @@ impl HybridModel {
                         Some((x, x))
                     }
                 });
-                let rr_this = rr_layer.is_none_or(|(a, b)| il >= a && il <= b);
+                let rr_this = rr_layer.map_or(true, |(a, b)| il >= a && il <= b);
                 let full_mixed = if fa_rows && rope_rows_on && rr_this {
                     self.step35_batch_rope_fa_pass(
                         e,
@@ -3703,8 +2555,6 @@ impl HybridModel {
                 };
                 if let Some(mixed_t) = &full_mixed {
                     pos_staged = true;
-                    #[allow(clippy::needless_range_loop)]
-                    // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
                     for r in 0..t {
                         let ci = cache_index(r);
                         let cache = &mut *caches[ci];
@@ -3739,7 +2589,28 @@ impl HybridModel {
                         }
                     }
                     let o_out = mixed_t.len() / t;
-                    {
+                    let mut batched = false;
+                    if o_out == n_embd {
+                        let mut x1_t = e.uninit(t * n_embd)?;
+                        let mut z_t = e.uninit(t * n_embd)?;
+                        e.add_rms_norm(
+                            &x_t,
+                            mixed_t,
+                            layer.post_attn_norm.float_data(),
+                            &mut x1_t,
+                            &mut z_t,
+                            n_embd,
+                            t,
+                            eps,
+                        )?;
+                        if let Some(ffn_t) = self.step35_verify_moe_tn(e, il, &z_t, t)? {
+                            let mut x2_t = e.uninit(t * n_embd)?;
+                            e.add(&x1_t, &ffn_t, &mut x2_t, t * n_embd)?;
+                            next = x2_t;
+                            batched = true;
+                        }
+                    }
+                    if !batched {
                         for r in 0..t {
                             e.dtod_copy_view(
                                 &mixed_t.slice(r * o_out..(r + 1) * o_out),
@@ -3813,7 +2684,28 @@ impl HybridModel {
                         self.step35_verify_oproj_tcol(e, il, t)?
                     };
                     let o_out = mixed_t.len() / t;
-                    {
+                    let mut batched = false;
+                    if deferred.len() == t && o_out == n_embd {
+                        let mut x1_t = e.uninit(t * n_embd)?;
+                        let mut z_t = e.uninit(t * n_embd)?;
+                        e.add_rms_norm(
+                            &x_t,
+                            &mixed_t,
+                            layer.post_attn_norm.float_data(),
+                            &mut x1_t,
+                            &mut z_t,
+                            n_embd,
+                            t,
+                            eps,
+                        )?;
+                        if let Some(ffn_t) = self.step35_verify_moe_tn(e, il, &z_t, t)? {
+                            let mut x2_t = e.uninit(t * n_embd)?;
+                            e.add(&x1_t, &ffn_t, &mut x2_t, t * n_embd)?;
+                            next = x2_t;
+                            batched = true;
+                        }
+                    }
+                    if !batched {
                         for &r in &deferred {
                             e.dtod_copy_view(
                                 &mixed_t.slice(r * o_out..(r + 1) * o_out),
@@ -3850,8 +2742,6 @@ impl HybridModel {
             // weights remain hot, while every row still executes the qualified B=1 program.
             let mut row_states = Vec::with_capacity(b_n);
             let mut row_positions = Vec::with_capacity(b_n);
-            #[allow(clippy::needless_range_loop)]
-            // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
             for row in 0..b_n {
                 let mut h_row = e.uninit(n_embd)?;
                 e.copy_view_into(
@@ -3940,8 +2830,6 @@ impl HybridModel {
                     .as_ref()
                     .expect("rank-local TP positions were prepared");
                 let mut outputs = e.uninit(b_n * n_embd)?;
-                #[allow(clippy::needless_range_loop)]
-                // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
                 for row in 0..b_n {
                     let mut h_row = e.uninit(n_embd)?;
                     e.copy_view_into(
@@ -3958,7 +2846,7 @@ impl HybridModel {
                         &h_row,
                         None,
                         &row_positions[row],
-                        caches[cache],
+                        &mut caches[cache],
                     )?;
                     e.copy_into(&mut outputs, row * n_embd, &output, n_embd)?;
                 }
@@ -4228,7 +3116,6 @@ impl HybridModel {
     /// fast arms off), so a B=1 run is the eager decode's own attention program and the
     /// batch is per-row independent by construction. The rows / rows_w per-session fast
     /// arms are a later perf increment gated behind their own seam.
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     fn gemma4_decode_batch(
         &self,
         e: &Engine,
@@ -4402,8 +3289,6 @@ impl HybridModel {
         let q_dim = nh * hd;
         let kv_dim = nkv * hd;
         let mut attn = e.uninit(b_n * q_dim)?;
-        #[allow(clippy::needless_range_loop)]
-        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
         for bi in 0..b_n {
             let kvl = caches[bi].kv[il].as_mut().unwrap();
             let k_row = k.slice(bi * kv_dim..(bi + 1) * kv_dim);
@@ -4457,7 +3342,7 @@ impl HybridModel {
                 swa && crate::Engine::wkv_on(),
             )?;
         }
-        e.matmul(&fa.wo, &attn, b_n)
+        Ok(e.matmul(&fa.wo, &attn, b_n)?)
     }
 
     /// Standalone MoESD target forward. This entrypoint is not used by serving: it widens the
@@ -4472,19 +3357,7 @@ impl HybridModel {
         gamma: usize,
         caches: &mut [&mut Cache],
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        if self.hyper.is_some() {
-            return Err(
-                "moesd_target_forward: the MoESD speculative target walk has no \
-                 HyperConnections trunk — it drives `step35_decode_rows_layers`, a serial \
-                 residual rows-walk, and no [B*gamma, streams, n_embd] hyper rows-walk with \
-                 causal per-session verify appends exists. mHC speculative verify is a \
-                 separate lane, not this entry point."
-                    .into(),
-            );
-        }
-        for cache in caches.iter() {
-            cache.ensure_usable("moesd_target_forward")?;
-        }
+        self.refuse_hyper("moesd_target_forward")?;
         if crate::plan_backend::decode_batch_program(&self.plan)
             != crate::plan_backend::DecodeBatchProgram::SlidingGatedMoe
         {
@@ -4502,13 +3375,6 @@ impl HybridModel {
         if rows > 256 {
             return Err(format!("MoESD target width {rows} exceeds the frozen 32*8 matrix").into());
         }
-        let _pp_walk =
-            if crate::pp::pp_cuts(self.layers.len()).is_some() && !crate::pp::pp2_streams_off() {
-                let rt = crate::pp::PpNRt::get(e)?;
-                Some(rt.acquire_walk("moesd_target_forward")?)
-            } else {
-                None
-            };
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         let payload = rows * n_embd;
@@ -4553,8 +3419,7 @@ impl HybridModel {
                 )?;
                 rt.tx(0, &x, payload)?
             };
-
-            {
+            let logits = {
                 let _st1 = rt.enter(1);
                 let e1 = rt.engine(1, e);
                 let pos_d = e1.htod_i32(&positions)?;
@@ -4582,7 +3447,8 @@ impl HybridModel {
                 let logits = e1.matmul(&self.output, &hn, rows)?;
                 rt.publish_to(1, &caller_stream)?;
                 logits
-            }
+            };
+            logits
         } else {
             let pos_d = e.htod_i32(&positions)?;
             let x = e.htod(&self.embd.gather(n_embd, tokens))?;
@@ -4624,7 +3490,6 @@ impl HybridModel {
     /// output_norm + lm_head pair stays at the call site so a stage split can fence around
     /// it); everything after it is here, verbatim.
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     fn decode_batch_epilogue(
         &self,
         e: &Engine,
@@ -4775,8 +3640,6 @@ impl HybridModel {
             let mut group_stats: Vec<(CudaSlice<f32>, CudaSlice<f32>)> = Vec::new();
             let mut row_stat: Vec<Option<(usize, usize)>> = vec![None; b_n];
             if !filt.is_empty() {
-                #[allow(clippy::type_complexity)]
-                // allow: one-shot composite type; naming it would hide the shape that matters at the call site
                 let mut groups: Vec<((f32, i32, f32, f32), Vec<usize>)> = Vec::new();
                 for &(bi, s) in &filt {
                     let key = (s.temp, s.top_k, s.top_p, s.min_p);
@@ -4944,122 +3807,8 @@ fn b1_fast_env_on(value: Option<&str>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        PpWaveIncoming, PpWaveOutgoing, b1_fast_env_on, b1_fast_plan_eligible, pp_wave_channels,
-    };
+    use super::{b1_fast_env_on, b1_fast_plan_eligible};
     use memra_gguf::config::{HfConfig, ModelConfig};
-
-    fn protocol_pair(boundary: usize) -> (PpWaveOutgoing, PpWaveIncoming) {
-        let (mut outgoing, mut incoming) = pp_wave_channels(boundary + 1);
-        (
-            outgoing[boundary].take().unwrap(),
-            incoming[boundary].take().unwrap(),
-        )
-    }
-
-    #[test]
-    fn pp_wave_credit_requires_exact_ack_before_slot_reuse() {
-        let (mut outgoing, incoming) = protocol_pair(0);
-
-        let expected0 = outgoing.prepare(0).unwrap();
-        assert_eq!(expected0, None);
-        outgoing.publish(0, 1, expected0).unwrap();
-        let transfer0 = incoming.receive(0).unwrap();
-
-        let expected1 = outgoing.prepare(1).unwrap();
-        assert_eq!(expected1, Some(0));
-        outgoing.publish(1, 0, expected1).unwrap();
-        let transfer1 = incoming.receive(1).unwrap();
-
-        // Wave 2 wants slot 1 again. Credit arrives only through the exact wave-0/slot-1
-        // acknowledgement that a real consumer sends after rt.rx records ev_rx.
-        incoming.acknowledge(transfer0).unwrap();
-        let expected2 = outgoing.prepare(2).unwrap();
-        assert_eq!(expected2, Some(1));
-        outgoing.publish(2, 1, expected2).unwrap();
-        let transfer2 = incoming.receive(2).unwrap();
-
-        incoming.acknowledge(transfer1).unwrap();
-        incoming.acknowledge(transfer2).unwrap();
-        outgoing.finish().unwrap();
-        assert!(outgoing.pending.is_empty());
-        assert_eq!(outgoing.slot_owner, [None, None]);
-    }
-
-    #[test]
-    fn pp_wave_protocol_rejects_order_and_propagates_worker_error() {
-        let (mut outgoing, incoming) = protocol_pair(0);
-        let expected = outgoing.prepare(0).unwrap();
-        outgoing.publish(0, 0, expected).unwrap();
-        let order_error = incoming.receive(1).unwrap_err();
-        assert!(order_error.contains("expected wave 1"), "{order_error}");
-
-        let (outgoing, incoming) = protocol_pair(1);
-        outgoing.publish_worker_error("injected stage failure");
-        let worker_error = incoming.receive(0).unwrap_err();
-        assert!(
-            worker_error.contains("injected stage failure"),
-            "{worker_error}"
-        );
-        assert!(worker_error.contains("boundary 1"), "{worker_error}");
-        assert!(worker_error.contains("wave 0"), "{worker_error}");
-    }
-
-    #[test]
-    fn pp_wave_credit_rejects_wrong_ack_and_slot_generation() {
-        let (mut outgoing, incoming) = protocol_pair(0);
-        let expected0 = outgoing.prepare(0).unwrap();
-        outgoing.publish(0, 0, expected0).unwrap();
-        let _transfer0 = incoming.receive(0).unwrap();
-        let expected1 = outgoing.prepare(1).unwrap();
-        assert_eq!(expected1, Some(1));
-        let wrong_slot = outgoing.publish(1, 0, expected1).unwrap_err();
-        assert!(
-            wrong_slot.contains("broke slot alternation"),
-            "{wrong_slot}"
-        );
-
-        // Rebuild after the rejected TX and inject an acknowledgement for wave 1 before wave 0.
-        let (mut outgoing, incoming) = protocol_pair(0);
-        let expected0 = outgoing.prepare(0).unwrap();
-        outgoing.publish(0, 0, expected0).unwrap();
-        let transfer0 = incoming.receive(0).unwrap();
-        let expected1 = outgoing.prepare(1).unwrap();
-        outgoing.publish(1, 1, expected1).unwrap();
-        let transfer1 = incoming.receive(1).unwrap();
-        incoming.acknowledgements.send(transfer1).unwrap();
-        let wrong_ack = outgoing.prepare(2).unwrap_err();
-        assert!(wrong_ack.contains("expected acknowledgement wave 0 slot 0"));
-        assert!(wrong_ack.contains("got boundary 0 wave 1 slot 1"));
-
-        // Keep the compiler honest that the expected transfer really was the earlier one.
-        assert_eq!(transfer0.wave, 0);
-    }
-
-    #[test]
-    fn pp_wave_protocol_reports_forward_and_ack_channel_closure() {
-        let (outgoing, incoming) = protocol_pair(0);
-        drop(outgoing);
-        let forward_closed = incoming.receive(0).unwrap_err();
-        assert!(forward_closed.contains("transfer channel closed"));
-
-        let (mut outgoing, incoming) = protocol_pair(0);
-        let expected0 = outgoing.prepare(0).unwrap();
-        outgoing.publish(0, 0, expected0).unwrap();
-        let _ = incoming.receive(0).unwrap();
-        let expected1 = outgoing.prepare(1).unwrap();
-        outgoing.publish(1, 1, expected1).unwrap();
-        let _ = incoming.receive(1).unwrap();
-        drop(incoming);
-        let ack_closed = outgoing.prepare(2).unwrap_err();
-        assert!(ack_closed.contains("acknowledgement channel closed"));
-
-        let (mut outgoing, incoming) = protocol_pair(0);
-        drop(incoming);
-        let expected = outgoing.prepare(0).unwrap();
-        let publish_closed = outgoing.publish(0, 0, expected).unwrap_err();
-        assert!(publish_closed.contains("transfer channel closed"));
-    }
 
     #[test]
     fn gdn_plans_stay_in_one_decode_numeric_class_across_widths() {

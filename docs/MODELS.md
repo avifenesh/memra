@@ -90,66 +90,13 @@ weight than a wishlist, and they are read.
 | Ornith-1.0-35B | MoE | Q4_K_M | own-gen donor-block draft | v0.64.0 |
 | Ornith-1.5-35B-A3B | MoE hybrid (GDN + gated attention) | NVFP4+Q5_K GGUF (own-published: HF Avifenesh/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF, first NVFP4 of this model) · image input via the checkpoint ViT (MEMRA_VISION_DIR, parity-gated) | continued-trained MTP head + FR-Spec self-trim (MEMRA_FRSPEC_TRIM; v0.105 serves cached-long at K=5 with a trimmed head, v0.108 replays the verify trunk as a captured graph by default — +19.7% on a current-generation host, and much less host-CPU-sensitive than before) — artifacts on HF | v0.97.0 |
 | Qwen-AgentWorld-35B-A3B | MoE | UD-IQ4_XS (avoid UD-Q4_K_M — its Q5_K expert mix sits outside fast-path coverage) | own-gen drafter | v0.66.0 |
-| Step-3.7-Flash 196B-A11B | MoE | IQ4_XS + Q8_0 MTP head (two-card PP-2), supported · FP8 tuning in progress · image input via the checkpoint perception_encoder ViT (MEMRA_STEP_VISION_DIR, parity- and serve-gated, default off) | MTP (single-card); plain batched decode on PP-2 | v0.73.1 |
+| Step-3.7-Flash 196B-A11B | MoE | IQ4_XS + Q8_0 MTP head (two-card PP-2), supported · FP8 tuning in progress | MTP (single-card); plain batched decode on PP-2 | v0.73.1 |
 <!-- PERF-MODELS:END -->
 
 Step-3.7-Flash serves on a two-card PP-2 pair (`MEMRA_PP_STAGES=2`); its explicit
 configuration and qualification boundaries are recorded under
 [bring-up notes](PERFORMANCE.md#bring-up-notes). On PP-2 it decodes in a single
 numeric class at every batch width — served bytes do not depend on load history.
-
-Since lane/step37-vision-20260830: **image input** on the same endpoint (OpenAI
-`image_url` content parts, base64 data URIs; no video for this family). The
-checkpoint's own perception_encoder tower (47 blocks, unquantized BF16 inside the
-NVFP4 artifact) runs in-engine behind `MEMRA_STEP_VISION_DIR` (default OFF; see
-docs/FLAGS.md), with the vendor's exact tiling law (728 main view + 504 crops,
-crops-first token layout, 169/81 tokens per view). Gated before any serving path:
-per-token cosine parity min-cos 1.000000 on the projected rows vs BOTH an
-independent NumPy reference and the checkpoint's own torch code, on both grids;
-end-to-end can't-hallucinate probes through the real endpoint (single, tiled,
-multi-image, mid-conversation) with exact prompt-token accounting (171 per plain
-image, 670 tiled); text requests through the vision-enabled binary stay
-byte-identical to the seam-off boot and keep MTP spec engaged, while vision
-sessions admit at K=0 (plain path) by the family-agnostic admission law. Vision
-tokens bill as ordinary prompt tokens. Receipts:
-`research/step37-vision-20260830/`.
-
-Since lane/step37-postthink-grammar: **structured output** (`response_format`
-`json_object` / `json_schema`) on the same endpoint, POST-THINK. This family's
-template force-opens a think channel with no `enable_thinking` switch, so the old
-behavior was a named 400; constrained requests now serve two-phase: the think
-phase runs unconstrained exactly as the model was trained (every end-of-generation
-id banned, so the response cannot end inside think: the receipted
-EOS-inside-think empty-content quirk is closed for constrained requests), and the
-llguidance grammar clamps every token from the tokenizer's atomic `</think>` close
-token (id 128799) on. `reasoning` carries the think text; `content` is the
-grammar-conformant JSON. Constrained sessions on this family take plain decode
-(MTP spec disengages, `[spec-k]` K=0 admit receipt); `MEMRA_POSTTHINK_CEILING`
-(default off) is the forced-close guard.
-
-The failure face is FAIL-CLOSED, never a success a client can mistake: if
-generation ends inside the reasoning channel before the think-close token (the
-model reasons at length; measured natural closes on real agentic prompts run
-p50 2119 / p90 3554 think tokens, so small `max_tokens` values get here), the
-request returns a named 400 `invalid_request_error` (param `max_tokens`, or
-`stop` when a stop sequence cut the reasoning) instead of a 200 with empty
-content; a stream that already delivered reasoning deltas ends with the same
-error object. `finish_reason: length` still occurs only AFTER the grammar
-engaged (truncated JSON with non-empty content, the same face every constrained
-model has). Raise `max_tokens` (stream for large budgets) or set the ceiling.
-Receipts: `research/step37-postthink-grammar-20260830/`.
-
-Since lane/step37-draft-graph-serving-20260830: the speculative DRAFT chain is
-CUDA-graph captured on the qualified serving shape itself — the 3-head step-modulo
-prefix-replay chain captures per-head single-row graphs (greedy AND sampled), and
-truncation-filtered sampling (the vendor default temp 0.5 / top_p 0.9) runs its
-filter in-graph, so vendor-default requests launch a captured chain. Gated by
-greedy byte identity K=1..8, per-K acceptance identity, seeded sampled twins
-(byte-identical streams graph-vs-eager), spec-on == spec-off serving bytes, and a
-vision no-interaction cell; doors `MEMRA_MTP_CHAIN_GRAPH` /
-`MEMRA_SPEC_GRAPH_FILTERED` / `MEMRA_STEP35_DRAFT_DCW` all default ON with `=0`
-rollbacks (docs/FLAGS.md). Receipts:
-`research/step37-draft-graph-serving-20260830/`.
 
 The Gemma-4 drafter is a separate-assistant format, not a NextN/MTP head — the generic NextN
 loader refuses it (`draft n_embd != model n_embd`). Since 2026-08-17, `memra-server` serves it
@@ -258,13 +205,7 @@ tok/s vs the MTP head's 117/120/85; single-stream wall prose ~131-146, code ~208
 digit-heavy ~287-339 tok/s (acceptance rises with output predictability). Recipe in
 [COOKBOOK.md](COOKBOOK.md); receipts in the FLAGS `MEMRA_DSPARK_SPEC` row.
 
-**Current engine number: 250 tok/s** on one RTX PRO 6000. That is memra: DFlash2,
-512-token digits, wall clock with TTFT included. The digit-heavy ~287-339 tok/s
-band above is the decode window on the same route (TTFT excluded); 250 is that
-window after TTFT. Do not quote the 140 tok/s p50 row below as current; it is
-the 2026-08-15 MTP-era battery.
-
-Historical MTP-era battery, kept as measured (NVFP4+Q5_K artifact, real agentic prompts,
+The MTP-era battery below stands as measured (NVFP4+Q5_K artifact, real agentic prompts,
 3-rep medians, zero sheds or errors across every cell — 2026-08-15):
 
 | Metric | Measured |

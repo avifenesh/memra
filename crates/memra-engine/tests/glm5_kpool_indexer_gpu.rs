@@ -53,18 +53,9 @@
 //!      across FOUR wraps of a 16-row ring at 64 tokens, the ring's index sets against the flat
 //!      plane's, and a ring too small for the chunk refusing instead of selecting against rows it
 //!      is about to overwrite.
-//!  15. `gpu_kpool_tail_ring_serves_a_whole_monolithic_prime`: the shape glm5_next ACTUALLY
-//!      serves: one call carrying the whole prompt, over a ring many times shorter than it, at
-//!      two context lengths. This is the gate the 4630-of-8192 regression walked past.
 //!  14. `gpu_kpool_tail_ring_mutations_change_the_pool_keys` — the ring's modulus is load-bearing:
 //!      the incremental ring build is BIT-identical to the flat build, and both an off-by-one-pool
 //!      reader ring and an off-by-one append slot move pool keys, with counts.
-//!  16. `gpu_latent_plane_snapshot_restores_byte_identically_and_continues_the_ring` +
-//!      `gpu_latent_plane_red_mutations_are_refused_or_detected` — the prefix-cache latent-plane
-//!      snapshot/restore (lane/glm5-prefix-latent): bit identity across ring/flat/small
-//!      destinations, restored-vs-cold continuation identity at the selection seam, and four red
-//!      mutations (truncated rows, forged finality both directions, wrong donor, corrupted
-//!      restored keys), each refused by name or detected by the comparison it exists to feed.
 //!
 //! Rig law (exactness only, never timing):
 //!   NVIDIA_TF32_OVERRIDE=0 flock /tmp/memra-5090.lock \
@@ -959,53 +950,6 @@ impl Harness {
         Ok(())
     }
 
-    /// ONE call against a ring whose resident pool-key count is set by the caller. It is the shape a
-    /// rewind or a pool-key reallocation leaves behind, where `pools_ready * pool` sits BELOW
-    /// `slot` and the rows in between are gone. It is the only lapse the drain cannot absorb.
-    fn select_once_with_ready(
-        &self,
-        x: &[f32],
-        q_resid: &[f32],
-        slot: usize,
-        n: usize,
-        ring_rows: usize,
-        ready: usize,
-    ) -> Result<(), String> {
-        let e = &self.engine;
-        let indexer = self.indexer();
-        let mut plane = e
-            .zeros(ring_rows * indexer.geom.state_width())
-            .expect("indexer plane");
-        let mut pool_keys = Some(
-            e.zeros(((slot + n) / KPOOL).max(1) * indexer.geom.head_dim)
-                .expect("pool keys"),
-        );
-        let mut ready = ready;
-        let h = e
-            .htod(&x[slot * HIDDEN..(slot + n) * HIDDEN])
-            .expect("upload x");
-        let qr = e
-            .htod(&q_resid[slot * Q_LORA..(slot + n) * Q_LORA])
-            .expect("upload q_resid");
-        HybridModel::mla_kpool_indices(
-            e,
-            indexer,
-            &h,
-            &qr,
-            IndexerPlanes {
-                state: &mut plane,
-                pool_keys: &mut pool_keys,
-                ready: &mut ready,
-                state_ring_rows: ring_rows,
-                capacity_tokens: slot + n,
-            },
-            n,
-            slot,
-        )
-        .map(|_| ())
-        .map_err(|e| e.to_string())
-    }
-
     fn dtoh_i32(&self, d: &CudaSlice<i32>) -> Vec<i32> {
         self.engine
             .stream()
@@ -1027,7 +971,7 @@ impl Harness {
 /// GATE 4 — SELECTION PARITY. The device's selected index sets must be the oracle's, at four
 /// context lengths INCLUDING two above the raw budget where the selection actually rejects.
 #[test]
-#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
+#[ignore = "needs a CUDA device — run under flock /tmp/memra-5090.lock"]
 fn gpu_kpool_selection_matches_the_reference() {
     let _gpu = gpu_guard();
     let h = Harness::new(true);
@@ -1061,7 +1005,7 @@ fn gpu_kpool_selection_matches_the_reference() {
 /// of weights: the reference (truth), the engine with the indexer, and the engine WITHOUT it. The
 /// gate is only meaningful if the third disagrees, which is asserted rather than assumed.
 #[test]
-#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
+#[ignore = "needs a CUDA device — run under flock /tmp/memra-5090.lock"]
 fn gpu_kpool_attention_matches_the_reference_and_differs_from_dense() {
     let _gpu = gpu_guard();
     let sparse = Harness::new(true);
@@ -1108,7 +1052,7 @@ fn gpu_kpool_attention_matches_the_reference_and_differs_from_dense() {
 /// kernel the passing path uses, so the reported difference is what that mutation would have done
 /// to the model's output — not just to a list of integers.
 #[test]
-#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
+#[ignore = "needs a CUDA device — run under flock /tmp/memra-5090.lock"]
 fn gpu_kpool_mutations_change_the_selection_and_the_output() {
     let _gpu = gpu_guard();
     let h = Harness::new(true);
@@ -1230,7 +1174,7 @@ fn gpu_kpool_mutations_change_the_selection_and_the_output() {
 /// is the exact failure this whole lane exists to prevent: fluent, plausible, and wrong past
 /// `index_topk` tokens.
 #[test]
-#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
+#[ignore = "needs a CUDA device — run under flock /tmp/memra-5090.lock"]
 fn gpu_a_missing_indexer_tensor_refuses_the_load_by_name() {
     let _gpu = gpu_guard();
     force_true_f32();
@@ -1266,7 +1210,7 @@ fn gpu_a_missing_indexer_tensor_refuses_the_load_by_name() {
 /// The prompt is 40 tokens and the run extends to 64 — every decode step scores 10 to 16 pools
 /// against a 4-pool budget, so the seam is exercised inside the sparse regime, not below it.
 #[test]
-#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
+#[ignore = "needs a CUDA device — run under flock /tmp/memra-5090.lock"]
 fn gpu_kpool_prime_then_decode_matches_the_reference() {
     let _gpu = gpu_guard();
     let h = Harness::new(true);
@@ -1329,7 +1273,7 @@ fn gpu_kpool_prime_then_decode_matches_the_reference() {
 /// select pools `0..select_k` and nothing else. A max-first-wins or last-wins reduction passes
 /// every other gate here and fails this one.
 #[test]
-#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
+#[ignore = "needs a CUDA device — run under flock /tmp/memra-5090.lock"]
 fn gpu_kpool_ties_break_on_the_lowest_pool_index() {
     let _gpu = gpu_guard();
     force_true_f32();
@@ -1404,10 +1348,10 @@ fn gpu_kpool_ties_break_on_the_lowest_pool_index() {
 ///   * `Masked` — only `select_k / 3` pools finite, the rest `-INFINITY`: fewer candidates than
 ///     the budget, the arm where the ref kernel exhausts its rounds early.
 ///   * `AllMasked` — nothing visible at all: the selection must emit only the tail.
-///     Every query in a launch draws a DIFFERENT distribution, so one launch exercises all five and
-///     the per-block independence at the same time.
+/// Every query in a launch draws a DIFFERENT distribution, so one launch exercises all five and
+/// the per-block independence at the same time.
 #[test]
-#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
+#[ignore = "needs a CUDA device — run under flock /tmp/memra-5090.lock"]
 fn gpu_kpool_radix_selection_is_byte_identical_to_the_reference_kernel() {
     let _gpu = gpu_guard();
     force_true_f32();
@@ -1551,7 +1495,7 @@ fn gpu_kpool_radix_selection_is_byte_identical_to_the_reference_kernel() {
 /// the prime), so a regression that silently rebuilt everything would fail rather than pass by
 /// doing more work.
 #[test]
-#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
+#[ignore = "needs a CUDA device — run under flock /tmp/memra-5090.lock"]
 fn gpu_kpool_resident_pool_keys_match_a_full_rebuild() {
     let _gpu = gpu_guard();
     let h = Harness::new(true);
@@ -1605,7 +1549,7 @@ fn gpu_kpool_resident_pool_keys_match_a_full_rebuild() {
 /// (whole tiles invisible, the block early-out), the middle (the horizon INSIDE a tile) and the
 /// end (everything visible).
 #[test]
-#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
+#[ignore = "needs a CUDA device — run under flock /tmp/memra-5090.lock"]
 fn gpu_kpool_scoring_is_byte_identical_to_the_reference_kernel() {
     let _gpu = gpu_guard();
     force_true_f32();
@@ -1738,10 +1682,6 @@ const RING_ROWS: usize = 16;
 /// chunk every call starts with `pools_ready * pool == slot` and the liveness bound degenerates to
 /// `ring >= t`, which would never exercise the `pool - 1` term the ring is actually sized against.
 const RING_CHUNK: usize = 7;
-/// Context lengths gate 15 runs the MONOLITHIC (one call, `chunk == t`) shape at. Two of them,
-/// because the regression is a RATIO (usable context over configured context), and 64/16 = 4
-/// wraps against 256/16 = 16 wraps says the wrap count is not load-bearing either.
-const MONOLITHIC_LENGTHS: [usize; 2] = [CTX, 4 * CTX];
 
 /// GATE 13 — THE TAIL RING WRAPS, AND WRAPPING CHANGES NOTHING.
 ///
@@ -1765,7 +1705,7 @@ const MONOLITHIC_LENGTHS: [usize; 2] = [CTX, 4 * CTX];
 ///      the liveness inequality catches it and the call fails loudly instead of selecting against
 ///      garbage.
 #[test]
-#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
+#[ignore = "needs a CUDA device — run under flock /tmp/memra-5090.lock"]
 fn gpu_kpool_tail_ring_wraps_and_matches_the_flat_plane() {
     let _gpu = gpu_guard();
     let h = Harness::new(true);
@@ -1823,125 +1763,16 @@ fn gpu_kpool_tail_ring_wraps_and_matches_the_flat_plane() {
          ring is not a pure addressing change"
     );
 
-    // 3a. A ring SHORTER THAN THE CHUNK is served, not refused. The drain is what makes the ring
-    //     size a working-set choice: 8 rows against a 7-token chunk leaves `pools_ready * pool`
-    //     three rows behind `slot`, which the pre-drain liveness inequality read as a lapse.
-    //     (lane/glm53-ring-sizing, 2026-08-28: this arm asserted the REFUSAL before the fix.)
-    let short = RING_ROWS / 2; // 8: two pools, below the 7-token chunk plus its pool-1 carry
-    assert!(
-        short < RING_CHUNK + KPOOL - 1,
-        "ring {short} is not shorter than the chunk's live window, so this arm would prove nothing"
-    );
-    let got = h.select_chunked(&x, &q_resid, t, RING_CHUNK, short);
-    println!(
-        "ring {short} rows against a chunk whose live window peaks at {} rows: served, and the \
-         selection is the oracle's",
-        RING_CHUNK + KPOOL - 1
-    );
-    assert_eq!(
-        got, want,
-        "the drained ring must select what the oracle selects"
-    );
-
-    // 3b. The lapse that SURVIVES the drain, and it is the only one: resident pool keys claiming
-    //     fewer finished pools than the ring's history can still supply. A rewind that reduced
-    //     the cache without clamping `index_pools_ready`, or a pool-key plane reallocation, leaves
-    //     rows this call must READ already overwritten, and no amount of draining brings them
-    //     back. It must refuse by name rather than collapse pools over dead rows.
+    // 3. A LAPPED ring REFUSES rather than selecting against overwritten rows.
+    let lapped = RING_ROWS / 2; // 8: fine while slot % pool <= 1, lapped at slot 7
     let err = h
-        .select_once_with_ready(&x, &q_resid, RING_ROWS * 2, RING_CHUNK, RING_ROWS, 0)
-        .expect_err("rows below a stale pools_ready are gone, so this must refuse, not fabricate");
-    println!(
-        "ring {RING_ROWS} rows, slot {}, pools_ready 0: refused with `{err}`",
-        RING_ROWS * 2
-    );
+        .select_chunked_result(&x, &q_resid, t, RING_CHUNK, lapped)
+        .expect_err("a ring too small for the chunk must refuse, not select against dead rows");
+    println!("ring {lapped} rows, chunk {RING_CHUNK}: refused with `{err}`");
     assert!(
         err.contains("tail ring lapped"),
         "the refusal must name the lapped ring; got `{err}`"
     );
-
-    // 3c. A ring that cannot hold one whole pool refuses by name too.
-    let err = h
-        .select_chunked_result(&x, &q_resid, t, RING_CHUNK, KPOOL - 1)
-        .expect_err("a ring below one pool cannot address a pool at all");
-    println!(
-        "ring {} rows (below pool {KPOOL}): refused with `{err}`",
-        KPOOL - 1
-    );
-    assert!(
-        err.contains("cannot hold one pool"),
-        "the refusal must name the pool it cannot hold; got `{err}`"
-    );
-}
-
-/// GATE 15: THE MONOLITHIC PRIME, WHICH IS THE SHAPE THIS MODEL ACTUALLY SERVES.
-///
-/// glm5_next is EAGER-ONLY (`ResidualTopology::HyperConnections` refuses every batched and
-/// speculative entry point), so the server primes it whole: `prime_cache_hyper` never calls
-/// `prime_chunk_ranges`, and the per-call `t` reaching `mla_kpool_indices` is the entire prompt.
-/// The ring shipped sized against `PRIME_CHUNK_MAX_TOKENS + 1024`, a bound belonging to a
-/// chunking discipline this architecture does not use, and the bench box measured the result:
-/// at `MEMRA_CTX=8192` the ring ON served 4630 prompt tokens, ring OFF served 7300, and the
-/// pre-ring binary served 7312 (rebaseline-and-surface-20260828, receipts 13 and 14).
-///
-/// So this gate runs the ONE-CALL shape, at a ring far shorter than the call, and asserts the
-/// SELECTION, not merely a 200. Two context values, because the failure is a RATIO, usable
-/// context as a fraction of configured context, and a sizing that holds at one length and not
-/// the next is not a sizing. `t / RING_ROWS` wraps at each: the ring is lapped many times over
-/// inside a single call, which is precisely what the pre-drain code could not do.
-///
-/// Non-vacuity is asserted, not assumed: the ring must be shorter than the call, and the ring
-/// arm must be compared against BOTH the reference oracle and the flat plane.
-#[test]
-#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
-fn gpu_kpool_tail_ring_serves_a_whole_monolithic_prime() {
-    let _gpu = gpu_guard();
-    let h = Harness::new(true);
-    for t in MONOLITHIC_LENGTHS {
-        let x = noise(t * HIDDEN, 0x51A7, 0.6);
-        let q_resid = noise(t * Q_LORA, 0x9F13, 0.6);
-        let want = oracle(&h.weights, &x, &q_resid, t);
-        let effective = RING_ROWS / KPOOL * KPOOL;
-        assert!(
-            t > effective,
-            "a {effective}-row ring is not lapped by a {t}-token single call, so this gate would \
-             be running the chunked shape it was written to escape"
-        );
-
-        // THE SHAPE: chunk == t, i.e. ONE call carrying the whole prompt.
-        let got = h.select_chunked(&x, &q_resid, t, t, RING_ROWS);
-        println!(
-            "monolithic prime, t={t}, ring {RING_ROWS} rows: usable {t} of configured {t} \
-             ({}x the ring, {} wraps inside ONE call)",
-            t / effective,
-            t / effective
-        );
-        assert_eq!(got.len(), t, "every query in the call must be compared");
-        for (token, (g, w)) in got.iter().zip(&want).enumerate() {
-            assert_eq!(
-                g, w,
-                "t={t}, monolithic prime over a {effective}-row ring, query {token}: device \
-                 selected {g:?}, oracle selected {w:?}"
-            );
-        }
-
-        // RING == FLAT on the same shape: the drain is an addressing change, nothing else.
-        let flat = h.select_chunked(&x, &q_resid, t, t, 0);
-        let differ = differing_queries(&flat, &got);
-        assert_eq!(
-            differ, 0,
-            "t={t}: the drained ring selected different rows than the flat plane on {differ} of \
-             {t} queries"
-        );
-
-        // STILL A RING. The plane the ring arm allocated is `RING_ROWS` rows; the flat arm's is
-        // `t`. If a sizing "fix" ever grows the first toward the second, this is the tripwire.
-        assert!(
-            RING_ROWS * 4 <= t,
-            "t={t}: a {RING_ROWS}-row ring is within 4x of the {t}-row flat plane. That is a \
-             silent revert of the saving, not a fix of the sizing"
-        );
-    }
 }
 
 /// GATE 14 — THE RING'S ADDRESSING IS LOAD-BEARING, WITH NUMBERS.
@@ -1960,7 +1791,7 @@ fn gpu_kpool_tail_ring_serves_a_whole_monolithic_prime() {
 /// Truth is the FLAT plane's own pool keys, compared as f32 bits: the ring must be BIT-identical
 /// to the flat build, because it is the same kernel over the same values in the same order.
 #[test]
-#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
+#[ignore = "needs a CUDA device — run under flock /tmp/memra-5090.lock"]
 fn gpu_kpool_tail_ring_mutations_change_the_pool_keys() {
     let _gpu = gpu_guard();
     let h = Harness::new(true);
@@ -2003,18 +1834,8 @@ fn gpu_kpool_tail_ring_mutations_change_the_pool_keys() {
                 .collect();
             let ad = e.htod(&a).expect("upload k half");
             let bd = e.htod(&b).expect("upload gate half");
-            e.mla_index_append(
-                &mut plane,
-                &ad,
-                &bd,
-                0,
-                slot + slot_bias,
-                n,
-                d,
-                d,
-                ring_write,
-            )
-            .expect("ring append");
+            e.mla_index_append(&mut plane, &ad, &bd, slot + slot_bias, n, d, d, ring_write)
+                .expect("ring append");
             let np = (slot + n) / KPOOL;
             e.mla_kpool_pool_keys(&plane, ape, &mut keys, ready, np, KPOOL, d, ring_read)
                 .expect("ring pool keys");
@@ -2060,629 +1881,4 @@ fn gpu_kpool_tail_ring_mutations_change_the_pool_keys() {
              cannot catch a broken modulus"
         );
     }
-}
-
-// ---------------------------------------------------------------------------------------------
-// GATE 16 — LATENT-PLANE PREFIX SNAPSHOT/RESTORE (lane/glm5-prefix-latent, 2026-08-30; design:
-// research/glm5-prefix-latent-20260830/DESIGN.md).
-//
-// The prefix cache's `PrefixEntry` now carries `LatentPlaneSnapshot`s: the f32 latent rows, the
-// CARRIED pool keys + `index_pools_ready` (a rebuild is impossible under the tail ring: the
-// source rows are overwritten by design), and the `len % pool` live tail-ring rows. This gate
-// pins the mechanism at the seam the defect lived on:
-//
-//   16a  BIT identity: snapshot a mid-pool boundary off a ring'd layer, restore into a fresh
-//        same-layout layer AND a fresh FLAT layer with a different max_ctx, and compare every
-//        logical window (rows, keys, tail, len, len_d, pools_ready, pool) as f32 BITS.
-//   16b  CONTINUATION identity, the can't-hallucinate arm: continue the donor, both restored
-//        layers, and a from-scratch COLD walk over the same inputs; every post-boundary
-//        selection must be identical across all four, and the final key planes bit-equal.
-//        The restored tail rows feed the FIRST pool completed after the boundary, so a wrong
-//        byte or a wrong ring address in the restore moves a pool key and the selection.
-//   16c  RED mutations, each proving the gate (or the validation) bites:
-//        rows truncated one short -> refuse by name; a forged len (finality broken in either
-//        direction) -> refuse by name; a WRONG-DONOR snapshot restored -> the bit comparison
-//        itself must fail; a corrupted restored pool key -> the continuation selections must
-//        diverge from cold. The wrong-donor arm is the unit form of "state restored from the
-//        wrong snapshot column"; its shape-identical production twin is caught only by the box
-//        byte-identity probes, which is why they are the acceptance bar.
-// ---------------------------------------------------------------------------------------------
-
-/// Latent rows plane width for gate 16. Independent of the indexer fixture: the rows arm is
-/// position-addressed passive bytes whose only contract is bit-exact travel.
-const LATENT_WIDTH: usize = 24;
-/// The snapshot boundary: NOT pool-aligned (43 % 4 == 3), so the live tail is 3 rows and the
-/// restore has to land them mid-ring-history.
-const SNAP_AT: usize = 43;
-
-/// A session-shaped `LatentKvLayer`, allocated exactly as `Cache::new_inner` allocates one.
-fn fresh_latent_layer(
-    e: &Engine,
-    max_ctx: usize,
-    ring_rows: Option<usize>,
-) -> memra_engine::cache::LatentKvLayer {
-    memra_engine::cache::LatentKvLayer {
-        rows: e.zeros(max_ctx * LATENT_WIDTH).expect("latent rows plane"),
-        width: LATENT_WIDTH,
-        len: 0,
-        len_d: e.htod_i32(&[0]).expect("len_d"),
-        index_rows: Some(
-            e.zeros(ring_rows.unwrap_or(max_ctx) * INDEX_HEAD_DIM * 2)
-                .expect("indexer state plane"),
-        ),
-        index_width: INDEX_HEAD_DIM * 2,
-        index_ring_rows: ring_rows,
-        index_pool_keys: None,
-        index_pools_ready: 0,
-        index_pool: 0,
-    }
-}
-
-/// Walk `[from, to)` through the REAL selection entry point (`mla_kpool_indices`) with the
-/// layer's own resident planes, maintaining exactly the bookkeeping `mla_attn_cached` does:
-/// take the planes, run, write back `pools_ready`/`index_pool`/`len`/`len_d`, plus the latent
-/// rows append (position-addressed upload of the shared `rows_data`). Returns each token's
-/// selected index set for the continuation-identity comparisons.
-#[allow(clippy::too_many_arguments)]
-fn latent_layer_walk(
-    h: &Harness,
-    layer: &mut memra_engine::cache::LatentKvLayer,
-    x: &[f32],
-    q_resid: &[f32],
-    rows_data: &[f32],
-    from: usize,
-    to: usize,
-    chunk: usize,
-    max_ctx: usize,
-) -> Vec<Vec<usize>> {
-    let e = &h.engine;
-    let indexer = h.indexer();
-    let mut out = Vec::with_capacity(to - from);
-    let mut slot = from;
-    while slot < to {
-        let n = chunk.min(to - slot);
-        let staged = e
-            .htod(&rows_data[slot * LATENT_WIDTH..(slot + n) * LATENT_WIDTH])
-            .expect("stage latent rows");
-        e.copy_into(
-            &mut layer.rows,
-            slot * LATENT_WIDTH,
-            &staged,
-            n * LATENT_WIDTH,
-        )
-        .expect("append latent rows");
-        let hbuf = e
-            .htod(&x[slot * HIDDEN..(slot + n) * HIDDEN])
-            .expect("upload x chunk");
-        let qr = e
-            .htod(&q_resid[slot * Q_LORA..(slot + n) * Q_LORA])
-            .expect("upload q_resid chunk");
-        let mut state = layer.index_rows.take().expect("indexer state plane");
-        let mut keys = layer.index_pool_keys.take();
-        let mut ready = layer.index_pools_ready;
-        let (idx, width) = HybridModel::mla_kpool_indices(
-            e,
-            indexer,
-            &hbuf,
-            &qr,
-            IndexerPlanes {
-                state: &mut state,
-                pool_keys: &mut keys,
-                ready: &mut ready,
-                state_ring_rows: layer.index_ring_rows.unwrap_or(0),
-                capacity_tokens: max_ctx,
-            },
-            n,
-            slot,
-        )
-        .unwrap_or_else(|err| panic!("walk chunk at slot {slot} (t={n}): {err}"));
-        layer.index_rows = Some(state);
-        layer.index_pool_keys = keys;
-        layer.index_pools_ready = ready;
-        layer.index_pool = indexer.geom.pool;
-        layer.len = slot + n;
-        h.engine
-            .set_i32_one(&mut layer.len_d, layer.len as i32)
-            .expect("len_d mirror");
-        out.extend(device_sets(&h.dtoh_i32(&idx), n, width));
-        slot += n;
-    }
-    out
-}
-
-/// The LOGICAL windows a snapshot carries, read back off a live layer: (rows [0..len*width),
-/// keys [0..ready*d), tail rows at their physical addresses). This is the comparison surface
-/// for both identity arms; every value is compared as f32 BITS by the callers.
-fn latent_logical_windows(
-    e: &Engine,
-    layer: &memra_engine::cache::LatentKvLayer,
-) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
-    let rows = e
-        .dtoh_view(&layer.rows.slice(0..layer.len * layer.width))
-        .expect("rows window");
-    let d = layer.index_width / 2;
-    let keys = match &layer.index_pool_keys {
-        Some(k) if layer.index_pools_ready > 0 => e
-            .dtoh_view(&k.slice(0..layer.index_pools_ready * d))
-            .expect("keys window"),
-        _ => Vec::new(),
-    };
-    let tail_rows = layer.len - layer.index_pools_ready * layer.index_pool;
-    let tail = if tail_rows > 0 {
-        let ring = layer.index_ring_rows.unwrap_or(0);
-        let phys = memra_engine::cache::index_plane_physical_row(
-            ring,
-            layer.index_pool,
-            layer.index_pools_ready * layer.index_pool,
-        );
-        let plane = layer.index_rows.as_ref().expect("index plane");
-        e.dtoh_view(&plane.slice(phys * layer.index_width..(phys + tail_rows) * layer.index_width))
-            .expect("tail window")
-    } else {
-        Vec::new()
-    };
-    (rows, keys, tail)
-}
-
-fn bits(v: &[f32]) -> Vec<u32> {
-    v.iter().map(|x| x.to_bits()).collect()
-}
-
-#[test]
-#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
-fn gpu_latent_plane_snapshot_restores_byte_identically_and_continues_the_ring() {
-    let _gpu = gpu_guard();
-    let h = Harness::new(true);
-    let e = &h.engine;
-    let t = CTX;
-    let x = noise(t * HIDDEN, 0x51A7, 0.6);
-    let q_resid = noise(t * Q_LORA, 0x9F13, 0.6);
-    let rows_data = noise(t * LATENT_WIDTH, 0xB007, 0.8);
-    assert_eq!(
-        SNAP_AT % KPOOL,
-        3,
-        "the boundary must sit mid-pool or the tail arm is vacuous"
-    );
-
-    // COLD: one uninterrupted walk over the whole context (the byte-identity reference).
-    let mut cold = fresh_latent_layer(e, t, Some(RING_ROWS));
-    let cold_sel = latent_layer_walk(&h, &mut cold, &x, &q_resid, &rows_data, 0, t, RING_CHUNK, t);
-
-    // DONOR: same walk to the boundary, then snapshot.
-    let mut donor = fresh_latent_layer(e, t, Some(RING_ROWS));
-    let donor_sel = latent_layer_walk(
-        &h, &mut donor, &x, &q_resid, &rows_data, 0, SNAP_AT, RING_CHUNK, t,
-    );
-    assert_eq!(
-        donor_sel,
-        cold_sel[..SNAP_AT],
-        "non-vacuity: the donor's pre-boundary walk must already match cold"
-    );
-    let snap = donor.snapshot_plane(e).expect("latent snapshot");
-    assert_eq!(snap.len, SNAP_AT);
-    assert_eq!(snap.index_pool, KPOOL);
-    assert_eq!(snap.index_pools_ready, SNAP_AT / KPOOL);
-    assert_eq!(
-        snap.index_tail.as_ref().map(CudaSlice::len),
-        Some((SNAP_AT % KPOOL) * INDEX_HEAD_DIM * 2),
-        "the live tail is exactly the sub-pool rows"
-    );
-
-    // 16a. BIT identity into a same-layout ring layer, a FLAT layer of the same capacity (the
-    // layout a short-ctx session allocates: index_ring_rows None), and a flat layer of a
-    // DIFFERENT capacity (restores cross ctx_cap boundaries in production).
-    let (want_rows, want_keys, want_tail) = latent_logical_windows(e, &donor);
-    let mut ring_dst = fresh_latent_layer(e, t, Some(RING_ROWS));
-    ring_dst.restore_plane(e, &snap, t).expect("ring restore");
-    let mut flat_dst = fresh_latent_layer(e, t, None);
-    flat_dst.restore_plane(e, &snap, t).expect("flat restore");
-    let small_dst = {
-        let mut small = fresh_latent_layer(e, SNAP_AT + 8, None);
-        small
-            .restore_plane(e, &snap, SNAP_AT + 8)
-            .expect("small-capacity flat restore");
-        small
-    };
-    for (label, dst) in [
-        ("ring", &ring_dst),
-        ("flat", &flat_dst),
-        ("small", &small_dst),
-    ] {
-        assert_eq!(dst.len, SNAP_AT, "{label}: restored len");
-        assert_eq!(
-            e.dtoh_i32(&dst.len_d).expect("len_d readback"),
-            vec![SNAP_AT as i32],
-            "{label}: restored device len mirror"
-        );
-        assert_eq!(dst.index_pool, KPOOL, "{label}: restored pool");
-        assert_eq!(
-            dst.index_pools_ready,
-            SNAP_AT / KPOOL,
-            "{label}: restored pools_ready"
-        );
-        let (got_rows, got_keys, got_tail) = latent_logical_windows(e, dst);
-        assert_eq!(
-            bits(&got_rows),
-            bits(&want_rows),
-            "{label}: latent rows BITS"
-        );
-        assert_eq!(bits(&got_keys), bits(&want_keys), "{label}: pool key BITS");
-        assert_eq!(
-            bits(&got_tail),
-            bits(&want_tail),
-            "{label}: tail-ring row BITS"
-        );
-    }
-
-    // 16b. CONTINUATION identity: the restored state must serve the future exactly as the
-    // donor's own state does, and exactly as a cold prime would have. The first pool completed
-    // after the boundary is built from the RESTORED tail rows, so this arm dies if a tail byte
-    // or its ring address is wrong.
-    let donor_cont = latent_layer_walk(
-        &h, &mut donor, &x, &q_resid, &rows_data, SNAP_AT, t, RING_CHUNK, t,
-    );
-    let ring_cont = latent_layer_walk(
-        &h,
-        &mut ring_dst,
-        &x,
-        &q_resid,
-        &rows_data,
-        SNAP_AT,
-        t,
-        RING_CHUNK,
-        t,
-    );
-    let flat_cont = latent_layer_walk(
-        &h,
-        &mut flat_dst,
-        &x,
-        &q_resid,
-        &rows_data,
-        SNAP_AT,
-        t,
-        RING_CHUNK,
-        t,
-    );
-    assert_eq!(
-        donor_cont,
-        cold_sel[SNAP_AT..],
-        "the donor's continuation must match cold (control arm)"
-    );
-    assert_eq!(
-        ring_cont,
-        cold_sel[SNAP_AT..],
-        "the RESTORED continuation must match cold — this is the restored-vs-cold identity \
-         at the selection seam"
-    );
-    assert_eq!(
-        flat_cont,
-        cold_sel[SNAP_AT..],
-        "the ring-to-FLAT restored continuation must match cold too — the tail rows landed at \
-         absolute addresses this time"
-    );
-    let (donor_rows, donor_keys, donor_tail) = latent_logical_windows(e, &donor);
-    let (rest_rows, rest_keys, rest_tail) = latent_logical_windows(e, &ring_dst);
-    assert_eq!(
-        bits(&rest_rows),
-        bits(&donor_rows),
-        "post-continuation rows BITS"
-    );
-    assert_eq!(
-        bits(&rest_keys),
-        bits(&donor_keys),
-        "post-continuation key BITS"
-    );
-    assert_eq!(
-        bits(&rest_tail),
-        bits(&donor_tail),
-        "post-continuation tail BITS"
-    );
-    println!(
-        "gate 16 GREEN: boundary {SNAP_AT} (tail {} rows), ring {RING_ROWS} and flat restores \
-         bit-identical; {} continuation selections identical to cold",
-        SNAP_AT % KPOOL,
-        t - SNAP_AT
-    );
-}
-
-#[test]
-#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
-fn gpu_latent_plane_red_mutations_are_refused_or_detected() {
-    let _gpu = gpu_guard();
-    let h = Harness::new(true);
-    let e = &h.engine;
-    let t = CTX;
-    let x = noise(t * HIDDEN, 0x51A7, 0.6);
-    let q_resid = noise(t * Q_LORA, 0x9F13, 0.6);
-    let rows_data = noise(t * LATENT_WIDTH, 0xB007, 0.8);
-
-    let mut cold = fresh_latent_layer(e, t, Some(RING_ROWS));
-    let cold_sel = latent_layer_walk(&h, &mut cold, &x, &q_resid, &rows_data, 0, t, RING_CHUNK, t);
-
-    let mut donor = fresh_latent_layer(e, t, Some(RING_ROWS));
-    latent_layer_walk(
-        &h, &mut donor, &x, &q_resid, &rows_data, 0, SNAP_AT, RING_CHUNK, t,
-    );
-    let snap = donor.snapshot_plane(e).expect("latent snapshot");
-
-    // RED 1 — latent rows truncated one short: refused by name before any copy.
-    let truncated = memra_engine::cache::LatentPlaneSnapshot {
-        rows: e.zeros((SNAP_AT - 1) * LATENT_WIDTH).expect("short rows"),
-        width: snap.width,
-        len: snap.len,
-        index_width: snap.index_width,
-        index_pool: snap.index_pool,
-        index_tail: Some(
-            e.clone_dtod(snap.index_tail.as_ref().expect("tail"))
-                .expect("tail copy"),
-        ),
-        index_pool_keys: Some(
-            e.clone_dtod(snap.index_pool_keys.as_ref().expect("keys"))
-                .expect("keys copy"),
-        ),
-        index_pools_ready: snap.index_pools_ready,
-    };
-    let err = fresh_latent_layer(e, t, Some(RING_ROWS))
-        .restore_plane(e, &truncated, t)
-        .expect_err("a rows plane one row short must refuse");
-    println!("RED 1 (rows truncated one short): refused with `{err}`");
-    assert!(
-        err.to_string().contains("truncated capture"),
-        "must refuse by name; got `{err}`"
-    );
-
-    // RED 2 — finality violated in either direction: forged `index_pools_ready` (keys claiming
-    // more, or fewer, final pools than `len / pool`) refuses by the invariant's name. This is
-    // the "pool keys stale after restore" class at the validation seam.
-    for forged_ready in [snap.index_pools_ready + 1, snap.index_pools_ready - 1] {
-        let forged = memra_engine::cache::LatentPlaneSnapshot {
-            rows: e.clone_dtod(&snap.rows).expect("rows copy"),
-            width: snap.width,
-            len: snap.len,
-            index_width: snap.index_width,
-            index_pool: snap.index_pool,
-            index_tail: Some(
-                e.clone_dtod(snap.index_tail.as_ref().expect("tail"))
-                    .expect("tail copy"),
-            ),
-            index_pool_keys: Some(
-                e.clone_dtod(snap.index_pool_keys.as_ref().expect("keys"))
-                    .expect("keys copy"),
-            ),
-            index_pools_ready: forged_ready,
-        };
-        assert_ne!(
-            forged_ready,
-            snap.len / KPOOL,
-            "forged ready {forged_ready} must actually break finality or this arm is vacuous"
-        );
-        let err = fresh_latent_layer(e, t, Some(RING_ROWS))
-            .restore_plane(e, &forged, t)
-            .expect_err("a snapshot whose keys violate finality must refuse");
-        println!("RED 2 (pools_ready forged to {forged_ready}): refused with `{err}`");
-        assert!(
-            err.to_string().contains("finality"),
-            "must refuse by the invariant's name; got `{err}`"
-        );
-    }
-
-    // RED 3 — the WRONG DONOR's snapshot (shape-identical, different history): the bit
-    // comparison must itself fail, proving 16a is not a tautology. Production twin: state
-    // restored from the wrong snapshot column, catchable only by byte comparison.
-    let rows_data2 = noise(t * LATENT_WIDTH, 0xDEAD, 0.8);
-    let x2 = noise(t * HIDDEN, 0xFEED, 0.6);
-    let mut donor2 = fresh_latent_layer(e, t, Some(RING_ROWS));
-    latent_layer_walk(
-        &h,
-        &mut donor2,
-        &x2,
-        &q_resid,
-        &rows_data2,
-        0,
-        SNAP_AT,
-        RING_CHUNK,
-        t,
-    );
-    let snap2 = donor2.snapshot_plane(e).expect("wrong-donor snapshot");
-    let mut wrong = fresh_latent_layer(e, t, Some(RING_ROWS));
-    wrong
-        .restore_plane(e, &snap2, t)
-        .expect("wrong-donor restore is shape-valid");
-    let (want_rows, want_keys, want_tail) = latent_logical_windows(e, &donor);
-    let (got_rows, got_keys, got_tail) = latent_logical_windows(e, &wrong);
-    assert_ne!(
-        bits(&got_rows),
-        bits(&want_rows),
-        "RED 3 must bite on the rows plane"
-    );
-    assert_ne!(
-        bits(&got_keys),
-        bits(&want_keys),
-        "RED 3 must bite on the key plane"
-    );
-    assert_ne!(
-        bits(&got_tail),
-        bits(&want_tail),
-        "RED 3 must bite on the tail rows"
-    );
-    println!("RED 3 (wrong donor): all three bit comparisons detected the swap");
-
-    // RED 4 — a stale/corrupt key SURVIVING restore must be caught by the continuation arm:
-    // corrupt one restored pool key hard and the post-boundary selections diverge from cold.
-    let mut corrupt = fresh_latent_layer(e, t, Some(RING_ROWS));
-    corrupt
-        .restore_plane(e, &snap, t)
-        .expect("restore before corruption");
-    {
-        // Every ready key, alternating huge magnitudes: whatever sign structure the query side
-        // has, no top-k over 4-of-16 pools survives this unchanged.
-        let n = snap.index_pools_ready * INDEX_HEAD_DIM;
-        let poison_host: Vec<f32> = (0..n)
-            .map(|i| if i % 2 == 0 { 1.0e6 } else { -1.0e6 })
-            .collect();
-        let poison = e.htod(&poison_host).expect("poison keys");
-        let keys = corrupt.index_pool_keys.as_mut().expect("restored keys");
-        e.copy_range_into(keys, 0, &poison, 0, n)
-            .expect("corrupt every restored ready key");
-    }
-    let corrupt_cont = latent_layer_walk(
-        &h,
-        &mut corrupt,
-        &x,
-        &q_resid,
-        &rows_data,
-        SNAP_AT,
-        t,
-        RING_CHUNK,
-        t,
-    );
-    let differ = differing_queries(&corrupt_cont, &cold_sel[SNAP_AT..]);
-    println!(
-        "RED 4 (corrupted restored key): {differ}/{} continuation selections diverge from cold",
-        t - SNAP_AT
-    );
-    assert!(
-        differ > 0,
-        "a corrupted restored pool key changed NO selection — the continuation arm of gate 16 \
-         cannot catch stale keys and is not a gate"
-    );
-}
-
-// ---------------------------------------------------------------------------------------------
-// 18. DEFERRED boundary capture (lane/glm5-prefix-latent2, 2026-09-01): the spec-session
-//     publication path captures only the generation-destroyed tail EAGERLY at the boundary
-//     (`snapshot_tail`) and slices the append-only planes from the LIVE layer at publish time
-//     (`snapshot_plane_at`) — after generation has grown the plane and LAPPED the tail ring.
-//     The bar: the deferred publication is BIT-IDENTICAL to the eager `snapshot_plane` taken
-//     at the boundary (the parent lane's gated reference). Red arms: every disagreement
-//     between the capture and the live layer refuses rather than publishing a guessed plane.
-// ---------------------------------------------------------------------------------------------
-
-#[test]
-#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
-fn gpu_deferred_boundary_capture_publishes_the_eager_snapshot_bytes() {
-    let _gpu = gpu_guard();
-    let h = Harness::new(true);
-    let e = &h.engine;
-    let t = CTX;
-    let x = noise(t * HIDDEN, 0x51A7, 0.6);
-    let q_resid = noise(t * Q_LORA, 0x9F13, 0.6);
-    let rows_data = noise(t * LATENT_WIDTH, 0xB007, 0.8);
-    assert_eq!(
-        SNAP_AT % KPOOL,
-        3,
-        "the boundary must sit mid-pool or the tail arm is vacuous"
-    );
-    assert!(
-        t - SNAP_AT > RING_ROWS,
-        "the post-boundary walk must LAP the tail ring or the deferred arm is vacuous"
-    );
-
-    // Walk to the boundary; take BOTH captures there: the eager reference and the tail half.
-    let mut donor = fresh_latent_layer(e, t, Some(RING_ROWS));
-    latent_layer_walk(
-        &h, &mut donor, &x, &q_resid, &rows_data, 0, SNAP_AT, RING_CHUNK, t,
-    );
-    let eager = donor.snapshot_plane(e).expect("eager reference snapshot");
-    let tail = donor.snapshot_tail(e).expect("eager tail half");
-    assert_eq!(tail.len, SNAP_AT);
-    assert_eq!(tail.width, LATENT_WIDTH);
-    assert_eq!(tail.index_pool, KPOOL);
-    assert_eq!(tail.index_pools_ready, SNAP_AT / KPOOL);
-    assert_eq!(
-        tail.index_tail.as_ref().map(CudaSlice::len),
-        Some((SNAP_AT % KPOOL) * INDEX_HEAD_DIM * 2),
-        "the eager half carries exactly the sub-pool live rows"
-    );
-
-    // Generation-analog: the live plane grows to full ctx — the ring overwrites the
-    // boundary's tail rows (asserted non-vacuous above) and the key plane extends.
-    latent_layer_walk(
-        &h, &mut donor, &x, &q_resid, &rows_data, SNAP_AT, t, RING_CHUNK, t,
-    );
-    assert!(donor.len == t && donor.index_pools_ready == t / KPOOL);
-
-    // Deferred publish: live slices + the captured tail must equal the eager reference,
-    // bit for bit, field for field.
-    let deferred = donor
-        .snapshot_plane_at(e, tail)
-        .expect("deferred boundary publish");
-    assert_eq!(deferred.len, eager.len);
-    assert_eq!(deferred.width, eager.width);
-    assert_eq!(deferred.index_width, eager.index_width);
-    assert_eq!(deferred.index_pool, eager.index_pool);
-    assert_eq!(deferred.index_pools_ready, eager.index_pools_ready);
-    let dt = |s: &CudaSlice<f32>| e.dtoh(s).expect("snapshot plane readback");
-    assert_eq!(
-        bits(&dt(&deferred.rows)),
-        bits(&dt(&eager.rows)),
-        "latent rows BITS: deferred live-slice == eager boundary copy"
-    );
-    assert_eq!(
-        bits(&dt(deferred.index_pool_keys.as_ref().expect("keys"))),
-        bits(&dt(eager.index_pool_keys.as_ref().expect("keys"))),
-        "pool key BITS: the boundary prefix of the grown key plane is final"
-    );
-    assert_eq!(
-        bits(&dt(deferred.index_tail.as_ref().expect("tail"))),
-        bits(&dt(eager.index_tail.as_ref().expect("tail"))),
-        "tail-ring BITS: the captured tail survives the ring lap"
-    );
-
-    // RED 18a: a live plane TRUNCATED below the boundary refuses (the "plane was truncated
-    // below the capture boundary" class) — modeled by a second layer walked short of the
-    // boundary receiving the boundary's tail.
-    let mut short = fresh_latent_layer(e, t, Some(RING_ROWS));
-    latent_layer_walk(
-        &h,
-        &mut short,
-        &x,
-        &q_resid,
-        &rows_data,
-        0,
-        SNAP_AT - KPOOL,
-        RING_CHUNK,
-        t,
-    );
-    let tail_for_short = {
-        let mut c = fresh_latent_layer(e, t, Some(RING_ROWS));
-        latent_layer_walk(
-            &h, &mut c, &x, &q_resid, &rows_data, 0, SNAP_AT, RING_CHUNK, t,
-        );
-        c.snapshot_tail(e).expect("tail at the boundary")
-    };
-    assert!(
-        short.snapshot_plane_at(e, tail_for_short).is_err(),
-        "RED: live len below the boundary must refuse the deferred publish"
-    );
-
-    // RED 18b: captured width disagreeing with the live layer refuses.
-    let mut bad_width = {
-        let mut c = fresh_latent_layer(e, t, Some(RING_ROWS));
-        latent_layer_walk(
-            &h, &mut c, &x, &q_resid, &rows_data, 0, SNAP_AT, RING_CHUNK, t,
-        );
-        c.snapshot_tail(e).expect("tail at the boundary")
-    };
-    bad_width.width += 1;
-    assert!(
-        donor.snapshot_plane_at(e, bad_width).is_err(),
-        "RED: captured width != live width must refuse"
-    );
-
-    // RED 18c: pools_ready inflated past the live key plane refuses (the finality
-    // invariant's publish-side guard).
-    let mut inflated = {
-        let mut c = fresh_latent_layer(e, t, Some(RING_ROWS));
-        latent_layer_walk(
-            &h, &mut c, &x, &q_resid, &rows_data, 0, SNAP_AT, RING_CHUNK, t,
-        );
-        c.snapshot_tail(e).expect("tail at the boundary")
-    };
-    inflated.index_pools_ready = t / KPOOL + 1;
-    inflated.len = (t / KPOOL + 1) * KPOOL;
-    assert!(
-        donor.snapshot_plane_at(e, inflated).is_err(),
-        "RED: pools_ready inflated past the live plane must refuse"
-    );
 }

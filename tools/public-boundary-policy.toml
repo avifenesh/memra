@@ -183,15 +183,11 @@ provider_secret_assignment = "(?i)\\b(CLOUDFLARE_(API|EMAIL)_TOKEN|R2_SECRET_ACC
 # supervision contract, cited from docs/SERVING.md and crates/memra-server/src/worker.rs, and
 # they are private surface only in the sense that a site copies and edits them.
 deploy_systemd = "deploy/systemd/**"
-# The business tier LEFT this repo (engine-billing-extraction-20260829; owner razor
-# 2026-08-29: "only engine is open, business is private"). ledger.rs / admin.rs /
-# capture.rs migrated to the deployment side behind the pub metering seam; these rules
-# stay as TRIPWIRES with zero allowlist exemptions — re-adding one of these files fails
-# the gate with no grandfather to hide behind. lane QoS (memra-lanes) and darklane.rs
-# were reclassified engine-open the same day: scheduling mechanisms, not money.
+# Multi-tenant / admission / billing engine code lives in darklanes.
 server_admin = "crates/memra-server/src/admin.rs"
 server_ledger = "crates/memra-server/src/ledger.rs"
-server_capture = "crates/memra-server/src/capture.rs"
+server_darklane = "crates/memra-server/src/darklane.rs"
+lanes_crate = "crates/memra-lanes/**"
 # Fleet / proxy / operator tooling lives in darklanes.
 fleet_meter = "tools/fleet-meter.sh"
 fleet_replay = "tools/fleet-replay.py"
@@ -295,7 +291,8 @@ live_fingerprint = 1
 # and billing engine code, which is the commercial core.
 server_admin = 4
 server_ledger = 4
-server_capture = 4
+server_darklane = 4
+lanes_crate = 4
 deploy_systemd = 3
 fleet_meter = 3
 fleet_replay = 3

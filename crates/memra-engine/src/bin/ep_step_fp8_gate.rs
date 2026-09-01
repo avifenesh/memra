@@ -196,7 +196,7 @@ fn reference_expert(
 const STEP_GROUPED_TOP_K: usize = 8;
 
 fn grouped_selected_routes(tokens: usize, experts: usize) -> Result<Vec<usize>, String> {
-    if tokens == 0 || experts < STEP_GROUPED_TOP_K || !experts.is_multiple_of(STEP_GROUPED_TOP_K) {
+    if tokens == 0 || experts < STEP_GROUPED_TOP_K || experts % STEP_GROUPED_TOP_K != 0 {
         return Err(format!(
             "grouped Step route fixture requires tokens > 0 and expert count divisible by \
              {STEP_GROUPED_TOP_K}, got tokens={tokens} experts={experts}"
@@ -210,7 +210,6 @@ fn grouped_selected_routes(tokens: usize, experts: usize) -> Result<Vec<usize>, 
         .collect())
 }
 
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn dynamic_grouped_selected_routes(
     tokens: usize,
     experts: usize,
@@ -1341,7 +1340,6 @@ fn run_attention_transition_pair(
 }
 
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn run_attention_to_expert_transition(
     runtime: &TpE4m3HostBounce,
     resident: &ResidentTransitionAttention,

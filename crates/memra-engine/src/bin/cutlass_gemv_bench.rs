@@ -31,13 +31,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         (16, 2560, 4096, "PREFILL expert gate+up tile m=16"),
         (16, 4096, 1280, "PREFILL expert down tile m=16"),
         (512, 2560, 4096, "PREFILL expert gate+up dense-equiv m=512"),
-        // TTFT lane (2026-08-27): the sub-second-cold sizing rows. A 4,092-token prime as ONE
-        // chunk per matrix class — if these sustain tensor-core-class TFLOP/s the NVFP4 grouped
-        // prefill clears the bar with room; if they sag toward the GEMV numbers the dequant-f16
-        // GEMM route is the build instead. Speed receipts only (W4A4 class, never a serving arm).
-        (4096, 2560, 4096, "PRIME-CHUNK expert gate+up m=4096"),
-        (4096, 4096, 1280, "PRIME-CHUNK expert down m=4096"),
-        (4096, 5152, 4096, "PRIME-CHUNK qkv+gate m=4096"),
     ];
     for &(m, n, k, label) in shapes {
         let us = time_shape(&eng, m, n, k)?;

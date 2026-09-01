@@ -1,8 +1,0 @@
-[meter] admit id=chatcmpl-5c2edd7fe99376658823a9d9dd4d9727 tenant=default lane=interactive model="zai/glm-5.3-flash"
-[admission] request cost: model="zai/glm-5.3-flash" ctx=15958 path=plain = 23936 B/token x ctx + 4693MB prefill-workspace + 0MB fixed = 5075MB
-[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="" prompt=15766 wave=1 sampled=0 penalized=0 cold=1
-[glm5-spec] draft confidence gate armed: PMIN=0.700 PMIN0=0 (native chain p-of-pick; DFlash2 selector-q tau-slot truncation)
-[glm5-acc] ctx=15766 burst=17/29 cum=17/29=0.586
-[glm5-acc] ctx=15798 burst=18/30 cum=35/59=0.593
-[glm5-acc] ctx=15831 burst=22/31 cum=57/90=0.633
-[glm5-acc] ctx=15866 burst=15/24 cum=72/114=0.632

@@ -571,28 +571,6 @@ unsafe extern "C" {
         eps: f32,
         stream: *mut c_void,
     ) -> i32;
-    /// Fused hc pre-chain: rowsq_scale + Sinkhorn (bit-preserving stationarity exit) +
-    /// collapse, one launch per (site, token). `niters` is nullable — per-token executed
-    /// Sinkhorn iteration counts, the gate's convergence receipt. Bit-identical to the
-    /// three-kernel chain (hc_fused_pre_gpu.rs); host seam MEMRA_HC_FUSED_PRE.
-    #[allow(clippy::too_many_arguments)]
-    pub fn memra_dsv4_hc_pre_fused(
-        x: *const f32,
-        mixes: *const f32,
-        scale: *const f32,
-        base: *const f32,
-        pre: *mut f32,
-        post: *mut f32,
-        comb: *mut f32,
-        y: *mut f32,
-        s: i32,
-        hc: i32,
-        d: i32,
-        iters: i32,
-        eps: f32,
-        niters: *mut i32,
-        stream: *mut c_void,
-    ) -> i32;
     #[allow(clippy::too_many_arguments)]
     pub fn memra_dsv4_hc_head_pre_m(
         mixes: *const f32,
