@@ -40,6 +40,15 @@ CK=${CK:-$HOME/data/q48fn-yarn1m}
 OUT=${OUT:-$HOME/realgate/downsel}
 SRC=${SRC:-$HOME/downsel-wt}
 IDS=${IDS:-$HOME/realgate/ladder-ids.txt}
+# Cell B's spec section in qwen4exp_real_gate is GATED on --goldens (`if let Some(dir) =
+# args.goldens` wraps the whole spec measurement block, and the A/B prompt defaults to the
+# goldens probe ids); without it the binary loads, exits 0, and writes NO rows — which is
+# exactly what the first live run of this script did, twice, on 2026-09-01 (two rc=0 arms,
+# zero ab-spec-k5-*.tsv). The dump is expand-goldens.py over gpu-eager/real-checkpoint/;
+# the prompt is a REAL shape per the greedy-loop law (mtp11 used thinkon for K=5).
+GOLDENS=${GOLDENS:-$HOME/realgate/dump}
+PROMPTS=${PROMPTS:-$HOME/realgate/shapes/thinkon-prompts.tsv}
+export GOLDENS PROMPTS
 LOCK=${LOCK:-/tmp/q48fn-measure.lock}
 CARD=${CARD:-0}
 CARD_TOTAL_MIB=${CARD_TOTAL_MIB:-97887}
@@ -148,20 +157,26 @@ cell_spec_ab(){
       echo "CAPACITY-GUARD: card never free+idle within 900s in-hold" >&2; exit 90
     fi
     for arm in "$a1" "$a2"; do
-      seams="$base"; [ "$arm" = auto ] && seams="$base,selgroup"
+      # --goldens/--prompts trip the binary'"'"'s reference-parity pin (real_gate golden_comparison:
+      # f32 KV + f32 idx caches, "golden_pin=true"), which is the exactness INSTRUMENT, not the
+      # serving shape. An explicit kvq,idxq seam entry wins over the pin (real_gate 1192-1193),
+      # so both arms measure on the shipped q8_0/q5_1 + idxq q8 caches the flip rule is about.
+      # (First live run 2026-09-01 measured 3 reps under the f32 pin before revuto caught it;
+      # those receipts are kept under spec-ab-f32pin/ as a same-config ratio, not the number.)
+      seams="$base,kvq,idxq"; [ "$arm" = auto ] && seams="$base,kvq,idxq,selgroup"
       lf="$out/spec-ab-rep$rep-$arm.log"
       { printf "# capacity_guard\twaited_s=%s\n" "$w"
         printf "# arm\t%s\n# seams_env\tMEMRA_Q4E_SEAMS=%s\n" "$arm" "$seams"
       } > "$lf"
       env MEMRA_Q4E_SEAMS="$seams" "$bin" "$ck" "$out" \
-        --label "spec-ab-rep$rep-$arm" --mtp --spec-k 5 --spec-ab 5x64 >> "$lf" 2>&1
+        --label "spec-ab-rep$rep-$arm" --mtp --spec-k 5 --spec-ab 5x64 --goldens "$GOLDENS" --prompts "$PROMPTS" >> "$lf" 2>&1
       printf "# rc\t%s\n" "$?" >> "$lf"
     done
   ' _ "$BIN" "$CK" "$OUT" "$rep" "$BASE_SEAMS" "${order[0]}" "${order[1]}"
   log "cell $label rc=$?"
   for arm in off auto; do
     receipt_head "$OUT/spec-ab-rep$rep-$arm.log" "$label-$arm" \
-      "$BASE_SEAMS$([ $arm = auto ] && echo ,selgroup)" "$arm"
+      "$BASE_SEAMS,kvq,idxq$([ $arm = auto ] && echo ,selgroup)" "$arm"
     printf '# bin_sha256\t%s\n' "$(bin_sha "$BIN")" >> "$OUT/spec-ab-rep$rep-$arm.log"
   done
 }
