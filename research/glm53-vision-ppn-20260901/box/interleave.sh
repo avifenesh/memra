@@ -36,7 +36,12 @@ set -euo pipefail
 
 REPS=${1:?reps (3 is the banked shape)}
 OUT=${2:?output dir}
-: "${GLM53_KEY:?}" "${BOOT_CMD_VISION:?}" "${BOOT_CMD_TEXTONLY:?}" "${STOP_CMD:?}" "${READYZ:?}" "${SERVER_BIN:?}"
+# BASE is REQUIRED and passed through explicitly. It used to be omitted, letting the probe fall
+# back to its own default of "https://$GLM53_HOST" — which on an on-box run resolves to
+# https://127.0.0.1:443 and every request dies "Connection refused" AFTER a full model boot. The
+# probe's default is right for the edge path and wrong for a loopback run; a driver that knows
+# which one it is doing should say so rather than inherit a guess.
+: "${GLM53_KEY:?}" "${BOOT_CMD_VISION:?}" "${BOOT_CMD_TEXTONLY:?}" "${STOP_CMD:?}" "${READYZ:?}" "${SERVER_BIN:?}" "${BASE:?BASE must name the endpoint, e.g. http://127.0.0.1:18893}"
 HERE=$(cd "$(dirname "$0")" && pwd)
 PROBE=$HERE/probe-vision-ppn.py
 ROWS=$OUT/decode-rows.jsonl
@@ -189,7 +194,7 @@ for rep in $(seq 1 "$REPS"); do
     #   vision-ARMED server: the decode row is what this rep is for. The row's own `arm` field
     #   is forced below so it is never mislabelled.
     VISION_FIXTURES=${VISION_FIXTURES:-} BOOT_NONCE=$nonce \
-      python3 "$PROBE" --arm "$probe_arm" --nonce "$nonce" --reps 1 \
+      python3 "$PROBE" --base "$BASE" --arm "$probe_arm" --nonce "$nonce" --reps 1 \
         --rows-jsonl "$ROWS.raw" --out "$OUT/probe-$nonce" || {
           echo "REFUSE: probe failed on arm=$arm rep=$rep (see $OUT/probe-$nonce)" >&2; exit 1; }
     python3 - "$ROWS.raw" "$ROWS" "$arm" <<'PY'

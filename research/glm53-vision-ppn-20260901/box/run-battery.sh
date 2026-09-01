@@ -28,6 +28,9 @@ REPS=${2:-3}
 HERE=$(cd "$(dirname "$0")" && pwd)
 : "${GLM53_KEY:?}" "${BOOT_CMD_VISION:?}" "${BOOT_CMD_TEXTONLY:?}" "${BOOT_CMD_CONTROL:?}"
 : "${STOP_CMD:?}" "${READYZ:?}" "${SERVER_BIN:?}" "${VISION_FIXTURES:?}"
+# The endpoint is named, never inherited: the probe's default is the EDGE hostname over https, so
+# an on-box loopback run that omits this boots the whole model and then fails every request.
+: "${BASE:?BASE must name the endpoint, e.g. http://127.0.0.1:18893}"
 mkdir -p "$OUT"
 exec > >(tee -a "$OUT/battery.log") 2>&1
 echo "=== glm5 vision-on-ppN battery — $(date -u +%FT%TZ)"
@@ -78,7 +81,7 @@ boot_and_probe() {  # arm-label boot-cmd probe-arm
       exit 1; }
   fi
   BOOT_NONCE=$nonce VISION_FIXTURES=$VISION_FIXTURES \
-    python3 "$HERE/probe-vision-ppn.py" --arm "$arm" --nonce "$nonce" --reps 1 \
+    python3 "$HERE/probe-vision-ppn.py" --base "$BASE" --arm "$arm" --nonce "$nonce" --reps 1 \
       --out "$OUT/probe-$label" && local rc=0 || local rc=$?
   return ${rc:-0}
 }
@@ -104,7 +107,7 @@ echo
 echo "--- arms C+D: boot-interleaved decode rows and the text-only byte-identity twin"
 if BOOT_CMD_VISION="$BOOT_CMD_VISION" BOOT_CMD_TEXTONLY="$BOOT_CMD_TEXTONLY" \
    STOP_CMD="$STOP_CMD" READYZ="$READYZ" SERVER_BIN="$SERVER_BIN" \
-   VISION_FIXTURES="$VISION_FIXTURES" GLM53_KEY="$GLM53_KEY" \
+   VISION_FIXTURES="$VISION_FIXTURES" GLM53_KEY="$GLM53_KEY" BASE="$BASE" \
    "$HERE/interleave.sh" "$REPS" "$OUT/armD"; then
   note "ARM D (no decode tax, boot-interleaved): see armD/ARM-D-VERDICT.txt"
   grep -E "^VERDICT" -A3 "$OUT/armD/ARM-D-VERDICT.txt" | sed 's/^/  /'
