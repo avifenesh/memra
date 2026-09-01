@@ -1413,10 +1413,12 @@ fn gpu_restored_session_bytes_match_plain_decode_and_cold_acceptance() {
 
 // ---------------------------------------------------------------------------------------------
 // Gate 12 — C1b ATTRIBUTION (memra#34): the restored-then-continue program is bit-identical to
-// the SPLIT cold prime, so any delta the serving battery sees against the MONOLITHIC cold prime
-// is the documented chunked-prime numeric class (`prime_chunk_ranges`'s "NOT BIT-STABLE ACROSS
-// CHUNK SIZES" note: cuBLASLt reselects by shape, worst 3.815e-6 on the mixes GEMM), never a
-// state-restoration defect. Born from the 2026-09-01 slot-B C1b red: a strict-prefix spec
+// the SPLIT cold prime at this scale, so a serving-battery delta against the MONOLITHIC cold
+// prime ATTRIBUTES to the documented chunked-prime numeric class (`hyper_prime_ranges`' "NOT
+// BIT-STABLE ACROSS CHUNK SIZES" note: cuBLASLt reselects by shape, worst 3.815e-6 on the mixes
+// GEMM) ONCE the battery's split-twin oracle confirms at prod scale — the prod half lives in
+// the battery (a `MEMRA_PRIME_CHUNK=<boundary>` cold boot matching the restored bytes), not
+// here. SCOPE: a scale-dependent restore defect would not reproduce at PROMPT=24/BLOCK=8. Born from the 2026-09-01 slot-B C1b red: a strict-prefix spec
 // restore (269 of 448) flipped '\n' vs '\n\n' at verify-round token 1 while full-cover restores
 // stayed byte-exact — the anchor token itself matched, so the boundary state was right and the
 // suspect is the differently-shaped prime over the suffix rows.
@@ -1475,6 +1477,13 @@ fn gpu_restored_continuation_is_bit_identical_to_the_split_prime_cold_twin() {
 
     // ATTRIBUTION REPORT — A vs B logits at the anchor position: the chunking class, measured.
     assert_eq!(logits_mono.len(), logits_split.len(), "logit widths match");
+    assert!(
+        logits_mono
+            .iter()
+            .chain(logits_split.iter())
+            .all(|v| v.is_finite()),
+        "non-finite anchor logits — the band below cannot see NaN (f32::max drops it)"
+    );
     let mut diff_bits = 0usize;
     let mut max_delta = 0f32;
     for (a, b) in logits_mono.iter().zip(logits_split.iter()) {
