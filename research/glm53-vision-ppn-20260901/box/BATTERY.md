@@ -30,7 +30,8 @@ conditions, both folded in below and executed on the rig before the window:
 | shape | the ship recipe, unchanged: `MEMRA_PP_STAGES=3 MEMRA_PP_SPLITS=15,30 MEMRA_PP_DEVICES=0,1,2 MEMRA_MOE_RESIDENT_GB=98`, spec ON with the DFlash2 drafter, `MEMRA_DSA_INDEX_RING` unset (it is a ROW COUNT, default 5120 — the launch's `=1` built a one-row ring and 500'd) |
 | vision | `MEMRA_GLM5_VISION` UNSET (auto-detect, default on) for the fix arm — the launcher's `=0` pin is what this lane exists to remove |
 | slot | a free slot, blue/green through `serve-deploy`; the dark stack keeps serving on its slot |
-| fixtures | the banked card3 requests, **sha256-pinned in the probe** — `10-…greedy` `74c45948…`, `11-…vendor-default` `5732d261…`, `20-…placeholder` `14139fc0…`, `21-…video` `f534a178…`, `23-…fakedpad` `225437f0…`. A mismatch REFUSES before the first request; a deliberate change updates the pin in the same commit and says why |
+| fixtures | **CUSTODY GAP, flagged 2026-09-01:** the five request JSONs are on darklanes branch `lane/glm5-serving-launch-20260901` and NOT on darklanes main — the fresh-repo port carried only `receipts.json` and the replay script to main. All five pins were re-verified against the NEW remote and still match byte-for-byte, so the instrument survived; but if that branch is deleted before the files reach main, this battery loses its instrument. They should land on main (or be re-homed) before the launch lane closes |
+| fixtures (pins) | the banked card3 requests, **sha256-pinned in the probe** — `10-…greedy` `74c45948…`, `11-…vendor-default` `5732d261…`, `20-…placeholder` `14139fc0…`, `21-…video` `f534a178…`, `23-…fakedpad` `225437f0…`. A mismatch REFUSES before the first request; a deliberate change updates the pin in the same commit and says why |
 
 ## Arm A — the fix arm (default door)
 
@@ -114,6 +115,13 @@ primitive is missing.)*
 serving shape at all; the driver stops and no row from it may be cited. A green run that measured
 the wrong shape is worse than a red one.
 
+**Which program the battery measures.** The hardened one, deliberately: the merged tree's
+`EmbedOverlay::window` deep-copied the whole rows buffer on every prefill tick and every prime
+chunk (memra-next#23), so a multi-chunk image prompt paid copies the cost story did not mention.
+Fixed before the window at the coordinator's preference, so arm A's prefill numbers describe the
+program that would actually ship. It does not move arm D's bar — that path is prefill, and decode
+never touches an overlay — but a receipt should say which program it measured.
+
 **Rows and the bar.** Vendor-default sampled (no sampling params), `reasoning_effort` pinned,
 tok/s from each response's own `usage.elapsed_s` so the number is the server's. The verdict passes
 when the between-arm median gap sits inside the arms' own within-arm spread, and it is written as
@@ -126,6 +134,20 @@ the primary card changes that card's free memory, which can move the `[moe] resi
 decision` line. Compare that line across the two arms' boot logs before reading any gap as a tax.
 The vision request's own decode row is reported as information only — a different prompt shape is
 not comparable to the text row.
+
+## One command, because the slot is on the critical path
+
+`run-battery.sh <out-dir> [reps]` drives arms A -> B -> C+D in order and writes one `VERDICT.txt`.
+Vision is a ship gate alongside the cache (owner ruling 2026-09-01), so everything decidable before
+the window is decided before it: the probe's own 17 refusal paths are re-executed and the fixture
+shas printed BEFORE the first request, and every missing input (boot commands, readyz, binary path,
+fixtures) is a named refusal rather than a guess. It claims no slot, deploys nothing, and never
+touches the live dark stack — it runs against a slot already handed over.
+
+Two clauses in it are worth knowing before reading any output: a boot whose build identity is
+`degraded` REFUSES (a version-only id cannot back a published claim), and a fix boot reporting
+`cross_context=false` is a **VOID** — the window would not be testing the ppN serving shape, and no
+row from it may be cited.
 
 ## Banking
 

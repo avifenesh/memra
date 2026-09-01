@@ -1,0 +1,14 @@
+arm D — no decode tax, boot-level interleaved (vendor-default sampled, tok/s from the
+server's own usage.elapsed_s). Rows in decode-rows.jsonl carry arm + rep + boot nonce.
+
+system_fingerprint across all rows: {'memra-0.123.0-efb0b421211c'}
+fix        n=3 rows=[49.6, 49.09, 51.16] median=49.60 min=49.09 max=51.16 spec_engaged=True
+text-only  n=3 rows=[53.25, 51.49, 50.05] median=51.49 min=50.05 max=53.25 spec_engaged=True
+
+vision-armed median 49.60 vs text-only median 51.49 -> -3.67%
+within-arm spread: vision 4.17%, text-only 6.21%
+
+VERDICT: NO TAX — the between-arm gap sits inside the arms' own spread. Read this as
+'no measurable tax at this rep count', never as a performance claim: there is also no
+MECHANISM for one (publication is a single host round trip per SESSION, in prefill; a
+text request never builds an overlay and decode never touches one).

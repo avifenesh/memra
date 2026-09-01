@@ -5750,9 +5750,26 @@ impl Engine {
         Ok(())
     }
 
-    /// Real device-to-device COPY of `src` into a freshly allocated buffer (NOT an Arc clone).
-    /// Used for cache snapshots (MTP-PLAN §D.4): `CudaSlice::clone()` only bumps a refcount and
-    /// would alias the live buffer; this allocs new device memory and memcpy_dtod's the contents.
+    /// Real device-to-device COPY of `src` into a freshly allocated buffer. Used for cache
+    /// snapshots (MTP-PLAN §D.4), where a snapshot must not alias the live buffer.
+    ///
+    /// CORRECTION (memra-next#23, verified against the LOCKED cudarc 0.19.8): this comment used to say
+    /// "`CudaSlice::clone()` only bumps a refcount and would alias the live buffer". That is
+    /// FALSE and it propagated — `impl Clone for CudaSlice` is `try_clone().unwrap()`, and
+    /// `try_clone` is `self.stream.clone_dtod(self)`, so a plain `.clone()` already allocates and
+    /// copies. Code that wants real aliasing needs an `Arc<CudaSlice<T>>` (see
+    /// `vision::EmbedOverlay::rows`).
+    ///
+    /// THE TWO ARE NOT INTERCHANGEABLE, AND THE DIFFERENCE IS NOT ONLY FALLIBILITY — a second
+    /// correction, from the peer review of that first one, because getting this backwards is how
+    /// a residency bug gets written. `CudaSlice::clone()` allocates on the SLICE's own stream, so
+    /// the copy lands in the SOURCE's context. This method allocates on `self.gpu.stream()`,
+    /// which is the thread-local pp stage stream whenever a stage scope is active — so under a
+    /// stage scope THIS method is the one that lands in a foreign context. Choose by what you
+    /// need: `try_clone()` for a fallible copy that stays with the source, this method for a copy
+    /// deliberately placed on the calling engine's current stream (and check the landing context
+    /// if residency matters). Minor: cudarc's path uses an uninitialized alloc, this one
+    /// `alloc_zeros`, i.e. an extra full memset.
     pub fn clone_dtod(
         &self,
         src: &CudaSlice<f32>,

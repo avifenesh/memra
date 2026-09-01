@@ -1,0 +1,248 @@
+{
+ "arm": "fix",
+ "base": "http://127.0.0.1:18893",
+ "model": "zai/glm-5.3-flash",
+ "boot_nonce": "fix-r1-163310-617345",
+ "fixtures": {
+  "path": "/data/glm53/vision-battery/fixtures",
+  "explicit": true,
+  "files": {
+   "10-cant-hallucinate-greedy": {
+    "sha256": "74c45948fa2634b65931425ee71770ce8e56894967e287d1a25935eaa5d4e144",
+    "bytes": 7072
+   },
+   "11-cant-hallucinate-sampled-vendor-default": {
+    "sha256": "5732d261e9c3024c78cd6ef970ff6e8295ac99873951ac82566bd772fb4cee44",
+    "bytes": 7110
+   },
+   "20-neg-literal-placeholder": {
+    "sha256": "14139fc0e9ca4b01c540efbdc40091206f9127585707d99a1ebe73c46571be36",
+    "bytes": 905
+   },
+   "21-neg-video-url": {
+    "sha256": "f534a1781e885e61da5259a4eba929a59834baa4d77b927c874b7d306c0a46bc",
+    "bytes": 6228
+   },
+   "23-neg-fakedpad-with-image": {
+    "sha256": "225437f08b542b2d7d78eed32f9516120e6fd60b251780ef14056475c7d5378f",
+    "bytes": 6324
+   }
+  },
+  "codes": [
+   "ZK5465",
+   "QV4655",
+   "XR0818"
+  ]
+ },
+ "text_greedy_sha256": "80e1184c61f977be9d204aa09e5d3955424fe3ce271c4ebcbaa683b1dc35f8b2",
+ "checks": {
+  "10-cant-hallucinate-greedy": true,
+  "11-cant-hallucinate-sampled-vendor-default": true,
+  "20-neg-literal-placeholder": true,
+  "21-neg-video-url": true,
+  "23-neg-fakedpad-with-image": true,
+  "40-text-greedy-200": true,
+  "41-decode-rows-served": true,
+  "41-spec-engaged": true
+ },
+ "receipts": {
+  "10-cant-hallucinate-greedy": {
+   "status": 200,
+   "response": {
+    "object": "chat.completion",
+    "model": "zai/glm-5.3-flash",
+    "choices": [
+     {
+      "index": 0,
+      "message": {
+       "role": "assistant",
+       "content": "ZK5465\n\nQV4655\n\nXR0818",
+       "reasoning": "The user wants me to transcribe the text in the image exactly. Looking at the image, I can see three lines of text:\n\n1. ZK5465\n2. QV4655\n3. XR0818\n\nLet me transcribe these exactly as they appear.",
+       "reasoning_details": [
+        {
+         "type": "reasoning.text",
+         "text": "The user wants me to transcribe the text in the image exactly. Looking at the image, I can see three lines of text:\n\n1. ZK5465\n2. QV4655\n3. XR0818\n\nLet me transcribe these exactly as they appear."
+        }
+       ]
+      },
+      "finish_reason": "stop"
+     }
+    ],
+    "usage": {
+     "prompt_tokens": 279,
+     "completion_tokens": 78,
+     "total_tokens": 357,
+     "prompt_tokens_details": {
+      "cached_tokens": 0
+     },
+     "elapsed_s": 4.022704864
+    },
+    "id": "chatcmpl-f66cbda15f39f98c04ee419ccdafe804",
+    "created": 1788280430,
+    "system_fingerprint": "memra-0.123.0-efb0b421211c"
+   }
+  },
+  "11-cant-hallucinate-sampled-vendor-default": {
+   "status": 200,
+   "response": {
+    "object": "chat.completion",
+    "model": "zai/glm-5.3-flash",
+    "choices": [
+     {
+      "index": 0,
+      "message": {
+       "role": "assistant",
+       "content": "The text in the image reads:\n\n**ZK5465**\n\n**QV4655**\n\n**XR0818**\n\nThese appear to be three alphanumeric codes arranged vertically on the page.",
+       "reasoning": "The user wants me to transcribe the text in the image exactly. Looking at the image, I can see three lines of text:\n\n1. ZK5465\n2. QV4655\n3. XR0818\n\nThese appear to be alphanumeric codes, possibly license plate numbers or serial numbers. Let me transcribe them exactly as shown.",
+       "reasoning_details": [
+        {
+         "type": "reasoning.text",
+         "text": "The user wants me to transcribe the text in the image exactly. Looking at the image, I can see three lines of text:\n\n1. ZK5465\n2. QV4655\n3. XR0818\n\nThese appear to be alphanumeric codes, possibly license plate numbers or serial numbers. Let me transcribe them exactly as shown."
+        }
+       ]
+      },
+      "finish_reason": "stop"
+     }
+    ],
+    "usage": {
+     "prompt_tokens": 279,
+     "completion_tokens": 116,
+     "total_tokens": 395,
+     "prompt_tokens_details": {
+      "cached_tokens": 0
+     },
+     "elapsed_s": 5.194703927
+    },
+    "id": "chatcmpl-28082aaa2b717ac786ec7867ec46c948",
+    "created": 1788280434,
+    "system_fingerprint": "memra-0.123.0-efb0b421211c"
+   }
+  },
+  "20-neg-literal-placeholder": {
+   "status": 200,
+   "response": {
+    "object": "chat.completion",
+    "model": "zai/glm-5.3-flash",
+    "choices": [
+     {
+      "index": 0,
+      "message": {
+       "role": "assistant",
+       "content": "",
+       "reasoning": "The user is asking about \"",
+       "reasoning_details": [
+        {
+         "type": "reasoning.text",
+         "text": "The user is asking about \""
+        }
+       ]
+      },
+      "finish_reason": "stop"
+     }
+    ],
+    "usage": {
+     "prompt_tokens": 19,
+     "completion_tokens": 7,
+     "total_tokens": 26,
+     "prompt_tokens_details": {
+      "cached_tokens": 0
+     },
+     "elapsed_s": 0.278504399,
+     "spec": {
+      "rounds": 3,
+      "drafted": 6,
+      "accepted": 3,
+      "acceptance_rate": 0.5
+     }
+    },
+    "id": "chatcmpl-1953b2723a5e57cef2dcda7e1066bd84",
+    "created": 1788280439,
+    "system_fingerprint": "memra-0.123.0-efb0b421211c"
+   }
+  },
+  "21-neg-video-url": {
+   "status": 400,
+   "response": {
+    "error": {
+     "message": "user message: glm5 video input is not served (tensor census only; image input is the supported surface)",
+     "type": "invalid_request_error",
+     "param": null,
+     "code": null
+    }
+   }
+  },
+  "23-neg-fakedpad-with-image": {
+   "status": 400,
+   "response": {
+    "error": {
+     "message": "prompt carries 2 glm5 image run(s) but the request has 1 unit(s) \u2014 literal <|image|> tokens in message text are not allowed",
+     "type": "invalid_request_error",
+     "param": "messages",
+     "code": null
+    }
+   }
+  },
+  "40-text-greedy": {
+   "status": 200,
+   "response": {
+    "object": "chat.completion",
+    "model": "zai/glm-5.3-flash",
+    "choices": [
+     {
+      "index": 0,
+      "message": {
+       "role": "assistant",
+       "content": "## Why Publication Across a Stage Boundary Is Necessary\n\nIn a pipeline-parallel server, work is split into stages that typically execute on different threads, and often on different CPU cores. When stage A finishes filling a buffer and stage B begins consuming it, the handoff is not just a logical transfer of ownership \u2014 it is a *memory visibility* event. Stage A must explicitly **publish** the buffer (via a memory barrier, atomic store with release semantics, or a lock) before stage B reads it, because without that synchronization, stage B has no guarantee it will see the data stage A wrote.\n\n### The hardware reason\n\nModern CPUs and compilers reorder and cache memory operations. A store issued by stage A's core may sit in that core's private store buffer or cache, invisible to stage B's core, even though stage A's code appears to have completed the write. Similarly, stage B's core may have prefetched the buffer into cache earlier and serve stale values from it. Only a properly ordered release/acquire pair (or equivalent) forces the hardware to make stage A's writes globally visible before stage B observes the \"ready\" flag.\n\n### A concrete example\n\nConsider a two-stage image pipeline:\n\n- **Stage A (thread 1):** decodes a JPEG into a shared buffer `buf[4096]`, then sets `ready = true`.\n- **Stage B (thread 2):** spins until `ready == true`, then reads `buf` to apply a filter.\n\nNaive code looks like this:\n\n```c\n// Stage A\nfill(buf);\nready = true;          // plain store\n\n// Stage B\nwhile (!ready) {}      // plain load\nprocess(buf);\n```\n\nThis is broken. The compiler may reorder `ready = true` before the `fill(buf)` loop, or the CPU may commit the flag store while `buf`'s writes are still buffered. Stage B can then observe `ready == true` while reading *partially filled or entirely stale* buffer contents \u2014 producing corrupted output pixels that are maddeningly intermittent, since the race depends on timing, cache state, and compiler optimization level.\n\n",
+       "reasoning": "Explain memory visibility/consistency: pipeline stages may run on different threads/cores/processors; writes must be made visible (memory barrier, flush, publish) before downstream reads. Concrete example: two-stage pipeline, stage A computes into buffer, stage B reads. Without publication, reordering/caching means B sees stale or partial data. ~400 words.",
+       "reasoning_details": [
+        {
+         "type": "reasoning.text",
+         "text": "Explain memory visibility/consistency: pipeline stages may run on different threads/cores/processors; writes must be made visible (memory barrier, flush, publish) before downstream reads. Concrete example: two-stage pipeline, stage A computes into buffer, stage B reads. Without publication, reordering/caching means B sees stale or partial data. ~400 words."
+        }
+       ]
+      },
+      "finish_reason": "length"
+     }
+    ],
+    "usage": {
+     "prompt_tokens": 47,
+     "completion_tokens": 512,
+     "total_tokens": 559,
+     "prompt_tokens_details": {
+      "cached_tokens": 0
+     },
+     "elapsed_s": 9.546037601,
+     "spec": {
+      "rounds": 220,
+      "drafted": 472,
+      "accepted": 293,
+      "acceptance_rate": 0.6207627118644068
+     }
+    },
+    "id": "chatcmpl-4c12967fcfc367264131e12488886b0b",
+    "created": 1788280440,
+    "system_fingerprint": "memra-0.123.0-efb0b421211c"
+   }
+  },
+  "41-decode-rows": [
+   {
+    "arm": "fix",
+    "rep": 0,
+    "boot_nonce": "fix-r1-163310-617345",
+    "utc": "2026-09-01T16:34:20Z",
+    "status": 200,
+    "completion_tokens": 512,
+    "elapsed_s": 10.322640271,
+    "tok_s": 49.6,
+    "spec": {
+     "rounds": 246,
+     "drafted": 475,
+     "accepted": 266,
+     "acceptance_rate": 0.56
+    },
+    "finish_reason": "length",
+    "fingerprint": "memra-0.123.0-efb0b421211c"
+   }
+  ]
+ }
+}

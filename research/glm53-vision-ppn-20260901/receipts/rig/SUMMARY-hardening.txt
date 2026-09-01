@@ -1,0 +1,14 @@
+glm5-hyper-ppn-gate matrix, REVIEW-FIX tree dca571d9b 2026-09-01T15:28:13Z
+adds the source-side residency check in new_published (peer-review bug) + comment
+corrections; re-measured because a green from the pre-fix tree does not carry.
+binary sha256 68da5d93ebf72e5173a2aaf1394ed5df
+
+n2 (stages=2 P=6 N=8 default): exit=0 pass_lines=8 publications=1
+n3 (stages=3 P=6 N=8 default): exit=0 pass_lines=8 publications=1
+n4 (stages=4 P=6 N=8 default): exit=0 pass_lines=8 publications=1
+n2-streams0 (stages=2 P=6 N=8 MEMRA_PP_STREAMS=0): exit=0 pass_lines=8 publications=1
+n2-long (stages=2 P=16 N=24 default): exit=0 pass_lines=8 publications=1
+n3-chunked (stages=3 P=192 N=8 MEMRA_PRIME_CHUNK=64): exit=0 pass_lines=8 publications=1
+RED span-shift: exit=1 fails=5 published_arms_red=2
+ambient-door immunity (env=0): exit=0 publications=1
+unit tests (incl. the new source-side arm): test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 330 filtered out; finished in 0.31s

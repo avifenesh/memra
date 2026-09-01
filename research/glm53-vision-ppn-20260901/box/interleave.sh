@@ -36,22 +36,43 @@ set -euo pipefail
 
 REPS=${1:?reps (3 is the banked shape)}
 OUT=${2:?output dir}
-: "${GLM53_KEY:?}" "${BOOT_CMD_VISION:?}" "${BOOT_CMD_TEXTONLY:?}" "${STOP_CMD:?}" "${READYZ:?}" "${SERVER_BIN:?}"
+# BASE is REQUIRED and passed through explicitly. It used to be omitted, letting the probe fall
+# back to its own default of "https://$GLM53_HOST" — which on an on-box run resolves to
+# https://127.0.0.1:443 and every request dies "Connection refused" AFTER a full model boot. The
+# probe's default is right for the edge path and wrong for a loopback run; a driver that knows
+# which one it is doing should say so rather than inherit a guess.
+: "${GLM53_KEY:?}" "${BOOT_CMD_VISION:?}" "${BOOT_CMD_TEXTONLY:?}" "${STOP_CMD:?}" "${READYZ:?}" "${SERVER_BIN:?}" "${BASE:?BASE must name the endpoint, e.g. http://127.0.0.1:18893}"
 HERE=$(cd "$(dirname "$0")" && pwd)
 PROBE=$HERE/probe-vision-ppn.py
 ROWS=$OUT/decode-rows.jsonl
 mkdir -p "$OUT"
 : > "$ROWS"
 
+# Count live servers by /proc/<pid>/exe, NOT by cmdline. Two reasons, both from the slot handoff:
+# `pgrep -f <binary path>` matches the FLOCK WRAPPER before the server itself, and it also matches
+# any shell whose command line contains the path — including the ssh invocation running this
+# script, which would make the wait below never finish and refuse a healthy window.
+servers_live() {
+  local n=0 p e
+  for p in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
+    e=$(readlink "/proc/$p/exe" 2>/dev/null) || continue
+    case "$e" in *memra-server*) n=$((n + 1)) ;; esac
+  done
+  echo "$n"
+}
+
 pgrep_clear() {
   local waited=0
   $STOP_CMD >>"$OUT/stop.log" 2>&1 || true
-  while pgrep -f "$SERVER_BIN" >/dev/null 2>&1; do
+  while [ "$(servers_live)" -gt 0 ]; do
     sleep 2; waited=$((waited+2))
     if [ $waited -ge 120 ]; then
-      echo "REFUSE: a server on $SERVER_BIN survived 120s of STOP_CMD — an arm cannot be" \
-           "attributed while the previous boot is alive" >&2
-      pgrep -af "$SERVER_BIN" >&2 || true
+      echo "REFUSE: $(servers_live) memra-server process(es) survived 120s of STOP_CMD — an arm" \
+           "cannot be attributed while a previous boot is alive" >&2
+      for p in $(ls /proc | grep -E '^[0-9]+$'); do
+        e=$(readlink "/proc/$p/exe" 2>/dev/null) || continue
+        case "$e" in *memra-server*) echo "  pid=$p exe=$e" >&2 ;; esac
+      done
       exit 1
     fi
   done
@@ -75,7 +96,11 @@ boot() {
       tail -40 "$log" >&2; exit 1
     fi
   done
-  local pid; pid=$(pgrep -f "$SERVER_BIN" | head -1)
+  local pid=""; local q e
+  for q in $(ls /proc | grep -E '^[0-9]+$'); do
+    e=$(readlink "/proc/$q/exe" 2>/dev/null) || continue
+    case "$e" in *memra-server*) pid=$q; break ;; esac
+  done
   [ -n "$pid" ] || { echo "REFUSE: readyz answered but no $SERVER_BIN process exists — the" \
                           "listener is not the server this battery thinks it is" >&2; exit 1; }
   # Started AFTER the boot command: a stale process that happens to answer readyz is the exact
@@ -169,7 +194,7 @@ for rep in $(seq 1 "$REPS"); do
     #   vision-ARMED server: the decode row is what this rep is for. The row's own `arm` field
     #   is forced below so it is never mislabelled.
     VISION_FIXTURES=${VISION_FIXTURES:-} BOOT_NONCE=$nonce \
-      python3 "$PROBE" --arm "$probe_arm" --nonce "$nonce" --reps 1 \
+      python3 "$PROBE" --base "$BASE" --arm "$probe_arm" --nonce "$nonce" --reps 1 \
         --rows-jsonl "$ROWS.raw" --out "$OUT/probe-$nonce" || {
           echo "REFUSE: probe failed on arm=$arm rep=$rep (see $OUT/probe-$nonce)" >&2; exit 1; }
     python3 - "$ROWS.raw" "$ROWS" "$arm" <<'PY'

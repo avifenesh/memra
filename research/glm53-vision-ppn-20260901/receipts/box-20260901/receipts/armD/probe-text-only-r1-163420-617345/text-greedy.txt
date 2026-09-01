@@ -1,0 +1,29 @@
+## Why Publication Across a Stage Boundary Is Necessary
+
+In a pipeline-parallel server, work is split into stages that typically execute on different threads, and often on different CPU cores. When stage A finishes filling a buffer and stage B begins consuming it, the handoff is not just a logical transfer of ownership — it is a *memory visibility* event. Stage A must explicitly **publish** the buffer (via a memory barrier, atomic store with release semantics, or a lock) before stage B reads it, because without that synchronization, stage B has no guarantee it will see the data stage A wrote.
+
+### The hardware reason
+
+Modern CPUs and compilers reorder and cache memory operations. A store issued by stage A's core may sit in that core's private store buffer or cache, invisible to stage B's core, even though stage A's code appears to have completed the write. Similarly, stage B's core may have prefetched the buffer into cache earlier and serve stale values from it. Only a properly ordered release/acquire pair (or equivalent) forces the hardware to make stage A's writes globally visible before stage B observes the "ready" flag.
+
+### A concrete example
+
+Consider a two-stage image pipeline:
+
+- **Stage A (thread 1):** decodes a JPEG into a shared buffer `buf[4096]`, then sets `ready = true`.
+- **Stage B (thread 2):** spins until `ready == true`, then reads `buf` to apply a filter.
+
+Naive code looks like this:
+
+```c
+// Stage A
+fill(buf);
+ready = true;          // plain store
+
+// Stage B
+while (!ready) {}      // plain load
+process(buf);
+```
+
+This is broken. The compiler may reorder `ready = true` before the `fill(buf)` loop, or the CPU may commit the flag store while `buf`'s writes are still buffered. Stage B can then observe `ready == true` while reading *partially filled or entirely stale* buffer contents — producing corrupted output pixels that are maddeningly intermittent, since the race depends on timing, cache state, and compiler optimization level.
+
