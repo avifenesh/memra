@@ -99,7 +99,7 @@ pub struct EmbedOverlay {
     /// `Arc` SO A WINDOW REALLY ALIASES (lane/glm53-vision-ppn follow-up, memra-next#23).
     /// This field was a bare `CudaSlice<f32>` and `window()` cloned it, on the belief — stated
     /// in two comments here and one on `Engine::clone_dtod` — that `CudaSlice::clone()` bumps a
-    /// refcount. It does not: cudarc 0.19.9 `impl Clone for CudaSlice` is
+    /// refcount. It does not: in the LOCKED cudarc 0.19.8 (Cargo.lock), `impl Clone for CudaSlice` is
     /// `try_clone().unwrap()` -> `stream.clone_dtod(self)`, i.e. a full device allocation plus
     /// D2D copy of every row, and an `unwrap` that PANICS in the GPU worker thread. Stated
     /// precisely, because the first version of this comment overstated it: the panic is CAUGHT

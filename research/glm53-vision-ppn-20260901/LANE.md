@@ -282,15 +282,22 @@ PR #104 merged as `77a4d1249` before the peer review returned, so these are fix-
 review CONFIRMED the core fix (context equality is the right validity condition, verified against
 cudarc's primary-context retain; nothing loosened; the same-device case is ordered by the existing
 `fence_stages_behind`) and found three things worth fixing plus one comment to correct. All are
-now closed on this tree. **Every claim below was verified against cudarc 0.19.9's source, not
+now closed on this tree. **Every claim below was verified against the LOCKED cudarc 0.19.8's source
+(`Cargo.lock` — an earlier draft cited 0.19.9, which is also unpacked in this registry but is NOT
+what the build resolves; the substance is identical in both, the line numbers are not), not
 taken on the reviewer's word — and two of them contradicted comments already in this repo.**
 
 ### #23 FLEET-FATAL, and two of my own comments were false
 
-`EmbedOverlay::window` did `rows: self.rows.clone()`. cudarc 0.19.9 `impl Clone for CudaSlice` is
-`try_clone().unwrap()`, and `try_clone` is `self.stream.clone_dtod(self)` (core.rs:856-865). So a
+`EmbedOverlay::window` did `rows: self.rows.clone()`. In cudarc 0.19.8 `impl Clone for CudaSlice` is
+`try_clone().unwrap()` (core.rs:859-863), and `try_clone` is `self.stream.clone_dtod(self)`
+(core.rs:854-856). So a
 "window" was a full device allocation plus a D2D copy of every row, with an `unwrap` that PANICS
-in the GPU worker thread — which exits the process and kills every in-flight session on the box
+in the GPU worker thread. RETRACTED AND CORRECTED (peer review, and verified in worker.rs): the
+panic is CAUGHT — `run` is wrapped in `catch_unwind`, the worker is marked dead and respawned, and
+`exit(EXIT_WORKER_UNRECOVERABLE)` is reached only once respawns are exhausted. The cost is every
+IN-FLIGHT SESSION plus a respawn, not necessarily immediate process death — still unacceptable for
+an allocation failure the caller is shaped to propagate, but the original wording overstated it
 (the banked engine-panics-are-fleet-fatal law). It ran once per prefill TICK and once per prime
 CHUNK, so a multi-chunk image prompt paid several whole-buffer copies.
 
@@ -329,7 +336,7 @@ the label inverted. My "call outside any stage scope" comment was correct and lo
 convention where an invariant was two lines away.
 
 Fixed by taking residency from the **pointer** instead of the caller: `EmbedOverlay::new` reads
-`rows.context()` (cudarc core.rs:844) and REFUSES when it disagrees with the engine the caller
+`rows.context()` (cudarc 0.19.8 core.rs:842) and REFUSES when it disagrees with the engine the caller
 believes it used, so a mislabelled overlay cannot be constructed; `new_published` routes its
 uploaded buffer through the same constructor, making the label evidence rather than a claim. The
 GPU test now asserts BOTH layers (construction refuses; and a fabricated mislabel still refuses at

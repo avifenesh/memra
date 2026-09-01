@@ -5753,7 +5753,7 @@ impl Engine {
     /// Real device-to-device COPY of `src` into a freshly allocated buffer. Used for cache
     /// snapshots (MTP-PLAN §D.4), where a snapshot must not alias the live buffer.
     ///
-    /// CORRECTION (memra-next#23, verified against cudarc 0.19.9): this comment used to say
+    /// CORRECTION (memra-next#23, verified against the LOCKED cudarc 0.19.8): this comment used to say
     /// "`CudaSlice::clone()` only bumps a refcount and would alias the live buffer". That is
     /// FALSE and it propagated — `impl Clone for CudaSlice` is `try_clone().unwrap()`, and
     /// `try_clone` is `self.stream.clone_dtod(self)`, so a plain `.clone()` already allocates and

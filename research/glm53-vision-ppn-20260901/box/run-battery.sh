@@ -50,6 +50,15 @@ fail=0
 note() { echo "$1" >> "$OUT/VERDICT.txt"; }
 : > "$OUT/VERDICT.txt"
 
+servers_live() {
+  local n=0 p e
+  for p in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
+    e=$(readlink "/proc/$p/exe" 2>/dev/null) || continue
+    case "$e" in *memra-server*) n=$((n + 1)) ;; esac
+  done
+  echo "$n"
+}
+
 boot_and_probe() {  # arm-label boot-cmd probe-arm
   local label=$1 cmd=$2 arm=$3
   local nonce="${label}-$(date -u +%H%M%S)-$$"
@@ -57,10 +66,21 @@ boot_and_probe() {  # arm-label boot-cmd probe-arm
   echo
   echo "--- $label: stop, clear, boot, probe (nonce=$nonce)"
   $STOP_CMD >>"$OUT/stop.log" 2>&1 || true
+  # Count by /proc/<pid>/exe, NOT by cmdline. interleave.sh was fixed for this and this file was
+  # NOT, while the banked receipt claimed "both drivers" — caught by review. `pgrep -f <path>`
+  # matches the flock wrapper and the calling shell (measured: 6 hits on a rig with ZERO servers,
+  # exe predicate 0), so the wait below could false-REFUSE a healthy box after 120s.
   local waited=0
-  while pgrep -f "$SERVER_BIN" >/dev/null 2>&1; do
+  while [ "$(servers_live)" -gt 0 ]; do
     sleep 2; waited=$((waited+2))
-    [ $waited -ge 120 ] && { echo "REFUSE: previous server survived 120s of STOP_CMD"; exit 1; }
+    if [ $waited -ge 120 ]; then
+      echo "REFUSE: $(servers_live) memra-server process(es) survived 120s of STOP_CMD"
+      for q in $(ls /proc | grep -E '^[0-9]+$'); do
+        e=$(readlink "/proc/$q/exe" 2>/dev/null) || continue
+        case "$e" in *memra-server*) echo "  pid=$q exe=$e" ;; esac
+      done
+      exit 1
+    fi
   done
   echo "BOOT_NONCE=$nonce arm=$label utc=$(date -u +%FT%TZ)" > "$log"
   ( eval "$cmd" ) >>"$log" 2>&1 &

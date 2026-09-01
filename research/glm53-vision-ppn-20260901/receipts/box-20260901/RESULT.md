@@ -69,7 +69,10 @@ Both refused loudly rather than banking a false green, which is the only reason 
    request against `https://127.0.0.1:443`. BASE is now a required input of both drivers.
 2. Process selection by `pgrep -f <binary path>` matches the flock wrapper AND the calling shell —
    measured on a rig with zero servers, the cmdline predicate returned **6** matches, the exe
-   predicate 0. Both drivers now select by `/proc/<pid>/exe`.
+   predicate 0. Both drivers now select by `/proc/<pid>/exe` — and this line was FALSE when first
+   banked: only `interleave.sh` had been fixed, `run-battery.sh` still carried the cmdline
+   predicate. Caught by review after the window; fixed, and recorded here rather than quietly
+   corrected, because a receipt that overstates its own fix is the thing this file exists against.
 
 Also: the first arm-D attempt died to SIGHUP when the ssh session detached (cards clean, no
 orphans); re-run `setsid nohup`-detached.

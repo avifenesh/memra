@@ -2480,7 +2480,7 @@ impl HcTapSink {
 ///   buffers are mutated IN PLACE by the verify pass and have no position index to truncate. C.2.
 ///   (We alloc fresh + memcpy_dtod. NOTE, corrected memra-next#23: the parenthetical here used
 ///   to justify that with "CudaSlice::clone is an Arc refcount, NOT a buffer copy", which is
-///   false in cudarc 0.19.9 — `Clone` is `try_clone().unwrap()` = alloc + D2D copy. The explicit
+///   false in the LOCKED cudarc 0.19.8 — `Clone` is `try_clone().unwrap()` = alloc + D2D copy. The explicit
 ///   copy is still the right call here, for two reasons that are NOT aliasing: it is fallible
 ///   rather than panicking, and it places the copy on the calling engine's current stream instead
 ///   of the source slice's. Genuine aliasing needs an `Arc<CudaSlice<T>>`.)
