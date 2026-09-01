@@ -1469,13 +1469,23 @@ fn sel_v3_on() -> bool {
 //
 // AUTO derives the shape from the geometry rather than pinning a number, because the two
 // families have different `pairs` and a single global shape would starve one of them:
-// `g` = the largest power of two dividing `pairs` (100% lane occupancy), `rows` = the
-// largest of {1,2,4} that keeps `rows_per_warp` near the shipped 4. At the serving
-// geometry that resolves to **gu (g=16, rows=2)** — 100% lanes at the SAME grid as today —
-// and **down (g=4, rows=1)** — 100% lanes at HALF the grid, since `pairs=20` admits no
-// power-of-two group above 4. The halved grid is the one thing the A/B has to check: it
-// costs warp-level parallelism at t=1, where the down launch already runs only
+// `g` = the largest power of two dividing `pairs`, and `rows` = 4 ALWAYS — the ladder
+// inverted the first design here (rows_per_warp≈4 was BACKWARDS): rows-per-LANE is what
+// pays, because one pair's activation float4 loads amortize across 4 independent rows'
+// code loads, and arms that bought 100% occupancy by spending rows measured WORSE than
+// the 62.5% kernel (gu (16,2): −12-14%; down (8,1): −27%; DOWNSEL.md §3). At the serving
+// geometry AUTO resolves to **gu (g=16, rows=4)** and **down (g=4, rows=4)** — more rows
+// per warp than the shipped kernels, fewer warps in the grid. That grid shrink is the one
+// thing the box A/B has to check at t=1, where the down launch already runs only
 // out_f/4 * selected warps.
+// SCOPE (revuto, PR #27): the `dn` seam reaches ONLY `launch_nvfp4_sel_matvec`. The TP2
+// seg-C tail has a third launcher, `launch_nvfp4_sel_matvec_pack` (below, ~L19840), which
+// hardcodes `qmatvec_nvfp4_modelopt_sel_f32_v3c` and never reads the seam — while that
+// same seg C's gate+up goes through the seam-aware `launch_nvfp4_sel_gu_silu`. Deliberate
+// for now: TP2 is not the shipped route on this family (depth regression, receipts in
+// ROUND-BUDGET-COMPOSITION.md) and the pack kernel's shape differs; if the EP2 lane
+// revives a two-card route through seg C, extend the seam there THEN, with its own gate
+// arm, rather than silently inheriting a shape never measured on the pack kernel.
 const SEL_GROUP_OFF: u32 = 0;
 const SEL_GROUP_AUTO: u32 = 1;
 /// Down-projection family (`launch_nvfp4_sel_matvec`).
