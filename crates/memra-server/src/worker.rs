@@ -16467,7 +16467,12 @@ fn glm5_sharded_placement_admits(
 ///   * `vision`: the glm5 session prime has no embedding-overlay seam;
 ///   * `!cold`: the session owns its cache and has no restore/resume arm — any reused or
 ///     restored state serves plain (session pooling is a named follow-up);
-///   * `temp_ok`: greedy or a real temperature (the spec_eligible convention).
+///   * `temp_ok`: greedy or a real temperature (the spec_eligible convention);
+///   * `prompt_primeable` (prompt >= 2 tokens): the MTP plane warms on
+///     (token[i+1], hidden[i]) pairs, so `generate_spec_glm5` REFUSES a 1-token prompt —
+///     and prime-time is past admission, where a refusal is a loud 500, not a fallback
+///     (the dspark law). A one-word prompt ("hi") is the first thing a customer types at
+///     a new model; it serves PLAIN (memra#9, found by the 2026-09-01 slot-B battery).
 #[allow(clippy::too_many_arguments)]
 // allow: the parameter list IS the class matrix the routing gate pins; a struct would hide it
 fn glm5_route_admits(
@@ -16483,6 +16488,10 @@ fn glm5_route_admits(
     // shape (live spec state, continuation resume, plain reuse without a tail) still
     // refuses; the call site owns the carrier proof (`glm5_restored_carrier`).
     cold_or_restored_carrier: bool,
+    // prompt >= 2 tokens: below the engine's own MTP warm floor the prime REFUSES, so
+    // admission keeps the request on the plain path instead of shipping the refusal as a
+    // customer-visible 500 (memra#9).
+    prompt_primeable: bool,
 ) -> bool {
     capable
         && serve_spec
@@ -16492,6 +16501,7 @@ fn glm5_route_admits(
         && !constrained
         && !vision
         && cold_or_restored_carrier
+        && prompt_primeable
 }
 
 /// K+1 <= 15 HARD BOUND for the glm5 route: verify rows ride the batched-decode walk's
@@ -19229,6 +19239,7 @@ fn admit(
         constraint.is_some(),
         vision_state.is_some(),
         glm5_cold || glm5_restored_carrier,
+        prompt.len() >= 2,
     );
     // A carrier the route did not take (K shed to 0 under load, capability lost) serves
     // the PLAIN hit — drop the drafter KV so the session literal below stays truthful and
@@ -26242,50 +26253,57 @@ mod tests {
     #[test]
     fn glm5_route_class_matrix_is_exact() {
         use super::glm5_route_admits;
-        // (capable, serve_spec, k, temp_ok, penalized, constrained, vision, cold)
-        let green = |k| glm5_route_admits(true, true, k, true, false, false, false, true);
+        // (capable, serve_spec, k, temp_ok, penalized, constrained, vision, cold, primeable)
+        let green = |k| glm5_route_admits(true, true, k, true, false, false, false, true, true);
         assert!(
             green(3),
             "greedy/sampled cold unpenalized K>0 is the routed class"
         );
         assert!(green(1) && green(14), "every legal K routes");
         assert!(
-            !glm5_route_admits(false, true, 3, true, false, false, false, true),
+            !glm5_route_admits(false, true, 3, true, false, false, false, true, true),
             "not capable (flag off / no MTP head / manifest blocked / ppN / sealed bundle \
              without a glm5-spec receipt) must refuse — the off-flag arm"
         );
         assert!(
-            !glm5_route_admits(true, false, 3, true, false, false, false, true),
+            !glm5_route_admits(true, false, 3, true, false, false, false, true, true),
             "MEMRA_SERVE_SPEC=0 / vision / capture / pp-bounce (serve_spec) must refuse"
         );
         assert!(
-            !glm5_route_admits(true, true, 0, true, false, false, false, true),
+            !glm5_route_admits(true, true, 0, true, false, false, false, true, true),
             "K=0 (operator pin 0 or the concurrency shed) must refuse"
         );
         assert!(
-            !glm5_route_admits(true, true, 3, false, false, false, false, true),
+            !glm5_route_admits(true, true, 3, false, false, false, false, true, true),
             "neither greedy nor a real temperature must refuse"
         );
         assert!(
-            !glm5_route_admits(true, true, 3, true, true, false, false, true),
+            !glm5_route_admits(true, true, 3, true, true, false, false, true, true),
             "penalties (greedy OR sampled) must refuse — the glm5 accept walk has no \
              penalty arm; silently dropping them is the failure class"
         );
         assert!(
-            !glm5_route_admits(true, true, 3, true, false, true, false, true),
+            !glm5_route_admits(true, true, 3, true, false, true, false, true, true),
             "constrained requests must refuse (grammar hooks live on the qwen program only)"
         );
         assert!(
-            !glm5_route_admits(true, true, 3, true, false, false, true, true),
+            !glm5_route_admits(true, true, 3, true, false, false, true, true, true),
             "vision sessions must refuse (no embedding-overlay seam in the glm5 prime)"
         );
         assert!(
-            !glm5_route_admits(true, true, 3, true, false, false, false, false),
+            !glm5_route_admits(true, true, 3, true, false, false, false, false, true),
             "a warm session that is NEITHER cold NOR the restored carrier must refuse — \
              the last param is `cold_or_restored_carrier` (lane/glm5-prefix-latent2): the \
              call site passes `glm5_cold || glm5_restored_carrier`, and the carrier proof \
              (rebuilt drafter KV + restored cache + non-empty seed, every other spec-state \
              term still cold) lives at the call site, not here"
+        );
+        assert!(
+            !glm5_route_admits(true, true, 3, true, false, false, false, true, false),
+            "a sub-primeable prompt (< 2 tokens) must refuse — the MTP plane warms on \
+             (token[i+1], hidden[i]) pairs and generate_spec_glm5 refuses at prime time, \
+             which is PAST the plain fallback; a one-word prompt serves plain, never a \
+             500 (memra#9)"
         );
     }
 
