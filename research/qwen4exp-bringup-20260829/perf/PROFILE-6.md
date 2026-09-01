@@ -1,6 +1,6 @@
 # qwen4_exp decode PROFILE-6 — the mtp9 round: FR-Spec draft trim + verify graphs
 
-Lane: mtp9, continuing spec/MTP-SPEC.md. Box: cloud-eval frankfurt, 2× RTX PRO 6000
+Lane: mtp9, continuing spec/MTP-SPEC.md. Box: sbox-eval Frankfurt, 2× RTX PRO 6000
 Blackwell 96 GB, single-card route; artifact `~/data/q48fn-nvfp4` (NVFP4 mint + BF16 mtp
 graft). Entry state from PROFILE-5: spec K=5 **8.37 ms/token = 119.50 tok/s** interleaved
 ×5 over 256 tokens/arm (plain single-card same-run arm 14.86 ms = 67.28 tok/s), accept

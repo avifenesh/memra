@@ -150,7 +150,7 @@ fn take_observed_cells() -> BTreeSet<String> {
 /// the models that lane fights over. Chain, first existing path wins:
 ///   1. $MEMRA_KC_MODELS_DIR/<file>                       (explicit; battery scripts set this)
 ///   2. the CLI gguf arg, when its basename == <file>     (model under test doubles as oracle)
-///   3. $HOME/models/<file>, /opt/scratch/nvme/models/<file> (bench-box conventions)
+///   3. $HOME/models/<file>, /opt/dl-image/nvme/models/<file> (bench-box conventions)
 ///   4. the legacy rig paths                              (the 5090 rig keeps working naked)
 ///      A miss emits one explicit line per skipped cell. Explicit CLI/model-directory paths are
 ///      authoritative: a typo must not silently fall through to stale bytes elsewhere on the box.
@@ -230,7 +230,7 @@ fn kc_model(
         if let Ok(home) = std::env::var("HOME") {
             cands.push(format!("{home}/models/{fname}"));
         }
-        cands.push(format!("/opt/scratch/nvme/models/{fname}"));
+        cands.push(format!("/opt/dl-image/nvme/models/{fname}"));
         cands.extend(legacy.iter().map(|path| path.to_string()));
     }
     if let Some(path) = cands

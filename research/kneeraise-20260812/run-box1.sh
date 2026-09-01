@@ -9,11 +9,11 @@ case "$MODE" in
 esac
 
 export PATH=/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:$PATH
-ROOT=${KNEERAISE_ROOT:-/opt/scratch/nvme/cx-kneeraise}
+ROOT=${KNEERAISE_ROOT:-/opt/dl-image/nvme/cx-kneeraise}
 REPO=${KNEERAISE_REPO:-$ROOT/memra}
 LANE=${KNEERAISE_HARNESS:-$REPO/research/kneeraise-20260812}
 FROZEN=$REPO/research/sellgate-20260812
-MODEL=${KNEERAISE_MODEL:-/opt/scratch/nvme/cx-gateway/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf}
+MODEL=${KNEERAISE_MODEL:-/opt/dl-image/nvme/cx-gateway/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf}
 SERVER=$REPO/target/release/memra-server
 EXPECTED_SOURCE=${KNEERAISE_EXPECTED_SOURCE:-b671c3e17035d757944439a5345b66d2f442ebe5}
 EXPECTED_MODEL=d8d71c7e8a01a1c964fd904a7b496eaef19bdd66827e0949e66c723da742d517

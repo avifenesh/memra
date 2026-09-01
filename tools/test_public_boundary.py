@@ -589,7 +589,7 @@ class CheckTests(unittest.TestCase):
         `wiki-055.txt` carries `personal_email` at offset 367 and a cloud account id at 556, and
         was therefore reported as `personal_email` — one line inside 56 hits of a class a
         reviewer correctly triages as authorship noise, with the account id, the
-        AdministratorAccess assertion and the identity principal beside it named nowhere. One hit is
+        AdministratorAccess assertion and the IAM principal beside it named nowhere. One hit is
         enough to enforce; triage needs all of them.
         """
         handle = tempfile.NamedTemporaryFile("w", delete=False)
@@ -1279,7 +1279,7 @@ class UnstatablePathTests(unittest.TestCase):
         """The CAUSE, not just the symptom: an absolute symlink target is unresolvable on
         every machine but the one that wrote it, so it is never a receipt and it publishes
         a foreign box's filesystem layout. Six mv-battery links pointed at `/root/out-mv/`
-        and one requal link at `/opt/scratch/...` while their real targets sat beside them
+        and one requal link at `/opt/dl-image/...` while their real targets sat beside them
         in-repo."""
         listing = subprocess.run(
             ["git", "ls-files", "-s"],

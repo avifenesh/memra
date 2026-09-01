@@ -53,12 +53,6 @@ anticipated fail-closed seam, its own comment names this lane's work).
   refusal no longer applies. Required for the 8-turn twin to deepen per turn.
 - Worker unit tests: predicate truth table, gemma negative control, wiring assertions
   anchored on invocations (comment-stripped), reseed predicate.
-- Routing note (PR #93 review finding 4a): `step_session`'s per-session prefill phase has
-  no bound_rem stop and no lcp-split capture, so the deepening lever exists only on the
-  `prefill_tick` path. Pre-existing for every family; a snapshot_at-armed session that
-  prefills through `step_session` simply never captures (the arm is cleared at retire) —
-  no wrong entry can be published from there, the lever is just absent. The provenance
-  bit (finding 3a) additionally covers any tokenwise leak on either path.
 
 ### PR 2 — spec x prefix (`MEMRA_GLM5_SPEC_PREFIX`, default OFF, requires PREFIX_LATENT)
 - Capture: `Glm5SpecSession` takes a boundary capture at `session_new` prime-done
@@ -84,12 +78,6 @@ anticipated fail-closed seam, its own comment names this lane's work).
   24-step greedy tape); red arms (truncated rows, wrong-entry ssm, stale keys) stay
   biting; existing 34 prefix worker tests + latent gpu gates green (negative control:
   non-glm5 byte-identical, flag-off arm byte-identical).
-- Entry-level provenance compare (PR #93 review finding 3c — R16's second prerequisite
-  is about the PUBLISHED ARTIFACT, not just the continuation): a DEEPENED entry
-  (hit -> suffix prime -> republish) must digest-match a COLD-primed entry of the same
-  depth (`prefix_entry_state_digest` both sides); plus the checked-invariant red arm —
-  force a tokenwise prompt token under the flag (starved budget) and assert BOTH capture
-  sites refuse with the `[suffix-prime] ... REFUSED` receipts and no insert line.
 - Box (the shared 2-card dev box — identity in the private ops repo, never here;
   cleanup-batch protocol; artifact staged
   2026-09-01: glm53-nvfp4 178G + drafter 2.2G rev dc77ff1c):
@@ -108,12 +96,5 @@ anticipated fail-closed seam, its own comment names this lane's work).
 ### Close
 - FLAGS rows final states; glm53 card trap line scope-noted fixed-at-version;
   darklanes research/INDEX.md row; corpus updates quoting receipts.
-- Corpus note owed at close (PR #96 review round 2, finding 5 design note):
-  `snapshot_plane_at` has NO content epoch — its safety is entirely the rollback
-  arithmetic (round base >= prime boundary, keep >= 1, truncate_index_pool_keys can
-  never clamp below the capture, publish clamps pools_ready to the capture's value).
-  Any FUTURE lane that rewinds a trunk latent plane below a live session's prompt
-  boundary and regrows it would publish foreign rows silently and owes this seam a
-  re-gate.
 
 ## Receipts land in this directory. Commit pinned in every receipt.

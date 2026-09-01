@@ -98,7 +98,7 @@ isolated scorer. MBPP was excluded before any candidate run because the harness 
 leading `def` and the model emitted replacement characters at code line endings; the screen does
 not normalize or repair model output. No generated code was executed during calibration. The
 calibration output is preserved under
-`/data/results/per-expert-quant/hourish-calibration/plain_quant/` on the cloudbox host.
+`/data/results/per-expert-quant/hourish-calibration/plain_quant/` on the Sbox host.
 
 ## Expanded matched triage panel
 

@@ -192,7 +192,7 @@ to f32; the serving path rides MMVQ/W4A8 and is gated separately).
 
 Release build, warmup 3 + 11 trials, `NVIDIA_TF32_OVERRIDE=0`, shipped shape
 (index_topk 2048, pool 4, 32 index heads, d 128, kv_rank 512). Raw:
-kpool-bench-frankfurt.txt. Per MLA layer; a forward runs 12 of them.
+kpool-bench-Frankfurt.txt. Per MLA layer; a forward runs 12 of them.
 
 DECODE (t_q=1), ms:
 
@@ -241,7 +241,7 @@ new scorer sets (a max-shared carveout) is per-FUNCTION, so it does not reach th
 ## Indexer scoring, re-measured after the tiled rewrite (2026-08-28)
 
 Same box, same release harness, old and new kernels timed in ONE run so the ratio is
-one clock. Raw: kpool-bench-frankfurt-tiled.txt.
+one clock. Raw: kpool-bench-Frankfurt-tiled.txt.
 
 PREFILL (t_q=512), score ms, per MLA layer:
 
@@ -278,7 +278,7 @@ two curves at every size.
 
 ## Crossover dispatch CONFIRMED (2026-08-28, same box, gate 12 re-run green there)
 
-Raw: kpool-bench-frankfurt-crossover.txt. Decode now takes the better of the two
+Raw: kpool-bench-Frankfurt-crossover.txt. Decode now takes the better of the two
 kernels at every size, and prefill is unchanged.
 
 DECODE (t_q=1) score ms: ref / dispatched
@@ -359,7 +359,7 @@ Not yet measured, therefore not claimed: any tok/s number, TTFT, or throughput.
 
 ## 2026-08-28 — the stall is root-caused and fixed (two defects, two fixes)
 
-Box: rented cloud bench box (2 x RTX PRO 6000 Blackwell 96 GB, 499 GB RAM, ext4 on a **provider SSD-class network
+Box: sbox bench box (2 x RTX PRO 6000 Blackwell 96 GB, 499 GB RAM, ext4 on a **ssd-vol EBS
 root volume**). Artifact `~/models/glm53-nvfp4`. All timing on the box; the rig is
 correctness-only.
 
@@ -398,7 +398,7 @@ Cold device characterisation (caches dropped, single stream):
 | 4.72 MiB expert-stride pread | **331 MB/s** |
 | 16 parallel 1 MiB readers | **69 MiB/s aggregate** (contention, not scaling) |
 
-The volume is a ~125 MiB/s network volume. `TIMEOUT_MS_MAX` is a hard 90 s platform ceiling.
+The volume is a ~125 MiB/s ssd-vol. `TIMEOUT_MS_MAX` is a hard 90 s platform ceiling.
 
 ### Root cause 1 — the stall
 
@@ -539,8 +539,8 @@ before any customer-facing claim. **GLM-5.3-Flash is not servable until that lan
   yet; it is the follow-up, not this increment.
 - `[spill-pread] falling back to mmap: worker read ring is busy` at `depth=2`
   (`buffer_bytes=4718592`): the ring is one expert deep, so a rolling window cannot form.
-- Deploy smell: `.memra-repack` on a 125 MiB/s network root volume. This box has an idle 3.5 TB
-  local NVMe at `/opt/scratch/nvme`; the slab belongs there, which turns the 22 min populate into
+- Deploy smell: `.memra-repack` on a 125 MiB/s ssd-vol root volume. This box has an idle 3.5 TB
+  local NVMe at `/opt/dl-image/nvme`; the slab belongs there, which turns the 22 min populate into
   roughly a minute.
 - 159.5 GiB of experts against 2 x 96 GB VRAM with GPU1 idle at 3 MiB and
   `MEMRA_MOE_RESIDENT=0` forced. TP2 / multi-device expert residency would remove the disk tier

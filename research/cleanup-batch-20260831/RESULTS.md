@@ -26,7 +26,7 @@ through the existing image-error wrap (`image {n}: ...`) as a clean 400. The
 - Unit: `vision_pre::tests::data_uri_per_image_raw_cap`: one base64 quad past the cap
   refuses by name (both decoders); exactly-at-cap admits and decodes to 12 MiB. PASS.
 - Existing vision tests: PASS (see suite line below).
-- Real surface (the rented dev box, live vision-enabled server): oversized data URI returns
+- Real surface (sbox dev box, live vision-enabled server): oversized data URI returns
   the named 400; at-cap and in-budget URIs are admitted past the cap gate; the 9th
   image still refuses "too many images (max 8)". Receipts: `raw/devbox/cell1*.json`,
   cells table below.
@@ -54,7 +54,7 @@ and the `MEMRA_MTP_SKIP` FLAGS.md row was updated in the same commit.
 - Unit: explicit non-zero refuses; None/blank/" 0 " refuse naming `MEMRA_SERVE_SPEC=0`
   and `MEMRA_DSPARK_SPEC`; literal "0" boots with the PLAIN announce. PASS.
 - Boot cells (rig 5090, lock-serialized, real MTP-carrying q38 artifact; tooth 3 also
-  re-proven on the rented dev box): `MEMRA_MTP_SKIP=1` with `MEMRA_SERVE_SPEC` unset
+  re-proven on the sbox dev box): `MEMRA_MTP_SKIP=1` with `MEMRA_SERVE_SPEC` unset
   refuses at boot with the named FATAL; `MEMRA_SERVE_SPEC=0` boots and serves plain
   quietly. Receipts: `raw/rig/tooth*.log`, cells table below.
 
@@ -106,7 +106,7 @@ door is removed (resolved by the flip for the family; OFF-globally is the design
 
 The mtp-skip teeth are correctness gates (no timing), so they ran on the rig 5090 under
 `/tmp/memra-5090.lock` with the lane's release binary; the vision cells need the step37
-artifact and ran on the rented dev box. The toolchain A/B lane owned the box GPU first:
+artifact and ran on the sbox dev box. The toolchain A/B lane owned the box GPU first:
 the window was taken only after 10 SUSTAINED free minutes (their inter-arm gaps ran up
 to ~9 min, and two shorter 0-MiB dips were correctly not treated as a handback), with a
 window note filed in lanectl control and a loud marker file on the box for the cell's

@@ -2,8 +2,8 @@
 # Polite on-box release rebuild for the pinned sigrouter-default profiling checkout.
 set -euo pipefail
 
-REPO=${NCUSPIKE_REPO:-/opt/scratch/nvme/memra-cx-ncuspike-src}
-TARGET=${NCUSPIKE_TARGET:-/opt/scratch/nvme/memra-cx-ncuspike-target}
+REPO=${NCUSPIKE_REPO:-/opt/dl-image/nvme/memra-cx-ncuspike-src}
+TARGET=${NCUSPIKE_TARGET:-/opt/dl-image/nvme/memra-cx-ncuspike-target}
 EXPECTED_SHA=1808220ead39d515a0854df49d1bb6452b558209
 CARGO=${CARGO:-/home/ubuntu/.cargo/bin/cargo}
 

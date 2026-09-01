@@ -1,7 +1,7 @@
 # qwen4_exp YaRN long-context affordability cell
 
 Owner question: "it will probably require yarn for full context the card offers, but need
-to see if we can afford it on two cards." Box: cloud-eval frankfurt, 2x RTX PRO 6000
+to see if we can afford it on two cards." Box: sbox-eval Frankfurt, 2x RTX PRO 6000
 Blackwell 96 GB (97,887 MiB each); artifact `~/data/q48fn-nvfp4` (NVFP4 mint, rev
 de4b8e4d); eager arm, single-request, f32 KV.
 

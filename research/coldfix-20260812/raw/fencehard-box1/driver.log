@@ -20,20 +20,20 @@ Build cuda_13.2.r13.2/compiler.37434383_0
 23:memra-tokenizer = { path = "crates/memra-tokenizer", version = "=0.81.1" }
 24:memra-runtime = { path = "crates/memra-runtime", version = "=0.81.1" }
 25:memra-engine = { path = "crates/memra-engine", version = "=0.81.1" }
-d8d71c7e8a01a1c964fd904a7b496eaef19bdd66827e0949e66c723da742d517  /opt/scratch/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
-b445fbb139e72f9869df06f2f0f91bcaf57527ec34a24bec74d3febd719f3581  /opt/scratch/nvme/cx-requal/models/draft-daily-owntrim-nvfp4head-q4blk.gguf
-df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf  /opt/scratch/nvme/cx-requal/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
-ae5b7797cc10188bddd00d7e46394e6b8676c1d4e4c6768c8b7b3b10d8870b6a  /opt/scratch/nvme/cx-requal/models/draft-35b-owntrim-nvfp4head-q4blk.gguf
-ce404f9ec20c6aab37220a2428254c6f7dc59286f1620d9060bb30e9d5ad9027  /opt/scratch/nvme/cx-fencehard/memra/research/e2e/prompts/pp512.txt
+d8d71c7e8a01a1c964fd904a7b496eaef19bdd66827e0949e66c723da742d517  /opt/dl-image/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+b445fbb139e72f9869df06f2f0f91bcaf57527ec34a24bec74d3febd719f3581  /opt/dl-image/nvme/cx-requal/models/draft-daily-owntrim-nvfp4head-q4blk.gguf
+df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf  /opt/dl-image/nvme/cx-requal/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+ae5b7797cc10188bddd00d7e46394e6b8676c1d4e4c6768c8b7b3b10d8870b6a  /opt/dl-image/nvme/cx-requal/models/draft-35b-owntrim-nvfp4head-q4blk.gguf
+ce404f9ec20c6aab37220a2428254c6f7dc59286f1620d9060bb30e9d5ad9027  /opt/dl-image/nvme/cx-fencehard/memra/research/e2e/prompts/pp512.txt
 4c8382370a988e24bc09f73fac484b2657d73a872116071cacb3e9d486cd74ea  tools/kernel-check-27b.cells
 80c07e8bfeacb897aeddbbbd10e4bed63db8094149340c6ef449d341317d1f46  tools/kernel-check-step35.cells
 2847ab0bfdead9c62302a36b9a46dcfa3d0ecd6aa67cbfa09adee0cd269a585c  tools/serve-smoke.sh
 b98b6c0234ba286192cb9c276cfd7295c746fd6fcf1d7fc3049944ff393812b1  tools/serve-stress-gate.sh
 783c22310084413b8d3608443c7c8f096feb36f777cf85f9f8eb334ddaa8d223  tools/q35-cold-mixed-gate.py
-artifact=/opt/scratch/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf bytes=15705920064 mtime=2026-06-30 02:47:04.313106221 +0000
-artifact=/opt/scratch/nvme/cx-requal/models/draft-daily-owntrim-nvfp4head-q4blk.gguf bytes=1242867296 mtime=2026-07-18 02:51:51.642796089 +0000
-artifact=/opt/scratch/nvme/cx-requal/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf bytes=18209036576 mtime=2026-06-21 17:38:04.402413150 +0000
-artifact=/opt/scratch/nvme/cx-requal/models/draft-35b-owntrim-nvfp4head-q4blk.gguf bytes=944118560 mtime=2026-07-18 04:06:39.438907949 +0000
+artifact=/opt/dl-image/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf bytes=15705920064 mtime=2026-06-30 02:47:04.313106221 +0000
+artifact=/opt/dl-image/nvme/cx-requal/models/draft-daily-owntrim-nvfp4head-q4blk.gguf bytes=1242867296 mtime=2026-07-18 02:51:51.642796089 +0000
+artifact=/opt/dl-image/nvme/cx-requal/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf bytes=18209036576 mtime=2026-06-21 17:38:04.402413150 +0000
+artifact=/opt/dl-image/nvme/cx-requal/models/draft-35b-owntrim-nvfp4head-q4blk.gguf bytes=944118560 mtime=2026-07-18 04:06:39.438907949 +0000
 COLDSHIP_LOCK_ACQUIRED ts=2026-08-12T20:52:11Z pid=1105364
 label=before
 ts=2026-08-12T20:52:11Z
@@ -43,9 +43,9 @@ RUN_START label=build ts=2026-08-12T20:52:11Z n=1
    Compiling libc v0.2.186
    Compiling cfg-if v1.0.4
    Compiling cudarc v0.19.8
-   Compiling memra-engine v0.81.1 (/opt/scratch/nvme/cx-fencehard/memra/crates/memra-engine)
-   Compiling memra-validate v0.81.1 (/opt/scratch/nvme/cx-fencehard/memra/crates/memra-validate)
-   Compiling memra-sampling v0.81.1 (/opt/scratch/nvme/cx-fencehard/memra/crates/memra-sampling)
+   Compiling memra-engine v0.81.1 (/opt/dl-image/nvme/cx-fencehard/memra/crates/memra-engine)
+   Compiling memra-validate v0.81.1 (/opt/dl-image/nvme/cx-fencehard/memra/crates/memra-validate)
+   Compiling memra-sampling v0.81.1 (/opt/dl-image/nvme/cx-fencehard/memra/crates/memra-sampling)
    Compiling libloading v0.9.0
    Compiling proc-macro2 v1.0.106
    Compiling quote v1.0.46
@@ -55,7 +55,7 @@ RUN_START label=build ts=2026-08-12T20:52:11Z n=1
    Compiling memmap2 v0.9.11
    Compiling syn v2.0.118
    Compiling version_check v0.9.5
-   Compiling memra-gguf v0.81.1 (/opt/scratch/nvme/cx-fencehard/memra/crates/memra-gguf)
+   Compiling memra-gguf v0.81.1 (/opt/dl-image/nvme/cx-fencehard/memra/crates/memra-gguf)
    Compiling itoa v1.0.18
    Compiling pin-project-lite v0.2.17
    Compiling once_cell v1.21.4
@@ -63,11 +63,11 @@ RUN_START label=build ts=2026-08-12T20:52:11Z n=1
    Compiling hashbrown v0.17.1
    Compiling equivalent v1.0.2
    Compiling indexmap v2.14.0
-   Compiling memra-tokenizer v0.81.1 (/opt/scratch/nvme/cx-fencehard/memra/crates/memra-tokenizer)
+   Compiling memra-tokenizer v0.81.1 (/opt/dl-image/nvme/cx-fencehard/memra/crates/memra-tokenizer)
    Compiling smallvec v1.15.2
    Compiling bytes v1.12.0
-   Compiling memra-runtime v0.81.1 (/opt/scratch/nvme/cx-fencehard/memra/crates/memra-runtime)
-   Compiling memra-kv v0.81.1 (/opt/scratch/nvme/cx-fencehard/memra/crates/memra-kv)
+   Compiling memra-runtime v0.81.1 (/opt/dl-image/nvme/cx-fencehard/memra/crates/memra-runtime)
+   Compiling memra-kv v0.81.1 (/opt/dl-image/nvme/cx-fencehard/memra/crates/memra-kv)
    Compiling serde_derive v1.0.228
    Compiling crossbeam-utils v0.8.22
    Compiling zmij v1.0.21
@@ -132,7 +132,7 @@ RUN_START label=build ts=2026-08-12T20:52:11Z n=1
    Compiling regex-syntax v0.8.11
    Compiling ryu v1.0.23
    Compiling toml_write v0.1.2
-   Compiling memra-probe v0.0.0 (/opt/scratch/nvme/cx-fencehard/memra/crates/memra-probe)
+   Compiling memra-probe v0.0.0 (/opt/dl-image/nvme/cx-fencehard/memra/crates/memra-probe)
    Compiling winnow v0.7.15
    Compiling llguidance v1.7.6
    Compiling serde_urlencoded v0.7.1
@@ -149,13 +149,13 @@ warning: memra-probe@0.0.0: nvcc CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc
    Compiling async-stream-impl v0.3.6
    Compiling serde_path_to_error v0.1.20
    Compiling cpufeatures v0.2.17
-   Compiling memra-server v0.81.1 (/opt/scratch/nvme/cx-fencehard/memra/crates/memra-server)
+   Compiling memra-server v0.81.1 (/opt/dl-image/nvme/cx-fencehard/memra/crates/memra-server)
    Compiling matchit v0.7.3
    Compiling axum v0.7.9
    Compiling sha2 v0.10.9
    Compiling async-stream v0.3.6
    Compiling toml v0.8.23
-   Compiling memra-lanes v0.81.1 (/opt/scratch/nvme/cx-fencehard/memra/crates/memra-lanes)
+   Compiling memra-lanes v0.81.1 (/opt/dl-image/nvme/cx-fencehard/memra/crates/memra-lanes)
 warning: memra-engine@0.81.1: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc (newest of 4; also saw 13.0 @ /usr/local/cuda-13.0/bin/nvcc, 12.9 @ /usr/local/cuda-12.9/bin/nvcc, 12.8 @ /usr/local/cuda-12.8/bin/nvcc)
 warning: memra-engine@0.81.1: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
     Finished `release` profile [optimized] target(s) in 4m 03s
@@ -169,10 +169,10 @@ memra-sampling	0.81.1
 memra-server	0.81.1
 memra-tokenizer	0.81.1
 memra-validate	0.81.1
-0a4a5de5e6a4535e6e4505907968e1d31ff02fc4a7e15a0b898766202d04f787  /opt/scratch/nvme/cx-fencehard/memra/target/release/kernel-check
-61ec44282598bd8e0be691eeb8559f46ae363e9e68ad0e8ccb100e6cda9d6e9d  /opt/scratch/nvme/cx-fencehard/memra/target/release/run-gen
-59b958033ecdb08f5b44ba3dd4523c8e7d66e7293613dfb9e59427e24852a35c  /opt/scratch/nvme/cx-fencehard/memra/target/release/run-spec
-9f55c46966f87a58733c2b7b5f85aa8a4d6cd632dec2c02914d740c324a59d99  /opt/scratch/nvme/cx-fencehard/memra/target/release/memra-server
+0a4a5de5e6a4535e6e4505907968e1d31ff02fc4a7e15a0b898766202d04f787  /opt/dl-image/nvme/cx-fencehard/memra/target/release/kernel-check
+61ec44282598bd8e0be691eeb8559f46ae363e9e68ad0e8ccb100e6cda9d6e9d  /opt/dl-image/nvme/cx-fencehard/memra/target/release/run-gen
+59b958033ecdb08f5b44ba3dd4523c8e7d66e7293613dfb9e59427e24852a35c  /opt/dl-image/nvme/cx-fencehard/memra/target/release/run-spec
+9f55c46966f87a58733c2b7b5f85aa8a4d6cd632dec2c02914d740c324a59d99  /opt/dl-image/nvme/cx-fencehard/memra/target/release/memra-server
 RUN_START label=kernel-check ts=2026-08-12T20:56:14Z n=1
 GPU: NVIDIA RTX PRO 6000 Blackwell Server Edition
 dual-pp-wave-split c=1..32 ceil-halves OK
@@ -254,7 +254,7 @@ f16g-kq-direct [iq3_s synth in=512 out=300] hybrid(cross=64,deep-tail) vs worksp
 f16g-kq-direct [iq3_s synth in=512 out=300] all-128 vs workspace: maxdiff=0.00e0 OK (byte-identical)
 f16g-kq-direct [iq3_s synth in=512 out=300] all-32-deep-tail vs workspace: maxdiff=0.00e0 OK (byte-identical)
 f16g-kq-direct [iq3_s synth in=512 out=300] all-32-legacy-tail vs workspace: maxdiff=0.00e0 OK (byte-identical)
-SKIP f16g-kq-direct-ornith (missing model ornith-1.0-35b-Q4_K_M.gguf under MEMRA_KC_MODELS_DIR=/opt/scratch/nvme/cx-requal/models)
+SKIP f16g-kq-direct-ornith (missing model ornith-1.0-35b-Q4_K_M.gguf under MEMRA_KC_MODELS_DIR=/opt/dl-image/nvme/cx-requal/models)
 f16g-kq-direct [q35 blk.0.ffn_gate_exps.weight iq3_s in=2048 out=512] hybrid(cross=64,deep-tail) vs workspace: maxdiff=0.00e0 OK (byte-identical)
 f16g-kq-direct [q35 blk.0.ffn_gate_exps.weight iq3_s in=2048 out=512] all-128 vs workspace: maxdiff=0.00e0 OK (byte-identical)
 f16g-kq-direct [q35 blk.0.ffn_gate_exps.weight iq3_s in=2048 out=512] all-32-deep-tail vs workspace: maxdiff=0.00e0 OK (byte-identical)
@@ -267,7 +267,7 @@ iq4xs-mmq [synth] T=16: rel=1.62e-7 OK
 iq4xs-mmq [synth] T=64: rel=2.39e-7 OK
 iq4xs-mmq [synth] T=128: rel=2.38e-7 OK
 iq4xs-mmq [synth] T=512: rel=1.70e-4 OK
-SKIP iq4xs-mmq-real (missing model Kwaipilot_KAT-Coder-V2.5-Dev-IQ4_XS.gguf or Step-3.7-flash-IQ4_XS-00001-of-00003.gguf under MEMRA_KC_MODELS_DIR=/opt/scratch/nvme/cx-requal/models)
+SKIP iq4xs-mmq-real (missing model Kwaipilot_KAT-Coder-V2.5-Dev-IQ4_XS.gguf or Step-3.7-flash-IQ4_XS-00001-of-00003.gguf under MEMRA_KC_MODELS_DIR=/opt/dl-image/nvme/cx-requal/models)
 GEMM blk.0.attn_gate.weight [Q5_K] T=16: rel=4.31e-7 OK
 GEMM blk.0.attn_gate.weight [Q5_K] T=64: rel=3.75e-7 OK
 GEMM blk.0.attn_gate.weight [Q5_K] T=128: rel=3.75e-7 OK
@@ -320,12 +320,12 @@ MMQ-Q8_0 blk.0.ffn_gate_shexp.weight [Q8_0 in=2048 out=512] T=16: rel=3.64e-3 OK
 MMQ-Q8_0 blk.0.ffn_gate_shexp.weight [Q8_0 in=2048 out=512] T=64: rel=3.71e-3 OK
 MMQ-Q8_0 blk.0.ffn_gate_shexp.weight [Q8_0 in=2048 out=512] T=128: rel=4.17e-3 OK
 MMQ-Q8_0 blk.0.ffn_gate_shexp.weight [Q8_0 in=2048 out=512] T=512: rel=4.18e-3 OK
-SKIP q4_0-mmq (missing model gemma-4-12b-it-qat-q4_0.gguf under MEMRA_KC_MODELS_DIR=/opt/scratch/nvme/cx-requal/models)
+SKIP q4_0-mmq (missing model gemma-4-12b-it-qat-q4_0.gguf under MEMRA_KC_MODELS_DIR=/opt/dl-image/nvme/cx-requal/models)
 MMQ-27B blk.0.ffn_down.weight [NVFP4 in=17408 out=5120] T=16: rel=1.12e-1 (W4A4-vs-dp4a band ~0.1) OK
 MMQ-27B blk.0.ffn_down.weight [NVFP4 in=17408 out=5120] T=512: rel=1.54e-1 (W4A4-vs-dp4a band ~0.1) OK
 MMQ-27B blk.0.ffn_gate.weight [NVFP4 in=5120 out=17408] T=16: rel=1.07e-1 (W4A4-vs-dp4a band ~0.1) OK
 MMQ-27B blk.0.ffn_gate.weight [NVFP4 in=5120 out=17408] T=512: rel=8.52e-2 (W4A4-vs-dp4a band ~0.1) OK
-SKIP q4_0-sk-arm (missing model gemma-4-26B_q4_0-it.gguf under MEMRA_KC_MODELS_DIR=/opt/scratch/nvme/cx-requal/models)
+SKIP q4_0-sk-arm (missing model gemma-4-26B_q4_0-it.gguf under MEMRA_KC_MODELS_DIR=/opt/dl-image/nvme/cx-requal/models)
 MMVQ blk.0.ffn_gate.weight [NVFP4] m=1: rel=1.46e-7 OK
 MMVQ blk.0.ffn_gate.weight [NVFP4] m=2: rel=1.42e-7 OK
 E4M3-MMVQ synth [5120x512] m=1: rel=1.73e-7 m1-bits=true OK
@@ -756,7 +756,7 @@ Here's a thinking process:
    - The user provided a snippet of Rust code from a file `cr
 RUN_DONE label=run-gen-q35 rc=0 ts=2026-08-12T20:58:22Z
 RUN_START label=run-spec-q27 ts=2026-08-12T20:58:22Z n=1
-[mtp-draft] loading external MTP draft: /opt/scratch/nvme/cx-requal/models/draft-daily-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] loading external MTP draft: /opt/dl-image/nvme/cx-requal/models/draft-daily-owntrim-nvfp4head-q4blk.gguf
 [mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
 loaded qwen35 (65 layers, nextn=1)
 text prompt (1607 chars, chat-templated) -> 521 tokens
@@ -793,7 +793,7 @@ prompt tokens: [248045, 846, 198, 8442, 11498, 25, 78902, 3359, 86, 17, 19, 4795
 RUN_DONE label=run-spec-q27 rc=0 ts=2026-08-12T20:58:33Z
 RUN_START label=run-spec-q35 ts=2026-08-12T20:58:33Z n=1
 [moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 100.88GB (expert budget 96.29GB) -> RESIDENT
-[mtp-draft] loading external MTP draft: /opt/scratch/nvme/cx-requal/models/draft-35b-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] loading external MTP draft: /opt/dl-image/nvme/cx-requal/models/draft-35b-owntrim-nvfp4head-q4blk.gguf
 [mtp-draft] external draft head: blk.40, source=output.weight, head_vocab=32768 (trimmed, d2t map)
 [moe] resident-experts decision (dev0): experts 0.52GB + trunk 0.41GB vs free 83.60GB (expert budget 81.19GB) -> RESIDENT
 loaded qwen35moe (41 layers, nextn=1)

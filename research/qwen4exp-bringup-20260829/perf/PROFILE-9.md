@@ -4,7 +4,7 @@ Lane: devtwin (owner-sequenced from three closed lanes: PROFILE-7 §2's verify
 decomposition — ~12 ms/round of host-twin bubbles ≈ 1/3 of verify wall, 48 router dtoh
 boundaries; mtp11's audit — the draft step's host twins serialize the round, deferred
 readback flat until they move; and the round-3 graphs doctrine — whole-step graphs
-structurally impossible BECAUSE of the host boundaries). Box: cloud-eval frankfurt,
+structurally impossible BECAUSE of the host boundaries). Box: sbox-eval Frankfurt,
 2× RTX PRO 6000 Blackwell 96 GB; artifact `~/data/q48fn-nvfp4`; ship admission
 everywhere (dev1 + K=5 + adapt k_lo=1 + pmin 0.3). Census: devtwin/CENSUS.md (work
 item 1) — 64 blocking dtoh per forward: 48 router + 12 idx_proj + 4 PLE.

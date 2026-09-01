@@ -683,7 +683,7 @@ extern "C" int memra_mla_kpool_score_ref_f32(const float* q, const float* pool_k
 //   * the head mix is 32 serial adds executed by thread 0 with 31 threads parked;
 //   * the grid is `t_q * n_pools` = 134M blocks of 32 threads, so per-block launch and
 //     __syncthreads overhead is paid 134M times for 4096 FMAs of real work each.
-// MEASURED (2x RTX PRO 6000 Blackwell Server, release, kpool-bench-frankfurt.txt): 1294.5 ms
+// MEASURED (2x RTX PRO 6000 Blackwell Server, release, kpool-bench-Frankfurt.txt): 1294.5 ms
 // per MLA layer for one 512-token prefill chunk at 1M context — ~425 GFLOP/s of a card that
 // carries ~100 TFLOP/s of f32 FMA. x12 MLA layers that is 15.5 s per chunk, and scoring is the
 // dominant stage at EVERY shape on the ladder.
@@ -866,7 +866,7 @@ static int memra_kpool_score_launch(const float* q, const float* pool_keys, cons
 // Thresholds sit at the tile heights so a shape never runs a tile it cannot half-fill.
 //
 // SMALL-TILE CROSSOVER, measured (2x RTX PRO 6000 Blackwell Server, release, 11 trials,
-// research/glm53-flash-bringup-20260827/kpool-bench-frankfurt-tiled.txt): at t_q=1 the
+// research/glm53-flash-bringup-20260827/kpool-bench-Frankfurt-tiled.txt): at t_q=1 the
 // tiled path is SLOWER than the reference kernel below ~16k pools -- 0.140 vs 0.021 ms at
 // 1024 pools (6.5x), 0.141 vs 0.052 ms at 4096 (2.7x) -- and only wins from ~16k pools up
 // (0.151 vs 0.171, then 1.560 vs 2.537 at 262144). The tile's fixed setup dominates when

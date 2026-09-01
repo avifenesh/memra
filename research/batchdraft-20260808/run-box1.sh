@@ -16,7 +16,7 @@ BASE=http://$ADDR
 REPS=${BATCHDRAFT_REPS:-5}
 MAX_TOKENS=${BATCHDRAFT_MAX_TOKENS:-96}
 BLOCKS=${BATCHDRAFT_BLOCKS:-all}
-TARGET=${CARGO_TARGET_DIR:-/opt/scratch/nvme/cx-batchdraft-target}
+TARGET=${CARGO_TARGET_DIR:-/opt/dl-image/nvme/cx-batchdraft-target}
 SERVER=$TARGET/release/memra-server
 MSCALE=$TARGET/release/verify-mscale
 TRUNK=${STEP35:-$HOME/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf}
@@ -41,7 +41,7 @@ echo "branch=$(git branch --show-current)"
 echo "status-before:"
 git status --short
 echo "mounts:"
-df -h "$TRUNK" /opt/scratch/nvme
+df -h "$TRUNK" /opt/dl-image/nvme
 echo "artifacts:"
 stat -c '%n %s bytes' "$TRUNK" "$DRAFT"
 sha256sum "$TRUNK" "$DRAFT" > "$RAW/artifact-sha256-$TS.txt"

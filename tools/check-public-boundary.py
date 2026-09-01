@@ -36,7 +36,7 @@ bytes rather than argued from:
   * A blob reports EVERY rule it matches, ordered worst-rule-first by the policy's severity
     ranks. First-match-only was correct for the enforce/don't-enforce decision and wrong for
     triage: it labelled the worst file in the repo — a cloud account id plus a privilege level
-    plus an identity principal — `personal_email`, one line inside 56 other `personal_email` hits.
+    plus an IAM principal — `personal_email`, one line inside 56 other `personal_email` hits.
 """
 
 from __future__ import annotations
@@ -675,7 +675,7 @@ def scan_secret_bytes(
     Reporting one rule per file was correct for the enforce/don't-enforce decision — one hit is
     enough to make a blob a violation — and it is why the worst file in this repo read as
     authorship noise: `personal_email` matched 189 bytes before the account id did, so the
-    account id, the AdministratorAccess assertion and the identity principal beside it were never
+    account id, the AdministratorAccess assertion and the IAM principal beside it were never
     named in any report. Enforcement takes one rule; triage needs all of them.
     """
     text = data.decode("utf-8", errors="ignore")

@@ -331,7 +331,7 @@ def main() -> int:
         "schema": "memra.percard.capacity.v1",
         "source_commit": args.source,
         "bundled_main": "250ba819e83f868d395c01c6f315a4c6344f54cb",
-        "rig": "london, 2x RTX PRO 6000 Blackwell Server Edition, one model per card",
+        "rig": "London, 2x RTX PRO 6000 Blackwell Server Edition, one model per card",
         "protocol": "persistent simultaneous servers; exactness first; N=3 order-rotated paired and resident-idle controls; barrier-released 128-token requests; no artificial cooldown",
         "metric": "per-model completion tokens / global barrier release to that model's final drain",
         "goldens": goldens,

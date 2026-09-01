@@ -14,7 +14,7 @@ Daily serving artifact + drafters, `/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/`
 | `Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf` | 16 GB | THE daily artifact: NVFP4 trunk + Q5_K embed/head + baked MTP block (provenance line: research/verify-economics-20260802/RESULTS.md:7-8) |
 | `draft-daily-owntrim-nvfp4head-q4blk.gguf` | 1.2 GB | own-gen trimmed drafter, the board spec-row config (research/verify-economics-20260802/RESULTS.md:8-9) |
 | `owngen-ranks-32768.gguf` + `.txt` | 131k/186k | own-gen rank file feeding the trim (docs/DRAFT-REGIME.md:44-50 recipe) |
-| `mtp-Qwen3.6-27B-hfbf16-q8_0.gguf` | 3.2 GB | HF-bf16 MTP block @ q8_0 (acceptance arc, research/tune-data/cloud-rtx6000.jsonl:25) |
+| `mtp-Qwen3.6-27B-hfbf16-q8_0.gguf` | 3.2 GB | HF-bf16 MTP block @ q8_0 (acceptance arc, research/tune-data/sbox-rtx6000.jsonl:25) |
 | `mtp-Qwen3.6-27B-NVFP4.gguf`, `mtp-*Q4_K_M*.gguf` x4 | 1-6 GB | legacy pre-regime drafts/trims (superseded 2026-07-18, rig5090.jsonl line 344) |
 
 Other 27B trees under `/data/ai-ml/hf-models/`:

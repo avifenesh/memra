@@ -175,7 +175,6 @@ pub(crate) async fn admit_translated(
     };
     plan.request.cache_ns = cache_ns;
     plan.request.request_id = env.id.clone();
-    plan.request.wire_deadline = Some(deadline.at.into_std());
     if let Err((message, param)) = crate::apply_model_request_limits(
         &mut plan.request,
         st.openrouter_metadata.get(&model),

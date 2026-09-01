@@ -3,7 +3,7 @@
 set -euo pipefail
 
 export PATH=/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:$PATH
-ROOT=${REQUAL_ROOT:-/opt/scratch/nvme/cx-requal}
+ROOT=${REQUAL_ROOT:-/opt/dl-image/nvme/cx-requal}
 REPO=$ROOT/memra
 EXPECTED_SOURCE=ac6ef049b8661008c0da91f4747f68f4dabdaa04
 STAMP=${REQUAL_STAMP:-$(date -u +%Y%m%dT%H%M%SZ)}

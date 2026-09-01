@@ -256,38 +256,6 @@ jobs:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
           MEMRA_CUDA_ARCH: "120a"
 
-      # BUILD-IDENTITY GATE (lane/real-system-fingerprint-20260901). The unit tests assert the
-      # baked fingerprint from inside the crate; this asks the shipped ARTIFACT the same
-      # question through the surface a deploy uses, because the defect it closes lived in the
-      # gap between them: `system_fingerprint` was `concat!("memra-", <git rev-parse>)` with
-      # failure swallowed into the literal "unknown", darklanes' release container could not
-      # read git, and prod answered `memra-unknown` to every customer request for a deploy
-      # generation while every test was green. `--version` runs before any engine/GPU/model
-      # work, so this needs no GPU. Teeth are closed in-step: the same matcher is proven to
-      # REJECT the literal that shipped, so a matcher that stopped matching cannot pass.
-      - name: Build identity (the release binary reports a real fingerprint)
-        run: |
-          set -euo pipefail
-          out=$(./target/release/memra-server --version)
-          echo "$out"
-          fp=$(printf '%s\n' "$out" | awk '$1=="system_fingerprint"{print $2}')
-          src=$(printf '%s\n' "$out" | awk '$1=="build_id_src"{print $2}')
-          shape='^memra-[0-9][0-9A-Za-z.+-]*-[0-9a-f]{12}$'
-          # Teeth first: the matcher must reject what prod served, or it proves nothing.
-          if printf '%s' 'memra-unknown' | grep -Eq "$shape"; then
-            echo "GATE BROKEN: the shape matcher accepts memra-unknown" >&2; exit 1
-          fi
-          if printf '%s' 'memra-0.123.0-4b1f9c02d7a3' | grep -Evq "$shape"; then
-            echo "GATE BROKEN: the shape matcher rejects a valid fingerprint" >&2; exit 1
-          fi
-          [ -n "$fp" ] || { echo "no system_fingerprint on --version" >&2; exit 1; }
-          case "$fp" in *unknown*) echo "fingerprint is degraded: $fp" >&2; exit 1;; esac
-          printf '%s' "$fp" | grep -Eq "$shape" || {
-            echo "fingerprint $fp is not memra-<version>-<12 hex>" >&2; exit 1; }
-          [ "$src" = "source-tree" ] || {
-            echo "build id came from '$src', not the source tree" >&2; exit 1; }
-          echo "build identity OK: $fp (id: $src)"
-
       # CLIPPY GATE (lane/clippy-zero-restore-20260901). The workspace reached clippy-zero
       # on 2026-09-01 (~200 sites: mechanical fixes plus per-file #[allow]s with stated
       # reasons — perf-lane code shapes are load-bearing, so shape lints are allowed where

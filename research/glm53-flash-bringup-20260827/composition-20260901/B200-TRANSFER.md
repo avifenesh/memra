@@ -99,28 +99,18 @@ the decode round, and the batched-EP prime. `MEMRA_GLM5_SPEC_TP` stays default O
 11. **Every multiplier.** 1.159x (peer-pull), 1.126x (diet), 1.305x (together), 1.151x
     (spec on TP), 1.012x (bare TP-2 over one card) are PCIe-2-card, PRO-6000-class,
     host-ST-caveated numbers.
-12. **The build itself — CORRECTED 2026-09-01 by the b200-prep census (this item's
-    original text is superseded; the census is authoritative:
-    `research/glm5-b200-prep-20260901/LANE.md`, "The SM100 native-FP4 question,
-    settled").** Three of this item's claims aged out or were never quite right:
-    (a) sm_100a NOW COMPILES — the polarity bugs named here were already fixed
-    2026-08-23; the actual last blocker was `cu/mmq_q8_0_f32acc.cu`'s
-    `__CUDA_ARCH__ >= 1000` guard, fixed by lane/glm5-b200-prep-20260901 (PR #91,
-    merged to main 2026-09-01); the 29-cell census is green and ci.yml carries a
-    100a compile cell.
-    (b) The fatbin census now passes: the two absent lookups are DECLARED exceptions
-    with property-guarded call sites (`MEMRA_FP4` door + kernel_check Stage-C).
-    (c) NVFP4 experts are NOT "routed through the accuracy-safe W4A8 int8 path" on
-    sm_100a — `cu/mmq_nvfp4_w4a8.cu` is a fail-closed STUB on every non-120a arch (its
-    block-scale int8 form is the same sm_120a-only MMA kind). What an sm_100a build
-    actually runs for NVFP4 is the dp4a decode matvec family (`qmatvec_nvfp4_dp4a_sel*`,
-    plain int8 dp4a) plus cuBLAS/cuBLASLt-class prefill; B200's own FP4 tensor cores
-    (tcgen05) are unreached by any memra kernel and remain a port lane. What STANDS from
-    this item: the SM100 re-gate law (every decode-exact/rows-exact class contract
-    re-proven on the new arch, on the path that actually executes) and the launch-diet
-    census as the first instrument once it boots. `detect_arch()` still refuses to
-    auto-select 100a — now because nothing has ever RUN on the silicon, not because it
-    does not build.
+12. **The build itself: B200 does not compile today.** `detect_arch()` deliberately does
+    NOT select sm_100a; `MEMRA_CUDA_ARCH=100a` is an explicit opt-in that currently dies
+    at ~40 ptxas sites in `cu/mmq_nvfp4_w4a8.cu` (a stub-gate polarity bug: the
+    block-scale MMA is sm_120a-only), and even past that the fatbin census reports two
+    looked-up kernels absent (docs/RELEASING.md "sm_100a: NOT auto-detected any more,
+    and not compiled"). And the arithmetic PATH is the opposite of the naive story: on
+    sm_100a the build DISABLES the native-FP4 MMA (`-DMEMRA_DISABLE_NATIVE_FP4=1`,
+    build.rs) and routes NVFP4 experts through the accuracy-safe W4A8 int8 path. So the
+    B200 arc's step zero is an ENGINE lane (fix the stub gate, census the fatbin,
+    re-gate every decode-exact/rows-exact class contract on the W4A8 path) — "fabric +
+    code sanity, minutes" is false until that lands. Budget the launch-diet census
+    (per-box us/launch constant) as the first instrument once it boots.
 13. **The residency premise — with the arithmetic done honestly, SKU-sensitively.** The
     artifact models 190.6-190.75 GB total (171.2 GB routed bank — which EXCLUDES the
     4.08 GB MTP bank — plus ~14.7 GB non-expert trunk/head). Against a 192 GB B200 that
@@ -146,13 +136,9 @@ the decode round, and the batched-EP prime. `MEMRA_GLM5_SPEC_TP` stays default O
 
 ## First actions on a B200 pair, in order
 
-0. THE ENGINE LANE FIRST (item 12) — DONE 2026-09-01: lane/glm5-b200-prep-20260901
-   (PR #91, merged to main 2026-09-01) fixed the last compile guard, declared and
-   guarded the two fatbin census exceptions, and added the ci.yml 100a compile
-   cell; a 100a binary exists and
-   stays buildable at every merge. Still owed ON THE BOX: the class-contract re-gates on
-   the paths that actually execute on sm_100a (dp4a NVFP4 decode + cuBLAS prefill — NOT
-   the W4A8 int8 MMQ, which is a fail-closed stub there; see the corrected item 12).
+0. THE ENGINE LANE FIRST (item 12): fix the sm_100a stub-gate polarity, pass the fatbin
+   census, re-gate the kernel class contracts on the W4A8 path. Nothing below runs
+   before a binary exists.
 1. Arm ladder + kernel peer-read probe + `glm5-tp-gate` (fixture, all arms) — fabric and
    code sanity.
 2. Launch-diet census (us/launch constant) — the number every later receipt divides by.

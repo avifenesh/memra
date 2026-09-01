@@ -5,9 +5,9 @@ set -euo pipefail
 
 export PATH=/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:$PATH
 
-REPO=${COLDSHIP_REPO:-/opt/scratch/nvme/cx-coldship/memra}
+REPO=${COLDSHIP_REPO:-/opt/dl-image/nvme/cx-coldship/memra}
 EXPECTED_SOURCE=${COLDSHIP_EXPECTED_SOURCE:?set COLDSHIP_EXPECTED_SOURCE}
-MODELS=${COLDSHIP_MODELS:-/opt/scratch/nvme/cx-requal/models}
+MODELS=${COLDSHIP_MODELS:-/opt/dl-image/nvme/cx-requal/models}
 OUT=${COLDSHIP_OUT:-$REPO/research/coldfix-20260812/raw/coldship-box1}
 
 Q27=$MODELS/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf

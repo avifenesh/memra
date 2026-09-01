@@ -43,7 +43,7 @@ that storage tier*.
 
 ## Why box1 inverts it
 
-The pilot ran on a laptop 5090 spilling to NVMe. box1 (`cloud-2card`, 2× RTX PRO 6000) has **499 GB host
+The pilot ran on a laptop 5090 spilling to NVMe. box1 (`sbox-2card`, 2× RTX PRO 6000) has **499 GB host
 RAM, 299 GB available** — for Step-3.7-Flash Q8_0 the entire spilled tail (~4–20 GB) sits in RAM, so the
 prefetch source is **host RAM over PCIe Gen5**, not disk.
 

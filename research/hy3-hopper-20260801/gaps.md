@@ -87,7 +87,7 @@ every bulk fetch (the assemble script here does: 237 shards, payload bytes exact
 
 ## G6 — Mumbai root EBS at 94% [operational note]
 
-Weights must never land on `/` (19G free). Everything staged to `/opt/scratch/nvme`
+Weights must never land on `/` (19G free). Everything staged to `/opt/dl-image/nvme`
 (3.5T). No deletions were needed; nothing was removed. The Aug-2 p5 box: same rule,
 stage to instance NVMe, record staged manifest hash (done here), and never report
 EBS fault throughput as spill speed.

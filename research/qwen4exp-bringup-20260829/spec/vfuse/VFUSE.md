@@ -1,6 +1,6 @@
 # mtp12: the fused-verify lever, priced (`vfuse`)
 
-Lane `lane/q4e-fused-verify-20260901`. Box cloud-eval, artifact `~/data/q48fn-nvfp4`,
+Lane `lane/q4e-fused-verify-20260901`. Box sbox-eval, artifact `~/data/q48fn-nvfp4`,
 ship admission (`--mtp-dev1 --spec-pmin 0.3 --spec-adapt 1`, K=5 so the verify chunk is
 t=6). Rig (sm_120a laptop 5090) carries the exactness arms only; every ms in this file
 comes from the box under `flock -x /tmp/q48fn-measure.lock` held around the whole

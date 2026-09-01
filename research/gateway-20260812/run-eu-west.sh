@@ -10,7 +10,7 @@ case "$MODE" in
 esac
 
 export PATH=/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:$PATH
-ROOT=${GATEWAY_ROOT:-/opt/scratch/nvme/cx-gateway}
+ROOT=${GATEWAY_ROOT:-/opt/dl-image/nvme/cx-gateway}
 REPO=${GATEWAY_REPO:-$ROOT/memra}
 MODEL_ROOT=${GATEWAY_MODEL_ROOT:-$ROOT/models}
 MODEL=${GATEWAY_MODEL:-$MODEL_ROOT/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf}

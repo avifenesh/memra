@@ -1663,19 +1663,12 @@ pub struct SpecBoundaryCapture {
     /// (the `SpecSession::last_h` convention). Empty = unavailable (capture stays valid;
     /// the fill's zeros row-0 fallback covers it at a bounded acceptance cost).
     pub last_h: Vec<f32>,
-    /// Per-layer latent boundary tails (lane/glm5-prefix-latent2, 2026-09-01): the
-    /// generation-destroyed slice of each MLA/DSA layer's boundary state, captured eagerly
-    /// so the worker's DEFERRED publication can slice the append-only planes from the live
-    /// cache (`LatentKvLayer::snapshot_plane_at`). EMPTY on every two-plane model — the
-    /// pre-field captures are byte-identical; a latent-bearing cache with an EMPTY vec here
-    /// keeps the publisher's loud refusal (the fail-closed door stays shut).
-    pub latent_tails: Vec<Option<crate::cache::LatentTailCapture>>,
 }
 
 /// D2H one hidden row out of a `[T, n_embd]` prime hidden stack — the boundary anchor a
 /// spec boundary capture carries for later restored-session fills. Failure is silent
 /// (`turn_ckpt` convention): the capture publishes without an anchor.
-pub(crate) fn capture_boundary_hidden(
+fn capture_boundary_hidden(
     e: &Engine,
     h_rows: &CudaSlice<f32>,
     pos: usize,
@@ -10434,7 +10427,6 @@ impl HybridModel {
                             pos: pos + seg_end,
                             logits: feed_logits.clone(),
                             last_h: capture_boundary_hidden(e, &h_rows, seg_end, n_embd),
-                            latent_tails: Vec::new(),
                         });
                     }
                     let anchor: Result<CudaSlice<f32>, Box<dyn std::error::Error>> =
@@ -10564,7 +10556,6 @@ impl HybridModel {
                         pos: pos + t,
                         logits: feed_logits.clone(),
                         last_h: capture_boundary_hidden(e, &h_rows, t, n_embd),
-                        latent_tails: Vec::new(),
                     });
                 }
             }
@@ -11946,7 +11937,6 @@ impl HybridModel {
                             // rows [0..seg_end) of h_all are primed — the following
                             // segments append, never overwrite.
                             last_h: capture_boundary_hidden(e, &h_all, seg_end, n_embd),
-                            latent_tails: Vec::new(),
                         });
                     }
                 }
@@ -12018,7 +12008,6 @@ impl HybridModel {
                         .as_ref()
                         .map(|ph| capture_boundary_hidden(e, ph, prompt.len(), n_embd))
                         .unwrap_or_default(),
-                    latent_tails: Vec::new(),
                 });
             }
         }

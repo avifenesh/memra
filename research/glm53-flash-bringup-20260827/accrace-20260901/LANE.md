@@ -460,7 +460,7 @@ unreadable parent, this workstation's returned False. **The gate therefore scann
 that file** — the worst shape a censusing gate can have. Fixed two ways here: an unstat-able
 tracked path is now its own reported finding (never a traceback, never a silent skip), and the
 seven tracked symlinks that pointed OUT of the repo (six at `/root/out-mv/`, one at
-`/opt/scratch/nvme/`) were retargeted **losslessly** at their in-repo twins, which existed beside
+`/opt/dl-image/nvme/`) were retargeted **losslessly** at their in-repo twins, which existed beside
 them all along (`../c2/off-N`, `../c2/don-N`, `build-20260812T065133Z`). An absolute target is
 unresolvable on every machine but the one that wrote it, so those six control arms were never
 receipts; they resolve now for the first time.

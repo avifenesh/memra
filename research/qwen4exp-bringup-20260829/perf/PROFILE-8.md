@@ -3,7 +3,7 @@
 Round: mtp11 (owner-ordered loop-port lane). Code: 03686fb2a + 8f80bde1f (seams
 `SpecOpts::defer` / `defer_guard_sync`, default-OFF), 94f1cecc2 (the gen-157 fix, below).
 Audit: spec/mtp11/AUDIT.md. Port facts: spec/MTP-SPEC.md Deliverable 8. Receipts:
-spec/mtp11/*.tsv (pulled from box ~/realgate/mtp11). Box: cloud-eval (2x RTX PRO 6000
+spec/mtp11/*.tsv (pulled from box ~/realgate/mtp11). Box: sbox-eval (2x RTX PRO 6000
 Blackwell 96 GB), artifact ~/data/q48fn-nvfp4, ship admission everywhere (dev1 + K=5 +
 adapt k_lo=1 + pmin 0.3). Protocol: interleaved x3 default + receipted escalation to x5
 (2026-08-30 fleet amendment) — every cell escalated on rules a+b (within-arm spreads

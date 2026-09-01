@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# devtwin battery, stage 1 (device MoE router) — runs ON cloud-eval (box), only when the
+# devtwin battery, stage 1 (device MoE router) — runs ON sbox-eval (box), only when the
 # box is IDLE. Ship admission everywhere: dev1 placement, K=5 ceiling, adapt k_lo=1,
 # pmin 0.3. Audit (MEMRA_Q4E_ROUTER_AUDIT=1) is ON for the correctness phases only — it
 # dtohs per route, so it never rides a perf arm.

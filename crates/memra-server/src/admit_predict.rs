@@ -498,38 +498,6 @@ pub(crate) fn earliest_completion_retry_s(
         })
 }
 
-/// Margin for the first-token deadline gate (`MEMRA_FIRST_TOKEN_DEADLINE_GATE`): the same
-/// 150% posture as the non-streaming feasibility gate's `DEADLINE_INFEASIBLE_MARGIN_PCT`:
-/// the floor rates are deliberately pessimistic, so only an estimate 1.5x past the
-/// remaining deadline refuses. A shared constant is NOT reused across the two gates on
-/// purpose: they judge different phases (whole response vs first token) and must be
-/// re-tunable independently when their GPU gates land.
-pub(crate) const FIRST_TOKEN_DEADLINE_MARGIN_PCT: u64 = 150;
-
-/// First-token deadline feasibility (lane/bench-debts-20260901, competitive-bench engine
-/// debt 3; the streaming analog the D2 report §7 named): can this request's FIRST token
-/// arrive inside its remaining wire deadline, given the prime backlog already admitted
-/// ahead of it? The estimate is the whole pending prefill demand (this prompt plus the
-/// sum of every active session's unprimed tokens) at the pessimistic single-stream
-/// prefill floor (`MEMRA_PREFILL_FLOOR_TOK_S`; the batched prime shares one card, so the
-/// aggregate rate is the same unit). Streaming and non-streaming alike: the wire deadline
-/// bounds exactly time-to-first-token for a stream and is a lower bound for a body.
-/// Returns `Some(estimated_ms)` when infeasible past the margin, `None` when the request
-/// may proceed. Pure arithmetic; the worker owns the inputs and the refusal.
-pub(crate) fn first_token_wait_infeasible(
-    prompt_tokens: u64,
-    backlog_tokens: u64,
-    remaining_ms: u64,
-    prefill_floor_tok_s: u64,
-) -> Option<u64> {
-    let est_ms = prompt_tokens
-        .saturating_add(backlog_tokens)
-        .saturating_mul(1_000)
-        / prefill_floor_tok_s.max(1);
-    let bound_ms = remaining_ms.saturating_mul(FIRST_TOKEN_DEADLINE_MARGIN_PCT) / 100;
-    (est_ms > bound_ms).then_some(est_ms)
-}
-
 /// Everything one receipt line says. Assembled by the worker at the request's first
 /// decisive admission consideration; formatted by [`shadow_verdict_line`].
 pub(crate) struct VerdictLine<'a> {
@@ -590,41 +558,6 @@ pub(crate) fn shadow_verdict_line(line: &VerdictLine<'_>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// First-token deadline arithmetic (lane/bench-debts-20260901, competitive-bench
-    /// debt 3). The bench shape as concrete rows: at the 2,000 tok/s floor, a 60k-token
-    /// prompt behind a 500k-token prime backlog estimates 280 s: infeasible inside a
-    /// 90 s wire deadline; the same prompt on an idle box estimates 30 s and proceeds.
-    #[test]
-    fn first_token_wait_infeasible_arithmetic() {
-        // Idle box, 60k prompt, 90 s deadline: 30 s estimate <= 135 s bound -> feasible.
-        assert_eq!(first_token_wait_infeasible(60_000, 0, 90_000, 2_000), None);
-        // The bench's N56 thrash shape: 500k tokens of prime backlog ahead.
-        assert_eq!(
-            first_token_wait_infeasible(60_000, 500_000, 90_000, 2_000),
-            Some(280_000)
-        );
-        // The margin is real: an estimate just past the deadline but inside the x1.5
-        // band proceeds (floor rates are pessimistic)...
-        assert_eq!(first_token_wait_infeasible(200_000, 0, 90_000, 2_000), None);
-        // ...and just past the band refuses. 271k tok / 2k tok/s = 135.5 s > 135 s.
-        assert_eq!(
-            first_token_wait_infeasible(271_000, 0, 90_000, 2_000),
-            Some(135_500)
-        );
-        // A decayed deadline refuses what a fresh one admitted (defer-tick re-check).
-        assert_eq!(first_token_wait_infeasible(60_000, 0, 90_000, 2_000), None);
-        assert_eq!(
-            first_token_wait_infeasible(60_000, 0, 10_000, 2_000),
-            Some(30_000)
-        );
-        // Zero/absurd floor never divides by zero and never admits by overflow
-        // (saturating add+mul, floor clamped to 1).
-        assert_eq!(
-            first_token_wait_infeasible(u64::MAX, u64::MAX, 90_000, 0),
-            Some(u64::MAX)
-        );
-    }
 
     fn line(verdict: Verdict) -> VerdictLine<'static> {
         VerdictLine {

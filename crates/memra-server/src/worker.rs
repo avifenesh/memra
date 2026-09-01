@@ -1139,10 +1139,11 @@ impl EngineError {
     /// "an enforcing 429 should carry the predicted earliest-completion estimate").
     /// Same class, same body shape, same header machinery as `rate_limit`; only the
     /// Retry-After value is the producer's estimate instead of the class default.
-    /// Built and tested for the D2 enforcing flip (the shed byte-compat gate
-    /// `admit_predict_reject_matches_shed_contract` locks the response shape); the
-    /// first-token deadline gate (`MEMRA_FIRST_TOKEN_DEADLINE_GATE`,
-    /// lane/bench-debts-20260901) is its first production caller.
+    /// Built and tested for the enforcing flip; shadow mode only LOGS the value, so
+    /// until that flip the shed byte-compat gate (`admit_predict_reject_matches_shed_
+    /// contract`) is the constructor's only caller, hence the cfg(test)-invisible
+    /// dead-code allowance.
+    #[allow(dead_code)]
     pub fn rate_limit_after(message: impl Into<String>, retry_after_s: u64) -> Self {
         Self {
             class: ErrClass::RateLimit,
@@ -1301,14 +1302,6 @@ pub struct Request {
     /// Reserved host patch-memory budget. The permit is moved through requeues and released only
     /// when this worker-owned request is dropped, including streaming completion/cancellation.
     pub(crate) vision_memory: Option<crate::VisionMemoryPermit>,
-    /// The request's WIRE first-token deadline (`timeout_ms`, capped at the 90 s platform
-    /// ceiling), stamped by the HTTP handler at submission: the same instant the handler's
-    /// own 408 watch fires at (lane/bench-debts-20260901). Carried so the worker's
-    /// first-token deadline gate (`MEMRA_FIRST_TOKEN_DEADLINE_GATE`) can judge admission
-    /// against the REMAINING deadline at its own tick instead of a stale handler snapshot.
-    /// None for internally-constructed requests (tests, embeddings/rerank capture routes),
-    /// which the gate skips.
-    pub wire_deadline: Option<std::time::Instant>,
     /// per-request stream back to the handler. tokio mpsc so the async side can await it.
     pub tx: tokio::sync::mpsc::UnboundedSender<Event>,
 }
@@ -2702,58 +2695,6 @@ fn affinity_enabled() -> bool {
 fn spec_stable_boundary_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_SPEC_STABLE_BOUNDARY").as_deref() != Ok("0"))
-}
-
-/// MEMRA_PREFIX_STABLE_BOUNDARY (default **0 = OFF by design**, lane/bench-debts-20260901):
-/// arm the PLAIN prefix-cache boundary capture at the render-stable last-turn boundary
-/// (`plain_checkpoint_boundary`) on both the miss path and the shallow-hit path, so the
-/// entry a cold turn mints is exact-prefix-matchable by the SAME session's next re-rendered
-/// turn: on the device tier and, after a capacity demotion, on the host tier.
-///
-/// WHY (the competitive bench's promote-starvation finding, darklanes
-/// research/competitive-bench-20260901/RESULTS.md §7): the prompt-end SEED's key carries
-/// the template's live generation header, which the next turn re-renders (the pi-rewrite
-/// divergence `plain_checkpoint_boundary` documents), so under organic multi-turn churn the
-/// demoted population is dominated by keys that can never match again: N56 cell: 425 of
-/// 432 device hits at exactly 64 tokens (the shared-system-prompt seed), 28 demotions
-/// against 1 promotion, every deep hit a grid-aligned boundary entry. The spec tier fixed
-/// this exact defect 2026-08-21 (`MEMRA_SPEC_STABLE_BOUNDARY`, frozen-boundary finding B4);
-/// this flag ports the same law to the plain capture side. OFF is byte-identical to today
-/// by construction (no call site changes an armed boundary). Default OFF because the arm is
-/// unmeasured on serving hardware: the GPU gate (organic-churn promote-rate cell, next
-/// hardware window) is named in docs/FLAGS.md.
-fn prefix_stable_boundary_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_PREFIX_STABLE_BOUNDARY").as_deref() == Ok("1"))
-}
-
-/// MEMRA_FIRST_TOKEN_DEADLINE_GATE (default **0 = OFF by design**, lane/bench-debts-20260901,
-/// competitive-bench engine debt 3: deadline behavior under thrash). `1` arms a first-token
-/// deadline feasibility check at the worker's admission seam (post-tokenize, the D2 G1
-/// placement): when the request's own prompt plus the live prime backlog cannot produce a
-/// first token inside the remaining wire deadline even at the pessimistic prefill floor
-/// (x1.5 margin, `admit_predict::first_token_wait_infeasible`), the request is refused with
-/// the shed contract's 429 + Retry-After BEFORE it burns its 90 s deadline queueing: the
-/// bench's N56 cells cancelled 70-74% of turns at that wall. Full doc: docs/FLAGS.md row.
-fn first_token_deadline_gate_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_FIRST_TOKEN_DEADLINE_GATE").as_deref() == Ok("1"))
-}
-
-/// Pure arming rule for the stable-boundary capture (unit-tested half; the stateful
-/// `has_key` dedupe stays at the call site). Deepest-wins: a stable boundary only replaces
-/// an already-armed capture when it is strictly deeper, so LCP teaching from a deeper
-/// sibling is never downgraded. The boundary must clear the entry floor and sit strictly
-/// inside the prompt (`plain_checkpoint_boundary` already grid-aligned it and handled the
-/// W1 sub-floor remainder).
-fn stable_boundary_arm(
-    stable: Option<usize>,
-    current: Option<usize>,
-    prompt_len: usize,
-) -> Option<usize> {
-    let b = stable?;
-    (b >= PREFIX_CACHE_MIN_TOKENS && b < prompt_len && current.is_none_or(|cur| b > cur))
-        .then_some(b)
 }
 
 /// FNV-1a over a token stream — a stable, allocation-free 64-bit mix. (Not a cryptographic
@@ -4250,14 +4191,6 @@ fn hyper_suffix_prime_on() -> bool {
 /// hyper-connections trunks (`decode_batch_unconverted`) — the ONLY eager-only class whose
 /// engine prime is continuation-capable. gemma4 (`DecodeBatchProgram::Gemma` / E4B) keeps
 /// the tokenwise path: its prime is fresh-monolithic only and the engine refuses pos>0.
-///
-/// PROXY WARNING (PR #93 review finding 7, the no-generic-model-support law):
-/// `decode_batch_unconverted` literally means "topology carries HyperConnections", and
-/// "continuation-capable prime" is a MEASURED property of glm5_next's walk, not of the
-/// topology class. A SECOND hyper-connections family inherits this carve-out under the
-/// flag automatically and MUST re-gate its own restored-vs-cold byte identity before its
-/// serving recipe may arm MEMRA_HYPER_SUFFIX_PRIME — loading and running never proves
-/// support.
 fn carried_suffix_primes(hyper_trunk: bool, flag_on: bool) -> bool {
     hyper_trunk && flag_on
 }
@@ -7305,27 +7238,6 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
     })
 }
 
-/// Pure admit-time probe-order decision (the unit-tested half of `host_promote_prefix_hit`):
-/// consult the host tier and name the entry worth re-materializing, or None. The rule the
-/// competitive bench's promote-starvation finding is anchored on (darklanes
-/// research/competitive-bench-20260901/RESULTS.md §7): the host is consulted on a device
-/// MISS **or a device hit SHALLOWER than the host's best exact-prefix entry**: a surviving
-/// shallow device entry (the shared-system-prompt seed shape: 425 of 432 device hits at
-/// exactly 64 tokens in the N56 cell) must never shadow a deeper demoted twin.
-/// `device_best_len = 0` encodes a device miss.
-fn host_promote_candidate(
-    host: &HostPrefixCache,
-    pool_key: &PoolKey,
-    prompt: &[u32],
-    device_best_len: usize,
-) -> Option<usize> {
-    if !host.armed() {
-        return None;
-    }
-    let hi = host.lookup(pool_key, prompt)?;
-    (host.entries[pool_key][hi].toks.len() > device_best_len).then_some(hi)
-}
-
 /// The promote hook (admit-time): device miss (or a device hit SHALLOWER than the host's
 /// best) -> host probe with the SAME exact-token / PC-ISO key rules -> on hit, re-materialize
 /// a normal device `PrefixEntry` and insert it PINNED so it survives until the unmodified hit
@@ -7341,11 +7253,17 @@ fn host_promote_prefix_hit(
     prompt: &[u32],
     device_best_len: usize,
 ) -> Option<(usize, PrefixPin)> {
-    let hi = host_promote_candidate(host, pool_key, prompt, device_best_len)?;
+    if !host.armed() {
+        return None;
+    }
+    let hi = host.lookup(pool_key, prompt)?;
     let (host_len, expected_digest) = {
         let e = &host.entries[pool_key][hi];
         (e.toks.len(), e.verify_digest.clone())
     };
+    if host_len <= device_best_len {
+        return None; // the device tier already serves at least as deep: nothing to feed
+    }
     let t0 = Instant::now();
     let e = match device_entry_from_host(engine, &host.entries[pool_key][hi]) {
         Ok(e) => e,
@@ -9473,75 +9391,25 @@ fn prefix_insert_from_spec_boundary(
     if cache.has_swa_ring() {
         return;
     }
-    // LATENT ARM (lane/glm5-prefix-latent2, 2026-09-01 — the case the old refusal named
-    // "unreachable today ... IF A SPEC ARM EVER LANDS FIRST"; the glm5 spec arm landed):
-    // a latent-bearing cache publishes ONLY when the capture carries the boundary tails
-    // (taken at prime time, before generation lapped the tail ring) AND the latent plane
-    // flag arms publication. The append-only planes (latent rows, final pool keys) are
-    // sliced from the LIVE cache below the boundary (`snapshot_plane_at` validates every
-    // slice); anything else keeps the loud refusal — fail closed, never a guessed plane.
-    let has_latent = cache.latent.iter().any(Option::is_some);
-    let mut cap = cap;
-    let n = cache.kv.len();
-    let mut latent: Vec<Option<memra_engine::cache::LatentPlaneSnapshot>> = Vec::new();
-    let mut latent_bytes = 0usize;
-    if has_latent {
-        if !prefix_latent_planes_on() || cap.latent_tails.len() != n {
-            eprintln!(
-                "[prefix-cache] spec publish REFUSED: latent (MLA/DSA) cache without \
-                 boundary tails in the capture (or MEMRA_PREFIX_LATENT off); entry dropped",
-            );
-            return;
-        }
-        for il in 0..n {
-            match (&cache.latent[il], cap.latent_tails[il].take()) {
-                (Some(l), Some(tail)) => match l.snapshot_plane_at(engine, tail) {
-                    Ok(snap) => {
-                        latent_bytes += snap.bytes();
-                        latent.push(Some(snap));
-                    }
-                    Err(err) => {
-                        eprintln!(
-                            "[prefix-cache] spec publish REFUSED: latent layer {il} boundary \
-                             slice: {err}; entry dropped",
-                        );
-                        return;
-                    }
-                },
-                // Absent at the boundary (the MTP plane on the DFlash2 arm) stays absent —
-                // the prefix_snapshot convention, capture/restore symmetric. Identity
-                // hardening (PR #96 review round 2, finding 1): a LIVE plane carrying rows
-                // whose capture slot is None is a disagreement, not a convention — refuse
-                // rather than publish an absent history for a layer that has one.
-                (Some(l), None) if l.len == 0 => latent.push(None),
-                (None, None) => latent.push(None),
-                (Some(_), None) => {
-                    eprintln!(
-                        "[prefix-cache] spec publish REFUSED: live latent layer {il} \
-                         carries rows but the capture recorded it absent; entry dropped",
-                    );
-                    return;
-                }
-                (None, Some(_)) => {
-                    eprintln!(
-                        "[prefix-cache] spec publish REFUSED: capture carries a tail for \
-                         layer {il} but the live cache has no latent plane there; entry \
-                         dropped",
-                    );
-                    return;
-                }
-            }
-        }
-    } else {
-        latent = (0..n).map(|_| None).collect();
+    // FAIL-CLOSED, unreachable today: every latent model is eager-only with no drafter, so no
+    // spec session can exist on one. If a spec arm ever lands first, this publisher builds
+    // entries WITHOUT latent planes; publishing one would depend on the restore-side guard
+    // alone. Refuse at the source instead, loudly.
+    if cache.latent.iter().any(Option::is_some) {
+        eprintln!(
+            "[prefix-cache] spec publish REFUSED: the spec boundary capture does not carry \
+             latent (MLA/DSA) planes; entry dropped",
+        );
+        return;
     }
     debug_assert!(
         cap.snap.pos == pos,
         "spec boundary capture snap pos {} != capture pos {pos}",
         cap.snap.pos,
     );
+    let n = cache.kv.len();
     let mut kv = Vec::with_capacity(n);
-    let mut bytes = latent_bytes;
+    let mut bytes = 0usize;
     for il in 0..n {
         match &cache.kv[il] {
             // MTP head layer: allocated, never executed by the trunk — absent, like
@@ -9641,9 +9509,9 @@ fn prefix_insert_from_spec_boundary(
         kv,
         conv: cap.snap.conv,
         ssm: cap.snap.ssm,
-        // Latent planes: boundary-tail capture + live append-only slices (the latent arm
-        // above); every slot absent on two-plane models, byte-identical to the pre-arm entry.
-        latent,
+        // The spec boundary capture cannot express latent planes; the latent-bearing case is
+        // refused at this function's entry, so every slot is legitimately absent.
+        latent: (0..n).map(|_| None).collect(),
         pos,
         last_logits: cap.logits,
         draft,
@@ -9788,19 +9656,6 @@ fn maybe_prefix_seed(
         return;
     }
     s.seed_prefix = false;
-    // PROVENANCE REFUSAL (PR #93 review finding 3a): a hyper-under-flag session whose
-    // prompt tokens rode tokenwise decode_step must not publish — the entry would carry
-    // the restore+decode_step chained provenance R16 refuses. Checked here rather than
-    // inferred from which prefill branch should have run, so ANY veto (budget starvation,
-    // sub-floor suffix, a future term) fails closed.
-    if s.prompt_tok_decode_step {
-        eprintln!(
-            "[suffix-prime] seed REFUSED: prompt tokens rode decode_step under \
-             MEMRA_HYPER_SUFFIX_PRIME; mixed-provenance entry not published (model {})",
-            s.model
-        );
-        return;
-    }
     if s.cache.is_none() || s.fed.len() < PREFIX_CACHE_MIN_TOKENS {
         return;
     }
@@ -9864,17 +9719,8 @@ struct ReplayPlan {
 
 /// Build a session's embedding overlay: tower forward per image, merger rows concatenated
 /// into one device buffer. Drops the host patch buffers afterwards. No-op if already built.
-///
-/// `intake` is the engine that will CONSUME the overlay at embedding intake
-/// (`HybridModel::vision_intake_engine`): the primary engine on a single-device, doorless or
-/// `MEMRA_PP_STREAMS=0` shape, pp stage 0's engine under a per-stage-stream ppN split. The
-/// towers always run on `engine` (that is where their weights are resident, ~2.3 GiB f32 for
-/// glm5); `EmbedOverlay::new_published` then publishes the finished rows into `intake`'s
-/// context when the two differ. Once per session, prefill only (lane/glm53-vision-ppn).
-#[allow(clippy::too_many_arguments)] // allow: one tower parameter per vision family plus the two engines the publication needs; bundling them hides which engine owns which side of the copy
 fn build_vision_overlay(
     engine: &Engine,
-    intake: &Engine,
     tower: Option<&memra_engine::vision::VisionTower>,
     gemma_tower: Option<&memra_engine::vision_gemma::GemmaVisionTower>,
     glm5_tower: Option<&memra_engine::vision_glm5::Glm5VisionTower>,
@@ -9896,12 +9742,10 @@ fn build_vision_overlay(
             engine.dtod_copy_into(&emb, &mut rows, off * n_embd)?;
             off += u.n_merged();
         }
-        v.overlay = Some(memra_engine::vision::EmbedOverlay::new_published(
-            engine,
-            intake,
+        v.overlay = Some(memra_engine::vision::EmbedOverlay {
             rows,
-            v.spans.clone(),
-        )?);
+            spans: v.spans.clone(),
+        });
         for u in units.iter_mut() {
             u.patches = Vec::new();
         }
@@ -9917,12 +9761,10 @@ fn build_vision_overlay(
         for u in units.iter() {
             off += tower.forward_unit(engine, u, &mut rows, off)?;
         }
-        v.overlay = Some(memra_engine::vision::EmbedOverlay::new_published(
-            engine,
-            intake,
+        v.overlay = Some(memra_engine::vision::EmbedOverlay {
             rows,
-            v.spans.clone(),
-        )?);
+            spans: v.spans.clone(),
+        });
         for u in units.iter_mut() {
             u.main = Vec::new();
             u.tiles = Vec::new();
@@ -9940,12 +9782,10 @@ fn build_vision_overlay(
             engine.dtod_copy_into(&emb, &mut rows, off * n_embd)?;
             off += u.n_soft();
         }
-        v.overlay = Some(memra_engine::vision::EmbedOverlay::new_published(
-            engine,
-            intake,
+        v.overlay = Some(memra_engine::vision::EmbedOverlay {
             rows,
-            v.spans.clone(),
-        )?);
+            spans: v.spans.clone(),
+        });
         for u in units.iter_mut() {
             u.patches = Vec::new();
         }
@@ -9985,12 +9825,10 @@ fn build_vision_overlay(
             }
         }
     }
-    v.overlay = Some(memra_engine::vision::EmbedOverlay::new_published(
-        engine,
-        intake,
+    v.overlay = Some(memra_engine::vision::EmbedOverlay {
         rows,
-        v.spans.clone(),
-    )?);
+        spans: v.spans.clone(),
+    });
     for u in units.iter_mut() {
         u.prep.patches = Vec::new();
     }
@@ -10413,31 +10251,13 @@ struct Session {
     /// rollback); it owns its trunk cache (s.cache stays None) and its session-continuity
     /// Philox counters. Created lazily at the first spec tick (the prime). Greedy
     /// (unpenalized) OR sampled (T>0 rejection-sampling accept, penalties EXCLUDED — no
-    /// penalty arm yet) + unconstrained + text-only + cold sessions only — EXCEPT the
-    /// prefix-restored carrier (lane/glm5-prefix-latent2, `MEMRA_GLM5_SPEC_PREFIX`), which
-    /// re-arms via `glm5_spec_session_from_restored`; no demotion-to-park (each a named
-    /// follow-up).
+    /// penalty arm yet) + unconstrained + text-only + cold sessions only; no demotion, no
+    /// parking, no prefix restore in this lane (each a named follow-up).
     glm5: Option<memra_engine::glm_spec::Glm5SpecSession>,
     /// Marks the session as glm5-routed even before `glm5` exists (the pre-prime window)
     /// — scheduler filters key on this, the dspark_on convention (derived from what
     /// admission actually installs, so dispatch and session can never disagree).
     glm5_on: bool,
-    /// GLM5 SPEC RESTORE carrier (lane/glm5-prefix-latent2, 2026-09-01): the DFlash2
-    /// drafter KV rebuilt from a prefix entry's tail at admission (while the PrefixCache
-    /// was borrowable). `Some` = the first spec tick builds the session via
-    /// `glm5_spec_session_from_restored` (restored trunk cache in `s.cache`, restored
-    /// prefix in `s.fed`, suffix in the prefill queue — the gemma spec-on-cache-hit
-    /// carrier shape); `None` = the cold `glm5_spec_session_new` path, byte-identical to
-    /// the pre-lane literal.
-    glm5_restored_dkv: Option<memra_engine::dflash::DflashKv>,
-    /// PROMPT-TOKEN PROVENANCE BIT (PR #93 review finding 3a): set the moment a prompt
-    /// token of a HYPER trunk walks tokenwise `decode_step` while MEMRA_HYPER_SUFFIX_PRIME
-    /// is armed (budget starvation, sub-floor suffix, any future prime-branch veto). The
-    /// two capture sites (`maybe_prefix_seed`, the lcp-split insert) refuse to publish
-    /// from a session carrying it — R16's chained-provenance prerequisite as a CHECKED
-    /// invariant, never an inference from which branch should have run. Non-hyper and
-    /// flag-off sessions never set it (their capture behavior is byte-identical).
-    prompt_tok_decode_step: bool,
     /// Draft depth K for the glm5 route (shared spec-K policy at admit, clamped to the
     /// verify walk's K+1 <= 15 decode-exact knee); 0 = plain.
     glm5_k: usize,
@@ -10498,10 +10318,6 @@ struct Session {
     request_id: String,
     /// The request's `[admit-predict]` one-shot latch, carried across a park replay.
     admit_predict_logged: bool,
-    /// The request's wire first-token deadline, carried across a step-OOM park replay so
-    /// the first-token deadline gate can judge the retry against the REAL remaining
-    /// deadline (the handler's 408 watch is still armed on the original stream).
-    wire_deadline: Option<std::time::Instant>,
     /// D2 gap G2: the engine admission charge this session was admitted under (the
     /// request-cost estimate the VRAM gate used). Booked into the per-model
     /// `AdmissionBook` at `active.push` and released at `active.remove`; a step-OOM
@@ -10636,58 +10452,6 @@ fn drain_dspark_prefix_capture(
         return;
     };
     publish_dspark_prefix_capture(engine, px, hpx, s, cap);
-}
-
-/// GLM5 SPEC boundary publication (lane/glm5-prefix-latent2, 2026-09-01): the glm5 twin of
-/// the dspark drain above, with one timing difference — glm5 defers the prompt's drafter
-/// ingest to round 1, so the drain waits for `prefix_capture_ready` (drafter KV covers the
-/// boundary) instead of firing on the first sweep. Publication carries the latent boundary
-/// planes (the capture's tails + live append-only slices) and the DFlash2 drafter tail, so
-/// a later hit can re-arm a spec session instead of demoting to plain.
-fn drain_glm5_prefix_capture(
-    engine: &Engine,
-    px: &mut PrefixCache,
-    hpx: &mut HostPrefixCache,
-    s: &mut Session,
-) {
-    if !s.glm5.as_ref().is_some_and(|g| g.prefix_capture_ready()) {
-        return;
-    }
-    let Some(cap) = s.glm5.as_mut().and_then(|g| g.take_prefix_capture()) else {
-        return;
-    };
-    let Some(g) = s.glm5.as_ref() else { return };
-    let end = cap.pos.min(s.fed.len());
-    if end == 0 {
-        return;
-    }
-    let pool_key = s.pool_key();
-    if px.has_key(&pool_key, &s.fed[..end]) {
-        return;
-    }
-    // The drafter tail travels with the entry or the restore half cannot exist (the draft
-    // state derives from trunk hidden FEATURES a KV restore cannot return — the dspark
-    // publisher's law, verbatim). Publication and consumption gate on the SAME flag
-    // (`glm5_spec_prefix_on`), so unset is a true rollback, memory profile included.
-    let tail = g.export_draft_tail(engine, end);
-    if tail.is_none() {
-        eprintln!(
-            "[prefix-cache] glm5 publish: draft tail export failed; entry published \
-             trunk-only (a later spec hit will demote to the plain path)"
-        );
-    }
-    prefix_insert_from_spec_boundary(
-        engine,
-        px,
-        hpx,
-        &pool_key,
-        &s.fed,
-        g.cache_ref(),
-        None,
-        tail,
-        cap,
-        "glm5-boundary",
-    );
 }
 
 /// Primary CUDA ordinal for the serving worker. CUDA_VISIBLE_DEVICES already remaps physical GPUs
@@ -11762,58 +11526,8 @@ pub fn run(
         };
     // Publish the serving decision to the HTTP intake (main.rs glm5_vision_enabled):
     // image_url parts route to the glm5 planner iff a tower is actually loaded, whatever
-    // combination of default/flag/dir produced it — AND the placement can actually deliver
-    // the overlay to embedding intake.
-    //
-    // PLACEMENT ADMISSIBILITY (lane/glm53-vision-ppn, 2026-09-01). A loaded tower is not
-    // sufficient. The overlay's rows have to be resident in the context of the engine that
-    // embeds (pp stage 0 under a per-stage-stream split), which the tower's own engine is NOT
-    // on the deployed multi-card shape. `EmbedOverlay::new_published` closes that by default;
-    // pinned to `MEMRA_VISION_OVERLAY_PUBLISH=0` it cannot, and the refusal would land
-    // MID-PREFILL on a live request (a 500, which is exactly what the launch window saw).
-    // Decide it ONCE here and refuse at the HTTP waist instead — the same named 4xx the
-    // `MEMRA_GLM5_VISION=0` kill switch produces. An unrecognized door value is a BOOT death,
-    // the same shape as an unloadable tower above: a mistyped correctness door must never
-    // resolve to a default.
-    let glm5_vision_servable = match glm5_tower.as_ref() {
-        None => false,
-        Some(_) => {
-            let publish = memra_engine::vision::overlay_publish_mode()
-                .unwrap_or_else(|e| panic!("glm5 vision: {e}"));
-            match loaded
-                .values()
-                .find(|lm| lm.model.cfg.arch.is_glm5_next())
-                .map(|lm| lm.model.vision_intake_engine(&engine))
-            {
-                None => true,
-                Some(Err(e)) => panic!(
-                    "glm5 vision: the embedding-intake engine for this placement could not be \
-                     resolved: {e}"
-                ),
-                Some(Ok(intake)) => {
-                    let cross = intake.ctx().cu_ctx() != engine.ctx().cu_ctx();
-                    let servable = !cross || publish != memra_engine::vision::OverlayPublish::Never;
-                    eprintln!(
-                        "[glm5-vision] overlay intake: tower dev{} -> intake dev{} \
-                         (cross_context={cross}) publish={publish:?} servable={servable}",
-                        engine.ctx().ordinal(),
-                        intake.ctx().ordinal()
-                    );
-                    if !servable {
-                        eprintln!(
-                            "[glm5-vision] IMAGE INPUT DISABLED: this placement embeds on \
-                             another CUDA context and MEMRA_VISION_OVERLAY_PUBLISH=0 forbids \
-                             publishing the overlay there. Image requests refuse at intake \
-                             instead of failing mid-prefill; unset the door (default auto) to \
-                             serve images, or run MEMRA_PP_STREAMS=0 (~3x decode cost)"
-                        );
-                    }
-                    servable
-                }
-            }
-        }
-    };
-    crate::GLM5_VISION_SERVING.store(glm5_vision_servable, std::sync::atomic::Ordering::Release);
+    // combination of default/flag/dir produced it.
+    crate::GLM5_VISION_SERVING.store(glm5_tower.is_some(), std::sync::atomic::Ordering::Release);
     // STEP37 vision tower (lane/step37-vision): loaded once at spawn from the serving
     // artifact's own directory (the perception_encoder tensors live unquantized inside
     // the checkpoint — MEMRA_STEP_VISION_DIR points at the model dir). Fail LOUD at boot
@@ -12591,60 +12305,6 @@ pub fn run(
             };
             let model_key = req.model.clone();
             let prompt_len = req.prepared_prompt.as_ref().unwrap().len();
-            // FIRST-TOKEN DEADLINE GATE (lane/bench-debts-20260901; darklanes
-            // research/competitive-bench-20260901/RESULTS.md §7 item 3 and
-            // research/d2-shadow-20260831/RESULTS.md §7's named streaming analog):
-            // at 1.64x KV oversubscription the bench cancelled 70-74% of turns at the
-            // 90 s wire ceiling: each one burned its full deadline queueing behind the
-            // aggregate prime backlog and then discarded the prefill it had bought. The
-            // handler-side `shed_deadline` cannot see this shape (its backlog gauge is
-            // the handler->worker queue, which stays ~0 while sessions grind inside the
-            // cap); this gate judges the same contract at the seam that can: exact
-            // prompt tokens, the live prime backlog, and the REMAINING wire deadline.
-            // Refusal is the shed contract byte-shape (429 rate_limit + Retry-After,
-            // never billed, request not admitted): the D2 G6 machinery. Interactive
-            // lane only (dark lanes already shed at cap); capture requests bypass
-            // (their prime is the product). Re-evaluated on every defer tick by
-            // construction, so a request whose deadline decays while queued is refused
-            // at the first infeasible consideration, not at the 408.
-            if first_token_deadline_gate_on()
-                && lane == crate::lanes::Lane::Interactive
-                && req.capture.is_none()
-                && let Some(dl) = req.wire_deadline
-            {
-                let remaining_ms = dl.saturating_duration_since(Instant::now()).as_millis() as u64;
-                let backlog_tokens: u64 = active.iter().map(|s| s.prefill_queue.len() as u64).sum();
-                if let Some(est_ms) = crate::admit_predict::first_token_wait_infeasible(
-                    prompt_len as u64,
-                    backlog_tokens,
-                    remaining_ms,
-                    crate::env_u64("MEMRA_PREFILL_FLOOR_TOK_S", crate::PREFILL_FLOOR_TOK_S),
-                ) {
-                    let retry_after_s = (est_ms / 1_000).clamp(1, 60);
-                    eprintln!(
-                        "[first-token-gate] id={} refused: est_first_token_ms={est_ms} \
-                         (prompt {prompt_len} tok + prime backlog {backlog_tokens} tok at \
-                         the prefill floor) exceeds remaining deadline {remaining_ms} ms \
-                         x{}% margin; 429 retry_after_s={retry_after_s}",
-                        req.request_id,
-                        crate::admit_predict::FIRST_TOKEN_DEADLINE_MARGIN_PCT,
-                    );
-                    release_admission_reservation(req.lane);
-                    let _ = req.tx.send(Event::Error(EngineError::rate_limit_after(
-                        format!(
-                            "estimated first-token wait ~{}s (a {prompt_len}-token prompt \
-                             behind a {backlog_tokens}-token prime backlog at the \
-                             pessimistic prefill floor) exceeds this request's remaining \
-                             timeout_ms deadline ({remaining_ms} ms); this request was not \
-                             admitted and is not billed; retry after ~{retry_after_s}s or \
-                             raise timeout_ms (a coarse estimate, not a promise)",
-                            est_ms / 1_000,
-                        ),
-                        retry_after_s,
-                    )));
-                    continue;
-                }
-            }
             let peer_probe_allows_spec = health.peer_probe_allows_spec_admission();
             let estimate_spec = admission_request_may_spec(
                 &loaded[&model_key],
@@ -13946,11 +13606,6 @@ pub fn run(
                 // session instead of cold-priming. It still has no hidden anchor, LCP split
                 // or message-boundary arm, so whole-entry hits are the only restorable shape.
                 drain_dspark_prefix_capture(&engine, &mut px, &mut hpx, s);
-
-                // The glm5 twin (lane/glm5-prefix-latent2): latent boundary planes + the
-                // DFlash2 drafter tail; waits for the drafter KV to cover the boundary
-                // (glm5 ingests the prompt's features at round 1, not at creation).
-                drain_glm5_prefix_capture(&engine, &mut px, &mut hpx, s);
             }
 
             if automatic_demote || demote_at.is_some() {
@@ -16478,20 +16133,9 @@ fn glm5_route_admits(
     penalized: bool,
     constrained: bool,
     vision: bool,
-    // COLD session, or the prefix-restored CARRIER (lane/glm5-prefix-latent2): a hit whose
-    // drafter KV was rebuilt from the entry's tail admits the route — every other warm
-    // shape (live spec state, continuation resume, plain reuse without a tail) still
-    // refuses; the call site owns the carrier proof (`glm5_restored_carrier`).
-    cold_or_restored_carrier: bool,
+    cold: bool,
 ) -> bool {
-    capable
-        && serve_spec
-        && k > 0
-        && temp_ok
-        && !penalized
-        && !constrained
-        && !vision
-        && cold_or_restored_carrier
+    capable && serve_spec && k > 0 && temp_ok && !penalized && !constrained && !vision && cold
 }
 
 /// K+1 <= 15 HARD BOUND for the glm5 route: verify rows ride the batched-decode walk's
@@ -16838,7 +16482,6 @@ fn park_requeue(loaded: &HashMap<String, LoadedModel>, s: &Session) -> Option<Bo
         prepared_constraint: None,
         constraint_ready: None,
         oom_retries: s.oom_retries,
-        wire_deadline: s.wire_deadline,
         spec_k_replay: Some(s.spec_k),
         prepared_prompt: None,
         images: Vec::new(),
@@ -17693,30 +17336,16 @@ fn admit(
                     // trunk's carried suffix then rides the PRIME program, the capture is
                     // prime-provenance, and R16's ground dissolves — same predicate as the
                     // prefill_tick veto lift, one law.
-                    // STABLE-BOUNDARY CAPTURE on the shallow-hit shape (lane/
-                    // bench-debts-20260901; flag doc at `prefix_stable_boundary_on`): the
-                    // LCP teacher only reaches as deep as a surviving device sibling, so
-                    // when the session's deep entries were evicted/demoted the taught
-                    // boundary collapses to the shared shallow entry and the cold prime
-                    // captures nothing a later turn (or the host tier) can serve. The
-                    // render-stable last-turn boundary is derivable from the prompt alone;
-                    // deepest-wins, and the fed-start floor plus the grid law apply through
-                    // the same `hit_lcp_snapshot_boundary` body either way.
-                    let lcp_taught = px.best_lcp_entry(&pool_key, &prompt).map(|(_, lcp)| lcp);
-                    let stable = if prefix_stable_boundary_on() {
-                        plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t))
-                    } else {
-                        None
-                    };
-                    if let Some(la) = hit_lcp_snapshot_boundary(
-                        lcp_taught.unwrap_or(0).max(stable.unwrap_or(0)),
-                        hit_len,
-                        prompt.len(),
-                    ) && (!eager_only_model(lm)
-                        || carried_suffix_primes(
-                            memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan),
-                            hyper_suffix_prime_on(),
-                        ))
+                    if let Some(la) = px
+                        .best_lcp_entry(&pool_key, &prompt)
+                        .and_then(|(_, lcp)| hit_lcp_snapshot_boundary(lcp, hit_len, prompt.len()))
+                        && (!eager_only_model(lm)
+                            || carried_suffix_primes(
+                                memra_engine::plan_backend::decode_batch_unconverted(
+                                    &lm.model.plan,
+                                ),
+                                hyper_suffix_prime_on(),
+                            ))
                         && !px.has_key(&pool_key, &prompt[..la])
                     {
                         snapshot_at = Some(la);
@@ -17888,31 +17517,6 @@ fn admit(
                 if ba >= PREFIX_CACHE_MIN_TOKENS && !px.has_key(&pool_key, &prompt[..ba]) {
                     snapshot_at = Some(ba);
                 }
-            }
-            // STABLE-BOUNDARY CAPTURE on the miss path (lane/bench-debts-20260901; flag
-            // doc at `prefix_stable_boundary_on`): whatever the LCP or first-message arms
-            // taught, a cold turn also captures at the render-stable last-turn boundary,
-            // the deepest key the SAME session's next re-rendered turn resends verbatim.
-            // The prompt-end seed at prefill-done keeps its exact-resend role; when the
-            // stable boundary sits within `prefix_seed_deepen_min()` of prompt end (the
-            // common template-header gap), `prefix_seed_deepens` skips that seed on its
-            // own, so the flag does not double-mint. Deepest-wins over an armed boundary;
-            // `has_key` dedupes against a prior turn's capture.
-            if prefix_stable_boundary_on()
-                && let Some(b) = stable_boundary_arm(
-                    plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t)),
-                    snapshot_at,
-                    prompt.len(),
-                )
-                && !px.has_key(&pool_key, &prompt[..b])
-            {
-                snapshot_at = Some(b);
-                eprintln!(
-                    "[prefix-cache] stable-boundary capture armed at {b} of {} prompt \
-                     tokens (model {})",
-                    prompt.len(),
-                    req.model
-                );
             }
             if prompt.len() >= PREFIX_CACHE_MIN_TOKENS {
                 seed_prefix = true; // re-checked against covering entries at prefill-done
@@ -18160,7 +17764,7 @@ fn admit(
         None;
     // ONLY when the request WOULD HAVE COLD-PRIMED. The shipped shape guard already decides
     // who gets what: short-decode requests take the plain hit (proven byte-exact, ~1 s), and
-    // only cold-preferring long decodes have a prime to save. The first gate run on the rented
+    // only cold-preferring long decodes have a prime to save. The first gate run on the sbox
     // box proved why this condition is load-bearing and not an optimization: without it the
     // conversion re-armed dspark for a 64-token request the guard had JUST routed to the
     // plain hit (the log shows "serving the hit and going plain" followed by "DSPARK
@@ -18247,56 +17851,6 @@ fn admit(
                  rather than downgrading to plain (model {})",
                 req.model,
             );
-        }
-    }
-    // GLM5 SPEC RESTORE, half 1 of 2 (lane/glm5-prefix-latent2, 2026-09-01): rebuild the
-    // DFlash2 drafter KV from the entry's tail HERE, while the PrefixCache is borrowable
-    // (the dspark placement law above, verbatim) — the session itself is born at the first
-    // spec tick from the CARRIER (restored cache in s.cache, restored prefix in s.fed,
-    // suffix in the prefill queue: the gemma spec-on-cache-hit shape), because the suffix
-    // prime belongs on the tick, not in admission. The carrier is NOT taken: the normal
-    // hit plumbing below carries it into the session either way, so a K-shed at the route
-    // decision (glm5_on false) degrades to the PLAIN HIT, never to a cold prime. A
-    // session-BUILD error at the first tick is different (PR #96 review round 2, finding
-    // 3): admission pre-validated the shape, so from_restored failing there is an
-    // invariant break and FAILS THE REQUEST loudly (the dspark law in step_glm5_spec) —
-    // do not build on a tick-time degrade; it does not exist.
-    let mut glm5_prefix_restored_dkv: Option<memra_engine::dflash::DflashKv> = None;
-    if memra_engine::glm_spec::glm5_spec_prefix_on()
-        && glm5_spec_capable(lm)
-        && serve_spec
-        && !vision_req
-        && constraint.is_none()
-        && ((sampler.is_greedy() && !greedy_penalized) || sampler.temperature() > 0.0)
-        && !spec_sampling_for(&sampler).is_some_and(|sp| sp.pen_on())
-        && spec_restored.is_none()
-        && dspark_prefix_restored.is_none()
-        && let Some(carrier) = reused.as_ref()
-        && prefix_hit
-    {
-        let suffix_len = prompt.len().saturating_sub(carrier.fed.len());
-        // Empty-suffix full-cover hits keep the plain boundary-logits resume (faster than
-        // any prime); sub-floor suffixes keep the plain hit (the prime-floor law — a
-        // tokenwise suffix under a spec session is the exact two-programs door this lane
-        // closes). Both are hits, both bill cached, neither is a defect.
-        if suffix_len >= memra_engine::hybrid_forward::PRIME_MIN_T {
-            let tail_dkv = prefix_pin
-                .as_ref()
-                .and_then(|p| px.id_index(p))
-                .and_then(|i| px.entries[&pool_key][i].dspark_draft.as_ref())
-                .and_then(|tail| {
-                    let dr = lm.model.glm5_dflash.as_ref()?;
-                    memra_engine::dflash::DflashKv::from_tail(engine, &dr.draft.cfg, ctx_cap, tail)
-                });
-            match tail_dkv {
-                Some(dkv) => glm5_prefix_restored_dkv = Some(dkv),
-                None => eprintln!(
-                    "[prefix-cache] glm5 spec restore declined (no drafter tail on the \
-                     entry, or the tail does not cover the drafter window); the plain \
-                     path serves the hit (model {})",
-                    req.model,
-                ),
-            }
         }
     }
     // Downgrade-on-hit (lane/spec-prefix-cache): a restored prefix carrier without a
@@ -19207,19 +18761,6 @@ fn admit(
         && !dspark_on
         && gspec_k == 0
         && req_spec_k_replay.is_none();
-    // GLM5 SPEC RESTORE, half 2 of 2 (lane/glm5-prefix-latent2): a prefix-hit CARRIER with
-    // a rebuilt drafter KV admits the spec route — every OTHER cold-only term still holds
-    // (no live spec state of any family), only the "owns no cache" terms flip: the carrier
-    // IS the restored cache + prefix, consumed by the first spec tick (the gemma
-    // spec-on-cache-hit shape).
-    let glm5_restored_carrier = glm5_prefix_restored_dkv.is_some()
-        && spec.is_none()
-        && spec_resumed == 0
-        && !seed_fed.is_empty()
-        && cache.is_some()
-        && !dspark_on
-        && gspec_k == 0
-        && req_spec_k_replay.is_none();
     let glm5_on = glm5_route_admits(
         glm5_capable,
         serve_spec,
@@ -19228,19 +18769,13 @@ fn admit(
         glm5_penalized,
         constraint.is_some(),
         vision_state.is_some(),
-        glm5_cold || glm5_restored_carrier,
+        glm5_cold,
     );
-    // A carrier the route did not take (K shed to 0 under load, capability lost) serves
-    // the PLAIN hit — drop the drafter KV so the session literal below stays truthful and
-    // the tick dispatch can never see a dkv on a plain session.
-    if !(glm5_on && glm5_restored_carrier) {
-        glm5_prefix_restored_dkv = None;
-    }
     if glm5_capable {
         // Admission receipt (the [spec-k] shape): the deploy gate greps route+K per request.
         eprintln!(
             "[glm5-spec] route={} K={glm5_k} model={:?} tenant={:?} prompt={} \
-             wave={projected_wave} sampled={} penalized={} cold={} restored={}",
+             wave={projected_wave} sampled={} penalized={} cold={}",
             if glm5_on { "spec" } else { "plain" },
             req.model,
             crate::auth::meter_key(&req.cache_ns),
@@ -19248,7 +18783,6 @@ fn admit(
             (sampler.temperature() > 0.0) as u8,
             glm5_penalized as u8,
             glm5_cold as u8,
-            glm5_prefix_restored_dkv.is_some() as u8,
         );
     }
     // legacy tokenwise cache only when the spec path did NOT take the session (spec owns its own).
@@ -19271,14 +18805,9 @@ fn admit(
     // spec-on-cache-hit lane's text.
     // A glm5-spec session is the same shape: its cache is born inside
     // glm5_spec_session_new at the first spec tick, and glm5_on requires a COLD session
-    // (glm5_cold above), so allocating a plain cache here would only be dropped —
-    // EXCEPT the restored carrier (lane/glm5-prefix-latent2): like the gemma
-    // spec-on-cache-hit shape, the restored trunk cache rides in s.cache and
-    // glm5_spec_session_from_restored takes it at the first spec tick.
-    let cache = if dspark_on || (glm5_on && glm5_prefix_restored_dkv.is_none()) {
+    // (glm5_cold above), so allocating a plain cache here would only be dropped.
+    let cache = if dspark_on || glm5_on {
         None
-    } else if glm5_on {
-        cache // the restored carrier (glm5_restored_carrier proved it Some)
     } else if gspec_k > 0 {
         if gspec_carrier { cache } else { None }
     } else {
@@ -19546,15 +19075,11 @@ fn admit(
         dspark_on: dspark_on || dspark_session_installed,
         dspark_capture_prefix,
         // The glm5 dispatch flag follows the dspark convention: derived from the decision
-        // that shaped THIS literal, so the tick dispatch and the installed session cannot
-        // disagree. The restore fold (lane/glm5-prefix-latent2) rides the carrier shape:
-        // the dkv below is Some ONLY when glm5_on took the restored carrier, and the
-        // first spec tick consumes it together with s.cache + s.fed.
+        // that shaped THIS literal (no restore fold exists for glm5 yet — cold only), so
+        // the tick dispatch and the installed session cannot disagree.
         glm5: None,
         glm5_on,
         glm5_k,
-        glm5_restored_dkv: glm5_prefix_restored_dkv,
-        prompt_tok_decode_step: false,
         constraint,
         mask_dev: None,
         mask_words: 0,
@@ -19580,7 +19105,6 @@ fn admit(
         trace_id: req.trace_id,
         request_id: req.request_id,
         admit_predict_logged: req.admit_predict_logged,
-        wire_deadline: req.wire_deadline,
         // Booked by the worker loop at active.push (the admission charge is computed
         // there); zero until then so a test-constructed Session books nothing.
         booked_kv_bytes: 0,
@@ -20050,7 +19574,6 @@ fn prefill_tick(
     {
         build_vision_overlay(
             engine,
-            lm.model.vision_intake_engine(engine)?,
             vision_tower,
             gemma_tower,
             glm5_tower,
@@ -20082,13 +19605,15 @@ fn prefill_tick(
     // (glm5_next) are eager-only for BATCHING reasons, not prime reasons — their engine
     // prime is continuation-capable (see `hyper_suffix_prime_on`), so with the flag armed
     // a carried suffix takes the prime branch below instead of ~33 ms/token tokenwise.
-    let hyper_trunk = memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan);
-    let suffix_prime = carried_suffix_primes(hyper_trunk, hyper_suffix_prime_on());
+    let suffix_prime = carried_suffix_primes(
+        memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan),
+        hyper_suffix_prime_on(),
+    );
     if eager_mono
         && carried
         && !suffix_prime
         && q > 0
-        && hyper_trunk
+        && memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan)
         && s.n_cached > 0
         && s.fed.len() == s.n_cached
     {
@@ -20096,8 +19621,7 @@ fn prefill_tick(
         // design, not a defect — logging it would spam every gemma reuse hit): the parent
         // lane's C2 defect was only ever inferred from TTFT arithmetic; the deploy gate
         // greps this line instead. `fed == n_cached` holds only before the first suffix
-        // token is consumed — once per admitted request (so once per TURN in a multi-turn
-        // conversation and once per sibling in an N-way fanout), never per token.
+        // token is consumed — once per restored session, not per token.
         eprintln!(
             "[suffix-prime] DECLINED (MEMRA_HYPER_SUFFIX_PRIME off): carried suffix \
              {q} tokens rides tokenwise decode_step (model {})",
@@ -20211,21 +19735,6 @@ fn prefill_tick(
         }
         consumed = take;
     } else if let Some(tok) = s.prefill_queue.pop_front() {
-        // PROVENANCE BIT + TOKENWISE receipt (PR #93 review finding 3a/5): a hyper-trunk
-        // prompt token walking decode_step UNDER THE FLAG marks the session — the capture
-        // sites refuse to publish from it (R16 as a checked invariant; budget starvation,
-        // sub-floor suffixes and any future prime-branch veto all land in this branch).
-        // First-token receipt, once per session; non-hyper and flag-off sessions are
-        // byte-identical (the bit stays false).
-        if hyper_trunk && suffix_prime && !s.prompt_tok_decode_step {
-            s.prompt_tok_decode_step = true;
-            eprintln!(
-                "[suffix-prime] TOKENWISE (flag on): prompt tokens ride decode_step \
-                 (carried={}, q={q}, budget={budget}); captures for this session refuse \
-                 (model {})",
-                carried as u8, s.model
-            );
-        }
         if std::env::var("MEMRA_DEBUG_PRIMESEG").is_ok() {
             // The W1 two-programs door (see the comment above): prompt tokens going through
             // decode_step one at a time. Loud under the diagnostic so a byte comparison can
@@ -20279,18 +19788,7 @@ fn prefill_tick(
     // of the prompt as a continuation (the LCP-split learning insert).
     if s.snapshot_at == Some(s.fed.len()) {
         s.snapshot_at = None;
-        // PROVENANCE REFUSAL (PR #93 review finding 3a) — the seed site's twin: a
-        // decode_step-fed hyper-under-flag session publishes nothing (R16).
-        if s.prompt_tok_decode_step {
-            eprintln!(
-                "[suffix-prime] lcp-split capture REFUSED: prompt tokens rode decode_step \
-                 under MEMRA_HYPER_SUFFIX_PRIME; mixed-provenance entry not published \
-                 (model {})",
-                s.model
-            );
-        } else {
-            prefix_insert_from_session(engine, px, hpx, s, "lcp-split");
-        }
+        prefix_insert_from_session(engine, px, hpx, s, "lcp-split");
     }
     // PLAIN-AFFINITY: capture the pre-generation checkpoint the instant the prime reaches its
     // boundary (no-op unless s.ckpt_at == s.fed.len()). Cheap — one GDN-state snapshot.
@@ -21416,25 +20914,10 @@ fn step_session(
         // exactly as in prefill_tick (lane/glm5-prefix-latent2 — one law, both sites).
         let eager_mono = eager_only_model(lm);
         let carried = s.cache.as_ref().is_some_and(|c| c.pos > 0);
-        let hyper_trunk = memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan);
-        let suffix_prime = carried_suffix_primes(hyper_trunk, hyper_suffix_prime_on());
-        if eager_mono
-            && carried
-            && !suffix_prime
-            && q > 0
-            && hyper_trunk
-            && s.n_cached > 0
-            && s.fed.len() == s.n_cached
-        {
-            // The prefill_tick DECLINED receipt's twin (PR #93 review finding 5): the
-            // per-session path's OFF-arm hyper suffix was silent. Same once-per-request
-            // predicate (`fed == n_cached` holds only before the first suffix token).
-            eprintln!(
-                "[suffix-prime] DECLINED (MEMRA_HYPER_SUFFIX_PRIME off): carried suffix \
-                 {q} tokens rides tokenwise decode_step (model {})",
-                s.model
-            );
-        }
+        let suffix_prime = carried_suffix_primes(
+            memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan),
+            hyper_suffix_prime_on(),
+        );
         if !confidence_trace_enabled()
             && q >= memra_engine::hybrid_forward::PRIME_MIN_T.max(2)
             && !(eager_mono && carried && !suffix_prime)
@@ -21482,17 +20965,6 @@ fn step_session(
                 s.sampler.accept(tok);
             }
         } else if let Some(tok) = s.prefill_queue.pop_front() {
-            // PROVENANCE BIT + TOKENWISE receipt (PR #93 review finding 3a/5) — the
-            // prefill_tick twin: mark hyper-under-flag sessions whose prompt tokens walk
-            // decode_step so the capture sites refuse them (R16 as a checked invariant).
-            if hyper_trunk && suffix_prime && !s.prompt_tok_decode_step {
-                s.prompt_tok_decode_step = true;
-                eprintln!(
-                    "[suffix-prime] TOKENWISE (flag on): prompt tokens ride decode_step \
-                     (carried={}, q={q}); captures for this session refuse (model {})",
-                    carried as u8, s.model
-                );
-            }
             // CAPTURE (lane/embed-serve): the FINAL prompt token walks decode_step_h so
             // sub-prime-floor prompts can still pool their last position (same numeric
             // program; prime_cache hard-asserts T >= PRIME_MIN_T).
@@ -22063,14 +21535,11 @@ fn step_glm5_spec(
         finish(s, StopReason::MaxNew);
         return Ok(false);
     }
-    // turn 1: prime (the session owns its cache; s.cache stays None). Cold sessions drain
-    // the whole prompt from the prefill queue; the RESTORED carrier (lane/glm5-prefix-
-    // latent2) drains only the suffix — the restored prefix already sits in s.fed and the
-    // restored trunk cache in s.cache (the gemma spec-on-cache-hit shape), and the dkv
-    // admission rebuilt from the entry's tail rides s.glm5_restored_dkv.
+    // turn 1: prime (the session owns its cache; s.cache stays None). Cold sessions only —
+    // admission requires it (glm5_cold), so the whole prompt is the prefill queue.
     if s.glm5.is_none() {
-        let queued: Vec<u32> = s.prefill_queue.drain(..).collect();
-        if queued.is_empty() {
+        let prompt: Vec<u32> = s.prefill_queue.drain(..).collect();
+        if prompt.is_empty() {
             finish(s, StopReason::MaxNew);
             return Ok(false);
         }
@@ -22079,46 +21548,24 @@ fn step_glm5_spec(
         }
         // Sampled admission (T>0): the ONE Sampler->SpecSampling seam (spec_sampling_for),
         // same as the frspec/dspark routes — None = greedy, byte-identical instrument route.
-        let sess = match s.glm5_restored_dkv.take() {
-            Some(dkv) => {
-                let restored = s
-                    .cache
-                    .take()
-                    .ok_or("glm5 restored dkv without a carrier cache (admission literal bug)")?;
-                lm.model
-                    .glm5_spec_session_from_restored(
-                        engine,
-                        restored,
-                        &s.fed,
-                        &queued,
-                        dkv,
-                        s.gspec_ctx,
-                        spec_sampling_for(&s.sampler),
-                    )
-                    // A restored-arm refusal is an invariant break (admission pre-validated
-                    // the shape): fail loudly rather than silently switching numeric
-                    // programs mid-request — the dspark law, same as the cold arm below.
-                    .map_err(|err| format!("glm5 spec restore prime failed: {err}"))?
+        let sess = match lm.model.glm5_spec_session_new(
+            engine,
+            &prompt,
+            s.gspec_ctx,
+            spec_sampling_for(&s.sampler),
+        ) {
+            Ok(sess) => sess,
+            Err(err) => {
+                // Prime-time refusal (ctx shape, alloc failure): fail the request loudly
+                // rather than silently switching numeric programs mid-request — admission
+                // is where the plain fallback lives (the dspark law).
+                return Err(format!("glm5 spec prime failed: {err}").into());
             }
-            None => match lm.model.glm5_spec_session_new(
-                engine,
-                &queued,
-                s.gspec_ctx,
-                spec_sampling_for(&s.sampler),
-            ) {
-                Ok(sess) => sess,
-                Err(err) => {
-                    // Prime-time refusal (ctx shape, alloc failure): fail the request loudly
-                    // rather than silently switching numeric programs mid-request — admission
-                    // is where the plain fallback lives (the dspark law).
-                    return Err(format!("glm5 spec prime failed: {err}").into());
-                }
-            },
         };
         if let Some(trace) = s.ttft.as_ref() {
             trace.mark_prime_end();
         }
-        for &tok in &queued {
+        for &tok in &prompt {
             s.fed.push(tok);
             s.sampler.accept(tok);
         }
@@ -22930,8 +22377,8 @@ mod tests {
         DEFAULT_PREFIX_CACHE_PROTECTED_PCT, HostPrefixCache, HostPrefixEntry,
         PREFIX_CACHE_MIN_TOKENS, PREFIX_ENTRY_LAYOUT_VERSION, PartialPrefixDecision, PoolKey,
         PrefixCache, PrefixEntry, PrefixFanoutCandidate, PrefixFanoutGroup, PrefixSegment,
-        host_promote_candidate, partial_prefix_decision, prefix_fanout_groups, retire_prefix_pin,
-        stable_boundary_arm, validate_prefix_plane_shape,
+        partial_prefix_decision, prefix_fanout_groups, retire_prefix_pin,
+        validate_prefix_plane_shape,
     };
     use super::{
         DecodeChunkPolicy, resolve_decode_chunk_policy, resolve_pp_wave_chunk_policy,
@@ -23002,7 +22449,6 @@ mod tests {
             step_images: Vec::new(),
             capture: None,
             vision_memory: None,
-            wire_deadline: None,
             tx,
         }
     }
@@ -23404,7 +22850,6 @@ mod tests {
             step_images: Vec::new(),
             capture: None,
             vision_memory: None,
-            wire_deadline: None,
             ttft: None,
             tx: bad_tx,
         });
@@ -26281,11 +25726,7 @@ mod tests {
         );
         assert!(
             !glm5_route_admits(true, true, 3, true, false, false, false, false),
-            "a warm session that is NEITHER cold NOR the restored carrier must refuse — \
-             the last param is `cold_or_restored_carrier` (lane/glm5-prefix-latent2): the \
-             call site passes `glm5_cold || glm5_restored_carrier`, and the carrier proof \
-             (rebuilt drafter KV + restored cache + non-empty seed, every other spec-state \
-             term still cold) lives at the call site, not here"
+            "a reused/restored/warm session must refuse — the glm5 session is cold-only"
         );
     }
 
@@ -26364,28 +25805,10 @@ mod tests {
             "the chosen K must pass the knee clamp"
         );
         // 4. The session-owned-cache arm: admission must not allocate a plain cache under
-        //    a glm5 route — EXCEPT the restored carrier (lane/glm5-prefix-latent2), which
-        //    keeps the restored cache for the first spec tick to consume. Anchored on the
-        //    PRE-TEST slice: the old form of this assertion matched its own string literal
-        //    (the self-match trap the wiring-assertions law names).
-        let live_pre_tests = &code[..code.find("mod tests").expect("the test module exists")];
+        //    a glm5 route.
         assert!(
-            live_pre_tests.contains(
-                "let cache = if dspark_on || (glm5_on && glm5_prefix_restored_dkv.is_none()) {"
-            ),
-            "the cache literal must carry the glm5 no-alloc arm with the restored-carrier exception"
-        );
-        assert!(
-            live_pre_tests.contains("glm5_restored_dkv: glm5_prefix_restored_dkv,"),
-            "the session literal must carry the restored drafter KV"
-        );
-        assert!(
-            live_pre_tests.contains("glm5_spec_session_from_restored("),
-            "the first spec tick must consume the restored carrier via from_restored"
-        );
-        assert!(
-            live_pre_tests.contains("drain_glm5_prefix_capture(&engine, &mut px, &mut hpx, s);"),
-            "the retire-adjacent sweep must drain glm5 boundary captures"
+            code.contains("let cache = if dspark_on || glm5_on {"),
+            "the cache literal must carry the glm5 no-alloc arm"
         );
         // 5. The per-request engagement receipt is an INVOCATION inside step_glm5_spec
         //    (the deploy gate greps the server log for it; never-serve-greedy law).
@@ -27171,90 +26594,6 @@ mod tests {
         );
     }
 
-    /// FIRST-TOKEN DEADLINE GATE wiring (lane/bench-debts-20260901, competitive-bench
-    /// engine debt 3): anchored on INVOCATIONS in comment-stripped production text
-    /// (wiring-assertions law).
-    #[test]
-    fn first_token_deadline_gate_wiring() {
-        let src = include_str!("worker.rs");
-        let code: String = src
-            .lines()
-            .map(|l| l.split("//").next().unwrap_or(""))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
-
-        // ONE gate site, judging through the pure predicate.
-        let sites: Vec<usize> = prod
-            .match_indices("crate::admit_predict::first_token_wait_infeasible(")
-            .map(|(i, _)| i)
-            .collect();
-        assert_eq!(sites.len(), 1, "exactly one production gate site");
-        let i = sites[0];
-        // Behind the flag, interactive-only, capture-exempt, judging the REMAINING
-        // wire deadline and the live prime backlog.
-        let before = &prod[i.saturating_sub(1000)..i];
-        assert!(
-            before.contains("first_token_deadline_gate_on()"),
-            "the gate must be flag-guarded"
-        );
-        assert!(
-            before.contains("lane == crate::lanes::Lane::Interactive"),
-            "interactive lane only"
-        );
-        assert!(
-            before.contains("req.capture.is_none()"),
-            "capture requests bypass"
-        );
-        assert!(
-            before.contains("req.wire_deadline"),
-            "the wire deadline is the judged contract"
-        );
-        assert!(
-            before.contains("s.prefill_queue.len()"),
-            "the backlog is the live prime queue, not a proxy"
-        );
-        // The refusal is the shed contract: Retry-After constructor, reservation
-        // released, and the request never falls through to admission.
-        let after = &prod[i..(i + 2200).min(prod.len())];
-        assert!(
-            after.contains("EngineError::rate_limit_after("),
-            "refusal takes the Retry-After shed constructor"
-        );
-        assert!(
-            after.contains("release_admission_reservation(req.lane);"),
-            "the lane reservation is released on refusal"
-        );
-        assert!(
-            after.contains("continue;"),
-            "a refused request never reaches admission"
-        );
-        // The receipt line is grep-stable.
-        assert!(
-            after.contains("[first-token-gate] id="),
-            "the refusal logs a joined receipt line"
-        );
-        // The deadline is stamped at every handler submission seam beside the receipt
-        // identity: the two lib.rs handlers plus the shared surfaces body.
-        for (file, want) in [
-            (include_str!("lib.rs"), 2usize),
-            (include_str!("surfaces.rs"), 1usize),
-        ] {
-            let stripped: String = file
-                .lines()
-                .map(|l| l.split("//").next().unwrap_or(""))
-                .collect::<Vec<_>>()
-                .join("\n");
-            assert_eq!(
-                stripped
-                    .matches("wire_deadline = Some(deadline.at.into_std());")
-                    .count(),
-                want,
-                "every handler submission stamps the wire deadline"
-            );
-        }
-    }
-
     /// TOOTH for the H11 depth freeze (the measured 3.1x lever, canonflip-20260813):
     /// the seed decision must compare DEPTH against the deepest covering entry, never a
     /// boolean covering check. Under the pre-fix rule (`has_covering` -> skip), the shallow
@@ -27349,9 +26688,8 @@ mod tests {
         //    plan's hyper-trunk truth and the flag, and their veto terms consume it.
         assert_eq!(
             live.matches("carried_suffix_primes(").count(),
-            5, // fn def + 2 prefill sites + reseed narrowing + hit-LCP deepening (update
-            // this count AND this comment together when a new consumer lands)
-            "the carve-out predicate must be consumed at exactly the claimed seams"
+            5, // fn def + 2 prefill sites + reseed narrowing + hit-LCP deepening
+            "the carve-out predicate must be consumed at exactly the four claimed seams"
         );
         assert_eq!(
             live.matches("!(eager_mono && carried && !suffix_prime)")
@@ -27359,46 +26697,20 @@ mod tests {
             2,
             "both prefill sites (prefill_tick + step_session) must carry the lifted veto"
         );
-        // Any THIRD variant of the veto expression (an unlifted reintroduction under
-        // different formatting — PR #93 review finding 6a: the old newline-anchored
-        // negative assertion passed on same-line braces) fails this exact count.
-        assert_eq!(
-            live.matches("(eager_mono && carried").count(),
-            2,
-            "exactly the two lifted veto forms may mention (eager_mono && carried"
+        assert!(
+            !live.contains("!(eager_mono && carried)\n"),
+            "no prefill site may keep the unlifted veto"
         );
         // 2. The engagement receipt is an INVOCATION in both sites (the deploy gate greps
-        //    the server log for it); the OFF arm announces DECLINED in both sites; the
-        //    flag-ON tokenwise fallbacks (budget starvation, sub-floor suffix) announce
-        //    TOKENWISE in both sites and set the provenance bit the capture sites refuse
-        //    on (PR #93 review findings 3a + 5 — R16 as a checked invariant).
+        //    the server log for it), and the declined twin exists for the OFF arm.
         assert_eq!(
             live.matches("\"[suffix-prime] ENGAGED:").count(),
             2,
             "both prefill sites must emit the ENGAGED receipt"
         );
-        assert_eq!(
-            live.matches("\"[suffix-prime] DECLINED (MEMRA_HYPER_SUFFIX_PRIME off):")
-                .count(),
-            2,
-            "both prefill sites must announce the OFF-arm tokenwise suffix on hyper trunks"
-        );
-        assert_eq!(
-            live.matches("\"[suffix-prime] TOKENWISE (flag on):")
-                .count(),
-            2,
-            "both tokenwise branches must announce the flag-ON fallback on hyper trunks"
-        );
-        assert_eq!(
-            live.matches("s.prompt_tok_decode_step = true;").count(),
-            2,
-            "both tokenwise branches must set the provenance bit"
-        );
-        assert_eq!(
-            live.matches("if s.prompt_tok_decode_step {").count(),
-            2,
-            "both capture sites (maybe_prefix_seed + the lcp-split insert) must refuse on \
-             the provenance bit"
+        assert!(
+            live.contains("\"[suffix-prime] DECLINED (MEMRA_HYPER_SUFFIX_PRIME off):"),
+            "the OFF arm must announce the tokenwise suffix on hyper trunks"
         );
         // 3. The H11 reseed call site narrows the eager bit through the predicate.
         let reseed = live
@@ -27408,12 +26720,9 @@ mod tests {
             live[reseed..reseed + 400].contains("&& !carried_suffix_primes("),
             "the reseed call site must pass the carve-out-narrowed eager bit"
         );
-        // 4. The hit-LCP deepening carries the carve-out disjunction beside the eager
-        //    veto. The invocation shape is the deepest-wins max over the LCP teacher and
-        //    the stable boundary (lane/bench-debts-20260901); the carve-out anchor is
-        //    unchanged.
+        // 4. The hit-LCP deepening carries the carve-out disjunction beside the eager veto.
         let deepen = live
-            .find("lcp_taught.unwrap_or(0).max(stable.unwrap_or(0)),")
+            .find("hit_lcp_snapshot_boundary(lcp, hit_len, prompt.len())")
             .expect("the hit-LCP deepening site exists");
         assert!(
             live[deepen..deepen + 500].contains("|| carried_suffix_primes("),
@@ -27920,144 +27229,6 @@ mod tests {
         assert!(h.insert(&kd, host_entry(&kd, toks(min + 64), 4)));
         let i = h.lookup(&kd, &toks(min + 128)).expect("a hit exists");
         assert_eq!(h.entries[&kd][i].toks.len(), min + 64);
-    }
-
-    // ---- COMPETITIVE-BENCH DEBT 1: promote starvation under organic churn ----
-    // (darklanes research/competitive-bench-20260901/RESULTS.md §7: N56 cell: 28-49
-    // demotions per promotion.) CPU-side halves: the admit-time probe-order rule (host
-    // consulted on a device miss OR a shallower device hit) and the key-shape reason the
-    // demoted population could not match (prompt-end seeds carry the live generation
-    // header the next turn re-renders).
-
-    #[test]
-    fn host_probe_fires_on_device_miss_and_on_shallower_device_hit() {
-        let mut h = HostPrefixCache::new(1 << 20);
-        let k = key("t");
-        let min = super::PREFIX_CACHE_MIN_TOKENS;
-        let deep = min + 256;
-        assert!(h.insert(&k, host_entry(&k, toks(deep), 8)));
-        let prompt = toks(deep + 512);
-        // Device miss (best_len 0): the host entry is the candidate.
-        assert_eq!(host_promote_candidate(&h, &k, &prompt, 0), Some(0));
-        // A surviving SHALLOW device entry (the bench's shared-system-prompt seed, hit
-        // 425x at exactly 64 tokens) must not shadow the deeper demoted twin.
-        assert_eq!(host_promote_candidate(&h, &k, &prompt, min), Some(0));
-        // The device already serves at least as deep: nothing to feed.
-        assert_eq!(host_promote_candidate(&h, &k, &prompt, deep), None);
-        assert_eq!(host_promote_candidate(&h, &k, &prompt, deep + 32), None);
-        // A latched-off tier is never consulted.
-        h.disable("test latch");
-        assert_eq!(host_promote_candidate(&h, &k, &prompt, 0), None);
-    }
-
-    #[test]
-    fn prompt_end_seed_key_never_matches_the_rerendered_next_turn_but_a_stable_key_does() {
-        // Turn N's prompt ends inside the live generation header; turn N+1 re-renders that
-        // header after the stripped answer (the pi-rewrite divergence documented at
-        // `plain_checkpoint_boundary`). A prompt-END seed key therefore diverges a couple
-        // of tokens below its own end and can never exact-prefix-match again: the
-        // starvation shape. The same state keyed at the stable boundary matches trivially.
-        let k = key("t");
-        let min = super::PREFIX_CACHE_MIN_TOKENS;
-        let body = min * 4;
-        let header = [900_001u32, 900_002];
-        let mut turn_n: Vec<u32> = toks(body);
-        turn_n.extend_from_slice(&header);
-        let mut turn_n1: Vec<u32> = toks(body);
-        turn_n1.extend_from_slice(&[700_000, 700_001, 700_002]);
-        turn_n1.extend_from_slice(&header);
-        let mut h = HostPrefixCache::new(1 << 20);
-        // The demoted prompt-end seed of turn N.
-        assert!(h.insert(&k, host_entry(&k, turn_n, 8)));
-        assert_eq!(
-            host_promote_candidate(&h, &k, &turn_n1, 0),
-            None,
-            "a prompt-end seed key carries the volatile header tail and starves the tier"
-        );
-        // The same session state keyed at the render-stable boundary (before the header).
-        assert!(h.insert(&k, host_entry(&k, toks(body), 8)));
-        let hi = host_promote_candidate(&h, &k, &turn_n1, 0).expect("stable key promotes");
-        assert_eq!(h.entries[&k][hi].toks.len(), body);
-    }
-
-    #[test]
-    fn stable_boundary_arm_is_deepest_wins_and_floor_checked() {
-        let min = super::PREFIX_CACHE_MIN_TOKENS;
-        // No boundary, nothing arms.
-        assert_eq!(stable_boundary_arm(None, None, 10 * min), None);
-        // Below the entry floor never arms.
-        assert_eq!(stable_boundary_arm(Some(min - 1), None, 10 * min), None);
-        // At/above the floor arms on a bare miss.
-        assert_eq!(stable_boundary_arm(Some(min), None, 10 * min), Some(min));
-        // Deeper than an already-taught boundary wins...
-        assert_eq!(
-            stable_boundary_arm(Some(4 * min), Some(2 * min), 10 * min),
-            Some(4 * min)
-        );
-        // ...but a shallower stable boundary never downgrades a deeper armed capture.
-        assert_eq!(
-            stable_boundary_arm(Some(2 * min), Some(4 * min), 10 * min),
-            None
-        );
-        assert_eq!(
-            stable_boundary_arm(Some(2 * min), Some(2 * min), 10 * min),
-            None
-        );
-        // A boundary at/past prompt end is not a boundary.
-        assert_eq!(stable_boundary_arm(Some(10 * min), None, 10 * min), None);
-    }
-
-    /// Competitive-bench debt 1 wiring: anchored on INVOCATIONS in comment-stripped
-    /// production text (wiring-assertions law: a rationale comment must never satisfy
-    /// this).
-    #[test]
-    fn stable_boundary_and_host_probe_wiring() {
-        let src = include_str!("worker.rs");
-        let code: String = src
-            .lines()
-            .map(|l| l.split("//").next().unwrap_or(""))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
-
-        // The admit-time probe-order decision has ONE owner and the promote hook consults
-        // it (definition + the one call site).
-        assert_eq!(
-            prod.matches("host_promote_candidate(").count(),
-            2,
-            "definition + the promote hook's consult, nothing else"
-        );
-        let hook = prod
-            .find("fn host_promote_prefix_hit(")
-            .expect("promote hook exists");
-        let consult = prod[hook..]
-            .find("host_promote_candidate(")
-            .expect("the hook consults the candidate rule");
-        assert!(
-            consult < 900,
-            "the candidate consult must be the promote hook's first act"
-        );
-
-        // Both plain capture paths arm through the flag + the stable-boundary derivation:
-        // the shallow-hit arm and the miss-path arm.
-        let flag_sites: Vec<usize> = prod
-            .match_indices("if prefix_stable_boundary_on()")
-            .map(|(i, _)| i)
-            .collect();
-        assert_eq!(flag_sites.len(), 2, "hit arm + miss arm, nothing else");
-        for i in flag_sites {
-            let window = &prod[i..(i + 700).min(prod.len())];
-            assert!(
-                window.contains("plain_checkpoint_boundary(&prompt"),
-                "each armed site derives the boundary from plain_checkpoint_boundary"
-            );
-        }
-        // The miss arm goes through the pure deepest-wins rule (definition + one call).
-        assert_eq!(
-            prod.matches("stable_boundary_arm(").count(),
-            2,
-            "definition + the miss-path arm"
-        );
     }
 
     #[test]
@@ -28693,7 +27864,6 @@ mod tests {
             step_images: Vec::new(),
             capture: None,
             vision_memory: None,
-            wire_deadline: None,
             ttft: None,
             tx,
         });

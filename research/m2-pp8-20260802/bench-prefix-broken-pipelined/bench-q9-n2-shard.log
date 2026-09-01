@@ -1,4 +1,4 @@
-ppn-bench M2 config: stages=2 devices=1,2 splits=default(even) shard=per-stage streams=per-stage P=32 G=128 reps=1 model=/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
+ppn-bench M2 config: stages=2 devices=1,2 splits=default(even) shard=per-stage streams=per-stage P=32 G=128 reps=1 model=/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
 [pp] cross-device transport: stage0=dev1 stage1=dev2 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [1, 2]; weight home: per-stage (sharded loader))
 [q8rp] split-plane decode mirrors built: 249 tensors
 stage fence: [0, 16, 32] over 32 layers
@@ -7,7 +7,7 @@ stage fence: [0, 16, 32] over 32 layers
 ---- medians (us/token over 128 gen steps, N=1 reps, interleaved) ----
 serial-pp: median 5939.07 us/tok (168.38 tok/s)  all=[5939.07]
 pipelined-pp: median 3415.60 us/tok (292.77 tok/s)  all=[3415.6]
-ppn-bench M2 config: stages=2 devices=1,2 splits=default(even) shard=per-stage streams=per-stage P=32 G=128 reps=1 model=/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
+ppn-bench M2 config: stages=2 devices=1,2 splits=default(even) shard=per-stage streams=per-stage P=32 G=128 reps=1 model=/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
 [pp] cross-device transport: stage0=dev1 stage1=dev2 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [1, 2]; weight home: per-stage (sharded loader))
 [q8rp] split-plane decode mirrors built: 249 tensors
 stage fence: [0, 16, 32] over 32 layers
@@ -16,7 +16,7 @@ stage fence: [0, 16, 32] over 32 layers
 ---- medians (us/token over 128 gen steps, N=1 reps, interleaved) ----
 serial-pp: median 5959.30 us/tok (167.80 tok/s)  all=[5959.3]
 pipelined-pp: median 3431.58 us/tok (291.41 tok/s)  all=[3431.58]
-ppn-bench M2 config: stages=2 devices=1,2 splits=default(even) shard=per-stage streams=per-stage P=32 G=128 reps=1 model=/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
+ppn-bench M2 config: stages=2 devices=1,2 splits=default(even) shard=per-stage streams=per-stage P=32 G=128 reps=1 model=/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
 [pp] cross-device transport: stage0=dev1 stage1=dev2 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [1, 2]; weight home: per-stage (sharded loader))
 [q8rp] split-plane decode mirrors built: 249 tensors
 stage fence: [0, 16, 32] over 32 layers
@@ -25,7 +25,7 @@ stage fence: [0, 16, 32] over 32 layers
 ---- medians (us/token over 128 gen steps, N=1 reps, interleaved) ----
 serial-pp: median 5984.01 us/tok (167.11 tok/s)  all=[5984.01]
 pipelined-pp: median 3446.42 us/tok (290.16 tok/s)  all=[3446.42]
-ppn-bench M2 config: stages=2 devices=1,2 splits=default(even) shard=per-stage streams=per-stage P=32 G=128 reps=1 model=/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
+ppn-bench M2 config: stages=2 devices=1,2 splits=default(even) shard=per-stage streams=per-stage P=32 G=128 reps=1 model=/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
 [pp] cross-device transport: stage0=dev1 stage1=dev2 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [1, 2]; weight home: per-stage (sharded loader))
 [q8rp] split-plane decode mirrors built: 249 tensors
 stage fence: [0, 16, 32] over 32 layers
@@ -34,7 +34,7 @@ stage fence: [0, 16, 32] over 32 layers
 ---- medians (us/token over 128 gen steps, N=1 reps, interleaved) ----
 serial-pp: median 5983.49 us/tok (167.13 tok/s)  all=[5983.49]
 pipelined-pp: median 3454.57 us/tok (289.47 tok/s)  all=[3454.57]
-ppn-bench M2 config: stages=2 devices=1,2 splits=default(even) shard=per-stage streams=per-stage P=32 G=128 reps=1 model=/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
+ppn-bench M2 config: stages=2 devices=1,2 splits=default(even) shard=per-stage streams=per-stage P=32 G=128 reps=1 model=/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
 [pp] cross-device transport: stage0=dev1 stage1=dev2 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [1, 2]; weight home: per-stage (sharded loader))
 [q8rp] split-plane decode mirrors built: 249 tensors
 stage fence: [0, 16, 32] over 32 layers

@@ -4217,7 +4217,6 @@ impl crate::hybrid::HybridModel {
                     pos: tp,
                     logits: logits.clone(),
                     last_h: Vec::new(),
-                    latent_tails: Vec::new(),
                 })
         } else {
             None
@@ -6334,7 +6333,6 @@ mod dspark_prefix_capture_tests {
             pos: prompt_len,
             logits: vec![1.0, 2.0],
             last_h: Vec::new(),
-            latent_tails: Vec::new(),
         });
 
         let capture = take_dspark_prefix_capture(&mut slot).expect("first drain gets capture");
