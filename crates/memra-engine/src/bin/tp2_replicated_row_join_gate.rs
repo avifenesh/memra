@@ -171,5 +171,57 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "TP2_BF16_ROW_PARALLEL PASS geometry={out_f}x{in_f} split={half}+{half} \
          argmax={reference_argmax} max_abs={max_abs:.8} max_rel={max_rel:.8}"
     );
+
+    let prep_width = 4096usize;
+    let prep_input = (0..prep_width)
+        .map(|index| signed_unit(index as u64 ^ 0xa076_1d64_78bd_642f))
+        .collect::<Vec<_>>();
+    let selected = vec![0i32, 17, 64, 65, 128, 129, 190, 191];
+    let route_weights = (0..selected.len())
+        .map(|index| signed_unit(index as u64 ^ 0xe703_7ed1_a0b4_28db).abs())
+        .collect::<Vec<_>>();
+    let prep_input = rank0.htod(&prep_input)?;
+    let selected = rank0.htod_i32(&selected)?;
+    let route_weights = rank0.htod(&route_weights)?;
+    let mut q_separate = rank0.alloc_i8_uninit(prep_width)?;
+    let mut d_separate = rank0.uninit(prep_width / 32)?;
+    let mut sel_separate = rank0.htod_i32(&vec![-1; selected.len()])?;
+    let mut weights_separate = rank0.htod(&vec![f32::NAN; selected.len()])?;
+    let mut q_fused = rank0.alloc_i8_uninit(prep_width)?;
+    let mut d_fused = rank0.uninit(prep_width / 32)?;
+    let mut sel_fused = rank0.htod_i32(&vec![-2; selected.len()])?;
+    let mut weights_fused = rank0.htod(&vec![f32::NEG_INFINITY; selected.len()])?;
+    rank0.quantize_q8_1_into(&prep_input, 1, prep_width, &mut q_separate, &mut d_separate)?;
+    rank0.moe_sel_w_mirror(
+        &selected,
+        &route_weights,
+        &mut sel_separate,
+        &mut weights_separate,
+        selected.len(),
+    )?;
+    rank0.quantize_q8_1_mirror_routes_into(
+        &prep_input,
+        1,
+        prep_width,
+        &mut q_fused,
+        &mut d_fused,
+        &selected,
+        &route_weights,
+        &mut sel_fused,
+        &mut weights_fused,
+        selected.len(),
+    )?;
+    if rank0.dtoh_i8(&q_separate)? != rank0.dtoh_i8(&q_fused)?
+        || rank0.dtoh(&d_separate)? != rank0.dtoh(&d_fused)?
+        || rank0.dtoh_i32(&sel_separate)? != rank0.dtoh_i32(&sel_fused)?
+        || rank0.dtoh(&weights_separate)? != rank0.dtoh(&weights_fused)?
+    {
+        return Err("fused EP Q8 preparation differs from separate quantize/mirror".into());
+    }
+    println!(
+        "EP_Q8_PREP_FUSED PASS input={prep_width} pairs={} \
+         q8/scales/selected/weights=bit-identical",
+        selected.len(),
+    );
     Ok(())
 }

@@ -1161,6 +1161,24 @@ pub(crate) fn parallel_ep_q8_gu_paired_enabled(
     )
 }
 
+fn parse_parallel_ep_q8_prep_fused(value: Option<&str>) -> Result<bool, String> {
+    match value {
+        None | Some("") | Some("0") => Ok(false),
+        Some("1") => Ok(true),
+        Some(value) => Err(format!(
+            "MEMRA_PARALLEL_EP_Q8_PREP_FUSED={value:?} is invalid; expected 0 or 1"
+        )),
+    }
+}
+
+fn parallel_ep_q8_prep_fused_enabled() -> Result<bool, String> {
+    parse_parallel_ep_q8_prep_fused(
+        std::env::var("MEMRA_PARALLEL_EP_Q8_PREP_FUSED")
+            .ok()
+            .as_deref(),
+    )
+}
+
 fn parse_step_layer_specs(
     flag: &str,
     value: Option<&str>,
@@ -12138,6 +12156,14 @@ impl TpE4m3HostBounce {
             .ok_or("W4A8 device-routed EP input size overflow")?;
         let scope = parallel_ep_q8_scope()?.unwrap_or(ParallelEpQ8Scope::All);
         let gate_up_paired = parallel_ep_q8_gu_paired_enabled(true, Some(scope))?;
+        let prep_fused = parallel_ep_q8_prep_fused_enabled()?;
+        if prep_fused && scope == ParallelEpQ8Scope::Down {
+            return Err(
+                "MEMRA_PARALLEL_EP_Q8_PREP_FUSED=1 requires Q8 gate/up input preparation; \
+                 MEMRA_PARALLEL_EP_Q8_SCOPE=down keeps that input BF16"
+                    .into(),
+            );
+        }
 
         {
             let _main = e.gpu.enter_main()?;
@@ -12159,20 +12185,35 @@ impl TpE4m3HostBounce {
             let owner_end = rank.expert_range.end;
             match scope {
                 ParallelEpQ8Scope::All | ParallelEpQ8Scope::GateUp => {
-                    engine.quantize_q8_1_into(
-                        input_dev,
-                        tokens,
-                        experts.input_width,
-                        &mut workspace.input_q8[rank_index],
-                        &mut workspace.input_q8_scales[rank_index],
-                    )?;
-                    engine.moe_sel_w_mirror(
-                        selected_dev,
-                        route_weights_dev,
-                        &mut workspace.sel[rank_index],
-                        &mut workspace.route_w[rank_index],
-                        pairs,
-                    )?;
+                    if prep_fused {
+                        engine.quantize_q8_1_mirror_routes_into(
+                            input_dev,
+                            tokens,
+                            experts.input_width,
+                            &mut workspace.input_q8[rank_index],
+                            &mut workspace.input_q8_scales[rank_index],
+                            selected_dev,
+                            route_weights_dev,
+                            &mut workspace.sel[rank_index],
+                            &mut workspace.route_w[rank_index],
+                            pairs,
+                        )?;
+                    } else {
+                        engine.quantize_q8_1_into(
+                            input_dev,
+                            tokens,
+                            experts.input_width,
+                            &mut workspace.input_q8[rank_index],
+                            &mut workspace.input_q8_scales[rank_index],
+                        )?;
+                        engine.moe_sel_w_mirror(
+                            selected_dev,
+                            route_weights_dev,
+                            &mut workspace.sel[rank_index],
+                            &mut workspace.route_w[rank_index],
+                            pairs,
+                        )?;
+                    }
                     if let Some(events) = workspace.phase_events.as_ref() {
                         events.copy_done[rank_index].record(&engine.stream())?;
                     }
@@ -12422,11 +12463,16 @@ impl TpE4m3HostBounce {
             eprintln!(
                 "[parallel-ep-q8] devices={:?} tokens={tokens} scope={} \
                  expert_input={expert_input} post_activation={post_activation} \
-                 gate_up_schedule={} \
+                 input_prep={} gate_up_schedule={} \
                  external_boundary=bf16 numeric_class={numeric_class} \
                  host_expf=true accumulation=token-slot-order performance_claim=false",
                 self.devices,
                 scope.label(),
+                if prep_fused {
+                    "quantize-plus-route-mirror"
+                } else {
+                    "separate"
+                },
                 if gate_up_paired {
                     "paired-cta"
                 } else {
@@ -16039,6 +16085,14 @@ mod tests {
         assert!(!parse_parallel_ep_q8_act(Some("0")).unwrap());
         assert!(parse_parallel_ep_q8_act(Some("1")).unwrap());
         assert!(parse_parallel_ep_q8_act(Some("true")).is_err());
+    }
+
+    #[test]
+    fn automatic_ep_q8_prep_fusion_flag_is_strict() {
+        assert!(!parse_parallel_ep_q8_prep_fused(None).unwrap());
+        assert!(!parse_parallel_ep_q8_prep_fused(Some("0")).unwrap());
+        assert!(parse_parallel_ep_q8_prep_fused(Some("1")).unwrap());
+        assert!(parse_parallel_ep_q8_prep_fused(Some("true")).is_err());
     }
 
     #[test]
