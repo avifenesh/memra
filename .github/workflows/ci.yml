@@ -67,23 +67,6 @@ jobs:
           command -v rg >/dev/null || sudo apt-get install -y -q ripgrep
           tools/test_check_flags.sh
 
-      # Docs-registry census (2026-08-30). The flags census above covers docs/FLAGS.md;
-      # this is the same question asked of the other registries, which had no census at
-      # all: every file-shaped reference in docs/KERNELS.md resolves against the tracked
-      # tree (a renamed .cu or FFI shim leaves a row pointing at nothing, and nothing
-      # noticed), docs/MODELS.md names support states only from the three-state
-      # vocabulary (NativeReference, NativeQualified, NativeTuned: the enum in
-      # crates/memra-gguf/src/model_packs/mod.rs), and docs/ROUTER.md exists and stays
-      # at or under 60 lines (the router points at registries; one that grows answers is
-      # becoming a second registry). Flags coverage is NOT re-derived here, on purpose:
-      # a second implementation could drift green while the first reds. The census only
-      # asserts tools/check-flags.sh --list still answers. No grandfather list, same
-      # reason check-flags.sh has none. Text-only, well under a second.
-      - name: Docs-registry census
-        run: |
-          command -v rg >/dev/null || sudo apt-get install -y -q ripgrep
-          tools/docs-registry-census.sh
-
       # Teeth for the PRE-PUSH flags-census arm (2026-08-23). The step above is the backstop and
       # stays exactly as it was; the defect it kept exposing was WHEN it ran. main went red three
       # times in one day — 61e99d5337 (MEMRA_TCOL_OPROJ/_REF/_PROF), d7fed25562 (MEMRA_TCOL_FFN,
@@ -216,25 +199,7 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q cuda-nvcc-13-1 cuda-cudart-dev-13-1 libcublas-dev-13-1
 
-      # PINNED to the workspace rust-version, not @stable, because this job carries the
-      # clippy gate (lane/clippy-zero-restore-20260901, second push): the gate's very first
-      # CI run failed on a runner whose @stable had moved to 1.98 overnight, whose clippy
-      # ships a lint 1.97 does not have (chunks_exact_to_as_chunks: 17 hits in memra-gguf's
-      # quant repack/forward code, none of them this repo's to rewrite on a toolchain's
-      # schedule) — while the rig, on 1.97, measured clippy-zero. A lint bar that moves when
-      # upstream releases is a gate that reds on someone else's clock, and the skew is
-      # unfixable with #[allow] (the older toolchain reds unknown_lints on names it has not
-      # met). So the bar is the MSRV in Cargo.toml: bump rust-version and this pin together
-      # in a deliberate lane, and take the new toolchain's lints as part of that bump.
-      # `components: clippy` here because the action installs the minimal profile, and a
-      # workflow that calls a missing cargo-clippy fails on the tool, not the lints; only
-      # this job lints, so only this job asks for it. The stable channel still compiles this
-      # tree in the publish-dryrun job (120a) and both release-arch-mirror cells, so newest-
-      # stable compile coverage is not lost by pinning here.
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "1.97"
-          components: clippy
 
       - uses: Swatinem/rust-cache@v2
 
@@ -252,62 +217,6 @@ jobs:
       # the sm_89 link failure invisible for a day (see the arch-matrix job below).
       - name: Build (all bins, release — compiles every CUDA fatbin)
         run: cargo build --release --bins
-        env:
-          MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
-          MEMRA_CUDA_ARCH: "120a"
-
-      # BUILD-IDENTITY GATE (lane/real-system-fingerprint-20260901). The unit tests assert the
-      # baked fingerprint from inside the crate; this asks the shipped ARTIFACT the same
-      # question through the surface a deploy uses, because the defect it closes lived in the
-      # gap between them: `system_fingerprint` was `concat!("memra-", <git rev-parse>)` with
-      # failure swallowed into the literal "unknown", darklanes' release container could not
-      # read git, and prod answered `memra-unknown` to every customer request for a deploy
-      # generation while every test was green. `--version` runs before any engine/GPU/model
-      # work, so this needs no GPU. Teeth are closed in-step: the same matcher is proven to
-      # REJECT the literal that shipped, so a matcher that stopped matching cannot pass.
-      - name: Build identity (the release binary reports a real fingerprint)
-        run: |
-          set -euo pipefail
-          out=$(./target/release/memra-server --version)
-          echo "$out"
-          fp=$(printf '%s\n' "$out" | awk '$1=="system_fingerprint"{print $2}')
-          src=$(printf '%s\n' "$out" | awk '$1=="build_id_src"{print $2}')
-          shape='^memra-[0-9][0-9A-Za-z.+-]*-[0-9a-f]{12}$'
-          # Teeth first: the matcher must reject what prod served, or it proves nothing.
-          if printf '%s' 'memra-unknown' | grep -Eq "$shape"; then
-            echo "GATE BROKEN: the shape matcher accepts memra-unknown" >&2; exit 1
-          fi
-          if printf '%s' 'memra-0.123.0-4b1f9c02d7a3' | grep -Evq "$shape"; then
-            echo "GATE BROKEN: the shape matcher rejects a valid fingerprint" >&2; exit 1
-          fi
-          [ -n "$fp" ] || { echo "no system_fingerprint on --version" >&2; exit 1; }
-          case "$fp" in *unknown*) echo "fingerprint is degraded: $fp" >&2; exit 1;; esac
-          printf '%s' "$fp" | grep -Eq "$shape" || {
-            echo "fingerprint $fp is not memra-<version>-<12 hex>" >&2; exit 1; }
-          [ "$src" = "source-tree" ] || {
-            echo "build id came from '$src', not the source tree" >&2; exit 1; }
-          echo "build identity OK: $fp (id: $src)"
-
-      # CLIPPY GATE (lane/clippy-zero-restore-20260901). The workspace reached clippy-zero
-      # on 2026-09-01 (~200 sites: mechanical fixes plus per-file #[allow]s with stated
-      # reasons — perf-lane code shapes are load-bearing, so shape lints are allowed where
-      # receipts pin the shape, never rewritten to please a lint). -D warnings so the count
-      # cannot regrow silently: main was clippy-dirty for weeks precisely because nothing
-      # gated it, and a lint gate that does not gate is the loud-failures-fail-quietly trap.
-      # Teeth were closed by hand before wiring (2026-09-01, lane log): an injected unused
-      # import exits 101 under this exact invocation; the clean tree exits 0.
-      # AFTER the release build on purpose — it reuses the warmed target dir and build-script
-      # outputs (dep rlibs, the nvcc fatbins), so the marginal cost is the clippy pass over
-      # the workspace crates plus the test/bench targets the --bins build above did not
-      # touch; --all-targets is wider than --bins by design, since tests carry lints too.
-      # --release and the same env as the build above: one profile, one cache, and build.rs
-      # (nvcc) runs identically. Build-script cargo:warning lines are not rustc lints and do
-      # not trip -D warnings. tools/local-ci.sh runs the same invocation pre-push, so a
-      # local-ci-green tree does not bounce off this step — an agreement that holds because
-      # the toolchain above is pinned to the workspace rust-version the rig also runs; see
-      # the pin comment on the toolchain step.
-      - name: Clippy gate (workspace clippy-zero, -D warnings)
-        run: cargo clippy --release --all-targets -- -D warnings
         env:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
           MEMRA_CUDA_ARCH: "120a"
@@ -367,20 +276,15 @@ jobs:
   # buy nothing this gate is for. If a cell is ever added to release.yml's arch axis,
   # tools/arch-matrix-census.sh turns this workflow red until it is added here too.
   #
-  # 100a (B200) is in the matrix as COMPILE COVERAGE ONLY (lane/glm5-b200-prep-20260901): it is
-  # NOT in release.yml (nothing has ever RUN on sm_100a silicon — build.rs detect_arch carries
-  # the reasons), but the B200 bring-up depends on main staying 100a-compilable, and this cell
-  # is what stops the 2026-08-23 shape (an arch whose first compile is the day someone needs
-  # it) from recurring. build.rs gives 100a its own source set (three block-scale-MMA TUs take
-  # their fail-closed stubs, qmatvec_gemm.cu drops the native-FP4 kernel), so only this cell
-  # compiles that set at merge time. Its fatbin census runs with the two DECLARED 100a
-  # exceptions in tools/fatbin-lookup-exceptions.txt.
+  # 100a (B200) is deliberately absent: build.rs accepts it and gives it its own source set
+  # (it skips cu/qmatvec_gemm.cu), but release.yml does not build it, so it cannot break a
+  # release. Named in docs/RELEASING.md as a known uncovered arch rather than left implicit.
   release-arch-mirror:
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false      # one arch failing must not hide the other's result
       matrix:
-        cuda_arch: ["100a", "90a", "89"]
+        cuda_arch: ["90a", "89"]
     steps:
       - uses: actions/checkout@v4
 

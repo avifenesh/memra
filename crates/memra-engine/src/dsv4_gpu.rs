@@ -881,7 +881,7 @@ pub fn dsv4_phase_report(tag: &str, rounds: u64, plain_us: f64) {
             "phase", "incl_us/rd", "self_us/rd", "calls/rd", "self_plainstp", "incl_plainstp"
         );
         let mut rows = p.rows.clone();
-        rows.sort_by_key(|r| std::cmp::Reverse(r.1.saturating_sub(r.2)));
+        rows.sort_by(|a, b| (b.1.saturating_sub(b.2)).cmp(&(a.1.saturating_sub(a.2))));
         let r = rounds.max(1) as f64;
         let mut leaf_sum = 0f64;
         for (name, incl, child, calls) in rows {
@@ -1432,7 +1432,7 @@ impl Dsv4Gpu {
         max_seq: usize,
     ) -> Res<Self> {
         assert_eq!(devices.len(), 2, "lane 4 placement is a 2-card layer split");
-        let model = Dsv4Model::open(dir)?;
+        let model = Dsv4Model::open(dir);
         let d = model.cfg().clone();
         let mc = model.mc.clone();
         let n_trunk = mc.n_layer - mc.nextn_predict_layers;
@@ -2067,7 +2067,6 @@ impl Dsv4Gpu {
     /// arm (default — byte-identical to `Self::dots`) or the owner-gated
     /// f32-accumulation serving arm (MEMRA_DSV4_DOTS_ARM=f32; fork gated by
     /// decode-gate + oracle teacher-forcing, RECEIPTS.md "Lane 9").
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn dots_dev(
         &self,
         st: &Stage,
@@ -2105,7 +2104,6 @@ impl Dsv4Gpu {
     /// The raw GEMM outputs are ALWAYS computed (the reference does too, M:330-331) —
     /// lane 6 seeds the decode pending state from their trailing rows.
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     fn compressor(
         &self,
         st: &Stage,
@@ -2686,8 +2684,10 @@ impl Dsv4Gpu {
                 // indexer compressed kv
                 let (ckv_i, ikv_raw, isc_raw) =
                     self.compressor(st, &ix.cmp, &x, s, hidden, fc_dev, rd, eps)?;
-                if want_cap && let Some((buf, nb)) = &ckv_i {
-                    cap_ikv = Some((dtoh_f32(&stream, buf)?, *nb));
+                if want_cap {
+                    if let Some((buf, nb)) = &ckv_i {
+                        cap_ikv = Some((dtoh_f32(&stream, buf)?, *nb));
+                    }
                 }
                 if let Some(c) = cache.as_deref_mut() {
                     let mut i_blocks = c.i_blocks;
@@ -2777,10 +2777,12 @@ impl Dsv4Gpu {
             let acmp = layer.cmp.as_ref().expect("ratio!=0 has compressor");
             let (ckv, akv_raw, asc_raw) =
                 self.compressor(st, acmp, &x, s, hidden, fc_dev, rd, eps)?;
-            if want_cap && let Some((buf, nb)) = &ckv {
-                cap_cmp = Some((dtoh_f32(&stream, buf)?, *nb));
+            if want_cap {
+                if let Some((buf, nb)) = &ckv {
+                    cap_cmp = Some((dtoh_f32(&stream, buf)?, *nb));
+                }
             }
-            if let Some(c) = cache {
+            if let Some(c) = cache.as_deref_mut() {
                 let mut n_blocks = c.n_blocks;
                 Self::populate_cmp_cache(
                     &stream,
@@ -2975,10 +2977,10 @@ impl Dsv4Gpu {
                 ),
             )?;
         }
-        if let Some(c) = capture.as_deref_mut()
-            && c.want.contains(&layer.il)
-        {
-            c.moe_x.insert(layer.il, dtoh_f32(&stream, &xf)?);
+        if let Some(c) = capture.as_deref_mut() {
+            if c.want.contains(&layer.il) {
+                c.moe_x.insert(layer.il, dtoh_f32(&stream, &xf)?);
+            }
         }
         let moe_out = self.moe_forward(st, layer, &xf, s, ids)?;
         let mut h3 = stream
@@ -3001,32 +3003,32 @@ impl Dsv4Gpu {
             )?;
         }
 
-        if let Some(c) = capture
-            && c.want.contains(&layer.il)
-        {
-            c.layer_out.insert(layer.il, dtoh_f32(&stream, &h3)?);
-            c.x_dbg.insert(layer.il, dtoh_f32(&stream, &x)?);
-            c.q_dbg.insert(layer.il, dtoh_f32(&stream, &q)?);
-            {
-                let mut kvh = vec![0f32; s * hd];
-                stream
-                    .memcpy_dtoh(&kv_full.slice(0..s * hd), &mut kvh[..])
-                    .map_err(e("dtoh kv_dbg"))?;
-                stream.synchronize().map_err(e("sync kv_dbg"))?;
-                c.kv_dbg.insert(layer.il, kvh);
-            }
-            c.o_dbg.insert(layer.il, dtoh_f32(&stream, &o)?);
-            if let Some(a) = cap_attn {
-                c.attn_out.insert(layer.il, a);
-            }
-            if let Some(v) = cap_cmp {
-                c.compressor_kv.insert(layer.il, v);
-            }
-            if let Some(v) = cap_ikv {
-                c.indexer_kv.insert(layer.il, v);
-            }
-            if let Some(v) = cap_isc {
-                c.index_score.insert(layer.il, v);
+        if let Some(c) = capture {
+            if c.want.contains(&layer.il) {
+                c.layer_out.insert(layer.il, dtoh_f32(&stream, &h3)?);
+                c.x_dbg.insert(layer.il, dtoh_f32(&stream, &x)?);
+                c.q_dbg.insert(layer.il, dtoh_f32(&stream, &q)?);
+                {
+                    let mut kvh = vec![0f32; s * hd];
+                    stream
+                        .memcpy_dtoh(&kv_full.slice(0..s * hd), &mut kvh[..])
+                        .map_err(e("dtoh kv_dbg"))?;
+                    stream.synchronize().map_err(e("sync kv_dbg"))?;
+                    c.kv_dbg.insert(layer.il, kvh);
+                }
+                c.o_dbg.insert(layer.il, dtoh_f32(&stream, &o)?);
+                if let Some(a) = cap_attn {
+                    c.attn_out.insert(layer.il, a);
+                }
+                if let Some(v) = cap_cmp {
+                    c.compressor_kv.insert(layer.il, v);
+                }
+                if let Some(v) = cap_ikv {
+                    c.indexer_kv.insert(layer.il, v);
+                }
+                if let Some(v) = cap_isc {
+                    c.index_score.insert(layer.il, v);
+                }
             }
         }
         Ok(h3)
@@ -3552,10 +3554,10 @@ impl Dsv4Gpu {
                 ),
             )?;
         }
-        if let Some(c) = capture.as_deref_mut()
-            && c.embed_out.is_none()
-        {
-            c.embed_out = Some(dtoh_f32(&stream0, &emb)?);
+        if let Some(c) = capture.as_deref_mut() {
+            if c.embed_out.is_none() {
+                c.embed_out = Some(dtoh_f32(&stream0, &emb)?);
+            }
         }
         let mut h = stream0
             .alloc_zeros::<f32>(s * hc * hidden)
@@ -3908,8 +3910,6 @@ impl Dsv4Gpu {
                 .unwrap_or_else(|| panic!("layer {il} not on stage {stage_i}"));
             let layer = &st.layers[lidx];
             let ratio = layer.ratio;
-            #[allow(clippy::manual_checked_ops)]
-            // allow: the explicit zero guard names the degenerate-ratio case; checked ops would hide the sentinel
             let cap_blocks = if ratio != 0 { self.max_seq / ratio } else { 0 };
             let kvc_rows = win + cap_blocks + trans_rows;
             let mut bytes = (kvc_rows * hd * 4) as u64;
@@ -4111,7 +4111,6 @@ impl Dsv4Gpu {
     /// [ratio,2ratio) through dims [d,2d) — the emission pooling verbatim), then
     /// norm→rope(j·ratio)→QAT, and shift cur→prev.
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
     fn cmp_decode(
         &self,
         st: &Stage,
@@ -4270,7 +4269,6 @@ impl Dsv4Gpu {
     /// (M:531), window/compressed index law (M:255-276). `dump` (diagnostic only)
     /// collects named intermediates for the bisect probe.
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::manual_checked_ops)] // allow: the explicit zero guard names the degenerate-ratio case; checked ops would hide the sentinel
     fn block_decode(
         &self,
         st: &Stage,
@@ -4809,7 +4807,7 @@ impl Dsv4Gpu {
                 ),
             )?;
         }
-        if let Some(dm) = dump {
+        if let Some(dm) = dump.as_deref_mut() {
             dm.push((format!("layer{}.h3", layer.il), dtoh_f32(&stream, &h3)?));
         }
         Ok(h3)
@@ -4824,7 +4822,6 @@ impl Dsv4Gpu {
     }
 
     /// Diagnostic twin: returns (logits, named per-layer intermediates).
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn decode_step_probe(
         &self,
         tok: u32,
@@ -5047,7 +5044,6 @@ impl Dsv4Gpu {
         }
     }
 
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn hc_pre_dev(
         &self,
         st: &Stage,
@@ -5133,7 +5129,6 @@ impl Dsv4Gpu {
     /// same kernels, same D2D moves; rope via the scalar-position launcher — identical
     /// kernel body). No allocations.
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
     fn cmp_decode_dev(
         &self,
         st: &Stage,
@@ -6219,8 +6214,6 @@ impl Dsv4Gpu {
         }
         if host_math {
             let mut mixes_h = dtoh_f32(&stream, &ws.head_mixes)?;
-            #[allow(clippy::needless_range_loop)]
-            // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
             for c in 0..hc {
                 let m = mixes_h[c];
                 mixes_h[c] =
@@ -6452,25 +6445,27 @@ impl Dsv4Gpu {
             input_rx = false;
             // iteration-3 DSpark tap (capture-only): hc-mean of this layer's output
             // hc state into the tap row at the target's concat offset.
-            if let Some((t, base)) = taps.as_mut()
-                && let Some(ds) = &self.dspark
-                && let Some(k) = ds.targets.iter().position(|&tl| tl == il as usize)
-            {
-                let stream = self.stages[stage].gpu.stream();
-                let hidden_i = hidden as i32;
-                unsafe {
-                    ck(
-                        "hc_mean tap dev",
-                        k::memra_dsv4_hc_mean(
-                            dpf!(ws_all[stage].h_a, &stream),
-                            (t.device_ptr_mut(&stream).0 as usize + (*base + k * hidden) * 4)
-                                as *mut f32,
-                            1,
-                            hc as i32,
-                            hidden_i,
-                            sp(&stream),
-                        ),
-                    )?;
+            if let Some((t, base)) = taps.as_mut() {
+                if let Some(ds) = &self.dspark {
+                    if let Some(k) = ds.targets.iter().position(|&tl| tl == il as usize) {
+                        let stream = self.stages[stage].gpu.stream();
+                        let hidden_i = hidden as i32;
+                        unsafe {
+                            ck(
+                                "hc_mean tap dev",
+                                k::memra_dsv4_hc_mean(
+                                    dpf!(ws_all[stage].h_a, &stream),
+                                    (t.device_ptr_mut(&stream).0 as usize
+                                        + (*base + k * hidden) * 4)
+                                        as *mut f32,
+                                    1,
+                                    hc as i32,
+                                    hidden_i,
+                                    sp(&stream),
+                                ),
+                            )?;
+                        }
+                    }
                 }
             }
         }
@@ -7737,8 +7732,6 @@ impl Dsv4Gpu {
         // ends and one post-loop read is bit-identical to the per-step reads it replaces.
         let membeds: Vec<f32> = if capture {
             let mut m = Vec::with_capacity(block * rank);
-            #[allow(clippy::needless_range_loop)]
-            // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
             for i in 0..block {
                 let prev = out_ids[i] as usize;
                 m.extend_from_slice(&ds.markov_w1_host[prev * rank..(prev + 1) * rank]);
@@ -8443,7 +8436,6 @@ impl Dsv4Gpu {
     /// machine + emissions run t = 0..T-1 in POSITION ORDER, exactly the sequential
     /// program. The snapshot is taken before the first write.
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
     fn cmp_decode_batch_dev(
         &self,
         st: &Stage,
@@ -8623,7 +8615,6 @@ impl Dsv4Gpu {
     /// sequential twin — the batch advanced the pending in position order, so every
     /// emission pooled the same inputs). The CPU oracle's `rollback_replay`, verbatim.
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
     fn cmp_rollback_replay_dev(
         &self,
         st: &Stage,
@@ -9968,35 +9959,35 @@ impl Dsv4Gpu {
             )?;
             input_rx = false;
             // DSpark trunk tap for all T rows (capture only)
-            if let (Some(tp), Some(tg)) = (taps.as_mut(), targets.as_ref())
-                && let Some(kk) = tg.iter().position(|&tl| tl == il)
-            {
-                let stream = self.stages[stage].gpu.stream();
-                let vws = &mut vstate.ws[stage];
-                unsafe {
-                    ck(
-                        "hc_mean tap batch",
-                        k::memra_dsv4_hc_mean(
-                            dpf!(vws.h_a, &stream),
-                            dpm!(vws.tap_tmp, &stream),
-                            t as i32,
-                            hc as i32,
-                            hidden as i32,
-                            sp(&stream),
-                        ),
-                    )?;
-                    ck(
-                        "place_cols tap batch",
-                        k::memra_dsv4_place_cols(
-                            dpf!(vws.tap_tmp, &stream),
-                            dpm!(**tp, &stream),
-                            t as i32,
-                            hidden as i32,
-                            (n_t * hidden) as i64,
-                            (kk * hidden) as i64,
-                            sp(&stream),
-                        ),
-                    )?;
+            if let (Some(tp), Some(tg)) = (taps.as_mut(), targets.as_ref()) {
+                if let Some(kk) = tg.iter().position(|&tl| tl == il) {
+                    let stream = self.stages[stage].gpu.stream();
+                    let vws = &mut vstate.ws[stage];
+                    unsafe {
+                        ck(
+                            "hc_mean tap batch",
+                            k::memra_dsv4_hc_mean(
+                                dpf!(vws.h_a, &stream),
+                                dpm!(vws.tap_tmp, &stream),
+                                t as i32,
+                                hc as i32,
+                                hidden as i32,
+                                sp(&stream),
+                            ),
+                        )?;
+                        ck(
+                            "place_cols tap batch",
+                            k::memra_dsv4_place_cols(
+                                dpf!(vws.tap_tmp, &stream),
+                                dpm!(**tp, &stream),
+                                t as i32,
+                                hidden as i32,
+                                (n_t * hidden) as i64,
+                                (kk * hidden) as i64,
+                                sp(&stream),
+                            ),
+                        )?;
+                    }
                 }
             }
         }
@@ -10246,7 +10237,6 @@ impl Dsv4Gpu {
     /// EOS/stop-string, and client-disconnect cancel all ride this one seam. `None`
     /// is byte-identical to the gated driver (the closure is never constructed).
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn spec_greedy_batched_stream(
         &self,
         prompt: &[u32],
@@ -10413,10 +10403,10 @@ impl Dsv4Gpu {
                 round_us: round_t0.elapsed().as_micros() as u64,
             });
             t_tok = t_next;
-            if let Some(cb) = round_cb.as_deref_mut()
-                && !cb(&tokens[cb_from..])
-            {
-                break;
+            if let Some(cb) = round_cb.as_deref_mut() {
+                if !cb(&tokens[cb_from..]) {
+                    break;
+                }
             }
         }
         Ok(SpecRunGpu { tokens, rounds })
@@ -10466,7 +10456,6 @@ impl Dsv4Gpu {
     /// (see [`Self::spec_greedy_batched_stream`] — same seam, same None-is-byte-identical
     /// contract).
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn spec_sampled_batched_stream(
         &self,
         prompt: &[u32],
@@ -10500,7 +10489,6 @@ impl Dsv4Gpu {
     /// loop is structural for the same reason as the unpenalized path: the window at
     /// a given position is a pure function of the shared committed prefix.
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn spec_sampled_batched_pen(
         &self,
         prompt: &[u32],
@@ -10641,10 +10629,10 @@ impl Dsv4Gpu {
                 round_us: round_t0.elapsed().as_micros() as u64,
             });
             t_tok = t_next;
-            if let Some(cb) = round_cb.as_deref_mut()
-                && !cb(&tokens[cb_from..])
-            {
-                break;
+            if let Some(cb) = round_cb.as_deref_mut() {
+                if !cb(&tokens[cb_from..]) {
+                    break;
+                }
             }
         }
         Ok(SpecRunGpu { tokens, rounds })
@@ -10893,7 +10881,6 @@ pub fn dsv4_pos_uniform(seed: u64, pos: usize) -> f64 {
 }
 
 /// One sampled token from a full-vocab logits row at absolute position `pos`.
-#[allow(clippy::neg_cmp_op_on_partial_ord)] // allow: NaN must take this branch; !(a > b) is not a <= b under IEEE comparisons
 pub fn dsv4_sample_row(logits: &[f32], pos: usize, cfg: &Dsv4SampleCfg) -> Result<u32, String> {
     if !(cfg.temperature > 0.0) {
         return Err(format!(

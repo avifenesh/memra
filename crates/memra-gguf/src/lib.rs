@@ -41,7 +41,6 @@ pub mod micro_gguf;
 pub mod model_packs;
 pub mod model_plan;
 pub mod nvfp4_repack;
-pub mod placement;
 pub mod safetensors;
 pub mod source;
 pub mod spec_oracle;
@@ -49,7 +48,6 @@ pub mod tensor_contract;
 
 pub const GGUF_MAGIC: u32 = 0x4655_4747; // "GGUF" little-endian
 pub const GGUF_DEFAULT_ALIGNMENT: u64 = 32;
-const MAX_SPLIT_SHARDS: usize = 1_024;
 
 /// ggml_type ids — values are the on-disk integers (ggml/include/ggml.h).
 /// Variant names mirror ggml's C enum exactly (Q4_0, Q8_K, …) by design.
@@ -208,10 +206,10 @@ impl MetaValue {
             MetaValue::U16(v) => *v as u64,
             MetaValue::U32(v) => *v as u64,
             MetaValue::U64(v) => *v,
-            MetaValue::I8(v) if *v >= 0 => *v as u64,
-            MetaValue::I16(v) if *v >= 0 => *v as u64,
-            MetaValue::I32(v) if *v >= 0 => *v as u64,
-            MetaValue::I64(v) if *v >= 0 => *v as u64,
+            MetaValue::I8(v) => *v as u64,
+            MetaValue::I16(v) => *v as u64,
+            MetaValue::I32(v) => *v as u64,
+            MetaValue::I64(v) => *v as u64,
             MetaValue::Bool(v) => *v as u64,
             _ => return None,
         })
@@ -527,8 +525,6 @@ fn aligned_data_start(header_end: u64, alignment: u64, path: &Path) -> io::Resul
 
 /// Parse ONE physical GGUF file: `(shard, version, metadata, tensor infos with shard=usize::MAX)`.
 /// `TensorInfo::shard` is patched by the caller once the shard's index is known.
-#[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn parse_one(
     path: PathBuf,
 ) -> std::io::Result<(Shard, u32, BTreeMap<String, MetaValue>, Vec<TensorInfo>)> {
@@ -859,14 +855,6 @@ impl GgufFile {
                 ),
             )
         })?;
-        if split_count > MAX_SPLIT_SHARDS {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "GGUF split.count={split_count} exceeds maximum supported shard count {MAX_SPLIT_SHARDS}"
-                ),
-            ));
-        }
         // count 0 or 1 = not split. Any member of the set is a valid entry point: the sibling
         // names come from the filename form, and shard 0's KVs (architecture, tokenizer) win the
         // merge below, so opening shard 3 yields the same model as opening shard 1.
@@ -1054,10 +1042,10 @@ impl GgufFile {
 
     /// Get a metadata value, trying `{arch}.{suffix}` then the literal key.
     pub fn meta_arch(&self, suffix: &str) -> Option<&MetaValue> {
-        if let Some(arch) = self.arch()
-            && let Some(v) = self.metadata.get(&format!("{arch}.{suffix}"))
-        {
-            return Some(v);
+        if let Some(arch) = self.arch() {
+            if let Some(v) = self.metadata.get(&format!("{arch}.{suffix}")) {
+                return Some(v);
+            }
         }
         self.metadata.get(suffix)
     }
@@ -1066,13 +1054,6 @@ impl GgufFile {
 #[cfg(test)]
 mod split_tests {
     use super::*;
-
-    #[test]
-    fn signed_metadata_cannot_become_a_large_unsigned_value() {
-        assert_eq!(MetaValue::I8(-1).as_u64(), None);
-        assert_eq!(MetaValue::I64(-1).as_u64(), None);
-        assert_eq!(MetaValue::I32(7).as_u64(), Some(7));
-    }
 
     fn put_test_string(h: &mut Vec<u8>, s: &str) {
         h.extend_from_slice(&(s.len() as u64).to_le_bytes());

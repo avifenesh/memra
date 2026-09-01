@@ -2,7 +2,7 @@
 # Five-round, whole-server interleaved A/B wrapper for one Q27 serving knob.
 set -euo pipefail
 
-ROOT=${KNEERAISE_ROOT:-/opt/scratch/nvme/cx-kneeraise}
+ROOT=${KNEERAISE_ROOT:-/opt/dl-image/nvme/cx-kneeraise}
 HARNESS=${KNEERAISE_HARNESS:-$ROOT/harness}
 RUNNER=${KNEERAISE_RUNNER:-$HARNESS/run-box1.sh}
 NAME=${KNEERAISE_AB_NAME:-prefill2048}

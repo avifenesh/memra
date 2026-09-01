@@ -301,10 +301,10 @@ impl WorkerHealth {
     pub fn mark_gpu_fault(&self, reason: impl Into<String>) {
         let reason = reason.into();
         eprintln!("[gpu-watch] CRITICAL: {reason}");
-        if let Ok(mut r) = self.gpu_reason.lock()
-            && r.is_empty()
-        {
-            *r = reason;
+        if let Ok(mut r) = self.gpu_reason.lock() {
+            if r.is_empty() {
+                *r = reason;
+            }
         }
         self.gpu_faulted.store(true, Ordering::Release);
     }
@@ -599,12 +599,12 @@ fn scan_smi_csv(out: &str) -> Option<String> {
     // RICH order: timestamp, ecc uncorrected volatile total, retired_pages.pending,
     // remapped_rows.failure
     if fields.len() >= 4 {
-        if let Ok(ecc) = fields[1].parse::<u64>()
-            && ecc > 0
-        {
-            return Some(format!(
-                "uncorrected volatile ECC errors = {ecc} (nvidia-smi)"
-            ));
+        if let Ok(ecc) = fields[1].parse::<u64>() {
+            if ecc > 0 {
+                return Some(format!(
+                    "uncorrected volatile ECC errors = {ecc} (nvidia-smi)"
+                ));
+            }
         }
         if fields[3].eq_ignore_ascii_case("yes") || fields[3] == "1" {
             return Some("row-remap FAILURE reported by nvidia-smi (Xid 64 class)".into());
@@ -618,8 +618,8 @@ fn scan_smi_csv(out: &str) -> Option<String> {
 ///      `kernel.dmesg_restrict=0`; on this rig it is root-only, so it is TRIED and skipped.
 ///   2. `journalctl -k -f` — works unprivileged here (measured), and is what the systemd
 ///      deployment has anyway.
-///      A watcher that cannot read either source says so ONCE and exits: the `nvidia-smi` canary
-///      still covers the hang class, and a silent no-op watcher would be worse than an absent one.
+/// A watcher that cannot read either source says so ONCE and exits: the `nvidia-smi` canary
+/// still covers the hang class, and a silent no-op watcher would be worse than an absent one.
 fn spawn_xid_tail(health: SharedHealth) {
     let _ = std::thread::Builder::new()
         .name("memra-xid-tail".into())

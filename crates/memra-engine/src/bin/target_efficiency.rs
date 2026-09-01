@@ -246,7 +246,6 @@ fn identity_check(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
 fn emit_row(
     run: usize,
     batch: usize,

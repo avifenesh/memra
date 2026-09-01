@@ -3,10 +3,10 @@
 set -euo pipefail
 
 export PATH=/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:$PATH
-ROOT=${REQUAL2_ROOT:-/opt/scratch/nvme/cx-requal2}
+ROOT=${REQUAL2_ROOT:-/opt/dl-image/nvme/cx-requal2}
 REPO=$ROOT/memra
 HARNESS=$ROOT/harness
-MODELS=${REQUAL2_MODELS:-/opt/scratch/nvme/cx-requal/models}
+MODELS=${REQUAL2_MODELS:-/opt/dl-image/nvme/cx-requal/models}
 EXPECTED_SOURCE=${REQUAL2_EXPECTED_SOURCE:?set REQUAL2_EXPECTED_SOURCE}
 STAMP=${REQUAL2_STAMP:-$(date -u +%Y%m%dT%H%M%SZ)}
 OUT=${REQUAL2_OUT:-$ROOT/raw/run-$STAMP}

@@ -4,7 +4,7 @@ Date: 2026-08-11
 
 Measured source: `edbf6827d2c6993b15301c966a898a419aebfd40`
 
-Rig: rented cloud-2card `<private-host-redacted>`, 2x NVIDIA RTX PRO 6000 Blackwell
+Rig: hyperscaler sbox-2card `<private-host-redacted>`, 2x NVIDIA RTX PRO 6000 Blackwell
 Server Edition, stock 600 W limits
 
 ## Verdict: NO-GO (CLOSED)

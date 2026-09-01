@@ -75,7 +75,7 @@ fn resolve_nvcc() -> String {
             ranked.push((v, abs));
         }
     }
-    ranked.sort_by_key(|r| std::cmp::Reverse(r.0));
+    ranked.sort_by(|a, b| b.0.cmp(&a.0));
     match ranked.first() {
         Some(((maj, min), p)) => {
             println!("cargo:warning=nvcc CUDA {maj}.{min} at {}", p.display());

@@ -1,6 +1,6 @@
 //! Step TP DEVICE-RESIDENT activation gate (lane/hermes-perf-fixes, 2026-08-23).
 //!
-//! THE FINDING THIS GATES: the full-attention TP QKV/O seams used to DtoH the full activation,
+//! THE FINDING THIS GATES: `step35_tp_qkv`/`step35_tp_o` used to DtoH the full activation,
 //! run the projection from a host copy, gather to host vectors and re-upload — a host
 //! round-trip per layer per step, on the very path native P2P exists to remove. The lane
 //! added device-input twins (`bf16_column_parallel_resident_native_device`,

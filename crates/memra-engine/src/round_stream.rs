@@ -98,7 +98,7 @@ pub fn kv_len_ptr_table_range(
             Some(kvl) => {
                 let __s_g = e.stream();
                 let (p, _g) = kvl.len_d.device_ptr(&__s_g);
-                p
+                p as u64
             }
             None => 0u64,
         })
@@ -106,7 +106,7 @@ pub fn kv_len_ptr_table_range(
     if let Some(pc) = pos_ctr {
         let __s_g = e.stream();
         let (p, _g) = pc.device_ptr(&__s_g);
-        ptrs.push(p);
+        ptrs.push(p as u64);
     }
-    e.htod_u64(&ptrs)
+    Ok(e.htod_u64(&ptrs)?)
 }

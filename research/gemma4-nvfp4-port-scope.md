@@ -8,7 +8,7 @@ the flat dir). Census = headers only (index + per-shard safetensors JSON headers
 tensor data loaded, CPU-only.
 
 Prior art: `research/tune-data/rig5090.jsonl` row `gemma4-26b-moe-gap-list` (2026-07-05,
-cloud-rtx6000 jsonl) — 9 hard gaps for the GGUF q4km route. This doc answers: which of those the
+sbox jsonl) — 9 hard gaps for the GGUF q4km route. This doc answers: which of those the
 ST+NVFP4 route dissolves.
 
 ## 1. Checkpoint census
@@ -179,7 +179,7 @@ Vision tower: ignored by construction (engine only requests text ggml names).
    The hard center of the port.
 5. **SWA (R6):** v0 windowed mask on full cache (correctness), ring cache as the perf arc.
 6. Bench vs llama.cpp same-box reference (gemma4 q4km tg128 224.3, pp512 11234 from the
-   cloud-rtx6000 jsonl row; re-baseline on rig5090).
+   sbox row; re-baseline on rig5090).
 
 ## 5. Verdict
 

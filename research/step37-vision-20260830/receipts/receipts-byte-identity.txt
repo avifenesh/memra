@@ -1,9 +1,0 @@
-== text-only greedy byte-identity: vision-enabled boot vs seam-off boot ==
-invocation: byte_probe.py (temperature=0, fixed 2-turn prompt, max_tokens 400) against
-  boot A: boot-server.sh vision 18902 (MEMRA_STEP_VISION_DIR set) -> bytes-vision-on.json
-  boot B: boot-server.sh plain 18903 (seam off) -> bytes-vision-off.json
-server bin md5: 98845da6e4b9732bd9e16579de9ff722  memra commit: 04b3c771ee5c53fc6bc8f6e5698f767008c541cd
-identical (content+reasoning_content+finish_reason+usage token counts): True
-only differing field: usage.elapsed_s (timing): 3.238016784 vs 3.500391498
-completion_tokens: 311 prompt_tokens: 33
-content sha-check first 80: 'Sunlight contains all the colors of the visible spectrum, and when it passes thr'

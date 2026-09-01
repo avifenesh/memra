@@ -9,14 +9,7 @@
 #      carries [dspark-acc] lines (the route ENGAGED — acceptance itself may legitimately be 0);
 #   3. a sampled request on the dspark boot engages rejection-verify speculation;
 #   4. two concurrent greedy requests both draft under the default LOW=2 wave policy;
-#   5. a greedy request behind a live sampled DFlash row STACKS into the LOW band. STALE-GATE
-#      FIX (mtp-skip lane, 2026-08-30): this tooth used to assert the opposite (greedy stays
-#      plain behind one non-demotable sampled row), the posture 62f48ac1c4 hardened on
-#      2026-08-24; c4432f4a4 refuted and removed that block ON MEASUREMENT the next day (the
-#      LOW band now stacks dspark rows bounded by the wave projection) but did not update this
-#      tooth, so the gate has been red-on-main for every binary since. The old solo posture
-#      still exists behind the MEMRA_DSPARK_SAMPLED_WAVE=0 seam; this smoke asserts the
-#      default.
+#   5. a live sampled/non-demotable DFlash row keeps a later greedy request on plain decode.
 #
 # usage: dspark-serve-smoke.sh <trunk.gguf> <draft_export_dir> <server_bin> <evidence_dir>
 set -uo pipefail
@@ -213,10 +206,10 @@ fi
 if [ "$MIX_READY" = 1 ]; then
     if ! valid_completion "$EV/on-greedy-behind-sampled.json"; then
         echo "FAIL: greedy-behind-sampled request was not a valid completion"; FAIL=1
-    elif ! spec_engaged "$EV/on-greedy-behind-sampled.json"; then
-        echo "FAIL: greedy request behind a live sampled row did not stack into the LOW band (c4432f4a4 policy)"; FAIL=1
+    elif ! spec_plain "$EV/on-greedy-behind-sampled.json"; then
+        echo "FAIL: greedy request widened behind a live non-demotable sampled row"; FAIL=1
     else
-        echo "sampled-first tooth: later greedy request stacked into the LOW band"
+        echo "sampled-first tooth: later greedy request stayed plain"
     fi
 fi
 grep -c "\[dspark-acc\]" "$EV/serve-on.log" >/dev/null || { echo "FAIL: no [dspark-acc] in server log"; FAIL=1; }

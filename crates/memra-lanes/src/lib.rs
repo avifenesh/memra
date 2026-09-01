@@ -83,14 +83,6 @@ impl StepStats {
             }
         }
     }
-    /// Live sample count after eviction. The statistical mass behind `p()`: with n
-    /// samples, p99 selects index round(0.99*(n-1)) — the MAXIMUM for every n <= 50 —
-    /// so a small window makes "p99" a synonym for "the one slowest thing that
-    /// happened lately", which is exactly the wrong signal to gate on.
-    pub fn samples(&mut self) -> usize {
-        self.evict();
-        self.window.len()
-    }
     /// q in [0,100]. None until the window has signal (cold start => lanes admit).
     pub fn p(&mut self, q: f32) -> Option<f32> {
         self.evict();
@@ -107,15 +99,6 @@ impl StepStats {
 /// Admission policy: thresholds as fractions of the SLO, per lane (yieldgate.py SHED_AT).
 pub struct LanePolicy {
     pub slo_p99_ms: f32,
-    /// Minimum window samples before the p99 gate may SHED (below it the window is
-    /// treated as cold, like `None`). Born 2026-08-28: on an idle prod box whose only
-    /// interactive traffic was the watchdog's one-token probe (~5 samples per 30s
-    /// window), p99 == the probe's own PRIME-carrying tick (~46-50ms vs the 45ms
-    /// harvest threshold), and the health probe itself shed real harvest requests on
-    /// an empty machine — 2 of the day's 4 capture calls 429'd, painting the CRM 50%
-    /// red. Probe cardinality is noise, not signal; the `starved` sentinel (which
-    /// needs no window) still sheds under genuine starvation regardless of this floor.
-    pub min_samples: usize,
     /// admission threshold per lane index (interactive unused — always admitted)
     pub shed_at: [f32; 3],
     /// per-tick prefill token budgets [interactive, judge, harvest]; interactive budget is
@@ -141,10 +124,6 @@ impl LanePolicy {
         };
         Self {
             slo_p99_ms: f("MEMRA_SLO_P99_MS", 50.0),
-            // 32: a one-token watchdog probe contributes ~5-10 samples per 30s window,
-            // real interactive load contributes hundreds per second (per-token records).
-            // 0 disables the floor (the pre-2026-08-28 behavior).
-            min_samples: u("MEMRA_SHED_MIN_SAMPLES", 32),
             shed_at: [
                 f32::INFINITY,
                 f("MEMRA_SHED_JUDGE", 1.00),
@@ -186,11 +165,6 @@ impl LanePolicy {
         if starved {
             return false;
         }
-        // Below the floor the window is statistically no signal (p99 of n<=50 samples
-        // IS the max sample) — same verdict as the empty-window cold start: admit.
-        if stats.samples() < self.min_samples {
-            return true;
-        }
         match stats.p(99.0) {
             Some(p99) => p99 < self.slo_p99_ms * self.shed_at[lane.idx()],
             None => true,
@@ -211,96 +185,3 @@ pub struct LaneMetrics {
 }
 
 pub type SharedMetrics = std::sync::Arc<std::sync::Mutex<LaneMetrics>>;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn policy(min_samples: usize) -> LanePolicy {
-        LanePolicy {
-            slo_p99_ms: 50.0,
-            shed_at: [f32::INFINITY, 1.00, 0.90],
-            prefill_budget: [1024, 256, 256],
-            max_sessions: [32, 4, 8],
-            min_samples,
-        }
-    }
-
-    /// The 2026-08-28 incident, numerically: an idle box whose window holds only the
-    /// watchdog probe's samples — a handful of fast decode ticks plus ONE prime-carrying
-    /// tick at ~46ms. p99 of five samples is the max, 46 > 50*0.9 = 45, and the old gate
-    /// shed harvest on an empty machine. The floor reads that window as no-signal.
-    #[test]
-    fn probe_cardinality_window_does_not_shed_harvest() {
-        let mut stats = StepStats::new(30.0);
-        for ms in [12.0, 11.0, 13.0, 12.0, 46.0] {
-            stats.record(ms);
-        }
-        assert!(
-            !policy(0).admit(Lane::Harvest, &mut stats, false),
-            "floor disabled reproduces the incident: one probe prime tick sheds harvest"
-        );
-        assert!(
-            policy(32).admit(Lane::Harvest, &mut stats, false),
-            "5 samples are noise, not congestion — the floored gate admits"
-        );
-    }
-
-    /// The floor must not blunt the gate's real job: at genuine load the window carries
-    /// hundreds of per-token samples, and a p99 over budget still sheds.
-    #[test]
-    fn real_congestion_still_sheds_past_the_floor() {
-        let mut stats = StepStats::new(30.0);
-        for i in 0..300 {
-            stats.record(if i % 10 == 0 { 55.0 } else { 30.0 });
-        }
-        assert!(!policy(32).admit(Lane::Harvest, &mut stats, false));
-        // and a healthy p99 at the same mass admits
-        let mut healthy = StepStats::new(30.0);
-        for _ in 0..300 {
-            healthy.record(20.0);
-        }
-        assert!(policy(32).admit(Lane::Harvest, &mut healthy, false));
-    }
-
-    /// Starvation needs no window and no floor: interactive work exists but is not
-    /// decoding — shed, whatever the sample count says.
-    #[test]
-    fn starved_sheds_regardless_of_floor() {
-        let mut empty = StepStats::new(30.0);
-        assert!(!policy(32).admit(Lane::Harvest, &mut empty, true));
-        assert!(!policy(0).admit(Lane::Harvest, &mut empty, true));
-    }
-
-    /// Interactive is never gated, floor or not, congestion or not.
-    #[test]
-    fn interactive_always_admits() {
-        let mut stats = StepStats::new(30.0);
-        for _ in 0..300 {
-            stats.record(500.0);
-        }
-        assert!(policy(32).admit(Lane::Interactive, &mut stats, false));
-    }
-
-    /// At exactly the floor the gate ARMS: the boundary belongs to the shed side, so an
-    /// off-by-one cannot quietly re-open the probe-noise hole.
-    #[test]
-    fn floor_boundary_arms_the_gate() {
-        let mut stats = StepStats::new(30.0);
-        for _ in 0..32 {
-            stats.record(48.0);
-        }
-        assert!(
-            !policy(32).admit(Lane::Harvest, &mut stats, false),
-            "n == floor gates"
-        );
-        let mut below = StepStats::new(30.0);
-        for _ in 0..31 {
-            below.record(48.0);
-        }
-        assert!(
-            policy(32).admit(Lane::Harvest, &mut below, false),
-            "n == floor-1 admits"
-        );
-    }
-}

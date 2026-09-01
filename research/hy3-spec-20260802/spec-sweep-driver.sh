@@ -7,10 +7,10 @@
 # Usage: spec-sweep-driver.sh <r1|r2|r3>
 set -u
 RUN=${1:?usage: spec-sweep-driver.sh <run-tag>}
-TREE=/opt/scratch/nvme/hy3-spec-sweep/memra
-ART=/opt/scratch/nvme/models/hy3-layer103p5-bw24-runtime
+TREE=/opt/dl-image/nvme/hy3-spec-sweep/memra
+ART=/opt/dl-image/nvme/models/hy3-layer103p5-bw24-runtime
 PROMPT=$TREE/research/gemma4-bringup/depth-prompt-1736.txt
-LOG=/opt/scratch/nvme/hy3-spec-sweep/logs/sweep-$RUN.log
+LOG=/opt/dl-image/nvme/hy3-spec-sweep/logs/sweep-$RUN.log
 
 {
   echo "=== sweep $RUN start $(date -u +%FT%TZ) ==="

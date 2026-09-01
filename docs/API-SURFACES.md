@@ -17,13 +17,6 @@ The house law applies on both: a semantic feature the engine cannot honor is a *
 400 naming the field**, never a silent downgrade. Cosmetic or client-telemetry fields are
 accepted and ignored.
 
-Two further OpenAI/Cohere-shaped routes exist outside this document's scope because they
-do not generate: `POST /v1/embeddings` and `POST /v1/rerank` are prefill-only **capture
-surfaces** over a causal LM, with their own schemas, caps and worker semantics — see
-[Serving](SERVING.md#embeddings-and-rerank--the-capture-surfaces-laneembed-serve-2026-08-26).
-They share the accounting described below: one admitted worker request per input, billed
-as prompt tokens.
-
 ## `/v1/messages` — Anthropic Messages API
 
 `POST /v1/messages` (query strings such as `?beta=true` are accepted). Streaming and
@@ -146,7 +139,7 @@ the chat surface.
 
 One admission path (`surfaces::admit_translated` mirrors `chat_completions` exactly):
 canonical model resolution → tenant auth → lane → **`timeout_ms` validation** →
-tenant admission / prepaid reservation → ledger receipt (`route` records which dialect:
+prepaid-budget reservation → ledger receipt (`route` records which dialect:
 `/v1/messages`, `/v1/responses`) → rate-limit slot → **deadline-aware backpressure** →
 meter line → worker submit → deadline-bounded admission wait.
 A request deadline, its 408, its zero-debit ledger outcome and the admission sheds are

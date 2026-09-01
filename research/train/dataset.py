@@ -42,7 +42,7 @@ from typing import Iterator, Optional
 # ---------------------------------------------------------------------------
 HERE = os.path.dirname(os.path.abspath(__file__))
 # The corpus is the WHOLE tune-data directory: every per-rig file
-# (rig5090.jsonl, cloud-rtx6000.jsonl, l40s-sm89.jsonl, ...) is globbed and
+# (rig5090.jsonl, sbox-rtx6000.jsonl, l40s-sm89.jsonl, ...) is globbed and
 # concatenated so `rig` is a real multi-value conditioning variable rather than
 # a constant. DEFAULT_CORPUS is that directory; load() resolves it to all
 # *.jsonl inside. A single file or a glob pattern is still accepted.

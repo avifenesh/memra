@@ -25,11 +25,11 @@
 # split with dynamic boundaries but takes MEMRA_PRIME_PIPE=0. Bits still agree, split
 # liveness still passes, and ONLY the overlap assertion must turn RED.
 #
-# NEEDS 2-4 GPUs with P2P. On a single-GPU rig (the local 5090) it SKIPs:
+# NEEDS 2 GPUs with P2P (the PRO 6000 pair). On a single-GPU rig (the local 5090) it SKIPs:
 # a same-device "split" exercises the seam but not the placement this lever exists for; the
 # box battery is the authority (CLAUDE.md: CI is compile-only, the battery is the real gate).
 set -uo pipefail
-cd "$(dirname "$0")/.." || exit 1
+cd "$(dirname "$0")/.."
 PROBE=./target/release/concat-prime-probe
 MODEL=""
 DEVICES=0,1
@@ -38,34 +38,18 @@ CHUNKS=auto,513
 STEPS=8
 PROMPTS=""
 CANARY=0
-need_value() {
-    [ "$#" -ge 2 ] || { echo "prime-split-gate: missing value for $1" >&2; exit 2; }
-}
 while [ $# -gt 0 ]; do
     case "$1" in
-        --devices) need_value "$@"; DEVICES="$2"; shift 2 ;;
-        --stages)  need_value "$@"; STAGES="$2"; shift 2 ;;
-        --chunks)  need_value "$@"; CHUNKS="$2"; shift 2 ;;
-        --steps)   need_value "$@"; STEPS="$2"; shift 2 ;;
-        --prompts) need_value "$@"; PROMPTS="$2"; shift 2 ;;
+        --devices) DEVICES="$2"; shift 2 ;;
+        --stages)  STAGES="$2"; shift 2 ;;
+        --chunks)  CHUNKS="$2"; shift 2 ;;
+        --steps)   STEPS="$2"; shift 2 ;;
+        --prompts) PROMPTS="$2"; shift 2 ;;
         --canary)  CANARY=1; shift ;;
         -*) echo "prime-split-gate: unknown arg $1" >&2; exit 2 ;;
         *)  MODEL="$1"; shift ;;
     esac
 done
-case "$STAGES" in
-    2|3|4) ;;
-    *) echo "prime-split-gate: FAIL (--stages must be exactly 2, 3, or 4)" >&2; exit 2 ;;
-esac
-if [[ ! "$DEVICES" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
-    echo "prime-split-gate: FAIL (--devices must be a comma-separated list of numeric ordinals)" >&2
-    exit 2
-fi
-IFS=',' read -r -a DEVICE_LIST <<< "$DEVICES"
-if [ "${#DEVICE_LIST[@]}" -ne "$STAGES" ]; then
-    echo "prime-split-gate: FAIL (--devices count must equal --stages)" >&2
-    exit 2
-fi
 # Default model = the launch SKU (the placement this lever serves); resolves like chunkinv35.
 if [ -z "$MODEL" ]; then
     for cand in "${MEMRA_STEP37_GGUF:-}" \
@@ -81,7 +65,7 @@ fi
 NGPU=$(nvidia-smi --list-gpus 2>/dev/null | wc -l)
 NDEV=$(echo "$DEVICES" | tr ',' '\n' | sort -u | wc -l)
 MAXDEV=$(echo "$DEVICES" | tr ',' '\n' | sort -n | tail -1)
-if [ "$NGPU" -le "$MAXDEV" ] || [ "$NDEV" -ne "$STAGES" ]; then
+if [ "$NGPU" -le "$MAXDEV" ] || [ "$NDEV" -lt 2 ]; then
     echo "prime-split-gate: SKIP (needs the multi-GPU placement $DEVICES; $NGPU GPU(s) visible)"
     exit 0
 fi
@@ -93,11 +77,7 @@ EXTRA=()
 [ "$CANARY" = 1 ] && EXTRA=(--force-serial-pipe)
 LOG=$(mktemp /tmp/prime-split-gate-XXXXXX.log)
 # evidence discipline: tee the raw log, parse the LOG (never the pipe)
-WAVE_ENV=()
-if [ "$STAGES" -gt 2 ]; then
-    WAVE_ENV=(MEMRA_PP_WAVE=1 MEMRA_PP_OVERLAP=1)
-fi
-env "${WAVE_ENV[@]}" "MEMRA_PP_STAGES=$STAGES" "MEMRA_PP_DEVICES=$DEVICES" \
+MEMRA_PP_STAGES=$STAGES MEMRA_PP_DEVICES=$DEVICES \
     "$PROBE" "$MODEL" ppsplit --prompt-a "@$PROMPTS" \
     --chunks "$CHUNKS" --steps "$STEPS" "${EXTRA[@]}" > "$LOG" 2>&1
 rc=$?

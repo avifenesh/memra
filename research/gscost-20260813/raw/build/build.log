@@ -1,7 +1,7 @@
 BUILD_START ts=2026-08-13T06:07:20Z
 source=71682fdbdf4a3616b3ab1794bf4b75607d35dcfd
-repo=/opt/scratch/nvme/cx-gscost/memra
-TMPDIR=/opt/scratch/nvme/cx-gscost/tmp
+repo=/opt/dl-image/nvme/cx-gscost/memra
+TMPDIR=/opt/dl-image/nvme/cx-gscost/tmp
 <private-host-redacted>
 Linux <private-host-redacted> 6.17.0-1019-cloud #19~24.04.1-Ubuntu SMP Tue Jun 23 18:53:06 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
 71682fdb (HEAD -> lane/cx-gscost, origin/lane/cx-gscost) chore(gscost): clean build driver whitespace
@@ -21,15 +21,15 @@ Build cuda_13.2.r13.2/compiler.37434383_0
    Compiling libc v0.2.186
    Compiling cudarc v0.19.8
    Compiling cfg-if v1.0.4
-   Compiling memra-engine v0.82.0 (/opt/scratch/nvme/cx-gscost/memra/crates/memra-engine)
-   Compiling memra-validate v0.82.0 (/opt/scratch/nvme/cx-gscost/memra/crates/memra-validate)
-   Compiling memra-sampling v0.82.0 (/opt/scratch/nvme/cx-gscost/memra/crates/memra-sampling)
+   Compiling memra-engine v0.82.0 (/opt/dl-image/nvme/cx-gscost/memra/crates/memra-engine)
+   Compiling memra-validate v0.82.0 (/opt/dl-image/nvme/cx-gscost/memra/crates/memra-validate)
+   Compiling memra-sampling v0.82.0 (/opt/dl-image/nvme/cx-gscost/memra/crates/memra-sampling)
    Compiling libloading v0.9.0
    Compiling memmap2 v0.9.11
-   Compiling memra-gguf v0.82.0 (/opt/scratch/nvme/cx-gscost/memra/crates/memra-gguf)
-   Compiling memra-tokenizer v0.82.0 (/opt/scratch/nvme/cx-gscost/memra/crates/memra-tokenizer)
-   Compiling memra-runtime v0.82.0 (/opt/scratch/nvme/cx-gscost/memra/crates/memra-runtime)
-   Compiling memra-kv v0.82.0 (/opt/scratch/nvme/cx-gscost/memra/crates/memra-kv)
+   Compiling memra-gguf v0.82.0 (/opt/dl-image/nvme/cx-gscost/memra/crates/memra-gguf)
+   Compiling memra-tokenizer v0.82.0 (/opt/dl-image/nvme/cx-gscost/memra/crates/memra-tokenizer)
+   Compiling memra-runtime v0.82.0 (/opt/dl-image/nvme/cx-gscost/memra/crates/memra-runtime)
+   Compiling memra-kv v0.82.0 (/opt/dl-image/nvme/cx-gscost/memra/crates/memra-kv)
 warning: memra-engine@0.82.0: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc (newest of 4; also saw 13.0 @ /usr/local/cuda-13.0/bin/nvcc, 12.9 @ /usr/local/cuda-12.9/bin/nvcc, 12.8 @ /usr/local/cuda-12.8/bin/nvcc)
 warning: memra-engine@0.82.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
     Finished `release` profile [optimized] target(s) in 4m 07s
@@ -129,13 +129,13 @@ warning: memra-engine@0.82.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12
    Compiling toktrie v1.7.6
    Compiling async-stream-impl v0.3.6
    Compiling serde_path_to_error v0.1.20
-   Compiling memra-server v0.82.0 (/opt/scratch/nvme/cx-gscost/memra/crates/memra-server)
+   Compiling memra-server v0.82.0 (/opt/dl-image/nvme/cx-gscost/memra/crates/memra-server)
    Compiling cpufeatures v0.2.17
    Compiling matchit v0.7.3
    Compiling sha2 v0.10.9
    Compiling axum v0.7.9
    Compiling async-stream v0.3.6
    Compiling toml v0.8.23
-   Compiling memra-lanes v0.82.0 (/opt/scratch/nvme/cx-gscost/memra/crates/memra-lanes)
+   Compiling memra-lanes v0.82.0 (/opt/dl-image/nvme/cx-gscost/memra/crates/memra-lanes)
     Finished `release` profile [optimized] target(s) in 27.51s
 BUILD_PASS ts=2026-08-13T06:11:55Z

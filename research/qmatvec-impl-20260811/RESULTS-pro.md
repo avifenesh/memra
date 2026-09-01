@@ -6,7 +6,7 @@ Candidate: `4f15557c7a24d396966a9b3b34c970518e5d81ce`
 
 Baseline: `49f5002d7a37291c9b551ac2f683ce2edb27d163`
 
-Rig: rented box1, 2x NVIDIA RTX PRO 6000 Blackwell Server Edition; the timed and
+Rig: hyperscaler box1, 2x NVIDIA RTX PRO 6000 Blackwell Server Edition; the timed and
 profiled harness ran on GPU0 under one exclusive GPU-lock window.
 
 ## Verdict

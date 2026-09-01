@@ -37,7 +37,7 @@ for pass in 1 2 3 4 5; do
 done
 grep -H "tok/s" "$R"/boundary/*-fix-p*.log | grep "gen-only" | tee "$R/boundary/rates-fix.txt"
 
-# ---- M0 a2a: link against the versioned soname (no libnccl.so symlink on this stock GPU image) ----
+# ---- M0 a2a: link against the versioned soname (no libnccl.so symlink on this DL-image) ----
 echo "=== [$(stamp)] M0 a2a (round 2) ==="
 RA=$HOME/receipts/m0-a2a
 cd "$HOME/m0-nccl"

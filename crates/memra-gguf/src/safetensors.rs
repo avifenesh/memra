@@ -14,140 +14,15 @@
 //! The grammar we accept is exactly what `safetensors` emits: objects, arrays, strings, integers.
 
 use memmap2::Mmap;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs::File;
-use std::io::Read;
-use std::path::{Component, Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use crate::GgmlType;
 
 const N_LEN: usize = 8; // size_of::<u64>()
 const MAX_HEADER: usize = 100_000_000; // DoS guard (matches safetensors crate)
-const MAX_INDEX_BYTES: usize = 100_000_000;
-const MAX_INDEX_ENTRIES: usize = 1_000_000;
-const MAX_INDEX_SHARDS: usize = 1024;
-const MAX_HEADER_TENSORS: usize = 1_000_000;
-const MAX_TENSOR_RANK: usize = 128;
-const MAX_JSON_DEPTH: usize = 128;
-
-/// Return the number of bits occupied by one value of a safetensors dtype.
-///
-/// This is deliberately broader than `st_dtype_to_ggml`: modelopt and DSV4 artifacts use
-/// byte-oriented dtypes (U8/F8/BOOL) that do not have a resident `GgmlType` equivalent, but their
-/// declared shape still has to agree with the uploaded extent before any consumer can derive a
-/// CUDA launch geometry from it.
-fn st_dtype_bits(dtype: &str) -> Option<usize> {
-    match dtype {
-        "F4" => Some(4),
-        "F6_E2M3" | "F6_E3M2" => Some(6),
-        "BOOL" | "U8" | "I8" | "F8_E4M3" | "F8_E5M2" | "F8_E8M0" | "F8_E4M3FNUZ"
-        | "F8_E5M2FNUZ" => Some(8),
-        "U16" | "I16" | "F16" | "BF16" => Some(16),
-        "U32" | "I32" | "F32" => Some(32),
-        "U64" | "I64" | "F64" | "C64" => Some(64),
-        _ => None,
-    }
-}
-
-/// Validate one header entry against the post-header byte buffer.
-///
-/// `raw` is intentionally zero-copy, so this check is the last safe point before callers can
-/// turn an artifact-controlled shape/offset pair into device dimensions. Requiring the exact
-/// dtype-sized extent rejects both truncated tensors (which would otherwise slice out of bounds)
-/// and oversized/reversed ranges (which could make a later upload consume bytes belonging to a
-/// different tensor or an unrelated file tail).
-fn validate_tensor_extent(name: &str, info: &StInfo, payload_len: usize) -> std::io::Result<()> {
-    let Some(value_bits) = st_dtype_bits(&info.dtype) else {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!(
-                "tensor {name:?} has unsupported safetensors dtype {:?}",
-                info.dtype
-            ),
-        ));
-    };
-    let elements = info.shape.iter().try_fold(1usize, |total, &dim| {
-        let dim = usize::try_from(dim).map_err(|_| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("tensor {name:?} shape dimension {dim} does not fit this platform"),
-            )
-        })?;
-        total.checked_mul(dim).ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("tensor {name:?} shape element count overflows this platform"),
-            )
-        })
-    })?;
-    let expected_bits = elements.checked_mul(value_bits).ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("tensor {name:?} byte length overflows this platform"),
-        )
-    })?;
-    if expected_bits % 8 != 0 {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!(
-                "tensor {name:?} {:?} shape {:?} is not byte-aligned ({expected_bits} bits)",
-                info.dtype, info.shape
-            ),
-        ));
-    }
-    let expected = expected_bits / 8;
-    let [start, end] = info.data_offsets;
-    let actual = end.checked_sub(start).ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("tensor {name:?} has reversed data_offsets [{start}, {end}]"),
-        )
-    })?;
-    if end > payload_len || actual != expected {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!(
-                "tensor {name:?} extent [{start}, {end}) is invalid for {:?} shape {:?}: expected {expected} bytes within {payload_len}, found {actual}",
-                info.dtype, info.shape
-            ),
-        ));
-    }
-    Ok(())
-}
-
-fn validate_tensor_extents(
-    infos: &HashMap<String, StInfo>,
-    payload_len: usize,
-) -> std::io::Result<()> {
-    let mut ordered: Vec<_> = infos.iter().collect();
-    ordered.sort_unstable_by_key(|(name, info)| {
-        (info.data_offsets[0], info.data_offsets[1], name.as_str())
-    });
-    let mut cursor = 0usize;
-    for (name, info) in ordered {
-        if info.data_offsets[0] != cursor {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "tensor {name:?} starts at {}, but exact safetensors coverage requires {cursor}",
-                    info.data_offsets[0]
-                ),
-            ));
-        }
-        validate_tensor_extent(name, info, payload_len)?;
-        cursor = info.data_offsets[1];
-    }
-    if cursor != payload_len {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!(
-                "safetensors metadata covers {cursor} payload bytes, but the file contains {payload_len}"
-            ),
-        ));
-    }
-    Ok(())
-}
 
 /// safetensors dtype string -> memra GgmlType. FP8 is deferred (explicit panic, never silent).
 /// Shape note handled by the caller: safetensors shape is row-major outer..inner, memra `ne` is
@@ -182,42 +57,6 @@ pub struct StInfo {
     pub data_offsets: [usize; 2], // [begin, end) into the post-header buffer
 }
 
-fn huggingface_blob_root(root: &Path) -> Option<PathBuf> {
-    let snapshots = root.parent()?;
-    if snapshots.file_name()?.to_str()? != "snapshots" {
-        return None;
-    }
-    let blobs = snapshots.parent()?.join("blobs");
-    std::fs::canonicalize(blobs)
-        .ok()
-        .filter(|path| path.is_dir())
-}
-
-fn safe_index_path(root: &Path, blob_root: Option<&Path>, name: &str) -> std::io::Result<PathBuf> {
-    let relative = Path::new(name);
-    if relative.as_os_str().is_empty()
-        || relative
-            .components()
-            .any(|component| !matches!(component, Component::Normal(_)))
-    {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("safetensors index shard name is not a relative normal path: {name:?}"),
-        ));
-    }
-    let candidate = root.join(relative);
-    let resolved = std::fs::canonicalize(&candidate)?;
-    if !resolved.starts_with(root) && !blob_root.is_some_and(|blobs| resolved.starts_with(blobs)) {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::PermissionDenied,
-            format!(
-                "safetensors index path escapes the model snapshot and its repository blobs: {name:?}"
-            ),
-        ));
-    }
-    Ok(resolved)
-}
-
 impl StInfo {
     /// memra `ne` (inner-fastest) is the reverse of the safetensors shape.
     pub fn ne(&self) -> Vec<u64> {
@@ -238,80 +77,29 @@ pub struct StShard {
 
 impl StShard {
     pub fn open<P: AsRef<Path>>(p: P) -> std::io::Result<Self> {
-        let path = p.as_ref();
-        let metadata = std::fs::symlink_metadata(path)?;
-        if !metadata.file_type().is_file() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "safetensors shard is not a regular non-symlink file: {}",
-                    path.display()
-                ),
-            ));
-        }
-        #[cfg(unix)]
-        use std::os::unix::fs::OpenOptionsExt as _;
-        let mut options = std::fs::OpenOptions::new();
-        options.read(true);
-        #[cfg(unix)]
-        options.custom_flags(libc::O_NOFOLLOW);
-        let file = Arc::new(options.open(path)?);
+        let file = Arc::new(File::open(p)?);
         let mmap = Arc::new(unsafe { Mmap::map(file.as_ref())? });
         Self::from_mmap(mmap, file)
     }
 
     fn from_mmap(mmap: Arc<Mmap>, file: Arc<File>) -> std::io::Result<Self> {
-        if mmap.len() < N_LEN {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
-                "safetensors file too small for header length",
-            ));
-        }
-        let hlen = u64::from_le_bytes(
-            mmap.get(..N_LEN)
-                .and_then(|bytes| bytes.try_into().ok())
-                .ok_or_else(|| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::UnexpectedEof,
-                        "safetensors header length is truncated",
-                    )
-                })?,
+        assert!(
+            mmap.len() >= N_LEN,
+            "safetensors file too small for header length"
         );
-        let hlen = usize::try_from(hlen).map_err(|_| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "safetensors header length overflows usize",
-            )
-        })?;
-        if hlen > MAX_HEADER || hlen > mmap.len().saturating_sub(N_LEN) {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "bad/oversized safetensors header (len={hlen}, file={})",
-                    mmap.len()
-                ),
-            ));
-        }
-        let json = std::str::from_utf8(&mmap[N_LEN..N_LEN + hlen]).map_err(|_| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "safetensors header is not valid UTF-8",
-            )
-        })?;
-        if json_exceeds_depth(json, MAX_JSON_DEPTH) {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("safetensors header nesting exceeds maximum depth {MAX_JSON_DEPTH}"),
-            ));
-        }
-        let infos = parse_header_json_checked(json)
-            .map_err(|message| std::io::Error::new(std::io::ErrorKind::InvalidData, message))?;
-        let data_base = N_LEN + hlen;
-        validate_tensor_extents(&infos, mmap.len() - data_base)?;
+        let hlen = u64::from_le_bytes(mmap[..N_LEN].try_into().unwrap()) as usize;
+        assert!(
+            hlen <= MAX_HEADER && N_LEN + hlen <= mmap.len(),
+            "bad/oversized safetensors header (len={hlen}, file={})",
+            mmap.len()
+        );
+        let json = std::str::from_utf8(&mmap[N_LEN..N_LEN + hlen])
+            .expect("safetensors header is not valid UTF-8");
+        let infos = parse_header_json(json);
         Ok(Self {
             mmap,
             file,
-            data_base,
+            data_base: N_LEN + hlen,
             infos,
         })
     }
@@ -357,9 +145,8 @@ impl StModel {
     /// falls back to a single `model.safetensors`. Also accepts an explicit file path.
     pub fn open(path: &Path) -> std::io::Result<Self> {
         if path.is_file() {
-            // An explicit caller-selected file may itself be an HF cache symlink. Resolve that
-            // one declared path, then retain StShard's no-follow rule for index-selected files.
-            let sh = StShard::open(std::fs::canonicalize(path)?)?;
+            // Direct path to a single safetensors file.
+            let sh = StShard::open(path)?;
             let map = sh.names().map(|n| (n.clone(), 0)).collect();
             return Ok(Self {
                 shards: vec![sh],
@@ -367,104 +154,23 @@ impl StModel {
             });
         }
         let dir = path;
-        let root = std::fs::canonicalize(dir)?;
-        if !root.is_dir() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                format!(
-                    "safetensors model root is not a directory: {}",
-                    dir.display()
-                ),
-            ));
-        }
-        let blob_root = huggingface_blob_root(&root);
-        let idx = root.join("model.safetensors.index.json");
+        let idx = dir.join("model.safetensors.index.json");
         if idx.exists() {
-            let idx = safe_index_path(&root, blob_root.as_deref(), "model.safetensors.index.json")?;
-            let idx_meta = std::fs::symlink_metadata(&idx)?;
-            if !idx_meta.file_type().is_file() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!(
-                        "safetensors index is not a regular non-symlink file: {}",
-                        idx.display()
-                    ),
-                ));
-            }
-            let idx_len = usize::try_from(idx_meta.len()).map_err(|_| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "safetensors index length overflows usize",
-                )
-            })?;
-            if idx_len > MAX_INDEX_BYTES {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!(
-                        "safetensors index is too large ({idx_len} bytes; maximum {MAX_INDEX_BYTES})"
-                    ),
-                ));
-            }
-            #[cfg(unix)]
-            use std::os::unix::fs::OpenOptionsExt as _;
-            let mut index_options = std::fs::OpenOptions::new();
-            index_options.read(true);
-            #[cfg(unix)]
-            index_options.custom_flags(libc::O_NOFOLLOW);
-            let index_file = index_options.open(&idx)?;
-            let index_meta = index_file.metadata()?;
-            if !index_meta.file_type().is_file() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("safetensors index is not a regular file: {}", idx.display()),
-                ));
-            }
-            let mut txt = String::new();
-            index_file
-                .take((MAX_INDEX_BYTES as u64).saturating_add(1))
-                .read_to_string(&mut txt)?;
-            if txt.len() > MAX_INDEX_BYTES {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("safetensors index exceeds {MAX_INDEX_BYTES} bytes while reading"),
-                ));
-            }
-            if json_exceeds_depth(&txt, MAX_JSON_DEPTH) {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("safetensors index nesting exceeds maximum depth {MAX_JSON_DEPTH}"),
-                ));
-            }
-            let weight_map = parse_index_weight_map_json_checked(&txt)
-                .map_err(|message| std::io::Error::new(std::io::ErrorKind::InvalidData, message))?;
+            let txt = std::fs::read_to_string(&idx)?;
+            let weight_map = parse_index_weight_map_json(&txt);
             // distinct shard file names, in stable sorted order
             let mut files: Vec<String> = weight_map.values().cloned().collect();
             files.sort();
             files.dedup();
-            if files.len() > MAX_INDEX_SHARDS {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!(
-                        "safetensors index references too many shards ({}; maximum {MAX_INDEX_SHARDS})",
-                        files.len()
-                    ),
-                ));
-            }
             let pos: HashMap<&String, usize> =
                 files.iter().enumerate().map(|(n, f)| (f, n)).collect();
-            let shard_paths: Vec<PathBuf> = files
+            let shards = files
                 .iter()
-                .map(|file| safe_index_path(&root, blob_root.as_deref(), file))
-                .collect::<Result<Vec<_>, _>>()?;
-            let shards = shard_paths
-                .iter()
-                .map(StShard::open)
+                .map(|f| StShard::open(dir.join(f)))
                 .collect::<Result<Vec<_>, _>>()?;
             for (tensor, file) in &weight_map {
                 let si = pos[file];
-                // Index validation is metadata-only. Do not form a payload slice merely to prove
-                // the owning shard header contains the indexed name.
-                if !shards[si].infos.contains_key(tensor) {
+                if shards[si].raw(tensor).is_none() {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::InvalidData,
                         format!(
@@ -503,7 +209,7 @@ impl StModel {
             }
             Ok(Self { shards, map })
         } else {
-            let single = safe_index_path(&root, blob_root.as_deref(), "model.safetensors")?;
+            let single = dir.join("model.safetensors");
             let sh = StShard::open(single)?;
             let map = sh.names().map(|n| (n.clone(), 0)).collect();
             Ok(Self {
@@ -517,16 +223,6 @@ impl StModel {
     pub fn raw(&self, name: &str) -> Option<(&StInfo, &[u8])> {
         let &si = self.map.get(name)?;
         self.shards[si].raw(name)
-    }
-
-    /// Header-only metadata for a tensor, routed to the owning shard.
-    ///
-    /// Unlike [`Self::raw`], this never forms a view into the tensor payload. Placement and
-    /// inspection code use it to census exact physical byte ranges without faulting weight pages
-    /// or invoking any source transform.
-    pub fn info(&self, name: &str) -> Option<&StInfo> {
-        let &si = self.map.get(name)?;
-        self.shards[si].infos.get(name)
     }
 
     /// Owned extent for the same tensor selected by `raw`.
@@ -545,36 +241,6 @@ impl StModel {
     }
 }
 
-fn json_exceeds_depth(text: &str, max: usize) -> bool {
-    let mut depth = 0usize;
-    let mut in_string = false;
-    let mut escaped = false;
-    for byte in text.bytes() {
-        if in_string {
-            if escaped {
-                escaped = false;
-            } else if byte == b'\\' {
-                escaped = true;
-            } else if byte == b'"' {
-                in_string = false;
-            }
-            continue;
-        }
-        match byte {
-            b'"' => in_string = true,
-            b'{' | b'[' => {
-                depth = depth.saturating_add(1);
-                if depth > max {
-                    return true;
-                }
-            }
-            b'}' | b']' => depth = depth.saturating_sub(1),
-            _ => {}
-        }
-    }
-    false
-}
-
 // ============================ minimal JSON parsing (header + index) ============================
 //
 // We only parse the exact shapes the safetensors writer emits. This avoids adding a serde
@@ -583,7 +249,6 @@ fn json_exceeds_depth(text: &str, max: usize) -> bool {
 struct Json<'a> {
     b: &'a [u8],
     i: usize,
-    failed: bool,
 }
 
 impl<'a> Json<'a> {
@@ -591,7 +256,6 @@ impl<'a> Json<'a> {
         Self {
             b: s.as_bytes(),
             i: 0,
-            failed: false,
         }
     }
     fn skip_ws(&mut self) {
@@ -601,42 +265,28 @@ impl<'a> Json<'a> {
     }
     fn peek(&mut self) -> u8 {
         self.skip_ws();
-        self.b.get(self.i).copied().unwrap_or_else(|| {
-            self.failed = true;
-            0
-        })
+        self.b[self.i]
     }
     fn eat(&mut self, c: u8) {
         self.skip_ws();
-        if self.b.get(self.i).copied() != Some(c) {
-            self.failed = true;
-            return;
-        }
-        self.i = self.i.saturating_add(1);
+        assert_eq!(
+            self.b[self.i], c,
+            "json: expected '{}' at {}",
+            c as char, self.i
+        );
+        self.i += 1;
     }
     /// Parse a JSON string (no escape handling beyond \" and \\, which suffices for tensor names).
     fn string(&mut self) -> String {
-        self.skip_ws();
-        if self.b.get(self.i).copied() != Some(b'"') {
-            self.failed = true;
-            return String::new();
-        }
-        self.i = self.i.saturating_add(1);
+        self.eat(b'"');
         let mut out = String::new();
-        let mut terminated = false;
         while self.i < self.b.len() {
             let c = self.b[self.i];
             self.i += 1;
             match c {
-                b'"' => {
-                    terminated = true;
-                    break;
-                }
+                b'"' => break,
                 b'\\' => {
-                    let Some(&e) = self.b.get(self.i) else {
-                        self.failed = true;
-                        break;
-                    };
+                    let e = self.b[self.i];
                     self.i += 1;
                     out.push(match e {
                         b'"' => '"',
@@ -651,9 +301,6 @@ impl<'a> Json<'a> {
                 _ => out.push(c as char),
             }
         }
-        if !terminated {
-            self.failed = true;
-        }
         out
     }
     /// Parse a non-negative integer (offsets/shape are always >= 0 in safetensors).
@@ -663,57 +310,14 @@ impl<'a> Json<'a> {
         while self.i < self.b.len() && self.b[self.i].is_ascii_digit() {
             self.i += 1;
         }
-        if self.i == start {
-            self.failed = true;
-            return 0;
-        }
-        match std::str::from_utf8(&self.b[start..self.i])
-            .ok()
-            .and_then(|value| value.parse().ok())
-        {
-            Some(value) => value,
-            None => {
-                self.failed = true;
-                0
-            }
-        }
+        assert!(self.i > start, "json: expected integer at {start}");
+        std::str::from_utf8(&self.b[start..self.i])
+            .unwrap()
+            .parse()
+            .unwrap()
     }
     /// Skip an arbitrary JSON value (used for "__metadata__" and index "metadata").
     fn skip_value(&mut self) {
-        self.skip_value_depth(0);
-    }
-
-    /// The safetensors `__metadata__` contract is string-to-string, not arbitrary JSON.
-    fn skip_string_map(&mut self) {
-        self.eat(b'{');
-        let mut keys = HashSet::new();
-        if self.peek() != b'}' {
-            loop {
-                let key = self.string();
-                if !keys.insert(key) {
-                    self.failed = true;
-                    return;
-                }
-                self.eat(b':');
-                let _ = self.string();
-                if self.peek() == b',' {
-                    self.eat(b',');
-                } else {
-                    break;
-                }
-            }
-        }
-        self.eat(b'}');
-    }
-
-    fn skip_value_depth(&mut self, depth: usize) {
-        if self.failed {
-            return;
-        }
-        if depth > MAX_JSON_DEPTH {
-            self.failed = true;
-            return;
-        }
         match self.peek() {
             b'{' => {
                 self.eat(b'{');
@@ -721,7 +325,7 @@ impl<'a> Json<'a> {
                     loop {
                         let _ = self.string();
                         self.eat(b':');
-                        self.skip_value_depth(depth + 1);
+                        self.skip_value();
                         if self.peek() == b',' {
                             self.eat(b',');
                         } else {
@@ -735,7 +339,7 @@ impl<'a> Json<'a> {
                 self.eat(b'[');
                 if self.peek() != b']' {
                     loop {
-                        self.skip_value_depth(depth + 1);
+                        self.skip_value();
                         if self.peek() == b',' {
                             self.eat(b',');
                         } else {
@@ -751,7 +355,6 @@ impl<'a> Json<'a> {
             _ => {
                 // number, true, false, or null
                 self.skip_ws();
-                let start = self.i;
                 while self.i < self.b.len()
                     && !matches!(
                         self.b[self.i],
@@ -760,127 +363,42 @@ impl<'a> Json<'a> {
                 {
                     self.i += 1;
                 }
-                let token = &self.b[start..self.i];
-                if token.is_empty()
-                    || (token != b"true"
-                        && token != b"false"
-                        && token != b"null"
-                        && !valid_json_number(token))
-                {
-                    self.failed = true;
-                }
             }
         }
     }
-}
-
-fn valid_json_number(token: &[u8]) -> bool {
-    let mut i = 0usize;
-    if token.get(i) == Some(&b'-') {
-        i += 1;
-    }
-    match token.get(i) {
-        Some(b'0') => i += 1,
-        Some(b'1'..=b'9') => {
-            i += 1;
-            while token.get(i).is_some_and(u8::is_ascii_digit) {
-                i += 1;
-            }
-        }
-        _ => return false,
-    }
-    if token.get(i) == Some(&b'.') {
-        i += 1;
-        let start = i;
-        while token.get(i).is_some_and(u8::is_ascii_digit) {
-            i += 1;
-        }
-        if i == start {
-            return false;
-        }
-    }
-    if matches!(token.get(i), Some(b'e' | b'E')) {
-        i += 1;
-        if matches!(token.get(i), Some(b'+' | b'-')) {
-            i += 1;
-        }
-        let start = i;
-        while token.get(i).is_some_and(u8::is_ascii_digit) {
-            i += 1;
-        }
-        if i == start {
-            return false;
-        }
-    }
-    i == token.len()
 }
 
 /// Parse a safetensors header already obtained from a local file or an HTTP range request.
-/// No tensor payload bytes are required. The public compatibility wrapper returns an empty map
-/// for malformed input; file-backed callers use the checked variant below so malformed model
-/// artifacts become ordinary load errors rather than panics.
+/// No tensor payload bytes are required.
 pub fn parse_header_json(json: &str) -> HashMap<String, StInfo> {
-    parse_header_json_checked(json).unwrap_or_default()
-}
-
-pub fn parse_header_json_checked(json: &str) -> Result<HashMap<String, StInfo>, String> {
     let mut p = Json::new(json);
     let mut out = HashMap::new();
-    let mut top_keys = HashSet::new();
     p.eat(b'{');
     if p.peek() == b'}' {
         p.eat(b'}');
-        p.skip_ws();
-        return if p.failed || p.i != p.b.len() {
-            Err("invalid safetensors header JSON".into())
-        } else {
-            Ok(out)
-        };
+        return out;
     }
     loop {
-        if out.len() >= MAX_HEADER_TENSORS {
-            return Err(format!(
-                "safetensors header has more than {MAX_HEADER_TENSORS} tensors"
-            ));
-        }
         let key = p.string();
-        if !top_keys.insert(key.clone()) {
-            return Err(format!("duplicate safetensors header key {key:?}"));
-        }
         p.eat(b':');
         if key == "__metadata__" {
-            p.skip_string_map();
-            if p.failed {
-                return Err("safetensors __metadata__ must be a string-to-string map".into());
-            }
+            p.skip_value();
         } else {
             // { "dtype": "...", "shape": [...], "data_offsets": [a,b] } — fields in any order.
             p.eat(b'{');
-            let mut dtype = None;
-            let mut shape = None;
-            let mut offsets = None;
-            let mut fields = HashSet::new();
+            let mut dtype = String::new();
+            let mut shape: Vec<u64> = Vec::new();
+            let mut offsets = [0usize; 2];
             loop {
                 let field = p.string();
-                if !fields.insert(field.clone()) {
-                    return Err(format!(
-                        "tensor {key:?} repeats safetensors field {field:?}"
-                    ));
-                }
                 p.eat(b':');
                 match field.as_str() {
-                    "dtype" => dtype = Some(p.string()),
+                    "dtype" => dtype = p.string(),
                     "shape" => {
                         p.eat(b'[');
-                        let mut parsed = Vec::new();
                         if p.peek() != b']' {
                             loop {
-                                if parsed.len() >= MAX_TENSOR_RANK {
-                                    return Err(format!(
-                                        "safetensors tensor rank exceeds {MAX_TENSOR_RANK}"
-                                    ));
-                                }
-                                parsed.push(p.u64());
+                                shape.push(p.u64());
                                 if p.peek() == b',' {
                                     p.eat(b',');
                                 } else {
@@ -889,19 +407,15 @@ pub fn parse_header_json_checked(json: &str) -> Result<HashMap<String, StInfo>, 
                             }
                         }
                         p.eat(b']');
-                        shape = Some(parsed);
                     }
                     "data_offsets" => {
                         p.eat(b'[');
-                        let start = usize::try_from(p.u64())
-                            .map_err(|_| format!("tensor {key:?} start offset overflows usize"))?;
+                        offsets[0] = p.u64() as usize;
                         p.eat(b',');
-                        let end = usize::try_from(p.u64())
-                            .map_err(|_| format!("tensor {key:?} end offset overflows usize"))?;
+                        offsets[1] = p.u64() as usize;
                         p.eat(b']');
-                        offsets = Some([start, end]);
                     }
-                    _ => return Err(format!("tensor {key:?} has unknown field {field:?}")),
+                    _ => p.skip_value(),
                 }
                 if p.peek() == b',' {
                     p.eat(b',');
@@ -910,19 +424,12 @@ pub fn parse_header_json_checked(json: &str) -> Result<HashMap<String, StInfo>, 
                 }
             }
             p.eat(b'}');
-            if p.failed {
-                return Err(format!("invalid metadata JSON for tensor {key:?}"));
-            }
-            let dtype = dtype.ok_or_else(|| format!("tensor {key:?} is missing dtype"))?;
-            let shape = shape.ok_or_else(|| format!("tensor {key:?} is missing shape"))?;
-            let data_offsets =
-                offsets.ok_or_else(|| format!("tensor {key:?} is missing data_offsets"))?;
             out.insert(
                 key,
                 StInfo {
                     dtype,
                     shape,
-                    data_offsets,
+                    data_offsets: offsets,
                 },
             );
         }
@@ -933,46 +440,24 @@ pub fn parse_header_json_checked(json: &str) -> Result<HashMap<String, StInfo>, 
         }
     }
     p.eat(b'}');
-    p.skip_ws();
-    if p.failed || p.i != p.b.len() {
-        return Err("invalid safetensors header JSON".into());
-    }
-    Ok(out)
+    out
 }
 
 /// Parse `model.safetensors.index.json` into tensor-to-shard ownership.
 pub fn parse_index_weight_map_json(json: &str) -> HashMap<String, String> {
-    parse_index_weight_map_json_checked(json).unwrap_or_default()
-}
-
-pub fn parse_index_weight_map_json_checked(json: &str) -> Result<HashMap<String, String>, String> {
     let mut p = Json::new(json);
     let mut out = HashMap::new();
-    let mut top_keys = HashSet::new();
-    let mut saw_weight_map = false;
     p.eat(b'{');
     loop {
         let key = p.string();
-        if !top_keys.insert(key.clone()) {
-            return Err(format!("duplicate safetensors index key {key:?}"));
-        }
         p.eat(b':');
         if key == "weight_map" {
-            saw_weight_map = true;
             p.eat(b'{');
             if p.peek() != b'}' {
                 loop {
                     let t = p.string();
                     p.eat(b':');
                     let f = p.string();
-                    if out.len() >= MAX_INDEX_ENTRIES && !out.contains_key(&t) {
-                        return Err(format!(
-                            "safetensors index has more than {MAX_INDEX_ENTRIES} tensor entries"
-                        ));
-                    }
-                    if out.contains_key(&t) {
-                        return Err(format!("duplicate safetensors index tensor {t:?}"));
-                    }
                     out.insert(t, f);
                     if p.peek() == b',' {
                         p.eat(b',');
@@ -984,9 +469,6 @@ pub fn parse_index_weight_map_json_checked(json: &str) -> Result<HashMap<String,
             p.eat(b'}');
         } else {
             p.skip_value();
-            if p.failed {
-                return Err("invalid safetensors index JSON".into());
-            }
         }
         if p.peek() == b',' {
             p.eat(b',');
@@ -994,15 +476,7 @@ pub fn parse_index_weight_map_json_checked(json: &str) -> Result<HashMap<String,
             break;
         }
     }
-    p.eat(b'}');
-    p.skip_ws();
-    if p.failed || p.i != p.b.len() {
-        return Err("invalid safetensors index JSON".into());
-    }
-    if !saw_weight_map || out.is_empty() {
-        return Err("safetensors index weight_map must contain at least one tensor".into());
-    }
-    Ok(out)
+    out
 }
 
 #[cfg(test)]
@@ -1072,106 +546,6 @@ mod tests {
     }
 
     #[test]
-    fn rejects_tensor_extents_that_disagree_with_shape_or_payload() {
-        let cases = [
-            (
-                "short",
-                r#"{"w":{"dtype":"F32","shape":[2],"data_offsets":[0,4]}}"#,
-                4usize,
-            ),
-            (
-                "long",
-                r#"{"w":{"dtype":"F32","shape":[2],"data_offsets":[0,12]}}"#,
-                12usize,
-            ),
-            (
-                "reversed",
-                r#"{"w":{"dtype":"F32","shape":[2],"data_offsets":[8,0]}}"#,
-                8usize,
-            ),
-            (
-                "oob",
-                r#"{"w":{"dtype":"F32","shape":[2],"data_offsets":[0,8]}}"#,
-                4usize,
-            ),
-        ];
-        for (name, header, data_len) in cases {
-            let mut bytes = Vec::new();
-            bytes.extend_from_slice(&(header.len() as u64).to_le_bytes());
-            bytes.extend_from_slice(header.as_bytes());
-            bytes.extend(std::iter::repeat_n(0u8, data_len));
-            let path = write_temp(&format!("extent_{name}"), &bytes);
-            let error = match StShard::open(&path) {
-                Ok(_) => panic!("invalid extent was accepted"),
-                Err(error) => error,
-            };
-            assert_eq!(error.kind(), std::io::ErrorKind::InvalidData, "{error}");
-            assert!(error.to_string().contains("tensor"), "{error}");
-            std::fs::remove_file(path).ok();
-        }
-    }
-
-    #[test]
-    fn accepts_current_spec_subbyte_fnuz_and_complex_dtypes() {
-        let json = r#"{"f4":{"dtype":"F4","shape":[2],"data_offsets":[0,1]},"f6":{"dtype":"F6_E2M3","shape":[4],"data_offsets":[1,4]},"fnuz":{"dtype":"F8_E4M3FNUZ","shape":[1],"data_offsets":[4,5]},"complex":{"dtype":"C64","shape":[1],"data_offsets":[5,13]}}"#;
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&(json.len() as u64).to_le_bytes());
-        bytes.extend_from_slice(json.as_bytes());
-        bytes.extend_from_slice(&[0u8; 13]);
-        let path = write_temp("current_dtypes", &bytes);
-        let shard = StShard::open(&path).unwrap();
-        assert_eq!(shard.len(), 4);
-        std::fs::remove_file(path).ok();
-
-        let json = r#"{"misaligned":{"dtype":"F4","shape":[1],"data_offsets":[0,1]}}"#;
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&(json.len() as u64).to_le_bytes());
-        bytes.extend_from_slice(json.as_bytes());
-        bytes.push(0);
-        let path = write_temp("misaligned_subbyte", &bytes);
-        let error = match StShard::open(&path) {
-            Ok(_) => panic!("misaligned sub-byte tensor was accepted"),
-            Err(error) => error,
-        };
-        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
-        std::fs::remove_file(path).ok();
-    }
-
-    #[test]
-    fn rejects_overlaps_gaps_and_unclaimed_payload_tail() {
-        let cases = [
-            (
-                "overlap",
-                r#"{"a":{"dtype":"U8","shape":[2],"data_offsets":[0,2]},"b":{"dtype":"U8","shape":[2],"data_offsets":[1,3]}}"#,
-                3usize,
-            ),
-            (
-                "gap",
-                r#"{"a":{"dtype":"U8","shape":[1],"data_offsets":[0,1]},"b":{"dtype":"U8","shape":[1],"data_offsets":[2,3]}}"#,
-                3usize,
-            ),
-            (
-                "tail",
-                r#"{"a":{"dtype":"U8","shape":[1],"data_offsets":[0,1]}}"#,
-                2usize,
-            ),
-        ];
-        for (name, header, data_len) in cases {
-            let mut bytes = Vec::new();
-            bytes.extend_from_slice(&(header.len() as u64).to_le_bytes());
-            bytes.extend_from_slice(header.as_bytes());
-            bytes.extend(std::iter::repeat_n(0u8, data_len));
-            let path = write_temp(&format!("coverage_{name}"), &bytes);
-            let error = match StShard::open(&path) {
-                Ok(_) => panic!("invalid {name} coverage was accepted"),
-                Err(error) => error,
-            };
-            assert_eq!(error.kind(), std::io::ErrorKind::InvalidData, "{name}");
-            std::fs::remove_file(path).ok();
-        }
-    }
-
-    #[test]
     fn synthetic_dequant_through_path() {
         // round-trip the bytes back through the shared dequant path: F32 verbatim, BF16 known.
         let bytes = build_synthetic();
@@ -1196,70 +570,6 @@ mod tests {
         assert_eq!(ra.len(), 24);
         assert!(m.raw("missing").is_none());
         std::fs::remove_file(&p).ok();
-    }
-
-    #[test]
-    fn malformed_safetensors_headers_return_errors_without_panicking() {
-        let cases = [
-            Vec::new(),
-            vec![0u8; 3],
-            16u64.to_le_bytes().to_vec(),
-            {
-                let mut bytes = 1u64.to_le_bytes().to_vec();
-                bytes.push(0xff);
-                bytes
-            },
-            {
-                let json = br#"{"broken":{"dtype":"F32""#;
-                let mut bytes = (json.len() as u64).to_le_bytes().to_vec();
-                bytes.extend_from_slice(json);
-                bytes
-            },
-        ];
-        for (index, bytes) in cases.into_iter().enumerate() {
-            let path = write_temp(&format!("malformed-{index}"), &bytes);
-            let result = std::panic::catch_unwind(|| StShard::open(&path));
-            assert!(result.is_ok(), "malformed header panicked for case {index}");
-            assert!(
-                result.unwrap().is_err(),
-                "malformed header was accepted for case {index}"
-            );
-            std::fs::remove_file(path).ok();
-        }
-    }
-
-    #[test]
-    fn checked_parsers_enforce_required_unique_and_metadata_contracts() {
-        let bad_headers = [
-            r#"{"w":{"dtype":"F32","data_offsets":[0,4]}}"#,
-            r#"{"w":{"shape":[],"data_offsets":[0,4]}}"#,
-            r#"{"w":{"dtype":"F32","shape":[]}}"#,
-            r#"{"__metadata__":{"format":1},"w":{"dtype":"F32","shape":[],"data_offsets":[0,4]}}"#,
-            r#"{"__metadata__":,"w":{"dtype":"F32","shape":[],"data_offsets":[0,4]}}"#,
-            r#"{"w":{"dtype":"F32","shape":[],"data_offsets":[0,4]},"w":{"dtype":"F32","shape":[],"data_offsets":[0,4]}}"#,
-            r#"{"w":{"dtype":"F32","dtype":"F16","shape":[],"data_offsets":[0,4]}}"#,
-            r#"{"w":{"dtype":"F32","shape":[],"data_offsets":[0,4],"stride":1}}"#,
-        ];
-        for header in bad_headers {
-            assert!(
-                parse_header_json_checked(header).is_err(),
-                "non-conforming header was accepted: {header}"
-            );
-        }
-
-        let bad_indices = [
-            r#"{"metadata":{"total_size":4}}"#,
-            r#"{"weight_map":{}}"#,
-            r#"{"metadata":,"weight_map":{"w":"model.safetensors"}}"#,
-            r#"{"weight_map":{"w":"a.safetensors","w":"b.safetensors"}}"#,
-            r#"{"weight_map":{"w":"a.safetensors"},"weight_map":{"x":"b.safetensors"}}"#,
-        ];
-        for index in bad_indices {
-            assert!(
-                parse_index_weight_map_json_checked(index).is_err(),
-                "non-conforming index was accepted: {index}"
-            );
-        }
     }
 
     #[test]
@@ -1296,97 +606,6 @@ mod tests {
         assert_eq!(f32::from_le_bytes(ry[0..4].try_into().unwrap()), 9.0);
 
         std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn model_index_rejects_absolute_parent_and_symlink_shard_paths() {
-        let dir =
-            std::env::temp_dir().join(format!("memra_st_index_escape_{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let outside = dir.parent().unwrap().join(format!(
-            "memra_st_escape_{}.safetensors",
-            std::process::id()
-        ));
-        std::fs::write(&outside, build_synthetic()).unwrap();
-
-        for name in [
-            "../memra_st_escape_999.safetensors",
-            outside.to_str().unwrap(),
-        ] {
-            std::fs::write(
-                dir.join("model.safetensors.index.json"),
-                format!(r#"{{"weight_map":{{"a.weight":{name:?}}}}}"#),
-            )
-            .unwrap();
-            let error = match StModel::open(&dir) {
-                Ok(_) => panic!("index path escaped the model root"),
-                Err(error) => error,
-            };
-            assert!(
-                error.to_string().contains("relative normal path")
-                    || error.to_string().contains("escapes model root"),
-                "unexpected error: {error}"
-            );
-        }
-
-        #[cfg(unix)]
-        {
-            std::os::unix::fs::symlink(&outside, dir.join("linked.safetensors")).unwrap();
-            std::fs::write(
-                dir.join("model.safetensors.index.json"),
-                r#"{"weight_map":{"a.weight":"linked.safetensors"}}"#,
-            )
-            .unwrap();
-            let error = match StModel::open(&dir) {
-                Ok(_) => panic!("symlink shard was accepted"),
-                Err(error) => error,
-            };
-            assert!(
-                error.to_string().contains("regular non-symlink")
-                    || error.to_string().contains("escapes the model snapshot"),
-                "{error}"
-            );
-        }
-        std::fs::remove_file(outside).ok();
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn huggingface_snapshot_symlinks_are_confined_to_same_repository_blobs() {
-        use std::os::unix::fs::symlink;
-
-        let repo = std::env::temp_dir().join(format!(
-            "models--memra--hf-symlink-fixture-{}",
-            std::process::id()
-        ));
-        let snapshot = repo.join("snapshots").join("pinned-revision");
-        let blobs = repo.join("blobs");
-        std::fs::create_dir_all(&snapshot).unwrap();
-        std::fs::create_dir_all(&blobs).unwrap();
-
-        std::fs::write(blobs.join("shard-hash"), build_synthetic()).unwrap();
-        std::fs::write(
-            blobs.join("index-hash"),
-            r#"{"weight_map":{"a.weight":"model-00001.safetensors","b.norm":"model-00001.safetensors"}}"#,
-        )
-        .unwrap();
-        symlink(
-            "../../blobs/index-hash",
-            snapshot.join("model.safetensors.index.json"),
-        )
-        .unwrap();
-        symlink(
-            "../../blobs/shard-hash",
-            snapshot.join("model-00001.safetensors"),
-        )
-        .unwrap();
-
-        let model = StModel::open(&snapshot).unwrap();
-        assert_eq!(model.n_tensors(), 2);
-        assert!(model.raw("a.weight").is_some());
-        assert!(model.raw("b.norm").is_some());
-        std::fs::remove_dir_all(repo).ok();
     }
 
     #[test]

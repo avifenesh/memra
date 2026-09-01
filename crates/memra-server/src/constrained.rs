@@ -19,7 +19,7 @@
 //!     masked-argmax cut slot; SpecGrammar below adapts the engine's SpecConstraint hook).
 //!   - fallback sampler configs (penalties/top-k/top-p/min-p) and MEMRA_CONSTRAIN_HOST=1
 //!     (the rollback oracle) keep the v1 host masked-copy sample.
-//!     Receipts: research/constrained-full-20260803/ (battery + three-way perf + gates).
+//! Receipts: research/constrained-full-20260803/ (battery + three-way perf + gates).
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -559,141 +559,10 @@ pub fn apply_mask(mask: &SimpleVob, logits: &mut [f32]) {
     }
 }
 
-/// POST-THINK phase gate (lane/step37-postthink-grammar, 2026-08-30): two-phase constrained
-/// decoding for chat templates that force-open a think channel with no `enable_thinking`
-/// switch (the step35 dialect — its `<think>\n` generation tail is unconditional).
-///
-/// Phase 1 (think): generation runs UNCONSTRAINED, exactly as the model was trained — the
-/// mask is all-allow EXCEPT the request's end-of-generation set, so the model cannot end
-/// the response inside the think channel (the receipted step37 EOS-inside-think quirk:
-/// finish=stop with `content: ""` and the whole answer in `reasoning`).
-///
-/// Phase transition: the detector matches the template contract's think-close TOKEN-ID
-/// sequence (derived from the model's tokenizer at load — never string matching on decoded
-/// text) with a rolling KMP walk over the emitted stream. When the full close sequence has
-/// been consumed, the gate closes and the grammar owns every mask/consume from there,
-/// starting at its initial state (the matcher is untouched during phase 1 by construction).
-///
-/// Forced close (`MEMRA_POSTTHINK_CEILING`, 0 = off): past the ceiling the mask collapses
-/// to exactly the next unmatched close token, so the sampler is FORCED to walk the close
-/// sequence and the grammar engages — the guard against a think that never closes. Rides
-/// the same mask seam as everything else, so it works identically on the host, batched
-/// device, and graph paths.
-///
-/// The gate lives INSIDE SessionConstraint so every existing mask/consume call site (host
-/// masked sample, batched device mask staging, graph promotion + per-step re-upload) takes
-/// the phase behavior without a new branch. Post-think sessions never ride spec (the
-/// admission conjunction gates them plain), so `clone_matcher`/SpecGrammar never observe an
-/// open gate.
-pub struct PostThinkGate {
-    /// think-close token-id sequence (template contract; step37-NVFP4: `[128799]`, the
-    /// tokenizer's single added `</think>` token).
-    close: Vec<u32>,
-    /// KMP failure function over `close` — a diverging partial match rewinds to the longest
-    /// proper prefix that is also a suffix instead of resetting to zero.
-    fail: Vec<usize>,
-    /// tokens of `close` currently matched (rolling state over the emitted stream).
-    matched: usize,
-    /// phase-1 mask: all-allow minus the request's end-of-generation ids. Constant until
-    /// the ceiling fires; cloned per step (the packed words H2D verbatim, same shape the
-    /// grammar masks take).
-    think_mask: SimpleVob,
-    /// tokens emitted inside the think channel (phase-1 `consume` count).
-    pub think_tokens: u64,
-    /// forced-close ceiling in think tokens; 0 = off (the request's max_tokens bounds the
-    /// whole completion exactly as today).
-    ceiling: u64,
-    /// think closed — grammar owns generation from here.
-    closed: bool,
-    /// receipt: the ceiling forced the close (vs the model closing on its own).
-    pub forced_close: bool,
-}
-
-impl PostThinkGate {
-    pub fn new(close: Vec<u32>, eos: &[u32], n_vocab: usize, ceiling: u64) -> Result<Self, String> {
-        if close.is_empty() {
-            return Err("post-think gate armed with an empty think-close sequence".into());
-        }
-        if let Some(&bad) = close.iter().find(|&&t| t as usize >= n_vocab) {
-            return Err(format!(
-                "think-close token {bad} is outside the vocabulary ({n_vocab})"
-            ));
-        }
-        // KMP failure function: fail[i] = length of the longest proper prefix of
-        // close[..=i] that is also a suffix of it.
-        let mut fail = vec![0usize; close.len()];
-        for i in 1..close.len() {
-            let mut k = fail[i - 1];
-            while k > 0 && close[i] != close[k] {
-                k = fail[k - 1];
-            }
-            if close[i] == close[k] {
-                k += 1;
-            }
-            fail[i] = k;
-        }
-        let mut think_mask = SimpleVob::alloc_ones(n_vocab);
-        for &id in eos {
-            if (id as usize) < n_vocab {
-                think_mask.disallow_token(id);
-            }
-        }
-        if think_mask.num_set() == 0 {
-            return Err("post-think phase-1 mask is empty (eos set covers the vocabulary)".into());
-        }
-        Ok(Self {
-            close,
-            fail,
-            matched: 0,
-            think_mask,
-            think_tokens: 0,
-            ceiling,
-            closed: false,
-            forced_close: false,
-        })
-    }
-
-    fn open(&self) -> bool {
-        !self.closed
-    }
-
-    /// Phase-1 mask for the current step. Past the ceiling it collapses to exactly the
-    /// next unmatched close token (the forced walk); otherwise the constant
-    /// all-allow-minus-eos mask.
-    fn mask(&mut self) -> SimpleVob {
-        if self.ceiling > 0 && self.think_tokens >= self.ceiling {
-            self.forced_close = true;
-            let mut m = SimpleVob::alloc(self.think_mask.len());
-            m.allow_token(self.close[self.matched]);
-            return m;
-        }
-        self.think_mask.clone()
-    }
-
-    /// Advance the close detector with an emitted token. Returns true when this token
-    /// completed the close sequence (the grammar owns the NEXT step).
-    fn advance(&mut self, tok: u32) -> bool {
-        self.think_tokens += 1;
-        while self.matched > 0 && self.close[self.matched] != tok {
-            self.matched = self.fail[self.matched - 1];
-        }
-        if self.close[self.matched] == tok {
-            self.matched += 1;
-        }
-        if self.matched == self.close.len() {
-            self.closed = true;
-        }
-        self.closed
-    }
-}
-
 /// Per-session grammar state + the mask-cost meter (the perf receipt: steps and total
 /// mask-compute time are logged at finish).
 pub struct SessionConstraint {
     m: Matcher,
-    /// post-think phase gate; None = the grammar owns generation from token 1 (every
-    /// pre-lane request shape, byte-identical by construction).
-    gate: Option<PostThinkGate>,
     pub steps: u64,
     pub mask_ns: u128,
     /// draft-side masking receipt (lane/draft-mask): speculative clones + their wall, and the
@@ -708,7 +577,6 @@ impl SessionConstraint {
     pub fn new(m: Matcher) -> Self {
         Self {
             m,
-            gate: None,
             steps: 0,
             mask_ns: 0,
             spec_clones: 0,
@@ -716,28 +584,6 @@ impl SessionConstraint {
             draft_masks: 0,
             draft_mask_ns: 0,
         }
-    }
-
-    /// Arm the post-think phase gate (admission, think-forced templates only). The grammar
-    /// then engages only after the think-close token sequence has been emitted; until then
-    /// phase-1 masks allow everything except `eos`.
-    pub fn arm_postthink(
-        &mut self,
-        close: Vec<u32>,
-        eos: &[u32],
-        n_vocab: usize,
-        ceiling: u64,
-    ) -> Result<(), String> {
-        self.gate = Some(PostThinkGate::new(close, eos, n_vocab, ceiling)?);
-        Ok(())
-    }
-
-    /// Post-think receipt for the finish log: (think tokens, closed, forced by ceiling).
-    /// None = the gate was never armed (grammar-from-token-1 session).
-    pub fn postthink_receipt(&self) -> Option<(u64, bool, bool)> {
-        self.gate
-            .as_ref()
-            .map(|g| (g.think_tokens, g.closed, g.forced_close))
     }
 
     /// Grammar-compile / parser error (checked once at admit).
@@ -748,19 +594,8 @@ impl SessionConstraint {
     /// Compute the current token mask (timed — the mask-cost receipt). When the grammar
     /// has finished, the mask collapses to EOS-only — the normal Eos stop fires. The
     /// packed form (`SimpleVob::as_slice`) is what the device path H2Ds verbatim.
-    /// With an OPEN post-think gate the mask is the phase-1 mask instead (all-allow minus
-    /// eos; forced close token past the ceiling) — the grammar is untouched until the
-    /// think channel closes.
     pub fn compute_mask(&mut self) -> Result<SimpleVob, String> {
         let t0 = std::time::Instant::now();
-        if let Some(gate) = self.gate.as_mut()
-            && gate.open()
-        {
-            let mask = gate.mask();
-            self.steps += 1;
-            self.mask_ns += t0.elapsed().as_nanos();
-            return Ok(mask);
-        }
         let mask = self.m.compute_mask_or_eos().map_err(|e| e.to_string())?;
         self.steps += 1;
         self.mask_ns += t0.elapsed().as_nanos();
@@ -777,24 +612,14 @@ impl SessionConstraint {
 
     /// Advance the grammar with the accepted token. Cannot legitimately fail (the token
     /// was sampled from this state's own mask) — an error here is a loud session stop.
-    /// With an OPEN post-think gate the token advances the close DETECTOR instead — think
-    /// tokens (including the close sequence itself) are never fed to the grammar, so phase 2
-    /// starts at the grammar's initial state.
     pub fn consume(&mut self, tok: u32) -> Result<(), String> {
-        if let Some(gate) = self.gate.as_mut()
-            && gate.open()
-        {
-            gate.advance(tok);
-            return Ok(());
-        }
         self.m.consume_token(tok).map_err(|e| e.to_string())
     }
 
     /// SPECULATIVE CLONE of the committed grammar state (draft-side masking): llguidance's
     /// Matcher is Clone, so a draft chain walks a throwaway copy and the real state stays
     /// pinned at the last EMITTED token. Cost is metered separately (`spec_ns`) — one clone
-    /// per spec round, never on the plain path. Post-think sessions never spec (admission
-    /// gates them plain), so this is only ever called with the gate closed or absent.
+    /// per spec round, never on the plain path.
     pub fn clone_matcher(&mut self) -> Matcher {
         let t0 = std::time::Instant::now();
         let m = self.m.clone();
@@ -824,30 +649,6 @@ pub struct SpecGrammar<'a> {
     /// speculative (draft-chain) matcher: a clone of `c`'s state at chain start.
     spec: Option<Matcher>,
     on: bool,
-}
-
-/// MEMRA_POSTTHINK_CEILING=<tokens>: forced-close guard for post-think constrained
-/// sessions — past this many think tokens the phase-1 mask collapses to the think-close
-/// sequence and the grammar engages. 0 / unset = OFF (default by design: the request's
-/// max_tokens bounds the whole completion exactly as today, and length-inside-think stays
-/// an honest, receipted finish face; a fixed default ceiling either clips real thinks —
-/// step37 agentic thinks routinely exceed 1024 tokens — or never fires). Invalid values
-/// warn once and stay off, never silently become a different number.
-pub fn postthink_ceiling() -> u64 {
-    static CEILING: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
-    *CEILING.get_or_init(|| match std::env::var("MEMRA_POSTTHINK_CEILING") {
-        Ok(v) => match v.parse::<u64>() {
-            Ok(n) => n,
-            Err(_) => {
-                eprintln!(
-                    "[postthink] WARN: MEMRA_POSTTHINK_CEILING={v:?} is not a non-negative \
-                     integer; ceiling stays off"
-                );
-                0
-            }
-        },
-        Err(_) => 0,
-    })
 }
 
 /// MEMRA_DRAFT_MASK=0 turns draft-side grammar masking off (the rollback seam / A-B arm).
@@ -1368,126 +1169,6 @@ mod tests {
         assert!(
             sc.draft_masks >= 3,
             "draft-mask meter must count each masked position"
-        );
-    }
-
-    fn postthink_constraint(schema: serde_json::Value) -> (SessionConstraint, u32, usize) {
-        let env = ApproximateTokEnv::single_byte_env();
-        let factory = ParserFactory::new_simple(&env).unwrap();
-        let sc = SessionConstraint::new(Matcher::new(
-            factory.create_parser(TopLevelGrammar::from_json_schema(schema)),
-        ));
-        let n_vocab = env.tok_trie().vocab_size();
-        (sc, env.tok_trie().eos_token(), n_vocab)
-    }
-
-    /// POST-THINK phase 1: the mask allows everything EXCEPT the eos set (EOS banned
-    /// inside think — the step37 empty-content quirk fix), the grammar stays untouched
-    /// while arbitrary think tokens are consumed, and after the close sequence the mask
-    /// is the grammar's INITIAL mask.
-    #[test]
-    fn postthink_phase1_bans_eos_and_grammar_engages_at_close() {
-        let (mut sc, eos, n_vocab) = postthink_constraint(serde_json::json!({"type": "object"}));
-        // multi-token close sequence: "</" "think" ">" stand-ins (byte tokens).
-        let close = vec![b'<' as u32, b'/' as u32, b'>' as u32];
-        sc.arm_postthink(close, &[eos, 7], n_vocab, 0).unwrap();
-
-        // the grammar's initial mask, computed on an UNGATED twin (same schema).
-        let (mut twin, _, _) = postthink_constraint(serde_json::json!({"type": "object"}));
-        let initial = twin.compute_mask().unwrap();
-
-        // phase 1 mask: everything allowed but the eos set.
-        let m = sc.compute_mask().unwrap();
-        assert!(!m.is_allowed(eos), "eos must be banned inside think");
-        assert!(!m.is_allowed(7), "every id in the eos set must be banned");
-        assert!(m.is_allowed(b'x' as u32), "think is unconstrained");
-        assert!(
-            m.is_allowed(b'{' as u32),
-            "phase 1 must not clamp to the grammar"
-        );
-
-        // arbitrary think prose — including grammar-illegal tokens — consumes cleanly
-        // and never touches the matcher.
-        for &t in b"deep thought about { and > tokens" {
-            sc.consume(t as u32).unwrap();
-        }
-        // a PARTIAL close match ('<' then divergence) must rewind, not flip the phase.
-        sc.consume(b'<' as u32).unwrap();
-        sc.consume(b'x' as u32).unwrap();
-        let m = sc.compute_mask().unwrap();
-        assert!(
-            m.is_allowed(b'x' as u32),
-            "still phase 1 after partial close"
-        );
-
-        // the full close sequence flips the phase...
-        sc.consume(b'<' as u32).unwrap();
-        sc.consume(b'/' as u32).unwrap();
-        sc.consume(b'>' as u32).unwrap();
-        let (think_tokens, closed, forced) = sc.postthink_receipt().unwrap();
-        assert!(closed, "close sequence must close the gate");
-        assert!(!forced, "model-closed, not ceiling-forced");
-        assert_eq!(think_tokens, 33 + 2 + 3, "every phase-1 token counted");
-        // ...and the next mask is the grammar's INITIAL mask (untouched during think).
-        let m = sc.compute_mask().unwrap();
-        assert_eq!(
-            m.as_slice(),
-            initial.as_slice(),
-            "phase 2 must start at the grammar's initial state"
-        );
-        // phase 2 consume feeds the grammar: a grammar-illegal token now errors.
-        assert!(sc.consume(b'x' as u32).is_err());
-    }
-
-    /// Ceiling: past MEMRA_POSTTHINK_CEILING think tokens the mask collapses to exactly
-    /// the next close token — the forced walk — then the grammar engages.
-    #[test]
-    fn postthink_ceiling_forces_the_close_sequence() {
-        let (mut sc, eos, n_vocab) = postthink_constraint(serde_json::json!({"type": "object"}));
-        let close = vec![b'<' as u32, b'/' as u32];
-        sc.arm_postthink(close.clone(), &[eos], n_vocab, 4).unwrap();
-        for &t in b"abcd" {
-            sc.consume(t as u32).unwrap();
-        }
-        // at the ceiling: only close[0] is allowed.
-        let m = sc.compute_mask().unwrap();
-        assert_eq!(m.num_set(), 1, "forced mask allows exactly one token");
-        assert!(m.is_allowed(close[0]));
-        sc.consume(close[0]).unwrap();
-        let m = sc.compute_mask().unwrap();
-        assert_eq!(m.num_set(), 1);
-        assert!(m.is_allowed(close[1]));
-        sc.consume(close[1]).unwrap();
-        let (_, closed, forced) = sc.postthink_receipt().unwrap();
-        assert!(closed && forced, "ceiling-forced close must be receipted");
-        // grammar owns the next step.
-        let m = sc.compute_mask().unwrap();
-        assert!(m.is_allowed(b'{' as u32));
-        assert!(!m.is_allowed(b'x' as u32));
-    }
-
-    /// KMP detector: a close whose prefix repeats ("aab" over stream "aaab") must match —
-    /// a reset-to-zero detector misses it.
-    #[test]
-    fn postthink_close_detector_handles_overlapping_prefixes() {
-        let (mut sc, eos, n_vocab) = postthink_constraint(serde_json::json!({"type": "object"}));
-        sc.arm_postthink(vec![1, 1, 2], &[eos], n_vocab, 0).unwrap();
-        for t in [1u32, 1, 1, 2] {
-            sc.consume(t).unwrap();
-        }
-        let (_, closed, _) = sc.postthink_receipt().unwrap();
-        assert!(closed, "overlapping-prefix close must be detected");
-    }
-
-    /// Arming refusals: an empty close sequence and out-of-vocab close ids are loud
-    /// errors at admission, never a silently unconstrained session.
-    #[test]
-    fn postthink_arming_is_fail_closed() {
-        let (mut sc, eos, n_vocab) = postthink_constraint(serde_json::json!({"type": "object"}));
-        assert!(sc.arm_postthink(vec![], &[eos], n_vocab, 0).is_err());
-        assert!(
-            sc.arm_postthink(vec![n_vocab as u32 + 1], &[eos], n_vocab, 0)
-                .is_err()
         );
     }
 

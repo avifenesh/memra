@@ -170,8 +170,8 @@ decision — one hit makes a blob a violation — and it is how the worst file i
 | `research/gemma4-bringup/corpus-prompts/wiki-055.txt` | `personal_email` @367, **`aws_account_id` @556** | `personal_email` |
 | `research/per-expert-quant/finalize_hy3_smart100_research.sh` | `cloud_instance_id` @264, **`aws_account_id` @294** | `cloud_instance_id` |
 
-`wiki-055.txt` carries a cloud account id, an `AdministratorAccess` assertion and a named
-identity principal. Reported as `personal_email`, it was one line inside **56** `personal_email` hits — a
+`wiki-055.txt` carries a cloud account id, an `AdministratorAccess` assertion and a named IAM
+principal. Reported as `personal_email`, it was one line inside **56** `personal_email` hits — a
 class a reviewer correctly triages as known authorship noise — and the account id was named
 nowhere.
 

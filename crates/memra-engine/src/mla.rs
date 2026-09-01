@@ -38,18 +38,6 @@ impl MlaDims {
         kv_rank: 512,
     };
 
-    /// glm5_next (GLM-5.3-Flash) MLA geometry: NoPE — `rope_head_dim` is 0, so there is no
-    /// decoupled rope plane at all and the latent cache row is `kv_rank` wide (not kv_rank+rope).
-    /// qk_head_dim is therefore ALL nope (256), and the softmax scale is 1/sqrt(256) = 1/16 —
-    /// numerically the same 1/16 as GLM-5.2 (192+64), reached by a different decomposition.
-    pub const GLM5_NEXT: MlaDims = MlaDims {
-        n_head: 64,
-        d_nope: 256,
-        d_rope: 0,
-        d_v: 256,
-        kv_rank: 512,
-    };
-
     /// Softmax scale: 1/sqrt(d_nope + d_rope) — the ORIGINAL qk head dim (256 for GLM-5.2),
     /// NOT the absorbed width (576). llama.cpp glm-dsa.cpp `kq_scale` with mscale=1 (no yarn).
     pub fn scale(&self) -> f32 {
@@ -201,8 +189,6 @@ pub fn mla_attend_absorbed(d: &MlaDims, x: &MlaInputs) -> Vec<f32> {
                 }
             }
             // MQA scores against the 576-wide latent rows
-            #[allow(clippy::needless_range_loop)]
-            // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
             for t in 0..visible {
                 let c = &x.c_kv[t * r..(t + 1) * r];
                 let mut s = 0.0f32;
@@ -218,8 +204,6 @@ pub fn mla_attend_absorbed(d: &MlaDims, x: &MlaInputs) -> Vec<f32> {
             softmax(&mut scores[..visible]);
             // latent-space AV
             o_lat.iter_mut().for_each(|v| *v = 0.0);
-            #[allow(clippy::needless_range_loop)]
-            // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
             for t in 0..visible {
                 let p = scores[t];
                 let c = &x.c_kv[t * r..(t + 1) * r];
@@ -327,7 +311,6 @@ mod tests {
 
     /// Build random inputs at unit-ish scale: weights ~ 1/sqrt(rank) so decompressed values and
     /// scores stay O(1) and the f32 tolerance is meaningful.
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     fn random_case(
         d: &MlaDims,
         t_q: usize,
@@ -435,51 +418,6 @@ mod tests {
         // Full GLM-5.2 geometry (64 heads, 192/64/256, rank 512) — decode t=1, T=8.
         // Wider accumulations (576-dot, rank-512 decompress) ⇒ slightly looser f32 tolerance.
         run_case(&MlaDims::GLM52, 1, 8, 20260801, 1e-4);
-    }
-
-    /// NoPE pin (glm5_next / GLM-5.3-Flash): `d_rope == 0` — no decoupled rope plane, the
-    /// latent row is kv_rank wide, and every rope loop in both forms is empty. The oracle had
-    /// never been run at this geometry; it is the GPU arm's truth for the NoPE door, so it is
-    /// pinned as a tested fact here before any kernel compares against it.
-    #[test]
-    fn naive_equals_absorbed_nope_rope_zero() {
-        // shrunk NoPE shapes first (cheap, several seeds), then full glm5_next dims.
-        let shapes = [
-            MlaDims {
-                n_head: 4,
-                d_nope: 32,
-                d_rope: 0,
-                d_v: 32,
-                kv_rank: 64,
-            },
-            MlaDims {
-                n_head: 3,
-                d_nope: 16,
-                d_rope: 0,
-                d_v: 24,
-                kv_rank: 48,
-            },
-        ];
-        for (i, d) in shapes.iter().enumerate() {
-            for seed in [11, 2026, 0x5EED] {
-                run_case(d, 1, 13, seed + i as u64, 1e-5); // decode
-                run_case(d, 5, 5, seed + 7 + i as u64, 1e-5); // pure prefill
-                run_case(d, 3, 9, seed + 13 + i as u64, 1e-5); // chunked
-            }
-        }
-        // Full glm5_next geometry (64 heads, nope 256, rope 0, v 256, rank 512).
-        run_case(&MlaDims::GLM5_NEXT, 1, 8, 20260827, 1e-4);
-        run_case(&MlaDims::GLM5_NEXT, 4, 4, 20260828, 1e-4);
-    }
-
-    /// The NoPE scale is 1/sqrt(qk_head_dim) with qk_head_dim == d_nope (rope contributes 0),
-    /// NOT 1/sqrt(kv_rank) — the absorbed width (512) must never reach the softmax.
-    #[test]
-    fn nope_scale_is_qk_head_dim() {
-        let d = MlaDims::GLM5_NEXT;
-        assert_eq!(d.d_nope + d.d_rope, 256);
-        assert!((d.scale() - 1.0 / 16.0).abs() <= 1e-9);
-        assert!((MlaDims::GLM52.scale() - d.scale()).abs() <= 1e-9);
     }
 
     #[test]

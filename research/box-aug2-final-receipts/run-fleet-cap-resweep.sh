@@ -8,7 +8,7 @@ set -uo pipefail
 cd ~/memra
 OUT=~/receipts/fleet-cap-resweep
 mkdir -p "$OUT"
-MODEL=/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
+MODEL=/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
 
 nvidia-smi --query-gpu=index,name,memory.used,temperature.gpu --format=csv \
   > "$OUT/gpu-state-pre-fleet.txt" 2>&1

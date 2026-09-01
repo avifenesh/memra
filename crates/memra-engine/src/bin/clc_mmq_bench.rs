@@ -68,8 +68,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let nsm = 82usize; // 5090 laptop; informational only (wave math printed per shape)
 
     // (label, in_f, out_f, T, synthetic?) — real tensors appended below when gguf present.
-    #[allow(clippy::type_complexity)]
-    // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     let mut shapes: Vec<(String, usize, usize, usize, Option<Vec<u8>>)> = Vec::new();
     for (lbl, inf, outf) in [
         ("q9-qkv", 4096usize, 8192usize),
@@ -78,7 +76,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ("q9-attngate", 4096, 4096),
     ] {
         for t in [512usize, 1736] {
-            shapes.push((lbl.to_string(), inf, outf, t, None));
+            shapes.push((format!("{lbl}"), inf, outf, t, None));
         }
     }
     // poor-wave-quantization probes: nty*ntx just past a wave boundary.

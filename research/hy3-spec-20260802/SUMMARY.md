@@ -10,12 +10,12 @@ N=3. Verdict shape for the Aug-2 8xH100 spike at the bottom.
   `flock /tmp/gpu-h100.lock`). GPU otherwise idle — concurrent compute-apps captured EMPTY
   in every pre/post run bracket, temps 35-38 C at brackets, same-day same thermal regime.
 - Build: restructure/public-split tip `2b9a6aa6` (= lane/hy3-spec-sweep base; includes the
-  G1 overlay-acceptance fix `096f212d`), fresh tree at `/opt/scratch/nvme/hy3-spec-sweep/memra`,
+  G1 overlay-acceptance fix `096f212d`), fresh tree at `/opt/dl-image/nvme/hy3-spec-sweep/memra`,
   `MEMRA_CUDA_ARCH` auto-detected 90a (`logs/build.log`). The first-light lane tree
-  `/opt/scratch/nvme/hy3-hopper/memra` was left byte-untouched (its source differs from the
+  `/opt/dl-image/nvme/hy3-hopper/memra` was left byte-untouched (its source differs from the
   merged tip in engine core: spec.rs, hybrid*.rs, moe_cache.rs, decode.rs).
 - Gate: `kernel-check` ALL GREEN — 206/206 OK on this exact build (`logs/kernel-check.log`).
-- Artifact: `/opt/scratch/nvme/models/hy3-layer103p5-bw24-runtime` (manifest sha `b8bdd684…`),
+- Artifact: `/opt/dl-image/nvme/models/hy3-layer103p5-bw24-runtime` (manifest sha `b8bdd684…`),
   bytes untouched; box left staged exactly per `research/hy3-hopper-20260801/box-state.md`.
 - Prompt: `research/gemma4-bringup/depth-prompt-1736.txt`, RAW continuation (no chat
   template) = the baseline.md board-d1736 protocol; encodes to **1818 tokens** (verified in
@@ -111,7 +111,7 @@ cost. Any future spec deployment of this artifact should only consider K=1.
 - `logs/probe-b-oldbuild-depth-k1.log` — pre-merge binary, d1736 K=1 cross-check.
 - `logs/kernel-check.log` (206/206 ALL GREEN), `logs/build.log` (sm_90a, tip `2b9a6aa6`).
 - `sweep-table.md` — machine-parsed per-run table (`parse-sweep.py`).
-- `spec-sweep-driver.sh` — the on-box driver (copy of `/opt/scratch/nvme/hy3-spec-sweep/`'s).
-- Box additions live only under `/opt/scratch/nvme/hy3-spec-sweep/` (tip build tree + logs,
+- `spec-sweep-driver.sh` — the on-box driver (copy of `/opt/dl-image/nvme/hy3-spec-sweep/`'s).
+- Box additions live only under `/opt/dl-image/nvme/hy3-spec-sweep/` (tip build tree + logs,
   left for the spike team); staged artifact dirs untouched; all GPU work off the box at
   18:02Z Aug 1 — 16.5 h before the box-prep hard stop.

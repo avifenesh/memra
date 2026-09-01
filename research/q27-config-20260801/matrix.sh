@@ -5,7 +5,7 @@
 set -u
 cd $HOME/arc4
 D=$HOME/arc4/research/q27-config-20260801
-M=/opt/scratch/nvme/models/Qwen3.6-27B-Q4_K_M.gguf
+M=/opt/dl-image/nvme/models/Qwen3.6-27B-Q4_K_M.gguf
 export CUDA_VISIBLE_DEVICES=3
 nvidia-smi --query-gpu=memory.used --format=csv,noheader -i 3 -l 5 >> $D/vram-samples.log &
 SMIPID=$!

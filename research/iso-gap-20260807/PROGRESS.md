@@ -29,10 +29,10 @@ staggered-depth batches are an open gap"*, attributing the gap to two documented
 
 ### 1.3 The prior fix in the same class (the row axis — issue #10)
 
-Commit `4eda65d6` (2026-07-13, cloudbox-proven): batched spec VERIFY picked ONE split size from the
+Commit `4eda65d6` (2026-07-13, sbox-proven): batched spec VERIFY picked ONE split size from the
 batch-max t_kv while eager decode picked `fa_split_keys(t_kv)` per token — a ladder rung inside
 the batch changed a row's combine FP order vs its eager twin; greedy ties flipped at depth
-(cloudbox rung at 2048; `MEMRA_FA_SPLIT=64` pin → PASS proved the mechanism). Fix:
+(sbox rung at 2048; `MEMRA_FA_SPLIT=64` pin → PASS proved the mechanism). Fix:
 `fa_decode_rows` (lib.rs ~9861) groups consecutive rows by their OWN ladder value, one launch
 per group. Second instance: commit `a3211c7d` (2026-08-02) — graph segment fingerprints missing
 the ladder rung replayed a captured `split_keys` partition against eager's other side; ladder

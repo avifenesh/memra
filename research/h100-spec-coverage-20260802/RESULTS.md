@@ -49,7 +49,7 @@ K=2 — same best-K as the 5090 receipts' class.
 
 ## 2) q27 MTP spec on sm_90a (v0.65 tip) — the v0.57 follow-up, measured and REFUTED
 
-Artifact `/opt/scratch/nvme/models/Qwen3.6-27B-Q4_K_M.gguf` (MTP-baked, `nextn=1` in-file — no
+Artifact `/opt/dl-image/nvme/models/Qwen3.6-27B-Q4_K_M.gguf` (MTP-baked, `nextn=1` in-file — no
 drafter env). Same battery protocol, `MEMRA_NGEN=256`, N=3
 (`logs/q27-spec-k1-8-r{1,2,3}.log`, table `q27-sweep-table.md`).
 

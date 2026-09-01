@@ -1,6 +1,6 @@
-[server] starting; models config = [("qwen", "/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf", None)]
+[server] starting; models config = [("qwen", "/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf", None)]
 [worker] Engine ready (MEMRA_FAST=true)
-[worker] loading model "qwen" <- /opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
+[worker] loading model "qwen" <- /opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
 [q8rp] split-plane decode mirrors built: 249 tensors
 [worker]   loaded "qwen": 32 layers, eos=248046
 [worker] qwen: template caps tools=true think=true think_switch=true
@@ -34,9 +34,9 @@
 [prime-batch] B=6 tokens=1356 in 294.2ms
 [prime-batch] B=2 tokens=452 in 118.0ms
 [prime-batch] B=6 tokens=1356 in 279.9ms
-[server] starting; models config = [("qwen", "/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf", None)]
+[server] starting; models config = [("qwen", "/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf", None)]
 [worker] Engine ready (MEMRA_FAST=true)
-[worker] loading model "qwen" <- /opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
+[worker] loading model "qwen" <- /opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
 [q8rp] split-plane decode mirrors built: 249 tensors
 [worker]   loaded "qwen": 32 layers, eos=248046
 [worker] qwen: template caps tools=true think=true think_switch=true

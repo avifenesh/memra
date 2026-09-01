@@ -208,15 +208,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             std::process::exit(1);
         }
-        if step == 0
-            && let Some(f) = &dump_logits
-        {
-            let mut raw = Vec::with_capacity(logits.len() * 4);
-            for v in &logits {
-                raw.extend_from_slice(&v.to_le_bytes());
+        if step == 0 {
+            if let Some(f) = &dump_logits {
+                let mut raw = Vec::with_capacity(logits.len() * 4);
+                for v in &logits {
+                    raw.extend_from_slice(&v.to_le_bytes());
+                }
+                std::fs::write(f, &raw)?;
+                println!("step-0 logits -> {f} ({} f32)", logits.len());
             }
-            std::fs::write(f, &raw)?;
-            println!("step-0 logits -> {f} ({} f32)", logits.len());
         }
         let (i1, v1, i2, v2) = top2(&logits);
         debug_assert_eq!(i1, argmax(&logits));

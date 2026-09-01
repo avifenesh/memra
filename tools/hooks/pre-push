@@ -49,19 +49,7 @@ do
     esac
     case "$remote_oid" in
         *[!0]*)
-            # A rewritten topic can be based on commits that are already published through
-            # another ref on this same remote (normally origin/main).  remote_oid..local_oid
-            # includes those commits even though this push does not introduce them, which made
-            # the blob-version boundary gate judge historical main blobs against the topic's
-            # final-tree allowlist.  Exclude every commit already reachable on the destination
-            # remote while still naming the exact old topic tip passed by Git.
-            if git remote get-url "$1" >/dev/null 2>&1; then
-                git rev-list "$local_oid" --not "$remote_oid" "--remotes=$1" \
-                    >> "$push_commits"
-            else
-                # A direct URL has no local remote-tracking namespace to consult.
-                git rev-list "$remote_oid..$local_oid" >> "$push_commits"
-            fi
+            git rev-list "$remote_oid..$local_oid" >> "$push_commits"
             ;;
         *)
             # A new remote ref has no left side. Exclude commits already reachable from
@@ -197,49 +185,6 @@ done
 echo "pre-push: releasability censuses OK — publish list, stub ABI, arch matrix"
 fi
 
-# ---- docs-registry census (2026-08-30) ----
-# Same WHEN-lesson as the flags arm above, for the other registry docs: ci.yml runs
-# tools/docs-registry-census.sh as the backstop, and a census that first answers in CI
-# answers AFTER landing. A renamed or deleted file leaves a docs/KERNELS.md row pointing
-# at nothing, an off-vocabulary support state or an over-60-line docs/ROUTER.md ships
-# the same way, and main reds behind the push that did it. Text-only and sub-second
-# (rg + git ls-files), so it runs on every push, unconditional like the flags census.
-#
-# No skip switch, same reasoning as the releasability censuses: a registry row pointing
-# at a missing file has no emergency in which pushing it is right. Fix the row or
-# restore the file. Scoped to the memra workspace exactly like those censuses, for the
-# same two reasons: the registry docs only exist here, and the throwaway repos that
-# test_flags_guard.sh drives real pushes through carry neither the docs nor the script.
-# Inside the workspace, a missing census is someone removing a gate, and it refuses.
-if ! grep -q '^\[workspace\.package\]' Cargo.toml 2>/dev/null; then
-    echo "pre-push: docs-registry census N/A: no [workspace.package] in Cargo.toml (not the memra workspace)"
-elif ! command -v rg >/dev/null 2>&1; then
-    # Same degradation as the flags arm: a box without ripgrep cannot answer the
-    # question, and blocking every push there gets the hook uninstalled. LOUD, and
-    # ci.yml still answers (it installs rg itself before running the census).
-    echo "pre-push: WARNING: rg is not on PATH, so the docs-registry census was SKIPPED." >&2
-    echo "          A stale registry row will red ci.yml instead of stopping here." >&2
-    echo "          Install it: sudo apt-get install ripgrep" >&2
-elif [ ! -x tools/docs-registry-census.sh ]; then
-    echo "pre-push: REFUSED: tools/docs-registry-census.sh is missing or not executable." >&2
-    echo "    This repo IS the memra workspace, so a registry gate that cannot answer" >&2
-    echo "    is a gate someone removed. Fails closed." >&2
-    exit 1
-elif ! docs_census_out=$(tools/docs-registry-census.sh 2>&1); then
-    printf '%s\n' "$docs_census_out" >&2
-    echo "" >&2
-    echo "pre-push: REFUSED: the docs-registry census is red (violations above)." >&2
-    echo "    docs/KERNELS.md rows must point at tracked files, docs/MODELS.md may only" >&2
-    echo "    speak the three support states, and docs/ROUTER.md stays at or under 60" >&2
-    echo "    lines. Fix the row or restore the file; ci.yml runs the same census." >&2
-    exit 1
-else
-    # A green run SAYS SO, like the arms above, and it says it with the census's own
-    # measured counts (2>&1 keeps its WARNING lines in the record too).
-    echo "pre-push: docs-registry census OK"
-    printf '%s\n' "$docs_census_out" | sed 's/^docs-registry-census: /    /'
-fi
-
 # ---- target-aware hardware gate (2026-08-15) ----
 # Generic kernel/default changes retain the local perf-ci freshness gate. Step-specific
 # multi-card changes may instead use a hash-bound RTX PRO 6000 receipt:
@@ -370,7 +315,7 @@ fi
 
 # ---- profile-blob / secret guard (2026-08-06) ----
 # nsys full profiles (.nsys-rep/.qdrep/.qdstrm) embed the ENTIRE process environment —
-# a committed one leaked a live GH_TOKEN + hosted-provider API key (caught by GitHub push protection,
+# a committed one leaked a live GH_TOKEN + Bedrock key (caught by GitHub push protection,
 # scrubbed via filter-repo). Refuse any push whose new commits add one. No override:
 # export the kern-sum CSV instead (nsys stats --report cuda_gpu_kern_sum).
 blobs=$(

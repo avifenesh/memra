@@ -18,7 +18,7 @@ rewinds in each affinity arm and no failed restore.
 
 The requested box2 address was unavailable: SSH timed out and the cloud inventory observed during
 the run showed `darklanes-sprint-pair2` terminated; the final recheck no longer listed it.
-Measurements therefore used the designated fallback box1, the same `cloud-2card` PP-2 class,
+Measurements therefore used the designated fallback box1, the same `sbox-2card` PP-2 class,
 at `<rented-box-ip>`.
 
 - GPUs: 2x NVIDIA RTX PRO 6000 Blackwell Server Edition, PP devices `0,1`.

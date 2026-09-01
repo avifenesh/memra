@@ -1,7 +1,7 @@
 # v0.72 wave — pair-box release battery (lane/v072-battery)
 
 Validation target: train `restructure/public-split` @ **6afc4f65** (read-only; receipts only).
-Rig: rented cloud pair box <rented-box-ip> — 2x RTX PRO 6000 Blackwell Server 96GB, CUDA 13.2,
+Rig: hyperscaler pair box <rented-box-ip> — 2x RTX PRO 6000 Blackwell Server 96GB, CUDA 13.2,
 sm_120a auto-detected. Tree rsynced to `~/v072/memra`, built `cargo build --release`
 (3m36s, 0 errors; `~/v072/build.log`). All GPU windows under `flock /tmp/memra-gpu.lock`.
 Raw receipts: `raw/` (driver scripts committed beside them).

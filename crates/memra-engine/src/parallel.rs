@@ -1,29 +1,23 @@
-//! ModelPlan-driven parallel topology and artifact placement contracts.
+//! Model-specific parallel topology contracts.
 //!
-//! The automatic loader does not select a family-specific TP/EP recipe. It compiles the canonical
-//! operation plan, binds the source tensor census, estimates the checkpoint residency of every
-//! legal program, and then selects a registered numeric backend. Family packs remain responsible
-//! for semantic tensor/config validation; they do not carry per-layer placement lists.
+//! The rank planner is reusable, but model support is never inferred from a loader or a few
+//! scalar dimensions. Each family must register the complete geometry that its TP/EP program
+//! shards. Step-3.7-Flash is the first registered contract because its query-head count varies by
+//! layer (64 full-attention / 96 sliding-attention), while KV heads stay at 8. Step-3.5 and other
+//! siblings do not inherit this contract merely because they share the `step35` architecture tag.
 
 use std::fmt;
 use std::ops::Range;
 
 use memra_gguf::config::ModelConfig;
-use memra_gguf::model_plan::{MlpPlan, ModelPlan};
-use memra_gguf::placement::{LayerPlacementCost, PlacementRequest, plan_contiguous_stages};
-use memra_gguf::source::{ExpertActivationPrecision, TensorSource};
-use memra_gguf::tensor_contract::{
-    ContractOptions, LayerTensor, OutputHead, TensorContract, TensorId, TensorOwner,
-};
+use memra_gguf::source::TensorSource;
 
 /// The execution planner's supported rank envelope. Hardware qualification and tuned defaults
 /// remain model x rig evidence, but the placement/runtime contract must not stop at earlier
 /// three-card qualification cells.
 pub const PRODUCT_MAX_CARDS: usize = 8;
-pub const AUTO_PARALLEL_MAX_CARDS: usize = 4;
 pub const STEP37_TRUNK_LAYERS: usize = 45;
 const STEP_FP8_BLOCK: usize = 128;
-const AUTO_PARALLEL_RESERVE_MB_DEFAULT: u64 = 6_144;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HardwareTarget {
@@ -111,370 +105,12 @@ pub struct ModelParallelContract {
     pub head_dim: usize,
     pub query_heads: Vec<usize>,
     pub kv_heads: Vec<usize>,
-    /// True when every layer exposes a Full/Sliding attention geometry that the generic TP
-    /// planner can shard. Expert-only EP does not require this.
-    pub tensor_attention_supported: bool,
     pub expert_count: usize,
     pub experts_per_token: usize,
     pub expert_ffn_size: usize,
     pub shared_expert_ffn_size: usize,
-    /// Trunk layer indices whose ModelPlan MLP is routed MoE. This is the automatic EP scope.
-    pub routed_layers: Vec<usize>,
     pub partition_boundaries: Vec<usize>,
     pub hardware_targets: Vec<HardwareTarget>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum AutoParallelBackend {
-    Pipeline,
-    ExpertParallel,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct AutoParallelPlacement {
-    pub backend: AutoParallelBackend,
-    pub devices: Vec<usize>,
-    pub routed_layers: Vec<usize>,
-    pub pipeline_splits: Vec<usize>,
-    pub checkpoint_peak_bytes: u64,
-    pub expert_root_bytes: u64,
-    pub expert_peer_bytes: u64,
-    pub reserve_bytes: u64,
-    pub device_capacity_bytes: Vec<u64>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct AutoArtifactCosts {
-    layers: Vec<LayerPlacementCost>,
-    first_fixed_bytes: u64,
-    last_fixed_bytes: u64,
-    trunk_expert_bytes: u64,
-    non_distributed_bytes: u64,
-}
-
-fn placement_first_stage_tensor(id: &TensorId) -> bool {
-    match id {
-        TensorId::TokenEmbedding | TensorId::RopeFactors | TensorId::Vision { .. } => true,
-        TensorId::QuantAux { tensor, .. } => placement_first_stage_tensor(tensor),
-        _ => false,
-    }
-}
-
-fn routed_expert_tensor(id: &TensorId) -> bool {
-    match id {
-        TensorId::Expert { .. } => true,
-        TensorId::Layer {
-            tensor:
-                LayerTensor::MoeExpertGateUpBank
-                | LayerTensor::MoeExpertGateBank
-                | LayerTensor::MoeExpertUpBank
-                | LayerTensor::MoeExpertDownBank
-                | LayerTensor::MoeExpertOutputScale,
-            ..
-        } => true,
-        TensorId::QuantAux { tensor, .. } => routed_expert_tensor(tensor),
-        _ => false,
-    }
-}
-
-fn checked_add_bytes(total: &mut u64, bytes: u64, label: &str) -> Result<(), TopologyError> {
-    *total = total
-        .checked_add(bytes)
-        .ok_or_else(|| TopologyError::new(format!("{label} byte total overflows u64")))?;
-    Ok(())
-}
-
-fn artifact_costs(
-    src: &dyn TensorSource,
-    cfg: &ModelConfig,
-    plan: &ModelPlan,
-) -> Result<AutoArtifactCosts, TopologyError> {
-    let census = src.tensor_census().map_err(|error| {
-        TopologyError::new(format!(
-            "automatic parallel placement requires a source tensor census: {error}"
-        ))
-    })?;
-    let output_head = if census
-        .tensors
-        .iter()
-        .any(|row| row.entry.name == "lm_head.weight" || row.entry.name == "output.weight")
-    {
-        OutputHead::Separate
-    } else {
-        OutputHead::TiedToEmbedding
-    };
-    let contract = match memra_gguf::model_packs::for_config(cfg) {
-        Some(pack) => {
-            pack.compile_tensor_contract(cfg, plan, census.dialect, ContractOptions { output_head })
-        }
-        None => TensorContract::for_plan(plan, census.dialect, ContractOptions { output_head }),
-    }
-    .map_err(|error| {
-        TopologyError::new(format!(
-            "cannot compile automatic parallel tensor contract: {error}"
-        ))
-    })?;
-    let entries = census
-        .tensors
-        .iter()
-        .map(|row| row.entry.clone())
-        .collect::<Vec<_>>();
-    let binding = contract.bind(&entries).map_err(|error| {
-        TopologyError::new(format!(
-            "cannot bind automatic parallel tensor census: {error}"
-        ))
-    })?;
-
-    let mut layers = vec![LayerPlacementCost::default(); plan.layers.len()];
-    let mut first_fixed_bytes = 0u64;
-    let mut last_fixed_bytes = 0u64;
-    let mut trunk_expert_bytes = 0u64;
-    let mut total_bytes = 0u64;
-    for (id, tensor) in &binding.tensors {
-        checked_add_bytes(
-            &mut total_bytes,
-            tensor.physical_bytes,
-            "automatic placement checkpoint",
-        )?;
-        match tensor.owner {
-            TensorOwner::Layer(layer) if (layer as usize) < layers.len() => {
-                checked_add_bytes(
-                    &mut layers[layer as usize].weight_bytes,
-                    tensor.physical_bytes,
-                    "automatic placement layer",
-                )?;
-            }
-            // Some legacy contracts retain the physical MTP index rather than rewriting the
-            // owner to TensorOwner::Mtp. It executes with the tail/head stage either way.
-            TensorOwner::Layer(_) => checked_add_bytes(
-                &mut last_fixed_bytes,
-                tensor.physical_bytes,
-                "automatic placement head stage",
-            )?,
-            TensorOwner::Vision(_) => checked_add_bytes(
-                &mut first_fixed_bytes,
-                tensor.physical_bytes,
-                "automatic placement first stage",
-            )?,
-            TensorOwner::Global if placement_first_stage_tensor(id) => checked_add_bytes(
-                &mut first_fixed_bytes,
-                tensor.physical_bytes,
-                "automatic placement first stage",
-            )?,
-            TensorOwner::Global | TensorOwner::Mtp(_) => checked_add_bytes(
-                &mut last_fixed_bytes,
-                tensor.physical_bytes,
-                "automatic placement head stage",
-            )?,
-        }
-
-        let trunk_expert = routed_expert_tensor(id)
-            && matches!(
-                tensor.owner,
-                TensorOwner::Layer(layer)
-                    if (layer as usize) < plan.layers.len()
-                        && matches!(plan.layers[layer as usize].mlp, MlpPlan::Moe(_))
-            );
-        if trunk_expert {
-            checked_add_bytes(
-                &mut trunk_expert_bytes,
-                tensor.physical_bytes,
-                "automatic placement trunk experts",
-            )?;
-        }
-    }
-    let non_distributed_bytes = total_bytes
-        .checked_sub(trunk_expert_bytes)
-        .ok_or_else(|| TopologyError::new("automatic placement expert bytes exceed total bytes"))?;
-    Ok(AutoArtifactCosts {
-        layers,
-        first_fixed_bytes,
-        last_fixed_bytes,
-        trunk_expert_bytes,
-        non_distributed_bytes,
-    })
-}
-
-fn auto_parallel_reserve_bytes() -> Result<u64, TopologyError> {
-    let reserve_mb = match std::env::var("MEMRA_PARALLEL_RESERVE_MB") {
-        Ok(raw) => raw.parse::<u64>().map_err(|_| {
-            TopologyError::new(format!(
-                "MEMRA_PARALLEL_RESERVE_MB={raw:?} is not an unsigned integer"
-            ))
-        })?,
-        Err(std::env::VarError::NotPresent) => AUTO_PARALLEL_RESERVE_MB_DEFAULT,
-        Err(error) => {
-            return Err(TopologyError::new(format!(
-                "cannot read MEMRA_PARALLEL_RESERVE_MB: {error}"
-            )));
-        }
-    };
-    reserve_mb
-        .checked_mul(1024 * 1024)
-        .ok_or_else(|| TopologyError::new("MEMRA_PARALLEL_RESERVE_MB overflows bytes"))
-}
-
-fn device_capacity_bytes(devices: &[usize]) -> Result<Vec<u64>, TopologyError> {
-    cudarc::driver::result::init().map_err(|error| {
-        TopologyError::new(format!("CUDA driver initialization failed: {error}"))
-    })?;
-    devices
-        .iter()
-        .map(|&ordinal| {
-            let device = cudarc::driver::result::device::get(ordinal as i32).map_err(|error| {
-                TopologyError::new(format!("CUDA device {ordinal} lookup failed: {error}"))
-            })?;
-            // SAFETY: `device` was returned by CUDA for this exact process-local ordinal.
-            let bytes =
-                unsafe { cudarc::driver::result::device::total_mem(device) }.map_err(|error| {
-                    TopologyError::new(format!(
-                        "CUDA device {ordinal} memory query failed: {error}"
-                    ))
-                })?;
-            u64::try_from(bytes).map_err(|_| {
-                TopologyError::new(format!("CUDA device {ordinal} memory exceeds u64"))
-            })
-        })
-        .collect()
-}
-
-fn fits_capacity(bytes: u64, reserve: u64, capacity: u64) -> bool {
-    bytes
-        .checked_add(reserve)
-        .is_some_and(|required| required <= capacity)
-}
-
-fn choose_auto_parallel_placement(
-    costs: &AutoArtifactCosts,
-    contract: &ModelParallelContract,
-    activation: ExpertActivationPrecision,
-    devices: &[usize],
-    capacity_bytes: &[u64],
-    reserve_bytes: u64,
-) -> Result<AutoParallelPlacement, TopologyError> {
-    if devices.len() != capacity_bytes.len() {
-        return Err(TopologyError::new(format!(
-            "automatic placement has {} devices but {} capacity rows",
-            devices.len(),
-            capacity_bytes.len()
-        )));
-    }
-    let mut fixed = vec![0u64; devices.len()];
-    fixed[0] = costs.first_fixed_bytes;
-    fixed[devices.len() - 1] = fixed[devices.len() - 1]
-        .checked_add(costs.last_fixed_bytes)
-        .ok_or_else(|| TopologyError::new("automatic placement fixed bytes overflow"))?;
-    let pipeline = plan_contiguous_stages(PlacementRequest {
-        layers: &costs.layers,
-        fixed_stage_bytes: &fixed,
-        context_tokens: 0,
-        devices,
-        legal_boundaries: &contract.partition_boundaries,
-    })
-    .map_err(|error| TopologyError::new(format!("automatic PP placement failed: {error}")))?;
-    let pipeline_fits = pipeline
-        .stages
-        .iter()
-        .enumerate()
-        .all(|(stage, placement)| {
-            fits_capacity(
-                placement.cost.total_bytes,
-                reserve_bytes,
-                capacity_bytes[stage],
-            )
-        });
-
-    let world = devices.len() as u64;
-    let expert_peer_bytes = if contract.expert_count == 0 {
-        0
-    } else {
-        let expert_count = contract.expert_count as u64;
-        let bytes_per_expert = costs.trunk_expert_bytes.div_ceil(expert_count);
-        bytes_per_expert
-            .checked_mul(expert_count.div_ceil(world))
-            .ok_or_else(|| TopologyError::new("automatic EP peer byte total overflows"))?
-    };
-    let expert_root_bytes = costs
-        .non_distributed_bytes
-        .checked_add(expert_peer_bytes)
-        .ok_or_else(|| TopologyError::new("automatic EP root byte total overflows"))?;
-    let expert_fits = !contract.routed_layers.is_empty()
-        && activation == ExpertActivationPrecision::Bf16
-        && capacity_bytes.iter().enumerate().all(|(rank, &capacity)| {
-            let bytes = if rank == 0 {
-                expert_root_bytes
-            } else {
-                expert_peer_bytes
-            };
-            fits_capacity(bytes, reserve_bytes, capacity)
-        });
-
-    if expert_fits {
-        return Ok(AutoParallelPlacement {
-            backend: AutoParallelBackend::ExpertParallel,
-            devices: devices.to_vec(),
-            routed_layers: contract.routed_layers.clone(),
-            pipeline_splits: Vec::new(),
-            checkpoint_peak_bytes: expert_root_bytes,
-            expert_root_bytes,
-            expert_peer_bytes,
-            reserve_bytes,
-            device_capacity_bytes: capacity_bytes.to_vec(),
-        });
-    }
-    if pipeline_fits {
-        let pipeline_splits = pipeline
-            .stages
-            .iter()
-            .take(pipeline.stages.len() - 1)
-            .map(|stage| stage.layers.end)
-            .collect();
-        return Ok(AutoParallelPlacement {
-            backend: AutoParallelBackend::Pipeline,
-            devices: devices.to_vec(),
-            routed_layers: contract.routed_layers.clone(),
-            pipeline_splits,
-            checkpoint_peak_bytes: pipeline.max_stage_bytes,
-            expert_root_bytes,
-            expert_peer_bytes,
-            reserve_bytes,
-            device_capacity_bytes: capacity_bytes.to_vec(),
-        });
-    }
-
-    Err(TopologyError::new(format!(
-        "automatic placement found no capacity-safe program: PP peak={} bytes, EP root={} bytes, \
-         reserve={} bytes, device capacities={capacity_bytes:?}",
-        pipeline.max_stage_bytes, expert_root_bytes, reserve_bytes,
-    )))
-}
-
-pub(crate) fn plan_auto_parallel(
-    src: &dyn TensorSource,
-    cfg: &ModelConfig,
-    plan: &ModelPlan,
-    devices: &[usize],
-) -> Result<AutoParallelPlacement, TopologyError> {
-    let hardware = detect_uniform_hardware(devices)?;
-    let contract = ModelParallelContract::from_plan(cfg, plan)?;
-    if !contract.hardware_targets.contains(&hardware) {
-        return Err(TopologyError::new(format!(
-            "{} has no qualified {} automatic placement contract",
-            contract.variant,
-            hardware.label()
-        )));
-    }
-    let costs = artifact_costs(src, cfg, plan)?;
-    let capacity_bytes = device_capacity_bytes(devices)?;
-    let reserve_bytes = auto_parallel_reserve_bytes()?;
-    choose_auto_parallel_placement(
-        &costs,
-        &contract,
-        src.expert_activation_precision(),
-        devices,
-        &capacity_bytes,
-        reserve_bytes,
-    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -523,8 +159,8 @@ impl StepTpPreflightPlan {
 }
 
 impl ModelParallelContract {
-    /// Build the structural contract from the canonical operation plan. Unsupported operations
-    /// refuse during ModelPlan compilation; family names do not select placement.
+    /// Build the model-specific contract. Unregistered families refuse rather than inheriting a
+    /// generic transformer assumption.
     pub fn from_model(cfg: &ModelConfig) -> Result<Self, TopologyError> {
         let plan = memra_gguf::model_plan::ModelPlan::compile(cfg).map_err(|error| {
             TopologyError::new(format!("cannot compile parallel ModelPlan: {error}"))
@@ -538,6 +174,29 @@ impl ModelParallelContract {
     ) -> Result<Self, TopologyError> {
         use memra_gguf::model_plan::{AttentionPlan, MlpPlan};
 
+        if crate::plan_backend::decode_batch_program(plan)
+            != crate::plan_backend::DecodeBatchProgram::SlidingGatedMoe
+        {
+            return Err(TopologyError::new(format!(
+                "no parallel contract registered for plan operations {:?}; loading/running does not establish TP/EP support",
+                plan.trunk_operations()
+            )));
+        }
+        // TRUNK scope, like every other text-serving surface (worker.rs precedent): the
+        // TP/pipeline contract governs the text trunk; a checkpoint that also carries a
+        // vision encoder (step37-flash) must not have its TEXT decode blocked by vision
+        // operations the pipeline program never runs. Vision serving gates on its own
+        // surface (multimodal_prefill_capabilities), not here.
+        let pipeline = crate::plan_backend::PIPELINE
+            .trunk_capabilities(plan)
+            .pipeline;
+        if !pipeline.supported {
+            return Err(TopologyError::new(format!(
+                "pipeline program {} does not implement plan operations {:?}",
+                crate::plan_backend::PIPELINE.name,
+                pipeline.blockers
+            )));
+        }
         let trunk_layers = plan.layers.len();
         let mtp_layers = plan.mtp_blocks.len();
         if trunk_layers == 0 {
@@ -552,118 +211,89 @@ impl ModelParallelContract {
             .iter()
             .map(|layer| match &layer.attention {
                 AttentionPlan::Full(attention) | AttentionPlan::SlidingWindow { attention, .. } => {
-                    Some((
+                    Ok((
                         attention.query_heads as usize,
                         attention.kv_heads as usize,
                         attention.key_head_dim as usize,
                     ))
                 }
-                _ => None,
+                _ => Err(TopologyError::new(format!(
+                    "parallel contract has unsupported attention at layer {}",
+                    layer.index
+                ))),
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, _>>()?;
         let query_heads: Vec<_> = attention_geometry
             .iter()
-            .map(|geometry| geometry.map_or(0, |geometry| geometry.0))
+            .map(|geometry| geometry.0)
             .collect();
         let kv_heads: Vec<_> = attention_geometry
             .iter()
-            .map(|geometry| geometry.map_or(0, |geometry| geometry.1))
+            .map(|geometry| geometry.1)
             .collect();
-        let head_dim = attention_geometry
+        let head_dim = attention_geometry[0].2;
+        if attention_geometry
             .iter()
-            .flatten()
-            .map(|geometry| geometry.2)
-            .next()
-            .unwrap_or(cfg.head_dim_k as usize);
-        let tensor_attention_supported = attention_geometry
-            .iter()
-            .all(|geometry| geometry.is_some_and(|geometry| geometry.2 == head_dim));
+            .any(|geometry| geometry.2 != head_dim)
+        {
+            return Err(TopologyError::new(
+                "parallel contract requires one sharding head dimension",
+            ));
+        }
         let dense_prefix_layers = plan
             .layers
             .iter()
             .take_while(|layer| matches!(layer.mlp, MlpPlan::Dense(_)))
             .count();
-        if plan.layers[dense_prefix_layers..]
+        let dense_ffn_size = plan
+            .layers
             .iter()
-            .any(|layer| matches!(layer.mlp, MlpPlan::Dense(_)))
-        {
-            return Err(TopologyError::new(
-                "generic parallel loader requires dense layers to form one prefix before routed \
-                 MoE layers",
-            ));
-        }
-        let dense_sizes = layers
-            .iter()
-            .filter_map(|layer| match &layer.mlp {
+            .find_map(|layer| match &layer.mlp {
                 MlpPlan::Dense(dense) => Some(dense.intermediate_size as usize),
                 _ => None,
             })
-            .collect::<std::collections::BTreeSet<_>>();
-        if dense_sizes.len() > 1 {
+            .ok_or_else(|| TopologyError::new("parallel contract requires a dense prefix"))?;
+        let moe = layers
+            .iter()
+            .find_map(|layer| match &layer.mlp {
+                MlpPlan::Moe(moe) => Some(moe),
+                _ => None,
+            })
+            .ok_or_else(|| TopologyError::new("parallel contract requires routed experts"))?;
+        let shared_expert_ffn_size = moe
+            .shared
+            .as_ref()
+            .map_or(0, |shared| shared.intermediate_size as usize);
+        let is_step37 = trunk_layers == STEP37_TRUNK_LAYERS
+            && mtp_layers == 3
+            && plan.hidden_size == 4096
+            && dense_ffn_size == 11_264
+            && plan.vocab_size == 128_896
+            && query_heads
+                .iter()
+                .enumerate()
+                .all(|(il, &heads)| heads == if il % 4 == 0 { 64 } else { 96 })
+            && kv_heads.iter().all(|&heads| heads == 8)
+            && moe.expert_count == 288
+            && moe.experts_per_token == 8
+            && moe.expert_intermediate_size == 1280
+            && shared_expert_ffn_size == 1280
+            && dense_prefix_layers == 3;
+        if !is_step37 {
             return Err(TopologyError::new(format!(
-                "generic parallel loader requires one dense FFN width, got {dense_sizes:?}"
+                "no qualified parallel contract for variant {:?}: only the exact Step-3.7-Flash geometry is registered; derived trunk={trunk_layers} mtp={mtp_layers} hidden={} vocab={} dense_ff={dense_ffn_size} dense_prefix={dense_prefix_layers} head_dim={head_dim} q_heads={query_heads:?} kv_heads={kv_heads:?} experts={}/{}/{} shared={shared_expert_ffn_size}",
+                cfg.name,
+                plan.hidden_size,
+                plan.vocab_size,
+                moe.expert_count,
+                moe.experts_per_token,
+                moe.expert_intermediate_size,
             )));
         }
-        let dense_ffn_size = dense_sizes.iter().next().copied().unwrap_or(0);
-        let routed_layers = plan
-            .layers
-            .iter()
-            .enumerate()
-            .filter_map(|(layer, plan)| match plan.mlp {
-                MlpPlan::Moe(_) => Some(layer),
-                MlpPlan::Dense(_) => None,
-            })
-            .collect::<Vec<_>>();
-        let moe_layers = layers
-            .iter()
-            .filter_map(|layer| match &layer.mlp {
-                MlpPlan::Moe(moe) => Some(moe),
-                MlpPlan::Dense(_) => None,
-            })
-            .collect::<Vec<_>>();
-        let (expert_count, experts_per_token, expert_ffn_size, shared_expert_ffn_size) =
-            if let Some(first) = moe_layers.first() {
-                let shared = first
-                    .shared
-                    .as_ref()
-                    .map_or(0, |shared| shared.intermediate_size as usize);
-                if moe_layers.iter().any(|moe| {
-                    moe.expert_count != first.expert_count
-                        || moe.experts_per_token != first.experts_per_token
-                        || moe.expert_intermediate_size != first.expert_intermediate_size
-                        || moe
-                            .shared
-                            .as_ref()
-                            .map_or(0, |shared| shared.intermediate_size as usize)
-                            != shared
-                }) {
-                    return Err(TopologyError::new(
-                        "generic parallel loader requires one routed-expert geometry across the \
-                         selected model plan",
-                    ));
-                }
-                (
-                    first.expert_count as usize,
-                    first.experts_per_token as usize,
-                    first.expert_intermediate_size as usize,
-                    shared,
-                )
-            } else {
-                (0, 0, 0, 0)
-            };
-        if routed_layers.is_empty() && dense_ffn_size == 0 {
-            return Err(TopologyError::new(
-                "generic parallel loader found neither dense nor routed MLP layers",
-            ));
-        };
 
         Ok(Self {
-            family: if routed_layers.is_empty() {
-                "dense-transformer"
-            } else {
-                "routed-moe"
-            },
-            variant: cfg.name.clone(),
+            family: "sliding-gated-moe",
+            variant: "Step-3.7-Flash-FP8".to_string(),
             trunk_layers,
             mtp_layers,
             hidden_size: cfg.n_embd as usize,
@@ -673,12 +303,10 @@ impl ModelParallelContract {
             head_dim,
             query_heads,
             kv_heads,
-            tensor_attention_supported,
-            expert_count,
-            experts_per_token,
-            expert_ffn_size,
+            expert_count: moe.expert_count as usize,
+            experts_per_token: moe.experts_per_token as usize,
+            expert_ffn_size: moe.expert_intermediate_size as usize,
             shared_expert_ffn_size,
-            routed_layers,
             partition_boundaries: plan.partition_boundaries.clone(),
             hardware_targets: vec![HardwareTarget::RtxPro6000Blackwell],
         })
@@ -735,36 +363,20 @@ impl ModelParallelContract {
                 "expert parallelism requires TP group size greater than one",
             ));
         }
-        if request.expert_parallel && self.expert_count == 0 {
-            return Err(TopologyError::new(
-                "expert parallelism requested for a dense-only ModelPlan",
-            ));
-        }
-        if tp > 1 && !self.tensor_attention_supported {
-            return Err(TopologyError::new(format!(
-                "{} has attention operations without a generic TP shard contract; expert-only \
-                 EP may still be selected independently",
-                self.variant
-            )));
-        }
 
-        // Check the plan-derived per-layer attention geometry before generic dimensions so a
-        // refused topology names the operation that actually makes it invalid.
+        // Check the family-specific, per-layer attention geometry before generic dimensions so a
+        // refused topology names the model program that actually makes it invalid.
         for (il, (&q, &kv)) in self.query_heads.iter().zip(&self.kv_heads).enumerate() {
             require_divisible(&format!("layer {il} query heads"), q, tp)?;
             require_divisible(&format!("layer {il} KV heads"), kv, tp)?;
         }
         require_divisible("hidden size", self.hidden_size, tp)?;
         require_divisible("vocabulary size", self.vocab_size, tp)?;
-        if self.dense_ffn_size > 0 {
-            require_divisible("dense FFN size", self.dense_ffn_size, tp)?;
-        }
-        if self.expert_count > 0 {
-            if request.expert_parallel {
-                require_divisible("routed expert count", self.expert_count, tp)?;
-            } else {
-                require_divisible("routed expert FFN size", self.expert_ffn_size, tp)?;
-            }
+        require_fp8_block_shard("dense FFN size", self.dense_ffn_size, tp)?;
+        if request.expert_parallel {
+            require_divisible("routed expert count", self.expert_count, tp)?;
+        } else {
+            require_fp8_block_shard("routed expert FFN size", self.expert_ffn_size, tp)?;
         }
 
         let stage_ranges = (0..pp)
@@ -777,7 +389,9 @@ impl ModelParallelContract {
             world_size: world,
             stage_ranges,
             mtp_owner_stage: self.mtp_layers.gt(&0).then_some(pp - 1),
-            // Shared experts remain replicated until a backend advertises a sharded shared branch.
+            // Step's 1280-wide shared expert cannot be split four or eight ways without cutting
+            // through checkpoint 128-row E4M3 scale blocks. Replication is the exact program for
+            // those TP/EP layouts; only routed experts are distributed.
             shared_expert_replicated: tp > 1 && self.shared_expert_ffn_size > 0,
         })
     }
@@ -1170,16 +784,16 @@ pub fn validate_step_pp_request(cfg: &ModelConfig) -> Result<Option<ParallelPlan
     Ok(Some(plan))
 }
 
-/// Prove that every routed layer in the structural contract exposes native stacked block-128
-/// E4M3 expert banks. Converted and per-tensor artifacts do not inherit this backend.
-pub fn validate_fp8_expert_checkpoint(
+/// Prove that the official Step checkpoint exposes every routed expert projection as a native
+/// stacked block-128 E4M3 bank. Converted and per-tensor artifacts do not inherit this contract.
+pub fn validate_step_fp8_checkpoint(
     src: &dyn TensorSource,
     contract: &ModelParallelContract,
 ) -> Result<usize, TopologyError> {
     if src.st_dir().is_none() {
         return Err(TopologyError::new(
-            "native E4M3 expert parallelism requires a safetensors checkpoint source; a \
-             converted artifact cannot inherit this backend",
+            "Step-3.7-Flash-FP8 topology qualification requires the official safetensors \
+             checkpoint source; a converted artifact cannot inherit this contract",
         ));
     }
 
@@ -1246,23 +860,26 @@ pub fn validate_fp8_expert_checkpoint(
         * projections.len();
     if qualified != expected {
         return Err(TopologyError::new(format!(
-            "E4M3 expert tensor census qualified {qualified}, expected {expected}"
+            "Step E4M3 tensor census qualified {qualified}, expected {expected}"
         )));
     }
     Ok(qualified)
 }
 
-/// Prove that every routed layer in the structural contract exposes native ModelOpt NVFP4
-/// experts: either one stacked bank or the Hugging Face per-expert layout. Both carry packed
-/// e2m1 codes, per-16 UE4M3 scales, and finite-positive per-expert macros.
-pub fn validate_nvfp4_expert_checkpoint(
+/// Prove that the official Step NVFP4 checkpoint exposes every routed expert projection as a
+/// native stacked modelopt NVFP4 bank: packed e2m1 codes `[E, out, in/2]`, per-16 UE4M3 scales
+/// `[E, out, in/16]`, and a finite positive per-expert `weight_scale_2` macro. Converted and
+/// per-tensor artifacts do not inherit this contract. The macro census matters: those values run
+/// ~1e-5..1e-4 in the official artifact and dropping them silently produces garbage, so a bank
+/// whose macros fail the finite-positive check refuses here rather than at first decode.
+pub fn validate_step_nvfp4_checkpoint(
     src: &dyn TensorSource,
     contract: &ModelParallelContract,
 ) -> Result<usize, TopologyError> {
     if src.st_dir().is_none() {
         return Err(TopologyError::new(
-            "native NVFP4 expert parallelism requires a safetensors checkpoint source; a \
-             converted artifact cannot inherit this backend",
+            "Step-3.7-Flash-NVFP4 topology qualification requires the official safetensors \
+             checkpoint source; a converted artifact cannot inherit this contract",
         ));
     }
 
@@ -1287,60 +904,39 @@ pub fn validate_nvfp4_expert_checkpoint(
     for layer in contract.dense_prefix_layers..contract.trunk_layers {
         for &(projection, expected_in, expected_out) in &projections {
             let name = format!("blk.{layer}.{projection}.weight");
-            if let Some(bank) = src.find_nvfp4_stacked_native(&name) {
-                if bank.n_expert != contract.expert_count {
-                    return Err(TopologyError::new(format!(
-                        "{name} carries {} experts, expected {}",
-                        bank.n_expert, contract.expert_count
-                    )));
-                }
-                if bank.in_f != expected_in || bank.out_f != expected_out {
-                    return Err(TopologyError::new(format!(
-                        "{name} expert shape {}x{} != expected {expected_out}x{expected_in}",
-                        bank.out_f, bank.in_f
-                    )));
-                }
-                if bank.in_f % 64 != 0 {
-                    return Err(TopologyError::new(format!(
-                        "{name} in_features {} is not 64-aligned; memra block_nvfp4 kernels \
-                         require whole 64-element superblocks",
-                        bank.in_f
-                    )));
-                }
-                if bank.macros.len() != contract.expert_count {
-                    return Err(TopologyError::new(format!(
-                        "{name} carries {} weight_scale_2 macros, expected {}",
-                        bank.macros.len(),
-                        contract.expert_count
-                    )));
-                }
-                qualified += bank.n_expert;
-                continue;
+            let bank = src.find_nvfp4_stacked_native(&name).ok_or_else(|| {
+                TopologyError::new(format!(
+                    "{name} is not a checkpoint-faithful stacked modelopt NVFP4 bank \
+                     (packed e2m1 codes + per-16 UE4M3 scales + per-expert macro)"
+                ))
+            })?;
+            if bank.n_expert != contract.expert_count {
+                return Err(TopologyError::new(format!(
+                    "{name} carries {} experts, expected {}",
+                    bank.n_expert, contract.expert_count
+                )));
             }
-
-            for expert in 0..contract.expert_count {
-                let expert_name = format!("blk.{layer}.{projection}.{expert}.weight");
-                let tensor = src.find_nvfp4_native(&expert_name).ok_or_else(|| {
-                    TopologyError::new(format!(
-                        "{name} is neither a checkpoint-faithful stacked modelopt NVFP4 bank nor \
-                         a complete per-expert NVFP4 set; missing {expert_name}"
-                    ))
-                })?;
-                if tensor.in_f != expected_in || tensor.out_f != expected_out {
-                    return Err(TopologyError::new(format!(
-                        "{expert_name} shape {}x{} != expected {expected_out}x{expected_in}",
-                        tensor.out_f, tensor.in_f
-                    )));
-                }
-                if tensor.in_f % 64 != 0 {
-                    return Err(TopologyError::new(format!(
-                        "{expert_name} in_features {} is not 64-aligned; memra block_nvfp4 \
-                         kernels require whole 64-element superblocks",
-                        tensor.in_f
-                    )));
-                }
-                qualified += 1;
+            if bank.in_f != expected_in || bank.out_f != expected_out {
+                return Err(TopologyError::new(format!(
+                    "{name} expert shape {}x{} != expected {expected_out}x{expected_in}",
+                    bank.out_f, bank.in_f
+                )));
             }
+            if bank.in_f % 64 != 0 {
+                return Err(TopologyError::new(format!(
+                    "{name} in_features {} is not 64-aligned; memra block_nvfp4 kernels \
+                     require whole 64-element superblocks",
+                    bank.in_f
+                )));
+            }
+            if bank.macros.len() != contract.expert_count {
+                return Err(TopologyError::new(format!(
+                    "{name} carries {} weight_scale_2 macros, expected {}",
+                    bank.macros.len(),
+                    contract.expert_count
+                )));
+            }
+            qualified += bank.n_expert;
         }
     }
 
@@ -1349,26 +945,10 @@ pub fn validate_nvfp4_expert_checkpoint(
         * projections.len();
     if qualified != expected {
         return Err(TopologyError::new(format!(
-            "NVFP4 expert tensor census qualified {qualified}, expected {expected}"
+            "Step NVFP4 tensor census qualified {qualified}, expected {expected}"
         )));
     }
     Ok(qualified)
-}
-
-/// Legacy API retained for existing focused gates.
-pub fn validate_step_fp8_checkpoint(
-    src: &dyn TensorSource,
-    contract: &ModelParallelContract,
-) -> Result<usize, TopologyError> {
-    validate_fp8_expert_checkpoint(src, contract)
-}
-
-/// Legacy API retained for existing focused gates.
-pub fn validate_step_nvfp4_checkpoint(
-    src: &dyn TensorSource,
-    contract: &ModelParallelContract,
-) -> Result<usize, TopologyError> {
-    validate_nvfp4_expert_checkpoint(src, contract)
 }
 
 fn apply_stage_fence(
@@ -1459,7 +1039,6 @@ pub(crate) fn detect_uniform_hardware(devices: &[usize]) -> Result<HardwareTarge
     target.ok_or_else(|| TopologyError::new("MEMRA_PP_DEVICES is empty"))
 }
 
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn require_divisible(label: &str, value: usize, parts: usize) -> Result<(), TopologyError> {
     if value == 0 {
         return Err(TopologyError::new(format!("{label} is zero")));
@@ -1475,7 +1054,7 @@ fn require_divisible(label: &str, value: usize, parts: usize) -> Result<(), Topo
 fn require_fp8_block_shard(label: &str, value: usize, parts: usize) -> Result<(), TopologyError> {
     require_divisible(label, value, parts)?;
     let local = value / parts;
-    if !local.is_multiple_of(STEP_FP8_BLOCK) {
+    if local % STEP_FP8_BLOCK != 0 {
         return Err(TopologyError::new(format!(
             "{label} shard {local} for TP={parts} cuts through the Step E4M3 block size \
              {STEP_FP8_BLOCK}"
@@ -1549,7 +1128,6 @@ fn expected_layer_stage(
         .ok_or_else(|| TopologyError::new(format!("no grouped stage owns layer {layer}")))
 }
 
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn split_range(total: usize, parts: usize, rank: usize) -> Option<Range<usize>> {
     if parts == 0 || rank >= parts || total % parts != 0 {
         return None;
@@ -1582,7 +1160,7 @@ impl std::error::Error for TopologyError {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use memra_gguf::config::{Arch, HfConfig, MoeConfig, Step35Config};
+    use memra_gguf::config::{Arch, MoeConfig, Step35Config};
     use memra_gguf::source::{Fp8StackedNative, TensorView};
     use std::path::Path;
 
@@ -1602,12 +1180,10 @@ mod tests {
                 .map(|il| if il % 4 == 0 { 64 } else { 96 })
                 .collect(),
             kv_heads: vec![8; total_layers],
-            tensor_attention_supported: true,
             expert_count: 288,
             experts_per_token: 8,
             expert_ffn_size: 1280,
             shared_expert_ffn_size: 1280,
-            routed_layers: (3..45).collect(),
             partition_boundaries: (1..45).collect(),
             hardware_targets: vec![HardwareTarget::RtxPro6000Blackwell],
         }
@@ -1646,13 +1222,9 @@ mod tests {
             hy3: None,
             gemma4: None,
             vision: None,
-            vision_glm5: None,
             multimodal: None,
             mla: None,
             dsv4: None,
-            qwen4exp: None,
-            rope_yarn: None,
-            glm5: None,
             step35: Some(Step35Config {
                 head_count,
                 head_count_kv: vec![8; total_layers as usize],
@@ -1673,93 +1245,6 @@ mod tests {
             geometry: None,
             nextn_predict_layers: 3,
             n_layer_total: total_layers,
-        }
-    }
-
-    fn hy3_model_config() -> ModelConfig {
-        ModelConfig::from_hf(&HfConfig::parse(
-            r#"{
-                "model_type":"hy_v3",
-                "num_hidden_layers":80,
-                "num_nextn_predict_layers":1,
-                "hidden_size":4096,
-                "num_attention_heads":64,
-                "num_key_value_heads":8,
-                "head_dim":128,
-                "intermediate_size":13312,
-                "vocab_size":120832,
-                "max_position_embeddings":262144,
-                "first_k_dense_replace":1,
-                "num_experts":192,
-                "num_experts_per_tok":8,
-                "moe_intermediate_size":1536,
-                "num_shared_experts":1,
-                "moe_router_use_sigmoid":true,
-                "moe_router_enable_expert_bias":true,
-                "route_norm":true,
-                "router_scaling_factor":2.826,
-                "qk_norm":true
-            }"#,
-        ))
-    }
-
-    fn dense_model_config() -> ModelConfig {
-        ModelConfig::from_hf(&HfConfig::parse(
-            r#"{
-                "model_type":"qwen3",
-                "num_hidden_layers":4,
-                "hidden_size":4096,
-                "num_attention_heads":32,
-                "num_key_value_heads":8,
-                "head_dim":128,
-                "intermediate_size":12288,
-                "vocab_size":131072,
-                "max_position_embeddings":32768
-            }"#,
-        ))
-    }
-
-    fn synthetic_auto_contract(routed: bool) -> ModelParallelContract {
-        ModelParallelContract {
-            family: if routed {
-                "routed-moe"
-            } else {
-                "dense-transformer"
-            },
-            variant: "synthetic-auto".to_string(),
-            trunk_layers: 4,
-            mtp_layers: 0,
-            hidden_size: 64,
-            vocab_size: 128,
-            dense_ffn_size: 128,
-            dense_prefix_layers: if routed { 1 } else { 4 },
-            head_dim: 32,
-            query_heads: vec![2; 4],
-            kv_heads: vec![1; 4],
-            tensor_attention_supported: true,
-            expert_count: if routed { 8 } else { 0 },
-            experts_per_token: if routed { 2 } else { 0 },
-            expert_ffn_size: if routed { 32 } else { 0 },
-            shared_expert_ffn_size: 0,
-            routed_layers: if routed { vec![1, 2, 3] } else { Vec::new() },
-            partition_boundaries: vec![1, 2, 3],
-            hardware_targets: vec![HardwareTarget::RtxPro6000Blackwell],
-        }
-    }
-
-    fn synthetic_auto_costs(trunk_expert_bytes: u64) -> AutoArtifactCosts {
-        AutoArtifactCosts {
-            layers: vec![
-                LayerPlacementCost {
-                    weight_bytes: 25,
-                    kv_bytes_per_token: 0,
-                };
-                4
-            ],
-            first_fixed_bytes: 0,
-            last_fixed_bytes: 0,
-            trunk_expert_bytes,
-            non_distributed_bytes: 20,
         }
     }
 
@@ -1840,7 +1325,7 @@ mod tests {
             validate_step_fp8_checkpoint(&converted, &step37_contract())
                 .unwrap_err()
                 .to_string()
-                .contains("safetensors checkpoint source")
+                .contains("official safetensors")
         );
 
         let per_tensor = MockStepFp8Source {
@@ -1884,7 +1369,7 @@ mod tests {
     #[test]
     fn step_contract_is_extracted_from_model_specific_geometry() {
         let contract = ModelParallelContract::from_model(&step37_model_config()).unwrap();
-        assert_eq!(contract.family, "routed-moe");
+        assert_eq!(contract.family, "sliding-gated-moe");
         assert_eq!(contract.trunk_layers, 45);
         assert_eq!(contract.mtp_layers, 3);
         assert_eq!(contract.query_heads[0], 64);
@@ -1895,143 +1380,28 @@ mod tests {
     }
 
     #[test]
-    fn hy3_contract_is_extracted_from_exact_full_sigmoid_moe_geometry() {
-        let contract = ModelParallelContract::from_model(&hy3_model_config()).unwrap();
-        assert_eq!(contract.family, "routed-moe");
-        assert_eq!(contract.trunk_layers, 80);
-        assert_eq!(contract.mtp_layers, 1);
-        assert_eq!(contract.query_heads, vec![64; 81]);
-        assert_eq!(contract.kv_heads, vec![8; 81]);
-        assert_eq!(contract.dense_prefix_layers, 1);
-        assert_eq!(contract.expert_count, 192);
-        assert_eq!(contract.experts_per_token, 8);
-        assert_eq!(contract.expert_ffn_size, 1536);
-        assert_eq!(contract.routed_layers, (1..80).collect::<Vec<_>>());
-    }
-
-    #[test]
-    fn hy3_sibling_geometry_is_derived_without_a_family_loader() {
-        let mut sibling = hy3_model_config();
-        sibling.n_vocab += 1;
-        let contract = ModelParallelContract::from_model(&sibling).unwrap();
-        assert_eq!(contract.vocab_size, 120_833);
-        assert_eq!(contract.routed_layers.len(), 79);
-    }
-
-    #[test]
-    fn dense_transformer_contract_and_tp_geometry_are_plan_derived() {
-        let contract = ModelParallelContract::from_model(&dense_model_config()).unwrap();
-        assert_eq!(contract.family, "dense-transformer");
-        assert!(contract.routed_layers.is_empty());
-        assert_eq!(contract.dense_prefix_layers, 4);
-        assert_eq!(contract.dense_ffn_size, 12_288);
-        let tp4 = contract.plan(request(1, 4, false)).unwrap();
-        assert_eq!(tp4.query_feature_range(0, 3), Some(3072..4096));
-        assert_eq!(tp4.dense_ffn_range(3), Some(9216..12_288));
-    }
-
-    #[test]
-    fn automatic_placement_uses_capacity_not_family_recipes() {
-        let routed = synthetic_auto_contract(true);
-        let costs = synthetic_auto_costs(80);
-
-        let pp2 = choose_auto_parallel_placement(
-            &costs,
-            &routed,
-            ExpertActivationPrecision::Bf16,
-            &[0, 1],
-            &[60, 60],
-            6,
-        )
-        .unwrap();
-        assert_eq!(pp2.backend, AutoParallelBackend::Pipeline);
-        assert_eq!(pp2.pipeline_splits, vec![2]);
-        assert_eq!(pp2.checkpoint_peak_bytes, 50);
-
-        let ep3 = choose_auto_parallel_placement(
-            &costs,
-            &routed,
-            ExpertActivationPrecision::Bf16,
-            &[0, 1, 2],
-            &[60, 60, 60],
-            6,
-        )
-        .unwrap();
-        assert_eq!(ep3.backend, AutoParallelBackend::ExpertParallel);
-        assert_eq!(ep3.expert_root_bytes, 50);
-        assert_eq!(ep3.expert_peer_bytes, 30);
-
-        let ep4 = choose_auto_parallel_placement(
-            &costs,
-            &routed,
-            ExpertActivationPrecision::Bf16,
-            &[0, 1, 2, 3],
-            &[60; 4],
-            6,
-        )
-        .unwrap();
-        assert_eq!(ep4.backend, AutoParallelBackend::ExpertParallel);
-        assert_eq!(ep4.expert_root_bytes, 40);
-        assert_eq!(ep4.expert_peer_bytes, 20);
-    }
-
-    #[test]
-    fn automatic_placement_routes_dense_and_non_w4a16_plans_to_pipeline() {
-        let costs = synthetic_auto_costs(80);
-        let dense = choose_auto_parallel_placement(
-            &costs,
-            &synthetic_auto_contract(false),
-            ExpertActivationPrecision::Bf16,
-            &[0, 1, 2, 3],
-            &[60; 4],
-            6,
-        )
-        .unwrap();
-        assert_eq!(dense.backend, AutoParallelBackend::Pipeline);
-
-        let activation_quantized = choose_auto_parallel_placement(
-            &costs,
-            &synthetic_auto_contract(true),
-            ExpertActivationPrecision::Quantized,
-            &[0, 1, 2, 3],
-            &[60; 4],
-            6,
-        )
-        .unwrap();
-        assert_eq!(activation_quantized.backend, AutoParallelBackend::Pipeline);
-    }
-
-    #[test]
-    fn automatic_placement_refuses_when_no_program_preserves_reserve() {
-        let error = choose_auto_parallel_placement(
-            &synthetic_auto_costs(80),
-            &synthetic_auto_contract(true),
-            ExpertActivationPrecision::Bf16,
-            &[0, 1],
-            &[55, 55],
-            6,
-        )
-        .unwrap_err();
-        assert!(error.to_string().contains("no capacity-safe program"));
-    }
-
-    #[test]
-    fn step_sibling_geometry_is_derived_without_a_family_loader() {
+    fn step_sibling_does_not_inherit_the_step37_contract() {
         let mut sibling = step37_model_config();
         sibling.name = "Step-3.5-Flash".to_string();
         sibling.n_vocab = 128_000;
-        let contract = ModelParallelContract::from_model(&sibling).unwrap();
-        assert_eq!(contract.variant, "Step-3.5-Flash");
-        assert_eq!(contract.vocab_size, 128_000);
+        let error = ModelParallelContract::from_model(&sibling).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("only the exact Step-3.7-Flash geometry is registered")
+        );
     }
 
     #[test]
-    fn step_without_mtp_keeps_the_same_structural_parallel_contract() {
+    fn step_without_the_official_mtp_geometry_does_not_inherit_the_contract() {
         let mut stripped = step37_model_config();
         stripped.nextn_predict_layers = 0;
-        let contract = ModelParallelContract::from_model(&stripped).unwrap();
-        assert_eq!(contract.mtp_layers, 0);
-        assert_eq!(contract.routed_layers, (3..48).collect::<Vec<_>>());
+        let error = ModelParallelContract::from_model(&stripped).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("only the exact Step-3.7-Flash geometry is registered")
+        );
     }
 
     #[test]
@@ -2280,9 +1650,13 @@ mod tests {
     }
 
     #[test]
-    fn structural_tp4_defers_quant_block_legality_to_the_artifact_backend() {
-        let tp4 = step37_contract().plan(request(1, 4, false)).unwrap();
-        assert_eq!(tp4.routed_expert_ffn_range(1), Some(320..640));
+    fn step_tp4_requires_whole_expert_parallelism() {
+        let error = step37_contract().plan(request(1, 4, false)).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("routed expert FFN size shard 320")
+        );
         let tp2 = step37_contract().plan(request(1, 2, false)).unwrap();
         assert_eq!(tp2.routed_expert_ffn_range(1), Some(640..1280));
         assert!(tp2.shared_expert_replicated);

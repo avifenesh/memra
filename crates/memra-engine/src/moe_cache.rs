@@ -9,29 +9,10 @@
 //! expert can never evict a genuinely hot one.
 //!
 //! THE bit-identity property (MOE-SLRU-PLAN §B.3): a cache HIT and a MISS feed `qmatvec_view` the
-//! *same* block bytes — the only difference is whether the `memcpy_htod` ran. So the cache-hit
-//! weight path is byte-for-byte identical to stage-every-token. TWO gates pin this, and they
-//! cover different classes: `src/bin/kernel_check.rs` `d2-cache-bit-identity` pins ONE block of a
-//! real GGUF checkpoint (dtypes `IQ3_S | IQ4_XS | Q6_K | Q8_0` — everything else, NVFP4 included,
-//! takes its `cells.skip` arm), and `tests/glm5_moe_residency_gpu.rs` pins it END TO END on a
-//! glm5_next fixture for the safetensors NVFP4 macro-carrying class, in CI, without a checkpoint.
+//! *same* GGUF block bytes — the only difference is whether the `memcpy_htod` ran. So the cache-hit
+//! weight path is byte-for-byte identical to stage-every-token; the §D.2 gate pins this.
 //!
-//! QUANT-FORMAT AGNOSTIC, and that is load-bearing for the safetensors NVFP4 class (glm5_next /
-//! GLM-5.3-Flash, Step-3.7-Flash-NVFP4, the unsloth 35B-A3B ST class). A slot is `max_block_bytes`
-//! of opaque bytes keyed by `BlockId`; nothing here reads a qtype, a block stride, or a scale.
-//! The loader has already repacked modelopt NVFP4 (`weight` + per-16 `weight_scale`) into ONE
-//! contiguous per-expert block in memra's internal `block_nvfp4` layout
-//! (`nvfp4_repack::repack_modelopt_to_gguf`, `row_bytes = in_f / 64 * 36`), so an NVFP4 block is
-//! staged and hit exactly like a k-quant GGUF block. The per-expert `weight_scale_2` MACRO scale
-//! is NOT in the block — it rides `HostExps::macros` and is folded post-matmul by the MoE forward
-//! — so residency can never move it, and hit/miss stay bit-identical for macro-carrying banks too.
-//!
-//! Gated behind `MEMRA_MOE_CACHE`, **default ON since 2026-07-08** (`docs/FLAGS.md`: the row is
-//! spelled `MEMRA_MOE_CACHE=0` = stage-every-token, i.e. `=0` is the ROLLBACK, not the default).
-//! `Engine::moe_cache_enabled()` is `var("MEMRA_MOE_CACHE") != Ok("0")`. This line previously read
-//! "default off => current stage-every-token behavior", which was the pre-2026-07-08 state and had
-//! been stale for seven weeks; it was corrected in the glm53-flash bring-up lane (2026-08-28) after
-//! it was quoted as the live default in a placement plan.
+//! Gated behind `MEMRA_MOE_CACHE` (default off => current stage-every-token behavior).
 
 use crate::Engine;
 use crate::model::{ExpertKeepalive, ExpertSource};
@@ -871,10 +852,10 @@ impl MoeSlotCache {
 
     fn reserve_slot(&mut self, required: usize) -> Option<usize> {
         for class in &mut self.classes {
-            if class.capacity >= required
-                && let Some(slot) = class.free.pop()
-            {
-                return Some(slot);
+            if class.capacity >= required {
+                if let Some(slot) = class.free.pop() {
+                    return Some(slot);
+                }
             }
         }
         self.evict_one(required)
@@ -1025,10 +1006,10 @@ impl MoeSlotCache {
         let mut promoted = 0usize;
         for &id in order {
             if self.table.contains_key(&id) || self.pending.contains_key(&id) {
-                if let Some(read) = self.worker_reads.remove(&id)
-                    && let Some(pool) = self.pread.as_mut()
-                {
-                    let _ = pool.cancel_worker(read.ticket);
+                if let Some(read) = self.worker_reads.remove(&id) {
+                    if let Some(pool) = self.pread.as_mut() {
+                        let _ = pool.cancel_worker(read.ticket);
+                    }
                 }
                 continue;
             }
@@ -1300,10 +1281,10 @@ impl MoeSlotCache {
 
     fn reserve_prefetch_slot(&mut self, required: usize, keep: &[BlockId]) -> Option<usize> {
         for class in &mut self.classes {
-            if class.capacity >= required
-                && let Some(slot) = class.free.pop()
-            {
-                return Some(slot);
+            if class.capacity >= required {
+                if let Some(slot) = class.free.pop() {
+                    return Some(slot);
+                }
             }
         }
         self.evict_one_excluding(required, keep)
@@ -1568,7 +1549,7 @@ impl MoeSlotCache {
                     };
                     let __s_ev = e.stream();
                     let (p, _ev) = self.slots[s].device_ptr(&__s_ev);
-                    host[proj as usize * n_expert + ex] = p;
+                    host[proj as usize * n_expert + ex] = p as u64;
                 }
             }
             let row = e.stream().clone_htod(&host)?;

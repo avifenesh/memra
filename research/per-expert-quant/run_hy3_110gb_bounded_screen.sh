@@ -70,8 +70,8 @@ fi
 
 # Make the irreplaceable quant artifacts durable before starting the bounded
 # candidate clock.  The pinned upstream source remains reproducible by revision.
-storecli sync "$ARTIFACT_ROOT" \
-  "deadstore:$BUCKET/runs/$PARENT_RUN_ID/artifacts/matched-repack" --only-show-errors
+hyperscaler s3 sync "$ARTIFACT_ROOT" \
+  "obj://$BUCKET/runs/$PARENT_RUN_ID/artifacts/matched-repack" --only-show-errors
 
 tasks=(mmlu_pro_history mmlu_pro_other hendrycks_math500 humaneval_instruct)
 server_pids=()
@@ -177,7 +177,7 @@ cleanup
 trap - EXIT
 
 ((failure == 0)) || {
-  storecli sync "$ROOT" "deadstore:$BUCKET/runs/$PARENT_RUN_ID" --only-show-errors \
+  hyperscaler s3 sync "$ROOT" "obj://$BUCKET/runs/$PARENT_RUN_ID" --only-show-errors \
     --exclude 'source/*' --exclude 'tmp/*' --exclude 'cache/*'
   echo "bounded screen incomplete failure=$failure timed_out=$timed_out elapsed=$generation_elapsed" >&2
   exit 5
@@ -241,6 +241,6 @@ pathlib.Path(output).write_text(json.dumps({
 }, indent=2, sort_keys=True) + "\n")
 PY
 date -u +%Y-%m-%dT%H:%M:%SZ | tee "$RUN_ROOT/complete"
-storecli sync "$ROOT" "deadstore:$BUCKET/runs/$PARENT_RUN_ID" --only-show-errors \
+hyperscaler s3 sync "$ROOT" "obj://$BUCKET/runs/$PARENT_RUN_ID" --only-show-errors \
   --exclude 'source/*' --exclude 'tmp/*' --exclude 'cache/*'
 echo "bounded matched screen complete run=$RUN_ID elapsed=$eval_elapsed"
