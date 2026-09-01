@@ -182,3 +182,63 @@ This is substrate evidence, not the 100 tok/s result. Next implementation: retai
 the TP pair, use the persistent join at the attention and FFN ownership boundaries, keep EP4
 experts whole, and profile each integrated rung. The pass condition at the top of this file is
 unchanged.
+
+## 2026-09-01 Vast continuation: profile-driven boundary diet
+
+The migrated-repo continuation rented Vast instance `49548335`, a non-production 4x RTX PRO 6000
+Blackwell Workstation host at 600 W/card and $6.8056/hour including 500 GB disk. The pinned public
+artifact revision and index hash above were downloaded once. Raw logs, five Nsight reports/SQLite
+exports, telemetry, forced tapes, and hardware gates were copied and hash-checked before the
+instance was destroyed:
+
+`/home/avifenesh/projects/runpod-receipts/hy3-c1-100-20260901/vast-49548335/raw/`
+
+The strengthened primitive gate used a non-periodic fixed PRNG matrix. On the exact cards:
+
+- persistent 16 KiB TP2 join: **9.383 us** over 10,000 joins, rank outputs bit-identical;
+- 4096x1536 BF16 row-parallel partial: same argmax, max-abs **9.5e-7**, max-rel
+  **5.6515e-4** (relative maximum is on a near-zero reference; the mixed bound passed);
+- the later Q8-preparation fusion probe also proved q8 bytes/scales/ids/weights bit-identical, but
+  that dispatch was removed after its wall result failed the retention bar.
+
+The exact 66-token prompt and BF16-fused TP recipe were required to compare with the prior 66.32
+row. A first F32-mirror diagnostic measured 32.94 tok/s and is excluded: it was the wrong TP
+numeric/residency arm. Same-host vendor-default sampled c1 results on the correct recipe:
+
+| rung | sampled tok/s | verdict |
+|---|---:|---|
+| reconstructed TP2-attention + EP4 + paired all-Q8 + chain8 | 52.18 | same engagement markers and 1.466 s TTFT as the prior receipt, but a slower host window |
+| coarse TP2 shared expert (`MEMRA_PARALLEL_TP_SHEXP`) | 49.92 | **rejected**, -4.3%; dispatch removed |
+| root shared-expert PREJOIN overlap | 57.69 | retained recipe component, +10.6% |
+| overlap + native Q8 TP-attention mirrors | 64.51 | retained recipe component, +11.8% |
+| plus TP-attention launch diet (DCW fused rope/append, no unused local shadow, lazy length mirrors, direct O join) | **71.93** | current measured best, +11.5% |
+| root-light EP, 1 / 64 / 64 / 63 experts | 69.84 | rejected; TTFT 1.605 s |
+| root-light EP, 24 / 56 / 56 / 56 experts | 71.90 | flat; TTFT 1.536 s; dispatch removed |
+| fused Q8 input-quantize + route mirror | 72.22 | +0.4%, below 3% bar; dispatch removed |
+| multi-device Q8 EP rank-chain graph, overlap excluded | 54.09 | **rejected**; capture/replay worked but serialized dependency latency; dispatch removed |
+
+The coarse-shared profiles explain that negative instead of merely timing it. OFF shared work was
+about 2.14 ms/token aggregate. The split reduced rank-local matrix duration, but added 50,165
+kernel launches and 20,066 each of event record, wait, and copy operations over the 128-token
+window. Profiled throughput moved 9.01 -> 8.22 tok/s, in the same direction as uninstrumented wall.
+
+The retained attention diet has a non-vacuous profile receipt. Against W8+overlap, profiled
+throughput moved 8.86 -> **10.34 tok/s** while D2D calls fell **50,927 -> 20,447**, H2D calls
+**51,054 -> 9,694**, and kernel launches fell by **25,840**. Its fused
+`qk_norm_rope_append_inc_dcw` and `fa_decode_vec_q_v3_dcw` kernels appear in the capture. GPU0
+still summed 1,458.5 ms of kernels over the decode window versus 906.9 / 270.4 / 274.1 ms on the
+other cards. The best uninstrumented row is 13.90 ms/token, so the 100 tok/s target still needs
+about **3.90 ms/token** removed.
+
+Correctness so far: every real-artifact rung above kept the prompt prefill/decode argmax at 40129.
+The current-best max-diff is 8.912e-1, the already-declared W8 numeric class. Forcing its own
+128-token sampled tape yielded 0/128 argmax disagreements and total NLL 9.4495. Forcing the older
+base tape through the current best yielded 5/128 disagreements and total NLL 15.5025; the reverse
+arm and paired full-logit comparison remain required before a serving/default decision. These are
+engine development rows, not product or support-state claims.
+
+The negative dispatch implementations were reverted after their receipts were banked. The branch
+retains the generic, hardware-gated TP2 replicated-row join and compact BF16 K-range primitive.
+Next work must remove a whole dependency group without graph serialization. The live profile says
+the four-rank expert preparation/gate-up/activation/down issue stream and the remaining TP
+attention boundaries are the candidates; deleting launch count alone is not a wall result.
