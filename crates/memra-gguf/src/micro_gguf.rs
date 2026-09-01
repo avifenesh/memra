@@ -957,16 +957,8 @@ mod tests {
                 "no fused-epilogue deny below layer 43"
             );
         }
-        // step35 is the POST form (clamp on the silu OUTPUT). glm5_next's PRE form shares these
-        // accessors, so pin the FORM here too — a Post/Pre swap is a silent wrong-logits bug.
-        assert_eq!(
-            c.clamp_exp_at(43),
-            Some(crate::config::SwigluClamp::Post(7.0))
-        );
-        assert_eq!(
-            c.clamp_shexp_at(44),
-            Some(crate::config::SwigluClamp::Post(16.0))
-        );
+        assert_eq!(c.clamp_exp_at(43), Some(7.0));
+        assert_eq!(c.clamp_shexp_at(44), Some(16.0));
         assert!(
             c.swiglu_clamped_at(43) && c.swiglu_clamped_at(44),
             "layers 43/44 MUST deny the grouped-decode/pairs/dev fused SiLU epilogues"

@@ -9,7 +9,7 @@ case "$MODE" in
 esac
 
 export PATH=/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:$PATH
-ROOT=${PERCARD_ROOT:-/opt/scratch/nvme/cx-percard}
+ROOT=${PERCARD_ROOT:-/opt/dl-image/nvme/cx-percard}
 REPO=${PERCARD_REPO:-$ROOT/memra}
 MODELS=$ROOT/models
 RAW_ROOT=$ROOT/raw

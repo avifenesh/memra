@@ -39,9 +39,9 @@ bankable. Raw logs live on-box under `~/models/ornith15/mtp-train/` and are pull
 
 (pending — filled from metrics.jsonl / ab-summary.json when the chain completes)
 
-## Backup (box3 is a SPOT rental (owner call 2026-08-20))
+## Backup (box3 is a SPOT instance — owner call 2026-08-20)
 
-Everything irreplaceable syncs to `deadstore:darklanes-artifacts/ornith15/` (retired external object store, Ohio,
+Everything irreplaceable syncs to `obj://darklanes-artifacts/ornith15/` (bucket Ohio,
 created 2026-08-20): `mtp-train/` (corpus, prompts, hidden shards, train-out, scripts, logs),
 `gates/`, `st-gates/`. First full sync 2026-08-20 ~04:45Z (corpus + 8.4G hiddens); re-synced
 incrementally with every poll via `sync-box3.sh` (fresh 1h STS token per run, passed through

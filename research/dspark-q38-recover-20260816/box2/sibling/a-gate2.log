@@ -1,19 +1,19 @@
 + date -u
 Wed Aug 19 01:06:44 UTC 2026
-+ GATE=/opt/scratch/nvme/a/memra/target/release/dspark_q38_gate
-+ ART=/opt/scratch/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
-+ EXP=/opt/scratch/nvme/a/arm-a-cum1000
-+ PACK=/opt/scratch/nvme/a/q38-own-prompts
-+ MINI=/opt/scratch/nvme/a/mini-prompts
-+ mkdir -p /opt/scratch/nvme/a/mini-prompts
-+ cp /opt/scratch/nvme/a/q38-own-prompts/chat-short-000.txt /opt/scratch/nvme/a/q38-own-prompts/agentic-brief-000.txt /opt/scratch/nvme/a/q38-own-prompts/agentic-brief-001.txt /opt/scratch/nvme/a/mini-prompts/
++ GATE=/opt/dl-image/nvme/a/memra/target/release/dspark_q38_gate
++ ART=/opt/dl-image/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
++ EXP=/opt/dl-image/nvme/a/arm-a-cum1000
++ PACK=/opt/dl-image/nvme/a/q38-own-prompts
++ MINI=/opt/dl-image/nvme/a/mini-prompts
++ mkdir -p /opt/dl-image/nvme/a/mini-prompts
++ cp /opt/dl-image/nvme/a/q38-own-prompts/chat-short-000.txt /opt/dl-image/nvme/a/q38-own-prompts/agentic-brief-000.txt /opt/dl-image/nvme/a/q38-own-prompts/agentic-brief-001.txt /opt/dl-image/nvme/a/mini-prompts/
 + echo '=STAGE e2e-mini='
 =STAGE e2e-mini=
 + CUDA_VISIBLE_DEVICES=0
-+ MEMRA_PROMPT_DIR=/opt/scratch/nvme/a/mini-prompts
++ MEMRA_PROMPT_DIR=/opt/dl-image/nvme/a/mini-prompts
 + MEMRA_CHAT=1
 + MEMRA_SPEC_STATS=1
-+ /opt/scratch/nvme/a/memra/target/release/dspark_q38_gate /opt/scratch/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /opt/scratch/nvme/a/arm-a-cum1000 96
++ /opt/dl-image/nvme/a/memra/target/release/dspark_q38_gate /opt/dl-image/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /opt/dl-image/nvme/a/arm-a-cum1000 96
 target loaded (65 layers); dspark draft: block 7, taps [4, 16, 28, 40, 52], markov true, yarn true
 [dspark-q38] acceptance 35/139 = 0.252 rounds=61 draft=182.3ms snap=45.2ms verify=1103.6ms rollback+replay=20.0ms ingest=17.0ms
 agentic-brief-000.txt: prompt 395 -> gen 96 | plain 59.6 tok/s | spec 69.6 tok/s | EXACT
@@ -27,20 +27,20 @@ E2E_MINI_FAIL
 + exit 1
 + date -u
 Wed Aug 19 01:15:39 UTC 2026
-+ GATE=/opt/scratch/nvme/a/memra/target/release/dspark_q38_gate
-+ ART=/opt/scratch/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
-+ EXP=/opt/scratch/nvme/a/arm-a-cum1000
-+ PACK=/opt/scratch/nvme/a/q38-own-prompts
-+ MINI=/opt/scratch/nvme/a/mini-prompts
-+ mkdir -p /opt/scratch/nvme/a/mini-prompts
-+ cp /opt/scratch/nvme/a/q38-own-prompts/chat-short-000.txt /opt/scratch/nvme/a/q38-own-prompts/agentic-brief-000.txt /opt/scratch/nvme/a/q38-own-prompts/agentic-brief-001.txt /opt/scratch/nvme/a/mini-prompts/
++ GATE=/opt/dl-image/nvme/a/memra/target/release/dspark_q38_gate
++ ART=/opt/dl-image/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
++ EXP=/opt/dl-image/nvme/a/arm-a-cum1000
++ PACK=/opt/dl-image/nvme/a/q38-own-prompts
++ MINI=/opt/dl-image/nvme/a/mini-prompts
++ mkdir -p /opt/dl-image/nvme/a/mini-prompts
++ cp /opt/dl-image/nvme/a/q38-own-prompts/chat-short-000.txt /opt/dl-image/nvme/a/q38-own-prompts/agentic-brief-000.txt /opt/dl-image/nvme/a/q38-own-prompts/agentic-brief-001.txt /opt/dl-image/nvme/a/mini-prompts/
 + echo '=STAGE e2e-mini='
 =STAGE e2e-mini=
 + CUDA_VISIBLE_DEVICES=0
-+ MEMRA_PROMPT_DIR=/opt/scratch/nvme/a/mini-prompts
++ MEMRA_PROMPT_DIR=/opt/dl-image/nvme/a/mini-prompts
 + MEMRA_CHAT=1
 + MEMRA_SPEC_STATS=1
-+ /opt/scratch/nvme/a/memra/target/release/dspark_q38_gate /opt/scratch/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /opt/scratch/nvme/a/arm-a-cum1000 96
++ /opt/dl-image/nvme/a/memra/target/release/dspark_q38_gate /opt/dl-image/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /opt/dl-image/nvme/a/arm-a-cum1000 96
 target loaded (65 layers); dspark draft: block 7, taps [4, 16, 28, 40, 52], markov true, yarn true
 [dspark-q38] acceptance 35/139 = 0.252 rounds=61 draft=182.6ms snap=45.3ms verify=1103.7ms rollback+replay=19.3ms ingest=16.8ms
 agentic-brief-000.txt: prompt 395 -> gen 96 | plain 59.6 tok/s | spec 69.6 tok/s | EXACT
@@ -52,11 +52,11 @@ chat-short-000.txt: prompt 69 -> gen 96 | plain 65.2 tok/s | spec 68.0 tok/s | E
 + echo '=STAGE e2e-ckpt-mini='
 =STAGE e2e-ckpt-mini=
 + CUDA_VISIBLE_DEVICES=0
-+ MEMRA_PROMPT_DIR=/opt/scratch/nvme/a/mini-prompts
++ MEMRA_PROMPT_DIR=/opt/dl-image/nvme/a/mini-prompts
 + MEMRA_CHAT=1
 + MEMRA_SPEC_STATS=1
 + MEMRA_DSPARK_CKPT_GATE=1
-+ /opt/scratch/nvme/a/memra/target/release/dspark_q38_gate /opt/scratch/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /opt/scratch/nvme/a/arm-a-cum1000 96
++ /opt/dl-image/nvme/a/memra/target/release/dspark_q38_gate /opt/dl-image/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /opt/dl-image/nvme/a/arm-a-cum1000 96
 target loaded (65 layers); dspark draft: block 7, taps [4, 16, 28, 40, 52], markov true, yarn true
 [dspark-q38] acceptance 35/139 = 0.252 rounds=61 draft=183.4ms snap=45.3ms verify=1103.7ms rollback+replay=10672.9ms ingest=16.1ms
 agentic-brief-000.txt: prompt 395 -> gen 96 | plain 59.7 tok/s | spec 8.0 tok/s | EXACT
@@ -68,12 +68,12 @@ chat-short-000.txt: prompt 69 -> gen 96 | plain 65.2 tok/s | spec 6.8 tok/s | EX
 + echo '=STAGE e2e-ckpt-fullpack='
 =STAGE e2e-ckpt-fullpack=
 + CUDA_VISIBLE_DEVICES=0
-+ MEMRA_PROMPT_DIR=/opt/scratch/nvme/a/q38-own-prompts
++ MEMRA_PROMPT_DIR=/opt/dl-image/nvme/a/q38-own-prompts
 + MEMRA_CHAT=1
 + MEMRA_SPEC_STATS=1
 + MEMRA_DSPARK_CKPT_GATE=1
-+ /opt/scratch/nvme/a/memra/target/release/dspark_q38_gate /opt/scratch/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /opt/scratch/nvme/a/arm-a-cum1000 96
-+ tail -3 /opt/scratch/nvme/receipts/a/ckpt-fullpack.log
++ /opt/dl-image/nvme/a/memra/target/release/dspark_q38_gate /opt/dl-image/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /opt/dl-image/nvme/a/arm-a-cum1000 96
++ tail -3 /opt/dl-image/nvme/receipts/a/ckpt-fullpack.log
 [dspark-q38] acceptance 33/141 = 0.234 rounds=64 draft=159.7ms snap=48.8ms verify=1231.3ms rollback+replay=12963.3ms ingest=16.8ms
 chat-short-063.txt: prompt 37 -> gen 96 | plain 64.1 tok/s | spec 6.7 tok/s | EXACT
 == dspark_q38_gate: ALL EXACT | mean plain 63.2 tok/s | mean spec 6.2 tok/s | 12168 tokens ==
@@ -81,55 +81,55 @@ chat-short-063.txt: prompt 37 -> gen 96 | plain 64.1 tok/s | spec 6.7 tok/s | EX
 + echo '=STAGE accept-ab rep 1='
 =STAGE accept-ab rep 1=
 + CUDA_VISIBLE_DEVICES=0
-+ MEMRA_PROMPT_DIR=/opt/scratch/nvme/a/q38-own-prompts
++ MEMRA_PROMPT_DIR=/opt/dl-image/nvme/a/q38-own-prompts
 + MEMRA_CHAT=1
 + MEMRA_SPEC_STATS=1
-+ /opt/scratch/nvme/a/memra/target/release/dspark_q38_gate /opt/scratch/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /opt/scratch/nvme/a/arm-a-cum1000 96
-+ tail -2 /opt/scratch/nvme/receipts/a/accept-r1.log
++ /opt/dl-image/nvme/a/memra/target/release/dspark_q38_gate /opt/dl-image/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /opt/dl-image/nvme/a/arm-a-cum1000 96
++ tail -2 /opt/dl-image/nvme/receipts/a/accept-r1.log
 chat-short-063.txt: prompt 37 -> gen 96 | plain 64.7 tok/s | spec 65.6 tok/s | EXACT
 == dspark_q38_gate: ALL EXACT | mean plain 63.7 tok/s | mean spec 62.2 tok/s | 12168 tokens ==
 + for i in 1 2 3 4 5
 + echo '=STAGE accept-ab rep 2='
 =STAGE accept-ab rep 2=
 + CUDA_VISIBLE_DEVICES=0
-+ MEMRA_PROMPT_DIR=/opt/scratch/nvme/a/q38-own-prompts
++ MEMRA_PROMPT_DIR=/opt/dl-image/nvme/a/q38-own-prompts
 + MEMRA_CHAT=1
 + MEMRA_SPEC_STATS=1
-+ /opt/scratch/nvme/a/memra/target/release/dspark_q38_gate /opt/scratch/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /opt/scratch/nvme/a/arm-a-cum1000 96
-+ tail -2 /opt/scratch/nvme/receipts/a/accept-r2.log
++ /opt/dl-image/nvme/a/memra/target/release/dspark_q38_gate /opt/dl-image/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /opt/dl-image/nvme/a/arm-a-cum1000 96
++ tail -2 /opt/dl-image/nvme/receipts/a/accept-r2.log
 chat-short-063.txt: prompt 37 -> gen 96 | plain 64.8 tok/s | spec 65.7 tok/s | EXACT
 == dspark_q38_gate: ALL EXACT | mean plain 63.7 tok/s | mean spec 62.3 tok/s | 12168 tokens ==
 + for i in 1 2 3 4 5
 + echo '=STAGE accept-ab rep 3='
 =STAGE accept-ab rep 3=
 + CUDA_VISIBLE_DEVICES=0
-+ MEMRA_PROMPT_DIR=/opt/scratch/nvme/a/q38-own-prompts
++ MEMRA_PROMPT_DIR=/opt/dl-image/nvme/a/q38-own-prompts
 + MEMRA_CHAT=1
 + MEMRA_SPEC_STATS=1
-+ /opt/scratch/nvme/a/memra/target/release/dspark_q38_gate /opt/scratch/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /opt/scratch/nvme/a/arm-a-cum1000 96
-+ tail -2 /opt/scratch/nvme/receipts/a/accept-r3.log
++ /opt/dl-image/nvme/a/memra/target/release/dspark_q38_gate /opt/dl-image/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /opt/dl-image/nvme/a/arm-a-cum1000 96
++ tail -2 /opt/dl-image/nvme/receipts/a/accept-r3.log
 chat-short-063.txt: prompt 37 -> gen 96 | plain 64.7 tok/s | spec 65.6 tok/s | EXACT
 == dspark_q38_gate: ALL EXACT | mean plain 63.7 tok/s | mean spec 62.2 tok/s | 12168 tokens ==
 + for i in 1 2 3 4 5
 + echo '=STAGE accept-ab rep 4='
 =STAGE accept-ab rep 4=
 + CUDA_VISIBLE_DEVICES=0
-+ MEMRA_PROMPT_DIR=/opt/scratch/nvme/a/q38-own-prompts
++ MEMRA_PROMPT_DIR=/opt/dl-image/nvme/a/q38-own-prompts
 + MEMRA_CHAT=1
 + MEMRA_SPEC_STATS=1
-+ /opt/scratch/nvme/a/memra/target/release/dspark_q38_gate /opt/scratch/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /opt/scratch/nvme/a/arm-a-cum1000 96
-+ tail -2 /opt/scratch/nvme/receipts/a/accept-r4.log
++ /opt/dl-image/nvme/a/memra/target/release/dspark_q38_gate /opt/dl-image/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /opt/dl-image/nvme/a/arm-a-cum1000 96
++ tail -2 /opt/dl-image/nvme/receipts/a/accept-r4.log
 chat-short-063.txt: prompt 37 -> gen 96 | plain 64.7 tok/s | spec 65.6 tok/s | EXACT
 == dspark_q38_gate: ALL EXACT | mean plain 63.7 tok/s | mean spec 62.2 tok/s | 12168 tokens ==
 + for i in 1 2 3 4 5
 + echo '=STAGE accept-ab rep 5='
 =STAGE accept-ab rep 5=
 + CUDA_VISIBLE_DEVICES=0
-+ MEMRA_PROMPT_DIR=/opt/scratch/nvme/a/q38-own-prompts
++ MEMRA_PROMPT_DIR=/opt/dl-image/nvme/a/q38-own-prompts
 + MEMRA_CHAT=1
 + MEMRA_SPEC_STATS=1
-+ /opt/scratch/nvme/a/memra/target/release/dspark_q38_gate /opt/scratch/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /opt/scratch/nvme/a/arm-a-cum1000 96
-+ tail -2 /opt/scratch/nvme/receipts/a/accept-r5.log
++ /opt/dl-image/nvme/a/memra/target/release/dspark_q38_gate /opt/dl-image/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /opt/dl-image/nvme/a/arm-a-cum1000 96
++ tail -2 /opt/dl-image/nvme/receipts/a/accept-r5.log
 chat-short-063.txt: prompt 37 -> gen 96 | plain 64.7 tok/s | spec 65.6 tok/s | EXACT
 == dspark_q38_gate: ALL EXACT | mean plain 63.7 tok/s | mean spec 62.2 tok/s | 12168 tokens ==
 + date -u

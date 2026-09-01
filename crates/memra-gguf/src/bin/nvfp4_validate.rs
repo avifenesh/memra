@@ -19,19 +19,19 @@ use std::time::Instant;
 /// Resolve the (packed_bytes, scale_bytes, out_f, in_f) for a Linear `stem` under EITHER format.
 /// modelopt: `<stem>.weight`(U8) + `<stem>.weight_scale`(F8_E4M3). Reza: `<stem>.weight.nvfp4_packed`
 /// + `<stem>.weight.nvfp4_scale_e4m3`. Returns None if neither set of siblings is present.
-#[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
 fn resolve<'a>(
     m: &'a StModel,
     stem: &str,
 ) -> Option<(&'a [u8], &'a [u8], usize, usize, &'static str)> {
     // modelopt
-    if let Some((winfo, wbytes)) = m.raw(&format!("{stem}.weight"))
-        && winfo.dtype == "U8"
-        && let Some((_si, sbytes)) = m.raw(&format!("{stem}.weight_scale"))
-    {
-        let out_f = winfo.shape[0] as usize;
-        let in_f = (winfo.shape[1] as usize) * 2;
-        return Some((wbytes, sbytes, out_f, in_f, "modelopt"));
+    if let Some((winfo, wbytes)) = m.raw(&format!("{stem}.weight")) {
+        if winfo.dtype == "U8" {
+            if let Some((_si, sbytes)) = m.raw(&format!("{stem}.weight_scale")) {
+                let out_f = winfo.shape[0] as usize;
+                let in_f = (winfo.shape[1] as usize) * 2;
+                return Some((wbytes, sbytes, out_f, in_f, "modelopt"));
+            }
+        }
     }
     // Reza custom
     if let Some((winfo, wbytes)) = m.raw(&format!("{stem}.weight.nvfp4_packed")) {
@@ -45,13 +45,14 @@ fn resolve<'a>(
     // per-tensor DIVISOR handled post-matmul by the engine (Nvfp4Native::macro_s); the
     // packed codes + micro scales are byte-identical to modelopt, so the repack/dequant
     // cross-check below is macro-invariant and shared.
-    if let Some((winfo, wbytes)) = m.raw(&format!("{stem}.weight_packed"))
-        && winfo.dtype == "U8"
-        && let Some((_si, sbytes)) = m.raw(&format!("{stem}.weight_scale"))
-    {
-        let out_f = winfo.shape[0] as usize;
-        let in_f = (winfo.shape[1] as usize) * 2;
-        return Some((wbytes, sbytes, out_f, in_f, "compressed-tensors"));
+    if let Some((winfo, wbytes)) = m.raw(&format!("{stem}.weight_packed")) {
+        if winfo.dtype == "U8" {
+            if let Some((_si, sbytes)) = m.raw(&format!("{stem}.weight_scale")) {
+                let out_f = winfo.shape[0] as usize;
+                let in_f = (winfo.shape[1] as usize) * 2;
+                return Some((wbytes, sbytes, out_f, in_f, "compressed-tensors"));
+            }
+        }
     }
     None
 }

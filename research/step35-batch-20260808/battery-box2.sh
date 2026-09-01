@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Box2 (<box2-ip>, 2x PRO 6000, ohio) — serve-level gates + the c-scaling perf
+# Box2 (<box2-ip>, 2x PRO 6000, Ohio) — serve-level gates + the c-scaling perf
 # sweep, in parallel with box1's engine-level bit-identity battery. Box2 is this lane's
 # own battery box; flock kept anyway (discipline, and future co-tenants).
 set -uo pipefail

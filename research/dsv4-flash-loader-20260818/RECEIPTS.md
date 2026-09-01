@@ -2,7 +2,7 @@
 
 Lane 1 of dsv4-flash support: artifact loading + quantization decode truth. Ends at the
 census gate; no GPU kernels, no forward pass. Branch `lane/dsv4-flash-loader` (off v0.91.0
-`022d84814`), NOT merged. Artifact: `nvidia/DeepSeek-V4-Flash-NVFP4` staged on the rented cloud bench
+`022d84814`), NOT merged. Artifact: `nvidia/DeepSeek-V4-Flash-NVFP4` staged on the hyperscaler bench
 box at `/home/ubuntu/models/dsv4-flash-nvfp4` (157 GB, 46 shards, 135,235 tensors).
 
 ## What landed
@@ -1651,7 +1651,7 @@ single-stream greedy from the fixture 32-token prompt, full-logits step contract
 
 Byte-stability across ALL runs: every A run sha 691ded3a… (== the tip legacy path —
 a cross-binary witness that the rung-A kernel rewrites are bit-exact), every B run
-sha 384ecde1… (the rung-C gated realization). Conditions: cloud box1 (instance id redacted; full conditions banked in darklanes),
+sha 384ecde1… (the rung-C gated realization). Conditions: hyperscaler box1 (instance id redacted; full conditions banked in darklanes),
 2× RTX PRO 6000 Blackwell Server 96GB PIX P2P, CUDA 13.2, MEMRA_CUDA_ARCH=120a,
 nvidia 595.91.07, artifact dsv4-flash-nvfp4 (clamp-only contract), PP split at
 layer 22. Bar context (RECON.md): canada-quant TP2 W4A16 47.5 tok/s bs=1 —
@@ -1986,7 +1986,7 @@ gated f64-device realization at 8200 steps), every B run sha eeecacbd3ee4… (th
 lane-9 gated f32-dots realization). Near-flat long context holds: B rises +24.5%
 over 40× context growth (A: +25.1%). The A arm's s≈200/1024/8192 medians reproduce
 lane-8's banked table (42.60/46.02/53.2) across days — cross-day witness.
-Conditions: cloud box1 (instance id redacted; full conditions banked in darklanes), 2× RTX PRO 6000 Blackwell Server 96GB PIX P2P,
+Conditions: hyperscaler box1 (instance id redacted; full conditions banked in darklanes), 2× RTX PRO 6000 Blackwell Server 96GB PIX P2P,
 CUDA 13.2, MEMRA_CUDA_ARCH=120a, nvidia 595.91.07, artifact dsv4-flash-nvfp4
 (clamp-only), PP split at layer 22; another lane's CPU-only fixture job (taskset
 cores 24–47) ran during parts of the lane-9 rung gates but NOT during this A/B
@@ -2315,7 +2315,7 @@ darklanes `research/deepseek-flash-20260818/box-mirror-box7/ws-ref-thresholds/`.
 OWED (prediction banked): one Server-window default-env REF battery under the landed
 gate — expected PASS 14/14 with ≤ a few budget-adjudicated flips.
 
-## OWED DISCHARGED: Server-window default-env battery (2026-08-21, box6 cloud PRO 6000 Server Edition)
+## OWED DISCHARGED: Server-window default-env battery (2026-08-21, box6 sbox Server Edition)
 
 Prediction held, verdict shape (a): default-env REF battery at this tip
 (binary rebuilt on box6 at clean f6554a5777, sha 0cd98786c970e8be…) = PASS 14/14

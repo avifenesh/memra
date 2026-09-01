@@ -223,7 +223,7 @@ fn regex_blk(name: &str) -> String {
     while let Some(c) = chars.next() {
         if name[..].starts_with("blk.") && out == "blk." {
             // consume digits
-            while chars.peek().is_some_and(|d| d.is_ascii_digit()) {
+            while chars.peek().map_or(false, |d| d.is_ascii_digit()) {
                 chars.next();
             }
             out.push('*');

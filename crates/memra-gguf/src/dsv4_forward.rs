@@ -489,26 +489,16 @@ fn bf16_to_f32_vec(raw: &[u8]) -> Vec<f32> {
 }
 
 impl Dsv4Model {
-    pub fn open(dir: &Path) -> Result<Self, String> {
-        let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            ModelConfig::from_config_json(&dir.join("config.json"))
-        }))
-        .map_err(|payload| {
-            payload
-                .downcast_ref::<String>()
-                .cloned()
-                .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).to_string()))
-                .unwrap_or_else(|| "config.json parser panicked".into())
-        })?;
-        let mc = parsed.map_err(|error| format!("parse config.json: {error}"))?;
-        if !mc.arch.is_dsv4() {
-            return Err(format!(
-                "dsv4 forward: model_type is not deepseek_v4 (arch {:?})",
-                mc.arch
-            ));
-        }
-        let st = StModel::open(dir).map_err(|error| format!("open safetensors model: {error}"))?;
-        Ok(Dsv4Model { st, mc })
+    pub fn open(dir: &Path) -> Self {
+        let mc =
+            ModelConfig::from_config_json(&dir.join("config.json")).expect("parse config.json");
+        assert!(
+            mc.arch.is_dsv4(),
+            "dsv4 forward: model_type is not deepseek_v4 (arch {:?})",
+            mc.arch
+        );
+        let st = StModel::open(dir).expect("open safetensors model");
+        Dsv4Model { st, mc }
     }
 
     pub fn cfg(&self) -> &DeepSeekV4Config {

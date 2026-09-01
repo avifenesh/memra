@@ -39,6 +39,14 @@ use memra_gguf::GgufFile;
 
 const DEFAULT_PENALTY_WINDOW: usize = memra_engine::spec::PEN_WINDOW_MAX;
 
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn default_penalty_window_matches_the_served_cross_path_bound() {
+        assert_eq!(super::DEFAULT_PENALTY_WINDOW, 8192);
+    }
+}
+
 fn load_model(path: &str, e: &Engine) -> Result<HybridModel, Box<dyn std::error::Error>> {
     let path = memra_gguf::hf::resolve_arg(path)?;
     let is_dir = std::path::Path::new(&path).is_dir();
@@ -384,12 +392,4 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if fails == 0 { "ALL PASS" } else { "FAIL" }
     );
     std::process::exit(if fails == 0 { 0 } else { 1 });
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn default_penalty_window_matches_the_served_cross_path_bound() {
-        assert_eq!(super::DEFAULT_PENALTY_WINDOW, 8192);
-    }
 }

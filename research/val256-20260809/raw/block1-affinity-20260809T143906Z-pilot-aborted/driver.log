@@ -43,7 +43,7 @@ shape: PP=2 devices=0,1 ctx=262144 sequential=8 c=1 max_tokens=256 base_notes=60
    Compiling anyhow v1.0.104
    Compiling cudarc v0.19.8
    Compiling memchr v2.8.2
-   Compiling memra-gguf v0.72.0 (/opt/scratch/nvme/memra-cx-val256/crates/memra-gguf)
+   Compiling memra-gguf v0.72.0 (/opt/dl-image/nvme/memra-cx-val256/crates/memra-gguf)
    Compiling serde_derive v1.0.228
    Compiling tokio-macros v2.7.0
    Compiling ref-cast-impl v1.0.26
@@ -84,7 +84,7 @@ shape: PP=2 devices=0,1 ctx=262144 sequential=8 c=1 max_tokens=256 base_notes=60
    Compiling mime v0.3.17
    Compiling toml_write v0.1.2
    Compiling llguidance v1.7.6
-   Compiling memra-engine v0.72.0 (/opt/scratch/nvme/memra-cx-val256/crates/memra-engine)
+   Compiling memra-engine v0.72.0 (/opt/dl-image/nvme/memra-cx-val256/crates/memra-engine)
    Compiling ryu v1.0.23
    Compiling regex-syntax v0.8.11
    Compiling either v1.17.0
@@ -95,25 +95,25 @@ shape: PP=2 devices=0,1 ctx=262144 sequential=8 c=1 max_tokens=256 base_notes=60
    Compiling serde_urlencoded v0.7.1
    Compiling axum-core v0.4.5
    Compiling digest v0.10.7
-   Compiling memra-runtime v0.72.0 (/opt/scratch/nvme/memra-cx-val256/crates/memra-runtime)
-   Compiling memra-kv v0.72.0 (/opt/scratch/nvme/memra-cx-val256/crates/memra-kv)
+   Compiling memra-runtime v0.72.0 (/opt/dl-image/nvme/memra-cx-val256/crates/memra-runtime)
+   Compiling memra-kv v0.72.0 (/opt/dl-image/nvme/memra-cx-val256/crates/memra-kv)
    Compiling hyper-util v0.1.20
    Compiling referencing v0.29.1
    Compiling tower v0.5.3
    Compiling toktrie v1.7.6
-   Compiling memra-tokenizer v0.72.0 (/opt/scratch/nvme/memra-cx-val256/crates/memra-tokenizer)
+   Compiling memra-tokenizer v0.72.0 (/opt/dl-image/nvme/memra-cx-val256/crates/memra-tokenizer)
    Compiling async-stream-impl v0.3.6
    Compiling serde_path_to_error v0.1.20
    Compiling cpufeatures v0.2.17
    Compiling matchit v0.7.3
-   Compiling memra-sampling v0.72.0 (/opt/scratch/nvme/memra-cx-val256/crates/memra-sampling)
-   Compiling memra-validate v0.72.0 (/opt/scratch/nvme/memra-cx-val256/crates/memra-validate)
-   Compiling memra-server v0.72.0 (/opt/scratch/nvme/memra-cx-val256/crates/memra-server)
+   Compiling memra-sampling v0.72.0 (/opt/dl-image/nvme/memra-cx-val256/crates/memra-sampling)
+   Compiling memra-validate v0.72.0 (/opt/dl-image/nvme/memra-cx-val256/crates/memra-validate)
+   Compiling memra-server v0.72.0 (/opt/dl-image/nvme/memra-cx-val256/crates/memra-server)
    Compiling axum v0.7.9
    Compiling sha2 v0.10.9
    Compiling async-stream v0.3.6
    Compiling toml v0.8.23
-   Compiling memra-lanes v0.72.0 (/opt/scratch/nvme/memra-cx-val256/crates/memra-lanes)
+   Compiling memra-lanes v0.72.0 (/opt/dl-image/nvme/memra-cx-val256/crates/memra-lanes)
 warning: memra-engine@0.72.0: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc (newest of 4; also saw 13.0 @ /usr/local/cuda-13.0/bin/nvcc, 12.9 @ /usr/local/cuda-12.9/bin/nvcc, 12.8 @ /usr/local/cuda-12.8/bin/nvcc)
 warning: memra-engine@0.72.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
     Finished `release` profile [optimized] target(s) in 3m 43s
@@ -139,20 +139,20 @@ Terminated
 {"cached_tokens": 46294, "completion_tokens": 256, "decode_s_after_first": 3.888406, "decode_tok_s_after_first": 65.579565, "finish_reason": "length", "history_rewritten": false, "kept_text_sha256": "b0c603d7b97c9a4003090b686f61738d586aeff53b50f1dfa0fa6a398d709824", "phase": "sequential", "phase_index": 5, "prompt_chars": 258832, "prompt_sha256": "8bea03152724109c0a3567ce63a3471e4f5f67693371c0de192dc846f07d20ce", "prompt_tokens": 46583, "request_index": 5, "session_id": "cachespec-main", "started_at": "2026-08-09T14:47:14.475611+00:00", "text_chars": 1269, "text_sha256": "b0c603d7b97c9a4003090b686f61738d586aeff53b50f1dfa0fa6a398d709824", "ttft_s": 1.175661, "type": "request", "wall_s": 5.079384}
 {"cached_tokens": 46577, "completion_tokens": 256, "decode_s_after_first": 3.909933, "decode_tok_s_after_first": 65.218508, "finish_reason": "length", "history_rewritten": false, "kept_text_sha256": "e52594a330d0bd7887ac8dae274d82c6f1bf69012e5603d8f6ecb542015bc986", "phase": "sequential", "phase_index": 6, "prompt_chars": 260245, "prompt_sha256": "dcdd99a700abc65c58665cd65e43425c8d79056732b1dc022fdf5c06546690d8", "prompt_tokens": 46867, "request_index": 6, "session_id": "cachespec-main", "started_at": "2026-08-09T14:47:19.556692+00:00", "text_chars": 1199, "text_sha256": "e52594a330d0bd7887ac8dae274d82c6f1bf69012e5603d8f6ecb542015bc986", "ttft_s": 1.176564, "type": "request", "wall_s": 5.10182}
 {"cached_tokens": 46861, "completion_tokens": 256, "decode_s_after_first": 3.899978, "decode_tok_s_after_first": 65.384986, "finish_reason": "length", "history_rewritten": false, "kept_text_sha256": "70252c7efdd79f2e4009d135f5d8636ec9c9a5d3d84af045ff58968bac8aa69d", "phase": "sequential", "phase_index": 7, "prompt_chars": 261604, "prompt_sha256": "68adbbd53341f6ac045c37305ae77b390b6460fc32df68a4d9703453b3811538", "prompt_tokens": 47159, "request_index": 7, "session_id": "cachespec-main", "started_at": "2026-08-09T14:47:24.660306+00:00", "text_chars": 1150, "text_sha256": "70252c7efdd79f2e4009d135f5d8636ec9c9a5d3d84af045ff58968bac8aa69d", "ttft_s": 1.197405, "type": "request", "wall_s": 5.112719}
-[server] starting; models config = [("step", "/opt/scratch/nvme/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", Some("/opt/scratch/nvme/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"))]
+[server] starting; models config = [("step", "/opt/dl-image/nvme/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", Some("/opt/dl-image/nvme/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"))]
 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
 [gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
 [worker] Engine ready (device=1, MEMRA_FAST=true)
 [spec-gate] policy placement=pp2-cross-device LOW=0 HIGH=1 source=placement-default spec-admission=off
 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
-[worker] loading model "step" <- /opt/scratch/nvme/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+[worker] loading model "step" <- /opt/dl-image/nvme/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
 [pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
 [moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
 [moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.72GB (expert budget 94.80GB) -> RESIDENT
 [fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
 [mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
 [mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
-[worker] step: regime draft attached (/opt/scratch/nvme/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf)
+[worker] step: regime draft attached (/opt/dl-image/nvme/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf)
 [worker]   loaded "step": 45 layers, eos=128007
 [worker] step: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true gemma_think=false ctx=262144 tok="deepseek-v3" instruct=Some("chatml") chat_defaults=Some(0.5)/Some(0.9)
 [worker] step: decode chunk cap 8

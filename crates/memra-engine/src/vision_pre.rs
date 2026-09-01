@@ -220,168 +220,6 @@ pub const VID_MAX_FRAMES: usize = 32;
 pub const GIF_MAX_FRAMES: usize = 512;
 pub const GIF_MAX_TOTAL_PIXELS: usize = 1 << 26; // 67.1M px = 192 MiB retained RGB
 
-/// Header-only video plan used by the HTTP admission path. It carries exactly the information
-/// needed to price/render the pad runs; frame pixels are not materialized until the request has
-/// passed budget and concurrency admission.
-#[derive(Debug, Clone)]
-pub struct PlannedVideoGroup {
-    pub gh: usize,
-    pub gw: usize,
-    pub timestamp: f32,
-}
-
-#[derive(Debug, Clone)]
-pub struct PlannedVideo {
-    pub groups: Vec<PlannedVideoGroup>,
-}
-
-fn gif_need(bytes: &[u8], pos: usize, len: usize, what: &str) -> Result<(), String> {
-    if pos.checked_add(len).is_none_or(|end| end > bytes.len()) {
-        return Err(format!("truncated GIF {what}"));
-    }
-    Ok(())
-}
-
-fn gif_skip_subblocks(bytes: &[u8], pos: &mut usize) -> Result<(), String> {
-    loop {
-        gif_need(bytes, *pos, 1, "sub-block length")?;
-        let len = bytes[*pos] as usize;
-        *pos += 1;
-        if len == 0 {
-            return Ok(());
-        }
-        gif_need(bytes, *pos, len, "sub-block payload")?;
-        *pos += len;
-    }
-}
-
-/// Parse GIF structure, frame count, delays, and canvas dimensions without decoding a single
-/// pixel. This mirrors the sampling arithmetic in `prep_video_gif`, but keeps the expensive
-/// composited frame buffers behind the HTTP admission gates.
-pub fn plan_video_gif(bytes: &[u8]) -> Result<PlannedVideo, String> {
-    if bytes.len() < 13 || !(bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a")) {
-        return Err("invalid GIF header".into());
-    }
-    let cw = u16::from_le_bytes([bytes[6], bytes[7]]) as usize;
-    let ch = u16::from_le_bytes([bytes[8], bytes[9]]) as usize;
-    let canvas_px = cw
-        .checked_mul(ch)
-        .ok_or_else(|| "gif canvas dimensions overflow".to_string())?;
-    if canvas_px == 0 {
-        return Err("gif has an empty canvas".into());
-    }
-    let max_frames = GIF_MAX_FRAMES.min(GIF_MAX_TOTAL_PIXELS / canvas_px);
-    if max_frames == 0 {
-        return Err(format!(
-            "gif canvas {cw}x{ch} exceeds the decode budget ({GIF_MAX_TOTAL_PIXELS} px)"
-        ));
-    }
-
-    let mut pos = 13usize;
-    let packed = bytes[10];
-    if packed & 0x80 != 0 {
-        let table_len = 3usize
-            .checked_mul(1usize << ((packed & 0x07) as usize + 1))
-            .ok_or_else(|| "GIF color table length overflow".to_string())?;
-        gif_need(bytes, pos, table_len, "global color table")?;
-        pos += table_len;
-    }
-
-    let mut timestamps = Vec::new();
-    let mut elapsed = 0f32;
-    let mut next_delay = 0.01f32;
-    let mut trailer_seen = false;
-    while pos < bytes.len() {
-        match bytes[pos] {
-            0x3B => {
-                trailer_seen = true;
-                break;
-            }
-            0x21 => {
-                gif_need(bytes, pos, 2, "extension label")?;
-                let label = bytes[pos + 1];
-                pos += 2;
-                if label == 0xF9 {
-                    gif_need(bytes, pos, 1, "graphic-control block size")?;
-                    let block_len = bytes[pos] as usize;
-                    pos += 1;
-                    if block_len != 4 {
-                        return Err(format!(
-                            "unsupported GIF graphic-control block length {block_len}"
-                        ));
-                    }
-                    gif_need(bytes, pos, block_len + 1, "graphic-control block")?;
-                    let delay_cs = u16::from_le_bytes([bytes[pos + 1], bytes[pos + 2]]);
-                    // image::Delay exposes the same centiseconds as milliseconds
-                    // (delay_cs * 10) before dividing by 1000. Mirror that exact
-                    // operation order so the metadata-only planner and decoder
-                    // accumulate identical f32 timestamps over long GIFs.
-                    next_delay = ((delay_cs as f32 * 10.0) / 1000.0).max(0.01);
-                    pos += block_len;
-                    if bytes[pos] != 0 {
-                        return Err("GIF graphic-control block is not terminated".into());
-                    }
-                    pos += 1;
-                } else {
-                    gif_skip_subblocks(bytes, &mut pos)?;
-                }
-            }
-            0x2C => {
-                gif_need(bytes, pos, 10, "image descriptor")?;
-                let fw = u16::from_le_bytes([bytes[pos + 5], bytes[pos + 6]]) as usize;
-                let fh = u16::from_le_bytes([bytes[pos + 7], bytes[pos + 8]]) as usize;
-                if fw == 0 || fh == 0 {
-                    return Err("GIF frame has an empty rectangle".into());
-                }
-                if timestamps.len() >= max_frames {
-                    return Err(format!(
-                        "gif exceeds the decode budget: more than {max_frames} frames at {cw}x{ch} \
-                         (ceiling {GIF_MAX_FRAMES} frames / {GIF_MAX_TOTAL_PIXELS} total px)"
-                    ));
-                }
-                let frame_packed = bytes[pos + 9];
-                pos += 10;
-                if frame_packed & 0x80 != 0 {
-                    let table_len = 3usize
-                        .checked_mul(1usize << ((frame_packed & 0x07) as usize + 1))
-                        .ok_or_else(|| "GIF local color table length overflow".to_string())?;
-                    gif_need(bytes, pos, table_len, "local color table")?;
-                    pos += table_len;
-                }
-                gif_need(bytes, pos, 1, "LZW minimum code size")?;
-                pos += 1;
-                gif_skip_subblocks(bytes, &mut pos)?;
-                timestamps.push(elapsed);
-                elapsed += next_delay;
-                next_delay = 0.01;
-            }
-            other => return Err(format!("unsupported GIF block 0x{other:02x}")),
-        }
-    }
-    if !trailer_seen {
-        return Err("GIF is missing its trailer".into());
-    }
-    if timestamps.is_empty() {
-        return Err("gif has no frames".into());
-    }
-    if timestamps.len() == 1 {
-        timestamps.push(timestamps[0]);
-    }
-    let total = timestamps.len();
-    let take = total.min(VID_MAX_FRAMES) & !1;
-    let picked: Vec<usize> = (0..take).map(|i| i * total / take).collect();
-    let (rh, rw) = smart_resize_video(take, ch, cw)?;
-    let (gh, gw) = (rh / V_PATCH, rw / V_PATCH);
-    let groups = (0..take / 2)
-        .map(|g| PlannedVideoGroup {
-            gh,
-            gw,
-            timestamp: timestamps[picked[2 * g]],
-        })
-        .collect();
-    Ok(PlannedVideo { groups })
-}
-
 /// HF Qwen3VL video smart_resize: the pixel budget covers t_bar*h*w — ALL frames.
 fn smart_resize_video(frames: usize, h: usize, w: usize) -> Result<(usize, usize), String> {
     if h < 2 || w < 2 {
@@ -493,30 +331,7 @@ pub fn prep_video_gif(bytes: &[u8]) -> Result<PreppedVideo, String> {
     Ok(PreppedVideo { groups, timestamps })
 }
 
-/// Per-image RAW byte cap, enforced AT the data-URI decode (hermes review finding
-/// 48f96cb4cd37e436): the decode runs in the HTTP content walkers BEFORE slot admission,
-/// and until this cap only `MAX_BODY_BYTES` (192 MiB) bounded it, so one oversized image
-/// could expand ~144 MiB of host bytes pre-check. 12 MiB raw is the per-image line item
-/// the memra-server `MAX_BODY_BYTES` budget has always itemized (8 images x 12 MiB raw
-/// x 4/3 base64); this constant makes that line item enforced rather than aspirational.
-pub const IMG_MAX_RAW_BYTES: usize = 12 * 1024 * 1024;
-
-/// The exact base64 length ceiling for `IMG_MAX_RAW_BYTES` raw bytes: base64 emits 4
-/// chars per 3 raw bytes and the cap is a multiple of 3, so any longer payload decodes
-/// past the cap. Checking the payload LENGTH refuses oversized input before ANY decode
-/// allocation. Shared by the qwen and gemma data-URI decoders.
-pub(crate) fn data_uri_payload_over_cap(payload: &str) -> Option<String> {
-    if payload.len() > IMG_MAX_RAW_BYTES / 3 * 4 {
-        return Some(format!(
-            "image data exceeds {} MiB (per-image raw limit, refused before decode)",
-            IMG_MAX_RAW_BYTES / (1024 * 1024)
-        ));
-    }
-    None
-}
-
-/// Parse a base64 data URI into raw bytes (any `data:*;base64,` media type). Refuses a
-/// payload past `IMG_MAX_RAW_BYTES` (by encoded length, before decoding anything).
+/// Parse a base64 data URI into raw bytes (any `data:*;base64,` media type).
 pub fn decode_data_uri(uri: &str) -> Result<Vec<u8>, String> {
     let rest = uri
         .strip_prefix("data:")
@@ -527,12 +342,8 @@ pub fn decode_data_uri(uri: &str) -> Result<Vec<u8>, String> {
     if !meta.ends_with(";base64") {
         return Err("data URI must be base64-encoded".into());
     }
-    let payload = payload.trim();
-    if let Some(err) = data_uri_payload_over_cap(payload) {
-        return Err(err);
-    }
     base64::engine::general_purpose::STANDARD
-        .decode(payload)
+        .decode(payload.trim())
         .map_err(|e| format!("base64 decode: {e}"))
 }
 
@@ -692,27 +503,6 @@ mod tests {
     }
 
     #[test]
-    fn gif_plan_reads_metadata_without_materializing_frames() {
-        let bytes = crafted_gif(64, 64, 4);
-        let plan = plan_video_gif(&bytes).unwrap();
-        assert_eq!(plan.groups.len(), 2);
-        assert!(plan.groups.iter().all(|group| group.gh > 0 && group.gw > 0));
-        let prepared = prep_video_gif(&bytes).unwrap();
-        assert_eq!(
-            plan.groups
-                .iter()
-                .map(|group| (group.gh, group.gw))
-                .collect::<Vec<_>>(),
-            prepared
-                .groups
-                .iter()
-                .map(|group| (group.gh, group.gw))
-                .collect::<Vec<_>>()
-        );
-        assert!(plan_video_gif(&crafted_gif(2000, 2000, 64)).is_err());
-    }
-
-    #[test]
     fn data_uri_roundtrip() {
         let png = {
             let img = RgbImage::new(32, 32);
@@ -727,31 +517,5 @@ mod tests {
         let prep = prep_data_uri(&uri).unwrap();
         assert_eq!(prep.n_tokens(), prep.gh * prep.gw / 4);
         assert!(decode_data_uri("http://x/y.png").is_err());
-    }
-
-    /// The per-image raw cap is enforced at the decode, BY ENCODED LENGTH, so an
-    /// oversized data URI is refused by name before a single byte is decoded (hermes
-    /// review finding 48f96cb4cd37e436: only MAX_BODY_BYTES bounded this, letting one
-    /// image expand ~144 MiB of host bytes pre-admission).
-    #[test]
-    fn data_uri_per_image_raw_cap() {
-        let cap_chars = IMG_MAX_RAW_BYTES / 3 * 4;
-        // One base64 quad past the cap: refused, and the error names the limit.
-        let over = format!("data:image/png;base64,{}", "A".repeat(cap_chars + 4));
-        let err = decode_data_uri(&over).unwrap_err();
-        assert!(
-            err.contains("12 MiB"),
-            "cap refusal must name the limit: {err}"
-        );
-        // Exactly at the cap: the size gate admits and the decode yields cap bytes
-        // (the image decoder then judges the content, as before).
-        let at = format!("data:image/png;base64,{}", "A".repeat(cap_chars));
-        assert_eq!(decode_data_uri(&at).unwrap().len(), IMG_MAX_RAW_BYTES);
-        // The gemma mirror carries the identical cap.
-        let gerr = crate::vision_gemma::gemma_decode_data_uri(&over).unwrap_err();
-        assert!(
-            gerr.contains("12 MiB"),
-            "gemma cap refusal must name the limit: {gerr}"
-        );
     }
 }

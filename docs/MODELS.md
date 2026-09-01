@@ -90,7 +90,7 @@ weight than a wishlist, and they are read.
 | Ornith-1.0-35B | MoE | Q4_K_M | own-gen donor-block draft | v0.64.0 |
 | Ornith-1.5-35B-A3B | MoE hybrid (GDN + gated attention) | NVFP4+Q5_K GGUF (own-published: HF Avifenesh/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF, first NVFP4 of this model) · image input via the checkpoint ViT (MEMRA_VISION_DIR, parity-gated) | continued-trained MTP head + FR-Spec self-trim (MEMRA_FRSPEC_TRIM; v0.105 serves cached-long at K=5 with a trimmed head, v0.108 replays the verify trunk as a captured graph by default — +19.7% on a current-generation host, and much less host-CPU-sensitive than before) — artifacts on HF | v0.97.0 |
 | Qwen-AgentWorld-35B-A3B | MoE | UD-IQ4_XS (avoid UD-Q4_K_M — its Q5_K expert mix sits outside fast-path coverage) | own-gen drafter | v0.66.0 |
-| Step-3.7-Flash 196B-A11B | MoE | IQ4_XS + Q8_0 MTP head (two-card PP-2), supported · FP8 tuning in progress · image input via the checkpoint perception_encoder ViT (MEMRA_STEP_VISION_DIR, parity- and serve-gated, default off) | MTP (single-card); plain batched decode on PP-2 | v0.73.1 |
+| Step-3.7-Flash 196B-A11B | MoE | IQ4_XS + Q8_0 MTP head (two-card PP-2), supported · FP8 tuning in progress | MTP (single-card); plain batched decode on PP-2 | v0.73.1 |
 <!-- PERF-MODELS:END -->
 
 Step-3.7-Flash serves on a two-card PP-2 pair (`MEMRA_PP_STAGES=2`); its explicit
@@ -98,106 +98,12 @@ configuration and qualification boundaries are recorded under
 [bring-up notes](PERFORMANCE.md#bring-up-notes). On PP-2 it decodes in a single
 numeric class at every batch width — served bytes do not depend on load history.
 
-Since lane/step37-vision-20260830: **image input** on the same endpoint (OpenAI
-`image_url` content parts, base64 data URIs; no video for this family). The
-checkpoint's own perception_encoder tower (47 blocks, unquantized BF16 inside the
-NVFP4 artifact) runs in-engine behind `MEMRA_STEP_VISION_DIR` (default OFF; see
-docs/FLAGS.md), with the vendor's exact tiling law (728 main view + 504 crops,
-crops-first token layout, 169/81 tokens per view). Gated before any serving path:
-per-token cosine parity min-cos 1.000000 on the projected rows vs BOTH an
-independent NumPy reference and the checkpoint's own torch code, on both grids;
-end-to-end can't-hallucinate probes through the real endpoint (single, tiled,
-multi-image, mid-conversation) with exact prompt-token accounting (171 per plain
-image, 670 tiled); text requests through the vision-enabled binary stay
-byte-identical to the seam-off boot and keep MTP spec engaged, while vision
-sessions admit at K=0 (plain path) by the family-agnostic admission law. Vision
-tokens bill as ordinary prompt tokens. Receipts:
-`research/step37-vision-20260830/`.
-
-Since lane/step37-postthink-grammar: **structured output** (`response_format`
-`json_object` / `json_schema`) on the same endpoint, POST-THINK. This family's
-template force-opens a think channel with no `enable_thinking` switch, so the old
-behavior was a named 400; constrained requests now serve two-phase: the think
-phase runs unconstrained exactly as the model was trained (every end-of-generation
-id banned, so the response cannot end inside think: the receipted
-EOS-inside-think empty-content quirk is closed for constrained requests), and the
-llguidance grammar clamps every token from the tokenizer's atomic `</think>` close
-token (id 128799) on. `reasoning` carries the think text; `content` is the
-grammar-conformant JSON. Constrained sessions on this family take plain decode
-(MTP spec disengages, `[spec-k]` K=0 admit receipt); `MEMRA_POSTTHINK_CEILING`
-(default off) is the forced-close guard.
-
-The failure face is FAIL-CLOSED, never a success a client can mistake: if
-generation ends inside the reasoning channel before the think-close token (the
-model reasons at length; measured natural closes on real agentic prompts run
-p50 2119 / p90 3554 think tokens, so small `max_tokens` values get here), the
-request returns a named 400 `invalid_request_error` (param `max_tokens`, or
-`stop` when a stop sequence cut the reasoning) instead of a 200 with empty
-content; a stream that already delivered reasoning deltas ends with the same
-error object. `finish_reason: length` still occurs only AFTER the grammar
-engaged (truncated JSON with non-empty content, the same face every constrained
-model has). Raise `max_tokens` (stream for large budgets) or set the ceiling.
-Receipts: `research/step37-postthink-grammar-20260830/`.
-
-Since lane/step37-draft-graph-serving-20260830: the speculative DRAFT chain is
-CUDA-graph captured on the qualified serving shape itself — the 3-head step-modulo
-prefix-replay chain captures per-head single-row graphs (greedy AND sampled), and
-truncation-filtered sampling (the vendor default temp 0.5 / top_p 0.9) runs its
-filter in-graph, so vendor-default requests launch a captured chain. Gated by
-greedy byte identity K=1..8, per-K acceptance identity, seeded sampled twins
-(byte-identical streams graph-vs-eager), spec-on == spec-off serving bytes, and a
-vision no-interaction cell; doors `MEMRA_MTP_CHAIN_GRAPH` /
-`MEMRA_SPEC_GRAPH_FILTERED` / `MEMRA_STEP35_DRAFT_DCW` all default ON with `=0`
-rollbacks (docs/FLAGS.md). Receipts:
-`research/step37-draft-graph-serving-20260830/`.
-
 The Gemma-4 drafter is a separate-assistant format, not a NextN/MTP head — the generic NextN
 loader refuses it (`draft n_embd != model n_embd`). Since 2026-08-17, `memra-server` serves it
 through its own attach path (`gspec`): `MEMRA_DRAFT=<assistant.gguf>` with `MEMRA_GEMMA4_SPEC`
 unset arms served speculative decode at the shipping depth K=5 (`MEMRA_GEMMA4_SPEC=0` is the
 plain kill switch — see docs/FLAGS.md). The speculative numbers in the table above remain
 `gemma-gate` CLI measurements, not serving ones.
-
-## Capture models — embeddings and rerank (v0.116.0)
-
-These two checkpoints are served through the **capture surfaces**
-(`POST /v1/embeddings`, `POST /v1/rerank`), not through generation. They are
-prefill-only: the route reads the final prompt position of a causal LM and no decode
-step runs, so they carry no drafter, no spec path and no perf-board row — the
-serving contract is in [Serving](SERVING.md#embeddings-and-rerank--the-capture-surfaces-laneembed-serve-2026-08-26).
-
-| Model | Class | Quant | Surface | Supported since |
-|---|---|---|---|---|
-| Qwen3-Embedding-8B | dense | Q8_0 GGUF (official `Qwen/Qwen3-Embedding-8B-GGUF` mint) | `/v1/embeddings` — last-token post-final-norm hidden state, L2-normalized, 4096-dim, MRL `dimensions` truncation | v0.116.0 |
-| Qwen3-Reranker-8B | dense | Q8_0 GGUF (community `mradermacher/Qwen3-Reranker-8B-GGUF` f16→`llama-quantize` mint; direct convert-to-q8 mints of this model are broken) | `/v1/rerank` — P("yes") over the {"yes","no"} logit pair at the final position, under the Qwen3-Reranker prompt | v0.116.0 |
-
-Both were qualified against a vendor `transformers` fp16 reference on pinned real-corpus
-probes before serving. The embedding gate is a cosine floor of **0.995** (the measured
-floor with margin), both prefill paths exercised — prime at or above the prime floor,
-`decode_step_h` below it. The rerank gate is **strict full-order parity plus
-|Δscore| ≤ 0.12** against the reference logit-score path (fp16 dir: 32/32 positions
-exact, max |Δ| 0.0996; the shipped Q8_0 mint: 30/32 exact with one bottom-two tail swap
-at reference margin 0.052, under the documented Q8 tail rule of strict top-half parity
-and tail flips < 0.06 — rerank is a `top_n` product).
-
-Two mint traps this bring-up paid for, both artifact-side rather than engine-side:
-`convert_hf_to_gguf --outtype q8_0` **direct** from the reranker's safetensors produces a
-broken rerank head — order scrambled across every gate query, reproduced byte-identically
-from two independent llama.cpp checkouts — while the f16→`llama-quantize` pipeline of the
-same weights gates PASS. And f16 GGUF is not a usable discriminator here: the engine
-refuses it at load with `embed_gather: unsupported dtype F16`.
-
-A capture model loads PLAIN beside a spec'd chat model — `MEMRA_MODELS` takes the extra
-`alias=path` entry, and a model with no trained NextN block no longer fatals the worker
-when `MEMRA_FRSPEC_TRIM` is set globally. A three-model single process (a spec'd chat
-model plus both capture models) is a proven shape; `/health` lists all three. On such a
-process, pin `MEMRA_Q8RP=0`: the capacity-keyed decode mirrors auto-arm on the Q8
-embedder and cost 8.5 GB for a decode path a capture model never takes.
-
-Both capture models are **subordinate by design**: serve them on batch-class keys so they
-ride the harvest lane and shed under interactive load — the SLO admission that protects
-decode p99 is the isolation mechanism, and a shed answers a retryable
-`429 rate_limit_exceeded`, not an error.
 
 
 ---
@@ -258,13 +164,7 @@ tok/s vs the MTP head's 117/120/85; single-stream wall prose ~131-146, code ~208
 digit-heavy ~287-339 tok/s (acceptance rises with output predictability). Recipe in
 [COOKBOOK.md](COOKBOOK.md); receipts in the FLAGS `MEMRA_DSPARK_SPEC` row.
 
-**Current engine number: 250 tok/s** on one RTX PRO 6000. That is memra: DFlash2,
-512-token digits, wall clock with TTFT included. The digit-heavy ~287-339 tok/s
-band above is the decode window on the same route (TTFT excluded); 250 is that
-window after TTFT. Do not quote the 140 tok/s p50 row below as current; it is
-the 2026-08-15 MTP-era battery.
-
-Historical MTP-era battery, kept as measured (NVFP4+Q5_K artifact, real agentic prompts,
+The MTP-era battery below stands as measured (NVFP4+Q5_K artifact, real agentic prompts,
 3-rep medians, zero sheds or errors across every cell — 2026-08-15):
 
 | Metric | Measured |
@@ -336,34 +236,6 @@ shape with a shared prefix:
 
 Raw per-run receipts for both are under [research/](../research/), and the second is the kind of result
 this project publishes either way: the arm expected to win lost.
-
-
-## GLM-5.3-Flash serves its OWN chat dialect, not ChatML (lane/glm53-flash-bringup-20260827)
-
-`glm5_next` ships a chat template that shares three markers with the qwen ChatML class —
-`<think>`, `add_generation_prompt`, `<tools>` — and NOTHING else. Its frame is
-`[gMASK]<sop>` + `<|system|>` / `<|user|>` / `<|assistant|>` / `<|observation|>`; its tool
-calls are `<tool_call>NAME<arg_key>K</arg_key><arg_value>V</arg_value></tool_call>`; its tool
-results are `<tool_response>` blocks inside one `<|observation|>` turn; its `<think>` tail is
-unconditional (no `enable_thinking` anywhere) and it renders an always-present
-`<|system|>Reasoning Effort: {Low|High|Max}` line whose default rung is **Max**.
-
-Because every qwen marker check matched it, the renderer used to fall through to the ChatML
-arm and serve `<|im_start|>` turns — tokens this checkpoint does not carry as specials at all,
-so the whole frame tokenized as ordinary text. It answered anyway (GLM follows the qwen
-tool-format instruction it is handed in-context), which is exactly the template-mint failure
-mode: fluent, and invisible without a byte oracle. `chat::template_is_glm5`
-(`[gMASK]<sop>` AND `<|observation|>`) now keys the renderer dispatch, the tools-branch probe,
-`ModelCaps::glm5`, the streaming tool/reasoning parser and the effort ladder from one law.
-
-Byte parity against the checkpoint's own `chat_template.jinja` is the acceptance bar, pinned
-by 20 generated fixtures (darklanes
-`research/glm53-flash-bringup-20260827/{gen_surface_fixtures.py,surface-fixtures/}`) replayed
-through the REAL request pipeline on all three wire formats. Two honesty consequences: an
-explicit reasoning-off request is a named 400 (the template cannot close its tail), and the
-`/v1/models` row no longer claims `structured_output` on any model whose think tail opens
-unconditionally without an `enable_thinking` switch — the server already refused
-`response_format` there by name, so the claim was one the server itself would not keep.
 
 
 ## deepseek-v4 checkpoint dirs serve through their own door (lane/dsv4-flash-revival-20260822)

@@ -1,7 +1,0 @@
-nvfp4-bank-oracle: v1(QT_NVFP4) vs v2(QT_NVFP4_V2) over ONE permuted bank
-arm policy: shape_sel=0 cross=64 deep_tail=false f16g_mode=2 direct_on=true | MEMRA_F16G_SK / _SK_CROSS / _TAIL select the tile form
-[moe-sk-form] dev=0 qt=7 sms=188 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=4096 out_f=640 n_active=32 max_m=41
-[moe-sk-form] dev=0 qt=107 sms=188 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=4096 out_f=640 n_active=32 max_m=41
-[cell gate_up] in_f=4096 out_f=640 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=64 elems=327680 nonzero_v1=327680 finite=true DIFF=0 maxabs=0.000000e0 maxrel=0.000e0 => IDENTICAL
-[cell down] in_f=640 out_f=4096 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=10 elems=2097152 nonzero_v1=2097152 finite=true DIFF=0 maxabs=0.000000e0 maxrel=0.000e0 => IDENTICAL
-nvfp4-bank-oracle: PASS — every cell bit-identical

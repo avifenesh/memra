@@ -12,8 +12,7 @@ edges of batched serving.
 > same SKU and ~2x between a 188-SM and an 82-SM board. The open gaps stated below travel
 > with the wins.
 
-The qualified published shape is a 2x RTX PRO 6000 Blackwell pair. PP-3/PP-4 infrastructure is
-experimental until its exact-topology and sampled-serving battery lands. Which provider hosts which role —
+The supported shape is a 2x RTX PRO 6000 Blackwell pair. Which provider hosts which role —
 serving, verification, tuning — is a deployment fact and lives in darklanes, not here. The
 Provider runbooks are not in this repo at all — they moved to darklanes with the rest of
 deployment. What stays here is `deploy/systemd/`, the supervision contract.
@@ -25,18 +24,14 @@ on one card:
   processes, one engine per GPU (`Engine::new(0)`; `CUDA_VISIBLE_DEVICES` is the placement
   mechanism), fronted by an admission proxy. This is the throughput shape — see
   [Fleet tooling](#fleet-tooling).
-- **Pipeline-parallel PP-2** (qualified for a model that fits only across the pair): ONE engine
+- **Pipeline-parallel PP-2** (for a model that fits only across the pair): ONE engine
   process, the layer trunk cut into stages, each stage's weights and KV resident on its own
   card. Opt-in via `MEMRA_PP_STAGES` / `MEMRA_PP_DEVICES`; see
   [Pipeline-parallel serving](#pipeline-parallel-pp-2-serving) below for what is gated and
   what is refused.
-- **Pipeline-parallel PP-3/PP-4** (experimental): the same stage-local weight/KV and peer-copy
-  runtime, with `MEMRA_PP_WAVE=1` filling stages from independent request or prompt-microchunk
-  waves. It is default-off and has no published performance/support claim yet; see
-  [the design decision](decisions/PRO6000-MULTICARD.md).
 
-Tensor parallelism is neither. Step-3.7 has an exact model-specific TP2/TP4/EP implementation,
-but that does not establish generic dense TP or transfer a topology/default to another model.
+Tensor parallelism is neither — it is a separate in-progress build (M0 comms floor measured
+— ARCHITECTURE-H100.md).
 
 ### Step topology contract (placement only)
 
@@ -58,7 +53,7 @@ separate official-model and target-hardware gates.
 | tool | what it does |
 |---|---|
 | `tools/serve-fleet.sh start\|stop\|status\|restart` | declarative fleet supervisor: brings up `REPLICAS_PER_GPU` replicas per GPU in `GPUS`, fronts them with the proxy, health-loop restarts anything that dies. systemd-free; pidfiles under `$FLEET_RUN` |
-| `tools/serve-proxy.py` | least-outstanding reverse proxy with per-backend admission cap (default 8 = the engine's exactness-tier batch width and the two-replicas-per-GPU anti-thrash bound). Bounded FIFO queue with deadline → 429 + Retry-After; `/health` + `/metrics` JSON. Request bodies default to 32 MiB with bounded buffering and can be raised explicitly to the server's 192 MiB ceiling via `--max-body-mb 192`; the proxy always rejects dual credentials and authenticates headers before accepting a body. |
+| `tools/serve-proxy.py` | least-outstanding reverse proxy with per-backend admission cap (default 8 = the engine's exactness-tier batch width and the two-replicas-per-GPU anti-thrash bound). Bounded FIFO queue with deadline → 429 + Retry-After; `/health` + `/metrics` JSON |
 | `tools/load-serve.py` | concurrent OpenAI-format load harness: aggregate output tok/s, p50/p95 latency, JSONL per load point |
 | `tools/serve-smoke.sh` | OpenAI-surface smoke gate for a single server |
 | `deploy/systemd/memra-server.service` | example unit for a **single supervised instance** (the other deployment shape — `serve-fleet.sh` is the systemd-free multi-replica path). `Type=notify` with `READY=1` after the models load and the socket binds, `WATCHDOG=1` pings only while inference is live, `STOPPING=1` + `EXTEND_TIMEOUT_USEC` so a drain is not SIGKILLed, and exit 70 (unrecoverable GPU) distinguished from exit 1 (bad config). Copy, do not symlink: every path is site-specific and the value is the supervision contract in the directive choices, each commented with the failure it prevents |
@@ -392,17 +387,6 @@ headroom = a 168 MiB requirement, rounded to 192 MiB for headroom while staying 
 Operators fronting the server with a proxy should raise the proxy's own body limit to match, or
 the proxy becomes the real ceiling and returns its own error page instead of the API's 413.
 
-Authenticated body parsing has a separate bounded admission gate for large uploads. Requests
-with a declared body of at most 1 MiB use their own 32-slot pool, so a slow vision upload cannot
-head-of-line block ordinary JSON calls and neither class can create unbounded parser tasks. The
-body-read deadline starts at 90 seconds for an unknown-length body and adds a pessimistic 2 MiB/s
-transfer budget for a declared length, capped at 180 seconds; this upload bound is separate from
-the inference `timeout_ms` promise. If either pool is full, the request fails fast with 429
-`body_admission_busy` rather than joining an unbounded waiter queue; it carries `Retry-After: 1`
-and the `retry-after-ms` twin. A closed pool uses retryable 503 `body_admission_unavailable`.
-All pre-body refusals retain the selected dialect's error body and request-id headers, including
-the Anthropic `/v1/messages` contract.
-
 ## The exact-16 decode chunk tier
 
 The batched tick decodes sessions in per-model chunks. Default width is **16 on models
@@ -502,29 +486,6 @@ bytes), which is exactly why a refusal rather than a warning was the right call.
 `MEMRA_PP_SHARD=0` is the non-measurement escape (weights all home — full speed, forfeits the
 capacity PP-2 exists for).
 
-### Experimental PP-3/PP-4 wavefront
-
-The PP-N transport already places complete layer ranges, their weights, and their KV state on
-each stage. `MEMRA_PP_WAVE=1` adds the missing 3–4 card serving schedule: the worker forms up to
-one exact-width request wave per stage, and the engine advances cells by dependency order while
-one host worker owns each stage. Prompt microchunks use the same shape. Every boundary retains
-two explicit credits, so a slot cannot be reused until the downstream `rx` has recorded that
-wave's read-complete event.
-
-The door requires 3 or 4 distinct CUDA ordinals, native P2P, the resolved double-slot policy,
-ModelPlan pipeline capability plus legal selected cuts, and a qualified batched decode rewrite.
-Host bounce and repeated devices refuse. Per-device admission charges stage-local context and
-learned fixed residency, then projects only missing capacity in the process-global grow-only
-boundary slots (including the enabled Step concat-prime high-water). Generic dense/non-Step
-concat prime has no cross-device PP split and is routed through individual wavefront primes. A
-failed mutating wave taints every affected cache and the worker aborts those sessions instead of
-retrying or parking partial state. `/metrics.pp_wave` exposes operator-only ticks, cells, and real
-host-walker overlap. `MEMRA_PP_WAVE=0` returns to the serial PP-N walk.
-
-This is implemented infrastructure, not a qualified model surface. Before enabling it outside a
-research process, run the PP-N gate matrix in [Testing](TESTING.md#multi-gpu-pp-n-exactness-gates--run-on-the-multi-card-box)
-on the exact 3/4-card RTX PRO 6000 host and retain sampled serving/performance receipts.
-
 ### v0.73 PP-2 prefill stack and Step trial receipt
 
 Three prefill mechanisms compose on the current Step path, but their performance claims stay
@@ -597,32 +558,23 @@ assistant-history `tool_calls`,
 `role:"tool"` result turns, and `reasoning_effort`/`reasoning`. The path is **template +
 parsing only — zero engine changes**:
 
-- Tool schemas render into each model's own tools branch. Qwen3.5/3.6 uses its ChatML
-  `<tool_call>`/`<function=…>` protocol; HY3 uses the pinned shipping template's suffixed
-  `<tool_calls:opensource>` / `<arg_key:opensource>` / `<tool_responses:opensource>` protocol,
-  including its no_think/low/high reasoning header. Both are reproduced byte-for-byte from the
-  committed vendor template. Models whose template has no supported tools branch (plain gemma4
-  and bare ChatML) reject `tools` with a 400 at admission.
-- Emitted model-native tool-call blocks are parsed from the generated stream into OpenAI-shape
+- Tool schemas render into the model chat template's own `<tools>` branch (the qwen3.5/3.6
+  ChatML convention: schemas JSON in the system region, `<tool_call>`/`<function=…>` call
+  format, `<tool_response>` result turns), byte-per-byte per the committed template dumps
+  (`research/onboard-ornith-20260801/templates/`). Models whose template has no tools
+  branch (hy3 dialect, gemma4, bare ChatML) reject `tools` with a 400 at admission.
+- Emitted `<tool_call>` blocks are parsed from the generated stream into OpenAI-shape
   `tool_calls` (streaming deltas + non-stream `message.tool_calls`, deterministic ids,
   `finish_reason:"tool_calls"`); argument values coerce per the declared JSON-schema types.
   **Malformed policy:** a block that does not parse is surfaced verbatim as content — never
   an error, never dropped bytes; unterminated blocks flush raw at end of generation.
 - **`reasoning_effort` — one surface, per-arch native thinking control** (owner directive
   2026-08-07: every supported model is a thinking model). The reasoning-capable-model
-  convention: `low|medium|high` = thinking ON, with the named level passed to templates
-  that consume one; `none|minimal` = thinking OFF; **absent = the model's own default**
-  (never overridden; no silent behavior change for existing deployments). The named levels
-  are per-request token-saving dials, NOT a graded quality ladder: measured on the
-  level-consuming step37 template (`research/step37-reasoning-effort-20260829/RESULTS.md`,
-  cell12, n=8 vendor-default sampled per level), every level is honored and answers
-  sanely, but reasoning depth is not monotone in the level (`high` landed below `medium`
-  on both non-trivial prompts) and the absent-field default is the DEEPEST arm by a wide
-  margin, so naming any level constrains the model relative to sending nothing. Name a
-  level to spend fewer reasoning tokens; do not promise or expect more depth from a higher
-  one. `reasoning: {enabled, effort}` (OpenRouter form) maps the same
+  convention: `low|medium|high` = thinking ON at that budget, `none|minimal` = thinking
+  OFF, **absent = the model's own default** (never overridden — no silent behavior change
+  for existing deployments). `reasoning: {enabled, effort}` (OpenRouter form) maps the same
   way; `{enabled: false}` is the explicit off, `{enabled: true}` thinking on at the
-  template default. `xhigh|max|ultra` are accepted as clamp aliases for `high`
+  template default budget. `xhigh|max|ultra` are accepted as clamp aliases for `high`
   (real default-config clients send them: codex `xhigh` on `/v1/responses`, Claude Code
   `xhigh` on `/v1/messages`). Any other value 400s. **The canonical set —
   `none|minimal|low|medium|high` plus the three clamp aliases — is ONE table
@@ -644,19 +596,10 @@ parsing only — zero engine changes**:
   | Gemma-4 family (12B/26B/31B/E4B) | `enable_thinking`, template default **false** | thinking **OFF** (closed `<\|channel>thought\n<channel\|>`) | closed channel | `<\|think\|>` system token + open turn | same | same |
   | Hy3 | template's own `reasoning_effort:` `no_think\|low\|high` | `no_think` (its jinja default) | `no_think` | `low`, open `<think:opensource>` | `low` (clamp — no medium level) | `high`, open think |
   | Step-3.7-Flash (`step35`) | `Reasoning: {level}` string in the system turn; `<think>` tail **unconditional** | no `Reasoning:` line (template default) | `Reasoning: low` (clamp — no off level) | `Reasoning: low` | `Reasoning: medium` | `Reasoning: high` |
-  | GLM-5.3-Flash (`glm5_next`) | `<\|system\|>Reasoning Effort: {Low\|High\|Max}` line, ALWAYS rendered; `<think>` tail **unconditional**, no off switch anywhere in the template | `Reasoning Effort: Max` (the template's own `else` arm) | **400** — the template cannot close its think tail (`qwen_think && !think_switch`) | `Reasoning Effort: Low` | `Reasoning Effort: Low` (clamp DOWN — no medium rung, and the template's `else` is Max) | `Reasoning Effort: High` |
-
-  GLM-5.3-Flash is the second model (after deepseek-v4 0731) whose template distinguishes a
-  rung **above** `high`: `xhigh`/`max`/`ultra` canonicalize to `max` there instead of clamping
-  into `high`, so `Reasoning Effort: Max` — the model's own default — stays reachable by name.
-  `medium` is the one rung it does not define, and it clamps DOWN to `Low` rather than falling
-  through the template's `else` arm to `Max`: answering "reason less" with the model's deepest
-  setting is the never-corrupt-clamp law read backwards (same reasoning as Hy3's medium clamp).
 
   Level strings reach only templates that consume one (spawn-time `effort_levels` probe,
-  keyed on the jinja's own `reasoning_effort is defined` input test — true for step35, Hy3
-  and GLM-5.3-Flash, plus the `qwen_effort` and `glm5` dialect probes);
-  binary-switch templates are driven by the on/off half alone, so prompts on models
+  keyed on the jinja's own `reasoning_effort is defined` input test — true for step35 and
+  Hy3); binary-switch templates are driven by the on/off half alone, so prompts on models
   that never read a level cannot be perturbed by it. Serve-smoke receipts:
   `research/step-sku-20260807/raw/effort-smoke-*.log` (step35),
   `research/step-sku-20260807/raw/think-smoke-*.log` (qwen + gemma4 arms).
@@ -784,44 +727,6 @@ Qwen3.6-35B + AgentWorld, streaming schema checker, malformed-policy transcript,
 tok-check usage crosscheck, cross-binary c1 refs + c1-vs-c16) and
 `research/integrate-cache-20260802/` (tools x cache intersection gate).
 
-## Embeddings and rerank — the capture surfaces (lane/embed-serve, 2026-08-26)
-
-Two prefill-only routes read the final prompt position of a causal LM instead of
-decoding from it. No decode step runs (`max_new: 0`); admission, lanes, budgets,
-receipts, rate limits and `[meter]` lines are byte-identical to `/v1/completions` —
-one admitted worker request per input, billed as prompt tokens.
-
-- `POST /v1/embeddings` (OpenAI schema): `{model, input: string|string[], dimensions?}`.
-  The vector is the last-token post-final-norm hidden state, L2-normalized; `dimensions`
-  applies MRL truncation (keep-first-N, re-normalize) — the Qwen3-Embedding pooling
-  convention. `encoding_format` other than `"float"` is refused. Arrays are capped at 32
-  inputs per request.
-- `POST /v1/rerank` (Cohere-shaped): `{model, query, documents[], top_n?, instruction?,
-  return_documents?}`. Each document is judged with the Qwen3-Reranker prompt (system +
-  `<Instruct>/<Query>/<Document>` + forced empty think block) and scored as P("yes")
-  over the {"yes","no"} logit pair at the final position. Models whose "yes"/"no" are
-  not single vocabulary tokens are refused honestly. Documents capped at 64 per request.
-
-Worker semantics (`worker::CaptureSpec`): capture requests bypass EVERY cross-request
-KV reuse tier (prefix cache, continuation pool, spec resume — a cache hit would skip
-the prime the capture reads from), never take the spec path, and prime alone (no
-batched prime, no prefix fanout). Prompts at or above the prime floor pool from the
-prime call's hidden stack; shorter prompts walk the tokenwise path and pool via
-`decode_step_h` on the final token — same numeric program, hidden returned
-(`prime_cache` hard-asserts T >= PRIME_MIN_T; do not lower that floor for capture).
-
-Deployment posture: these are the SUBORDINATE surfaces by design — serve them on
-batch-class keys so they ride the harvest lane and shed under interactive load (the
-SLO admission protecting decode p99 is the isolation mechanism). A co-loaded
-embedding/reranker model is the intended shape: `MEMRA_MODELS` accepts the extra
-`alias=path` entry, and a model with no trained NextN block now loads PLAIN beside a
-spec'd chat model even when `MEMRA_FRSPEC_TRIM` is set globally (the trim request is
-ignored for headless models instead of fataling the whole worker).
-
-No new environment flag: capture is request-driven (`/v1/embeddings`, `/v1/rerank`
-are the only producers), so there is no default to decide or roll back — absent those
-calls the serving process is byte-identical to before this lane.
-
 ## Model id resolution — a stripped vendor prefix is tolerated (2026-08-13)
 
 Marketplaces normalize model ids before calling upstream. Onlist lists `qwen/qwen3.6-35b-a3b` and
@@ -851,9 +756,8 @@ gated by the official `openai` Python SDK against a live server
 (`research/serve-compat-20260802/`):
 
 - **Envelope:** every OpenAI-shape completion and stream chunk carries `id`
-  (`chatcmpl-…`/`cmpl-…`), `created`, and `system_fingerprint`
-  (`memra-<version>-<content id>`, baked at build, see **The build fingerprint** below);
-  the id echoes as the `x-request-id` response header. The first stream delta
+  (`chatcmpl-…`/`cmpl-…`), `created`, and `system_fingerprint` (`memra-<git sha>`, baked
+  at build); the id echoes as the `x-request-id` response header. The first stream delta
   carries `role:"assistant"`. Error bodies are the OpenAI object —
   `{"error": {"message","type","param","code"}}` — and mid-stream worker errors arrive as
   a final `data:` error chunk + `[DONE]`, never a named SSE event. SSE keep-alive comments
@@ -909,92 +813,6 @@ gated by the official `openai` Python SDK against a live server
   channel open indefinitely and no disconnect or deadline could cancel it.
 - **`timeout_ms` request deadline** (all four surfaces — see the billing contract below).
 
-## The build fingerprint (lane/real-system-fingerprint, 2026-09-01)
-
-`system_fingerprint` is **`memra-<crate version>-<content id>`**, for example
-`memra-0.123.0-6371ca8a0af4` (every concrete value in this section is this lane's head,
-2026-09-01; the id moves with the source, which is the point). It is baked at compile time by
-`crates/memra-server/build.rs` and the algorithm lives in `crates/memra-server/src/build_id.rs`,
-which the build script `include!`s and the crate compiles as a module: one implementation,
-two callers, so the tests re-derive the value instead of pinning a copy of the algorithm.
-
-The `<content id>` is 12 lowercase hex: an FNV-1a-128 digest, folded to its top 48 bits, over
-the workspace's compiled inputs: root `Cargo.toml` and `Cargo.lock` plus every `*.rs`,
-`*.toml`, `*.cu`, `*.cuh`, `*.h` under `crates/`, keyed by workspace-relative path and
-sorted, so it does not depend on `read_dir` order or on where the checkout lives. Uniqueness
-class, not crypto: it is a build identity, not a tamper seal.
-
-**Why content and not the git sha.** The field used to be `concat!("memra-", <git rev-parse>)`
-with any git failure swallowed into the literal `"unknown"`. Two consequences, both real:
-
-- **It degraded silently.** darklanes' release container (`serving/build-artifact.sh`)
-  compiles as root over a uid-1000 read-only mount; before its `safe.directory` line landed
-  on 2026-08-30 git aborted with "detected dubious ownership" and the build baked
-  `unknown`. Prod answered `system_fingerprint: memra-unknown` to every request for a whole
-  deploy generation. A build with a meaningless identity looked exactly like a good one.
-- **It did not survive a history rewrite.** A rewrite changes every commit SHA while the
-  bytes of the tree stay put, so a sha baked into a shipped binary becomes a dangling
-  reference, and a fingerprint quoted in a published claim, a research receipt, or a
-  customer's own response stops naming anything. A content id is unchanged by a rewrite
-  (receipt in the lane PR: `git commit --amend` over this tree moved the commit sha
-  `2bfd89fb74d2` to `07b909892f43` while the id stayed `6371ca8a0af4`).
-
-**Deliberately NOT in the value: a build timestamp.** Two builds of the same source must
-produce the same fingerprint, because darklanes' `tools/check-claim-builds.mjs --live`
-compares it for **equality** against the pin published beside every performance figure; a
-per-rebuild component would churn every pin and make the gate meaningless. Build time is an
-artifact-registry fact (the artifact filename and the file's mtime), not an identity.
-
-**The git sha is still baked, as an extra field, never as the identity:**
-`MEMRA_BUILD_SHA` → `memra_server::BUILD_GIT_SHA`. It is allowed to read `unknown` there,
-because there it is honest.
-
-**No flag.** The real fingerprint is unconditional: there is no env var that turns it off,
-downgrades it, or overrides it. A knob here would be a knob for publishing an unverifiable
-identity (new-flags law: the default is a written decision, and this one is "no flag").
-
-**Reading it without a GPU.** `memra-server --version` (also `-V`) prints the identity and
-exits before any engine, GPU, or model work, so a deployed artifact can be identified on any
-box and in the release container that produced it:
-
-```
-$ memra-server --version
-memra-server 0.123.0
-system_fingerprint memra-0.123.0-6371ca8a0af4
-build_id_src source-tree
-git_sha <this build's short sha, or `unknown` if it could not read a repo>
-```
-
-The same path is in `serve_with`, so darklanes' deployment binary answers `--version` too.
-
-**The degraded path is loud on both sides.** If the workspace source tree is unreadable (a
-vendored or packaged crate), the id falls back to a digest of the package's own identity,
-still shaped, still never `unknown`, and:
-
-- `build.rs` emits a `cargo:warning=memra build identity DEGRADED: <reason>` at build time;
-- every boot prints `[server] WARNING: build identity is DEGRADED: <reason>` naming the
-  consequence (published performance pins cannot be verified against it).
-
-Every boot also prints the identity line unconditionally, as its first line:
-`[server] build: memra-0.123.0-6371ca8a0af4 (id: source-tree, git: <short sha>)`.
-
-**Gates** (`crates/memra-server/src/lib.rs`, `mod build_identity_tests`): the baked value is
-non-empty, is not `memra-unknown`, contains no `unknown`, matches
-`memra-<version>-<12 lowercase hex>` and names this crate version; the shape checker rejects
-what shipped to prod **and** the old `memra-<sha>` form; the baked id is re-derived from the
-working tree in a separate process and must match, which is what proves it is a function of
-the source rather than of the build environment; two scans of one tree agree; and the id is
-asserted to differ from `BUILD_GIT_SHA`, so history can never become the identity by
-accident. The two OpenAI envelope tests now assert the full shape: they used to assert
-`starts_with("memra-")`, which `memra-unknown` passes, which is how the defect sat inside a
-tested surface all the way to a customer.
-
-**Consumers.** darklanes `tools/check-claim-builds.mjs` reads `system_fingerprint` from a
-live endpoint and compares it to the `build` / `*Build` pins carried by every published
-performance figure (`PRODUCT-TRUTH.md` §2.7). While the field read `memra-unknown` that gate
-had nothing to verify; both prod boxes need a binary from this lane before the `--live` half
-means anything, and the pins move to the new shape as part of that deploy.
-
 ## Request deadlines and the billing promise (`timeout_ms`)
 
 Owner ruling, 2026-08-23: *"if the time pass and we didnt responed in time we fail and we
@@ -1010,22 +828,6 @@ class the standard-surface law bans.
 **Default when absent: `90000`.** Every request has a deadline whether or not the client
 knows the parameter exists: *we answer inside 90 s or you don't pay.*
 
-**AMENDED 2026-08-26** (owner: a 30k-token non-streaming request timed out —
-lane/deadline-partial-20260826). That promise covered a request we fail to answer, and it
-still does. What changed is that a non-streaming deadline no longer THROWS AWAY the tokens
-it had already generated in order to produce that error:
-
-- An infeasible non-streaming request is refused at admission with a named
-  400 (`nonstream_deadline_infeasible`) naming the `max_tokens` that fits — instantly,
-  before any GPU work, instead of after the full deadline.
-- A deadline that lands mid-generation on the OpenAI-dialect surfaces DELIVERS what was
-  produced and BILLS it, under the census outcome `deadline_partial` — the caller received
-  those tokens. A deadline that lands with zero tokens still answers 408 `deadline_exceeded`
-  and bills nothing.
-
-Full behaviour, including which surfaces deliver partials and why the other two do not, is
-in "Long non-streaming requests: what the deadline does now" below.
-
 The 90 s maximum is a **platform fact, not a preference**: the fronting proxy fails a
 non-streaming response whose time-to-headers reaches ~100 s (Cloudflare `524`), so a
 larger promise would be broken above this server no matter what it did. Work that
@@ -1035,15 +837,13 @@ to first token and the response may then run as long as it needs.
 | | non-streaming | streaming (`stream: true`) |
 |---|---|---|
 | what the deadline bounds | the COMPLETE response | **time to first token only** |
-| infeasible before it starts | refused at admission: `400` `nonstream_deadline_infeasible` | never gated |
-| miss with SOME tokens produced | OpenAI-dialect surfaces: **`200` partial, BILLED** (`deadline_partial`, `finish_reason: "error"`); `/v1/messages` + `/v1/responses`: `408`, discarded | cannot happen — the parameter is spent at the first token |
-| miss with ZERO tokens produced | `408`, generation cancelled, **not billed** | `408` **pre-header**, generation cancelled, **not billed** |
+| on a miss | `408`, generation cancelled | `408` **pre-header**, generation cancelled |
+| billed on a miss | **nothing** | **nothing** (nothing was delivered) |
 | after the first token | — | the parameter is **spent**; the stream runs to completion |
 
-A missed deadline that delivered NOTHING is `408` with the standard error object
-(`type: "timeout"`, `code: "deadline_exceeded"`), a message naming the effective deadline,
-and **no** `Retry-After` — a miss says nothing about when a retry would fit, and inventing a
-window
+A missed deadline is `408` with the standard error object (`type: "timeout"`,
+`code: "deadline_exceeded"`), a message naming the effective deadline, and **no**
+`Retry-After` — a miss says nothing about when a retry would fit, and inventing a window
 would be a promise this server cannot keep. `408` stays retryable (no
 `x-should-retry: false`; SDKs retry it by default). The streaming 408 is deliberately
 **pre-header**: the response is held until the first token, because once the first byte of
@@ -1058,16 +858,12 @@ billed. Everything that is OUR fault bills zero (the census below).
 
 ### Fault attribution: which outcomes may bill
 
-Every request ends with exactly one ledger `outcome`, and only the outcomes in
-`BILLABLE_OUTCOMES` may carry a debit — **three** of them, marked below. (Stated as the
-constant rather than a number: the count has now gone stale twice, once in this file and
-once in four places in `ledger.rs`, each time the billable set grew.)
+Every request ends with exactly one ledger `outcome`, and only **two** may carry a debit:
 
 | outcome | when | debit |
 |---|---|---|
 | `completed` | the response was delivered in full | exact |
 | `abandoned` | the CLIENT walked away mid-generation | partial (what was generated) |
-| `deadline_partial` | `timeout_ms` cut generation and we DELIVERED what was produced | partial (what was delivered) |
 | `rejected` | refused or failed before/during generation (any 4xx/5xx) | **zero** |
 | `deadline_exceeded` | `timeout_ms` elapsed before we responded | **zero** |
 | `shed_deadline` | admission shed: estimated wait exceeded the deadline | **zero** |
@@ -1143,19 +939,9 @@ fields:
 The Provider Monitor view derives what the process knows:
 
 - `id` and `name` are the exact `MEMRA_MODELS` alias.
-- Text `max_context_length` and `tokenizer` come from the loaded model — with the
-  context claim CAPPED by the deployment's operational envelope
-  (`max_prompt_length + max_output_length`) whenever the metadata pins both
-  (2026-08-30, lane/glm5-docs-sweep): the checkpoint's trained `context_length` is a
-  training fact, not a serving claim, and every catalog view (`/v1/models`,
-  openrouter, openmodels) publishes `min(trained, envelope)`. The receipt that forced
-  it: glm5_next declares 1,048,576 trained while the 3-card resident shape OOMs the 1M
-  prime (`research/glm5-prefix-latent-20260830/box-window/WINDOW-STATUS.md`).
+- Text `max_context_length` and `tokenizer` come from the loaded model.
 - Streaming and supported generation parameters come from the real HTTP surface;
   `tools` and `reasoning` appear only when the loaded template exposes them.
-  A model declaring a non-chat `surface` (below) overrides all of that: it is not a
-  completion surface, so it advertises no streaming and no generation parameters at
-  all, whatever its template exposes.
 
 Everything else is operator-declared in a TOML file named by
 `MEMRA_MODEL_METADATA`. The same declarations supply both strict provider views: OpenModels maps
@@ -1202,22 +988,9 @@ curl 'http://127.0.0.1:8080/models?schema=openmodels'
 ```
 
 Supported metadata fields are `hugging_face_id`, `created`, `quantization`,
-`description`, `surface`, `max_prompt_length`, `max_output_length`, `default_output_length`,
+`description`, `max_prompt_length`, `max_output_length`, `default_output_length`,
 `default_reasoning_effort`, the `default_*` sampling keys below, `is_ready`, `is_free`,
 `discount_to_user`, `openrouter_slug`, `datacenters`, `zdr`, and `hipaa`.
-`surface` (`chat` | `embedding` | `rerank`, default `chat`, validated at boot) declares
-which API surface the model serves, and is what every catalog view — `/v1/models`,
-`?schema=openrouter`, `?schema=openmodels` — reads to decide the model `type`, its
-`endpoints`, its output modality and whether the chat affordances (streaming, tools,
-reasoning, structured output, `max_tokens` and any output ceiling) appear at all. It is
-declared rather than inferred because embedding/rerank capability is only decided at
-runtime, when the prime path either yields hidden state or does not, which is long after
-the catalog row is built. Omit it and the row is byte-identical to a chat model's:
-
-```toml
-[models."qwen/qwen3-embedding-8b"]
-surface = "embedding"   # serves /v1/embeddings, not /v1/chat/completions
-```
 `default_reasoning_effort` (`none|minimal|low|medium|high`, validated at boot) resolves a
 request that expressed no reasoning choice on any surface as if the client had sent that
 value — explicit client `reasoning_effort`/`reasoning` always wins, and models without
@@ -1286,11 +1059,9 @@ overridden by either arm):
   `enable_thinking: false`, `chat_template_kwargs.enable_thinking: false`,
   `reasoning: {"enabled": false}`, `include_reasoning: false`, Anthropic
   `thinking.type: "disabled"`, an operator `default_reasoning_effort = "none"` resolving an
-  unset request, or `response_format` forcing the think switch off (switch-carrying
-  templates only; post-think constrained requests on think-forced templates keep thinking
-  ON and take the primary arm) takes the non-thinking arm for the sampling fields the
-  client left unset. Every other mode (thinking on, or the template's own default) takes
-  the primary arm.
+  unset request, or `response_format` forcing the think switch off — takes the non-thinking
+  arm for the sampling fields the client left unset. Every other mode (thinking on, or the
+  template's own default) takes the primary arm.
 - **A model without the table is byte-identical to before it existed**: one arm, every mode.
 - **Arms never blend.** A field the vendor left out of the non-thinking arm falls to the
   API-standard default, not to the thinking arm's value — the two arms are separate vendor
@@ -1510,9 +1281,7 @@ class now comes from the producer:
 | unknown model id | 400 | `invalid_request_error` | `model_not_found` | `x-should-retry: false` |
 | dark-lane QoS shed (`x-lane` judge/harvest over budget) | 429 | `rate_limit_error` | `rate_limit_exceeded` | `Retry-After: 2` + `retry-after-ms: 2000` |
 | `timeout_ms` out of range or wrong type | 400 | `invalid_request_error` | — | `x-should-retry: false` |
-| `timeout_ms` deadline missed with ZERO tokens produced (or TTFT when streaming) | 408 | `timeout` | `deadline_exceeded` | none — a miss says nothing about when a retry fits; 408 is retryable by default |
-| `timeout_ms` deadline missed mid-generation, OpenAI-dialect surfaces | **200** | — | `deadline_exceeded` in the response's `error` object, with `finish_reason: "error"` | n/a — the partial is delivered and billed (`deadline_partial`) |
-| non-streaming request that cannot fit its deadline (refused at admission) | 400 | `invalid_request_error` | `nonstream_deadline_infeasible` | `x-should-retry: false` — retrying unchanged cannot fit either; the message names the `max_tokens` that would |
+| `timeout_ms` deadline missed (complete response, or TTFT when streaming) | 408 | `timeout` | `deadline_exceeded` | none — a miss says nothing about when a retry fits; 408 is retryable by default |
 | interactive shed: estimated queue wait exceeds the request's deadline | 429 | `rate_limit_error` | `shed_deadline` | `Retry-After` = the wait estimate + matching `retry-after-ms` |
 | interactive shed: absolute queue bound (`MEMRA_MAX_QUEUE_DEPTH`) reached | 429 | `rate_limit_error` | `shed_queue` | `Retry-After` = the wait estimate + matching `retry-after-ms` |
 | out of VRAM / step-OOM past its park budget / worker restarting | 503 | `server_error` | `overloaded` | `Retry-After: 5` + `retry-after-ms: 5000` |
@@ -1652,26 +1421,9 @@ server worker restarts; later submissions are refused without spawning another w
   flips argmax at the near-ties in that tail). The pre-lane binary shows the same
   divergence across `MEMRA_SPEC_K=3/2/1` on that cell with no draft-mask code present;
   with shape held fixed the arms are byte-identical. Bound the schema and it goes away.
-- **Think interaction (updated lane/step37-postthink-grammar, 2026-08-30):** on a
-  switch-carrying template, constrained requests force the template's no-think switch (a
-  grammar masking from token 0 can never close an open `<think>` tail), byte-identical
-  to before. On a think-FORCED template with a derivable think-close token contract
-  (step37: the tokenizer's atomic `</think>` token, id 128799 on the NVFP4 artifact),
-  constrained requests serve POST-THINK two-phase decoding instead: the think phase runs
-  unconstrained exactly as the model was trained, with every end-of-generation id banned
-  (so the response cannot end inside think: the receipted step37 EOS-inside-think
-  quirk), and the grammar clamps every token from the close on. The close detector
-  matches TOKEN IDS (rolling KMP over the emitted stream), never decoded text. The
-  `reasoning` channel is present and streams as usual; `content` is the grammar-clamped
-  JSON. Post-think sessions never ride spec (plain constrained decode; the `[spec-k]`
-  admit line receipts K=0). `MEMRA_POSTTHINK_CEILING=<tokens>` (default off) force-closes
-  a think that never ends. FAIL-CLOSED terminal: a budget (or stop sequence, or context
-  bound) that ends generation INSIDE the think channel produced zero schema-constrained
-  content, so the request returns a named 400 `invalid_request_error` naming the field
-  (`max_tokens` / `stop`) and the reasoning-token count, never a 200 with empty content;
-  mid-stream the same error object ends the stream. `finish_reason: length` remains
-  possible only after the grammar engaged (non-empty, truncated content). A think-forced
-  template with NO derivable close contract keeps the loud 400.
+- **Think interaction:** constrained requests force the template's no-think switch (a
+  grammar masking from token 0 can never close an open `<think>` tail); a think-tail
+  template without an `enable_thinking` switch is a loud 400.
 - Unknown `response_format` types remain loud 400s. `/v1/completions` (non-chat) carries
   no `response_format`.
 
@@ -1780,85 +1532,12 @@ OpenRouter, and Grok chat all use `prompt_tokens_details.cached_tokens`). Cached
 prefill costs ~0 to serve and bills at 25% of input on the OpenRouter hy3 endpoints — the
 margin lever (`research/or-provider-20260802/REPORT.md`).
 
-**Host spill tier (`MEMRA_KV_HOST_MB`, default 0 = off; lane/kv-host-spill-20260830):** an
-optional pinned-host RAM tier BEHIND the device prefix cache. Design law: the host tier
-feeds the device cache and the restore path is untouched. A device capacity eviction
-demotes the entry's bytes verbatim (already q8_0 K / q5_1 V at rest, no requantization)
-into pinned cacheable host memory; a later probe that misses the device pool but exactly
-matches a host entry (same exact-token / PC-ISO key rules) re-materializes a normal device
-entry and serves through the existing restore, byte-lossless by construction. Two flags:
-`MEMRA_KV_HOST_MB` (the per-stack budget in MiB, boot-clamped to MemAvailable x 0.6 with a
-loud warning; pinned-alloc failure is loud and latches the tier off, never a silent
-pageable fallback) and `MEMRA_KV_HOST_VERIFY` (diagnostic sha256 of the entry's logical
-state at demote, re-checked at promote; too slow always-on for GB entries). Rollback seam:
-`MEMRA_KV_HOST_MB=0` is byte-identical to today by construction, nothing ever reaches the
-tier. Model exclusions ride the upstream `prefix_snapshot` refusals for free: step37's SWA
-ring and glm5's latent planes cannot produce a demotable entry in the first place. Operator
-receipts: `prefix_host_entries/bytes/demotions/promotions/demote_ms/promote_ms/
-rejected_allocs` in `/metrics` (the `*_ms` fields are cumulative copy wall-time, the
-tick-stall receipt), plus per-copy `[prefix-host]` log lines. See the
-[flag catalog](FLAGS.md) rows for arms, receipts pointers, and the pending pod battery.
-
-**Tenant lifecycle purge (lane/kv-tenancy-compaction-20260831, tiering spec §0.5):** key
-revocation or tenant deletion must not leave that tenant's prompt bytes parked in pinned
-host RAM. The engine exposes `RuntimeHandles.purge` (`PurgeHandle::purge_tenant(tenant)`)
-beside the trim handle; the deployment binary wires it into its admin surface as
-`/admin/tenants/{tenant}/purge` and calls it from BOTH the revocation and deletion paths.
-Contract notes: the parameter is `{tenant}` (the keyring tenant id, the same string
-`--gen-key <tenant>` took), never `{tenant_id}`; the purge removes every host-tier entry
-across ALL of the tenant's end-user salts (the PC-ISO `t:<tenant>` row identity, the same
-`scope_namespace -> meter_key` derivation that scoped the entries in), and ALSO sweeps the
-tenant's unpinned DEVICE prefix entries so a later capacity eviction cannot demote the
-purged bytes straight back into host RAM. Pinned device entries (leased by in-flight
-sessions) are reported as `device_pinned_left`, not dropped: revocation never aborts an
-admitted request; re-fire after those sessions retire when the report says pins remained.
-Raw-salt (no-keyring) namespaces carry no tenant and never match. Receipts:
-`prefix_host_purges/purged_entries/purged_bytes` in `/metrics` plus the per-purge
-`[prefix-host] purge tenant=...` log line with both tiers' counts.
-
-**Per-tenant host-pool share cap (`MEMRA_KV_HOST_TENANT_PCT`, default 50;
-lane/kv-tenancy-compaction-20260831):** one tenant's maximum share of the
-`MEMRA_KV_HOST_MB` budget, keyed on the same tenant row identity as the `tenants`
-receipt. A demotion that would push the tenant past its share evaporates (checked before
-the D2H copy, so it also skips the PCIe trip) instead of demoting, so one tenant can
-never squeeze the others out of the pool; `100` disarms the check for single-tenant
-deployments (the global byte-LRU then governs, exactly as before the flag). Receipt:
-`prefix_host_tenant_rejects`, the boot line's `tenant share cap` clause, and the
-per-evaporation `[prefix-host] demote evaporated at the tenant share cap` log line (the
-exact production text; a gate greps this line, not a paraphrase). Full trade discussion
-in the [flag catalog](FLAGS.md) row.
-
-**Continuation-pool park compaction (`MEMRA_KV_PARK_COMPACT`, default 0 = off;
-lane/kv-tenancy-compaction-20260831, tiering spec Arc C1):** a parked plain-pool session
-keeps its full ladder-cap `Cache` allocation today (cap = `cache.max_ctx`, so a 6k-token
-session can park ~1 GB on a 262k-ctx deployment). Armed, the park compacts the cache to
-exactly its committed length through the same snapshot + checkpoint-restore machinery the
-plain-affinity grow uses, and the resume grows it back to the request's own charged cap
-before any suffix primes; failures in either direction fall back to today's behavior
-(full-size park, or cold serve). SPEC/DSPARK pools are out of scope by design (they park
-live engine sessions). Default off until the pod battery lands the resume byte-identity
-gate and the step-OOM adjacency replay; see the [flag catalog](FLAGS.md) row and
-`research/kv-tenancy-20260831/REPORT.md` for the pending cells.
-
 ## Cache-hit metering (lane/cache-metering, 2026-08-07)
 
 The cache receipt surface is cumulative since process start, worker-truth, published every 32nd
 tick AND on every request retire so a post-workload scrape is never stale. Global prefix/LCP rows
 below are operator-only; completion credentials retain the base prompt totals and their permitted
 `tenants` rows:
-
-**Publish semantics (tick-boundary truth):** the worker owns every counter and copies a
-snapshot into `/metrics` at scheduler-tick END, so within a tick the named log lines are the
-authoritative per-event receipt, and a scrape racing a response's final tick can read totals
-up to one tick stale (the terminal token event is sent mid-tick, before the retire sweep and
-the publish). Since lane/kv-battery-fixups-20260831, any tick whose `prefix_host_*` event
-counters moved ALSO forces the publish (`HostPrefixCache::telemetry_stamp`): before that, an
-admit-tick promote and an idle-wake pause-sweep demote landed on ticks the 32-tick/retire
-forces skipped, and the counters lagged the `[prefix-host]` log lines around quiesce; the
-receipt of record is the 2026-08-31 battery's O6 cell, where a promote logged at 89.9 ms was
-still reading `promotions=0 / promote_ms=0.0` in the scrape taken right after its response
-completed (darklanes `research/kv-fastband-20260830/battery-20260831/RESULTS.md`, O6
-finding). Gates assert on the log lines; metrics deltas are recorded fields.
 
 | field | meaning |
 |---|---|
@@ -1868,9 +1547,6 @@ finding). Gates assert on the log lines; metrics deltas are recorded fields.
 | `prefix_cache_hits/misses/inserts/evictions` | global prefix-cache probe outcomes + churn; operator scope only |
 | `prefix_cache_hit_tokens` | global token-weighted hit mass (sum of served entry lengths); operator scope only |
 | `prefix_cache_entries/bytes` | resident state; operator scope only |
-| `prefix_host_entries/bytes/demotions/promotions/demote_ms/promote_ms/rejected_allocs` | pinned-host spill tier (`MEMRA_KV_HOST_MB`, lane/kv-host-spill-20260830): current gauges, tier round-trips, cumulative copy wall-time (the tick-stall receipt: ms per demotion = `demote_ms / demotions`), and alloc/copy failures; operator scope only |
-| `prefix_host_purges/purged_entries/purged_bytes` | tenant lifecycle purges (`PurgeHandle`, lane/kv-tenancy-compaction-20260831): cumulative invocation count and host-tier entries/bytes removed, the receipt that a revocation/deletion actually cleared resident state; operator scope only |
-| `prefix_host_tenant_rejects` | demotions evaporated at the per-tenant share cap (`MEMRA_KV_HOST_TENANT_PCT`, lane/kv-tenancy-compaction-20260831); a nonzero rate with low pool occupancy is the whale-tenant signature the cap bounds; operator scope only |
 | `lcp_histogram` | global `{edges, counts}`: one sample per prefix-cache probe — served entry length on a hit, best LCP on a miss. Lower-edge buckets `[0,1,16,32,64,128,256,512,1024,2048,4096]`, last unbounded; `[64,512)` (buckets 4..=6) is the tick-seg segmentation window; operator scope only |
 | `tenants` | per-tenant `{prompt_tokens_in, cached_tokens_in, cache_hit_token_ratio}` rows — absent until the first admit |
 | `adsd_suspect_total` | per-tenant detection-only acceptance-collapse incident counters; absent until the first incident |
@@ -2021,11 +1697,6 @@ hot-reloads on mtime change (≤2s poll — chosen over SIGHUP: no signal thread
 missed), and a broken rewrite keeps the previous ring and logs loudly — auth never fails
 open because of a typo.
 
-A file-backed ring must be a private regular non-symlink file (0600/0640 class), owned
-by the service uid, with exactly one hard link and size at most 8 MiB. Startup fails
-before serving when this class is wrong; hot reload, `--gen-key`, and `--revoke-key`
-revalidate it rather than weakening the rule after boot.
-
 **Lifecycle CLI.**
 ```
 memra-server --gen-key acme [--lane batch] [--rate-limit 4] [--keys /path/keys.toml]
@@ -2033,9 +1704,8 @@ memra-server --revoke-key <key-prefix> [--keys /path/keys.toml]
 ```
 `--gen-key` prints the plaintext key (`mk-<tenant>-<48 hex>`) exactly ONCE on stdout and
 appends the hash entry; newly created keyrings use mode `0640`. `--revoke-key` disables
-by unambiguous prefix (or full key), writing and fsyncing a randomized hidden sibling
-temporary file before an atomic rename over the live ring, so a concurrent hot reload
-sees the complete old or new file.
+by unambiguous prefix (or full key), writing and fsyncing `keys.toml.tmp` before an atomic
+rename over the live ring, so a concurrent hot reload sees the complete old or new file.
 A running server picks the revocation up on the next poll. `--keys` defaults to
 `MEMRA_API_KEYS`.
 
@@ -2084,82 +1754,75 @@ cache-hit behavior; receipts `research/apikeys-20260805/`).
 
 ## Self-serve seams
 
-THE BUSINESS TIER LEFT THIS REPO (engine-billing-extraction-20260829; owner razor
-2026-08-29: "only engine is open, business is private"). The prepaid ledger, tenant
-budgets, admission modes, per-tenant capture, and the `/admin` provisioning surface now
-live in the deployment's own binary, compiled against this crate's public metering seam.
+memra exposes generic prepaid enforcement and provisioning primitives; account lifecycle,
+checkout, tax, refunds, and other business policy remain outside the engine.
 
-What the ENGINE owns, and exposes publicly:
+Set `MEMRA_TENANT_BUDGETS` alongside `MEMRA_REQUEST_LEDGER` to enable budgets. The source is
+either TOML (when the filename ends in `.toml`) or JSONL. Rows are additive grants denominated
+only in integer micro-USD; floats are rejected by the parsers:
 
-- `memra_server::metering` — the seam vocabulary: `Metering` (enforces_limits /
-  is_limited / reserve / open / captures / limits_health / drain_kill), `Receipt` (the
-  full settle lifecycle: prompt usage, per-token counting, complete, deadline-partial,
-  reject, named zero-debit outcomes, capture arming), `UsageCounts`, `AdmitError`, an
-  opaque `Permit`, and `MeteringFactory`. Everything speaks tokens and verdicts, never
-  money.
-- `memra_server::ServerWiring` — `stock()` runs the open engine with NO accounting;
-  `with_metering(factory)` compiles a deployment's implementation in;
-  `claiming(var)` declares which deployment-surface env vars that binary consumes
-  itself; `on_ready(RuntimeHandles { trim, shutdown })` hands over the engine trim
-  handle and the drain shutdown signal at worker-ready. A deployment surface MUST end
-  and drop its `TrimHandle` on the shutdown signal — the handle wraps a worker command
-  sender, and the GPU worker only exits when every sender drops.
-- The handler obligations behind that seam are tested here with a recording mock
-  (deadline partial vs unbilled, worker-truth usage sync, admission-denial mapping,
-  disconnect partials, byte-exact capture feeding); what the counts COST is the
-  implementation's business and is tested with it.
+```toml
+[[budgets]]
+tenant = "tenant-a"
+currency = "USD"
+balance_micro = 10000
+```
 
-`MEMRA_REQUEST_LEDGER`, `MEMRA_TENANT_BUDGETS`, `MEMRA_ADMIN_ADDR`,
-`MEMRA_ADMIN_TOKEN_FILE`, and `MEMRA_CAPTURE_DIR` are startup FATALs on the stock
-binary: they configure surfaces this build does not carry, and set-but-unread
-configuration must not fail open.
+Repeated rows for a tenant add to its source total. Appending a row is a top-up, observed by
+the engine's two-second poll. Reloads that remove a tenant or reduce its source total are
+rejected. Failed polls are retried without advancing the accepted source version; after three
+consecutive failures every admission fails closed at 503 until a full read and parse succeeds.
+`/metrics` and the admin balance response expose `budget_source_reload_failed`, the consecutive
+failure count, and availability. A tenant with any source or admin-credit row is budget-limited;
+a tenant with no row remains unlimited, preserving existing router deployments. The source,
+ledger, and generated sidecars must be private regular files with 0600/0640-class permissions.
 
-Auth stays in the engine (`memra_server::auth`, `MEMRA_API_KEYS` / `MEMRA_API_KEY`):
-a key file, tenant identity, per-key lane class and rate limits are engine security
-surface; what a tenant may SPEND is not.
+The request ledger's exact Decimal USD total is authoritative. Before worker admission, memra
+renders and tokenizes the prompt through the same model tokenizer and reserves the integer ceiling
+of the worst-case exact tariff: all prompt tokens at the ordinary (non-cached) rate, the maximum
+completion tokens allowed by the request/context limits, plus the per-request price. A balance
+below that hold is rejected at HTTP 402 with OpenAI-style code `insufficient_balance`; generation
+cannot spend past the prepaid balance. At terminal completion, including an abandoned request's
+partial usage, the exact Decimal total is rounded **up** once to a whole micro-USD, debited, and
+the unused hold refunded. A budgeted tenant may have one request active at a time; another receives
+429 `budget_request_in_progress`. A process crash can lose at most that single in-flight request's
+collection, while durable terminal rows are repaired exactly on restart.
 
-### Long non-streaming requests: what the deadline does now (2026-08-26)
+Debits and credits are synced to `<ledger>.tenant-budget-journal.jsonl`; compact balance snapshots
+are written to `<ledger>.tenant-budget-snapshot.toml`. The terminal request row is synced before
+its debit. Startup replays the journal and repairs a terminal request whose debit was interrupted,
+deduplicated by request id, so replay cannot double-charge it. The request ledger and budget
+journal are the authoritative pair; the snapshot is a derived compact view. One process must own
+that pair. A multi-replica deployment must pin a tenant to one owner or coordinate the shared
+budget above memra rather than giving each process an independent copy of the same balance.
 
-`timeout_ms` (MIN 1000 / MAX 90000 / DEFAULT 90000) bounds a non-streaming response
-end-to-end. The 90 s maximum is a platform fact, not a preference: the fronting proxy
-fails a non-streaming response whose headers take ~100 s, so a longer promise would be
-broken upstream of this server.
+The provisioning API is default-off. To enable it, set `MEMRA_ADMIN_ADDR` to a loopback-only
+address and `MEMRA_ADMIN_TOKEN_FILE` to a private token file; file-backed `MEMRA_API_KEYS`, the
+request ledger, and tenant budgets must also be enabled. Send that token as `Authorization:
+Bearer ...` to the separate admin listener:
 
-Two behaviours keep that ceiling from eating a customer's work:
+- `POST /admin/keys` with `{tenant, lane?, rate_limit?}` creates a key and returns its plaintext
+  exactly in that response; the keyring hot-reloads it within two seconds.
+- `POST /admin/keys/revoke` with `{prefix}` revokes the unique matching key.
+- `GET /admin/tenants/{tenant}/usage` returns request, token, exact cost, and debited-micro totals
+  in UTC day buckets.
+- `POST /admin/tenants/{tenant}/credit` with `{amount_micro, idempotency_key}` appends a positive
+  USD credit. An exact replay returns the original result; reusing the key with different
+  parameters returns 409.
+- `POST /admin/tenants/{tenant}/debit` with `{amount_micro, idempotency_key, reason}` appends an
+  operator debit (balance migrations between boxes, refunds of mistaken credits, dispute
+  clawbacks). It journals the same `kind: "debit"` row request settlement writes, with the
+  request id namespaced `admin-debit:{tenant}:{idempotency_key}`. The balance may go negative — admission
+  already refuses a non-positive balance — and `reason` is required and journaled. A same-key
+  same-amount replay returns 200 with the current balance; a same-key different-amount call
+  returns 409. An unenrolled tenant is refused: debiting it would silently enroll a ghost.
+- `GET /admin/tenants/{tenant}/balance` returns the current integer balance, or `limited:false`
+  for a tenant without a budget row, plus the budget-source reload counter and availability.
 
-1. **Infeasible requests are refused at admission, not after 90 s.** A non-streaming
-   request whose pessimistic estimate (prompt at `MEMRA_PREFILL_FLOOR_TOK_S`, generation
-   at `MEMRA_DECODE_FLOOR_TOK_S`) needs more than 1.5x its deadline gets an immediate
-   400 `nonstream_deadline_infeasible` naming the `max_tokens` that would fit and the
-   streaming alternative. No slot, no receipt, no GPU time.
-2. **A deadline that lands mid-generation DELIVERS what was produced.** The response is
-   200 with the tokens generated so far, `finish_reason: "error"`,
-   `native_finish_reason: "deadline_exceeded"`, and an `error` object carrying
-   `code: "deadline_exceeded"` and `metadata.error_type: "timeout"` — the OpenRouter
-   dialect this server already uses for reasoning. Those tokens ARE billed: the caller
-   received them. Only a deadline that lands before ANY token still answers
-   408 `deadline_exceeded`, unbilled, because there is nothing to deliver.
-
-`finish_reason: "length"` is deliberately NOT used for a time cut. No provider's
-finish-reason enum has a time value (OpenAI, Anthropic, Google and the hosted resellers all mean
-max_tokens by `length`/`MAX_TOKENS`), so reporting a deadline as `length` would tell a
-caller to ask for more tokens when the truth is that it must stream.
-
-**Surface coverage.** The feasibility gate runs on all four completion surfaces
-(`/v1/completions`, `/v1/chat/completions`, `/v1/messages`, `/v1/responses`) from one
-body. PARTIAL DELIVERY is OpenAI-dialect only, and deliberately: `/v1/messages` keeps the
-408 because the Anthropic `stop_reason` enum has no time value (labelling a time cut
-`max_tokens` would be the same lie), and `/v1/responses` keeps it because OpenAI defines
-`incomplete_details.reason` as `max_output_tokens | content_filter` only. Both are stated
-decisions, not omissions.
-
-**Ledger.** A delivered partial writes the billable outcome `deadline_partial` with
-`error_code: "deadline_exceeded"` — distinguishable from `completed` in every census. A
-zero-token miss writes `deadline_exceeded`, unbilled.
-
-**Streaming has no such ceiling**: a stream's deadline bounds only the time to first
-token, and the stream then runs as long as it needs. For work that cannot fit a
-synchronous window at all, streaming is the answer this server offers today.
+Every admin attempt is synchronously appended to `<ledger>.admin-audit.jsonl` before the handler
+runs. Audit rows contain time, method, normalized route, and authorized/denied state, never bearer
+tokens, generated keys, or request bodies. Missing admin authorization returns 401; malformed or
+incorrect authorization returns 403.
 
 ## Session affinity — resuming a REWRITTEN conversation (lane/session-affinity, 2026-08-05)
 

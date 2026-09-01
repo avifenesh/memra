@@ -4,10 +4,10 @@ set -euo pipefail
 
 export PATH=/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:$PATH
 
-ROOT=${GROUPEDREGATE_ROOT:-/opt/scratch/nvme/cx-groupedregate}
+ROOT=${GROUPEDREGATE_ROOT:-/opt/dl-image/nvme/cx-groupedregate}
 REPO=${GROUPEDREGATE_REPO:-$ROOT/memra}
 HARNESS=${GROUPEDREGATE_HARNESS:-$ROOT/harness}
-MODELS=${GROUPEDREGATE_MODELS:-/opt/scratch/nvme/cx-requal/models}
+MODELS=${GROUPEDREGATE_MODELS:-/opt/dl-image/nvme/cx-requal/models}
 STAMP=${GROUPEDREGATE_STAMP:-$(date -u +%Y%m%dT%H%M%SZ)}
 OUT=${GROUPEDREGATE_OUT:-$ROOT/raw/single-$STAMP}
 PHYSICAL_GPU_INDEX=${PHYSICAL_GPU_INDEX:?set the free physical GPU index after live inspection}

@@ -69,8 +69,6 @@ enum State {
     /// deepseek-v4: inside a `<｜DSML｜tool_calls>...` block, buffering until
     /// `</｜DSML｜tool_calls>`.
     Dsv4Call,
-    /// Tencent HY3: inside `<tool_calls:opensource>...`, buffering until its suffixed close.
-    Hy3Call,
 }
 
 const OPEN: &str = "<tool_call>";
@@ -101,36 +99,12 @@ const GEMMA_DQ: &str = "<|\"|>";
 /// (scoped to dsv4 tool requests, never global), and the close stays in the stream so this
 /// parser closes the span. `｜` is U+FF5C. The `\n\n` before the open is wire syntax, stripped
 /// from content. Multiple invokes -> multiple OpenAI tool_calls.
-/// GLM-5.3-Flash (`glm5_next`) tool-call dialect (lane/glm53-flash-bringup, 2026-08-27). The
-/// template instructs the model to emit
-/// `<tool_call>NAME<arg_key>K</arg_key><arg_value>V</arg_value>…</tool_call>` — the SAME outer
-/// `<tool_call>`/`</tool_call>` tags as the qwen class, a completely different body (no
-/// `<function=`, no `<parameter=`, no delimiter newlines). Back-to-back calls carry NO
-/// separator, and the `\n` the template renders before the first call is wire syntax.
-/// Generation ends on `<|observation|>` — a DECLARED EOS id on this checkpoint, not a stop
-/// string — so the span always closes on its own tag.
-const GLM_ARG_KEY: &str = "<arg_key>";
-const GLM_ARG_KEY_END: &str = "</arg_key>";
-const GLM_ARG_VALUE: &str = "<arg_value>";
-const GLM_ARG_VALUE_END: &str = "</arg_value>";
-
 const DSV4_OPEN: &str = "<\u{ff5c}DSML\u{ff5c}tool_calls>";
 const DSV4_CLOSE: &str = "</\u{ff5c}DSML\u{ff5c}tool_calls>";
 const DSV4_INVOKE: &str = "<\u{ff5c}DSML\u{ff5c}invoke name=\"";
 const DSV4_PARAM: &str = "<\u{ff5c}DSML\u{ff5c}parameter name=\"";
 const DSV4_PARAM_END: &str = "</\u{ff5c}DSML\u{ff5c}parameter>";
 const DSV4_INVOKE_END: &str = "</\u{ff5c}DSML\u{ff5c}invoke>";
-/// Tencent HY3 shipping tool protocol (the `:opensource` suffix is part of every token).
-const HY3_THINK_END: &str = "</think:opensource>";
-const HY3_OPEN: &str = "<tool_calls:opensource>";
-const HY3_CLOSE: &str = "</tool_calls:opensource>";
-const HY3_CALL_OPEN: &str = "<tool_call:opensource>";
-const HY3_CALL_CLOSE: &str = "</tool_call:opensource>";
-const HY3_TOOL_SEP: &str = "<tool_sep:opensource>";
-const HY3_ARG_KEY_OPEN: &str = "<arg_key:opensource>";
-const HY3_ARG_KEY_CLOSE: &str = "</arg_key:opensource>";
-const HY3_ARG_VALUE_OPEN: &str = "<arg_value:opensource>";
-const HY3_ARG_VALUE_CLOSE: &str = "</arg_value:opensource>";
 
 pub struct ToolStreamParser {
     state: State,
@@ -151,46 +125,8 @@ pub struct ToolStreamParser {
     /// dsv4 content starts immediately after `</think>`), then Scan watches for
     /// `<｜DSML｜tool_calls>` (the `\n\n` before it is wire syntax).
     dsv4: bool,
-    /// GLM-5.3-Flash dialect: same as dsv4 on the think seam (no separator-newline swallow —
-    /// this template puts content directly after `</think>`), and the `<tool_call>` body is
-    /// the `<arg_key>`/`<arg_value>` grammar rather than qwen's `<function=`/`<parameter=`.
-    glm5: bool,
-    /// Tencent HY3 dialect: reasoning closes with `</think:opensource>` and calls use the
-    /// suffixed `<tool_calls:opensource>` protocol.
-    hy3: bool,
     /// Separator-newline budget right after `</think>` (the template emits `</think>\n\n`).
     postthink_nl: u8,
-}
-
-/// AGENT-PAUSE TAIL PREDICATE (lane/kv-pause-demote-20260831, tiering spec Arc E): does a
-/// generation tail END with a completed tool-call block in one of the served dialects
-/// (qwen `</tool_call>`, gemma tooluse `<tool_call|>`, deepseek-v4 `</｜DSML｜tool_calls>`)?
-/// The markers live HERE so this predicate and the streaming parser can never disagree on
-/// what a close tag looks like.
-///
-/// This is the WORKER-SIDE PREDICTOR of the HTTP layer's `finish_reason: "tool_calls"`
-/// verdict (the authoritative parse lives in `ToolStreamParser`, between the worker's token
-/// stream and the response; the worker never sees it). The two can diverge, and both
-/// directions are safe because nothing correctness-bearing rides on the prediction: it only
-/// times an eager host-tier demotion whose round trip is byte-exact either way:
-/// - a call followed by trailing prose finishes `tool_calls` upstream but fails the tail
-///   check here (no pause demote armed: conservative, the entry just waits for SLRU);
-/// - a malformed block that happens to end in a close tag fails to parse upstream but
-///   passes here (one wasted demotion timer; PCIe cost only, bounded by the delay filter).
-///
-/// NOT a divergence any more (battery-20260831 pause-gates FINDING 1): the NATURAL
-/// tool_calls finish lands the request's stop id AFTER the close marker
-/// (`...</tool_call><eos>`), and on qwen3.8 that shape was 6 of 6 real tool pauses: a
-/// "conservative miss" that covered the entire target workload. The arm site strips
-/// trailing stop ids at the TOKEN-ID level before decoding (`pause_tail_window` in
-/// worker.rs, driven by the session's exact stop set), so this predicate stays text-only
-/// and marker-only; it never guesses at per-model stop-token spellings.
-///
-/// Exact finish-reason plumb-through (an HTTP->worker per-session backchannel) is the named
-/// v2 refinement in `research/kv-pause-20260831/REPORT.md`.
-pub fn tail_ends_with_tool_call(tail: &str) -> bool {
-    let t = tail.trim_end();
-    t.ends_with(CLOSE) || t.ends_with(GEMMA_CALL_CLOSE) || t.ends_with(DSV4_CLOSE)
 }
 
 /// Length of the longest PROPER prefix of `tag` that `s` ends with. NOTE: byte-indexed —
@@ -226,8 +162,6 @@ impl ToolStreamParser {
             gemma: false,
             gemma_tools: false,
             dsv4: false,
-            glm5: false,
-            hy3: false,
             postthink_nl: 0,
         }
     }
@@ -242,32 +176,6 @@ impl ToolStreamParser {
         let mut p = Self::new(HashMap::new(), skip_think);
         p.scan_tools = false;
         p.dsv4 = true;
-        p
-    }
-
-    /// GLM-5.3-Flash (`glm5_next`) parser (lane/glm53-flash-bringup). Reasoning routes to
-    /// `</think>` on every request (this template's `<think>` tail is unconditional and has no
-    /// off switch), with NO `</think>\n\n` separator swallow — the vendor template puts
-    /// assistant content directly after the close, so eating newlines there would eat content.
-    /// `tools` arms the `<tool_call>NAME<arg_key>…` scanner; without it the post-think stream is
-    /// pure content, unscanned, exactly like `reasoning_only`. `schemas` drives the same
-    /// declared-type coercion the qwen arm uses: the GLM wire renders string values RAW and
-    /// everything else through `json.dumps`, so `3` alone is ambiguous and the schema resolves
-    /// it. Malformed span surfaces VERBATIM (house policy).
-    pub fn glm5(skip_think: bool, schemas: HashMap<String, HashMap<String, String>>) -> Self {
-        let tools = !schemas.is_empty();
-        let mut p = Self::new(schemas, skip_think);
-        p.scan_tools = tools;
-        p.glm5 = true;
-        p
-    }
-
-    /// Tencent HY3 parser: optional open reasoning tail, then one-or-more native tool calls.
-    /// The declaration schemas drive the same typed argument coercion as the qwen parser.
-    pub fn hy3(schemas: HashMap<String, HashMap<String, String>>, skip_think: bool) -> Self {
-        let mut p = Self::new(schemas, skip_think);
-        p.scan_tools = false;
-        p.hy3 = true;
         p
     }
 
@@ -311,15 +219,13 @@ impl ToolStreamParser {
         loop {
             match self.state {
                 State::Prethink => {
-                    let think_end = if self.hy3 { HY3_THINK_END } else { THINK_END };
-                    if let Some(i) = self.buf.find(think_end) {
+                    if let Some(i) = self.buf.find(THINK_END) {
                         // think text -> reasoning; the tag itself is syntax, not output.
                         self.emit_reasoning(&mut out, self.buf[..i].to_string());
-                        self.buf.drain(..i + think_end.len());
+                        self.buf.drain(..i + THINK_END.len());
                         // dsv4 content starts IMMEDIATELY after `</think>` (no separator
                         // newlines, unlike the qwen `</think>\n\n`); go straight to Scan.
-                        // glm5 and HY3 share that shape.
-                        if self.dsv4 || self.glm5 || self.hy3 {
+                        if self.dsv4 {
                             self.state = State::Scan;
                         } else {
                             self.state = State::PostThink;
@@ -327,7 +233,7 @@ impl ToolStreamParser {
                         }
                         continue;
                     }
-                    let keep = partial_suffix_len(&self.buf, think_end);
+                    let keep = partial_suffix_len(&self.buf, THINK_END);
                     let emit_to = self.buf.len() - keep;
                     if emit_to > 0 {
                         self.emit_reasoning(&mut out, self.buf[..emit_to].to_string());
@@ -348,23 +254,6 @@ impl ToolStreamParser {
                     continue;
                 }
                 State::Scan => {
-                    if self.hy3 {
-                        if let Some(i) = self.buf.find(HY3_OPEN) {
-                            if i > 0 {
-                                emit_content(&mut out, self.buf[..i].to_string());
-                            }
-                            self.buf.drain(..i + HY3_OPEN.len());
-                            self.state = State::Hy3Call;
-                            continue;
-                        }
-                        let keep = partial_suffix_len(&self.buf, HY3_OPEN);
-                        let emit_to = self.buf.len() - keep;
-                        if emit_to > 0 {
-                            emit_content(&mut out, self.buf[..emit_to].to_string());
-                            self.buf.drain(..emit_to);
-                        }
-                        break;
-                    }
                     if self.gemma_tools {
                         // content until the EARLIER of a `<|channel>` (thought) or a
                         // `<|tool_call>` (call). Both start with `<|`; a partial suffix of
@@ -464,29 +353,14 @@ impl ToolStreamParser {
                         break;
                     }
                     if let Some(i) = self.buf.find(OPEN) {
-                        // GLM renders exactly ONE `\n` between the assistant's content (or its
-                        // `</think>`) and the first `<tool_call>` — wire syntax, not prose.
-                        // Left in, a tool-only turn answers with `content: "\n"` instead of the
-                        // `content: null` every OpenAI client keys "the model called a tool" on.
-                        let mut end = i;
-                        if self.glm5 && end > 0 && self.buf.as_bytes()[end - 1] == b'\n' {
-                            end -= 1;
-                        }
-                        if end > 0 {
-                            emit_content(&mut out, self.buf[..end].to_string());
+                        if i > 0 {
+                            emit_content(&mut out, self.buf[..i].to_string());
                         }
                         self.buf.drain(..i + OPEN.len());
                         self.state = State::InCall;
                         continue;
                     }
-                    let mut keep = partial_suffix_len(&self.buf, OPEN);
-                    // hold back the newline that may turn out to be that separator.
-                    if self.glm5
-                        && keep < self.buf.len()
-                        && self.buf[..self.buf.len() - keep].ends_with('\n')
-                    {
-                        keep += 1;
-                    }
+                    let keep = partial_suffix_len(&self.buf, OPEN);
                     let emit_to = self.buf.len() - keep;
                     if emit_to > 0 {
                         emit_content(&mut out, self.buf[..emit_to].to_string());
@@ -499,12 +373,7 @@ impl ToolStreamParser {
                     let inner: String = self.buf[..i].to_string();
                     self.buf.drain(..i + CLOSE.len());
                     self.state = State::Scan;
-                    let parsed = if self.glm5 {
-                        self.parse_glm5_block(&inner)
-                    } else {
-                        self.parse_block(&inner)
-                    };
-                    match parsed {
+                    match self.parse_block(&inner) {
                         Some(call) => out.push(Piece::Call(call)),
                         // malformed: surfaced verbatim, tags included, stream continues.
                         None => emit_content(&mut out, format!("{OPEN}{inner}{CLOSE}")),
@@ -579,23 +448,6 @@ impl ToolStreamParser {
                     }
                     continue;
                 }
-                State::Hy3Call => {
-                    let Some(i) = self.buf.find(HY3_CLOSE) else {
-                        break;
-                    };
-                    let inner: String = self.buf[..i].to_string();
-                    self.buf.drain(..i + HY3_CLOSE.len());
-                    self.state = State::Scan;
-                    match self.parse_hy3_calls(&inner) {
-                        Some(calls) if !calls.is_empty() => {
-                            for call in calls {
-                                out.push(Piece::Call(call));
-                            }
-                        }
-                        _ => emit_content(&mut out, format!("{HY3_OPEN}{inner}{HY3_CLOSE}")),
-                    }
-                    continue;
-                }
             }
         }
         out
@@ -624,7 +476,6 @@ impl ToolStreamParser {
                 State::GemmaCall => emit_content(&mut out, format!("{GEMMA_CALL_OPEN}{tail}")),
                 // dsv4 unterminated `<｜DSML｜tool_calls>` block: surfaced raw (open restored).
                 State::Dsv4Call => emit_content(&mut out, format!("{DSV4_OPEN}{tail}")),
-                State::Hy3Call => emit_content(&mut out, format!("{HY3_OPEN}{tail}")),
                 _ => emit_content(&mut out, tail),
             }
         }
@@ -689,57 +540,6 @@ impl ToolStreamParser {
         }
         let arguments = serde_json::to_string(&serde_json::Value::Object(args)).ok()?;
         // Deterministic id (greedy serve receipts stay hashable): FNV-1a over index+name+args.
-        let id = format!(
-            "call_{:016x}",
-            fnv1a64(&[
-                &self.n_calls.to_le_bytes(),
-                name.as_bytes(),
-                arguments.as_bytes(),
-            ])
-        );
-        self.n_calls += 1;
-        Some(ParsedToolCall {
-            id,
-            name: name.to_string(),
-            arguments,
-        })
-    }
-
-    /// Parse one GLM-5.3-Flash `<tool_call>` body into an OpenAI call. The wire is
-    /// `NAME<arg_key>K</arg_key><arg_value>V</arg_value>…` — the name is everything up to the
-    /// first `<arg_key>` (trimmed; the template renders it with no surrounding whitespace, but
-    /// a model that adds a newline should still be understood), then key/value pairs in
-    /// emission order. Values are taken RAW between the tags — inner newlines and `<`/`>` in a
-    /// string value belong to the value — and coerced through the declared schema type, the
-    /// same law the qwen arm uses. None = malformed (surfaced verbatim, tags included).
-    fn parse_glm5_block(&mut self, inner: &str) -> Option<ParsedToolCall> {
-        let first_key = inner.find(GLM_ARG_KEY).unwrap_or(inner.len());
-        let name = inner[..first_key].trim();
-        if name.is_empty() || name.contains(['<', '>', '\n']) {
-            return None;
-        }
-        let mut args = serde_json::Map::new();
-        let mut rest = &inner[first_key..];
-        loop {
-            let t = rest.trim_start();
-            if t.is_empty() {
-                break;
-            }
-            let r = t.strip_prefix(GLM_ARG_KEY)?;
-            let key_end = r.find(GLM_ARG_KEY_END)?;
-            let key = r[..key_end].trim();
-            if key.is_empty() || key.contains(['<', '>', '\n']) {
-                return None;
-            }
-            let after_key = &r[key_end + GLM_ARG_KEY_END.len()..];
-            let v = after_key.trim_start().strip_prefix(GLM_ARG_VALUE)?;
-            let val_end = v.find(GLM_ARG_VALUE_END)?;
-            let raw = &v[..val_end];
-            args.insert(key.to_string(), self.coerce(name, key, raw));
-            rest = &v[val_end + GLM_ARG_VALUE_END.len()..];
-        }
-        let arguments = serde_json::to_string(&serde_json::Value::Object(args)).ok()?;
-        // Same deterministic id law as every other dialect (FNV-1a over index+name+args).
         let id = format!(
             "call_{:016x}",
             fnv1a64(&[
@@ -872,63 +672,6 @@ impl ToolStreamParser {
             return None;
         }
         Some(calls)
-    }
-
-    /// Parse HY3's `<tool_calls:opensource>` body into OpenAI calls. Each call carries the
-    /// function name before `<tool_sep:opensource>`, followed by ordered arg-key/value pairs.
-    fn parse_hy3_calls(&mut self, inner: &str) -> Option<Vec<ParsedToolCall>> {
-        let mut calls = Vec::new();
-        let mut rest = inner;
-        loop {
-            rest = rest.trim_start_matches(['\n', '\r']);
-            if rest.trim().is_empty() {
-                break;
-            }
-            let body = rest.strip_prefix(HY3_CALL_OPEN)?;
-            let call_end = body.find(HY3_CALL_CLOSE)?;
-            let call = &body[..call_end];
-            rest = &body[call_end + HY3_CALL_CLOSE.len()..];
-
-            let sep = call.find(HY3_TOOL_SEP)?;
-            let name = call[..sep].trim();
-            if name.is_empty() || name.contains(['<', '>', '\n']) {
-                return None;
-            }
-            let mut fields = call[sep + HY3_TOOL_SEP.len()..].trim_start_matches(['\n', '\r']);
-            let mut args = serde_json::Map::new();
-            while !fields.trim().is_empty() {
-                fields = fields.trim_start_matches(['\n', '\r']);
-                let keyed = fields.strip_prefix(HY3_ARG_KEY_OPEN)?;
-                let key_end = keyed.find(HY3_ARG_KEY_CLOSE)?;
-                let key = &keyed[..key_end];
-                if key.is_empty() || key.contains(['<', '>', '\n']) || args.contains_key(key) {
-                    return None;
-                }
-                let after_key =
-                    keyed[key_end + HY3_ARG_KEY_CLOSE.len()..].trim_start_matches(['\n', '\r']);
-                let valued = after_key.strip_prefix(HY3_ARG_VALUE_OPEN)?;
-                let value_end = valued.find(HY3_ARG_VALUE_CLOSE)?;
-                let value = &valued[..value_end];
-                args.insert(key.to_string(), self.coerce(name, key, value));
-                fields = &valued[value_end + HY3_ARG_VALUE_CLOSE.len()..];
-            }
-            let arguments = serde_json::to_string(&serde_json::Value::Object(args)).ok()?;
-            let id = format!(
-                "call_{:016x}",
-                fnv1a64(&[
-                    &self.n_calls.to_le_bytes(),
-                    name.as_bytes(),
-                    arguments.as_bytes(),
-                ])
-            );
-            self.n_calls += 1;
-            calls.push(ParsedToolCall {
-                id,
-                name: name.to_string(),
-                arguments,
-            });
-        }
-        (!calls.is_empty()).then_some(calls)
     }
 
     /// Coercion law: a parameter whose declared schema type is non-"string" is parsed as
@@ -1144,176 +887,6 @@ Paris\n</parameter>\n<parameter=days>\n3\n</parameter>\n<parameter=metric>\ntrue
         assert_eq!(calls.len(), 2);
         assert_eq!(calls[0].arguments, r#"{"metric":true}"#);
         assert_eq!(calls[1].arguments, r#"{"metric":false}"#);
-    }
-
-    // ---- GLM-5.3-Flash (`glm5_next`) wire ---------------------------------------------------
-
-    /// What the model emits on a glm5 tools prompt: reasoning (the prompt's `<think>` tail is
-    /// open and unconditional), `</think>`, then one or more `<tool_call>NAME<arg_key>…` spans
-    /// with the template's single `\n` separator and NOTHING between consecutive calls.
-    const GLM_EMISSION: &str = "I'll check.\n<tool_call>get_weather<arg_key>city</arg_key>\
-<arg_value>Paris</arg_value><arg_key>days</arg_key><arg_value>3</arg_value>\
-<arg_key>metric</arg_key><arg_value>true</arg_value></tool_call>";
-
-    #[test]
-    fn glm5_wire_parses_whole_and_char_by_char() {
-        for chunked in [false, true] {
-            let mut p = ToolStreamParser::glm5(true, weather_schema());
-            let text = format!("thinking about it</think>{GLM_EMISSION}");
-            let mut pieces = Vec::new();
-            if chunked {
-                for ch in text.chars() {
-                    pieces.extend(p.push(&ch.to_string()));
-                }
-            } else {
-                pieces.extend(p.push(&text));
-            }
-            pieces.extend(p.finish());
-            let (content, reasoning, calls) = reassemble3(&pieces);
-            assert_eq!(reasoning, "thinking about it", "chunked={chunked}");
-            // The `\n` between prose and the call is the template's wire syntax, stripped;
-            // `</think>` is followed by content immediately (no qwen `\n\n` swallow here, which
-            // would have eaten the prose's own leading bytes).
-            assert_eq!(content, "I'll check.", "chunked={chunked}");
-            assert_eq!(calls.len(), 1, "chunked={chunked}");
-            assert_eq!(calls[0].name, "get_weather");
-            // declared-type coercion, same law as the qwen arm: the wire renders strings RAW
-            // and everything else json.dumps'd, so `3` alone is ambiguous without the schema.
-            assert_eq!(
-                calls[0].arguments, r#"{"city":"Paris","days":3,"metric":true}"#,
-                "chunked={chunked}"
-            );
-        }
-    }
-
-    #[test]
-    fn glm5_back_to_back_calls_need_no_separator() {
-        let mut p = ToolStreamParser::glm5(false, weather_schema());
-        let mut pieces = p.push(
-            "<tool_call>get_weather<arg_key>city</arg_key><arg_value>Paris</arg_value>\
-</tool_call><tool_call>get_weather<arg_key>city</arg_key><arg_value>Rome</arg_value></tool_call>",
-        );
-        pieces.extend(p.finish());
-        let (content, calls) = reassemble(&pieces);
-        assert_eq!(content, "");
-        assert_eq!(calls.len(), 2);
-        assert_eq!(calls[0].arguments, r#"{"city":"Paris"}"#);
-        assert_eq!(calls[1].arguments, r#"{"city":"Rome"}"#);
-        assert_ne!(calls[0].id, calls[1].id);
-    }
-
-    #[test]
-    fn glm5_malformed_span_surfaces_verbatim() {
-        // House policy (gate c): content + parsed calls always reassemble to the generated
-        // text. A qwen-shaped body on a glm5 stream is exactly the shape that must NOT be
-        // half-parsed into a call with no arguments.
-        for inner in [
-            "get_weather<arg_key>city</arg_key><arg_value>Paris", // unterminated value
-            "<function=get_weather>",                             // the wrong dialect's body
-            "<arg_key>city</arg_key><arg_value>Paris</arg_value>", // no function name
-        ] {
-            let mut p = ToolStreamParser::glm5(false, weather_schema());
-            let text = format!("<tool_call>{inner}</tool_call>");
-            let mut pieces = p.push(&text);
-            pieces.extend(p.finish());
-            let (content, calls) = reassemble(&pieces);
-            assert!(calls.is_empty(), "{inner:?} must not parse: {calls:?}");
-            assert_eq!(content, text, "{inner:?} must surface verbatim");
-        }
-    }
-
-    #[test]
-    fn glm5_live_emissions_parse_into_the_serve_surface() {
-        // THE LIVE BYTES. Both strings are the verbatim `choices[0].text` of
-        // research/glm53-flash-bringup-20260827/surface-receipts/roundtrip-{turn1-call,
-        // turn2-final}.response.json — the model's own answers to the fixture-pinned NATIVE
-        // prompts (2026-08-28, bench box, `finish_reason: "stop"` on both, i.e. it stopped on
-        // the declared `<|observation|>` / `<|user|>` eos ids rather than running past them).
-        //
-        // Note what turn 1 emits: `<tool_call>get_weather<arg_key>city</arg_key>…`. That is the
-        // GLM wire, not the qwen `<function=…><parameter=…>` wire the ChatML fallback used to
-        // instruct it into — which is the whole reason this parser exists, and why the old
-        // render was a different program wearing the same 200.
-        let mut schemas = HashMap::new();
-        let mut params = HashMap::new();
-        params.insert("city".to_string(), "string".to_string());
-        schemas.insert("get_weather".to_string(), params);
-
-        let mut p = ToolStreamParser::glm5(true, schemas);
-        let mut pieces = p.push(
-            "</think><tool_call>get_weather<arg_key>city</arg_key>\
-<arg_value>Paris</arg_value></tool_call>",
-        );
-        pieces.extend(p.finish());
-        let (content, reasoning, calls) = reassemble3(&pieces);
-        assert_eq!(reasoning, "");
-        assert_eq!(content, "");
-        assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].name, "get_weather");
-        assert_eq!(calls[0].arguments, r#"{"city":"Paris"}"#);
-
-        // Turn 2: the tool result went back in as an `<|observation|>` block and the model
-        // answered from it. Reasoning splits off; the answer is content; no tags leak.
-        let mut p = ToolStreamParser::glm5(true, HashMap::new());
-        let mut pieces = p.push(
-            "The weather result shows:\n- Temperature: 21\u{b0}C\n- Sky: sunny</think>\
-The weather in Paris is **21\u{b0}C and sunny**! \u{2600}\u{fe0f}\n\n\
-It looks like a beautiful day there\u{2014}perfect temperature for a stroll along the Seine \
-or a caf\u{e9} terrace.",
-        );
-        pieces.extend(p.finish());
-        let (content, reasoning, calls) = reassemble3(&pieces);
-        assert!(calls.is_empty());
-        assert_eq!(
-            reasoning,
-            "The weather result shows:\n- Temperature: 21\u{b0}C\n- Sky: sunny"
-        );
-        assert!(content.starts_with("The weather in Paris is **21\u{b0}C and sunny**!"));
-        // The answer really used the tool result, and no dialect syntax reached the client.
-        assert!(!content.contains("</think>") && !content.contains("<tool_call>"));
-    }
-
-    #[test]
-    fn glm5_newline_holdback_never_swallows_real_content() {
-        // The `\n` strip is speculative: Scan holds a trailing newline back in case a
-        // `<tool_call>` follows it. When one never comes, the byte MUST come back — content +
-        // parsed calls always reassemble to the generated text (house policy). Covers both the
-        // "more prose arrives" path and the "generation ends there" path.
-        let mut p = ToolStreamParser::glm5(false, weather_schema());
-        let mut pieces = p.push("line one\n");
-        pieces.extend(p.push("line two"));
-        pieces.extend(p.finish());
-        let (content, calls) = reassemble(&pieces);
-        assert_eq!(content, "line one\nline two");
-        assert!(calls.is_empty());
-
-        let mut p = ToolStreamParser::glm5(false, weather_schema());
-        let mut pieces = p.push("trailing newline stays\n");
-        pieces.extend(p.finish());
-        let (content, calls) = reassemble(&pieces);
-        assert_eq!(content, "trailing newline stays\n");
-        assert!(calls.is_empty());
-
-        // ...and an unterminated call span still surfaces raw with its opening tag restored.
-        let mut p = ToolStreamParser::glm5(false, weather_schema());
-        let mut pieces = p.push("<tool_call>get_weather<arg_key>city");
-        pieces.extend(p.finish());
-        let (content, calls) = reassemble(&pieces);
-        assert_eq!(content, "<tool_call>get_weather<arg_key>city");
-        assert!(calls.is_empty());
-    }
-
-    #[test]
-    fn glm5_without_tools_is_a_reasoning_splitter_only() {
-        // Non-tools chat on this model still has an open `<think>` tail (the template cannot
-        // close it), so reasoning must split — but a `<tool_call>` in prose is prose.
-        let mut p = ToolStreamParser::glm5(true, HashMap::new());
-        let mut pieces = p.push("weighing it</think>Answer with a <tool_call> literal.");
-        pieces.extend(p.finish());
-        let (content, reasoning, calls) = reassemble3(&pieces);
-        assert_eq!(reasoning, "weighing it");
-        assert_eq!(content, "Answer with a <tool_call> literal.");
-        assert!(calls.is_empty());
     }
 
     #[test]
@@ -1734,62 +1307,6 @@ flexible:true,note:<|\"|>a{b,c}:d<|\"|>,workdir:None}<tool_call|>";
     }
 
     #[test]
-    fn hy3_splits_reasoning_and_parses_multiple_typed_calls() {
-        let mut parser = ToolStreamParser::hy3(weather_schema(), true);
-        let emission = concat!(
-            "Need current data.</think:opensource>Checking.",
-            "<tool_calls:opensource>\n",
-            "<tool_call:opensource>get_weather<tool_sep:opensource>\n",
-            "<arg_key:opensource>city</arg_key:opensource>\n",
-            "<arg_value:opensource>Paris</arg_value:opensource>\n",
-            "<arg_key:opensource>days</arg_key:opensource>\n",
-            "<arg_value:opensource>3</arg_value:opensource>\n",
-            "<arg_key:opensource>metric</arg_key:opensource>\n",
-            "<arg_value:opensource>false</arg_value:opensource>\n",
-            "</tool_call:opensource>\n",
-            "<tool_call:opensource>get_weather<tool_sep:opensource>\n",
-            "<arg_key:opensource>city</arg_key:opensource>\n",
-            "<arg_value:opensource>Rome</arg_value:opensource>\n",
-            "</tool_call:opensource>\n",
-            "</tool_calls:opensource>",
-        );
-        let mut pieces = Vec::new();
-        for ch in emission.chars() {
-            pieces.extend(parser.push(&ch.to_string()));
-        }
-        pieces.extend(parser.finish());
-        let (content, reasoning, calls) = reassemble3(&pieces);
-        assert_eq!(reasoning, "Need current data.");
-        assert_eq!(content, "Checking.");
-        assert_eq!(calls.len(), 2);
-        assert_eq!(calls[0].name, "get_weather");
-        assert_eq!(
-            calls[0].arguments,
-            r#"{"city":"Paris","days":3,"metric":false}"#
-        );
-        assert_eq!(calls[1].arguments, r#"{"city":"Rome"}"#);
-        assert_ne!(calls[0].id, calls[1].id);
-    }
-
-    #[test]
-    fn hy3_malformed_and_unterminated_calls_surface_verbatim() {
-        let bad = "<tool_calls:opensource><tool_call:opensource>missing-separator\
-                   </tool_call:opensource></tool_calls:opensource>";
-        let mut parser = ToolStreamParser::hy3(weather_schema(), false);
-        let pieces = parser.push(bad);
-        let (content, calls) = reassemble(&pieces);
-        assert_eq!(content, bad);
-        assert!(calls.is_empty());
-
-        let tail = "<tool_calls:opensource><tool_call:opensource>get_weather";
-        let mut parser = ToolStreamParser::hy3(weather_schema(), false);
-        assert!(parser.push(tail).is_empty());
-        let (content, calls) = reassemble(&parser.finish());
-        assert_eq!(content, tail);
-        assert!(calls.is_empty());
-    }
-
-    #[test]
     fn dsv4_parses_a_call_in_thinking_mode_split_from_reasoning() {
         // real wire from artifact test_output_1: reasoning then a get_weather call. `</think>`
         // routes reasoning; content is empty; the `\n\n` before the block is syntax.
@@ -1957,30 +1474,5 @@ flexible:true,note:<|\"|>a{b,c}:d<|\"|>,workdir:None}<tool_call|>";
         let (content, _r, calls) = reassemble3(&pieces);
         assert_eq!(content, "cost note\n\n<\u{ff5c}DSML\u{ff5c}took a while");
         assert!(calls.is_empty());
-    }
-
-    #[test]
-    fn pause_tail_predicate_matches_all_three_close_dialects_and_nothing_else() {
-        // The three served close markers, with and without trailing whitespace/newlines
-        // (models commonly emit `</tool_call>\n` before EOS).
-        assert!(tail_ends_with_tool_call(EMISSION));
-        assert!(tail_ends_with_tool_call("</tool_call>"));
-        assert!(tail_ends_with_tool_call("...args}</tool_call>\n\n"));
-        assert!(tail_ends_with_tool_call(
-            "call:get_weather{city}<tool_call|>  "
-        ));
-        assert!(tail_ends_with_tool_call(&format!("body{DSV4_CLOSE}\n")));
-        // Divergence direction that must stay CONSERVATIVE: a completed call followed by
-        // trailing prose parses as tool_calls upstream but does not arm a pause demote.
-        assert!(!tail_ends_with_tool_call(
-            "</tool_call>\nAnd one more thing."
-        ));
-        // Plain prose / open tags / partial closes never match.
-        assert!(!tail_ends_with_tool_call("The weather in Paris is 21C."));
-        assert!(!tail_ends_with_tool_call(
-            "<tool_call>\n<function=get_weather>"
-        ));
-        assert!(!tail_ends_with_tool_call("</tool_cal"));
-        assert!(!tail_ends_with_tool_call(""));
     }
 }

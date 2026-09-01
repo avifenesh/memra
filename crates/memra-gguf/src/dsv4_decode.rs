@@ -234,7 +234,6 @@ impl CompressorState {
     /// [`Self::decode`] with optional checkpoint recording (batched verify): identical
     /// arithmetic — the recording is pure copies and never changes what is computed.
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
     pub fn decode_ck(
         &mut self,
         w: &CompressorW,
@@ -1327,7 +1326,7 @@ mod tests {
     fn sparse_attn_query_single_row_passthrough() {
         // one valid row + a hugely negative sink: output == that row
         let q = vec![1.0f32; 8];
-        let kv = [0.5f32; 8];
+        let kv = vec![0.5f32; 8];
         let idxs = vec![0i64, -1];
         let sink = vec![-1e30f32];
         let mut out = vec![0f32; 8];

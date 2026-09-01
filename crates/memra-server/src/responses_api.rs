@@ -673,14 +673,6 @@ pub(crate) async fn responses(
     // Non-streaming: the deadline covers the COMPLETE response. On a miss the collect
     // future is dropped and rx with it (cancelling generation at the worker's next tick);
     // the receipt settles deadline_exceeded, debit ZERO.
-    // Deadline posture, stated so it is a decision and not an omission
-    // (lane/deadline-partial-20260826): this surface keeps the 408 while the OpenAI
-    // chat/completions dialect now delivers the partial. The Responses shape COULD express
-    // one (`status: "incomplete"` + `incomplete_details.reason`), but OpenAI defines that
-    // reason as max_output_tokens | content_filter only, so a deadline value would be an
-    // extension callers do not parse — and the feasibility gate in `surfaces::admit_translated` now
-    // refuses the impossible request up front on this surface too, which is where nearly all
-    // of these went. Revisit if a caller asks for partials here specifically.
     let collected = tokio::time::timeout_at(
         deadline.at,
         surfaces::collect_final(&mut rx, &mut receipt, parser, &stop_strings, &env),
@@ -760,7 +752,7 @@ pub(crate) async fn responses(
 #[allow(clippy::too_many_arguments, unused_assignments)]
 fn responses_sse(
     mut rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
-    mut receipt: Option<Box<dyn crate::metering::Receipt>>,
+    mut receipt: Option<crate::ledger::PendingReceipt>,
     env: Envelope,
     model: String,
     mut parser: Option<crate::toolcall::ToolStreamParser>,
@@ -936,7 +928,6 @@ fn responses_sse(
         let mut terminal = false;
         while let Some(ev) = rx.recv().await {
             match ev {
-                Event::PromptCapture { .. } => {} // embeddings/rerank surface only
                 Event::PromptUsage { n_prompt, n_cached } => {
                     if let Some(receipt) = receipt.as_mut()
                         && let Err(err) = receipt.record_prompt_usage(
@@ -1003,7 +994,7 @@ fn responses_sse(
                     }
                     if let Some(receipt) = receipt.as_mut()
                         && let Err(err) = receipt.complete(
-                            crate::metering::UsageCounts {
+                            crate::ledger::Usage {
                                 prompt_tokens: n_prompt as u64,
                                 cached_prompt_tokens: n_cached as u64,
                                 completion_tokens: n_tokens as u64,

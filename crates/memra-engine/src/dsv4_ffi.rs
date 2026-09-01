@@ -482,16 +482,6 @@ unsafe extern "C" {
         hidden: i32,
         stream: *mut c_void,
     ) -> i32;
-    /// Model-entry stream expand, the inverse of `memra_dsv4_hc_mean`. Added for the
-    /// glm5_next trunk (crate::hyper), which drives the whole hc kernel family.
-    pub fn memra_dsv4_hc_expand(
-        e: *const f32,
-        out: *mut f32,
-        s: i32,
-        hc: i32,
-        hidden: i32,
-        stream: *mut c_void,
-    ) -> i32;
     #[allow(clippy::too_many_arguments)]
     pub fn memra_dsv4_build_idx_redirect(
         idx: *mut i32,
@@ -569,28 +559,6 @@ unsafe extern "C" {
         hc: i32,
         iters: i32,
         eps: f32,
-        stream: *mut c_void,
-    ) -> i32;
-    /// Fused hc pre-chain: rowsq_scale + Sinkhorn (bit-preserving stationarity exit) +
-    /// collapse, one launch per (site, token). `niters` is nullable — per-token executed
-    /// Sinkhorn iteration counts, the gate's convergence receipt. Bit-identical to the
-    /// three-kernel chain (hc_fused_pre_gpu.rs); host seam MEMRA_HC_FUSED_PRE.
-    #[allow(clippy::too_many_arguments)]
-    pub fn memra_dsv4_hc_pre_fused(
-        x: *const f32,
-        mixes: *const f32,
-        scale: *const f32,
-        base: *const f32,
-        pre: *mut f32,
-        post: *mut f32,
-        comb: *mut f32,
-        y: *mut f32,
-        s: i32,
-        hc: i32,
-        d: i32,
-        iters: i32,
-        eps: f32,
-        niters: *mut i32,
         stream: *mut c_void,
     ) -> i32;
     #[allow(clippy::too_many_arguments)]

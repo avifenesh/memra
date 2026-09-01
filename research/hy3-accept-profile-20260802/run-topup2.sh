@@ -2,7 +2,7 @@
 # r3 for the three longer classes: fresh-process spec ratio showed >10% spread at long ctx
 # (code-review r1 1.25x vs r2 0.97x) — N=3 gives the ratio column a median.
 set -u
-BASE=/opt/scratch/nvme/hy3-accept-profile
+BASE=/opt/dl-image/nvme/hy3-accept-profile
 MLOG=$BASE/logs/master.log
 while pgrep -f "run-all.sh|run-topup.sh" > /dev/null; do sleep 30; done
 echo "$(date -u +%FT%TZ) TOPUP2-START" >> "$MLOG"

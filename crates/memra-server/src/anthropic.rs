@@ -59,7 +59,7 @@ fn error_body(etype: &str, message: &str, request_id: &str) -> Value {
 
 /// Stamp the request id as BOTH `x-request-id` (house convention, every surface) and
 /// `request-id` (the Anthropic SDK's spelling — it surfaces this one to callers).
-pub(crate) fn with_anthropic_request_id(id: &str, resp: Response) -> Response {
+fn with_anthropic_request_id(id: &str, resp: Response) -> Response {
     let mut resp = crate::with_request_id(id, resp);
     if let Ok(v) = axum::http::HeaderValue::from_str(id) {
         resp.headers_mut()
@@ -420,7 +420,7 @@ pub(crate) fn translate(v: &Value) -> Result<Value, String> {
                 .as_object()
                 .ok_or_else(|| format!("thinking must be an object, got {th}"))?;
             // ...and unknown KEYS inside a well-formed object were silently dropped, including
-            // a hosted-reseller's `max_thinking_tokens` spelling of the budget. Iterated like
+            // Bedrock's `max_thinking_tokens` spelling of the budget. Iterated like
             // `output_config` below, so SERVING.md's "every reasoning field this server cannot
             // act on is a named 400, on every surface" is true rather than aspirational.
             if let Some(other) = th_map
@@ -433,17 +433,17 @@ pub(crate) fn translate(v: &Value) -> Result<Value, String> {
                      below)"
                 ));
             }
-            if let Some(budget) = th.get("budget_tokens")
-                && !budget.is_null()
-            {
-                return Err(format!(
-                    "thinking.budget_tokens ({budget}) is not supported by this server: \
+            if let Some(budget) = th.get("budget_tokens") {
+                if !budget.is_null() {
+                    return Err(format!(
+                        "thinking.budget_tokens ({budget}) is not supported by this server: \
                          reasoning tokens are output tokens here and max_tokens is the ONE \
                          output budget covering reasoning and content together, so there is no \
                          separate reasoning budget to cap. Send max_tokens for the budget, and \
                          output_config.effort (low|medium|high) to spend less of it on \
                          reasoning, or thinking:{{\"type\":\"disabled\"}} for none at all"
-                ));
+                    ));
+                }
             }
             // Matched on the RAW value, not through `as_str()`: that conflated "absent" with
             // "wrong type", so `{"type": 3}` landed in the unset arm and returned 200 while an
@@ -761,20 +761,6 @@ pub(crate) async fn messages(
     // Non-streaming: the deadline covers the COMPLETE response. On a miss the collect
     // future is dropped and rx with it (cancelling generation at the worker's next tick);
     // the receipt settles deadline_exceeded, debit ZERO.
-    //
-    // THIS SURFACE KEEPS THE 408 DELIBERATELY (lane/deadline-partial-20260826). The
-    // OpenAI-dialect surfaces now DELIVER what was generated when the deadline lands,
-    // carried by `finish_reason: "error"` + an error object — a shape the OpenRouter dialect
-    // defines and this server already speaks. The Anthropic dialect has no such shape: its
-    // `stop_reason` enum is end_turn | max_tokens | stop_sequence | tool_use | pause_turn |
-    // refusal | model_context_window_exceeded, with NO time value, so a partial here could
-    // only be labelled `max_tokens` — the same lie this lane refused to tell on the other
-    // surfaces (it tells the caller to ask for more tokens when the truth is that it must
-    // stream). Anthropic itself answers a long non-streaming request with an error and
-    // requires streaming for long work, so erroring is also the dialect-faithful behaviour.
-    // What DID change for this surface is the feasibility gate in `surfaces::admit_translated`: an
-    // impossible request is now refused in ~0.1 s with actionable advice instead of burning
-    // the full deadline first.
     let collected = tokio::time::timeout_at(
         deadline.at,
         surfaces::collect_final(&mut rx, &mut receipt, parser, &stop_strings, &env),
@@ -834,7 +820,7 @@ pub(crate) async fn messages(
 #[allow(clippy::too_many_arguments, unused_assignments)]
 fn messages_sse(
     mut rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
-    mut receipt: Option<Box<dyn crate::metering::Receipt>>,
+    mut receipt: Option<crate::ledger::PendingReceipt>,
     env: Envelope,
     model: String,
     mut parser: Option<crate::toolcall::ToolStreamParser>,
@@ -961,7 +947,6 @@ fn messages_sse(
         let mut terminal = false;
         while let Some(ev) = rx.recv().await {
             match ev {
-                Event::PromptCapture { .. } => {} // embeddings/rerank surface only
                 Event::PromptUsage { n_prompt, n_cached } => {
                     if let Some(receipt) = receipt.as_mut()
                         && let Err(err) = receipt.record_prompt_usage(
@@ -1032,7 +1017,7 @@ fn messages_sse(
                     }
                     if let Some(receipt) = receipt.as_mut()
                         && let Err(err) = receipt.complete(
-                            crate::metering::UsageCounts {
+                            crate::ledger::Usage {
                                 prompt_tokens: n_prompt as u64,
                                 cached_prompt_tokens: n_cached as u64,
                                 completion_tokens: n_tokens as u64,
@@ -1368,7 +1353,7 @@ mod tests {
                 json!({"thinking": {"type": 3}}),
                 "thinking.type must be a string",
             ),
-            // unknown keys inside a well-formed object were dropped — including a hosted-reseller's
+            // unknown keys inside a well-formed object were dropped — including Bedrock's
             // spelling of the budget, which is exactly the field we refuse by name.
             (
                 json!({"thinking": {"type": "enabled", "max_thinking_tokens": 8192}}),

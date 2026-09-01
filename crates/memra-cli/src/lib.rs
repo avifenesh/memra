@@ -1,22 +1,14 @@
-use memra_gguf::GgufFile;
 use memra_gguf::config::{HfConfig, ModelConfig};
 use memra_gguf::model_packs::{self, Gate, ModelPack, TokenizerSource};
-use memra_gguf::placement::{LayerPlacementCost, PlacementRequest, plan_contiguous_stages};
-use memra_gguf::safetensors::{
-    StInfo, StModel, parse_header_json_checked, parse_index_weight_map_json_checked,
-};
-#[cfg(test)]
-use memra_gguf::source::canonical_hf_name;
-use memra_gguf::source::{
-    Hy3RepackSource, TensorCensusRecord, TensorSource, census_from_gguf,
-    census_from_safetensors_headers,
-};
+use memra_gguf::safetensors::{StInfo, StModel, parse_header_json, parse_index_weight_map_json};
 use memra_gguf::tensor_contract::{
-    BoundTensorContract, CheckpointDialect, ContractOptions, OutputHead, TensorId, TensorOwner,
+    CheckpointDialect, ContractOptions, FloatType, IntegerType, OutputHead, QuantLayout,
+    StorageLayout, TensorCensusEntry,
 };
+use memra_gguf::{GgmlType, GgufFile};
 use memra_reference::{deterministic_fixture, execute, execute_multimodal, execute_vision};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -913,7 +905,7 @@ struct SourceData {
     dialect: CheckpointDialect,
     config: ModelConfig,
     config_bytes: Vec<u8>,
-    tensors: Vec<TensorCensusRecord>,
+    tensors: Vec<CensusRow>,
     shards: Vec<String>,
     tokenizer: Result<TokenizerEvidence, String>,
 }
@@ -923,6 +915,13 @@ struct TokenizerEvidence {
     tokenizer_sha256: String,
     template_sha256: String,
     template_bytes: usize,
+}
+
+#[derive(Clone)]
+struct CensusRow {
+    physical_name: String,
+    entry: TensorCensusEntry,
+    dtype: String,
 }
 
 pub fn inspect_model(
@@ -943,18 +942,6 @@ pub fn inspect_model(
     };
     let entries: Vec<_> = source.tensors.iter().map(|row| row.entry.clone()).collect();
     std::fs::create_dir_all(&request.out_dir)?;
-    // A reused inspection directory must never retain a valid-looking placement from an older
-    // checkpoint/plan when the current tensor contract cannot bind or has fewer legal stages.
-    for stages in 2..=4 {
-        let path = request
-            .out_dir
-            .join(format!("placement-checkpoint-{stages}.tsv"));
-        match std::fs::remove_file(path) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
-        }
-    }
     let config_hash = hex_sha256(&source.config_bytes);
     let census = format_census(&source.tensors);
     let census_hash = hex_sha256(census.as_bytes());
@@ -980,21 +967,15 @@ pub fn inspect_model(
         &request.out_dir.join("execution-rewrites.tsv"),
         rewrite_manifest.as_bytes(),
     )?;
-    let (binding, binding_error) = match pack.compile_tensor_contract(
+    let binding_error = match pack.compile_tensor_contract(
         &source.config,
         &plan,
         source.dialect,
         ContractOptions { output_head },
     ) {
-        Ok(contract) => match contract.bind(&entries) {
-            Ok(binding) => (Some(binding), None),
-            Err(error) => (None, Some(error.to_string())),
-        },
-        Err(error) => (None, Some(error.to_string())),
+        Ok(contract) => contract.bind(&entries).err().map(|error| error.to_string()),
+        Err(error) => Some(error.to_string()),
     };
-    if let Some(binding) = binding.as_ref() {
-        write_checkpoint_placement_candidates(&request.out_dir, &plan, binding, &plan_hash)?;
-    }
     let tokenizer_error = match &source.tokenizer {
         Ok(evidence) if pack.tokenizer_sources.contains(&evidence.source) => None,
         Ok(evidence) => Some(format!(
@@ -1117,7 +1098,19 @@ fn load_local(path: &Path) -> Result<SourceData, Box<dyn std::error::Error>> {
         let gguf = GgufFile::open(path)?;
         let tokenizer = inspect_gguf_tokenizer(&gguf);
         let config = ModelConfig::from_gguf(&gguf);
-        let tensors = census_from_gguf(&gguf).tensors;
+        let tensors = gguf
+            .tensors
+            .iter()
+            .map(|tensor| CensusRow {
+                physical_name: tensor.name.clone(),
+                entry: TensorCensusEntry {
+                    name: tensor.name.clone(),
+                    shape: tensor.ne.clone(),
+                    storage: ggml_storage(tensor.ggml_type),
+                },
+                dtype: format!("{:?}", tensor.ggml_type),
+            })
+            .collect();
         let config_bytes = format!("{config:#?}").into_bytes();
         return Ok(SourceData {
             label: path.display().to_string(),
@@ -1133,24 +1126,6 @@ fn load_local(path: &Path) -> Result<SourceData, Box<dyn std::error::Error>> {
         });
     }
 
-    if path.join("manifest.json").is_file() {
-        let source = Hy3RepackSource::open(path)?;
-        let config = source.try_config().map_err(std::io::Error::other)?;
-        let census = source.tensor_census().map_err(std::io::Error::other)?;
-        let tokenizer_dir = source.source_dir().unwrap_or(path);
-        let tokenizer = inspect_hf_tokenizer_dir(tokenizer_dir);
-        return Ok(SourceData {
-            label: path.display().to_string(),
-            revision: "local-repack".to_string(),
-            dialect: census.dialect,
-            config_bytes: format!("{config:#?}").into_bytes(),
-            config,
-            tensors: census.tensors,
-            shards: vec!["manifest.json".to_string()],
-            tokenizer,
-        });
-    }
-
     let config_bytes = std::fs::read(path.join("config.json"))?;
     let config_text = std::str::from_utf8(&config_bytes)?;
     let config = ModelConfig::from_hf(&HfConfig::parse(config_text));
@@ -1161,7 +1136,7 @@ fn load_local(path: &Path) -> Result<SourceData, Box<dyn std::error::Error>> {
     let headers = model
         .names()
         .map(|name| {
-            let info = model.info(name).expect("StModel name must resolve");
+            let (info, _) = model.raw(name).expect("StModel name must resolve");
             (name.clone(), info.clone())
         })
         .collect();
@@ -1171,7 +1146,7 @@ fn load_local(path: &Path) -> Result<SourceData, Box<dyn std::error::Error>> {
         dialect: CheckpointDialect::HfSafetensors,
         config,
         config_bytes,
-        tensors: census_from_safetensors_headers(&headers)?.tensors,
+        tensors: census_from_headers(headers)?,
         shards,
         tokenizer,
     })
@@ -1226,7 +1201,7 @@ fn load_remote(repo: &str, revision: &str) -> Result<SourceData, Box<dyn std::er
         dialect: CheckpointDialect::HfSafetensors,
         config,
         config_bytes,
-        tensors: census_from_safetensors_headers(&headers)?.tensors,
+        tensors: census_from_headers(headers)?,
         shards,
         tokenizer,
     })
@@ -1343,6 +1318,159 @@ fn nonempty_template(template: String) -> Result<String, String> {
         Err("chat template is empty".to_string())
     } else {
         Ok(template)
+    }
+}
+
+fn census_from_headers(
+    headers: BTreeMap<String, StInfo>,
+) -> Result<Vec<CensusRow>, Box<dyn std::error::Error>> {
+    let mut auxiliary_names = BTreeSet::new();
+    let mut rows = Vec::new();
+    for (physical_name, info) in &headers {
+        if auxiliary_names.contains(physical_name) || is_quant_auxiliary(physical_name, &headers) {
+            continue;
+        }
+        let stem = physical_name.strip_suffix(".weight");
+        let auxiliaries: Vec<String> = stem
+            .map(|stem| {
+                [
+                    format!("{stem}.weight_scale"),
+                    format!("{stem}.weight_scale_inv"),
+                    format!("{stem}.weight_scale_2"),
+                    format!("{stem}.input_scale"),
+                    format!("{stem}.scale"),
+                ]
+                .into_iter()
+                .filter(|name| headers.contains_key(name))
+                .collect()
+            })
+            .unwrap_or_default();
+        auxiliary_names.extend(auxiliaries.iter().cloned());
+        let (shape, storage) = st_storage(info, &auxiliaries)?;
+        rows.push(CensusRow {
+            physical_name: physical_name.clone(),
+            entry: TensorCensusEntry {
+                name: canonical_hf_name(physical_name),
+                shape,
+                storage: match storage {
+                    StorageLayout::Quantized(mut layout) => {
+                        layout.auxiliaries = auxiliaries
+                            .iter()
+                            .map(|name| canonical_hf_name(name))
+                            .collect();
+                        StorageLayout::Quantized(layout)
+                    }
+                    other => other,
+                },
+            },
+            dtype: info.dtype.clone(),
+        });
+    }
+    rows.sort_by(|left, right| left.entry.name.cmp(&right.entry.name));
+    let mut names = BTreeSet::new();
+    for row in &rows {
+        if !names.insert(&row.entry.name) {
+            return Err(
+                format!("multiple physical tensors normalize to {}", row.entry.name).into(),
+            );
+        }
+    }
+    Ok(rows)
+}
+
+fn st_storage(
+    info: &StInfo,
+    auxiliaries: &[String],
+) -> Result<(Vec<u64>, StorageLayout), Box<dyn std::error::Error>> {
+    let float = match info.dtype.as_str() {
+        "F32" => Some(FloatType::F32),
+        "F16" => Some(FloatType::F16),
+        "BF16" => Some(FloatType::Bf16),
+        "F8_E4M3" if auxiliaries.is_empty() => Some(FloatType::Fp8E4m3),
+        _ => None,
+    };
+    if let Some(float) = float {
+        return Ok((info.shape.clone(), StorageLayout::Float(float)));
+    }
+    if info.dtype == "I64" && auxiliaries.is_empty() {
+        return Ok((info.shape.clone(), StorageLayout::Integer(IntegerType::I64)));
+    }
+    if auxiliaries.is_empty() {
+        return Err(format!("unsupported standalone safetensors dtype {}", info.dtype).into());
+    }
+    let mut shape = info.shape.clone();
+    let (format, block_shape) = match info.dtype.as_str() {
+        "U8" => {
+            let last = shape
+                .last_mut()
+                .ok_or("packed U8 weight has no dimensions")?;
+            *last *= 2;
+            ("NVFP4", vec![16])
+        }
+        "I8" => {
+            let last = shape
+                .last_mut()
+                .ok_or("packed I8 weight has no dimensions")?;
+            *last *= 2;
+            ("MXFP4", vec![32])
+        }
+        "F8_E4M3" => ("FP8_E4M3", vec![128, 128]),
+        other => return Err(format!("unsupported quantized weight dtype {other}").into()),
+    };
+    Ok((
+        shape,
+        StorageLayout::Quantized(QuantLayout {
+            format: format.to_string(),
+            block_shape,
+            auxiliaries: Vec::new(),
+        }),
+    ))
+}
+
+fn is_quant_auxiliary(name: &str, headers: &BTreeMap<String, StInfo>) -> bool {
+    for suffix in [
+        ".weight_scale",
+        ".weight_scale_inv",
+        ".weight_scale_2",
+        ".input_scale",
+        ".scale",
+    ] {
+        if let Some(stem) = name.strip_suffix(suffix) {
+            if headers.contains_key(&format!("{stem}.weight")) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn canonical_hf_name(name: &str) -> String {
+    if let Some(suffix) = name.strip_prefix("model.language_model.") {
+        return format!("model.{suffix}");
+    }
+    if let Some(suffix) = name.strip_prefix("language_model.model.") {
+        return format!("model.{suffix}");
+    }
+    if let Some(suffix) = name.strip_prefix("language_model.lm_head.") {
+        return format!("lm_head.{suffix}");
+    }
+    name.to_string()
+}
+
+fn ggml_storage(kind: GgmlType) -> StorageLayout {
+    match kind {
+        GgmlType::F32 => StorageLayout::Float(FloatType::F32),
+        GgmlType::F16 => StorageLayout::Float(FloatType::F16),
+        GgmlType::BF16 => StorageLayout::Float(FloatType::Bf16),
+        GgmlType::I64 => StorageLayout::Integer(IntegerType::I64),
+        other => {
+            let (block, _) = other.block_and_type_size();
+            StorageLayout::Quantized(QuantLayout {
+                format: format!("{other:?}"),
+                block_shape: vec![block as u32],
+                auxiliaries: Vec::new(),
+            })
+        }
     }
 }
 
@@ -1505,148 +1633,17 @@ fn local_hf_revision(path: &Path, shards: &[String]) -> Option<String> {
         .then(|| first.clone())
 }
 
-fn format_census(rows: &[TensorCensusRecord]) -> String {
-    let mut output =
-        String::from("semantic_name\tphysical_name\tdtype\tshape\tstorage\tphysical_bytes\n");
+fn format_census(rows: &[CensusRow]) -> String {
+    let mut output = String::from("semantic_name\tphysical_name\tdtype\tshape\tstorage\n");
     for row in rows {
         writeln!(
             output,
-            "{}\t{}\t{}\t{:?}\t{:?}\t{}",
-            row.entry.name,
-            row.physical_name,
-            row.dtype,
-            row.entry.shape,
-            row.entry.storage,
-            row.entry.physical_bytes,
+            "{}\t{}\t{}\t{:?}\t{:?}",
+            row.entry.name, row.physical_name, row.dtype, row.entry.shape, row.entry.storage
         )
         .unwrap();
     }
     output
-}
-
-fn placement_first_stage_tensor(id: &TensorId) -> bool {
-    match id {
-        TensorId::TokenEmbedding | TensorId::RopeFactors | TensorId::Vision { .. } => true,
-        TensorId::QuantAux { tensor, .. } => placement_first_stage_tensor(tensor),
-        _ => false,
-    }
-}
-
-fn write_checkpoint_placement_candidates(
-    out_dir: &Path,
-    plan: &memra_gguf::model_plan::ModelPlan,
-    binding: &BoundTensorContract,
-    plan_hash: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let mut layers = vec![LayerPlacementCost::default(); plan.layers.len()];
-    let mut first_fixed = 0u64;
-    let mut last_fixed = 0u64;
-    for (id, tensor) in &binding.tensors {
-        match tensor.owner {
-            TensorOwner::Layer(layer) if (layer as usize) < layers.len() => {
-                let cost = &mut layers[layer as usize];
-                cost.weight_bytes = cost
-                    .weight_bytes
-                    .checked_add(tensor.physical_bytes)
-                    .ok_or("layer checkpoint byte total overflows u64")?;
-            }
-            // Some legacy contracts retain the physical MTP layer index instead of rewriting
-            // its owner to TensorOwner::Mtp. It executes with the tail/head stage either way.
-            TensorOwner::Layer(_) => {
-                last_fixed = last_fixed
-                    .checked_add(tensor.physical_bytes)
-                    .ok_or("head-stage checkpoint byte total overflows u64")?;
-            }
-            TensorOwner::Vision(_) => {
-                first_fixed = first_fixed
-                    .checked_add(tensor.physical_bytes)
-                    .ok_or("first-stage checkpoint byte total overflows u64")?;
-            }
-            TensorOwner::Global if placement_first_stage_tensor(id) => {
-                first_fixed = first_fixed
-                    .checked_add(tensor.physical_bytes)
-                    .ok_or("first-stage checkpoint byte total overflows u64")?;
-            }
-            TensorOwner::Global | TensorOwner::Mtp(_) => {
-                last_fixed = last_fixed
-                    .checked_add(tensor.physical_bytes)
-                    .ok_or("head-stage checkpoint byte total overflows u64")?;
-            }
-        }
-    }
-
-    for stages in 2..=4.min(layers.len()) {
-        let devices: Vec<usize> = (0..stages).collect();
-        let mut fixed = vec![0u64; stages];
-        fixed[0] = first_fixed;
-        fixed[stages - 1] = fixed[stages - 1]
-            .checked_add(last_fixed)
-            .ok_or("head-stage checkpoint byte total overflows u64")?;
-        let candidate = plan_contiguous_stages(PlacementRequest {
-            layers: &layers,
-            fixed_stage_bytes: &fixed,
-            context_tokens: 0,
-            devices: &devices,
-            legal_boundaries: &plan.partition_boundaries,
-        });
-        let mut output = String::new();
-        writeln!(output, "basis\tcheckpoint_physical_bytes")?;
-        writeln!(output, "plan_sha256\t{plan_hash}")?;
-        writeln!(output, "context_tokens\t0")?;
-        writeln!(
-            output,
-            "warning\tnot exact HBM: loader expansions, repacks, mirrors, KV and workspaces require runtime planning"
-        )?;
-        match candidate {
-            Ok(candidate) => {
-                let cuts = candidate
-                    .stages
-                    .iter()
-                    .take(candidate.stages.len() - 1)
-                    .map(|stage| stage.layers.end.to_string())
-                    .collect::<Vec<_>>()
-                    .join(",");
-                writeln!(output, "status\tpassed")?;
-                writeln!(output, "MEMRA_PP_STAGES\t{stages}")?;
-                writeln!(
-                    output,
-                    "MEMRA_PP_DEVICES\t{}",
-                    devices
-                        .iter()
-                        .map(usize::to_string)
-                        .collect::<Vec<_>>()
-                        .join(",")
-                )?;
-                writeln!(output, "MEMRA_PP_SPLITS\t{cuts}")?;
-                writeln!(output, "max_stage_bytes\t{}", candidate.max_stage_bytes)?;
-                writeln!(
-                    output,
-                    "stage\tdevice\tlayers\tweight_bytes\tfixed_bytes\ttotal_bytes"
-                )?;
-                for (stage, placement) in candidate.stages.iter().enumerate() {
-                    writeln!(
-                        output,
-                        "{stage}\t{}\t{}..{}\t{}\t{}\t{}",
-                        placement.device,
-                        placement.layers.start,
-                        placement.layers.end,
-                        placement.cost.weight_bytes,
-                        placement.cost.fixed_bytes,
-                        placement.cost.total_bytes,
-                    )?;
-                }
-            }
-            Err(error) => {
-                writeln!(output, "status\tfailed")?;
-                writeln!(output, "error\t{error}")?;
-            }
-        }
-        write_atomic(
-            &out_dir.join(format!("placement-checkpoint-{stages}.tsv")),
-            output.as_bytes(),
-        )?;
-    }
-    Ok(())
 }
 
 fn format_execution_rewrites(
@@ -1735,13 +1732,15 @@ fn format_lock(
 fn parse_header(
     json: &str,
 ) -> Result<std::collections::HashMap<String, StInfo>, Box<dyn std::error::Error>> {
-    parse_header_json_checked(json).map_err(Into::into)
+    std::panic::catch_unwind(|| parse_header_json(json))
+        .map_err(|_| "invalid safetensors header JSON".into())
 }
 
 fn parse_index_json(
     json: &str,
 ) -> Result<std::collections::HashMap<String, String>, Box<dyn std::error::Error>> {
-    parse_index_weight_map_json_checked(json).map_err(Into::into)
+    std::panic::catch_unwind(|| parse_index_weight_map_json(json))
+        .map_err(|_| "invalid safetensors index JSON".into())
 }
 
 fn lock_value(value: &str) -> String {
@@ -2072,8 +2071,6 @@ mod tests {
         assert_eq!(first.family, "glm_dsa");
         assert!(first.tensor_count > 0);
         let lock = std::fs::read(output.join("artifact.lock")).unwrap();
-        std::fs::write(output.join("placement-checkpoint-3.tsv"), "stale\n").unwrap();
-        std::fs::write(output.join("placement-checkpoint-4.tsv"), "stale\n").unwrap();
         inspect_model(InspectRequest {
             source: model.display().to_string(),
             against: "glm_dsa".to_string(),
@@ -2086,17 +2083,10 @@ mod tests {
             "tensor-census.tsv",
             "model-plan.txt",
             "execution-rewrites.tsv",
-            "placement-checkpoint-2.tsv",
             "gates.txt",
         ] {
             assert!(output.join(artifact).is_file(), "missing {artifact}");
         }
-        let placement = std::fs::read_to_string(output.join("placement-checkpoint-2.tsv")).unwrap();
-        assert!(placement.contains("basis\tcheckpoint_physical_bytes"));
-        assert!(placement.contains("warning\tnot exact HBM"));
-        assert!(placement.contains("MEMRA_PP_STAGES\t2"));
-        assert!(!output.join("placement-checkpoint-3.tsv").exists());
-        assert!(!output.join("placement-checkpoint-4.tsv").exists());
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -2112,84 +2102,6 @@ mod tests {
             canonical_hf_name("model.language_model.layers.1.self_attn.q_proj.weight"),
             "model.layers.1.self_attn.q_proj.weight"
         );
-    }
-
-    #[test]
-    fn local_repack_inspect_routes_metadata_census_into_placement() {
-        use memra_gguf::tensor_contract::TensorMatch;
-
-        let root =
-            std::env::temp_dir().join(format!("memra-cli-repack-inspect-{}", std::process::id()));
-        let output = root.join("out");
-        std::fs::create_dir_all(&root).unwrap();
-        let config_json = r#"{"model_type":"qwen3","num_hidden_layers":2,"hidden_size":8,
-            "num_attention_heads":2,"num_key_value_heads":1,"head_dim":4,
-            "intermediate_size":16,"vocab_size":32,"max_position_embeddings":32,
-            "rms_norm_eps":0.000001}"#;
-        std::fs::write(root.join("config.json"), config_json).unwrap();
-        std::fs::write(root.join("tokenizer.json"), "{}").unwrap();
-        std::fs::write(
-            root.join("tokenizer_config.json"),
-            r#"{"chat_template":"{{ messages }}"}"#,
-        )
-        .unwrap();
-        let config = ModelConfig::from_hf(&HfConfig::parse(config_json));
-        let pack = model_packs::by_alias("qwen3").unwrap();
-        let plan = pack.compile_plan(&config).unwrap();
-        let contract = pack
-            .compile_tensor_contract(
-                &config,
-                &plan,
-                CheckpointDialect::Gguf,
-                ContractOptions {
-                    output_head: OutputHead::Separate,
-                },
-            )
-            .unwrap();
-        let mut tensors = BTreeMap::<String, Vec<u64>>::new();
-        for requirement in contract.requirements {
-            if !requirement.required {
-                continue;
-            }
-            let names: Vec<_> = match requirement.match_mode {
-                TensorMatch::OneOf => requirement.names.into_iter().take(1).collect(),
-                TensorMatch::All => requirement.names,
-            };
-            for name in names {
-                tensors.insert(name, requirement.shape.clone());
-            }
-        }
-        let mut blob = Vec::new();
-        let mut fields = Vec::new();
-        for (name, shape) in tensors {
-            let bytes = shape.iter().product::<u64>() as usize * 4;
-            let offset = blob.len();
-            blob.resize(offset + bytes, 0);
-            fields.push(format!(
-                "{name:?}:{{\"file\":\"weights.bin\",\"offset\":{offset},\"qtype\":\"F32\",\"ne\":{:?},\"bytes\":{bytes}}}",
-                shape,
-            ));
-        }
-        std::fs::write(root.join("weights.bin"), blob).unwrap();
-        std::fs::write(
-            root.join("manifest.json"),
-            format!(
-                "{{\"format\":\"memra-repack-v1\",\"tensors\":{{{}}}}}",
-                fields.join(",")
-            ),
-        )
-        .unwrap();
-
-        let summary = inspect_model(InspectRequest {
-            source: root.display().to_string(),
-            against: "qwen3".to_string(),
-            out_dir: output.clone(),
-        })
-        .unwrap();
-        assert_eq!(summary.family, "qwen3");
-        assert!(summary.tensor_count > 0);
-        assert!(output.join("placement-checkpoint-2.tsv").is_file());
-        std::fs::remove_dir_all(root).ok();
     }
 
     #[test]
@@ -2223,8 +2135,7 @@ mod tests {
 
     #[test]
     fn unimplemented_verify_stages_refuse_without_fallback() {
-        {
-            let stage = VerifyStage::Serve;
+        for stage in [VerifyStage::Serve] {
             let error = verify_model(VerifyRequest {
                 stage,
                 source: "unused".to_string(),

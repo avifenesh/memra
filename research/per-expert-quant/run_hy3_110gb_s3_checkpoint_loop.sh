@@ -10,7 +10,7 @@ PREFIX=${PREFIX:-runs/$RUN_ID}
 mkdir -p "$ROOT/logs/checkpoint"
 while true; do
   stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  if storecli sync "$ROOT" "deadstore:$BUCKET/$PREFIX" \
+  if hyperscaler s3 sync "$ROOT" "obj://$BUCKET/$PREFIX" \
       --only-show-errors \
       --exclude 'cache/*' \
       --exclude 'source/*' \

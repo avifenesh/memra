@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fuse the plain-arm routed-mass ranking with the frozen cloudbox big-corpus tier classes into a
+"""Fuse the plain-arm routed-mass ranking with the frozen Sbox big-corpus tier classes into a
 byte-bounded tier-plan candidate. No pruning (owner directive: prune arms showed bad results).
 
 Evidence fusion (conservative by construction):
@@ -9,7 +9,7 @@ Evidence fusion (conservative by construction):
 Per-layer byte bound: candidate bytes <= uniform Q3_K bytes, enforced via
   promotions <= floor(demotions * (B3-B2)/(B8-B3)) = floor(demotions * 26/162).
 
-Inputs: --mass (rank_tail_by_routed_mass.py output), --prior (frozen cloudbox plan), --out plan path.
+Inputs: --mass (rank_tail_by_routed_mass.py output), --prior (frozen Sbox plan), --out plan path.
 Ranking sources: local mass ranks per layer; prior classes from big-corpus traffic ranking
 (192 requests / 103M routed assignments). Public eval data enters nowhere.
 """
@@ -77,7 +77,7 @@ def main():
         groups[(layer, q)].append(e)
     plan = {
         "format": "bw24-expert-tier-plan-v2",
-        "description": "importance-fused candidate: plain-arm routed mass x cloudbox big-corpus prior; "
+        "description": "importance-fused candidate: plain-arm routed mass x Sbox big-corpus prior; "
                        "no pruning; byte-bounded to the uniform Q3_K baseline per layer",
         "recipe": "fused-mass-prior-q8-q3-q2-noprune",
         "model": {"expert_count": N_EXPERT, "expert_used_count": 8,

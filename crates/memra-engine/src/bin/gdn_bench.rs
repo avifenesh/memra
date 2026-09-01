@@ -15,7 +15,6 @@ fn pr(i: usize) -> f32 {
     ((x >> 8) as f32 / (1u32 << 24) as f32) * 2.0 - 1.0
 }
 
-#[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
 fn cpu_ref(
     q: &[f32],
     k: &[f32],
@@ -58,7 +57,6 @@ fn cpu_ref(
     out
 }
 
-#[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     let t: usize = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(512);

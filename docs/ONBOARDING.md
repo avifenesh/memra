@@ -129,34 +129,6 @@ Minimum geometry tests:
 - gate kind is mutually exclusive and matches tensor ownership; and
 - missing/malformed arrays fail instead of falling back to projection-wide scalars.
 
-### The name map is a SECOND surface, and a missing row is silent
-
-The tensor contract (`tensor_contract.rs`) and the engine's ggml -> HF name map
-(`hf_mapping::{ggml_to_hf, resolve_ggml}`) are two independent spellings of the same
-checkpoint. `TensorCensus`, `memra model inspect`, and the `memra-reference` executor all read
-the CONTRACT. The ENGINE's loader reads the MAP. A row the map is missing does not fail: the
-name resolves to `None` and reads as an ABSENT tensor, and several load sites treat absent as a
-legal shape — a zero-filled router selection bias, a dropped shared expert, a skipped optional
-projection. The model then loads, serves, and computes something else.
-
-Three such gaps reached a real-artifact load in the GLM-5.3-Flash lane alone: the six mHC
-parameters, the whole MLA family, and both `exp_probs_b.bias` and the PLURAL
-`mlp.shared_experts.*` spelling. Two of them were caught only by comparing the engine against
-`memra-reference` layer by layer, days after the artifact first "loaded fine".
-
-So, for every new architecture: write a completeness pin that compiles the real plan and
-requires EVERY tensor the GGUF-dialect contract declares to resolve through `resolve_ggml`
-onto a name the HF dialect of the SAME contract declares for the SAME `TensorId`. Pin the
-count. No per-name allowlist — an allowlist is exactly how a missing row stays missing.
-`glm5_next_every_contract_tensor_resolves_through_the_engine_map` in `hf_mapping.rs` is the
-template; it is CPU-only, needs no checkpoint and no GPU, and it caught the shared-expert gap
-on its first run. Every GPU fixture gate serves tensors under names the test itself chose, so
-none of them can see this surface.
-
-Where the plan DECLARES a tensor (a selection-bias router, an always-on shared expert, a
-residual topology's parameters), the loader refuses by name rather than substituting a default.
-Add the refusal in the same change as the semantics, and execute both arms before merging.
-
 ## 3. Implement new semantics behind closed doors
 
 Add only the pieces the audit marked as genuinely new:

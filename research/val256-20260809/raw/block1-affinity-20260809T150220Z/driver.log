@@ -18,7 +18,7 @@ record-on affinity=1 ready pid=358125 at 2026-08-09T15:04:28Z
 {"cached_tokens": 0, "completion_tokens": 160, "decode_s_after_first": 2.43047, "decode_tok_s_after_first": 65.419441, "finish_reason": "stop", "phase": "burst", "phase_index": 0, "prompt_chars": 146777, "prompt_sha256": "292039b5b0f66edb8a55e106de2461203e4535ab957cf344ad2d16163d8b382c", "prompt_tokens": 47229, "request_index": 8, "session_id": "cachespec-main-burst-0", "started_at": "2026-08-09T15:07:15.762424+00:00", "text_chars": 559, "text_sha256": "0642e01d2b9908995064338fd682f4d30ecb859426b2d1f71ee51f0918eaae5e", "ttft_s": 133.257537, "type": "request", "wall_s": 135.703314}
 {"concurrency": 1, "phase": "burst", "type": "burst_summary"}
 {"cached_tokens": 47169, "completion_tokens": 256, "decode_s_after_first": 3.900855, "decode_tok_s_after_first": 65.370292, "finish_reason": "length", "phase": "postburst", "phase_index": 0, "prompt_chars": 146809, "prompt_sha256": "2423d7b79a809098b4830d10def7b812db8bf54dba1d3ed329d1d7245c46b76a", "prompt_tokens": 47234, "request_index": 9, "session_id": "cachespec-main", "started_at": "2026-08-09T15:09:31.467591+00:00", "text_chars": 1209, "text_sha256": "1b32d312aa43daef00f41b6a499a0acc1937cd18d7eb0f616dd43a661bd2adfa", "ttft_s": 0.482473, "type": "request", "wall_s": 4.398598}
-REPLAY_DONE rows=/opt/scratch/nvme/memra-cx-val256/research/val256-20260809/raw/block1-affinity-20260809T150220Z/record-on/requests.jsonl workload=/opt/scratch/nvme/memra-cx-val256/research/val256-20260809/raw/block1-affinity-20260809T150220Z/workload.json
+REPLAY_DONE rows=/opt/dl-image/nvme/memra-cx-val256/research/val256-20260809/raw/block1-affinity-20260809T150220Z/record-on/requests.jsonl workload=/opt/dl-image/nvme/memra-cx-val256/research/val256-20260809/raw/block1-affinity-20260809T150220Z/workload.json
 === arm=record-on client_rc=0 at 2026-08-09T15:09:40Z
 {
   "sequential_turns": 8,
@@ -42,7 +42,7 @@ on-1 affinity=1 ready pid=359349 at 2026-08-09T15:10:15Z
 {"cached_tokens": 0, "completion_tokens": 160, "decode_s_after_first": 2.424871, "decode_tok_s_after_first": 65.570499, "finish_reason": "stop", "phase": "burst", "phase_index": 0, "prompt_chars": 146777, "prompt_sha256": "292039b5b0f66edb8a55e106de2461203e4535ab957cf344ad2d16163d8b382c", "prompt_tokens": 47229, "request_index": 8, "session_id": "cachespec-main-burst-0", "started_at": "2026-08-09T15:12:59.564849+00:00", "text_chars": 559, "text_sha256": "0642e01d2b9908995064338fd682f4d30ecb859426b2d1f71ee51f0918eaae5e", "ttft_s": 131.536092, "type": "request", "wall_s": 133.976128}
 {"concurrency": 1, "phase": "burst", "type": "burst_summary"}
 {"cached_tokens": 47169, "completion_tokens": 256, "decode_s_after_first": 3.865354, "decode_tok_s_after_first": 65.970673, "finish_reason": "length", "phase": "postburst", "phase_index": 0, "prompt_chars": 146809, "prompt_sha256": "2423d7b79a809098b4830d10def7b812db8bf54dba1d3ed329d1d7245c46b76a", "prompt_tokens": 47234, "request_index": 9, "session_id": "cachespec-main", "started_at": "2026-08-09T15:15:13.542393+00:00", "text_chars": 1209, "text_sha256": "1b32d312aa43daef00f41b6a499a0acc1937cd18d7eb0f616dd43a661bd2adfa", "ttft_s": 0.479584, "type": "request", "wall_s": 4.3601}
-REPLAY_DONE rows=/opt/scratch/nvme/memra-cx-val256/research/val256-20260809/raw/block1-affinity-20260809T150220Z/on-1/requests.jsonl workload=/opt/scratch/nvme/memra-cx-val256/research/val256-20260809/raw/block1-affinity-20260809T150220Z/workload.json
+REPLAY_DONE rows=/opt/dl-image/nvme/memra-cx-val256/research/val256-20260809/raw/block1-affinity-20260809T150220Z/on-1/requests.jsonl workload=/opt/dl-image/nvme/memra-cx-val256/research/val256-20260809/raw/block1-affinity-20260809T150220Z/workload.json
 === arm=on-1 client_rc=0 at 2026-08-09T15:15:22Z
 === arm=off-1 affinity=0 mode=replay at 2026-08-09T15:15:22Z
 off-1 affinity=0 ready pid=360514 at 2026-08-09T15:15:57Z
@@ -50,21 +50,21 @@ off-1 affinity=0 ready pid=360514 at 2026-08-09T15:15:57Z
 {"cached_tokens": 0, "completion_tokens": 256, "decode_s_after_first": 3.81506, "decode_tok_s_after_first": 66.840369, "finish_reason": "length", "phase": "sequential", "phase_index": 1, "prompt_chars": 120719, "prompt_sha256": "c3685e5e6c0322e34c61da99847f9d63db7d859adaf8d692f05a85dc3836739b", "prompt_tokens": 39159, "request_index": 1, "session_id": "cachespec-main", "started_at": "2026-08-09T15:17:42.899600+00:00", "text_chars": 987, "text_sha256": "6370e1dc98d99c7944f28466a366bfdc2804bcf1929c353d02196e13dcc844aa", "ttft_s": 105.789819, "type": "request", "wall_s": 109.619757}
 {"cached_tokens": 0, "completion_tokens": 256, "decode_s_after_first": 3.795954, "decode_tok_s_after_first": 67.176795, "finish_reason": "length", "phase": "sequential", "phase_index": 2, "prompt_chars": 125031, "prompt_sha256": "9f2a405a35ef6535a03f6d80b173e3e2ff81a700273f283c4fa99b24c5915a77", "prompt_tokens": 40495, "request_index": 2, "session_id": "cachespec-main", "started_at": "2026-08-09T15:19:32.520576+00:00", "text_chars": 952, "text_sha256": "e291d9e45c009052daaf3b8dcd8e97a117dc9543d282e190f03e5c33252fd9b1", "ttft_s": 109.930467, "type": "request", "wall_s": 113.74122}
 Traceback (most recent call last):
-  File "/opt/scratch/nvme/memra-cx-val256/research/val256-20260809/deep_affinity_replay.py", line 59, in <module>
+  File "/opt/dl-image/nvme/memra-cx-val256/research/val256-20260809/deep_affinity_replay.py", line 59, in <module>
     raise SystemExit(REPLAY.main())
                      ^^^^^^^^^^^^^
-  File "/opt/scratch/nvme/memra-cx-val256/research/cachespec-20260809/replay.py", line 561, in main
+  File "/opt/dl-image/nvme/memra-cx-val256/research/cachespec-20260809/replay.py", line 561, in main
     replay_workload(args, workload, args.out, args.raw_dir)
-  File "/opt/scratch/nvme/memra-cx-val256/research/cachespec-20260809/replay.py", line 498, in replay_workload
+  File "/opt/dl-image/nvme/memra-cx-val256/research/cachespec-20260809/replay.py", line 498, in replay_workload
     result, receipt = issue_sequential(
                       ^^^^^^^^^^^^^^^^^
-  File "/opt/scratch/nvme/memra-cx-val256/research/cachespec-20260809/replay.py", line 347, in issue_sequential
+  File "/opt/dl-image/nvme/memra-cx-val256/research/cachespec-20260809/replay.py", line 347, in issue_sequential
     result = stream_request(args, prompt, session_id, request_index)
              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/scratch/nvme/memra-cx-val256/research/cachespec-20260809/replay.py", line 274, in stream_request
+  File "/opt/dl-image/nvme/memra-cx-val256/research/cachespec-20260809/replay.py", line 274, in stream_request
     result = read_stream(response, started_ns)
              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/scratch/nvme/memra-cx-val256/research/cachespec-20260809/replay.py", line 220, in read_stream
+  File "/opt/dl-image/nvme/memra-cx-val256/research/cachespec-20260809/replay.py", line 220, in read_stream
     raise RuntimeError(json.dumps(event["error"], sort_keys=True))
 RuntimeError: {"code": "overloaded", "message": "cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, \"out of memory\")", "param": null, "type": "server_error"}
 === arm=off-1 client_rc=1 at 2026-08-09T15:21:31Z
@@ -72,37 +72,37 @@ RuntimeError: {"code": "overloaded", "message": "cache alloc failed: DriverError
 {"cached_tokens": 0, "completion_tokens": 256, "decode_s_after_first": 3.81506, "decode_tok_s_after_first": 66.840369, "finish_reason": "length", "phase": "sequential", "phase_index": 1, "prompt_chars": 120719, "prompt_sha256": "c3685e5e6c0322e34c61da99847f9d63db7d859adaf8d692f05a85dc3836739b", "prompt_tokens": 39159, "request_index": 1, "session_id": "cachespec-main", "started_at": "2026-08-09T15:17:42.899600+00:00", "text_chars": 987, "text_sha256": "6370e1dc98d99c7944f28466a366bfdc2804bcf1929c353d02196e13dcc844aa", "ttft_s": 105.789819, "type": "request", "wall_s": 109.619757}
 {"cached_tokens": 0, "completion_tokens": 256, "decode_s_after_first": 3.795954, "decode_tok_s_after_first": 67.176795, "finish_reason": "length", "phase": "sequential", "phase_index": 2, "prompt_chars": 125031, "prompt_sha256": "9f2a405a35ef6535a03f6d80b173e3e2ff81a700273f283c4fa99b24c5915a77", "prompt_tokens": 40495, "request_index": 2, "session_id": "cachespec-main", "started_at": "2026-08-09T15:19:32.520576+00:00", "text_chars": 952, "text_sha256": "e291d9e45c009052daaf3b8dcd8e97a117dc9543d282e190f03e5c33252fd9b1", "ttft_s": 109.930467, "type": "request", "wall_s": 113.74122}
 Traceback (most recent call last):
-  File "/opt/scratch/nvme/memra-cx-val256/research/val256-20260809/deep_affinity_replay.py", line 59, in <module>
+  File "/opt/dl-image/nvme/memra-cx-val256/research/val256-20260809/deep_affinity_replay.py", line 59, in <module>
     raise SystemExit(REPLAY.main())
                      ^^^^^^^^^^^^^
-  File "/opt/scratch/nvme/memra-cx-val256/research/cachespec-20260809/replay.py", line 561, in main
+  File "/opt/dl-image/nvme/memra-cx-val256/research/cachespec-20260809/replay.py", line 561, in main
     replay_workload(args, workload, args.out, args.raw_dir)
-  File "/opt/scratch/nvme/memra-cx-val256/research/cachespec-20260809/replay.py", line 498, in replay_workload
+  File "/opt/dl-image/nvme/memra-cx-val256/research/cachespec-20260809/replay.py", line 498, in replay_workload
     result, receipt = issue_sequential(
                       ^^^^^^^^^^^^^^^^^
-  File "/opt/scratch/nvme/memra-cx-val256/research/cachespec-20260809/replay.py", line 347, in issue_sequential
+  File "/opt/dl-image/nvme/memra-cx-val256/research/cachespec-20260809/replay.py", line 347, in issue_sequential
     result = stream_request(args, prompt, session_id, request_index)
              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/scratch/nvme/memra-cx-val256/research/cachespec-20260809/replay.py", line 274, in stream_request
+  File "/opt/dl-image/nvme/memra-cx-val256/research/cachespec-20260809/replay.py", line 274, in stream_request
     result = read_stream(response, started_ns)
              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/scratch/nvme/memra-cx-val256/research/cachespec-20260809/replay.py", line 220, in read_stream
+  File "/opt/dl-image/nvme/memra-cx-val256/research/cachespec-20260809/replay.py", line 220, in read_stream
     raise RuntimeError(json.dumps(event["error"], sort_keys=True))
 RuntimeError: {"code": "overloaded", "message": "cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, \"out of memory\")", "param": null, "type": "server_error"}
-[server] starting; models config = [("step", "/opt/scratch/nvme/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", Some("/opt/scratch/nvme/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"))]
+[server] starting; models config = [("step", "/opt/dl-image/nvme/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", Some("/opt/dl-image/nvme/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"))]
 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
 [gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
 [worker] Engine ready (device=1, MEMRA_FAST=true)
 [spec-gate] policy placement=pp2-cross-device LOW=0 HIGH=1 source=placement-default spec-admission=off
 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
-[worker] loading model "step" <- /opt/scratch/nvme/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+[worker] loading model "step" <- /opt/dl-image/nvme/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
 [pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
 [moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
 [moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.72GB (expert budget 94.80GB) -> RESIDENT
 [fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
 [mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
 [mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
-[worker] step: regime draft attached (/opt/scratch/nvme/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf)
+[worker] step: regime draft attached (/opt/dl-image/nvme/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf)
 [worker]   loaded "step": 45 layers, eos=128007
 [worker] step: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true gemma_think=false ctx=262144 tok="deepseek-v3" instruct=Some("chatml") chat_defaults=Some(0.5)/Some(0.9)
 [worker] step: decode chunk cap 8

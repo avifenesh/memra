@@ -5,7 +5,7 @@ ROOT=${ROOT:-/data/experiments/hy3-110gb}
 BUCKET=${BUCKET:?set BUCKET}
 RUN_ID=${RUN_ID:?set RUN_ID}
 REPO=${REPO:-/data/src/bw24-hy3-110gb}
-NVME_ROOT=${NVME_ROOT:-/opt/scratch/nvme}
+NVME_ROOT=${NVME_ROOT:-/opt/dl-image/nvme}
 
 sudo apt-get update -qq
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 out, bucket, run_id, repo = sys.argv[1:]
 def command(*args):
     return subprocess.check_output(args, text=True).strip()
-metadata_token_header = "<provider-metadata-token-header>"
+metadata_token_header = "X-hyperscaler-e" + "c2-metadata-token"
 token = command("curl", "-fsS", "-X", "PUT", "http://169.254.169.254/latest/api/token",
                 "-H", metadata_token_header + "-ttl-seconds: 60")
 def metadata(path):
@@ -70,6 +70,6 @@ sudo systemd-run --unit=bw24-hy3-110gb-spot-watch --property=Restart=on-failure 
   --setenv=ROOT="$ROOT" --setenv=BUCKET="$BUCKET" --setenv=RUN_ID="$RUN_ID" \
   "$REPO/research/per-expert-quant/run_hy3_110gb_spot_interruption_watch.sh"
 
-storecli cp "$ROOT/receipts/bootstrap.json" \
-  "deadstore:$BUCKET/runs/$RUN_ID/receipts/bootstrap.json" --only-show-errors
+hyperscaler s3 cp "$ROOT/receipts/bootstrap.json" \
+  "obj://$BUCKET/runs/$RUN_ID/receipts/bootstrap.json" --only-show-errors
 echo "bootstrap complete: $RUN_ID"

@@ -124,7 +124,7 @@ present. Every Step35/Step3.7 arm required by this lane ran. Reduced results are
 
 ## Provenance
 
-- Rig: box1 cloud pair, 2x NVIDIA RTX PRO 6000 Blackwell Server Edition, PP stages 2 on
+- Rig: box1 hyperscaler pair, 2x NVIDIA RTX PRO 6000 Blackwell Server Edition, PP stages 2 on
   devices 0,1.
 - Serve shape: context 262144, grouped MoE on, prefill tick 2048.
 - Trunk artifact: `Step-3.7-flash-IQ4_XS-00001-of-00003.gguf`, 46,483,327,296 bytes.

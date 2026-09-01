@@ -4,13 +4,13 @@
 //! `src/unicode.cpp`), Rust glue hand-rolled. Built from the model's own GGUF
 //! tokenizer metadata (`tokenizer.ggml.*`) so it is integer-exact for that model.
 //!
-//! Scope: the `gpt2` vocab model with the `qwen35`/`qwen2`/`deepseek-v3`/`glm4` pre-tokenizers,
-//! plus the `gemma4` SPM-style path — see `SUPPORTED_PRETOKENIZERS`. A model declaring anything else
+//! Scope: the `gpt2` vocab model with the `qwen35`/`qwen2`/`deepseek-v3` pre-tokenizers, plus
+//! the `gemma4` SPM-style path — see `SUPPORTED_PRETOKENIZERS`. A model declaring anything else
 //! is REFUSED at load (`UnknownPretokenizer`), because an unported pre-tokenizer produces
 //! fluent output with wrong token ids and nothing downstream can see it.
 
 pub mod chat;
-pub mod json;
+mod json;
 mod unicode;
 mod unicode_data;
 
@@ -18,18 +18,13 @@ pub use chat::apply_chat_template_str;
 
 use memra_gguf::{GgufFile, MetaValue};
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::collections::{BinaryHeap, HashMap};
 
 /// ggml token_type values (llama.cpp `LLAMA_TOKEN_TYPE_*`).
 const TT_UNKNOWN: i64 = 2;
 const TT_CONTROL: i64 = 3;
 const TT_USER_DEFINED: i64 = 4;
 const TT_BYTE: i64 = 6;
-/// Dense token tables are indexed by token id; cap sparse metadata before it can
-/// request a multi-gigabyte `Vec` for one distant id.
-const MAX_TOKENIZER_ID: u32 = 1_000_000;
-const MAX_TOKENIZER_SPARSE_FACTOR: usize = 16;
-const MAX_TOKENIZER_SPARSE_SLACK: usize = 4096;
 const QWEN35_PRETOKENIZE_REGEX: &str = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?[\p{L}\p{M}]+|\p{N}| ?[^\s\p{L}\p{M}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+";
 /// llama.cpp `LLAMA_VOCAB_PRE_TYPE_QWEN2`. Differs from qwen35 in exactly two places —
 /// `\p{L}+` vs `[\p{L}\p{M}]+` and `[^\s\p{L}\p{N}]+` vs `[^\s\p{L}\p{M}\p{N}]+` — both of
@@ -45,20 +40,9 @@ const DEEPSEEK_V3_SPLIT_REGEXES: [&str; 3] = [
     "[!\"#$%&'()*+,\\-./:;<=>?@\\[\\\\\\]^_`{|}~][A-Za-z]+|[^\r\n\\p{L}\\p{P}\\p{S}]?[\\p{L}\\p{M}]+| ?[\\p{P}\\p{S}]+[\r\n]*|\\s*[\r\n]+|\\s+(?!\\S)|\\s+",
 ];
 
-/// llama.cpp `LLAMA_VOCAB_PRE_TYPE_CHATGLM4` (`tokenizer.ggml.pre` = `glm4`), read off
-/// zai-org/GLM-5.3-Flash @ 04c4e9e9's own `tokenizer.json` (sha256 19e77364…, the sha banked
-/// in that lane's `artifact.lock`). Differs from `QWEN2_PRETOKENIZE_REGEX` in EXACTLY ONE
-/// ATOM — `\p{N}{1,3}` instead of `\p{N}`, so digit runs group up to three (the cl100k /
-/// LLaMA-3 convention) instead of one token per digit — and is character-identical
-/// everywhere else. It still needs its OWN state machine (`unicode::split_glm4`) rather than
-/// a parameterized `split_qwen35`: `split_qwen35` implements qwen35's mark-folding classes
-/// (`[\p{L}\p{M}]+`, `[^\s\p{L}\p{M}\p{N}]+`), which the literal classes here do not, and the
-/// two disagree on any text carrying combining marks.
-const GLM4_PRETOKENIZE_REGEX: &str = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+";
-
 /// Every `tokenizer.ggml.pre` id memra implements an EXACT split for. This is the allowlist a
 /// load is checked against and the list quoted in the load error, so the two can never drift.
-pub const SUPPORTED_PRETOKENIZERS: &[&str] = &["qwen35", "qwen2", "deepseek-v3", "gemma4", "glm4"];
+pub const SUPPORTED_PRETOKENIZERS: &[&str] = &["qwen35", "qwen2", "deepseek-v3", "gemma4"];
 
 /// Escape hatch for deliberate experimentation with a family whose pre-tokenizer is not ported
 /// yet. Set to `1` to downgrade the hard load error to a loud per-load WARN.
@@ -66,30 +50,6 @@ pub const ALLOW_UNKNOWN_PRETOKENIZER_ENV: &str = "MEMRA_ALLOW_UNKNOWN_PRETOKENIZ
 
 fn allow_unknown_pretokenizer() -> bool {
     std::env::var(ALLOW_UNKNOWN_PRETOKENIZER_ENV).as_deref() == Ok("1")
-}
-
-/// Serializes every TEST that touches `MEMRA_ALLOW_UNKNOWN_PRETOKENIZER`. The variable is
-/// PROCESS-wide and `cargo test` runs the suite in parallel threads of ONE process, so
-/// `pretokenizer_tests::opt_out_env_gate`'s `set_var("1")` was visible to
-/// `hf_tests::hf_dir_refuses_unidentifiable_pretokenizer` while it ran: that test calls
-/// `from_hf_dir`, which reads this same variable through `allow_unknown_pretokenizer` above, so
-/// it LOADED instead of refusing and the suite failed with the qwen35-fallback WARN in its
-/// stdout. It reddened at whatever interleaving the scheduler happened to pick and passed every
-/// time it was run alone, which is why it read as noise. `opt_out_env_gate`'s old SAFETY note
-/// asserted "no other test reads this variable", which was simply untrue: the prose was the
-/// entire justification and nothing checked it against an actual reader. It lives at the crate
-/// root because the two racing tests are in two different `#[cfg(test)]` modules.
-/// (Found by lane/real-system-fingerprint-20260901, whose `cargo test --workspace` it reddened.)
-#[cfg(test)]
-static PRETOKENIZER_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-/// Take the env lock, tolerating poisoning: a panic inside one of these tests must not convert
-/// the others into a second, misleading failure that hides the first.
-#[cfg(test)]
-fn pretokenizer_env_lock() -> std::sync::MutexGuard<'static, ()> {
-    PRETOKENIZER_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// A model declared a pre-tokenizer memra has no exact split for.
@@ -135,9 +95,6 @@ pub enum PreSplit {
     Qwen35,
     /// `unicode::split_deepseek_v3` — DeepSeek-V3 and the Step-3.5/3.7-Flash family.
     DeepseekV3,
-    /// `unicode::split_glm4` — the zai-org GLM-4.x / GLM-5.x line (llama.cpp
-    /// `LLAMA_VOCAB_PRE_TYPE_CHATGLM4`). qwen2's pattern with `\p{N}{1,3}` digit grouping.
-    Glm4,
     /// gemma4 SPM-style BPE: `bpe_tokenize` splits whole lines itself and the `pre` id is never
     /// consulted. Requires the `gemma4` vocab model, not just the `pre` string.
     Spm,
@@ -166,7 +123,6 @@ impl PreSplit {
         match (pre, spm_style) {
             ("qwen35" | "qwen2", false) => Ok(PreSplit::Qwen35),
             ("deepseek-v3", false) => Ok(PreSplit::DeepseekV3),
-            ("glm4", false) => Ok(PreSplit::Glm4),
             ("gemma4", true) => Ok(PreSplit::Spm),
             _ => {
                 let err = UnknownPretokenizer {
@@ -234,16 +190,6 @@ pub struct Tokenizer {
     /// special-token ids, sorted by descending piece length (llama's cache order).
     special_tokens: Vec<u32>,
     eos_id: u32,
-    /// EVERY end-of-generation id the checkpoint declares, `eos_id` first.
-    ///
-    /// `eos_id` alone is a lie on any vendor that ships an ARRAY `eos_token_id`: GLM-5.3-Flash
-    /// declares `[154820 <|endoftext|>, 154827 <|user|>, 154829 <|observation|>]` in
-    /// `generation_config.json` (its turn boundaries — the assistant reaching either of the
-    /// last two has left its turn), and the serve path stopped on the first id only, so a
-    /// finished answer ran on into a hallucinated multi-turn transcript and reported
-    /// `finish_reason: "length"` (research/glm53-flash-bringup-20260827, 2026-08-27).
-    /// GGUF keeps exactly one id here (its metadata declares one), so no GGUF family moves.
-    eos_ids: Vec<u32>,
     bos_id: Option<u32>,
     add_bos: bool,
     pre: String,
@@ -331,12 +277,6 @@ impl Tokenizer {
             _ => return Err("missing tokenizer.ggml.tokens array".into()),
         };
         let n = tokens.len();
-        if n > MAX_TOKENIZER_ID as usize + 1 {
-            return Err(format!(
-                "tokenizer.ggml.tokens has {n} entries; maximum supported vocabulary is {}",
-                MAX_TOKENIZER_ID + 1
-            ));
-        }
         let mut id_to_token = Vec::with_capacity(n);
         let mut token_to_id = HashMap::with_capacity(n);
         for (i, t) in tokens.iter().enumerate() {
@@ -421,9 +361,6 @@ impl Tokenizer {
             bpe_ranks,
             special_tokens,
             eos_id,
-            // GGUF declares ONE eos id (`tokenizer.ggml.eos_token_id`); there is no array
-            // form to honour, so every GGUF family's stop set is byte-identical to before.
-            eos_ids: vec![eos_id],
             bos_id,
             add_bos,
             pre,
@@ -461,12 +398,12 @@ impl Tokenizer {
         let tj = json::parse(&text).map_err(|e| format!("{}: {e}", tj_path.display()))?;
 
         let model = tj.get("model").ok_or("tokenizer.json: missing model")?;
-        if let Some(t) = model.get("type").and_then(|v| v.as_str())
-            && t != "BPE"
-        {
-            return Err(format!(
-                "unsupported tokenizer.json model type '{t}' (only BPE)"
-            ));
+        if let Some(t) = model.get("type").and_then(|v| v.as_str()) {
+            if t != "BPE" {
+                return Err(format!(
+                    "unsupported tokenizer.json model type '{t}' (only BPE)"
+                ));
+            }
         }
         // byte-level check: pre_tokenizer.type == ByteLevel (possibly inside a Sequence).
         let pre_tok = tj
@@ -491,68 +428,33 @@ impl Tokenizer {
             .and_then(|v| v.as_arr())
             .unwrap_or(&empty);
         let mut max_id = 0u32;
-        let mut used_ids = HashSet::new();
         for v in vocab.values() {
-            let id = v
-                .as_u64()
-                .ok_or("tokenizer.json: non-integer id in model.vocab")?;
-            let id = u32::try_from(id).map_err(|_| "tokenizer.json: vocabulary id exceeds u32")?;
-            if id > MAX_TOKENIZER_ID {
-                return Err(format!(
-                    "tokenizer.json: vocabulary id {id} exceeds maximum {MAX_TOKENIZER_ID}"
-                ));
-            }
+            let id =
+                v.as_u64()
+                    .ok_or("tokenizer.json: non-integer id in model.vocab")? as u32;
             max_id = max_id.max(id);
-            used_ids.insert(id);
         }
         for a in added {
-            let id = a
-                .get("id")
-                .and_then(|v| v.as_u64())
-                .ok_or("tokenizer.json: added_tokens entry missing id")?;
-            let id = u32::try_from(id).map_err(|_| "tokenizer.json: added token id exceeds u32")?;
-            if id > MAX_TOKENIZER_ID {
-                return Err(format!(
-                    "tokenizer.json: added token id {id} exceeds maximum {MAX_TOKENIZER_ID}"
-                ));
+            if let Some(id) = a.get("id").and_then(|v| v.as_u64()) {
+                max_id = max_id.max(id as u32);
             }
-            max_id = max_id.max(id);
-            used_ids.insert(id);
         }
-        let n = (max_id as usize)
-            .checked_add(1)
-            .ok_or("tokenizer.json: vocabulary size overflow")?;
-        let entry_count = used_ids.len();
-        let max_dense_len = entry_count
-            .saturating_mul(MAX_TOKENIZER_SPARSE_FACTOR)
-            .saturating_add(MAX_TOKENIZER_SPARSE_SLACK);
-        if n > max_dense_len {
-            return Err(format!(
-                "tokenizer.json: vocabulary ids are too sparse (dense length {n}, {} entries; maximum {max_dense_len})",
-                entry_count
-            ));
-        }
+        let n = max_id as usize + 1;
         let mut id_to_token = vec![String::new(); n];
         let mut token_to_id: HashMap<String, u32> = HashMap::with_capacity(n);
         let mut attrs = vec![TokAttr::Normal; n];
         for (tok, v) in vocab {
-            let id = u32::try_from(
-                v.as_u64()
-                    .ok_or("tokenizer.json: non-integer id in model.vocab")?,
-            )
-            .map_err(|_| "tokenizer.json: vocabulary id exceeds u32")?;
+            let id = v.as_u64().unwrap() as u32;
             id_to_token[id as usize] = tok.clone();
             token_to_id.entry(tok.clone()).or_insert(id);
         }
         // added_tokens: register content + special flag. special=true -> Control (the class
         // that is split out before BPE and hidden by decode_special(.., false)).
         for a in added {
-            let id = u32::try_from(
+            let id =
                 a.get("id")
                     .and_then(|v| v.as_u64())
-                    .ok_or("tokenizer.json: added_tokens entry missing id")?,
-            )
-            .map_err(|_| "tokenizer.json: added token id exceeds u32")?;
+                    .ok_or("tokenizer.json: added_tokens entry missing id")? as u32;
             let content = a
                 .get("content")
                 .and_then(|v| v.as_str())
@@ -642,41 +544,20 @@ impl Tokenizer {
             .and_then(|c| c.get("eos_token"))
             .and_then(&tok_content)
             .and_then(|s| token_to_id.get(&s).copied());
-        // generation_config eos_token_id: int or an ARRAY of ints, and the array is the
-        // vendor's whole stop set — not a list whose first entry is the answer. Reading only
-        // `a.first()` here is what let GLM-5.3-Flash run past `<|user|>` (lane
-        // glm53-flash-bringup, 2026-08-27): ids 2 and 3 of a declared triple were dropped on
-        // the floor. `eos_id` (the SCALAR, consumed by the boot log, embed pooling, the
-        // grammar/tokrx bridges and every `eos_id()` caller) keeps its exact old selection —
-        // tokenizer_config `eos_token` first, else the FIRST generation_config id — and the
-        // rest of the declared ids ride `eos_ids` into `eog_ids()`.
-        let gen_eos_ids: Vec<u32> = gc
+        // generation_config eos_token_id: int or array of ints (first entry wins).
+        let eos_from_gen = gc
             .as_ref()
             .and_then(|c| c.get("eos_token_id"))
-            .map(|v| match v {
-                json::Value::Num(_) => v.as_u64().map(|x| x as u32).into_iter().collect(),
-                json::Value::Arr(a) => a
-                    .iter()
-                    .filter_map(|x| x.as_u64())
-                    .map(|x| x as u32)
-                    .collect(),
-                _ => Vec::new(),
+            .and_then(|v| match v {
+                json::Value::Num(_) => v.as_u64(),
+                json::Value::Arr(a) => a.first().and_then(|x| x.as_u64()),
+                _ => None,
             })
-            .unwrap_or_default();
-        let eos_from_gen = gen_eos_ids.first().copied();
+            .map(|v| v as u32);
         let eos_id = eos_from_cfg.or(eos_from_gen).ok_or(
             "no eos token: need tokenizer_config.json eos_token or \
              generation_config.json eos_token_id",
         )?;
-        // Declared order, eos_id first, no dedup survivors. An id past the vocab is kept as
-        // declared rather than silently dropped: it is inert (nothing can sample an id the
-        // logit row has no column for) and dropping it would hide a bad checkpoint.
-        let mut eos_ids = vec![eos_id];
-        for id in gen_eos_ids {
-            if !eos_ids.contains(&id) {
-                eos_ids.push(id);
-            }
-        }
         let bos_id = tc
             .as_ref()
             .and_then(|c| c.get("bos_token"))
@@ -741,7 +622,6 @@ impl Tokenizer {
             bpe_ranks,
             special_tokens,
             eos_id,
-            eos_ids,
             bos_id,
             add_bos,
             pre: pre.to_string(),
@@ -755,29 +635,19 @@ impl Tokenizer {
     pub fn eos_id(&self) -> u32 {
         self.eos_id
     }
-    /// Every eos id the checkpoint declares, `eos_id` first. One entry for GGUF and for any
-    /// checkpoint whose `generation_config.json` names a single id; the whole declared array
-    /// otherwise. Prefer `eog_ids()` for a stop set — it adds the name-keyed backstop.
-    pub fn eos_ids(&self) -> &[u32] {
-        &self.eos_ids
-    }
     /// Exact-piece id lookup (vision special tokens etc.). None = not in the vocab.
     pub fn id_of(&self, piece: &str) -> Option<u32> {
         self.token_to_id.get(piece).copied()
     }
-    /// Every end-of-generation id the CHECKPOINT declares (`eos_ids`), plus the common
-    /// turn-end control tokens present in the vocab (llama's special_eog set — <|im_end|>
-    /// chatml, <turn|>/<end_of_turn> gemma) as a name-keyed backstop for checkpoints whose
-    /// metadata names only one.
-    ///
-    /// This is the serve path's stop set (`worker::run` unions it into `GenParams::eos`).
+    /// End-of-generation ids: eos + the common turn-end control tokens present in the vocab
+    /// (llama's special_eog set — <|im_end|> chatml, <turn|>/<end_of_turn> gemma).
     pub fn eog_ids(&self) -> Vec<u32> {
-        let mut ids = self.eos_ids.clone();
+        let mut ids = vec![self.eos_id];
         for t in ["<|im_end|>", "<turn|>", "<end_of_turn>"] {
-            if let Some(&id) = self.token_to_id.get(t)
-                && !ids.contains(&id)
-            {
-                ids.push(id);
+            if let Some(&id) = self.token_to_id.get(t) {
+                if !ids.contains(&id) {
+                    ids.push(id);
+                }
             }
         }
         ids
@@ -828,11 +698,10 @@ impl Tokenizer {
 
     pub fn encode_special(&self, text: &str, add_special: bool, parse_special: bool) -> Vec<u32> {
         let mut output: Vec<u32> = Vec::new();
-        if add_special
-            && self.add_bos
-            && let Some(b) = self.bos_id
-        {
-            output.push(b);
+        if add_special && self.add_bos {
+            if let Some(b) = self.bos_id {
+                output.push(b);
+            }
         }
         if text.is_empty() {
             return output;
@@ -913,11 +782,11 @@ impl Tokenizer {
             }
             for word in &words {
                 // newline-run fix (llama PR #21343): whole-word vocab hit short-circuits BPE.
-                if word.chars().all(|c| c == '\n')
-                    && let Some(tok) = self.text_to_token(word)
-                {
-                    output.push(tok);
-                    continue;
+                if word.chars().all(|c| c == '\n') {
+                    if let Some(tok) = self.text_to_token(word) {
+                        output.push(tok);
+                        continue;
+                    }
                 }
                 self.bpe_merge_word(word, output);
             }
@@ -936,10 +805,6 @@ impl Tokenizer {
             // (llama.cpp LLAMA_VOCAB_PRE_TYPE_DEEPSEEK3_LLM). Materially different from qwen2:
             // \p{N}{1,3} digit grouping, an isolated CJK/kana pass, and \p{P}/\p{S}-only runs.
             PreSplit::DeepseekV3 => unicode::split_deepseek_v3(text),
-            // zai-org GLM-4.x / GLM-5.x (llama.cpp LLAMA_VOCAB_PRE_TYPE_CHATGLM4): qwen2's
-            // pattern with `\p{N}{1,3}` digit grouping, and literal `\p{L}` letter runs that
-            // do NOT fold combining marks the way the qwen35 machine does.
-            PreSplit::Glm4 => unicode::split_glm4(text),
             // MEMRA_ALLOW_UNKNOWN_PRETOKENIZER=1 — the operator asked for wrong ids. The WARN
             // was printed at load; do not repeat it once per fragment.
             PreSplit::UnknownFallbackQwen35 => unicode::split_qwen35(text),
@@ -1068,18 +933,10 @@ impl Tokenizer {
     /// grammar match these as literal bytes (a JSON string could otherwise smuggle
     /// `<|im_start|>`); they substitute a non-text marker form instead.
     pub fn token_is_control(&self, id: u32) -> bool {
-        matches!(
-            self.attrs.get(id as usize),
-            Some(TokAttr::Control) | Some(TokAttr::Unknown)
-        )
-    }
-
-    /// True iff `id` is in the special set `st_partition` splits out of raw text (control /
-    /// user-defined / unknown) — i.e. an id a plain-text LITERAL can produce during encode.
-    /// The vision special-id intake guard (memra-server) keys on this: an ordinary vocab
-    /// entry that merely looks like a marker is honest text and must not be policed.
-    pub fn token_is_special(&self, id: u32) -> bool {
-        self.special_tokens.contains(&id)
+        match self.attrs.get(id as usize) {
+            Some(TokAttr::Control) | Some(TokAttr::Unknown) => true,
+            _ => false,
+        }
     }
 
     pub fn decode_special(&self, ids: &[u32], special: bool) -> String {
@@ -1101,14 +958,15 @@ impl Tokenizer {
                 TokAttr::Normal | TokAttr::Byte => {
                     if self.spm_style {
                         // gemma4: <0xXX> byte tokens -> raw byte; else unescape \u2581 -> space.
-                        if (matches!(attr, TokAttr::Byte)
+                        if matches!(attr, TokAttr::Byte)
                             || (piece.len() == 6
                                 && piece.starts_with("<0x")
-                                && piece.ends_with('>')))
-                            && let Ok(b) = u8::from_str_radix(&piece[3..5], 16)
+                                && piece.ends_with('>'))
                         {
-                            bytes.push(b);
-                            continue;
+                            if let Ok(b) = u8::from_str_radix(&piece[3..5], 16) {
+                                bytes.push(b);
+                                continue;
+                            }
                         }
                         for c in piece.chars() {
                             if c == '\u{2581}' {
@@ -1329,10 +1187,6 @@ fn pre_from_split_regexes(regexes: &[String]) -> Option<&'static str> {
     match regexes {
         [one] if one == QWEN35_PRETOKENIZE_REGEX => Some("qwen35"),
         [one] if one == QWEN2_PRETOKENIZE_REGEX => Some("qwen2"),
-        // GLM-5.3-Flash's `tokenizer.ggml.pre` is `default`; this arm is the ONLY thing that
-        // identifies it, and the one-atom `{1,3}` delta from qwen2 is why the comparison has
-        // to stay byte-exact.
-        [one] if one == GLM4_PRETOKENIZE_REGEX => Some("glm4"),
         [a, b, c]
             if a == DEEPSEEK_V3_SPLIT_REGEXES[0]
                 && b == DEEPSEEK_V3_SPLIT_REGEXES[1]
@@ -1378,10 +1232,6 @@ mod pretokenizer_tests {
             Ok(PreSplit::DeepseekV3)
         );
         assert_eq!(
-            PreSplit::resolve_with("glm4", false, false),
-            Ok(PreSplit::Glm4)
-        );
-        assert_eq!(
             PreSplit::resolve_with("gemma4", true, false),
             Ok(PreSplit::Spm)
         );
@@ -1389,7 +1239,7 @@ mod pretokenizer_tests {
         // what the code accepts
         assert_eq!(
             SUPPORTED_PRETOKENIZERS,
-            &["qwen35", "qwen2", "deepseek-v3", "gemma4", "glm4"]
+            &["qwen35", "qwen2", "deepseek-v3", "gemma4"]
         );
     }
 
@@ -1448,9 +1298,8 @@ mod pretokenizer_tests {
     /// `=0`/`=false` in a launcher does not silently turn wrong ids back on).
     #[test]
     fn opt_out_env_gate() {
-        let _env = pretokenizer_env_lock();
-        // SAFETY: the lock above makes this thread the only one touching this variable, and
-        // the resolve paths every other test uses take the decision as a parameter.
+        // SAFETY: single-threaded within this test; no other test reads this variable, and the
+        // resolve paths every other test uses take the decision as a parameter.
         unsafe { std::env::remove_var(ALLOW_UNKNOWN_PRETOKENIZER_ENV) };
         assert!(!allow_unknown_pretokenizer());
         unsafe { std::env::set_var(ALLOW_UNKNOWN_PRETOKENIZER_ENV, "0") };
@@ -1482,12 +1331,6 @@ mod pretokenizer_tests {
             pre_from_split_regexes(&s(&DEEPSEEK_V3_SPLIT_REGEXES)),
             Some("deepseek-v3")
         );
-        // GLM-5.3-Flash: `tokenizer.ggml.pre` is `default`, so the tokenizer.json Split regex
-        // is the ONLY identifier the checkpoint carries.
-        assert_eq!(
-            pre_from_split_regexes(&s(&[GLM4_PRETOKENIZE_REGEX])),
-            Some("glm4")
-        );
         // order matters
         assert_eq!(
             pre_from_split_regexes(&s(&[
@@ -1512,23 +1355,6 @@ mod pretokenizer_tests {
         assert_eq!(pre_from_split_regexes(&[]), None);
         // qwen2 and qwen35 are NOT the same string (the two-class delta is real)
         assert_ne!(QWEN2_PRETOKENIZE_REGEX, QWEN35_PRETOKENIZE_REGEX);
-        // glm4 is qwen2's pattern with ONE atom changed — assert that literally, so nobody can
-        // "simplify" the two constants into one and silently route GLM through qwen2's split.
-        assert_ne!(GLM4_PRETOKENIZE_REGEX, QWEN2_PRETOKENIZE_REGEX);
-        assert_eq!(
-            QWEN2_PRETOKENIZE_REGEX.replacen(r"|\p{N}|", r"|\p{N}{1,3}|", 1),
-            GLM4_PRETOKENIZE_REGEX,
-            "glm4 must differ from qwen2 in exactly the digit-run atom"
-        );
-        // and dropping the {1,3} back off is qwen2, not glm4
-        assert_eq!(
-            pre_from_split_regexes(&s(&[&GLM4_PRETOKENIZE_REGEX.replacen(
-                r"\p{N}{1,3}",
-                r"\p{N}",
-                1
-            )])),
-            Some("qwen2")
-        );
     }
 
     /// `collect_split_regexes` walks a Sequence in order and ignores non-Split steps and
@@ -1615,58 +1441,6 @@ mod hf_tests {
         dir
     }
 
-    /// A GLM-5.3-Flash-shaped checkpoint dir: the shared fixture's BPE with the artifact's
-    /// three declared eos tokens spliced into `added_tokens` at their REAL ids, plus the two
-    /// real vendor sidecars byte-for-byte. What is under test is which declared ids survive
-    /// the load, so the vocab/merges/pre-tokenizer stay the shared fixture's.
-    fn write_glm53_fixture() -> std::path::PathBuf {
-        let base_added = r#""added_tokens": [
-        {"id": 15, "content": "<|end|>", "special": true},
-        {"id": 16, "content": "<think>", "special": false}
-      ],"#;
-        // ids straight off the artifact's own added_tokens table (box, 2026-08-28).
-        let glm_added = r#""added_tokens": [
-        {"id": 154820, "content": "<|endoftext|>", "special": true},
-        {"id": 154826, "content": "<|system|>", "special": true},
-        {"id": 154827, "content": "<|user|>", "special": true},
-        {"id": 154828, "content": "<|assistant|>", "special": true},
-        {"id": 154829, "content": "<|observation|>", "special": true}
-      ],"#;
-        assert!(
-            TOKENIZER_JSON.contains(base_added),
-            "fixture added_tokens block moved"
-        );
-        let tj = TOKENIZER_JSON.replace(base_added, glm_added);
-        // DENSITY. `from_hf_dir` refuses a tokenizer.json whose ids are sparse relative to its
-        // entry count (`MAX_TOKENIZER_SPARSE_*`, PR #57) — a real defense: `id_to_token` is a
-        // DENSE Vec, so a 20-entry file declaring id 154829 would allocate a 154k-slot table
-        // from a few hundred bytes of attacker-chosen JSON. The GLM artifact itself is dense
-        // (154830 ids, ~154k entries); it is this FIXTURE that was sparse, having borrowed a
-        // 17-id vocab and bolted the artifact's real high ids onto it. Fill the gap so the
-        // fixture has the artifact's SHAPE and the guard sees what it would see in production.
-        // Ids 17..154820 only: the five added_tokens above own 154820..154829, and 0..16 are
-        // the shared fixture's own vocab.
-        let anchor = "\"!\": 14\n";
-        assert!(tj.contains(anchor), "fixture vocab tail moved");
-        let mut filler = String::with_capacity(4 << 20);
-        filler.push_str("\"!\": 14");
-        for id in 17u32..154_820 {
-            // A name that can never collide with a real piece, a merge operand, or any of the
-            // eos NAMES the name-keyed backstop looks for: no merge rule can ever produce it.
-            filler.push_str(&format!(",\n          \"##fill{id}\": {id}"));
-        }
-        filler.push('\n');
-        let tj = tj.replace(anchor, &filler);
-
-        let dir = std::env::temp_dir().join(format!("memra-tok-glm53-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("tokenizer.json"), tj).unwrap();
-        std::fs::write(dir.join("tokenizer_config.json"), GLM53_TOKENIZER_CONFIG).unwrap();
-        std::fs::write(dir.join("generation_config.json"), GLM53_GENERATION_CONFIG).unwrap();
-        dir
-    }
-
     #[test]
     fn hf_dir_encode_decode_roundtrip_and_specials() {
         // eos as an AddedToken OBJECT + chat_template string in tokenizer_config.
@@ -1712,161 +1486,8 @@ mod hf_tests {
         let dir = write_fixture("genconf", None, Some(gc), Some("JINJA {{ messages }}"));
         let tok = Tokenizer::from_hf_dir(&dir).expect("from_hf_dir");
         assert_eq!(tok.eos_id(), 15);
-        // DELIBERATE CHANGE, 2026-08-27 (lane glm53-flash-bringup): the scalar still takes
-        // the array's first entry — unchanged — but id 14 is no longer dropped. Every id in
-        // the vendor's array is a declared stop; keeping only the first is the GLM-5.3 bug.
-        assert_eq!(tok.eos_ids(), &[15, 14]);
-        assert_eq!(tok.eog_ids(), vec![15, 14]);
         assert!(!tok.encode("hello", true).is_empty());
         assert_eq!(tok.chat_template(), Some("JINJA {{ messages }}"));
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// GLM-5.3-Flash's REAL banked sidecars, byte-for-byte.
-    ///
-    ///   research/glm53-flash-bringup-20260827/generation_config.json
-    ///     sha256 230c30609ecbbb9e6583bedde8e7bdda0c6eb8fe5fad0eaeb3d1b293d751cb4f
-    ///   research/glm53-flash-bringup-20260827/tokenizer_config.json
-    ///     sha256 98b1271574f41abf89427ae2dda030d94dc9478f0edc5a8bd240db213c6fd5fc
-    ///
-    /// Inlined rather than `include_str!`d: these crates publish to crates.io and `research/`
-    /// is outside every package, so a path include would compile here and break `cargo
-    /// publish`. The lane dir holds the same bytes for provenance.
-    const GLM53_GENERATION_CONFIG: &str = r#"{
-  "_from_model_config": true,
-  "eos_token_id": [
-    154820,
-    154827,
-    154829
-  ],
-  "pad_token_id": 154820,
-  "temperature": 1.0,
-  "top_p": 0.95,
-  "transformers_version": "5.16.0"
-}
-"#;
-    const GLM53_TOKENIZER_CONFIG: &str = r#"{
-  "backend": "tokenizers",
-  "clean_up_tokenization_spaces": false,
-  "do_lower_case": false,
-  "eos_token": "<|endoftext|>",
-  "extra_special_tokens": ["<|endoftext|>", "[MASK]", "[gMASK]", "[sMASK]", "<sop>", "<eop>",
-    "<|system|>", "<|user|>", "<|assistant|>", "<|observation|>", "<|begin_of_image|>",
-    "<|end_of_image|>", "<|begin_of_video|>", "<|end_of_video|>", "<|begin_of_audio|>",
-    "<|end_of_audio|>", "<|begin_of_transcription|>", "<|end_of_transcription|>"],
-  "is_local": true,
-  "model_max_length": 1048576,
-  "pad_token": "<|endoftext|>",
-  "padding_side": "left",
-  "remove_space": false,
-  "tokenizer_class": "TokenizersBackend"
-}"#;
-
-    /// THE GLM-5.3-FLASH TRIPLE-EOS PIN (lane glm53-flash-bringup, 2026-08-27).
-    ///
-    /// What was broken: `generation_config.json` declares three eos ids and the engine carried
-    /// one, so a finished answer ran straight through `<|user|>` into a hallucinated
-    /// multi-turn transcript and the OpenAI surface reported `finish_reason: "length"`
-    /// (receipts: research/glm53-flash-bringup-20260827/forward-bisect-receipts/).
-    ///
-    /// Why <|user|> and <|observation|> are legitimately stops and not arbitrary specials:
-    /// they are the artifact's TURN BOUNDARIES. chat_template.jinja emits `<|user|>` as the
-    /// user-turn prefix (line 139) and `<|observation|>` as the tool-result prefix (line 167),
-    /// with `<|assistant|>` opening the generation the server asked for (line 256); an
-    /// assistant that emits either has left its own turn. Both are `special: true` added
-    /// tokens in the artifact's tokenizer.json (ids 154827 / 154829, verified on the box
-    /// 2026-08-28), i.e. control tokens that can never fall out of ordinary BPE text.
-    ///
-    /// The ids come from the vendor sidecar, so the fixture's `tokenizer.json` only has to
-    /// carry them; the pre-tokenizer here is the shared qwen35 fixture and is not under test.
-    #[test]
-    fn hf_dir_glm53_flash_carries_all_three_declared_eos_ids() {
-        let dir = write_glm53_fixture();
-        let tok = Tokenizer::from_hf_dir(&dir).expect("from_hf_dir");
-
-        // The SCALAR is unchanged by this lane: tokenizer_config's eos_token still wins, and
-        // it is <|endoftext|> — the boot log, embed pooling and the grammar bridges all keep
-        // seeing exactly what they saw before.
-        assert_eq!(tok.eos_id(), 154_820);
-        assert_eq!(tok.id_of("<|endoftext|>"), Some(154_820));
-        assert_eq!(tok.id_of("<|user|>"), Some(154_827));
-        assert_eq!(tok.id_of("<|observation|>"), Some(154_829));
-
-        // The SET is what the serve path stops on (`worker::run` unions `eog_ids()` into
-        // `GenParams::eos`). Set EQUALITY, not containment: this vocab has no <|im_end|> /
-        // <turn|> / <end_of_turn>, so the name-keyed backstop must contribute nothing and the
-        // three declared ids must be all of it.
-        assert_eq!(tok.eos_ids(), &[154_820, 154_827, 154_829]);
-        assert_eq!(tok.eog_ids(), vec![154_820, 154_827, 154_829]);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// REGRESSION PIN: a single-eos family does not move.
-    ///
-    /// Both single-id shapes that ship today — `tokenizer_config.eos_token` with no
-    /// generation_config at all, and hy3's scalar `generation_config.eos_token_id` — must
-    /// produce a one-id `eos_ids` and an `eog_ids` identical to the pre-lane
-    /// `vec![eos_id] + name-keyed backstop`.
-    #[test]
-    fn hf_dir_single_eos_family_stop_set_unchanged() {
-        // shape 1: tokenizer_config eos_token only (no generation_config).
-        let tc = r#"{"eos_token": "<|end|>", "add_bos_token": false}"#;
-        let dir = write_fixture("single-tc", Some(tc), None, None);
-        let tok = Tokenizer::from_hf_dir(&dir).expect("from_hf_dir");
-        assert_eq!(tok.eos_id(), 15);
-        assert_eq!(tok.eos_ids(), &[15]);
-        assert_eq!(tok.eog_ids(), vec![15]);
-        let _ = std::fs::remove_dir_all(&dir);
-
-        // shape 2: hy3 — tokenizer_config eos_token AND a scalar generation_config id that
-        // agrees. One id in, one id out; the scalar arm must not become a one-element array
-        // that then re-enters as a duplicate.
-        let dir = write_fixture("single-gc", Some(tc), Some(r#"{"eos_token_id": 15}"#), None);
-        let tok = Tokenizer::from_hf_dir(&dir).expect("from_hf_dir");
-        assert_eq!(tok.eos_id(), 15);
-        assert_eq!(tok.eos_ids(), &[15]);
-        assert_eq!(tok.eog_ids(), vec![15]);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// THE CENSUS DELTA, made explicit rather than discovered in production.
-    ///
-    /// Reading the whole array changes the stop set of every from_hf_dir family whose vendor
-    /// declares more than one id. Measured 2026-08-27 over the artifacts on the rig:
-    ///
-    ///   qwen36/qwen38 27B  eos_token_id [248046, 248044]  -> +248044 `<|endoftext|>`
-    ///                      (248046 `<|im_end|>` was already in via the name backstop)
-    ///   qwen35 9B          scalar 248044, tc `<|im_end|>` -> +248044 `<|endoftext|>`
-    ///   qwen3 1.7B         [151645, 151643]               -> +151643 `<|endoftext|>`
-    ///   gemma4 26B NVFP4   [1, 106, 50]                   -> +50 `<|tool_response>`
-    ///                      (1 `<eos>` is the scalar, 106 `<turn|>` was in via the backstop)
-    ///   hy3                scalar 120025                  -> no change
-    ///   m3                 scalar 200020                  -> no change
-    ///   step35 NVFP4       [1, 2, 128007]                 -> +1 end-of-sentence, +2 pad
-    ///                      (128007 `<|im_end|>` is the scalar; the vendor lists its PAD
-    ///                       token as an eos — a control token either way)
-    ///   every GGUF family                                 -> no change by construction
-    ///   dsv4                                              -> no change (dsv4_serve.rs builds
-    ///                                                        its stop set from `eos_id()`)
-    ///
-    /// Every delta is a `special: true` control token the vendor itself names as a stop, and
-    /// none can be produced by ordinary BPE over text. This pin holds the qwen shape so the
-    /// delta is a decision with a test behind it, not a surprise.
-    #[test]
-    fn hf_dir_multi_eos_array_extends_the_stop_set_beyond_the_first_id() {
-        // qwen shape: tokenizer_config names the turn-end token, generation_config's array
-        // adds the raw end-of-text id after it.
-        let tc = r#"{"eos_token": "<|end|>", "add_bos_token": false}"#;
-        let gc = r#"{"eos_token_id": [15, 14]}"#;
-        let dir = write_fixture("multi", Some(tc), Some(gc), None);
-        let tok = Tokenizer::from_hf_dir(&dir).expect("from_hf_dir");
-        assert_eq!(
-            tok.eos_id(),
-            15,
-            "the scalar keeps tokenizer_config's choice"
-        );
-        assert_eq!(tok.eos_ids(), &[15, 14]);
-        assert_eq!(tok.eog_ids(), vec![15, 14]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1936,71 +1557,10 @@ mod hf_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// GLM-5.3-Flash's own shape: `tokenizer.ggml.pre` is absent (the GGUF sentinel is
-    /// `default`), the checkpoint carries no `pretokenize_regex` sidecar, and the
-    /// tokenizer.json Split regex is the ONLY identifier. It differs from qwen2 by the single
-    /// `\p{N}` -> `\p{N}{1,3}` atom, so the byte-exact comparison is the whole gate: a fuzzy
-    /// match here would route GLM through qwen2's split and every id downstream would be wrong.
-    #[test]
-    fn hf_dir_identifies_glm4_regex() {
-        let json = TOKENIZER_JSON.replace(
-            r"[^\\r\\n\\p{L}\\p{N}]?[\\p{L}\\p{M}]+|\\p{N}| ?[^\\s\\p{L}\\p{M}\\p{N}]+",
-            r"[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+",
-        );
-        assert_ne!(json, TOKENIZER_JSON, "the glm4 substitution must apply");
-        let dir = std::env::temp_dir().join(format!("memra-tok-hf-glm4-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("tokenizer.json"), &json).unwrap();
-        std::fs::write(
-            dir.join("generation_config.json"),
-            r#"{"eos_token_id": 15}"#,
-        )
-        .unwrap();
-        let tok = Tokenizer::from_hf_dir(&dir).expect("from_hf_dir");
-        assert_eq!(tok.pre(), "glm4");
-        assert_eq!(
-            tok.split(),
-            PreSplit::Glm4,
-            "glm4 gets its OWN split, not qwen35's"
-        );
-        // and the SAME fixture with qwen2's `\p{N}` instead resolves elsewhere — the one-atom
-        // delta is the whole identification, so both directions are pinned here.
-        let qjson = TOKENIZER_JSON.replace(
-            r"[^\\r\\n\\p{L}\\p{N}]?[\\p{L}\\p{M}]+|\\p{N}| ?[^\\s\\p{L}\\p{M}\\p{N}]+",
-            r"[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}| ?[^\\s\\p{L}\\p{N}]+",
-        );
-        let qwen_dir =
-            std::env::temp_dir().join(format!("memra-tok-hf-glm4-ctl-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&qwen_dir);
-        std::fs::create_dir_all(&qwen_dir).unwrap();
-        std::fs::write(qwen_dir.join("tokenizer.json"), &qjson).unwrap();
-        std::fs::write(
-            qwen_dir.join("generation_config.json"),
-            r#"{"eos_token_id": 15}"#,
-        )
-        .unwrap();
-        let qtok = Tokenizer::from_hf_dir(&qwen_dir).expect("from_hf_dir(qwen2 control)");
-        assert_eq!(qtok.pre(), "qwen2");
-        assert_eq!(qtok.split(), PreSplit::Qwen35);
-        assert_ne!(tok.split(), qtok.split());
-        // the two splits disagree on a 4-digit run — the reason the variant exists
-        assert_eq!(unicode::split_glm4("1234"), ["123", "4"]);
-        assert_eq!(unicode::split_qwen35("1234"), ["1", "2", "3", "4"]);
-        let _ = std::fs::remove_dir_all(&dir);
-        let _ = std::fs::remove_dir_all(&qwen_dir);
-    }
-
     /// An HF checkpoint whose pre-tokenizer matches nothing known is REFUSED, and the error
     /// names both observations so the next porter knows what to implement.
     #[test]
     fn hf_dir_refuses_unidentifiable_pretokenizer() {
-        // This test's whole point is the REFUSAL path, which the opt-out env var disables, so
-        // it holds the same lock as `opt_out_env_gate` and clears the variable first: a panic
-        // partway through that test can otherwise leave the opt-out set.
-        let _env = pretokenizer_env_lock();
-        // SAFETY: the lock above makes this thread the only one touching this variable.
-        unsafe { std::env::remove_var(ALLOW_UNKNOWN_PRETOKENIZER_ENV) };
         let json = TOKENIZER_JSON.replace(r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|", "SOMETHING-ELSE|");
         assert_ne!(json, TOKENIZER_JSON);
         let dir = std::env::temp_dir().join(format!("memra-tok-hf-unk-{}", std::process::id()));

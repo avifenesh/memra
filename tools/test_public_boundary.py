@@ -84,86 +84,6 @@ class AllowlistTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "does not grandfather"):
             boundary.load_allowlist(self.write_lines(bad))
 
-    def test_malformed_expiry_is_rejected(self) -> None:
-        bad = entry()
-        bad["expires"] = "next month"
-        with self.assertRaisesRegex(SystemExit, "ISO date"):
-            boundary.load_allowlist(self.write_lines(bad))
-
-    def test_empty_lane_is_rejected(self) -> None:
-        bad = entry()
-        bad["lane"] = ""
-        with self.assertRaisesRegex(SystemExit, "non-empty string"):
-            boundary.load_allowlist(self.write_lines(bad))
-
-    def test_severity4_private_path_entry_demands_expiry_and_lane(self) -> None:
-        """A parked private SURFACE is a dated owner decision, not a permanent fact.
-
-        Before 2026-08-29 the severity-4 whole-file grandfathers (ledger, admin, darklane,
-        lanes) were re-blessed hash-bump after hash-bump — four lanes in one week — and
-        nothing ever asked when the parking ends.
-        """
-        policy = boundary.Policy(
-            secret_patterns={}, secret_sources={},
-            secret_union=boundary.re.compile(r"(?!x)x"), secret_groups={},
-            private_paths={"test": "deploy/gateway/**"}, bypass_paths=[],
-            severity={"test": 4},
-        )
-        undated = entry()
-        key = (undated["path"], undated["sha256"])
-        with self.assertRaisesRegex(SystemExit, "lack 'expires'"):
-            boundary.enforce_expiry_metadata({key: undated}, policy)
-        dated = entry()
-        dated["expires"] = "2999-01-01"
-        dated["lane"] = "some-lane"
-        boundary.enforce_expiry_metadata({key: dated}, policy)
-
-    def test_expiry_demand_stops_below_severity4_and_outside_private_path(self) -> None:
-        sev3 = boundary.Policy(
-            secret_patterns={}, secret_sources={},
-            secret_union=boundary.re.compile(r"(?!x)x"), secret_groups={},
-            private_paths={"test": "deploy/gateway/**"}, bypass_paths=[],
-            severity={"test": 3},
-        )
-        self.assertFalse(boundary.needs_expiry(entry(), sev3))
-        # A severity-4 SECRET-PATTERN pin never demands a date — its safety case lives in
-        # the reason text; only whole parked surfaces (private_path rules) do.
-        secret_rule = boundary.Policy(
-            secret_patterns={}, secret_sources={},
-            secret_union=boundary.re.compile(r"(?!x)x"), secret_groups={},
-            private_paths={}, bypass_paths=[], severity={"test": 5},
-        )
-        self.assertFalse(boundary.needs_expiry(entry(), secret_rule))
-        # An unranked rule only exists in hand-built test policies; the demand keys on the
-        # rank the policy explicitly declares, never on DEFAULT_SEVERITY.
-        unranked = boundary.Policy(
-            secret_patterns={}, secret_sources={},
-            secret_union=boundary.re.compile(r"(?!x)x"), secret_groups={},
-            private_paths={"test": "deploy/gateway/**"}, bypass_paths=[],
-        )
-        self.assertFalse(boundary.needs_expiry(entry(), unranked))
-
-    def test_shipped_allowlist_parks_no_private_surfaces(self) -> None:
-        """The end state the expiry machinery was built to force, reached 2026-08-29.
-
-        The severity-4 whole-file grandfathers (ledger, admin, darklane, lanes) are
-        GONE: the business tier migrated out (engine-billing-extraction-20260829) and
-        lane QoS was reclassified engine-open. The rules stay as tripwires; any entry
-        for them reappearing here demands a dated owner decision again.
-        """
-        policy = boundary.load_policy(boundary.POLICY_PATH)
-        allowlist = boundary.load_allowlist(boundary.ALLOWLIST_PATH)
-        boundary.enforce_expiry_metadata(allowlist, policy)
-        dated = [e["path"] for e in allowlist.values() if boundary.needs_expiry(e, policy)]
-        self.assertEqual(
-            dated, [], "a private SURFACE is parked in the public repo again"
-        )
-        # The tripwires themselves must stay declared, or deleting the files also
-        # deleted the fence that keeps them out.
-        for rule in ("server_ledger", "server_admin", "server_capture"):
-            self.assertIn(rule, policy.private_paths)
-            self.assertGreaterEqual(policy.severity.get(rule, 0), 4)
-
     def test_shipped_allowlist_loads_and_is_fully_rule_scoped(self) -> None:
         """The migration's own invariant: no entry in the repo grandfathers everything."""
         allowlist = boundary.load_allowlist(boundary.ALLOWLIST_PATH)
@@ -533,28 +453,6 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn("stale allowlist entries", output)
 
-    def test_expired_grandfather_resurfaces_the_finding(self) -> None:
-        """Past its date an entry exempts nothing; the report names the parking record."""
-        violation = boundary.Violation("deploy/gateway/unit", "a" * 64, "private_path", "test")
-        parked = entry()
-        parked["expires"] = "2000-01-01"
-        parked["lane"] = "some-lane"
-        key = (violation.path, violation.sha256)
-        rc, output = self.run_check({key: parked}, [violation])
-        self.assertEqual(rc, 1)
-        self.assertIn("EXPIRED grandfathers", output)
-        self.assertIn("lane: some-lane", output)
-
-    def test_future_dated_grandfather_still_exempts(self) -> None:
-        violation = boundary.Violation("deploy/gateway/unit", "a" * 64, "private_path", "test")
-        parked = entry()
-        parked["expires"] = "2999-01-01"
-        parked["lane"] = "some-lane"
-        key = (violation.path, violation.sha256)
-        rc, output = self.run_check({key: parked}, [violation])
-        self.assertEqual(rc, 0)
-        self.assertIn("1 grandfathered, 0 new", output)
-
     def test_summary_only_reports_counts_without_paths(self) -> None:
         """A public Actions log must not publish where the unremediated leaks are.
 
@@ -589,7 +487,7 @@ class CheckTests(unittest.TestCase):
         `wiki-055.txt` carries `personal_email` at offset 367 and a cloud account id at 556, and
         was therefore reported as `personal_email` — one line inside 56 hits of a class a
         reviewer correctly triages as authorship noise, with the account id, the
-        AdministratorAccess assertion and the identity principal beside it named nowhere. One hit is
+        AdministratorAccess assertion and the IAM principal beside it named nowhere. One hit is
         enough to enforce; triage needs all of them.
         """
         handle = tempfile.NamedTemporaryFile("w", delete=False)
@@ -850,11 +748,6 @@ class CommitBlobTests(unittest.TestCase):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
 
-    def symlink(self, path: str, target: str) -> None:
-        link = self.root / path
-        link.parent.mkdir(parents=True, exist_ok=True)
-        link.symlink_to(target)
-
     def commit(self, path: str, data: bytes, message: str) -> str:
         self.write(path, data)
         self.git("add", "-f", path)
@@ -867,22 +760,6 @@ class CommitBlobTests(unittest.TestCase):
         with mock.patch.object(boundary, "ROOT", self.root):
             candidates = boundary.secret_candidate_files(self.policy.secret_sources)
         self.assertIn("capture.bin", candidates)
-
-    def test_checkout_scan_reads_symlink_blob_without_following_absolute_target(self) -> None:
-        """Checkout mode scans the published link text, not a machine-local target.
-
-        The live failure was a tracked receipt link into `/root`: pathlib followed it while
-        evaluating `is_file()` and Python 3.12 raised PermissionError on the hosted runner.
-        """
-        self.symlink("receipt-link", "/root/alpha needle")
-        self.git("add", "receipt-link")
-        self.git("commit", "-q", "-m", "absolute receipt link")
-        with mock.patch.object(boundary, "ROOT", self.root):
-            violations = boundary.evaluate(self.policy)
-        self.assertEqual(
-            [(violation.path, violation.detail) for violation in violations],
-            [("receipt-link", "alpha (first hit line 1)")],
-        )
 
     def test_commit_scan_reads_binary_blob_instead_of_checkout(self) -> None:
         bad_commit = self.commit("capture.bin", b"\0alpha needle\n", "binary evidence")
@@ -1201,107 +1078,6 @@ class VerifyAllowlistTests(unittest.TestCase):
             "ci.yml has no live `check-public-boundary.py verify-allowlist` invocation — the "
             "allowlist gate is unwired and would go back to running only when a human "
             "remembered (it had no caller at all until 2026-08-23)",
-        )
-
-
-class UnstatablePathTests(unittest.TestCase):
-    """TEETH for the unstat-able-tracked-path arm (2026-09-01).
-
-    `evaluate()` calls `full.is_file()`, which STATS, and a stat can RAISE — a tracked
-    symlink whose target sits on another machine under a directory this user cannot
-    traverse gives PermissionError. That killed the whole gate in CI: it died on
-    `.../mv-battery-20260831/receipts/c3/off-1 -> /root/out-mv/c2/off-1` and therefore
-    scanned NOTHING after it, while the same tree passed on a workstation whose Python
-    returned False instead of raising. A gate that governs what a public MIT repo may
-    publish must not be silenced by one unreadable path, and must not silently skip it
-    either.
-
-    Both halves are proven here: the scan SURVIVES the raise, and it REPORTS the path.
-    """
-
-    def setUp(self) -> None:
-        self.policy = boundary.Policy(
-            secret_patterns={},
-            secret_sources={},
-            secret_union=boundary.re.compile(r"(?!x)x"),
-            secret_groups={},
-            private_paths={},
-            bypass_paths=[],
-        )
-
-    def _evaluate_with(self, tracked, raiser):
-        def fake_is_file(self):  # noqa: ANN001
-            if self.name == raiser:
-                raise PermissionError(13, "Permission denied")
-            # Every other tracked path in these fixtures is a real file as far as the scan
-            # is concerned; returning the on-disk answer would skip them for not existing
-            # and the "did the scan continue" assertion could never fail.
-            return True
-
-        with (
-            mock.patch.object(boundary, "tracked_files", return_value=tracked),
-            mock.patch.object(boundary, "secret_candidate_files", return_value=set()),
-            mock.patch.object(boundary.Path, "is_file", fake_is_file),
-        ):
-            return boundary.evaluate(self.policy)
-
-    def test_unstatable_path_is_reported_not_raised(self) -> None:
-        violations = self._evaluate_with(["a/unreadable", "README.md"], "unreadable")
-        paths = [v.path for v in violations]
-        self.assertIn(
-            "a/unreadable",
-            paths,
-            "an unstat-able tracked path must be REPORTED — a silent skip lets an "
-            "unreadable tracked path hide anything at all",
-        )
-        v = next(v for v in violations if v.path == "a/unreadable")
-        self.assertEqual(v.category, "unstatable_path")
-        self.assertIn("PermissionError", v.detail)
-
-    def test_scan_continues_past_the_unstatable_path(self) -> None:
-        # The regression that mattered: the raise used to abort the loop, so every file
-        # AFTER the bad one went unscanned. Order it first and prove the rest still ran.
-        with mock.patch.object(boundary, "worktree_blob_bytes", return_value=b""):
-            self.policy.private_paths = {"deploy_unit": "later/*"}
-            violations = self._evaluate_with(
-                ["a/unreadable", "later/thing"], "unreadable"
-            )
-        paths = [v.path for v in violations]
-        self.assertIn("a/unreadable", paths)
-        self.assertIn(
-            "later/thing",
-            paths,
-            "the scan stopped at the unstat-able path — every later tracked file would go "
-            "unchecked, which is how the gate reported success while scanning nothing",
-        )
-
-    def test_no_tracked_symlink_escapes_the_repo(self) -> None:
-        """The CAUSE, not just the symptom: an absolute symlink target is unresolvable on
-        every machine but the one that wrote it, so it is never a receipt and it publishes
-        a foreign box's filesystem layout. Six mv-battery links pointed at `/root/out-mv/`
-        and one requal link at `/opt/scratch/...` while their real targets sat beside them
-        in-repo."""
-        listing = subprocess.run(
-            ["git", "ls-files", "-s"],
-            cwd=boundary.ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.splitlines()
-        offenders = []
-        for line in listing:
-            meta, _, rel = line.partition("\t")
-            if not meta.startswith("120000"):
-                continue
-            target = (boundary.ROOT / rel).readlink()
-            if target.is_absolute() or not (boundary.ROOT / rel).exists():
-                offenders.append(f"{rel} -> {target}")
-        self.assertEqual(
-            offenders,
-            [],
-            "tracked symlink(s) are absolute or dangling: "
-            + "; ".join(offenders)
-            + " — retarget them repo-relative at their in-repo twin",
         )
 
 

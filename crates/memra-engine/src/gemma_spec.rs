@@ -242,8 +242,6 @@ impl GemmaDraft {
         };
 
         let mut layers = Vec::with_capacity(n_layer);
-        #[allow(clippy::needless_range_loop)]
-        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
         for il in 0..n_layer {
             let p = |n: &str| format!("blk.{il}.{n}");
             let swa = swa_pat[il];
@@ -500,7 +498,6 @@ impl HybridModel {
 
     /// Drafter trunk with the token in DEVICE memory (a 1-elem view of the round's batch
     /// buffer) — zero host traffic.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn gemma4_draft_trunk_dev(
         &self,
         e: &Engine,
@@ -535,11 +532,10 @@ impl HybridModel {
         let mut xs = e.htod(&self.embd.gather(nb, &[token]))?;
         e.scale_inplace(&mut xs, (nb as f32).sqrt(), nb)?;
         let pos_d = e.htod_i32(&[pos as i32])?;
-        self.gemma4_draft_trunk_from_x(e, d, &xs, h, &pos_d, cache, None)
+        return self.gemma4_draft_trunk_from_x(e, d, &xs, h, &pos_d, cache, None);
     }
 
     /// Trunk body from the pre-scaled main-embed row.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn gemma4_draft_trunk_from_x(
         &self,
         e: &Engine,
@@ -564,7 +560,7 @@ impl HybridModel {
 
         let mut cur = e.matmul(&d.pre_proj, &xh, 1)?; // [1024]
 
-        for dl in d.layers.iter() {
+        for (_il, dl) in d.layers.iter().enumerate() {
             // attention over the shared MAIN KV: swa -> the last OWN-KV windowed layer,
             // global -> the last OWN-KV global layer (llama-model.cpp:2139 rule). Plain
             // 26B/31B trunks have no shared tail, so this is n-2 / n-1 there; E4B's 18
@@ -723,8 +719,6 @@ impl HybridModel {
     /// over the frozen main cache) + (ONE batched verify) + longest-prefix accept + KV rollback.
     /// Returns generated tokens; prints acceptance stats.
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::unnecessary_unwrap)] // allow: the Some-guards sit in multi-clause regime gates; if-let would reshape the arm structure
-    #[allow(clippy::map_entry)] // allow: the init bodies are fallible (`?`); Entry::or_insert_with cannot propagate errors
     pub fn generate_spec_gemma(
         &self,
         e: &Engine,
@@ -919,8 +913,6 @@ impl HybridModel {
         // the seed hidden rides the persistent g_seed buffer, KV lengths ride len_d (step b).
         // Keyed on (kr, rung, over_win): a new depth/rung/window regime captures lazily.
         let graph_on = std::env::var("MEMRA_GEMMA_DRAFT_GRAPH").as_deref() == Ok("1");
-        #[allow(clippy::type_complexity)]
-        // allow: one-shot composite type; naming it would hide the shape that matters at the call site
         let mut draft_graphs: std::collections::HashMap<
             (usize, usize, bool),
             (
@@ -1127,8 +1119,6 @@ impl HybridModel {
                 if out.len() >= max_new {
                     break 'outer;
                 }
-                #[allow(clippy::unnecessary_unwrap)]
-                // allow: the Some-guard sits in a multi-clause regime gate; if-let would reshape the arm structure
                 let key = (usize::MAX - k_cap, dc_bucket.unwrap(), over_win);
                 let mut fresh_rounds = 1usize; // rounds executed by this iteration
                 // `hint` is the verify stream's ARM-GATING upper bound — it must sit on
@@ -1171,8 +1161,6 @@ impl HybridModel {
                     }
                     let mut hc = e.uninit(n_embd)?;
                     e.copy_into(&mut hc, 0, g_seed, n_embd)?;
-                    #[allow(clippy::needless_range_loop)]
-                    // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
                     for j in 0..k_cap {
                         let tv = batch_d.slice(j..j + 1);
                         let (hn, h_next) = self.gemma4_draft_trunk_dev(
@@ -1317,8 +1305,6 @@ impl HybridModel {
                 }
                 // the loop-top dc_bucket already carries the horizon slack on burst rounds,
                 // so the key below matches the rung the captured chain actually launches with.
-                #[allow(clippy::unnecessary_unwrap)]
-                // allow: the Some-guard sits in a multi-clause regime gate; if-let would reshape the arm structure
                 let key = (k_cap, dc_bucket.unwrap(), over_win);
                 if std::env::var("MEMRA_GEMMA_BURST_GRAPH").as_deref() == Ok("1")
                     && !draft_graphs.contains_key(&key)
@@ -1365,8 +1351,6 @@ impl HybridModel {
                         // lifetime and collides with the verify's &mut cache borrow.
                         let mut hc = e.uninit(n_embd)?;
                         e.copy_into(&mut hc, 0, &g_seed, n_embd)?;
-                        #[allow(clippy::needless_range_loop)]
-                        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
                         for j in 0..k_cap {
                             let tv = batch_d.slice(j..j + 1);
                             let (hn, h_next) = self.gemma4_draft_trunk_dev(
@@ -1455,8 +1439,6 @@ impl HybridModel {
                 continue 'outer;
             }
             if graph_on && dc_bucket.is_some() {
-                #[allow(clippy::unnecessary_unwrap)]
-                // allow: the Some-guard sits in a multi-clause regime gate; if-let would reshape the arm structure
                 let key = (kr, dc_bucket.unwrap(), over_win);
                 if !draft_graphs.contains_key(&key) {
                     // chain-only capture; pos slots are graph INPUTS (filled eagerly before
@@ -1714,8 +1696,8 @@ impl HybridModel {
 ///   * `cache`  — the trunk Cache; rows = `committed` (prompt + emitted, INCL. overshoot).
 ///   * `h`      — post-output_norm hidden of the LAST committed row (device; draft seed).
 ///   * `pending`— the `last` local: the predicted next token. Emitted as the FIRST token
-///     of the next round and appended as verify col 0 there; it has NO cache
-///     row while parked here (the Q38 `next_pred` convention).
+///                of the next round and appended as verify col 0 there; it has NO cache
+///                row while parked here (the Q38 `next_pred` convention).
 ///   * `kc_next`/`prev_full` — the adaptive-depth + self-keyed in-round-cut carries.
 ///
 /// BOUNDARY LAW (the Q38 pending-carry/empty-suffix bug class, banked as gate cases in
@@ -2179,7 +2161,6 @@ impl HybridModel {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::map_entry)] // allow: the init body is fallible (`?`); Entry::or_insert_with cannot propagate errors
     fn gemma4_plain_graph_inner(
         &self,
         e: &Engine,
@@ -2205,8 +2186,6 @@ impl HybridModel {
         }
         let ring_base = cache.pos; // baked into every capture
 
-        #[allow(clippy::type_complexity)]
-        // allow: one-shot composite type; naming it would hide the shape that matters at the call site
         let mut graphs: std::collections::HashMap<
             (usize, bool, bool),
             (

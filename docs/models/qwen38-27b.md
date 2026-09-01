@@ -8,7 +8,6 @@
 | **Portable path** | NVFP4+Q5_K GGUF with the embedded or attached MTP head |
 | **Fastest spec route** | DFlash2 drafter on the GGUF trunk (`MEMRA_DSPARK_SPEC`, q4 drafter default + FR-Spec trim; sampled sessions stack in the LOW band since v0.113.0) — beats the MTP head on every rung of the vendor-default sampled shape on RTX PRO 6000 (c1 127/117, c2 128/120, c4 87/85 agg tok/s) and serves both production origins; +3.87% local 5090 E2E over full-head DFlash2 |
 | **Hardware** | RTX 5090 for single-card use; RTX PRO 6000 Blackwell for larger context and serving headroom |
-| **On-box speed** | **250 tok/s** wall on one RTX PRO 6000 (DFlash2, 512-token digits, TTFT included). Same route's digit-heavy decode-window band is ~287-339 tok/s. 140 tok/s is the 2026-08-15 MTP-era p50, not current memra. |
 | **Use this when** | You want the main general-purpose and agentic path exercised by Memra |
 
 Start with the [Qwen3.8 cookbook](../COOKBOOK.md#qwen38-27b). Choose the agentic, prose, or mixed

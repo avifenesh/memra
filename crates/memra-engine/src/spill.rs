@@ -135,10 +135,7 @@ impl SpillCtx {
         for i in 0..g.n_shards() {
             let file = g.shard_file(i).clone();
             // MAP_SHARED, no MAP_POPULATE (memmap2's default Mmap::map): zero upfront copy,
-            // demand-fault. This tier maps whole GGUF SHARDS, so its map length is not expert
-            // bytes — populating one would also read trunk weights the loader has already copied
-            // to VRAM. `populate_expert_slab` is therefore applied only to the `.memra-repack`
-            // tiers, whose files hold exactly one projection's expert slab.
+            // demand-fault.
             let map = unsafe { Mmap::map(file.as_ref())? };
             let _ = memra_gguf::source::apply_expert_mmap_advice(&map);
             files.push(file);
@@ -177,7 +174,7 @@ pub fn place_expert(
             let dst = p.as_mut_slice()?;
             dst.copy_from_slice(raw);
         }
-        let base = p.as_ptr()?;
+        let base = p.as_ptr()? as *const u8;
         Ok(HostBuf::Pinned {
             slice: std::sync::Arc::new(p),
             base,

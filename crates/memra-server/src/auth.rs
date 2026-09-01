@@ -28,7 +28,6 @@
 //! appends the hash entry; revoke flips `enabled = false` by key prefix. No web UI.
 
 use std::collections::HashSet;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 use std::time::{Duration, Instant, SystemTime};
@@ -140,12 +139,6 @@ pub struct TenantCtx {
     pub tenant: String,
     pub lane_class: LaneClass,
     pub rate_limit: Option<usize>,
-    /// The authenticated KEY's identification prefix (`mk-<tenant>-<12 hex>` — the
-    /// same non-secret revoke handle stored in the keyring). None on the single-key /
-    /// open-server paths, which have no per-key identity. This is what lets a
-    /// metering implementation enforce per-key policy (spend caps) without the seam
-    /// ever seeing a credential.
-    pub key_prefix: Option<String>,
 }
 
 impl TenantCtx {
@@ -155,7 +148,6 @@ impl TenantCtx {
             tenant: "default".into(),
             lane_class: LaneClass::Interactive,
             rate_limit: None,
-            key_prefix: None,
         }
     }
 }
@@ -186,7 +178,7 @@ fn valid_tenant(t: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
-pub fn tenant_is_valid(tenant: &str) -> bool {
+pub(crate) fn tenant_is_valid(tenant: &str) -> bool {
     valid_tenant(tenant)
 }
 
@@ -225,13 +217,13 @@ impl Keyring {
                     e.tenant
                 ));
             }
-            if let Some(lane) = e.lane.as_deref()
-                && LaneClass::parse(lane).is_none()
-            {
-                return Err(format!(
-                    "key entry {i} (tenant {:?}): bad lane {lane:?} (interactive|batch)",
-                    e.tenant
-                ));
+            if let Some(lane) = e.lane.as_deref() {
+                if LaneClass::parse(lane).is_none() {
+                    return Err(format!(
+                        "key entry {i} (tenant {:?}): bad lane {lane:?} (interactive|batch)",
+                        e.tenant
+                    ));
+                }
             }
             if e.rate_limit == Some(0) {
                 return Err(format!(
@@ -288,10 +280,6 @@ impl Keyring {
         self.keys.len()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
     /// Authenticate a plaintext bearer key against the ring.
     pub fn lookup(&self, key: &str) -> Result<TenantCtx, AuthDenied> {
         let digest = sha256_digest(key);
@@ -312,7 +300,6 @@ impl Keyring {
                     .and_then(LaneClass::parse)
                     .unwrap_or_default(),
                 rate_limit: e.rate_limit,
-                key_prefix: Some(e.prefix.clone()).filter(|p| !p.is_empty()),
             }),
         }
     }
@@ -339,76 +326,7 @@ struct State {
 }
 
 fn file_mtime(p: &Path) -> Option<SystemTime> {
-    std::fs::symlink_metadata(p).and_then(|m| m.modified()).ok()
-}
-
-fn validate_private_keyring_metadata(
-    file: &std::fs::File,
-    path: &Path,
-) -> Result<SystemTime, String> {
-    let metadata = file
-        .metadata()
-        .map_err(|e| format!("stat keyring {}: {e}", path.display()))?;
-    if !metadata.is_file() {
-        return Err(format!("keyring {} is not a regular file", path.display()));
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::{MetadataExt, PermissionsExt};
-        let mode = metadata.permissions().mode() & 0o777;
-        if mode & 0o137 != 0 {
-            return Err(format!(
-                "keyring {} must have 0600 or 0640-class permissions; found {mode:04o}",
-                path.display()
-            ));
-        }
-        let expected_uid = unsafe { libc::geteuid() } as u32;
-        if metadata.uid() != expected_uid {
-            return Err(format!(
-                "keyring {} is not owned by the service uid {} (found {})",
-                path.display(),
-                expected_uid,
-                metadata.uid()
-            ));
-        }
-        if metadata.nlink() != 1 {
-            return Err(format!(
-                "keyring {} has {} hard links; expected exactly one",
-                path.display(),
-                metadata.nlink()
-            ));
-        }
-    }
-    metadata
-        .modified()
-        .map_err(|e| format!("stat keyring {}: {e}", path.display()))
-}
-
-/// Read a file-backed keyring without following a final symlink and only accept a private,
-/// single-link regular file owned by the service account. This is checked on every startup and
-/// hot reload; a valid TOML document is not sufficient authorization state if an untrusted local
-/// user can redirect or replace the path.
-fn read_private_keyring(path: &Path) -> Result<(String, SystemTime), String> {
-    use std::fs::OpenOptions;
-    use std::os::unix::fs::OpenOptionsExt;
-    let file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)
-        .map_err(|e| format!("{}: {e}", path.display()))?;
-    let mtime = validate_private_keyring_metadata(&file, path)?;
-    let mut text = String::new();
-    (&file)
-        .take(8 * 1024 * 1024 + 1)
-        .read_to_string(&mut text)
-        .map_err(|e| format!("read keyring {}: {e}", path.display()))?;
-    if text.len() > 8 * 1024 * 1024 {
-        return Err(format!(
-            "keyring {} exceeds the 8 MiB limit",
-            path.display()
-        ));
-    }
-    Ok((text, mtime))
+    std::fs::metadata(p).and_then(|m| m.modified()).ok()
 }
 
 impl KeyStore {
@@ -418,8 +336,8 @@ impl KeyStore {
     pub fn from_spec(spec: &str) -> Result<KeyStore, String> {
         let p = Path::new(spec);
         if p.is_file() {
-            let (text, mtime) =
-                read_private_keyring(p).map_err(|e| format!("MEMRA_API_KEYS {spec:?}: {e}"))?;
+            let text =
+                std::fs::read_to_string(p).map_err(|e| format!("MEMRA_API_KEYS {spec:?}: {e}"))?;
             let ring = Keyring::from_toml(&text).map_err(|e| format!("{spec}: {e}"))?;
             let n = ring.len();
             eprintln!("[auth] keyring loaded: {n} key(s) from {spec}");
@@ -428,7 +346,7 @@ impl KeyStore {
                 poll: Duration::from_secs(2),
                 state: RwLock::new(State {
                     ring,
-                    mtime: Some(mtime),
+                    mtime: file_mtime(p),
                     checked: Instant::now(),
                 }),
             });
@@ -452,16 +370,13 @@ impl KeyStore {
         ))
     }
 
-    /// Override how often the key file is re-statted for hot reload. Public as a
-    /// real knob: deployment-side tests (and unusual deployments) set it; the
-    /// default poll is right for production.
-    pub fn with_poll(mut self, poll: Duration) -> KeyStore {
+    #[cfg(test)]
+    pub(crate) fn with_poll(mut self, poll: Duration) -> KeyStore {
         self.poll = poll;
         self
     }
 
-    /// `pub`: a deployment admin surface provisions keys against this file.
-    pub fn file_path(&self) -> Option<&Path> {
+    pub(crate) fn file_path(&self) -> Option<&Path> {
         match &self.source {
             Source::File(path) => Some(path),
             Source::Inline => None,
@@ -489,17 +404,18 @@ impl KeyStore {
         if mtime == st.mtime {
             return;
         }
-        match read_private_keyring(path)
-            .and_then(|(text, mtime)| Keyring::from_toml(&text).map(|ring| (ring, mtime)))
+        match std::fs::read_to_string(path)
+            .map_err(|e| e.to_string())
+            .and_then(|t| Keyring::from_toml(&t))
         {
-            Ok((ring, mtime)) => {
+            Ok(ring) => {
                 eprintln!(
                     "[auth] keyring reloaded: {} key(s) from {}",
                     ring.len(),
                     path.display()
                 );
                 st.ring = ring;
-                st.mtime = Some(mtime);
+                st.mtime = mtime;
             }
             Err(e) => {
                 eprintln!("[auth] keyring reload FAILED ({e}); keeping the previous ring");
@@ -629,7 +545,8 @@ pub fn gen_key(
     // Validate the existing file first (never append to a broken ring), and refuse a
     // prefix collision (the revoke handle must stay unambiguous).
     if keys_path.is_file() {
-        let (text, _) = read_private_keyring(keys_path)?;
+        let text = std::fs::read_to_string(keys_path)
+            .map_err(|e| format!("{}: {e}", keys_path.display()))?;
         let f: KeyFile =
             toml::from_str(&text).map_err(|e| format!("{}: {e}", keys_path.display()))?;
         Keyring::from_entries(f.keys.clone())?;
@@ -669,7 +586,6 @@ pub fn gen_key(
         .custom_flags(libc::O_NOFOLLOW)
         .open(keys_path)
         .map_err(|e| format!("{}: {e}", keys_path.display()))?;
-    validate_private_keyring_metadata(&f, keys_path)?;
     if creating {
         f.set_permissions(std::fs::Permissions::from_mode(0o640))
             .map_err(|e| format!("{}: {e}", keys_path.display()))?;
@@ -695,22 +611,12 @@ fn atomic_rewrite(keys_path: &Path, contents: &str) -> Result<(), String> {
     use std::io::Write;
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
-    let parent = keys_path.parent().unwrap_or_else(|| Path::new("."));
-    let name = keys_path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("keys");
-    let mut random = [0u8; 16];
-    std::fs::File::open("/dev/urandom")
-        .and_then(|mut source| source.read_exact(&mut random))
-        .map_err(|e| format!("randomize keyring temporary name: {e}"))?;
-    let suffix = random
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    let tmp_path = parent.join(format!(".{name}.tmp.{suffix}"));
+    let mut tmp_name = keys_path.as_os_str().to_os_string();
+    tmp_name.push(".tmp");
+    let tmp_path = PathBuf::from(tmp_name);
     let mut tmp = std::fs::OpenOptions::new()
-        .create_new(true)
+        .create(true)
+        .truncate(true)
         .write(true)
         .mode(0o640)
         .custom_flags(libc::O_NOFOLLOW)
@@ -722,7 +628,6 @@ fn atomic_rewrite(keys_path: &Path, contents: &str) -> Result<(), String> {
         .map_err(|e| format!("{}: {e}", tmp_path.display()))?;
     tmp.sync_all()
         .map_err(|e| format!("{}: {e}", tmp_path.display()))?;
-    validate_private_keyring_metadata(&tmp, &tmp_path)?;
     drop(tmp);
     std::fs::rename(&tmp_path, keys_path)
         .map_err(|e| format!("{} -> {}: {e}", tmp_path.display(), keys_path.display()))?;
@@ -733,7 +638,8 @@ fn atomic_rewrite(keys_path: &Path, contents: &str) -> Result<(), String> {
 /// handle's hash, if a full plaintext key was pasted). Exactly one match required —
 /// ambiguity is an error, not a mass revoke. Rewrites the file (comments not preserved).
 pub fn revoke_key(keys_path: &Path, handle: &str) -> Result<String, String> {
-    let (text, _) = read_private_keyring(keys_path)?;
+    let text =
+        std::fs::read_to_string(keys_path).map_err(|e| format!("{}: {e}", keys_path.display()))?;
     let mut f: KeyFile =
         toml::from_str(&text).map_err(|e| format!("{}: {e}", keys_path.display()))?;
     Keyring::from_entries(f.keys.clone())?;
@@ -867,12 +773,6 @@ mod tests {
         p
     }
 
-    fn write_private(path: &Path, contents: &str) {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::write(path, contents).unwrap();
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o640)).unwrap();
-    }
-
     const K_A1: &str = "mk-acme-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const K_A2: &str = "mk-acme-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     const K_B1: &str = "mk-blue-cccccccccccccccccccccccccccccccccccccccccccccccc";
@@ -992,7 +892,7 @@ mod tests {
     #[test]
     fn keystore_hot_reloads_on_mtime_change() {
         let path = tmpfile("reload.toml");
-        write_private(&path, &toml_ring());
+        std::fs::write(&path, toml_ring()).unwrap();
         let ks = KeyStore::from_spec(path.to_str().unwrap())
             .unwrap()
             .with_poll(Duration::ZERO);
@@ -1032,7 +932,7 @@ mod tests {
     #[test]
     fn auth_law_composes_keyring_and_single_key() {
         let path = tmpfile("law.toml");
-        write_private(&path, &toml_ring());
+        std::fs::write(&path, toml_ring()).unwrap();
         let ks = KeyStore::from_spec(path.to_str().unwrap()).unwrap();
         // keyring key -> its tenant; single key -> "default"; both live at once.
         assert_eq!(
@@ -1199,7 +1099,7 @@ mod tests {
                 created_unix: None,
             })
             .collect();
-        write_private(&path, &toml::to_string(&KeyFile { keys }).unwrap());
+        std::fs::write(&path, toml::to_string(&KeyFile { keys }).unwrap()).unwrap();
         let store = Arc::new(
             KeyStore::from_spec(path.to_str().unwrap())
                 .unwrap()

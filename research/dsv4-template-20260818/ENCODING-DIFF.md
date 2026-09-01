@@ -10,7 +10,7 @@ and the record of the re-gate.
 | oracle | path | sha256 | bytes |
 |---|---|---|---|
 | preview | `ref/encoding/encoding_dsv4.py` (== the nvidia NVFP4 artifact's copy, `ref/artifact-encoding/`) | `bdbd57c132a1b3725042323d02b98b9d1df28e5f388f134399555d041f5055e0` | 27,908 |
-| 0731 | `ref-0731/encoding/encoding_dsv4.py` (fetched read-only from the minted artifact on the rented bench box, `/home/ubuntu/models/dsv4-flash-0731-nvfp4/encoding/` — byte-identical to the 0731 source per 0731-MINT-RECEIPTS.md) | `abc0d26120250dda0ae077dc64aa28836026e61e970854aaeb792445e6a0dde6` | 29,001 (+1,093) |
+| 0731 | `ref-0731/encoding/encoding_dsv4.py` (fetched read-only from the minted artifact on the hyperscaler box, `/home/ubuntu/models/dsv4-flash-0731-nvfp4/encoding/` — byte-identical to the 0731 source per 0731-MINT-RECEIPTS.md) | `abc0d26120250dda0ae077dc64aa28836026e61e970854aaeb792445e6a0dde6` | 29,001 (+1,093) |
 
 Full `diff -u` over `encoding_dsv4.py`: FOUR hunks — one constant block, one logic block,
 two docstring touches. Everything else is byte-identical. File-level census of the rest of

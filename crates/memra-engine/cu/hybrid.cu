@@ -1047,29 +1047,6 @@ extern "C" __global__ void swiglu_clamped_mul_scaled_f32(const float* __restrict
     }
 }
 
-// glm5_next PRE-clamped SwiGLU. NOT interchangeable with swiglu_clamped_mul_scaled_f32 above:
-//   step35 (post):  dst = min(silu(gate*gs), limit)   * clamp(up*us, +-limit)
-//   glm5_next (pre):dst = silu(min(gate*gs, limit))   * clamp(up*us, +-limit)
-// The gate clamp lands BEFORE silu and is ONE-sided (no lower bound); the two forms diverge
-// wherever gate*gs > limit, by up to limit*(1 - sigmoid(limit)) per element. Verbatim from the
-// vendor module: Glm5NextTextMLP.forward (dense + shared expert) and
-// Glm5NextTextExperts._apply_gate (routed experts) both run
-// `gate.clamp(max=swiglu_limit)`, `up.clamp(-swiglu_limit, swiglu_limit)`, then `silu(gate)*up`
-// — one limit, all three MLP branches, every layer.
-// Same limit>1e-6 caller contract as the post-clamp sibling: at limit=0 this would drive every
-// gate to silu(0)=0. gs/us fold the NVFP4 per-tensor macro-scales.
-extern "C" __global__ void swiglu_preclamped_mul_scaled_f32(const float* __restrict__ gate,
-                                                            const float* __restrict__ up,
-                                                            float gs, float us, float limit,
-                                                            float* __restrict__ dst, int n) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n) {
-        float u = fmaxf(fminf(up[i] * us, limit), -limit);
-        float x = fminf(gate[i] * gs, limit);
-        dst[i] = (x / (1.0f + expf(-x))) * u;
-    }
-}
-
 // softplus(x + bias_broadcast) then * a_broadcast -> g_log. x:[H,T], bias/a:[H]. out:[H,T].
 // alpha layout [H,T] (alpha[t*H+h]); dt_bias/a [H].
 extern "C" __global__ void gdn_glog_f32(const float* alpha, const float* dt_bias, const float* a,
@@ -2628,77 +2605,4 @@ gdn_k2_wgmma_vl(gdnvl_t v, gdnwvl_t wq, int H, int C, int hk) {
     const gdnw_t w = wq.s[blockIdx.z];
     gdn_k2_wgmma_body(w.qb16, a.kb16, a.gcum, a.beta, a.a, w.pb16,
                       H, a.T, C, hk, blockIdx.x, blockIdx.y);
-}
-
-// ======== STEP TP2 GEMM PRIME (2026-08-27, TTFT lane) ========
-
-// scale_rows_f32: y[r, :] *= s[r] in place. The grouped-prefill gate/up outputs need their
-// per-expert NVFP4 macro-scale applied BEFORE silu (silu is nonlinear, so the macro cannot fold
-// into a later stage); s is a per-CSR-row scalar vector built host-side from the selections.
-// Grid: for_num_elems(nrows*ncols).
-extern "C" __global__ void scale_rows_f32(
-    float* __restrict__ y,        // [nrows, ncols]
-    const float* __restrict__ s,  // [nrows]
-    int ncols, int nrows)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int total = nrows * ncols;
-    if (i < total) {
-        y[i] *= s[i / ncols];
-    }
-}
-
-// moe_pairs_weighted_scatter_f32: out[t, :] += sum_j w[t*n_used + j] * y[t*n_used + j, :],
-// with the j-sum SEQUENTIAL inside each thread — a fixed per-token reduction order (slot 0..7),
-// never atomics, so the grouped prime stays run-deterministic like every other reduction whose
-// order this repo pins. y is PAIR-ID order (token-major slots); one thread owns one (t, col).
-// Grid: for_num_elems(t*ncols).
-extern "C" __global__ void moe_pairs_weighted_scatter_f32(
-    const float* __restrict__ y,  // [t*n_used, ncols] pair-id order
-    const float* __restrict__ w,  // [t*n_used] route weight (down macro pre-folded host-side)
-    float*       __restrict__ out, // [t, ncols] accumulated in place
-    int ncols, int n_used, int t)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int total = t * ncols;
-    if (i < total) {
-        int tok = i / ncols;
-        int col = i % ncols;
-        float acc = out[i];
-        for (int j = 0; j < n_used; j++) {
-            int p = tok * n_used + j;
-            acc += w[p] * y[(size_t)p * ncols + col];
-        }
-        out[i] = acc;
-    }
-}
-
-// moe_prime_join_scatter_f32 (2026-08-28): fuses the grouped prime's tail — cross-rank join,
-// CSR->pair permute, route weighting, and token scatter — into ONE pass.
-// Was: rows_permute (a full [n_pairs, ncols] read+write), then add(y0,y1), then a weighted
-// scatter: ~3 extra passes over a 532 MB buffer per rank per layer at 4k tokens, plus three
-// large allocations the pool had to satisfy 45 times per prime.
-// inv[p] = the CSR row holding pair p (host-built inverse of ex_pairs).
-// Reduction order is unchanged and pinned: per (token,col) the slot sum runs j = 0..n_used-1
-// sequentially, and each term is (y0 + y1) in canonical shard order — never atomics.
-extern "C" __global__ void moe_prime_join_scatter_f32(
-    const float* __restrict__ y0,   // [n_pairs, ncols] rank-0 partial, CSR order
-    const float* __restrict__ y1,   // [n_pairs, ncols] rank-1 partial, CSR order
-    const int*   __restrict__ inv,  // [n_pairs] pair-id -> CSR row
-    const float* __restrict__ w,    // [n_pairs] route weight (down macro pre-folded)
-    float*       __restrict__ out,  // [t, ncols]
-    int ncols, int n_used, int t)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int total = t * ncols;
-    if (i >= total) return;
-    int tok = i / ncols;
-    int col = i % ncols;
-    float acc = 0.0f;
-    for (int j = 0; j < n_used; j++) {
-        int p = tok * n_used + j;
-        size_t r = (size_t)inv[p] * ncols + col;
-        acc += w[p] * (y0[r] + y1[r]);
-    }
-    out[i] = acc;
 }

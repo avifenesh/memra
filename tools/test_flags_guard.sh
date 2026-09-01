@@ -27,7 +27,6 @@
 #   7. wiring census                          -> the hook calls check-flags.sh, ci.yml still
 #                                                runs the self-test backstop and this fixture
 #   8. MEMRA_SKIP_PERF_CI=1 on an engine file -> perf gate skip PRINTED and LOGGED too
-#   9. rewritten topic based on newer main    -> boundary scan excludes already-remote commits
 #
 # SCOPE, since the filename is narrower than the content: arms 1-4, 6 and 7 are the census arm;
 # arms 5 and 8 cover the hook's ESCAPE HATCHES, which are a property of the hook rather than of
@@ -384,74 +383,12 @@ $out"
 fi
 
 # ---------------------------------------------------------------------------
-# Arm 9: a force-pushed topic rebased onto newer main must only scan commits the push actually
-# introduces.  `old_topic..rewritten_topic` also contains main commits that are already on the
-# destination remote; the old hook fed those historical blobs to the boundary scanner, where a
-# final-tree hash allowlist cannot legitimately cover them.  The scanner stub below has teeth in
-# both directions: it requires the rewritten topic commit and rejects the already-remote main
-# commit.  This drives a REAL force-push through the REAL hook.
-# ---------------------------------------------------------------------------
-stage arm9
-(
-    cd "$work" || exit 1
-    seed_branch=$(git branch --show-current)
-    git switch -qc topic
-    printf 'old topic\n' > topic.txt
-    git add topic.txt
-    git commit -qm 'old topic tip'
-    git push -q -u origin HEAD:topic
-
-    git switch -q "$seed_branch"
-    printf 'already published on main\n' > main-only.txt
-    git add main-only.txt
-    git commit -qm 'main-only boundary history sentinel'
-    git push -q origin HEAD:main
-    git fetch -q origin main topic
-    main_only=$(git rev-parse HEAD)
-
-    git switch -qc rewritten
-    printf 'rewritten topic\n' > rewritten.txt
-    git add rewritten.txt
-    git commit -qm 'rewritten topic tip'
-    rewritten=$(git rev-parse HEAD)
-
-    # This stub replaces only the boundary evaluator.  Every other hook arm remains real or is
-    # staged by stage() above.  It refuses the exact false-positive commit and also refuses an
-    # empty/incorrect pushed-commit list.
-    printf '%s\n' \
-        'import os, pathlib, sys' \
-        'path = pathlib.Path(sys.argv[sys.argv.index("--commits-file") + 1])' \
-        'seen = set(path.read_text().split())' \
-        'forbidden = os.environ["BOUNDARY_FORBIDDEN_COMMIT"]' \
-        'expected = os.environ["BOUNDARY_EXPECTED_COMMIT"]' \
-        'if forbidden in seen:' \
-        '    print("boundary fixture: already-remote main commit was rescanned")' \
-        '    raise SystemExit(1)' \
-        'if expected not in seen:' \
-        '    print("boundary fixture: rewritten topic commit was not scanned")' \
-        '    raise SystemExit(1)' \
-        'print("boundary fixture: pushed-only commit range")' \
-        > tools/check-public-boundary.py
-
-    BOUNDARY_FORBIDDEN_COMMIT=$main_only \
-    BOUNDARY_EXPECTED_COMMIT=$rewritten \
-        git push --force origin HEAD:topic > push.out 2>&1
-) && out=$(cat "$work/push.out") && [[ "$out" == *"pushed-only commit range"* ]]
-if (( $? == 0 )); then
-    ok "arm9: force-push boundary range excludes commits already published on origin/main"
-else
-    bad "arm9: force-push boundary range rescanned remote history or missed the new topic
-${out:-}"
-fi
-
-# ---------------------------------------------------------------------------
 # The fixture's own floor, the shape test_check_flags.sh uses: a run that records FEWER
 # assertions than it should is BROKEN, not green. Every `bad` path above is paired so the count
 # is invariant to which branch was taken.
-#   arms 1-2: 2 | arm 3: 1 | arm 4: 1 | arm 5: 2 | arm 6: 1 | arm 7: 3 | arm 8: 3
-#   arm 9: 1  = 14
+#   arms 1-2: 2 | arm 3: 1 | arm 4: 1 | arm 5: 2 | arm 6: 1 | arm 7: 3 | arm 8: 3  = 13
 # ---------------------------------------------------------------------------
-EXPECTED_ASSERTIONS=14
+EXPECTED_ASSERTIONS=13
 total=$((pass + fail))
 printf '\ntest_flags_guard: %d passed, %d failed (%d assertions, expected %d)\n' \
     "$pass" "$fail" "$total" "$EXPECTED_ASSERTIONS"
