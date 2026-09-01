@@ -157,7 +157,13 @@ cell_spec_ab(){
       echo "CAPACITY-GUARD: card never free+idle within 900s in-hold" >&2; exit 90
     fi
     for arm in "$a1" "$a2"; do
-      seams="$base"; [ "$arm" = auto ] && seams="$base,selgroup"
+      # --goldens/--prompts trip the binary'"'"'s reference-parity pin (real_gate golden_comparison:
+      # f32 KV + f32 idx caches, "golden_pin=true"), which is the exactness INSTRUMENT, not the
+      # serving shape. An explicit kvq,idxq seam entry wins over the pin (real_gate 1192-1193),
+      # so both arms measure on the shipped q8_0/q5_1 + idxq q8 caches the flip rule is about.
+      # (First live run 2026-09-01 measured 3 reps under the f32 pin before revuto caught it;
+      # those receipts are kept under spec-ab-f32pin/ as a same-config ratio, not the number.)
+      seams="$base,kvq,idxq"; [ "$arm" = auto ] && seams="$base,kvq,idxq,selgroup"
       lf="$out/spec-ab-rep$rep-$arm.log"
       { printf "# capacity_guard\twaited_s=%s\n" "$w"
         printf "# arm\t%s\n# seams_env\tMEMRA_Q4E_SEAMS=%s\n" "$arm" "$seams"
