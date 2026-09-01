@@ -40,6 +40,15 @@ CK=${CK:-$HOME/data/q48fn-yarn1m}
 OUT=${OUT:-$HOME/realgate/downsel}
 SRC=${SRC:-$HOME/downsel-wt}
 IDS=${IDS:-$HOME/realgate/ladder-ids.txt}
+# Cell B's spec section in qwen4exp_real_gate is GATED on --goldens (`if let Some(dir) =
+# args.goldens` wraps the whole spec measurement block, and the A/B prompt defaults to the
+# goldens probe ids); without it the binary loads, exits 0, and writes NO rows — which is
+# exactly what the first live run of this script did, twice, on 2026-09-01 (two rc=0 arms,
+# zero ab-spec-k5-*.tsv). The dump is expand-goldens.py over gpu-eager/real-checkpoint/;
+# the prompt is a REAL shape per the greedy-loop law (mtp11 used thinkon for K=5).
+GOLDENS=${GOLDENS:-$HOME/realgate/dump}
+PROMPTS=${PROMPTS:-$HOME/realgate/shapes/thinkon-prompts.tsv}
+export GOLDENS PROMPTS
 LOCK=${LOCK:-/tmp/q48fn-measure.lock}
 CARD=${CARD:-0}
 CARD_TOTAL_MIB=${CARD_TOTAL_MIB:-97887}
@@ -154,7 +163,7 @@ cell_spec_ab(){
         printf "# arm\t%s\n# seams_env\tMEMRA_Q4E_SEAMS=%s\n" "$arm" "$seams"
       } > "$lf"
       env MEMRA_Q4E_SEAMS="$seams" "$bin" "$ck" "$out" \
-        --label "spec-ab-rep$rep-$arm" --mtp --spec-k 5 --spec-ab 5x64 >> "$lf" 2>&1
+        --label "spec-ab-rep$rep-$arm" --mtp --spec-k 5 --spec-ab 5x64 --goldens "$GOLDENS" --prompts "$PROMPTS" >> "$lf" 2>&1
       printf "# rc\t%s\n" "$?" >> "$lf"
     done
   ' _ "$BIN" "$CK" "$OUT" "$rep" "$BASE_SEAMS" "${order[0]}" "${order[1]}"
