@@ -1410,3 +1410,135 @@ fn gpu_restored_session_bytes_match_plain_decode_and_cold_acceptance() {
         drafted,
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// Gate 12 — C1b ATTRIBUTION (memra#34): the restored-then-continue program is bit-identical to
+// the SPLIT cold prime at this scale, so a serving-battery delta against the MONOLITHIC cold
+// prime ATTRIBUTES to the documented chunked-prime numeric class (`hyper_prime_ranges`' "NOT
+// BIT-STABLE ACROSS CHUNK SIZES" note: cuBLASLt reselects by shape, worst 3.815e-6 on the mixes
+// GEMM) ONCE the battery's split-twin oracle confirms at prod scale — the prod half lives in
+// the battery (a `MEMRA_PRIME_CHUNK=<boundary>` cold boot matching the restored bytes), not
+// here. SCOPE: a scale-dependent restore defect would not reproduce at PROMPT=24/BLOCK=8. Born from the 2026-09-01 slot-B C1b red: a strict-prefix spec
+// restore (269 of 448) flipped '\n' vs '\n\n' at verify-round token 1 while full-cover restores
+// stayed byte-exact — the anchor token itself matched, so the boundary state was right and the
+// suspect is the differently-shaped prime over the suffix rows.
+//
+// Arms, all greedy:
+//   A (mono):  one prime call over the whole prompt, then plain decode — the battery's cold ref.
+//   B (split): prefix prime, then suffix prime as a CONTINUATION on the same cache, then plain
+//              decode. No cache entry, no restore machinery: the pure chunking control.
+//   C (spec-restored): gate 11's construction (donor session over the prefix, drafter tail
+//              export at the boundary, fresh boundary cache) driven through worker-shaped
+//              bursts — the path the serving battery exercised.
+//
+// THE INVARIANT (hard assert): C's tape == B's tape, byte for byte, and B's continuation logits
+// carry NO drift the restore could hide behind. A vs B is REPORTED with bit counts and max
+// delta, and held to the chunked-prime band rather than asserted equal — bit equality across
+// chunk shapes is the documented non-goal.
+#[test]
+#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
+fn gpu_restored_continuation_is_bit_identical_to_the_split_prime_cold_twin() {
+    let _gpu = gpu_guard();
+    let h = Harness::new("g12");
+    let prompt = tokens(PROMPT, 0xC1B7);
+    let split = PROMPT - BLOCK;
+    let (prefix, suffix) = prompt.split_at(split);
+    let max_new = 20usize;
+    let k = 3usize;
+    let ctx = prompt.len() + max_new + K + 8;
+
+    // ARM A — monolithic cold prime + plain decode (the battery's cold reference shape).
+    let (mut cache_mono, logits_mono) = h.fresh_primed(&prompt, ctx);
+    let mut tape_mono = Vec::with_capacity(max_new);
+    tape_mono.push(argmax(&logits_mono) as u32);
+    while tape_mono.len() < max_new {
+        let ll = h
+            .model
+            .decode_step(&h.engine, *tape_mono.last().unwrap(), &mut cache_mono)
+            .expect("mono decode step");
+        tape_mono.push(argmax(&ll) as u32);
+    }
+
+    // ARM B — split cold prime (prefix, then suffix on the same cache) + plain decode.
+    let (mut cache_split, _boundary_logits) = h.fresh_primed(prefix, ctx);
+    let (logits_split, _seed, _hiddens) = h
+        .model
+        .prime_cache(&h.engine, suffix, &mut cache_split, 0)
+        .expect("suffix continuation prime");
+    let mut tape_split = Vec::with_capacity(max_new);
+    tape_split.push(argmax(&logits_split) as u32);
+    while tape_split.len() < max_new {
+        let ll = h
+            .model
+            .decode_step(&h.engine, *tape_split.last().unwrap(), &mut cache_split)
+            .expect("split decode step");
+        tape_split.push(argmax(&ll) as u32);
+    }
+
+    // ATTRIBUTION REPORT — A vs B logits at the anchor position: the chunking class, measured.
+    assert_eq!(logits_mono.len(), logits_split.len(), "logit widths match");
+    assert!(
+        logits_mono
+            .iter()
+            .chain(logits_split.iter())
+            .all(|v| v.is_finite()),
+        "non-finite anchor logits — the band below cannot see NaN (f32::max drops it)"
+    );
+    let mut diff_bits = 0usize;
+    let mut max_delta = 0f32;
+    for (a, b) in logits_mono.iter().zip(logits_split.iter()) {
+        if a.to_bits() != b.to_bits() {
+            diff_bits += 1;
+            max_delta = max_delta.max((a - b).abs());
+        }
+    }
+    // The chunked-prime band (prime_chunk_ranges doc: worst 3.815e-6 at prod scale). A toy
+    // trunk may read exactly zero; a REAL drift class lands well under this bar; a restore
+    // defect masquerading as chunking would not.
+    assert!(
+        max_delta <= 1e-3,
+        "mono-vs-split anchor logits moved {max_delta:.3e} — beyond the chunked-prime class"
+    );
+
+    // ARM C — the spec restore over the same boundary (gate 11's construction, worker-shaped).
+    let mut donor = h
+        .model
+        .glm5_spec_session_new(&h.engine, prefix, ctx, None)
+        .expect("donor spec session over the prefix");
+    let (_burst, donor_drafted, _, _) = drive_bursts(&h, &mut donor, prefix, k, 4, 4, &[]);
+    assert!(donor_drafted > 0, "the donor must have drafted (kv filled)");
+    let tail = donor
+        .export_draft_tail(&h.engine, prefix.len())
+        .expect("drafter tail export at the boundary");
+    let dr = h.model.glm5_dflash.as_ref().expect("drafter attached");
+    let dkv = memra_engine::dflash::DflashKv::from_tail(&h.engine, &dr.draft.cfg, ctx, &tail)
+        .expect("drafter KV rebuilt from the tail");
+    drop(donor);
+    let (boundary_cache, _bl) = h.fresh_primed(prefix, ctx);
+    let mut restored = h
+        .model
+        .glm5_spec_session_from_restored(&h.engine, boundary_cache, prefix, suffix, dkv, ctx, None)
+        .expect("restored spec session");
+    let (tape_spec, drafted, _accepted, _bursts) =
+        drive_bursts(&h, &mut restored, &prompt, k, max_new, 7, &[]);
+    assert!(drafted > 0, "the restored session must actually draft");
+
+    // THE INVARIANT: the restored continuation serves the SPLIT twin's bytes exactly. If this
+    // ever reds, the divergence is a restoration defect and memra#34 reopens as engine work;
+    // while it holds, a battery C1b red against a MONOLITHIC cold ref attributes to the
+    // documented chunking class and the battery's oracle must use the split twin.
+    assert_eq!(
+        tape_spec,
+        tape_split[..tape_spec.len()],
+        "restored spec tape must be BYTE-IDENTICAL to the split-prime cold twin"
+    );
+    println!(
+        "gate 12 PASS: restored == split twin over {} tokens; mono-vs-split anchor logits: \
+         {} of {} values differ, max |delta| {:.3e}; mono tape == split tape: {}",
+        tape_spec.len(),
+        diff_bits,
+        logits_mono.len(),
+        max_delta,
+        tape_mono == tape_split,
+    );
+}
