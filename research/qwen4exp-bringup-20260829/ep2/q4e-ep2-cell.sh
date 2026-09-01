@@ -43,7 +43,14 @@ CK=${CK:-$HOME/data/q48fn-yarn1m}
 OUT=${OUT:-$HOME/realgate/ep2}
 SRC=${SRC:-$HOME/ep2-wt}
 LOCK=${LOCK:-/tmp/q48fn-measure.lock}
-CARD_TOTAL_MIB=${CARD_TOTAL_MIB:-97887}
+# EXPORTED, and that is not cosmetic. `need_cards` is exported with `export -f` and called
+# inside every `flock -x ... bash -c` child, each of which runs `set -u`; an unexported
+# CARD_TOTAL_MIB makes the guard die on `unbound variable` in the child and every cell then
+# exits 90 with a message BLAMING THE CARD for a turn that never ran. Found by review before
+# this script ever ran, reproduced in the shipped child shape, and both guard arms are now
+# executed in that shape rather than in the parent (where the variable is always set and the
+# bug is invisible). This is the loud-failures-fail-quietly law applied to the guard itself.
+export CARD_TOTAL_MIB=${CARD_TOTAL_MIB:-97887}
 EP_MAP=${EP_MAP:-$OUT/ep-map-coactivation.json}
 TRACE_DIR=${TRACE_DIR:-$HOME/realgate/traces}
 # The gate's SECOND POSITIONAL is its out dir; `--prompts` selects the shape pack. Packs are
@@ -66,15 +73,26 @@ unset MEMRA_Q4E_MEASURE_LOCK
 src_sha(){ (cd "$SRC" 2>/dev/null && git log -1 --format=%H) || echo UNKNOWN; }
 bin_sha(){ sha256sum "$1" 2>/dev/null | cut -d' ' -f1 || echo UNKNOWN; }
 
+# NEED_CARDS_WAIT_S exists ONLY so both arms of the guard can be executed in seconds. At the
+# shipped 900 the red arm costs 15 minutes, and a guard whose failing arm is expensive to run is
+# a guard nobody runs, which is how this file shipped a broken one past its own header once.
+export NEED_CARDS_WAIT_S=${NEED_CARDS_WAIT_S:-900}
+
 # need_cards <need_mib> <card...>: wait for EVERY named card to be free AND idle, INSIDE the
 # hold. Idle as well as free because these cells quote per-round wall clocks. Exits loudly
 # rather than obscurely: a guard proven only on its red arm may be unconditionally red, which
-# is the same defect as unconditionally green, so execute BOTH arms of this before trusting a
-# queue built on it (need=100 -> rc 0, need=97000 on a loaded card -> rc 1).
+# is the same defect as unconditionally green, so BOTH arms are executed in the shipped child
+# context (see the CARD_TOTAL_MIB note above) rather than in the parent shell.
+#
+# EXECUTED RECEIPT (rig, one card, NEED_CARDS_WAIT_S=20, inside `flock -x ... bash -c` + set -u):
+#   green  need=100     -> rc 0,  prints waited=0
+#   red    need=999999  -> rc 90, prints the capacity-guard line
+# Before the CARD_TOTAL_MIB export both arms returned rc 90: unconditionally red, i.e. exactly
+# as broken as unconditionally green and indistinguishable from a busy card in the receipt.
 need_cards() {
   local need=$1; shift
   local cards=("$@") waited=0
-  while [ "$waited" -lt 900 ]; do
+  while [ "$waited" -lt "$NEED_CARDS_WAIT_S" ]; do
     local ok=1
     for c in "${cards[@]}"; do
       local used util free
