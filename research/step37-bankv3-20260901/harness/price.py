@@ -69,29 +69,10 @@ def looped(text):
     return False, None
 
 
-# BV3_SAMPLING selects the REQUEST SHAPE, and both shapes are required by the flip battery for
-# different reasons:
-#
-#   vendor (default) -- NO sampling params at all. models.toml's temperature 0.5 / top_p 0.9
-#       governs. This is the shape real traffic sends and the ONLY shape a serving decision may
-#       rest on (owner rule 2026-08-25).
-#   greedy           -- temperature 0 / top_p 1. The byte-deterministic INSTRUMENT, never the
-#       product. It earns its place in a DEFAULT-FLIP battery because it removes sampling
-#       variance from the tok/s comparison, so the overlap test is reading the program and not
-#       the RNG. It is reported as its own table and never as the serving number.
-#
-# The shape is recorded in every row, because a greedy row pooled into a vendor-default median
-# would be a different measurement wearing the same name.
-SAMPLING = os.environ.get("BV3_SAMPLING", "vendor")
-if SAMPLING not in ("vendor", "greedy"):
-    print("REFUSE: BV3_SAMPLING must be 'vendor' or 'greedy', got %r" % SAMPLING)
-    sys.exit(3)
-
-
 def stream_rep(rep, prompt, salt, maxtok):
-    # NO sampling params in the vendor arm: the registry's vendor defaults must be what governs,
-    # or the row is not the customer shape. An explicit temperature there would silently make
-    # this a different measurement from the one the serving claim needs.
+    # NO sampling params: the registry's vendor defaults must be what governs, or the row is
+    # not the customer shape. An explicit temperature here would silently make this a
+    # different measurement from the one the serving claim needs.
     body = {
         "model": MODEL,
         "messages": [{"role": "user", "content": prompt + "\n\n[session %s]" % salt}],
@@ -99,9 +80,6 @@ def stream_rep(rep, prompt, salt, maxtok):
         "stream": True,
         "stream_options": {"include_usage": True},
     }
-    if SAMPLING == "greedy":
-        body["temperature"] = 0
-        body["top_p"] = 1
     t0 = time.perf_counter()
     first = None
     usage = None
@@ -158,7 +136,6 @@ def stream_rep(rep, prompt, salt, maxtok):
         "rep": rep,
         "salt": salt,
         "corpus": CORPUS,
-        "sampling": SAMPLING,
         "prompt_index": rep - 1,
         "prompt_tokens": pt,
         "completion_tokens": ct,

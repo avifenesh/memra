@@ -2,7 +2,7 @@
 
 Box: <bench-instance> Mumbai H100 (`<mumbai-box-ip>`, H100 80GB HBM3, 16 vCPU, 249G RAM).
 Disk at start: root EBS 290G/94% used (19G free) — NOT used for weights; local NVMe
-`/opt/scratch/nvme` 3.5T with 3.2T free is the staging target (per the /data->NVMe staging
+`/opt/dl-image/nvme` 3.5T with 3.2T free is the staging target (per the /data->NVMe staging
 rule). **No deletions were needed or performed** on the box; the historical "EBS ~93% full"
 constraint is moot because everything stages on NVMe (5% used after staging).
 
@@ -13,22 +13,22 @@ reclaimed 2026-07-30, published to HF). Both big pieces came down HF Hub -> Mumb
 (minutes, vs hours over the home uplink):
 
 1. `Avifenesh/Hy3-REAP-Layer103p5-bw24` (full repo, 487 files) ->
-   `/opt/scratch/nvme/models/hy3-layer103p5-bw24-restored` (73.1 GiB payload + receipts).
+   `/opt/dl-image/nvme/models/hy3-layer103p5-bw24-restored` (73.1 GiB payload + receipts).
    Log: `logs/dl-overlay.log`.
 2. `tencent/Hy3` @ `716aa7241bd6d95896be4ebfc761162a9c4d49ef`, the 20 non-expert shards +
-   config/tokenizer/index (23.3 GiB) -> `/opt/scratch/nvme/models/hy3-sparse-source-dl`.
+   config/tokenizer/index (23.3 GiB) -> `/opt/dl-image/nvme/models/hy3-sparse-source-dl`.
    Logs: `logs/dl-source.log`, `logs/dl-source-2.log` (shard 00006 missed by the first
    batch fetch; refetched and verified present).
 3. rsync from local rig (small): runtime view dir (manifest.json 9.8M, frspec drafts,
-   RESTORE.md, relocation-receipt.json) -> `/opt/scratch/nvme/models/hy3-layer103p5-bw24-runtime`;
+   RESTORE.md, relocation-receipt.json) -> `/opt/dl-image/nvme/models/hy3-layer103p5-bw24-runtime`;
    10-byte `.expert-only.empty.safetensors` placeholder + `sparse-source-receipt.json`.
 
 Tooling: no pip on the box; bootstrapped `uv` and ran `uvx --from 'huggingface_hub[cli,hf_transfer]'
-hf download` with `HF_HOME=/opt/scratch/nvme/hf`.
+hf download` with `HF_HOME=/opt/dl-image/nvme/hf`.
 
 ## Assembly (exact mirror of the local layout)
 
-- `/opt/scratch/nvme/models/hy3-sparse-source/`: 107 entries = 20 real shard symlinks ->
+- `/opt/dl-image/nvme/models/hy3-sparse-source/`: 107 entries = 20 real shard symlinks ->
   `hy3-sparse-source-dl/`, 79 expert-only shard names -> `.expert-only.empty.safetensors`,
   6 config/tokenizer files, placeholder, receipt.
 - `/data/ai-ml/hf-models/hy3-layer103p5-sparse-source` -> the above (the manifest bakes this
@@ -49,7 +49,7 @@ hf download` with `HF_HOME=/opt/scratch/nvme/hf`.
 
 ## Build on box
 
-Lane tree rsync'd to `/opt/scratch/nvme/hy3-hopper/memra` (isolated — `~/memra` belongs to
+Lane tree rsync'd to `/opt/dl-image/nvme/hy3-hopper/memra` (isolated — `~/memra` belongs to
 another live lane, sk-bm128, and was NOT touched). `~/.cargo/bin/cargo build --release`
 (kernel-check, run-gen, run-spec): `MEMRA_CUDA_ARCH auto-detected 90a (compute_cap 9.0)`,
 finished in 3m57s. Log: `logs/build.log`.

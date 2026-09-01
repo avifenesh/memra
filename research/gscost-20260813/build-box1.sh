@@ -3,7 +3,7 @@
 set -euo pipefail
 
 : "${EXPECTED_SOURCE:?set EXPECTED_SOURCE to the staged lane commit}"
-ROOT=${GSCOST_ROOT:-/opt/scratch/nvme/cx-gscost}
+ROOT=${GSCOST_ROOT:-/opt/dl-image/nvme/cx-gscost}
 REPO=${GSCOST_REPO:-$ROOT/memra}
 OUT=${GSCOST_BUILD_OUT:-$REPO/research/gscost-20260813/raw/build}
 BUILD_TMP=${GSCOST_BUILD_TMP:-$ROOT/tmp}

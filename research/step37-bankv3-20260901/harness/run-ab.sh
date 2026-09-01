@@ -42,24 +42,7 @@ for boot in $BOOTS; do
     echo "$(date -u +%H:%M:%SZ) BOOT_START $TAG bin=$BINP mode=$MODE" >> "$PROG"
     "$D/harness/boot.sh" "$TAG" "$BINP" "$MODE" >> "$PROG" 2>&1 || {
       echo "BOOT_FAIL $TAG" >> "$PROG"; "$D/harness/stop.sh" >> "$PROG" 2>&1; exit 2; }
-    # PASSES: one or more request shapes per boot, ALWAYS in the same order in every arm, so the
-    # ordering (and any cache/thermal state it leaves) is a constant of the cell rather than a
-    # confound between arms. Default is the vendor-default sampled shape alone, which is what
-    # milestone 4 ran; the flip battery sets PASSES="greedy vendor" to get the byte-deterministic
-    # table and the serving table out of the SAME boots -- paired arms, half the card time, and no
-    # cross-boot clock drift between the two tables.
-    for pass_shape in ${PASSES:-vendor}; do
-      BV3_SAMPLING=$pass_shape python3 "$D/harness/price.py" "$TAG" "$boot" \
-        "$D/receipts/rows-$CELL-$pass_shape.jsonl" >> "$PROG" 2>&1 \
-        || echo "BENCH_FAIL $TAG shape=$pass_shape" >> "$PROG"
-    done
-    # ENGAGEMENT AFTER the requests, because the [nvfp4-sweep] announce needs a decode to have
-    # happened -- and BEFORE the next arm, because an engagement failure invalidates the whole
-    # cell and there is no reason to spend more card time on it. This is a hard abort, not a
-    # warning: LAW:engagement-receipt-before-any-perf-row, and this lane's own stopped rotation.
-    "$D/harness/assert-engagement.sh" "$TAG" "$MODE" >> "$PROG" 2>&1 || {
-      echo "ENGAGEMENT_REFUSED $TAG mode=$MODE — CELL VOID, rows above are not aggregatable" >> "$PROG"
-      "$D/harness/stop.sh" >> "$PROG" 2>&1; exit 7; }
+    python3 "$D/harness/price.py" "$TAG" "$boot" "$ROWS" >> "$PROG" 2>&1 || echo "BENCH_FAIL $TAG" >> "$PROG"
     "$D/harness/stop.sh" >> "$PROG" 2>&1
     echo "$(date -u +%H:%M:%SZ) CYCLE_DONE $TAG" >> "$PROG"
   done

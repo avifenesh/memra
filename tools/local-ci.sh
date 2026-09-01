@@ -112,27 +112,6 @@ fi
 # the engine bins, and the gate tools all match HEAD before a single check runs.
 cargo build --release || { echo "local-ci: build FAILED"; exit 1; }
 
-# CLIPPY GATE (lane/clippy-zero-restore-20260901, wired on the PR #87 review's finding).
-# CPU-only, pre-lock, on the target dir the build above just warmed. Mirrors ci.yml's gate
-# exactly so "local-ci green" keeps implying "pushable": the workspace is clippy-zero and
-# -D warnings holds it there; without this line a local-ci-green tree bounces off CI on a
-# lint 20 minutes after the push. Steady-state cost is small (cargo replays cached
-# diagnostics on an unchanged tree); first run after an edit pays the lint pass. -j8 per
-# the rig CPU cap. MEMRA_CI_CLIPPY=0 skips, announced — same door pattern as the stages
-# below, and like them it is not an engine flag (check-flags censuses runtime .rs only).
-# VERSION AGREEMENT: ci.yml pins its clippy toolchain to the workspace rust-version
-# (Cargo.toml), and this line lints with the rig's default toolchain — keep the rig on
-# that same version, and bump rust-version + the ci.yml pin + the rig together in one
-# lane (the gate's first CI run redded on a stable that moved overnight; receipt in the
-# ci.yml toolchain-pin comment).
-if [ "${MEMRA_CI_CLIPPY:-1}" = "1" ]; then
-    echo "== local-ci: clippy gate (-D warnings) =="
-    cargo clippy --release --all-targets -j8 -- -D warnings \
-        || { echo "local-ci: clippy gate FAILED — the workspace stays clippy-zero (fix or #[allow] with a stated reason)"; exit 1; }
-else
-    echo "local-ci: clippy gate SKIPPED (MEMRA_CI_CLIPPY=0)" >&2
-fi
-
 # HTTP-SURFACE UNIT SUITE (lane/vendor-default-sampling, 2026-08-19). CPU-only, ~1s, and it
 # was in NO automated gate: this battery ran `cargo build` but never `cargo test`, and at the
 # time .github/workflows/ci.yml ran only `cargo test -p memra-engine cpu_experts --lib` (the

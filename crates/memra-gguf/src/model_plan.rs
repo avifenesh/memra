@@ -2300,8 +2300,6 @@ mod tests {
     }
 
     #[test]
-    // excessive_precision: the literals quote the banked transformers receipt digits verbatim.
-    #[allow(clippy::excessive_precision)]
     fn yarn_divisors_match_the_banked_transformers_receipt() {
         // Pinned against transformers 5.14.1 `_compute_yarn_parameters` run on the fleet
         // box (research/qwen4exp-bringup-20260829/yarn/transformers-yarn-params.tsv).
@@ -2351,8 +2349,6 @@ mod tests {
     }
 
     #[test]
-    // excessive_precision: 3.814697265625 is the artifact's exact yarn factor (1,000,000/262,144).
-    #[allow(clippy::excessive_precision)]
     fn compiles_qwen4exp_yarn_rope_from_config() {
         // The 1M override shape: rope_type yarn + factor + original inside rope_parameters
         // (the transformers 5.x spelling this artifact uses).

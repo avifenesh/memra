@@ -1,1 +1,1 @@
-bin/expand-goldens.py
+/home/ubuntu/realgate/bin/expand-goldens.py

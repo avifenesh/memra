@@ -40,8 +40,8 @@ gdn_chunked  T= 17 C= 64 vs f64-truth: out seq=3.93e-6/chunk=1.97e-5 state seq=1
 gdn_chunked  T=512 C= 64 vs f64-truth: out seq=4.22e-6/chunk=3.50e-5 state seq=1.21e-5/chunk=1.03e-4 OK
 qmatvec Q2_K synthetic Stage-A: rel=3.16e-7 OK
 (pass a GGUF path to also validate qmatvec vs CPU oracle)
-SKIP dtype5-NVFP4 (missing model Qwen3.5-9B-NVFP4-MTP-GGUF.gguf under MEMRA_KC_MODELS_DIR=/opt/scratch/nvme/cx-requal/models)
-SKIP dtype5-Q5_K (missing model Qwen3.5-9B-NVFP4-MTP-GGUF.gguf under MEMRA_KC_MODELS_DIR=/opt/scratch/nvme/cx-requal/models)
+SKIP dtype5-NVFP4 (missing model Qwen3.5-9B-NVFP4-MTP-GGUF.gguf under MEMRA_KC_MODELS_DIR=/opt/dl-image/nvme/cx-requal/models)
+SKIP dtype5-Q5_K (missing model Qwen3.5-9B-NVFP4-MTP-GGUF.gguf under MEMRA_KC_MODELS_DIR=/opt/dl-image/nvme/cx-requal/models)
 dtype5 [IQ3_S] blk.0.ffn_gate_exps.weight (in=2048 out=512) Stage-A: rel=1.19e-7 OK
 dtype5 [IQ3_S] blk.0.ffn_gate_exps.weight Stage-B dp4a: (no fast path — Stage-A only)
 dtype5 [IQ4_XS] blk.0.ffn_down_exps.weight (in=512 out=2048) Stage-A: rel=2.24e-8 OK
@@ -76,7 +76,7 @@ f16g-kq-direct [iq3_s synth in=512 out=300] hybrid(cross=64,deep-tail) vs worksp
 f16g-kq-direct [iq3_s synth in=512 out=300] all-128 vs workspace: maxdiff=0.00e0 OK (byte-identical)
 f16g-kq-direct [iq3_s synth in=512 out=300] all-32-deep-tail vs workspace: maxdiff=0.00e0 OK (byte-identical)
 f16g-kq-direct [iq3_s synth in=512 out=300] all-32-legacy-tail vs workspace: maxdiff=0.00e0 OK (byte-identical)
-SKIP f16g-kq-direct-ornith (missing model ornith-1.0-35b-Q4_K_M.gguf under MEMRA_KC_MODELS_DIR=/opt/scratch/nvme/cx-requal/models)
+SKIP f16g-kq-direct-ornith (missing model ornith-1.0-35b-Q4_K_M.gguf under MEMRA_KC_MODELS_DIR=/opt/dl-image/nvme/cx-requal/models)
 f16g-kq-direct [q35 blk.0.ffn_gate_exps.weight iq3_s in=2048 out=512] hybrid(cross=64,deep-tail) vs workspace: maxdiff=0.00e0 OK (byte-identical)
 f16g-kq-direct [q35 blk.0.ffn_gate_exps.weight iq3_s in=2048 out=512] all-128 vs workspace: maxdiff=0.00e0 OK (byte-identical)
 f16g-kq-direct [q35 blk.0.ffn_gate_exps.weight iq3_s in=2048 out=512] all-32-deep-tail vs workspace: maxdiff=0.00e0 OK (byte-identical)
@@ -89,7 +89,7 @@ iq4xs-mmq [synth] T=16: rel=1.62e-7 OK
 iq4xs-mmq [synth] T=64: rel=2.39e-7 OK
 iq4xs-mmq [synth] T=128: rel=2.38e-7 OK
 iq4xs-mmq [synth] T=512: rel=1.70e-4 OK
-SKIP iq4xs-mmq-real (missing model Kwaipilot_KAT-Coder-V2.5-Dev-IQ4_XS.gguf or Step-3.7-flash-IQ4_XS-00001-of-00003.gguf under MEMRA_KC_MODELS_DIR=/opt/scratch/nvme/cx-requal/models)
+SKIP iq4xs-mmq-real (missing model Kwaipilot_KAT-Coder-V2.5-Dev-IQ4_XS.gguf or Step-3.7-flash-IQ4_XS-00001-of-00003.gguf under MEMRA_KC_MODELS_DIR=/opt/dl-image/nvme/cx-requal/models)
 SKIP nvfp4-gemm:Q5_K (model lacks Q5_K blk.0.attn_gate.weight)
 GEMM blk.0.ffn_gate.weight [NVFP4] T=16: rel=5.45e-7 OK
 GEMM blk.0.ffn_gate.weight [NVFP4] T=64: rel=4.80e-7 OK
@@ -132,13 +132,13 @@ MMQ-Q8_0 blk.0.ffn_gate_shexp.weight [Q8_0 in=2048 out=512] T=16: rel=3.64e-3 OK
 MMQ-Q8_0 blk.0.ffn_gate_shexp.weight [Q8_0 in=2048 out=512] T=64: rel=3.71e-3 OK
 MMQ-Q8_0 blk.0.ffn_gate_shexp.weight [Q8_0 in=2048 out=512] T=128: rel=4.17e-3 OK
 MMQ-Q8_0 blk.0.ffn_gate_shexp.weight [Q8_0 in=2048 out=512] T=512: rel=4.18e-3 OK
-SKIP q4_0-mmq (missing model gemma-4-12b-it-qat-q4_0.gguf under MEMRA_KC_MODELS_DIR=/opt/scratch/nvme/cx-requal/models)
+SKIP q4_0-mmq (missing model gemma-4-12b-it-qat-q4_0.gguf under MEMRA_KC_MODELS_DIR=/opt/dl-image/nvme/cx-requal/models)
 MMQ-27B blk.0.ffn_down.weight [NVFP4 in=17408 out=5120] T=16: rel=1.12e-1 (W4A4-vs-dp4a band ~0.1) OK
 MMQ-27B blk.0.ffn_down.weight [NVFP4 in=17408 out=5120] T=512: rel=1.54e-1 (W4A4-vs-dp4a band ~0.1) OK
 MMQ-27B blk.0.ffn_gate.weight [NVFP4 in=5120 out=17408] T=16: rel=1.07e-1 (W4A4-vs-dp4a band ~0.1) OK
 MMQ-27B blk.0.ffn_gate.weight [NVFP4 in=5120 out=17408] T=512: rel=8.52e-2 (W4A4-vs-dp4a band ~0.1) OK
-SKIP q4_0-sk-arm (missing model gemma-4-26B_q4_0-it.gguf under MEMRA_KC_MODELS_DIR=/opt/scratch/nvme/cx-requal/models)
-SKIP nvfp4-mmvq (missing model Qwen3.5-9B-NVFP4-MTP-GGUF.gguf under MEMRA_KC_MODELS_DIR=/opt/scratch/nvme/cx-requal/models)
+SKIP q4_0-sk-arm (missing model gemma-4-26B_q4_0-it.gguf under MEMRA_KC_MODELS_DIR=/opt/dl-image/nvme/cx-requal/models)
+SKIP nvfp4-mmvq (missing model Qwen3.5-9B-NVFP4-MTP-GGUF.gguf under MEMRA_KC_MODELS_DIR=/opt/dl-image/nvme/cx-requal/models)
 E4M3-MMVQ synth [5120x512] m=1: rel=1.73e-7 m1-bits=true OK
 E4M3-MMVQ synth [5120x512] m=2: rel=1.73e-7 m1-bits=true OK
 E4M3-MMVQ synth [5120x512] m=5: rel=2.17e-7 m1-bits=true OK
@@ -276,9 +276,9 @@ E4M3-BLK-BATCHED RAND [5120x1536] m=5 b8: bit-bad=0/7680 OK
 E4M3-BLK-MMVQ RAND [5120x1536] s12x40 m=9: rms_rel=1.81e-6 bit-bad=12440/13824 m1-bits=true q8-lossless=true nan=0 OK
 E4M3-BLK-BATCHED RAND [5120x1536] m=9 b16: bit-bad=0/13824 OK
 E4M3-BLK-MMVQ code coverage: 254/254 legal e4m3 codes exercised (0x7F/0xFF excluded — refused by the residency NaN precondition) OK
-SKIP nvfp4-batched (missing model Qwen3.5-9B-NVFP4-MTP-GGUF.gguf under MEMRA_KC_MODELS_DIR=/opt/scratch/nvme/cx-requal/models)
-SKIP DUAL-BATCHED-AUX (missing model Qwen3.5-9B-NVFP4-MTP-GGUF.gguf under MEMRA_KC_MODELS_DIR=/opt/scratch/nvme/cx-requal/models)
-SKIP a6-split-plane (missing model Qwen3.5-9B-NVFP4-MTP-GGUF.gguf under MEMRA_KC_MODELS_DIR=/opt/scratch/nvme/cx-requal/models)
+SKIP nvfp4-batched (missing model Qwen3.5-9B-NVFP4-MTP-GGUF.gguf under MEMRA_KC_MODELS_DIR=/opt/dl-image/nvme/cx-requal/models)
+SKIP DUAL-BATCHED-AUX (missing model Qwen3.5-9B-NVFP4-MTP-GGUF.gguf under MEMRA_KC_MODELS_DIR=/opt/dl-image/nvme/cx-requal/models)
+SKIP a6-split-plane (missing model Qwen3.5-9B-NVFP4-MTP-GGUF.gguf under MEMRA_KC_MODELS_DIR=/opt/dl-image/nvme/cx-requal/models)
 fa_prefill T=16 Tkv=16: rel=3.03e-3 OK
 fa_prefill T=64 Tkv=64: rel=3.03e-3 OK
 fa_prefill T=100 Tkv=100: rel=3.03e-3 OK

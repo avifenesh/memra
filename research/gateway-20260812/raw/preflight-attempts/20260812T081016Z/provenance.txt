@@ -3,10 +3,10 @@ mode=preflight
 duration_s=0
 runtime_commit=f1b4cdc1827d99f6f8824032de6ad1153c332cc6
 model_id=qwen/qwen3.6-27b
-model_path=/opt/scratch/nvme/cx-gateway/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+model_path=/opt/dl-image/nvme/cx-gateway/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
 model_sha256=d8d71c7e8a01a1c964fd904a7b496eaef19bdd66827e0949e66c723da742d517
 model_bytes=15705920064
-model_source_manifest=/opt/scratch/nvme/cx-gateway/memra/deploy/gateway/q27-artifact.manifest
+model_source_manifest=/opt/dl-image/nvme/cx-gateway/memra/deploy/gateway/q27-artifact.manifest
 shape=two independent Q27 replicas on physical GPU0 and GPU1; c=4 tenant cap per replica; spec off; ctx8192; prefix cache 4096 MiB per replica
 traffic=the same streaming plus non-streaming, tools, strict structured output, exact 90%-hit, and overload soak runs concurrently against both replicas
 <private-host-redacted>
@@ -16,8 +16,8 @@ f1b4cdc1 (HEAD) fix: preserve concurrent output hash classes
 e837c311 feat: add production gateway preflight
 136f1f41 docs: start cx gateway production ledger
 7f305984 data(perf-ci): 5090 battery rows @ sec9 merge (0 fail 0 warn)
-a845cf9b51def51e1ba8e75b1eaa06dfc1e0cdd572e05c7fbfd6d6ce44a6348a  /opt/scratch/nvme/cx-gateway/memra/target/release/memra-server
-d685fc39208218819cc91d22c624d659094ce6bb5d14b69d434657429dfe6778  /opt/scratch/nvme/cx-gateway/memra/deploy/gateway/probe.py
-671568b0f4ea3c1b799b79073faeba8a8bfdb4f47e1afca8ed7710de2783d4ce  /opt/scratch/nvme/cx-gateway/memra/deploy/gateway/q27-models.toml
+a845cf9b51def51e1ba8e75b1eaa06dfc1e0cdd572e05c7fbfd6d6ce44a6348a  /opt/dl-image/nvme/cx-gateway/memra/target/release/memra-server
+d685fc39208218819cc91d22c624d659094ce6bb5d14b69d434657429dfe6778  /opt/dl-image/nvme/cx-gateway/memra/deploy/gateway/probe.py
+671568b0f4ea3c1b799b79073faeba8a8bfdb4f47e1afca8ed7710de2783d4ce  /opt/dl-image/nvme/cx-gateway/memra/deploy/gateway/q27-models.toml
 8e80ab2a7d2280801470410274e3fda9e308955e4e83cf3edc3c29a235ccfaf4  research/gateway-20260812/run-eu-west.sh
-247a0244ba557ef34246c57b778ff15da2c10e18e05804c98765eb793753e624  /opt/scratch/nvme/cx-gateway/memra/deploy/gateway/q27-artifact.manifest
+247a0244ba557ef34246c57b778ff15da2c10e18e05804c98765eb793753e624  /opt/dl-image/nvme/cx-gateway/memra/deploy/gateway/q27-artifact.manifest

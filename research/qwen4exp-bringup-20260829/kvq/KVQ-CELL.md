@@ -3,7 +3,7 @@
 Owner decisions binding this lane: KV cache default **K=q8_0, V=q5_1** (asymmetric —
 K feeds the score dots + rope, V errors average under attention weighting); the default
 ships ON only with this lane's receipts attached (flags law). Activation quantization
-stays owner-retired; KV STORAGE precision is this assignment. Box: cloud-eval frankfurt,
+stays owner-retired; KV STORAGE precision is this assignment. Box: sbox-eval Frankfurt,
 2x RTX PRO 6000 Blackwell 96 GB; artifact `~/data/q48fn-nvfp4` (+ the yarn-1M hardlink
 override for the deep rungs); branch qwen4exp-bringup-20260829.
 

@@ -30,29 +30,6 @@
 //! `linear_attn.norm` (the qwen35 receipt: hf_mapping.rs qwen.py:302-303 exempts exactly
 //! that row; SEMANTICS.md §GDN says the GDN program is qwen3_5's except the sigmoid gate).
 
-// Shape lints allowed module-wide (lane/clippy-zero-restore-20260901): this is the qwen4exp
-// bring-up lane's kernel-adjacent host code — host twins pinned line-for-line to their
-// reference functions — and its just-gated shape is load-bearing, so index loops, control
-// flow, and `% == 0` idioms are not reshaped here (is_multiple_of also changes zero-divisor
-// semantics from panic to defined). The last four rows (unwrap/question-mark/as_deref/drain)
-// are allowed for the same reason, not because they are harmless: their fixes rewrite
-// control flow and expression order in the pinned twins. Truly mechanical lints (unused
-// imports/mut, no-op casts, needless borrows, doc shape) stay live. NOTE: a module-wide
-// allow exempts FUTURE code in this file too, not just the banked sites — when the bring-up
-// lanes close, narrowing these to per-site allows is fair game.
-#![allow(
-    clippy::manual_is_multiple_of,
-    clippy::collapsible_if,
-    clippy::needless_range_loop,
-    clippy::too_many_arguments,
-    clippy::unnecessary_unwrap,
-    clippy::needless_question_mark,
-    clippy::needless_option_as_deref,
-    clippy::extend_with_drain,
-    clippy::type_complexity,
-    clippy::large_enum_variant
-)]
-
 use std::os::raw::c_void;
 
 use cudarc::driver::{CudaSlice, CudaView, DevicePtr, DevicePtrMut, LaunchConfig, PushKernelArg};
@@ -850,11 +827,6 @@ pub struct VerifyStash {
     k_cap: usize,
     /// The live chunk (base_pos, t) — set by the last exact chunk, consumed by rewind.
     chunk: Option<(usize, usize)>,
-    /// The last FUSED verify chunk (`vfuse` cost instrument), for the rewind refusal
-    /// message only. A fused chunk leaves no per-column stash, so the state it produced
-    /// cannot be rewound; naming the shape keeps that refusal readable as the seam's
-    /// documented limit instead of an internal inconsistency.
-    fused_chunk: Option<(usize, usize)>,
     gdn: Vec<Option<GdnStash>>,
     ple: Vec<Option<PleStash>>,
     /// Trunk final wide rows, RING-slotted: absolute row r lives at slot
@@ -1515,8 +1487,8 @@ fn proj_stack_on() -> bool {
 /// Hyper-gate diet (perf round 4): the read gate's 7-launch serial chain (norm, batched
 /// down GEMV, lowrank reduce, batched up GEMV, mix epilogue, inject partials + reduce)
 /// re-fuses into THREE launches at t == 1 — stage 1 (per-stream RMS recompute + normed
-/// smem row + down/inject rows), stage 2 (silu mean + inject sigmoid), stage 3 (up dots +
-/// mix epilogue from the stage-1 inv scalars). ACCUMULATION CLASS (new reduce widths);
+/// smem row + down/inject rows), stage 2 (silu mean + inject sigmoid), stage 3 (up dots
+/// + mix epilogue from the stage-1 inv scalars). ACCUMULATION CLASS (new reduce widths);
 /// gated by `gate_hc_diet_kernels` (real geometry vs the classic fused chain) + the real
 /// gates. Requires the bf16 trunk twins + hcmicro inject posture (the Slab inject form);
 /// geometry guards hidden % 8 == 0 && rank % 8 == 0 (tiny plans fall back). Default ON
@@ -1579,40 +1551,6 @@ pub fn set_verify_mt(on: bool) {
 
 fn verify_mt_on() -> bool {
     VERIFY_MT.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// FUSED verify program (`vfuse`, mtp12 cost lane): route a `1 < t <= k_cap` verify chunk
-/// through the FUSED (prefill-style) program instead of the EXACT per-row programs.
-///
-/// **This is a COST INSTRUMENT, not a serving arm, and it is default OFF forever unless a
-/// receipt moves it** (new-flags law). What it changes and what it cannot:
-///
-/// - Changes (the only sections where exact and fused differ): trunk dense mats
-///   (`qmatvec_bf16w_mt` W-once → cuBLASLt m=t), the hyper read gate (hc-diet MT 3-launch
-///   → the t-generic fused chain), the GDN scan (per-column `gdn_scan_step_at` + snapshots
-///   → chunk scan), the QSA indexer projection and the PLE projections (t × m=1 → 1 × m=t).
-/// - Cannot change, BY CONSTRUCTION: the MoE routed union (already ONE grouped gufuse
-///   launch over every column on the exact arm — this seam FORCES `grouped` so the fused
-///   chunk does not fall into the per-expert prefill executor, which costs minutes/chunk),
-///   `sdpa_naive_mask` (same kernel both arms), and the ~12 ms/round of per-layer HOST
-///   TWIN bubbles (48 MoE router dtoh + 12 QSA indexer masks are PER CHUNK, not per
-///   column, so a fused chunk pays them identically).
-///
-/// **No rewind exists on this arm.** The exact program stashes per-column GDN recurrent
-/// state and PLE segment state so `verify_rewind` can drop rejected columns replay-free;
-/// the fused chunk scan materializes only the final state, so `verify_rewind` refuses
-/// loudly (`vfuse_chunk`) rather than silently rewinding to a wrong state. That is why the
-/// seam is a timing probe on a throwaway state and NOT wired into `spec_generate`.
-pub const VERIFY_FUSED_DEFAULT: bool = false;
-static VERIFY_FUSED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(VERIFY_FUSED_DEFAULT);
-
-pub fn set_verify_fused(on: bool) {
-    VERIFY_FUSED.store(on, std::sync::atomic::Ordering::Relaxed);
-}
-
-pub fn verify_fused_on() -> bool {
-    VERIFY_FUSED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Router bf16 residency (perf round 4): the MoE router GEMV was the last dense trunk
@@ -2549,7 +2487,6 @@ pub fn seam_state(name: &str) -> Option<bool> {
         "gufuse" => sel_gufuse_on(),
         "routerb16" => router_bf16_on(),
         "vgraph" => verify_graphs_on(),
-        "vfuse" => verify_fused_on(),
         "idxdev" => idx_dev_on(),
         "idxsel" => idx_sel_on(),
         "plecache" => ple_cache_on(),
@@ -2595,7 +2532,6 @@ pub fn seam_names() -> &'static [&'static str] {
         "gufuse",
         "routerb16",
         "vgraph",
-        "vfuse",
         "longatt",
         "idxdev",
         "idxsel",
@@ -2636,9 +2572,6 @@ fn seam_dispatch(name: &str, on: bool, value: Option<&str>, apply: bool) -> bool
         "gufuse" => seam!(set_sel_gufuse(on)),
         "routerb16" => seam!(set_router_bf16(on)),
         "vgraph" => seam!(set_verify_graphs(on)),
-        // COST INSTRUMENT, no rewind (see VERIFY_FUSED_DEFAULT): a spec loop with this
-        // armed refuses at the first `verify_rewind`. Timing probes only.
-        "vfuse" => seam!(set_verify_fused(on)),
         "longatt" => seam!(set_longatt(if on { "force" } else { "off" })),
         "idxdev" => seam!(set_idx_dev(on)),
         "idxsel" => seam!(set_idx_sel(on)),
@@ -2992,6 +2925,7 @@ fn score_blocks(
 /// tail. Values and selected sets are bit-identical to the historical per-row recompute
 /// (see the helper docs above); rows are computed in PARALLEL when the work is large
 /// (rows are independent; single-row chunks parallelize across block ranges instead).
+#[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_arguments)]
 fn indexer_select_rows(
     overlay: &MicroBlockIndexPlan,
@@ -3788,9 +3722,6 @@ fn route_topk_device(
 
 /// The historical mask-producing entry point, now select + render (byte-identical mask;
 /// the TP2 decode path and the masked-kernel arm consume it).
-// dead_code: bring-up scaffolding the in-flight qwen4exp lanes still call; not deleted in
-// the clippy-zero lane (bit-neutral by construction).
-#[allow(dead_code)]
 #[allow(clippy::too_many_arguments)]
 fn indexer_mask_rows(
     overlay: &MicroBlockIndexPlan,
@@ -4878,6 +4809,7 @@ fn launch_hc_inject_two_stage(
 /// from the raw plane, normed row in smem, this chunk's down rows + inject partial rows.
 /// Emits parts [S, rank], inj_parts [n_inj, S], inv [S].
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn launch_hc_diet_stage1(
     e: &Engine,
     ptrs: &CudaSlice<u64>,
@@ -4946,6 +4878,7 @@ fn launch_hc_diet_stage1(
 
 /// hc-diet stage 2 (`hc_diet_stage2_f32`): low_act = silu(mean_s parts) (the
 /// hc_lowrank_reduce association verbatim) + inj = 2*sigmoid(mean_s2 inj_parts).
+#[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_arguments)]
 fn launch_hc_diet_stage2(
     e: &Engine,
@@ -5761,6 +5694,7 @@ fn launch_nvfp4_sel_matvec(
 /// array vs the TP2 count-gated pack blob). Bit-identical to the v3 gate + v3 up +
 /// silu_mul chain (kernel doc).
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn launch_nvfp4_sel_gu_silu(
     e: &Engine,
     gate: (&CudaSlice<u8>, &CudaSlice<u8>, &CudaSlice<f32>),
@@ -5827,266 +5761,6 @@ fn launch_nvfp4_sel_gu_silu(
         b.launch(cfg)?;
     }
     Ok(())
-}
-
-/// One row of the MoE routed-union cost probe (`moeu` lane, mtp13).
-#[derive(Debug, Clone, Copy)]
-pub struct MoeUnionRow {
-    /// Verify columns fed (t). 1 = the plain-decode reference shape.
-    pub t: usize,
-    /// (token, expert) pairs dispatched = the grid.y extent of both launches.
-    pub slots: usize,
-    /// DISTINCT experts among those slots — the only quantity a union gather changes.
-    pub union_size: usize,
-    /// Median us/launch of the fused gate+up+silu sel matvec.
-    pub gu_us: f64,
-    /// Median us/launch of the down sel matvec.
-    pub down_us: f64,
-    /// (max-min)/median over the arm's reps. Reported so a reader can see whether an arm's
-    /// delta against another arm is inside its own noise; LAW:interleaved-ab wants every arm
-    /// to report its spread, and at realistic union sizes this lever's delta is smaller than
-    /// this column.
-    pub gu_spread_rel: f64,
-    pub down_spread_rel: f64,
-}
-
-/// COST INSTRUMENT for the MoE routed-union lever (`moeu`), and the reason it exists
-/// instead of a kernel: the union gather changes exactly ONE thing about the MoE verify
-/// section — how many DISTINCT experts' NVFP4 bytes the chunk reads — while leaving the
-/// per-slot arithmetic, the slot count and the launch geometry alone. So the lever can be
-/// priced WITHOUT writing it, by running the shipped kernels at a fixed slot count and
-/// varying only the number of distinct experts those slots name.
-///
-/// The three-point decomposition each sweep yields, at t verify columns and k selected:
-///
-/// - `slots = t*k, union = t*k` — TODAY. Every slot reads its expert's bytes; duplicates
-///   across tokens re-read (the kernel doc says so in as many words: "the weight banks are
-///   read once per selected slot either way — the launch count is what drops").
-/// - `slots = t*k, union = U` — the IDEALISED union gather: same arithmetic, same slots,
-///   only `U` experts' bytes touched. A real union-major kernel cannot beat this by much
-///   and cannot be slower on traffic, so this row is the lever's payoff, measured.
-/// - `slots = k, union = k` — the t=1 plain reference, for the round arithmetic.
-///
-/// If the middle row does not beat the first, the section's cost is not the duplicated
-/// bytes and the lever has no surface REGARDLESS of what the routed union sizes turn out
-/// to be — the card's 128 MiB L2 is large enough to hold a whole chunk's routed working
-/// set at this geometry (60 slots x 1.76 MiB gate+up = 105.5 MiB), so the hardware may
-/// already be deduplicating what the kernel re-reads.
-///
-/// SYNTHETIC BANKS, stated because a probe that looks like a gate is how a wrong number
-/// gets quoted later. This loads NO checkpoint: it allocates a bank of the serving
-/// geometry (`experts` x `ff` x `hidden` gate + up, `experts` x `hidden` x `ff` down) and
-/// fills it with deterministic pseudo-random bytes. That is sound for a TRAFFIC and
-/// LATENCY probe and for nothing else: the NVFP4 lane program is branch-free and
-/// data-independent (LUT extract, fixed shfl tree), so bytes decide addresses and never
-/// control flow. Scale bytes are held in a modest ue4m3 range so the f32 chain stays in
-/// normal range; no output of this probe is a correctness claim and none is compared to an
-/// oracle. Expert ids are SPREAD across the bank by a fixed stride, because a clustered
-/// id set would make the sweep measure address locality instead of distinct-byte count.
-///
-/// Numbers from this probe are per-LAUNCH; the section cost is per LAYER (one gu + one
-/// down launch each) times the model's MoE layer count.
-pub fn moe_union_cost_probe(
-    e: &Engine,
-    experts: usize,
-    hidden: usize,
-    ff: usize,
-    selected: usize,
-    t: usize,
-    reps: usize,
-) -> Res<Vec<MoeUnionRow>> {
-    if hidden % 32 != 0 || ff % 4 != 0 {
-        return Err("moe_union_cost_probe: needs the gufuse geometry (hidden%32, ff%4)".into());
-    }
-    if selected == 0 || t == 0 || reps == 0 {
-        return Err("moe_union_cost_probe: selected/t/reps must be non-zero".into());
-    }
-    // Deterministic byte fill. Codes index a 16-entry LUT so every byte is legal; scale
-    // bytes are confined to a mid ue4m3 range so no product leaves normal f32 range.
-    let code_byte = |i: usize| -> u8 { (i.wrapping_mul(2_654_435_761) >> 13) as u8 };
-    let scale_byte = |i: usize| -> u8 { 0x38 | ((i.wrapping_mul(40_503) >> 7) & 0x07) as u8 };
-    let mk = |n: usize, f: &dyn Fn(usize) -> u8| -> Res<CudaSlice<u8>> {
-        let host: Vec<u8> = (0..n).map(f).collect();
-        let d = e.htod_bytes(&host)?;
-        drop(host);
-        Ok(d)
-    };
-    // gate/up: [experts, ff, hidden]; down: [experts, hidden, ff]. Gate and up get
-    // SEPARATE allocations on purpose — aliasing them would halve the distinct bytes and
-    // silently turn the sweep into a cache-hit measurement.
-    let gu_codes_n = experts * ff * (hidden / 2);
-    let gu_scales_n = experts * ff * (hidden / 16);
-    let dn_codes_n = experts * hidden * (ff / 2);
-    let dn_scales_n = experts * hidden * (ff / 16);
-    let gc = mk(gu_codes_n, &code_byte)?;
-    let gs = mk(gu_scales_n, &scale_byte)?;
-    let uc = mk(gu_codes_n, &|i| code_byte(i ^ 0x5A5A_5A5A))?;
-    let us = mk(gu_scales_n, &|i| scale_byte(i ^ 0x3C3C_3C3C))?;
-    let dc = mk(dn_codes_n, &|i| code_byte(i ^ 0x0F0F_0F0F))?;
-    let ds = mk(dn_scales_n, &|i| scale_byte(i ^ 0x1111_1111))?;
-    let gm = e.htod(&vec![1.0f32; experts])?;
-    let um = e.htod(&vec![1.0f32; experts])?;
-    let dm = e.htod(&vec![1.0f32; experts])?;
-    // Activations: small normal values, one row per verify column.
-    let mixed_h: Vec<f32> = (0..t * hidden)
-        .map(|i| ((i.wrapping_mul(40_503) % 1000) as f32) / 4000.0 - 0.125)
-        .collect();
-    let mixed = e.htod(&mixed_h)?;
-
-    // Spread candidate expert ids over the whole bank by a fixed stride.
-    let pool: Vec<i32> = {
-        let stride = (experts / (t * selected).max(1)).max(1);
-        (0..t * selected)
-            .map(|i| ((i * stride) % experts) as i32)
-            .collect()
-    };
-
-    let mut rows: Vec<MoeUnionRow> = Vec::new();
-    // (t, union target). `new` fresh experts per extra column: union = k + (t-1)*new.
-    let mut cells: Vec<(usize, usize)> = vec![(1, selected)];
-    for new in 0..=selected {
-        cells.push((t, selected + (t - 1) * new));
-    }
-    // Build EVERY cell's device state first, then interleave the arms rep by rep.
-    //
-    // WHY THE ARMS ARE INTERLEAVED AND NOT SWEPT (LAW:interleaved-ab): the union sizes are
-    // arms of a perf A/B, and a contiguous block per arm ordered monotonically in union size
-    // lets any clock/thermal drift over the run masquerade as a union effect -- in this
-    // sweep's natural order (small union first) drift would INFLATE the apparent payoff,
-    // which is the direction that would have made a dead lever look alive. Interleaving puts
-    // every arm at every point of the drift curve.
-    struct Cell {
-        t: usize,
-        slots: usize,
-        union_size: usize,
-        sel: CudaSlice<i32>,
-        tokm: CudaSlice<i32>,
-        act: CudaSlice<f32>,
-        partial: CudaSlice<f32>,
-        gu: Vec<f64>,
-        dn: Vec<f64>,
-    }
-    let mut built: Vec<Cell> = Vec::with_capacity(cells.len());
-    for (cells_t, want_union) in cells {
-        let slots = cells_t * selected;
-        // Build the slot->expert map: column 0 takes the first k of the pool; each later
-        // column re-uses `shared` of column 0's experts and takes `new` fresh ones. Within
-        // a column the ids stay DISTINCT, which is what top-k routing guarantees.
-        let new = if cells_t > 1 {
-            (want_union - selected) / (cells_t - 1)
-        } else {
-            0
-        };
-        let shared = selected - new;
-        let mut sel_h: Vec<i32> = Vec::with_capacity(slots);
-        let mut tok_h: Vec<i32> = Vec::with_capacity(slots);
-        let mut fresh = selected;
-        for col in 0..cells_t {
-            if col == 0 {
-                sel_h.extend_from_slice(&pool[0..selected]);
-            } else {
-                sel_h.extend_from_slice(&pool[0..shared]);
-                for _ in 0..new {
-                    sel_h.push(pool[fresh % pool.len()]);
-                    fresh += 1;
-                }
-            }
-            for _ in 0..selected {
-                tok_h.push(col as i32);
-            }
-        }
-        let union_size = {
-            let mut u: Vec<i32> = sel_h.clone();
-            u.sort_unstable();
-            u.dedup();
-            u.len()
-        };
-        built.push(Cell {
-            t: cells_t,
-            slots,
-            union_size,
-            sel: e.htod_i32(&sel_h)?,
-            tokm: e.htod_i32(&tok_h)?,
-            act: e.zeros(slots * ff)?,
-            partial: e.zeros(slots * hidden)?,
-            gu: Vec::with_capacity(reps),
-            dn: Vec::with_capacity(reps),
-        });
-    }
-    // Rep 0 is a warmed throwaway for EVERY arm: the first launch of a width pays workspace
-    // allocation and a cold instruction cache (the scan_warm lesson).
-    for rep in 0..(reps + 1) {
-        for c in built.iter_mut() {
-            let tok_arg = if c.t > 1 {
-                Some((&c.tokm, hidden))
-            } else {
-                None
-            };
-            e.stream().synchronize()?;
-            let t0 = std::time::Instant::now();
-            launch_nvfp4_sel_gu_silu(
-                e,
-                (&gc, &gs, &gm),
-                (&uc, &us, &um),
-                Some(&c.sel),
-                0,
-                c.slots,
-                &mixed,
-                &mut c.act,
-                hidden,
-                ff,
-                tok_arg,
-            )?;
-            e.stream().synchronize()?;
-            let t1 = std::time::Instant::now();
-            launch_nvfp4_sel_matvec(
-                e,
-                &dc,
-                &ds,
-                &dm,
-                &c.sel,
-                &c.act,
-                &mut c.partial,
-                c.slots,
-                ff,
-                hidden,
-                ff,
-            )?;
-            e.stream().synchronize()?;
-            let t2 = std::time::Instant::now();
-            if rep > 0 {
-                c.gu.push(t1.duration_since(t0).as_secs_f64() * 1e6);
-                c.dn.push(t2.duration_since(t1).as_secs_f64() * 1e6);
-            }
-        }
-    }
-    let stat = |v: &[f64]| -> (f64, f64) {
-        let mut s = v.to_vec();
-        s.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let med = s[s.len() / 2];
-        // Spread of the decision statistic, so a reader can see whether an arm's delta is
-        // inside its own noise (the escalation rule's input).
-        let spread = if med > 0.0 {
-            (s[s.len() - 1] - s[0]) / med
-        } else {
-            0.0
-        };
-        (med, spread)
-    };
-    for c in &built {
-        let (gu_us, gu_spread) = stat(&c.gu);
-        let (down_us, down_spread) = stat(&c.dn);
-        rows.push(MoeUnionRow {
-            t: c.t,
-            slots: c.slots,
-            union_size: c.union_size,
-            gu_us,
-            down_us,
-            gu_spread_rel: gu_spread,
-            down_spread_rel: down_spread,
-        });
-    }
-    Ok(rows)
 }
 
 /// Sequential slot-combine over a WINDOW of a taller partial slab (mtp-spec verify):
@@ -7099,7 +6773,7 @@ pub fn gate_sdpa_blocklist(e: &Engine) -> Res<String> {
 /// Caveat, stated: blocks mixing +0.0 and -0.0 are outside the pin (fminf/fmaxf zero
 /// sign order is unspecified); projection outputs do not produce signed-zero ties.
 pub fn gate_kvq_kernels(e: &Engine) -> Res<String> {
-    let mut lcg = 0x6b_7671_5eed_u64; // "kvq"-seeded LCG
+    let mut lcg = 0x6b76_715ee_du64; // "kvq"-seeded LCG
     let mut next_f32 = move || -> f32 {
         lcg = lcg
             .wrapping_mul(6364136223846793005)
@@ -7566,7 +7240,7 @@ pub fn gate_ple_ngram_cache() -> Res<String> {
         ((lcg >> 33) as u32) % 250_000
     };
     let mut checks = 0usize;
-    let run = |label: &str, steps: Vec<Vec<u32>>| -> Res<usize> {
+    let mut run = |label: &str, steps: Vec<Vec<u32>>| -> Res<usize> {
         // `steps` are cumulative sequences fed to ONE cache, in order.
         let (mut ci, mut ch, mut ce) = (Vec::new(), Vec::new(), -1i64);
         let mut n = 0usize;
@@ -8555,7 +8229,7 @@ fn build_layer_w(
     let attn_gate = load_gate(
         e,
         weights,
-        prefix,
+        &prefix,
         "attn_hyper_connection.",
         streams,
         hidden,
@@ -8565,7 +8239,7 @@ fn build_layer_w(
     let mlp_gate = load_gate(
         e,
         weights,
-        prefix,
+        &prefix,
         "mlp_hyper_connection.",
         streams,
         hidden,
@@ -8775,6 +8449,7 @@ fn build_layer_w(
                     .into_iter()
                     .map(|v| e.htod(&v))
                     .collect::<Result<_, _>>()
+                    .map_err(Into::into)
             };
             let ints = |name: &str| -> Res<Vec<i64>> {
                 let t = expect(
@@ -9551,59 +9226,43 @@ impl Qwen4ExpGpu {
         // every forward; 1 < t <= k_cap chunks additionally run the EXACT row programs
         // (each row bit-identical to t == 1 decode) and stash per-column GDN/PLE state.
         let verify = state.verify.as_mut();
-        let (exact, vfused, stash_gdn, stash_ple, stash_wide, argmax_sink, last_row_only) =
-            match verify {
-                Some(v) => {
-                    // Verify chunks NEVER include the prefill (base_pos == 0): a
-                    // prompt shorter than k_cap would otherwise prefill through the
-                    // per-row DECODE programs while the plain baseline prefills FUSED —
-                    // bit-different state from token 0 that drifts until the first
-                    // thin-margin argmax flips. Found by the mtp11 256-token battery
-                    // (raw prompt 2, len 6, K=5: k_cap 6 >= 6 -> exact prefill ->
-                    // divergence at gen 157; K<=4 fused the same prefill and passed);
-                    // latent since mtp-spec (every green spec-gate ran 64 tokens, and
-                    // the tiny fixture's 18-token prompt never fit inside k_cap).
-                    // The `vfuse` cost instrument moves the SAME chunk shape onto the
-                    // fused program; it does not widen the shape, so this gen-157 rule
-                    // holds unchanged on both arms.
-                    let vchunk = base_pos > 0 && t > 1 && t <= v.k_cap;
-                    let vfused = vchunk && verify_fused_on();
-                    let exact = vchunk && !vfused;
-                    // mtp11 deferred round: the t == 1 steps (zero-draft verify, dynk
-                    // plain tail) take the argmax fast path too — same sink, same
-                    // bit-identical device argmax, a 4-byte dtoh instead of ~1 MB.
-                    let amx_t1 = t == 1 && v.want_argmax_t1;
-                    if exact {
-                        v.chunk = Some((base_pos, t));
-                        v.argmax.clear();
-                    } else if (vfused || amx_t1) && v.want_argmax {
-                        v.argmax.clear();
-                    }
-                    if vfused {
-                        // Rewind has no per-column stash to restore from on this arm —
-                        // record the shape so `verify_rewind` can refuse by NAME instead
-                        // of reporting "no live verify chunk" and reading like a bug.
-                        v.fused_chunk = Some((base_pos, t));
-                    }
-                    (
-                        exact,
-                        vfused,
-                        Some(&mut v.gdn),
-                        Some(&mut v.ple),
-                        Some((&mut v.wide, v.ring_rows)),
-                        // The fused arm feeds the SAME argmax sink, so the A/B compares
-                        // programs and not readback sizes (a full [t, vocab] dtoh on one
-                        // arm only would be ~6 MB of measured noise at t=6).
-                        if (exact || vfused || amx_t1) && v.want_argmax {
-                            Some((&mut v.argmax, &mut v.toks))
-                        } else {
-                            None
-                        },
-                        v.last_row_only && t > 1 && !exact && !vfused,
-                    )
+        let (exact, stash_gdn, stash_ple, stash_wide, argmax_sink, last_row_only) = match verify {
+            Some(v) => {
+                // Exact verify chunks NEVER include the prefill (base_pos == 0): a
+                // prompt shorter than k_cap would otherwise prefill through the
+                // per-row DECODE programs while the plain baseline prefills FUSED —
+                // bit-different state from token 0 that drifts until the first
+                // thin-margin argmax flips. Found by the mtp11 256-token battery
+                // (raw prompt 2, len 6, K=5: k_cap 6 >= 6 -> exact prefill ->
+                // divergence at gen 157; K<=4 fused the same prefill and passed);
+                // latent since mtp-spec (every green spec-gate ran 64 tokens, and
+                // the tiny fixture's 18-token prompt never fit inside k_cap).
+                let exact = base_pos > 0 && t > 1 && t <= v.k_cap;
+                // mtp11 deferred round: the t == 1 steps (zero-draft verify, dynk
+                // plain tail) take the argmax fast path too — same sink, same
+                // bit-identical device argmax, a 4-byte dtoh instead of ~1 MB.
+                let amx_t1 = t == 1 && v.want_argmax_t1;
+                if exact {
+                    v.chunk = Some((base_pos, t));
+                    v.argmax.clear();
+                } else if amx_t1 && v.want_argmax {
+                    v.argmax.clear();
                 }
-                None => (false, false, None, None, None, None, false),
-            };
+                (
+                    exact,
+                    Some(&mut v.gdn),
+                    Some(&mut v.ple),
+                    Some((&mut v.wide, v.ring_rows)),
+                    if (exact || amx_t1) && v.want_argmax {
+                        Some((&mut v.argmax, &mut v.toks))
+                    } else {
+                        None
+                    },
+                    v.last_row_only && t > 1 && !exact,
+                )
+            }
+            None => (false, None, None, None, None, false),
+        };
         let mut stash_gdn = stash_gdn;
         let mut stash_ple = stash_ple;
         // Slot RESERVE unit: reserve-derived so a growing decode never reallocates a
@@ -9743,13 +9402,7 @@ impl Qwen4ExpGpu {
             // OFF = today's behavior exactly): it lets an all-rows single-card forward run
             // the GROUPED executor so a TP2 comparison isolates the expert-half split
             // instead of straddling it and the executor difference. See the flag's doc.
-            // `vfused` forces grouped too: the MoE routed union is ALREADY one grouped
-            // gufuse launch over every verify column on the exact arm, so letting a fused
-            // verify chunk fall into the per-expert prefill executor would measure that
-            // executor (minutes/chunk, above) instead of the fusion. Identical MoE program
-            // on both arms is also the honest cost model — this section cannot be a vfuse
-            // win, and the A/B must not pretend otherwise in either direction.
-            let grouped = exact || vfused || head != HeadMode::All || prefill_grouped_all_on();
+            let grouped = exact || head != HeadMode::All || prefill_grouped_all_on();
             let mlp = self.moe_forward(e, ws, &layer.moe, &mixed, t, grouped, layer.index)?;
             ws.put_f32("hc.mixed", mixed);
             prof_section(e, "hyper.write", || {
@@ -9888,6 +9541,7 @@ impl Qwen4ExpGpu {
     /// RMSNorm per stream, `w = sigmoid(up(silu(down(normed)/S)))`, `mixed = mean_s(w ⊙
     /// normed_s)`, inject scalars `2*sigmoid(block_inject(normed)/S)` per stream.
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     fn gate_read(
         &self,
         e: &Engine,
@@ -9902,6 +9556,7 @@ impl Qwen4ExpGpu {
         self.gate_read_inner(e, ws, ptrs, gate, planes, t, eps, true, exact)
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]
     fn gate_read_inner(
         &self,
@@ -10333,6 +9988,7 @@ impl Qwen4ExpGpu {
     /// semantics of the eager `forward` loop body up to `moe_forward`; device-only for
     /// GDN layers without PLE, which is what makes those capturable.
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     fn layer_interior(
         &self,
         e: &Engine,
@@ -10683,7 +10339,10 @@ impl Qwen4ExpGpu {
 
     /// QSA layer: fused [q|gate] projection, q/k RMSNorm, partial rope, KV append, the
     /// host indexer-selection twin, dense masked attention, sigmoid fused output gate.
-    ///
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
+
     /// Indexer update + selection for one chunk (factored from `qsa_forward` so the
     /// TP2 route shares it verbatim): idx projection, the idxcache device raw-key
     /// cache maintenance, host/pooled cache updates, the device-scorer selection, and
@@ -12504,6 +12163,7 @@ impl Qwen4ExpGpu {
     /// host-resident table, H2D of the gathered rows, device projections / grouped norms /
     /// dilated depthwise conv, host signed-sqrt sigmoid gate scalars.
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     fn ple_block(
         &self,
         e: &Engine,
@@ -13718,7 +13378,6 @@ impl Qwen4ExpGpu {
         state.verify = Some(VerifyStash {
             k_cap,
             chunk: None,
-            fused_chunk: None,
             gdn,
             ple,
             wide: e.zeros(ring_rows * wide)?,
@@ -13764,15 +13423,6 @@ impl Qwen4ExpGpu {
             return Err("qwen4exp_gpu: verify not armed".into());
         };
         let Some((base, t)) = v.chunk.take() else {
-            if let Some((fb, ft)) = v.fused_chunk.take() {
-                return Err(format!(
-                    "qwen4exp_gpu: verify chunk (base {fb}, t {ft}) ran the FUSED program \
-                     (`vfuse` cost instrument) — no per-column GDN/PLE stash exists, so it \
-                     cannot be rewound. vfuse is a timing probe on a throwaway state; drop \
-                     the seam to run a spec loop."
-                )
-                .into());
-            }
             return Err("qwen4exp_gpu: no live verify chunk to rewind".into());
         };
         if keep == 0 || keep > t {
@@ -15736,9 +15386,9 @@ struct Tp2State {
 }
 
 /// Captured TP2 decode segments per card (the single-card StepGraphs pattern applied
-/// per rank): `a[d][li]` = attn gate_read + GDN half + join push, `b[d][li]` = join add +
-/// gate_write + mlp gate_read (+ card1 shared-half prestage), `exit[d]` = exit mixer +
-/// lm_head half. GDN layers without PLE only; QSA/PLE layers, the router boundary,
+/// per rank): `a[d][li]` = attn gate_read + GDN half + join push, `b[d][li]` = join add
+/// + gate_write + mlp gate_read (+ card1 shared-half prestage), `exit[d]` = exit mixer
+/// + lm_head half. GDN layers without PLE only; QSA/PLE layers, the router boundary,
 /// the variable-shape MoE tail, and the MoE join stay eager. Event records/waits sit
 /// BETWEEN segment launches (not capturable) — same choreography in warm and replay
 /// modes. The first TP2 decode step runs fully eager to park every slot (allocations
@@ -15881,6 +15531,7 @@ fn build_ple_replica(
             .into_iter()
             .map(|v| e.htod(&v))
             .collect::<Result<_, _>>()
+            .map_err(Into::into)
     };
     let ints = |name: &str| -> Res<Vec<i64>> {
         let t = expect(
@@ -16290,7 +15941,10 @@ pub fn build_tp2_shard(e0: &Engine, e1: &Engine, ckpt: &LoadedCheckpoint) -> Res
     let ev1 = [e1.ctx().new_event(None)?, e1.ctx().new_event(None)?];
     let stage1_raw = {
         let s = e1.gpu.stream();
-        [stage1[0].device_ptr(&s).0, stage1[1].device_ptr(&s).0]
+        [
+            stage1[0].device_ptr(&s).0 as u64,
+            stage1[1].device_ptr(&s).0 as u64,
+        ]
     };
     drop(_g1);
     let _g0 = e0.gpu.enter_main()?;
@@ -16298,7 +15952,10 @@ pub fn build_tp2_shard(e0: &Engine, e1: &Engine, ckpt: &LoadedCheckpoint) -> Res
     let ev0 = [e0.ctx().new_event(None)?, e0.ctx().new_event(None)?];
     let stage0_raw = {
         let s = e0.gpu.stream();
-        [stage0[0].device_ptr(&s).0, stage0[1].device_ptr(&s).0]
+        [
+            stage0[0].device_ptr(&s).0 as u64,
+            stage0[1].device_ptr(&s).0 as u64,
+        ]
     };
     Ok(Tp2Shard {
         layers,
@@ -16921,9 +16578,6 @@ impl Qwen4ExpGpu {
 
     /// The QSA indexer host twin factored for TP2 (runs on card 0's projection; the mask
     /// bytes feed BOTH cards' masked SDPA halves).
-    // dead_code: bring-up scaffolding the in-flight qwen4exp lanes still call; not deleted in
-    // the clippy-zero lane (bit-neutral by construction).
-    #[allow(dead_code)]
     #[allow(clippy::too_many_arguments)]
     fn qsa_indexer_mask(
         &self,
@@ -17956,14 +17610,14 @@ impl Qwen4ExpGpu {
                 let _g = e1.gpu.enter_main()?;
                 let s1 = [e1.zeros(t * hidden)?, e1.zeros(t * hidden)?];
                 let s = e1.gpu.stream();
-                tp2s.pf_stage1_raw = [s1[0].device_ptr(&s).0, s1[1].device_ptr(&s).0];
+                tp2s.pf_stage1_raw = [s1[0].device_ptr(&s).0 as u64, s1[1].device_ptr(&s).0 as u64];
                 tp2s.pf_stage1 = Some(s1);
             }
             {
                 let _g = e0.gpu.enter_main()?;
                 let s0 = [e0.zeros(t * hidden)?, e0.zeros(t * hidden)?];
                 let s = e0.gpu.stream();
-                tp2s.pf_stage0_raw = [s0[0].device_ptr(&s).0, s0[1].device_ptr(&s).0];
+                tp2s.pf_stage0_raw = [s0[0].device_ptr(&s).0 as u64, s0[1].device_ptr(&s).0 as u64];
                 tp2s.pf_stage0 = Some(s0);
             }
             tp2s.pf_rows = t;

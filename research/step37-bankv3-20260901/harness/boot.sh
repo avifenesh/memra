@@ -110,22 +110,6 @@ case "$MODE" in
   # gate-main: the doors are absent because the BINARY has no code for them, not because the
   # env omitted them. Both facts are asserted -- the env here, the binary in launch.sh.
   gate-main)     EXPECT="MEMRA_NVFP4_BANK_SM! MEMRA_NVFP4_SEL_GU! MEMRA_NVFP4_SEL_DOWN8! MEMRA_SERVE_SPEC=0" ;;
-  # ---- DOWN8 DEFAULT-FLIP QUALIFICATION (2026-09-01), pre-flip binary --------------------
-  # The inertness probe: DOWN8 armed, BANK_SM deliberately ABSENT. The env assertion is the
-  # easy half; the POINT of this arm is the [nvfp4-sweep] line it produces (down8=false with
-  # door=true), which the env cannot show.
-  v3-d8only)     EXPECT="MEMRA_NVFP4_BANK_SM! MEMRA_NVFP4_SEL_GU! MEMRA_NVFP4_SEL_DOWN8=1 MEMRA_SERVE_SPEC=1" ;;
-  v3-sm-d8)      EXPECT="MEMRA_NVFP4_BANK_SM=1 MEMRA_NVFP4_SEL_GU! MEMRA_NVFP4_SEL_DOWN8=1 MEMRA_SERVE_SPEC=1" ;;
-  # ---- THE FLIP ARMS, flipped binary ----------------------------------------------------
-  # `flip-on` asserts all three doors ABSENT, which on a FLIPPED binary means two of them are
-  # armed BY THE DEFAULT. That is the arm the flip actually ships, and it is why launch.sh's
-  # FLIPMARK test is load-bearing here: this expectation table is byte-identical to `v3-off`'s
-  # and only the binary tells the two arms apart.
-  flip-on)       EXPECT="MEMRA_NVFP4_BANK_SM! MEMRA_NVFP4_SEL_GU! MEMRA_NVFP4_SEL_DOWN8! MEMRA_SERVE_SPEC=1" ;;
-  flip-off)      EXPECT="MEMRA_NVFP4_BANK_SM=0 MEMRA_NVFP4_SEL_GU! MEMRA_NVFP4_SEL_DOWN8=0 MEMRA_SERVE_SPEC=1" ;;
-  flip-d8off)    EXPECT="MEMRA_NVFP4_BANK_SM! MEMRA_NVFP4_SEL_GU! MEMRA_NVFP4_SEL_DOWN8=0 MEMRA_SERVE_SPEC=1" ;;
-  gflip-on)      EXPECT="MEMRA_NVFP4_BANK_SM! MEMRA_NVFP4_SEL_GU! MEMRA_NVFP4_SEL_DOWN8! MEMRA_SERVE_SPEC=0" ;;
-  gflip-off)     EXPECT="MEMRA_NVFP4_BANK_SM=0 MEMRA_NVFP4_SEL_GU! MEMRA_NVFP4_SEL_DOWN8=0 MEMRA_SERVE_SPEC=0" ;;
   *) echo "ENV_FAIL: no expectation table for mode $MODE"; exit 6 ;;
 esac
 # The retired bundle names are asserted ABSENT in EVERY mode, not just the ones that would

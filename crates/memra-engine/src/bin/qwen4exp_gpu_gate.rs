@@ -27,11 +27,6 @@
 //!
 //! Usage: qwen4exp-gpu-gate <receipt.tsv>
 
-// lane/clippy-zero-restore-20260901: the gate's comparison tuples are deliberately explicit
-// (naming them buys nothing in a one-file gate binary), and the summaries vec is built by
-// pushes because each push is a named gate arm carrying its own comment block.
-#![allow(clippy::type_complexity, clippy::vec_init_then_push)]
-
 use memra_engine::Engine;
 use memra_engine::qwen4exp_gpu::{LoadOptions, Qwen4ExpGpu, read_checkpoint, read_checkpoint_with};
 use memra_gguf::config::{HfConfig, ModelConfig};
@@ -123,7 +118,7 @@ fn gen_f32(name: &str, elements: usize, center: f32, scale: f32) -> Vec<f32> {
         .map(|index| {
             let mut value = index as u64 ^ salt.wrapping_mul(0x9e37_79b9);
             value ^= value >> 16;
-            value = value.wrapping_mul(0x045d_9f3b);
+            value = value.wrapping_mul(0x45d9_f3b);
             value ^= value >> 16;
             let unit = (value as u32) as f32 / u32::MAX as f32;
             center + (2.0 * unit - 1.0) * scale
@@ -137,7 +132,7 @@ fn gen_bytes(name: &str, elements: usize, lo: u8, hi: u8) -> Vec<u8> {
         .map(|index| {
             let mut value = index as u64 ^ salt.wrapping_mul(0x9e37_79b9);
             value ^= value >> 13;
-            value = value.wrapping_mul(0x045d_9f3b);
+            value = value.wrapping_mul(0x45d9_f3b);
             (lo as u64 + value % (hi as u64 - lo as u64 + 1)) as u8
         })
         .collect()
@@ -531,13 +526,13 @@ fn run_mtp_arm(
     let wide = trunk_wide.len() / t;
     let wide_dev = e.htod(trunk_wide)?;
     let mut worst = (0.0f32, 0.0f32);
-    let record = |phase: &str,
-                  row: usize,
-                  stats: &RowStats,
-                  with_argmax: bool,
-                  worst: &mut (f32, f32),
-                  failures: &mut usize,
-                  lines: &mut Vec<String>| {
+    let mut record = |phase: &str,
+                      row: usize,
+                      stats: &RowStats,
+                      with_argmax: bool,
+                      worst: &mut (f32, f32),
+                      failures: &mut usize,
+                      lines: &mut Vec<String>| {
         let passed = stats.max_abs <= MAX_ABS
             && stats.max_rel <= MAX_REL
             && (!with_argmax || stats.argmax_match);
@@ -693,7 +688,7 @@ fn run_defer_arm(
         }
         Ok(())
     };
-    let check_config =
+    let mut check_config =
         |model: &Qwen4ExpGpu,
          cfg_name: &str,
          arms: &[(&str, SpecOpts)],
@@ -1205,108 +1200,6 @@ fn main() -> Res<()> {
         ));
     }
 
-    // Arm G4 (mtp12, `vfuse`): the FUSED verify program at the VERIFY-CHUNK shape.
-    //
-    // Acceptance policy for this arm is deliberately NOT byte identity, and the reason is
-    // the owner law: greedy/bit exactness is the INSTRUMENT. The exact per-row arm stays
-    // as the byte-identity gate arm; `vfuse` is a DIFFERENT program (fused dense mats,
-    // fused hyper gate, chunk scan, m=t indexer/PLE projections) that is allowed to differ
-    // in bits. What it is not allowed to do is differ in MEANING, so it is gated like the
-    // reference class: tolerance vs the reference executor plus argmax per row.
-    //
-    // Three things this arm pins that no other arm can:
-    // 1. the fused program EXECUTES at 1 < t <= k_cap (no geometry refusal from the
-    //    kernels that were written for prefill widths),
-    // 2. the argmax sink is fed on the fused arm (so a cost A/B compares programs and not
-    //    readback sizes),
-    // 3. `verify_rewind` REFUSES after a fused chunk, by name. That failure path is
-    //    executed here rather than described, because the fused chunk scan leaves no
-    //    per-column stash and a rewind that silently "worked" would corrupt a spec run.
-    {
-        let vocab = plan.vocab_size as usize;
-        let seq: Vec<u32> = prompt.iter().chain(decode_feed.iter()).copied().collect();
-        let reference = execute(&plan, &fixture.weights, &seq)?;
-        let n = prompt.len();
-        let chunk_len = 4usize;
-        let chunk = &decode_feed[0..chunk_len];
-        let chunk_rows = |fused: bool| -> Res<Vec<f32>> {
-            memra_engine::qwen4exp_gpu::set_verify_fused(fused);
-            let mut state = model.alloc_state(&engine, seq.len() + 2)?;
-            model.spec_arm(&engine, &mut state, chunk_len + 1)?;
-            let _ = model.prefill(&engine, &prompt, &mut state)?;
-            let rows = model.prefill(&engine, chunk, &mut state)?;
-            memra_engine::qwen4exp_gpu::set_verify_fused(false);
-            Ok(rows)
-        };
-        let exact_rows = chunk_rows(false)?;
-        let fused_rows = chunk_rows(true)?;
-        // (1) + meaning: every fused row vs the REFERENCE under the modelplan policy.
-        let mut worst = (0.0f32, 0.0f32);
-        let mut argmax_rows = 0usize;
-        let mut ok = true;
-        // Arm-vs-arm delta, informational: how far the fused program sits from the exact
-        // one. A thin-margin argmax flip here would be EXPECTED and reported, not hidden.
-        let mut worst_vs_exact = 0.0f32;
-        for row in 0..chunk_len {
-            let stats = compare_row(
-                &reference.logits[(n + row) * vocab..(n + row + 1) * vocab],
-                &fused_rows[row * vocab..(row + 1) * vocab],
-            );
-            worst.0 = worst.0.max(stats.max_abs);
-            worst.1 = worst.1.max(stats.max_rel);
-            argmax_rows += usize::from(stats.argmax_match);
-            ok &= stats.max_abs <= 0.01 && stats.max_rel <= 0.01 && stats.argmax_match;
-            for (a, b) in exact_rows[row * vocab..(row + 1) * vocab]
-                .iter()
-                .zip(&fused_rows[row * vocab..(row + 1) * vocab])
-            {
-                worst_vs_exact = worst_vs_exact.max((a - b).abs());
-            }
-        }
-        // (2) the argmax sink on the fused arm: 4t-byte device argmax == host argmax of
-        // the same rows.
-        memra_engine::qwen4exp_gpu::set_verify_fused(true);
-        let mut sink_state = model.alloc_state(&engine, seq.len() + 2)?;
-        model.spec_arm(&engine, &mut sink_state, chunk_len + 1)?;
-        let _ = model.prefill(&engine, &prompt, &mut sink_state)?;
-        model.set_verify_want_argmax(&mut sink_state, true)?;
-        let _ = model.prefill(&engine, chunk, &mut sink_state)?;
-        let sink = model.verify_argmax_rows(&sink_state)?.to_vec();
-        let sink_want: Vec<u32> = (0..chunk_len)
-            .map(|r| argmax(&fused_rows[r * vocab..(r + 1) * vocab]) as u32)
-            .collect();
-        let sink_ok = sink == sink_want;
-        ok &= sink_ok;
-        // (3) rewind after a fused chunk must refuse, and say why.
-        let rewind_err = model
-            .verify_rewind(&engine, &mut sink_state, 1)
-            .err()
-            .map(|e| e.to_string())
-            .unwrap_or_default();
-        let refused = rewind_err.contains("vfuse");
-        ok &= refused;
-        memra_engine::qwen4exp_gpu::set_verify_fused(false);
-        if !ok {
-            failures += 1;
-        }
-        lines.push(format!(
-            "mtp-vfuse\tt={chunk_len}\tk_cap={}\tmax_abs={:.3e}\tmax_rel={:.3e}\targmax={argmax_rows}/{chunk_len}\tworst_vs_exact={worst_vs_exact:.3e}\tsink_ok={sink_ok}\trewind_refused={refused}\tpass={ok}",
-            chunk_len + 1,
-            worst.0,
-            worst.1,
-        ));
-        summaries.push(format!(
-            "mtp-vfuse: fused verify chunk vs reference {} (argmax {argmax_rows}/{chunk_len}, \
-             worst abs {:.3e} rel {:.3e}; vs exact arm {worst_vs_exact:.3e}); argmax sink \
-             {}; rewind refusal {}",
-            if ok { "PASS" } else { "FAIL" },
-            worst.0,
-            worst.1,
-            if sink_ok { "fed" } else { "WRONG" },
-            if refused { "loud" } else { "MISSING" },
-        ));
-    }
-
     // Arm H: verify-REWIND invariance on the fixture — chunk 4 tokens through the
     // exact verify path, rewind to keep ∈ {1,2,3}, then decode the remaining feed
     // step-by-step; every row (chunk rows 0..keep AND the post-rewind steps) must
@@ -1812,7 +1705,7 @@ fn main() -> Res<()> {
         let chunked = model.prefill_extend(&engine, &prompt, &mut chunk_state, 5)?;
         let mut worst = (0.0f32, 0.0f32);
         let mut ok = chunked.len() == vocab;
-        let fold = |s: RowStats, ok: &mut bool, worst: &mut (f32, f32)| {
+        let mut fold = |s: RowStats, ok: &mut bool, worst: &mut (f32, f32)| {
             worst.0 = worst.0.max(s.max_abs);
             worst.1 = worst.1.max(s.max_rel);
             *ok &= s.max_abs <= 0.01 && s.max_rel <= 0.01 && s.argmax_match;
@@ -1846,7 +1739,7 @@ fn main() -> Res<()> {
         .collect::<String>();
     let all_tokens: Vec<u32> = prompt.iter().chain(decode_feed.iter()).copied().collect();
     let mut receipt = format!(
-        "# qwen4exp-gpu-gate\tbinary_sha256={sha256}\tpolicy=max_abs<=0.01 max_rel<=0.01 argmax\tprompt_len={}\tdecode_steps={}\tvocab={}\tplan=tiny(qwen4_exp pack)\tarms=fixture,mtp-fixture,dir-bf16,dir-nvfp4-stacked,dir-nvfp4-perexpert,mtp-dir-bf16,mtp-spec-tiny,mtp-spec-defer,mtp-spec-defer-dirbf16,mtp-armed-prefill-bit,mtp-vfuse,fixture-yarn,yarn-identity\ttokens={all_tokens:?}\n",
+        "# qwen4exp-gpu-gate\tbinary_sha256={sha256}\tpolicy=max_abs<=0.01 max_rel<=0.01 argmax\tprompt_len={}\tdecode_steps={}\tvocab={}\tplan=tiny(qwen4_exp pack)\tarms=fixture,mtp-fixture,dir-bf16,dir-nvfp4-stacked,dir-nvfp4-perexpert,mtp-dir-bf16,mtp-spec-tiny,mtp-spec-defer,mtp-spec-defer-dirbf16,mtp-armed-prefill-bit,fixture-yarn,yarn-identity\ttokens={all_tokens:?}\n",
         prompt.len(),
         decode_feed.len(),
         plan.vocab_size

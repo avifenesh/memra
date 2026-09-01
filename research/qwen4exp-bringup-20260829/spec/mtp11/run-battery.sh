@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mtp11 deferred-readback battery — runs ON cloud-eval (box), only when the box is IDLE
+# mtp11 deferred-readback battery — runs ON sbox-eval (box), only when the box is IDLE
 # (the YaRN ladder owns the GPUs otherwise; poll nvidia-smi + pgrep qwen4exp_real first).
 # Ship admission everywhere: dev1 placement, K=5 ceiling, adapt k_lo=1, pmin 0.3.
 set -euo pipefail

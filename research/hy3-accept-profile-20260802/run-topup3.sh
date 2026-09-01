@@ -2,7 +2,7 @@
 # r3 for all six classes (shorts: warm-storage ratio rep to replace cold r1;
 # longs: third rep for a ratio median given >10% fresh-process spec spread).
 set -u
-BASE=/opt/scratch/nvme/hy3-accept-profile
+BASE=/opt/dl-image/nvme/hy3-accept-profile
 MLOG=$BASE/logs/master.log
 echo "$(date -u +%FT%TZ) TOPUP3-START" >> "$MLOG"
 for p in chat-qa-short chat-prose-medium code-gen-short code-review-medium agentic-tool summarize-medium; do

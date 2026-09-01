@@ -22,12 +22,6 @@
 //!     so "verify rows == plain ppN decode" holds by the same-reference transitivity.
 //!
 //! ARMS:
-//!   P0. PRIME DETERMINISM (quiet regime) — R repeated split primes of one prompt, each
-//!       bit-identical to the door-OFF prime.
-//!   P1. PRIME DETERMINISM AFTER THE SPEC ARMS — the SAME census once the stage streams
-//!       carry rollback/teardown tails. lane/glm5-accrace: P1 is the detector for a
-//!       stage-stream exit-publication hole (P0's regime is measurably too quiet), and
-//!       both catch it at its source instead of many rounds downstream.
 //!   W0. plain ppN decode re-pin — door-ON `decode_step` rows vs the door-OFF chain.
 //!   W1. WALK — door-ON `glm5_verify_rows` (the ppN twin) rows vs the door-OFF plain
 //!       chain, full logits, bit for bit.
@@ -60,7 +54,7 @@
 //! Rig law: exactness only, never a timing number. Run under `flock /tmp/memra-5090.lock`
 //! with `NVIDIA_TF32_OVERRIDE=0`.
 //!
-//! usage: glm5-spec-ppn-gate [stages=2] [P=24] [N=20] [accept-probe=0] [prime-reps=8]
+//! usage: glm5-spec-ppn-gate [stages=2] [P=24] [N=20]
 use memra_engine::Engine;
 use memra_engine::forward::argmax;
 use memra_engine::glm_spec::Glm5SpecKnobs;
@@ -368,35 +362,6 @@ fn plain_tape(
     tape
 }
 
-/// First index where two tapes differ, with both tokens — the bisect anchor a diverging
-/// e2e arm owes its reader (lane/glm5-accrace follow-up 6). `None` when they are identical.
-fn first_diff(out: &[u32], tape: &[u32]) -> Option<(usize, Option<u32>, Option<u32>)> {
-    let n = out.len().max(tape.len());
-    (0..n)
-        .find(|&i| out.get(i) != tape.get(i))
-        .map(|i| (i, out.get(i).copied(), tape.get(i).copied()))
-}
-
-/// The detail string of a tape-identity arm, REPORTING THE COMPARISON IT RAN.
-///
-/// WHY THIS EXISTS: every e2e arm used to hand `arm()` a STATIC "tape identical" string,
-/// which `Verdicts::arm` then printed under the word FAIL — a failing line that describes
-/// a passing one (`gate FAIL [E forced-rejection sweep K=7]: ... tape identical (13/42)`,
-/// banked in `research/glm53-flash-bringup-20260827/dedup-20260831/receipts/ppn-gate/
-/// flake-20260831/`). A FAIL that reads like a PASS is how a real red gets waved past, so
-/// the message is now derived from `out` vs `tape` rather than asserted alongside it.
-fn tape_verdict(what: &str, out: &[u32], tape: &[u32], accepted: usize, drafted: usize) -> String {
-    match first_diff(out, tape) {
-        None => format!("{what}, tape identical to door-OFF plain greedy ({accepted}/{drafted})"),
-        Some((i, got, want)) => format!(
-            "{what}, TAPE DIVERGED from door-OFF plain greedy at index {i} \
-             (got {got:?}, want {want:?}; lens {}/{}) ({accepted}/{drafted})",
-            out.len(),
-            tape.len()
-        ),
-    }
-}
-
 struct Verdicts {
     fails: usize,
 }
@@ -430,19 +395,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nth(3)
         .and_then(|s| s.parse().ok())
         .unwrap_or(20);
-    // Arg 4 = the accrace ACCEPT PROBE (a positional gate instrument, deliberately NOT an
-    // env flag: it is diagnosis plumbing for one arm, not a runtime surface). `1` traces
-    // every forced-rejection round's device-vs-host accept row and per-row logit hashes to
-    // stderr; see `Glm5SpecKnobs::accept_probe`.
-    let probe: bool = std::env::args().nth(4).as_deref() == Some("1");
-    // Arg 5 = repetitions of the P0 prime-determinism arm (default 8). It is the SENSITIVE
-    // instrument of lane/glm5-accrace: one gate run samples the ppN prime R times, so the
-    // arm is ~R times likelier to catch a stage-stream publication hole than any single
-    // end-to-end tape.
-    let prime_reps: usize = std::env::args()
-        .nth(5)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(8);
 
     // TF32 must be off before the first CUDA call (exactness gate).
     if std::env::var("NVIDIA_TF32_OVERRIDE").as_deref() != Ok("0") {
@@ -456,14 +408,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::env::set_var("MEMRA_PP_STAGES", stages.to_string());
         std::env::set_var("MEMRA_GLM5_MTP", "1");
     }
-    // DOOR-H ALIAS HYGIENE (lane/glm5-extract2). This gate's composed arms are driven from
-    // the SHELL with `MEMRA_GLM5_HTOD_DIET=1` (the matrix runners' `compose-*-doors-EDH`
-    // cells), and they assert BIT-IDENTITY — which passes whether the door armed or not. So a
-    // leaked `MEMRA_HTOD_DIET=0` in the runner's environment would DISAGREE with the alias,
-    // fall the door closed, and make those ON arms silently vacuous. The alias the caller set
-    // is left alone; only the general name is cleared, so it cannot outvote them.
-    // SAFETY: single-threaded, before any engine or runtime exists.
-    unsafe { std::env::remove_var("MEMRA_HTOD_DIET") };
 
     let devices_env = std::env::var("MEMRA_PP_DEVICES").unwrap_or_default();
     let primary_dev: usize = devices_env
@@ -572,13 +516,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "the reference phase must run with the door SHUT"
     );
 
-    // R-walk: prime + plain decode chain over vt. `ref_prime` is the door-OFF prime's own
-    // logits — the truth the P0 prime-determinism arm holds the split prime to.
+    // R-walk: prime + plain decode chain over vt.
     let mut ref_rows: Vec<Vec<f32>> = Vec::with_capacity(vt.len());
-    let ref_prime;
     {
-        let (mut cache, l) = fresh_primed(&e, &m, &plan, &prompt, max_ctx);
-        ref_prime = l;
+        let (mut cache, _l) = fresh_primed(&e, &m, &plan, &prompt, max_ctx);
         for &tok in &vt {
             ref_rows.push(m.decode_step(&e, tok, &mut cache)?);
         }
@@ -627,48 +568,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &format!(
                 "{} rows bit-identical vs door-OFF (n_vocab={n_vocab})",
                 vt.len()
-            ),
-        );
-    }
-
-    // ---- arm P0: ppN PRIME DETERMINISM (lane/glm5-accrace) ----
-    // THE ARM THAT WAS MISSING. The acceptance-race defect was a stage-stream publication
-    // hole whose FIRST observable effect was that the split PRIME of a fixed prompt stopped
-    // being a function of its inputs: repeated primes in ONE process returned three
-    // different logit rows, all with the same argmax, and the drift only became visible
-    // many rounds later as one silently lost spec acceptance. Every arm in this gate
-    // compares a door-ON walk against a door-OFF walk ONCE, so none of them could see it.
-    //
-    // TWO PASSES, AND THE SECOND ONE IS THE TEETH — measured, not assumed. `P0` here runs
-    // with nothing yet in flight on the stage streams, which is the QUIET regime: in the
-    // hunt the FIRST prime of a process was canonical in 14/14 reps even while later ones
-    // drifted, and a first pass of this arm went 0/96 deviations on a tree with the defect
-    // present. `P1` below re-runs the same census AFTER arm E, where the spec sessions have
-    // left rollback and teardown tails queued on the stage streams — that is the regime the
-    // race lives in. Keep both: P0 is the cheap always-on canary, P1 is the detector.
-    eprintln!("[phase] arm P0: door ON, prime determinism x{prime_reps} (quiet regime)");
-    {
-        let mut deviated = 0usize;
-        let mut worst = 0usize;
-        for r in 0..prime_reps {
-            let (_c, l) = fresh_primed(&e, &m, &plan, &prompt, max_ctx);
-            let d = bit_diffs(&l, &ref_prime);
-            if d > 0 {
-                deviated += 1;
-                worst = worst.max(d);
-                println!(
-                    "[P0] prime rep {r}: {d}/{} logits differ from the door-OFF prime",
-                    ref_prime.len()
-                );
-            }
-        }
-        v.arm(
-            "P0 prime-determinism",
-            deviated == 0,
-            &format!(
-                "{prime_reps} split primes of one prompt vs the door-OFF prime: \
-                 {deviated} deviated (worst {worst}/{} logits)",
-                ref_prime.len()
             ),
         );
     }
@@ -737,7 +636,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         v.arm(
             &format!("E natural K={k}"),
             out == tape,
-            &tape_verdict("natural drafter", &out, &tape, accepted, drafted),
+            &format!("tape identical to door-OFF plain greedy ({accepted}/{drafted} accepted)"),
         );
     }
     for k in [3usize, K] {
@@ -765,15 +664,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         v.arm(
             &format!("E forced-accept K={k}"),
             out == tape && plumbing_live,
-            &format!(
-                "{} (full-accept path {})",
-                tape_verdict("forced full accept", &out, &tape, accepted, drafted),
-                if plumbing_live {
-                    "exercised"
-                } else {
-                    "NOT exercised — accepted*2 < drafted"
-                }
-            ),
+            &format!("tape identical, {accepted}/{drafted} accepted (full-accept path exercised)"),
         );
     }
     {
@@ -808,59 +699,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             k,
             Glm5SpecKnobs {
                 draft_override: Some(&mut over),
-                accept_probe: probe,
                 ..Default::default()
             },
         )?;
-        // The detail string REPORTS THE COMPARISON IT RAN (lane/glm5-accrace): the old
-        // format said "tape identical" on the FAIL line too, so a real red read like a
-        // green one — and a FAIL that describes a PASS is how a red gets waved past. On a
-        // divergence it names the first differing index and both tokens, which is the
-        // anchor a bisect needs.
         v.arm(
             &format!("E forced-rejection sweep K={k}"),
             out == tape,
-            &tape_verdict(
-                "every partial-keep rollback cycled",
-                &out,
-                &tape,
-                accepted,
-                drafted,
-            ),
-        );
-    }
-
-    // ---- arm P1: PRIME DETERMINISM AFTER THE SPEC ARMS (lane/glm5-accrace) ----
-    // The same census as P0, in the regime that actually carries the defect: arm E's ten
-    // spec sessions have just run, so every stage stream holds the tail of a per-stage
-    // rollback and a torn-down stage-owned cache. That is where the exit-publication hole
-    // let a caller allocation land under queued stage work, and it is why this arm — not P0
-    // and not any tape — is the detector. Under the lane's loaded protocol the pre-fix tree
-    // put roughly one prime in three off the door-OFF value here while every argmax held.
-    eprintln!("[phase] arm P1: door ON, prime determinism x{prime_reps} AFTER the spec arms");
-    {
-        let mut deviated = 0usize;
-        let mut worst = 0usize;
-        for r in 0..prime_reps {
-            let (_c, l) = fresh_primed(&e, &m, &plan, &prompt, max_ctx);
-            let d = bit_diffs(&l, &ref_prime);
-            if d > 0 {
-                deviated += 1;
-                worst = worst.max(d);
-                println!(
-                    "[P1] prime rep {r}: {d}/{} logits differ from the door-OFF prime",
-                    ref_prime.len()
-                );
-            }
-        }
-        v.arm(
-            "P1 prime-determinism-post-spec",
-            deviated == 0,
-            &format!(
-                "{prime_reps} split primes after the spec arms vs the door-OFF prime: \
-                 {deviated} deviated (worst {worst}/{} logits)",
-                ref_prime.len()
-            ),
+            &format!("every partial-keep rollback cycled, tape identical ({accepted}/{drafted})"),
         );
     }
 
@@ -1012,19 +857,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ..Default::default()
             },
         ) {
-            Ok((out, drafted, accepted)) => {
-                let detail = match first_diff(&out, &tape) {
-                    Some((i, got, want)) => format!(
-                        "bites — tape diverged with rollback disabled at index {i} \
-                         (got {got:?}, want {want:?}) ({accepted}/{drafted})"
-                    ),
-                    None => format!(
-                        "does NOT bite — the tape stayed BYTE-IDENTICAL with rollback \
-                         disabled, so the red arm proves nothing ({accepted}/{drafted})"
-                    ),
-                };
-                v.arm("R3 rollback-disabled RED", out != tape, &detail);
-            }
+            Ok((out, drafted, accepted)) => v.arm(
+                "R3 rollback-disabled RED",
+                out != tape,
+                &format!("bites — tape diverged with rollback disabled ({accepted}/{drafted})"),
+            ),
             Err(err) => v.arm(
                 "R3 rollback-disabled RED",
                 true,

@@ -173,45 +173,6 @@ if len(order) >= 2:
              100.0 * (hi["wall_median"] - lo["wall_median"]) / lo["wall_median"]))
 
 print()
-print("PER-BOOT RANGE / NON-OVERLAP TEST — the DECISION instrument")
-print("(LAW:overlap-test-beats-median-delta. Milestone 4 computed this by hand in its log and it")
-print(" was the only thing that separated down8 from noise: every median delta in that cell fell")
-print(" within 2x its pooled spread, so RULE B fired on all three programs and the median table")
-print(" could not decide anything. Two arms whose per-boot ranges do not intersect are separated")
-print(" whatever the medians say; two whose ranges overlap are not, however clean the delta looks.")
-print(" It is computed here so a default flip cannot rest on a range someone eyeballed.)")
-print("arm                        decode per-boot range        wall per-boot range")
-ranges = {}
-for a in order:
-    pb = summary[a]["per_boot"]
-    dvals = [pb[b]["decode_tok_s"] for b in pb if pb[b]["decode_tok_s"]]
-    wvals = [pb[b]["wall_tok_s"] for b in pb if pb[b]["wall_tok_s"]]
-    ranges[a] = {"decode": (min(dvals), max(dvals)), "wall": (min(wvals), max(wvals))}
-    print(
-        "%-24s  [%7.2f, %7.2f]  n=%d   [%7.2f, %7.2f]"
-        % (a, ranges[a]["decode"][0], ranges[a]["decode"][1], len(dvals),
-           ranges[a]["wall"][0], ranges[a]["wall"][1])
-    )
-
-print()
-for i in range(1, len(order)):
-    lo_a, hi_a = order[i - 1], order[i]
-    for metric in ("decode", "wall"):
-        alo, ahi = ranges[lo_a][metric]
-        blo, bhi = ranges[hi_a][metric]
-        # A single boot's median inside the other arm's range is enough to refuse separation.
-        # Reported with the witness value, because "overlaps" without the number is unauditable.
-        if blo > ahi:
-            print("SEPARATED     %s > %s on %s: min(%s)=%.2f > max(%s)=%.2f"
-                  % (hi_a, lo_a, metric, hi_a, blo, lo_a, ahi))
-        elif bhi < alo:
-            print("SEPARATED     %s < %s on %s: max(%s)=%.2f < min(%s)=%.2f"
-                  % (hi_a, lo_a, metric, hi_a, bhi, lo_a, alo))
-        else:
-            print("NOT SEPARATED %s vs %s on %s: ranges [%.2f, %.2f] and [%.2f, %.2f] INTERSECT"
-                  % (hi_a, lo_a, metric, alo, ahi, blo, bhi))
-
-print()
 if escalate:
     print("ESCALATE TO x5 — rules fired:")
     for a, rule, label, v in escalate:

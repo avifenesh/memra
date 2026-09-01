@@ -719,40 +719,6 @@ impl LatentPlaneSnapshot {
     }
 }
 
-/// The generation-destroyed slice of one latent layer's BOUNDARY state, captured EAGERLY at a
-/// spec session's prompt boundary (lane/glm5-prefix-latent2, 2026-09-01) so a DEFERRED prefix
-/// publication can be completed later against the live plane:
-///   * the latent `rows` and the FINAL pool keys are append-only BELOW the boundary for the
-///     session's lifetime (the glm5 verify rollback truncates back to the accepted length,
-///     never below the prime boundary), so `snapshot_plane_at` slices them from the LIVE
-///     layer at publish time — no eager copy of the big planes;
-///   * the incomplete tail-ring rows are read-once and OVERWRITTEN by the very next pool
-///     build, so they travel HERE or the boundary is unrecoverable by publish time (the KDA
-///     conv/ssm half of the same problem rides the sibling `CacheSnapshot`).
-pub struct LatentTailCapture {
-    /// Boundary length (== capture pos) — the row count the deferred publisher slices.
-    pub len: usize,
-    /// Latent width at capture; the publish-time slice validates it against the live layer.
-    pub width: usize,
-    pub index_width: usize,
-    /// The indexer's pool size at capture (`0` iff no indexer plane).
-    pub index_pool: usize,
-    /// `len / pool` at the boundary (the capture asserts the drain invariant, same as
-    /// `snapshot_plane`).
-    pub index_pools_ready: usize,
-    /// The live tail-ring rows `[pools_ready * pool, len)` at the boundary,
-    /// `(len % pool) * index_width` f32; `None` when the boundary is pool-aligned (or the
-    /// layer has no indexer).
-    pub index_tail: Option<CudaSlice<f32>>,
-}
-
-impl LatentTailCapture {
-    /// Device bytes held eagerly (the tail only — the big planes are sliced at publish).
-    pub fn bytes(&self) -> usize {
-        self.index_tail.as_ref().map_or(0, CudaSlice::len) * std::mem::size_of::<f32>()
-    }
-}
-
 impl LatentKvLayer {
     /// Deep-copy this layer's latent-plane state OUT of a live session cache. Stream-ordered on
     /// the implementor's worker stream, like every other prefix-capture copy. Errors instead of
@@ -869,197 +835,6 @@ impl LatentKvLayer {
             index_width: self.index_width,
             index_pool: pool,
             index_tail,
-            index_pool_keys,
-            index_pools_ready: pools_ready,
-        })
-    }
-
-    /// EAGER half of the deferred boundary capture (doc on [`LatentTailCapture`]): copy out
-    /// only what generation will destroy — the incomplete tail-ring rows — plus the boundary
-    /// metadata the publish-time slice validates against. Same preconditions as
-    /// `snapshot_plane` (len > 0, resolved pool, the pools-ready drain invariant); the big
-    /// planes are NOT copied here.
-    pub fn snapshot_tail(
-        &self,
-        e: &impl KvDev,
-    ) -> Result<LatentTailCapture, Box<dyn std::error::Error>> {
-        let (len, width) = (self.len, self.width);
-        if len == 0 {
-            return Err("latent tail capture at len 0 (record the layer as absent instead)".into());
-        }
-        if self.index_width == 0 {
-            return Ok(LatentTailCapture {
-                len,
-                width,
-                index_width: 0,
-                index_pool: 0,
-                index_pools_ready: 0,
-                index_tail: None,
-            });
-        }
-        let pool = self.index_pool;
-        if pool == 0 {
-            return Err(format!(
-                "latent tail capture: index plane (width {}) has an unresolved pool — no \
-                 indexer call ran against this layer, so its derived state cannot be validated",
-                self.index_width,
-            )
-            .into());
-        }
-        let pools_ready = self.index_pools_ready;
-        if pools_ready != len / pool {
-            return Err(format!(
-                "latent tail capture: index_pools_ready {pools_ready} != len/pool {} (len \
-                 {len}, pool {pool}); a capture must sit at a drained call boundary",
-                len / pool,
-            )
-            .into());
-        }
-        let tail_rows = len - pools_ready * pool;
-        let index_tail = if tail_rows > 0 {
-            let src = self
-                .index_rows
-                .as_ref()
-                .ok_or("latent tail capture: index_width > 0 but the state plane is gone")?;
-            let ring = self.index_ring_rows.unwrap_or(0);
-            let phys = index_plane_physical_row(ring, pool, pools_ready * pool);
-            let want = (phys + tail_rows) * self.index_width;
-            if src.len() < want {
-                return Err(format!(
-                    "latent tail capture: index plane holds {} f32 but the live tail window \
-                     requires {want}",
-                    src.len(),
-                )
-                .into());
-            }
-            let mut tail = e.uninit(tail_rows * self.index_width)?;
-            e.copy_range_into(
-                &mut tail,
-                0,
-                src,
-                phys * self.index_width,
-                tail_rows * self.index_width,
-            )?;
-            Some(tail)
-        } else {
-            None
-        };
-        Ok(LatentTailCapture {
-            len,
-            width,
-            index_width: self.index_width,
-            index_pool: pool,
-            index_pools_ready: pools_ready,
-            index_tail,
-        })
-    }
-
-    /// DEFERRED half of the boundary capture: complete a [`LatentPlaneSnapshot`] at the
-    /// captured boundary by slicing the append-only planes (`rows` `[0..cap.len)`, FINAL pool
-    /// keys `[0..cap.index_pools_ready * d)`) from the LIVE layer and moving the eagerly
-    /// captured tail in. Every disagreement between the capture and the live layer refuses —
-    /// a publication is an optimization and must never publish planes it cannot prove are the
-    /// boundary's (the append-only-below-boundary invariant is what makes the slice legal:
-    /// the glm5 verify rollback truncates to the accepted length, never below the prime
-    /// boundary, and pool keys are final the instant their last row lands).
-    pub fn snapshot_plane_at(
-        &self,
-        e: &impl KvDev,
-        cap: LatentTailCapture,
-    ) -> Result<LatentPlaneSnapshot, Box<dyn std::error::Error>> {
-        let (len, width) = (cap.len, cap.width);
-        if len == 0 {
-            return Err("latent boundary publish at len 0".into());
-        }
-        if width != self.width {
-            return Err(format!(
-                "latent boundary publish: captured width {width} != live width {}",
-                self.width,
-            )
-            .into());
-        }
-        if self.len < len {
-            return Err(format!(
-                "latent boundary publish: live len {} < boundary {len} — the plane was \
-                 truncated below the capture boundary",
-                self.len,
-            )
-            .into());
-        }
-        if self.rows.len() < len * width {
-            return Err(format!(
-                "latent boundary publish: live plane holds {} f32 but boundary {len} x width \
-                 {width} requires {}",
-                self.rows.len(),
-                len * width,
-            )
-            .into());
-        }
-        let mut rows = e.uninit(len * width)?;
-        e.copy_range_into(&mut rows, 0, &self.rows, 0, len * width)?;
-        if cap.index_width != self.index_width {
-            return Err(format!(
-                "latent boundary publish: captured index_width {} != live {}",
-                cap.index_width, self.index_width,
-            )
-            .into());
-        }
-        if cap.index_width == 0 {
-            return Ok(LatentPlaneSnapshot {
-                rows,
-                width,
-                len,
-                index_width: 0,
-                index_pool: 0,
-                index_tail: None,
-                index_pool_keys: None,
-                index_pools_ready: 0,
-            });
-        }
-        if cap.index_pool != self.index_pool {
-            return Err(format!(
-                "latent boundary publish: captured pool {} != live pool {}",
-                cap.index_pool, self.index_pool,
-            )
-            .into());
-        }
-        let d = cap.index_width / 2;
-        let pools_ready = cap.index_pools_ready;
-        if self.index_pools_ready < pools_ready {
-            return Err(format!(
-                "latent boundary publish: live index_pools_ready {} < boundary {pools_ready} \
-                 — the key plane was clamped below the capture boundary",
-                self.index_pools_ready,
-            )
-            .into());
-        }
-        let index_pool_keys = if pools_ready > 0 {
-            let src = self
-                .index_pool_keys
-                .as_ref()
-                .ok_or("latent boundary publish: pools are ready but the key plane is gone")?;
-            if src.len() < pools_ready * d {
-                return Err(format!(
-                    "latent boundary publish: key plane holds {} f32 but {pools_ready} pools \
-                     x d {d} require {}",
-                    src.len(),
-                    pools_ready * d,
-                )
-                .into());
-            }
-            let mut keys = e.uninit(pools_ready * d)?;
-            e.copy_range_into(&mut keys, 0, src, 0, pools_ready * d)?;
-            Some(keys)
-        } else {
-            None
-        };
-        Ok(LatentPlaneSnapshot {
-            rows,
-            width,
-            len,
-            index_width: cap.index_width,
-            index_pool: cap.index_pool,
-            index_tail: cap.index_tail,
             index_pool_keys,
             index_pools_ready: pools_ready,
         })
@@ -2077,11 +1852,8 @@ pub struct Cache {
     /// rank 1, ...]` shard-geometry conv ring + ssm ping-pong, lazily hydrated by the
     /// engine's TP walk on first touch (the kpool-plane precedent). The canonical
     /// `recur[il]` planes stay allocated untouched (full-width; never read by the TP walk).
-    /// `None` everywhere the seam is off. The prefix-cache snapshot seams REFUSE while any
-    /// slot is live (per-rank planes are not carried by CacheSnapshot); the SPEC
-    /// verify/rollback seam is WIRED for these planes since lane/glm5-composition
-    /// (admitted behind MEMRA_GLM5_SPEC_TP, default OFF) — the snapshot refusal is now a
-    /// live runtime guard, never dead code.
+    /// `None` everywhere the seam is off. Rollback/checkpoint seams REFUSE while any slot
+    /// is live — spec is co-refused with the TP door, so nothing reaches them in v1.
     pub glm5_tp_recur: Vec<Option<Vec<RecurLayer>>>,
     /// glm5 TP PEER replicas of the MLA latent+indexer plane (replicated deterministic
     /// compute: every rank appends identical bytes in the same calls), one per peer rank
@@ -2418,12 +2190,6 @@ pub struct HcTapSink {
     /// Row offset of the CURRENT walk's row 0 (chunked primes set it per chunk; the verify
     /// walk leaves it 0).
     pub base: usize,
-    /// ABSOLUTE position of sink row 0 (lane/glm5-prefix-latent2, 2026-09-01): a SUFFIX
-    /// prime over a restored cache writes at `cache.pos`-derived bases starting at the
-    /// restored boundary, while its sink covers only the suffix rows — the writer lands
-    /// row r of a walk at sink row `base - origin + r`. Fresh-prompt sinks leave it 0
-    /// (byte-identical indexing to before the field existed).
-    pub origin: usize,
     /// DEVICE STAGING (lane/glm5-loop-port, 2026-08-30): one optional `[t * hidden]` buffer
     /// per tap slot, allocated lazily by the walk ON THE WRITING engine's device (under a
     /// ppN split each tapped layer belongs to exactly one stage, so a slot's buffer lives
@@ -2448,18 +2214,8 @@ impl HcTapSink {
             hidden,
             t,
             base: 0,
-            origin: 0,
             dev: (0..n_taps).map(|_| None).collect(),
             device_stage: false,
-        }
-    }
-
-    /// Suffix-prime sink (doc on [`Self::origin`]): covers `t` rows whose first row sits at
-    /// absolute position `origin` — the restored-boundary continuation shape.
-    pub fn new_at(layer_ids: Vec<usize>, hidden: usize, t: usize, origin: usize) -> Self {
-        Self {
-            origin,
-            ..Self::new(layer_ids, hidden, t)
         }
     }
 
@@ -2825,7 +2581,7 @@ impl Cache {
             || self.glm5_tp_latent_peer.iter().any(Option::is_some)
         {
             return Err(
-                "cache snapshot is unwired for glm5 TP rank state (MEMRA_GLM5_TP): \
+                "cache snapshot is unwired for glm5 TP-2 rank state (MEMRA_GLM5_TP): \
                         per-rank planes are not carried by CacheSnapshot"
                     .into(),
             );
@@ -2878,7 +2634,7 @@ impl Cache {
         if self.glm5_tp_recur.iter().any(Option::is_some)
             || self.glm5_tp_latent_peer.iter().any(Option::is_some)
         {
-            return Err("cache snapshot_into is unwired for glm5 TP rank state \
+            return Err("cache snapshot_into is unwired for glm5 TP-2 rank state \
                         (MEMRA_GLM5_TP): per-rank planes are not carried by CacheSnapshot"
                 .into());
         }

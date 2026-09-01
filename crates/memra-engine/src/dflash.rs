@@ -2533,154 +2533,6 @@ fn emit_accepted_run(out: &mut Vec<u32>, accepted: &[u32], eos: &[u32], max_new:
     false
 }
 
-// ===== THE DRAFT-SOURCE SEAM (lane/glm5-extract2, phase 2 of the extraction program) ======
-//
-// `DraftSourcePlan` (memra-gguf `model_plan.rs`) has always been general: it is the PLAN's
-// statement of where a family's drafts come from. What was glm5-named was everything on the
-// ENGINE side of it — the loaded-drafter holder, the flag-to-drafter load contract, and the
-// tap-layer resolution. All three are family-agnostic by content, so they live here, in the
-// general DFlash module, and glm5 is a CONSUMER.
-//
-// WHAT IS DELIBERATELY *NOT* HERE, and why (phase-1 discipline, restated):
-// the PER-SESSION draft state (`glm_spec::Glm5DraftState`) and the source-keyed round /
-// maintenance walks. Those are not family-agnostic today: each arm reaches into the family's
-// own cache planes (glm5's MLA latent plane, `HcTapSink` hc-contract taps, the KDA rollback
-// stash) and the retained-q type carries the family's rank space. A trait over them would have
-// exactly ONE implementor whose associated types are all glm5 types — a decorative trait cut
-// blind, on the hottest file in the lane program. The trigger for that cut is the SECOND
-// hybrid spec family's session state, which is what tells us which half of the state is
-// shared. The trait sketch is banked in the lane doc so the second consumer starts from it,
-// not from scratch.
-
-/// A loaded alternate draft source: the drafter weights plus the byte identity they were
-/// pinned by. Model-level (loaded ONCE per model, on the head engine where the trunk lm_head
-/// it projects through lives — the MTP-head placement law); per-session state is the family's.
-///
-/// Generalized from `glm_spec::Glm5DflashDrafter`, which stays re-exported under its old name
-/// for the glm5 call sites and gates.
-pub struct DflashDrafter {
-    pub draft: DflashDraft,
-    /// First 8 hex of sha256(model.safetensors) — the boot-receipt identity pin
-    /// (`b33c0347` for the probe-pinned incoai/GLM-5.3-Flash-DFlash2 @ dc77ff1c bytes).
-    pub sha8: String,
-}
-
-/// Resolve a drafter's tap layers against the trunk it will read features from.
-///
-/// PURE (no env, no engine): the drafter's own `target_layer_ids`, plus a caller-supplied
-/// `shift` and the trunk bound. `shift` exists because the tap-shift RED ARM is a GATE
-/// INSTRUMENT owned by the family that runs the gate (`MEMRA_GLM5_*_GATE_RED` is classified
-/// as an instrument, never a serving flag, and never generalized) — the family reads its own
-/// red-arm env, prints its own tag, and passes the shift in here.
-pub fn resolve_tap_layers(
-    target_layer_ids: &[usize],
-    n_trunk: usize,
-    shift: usize,
-    what: &str,
-) -> Result<Vec<usize>, String> {
-    if target_layer_ids.is_empty() {
-        return Err(format!("{what} drafter config carries no target_layer_ids"));
-    }
-    let taps: Vec<usize> = target_layer_ids.iter().map(|t| t + shift).collect();
-    if let Some(&bad) = taps.iter().find(|&&t| t >= n_trunk) {
-        return Err(format!(
-            "{what} tap layer {bad} is outside the {n_trunk}-layer trunk"
-        ));
-    }
-    Ok(taps)
-}
-
-/// Load a DFlash2 drafter named by `flag` from `dir`, validating every contract that binds a
-/// drafter to a TARGET — family-agnostic, because each one is a property of the pair, not of
-/// the family:
-///
-/// * the checkpoint is a `DFlash2DraftModel` (the selector family is the only draft source
-///   this seam serves);
-/// * `cfg.hidden == n_embd` (the drafter consumes the target's features and projects through
-///   the target's embed/lm_head);
-/// * `cfg.target_layer_ids` name valid trunk layers;
-/// * `cfg.mask_token_id` is inside the target vocab.
-///
-/// A set flag that cannot load is a LOUD failure, never a silent plain fallback. Every error
-/// is prefixed `{flag}={dir}` so the operator sees the flag they typed; the glm5 call site's
-/// message bytes are unchanged by construction.
-pub fn load_drafter(
-    e: &Engine,
-    dir: &std::path::Path,
-    flag: &str,
-    n_trunk: usize,
-    n_embd: usize,
-    n_vocab: usize,
-) -> Result<DflashDrafter, String> {
-    let dpath = dir.display();
-    let draft = DflashDraft::load(e, dir)
-        .map_err(|err| format!("{flag}={dpath}: drafter load failed: {err}"))?;
-    if draft.dflash2.is_none() {
-        return Err(format!(
-            "{flag}={dpath}: checkpoint is not a DFlash2DraftModel \
-             (the glm5 draft source is the selector family only)"
-        ));
-    }
-    if draft.cfg.hidden != n_embd {
-        return Err(format!(
-            "{flag}={dpath}: drafter hidden {} != target n_embd {n_embd} \
-             (the drafter consumes target features and the target's embed/lm_head)",
-            draft.cfg.hidden
-        ));
-    }
-    if draft.cfg.target_layer_ids.is_empty()
-        || draft.cfg.target_layer_ids.iter().any(|&t| t >= n_trunk)
-    {
-        return Err(format!(
-            "{flag}={dpath}: target_layer_ids {:?} do not name valid \
-             trunk layers (n_trunk {n_trunk})",
-            draft.cfg.target_layer_ids
-        ));
-    }
-    if draft.cfg.mask_token_id as usize >= n_vocab {
-        return Err(format!(
-            "{flag}={dpath}: mask token {} outside the target vocab {n_vocab}",
-            draft.cfg.mask_token_id
-        ));
-    }
-    let sha8 = crate::hybrid::sha256_file_hex8(&dir.join("model.safetensors"))
-        .map_err(|err| format!("{flag}={dpath}: sha256 pin: {err}"))?;
-    Ok(DflashDrafter { draft, sha8 })
-}
-
-#[cfg(test)]
-mod draft_source_seam_tests {
-    use super::resolve_tap_layers;
-
-    #[test]
-    fn taps_resolve_and_the_shift_is_the_callers() {
-        assert_eq!(
-            resolve_tap_layers(&[1, 12, 23], 46, 0, "glm5 DFlash2").unwrap(),
-            vec![1, 12, 23]
-        );
-        // the red arm's +1 rides in as a parameter, not as an env read in here
-        assert_eq!(
-            resolve_tap_layers(&[1, 12, 23], 46, 1, "glm5 DFlash2").unwrap(),
-            vec![2, 13, 24]
-        );
-    }
-
-    #[test]
-    fn empty_and_out_of_trunk_taps_refuse_by_name() {
-        let err = resolve_tap_layers(&[], 46, 0, "glm5 DFlash2").unwrap_err();
-        assert!(err.contains("no target_layer_ids"), "{err}");
-        let err = resolve_tap_layers(&[1, 46], 46, 0, "glm5 DFlash2").unwrap_err();
-        assert!(
-            err.contains("tap layer 46 is outside the 46-layer trunk"),
-            "{err}"
-        );
-        // the SHIFTED tap is what gets bounds-checked — the red arm must not be able to
-        // walk off the trunk silently
-        let err = resolve_tap_layers(&[45], 46, 1, "glm5 DFlash2").unwrap_err();
-        assert!(err.contains("tap layer 46 is outside"), "{err}");
-    }
-}
-
 #[cfg(test)]
 mod emit_budget_tests {
     use super::emit_accepted_run;
@@ -4217,7 +4069,6 @@ impl crate::hybrid::HybridModel {
                     pos: tp,
                     logits: logits.clone(),
                     last_h: Vec::new(),
-                    latent_tails: Vec::new(),
                 })
         } else {
             None
@@ -6334,7 +6185,6 @@ mod dspark_prefix_capture_tests {
             pos: prompt_len,
             logits: vec![1.0, 2.0],
             last_h: Vec::new(),
-            latent_tails: Vec::new(),
         });
 
         let capture = take_dspark_prefix_capture(&mut slot).expect("first drain gets capture");

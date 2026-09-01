@@ -80,7 +80,7 @@ post-deploy vendor-default-shape probe with a spec-engagement receipt.
 
 # 2026-08-29 re-baseline: rank-serialization spans at t=4096 (post-fix) + spec policy sweep
 
-Box: the rented dev box (2x RTX PRO 6000 Blackwell Server Edition). Binary:
+Box: the sbox dev box (2x RTX PRO 6000 Blackwell Server Edition). Binary:
 `/home/ubuntu/memra/target/release/memra-server`, branch `lane/step37-main-merge-20260828`,
 md5 `f45c3623d958ca085eefd3207987812a` (verified before first boot and printed in the run
 header; the checkout's tip drifted 8695bdef4 -> 18cb988fa mid-session under another agent,

@@ -337,9 +337,8 @@ pub(crate) fn oproj_direct_on() -> bool {
 // The corruption they were removed for was NOT any of them: it was a defaulted `in_f = 0`
 // argument at two `kq_fetch` call sites in the PREFILL grouped-GEMM tail
 // (research/step37-bankv3-20260901/DIAGNOSIS.md), fixed compiler-enforced at `1b18a61e8` and
-// gated device-side by the `nvfp4-bank-oracle` bin. Each door below is strict `0`/`1` and
-// admitted separately so its contribution is a number; BANK_SM and SEL_DOWN8 default ON since
-// 2026-09-01 (one coupled decision, PR #76 battery), SEL_GU and the sub-doors default OFF.
+// gated device-side by the `nvfp4-bank-oracle` bin. Each door below is strict `0`/`1`, default
+// OFF, and admitted separately so its contribution is a number.
 //
 // LAYOUT IS A PROPERTY OF THE BANK. `bank_slot_major_on()` is read ONCE, at bank BUILD, and
 // recorded on the resident bank (`ResidentNvfp4{Column,Row}BankRank::slot_major`). Every reader
@@ -348,72 +347,15 @@ pub(crate) fn oproj_direct_on() -> bool {
 // defaulted `in_f`: a piece of layout geometry that a caller can fail to supply or can supply
 // inconsistently with the bytes actually resident.
 
-/// Read a DEFAULT-ON door strictly, and report the SOURCE of the answer rather than only the
-/// answer. `0` disables (the rollback seam), `1` re-states the default, unset takes the default.
-///
-/// Two properties this buys, both learned the hard way in this lane's own archaeology:
-///
-/// * **A typo cannot silently disarm a rollback seam.** The default-OFF doors here parse as
-///   `== Ok("1")`, which is safe when the default is OFF (a typo reads as the default) and
-///   DANGEROUS when the default is ON: `MEMRA_NVFP4_BANK_SM=false` under a `!= Ok("0")` rule
-///   would keep the program armed while the operator believed it was rolled back. So an
-///   unrecognized value is reported as such and the default is kept, loudly.
-/// * **The engagement receipt can name the source.** `default-on` and `MEMRA_..=1` are
-///   different facts about the same boot: one says the flip is doing the work, the other says
-///   a recipe is. A pricing or post-deploy receipt that cannot tell them apart cannot prove a
-///   DEFAULT was measured (TRAP:corrupt-arm-inflates-its-own-perf-price's sibling: an arm that
-///   cannot name what armed it is not an arm).
-fn door_default_on(name: &'static str) -> (bool, &'static str) {
-    let raw = std::env::var(name).ok();
-    door_default_on_value(name, raw.as_deref())
-}
-
-/// The parse, separated from the environment so it can be TESTED. `std::env` is process-global
-/// state and these doors are `OnceLock`-cached, so an env-var test would be both racy under
-/// `cargo test`'s thread pool and unrepeatable within one process — i.e. exactly the kind of
-/// gate that passes because it never really ran.
-fn door_default_on_value(name: &str, value: Option<&str>) -> (bool, &'static str) {
-    match value {
-        Some("0") => (false, "env=0 (rollback seam)"),
-        Some("1") => (true, "env=1"),
-        None => (true, "default-on"),
-        Some(_) => {
-            eprintln!(
-                "[nvfp4-door] WARN {name} has an unrecognized value; only `0` and `1` are \
-                 accepted and the DEFAULT-ON answer is kept. To roll back, set {name}=0."
-            );
-            (true, "default-on (unrecognized value ignored)")
-        }
-    }
-}
-
-/// MEMRA_NVFP4_BANK_SM (PROGRAM 1, **default ON since 2026-09-01**): build the step TP
-/// contiguous NVFP4 expert banks (gate/up/down) in the SLOT-MAJOR row layout — slot g's 16 qs
-/// bytes contiguous at `g*16` (one coalesced 512B warp wave) and the two UE4M3 scale bytes at
-/// `nslots*16 + g*2` — and dispatch the `_sel_v2` decode readers over them. Pure byte
-/// permutation, so BIT-IDENTICAL per row; the claim is gated by `nvfp4-bank-oracle`
-/// (device-side, prefill GEMM included) and by end-to-end greedy byte identity, never by a
-/// comment.
-///
-/// **WHY A BIT-IDENTICAL, MEASURABLY-FREE PROGRAM DEFAULTS ON.** On its own this layout earns
-/// nothing: x5 interleaved, 105.35 vs 106.78 decode tok/s, per-boot range `[104.66, 107.95]`
-/// overlapping the OFF arm's `[105.11, 107.09]`. It defaults ON for exactly one reason —
-/// `MEMRA_NVFP4_SEL_DOWN8` (PROGRAM 3), the one program that DOES separate (+5.48% decode), is
-/// gated at its call site on `shard.slot_major`, so with this door off PROGRAM 3's default-ON
-/// is a SILENT NO-OP: `down8=false door=true`, no refusal, no warning, and the win simply does
-/// not happen. The deployable unit is the two together, which makes this one coupled default
-/// decision and not two independent ones. Receipts:
-/// `research/step37-bankv3-20260901/RESULTS.md` (the down8 default-ON qualification battery).
-///
-/// ROLLBACK SEAM: `MEMRA_NVFP4_BANK_SM=0`, which also disarms PROGRAM 3 by construction.
+/// MEMRA_NVFP4_BANK_SM=1 (PROGRAM 1, default OFF): build the step TP contiguous NVFP4 expert
+/// banks (gate/up/down) in the SLOT-MAJOR row layout — slot g's 16 qs bytes contiguous at
+/// `g*16` (one coalesced 512B warp wave) and the two UE4M3 scale bytes at `nslots*16 + g*2` —
+/// and dispatch the `_sel_v2` decode readers over them. Pure byte permutation, so BIT-IDENTICAL
+/// per row; the claim is gated by `nvfp4-bank-oracle` (device-side, prefill GEMM included) and
+/// by end-to-end greedy byte identity, never by a comment.
 pub(crate) fn bank_slot_major_on() -> bool {
-    bank_slot_major_source().0
-}
-
-/// `bank_slot_major_on()` plus the SOURCE of the answer, for the engagement receipt.
-pub(crate) fn bank_slot_major_source() -> (bool, &'static str) {
-    static ON: std::sync::OnceLock<(bool, &'static str)> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| door_default_on("MEMRA_NVFP4_BANK_SM"))
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_NVFP4_BANK_SM").as_deref() == Ok("1"))
 }
 
 /// MEMRA_NVFP4_SEL_GU=1 (PROGRAM 2, default OFF): run the routed gate and up sweeps as ONE
@@ -429,7 +371,7 @@ pub(crate) fn sel_gu_fused_on() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_NVFP4_SEL_GU").as_deref() == Ok("1"))
 }
 
-/// MEMRA_NVFP4_SEL_DOWN8 (PROGRAM 3, default ON since 2026-09-01; `=0` is the rollback seam): fuse the routed DOWN sweep with the
+/// MEMRA_NVFP4_SEL_DOWN8=1 (PROGRAM 3, default OFF): fuse the routed DOWN sweep with the
 /// route-weight combine into one launch (`qmatvec_nvfp4_dp4a_sel_v2_down8`, the q8 `down8 w8`
 /// occupancy arm ported to the NVFP4 banks) — one warp per routed slot instead of one warp per
 /// (row, slot), and the `n_sel x out_f` partial-buffer round trip disappears. Bit-identical
@@ -437,29 +379,9 @@ pub(crate) fn sel_gu_fused_on() -> bool {
 /// PROGRAM 1: the caller arms it only when the down shard reports `slot_major`, and only on the
 /// device-routed arm at `nsb <= 32` (the fit-block class the reduce identity is argued at).
 /// Rides LAST per the lane mandate: it is priced only on green gates for the layers beneath it.
-///
-/// **DEFAULT ON since 2026-09-01**, and it is the reason PROGRAM 1 defaults ON too. This is the
-/// only one of the three restored programs that separates from noise: +5.48% decode / +5.09%
-/// wall, x5 interleaved vendor-default sampled, per-boot range `[112.59, 114.82]` with NO
-/// overlap against either the OFF arm or the arm directly beneath it, re-qualified at deploy
-/// grade in `research/step37-bankv3-20260901/RESULTS.md`.
-///
-/// ELIGIBILITY IS NARROWER THAN THE DEFAULT, and the engagement receipt below prints every
-/// condition: the arm needs `device_routed`, `shard.slot_major` (i.e. PROGRAM 1) and
-/// `nsb <= 32`. On any other geometry or route the default is INERT, which is correct-by-
-/// refusal and NOT a regression — but it does mean "default ON" and "engaged" are two facts,
-/// and only the `[nvfp4-sweep]` line settles the second.
-///
-/// ROLLBACK SEAM: `MEMRA_NVFP4_SEL_DOWN8=0` (or `MEMRA_NVFP4_BANK_SM=0`, which disarms it by
-/// construction).
 pub(crate) fn sel_down8_on() -> bool {
-    sel_down8_source().0
-}
-
-/// `sel_down8_on()` plus the SOURCE of the answer, for the engagement receipt.
-pub(crate) fn sel_down8_source() -> (bool, &'static str) {
-    static ON: std::sync::OnceLock<(bool, &'static str)> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| door_default_on("MEMRA_NVFP4_SEL_DOWN8"))
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_NVFP4_SEL_DOWN8").as_deref() == Ok("1"))
 }
 
 pub(crate) fn raw_copy_bytes(
@@ -1017,49 +939,6 @@ fn parse_parallel_ep_q8_scope(value: Option<&str>) -> Result<Option<ParallelEpQ8
 
 pub(crate) fn parallel_ep_q8_scope() -> Result<Option<ParallelEpQ8Scope>, String> {
     parse_parallel_ep_q8_scope(std::env::var("MEMRA_PARALLEL_EP_Q8_SCOPE").ok().as_deref())
-}
-
-fn parse_parallel_ep_q8_gu_paired(value: Option<&str>) -> Result<Option<bool>, String> {
-    match value {
-        None | Some("") => Ok(None),
-        Some("0") => Ok(Some(false)),
-        Some("1") => Ok(Some(true)),
-        Some(value) => Err(format!(
-            "MEMRA_PARALLEL_EP_Q8_GU_PAIRED={value:?} is invalid; expected 0 or 1"
-        )),
-    }
-}
-
-fn resolve_parallel_ep_q8_gu_paired(
-    value: Option<&str>,
-    q8_active: bool,
-    scope: Option<ParallelEpQ8Scope>,
-) -> Result<bool, String> {
-    let configured = parse_parallel_ep_q8_gu_paired(value)?;
-    if configured == Some(true) && !q8_active {
-        return Err("MEMRA_PARALLEL_EP_Q8_GU_PAIRED=1 requires MEMRA_PARALLEL_EP_Q8_ACT=1".into());
-    }
-    if configured == Some(true) && scope == Some(ParallelEpQ8Scope::Down) {
-        return Err(
-            "MEMRA_PARALLEL_EP_Q8_GU_PAIRED=1 requires Q8 gate/up arithmetic; \
-             MEMRA_PARALLEL_EP_Q8_SCOPE=down keeps gate/up BF16"
-                .into(),
-        );
-    }
-    Ok(q8_active && scope != Some(ParallelEpQ8Scope::Down) && configured.unwrap_or(true))
-}
-
-pub(crate) fn parallel_ep_q8_gu_paired_enabled(
-    q8_active: bool,
-    scope: Option<ParallelEpQ8Scope>,
-) -> Result<bool, String> {
-    resolve_parallel_ep_q8_gu_paired(
-        std::env::var("MEMRA_PARALLEL_EP_Q8_GU_PAIRED")
-            .ok()
-            .as_deref(),
-        q8_active,
-        scope,
-    )
 }
 
 fn parse_step_layer_specs(
@@ -5952,8 +5831,8 @@ impl TpE4m3HostBounce {
                 let stream = engine.stream();
                 let (k_ptr, _k_guard) = k[rank].device_ptr(&stream);
                 let (v_ptr, _v_guard) = v_raw[rank].device_ptr(&stream);
-                raw_k.push(k_ptr);
-                raw_v_raw.push(v_ptr);
+                raw_k.push(k_ptr as u64);
+                raw_v_raw.push(v_ptr as u64);
             }
             let partial_engine = if direct_join && rank != 0 {
                 &self.ranks[0]
@@ -5965,7 +5844,7 @@ impl TpE4m3HostBounce {
             let mut rank_raw = Vec::with_capacity(blocks_per_rank);
             for partial in &o_partials[rank] {
                 let (ptr, _guard) = partial.device_ptr(&stream);
-                rank_raw.push(ptr);
+                rank_raw.push(ptr as u64);
             }
             raw_o_partials.push(rank_raw);
         }
@@ -5989,7 +5868,7 @@ impl TpE4m3HostBounce {
             let (peer, _peer_guard) = peer_partial.device_ptr(&stream);
             let (k, _k_guard) = k_shadow.device_ptr(&stream);
             let (v, _v_guard) = v_shadow.device_ptr(&stream);
-            (peer, k, v)
+            (peer as u64, k as u64, v as u64)
         };
         let (gate_e, ev_entry) = {
             let _main = e.gpu.enter_main()?;
@@ -10450,14 +10329,12 @@ impl TpE4m3HostBounce {
             } else {
                 "block-nvfp4-v1"
             },
-            // The source string distinguishes "armed by the 2026-09-01 DEFAULT" from "armed by
-            // an explicit recipe" from "rolled back by the seam" from "armed because EP2". A
-            // default flip whose receipt cannot say which of those happened cannot prove the
-            // DEFAULT was what got measured.
             if ep2 {
                 "ep2-always"
+            } else if bank_slot_major_on() {
+                "MEMRA_NVFP4_BANK_SM"
             } else {
-                bank_slot_major_source().1
+                "default"
             },
             gate.expert_count,
             gate.in_features,
@@ -11873,7 +11750,6 @@ impl TpE4m3HostBounce {
             .checked_mul(experts.input_width)
             .ok_or("W4A8 device-routed EP input size overflow")?;
         let scope = parallel_ep_q8_scope()?.unwrap_or(ParallelEpQ8Scope::All);
-        let gate_up_paired = parallel_ep_q8_gu_paired_enabled(true, Some(scope))?;
 
         {
             let _main = e.gpu.enter_main()?;
@@ -11912,43 +11788,23 @@ impl TpE4m3HostBounce {
                     if let Some(events) = workspace.phase_events.as_ref() {
                         events.copy_done[rank_index].record(&engine.stream())?;
                     }
-                    if gate_up_paired {
-                        engine.qmatvec_nvfp4_q8_ep_paired_slots_into(
-                            &rank.gate,
-                            &rank.up,
-                            &workspace.sel[rank_index],
-                            &workspace.input_q8[rank_index],
-                            &workspace.input_q8_scales[rank_index],
-                            &mut workspace.gate_out[rank_index],
-                            &mut workspace.up_out[rank_index],
-                            pairs,
-                            experts_per_token,
-                            experts.input_width,
-                            experts.expert_width,
-                            owner_start,
-                            owner_end,
-                            experts.gate_row_bytes,
-                            rank.gate_expert_bytes,
-                        )?;
-                    } else {
-                        engine.qmatvec_nvfp4_q8_ep_dual_slots_into(
-                            &rank.gate,
-                            &rank.up,
-                            &workspace.sel[rank_index],
-                            &workspace.input_q8[rank_index],
-                            &workspace.input_q8_scales[rank_index],
-                            &mut workspace.gate_out[rank_index],
-                            &mut workspace.up_out[rank_index],
-                            pairs,
-                            experts_per_token,
-                            experts.input_width,
-                            experts.expert_width,
-                            owner_start,
-                            owner_end,
-                            experts.gate_row_bytes,
-                            rank.gate_expert_bytes,
-                        )?;
-                    }
+                    engine.qmatvec_nvfp4_q8_ep_dual_slots_into(
+                        &rank.gate,
+                        &rank.up,
+                        &workspace.sel[rank_index],
+                        &workspace.input_q8[rank_index],
+                        &workspace.input_q8_scales[rank_index],
+                        &mut workspace.gate_out[rank_index],
+                        &mut workspace.up_out[rank_index],
+                        pairs,
+                        experts_per_token,
+                        experts.input_width,
+                        experts.expert_width,
+                        owner_start,
+                        owner_end,
+                        experts.gate_row_bytes,
+                        rank.gate_expert_bytes,
+                    )?;
                 }
                 ParallelEpQ8Scope::Down => {
                     engine.nvfp4_ep_stage_inputs(
@@ -12158,16 +12014,10 @@ impl TpE4m3HostBounce {
             eprintln!(
                 "[parallel-ep-q8] devices={:?} tokens={tokens} scope={} \
                  expert_input={expert_input} post_activation={post_activation} \
-                 gate_up_schedule={} \
                  external_boundary=bf16 numeric_class={numeric_class} \
                  host_expf=true accumulation=token-slot-order performance_claim=false",
                 self.devices,
                 scope.label(),
-                if gate_up_paired {
-                    "paired-cta"
-                } else {
-                    "separate-cta"
-                },
             );
         }
         Ok(output)
@@ -12895,17 +12745,11 @@ impl TpE4m3HostBounce {
                 let mut seen = SEEN_D8.lock().unwrap();
                 if !seen.contains(&combo) {
                     seen.push(combo);
-                    // `door_source` is what makes this line a DEFAULT-flip receipt rather than
-                    // only an engagement receipt: `door=true door_source=default-on` is the
-                    // flip doing the work, `env=1` is a recipe doing it, and
-                    // `down8=false door=true` is the silent-no-op shape that PROGRAM 1's
-                    // default exists to prevent.
                     eprintln!(
-                        "[nvfp4-sweep] down8={} door={} door_source={} device_routed={} \
-                         slot_major={} nsb={} in_class={} n_sel={n_sel}",
+                        "[nvfp4-sweep] down8={} door={} device_routed={} slot_major={} \
+                         nsb={} in_class={} n_sel={n_sel}",
                         down8,
                         sel_down8_on(),
-                        sel_down8_source().1,
                         device_routed,
                         shard.slot_major,
                         shard.local_in >> 5,
@@ -15029,56 +14873,6 @@ impl TpE4m3HostBounce {
 }
 
 #[cfg(test)]
-mod default_on_door_tests {
-    use super::door_default_on_value;
-
-    /// The DEFAULT-ON parse, pinned in every state — including the two that only matter because
-    /// the default is ON.
-    ///
-    /// While these doors were default OFF the parse was `== Ok("1")` and its failure mode was
-    /// benign: any typo read as the default, which was OFF, which was the safe program. Flipping
-    /// the default INVERTS that. Under a naive `!= Ok("0")` rule, `MEMRA_NVFP4_BANK_SM=false`
-    /// (or `=off`, or `=no`) would leave the program ARMED while the operator believed they had
-    /// rolled it back — a rollback seam that silently does nothing, on the exact door whose
-    /// predecessor shipped fluent wrong text. So the unrecognized-value case is a named,
-    /// tested branch that keeps the default AND warns, rather than an accident of `!=`.
-    #[test]
-    fn the_default_on_door_parses_every_state_and_names_its_source() {
-        // unset: the flip is what arms it, and the source string says so — this is the string a
-        // default-flip receipt needs, because in the flip arms there is no env var to point at.
-        assert_eq!(
-            door_default_on_value("MEMRA_TEST_DOOR", None),
-            (true, "default-on")
-        );
-        // explicit 1: armed by a RECIPE, not by the default. Different fact, different label.
-        assert_eq!(
-            door_default_on_value("MEMRA_TEST_DOOR", Some("1")),
-            (true, "env=1")
-        );
-        // THE ROLLBACK SEAM. This is the assertion the flip's safety rests on.
-        assert_eq!(
-            door_default_on_value("MEMRA_TEST_DOOR", Some("0")),
-            (false, "env=0 (rollback seam)")
-        );
-        // Unrecognized values keep the DEFAULT (ON) and are flagged as such, for every shape an
-        // operator plausibly types when they mean "off". Every one of these MUST still read ON:
-        // a parse that guessed "off" from `false` would be a second, undocumented seam, and a
-        // parse that guessed "off" from `2` would make a typo a silent program change.
-        for bad in [
-            "false", "off", "no", "", " 0", "0 ", "00", "true", "2", "-1",
-        ] {
-            let (on, source) = door_default_on_value("MEMRA_TEST_DOOR", Some(bad));
-            assert!(on, "value {bad:?} must NOT disarm a default-ON door");
-            assert!(
-                source.contains("default-on") && source.contains("unrecognized"),
-                "value {bad:?} gave source {source:?}, which does not announce itself as an \
-                 ignored value — a receipt reader would take it for a clean default"
-            );
-        }
-    }
-}
-
-#[cfg(test)]
 mod bank_v2_layout_tests {
     use super::{nvfp4_matrix_v2_permute, nvfp4_row_bytes};
 
@@ -15732,38 +15526,6 @@ mod tests {
             Some(ParallelEpQ8Scope::Down)
         );
         assert!(parse_parallel_ep_q8_scope(Some("input")).is_err());
-    }
-
-    #[test]
-    fn automatic_ep_q8_gate_up_paired_is_parent_scoped_and_strict() {
-        assert_eq!(parse_parallel_ep_q8_gu_paired(None).unwrap(), None);
-        assert_eq!(parse_parallel_ep_q8_gu_paired(Some("")).unwrap(), None);
-        assert_eq!(
-            parse_parallel_ep_q8_gu_paired(Some("0")).unwrap(),
-            Some(false)
-        );
-        assert_eq!(
-            parse_parallel_ep_q8_gu_paired(Some("1")).unwrap(),
-            Some(true)
-        );
-        assert!(parse_parallel_ep_q8_gu_paired(Some("paired")).is_err());
-        assert!(parse_parallel_ep_q8_gu_paired(Some("true")).is_err());
-
-        assert!(!resolve_parallel_ep_q8_gu_paired(None, false, None).unwrap());
-        assert!(resolve_parallel_ep_q8_gu_paired(None, true, None).unwrap());
-        assert!(
-            resolve_parallel_ep_q8_gu_paired(None, true, Some(ParallelEpQ8Scope::GateUp)).unwrap()
-        );
-        assert!(
-            !resolve_parallel_ep_q8_gu_paired(None, true, Some(ParallelEpQ8Scope::Down)).unwrap()
-        );
-        assert!(!resolve_parallel_ep_q8_gu_paired(Some("0"), false, None).unwrap());
-        assert!(!resolve_parallel_ep_q8_gu_paired(Some("0"), true, None).unwrap());
-        assert!(resolve_parallel_ep_q8_gu_paired(Some("1"), false, None).is_err());
-        assert!(
-            resolve_parallel_ep_q8_gu_paired(Some("1"), true, Some(ParallelEpQ8Scope::Down))
-                .is_err()
-        );
     }
 
     #[test]

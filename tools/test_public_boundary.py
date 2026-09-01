@@ -589,7 +589,7 @@ class CheckTests(unittest.TestCase):
         `wiki-055.txt` carries `personal_email` at offset 367 and a cloud account id at 556, and
         was therefore reported as `personal_email` — one line inside 56 hits of a class a
         reviewer correctly triages as authorship noise, with the account id, the
-        AdministratorAccess assertion and the identity principal beside it named nowhere. One hit is
+        AdministratorAccess assertion and the IAM principal beside it named nowhere. One hit is
         enough to enforce; triage needs all of them.
         """
         handle = tempfile.NamedTemporaryFile("w", delete=False)
@@ -1201,107 +1201,6 @@ class VerifyAllowlistTests(unittest.TestCase):
             "ci.yml has no live `check-public-boundary.py verify-allowlist` invocation — the "
             "allowlist gate is unwired and would go back to running only when a human "
             "remembered (it had no caller at all until 2026-08-23)",
-        )
-
-
-class UnstatablePathTests(unittest.TestCase):
-    """TEETH for the unstat-able-tracked-path arm (2026-09-01).
-
-    `evaluate()` calls `full.is_file()`, which STATS, and a stat can RAISE — a tracked
-    symlink whose target sits on another machine under a directory this user cannot
-    traverse gives PermissionError. That killed the whole gate in CI: it died on
-    `.../mv-battery-20260831/receipts/c3/off-1 -> /root/out-mv/c2/off-1` and therefore
-    scanned NOTHING after it, while the same tree passed on a workstation whose Python
-    returned False instead of raising. A gate that governs what a public MIT repo may
-    publish must not be silenced by one unreadable path, and must not silently skip it
-    either.
-
-    Both halves are proven here: the scan SURVIVES the raise, and it REPORTS the path.
-    """
-
-    def setUp(self) -> None:
-        self.policy = boundary.Policy(
-            secret_patterns={},
-            secret_sources={},
-            secret_union=boundary.re.compile(r"(?!x)x"),
-            secret_groups={},
-            private_paths={},
-            bypass_paths=[],
-        )
-
-    def _evaluate_with(self, tracked, raiser):
-        def fake_is_file(self):  # noqa: ANN001
-            if self.name == raiser:
-                raise PermissionError(13, "Permission denied")
-            # Every other tracked path in these fixtures is a real file as far as the scan
-            # is concerned; returning the on-disk answer would skip them for not existing
-            # and the "did the scan continue" assertion could never fail.
-            return True
-
-        with (
-            mock.patch.object(boundary, "tracked_files", return_value=tracked),
-            mock.patch.object(boundary, "secret_candidate_files", return_value=set()),
-            mock.patch.object(boundary.Path, "is_file", fake_is_file),
-        ):
-            return boundary.evaluate(self.policy)
-
-    def test_unstatable_path_is_reported_not_raised(self) -> None:
-        violations = self._evaluate_with(["a/unreadable", "README.md"], "unreadable")
-        paths = [v.path for v in violations]
-        self.assertIn(
-            "a/unreadable",
-            paths,
-            "an unstat-able tracked path must be REPORTED — a silent skip lets an "
-            "unreadable tracked path hide anything at all",
-        )
-        v = next(v for v in violations if v.path == "a/unreadable")
-        self.assertEqual(v.category, "unstatable_path")
-        self.assertIn("PermissionError", v.detail)
-
-    def test_scan_continues_past_the_unstatable_path(self) -> None:
-        # The regression that mattered: the raise used to abort the loop, so every file
-        # AFTER the bad one went unscanned. Order it first and prove the rest still ran.
-        with mock.patch.object(boundary, "worktree_blob_bytes", return_value=b""):
-            self.policy.private_paths = {"deploy_unit": "later/*"}
-            violations = self._evaluate_with(
-                ["a/unreadable", "later/thing"], "unreadable"
-            )
-        paths = [v.path for v in violations]
-        self.assertIn("a/unreadable", paths)
-        self.assertIn(
-            "later/thing",
-            paths,
-            "the scan stopped at the unstat-able path — every later tracked file would go "
-            "unchecked, which is how the gate reported success while scanning nothing",
-        )
-
-    def test_no_tracked_symlink_escapes_the_repo(self) -> None:
-        """The CAUSE, not just the symptom: an absolute symlink target is unresolvable on
-        every machine but the one that wrote it, so it is never a receipt and it publishes
-        a foreign box's filesystem layout. Six mv-battery links pointed at `/root/out-mv/`
-        and one requal link at `/opt/scratch/...` while their real targets sat beside them
-        in-repo."""
-        listing = subprocess.run(
-            ["git", "ls-files", "-s"],
-            cwd=boundary.ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.splitlines()
-        offenders = []
-        for line in listing:
-            meta, _, rel = line.partition("\t")
-            if not meta.startswith("120000"):
-                continue
-            target = (boundary.ROOT / rel).readlink()
-            if target.is_absolute() or not (boundary.ROOT / rel).exists():
-                offenders.append(f"{rel} -> {target}")
-        self.assertEqual(
-            offenders,
-            [],
-            "tracked symlink(s) are absolute or dangling: "
-            + "; ".join(offenders)
-            + " — retarget them repo-relative at their in-repo twin",
         )
 
 

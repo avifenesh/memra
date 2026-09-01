@@ -2,7 +2,7 @@
 
 Owner target: 200+ tok/s single-request decode on the NVFP4 mint; the lever that carries
 the plain shape past 90 (PROFILE-4 verdict: not reachable by shaves; spec is a
-multiplier). Branch `qwen4exp-bringup-20260829`; box cloud-eval (2× RTX PRO 6000
+multiplier). Branch `qwen4exp-bringup-20260829`; box sbox-eval (2× RTX PRO 6000
 Blackwell 96 GB); artifact `~/data/q48fn-nvfp4` (NVFP4 trunk + BF16 mtp graft shard).
 
 ## The draft program (SEMANTICS.md §MTP, resolved from SGLang PR #36497)

@@ -1,7 +1,4 @@
-//! CPU affinity for the GPU worker thread — `MEMRA_WORKER_CPUSET`, default OFF (the
-//! `MEMRA_WORKER_AFFINITY` name lane/glm5-host-audit shipped stays honored as the alias;
-//! renamed in lane/glm5-extract2 to the `*_CPUSET` convention, coordinator ruling, because
-//! the VALUE is a cpuset spec and "affinity" named the mechanism instead of the thing set).
+//! CPU affinity for the GPU worker thread — `MEMRA_WORKER_AFFINITY`, default OFF.
 //!
 //! WHY THIS EXISTS (lane/glm5-host-audit, 2026-09-01; engine-wide, not one family's).
 //! Every served family's decode tick runs on the ONE `memra-gpu-worker` thread spawned in
@@ -44,47 +41,7 @@ use std::collections::BTreeSet;
 /// kernel; production always passes `"/sys/devices/system/cpu"`.
 pub const SYSFS_CPU: &str = "/sys/devices/system/cpu";
 
-/// The general fleet flag. `MEMRA_WORKER_CPUSET` matches the `*_CPUSET` convention
-/// (coordinator ruling 2026-09-01, lane/glm5-extract2): the value IS a cpuset spec, and
-/// "affinity" named the mechanism rather than the thing being set.
-pub const ENV_WORKER_CPUSET: &str = "MEMRA_WORKER_CPUSET";
-/// The name lane/glm5-host-audit shipped. Still honored — its window runner and
-/// `affinity-identity-gate.sh` both set it, and every banked host-audit receipt was minted
-/// under it. Never silently dead.
-pub const ENV_WORKER_AFFINITY: &str = "MEMRA_WORKER_AFFINITY";
-
-/// Resolve the general name and its alias to ONE armed `(value, name)`.
-///
-/// VALUED FLAG, RESOLVED ONCE AT BOOT — so a disagreeing pair REFUSES rather than falling
-/// closed. That distinction is the phase-2 law (lane/glm5-extract2): a per-call boolean door
-/// falls closed because an abort in the GPU worker thread would kill every live session, but
-/// this is read on the startup thread before a single request exists, and a server silently
-/// pinned to a cpuset the operator did not choose is worse than a boot that says why it
-/// stopped. Both set to the SAME value resolves to the general name; either alone is honored
-/// and every downstream refusal then names the flag the operator actually typed.
-///
-/// COMPARISON IS LITERAL, deliberately, and it matters MORE here than for the transport seam
-/// because this flag's OFF vocabulary is wide (`""` / `0` / `off` / `false` / `no` all mean
-/// off). `MEMRA_WORKER_CPUSET=0` beside `MEMRA_WORKER_AFFINITY=off` therefore refuses even
-/// though both spellings mean the same thing. That is the intended trade: normalizing first
-/// would let ONE of two differing strings win silently, and an operator who typed two
-/// different things is better told than guessed at. The refusal names both values, so the
-/// fix is obvious from the line.
-pub fn resolve_worker_cpuset_env(
-    general: Option<String>,
-    alias: Option<String>,
-) -> Result<(Option<String>, &'static str), String> {
-    match (general, alias) {
-        (Some(g), Some(a)) if g != a => Err(format!(
-            "{ENV_WORKER_CPUSET}={g:?} and {ENV_WORKER_AFFINITY}={a:?} disagree — the alias and \
-             the general flag name ONE cpuset (unset one); refused rather than silently picking \
-             a precedence winner"
-        )),
-        (Some(g), _) => Ok((Some(g), ENV_WORKER_CPUSET)),
-        (None, Some(a)) => Ok((Some(a), ENV_WORKER_AFFINITY)),
-        (None, None) => Ok((None, ENV_WORKER_CPUSET)),
-    }
-}
+const ENV_WORKER_AFFINITY: &str = "MEMRA_WORKER_AFFINITY";
 
 /// What the operator asked for, validated but not yet applied.
 ///
@@ -232,13 +189,9 @@ pub fn render_cpu_list(cpus: &[usize]) -> String {
 ///
 /// A MALFORMED OR UNSATISFIABLE VALUE IS A STARTUP ERROR, NOT A WARNING. The alternative — accept
 /// it, log a line, serve unpinned — is the exception-that-absorbs-the-regression shape: an
-/// operator who mistyped `MEMRA_WORKER_CPUSET=8-15,1O4-111` would get an unpinned server whose
+/// operator who mistyped `MEMRA_WORKER_AFFINITY=8-15,1O4-111` would get an unpinned server whose
 /// receipts are filed under the pinned arm.
-pub fn parse_affinity_named(
-    flag: &str,
-    raw: Option<&str>,
-    topo: &Topology,
-) -> Result<AffinitySpec, String> {
+pub fn parse_affinity(raw: Option<&str>, topo: &Topology) -> Result<AffinitySpec, String> {
     let Some(raw) = raw else {
         return Ok(AffinitySpec::Off);
     };
@@ -249,19 +202,18 @@ pub fn parse_affinity_named(
         _ => {}
     }
     if let Some(n) = value.to_ascii_lowercase().strip_prefix("ccx:") {
-        let idx: usize = n
-            .trim()
-            .parse()
-            .map_err(|_| format!("{flag}={value:?}: 'ccx:N' needs a number, got {n:?}"))?;
+        let idx: usize = n.trim().parse().map_err(|_| {
+            format!("{ENV_WORKER_AFFINITY}={value:?}: 'ccx:N' needs a number, got {n:?}")
+        })?;
         if topo.domains.is_empty() {
             return Err(format!(
-                "{flag}={value:?}: this host exposes no L3 (index3) map in \
+                "{ENV_WORKER_AFFINITY}={value:?}: this host exposes no L3 (index3) map in \
                  {SYSFS_CPU}, so 'ccx' forms cannot be resolved — use an explicit cpu list"
             ));
         }
         if idx >= topo.domains.len() {
             return Err(format!(
-                "{flag}={value:?}: this host has {} L3 domain(s) (0..{}), \
+                "{ENV_WORKER_AFFINITY}={value:?}: this host has {} L3 domain(s) (0..{}), \
                  so domain {idx} does not exist",
                 topo.domains.len(),
                 topo.domains.len() - 1
@@ -269,7 +221,7 @@ pub fn parse_affinity_named(
         }
         return Ok(AffinitySpec::Ccx(idx));
     }
-    let cpus = parse_cpu_list(value).map_err(|why| format!("{flag}: {why}"))?;
+    let cpus = parse_cpu_list(value).map_err(|why| format!("{ENV_WORKER_AFFINITY}: {why}"))?;
     if !topo.online.is_empty() {
         let missing: Vec<usize> = cpus
             .iter()
@@ -278,7 +230,7 @@ pub fn parse_affinity_named(
             .collect();
         if !missing.is_empty() {
             return Err(format!(
-                "{flag}={value:?}: cpu(s) {} are not present on this host \
+                "{ENV_WORKER_AFFINITY}={value:?}: cpu(s) {} are not present on this host \
                  (sysfs shows {} cpus)",
                 render_cpu_list(&missing),
                 topo.online.len()
@@ -291,12 +243,9 @@ pub fn parse_affinity_named(
 /// Read + validate the flag from the environment. Called ONCE, on the startup thread, so a bad
 /// value fails the boot instead of being discovered in a receipt.
 pub fn worker_affinity_spec() -> Result<AffinitySpec, String> {
-    let (raw, flag) = resolve_worker_cpuset_env(
-        std::env::var(ENV_WORKER_CPUSET).ok(),
-        std::env::var(ENV_WORKER_AFFINITY).ok(),
-    )?;
+    let raw = std::env::var(ENV_WORKER_AFFINITY).ok();
     let topo = Topology::read(SYSFS_CPU);
-    parse_affinity_named(flag, raw.as_deref(), &topo)
+    parse_affinity(raw.as_deref(), &topo)
 }
 
 /// The mask actually installed, as the kernel reports it back.
@@ -432,9 +381,7 @@ fn current_cpu() -> Result<usize, String> {
 pub fn apply_and_announce(spec: &AffinitySpec) {
     match apply(spec) {
         Ok(None) => {
-            eprintln!(
-                "[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)"
-            );
+            eprintln!("[worker-affinity] off (MEMRA_WORKER_AFFINITY unset or =0)");
         }
         Ok(Some(applied)) => {
             let req = render_cpu_list(&applied.requested);
@@ -490,7 +437,7 @@ mod tests {
             Some("no"),
         ] {
             assert_eq!(
-                parse_affinity_named(ENV_WORKER_CPUSET, raw, &t).unwrap(),
+                parse_affinity(raw, &t).unwrap(),
                 AffinitySpec::Off,
                 "{raw:?} must be OFF — the default is OFF by design"
             );
@@ -503,20 +450,20 @@ mod tests {
     fn ccx_forms_resolve_against_the_hosts_own_l3_map() {
         let t = epyc_9654();
         assert_eq!(
-            parse_affinity_named(ENV_WORKER_CPUSET, Some("ccx"), &t).unwrap(),
+            parse_affinity(Some("ccx"), &t).unwrap(),
             AffinitySpec::SelfCcx
         );
         assert_eq!(
-            parse_affinity_named(ENV_WORKER_CPUSET, Some("on"), &t).unwrap(),
+            parse_affinity(Some("on"), &t).unwrap(),
             AffinitySpec::SelfCcx
         );
         assert_eq!(
-            parse_affinity_named(ENV_WORKER_CPUSET, Some("ccx:3"), &t).unwrap(),
+            parse_affinity(Some("ccx:3"), &t).unwrap(),
             AffinitySpec::Ccx(3)
         );
         // Past the end of THIS host's map is a refusal, not a clamp: a clamp would pin to a
         // domain the operator did not name and announce success.
-        let err = parse_affinity_named(ENV_WORKER_CPUSET, Some("ccx:12"), &t).unwrap_err();
+        let err = parse_affinity(Some("ccx:12"), &t).unwrap_err();
         assert!(err.contains("12 L3 domain(s)"), "{err}");
         assert!(err.contains("does not exist"), "{err}");
     }
@@ -528,7 +475,7 @@ mod tests {
             domains: vec![],
             online: (0..8).collect(),
         };
-        let err = parse_affinity_named(ENV_WORKER_CPUSET, Some("ccx:0"), &blind).unwrap_err();
+        let err = parse_affinity(Some("ccx:0"), &blind).unwrap_err();
         assert!(err.contains("no L3"), "{err}");
         assert!(err.contains("explicit cpu list"), "{err}");
     }
@@ -557,7 +504,7 @@ mod tests {
             if bad.is_empty() {
                 continue; // "" is the documented OFF spelling, covered above
             }
-            let got = parse_affinity_named(ENV_WORKER_CPUSET, Some(bad), &t);
+            let got = parse_affinity(Some(bad), &t);
             assert!(got.is_err(), "{bad:?} must be refused, got {got:?}");
         }
     }
@@ -565,7 +512,7 @@ mod tests {
     #[test]
     fn cpus_absent_from_this_host_are_refused() {
         let t = epyc_9654();
-        let err = parse_affinity_named(ENV_WORKER_CPUSET, Some("190-200"), &t).unwrap_err();
+        let err = parse_affinity(Some("190-200"), &t).unwrap_err();
         assert!(err.contains("not present on this host"), "{err}");
         assert!(err.contains("192 cpus"), "{err}");
     }
@@ -605,60 +552,6 @@ mod tests {
                 why.contains("L3") || why.contains("sched_") || why.contains("cpu"),
                 "an unexplained refusal is the failure mode this lane exists to remove: {why}"
             ),
-        }
-    }
-}
-
-#[cfg(test)]
-mod cpuset_alias_tests {
-    use super::{ENV_WORKER_AFFINITY, ENV_WORKER_CPUSET, resolve_worker_cpuset_env};
-
-    fn r(g: Option<&str>, a: Option<&str>) -> Result<(Option<String>, &'static str), String> {
-        resolve_worker_cpuset_env(g.map(String::from), a.map(String::from))
-    }
-
-    #[test]
-    fn either_name_is_honored_and_the_armed_name_comes_back() {
-        // unset/unset: no spec, cited under the general name
-        assert_eq!(r(None, None).unwrap(), (None, ENV_WORKER_CPUSET));
-        // the general name alone
-        assert_eq!(
-            r(Some("8-15"), None).unwrap(),
-            (Some("8-15".to_string()), ENV_WORKER_CPUSET)
-        );
-        // the alias alone — honored, and refusals downstream must cite THIS name, because it
-        // is what the banked host-audit window runner and affinity-identity-gate.sh set
-        assert_eq!(
-            r(None, Some("ccx:0")).unwrap(),
-            (Some("ccx:0".to_string()), ENV_WORKER_AFFINITY)
-        );
-        // an agreeing pair resolves to the general name
-        assert_eq!(
-            r(Some("ccx:0"), Some("ccx:0")).unwrap(),
-            (Some("ccx:0".to_string()), ENV_WORKER_CPUSET)
-        );
-    }
-
-    #[test]
-    fn two_spellings_of_off_still_disagree_and_that_is_deliberate() {
-        // Not a bug: comparison is literal so neither of two differing strings wins silently.
-        // Pinned as an arm rather than left in prose, because "surprising but intended" is
-        // exactly the behavior that gets "fixed" by a later reader.
-        let err = r(Some("0"), Some("off")).expect_err("literal comparison must refuse");
-        assert!(err.contains("disagree"), "{err}");
-        assert!(
-            err.contains("\"0\"") && err.contains("\"off\""),
-            "both values named: {err}"
-        );
-    }
-
-    #[test]
-    fn a_disagreeing_pair_refuses_the_boot_and_names_both() {
-        for (g, a) in [("8-15", "0"), ("ccx:0", "ccx:1"), ("0", "8-15")] {
-            let err = r(Some(g), Some(a)).expect_err("a disagreeing pair must refuse");
-            assert!(err.contains(ENV_WORKER_CPUSET), "{err}");
-            assert!(err.contains(ENV_WORKER_AFFINITY), "{err}");
-            assert!(err.contains("disagree"), "{err}");
         }
     }
 }

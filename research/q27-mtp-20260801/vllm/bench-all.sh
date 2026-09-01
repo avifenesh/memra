@@ -2,7 +2,7 @@
 V=$HOME/vllm-env
 LOGD=$HOME/lane1/research/q27-mtp-20260801/vllm
 cd $HOME/lane1
-export HF_HOME=/opt/scratch/nvme/hf
+export HF_HOME=/opt/dl-image/nvme/hf
 export CUDA_VISIBLE_DEVICES=1
 export CUDA_HOME=/usr/local/cuda
 export PATH=$V/bin:/usr/local/cuda/bin:$PATH

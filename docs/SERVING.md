@@ -851,9 +851,8 @@ gated by the official `openai` Python SDK against a live server
 (`research/serve-compat-20260802/`):
 
 - **Envelope:** every OpenAI-shape completion and stream chunk carries `id`
-  (`chatcmpl-…`/`cmpl-…`), `created`, and `system_fingerprint`
-  (`memra-<version>-<content id>`, baked at build, see **The build fingerprint** below);
-  the id echoes as the `x-request-id` response header. The first stream delta
+  (`chatcmpl-…`/`cmpl-…`), `created`, and `system_fingerprint` (`memra-<git sha>`, baked
+  at build); the id echoes as the `x-request-id` response header. The first stream delta
   carries `role:"assistant"`. Error bodies are the OpenAI object —
   `{"error": {"message","type","param","code"}}` — and mid-stream worker errors arrive as
   a final `data:` error chunk + `[DONE]`, never a named SSE event. SSE keep-alive comments
@@ -908,92 +907,6 @@ gated by the official `openai` Python SDK against a live server
   the next event arrived, so a request still in prefill (producing nothing yet) kept its
   channel open indefinitely and no disconnect or deadline could cancel it.
 - **`timeout_ms` request deadline** (all four surfaces — see the billing contract below).
-
-## The build fingerprint (lane/real-system-fingerprint, 2026-09-01)
-
-`system_fingerprint` is **`memra-<crate version>-<content id>`**, for example
-`memra-0.123.0-6371ca8a0af4` (every concrete value in this section is this lane's head,
-2026-09-01; the id moves with the source, which is the point). It is baked at compile time by
-`crates/memra-server/build.rs` and the algorithm lives in `crates/memra-server/src/build_id.rs`,
-which the build script `include!`s and the crate compiles as a module: one implementation,
-two callers, so the tests re-derive the value instead of pinning a copy of the algorithm.
-
-The `<content id>` is 12 lowercase hex: an FNV-1a-128 digest, folded to its top 48 bits, over
-the workspace's compiled inputs: root `Cargo.toml` and `Cargo.lock` plus every `*.rs`,
-`*.toml`, `*.cu`, `*.cuh`, `*.h` under `crates/`, keyed by workspace-relative path and
-sorted, so it does not depend on `read_dir` order or on where the checkout lives. Uniqueness
-class, not crypto: it is a build identity, not a tamper seal.
-
-**Why content and not the git sha.** The field used to be `concat!("memra-", <git rev-parse>)`
-with any git failure swallowed into the literal `"unknown"`. Two consequences, both real:
-
-- **It degraded silently.** darklanes' release container (`serving/build-artifact.sh`)
-  compiles as root over a uid-1000 read-only mount; before its `safe.directory` line landed
-  on 2026-08-30 git aborted with "detected dubious ownership" and the build baked
-  `unknown`. Prod answered `system_fingerprint: memra-unknown` to every request for a whole
-  deploy generation. A build with a meaningless identity looked exactly like a good one.
-- **It did not survive a history rewrite.** A rewrite changes every commit SHA while the
-  bytes of the tree stay put, so a sha baked into a shipped binary becomes a dangling
-  reference, and a fingerprint quoted in a published claim, a research receipt, or a
-  customer's own response stops naming anything. A content id is unchanged by a rewrite
-  (receipt in the lane PR: `git commit --amend` over this tree moved the commit sha
-  `2bfd89fb74d2` to `07b909892f43` while the id stayed `6371ca8a0af4`).
-
-**Deliberately NOT in the value: a build timestamp.** Two builds of the same source must
-produce the same fingerprint, because darklanes' `tools/check-claim-builds.mjs --live`
-compares it for **equality** against the pin published beside every performance figure; a
-per-rebuild component would churn every pin and make the gate meaningless. Build time is an
-artifact-registry fact (the artifact filename and the file's mtime), not an identity.
-
-**The git sha is still baked, as an extra field, never as the identity:**
-`MEMRA_BUILD_SHA` → `memra_server::BUILD_GIT_SHA`. It is allowed to read `unknown` there,
-because there it is honest.
-
-**No flag.** The real fingerprint is unconditional: there is no env var that turns it off,
-downgrades it, or overrides it. A knob here would be a knob for publishing an unverifiable
-identity (new-flags law: the default is a written decision, and this one is "no flag").
-
-**Reading it without a GPU.** `memra-server --version` (also `-V`) prints the identity and
-exits before any engine, GPU, or model work, so a deployed artifact can be identified on any
-box and in the release container that produced it:
-
-```
-$ memra-server --version
-memra-server 0.123.0
-system_fingerprint memra-0.123.0-6371ca8a0af4
-build_id_src source-tree
-git_sha <this build's short sha, or `unknown` if it could not read a repo>
-```
-
-The same path is in `serve_with`, so darklanes' deployment binary answers `--version` too.
-
-**The degraded path is loud on both sides.** If the workspace source tree is unreadable (a
-vendored or packaged crate), the id falls back to a digest of the package's own identity,
-still shaped, still never `unknown`, and:
-
-- `build.rs` emits a `cargo:warning=memra build identity DEGRADED: <reason>` at build time;
-- every boot prints `[server] WARNING: build identity is DEGRADED: <reason>` naming the
-  consequence (published performance pins cannot be verified against it).
-
-Every boot also prints the identity line unconditionally, as its first line:
-`[server] build: memra-0.123.0-6371ca8a0af4 (id: source-tree, git: <short sha>)`.
-
-**Gates** (`crates/memra-server/src/lib.rs`, `mod build_identity_tests`): the baked value is
-non-empty, is not `memra-unknown`, contains no `unknown`, matches
-`memra-<version>-<12 lowercase hex>` and names this crate version; the shape checker rejects
-what shipped to prod **and** the old `memra-<sha>` form; the baked id is re-derived from the
-working tree in a separate process and must match, which is what proves it is a function of
-the source rather than of the build environment; two scans of one tree agree; and the id is
-asserted to differ from `BUILD_GIT_SHA`, so history can never become the identity by
-accident. The two OpenAI envelope tests now assert the full shape: they used to assert
-`starts_with("memra-")`, which `memra-unknown` passes, which is how the defect sat inside a
-tested surface all the way to a customer.
-
-**Consumers.** darklanes `tools/check-claim-builds.mjs` reads `system_fingerprint` from a
-live endpoint and compares it to the `build` / `*Build` pins carried by every published
-performance figure (`PRODUCT-TRUTH.md` §2.7). While the field read `memra-unknown` that gate
-had nothing to verify; both prod boxes need a binary from this lane before the `--live` half
-means anything, and the pins move to the new shape as part of that deploy.
 
 ## Request deadlines and the billing promise (`timeout_ms`)
 
@@ -2141,7 +2054,7 @@ Two behaviours keep that ceiling from eating a customer's work:
    408 `deadline_exceeded`, unbilled, because there is nothing to deliver.
 
 `finish_reason: "length"` is deliberately NOT used for a time cut. No provider's
-finish-reason enum has a time value (OpenAI, Anthropic, Google and the hosted resellers all mean
+finish-reason enum has a time value (OpenAI, Anthropic, Bedrock and Google all mean
 max_tokens by `length`/`MAX_TOKENS`), so reporting a deadline as `length` would tell a
 caller to ask for more tokens when the truth is that it must stream.
 

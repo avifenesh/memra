@@ -82,6 +82,7 @@ pub mod eagle;
 pub mod ep_map;
 pub mod gemma_spec;
 pub mod glm5_tp;
+pub mod glm5_tp_transport;
 /// glm5_next T-parallel speculative verify: the rows-walk verify, per-step KDA state-column
 /// rollback, latent/kpool truncation, and the MEMRA_GLM5_SPEC-gated draft->verify->rollback
 /// loop over the native MTP head (lane/glm5-tparallel-verify).
@@ -108,7 +109,6 @@ pub mod spec;
 /// beyond the stream drains at phase boundaries.
 pub mod spec_phase;
 pub mod tp;
-pub mod tp_transport;
 pub use memra_sampling as sampler;
 
 /// In-house MoE router GEMV on the spec-verify small-t path (DEFAULT ON since 2026-07-10:
@@ -1073,11 +1073,10 @@ pub struct Engine {
     /// 288 experts), 126 buffers = ~145 KB for a 42-MoE-layer model. Uploading per call instead
     /// would ADD three HtoD to a door whose whole purpose is removing two.
     vrows_macro_dev: Mutex<std::collections::HashMap<(u16, u8), CudaSlice<f32>>>,
-    /// Resident all-ones f32 vector for the UNGATED shared-expert add (`MEMRA_HTOD_DIET`,
-    /// door H). A family whose plan carries no `ffn_gate_inp_shexp` (GLM-5.3-Flash is the
-    /// first) makes `moe_shexp_add` take the `g = 1.0` arm, which re-uploaded a freshly
-    /// allocated `vec![1.0f32; t]` on EVERY MoE layer-call — 42 pageable HtoD per ship round
-    /// to move a constant on the glm5 serving geometry. Grown to the largest t
+    /// Resident all-ones f32 vector for the UNGATED shared-expert add (`MEMRA_GLM5_HTOD_DIET`,
+    /// door H). GLM-5.3-Flash carries no `ffn_gate_inp_shexp`, so `moe_shexp_add` took the
+    /// `g = 1.0` arm and re-uploaded a freshly allocated `vec![1.0f32; t]` on EVERY MoE
+    /// layer-call — 42 pageable HtoD per ship round to move a constant. Grown to the largest t
     /// seen; the buffer may be LONGER than t because `add_scaled_rows_f32` reads only
     /// `scale[0..nrows]`.
     shexp_ones: Mutex<Option<CudaSlice<f32>>>,
@@ -1846,132 +1845,37 @@ pub fn vrows_expert_major_order_for_test(sel_all: &[u32]) -> Vec<u64> {
     vrows_expert_major_order(sel_all)
 }
 
-// ---- THE FLAG-ALIAS LAW for boolean doors (lane/glm5-extract2, phase 2) ------------------
-//
-// A door extracted from a family name to its general name keeps the FAMILY NAME HONORED:
-// every banked gate script, box battery and in-flight lane sets the old name today, so
-// refusing it would break receipts mid-bank for the price of one extra env read. Phase 1
-// established the pattern for the two default-ON doors it moved (`MEMRA_VERIFY_WS`
-// OFF-wins; `MEMRA_SPEC_TRACE` general-wins-loudly) and for the one VALUED door
-// (`MEMRA_EP_MAP`, [`ep_map::resolve_ep_map_env`], which refuses a disagreeing pair at load).
-// [`alias_door_from`] is the same law for a DEFAULT-OFF BOOLEAN door read PER CALL.
-
-/// Pure two-name resolution for a default-OFF boolean door (unit-tested without env
-/// mutation — the phase-1 co-refusal-test pattern). Returns `(armed, the name the operator
-/// actually set)` so every downstream refusal names the flag they typed, exactly as
-/// [`ep_map::resolve_ep_map_env`] does for the valued seam.
-///
-/// * either name `=1` arms the door; anything else (including `=0`) is a deliberate pin;
-/// * both set to the SAME value resolves to the general name;
-/// * both set to DISAGREEING values is an operator error and is refused — `Err` carries the
-///   message naming BOTH flags. The CALLER falls closed to the shipped program rather than
-///   picking a precedence winner.
-pub(crate) fn alias_door_from(
-    general: (&'static str, Option<&str>),
-    alias: (&'static str, Option<&str>),
-) -> Result<(bool, &'static str), String> {
-    match (general.1, alias.1) {
-        (Some(g), Some(a)) if g != a => Err(format!(
-            "{}={g:?} and {}={a:?} disagree — the alias and the general flag name ONE door \
-             (unset one); refused rather than silently picking a precedence winner, and the \
-             door falls closed to the shipped program",
-            general.0, alias.0
-        )),
-        (Some(g), _) => Ok((g == "1", general.0)),
-        (None, Some(a)) => Ok((a == "1", alias.0)),
-        (None, None) => Ok((false, general.0)),
-    }
-}
-
-/// Env-reading wrapper over [`alias_door_from`]. A disagreeing pair FALLS CLOSED (door not
-/// armed = the shipped program) and prints the refusal ONCE PER PROCESS through `latch`.
-///
-/// COST, stated because "read-site only" is true of the ARITHMETIC and not of the lookups:
-/// honoring two names doubles the `env::var` calls on a per-call door (door H goes from ~64 to
-/// ~128 lookups per ship round across `i32_mirror_store` and the shexp add), and `env::var`
-/// takes the process environ lock. That is the price of not breaking every banked script, it
-/// is paid only on doors whose call sites are already per-layer rather than per-token, and it
-/// is unmeasured on a rig that cannot time host effects (LAW:rig-exactness-only). If a door
-/// ever moves to a per-token site, resolve it once behind a `OnceLock` and give up the
-/// in-process arm flipping the gates use today — that is the trade, named in advance.
-///
-/// It does not panic and it does not return `Result`: this is read per call inside the round,
-/// and an abort in the GPU worker thread exits the process and kills every live session
-/// (engine panics are fleet-fatal). A per-call door refuses by NOT ARMING; the loud line is
-/// the operator's receipt that neither value won.
-fn alias_door(
-    general: &'static str,
-    alias: &'static str,
-    latch: &'static std::sync::atomic::AtomicBool,
-) -> (bool, &'static str) {
-    let g = std::env::var(general).ok();
-    let a = std::env::var(alias).ok();
-    match alias_door_from((general, g.as_deref()), (alias, a.as_deref())) {
-        Ok(resolved) => resolved,
-        Err(msg) => {
-            if !latch.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                eprintln!("[flag-alias] {msg}");
-            }
-            (false, general)
-        }
-    }
-}
-
-/// `MEMRA_HTOD_DIET=1` (default OFF; generalized from `MEMRA_GLM5_HTOD_DIET`, which stays
-/// honored per the flag-alias law above — door H, lane/glm5-moe-loc): ENGINE-GENERIC HtoD
-/// hygiene. Nothing in either class is family knowledge; both are "the host uploaded bytes
-/// the device already had".
+/// `MEMRA_GLM5_HTOD_DIET=1` (lane/glm5-moe-loc door H, default OFF): the two per-round HtoD
+/// classes that move data the device did not need from the host at all.
 ///
 /// 1. The UNGATED shared-expert add re-uploaded a fresh `vec![1.0f32; t]` per MoE layer-call
 ///    (42 pageable HtoD/round to move a CONSTANT) — it now reads a resident ones buffer
-///    ([`Engine::shexp_ones`]). Applies to every MoE family whose plan carries no
-///    `ffn_gate_inp_shexp`.
-/// 2. The latent-plane `len_d` i32 mirror took `memcpy_htod(&[v], ..)`, a SYNCHRONIZING
+///    ([`Engine::shexp_ones`]).
+/// 2. The MLA latent-plane `len_d` i32 mirror took `memcpy_htod(&[v], ..)`, a SYNCHRONIZING
 ///    pageable copy, at 11 walk sites + 11 rollback sites per round. It now takes
 ///    [`Engine::i32_set_k`], the existing async twin whose value rides the kernel argument —
 ///    whose own doc already says the copy form is "fine at stream-idle boundaries, poison
-///    mid-round". Applies to every latent-KV consumer ([`Engine::i32_mirror_store`] is an
-///    Engine method, not a family method).
+///    mid-round".
 ///
 /// Both write identical values to identical buffers and both are stream-ordered, so the arms are
 /// bit-identical by construction. Default OFF because no box timing receipt exists (rig is
 /// exactness-only): 64 driver calls/round of measured count, UNPRICED wall. Read per call.
-pub fn htod_diet_on() -> bool {
-    htod_diet_armed().0
+pub fn glm5_htod_diet_on() -> bool {
+    std::env::var("MEMRA_GLM5_HTOD_DIET").as_deref() == Ok("1")
 }
 
-/// Once-per-process latch for door H's disagreeing-pair line.
-static HTOD_DIET_ALIAS_WARNED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
-/// Resolve door H, returning the armed flag name for refusals/announces.
-pub(crate) fn htod_diet_armed() -> (bool, &'static str) {
-    alias_door(
-        "MEMRA_HTOD_DIET",
-        "MEMRA_GLM5_HTOD_DIET",
-        &HTOD_DIET_ALIAS_WARNED,
-    )
-}
-
-/// HtoD calls avoided by door H (`MEMRA_HTOD_DIET`): the count receipt. A gate asserts it
+/// HtoD calls avoided by door H (`MEMRA_GLM5_HTOD_DIET`): the count receipt. A gate asserts it
 /// tracks the layer-call count on the ON arm and stays flat on the OFF arm.
-pub static HTOD_DIET_AVOIDED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub static GLM5_HTOD_DIET_AVOIDED: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
 
-/// Snapshot of [`HTOD_DIET_AVOIDED`] — gates take a before/after delta.
-pub fn htod_diet_avoided() -> u64 {
-    HTOD_DIET_AVOIDED.load(std::sync::atomic::Ordering::Relaxed)
+/// Snapshot of [`GLM5_HTOD_DIET_AVOIDED`] — gates take a before/after delta.
+pub fn glm5_htod_diet_avoided() -> u64 {
+    GLM5_HTOD_DIET_AVOIDED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// `MEMRA_EP_DIET=1` (default OFF; generalized from `MEMRA_GLM5_EP_DIET`, which stays honored
-/// per the flag-alias law — lane/glm5-ep-diet): the EP DISPATCH DIET door, general to any
-/// expert-parallel MoE walk. What the door names is a movement CLASS, not a family: one bulk
-/// peer activation fan-out per layer-call instead of per-token uploads, compact peer staging
-/// with one bulk return instead of a per-slot round-trip dribble, and one scatter launch
-/// instead of the `t*n_used` sequential axpy chain. The glm5 TP-2 walk is today's CONSUMER
-/// (its kernels, its combine order, its counters in `glm5_tp.rs`); hy3/step EP walks arm the
-/// same door for their own walks.
-///
-/// The glm5 consumer's contract, unchanged: same per-slot expert kernels, same slot-ordered combine chain, restructured
+/// `MEMRA_GLM5_EP_DIET=1` (lane/glm5-ep-diet, default OFF): the glm5 TP-2 EP walk's
+/// dispatch diet. Same per-slot expert kernels, same slot-ordered combine chain, restructured
 /// data movement: ONE bulk peer z fan-out per layer-call (skipped entirely when no peer-owned
 /// expert routed), zero per-slot host round-trips (peer rows stage compact on the peer and
 /// return in ONE bulk DtoH+HtoD), and the t*n_used sequential `axpy_f32` combine launches
@@ -1982,27 +1886,11 @@ pub fn htod_diet_avoided() -> u64 {
 /// SYNC STRUCTURE (the class the diet window warned does not always transfer from counts to
 /// wall) — it ships with count receipts and the box window prices the wall. Read per call;
 /// `=0`/unset restores the v1 per-slot walk byte-for-byte.
-pub fn ep_diet_on() -> bool {
-    ep_diet_armed().0
+pub fn glm5_ep_diet_on() -> bool {
+    std::env::var("MEMRA_GLM5_EP_DIET").as_deref() == Ok("1")
 }
 
-/// Once-per-process latch for the EP-diet door's disagreeing-pair line.
-static EP_DIET_ALIAS_WARNED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
-/// Resolve the EP-diet door, returning the armed flag name — the co-refusal in `hybrid.rs`
-/// names the flag the operator actually set.
-pub(crate) fn ep_diet_armed() -> (bool, &'static str) {
-    alias_door("MEMRA_EP_DIET", "MEMRA_GLM5_EP_DIET", &EP_DIET_ALIAS_WARNED)
-}
-
-/// `MEMRA_EP_GROUPED_PRIME=1` (default OFF; generalized from `MEMRA_GLM5_EP_GROUPED_PRIME`,
-/// which stays honored per the flag-alias law — lane/glm5-ep-diet): the EP GROUPED-PRIME door,
-/// general to any expert-parallel MoE walk — "run the family's own chunked grouped MoE prefill
-/// program per rank over each rank's resident expert slab, then add the peer's bulk-returned
-/// partial". The glm5 TP-2 walk is today's consumer.
-///
-/// The glm5 consumer's contract, unchanged: port the chunked
+/// `MEMRA_GLM5_EP_GROUPED_PRIME=1` (lane/glm5-ep-diet, default OFF): port the chunked
 /// grouped MoE prefill (`MEMRA_MOE_GROUPED_PREFILL`, the plain walk's default-ON 85->616-639
 /// tok/s prefill program) through the glm5 TP-2 EP walk: the SAME sigmoid host-oracle
 /// routing, per-rank expert-major CSR restricted to each rank's owned experts, one grouped
@@ -2013,21 +1901,8 @@ pub(crate) fn ep_diet_armed() -> (bool, &'static str) {
 /// (dieted) sequential EP walk. Numeric class: per-expert GEMMs are the plain grouped arm's;
 /// the ONE reassociation is the per-token root+peer partial add (band-gated, never claimed
 /// byte). Read per call.
-pub fn ep_grouped_prime_on() -> bool {
-    ep_grouped_prime_armed().0
-}
-
-/// Once-per-process latch for the EP grouped-prime door's disagreeing-pair line.
-static EP_GROUPED_PRIME_ALIAS_WARNED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
-/// Resolve the EP grouped-prime door, returning the armed flag name for the co-refusal.
-pub(crate) fn ep_grouped_prime_armed() -> (bool, &'static str) {
-    alias_door(
-        "MEMRA_EP_GROUPED_PRIME",
-        "MEMRA_GLM5_EP_GROUPED_PRIME",
-        &EP_GROUPED_PRIME_ALIAS_WARNED,
-    )
+pub fn glm5_ep_grouped_prime_on() -> bool {
+    std::env::var("MEMRA_GLM5_EP_GROUPED_PRIME").as_deref() == Ok("1")
 }
 
 /// `MEMRA_TOPK_SHARDS` (lane/glm5-matvec door K, default ON since the 2026-08-31 mv-battery
@@ -2157,54 +2032,6 @@ mod verify_ws_flag_tests {
         // explicit ON on either name keeps the default
         assert!(verify_ws_on_from(Some("1"), None));
         assert!(verify_ws_on_from(None, Some("1")));
-    }
-}
-
-#[cfg(test)]
-mod alias_door_tests {
-    use super::alias_door_from;
-
-    const G: &str = "MEMRA_EP_DIET";
-    const A: &str = "MEMRA_GLM5_EP_DIET";
-
-    fn r(g: Option<&str>, a: Option<&str>) -> Result<(bool, &'static str), String> {
-        alias_door_from((G, g), (A, a))
-    }
-
-    #[test]
-    fn default_off_and_either_name_arms() {
-        // unset/unset: the door is OFF and the general name is what a refusal would cite
-        assert_eq!(r(None, None).unwrap(), (false, G));
-        // either name =1 arms it, and the ARMED NAME is the one the operator set
-        assert_eq!(r(Some("1"), None).unwrap(), (true, G));
-        assert_eq!(r(None, Some("1")).unwrap(), (true, A));
-        // =0 is a deliberate pin on either name, never an arming
-        assert_eq!(r(Some("0"), None).unwrap(), (false, G));
-        assert_eq!(r(None, Some("0")).unwrap(), (false, A));
-        // anything that is not "1" is not an arming (no truthiness guessing)
-        assert_eq!(r(None, Some("on")).unwrap(), (false, A));
-        assert_eq!(r(Some(""), None).unwrap(), (false, G));
-    }
-
-    #[test]
-    fn agreeing_pair_resolves_to_the_general_name() {
-        assert_eq!(r(Some("1"), Some("1")).unwrap(), (true, G));
-        assert_eq!(r(Some("0"), Some("0")).unwrap(), (false, G));
-    }
-
-    #[test]
-    fn disagreeing_pair_refuses_and_names_both() {
-        for (g, a) in [("1", "0"), ("0", "1")] {
-            let err = r(Some(g), Some(a)).expect_err("a disagreeing pair must refuse");
-            assert!(
-                err.contains(G),
-                "the refusal must name the general flag: {err}"
-            );
-            assert!(err.contains(A), "the refusal must name the alias: {err}");
-            // and it must say which way it falls, so an operator reading the line knows the
-            // door is CLOSED rather than guessing a precedence winner
-            assert!(err.contains("falls closed"), "{err}");
-        }
     }
 }
 
@@ -6628,9 +6455,7 @@ impl Engine {
         Ok(act)
     }
 
-    /// The PRE-clamped, macro-folding twin of [`Engine::moe_gate_up_silu8_q8`] — the kernel
-    /// class for any MoE family whose activation clamps the gate BEFORE the silu (glm5_next is
-    /// the first such family; the door names the arithmetic, not the family).
+    /// glm5_next's PRE-clamped, macro-folding twin of [`Engine::moe_gate_up_silu8_q8`].
     ///
     /// Same grid/block/dots/warp reduction; the epilogue is
     /// `silu(min(gate*gs, limit)) * clamp(up*us, ±limit)` — `swiglu_preclamped_mul_scaled_f32`'s
@@ -9114,7 +8939,7 @@ impl Engine {
     }
 
     /// `add_scaled_rows` with an all-ones scale drawn from the resident ones buffer (door H,
-    /// `MEMRA_HTOD_DIET`) — the UNGATED shared-expert add, without re-uploading the
+    /// `MEMRA_GLM5_HTOD_DIET`) — the UNGATED shared-expert add, without re-uploading the
     /// constant every MoE layer-call. Same kernel, same values: the buffer may be longer than
     /// `nrows` because `add_scaled_rows_f32` reads only `scale[0..nrows]`.
     pub fn add_scaled_rows_ones(
@@ -9146,7 +8971,7 @@ impl Engine {
         Ok(())
     }
 
-    /// The `len_d` i32 mirror store, door H aware (`MEMRA_HTOD_DIET`): the async
+    /// The `len_d` i32 mirror store, door H aware (`MEMRA_GLM5_HTOD_DIET`): the async
     /// [`Self::i32_set_k`] launch when the door is on, else the shipped synchronizing pageable
     /// `memcpy_htod`. Identical value into the identical slot, both stream-ordered.
     pub fn i32_mirror_store(
@@ -9154,8 +8979,8 @@ impl Engine {
         dst: &mut CudaSlice<i32>,
         v: i32,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        if crate::htod_diet_on() {
-            HTOD_DIET_AVOIDED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if crate::glm5_htod_diet_on() {
+            GLM5_HTOD_DIET_AVOIDED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             return self.i32_set_k(dst, v);
         }
         self.gpu.stream().memcpy_htod(&[v], dst)?;
@@ -9944,10 +9769,7 @@ impl Engine {
         expert_stride: usize,
         slot_major: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        assert!(
-            in_f.is_multiple_of(64),
-            "NVFP4 dp4a requires in_f % 64 == 0"
-        );
+        assert!(in_f % 64 == 0, "NVFP4 dp4a requires in_f % 64 == 0");
         if yg.len() < n_sel * out_f || yu.len() < n_sel * out_f || sel.len() < n_sel {
             return Err("NVFP4 gu sel geometry".into());
         }
@@ -9969,7 +9791,7 @@ impl Engine {
                 .filter(|r| *r == 2 || *r == 4)
                 .unwrap_or(1)
         });
-        let rpw = if out_f.is_multiple_of(rpw) { rpw } else { 1 };
+        let rpw = if out_f % rpw == 0 { rpw } else { 1 };
         // MEMRA_NVFP4_SEL_GU_WPR=1 (sub-door, default OFF, UNPRICED): warp-per-row.
         // NUMERIC-CLASS — the per-row REDUCTION ORDER changes, so a bit tape cannot apply and
         // acceptance is the argmax gate plus the boot battery (the QKV_FUSED/BF16_MMV class).
@@ -10019,8 +9841,7 @@ impl Engine {
         Ok(())
     }
 
-    /// PROGRAM 3 (`MEMRA_NVFP4_SEL_DOWN8`, **default ON since 2026-09-01**): the DOWN sweep and
-    /// the route-weight
+    /// PROGRAM 3 (`MEMRA_NVFP4_SEL_DOWN8`, default OFF): the DOWN sweep and the route-weight
     /// combine in ONE launch (`qmatvec_nvfp4_dp4a_sel_v2_down8`, the q8 `down8 w8` occupancy arm
     /// ported to the NVFP4 banks). Block = `(32, n_sel)`: one warp per slot instead of one warp
     /// per (row, slot), and the `n_sel x out_f` partial buffer disappears. BIT-IDENTICAL to
@@ -10049,7 +9870,7 @@ impl Engine {
         ad_row_stride: usize,
         slot_major: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        if !in_f.is_multiple_of(64)
+        if in_f % 64 != 0
             || n_sel == 0
             || n_sel > 8
             || (in_f >> 5) > 32
@@ -10343,7 +10164,7 @@ impl Engine {
         let sm_stream = mode == 3
             && *SM_STREAM
                 .get_or_init(|| std::env::var("MEMRA_NVFP4_SEL_SM_STREAM").as_deref() == Ok("1"))
-            && row_bytes.is_multiple_of(16)
+            && row_bytes % 16 == 0
             && in_f <= 4096;
         let kname = match (mode, sm_stream) {
             (3, true) => "qmatvec_nvfp4_dp4a_sel_v2s",
@@ -10633,82 +10454,6 @@ impl Engine {
             .into());
         }
         let f = self.func("qmatvec_nvfp4_q8_ep_dual_slots");
-        let threads = ((in_f / 32).div_ceil(32) * 32).clamp(32, 256) as u32;
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, 1, 1),
-            block_dim: (threads, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, np, tk) = (in_f as i32, out_f as i32, n_pairs as i32, top_k as i32);
-        let (os, oe) = (owner_start as i32, owner_end as i32);
-        let (rb, es) = (row_bytes as i64, expert_stride as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(gate_bank)
-            .arg(up_bank)
-            .arg(sel)
-            .arg(aq)
-            .arg(ad)
-            .arg(gate_out)
-            .arg(up_out)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&np)
-            .arg(&tk)
-            .arg(&os)
-            .arg(&oe)
-            .arg(&rb)
-            .arg(&es);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// Known-good paired gate+up Q8 schedule: one CTA owns the same output row in both banks,
-    /// shares the activation bytes, and retains one independent accumulator/reduction per bank.
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_nvfp4_q8_ep_paired_slots_into(
-        &self,
-        gate_bank: &CudaSlice<u8>,
-        up_bank: &CudaSlice<u8>,
-        sel: &CudaSlice<i32>,
-        aq: &CudaSlice<i8>,
-        ad: &CudaSlice<f32>,
-        gate_out: &mut CudaSlice<f32>,
-        up_out: &mut CudaSlice<f32>,
-        n_pairs: usize,
-        top_k: usize,
-        in_f: usize,
-        out_f: usize,
-        owner_start: usize,
-        owner_end: usize,
-        row_bytes: usize,
-        expert_stride: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let tokens = n_pairs.div_ceil(top_k);
-        if top_k == 0
-            || owner_start >= owner_end
-            || !in_f.is_multiple_of(64)
-            || sel.len() < n_pairs
-            || aq.len() < tokens * in_f
-            || ad.len() < tokens * (in_f / 32)
-            || gate_out.len() < n_pairs * out_f
-            || up_out.len() < n_pairs * out_f
-        {
-            return Err(format!(
-                "W4A8 NVFP4 paired gate/up geometry sel={} aq={} ad={} gate={} up={} \
-                 pairs={n_pairs} top_k={top_k} in={in_f} out={out_f} \
-                 owner={owner_start}..{owner_end}",
-                sel.len(),
-                aq.len(),
-                ad.len(),
-                gate_out.len(),
-                up_out.len(),
-            )
-            .into());
-        }
-        let f = self.func("qmatvec_nvfp4_q8_ep_paired_slots");
         let threads = ((in_f / 32).div_ceil(32) * 32).clamp(32, 256) as u32;
         let cfg = LaunchConfig {
             grid_dim: (out_f as u32, 1, 1),
@@ -11326,7 +11071,7 @@ impl Engine {
     ) -> Result<(), Box<dyn std::error::Error>> {
         if dst_raw == 0
             || owner_start >= owner_end
-            || !in_f.is_multiple_of(64)
+            || in_f % 64 != 0
             || sel.len() < n_pairs
             || aq.len() < n_pairs * in_f
             || ad.len() < n_pairs * (in_f / 32)
@@ -20009,23 +19754,10 @@ impl Engine {
         if cfg!(memra_portable_cuda) {
             return Ok(None);
         }
-        // MEMRA_FP4 reaches qmatvec_gemm_nvfp4_fp4, which ONLY the sm_120a fatbin contains:
-        // cu/qmatvec_gemm.cu omits it on portable builds (MEMRA_PORTABLE_CUDA) AND on sm_100a
-        // (build.rs passes -DMEMRA_DISABLE_NATIVE_FP4=1 there — the mxf4 block-scale MMA is an
-        // sm_120a instruction encoding). Refuse at the door on EVERY build that lacks it. The
-        // portable refusal alone was an enumeration, not a property: a 100a build is not
-        // portable, so `MEMRA_FP4=1` sailed past it into Engine::func's "kernel not in any
-        // fatbin" panic — found by the 100a fatbin-lookup census, lane/glm5-b200-prep-20260901
-        // (same enumeration-vs-property class as the 2026-08-23 stub-polarity fixes in build.rs).
+        // MEMRA_FP4 reaches qmatvec_gemm_nvfp4_fp4, which cu/qmatvec_gemm.cu:1234 omits on a
+        // portable build (the mxf4 block-scale MMA is sm_120a-only). Refuse at the door.
         if std::env::var("MEMRA_FP4").is_ok() {
             refuse_portable_force("MEMRA_FP4", "the sm_120a mxf4 block-scale MMA");
-            assert!(
-                konst_eq(env!("MEMRA_BUILT_CUDA_ARCH"), "120a"),
-                "MEMRA_FP4 forces the native mxf4 block-scale GEMM (qmatvec_gemm_nvfp4_fp4), \
-                 which only the sm_120a fatbin contains — this is an sm_{} build. Unset \
-                 MEMRA_FP4; the W4A8 int8 path is the correct default for NVFP4 weights.",
-                env!("MEMRA_BUILT_CUDA_ARCH")
-            );
         }
         if std::env::var("MEMRA_FP4").is_err() {
             return Ok(None);
@@ -22143,11 +21875,7 @@ impl Engine {
         in_f: usize,
         out_f: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        if data.len() != in_f * out_f * 2
-            || x.len() < in_f
-            || !in_f.is_multiple_of(8)
-            || y.len() < out_f
-        {
+        if data.len() != in_f * out_f * 2 || x.len() < in_f || in_f % 8 != 0 || y.len() < out_f {
             return Err(format!(
                 "matvec_bf16_views_into geometry bytes={} x={} y={} in={in_f} out={out_f}",
                 data.len(),

@@ -2178,18 +2178,11 @@ pub struct MlaAttnLayer {
     /// `Some` exactly when the layer's plan declares `SparseIndexPlan::Own { kpool: Some(..) }`.
     /// `None` means the layer attends DENSELY — correct only for a plan that asked for dense.
     pub index: Option<MlaIndexer>,
-    /// glm5 TP sidecar (`MEMRA_GLM5_TP`, lane/glm5-tp2). `Some` means THIS struct is the
-    /// ROOT-RANK HEAD SHARD (heads/ranks, replicated latent/indexer operands) and the
-    /// sidecar carries the peer shards + runtime. Every plain entry refuses a sharded layer
-    /// by name; only the TP walk may execute it. `None` everywhere else.
+    /// glm5 TP-2 sidecar (`MEMRA_GLM5_TP`, lane/glm5-tp2). `Some` means THIS struct is the
+    /// ROOT-RANK HEAD SHARD (heads/2, replicated latent/indexer operands) and the sidecar
+    /// carries the peer shard + runtime. Every plain entry refuses a sharded layer by name;
+    /// only the TP walk may execute it. `None` everywhere else.
     pub tp: Option<Box<crate::glm5_tp::Glm5TpMla>>,
-    /// True on EVERY rank's shard (root AND peers — the peers' `tp` is `None`, so this is
-    /// the only marker they carry). Composition guard (lane/glm5-composition): doored
-    /// kernels whose gates ran on the FULL-head geometry only (`MEMRA_MLA_TC_PREFILL`)
-    /// decline a shard by this flag and fall through to their ungated-composition-free
-    /// arms; the fixture gates cannot exercise those doors (kv_rank-stamped kernels), so
-    /// the decline is fail-closed by construction until a real-artifact box gate lands.
-    pub tp_shard: bool,
 }
 
 impl MlaAttnLayer {
@@ -2320,7 +2313,6 @@ impl MlaAttnLayer {
             geom,
             index,
             tp: None,
-            tp_shard: false,
         })
     }
 
@@ -2892,12 +2884,9 @@ fn load_mtp_head_maybe_nvfp4(
 /// rows for families whose nextn blocks do not tie to the trunk head. step-3.7-flash ships a
 /// DIFFERENT head matrix per nextn block, and gathering trunk rows there measured acceptance
 /// 0/248 across K=1..8 while self-consistency still PASSED, so no exactness gate catches it.
-/// First 8 hex of sha256 over a file's bytes — any drafter's boot-receipt identity pin
-/// (streamed, so a 2.3 GB safetensors never lands in memory twice). `pub(crate)` because the
-/// general draft-source seam (`dflash::load_drafter`) mints the pin for every family.
-pub(crate) fn sha256_file_hex8(
-    path: &std::path::Path,
-) -> Result<String, Box<dyn std::error::Error>> {
+/// First 8 hex of sha256 over a file's bytes — the glm5 DFlash2 drafter's boot-receipt
+/// identity pin (streamed, so a 2.3 GB safetensors never lands in memory twice).
+fn sha256_file_hex8(path: &std::path::Path) -> Result<String, Box<dyn std::error::Error>> {
     use sha2::{Digest, Sha256};
     let mut file = std::fs::File::open(path)?;
     let mut hasher = Sha256::new();
@@ -4072,12 +4061,9 @@ impl HybridModel {
             // an ENABLED diet flag on a glm5-class plan with the TP door cold would
             // silently run the plain walk while the operator believes the diet is live.
             // `=0` is a deliberate pin, not an arming, and never refuses.
-            // The doors resolve through the general name + its glm5 alias, and report the
-            // name the OPERATOR set — so this refusal's bytes are unchanged for every banked
-            // script (which sets the alias) and correct for the general name.
             if glm5_class {
-                for (armed, flag) in [crate::ep_diet_armed(), crate::ep_grouped_prime_armed()] {
-                    if armed {
+                for flag in ["MEMRA_GLM5_EP_DIET", "MEMRA_GLM5_EP_GROUPED_PRIME"] {
+                    if std::env::var(flag).as_deref() == Ok("1") {
                         return Err(format!(
                             "{flag}=1 is set but MEMRA_GLM5_TP is off: the EP dispatch \
                              diet only exists inside the TP-2 EP walk and cannot engage \
@@ -4784,27 +4770,51 @@ impl HybridModel {
         // the MTP-head placement law). The native MTP head is NOT needed and NOT loaded for
         // this source (the q38 pattern: layers.45 is a full MoE trunk layer of VRAM).
         // A set flag that cannot load is a LOUD boot failure, never a silent plain fallback.
-        //
-        // THE LOAD CONTRACT IS THE GENERAL SEAM (lane/glm5-extract2):
-        // `dflash::load_drafter` holds every drafter<->target validation (DFlash2 family,
-        // hidden == n_embd, taps inside the trunk, mask token inside the vocab) plus the
-        // sha256 identity pin. All four are properties of the PAIR, not of glm5 — the next
-        // spec family passes its own flag name and its own (n_trunk, n_embd, n_vocab). What
-        // stays here is glm5's own: the family flag name and the `is_glm5_next()` route.
-        // Error bytes unchanged (the general fn prefixes `{flag}={dir}`).
         let glm5_dflash = match std::env::var("MEMRA_GLM5_DFLASH") {
             Ok(spec) if !spec.is_empty() && cfg.arch.is_glm5_next() => {
                 let dpath = memra_gguf::hf::resolve_arg(&spec)
                     .map_err(|err| format!("MEMRA_GLM5_DFLASH={spec:?}: {err}"))?;
                 let de = crate::pp::layer_engine(e, n_trunk, n_trunk)?;
-                Some(crate::dflash::load_drafter(
-                    de,
-                    std::path::Path::new(&dpath),
-                    "MEMRA_GLM5_DFLASH",
-                    n_trunk,
-                    cfg.n_embd as usize,
-                    output.out_features(),
-                )?)
+                let dir = std::path::Path::new(&dpath);
+                let draft = crate::dflash::DflashDraft::load(de, dir).map_err(|err| {
+                    format!("MEMRA_GLM5_DFLASH={dpath}: drafter load failed: {err}")
+                })?;
+                if draft.dflash2.is_none() {
+                    return Err(format!(
+                        "MEMRA_GLM5_DFLASH={dpath}: checkpoint is not a DFlash2DraftModel \
+                         (the glm5 draft source is the selector family only)"
+                    )
+                    .into());
+                }
+                if draft.cfg.hidden != cfg.n_embd as usize {
+                    return Err(format!(
+                        "MEMRA_GLM5_DFLASH={dpath}: drafter hidden {} != target n_embd {} \
+                         (the drafter consumes target features and the target's embed/lm_head)",
+                        draft.cfg.hidden, cfg.n_embd
+                    )
+                    .into());
+                }
+                if draft.cfg.target_layer_ids.is_empty()
+                    || draft.cfg.target_layer_ids.iter().any(|&t| t >= n_trunk)
+                {
+                    return Err(format!(
+                        "MEMRA_GLM5_DFLASH={dpath}: target_layer_ids {:?} do not name valid \
+                         trunk layers (n_trunk {n_trunk})",
+                        draft.cfg.target_layer_ids
+                    )
+                    .into());
+                }
+                if draft.cfg.mask_token_id as usize >= output.out_features() {
+                    return Err(format!(
+                        "MEMRA_GLM5_DFLASH={dpath}: mask token {} outside the target vocab {}",
+                        draft.cfg.mask_token_id,
+                        output.out_features()
+                    )
+                    .into());
+                }
+                let sha8 = sha256_file_hex8(&dir.join("model.safetensors"))
+                    .map_err(|err| format!("MEMRA_GLM5_DFLASH={dpath}: sha256 pin: {err}"))?;
+                Some(crate::glm_spec::Glm5DflashDrafter { draft, sha8 })
             }
             _ => None,
         };

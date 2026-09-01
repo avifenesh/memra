@@ -361,41 +361,6 @@ Two holes in this stage were closed by that same red (2026-08-06):
   `local-ci.sh` — it runs on the multi-card box for any diff touching `pp.rs`, the stage-split
   dispatch, or a decode path a split reaches. See below.
 
-## Box health before measurement (`tools/box-health.sh`)
-
-Run it FIRST on every box window, before the first timed arm:
-
-```
-bash tools/box-health.sh [OUTDIR]     # exit 0 = fit to measure; exit 1 = do not open the window
-```
-
-It is not a memra gate and it proves nothing about our code. It answers one question — *is
-this machine fit to be measured on?* — and every check in it is a documented case of a box
-reporting 100% utilisation with clean logs while delivering a fraction of its capability:
-a persistent power cap 400 W of 600 W (25.3% of dense prefill, silently); the false-600W
-~600 MHz degradation (power at cap + clocks under 1 GHz + temp under 50 °C, and **never flash
-VBIOS in-fleet**); a PCIe link negotiated at Gen2 x16 that ran 3.5 hours of production
-undetected; a 256 MB BAR1; an out-of-range CPU affinity mask (25% of all-reduce bandwidth);
-IOMMU translated mode (the stake is silent device memory corruption, not throughput); ACS
-ReqRedir forcing P2P through the root port; and P-state normalization before timing.
-
-Section 8 is the one that cannot be replaced by `nvidia-smi`: it builds and runs
-`tools/peer-read-probe.cu`, a self-contained `simpleP2P`-class **kernel** peer dereference
-(`nvcc -O2 -arch=${MEMRA_CUDA_ARCH:-sm_120} -o peer-read-probe tools/peer-read-probe.cu`).
-`nvidia-smi topo -p2p r` can report OK and `cudaMemcpy` can look healthy while the driver
-stages SM-issued peer access through system memory; only a kernel peer read catches it.
-Exit codes: 0 = bytes validated both directions; 2 = **wrong bytes** (a fused pull collective
-is blocked on this box); 4 = fewer than two devices (expected on the single-card rig);
-5 = no peer-capable pair (place the TP group inside a peer island). A missing `nvcc` is a
-HARD-FAIL, not a skip — the one check that matters most is the one easiest to silently lose.
-
-`-p2p a` reporting `NS` on SM120 is EXPECTED, not a fault: there are no native peer atomics on
-these pairs, and `tp_transport`'s peer-pull arm is atomics-free by design.
-
-Deliberately absent: `ncu`. Profiling every rank deadlocks (the profiler serialises the
-observed kernel while its peers wait), and any metric set needing more than one pass deadlocks
-the same way.
-
 ## Multi-GPU (PP-N) exactness gates — run on the multi-card box
 
 These are not in `tools/local-ci.sh`: the single owned rig has one GPU, so a green local

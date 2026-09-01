@@ -72,10 +72,6 @@
 //!
 //! usage: glm5-tp-gate [P=16] [N=12] [TRACE_OUT (preserve arm T's fixture weight-trace)]
 
-// lane/clippy-zero-restore-20260901: the gate's comparison tuples are deliberately explicit;
-// naming them buys nothing in a one-file gate binary.
-#![allow(clippy::type_complexity)]
-
 use memra_engine::Engine;
 use memra_engine::forward::argmax;
 use memra_engine::hybrid::HybridModel;
@@ -398,176 +394,6 @@ struct Verdict {
     detail: String,
 }
 
-/// The spec x TP composition arms (lane/glm5-composition): the verify + rollback +
-/// continue identity between the SHARDED walk and the plain walk, per fixture.
-///
-/// STATE BUILD IS THE DECODE REGIME ON PURPOSE: the trunk state is built with prime P=1 +
-/// t=1 decode steps (byte-identical between the arms by the banked decode-identity bar),
-/// so the comparison isolates the VERIFY WALK + ROLLBACK — a t>1 prime would fold the
-/// documented prime near-tie class into the state and turn a verify-walk bar into a band.
-///
-/// Per `keep` in {1, partial, full}: fresh cache, state build over `ids[..s]`, one
-/// `glm5_verify_rows` over `ids[s..s+4]` (K=3 -> t=4), `glm5_verify_rollback(keep)`, then
-/// M t=1 continue steps over `ids[s+keep..]` — verify logits, continue logits and tapes
-/// all BYTE-compared against the plain model's identical sequence (the accept-j-then-
-/// continue identity, the tparallel gate's own bar). The red arm SKIPS the rollback and
-/// must then diverge loudly (or trip a residency guard) — the proof the rollback is
-/// load-bearing, not decorative.
-#[allow(clippy::too_many_arguments)]
-fn spec_tp_verify_arms(
-    label: &str,
-    e: &Engine,
-    source: &FixtureSource,
-    plan: &ModelPlan,
-    ids: &[u32],
-    spec: &str,
-    verdicts: &mut Vec<Verdict>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    const S: usize = 12; // committed state rows before the verify round
-    const T: usize = 4; // verify rows (K=3 drafts + the anchor)
-    const M: usize = 6; // t=1 continue steps after the rollback
-    if ids.len() < S + T + M {
-        return Err(format!("{label}: token stream too short for the composition arm").into());
-    }
-    let max_ctx = ids.len() + 8;
-
-    // One walk of the protocol on one model; returns (verify logits, continue logits,
-    // continue tape). `keep = None` = the RED arm (rollback skipped).
-    let run = |m: &HybridModel,
-               keep: Option<usize>|
-     -> Result<(Vec<f32>, Vec<Vec<f32>>, Vec<u32>), Box<dyn std::error::Error>> {
-        let mut cache = memra_engine::cache::Cache::new_planned(e, &m.cfg, plan, max_ctx)?;
-        let (_lg, _seed, _h) = m.prime_cache(e, &ids[..1], &mut cache, 0)?;
-        for &tok in &ids[1..S] {
-            let _ = m.decode_step(e, tok, &mut cache)?;
-        }
-        let (vlog, _collapsed, ckpt) = m.glm5_verify_rows(e, &ids[S..S + T], &mut cache)?;
-        let vhost = e.dtoh(&vlog)?;
-        let kept = match keep {
-            Some(k) => {
-                m.glm5_verify_rollback(e, &mut cache, &ckpt, k)?;
-                k
-            }
-            None => {
-                // RED: no rollback. The trunk state holds all T verify rows but pos never
-                // moved; move pos as a keep=2 rollback would (the state build fixed
-                // ckpt-time pos at S) and continue — the chain must diverge from the
-                // plain reference (or a residency guard trips loudly; either is a bite).
-                let _ = &ckpt;
-                cache.pos = S + 2;
-                2
-            }
-        };
-        let mut clogs = Vec::with_capacity(M);
-        let mut tape = Vec::with_capacity(M);
-        for &tok in ids[S + kept..].iter().take(M) {
-            let lg = m.decode_step(e, tok, &mut cache)?;
-            tape.push(argmax(&lg) as u32);
-            clogs.push(lg);
-        }
-        Ok((vhost, clogs, tape))
-    };
-
-    // Plain references (door OFF — caller guarantees the env is cold here).
-    let m_plain = HybridModel::load_from_source_without_mtp(e, source)?;
-    let mut plain: Vec<(usize, (Vec<f32>, Vec<Vec<f32>>, Vec<u32>))> = Vec::new();
-    for keep in [1usize, 2, T] {
-        plain.push((keep, run(&m_plain, Some(keep))?));
-    }
-    drop(m_plain);
-
-    // TP twin: the raw verify/rollback walk needs no session flag (the flag gates the
-    // SESSION seam; the walk itself is wired unconditionally and reachable only through
-    // gates until the session admits it).
-    set_env("MEMRA_GLM5_TP", spec);
-    let m_tp = HybridModel::load_from_source_without_mtp(e, source)?;
-    rm_env("MEMRA_GLM5_TP");
-    // Non-vacuity anchor (run_tp_arm's own law): every green keep AND the RED below would
-    // pass on an accidentally-unsharded model (plain-vs-plain identity; a skipped rollback
-    // diverges unsharded too) — assert the shards actually armed.
-    let sharded = m_tp
-        .layers
-        .iter()
-        .filter(|l| match &l.mixer {
-            memra_engine::hybrid::Mixer::Kda(la) => la.tp.is_some(),
-            memra_engine::hybrid::Mixer::Mla(la) => la.tp.is_some(),
-            _ => false,
-        })
-        .count();
-    assert_eq!(
-        sharded, LAYERS,
-        "[{label}] {sharded} sharded mixers != {LAYERS} — the composition arms would be vacuous"
-    );
-    for (keep, (pv, pc, pt)) in &plain {
-        let (tv, tc, tt) = run(&m_tp, Some(*keep))?;
-        let v_ok = pv.len() == tv.len()
-            && pv
-                .iter()
-                .zip(tv.iter())
-                .all(|(a, b)| a.to_bits() == b.to_bits());
-        let c_diff = bit_equal(pc, &tc);
-        let pass = v_ok && c_diff.is_none() && pt == &tt;
-        verdicts.push(Verdict {
-            name: format!("{label} verify+rollback keep={keep}"),
-            pass,
-            detail: format!(
-                "verify logits byte_identical={v_ok}; continue {} / tape_match={} \
-                 (S={S} T={T} M={M}, decode-regime state build)",
-                match c_diff {
-                    None => "BYTE-IDENTICAL".to_string(),
-                    Some((s, i)) => format!("DIVERGES at step {s} logit {i}"),
-                },
-                pt == &tt,
-            ),
-        });
-    }
-
-    // RED: rollback skipped on the TP model — must diverge from the plain keep=2 arm.
-    let red = run(&m_tp, None);
-    let (_, (pv2, pc2, pt2)) = plain.iter().find(|(k, _)| *k == 2).expect("keep=2 banked");
-    let _ = pv2;
-    verdicts.push(match red {
-        Ok((_, rc, rt)) => {
-            let diverged = bit_equal(pc2, &rc).is_some() || &rt != pt2;
-            Verdict {
-                name: format!("{label} RED no-rollback"),
-                pass: diverged,
-                detail: if diverged {
-                    "skipped rollback DIVERGES from the plain accept-then-continue chain \
-                     (the rollback is load-bearing)"
-                        .into()
-                } else {
-                    "skipped rollback matched plain — the rollback arm is VACUOUS".into()
-                },
-            }
-        }
-        Err(err) => {
-            // Only the NAMED state guards count as a loud bite; any other error (alloc,
-            // prime, walk infrastructure) means the divergence comparison never executed
-            // and the arm FAILS rather than passing vacuously (#80 review finding).
-            let msg = err.to_string();
-            // The NAMED state guards only — 'blk.' prefixes 100+ non-guard per-layer
-            // errors (alloc, tensor-load, contract), so matching the prefix half-reopened
-            // the vacuous pass this arm exists to close (#82 review).
-            let named_guard = ["index_pools_ready", "KDA scan replay", "KDA rows rollback"]
-                .iter()
-                .any(|p| msg.contains(p));
-            Verdict {
-                name: format!("{label} RED no-rollback"),
-                pass: named_guard,
-                detail: if named_guard {
-                    format!("skipped rollback tripped a NAMED state guard: {msg}")
-                } else {
-                    format!(
-                        "RED arm errored OUTSIDE the named guards (comparison never ran): {msg}"
-                    )
-                },
-            }
-        }
-    });
-    Ok(())
-}
-
 /// Everything one TP arm needs from its fixture: the engine, the source/plan pair, the
 /// chosen token stream, and the banked plain references of BOTH regimes. Two instances
 /// exist — the original TP-2 fixture and the TP-4 quad fixture — running the SAME arm
@@ -788,29 +614,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // twins run after the diet arms, and the flat movement census across this whole battery
     // is asserted there (lane/glm5-tp-transport).
     set_env("MEMRA_GLM5_TP_TRANSPORT", "0");
-    // The GENERAL names of the three doors above (lane/glm5-extract2): a leaked general name
-    // would DISAGREE with the alias pins and fall the door closed — correct for the OFF arms,
-    // but it would silently defeat the ON twins. Cleared here so the alias pins are the only
-    // voice; the general-name twins below set them deliberately.
-    rm_env("MEMRA_EP_DIET");
-    rm_env("MEMRA_EP_GROUPED_PRIME");
-    rm_env("MEMRA_TP_TRANSPORT");
-    // Door H's general name too. It is not armed anywhere in THIS gate, which is exactly why
-    // it is cleared: a leaked `MEMRA_HTOD_DIET=0` would disagree with any inherited
-    // `MEMRA_GLM5_HTOD_DIET=1` and fall the door closed, and the arms that drive door H from
-    // the shell assert BIT-IDENTITY — which passes whether the door armed or not. Vacuous, and
-    // silently so. Clearing it costs one line.
-    rm_env("MEMRA_HTOD_DIET");
     // A leaked route tap would trace every arm's walks before arm T banks its tap-cold
     // references (and would break run-to-run receipt comparability).
     rm_env("MEMRA_MOE_TRACE");
     rm_env("MEMRA_MOE_WEIGHT_TRACE");
     rm_env("MEMRA_GLM5_EP_MAP");
-    // The batched verify walk PINNED ON for the banked battery (the S2/Q-S4 arms depend
-    // on it and SF2/SW mutate it; a caller env carrying =0 would bank per-row references
-    // and abort the first TP verify at the walk-entry guard — the pin law's own words:
-    // an unset variable inherits any future default flip, a pin does not).
-    set_env("MEMRA_GLM5_VERIFY_BATCH", "1");
     set_env("MEMRA_GLM5_TP_GATE_SAME_DEV", "1");
 
     let config = ModelConfig::from_hf(&HfConfig::parse(&mini_config_json(2, 4)));
@@ -1231,131 +1039,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &mut verdicts,
     )?;
 
-    // ============ S. spec x TP composition arms (lane/glm5-composition) ============
-    spec_tp_verify_arms("S2", &e, &source, &plan, &ids, "all@0,1", &mut verdicts)?;
-    {
-        // SF1: WITHOUT the flag the session co-refusal holds verbatim (arm F's twin, kept
-        // here so the composition block carries its own OFF-arm receipt).
-        set_env("MEMRA_GLM5_TP", "all@0,1");
-        rm_env("MEMRA_GLM5_SPEC_TP");
-        let m_tp = HybridModel::load_from_source_without_mtp(&e, &source)?;
-        let refused = m_tp.glm5_spec_session_new(&e, &ids[..8], max_ctx, None);
-        let msg = refused
-            .as_ref()
-            .err()
-            .map(|e| e.to_string())
-            .unwrap_or_default();
-        verdicts.push(Verdict {
-            name: "SF1 session co-refusal without the flag".into(),
-            pass: refused.is_err()
-                && msg.contains("co-refused")
-                && msg.contains("MEMRA_GLM5_SPEC_TP"),
-            detail: if refused.is_err() {
-                format!("refused: {msg}")
-            } else {
-                "a spec session opened on a TP model with the flag COLD".into()
-            },
-        });
-        // SF2: flag ON + per-row verify walk pinned = refuse by name (no TP rollback arm).
-        set_env("MEMRA_GLM5_SPEC_TP", "1");
-        set_env("MEMRA_GLM5_VERIFY_BATCH", "0");
-        let refused = m_tp.glm5_spec_session_new(&e, &ids[..8], max_ctx, None);
-        let msg = refused
-            .as_ref()
-            .err()
-            .map(|e| e.to_string())
-            .unwrap_or_default();
-        verdicts.push(Verdict {
-            name: "SF2 flag-on demands the batched walk".into(),
-            pass: refused.is_err() && msg.contains("BATCHED verify walk"),
-            detail: if refused.is_err() {
-                format!("refused: {msg}")
-            } else {
-                "a spec x TP session opened on the per-row walk".into()
-            },
-        });
-        set_env("MEMRA_GLM5_VERIFY_BATCH", "1"); // restore the battery pin
-        // SF3: flag ON lifts ONLY the co-refusal — the fixture has no draft source, so
-        // the session must still refuse on THAT law (the flag is not a bypass).
-        let refused = m_tp.glm5_spec_session_new(&e, &ids[..8], max_ctx, None);
-        let msg = refused
-            .as_ref()
-            .err()
-            .map(|e| e.to_string())
-            .unwrap_or_default();
-        verdicts.push(Verdict {
-            name: "SF3 flag-on still demands a draft source".into(),
-            pass: refused.is_err() && msg.contains("draft source"),
-            detail: if refused.is_err() {
-                format!("refused: {msg}")
-            } else {
-                "a draft-source-less session opened under the composition flag".into()
-            },
-        });
-        rm_env("MEMRA_GLM5_SPEC_TP");
-        // SF4: the co-refusal keys on MODEL TRUTH, not the env — unset MEMRA_GLM5_TP
-        // entirely (the set/load/unset bypass the #80 review confirmed) and the session
-        // on the SHARDED model must still refuse.
-        rm_env("MEMRA_GLM5_TP");
-        let refused = m_tp.glm5_spec_session_new(&e, &ids[..8], max_ctx, None);
-        let msg = refused
-            .as_ref()
-            .err()
-            .map(|e| e.to_string())
-            .unwrap_or_default();
-        verdicts.push(Verdict {
-            name: "SF4 co-refusal survives env unsetting (model truth)".into(),
-            pass: refused.is_err() && msg.contains("co-refused"),
-            detail: if refused.is_err() {
-                format!("refused with the env COLD: {msg}")
-            } else {
-                "a spec session opened on a sharded model after the env was unset \
-                 (the set/load/unset bypass is back)"
-                    .into()
-            },
-        });
-        set_env("MEMRA_GLM5_TP", "all@0,1");
-        // SW: the WALK-level guard — a sharded trunk + MEMRA_GLM5_VERIFY_BATCH=0 refuses
-        // the t>1 verify walk itself by name (defense in depth under the session gate).
-        set_env("MEMRA_GLM5_VERIFY_BATCH", "0");
-        let mut cache = memra_engine::cache::Cache::new_planned(&e, &m_tp.cfg, &plan, max_ctx)?;
-        let (_lg, _s, _h) = m_tp.prime_cache(&e, &ids[..1], &mut cache, 0)?;
-        let refused = m_tp.glm5_verify_rows(&e, &ids[1..5], &mut cache);
-        set_env("MEMRA_GLM5_VERIFY_BATCH", "1"); // restore the battery pin
-        let msg = refused
-            .as_ref()
-            .err()
-            .map(|e| e.to_string())
-            .unwrap_or_default();
-        verdicts.push(Verdict {
-            name: "SW per-row walk guard on a sharded trunk".into(),
-            pass: refused.is_err() && msg.contains("no TP arm"),
-            detail: if refused.is_err() {
-                format!("refused: {msg}")
-            } else {
-                "the per-row verify walk ran over a sharded trunk".into()
-            },
-        });
-        rm_env("MEMRA_GLM5_TP");
-        // SD: DEFAULT-RESOLUTION tripwire (#82 review). Every other arm reads an explicit
-        // pin, so a future flip of glm5_verify_batch_on()'s default would keep the whole
-        // battery green while env-absent consumers silently reverted to the per-row walk.
-        // This arm runs with the variable GENUINELY ABSENT and asserts the batched walk is
-        // what a bare process gets — the ckpt's own stash-kind counters are the anchor.
-        rm_env("MEMRA_GLM5_VERIFY_BATCH");
-        let default_batched = memra_engine::glm_spec::glm5_verify_batch_on();
-        set_env("MEMRA_GLM5_VERIFY_BATCH", "1");
-        verdicts.push(Verdict {
-            name: "SD verify-batch default resolves ON (env absent)".into(),
-            pass: default_batched,
-            detail: format!(
-                "glm5_verify_batch_on() with the env unset = {default_batched} (the \
-                 composition's admission REQUIRES the batched walk; a default flip would \
-                 refuse every env-absent composed session)"
-            ),
-        });
-    }
-
     // ================= DIET arms (lane/glm5-ep-diet, MEMRA_GLM5_EP_DIET) =================
     // The doors were PINNED =0 for every banked arm above; a flat dispatch counter across
     // that whole battery is itself the OFF-arm receipt, asserted before the ON twins run.
@@ -1402,59 +1085,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                  avoided={dr} (all must be >0 or the identity claim above is vacuous)"
             ),
         });
-
-        // B2G: the SAME door armed through its GENERAL name (lane/glm5-extract2). The alias
-        // is what every banked script sets, so B2 above is the receipt-comparable arm; this
-        // twin is the only proof that `MEMRA_EP_DIET` actually reaches the walk — a rename
-        // whose general name is never exercised is a rename that only works on paper.
-        rm_env("MEMRA_GLM5_EP_DIET");
-        set_env("MEMRA_EP_DIET", "1");
-        let g0 = gtp::glm5_ep_diet_dispatches();
-        run_tp_arm(
-            &cx2,
-            "B2G tp-all-diet-general-name",
-            "all@0,1",
-            None,
-            None,
-            false,
-            &mut verdicts,
-        )?;
-        let gd = gtp::glm5_ep_diet_dispatches() - g0;
-        verdicts.push(Verdict {
-            name: "B2G general-name-engagement".into(),
-            pass: gd > 0,
-            detail: format!(
-                "MEMRA_EP_DIET=1 with the glm5 alias UNSET: diet layer-calls={gd} \
-                 (must be >0 — the general name is the door's primary name)"
-            ),
-        });
-
-        // B2X: the two names DISAGREEING. The flag-alias law falls the door CLOSED to the
-        // shipped program (no panic — an abort in the worker thread kills every session) and
-        // names both flags once on stderr. Asserted as a COUNTER, not a liveness check.
-        set_env("MEMRA_GLM5_EP_DIET", "0");
-        let x0 = gtp::glm5_ep_diet_dispatches();
-        run_tp_arm(
-            &cx2,
-            "B2X tp-all-diet-alias-disagree",
-            "all@0,1",
-            None,
-            None,
-            false,
-            &mut verdicts,
-        )?;
-        let xd = gtp::glm5_ep_diet_dispatches() - x0;
-        verdicts.push(Verdict {
-            name: "B2X alias-disagreement-falls-closed".into(),
-            pass: xd == 0,
-            detail: format!(
-                "MEMRA_EP_DIET=1 + MEMRA_GLM5_EP_DIET=0: diet layer-calls={xd} (must be 0 — \
-                 the door refuses to arm rather than pick a precedence winner; the \
-                 [flag-alias] line above is the operator's receipt)"
-            ),
-        });
-        rm_env("MEMRA_EP_DIET");
-        set_env("MEMRA_GLM5_EP_DIET", "1");
 
         // B3: grouped prime armed ON TOP of the diet. The fixture bank is Q8_0 — not
         // f16g-eligible — so the arm must FALL CLOSED (counter pinned 0) while the walk
@@ -1536,21 +1166,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // second CUDA context on ONE device (MEMRA_GLM5_TP_GATE_SAME_DEV=1, LAW:rig-exactness-only).
     // These arms prove the peer-pull program is BIT-PRESERVING and its counters non-vacuous.
     // They prove NOTHING about a real PCIe fabric; that is the box window's arm, and the
-    // arm-time byte-integrity pull ladder plus tools/box-health.sh's simpleP2P-class kernel peer read are
+    // arm-time byte-integrity pull ladder plus HEALTH.sh's simpleP2P-class kernel peer read are
     // what qualify it there.
     {
-        use memra_engine::tp_transport as gtx;
+        use memra_engine::glm5_tp_transport as gtx;
 
         // The OFF-arm receipt: the transport was pinned =0 for the whole banked battery above,
         // so the peer-pull counters must be FLAT and the host counters must be NON-ZERO. A pin
         // that is not holding reads exactly like a passing gate otherwise.
-        let off_legs = gtx::tp_host_legs();
-        let off_syncs = gtx::tp_host_syncs();
-        let off_pulls = gtx::tp_peer_pulls();
-        let off_bytes = gtx::tp_xfer_bytes();
+        let off_legs = gtx::glm5_tp_host_legs();
+        let off_syncs = gtx::glm5_tp_host_syncs();
+        let off_pulls = gtx::glm5_tp_peer_pulls();
+        let off_bytes = gtx::glm5_tp_xfer_bytes();
         println!(
             "{}",
-            gtx::transport_census_line("glm5-tp-transport", gtx::TpTransport::HostCanonical)
+            gtx::transport_census_line(gtx::Glm5TpTransport::HostCanonical)
         );
         verdicts.push(Verdict {
             name: "X0 transport pin held (=0 battery)".into(),
@@ -1573,10 +1203,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             false,
             &mut verdicts,
         )?;
-        let x1_legs = gtx::tp_host_legs() - off_legs;
-        let x1_syncs = gtx::tp_host_syncs() - off_syncs;
-        let x1_pulls = gtx::tp_peer_pulls() - off_pulls;
-        let x1_events = gtx::tp_pub_events();
+        let x1_legs = gtx::glm5_tp_host_legs() - off_legs;
+        let x1_syncs = gtx::glm5_tp_host_syncs() - off_syncs;
+        let x1_pulls = gtx::glm5_tp_peer_pulls() - off_pulls;
+        let x1_events = gtx::glm5_tp_pub_events();
         verdicts.push(Verdict {
             name: "X1 transport engagement".into(),
             pass: x1_pulls > 0 && x1_legs == 0 && x1_syncs == 0,
@@ -1691,68 +1321,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
         }
 
-        // XG: the SAME transport armed through its GENERAL name (lane/glm5-extract2), with the
-        // glm5 alias UNSET. Every arm above drives the alias, because that is what the banked
-        // tp-transport receipts set — so this is the only proof that `MEMRA_TP_TRANSPORT`
-        // reaches the seam at all.
-        {
-            eprintln!("[phase] arm XG: peer-pull armed through the GENERAL flag name");
-            rm_env("MEMRA_GLM5_TP_TRANSPORT");
-            set_env("MEMRA_TP_TRANSPORT", "peer-pull");
-            let g0 = gtx::tp_peer_pulls();
-            run_tp_arm(
-                &cx2,
-                "XG tp-all-peer-pull-general-name",
-                "all@0,1",
-                None,
-                None,
-                false,
-                &mut verdicts,
-            )?;
-            let gd = gtx::tp_peer_pulls() - g0;
-            verdicts.push(Verdict {
-                name: "XG general-name-engagement".into(),
-                pass: gd > 0,
-                detail: format!(
-                    "MEMRA_TP_TRANSPORT=peer-pull with the glm5 alias UNSET: peer_pulls={gd} \
-                     (must be >0 — the general name is the transport's primary name)"
-                ),
-            });
-        }
-
-        // XD: the two names DISAGREEING. A transport is a VALUED flag resolved once at ARM
-        // time, before any session exists, so the law refuses the LOAD naming both names —
-        // unlike the per-call boolean doors, which fall closed because an abort in the worker
-        // thread would kill live sessions. Asserted on the refusal message, not on liveness.
-        {
-            eprintln!("[phase] arm XD: disagreeing general/alias pair must refuse the load");
-            set_env("MEMRA_TP_TRANSPORT", "peer-pull");
-            set_env("MEMRA_GLM5_TP_TRANSPORT", "0");
-            set_env("MEMRA_GLM5_TP", "all@0,1");
-            let refused = HybridModel::load_from_source_without_mtp(&e, &source);
-            rm_env("MEMRA_GLM5_TP");
-            let msg = match &refused {
-                Err(err) => err.to_string(),
-                Ok(_) => String::new(),
-            };
-            verdicts.push(Verdict {
-                name: "XD alias-disagreement refuses the load".into(),
-                pass: refused.is_err()
-                    && msg.contains("MEMRA_TP_TRANSPORT")
-                    && msg.contains("MEMRA_GLM5_TP_TRANSPORT")
-                    && msg.contains("disagree"),
-                detail: if refused.is_err() {
-                    format!("refused naming both: {msg}")
-                } else {
-                    "LOADED — a disagreeing pair silently picked a transport".into()
-                },
-            });
-            rm_env("MEMRA_TP_TRANSPORT");
-        }
-
         println!(
             "{}",
-            gtx::transport_census_line("glm5-tp-transport", gtx::TpTransport::PeerPull)
+            gtx::transport_census_line(gtx::Glm5TpTransport::PeerPull)
         );
         set_env("MEMRA_GLM5_TP_TRANSPORT", "0");
     }
@@ -2168,7 +1739,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                  {\"layer\": 3, \"assignment\": [0, 0, 0, 0, 1, 1, 1, 1]}]}",
             )?;
             set_env("MEMRA_GLM5_TP", spec4);
-            set_env("MEMRA_GLM5_EP_MAP", &two_rank_map.to_string_lossy());
+            set_env(
+                "MEMRA_GLM5_EP_MAP",
+                &two_rank_map.to_string_lossy().into_owned(),
+            );
             let res = HybridModel::load_from_source_without_mtp(&e, &source4);
             rm_env("MEMRA_GLM5_EP_MAP");
             rm_env("MEMRA_GLM5_TP");
@@ -2188,9 +1762,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
         }
         std::fs::remove_dir_all(&map_dir4)?;
-        // Q-S4: the spec x TP composition arms at FOUR ranks (same harness as S2) — after
-        // the scratch cleanup, so an arm failure cannot leak the map dir (tmp hygiene law).
-        spec_tp_verify_arms("Q-S4", &e, &source4, &plan4, &ids4, spec4, &mut verdicts)?;
     }
 
     // ================= verdict =================

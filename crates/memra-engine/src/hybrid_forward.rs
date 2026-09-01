@@ -2,10 +2,6 @@
 //! linear-attention (Gated DeltaNet) or full-attention mixer, then SwiGLU FFN. Matches
 //! llama.cpp src/models/qwen35.cpp node-for-node.
 
-// lane/clippy-zero-restore-20260901: index loops here mirror the llama.cpp reference
-// node-for-node (header above); iterator reshapes are not bit-neutral by inspection.
-#![allow(clippy::needless_range_loop)]
-
 use crate::Engine;
 use crate::cache::Cache;
 use cudarc::driver::CudaSlice;
@@ -961,49 +957,6 @@ fn cpu_expert_profile_admit_enabled() -> bool {
 /// kernel needs T >= d_conv-1). Callers: generate / generate_spec.
 pub const PRIME_MIN_T: usize = 16;
 
-/// CUDA grid dimensions y and z cap at 65,535 (an architecture constant on every compute
-/// capability we target; only grid.x is 2^31-1). Several prime-path kernels launch with the
-/// call's token count in grid.y — the fused GDN conv (`ssm_conv1d_gdn_state_f32`,
-/// lib.rs `ssm_conv1d_gdn_state_pad`), the dp4a matvec family taken at out_f < 128
-/// (`qmatvec*_fast`/`qmatvec_dp4a_named`, which is where the GDN ssm_beta/ssm_alpha
-/// projections land), and the MoE `router_gemv` — so ONE prime call must never carry more
-/// tokens than this. A monolithic prime above it is a guaranteed
-/// `DriverError(CUDA_ERROR_INVALID_VALUE)` at launch: measured on ornith-1.5 serving with
-/// MEMRA_PRIME_CHUNK=0 (cold 64,984 PASS / 65,643 FAIL, darklanes
-/// research/ornith-move-20260829 F2; re-hit on prod by the 2026-09-01 stress campaign at
-/// 66,045/79,717/82,440), and the same wall was hit and chunk-walked away by the glm5 1M
-/// lane's ppN prime.
-pub const CUDA_GRID_YZ_MAX: usize = 65_535;
-
-/// Widest prime range that stays launch-legal through the ring-off tail fold of
-/// `fixed_prime_chunk_ranges_for_ring`: a trailing remainder shorter than `PRIME_MIN_T`
-/// folds INTO the previous range, widening it by up to `PRIME_MIN_T - 1` tokens, so the
-/// cap keeps `chunk + PRIME_MIN_T - 1 <= CUDA_GRID_YZ_MAX`. With this value every
-/// t <= 65,535 still schedules as the identical single monolithic range (t <= chunk, or
-/// the fold collapses the split), so behavior below the CUDA wall is byte-for-byte
-/// unchanged — only prompts that today CANNOT launch get chunked.
-pub const PRIME_CHUNK_LAUNCH_CAP: usize = CUDA_GRID_YZ_MAX - (PRIME_MIN_T - 1);
-
-/// The explicit-`MEMRA_PRIME_CHUNK` chunk width, ring-aware. Extracted pure for tests.
-/// Ring ON keeps the historical clamp to `PRIME_CHUNK_MAX_TOKENS`. Ring OFF preserves the
-/// operator's value except at the CUDA launch wall: `0` ("monolithic") now means
-/// "monolithic up to `PRIME_CHUNK_LAUNCH_CAP`", and any larger explicit value is capped
-/// there too — an uncapped value above the wall never produced output, only
-/// CUDA_ERROR_INVALID_VALUE (see `CUDA_GRID_YZ_MAX`).
-fn explicit_prime_chunk(parsed: usize, ring_on: bool) -> usize {
-    if ring_on {
-        if parsed == 0 {
-            crate::cache::PRIME_CHUNK_MAX_TOKENS
-        } else {
-            parsed.min(crate::cache::PRIME_CHUNK_MAX_TOKENS)
-        }
-    } else if parsed == 0 {
-        PRIME_CHUNK_LAUNCH_CAP
-    } else {
-        parsed.min(PRIME_CHUNK_LAUNCH_CAP)
-    }
-}
-
 /// MEMRA_STEP_GEMM_PRIME_SUFFIX: does a CONTINUATION prime (`cache.pos > 0` — a rewound
 /// session's suffix, or a prompt remainder split across scheduler ticks) ride the batched
 /// GEMM prime, like a fresh prompt does?
@@ -1068,9 +1021,7 @@ fn prime_pipeline_auto_geometry(n_layers: usize) -> bool {
     prime_pp2_auto_geometry(n_layers) || prime_ppn_wave_auto_geometry(n_layers)
 }
 
-/// Effective internal prime chunk. An explicit MEMRA_PRIME_CHUNK is authoritative up to the
-/// CUDA launch wall (`PRIME_CHUNK_LAUNCH_CAP`; 0 = monolithic up to that wall — see
-/// `explicit_prime_chunk`).
+/// Effective internal prime chunk. An explicit MEMRA_PRIME_CHUNK is authoritative.
 /// Pipelined PP primes use the measured PP-2 geometry: up to eight microchunks, never below
 /// 128 tokens, while the legacy 4096-token cap remains the long-context bound. PP-3/4 inherit
 /// only the geometry when their separate MEMRA_PP_WAVE door is explicitly open.
@@ -1079,7 +1030,15 @@ pub fn prime_chunk_tokens(t: usize, n_layers: usize) -> usize {
         let parsed = value
             .parse::<usize>()
             .unwrap_or(crate::cache::PRIME_CHUNK_MAX_TOKENS);
-        return explicit_prime_chunk(parsed, crate::cache::swa_ring_on());
+        return if crate::cache::swa_ring_on() {
+            if parsed == 0 {
+                crate::cache::PRIME_CHUNK_MAX_TOKENS
+            } else {
+                parsed.min(crate::cache::PRIME_CHUNK_MAX_TOKENS)
+            }
+        } else {
+            parsed
+        };
     }
     let chunk = crate::cache::PRIME_CHUNK_MAX_TOKENS;
     if prime_pipeline_auto_geometry(n_layers) && t >= 2 * PRIME_PIPE_MIN_CHUNK {
@@ -1251,10 +1210,8 @@ pub fn prime_chunk_ranges(t: usize, n_layers: usize, gdn_grid: bool) -> Vec<(usi
 /// nothing at all.
 ///
 /// A prompt at or under one chunk takes the monolithic body unchanged, and `MEMRA_PRIME_CHUNK=0`
-/// restores the monolithic walk up to `PRIME_CHUNK_LAUNCH_CAP` (65,520 tokens; the CUDA
-/// grid.y wall is 65,535 and the old walk always died at launch above it, 08-29 ppN receipts)
-/// — the rollback seam, and the oracle arm the correctness gate compares against, both now
-/// bounded by that cap; longer prompts split at the cap even under `0`.
+/// restores the monolithic walk at any length — the rollback seam, and the oracle arm the
+/// correctness gate compares against.
 pub fn hyper_prime_ranges(t: usize, n_layers: usize, gdn_grid: bool) -> Vec<(usize, usize)> {
     prime_chunk_ranges(t, n_layers, gdn_grid)
 }
@@ -1290,9 +1247,7 @@ pub struct HyperPrimeWorkspaceShape {
     /// planes), the MLA query/attention planes, the k-pool idx plane, and the prime-tail
     /// hidden/norm pair. Multiplied by [`hyper_prime_call_rows`] this bounds the workspace of
     /// the CHUNKED prime; on the monolithic rollback (`MEMRA_PRIME_CHUNK=0`) the call rows are
-    /// the whole prompt up to `PRIME_CHUNK_LAUNCH_CAP` (65,535 launch-legal max; admission
-    /// re-derives `hyper_prime_call_rows` so the arithmetic stays consistent either way) and
-    /// the same product stays honest.
+    /// the whole prompt and the same product stays honest.
     pub chunk_token_bytes: usize,
     /// Bytes per PROMPT token that live for the WHOLE prime on the last stage: the returned
     /// pre-output_norm `hiddens` stack (`n_embd` f32), consumed by the MTP-spec `prompt_h`
@@ -1809,9 +1764,8 @@ impl HybridModel {
         // schedule. `queued_after + (t - end)` keeps the REQUEST-level `seq_end` invariant
         // across chunks (each call recomputes pos0+start + (end-start) + rest = pos0 + t +
         // queued_after). A prompt at or under one chunk takes the monolithic ppN body
-        // unchanged, and `MEMRA_PRIME_CHUNK=0` restores the monolithic walk up to
-        // PRIME_CHUNK_LAUNCH_CAP (grid.y-legal ceiling; above it the old walk always died
-        // at launch) — the same rollback seam the single-engine chunk walk documents.
+        // unchanged, and `MEMRA_PRIME_CHUNK=0` restores the monolithic walk — the same
+        // rollback seam the single-engine chunk walk documents.
         if let Some(fence) = crate::pp::pp_cuts(self.layers.len()) {
             if !self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::Pipeline) {
                 return Err("pipeline rewrite is not qualified for this ModelPlan".into());
@@ -2102,7 +2056,7 @@ impl HybridModel {
                 }
                 Mixer::Linear(la) => self.linear_attn_prime(e, la, &h, None, t, cache, il)?,
                 Mixer::Mla(mla) if mla.tp.is_some() => {
-                    self.mla_tp_attn_cached(e, mla, &h, pos_d, t, il, cache, false)?
+                    self.mla_tp_attn_cached(e, mla, &h, pos_d, t, il, cache)?
                 }
                 Mixer::Mla(mla) => self.mla_attn_cached(e, mla, &h, pos_d, t, il, cache)?,
                 Mixer::Kda(la) if la.tp.is_some() => crate::glm5_tp::kda_tp_cached(
@@ -2174,7 +2128,7 @@ impl HybridModel {
                 Mixer::Full(fa) => self.full_attn_decode(e, fa, &h, pos_d, pos, cache, il)?,
                 Mixer::Linear(la) => self.linear_attn_decode(e, la, &h, cache, il)?,
                 Mixer::Mla(mla) if mla.tp.is_some() => {
-                    self.mla_tp_attn_cached(e, mla, &h, pos_d, 1, il, cache, false)?
+                    self.mla_tp_attn_cached(e, mla, &h, pos_d, 1, il, cache)?
                 }
                 Mixer::Mla(mla) => self.mla_attn_cached(e, mla, &h, pos_d, 1, il, cache)?,
                 Mixer::Kda(la) if la.tp.is_some() => crate::glm5_tp::kda_tp_cached(
@@ -2708,44 +2662,19 @@ impl HybridModel {
                 "PpNRt stage count {} != fence stages {n_st}",
                 rt.n_stages()
             );
-            let caller_stream = e.stream();
-            rt.fence_stages_behind(&caller_stream)?;
-            // OVERLAY RESIDENCY LAW (rewritten in lane/glm53-vision-ppn, 2026-09-01; was the
-            // OVERLAY DEVICE LAW). The splice reads `overlay.rows` through stage 0's engine,
-            // so those rows must live in STAGE 0's CUDA context. That is the real invariant,
-            // and it is what is checked.
-            //
-            // The pre-lane check was `!std::ptr::eq(rt.engine(0, e), e)` — "stage 0 must BE
-            // the primary engine". It refused the deployed 3-card shape outright: the worker's
-            // primary engine follows the LAST pp stage (`worker::worker_device`, and that is
-            // load-bearing — pinning the primary to stage 0 was the v0.72 tag-blocker-2
-            // regressor, 112.5 -> 17.5 tok/s on spec+PP), so with MEMRA_PP_DEVICES=0,1,2 the
-            // primary is dev2 while stage 0 owns dev0 and `PpNRt::build` hands stage 0 its
-            // own Engine. Vision was therefore unservable on the ppN shape with the only
-            // in-tag rollback costing ~3x decode (MEMRA_PP_STREAMS=0). The fix is to PUBLISH
-            // the overlay into stage 0's context at construction
-            // (`EmbedOverlay::new_published`, driven by `vision_intake_engine` below), never
-            // to relax the check: the identity now passes because the pointers ARE in the
-            // right domain.
-            //
-            // ORDERING, the seam the accrace lane taught (MEMRA_PP_EXIT_PUBLISH): rows built
-            // on the caller's stream are covered by `fence_stages_behind` above, which orders
-            // every stage stream behind the caller before stage 0 issues its splice; rows
-            // published onto the intake engine were host-synchronized when they were uploaded.
-            // Both producers are ordered before this body's first stage-0 kernel.
-            if let Some(ov) = overlay
-                && !ov.resident_in(rt.engine(0, e))
-            {
-                return Err(format!(
-                    "vision embedding overlay rows are resident on dev{} but pp stage 0's \
-                     embedding intake runs on dev{}: the overlay must be published into the \
-                     intake engine's context (build it with EmbedOverlay::new_published; \
-                     MEMRA_VISION_OVERLAY_PUBLISH=0 pins the pre-publication program, whose \
-                     only vision-capable shape is MEMRA_PP_STREAMS=0)",
-                    ov.ctx().ordinal(),
-                    rt.engine(0, e).ctx().ordinal(),
-                )
-                .into());
+            rt.fence_stages_behind(&e.stream())?;
+            // OVERLAY DEVICE LAW: the overlay rows are built by the caller on the PRIMARY
+            // engine (build_vision_overlay runs the tower there). Stage 0 keeps the primary
+            // engine whenever it lives on the primary device (pp::PpNRt::build); a placement
+            // that moves stage 0 to another device would make the splice a cross-device copy
+            // with no receipts — refuse loudly instead of silently peer-reading.
+            if overlay.is_some() && !std::ptr::eq(rt.engine(0, e), e) {
+                return Err(
+                    "vision embedding overlay requires stage 0 on the primary device \
+                     (overlay rows are primary-resident); place stage 0 on the primary \
+                     or run MEMRA_PP_STREAMS=0"
+                        .into(),
+                );
             }
             let mut slot = {
                 let _st0 = rt.enter(0);
@@ -2784,33 +2713,22 @@ impl HybridModel {
                 )?;
                 slot = rt.tx(s, &x, t * width)?;
             }
-            let out = {
-                let _stl = rt.enter(n_st - 1);
-                let el = rt.engine(n_st - 1, e);
-                let pos_d = el.htod_i32(&pos)?;
-                let x = rt.rx(n_st - 2, slot, t * width)?;
-                let x = self.hyper_range_prime(
-                    el,
-                    topology,
-                    x,
-                    fence[n_st - 1],
-                    fence[n_st],
-                    &pos_d,
-                    t,
-                    cache,
-                    seq_end,
-                )?;
-                self.hyper_prime_tail(el, topology, &x, t, n_embd, eps, cache)?
-            };
-            // EXIT PUBLICATION (lane/glm5-accrace 2026-09-01, the same law the batched and
-            // spec ppN bodies carry): `hyper_prime_tail`'s dtoh drains the LAST stage only,
-            // and the TX-wait chain reaches each earlier stage just as far as its `ev_tx`.
-            // Every earlier stage's stream still holds the tail its stage-scope locals
-            // enqueue on drop, and the caller resumes here to allocate (the glm5 spec
-            // session's MTP plane warm, the worker's next step). Anatomy + receipts:
-            // `PpNRt::publish_all_to`.
-            rt.publish_all_to(&caller_stream)?;
-            Ok(out)
+            let _stl = rt.enter(n_st - 1);
+            let el = rt.engine(n_st - 1, e);
+            let pos_d = el.htod_i32(&pos)?;
+            let x = rt.rx(n_st - 2, slot, t * width)?;
+            let x = self.hyper_range_prime(
+                el,
+                topology,
+                x,
+                fence[n_st - 1],
+                fence[n_st],
+                &pos_d,
+                t,
+                cache,
+                seq_end,
+            )?;
+            self.hyper_prime_tail(el, topology, &x, t, n_embd, eps, cache)
         }
     }
 
@@ -2868,7 +2786,7 @@ impl HybridModel {
                 }
                 Mixer::Linear(la) => self.linear_attn_prime(e, la, &h, None, t, cache, il)?,
                 Mixer::Mla(mla) if mla.tp.is_some() => {
-                    self.mla_tp_attn_cached(e, mla, &h, &pos_d, t, il, cache, false)?
+                    self.mla_tp_attn_cached(e, mla, &h, &pos_d, t, il, cache)?
                 }
                 Mixer::Mla(mla) => self.mla_attn_cached(e, mla, &h, &pos_d, t, il, cache)?,
                 Mixer::Kda(la) if la.tp.is_some() => crate::glm5_tp::kda_tp_cached(
@@ -3375,34 +3293,6 @@ impl HybridModel {
         queued_after: usize,
     ) -> Result<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
         self.prime_cache_overlaid(e, tokens, cache, queued_after, None)
-    }
-
-    /// The engine that owns EMBEDDING INTAKE for the current placement — the engine whose
-    /// context a vision overlay's rows must live in (`EmbedOverlay::new_published`).
-    ///
-    /// It is NOT always the primary engine. Under a per-stage-stream ppN split the embedding
-    /// happens on stage 0 (`prime_cache_hyper_ppn` embeds inside the stage-0 scope and every
-    /// later stage sees only the expanded stream state), and stage 0 gets its own Engine
-    /// whenever its device differs from the primary's — which is the deployed 3-card shape,
-    /// because the worker's primary engine follows the LAST stage. On a single-device
-    /// placement, with the door shut, or on the `MEMRA_PP_STREAMS=0` seam, intake is the
-    /// primary engine and this returns `e` unchanged (byte-identical to the pre-lane path).
-    ///
-    /// This mirrors `prime_cache_hyper`'s own door test deliberately, and the ppN prime's
-    /// residency refusal is the enforcement: if this ever picks the wrong engine, the prime
-    /// fails CLOSED with a named error instead of peer-reading an overlay.
-    pub fn vision_intake_engine<'a>(
-        &self,
-        e: &'a Engine,
-    ) -> Result<&'a Engine, Box<dyn std::error::Error>> {
-        if self.hyper.is_some()
-            && !crate::pp::pp2_streams_off()
-            && crate::pp::pp_cuts(self.layers.len()).is_some()
-        {
-            let rt = crate::pp::PpNRt::get(e)?;
-            return Ok(rt.engine(0, e));
-        }
-        Ok(e)
     }
 
     /// `prime_cache` with a vision embedding overlay (lane/vision): image merger outputs
@@ -4385,12 +4275,23 @@ impl HybridModel {
             // Mixed-embedding splice: image rows overwrite the pad-token embeddings that
             // fall inside this chunk's prompt-relative window [chunk_off, chunk_off+t).
             // Images larger than one prime chunk straddle boundaries, hence the clipping.
-            //
-            // Through the SHARED `EmbedOverlay::splice_into` (lane/glm53-vision-ppn): this
-            // site used to carry its own byte-identical copy of that loop, which meant the
-            // overlay residency law had to be re-stated per call site. One implementation,
-            // one law, and the splice point cannot drift between arms.
-            ov.splice_into(e, &mut x_embed, chunk_off, t, self.cfg.n_embd as usize)?;
+            let n_embd = self.cfg.n_embd as usize;
+            for &(pos, row_off, n_rows) in &ov.spans {
+                let lo = pos.max(chunk_off);
+                let hi = (pos + n_rows).min(chunk_off + t);
+                if lo < hi {
+                    let src_row = row_off + (lo - pos);
+                    let view = ov
+                        .rows
+                        .slice(src_row * n_embd..(src_row + (hi - lo)) * n_embd);
+                    e.copy_view_into(
+                        &mut x_embed,
+                        (lo - chunk_off) * n_embd,
+                        &view,
+                        (hi - lo) * n_embd,
+                    )?;
+                }
+            }
         }
         let x = self.prime_layers(
             e,
@@ -7561,39 +7462,12 @@ impl HybridModel {
         // to the flag being off.
         // A chain returning Ok(None) is a cuBLASLt shape DECLINE (announced once per shape);
         // the let-chain then simply does not match and the f32 kernels below serve the call.
-        // glm5 TP composition guard (lane/glm5-composition): the TC prefill chain's gate
-        // ran on the FULL-head geometry only; a head shard (any rank) declines it by name
-        // and falls through to the f32 kernels below — behavior identical to the flag
-        // being off for that layer, announced once. The composed door re-gates on the box
-        // (real-artifact kv_rank 512 shapes; the rig fixtures are kv_rank 16 and never
-        // reach this chain).
-        // The announce shares the chain's OWN conjuncts (gathered + !portable_mma_gated),
-        // so it can never blame TP for a decline the missing DSA gather or the MMA gate
-        // caused (#82 review).
-        if mla.tp_shard
-            && gathered.is_some()
-            && dr == 0
-            && r == 512
-            && t >= 16
-            && !crate::portable_mma_gated()
-            && mla_tc_prefill_enabled()
-        {
-            static TP_TC_DECLINE: std::sync::Once = std::sync::Once::new();
-            TP_TC_DECLINE.call_once(|| {
-                eprintln!(
-                    "[mla-tc-prefill] DECLINED on glm5-TP head shards: the door's gate ran \
-                     on full-head geometry; shards ride the f32 prefill kernels until the \
-                     TP composition gate lands (pin MEMRA_MLA_TC_PREFILL=0 to silence)"
-                );
-            });
-        }
         if let Some((idx, slots)) = &gathered
             && dr == 0
             && r == 512
             && t >= 16
             && !rows_exact // verify-batch stays on the decode-exact classes (t <= 15 anyway)
             && !crate::portable_mma_gated()
-            && !mla.tp_shard
             && mla_tc_prefill_enabled()
             && let Some(attn) = self.mla_tc_prefill_chain(
                 e, wk_b, wv_b, &q_nope, latent, idx, *slots, t, t_kv, nh, dn, dv, r, g.scale,
@@ -8238,7 +8112,6 @@ impl HybridModel {
         t: usize,
         il: usize,
         cache: &mut Cache,
-        rows_exact: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let tp = mla
             .tp
@@ -8258,8 +8131,8 @@ impl HybridModel {
         // WHOLE buffer, exactly as the v1 arm did, so the transport arms move identical
         // byte ranges (lane/glm5-tp-transport).
         let hop = rt.hop(e);
-        let h_peers = crate::tp_transport::fanout_f32(&hop, h, h.len())?;
-        let pos_peers = crate::tp_transport::fanout_i32(&hop, pos_d, pos_d.len())?;
+        let h_peers = crate::glm5_tp_transport::fanout_f32(&hop, h, h.len())?;
+        let pos_peers = crate::glm5_tp_transport::fanout_i32(&hop, pos_d, pos_d.len())?;
 
         // Peer replica planes (lazily geometry-cloned from the canonical plane).
         {
@@ -8274,11 +8147,9 @@ impl HybridModel {
         }
 
         // Peer passes first (each rank's heads over its replica), then root (canonical
-        // plane unchanged) — v1's issue order at two ranks. `rows_exact` threads the
-        // caller's matmul class through every rank: false = the prime/decode walk
-        // (byte-for-byte the pre-composition arm), true = the spec x TP verify walk
-        // (lane/glm5-composition) riding the same rows-exact classes as the unsharded
-        // verify walk.
+        // plane unchanged) — v1's issue order at two ranks. rows_exact=false on every rank:
+        // the TP walk serves prime/decode only — the verify-batch rows arm belongs to glm5
+        // spec sessions, which are co-refused while the TP door is armed.
         let mut attn: Vec<Option<CudaSlice<f32>>> = (0..ranks).map(|_| None).collect();
         for r in 1..ranks {
             let layer = &mut cache.glm5_tp_latent_peer[il].as_mut().unwrap()[r - 1];
@@ -8291,12 +8162,12 @@ impl HybridModel {
                 il,
                 layer,
                 max_ctx,
-                rows_exact,
+                false,
             )?);
         }
         attn[0] = {
             let layer = cache.latent[il].as_mut().unwrap();
-            Some(self.mla_attn_cached_pre_wo(e, mla, h, pos_d, t, il, layer, max_ctx, rows_exact)?)
+            Some(self.mla_attn_cached_pre_wo(e, mla, h, pos_d, t, il, layer, max_ctx, false)?)
         };
 
         // HOP 2 — gather the per-head parts into the FULL [t, full_heads*dv] layout on
@@ -8307,26 +8178,18 @@ impl HybridModel {
             .iter()
             .map(|a| a.as_ref().expect("filled above"))
             .collect();
-        let fulls = crate::tp_transport::gather_parts(&hop, &attn_refs, t, part)?;
+        let fulls = crate::glm5_tp_transport::gather_parts(&hop, &attn_refs, t, part)?;
 
-        // Column-parallel wo slices + output concat (pure movement). The verify walk's
-        // wo rides the rows-exact class, exactly like the unsharded verify walk's wo.
+        // Column-parallel wo slices + output concat (pure movement).
         let mut ys = Vec::with_capacity(ranks);
-        if rows_exact {
-            ys.push(e.matmul_rows_exact(&mla.wo, &fulls[0], t)?);
-            for r in 1..ranks {
-                ys.push(rt.peers[r - 1].matmul_rows_exact(&tp.peers[r - 1].wo, &fulls[r], t)?);
-            }
-        } else {
-            ys.push(e.matmul(&mla.wo, &fulls[0], t)?);
-            for r in 1..ranks {
-                ys.push(rt.peers[r - 1].matmul(&tp.peers[r - 1].wo, &fulls[r], t)?);
-            }
+        ys.push(e.matmul(&mla.wo, &fulls[0], t)?);
+        for r in 1..ranks {
+            ys.push(rt.peers[r - 1].matmul(&tp.peers[r - 1].wo, &fulls[r], t)?);
         }
         // HOP 3 — concat the column parts into the mixer output on ROOT.
         debug_assert_eq!(n_embd, ranks * hh);
         let y_refs: Vec<&CudaSlice<f32>> = ys.iter().collect();
-        crate::tp_transport::concat_parts_on_root(&hop, &y_refs, t, hh)
+        crate::glm5_tp_transport::concat_parts_on_root(&hop, &y_refs, t, hh)
     }
 
     /// Linear-attention (Gated DeltaNet) mixer (qwen35 :338-470).
@@ -9185,10 +9048,6 @@ impl HybridModel {
             let automatic_ep_device_router = crate::tp::parallel_ep_device_router_enabled()?;
             let automatic_ep_q8_act = crate::tp::parallel_ep_q8_act_enabled()?;
             let automatic_ep_q8_scope = crate::tp::parallel_ep_q8_scope()?;
-            crate::tp::parallel_ep_q8_gu_paired_enabled(
-                automatic_ep_q8_act,
-                automatic_ep_q8_scope,
-            )?;
             let automatic_ep_q8_active =
                 automatic_ep_q8_act && t <= crate::tp::NVFP4_EP_Q8_BATCH_CAP;
             if automatic_ep_q8_scope.is_some() && !automatic_ep_q8_act {
@@ -11214,7 +11073,7 @@ impl HybridModel {
         if prefill && t > MOE_DEV_MAX_T {
             static EPGP_ANNOUNCED: std::sync::atomic::AtomicU8 =
                 std::sync::atomic::AtomicU8::new(0);
-            let enabled = crate::ep_grouped_prime_on() && moe_grouped_prefill_enabled();
+            let enabled = crate::glm5_ep_grouped_prime_on() && moe_grouped_prefill_enabled();
             let bit = 1u8 << u8::from(enabled);
             if EPGP_ANNOUNCED.fetch_or(bit, std::sync::atomic::Ordering::Relaxed) & bit == 0 {
                 eprintln!(
@@ -11232,34 +11091,16 @@ impl HybridModel {
             }
         }
 
-        // spec x TP composition receipt (the #80 review's confirmed perf-shape finding):
-        // at verify widths (1 < t < prefill) the EP walk PREEMPTS the batched vrows MoE
-        // pair — a composed verify round pays the sequential per-(token,expert) walk per
-        // MoE layer, re-inheriting the vrest wall the vrows lane removed on the unsharded
-        // shape. Announced once so a composed-shape battery cannot mistake a flat
-        // MOE_VROWS_DISPATCHES counter for a wiring bug; the EP-aware vrows arm is the
-        // named lever (composition-20260901/box/CELLS.md).
-        if t > 1 && !prefill {
-            static EP_VERIFY_MARKED: std::sync::atomic::AtomicBool =
-                std::sync::atomic::AtomicBool::new(false);
-            if !EP_VERIFY_MARKED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                eprintln!(
-                    "[glm5-tp-ep] verify rows ride the SEQUENTIAL EP walk (t={t}): the \
-                     batched vrows MoE pair is preempted by EP; the EP-aware vrows arm is \
-                     the named lever performance_claim=false"
-                );
-            }
-        }
         // EP dispatch diet (`MEMRA_GLM5_EP_DIET`, default OFF): same kernels, same combine
         // chain, restructured movement. Read per call — `=0`/unset restores the v1 walk.
-        if crate::ep_diet_on() {
+        if crate::glm5_ep_diet_on() {
             let mut out = Self::moe_ffn_glm5_ep_diet(e, m, ep, z, &sel_all, &w_all, t, cfg, il)?;
             Self::moe_shexp_add(e, m, z, zq8, t, cfg, lim_shexp, &mut out)?;
             return Ok(out);
         }
 
         let mut moe_out = e.zeros(t * n_embd)?;
-        use crate::tp_transport::TpTransport as TpXport;
+        use crate::glm5_tp_transport::Glm5TpTransport as TpXport;
         let hop = ep.rt.hop(e);
         // Peer replicas of `z`, one arm each (lane/glm5-tp-transport):
         //   host-canonical — v1's EXACT pattern: one draining `dtoh` of the whole block here,
@@ -11270,7 +11111,7 @@ impl HybridModel {
         //     are sliced out of it. Same bytes on the peers, the host uploads and drains
         //     removed.
         let z_host = match hop.transport {
-            TpXport::HostCanonical => Some(crate::tp_transport::host_stage_block(
+            TpXport::HostCanonical => Some(crate::glm5_tp_transport::host_stage_block(
                 &hop,
                 0,
                 z,
@@ -11279,7 +11120,7 @@ impl HybridModel {
             TpXport::PeerPull => None,
         };
         let z_peer_bulks = match hop.transport {
-            TpXport::PeerPull => Some(crate::tp_transport::fanout_f32(&hop, z, t * n_embd)?),
+            TpXport::PeerPull => Some(crate::glm5_tp_transport::fanout_f32(&hop, z, t * n_embd)?),
             TpXport::HostCanonical => None,
         };
         for tok in 0..t {
@@ -11293,7 +11134,7 @@ impl HybridModel {
                 Some(h) => {
                     let mut rows = Vec::with_capacity(ranks - 1);
                     for r in 1..ranks {
-                        rows.push(crate::tp_transport::host_row_to(
+                        rows.push(crate::glm5_tp_transport::host_row_to(
                             &hop,
                             r,
                             &h[tok * n_embd..(tok + 1) * n_embd],
@@ -11399,7 +11240,7 @@ impl HybridModel {
                 let y_root = if owner == 0 {
                     y
                 } else {
-                    crate::tp_transport::return_row_to_root(&hop, owner, &y, n_embd)?
+                    crate::glm5_tp_transport::return_row_to_root(&hop, owner, &y, n_embd)?
                 };
                 let mut dst = moe_out.slice_mut(tok * n_embd..(tok + 1) * n_embd);
                 e.axpy_into(
@@ -11591,7 +11432,7 @@ impl HybridModel {
             let dev = crate::glm5_tp::rank_engine(e, rt, r);
             // SWAP POINT 1 (bulk fan-out) — the named transport shape, to this rank only
             // (a rank with zero owned pairs moves zero activation bytes off root).
-            let z_r = crate::tp_transport::fanout_f32_to(&hop, r, z, t * n_embd)?;
+            let z_r = crate::glm5_tp_transport::fanout_f32_to(&hop, r, z, t * n_embd)?;
             // Under the skip-peer-combine red the block stays ZERO for skipped rows (a red
             // must drop the peer contribution loudly, never multiply garbage into the chain).
             let mut blk = if red_skip_peer {
@@ -11650,7 +11491,7 @@ impl HybridModel {
         // copy and no host boundary at all.
         for r in 1..ranks {
             if let Some(blk) = &y_peer_blks[r] {
-                crate::tp_transport::return_block_to_root(
+                crate::glm5_tp_transport::return_block_to_root(
                     &hop,
                     r,
                     blk,
@@ -11938,7 +11779,7 @@ impl HybridModel {
             }
             let dev = crate::glm5_tp::rank_engine(e, rt, r);
             // SWAP POINT 1 (bulk fan-out) — the named transport shape, to this rank only.
-            let z_r = crate::tp_transport::fanout_f32_to(&hop, r, z, t * n_embd)?;
+            let z_r = crate::glm5_tp_transport::fanout_f32_to(&hop, r, z, t * n_embd)?;
             dev.bind_runtime_device(dev.ctx().ordinal() as i32)?;
             let res = rank_pass(dev, r as u8, &ep.ptr_rows[r], &z_r);
             e.bind_runtime_device(e.ctx().ordinal() as i32)?;
@@ -11959,7 +11800,8 @@ impl HybridModel {
             if let Some(pp) = &peer_partials[r]
                 && !red_skip_peer
             {
-                let pp_root = crate::tp_transport::return_row_to_root(&hop, r, pp, t * n_embd)?;
+                let pp_root =
+                    crate::glm5_tp_transport::return_row_to_root(&hop, r, pp, t * n_embd)?;
                 let mut dst = out.slice_mut(0..t * n_embd);
                 e.axpy_into(&pp_root, 1.0, &mut dst, t * n_embd)?;
                 crate::glm5_tp::GLM5_EP_DIET_BULK_RETURNS.fetch_add(1, Ordering::Relaxed);
@@ -12055,8 +11897,8 @@ impl HybridModel {
             // on every MoE layer-call — 42 pageable HtoD per ship round (26.9% of the round's
             // 156). The resident ones buffer feeds the SAME `add_scaled_rows_f32` kernel the
             // same 1.0 values, so the arms are bit-identical.
-            if m.gate_inp_shexp.is_none() && crate::htod_diet_on() {
-                crate::HTOD_DIET_AVOIDED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if m.gate_inp_shexp.is_none() && crate::glm5_htod_diet_on() {
+                crate::GLM5_HTOD_DIET_AVOIDED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 e.add_scaled_rows_ones(&sh, moe_out, n_embd, t)?;
                 return Ok(());
             }
@@ -18486,10 +18328,6 @@ impl HybridModel {
         // reference's llama_set_causal_attn(false) image batch exactly.
         let island: Option<CudaSlice<i32>> = match overlay {
             Some(ov) => {
-                // The residency law reaches this arm too (lane/glm53-vision-ppn): the splice
-                // arithmetic below differs from the shared helper on purpose (post-scale
-                // placement + island ids), but the pointer it reads obeys the same rule.
-                ov.require_resident(e)?;
                 let mut span_id = vec![-1i32; t];
                 for (i, &(pos, row_off, n_rows)) in ov.spans.iter().enumerate() {
                     if pos + n_rows > t {
@@ -25076,13 +24914,13 @@ impl HybridModel {
 #[cfg(test)]
 mod prime_chunk_schedule_tests {
     use super::{
-        CUDA_GRID_YZ_MAX, PRIME_CHUNK_LAUNCH_CAP, PRIME_MIN_T, PRIME_PIPE_MIN_CHUNK, PrimePpSignal,
-        PrimePpStageChannels, PrimePpWaveCredits, PrimePpWaveSlot, active_matrix_values,
-        align_prime_ranges_to_gdn, dynamic_prime_chunk_ranges, explicit_prime_chunk,
-        fixed_prime_chunk_ranges, fixed_prime_chunk_ranges_for_ring, move_prime_cache_layers,
-        parse_step_ep_grouped_prefill, parse_step_tp_prefill, prime_cache_stage_for_layer,
-        recv_prime_pp_signal, restore_prime_cache_layers, step_grouped_decode_shape,
-        step_grouped_prefill_shape, step_tp_prefill_shape, validate_step_prime_batch_modes,
+        PRIME_MIN_T, PRIME_PIPE_MIN_CHUNK, PrimePpSignal, PrimePpStageChannels, PrimePpWaveCredits,
+        PrimePpWaveSlot, active_matrix_values, align_prime_ranges_to_gdn,
+        dynamic_prime_chunk_ranges, fixed_prime_chunk_ranges, fixed_prime_chunk_ranges_for_ring,
+        move_prime_cache_layers, parse_step_ep_grouped_prefill, parse_step_tp_prefill,
+        prime_cache_stage_for_layer, recv_prime_pp_signal, restore_prime_cache_layers,
+        step_grouped_decode_shape, step_grouped_prefill_shape, step_tp_prefill_shape,
+        validate_step_prime_batch_modes,
     };
 
     fn sizes(ranges: &[(usize, usize)]) -> Vec<usize> {
@@ -25092,94 +24930,6 @@ mod prime_chunk_schedule_tests {
     #[allow(clippy::manual_clamp)] // allow: the min/max chain mirrors the reference arithmetic order in pinned sizing/quant math
     fn auto_chunk(t: usize) -> usize {
         t.div_ceil(8).max(PRIME_PIPE_MIN_CHUNK).min(4096)
-    }
-
-    /// The ornith cold-long 66k defect (darklanes research/ornith-move-20260829 F2,
-    /// re-hit on prod 2026-09-01): MEMRA_PRIME_CHUNK=0 ("monolithic") must not schedule
-    /// a prime range wider than the CUDA grid.y limit, and must stay byte-identical
-    /// (single monolithic range) for every prompt the limit allows.
-    #[test]
-    // assertions_on_constants: the constant relation (cap + fold headroom fits the CUDA
-    // grid wall) IS the invariant under test; a red here means someone moved a constant.
-    #[allow(clippy::assertions_on_constants)]
-    fn monolithic_prime_chunk_caps_at_the_cuda_launch_wall() {
-        // Ring OFF (ornith serving shape): 0 maps to the launch cap, larger explicit
-        // values cap there too, workable explicit values pass through untouched.
-        assert_eq!(explicit_prime_chunk(0, false), PRIME_CHUNK_LAUNCH_CAP);
-        assert_eq!(explicit_prime_chunk(100_000, false), PRIME_CHUNK_LAUNCH_CAP);
-        assert_eq!(explicit_prime_chunk(4096, false), 4096);
-        assert_eq!(
-            explicit_prime_chunk(PRIME_CHUNK_LAUNCH_CAP, false),
-            PRIME_CHUNK_LAUNCH_CAP
-        );
-        // Ring ON keeps the historical PRIME_CHUNK_MAX_TOKENS clamp exactly.
-        assert_eq!(
-            explicit_prime_chunk(0, true),
-            crate::cache::PRIME_CHUNK_MAX_TOKENS
-        );
-        assert_eq!(
-            explicit_prime_chunk(100_000, true),
-            crate::cache::PRIME_CHUNK_MAX_TOKENS
-        );
-        assert_eq!(explicit_prime_chunk(512, true), 512);
-        // The fold headroom the cap exists for.
-        assert!(PRIME_CHUNK_LAUNCH_CAP + PRIME_MIN_T - 1 <= CUDA_GRID_YZ_MAX);
-    }
-
-    #[test]
-    fn capped_monolithic_ranges_are_identical_below_the_wall_and_legal_above() {
-        let chunk = explicit_prime_chunk(0, false);
-        // Every t the CUDA limit allows keeps the exact pre-fix monolithic schedule:
-        // one range covering the whole prompt (t <= chunk directly, or the < PRIME_MIN_T
-        // tail folds the split back into a single range).
-        for t in [
-            PRIME_MIN_T,
-            4096,
-            61_000,
-            64_984,
-            PRIME_CHUNK_LAUNCH_CAP,
-            PRIME_CHUNK_LAUNCH_CAP + 1,
-            CUDA_GRID_YZ_MAX,
-        ] {
-            assert_eq!(
-                fixed_prime_chunk_ranges_for_ring(t, chunk, false),
-                vec![(0, t)],
-                "t={t} must stay a single monolithic range"
-            );
-        }
-        // Above the wall — the sizes the campaign measured failing, the F2 bracket's
-        // first FAIL, and the boundary — every scheduled range must be launch-legal,
-        // contiguous, and full-coverage.
-        for t in [65_536, 65_643, 66_045, 79_717, 82_440, 262_144] {
-            let ranges = fixed_prime_chunk_ranges_for_ring(t, chunk, false);
-            assert!(ranges.len() >= 2, "t={t} must chunk");
-            let mut cursor = 0usize;
-            for &(start, end) in &ranges {
-                assert_eq!(start, cursor, "t={t}: ranges must be contiguous");
-                assert!(
-                    end - start <= CUDA_GRID_YZ_MAX,
-                    "t={t}: range width {} exceeds the CUDA grid.y limit",
-                    end - start
-                );
-                assert!(
-                    end - start >= PRIME_MIN_T,
-                    "t={t}: range width {} below PRIME_MIN_T",
-                    end - start
-                );
-                cursor = end;
-            }
-            assert_eq!(cursor, t, "t={t}: ranges must cover the prompt");
-        }
-        // Dense sweep across the boundary band: no width may ever exceed the limit.
-        for t in (CUDA_GRID_YZ_MAX - 64)..=(CUDA_GRID_YZ_MAX + 2 * PRIME_MIN_T + 64) {
-            for &(start, end) in &fixed_prime_chunk_ranges_for_ring(t, chunk, false) {
-                assert!(
-                    end - start <= CUDA_GRID_YZ_MAX,
-                    "t={t} width {}",
-                    end - start
-                );
-            }
-        }
     }
 
     #[test]

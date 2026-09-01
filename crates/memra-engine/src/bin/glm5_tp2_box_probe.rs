@@ -19,15 +19,6 @@
 //!          BOXP_MAX_NEW steps, dump the tape (<tag>.ids / <tag>.txt) and the first
 //!          BOXP_LOGIT_STEPS decode-step logits (<tag>.step<i>.f32). Byte/band compare
 //!          happens offline against the twin arm's dumps.
-//!   spec   COMPOSED spec rows (lane/glm5-composition, spec x TP): per prompt — a
-//!          [`Glm5SpecSession`] burst loop at BOXP_SPEC_K (default 3) drafts/verifies to
-//!          BOXP_MAX_NEW; one JSONL row per prompt with spec tok/s, rounds, drafted,
-//!          accepted, acc-rate and tok/cyc ((accepted + rounds) / rounds — the flip_check
-//!          receipt shape). BOXP_SAMPLED=1 appends the vendor-default sampled twin on the
-//!          first prompt (session-owned Philox sampler — the SERVING sampler, unlike the
-//!          timed mode's host instrument RNG). Needs a draft source (MEMRA_GLM5_DFLASH)
-//!          and, on a TP-armed boot, MEMRA_GLM5_SPEC_TP=1 (the composition flag; the
-//!          session refuses without it — run the refusal once as the OFF-arm receipt).
 //!   timed  pricing rows (only under the window's TIMING-IN-FLIGHT marker): per prompt —
 //!          prime wall, per-step decode walls, decode tok/s over steps 2..N (the streamed
 //!          (ct-1)/(t_last-t_first) estimator shape), TTFT proxy = prime + step1. One
@@ -226,116 +217,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Sub-rows for this prompt: always the greedy row; in timed mode the first prompt
         // also carries the vendor-default sampled twin when asked.
-        let arms: &[&str] = if (mode == "timed" || mode == "spec") && sampled && pi == 0 {
+        let arms: &[&str] = if mode == "timed" && sampled && pi == 0 {
             &["greedy", "vendor"]
         } else {
             &["greedy"]
         };
-        if mode == "spec" {
-            let k = env_usize("BOXP_SPEC_K", 3);
-            for &arm in arms {
-                let max_ctx = ids.len() + max_new + k + 16;
-                let sampling = (arm == "vendor").then_some(memra_engine::spec::SpecSampling {
-                    temp,
-                    seed: seed ^ 0x5ec5_0000 ^ pi as u64,
-                    top_k: 0,
-                    top_p,
-                    min_p: 0.0,
-                    penalty_last_n: 0,
-                    penalty_repeat: 1.0,
-                    penalty_freq: 0.0,
-                    penalty_present: 0.0,
-                });
-                let t0 = Instant::now();
-                let mut sess = model.glm5_spec_session_new(&e, &ids, max_ctx, sampling)?;
-                let prime_s = t0.elapsed().as_secs_f64();
-                let mut out: Vec<u32> = Vec::with_capacity(max_new);
-                let (mut drafted, mut accepted) = (0usize, 0usize);
-                let g0 = Instant::now();
-                while out.len() < max_new && !sess.finished() {
-                    let (burst, d, a) = model.glm5_spec_session_burst(
-                        &e,
-                        &mut sess,
-                        max_new - out.len(),
-                        k,
-                        &eos,
-                    )?;
-                    if burst.is_empty() {
-                        break; // ctx guard tripped with nothing new — never spin
-                    }
-                    out.extend(burst);
-                    drafted += d;
-                    accepted += a;
-                }
-                let gen_wall = g0.elapsed().as_secs_f64();
-                // EOS CLAMP + honest finish (#82 review): a burst commits WHOLE rounds, so
-                // an EOS-terminated round can carry up to K post-EOS tokens and a
-                // max_new-bounded round can overshoot. The plain/timed arms break AT the
-                // EOS token; clamp here so the tape, the token count and the sha describe
-                // the same stream the serving surface would emit, and label the finish
-                // from what the CLAMPED tape actually contains.
-                let eos_at = out.iter().position(|t| eos.contains(t));
-                let finish = if let Some(i) = eos_at {
-                    out.truncate(i + 1);
-                    "stop"
-                } else if out.len() >= max_new {
-                    out.truncate(max_new);
-                    "length"
-                } else if sess.finished() {
-                    // No EOS in the emitted stream and the session says done = the ctx
-                    // guard tripped; never labelled "stop".
-                    "ctx"
-                } else {
-                    "length"
-                };
-                let rounds = sess.rounds;
-                // The wall covers every token the rounds produced, including any
-                // post-EOS/overshoot tail the clamp dropped; `surplus` names it so a row
-                // is never read as a clean tokens/wall ratio when it is not.
-                let surplus = (accepted + rounds).saturating_sub(out.len().saturating_sub(1));
-                let tok_s = if gen_wall > 0.0 {
-                    out.len() as f64 / gen_wall
-                } else {
-                    0.0
-                };
-                let tok_cyc = if rounds > 0 {
-                    (accepted + rounds) as f64 / rounds as f64
-                } else {
-                    0.0
-                };
-                let acc_rate = if drafted > 0 {
-                    accepted as f64 / drafted as f64
-                } else {
-                    0.0
-                };
-                let dec = tok.decode(&out);
-                let suffix = if arm == "vendor" { "-vendor" } else { "" };
-                std::fs::write(out_dir.join(format!("{tag}{suffix}.spec.txt")), &dec)?;
-                std::fs::write(
-                    out_dir.join(format!("{tag}{suffix}.spec.ids")),
-                    out.iter()
-                        .map(|t| t.to_string())
-                        .collect::<Vec<_>>()
-                        .join(" "),
-                )?;
-                let row = format!(
-                    "{{\"tag\":\"{tag}\",\"mode\":\"spec\",\"arm\":\"{arm}\",\"k\":{k},\
-                     \"prompt_tokens\":{},\"out_tokens\":{},\"prime_s\":{prime_s:.4},\
-                     \"gen_wall_s\":{gen_wall:.4},\"spec_tok_s\":{tok_s:.3},\
-                     \"rounds\":{rounds},\"drafted\":{drafted},\"accepted\":{accepted},\
-                     \"acc_rate\":{acc_rate:.4},\"tok_cyc\":{tok_cyc:.4},\
-                     \"surplus_dropped\":{surplus},\
-                     \"finish\":\"{finish}\",\"seed\":{seed},\"tape_sha16\":\"{}\"}}",
-                    ids.len(),
-                    out.len(),
-                    sha16(dec.as_bytes()),
-                );
-                writeln!(rows, "{row}")?;
-                rows.flush()?;
-                println!("{row}");
-            }
-            continue;
-        }
         for &arm in arms {
             let max_ctx = ids.len() + max_new + 16;
             let mut cache =

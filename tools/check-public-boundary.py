@@ -36,7 +36,7 @@ bytes rather than argued from:
   * A blob reports EVERY rule it matches, ordered worst-rule-first by the policy's severity
     ranks. First-match-only was correct for the enforce/don't-enforce decision and wrong for
     triage: it labelled the worst file in the repo — a cloud account id plus a privilege level
-    plus an identity principal — `personal_email`, one line inside 56 other `personal_email` hits.
+    plus an IAM principal — `personal_email`, one line inside 56 other `personal_email` hits.
 """
 
 from __future__ import annotations
@@ -675,7 +675,7 @@ def scan_secret_bytes(
     Reporting one rule per file was correct for the enforce/don't-enforce decision — one hit is
     enough to make a blob a violation — and it is why the worst file in this repo read as
     authorship noise: `personal_email` matched 189 bytes before the account id did, so the
-    account id, the AdministratorAccess assertion and the identity principal beside it were never
+    account id, the AdministratorAccess assertion and the IAM principal beside it were never
     named in any report. Enforcement takes one rule; triage needs all of them.
     """
     text = data.decode("utf-8", errors="ignore")
@@ -770,35 +770,11 @@ def evaluate(policy: Policy) -> List[Violation]:
         # this guard); the tracked object is still a perfectly readable symlink blob.
         is_link = full.is_symlink()
         if not is_link:
-            # A NON-symlink we cannot stat is REPORTED, never raised and never skipped
-            # (lane/glm5-accrace, merged with the symlink guard above). Raising kills the
-            # scan for every LATER tracked file — the exact shape of the CI failure both
-            # halves of this guard exist to fix — and a silent `continue` would let an
-            # unreadable tracked path hide anything at all. So it becomes its own finding
-            # and the census runs to the end of the tree. Teeth: `UnstatablePathTests`.
             try:
-                is_file = full.is_file()
-            except OSError as err:
-                # Built directly rather than through `build_violation`: that helper derives
-                # `detail` from matched RULE NAMES and line numbers, and the one fact worth
-                # reporting here is the errno text. `detail` keeps the allowlist's
-                # long-standing "rules (note)" shape, so this category needs no migration.
-                violations.append(
-                    Violation(
-                        path=rel,
-                        sha256="unstatable",
-                        category="unstatable_path",
-                        detail=(
-                            f"unstatable_path ({type(err).__name__}: "
-                            f"{err.strerror or err})"
-                        ),
-                        rules=("unstatable_path",),
-                        severity=policy.rank("unstatable_path"),
-                    )
-                )
-                continue
-            if not is_file:
-                continue
+                if not full.is_file():
+                    continue
+            except OSError as exc:
+                raise RuntimeError(f"cannot inspect tracked worktree entry {rel}: {exc}") from exc
         bypass = is_bypass(rel, policy.bypass_paths)
         # Path glob rule (private serving material).
         matched_globs = [

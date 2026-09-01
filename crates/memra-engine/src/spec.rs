@@ -1152,115 +1152,6 @@ impl SpecSampling {
     }
 }
 
-/// Which draft source a spec session is pinned to. The ENGINE-LEVEL half of
-/// `DraftSourcePlan` (memra-gguf `model_plan.rs`, always general): the plan states what the
-/// model DECLARES, this states what actually LOADED and therefore what the session runs.
-/// Pinned at session creation for the session's lifetime.
-///
-/// Family-agnostic on purpose (lane/glm5-extract2, the DraftSource seam): glm5 is today's
-/// consumer with NativeMtp | Dflash2; the hy3/qwen-next spec lanes select through the same
-/// three-way law instead of re-deriving it. What each family still owns is the per-session
-/// STATE behind the kind (see `dflash.rs`'s seam note for why that half is not a trait yet).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DraftSourceKind {
-    /// The model's own embedded NextN/MTP head.
-    NativeMtp,
-    /// A separately loaded DFlash2 block-diffusion drafter
-    /// ([`crate::dflash::DflashDrafter`]).
-    Dflash2,
-}
-
-/// The uniform draft-source selection law. Pure — no env, no engine, no family types — so it
-/// is CPU-gateable and so every spec family answers "which source" the same way.
-///
-/// THE LAW, in precedence order:
-/// 1. A LOADED DFlash2 drafter IS the source. The operator asked for it by name (a set
-///    drafter flag that cannot load is already a loud boot failure, never a silent
-///    fallback), and the family's embedded head is deliberately NOT loaded for this source —
-///    it is a full trunk layer of VRAM.
-/// 2. Otherwise the embedded head, and only when the PLAN declares an embedded source: a
-///    loaded head under a plan that does not declare `Embedded` is a load-path bug, not a
-///    draft source, and it is refused by name rather than drafted from.
-/// 3. Otherwise there is no draft source and speculative decode must refuse before drafting.
-pub fn resolve_draft_source_kind(
-    plan: memra_gguf::model_plan::DraftSourcePlan,
-    embedded_head_loaded: bool,
-    dflash_loaded: bool,
-) -> Result<DraftSourceKind, String> {
-    use memra_gguf::model_plan::DraftSourcePlan as P;
-    if dflash_loaded {
-        return Ok(DraftSourceKind::Dflash2);
-    }
-    if embedded_head_loaded {
-        if plan != P::Embedded {
-            return Err(format!(
-                "an embedded draft head is loaded but the ModelPlan declares \
-                 draft_source={plan:?} — refused rather than drafting from a head the plan \
-                 does not claim"
-            ));
-        }
-        return Ok(DraftSourceKind::NativeMtp);
-    }
-    Err(format!(
-        "no draft source loaded (ModelPlan declares draft_source={plan:?}): speculative \
-         decode has nothing to draft from"
-    ))
-}
-
-#[cfg(test)]
-mod draft_source_kind_tests {
-    use super::{DraftSourceKind, resolve_draft_source_kind};
-    use memra_gguf::model_plan::DraftSourcePlan as P;
-
-    #[test]
-    fn a_loaded_drafter_wins_over_a_co_loaded_embedded_head() {
-        // The operator asked for the drafter BY NAME (a set drafter flag that cannot load is
-        // already a loud boot failure), so it takes precedence under every plan value —
-        // including ExternalArtifact, which is what a pack declares when the draft weights
-        // are not in the model file.
-        for plan in [P::Embedded, P::ExternalArtifact, P::None] {
-            assert_eq!(
-                resolve_draft_source_kind(plan, true, true).unwrap(),
-                DraftSourceKind::Dflash2,
-                "plan {plan:?}: a loaded drafter must win"
-            );
-            assert_eq!(
-                resolve_draft_source_kind(plan, false, true).unwrap(),
-                DraftSourceKind::Dflash2
-            );
-        }
-    }
-
-    #[test]
-    fn the_embedded_head_is_the_source_only_under_a_plan_that_claims_it() {
-        assert_eq!(
-            resolve_draft_source_kind(P::Embedded, true, false).unwrap(),
-            DraftSourceKind::NativeMtp
-        );
-        // A head loaded under a plan that does not declare Embedded is a LOAD-PATH BUG, not a
-        // draft source. Unreachable on glm5 today (its pack hardcodes Embedded and the head
-        // only loads under it) — which is exactly why it is pinned here: an unreachable
-        // refusal with no arm is an untested refusal, and the next family is the one that
-        // makes it reachable.
-        for plan in [P::ExternalArtifact, P::None] {
-            let err = resolve_draft_source_kind(plan, true, false)
-                .expect_err("a head under a non-Embedded plan must refuse");
-            assert!(err.contains("does not claim"), "{err}");
-            assert!(err.contains(&format!("{plan:?}")), "{err}");
-        }
-    }
-
-    #[test]
-    fn nothing_loaded_refuses_before_drafting_and_names_the_plan() {
-        for plan in [P::Embedded, P::ExternalArtifact, P::None] {
-            let err =
-                resolve_draft_source_kind(plan, false, false).expect_err("no source must refuse");
-            assert!(err.contains("no draft source loaded"), "{err}");
-            assert!(err.contains(&format!("{plan:?}")), "{err}");
-        }
-    }
-}
-
 /// `MEMRA_SPEC_PMIN` break semantics over per-slot draft confidences (the chain break this
 /// module's drafting loops apply inline: `p < p_min && (j > 0 || pmin0)`): keep the longest
 /// prefix whose every slot clears `p_min`; slot 0 survives a miss unless PMIN0 arms
@@ -1663,19 +1554,12 @@ pub struct SpecBoundaryCapture {
     /// (the `SpecSession::last_h` convention). Empty = unavailable (capture stays valid;
     /// the fill's zeros row-0 fallback covers it at a bounded acceptance cost).
     pub last_h: Vec<f32>,
-    /// Per-layer latent boundary tails (lane/glm5-prefix-latent2, 2026-09-01): the
-    /// generation-destroyed slice of each MLA/DSA layer's boundary state, captured eagerly
-    /// so the worker's DEFERRED publication can slice the append-only planes from the live
-    /// cache (`LatentKvLayer::snapshot_plane_at`). EMPTY on every two-plane model — the
-    /// pre-field captures are byte-identical; a latent-bearing cache with an EMPTY vec here
-    /// keeps the publisher's loud refusal (the fail-closed door stays shut).
-    pub latent_tails: Vec<Option<crate::cache::LatentTailCapture>>,
 }
 
 /// D2H one hidden row out of a `[T, n_embd]` prime hidden stack — the boundary anchor a
 /// spec boundary capture carries for later restored-session fills. Failure is silent
 /// (`turn_ckpt` convention): the capture publishes without an anchor.
-pub(crate) fn capture_boundary_hidden(
+fn capture_boundary_hidden(
     e: &Engine,
     h_rows: &CudaSlice<f32>,
     pos: usize,
@@ -10434,7 +10318,6 @@ impl HybridModel {
                             pos: pos + seg_end,
                             logits: feed_logits.clone(),
                             last_h: capture_boundary_hidden(e, &h_rows, seg_end, n_embd),
-                            latent_tails: Vec::new(),
                         });
                     }
                     let anchor: Result<CudaSlice<f32>, Box<dyn std::error::Error>> =
@@ -10564,7 +10447,6 @@ impl HybridModel {
                         pos: pos + t,
                         logits: feed_logits.clone(),
                         last_h: capture_boundary_hidden(e, &h_rows, t, n_embd),
-                        latent_tails: Vec::new(),
                     });
                 }
             }
@@ -11946,7 +11828,6 @@ impl HybridModel {
                             // rows [0..seg_end) of h_all are primed — the following
                             // segments append, never overwrite.
                             last_h: capture_boundary_hidden(e, &h_all, seg_end, n_embd),
-                            latent_tails: Vec::new(),
                         });
                     }
                 }
@@ -12018,7 +11899,6 @@ impl HybridModel {
                         .as_ref()
                         .map(|ph| capture_boundary_hidden(e, ph, prompt.len(), n_embd))
                         .unwrap_or_default(),
-                    latent_tails: Vec::new(),
                 });
             }
         }
@@ -13287,12 +13167,6 @@ impl HybridModel {
                     .unwrap_or(4096)
             };
             let fill_chunk = if fill_chunk == 0 { tp } else { fill_chunk };
-            // CUDA launch wall (same class as the trunk prime's PRIME_CHUNK_LAUNCH_CAP):
-            // a fill call's matmuls can land on the grid.y=m dp4a family, and grid.y caps
-            // at 65,535. This loop has no tail fold, so the raw limit is exact:
-            // tp <= 65,535 keeps the legacy schedule (monolithic included) byte-for-byte,
-            // and larger fills — unreachable before the trunk prime's own cap fix — chunk.
-            let fill_chunk = fill_chunk.min(crate::hybrid_forward::CUDA_GRID_YZ_MAX);
             let mut start = 0usize;
             while start < tp {
                 let end = (start + fill_chunk).min(tp);

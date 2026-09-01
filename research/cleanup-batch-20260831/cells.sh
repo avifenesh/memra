@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cleanup-batch 2026-08-31 GPU cells (the rented dev box, card 0 only, minutes of use):
+# Cleanup-batch 2026-08-31 GPU cells (sbox dev box, card 0 only, minutes of use):
 #   tooth 1: MEMRA_MTP_SKIP=1 + explicit MEMRA_SERVE_SPEC=1, no dspark -> boot FATAL,
 #            "cannot be honored" quoted (contract unchanged, re-proven on this binary).
 #   tooth 2 (NEW refuse-loud contract, hermes baf261e2bfdae118): skip + MEMRA_SERVE_SPEC

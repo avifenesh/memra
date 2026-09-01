@@ -134,10 +134,8 @@ fn dead_prime_kill_switch_refusal(
 /// same predicate with no door of its own), and, via `MEMRA_SEL_DOWN8`, the fused down+combine.
 /// That coupling is why the 2026-08-29 bisect could name a door and not a mechanism, and it is
 /// why the restore splits them: `MEMRA_NVFP4_BANK_SM`, `MEMRA_NVFP4_SEL_GU`,
-/// `MEMRA_NVFP4_SEL_DOWN8`, each strict `0`/`1`, each admitted and priced on its own. Two of the
-/// three (`BANK_SM` + `SEL_DOWN8`) flipped to default ON on 2026-09-01 as ONE COUPLED decision
-/// with a deploy-grade battery attached; `SEL_GU` stays default OFF because it earns nothing
-/// measurable. A recipe that still says `MEMRA_NVFP4_BANK_V2=1` is asking for the bundle, by a name
+/// `MEMRA_NVFP4_SEL_DOWN8`, each strict `0`/`1`, each default OFF, each admitted and priced on
+/// its own. A recipe that still says `MEMRA_NVFP4_BANK_V2=1` is asking for the bundle, by a name
 /// no code reads; honouring it silently as "just the layout" would serve a different program than
 /// the recipe was written against — the exact failure shape the incident documented, fluent wrong
 /// answers with every counter green. So the boot still fails loudly, for every model family, and
@@ -160,15 +158,11 @@ fn removed_bank_v2_doors_refusal(
              generated text in serving (bisect: research/step37-reasoning-effort-20260829). The \
              cause was NOT the layout -- it was a defaulted scale-fetch argument in the prefill \
              grouped GEMM, fixed 2026-09-01 -- and the programs are back under THREE separate \
-             strict 0/1 doors: MEMRA_NVFP4_BANK_SM (slot-major TP expert banks + the _sel_v2 \
-             readers) and MEMRA_NVFP4_SEL_DOWN8 (fused down+combine) are DEFAULT ON since \
-             2026-09-01, and MEMRA_NVFP4_SEL_GU (fused gate+up sweep) is DEFAULT OFF. One old \
-             name armed all three at once, which is why this boot refuses instead of guessing \
-             which one you meant. NOTE FOR THE FIX: two thirds of what this recipe asked for is \
-             now the DEFAULT, so the remediation is usually to DELETE these two vars rather than \
-             translate them; add MEMRA_NVFP4_SEL_GU=1 only if the recipe really wanted the gate+up \
-             fusion, and use MEMRA_NVFP4_BANK_SM=0 to roll back to the pre-2026-09-01 program. \
-             Receipts and per-program pricing: research/step37-bankv3-20260901."
+             strict 0/1 doors, all default OFF: MEMRA_NVFP4_BANK_SM (slot-major TP expert banks \
+             + the _sel_v2 readers), MEMRA_NVFP4_SEL_GU (fused gate+up sweep) and \
+             MEMRA_NVFP4_SEL_DOWN8 (fused down+combine). One old name armed all three at once, \
+             which is why this boot refuses instead of guessing which one you meant. Receipts \
+             and per-program pricing: research/step37-bankv3-20260901."
         ));
     }
     None
@@ -1139,10 +1133,11 @@ impl EngineError {
     /// "an enforcing 429 should carry the predicted earliest-completion estimate").
     /// Same class, same body shape, same header machinery as `rate_limit`; only the
     /// Retry-After value is the producer's estimate instead of the class default.
-    /// Built and tested for the D2 enforcing flip (the shed byte-compat gate
-    /// `admit_predict_reject_matches_shed_contract` locks the response shape); the
-    /// first-token deadline gate (`MEMRA_FIRST_TOKEN_DEADLINE_GATE`,
-    /// lane/bench-debts-20260901) is its first production caller.
+    /// Built and tested for the enforcing flip; shadow mode only LOGS the value, so
+    /// until that flip the shed byte-compat gate (`admit_predict_reject_matches_shed_
+    /// contract`) is the constructor's only caller, hence the cfg(test)-invisible
+    /// dead-code allowance.
+    #[allow(dead_code)]
     pub fn rate_limit_after(message: impl Into<String>, retry_after_s: u64) -> Self {
         Self {
             class: ErrClass::RateLimit,
@@ -1301,14 +1296,6 @@ pub struct Request {
     /// Reserved host patch-memory budget. The permit is moved through requeues and released only
     /// when this worker-owned request is dropped, including streaming completion/cancellation.
     pub(crate) vision_memory: Option<crate::VisionMemoryPermit>,
-    /// The request's WIRE first-token deadline (`timeout_ms`, capped at the 90 s platform
-    /// ceiling), stamped by the HTTP handler at submission: the same instant the handler's
-    /// own 408 watch fires at (lane/bench-debts-20260901). Carried so the worker's
-    /// first-token deadline gate (`MEMRA_FIRST_TOKEN_DEADLINE_GATE`) can judge admission
-    /// against the REMAINING deadline at its own tick instead of a stale handler snapshot.
-    /// None for internally-constructed requests (tests, embeddings/rerank capture routes),
-    /// which the gate skips.
-    pub wire_deadline: Option<std::time::Instant>,
     /// per-request stream back to the handler. tokio mpsc so the async side can await it.
     pub tx: tokio::sync::mpsc::UnboundedSender<Event>,
 }
@@ -1486,26 +1473,6 @@ pub enum Cmd {
         tenant: String,
         tx: tokio::sync::oneshot::Sender<HostPurgeReport>,
     },
-    /// DEPLOY HANDOFF, export half (lane/host-tier-deploy-warmth-20260901): drain-demote
-    /// every evictable device prefix entry into the host tier, then serialize the tier
-    /// (newest-first under MEMRA_KV_HOST_HANDOFF_MB) to the MEMRA_KV_HOST_HANDOFF path.
-    /// Engine half of a deployment admin `POST /admin/kv-host/export`. The write is
-    /// SYNCHRONOUS on the worker thread by design: serve-deploy calls it on the DRAINED
-    /// blue slot after the edge flip, where a stalled tick has no one to stall; a slot
-    /// with active/queued requests refuses unless `force`.
-    ExportHostHandoff {
-        force: bool,
-        tx: tokio::sync::oneshot::Sender<Result<HostHandoffExportReport, String>>,
-    },
-    /// DEPLOY HANDOFF, import half: validate the handoff file's header (magic, digest,
-    /// layout_version, age, per-model artifact stamps) and answer immediately; the
-    /// entries then re-materialize ONE per scheduler tick (promote-class stalls, never a
-    /// multi-second gap on a slot that is already serving). Engine half of a deployment
-    /// admin `POST /admin/kv-host/import`. A file already present at boot arms the same
-    /// drip without this command (the sequential-deploy shape).
-    ImportHostHandoff {
-        tx: tokio::sync::oneshot::Sender<Result<HostHandoffImportStart, String>>,
-    },
 }
 
 /// What `Cmd::TrimPools` freed, by pool (entry counts, not bytes — the device memory
@@ -1531,44 +1498,6 @@ pub struct HostPurgeReport {
     pub host_bytes: usize,
     pub device_entries: usize,
     pub device_pinned_left: usize,
-}
-
-/// What `Cmd::ExportHostHandoff` wrote (lane/host-tier-deploy-warmth-20260901).
-/// `demoted_from_device` counts the drain-demote step's device->host moves;
-/// `entries`/`bytes` are what landed in the file; `skipped_over_cap` counts resident
-/// entries the MEMRA_KV_HOST_HANDOFF_MB newest-first cap left behind.
-#[derive(Debug, serde::Serialize)]
-pub struct HostHandoffExportReport {
-    pub path: String,
-    pub demoted_from_device: usize,
-    pub entries: u64,
-    pub bytes: u64,
-    pub skipped_over_cap: u64,
-    pub ms: f64,
-}
-
-/// `Cmd::ImportHostHandoff`'s immediate answer: the VALIDATED header, before any entry
-/// re-materializes (the drip then runs one frame per tick; completion is a summary log
-/// line plus the `prefix_host_handoff_*` /metrics counters). `refused_models` lists
-/// models whose entries will be skipped (artifact stamp mismatch, or not loaded here).
-#[derive(Debug, serde::Serialize)]
-pub struct HostHandoffImportStart {
-    pub path: String,
-    pub header_entries: u64,
-    pub header_bytes: u64,
-    pub age_secs: u64,
-    pub refused_models: Vec<String>,
-}
-
-/// Parked reply channels for the handoff commands, the same parking discipline as
-/// trims/purges: `handle_cmd` parks, the tick top executes where px/hpx are in scope.
-#[derive(Default)]
-struct PendingHandoffs {
-    exports: Vec<(
-        bool,
-        tokio::sync::oneshot::Sender<Result<HostHandoffExportReport, String>>,
-    )>,
-    import_starts: Vec<tokio::sync::oneshot::Sender<Result<HostHandoffImportStart, String>>>,
 }
 
 const CONSTRAINT_RESULT_POLL: Duration = Duration::from_millis(5);
@@ -1685,15 +1614,6 @@ pub struct Metrics {
     /// the session's next request won the race (or nothing demotable remained).
     pub prefix_host_pause_demotes: u64,
     pub prefix_host_pause_cancels: u64,
-    /// Deploy handoff (MEMRA_KV_HOST_HANDOFF, lane/host-tier-deploy-warmth-20260901):
-    /// exports counts files written by this process; imported entries/bytes count host
-    /// entries re-materialized from a handoff file (also ordinary inserts, so the
-    /// entries/bytes gauges move with them); skips counts frames refused during import
-    /// (corrupt digest, refused model, insert refusal); each skip also logs its reason.
-    pub prefix_host_handoff_exports: u64,
-    pub prefix_host_handoff_imported_entries: u64,
-    pub prefix_host_handoff_imported_bytes: u64,
-    pub prefix_host_handoff_skips: u64,
     /// KV budget flex (MEMRA_KV_FLEX, lane/kv-flex-20260831, tiering spec Arc G):
     /// borrowed_bytes is the current device-cache residency ABOVE the configured floor
     /// (a gauge, derived from the one byte accountant); sheds counts borrowed-slice
@@ -2702,58 +2622,6 @@ fn affinity_enabled() -> bool {
 fn spec_stable_boundary_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_SPEC_STABLE_BOUNDARY").as_deref() != Ok("0"))
-}
-
-/// MEMRA_PREFIX_STABLE_BOUNDARY (default **0 = OFF by design**, lane/bench-debts-20260901):
-/// arm the PLAIN prefix-cache boundary capture at the render-stable last-turn boundary
-/// (`plain_checkpoint_boundary`) on both the miss path and the shallow-hit path, so the
-/// entry a cold turn mints is exact-prefix-matchable by the SAME session's next re-rendered
-/// turn: on the device tier and, after a capacity demotion, on the host tier.
-///
-/// WHY (the competitive bench's promote-starvation finding, darklanes
-/// research/competitive-bench-20260901/RESULTS.md §7): the prompt-end SEED's key carries
-/// the template's live generation header, which the next turn re-renders (the pi-rewrite
-/// divergence `plain_checkpoint_boundary` documents), so under organic multi-turn churn the
-/// demoted population is dominated by keys that can never match again: N56 cell: 425 of
-/// 432 device hits at exactly 64 tokens (the shared-system-prompt seed), 28 demotions
-/// against 1 promotion, every deep hit a grid-aligned boundary entry. The spec tier fixed
-/// this exact defect 2026-08-21 (`MEMRA_SPEC_STABLE_BOUNDARY`, frozen-boundary finding B4);
-/// this flag ports the same law to the plain capture side. OFF is byte-identical to today
-/// by construction (no call site changes an armed boundary). Default OFF because the arm is
-/// unmeasured on serving hardware: the GPU gate (organic-churn promote-rate cell, next
-/// hardware window) is named in docs/FLAGS.md.
-fn prefix_stable_boundary_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_PREFIX_STABLE_BOUNDARY").as_deref() == Ok("1"))
-}
-
-/// MEMRA_FIRST_TOKEN_DEADLINE_GATE (default **0 = OFF by design**, lane/bench-debts-20260901,
-/// competitive-bench engine debt 3: deadline behavior under thrash). `1` arms a first-token
-/// deadline feasibility check at the worker's admission seam (post-tokenize, the D2 G1
-/// placement): when the request's own prompt plus the live prime backlog cannot produce a
-/// first token inside the remaining wire deadline even at the pessimistic prefill floor
-/// (x1.5 margin, `admit_predict::first_token_wait_infeasible`), the request is refused with
-/// the shed contract's 429 + Retry-After BEFORE it burns its 90 s deadline queueing: the
-/// bench's N56 cells cancelled 70-74% of turns at that wall. Full doc: docs/FLAGS.md row.
-fn first_token_deadline_gate_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_FIRST_TOKEN_DEADLINE_GATE").as_deref() == Ok("1"))
-}
-
-/// Pure arming rule for the stable-boundary capture (unit-tested half; the stateful
-/// `has_key` dedupe stays at the call site). Deepest-wins: a stable boundary only replaces
-/// an already-armed capture when it is strictly deeper, so LCP teaching from a deeper
-/// sibling is never downgraded. The boundary must clear the entry floor and sit strictly
-/// inside the prompt (`plain_checkpoint_boundary` already grid-aligned it and handled the
-/// W1 sub-floor remainder).
-fn stable_boundary_arm(
-    stable: Option<usize>,
-    current: Option<usize>,
-    prompt_len: usize,
-) -> Option<usize> {
-    let b = stable?;
-    (b >= PREFIX_CACHE_MIN_TOKENS && b < prompt_len && current.is_none_or(|cur| b > cur))
-        .then_some(b)
 }
 
 /// FNV-1a over a token stream — a stable, allocation-free 64-bit mix. (Not a cryptographic
@@ -3899,41 +3767,6 @@ fn kv_host_fault() -> &'static str {
     F.get_or_init(|| std::env::var("MEMRA_KV_HOST_FAULT").unwrap_or_default())
 }
 
-/// MEMRA_KV_HOST_HANDOFF (lane/host-tier-deploy-warmth-20260901): filesystem path of the
-/// host tier's cross-deploy handoff file. Default EMPTY/unset = OFF BY DESIGN (rollback =
-/// unset): the tier stays process-lifetime pinned memory and a blue/green flip starts cold,
-/// exactly as before this flag (darklanes TRAP:host-tier-empties-on-deploy; measured 34.1 s
-/// cold re-prefill at 82.5k tokens on box12, research/stress-campaign-20260901/RESULTS.md).
-/// Set the SAME path on both slots of a box: the draining slot's export writes it
-/// atomically (.tmp + rename), the incoming slot's import consumes it and UNLINKS it
-/// (consume-once; a refused file is also unlinked so a stale leftover cannot retry forever).
-fn kv_host_handoff_path() -> Option<&'static str> {
-    static P: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
-    P.get_or_init(|| {
-        std::env::var("MEMRA_KV_HOST_HANDOFF")
-            .ok()
-            .filter(|p| !p.is_empty())
-    })
-    .as_deref()
-}
-
-/// MEMRA_KV_HOST_HANDOFF_MB (default 0 = whole resident pool): newest-first byte cap on the
-/// exported entries, in binary MiB. The pool is already operator-bounded by MEMRA_KV_HOST_MB,
-/// so the uncapped default is a deliberate decision, not an accident: the handoff exists to
-/// carry exactly what the tier holds. The cap is the bounded-policy knob for boxes where the
-/// full pool's write+hash time would stretch the deploy tail (selection walks the LRU from
-/// most-recent, keeping the newest entries that fit under the cap).
-fn kv_host_handoff_cap_bytes() -> usize {
-    static B: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-    *B.get_or_init(|| {
-        std::env::var("MEMRA_KV_HOST_HANDOFF_MB")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(0)
-            .saturating_mul(1024 * 1024)
-    })
-}
-
 /// In-batch cold-prefix fanout. `=0` is the rollback/measurement seam.
 /// MEMRA_KV_PAUSE_DEMOTE (default **0 = OFF by design**, lane/kv-pause-demote-20260831,
 /// tiering spec Arc E): a response ending in a completed tool-call block is a session about
@@ -4219,47 +4052,6 @@ fn prefix_dedup_enabled() -> bool {
 fn prefix_latent_planes_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_PREFIX_LATENT").as_deref() == Ok("1"))
-}
-
-/// `MEMRA_HYPER_SUFFIX_PRIME=1` lets a CARRIED suffix (prefix-cache restore, reuse hit,
-/// continuation) on a hyper-connections trunk ride the PRIME program instead of tokenwise
-/// `decode_step` (lane/glm5-prefix-latent2, 2026-09-01; docs/FLAGS.md row).
-///
-/// WHY: the `eager_mono && carried` veto in the two prefill sites exists for gemma4, whose
-/// engine REFUSES a pos>0 prime. glm5_next's engine does not — `prime_cache_hyper` is
-/// positional by construction (pos from `cache.pos`, KDA state via `cache.recur`, MLA/DSA
-/// via the latent planes; every chunk after the first inside one cold prime already runs
-/// exactly this program). The veto therefore sent every restored glm5 suffix through the
-/// t=1 decode program at ~33 ms/token — 10-14x a cold prime, the parent lane's
-/// PRODUCT-SUSPECT defect (research/glm5-prefix-latent-20260830/box-window, box B: suffixes
-/// 469/1407/1899 tok predicted 15.5/46.4/62.7 s at 33 ms/tok, measured 15.10/46.13/62.49 s).
-/// A prefix hit MUST NOT be slower than a miss; with the veto in place it was.
-///
-/// DEFAULT OFF BY DESIGN (new-flags law): the ON arm changes the suffix's numeric program
-/// (chunked prefill vs t=1 decode), so it ships dark until the box battery banks
-/// restored-vs-cold byte identity ON THE CONTINUATION plus the 8-turn cache twin's TTFT
-/// receipts. OFF is byte-for-byte today's tokenwise path; unsetting the flag is the
-/// rollback seam. gemma stays vetoed regardless — see `carried_suffix_primes`.
-fn hyper_suffix_prime_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_HYPER_SUFFIX_PRIME").as_deref() == Ok("1"))
-}
-
-/// Pure carve-out predicate (unit-testable half of the `eager_mono && carried` veto lift):
-/// true = this eager-only model's carried suffix may take the prime branch. Scoped to
-/// hyper-connections trunks (`decode_batch_unconverted`) — the ONLY eager-only class whose
-/// engine prime is continuation-capable. gemma4 (`DecodeBatchProgram::Gemma` / E4B) keeps
-/// the tokenwise path: its prime is fresh-monolithic only and the engine refuses pos>0.
-///
-/// PROXY WARNING (PR #93 review finding 7, the no-generic-model-support law):
-/// `decode_batch_unconverted` literally means "topology carries HyperConnections", and
-/// "continuation-capable prime" is a MEASURED property of glm5_next's walk, not of the
-/// topology class. A SECOND hyper-connections family inherits this carve-out under the
-/// flag automatically and MUST re-gate its own restored-vs-cold byte identity before its
-/// serving recipe may arm MEMRA_HYPER_SUFFIX_PRIME — loading and running never proves
-/// support.
-fn carried_suffix_primes(hyper_trunk: bool, flag_on: bool) -> bool {
-    hyper_trunk && flag_on
 }
 
 /// Immediate LCP-boundary restore. **Default OFF**: the lane that built this mechanism
@@ -6478,17 +6270,6 @@ struct HostPrefixCache {
     /// or nothing demotable remained. Cancels are counted at the deadline, not at arrival.
     pause_demotes: u64,
     pause_cancels: u64,
-    /// DEPLOY HANDOFF (lane/host-tier-deploy-warmth-20260901, MEMRA_KV_HOST_HANDOFF):
-    /// `handoff_exports` counts export invocations that wrote a file; `handoff_imports` /
-    /// `handoff_import_bytes` count entries re-materialized from a handoff file (each is
-    /// ALSO an ordinary `insert`, so entries/bytes gauges move with them); `handoff_skips`
-    /// counts frames refused during import (corrupt digest, refused model, insert
-    /// refusal), each with its own loud log line. The sentinel's fresh-empty-vs-broken
-    /// read post-deploy: imports > 0 with skips == 0 is a clean warm start.
-    handoff_exports: u64,
-    handoff_imports: u64,
-    handoff_import_bytes: u64,
-    handoff_skips: u64,
 }
 
 impl HostPrefixCache {
@@ -6524,9 +6305,6 @@ impl HostPrefixCache {
             .wrapping_add(self.tenant_rejects)
             .wrapping_add(self.pause_demotes)
             .wrapping_add(self.pause_cancels)
-            .wrapping_add(self.handoff_exports)
-            .wrapping_add(self.handoff_imports)
-            .wrapping_add(self.handoff_skips)
     }
 
     /// Would demoting `bytes` under `key` push its tenant past the share cap? The ONE
@@ -7305,27 +7083,6 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
     })
 }
 
-/// Pure admit-time probe-order decision (the unit-tested half of `host_promote_prefix_hit`):
-/// consult the host tier and name the entry worth re-materializing, or None. The rule the
-/// competitive bench's promote-starvation finding is anchored on (darklanes
-/// research/competitive-bench-20260901/RESULTS.md §7): the host is consulted on a device
-/// MISS **or a device hit SHALLOWER than the host's best exact-prefix entry**: a surviving
-/// shallow device entry (the shared-system-prompt seed shape: 425 of 432 device hits at
-/// exactly 64 tokens in the N56 cell) must never shadow a deeper demoted twin.
-/// `device_best_len = 0` encodes a device miss.
-fn host_promote_candidate(
-    host: &HostPrefixCache,
-    pool_key: &PoolKey,
-    prompt: &[u32],
-    device_best_len: usize,
-) -> Option<usize> {
-    if !host.armed() {
-        return None;
-    }
-    let hi = host.lookup(pool_key, prompt)?;
-    (host.entries[pool_key][hi].toks.len() > device_best_len).then_some(hi)
-}
-
 /// The promote hook (admit-time): device miss (or a device hit SHALLOWER than the host's
 /// best) -> host probe with the SAME exact-token / PC-ISO key rules -> on hit, re-materialize
 /// a normal device `PrefixEntry` and insert it PINNED so it survives until the unmodified hit
@@ -7341,11 +7098,17 @@ fn host_promote_prefix_hit(
     prompt: &[u32],
     device_best_len: usize,
 ) -> Option<(usize, PrefixPin)> {
-    let hi = host_promote_candidate(host, pool_key, prompt, device_best_len)?;
+    if !host.armed() {
+        return None;
+    }
+    let hi = host.lookup(pool_key, prompt)?;
     let (host_len, expected_digest) = {
         let e = &host.entries[pool_key][hi];
         (e.toks.len(), e.verify_digest.clone())
     };
+    if host_len <= device_best_len {
+        return None; // the device tier already serves at least as deep: nothing to feed
+    }
     let t0 = Instant::now();
     let e = match device_entry_from_host(engine, &host.entries[pool_key][hi]) {
         Ok(e) => e,
@@ -7394,1212 +7157,6 @@ fn host_promote_prefix_hit(
         ns_suffix(&pool_key.1)
     );
     Some((i, pin))
-}
-
-// ---------------------------------------------------------------------------
-// HOST-TIER DEPLOY HANDOFF (lane/host-tier-deploy-warmth-20260901).
-//
-// The tier is process-lifetime pinned memory, so every blue/green flip booted a fresh-empty
-// pool and every parked long-context session paid a full cold re-prefill until re-warmed
-// (darklanes TRAP:host-tier-empties-on-deploy: 34.1 s at 82.5k tokens measured on box12,
-// research/stress-campaign-20260901/RESULTS.md). The fix is a drain-demote + file handoff:
-// the DRAINED old slot demotes its evictable device entries into the host tier and
-// serializes the tier to MEMRA_KV_HOST_HANDOFF; the new slot re-materializes host entries
-// from that file, one per tick, and the untouched promote path serves them on demand.
-//
-// Design laws, in order:
-// - The restore path is UNTOUCHED: import = ordinary `HostPrefixCache::insert` of an
-//   ordinary `HostPrefixEntry`; budget LRU, tenant share caps, and identity checks all
-//   apply exactly as to a demotion.
-// - Every frame is digest-checked (sha256 over the payload, written at export, verified at
-//   import): a corrupt frame is SKIPPED LOUDLY and the stream continues; it can never
-//   become a bad restore.
-// - A `layout_version` mismatch refuses the WHOLE file cleanly: a deploy that changes the
-//   entry layout starts cold BY DESIGN, and says so.
-// - Same-name model artifacts are stamp-checked (file count/bytes/max-mtime, a cheap stat
-//   walk, deliberately not a byte hash): KV bytes minted by different weights must never
-//   restore, so a stamp mismatch skips that model's entries loudly.
-// - Consume-once: the importer unlinks the file at completion AND at refusal; the 1-hour
-//   age bound refuses leftovers from a crashed deploy.
-// - The format is SAME-HOST by construction (blue/green share the box), so native
-//   endianness is part of the format and the digests catch any cross-host misuse.
-//
-// Out of scope, stated: the continuation pools (plain/spec/dspark session reuse) do not
-// hand off: a parked session on the new slot re-enters through the prefix entry covering
-// its committed tape (prefix-restore cost, sub-second measured) instead of the 34.1 s
-// re-prefill. Latent-plane (MLA/DSA) entries never reach the host tier upstream, so no
-// such frame can exist.
-
-/// File magic; the trailing digit is the format version (bump it on any wire change: an
-/// old file then refuses at the magic check, which is the correct cold start).
-const HANDOFF_MAGIC: &[u8; 16] = b"MEMRA-KVHANDOFF1";
-/// A handoff spans one deploy (seconds to minutes). Anything older is a leftover from a
-/// crashed or rolled-back deploy and is refused + unlinked rather than imported.
-const HANDOFF_MAX_AGE_SECS: u64 = 3600;
-/// Header body sanity bound (model stamps only; entries carry their own frames).
-const HANDOFF_MAX_HEADER_BYTES: u64 = 1 << 20;
-
-/// Cheap fidelity stamp over one model's artifact path (file or directory, walked
-/// recursively). Deliberately NOT a byte hash: hashing tens of GB of weights at export
-/// would eat the deploy window, while any artifact byte change moves size or mtime.
-/// `readable: false` NEVER matches, including against another unreadable stamp: two sides
-/// equally blind is refusal, not agreement.
-#[derive(Clone, Debug, PartialEq)]
-struct HandoffModelStamp {
-    name: String,
-    path: String,
-    readable: bool,
-    files: u64,
-    bytes: u64,
-    max_mtime_ns: u64,
-}
-
-fn handoff_model_stamp(name: &str, path: &str) -> HandoffModelStamp {
-    fn walk(p: &std::path::Path, acc: &mut (u64, u64, u64)) -> std::io::Result<()> {
-        let md = std::fs::metadata(p)?;
-        if md.is_dir() {
-            for ent in std::fs::read_dir(p)? {
-                walk(&ent?.path(), acc)?;
-            }
-        } else {
-            acc.0 += 1;
-            acc.1 += md.len();
-            let mtime = md
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map_or(0, |d| d.as_nanos() as u64);
-            acc.2 = acc.2.max(mtime);
-        }
-        Ok(())
-    }
-    let mut acc = (0u64, 0u64, 0u64);
-    let readable = walk(std::path::Path::new(path), &mut acc).is_ok();
-    HandoffModelStamp {
-        name: name.to_string(),
-        path: path.to_string(),
-        readable,
-        files: acc.0,
-        bytes: acc.1,
-        max_mtime_ns: acc.2,
-    }
-}
-
-fn handoff_stamp_matches(a: &HandoffModelStamp, b: &HandoffModelStamp) -> bool {
-    a.readable
-        && b.readable
-        && a.files == b.files
-        && a.bytes == b.bytes
-        && a.max_mtime_ns == b.max_mtime_ns
-}
-
-#[derive(Debug, PartialEq)]
-struct HandoffHeader {
-    layout_version: u32,
-    created_unix: u64,
-    models: Vec<HandoffModelStamp>,
-    entries: u64,
-    resident_bytes: u64,
-}
-
-/// Header-level import verdict, pure so the refusal matrix is unit-testable. `Err` refuses
-/// the whole file; `Ok` carries the per-model refusals (name, reason) whose entries the
-/// drip will skip.
-fn handoff_header_verdict(
-    h: &HandoffHeader,
-    runtime_layout: u32,
-    now_unix: u64,
-    local_stamps: &[HandoffModelStamp],
-) -> Result<Vec<(String, String)>, String> {
-    if h.layout_version != runtime_layout {
-        return Err(format!(
-            "handoff layout version {} != runtime {}: a deploy that changes the entry \
-             layout starts cold by design",
-            h.layout_version, runtime_layout,
-        ));
-    }
-    let age = now_unix.saturating_sub(h.created_unix);
-    if age > HANDOFF_MAX_AGE_SECS {
-        return Err(format!(
-            "handoff file is {age}s old (bound {HANDOFF_MAX_AGE_SECS}s): a deploy handoff \
-             is minutes old by construction; refusing a leftover"
-        ));
-    }
-    let mut refused = Vec::new();
-    for m in &h.models {
-        match local_stamps.iter().find(|l| l.name == m.name) {
-            Some(l) if handoff_stamp_matches(m, l) => {}
-            Some(l) => refused.push((
-                m.name.clone(),
-                format!(
-                    "artifact stamp mismatch (file: {} files/{} B/mtime {}, {}; here: {} \
-                     files/{} B/mtime {}, {}): KV state minted by different weights must \
-                     not restore",
-                    m.files,
-                    m.bytes,
-                    m.max_mtime_ns,
-                    if m.readable { "readable" } else { "UNREADABLE" },
-                    l.files,
-                    l.bytes,
-                    l.max_mtime_ns,
-                    if l.readable { "readable" } else { "UNREADABLE" },
-                ),
-            )),
-            None => refused.push((m.name.clone(), "model not loaded on this slot".into())),
-        }
-    }
-    Ok(refused)
-}
-
-// ---- wire primitives -------------------------------------------------------
-
-/// Reinterpret an f32 slice as raw bytes (native endianness; same-host format by design,
-/// see the module comment). Safety: f32 and u32 have no invalid bit patterns and u8 has
-/// alignment 1.
-fn f32s_as_bytes(v: &[f32]) -> &[u8] {
-    unsafe { std::slice::from_raw_parts(v.as_ptr().cast::<u8>(), std::mem::size_of_val(v)) }
-}
-
-fn u32s_as_bytes(v: &[u32]) -> &[u8] {
-    unsafe { std::slice::from_raw_parts(v.as_ptr().cast::<u8>(), std::mem::size_of_val(v)) }
-}
-
-/// Counting + hashing writer for one frame payload: every payload byte flows through
-/// `put`, so the digest and the byte count can never drift from what was written.
-struct HandoffFrameWriter<'a, W: std::io::Write> {
-    w: &'a mut W,
-    hasher: Sha256,
-    written: u64,
-}
-
-impl<'a, W: std::io::Write> HandoffFrameWriter<'a, W> {
-    fn new(w: &'a mut W) -> Self {
-        HandoffFrameWriter {
-            w,
-            hasher: Sha256::new(),
-            written: 0,
-        }
-    }
-    fn put(&mut self, bytes: &[u8]) -> Result<(), String> {
-        self.w
-            .write_all(bytes)
-            .map_err(|e| format!("handoff write failed: {e}"))?;
-        self.hasher.update(bytes);
-        self.written += bytes.len() as u64;
-        Ok(())
-    }
-    fn put_u8(&mut self, v: u8) -> Result<(), String> {
-        self.put(&[v])
-    }
-    fn put_u32(&mut self, v: u32) -> Result<(), String> {
-        self.put(&v.to_le_bytes())
-    }
-    fn put_u64(&mut self, v: u64) -> Result<(), String> {
-        self.put(&v.to_le_bytes())
-    }
-    fn put_str(&mut self, s: &str) -> Result<(), String> {
-        self.put_u64(s.len() as u64)?;
-        self.put(s.as_bytes())
-    }
-    fn put_f32s(&mut self, v: &[f32]) -> Result<(), String> {
-        self.put_u64(v.len() as u64)?;
-        self.put(f32s_as_bytes(v))
-    }
-    fn finish(self) -> (u64, [u8; 32]) {
-        (self.written, self.hasher.finalize().into())
-    }
-}
-
-/// Bounds-checked + hashing reader over one frame payload. Every read is charged against
-/// `remaining`, so a corrupt length field can never allocate or read past the frame.
-struct HandoffFrameReader<'a, R: std::io::Read> {
-    r: &'a mut R,
-    hasher: Sha256,
-    remaining: u64,
-}
-
-impl<'a, R: std::io::Read> HandoffFrameReader<'a, R> {
-    fn take_into(&mut self, buf: &mut [u8]) -> Result<(), String> {
-        if buf.len() as u64 > self.remaining {
-            return Err(format!(
-                "frame overrun: {} bytes wanted, {} left (corrupt length field)",
-                buf.len(),
-                self.remaining
-            ));
-        }
-        self.r
-            .read_exact(buf)
-            .map_err(|e| format!("handoff read failed: {e}"))?;
-        self.hasher.update(&buf[..]);
-        self.remaining -= buf.len() as u64;
-        Ok(())
-    }
-    fn u8(&mut self) -> Result<u8, String> {
-        let mut b = [0u8; 1];
-        self.take_into(&mut b)?;
-        Ok(b[0])
-    }
-    fn u32(&mut self) -> Result<u32, String> {
-        let mut b = [0u8; 4];
-        self.take_into(&mut b)?;
-        Ok(u32::from_le_bytes(b))
-    }
-    fn u64(&mut self) -> Result<u64, String> {
-        let mut b = [0u8; 8];
-        self.take_into(&mut b)?;
-        Ok(u64::from_le_bytes(b))
-    }
-    /// Length-checked usize (all counts/sizes travel as u64).
-    fn size(&mut self) -> Result<usize, String> {
-        let v = self.u64()?;
-        usize::try_from(v).map_err(|_| format!("size {v} does not fit this platform"))
-    }
-    fn string(&mut self, cap: usize) -> Result<String, String> {
-        let n = self.size()?;
-        if n > cap {
-            return Err(format!("string of {n} bytes exceeds the {cap} bound"));
-        }
-        let mut buf = vec![0u8; n];
-        self.take_into(&mut buf)?;
-        String::from_utf8(buf).map_err(|_| "non-UTF-8 string in frame".into())
-    }
-    fn bytes_vec(&mut self, n: usize) -> Result<Vec<u8>, String> {
-        if n as u64 > self.remaining {
-            return Err(format!(
-                "byte run of {n} exceeds the {} remaining (corrupt length field)",
-                self.remaining
-            ));
-        }
-        let mut buf = vec![0u8; n];
-        self.take_into(&mut buf)?;
-        Ok(buf)
-    }
-    fn f32s(&mut self) -> Result<Vec<f32>, String> {
-        let n = self.size()?;
-        let nb = n
-            .checked_mul(4)
-            .ok_or_else(|| "f32 count overflow".to_string())?;
-        if nb as u64 > self.remaining {
-            return Err(format!(
-                "f32 run of {nb} bytes exceeds the {} remaining (corrupt length field)",
-                self.remaining
-            ));
-        }
-        let mut v = vec![0f32; n];
-        // Safety: same representation argument as f32s_as_bytes, mutable side.
-        let view = unsafe { std::slice::from_raw_parts_mut(v.as_mut_ptr().cast::<u8>(), nb) };
-        self.take_into(view)?;
-        Ok(v)
-    }
-    /// Consume (and hash) the payload remainder, keeping the digest check honest and the
-    /// stream in register with the next frame whatever the parse did.
-    fn drain(&mut self) -> Result<(), String> {
-        let mut scratch = [0u8; 64 * 1024];
-        while self.remaining > 0 {
-            let n = (self.remaining as usize).min(scratch.len());
-            self.take_into(&mut scratch[..n])?;
-        }
-        Ok(())
-    }
-}
-
-// ---- wire entry shapes ------------------------------------------------------
-
-/// Borrowed view of one host entry for serialization. Production borrows the pinned
-/// buffers straight out of `HostPrefixEntry` (zero copies before the file write); tests
-/// build these from plain vectors, which is what keeps the round-trip CPU-testable.
-struct HandoffPlaneRef<'a> {
-    len: usize,
-    k_tok_bytes: usize,
-    v_tok_bytes: usize,
-    k: &'a [u8],
-    v: &'a [u8],
-}
-
-struct HandoffTailRef<'a> {
-    layers: Vec<(&'a [f32], &'a [f32])>,
-    base: usize,
-    rows: usize,
-    len: usize,
-    row_bytes: usize,
-}
-
-struct HandoffEntryRef<'a> {
-    layout_version: u32,
-    model: &'a str,
-    ns: &'a str,
-    toks: &'a [u32],
-    kv: Vec<Option<HandoffPlaneRef<'a>>>,
-    conv: &'a [Option<Vec<f32>>],
-    ssm: &'a [Option<Vec<f32>>],
-    pos: usize,
-    last_logits: &'a [f32],
-    draft: Option<HandoffPlaneRef<'a>>,
-    dspark: Option<HandoffTailRef<'a>>,
-    last_h: &'a [f32],
-    bytes: usize,
-    verify_digest: Option<&'a str>,
-}
-
-/// Owned twin the reader produces: plain heap vectors, no pinned memory, no CUDA: the
-/// CPU-testable half of the round trip. `host_entry_from_owned` turns it into a real
-/// `HostPrefixEntry` (pinned allocations + memcpy) on the worker thread.
-#[derive(Debug, PartialEq)]
-struct HandoffPlaneOwned {
-    len: usize,
-    k_tok_bytes: usize,
-    v_tok_bytes: usize,
-    k: Vec<u8>,
-    v: Vec<u8>,
-}
-
-#[derive(Debug, PartialEq)]
-struct HandoffTailOwned {
-    layers: Vec<(Vec<f32>, Vec<f32>)>,
-    base: usize,
-    rows: usize,
-    len: usize,
-    row_bytes: usize,
-}
-
-#[derive(Debug, PartialEq)]
-struct HandoffEntryOwned {
-    layout_version: u32,
-    model: String,
-    ns: String,
-    toks: Vec<u32>,
-    kv: Vec<Option<HandoffPlaneOwned>>,
-    conv: Vec<Option<Vec<f32>>>,
-    ssm: Vec<Option<Vec<f32>>>,
-    pos: usize,
-    last_logits: Vec<f32>,
-    draft: Option<HandoffPlaneOwned>,
-    dspark: Option<HandoffTailOwned>,
-    last_h: Vec<f32>,
-    bytes: usize,
-    verify_digest: Option<String>,
-}
-
-#[cfg(test)]
-impl HandoffEntryOwned {
-    /// Test-side view builder: the round-trip cell writes exactly what production writes,
-    /// through the same `HandoffEntryRef` writer, with no pinned memory anywhere.
-    fn as_wire_ref(&self) -> HandoffEntryRef<'_> {
-        fn plane(p: &HandoffPlaneOwned) -> HandoffPlaneRef<'_> {
-            HandoffPlaneRef {
-                len: p.len,
-                k_tok_bytes: p.k_tok_bytes,
-                v_tok_bytes: p.v_tok_bytes,
-                k: &p.k,
-                v: &p.v,
-            }
-        }
-        HandoffEntryRef {
-            layout_version: self.layout_version,
-            model: &self.model,
-            ns: &self.ns,
-            toks: &self.toks,
-            kv: self.kv.iter().map(|p| p.as_ref().map(plane)).collect(),
-            conv: &self.conv,
-            ssm: &self.ssm,
-            pos: self.pos,
-            last_logits: &self.last_logits,
-            draft: self.draft.as_ref().map(plane),
-            dspark: self.dspark.as_ref().map(|t| HandoffTailRef {
-                layers: t
-                    .layers
-                    .iter()
-                    .map(|(k, v)| (k.as_slice(), v.as_slice()))
-                    .collect(),
-                base: t.base,
-                rows: t.rows,
-                len: t.len,
-                row_bytes: t.row_bytes,
-            }),
-            last_h: &self.last_h,
-            bytes: self.bytes,
-            verify_digest: self.verify_digest.as_deref(),
-        }
-    }
-}
-
-/// Production view builder over a resident host entry (borrows the pinned slices).
-fn handoff_entry_ref(e: &HostPrefixEntry) -> HandoffEntryRef<'_> {
-    fn plane(p: &HostPlane) -> HandoffPlaneRef<'_> {
-        HandoffPlaneRef {
-            len: p.len,
-            k_tok_bytes: p.k_tok_bytes,
-            v_tok_bytes: p.v_tok_bytes,
-            k: p.k.as_slice(),
-            v: p.v.as_slice(),
-        }
-    }
-    HandoffEntryRef {
-        layout_version: e.layout_version,
-        model: &e.pool_key.0,
-        ns: &e.pool_key.1,
-        toks: &e.toks,
-        kv: e.kv.iter().map(|p| p.as_ref().map(plane)).collect(),
-        conv: &e.conv,
-        ssm: &e.ssm,
-        pos: e.pos,
-        last_logits: &e.last_logits,
-        draft: e.draft.as_ref().map(plane),
-        dspark: e.dspark_draft.as_ref().map(|t| HandoffTailRef {
-            layers: t
-                .layers
-                .iter()
-                .map(|(k, v)| (k.as_slice(), v.as_slice()))
-                .collect(),
-            base: t.base,
-            rows: t.rows,
-            len: t.len,
-            row_bytes: t.row_bytes,
-        }),
-        last_h: &e.last_h,
-        bytes: e.bytes,
-        verify_digest: e.verify_digest.as_deref(),
-    }
-}
-
-// ---- header IO --------------------------------------------------------------
-
-fn handoff_header_body(h: &HandoffHeader) -> Vec<u8> {
-    fn put_u64(out: &mut Vec<u8>, v: u64) {
-        out.extend_from_slice(&v.to_le_bytes());
-    }
-    fn put_str(out: &mut Vec<u8>, s: &str) {
-        put_u64(out, s.len() as u64);
-        out.extend_from_slice(s.as_bytes());
-    }
-    let mut out = Vec::new();
-    out.extend_from_slice(&h.layout_version.to_le_bytes());
-    put_u64(&mut out, h.created_unix);
-    put_u64(&mut out, h.models.len() as u64);
-    for m in &h.models {
-        put_str(&mut out, &m.name);
-        put_str(&mut out, &m.path);
-        out.push(u8::from(m.readable));
-        put_u64(&mut out, m.files);
-        put_u64(&mut out, m.bytes);
-        put_u64(&mut out, m.max_mtime_ns);
-    }
-    put_u64(&mut out, h.entries);
-    put_u64(&mut out, h.resident_bytes);
-    out
-}
-
-fn handoff_write_header<W: std::io::Write>(w: &mut W, h: &HandoffHeader) -> Result<(), String> {
-    let body = handoff_header_body(h);
-    w.write_all(HANDOFF_MAGIC)
-        .and_then(|()| w.write_all(&(body.len() as u64).to_le_bytes()))
-        .and_then(|()| w.write_all(&body))
-        .and_then(|()| w.write_all(&Sha256::digest(&body)))
-        .map_err(|e| format!("handoff header write failed: {e}"))
-}
-
-fn handoff_read_header<R: std::io::Read>(r: &mut R) -> Result<HandoffHeader, String> {
-    let mut magic = [0u8; 16];
-    r.read_exact(&mut magic)
-        .map_err(|e| format!("handoff magic read failed: {e}"))?;
-    if &magic != HANDOFF_MAGIC {
-        return Err(format!(
-            "not a v{} handoff file (magic {:?})",
-            HANDOFF_MAGIC[15] as char,
-            String::from_utf8_lossy(&magic),
-        ));
-    }
-    let mut len8 = [0u8; 8];
-    r.read_exact(&mut len8)
-        .map_err(|e| format!("handoff header length read failed: {e}"))?;
-    let len = u64::from_le_bytes(len8);
-    if len > HANDOFF_MAX_HEADER_BYTES {
-        return Err(format!(
-            "handoff header of {len} bytes exceeds the {HANDOFF_MAX_HEADER_BYTES} bound \
-             (corrupt file)"
-        ));
-    }
-    let mut body = vec![0u8; len as usize];
-    r.read_exact(&mut body)
-        .map_err(|e| format!("handoff header read failed: {e}"))?;
-    let mut expected = [0u8; 32];
-    r.read_exact(&mut expected)
-        .map_err(|e| format!("handoff header digest read failed: {e}"))?;
-    let actual: [u8; 32] = Sha256::digest(&body).into();
-    if actual != expected {
-        return Err("handoff header digest mismatch (corrupt file)".into());
-    }
-    let mut slice: &[u8] = &body;
-    let mut fr = HandoffFrameReader {
-        r: &mut slice,
-        hasher: Sha256::new(),
-        remaining: len,
-    };
-    let layout_version = fr.u32()?;
-    let created_unix = fr.u64()?;
-    let n_models = fr.size()?;
-    if n_models > 4096 {
-        return Err(format!("{n_models} model stamps exceed the 4096 bound"));
-    }
-    let mut models = Vec::with_capacity(n_models);
-    for _ in 0..n_models {
-        let name = fr.string(4096)?;
-        let path = fr.string(65536)?;
-        let readable = fr.u8()? != 0;
-        let files = fr.u64()?;
-        let bytes = fr.u64()?;
-        let max_mtime_ns = fr.u64()?;
-        models.push(HandoffModelStamp {
-            name,
-            path,
-            readable,
-            files,
-            bytes,
-            max_mtime_ns,
-        });
-    }
-    let entries = fr.u64()?;
-    let resident_bytes = fr.u64()?;
-    if fr.remaining != 0 {
-        return Err("handoff header carries trailing bytes (corrupt file)".into());
-    }
-    Ok(HandoffHeader {
-        layout_version,
-        created_unix,
-        models,
-        entries,
-        resident_bytes,
-    })
-}
-
-// ---- entry IO ---------------------------------------------------------------
-
-/// Serialized payload size of one entry, in bytes. MUST agree with `handoff_write_entry`;
-/// the writer counts what it wrote and refuses the frame on drift (covered by the
-/// round-trip test), so the two can never silently diverge in a shipped file.
-fn handoff_entry_wire_len(e: &HandoffEntryRef) -> u64 {
-    fn str_len(s: &str) -> u64 {
-        8 + s.len() as u64
-    }
-    fn f32s_len(v: &[f32]) -> u64 {
-        8 + 4 * v.len() as u64
-    }
-    fn plane_len(p: &HandoffPlaneRef) -> u64 {
-        8 * 3 + 8 + p.k.len() as u64 + 8 + p.v.len() as u64
-    }
-    let mut n = 4; // layout_version
-    n += str_len(e.model) + str_len(e.ns);
-    n += 8 + 4 * e.toks.len() as u64;
-    n += 8; // kv layer count
-    for p in &e.kv {
-        n += 1 + p.as_ref().map_or(0, plane_len);
-    }
-    for class in [e.conv, e.ssm] {
-        n += 8;
-        for c in class {
-            n += 1 + c.as_ref().map_or(0, |v| f32s_len(v));
-        }
-    }
-    n += 8; // pos
-    n += f32s_len(e.last_logits);
-    n += 1 + e.draft.as_ref().map_or(0, plane_len);
-    n += 1;
-    if let Some(t) = &e.dspark {
-        n += 8;
-        for (k, v) in &t.layers {
-            n += f32s_len(k) + f32s_len(v);
-        }
-        n += 8 * 4;
-    }
-    n += f32s_len(e.last_h);
-    n += 8; // bytes
-    n += 1 + e.verify_digest.map_or(0, str_len);
-    n
-}
-
-fn handoff_write_plane<W: std::io::Write>(
-    w: &mut HandoffFrameWriter<W>,
-    p: &HandoffPlaneRef,
-) -> Result<(), String> {
-    w.put_u64(p.len as u64)?;
-    w.put_u64(p.k_tok_bytes as u64)?;
-    w.put_u64(p.v_tok_bytes as u64)?;
-    w.put_u64(p.k.len() as u64)?;
-    w.put(p.k)?;
-    w.put_u64(p.v.len() as u64)?;
-    w.put(p.v)
-}
-
-/// Write one frame: `[payload_len u64][payload][sha256(payload) 32]`. Returns the payload
-/// length written.
-fn handoff_write_entry<W: std::io::Write>(out: &mut W, e: &HandoffEntryRef) -> Result<u64, String> {
-    let len = handoff_entry_wire_len(e);
-    out.write_all(&len.to_le_bytes())
-        .map_err(|err| format!("handoff frame length write failed: {err}"))?;
-    let mut w = HandoffFrameWriter::new(out);
-    w.put_u32(e.layout_version)?;
-    w.put_str(e.model)?;
-    w.put_str(e.ns)?;
-    w.put_u64(e.toks.len() as u64)?;
-    w.put(u32s_as_bytes(e.toks))?;
-    w.put_u64(e.kv.len() as u64)?;
-    for p in &e.kv {
-        match p {
-            Some(p) => {
-                w.put_u8(1)?;
-                handoff_write_plane(&mut w, p)?;
-            }
-            None => w.put_u8(0)?,
-        }
-    }
-    for class in [e.conv, e.ssm] {
-        w.put_u64(class.len() as u64)?;
-        for c in class {
-            match c {
-                Some(v) => {
-                    w.put_u8(1)?;
-                    w.put_f32s(v)?;
-                }
-                None => w.put_u8(0)?,
-            }
-        }
-    }
-    w.put_u64(e.pos as u64)?;
-    w.put_f32s(e.last_logits)?;
-    match &e.draft {
-        Some(p) => {
-            w.put_u8(1)?;
-            handoff_write_plane(&mut w, p)?;
-        }
-        None => w.put_u8(0)?,
-    }
-    match &e.dspark {
-        Some(t) => {
-            w.put_u8(1)?;
-            w.put_u64(t.layers.len() as u64)?;
-            for (k, v) in &t.layers {
-                w.put_f32s(k)?;
-                w.put_f32s(v)?;
-            }
-            w.put_u64(t.base as u64)?;
-            w.put_u64(t.rows as u64)?;
-            w.put_u64(t.len as u64)?;
-            w.put_u64(t.row_bytes as u64)?;
-        }
-        None => w.put_u8(0)?,
-    }
-    w.put_f32s(e.last_h)?;
-    w.put_u64(e.bytes as u64)?;
-    match e.verify_digest {
-        Some(d) => {
-            w.put_u8(1)?;
-            w.put_str(d)?;
-        }
-        None => w.put_u8(0)?,
-    }
-    let (written, digest) = w.finish();
-    if written != len {
-        return Err(format!(
-            "handoff wire-length drift: computed {len}, wrote {written} (refusing the file)"
-        ));
-    }
-    out.write_all(&digest)
-        .map_err(|err| format!("handoff frame digest write failed: {err}"))?;
-    Ok(written)
-}
-
-fn handoff_parse_plane<R: std::io::Read>(
-    fr: &mut HandoffFrameReader<R>,
-) -> Result<HandoffPlaneOwned, String> {
-    let len = fr.size()?;
-    let k_tok_bytes = fr.size()?;
-    let v_tok_bytes = fr.size()?;
-    let kb = fr.size()?;
-    let k = fr.bytes_vec(kb)?;
-    let vb = fr.size()?;
-    let v = fr.bytes_vec(vb)?;
-    let expect_k = len
-        .checked_mul(k_tok_bytes)
-        .ok_or_else(|| "plane K size overflow".to_string())?;
-    let expect_v = len
-        .checked_mul(v_tok_bytes)
-        .ok_or_else(|| "plane V size overflow".to_string())?;
-    if kb != expect_k || vb != expect_v {
-        return Err(format!(
-            "plane shape mismatch: {len} tokens x {k_tok_bytes}/{v_tok_bytes} B/tok vs \
-             {kb}/{vb} plane bytes"
-        ));
-    }
-    Ok(HandoffPlaneOwned {
-        len,
-        k_tok_bytes,
-        v_tok_bytes,
-        k,
-        v,
-    })
-}
-
-fn handoff_parse_entry<R: std::io::Read>(
-    fr: &mut HandoffFrameReader<R>,
-) -> Result<HandoffEntryOwned, String> {
-    const MAX_LAYERS: usize = 4096;
-    let layout_version = fr.u32()?;
-    let model = fr.string(4096)?;
-    let ns = fr.string(65536)?;
-    let n_toks = fr.size()?;
-    let tok_bytes = n_toks
-        .checked_mul(4)
-        .ok_or_else(|| "token count overflow".to_string())?;
-    let raw = fr.bytes_vec(tok_bytes)?;
-    let toks: Vec<u32> = raw
-        .chunks_exact(4)
-        .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-        .collect();
-    let n_kv = fr.size()?;
-    if n_kv > MAX_LAYERS {
-        return Err(format!("{n_kv} kv layers exceed the {MAX_LAYERS} bound"));
-    }
-    let mut kv = Vec::with_capacity(n_kv);
-    for _ in 0..n_kv {
-        kv.push(match fr.u8()? {
-            0 => None,
-            1 => Some(handoff_parse_plane(fr)?),
-            f => return Err(format!("bad kv plane flag {f}")),
-        });
-    }
-    let mut recur = [Vec::new(), Vec::new()];
-    for class in &mut recur {
-        let n = fr.size()?;
-        if n > MAX_LAYERS {
-            return Err(format!(
-                "{n} recurrent layers exceed the {MAX_LAYERS} bound"
-            ));
-        }
-        for _ in 0..n {
-            class.push(match fr.u8()? {
-                0 => None,
-                1 => Some(fr.f32s()?),
-                f => return Err(format!("bad recurrent flag {f}")),
-            });
-        }
-    }
-    let [conv, ssm] = recur;
-    let pos = fr.size()?;
-    let last_logits = fr.f32s()?;
-    let draft = match fr.u8()? {
-        0 => None,
-        1 => Some(handoff_parse_plane(fr)?),
-        f => return Err(format!("bad draft flag {f}")),
-    };
-    let dspark = match fr.u8()? {
-        0 => None,
-        1 => {
-            let n = fr.size()?;
-            if n > MAX_LAYERS {
-                return Err(format!(
-                    "{n} draft tail layers exceed the {MAX_LAYERS} bound"
-                ));
-            }
-            let mut layers = Vec::with_capacity(n);
-            for _ in 0..n {
-                let k = fr.f32s()?;
-                let v = fr.f32s()?;
-                layers.push((k, v));
-            }
-            Some(HandoffTailOwned {
-                layers,
-                base: fr.size()?,
-                rows: fr.size()?,
-                len: fr.size()?,
-                row_bytes: fr.size()?,
-            })
-        }
-        f => return Err(format!("bad draft tail flag {f}")),
-    };
-    let last_h = fr.f32s()?;
-    let bytes = fr.size()?;
-    let verify_digest = match fr.u8()? {
-        0 => None,
-        1 => Some(fr.string(4096)?),
-        f => return Err(format!("bad verify-digest flag {f}")),
-    };
-    Ok(HandoffEntryOwned {
-        layout_version,
-        model,
-        ns,
-        toks,
-        kv,
-        conv,
-        ssm,
-        pos,
-        last_logits,
-        draft,
-        dspark,
-        last_h,
-        bytes,
-        verify_digest,
-    })
-}
-
-/// Read one frame. `Ok(None)` = clean EOF. `Ok(Some(Err(reason)))` = THIS frame is corrupt
-/// or malformed but was fully consumed: skip it loudly, the stream continues in register.
-/// `Err` = the stream itself is broken (truncated / unreadable): abort the import; what
-/// was already imported stays, the rest serves cold.
-fn handoff_read_entry<R: std::io::Read>(
-    r: &mut R,
-    max_frame: u64,
-) -> Result<Option<Result<HandoffEntryOwned, String>>, String> {
-    let mut len8 = [0u8; 8];
-    match r.read_exact(&mut len8) {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
-        Err(e) => return Err(format!("frame length read failed: {e}")),
-    }
-    let len = u64::from_le_bytes(len8);
-    if len > max_frame {
-        return Err(format!(
-            "frame length {len} exceeds the file-size bound {max_frame} (corrupt stream)"
-        ));
-    }
-    let mut fr = HandoffFrameReader {
-        r,
-        hasher: Sha256::new(),
-        remaining: len,
-    };
-    let parsed = handoff_parse_entry(&mut fr);
-    let leftover = fr.remaining;
-    fr.drain().map_err(|e| format!("frame drain failed: {e}"))?;
-    let actual: [u8; 32] = fr.hasher.finalize().into();
-    let mut expected = [0u8; 32];
-    r.read_exact(&mut expected)
-        .map_err(|e| format!("frame digest read failed: {e}"))?;
-    if actual != expected {
-        return Ok(Some(Err(
-            "entry digest mismatch (corrupt handoff bytes)".into()
-        )));
-    }
-    Ok(Some(match parsed {
-        Ok(_) if leftover != 0 => Err(format!(
-            "entry parsed with {leftover} trailing payload bytes (malformed frame)"
-        )),
-        Ok(e) => Ok(e),
-        Err(reason) => Err(reason),
-    }))
-}
-
-// ---- re-materialization ------------------------------------------------------
-
-/// Pinned-host twin of a parsed plane. Alloc failures are the ONLY error class here
-/// (shapes were validated at parse), and the caller treats them with the tier's latch
-/// posture: pinned RAM exhaustion aborts the import loudly.
-fn host_plane_from_owned(p: HandoffPlaneOwned) -> Result<HostPlane, String> {
-    let mut k = memra_engine::PinnedHostBuf::new(p.k.len()).map_err(|e| e.to_string())?;
-    k.as_mut_slice().copy_from_slice(&p.k);
-    let mut v = memra_engine::PinnedHostBuf::new(p.v.len()).map_err(|e| e.to_string())?;
-    v.as_mut_slice().copy_from_slice(&p.v);
-    Ok(HostPlane {
-        k,
-        v,
-        len: p.len,
-        k_tok_bytes: p.k_tok_bytes,
-        v_tok_bytes: p.v_tok_bytes,
-    })
-}
-
-fn host_entry_from_owned(e: HandoffEntryOwned) -> Result<HostPrefixEntry, String> {
-    let mut kv = Vec::with_capacity(e.kv.len());
-    for p in e.kv {
-        kv.push(match p {
-            Some(p) => Some(host_plane_from_owned(p)?),
-            None => None,
-        });
-    }
-    let draft = match e.draft {
-        Some(p) => Some(host_plane_from_owned(p)?),
-        None => None,
-    };
-    Ok(HostPrefixEntry {
-        layout_version: e.layout_version,
-        pool_key: (e.model, e.ns),
-        toks: e.toks,
-        kv,
-        conv: e.conv,
-        ssm: e.ssm,
-        pos: e.pos,
-        last_logits: e.last_logits,
-        draft,
-        dspark_draft: e.dspark.map(|t| HostDflashTail {
-            layers: t.layers,
-            base: t.base,
-            rows: t.rows,
-            len: t.len,
-            row_bytes: t.row_bytes,
-        }),
-        last_h: e.last_h,
-        bytes: e.bytes,
-        last_use: Instant::now(),
-        id: 0, // recency identity assigned by HostPrefixCache::insert
-        verify_digest: e.verify_digest,
-    })
-}
-
-// ---- export -----------------------------------------------------------------
-
-fn handoff_now_unix() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
-}
-
-/// The export body: drain-demote, select, write. Runs synchronously on the worker thread
-/// (see `Cmd::ExportHostHandoff` for why that is the design, not an accident).
-fn host_handoff_export(
-    path: &str,
-    cap_bytes: usize,
-    engine: &Engine,
-    px: &mut PrefixCache,
-    hpx: &mut HostPrefixCache,
-    local_stamps: &[HandoffModelStamp],
-) -> Result<HostHandoffExportReport, String> {
-    if !hpx.armed() {
-        return Err(
-            "host tier is off (MEMRA_KV_HOST_MB=0) or latched off; nothing to export".into(),
-        );
-    }
-    let t0 = Instant::now();
-    // 1. DRAIN-DEMOTE: pull every evictable device prefix entry through the ordinary
-    //    demote sink, oldest first so host recency stays device-true. The freshest KV
-    //    state on a draining slot lives on the DEVICE (parked sessions' boundary
-    //    entries); without this step the handoff would carry only what pressure had
-    //    already spilled. Pinned (leased) entries are absent from the evictable LRU by
-    //    construction; latent-plane entries refuse at the demote hook and drop, exactly
-    //    as a device eviction would treat them.
-    let mut demoted = 0usize;
-    while let Some((key, i)) = px.oldest_evictable() {
-        let Some(dead) = px.remove_at(&key, i) else {
-            break;
-        };
-        px.evictions += 1;
-        if host_demote_prefix_ref(engine, hpx, &dead) == HostDemoteOutcome::Demoted {
-            demoted += 1;
-        }
-    }
-    // 2. SELECT newest-first under the MEMRA_KV_HOST_HANDOFF_MB cap (0 = everything).
-    //    An entry that does not fit is skipped and scanning continues, so the cap fills
-    //    with the newest entries that fit rather than stopping at the first oversized one.
-    let mut selected: Vec<(PoolKey, usize)> = Vec::new();
-    let (mut sel_bytes, mut skipped_over_cap) = (0u64, 0u64);
-    for (key, i) in hpx.lru.values().rev() {
-        let b = hpx.entries[key][*i].bytes as u64;
-        if cap_bytes > 0 && sel_bytes + b > cap_bytes as u64 {
-            skipped_over_cap += 1;
-            continue;
-        }
-        sel_bytes += b;
-        selected.push((key.clone(), *i));
-    }
-    // 3. WRITE `.tmp`, fsync, rename: the destination path only ever holds a complete
-    //    file. Frames go OLDEST-first (selection reversed) so the importer's sequential
-    //    inserts reconstruct true LRU recency.
-    let tmp = format!("{path}.tmp");
-    let write = (|| -> Result<(), String> {
-        let f = std::fs::File::create(&tmp).map_err(|e| format!("create {tmp}: {e}"))?;
-        let mut w = std::io::BufWriter::with_capacity(4 << 20, f);
-        handoff_write_header(
-            &mut w,
-            &HandoffHeader {
-                layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
-                created_unix: handoff_now_unix(),
-                models: local_stamps.to_vec(),
-                entries: selected.len() as u64,
-                resident_bytes: sel_bytes,
-            },
-        )?;
-        for (key, i) in selected.iter().rev() {
-            handoff_write_entry(&mut w, &handoff_entry_ref(&hpx.entries[key][*i]))?;
-        }
-        let f = w
-            .into_inner()
-            .map_err(|e| format!("handoff flush failed: {e}"))?;
-        f.sync_all()
-            .map_err(|e| format!("handoff fsync failed: {e}"))?;
-        std::fs::rename(&tmp, path).map_err(|e| format!("rename {tmp} -> {path}: {e}"))
-    })();
-    if let Err(err) = write {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(err);
-    }
-    hpx.handoff_exports += 1;
-    let ms = t0.elapsed().as_secs_f64() * 1e3;
-    eprintln!(
-        "[prefix-host] handoff export: {} entries / {:.1}MB to {path} in {ms:.0}ms \
-         (drain-demoted {demoted} device entries first; {skipped_over_cap} skipped over \
-         the MEMRA_KV_HOST_HANDOFF_MB cap)",
-        selected.len(),
-        sel_bytes as f64 / 1e6,
-    );
-    Ok(HostHandoffExportReport {
-        path: path.to_string(),
-        demoted_from_device: demoted,
-        entries: selected.len() as u64,
-        bytes: sel_bytes,
-        skipped_over_cap,
-        ms,
-    })
-}
-
-// ---- import -----------------------------------------------------------------
-
-/// Drip-import state: the validated header plus an open reader. One frame re-materializes
-/// per scheduler tick (a promote-class stall, bounded by the largest single entry), so a
-/// slot that is already serving warms in the background instead of stalling behind the
-/// whole file.
-struct HostHandoffImport {
-    path: String,
-    reader: std::io::BufReader<std::fs::File>,
-    max_frame: u64,
-    refused_models: std::collections::HashSet<String>,
-    header_entries: u64,
-    seen: u64,
-    imported: u64,
-    imported_bytes: u64,
-    skipped: u64,
-    started: Instant,
-}
-
-fn open_host_handoff_import(
-    path: &str,
-    local_stamps: &[HandoffModelStamp],
-) -> Result<(HostHandoffImport, HostHandoffImportStart), String> {
-    let f = std::fs::File::open(path).map_err(|e| format!("open {path}: {e}"))?;
-    let max_frame = f.metadata().map_or(u64::MAX, |m| m.len());
-    let mut reader = std::io::BufReader::with_capacity(4 << 20, f);
-    let header = handoff_read_header(&mut reader)?;
-    let now = handoff_now_unix();
-    let refused = handoff_header_verdict(&header, PREFIX_ENTRY_LAYOUT_VERSION, now, local_stamps)?;
-    for (model, why) in &refused {
-        eprintln!("[prefix-host] handoff import will SKIP every entry of model {model:?}: {why}");
-    }
-    let age_secs = now.saturating_sub(header.created_unix);
-    let start = HostHandoffImportStart {
-        path: path.to_string(),
-        header_entries: header.entries,
-        header_bytes: header.resident_bytes,
-        age_secs,
-        refused_models: refused.iter().map(|(m, _)| m.clone()).collect(),
-    };
-    Ok((
-        HostHandoffImport {
-            path: path.to_string(),
-            reader,
-            max_frame,
-            refused_models: refused.into_iter().map(|(m, _)| m).collect(),
-            header_entries: header.entries,
-            seen: 0,
-            imported: 0,
-            imported_bytes: 0,
-            skipped: 0,
-            started: Instant::now(),
-        },
-        start,
-    ))
-}
-
-/// Import at most ONE frame. Returns `true` when the import is FINISHED (clean EOF, broken
-/// stream, or the tier latched off) and the caller should unlink the file and drop the
-/// state: consume-once, whatever the outcome.
-fn host_handoff_import_step(imp: &mut HostHandoffImport, hpx: &mut HostPrefixCache) -> bool {
-    if !hpx.armed() {
-        eprintln!(
-            "[prefix-host] handoff import ABORTED: the tier latched off mid-import \
-             ({} of {} frames in); the rest serves cold",
-            imp.seen, imp.header_entries,
-        );
-        return true;
-    }
-    match handoff_read_entry(&mut imp.reader, imp.max_frame) {
-        Ok(None) => {
-            eprintln!(
-                "[prefix-host] handoff import DONE: {} entries / {:.1}MB re-materialized, \
-                 {} skipped, in {:.1}s from {}",
-                imp.imported,
-                imp.imported_bytes as f64 / 1e6,
-                imp.skipped,
-                imp.started.elapsed().as_secs_f64(),
-                imp.path,
-            );
-            true
-        }
-        Ok(Some(Ok(e))) => {
-            imp.seen += 1;
-            if imp.refused_models.contains(&e.model) {
-                imp.skipped += 1;
-                hpx.handoff_skips += 1;
-                return false;
-            }
-            let t0 = Instant::now();
-            let key: PoolKey = (e.model.clone(), e.ns.clone());
-            match host_entry_from_owned(e) {
-                Ok(entry) => {
-                    let (toks, bytes) = (entry.toks.len(), entry.bytes);
-                    // Ordinary insert: identity/version re-checked, budget LRU and tenant
-                    // share cap enforced exactly as for a demotion. Refusals log their
-                    // own reason there.
-                    if hpx.insert(&key, entry) {
-                        imp.imported += 1;
-                        imp.imported_bytes += bytes as u64;
-                        hpx.handoff_imports += 1;
-                        hpx.handoff_import_bytes += bytes as u64;
-                        eprintln!(
-                            "[prefix-host] handoff import: {toks} tokens, {:.1}MB in \
-                             {:.1}ms ({}/{} frames; host resident {:.1}MB / {:.0}MB)",
-                            bytes as f64 / 1e6,
-                            t0.elapsed().as_secs_f64() * 1e3,
-                            imp.seen,
-                            imp.header_entries,
-                            hpx.total_bytes as f64 / 1e6,
-                            hpx.budget as f64 / 1e6,
-                        );
-                    } else {
-                        imp.skipped += 1;
-                        hpx.handoff_skips += 1;
-                    }
-                    false
-                }
-                Err(err) => {
-                    // Pinned alloc failure: the tier's no-pageable-fallback latch posture.
-                    hpx.rejected_allocs += 1;
-                    hpx.disable(&format!("handoff import pinned alloc failed: {err}"));
-                    eprintln!(
-                        "[prefix-host] handoff import ABORTED at frame {} of {}: {err}; \
-                         {} entries already imported stay resident, the rest serves cold",
-                        imp.seen, imp.header_entries, imp.imported,
-                    );
-                    true
-                }
-            }
-        }
-        Ok(Some(Err(reason))) => {
-            imp.seen += 1;
-            imp.skipped += 1;
-            hpx.handoff_skips += 1;
-            eprintln!(
-                "[prefix-host] handoff import SKIPPED a corrupt frame ({}/{}): {reason}; \
-                 that prefix serves cold",
-                imp.seen, imp.header_entries,
-            );
-            false
-        }
-        Err(err) => {
-            eprintln!(
-                "[prefix-host] handoff import ABORTED ({err}); {} entries / {:.1}MB \
-                 imported before the break, the rest serves cold",
-                imp.imported,
-                imp.imported_bytes as f64 / 1e6,
-            );
-            true
-        }
-    }
 }
 
 /// Deep-copy the primed prefix state OUT of a live session cache into a compact entry.
@@ -9473,75 +8030,25 @@ fn prefix_insert_from_spec_boundary(
     if cache.has_swa_ring() {
         return;
     }
-    // LATENT ARM (lane/glm5-prefix-latent2, 2026-09-01 — the case the old refusal named
-    // "unreachable today ... IF A SPEC ARM EVER LANDS FIRST"; the glm5 spec arm landed):
-    // a latent-bearing cache publishes ONLY when the capture carries the boundary tails
-    // (taken at prime time, before generation lapped the tail ring) AND the latent plane
-    // flag arms publication. The append-only planes (latent rows, final pool keys) are
-    // sliced from the LIVE cache below the boundary (`snapshot_plane_at` validates every
-    // slice); anything else keeps the loud refusal — fail closed, never a guessed plane.
-    let has_latent = cache.latent.iter().any(Option::is_some);
-    let mut cap = cap;
-    let n = cache.kv.len();
-    let mut latent: Vec<Option<memra_engine::cache::LatentPlaneSnapshot>> = Vec::new();
-    let mut latent_bytes = 0usize;
-    if has_latent {
-        if !prefix_latent_planes_on() || cap.latent_tails.len() != n {
-            eprintln!(
-                "[prefix-cache] spec publish REFUSED: latent (MLA/DSA) cache without \
-                 boundary tails in the capture (or MEMRA_PREFIX_LATENT off); entry dropped",
-            );
-            return;
-        }
-        for il in 0..n {
-            match (&cache.latent[il], cap.latent_tails[il].take()) {
-                (Some(l), Some(tail)) => match l.snapshot_plane_at(engine, tail) {
-                    Ok(snap) => {
-                        latent_bytes += snap.bytes();
-                        latent.push(Some(snap));
-                    }
-                    Err(err) => {
-                        eprintln!(
-                            "[prefix-cache] spec publish REFUSED: latent layer {il} boundary \
-                             slice: {err}; entry dropped",
-                        );
-                        return;
-                    }
-                },
-                // Absent at the boundary (the MTP plane on the DFlash2 arm) stays absent —
-                // the prefix_snapshot convention, capture/restore symmetric. Identity
-                // hardening (PR #96 review round 2, finding 1): a LIVE plane carrying rows
-                // whose capture slot is None is a disagreement, not a convention — refuse
-                // rather than publish an absent history for a layer that has one.
-                (Some(l), None) if l.len == 0 => latent.push(None),
-                (None, None) => latent.push(None),
-                (Some(_), None) => {
-                    eprintln!(
-                        "[prefix-cache] spec publish REFUSED: live latent layer {il} \
-                         carries rows but the capture recorded it absent; entry dropped",
-                    );
-                    return;
-                }
-                (None, Some(_)) => {
-                    eprintln!(
-                        "[prefix-cache] spec publish REFUSED: capture carries a tail for \
-                         layer {il} but the live cache has no latent plane there; entry \
-                         dropped",
-                    );
-                    return;
-                }
-            }
-        }
-    } else {
-        latent = (0..n).map(|_| None).collect();
+    // FAIL-CLOSED, unreachable today: every latent model is eager-only with no drafter, so no
+    // spec session can exist on one. If a spec arm ever lands first, this publisher builds
+    // entries WITHOUT latent planes; publishing one would depend on the restore-side guard
+    // alone. Refuse at the source instead, loudly.
+    if cache.latent.iter().any(Option::is_some) {
+        eprintln!(
+            "[prefix-cache] spec publish REFUSED: the spec boundary capture does not carry \
+             latent (MLA/DSA) planes; entry dropped",
+        );
+        return;
     }
     debug_assert!(
         cap.snap.pos == pos,
         "spec boundary capture snap pos {} != capture pos {pos}",
         cap.snap.pos,
     );
+    let n = cache.kv.len();
     let mut kv = Vec::with_capacity(n);
-    let mut bytes = latent_bytes;
+    let mut bytes = 0usize;
     for il in 0..n {
         match &cache.kv[il] {
             // MTP head layer: allocated, never executed by the trunk — absent, like
@@ -9641,9 +8148,9 @@ fn prefix_insert_from_spec_boundary(
         kv,
         conv: cap.snap.conv,
         ssm: cap.snap.ssm,
-        // Latent planes: boundary-tail capture + live append-only slices (the latent arm
-        // above); every slot absent on two-plane models, byte-identical to the pre-arm entry.
-        latent,
+        // The spec boundary capture cannot express latent planes; the latent-bearing case is
+        // refused at this function's entry, so every slot is legitimately absent.
+        latent: (0..n).map(|_| None).collect(),
         pos,
         last_logits: cap.logits,
         draft,
@@ -9788,19 +8295,6 @@ fn maybe_prefix_seed(
         return;
     }
     s.seed_prefix = false;
-    // PROVENANCE REFUSAL (PR #93 review finding 3a): a hyper-under-flag session whose
-    // prompt tokens rode tokenwise decode_step must not publish — the entry would carry
-    // the restore+decode_step chained provenance R16 refuses. Checked here rather than
-    // inferred from which prefill branch should have run, so ANY veto (budget starvation,
-    // sub-floor suffix, a future term) fails closed.
-    if s.prompt_tok_decode_step {
-        eprintln!(
-            "[suffix-prime] seed REFUSED: prompt tokens rode decode_step under \
-             MEMRA_HYPER_SUFFIX_PRIME; mixed-provenance entry not published (model {})",
-            s.model
-        );
-        return;
-    }
     if s.cache.is_none() || s.fed.len() < PREFIX_CACHE_MIN_TOKENS {
         return;
     }
@@ -9827,12 +8321,9 @@ fn prefix_seed_deepens(deepest_covering: Option<usize>, fed_len: usize) -> bool 
 }
 
 /// Pure half of the H11 hit re-arm (`seed_prefix` for a plain prefix-cache hit session) —
-/// the unit-testable predicate; the call site supplies the EFFECTIVE eager-only bit
-/// (`eager_only_model(lm)` narrowed by the `carried_suffix_primes` carve-out — a hyper
-/// trunk under MEMRA_HYPER_SUFFIX_PRIME is not eager-only for this purpose, its suffix is
-/// prime-provenance) and `spec.is_none()`. The eager-only refusal is R16's hard
-/// prerequisite for this mechanism (research/cacheinval-20260813; full reasoning at the
-/// arming site).
+/// the unit-testable predicate; the call site supplies `eager_only_model(lm)` and
+/// `spec.is_none()`. The eager-only refusal is R16's hard prerequisite for this mechanism
+/// (research/cacheinval-20260813; full reasoning at the arming site).
 fn plain_hit_reseed_arms(
     prefix_hit: bool,
     plain_path: bool,
@@ -9864,17 +8355,8 @@ struct ReplayPlan {
 
 /// Build a session's embedding overlay: tower forward per image, merger rows concatenated
 /// into one device buffer. Drops the host patch buffers afterwards. No-op if already built.
-///
-/// `intake` is the engine that will CONSUME the overlay at embedding intake
-/// (`HybridModel::vision_intake_engine`): the primary engine on a single-device, doorless or
-/// `MEMRA_PP_STREAMS=0` shape, pp stage 0's engine under a per-stage-stream ppN split. The
-/// towers always run on `engine` (that is where their weights are resident, ~2.3 GiB f32 for
-/// glm5); `EmbedOverlay::new_published` then publishes the finished rows into `intake`'s
-/// context when the two differ. Once per session, prefill only (lane/glm53-vision-ppn).
-#[allow(clippy::too_many_arguments)] // allow: one tower parameter per vision family plus the two engines the publication needs; bundling them hides which engine owns which side of the copy
 fn build_vision_overlay(
     engine: &Engine,
-    intake: &Engine,
     tower: Option<&memra_engine::vision::VisionTower>,
     gemma_tower: Option<&memra_engine::vision_gemma::GemmaVisionTower>,
     glm5_tower: Option<&memra_engine::vision_glm5::Glm5VisionTower>,
@@ -9896,12 +8378,10 @@ fn build_vision_overlay(
             engine.dtod_copy_into(&emb, &mut rows, off * n_embd)?;
             off += u.n_merged();
         }
-        v.overlay = Some(memra_engine::vision::EmbedOverlay::new_published(
-            engine,
-            intake,
+        v.overlay = Some(memra_engine::vision::EmbedOverlay {
             rows,
-            v.spans.clone(),
-        )?);
+            spans: v.spans.clone(),
+        });
         for u in units.iter_mut() {
             u.patches = Vec::new();
         }
@@ -9917,12 +8397,10 @@ fn build_vision_overlay(
         for u in units.iter() {
             off += tower.forward_unit(engine, u, &mut rows, off)?;
         }
-        v.overlay = Some(memra_engine::vision::EmbedOverlay::new_published(
-            engine,
-            intake,
+        v.overlay = Some(memra_engine::vision::EmbedOverlay {
             rows,
-            v.spans.clone(),
-        )?);
+            spans: v.spans.clone(),
+        });
         for u in units.iter_mut() {
             u.main = Vec::new();
             u.tiles = Vec::new();
@@ -9940,12 +8418,10 @@ fn build_vision_overlay(
             engine.dtod_copy_into(&emb, &mut rows, off * n_embd)?;
             off += u.n_soft();
         }
-        v.overlay = Some(memra_engine::vision::EmbedOverlay::new_published(
-            engine,
-            intake,
+        v.overlay = Some(memra_engine::vision::EmbedOverlay {
             rows,
-            v.spans.clone(),
-        )?);
+            spans: v.spans.clone(),
+        });
         for u in units.iter_mut() {
             u.patches = Vec::new();
         }
@@ -9985,12 +8461,10 @@ fn build_vision_overlay(
             }
         }
     }
-    v.overlay = Some(memra_engine::vision::EmbedOverlay::new_published(
-        engine,
-        intake,
+    v.overlay = Some(memra_engine::vision::EmbedOverlay {
         rows,
-        v.spans.clone(),
-    )?);
+        spans: v.spans.clone(),
+    });
     for u in units.iter_mut() {
         u.prep.patches = Vec::new();
     }
@@ -10413,31 +8887,13 @@ struct Session {
     /// rollback); it owns its trunk cache (s.cache stays None) and its session-continuity
     /// Philox counters. Created lazily at the first spec tick (the prime). Greedy
     /// (unpenalized) OR sampled (T>0 rejection-sampling accept, penalties EXCLUDED — no
-    /// penalty arm yet) + unconstrained + text-only + cold sessions only — EXCEPT the
-    /// prefix-restored carrier (lane/glm5-prefix-latent2, `MEMRA_GLM5_SPEC_PREFIX`), which
-    /// re-arms via `glm5_spec_session_from_restored`; no demotion-to-park (each a named
-    /// follow-up).
+    /// penalty arm yet) + unconstrained + text-only + cold sessions only; no demotion, no
+    /// parking, no prefix restore in this lane (each a named follow-up).
     glm5: Option<memra_engine::glm_spec::Glm5SpecSession>,
     /// Marks the session as glm5-routed even before `glm5` exists (the pre-prime window)
     /// — scheduler filters key on this, the dspark_on convention (derived from what
     /// admission actually installs, so dispatch and session can never disagree).
     glm5_on: bool,
-    /// GLM5 SPEC RESTORE carrier (lane/glm5-prefix-latent2, 2026-09-01): the DFlash2
-    /// drafter KV rebuilt from a prefix entry's tail at admission (while the PrefixCache
-    /// was borrowable). `Some` = the first spec tick builds the session via
-    /// `glm5_spec_session_from_restored` (restored trunk cache in `s.cache`, restored
-    /// prefix in `s.fed`, suffix in the prefill queue — the gemma spec-on-cache-hit
-    /// carrier shape); `None` = the cold `glm5_spec_session_new` path, byte-identical to
-    /// the pre-lane literal.
-    glm5_restored_dkv: Option<memra_engine::dflash::DflashKv>,
-    /// PROMPT-TOKEN PROVENANCE BIT (PR #93 review finding 3a): set the moment a prompt
-    /// token of a HYPER trunk walks tokenwise `decode_step` while MEMRA_HYPER_SUFFIX_PRIME
-    /// is armed (budget starvation, sub-floor suffix, any future prime-branch veto). The
-    /// two capture sites (`maybe_prefix_seed`, the lcp-split insert) refuse to publish
-    /// from a session carrying it — R16's chained-provenance prerequisite as a CHECKED
-    /// invariant, never an inference from which branch should have run. Non-hyper and
-    /// flag-off sessions never set it (their capture behavior is byte-identical).
-    prompt_tok_decode_step: bool,
     /// Draft depth K for the glm5 route (shared spec-K policy at admit, clamped to the
     /// verify walk's K+1 <= 15 decode-exact knee); 0 = plain.
     glm5_k: usize,
@@ -10498,10 +8954,6 @@ struct Session {
     request_id: String,
     /// The request's `[admit-predict]` one-shot latch, carried across a park replay.
     admit_predict_logged: bool,
-    /// The request's wire first-token deadline, carried across a step-OOM park replay so
-    /// the first-token deadline gate can judge the retry against the REAL remaining
-    /// deadline (the handler's 408 watch is still armed on the original stream).
-    wire_deadline: Option<std::time::Instant>,
     /// D2 gap G2: the engine admission charge this session was admitted under (the
     /// request-cost estimate the VRAM gate used). Booked into the per-model
     /// `AdmissionBook` at `active.push` and released at `active.remove`; a step-OOM
@@ -10636,58 +9088,6 @@ fn drain_dspark_prefix_capture(
         return;
     };
     publish_dspark_prefix_capture(engine, px, hpx, s, cap);
-}
-
-/// GLM5 SPEC boundary publication (lane/glm5-prefix-latent2, 2026-09-01): the glm5 twin of
-/// the dspark drain above, with one timing difference — glm5 defers the prompt's drafter
-/// ingest to round 1, so the drain waits for `prefix_capture_ready` (drafter KV covers the
-/// boundary) instead of firing on the first sweep. Publication carries the latent boundary
-/// planes (the capture's tails + live append-only slices) and the DFlash2 drafter tail, so
-/// a later hit can re-arm a spec session instead of demoting to plain.
-fn drain_glm5_prefix_capture(
-    engine: &Engine,
-    px: &mut PrefixCache,
-    hpx: &mut HostPrefixCache,
-    s: &mut Session,
-) {
-    if !s.glm5.as_ref().is_some_and(|g| g.prefix_capture_ready()) {
-        return;
-    }
-    let Some(cap) = s.glm5.as_mut().and_then(|g| g.take_prefix_capture()) else {
-        return;
-    };
-    let Some(g) = s.glm5.as_ref() else { return };
-    let end = cap.pos.min(s.fed.len());
-    if end == 0 {
-        return;
-    }
-    let pool_key = s.pool_key();
-    if px.has_key(&pool_key, &s.fed[..end]) {
-        return;
-    }
-    // The drafter tail travels with the entry or the restore half cannot exist (the draft
-    // state derives from trunk hidden FEATURES a KV restore cannot return — the dspark
-    // publisher's law, verbatim). Publication and consumption gate on the SAME flag
-    // (`glm5_spec_prefix_on`), so unset is a true rollback, memory profile included.
-    let tail = g.export_draft_tail(engine, end);
-    if tail.is_none() {
-        eprintln!(
-            "[prefix-cache] glm5 publish: draft tail export failed; entry published \
-             trunk-only (a later spec hit will demote to the plain path)"
-        );
-    }
-    prefix_insert_from_spec_boundary(
-        engine,
-        px,
-        hpx,
-        &pool_key,
-        &s.fed,
-        g.cache_ref(),
-        None,
-        tail,
-        cap,
-        "glm5-boundary",
-    );
 }
 
 /// Primary CUDA ordinal for the serving worker. CUDA_VISIBLE_DEVICES already remaps physical GPUs
@@ -10965,7 +9365,7 @@ pub fn run(
     // dual-active PP arm spawns), which is the point on a big-core box.
     //
     // A malformed or unsatisfiable value FAILS THE BOOT through the same verdict channel as a bad
-    // device: `MEMRA_WORKER_CPUSET` is machine config, and an operator who mistypes a cpu list
+    // device: `MEMRA_WORKER_AFFINITY` is machine config, and an operator who mistypes a cpu list
     // must not get a silently unpinned server whose numbers are then filed under the pinned arm.
     let affinity = match crate::affinity::worker_affinity_spec() {
         Ok(spec) => spec,
@@ -11659,9 +10059,6 @@ pub fn run(
     // beside the trims, where hpx/px are in scope (lane/kv-tenancy-compaction-20260831).
     let mut pending_purges: Vec<(String, tokio::sync::oneshot::Sender<HostPurgeReport>)> =
         Vec::new();
-    // Cmd::{Export,Import}HostHandoff reply channels, same parking discipline
-    // (lane/host-tier-deploy-warmth-20260901).
-    let mut pending_handoffs = PendingHandoffs::default();
     // F5: learned spec-session sizing (evict-first models + right-sized ctx asks).
     let mut spec_sizing = SpecSizing::default();
     let mut reuse_metrics = ReuseMetrics::default();
@@ -11762,58 +10159,8 @@ pub fn run(
         };
     // Publish the serving decision to the HTTP intake (main.rs glm5_vision_enabled):
     // image_url parts route to the glm5 planner iff a tower is actually loaded, whatever
-    // combination of default/flag/dir produced it — AND the placement can actually deliver
-    // the overlay to embedding intake.
-    //
-    // PLACEMENT ADMISSIBILITY (lane/glm53-vision-ppn, 2026-09-01). A loaded tower is not
-    // sufficient. The overlay's rows have to be resident in the context of the engine that
-    // embeds (pp stage 0 under a per-stage-stream split), which the tower's own engine is NOT
-    // on the deployed multi-card shape. `EmbedOverlay::new_published` closes that by default;
-    // pinned to `MEMRA_VISION_OVERLAY_PUBLISH=0` it cannot, and the refusal would land
-    // MID-PREFILL on a live request (a 500, which is exactly what the launch window saw).
-    // Decide it ONCE here and refuse at the HTTP waist instead — the same named 4xx the
-    // `MEMRA_GLM5_VISION=0` kill switch produces. An unrecognized door value is a BOOT death,
-    // the same shape as an unloadable tower above: a mistyped correctness door must never
-    // resolve to a default.
-    let glm5_vision_servable = match glm5_tower.as_ref() {
-        None => false,
-        Some(_) => {
-            let publish = memra_engine::vision::overlay_publish_mode()
-                .unwrap_or_else(|e| panic!("glm5 vision: {e}"));
-            match loaded
-                .values()
-                .find(|lm| lm.model.cfg.arch.is_glm5_next())
-                .map(|lm| lm.model.vision_intake_engine(&engine))
-            {
-                None => true,
-                Some(Err(e)) => panic!(
-                    "glm5 vision: the embedding-intake engine for this placement could not be \
-                     resolved: {e}"
-                ),
-                Some(Ok(intake)) => {
-                    let cross = intake.ctx().cu_ctx() != engine.ctx().cu_ctx();
-                    let servable = !cross || publish != memra_engine::vision::OverlayPublish::Never;
-                    eprintln!(
-                        "[glm5-vision] overlay intake: tower dev{} -> intake dev{} \
-                         (cross_context={cross}) publish={publish:?} servable={servable}",
-                        engine.ctx().ordinal(),
-                        intake.ctx().ordinal()
-                    );
-                    if !servable {
-                        eprintln!(
-                            "[glm5-vision] IMAGE INPUT DISABLED: this placement embeds on \
-                             another CUDA context and MEMRA_VISION_OVERLAY_PUBLISH=0 forbids \
-                             publishing the overlay there. Image requests refuse at intake \
-                             instead of failing mid-prefill; unset the door (default auto) to \
-                             serve images, or run MEMRA_PP_STREAMS=0 (~3x decode cost)"
-                        );
-                    }
-                    servable
-                }
-            }
-        }
-    };
-    crate::GLM5_VISION_SERVING.store(glm5_vision_servable, std::sync::atomic::Ordering::Release);
+    // combination of default/flag/dir produced it.
+    crate::GLM5_VISION_SERVING.store(glm5_tower.is_some(), std::sync::atomic::Ordering::Release);
     // STEP37 vision tower (lane/step37-vision): loaded once at spawn from the serving
     // artifact's own directory (the perception_encoder tensors live unquantized inside
     // the checkpoint — MEMRA_STEP_VISION_DIR points at the model dir). Fail LOUD at boot
@@ -11861,52 +10208,6 @@ pub fn run(
                 "[prefix-host] MEMRA_KV_HOST_MB is set but the device prefix cache is off \
                  (MEMRA_PREFIX_CACHE_MB=0 or non-batched serving): the host tier has no \
                  feed and stays inert"
-            );
-        }
-    }
-    // DEPLOY HANDOFF (lane/host-tier-deploy-warmth-20260901, MEMRA_KV_HOST_HANDOFF):
-    // artifact stamps are computed once per boot (a cheap stat walk); the export header
-    // carries them, and an import refuses entries whose model artifact changed under the
-    // same name (KV bytes minted by different weights must never restore). A handoff file
-    // already present at boot arms the drip import immediately: the sequential-deploy
-    // shape, where the old process exported before this one booted. Overlap deploys have
-    // no file yet at green boot; serve-deploy triggers `Cmd::ImportHostHandoff` post-flip.
-    let handoff_stamps: Vec<HandoffModelStamp> = if kv_host_handoff_path().is_some() {
-        models
-            .iter()
-            .map(|(name, path, _)| handoff_model_stamp(name, path))
-            .collect()
-    } else {
-        Vec::new()
-    };
-    let mut handoff_import: Option<HostHandoffImport> = None;
-    if let Some(path) = kv_host_handoff_path()
-        && std::path::Path::new(path).exists()
-    {
-        if hpx.armed() && prefix_cache_budget_bytes() > 0 && serve_batching() {
-            match open_host_handoff_import(path, &handoff_stamps) {
-                Ok((imp, start)) => {
-                    eprintln!(
-                        "[prefix-host] handoff import armed at boot: {} entries / {:.1}MB \
-                         from {path} (file age {}s); re-materializing one per tick",
-                        start.header_entries,
-                        start.header_bytes as f64 / 1e6,
-                        start.age_secs,
-                    );
-                    handoff_import = Some(imp);
-                }
-                Err(why) => {
-                    eprintln!(
-                        "[prefix-host] handoff file {path} REFUSED at boot ({why}); \
-                         starting cold by design and removing the file"
-                    );
-                    let _ = std::fs::remove_file(path);
-                }
-            }
-        } else {
-            eprintln!(
-                "[prefix-host] handoff file {path} present but the host tier is not armed \
-                 on this slot; leaving the file untouched"
             );
         }
     }
@@ -12076,39 +10377,7 @@ pub fn run(
     // counters are live and the history is warm whenever the shadow flag is armed. The
     // verdict computation and its `[admit-predict]` receipt (G5) run only when
     // MEMRA_ADMIT_PREDICT_SHADOW=1, and they only ever LOG: nothing here rejects.
-    let mut admit_predict_cfg = crate::admit_predict::ShadowConfig::from_env();
-    if admit_predict_cfg.armed {
-        // LIVE BUDGET DEFAULT (lane/admit-predict-calibration-20260901, stress-campaign
-        // FINDING 3 cause 1): when MEMRA_ADMIT_PREDICT_BUDGET_MB is unset, derive the
-        // KV budget arm from the engine's own boot numbers instead of a hand-carried
-        // deployment constant that goes stale when another lane's deploy changes the
-        // box config. The three inputs are the same quantities the real machinery
-        // reads: effective free VRAM (the VRAM gate's own read; this runs after model
-        // load + boot calibration, so weights and calibration transients are already
-        // out of `free`), the device prefix-cache budget (init_prefix_cache_budget ran
-        // above), and the admission transient reserve at the real gate's own floor
-        // arithmetic (max calibrated per-model floor, never below the static constant,
-        // teeth override honored). resolve_budget emits the boot line with the value
-        // AND the formula inputs; an env value remains the explicit override.
-        let derived = effective_free_bytes(&engine).map(|(free, _)| {
-            let calibrated_floor = admission_costs
-                .values()
-                .filter_map(|model| model.transient_floor)
-                .max();
-            crate::admit_predict::DerivedShadowBudget {
-                effective_free_bytes: free as u64,
-                prefix_cache_budget_bytes: prefix_cache_budget_bytes() as u64,
-                admission_reserve_bytes: admission_reserve(
-                    true, // box-level arm: charge the full transient floor, cost-independent
-                    0,
-                    calibrated_floor,
-                    admit_reserve_override(),
-                ) as u64,
-            }
-        });
-        admit_predict_cfg.resolve_budget(derived);
-    }
-    let admit_predict_cfg = admit_predict_cfg;
+    let admit_predict_cfg = crate::admit_predict::ShadowConfig::from_env();
     let mut admission_book = crate::admit_predict::AdmissionBook::default();
     let mut completion_history = crate::admit_predict::CompletionHistory::default();
     // AGENT-PAUSE DEMOTION (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831, Arc E):
@@ -12170,10 +10439,7 @@ pub fn run(
         //    nearest deadline, so the sweep fires even on a box with zero active sessions:
         //    exactly the tool-round-trip pause shape at low concurrency.
         if active.is_empty() && queue.is_empty() {
-            if pending_constraints.is_empty()
-                && pause_pending.is_empty()
-                && handoff_import.is_none()
-            {
+            if pending_constraints.is_empty() && pause_pending.is_empty() {
                 // Do not let an already-arrived request sit behind an idle-only probe. Once the
                 // channel is observed empty, one pending expensive rung may run before the worker
                 // enters its ordinary indefinite idle block.
@@ -12188,7 +10454,6 @@ pub fn run(
                             &mut queue,
                             &mut pending_trims,
                             &mut pending_purges,
-                            &mut pending_handoffs,
                         );
                     }
                     Err(std::sync::mpsc::TryRecvError::Empty) => {
@@ -12218,7 +10483,6 @@ pub fn run(
                                     &mut queue,
                                     &mut pending_trims,
                                     &mut pending_purges,
-                                    &mut pending_handoffs,
                                 );
                             }
                             Err(_) => break, // all senders dropped -> shutdown
@@ -12228,13 +10492,7 @@ pub fn run(
                 }
             } else {
                 health.beat_busy();
-                // A pending handoff import is tick work too: cap the idle wait so the drip
-                // keeps re-materializing on a box with zero traffic (exactly the fresh
-                // post-flip green slot, lane/host-tier-deploy-warmth-20260901).
-                let mut wait = idle_recv_wait(&pending_constraints, &pause_pending, Instant::now());
-                if handoff_import.is_some() {
-                    wait = wait.min(Duration::from_millis(1));
-                }
+                let wait = idle_recv_wait(&pending_constraints, &pause_pending, Instant::now());
                 match rx.recv_timeout(wait) {
                     Ok(cmd) => handle_cmd(
                         cmd,
@@ -12244,7 +10502,6 @@ pub fn run(
                         &mut queue,
                         &mut pending_trims,
                         &mut pending_purges,
-                        &mut pending_handoffs,
                     ),
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                     Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
@@ -12266,7 +10523,6 @@ pub fn run(
                     &mut queue,
                     &mut pending_trims,
                     &mut pending_purges,
-                    &mut pending_handoffs,
                 ),
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
@@ -12337,68 +10593,6 @@ pub fn run(
                 device_entries,
                 device_pinned_left,
             });
-        }
-        // DEPLOY HANDOFF (lane/host-tier-deploy-warmth-20260901). Export is SYNCHRONOUS
-        // here by design: its caller is serve-deploy on the DRAINED old slot, where a
-        // stalled tick has nobody to stall; a slot still carrying traffic refuses unless
-        // forced. Import is a DRIP: one frame re-materializes per tick below, so a slot
-        // that is already serving warms in the background at promote-class stalls.
-        for (force, tx) in pending_handoffs.exports.drain(..) {
-            let answer = match kv_host_handoff_path() {
-                None => Err("MEMRA_KV_HOST_HANDOFF is not set on this slot".to_string()),
-                Some(_) if !force && !(active.is_empty() && queue.is_empty()) => Err(format!(
-                    "refusing to export with {} active / {} queued requests: the \
-                     synchronous write stalls every tick for its duration; drain this \
-                     slot first (or force)",
-                    active.len(),
-                    queue.len(),
-                )),
-                Some(path) => host_handoff_export(
-                    path,
-                    kv_host_handoff_cap_bytes(),
-                    &engine,
-                    &mut px,
-                    &mut hpx,
-                    &handoff_stamps,
-                ),
-            };
-            let _ = tx.send(answer);
-        }
-        for tx in pending_handoffs.import_starts.drain(..) {
-            let answer = match kv_host_handoff_path() {
-                None => Err("MEMRA_KV_HOST_HANDOFF is not set on this slot".to_string()),
-                Some(_) if handoff_import.is_some() => {
-                    Err("a handoff import is already in progress".to_string())
-                }
-                Some(_) if !hpx.armed() => {
-                    Err("host tier is off (MEMRA_KV_HOST_MB=0) or latched off".to_string())
-                }
-                Some(path) => match open_host_handoff_import(path, &handoff_stamps) {
-                    Ok((imp, start)) => {
-                        eprintln!(
-                            "[prefix-host] handoff import armed: {} entries / {:.1}MB \
-                             from {path} (file age {}s); re-materializing one per tick",
-                            start.header_entries,
-                            start.header_bytes as f64 / 1e6,
-                            start.age_secs,
-                        );
-                        handoff_import = Some(imp);
-                        Ok(start)
-                    }
-                    Err(why) => {
-                        // Consume-once even on refusal: a leftover must not retry forever.
-                        let _ = std::fs::remove_file(path);
-                        Err(format!("{why}; file removed, this slot serves cold"))
-                    }
-                },
-            };
-            let _ = tx.send(answer);
-        }
-        if let Some(imp) = handoff_import.as_mut()
-            && host_handoff_import_step(imp, &mut hpx)
-        {
-            let _ = std::fs::remove_file(&imp.path); // consume-once, whatever the outcome
-            handoff_import = None;
         }
         // 2. ADMISSION + LANE GATE (x-lane yield gate, engine-side): interactive admits up
         //    to the cap and WAITS beyond it (FIFO, never rejected — its queue wait is the
@@ -12541,7 +10735,6 @@ pub fn run(
                         predicted_completion: predicted,
                         kv_hat_bytes: None,
                         booked_bytes: admission_book.shadow_booked_total(),
-                        booked_real_bytes: admission_book.booked_total(),
                         inflight: admission_book.inflight(&req.model),
                         cap: cap as u64,
                         budget_bytes: admit_predict_cfg.budget_bytes,
@@ -12591,60 +10784,6 @@ pub fn run(
             };
             let model_key = req.model.clone();
             let prompt_len = req.prepared_prompt.as_ref().unwrap().len();
-            // FIRST-TOKEN DEADLINE GATE (lane/bench-debts-20260901; darklanes
-            // research/competitive-bench-20260901/RESULTS.md §7 item 3 and
-            // research/d2-shadow-20260831/RESULTS.md §7's named streaming analog):
-            // at 1.64x KV oversubscription the bench cancelled 70-74% of turns at the
-            // 90 s wire ceiling: each one burned its full deadline queueing behind the
-            // aggregate prime backlog and then discarded the prefill it had bought. The
-            // handler-side `shed_deadline` cannot see this shape (its backlog gauge is
-            // the handler->worker queue, which stays ~0 while sessions grind inside the
-            // cap); this gate judges the same contract at the seam that can: exact
-            // prompt tokens, the live prime backlog, and the REMAINING wire deadline.
-            // Refusal is the shed contract byte-shape (429 rate_limit + Retry-After,
-            // never billed, request not admitted): the D2 G6 machinery. Interactive
-            // lane only (dark lanes already shed at cap); capture requests bypass
-            // (their prime is the product). Re-evaluated on every defer tick by
-            // construction, so a request whose deadline decays while queued is refused
-            // at the first infeasible consideration, not at the 408.
-            if first_token_deadline_gate_on()
-                && lane == crate::lanes::Lane::Interactive
-                && req.capture.is_none()
-                && let Some(dl) = req.wire_deadline
-            {
-                let remaining_ms = dl.saturating_duration_since(Instant::now()).as_millis() as u64;
-                let backlog_tokens: u64 = active.iter().map(|s| s.prefill_queue.len() as u64).sum();
-                if let Some(est_ms) = crate::admit_predict::first_token_wait_infeasible(
-                    prompt_len as u64,
-                    backlog_tokens,
-                    remaining_ms,
-                    crate::env_u64("MEMRA_PREFILL_FLOOR_TOK_S", crate::PREFILL_FLOOR_TOK_S),
-                ) {
-                    let retry_after_s = (est_ms / 1_000).clamp(1, 60);
-                    eprintln!(
-                        "[first-token-gate] id={} refused: est_first_token_ms={est_ms} \
-                         (prompt {prompt_len} tok + prime backlog {backlog_tokens} tok at \
-                         the prefill floor) exceeds remaining deadline {remaining_ms} ms \
-                         x{}% margin; 429 retry_after_s={retry_after_s}",
-                        req.request_id,
-                        crate::admit_predict::FIRST_TOKEN_DEADLINE_MARGIN_PCT,
-                    );
-                    release_admission_reservation(req.lane);
-                    let _ = req.tx.send(Event::Error(EngineError::rate_limit_after(
-                        format!(
-                            "estimated first-token wait ~{}s (a {prompt_len}-token prompt \
-                             behind a {backlog_tokens}-token prime backlog at the \
-                             pessimistic prefill floor) exceeds this request's remaining \
-                             timeout_ms deadline ({remaining_ms} ms); this request was not \
-                             admitted and is not billed; retry after ~{retry_after_s}s or \
-                             raise timeout_ms (a coarse estimate, not a promise)",
-                            est_ms / 1_000,
-                        ),
-                        retry_after_s,
-                    )));
-                    continue;
-                }
-            }
             let peer_probe_allows_spec = health.peer_probe_allows_spec_admission();
             let estimate_spec = admission_request_may_spec(
                 &loaded[&model_key],
@@ -12779,7 +10918,6 @@ pub fn run(
                         predicted_completion: predicted,
                         kv_hat_bytes: Some(request_kv_hat),
                         booked_bytes: booked,
-                        booked_real_bytes: admission_book.booked_total(),
                         inflight: admission_book.inflight(&req.model),
                         cap: cap as u64,
                         budget_bytes: admit_predict_cfg.budget_bytes,
@@ -13946,11 +12084,6 @@ pub fn run(
                 // session instead of cold-priming. It still has no hidden anchor, LCP split
                 // or message-boundary arm, so whole-entry hits are the only restorable shape.
                 drain_dspark_prefix_capture(&engine, &mut px, &mut hpx, s);
-
-                // The glm5 twin (lane/glm5-prefix-latent2): latent boundary planes + the
-                // DFlash2 drafter tail; waits for the drafter KV to cover the boundary
-                // (glm5 ingests the prompt's features at round 1, not at creation).
-                drain_glm5_prefix_capture(&engine, &mut px, &mut hpx, s);
             }
 
             if automatic_demote || demote_at.is_some() {
@@ -15899,10 +14032,6 @@ pub fn run(
             m.prefix_host_tenant_rejects = hpx.tenant_rejects;
             m.prefix_host_pause_demotes = hpx.pause_demotes;
             m.prefix_host_pause_cancels = hpx.pause_cancels;
-            m.prefix_host_handoff_exports = hpx.handoff_exports;
-            m.prefix_host_handoff_imported_entries = hpx.handoff_imports;
-            m.prefix_host_handoff_imported_bytes = hpx.handoff_import_bytes;
-            m.prefix_host_handoff_skips = hpx.handoff_skips;
             m.kv_flex_borrowed_bytes = kv_flex.borrowed_bytes(&px) as u64;
             m.kv_flex_sheds = kv_flex.sheds;
             m.kv_flex_shed_ms = kv_flex.shed_ms_total;
@@ -15996,7 +14125,6 @@ fn fail_request(mut req: Box<Request>, error: EngineError) {
     }
 }
 
-#[allow(clippy::too_many_arguments)] // one parked-reply vec per admin command class
 fn handle_cmd(
     cmd: Cmd,
     loaded: &HashMap<String, LoadedModel>,
@@ -16005,7 +14133,6 @@ fn handle_cmd(
     queue: &mut std::collections::VecDeque<Box<Request>>,
     trims: &mut Vec<tokio::sync::oneshot::Sender<TrimReport>>,
     purges: &mut Vec<(String, tokio::sync::oneshot::Sender<HostPurgeReport>)>,
-    handoffs: &mut PendingHandoffs,
 ) {
     match cmd {
         // The pools live in run()'s scheduler scope — park the reply channel; run()
@@ -16021,16 +14148,6 @@ fn handle_cmd(
             purges.push((tenant, tx));
             return;
         }
-        // Same parking discipline again (lane/host-tier-deploy-warmth-20260901): export
-        // and import both mutate px/hpx, which live in run()'s scope.
-        Cmd::ExportHostHandoff { force, tx } => {
-            handoffs.exports.push((force, tx));
-            return;
-        }
-        Cmd::ImportHostHandoff { tx } => {
-            handoffs.import_starts.push(tx);
-            return;
-        }
         Cmd::Generate(_) => {}
     }
     // Pending-admit gauge (admission yield): the request is now in the worker's hands
@@ -16041,10 +14158,7 @@ fn handle_cmd(
     // touched either gauge.
     release_pending_admit();
     match cmd {
-        Cmd::TrimPools(_)
-        | Cmd::PurgeTenantHost { .. }
-        | Cmd::ExportHostHandoff { .. }
-        | Cmd::ImportHostHandoff { .. } => unreachable!("handled above"),
+        Cmd::TrimPools(_) | Cmd::PurgeTenantHost { .. } => unreachable!("handled above"),
         Cmd::Generate(req) => {
             // dsv4 route: hand the request to the model's dedicated serving thread —
             // its channel is the FIFO admission queue (bs=1 engine; queueing is the
@@ -16478,20 +14592,9 @@ fn glm5_route_admits(
     penalized: bool,
     constrained: bool,
     vision: bool,
-    // COLD session, or the prefix-restored CARRIER (lane/glm5-prefix-latent2): a hit whose
-    // drafter KV was rebuilt from the entry's tail admits the route — every other warm
-    // shape (live spec state, continuation resume, plain reuse without a tail) still
-    // refuses; the call site owns the carrier proof (`glm5_restored_carrier`).
-    cold_or_restored_carrier: bool,
+    cold: bool,
 ) -> bool {
-    capable
-        && serve_spec
-        && k > 0
-        && temp_ok
-        && !penalized
-        && !constrained
-        && !vision
-        && cold_or_restored_carrier
+    capable && serve_spec && k > 0 && temp_ok && !penalized && !constrained && !vision && cold
 }
 
 /// K+1 <= 15 HARD BOUND for the glm5 route: verify rows ride the batched-decode walk's
@@ -16838,7 +14941,6 @@ fn park_requeue(loaded: &HashMap<String, LoadedModel>, s: &Session) -> Option<Bo
         prepared_constraint: None,
         constraint_ready: None,
         oom_retries: s.oom_retries,
-        wire_deadline: s.wire_deadline,
         spec_k_replay: Some(s.spec_k),
         prepared_prompt: None,
         images: Vec::new(),
@@ -17688,35 +15790,11 @@ fn admit(
                     // tokenwise `decode_step` for the whole suffix (`!(eager_mono && carried)`
                     // in `prefill_tick`), so ITS capture would always be decode_step
                     // provenance — the chained-provenance class R16
-                    // (research/cacheinval-20260813) refuses. EXCEPT under the
-                    // MEMRA_HYPER_SUFFIX_PRIME carve-out (lane/glm5-prefix-latent2): a hyper
-                    // trunk's carried suffix then rides the PRIME program, the capture is
-                    // prime-provenance, and R16's ground dissolves — same predicate as the
-                    // prefill_tick veto lift, one law.
-                    // STABLE-BOUNDARY CAPTURE on the shallow-hit shape (lane/
-                    // bench-debts-20260901; flag doc at `prefix_stable_boundary_on`): the
-                    // LCP teacher only reaches as deep as a surviving device sibling, so
-                    // when the session's deep entries were evicted/demoted the taught
-                    // boundary collapses to the shared shallow entry and the cold prime
-                    // captures nothing a later turn (or the host tier) can serve. The
-                    // render-stable last-turn boundary is derivable from the prompt alone;
-                    // deepest-wins, and the fed-start floor plus the grid law apply through
-                    // the same `hit_lcp_snapshot_boundary` body either way.
-                    let lcp_taught = px.best_lcp_entry(&pool_key, &prompt).map(|(_, lcp)| lcp);
-                    let stable = if prefix_stable_boundary_on() {
-                        plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t))
-                    } else {
-                        None
-                    };
-                    if let Some(la) = hit_lcp_snapshot_boundary(
-                        lcp_taught.unwrap_or(0).max(stable.unwrap_or(0)),
-                        hit_len,
-                        prompt.len(),
-                    ) && (!eager_only_model(lm)
-                        || carried_suffix_primes(
-                            memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan),
-                            hyper_suffix_prime_on(),
-                        ))
+                    // (research/cacheinval-20260813) refuses.
+                    if let Some(la) = px
+                        .best_lcp_entry(&pool_key, &prompt)
+                        .and_then(|(_, lcp)| hit_lcp_snapshot_boundary(lcp, hit_len, prompt.len()))
+                        && !eager_only_model(lm)
                         && !px.has_key(&pool_key, &prompt[..la])
                     {
                         snapshot_at = Some(la);
@@ -17888,31 +15966,6 @@ fn admit(
                 if ba >= PREFIX_CACHE_MIN_TOKENS && !px.has_key(&pool_key, &prompt[..ba]) {
                     snapshot_at = Some(ba);
                 }
-            }
-            // STABLE-BOUNDARY CAPTURE on the miss path (lane/bench-debts-20260901; flag
-            // doc at `prefix_stable_boundary_on`): whatever the LCP or first-message arms
-            // taught, a cold turn also captures at the render-stable last-turn boundary,
-            // the deepest key the SAME session's next re-rendered turn resends verbatim.
-            // The prompt-end seed at prefill-done keeps its exact-resend role; when the
-            // stable boundary sits within `prefix_seed_deepen_min()` of prompt end (the
-            // common template-header gap), `prefix_seed_deepens` skips that seed on its
-            // own, so the flag does not double-mint. Deepest-wins over an armed boundary;
-            // `has_key` dedupes against a prior turn's capture.
-            if prefix_stable_boundary_on()
-                && let Some(b) = stable_boundary_arm(
-                    plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t)),
-                    snapshot_at,
-                    prompt.len(),
-                )
-                && !px.has_key(&pool_key, &prompt[..b])
-            {
-                snapshot_at = Some(b);
-                eprintln!(
-                    "[prefix-cache] stable-boundary capture armed at {b} of {} prompt \
-                     tokens (model {})",
-                    prompt.len(),
-                    req.model
-                );
             }
             if prompt.len() >= PREFIX_CACHE_MIN_TOKENS {
                 seed_prefix = true; // re-checked against covering entries at prefill-done
@@ -18160,7 +16213,7 @@ fn admit(
         None;
     // ONLY when the request WOULD HAVE COLD-PRIMED. The shipped shape guard already decides
     // who gets what: short-decode requests take the plain hit (proven byte-exact, ~1 s), and
-    // only cold-preferring long decodes have a prime to save. The first gate run on the rented
+    // only cold-preferring long decodes have a prime to save. The first gate run on the sbox
     // box proved why this condition is load-bearing and not an optimization: without it the
     // conversion re-armed dspark for a 64-token request the guard had JUST routed to the
     // plain hit (the log shows "serving the hit and going plain" followed by "DSPARK
@@ -18247,56 +16300,6 @@ fn admit(
                  rather than downgrading to plain (model {})",
                 req.model,
             );
-        }
-    }
-    // GLM5 SPEC RESTORE, half 1 of 2 (lane/glm5-prefix-latent2, 2026-09-01): rebuild the
-    // DFlash2 drafter KV from the entry's tail HERE, while the PrefixCache is borrowable
-    // (the dspark placement law above, verbatim) — the session itself is born at the first
-    // spec tick from the CARRIER (restored cache in s.cache, restored prefix in s.fed,
-    // suffix in the prefill queue: the gemma spec-on-cache-hit shape), because the suffix
-    // prime belongs on the tick, not in admission. The carrier is NOT taken: the normal
-    // hit plumbing below carries it into the session either way, so a K-shed at the route
-    // decision (glm5_on false) degrades to the PLAIN HIT, never to a cold prime. A
-    // session-BUILD error at the first tick is different (PR #96 review round 2, finding
-    // 3): admission pre-validated the shape, so from_restored failing there is an
-    // invariant break and FAILS THE REQUEST loudly (the dspark law in step_glm5_spec) —
-    // do not build on a tick-time degrade; it does not exist.
-    let mut glm5_prefix_restored_dkv: Option<memra_engine::dflash::DflashKv> = None;
-    if memra_engine::glm_spec::glm5_spec_prefix_on()
-        && glm5_spec_capable(lm)
-        && serve_spec
-        && !vision_req
-        && constraint.is_none()
-        && ((sampler.is_greedy() && !greedy_penalized) || sampler.temperature() > 0.0)
-        && !spec_sampling_for(&sampler).is_some_and(|sp| sp.pen_on())
-        && spec_restored.is_none()
-        && dspark_prefix_restored.is_none()
-        && let Some(carrier) = reused.as_ref()
-        && prefix_hit
-    {
-        let suffix_len = prompt.len().saturating_sub(carrier.fed.len());
-        // Empty-suffix full-cover hits keep the plain boundary-logits resume (faster than
-        // any prime); sub-floor suffixes keep the plain hit (the prime-floor law — a
-        // tokenwise suffix under a spec session is the exact two-programs door this lane
-        // closes). Both are hits, both bill cached, neither is a defect.
-        if suffix_len >= memra_engine::hybrid_forward::PRIME_MIN_T {
-            let tail_dkv = prefix_pin
-                .as_ref()
-                .and_then(|p| px.id_index(p))
-                .and_then(|i| px.entries[&pool_key][i].dspark_draft.as_ref())
-                .and_then(|tail| {
-                    let dr = lm.model.glm5_dflash.as_ref()?;
-                    memra_engine::dflash::DflashKv::from_tail(engine, &dr.draft.cfg, ctx_cap, tail)
-                });
-            match tail_dkv {
-                Some(dkv) => glm5_prefix_restored_dkv = Some(dkv),
-                None => eprintln!(
-                    "[prefix-cache] glm5 spec restore declined (no drafter tail on the \
-                     entry, or the tail does not cover the drafter window); the plain \
-                     path serves the hit (model {})",
-                    req.model,
-                ),
-            }
         }
     }
     // Downgrade-on-hit (lane/spec-prefix-cache): a restored prefix carrier without a
@@ -19207,19 +17210,6 @@ fn admit(
         && !dspark_on
         && gspec_k == 0
         && req_spec_k_replay.is_none();
-    // GLM5 SPEC RESTORE, half 2 of 2 (lane/glm5-prefix-latent2): a prefix-hit CARRIER with
-    // a rebuilt drafter KV admits the spec route — every OTHER cold-only term still holds
-    // (no live spec state of any family), only the "owns no cache" terms flip: the carrier
-    // IS the restored cache + prefix, consumed by the first spec tick (the gemma
-    // spec-on-cache-hit shape).
-    let glm5_restored_carrier = glm5_prefix_restored_dkv.is_some()
-        && spec.is_none()
-        && spec_resumed == 0
-        && !seed_fed.is_empty()
-        && cache.is_some()
-        && !dspark_on
-        && gspec_k == 0
-        && req_spec_k_replay.is_none();
     let glm5_on = glm5_route_admits(
         glm5_capable,
         serve_spec,
@@ -19228,19 +17218,13 @@ fn admit(
         glm5_penalized,
         constraint.is_some(),
         vision_state.is_some(),
-        glm5_cold || glm5_restored_carrier,
+        glm5_cold,
     );
-    // A carrier the route did not take (K shed to 0 under load, capability lost) serves
-    // the PLAIN hit — drop the drafter KV so the session literal below stays truthful and
-    // the tick dispatch can never see a dkv on a plain session.
-    if !(glm5_on && glm5_restored_carrier) {
-        glm5_prefix_restored_dkv = None;
-    }
     if glm5_capable {
         // Admission receipt (the [spec-k] shape): the deploy gate greps route+K per request.
         eprintln!(
             "[glm5-spec] route={} K={glm5_k} model={:?} tenant={:?} prompt={} \
-             wave={projected_wave} sampled={} penalized={} cold={} restored={}",
+             wave={projected_wave} sampled={} penalized={} cold={}",
             if glm5_on { "spec" } else { "plain" },
             req.model,
             crate::auth::meter_key(&req.cache_ns),
@@ -19248,7 +17232,6 @@ fn admit(
             (sampler.temperature() > 0.0) as u8,
             glm5_penalized as u8,
             glm5_cold as u8,
-            glm5_prefix_restored_dkv.is_some() as u8,
         );
     }
     // legacy tokenwise cache only when the spec path did NOT take the session (spec owns its own).
@@ -19271,14 +17254,9 @@ fn admit(
     // spec-on-cache-hit lane's text.
     // A glm5-spec session is the same shape: its cache is born inside
     // glm5_spec_session_new at the first spec tick, and glm5_on requires a COLD session
-    // (glm5_cold above), so allocating a plain cache here would only be dropped —
-    // EXCEPT the restored carrier (lane/glm5-prefix-latent2): like the gemma
-    // spec-on-cache-hit shape, the restored trunk cache rides in s.cache and
-    // glm5_spec_session_from_restored takes it at the first spec tick.
-    let cache = if dspark_on || (glm5_on && glm5_prefix_restored_dkv.is_none()) {
+    // (glm5_cold above), so allocating a plain cache here would only be dropped.
+    let cache = if dspark_on || glm5_on {
         None
-    } else if glm5_on {
-        cache // the restored carrier (glm5_restored_carrier proved it Some)
     } else if gspec_k > 0 {
         if gspec_carrier { cache } else { None }
     } else {
@@ -19449,18 +17427,10 @@ fn admit(
     // suffix (H1), so its "deepened" seed would publish restore+decode_step chained
     // provenance and multiply traffic onto the H1 crossing. Same predicate as the ckpt
     // arm below; the qwen-class lever this fix targets is untouched by the exclusion.
-    // MEMRA_HYPER_SUFFIX_PRIME carve-out (lane/glm5-prefix-latent2): with a hyper trunk's
-    // carried suffix riding the PRIME program, the deepened seed is prime-provenance and
-    // R16's prerequisite is met — the "effective eager-only" below narrows exactly as the
-    // prefill_tick veto does, so an 8-turn conversation can deepen its entry every turn.
     if plain_hit_reseed_arms(
         prefix_hit,
         spec.is_none(),
-        eager_only_model(lm)
-            && !carried_suffix_primes(
-                memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan),
-                hyper_suffix_prime_on(),
-            ),
+        eager_only_model(lm),
         prompt.len(),
     ) {
         seed_prefix = true;
@@ -19546,15 +17516,11 @@ fn admit(
         dspark_on: dspark_on || dspark_session_installed,
         dspark_capture_prefix,
         // The glm5 dispatch flag follows the dspark convention: derived from the decision
-        // that shaped THIS literal, so the tick dispatch and the installed session cannot
-        // disagree. The restore fold (lane/glm5-prefix-latent2) rides the carrier shape:
-        // the dkv below is Some ONLY when glm5_on took the restored carrier, and the
-        // first spec tick consumes it together with s.cache + s.fed.
+        // that shaped THIS literal (no restore fold exists for glm5 yet — cold only), so
+        // the tick dispatch and the installed session cannot disagree.
         glm5: None,
         glm5_on,
         glm5_k,
-        glm5_restored_dkv: glm5_prefix_restored_dkv,
-        prompt_tok_decode_step: false,
         constraint,
         mask_dev: None,
         mask_words: 0,
@@ -19580,7 +17546,6 @@ fn admit(
         trace_id: req.trace_id,
         request_id: req.request_id,
         admit_predict_logged: req.admit_predict_logged,
-        wire_deadline: req.wire_deadline,
         // Booked by the worker loop at active.push (the admission charge is computed
         // there); zero until then so a test-constructed Session books nothing.
         booked_kv_bytes: 0,
@@ -20050,7 +18015,6 @@ fn prefill_tick(
     {
         build_vision_overlay(
             engine,
-            lm.model.vision_intake_engine(engine)?,
             vision_tower,
             gemma_tower,
             glm5_tower,
@@ -20078,43 +18042,11 @@ fn prefill_tick(
     // LCP split is skipped (its boundary-stop would turn the tail into a continuation).
     let eager_mono = eager_only_model(lm);
     let carried = s.cache.as_ref().is_some_and(|c| c.pos > 0);
-    // CARRIED-SUFFIX PRIME CARVE-OUT (lane/glm5-prefix-latent2, 2026-09-01): hyper trunks
-    // (glm5_next) are eager-only for BATCHING reasons, not prime reasons — their engine
-    // prime is continuation-capable (see `hyper_suffix_prime_on`), so with the flag armed
-    // a carried suffix takes the prime branch below instead of ~33 ms/token tokenwise.
-    let hyper_trunk = memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan);
-    let suffix_prime = carried_suffix_primes(hyper_trunk, hyper_suffix_prime_on());
-    if eager_mono
-        && carried
-        && !suffix_prime
-        && q > 0
-        && hyper_trunk
-        && s.n_cached > 0
-        && s.fed.len() == s.n_cached
-    {
-        // Loud DECLINED receipt, hyper trunks only (gemma's tokenwise suffix is by engine
-        // design, not a defect — logging it would spam every gemma reuse hit): the parent
-        // lane's C2 defect was only ever inferred from TTFT arithmetic; the deploy gate
-        // greps this line instead. `fed == n_cached` holds only before the first suffix
-        // token is consumed — once per admitted request (so once per TURN in a multi-turn
-        // conversation and once per sibling in an N-way fanout), never per token.
-        eprintln!(
-            "[suffix-prime] DECLINED (MEMRA_HYPER_SUFFIX_PRIME off): carried suffix \
-             {q} tokens rides tokenwise decode_step (model {})",
-            s.model
-        );
-    }
-    if eager_mono && !suffix_prime {
-        s.snapshot_at = None;
-    }
     if eager_mono {
+        s.snapshot_at = None;
         // eager-only models (gemma4) cannot continuation-prime a suffix over a rewound cache
         // (the engine refuses pos > 0 prime), so plain-affinity resume excludes them — no
-        // point capturing a checkpoint they can never resume from. This stays cleared for
-        // hyper trunks under the carve-out too: `maybe_plain_checkpoint` refuses to arm on
-        // latent-bearing caches in its own right (the parent lane's guard), so a checkpoint
-        // here could never be consumed — the LCP-split retention above is the deliberate
-        // delta, the checkpoint clearing is not.
+        // point capturing a checkpoint they can never resume from.
         s.ckpt_at = None;
     }
     // BOUNDARY STOP: the prime must stop exactly at the NEXT of two pre-generation boundaries
@@ -20141,21 +18073,10 @@ fn prefill_tick(
     if !confidence_trace_enabled()
         && q >= memra_engine::hybrid_forward::PRIME_MIN_T.max(2)
         && budget >= memra_engine::hybrid_forward::PRIME_MIN_T
-        && !(eager_mono && carried && !suffix_prime)
+        && !(eager_mono && carried)
         && bound_rem.is_none_or(|r| r >= memra_engine::hybrid_forward::PRIME_MIN_T)
     {
         let take = prefill_tick_take(q, budget, eager_mono, bound_rem);
-        if eager_mono && carried && suffix_prime {
-            // ENGAGEMENT RECEIPT (lane/glm5-prefix-latent2): the deploy gate greps this —
-            // a restored-turn TTFT number alone cannot distinguish the prime program from
-            // a fast box (never-serve-greedy law's receipt discipline, applied here).
-            eprintln!(
-                "[suffix-prime] ENGAGED: carried suffix {take} of {q} tokens primes at \
-                 base={} (MEMRA_HYPER_SUFFIX_PRIME, model {})",
-                s.cache.as_ref().map_or(0, |c| c.pos),
-                s.model
-            );
-        }
         if std::env::var("MEMRA_DEBUG_PRIMESEG").is_ok() {
             // PRIME-PROGRAM RECEIPT (lane/spec-longctx-20260821). A cross-prime-path byte
             // comparison is only interpretable if the CALL SEQUENCE is known: the prime-grid
@@ -20211,21 +18132,6 @@ fn prefill_tick(
         }
         consumed = take;
     } else if let Some(tok) = s.prefill_queue.pop_front() {
-        // PROVENANCE BIT + TOKENWISE receipt (PR #93 review finding 3a/5): a hyper-trunk
-        // prompt token walking decode_step UNDER THE FLAG marks the session — the capture
-        // sites refuse to publish from it (R16 as a checked invariant; budget starvation,
-        // sub-floor suffixes and any future prime-branch veto all land in this branch).
-        // First-token receipt, once per session; non-hyper and flag-off sessions are
-        // byte-identical (the bit stays false).
-        if hyper_trunk && suffix_prime && !s.prompt_tok_decode_step {
-            s.prompt_tok_decode_step = true;
-            eprintln!(
-                "[suffix-prime] TOKENWISE (flag on): prompt tokens ride decode_step \
-                 (carried={}, q={q}, budget={budget}); captures for this session refuse \
-                 (model {})",
-                carried as u8, s.model
-            );
-        }
         if std::env::var("MEMRA_DEBUG_PRIMESEG").is_ok() {
             // The W1 two-programs door (see the comment above): prompt tokens going through
             // decode_step one at a time. Loud under the diagnostic so a byte comparison can
@@ -20279,18 +18185,7 @@ fn prefill_tick(
     // of the prompt as a continuation (the LCP-split learning insert).
     if s.snapshot_at == Some(s.fed.len()) {
         s.snapshot_at = None;
-        // PROVENANCE REFUSAL (PR #93 review finding 3a) — the seed site's twin: a
-        // decode_step-fed hyper-under-flag session publishes nothing (R16).
-        if s.prompt_tok_decode_step {
-            eprintln!(
-                "[suffix-prime] lcp-split capture REFUSED: prompt tokens rode decode_step \
-                 under MEMRA_HYPER_SUFFIX_PRIME; mixed-provenance entry not published \
-                 (model {})",
-                s.model
-            );
-        } else {
-            prefix_insert_from_session(engine, px, hpx, s, "lcp-split");
-        }
+        prefix_insert_from_session(engine, px, hpx, s, "lcp-split");
     }
     // PLAIN-AFFINITY: capture the pre-generation checkpoint the instant the prime reaches its
     // boundary (no-op unless s.ckpt_at == s.fed.len()). Cheap — one GDN-state snapshot.
@@ -21412,42 +19307,12 @@ fn step_session(
         // EAGER-ONLY prime shape (lane/gemma4-serve-gaps): same law as prefill_tick —
         // gemma4 primes fresh prompts WHOLE (no chunked prime in the engine; chunk 2 used
         // to kill the worker) and carried suffixes tokenwise (no continuation prime).
-        // Hyper trunks carve out of the carried veto under MEMRA_HYPER_SUFFIX_PRIME
-        // exactly as in prefill_tick (lane/glm5-prefix-latent2 — one law, both sites).
         let eager_mono = eager_only_model(lm);
         let carried = s.cache.as_ref().is_some_and(|c| c.pos > 0);
-        let hyper_trunk = memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan);
-        let suffix_prime = carried_suffix_primes(hyper_trunk, hyper_suffix_prime_on());
-        if eager_mono
-            && carried
-            && !suffix_prime
-            && q > 0
-            && hyper_trunk
-            && s.n_cached > 0
-            && s.fed.len() == s.n_cached
-        {
-            // The prefill_tick DECLINED receipt's twin (PR #93 review finding 5): the
-            // per-session path's OFF-arm hyper suffix was silent. Same once-per-request
-            // predicate (`fed == n_cached` holds only before the first suffix token).
-            eprintln!(
-                "[suffix-prime] DECLINED (MEMRA_HYPER_SUFFIX_PRIME off): carried suffix \
-                 {q} tokens rides tokenwise decode_step (model {})",
-                s.model
-            );
-        }
         if !confidence_trace_enabled()
             && q >= memra_engine::hybrid_forward::PRIME_MIN_T.max(2)
-            && !(eager_mono && carried && !suffix_prime)
+            && !(eager_mono && carried)
         {
-            if eager_mono && carried && suffix_prime {
-                // The prefill_tick receipt's twin — same grep target, per-session path.
-                eprintln!(
-                    "[suffix-prime] ENGAGED: carried suffix {q} tokens primes at base={} \
-                     (MEMRA_HYPER_SUFFIX_PRIME, model {})",
-                    s.cache.as_ref().map_or(0, |c| c.pos),
-                    s.model
-                );
-            }
             // leave a tail chunk >= PRIME_MIN_T if this tick doesn't finish the queue
             let mut take = if eager_mono { q } else { q.min(PREFILL_TICK_T) };
             if q - take > 0 && q - take < memra_engine::hybrid_forward::PRIME_MIN_T {
@@ -21482,17 +19347,6 @@ fn step_session(
                 s.sampler.accept(tok);
             }
         } else if let Some(tok) = s.prefill_queue.pop_front() {
-            // PROVENANCE BIT + TOKENWISE receipt (PR #93 review finding 3a/5) — the
-            // prefill_tick twin: mark hyper-under-flag sessions whose prompt tokens walk
-            // decode_step so the capture sites refuse them (R16 as a checked invariant).
-            if hyper_trunk && suffix_prime && !s.prompt_tok_decode_step {
-                s.prompt_tok_decode_step = true;
-                eprintln!(
-                    "[suffix-prime] TOKENWISE (flag on): prompt tokens ride decode_step \
-                     (carried={}, q={q}); captures for this session refuse (model {})",
-                    carried as u8, s.model
-                );
-            }
             // CAPTURE (lane/embed-serve): the FINAL prompt token walks decode_step_h so
             // sub-prime-floor prompts can still pool their last position (same numeric
             // program; prime_cache hard-asserts T >= PRIME_MIN_T).
@@ -22063,14 +19917,11 @@ fn step_glm5_spec(
         finish(s, StopReason::MaxNew);
         return Ok(false);
     }
-    // turn 1: prime (the session owns its cache; s.cache stays None). Cold sessions drain
-    // the whole prompt from the prefill queue; the RESTORED carrier (lane/glm5-prefix-
-    // latent2) drains only the suffix — the restored prefix already sits in s.fed and the
-    // restored trunk cache in s.cache (the gemma spec-on-cache-hit shape), and the dkv
-    // admission rebuilt from the entry's tail rides s.glm5_restored_dkv.
+    // turn 1: prime (the session owns its cache; s.cache stays None). Cold sessions only —
+    // admission requires it (glm5_cold), so the whole prompt is the prefill queue.
     if s.glm5.is_none() {
-        let queued: Vec<u32> = s.prefill_queue.drain(..).collect();
-        if queued.is_empty() {
+        let prompt: Vec<u32> = s.prefill_queue.drain(..).collect();
+        if prompt.is_empty() {
             finish(s, StopReason::MaxNew);
             return Ok(false);
         }
@@ -22079,46 +19930,24 @@ fn step_glm5_spec(
         }
         // Sampled admission (T>0): the ONE Sampler->SpecSampling seam (spec_sampling_for),
         // same as the frspec/dspark routes — None = greedy, byte-identical instrument route.
-        let sess = match s.glm5_restored_dkv.take() {
-            Some(dkv) => {
-                let restored = s
-                    .cache
-                    .take()
-                    .ok_or("glm5 restored dkv without a carrier cache (admission literal bug)")?;
-                lm.model
-                    .glm5_spec_session_from_restored(
-                        engine,
-                        restored,
-                        &s.fed,
-                        &queued,
-                        dkv,
-                        s.gspec_ctx,
-                        spec_sampling_for(&s.sampler),
-                    )
-                    // A restored-arm refusal is an invariant break (admission pre-validated
-                    // the shape): fail loudly rather than silently switching numeric
-                    // programs mid-request — the dspark law, same as the cold arm below.
-                    .map_err(|err| format!("glm5 spec restore prime failed: {err}"))?
+        let sess = match lm.model.glm5_spec_session_new(
+            engine,
+            &prompt,
+            s.gspec_ctx,
+            spec_sampling_for(&s.sampler),
+        ) {
+            Ok(sess) => sess,
+            Err(err) => {
+                // Prime-time refusal (ctx shape, alloc failure): fail the request loudly
+                // rather than silently switching numeric programs mid-request — admission
+                // is where the plain fallback lives (the dspark law).
+                return Err(format!("glm5 spec prime failed: {err}").into());
             }
-            None => match lm.model.glm5_spec_session_new(
-                engine,
-                &queued,
-                s.gspec_ctx,
-                spec_sampling_for(&s.sampler),
-            ) {
-                Ok(sess) => sess,
-                Err(err) => {
-                    // Prime-time refusal (ctx shape, alloc failure): fail the request loudly
-                    // rather than silently switching numeric programs mid-request — admission
-                    // is where the plain fallback lives (the dspark law).
-                    return Err(format!("glm5 spec prime failed: {err}").into());
-                }
-            },
         };
         if let Some(trace) = s.ttft.as_ref() {
             trace.mark_prime_end();
         }
-        for &tok in &queued {
+        for &tok in &prompt {
             s.fed.push(tok);
             s.sampler.accept(tok);
         }
@@ -22930,8 +20759,8 @@ mod tests {
         DEFAULT_PREFIX_CACHE_PROTECTED_PCT, HostPrefixCache, HostPrefixEntry,
         PREFIX_CACHE_MIN_TOKENS, PREFIX_ENTRY_LAYOUT_VERSION, PartialPrefixDecision, PoolKey,
         PrefixCache, PrefixEntry, PrefixFanoutCandidate, PrefixFanoutGroup, PrefixSegment,
-        host_promote_candidate, partial_prefix_decision, prefix_fanout_groups, retire_prefix_pin,
-        stable_boundary_arm, validate_prefix_plane_shape,
+        partial_prefix_decision, prefix_fanout_groups, retire_prefix_pin,
+        validate_prefix_plane_shape,
     };
     use super::{
         DecodeChunkPolicy, resolve_decode_chunk_policy, resolve_pp_wave_chunk_policy,
@@ -23002,7 +20831,6 @@ mod tests {
             step_images: Vec::new(),
             capture: None,
             vision_memory: None,
-            wire_deadline: None,
             tx,
         }
     }
@@ -23404,7 +21232,6 @@ mod tests {
             step_images: Vec::new(),
             capture: None,
             vision_memory: None,
-            wire_deadline: None,
             ttft: None,
             tx: bad_tx,
         });
@@ -24864,9 +22691,9 @@ mod tests {
         let msg = removed_bank_v2_doors_refusal(None, Some("1")).unwrap();
         assert!(msg.contains("MEMRA_SEL_DOWN8=1 is"), "{msg}");
         // RESCOPED 2026-09-01: the three programs the old bundle armed are back under three
-        // SEPARATE doors. The refusal must name all three, or an operator holding a 140-era
-        // recipe has no path forward and the obvious guess ("it's just the layout") silently
-        // arms one third of what the recipe asked for.
+        // SEPARATE default-OFF doors. The refusal must name all three, or an operator holding
+        // a 140-era recipe has no path forward and the obvious guess ("it's just the layout")
+        // silently arms one third of what the recipe asked for.
         let msg = removed_bank_v2_doors_refusal(Some("1"), None).unwrap();
         for successor in [
             "MEMRA_NVFP4_BANK_SM",
@@ -24876,15 +22703,6 @@ mod tests {
             assert!(msg.contains(successor), "missing {successor} in: {msg}");
         }
         assert!(msg.contains("step37-bankv3-20260901"), "{msg}");
-        // DEFAULT FLIP 2026-09-01: two of the three successors are now DEFAULT ON, which CHANGES
-        // THE REMEDIATION this message has to give. An operator translating `BANK_V2=1` into
-        // `BANK_SM=1 SEL_DOWN8=1` would be re-stating the default and would likely also add
-        // `SEL_GU=1` "to be safe", quietly arming a program that was deliberately left off. So
-        // the message must say which are default and offer the rollback seam, and that is
-        // asserted rather than trusted to survive the next edit of the string.
-        assert!(msg.contains("DEFAULT ON"), "{msg}");
-        assert!(msg.contains("DEFAULT OFF"), "{msg}");
-        assert!(msg.contains("MEMRA_NVFP4_BANK_SM=0"), "{msg}");
         // and the successors are NOT themselves refused — that is the whole point of milestone 3.
         assert!(removed_bank_v2_doors_refusal(None, None).is_none());
     }
@@ -26281,11 +24099,7 @@ mod tests {
         );
         assert!(
             !glm5_route_admits(true, true, 3, true, false, false, false, false),
-            "a warm session that is NEITHER cold NOR the restored carrier must refuse — \
-             the last param is `cold_or_restored_carrier` (lane/glm5-prefix-latent2): the \
-             call site passes `glm5_cold || glm5_restored_carrier`, and the carrier proof \
-             (rebuilt drafter KV + restored cache + non-empty seed, every other spec-state \
-             term still cold) lives at the call site, not here"
+            "a reused/restored/warm session must refuse — the glm5 session is cold-only"
         );
     }
 
@@ -26364,28 +24178,10 @@ mod tests {
             "the chosen K must pass the knee clamp"
         );
         // 4. The session-owned-cache arm: admission must not allocate a plain cache under
-        //    a glm5 route — EXCEPT the restored carrier (lane/glm5-prefix-latent2), which
-        //    keeps the restored cache for the first spec tick to consume. Anchored on the
-        //    PRE-TEST slice: the old form of this assertion matched its own string literal
-        //    (the self-match trap the wiring-assertions law names).
-        let live_pre_tests = &code[..code.find("mod tests").expect("the test module exists")];
+        //    a glm5 route.
         assert!(
-            live_pre_tests.contains(
-                "let cache = if dspark_on || (glm5_on && glm5_prefix_restored_dkv.is_none()) {"
-            ),
-            "the cache literal must carry the glm5 no-alloc arm with the restored-carrier exception"
-        );
-        assert!(
-            live_pre_tests.contains("glm5_restored_dkv: glm5_prefix_restored_dkv,"),
-            "the session literal must carry the restored drafter KV"
-        );
-        assert!(
-            live_pre_tests.contains("glm5_spec_session_from_restored("),
-            "the first spec tick must consume the restored carrier via from_restored"
-        );
-        assert!(
-            live_pre_tests.contains("drain_glm5_prefix_capture(&engine, &mut px, &mut hpx, s);"),
-            "the retire-adjacent sweep must drain glm5 boundary captures"
+            code.contains("let cache = if dspark_on || glm5_on {"),
+            "the cache literal must carry the glm5 no-alloc arm"
         );
         // 5. The per-request engagement receipt is an INVOCATION inside step_glm5_spec
         //    (the deploy gate greps the server log for it; never-serve-greedy law).
@@ -27125,134 +24921,14 @@ mod tests {
         }
         assert_eq!(
             prod.matches("admit_predict_cfg.armed").count(),
-            4,
-            "slot arm, kv arm, the admit-time shadow book charge, and the boot \
-             budget resolution"
+            3,
+            "slot arm, kv arm, and the admit-time shadow book charge"
         );
         assert_eq!(
             prod.matches("req.admit_predict_logged = true;").count(),
             2,
             "both arms latch the one-shot receipt"
         );
-
-        // LIVE BUDGET DEFAULT (lane/admit-predict-calibration-20260901): the boot
-        // resolution is invoked exactly once, and its derivation reads the engine's
-        // own quantities (effective free, the prefix-cache budget, the real gate's
-        // reserve arithmetic), never a second hand-rolled formula.
-        assert_eq!(
-            prod.matches("admit_predict_cfg.resolve_budget(derived);")
-                .count(),
-            1,
-            "one boot budget resolution"
-        );
-        let resolve_at = prod
-            .find("admit_predict_cfg.resolve_budget(derived);")
-            .expect("resolution exists");
-        let derive_block = &prod[resolve_at.saturating_sub(1600)..resolve_at];
-        for input in [
-            "effective_free_bytes(&engine)",
-            "prefix_cache_budget_bytes() as u64",
-            "admission_reserve(",
-            "admit_reserve_override()",
-        ] {
-            assert!(
-                derive_block.contains(input),
-                "the derivation must read `{input}`"
-            );
-        }
-
-        // Dual book (FINDING 3 calibration): both verdict sites carry the
-        // engine-charge book beside the predictive one.
-        assert_eq!(
-            prod.matches("booked_real_bytes: admission_book.booked_total(),")
-                .count(),
-            2,
-            "both arms log booked_real from the engine-charge book"
-        );
-    }
-
-    /// FIRST-TOKEN DEADLINE GATE wiring (lane/bench-debts-20260901, competitive-bench
-    /// engine debt 3): anchored on INVOCATIONS in comment-stripped production text
-    /// (wiring-assertions law).
-    #[test]
-    fn first_token_deadline_gate_wiring() {
-        let src = include_str!("worker.rs");
-        let code: String = src
-            .lines()
-            .map(|l| l.split("//").next().unwrap_or(""))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
-
-        // ONE gate site, judging through the pure predicate.
-        let sites: Vec<usize> = prod
-            .match_indices("crate::admit_predict::first_token_wait_infeasible(")
-            .map(|(i, _)| i)
-            .collect();
-        assert_eq!(sites.len(), 1, "exactly one production gate site");
-        let i = sites[0];
-        // Behind the flag, interactive-only, capture-exempt, judging the REMAINING
-        // wire deadline and the live prime backlog.
-        let before = &prod[i.saturating_sub(1000)..i];
-        assert!(
-            before.contains("first_token_deadline_gate_on()"),
-            "the gate must be flag-guarded"
-        );
-        assert!(
-            before.contains("lane == crate::lanes::Lane::Interactive"),
-            "interactive lane only"
-        );
-        assert!(
-            before.contains("req.capture.is_none()"),
-            "capture requests bypass"
-        );
-        assert!(
-            before.contains("req.wire_deadline"),
-            "the wire deadline is the judged contract"
-        );
-        assert!(
-            before.contains("s.prefill_queue.len()"),
-            "the backlog is the live prime queue, not a proxy"
-        );
-        // The refusal is the shed contract: Retry-After constructor, reservation
-        // released, and the request never falls through to admission.
-        let after = &prod[i..(i + 2200).min(prod.len())];
-        assert!(
-            after.contains("EngineError::rate_limit_after("),
-            "refusal takes the Retry-After shed constructor"
-        );
-        assert!(
-            after.contains("release_admission_reservation(req.lane);"),
-            "the lane reservation is released on refusal"
-        );
-        assert!(
-            after.contains("continue;"),
-            "a refused request never reaches admission"
-        );
-        // The receipt line is grep-stable.
-        assert!(
-            after.contains("[first-token-gate] id="),
-            "the refusal logs a joined receipt line"
-        );
-        // The deadline is stamped at every handler submission seam beside the receipt
-        // identity: the two lib.rs handlers plus the shared surfaces body.
-        for (file, want) in [
-            (include_str!("lib.rs"), 2usize),
-            (include_str!("surfaces.rs"), 1usize),
-        ] {
-            let stripped: String = file
-                .lines()
-                .map(|l| l.split("//").next().unwrap_or(""))
-                .collect::<Vec<_>>()
-                .join("\n");
-            assert_eq!(
-                stripped
-                    .matches("wire_deadline = Some(deadline.at.into_std());")
-                    .count(),
-                want,
-                "every handler submission stamps the wire deadline"
-            );
-        }
     }
 
     /// TOOTH for the H11 depth freeze (the measured 3.1x lever, canonflip-20260813):
@@ -27313,112 +24989,6 @@ mod tests {
         assert!(!arms(false, true, false, 4860));
         assert!(!arms(true, false, false, 4860));
         assert!(!arms(true, true, false, PREFIX_CACHE_MIN_TOKENS - 1));
-    }
-
-    /// lane/glm5-prefix-latent2 (2026-09-01): the carried-suffix prime carve-out is scoped
-    /// to hyper trunks AND the flag — gemma-class eager-only models never carve out (their
-    /// engine genuinely refuses pos>0 prime; the veto is load-bearing there).
-    #[test]
-    fn carried_suffix_prime_carveout_is_hyper_and_flag_scoped() {
-        let p = super::carried_suffix_primes;
-        // hyper trunk + flag = the carve-out (glm5 restored suffix rides the prime program)
-        assert!(p(true, true));
-        // flag off = today's tokenwise path, byte-identical (the rollback seam)
-        assert!(!p(true, false));
-        // gemma-class (not a hyper trunk) never carves out, flag or no flag
-        assert!(!p(false, true));
-        assert!(!p(false, false));
-    }
-
-    /// WIRING GATE (anchored on invocations in comment-stripped source, never prose —
-    /// the wiring-assertions-match-prose law): the MEMRA_HYPER_SUFFIX_PRIME carve-out is
-    /// LIVE at all four seams it claims (both prefill sites' veto terms + receipts, the
-    /// H11 reseed narrowing, the hit-LCP deepening disjunction).
-    #[test]
-    fn suffix_prime_carveout_wiring_is_live_in_comment_stripped_source() {
-        let src = include_str!("worker.rs");
-        let code: String = src
-            .lines()
-            .map(|l| l.split("//").next().unwrap_or(""))
-            .collect::<Vec<_>>()
-            .join("\n");
-        // Assertions run over the PRE-TEST slice: this test's own string literals would
-        // otherwise count themselves (comment-stripping does not strip strings).
-        let live = &code[..code.find("mod tests").expect("the test module exists")];
-        // 1. Both prefill sites compute the carve-out through the PURE predicate over the
-        //    plan's hyper-trunk truth and the flag, and their veto terms consume it.
-        assert_eq!(
-            live.matches("carried_suffix_primes(").count(),
-            5, // fn def + 2 prefill sites + reseed narrowing + hit-LCP deepening (update
-            // this count AND this comment together when a new consumer lands)
-            "the carve-out predicate must be consumed at exactly the claimed seams"
-        );
-        assert_eq!(
-            live.matches("!(eager_mono && carried && !suffix_prime)")
-                .count(),
-            2,
-            "both prefill sites (prefill_tick + step_session) must carry the lifted veto"
-        );
-        // Any THIRD variant of the veto expression (an unlifted reintroduction under
-        // different formatting — PR #93 review finding 6a: the old newline-anchored
-        // negative assertion passed on same-line braces) fails this exact count.
-        assert_eq!(
-            live.matches("(eager_mono && carried").count(),
-            2,
-            "exactly the two lifted veto forms may mention (eager_mono && carried"
-        );
-        // 2. The engagement receipt is an INVOCATION in both sites (the deploy gate greps
-        //    the server log for it); the OFF arm announces DECLINED in both sites; the
-        //    flag-ON tokenwise fallbacks (budget starvation, sub-floor suffix) announce
-        //    TOKENWISE in both sites and set the provenance bit the capture sites refuse
-        //    on (PR #93 review findings 3a + 5 — R16 as a checked invariant).
-        assert_eq!(
-            live.matches("\"[suffix-prime] ENGAGED:").count(),
-            2,
-            "both prefill sites must emit the ENGAGED receipt"
-        );
-        assert_eq!(
-            live.matches("\"[suffix-prime] DECLINED (MEMRA_HYPER_SUFFIX_PRIME off):")
-                .count(),
-            2,
-            "both prefill sites must announce the OFF-arm tokenwise suffix on hyper trunks"
-        );
-        assert_eq!(
-            live.matches("\"[suffix-prime] TOKENWISE (flag on):")
-                .count(),
-            2,
-            "both tokenwise branches must announce the flag-ON fallback on hyper trunks"
-        );
-        assert_eq!(
-            live.matches("s.prompt_tok_decode_step = true;").count(),
-            2,
-            "both tokenwise branches must set the provenance bit"
-        );
-        assert_eq!(
-            live.matches("if s.prompt_tok_decode_step {").count(),
-            2,
-            "both capture sites (maybe_prefix_seed + the lcp-split insert) must refuse on \
-             the provenance bit"
-        );
-        // 3. The H11 reseed call site narrows the eager bit through the predicate.
-        let reseed = live
-            .find("if plain_hit_reseed_arms(")
-            .expect("the H11 re-arm call site exists");
-        assert!(
-            live[reseed..reseed + 400].contains("&& !carried_suffix_primes("),
-            "the reseed call site must pass the carve-out-narrowed eager bit"
-        );
-        // 4. The hit-LCP deepening carries the carve-out disjunction beside the eager
-        //    veto. The invocation shape is the deepest-wins max over the LCP teacher and
-        //    the stable boundary (lane/bench-debts-20260901); the carve-out anchor is
-        //    unchanged.
-        let deepen = live
-            .find("lcp_taught.unwrap_or(0).max(stable.unwrap_or(0)),")
-            .expect("the hit-LCP deepening site exists");
-        assert!(
-            live[deepen..deepen + 500].contains("|| carried_suffix_primes("),
-            "the deepening site must admit prime-provenance hyper suffixes"
-        );
     }
 
     #[test]
@@ -27920,144 +25490,6 @@ mod tests {
         assert!(h.insert(&kd, host_entry(&kd, toks(min + 64), 4)));
         let i = h.lookup(&kd, &toks(min + 128)).expect("a hit exists");
         assert_eq!(h.entries[&kd][i].toks.len(), min + 64);
-    }
-
-    // ---- COMPETITIVE-BENCH DEBT 1: promote starvation under organic churn ----
-    // (darklanes research/competitive-bench-20260901/RESULTS.md §7: N56 cell: 28-49
-    // demotions per promotion.) CPU-side halves: the admit-time probe-order rule (host
-    // consulted on a device miss OR a shallower device hit) and the key-shape reason the
-    // demoted population could not match (prompt-end seeds carry the live generation
-    // header the next turn re-renders).
-
-    #[test]
-    fn host_probe_fires_on_device_miss_and_on_shallower_device_hit() {
-        let mut h = HostPrefixCache::new(1 << 20);
-        let k = key("t");
-        let min = super::PREFIX_CACHE_MIN_TOKENS;
-        let deep = min + 256;
-        assert!(h.insert(&k, host_entry(&k, toks(deep), 8)));
-        let prompt = toks(deep + 512);
-        // Device miss (best_len 0): the host entry is the candidate.
-        assert_eq!(host_promote_candidate(&h, &k, &prompt, 0), Some(0));
-        // A surviving SHALLOW device entry (the bench's shared-system-prompt seed, hit
-        // 425x at exactly 64 tokens) must not shadow the deeper demoted twin.
-        assert_eq!(host_promote_candidate(&h, &k, &prompt, min), Some(0));
-        // The device already serves at least as deep: nothing to feed.
-        assert_eq!(host_promote_candidate(&h, &k, &prompt, deep), None);
-        assert_eq!(host_promote_candidate(&h, &k, &prompt, deep + 32), None);
-        // A latched-off tier is never consulted.
-        h.disable("test latch");
-        assert_eq!(host_promote_candidate(&h, &k, &prompt, 0), None);
-    }
-
-    #[test]
-    fn prompt_end_seed_key_never_matches_the_rerendered_next_turn_but_a_stable_key_does() {
-        // Turn N's prompt ends inside the live generation header; turn N+1 re-renders that
-        // header after the stripped answer (the pi-rewrite divergence documented at
-        // `plain_checkpoint_boundary`). A prompt-END seed key therefore diverges a couple
-        // of tokens below its own end and can never exact-prefix-match again: the
-        // starvation shape. The same state keyed at the stable boundary matches trivially.
-        let k = key("t");
-        let min = super::PREFIX_CACHE_MIN_TOKENS;
-        let body = min * 4;
-        let header = [900_001u32, 900_002];
-        let mut turn_n: Vec<u32> = toks(body);
-        turn_n.extend_from_slice(&header);
-        let mut turn_n1: Vec<u32> = toks(body);
-        turn_n1.extend_from_slice(&[700_000, 700_001, 700_002]);
-        turn_n1.extend_from_slice(&header);
-        let mut h = HostPrefixCache::new(1 << 20);
-        // The demoted prompt-end seed of turn N.
-        assert!(h.insert(&k, host_entry(&k, turn_n, 8)));
-        assert_eq!(
-            host_promote_candidate(&h, &k, &turn_n1, 0),
-            None,
-            "a prompt-end seed key carries the volatile header tail and starves the tier"
-        );
-        // The same session state keyed at the render-stable boundary (before the header).
-        assert!(h.insert(&k, host_entry(&k, toks(body), 8)));
-        let hi = host_promote_candidate(&h, &k, &turn_n1, 0).expect("stable key promotes");
-        assert_eq!(h.entries[&k][hi].toks.len(), body);
-    }
-
-    #[test]
-    fn stable_boundary_arm_is_deepest_wins_and_floor_checked() {
-        let min = super::PREFIX_CACHE_MIN_TOKENS;
-        // No boundary, nothing arms.
-        assert_eq!(stable_boundary_arm(None, None, 10 * min), None);
-        // Below the entry floor never arms.
-        assert_eq!(stable_boundary_arm(Some(min - 1), None, 10 * min), None);
-        // At/above the floor arms on a bare miss.
-        assert_eq!(stable_boundary_arm(Some(min), None, 10 * min), Some(min));
-        // Deeper than an already-taught boundary wins...
-        assert_eq!(
-            stable_boundary_arm(Some(4 * min), Some(2 * min), 10 * min),
-            Some(4 * min)
-        );
-        // ...but a shallower stable boundary never downgrades a deeper armed capture.
-        assert_eq!(
-            stable_boundary_arm(Some(2 * min), Some(4 * min), 10 * min),
-            None
-        );
-        assert_eq!(
-            stable_boundary_arm(Some(2 * min), Some(2 * min), 10 * min),
-            None
-        );
-        // A boundary at/past prompt end is not a boundary.
-        assert_eq!(stable_boundary_arm(Some(10 * min), None, 10 * min), None);
-    }
-
-    /// Competitive-bench debt 1 wiring: anchored on INVOCATIONS in comment-stripped
-    /// production text (wiring-assertions law: a rationale comment must never satisfy
-    /// this).
-    #[test]
-    fn stable_boundary_and_host_probe_wiring() {
-        let src = include_str!("worker.rs");
-        let code: String = src
-            .lines()
-            .map(|l| l.split("//").next().unwrap_or(""))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
-
-        // The admit-time probe-order decision has ONE owner and the promote hook consults
-        // it (definition + the one call site).
-        assert_eq!(
-            prod.matches("host_promote_candidate(").count(),
-            2,
-            "definition + the promote hook's consult, nothing else"
-        );
-        let hook = prod
-            .find("fn host_promote_prefix_hit(")
-            .expect("promote hook exists");
-        let consult = prod[hook..]
-            .find("host_promote_candidate(")
-            .expect("the hook consults the candidate rule");
-        assert!(
-            consult < 900,
-            "the candidate consult must be the promote hook's first act"
-        );
-
-        // Both plain capture paths arm through the flag + the stable-boundary derivation:
-        // the shallow-hit arm and the miss-path arm.
-        let flag_sites: Vec<usize> = prod
-            .match_indices("if prefix_stable_boundary_on()")
-            .map(|(i, _)| i)
-            .collect();
-        assert_eq!(flag_sites.len(), 2, "hit arm + miss arm, nothing else");
-        for i in flag_sites {
-            let window = &prod[i..(i + 700).min(prod.len())];
-            assert!(
-                window.contains("plain_checkpoint_boundary(&prompt"),
-                "each armed site derives the boundary from plain_checkpoint_boundary"
-            );
-        }
-        // The miss arm goes through the pure deepest-wins rule (definition + one call).
-        assert_eq!(
-            prod.matches("stable_boundary_arm(").count(),
-            2,
-            "definition + the miss-path arm"
-        );
     }
 
     #[test]
@@ -28693,7 +26125,6 @@ mod tests {
             step_images: Vec::new(),
             capture: None,
             vision_memory: None,
-            wire_deadline: None,
             ttft: None,
             tx,
         });
@@ -30407,268 +27838,5 @@ mod vision_special_guard_tests {
         let run_ids = tok.encode(&rendered, false);
         let budgets = vision_special_budgets_inner(&tok, 1, 16, 0, 0, 0);
         vision_special_id_guard(&run_ids, &budgets).expect("the rendered run must admit");
-    }
-}
-
-/// HOST-TIER DEPLOY HANDOFF gates (lane/host-tier-deploy-warmth-20260901).
-/// CPU-testable by construction: the wire layer works on plain vectors (the owned shapes
-/// the reader produces, the borrowed views the writer takes); pinned memory only enters
-/// at `host_entry_from_owned`, which the GPU/box gate covers.
-#[cfg(test)]
-mod host_handoff_tests {
-    use super::{
-        HANDOFF_MAX_AGE_SECS, HandoffEntryOwned, HandoffHeader, HandoffModelStamp,
-        HandoffPlaneOwned, HandoffTailOwned, PREFIX_ENTRY_LAYOUT_VERSION, handoff_header_verdict,
-        handoff_read_entry, handoff_read_header, handoff_write_entry, handoff_write_header,
-    };
-
-    /// One entry with EVERY field class populated somewhere across the fixture pair:
-    /// planes present and absent, conv/ssm split, draft, dspark tail, verify digest.
-    fn handoff_fixture(model: &str, ns: &str, seed: u8) -> HandoffEntryOwned {
-        let plane = |len: usize, ktb: usize, vtb: usize| HandoffPlaneOwned {
-            len,
-            k_tok_bytes: ktb,
-            v_tok_bytes: vtb,
-            k: (0..len * ktb)
-                .map(|i| (i as u8).wrapping_add(seed))
-                .collect(),
-            v: (0..len * vtb)
-                .map(|i| (i as u8).wrapping_mul(3).wrapping_add(seed))
-                .collect(),
-        };
-        HandoffEntryOwned {
-            layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
-            model: model.to_string(),
-            ns: ns.to_string(),
-            toks: (0..48u32).map(|i| i + u32::from(seed)).collect(),
-            kv: vec![Some(plane(4, 8, 6)), None],
-            conv: vec![Some(vec![1.5, -2.25, f32::from(seed)]), None],
-            ssm: vec![None, Some(vec![0.5; 7])],
-            pos: 48,
-            last_logits: vec![0.25, -0.125, 3.5],
-            draft: Some(plane(4, 2, 2)),
-            dspark: Some(HandoffTailOwned {
-                layers: vec![(vec![1.0, 2.0], vec![3.0, 4.0])],
-                base: 5,
-                rows: 2,
-                len: 4,
-                row_bytes: 16,
-            }),
-            last_h: vec![9.75; 5],
-            bytes: 12345,
-            verify_digest: Some(format!("digest-{seed}")),
-        }
-    }
-
-    fn handoff_stamp(name: &str, files: u64, bytes: u64, mtime: u64) -> HandoffModelStamp {
-        HandoffModelStamp {
-            name: name.to_string(),
-            path: format!("/models/{name}"),
-            readable: true,
-            files,
-            bytes,
-            max_mtime_ns: mtime,
-        }
-    }
-
-    fn handoff_header_fixture(created_unix: u64) -> HandoffHeader {
-        HandoffHeader {
-            layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
-            created_unix,
-            models: vec![handoff_stamp("m", 3, 999, 42)],
-            entries: 2,
-            resident_bytes: 24690,
-        }
-    }
-
-    #[test]
-    fn host_handoff_round_trips_every_field_class() {
-        let a = handoff_fixture("m", "ns-a", 7);
-        let b = handoff_fixture("m", "ns-b", 91);
-        let mut buf = Vec::new();
-        handoff_write_header(&mut buf, &handoff_header_fixture(1000)).unwrap();
-        handoff_write_entry(&mut buf, &a.as_wire_ref()).unwrap();
-        handoff_write_entry(&mut buf, &b.as_wire_ref()).unwrap();
-
-        let mut r: &[u8] = &buf;
-        let header = handoff_read_header(&mut r).unwrap();
-        assert_eq!(header, handoff_header_fixture(1000));
-        let max = buf.len() as u64;
-        let got_a = handoff_read_entry(&mut r, max).unwrap().unwrap().unwrap();
-        let got_b = handoff_read_entry(&mut r, max).unwrap().unwrap().unwrap();
-        assert_eq!(got_a, a, "entry A must survive the round trip byte-exact");
-        assert_eq!(got_b, b, "entry B must survive the round trip byte-exact");
-        assert!(
-            handoff_read_entry(&mut r, max).unwrap().is_none(),
-            "clean EOF after the last frame"
-        );
-    }
-
-    #[test]
-    fn host_handoff_skips_a_corrupt_frame_and_keeps_the_stream_in_register() {
-        let a = handoff_fixture("m", "ns-a", 7);
-        let b = handoff_fixture("m", "ns-b", 91);
-        let mut buf = Vec::new();
-        handoff_write_header(&mut buf, &handoff_header_fixture(1000)).unwrap();
-        let frames_start = buf.len();
-        handoff_write_entry(&mut buf, &a.as_wire_ref()).unwrap();
-        handoff_write_entry(&mut buf, &b.as_wire_ref()).unwrap();
-        // Flip one payload byte of frame A (past its 8-byte length prefix): the digest
-        // check must skip EXACTLY that frame and frame B must still parse.
-        buf[frames_start + 8 + 3] ^= 0xff;
-
-        let mut r: &[u8] = &buf;
-        handoff_read_header(&mut r).unwrap();
-        let max = buf.len() as u64;
-        let first = handoff_read_entry(&mut r, max).unwrap().unwrap();
-        let reason = first.expect_err("the corrupt frame must refuse, never restore");
-        assert!(reason.contains("digest mismatch"), "{reason}");
-        let got_b = handoff_read_entry(&mut r, max).unwrap().unwrap().unwrap();
-        assert_eq!(got_b, b, "the frame after a corrupt one must read intact");
-    }
-
-    #[test]
-    fn host_handoff_truncated_stream_aborts_instead_of_inventing_entries() {
-        let a = handoff_fixture("m", "ns-a", 7);
-        let mut buf = Vec::new();
-        handoff_write_header(&mut buf, &handoff_header_fixture(1000)).unwrap();
-        let frames_start = buf.len();
-        handoff_write_entry(&mut buf, &a.as_wire_ref()).unwrap();
-        buf.truncate(frames_start + 40); // mid-payload
-
-        let mut r: &[u8] = &buf;
-        handoff_read_header(&mut r).unwrap();
-        // max_frame is the ORIGINAL file's bound: the break must come from the payload
-        // EOF itself, the exact mid-write-crash shape.
-        let err = handoff_read_entry(&mut r, 1 << 20).unwrap_err();
-        assert!(
-            err.contains("failed"),
-            "a truncated stream is a broken stream, not a skippable frame: {err}"
-        );
-        // And a frame LENGTH beyond the file bound refuses before any allocation.
-        let mut huge = Vec::new();
-        huge.extend_from_slice(&u64::MAX.to_le_bytes());
-        let mut r: &[u8] = &huge;
-        let err = handoff_read_entry(&mut r, 1024).unwrap_err();
-        assert!(err.contains("exceeds the file-size bound"), "{err}");
-    }
-
-    #[test]
-    fn host_handoff_header_corruption_refuses_the_whole_file() {
-        let mut buf = Vec::new();
-        handoff_write_header(&mut buf, &handoff_header_fixture(1000)).unwrap();
-        buf[16 + 8 + 2] ^= 0xff; // a header body byte, past magic + length
-        let mut r: &[u8] = &buf;
-        let err = handoff_read_header(&mut r).unwrap_err();
-        assert!(err.contains("header digest mismatch"), "{err}");
-
-        let mut r: &[u8] = b"definitely not a handoff file, long enough to read";
-        let err = handoff_read_header(&mut r).unwrap_err();
-        assert!(err.contains("not a"), "{err}");
-    }
-
-    #[test]
-    fn host_handoff_verdict_refuses_layout_age_and_stamp_mismatch() {
-        let local = [handoff_stamp("m", 3, 999, 42)];
-        let h = handoff_header_fixture(1000);
-        // Clean: same layout, fresh, matching stamp.
-        assert_eq!(
-            handoff_header_verdict(&h, PREFIX_ENTRY_LAYOUT_VERSION, 1000 + 60, &local).unwrap(),
-            Vec::new(),
-        );
-        // Layout mismatch refuses the WHOLE file: a deploy that changes the entry layout
-        // starts cold by design.
-        let err =
-            handoff_header_verdict(&h, PREFIX_ENTRY_LAYOUT_VERSION + 1, 1060, &local).unwrap_err();
-        assert!(err.contains("cold by design"), "{err}");
-        // Stale leftover refuses.
-        let err = handoff_header_verdict(
-            &h,
-            PREFIX_ENTRY_LAYOUT_VERSION,
-            1000 + HANDOFF_MAX_AGE_SECS + 1,
-            &local,
-        )
-        .unwrap_err();
-        assert!(err.contains("leftover"), "{err}");
-        // Artifact stamp mismatch refuses THAT model's entries (not the file).
-        let refused = handoff_header_verdict(
-            &h,
-            PREFIX_ENTRY_LAYOUT_VERSION,
-            1060,
-            &[handoff_stamp("m", 3, 1000, 42)],
-        )
-        .unwrap();
-        assert_eq!(refused.len(), 1);
-        assert_eq!(refused[0].0, "m");
-        assert!(refused[0].1.contains("stamp mismatch"), "{}", refused[0].1);
-        // A model absent on this slot refuses its entries too.
-        let refused = handoff_header_verdict(&h, PREFIX_ENTRY_LAYOUT_VERSION, 1060, &[]).unwrap();
-        assert_eq!(refused[0].1, "model not loaded on this slot");
-        // An UNREADABLE stamp never matches, even against an identical unreadable twin:
-        // two sides equally blind is refusal, not agreement.
-        let mut blind_file = handoff_header_fixture(1000);
-        blind_file.models[0].readable = false;
-        let mut blind_local = handoff_stamp("m", 3, 999, 42);
-        blind_local.readable = false;
-        let refused = handoff_header_verdict(
-            &blind_file,
-            PREFIX_ENTRY_LAYOUT_VERSION,
-            1060,
-            &[blind_local],
-        )
-        .unwrap();
-        assert_eq!(refused.len(), 1, "unreadable stamps must refuse");
-    }
-
-    /// WIRING (anchored on invocations in comment-stripped production text, per the
-    /// wiring-assertions law): the drip runs at the tick top, both admin commands
-    /// execute against the real export/import bodies, the boot probe arms the same
-    /// import, the idle block cannot sleep forever past a pending import, and the
-    /// counters reach /metrics and the HTTP render.
-    #[test]
-    fn host_handoff_wiring() {
-        let strip = |src: &str| -> String {
-            src.lines()
-                .map(|l| l.split("//").next().unwrap_or(""))
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-        let code = strip(include_str!("worker.rs"));
-        let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
-
-        assert!(
-            prod.contains("host_handoff_import_step(imp, &mut hpx)"),
-            "the tick top must drive the drip import"
-        );
-        assert!(
-            prod.contains("host_handoff_export("),
-            "the export command must execute the real export body"
-        );
-        assert_eq!(
-            prod.matches("open_host_handoff_import(path, &handoff_stamps)")
-                .count(),
-            2,
-            "boot probe AND admin import must open through the one validated path"
-        );
-        assert!(
-            prod.contains("handoff_import.is_none()"),
-            "the indefinite recv() block must be conditional on no pending import"
-        );
-        assert!(
-            prod.contains("wait.min(Duration::from_millis(1))"),
-            "an idle worker with a pending import must keep dripping"
-        );
-        assert!(
-            prod.contains("m.prefix_host_handoff_exports = hpx.handoff_exports;")
-                && prod.contains("m.prefix_host_handoff_imported_entries = hpx.handoff_imports;")
-                && prod.contains("m.prefix_host_handoff_skips = hpx.handoff_skips;"),
-            "handoff counters must publish to the metrics snapshot"
-        );
-        let lib = strip(include_str!("lib.rs"));
-        assert!(
-            lib.contains("prefix_host_handoff_imported_entries")
-                && lib.contains("prefix_host_handoff_skips"),
-            "the /metrics render must expose the handoff counters"
-        );
     }
 }

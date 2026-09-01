@@ -222,34 +222,3 @@ suite reporting `0 passed` counts as FAILED.
 | clippy | `cargo clippy --workspace --all-targets` | zero warnings |
 | fmt | `cargo fmt --check` | clean |
 | local-ci --perf | `tools/local-ci.sh --perf` | exit 0 — correctness stage green, perf stage 0 fail 0 warn; qwen9b-plain-short 136.58 tok/s [OK] vs the rolling median, row banked at git 4721342e0 (`receipts/local-ci-perf.log`) |
-
----
-
-## PHASE 2 LANDED — this map is superseded in three rows (2026-09-01)
-
-`lane/glm5-extract2` (`research/glm53-flash-bringup-20260827/extract2-20260901/LANE.md`)
-executed the rest. Read that doc's §7 for the merged integration map; the deltas to §3 above:
-
-- **"Planned structural follow-ups" row 2 is DONE**: `MEMRA_GLM5_HTOD_DIET` -> `MEMRA_HTOD_DIET`
-  (door H is engine-generic HtoD hygiene), with `HTOD_DIET_AVOIDED` / `htod_diet_avoided()`.
-- **"Planned structural follow-ups" row 1 is DONE IN HALF**: the DraftSource seam's model-level
-  and selection halves are extracted (`dflash::DflashDrafter`, `dflash::load_drafter`,
-  `dflash::resolve_tap_layers`, `spec::DraftSourceKind` + `resolve_draft_source_kind`). The
-  per-session-state trait stays deferred, with the reason in code terms and a trait sketch in
-  extract2 §4.6 — its trigger is unchanged (the second hybrid spec family's session state).
-- **"Planned structural follow-ups" row 3 (batched verify) is UNCHANGED**: the hy3 pack landed
-  on the same base, but a model pack is not a verify walk, so the second-consumer trigger is
-  still not met.
-- **NEW general features to add to the "General engine features" set**: the flag-alias law for
-  BOOLEAN doors (`alias_door_from` — the fourth and last door shape, so future renames follow a
-  law instead of a hand-roll); `MEMRA_EP_DIET` and `MEMRA_EP_GROUPED_PRIME` (general EP
-  dispatch/prime doors); the draft-source seam above; `memra-gguf::placement` (pure multi-GPU
-  stage placement, landed on bringup after this doc was written).
-- **NEW for "Main should get FIRST"**: the flag-alias law itself, and `memra-gguf::placement`
-  (pure, no CUDA, no family — cherry-pickable today).
-
-Not extracted, and NOT because they were declined: the transport seam + its fleet tools
-(`lane/glm5-tp-transport`, LOCAL-ONLY, never pushed to origin) and the
-`MEMRA_WORKER_AFFINITY` -> `MEMRA_WORKER_CPUSET` rename plus the `apply_penalties_dense` audit
-(`lane/glm5-host-audit`, on origin, not merged into bringup). Their content is not on the
-bringup head at all; extract2 §4.1/§4.2/§4.3/§4.4 carry apply-ready recipes.

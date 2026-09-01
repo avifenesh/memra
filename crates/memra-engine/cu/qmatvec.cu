@@ -10236,58 +10236,6 @@ extern "C" __global__ void qmatvec_nvfp4_q8_ep_dual_slots(
     }
 }
 
-// Known-good HY3 gate+up schedule from the admitted W4A8 receipt: one CTA owns one output row
-// in both banks. The activation bytes are shared, while gate and up retain independent dot and
-// reduction chains. Kept beside the separate-CTA schedule for a single-binary A/B.
-extern "C" __global__ void qmatvec_nvfp4_q8_ep_paired_slots(
-        const unsigned char* __restrict__ Wg, const unsigned char* __restrict__ Wu,
-        const int* __restrict__ sel,
-        const signed char* __restrict__ aq, const float* __restrict__ ad,
-        float* __restrict__ yg, float* __restrict__ yu,
-        int in_f, int out_f, int n_pairs, int top_k,
-        int owner_start, int owner_end, long row_bytes, long expert_stride) {
-    const int o = blockIdx.x;
-    if (o >= out_f) return;
-    const int tid = threadIdx.x;
-    const int nsb = in_f >> 5;
-    __shared__ float gate_s[32], up_s[32];
-    for (int pair = 0; pair < n_pairs; ++pair) {
-        const int global_expert = sel[pair];
-        if (global_expert < owner_start || global_expert >= owner_end) continue;
-        const int expert = global_expert - owner_start;
-        const int token = pair / top_k;
-        const unsigned char* gate_row =
-            Wg + (long)expert * expert_stride + (long)o * row_bytes;
-        const unsigned char* up_row =
-            Wu + (long)expert * expert_stride + (long)o * row_bytes;
-        const signed char* arow = aq + (size_t)token * (size_t)in_f;
-        const float* adrow = ad + (size_t)token * (size_t)nsb;
-        float2 acc = dot_nvfp4_q8_dual_row(gate_row, up_row, arow, adrow, in_f);
-        for (int off = 16; off > 0; off >>= 1)
-            acc.x += __shfl_down_sync(0xffffffff, acc.x, off);
-        for (int off = 16; off > 0; off >>= 1)
-            acc.y += __shfl_down_sync(0xffffffff, acc.y, off);
-        if ((tid & 31) == 0) {
-            gate_s[tid >> 5] = acc.x;
-            up_s[tid >> 5] = acc.y;
-        }
-        __syncthreads();
-        if (tid < 32) {
-            float gate_v = tid < (blockDim.x + 31) / 32 ? gate_s[tid] : 0.0f;
-            float up_v = tid < (blockDim.x + 31) / 32 ? up_s[tid] : 0.0f;
-            for (int off = 16; off > 0; off >>= 1)
-                gate_v += __shfl_down_sync(0xffffffff, gate_v, off);
-            for (int off = 16; off > 0; off >>= 1)
-                up_v += __shfl_down_sync(0xffffffff, up_v, off);
-            if (tid == 0) {
-                yg[(size_t)pair * out_f + o] = gate_v;
-                yu[(size_t)pair * out_f + o] = up_v;
-            }
-        }
-        __syncthreads();
-    }
-}
-
 // Multi-token twin of the fixed-slot gate/up kernel. One CTA owns one canonical token/slot row
 // instead of serially walking every pair. Dots and reductions are unchanged; only independent
 // pair rows execute concurrently. Non-owner CTAs return before reading expert weights.
@@ -10784,8 +10732,7 @@ extern "C" __global__ void qmatvec_nvfp4_q8_ep_down_fma(
 // `slot_major` on the resident bank (tp.rs `ResidentNvfp4{Column,Row}BankRank`) and every
 // reader branches on that stored field. Two producers exist: the always-slot-major EP2
 // whole-expert banks (`MEMRA_STEP_NVFP4_EP2`) and the TP shard banks under
-// `MEMRA_NVFP4_BANK_SM` (default ON since 2026-09-01). A reader that re-derives the layout
-// from an env door,
+// `MEMRA_NVFP4_BANK_SM` (default OFF). A reader that re-derives the layout from an env door,
 // or takes a defaultable geometry scalar, is the exact hole that produced the 2026-08-29
 // step37 text corruption: `kq_fetch(..., int in_f = 0)` in moe_f16_grouped.cu had two callers
 // omit `in_f`, so the QT_NVFP4_V2 branch fetched the scale byte from inside the packed-codes
@@ -11174,8 +11121,7 @@ extern "C" __global__ void qmatvec_nvfp4_dp4a_sel_v2_gu_r4(
                                 row_bytes, expert_stride, act_row_stride, ad_row_stride);
 }
 
-// NVFP4 sel DOWN + COMBINE in ONE launch (MEMRA_NVFP4_SEL_DOWN8, default ON since
-// 2026-09-01; rollback MEMRA_NVFP4_SEL_DOWN8=0) — the q8
+// NVFP4 sel DOWN + COMBINE in ONE launch (MEMRA_NVFP4_SEL_DOWN8=1, default OFF) — the q8
 // `down8 w8` arm (cx-downkernel, waves/SM
 // 0.91 -> 4.36, +8.9% on that kernel) ported to the NVFP4 bank family, which never took it:
 // the sel path still launches (out_f, n_sel) ONE-WARP blocks (the q8 BASE shape) and then a
@@ -11331,8 +11277,7 @@ extern "C" __global__ void qmatvec_nvfp4_dp4a_sel_v2s(
     }
 }
 
-// SELECTED-EXPERTS sweep over slot-major banks (MEMRA_NVFP4_BANK_SM, default ON since
-// 2026-09-01): the
+// SELECTED-EXPERTS sweep over slot-major banks (MEMRA_NVFP4_BANK_SM=1, default OFF): the
 // _sel body with the slot-major byte map — one coalesced 512B warp wave per slot group
 // instead of the 36B-superblock scatter. Weights at sel[t]*expert_stride into the contiguous
 // per-rank bank; same dp4a order, same per-slot scale multiply, same shfl+shared reduce tree

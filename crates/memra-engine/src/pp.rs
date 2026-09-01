@@ -209,36 +209,6 @@ pub fn pp2_streams_off() -> bool {
     matches!(std::env::var("MEMRA_PP_STREAMS").as_deref(), Ok("0"))
 }
 
-/// `MEMRA_PP_EXIT_PUBLISH` — the ppN EXIT-PUBLICATION guard (lane/glm5-accrace 2026-09-01).
-///
-/// **DEFAULT ON, and the default is the measurement, not a preference** (the new-flags law:
-/// ON/OFF by design, receipts attached, FLAGS.md row in the same commit). With per-stage
-/// streams on ONE device the hc ppN bodies published nothing to the caller except a
-/// last-stage drain, so a caller allocation could land under still-queued stage work: the
-/// prime over a fixed prompt returned three distinct logit fingerprints inside one process
-/// (32/110 non-canonical), and one glm5 spec round silently lost an acceptance. See
-/// [`PpNRt::publish_all_to`] for the anatomy and
-/// `research/glm53-flash-bringup-20260827/accrace-20260901/LANE.md` for the receipts.
-///
-/// `0` restores the pre-lane behaviour exactly — the ROLLBACK/CONTROL seam (flags doctrine:
-/// rollback seams are a legitimate flag class). It is a KNOWN-RACY arm: never a serving
-/// configuration, only an A/B control.
-///
-/// Read PER CALL rather than latched: the gate matrices drive both arms in one process.
-///
-/// POLARITY IS DELIBERATE, AND DO NOT COPY IT BLIND (review note, 2026-09-01): the test is
-/// "anything except exactly `0` is ON", so a typo'd rollback (`=false`, `=O`, `=00`) leaves the
-/// guard ON. That FAILS SAFE **here** — the ON arm is the correctness fix, the OFF arm is the
-/// known-racy control — and it is why this flag is written loosely on purpose rather than
-/// parsed strictly. The polarity is only safe because of which arm is dangerous. A default-ON
-/// flag whose `0` disables something HAZARDOUS needs the mirror shape (`Ok("1")`-style strict
-/// opt-in, or a parse that refuses an unrecognized value), because there the same typo would
-/// silently keep the hazard armed. Pick the polarity from which side fails safe, never by
-/// copying this line.
-pub fn pp_exit_publish() -> bool {
-    !matches!(std::env::var("MEMRA_PP_EXIT_PUBLISH").as_deref(), Ok("0"))
-}
-
 /// True iff the ppN door would put TWO OR MORE stage streams on ONE device (devices
 /// unset = all stages on the primary; or an explicit placement with a repeated device).
 /// The deferred-readback (pipelined) arm is REFUSED in this regime: the 2026-08-02 x20
@@ -249,17 +219,6 @@ pub fn pp_exit_publish() -> bool {
 /// Engine kernels concurrent on two streams of one device) is NOT fixed by any flag yet.
 /// Cross-device pipelined (one stage stream per device) is 23/23 clean post-fix. Refuse
 /// loudly rather than return silently-wrong logits. Env-only read (callable pre-runtime).
-///
-/// ONE MECHANISM OF THAT OPEN ROOT CAUSE IS NOW NAMED AND CLOSED (lane/glm5-accrace
-/// 2026-09-01), stated narrowly because it was measured on the SERIAL arm, not this
-/// refused pipelined one: a ppN body that returned to its caller published only the
-/// producing last stage, so a caller allocation could land under work still queued on a
-/// caller-CO-RESIDENT stage stream. That is exactly a "same Engine, two streams, one
-/// device" corruption, and it is the reason this predicate's regime is the dangerous one —
-/// on a DISTINCT-device placement only the head stage shares the caller's context, and a
-/// body's terminal drain already covers it. See [`PpNRt::publish_all_to`] and
-/// [`pp_exit_publish`]. Whether the pipelined arm's remaining flake is the same mechanism
-/// is UNMEASURED; this refusal stands.
 pub fn pp_multi_stream_same_device() -> bool {
     let stages_open = std::env::var("MEMRA_PP_STAGES")
         .map(|v| v.parse::<usize>().map(|n| n >= 2).unwrap_or(false))
@@ -3254,46 +3213,6 @@ impl PpNRt {
         let ev = st.ctx.new_event(None)?;
         ev.record(&st.stream)?;
         dst.wait(&ev)?;
-        Ok(())
-    }
-
-    /// PUBLISH EVERY STAGE to the caller (lane/glm5-accrace 2026-09-01) — the exit half of
-    /// the boundary law, applied to ALL stages instead of only the producing one.
-    ///
-    /// WHY `publish_to(last, …)` IS NOT ENOUGH. A ppN body's terminal drain (a `dtoh` in
-    /// the last-stage scope, or `publish_to(n_st-1, …)`) orders the caller behind the last
-    /// stage, and the TX-wait chain transitively covers every earlier stage's work UP TO
-    /// its `ev_tx`. It does NOT cover what each earlier stage's stream still holds AFTER
-    /// its tx: the stage-scope locals (`pos_d`, the embedded/expanded rows, the boundary
-    /// residual, every per-layer transient, and a verify round's ckpt clones) are dropped
-    /// with the stage override still active, so their `free_async` enqueues on the STAGE
-    /// stream after `ev_tx`. The caller then resumes on its own stream and allocates —
-    /// and, per the `fence_stages_behind` anatomy above, cudarc's drop carries no read
-    /// guard, so the pool can hand the caller a block whose stage-stream lifetime has not
-    /// retired and the caller's writes land under queued stage work.
-    ///
-    /// MEASURED (research/glm53-flash-bringup-20260827/accrace-20260901/): with per-stage
-    /// streams on one device, the hc ppN PRIME over a fixed 24-token prompt returned THREE
-    /// distinct logit fingerprints within a single process — the first prime always
-    /// canonical, later ones drifting — while `MEMRA_PP_STREAMS=0` returned one
-    /// fingerprint 11/11. Downstream, one glm5 spec round silently lost an acceptance
-    /// (14/42 -> 13/42) and the e2e tape diverged.
-    ///
-    /// Event waits, never a device sync: the stage streams keep running. Call at a ppN
-    /// body's EXIT with the pre-`enter` caller stream (a stage stream that IS the caller's
-    /// stream is skipped by `publish_to`).
-    ///
-    /// `MEMRA_PP_EXIT_PUBLISH=0` is the ROLLBACK SEAM (see [`pp_exit_publish`]) and
-    /// restores the pre-lane, racy program exactly — it exists so the fix can be A/B'd in
-    /// ONE binary and so a future perf question has a control arm, not because the guard is
-    /// optional.
-    pub fn publish_all_to(&self, dst: &Arc<CudaStream>) -> Result<(), Box<dyn std::error::Error>> {
-        if !pp_exit_publish() {
-            return Ok(());
-        }
-        for s in 0..self.stages.len() {
-            self.publish_to(s, dst)?;
-        }
         Ok(())
     }
 

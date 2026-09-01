@@ -9,7 +9,7 @@ Starting revision: `250ba819e83f868d395c01c6f315a4c6344f54cb`
 ## Objective
 
 Measure Qwen3.6-27B and Qwen3.6-35B-A3B serving one model per RTX PRO 6000 while both cards are
-active on the london pair. Retain exactness, artifact, concurrency, latency, throughput,
+active on the London pair. Retain exactness, artifact, concurrency, latency, throughput,
 thermal, and cross-interference receipts for the owner-facing capacity decision.
 
 ## Fixed protocol

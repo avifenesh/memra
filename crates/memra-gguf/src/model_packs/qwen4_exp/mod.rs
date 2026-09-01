@@ -8,16 +8,6 @@
 //! There is NO `model.language_model.norm` — the global `hyper_connection_mixer` is the exit
 //! downmix (SEMANTICS.md §Layer stack), so this schema deliberately emits no OutputNorm row.
 
-// Shape lints allowed module-wide (lane/clippy-zero-restore-20260901): active qwen4exp
-// bring-up lane code — control flow and `% == 0` idioms stay as gated (is_multiple_of
-// changes zero-divisor semantics), and TensorContractError's size is the pack contract's
-// business, not a lint's. Mechanical lints stay live.
-#![allow(
-    clippy::manual_is_multiple_of,
-    clippy::collapsible_if,
-    clippy::result_large_err
-)]
-
 use std::collections::BTreeMap;
 
 use super::*;
@@ -295,9 +285,6 @@ fn schema_impl(
 }
 
 /// Complete expected tensor map for the BF16 artifact (FusedBanks dialect).
-// dead_code: the BF16-dialect census entry point of an in-flight bring-up lane; kept for
-// the lanes that consume it (clippy-zero lane is bit-neutral, nothing deleted).
-#[allow(dead_code)]
 pub(crate) fn expected_census(config: &ModelConfig) -> BTreeMap<String, TensorSpec> {
     expected_census_for(config, ExpertDialect::FusedBanks)
 }
@@ -1173,8 +1160,8 @@ mod tests {
             .find(|requirement| requirement.match_mode == TensorMatch::All)
             .expect("ngram shard bank");
         assert_eq!(shard_bank.names.len(), 128);
-        assert!(shard_bank.names[0].contains("shard_0."));
-        assert!(shard_bank.names[127].contains("shard_127."));
+        assert_eq!(shard_bank.names[0].contains("shard_0."), true);
+        assert_eq!(shard_bank.names[127].contains("shard_127."), true);
         assert_eq!(shard_bank.shape, vec![2_500_012, 160]);
 
         // Typed spot checks against the semantic namespace.

@@ -26,10 +26,6 @@
 //!
 //! Usage: qwen4exp_real_gate <ckpt_dir> <out_dir> --label <label> [flags above]
 
-// lane/clippy-zero-restore-20260901: active-lane gate binary — its banked receipts were
-// produced by this exact shape; control flow and `% == 0` idioms stay as gated.
-#![allow(clippy::manual_is_multiple_of, clippy::collapsible_if)]
-
 use memra_engine::Engine;
 use memra_engine::qwen4exp_gpu::{LoadOptions, Qwen4ExpGpu, read_checkpoint_with};
 use sha2::{Digest, Sha256};
@@ -702,15 +698,6 @@ struct Args {
     /// the p-min guard is armed). Chains AND admission counters must be identical
     /// across arms per rep — the deferred round is the same picks by construction.
     defer_ab: Option<(usize, usize)>,
-    /// `--verify-cost-probe <reps>x<chunks>` (mtp12): price the t == K+1 verify chunk on
-    /// the EXACT per-row programs vs the FUSED program (`vfuse` seam). A COST probe on
-    /// throwaway states — the fused arm has no rewind stash, so no chain identity is
-    /// claimed on it. Go/no-go input for the fused-verify lever.
-    verify_cost: Option<(usize, usize)>,
-    /// Pad the probe state to this absolute position with chunked prefill before timing,
-    /// so the chunk cost can be read at depth (the pad pieces are > k_cap and take the
-    /// fused program on both arms, so the pad is context and not measurement).
-    verify_cost_depth: usize,
     router_ab: Option<(usize, usize)>,
     /// Card-1 draft placement (mtp10): load the MTP block + a private lm-head copy on
     /// device 1 (`load_from_dir_dev1`); the spec loop P2P-crosses the wide seed rows and
@@ -794,7 +781,6 @@ fn parse_args() -> Res<Args> {
                  [--mtp-dev1] [--spec-pmin <p>] [--spec-adapt <k_lo>] \
                  [--spec-dynk <window>,<thr>,<k_floor>] [--spec-trace <tokens>] \
                  [--spec-defer] [--spec-defer-guard-sync] [--defer-ab <reps>x<tokens>] \
-                 [--verify-cost-probe <reps>x<chunks> [--verify-cost-depth <pos>]] \
                  [--ladder-ab-seam <seam> [--ladder-ab-rounds <n>] [--ladder-ab-steps <n>]] \
                  [--host-probe] [--measure-lock <path>]";
     let ckpt = PathBuf::from(it.next().ok_or(usage)?);
@@ -846,8 +832,6 @@ fn parse_args() -> Res<Args> {
         trim_sweep: Vec::new(),
         vgraph_ab: None,
         defer_ab: None,
-        verify_cost: None,
-        verify_cost_depth: 0,
         router_ab: None,
         mtp_dev1: false,
         spec_opts: memra_engine::qwen4exp_gpu::SpecOpts::default(),
@@ -1041,16 +1025,6 @@ fn parse_args() -> Res<Args> {
                     .split_once('x')
                     .ok_or("--defer-ab wants <reps>x<tokens>")?;
                 args.defer_ab = Some((reps.parse()?, toks.parse()?));
-            }
-            "--verify-cost-probe" => {
-                let spec = value("--verify-cost-probe")?;
-                let (reps, chunks) = spec
-                    .split_once('x')
-                    .ok_or("--verify-cost-probe wants <reps>x<chunks>")?;
-                args.verify_cost = Some((reps.parse()?, chunks.parse()?));
-            }
-            "--verify-cost-depth" => {
-                args.verify_cost_depth = value("--verify-cost-depth")?.parse()?
             }
             "--spec-adapt" => args.spec_opts.adapt_k_lo = Some(value("--spec-adapt")?.parse()?),
             "--spec-dynk" => {
@@ -2419,16 +2393,16 @@ fn main() -> Res<()> {
             let mut tape_ok = true;
             let mut rows = 0usize;
             let mut argmax_matches = 0usize;
-            let record = |regime: &str,
-                          label: i64,
-                          fed: u32,
-                          ra: &[f32],
-                          rb: &[f32],
-                          receipt: &mut String,
-                          rows: &mut usize,
-                          argmax_matches: &mut usize,
-                          tape_ok: &mut bool,
-                          worst_elemrel: &mut f32|
+            let mut record = |regime: &str,
+                              label: i64,
+                              fed: u32,
+                              ra: &[f32],
+                              rb: &[f32],
+                              receipt: &mut String,
+                              rows: &mut usize,
+                              argmax_matches: &mut usize,
+                              tape_ok: &mut bool,
+                              worst_elemrel: &mut f32|
              -> f32 {
                 let (ma, mr, er) = max_rel_of(ra, rb);
                 let (ta, tb) = (argmax(ra), argmax(rb));
@@ -3582,259 +3556,6 @@ fn main() -> Res<()> {
         if any_diverged {
             std::process::exit(1);
         }
-    }
-
-    // ------------------------------------------------------- verify-cost probe (vfuse)
-    // THE COST MODEL BEFORE THE KERNELS (mtp12 lane). Question: what does the t == K+1
-    // verify chunk cost if it runs the FUSED (prefill-style) program instead of the EXACT
-    // per-row programs? The fused path already exists for t > k_cap, so the `vfuse` seam
-    // reaches it with no new kernels and this cell prices it directly.
-    //
-    // WHY THIS IS A COST PROBE AND NOT AN A/B OF TWO SERVING ARMS. The fused chunk scan
-    // materializes only the final GDN state, so the fused arm leaves NO per-column stash
-    // and its resulting state cannot be rewound (`verify_rewind` refuses by name). The
-    // states this cell builds are therefore THROWAWAY: it feeds real tokens at real decode
-    // positions, forwards them as t == K+1 chunks, and times the forward. Nothing reads
-    // the logits, and no chain identity is claimed or checked on the fused arm — saying so
-    // out loud because a timing arm that looks like a correctness arm is how a wrong number
-    // gets quoted later.
-    //
-    // What makes the two arms comparable: identical t, identical absolute positions,
-    // identical fed tokens, identical seams, and the SAME argmax-sink readback (4t bytes)
-    // on both — the fused arm is wired into that sink precisely so the delta is the
-    // program and not a ~6 MB logits dtoh appearing on one side.
-    //
-    // Interleaved reps with the fleet escalation protocol; the per-rep statistic is the
-    // MEDIAN chunk within that rep (a rep runs `chunks` chunks back to back, so the first
-    // chunk's workspace growth cannot become the rep's number — it is warmed and dropped).
-    if let Some((reps, chunks)) = args.verify_cost {
-        let vc_prompt: Vec<u32> = match args.prompts.as_ref() {
-            Some(path) => read_prompts(path)?
-                .first()
-                .map(|p| p.ids.clone())
-                .ok_or("empty prompts file")?,
-            None => {
-                return Err(
-                    "--verify-cost-probe needs --prompts (real prompts, perf-row law)".into(),
-                );
-            }
-        };
-        let k1 = args.spec_k + 1;
-        let depth = args.verify_cost_depth;
-        // Real tokens only: the chunk stream cycles the prompt's own ids, so routing,
-        // indexer selection and PLE hashing all see real content (a synthetic id stream
-        // would price a different MoE route — the lane's real-prompt-only law).
-        let feed =
-            |n: usize| -> Vec<u32> { (0..n).map(|i| vc_prompt[i % vc_prompt.len()]).collect() };
-        let median = |v: &[f64]| -> f64 {
-            let mut s = v.to_vec();
-            s.sort_by(f64::total_cmp);
-            s[s.len() / 2]
-        };
-        let spread_abs = |v: &[f64]| -> f64 {
-            v.iter().copied().fold(f64::NEG_INFINITY, f64::max)
-                - v.iter().copied().fold(f64::INFINITY, f64::min)
-        };
-        // One rep of one arm: fresh state, prefill (base_pos == 0 stays FUSED on both
-        // arms — the gen-157 rule), optional depth pad, one warm chunk, then `chunks`
-        // timed chunks. Returns each timed chunk's ms.
-        let run_arm = |fused: bool, tlen: usize| -> Res<Vec<f64>> {
-            memra_engine::qwen4exp_gpu::set_verify_fused(fused);
-            let cap = depth.max(vc_prompt.len()) + (chunks + 2) * tlen + 8;
-            let mut st = model.alloc_state(&engine, cap)?;
-            model.spec_arm(&engine, &mut st, k1)?;
-            let _ = model.prefill(&engine, &vc_prompt, &mut st)?;
-            if depth > vc_prompt.len() {
-                // Depth behaviour arm: extend to `depth` with chunked prefill. Pieces are
-                // > k_cap so they take the fused program on BOTH arms (unchanged by the
-                // seam) — the pad is context, not part of the measurement.
-                let pad = feed(depth - vc_prompt.len());
-                let _ = model.prefill_extend(&engine, &pad, &mut st, 2048)?;
-            }
-            // 4t-byte argmax readback on both arms (see the note above).
-            model.set_verify_want_argmax(&mut st, true)?;
-            let stream = feed((chunks + 1) * tlen);
-            let mut out = Vec::with_capacity(chunks);
-            for c in 0..=chunks {
-                let chunk = &stream[c * tlen..(c + 1) * tlen];
-                let at = Instant::now();
-                let _ = model.prefill(&engine, chunk, &mut st)?;
-                let dt = ms(at);
-                // c == 0 is the WARM chunk: a first chunk of a width allocates every
-                // workspace slot (the scan_warm lesson), so its cost is allocation, not
-                // program.
-                if c > 0 {
-                    out.push(dt);
-                }
-            }
-            Ok(out)
-        };
-        let arms: [(&str, bool); 2] = [("exact", false), ("vfuse", true)];
-        let mut receipt = header.clone();
-        receipt.push_str(&format!(
-            "# verify-cost-probe t={k1} (spec_k={}) reps={reps} chunks_per_rep={chunks} \
-             depth={depth} prompt_len={}\n\
-             # COST PROBE ONLY — the vfuse arm leaves no rewind stash; its state is \
-             throwaway and no chain identity is claimed on it\n\
-             rep\tarm\tt\tms_per_chunk_median\tms_per_chunk_min\tms_per_chunk_max\n",
-            args.spec_k,
-            vc_prompt.len(),
-        ));
-        const ESCALATE_CAP: usize = 5;
-        let mut arm_reps: Vec<Vec<f64>> = vec![Vec::new(); arms.len()];
-        let mut escal_notes: Vec<String> = Vec::new();
-        let mut rep = 0usize;
-        let mut target = reps;
-        loop {
-            for (slot, (name, fused)) in arms.iter().enumerate() {
-                let v = run_arm(*fused, k1)?;
-                let med = median(&v);
-                arm_reps[slot].push(med);
-                receipt.push_str(&format!(
-                    "{rep}\t{name}\t{k1}\t{med:.3}\t{:.3}\t{:.3}\n",
-                    v.iter().copied().fold(f64::INFINITY, f64::min),
-                    v.iter().copied().fold(f64::NEG_INFINITY, f64::max),
-                ));
-            }
-            rep += 1;
-            if rep == reps && reps < ESCALATE_CAP {
-                let m0 = median(&arm_reps[0]);
-                let s0 = spread_abs(&arm_reps[0]);
-                let m1 = median(&arm_reps[1]);
-                let s1 = spread_abs(&arm_reps[1]);
-                let rule_a = s0 / m0 > 0.005 || s1 / m1 > 0.005;
-                let rule_b = (m1 - m0).abs() < 2.0 * ((s0 + s1) / 2.0);
-                if rule_a || rule_b {
-                    escal_notes.push(format!(
-                        "# escalation\tpair=exact-vs-vfuse\trule={}\treps {reps}->{ESCALATE_CAP}\tspread_rel_exact={:.4}%\tspread_rel_vfuse={:.4}%\tverdict_ms={:.3}\tpooled_spread_ms={:.3}\n",
-                        match (rule_a, rule_b) {
-                            (true, true) => "a+b",
-                            (true, false) => "a",
-                            _ => "b",
-                        },
-                        100.0 * s0 / m0,
-                        100.0 * s1 / m1,
-                        (m1 - m0).abs(),
-                        (s0 + s1) / 2.0,
-                    ));
-                    target = ESCALATE_CAP;
-                    continue;
-                }
-                break;
-            }
-            if rep >= target {
-                break;
-            }
-        }
-        // The t == 1 plain step in the SAME lock hold and the same residency: the round
-        // arithmetic needs it, and a step timing borrowed from another run is a
-        // cross-run perf claim (box-clock-drift law).
-        let plain_t1 = {
-            memra_engine::qwen4exp_gpu::set_verify_fused(false);
-            let cap = depth.max(vc_prompt.len()) + chunks + 8;
-            let mut st = model.alloc_state(&engine, cap)?;
-            let _ = model.prefill(&engine, &vc_prompt, &mut st)?;
-            if depth > vc_prompt.len() {
-                let pad = feed(depth - vc_prompt.len());
-                let _ = model.prefill_extend(&engine, &pad, &mut st, 2048)?;
-            }
-            let stream = feed(chunks + 1);
-            let mut v = Vec::new();
-            for (i, tok) in stream.iter().enumerate() {
-                let at = Instant::now();
-                let _ = model.decode_step(&engine, *tok, &mut st)?;
-                let dt = ms(at);
-                if i > 0 {
-                    v.push(dt);
-                }
-            }
-            median(&v)
-        };
-        for (slot, (name, _)) in arms.iter().enumerate() {
-            let v = &arm_reps[slot];
-            let med = median(v);
-            let sa = spread_abs(v);
-            receipt.push_str(&format!(
-                "# arm {name}\treps={}\tmedian_ms={med:.3}\tspread_abs_ms={sa:.3}\tspread_rel={:.4}%\n",
-                v.len(),
-                100.0 * sa / med,
-            ));
-        }
-        for note in &escal_notes {
-            receipt.push_str(note);
-        }
-        if escal_notes.is_empty() {
-            receipt.push_str(&format!(
-                "# protocol\tdefault_reps={reps}\tescalation=none (x{reps} sufficient by both rules)\n"
-            ));
-        }
-        let m_exact = median(&arm_reps[0]);
-        let m_vfuse = median(&arm_reps[1]);
-        receipt.push_str(&format!(
-            "# plain_t1_step_ms\t{plain_t1:.3}\t(same hold, same residency)\n\
-             # verdict\texact_ms={m_exact:.3}\tvfuse_ms={m_vfuse:.3}\tspeedup_vfuse_over_exact={:.4}\tsaved_ms_per_round={:.3}\n",
-            m_exact / m_vfuse,
-            m_exact - m_vfuse,
-        ));
-        memra_engine::qwen4exp_gpu::set_verify_fused(false);
-        let path = args
-            .out
-            .join(format!("verify-cost-k{k1}-{}.tsv", args.label));
-        std::fs::write(&path, &receipt)?;
-        println!("{receipt}\n# verify-cost receipt: {}", path.display());
-
-        // Section split per arm (prof, sync-bounded — SHARES are the signal, absolute ms
-        // are inflated by the per-section syncs). This is what says WHERE the delta is,
-        // and equally where it cannot be: the MoE routed union and sdpa are the same
-        // program on both arms by construction, and any per-layer host twin is per CHUNK
-        // rather than per column, so a fused chunk pays it identically. (PROFILE-7's ~12
-        // ms/round host-twin share is NOT the current composition — `routerdev`/`idxcache`
-        // went default ON 2026-08-31, which removed those router dtoh. That is exactly why
-        // the split is measured here on the same binary as the timings instead of being
-        // carried over from a pre-flip receipt.)
-        let mut prof_receipt = header.clone();
-        prof_receipt.push_str(&format!(
-            "# verify-cost section split t={k1} chunks={chunks} depth={depth} \
-             (prof: sync-bounded, shares are the signal)\n\
-             arm\tsection\tcalls_per_chunk\ttotal_ms\tms_per_chunk\tpct_of_attributed\n"
-        ));
-        for (name, fused) in arms.iter() {
-            // `prof::enable()` RESETS the accumulator on its own; `prof::take()` DRAINS
-            // AND DISABLES. Calling take() to "clear" right after enable() therefore
-            // switches the profiler back off and every section reads zero — which would
-            // have produced an empty split and a NaN share column, from inside an
-            // exclusive lock hold.
-            memra_engine::qwen4exp_gpu::prof::enable();
-            let _ = run_arm(*fused, k1)?;
-            let mut rows = memra_engine::qwen4exp_gpu::prof::take();
-            rows.sort_by(|a, b| b.1.total_cmp(&a.1));
-            let attributed: f64 = rows.iter().map(|r| r.1 * 1e3).sum();
-            if rows.is_empty() || attributed <= 0.0 {
-                prof_receipt.push_str(&format!(
-                    "{name}\tNONE\t0\t0\t0\t0\t(profiler collected nothing)\n"
-                ));
-                continue;
-            }
-            let n = chunks as f64;
-            for (section, seconds, calls) in &rows {
-                prof_receipt.push_str(&format!(
-                    "{name}\t{section}\t{:.1}\t{:.1}\t{:.3}\t{:.1}\n",
-                    *calls as f64 / n,
-                    seconds * 1e3,
-                    seconds * 1e3 / n,
-                    seconds * 1e3 / (attributed / 100.0),
-                ));
-            }
-        }
-        memra_engine::qwen4exp_gpu::set_verify_fused(false);
-        let path = args
-            .out
-            .join(format!("verify-cost-sections-k{k1}-{}.tsv", args.label));
-        std::fs::write(&path, &prof_receipt)?;
-        println!(
-            "{prof_receipt}\n# verify-cost sections receipt: {}",
-            path.display()
-        );
     }
 
     // ---------------------------------------------------------------- router-ab

@@ -1,6 +1,6 @@
 # qwen4_exp decode PROFILE-7 — the mtp10 round: card-1 draft, the thinkon regression diagnosed and fixed
 
-Lane: mtp10, continuing spec/MTP-SPEC.md. Box: cloud-eval frankfurt, 2× RTX PRO 6000
+Lane: mtp10, continuing spec/MTP-SPEC.md. Box: sbox-eval Frankfurt, 2× RTX PRO 6000
 Blackwell 96 GB; artifact `~/data/q48fn-nvfp4`. Entry state from PROFILE-6: spec K=5 =
 119.97 tok/s on the raw-continuation shape, but **0.87× (a REGRESSION) on the
 vendor-default thinking render**, 45% zero-accept rounds, and spec OOMs past ~400 prompt

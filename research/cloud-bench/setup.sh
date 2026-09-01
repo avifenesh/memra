@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bw24 cloud head-to-head setup — the rented 4x-L40S box (sm_89 Ada, 48GB ea, 192GB total).
+# bw24 cloud head-to-head setup — g6box.12xl (4x L40S, sm_89 Ada, 48GB ea, 192GB total).
 # PURPOSE: the vLLM vs SGLang vs llama.cpp three-way we've been blocked on (laptop venv broken,
 #          Qwen3_5 multimodal-registry dead-end, vLLM never installed). Fresh box clears all of it.
 # NOT for exact-arch tuning: bw24's kernels are sm_120a (mxf4nvf4/m16n8k32.s8) — they DO NOT run on
@@ -15,7 +15,7 @@ nproc; free -g | head -2
 log "1. system deps"
 sudo apt-get update -y && sudo apt-get install -y build-essential cmake git python3-venv python3-pip libcurl4-openssl-dev || true
 
-log "2. CUDA check (the stock GPU image usually ships CUDA 12.x)"
+log "2. CUDA check (g6box DL-image usually ships CUDA 12.x)"
 nvcc --version 2>/dev/null || echo "no nvcc in PATH — try: export PATH=/usr/local/cuda/bin:\$PATH"
 ls -d /usr/local/cuda* 2>/dev/null || true
 
