@@ -101,6 +101,7 @@ struct StepParallelLoadConfig {
     bulk_p2p: bool,
     nvfp4_device_routes: bool,
     auto_parallel: bool,
+    tp_attention_expert_overlap: bool,
     expert_artifact: StepExpertArtifact,
 }
 
@@ -123,18 +124,14 @@ struct StepExpertSelection {
     configured_by_tp: bool,
 }
 
-fn select_step_expert_layout(
+fn select_step_expert_layout_inner(
     layer: usize,
     ep_specs: &[crate::tp::StepEpLayerSpec],
     tp_specs: &[crate::tp::StepTpLayerSpec],
+    allow_attention_ep_overlap: bool,
 ) -> Result<Option<StepExpertSelection>, String> {
     let ep = ep_specs.iter().find(|spec| spec.layer == layer);
     let tp = tp_specs.iter().find(|spec| spec.layer == layer);
-    if ep.is_some() && tp.is_some() {
-        return Err(format!(
-            "Step layer {layer} cannot enable MEMRA_STEP_EP and MEMRA_STEP_TP together"
-        ));
-    }
     Ok(match (ep, tp) {
         (Some(spec), None) => Some(StepExpertSelection {
             spec: spec.clone(),
@@ -151,8 +148,37 @@ fn select_step_expert_layout(
             configured_by_tp: true,
         }),
         (None, None) => None,
-        (Some(_), Some(_)) => unreachable!(),
+        (Some(ep), Some(tp)) => {
+            if !allow_attention_ep_overlap {
+                return Err(format!(
+                    "Step layer {layer} cannot enable MEMRA_STEP_EP and MEMRA_STEP_TP together"
+                ));
+            }
+            if ep.devices.first() != tp.devices.first()
+                || tp.devices.iter().any(|device| !ep.devices.contains(device))
+            {
+                return Err(format!(
+                    "automatic TP-attention/EP overlap at layer {layer} requires the attention \
+                     ranks {:?} to be an owner-first subset of expert ranks {:?}",
+                    tp.devices, ep.devices
+                ));
+            }
+            Some(StepExpertSelection {
+                spec: ep.clone(),
+                layout: StepExpertLayout::ExpertParallel,
+                configured_by_tp: false,
+            })
+        }
     })
+}
+
+#[cfg(test)]
+fn select_step_expert_layout(
+    layer: usize,
+    ep_specs: &[crate::tp::StepEpLayerSpec],
+    tp_specs: &[crate::tp::StepTpLayerSpec],
+) -> Result<Option<StepExpertSelection>, String> {
+    select_step_expert_layout_inner(layer, ep_specs, tp_specs, false)
 }
 
 impl StepParallelRuntimeRegistry {
@@ -168,7 +194,12 @@ impl StepParallelRuntimeRegistry {
     }
 
     fn expert_selection(&self, layer: usize) -> Result<Option<StepExpertSelection>, String> {
-        select_step_expert_layout(layer, &self.config.ep_specs, &self.config.tp_specs)
+        select_step_expert_layout_inner(
+            layer,
+            &self.config.ep_specs,
+            &self.config.tp_specs,
+            self.config.tp_attention_expert_overlap,
+        )
     }
 
     fn runtime(
@@ -704,6 +735,26 @@ fn auto_parallel_tp_attention_enabled() -> Result<bool, String> {
     parse_auto_parallel_tp_attention(std::env::var("MEMRA_PARALLEL_TP_ATTENTION").ok().as_deref())
 }
 
+fn parse_auto_parallel_tp_attention_ranks(value: Option<&str>) -> Result<Option<usize>, String> {
+    match value {
+        None => Ok(None),
+        Some("2") => Ok(Some(2)),
+        Some("3") => Ok(Some(3)),
+        Some("4") => Ok(Some(4)),
+        Some(value) => Err(format!(
+            "MEMRA_PARALLEL_TP_ATTENTION_RANKS={value:?} is invalid; expected 2, 3, or 4"
+        )),
+    }
+}
+
+fn auto_parallel_tp_attention_ranks() -> Result<Option<usize>, String> {
+    parse_auto_parallel_tp_attention_ranks(
+        std::env::var("MEMRA_PARALLEL_TP_ATTENTION_RANKS")
+            .ok()
+            .as_deref(),
+    )
+}
+
 /// Resolve one whole-model placement from the ModelPlan plus exact source census.
 ///
 /// A selected pipeline is persisted into the existing process-level PP configuration before
@@ -819,7 +870,14 @@ fn prepare_step_parallel_load(
     let mut native_p2p = crate::tp::step_tp_native_p2p_enabled()?;
     let mut nvfp4_device_routes = crate::tp::step_nvfp4_dev_routes_enabled()?;
     let auto_tp_attention = auto_parallel_tp_attention_enabled()?;
+    let requested_attention_ranks = auto_parallel_tp_attention_ranks()?;
     let mut auto_parallel = false;
+    let mut tp_attention_expert_overlap = false;
+    if requested_attention_ranks.is_some() && !auto_tp_attention {
+        return Err(
+            "MEMRA_PARALLEL_TP_ATTENTION_RANKS requires MEMRA_PARALLEL_TP_ATTENTION=1".into(),
+        );
+    }
     if auto_tp_attention && auto_placement.is_none() {
         return Err(
             "MEMRA_PARALLEL_TP_ATTENTION=1 requires MEMRA_PARALLEL=auto; explicit per-layer \
@@ -853,13 +911,35 @@ fn prepare_step_parallel_load(
                 )
                 .into());
             }
+            let attention_ranks = requested_attention_ranks.unwrap_or(placement.devices.len());
+            if attention_ranks > placement.devices.len() {
+                return Err(format!(
+                    "MEMRA_PARALLEL_TP_ATTENTION_RANKS={attention_ranks} exceeds the automatic \
+                     placement width {}",
+                    placement.devices.len()
+                )
+                .into());
+            }
+            let attention_devices = placement.devices[..attention_ranks].to_vec();
             tp_specs = (0..trunk_layers)
                 .map(|layer| crate::tp::StepTpLayerSpec {
                     layer,
-                    devices: placement.devices.clone(),
+                    devices: attention_devices.clone(),
                 })
                 .collect();
-            ep_specs.clear();
+            if attention_ranks < placement.devices.len() {
+                ep_specs = placement
+                    .routed_layers
+                    .iter()
+                    .map(|&layer| crate::tp::StepEpLayerSpec {
+                        layer,
+                        devices: placement.devices.clone(),
+                    })
+                    .collect();
+                tp_attention_expert_overlap = true;
+            } else {
+                ep_specs.clear();
+            }
         } else {
             ep_specs = placement
                 .routed_layers
@@ -878,7 +958,8 @@ fn prepare_step_parallel_load(
         );
         eprintln!(
             "[parallel-auto-backend] devices={:?} routed_layers={} native_p2p=true \
-             artifact_activation={:?} attention_layout={} expert_layout=expert-parallel \
+             artifact_activation={:?} attention_layout={} attention_devices={:?} \
+             expert_layout=expert-parallel expert_devices={:?} \
              backend={} performance_claim=false",
             placement.devices,
             placement.routed_layers.len(),
@@ -888,6 +969,14 @@ fn prepare_step_parallel_load(
             } else {
                 "root-local"
             },
+            tp_specs
+                .first()
+                .map(|spec| spec.devices.as_slice())
+                .unwrap_or(&[]),
+            ep_specs
+                .first()
+                .map(|spec| spec.devices.as_slice())
+                .unwrap_or(placement.devices.as_slice()),
             if nvfp4_device_routes {
                 "nvfp4-w4a16"
             } else {
@@ -1010,8 +1099,13 @@ fn prepare_step_parallel_load(
     validate_step_expert_specs(&contract, "MEMRA_STEP_EP", &ep_specs, false)?;
     validate_step_expert_specs(&contract, "MEMRA_STEP_TP", &tp_specs, true)?;
     for spec in &tp_specs {
-        let selection = select_step_expert_layout(spec.layer, &ep_specs, &tp_specs)?
-            .ok_or("Step TP expert selection disappeared during preflight")?;
+        let selection = select_step_expert_layout_inner(
+            spec.layer,
+            &ep_specs,
+            &tp_specs,
+            tp_attention_expert_overlap,
+        )?
+        .ok_or("Step TP expert selection disappeared during preflight")?;
         validate_step_expert_activation_layout(cfg, "MEMRA_STEP_TP", &selection)?;
     }
 
@@ -1141,6 +1235,7 @@ fn prepare_step_parallel_load(
         bulk_p2p,
         nvfp4_device_routes,
         auto_parallel,
+        tp_attention_expert_overlap,
         expert_artifact,
     })
 }
@@ -5740,7 +5835,10 @@ mod pipeline_cut_tests {
 
 #[cfg(test)]
 mod auto_parallel_policy_tests {
-    use super::{parse_auto_parallel_tp_attention, parse_auto_w4a16_bf16_mmv};
+    use super::{
+        parse_auto_parallel_tp_attention, parse_auto_parallel_tp_attention_ranks,
+        parse_auto_w4a16_bf16_mmv,
+    };
 
     #[test]
     fn automatic_w4a16_bf16_residency_defaults_on_with_explicit_rollback() {
@@ -5760,13 +5858,33 @@ mod auto_parallel_policy_tests {
         assert!(parse_auto_parallel_tp_attention(Some("true")).is_err());
         assert!(parse_auto_parallel_tp_attention(Some("2")).is_err());
     }
+
+    #[test]
+    fn automatic_tp_attention_rank_count_is_explicit_and_bounded() {
+        assert_eq!(parse_auto_parallel_tp_attention_ranks(None).unwrap(), None);
+        assert_eq!(
+            parse_auto_parallel_tp_attention_ranks(Some("2")).unwrap(),
+            Some(2)
+        );
+        assert_eq!(
+            parse_auto_parallel_tp_attention_ranks(Some("3")).unwrap(),
+            Some(3)
+        );
+        assert_eq!(
+            parse_auto_parallel_tp_attention_ranks(Some("4")).unwrap(),
+            Some(4)
+        );
+        for bad in ["", "0", "1", "5", "all"] {
+            assert!(parse_auto_parallel_tp_attention_ranks(Some(bad)).is_err());
+        }
+    }
 }
 
 #[cfg(test)]
 mod step_expert_selection_tests {
     use super::{
         StepExpertArtifact, StepExpertLayout, StepParallelLoadConfig, StepParallelRuntimeRegistry,
-        StepTpAttentionPlacement, select_step_expert_layout,
+        StepTpAttentionPlacement, select_step_expert_layout, select_step_expert_layout_inner,
     };
     use crate::tp::StepEpLayerSpec;
 
@@ -5814,6 +5932,20 @@ mod step_expert_selection_tests {
     }
 
     #[test]
+    fn automatic_tp2_attention_can_overlap_ep4_expert_ownership() {
+        let selection = select_step_expert_layout_inner(24, &[spec(24, 4)], &[spec(24, 2)], true)
+            .unwrap()
+            .unwrap();
+        assert_eq!(selection.layout, StepExpertLayout::ExpertParallel);
+        assert!(!selection.configured_by_tp);
+        assert_eq!(selection.spec.devices, vec![0, 1, 2, 3]);
+
+        let error =
+            select_step_expert_layout_inner(24, &[spec(24, 4)], &[spec(24, 2)], false).unwrap_err();
+        assert!(error.contains("cannot enable MEMRA_STEP_EP and MEMRA_STEP_TP together"));
+    }
+
+    #[test]
     fn runtime_registry_owns_one_immutable_load_snapshot() {
         let mut source_specs = vec![spec(24, 8)];
         let registry = StepParallelRuntimeRegistry::with_config(StepParallelLoadConfig {
@@ -5825,6 +5957,7 @@ mod step_expert_selection_tests {
             bulk_p2p: true,
             nvfp4_device_routes: true,
             auto_parallel: true,
+            tp_attention_expert_overlap: false,
             expert_artifact: StepExpertArtifact::default(),
         });
         source_specs[0].devices.clear();

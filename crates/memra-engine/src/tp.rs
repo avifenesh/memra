@@ -8,7 +8,7 @@
 use crate::Engine;
 use crate::mmq_ffi::{DeviceExpertCsr, ExpertCsr, Fp8GroupedWorkspace};
 use crate::parallel::{PRODUCT_MAX_CARDS, STEP37_TRUNK_LAYERS};
-use cudarc::driver::{CudaEvent, CudaSlice, DeviceSlice};
+use cudarc::driver::{CudaEvent, CudaSlice, DevicePtr, DeviceSlice, LaunchConfig, PushKernelArg};
 use std::ops::Range;
 
 /// Previous gate output per (rank, t), so the determ probe can report the SHAPE of a divergence
@@ -1771,6 +1771,64 @@ pub struct TpE4m3HostBounce {
     decode_v2: std::sync::Mutex<Vec<StepTpDecodeV2Ws>>,
 }
 
+/// Persistent two-rank all-reduce for one replicated f32 row.
+///
+/// Each rank pushes its local partial directly into a peer-resident staging row, records one
+/// reusable event, waits for the peer's corresponding event, then adds `(rank0, rank1)` in that
+/// same operand order on both devices. Two staging rows per direction are enough because join
+/// `j + 1` is ordered after each rank's add at join `j`, so overwriting parity `j` cannot race its
+/// peer consumer. The collective allocates nothing and performs no host synchronization per call.
+pub struct Tp2ReplicatedRowJoin {
+    width: usize,
+    parity: usize,
+    stage0: [CudaSlice<f32>; 2],
+    stage1: [CudaSlice<f32>; 2],
+    stage0_raw: [u64; 2],
+    stage1_raw: [u64; 2],
+    event0: [CudaEvent; 2],
+    event1: [CudaEvent; 2],
+}
+
+fn validate_tp2_replicated_row_join(
+    ranks: usize,
+    native_p2p: bool,
+    width: usize,
+) -> Result<(), String> {
+    if ranks != 2 {
+        return Err(format!(
+            "replicated-row join requires exactly two ranks, got {ranks}"
+        ));
+    }
+    if !native_p2p {
+        return Err("replicated-row join requires native P2P".into());
+    }
+    if width == 0 || width > i32::MAX as usize {
+        return Err(format!(
+            "replicated-row join width must be in 1..={}, got {width}",
+            i32::MAX
+        ));
+    }
+    Ok(())
+}
+
+fn launch_tp2_peer_push(
+    engine: &Engine,
+    source: &CudaSlice<f32>,
+    destination: u64,
+    width: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let function = engine.func("q4e_push_f32");
+    let config = LaunchConfig::for_num_elems(width as u32);
+    let width = width as i64;
+    let stream = engine.gpu.stream();
+    let mut launch = stream.launch_builder(&function);
+    launch.arg(source).arg(&destination).arg(&width);
+    unsafe {
+        launch.launch(config)?;
+    }
+    Ok(())
+}
+
 /// Persistent workspace of the v2 rank-local decode-attention driver.
 ///
 /// Buffers live in their producing rank's CUDA context, are never freed, and events are
@@ -2083,6 +2141,102 @@ impl TpE4m3HostBounce {
     /// through the next ownership boundary before that boundary is wired into serving.
     pub fn rank_engine(&self, rank: usize) -> Option<&Engine> {
         self.ranks.get(rank)
+    }
+
+    /// Allocate the persistent ping-pong staging and event state for a two-rank replicated-row
+    /// all-reduce. The caller owns one instance per concurrently live collective sequence.
+    pub fn prepare_tp2_replicated_row_join(
+        &self,
+        width: usize,
+    ) -> Result<Tp2ReplicatedRowJoin, Box<dyn std::error::Error>> {
+        validate_tp2_replicated_row_join(self.ranks.len(), self.native_p2p, width)?;
+        let rank0 = &self.ranks[0];
+        let rank1 = &self.ranks[1];
+
+        let (stage0, stage0_raw, event0) = {
+            let _main = rank0.gpu.enter_main()?;
+            let stage = [rank0.zeros(width)?, rank0.zeros(width)?];
+            let stream = rank0.gpu.stream();
+            let raw = [
+                stage[0].device_ptr(&stream).0,
+                stage[1].device_ptr(&stream).0,
+            ];
+            let events = [rank0.ctx().new_event(None)?, rank0.ctx().new_event(None)?];
+            (stage, raw, events)
+        };
+        let (stage1, stage1_raw, event1) = {
+            let _main = rank1.gpu.enter_main()?;
+            let stage = [rank1.zeros(width)?, rank1.zeros(width)?];
+            let stream = rank1.gpu.stream();
+            let raw = [
+                stage[0].device_ptr(&stream).0,
+                stage[1].device_ptr(&stream).0,
+            ];
+            let events = [rank1.ctx().new_event(None)?, rank1.ctx().new_event(None)?];
+            (stage, raw, events)
+        };
+        Ok(Tp2ReplicatedRowJoin {
+            width,
+            parity: 0,
+            stage0,
+            stage1,
+            stage0_raw,
+            stage1_raw,
+            event0,
+            event1,
+        })
+    }
+
+    /// Sum one rank-local partial from each of two ranks and publish the same canonical
+    /// `(rank0 + rank1)` row on both devices. The method only enqueues work; subsequent work on
+    /// each rank's stream consumes its corresponding output without a host fence.
+    pub fn tp2_replicated_row_join(
+        &self,
+        join: &mut Tp2ReplicatedRowJoin,
+        partial0: &CudaSlice<f32>,
+        partial1: &CudaSlice<f32>,
+        output0: &mut CudaSlice<f32>,
+        output1: &mut CudaSlice<f32>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        validate_tp2_replicated_row_join(self.ranks.len(), self.native_p2p, join.width)?;
+        let rank0 = &self.ranks[0];
+        let rank1 = &self.ranks[1];
+        let width = join.width;
+        if partial0.len() < width
+            || partial1.len() < width
+            || output0.len() < width
+            || output1.len() < width
+            || partial0.ordinal() != rank0.ctx().ordinal()
+            || output0.ordinal() != rank0.ctx().ordinal()
+            || partial1.ordinal() != rank1.ctx().ordinal()
+            || output1.ordinal() != rank1.ctx().ordinal()
+        {
+            return Err("replicated-row join buffer geometry or ownership mismatch".into());
+        }
+
+        let parity = join.parity;
+        {
+            let _main = rank0.gpu.enter_main()?;
+            launch_tp2_peer_push(rank0, partial0, join.stage1_raw[parity], width)?;
+            join.event0[parity].record(&rank0.gpu.stream())?;
+        }
+        {
+            let _main = rank1.gpu.enter_main()?;
+            launch_tp2_peer_push(rank1, partial1, join.stage0_raw[parity], width)?;
+            join.event1[parity].record(&rank1.gpu.stream())?;
+        }
+        {
+            let _main = rank0.gpu.enter_main()?;
+            rank0.gpu.stream().wait(&join.event1[parity])?;
+            rank0.add(partial0, &join.stage0[parity], output0, width)?;
+        }
+        {
+            let _main = rank1.gpu.enter_main()?;
+            rank1.gpu.stream().wait(&join.event0[parity])?;
+            rank1.add(&join.stage1[parity], partial1, output1, width)?;
+        }
+        join.parity ^= 1;
+        Ok(())
     }
 
     pub fn allocate_tp_kv_cache(
@@ -15129,6 +15283,27 @@ mod bank_v2_layout_tests {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn replicated_row_join_is_strictly_tp2_native_and_nonempty() {
+        assert!(super::validate_tp2_replicated_row_join(2, true, 4096).is_ok());
+        assert!(
+            super::validate_tp2_replicated_row_join(1, true, 4096)
+                .unwrap_err()
+                .contains("exactly two ranks")
+        );
+        assert!(
+            super::validate_tp2_replicated_row_join(4, true, 4096)
+                .unwrap_err()
+                .contains("exactly two ranks")
+        );
+        assert!(
+            super::validate_tp2_replicated_row_join(2, false, 4096)
+                .unwrap_err()
+                .contains("native P2P")
+        );
+        assert!(super::validate_tp2_replicated_row_join(2, true, 0).is_err());
+    }
 
     #[test]
     fn door_composition_refuses_first_armed_flag_by_name() {

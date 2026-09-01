@@ -143,3 +143,42 @@ Q35, Gemma, Ornith, and 27B cells skipped because those artifacts were not insta
 isolated box; this receipt does not claim their gates ran. The HY3 TP+EP arm remains default off
 and below the retained root-local c1 result, so this is a draft/shared substrate checkpoint, not a
 `NativeTuned` claim.
+
+## 2026-09-01 exact-head profiling and migrated-repo continuation
+
+The repository was replaced by a new migrated root while this program was active. The canonical
+continuation base is `49d1d6f6594a7df52d3fed3268c5355026e3fae7`. Its HY3, TP/EP, Q8 paired,
+flags, kernels, and prior receipt blobs are byte-identical to the profiled source tree; provider
+history and old pull-request numbering are deliberately not part of the new repository.
+
+Fresh decode-only Nsight Systems capture on the pinned artifact and four 600 W RTX PRO 6000
+Blackwell cards, with vendor-default sampling (`temperature=0.9`, `top_p=1.0`) and speculation
+off, found:
+
+- root automatic EP4: device 0 was 91.9% kernel-busy over the captured span; peers were
+  16.6-17.7%; root-only `matvec_bf16_f32acc_x4_rows` cost 8.96 ms/token;
+- per token: 3,180 kernel launches, 1,205 async allocations, 1,205 async frees, and about
+  7.50 ms of launch API time; the physical D2H copy cost about 0.010 ms while its host API call
+  exposed queued work;
+- TP2-attention + EP4 + sampled device chaining reduced the uninstrumented row to 57.43 tok/s;
+  the corresponding profile left device 0 at 14.97 ms/token of summed kernels and device 1 at
+  9.71 ms/token. Expert down was 26.0% of aggregate kernel time, TP QKV/O 24.7%, and attention
+  about 12%;
+- paired all-Q8 experts on that topology were fluent at 66.32 tok/s, but remain a new numeric
+  class pending full-logit and symmetric teacher-forcing gates;
+- TP4 attention was slower at 55.32 tok/s. Shared-expert split plus route prestage were flat at
+  66.38 tok/s; the larger inherited-door stack regressed to 64.55 tok/s. Those compositions are
+  closed for this topology.
+
+The chosen topology is TP2 attention + EP4 whole experts + sampled device chaining. The missing
+mechanism is a coarse persistent schedule, not another rank degree or flag stack. A new generic
+two-rank replicated-row join provides the required 16 KiB collective: two direct peer pushes, two
+reusable events, ping-pong staging, no per-call allocation, no host synchronization, and the same
+`(rank0 + rank1)` operand order on both cards. Its 10,000-repetition hardware gate passed at
+9.461 us/join; two joins across 80 layers price at about 1.51 ms/token before overlap. Receipt:
+`receipts/tp2-replicated-row-join-20260901.txt`.
+
+This is substrate evidence, not the 100 tok/s result. Next implementation: retain the residual on
+the TP pair, use the persistent join at the attention and FFN ownership boundaries, keep EP4
+experts whole, and profile each integrated rung. The pass condition at the top of this file is
+unchanged.
