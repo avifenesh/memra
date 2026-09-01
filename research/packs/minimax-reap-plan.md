@@ -139,11 +139,11 @@ conservative bounds.
 ### Where each stage runs
 - **Local CPU/disk (now)**: downloads, tensor inventory, tokenizer sanity, saliency/prune
   *plumbing* (structure-only dry-run on the index — no weights needed), GGUF conversion prep.
-- **cloudbox 96GB (when its MoE agent frees)**: everything with forward passes. NOTE: even the 129GB
+- **Sbox 96GB (when its MoE agent frees)**: everything with forward passes. NOTE: even the 129GB
   REAP50 does NOT fit 96GB — calibration must be **layer-streamed** (embed→layer-by-layer with
   activation checkpoints on disk; REAP saliency only needs per-layer router logits + expert
   output norms, so this is clean) or accelerate CPU-offloaded (simpler, slower). Heal at REAP50
-  needs multi-GPU or aggressive offload — budget the cloudbox request accordingly, or heal only the
+  needs multi-GPU or aggressive offload — budget the Sbox request accordingly, or heal only the
   deeper-prune variants (≤70GB weights + Adafactor state fits 96GB with room).
 - **Local GPU (kernel agent owns it)**: nothing until free; then bw24 loader-arc bringup +
   spill-serving validation of the final GGUF.
@@ -170,7 +170,7 @@ REAP50 (`sparkarena/Minimax-M3-v0-NVFP4-REAP50`, 46906 tensors, index total_size
 2. [running] REAP50 download (~129GB) — `minimax-m3-nvfp4-reap50-dl.log`
 3. [when REAP50 lands] config/tokenizer sanity + full tensor inventory vs this plan +
    structure-only prune dry-run (verify slicing plan against real shapes, CPU only)
-4. [cloudbox queue] layer-streamed calibration pass → REAP saliency on our corpus → compare against
+4. [Sbox queue] layer-streamed calibration pass → REAP saliency on our corpus → compare against
    sparkarena's pruning choices (their kept-expert sets are visible in their ckpt — cheap diff)
 5. [local, anytime] bw24 `Arch::MinimaxM3` + name-mapping + sigmoid-router + gemma-norm +
    swigluoai plumbing (items 2-6 above) against the GGUF, full-attention v0 (≤2K exact)

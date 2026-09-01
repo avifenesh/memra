@@ -82,9 +82,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "{{\"schema\":\"memra.hy3.layer0.v2\",\"producer\":\"memra\",\"artifact\":"
     )?;
     write_json_string(&mut out, &artifact)?;
-    writeln!(
+    write!(
         out,
-        ",\"tokens\":{:?},\"n_embd\":{},\"precision\":\"runtime\"}}",
+        ",\"tokens\":{:?},\"n_embd\":{},\"precision\":\"runtime\"}}\n",
         tokens, n_embd
     )?;
 
@@ -109,7 +109,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         write_f32_array(&mut out, &mlp_output)?;
         write!(out, ",\"layer0_residual\":")?;
         write_f32_array(&mut out, &layer0)?;
-        writeln!(out, "}}")?;
+        write!(out, "}}\n")?;
     }
     out.flush()?;
     Ok(())

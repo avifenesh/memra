@@ -14,7 +14,6 @@
 // largest prob; ties broken by SMALLEST index (matches the host `.then(a.cmp(b))`). The chosen
 // expert is masked to -INF for the next round. This reproduces the stable DESC sort's top-k.
 #include <cuda_runtime.h>
-#include <cuda_bf16.h>
 #include <math.h>
 #include <float.h>
 
@@ -251,42 +250,6 @@ extern "C" __global__ void silu_clamped_mul_host_expf_f32(
     }
 }
 
-// W4A16 selected-expert activation. Gate/up macros are rank-local arrays indexed by the
-// rank-local selection ids. The host-expf transcription and explicit RN operation order match
-// step_expert_activation_host; the result is then rounded once to BF16, which is the checkpoint's
-// activation contract for the following NVFP4 down projection.
-extern "C" __global__ void silu_mul_scaled_host_expf_bf16_sel(
-    const float* __restrict__ gate,
-    const float* __restrict__ up,
-    const float* __restrict__ gate_macros,
-    const float* __restrict__ up_macros,
-    const int* __restrict__ sel,
-    float limit,
-    int has_limit,
-    unsigned short* __restrict__ dst,
-    int n_per,
-    int n_sel)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int n = n_per * n_sel;
-    if (i >= n) return;
-    int row = i / n_per;
-    int expert = sel[row];
-    const float g = __fmul_rn(gate[i], gate_macros[expert]);
-    const float u0 = __fmul_rn(up[i], up_macros[expert]);
-    const float denominator = __fadd_rn(1.0f, sigmoid_host_expf(-g));
-    float silu = __fdiv_rn(g, denominator);
-    float u = u0;
-    if (has_limit) {
-        silu = silu > limit ? limit : silu;
-        u = u > limit ? limit : u;
-        u = u < -limit ? -limit : u;
-    }
-    const float value = __fmul_rn(silu, u);
-    const __nv_bfloat16 rounded = __float2bfloat16(value);
-    dst[i] = *reinterpret_cast<const unsigned short*>(&rounded);
-}
-
 // Step-3.7 / DeepSeek-V3-class sigmoid router. The host oracle contract is:
 //   score[i] = 1 / (1 + exp(-logit[i]))
 //   selection key = score[i] + correction_bias[i]
@@ -390,90 +353,6 @@ extern "C" __global__ void moe_router_sigmoid_topk_f32_dexp(
     }
 }
 
-// Device-routed fixed token/slot activation. Selection ids remain global; ranks reject
-// non-owned slots and index their local macro arrays only for owned experts.
-extern "C" __global__ void silu_mul_scaled_host_expf_bf16_ep_slots(
-    const float* __restrict__ gate,
-    const float* __restrict__ up,
-    const float* __restrict__ gate_macros,
-    const float* __restrict__ up_macros,
-    const int* __restrict__ sel,
-    float limit,
-    int has_limit,
-    unsigned short* __restrict__ dst,
-    int n_per,
-    int n_pairs,
-    int owner_start,
-    int owner_end)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int n = n_per * n_pairs;
-    if (i >= n) return;
-    int pair = i / n_per;
-    int global_expert = sel[pair];
-    if (global_expert < owner_start || global_expert >= owner_end) return;
-    int expert = global_expert - owner_start;
-    const float g = __fmul_rn(gate[i], gate_macros[expert]);
-    const float u0 = __fmul_rn(up[i], up_macros[expert]);
-    const float denominator = __fadd_rn(1.0f, sigmoid_host_expf(-g));
-    float silu = __fdiv_rn(g, denominator);
-    float u = u0;
-    if (has_limit) {
-        silu = silu > limit ? limit : silu;
-        u = u > limit ? limit : u;
-        u = u < -limit ? -limit : u;
-    }
-    const float value = __fmul_rn(silu, u);
-    const __nv_bfloat16 rounded = __float2bfloat16(value);
-    dst[i] = *reinterpret_cast<const unsigned short*>(&rounded);
-}
-
-// Optional A8 expert-compute activation. Keeps the host-expf transcription and clamp order of
-// the W4A16 oracle, then emits one q8_1 block per 32 activation values for the dp4a down kernel.
-extern "C" __global__ void silu_mul_scaled_host_expf_q8_ep_slots(
-        const float* __restrict__ gate,
-        const float* __restrict__ up,
-        const float* __restrict__ gate_macros,
-        const float* __restrict__ up_macros,
-        const int* __restrict__ sel,
-        float limit,
-        int has_limit,
-        signed char* __restrict__ out_q,
-        float* __restrict__ out_d,
-        int n_per,
-        int n_pairs,
-        int owner_start,
-        int owner_end) {
-    int warp = (blockIdx.x * blockDim.x + threadIdx.x) >> 5;
-    int lane = threadIdx.x & 31;
-    int blocks_per_pair = n_per >> 5;
-    if (warp >= blocks_per_pair * n_pairs) return;
-    int pair = warp / blocks_per_pair;
-    int global_expert = sel[pair];
-    if (global_expert < owner_start || global_expert >= owner_end) return;
-    int expert = global_expert - owner_start;
-    int i = warp * 32 + lane;
-    const float g = __fmul_rn(gate[i], gate_macros[expert]);
-    const float u0 = __fmul_rn(up[i], up_macros[expert]);
-    const float denominator = __fadd_rn(1.0f, sigmoid_host_expf(-g));
-    float silu = __fdiv_rn(g, denominator);
-    float u = u0;
-    if (has_limit) {
-        silu = silu > limit ? limit : silu;
-        u = u > limit ? limit : u;
-        u = u < -limit ? -limit : u;
-    }
-    const float value = __fmul_rn(silu, u);
-    float amax = fabsf(value);
-    #pragma unroll
-    for (int offset = 16; offset > 0; offset >>= 1)
-        amax = fmaxf(amax, __shfl_xor_sync(0xffffffffu, amax, offset));
-    const float scale = amax / 127.0f;
-    const float inverse = scale > 0.0f ? 1.0f / scale : 0.0f;
-    out_q[i] = (signed char)__float2int_rn(value * inverse);
-    if (lane == 0) out_d[warp] = scale;
-}
-
 // BARRIER-LEAN twin (MEMRA_TOPK_FAST=1): the round-robin kernel above pays n_used rounds x
 // 3 __syncthreads (24 barriers for Step's top-8 = its 18us wall at t=1). This twin computes
 // each WARP's local top-8 barrier-free (8 masked warp-argmax passes), then ONE barrier and a
@@ -504,34 +383,10 @@ extern "C" __global__ void memra_ring_flag(unsigned long long p, unsigned int v)
 extern "C" __global__ void moe_sel_w_mirror(
         const int* __restrict__ sel_src, const float* __restrict__ w_src,
         int* __restrict__ sel_dst, float* __restrict__ w_dst, int n) {
-    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    const int i = threadIdx.x;
     if (i < n) {
         sel_dst[i] = sel_src[i];
         w_dst[i]   = w_src[i];
-    }
-}
-
-// Automatic W4A16 EP input staging. One rank-local launch replaces the input peer copy, the
-// two tiny route-metadata copies, and the separate f32->BF16 conversion launch. The entry event
-// recorded on the root stream orders all three peer reads before this kernel starts.
-extern "C" __global__ void nvfp4_ep_stage_inputs(
-        const float* __restrict__ input_src,
-        const int* __restrict__ sel_src,
-        const float* __restrict__ w_src,
-        unsigned short* __restrict__ input_bf16_dst,
-        int* __restrict__ sel_dst,
-        float* __restrict__ w_dst,
-        int input_values,
-        int pairs,
-        int copy_weights) {
-    const int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < input_values) {
-        const __nv_bfloat16 rounded = __float2bfloat16(input_src[i]);
-        input_bf16_dst[i] = *reinterpret_cast<const unsigned short*>(&rounded);
-    }
-    if (i < pairs) {
-        sel_dst[i] = sel_src[i];
-        if (copy_weights) w_dst[i] = w_src[i];
     }
 }
 
@@ -611,26 +466,8 @@ extern "C" __global__ void moe_router_sigmoid_topk_f32_dexp_fast(
             bv = __shfl_sync(FULL, bv, 0);
             bi = __shfl_sync(FULL, bi, 0);
             if (lane == 0) {
-                // NaN-ROW GUARD. `bi` is seeded with the 0x7fffffff sentinel and is only ever
-                // replaced by a candidate that compares greater-or-equal. Every comparison
-                // against NaN is FALSE, so a row whose router logits are all NaN leaves the
-                // sentinel in place — and the two writes below then read s_score OUT OF BOUNDS
-                // and publish 0x7fffffff as an EXPERT ID, a 2^31-row stride into the expert
-                // banks. That is an unrecoverable CUDA_ERROR_ILLEGAL_ADDRESS: it poisons the
-                // context, every later request fails on whatever CUDA call it reaches first,
-                // and the process keeps answering /health, so nothing restarts it.
-                //
-                // A NaN row is already a lost row — its output cannot be right whatever this
-                // kernel picks. Bound the pick so the failure stays INSIDE the request: a
-                // deterministic in-range slot carrying weight 0 contributes nothing, the
-                // poison still reaches the head as NaN logits, and the verify's #87 sentinel
-                // trap turns it into ONE failed request instead of a dead server.
-                //
-                // No-op on healthy rows: when `bi` is a real pick both expressions are the
-                // originals, so selected experts and weights stay bit-identical.
-                const int ok = (bi >= 0 && bi < n_expert);
-                sel_idx[(size_t)row * n_used + j] = ok ? bi : min(j, n_expert - 1);
-                sel_w[(size_t)row * n_used + j] = ok ? s_score[bi] : 0.0f;
+                sel_idx[(size_t)row * n_used + j] = bi;
+                sel_w[(size_t)row * n_used + j] = s_score[bi];
             }
             for (int k = 0; k < mine; ++k) {
                 if (mi[k] == bi && mv[k] == bv) { mv[k] = -FLT_MAX; mi[k] = 0x7fffffff; }
@@ -727,26 +564,8 @@ extern "C" __global__ void moe_router_sigmoid_topk_f32_fast(
             bv = __shfl_sync(FULL, bv, 0);
             bi = __shfl_sync(FULL, bi, 0);
             if (lane == 0) {
-                // NaN-ROW GUARD. `bi` is seeded with the 0x7fffffff sentinel and is only ever
-                // replaced by a candidate that compares greater-or-equal. Every comparison
-                // against NaN is FALSE, so a row whose router logits are all NaN leaves the
-                // sentinel in place — and the two writes below then read s_score OUT OF BOUNDS
-                // and publish 0x7fffffff as an EXPERT ID, a 2^31-row stride into the expert
-                // banks. That is an unrecoverable CUDA_ERROR_ILLEGAL_ADDRESS: it poisons the
-                // context, every later request fails on whatever CUDA call it reaches first,
-                // and the process keeps answering /health, so nothing restarts it.
-                //
-                // A NaN row is already a lost row — its output cannot be right whatever this
-                // kernel picks. Bound the pick so the failure stays INSIDE the request: a
-                // deterministic in-range slot carrying weight 0 contributes nothing, the
-                // poison still reaches the head as NaN logits, and the verify's #87 sentinel
-                // trap turns it into ONE failed request instead of a dead server.
-                //
-                // No-op on healthy rows: when `bi` is a real pick both expressions are the
-                // originals, so selected experts and weights stay bit-identical.
-                const int ok = (bi >= 0 && bi < n_expert);
-                sel_idx[(size_t)row * n_used + j] = ok ? bi : min(j, n_expert - 1);
-                sel_w[(size_t)row * n_used + j] = ok ? s_score[bi] : 0.0f;
+                sel_idx[(size_t)row * n_used + j] = bi;
+                sel_w[(size_t)row * n_used + j] = s_score[bi];
             }
             // Retire the picked candidate from its owning lane.
             for (int k = 0; k < mine; ++k) {

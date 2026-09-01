@@ -109,7 +109,7 @@ Any future probe expected to run on >=128-SM rigs needs the same pin — or per-
 goldens, which is more machinery for the same guarantee.
 
 NOT recommended: flattening the fa_split_keys SM rung itself. It is a measured perf
-default (cloudbox sweeps, +7-11% short-ctx on 188 SM) and the divergence it causes is
+default (sbox sweeps, +7-11% short-ctx on 188 SM) and the divergence it causes is
 near-tie-class; the gate pin isolates exactness from the perf ladder.
 
 ## Hashes

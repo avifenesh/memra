@@ -100,8 +100,8 @@ fn resolve_nvcc() -> String {
         }
     }
     // Newest release wins; ties (same release reachable by two paths) keep discovery order,
-    // which puts PATH ahead of /usr/local — the sort is stable.
-    ranked.sort_by_key(|r| std::cmp::Reverse(r.0));
+    // which puts PATH ahead of /usr/local — sort_by is stable.
+    ranked.sort_by(|a, b| b.0.cmp(&a.0));
     if let Some(((maj, min), p)) = ranked.first() {
         let others: Vec<String> = ranked[1..]
             .iter()
@@ -145,32 +145,30 @@ fn detect_arch() -> String {
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .and_then(|s| s.lines().next().map(|l| l.trim().to_string()));
     // sm_100a IS DELIBERATELY NOT AUTO-SELECTED. It is still accepted as an EXPLICIT
-    // MEMRA_CUDA_ARCH=100a opt-in, but a B200 owner must not have it chosen for them.
+    // MEMRA_CUDA_ARCH=100a opt-in (the engine lane that fixes it needs a way in), but a B200
+    // owner must not have it chosen for them, because as measured on 2026-08-23 it DOES NOT
+    // BUILD:
     //
-    // HISTORY (2026-08-23): it did not build at all —
     //   ptxas ... error : Instruction 'mma with block scale' not supported on .target 'sm_100a'
-    // Three translation units, two distinct causes, found by fixing each and watching the
-    // failure move:
+    //
+    // THREE translation units, TWO distinct causes, found by fixing each and watching the failure
+    // move:
     //   1. cu/mmq_nvfp4_w4a8.cu (~40 sites) — stub-gate polarity. FIXED below.
     //   2. cu/mmq_fp8_blk.cu   (~400 sites) — same polarity bug. FIXED below.
-    //   3. cu/mmq_q8_0_f32acc.cu — NOT polarity: its f8f6f4 arm was guarded by
-    //      `__CUDA_ARCH__ >= 1000`, and 1000 IS sm_100a, so the guard admitted the very arch
-    //      that rejects the instruction. FIXED lane/glm5-b200-prep-20260901 (>= 1200; the TU's
-    //      fail-closed __trap() arm now covers sm_100a like every other non-120a arch).
+    //   3. cu/mmq_q8_0_f32acc.cu (~256 sites) — NOT polarity. Its build.rs entry says it "needs
+    //      no portable stub" because its f8f6f4 arm is guarded by `__CUDA_ARCH__ >= 1000` inside
+    //      the TU — and that threshold is simply WRONG for this instruction: 1000 IS sm_100a, so
+    //      the guard admits the very arch that rejects it. Needs an engine fix, not a gate flip.
     //
-    // CURRENT STATE (2026-09-01, lane/glm5-b200-prep-20260901): MEMRA_CUDA_ARCH=100a COMPILES —
-    // per-TU census 29/29 arm-A cells green, and ci.yml carries a compile-only sm_100a matrix cell so
-    // it stays that way. tools/fatbin-lookup-census.py --arch 100a passes with two DECLARED
-    // exceptions (qmatvec_gemm_nvfp4_fp4 — the MEMRA_FP4 door refuses on non-120a builds;
-    // qmatvec_gemm_q8_0_wgmma — call sites compiled out, cfg!(memra_hopper_mma)).
+    // So sm_100a is more broken than the stub chain, which is why it is not auto-selected. And
+    // even with that fixed, tools/fatbin-lookup-census.py reports two kernels the Rust side
+    // looks up that no sm_100a fatbin contains (qmatvec_gemm_nvfp4_fp4,
+    // qmatvec_gemm_q8_0_wgmma), which is a runtime panic, not a compile error.
     //
-    // WHY STILL NOT AUTO-SELECTED: compiling is not running. No memra binary has ever executed
-    // on sm_100a silicon — zero exactness gates, zero serving receipts, and the sm_120a-tuned
-    // block-scale MMQ prefill family is fail-closed stubs here. Auto-detect must not hand a
-    // B200 owner an unproven target; the opt-in stays explicit until a B200 box window banks
-    // runtime receipts (the bring-up plan lives in research/glm5-b200-prep-20260901/LANE.md).
-    // Refusing to choose an unexercised target is honest; silently choosing one is the shape
-    // this repo spent 2026-08-23 removing. See docs/RELEASING.md.
+    // So auto-detecting it handed a B200 owner a confusing ptxas wall on a target nothing in
+    // CI had ever compiled. Refusing to choose it is honest; silently choosing a broken target
+    // is the shape this repo spent 2026-08-23 removing. Owners and the two concrete defects
+    // are recorded in docs/RELEASING.md.
     let arch = match cap.as_deref() {
         Some("12.0") | Some("12.1") => "120a",
         Some("9.0") => "90a",
@@ -180,11 +178,10 @@ fn detect_arch() -> String {
     match cap.as_deref() {
         Some("10.0") => println!(
             "cargo:warning=compute_cap 10.0 (B200) detected: sm_100a is NOT auto-selected \
-             because no memra binary has ever run on that silicon (it compiles and is \
-             CI-covered, but there are zero runtime receipts and the sm_120a block-scale MMQ \
-             prefill family is fail-closed stubs there - see docs/RELEASING.md). Building \
-             {arch} instead, which will NOT run on this device. Set MEMRA_CUDA_ARCH=100a to \
-             opt in explicitly."
+             because it does not currently compile (ptxas rejects the block-scale MMA in \
+             cu/mmq_nvfp4_w4a8.cu, and two looked-up kernels are absent from its fatbins - see \
+             docs/RELEASING.md). Building {arch} instead, which will NOT run on this device. \
+             Set MEMRA_CUDA_ARCH=100a to attempt it explicitly."
         ),
         Some(c) => println!(
             "cargo:warning=MEMRA_CUDA_ARCH auto-detected {arch} (compute_cap {c}); set MEMRA_CUDA_ARCH to override"
@@ -207,7 +204,6 @@ fn main() {
         for stem in [
             "kernels",
             "hybrid",
-            "kda",
             "qmatvec",
             "flash_attn",
             "qmatvec_gemm",
@@ -224,7 +220,6 @@ fn main() {
         for (env, stem) in [
             ("MEMRA_ENGINE_FATBIN", "kernels"),
             ("MEMRA_HYBRID_FATBIN", "hybrid"),
-            ("MEMRA_KDA_FATBIN", "kda"),
             ("MEMRA_QMATVEC_FATBIN", "qmatvec"),
             ("MEMRA_FLASH_FATBIN", "flash_attn"),
             ("MEMRA_GEMM_FATBIN", "qmatvec_gemm"),
@@ -286,7 +281,6 @@ fn main() {
     for (src, env) in [
         ("cu/kernels.cu", "MEMRA_ENGINE_FATBIN"),
         ("cu/hybrid.cu", "MEMRA_HYBRID_FATBIN"),
-        ("cu/kda.cu", "MEMRA_KDA_FATBIN"),
         ("cu/qmatvec.cu", "MEMRA_QMATVEC_FATBIN"),
         ("cu/flash_attn.cu", "MEMRA_FLASH_FATBIN"),
         ("cu/qmatvec_gemm.cu", "MEMRA_GEMM_FATBIN"),
@@ -295,7 +289,7 @@ fn main() {
     ] {
         println!("cargo:rerun-if-changed={src}");
         println!("cargo:rerun-if-changed=cu/wgmma_common.cuh");
-        let stem = src.split('/').next_back().unwrap().trim_end_matches(".cu");
+        let stem = src.split('/').last().unwrap().trim_end_matches(".cu");
         let fatbin = out.join(format!("{stem}.fatbin"));
         let mut args = vec!["-gencode", &gencode, "-O3", "--fatbin"];
         if portable {
@@ -305,16 +299,8 @@ fn main() {
             args.push("-DMEMRA_HOPPER_MMA=1");
         }
         // The hand-written mxf4nvf4 block-scale MMA in qmatvec_gemm.cu is an sm_120a
-        // instruction encoding, so omit that opt-in kernel from the sm_100a fatbin.
-        // NOTE (corrected lane/glm5-b200-prep-20260901): the earlier version of this comment
-        // said B200 "uses the accuracy-safe NVFP4 W4A8 int8 path below instead" — it does
-        // NOT: cu/mmq_nvfp4_w4a8.cu is a fail-closed stub on every non-120a arch (the
-        // block-scale int8 form is the same sm_120a-only MMA kind). What an sm_100a build
-        // actually runs for NVFP4 weights today is the dp4a decode matvec family
-        // (cu/qmatvec.cu, `qmatvec_nvfp4_dp4a_sel*` — plain int8 dp4a, compiles clean on
-        // sm_100a) plus cuBLAS/cuBLASLt-class prefill. B200's own FP4 tensor cores are the
-        // tcgen05 family, a different programming model no memra kernel targets yet; a tuned
-        // sm_100a FP4/W4A8 prefill is a port lane, not a flag flip.
+        // instruction encoding. B200 (sm_100a) uses the accuracy-safe NVFP4 W4A8 int8
+        // path below instead, so omit only that unused opt-in kernel from its fatbin.
         if cuda_arch == "100a" && src == "cu/qmatvec_gemm.cu" {
             args.push("-DMEMRA_DISABLE_NATIVE_FP4=1");
         }
@@ -499,18 +485,9 @@ fn main() {
             // accumulator (s32 vs f32) as its ONE free variable, to price v2's
             // "what is left is the f32 accumulator" ceiling claim before anyone builds
             // a v3. Research-only: no dispatch seam, never linked into a serving path.
-            // Its f8f6f4 arm is guarded by __CUDA_ARCH__ >= 1200 inside the TU (>= 1000
-            // wrongly admitted sm_100a, the one arch that rejects the instruction — fixed
-            // lane/glm5-b200-prep-20260901), so it needs no portable stub (the s32 arm
-            // builds everywhere; every non-120a arch takes the fail-closed __trap() arm).
+            // Its f8f6f4 arm is guarded by __CUDA_ARCH__ >= 1000 inside the TU, so it
+            // needs no portable stub (the s32 arm builds everywhere).
             "cu/mmq_q8_0_f32acc.cu",
-            // MLA (multi-head latent attention) forward: the glm-dsa / glm5_next attention
-            // core. Portable CUDA C (no tensor-core intrinsics, no arch stub needed).
-            // Deliberately NOT compiled -fmad=false like dsv4_gpu.cu below: that flag serves
-            // that lane's bit-parity-with-oracle contract, while the MLA gates are maxdiff
-            // bounds (the online-softmax tiling already reorders accumulation vs the CPU
-            // oracle), so forbidding contraction would cost speed and buy nothing.
-            "cu/mla_attn.cu",
             // DeepSeek-V4-Flash trunk bring-up kernels + bf16 cuBLASLt GEMM (lane 4).
             // Portable CUDA C (no tensor-core intrinsics) — no arch stub needed. Compiled
             // with -fmad=false below: the kernels mirror the lane-3 CPU oracle's separate
@@ -553,11 +530,7 @@ fn main() {
                 mmq_src
             };
             println!("cargo:rerun-if-changed={compile_src}");
-            let stem = mmq_src
-                .split('/')
-                .next_back()
-                .unwrap()
-                .trim_end_matches(".cu");
+            let stem = mmq_src.split('/').last().unwrap().trim_end_matches(".cu");
             let obj = out.join(format!("{stem}.o"));
             let mut args: Vec<String> = vec![
                 "-gencode".into(),
@@ -566,15 +539,15 @@ fn main() {
                 "-std=c++17".into(),
                 "--expt-relaxed-constexpr".into(),
             ];
-            if mmq_src.ends_with("mmq_q45k.cu")
-                && let Some(x) = &q45k_x
-            {
-                args.push(format!("-DMMQ_X={x}"));
+            if mmq_src.ends_with("mmq_q45k.cu") {
+                if let Some(x) = &q45k_x {
+                    args.push(format!("-DMMQ_X={x}"));
+                }
             }
-            if mmq_src.ends_with("mmq_q4_0.cu")
-                && let Some(x) = &q4_x
-            {
-                args.push(format!("-DMMQ_X={x}"));
+            if mmq_src.ends_with("mmq_q4_0.cu") {
+                if let Some(x) = &q4_x {
+                    args.push(format!("-DMMQ_X={x}"));
+                }
             }
             if mmq_src.ends_with("mmq_nvfp4_w4a8.cu") {
                 if let Some(x) = &w4a8_x {
@@ -615,8 +588,10 @@ fn main() {
             // against the S32 arm's 16.06, so "f32 vs s32 accumulate" moved the MMA interval too.
             // The default arm now uses the block_scale form at the ue8m0 identity scale (bit-identical
             // product, 16.06 cyc), which is what makes the instrument single-variable.
-            if mmq_src.ends_with("mmq_q8_0_f32acc.cu") && accprobe_plain.as_deref() == Some("1") {
-                args.push("-DMEMRA_ACCPROBE_PLAIN_MMA".into());
+            if mmq_src.ends_with("mmq_q8_0_f32acc.cu") {
+                if accprobe_plain.as_deref() == Some("1") {
+                    args.push("-DMEMRA_ACCPROBE_PLAIN_MMA".into());
+                }
             }
             if mmq_src.ends_with("fa3_prefill.cu") && cuda_arch != "90a" {
                 args.push("-DMEMRA_FA3_STUB".into());

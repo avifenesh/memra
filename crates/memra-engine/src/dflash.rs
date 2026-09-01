@@ -163,47 +163,11 @@ pub fn dflash2_walk_greedy(
     anchor: u32,
     nd: usize,
 ) -> Vec<u32> {
-    dflash2_walk_greedy_q(
-        pred_codebook,
-        succ_codebook,
-        vocab,
-        rank,
-        top_k,
-        unary,
-        cand,
-        hproj,
-        anchor,
-        nd,
-    )
-    .0
-}
-
-/// [`dflash2_walk_greedy`] with the per-slot CONFIDENCE recorded (lane/glm5-loop-port,
-/// 2026-08-30): q[p] = softmax over the slot's candidate-set scores at T=1, of the chosen
-/// candidate — the greedy twin of `dflash2_walk_sampled`'s recorded `q_chosen` (same
-/// statistic family the owner's "take only high confidence offers" tau gate thresholds on
-/// the dspark route). The argmax selection is UNCHANGED (q is bookkeeping over the same
-/// scores, ~top_k exps per slot on host), so every existing greedy caller is byte-identical
-/// through the delegating wrapper. Pure, CPU-gateable like its siblings.
-#[allow(clippy::too_many_arguments)]
-pub fn dflash2_walk_greedy_q(
-    pred_codebook: &[u8],
-    succ_codebook: &[u8],
-    vocab: usize,
-    rank: usize,
-    top_k: usize,
-    unary: &[f32],
-    cand: &[u32],
-    hproj: &[f32],
-    anchor: u32,
-    nd: usize,
-) -> (Vec<u32>, Vec<f32>) {
     let (kk, r) = (top_k, rank);
     assert_eq!(unary.len(), nd * kk, "walk: unary shape");
     assert_eq!(cand.len(), nd * kk, "walk: candidate shape");
     assert_eq!(hproj.len(), nd * r, "walk: hidden-projection shape");
     let mut path = Vec::with_capacity(nd);
-    let mut q_chosen = Vec::with_capacity(nd);
     let mut prev = anchor;
     for p in 0..nd {
         assert!(
@@ -214,33 +178,24 @@ pub fn dflash2_walk_greedy_q(
         let hp = &hproj[p * r..(p + 1) * r];
         // gate = pred_row .* hidden_proj (shared across the candidate set)
         let gate: Vec<f32> = pr.iter().zip(hp).map(|(a, b)| a * b).collect();
-        let mut scores = vec![0f32; kk];
         let (mut best, mut bi) = (f32::NEG_INFINITY, 0usize);
-        for (k, s) in scores.iter_mut().enumerate() {
+        for k in 0..kk {
             let c = cand[p * kk + k] as usize;
             assert!(c < vocab, "walk: candidate {c} outside codebook vocab");
             let sr = cb_row(succ_codebook, c, r);
-            let mut acc = unary[p * kk + k];
+            let mut s = unary[p * kk + k];
             for j in 0..r {
-                acc += gate[j] * sr[j];
+                s += gate[j] * sr[j];
             }
-            *s = acc;
-            if acc > best {
-                best = acc;
+            if s > best {
+                best = s;
                 bi = k;
             }
         }
-        // Recorded confidence: softmax at T=1 over the candidate set (f64 accumulation,
-        // the sampled walk's numeric discipline), of the argmaxed candidate.
-        let mut z = 0f64;
-        for &s in &scores {
-            z += ((s - best) as f64).exp();
-        }
-        q_chosen.push(if z > 0.0 { (1.0 / z) as f32 } else { 1.0 });
         prev = cand[p * kk + bi];
         path.push(prev);
     }
-    (path, q_chosen)
+    path
 }
 
 impl Dflash2Head {
@@ -254,29 +209,6 @@ impl Dflash2Head {
         nd: usize,
     ) -> Vec<u32> {
         dflash2_walk_greedy(
-            &self.pred_codebook,
-            &self.succ_codebook,
-            self.vocab,
-            self.rank,
-            self.top_k,
-            unary,
-            cand,
-            hproj,
-            anchor,
-            nd,
-        )
-    }
-
-    /// Greedy walk with the per-slot confidence recorded — see `dflash2_walk_greedy_q`.
-    pub fn walk_greedy_q(
-        &self,
-        unary: &[f32],
-        cand: &[u32],
-        hproj: &[f32],
-        anchor: u32,
-        nd: usize,
-    ) -> (Vec<u32>, Vec<f32>) {
-        dflash2_walk_greedy_q(
             &self.pred_codebook,
             &self.succ_codebook,
             self.vocab,
@@ -1386,7 +1318,7 @@ impl DflashDraft {
             let (_info, bytes) = st
                 .raw(name)
                 .ok_or_else(|| format!("missing tensor {name}"))?;
-            e.htod(&bf16_to_f32(bytes))
+            Ok(e.htod(&bf16_to_f32(bytes))?)
         };
         // Precision policy (MEMRA_DFLASH_PREC seam): "q4" = all q4_0 (DEFAULT since
         // lane/dflash2-head-trim 2026-08-25, owner-ratified): measured on BOTH engaging
@@ -1399,7 +1331,10 @@ impl DflashDraft {
         // the 31B trunk); "bf16" = all bf16 (parity runs, no target). The asymmetric
         // "q5" arm was measured DEFECTIVE (acceptance 0.656 -> 0.424) and never landed.
         let prec_env = std::env::var("MEMRA_DFLASH_PREC").ok();
-        let prec = dflash_precision(prec_env.as_deref())?;
+        let prec = match dflash_precision(prec_env.as_deref()) {
+            Ok(prec) => prec,
+            Err(err) => return Err(err.into()),
+        };
         let upw = |name: &str| -> Result<GpuTensor, Box<dyn std::error::Error>> {
             let (info, bytes) = st
                 .raw(name)
@@ -1810,13 +1745,13 @@ impl DflashDraft {
         _in_f: usize,
         _out_f: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        e.matmul(w, x, t)
+        Ok(e.matmul(w, x, t)?)
     }
 
     /// DFlash2 conv `prepare` (reference GroupedDynamicCausalConv.prepare): projects
     /// the pre-conv rows to BOTH dynamic kernels, convolves the rows with base half 0
     /// + dyn half 0, and returns (convolved rows, the dyn projection) — `finish`
-    ///   reuses the SAME projection's half 1. Block-local causal shift (row 0 zero-pads).
+    /// reuses the SAME projection's half 1. Block-local causal shift (row 0 zero-pads).
     pub fn d2_conv_prepare(
         &self,
         e: &Engine,
@@ -1881,7 +1816,6 @@ impl DflashDraft {
     /// (~nd*(2k+rank) floats — the same per-round sync slot the markov chain's token
     /// readback occupies), then the host codebook walk. Returns the nd drafted tokens
     /// (mask-fill rows 1..b-1; the anchor row is not a draft).
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub fn dflash2_propose_greedy(
         &self,
         e: &Engine,
@@ -1892,27 +1826,6 @@ impl DflashDraft {
         anchor: u32,
         d2t: Option<&[u32]>,
     ) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
-        Ok(self
-            .dflash2_propose_greedy_q(e, dl, rows, nd, n_vocab, anchor, d2t)?
-            .0)
-    }
-
-    /// [`Self::dflash2_propose_greedy`] with the walk's per-slot confidence returned
-    /// (lane/glm5-loop-port, 2026-08-30): q[p] = the chosen candidate's softmax mass over
-    /// its slot's candidate set at T=1 — the statistic the glm5 loop's MEMRA_SPEC_PMIN
-    /// tau-slot truncation thresholds on. Same walk, same path, same one-DtoH sync slot.
-    #[allow(clippy::too_many_arguments)]
-    // allow: mirrors the greedy propose contract it wraps
-    pub fn dflash2_propose_greedy_q(
-        &self,
-        e: &Engine,
-        dl: &CudaSlice<f32>,
-        rows: &CudaSlice<f32>,
-        nd: usize,
-        n_vocab: usize,
-        anchor: u32,
-        d2t: Option<&[u32]>,
-    ) -> Result<(Vec<u32>, Vec<f32>), Box<dyn std::error::Error>> {
         let d2 = self
             .dflash2
             .as_ref()
@@ -1937,7 +1850,7 @@ impl DflashDraft {
             }
         }
         let hproj = e.dtoh(&hproj_d)?;
-        Ok(d2.walk_greedy_q(&unary, &cand, &hproj, anchor, nd))
+        Ok(d2.walk_greedy(&unary, &cand, &hproj, anchor, nd))
     }
 
     /// DFlash2 proposal, SAMPLED arm (reference `DFlash2DraftModel.propose` at T>0): same
@@ -2198,23 +2111,23 @@ impl DflashDraft {
             e.copy_into(&mut v, 0, &v0c, ctx * nkv * hd)?;
             e.copy_into(&mut v, ctx * nkv * hd, &v0b, b * nkv * hd)?;
 
-            if li == 0
-                && let Ok(dir) = std::env::var("MEMRA_DFLASH_DUMP")
-            {
-                let v = e.dtoh(&q0)?;
-                let bytes: Vec<u8> = v.iter().flat_map(|f| f.to_le_bytes()).collect();
-                std::fs::write(format!("{dir}/memra-l0_q0.f32"), bytes)?;
+            if li == 0 {
+                if let Ok(dir) = std::env::var("MEMRA_DFLASH_DUMP") {
+                    let v = e.dtoh(&q0)?;
+                    let bytes: Vec<u8> = v.iter().flat_map(|f| f.to_le_bytes()).collect();
+                    std::fs::write(format!("{dir}/memra-l0_q0.f32"), bytes)?;
+                }
             }
             let mut q = e.uninit(b * nh * hd)?;
             let mut k = e.uninit((ctx + b) * nkv * hd)?;
             // rms over head_dim rows: q has b*nh rows, k has (ctx+b)*nkv rows.
             e.rms_norm(&q0, &l.q_norm, &mut q, hd, b * nh, c.eps)?;
-            if li == 0
-                && let Ok(dir) = std::env::var("MEMRA_DFLASH_DUMP")
-            {
-                let v = e.dtoh(&q)?;
-                let bytes: Vec<u8> = v.iter().flat_map(|f| f.to_le_bytes()).collect();
-                std::fs::write(format!("{dir}/memra-l0_qn.f32"), bytes)?;
+            if li == 0 {
+                if let Ok(dir) = std::env::var("MEMRA_DFLASH_DUMP") {
+                    let v = e.dtoh(&q)?;
+                    let bytes: Vec<u8> = v.iter().flat_map(|f| f.to_le_bytes()).collect();
+                    std::fs::write(format!("{dir}/memra-l0_qn.f32"), bytes)?;
+                }
             }
             e.rms_norm(&k0, &l.k_norm, &mut k, hd, (ctx + b) * nkv, c.eps)?;
 
@@ -2223,19 +2136,19 @@ impl DflashDraft {
             if !norope {
                 self.rope_rows(e, &mut q, &pos_blk, nh, b)?;
             }
-            if li == 0
-                && let Ok(dir) = std::env::var("MEMRA_DFLASH_DUMP")
-            {
-                let dump = |name: &str,
-                            t: &cudarc::driver::CudaSlice<f32>|
-                 -> Result<(), Box<dyn std::error::Error>> {
-                    let v = e.dtoh(t)?;
-                    let bytes: Vec<u8> = v.iter().flat_map(|f| f.to_le_bytes()).collect();
-                    std::fs::write(format!("{dir}/memra-l0_{name}.f32"), bytes)?;
-                    Ok(())
-                };
-                dump("xn", &xn)?;
-                dump("q_prerope", &q)?;
+            if li == 0 {
+                if let Ok(dir) = std::env::var("MEMRA_DFLASH_DUMP") {
+                    let dump = |name: &str,
+                                t: &cudarc::driver::CudaSlice<f32>|
+                     -> Result<(), Box<dyn std::error::Error>> {
+                        let v = e.dtoh(t)?;
+                        let bytes: Vec<u8> = v.iter().flat_map(|f| f.to_le_bytes()).collect();
+                        std::fs::write(format!("{dir}/memra-l0_{name}.f32"), bytes)?;
+                        Ok(())
+                    };
+                    dump("xn", &xn)?;
+                    dump("q_prerope", &q)?;
+                }
             }
             // k rows are laid out [row, nkv, hd] with row-major tokens — rope_neox expects
             // (n_heads, n_tokens); ctx and block ropes run as one call over ctx+b tokens.
@@ -2273,21 +2186,21 @@ impl DflashDraft {
             }
             let mut x1 = e.uninit(b * h)?;
             e.add(&o, &x, &mut x1, b * h)?;
-            if li == 0
-                && let Ok(dir) = std::env::var("MEMRA_DFLASH_DUMP")
-            {
-                let dump = |name: &str,
-                            t: &cudarc::driver::CudaSlice<f32>|
-                 -> Result<(), Box<dyn std::error::Error>> {
-                    let v = e.dtoh(t)?;
-                    let bytes: Vec<u8> = v.iter().flat_map(|f| f.to_le_bytes()).collect();
-                    std::fs::write(format!("{dir}/memra-l0_{name}.f32"), bytes)?;
-                    Ok(())
-                };
-                dump("q", &q)?;
-                dump("k", &k)?;
-                dump("attn", &attn)?;
-                dump("x1", &x1)?;
+            if li == 0 {
+                if let Ok(dir) = std::env::var("MEMRA_DFLASH_DUMP") {
+                    let dump = |name: &str,
+                                t: &cudarc::driver::CudaSlice<f32>|
+                     -> Result<(), Box<dyn std::error::Error>> {
+                        let v = e.dtoh(t)?;
+                        let bytes: Vec<u8> = v.iter().flat_map(|f| f.to_le_bytes()).collect();
+                        std::fs::write(format!("{dir}/memra-l0_{name}.f32"), bytes)?;
+                        Ok(())
+                    };
+                    dump("q", &q)?;
+                    dump("k", &k)?;
+                    dump("attn", &attn)?;
+                    dump("x1", &x1)?;
+                }
             }
 
             // mlp (DFlash2: the same conv wrap — prepare on the post-ln rows, mlp on
@@ -2332,12 +2245,6 @@ pub struct DflashKv {
     pub v: Vec<CudaSlice<f32>>,
     pub len: usize,
     pub cap: usize,
-    /// Trailing rows the drafter can still observe: `sliding_window + block_size`. Carried on
-    /// the KV (not recomputed at call sites) so an export and an import cannot disagree about
-    /// the geometry — see `DsparkSpecSession::draft_tail_rows`.
-    window_rows: usize,
-    /// `n_kv * head_dim * size_of::<f32>()` — the row unit for tail copies.
-    row_bytes: usize,
 }
 
 impl DflashKv {
@@ -2353,14 +2260,7 @@ impl DflashKv {
             k.push(e.uninit((cap + cfg.block_size) * rowsz)?);
             v.push(e.uninit((cap + cfg.block_size) * rowsz)?);
         }
-        Ok(Self {
-            k,
-            v,
-            len: 0,
-            cap,
-            window_rows: cfg.sliding_window.saturating_add(cfg.block_size),
-            row_bytes: rowsz * std::mem::size_of::<f32>(),
-        })
+        Ok(Self { k, v, len: 0, cap })
     }
 }
 
@@ -2533,154 +2433,6 @@ fn emit_accepted_run(out: &mut Vec<u32>, accepted: &[u32], eos: &[u32], max_new:
     false
 }
 
-// ===== THE DRAFT-SOURCE SEAM (lane/glm5-extract2, phase 2 of the extraction program) ======
-//
-// `DraftSourcePlan` (memra-gguf `model_plan.rs`) has always been general: it is the PLAN's
-// statement of where a family's drafts come from. What was glm5-named was everything on the
-// ENGINE side of it — the loaded-drafter holder, the flag-to-drafter load contract, and the
-// tap-layer resolution. All three are family-agnostic by content, so they live here, in the
-// general DFlash module, and glm5 is a CONSUMER.
-//
-// WHAT IS DELIBERATELY *NOT* HERE, and why (phase-1 discipline, restated):
-// the PER-SESSION draft state (`glm_spec::Glm5DraftState`) and the source-keyed round /
-// maintenance walks. Those are not family-agnostic today: each arm reaches into the family's
-// own cache planes (glm5's MLA latent plane, `HcTapSink` hc-contract taps, the KDA rollback
-// stash) and the retained-q type carries the family's rank space. A trait over them would have
-// exactly ONE implementor whose associated types are all glm5 types — a decorative trait cut
-// blind, on the hottest file in the lane program. The trigger for that cut is the SECOND
-// hybrid spec family's session state, which is what tells us which half of the state is
-// shared. The trait sketch is banked in the lane doc so the second consumer starts from it,
-// not from scratch.
-
-/// A loaded alternate draft source: the drafter weights plus the byte identity they were
-/// pinned by. Model-level (loaded ONCE per model, on the head engine where the trunk lm_head
-/// it projects through lives — the MTP-head placement law); per-session state is the family's.
-///
-/// Generalized from `glm_spec::Glm5DflashDrafter`, which stays re-exported under its old name
-/// for the glm5 call sites and gates.
-pub struct DflashDrafter {
-    pub draft: DflashDraft,
-    /// First 8 hex of sha256(model.safetensors) — the boot-receipt identity pin
-    /// (`b33c0347` for the probe-pinned incoai/GLM-5.3-Flash-DFlash2 @ dc77ff1c bytes).
-    pub sha8: String,
-}
-
-/// Resolve a drafter's tap layers against the trunk it will read features from.
-///
-/// PURE (no env, no engine): the drafter's own `target_layer_ids`, plus a caller-supplied
-/// `shift` and the trunk bound. `shift` exists because the tap-shift RED ARM is a GATE
-/// INSTRUMENT owned by the family that runs the gate (`MEMRA_GLM5_*_GATE_RED` is classified
-/// as an instrument, never a serving flag, and never generalized) — the family reads its own
-/// red-arm env, prints its own tag, and passes the shift in here.
-pub fn resolve_tap_layers(
-    target_layer_ids: &[usize],
-    n_trunk: usize,
-    shift: usize,
-    what: &str,
-) -> Result<Vec<usize>, String> {
-    if target_layer_ids.is_empty() {
-        return Err(format!("{what} drafter config carries no target_layer_ids"));
-    }
-    let taps: Vec<usize> = target_layer_ids.iter().map(|t| t + shift).collect();
-    if let Some(&bad) = taps.iter().find(|&&t| t >= n_trunk) {
-        return Err(format!(
-            "{what} tap layer {bad} is outside the {n_trunk}-layer trunk"
-        ));
-    }
-    Ok(taps)
-}
-
-/// Load a DFlash2 drafter named by `flag` from `dir`, validating every contract that binds a
-/// drafter to a TARGET — family-agnostic, because each one is a property of the pair, not of
-/// the family:
-///
-/// * the checkpoint is a `DFlash2DraftModel` (the selector family is the only draft source
-///   this seam serves);
-/// * `cfg.hidden == n_embd` (the drafter consumes the target's features and projects through
-///   the target's embed/lm_head);
-/// * `cfg.target_layer_ids` name valid trunk layers;
-/// * `cfg.mask_token_id` is inside the target vocab.
-///
-/// A set flag that cannot load is a LOUD failure, never a silent plain fallback. Every error
-/// is prefixed `{flag}={dir}` so the operator sees the flag they typed; the glm5 call site's
-/// message bytes are unchanged by construction.
-pub fn load_drafter(
-    e: &Engine,
-    dir: &std::path::Path,
-    flag: &str,
-    n_trunk: usize,
-    n_embd: usize,
-    n_vocab: usize,
-) -> Result<DflashDrafter, String> {
-    let dpath = dir.display();
-    let draft = DflashDraft::load(e, dir)
-        .map_err(|err| format!("{flag}={dpath}: drafter load failed: {err}"))?;
-    if draft.dflash2.is_none() {
-        return Err(format!(
-            "{flag}={dpath}: checkpoint is not a DFlash2DraftModel \
-             (the glm5 draft source is the selector family only)"
-        ));
-    }
-    if draft.cfg.hidden != n_embd {
-        return Err(format!(
-            "{flag}={dpath}: drafter hidden {} != target n_embd {n_embd} \
-             (the drafter consumes target features and the target's embed/lm_head)",
-            draft.cfg.hidden
-        ));
-    }
-    if draft.cfg.target_layer_ids.is_empty()
-        || draft.cfg.target_layer_ids.iter().any(|&t| t >= n_trunk)
-    {
-        return Err(format!(
-            "{flag}={dpath}: target_layer_ids {:?} do not name valid \
-             trunk layers (n_trunk {n_trunk})",
-            draft.cfg.target_layer_ids
-        ));
-    }
-    if draft.cfg.mask_token_id as usize >= n_vocab {
-        return Err(format!(
-            "{flag}={dpath}: mask token {} outside the target vocab {n_vocab}",
-            draft.cfg.mask_token_id
-        ));
-    }
-    let sha8 = crate::hybrid::sha256_file_hex8(&dir.join("model.safetensors"))
-        .map_err(|err| format!("{flag}={dpath}: sha256 pin: {err}"))?;
-    Ok(DflashDrafter { draft, sha8 })
-}
-
-#[cfg(test)]
-mod draft_source_seam_tests {
-    use super::resolve_tap_layers;
-
-    #[test]
-    fn taps_resolve_and_the_shift_is_the_callers() {
-        assert_eq!(
-            resolve_tap_layers(&[1, 12, 23], 46, 0, "glm5 DFlash2").unwrap(),
-            vec![1, 12, 23]
-        );
-        // the red arm's +1 rides in as a parameter, not as an env read in here
-        assert_eq!(
-            resolve_tap_layers(&[1, 12, 23], 46, 1, "glm5 DFlash2").unwrap(),
-            vec![2, 13, 24]
-        );
-    }
-
-    #[test]
-    fn empty_and_out_of_trunk_taps_refuse_by_name() {
-        let err = resolve_tap_layers(&[], 46, 0, "glm5 DFlash2").unwrap_err();
-        assert!(err.contains("no target_layer_ids"), "{err}");
-        let err = resolve_tap_layers(&[1, 46], 46, 0, "glm5 DFlash2").unwrap_err();
-        assert!(
-            err.contains("tap layer 46 is outside the 46-layer trunk"),
-            "{err}"
-        );
-        // the SHIFTED tap is what gets bounds-checked — the red arm must not be able to
-        // walk off the trunk silently
-        let err = resolve_tap_layers(&[45], 46, 1, "glm5 DFlash2").unwrap_err();
-        assert!(err.contains("tap layer 46 is outside"), "{err}");
-    }
-}
-
 #[cfg(test)]
 mod emit_budget_tests {
     use super::emit_accepted_run;
@@ -2723,7 +2475,6 @@ impl crate::hybrid::HybridModel {
         max_new: usize,
         eos: &[u32],
     ) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
-        self.refuse_hyper("generate_spec_dflash")?;
         use crate::cache::{Cache, DflashTapSink};
         let n_embd = self.cfg.n_embd as usize;
         let c = &draft.cfg;
@@ -2900,7 +2651,7 @@ impl crate::hybrid::HybridModel {
                 eprintln!(
                     "[dflash r] start={start} last={last}\n  draft={:?}\n  vam  ={:?}",
                     &block[1..],
-                    vam
+                    &vam
                 );
             }
 
@@ -2918,7 +2669,7 @@ impl crate::hybrid::HybridModel {
             if emit_accepted_run(&mut out, &block[1..=m], eos, max_new) {
                 break 'outer;
             }
-            let next = vam[m];
+            let next = vam[m] as u32;
 
             // ---- commit/rollback: keep m+1 of the b appended rows ----
             let keep = m + 1;
@@ -3015,10 +2766,10 @@ impl DsparkSnapBatch {
                 let (ps, _g1) = rl.ssm_state.device_ptr(s);
                 let (dc, _g2) = snap.conv[il].as_ref().unwrap().device_ptr(s);
                 let (ds, _g3) = snap.ssm[il].as_ref().unwrap().device_ptr(s);
-                host_conv[k] = pc;
-                host_conv[n + k] = dc;
-                host_ssm[k] = ps;
-                host_ssm[n + k] = ds;
+                host_conv[k] = pc as u64;
+                host_conv[n + k] = dc as u64;
+                host_ssm[k] = ps as u64;
+                host_ssm[n + k] = ds as u64;
             }
         }
         let conv_table = e.htod_u64(&host_conv)?;
@@ -3053,7 +2804,7 @@ impl DsparkSnapBatch {
             for (k, &il) in self.lin.iter().enumerate() {
                 let rl = cache.recur[il].as_ref().unwrap();
                 let (ps, _g) = rl.ssm_state.device_ptr(s);
-                self.host_ssm[k] = ps;
+                self.host_ssm[k] = ps as u64;
             }
         }
         e.htod_u64_into(&self.host_ssm, &mut self.ssm_table)?;
@@ -3071,7 +2822,6 @@ impl DsparkSnapBatch {
 // Exactness contract unchanged: identical stream to plain greedy BY CONSTRUCTION (the
 // target's verify argmax decides every committed token).
 impl crate::hybrid::HybridModel {
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn generate_spec_dspark(
         &self,
         e: &Engine,
@@ -3081,7 +2831,6 @@ impl crate::hybrid::HybridModel {
         eos: &[u32],
         sampling: Option<&crate::spec::SpecSampling>,
     ) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
-        self.refuse_hyper("generate_spec_dspark")?;
         use crate::cache::{Cache, DflashTapSink};
         assert!(
             !self.uses_gemma_program(),
@@ -3096,15 +2845,14 @@ impl crate::hybrid::HybridModel {
         // non-identity penalties would silently serve the UNPENALIZED greedy stream —
         // exactly the H-class silent-program-switch this route refuses everywhere else.
         // Penalized greedy stays on the plain path (worker admission owns the exclusion).
-        if let Some(s) = sampling
-            && s.temp <= 0.0
-            && s.pen_on()
-        {
-            return Err(
-                "dspark spec at temp==0 is the greedy route and would silently drop \
+        if let Some(s) = sampling {
+            if s.temp <= 0.0 && s.pen_on() {
+                return Err(
+                    "dspark spec at temp==0 is the greedy route and would silently drop \
                      the request's penalties; penalized greedy is served on the plain path"
-                    .into(),
-            );
+                        .into(),
+                );
+            }
         }
         // Penalized-sampled state: the session window (pen_window_seed — one definition
         // across both spec routes), extended with every committed token; each round's
@@ -3288,10 +3036,6 @@ impl crate::hybrid::HybridModel {
                     .as_ref()
                     .filter(|m| m.d2t_from_target_head)
                     .and_then(|m| m.shared_head_head.as_ref().zip(m.d2t.as_ref()))
-                    // MEMRA_MTP_SKIP stub: the same target-head trimmed rows, parked in
-                    // `dflash_trim` because the embedded MTP block was skipped (hybrid.rs;
-                    // rows are target-head by construction; the loader refuses otherwise).
-                    .or_else(|| self.dflash_trim.as_ref().map(|t| (&t.head, &t.d2t)))
                     .filter(|(_, d2t)| !d2t.is_empty())
             } else {
                 None
@@ -3434,12 +3178,12 @@ impl crate::hybrid::HybridModel {
             // proposals built `cand` at the walk; deferred greedy rounds build it after
             // the merged readback — the bytes are identical (chain_d is written before
             // either sync).
-            if let Some(chain_d) = chain_dev.as_ref()
-                && !deferred
-            {
-                let chain = e.dtoh_u32(chain_d)?;
-                cand.push(last);
-                cand.extend_from_slice(&chain[1..]);
+            if let Some(chain_d) = chain_dev.as_ref() {
+                if !deferred {
+                    let chain = e.dtoh_u32(chain_d)?;
+                    cand.push(last);
+                    cand.extend_from_slice(&chain[1..]);
+                }
             }
             ns_draft += clock(stats, e).duration_since(t0).as_nanos() as u64;
 
@@ -3641,8 +3385,6 @@ impl crate::hybrid::HybridModel {
                     }
                     // host-side state capture (NO device snapshot copies — two extra
                     // device snapshots per round OOM'd beside the 15GB trunk)
-                    #[allow(clippy::type_complexity)]
-                    // allow: one-shot composite type; naming it would hide the shape that matters at the call site
                     let capture = |cache: &Cache| -> Result<
                         (usize, Vec<Option<usize>>, Vec<(Vec<f32>, Vec<f32>)>),
                         Box<dyn std::error::Error>,
@@ -3844,219 +3586,6 @@ fn dspark_commit_limit(
 }
 
 impl DsparkSpecSession {
-    /// How many trailing draft-KV rows a restore must carry for the drafter to be
-    /// indistinguishable from one that cold-primed: the sliding window plus one block.
-    ///
-    /// WHY A TAIL IS SUFFICIENT, and why this is a fact about THIS export rather than a hope:
-    /// every DFlash2 draft layer is `sliding_attention` (the port asserts
-    /// `cfg.layer_sliding.iter().all(|&s| s)` at load and refuses otherwise), so the windowed
-    /// SDPA never reads a key below the current block's window floor
-    /// (`sdpa_naive_w_lo`, whose bit-identity at Tkv 4104 and legacy launch failure are both
-    /// pinned by kernel_check). A round at context `pos` therefore reads rows
-    /// `[pos - window + 1, pos + block)` and nothing older. Storing that tail is storing
-    /// everything the drafter can observe.
-    ///
-    /// SIZE, the reason this is affordable at all: 5 layers x (2048 + 16) rows x 8 kv x 128
-    /// dim x 4 B x 2 (k+v) is ~85 MB, against ~1,057 MB for the trunk planes of a
-    /// 30k-token entry. Storing the FULL draft history instead would be ~1,229 MB — more than
-    /// the trunk entry itself — which is what makes the tail the only viable form.
-    pub fn draft_tail_rows(&self) -> usize {
-        self.dkv.cfg_window_rows()
-    }
-
-    /// The drafter's KV, for a worker publishing the tail into its cross-request prefix cache.
-    pub fn draft_kv(&self) -> &DflashKv {
-        &self.dkv
-    }
-}
-
-/// The tail-import refusal arms, PURE so they are testable without CUDA. These are the fence
-/// in front of the deliberate uninitialised-rows-below-`base` design: rows the import does not
-/// copy are unreadable ONLY if the tail actually covers the drafter's window ending exactly at
-/// the logical length — every arm here is what makes that "only if" hold. A refusal that
-/// silently stopped firing would let a session attend garbage without crashing, which is the
-/// silent-quality-loss class, so each arm names itself.
-#[allow(clippy::too_many_arguments)]
-pub fn tail_geometry_ok(
-    tail_layers: usize,
-    tail_row_bytes: usize,
-    tail_base: usize,
-    tail_rows: usize,
-    tail_len: usize,
-    kv_layers: usize,
-    kv_row_bytes: usize,
-    kv_window_rows: usize,
-    cap: usize,
-) -> Result<(), &'static str> {
-    if tail_layers != kv_layers {
-        return Err("layer count differs from the live drafter");
-    }
-    if tail_row_bytes != kv_row_bytes {
-        return Err("row geometry differs from the live drafter");
-    }
-    if tail_len > cap {
-        return Err("logical length exceeds the session cap");
-    }
-    if tail_base + tail_rows != tail_len {
-        return Err("tail does not end at its own logical length");
-    }
-    // The whole point of the tail: it must cover everything a round can read. A shorter
-    // tail than the window is only acceptable when the tail IS the entire history.
-    if tail_rows < kv_window_rows.min(tail_len) {
-        return Err("tail shorter than the drafter's readable window");
-    }
-    Ok(())
-}
-
-/// A DFlash draft-KV tail, per drafter layer, ready to ride a cross-request prefix-cache
-/// entry: `(k, v)` f32 rows covering absolute positions `[base, base + rows)`.
-///
-/// Only the tail travels, and that is a fact about this export rather than an optimisation:
-/// every DFlash2 draft layer is `sliding_attention` (the port asserts it at load), so a round
-/// at context `pos` reads rows `[pos - window + 1, pos + block)` and nothing older. Storing
-/// the whole history for a 30k-token prompt would be ~1,229 MB — MORE than the ~1,057 MB of
-/// trunk planes it would ride with; the tail is ~85 MB.
-pub struct DflashKvTail {
-    pub layers: Vec<(CudaSlice<f32>, CudaSlice<f32>)>,
-    /// Absolute position of the first stored row.
-    pub base: usize,
-    /// Rows stored per layer.
-    pub rows: usize,
-    /// Logical length the KV had when exported (`= pos`), so an import can restore the same
-    /// absolute row addressing the rope positions were baked against.
-    pub len: usize,
-    /// Bytes per row per layer, carried so an import cannot disagree about the geometry.
-    pub row_bytes: usize,
-}
-
-impl DflashKvTail {
-    pub fn bytes(&self) -> usize {
-        self.layers.len() * self.rows * self.row_bytes * 2
-    }
-}
-
-impl DflashKv {
-    /// Copy out the readable tail ending at `upto` (see `DflashKvTail`). `None` when there is
-    /// nothing to publish or an allocation fails — publication is always optional.
-    ///
-    /// `upto` IS NOT `self.len`, and conflating them was the bug the first exactness-gate run
-    /// caught: publication happens at the scheduler's drain sweep, by which time the session
-    /// has committed generated rows, so `len` had run 35 rows past the capture boundary and
-    /// every restore was refused with `draft KV len 30364 != prompt 30329`. The trunk planes
-    /// are copied at the capture `pos` for the same reason; the tail must agree with them.
-    pub fn export_tail(&self, e: &Engine, upto: usize) -> Option<DflashKvTail> {
-        if upto == 0 || upto > self.len {
-            return None;
-        }
-        let rowsz = self.row_bytes / std::mem::size_of::<f32>();
-        let rows = self.window_rows.min(upto);
-        let base = upto - rows;
-        let mut layers = Vec::with_capacity(self.k.len());
-        for li in 0..self.k.len() {
-            let (Ok(mut k), Ok(mut v)) = (e.uninit(rows * rowsz), e.uninit(rows * rowsz)) else {
-                return None;
-            };
-            if e.copy_range_into(&mut k, 0, &self.k[li], base * rowsz, rows * rowsz)
-                .is_err()
-                || e.copy_range_into(&mut v, 0, &self.v[li], base * rowsz, rows * rowsz)
-                    .is_err()
-            {
-                return None;
-            }
-            layers.push((k, v));
-        }
-        Some(DflashKvTail {
-            layers,
-            base,
-            rows,
-            len: upto,
-            row_bytes: self.row_bytes,
-        })
-    }
-
-    /// Rebuild a draft KV from a published tail: a fresh allocation at `cap`, the tail copied
-    /// back to the SAME absolute rows it came from, and `len` restored so the next round
-    /// addresses positions exactly as a cold-primed session would.
-    ///
-    /// Rows below `tail.base` are ZEROED, not left uninitialised. The clipped SDPA never reads
-    /// below the block's window floor, but the legacy full-scan kernel
-    /// (`MEMRA_DFLASH2_SDPA_CLIP=0`, the rollback seam) scans EVERY row into the score and the
-    /// output, relying on masked rows contributing exactly zero — an identity that holds only
-    /// for finite data (`0.0 * NaN = NaN`, and an uninit K row can produce a NaN score that
-    /// poisons the softmax sum). Zeros keep that identity on both kernel arms, so a clip
-    /// rollback on a restore-armed box stays byte-exact instead of decoding silent garbage
-    /// (review round 3). Rows above `tail.len` stay uninit — equally unwritten and unread in
-    /// the cold path, so restored matches cold there.
-    ///
-    /// This function still REFUSES rather than trusts the window math — if the tail does not
-    /// cover the window, the caller gets `None` and must cold-prime.
-    pub fn from_tail(e: &Engine, cfg: &DflashCfg, cap: usize, tail: &DflashKvTail) -> Option<Self> {
-        let mut kv = Self::new(e, cfg, cap).ok()?;
-        if let Err(why) = tail_geometry_ok(
-            tail.layers.len(),
-            tail.row_bytes,
-            tail.base,
-            tail.rows,
-            tail.len,
-            kv.k.len(),
-            kv.row_bytes,
-            kv.window_rows,
-            cap,
-        ) {
-            eprintln!("[dspark] tail import refused: {why}");
-            return None;
-        }
-        let rowsz = kv.row_bytes / std::mem::size_of::<f32>();
-        for li in 0..kv.k.len() {
-            let (src_k, src_v) = &tail.layers[li];
-            if tail.base > 0 {
-                // Finite zeros below the tail: the legacy full-scan kernel reads these rows
-                // (see the doc above); NaN in either K or V poisons the row's contribution.
-                e.memset_zeros_view(&mut kv.k[li].slice_mut(0..tail.base * rowsz))
-                    .ok()?;
-                e.memset_zeros_view(&mut kv.v[li].slice_mut(0..tail.base * rowsz))
-                    .ok()?;
-            }
-            e.copy_range_into(
-                &mut kv.k[li],
-                tail.base * rowsz,
-                src_k,
-                0,
-                tail.rows * rowsz,
-            )
-            .ok()?;
-            e.copy_range_into(
-                &mut kv.v[li],
-                tail.base * rowsz,
-                src_v,
-                0,
-                tail.rows * rowsz,
-            )
-            .ok()?;
-        }
-        kv.len = tail.len;
-        Some(kv)
-    }
-
-    /// Rows a restore must carry (see `DsparkSpecSession::draft_tail_rows`). Stored here
-    /// because `DflashKv` owns the row geometry; the value comes from the drafter cfg.
-    pub fn cfg_window_rows(&self) -> usize {
-        self.window_rows
-    }
-
-    /// Bytes per row per layer (`n_kv * head_dim * 4`), the unit both the export and the
-    /// import address rows in.
-    pub fn row_bytes(&self) -> usize {
-        self.row_bytes
-    }
-
-    /// Number of draft layers, i.e. how many per-layer planes an export produces.
-    pub fn n_layer(&self) -> usize {
-        self.k.len()
-    }
-}
-
-impl DsparkSpecSession {
     pub fn cache_max_ctx(&self) -> usize {
         self.max_ctx
     }
@@ -4081,8 +3610,8 @@ impl DsparkSpecSession {
     /// and nothing else does. `last` is the verify argmax at the LAST committed row — and
     /// verify-column argmax equality with plain decode is the very property the dspark E2E
     /// byte-identity gate pins (`dspark_q38_gate`: ALL EXACT). Handing (cache, last) to the
-    ///   batched path therefore continues the stream from a state indistinguishable from one
-    ///   the batched path produced itself.
+    /// batched path therefore continues the stream from a state indistinguishable from one
+    /// the batched path produced itself.
     ///
     /// Unlike the MTP twin there is no carried-pending shape: the round commits its bonus
     /// inside the burst, so a session at a burst boundary is ALWAYS in handoff shape. The
@@ -4122,15 +3651,14 @@ impl crate::hybrid::HybridModel {
         // accept walk's penalty arm). Penalties at temp==0 stay a LOUD refusal: the greedy
         // walk argmaxes RAW columns and would silently drop them — penalized greedy is
         // served exactly on the plain path (worker admission owns that exclusion).
-        if let Some(sp) = sampling.as_ref()
-            && sp.temp <= 0.0
-            && sp.pen_on()
-        {
-            return Err(
-                "dspark spec at temp==0 is the greedy route and would silently drop \
+        if let Some(sp) = sampling.as_ref() {
+            if sp.temp <= 0.0 && sp.pen_on() {
+                return Err(
+                    "dspark spec at temp==0 is the greedy route and would silently drop \
                      the request's penalties; penalized greedy is served on the plain path"
-                    .into(),
-            );
+                        .into(),
+                );
+            }
         }
         let n_embd = self.cfg.n_embd as usize;
         let c = &draft.cfg;
@@ -4217,7 +3745,6 @@ impl crate::hybrid::HybridModel {
                     pos: tp,
                     logits: logits.clone(),
                     last_h: Vec::new(),
-                    latent_tails: Vec::new(),
                 })
         } else {
             None
@@ -4255,28 +3782,18 @@ impl crate::hybrid::HybridModel {
     /// public budget, which may be larger than the per-tick scheduler quantum. Returns
     /// (tokens, drafted, accepted) for this burst — mid-request quantum overshoot stays
     /// public, while only the true request boundary clamps the committed cache prefix.
-    /// ADMISSION DEBT of this model's verify-graph pool, in bytes (lane/
+    /// ADMISSION DEBT of this model's dspark verify-graph pool, in bytes (lane/
     /// hermes-perf-fixes, 2026-08-23): the projected remaining growth the serve admission
     /// gate must reserve so sessions admitted while the pool is cold do not overcommit VRAM
-    /// the pool will hold (it grows monotonically with no eviction by design — the pool's
-    /// high-water is per-export and unknown until observed on the serving box; the 1.5 GiB
+    /// the pool will hold (it grows monotonically to a measured multi-GiB high-water —
+    /// 8,852 MiB on the q38 export — with no eviction by design; the 1.5 GiB
     /// SPEC_SHRINK_RESERVE never covered it). Projection contract and the self-measuring
     /// arithmetic live on [`crate::spec::dspark_vg_debt_projection`]; the observed bytes
-    /// come from the device graph mem pool (`Engine::device_graph_mem_reserved`).
-    ///
-    /// CHARGED BY STRUCT, not by which route filled it (lane/graph-launch-guard-sweep-
-    /// 20260831, fleet-peer refuted-read fix): the MTP spec route's verify-graph door
-    /// (`MEMRA_SPEC_VERIFY_GRAPH`, family default for GDN+MoE) fills the SAME
-    /// `dspark_vgraphs` pool with the same monotonic growth, and used to escape charging
-    /// because the door check named only the dspark flags. 0 when EVERY door is closed
-    /// (`MEMRA_DSPARK_VERIFY_GRAPH=0` and the MTP door off), frozen
-    /// (`MEMRA_DSPARK_VG_MAX=0`), or the pool has not captured yet.
+    /// come from the device graph mem pool (`Engine::device_graph_mem_reserved`). 0 when
+    /// the door is closed (`MEMRA_DSPARK_VERIFY_GRAPH=0`), frozen (`MEMRA_DSPARK_VG_MAX=0`),
+    /// or the pool has not captured yet.
     pub fn dspark_vg_admission_debt(&self, e: &Engine) -> usize {
-        let dspark_door =
-            crate::spec::dspark_verify_graph_serve_on() || crate::spec::dspark_verify_graph_on();
-        let mtp_door =
-            crate::spec::spec_verify_graph_env().unwrap_or_else(|| self.vgraph_family_default());
-        if !dspark_door && !mtp_door {
+        if !crate::spec::dspark_verify_graph_serve_on() && !crate::spec::dspark_verify_graph_on() {
             return 0;
         }
         let reserved = e.device_graph_mem_reserved();
@@ -4310,129 +3827,6 @@ impl crate::hybrid::HybridModel {
     /// the new user turn continues past it) — `done` resets here. Callers must pass a
     /// NON-EMPTY suffix for a `done` session (an empty-suffix continuation of a finished
     /// stream would re-emit from a terminal state); the worker's probe enforces it.
-    /// Re-arm a dspark session from a RESTORED trunk cache plus a published draft tail —
-    /// the long-answer half of lane/dspark-draft-plane-20260827.
-    ///
-    /// WHY THIS EXISTS. `dspark_spec_session_new` must prime the full prompt, because the draft
-    /// KV derives from trunk hidden FEATURES the prime produces as a side effect. A cache hit
-    /// returns trunk K/V, not features, so before this a speculating request had to discard even
-    /// a full-prompt hit and re-prefill (~10 s at 30k tokens). With the drafter's readable tail
-    /// travelling on the entry, both halves are restorable and the discard is unnecessary.
-    ///
-    /// WHY IT IS EQUIVALENT TO A COLD PRIME, field by field:
-    /// * `cache` — the caller's restored trunk cache, already at `prompt.len()` with recurrent
-    ///   state, which is why only WHOLE-ENTRY hits are eligible (a GDN trunk cannot rebuild
-    ///   recurrent state mid-sequence, so there is no LCP arm here — same restriction as the
-    ///   cold path's full-prompt-only rule).
-    /// * `dkv` — byte-copied from the tail into the SAME absolute rows, so rope positions and
-    ///   every row the windowed SDPA can read are identical to what the prime produced.
-    /// * `last` — drawn from the entry's boundary logits with the request's own sampler, the
-    ///   same composition the cold path applies to its prime logits.
-    /// * `pen_hist` / `sctr` / `uctr` — seeded exactly as a cold session's are: the penalty
-    ///   window from this prompt, the Philox counters fresh, because randomness is
-    ///   session-owned by the frspec continuity law and a restore is a NEW session.
-    /// * `prefix_capture` — `None`: the entry this restored FROM already exists, so
-    ///   republishing the same key would be dropped by the worker's dedupe anyway.
-    ///
-    /// Refuses (rather than asserting) whenever the rebuilt draft KV and the cache disagree, so
-    /// a caller that gets `Err` simply cold-primes.
-    #[allow(clippy::too_many_arguments)]
-    pub fn dspark_spec_session_from_restored(
-        &self,
-        e: &Engine,
-        draft: &DflashDraft,
-        cache: crate::cache::Cache,
-        prompt: &[u32],
-        // Draft KV ALREADY rebuilt from the entry's tail by the caller (`DflashKv::from_tail`)
-        // while the prefix cache was borrowable. Taking the built KV rather than the tail is
-        // what keeps the ~85 MB tail in the entry for other requests — `from_tail` copies OUT
-        // of it, so no clone of the tail is ever needed.
-        dkv: DflashKv,
-        boundary_logits: &[f32],
-        sampling: Option<crate::spec::SpecSampling>,
-        ctx_cap: usize,
-    ) -> Result<DsparkSpecSession, Box<dyn std::error::Error>> {
-        assert!(
-            !self.uses_gemma_program(),
-            "gemma4 targets use the assistant-drafter route; dspark is the qwen-hybrid arm"
-        );
-        if let Some(sp) = sampling.as_ref()
-            && sp.temp <= 0.0
-            && sp.pen_on()
-        {
-            return Err("penalized greedy is served on the plain path".into());
-        }
-        let c = &draft.cfg;
-        let b = c.block_size;
-        let is_dflash2 = draft.dflash2.is_some();
-        let max_ctx = if is_dflash2 {
-            ctx_cap
-        } else {
-            ctx_cap.min(c.sliding_window)
-        };
-        let tp = prompt.len();
-        if !dspark_spec_prompt_fits(tp, ctx_cap, b, c.sliding_window, is_dflash2) {
-            return Err(format!("restored dspark session does not fit ctx {max_ctx}").into());
-        }
-        if cache.pos != tp {
-            return Err(format!(
-                "restored dspark session needs a whole-entry trunk cache: cache.pos {} !=                  prompt {tp}",
-                cache.pos
-            )
-            .into());
-        }
-        if dkv.len != tp {
-            return Err(format!("restored draft KV len {} != prompt {tp}", dkv.len).into());
-        }
-        if dkv.cap != max_ctx {
-            return Err(
-                format!("restored draft KV cap {} != session ctx {max_ctx}", dkv.cap).into(),
-            );
-        }
-        if boundary_logits.is_empty() {
-            return Err("restored dspark session needs the entry's boundary logits".into());
-        }
-        let mut sctr0 = 0u32;
-        let pen_hist: Vec<u32> = match sampling.as_ref().filter(|s| s.temp > 0.0 && s.pen_on()) {
-            Some(sp) => crate::spec::pen_window_seed(&[], prompt, sp.penalty_last_n),
-            None => Vec::new(),
-        };
-        let last = match sampling.as_ref().filter(|s| s.temp > 0.0) {
-            Some(sp) => crate::spec::sample_boundary_token(
-                e,
-                boundary_logits,
-                sp,
-                &pen_hist,
-                &mut sctr0,
-                "dspark-restore",
-            )?,
-            None => crate::forward::argmax(boundary_logits) as u32,
-        };
-        let nd = DsparkHarvest::for_draft(draft).n_drafts(b);
-        let vt_cap: usize = std::env::var("MEMRA_DFLASH_VERIFY_T")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(nd + 1)
-            .clamp(2, nd + 1);
-        Ok(DsparkSpecSession {
-            cache,
-            prefix_capture: None,
-            dkv,
-            last,
-            ctx_len: tp,
-            vt: vt_cap,
-            rounds: 0,
-            max_ctx,
-            done: false,
-            snapb: None,
-            snapb_off: !crate::spec::state_copy_batch_on(),
-            sampling,
-            sctr: sctr0,
-            uctr: 0,
-            pen_hist,
-        })
-    }
-
     pub fn dspark_spec_session_resume(
         &self,
         e: &Engine,
@@ -4500,7 +3894,8 @@ impl crate::hybrid::HybridModel {
         });
         let (logits, _h_seed, _hiddens) = self.prime_cache(e, suffix, &mut sess.cache, 0)?;
         let sp_pen = sess.sampling.filter(|s| s.temp > 0.0 && s.pen_on());
-        if let Some(sp) = sp_pen.as_ref() {
+        if sp_pen.is_some() {
+            let sp = sp_pen.as_ref().unwrap();
             sess.pen_hist = crate::spec::pen_window_seed(&sess.pen_hist, suffix, sp.penalty_last_n);
         }
         let last = match sess.sampling.filter(|s| s.temp > 0.0) {
@@ -4661,10 +4056,6 @@ impl crate::hybrid::HybridModel {
                     .as_ref()
                     .filter(|m| m.d2t_from_target_head)
                     .and_then(|m| m.shared_head_head.as_ref().zip(m.d2t.as_ref()))
-                    // MEMRA_MTP_SKIP stub: the same target-head trimmed rows, parked in
-                    // `dflash_trim` because the embedded MTP block was skipped (hybrid.rs;
-                    // rows are target-head by construction; the loader refuses otherwise).
-                    .or_else(|| self.dflash_trim.as_ref().map(|t| (&t.head, &t.d2t)))
                     .filter(|(_, d2t)| !d2t.is_empty())
             } else {
                 None
@@ -4782,12 +4173,12 @@ impl crate::hybrid::HybridModel {
             // Non-deferred greedy chain readback (the sampled and DFlash2 proposals
             // built `cand` at the walk; deferred rounds build it after the merged
             // readback — bytes identical, chain_d written before either sync).
-            if let Some(chain_d) = chain_dev.as_ref()
-                && !deferred
-            {
-                let chain = e.dtoh_u32(chain_d)?;
-                cand.push(sess.last);
-                cand.extend_from_slice(&chain[1..]);
+            if let Some(chain_d) = chain_dev.as_ref() {
+                if !deferred {
+                    let chain = e.dtoh_u32(chain_d)?;
+                    cand.push(sess.last);
+                    cand.extend_from_slice(&chain[1..]);
+                }
             }
 
             // ---- snapshot, then verify t=vt (ckpt stash default; oracle arms kept) ----
@@ -4844,7 +4235,6 @@ impl crate::hybrid::HybridModel {
             // the error escapes, or the next session's replayed tap copies write
             // freed memory. The bin arm has no such path (a gate-binary error ends
             // the process).
-            #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
             let verify_out = (|| -> Result<
                 (
                     Vec<u32>,
@@ -4909,10 +4299,10 @@ impl crate::hybrid::HybridModel {
             let (vam, tl, vck) = match verify_out {
                 Ok(v) => v,
                 Err(err) => {
-                    if let Some(taps) = sess.cache.dflash_taps.take()
-                        && let Some(g) = vgraphs.as_mut()
-                    {
-                        g.tap_bufs.insert(vt, taps.buf);
+                    if let Some(taps) = sess.cache.dflash_taps.take() {
+                        if let Some(g) = vgraphs.as_mut() {
+                            g.tap_bufs.insert(vt, taps.buf);
+                        }
                     }
                     return Err(err);
                 }
@@ -5087,47 +4477,6 @@ impl crate::hybrid::HybridModel {
 // HERE, naming the convention.
 #[cfg(test)]
 mod dflash2_tests {
-
-    /// The tail-import refusal arms (lane/dspark-draft-plane-20260827 review finding: these
-    /// were claimed tested and were not). Pure, so they run everywhere; the geometry mirrors
-    /// the served DFlash2 drafter (5 layers, 8 kv x 128 dim f32 rows, window 2048 + block 8).
-    #[test]
-    fn tail_import_refuses_every_geometry_disagreement_and_accepts_the_exported_shape() {
-        let rb = 8 * 128 * 4; // n_kv * head_dim * f32
-        let win = 2048 + 8; // window_rows = sliding_window + block
-        // THE EXPORTED SHAPE: window_rows ending exactly at len, same geometry — accepted.
-        assert!(
-            super::tail_geometry_ok(5, rb, 30_329 - win, win, 30_329, 5, rb, win, 34_433).is_ok()
-        );
-        // A short history where the tail IS the whole history — accepted.
-        assert!(super::tail_geometry_ok(5, rb, 0, 100, 100, 5, rb, win, 34_433).is_ok());
-        // Every refusal arm, each by name:
-        let arm =
-            |l, r, b, rows, len, cap| super::tail_geometry_ok(l, r, b, rows, len, 5, rb, win, cap);
-        assert_eq!(
-            arm(4, rb, 30_329 - win, win, 30_329, 34_433).unwrap_err(),
-            "layer count differs from the live drafter"
-        );
-        assert_eq!(
-            arm(5, rb - 4, 30_329 - win, win, 30_329, 34_433).unwrap_err(),
-            "row geometry differs from the live drafter"
-        );
-        assert_eq!(
-            arm(5, rb, 30_329 - win, win, 30_329, 30_000).unwrap_err(),
-            "logical length exceeds the session cap"
-        );
-        // THE RUN-2 BUG, pinned: a tail whose base+rows lands past its own logical length —
-        // the export-at-current-length defect the gate caught on the box.
-        assert_eq!(
-            arm(5, rb, 30_364 - win, win, 30_329, 34_433).unwrap_err(),
-            "tail does not end at its own logical length"
-        );
-        assert_eq!(
-            arm(5, rb, 30_329 - (win - 100), win - 100, 30_329, 34_433).unwrap_err(),
-            "tail shorter than the drafter's readable window"
-        );
-    }
-
     use super::{
         DsparkHarvest, dflash2_walk_greedy, dflash2_walk_sampled, dspark_commit_limit,
         rejection_accept_len,
@@ -5158,7 +4507,6 @@ mod dflash2_tests {
 
     /// Codebooks for the chain tests: pred rows are one-hot-ish, succ rows chosen so
     /// the slot-1 winner FLIPS with the slot-0 choice.
-    #[allow(clippy::identity_op)] // allow: the explicit +0/*1/>>0 terms document the lane/byte symmetry of the reference layout
     fn books() -> (Vec<u8>, Vec<u8>) {
         let mut pred = vec![0f32; V * R];
         pred[0] = 1.0; // tok 0: [1, 0]  (the anchor)
@@ -5422,7 +4770,6 @@ mod dflash2_tests {
     }
 
     /// One composed trial with an injectable accept rule; returns the committed token.
-    #[allow(clippy::neg_cmp_op_on_partial_ord)] // allow: NaN must take this branch; !(a > b) is not a <= b under IEEE comparisons
     fn compose_once(
         p: &[f32],
         q: &[f32],
@@ -5476,7 +4823,7 @@ mod dflash2_tests {
         // target p: a spread-out 8-token distribution
         let p: Vec<f32> = vec![0.30, 0.22, 0.15, 0.12, 0.09, 0.06, 0.04, 0.02];
         let trials = 200_000usize;
-        let mut counts = [0f64; V];
+        let mut counts = vec![0f64; V];
         for t in 0..trials {
             // three independent uniforms per trial off the host Philox stream
             let u_draw = crate::spec::host_u01(7, (t * 3) as u32);
@@ -6334,7 +5681,6 @@ mod dspark_prefix_capture_tests {
             pos: prompt_len,
             logits: vec![1.0, 2.0],
             last_h: Vec::new(),
-            latent_tails: Vec::new(),
         });
 
         let capture = take_dspark_prefix_capture(&mut slot).expect("first drain gets capture");

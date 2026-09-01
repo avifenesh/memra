@@ -233,8 +233,6 @@ pub fn fa_plan(
     // stream capture appends nodes in issue order, and the combine is always issued
     // right after its main within one fa_decode_* call).
     let mut mains: Vec<(usize, FaMain)> = Vec::new();
-    #[allow(clippy::type_complexity)]
-    // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     let mut combines: Vec<
         Option<(
             usize,
@@ -329,7 +327,6 @@ pub fn fa_plan(
 // CUDA returns CUDA_ERROR_NOT_SUPPORTED for edge topology edits on such graphs. The live PDL
 // mechanism is LAUNCH-SIDE instead: Engine::pdl-attributed launches of the MEMRA_PDL_ENTRY
 // consumer kernels (lib.rs pdl launcher) — capture encodes the programmatic edges natively.
-#[allow(clippy::manual_div_ceil)] // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
 pub fn fa_apply(
     graph: &cudarc::driver::CudaGraph,
     plan: &mut [FaMain],

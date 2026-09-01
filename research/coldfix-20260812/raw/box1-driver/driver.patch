@@ -1,5 +1,5 @@
---- /opt/scratch/nvme/cx-requal2/harness/run-box1.sh	2026-08-12 16:32:43.000000000 +0000
-+++ /opt/scratch/nvme/cx-requal2/harness-coldfix-065a705d6/run-box1.sh	2026-08-12 18:21:06.955803070 +0000
+--- /opt/dl-image/nvme/cx-requal2/harness/run-box1.sh	2026-08-12 16:32:43.000000000 +0000
++++ /opt/dl-image/nvme/cx-requal2/harness-coldfix-065a705d6/run-box1.sh	2026-08-12 18:21:06.955803070 +0000
 @@ -228,7 +228,19 @@
      stop_server
      assert_server_clean "$run_dir/server.log"

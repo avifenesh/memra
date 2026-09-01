@@ -2,7 +2,7 @@
 //! Checks (all must PASS):
 //!   1. gumbel temp=0  == pure copy (greedy-limit continuity)
 //!   2. gumbel determinism: same (seed, pos) -> identical perturbed vector; different pos -> differs
-//!      2b. gumbel uniforms stay strictly below one for the two live corruption receipts
+//!   2b. gumbel uniforms stay strictly below one for the two live corruption receipts
 //!   3. softmax_gather vs CPU softmax (rel < 1e-4 at temp 0.7/1.0; exact indicator at temp 0)
 //!   4. residual sampler: determinism, temp->0 argmax fallback, and empirical distribution vs the
 //!      CPU residual probabilities on a small vocab (10k draws, max abs freq error < 0.02)
@@ -311,8 +311,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // broadcast th/z to per-pair arrays
             let thv = e.dtoh(&thd)?[0];
             let zv = e.dtoh(&zd)?[0];
-            let thp = e.htod(&[thv; 5])?;
-            let zp = e.htod(&[zv; 5])?;
+            let thp = e.htod(&vec![thv; 5])?;
+            let zp = e.htod(&vec![zv; 5])?;
             let mut outd = e.zeros(5)?;
             e.softmax_gather_filtered(&x2d, nv2, &idsd, &rowsd, &thp, &zp, &mut outd, nv2, 5, t)?;
             let out = e.dtoh(&outd)?;
@@ -762,11 +762,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|i| ((i * 40503) % nv5) as f32 / nv5 as f32 * 8.0 - 4.0)
             .collect();
         let mut tl: Vec<f32> = Vec::with_capacity(ncol * nv5);
-        #[allow(clippy::needless_range_loop)]
-        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
         for c in 0..ncol {
-            #[allow(clippy::needless_range_loop)]
-            // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
             for i in 0..nv5 {
                 tl.push(base_row5[i] + col_shift[c]);
             }

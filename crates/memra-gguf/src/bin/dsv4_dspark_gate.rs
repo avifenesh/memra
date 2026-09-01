@@ -247,10 +247,7 @@ fn main() {
         .chain(spec.tokens.iter())
         .cloned()
         .collect();
-    let model = Dsv4Model::open(dir).unwrap_or_else(|error| {
-        eprintln!("dsv4 model load failed: {error}");
-        std::process::exit(1);
-    });
+    let model = Dsv4Model::open(dir);
     let mut dspark = DsparkModule::load(&model, dir, MAX_LEN);
     let mut trunk = TrunkState::load(&model, &dspark.cfg.target_layer_ids.clone(), MAX_LEN);
     println!("model loaded t={:.0}s", t0.elapsed().as_secs_f64());

@@ -43,10 +43,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let res_h: Vec<f32> = (0..s * hc * d).map(|i| pr(i + 17)).collect();
         let post_h: Vec<f32> = (0..s * hc).map(|i| pr(i + 29)).collect();
         let comb_h: Vec<f32> = (0..s * hc * hc).map(|i| pr(i + 41)).collect();
-        let f_d = stream.clone_htod(&f_h)?;
-        let res_d = stream.clone_htod(&res_h)?;
-        let post_d = stream.clone_htod(&post_h)?;
-        let comb_d = stream.clone_htod(&comb_h)?;
+        let f_d = stream.memcpy_stod(&f_h)?;
+        let res_d = stream.memcpy_stod(&res_h)?;
+        let post_d = stream.memcpy_stod(&post_h)?;
+        let comb_d = stream.memcpy_stod(&comb_h)?;
         let mut out_d = stream.alloc_zeros::<f32>(s * hc * d)?;
         let rc = unsafe {
             k::memra_dsv4_hc_post(
@@ -68,7 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             fails += 1;
         } else {
-            let got = stream.clone_dtoh(&out_d)?;
+            let got = stream.memcpy_dtov(&out_d)?;
             // CPU reference in the kernel's own accumulation order.
             let mut bad = 0usize;
             for t in 0..s {
@@ -103,8 +103,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let (s, hc, d) = (70000usize, 2usize, 32usize);
         let x_h: Vec<f32> = (0..s * hc * d).map(|i| pr(i + 7)).collect();
         let pre_h: Vec<f32> = (0..s * hc).map(|i| pr(i + 11)).collect();
-        let x_d = stream.clone_htod(&x_h)?;
-        let pre_d = stream.clone_htod(&pre_h)?;
+        let x_d = stream.memcpy_stod(&x_h)?;
+        let pre_d = stream.memcpy_stod(&pre_h)?;
         let mut y_d = stream.alloc_zeros::<f32>(s * d)?;
         let rc = unsafe {
             k::memra_dsv4_hc_collapse(
@@ -121,7 +121,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("hc_collapse s={s} (grid.y = s > ceiling): rc={rc} FAIL");
             fails += 1;
         } else {
-            let got = stream.clone_dtoh(&y_d)?;
+            let got = stream.memcpy_dtov(&y_d)?;
             let mut bad = 0usize;
             for t in 0..s {
                 for i in 0..d {

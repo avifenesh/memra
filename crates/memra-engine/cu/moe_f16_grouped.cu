@@ -24,7 +24,6 @@
 #include <cublas_v2.h>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 
 #define QT_IQ4_XS 5
 #define QT_IQ3_S  6
@@ -33,7 +32,6 @@
 #define QT_Q6_K   2
 #define QT_Q3_K   4
 #define QT_NVFP4  7
-#define QT_NVFP4_V2 107  // slot-major v2 bank permutation of QT_NVFP4 (tp.rs nvfp4_matrix_v2_permute)
 
 __device__ __forceinline__ float g_half_to_float(uint16_t h){ return __half2float(*reinterpret_cast<const __half*>(&h)); }
 __constant__ signed char g_kvalues_iq4nl[16] = {-127,-104,-83,-65,-49,-35,-22,-10,1,13,25,38,53,69,89,113};
@@ -273,30 +271,6 @@ static __global__ void dequant_nvfp4_f16_kernel(
         const uint8_t* b = r + (size_t)blk*36;
         float dscale = g_ue4m3_to_float(b[sub]);
         uint8_t q = b[4 + sub*8 + (j&7)];
-        int code = (j<8) ? (q & 0xF) : (q >> 4);
-        d[v] = __float2half(dscale * (float)g_kvalues_mxfp4[code]);
-    }
-}
-
-// NVFP4 v2 bank layout (tp.rs nvfp4_matrix_v2_permute): per row, slot g (32 values) stores its
-// 16 qs bytes at g*16, and the per-16-value UE4M3 scale bytes live in a tail at n_slots*16 + g*2.
-// Value-identical to the 36B interleaved form — only the byte permutation differs. Feeding v2
-// bytes to the v1 kernel above was the gemm-prime garbage-output bug (2026-08-27).
-static __global__ void dequant_nvfp4v2_f16_kernel(
-        const unsigned long long* __restrict__ table, int proj, int n_expert,
-        const int* __restrict__ ex_ids, __half* __restrict__ dst,
-        int in_f, int out_f, long row_bytes){
-    int row = blockIdx.x; int seg = blockIdx.y;
-    const uint8_t* W = (const uint8_t*)table[(size_t)proj*n_expert + ex_ids[seg]];
-    const uint8_t* r = W + (size_t)row*row_bytes;
-    __half* d = dst + ((size_t)seg*out_f + row)*in_f;
-    const int n_slots = in_f >> 5;
-    const uint8_t* qs0 = r;
-    const uint8_t* sc0 = r + (size_t)n_slots*16;
-    for(int v=threadIdx.x; v<in_f; v+=blockDim.x){
-        int g = v>>5, l = v&31, sub = l>>4, j = l&15;
-        float dscale = g_ue4m3_to_float(sc0[g*2 + sub]);
-        uint8_t q = qs0[(size_t)g*16 + sub*8 + (j&7)];
         int code = (j<8) ? (q & 0xF) : (q >> 4);
         d[v] = __float2half(dscale * (float)g_kvalues_mxfp4[code]);
     }
@@ -963,21 +937,8 @@ moe_f16g_sktail_kernel(
 // pre-converted — small ints are f32-exact); IQ3_S stages the 512-word grid and resolves the
 // window's four grid words AT FETCH (behind the previous kb's mma), so the store is pure
 // extract+mul.
-// QT_NVFP4_V2 MUST be listed here. kq_stage_codebook stages 16 words for BOTH NVFP4 layouts
-// (`QT == QT_NVFP4 || QT == QT_NVFP4_V2`), but this macro sized only the v1 constant, so the v2
-// instantiations -- at the time, every run with MEMRA_NVFP4_BANK_V2=1, a door REMOVED
-// 2026-08-29 (research/step37-bankv2-removal-20260829); QT_NVFP4_V2 now reaches this GEMM
-// only through the always-slot-major EP2 banks or the moe_tp2_repro harness --
-// declared `s_cb[1]` and threads
-// 1..15 wrote 15 words past the end of the array on every launch. compute-sanitizer memcheck,
-// 2026-08-28: 6816 "Invalid __shared__ write of size 4 bytes" in moe_kq_sktail_kernel<107> at
-// t=576, 288 at t=4096, naming threads 4 and 5 writing s_cb[4]/s_cb[5]; qt=7 clean at both
-// geometries. A shared-memory overrun is not a crash, it is a CORRUPTION whose victim depends on
-// what else is resident, which is why it presented as ULP-dense nondeterminism with byte-identical
-// inputs (and, in the workspace lane, as 1.6e20 garbage) rather than as a fault.
 #define KQ_CB_WORDS(QT) \
-    ((QT) == QT_IQ3_S ? 512                                                   \
-     : (((QT) == QT_IQ4_XS || (QT) == QT_NVFP4 || (QT) == QT_NVFP4_V2) ? 16 : 1))
+    ((QT) == QT_IQ3_S ? 512 : (((QT) == QT_IQ4_XS || (QT) == QT_NVFP4) ? 16 : 1))
 template<int QT>
 __device__ __forceinline__ void kq_stage_codebook(uint32_t* s_cb){
     const int tid = threadIdx.y * 32 + threadIdx.x;
@@ -986,7 +947,7 @@ __device__ __forceinline__ void kq_stage_codebook(uint32_t* s_cb){
         for(int i = tid; i < 512; i += nthr) s_cb[i] = g_iq3s_grid[i];
     } else if(QT == QT_IQ4_XS){
         if(tid < 16) s_cb[tid] = __float_as_uint((float)g_kvalues_iq4nl[tid]);
-    } else if(QT == QT_NVFP4 || QT == QT_NVFP4_V2){
+    } else if(QT == QT_NVFP4){
         // same pre-converted-float trick as IQ4_XS: the workspace kernel's
         // `(float)g_kvalues_mxfp4[code]` — small ints are f32-exact.
         if(tid < 16) s_cb[tid] = __float_as_uint((float)g_kvalues_mxfp4[tid]);
@@ -1001,38 +962,15 @@ struct KqRaw {
                         // iq3_s: (dd*(1+2*nib), -)
     int sel;            // q4k/iq4_xs: hi-nibble half | q6k: q4 (2-bit shift selector)
 };
-// `in_f` is REQUIRED and has NO default. It used to default to 0, and exactly two of the ten
-// call sites (moe_kq_sktail_kernel's kb+1 prefetch pair) relied on that default. QT_NVFP4_V2 is
-// the only branch that reads in_f -- it locates the slot-major row's UE4M3 scale tail at
-// n_slots*16 -- so in_f=0 sent the scale fetch into the packed-codes region while the 4-bit
-// codes stayed correct: right weights, wrong per-16-element scale, on every k-block but kb=0.
-// Every other qtype branch ignores in_f, which is why the omission was a silent no-op for v1 and
-// a margin-sensitive logits corruption for v2 (research/step37-bankv3-20260901/DIAGNOSIS.md).
-// Keep it undefaulted: a defaultable geometry field that only one layout consumes is the hole.
 template<int QT>
 __device__ __forceinline__ KqRaw kq_fetch(const uint8_t* __restrict__ wrow, int k0v,
-                                          const uint32_t* __restrict__ s_cb, int in_f){
+                                          const uint32_t* __restrict__ s_cb){
     // k0v = 16-aligned value offset within the row (absolute k of the window start)
     constexpr int SBB = (QT == QT_Q4_K) ? 144 : (QT == QT_Q6_K) ? 210
-                      : (QT == QT_IQ4_XS) ? 136 : 110;  // unused by the NVFP4 branches
+                      : (QT == QT_IQ4_XS) ? 136 : 110;
     const uint8_t* b = wrow + (size_t)(k0v >> 8) * SBB;
     const int l0 = k0v & 255;
     KqRaw r;
-    if(QT == QT_NVFP4_V2){
-        // v2 slot-major bank (tp.rs nvfp4_matrix_v2_permute): slot g's 16 qs bytes at g*16,
-        // its two UE4M3 scale bytes in the tail at n_slots*16 + g*2. Same values, same DAG as
-        // the v1 branch below and as dequant_nvfp4v2_f16_kernel — only the byte map differs.
-        // The 16-value window is one 16-value sub-block, so it never crosses a scale.
-        const int n_slots = in_f >> 5;
-        const int g = k0v >> 5, sub = (k0v >> 4) & 1;
-        r.f1 = g_ue4m3_to_float(wrow[(size_t)n_slots * 16 + g * 2 + sub]);
-        r.f2 = 0.0f;
-        r.sel = 0;
-        const uint8_t* qsp = wrow + (size_t)g * 16 + sub * 8;
-        r.q[0] = *(const uint32_t*)qsp;
-        r.q[1] = *(const uint32_t*)(qsp + 4);
-        return r;
-    }
     if(QT == QT_NVFP4){
         // 36B block covers 64 values in 4 UE4M3-scaled sub-blocks of 16 — the 16-value
         // window IS one sub-block (never crosses a scale boundary by construction).
@@ -1123,11 +1061,8 @@ __device__ __forceinline__ void kq_store(const KqRaw& r, __half* __restrict__ ds
                                          const uint32_t* __restrict__ s_cb){
     #pragma unroll
     for(int j = 0; j < 16; j++){
-        if(QT == QT_NVFP4 || QT == QT_NVFP4_V2){
-            // bytes qs[0..7] live in q[0..1]; j<8 lo nibble, j>=8 hi nibble (workspace order).
-            // v2 fills q[] with the same 8 bytes from its slot-major offset, so the store DAG
-            // is shared verbatim — the layouts differ only in where kq_fetch read them.
-            
+        if(QT == QT_NVFP4){
+            // bytes qs[0..7] live in q[0..1]; j<8 lo nibble, j>=8 hi nibble (workspace order)
             int byte = (r.q[(j&7)>>2] >> (8*(j&3))) & 0xff;
             int code = (j < 8) ? (byte & 0xF) : (byte >> 4);
             dst[j] = __float2half(r.f1 * __uint_as_float(s_cb[code]));
@@ -1194,7 +1129,7 @@ moe_kq_sk32v_kernel(
 
         sk_cp16(&As[0][ar][ac], aga);
         asm volatile("cp.async.commit_group;");
-        KqRaw braw = kq_fetch<QT>(wrow, bc0, s_cb, in_f);   // kb=0 window
+        KqRaw braw = kq_fetch<QT>(wrow, bc0, s_cb);   // kb=0 window
 
         float acc[4][4] = {};
         for(int kb = 0; kb < nkb; kb++){
@@ -1208,7 +1143,7 @@ moe_kq_sk32v_kernel(
             // __syncthreads fences the Bs overwrite), then issue kb+1's raw fetch so those
             // global reads fly behind this kb's mma.
             kq_store<QT>(braw, &Bs[brow][bc0], s_cb);
-            if(kb + 1 < nkb) braw = kq_fetch<QT>(wrow, (kb + 1) * SK_BK + bc0, s_cb, in_f);
+            if(kb + 1 < nkb) braw = kq_fetch<QT>(wrow, (kb + 1) * SK_BK + bc0, s_cb);
             if(kb + 1 < nkb) asm volatile("cp.async.wait_group 1;");
             else             asm volatile("cp.async.wait_group 0;");
             __syncthreads();
@@ -1248,14 +1183,9 @@ moe_kq_sk32v_kernel(
 
 // 128x64x64 direct form: A keeps the 3-stage cp.async pipeline; B is a single 64x72 tile
 // dequanted per kb (256 threads, row = tid>>2, 16-value quarter-row per thread).
-// B carries TWO buffers (lane/kq-bdb 2026-08-28): with a single buffer the weight-tile
-// dequant sits between two __syncthreads and cannot overlap the mma — see the schedule note
-// on moe_kq_sk128v_kernel. 3*128*72 + 2*64*72 halves = 72 KB, still one CTA/SM (occ128=1 was
-// already 1 at 63 KB), so this buys the overlap without costing occupancy.
-#define KQ128_B_BUFS 2
-#define KQ128_SMEM_BYTES ((SK128_STAGES * SK128_A_ELEMS + KQ128_B_BUFS * SK128_B_ELEMS) * (int)sizeof(__half))
+#define KQ128_SMEM_BYTES ((SK128_STAGES * SK128_A_ELEMS + SK128_B_ELEMS) * (int)sizeof(__half))
 
-template<int QT, bool BDB>
+template<int QT>
 static __global__ void __launch_bounds__(256)
 moe_kq_sk128v_kernel(
         const unsigned long long* __restrict__ table, int proj, int n_expert,
@@ -1266,7 +1196,7 @@ moe_kq_sk128v_kernel(
         int in_f, int out_f, int mlo, int mhi, int total_tiles){
     extern __shared__ __align__(16) __half kq128_sm[];
     __half* Asm = kq128_sm;                                   // [stage][128][72]
-    __half* Bsm = kq128_sm + SK128_STAGES * SK128_A_ELEMS;    // [KQ128_B_BUFS][64][72]
+    __half* Bsm = kq128_sm + SK128_STAGES * SK128_A_ELEMS;    // [64][72], single buffer
     __shared__ int s_pre[SK_MAX_G + 1];
     __shared__ uint32_t s_cb[KQ_CB_WORDS(QT)];
     const int ntx = (out_f + SK128_BN - 1) / SK128_BN;
@@ -1308,63 +1238,29 @@ moe_kq_sk128v_kernel(
 
         KQ128_LOAD_A(0, 0);
         if(nkb > 1) KQ128_LOAD_A(1, SK128_BK);
-        KqRaw braw = kq_fetch<QT>(wrow, bc0, s_cb, in_f);   // kb=0 window
-        // BDB: fill B[0] up front and pull kb=1's raw window, so the loop body always stores
-        // into the buffer the NEXT iteration reads while the mma consumes this one.
-        if(BDB){
-            kq_store<QT>(braw, Bsm + brow*SK128_STRIDE + bc0, s_cb);
-            if(nkb > 1) braw = kq_fetch<QT>(wrow, SK128_BK + bc0, s_cb, in_f);
-        }
+        KqRaw braw = kq_fetch<QT>(wrow, bc0, s_cb);   // kb=0 window
 
         float acc[2][4][4] = {};
         for(int kb = 0; kb < nkb; kb++){
             const int cur = kb % SK128_STAGES;
-            if(!BDB){
             if(kb + 2 < nkb) KQ128_LOAD_A((kb + 2) % SK128_STAGES, (kb + 2) * SK128_BK);
             // B tile for THIS kb from the pre-fetched registers (single buffer; previous
             // kb's trailing __syncthreads fences), then issue kb+1's raw fetch so those
             // global reads fly behind this kb's mma.
             kq_store<QT>(braw, Bsm + brow*SK128_STRIDE + bc0, s_cb);
-            if(kb + 1 < nkb) braw = kq_fetch<QT>(wrow, (kb + 1) * SK128_BK + bc0, s_cb, in_f);
+            if(kb + 1 < nkb) braw = kq_fetch<QT>(wrow, (kb + 1) * SK128_BK + bc0, s_cb);
             if(kb + 2 < nkb)      asm volatile("cp.async.wait_group 2;");
             else if(kb + 1 < nkb) asm volatile("cp.async.wait_group 1;");
             else                  asm volatile("cp.async.wait_group 0;");
             __syncthreads();
-            } else {
-            // DOUBLE-BUFFERED B (lane/kq-bdb): ONE barrier per k-block instead of two, and the
-            // dequant of kb+1's weight tile is issued AFTER it and overlaps this kb's mma.
-            //
-            // Why it is safe with a single barrier. The barrier at the top of iteration kb
-            // separates iteration kb-1's mma from everything in kb. Past it:
-            //   * KQ128_LOAD_A targets stage (kb+2)%3 == (kb-1)%3, which kb-1's mma just
-            //     finished reading — the barrier is exactly what makes that overwrite legal,
-            //     which is why the issue moved BELOW it (in the single-buffer schedule the
-            //     TRAILING __syncthreads played this role).
-            //   * kq_store targets B[(kb+1)&1], last read by kb-1's mma — same argument.
-            //   * the mma reads A[kb%3] and B[kb&1], both filled before this barrier.
-            // Group accounting: the prologue issues k0 and k1, and iteration kb issues k(kb+2)
-            // AFTER the wait, so at the wait the newest issued group is k(kb+1) and "kb is
-            // complete" means at most one group outstanding -> wait_group 1.
-            if(kb + 1 < nkb) asm volatile("cp.async.wait_group 1;");
-            else             asm volatile("cp.async.wait_group 0;");
-            __syncthreads();
-            if(kb + 2 < nkb) KQ128_LOAD_A((kb + 2) % SK128_STAGES, (kb + 2) * SK128_BK);
-            if(kb + 1 < nkb){
-                kq_store<QT>(braw, Bsm + ((kb + 1) & 1) * SK128_B_ELEMS
-                                       + brow*SK128_STRIDE + bc0, s_cb);
-                if(kb + 2 < nkb)
-                    braw = kq_fetch<QT>(wrow, (kb + 2) * SK128_BK + bc0, s_cb, in_f);
-            }
-            }
             const __half* Ab = Asm + cur * SK128_A_ELEMS;
-            const __half* Bb = BDB ? (Bsm + (kb & 1) * SK128_B_ELEMS) : Bsm;
             #pragma unroll
             for(int kk = 0; kk < 4; kk++){
                 unsigned a0[4], a1[4], b0[4], b1[4];
                 sk_ldm16x16(a0, Ab + (wm     ) * SK128_STRIDE + kk*16, SK128_STRIDE);
                 sk_ldm16x16(a1, Ab + (wm + 16) * SK128_STRIDE + kk*16, SK128_STRIDE);
-                sk_ldm16x16(b0, Bb + (wn     ) * SK128_STRIDE + kk*16, SK128_STRIDE);
-                sk_ldm16x16(b1, Bb + (wn + 16) * SK128_STRIDE + kk*16, SK128_STRIDE);
+                sk_ldm16x16(b0, Bsm + (wn     ) * SK128_STRIDE + kk*16, SK128_STRIDE);
+                sk_ldm16x16(b1, Bsm + (wn + 16) * SK128_STRIDE + kk*16, SK128_STRIDE);
                 sk_mma(acc[0][0], a0, b0[0], b0[2]);
                 sk_mma(acc[0][1], a0, b0[1], b0[3]);
                 sk_mma(acc[0][2], a0, b1[0], b1[2]);
@@ -1374,10 +1270,7 @@ moe_kq_sk128v_kernel(
                 sk_mma(acc[1][2], a1, b1[0], b1[2]);
                 sk_mma(acc[1][3], a1, b1[1], b1[3]);
             }
-            // Single-buffer schedule needs the trailing fence (the next kq_store overwrites the
-            // one B tile this mma just read). BDB's next store targets the OTHER buffer and is
-            // fenced by the next iteration's leading barrier instead.
-            if(!BDB) __syncthreads();
+            __syncthreads();
         }
         #undef KQ128_LOAD_A
 
@@ -1463,8 +1356,8 @@ moe_kq_sktail_kernel(
 
         KQT_LOAD_A(0, 0);
         if(nkb > 1) KQT_LOAD_A(1, SKT_BK);
-        KqRaw braw0 = kq_fetch<QT>(wrow, bc0, s_cb, in_f);        // kb=0 windows
-        KqRaw braw1 = kq_fetch<QT>(wrow, bc0 + 16, s_cb, in_f);
+        KqRaw braw0 = kq_fetch<QT>(wrow, bc0, s_cb);        // kb=0 windows
+        KqRaw braw1 = kq_fetch<QT>(wrow, bc0 + 16, s_cb);
 
         float acc[4][4] = {};
         for(int kb = 0; kb < nkb; kb++){
@@ -1476,8 +1369,8 @@ moe_kq_sktail_kernel(
             kq_store<QT>(braw0, &Bs[brow][bc0], s_cb);
             kq_store<QT>(braw1, &Bs[brow][bc0 + 16], s_cb);
             if(kb + 1 < nkb){
-                braw0 = kq_fetch<QT>(wrow, (kb + 1) * SKT_BK + bc0, s_cb, in_f);
-                braw1 = kq_fetch<QT>(wrow, (kb + 1) * SKT_BK + bc0 + 16, s_cb, in_f);
+                braw0 = kq_fetch<QT>(wrow, (kb + 1) * SKT_BK + bc0, s_cb);
+                braw1 = kq_fetch<QT>(wrow, (kb + 1) * SKT_BK + bc0 + 16, s_cb);
             }
             if(kb + 2 < nkb)      asm volatile("cp.async.wait_group 2;");
             else if(kb + 1 < nkb) asm volatile("cp.async.wait_group 1;");
@@ -1529,73 +1422,31 @@ static int moe_kq_gemm_sk_launch(const unsigned long long* table, int proj, int 
         int tail, long row_bytes, cudaStream_t st){
     // Per-instantiation device caps: occ128 -2 unprobed, -1 device-unfit -> this qtype's
     // large groups ride the 32x64 form. occt: the deep-tail direct form; -1 = probe failed.
-    // PER-DEVICE probes (2026-08-27, TP2 grouped prime). These were single statics probed on
-    // whichever device was current FIRST — and cudaFuncSetAttribute's smem opt-in is
-    // per-function-PER-CONTEXT, so the 128-form launch on the second rank's context ran with
-    // no opt-in: cudaErrorInvalidValue, the gemm-prime rc=1001. Probe and opt in once per device.
-    enum { SK_MAX_DEV = 16 };
-    static int sms_d[SK_MAX_DEV] = {0}, occ32_d[SK_MAX_DEV] = {0}, occt_d[SK_MAX_DEV] = {0};
-    static int occ128_d[SK_MAX_DEV];
-    static int occ128_init = 0;
-    if(!occ128_init){ for(int i = 0; i < SK_MAX_DEV; i++) occ128_d[i] = -2; occ128_init = 1; }
-    int cur_dev = 0; cudaGetDevice(&cur_dev);
-    if(cur_dev < 0 || cur_dev >= SK_MAX_DEV) cur_dev = 0;
-    int sms, occ32, occ128, occt;
-    if(sms_d[cur_dev] == 0){
-        if(cudaDeviceGetAttribute(&sms_d[cur_dev], cudaDevAttrMultiProcessorCount, cur_dev)
-           != cudaSuccess || sms_d[cur_dev] <= 0)
-            sms_d[cur_dev] = 1;
-        if(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&occ32_d[cur_dev], moe_kq_sk32v_kernel<QT>, 128, 0)
-           != cudaSuccess || occ32_d[cur_dev] < 1) occ32_d[cur_dev] = 1;
-        if(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&occt_d[cur_dev], moe_kq_sktail_kernel<QT>, 128, 0)
-           != cudaSuccess || occt_d[cur_dev] < 1) occt_d[cur_dev] = -1;
+    static int sms = 0, occ32 = 0, occ128 = -2, occt = 0;
+    if(sms == 0){
+        int dev = 0; cudaGetDevice(&dev);
+        if(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, dev) != cudaSuccess || sms <= 0)
+            sms = 1;
+        if(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&occ32, moe_kq_sk32v_kernel<QT>, 128, 0)
+           != cudaSuccess || occ32 < 1) occ32 = 1;
+        if(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&occt, moe_kq_sktail_kernel<QT>, 128, 0)
+           != cudaSuccess || occt < 1) occt = -1;
     }
-    // MEMRA_F16G_BDB (lane/kq-bdb 2026-08-28): double-buffered B in the 128 form. Same tiles and
-    // same accumulation order as the shipped schedule — one barrier per k-block instead of two,
-    // and kb+1's weight dequant overlaps this kb's mma. The extra 9 KB of smem does not move
-    // occ128 off 1. DEFAULT OFF until this lane's A/B lands, per the new-flag law; both
-    // instantiations stay compiled so the arms are one env var apart.
-    static int bdb = -1;
-    if(bdb < 0){
-        const char* e = getenv("MEMRA_F16G_BDB");
-        bdb = (e && e[0] == '1') ? 1 : 0;
-    }
-    // Both instantiations get the smem opt-in: cudaFuncSetAttribute is per-FUNCTION and
-    // per-context, and the two template arms are different functions (the rc=1001 lesson).
-    if(occ128_d[cur_dev] == -2){
-        int optin = 0;
-        if(cudaDeviceGetAttribute(&optin, cudaDevAttrMaxSharedMemoryPerBlockOptin, cur_dev) != cudaSuccess)
+    if(occ128 == -2){
+        int optin = 0, dev = 0; cudaGetDevice(&dev);
+        if(cudaDeviceGetAttribute(&optin, cudaDevAttrMaxSharedMemoryPerBlockOptin, dev) != cudaSuccess)
             optin = 48*1024;
-        cudaError_t ae = cudaFuncSetAttribute(moe_kq_sk128v_kernel<QT, false>,
+        cudaError_t ae = cudaFuncSetAttribute(moe_kq_sk128v_kernel<QT>,
                  cudaFuncAttributeMaxDynamicSharedMemorySize, KQ128_SMEM_BYTES);
-        cudaError_t ae2 = cudaFuncSetAttribute(moe_kq_sk128v_kernel<QT, true>,
-                 cudaFuncAttributeMaxDynamicSharedMemorySize, KQ128_SMEM_BYTES);
-        cudaError_t oe = cudaOccupancyMaxActiveBlocksPerMultiprocessor(&occ128_d[cur_dev],
-                 moe_kq_sk128v_kernel<QT, true>, 256, KQ128_SMEM_BYTES);
-        if((size_t)KQ128_SMEM_BYTES > (size_t)optin || ae != cudaSuccess || ae2 != cudaSuccess
-           || oe != cudaSuccess || occ128_d[cur_dev] < 1)
-            occ128_d[cur_dev] = -1;
+        cudaError_t oe = cudaOccupancyMaxActiveBlocksPerMultiprocessor(&occ128,
+                 moe_kq_sk128v_kernel<QT>, 256, KQ128_SMEM_BYTES);
+        if((size_t)KQ128_SMEM_BYTES > (size_t)optin || ae != cudaSuccess || oe != cudaSuccess
+           || occ128 < 1)
+            occ128 = -1;
     }
-    sms = sms_d[cur_dev]; occ32 = occ32_d[cur_dev]; occ128 = occ128_d[cur_dev]; occt = occt_d[cur_dev];
     int xcross = cross;
     if(occ128 < 1 || (in_f % SK128_BK) != 0) xcross = 0x7fffffff;
     if(xcross < 1) xcross = 1;
-    // WHICH FORM ACTUALLY RAN (2026-08-28): the prime measures ~13.6 TFLOP/s/rank in the MoE,
-    // ~10x under what this mma.m16n8k16 3-stage pipeline should reach. A failed smem opt-in
-    // silently forces every group onto the 32-row form (4x redundant weight dequant at the
-    // m_e~114 of a 4096-token chunk), and the fallback is invisible from outside: occ128 = -1
-    // reads exactly like a deliberate shape choice. One line per qtype (the instantiation
-    // statics above are already per-QT), so it cannot become log noise.
-    {
-        static int said = 0;
-        if(!said){
-            said = 1;
-            fprintf(stderr, "[moe-sk-form] dev=%d qt=%d sms=%d occ128=%d occ32=%d occt=%d "
-                    "cross=%d xcross=%d bdb=%d in_f=%d out_f=%d n_active=%d max_m=%d\n",
-                    cur_dev, QT, sms, occ128, occ32, occt, cross, xcross, bdb, in_f, out_f,
-                    n_active, max_m);
-        }
-    }
     const int ntx = (out_f + SK_BN - 1) / SK_BN;
     long t32 = 0, t128 = 0;
     for(int g = 0; g < n_active; g++){
@@ -1607,14 +1458,9 @@ static int moe_kq_gemm_sk_launch(const unsigned long long* table, int proj, int 
     if(t128 > 0){
         const long cap = (long)sms * occ128;
         const int grid = (int)(t128 < cap ? t128 : cap);
-        if(bdb)
-            moe_kq_sk128v_kernel<QT, true><<<grid, dim3(32,8,1), KQ128_SMEM_BYTES, st>>>(
-                table, proj, n_expert, ex_ids, row_bytes, (const __half*)act_f16, y, row_scale,
-                ex_off_dev, n_active, in_f, out_f, xcross, 0x7fffffff, (int)t128);
-        else
-            moe_kq_sk128v_kernel<QT, false><<<grid, dim3(32,8,1), KQ128_SMEM_BYTES, st>>>(
-                table, proj, n_expert, ex_ids, row_bytes, (const __half*)act_f16, y, row_scale,
-                ex_off_dev, n_active, in_f, out_f, xcross, 0x7fffffff, (int)t128);
+        moe_kq_sk128v_kernel<QT><<<grid, dim3(32,8,1), KQ128_SMEM_BYTES, st>>>(
+            table, proj, n_expert, ex_ids, row_bytes, (const __half*)act_f16, y, row_scale,
+            ex_off_dev, n_active, in_f, out_f, xcross, 0x7fffffff, (int)t128);
     }
     if(t32 > 0){
         // Deep tail (lane/sk-tail-form) when admitted; in_f % 256 == 0 here so the
@@ -1631,10 +1477,7 @@ static int moe_kq_gemm_sk_launch(const unsigned long long* table, int proj, int 
                 table, proj, n_expert, ex_ids, row_bytes, (const __half*)act_f16, y, row_scale,
                 ex_off_dev, n_active, in_f, out_f, 1, xcross, (int)t32);
     }
-    cudaError_t e=cudaGetLastError();
-    if(e) fprintf(stderr, "[moe-sk-err] kq_sk err=%d(%s) n_active=%d max_m=%d in_f=%d out_f=%d\n",
-                  (int)e, cudaGetErrorString(e), n_active, max_m, in_f, out_f);
-    return e?1000+(int)e:0;
+    cudaError_t e=cudaGetLastError(); return e?1000+(int)e:0;
 }
 
 extern "C" {
@@ -1651,9 +1494,7 @@ int memra_moe_f16g_dequant(const unsigned long long* table, int proj, int n_expe
         int qtype, long row_bytes, void* stream){
     cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
     dim3 grid((unsigned)out_f, (unsigned)n_active, 1), blk(256,1,1);
-    if(qtype==QT_NVFP4_V2)
-        dequant_nvfp4v2_f16_kernel<<<grid,blk,0,st>>>(table,proj,n_expert,ex_ids,(__half*)w_f16,in_f,out_f,row_bytes);
-    else if(qtype==QT_Q4_0)
+    if(qtype==QT_Q4_0)
         dequant_q4_0_f16_kernel<<<grid,blk,0,st>>>(table,proj,n_expert,ex_ids,(__half*)w_f16,in_f,out_f,row_bytes);
     else if(qtype==QT_IQ4_XS)
         dequant_iq4xs_f16_kernel<<<grid,blk,0,st>>>(table,proj,n_expert,ex_ids,(__half*)w_f16,in_f,out_f,row_bytes);
@@ -1699,48 +1540,34 @@ int memra_moe_f16g_gemm_sk(const void* w_f16, const void* act_f16, float* y,
         dim3 blk(32, 4, 1);
         moe_f16g_sk_kernel<<<grid, blk, 0, st>>>(
             (const __half*)w_f16, (const __half*)act_f16, y, row_scale, ex_off_dev, in_f, out_f);
-        cudaError_t e=cudaGetLastError();
-    if(e) fprintf(stderr, "[moe-sk-err] memra_moe_f16g_gemm_sk err=%d(%s) n_active=%d max_m=%d in_f=%d out_f=%d\n",
-                  (int)e, cudaGetErrorString(e), n_active, max_m, in_f, out_f);
-    return e?1000+(int)e:0;
+        cudaError_t e=cudaGetLastError(); return e?1000+(int)e:0;
     }
     // Device caps + per-form occupancy, once. occ128: -2 unprobed, -1 device-unfit (fallback to
     // the 32x64 form — the round-49 rc=1001 lesson: SetAttribute CHECKED, never assumed).
     // occt: the deep-tail form (static 43524 B smem — no opt-in needed); -1 = probe failed,
     // tail groups keep the 2-stage form.
-    // PER-DEVICE probes — same fix and reason as the kq template above (the smem opt-in is
-    // per-function-PER-CONTEXT; a second rank's context launched the 128-form without it:
-    // cudaErrorInvalidValue, the gemm-prime rc=1001).
-    enum { F16G_MAX_DEV = 16 };
-    static int sms_d[F16G_MAX_DEV] = {0}, occ32_d[F16G_MAX_DEV] = {0}, occt_d[F16G_MAX_DEV] = {0};
-    static int occ128_d[F16G_MAX_DEV];
-    static int occ128_init = 0;
-    if(!occ128_init){ for(int i = 0; i < F16G_MAX_DEV; i++) occ128_d[i] = -2; occ128_init = 1; }
-    int cur_dev = 0; cudaGetDevice(&cur_dev);
-    if(cur_dev < 0 || cur_dev >= F16G_MAX_DEV) cur_dev = 0;
-    int sms, occ32, occ128, occt;
-    if(sms_d[cur_dev] == 0){
-        if(cudaDeviceGetAttribute(&sms_d[cur_dev], cudaDevAttrMultiProcessorCount, cur_dev)
-           != cudaSuccess || sms_d[cur_dev] <= 0)
-            sms_d[cur_dev] = 1;
-        if(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&occ32_d[cur_dev], moe_f16g_sk32v_kernel, 128, 0)
-           != cudaSuccess || occ32_d[cur_dev] < 1) occ32_d[cur_dev] = 1;
-        if(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&occt_d[cur_dev], moe_f16g_sktail_kernel, 128, 0)
-           != cudaSuccess || occt_d[cur_dev] < 1) occt_d[cur_dev] = -1;
+    static int sms = 0, occ32 = 0, occ128 = -2, occt = 0;
+    if(sms == 0){
+        int dev = 0; cudaGetDevice(&dev);
+        if(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, dev) != cudaSuccess || sms <= 0)
+            sms = 1;
+        if(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&occ32, moe_f16g_sk32v_kernel, 128, 0)
+           != cudaSuccess || occ32 < 1) occ32 = 1;
+        if(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&occt, moe_f16g_sktail_kernel, 128, 0)
+           != cudaSuccess || occt < 1) occt = -1;
     }
-    if(occ128_d[cur_dev] == -2){
-        int optin = 0;
-        if(cudaDeviceGetAttribute(&optin, cudaDevAttrMaxSharedMemoryPerBlockOptin, cur_dev) != cudaSuccess)
+    if(occ128 == -2){
+        int optin = 0, dev = 0; cudaGetDevice(&dev);
+        if(cudaDeviceGetAttribute(&optin, cudaDevAttrMaxSharedMemoryPerBlockOptin, dev) != cudaSuccess)
             optin = 48*1024;
         if((size_t)SK128_SMEM_BYTES > (size_t)optin
            || cudaFuncSetAttribute(moe_f16g_sk128v_kernel,
                   cudaFuncAttributeMaxDynamicSharedMemorySize, SK128_SMEM_BYTES) != cudaSuccess
-           || cudaOccupancyMaxActiveBlocksPerMultiprocessor(&occ128_d[cur_dev], moe_f16g_sk128v_kernel, 256,
+           || cudaOccupancyMaxActiveBlocksPerMultiprocessor(&occ128, moe_f16g_sk128v_kernel, 256,
                   SK128_SMEM_BYTES) != cudaSuccess
-           || occ128_d[cur_dev] < 1)
-            occ128_d[cur_dev] = -1;
+           || occ128 < 1)
+            occ128 = -1;
     }
-    sms = sms_d[cur_dev]; occ32 = occ32_d[cur_dev]; occ128 = occ128_d[cur_dev]; occt = occt_d[cur_dev];
     int xcross = cross;
     if(occ128 < 1 || (in_f % SK128_BK) != 0) xcross = 0x7fffffff;  // every group rides 32x64
     if(xcross < 1) xcross = 1;
@@ -1774,10 +1601,7 @@ int memra_moe_f16g_gemm_sk(const void* w_f16, const void* act_f16, float* y,
                 (const __half*)w_f16, (const __half*)act_f16, y, row_scale, ex_off_dev,
                 n_active, in_f, out_f, 1, xcross, (int)t32);
     }
-    cudaError_t e=cudaGetLastError();
-    if(e) fprintf(stderr, "[moe-sk-err] f16g_sk err=%d(%s) n_active=%d max_m=%d in_f=%d out_f=%d\n",
-                  (int)e, cudaGetErrorString(e), n_active, max_m, in_f, out_f);
-    return e?1000+(int)e:0;
+    cudaError_t e=cudaGetLastError(); return e?1000+(int)e:0;
 }
 
 // DIRECT-FROM-QUANT grouped GEMM (lane/kquant-tile-loaders + lane/iq-direct-loaders): the
@@ -1794,9 +1618,9 @@ int memra_moe_kq_gemm_sk(const unsigned long long* table, int proj, int n_expert
         int tail, long row_bytes, void* stream){
     // whole superblocks per k walk: 256-value superblocks for the kq/IQ classes,
     // 64-value blocks for NVFP4 (its 16-value window is one UE4M3 sub-block).
-    if(in_f % ((qtype == QT_NVFP4 || qtype == QT_NVFP4_V2) ? 64 : 256)) return 2;
+    if(in_f % (qtype == QT_NVFP4 ? 64 : 256)) return 2;
     if(qtype != QT_Q4_K && qtype != QT_Q6_K && qtype != QT_IQ4_XS && qtype != QT_IQ3_S
-       && qtype != QT_NVFP4 && qtype != QT_NVFP4_V2)
+       && qtype != QT_NVFP4)
         return 2;
     if(n_active > SK_MAX_G || ex_off_host == nullptr) return 2;
     if(n_active <= 0 || max_m <= 0) return 0;
@@ -1804,10 +1628,6 @@ int memra_moe_kq_gemm_sk(const unsigned long long* table, int proj, int n_expert
     switch(qtype){
         case QT_NVFP4:
             return moe_kq_gemm_sk_launch<QT_NVFP4>(table, proj, n_expert, ex_ids, act_f16, y,
-                row_scale, ex_off_dev, ex_off_host, n_active, max_m, in_f, out_f, cross,
-                tail, row_bytes, st);
-        case QT_NVFP4_V2:
-            return moe_kq_gemm_sk_launch<QT_NVFP4_V2>(table, proj, n_expert, ex_ids, act_f16, y,
                 row_scale, ex_off_dev, ex_off_host, n_active, max_m, in_f, out_f, cross,
                 tail, row_bytes, st);
         case QT_Q4_K:
@@ -1902,13 +1722,3 @@ int memra_moe_f16g_gemm(const void* w_f16, const void* act_f16, void* y,
 }
 
 } // extern "C"
-
-// Runtime-API device bind (2026-08-27, gemm-prime bring-up). Every raw <<<>>> launch in this
-// file follows the RUNTIME API's current device, which nothing in this repo had ever moved off
-// 0 — the whole FFI surface was root-only until the TP2 grouped prime called it on rank
-// engines, where a rank-1 stream plus a device-0 runtime context is cudaErrorInvalidValue
-// (the rc=1001 the [moe-sk-err] receipt finally named; geometry exonerated by moe-sk-repro,
-// which ran the same shapes OK single-device up to max_m=6639).
-extern "C" int memra_bind_device(int dev){
-    return (int)cudaSetDevice(dev);
-}

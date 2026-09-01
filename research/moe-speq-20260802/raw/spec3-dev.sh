@@ -7,7 +7,7 @@
 set -u
 DEV=$1; TAG=$2; PROMPT=$3; CHAT=$4
 BIN=/home/ubuntu/memra-moespeq/target/release
-ART=/opt/scratch/nvme/models/hy3-layer103p5-bw24-runtime
+ART=/opt/dl-image/nvme/models/hy3-layer103p5-bw24-runtime
 OUT=/home/ubuntu/receipts/moe-speq
 CH=()
 if [ "$CHAT" = "1" ]; then CH=(MEMRA_CHAT=1); fi

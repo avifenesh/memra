@@ -58,7 +58,6 @@ impl HybridModel {
         e: &Engine,
         bucket: usize,
     ) -> Result<PrimeGraph, Box<dyn std::error::Error>> {
-        self.refuse_hyper("prime_graph_new")?;
         use cudarc::driver::sys::{CUgraphInstantiate_flags, CUstreamCaptureMode};
         let n_embd = self.cfg.n_embd as usize;
         let n_vocab = self.output.out_features();
@@ -109,13 +108,8 @@ impl HybridModel {
                 &mut hs_cell.borrow_mut(),
             )
         })?;
-        // Ends the &mut reborrows held by the capture cells before the buffers are
-        // moved into PrimeGraph below (the cells are RefCell<&mut _>, hence no Drop).
-        #[allow(clippy::drop_non_drop)] // allow: explicit end-of-borrow marker, see above
         drop(scratch_cell);
-        #[allow(clippy::drop_non_drop)] // allow: explicit end-of-borrow marker, see above
         drop(lo_cell);
-        #[allow(clippy::drop_non_drop)] // allow: explicit end-of-borrow marker, see above
         drop(hs_cell);
         // reclaim the private scratch (graph-baked) and restore the eager one
         let private_scratch = e.f16_scratch_swap(prev_scratch);

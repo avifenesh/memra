@@ -2,7 +2,7 @@
 # Five-round whole-server interleaved before/after binary pair under one lock hold.
 set -euo pipefail
 
-ROOT=${COLDHOL_ROOT:-/opt/scratch/nvme/cx-coldhol}
+ROOT=${COLDHOL_ROOT:-/opt/dl-image/nvme/cx-coldhol}
 REPO=${COLDHOL_REPO:-$ROOT/memra}
 RUNNER=${COLDHOL_RUNNER:-$REPO/research/coldhol-20260812/run-box1.sh}
 EXPECTED_HARNESS_SOURCE=${COLDHOL_EXPECTED_HARNESS_SOURCE:?set the checked-out harness commit}

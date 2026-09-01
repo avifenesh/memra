@@ -55,15 +55,11 @@ pub fn dequantize(ty: GgmlType, raw: &[u8], n_elems: usize) -> Vec<f32> {
             }
         }
         GgmlType::F16 => {
-            #[allow(clippy::needless_range_loop)]
-            // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
             for i in 0..n_elems {
                 out[i] = fp16_to_f32(rd_u16(raw, i * 2));
             }
         }
         GgmlType::BF16 => {
-            #[allow(clippy::needless_range_loop)]
-            // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
             for i in 0..n_elems {
                 out[i] = bf16_to_f32(rd_u16(raw, i * 2));
             }
@@ -190,7 +186,6 @@ fn dequant_q4_k(raw: &[u8], n: usize, out: &mut [f32]) {
 
 /// block_q6_K (QK_K=256): { u8 ql[128]; u8 qh[64]; i8 scales[16]; fp16 d } => 210 bytes / 256 elems.
 /// ggml layout: ql then qh then scales then d at the end.
-#[allow(clippy::identity_op)] // allow: the explicit +0/*1/>>0 terms document the lane/byte symmetry of the reference layout
 fn dequant_q6_k(raw: &[u8], n: usize, out: &mut [f32]) {
     const QK_K: usize = 256;
     const BYTES: usize = 210;
@@ -376,7 +371,6 @@ fn dequant_q5_k(raw: &[u8], n: usize, out: &mut [f32]) {
 
 /// block_q3_K (QK_K=256): { u8 hmask[32]; u8 qs[64]; u8 scales[12]; fp16 d } => 110 bytes.
 /// Port of dequantize_row_q3_K (ggml-quants.c:1247-1295). Symmetric: -4/-0 offset folded via hmask.
-#[allow(clippy::identity_op)] // allow: the explicit +0/*1/>>0 terms document the lane/byte symmetry of the reference layout
 fn dequant_q3_k(raw: &[u8], n: usize, out: &mut [f32]) {
     const QK_K: usize = 256;
     const BYTES: usize = 110;
@@ -395,8 +389,6 @@ fn dequant_q3_k(raw: &[u8], n: usize, out: &mut [f32]) {
         let aux1 = u32::from_le_bytes([scbytes[4], scbytes[5], scbytes[6], scbytes[7]]);
         let aux2 = u32::from_le_bytes([scbytes[8], scbytes[9], scbytes[10], scbytes[11]]);
         let tmp = aux2;
-        #[allow(clippy::identity_op)]
-        // allow: the explicit +0/*1/>>0 terms document the lane/byte symmetry of the reference layout
         let n_aux0 = (aux0 & kmask2) | (((tmp >> 0) & kmask1) << 4);
         let n_aux1 = (aux1 & kmask2) | (((tmp >> 2) & kmask1) << 4);
         let n_aux2 = ((aux0 >> 4) & kmask2) | (((tmp >> 4) & kmask1) << 4);
@@ -477,7 +469,6 @@ fn dequant_iq4_xs(raw: &[u8], n: usize, out: &mut [f32]) {
 /// block_iq3_s (QK_K=256): { fp16 d; u8 qs[64]; u8 qh[8]; u8 signs[32]; u8 scales[4] } => 110 bytes.
 /// Port of dequantize_row_iq3_s (ggml-quants.c:2535-2574). Grid-codebook + per-byte signs.
 /// kmask_iq2xs = {1,2,4,8,16,32,64,128} = (1<<j); scale = d*(1 + 2*nibble).
-#[allow(clippy::identity_op)] // allow: the explicit +0/*1/>>0 terms document the lane/byte symmetry of the reference layout
 fn dequant_iq3_s(raw: &[u8], n: usize, out: &mut [f32]) {
     const QK_K: usize = 256;
     const BYTES: usize = 110;
@@ -500,8 +491,6 @@ fn dequant_iq3_s(raw: &[u8], n: usize, out: &mut [f32]) {
             let db2 = d * (1.0 + 2.0 * (scales[ib32 / 2] >> 4) as f32);
             let qhb = qh[qh_i]; // first of the pair
             for l in 0..4 {
-                #[allow(clippy::identity_op)]
-                // allow: the explicit +0/*1/>>0 terms document the lane/byte symmetry of the reference layout
                 let i1 = raw[qs_off + 2 * l + 0] as usize | (((qhb as usize) << (8 - 2 * l)) & 256);
                 let i2 = raw[qs_off + 2 * l + 1] as usize | (((qhb as usize) << (7 - 2 * l)) & 256);
                 let s = raw[signs_off + l];
@@ -616,8 +605,6 @@ mod tests {
             raw[2 + j] = (j as i8 * 2) as u8;
         }
         let out = dequantize(GgmlType::Q8_0, &raw, 32);
-        #[allow(clippy::needless_range_loop)]
-        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
         for j in 0..32 {
             assert!((out[j] - (j as f32)).abs() < 1e-4, "j={j} got {}", out[j]);
         }
@@ -650,18 +637,12 @@ mod tests {
         raw[1] = 0x38; // d=0.5
         raw[2] = 0x00;
         raw[3] = 0x00; // dmin=0
-        #[allow(clippy::needless_range_loop)]
-        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
         for k in 4..16 {
             raw[k] = 0x21;
         } // scales nonzero
-        #[allow(clippy::needless_range_loop)]
-        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
         for k in 16..48 {
             raw[k] = 0xA5;
         } // qh
-        #[allow(clippy::needless_range_loop)]
-        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
         for k in 48..176 {
             raw[k] = (k as u8).wrapping_mul(7);
         } // qs
@@ -673,18 +654,12 @@ mod tests {
         // hmask all-0xFF -> hb=0 path (no -4); shift=0 reads low 2 bits -> w = q&3.
         // (the unpacked scale comes from the full 6-bit aux dance; this test only asserts finiteness.)
         let mut raw = vec![0u8; 110];
-        #[allow(clippy::needless_range_loop)]
-        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
         for k in 0..32 {
             raw[k] = 0xFF;
         } // hmask set -> no -4
-        #[allow(clippy::needless_range_loop)]
-        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
         for k in 32..96 {
             raw[k] = 0b01_10_11_00;
         } // qs
-        #[allow(clippy::needless_range_loop)]
-        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
         for k in 96..108 {
             raw[k] = 0x21;
         } // packed scales
@@ -697,13 +672,9 @@ mod tests {
     fn nvfp4_table_and_finite() {
         // sub-scale d byte 0x3F (exp=7,man=7 -> (1+7/8)*2^0*0.5 = 0.9375), qs nibble 7 -> 12 (doubled).
         let mut raw = vec![0u8; 36];
-        #[allow(clippy::needless_range_loop)]
-        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
         for k in 0..4 {
             raw[k] = 0x3F;
         }
-        #[allow(clippy::needless_range_loop)]
-        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
         for k in 4..36 {
             raw[k] = 0x77;
         } // both nibbles = 7 -> kvalues 12

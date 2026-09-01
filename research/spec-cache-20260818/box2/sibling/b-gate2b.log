@@ -1,13 +1,13 @@
 + date -u
 Wed Aug 19 01:15:39 UTC 2026
-+ cd /opt/scratch/nvme/b/memra
-+ rm -rf /opt/scratch/nvme/receipts/b/qwen-mixed-prodbudget
++ cd /opt/dl-image/nvme/b/memra
++ rm -rf /opt/dl-image/nvme/receipts/b/qwen-mixed-prodbudget
 + export MEMRA_PREFIX_CACHE_MB=16384
 + MEMRA_PREFIX_CACHE_MB=16384
 + CUDA_VISIBLE_DEVICES=1
 + MEMRA_GPU_LOCK=/tmp/memra-b.lock
 + MEMRA_GATE_PORT=18098
-+ tools/spec-cache-mixed-gate.sh /opt/scratch/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf target/release/memra-server /opt/scratch/nvme/receipts/b/qwen-mixed-prodbudget
++ tools/spec-cache-mixed-gate.sh /opt/dl-image/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf target/release/memra-server /opt/dl-image/nvme/receipts/b/qwen-mixed-prodbudget
 == mixed arm: production config (spec on) ==
 [mixed-on] window 34.3s batch agg 241.3 tok/s (138 batch rows)
 == mixed arm: spec-off reference ==

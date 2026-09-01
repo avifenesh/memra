@@ -2,9 +2,9 @@
 //! twins (MEMRA_Q5K_ISSUE, default ON) on SYNTHETIC q5_K weights at the real shapes:
 //!   - 27B lm_head: in_f=5120 out_f=248320 (874MB row-major stream, DRAM-cold every launch)
 //!   - trunk-class shapes rotated over copies so each launch reads L2-cold bytes.
-//!     Per shape: bit-exactness of il vs reference at the shipped mr policy (must be 0 mismatches),
-//!     then N-rep wall time + implied weight GB/s. Toggled in-process via MEMRA_Q5K_ISSUE (the
-//!     dispatch reads env per call — house style). The old forced-mr sweep went with MEMRA_MMVQ_MR.
+//! Per shape: bit-exactness of il vs reference at the shipped mr policy (must be 0 mismatches),
+//! then N-rep wall time + implied weight GB/s. Toggled in-process via MEMRA_Q5K_ISSUE (the
+//! dispatch reads env per call — house style). The old forced-mr sweep went with MEMRA_MMVQ_MR.
 use memra_engine::Engine;
 use std::time::Instant;
 

@@ -377,8 +377,6 @@ fn main() {
     );
     // ---- SPS(B) profile + per-position conditional acceptance, on owner corpora --------
     {
-        #[allow(clippy::type_complexity)]
-        // allow: one-shot composite type; naming it would hide the shape that matters at the call site
         let steady: Vec<&(usize, usize, usize, usize, u64, Vec<f32>)> = all_rounds
             .iter()
             .filter(|r| r.0 > 0 && r.0 == r.1)
@@ -662,20 +660,20 @@ fn run_depth_sweep(
                         ));
                     }
                     // identity is the verdict instrument: every depth must reproduce plain
-                    if let Some(pt) = &plain_toks
-                        && &out.tokens != pt
-                    {
-                        let first = out
-                            .tokens
-                            .iter()
-                            .zip(pt)
-                            .position(|(a, b)| a != b)
-                            .unwrap_or(pt.len().min(out.tokens.len()));
-                        identity_fails.push(format!(
-                            "IDENTITY FAIL rep{rep} prompt{pi} ({pool}) arm={}: drafted \
+                    if let Some(pt) = &plain_toks {
+                        if &out.tokens != pt {
+                            let first = out
+                                .tokens
+                                .iter()
+                                .zip(pt)
+                                .position(|(a, b)| a != b)
+                                .unwrap_or(pt.len().min(out.tokens.len()));
+                            identity_fails.push(format!(
+                                "IDENTITY FAIL rep{rep} prompt{pi} ({pool}) arm={}: drafted \
                                  != plain at generated index {first}",
-                            arms[ai].label
-                        ));
+                                arms[ai].label
+                            ));
+                        }
                     }
                 }
             }
@@ -702,8 +700,6 @@ fn run_depth_sweep(
     let mut table_json: Vec<String> = Vec::new();
     for a in &arms {
         // depth-pinned rounds only: a round the n_new budget truncated is not a depth-T round
-        #[allow(clippy::type_complexity)]
-        // allow: one-shot composite type; naming it would hide the shape that matters at the call site
         let steady: Vec<&(usize, usize, usize, usize, u64, Vec<f32>)> =
             a.recs.iter().filter(|r| r.0 > 0 && r.0 == r.1).collect();
         let (mean_round_us, tau, sps) = if steady.is_empty() {

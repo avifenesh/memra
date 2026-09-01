@@ -11,7 +11,6 @@ rust-version.workspace = true
 edition = "2024"
 
 [dependencies]
-libc = "0.2"
 memmap2 = "0.9"
 # fixture-integrity hashing for the dsv4-forward gate (already in the workspace lockfile
 # via memra-server; no new transitive deps)

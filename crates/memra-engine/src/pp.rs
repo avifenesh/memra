@@ -73,47 +73,12 @@
 //! (`MEMRA_PP_ALLOW_UNSPLIT_BATCH=1` = measurement override). "Unwired" for dc/graph/spec
 //! still means "runs unsplit, silently" — audit each before trusting it on a pair.
 
-use std::cell::RefCell;
-use std::marker::PhantomData;
-use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, OnceLock, Weak};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use cudarc::driver::{CudaContext, CudaEvent, CudaSlice, CudaStream};
 
 use crate::Engine;
-
-/// Restores the caller's primary CUDA context on every return path, including panic unwind. The
-/// explicit `restore` call preserves the bind error for normal Result propagation; Drop is the
-/// final safety net when a scoped host worker or head-stage callback panics.
-pub(crate) struct PrimaryContextRestore<'a> {
-    engine: &'a Engine,
-    restored: bool,
-}
-
-impl<'a> PrimaryContextRestore<'a> {
-    pub(crate) fn new(engine: &'a Engine) -> Self {
-        Self {
-            engine,
-            restored: false,
-        }
-    }
-
-    pub(crate) fn restore(mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let result = self.engine.ctx().bind_to_thread();
-        self.restored = result.is_ok();
-        result?;
-        Ok(())
-    }
-}
-
-impl Drop for PrimaryContextRestore<'_> {
-    fn drop(&mut self) {
-        if !self.restored {
-            let _ = self.engine.ctx().bind_to_thread();
-        }
-    }
-}
 
 /// Returns the stage fence iff the ppN door is open: `MEMRA_PP_STAGES=N` (N >= 2) with a
 /// valid cut list. The fence has N+1 entries: `[0, c1, .., cN-1, n_layers]`; stage s runs
@@ -209,36 +174,6 @@ pub fn pp2_streams_off() -> bool {
     matches!(std::env::var("MEMRA_PP_STREAMS").as_deref(), Ok("0"))
 }
 
-/// `MEMRA_PP_EXIT_PUBLISH` — the ppN EXIT-PUBLICATION guard (lane/glm5-accrace 2026-09-01).
-///
-/// **DEFAULT ON, and the default is the measurement, not a preference** (the new-flags law:
-/// ON/OFF by design, receipts attached, FLAGS.md row in the same commit). With per-stage
-/// streams on ONE device the hc ppN bodies published nothing to the caller except a
-/// last-stage drain, so a caller allocation could land under still-queued stage work: the
-/// prime over a fixed prompt returned three distinct logit fingerprints inside one process
-/// (32/110 non-canonical), and one glm5 spec round silently lost an acceptance. See
-/// [`PpNRt::publish_all_to`] for the anatomy and
-/// `research/glm53-flash-bringup-20260827/accrace-20260901/LANE.md` for the receipts.
-///
-/// `0` restores the pre-lane behaviour exactly — the ROLLBACK/CONTROL seam (flags doctrine:
-/// rollback seams are a legitimate flag class). It is a KNOWN-RACY arm: never a serving
-/// configuration, only an A/B control.
-///
-/// Read PER CALL rather than latched: the gate matrices drive both arms in one process.
-///
-/// POLARITY IS DELIBERATE, AND DO NOT COPY IT BLIND (review note, 2026-09-01): the test is
-/// "anything except exactly `0` is ON", so a typo'd rollback (`=false`, `=O`, `=00`) leaves the
-/// guard ON. That FAILS SAFE **here** — the ON arm is the correctness fix, the OFF arm is the
-/// known-racy control — and it is why this flag is written loosely on purpose rather than
-/// parsed strictly. The polarity is only safe because of which arm is dangerous. A default-ON
-/// flag whose `0` disables something HAZARDOUS needs the mirror shape (`Ok("1")`-style strict
-/// opt-in, or a parse that refuses an unrecognized value), because there the same typo would
-/// silently keep the hazard armed. Pick the polarity from which side fails safe, never by
-/// copying this line.
-pub fn pp_exit_publish() -> bool {
-    !matches!(std::env::var("MEMRA_PP_EXIT_PUBLISH").as_deref(), Ok("0"))
-}
-
 /// True iff the ppN door would put TWO OR MORE stage streams on ONE device (devices
 /// unset = all stages on the primary; or an explicit placement with a repeated device).
 /// The deferred-readback (pipelined) arm is REFUSED in this regime: the 2026-08-02 x20
@@ -249,17 +184,6 @@ pub fn pp_exit_publish() -> bool {
 /// Engine kernels concurrent on two streams of one device) is NOT fixed by any flag yet.
 /// Cross-device pipelined (one stage stream per device) is 23/23 clean post-fix. Refuse
 /// loudly rather than return silently-wrong logits. Env-only read (callable pre-runtime).
-///
-/// ONE MECHANISM OF THAT OPEN ROOT CAUSE IS NOW NAMED AND CLOSED (lane/glm5-accrace
-/// 2026-09-01), stated narrowly because it was measured on the SERIAL arm, not this
-/// refused pipelined one: a ppN body that returned to its caller published only the
-/// producing last stage, so a caller allocation could land under work still queued on a
-/// caller-CO-RESIDENT stage stream. That is exactly a "same Engine, two streams, one
-/// device" corruption, and it is the reason this predicate's regime is the dangerous one —
-/// on a DISTINCT-device placement only the head stage shares the caller's context, and a
-/// body's terminal drain already covers it. See [`PpNRt::publish_all_to`] and
-/// [`pp_exit_publish`]. Whether the pipelined arm's remaining flake is the same mechanism
-/// is UNMEASURED; this refusal stands.
 pub fn pp_multi_stream_same_device() -> bool {
     let stages_open = std::env::var("MEMRA_PP_STAGES")
         .map(|v| v.parse::<usize>().map(|n| n >= 2).unwrap_or(false))
@@ -272,24 +196,14 @@ pub fn pp_multi_stream_same_device() -> bool {
     }
     match devices {
         None => true, // door open, no placement: every stage stream lands on the primary
-        Some(s) => pp_devices_repeat(&s),
+        Some(s) => {
+            let mut v: Vec<&str> = s.split(',').map(|p| p.trim()).collect();
+            let n = v.len();
+            v.sort_unstable();
+            v.dedup();
+            v.len() < n // repeated device = shared-device streams
+        }
     }
-}
-
-fn pp_devices_repeat(raw: &str) -> bool {
-    let Ok(mut devices) = raw
-        .split(',')
-        .map(|part| part.trim().parse::<usize>())
-        .collect::<Result<Vec<_>, _>>()
-    else {
-        // Runtime construction will return the precise parse error. Treat malformed input as
-        // unsafe here so a second environment interpretation can never admit a wavefront.
-        return true;
-    };
-    let count = devices.len();
-    devices.sort_unstable();
-    devices.dedup();
-    devices.len() < count
 }
 
 /// True iff the ppN door is open AND the placement spans 2+ DISTINCT devices AND the
@@ -381,163 +295,6 @@ pub fn batch_pp_on() -> bool {
     std::env::var("MEMRA_BATCH_PP").as_deref() != Ok("0")
 }
 
-/// Largest PP wavefront admitted by the RTX PRO 6000 product shape. The underlying placement
-/// runtime remains N-stage, but the serving wave scheduler is deliberately bounded to the 2--4
-/// card surface that has a concrete qualification plan.
-pub const PP_WAVE_MAX_STAGES: usize = 4;
-
-/// Strict opt-in for the PP3/PP4 request wavefront. PP2 keeps its independently qualified
-/// `MEMRA_DUAL_PP` default; a new stage count never inherits that default without its own target
-/// receipts.
-pub fn pp_wave_on_value(value: Option<&str>) -> Result<bool, &'static str> {
-    match value {
-        None | Some("0") => Ok(false),
-        Some("1") => Ok(true),
-        Some(_) => Err("MEMRA_PP_WAVE must be 0 or 1"),
-    }
-}
-
-pub fn pp_wave_on() -> Result<bool, &'static str> {
-    match std::env::var_os("MEMRA_PP_WAVE") {
-        None => pp_wave_on_value(None),
-        Some(value) => value
-            .to_str()
-            .ok_or("MEMRA_PP_WAVE must be valid UTF-8 and exactly 0 or 1")
-            .and_then(|value| pp_wave_on_value(Some(value))),
-    }
-}
-
-/// Split one scheduler tick into at most one wave per stage. Earlier waves carry the remainder so
-/// priority order is preserved, every row appears exactly once, and the largest wave is
-/// `ceil(batch / min(batch, stages))`.
-pub fn pp_wave_ranges(batch: usize, stages: usize) -> Vec<(usize, usize)> {
-    if batch == 0 || stages == 0 {
-        return Vec::new();
-    }
-    let waves = batch.min(stages);
-    let base = batch / waves;
-    let extra = batch % waves;
-    let mut out = Vec::with_capacity(waves);
-    let mut start = 0usize;
-    for wave in 0..waves {
-        let len = base + usize::from(wave < extra);
-        out.push((start, start + len));
-        start += len;
-    }
-    debug_assert_eq!(start, batch);
-    out
-}
-
-/// Cells on one pipeline anti-diagonal, returned as `(wave, stage)`. Cells in a diagonal never
-/// share a wave (request/cache state) or a stage (Engine scratch/stream), so they may be driven by
-/// scoped host threads without reintroducing the shared-Engine race that quarantined the old
-/// deferred PP walker.
-pub fn pp_wave_diagonal(stages: usize, waves: usize, diagonal: usize) -> Vec<(usize, usize)> {
-    if stages == 0 || waves == 0 || diagonal >= stages + waves - 1 {
-        return Vec::new();
-    }
-    let first_stage = diagonal.saturating_sub(waves - 1);
-    let last_stage = diagonal.min(stages - 1);
-    (first_stage..=last_stage)
-        .map(|stage| (diagonal - stage, stage))
-        .collect()
-}
-
-/// Fail-closed topology gate for the unqualified PP3/PP4 wavefront. Native peer transport and one
-/// physical device per stage are required for the first implementation; host bounce and repeated
-/// devices retain the serial PP-N walker.
-pub fn pp_wave_eligibility(
-    stages: usize,
-    double_slot: bool,
-    host_bounce: bool,
-    repeated_device: bool,
-) -> Result<(), &'static str> {
-    if !(3..=PP_WAVE_MAX_STAGES).contains(&stages) {
-        return Err("PP wavefront requires 3 or 4 stages; PP2 is owned by MEMRA_DUAL_PP");
-    }
-    if !double_slot {
-        return Err("PP wavefront requires MEMRA_PP_OVERLAP=1 double-buffered boundaries");
-    }
-    if host_bounce {
-        return Err(
-            "PP wavefront is unqualified with MEMRA_PP_HOST_BOUNCE=1; use native peer transport",
-        );
-    }
-    if repeated_device {
-        return Err("PP wavefront requires one distinct CUDA device per stage");
-    }
-    Ok(())
-}
-
-/// The PP3/PP4 scheduler decomposes one serving batch into narrower stage waves. A preserved-BF16
-/// W4A16 artifact therefore needs the row-wise BF16 matvec program: the default f32-expanded
-/// cuBLAS path is batch-width dependent, and HY3 B=4/B=8 changed every logit row when wave cells
-/// narrowed to B=1/B=2. `MEMRA_BF16_MMV=1` keeps the same checkpoint BF16 values and runs one
-/// deterministic per-row reduction program at every width.
-pub const PP_WAVE_W4A16_BF16_REFUSAL: &str = "PP wavefront for a W4A16 artifact with preserved BF16 non-expert weights requires \
-     MEMRA_BF16_MMV=1; without the row-wise BF16 program, wave batch-width decomposition changes \
-     logits. Keep MEMRA_PP_WAVE=0 or enable and qualify MEMRA_BF16_MMV=1";
-
-pub fn pp_wave_numeric_eligibility(
-    weight_only_nvfp4: bool,
-    bf16_mmv: bool,
-) -> Result<(), &'static str> {
-    if weight_only_nvfp4 && !bf16_mmv {
-        return Err(PP_WAVE_W4A16_BF16_REFUSAL);
-    }
-    Ok(())
-}
-
-/// One routing predicate shared by decode and prime: requesting the wave door without the
-/// double-slot policy is the documented serial rollback, not a late per-request refusal.
-pub fn pp_wave_route_enabled(
-    requested: bool,
-    overlap: bool,
-    stages: usize,
-    work_items: usize,
-) -> bool {
-    requested && overlap && (3..=PP_WAVE_MAX_STAGES).contains(&stages) && work_items >= 2
-}
-
-static PP_WAVE_ACTIVE_CELLS: AtomicUsize = AtomicUsize::new(0);
-static PP_WAVE_OVERLAPS: AtomicUsize = AtomicUsize::new(0);
-static PP_WAVE_TICKS: AtomicUsize = AtomicUsize::new(0);
-static PP_WAVE_CELLS: AtomicUsize = AtomicUsize::new(0);
-
-pub(crate) struct PpWaveCellGuard;
-
-/// Mark one host-driven PP3/PP4 cell active. An overlap increment is proof that two distinct
-/// stage walkers were simultaneously inside their model range; enqueue order alone is not proof
-/// for MoE paths whose router readback synchronizes the host.
-pub(crate) fn enter_pp_wave_cell() -> PpWaveCellGuard {
-    let active = PP_WAVE_ACTIVE_CELLS.fetch_add(1, Ordering::AcqRel);
-    if active > 0 {
-        PP_WAVE_OVERLAPS.fetch_add(1, Ordering::Relaxed);
-    }
-    PP_WAVE_CELLS.fetch_add(1, Ordering::Relaxed);
-    PpWaveCellGuard
-}
-
-impl Drop for PpWaveCellGuard {
-    fn drop(&mut self) {
-        let active = PP_WAVE_ACTIVE_CELLS.fetch_sub(1, Ordering::AcqRel);
-        debug_assert!(active > 0, "PP wave active-cell counter underflow");
-    }
-}
-
-pub(crate) fn record_pp_wave_tick() {
-    PP_WAVE_TICKS.fetch_add(1, Ordering::Relaxed);
-}
-
-/// `(completed ticks, entered cells, observed concurrent-cell overlaps)`.
-pub fn pp_wave_snapshot() -> (usize, usize, usize) {
-    (
-        PP_WAVE_TICKS.load(Ordering::Relaxed),
-        PP_WAVE_CELLS.load(Ordering::Relaxed),
-        PP_WAVE_OVERLAPS.load(Ordering::Relaxed),
-    )
-}
-
 /// MEMRA_DUAL_PP three-state mode for the dual-active PP-2 batched decode path.
 /// Default ON (owner flip 2026-08-11) after the box1 PRO-pair re-gate: correctness
 /// bit-identity B=1..5, servestress no-thrash, 10-boot soak 929/929 golden matches with
@@ -611,7 +368,6 @@ pub const DUAL_PP_HOST_BOUNCE_REFUSAL: &str = "decode_step_batch_dual: refused: 
 
 /// Pure schedule policy shared by the runtime and kernel-check manifest cells. A single row
 /// has no second wave and must stay on the serial PP-N walker.
-#[allow(clippy::manual_div_ceil)] // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
 pub fn dual_pp_wave_mid(batch: usize) -> Option<usize> {
     (batch >= 2).then_some((batch + 1) / 2)
 }
@@ -1285,18 +1041,9 @@ fn peer_probe_copy(
             src.stream.cu_stream(),
         )?;
     }
-
-    // Publish the peer write to the receiving context exactly like the live BoundarySlot
-    // transport does. A host-side synchronize of only the TX stream is not the production
-    // cross-context visibility contract; the RX stream waits on a TX event before touching the
-    // destination allocation. Keeping the integrity probe on that same ordering path avoids
-    // diagnosing an intentionally unordered destination-context read as fabric corruption.
-    let published = src.ctx.new_event(None)?;
-    published.record(&src.stream)?;
+    src.stream.synchronize()?;
 
     dst.ctx.bind_to_thread()?;
-    dst.stream.wait(&published)?;
-    dst.stream.synchronize()?;
     let mut readback = vec![0u8; bytes];
     unsafe {
         cudarc::driver::result::memcpy_dtoh_sync(&mut readback, dst_buf.ptr)?;
@@ -1426,12 +1173,6 @@ fn host_bounce_capacity(n_embd: usize) -> Result<(usize, usize), String> {
     Ok((elems, bytes))
 }
 
-fn boundary_slot_growth_elements(current: [usize; 2], required: usize) -> usize {
-    current.into_iter().fold(0usize, |total, len| {
-        total.saturating_add(required.saturating_sub(len))
-    })
-}
-
 /// One bidirectional-DMA staging allocation. `CU_MEMHOSTALLOC_PORTABLE` matters here: the
 /// D2H producer and H2D consumer are in distinct CUDA primary contexts. Cacheable memory is
 /// intentional (rather than cudarc's write-combined pinned slice) because this allocation is
@@ -1529,15 +1270,6 @@ impl HostBounceRt {
 pub struct PpNRt {
     stages: Vec<StageRt>,
     boundaries: Vec<BoundaryRt>,
-    /// Whole-walk ownership for the shared boundary slot/event sequence. Boundary-local atomics
-    /// choose alternating slots but cannot distinguish two interleaved callers; one generation
-    /// lease therefore spans entry fencing through final publication/result collection.
-    walk_active: Arc<AtomicU64>,
-    walk_next: AtomicU64,
-    /// A deferred decode window intentionally owns several in-flight logits tickets. The weak
-    /// reference lets consecutive enqueue calls on the same CUDA-owner thread join that window;
-    /// the active generation is released only after the final `PendingLogits` is drained/dropped.
-    deferred_walk: Mutex<Weak<PpWalkState>>,
     /// true iff ANY boundary crosses devices.
     cross_any: bool,
     /// Startup selection captured at runtime construction. A runtime probe failure may promote
@@ -1556,128 +1288,6 @@ pub struct PpNRt {
     readback: Arc<CudaStream>,
 }
 
-#[derive(Debug)]
-struct PpWalkState {
-    active: Arc<AtomicU64>,
-    generation: u64,
-    runtime_id: usize,
-    deferred_owner: Option<std::thread::ThreadId>,
-}
-
-impl PpWalkState {
-    fn is_active(&self) -> bool {
-        self.active.load(Ordering::Acquire) == self.generation
-    }
-}
-
-impl Drop for PpWalkState {
-    fn drop(&mut self) {
-        let _ =
-            self.active
-                .compare_exchange(self.generation, 0, Ordering::AcqRel, Ordering::Acquire);
-    }
-}
-
-/// Opaque lifetime token for one complete PP boundary walk. Clones are allowed only through an
-/// explicit coordinator permit or the same-thread deferred enqueue window; the active generation
-/// clears when the final clone is dropped.
-#[derive(Debug)]
-pub struct PpWalkLease {
-    state: Arc<PpWalkState>,
-}
-
-/// Explicit authority for a coordinator whose two host lanes intentionally share one PP walk.
-#[derive(Clone, Debug)]
-pub(crate) struct PpWalkPermit {
-    state: Arc<PpWalkState>,
-}
-
-thread_local! {
-    static PP_WALK_BORROWS: RefCell<Vec<Arc<PpWalkState>>> = const { RefCell::new(Vec::new()) };
-}
-
-/// Thread-local borrowed authority. It is deliberately !Send so a caller must install the permit
-/// independently in each scoped coordinator lane.
-pub(crate) struct PpWalkBorrowGuard {
-    prior_len: usize,
-    _not_send: PhantomData<Rc<()>>,
-}
-
-impl Drop for PpWalkBorrowGuard {
-    fn drop(&mut self) {
-        PP_WALK_BORROWS.with(|borrows| borrows.borrow_mut().truncate(self.prior_len));
-    }
-}
-
-fn next_pp_walk_generation(next: &AtomicU64) -> u64 {
-    loop {
-        let generation = next.fetch_add(1, Ordering::Relaxed);
-        if generation != 0 {
-            return generation;
-        }
-    }
-}
-
-fn acquire_pp_walk(
-    active: &Arc<AtomicU64>,
-    next: &AtomicU64,
-    runtime_id: usize,
-    deferred_owner: Option<std::thread::ThreadId>,
-    path: &str,
-) -> Result<PpWalkLease, String> {
-    let generation = next_pp_walk_generation(next);
-    active
-        .compare_exchange(0, generation, Ordering::AcqRel, Ordering::Acquire)
-        .map_err(|_| {
-            format!(
-                "{path}: refused concurrent PP walk; shared boundary slots already have an owner"
-            )
-        })?;
-    Ok(PpWalkLease {
-        state: Arc::new(PpWalkState {
-            active: active.clone(),
-            generation,
-            runtime_id,
-            deferred_owner,
-        }),
-    })
-}
-
-fn borrowed_pp_walk(runtime_id: usize) -> Option<PpWalkLease> {
-    PP_WALK_BORROWS.with(|borrows| {
-        borrows
-            .borrow()
-            .iter()
-            .rev()
-            .find(|state| state.runtime_id == runtime_id && state.is_active())
-            .cloned()
-            .map(|state| PpWalkLease { state })
-    })
-}
-
-fn lock_deferred_walk<'a>(
-    deferred: &'a Mutex<Weak<PpWalkState>>,
-    path: &str,
-) -> Result<std::sync::MutexGuard<'a, Weak<PpWalkState>>, String> {
-    deferred
-        .lock()
-        .map_err(|_| format!("{path}: deferred PP walk owner lock is poisoned"))
-}
-
-fn validate_walk_state(state: &PpWalkState, runtime_id: usize, path: &str) -> Result<(), String> {
-    if state.runtime_id != runtime_id {
-        return Err(format!(
-            "{path}: PP walk permit belongs to a different runtime"
-        ));
-    }
-    if !state.is_active() {
-        return Err(format!(
-            "{path}: PP walk permit generation is no longer active"
-        ));
-    }
-    Ok(())
-}
-
 /// M1 name kept alive for external callers (`pp-transport-smoke`, receipts, docs).
 pub type Pp2Rt = PpNRt;
 
@@ -1694,9 +1304,6 @@ impl PpNRt {
     }
 
     fn build(e: &Engine) -> Result<PpNRt, Box<dyn std::error::Error>> {
-        // Validate the experimental PP3/PP4 door at runtime construction so an invalid value is a
-        // boot refusal, never a silently-disabled serving policy discovered on the first request.
-        pp_wave_on().map_err(|reason| -> Box<dyn std::error::Error> { reason.into() })?;
         let primary_dev = e.ctx().ordinal();
         // Stage count: MEMRA_PP_DEVICES length wins when set (it IS the placement);
         // else MEMRA_PP_STAGES; else 2 (the M1 default — pp-transport-smoke runs doorless).
@@ -1722,17 +1329,17 @@ impl PpNRt {
                     vec![primary_dev; n_st]
                 }
             };
-        if let Ok(v) = std::env::var("MEMRA_PP_STAGES")
-            && let Ok(n) = v.parse::<usize>()
-            && n >= 2
-            && n != devices.len()
-        {
-            return Err(format!(
-                "MEMRA_PP_DEVICES lists {} devices but MEMRA_PP_STAGES={n} — \
+        if let Ok(v) = std::env::var("MEMRA_PP_STAGES") {
+            if let Ok(n) = v.parse::<usize>() {
+                if n >= 2 && n != devices.len() {
+                    return Err(format!(
+                        "MEMRA_PP_DEVICES lists {} devices but MEMRA_PP_STAGES={n} — \
                          refusing an ambiguous placement",
-                devices.len()
-            )
-            .into());
+                        devices.len()
+                    )
+                    .into());
+                }
+            }
         }
         let n_st = devices.len();
         let cross_any = devices.iter().any(|&d| d != devices[0]);
@@ -2044,9 +1651,6 @@ impl PpNRt {
         let rt = PpNRt {
             stages,
             boundaries,
-            walk_active: Arc::new(AtomicU64::new(0)),
-            walk_next: AtomicU64::new(1),
-            deferred_walk: Mutex::new(Weak::new()),
             cross_any,
             host_bounce,
             peer_probe,
@@ -2065,111 +1669,13 @@ impl PpNRt {
         self.stages.len()
     }
 
-    /// Acquire exclusive ownership of the PP boundary/event sequence for one complete model walk.
-    /// Fail fast rather than blocking. A nested call can join only when its thread has an explicit
-    /// coordinator borrow installed; merely running on the original thread is not authority.
-    pub fn acquire_walk(
-        &'static self,
-        path: &str,
-    ) -> Result<PpWalkLease, Box<dyn std::error::Error>> {
-        let runtime_id = self as *const Self as usize;
-        if let Some(lease) = borrowed_pp_walk(runtime_id) {
-            return Ok(lease);
-        }
-        acquire_pp_walk(&self.walk_active, &self.walk_next, runtime_id, None, path)
-            .map_err(|error| -> Box<dyn std::error::Error> { error.into() })
-    }
-
-    /// Join the one intentional multi-enqueue deferred window. Only the thread that opened the
-    /// window may add work; unrelated callers still fail fast while any pending result exists.
-    pub(crate) fn acquire_deferred_walk(
-        &'static self,
-        path: &str,
-    ) -> Result<PpWalkLease, Box<dyn std::error::Error>> {
-        let runtime_id = self as *const Self as usize;
-        let current_thread = std::thread::current().id();
-        let mut weak = lock_deferred_walk(&self.deferred_walk, path)
-            .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
-        if let Some(state) = weak.upgrade() {
-            validate_walk_state(&state, runtime_id, path)
-                .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
-            if state.deferred_owner.as_ref() != Some(&current_thread) {
-                return Err(format!(
-                    "{path}: refused cross-thread join of the active deferred PP window"
-                )
-                .into());
-            }
-            return Ok(PpWalkLease { state });
-        }
-        let lease = acquire_pp_walk(
-            &self.walk_active,
-            &self.walk_next,
-            runtime_id,
-            Some(current_thread),
-            path,
-        )
-        .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
-        *weak = Arc::downgrade(&lease.state);
-        Ok(lease)
-    }
-
-    /// Mint coordinator authority from an active owner lease. Passing this object is the only way
-    /// another host thread can make nested PP calls within that same generation.
-    pub(crate) fn walk_permit(
-        &'static self,
-        lease: &PpWalkLease,
-        path: &str,
-    ) -> Result<PpWalkPermit, Box<dyn std::error::Error>> {
-        let runtime_id = self as *const Self as usize;
-        validate_walk_state(&lease.state, runtime_id, path)
-            .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
-        if lease.state.deferred_owner.is_some() {
-            return Err(
-                format!("{path}: deferred PP windows cannot mint coordinator permits").into(),
-            );
-        }
-        Ok(PpWalkPermit {
-            state: lease.state.clone(),
-        })
-    }
-
-    /// Install a coordinator permit on the current host thread for the lifetime of the guard.
-    pub(crate) fn borrow_walk(
-        &'static self,
-        permit: &PpWalkPermit,
-        path: &str,
-    ) -> Result<PpWalkBorrowGuard, Box<dyn std::error::Error>> {
-        let runtime_id = self as *const Self as usize;
-        validate_walk_state(&permit.state, runtime_id, path)
-            .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
-        let prior_len = PP_WALK_BORROWS.with(|borrows| {
-            let mut borrows = borrows.borrow_mut();
-            let prior_len = borrows.len();
-            borrows.push(permit.state.clone());
-            prior_len
-        });
-        Ok(PpWalkBorrowGuard {
-            prior_len,
-            _not_send: PhantomData,
-        })
-    }
-
     /// True iff any boundary crosses devices.
     pub fn cross_device(&self) -> bool {
         self.cross_any
     }
 
-    pub fn host_bounce_active(&self) -> bool {
+    fn host_bounce_active(&self) -> bool {
         self.host_bounce || PEER_RUNTIME_HOST_BOUNCE.load(Ordering::Acquire)
-    }
-
-    /// Actual stage placement frozen when this runtime was built. Environment strings may be
-    /// mutated by in-process gates later and are not authoritative for scheduler safety.
-    pub fn repeated_stage_device(&self) -> bool {
-        let mut devices: Vec<_> = self.stages.iter().map(|stage| stage.dev).collect();
-        devices.sort_unstable();
-        devices.dedup();
-        devices.len() != self.stages.len()
     }
 
     fn context_for_dev<'a>(
@@ -2435,12 +1941,11 @@ impl PpNRt {
         Ok(())
     }
 
-    fn run_production_peer_probe_widths(
+    fn run_production_peer_probe(
         &self,
         enabled_pairs: &[(usize, usize)],
         host_bounce: bool,
         n_embd: usize,
-        widths: &[usize],
     ) -> Result<(), Box<dyn std::error::Error>> {
         let started = std::time::Instant::now();
         let mut copies = 0usize;
@@ -2460,13 +1965,13 @@ impl PpNRt {
                 let dst_dev = self.stages[dst_stage].dev;
                 if !enabled_pairs.contains(&(src_dev, dst_dev)) {
                     if host_bounce {
-                        skipped += widths.len();
+                        skipped += PEER_PROBE_TOKEN_WIDTHS.len();
                         eprintln!(
                             "[pp] production-slot peer probe SKIP: boundary={boundary_idx} \
                              dev{src_dev}->dev{dst_dev} widths_tokens={:?} \
                              (peer or pool access unavailable; MEMRA_PP_HOST_BOUNCE=1 remains \
                              fail-safe)",
-                            widths,
+                            PEER_PROBE_TOKEN_WIDTHS,
                         );
                         continue;
                     }
@@ -2490,7 +1995,7 @@ impl PpNRt {
                 let mut direction_largest_clean = 0usize;
                 let mut failure = None;
 
-                for (width_idx, tokens) in widths.iter().copied().enumerate() {
+                for (width_idx, tokens) in PEER_PROBE_TOKEN_WIDTHS.into_iter().enumerate() {
                     let n = n_embd.checked_mul(tokens).ok_or_else(|| {
                         format!(
                             "PP production-slot probe element count overflows for \
@@ -2588,24 +2093,10 @@ impl PpNRt {
             "[pp] production-slot peer probe {status}: widths_tokens={:?} copies={copies} \
              skipped={skipped} mismatches={total_mismatches} \
              largest_clean_payload_bytes={largest_clean_payload} elapsed_ms={:.3}",
-            widths,
+            PEER_PROBE_TOKEN_WIDTHS,
             started.elapsed().as_secs_f64() * 1e3,
         );
         Ok(())
-    }
-
-    fn run_production_peer_probe(
-        &self,
-        enabled_pairs: &[(usize, usize)],
-        host_bounce: bool,
-        n_embd: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        self.run_production_peer_probe_widths(
-            enabled_pairs,
-            host_bounce,
-            n_embd,
-            &PEER_PROBE_TOKEN_WIDTHS,
-        )
     }
 
     fn run_host_bounce_production_probe(
@@ -2677,13 +2168,14 @@ impl PpNRt {
         e.ctx().bind_to_thread()?;
         let result = self.bounce.get_or_init(|| {
             HostBounceRt::new(n_embd, &self.boundaries)
-                .inspect(|rt| {
+                .map(|rt| {
                     let bytes = rt.capacity * std::mem::size_of::<f32>();
                     eprintln!(
                         "[pp] host-bounce staging ready: n_embd={n_embd} max_tokens={} \
                          slot_bytes={bytes} slots_per_cross_boundary=2",
                         crate::cache::PRIME_CHUNK_MAX_TOKENS,
                     );
+                    rt
                 })
                 .map_err(|err| err.to_string())
         });
@@ -2764,7 +2256,7 @@ impl PpNRt {
         e: &Engine,
         row_bytes: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        if row_bytes == 0 || !row_bytes.is_multiple_of(std::mem::size_of::<f32>()) {
+        if row_bytes == 0 || row_bytes % std::mem::size_of::<f32>() != 0 {
             return Err(format!(
                 "runtime host-bounce cannot recover n_embd from row_bytes={row_bytes}"
             )
@@ -2859,14 +2351,13 @@ impl PpNRt {
         };
         let probe_index = PEER_RUNTIME_PROBES.fetch_add(1, Ordering::Relaxed);
         let probe_bytes = row_bytes.checked_mul(tokens);
+        let scheduler_class = if scheduler_idle { "idle" } else { "busy" };
+        let label = format!("runtime-{scheduler_class}-{tokens}tok");
         let started = std::time::Instant::now();
         let probe = match probe_bytes {
-            Some(_) => self.run_production_peer_probe_widths(
-                &self.peer_capable,
-                false,
-                row_bytes / std::mem::size_of::<f32>(),
-                &[tokens],
-            ),
+            Some(bytes) => {
+                run_peer_probe_pass(&self.stages, &self.peer_capable, false, &label, bytes)
+            }
             None => Err(format!(
                 "PP runtime peer probe byte count overflows for row_bytes={row_bytes} \
                  tokens={tokens}"
@@ -2992,30 +2483,6 @@ impl PpNRt {
             s_rx.synchronize()?;
         }
         Ok(())
-    }
-
-    /// Project only the additional device bytes needed to grow this process-global boundary to
-    /// `n` elements per slot. Admission must not charge the full persistent high-water to every
-    /// session after it already exists.
-    pub fn boundary_slot_growth_bytes(
-        &self,
-        b: usize,
-        n: usize,
-    ) -> Result<usize, Box<dyn std::error::Error>> {
-        let boundary = self
-            .boundaries
-            .get(b)
-            .ok_or_else(|| format!("PP boundary {b} is outside the runtime"))?;
-        let mut current = [0usize; 2];
-        for (index, slot) in boundary.slots.iter().enumerate() {
-            let guard = slot
-                .buf
-                .lock()
-                .map_err(|_| format!("PP boundary {b} slot lock is poisoned"))?;
-            current[index] = guard.as_ref().map_or(0, CudaSlice::len);
-        }
-        let elements = boundary_slot_growth_elements(current, n);
-        Ok(elements.saturating_mul(std::mem::size_of::<f32>()))
     }
 
     /// Boundary TX at boundary `b` (call within the stage-`b` scope; `x` = the
@@ -3257,46 +2724,6 @@ impl PpNRt {
         Ok(())
     }
 
-    /// PUBLISH EVERY STAGE to the caller (lane/glm5-accrace 2026-09-01) — the exit half of
-    /// the boundary law, applied to ALL stages instead of only the producing one.
-    ///
-    /// WHY `publish_to(last, …)` IS NOT ENOUGH. A ppN body's terminal drain (a `dtoh` in
-    /// the last-stage scope, or `publish_to(n_st-1, …)`) orders the caller behind the last
-    /// stage, and the TX-wait chain transitively covers every earlier stage's work UP TO
-    /// its `ev_tx`. It does NOT cover what each earlier stage's stream still holds AFTER
-    /// its tx: the stage-scope locals (`pos_d`, the embedded/expanded rows, the boundary
-    /// residual, every per-layer transient, and a verify round's ckpt clones) are dropped
-    /// with the stage override still active, so their `free_async` enqueues on the STAGE
-    /// stream after `ev_tx`. The caller then resumes on its own stream and allocates —
-    /// and, per the `fence_stages_behind` anatomy above, cudarc's drop carries no read
-    /// guard, so the pool can hand the caller a block whose stage-stream lifetime has not
-    /// retired and the caller's writes land under queued stage work.
-    ///
-    /// MEASURED (research/glm53-flash-bringup-20260827/accrace-20260901/): with per-stage
-    /// streams on one device, the hc ppN PRIME over a fixed 24-token prompt returned THREE
-    /// distinct logit fingerprints within a single process — the first prime always
-    /// canonical, later ones drifting — while `MEMRA_PP_STREAMS=0` returned one
-    /// fingerprint 11/11. Downstream, one glm5 spec round silently lost an acceptance
-    /// (14/42 -> 13/42) and the e2e tape diverged.
-    ///
-    /// Event waits, never a device sync: the stage streams keep running. Call at a ppN
-    /// body's EXIT with the pre-`enter` caller stream (a stage stream that IS the caller's
-    /// stream is skipped by `publish_to`).
-    ///
-    /// `MEMRA_PP_EXIT_PUBLISH=0` is the ROLLBACK SEAM (see [`pp_exit_publish`]) and
-    /// restores the pre-lane, racy program exactly — it exists so the fix can be A/B'd in
-    /// ONE binary and so a future perf question has a control arm, not because the guard is
-    /// optional.
-    pub fn publish_all_to(&self, dst: &Arc<CudaStream>) -> Result<(), Box<dyn std::error::Error>> {
-        if !pp_exit_publish() {
-            return Ok(());
-        }
-        for s in 0..self.stages.len() {
-            self.publish_to(s, dst)?;
-        }
-        Ok(())
-    }
-
     /// REVERSE PUBLICATION (#87 root cause, lane/pp2spec-crash 2026-08-07): order every
     /// STAGE stream behind the CALLER's stream — the mirror of `publish_to`.
     ///
@@ -3372,22 +2799,11 @@ pub struct PendingLogits {
     logits: CudaSlice<f32>,
     ev: CudaEvent,
     rb: Arc<CudaStream>,
-    _walk: PpWalkLease,
 }
 
 impl PendingLogits {
-    pub(crate) fn new(
-        logits: CudaSlice<f32>,
-        ev: CudaEvent,
-        rb: Arc<CudaStream>,
-        walk: PpWalkLease,
-    ) -> Self {
-        PendingLogits {
-            logits,
-            ev,
-            rb,
-            _walk: walk,
-        }
+    pub fn new(logits: CudaSlice<f32>, ev: CudaEvent, rb: Arc<CudaStream>) -> Self {
+        PendingLogits { logits, ev, rb }
     }
 
     /// Blocks until this step's logits are computed, returns them host-side. Only this
@@ -3534,11 +2950,11 @@ pub fn sync_stages_after_load(
 /// device placement and sharding not rolled back; else the primary. `il >= n_trunk`
 /// (MTP/NextN blocks) maps to the last stage. The head (output_norm + lm head) belongs
 /// to the last trunk layer's stage — call with `il = n_trunk - 1`.
-pub fn layer_engine(
-    e: &Engine,
+pub fn layer_engine<'a>(
+    e: &'a Engine,
     n_trunk: usize,
     il: usize,
-) -> Result<&Engine, Box<dyn std::error::Error>> {
+) -> Result<&'a Engine, Box<dyn std::error::Error>> {
     if pp_shard_off() || pp2_devices_env().is_none() || pp2_streams_off() {
         return Ok(e);
     }
@@ -3548,123 +2964,6 @@ pub fn layer_engine(
     let rt = PpNRt::get(e)?;
     let s = stage_of(&fence, il.min(n_trunk - 1));
     Ok(rt.engine(s, e))
-}
-
-/// Why a checkpoint restore refused a layer's distributed (TP) KV mirror.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TpRestoreRefusal {
-    /// Snapshot recorded a distributed length but the in-place target has no mirror to rewind.
-    TargetAbsent,
-    /// Grow path: the snapshot recorded a distributed length the parked source cannot supply.
-    SourceAbsent,
-    /// Grow path: the freshly allocated target already holds a mirror it should not have.
-    GrowTargetNotFresh,
-    /// The whole-token TP CUDA graph door is open. That graph is MODEL-level state which bakes
-    /// the rank-cache pointers, so freeing a mirror under it strands the captured parent.
-    TokenGraphDoorOpen,
-}
-
-/// What a checkpoint restore must do with one layer's distributed (TP) KV mirror.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TpRestore {
-    /// Neither side holds a mirror: nothing to do.
-    Nothing,
-    /// In-place rewind of the target's existing mirror to the recorded committed length.
-    Rewind(usize),
-    /// Grow path: build the target's mirror from the parked source's, truncated to `len`.
-    Grow(usize),
-    /// The snapshot PREDATES this layer's lazily-created mirror. Clear it: the mirror is derived
-    /// state, and `ensure_step_tp_kv_cache` rebuilds it from the authoritative local plane on the
-    /// next TP use, at whatever length that plane then holds.
-    DropMirror,
-    Refuse(TpRestoreRefusal),
-}
-
-/// Resolve the distributed-KV arm of a checkpoint restore for ONE layer.
-///
-/// MECHANISM (lane/step37, 2026-08-28). `tp_kv[il]` is created LAZILY on a layer's first TP use
-/// (`hybrid_forward.rs::ensure_step_tp_kv_cache`, reached only from the two TP DECODE paths and
-/// the TP-PREFILL path). When rank-local TP prefill is not engaged, a cold prime never touches
-/// it, so the session-affinity checkpoint captured mid-prime at the stable boundary records
-/// `tp_kv_len[il] = None` for EVERY layer. The first decode step then materializes the mirror.
-/// At reuse time the recorded `None` met a live `Some(..)` and the whole checkpoint was refused
-/// at layer 0, so affinity reuse was 100% dead on step37 and every turn paid a full re-prime.
-///
-/// WHY DROPPING IS EXACT, NOT LENIENT. The mirror is not an independent plane: it is created by
-/// hydrating from the local plane, and every TP decode gathers its rank shards back and appends
-/// them into the local plane in the same step (`append_kv_quantized` into `local.k/v`, then
-/// `local.len = base_len + 1`), which is why every TP entry point asserts
-/// `distributed.committed_len() == local.len`. The local plane is therefore authoritative and
-/// complete. Clearing the mirror reproduces the checkpoint-time state LITERALLY (the snapshot
-/// says this layer had no mirror), and the rebuild reads the same bytes the checkpoint saw.
-///
-/// WHY THE `MEMRA_NO_LOCAL_SHADOW=1` DOOR DOES NOT BREAK THIS. That door skips the local-plane
-/// gathers and appends in the eager v2 TP decode: lengths still advance, contents go STALE
-/// (tp.rs::no_local_shadow_on). It is ON in the step37 serving env, so "the local plane is
-/// authoritative" is NOT true of rows written by a TP decode under that door. The drop is
-/// nonetheless safe, and self-guarding: `DropMirror` fires ONLY when the snapshot recorded NO
-/// mirror for the layer, and a snapshot with no mirror is proof that no TP decode had yet run in
-/// that cache's life (the mirror is created by the first TP use). Since the restore truncates the
-/// local plane to exactly that snapshot length, every surviving row predates the first TP decode
-/// and was therefore written by a PRIME, which always writes the local plane in full. The
-/// rehydration cannot read a shadow-skipped row. Rows above the boundary are discarded and
-/// re-primed by the suffix. The door also never rebases the local ring during decode (it does not
-/// call `prepare_kv_append`), so the physical layout below the boundary is exactly as the prime
-/// left it.
-///
-/// WHY NOT "MATERIALIZE BEFORE SNAPSHOT". The checkpoint is captured MID-PRIME. Nothing in the
-/// non-TP-prefill prime path maintains a mirror, so a mirror created at capture time would be
-/// stranded at the boundary length while the rest of the prime appends to the local plane only,
-/// and the first decode would hard-error on `cache lengths diverged before decode`. Eager
-/// materialization converts a re-prime into an outage.
-///
-/// Every genuinely inconsistent arm still refuses.
-/// `source_has_tp`: `None` = in-place rewind; `Some(has_tp)` = restore into a freshly grown cache.
-pub(crate) fn tp_restore_plan(
-    snap_len: Option<usize>,
-    source_has_tp: Option<bool>,
-    target_has_tp: bool,
-    token_graph_door: bool,
-) -> TpRestore {
-    match (source_has_tp, snap_len) {
-        (None, Some(len)) => {
-            if target_has_tp {
-                TpRestore::Rewind(len)
-            } else {
-                TpRestore::Refuse(TpRestoreRefusal::TargetAbsent)
-            }
-        }
-        (None, None) => {
-            if !target_has_tp {
-                TpRestore::Nothing
-            } else if token_graph_door {
-                TpRestore::Refuse(TpRestoreRefusal::TokenGraphDoorOpen)
-            } else {
-                TpRestore::DropMirror
-            }
-        }
-        (Some(source_has_tp), Some(len)) => {
-            if !source_has_tp {
-                TpRestore::Refuse(TpRestoreRefusal::SourceAbsent)
-            } else if target_has_tp {
-                TpRestore::Refuse(TpRestoreRefusal::GrowTargetNotFresh)
-            } else {
-                TpRestore::Grow(len)
-            }
-        }
-        (Some(_), None) => {
-            if target_has_tp {
-                // A freshly allocated cache must not already carry a mirror.
-                TpRestore::Refuse(TpRestoreRefusal::GrowTargetNotFresh)
-            } else {
-                // The snapshot predates the source's mirror (or the source never had one). Leave
-                // the grown target without one: the next TP use hydrates it from the local rows
-                // this restore just copied in. Before the step37 fix a source that HELD a mirror
-                // here was a hard refusal, which killed every grow-path affinity reuse too.
-                TpRestore::Nothing
-            }
-        }
-    }
 }
 
 /// Restore a cache checkpoint through each layer's owning engine.
@@ -3685,10 +2984,6 @@ pub fn restore_cache_checkpoint(
     target: &mut crate::cache::Cache,
     snap: &crate::cache::CacheSnapshot,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    target.ensure_usable("restore_cache_checkpoint target")?;
-    if let Some(source) = source {
-        source.ensure_usable("restore_cache_checkpoint source")?;
-    }
     let cfg = &model.cfg;
     let n = target.kv.len();
     if target.recur.len() != n
@@ -3710,9 +3005,6 @@ pub fn restore_cache_checkpoint(
     }
 
     let n_trunk = (cfg.n_layer - cfg.nextn_predict_layers) as usize;
-    // Read the door ONCE: the refusal it drives must be uniform across layers within a restore.
-    let token_graph_door = crate::tp::step_tp_graph_enabled().unwrap_or(false);
-    let mut dropped_mirrors = 0usize;
     for il in 0..n {
         let owner = layer_engine(e, n_trunk, il)?;
         let src_kv = source.map(|s| &s.kv[il]);
@@ -3732,68 +3024,13 @@ pub fn restore_cache_checkpoint(
                 {
                     return Err(format!("checkpoint KV layout mismatch at layer {il}").into());
                 }
-                match (&src.ring, dst.ring.as_ref()) {
-                    (Some(sring), Some(dring)) => {
-                        // SWA ring: `len` is ABSOLUTE and can exceed the physical row count once
-                        // the ring has lapped (the 2026-08-29 warm-turn-at-40k panic: a flat
-                        // `len`-row copy sliced past the window-sized buffer). Copy only the
-                        // aligned live window and rebase the fresh target to its start — the
-                        // same geometry `ResidentTpKvCache::prepare_grow` already uses.
-                        if dring.base() != 0 {
-                            return Err(format!(
-                                "checkpoint SWA restore at layer {il} requires a fresh target \
-                                 ring (base {}, expected 0)",
-                                dring.base(),
-                            )
-                            .into());
-                        }
-                        let (new_base, phys) = sring.restore_plan(len).map_err(|e| {
-                            format!("checkpoint SWA restore refused at layer {il}: {e}")
-                        })?;
-                        let rows = phys.len();
-                        let kb = rows * src.k_tok_bytes;
-                        let vb = rows * src.v_tok_bytes;
-                        if kb > 0 {
-                            owner.copy_u8_range_into(
-                                &mut dst.k,
-                                0,
-                                &src.k,
-                                phys.start * src.k_tok_bytes,
-                                kb,
-                            )?;
-                        }
-                        if vb > 0 {
-                            owner.copy_u8_range_into(
-                                &mut dst.v,
-                                0,
-                                &src.v,
-                                phys.start * src.v_tok_bytes,
-                                vb,
-                            )?;
-                        }
-                        dst.ring
-                            .as_mut()
-                            .expect("ring presence checked above")
-                            .apply_rebase(new_base);
-                        if let Some(base_d) = dst.base_d.as_mut() {
-                            owner.set_i32_one(base_d, new_base as i32)?;
-                        }
-                    }
-                    (None, None) => {
-                        let kb = len * src.k_tok_bytes;
-                        let vb = len * src.v_tok_bytes;
-                        if kb > 0 {
-                            owner.copy_u8_into(&mut dst.k, 0, &src.k, kb)?;
-                        }
-                        if vb > 0 {
-                            owner.copy_u8_into(&mut dst.v, 0, &src.v, vb)?;
-                        }
-                    }
-                    _ => {
-                        return Err(
-                            format!("checkpoint ring/flat KV mismatch at layer {il}").into()
-                        );
-                    }
+                let kb = len * src.k_tok_bytes;
+                let vb = len * src.v_tok_bytes;
+                if kb > 0 {
+                    owner.copy_u8_into(&mut dst.k, 0, &src.k, kb)?;
+                }
+                if vb > 0 {
+                    owner.copy_u8_into(&mut dst.v, 0, &src.v, vb)?;
                 }
                 dst.len = len;
                 owner.set_i32_one(&mut dst.len_d, len as i32)?;
@@ -3806,16 +3043,6 @@ pub fn restore_cache_checkpoint(
                     )
                     .into());
                 }
-                if let Some(ring) = &dst.ring
-                    && !ring.can_rewind_to(len)
-                {
-                    return Err(format!(
-                        "checkpoint SWA rewind at layer {il} has been lapped \
-                             (len {len}, ring base {}); full re-prime required",
-                        ring.base(),
-                    )
-                    .into());
-                }
                 dst.len = len;
                 owner.set_i32_one(&mut dst.len_d, len as i32)?;
             }
@@ -3823,64 +3050,35 @@ pub fn restore_cache_checkpoint(
             _ => return Err(format!("checkpoint KV kind mismatch at layer {il}").into()),
         }
 
-        match tp_restore_plan(
-            snap.tp_kv_len[il],
-            source.map(|s| s.tp_kv[il].is_some()),
-            target.tp_kv[il].is_some(),
-            token_graph_door,
-        ) {
-            TpRestore::Nothing => {}
-            TpRestore::Rewind(len) => target.tp_kv[il]
+        match (source, snap.tp_kv_len[il]) {
+            (None, Some(len)) => target.tp_kv[il]
                 .as_mut()
-                .expect("tp_restore_plan::Rewind implies a present target mirror")
+                .ok_or_else(|| format!("checkpoint TP KV target is absent at layer {il}"))?
                 .rewind_to(len)?,
-            TpRestore::Grow(len) => {
-                let src = source
-                    .and_then(|s| s.tp_kv[il].as_ref())
-                    .expect("tp_restore_plan::Grow implies a present source mirror");
+            (None, None) => {
+                if target.tp_kv[il].is_some() {
+                    return Err(format!("checkpoint TP KV kind mismatch at layer {il}").into());
+                }
+            }
+            (Some(src_cache), Some(len)) => {
+                let src = src_cache.tp_kv[il]
+                    .as_ref()
+                    .ok_or_else(|| format!("checkpoint TP KV source is absent at layer {il}"))?;
+                if target.tp_kv[il].is_some() {
+                    return Err(
+                        format!("checkpoint TP KV grow target is not fresh at layer {il}").into(),
+                    );
+                }
                 let runtime = model.step_tp_runtime_for_layer(il).ok_or_else(|| {
                     format!("checkpoint TP KV layer {il} has no distributed runtime")
                 })?;
                 let grown = runtime.grow_tp_kv_cache(src, target.max_ctx, len)?;
                 target.tp_kv[il] = Some(grown);
             }
-            TpRestore::DropMirror => {
-                // The snapshot predates this layer's lazily-created distributed mirror. Clear it
-                // and let `ensure_step_tp_kv_cache` rebuild it from the authoritative local
-                // plane on the next TP use. See `tp_restore_plan` for why this is exact.
-                if target.tp_kv[il].take().is_some() {
-                    dropped_mirrors += 1;
+            (Some(src_cache), None) => {
+                if src_cache.tp_kv[il].is_some() || target.tp_kv[il].is_some() {
+                    return Err(format!("checkpoint TP KV kind mismatch at layer {il}").into());
                 }
-            }
-            TpRestore::Refuse(reason) => {
-                return Err(format!(
-                    "checkpoint TP KV restore refused at layer {il}: {} \
-                     (snap.tp_kv_len={:?}, snap.kv_len={:?}, snap.pos={}, \
-                     source_has_tp={:?}, target_has_tp={}, target_committed={})",
-                    match reason {
-                        TpRestoreRefusal::TargetAbsent =>
-                            "the snapshot recorded a distributed length but the target holds no \
-                             distributed cache to rewind",
-                        TpRestoreRefusal::SourceAbsent =>
-                            "the snapshot recorded a distributed length the parked source cannot \
-                             supply",
-                        TpRestoreRefusal::GrowTargetNotFresh =>
-                            "the freshly allocated grow target already holds a distributed cache",
-                        TpRestoreRefusal::TokenGraphDoorOpen =>
-                            "MEMRA_STEP_TP_GRAPH is open, and its model-level whole-token graph \
-                             bakes the rank-cache pointers, so the stale mirror cannot be freed",
-                    },
-                    snap.tp_kv_len[il],
-                    snap.kv_len[il],
-                    snap.pos,
-                    source.map(|s| s.tp_kv[il].is_some()),
-                    target.tp_kv[il].is_some(),
-                    target.tp_kv[il]
-                        .as_ref()
-                        .map(|c| c.committed_len())
-                        .unwrap_or(0),
-                )
-                .into());
             }
         }
 
@@ -3901,17 +3099,6 @@ pub fn restore_cache_checkpoint(
         }
     }
     target.pos = snap.pos;
-    if dropped_mirrors > 0 {
-        // ENGAGEMENT RECEIPT. Before this fix the same condition returned "checkpoint TP KV kind
-        // mismatch at layer 0" and the caller dropped the session for a full re-prime. This line
-        // proves the restore took the rebuild path instead.
-        eprintln!(
-            "[pp] checkpoint restore: cleared {dropped_mirrors} stale distributed KV mirror(s) \
-             at pos {} (snapshot predates lazy TP hydration); the next TP use rehydrates them \
-             from the local plane",
-            snap.pos,
-        );
-    }
 
     // Open PP uses per-stage streams/contexts; publish every restored plane before the caller
     // starts the next prime. Door-shut single-stream restores remain naturally ordered.
@@ -3931,104 +3118,13 @@ mod host_bounce_tests {
         PEER_PROBE_FIXED_BYTES, PEER_PROBE_REQUIRED_REFUSAL, PEER_PROBE_TOKEN_WIDTHS,
         PEER_RUNTIME_PROBE_BUDGET_NS, PEER_RUNTIME_PROBE_CYCLE_COPIES,
         PEER_RUNTIME_PROBE_DEFERRAL_BOUND_INTERVALS, PEER_RUNTIME_PROBE_INTERVAL_COPIES,
-        PP_WAVE_MAX_STAGES, PeerProbeDecision, PeerProbeStartupPolicy, acquire_pp_walk,
-        boundary_slot_growth_elements, boundary_transport, dual_pp_eligibility,
-        dual_pp_timing_dropped, dual_pp_timing_snapshot, dual_pp_wave_mid, enter_pp_wave_cell,
-        host_bounce_capacity, latch_runtime_host_bounce, peer_probe_bytes_to_f32,
-        peer_probe_decision, peer_probe_f32_to_bytes, peer_probe_mismatch_count,
-        peer_probe_pattern, peer_probe_startup_policy, pp_devices_repeat, pp_wave_diagonal,
-        pp_wave_eligibility, pp_wave_numeric_eligibility, pp_wave_on_value, pp_wave_ranges,
-        pp_wave_route_enabled, pp_wave_snapshot, publish_runtime_peer_probe_deferral,
-        record_dual_pp_stage_result, record_pp_wave_tick, runtime_peer_probe_candidate,
-        runtime_peer_probe_next_copy,
+        PeerProbeDecision, PeerProbeStartupPolicy, boundary_transport, dual_pp_eligibility,
+        dual_pp_timing_dropped, dual_pp_timing_snapshot, dual_pp_wave_mid, host_bounce_capacity,
+        latch_runtime_host_bounce, peer_probe_bytes_to_f32, peer_probe_decision,
+        peer_probe_f32_to_bytes, peer_probe_mismatch_count, peer_probe_pattern,
+        peer_probe_startup_policy, publish_runtime_peer_probe_deferral,
+        record_dual_pp_stage_result, runtime_peer_probe_candidate, runtime_peer_probe_next_copy,
     };
-
-    // ---- lane/step37 session-affinity TP-mirror regression (2026-08-28) -------------------
-    //
-    // BEFORE this fix `restore_cache_checkpoint` refused with "checkpoint TP KV kind mismatch at
-    // layer 0" whenever a checkpoint captured mid-prime (tp_kv not yet lazily created) met a
-    // target whose first decode had since materialized the mirror. That is EVERY step37
-    // session-affinity reuse, so reuse was 100% dead and every turn paid a full re-prime.
-    // The `mismatch_*` cases below assert the new outcome; each of them was a hard refusal
-    // before. The `refuses_*` cases pin the arms that must STILL fail closed.
-
-    use super::{TpRestore, TpRestoreRefusal, tp_restore_plan};
-
-    #[test]
-    fn mismatch_snapshot_predating_lazy_tp_drops_the_mirror_instead_of_refusing() {
-        // in-place rewind, snapshot has no distributed length, target materialized one.
-        assert_eq!(
-            tp_restore_plan(None, None, true, false),
-            TpRestore::DropMirror
-        );
-    }
-
-    #[test]
-    fn mismatch_on_the_grow_path_leaves_the_fresh_target_without_a_mirror() {
-        // Grow path, snapshot predates the source's mirror, fresh target has none. Build none and
-        // let the next TP use hydrate from the copied local rows. This arm REFUSED before the fix.
-        assert_eq!(
-            tp_restore_plan(None, Some(true), false, false),
-            TpRestore::Nothing
-        );
-    }
-
-    #[test]
-    fn drop_is_refused_while_the_token_graph_door_bakes_rank_pointers() {
-        assert_eq!(
-            tp_restore_plan(None, None, true, true),
-            TpRestore::Refuse(TpRestoreRefusal::TokenGraphDoorOpen)
-        );
-    }
-
-    #[test]
-    fn healthy_arms_are_untouched() {
-        assert_eq!(
-            tp_restore_plan(None, None, false, false),
-            TpRestore::Nothing
-        );
-        assert_eq!(tp_restore_plan(None, None, false, true), TpRestore::Nothing);
-        assert_eq!(
-            tp_restore_plan(Some(15222), None, true, false),
-            TpRestore::Rewind(15222)
-        );
-        assert_eq!(
-            tp_restore_plan(Some(15222), Some(true), false, false),
-            TpRestore::Grow(15222)
-        );
-        assert_eq!(
-            tp_restore_plan(None, Some(false), false, false),
-            TpRestore::Nothing
-        );
-    }
-
-    #[test]
-    fn refuses_a_recorded_distributed_length_with_no_target_mirror() {
-        assert_eq!(
-            tp_restore_plan(Some(15222), None, false, false),
-            TpRestore::Refuse(TpRestoreRefusal::TargetAbsent)
-        );
-    }
-
-    #[test]
-    fn refuses_a_recorded_distributed_length_the_source_cannot_supply() {
-        assert_eq!(
-            tp_restore_plan(Some(15222), Some(false), false, false),
-            TpRestore::Refuse(TpRestoreRefusal::SourceAbsent)
-        );
-    }
-
-    #[test]
-    fn refuses_a_grow_target_that_is_not_fresh() {
-        assert_eq!(
-            tp_restore_plan(Some(15222), Some(true), true, false),
-            TpRestore::Refuse(TpRestoreRefusal::GrowTargetNotFresh)
-        );
-        assert_eq!(
-            tp_restore_plan(None, Some(true), true, false),
-            TpRestore::Refuse(TpRestoreRefusal::GrowTargetNotFresh)
-        );
-    }
 
     // ---- 2026-08-11 default-flip safety regression (owner-ordered) ----------------------
     // All pure-resolution tests: no env mutation (parallel test threads share process env).
@@ -4079,161 +3175,6 @@ mod host_bounce_tests {
     }
 
     #[test]
-    fn pp_wave_flag_is_strict_and_does_not_inherit_the_pp2_default() {
-        assert_eq!(pp_wave_on_value(None), Ok(false));
-        assert!(pp_wave_on_value(Some("")).is_err());
-        assert_eq!(pp_wave_on_value(Some("0")), Ok(false));
-        assert_eq!(pp_wave_on_value(Some("1")), Ok(true));
-        assert!(pp_wave_on_value(Some("auto")).is_err());
-        assert!(pp_wave_on_value(Some("2")).is_err());
-    }
-
-    #[test]
-    fn pp_wave_route_treats_overlap_off_and_single_work_item_as_serial_rollback() {
-        assert!(pp_wave_route_enabled(true, true, 3, 2));
-        assert!(pp_wave_route_enabled(true, true, 4, 8));
-        assert!(!pp_wave_route_enabled(true, false, 3, 8));
-        assert!(!pp_wave_route_enabled(false, true, 3, 8));
-        assert!(!pp_wave_route_enabled(true, true, 2, 8));
-        assert!(!pp_wave_route_enabled(true, true, 4, 1));
-    }
-
-    #[test]
-    fn pp_wave_ranges_are_balanced_contiguous_and_priority_preserving() {
-        assert!(pp_wave_ranges(0, 4).is_empty());
-        assert!(pp_wave_ranges(8, 0).is_empty());
-        assert_eq!(pp_wave_ranges(1, 4), vec![(0, 1)]);
-        assert_eq!(pp_wave_ranges(2, 4), vec![(0, 1), (1, 2)]);
-        assert_eq!(pp_wave_ranges(8, 4), vec![(0, 2), (2, 4), (4, 6), (6, 8)]);
-        assert_eq!(
-            pp_wave_ranges(17, 4),
-            vec![(0, 5), (5, 9), (9, 13), (13, 17)]
-        );
-        for batch in 1..=64 {
-            for stages in 2..=PP_WAVE_MAX_STAGES {
-                let ranges = pp_wave_ranges(batch, stages);
-                assert_eq!(ranges.len(), batch.min(stages));
-                assert_eq!(ranges.first().copied().unwrap().0, 0);
-                assert_eq!(ranges.last().copied().unwrap().1, batch);
-                assert!(ranges.iter().all(|(lo, hi)| lo < hi));
-                assert!(ranges.windows(2).all(|pair| pair[0].1 == pair[1].0));
-                let widths: Vec<_> = ranges.iter().map(|(lo, hi)| hi - lo).collect();
-                assert!(widths.windows(2).all(|pair| pair[0] >= pair[1]));
-                assert!(widths.first().unwrap() - widths.last().unwrap() <= 1);
-            }
-        }
-    }
-
-    #[test]
-    fn pp_wave_diagonals_cover_the_grid_without_stage_or_wave_aliasing() {
-        for stages in 3..=PP_WAVE_MAX_STAGES {
-            for waves in 1..=stages {
-                let mut seen = vec![vec![false; stages]; waves];
-                for diagonal in 0..stages + waves - 1 {
-                    let cells = pp_wave_diagonal(stages, waves, diagonal);
-                    let mut stage_seen = vec![false; stages];
-                    let mut wave_seen = vec![false; waves];
-                    for (wave, stage) in cells {
-                        assert_eq!(wave + stage, diagonal);
-                        assert!(!stage_seen[stage]);
-                        assert!(!wave_seen[wave]);
-                        assert!(!seen[wave][stage]);
-                        stage_seen[stage] = true;
-                        wave_seen[wave] = true;
-                        seen[wave][stage] = true;
-                    }
-                }
-                assert!(seen.into_iter().flatten().all(|cell| cell));
-            }
-        }
-        assert!(pp_wave_diagonal(4, 4, 7).is_empty());
-    }
-
-    #[test]
-    fn pp_wavefront_refuses_every_unqualified_transport_shape() {
-        assert!(pp_wave_eligibility(3, true, false, false).is_ok());
-        assert!(pp_wave_eligibility(4, true, false, false).is_ok());
-        assert!(pp_wave_eligibility(2, true, false, false).is_err());
-        assert!(pp_wave_eligibility(5, true, false, false).is_err());
-        assert!(pp_wave_eligibility(3, false, false, false).is_err());
-        assert!(pp_wave_eligibility(3, true, true, false).is_err());
-        assert!(pp_wave_eligibility(3, true, false, true).is_err());
-    }
-
-    #[test]
-    fn pp_wavefront_requires_width_invariant_bf16_for_w4a16() {
-        assert!(pp_wave_numeric_eligibility(false, false).is_ok());
-        assert!(pp_wave_numeric_eligibility(false, true).is_ok());
-        assert!(pp_wave_numeric_eligibility(true, true).is_ok());
-        assert!(pp_wave_numeric_eligibility(true, false).is_err());
-    }
-
-    #[test]
-    fn pp_device_aliases_cannot_bypass_the_distinct_stage_gate() {
-        assert!(!pp_devices_repeat("0,1,2,3"));
-        assert!(pp_devices_repeat("0,00,1"));
-        assert!(pp_devices_repeat("2,1,2"));
-        assert!(pp_devices_repeat("0,nope,1"));
-    }
-
-    #[test]
-    fn pp_walk_owner_refuses_reentry_and_releases_at_scope_end() {
-        let active = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
-        let next = std::sync::atomic::AtomicU64::new(1);
-        let first = acquire_pp_walk(&active, &next, 7, None, "first").unwrap();
-        let held_clone = super::PpWalkLease {
-            state: first.state.clone(),
-        };
-        let error = acquire_pp_walk(&active, &next, 7, None, "second").unwrap_err();
-        assert!(error.contains("refused concurrent PP walk"));
-        drop(first);
-        assert!(acquire_pp_walk(&active, &next, 7, None, "third").is_err());
-        drop(held_clone);
-        assert!(acquire_pp_walk(&active, &next, 7, None, "fourth").is_ok());
-    }
-
-    #[test]
-    fn pp_walk_coordinator_borrow_is_explicit_and_thread_local() {
-        let active = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
-        let next = std::sync::atomic::AtomicU64::new(1);
-        let lease = acquire_pp_walk(&active, &next, 11, None, "owner").unwrap();
-        let state = lease.state.clone();
-        super::PP_WALK_BORROWS.with(|borrows| borrows.borrow_mut().push(state.clone()));
-        assert!(super::borrowed_pp_walk(11).is_some());
-        std::thread::spawn(move || {
-            assert!(super::borrowed_pp_walk(11).is_none());
-            drop(state);
-        })
-        .join()
-        .unwrap();
-        super::PP_WALK_BORROWS.with(|borrows| borrows.borrow_mut().clear());
-        drop(lease);
-        assert_eq!(active.load(std::sync::atomic::Ordering::Acquire), 0);
-    }
-
-    #[test]
-    fn boundary_growth_charges_first_allocation_and_only_missing_high_water_afterward() {
-        assert_eq!(boundary_slot_growth_elements([0, 0], 4096), 8192);
-        assert_eq!(boundary_slot_growth_elements([4096, 4096], 4096), 0);
-        assert_eq!(boundary_slot_growth_elements([4096, 2048], 4096), 2048);
-        assert_eq!(boundary_slot_growth_elements([8192, 8192], 4096), 0);
-    }
-
-    #[test]
-    fn pp_wave_liveness_snapshot_counts_ticks_cells_and_real_overlap() {
-        let before = pp_wave_snapshot();
-        let first = enter_pp_wave_cell();
-        let second = enter_pp_wave_cell();
-        drop(second);
-        drop(first);
-        record_pp_wave_tick();
-        let after = pp_wave_snapshot();
-        assert!(after.0 > before.0);
-        assert!(after.1 >= before.1 + 2);
-        assert!(after.2 > before.2);
-    }
-
-    #[test]
     fn dual_pp_split_is_honest_at_one_and_ceil_first_afterward() {
         assert_eq!(dual_pp_wave_mid(1), None);
         assert_eq!(dual_pp_wave_mid(2), Some(1));
@@ -4263,7 +3204,6 @@ mod host_bounce_tests {
     }
 
     #[test]
-    #[allow(clippy::int_plus_one)] // allow: the +1 form states the at-least-one-more-drop bound
     fn dual_pp_timing_error_is_counted_without_recording_a_sample() {
         let dropped_before = dual_pp_timing_dropped();
         let (_, samples_before) = dual_pp_timing_snapshot();

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Local driver: fully deploy a fresh rented PRO 6000 spot/OD box and run the G1 bench queue.
+# Local driver: fully deploy a fresh sbox spot/OD box and run the G1 bench queue.
 # Usage: deploy-box.sh <instance-id> <region>
 set -u
 ID=$1; REGION=$2
@@ -8,8 +8,8 @@ LANE=/home/avifenesh/projects/wt-dspark-q38/research/dspark-q38-train-20260815
 SSH() { /usr/bin/ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -i $KEY ubuntu@$IP "$@"; }
 CLOUD_COMPUTE_API=${CLOUD_COMPUTE_API:-$(printf 'e%s2' c)}
 
-cloudcli "$CLOUD_COMPUTE_API" wait instance-running --region "$REGION" --instance-ids "$ID"
-IP=$(cloudcli "$CLOUD_COMPUTE_API" describe-instances --region "$REGION" --instance-ids "$ID" \
+hyperscaler "$CLOUD_COMPUTE_API" wait instance-running --region "$REGION" --instance-ids "$ID"
+IP=$(hyperscaler "$CLOUD_COMPUTE_API" describe-instances --region "$REGION" --instance-ids "$ID" \
      --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
 echo "IP=$IP"; echo "$IP" > /tmp/spotbox.ip
 
@@ -25,7 +25,7 @@ SSH 'chmod +x *.sh; tmux new-session -d -s boot "bash bootstrap-box.sh"'
     -e "/usr/bin/ssh -i $KEY -o ServerAliveInterval=15 -o StrictHostKeyChecking=accept-new" \
     /home/avifenesh/projects/colbert-2/data/sessions/ \
     /home/avifenesh/projects/colbert-2/data/chunks.parquet \
-    ubuntu@$IP:/opt/scratch/nvme/corpus/sessions/ 2>&1 | tail -1; do
+    ubuntu@$IP:/opt/dl-image/nvme/corpus/sessions/ 2>&1 | tail -1; do
     sleep 15; SSH true || { echo CORPUS-BOX-GONE; exit 1; }
   done; echo CORPUS-DONE ) &
 
@@ -33,7 +33,7 @@ SSH 'chmod +x *.sh; tmux new-session -d -s boot "bash bootstrap-box.sh"'
 ( mkdir -p $LANE/raw/box-$ID
   while true; do
     rsync -az --partial -e "/usr/bin/ssh -i $KEY -o ConnectTimeout=8" \
-      ubuntu@$IP:/opt/scratch/nvme/receipts/ $LANE/raw/box-$ID/ 2>/dev/null
+      ubuntu@$IP:/opt/dl-image/nvme/receipts/ $LANE/raw/box-$ID/ 2>/dev/null
     sleep 120
     SSH true 2>/dev/null || { echo PULL-BOX-GONE $(date -u +%H:%M); break; }
   done ) &

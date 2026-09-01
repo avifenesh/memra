@@ -4,7 +4,7 @@ Lane: `lane/cx-val256`
 
 Base: `4f80a0882f2c36572a386c6dc29831069c435ca9`
 
-Rig: box1 rented cloud pair (`<rented-box-ip>`, 2x RTX PRO 6000)
+Rig: box1 hyperscaler pair (`<rented-box-ip>`, 2x RTX PRO 6000)
 
 Status: complete; final verdict is FAIL. See `RESULTS.md`.
 

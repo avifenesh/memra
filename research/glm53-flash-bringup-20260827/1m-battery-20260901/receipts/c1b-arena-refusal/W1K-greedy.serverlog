@@ -1,5 +1,0 @@
-[meter] admit id=chatcmpl-f3c1aa0cb022c500bff8e4e51244a4ed tenant=default lane=interactive model="zai/glm-5.3-flash"
-[admission] request cost: model="zai/glm-5.3-flash" ctx=1204 path=plain = 23936 B/token x ctx + 1202MB prefill-workspace + 0MB fixed = 1230MB
-[admission] fixed residual high-water: model="zai/glm-5.3-flash" 18MB (observed 45MB at ctx 1148 path=plain)
-[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=1108, t_kv=1108, nh=64, width=1111); dispatches counted in MLA_TC_PREFILL_DISPATCHES
-[moe-grouped-prefill] flag=on t=1108 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)

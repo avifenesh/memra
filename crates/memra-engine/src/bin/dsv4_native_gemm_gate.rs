@@ -424,17 +424,17 @@ fn main() {
                 .iter()
                 .zip(&mir)
                 .all(|(a, b)| a.to_bits() == b.to_bits());
-            if !gemm_bits_ok
-                && codes_ok
-                && let Some(i) = got
+            if !gemm_bits_ok && codes_ok {
+                if let Some(i) = got
                     .iter()
                     .zip(&mir)
                     .position(|(a, b)| a.to_bits() != b.to_bits())
-            {
-                println!(
-                    "  [gemm-diff] first at flat {i}: gpu {:.6e} vs mirror {:.6e}",
-                    got[i], mir[i]
-                );
+                {
+                    println!(
+                        "  [gemm-diff] first at flat {i}: gpu {:.6e} vs mirror {:.6e}",
+                        got[i], mir[i]
+                    );
+                }
             }
             let bit_ok = codes_ok && gemm_bits_ok;
 

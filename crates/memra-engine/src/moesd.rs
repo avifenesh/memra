@@ -16,9 +16,6 @@ pub struct MoesdLayerUnion {
     pub n_expert: usize,
     pub n_used: usize,
     pub assignments: usize,
-    /// The routed expert ids themselves, ascending (glm5-tp-gate arm M picks its
-    /// provably-routed skew singleton from this; `union_size == experts.len()`).
-    pub experts: Vec<u32>,
 }
 
 #[derive(Default)]
@@ -54,29 +51,16 @@ pub fn finish_capture() -> Result<Vec<MoesdLayerUnion>, Box<dyn std::error::Erro
     let layers = capture.take().ok_or("MoESD capture state is missing")?;
     Ok(layers
         .into_iter()
-        .map(|(id, layer)| {
-            let mut experts: Vec<u32> = layer.experts.iter().copied().collect();
-            experts.sort_unstable();
-            MoesdLayerUnion {
-                id,
-                union_size: experts.len(),
-                n_expert: layer.n_expert,
-                n_used: layer.n_used,
-                assignments: layer.assignments,
-                experts,
-            }
+        .map(|(id, layer)| MoesdLayerUnion {
+            id,
+            union_size: layer.experts.len(),
+            n_expert: layer.n_expert,
+            n_used: layer.n_used,
+            assignments: layer.assignments,
         })
         .collect())
 }
 
-/// Whether a capture window is open. Callers that can bypass the host-visible selection
-/// entirely (door D's device vrows table build) must fail closed to the host path while this
-/// is true, or the harness would silently capture nothing for the bypassed layers.
-pub(crate) fn capture_active() -> bool {
-    ACTIVE.load(Ordering::Acquire)
-}
-
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 pub(crate) fn record_host_routes(
     il: u16,
     n_expert: usize,

@@ -1,6 +1,0 @@
-glm5-hyper-ppn-gate config: stages=2 streams=per-stage overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage
-[moe] resident-experts decision (PP dev0): experts 0.00GB + trunk 0.00GB vs free 24.35GB (expert budget 22.35GB) -> RESIDENT
-hc topology: streams=4 collapse=Mean sinkhorn_iters=20
-stage fence: [0, 2, 4] over 4 layers
-state placement: Recurrent(KDA) layers on stages [0, 1], LatentKvCache(MLA+kpool) layers on stages [0, 1]
-Error: "MEMRA_PP_SHARD is set, but the hyper-connection trunk walk is single-engine: the sharded stage handoff is unwired for this residual topology"

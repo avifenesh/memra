@@ -1,7 +1,7 @@
 # G1 control eval — interim results (spot box attempt 1, 2026-08-15)
 
-Rig: cloud-2card SPOT `spot-1` nvirginia-az-c (2x RTX PRO 6000 Blackwell Server 96GB,
-driver 595.91.07, PIX pair). **Box reclaimed by the provider at 01:07Z (`instance-terminated-no-capacity`)
+Rig: sbox-2card SPOT `spot-1` N-Virginia-c (2x RTX PRO 6000 Blackwell Server 96GB,
+driver 595.91.07, PIX pair). **Box reclaimed by hyperscaler at 01:07Z (`instance-terminated-no-capacity`)
 after ~45 min** — the numbers below were captured off the box before loss; the raw on-box logs died
 with it. Lesson applied: next bring-up streams receipts off-box continuously.
 
@@ -32,7 +32,7 @@ N>=3 repeats per cell, thermal note.
 
 ## Own-sessions cell (spot box attempt 2, 2026-08-15 ~01:50Z) — THE decision number
 
-Rig: cloud-2card SPOT `spot-2` nvirginia-az-c (also reclaimed ~50 min in; the
+Rig: sbox-2card SPOT `spot-2` N-Virginia-c (also reclaimed ~50 min in; the
 continuous receipt pull-loop streamed the completed JSONL home before loss — discipline works).
 Same server config as above. 128 real owner turns from the session corpus (seed 20260815,
 64 per bucket, thinking ON, temp 0.6/topk20/topp0.95, native /generate endpoint — spec stats
@@ -49,10 +49,10 @@ workload (Arena-Hard 2.71) and at 57% of its gsm8k headline (4.57). The corpus-m
 real and large — this is the empirical case for training our own drafter on own-session-shaped
 regenerated data (G3's bet). Single run, spot thermal regime unrecorded.
 
-Spot ops note: the N. Virginia AZ-c pool reclaimed two boxes in a row at ~45-50 min. Hunter re-ordered to
-prefer Oregon/Frankfurt pools; N. Virginia demoted to last.
+Spot ops note: N-Virginia-c reclaimed two boxes in a row at ~45-50 min. Hunter re-ordered to
+prefer Oregon/Frankfurt pools; N-Virginia demoted to last.
 
-## Box 3 cells (cloud-2card SPOT `spot-3` ohio-az-b, 2026-08-15 ~02:30-03:10Z)
+## Box 3 cells (sbox-2card SPOT `spot-3` Ohio-b, 2026-08-15 ~02:30-03:10Z)
 
 Same server config (SGLang 0.5.17, flashinfer, FP8 target + RadixArk drafter, block 7). Raw:
 `raw/box-spot-3/g1/`.
@@ -71,7 +71,7 @@ in our own training corpus (both modes) is justified. Spec-OFF denominators queu
 ## Training capacity (owner call 2026-08-15 ~03:00Z)
 
 B200 32h Capacity Block PURCHASED: `<capacity-block>`, p6-b200.48xlarge (8x B200 179GB),
-nvirginia-az-c, 2026-08-15T03:16Z -> 2026-08-16T11:30Z, $3,185.94 upfront. Box allocation (owner):
+N-Virginia-c, 2026-08-15T03:16Z -> 2026-08-16T11:30Z, $3,185.94 upfront. Box allocation (owner):
 **3 concurrent training arms x 2 cards (capture+trainer each) + 2 cards memra sm_100 recon**;
 regen phase borrows all 8 first. B200 spot was vetoed (no spot for training); OD was ICE
 everywhere; block = guaranteed + ~12% under OD.
@@ -89,6 +89,6 @@ Read: even at accept 2.6, RadixArk DSpark pays +52% on our real traffic at c=8 o
 An own-corpus drafter closing even half the gap to the math-class accept (~4.5) would push this
 toward ~2x. That is the training target's economic frame.
 
-Ops close: box 3 terminated after full queue (owner: B200-only posture); all PRO 6000 box hunters killed;
+Ops close: box 3 terminated after full queue (owner: B200-only posture); all sbox hunters killed;
 fleet = B200 block box `b200-1` only. Caveat: the 1.52x pair crosses two boxes
-(both 2-card cloud boxes, same driver/config/seed) — single-box repeat owed when a PRO 6000 rig is next up.
+(both sbox-2card, same driver/config/seed) — single-box repeat owed when a PRO 6000 rig is next up.

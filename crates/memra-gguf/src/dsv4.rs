@@ -138,7 +138,7 @@ pub fn expected_census(mc: &ModelConfig) -> BTreeMap<String, TensorSpec> {
     // weight_block_size [128,128] — both dims must divide exactly; refuse otherwise).
     let fp8 = |m: &mut BTreeMap<String, TensorSpec>, stem: String, out: u64, inn: u64| {
         assert!(
-            out.is_multiple_of(128) && inn.is_multiple_of(128),
+            out % 128 == 0 && inn % 128 == 0,
             "dsv4 fp8 block quant needs 128-divisible dims: {stem} [{out}, {inn}]"
         );
         m.insert(
@@ -159,7 +159,7 @@ pub fn expected_census(mc: &ModelConfig) -> BTreeMap<String, TensorSpec> {
     // modelopt NVFP4 quad (trunk experts).
     let nvfp4 = |m: &mut BTreeMap<String, TensorSpec>, stem: String, out: u64, inn: u64| {
         assert!(
-            inn.is_multiple_of(16),
+            inn % 16 == 0,
             "dsv4 nvfp4 needs in % 16 == 0: {stem} [{out}, {inn}]"
         );
         m.insert(
@@ -194,7 +194,7 @@ pub fn expected_census(mc: &ModelConfig) -> BTreeMap<String, TensorSpec> {
     // OCP MXFP4 pair (MTP experts — excluded from the NVFP4 cast, hf_quant_config "mtp.*").
     let mxfp4 = |m: &mut BTreeMap<String, TensorSpec>, stem: String, out: u64, inn: u64| {
         assert!(
-            inn.is_multiple_of(32),
+            inn % 32 == 0,
             "dsv4 mxfp4 needs in % 32 == 0: {stem} [{out}, {inn}]"
         );
         m.insert(
@@ -548,7 +548,7 @@ pub fn dequant_mxfp4_expert(weight: &[u8], scale: &[u8], rows: usize, cols: usiz
 /// census enforces it before any decode).
 pub fn dequant_fp8_blk128(weight: &[u8], scale: &[u8], rows: usize, cols: usize) -> Vec<f32> {
     assert!(
-        rows.is_multiple_of(128) && cols.is_multiple_of(128),
+        rows % 128 == 0 && cols % 128 == 0,
         "fp8 blk128 needs 128-divisible dims"
     );
     assert_eq!(weight.len(), rows * cols, "fp8 weight bytes != rows*cols");

@@ -64,12 +64,7 @@ fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
         pre_mlp_norm: norm,
         mlp,
         residual: ResidualTopology::Serial,
-        state: StatePlan::LatentKvCache {
-            width: 6,
-            index_width: 0,
-        },
-        sparse_overlay: None,
-        ple: None,
+        state: StatePlan::LatentKvCache { width: 6 },
     };
     Ok(ModelPlan {
         arch: Arch::GlmDsa,
@@ -86,7 +81,6 @@ fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
                     heads: 1,
                     head_dim: 2,
                     top_k: 8,
-                    kpool: None,
                 }),
                 MlpPlan::Dense(DenseMlpPlan {
                     intermediate_size: 16,
@@ -114,7 +108,6 @@ fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
             ),
         ],
         output_norm: norm,
-        exit_mixer: None,
         logits: Vec::new(),
         mtp_blocks: Vec::new(),
         drafter: None,

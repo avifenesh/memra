@@ -107,24 +107,6 @@ pub enum VisionTensor {
     MlpGate,
     MlpUp,
     MlpDown,
-    // glm5_next tower (fused-qkv ViT with biased projections, conv downsample and a
-    // gated-MLP merger). Census truth: research/glm53-flash-bringup-20260827.
-    FusedQkv,
-    FusedQkvBias,
-    AttentionOutputBias,
-    MlpGateBias,
-    MlpUpBias,
-    MlpDownBias,
-    PatchProjectionBias,
-    Downsample,
-    DownsampleBias,
-    MergerGate,
-    MergerUp,
-    MergerDown,
-    MergerProjection,
-    MergerPostProjectionNorm,
-    MergerPostProjectionNormBias,
-    PostEncoderNorm,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -145,11 +127,6 @@ pub enum MtpTensor {
     EmbeddingNorm,
     HiddenNorm,
     FusionProjection,
-    /// qwen4_exp `mtp.fc_embedding` — one of the TWO separate draft-input projections
-    /// (MtpFusionPlan::SeparateProjections), not the concat FusionProjection program.
-    EmbeddingProjection,
-    /// qwen4_exp `mtp.fc_hidden`, applied per stream to the grouped-normed WIDE hidden.
-    HiddenProjection,
     OutputNorm,
     OutputProjection,
 }
@@ -177,21 +154,6 @@ pub enum LayerTensor {
     GdnConv1d,
     GdnNorm,
     GdnOutput,
-    KdaQuery,
-    KdaKey,
-    KdaValue,
-    KdaQueryConv,
-    KdaKeyConv,
-    KdaValueConv,
-    KdaALog,
-    KdaDtBias,
-    KdaForgetDown,
-    KdaForgetUp,
-    KdaGateDown,
-    KdaGateUp,
-    KdaBeta,
-    KdaOutputNorm,
-    KdaOutput,
     MlaQueryDown,
     MlaQueryDownNorm,
     MlaQueryUp,
@@ -305,9 +267,6 @@ pub struct TensorCensusEntry {
     /// Checkpoint-native dimension order: safetensors outer-to-inner, GGUF inner-to-outer.
     pub shape: Vec<u64>,
     pub storage: StorageLayout,
-    /// Exact checkpoint bytes represented by this row. Quantized safetensors rows include the
-    /// recognized auxiliary scale planes carried by `storage`; GGUF auxiliaries are separate rows.
-    pub physical_bytes: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -354,7 +313,6 @@ pub struct BoundTensor {
     pub checkpoint_names: Vec<String>,
     pub shapes: Vec<Vec<u64>>,
     pub storage: Vec<StorageLayout>,
-    pub physical_bytes: u64,
     pub owner: TensorOwner,
     pub transform: TensorTransform,
 }
@@ -400,9 +358,6 @@ pub enum TensorContractError {
         name: String,
         expected: Vec<String>,
         actual: Vec<String>,
-    },
-    PhysicalBytesOverflow {
-        id: TensorId,
     },
     Extra {
         names: Vec<String>,
@@ -464,9 +419,6 @@ impl std::fmt::Display for TensorContractError {
                 f,
                 "tensor {id:?} ({name}) auxiliary planes mismatch: expected {expected:?}, got {actual:?}"
             ),
-            Self::PhysicalBytesOverflow { id } => {
-                write!(f, "tensor {id:?} physical byte total overflows u64")
-            }
             Self::Extra { names } => write!(f, "extra checkpoint tensors: {names:?}"),
         }
     }
@@ -475,7 +427,6 @@ impl std::fmt::Display for TensorContractError {
 impl std::error::Error for TensorContractError {}
 
 impl TensorContract {
-    #[allow(clippy::result_large_err)] // allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
     pub fn for_plan(
         plan: &ModelPlan,
         dialect: CheckpointDialect,
@@ -489,17 +440,17 @@ impl TensorContract {
             TensorOwner::Global,
             TensorTransform::Identity,
         );
-        if dialect == CheckpointDialect::Gguf
-            && let Some(width) = rope_factor_width(plan)
-        {
-            builder.float(
-                TensorId::RopeFactors,
-                "rope_freqs.weight".to_string(),
-                vec![width as u64],
-                TensorOwner::Global,
-                TensorTransform::Identity,
-                true,
-            );
+        if dialect == CheckpointDialect::Gguf {
+            if let Some(width) = rope_factor_width(plan) {
+                builder.float(
+                    TensorId::RopeFactors,
+                    "rope_freqs.weight".to_string(),
+                    vec![width as u64],
+                    TensorOwner::Global,
+                    TensorTransform::Identity,
+                    true,
+                );
+            }
         }
         builder.float(
             TensorId::OutputNorm,
@@ -546,7 +497,6 @@ impl TensorContract {
         })
     }
 
-    #[allow(clippy::result_large_err)] // allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
     pub fn bind(
         &self,
         census: &[TensorCensusEntry],
@@ -625,31 +575,23 @@ impl TensorContract {
                     StorageLayout::Quantized(layout) => layout.auxiliaries.clone(),
                     _ => Vec::new(),
                 };
-                if let Some(expected) = requirement.auxiliaries.as_ref()
-                    && actual_auxiliaries != *expected
-                {
-                    return Err(TensorContractError::AuxiliaryLayoutMismatch {
-                        id: requirement.id.clone(),
-                        name: entry.name.clone(),
-                        expected: expected.clone(),
-                        actual: actual_auxiliaries,
-                    });
+                if let Some(expected) = requirement.auxiliaries.as_ref() {
+                    if actual_auxiliaries != *expected {
+                        return Err(TensorContractError::AuxiliaryLayoutMismatch {
+                            id: requirement.id.clone(),
+                            name: entry.name.clone(),
+                            expected: expected.clone(),
+                            actual: actual_auxiliaries,
+                        });
+                    }
                 }
             }
-            let physical_bytes = matched.iter().try_fold(0u64, |total, entry| {
-                total.checked_add(entry.physical_bytes).ok_or_else(|| {
-                    TensorContractError::PhysicalBytesOverflow {
-                        id: requirement.id.clone(),
-                    }
-                })
-            })?;
             tensors.insert(
                 requirement.id.clone(),
                 BoundTensor {
                     checkpoint_names: matched.iter().map(|entry| entry.name.clone()).collect(),
                     shapes: matched.iter().map(|entry| entry.shape.clone()).collect(),
                     storage: matched.iter().map(|entry| entry.storage.clone()).collect(),
-                    physical_bytes,
                     owner: requirement.owner,
                     transform: requirement.transform,
                 },
@@ -689,7 +631,7 @@ fn rope_factor_width(plan: &ModelPlan) -> Option<u32> {
                 )
                 .then_some(rope.dimensions / 2),
             },
-            AttentionPlan::GatedDeltaNet(_) | AttentionPlan::KimiDeltaNet(_) => None,
+            AttentionPlan::GatedDeltaNet(_) => None,
         })
         .max()
 }
@@ -907,7 +849,6 @@ impl ContractBuilder {
         });
     }
 
-    #[allow(clippy::result_large_err)] // allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
     fn finish(self) -> Result<Vec<TensorRequirement>, TensorContractError> {
         let mut ids = BTreeSet::new();
         for requirement in &self.requirements {
@@ -921,7 +862,6 @@ impl ContractBuilder {
     }
 }
 
-#[allow(clippy::result_large_err)] // allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
 fn add_layer(
     builder: &mut ContractBuilder,
     plan: &ModelPlan,
@@ -946,11 +886,7 @@ fn add_layer(
             add_full_attention(builder, plan, index, attention);
         }
         AttentionPlan::GatedDeltaNet(gdn) => add_gdn(builder, plan, index, *gdn),
-        AttentionPlan::KimiDeltaNet(kda) => add_kda(builder, plan, index, *kda),
         AttentionPlan::Mla(mla) => add_mla(builder, plan, index, mla)?,
-    }
-    if let ResidualTopology::HyperConnections { streams, .. } = layer.residual {
-        add_hyper_connections(builder, plan, index, streams);
     }
     let gemma = matches!(layer.residual, ResidualTopology::Gemma { .. });
     if let ResidualTopology::Gemma {
@@ -1008,7 +944,12 @@ fn add_layer(
         ) => add_gemma_parallel_moe(builder, plan, index, moe, parallel)?,
         (MlpPlan::Moe(moe), _) => add_moe_mlp(builder, plan, index, moe)?,
     }
-    if let ResidualTopology::Gemma { post_mlp_norm, .. } = layer.residual {
+    if let ResidualTopology::Gemma {
+        post_mlp_norm,
+        layer_scale: _,
+        ..
+    } = layer.residual
+    {
         builder.float(
             layer_id(index, LayerTensor::PostMlpNorm),
             layer_name(
@@ -1039,7 +980,6 @@ fn add_layer(
     Ok(())
 }
 
-#[allow(clippy::result_large_err)] // allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
 fn add_gemma_parallel_moe(
     builder: &mut ContractBuilder,
     plan: &ModelPlan,
@@ -1250,11 +1190,7 @@ fn add_mtp_glue(
             depth,
             tensor: MtpTensor::OutputNorm,
         },
-        // glm5_next spells the private MTP output norm `shared_head.norm` (census).
-        vec![
-            output_norm,
-            format!("model.layers.{global_index}.shared_head.norm.weight"),
-        ],
+        vec![output_norm],
         vec![plan.hidden_size as u64],
         owner,
         norm_transform(plan.output_norm.weight_transform),
@@ -1387,7 +1323,6 @@ fn add_full_attention(
     }
 }
 
-#[allow(clippy::result_large_err)] // allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
 fn add_mla(
     builder: &mut ContractBuilder,
     plan: &ModelPlan,
@@ -1395,7 +1330,9 @@ fn add_mla(
     mla: &MlaAttentionPlan,
 ) -> Result<(), TensorContractError> {
     if builder.dialect != CheckpointDialect::Gguf {
-        return add_mla_hf(builder, plan, index, mla);
+        return Err(TensorContractError::UnsupportedPlanOperation {
+            operation: "HF MLA tensor schema",
+        });
     }
     let MlaAttentionPlan::LatentKv {
         query_heads,
@@ -1503,7 +1440,6 @@ fn add_mla(
         heads,
         head_dim,
         top_k: _,
-        kpool,
     } = sparse_index
     {
         for (tensor, suffix, shape) in [
@@ -1542,200 +1478,6 @@ fn add_mla(
                 owner,
                 TensorTransform::Identity,
                 true,
-            );
-        }
-        // The k-pool collapse operands (glm5_next). They exist ONLY under `kpool: Some`: the
-        // per-token indexer (GLM-5.2 / dsv4) scores raw keys and has no pool to collapse, so
-        // registering them unconditionally would make every GLM-5.2 checkpoint fail its census.
-        if let Some(kpool) = kpool {
-            builder.weight(
-                layer_id(index, LayerTensor::SparseCompressorGate),
-                format!("blk.{index}.indexer.kpool_gate.weight"),
-                vec![plan.hidden_size as u64, head_dim as u64],
-                owner,
-                TensorTransform::Identity,
-            );
-            // ggml ne order: fastest axis first, so the [pool][head_dim] row-major parameter
-            // registers as [head_dim, pool]. Element order is unchanged — `ape[slot*head_dim + c]`
-            // is what both the reference and the CUDA collapse read.
-            builder.float(
-                layer_id(index, LayerTensor::SparseCompressorPosition),
-                format!("blk.{index}.indexer.kpool_ape.weight"),
-                vec![head_dim as u64, kpool.pool as u64],
-                owner,
-                TensorTransform::Identity,
-                true,
-            );
-        }
-    }
-    Ok(())
-}
-
-/// HF-safetensors MLA schema (glm5_next is the first HF-dialect MLA family; glm-dsa
-/// censuses only through GGUF, where llama.cpp pre-splits `kv_b`). Names are the
-/// checkpoint's own (census-verified); the fused `kv_b_proj` registers with
-/// `SplitMlaKv` so downstream sees the same `MlaKeyUp`/`MlaValueUp` planes as the
-/// GGUF path. NoPE checkpoints (rope_head_dim 0) have latent_dim == kv_lora_rank.
-#[allow(clippy::result_large_err)] // allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
-fn add_mla_hf(
-    builder: &mut ContractBuilder,
-    plan: &ModelPlan,
-    index: u32,
-    mla: &MlaAttentionPlan,
-) -> Result<(), TensorContractError> {
-    let MlaAttentionPlan::LatentKv {
-        query_heads,
-        q_lora_rank,
-        kv_lora_rank,
-        qk_head_dim,
-        rope_head_dim,
-        value_head_dim,
-        rope: _,
-        sparse_index,
-    } = mla.clone()
-    else {
-        return Err(TensorContractError::UnsupportedPlanOperation {
-            operation: "HF compressed-KV MLA tensor schema",
-        });
-    };
-    let nope_head_dim = qk_head_dim - rope_head_dim;
-    let latent_dim = kv_lora_rank + rope_head_dim;
-    let owner = TensorOwner::Layer(index);
-    let name = |suffix: &str| format!("model.layers.{index}.{suffix}");
-    for (tensor, suffix, out, input) in [
-        (
-            LayerTensor::MlaQueryDown,
-            "self_attn.q_a_proj.weight",
-            q_lora_rank,
-            plan.hidden_size,
-        ),
-        (
-            LayerTensor::MlaQueryUp,
-            "self_attn.q_b_proj.weight",
-            query_heads * qk_head_dim,
-            q_lora_rank,
-        ),
-        (
-            LayerTensor::MlaKvDown,
-            "self_attn.kv_a_proj_with_mqa.weight",
-            latent_dim,
-            plan.hidden_size,
-        ),
-        (
-            LayerTensor::MlaOutput,
-            "self_attn.o_proj.weight",
-            plan.hidden_size,
-            query_heads * value_head_dim,
-        ),
-    ] {
-        builder.weight(
-            layer_id(index, tensor),
-            name(suffix),
-            vec![out as u64, input as u64],
-            owner,
-            TensorTransform::Identity,
-        );
-    }
-    builder.weight(
-        layer_id(index, LayerTensor::MlaKvSource),
-        name("self_attn.kv_b_proj.weight"),
-        vec![
-            (query_heads * (nope_head_dim + value_head_dim)) as u64,
-            kv_lora_rank as u64,
-        ],
-        owner,
-        TensorTransform::SplitMlaKv,
-    );
-    for (tensor, suffix, width) in [
-        (
-            LayerTensor::MlaQueryDownNorm,
-            "self_attn.q_a_layernorm.weight",
-            q_lora_rank,
-        ),
-        (
-            LayerTensor::MlaKvDownNorm,
-            "self_attn.kv_a_layernorm.weight",
-            kv_lora_rank,
-        ),
-    ] {
-        builder.float(
-            layer_id(index, tensor),
-            name(suffix),
-            vec![width as u64],
-            owner,
-            TensorTransform::Identity,
-            true,
-        );
-    }
-    if let SparseIndexPlan::Own {
-        heads,
-        head_dim,
-        top_k: _,
-        kpool,
-    } = sparse_index
-    {
-        for (tensor, suffix, out, input) in [
-            (
-                LayerTensor::SparseQuery,
-                "self_attn.indexer.wq_b.weight",
-                heads * head_dim,
-                q_lora_rank,
-            ),
-            (
-                LayerTensor::SparseKey,
-                "self_attn.indexer.wk.weight",
-                head_dim,
-                plan.hidden_size,
-            ),
-            (
-                LayerTensor::SparseProjection,
-                "self_attn.indexer.weights_proj.weight",
-                heads,
-                plan.hidden_size,
-            ),
-        ] {
-            builder.weight(
-                layer_id(index, tensor),
-                name(suffix),
-                vec![out as u64, input as u64],
-                owner,
-                TensorTransform::Identity,
-            );
-        }
-        for (tensor, suffix) in [
-            (
-                LayerTensor::SparseKeyNorm,
-                "self_attn.indexer.k_norm.weight",
-            ),
-            (
-                LayerTensor::SparseKeyNormBias,
-                "self_attn.indexer.k_norm.bias",
-            ),
-        ] {
-            builder.float(
-                layer_id(index, tensor),
-                name(suffix),
-                vec![head_dim as u64],
-                owner,
-                TensorTransform::Identity,
-                true,
-            );
-        }
-        if let Some(kpool) = kpool {
-            builder.float(
-                layer_id(index, LayerTensor::SparseCompressorPosition),
-                name("self_attn.indexer.index_kpool_compress_ape"),
-                vec![kpool.pool as u64, head_dim as u64],
-                owner,
-                TensorTransform::Identity,
-                true,
-            );
-            builder.weight(
-                layer_id(index, LayerTensor::SparseCompressorGate),
-                name("self_attn.indexer.index_kpool_compress_gate"),
-                vec![head_dim as u64, plan.hidden_size as u64],
-                owner,
-                TensorTransform::Identity,
             );
         }
     }
@@ -1849,190 +1591,6 @@ fn add_gdn(
     );
 }
 
-/// Sinkhorn hyper-connection parameters, per layer and per site (attention + FFN).
-/// Row count is streams! (the permutation basis of the manifold constraint — dsv4.rs:126
-/// derives the same 24 for hc_mult 4), fn width is streams * hidden, scale has
-/// streams - 1 rows. Names are the glm5_next checkpoint's own; the dsv4 family censuses
-/// these by hand (dsv4.rs) and does not pass through here.
-fn add_hyper_connections(
-    builder: &mut ContractBuilder,
-    plan: &ModelPlan,
-    index: u32,
-    streams: u32,
-) {
-    let rows = (1..=streams as u64).product::<u64>();
-    let owner = TensorOwner::Layer(index);
-    for site in ["hc_attn", "hc_ffn"] {
-        for (suffix, shape) in [
-            ("base", vec![rows]),
-            ("fn", vec![rows, (streams * plan.hidden_size) as u64]),
-            ("scale", vec![(streams - 1) as u64]),
-        ] {
-            let tensor = match (site, suffix) {
-                ("hc_attn", "base") => LayerTensor::HyperAttentionBase,
-                ("hc_attn", "fn") => LayerTensor::HyperAttentionFunction,
-                ("hc_attn", "scale") => LayerTensor::HyperAttentionScale,
-                ("hc_ffn", "base") => LayerTensor::HyperMlpBase,
-                ("hc_ffn", "fn") => LayerTensor::HyperMlpFunction,
-                (_, _) => LayerTensor::HyperMlpScale,
-            };
-            builder.float(
-                layer_id(index, tensor),
-                layer_name(
-                    builder.dialect,
-                    index,
-                    &format!("{site}_{suffix}"),
-                    &format!("{site}_{suffix}"),
-                ),
-                shape,
-                owner,
-                TensorTransform::Identity,
-                true,
-            );
-        }
-    }
-}
-
-/// KDA (glm5_next linear-attn) checkpoint tensors, exactly as GLM-5.3-Flash ships them:
-/// SPLIT q/k/v projections and SPLIT per-plane short-convs (the executor fuses at load),
-/// per-CHANNEL `dt_bias` (width = num_heads * head_dim, unlike GDN's per-head), low-rank
-/// forget (`f_a`/`f_b`) and output-gate (`g_a`/`g_b`) pairs, per-head `b_proj` beta and
-/// `A_log`, and the sigmoid-gated `o_norm` over head_dim. HF names from the census
-/// (research/glm53-flash-bringup-20260827/CENSUS.md); gguf names are memra's own
-/// (safetensors-first family, no public GGUF writes this arch).
-fn add_kda(
-    builder: &mut ContractBuilder,
-    plan: &ModelPlan,
-    index: u32,
-    kda: crate::model_plan::KimiDeltaNetPlan,
-) {
-    let qkv = kda.num_heads * kda.head_dim;
-    let owner = TensorOwner::Layer(index);
-    let matrix = |out, input| matrix_shape(builder.dialect, out, input);
-    for (tensor, gguf, hf, shape) in [
-        (
-            LayerTensor::KdaQuery,
-            "kda_q.weight",
-            "self_attn.q_proj.weight",
-            matrix(qkv, plan.hidden_size),
-        ),
-        (
-            LayerTensor::KdaKey,
-            "kda_k.weight",
-            "self_attn.k_proj.weight",
-            matrix(qkv, plan.hidden_size),
-        ),
-        (
-            LayerTensor::KdaValue,
-            "kda_v.weight",
-            "self_attn.v_proj.weight",
-            matrix(qkv, plan.hidden_size),
-        ),
-        (
-            LayerTensor::KdaForgetDown,
-            "kda_f_a.weight",
-            "self_attn.f_a_proj.weight",
-            matrix(kda.head_dim, plan.hidden_size),
-        ),
-        (
-            LayerTensor::KdaForgetUp,
-            "kda_f_b.weight",
-            "self_attn.f_b_proj.weight",
-            matrix(qkv, kda.head_dim),
-        ),
-        (
-            LayerTensor::KdaGateDown,
-            "kda_g_a.weight",
-            "self_attn.g_a_proj.weight",
-            matrix(kda.head_dim, plan.hidden_size),
-        ),
-        (
-            LayerTensor::KdaGateUp,
-            "kda_g_b.weight",
-            "self_attn.g_b_proj.weight",
-            matrix(qkv, kda.head_dim),
-        ),
-        (
-            LayerTensor::KdaBeta,
-            "kda_b.weight",
-            "self_attn.b_proj.weight",
-            matrix(kda.num_heads, plan.hidden_size),
-        ),
-        (
-            LayerTensor::KdaOutput,
-            "kda_out.weight",
-            "self_attn.o_proj.weight",
-            matrix(plan.hidden_size, qkv),
-        ),
-    ] {
-        builder.weight(
-            layer_id(index, tensor),
-            layer_name(builder.dialect, index, gguf, hf),
-            shape,
-            owner,
-            TensorTransform::Identity,
-        );
-    }
-    for (tensor, gguf, hf, shape) in [
-        (
-            LayerTensor::KdaALog,
-            "kda_a_log",
-            "self_attn.A_log",
-            vec![kda.num_heads as u64],
-        ),
-        (
-            LayerTensor::KdaDtBias,
-            "kda_dt.bias",
-            "self_attn.dt_bias",
-            vec![qkv as u64],
-        ),
-        (
-            LayerTensor::KdaOutputNorm,
-            "kda_o_norm.weight",
-            "self_attn.o_norm.weight",
-            vec![kda.head_dim as u64],
-        ),
-    ] {
-        builder.float(
-            layer_id(index, tensor),
-            layer_name(builder.dialect, index, gguf, hf),
-            shape,
-            owner,
-            TensorTransform::Identity,
-            true,
-        );
-    }
-    let conv_shape = match builder.dialect {
-        CheckpointDialect::Gguf => vec![kda.conv_kernel as u64, qkv as u64],
-        CheckpointDialect::HfSafetensors => vec![qkv as u64, 1, kda.conv_kernel as u64],
-    };
-    for (tensor, gguf, hf) in [
-        (
-            LayerTensor::KdaQueryConv,
-            "kda_q_conv1d.weight",
-            "self_attn.q_conv1d.weight",
-        ),
-        (
-            LayerTensor::KdaKeyConv,
-            "kda_k_conv1d.weight",
-            "self_attn.k_conv1d.weight",
-        ),
-        (
-            LayerTensor::KdaValueConv,
-            "kda_v_conv1d.weight",
-            "self_attn.v_conv1d.weight",
-        ),
-    ] {
-        builder.weight(
-            layer_id(index, tensor),
-            layer_name(builder.dialect, index, gguf, hf),
-            conv_shape.clone(),
-            owner,
-            TensorTransform::Identity,
-        );
-    }
-}
-
 fn add_dense_mlp(builder: &mut ContractBuilder, plan: &ModelPlan, index: u32, intermediate: u32) {
     for (tensor, gguf, hf, out, input) in [
         (
@@ -2067,7 +1625,6 @@ fn add_dense_mlp(builder: &mut ContractBuilder, plan: &ModelPlan, index: u32, in
     }
 }
 
-#[allow(clippy::result_large_err)] // allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
 fn add_moe_mlp(
     builder: &mut ContractBuilder,
     plan: &ModelPlan,
@@ -2088,25 +1645,12 @@ fn add_moe_mlp(
         Arch::Hy3 => "mlp.router.gate.weight",
         _ => "mlp.gate.weight",
     };
-    let router_names = match (builder.dialect, &plan.arch) {
-        (CheckpointDialect::HfSafetensors, Arch::Hy3) => vec![
-            format!("model.layers.{index}.mlp.router.gate.weight"),
-            format!("model.layers.{index}.mlp.gate.weight"),
-        ],
-        _ => vec![layer_name(
-            builder.dialect,
-            index,
-            "ffn_gate_inp.weight",
-            router_hf,
-        )],
-    };
-    builder.weight_aliases(
+    builder.weight(
         layer_id(index, LayerTensor::MoeRouter),
-        router_names,
+        layer_name(builder.dialect, index, "ffn_gate_inp.weight", router_hf),
         matrix_shape(builder.dialect, moe.expert_count, plan.hidden_size),
         owner,
         TensorTransform::Identity,
-        true,
     );
 
     let selection_bias = matches!(
@@ -2128,14 +1672,10 @@ fn add_moe_mlp(
             CheckpointDialect::HfSafetensors if plan.arch == Arch::Hy3 => vec![
                 format!("model.layers.{index}.mlp.expert_bias"),
                 format!("model.layers.{index}.mlp.router.expert_bias"),
-                format!("model.layers.{index}.mlp.e_score_correction_bias"),
             ],
-            // glm5_next nests the bias under the router module (mlp.gate.*), the
-            // DeepSeek-V3 spelling keeps it on mlp directly — accept both.
-            CheckpointDialect::HfSafetensors => vec![
-                format!("model.layers.{index}.mlp.e_score_correction_bias"),
-                format!("model.layers.{index}.mlp.gate.e_score_correction_bias"),
-            ],
+            CheckpointDialect::HfSafetensors => {
+                vec![format!("model.layers.{index}.mlp.e_score_correction_bias")]
+            }
         };
         builder.float_aliases(
             layer_id(index, LayerTensor::MoeRouterBias),
@@ -2149,6 +1689,9 @@ fn add_moe_mlp(
 
     match builder.dialect {
         CheckpointDialect::Gguf => add_gguf_expert_banks(builder, plan, index, moe, owner),
+        CheckpointDialect::HfSafetensors if plan.arch == Arch::Hy3 => {
+            add_hy3_expert_banks(builder, plan, index, moe, owner)
+        }
         CheckpointDialect::HfSafetensors => add_hf_expert_groups(builder, plan, index, moe, owner),
     }
 
@@ -2163,12 +1706,6 @@ fn add_moe_mlp(
                 "mlp.shared_mlp.gate_proj.weight",
                 "mlp.shared_mlp.up_proj.weight",
                 "mlp.shared_mlp.down_proj.weight",
-            ),
-            // glm5_next: plural module name under mlp (DeepSeek-V3 spelling).
-            Arch::Glm5Next => (
-                "mlp.shared_experts.gate_proj.weight",
-                "mlp.shared_experts.up_proj.weight",
-                "mlp.shared_experts.down_proj.weight",
             ),
             _ => (
                 "mlp.shared_expert.gate_proj.weight",
@@ -2199,25 +1736,12 @@ fn add_moe_mlp(
                 shared.intermediate_size,
             ),
         ] {
-            let names =
-                if builder.dialect == CheckpointDialect::HfSafetensors && plan.arch == Arch::Hy3 {
-                    vec![
-                        format!("model.layers.{index}.{hf}"),
-                        format!(
-                            "model.layers.{index}.{}",
-                            hf.replace("mlp.shared_mlp.", "mlp.shared_experts.")
-                        ),
-                    ]
-                } else {
-                    vec![layer_name(builder.dialect, index, gguf, hf)]
-                };
-            builder.weight_aliases(
+            builder.weight(
                 layer_id(index, tensor),
-                names,
+                layer_name(builder.dialect, index, gguf, hf),
                 matrix_shape(builder.dialect, out, input),
                 owner,
                 TensorTransform::Identity,
-                true,
             );
         }
         if shared.gated {
@@ -2278,6 +1802,52 @@ fn add_gguf_expert_banks(
         builder.weight(
             layer_id(index, tensor),
             format!("blk.{index}.{suffix}"),
+            shape,
+            owner,
+            TensorTransform::Identity,
+        );
+    }
+}
+
+fn add_hy3_expert_banks(
+    builder: &mut ContractBuilder,
+    plan: &ModelPlan,
+    index: u32,
+    moe: &MoeMlpPlan,
+    owner: TensorOwner,
+) {
+    for (tensor, suffix, shape) in [
+        (
+            LayerTensor::MoeExpertGateBank,
+            "mlp.switch_mlp.gate_proj.weight",
+            vec![
+                moe.expert_count as u64,
+                moe.expert_intermediate_size as u64,
+                plan.hidden_size as u64,
+            ],
+        ),
+        (
+            LayerTensor::MoeExpertUpBank,
+            "mlp.switch_mlp.up_proj.weight",
+            vec![
+                moe.expert_count as u64,
+                moe.expert_intermediate_size as u64,
+                plan.hidden_size as u64,
+            ],
+        ),
+        (
+            LayerTensor::MoeExpertDownBank,
+            "mlp.switch_mlp.down_proj.weight",
+            vec![
+                moe.expert_count as u64,
+                plan.hidden_size as u64,
+                moe.expert_intermediate_size as u64,
+            ],
+        ),
+    ] {
+        builder.weight(
+            layer_id(index, tensor),
+            format!("model.layers.{index}.{suffix}"),
             shape,
             owner,
             TensorTransform::Identity,
@@ -2407,20 +1977,6 @@ mod tests {
         ModelPlan::compile(&cfg).unwrap()
     }
 
-    fn hy3_plan() -> ModelPlan {
-        let cfg = ModelConfig::from_hf(&HfConfig::parse(
-            r#"{"model_type":"hy_v3","num_hidden_layers":2,
-            "num_nextn_predict_layers":1,"hidden_size":8,
-            "num_attention_heads":2,"num_key_value_heads":1,"head_dim":4,
-            "intermediate_size":16,"vocab_size":32,"max_position_embeddings":32,
-            "first_k_dense_replace":1,"num_experts":4,"num_experts_per_tok":2,
-            "moe_intermediate_size":8,"num_shared_experts":1,
-            "moe_router_use_sigmoid":true,"moe_router_enable_expert_bias":true,
-            "route_norm":true,"router_scaling_factor":2.826,"qk_norm":true}"#,
-        ));
-        ModelPlan::compile(&cfg).unwrap()
-    }
-
     fn gemma4_dense_plan() -> ModelPlan {
         let cfg = ModelConfig::from_hf(&HfConfig::parse(
             r#"{"model_type":"gemma4","num_hidden_layers":2,"hidden_size":8,
@@ -2457,42 +2013,9 @@ mod tests {
                             auxiliaries: Vec::new(),
                         })
                     },
-                    physical_bytes: 1,
                 })
             })
             .collect()
-    }
-
-    #[test]
-    fn bound_tensor_preserves_checked_physical_byte_total() {
-        let contract = TensorContract {
-            dialect: CheckpointDialect::Gguf,
-            requirements: vec![TensorRequirement {
-                id: TensorId::OutputNorm,
-                names: vec!["a".to_string(), "b".to_string()],
-                match_mode: TensorMatch::All,
-                shape: vec![1],
-                owner: TensorOwner::Global,
-                transform: TensorTransform::Identity,
-                quant: QuantConstraint::FloatOnly,
-                auxiliaries: None,
-                required: true,
-            }],
-        };
-        let entry = |name: &str, physical_bytes| TensorCensusEntry {
-            name: name.to_string(),
-            shape: vec![1],
-            storage: StorageLayout::Float(FloatType::F32),
-            physical_bytes,
-        };
-        let bound = contract.bind(&[entry("a", 3), entry("b", 5)]).unwrap();
-        assert_eq!(bound.tensors[&TensorId::OutputNorm].physical_bytes, 8);
-        assert_eq!(
-            contract.bind(&[entry("a", u64::MAX), entry("b", 1)]),
-            Err(TensorContractError::PhysicalBytesOverflow {
-                id: TensorId::OutputNorm,
-            })
-        );
     }
 
     #[test]
@@ -2547,7 +2070,6 @@ mod tests {
             name: "unexpected.weight".to_string(),
             shape: vec![1],
             storage: StorageLayout::Float(FloatType::F32),
-            physical_bytes: 1,
         });
         assert_eq!(
             contract.bind(&census),
@@ -2604,13 +2126,11 @@ mod tests {
                 name: ambiguous.requirements[0].names[0].clone(),
                 shape: vec![64],
                 storage: StorageLayout::Float(FloatType::Bf16),
-                physical_bytes: 128,
             },
             TensorCensusEntry {
                 name: ambiguous.requirements[0].names[1].clone(),
                 shape: vec![64],
                 storage: StorageLayout::Float(FloatType::Bf16),
-                physical_bytes: 128,
             },
         ];
         assert!(matches!(
@@ -2741,52 +2261,6 @@ mod tests {
     }
 
     #[test]
-    fn hy3_contract_binds_modelopt_router_bias_and_shared_expert_aliases() {
-        let contract = TensorContract::for_plan(
-            &hy3_plan(),
-            CheckpointDialect::HfSafetensors,
-            ContractOptions::default(),
-        )
-        .unwrap();
-        let mut census = census_for(&contract);
-
-        for (tensor, alias) in [
-            (LayerTensor::MoeRouter, "model.layers.1.mlp.gate.weight"),
-            (
-                LayerTensor::MoeRouterBias,
-                "model.layers.1.mlp.e_score_correction_bias",
-            ),
-            (
-                LayerTensor::SharedMlpGate,
-                "model.layers.1.mlp.shared_experts.gate_proj.weight",
-            ),
-            (
-                LayerTensor::SharedMlpUp,
-                "model.layers.1.mlp.shared_experts.up_proj.weight",
-            ),
-            (
-                LayerTensor::SharedMlpDown,
-                "model.layers.1.mlp.shared_experts.down_proj.weight",
-            ),
-        ] {
-            let requirement = contract
-                .requirements
-                .iter()
-                .find(|requirement| requirement.id == layer_id(1, tensor))
-                .unwrap();
-            assert!(requirement.names.iter().any(|name| name == alias));
-            let canonical = &requirement.names[0];
-            census
-                .iter_mut()
-                .find(|entry| &entry.name == canonical)
-                .unwrap()
-                .name = alias.to_string();
-        }
-
-        contract.bind(&census).unwrap();
-    }
-
-    #[test]
     fn mtp_contract_reuses_block_schema_and_rewrites_hf_namespace() {
         let plan = qwen35_mtp_plan();
         let contract = TensorContract::for_plan(
@@ -2870,7 +2344,6 @@ mod tests {
                         auxiliaries: Vec::new(),
                     }),
                 },
-                physical_bytes: tensor.n_bytes,
             })
             .collect();
         let bound = contract.bind(&census).unwrap();
@@ -2959,42 +2432,5 @@ mod tests {
             .unwrap();
         assert_eq!(factors.names, vec!["rope_freqs.weight"]);
         assert_eq!(factors.shape, vec![2]);
-    }
-}
-
-#[cfg(test)]
-mod glm5_dump {
-    // Scratch introspection for the bring-up loop: dump the glm5_next HF contract so the
-    // lane can diff expected names/shapes against the banked safetensors index without a
-    // box round-trip. Ignored by default; run explicitly.
-    #[test]
-    #[ignore]
-    fn dump_glm5_contract_names() {
-        let json = std::fs::read_to_string(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../research/glm53-flash-bringup-20260827/glm-config.json"
-        ))
-        .unwrap();
-        let cfg = crate::config::ModelConfig::from_hf(&crate::config::HfConfig::parse(&json));
-        let pack = crate::model_packs::for_config(&cfg).unwrap();
-        let plan = pack.compile_plan(&cfg).unwrap();
-        let contract = pack
-            .compile_tensor_contract(
-                &cfg,
-                &plan,
-                crate::tensor_contract::CheckpointDialect::HfSafetensors,
-                Default::default(),
-            )
-            .unwrap();
-        let mut out = String::new();
-        for req in &contract.requirements {
-            for name in &req.names {
-                out.push_str(&format!(
-                    "{name}\t{:?}\t{}\t{:?}\n",
-                    req.shape, req.required, req.transform
-                ));
-            }
-        }
-        std::fs::write("/tmp/glm53-contract-names.tsv", out).unwrap();
     }
 }

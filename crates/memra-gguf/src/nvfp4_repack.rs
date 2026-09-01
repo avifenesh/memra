@@ -171,7 +171,6 @@ pub fn f32_to_fp8_e4m3(x: f32) -> u8 {
 /// `ue4m3_to_f32` = raw*0.5 — caller passes the RAW target value, i.e. 2x the decoded scale).
 /// Round-to-nearest over the representable grid; clamps to [smallest-subnormal, 448].
 #[inline]
-#[allow(clippy::neg_cmp_op_on_partial_ord)] // allow: NaN must take this branch; !(a > b) is not a <= b under IEEE comparisons
 fn f32_to_ue4m3(x: f32) -> u8 {
     if !(x > 0.0) {
         return 0;
@@ -204,7 +203,7 @@ fn f32_to_ue4m3(x: f32) -> u8 {
 /// `data.len()` must be a multiple of 64.
 pub fn f32_to_nvfp4(data: &[f32]) -> Vec<u8> {
     assert!(
-        data.len().is_multiple_of(64),
+        data.len() % 64 == 0,
         "f32_to_nvfp4: len {} not /64",
         data.len()
     );
@@ -448,7 +447,6 @@ pub fn dequant_gguf_row(row: &[u8], in_f: usize) -> Vec<f32> {
 /// Reorder the V-head OUT-ROWS of a packed NVFP4 weight (rows are independent `row_bytes` blocks).
 /// `out_f` rows of `row_bytes`; rows in the band `[row_lo, row_hi)` (== `nv*head_dim` rows) are
 /// permuted by the V-head map, rows outside copy through. (qkv V band; z/a/b whole band.)
-#[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
 pub fn reorder_rows_nvfp4(
     packed: &[u8],
     out_f: usize,
@@ -776,7 +774,6 @@ mod tests {
     /// Nibble-order conversion spot-check: element 1 (modelopt high nibble of byte 0) must land in
     /// GGUF block 0 sub-block 0 byte 1 LOW nibble (elem 1 = s=0,j=1,lo).
     #[test]
-    #[allow(clippy::identity_op)] // allow: the explicit +0/*1/>>0 terms document the lane/byte symmetry of the reference layout
     fn nibble_order_conversion() {
         let in_f = 64usize;
         // weight byte 0 = (code_e1<<4)|code_e0 ; pick code_e0=5, code_e1=9
@@ -958,7 +955,7 @@ fn get_scale_min_k4(j: usize, q: &[u8]) -> (u8, u8) {
 /// `data.len()` must be a multiple of 256.
 pub fn f32_to_q5_k(data: &[f32]) -> Vec<u8> {
     const QK_K: usize = 256;
-    assert!(data.len().is_multiple_of(QK_K), "q5_k needs len % 256 == 0");
+    assert!(data.len() % QK_K == 0, "q5_k needs len % 256 == 0");
     let nb = data.len() / QK_K;
     const BLOCK_BYTES: usize = 2 + 2 + 12 + 32 + 128;
     let mut out = vec![0u8; nb * BLOCK_BYTES];
@@ -1008,11 +1005,7 @@ pub fn f32_to_q5_k(data: &[f32]) -> Vec<u8> {
         let inv_min = if max_min > 0.0 { 63.0 / max_min } else { 0.0 };
         let sc_off = 4; // d(2) + dmin(2) then scales[12]
         for j in 0..QK_K / 32 {
-            #[allow(clippy::manual_clamp)]
-            // allow: the min/max chain mirrors the reference arithmetic order in pinned sizing/quant math
             let ls = (nearest_int(inv_scale * scales[j]).min(63)).max(0) as u8;
-            #[allow(clippy::manual_clamp)]
-            // allow: the min/max chain mirrors the reference arithmetic order in pinned sizing/quant math
             let lm = (nearest_int(inv_min * mins[j]).min(63)).max(0) as u8;
             if j < 4 {
                 blk[sc_off + j] = ls;

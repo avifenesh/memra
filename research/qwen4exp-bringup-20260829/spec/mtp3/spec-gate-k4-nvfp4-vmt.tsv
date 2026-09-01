@@ -1,9 +1,0 @@
-# qwen4exp_real_gate	label=nvfp4-vmt	binary_sha256=ce2ad49a52a58e8a40951cbd7f3d7fa0371cfccb4378ff55ea86e4b2396eb41c	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false
-# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
-# spec-gate k=4 tokens=64: plain greedy vs spec chains, byte identity
-prompt	first_divergence	accept_rate	mean_accept_len	hist	spec_ms_per_token	plain_ms_per_token	pass
-0	-1	0.850	4.27	1,1,1,0,12	8.32	14.41	true
-1	-1	0.750	4.00	1,2,2,2,9	8.81	14.33	true
-2	-1	0.735	3.76	3,1,0,3,10	9.39	14.33	true
-3	-1	0.639	3.56	4,2,0,4,8	10.12	14.41	true
-# verdict	policy=byte-identity	pass=true

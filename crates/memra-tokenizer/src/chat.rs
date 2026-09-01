@@ -41,7 +41,7 @@ pub enum Val {
 }
 
 /// One tool call attached to a prior assistant turn.
-/// `params` values are pre-rendered strings for the qwen/step/HY3 arms (string arguments raw,
+/// `params` values are pre-rendered strings for the qwen/step arms (string arguments raw,
 /// everything else JSON-rendered by the caller). `args`/`id` carry the gemma4 arm's typed
 /// arguments and the OpenAI `tool_calls[].id` used to resolve tool-response names.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -55,8 +55,8 @@ pub struct ToolCall {
 }
 
 /// One chat turn for the tools-capable renderer (`apply_chat_template_tools`).
-/// The `reasoning` field is consumed by gemma4 and HY3; `tool_call_id`/`tool_name`/
-/// `tool_responses` are gemma4-only. The qwen/step arms use role/content/tool_calls.
+/// The `reasoning`/`tool_call_id`/`tool_name`/`tool_responses` fields are read ONLY by the
+/// gemma4 arm; the qwen/step arms use `role`/`content`/`tool_calls` and leave the rest default.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Turn {
     pub role: String,
@@ -239,24 +239,6 @@ pub fn apply_chat_template_str(
             None,
         )
         .expect("dsv4 render without reasoning_effort is encoding-independent");
-    }
-    // GLM-5.3-Flash (`glm5_next`): `[gMASK]<sop>` + `<|user|>`/`<|assistant|>`/`<|observation|>`
-    // turn dialect with an always-open `<think>` tail and an always-rendered reasoning-effort
-    // system line. Detected by its two structural markers. MUST precede the qwen `<think>`-tail
-    // check below: this template contains BOTH `<think>` and `add_generation_prompt`, so the
-    // qwen detector fires on it and used to render every GLM prompt as ChatML.
-    // Legacy path = the template's own effort default (`max`) — the only default it has.
-    if template.is_some_and(template_is_glm5) {
-        let turns: Vec<Turn> = messages
-            .iter()
-            .map(|(r, c)| Turn {
-                role: r.to_string(),
-                content: c.to_string(),
-                ..Default::default()
-            })
-            .collect();
-        return apply_glm5_template(&turns, add_generation_prompt, &[], None)
-            .expect("glm5 render without reasoning_effort takes the template's own default");
     }
     // gemma4: `<|turn>role\n{content}<turn|>\n` dialect; generation prompt appends
     // `<|turn>model\n` + the CLOSED thought channel (`<|channel>thought\n<channel|>` — the
@@ -492,7 +474,8 @@ pub fn apply_chat_template_tools_ex(
             dsv4_encoding,
         );
     }
-    // step35: its own dialect all the way through, tools included. Must precede the
+    // step35: its own dialect all the way through, tools included (unlike hy3/gemma4, which
+    // reject tool features — step35 HAS a tools branch and it is reproduced). Must precede the
     // qwen arm: the step35 template contains `<tools>`, `<think>` and `add_generation_prompt`,
     // so every qwen marker check below matches it. `ThinkMode` is ignored (no `enable_thinking`
     // in this template => `think_switch` is false => NoThink is already a documented no-op);
@@ -505,52 +488,13 @@ pub fn apply_chat_template_tools_ex(
             reasoning_effort,
         ));
     }
-    // GLM-5.3-Flash (`glm5_next`): its own dialect all the way through, tools included. Must
-    // precede the qwen arm below, which every one of this template's `<think>` /
-    // `add_generation_prompt` / `<tools>` markers would otherwise match. `ThinkMode` is ignored
-    // (the template has no off switch at all — `think_switch` is false and an explicit client
-    // off-request is refused upstream); `reasoning_effort` is this dialect's own control and is
-    // honored here. Tool DEFINITIONS come from `tools_struct` (the unwrapped `function`
-    // objects), not the qwen `tools_json` strings, because the template renders the function
-    // object alone and drops its `defer_loading`/`strict` keys.
-    if template.is_some_and(template_is_glm5) {
-        // A caller that has tools but no `tools_struct` reached the compat entry
-        // (`apply_chat_template_tools`, which passes `&[]`). Rendering the prompt WITHOUT the
-        // tools block there would be a silent downgrade — the model would be asked to call a
-        // function it was never shown. Name it instead; the serve path always calls `_ex`.
-        if !tools_json.is_empty() && tools_struct.is_empty() {
-            return Err(
-                "glm5 tool definitions need the structured `tools_struct` (the unwrapped \
-                 `function` objects) — call apply_chat_template_tools_ex"
-                    .into(),
-            );
-        }
-        return apply_glm5_template(turns, add_generation_prompt, tools_struct, reasoning_effort);
-    }
-    // Tencent HY3: the pinned shipping template has a complete tools branch using suffixed
-    // special tokens (`<tool_calls:opensource>`, `<arg_key:opensource>`, ...). It also owns
-    // the no_think/low/high reasoning ladder. Reproduce the one template for plain, reasoning,
-    // declarations, assistant calls and tool-result history so those surfaces cannot drift.
-    if template.is_some_and(|t| t.contains("hy_User")) {
-        let effort = match (think, reasoning_effort) {
-            (ThinkMode::Think, Some("high")) => "high",
-            (ThinkMode::Think, _) => "low",
-            _ => "no_think",
-        };
-        return Ok(apply_hy3_template_tools(
-            turns,
-            add_generation_prompt,
-            tools_json,
-            effort,
-        ));
-    }
     // gemma4 TOOLUSE dialect (`<|turn>` turn framing + the `<|tool>` declaration marker):
     // the official Google tooluse template is the rendering LAW (research/gemma4-tools-20260817
     // /official-tooluse-template.jinja). Engages for tool DEFINITIONS, tool_calls, tool-role
     // turns AND plain/thinking requests on this trunk. A `<|turn>` template WITHOUT `<|tool>`
     // has no committed tools reference and falls through to the reject/plain arm below.
-    // Must precede the plain `<|turn>` arm and the qwen marker checks (the tooluse template
-    // carries no `<tools>`, so it would not match those).
+    // Must precede the hy3/`<|turn>` arm (which would otherwise reject tools) and the qwen
+    // marker checks (the tooluse template carries no `<tools>`, so it would not match those).
     if template.is_some_and(|t| t.contains("<|turn>") && t.contains("<|tool>")) {
         // QAT-trunk variant emits a CLOSED thought channel on the thinking-off generation
         // prompt; the official served trunk emits a bare `<|turn>model\n`. Keyed on the exact
@@ -565,9 +509,13 @@ pub fn apply_chat_template_tools_ex(
             closed_tail,
         ));
     }
-    if template.is_some_and(|t| t.contains("<|turn>")) {
-        // Plain-gemma4 dialect: no committed tools rendering reference. ThinkMode maps to the
+    if template.is_some_and(|t| t.contains("hy_User") || t.contains("<|turn>")) {
+        // hy3 / plain-gemma4 dialects: no committed tools rendering reference — reject tool
+        // features even if the raw jinja happens to mention <tools>. ThinkMode maps to each
         // arch's native mechanism (thinking goldens, render-thinking-goldens.py):
+        //   hy3    -> the template's own reasoning_effort input: no_think (its default,
+        //             = ThinkMode::Default/NoThink) or low/high (open think, ThinkMode::Think
+        //             at the level the caller resolved — effort carries it).
         //   gemma4 -> enable_thinking: default(false) = Default/NoThink;
         //             Think = <|think|> system token + open generation turn.
         if has_tool_features {
@@ -577,6 +525,16 @@ pub fn apply_chat_template_tools_ex(
             .iter()
             .map(|t| (t.role.as_str(), t.content.as_str()))
             .collect();
+        if template.is_some_and(|t| t.contains("hy_User")) {
+            // hy3's accepted set is exactly no_think|low|high; OpenAI medium clamps to low
+            // (the template has no medium level and raises on unknown strings).
+            let effort = match (think, reasoning_effort) {
+                (ThinkMode::Think, Some("high")) => "high",
+                (ThinkMode::Think, _) => "low",
+                _ => "no_think",
+            };
+            return Ok(apply_hy3_template(&messages, add_generation_prompt, effort));
+        }
         return Ok(apply_gemma4_template(
             &messages,
             add_generation_prompt,
@@ -638,19 +596,18 @@ pub fn apply_chat_template_tools_ex(
     // jinja): the sentence is PREPENDED to the merged system turn across a blank line; when the
     // request carries no leading system content the sentence becomes a system turn of its own.
     // Emitted here, ahead of the message loop, because that is where the template emits it.
-    if tools_json.is_empty()
-        && merge_leading_system
-        && (!effort_instructions.is_empty() || !merged_system.is_empty())
-    {
-        out.push_str("<|im_start|>system\n");
-        if !effort_instructions.is_empty() {
-            out.push_str(effort_instructions);
-            if !merged_system.is_empty() {
-                out.push_str("\n\n");
+    if tools_json.is_empty() && merge_leading_system {
+        if !effort_instructions.is_empty() || !merged_system.is_empty() {
+            out.push_str("<|im_start|>system\n");
+            if !effort_instructions.is_empty() {
+                out.push_str(effort_instructions);
+                if !merged_system.is_empty() {
+                    out.push_str("\n\n");
+                }
             }
+            out.push_str(&merged_system);
+            out.push_str("<|im_end|>\n");
         }
-        out.push_str(&merged_system);
-        out.push_str("<|im_end|>\n");
     }
     // Tools system header replaces the plain system turn (template law: the leading system
     // turn's content is folded INTO the tools block).
@@ -831,11 +788,7 @@ format: an inner <function=...>\n...\n</function> block must be nested within <t
 ///
 /// Not reproduced (needs data `Turn` does not carry, tracked, cannot fire from an OpenAI client):
 /// the `name == "observation"` alias that renames a non-leading `system` turn's role to
-/// `observation`. The `<im_patch>` image-content path is handled UPSTREAM of this template
-/// (lane/step37-vision, 2026-08-30): when the step vision seam is armed, the server's
-/// content walker (`content_to_text_vision_step`) renders each image part's full pad-token
-/// expansion and the template macro's text-separator law into the turn content string, so
-/// the content arrives here as literal text and passes through verbatim.
+/// `observation`, and the `<im_patch>` image-content path (this is a VLM; memra is text-only here).
 fn apply_step35_template(
     turns: &[Turn],
     add_generation_prompt: bool,
@@ -985,7 +938,7 @@ fn apply_step35_template(
     out
 }
 
-/// Text-only compatibility entry for the Hy3 `chat_template.jinja`.
+/// Text-only reproduction of the Hy3 `chat_template.jinja` (no tools, no `is_training`).
 /// `effort` is the template's own `reasoning_effort` input — `"no_think"` / `"low"` /
 /// `"high"`, its full accepted set (the jinja `raise_exception`s on anything else; undefined
 /// defaults to `'no_think'`, so callers with no opinion pass `"no_think"`):
@@ -997,32 +950,12 @@ fn apply_step35_template(
 ///     opens only turns past `last_user_index`, and OpenAI history carries no reasoning);
 ///   - generation prompt: `<｜hy_Assistant:opensource｜><think:opensource></think:opensource>`
 ///     at no_think, `…<think:opensource>` (OPEN think) at low/high.
-///     Content is NOT trimmed (the Hy3 template applies no `|trim`). Goldens: rendered from the
-///     pinned tencent/Hy3 template (sha 7fc351fe…, snapshot 716aa724) by
-///     `research/step-sku-20260807/render-thinking-goldens.py`.
+/// Content is NOT trimmed (the Hy3 template applies no `|trim`). Goldens: rendered from the
+/// pinned tencent/Hy3 template (sha 7fc351fe…, snapshot 716aa724) by
+/// `research/step-sku-20260807/render-thinking-goldens.py`.
 fn apply_hy3_template(
     messages: &[(&str, &str)],
     add_generation_prompt: bool,
-    effort: &str,
-) -> String {
-    let turns: Vec<Turn> = messages
-        .iter()
-        .map(|(role, content)| Turn {
-            role: (*role).to_string(),
-            content: (*content).to_string(),
-            ..Default::default()
-        })
-        .collect();
-    apply_hy3_template_tools(&turns, add_generation_prompt, &[], effort)
-}
-
-/// Exact text/tools reproduction of Tencent HY3's pinned shipping template
-/// (`chat_template.jinja` SHA-256 7fc351fe...). `tools_json` entries are the request's
-/// function objects serialized by the HTTP layer in client order, matching jinja `tojson`.
-fn apply_hy3_template_tools(
-    turns: &[Turn],
-    add_generation_prompt: bool,
-    tools_json: &[String],
     effort: &str,
 ) -> String {
     const BOS: &str = "<\u{ff5c}hy_begin_of_sentence:opensource\u{ff5c}>";
@@ -1032,166 +965,42 @@ fn apply_hy3_template_tools(
     const REASONING: &str = "<\u{ff5c}reasoning_mode:opensource\u{ff5c}>";
     const THINK_BEGIN: &str = "<think:opensource>";
     const THINK_END: &str = "</think:opensource>";
-    const TOOLCALLS_BEGIN: &str = "<tool_calls:opensource>";
-    const TOOLCALLS_END: &str = "</tool_calls:opensource>";
-    const TOOLCALL_BEGIN: &str = "<tool_call:opensource>";
-    const TOOLCALL_END: &str = "</tool_call:opensource>";
-    const TOOL_SEP: &str = "<tool_sep:opensource>";
-    const ARGKEY_BEGIN: &str = "<arg_key:opensource>";
-    const ARGKEY_END: &str = "</arg_key:opensource>";
-    const ARGVALUE_BEGIN: &str = "<arg_value:opensource>";
-    const ARGVALUE_END: &str = "</arg_value:opensource>";
-    const TOOLRESPONSES_BEGIN: &str = "<tool_responses:opensource>";
-    const TOOLRESPONSES_END: &str = "</tool_responses:opensource>";
-    const TOOLRESPONSE_BEGIN: &str = "<tool_response:opensource>";
-    const TOOLRESPONSE_END: &str = "</tool_response:opensource>";
 
     debug_assert!(
         matches!(effort, "no_think" | "low" | "high"),
         "hy3 reasoning_effort must be no_think|low|high, got {effort:?}"
     );
     let mut out = String::from(BOS);
-    let mut system_prompt = String::new();
-    for turn in turns.iter().filter(|turn| turn.role == "system") {
-        system_prompt.push_str(&turn.content);
+    for (role, content) in messages.iter().filter(|(r, _)| *r == "system") {
+        let _ = role;
+        out.push_str(content);
     }
-    out.push_str(&system_prompt);
-    if tools_json.is_empty() {
-        out.push_str(REASONING);
-        out.push_str("reasoning_effort:");
-        out.push_str(effort);
-    } else {
-        if !system_prompt.is_empty() {
-            out.push_str(
-                "\n\n# Tools\n\nYou may call one or more functions to assist with the user query.",
-            );
-        } else {
-            out.push_str(
-                "# Tools\n\nYou may call one or more functions to assist with the user query.",
-            );
-        }
-        out.push_str(
-            "\n\nYou are provided with function signatures within <tools></tools> XML tags:",
-        );
-        out.push_str("\n<tools>\n");
-        for (index, tool) in tools_json.iter().enumerate() {
-            if index > 0 {
-                out.push('\n');
-            }
-            out.push_str(tool);
-        }
-        out.push_str("\n</tools>\n\n");
-        out.push_str("For function call returns, you should first print ");
-        out.push_str(TOOLCALLS_BEGIN);
-        out.push('\n');
-        out.push_str("For each function call, you should return object like:\n");
-        out.push_str(TOOLCALL_BEGIN);
-        out.push_str("{function-name}");
-        out.push_str(TOOL_SEP);
-        out.push('\n');
-        out.push_str(ARGKEY_BEGIN);
-        out.push_str("{arg-key-1}");
-        out.push_str(ARGKEY_END);
-        out.push('\n');
-        out.push_str(ARGVALUE_BEGIN);
-        out.push_str("{arg-value-1}");
-        out.push_str(ARGVALUE_END);
-        out.push('\n');
-        out.push_str(ARGKEY_BEGIN);
-        out.push_str("{arg-key-2}");
-        out.push_str(ARGKEY_END);
-        out.push('\n');
-        out.push_str(ARGVALUE_BEGIN);
-        out.push_str("{arg-value-2}");
-        out.push_str(ARGVALUE_END);
-        out.push_str("\n...\n");
-        out.push_str(TOOLCALL_END);
-        out.push('\n');
-        out.push_str("At the end of function call returns, you should print ");
-        out.push_str(TOOLCALLS_END);
-        out.push_str(REASONING);
-        out.push_str("reasoning_effort:");
-        out.push_str(effort);
-    }
+    out.push_str(REASONING);
+    out.push_str("reasoning_effort:");
+    out.push_str(effort);
 
-    let last_user = turns.iter().rposition(|turn| turn.role == "user");
-    let preserve_thinking = !tools_json.is_empty();
-    let mut previous_is_tool = false;
-    let mut tool_run_first = true;
-    for (index, turn) in turns.iter().enumerate() {
-        match turn.role.as_str() {
+    let mut last_is_assistant = false;
+    let n = messages.len();
+    for (i, (role, content)) in messages.iter().enumerate() {
+        last_is_assistant = false;
+        match *role {
             "user" => {
-                if previous_is_tool {
-                    out.push_str(TOOLRESPONSES_END);
-                }
                 out.push_str(USER);
-                out.push_str(&turn.content);
-                previous_is_tool = false;
+                out.push_str(content);
             }
             "assistant" => {
-                if previous_is_tool {
-                    out.push_str(TOOLRESPONSES_END);
-                }
-                let keep_reasoning = preserve_thinking || last_user.is_none_or(|last| index > last);
                 out.push_str(ASSISTANT);
                 out.push_str(THINK_BEGIN);
-                if keep_reasoning && let Some(reasoning) = turn.reasoning.as_deref() {
-                    out.push_str(reasoning);
-                }
                 out.push_str(THINK_END);
-                out.push_str(&turn.content);
-                if turn.tool_calls.is_empty() {
-                    if index + 1 < turns.len() {
-                        out.push_str(EOS);
-                    }
-                } else {
-                    tool_run_first = true;
-                    out.push_str(TOOLCALLS_BEGIN);
-                    out.push('\n');
-                    for call in &turn.tool_calls {
-                        out.push_str(TOOLCALL_BEGIN);
-                        out.push_str(&call.name);
-                        out.push_str(TOOL_SEP);
-                        out.push('\n');
-                        for (key, value) in &call.params {
-                            out.push_str(ARGKEY_BEGIN);
-                            out.push_str(key);
-                            out.push_str(ARGKEY_END);
-                            out.push('\n');
-                            out.push_str(ARGVALUE_BEGIN);
-                            out.push_str(value);
-                            out.push_str(ARGVALUE_END);
-                            out.push('\n');
-                        }
-                        out.push_str(TOOLCALL_END);
-                        out.push('\n');
-                    }
-                    out.push_str(TOOLCALLS_END);
+                out.push_str(content);
+                if i + 1 < n {
                     out.push_str(EOS);
-                }
-                previous_is_tool = false;
+                } // template: `not loop.last` gets eos
+                last_is_assistant = true;
             }
-            "tool" => {
-                previous_is_tool = true;
-                if tool_run_first {
-                    out.push_str(TOOLRESPONSES_BEGIN);
-                    out.push('\n');
-                    tool_run_first = false;
-                }
-                out.push_str(TOOLRESPONSE_BEGIN);
-                out.push('\n');
-                out.push_str(&turn.content);
-                out.push('\n');
-                out.push_str(TOOLRESPONSE_END);
-                out.push('\n');
-            }
-            _ => {} // system handled in the header; unknown roles are ignored by the template
+            _ => {} // system handled in the header; tool turns are out of scope here
         }
     }
-    if previous_is_tool {
-        out.push_str(TOOLRESPONSES_END);
-    }
-    let last_is_assistant = turns.last().is_some_and(|turn| turn.role == "assistant");
     if add_generation_prompt && !last_is_assistant {
         out.push_str(ASSISTANT);
         out.push_str(THINK_BEGIN);
@@ -1250,333 +1059,14 @@ fn apply_gemma4_template(
     out
 }
 
-// ---- GLM-5.3-Flash (`glm5_next`) dialect ---------------------------------------------------
-// A port of the checkpoint's own chat_template.jinja, banked byte-identical at
-// research/glm53-flash-bringup-20260827/chat_template.jinja. The jinja is the LAW; byte parity
-// is pinned by research/glm53-flash-bringup-20260827/surface-fixtures (the
-// `glm5_fixtures_match_the_vendor_jinja` test in memra-server renders the vendor jinja under
-// jinja2 and asserts equality, the same oracle discipline the gemma4/dsv4 arms carry).
-//
-// NOTHING about this dialect is ChatML. Before this arm existed, the template's `<think>` +
-// `add_generation_prompt` markers matched the qwen detector and every GLM chat request rendered
-// `<|im_start|>` turns — tokens that are not in this checkpoint's special vocabulary at all
-// (its extra_special_tokens are `[gMASK] <sop> <|system|> <|user|> <|assistant|>
-// <|observation|>` …), so the frame tokenized as ordinary text and the prompt was off the
-// model's distribution end to end. It "worked" only because GLM follows the qwen tool-format
-// instruction it was handed in-context: the GGUF-template-mint failure mode exactly — fluent,
-// and invisible without a byte oracle.
-
-/// GLM-5.3-Flash template detector: the `[gMASK]<sop>` sequence head AND the `<|observation|>`
-/// tool-result turn prefix. Both are unique to the GLM dialect among every committed template
-/// (`rg` over research/**/*.jinja finds them only in the glm53 lane), and neither can appear in
-/// a ChatML/gemma/hy3/dsv4 template by accident. Shared by the renderer dispatch, the tools
-/// probe and the worker caps, so one law keys all three.
-pub fn template_is_glm5(t: &str) -> bool {
-    t.contains("[gMASK]<sop>") && t.contains("<|observation|>")
-}
-
-/// The GLM-5.3-Flash REASONING-EFFORT ladder, resolved exactly as the template resolves it:
-///
-/// ```jinja
-/// {%- set effective_reasoning_effort = reasoning_effort
-///        if reasoning_effort is defined and reasoning_effort in ['low', 'high']
-///        else 'max' -%}
-/// <|system|>Reasoning Effort: {{ effective_reasoning_effort | capitalize }}
-/// ```
-///
-/// So the model's own rungs are **low < high < max**, `max` is its DEFAULT, the line is always
-/// rendered, and there is no off switch anywhere in the template (which is why an explicit
-/// client off-request 400s upstream — `ModelCaps::qwen_think && !think_switch`).
-///
-/// The canonical serve levels map onto those three rungs:
-///
-/// | client `reasoning_effort` | rendered line |
-/// |---|---|
-/// | (absent)                  | `Reasoning Effort: Max` — the template's own default |
-/// | `low`                     | `Reasoning Effort: Low` |
-/// | `medium`                  | `Reasoning Effort: Low` — see below |
-/// | `high`                    | `Reasoning Effort: High` |
-/// | `xhigh` / `max` / `ultra` | `Reasoning Effort: Max` — the real tier above high |
-///
-/// `medium` CLAMPS DOWN to `low` rather than falling through to the template's `else 'max'`.
-/// The else-arm is the template's *unset* default, not its medium rung: routing a client's
-/// `medium` there would answer a request to reason LESS with the model's deepest setting, the
-/// never-corrupt-clamp law read backwards. hy3 already clamps `medium` -> `low` for the same
-/// reason (its ladder has no medium either); GLM differs from hy3 only in having a rung above
-/// `high`, which is why `canonical_effort_for` must not fold `max` into `high` for this model.
-fn glm5_effort_level(reasoning_effort: Option<&str>) -> Result<&'static str, String> {
-    match reasoning_effort {
-        None => Ok("Max"),
-        Some("low") | Some("medium") => Ok("Low"),
-        Some("high") => Ok("High"),
-        Some("max") | Some("xhigh") | Some("ultra") => Ok("Max"),
-        // `none`/`minimal` never arrive here: the serve path refuses an explicit off-request on
-        // this template (no enable_thinking) and maps a deployment default of none/minimal to
-        // `ThinkMode::NoThink` + level "low", which lands on the Low rung above. Anything else
-        // is a level this model was never trained on, and the template's own `else` would have
-        // silently rendered Max for it — the accepted-and-ignored shape this arm exists to end.
-        Some(other) => Err(format!(
-            "reasoning effort {other:?} is not a level this chat template defines \
-             (low|medium|high|max; the template's own ladder is low|high|max with max the \
-             default)"
-        )),
-    }
-}
-
-/// One tool DECLARATION, rendered as the template's `tool_to_json` macro renders it: the
-/// unwrapped `function` object as `json.dumps(ensure_ascii=False)` in INSERTION key order, with
-/// the two client-side-only keys `defer_loading` and `strict` dropped. (`strict` is the one that
-/// actually shows up: stock OpenAI-shaped clients put it inside `function`.)
-fn glm5_tool_json(func: &Val) -> String {
-    let mut out = String::new();
-    let Some(obj) = as_obj(func) else {
-        py_json(func, &mut out);
-        return out;
-    };
-    out.push('{');
-    let mut first = true;
-    for (k, v) in obj {
-        if k == "defer_loading" || k == "strict" {
-            continue;
-        }
-        if !first {
-            out.push_str(", ");
-        }
-        first = false;
-        out.push('"');
-        py_json_escape(k, &mut out);
-        out.push_str("\": ");
-        py_json(v, &mut out);
-    }
-    out.push('}');
-    out
-}
-
-/// The message id a tool-result / tool-call turn is keyed by — the template's `id_of` macro
-/// (`obj.tool_call_id` first, then `obj.id`). An empty string is jinja-falsey, so it is `None`
-/// here too.
-fn glm5_id_of(id: Option<&str>) -> Option<&str> {
-    id.filter(|s| !s.is_empty())
-}
-
-/// Can this run of consecutive `tool` turns be re-ordered onto the preceding assistant turn's
-/// `tool_calls` order? The template's `can_sort` predicate, reproduced in its own order:
-/// the run must be immediately preceded by an assistant turn WITH tool_calls; every result in
-/// the run must carry an id that is unique within the run and present among those calls; and
-/// every call must carry an id, unique among the calls. Any miss renders the run in message
-/// order instead.
-fn glm5_can_sort(results: &[&Turn], calls: &[ToolCall]) -> bool {
-    if calls.is_empty() {
+/// A template carries a tools branch iff it has the qwen/step `<tools>` block, or the gemma4
+/// tooluse dialect (both the `<|turn>` turn framing and the `<|tool>` declaration marker).
+/// hy3 (`hy_User`) never has one. Shared by the renderer dispatch and the worker caps probe.
+pub fn template_has_tools_branch(t: &str) -> bool {
+    if t.contains("hy_User") {
         return false;
     }
-    for (i, r) in results.iter().enumerate() {
-        let Some(id) = glm5_id_of(r.tool_call_id.as_deref()) else {
-            return false;
-        };
-        if results
-            .iter()
-            .enumerate()
-            .any(|(j, o)| j != i && glm5_id_of(o.tool_call_id.as_deref()) == Some(id))
-        {
-            return false;
-        }
-        if !calls
-            .iter()
-            .any(|c| glm5_id_of(c.id.as_deref()) == Some(id))
-        {
-            return false;
-        }
-    }
-    for (i, c) in calls.iter().enumerate() {
-        let Some(id) = glm5_id_of(c.id.as_deref()) else {
-            return false;
-        };
-        if calls
-            .iter()
-            .enumerate()
-            .any(|(j, o)| j != i && glm5_id_of(o.id.as_deref()) == Some(id))
-        {
-            return false;
-        }
-    }
-    true
-}
-
-/// GLM-5.3-Flash (`glm5_next`) chat template — the vendor jinja, reproduced.
-///
-/// Shape, in the template's own order:
-///
-/// ```text
-/// [gMASK]<sop>
-/// <|system|>Reasoning Effort: {Low|High|Max}                      (always, no off switch)
-/// <|system|>\n# Tools\n\n…<tools>\n\n{json}\n\n\n</tools>\n\n…     (only when tools present)
-/// <|user|>{content}                                               (content NOT trimmed)
-/// <|system|>{content}                                             (anywhere, NOT trimmed)
-/// <|assistant|><think>{reasoning}</think>{content.strip()}
-///     \n<tool_call>NAME<arg_key>k</arg_key><arg_value>v</arg_value></tool_call>…\n
-/// <|observation|><tool_response>{r1}</tool_response><tool_response>{r2}</tool_response>
-/// <|assistant|><think>                                            (add_generation_prompt)
-/// ```
-///
-/// Load-bearing details, each measured against the jinja rather than assumed:
-///
-/// - **BOS is the template's own literal.** `[gMASK]<sop>` is emitted here; the checkpoint's
-///   tokenizer_config declares no `bos_token` and no `add_bos_token`, so `encode(add_special)`
-///   prepends nothing and there is no double-BOS trap (the one the gemma4/step35 arms document).
-/// - **The reasoning-effort system line is unconditional** — `effective_reasoning_effort` is
-///   always a string, so the `is not none` guard is always true. There is no prompt shape of
-///   this model without it.
-/// - **`<think>` is ALWAYS replayed on assistant history**, empty when the turn carries no
-///   reasoning (`<think></think>`), because `clear_thinking` defaults false and the guard is
-///   `(not clear_thinking or …)`. Reasoning comes from the turn's own `reasoning` field, else
-///   from an inline `<think>…</think>` span inside the content, which is then stripped out of
-///   the content — the same split the template performs.
-/// - **Assistant content is `.strip()`ed; user/system content is NOT.** (The qwen arm trims
-///   every role; copying that here would have been a silent byte divergence.)
-/// - **Tool calls carry no separators**: one `\n` before the first, none between, one after
-///   the last. Argument values are strings raw, everything else `json.dumps` — which is exactly
-///   the pre-rendering `ToolCall::params` already carries.
-/// - **A run of consecutive `tool` turns renders as ONE `<|observation|>` block**, re-ordered
-///   onto the preceding assistant turn's `tool_calls` order when every id resolves uniquely
-///   (`glm5_can_sort`), in message order otherwise.
-///
-/// NOT reproduced, because `Turn` cannot express them and no OpenAI/Anthropic/Responses request
-/// can produce them: the native `tool_reference` content type (`<tool_response><tools>…`), the
-/// list-of-outputs tool message shape (`m.content[i].output`), and the image/video/audio
-/// `visible_text` arms (this server serves this model text-only). ONE deliberate divergence,
-/// matching the step35 arm's: the vendor's body loop has no `else`, so a role outside
-/// {user, assistant, tool, system} renders as NOTHING — the turn silently vanishes. A dropped
-/// turn is the worse failure, so an unknown role renders here as a `<|user|>` turn. It cannot
-/// fire from the serve surface, whose roles are exactly system/user/assistant/tool (`developer`
-/// is normalized to `system` upstream).
-fn apply_glm5_template(
-    turns: &[Turn],
-    add_generation_prompt: bool,
-    tools_struct: &[Val],
-    reasoning_effort: Option<&str>,
-) -> Result<String, String> {
-    let mut out = String::new();
-    out.push_str("[gMASK]<sop>");
-    out.push_str("<|system|>Reasoning Effort: ");
-    out.push_str(glm5_effort_level(reasoning_effort)?);
-    if !tools_struct.is_empty() {
-        out.push_str(
-            "<|system|>\n# Tools\n\nYou may call one or more functions to assist with the \
-             user query.\n\nYou are provided with function signatures within <tools></tools> \
-             XML tags:\n<tools>\n",
-        );
-        for f in tools_struct {
-            out.push('\n');
-            out.push_str(&glm5_tool_json(f));
-            out.push_str("\n\n");
-        }
-        out.push_str(
-            "\n</tools>\n\nFor each function call, output the function name and arguments \
-             within the following XML format:\n<tool_call>{function-name}<arg_key>{arg-key-1}\
-             </arg_key><arg_value>{arg-value-1}</arg_value><arg_key>{arg-key-2}</arg_key>\
-             <arg_value>{arg-value-2}</arg_value>...</tool_call>",
-        );
-    }
-    for (i, turn) in turns.iter().enumerate() {
-        match turn.role.as_str() {
-            "assistant" => {
-                out.push_str("<|assistant|>");
-                // `m.reasoning_content is string` first, then the inline `</think>` split —
-                // the template's own order.
-                let (reasoning, content) = match turn.reasoning.as_deref() {
-                    Some(r) => (Some(r), turn.content.as_str()),
-                    None => match turn.content.split_once("</think>") {
-                        Some((head, tail)) => (
-                            Some(head.rsplit("<think>").next().unwrap_or(head)),
-                            // jinja `split('</think>')[-1]`: the LAST segment, so a second
-                            // `</think>` inside the reply keeps only what follows it.
-                            turn.content.rsplit("</think>").next().unwrap_or(tail),
-                        ),
-                        None => (None, turn.content.as_str()),
-                    },
-                };
-                out.push_str("<think>");
-                out.push_str(reasoning.unwrap_or(""));
-                out.push_str("</think>");
-                out.push_str(content.trim());
-                if !turn.tool_calls.is_empty() {
-                    out.push('\n');
-                    for call in &turn.tool_calls {
-                        out.push_str("<tool_call>");
-                        out.push_str(&call.name);
-                        for (key, value) in &call.params {
-                            out.push_str("<arg_key>");
-                            out.push_str(key);
-                            out.push_str("</arg_key><arg_value>");
-                            out.push_str(value);
-                            out.push_str("</arg_value>");
-                        }
-                        out.push_str("</tool_call>");
-                    }
-                    out.push('\n');
-                }
-            }
-            "tool" => {
-                // Only the FIRST turn of a run emits: it renders the whole `<|observation|>`
-                // block. The vendor's `if loop.first or previous.role != 'tool'` has no else,
-                // so every following turn of the run renders nothing at all.
-                if i > 0 && turns[i - 1].role == "tool" {
-                    continue;
-                }
-                let end = turns[i..].iter().take_while(|t| t.role == "tool").count();
-                let run: Vec<&Turn> = turns[i..i + end].iter().collect();
-                let calls: &[ToolCall] = if i > 0 && turns[i - 1].role == "assistant" {
-                    &turns[i - 1].tool_calls
-                } else {
-                    &[]
-                };
-                out.push_str("<|observation|>");
-                if glm5_can_sort(&run, calls) {
-                    for call in calls {
-                        for r in &run {
-                            if glm5_id_of(r.tool_call_id.as_deref())
-                                == glm5_id_of(call.id.as_deref())
-                            {
-                                out.push_str("<tool_response>");
-                                out.push_str(&r.content);
-                                out.push_str("</tool_response>");
-                            }
-                        }
-                    }
-                } else {
-                    for r in &run {
-                        out.push_str("<tool_response>");
-                        out.push_str(&r.content);
-                        out.push_str("</tool_response>");
-                    }
-                }
-            }
-            "system" => {
-                out.push_str("<|system|>");
-                out.push_str(&turn.content);
-            }
-            // `user`, and the documented unknown-role divergence.
-            _ => {
-                out.push_str("<|user|>");
-                out.push_str(&turn.content);
-            }
-        }
-    }
-    if add_generation_prompt {
-        out.push_str("<|assistant|><think>");
-    }
-    Ok(out)
-}
-
-/// A template carries a tools branch iff it has the qwen/step/HY3 `<tools>` block, the gemma4
-/// tooluse dialect (both the `<|turn>` turn framing and the `<|tool>` declaration marker), the
-/// dsv4 protocol, or the glm5 `<tool_call>` grammar. Shared by the renderer dispatch and the
-/// worker caps probe.
-pub fn template_has_tools_branch(t: &str) -> bool {
-    template_is_dsv4(t)
-        || template_is_glm5(t)
-        || t.contains("<tools>")
-        || (t.contains("<|turn>") && t.contains("<|tool>"))
+    template_is_dsv4(t) || t.contains("<tools>") || (t.contains("<|turn>") && t.contains("<|tool>"))
 }
 
 /// deepseek-v4 (`encoding_dsv4`) template detector: the `<｜Assistant｜>` turn prefix AND the
@@ -1599,7 +1089,7 @@ pub fn template_is_dsv4(t: &str) -> bool {
 /// jinja `| dictsort`: case-insensitive by key, STABLE (ties keep insertion order).
 fn dictsort(pairs: &[(String, Val)]) -> Vec<&(String, Val)> {
     let mut v: Vec<&(String, Val)> = pairs.iter().collect();
-    v.sort_by_key(|a| a.0.to_lowercase());
+    v.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
     v
 }
 
@@ -2005,14 +1495,12 @@ fn apply_gemma4_tools_template(
         }
 
         // reasoning re-render (tool_calls-carrying assistant after the last user turn)
-        if let Some(rt) = m.reasoning.as_deref()
-            && !rt.is_empty()
-            && (i as isize) > last_user_idx
-            && !m.tool_calls.is_empty()
-        {
-            out.push_str("<|channel>thought\n");
-            out.push_str(rt);
-            out.push_str("\n<channel|>");
+        if let Some(rt) = m.reasoning.as_deref() {
+            if !rt.is_empty() && (i as isize) > last_user_idx && !m.tool_calls.is_empty() {
+                out.push_str("<|channel>thought\n");
+                out.push_str(rt);
+                out.push_str("\n<channel|>");
+            }
         }
 
         // tool_calls
@@ -2043,8 +1531,6 @@ fn apply_gemma4_tools_template(
                 prev = Some("tool_response");
             }
         } else if !m.tool_calls.is_empty() {
-            #[allow(clippy::needless_range_loop)]
-            // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
             for k in (i + 1)..msgs.len() {
                 let follow = &msgs[k];
                 if follow.role != "tool" {
@@ -2187,17 +1673,14 @@ fn ds_task_token(task: &str) -> Option<&'static str> {
 /// python `json.dumps(v, ensure_ascii=False)` over a `Val` (encoding_dsv4 `to_json`, E:101-106):
 /// default separators `", "` / `": "`, insertion key order, non-ASCII raw, `Num` exact text.
 /// serde-free (this crate ships no serde) — the escaper below matches json.dumps exactly.
-///
-/// SHARED by the dsv4 arm (which named it) and the GLM-5.3-Flash arm: both templates render
-/// their tool JSON through jinja's `tojson`, which `transformers` binds to exactly this call.
-fn py_json(v: &Val, out: &mut String) {
+fn dsv4_json(v: &Val, out: &mut String) {
     match v {
         Val::Null => out.push_str("null"),
         Val::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
         Val::Num(s) => out.push_str(s),
         Val::Str(s) => {
             out.push('"');
-            py_json_escape(s, out);
+            dsv4_json_escape(s, out);
             out.push('"');
         }
         Val::Arr(a) => {
@@ -2206,7 +1689,7 @@ fn py_json(v: &Val, out: &mut String) {
                 if i > 0 {
                     out.push_str(", ");
                 }
-                py_json(x, out);
+                dsv4_json(x, out);
             }
             out.push(']');
         }
@@ -2217,9 +1700,9 @@ fn py_json(v: &Val, out: &mut String) {
                     out.push_str(", ");
                 }
                 out.push('"');
-                py_json_escape(k, out);
+                dsv4_json_escape(k, out);
                 out.push_str("\": ");
-                py_json(val, out);
+                dsv4_json(val, out);
             }
             out.push('}');
         }
@@ -2229,7 +1712,7 @@ fn py_json(v: &Val, out: &mut String) {
 /// JSON string escaping matching python `json.dumps(ensure_ascii=False)`: `"` `\` and the
 /// C0 escapes; other control chars < 0x20 become `\u00xx`; everything else (incl. non-ASCII)
 /// passes through raw. json.dumps does NOT escape `/` or DEL.
-fn py_json_escape(s: &str, out: &mut String) {
+fn dsv4_json_escape(s: &str, out: &mut String) {
     for c in s.chars() {
         match c {
             '"' => out.push_str("\\\""),
@@ -2254,7 +1737,7 @@ fn dsv4_render_tools(funcs: &[Val]) -> String {
         if i > 0 {
             schemas.push('\n');
         }
-        py_json(f, &mut schemas);
+        dsv4_json(f, &mut schemas);
     }
     format!(
         "## Tools\n\nYou have access to a set of tools to help answer the user's question. \
@@ -2304,7 +1787,7 @@ fn dsv4_render_tool_calls(calls: &[ToolCall]) -> String {
             ));
             match v {
                 Val::Str(s) => invokes.push_str(s),
-                other => py_json(other, &mut invokes),
+                other => dsv4_json(other, &mut invokes),
             }
             invokes.push_str(&format!("</{d}parameter>", d = DS_DSML));
         }
@@ -2432,10 +1915,10 @@ fn dsv4_sort_tool_results(msgs: &mut [DsMsg]) {
         if msgs[i].role == "assistant" && !msgs[i].tool_calls.is_empty() {
             order.clear();
             for (idx, tc) in msgs[i].tool_calls.iter().enumerate() {
-                if let Some(id) = tc.id.as_deref()
-                    && !id.is_empty()
-                {
-                    order.insert(id.to_string(), idx);
+                if let Some(id) = tc.id.as_deref() {
+                    if !id.is_empty() {
+                        order.insert(id.to_string(), idx);
+                    }
                 }
             }
         } else if msgs[i].role == "user" {
@@ -2974,7 +2457,7 @@ mod tests {
             ..Default::default()
         }];
         let tools = vec!["{}".to_string()];
-        for tmpl in [None, Some("... <|turn> ...")] {
+        for tmpl in [None, Some("... hy_User ..."), Some("... <|turn> ...")] {
             let err =
                 apply_chat_template_tools(tmpl, &turns, true, &tools, ThinkMode::Default, None);
             assert!(err.is_err(), "template={tmpl:?}");
@@ -3168,97 +2651,6 @@ mod tests {
                        <\u{ff5c}hy_User:opensource\u{ff5c}>more\
                        <\u{ff5c}hy_Assistant:opensource\u{ff5c}><think:opensource>"
         );
-    }
-
-    fn hy3_tools_header(tool: &str, effort: &str) -> String {
-        [
-            "<\u{ff5c}hy_begin_of_sentence:opensource\u{ff5c}>You are concise.\n\n# Tools\n\n",
-            "You may call one or more functions to assist with the user query.\n\n",
-            "You are provided with function signatures within <tools></tools> XML tags:\n",
-            "<tools>\n",
-            tool,
-            "\n</tools>\n\nFor function call returns, you should first print ",
-            "<tool_calls:opensource>\nFor each function call, you should return object like:\n",
-            "<tool_call:opensource>{function-name}<tool_sep:opensource>\n",
-            "<arg_key:opensource>{arg-key-1}</arg_key:opensource>\n",
-            "<arg_value:opensource>{arg-value-1}</arg_value:opensource>\n",
-            "<arg_key:opensource>{arg-key-2}</arg_key:opensource>\n",
-            "<arg_value:opensource>{arg-value-2}</arg_value:opensource>\n...\n",
-            "</tool_call:opensource>\nAt the end of function call returns, you should print ",
-            "</tool_calls:opensource><\u{ff5c}reasoning_mode:opensource\u{ff5c}>reasoning_effort:",
-            effort,
-        ]
-        .concat()
-    }
-
-    #[test]
-    fn hy3_tools_definitions_match_the_pinned_jinja() {
-        const TEMPLATE: &str = "... hy_User ... <tools> ... <tool_calls{}> ...";
-        let tool = r#"{"type": "function", "function": {"name": "get_weather", "description": "Get weather.", "parameters": {"type": "object", "properties": {"city": {"type": "string"}, "days": {"type": "integer"}}, "required": ["city"]}}}"#;
-        let turns = vec![turn("system", "You are concise."), turn("user", "Weather?")];
-        let got = apply_chat_template_tools(
-            Some(TEMPLATE),
-            &turns,
-            true,
-            &[tool.to_string()],
-            ThinkMode::Default,
-            None,
-        )
-        .unwrap();
-        let expected = [
-            &hy3_tools_header(tool, "no_think"),
-            "<\u{ff5c}hy_User:opensource\u{ff5c}>Weather?",
-            "<\u{ff5c}hy_Assistant:opensource\u{ff5c}><think:opensource></think:opensource>",
-        ]
-        .concat();
-        assert_eq!(got, expected);
-        assert!(template_has_tools_branch(TEMPLATE));
-    }
-
-    #[test]
-    fn hy3_tool_call_and_response_history_match_the_pinned_jinja() {
-        const TEMPLATE: &str = "... hy_User ... <tools> ... <tool_calls{}> ...";
-        let tool = r#"{"type": "function", "function": {"name": "get_weather", "description": "Get weather.", "parameters": {"type": "object", "properties": {"city": {"type": "string"}, "days": {"type": "integer"}}, "required": ["city"]}}}"#;
-        let turns = vec![
-            turn("system", "You are concise."),
-            turn("user", "Weather?"),
-            Turn {
-                role: "assistant".into(),
-                reasoning: Some("Need weather.".into()),
-                tool_calls: vec![ToolCall {
-                    name: "get_weather".into(),
-                    params: vec![("city".into(), "Paris".into()), ("days".into(), "2".into())],
-                    ..Default::default()
-                }],
-                ..Default::default()
-            },
-            turn("tool", "sunny"),
-            turn("user", "Summarize."),
-        ];
-        let got = apply_chat_template_tools(
-            Some(TEMPLATE),
-            &turns,
-            true,
-            &[tool.to_string()],
-            ThinkMode::Think,
-            Some("high"),
-        )
-        .unwrap();
-        let expected = [
-            &hy3_tools_header(tool, "high"),
-            "<\u{ff5c}hy_User:opensource\u{ff5c}>Weather?",
-            "<\u{ff5c}hy_Assistant:opensource\u{ff5c}><think:opensource>Need weather.</think:opensource>",
-            "<tool_calls:opensource>\n<tool_call:opensource>get_weather<tool_sep:opensource>\n",
-            "<arg_key:opensource>city</arg_key:opensource>\n<arg_value:opensource>Paris</arg_value:opensource>\n",
-            "<arg_key:opensource>days</arg_key:opensource>\n<arg_value:opensource>2</arg_value:opensource>\n",
-            "</tool_call:opensource>\n</tool_calls:opensource><\u{ff5c}hy_eos:opensource\u{ff5c}>",
-            "<tool_responses:opensource>\n<tool_response:opensource>\nsunny\n",
-            "</tool_response:opensource>\n</tool_responses:opensource>",
-            "<\u{ff5c}hy_User:opensource\u{ff5c}>Summarize.",
-            "<\u{ff5c}hy_Assistant:opensource\u{ff5c}><think:opensource>",
-        ]
-        .concat();
-        assert_eq!(got, expected);
     }
 
     #[test]

@@ -1,8 +1,0 @@
-== provenance ==
-c7d936536bbc890656352aa961b621c47fdcc828 merge lane/glm5-moe-loc: door D (device vrows tables) + door H (HtoD diet) + dedup instrument; double-fix reconciliation on the doors gate file (kept the without_flag helper), FLAGS row union, perf-ci union
--rwxrwxr-x 2 root root 69217248 Aug 31 12:06 /root/memra-struct/target/release/memra-server
-2a978b843d42746d
-WINNER_DOORS=MEMRA_MOE_VROWS_DEV_TABLES=1 MEMRA_GLM5_HTOD_DIET=1 WINNER_K=
-instrument: nsys --duration=180 --kill=none (CUPTI-flush trap fix), port 18412
-launch-econ missing (banked box constant 2.049 us/launch applies)
-PP_ENV=MEMRA_PP_STAGES=3 MEMRA_PP_SPLITS=15,30 MEMRA_PP_DEVICES=0,1,2 MEMRA_BF16_MMV=1 MEMRA_PP_BF16=1 MEMRA_MOE_GROUPED_PREFILL=1 MEMRA_MOE_RESIDENT_GB=98 MEMRA_MOE_SLOTS=16 MEMRA_GLM5_DFLASH=/root/models/glm53-dflash2 MEMRA_GLM5_SPEC=1 MEMRA_SPEC_PMIN=0.7 MEMRA_MOE_VROWS_DEV_TABLES=1 MEMRA_GLM5_HTOD_DIET=1 
