@@ -30,7 +30,8 @@ conditions, both folded in below and executed on the rig before the window:
 | shape | the ship recipe, unchanged: `MEMRA_PP_STAGES=3 MEMRA_PP_SPLITS=15,30 MEMRA_PP_DEVICES=0,1,2 MEMRA_MOE_RESIDENT_GB=98`, spec ON with the DFlash2 drafter, `MEMRA_DSA_INDEX_RING` unset (it is a ROW COUNT, default 5120 — the launch's `=1` built a one-row ring and 500'd) |
 | vision | `MEMRA_GLM5_VISION` UNSET (auto-detect, default on) for the fix arm — the launcher's `=0` pin is what this lane exists to remove |
 | slot | a free slot, blue/green through `serve-deploy`; the dark stack keeps serving on its slot |
-| fixtures | the banked card3 requests, **sha256-pinned in the probe** — `10-…greedy` `74c45948…`, `11-…vendor-default` `5732d261…`, `20-…placeholder` `14139fc0…`, `21-…video` `f534a178…`, `23-…fakedpad` `225437f0…`. A mismatch REFUSES before the first request; a deliberate change updates the pin in the same commit and says why |
+| fixtures | **CUSTODY GAP, flagged 2026-09-01:** the five request JSONs are on darklanes branch `lane/glm5-serving-launch-20260901` and NOT on darklanes main — the fresh-repo port carried only `receipts.json` and the replay script to main. All five pins were re-verified against the NEW remote and still match byte-for-byte, so the instrument survived; but if that branch is deleted before the files reach main, this battery loses its instrument. They should land on main (or be re-homed) before the launch lane closes |
+| fixtures (pins) | the banked card3 requests, **sha256-pinned in the probe** — `10-…greedy` `74c45948…`, `11-…vendor-default` `5732d261…`, `20-…placeholder` `14139fc0…`, `21-…video` `f534a178…`, `23-…fakedpad` `225437f0…`. A mismatch REFUSES before the first request; a deliberate change updates the pin in the same commit and says why |
 
 ## Arm A — the fix arm (default door)
 

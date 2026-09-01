@@ -91,9 +91,16 @@ TEXT_PROMPT = (
     "across a stage boundary before the next stage reads it. Use a concrete example."
 )
 
+# The fixtures live on the launch lane's BRANCH, not on darklanes main: the fresh-repo port
+# carried only `receipts.json` and `replay-serving-shape.py` to main, while the five request
+# JSONs sit on `lane/glm5-serving-launch-20260901`. Verified 2026-09-01 against the NEW remote:
+# all five pins below still match byte-for-byte, so the port preserved the instrument. This
+# default therefore points at a lane WORKTREE, and if it is absent the loader refuses by name
+# rather than guessing — CUSTODY NOTE: if that branch is ever deleted before these files reach
+# darklanes main, this battery loses its instrument. See box/BATTERY.md.
 DEFAULT_FIXTURES = (
-    "~/projects/darklanes/research/glm5-serving-launch-20260901/window-20260901/"
-    "vision-serving-shape"
+    "~/projects/darklanes/wt-glm5-launch/research/glm5-serving-launch-20260901/"
+    "window-20260901/vision-serving-shape"
 )
 
 
