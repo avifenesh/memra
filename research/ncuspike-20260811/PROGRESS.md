@@ -2,7 +2,7 @@
 
 Lane: `lane/cx-ncuspike`, created from `main` at `1592253f`.
 Deliverable: per-token post-sigrouter decode anatomy for resident Step-3.7 IQ4_XS on box1,
-the rented cloud-2card with 2x RTX PRO 6000 Blackwell Server Edition.
+the hyperscaler sbox-2card with 2x RTX PRO 6000 Blackwell Server Edition.
 
 ## Constraints
 
@@ -74,9 +74,9 @@ The owner chose the exact box1 path. The local blocker remains valid evidence ex
 - Host: `<private-host-redacted>`; 2x RTX PRO 6000 Blackwell Server Edition, stock 600 W limits.
 - Artifact: the three-part IQ4_XS checkpoint, 104,993,562,624 bytes total; the profiler contract
   records each pinned part hash from the existing artifact receipt.
-- Isolated source: `/opt/scratch/nvme/memra-cx-ncuspike-src`; isolated target:
-  `/opt/scratch/nvme/memra-cx-ncuspike-target`.
-- Remote raw staging: `/opt/scratch/nvme/ncuspike-20260811`; committed copies live under
+- Isolated source: `/opt/dl-image/nvme/memra-cx-ncuspike-src`; isolated target:
+  `/opt/dl-image/nvme/memra-cx-ncuspike-target`.
+- Remote raw staging: `/opt/dl-image/nvme/ncuspike-20260811`; committed copies live under
   `raw/box1/`.
 - Queue state at launch: the idle gate was green but `dualpp1` acquired the shared flock first;
   the detached ncuspike driver correctly remained queued. No overlapping ncuspike GPU process

@@ -136,7 +136,7 @@
   acquirable; both PRO 6000 cards reported zero compute applications and 0 MiB used. Cancelled only
   splitiso's still-waiting local queue before it acquired the 5090 lock. Its `local-smoke2` receipt
   contains the queue line only: no build, server, or request ran.
-- Materialized committed source `4fcd4bd1b` under `/opt/scratch/nvme/cx-splitiso/memra` through a
+- Materialized committed source `4fcd4bd1b` under `/opt/dl-image/nvme/cx-splitiso/memra` through a
   verified Git bundle, then held both box1 coordination locks for the release build. The build
   completed on CUDA 13.2 / sm_120a in 3m54s; server SHA-256 is
   `fc94f06645cebcc483dc32b4dfc7a3f65050ca7c9d6f74a88d847fc121e8de95`. Raw output is under

@@ -201,7 +201,7 @@ impl F16Scratch {
     }
 }
 
-pub(crate) const F16_WS_BYTES: usize = 64 << 20;
+const F16_WS_BYTES: usize = 64 << 20;
 
 impl crate::Engine {
     /// Swap the resident f16 scratch (task #14 capture isolation). Returns the previous

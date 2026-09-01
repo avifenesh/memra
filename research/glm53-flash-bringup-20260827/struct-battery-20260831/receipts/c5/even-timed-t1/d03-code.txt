@@ -1,8 +1,0 @@
-Let me parse what's happening here. The user is showing me a crash report — it looks like a message from an AI assistant (or a status report they received) about a gateway process that crashed. The context: they run something called "hermes-gateway" — a Python process that connects to Telegram, runs cron jobs, and uses AnthropicBedrock via httpx. The venv was deleted out from under a running process, causing lazy file opens (certifi's cacert.pem) to fail with FileNotFoundError on every new client init.
-
-The report says the issue was already fixed:
-1. Recreated venv with `uv sync --frozen --all-extras` (well, it says full --all-extras failed on mistralai resolver, used frozen lockfile)
-2. Killed broken process PID 3879941 with SIGKILL after SIGTERM didn't work
-3. Relaunched in detached tmux session `hermes-gateway`
-
-Status:

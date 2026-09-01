@@ -4,7 +4,7 @@
 // DeepSeek-recipe activation granularity VEC128_32F (per-token per-128-k) — or do we fold the
 // block scales in a pre-pass / extend MEMRA_MMQ_F8F4 instead?
 //
-// Prior art on this rig class (rtx6000 probe 2026-07-08, research/tune-data/cloud-rtx6000.jsonl:39):
+// Prior art on this rig class (rtx6000 probe 2026-07-08, research/tune-data/sbox-rtx6000.jsonl:39):
 // per-token OUTER_VEC_32F B-scales came back NOT_SUPPORTED on sm120 (AlgoGetHeuristic status=7
 // nh=0 at every m). Block-scale modes were NOT probed there — that is this probe's single job.
 //

@@ -27,13 +27,6 @@ pub enum Arch {
     // 3 leading HASH-routed layers (tid2eid, still full expert banks — NOT dense FFN),
     // Sinkhorn hyper-connections (hc_*), 1 NextN/MTP layer. Loader lane only for now:
     // no forward pass — census-gated safetensors ingest (research/dsv4-flash-loader-20260818).
-    Qwen4Exp, // Qwen3.8-Flash-Next (HF `qwen4_exp`): hybrid GDN 3:1 QSA (micro-block sparse
-    // attention, MQA indexer 4Q/1K over 4-token blocks, budget 512 blocks), 512-expert
-    // softmax top-k renormalized router (Qwen3NextTopKRouter — NOT sigmoid; the sigmoid
-    // gate is on the shared expert only) + gated shared expert after EVERY layer,
-    // 4-branch gated residual (rank-320 hyper-connections, 10240-wide stream), 20M-entry
-    // n-gram/PLE embedding at layer 1 (0-based), fused-q attention gate, 1 NextN/MTP
-    // full-attn block, ViT tower (research/qwen4exp-bringup-20260829).
     Glm5Next, // GLM-5.3-Flash: hybrid 34 KDA (Kimi Delta Attention) linear-attn + 11 MLA+DSA
     // sparse-attn layers, NoPE MLA (rope dim 0), k-pool-compressed indexer, sigmoid noaux_tc
     // 288-expert MoE + 1 shared, Sinkhorn hyper-connections (mHC), 1 NextN/MTP layer with its
@@ -63,9 +56,6 @@ impl Arch {
             "step35" => Arch::Step35,
             // No public GGUF writes this arch yet; the name is memra's own (safetensors-first).
             "deepseek-v4" => Arch::DeepSeekV4,
-            // Qwen3.8-Flash-Next. Upstream llama.cpp has GGUFs for it, but memra's lane is
-            // safetensors-first; the GGUF arch string is adopted when that entry lands.
-            "qwen4exp" => Arch::Qwen4Exp,
             // No public GGUF writes this arch yet; the name is memra's own (safetensors-first).
             "glm5-next" => Arch::Glm5Next,
             "llama" => Arch::Llama,
@@ -93,9 +83,6 @@ impl Arch {
             "glm_moe_dsa" => "glm-dsa",
             // DeepSeek-V4-Flash (HF `DeepseekV4ForCausalLM`, model_type `deepseek_v4`)
             "deepseek_v4" => "deepseek-v4",
-            // Qwen3.8-Flash-Next (HF `Qwen4ExpForConditionalGeneration`, model_type
-            // `qwen4_exp`; the text_config carries `qwen4_exp_text`)
-            "qwen4_exp" | "qwen4_exp_text" => "qwen4exp",
             // GLM-5.3-Flash (HF `Glm5NextForConditionalGeneration`): the VL wrapper model_type
             // is `glm5_next`, text_config's is `glm5_next_text` — same text architecture.
             "glm5_next" | "glm5_next_text" => "glm5-next",
@@ -140,9 +127,6 @@ impl Arch {
         match self {
             // qwen3.5 packs [q|gate] per head inside `attn_q.weight` (out = 2*n_head*head_dim).
             Arch::Qwen35 | Arch::Qwen35Moe => Some(AttentionGateKind::FusedQ),
-            // qwen4_exp keeps the fused layout: q_proj is [2*24*256, 2560] against 24 heads
-            // of 256 (census 2026-08-29), sigmoid output gate per config.
-            Arch::Qwen4Exp => Some(AttentionGateKind::FusedQ),
             // step35 projects one sigmoid scalar per head through a separate `attn_gate.weight`.
             Arch::Step35 => Some(AttentionGateKind::SeparateHead),
             // No attention output gate: wq out is exactly n_head*head_dim on all of these.
@@ -170,11 +154,6 @@ impl Arch {
     /// DeepSeek-V4-Flash (HF `deepseek_v4`) — safetensors-first, loader lane only today.
     pub fn is_dsv4(&self) -> bool {
         matches!(self, Arch::DeepSeekV4)
-    }
-
-    /// Qwen3.8-Flash-Next (HF `qwen4_exp`) — safetensors-first, loader lane only today.
-    pub fn is_qwen4exp(&self) -> bool {
-        matches!(self, Arch::Qwen4Exp)
     }
 
     /// GLM-5.3-Flash (HF `glm5_next`/`glm5_next_text`) — safetensors-first bring-up.
@@ -362,10 +341,6 @@ pub struct ArchGeometryTable {
 }
 
 impl ArchGeometryTable {
-    /// Interval-hybrid class table: (il+1) % full_attention_interval == 0 => full attention
-    /// with the FusedQ gate, else GDN linear; MTP tail layers are full. Shared by qwen35 and
-    /// qwen4_exp — qwen4_exp matches the rule exactly (interval 4, fused [q|gate] q_proj:
-    /// 24 heads x 256 x 2 = q_out 12288 measured, census 2026-08-29).
     #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn qwen35(
         n_layer: u32,
@@ -505,9 +480,6 @@ pub struct Hy3Config {
     pub first_k_dense_replace: u32,
     pub qk_norm: bool,
     pub hidden_act: String,
-    /// ModelOpt's explicit weight-only NVFP4 contract. When true, routed experts must retain
-    /// floating-point activations; the q8_1 expert kernels are a different W4A8 numeric program.
-    pub weight_only_nvfp4: bool,
 }
 
 /// Gemma-4 per-layer attention geometry + block extras (P0 census 2026-07-10).
@@ -562,38 +534,6 @@ pub struct VisionConfig {
 pub struct MultimodalConfig {
     pub image_token_id: u32,
     pub vision_soft_tokens_per_image: u32,
-}
-
-/// glm5_next vision tower config (`vision_config.model_type == "glm5_next_vision"`).
-/// A DIFFERENT semantic program from the factored-additive `VisionConfig` tower (gemma-4):
-/// fused-qkv ViT with per-head q/k RMS norms, 2D rope (no learned position table — upstream
-/// `GlmOcrVisionModel.__init__` deletes `self.embeddings`), clamped-SwiGLU MLP with biases,
-/// conv 2x2 downsample into a gated clamped merger. Field truth: banked
-/// `research/glm53-flash-bringup-20260827/glm-config.json` + transformers 5.16.1
-/// `models/glm5_next/modeling_glm5_next.py` (vision classes diffed identical to main).
-#[derive(Debug, Clone, PartialEq)]
-pub struct Glm5VisionConfig {
-    pub depth: u32,                        // 24
-    pub hidden_size: u32,                  // 1024
-    pub num_heads: u32,                    // 16 (head_dim = hidden/heads = 64)
-    pub intermediate_size: u32,            // 4096 (block MLP)
-    pub patch_size: u32,                   // 14
-    pub temporal_patch_size: u32,          // 2 (image frames duplicated by the processor)
-    pub spatial_merge_size: u32,           // 2 (downsample conv kernel AND token merge)
-    pub out_hidden_size: u32,              // 4096 == trunk n_embd (validated at plan compile)
-    pub projection_intermediate_size: u32, // 10240 (merger gate/up width)
-    pub swiglu_limit: f32,                 // 10.0 (gate max-clamp; up +/- clamp)
-    pub rms_norm_eps: f32,                 // 1e-5
-    pub in_channels: u32,                  // 3
-    pub attention_bias: bool,              // true: qkv/proj AND block-MLP linears carry bias
-    pub hidden_act: String,                // "silu"
-    // ---- mm token splice ids (top-level config.json keys) ----
-    pub image_token_id: u32, // 154854 <|image|> (placeholder the tower rows replace)
-    pub video_token_id: u32, // 154855 <|video|>
-    pub image_start_token_id: u32, // 154830 <|begin_of_image|>
-    pub image_end_token_id: u32, // 154831 <|end_of_image|>
-    pub video_start_token_id: u32, // 154832 <|begin_of_video|>
-    pub video_end_token_id: u32, // 154833 <|end_of_video|>
 }
 
 /// StepFun Step-3.5/3.7-Flash (`step35`) per-layer geometry + block extras. Values in comments are
@@ -785,155 +725,6 @@ impl DeepSeekV4Config {
     }
 }
 
-/// Qwen3.8-Flash-Next (`qwen4_exp`) config. Values in comments are the pinned artifact
-/// (Qwen/Qwen3.8-Flash-Next @ de4b8e4d — geometry receipts research/qwen4exp-bringup-20260829/
-/// ARCH.md, forward semantics SEMANTICS.md from transformers modular_qwen4_exp.py). qwen3_5
-/// ancestry INFORMS these fields but proves nothing (no-generic-support law): the QSA
-/// micro-block indexer, the 4-branch gated residual, the PLE n-gram block, the fused-3D
-/// experts, and the sigmoid GDN output gate are all this family's own semantic program.
-///
-/// Every field here is REQUIRED by the eventual forward pass; `from_hf` panics with the field
-/// name when config.json omits one (loud refusal over a silently-defaulted different program).
-#[derive(Debug, Clone)]
-pub struct Qwen4ExpConfig {
-    // ---- QSA micro-block sparse indexer (self_attn.indexer.*, on full-attention layers) ----
-    pub indexer_n_heads: u32,        // 4 query heads
-    pub indexer_kv_heads: u32,       // 1 shared key head (MQA)
-    pub indexer_head_dim: u32,       // 128
-    pub indexer_compress_ratio: u32, // 4 (tokens per scored micro-block)
-    pub indexer_budget: u32,         // 2048 tokens = 512 micro-blocks
-    // ---- gated residual (attn_/mlp_hyper_connection.* + one global hyper_connection_mixer) ----
-    pub hc_count: u32,   // 4 streams — wide stream = hc_count * hidden = 10240
-    pub hc_lowrank: u32, // 320 (input_mix_weight_down [320,10240] / _up [10240,320])
-    // ---- n-gram / PLE ----
-    pub ngram_size: u32,      // 3 (bigram + trigram histories)
-    pub heads_per_ngram: u32, // 8 (=> 16 n-gram heads total)
-    /// 20_000_000. Per-head vocab sizes are consecutive primes >= this base, shipped as
-    /// checkpoint I64 buffers (ngram_heads_vocab_sizes/offsets) — LOAD, never re-derive
-    /// (SEMANTICS.md §PLE).
-    pub ngram_vocab_size_base: u64,
-    pub make_ngram_vocab_size_divisible_by: u32, // 128
-    pub split_ngram_parts: u32,                  // 128 shards, concatenated on dim 0
-    /// ONE-indexed (config class docstring): `[2]` = checkpoint module `layers.1` (0-based).
-    /// Receipt: census `model.language_model.layers.1.ple.conv1d.weight` (SEMANTICS.md §PLE).
-    pub ple_layer_ids: Vec<u32>,
-    pub ple_embed_dim: u32,        // 2560
-    pub ple_conv_kernel_size: u32, // 4 (dilation 3, causal left-pad 9 — SEMANTICS.md §PLE)
-    /// GDN gated output-norm activation: "sigmoid" here — the ONE numeric divergence from the
-    /// qwen3_5 GDN program (SEMANTICS.md §GDN; config contract allows {"sigmoid","silu"}).
-    pub output_gate_type: String,
-    /// `eos_token_id` (248044 on the artifact; a list config takes its first entry —
-    /// modular L621). PLE pads token history with it and resets n-gram segments at it
-    /// (SEMANTICS.md §PLE), so it is REQUIRED whenever `ple_layer_ids` is non-empty;
-    /// enforced at parse.
-    pub eos_token_id: Option<u32>,
-    // ---- mrope: STORED, not implemented. Text-only inputs degenerate to plain partial rope
-    // (all 3 axes equal — SEMANTICS.md §Rope); the real 3-axis path is vision-lane work. ----
-    pub mrope_section: Vec<u32>, // [11, 11, 10]
-    pub mrope_interleaved: bool, // true
-    // ---- MTP sub-object ----
-    pub mtp_num_hidden_layers: u32, // 1 (full-attention QSA block, own indexer, no PLE)
-    pub mtp_rope_theta: f32,        // 1e7 (same base as the trunk on this artifact)
-    // ---- ViT tower (model.visual.*) ----
-    /// `None` on a text-only sibling. The tower serves through the qwen3_5-style side-load
-    /// path (MEMRA_VISION_DIR), NOT a plan-level encoder; this struct exists so the tensor
-    /// contract can census the `model.visual.*` namespace. The generic `VisionConfig` parse
-    /// speaks gemma key names and would fabricate wrong geometry for this file, so
-    /// `ModelConfig::vision` stays `None` for the arch.
-    pub vision: Option<Qwen4ExpVisionConfig>,
-}
-
-/// YaRN rope scaling as the qwen4_exp family consumes it (transformers 5.14.1
-/// `_compute_yarn_parameters`, truncate=True arm): frequency interpolation over the
-/// partial-rotary dims plus the derived `attention_factor = 0.1*ln(factor)+1` on cos/sin.
-/// Parsed from `rope_parameters`/`rope_scaling` with `rope_type == "yarn"`; keys the twin
-/// does NOT implement (explicit `attention_factor`, `mscale`, `mscale_all_dim`,
-/// `truncate=false`) are REFUSED at parse rather than silently mis-scaled.
-/// Receipt: research/qwen4exp-bringup-20260829/yarn/transformers-yarn-params.tsv.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct YarnRopeConfig {
-    /// Context extension factor. transformers uses the config value AS GIVEN when present
-    /// and derives `max_position_embeddings / original_max_position_embeddings` only when
-    /// the key is absent — mirrored here.
-    pub factor: f32,
-    pub original_context: u32,
-    pub beta_fast: f32, // default 32 (paper defaults, transformers `or 32`)
-    pub beta_slow: f32, // default 1
-}
-
-/// qwen4_exp `vision_config` geometry (census receipts in ARCH.md: 27 blocks, fused qkv
-/// [3456,1152]+bias, mlp fc 4304, patch Conv3d [1152,3,2,16,16], pos_embed [2304,1152],
-/// merger 4608 -> 2560).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Qwen4ExpVisionConfig {
-    pub depth: u32,                   // 27
-    pub hidden_size: u32,             // 1152
-    pub intermediate_size: u32,       // 4304
-    pub num_heads: u32,               // 16
-    pub num_position_embeddings: u32, // 2304
-    pub out_hidden_size: u32,         // 2560
-    pub patch_size: u32,              // 16
-    pub spatial_merge_size: u32,      // 2 (merger in = hidden * merge^2 = 4608)
-    pub temporal_patch_size: u32,     // 2
-    pub in_channels: u32,             // 3
-}
-
-impl Qwen4ExpVisionConfig {
-    /// Merger input width: spatial-merged patch group (2x2 of hidden) = 4608.
-    pub fn merger_in(&self) -> u32 {
-        self.hidden_size * self.spatial_merge_size * self.spatial_merge_size
-    }
-}
-
-impl Qwen4ExpConfig {
-    /// Total n-gram heads: `heads_per_ngram` per n in 2..=ngram_size (16 on the artifact).
-    pub fn ngram_heads(&self) -> u32 {
-        self.heads_per_ngram * self.ngram_size.saturating_sub(1)
-    }
-    /// Per-head embedding row width: ple_embed_dim / ngram_heads = 160 (census receipt:
-    /// ngram_embedding shard shape [2500012, 160]; 16 heads x 160 = 2560 = value_proj in).
-    pub fn ngram_head_embed_dim(&self) -> u32 {
-        let heads = self.ngram_heads();
-        assert!(
-            heads > 0 && self.ple_embed_dim.is_multiple_of(heads),
-            "qwen4_exp ple_embed_dim {} not divisible by ngram heads {heads}",
-            self.ple_embed_dim
-        );
-        self.ple_embed_dim / heads
-    }
-    /// Checkpoint (0-based) trunk-layer indices carrying the PLE module. `ple_layer_ids` is
-    /// ONE-indexed: config `[2]` places the module at `layers.1` (SEMANTICS.md §PLE).
-    pub fn ple_checkpoint_layers(&self) -> Vec<u32> {
-        self.ple_layer_ids
-            .iter()
-            .map(|&id| {
-                assert!(
-                    id >= 1,
-                    "qwen4_exp ple_layer_ids are ONE-indexed; got 0 (a 0 entry would wrap)"
-                );
-                id - 1
-            })
-            .collect()
-    }
-    /// Layer `il` (checkpoint 0-based) carries the PLE block.
-    pub fn has_ple(&self, il: u32) -> bool {
-        self.ple_checkpoint_layers().contains(&il)
-    }
-    /// Indexer budget in micro-blocks (2048 / 4 = 512).
-    pub fn indexer_budget_blocks(&self) -> u32 {
-        assert!(
-            self.indexer_compress_ratio > 0
-                && self
-                    .indexer_budget
-                    .is_multiple_of(self.indexer_compress_ratio),
-            "qwen4_exp indexer_budget {} not divisible by compress ratio {}",
-            self.indexer_budget,
-            self.indexer_compress_ratio
-        );
-        self.indexer_budget / self.indexer_compress_ratio
-    }
-}
-
 /// GLM-5.3-Flash (`glm5_next`) config. Values in comments are the zai-org/GLM-5.3-Flash FP8
 /// checkpoint (census + banked config.json in research/glm53-flash-bringup-20260827). GlmDsa /
 /// DeepSeek ancestry INFORMS these fields but proves nothing (no-generic-support law): the KDA
@@ -963,9 +754,7 @@ pub struct Glm5NextConfig {
     pub linear_conv_kernel: u32, // short_conv_kernel_size (4)
     /// Forget-gate decay floor: gate = lower_bound * sigmoid(exp(A_log) * g). -5.0.
     pub gate_lower_bound: f32,
-    // ---- MLA (NoPE: no rotary anywhere in the MLA path — nor in the indexer: the 5.3
-    // reference's `Glm5NextTextIndexer.forward` applies no rope and never reads
-    // `indexer_rope_interleave`; the key is carried below as checkpoint metadata only) ----
+    // ---- MLA (NoPE: no rotary anywhere in the MLA path; the indexer has its own rope) ----
     pub q_lora_rank: u32,      // 1536
     pub kv_lora_rank: u32,     // 512
     pub qk_head_dim: u32,      // 256 (== qk_nope_head_dim + qk_rope_head_dim, checked at parse)
@@ -1124,9 +913,6 @@ pub struct ModelConfig {
     pub hy3: Option<Hy3Config>,
     pub gemma4: Option<Gemma4Config>,
     pub vision: Option<VisionConfig>,
-    /// glm5_next tower (mutually exclusive with `vision`; keyed by
-    /// `vision_config.model_type` at parse, enforced at plan compile).
-    pub vision_glm5: Option<Glm5VisionConfig>,
     pub multimodal: Option<MultimodalConfig>,
     // MLA extras — glm-dsa only (None for every other arch)
     pub mla: Option<MlaConfig>,
@@ -1134,13 +920,6 @@ pub struct ModelConfig {
     pub step35: Option<Step35Config>,
     // DeepSeek-V4-Flash extras — `deepseek_v4` only (None for every other arch)
     pub dsv4: Option<DeepSeekV4Config>,
-    // Qwen3.8-Flash-Next extras — `qwen4_exp` only (None for every other arch)
-    pub qwen4exp: Option<Qwen4ExpConfig>,
-    /// YaRN rope scaling on the full-attention rope. Populated ONLY by the qwen4_exp HF
-    /// arm today (scope: that family's long-context lane) — other arches keep their own
-    /// rope-scaling handling (dsv4 flattens into DeepSeekV4Config, llama3 synthesizes
-    /// rope_freqs) and are untouched.
-    pub rope_yarn: Option<YarnRopeConfig>,
     // GLM-5.3-Flash extras — `glm5_next` only (None for every other arch)
     pub glm5: Option<Glm5NextConfig>,
     // Declarative per-layer geometry for migrated architectures.
@@ -1148,68 +927,6 @@ pub struct ModelConfig {
     // multi-token-predict / NextN
     pub nextn_predict_layers: u32,
     pub n_layer_total: u32, // includes appended MTP layers
-}
-
-/// qwen4_exp YaRN parse (scope: this family only — see `ModelConfig::rope_yarn`).
-/// transformers 5.14.1 `_compute_yarn_parameters` semantics, mirrored:
-/// - rope_type absent or "default" => no scaling;
-/// - "yarn" => `original_max_position_embeddings` REQUIRED; `factor` used AS GIVEN when
-///   present and derived `max_position_embeddings / original` only when absent;
-/// - betas default 32/1 (a zero beta is refused — transformers' `or 32` would too);
-/// - keys the engine twin does not implement (explicit attention_factor, mscale,
-///   mscale_all_dim, truncate=false) are REFUSED loudly rather than silently mis-scaled.
-fn qwen4exp_rope_yarn(c: &HfConfig) -> Option<YarnRopeConfig> {
-    match c.rope_scaling_type.as_deref() {
-        None | Some("default") => None,
-        Some("yarn") => {
-            assert!(
-                c.rope_scaling_attention_factor.is_none(),
-                "qwen4_exp yarn: explicit attention_factor is not implemented \
-                 (the twin derives 0.1*ln(factor)+1 per transformers get_mscale)"
-            );
-            assert!(
-                c.rope_scaling_mscale.is_none() && c.rope_scaling_mscale_all_dim.is_none(),
-                "qwen4_exp yarn: mscale/mscale_all_dim are not implemented"
-            );
-            assert!(
-                c.rope_scaling_truncate.unwrap_or(true),
-                "qwen4_exp yarn: truncate=false is not implemented (the twin floors/ceils \
-                 the correction range)"
-            );
-            let original_context = c.rope_scaling_original_context.unwrap_or_else(|| {
-                panic!("qwen4_exp yarn rope scaling requires original_max_position_embeddings")
-            });
-            assert!(
-                original_context > 0,
-                "qwen4_exp yarn: original context is zero"
-            );
-            let factor = c.rope_scaling_factor.unwrap_or_else(|| {
-                assert!(
-                    c.max_position_embeddings > 0,
-                    "qwen4_exp yarn: factor absent and max_position_embeddings unset \
-                     (transformers derives factor = max_position_embeddings / original)"
-                );
-                c.max_position_embeddings as f32 / original_context as f32
-            });
-            assert!(
-                factor.is_finite() && factor > 0.0,
-                "qwen4_exp yarn: invalid factor {factor}"
-            );
-            let beta_fast = c.rope_yarn_beta_fast.unwrap_or(32.0);
-            let beta_slow = c.rope_yarn_beta_slow.unwrap_or(1.0);
-            assert!(
-                beta_fast > 0.0 && beta_slow > 0.0,
-                "qwen4_exp yarn: betas must be positive (got {beta_fast}/{beta_slow})"
-            );
-            Some(YarnRopeConfig {
-                factor,
-                original_context,
-                beta_fast,
-                beta_slow,
-            })
-        }
-        Some(other) => panic!("qwen4_exp rope_type {other:?} is not supported (default|yarn)"),
-    }
 }
 
 fn qwen3next_expert_alias_warning(raw_arch: &str, moe: Option<&MoeConfig>) -> Option<String> {
@@ -1521,8 +1238,7 @@ impl ModelConfig {
         let rope_dim_count = resolve_rope_dim_count(u("rope.dimension_count"), None, head_dim_k);
         let full_attention_interval = u("full_attention_interval").unwrap_or(0);
         let geometry = match &arch {
-            // qwen4_exp reuses the interval-hybrid rule verbatim (see the table fn note).
-            Arch::Qwen35 | Arch::Qwen35Moe | Arch::Qwen4Exp => Some(ArchGeometryTable::qwen35(
+            Arch::Qwen35 | Arch::Qwen35Moe => Some(ArchGeometryTable::qwen35(
                 n_layer,
                 nextn,
                 full_attention_interval,
@@ -1582,13 +1298,10 @@ impl ModelConfig {
             hy3: None, // GGUF Hy3 metadata keys are a later arc (repack source first)
             gemma4,
             vision: None,
-            vision_glm5: None, // GGUF glm5_next artifacts carry no tower (safetensors-first)
             multimodal: None,
             mla,
             step35,
             dsv4: None, // safetensors-first arch: no GGUF artifact exists (loader lane)
-            qwen4exp: None, // safetensors-first arch: no GGUF artifact exists (loader lane)
-            rope_yarn: None,
             glm5: None, // safetensors-first arch: no GGUF artifact exists (bring-up lane)
             geometry,
             nextn_predict_layers: nextn,
@@ -1604,12 +1317,9 @@ impl ModelConfig {
         let arch = Arch::from_hf_model_type(&c.model_type);
         let is_gemma4 = matches!(&arch, Arch::Gemma4);
         // HF counts only trunk blocks; GGUF block_count includes appended NextN blocks.
-        // qwen4_exp nests the depth in an `mtp` sub-object (its flat twin key usually rides
-        // beside it; the object is the fallback for a sibling that drops the flat spelling).
         let nextn = c
             .num_nextn_predict_layers
             .or(c.mtp_num_hidden_layers)
-            .or(c.qwen4exp_mtp_num_hidden_layers)
             .unwrap_or(0);
         let n_layer = c.num_hidden_layers + nextn;
         let base_n_head = c.num_attention_heads;
@@ -1678,7 +1388,6 @@ impl ModelConfig {
                 first_k_dense_replace: c.first_k_dense_replace.unwrap_or(1),
                 qk_norm: c.qk_norm.unwrap_or(false),
                 hidden_act: c.hidden_act.clone().unwrap_or_else(|| "silu".to_string()),
-                weight_only_nvfp4: c.quant_algo.as_deref() == Some("W4A16_NVFP4"),
             })
         } else {
             None
@@ -1827,12 +1536,9 @@ impl ModelConfig {
 
         // NextN/MTP depth: 35B-MoE HF uses `num_nextn_predict_layers`; qwen3.6-27B (dense hybrid,
         // NVIDIA + local text ckpts) uses `mtp_num_hidden_layers`. Same meaning (head depth = 1).
-        // qwen4_exp carries both a flat `mtp_num_hidden_layers` and an `mtp` sub-object; the
-        // object is the fallback and is cross-checked against the flat key below.
         let mut nextn = c
             .num_nextn_predict_layers
             .or(c.mtp_num_hidden_layers)
-            .or(c.qwen4exp_mtp_num_hidden_layers)
             .unwrap_or(0);
         // deepseek_v4: `num_nextn_predict_layers` is VESTIGIAL on 0731 — still 1 while the
         // drafter is 3 DSpark blocks (the repo's own inference/config.json: n_mtp_layers 3).
@@ -1918,121 +1624,6 @@ impl ModelConfig {
                 rope_yarn_beta_fast: req_f(c.rope_yarn_beta_fast, "rope_scaling.beta_fast"),
                 rope_yarn_beta_slow: req_f(c.rope_yarn_beta_slow, "rope_scaling.beta_slow"),
             })
-        } else {
-            None
-        };
-
-        // qwen4_exp: every field below feeds the forward pass; a missing one means a DIFFERENT
-        // semantic program, so refuse by name instead of defaulting (the dsv4 expect style).
-        let qwen4exp = if arch.is_qwen4exp() {
-            let req_u = |v: Option<u32>, k: &str| {
-                v.unwrap_or_else(|| panic!("qwen4_exp config.json missing required field {k}"))
-            };
-            let interval = req_u(c.full_attention_interval, "full_attention_interval");
-            // layer_types cross-check. The shipped file spells the periodic layers
-            // "full_attention"; the HF config class rewrites those entries to
-            // "qwen_sparse_attention" when the indexer_* fields are present (SEMANTICS.md
-            // §Loading) — accept both spellings, refuse anything off the interval pattern.
-            if let Some(layer_types) = c.layer_types.as_ref() {
-                assert_eq!(
-                    layer_types.len() as u32,
-                    c.num_hidden_layers,
-                    "qwen4_exp layer_types length {} != num_hidden_layers {}",
-                    layer_types.len(),
-                    c.num_hidden_layers
-                );
-                for (il, kind) in layer_types.iter().enumerate() {
-                    // manual_is_multiple_of: `interval` is a raw config value; `% 0` must
-                    // keep panicking rather than take is_multiple_of's defined-result arm.
-                    #[allow(clippy::manual_is_multiple_of)]
-                    let full = (il as u32 + 1) % interval == 0;
-                    let ok = if full {
-                        kind == "full_attention" || kind == "qwen_sparse_attention"
-                    } else {
-                        kind == "linear_attention"
-                    };
-                    assert!(
-                        ok,
-                        "qwen4_exp layer_types[{il}] = {kind:?} contradicts \
-                         full_attention_interval {interval}"
-                    );
-                }
-            }
-            let output_gate_type = c.output_gate_type.clone().unwrap_or_else(|| {
-                panic!("qwen4_exp config.json missing required field output_gate_type")
-            });
-            assert!(
-                matches!(output_gate_type.as_str(), "sigmoid" | "silu"),
-                "qwen4_exp output_gate_type must be \"sigmoid\" or \"silu\" (the HF config \
-                 contract), got {output_gate_type:?}"
-            );
-            let ple_layer_ids = c.ple_layer_ids.clone().unwrap_or_else(|| {
-                panic!("qwen4_exp config.json missing required field ple_layer_ids")
-            });
-            let mtp_layers = req_u(c.qwen4exp_mtp_num_hidden_layers, "mtp.num_hidden_layers");
-            assert_eq!(
-                mtp_layers, nextn,
-                "qwen4_exp mtp.num_hidden_layers {mtp_layers} != mtp_num_hidden_layers {nextn}"
-            );
-            let cfg = Qwen4ExpConfig {
-                indexer_n_heads: req_u(c.indexer_n_heads, "indexer_n_heads"),
-                indexer_kv_heads: req_u(c.indexer_kv_heads, "indexer_kv_heads"),
-                indexer_head_dim: req_u(c.indexer_head_dim, "indexer_head_dim"),
-                indexer_compress_ratio: req_u(c.indexer_compress_ratio, "indexer_compress_ratio"),
-                indexer_budget: req_u(c.indexer_budget, "indexer_budget"),
-                hc_count: req_u(c.hc_count, "hc_count"),
-                hc_lowrank: req_u(c.hc_lowrank, "hc_lowrank"),
-                ngram_size: req_u(c.ngram_size, "ngram_size"),
-                heads_per_ngram: req_u(c.heads_per_ngram, "heads_per_ngram"),
-                ngram_vocab_size_base: c.ngram_vocab_size_base.unwrap_or_else(|| {
-                    panic!("qwen4_exp config.json missing required field ngram_vocab_size_base")
-                }),
-                make_ngram_vocab_size_divisible_by: req_u(
-                    c.make_ngram_vocab_size_divisible_by,
-                    "make_ngram_vocab_size_divisible_by",
-                ),
-                split_ngram_parts: req_u(c.split_ngram_parts, "split_ngram_parts"),
-                ple_layer_ids,
-                ple_embed_dim: req_u(c.ple_embed_dim, "ple_embed_dim"),
-                ple_conv_kernel_size: req_u(c.ple_conv_kernel_size, "ple_conv_kernel_size"),
-                output_gate_type,
-                eos_token_id: c.eos_token_id,
-                mrope_section: c.mrope_section.clone().unwrap_or_default(),
-                mrope_interleaved: c.mrope_interleaved.unwrap_or(false),
-                mtp_num_hidden_layers: mtp_layers,
-                mtp_rope_theta: c.qwen4exp_mtp_rope_theta.unwrap_or(c.rope_theta),
-                vision: c.qwen4exp_vision.clone(),
-            };
-            // ONE-indexed contract + divisibility checks run at parse, not first use.
-            let ple_layers = cfg.ple_checkpoint_layers();
-            for &il in &ple_layers {
-                assert!(
-                    il < c.num_hidden_layers,
-                    "qwen4_exp ple layer {il} out of trunk range {}",
-                    c.num_hidden_layers
-                );
-                // PLE is only valid on linear-attention layers (transformers validate).
-                assert!(
-                    (il + 1) % interval != 0,
-                    "qwen4_exp ple layer {il} lands on a full-attention layer"
-                );
-            }
-            // PLE token history pads with EOS and resets segments at it — a defaulted id
-            // would be a silently different hash program (SEMANTICS.md §PLE).
-            assert!(
-                ple_layers.is_empty() || cfg.eos_token_id.is_some(),
-                "qwen4_exp config.json missing required field eos_token_id (PLE layers present)"
-            );
-            let _ = cfg.ngram_head_embed_dim();
-            let _ = cfg.indexer_budget_blocks();
-            Some(cfg)
-        } else {
-            None
-        };
-        // YaRN long-context scaling — parsed for THIS family only (see ModelConfig::rope_yarn
-        // scope note); other arches keep their existing rope-scaling handling untouched.
-        let rope_yarn = if qwen4exp.is_some() {
-            qwen4exp_rope_yarn(c)
         } else {
             None
         };
@@ -2243,8 +1834,7 @@ impl ModelConfig {
             head_dim_k,
         );
         let geometry = match &arch {
-            // qwen4_exp reuses the interval-hybrid rule verbatim (see the table fn note).
-            Arch::Qwen35 | Arch::Qwen35Moe | Arch::Qwen4Exp => Some(ArchGeometryTable::qwen35(
+            Arch::Qwen35 | Arch::Qwen35Moe => Some(ArchGeometryTable::qwen35(
                 n_layer,
                 nextn,
                 full_attention_interval,
@@ -2293,13 +1883,7 @@ impl ModelConfig {
             // spells it `partial_rotary_factor` (0.25 of head_dim 256 = 64). Both resolved above,
             // through the same function the GGUF reader uses.
             rope_dim_count,
-            // mrope sections are STORED for arches that declare them (qwen4_exp [11,11,10]);
-            // text-only positions degenerate to plain partial rope (SEMANTICS.md §Rope).
-            rope_sections: c
-                .mrope_section
-                .as_ref()
-                .map(|s| s.iter().map(|&x| x as i32).collect())
-                .unwrap_or_default(),
+            rope_sections: Vec::new(),
             full_attention_interval,
             ssm,
             moe,
@@ -2339,16 +1923,7 @@ impl ModelConfig {
             } else {
                 None
             },
-            // qwen4_exp: the generic VisionConfig parse reads gemma key names, so it would
-            // fabricate a wrong tower geometry from this file's vision_config. The faithful
-            // geometry lives in qwen4exp.vision; the tower itself side-loads at serving
-            // (MEMRA_VISION_DIR, the qwen3_5 pattern) — never a plan-level encoder here.
-            vision: if qwen4exp.is_some() {
-                None
-            } else {
-                c.vision.clone()
-            },
-            vision_glm5: c.vision_glm5.clone(),
+            vision: c.vision.clone(),
             multimodal: match (c.image_token_id, c.vision_soft_tokens_per_image) {
                 (Some(image_token_id), Some(vision_soft_tokens_per_image)) => {
                     Some(MultimodalConfig {
@@ -2361,8 +1936,6 @@ impl ModelConfig {
             mla: None, // GGUF-first arch (glm-dsa): HF/safetensors import is a later arc
             step35,
             dsv4,
-            qwen4exp,
-            rope_yarn,
             glm5,
             geometry,
             // NextN/MTP depth: 35B-MoE HF uses `num_nextn_predict_layers`; the 27B (dense hybrid)
@@ -2727,12 +2300,6 @@ pub struct HfConfig {
     pub rope_scaling_original_context: Option<u32>,
     pub rope_scaling_low_freq_factor: Option<f32>,
     pub rope_scaling_high_freq_factor: Option<f32>,
-    /// Yarn keys the qwen4_exp twin refuses rather than mis-scales (parsed so the refusal
-    /// can be loud): explicit attention_factor / mscale / mscale_all_dim / truncate.
-    pub rope_scaling_attention_factor: Option<f32>,
-    pub rope_scaling_mscale: Option<f32>,
-    pub rope_scaling_mscale_all_dim: Option<f32>,
-    pub rope_scaling_truncate: Option<bool>,
     pub full_attention_interval: Option<u32>,
     // ---- gemma-4 (Arch::Gemma4 safetensors route, lane/gemma-vision) ----
     /// layer_types as swa flags (true = "sliding_attention"), parsed in apply().
@@ -2749,9 +2316,6 @@ pub struct HfConfig {
     pub hidden_size_per_layer_input: Option<u32>,
     pub num_kv_shared_layers: Option<u32>,
     pub vision: Option<VisionConfig>,
-    /// glm5_next tower (`vision_config.model_type == "glm5_next_vision"`); when this is
-    /// Some, `vision` stays None — the two structs are different semantic programs.
-    pub vision_glm5: Option<Glm5VisionConfig>,
     pub image_token_id: Option<u32>,
     pub vision_soft_tokens_per_image: Option<u32>,
     pub num_nextn_predict_layers: Option<u32>,
@@ -2819,7 +2383,7 @@ pub struct HfConfig {
     pub indexer_types: Option<Vec<String>>,
     pub mlp_layer_types: Option<Vec<String>>,
     pub moe_router_dtype: Option<String>,
-    // output_gate_type is declared once further down (both qwen4_exp and glm5_next read it).
+    pub output_gate_type: Option<String>,
     pub mhc: Option<bool>,
     /// `linear_attn_config` nested object, flattened in apply() (the rope_parameters pattern).
     pub glm_linear_num_heads: Option<u32>,
@@ -2834,35 +2398,6 @@ pub struct HfConfig {
     pub rope_yarn_orig_ctx: Option<u32>,
     pub rope_yarn_beta_fast: Option<f32>,
     pub rope_yarn_beta_slow: Option<f32>,
-    // ---- Qwen3.8-Flash-Next (`qwen4_exp` text_config) ----
-    pub indexer_n_heads: Option<u32>,
-    pub indexer_kv_heads: Option<u32>,
-    pub indexer_head_dim: Option<u32>,
-    pub indexer_compress_ratio: Option<u32>,
-    pub indexer_budget: Option<u32>,
-    pub hc_count: Option<u32>,
-    pub hc_lowrank: Option<u32>,
-    pub ngram_size: Option<u32>,
-    pub heads_per_ngram: Option<u32>,
-    pub ngram_vocab_size_base: Option<u64>,
-    pub make_ngram_vocab_size_divisible_by: Option<u32>,
-    pub split_ngram_parts: Option<u32>,
-    pub ple_layer_ids: Option<Vec<u32>>,
-    pub ple_embed_dim: Option<u32>,
-    pub ple_conv_kernel_size: Option<u32>,
-    pub output_gate_type: Option<String>,
-    /// `eos_token_id`, scalar or first list entry (modular_qwen4_exp.py L621 takes
-    /// `eos_token_id[0]` when it is a list). PLE hashes token history against it.
-    pub eos_token_id: Option<u32>,
-    /// rope_parameters.{mrope_section, mrope_interleaved}, flattened in apply().
-    pub mrope_section: Option<Vec<u32>>,
-    pub mrope_interleaved: Option<bool>,
-    /// `mtp` sub-object {num_hidden_layers, rope_theta}, flattened in apply().
-    pub qwen4exp_mtp_num_hidden_layers: Option<u32>,
-    pub qwen4exp_mtp_rope_theta: Option<f32>,
-    /// Parsed in `parse()` when vision_config.model_type == "qwen4_exp" (the generic
-    /// VisionConfig parse reads gemma key names and does not speak this file).
-    pub qwen4exp_vision: Option<Qwen4ExpVisionConfig>,
     // ---- Step-3.5 / Step-3.7-Flash (`step3p5` text config) ----
     pub attention_other_num_heads: Option<u32>,
     pub attention_other_num_groups: Option<u32>,
@@ -2875,12 +2410,8 @@ pub struct HfConfig {
     pub moe_layers_enum: Option<String>,
     /// HF module prefixes that the checkpoint explicitly excludes from quantization.
     pub modules_to_not_convert: Vec<String>,
-    /// Top-level `quantization_config.quant_algo`, retained so runtime dispatch can distinguish
-    /// ModelOpt W4A16 from the activation-quantized NVFP4 program.
-    pub quant_algo: Option<String>,
     /// The outer checkpoint contract requires every BF16 tensor to remain BF16. This is narrower
-    /// than architecture identity: Step-3.5, base Hy3, and GGUF imports do not inherit a
-    /// mixed-precision ModelOpt artifact's preservation rule.
+    /// than architecture identity: Step-3.5 and GGUF imports do not inherit the Step-3.7-FP8 rule.
     pub preserve_checkpoint_bf16: bool,
 }
 
@@ -2906,10 +2437,6 @@ impl Default for HfConfig {
             rope_scaling_original_context: None,
             rope_scaling_low_freq_factor: None,
             rope_scaling_high_freq_factor: None,
-            rope_scaling_attention_factor: None,
-            rope_scaling_mscale: None,
-            rope_scaling_mscale_all_dim: None,
-            rope_scaling_truncate: None,
             full_attention_interval: None,
             num_nextn_predict_layers: None,
             mtp_num_hidden_layers: None,
@@ -2953,7 +2480,6 @@ impl Default for HfConfig {
             hidden_size_per_layer_input: None,
             num_kv_shared_layers: None,
             vision: None,
-            vision_glm5: None,
             image_token_id: None,
             vision_soft_tokens_per_image: None,
             topk_method: None,
@@ -2984,6 +2510,7 @@ impl Default for HfConfig {
             indexer_types: None,
             mlp_layer_types: None,
             moe_router_dtype: None,
+            output_gate_type: None,
             mhc: None,
             glm_linear_num_heads: None,
             glm_linear_head_dim: None,
@@ -2995,28 +2522,6 @@ impl Default for HfConfig {
             rope_yarn_orig_ctx: None,
             rope_yarn_beta_fast: None,
             rope_yarn_beta_slow: None,
-            indexer_n_heads: None,
-            indexer_kv_heads: None,
-            indexer_head_dim: None,
-            indexer_compress_ratio: None,
-            indexer_budget: None,
-            hc_count: None,
-            hc_lowrank: None,
-            ngram_size: None,
-            heads_per_ngram: None,
-            ngram_vocab_size_base: None,
-            make_ngram_vocab_size_divisible_by: None,
-            split_ngram_parts: None,
-            ple_layer_ids: None,
-            ple_embed_dim: None,
-            ple_conv_kernel_size: None,
-            output_gate_type: None,
-            eos_token_id: None,
-            mrope_section: None,
-            mrope_interleaved: None,
-            qwen4exp_mtp_num_hidden_layers: None,
-            qwen4exp_mtp_rope_theta: None,
-            qwen4exp_vision: None,
             attention_other_num_heads: None,
             attention_other_num_groups: None,
             layer_types: None,
@@ -3027,7 +2532,6 @@ impl Default for HfConfig {
             moe_router_activation: None,
             moe_layers_enum: None,
             modules_to_not_convert: Vec::new(),
-            quant_algo: None,
             preserve_checkpoint_bf16: false,
         }
     }
@@ -3089,17 +2593,14 @@ impl HfConfig {
         let top = JsonObj::parse(json);
         let mut cfg = HfConfig::default();
         cfg.apply(&top);
-        cfg.quant_algo = top
-            .object("quantization_config")
-            .and_then(|quantization| quantization.string("quant_algo"));
         // Both official Step-3.7-Flash quantized artifacts keep everything OUTSIDE the routed
         // experts (attention, gates, shared experts, MTP, lm_head) as checkpoint BF16, and the
-        // Step TP attention program requires those exact bytes. A ModelOpt Hy3 artifact likewise
-        // uses physical BF16 to declare the deliberately unquantized half of a mixed profile.
-        // Base checkpoints and unrelated formats keep the Q8_0 loader law.
-        cfg.preserve_checkpoint_bf16 = top.object("quantization_config").is_some_and(|q| {
-            (top.string("model_type").as_deref() == Some("step3p7")
-                && ((q.string("quant_method").as_deref() == Some("fp8")
+        // Step TP attention program requires those exact bytes: FP8 (block-128 e4m3, dynamic
+        // activations) and modelopt NVFP4 (quant_algo NVFP4). Anything else keeps the Q8_0
+        // loader law.
+        cfg.preserve_checkpoint_bf16 = top.string("model_type").as_deref() == Some("step3p7")
+            && top.object("quantization_config").is_some_and(|q| {
+                (q.string("quant_method").as_deref() == Some("fp8")
                     && q.string("activation_scheme").as_deref() == Some("dynamic")
                     && q.string("fmt").as_deref() == Some("e4m3")
                     && q.u32_array("weight_block_size").as_deref() == Some(&[128, 128]))
@@ -3109,127 +2610,31 @@ impl HfConfig {
                         && matches!(
                             q.string("quant_algo").as_deref(),
                             Some("NVFP4") | Some("W4A16_NVFP4")
-                        ))))
-                || (top.string("model_type").as_deref() == Some("hy_v3")
-                    && matches!(
-                        q.string("quant_method").as_deref(),
-                        Some("modelopt" | "compressed-tensors")
-                    ))
-        });
-        // qwen4_exp ViT tower: its own key spellings (depth / num_heads /
-        // num_position_embeddings / spatial_merge_size / temporal_patch_size). Loud refusal
-        // on a missing field — a defaulted tower geometry is a silently different program.
-        cfg.qwen4exp_vision = top.object("vision_config").and_then(|vision| {
-            (vision.string("model_type").as_deref() == Some("qwen4_exp")).then(|| {
-                let req = |k: &str| {
-                    vision.u32(k).unwrap_or_else(|| {
-                        panic!("qwen4_exp vision_config missing required field {k}")
-                    })
-                };
-                Qwen4ExpVisionConfig {
-                    depth: req("depth"),
-                    hidden_size: req("hidden_size"),
-                    intermediate_size: req("intermediate_size"),
-                    num_heads: req("num_heads"),
-                    num_position_embeddings: req("num_position_embeddings"),
-                    out_hidden_size: req("out_hidden_size"),
-                    patch_size: req("patch_size"),
-                    spatial_merge_size: req("spatial_merge_size"),
-                    temporal_patch_size: req("temporal_patch_size"),
-                    in_channels: req("in_channels"),
-                }
-            })
-        });
-        // vision_config dispatch is keyed by the tower's own model_type: the factored-additive
-        // program (gemma-4 family) and the glm5_next fused-qkv program are different semantic
-        // programs, and reading one's config through the other's key names produced a silently
-        // wrong plan (caught in lane/glm5-vision: depth/num_heads/hidden_act all defaulted).
-        if top
-            .object("vision_config")
-            .and_then(|v| v.string("model_type"))
-            .as_deref()
-            == Some("glm5_next_vision")
-        {
-            let v = top.object("vision_config").expect("checked above");
-            let req_u = |x: Option<u32>, k: &str| {
-                x.unwrap_or_else(|| {
-                    panic!("glm5_next_vision config.json missing required field {k}")
-                })
-            };
-            let req_f = |x: Option<f32>, k: &str| {
-                x.unwrap_or_else(|| {
-                    panic!("glm5_next_vision config.json missing required field {k}")
-                })
-            };
-            cfg.vision_glm5 = Some(Glm5VisionConfig {
-                depth: req_u(v.u32("depth"), "vision_config.depth"),
-                hidden_size: req_u(v.u32("hidden_size"), "vision_config.hidden_size"),
-                num_heads: req_u(v.u32("num_heads"), "vision_config.num_heads"),
-                intermediate_size: req_u(
-                    v.u32("intermediate_size"),
-                    "vision_config.intermediate_size",
-                ),
-                patch_size: req_u(v.u32("patch_size"), "vision_config.patch_size"),
-                temporal_patch_size: req_u(
-                    v.u32("temporal_patch_size"),
-                    "vision_config.temporal_patch_size",
-                ),
-                spatial_merge_size: req_u(
-                    v.u32("spatial_merge_size"),
-                    "vision_config.spatial_merge_size",
-                ),
-                out_hidden_size: req_u(v.u32("out_hidden_size"), "vision_config.out_hidden_size"),
-                projection_intermediate_size: req_u(
-                    v.u32("projection_intermediate_size"),
-                    "vision_config.projection_intermediate_size",
-                ),
-                swiglu_limit: req_f(v.f32("swiglu_limit"), "vision_config.swiglu_limit"),
-                rms_norm_eps: req_f(v.f32("rms_norm_eps"), "vision_config.rms_norm_eps"),
-                in_channels: req_u(v.u32("in_channels"), "vision_config.in_channels"),
-                attention_bias: v.boolean("attention_bias").unwrap_or_else(|| {
-                    panic!("glm5_next_vision config.json missing required field vision_config.attention_bias")
-                }),
-                hidden_act: v.string("hidden_act").unwrap_or_else(|| {
-                    panic!("glm5_next_vision config.json missing required field vision_config.hidden_act")
-                }),
-                image_token_id: req_u(top.u32("image_token_id"), "image_token_id"),
-                video_token_id: req_u(top.u32("video_token_id"), "video_token_id"),
-                image_start_token_id: req_u(
-                    top.u32("image_start_token_id"),
-                    "image_start_token_id",
-                ),
-                image_end_token_id: req_u(top.u32("image_end_token_id"), "image_end_token_id"),
-                video_start_token_id: req_u(
-                    top.u32("video_start_token_id"),
-                    "video_start_token_id",
-                ),
-                video_end_token_id: req_u(top.u32("video_end_token_id"), "video_end_token_id"),
+                        ))
             });
-        } else {
-            cfg.vision = top.object("vision_config").map(|vision| VisionConfig {
-                hidden_size: vision.u32("hidden_size").unwrap_or(768),
-                intermediate_size: vision.u32("intermediate_size").unwrap_or(3072),
-                layer_count: vision.u32("num_hidden_layers").unwrap_or(16),
-                attention_heads: vision.u32("num_attention_heads").unwrap_or(12),
-                kv_heads: vision.u32("num_key_value_heads").unwrap_or(12),
-                head_dim: vision.u32("head_dim").unwrap_or(64),
-                context_length: vision.u32("max_position_embeddings").unwrap_or(131_072),
-                patch_size: vision.u32("patch_size").unwrap_or(16),
-                position_embedding_size: vision.u32("position_embedding_size").unwrap_or(10_240),
-                position_axes: 2,
-                pooling_kernel_size: vision.u32("pooling_kernel_size").unwrap_or(3),
-                rms_eps: vision.f32("rms_norm_eps").unwrap_or(1e-6),
-                rope_theta: vision
-                    .object("rope_parameters")
-                    .and_then(|rope| rope.f32("rope_theta"))
-                    .unwrap_or(100.0),
-                activation: vision
-                    .string("hidden_activation")
-                    .unwrap_or_else(|| "gelu_pytorch_tanh".to_string()),
-                standardize: vision.boolean("standardize").unwrap_or(false),
-                clipped_linears: vision.boolean("use_clipped_linears").unwrap_or(false),
-            });
-        }
+        cfg.vision = top.object("vision_config").map(|vision| VisionConfig {
+            hidden_size: vision.u32("hidden_size").unwrap_or(768),
+            intermediate_size: vision.u32("intermediate_size").unwrap_or(3072),
+            layer_count: vision.u32("num_hidden_layers").unwrap_or(16),
+            attention_heads: vision.u32("num_attention_heads").unwrap_or(12),
+            kv_heads: vision.u32("num_key_value_heads").unwrap_or(12),
+            head_dim: vision.u32("head_dim").unwrap_or(64),
+            context_length: vision.u32("max_position_embeddings").unwrap_or(131_072),
+            patch_size: vision.u32("patch_size").unwrap_or(16),
+            position_embedding_size: vision.u32("position_embedding_size").unwrap_or(10_240),
+            position_axes: 2,
+            pooling_kernel_size: vision.u32("pooling_kernel_size").unwrap_or(3),
+            rms_eps: vision.f32("rms_norm_eps").unwrap_or(1e-6),
+            rope_theta: vision
+                .object("rope_parameters")
+                .and_then(|rope| rope.f32("rope_theta"))
+                .unwrap_or(100.0),
+            activation: vision
+                .string("hidden_activation")
+                .unwrap_or_else(|| "gelu_pytorch_tanh".to_string()),
+            standardize: vision.boolean("standardize").unwrap_or(false),
+            clipped_linears: vision.boolean("use_clipped_linears").unwrap_or(false),
+        });
         // text_config (hybrid / VLM wrappers) — its transformer fields take precedence.
         if let Some(tc) = top.object("text_config") {
             cfg.apply(&tc);
@@ -3373,47 +2778,12 @@ impl HfConfig {
                 self.partial_rotary_factor = Some(v);
             }
         }
-        // Rope scaling lives under `rope_scaling` (classic) or `rope_parameters` (the
-        // transformers 5.x spelling — qwen4_exp ships rope_type there). Read both, nested
-        // last, exactly like `rope_theta` above; keys absent in the later object keep the
-        // earlier value.
-        for scaling_key in ["rope_scaling", "rope_parameters"] {
-            let Some(rp) = o.object(scaling_key) else {
-                continue;
-            };
-            if let Some(v) = rp.string("rope_type").or_else(|| rp.string("type")) {
-                self.rope_scaling_type = Some(v);
-            }
-            if let Some(v) = rp.f32("factor") {
-                self.rope_scaling_factor = Some(v);
-            }
-            if let Some(v) = rp.u32("original_max_position_embeddings") {
-                self.rope_scaling_original_context = Some(v);
-            }
-            if let Some(v) = rp.f32("low_freq_factor") {
-                self.rope_scaling_low_freq_factor = Some(v);
-            }
-            if let Some(v) = rp.f32("high_freq_factor") {
-                self.rope_scaling_high_freq_factor = Some(v);
-            }
-            if let Some(v) = rp.f32("beta_fast") {
-                self.rope_yarn_beta_fast = Some(v);
-            }
-            if let Some(v) = rp.f32("beta_slow") {
-                self.rope_yarn_beta_slow = Some(v);
-            }
-            if let Some(v) = rp.f32("attention_factor") {
-                self.rope_scaling_attention_factor = Some(v);
-            }
-            if let Some(v) = rp.f32("mscale") {
-                self.rope_scaling_mscale = Some(v);
-            }
-            if let Some(v) = rp.f32("mscale_all_dim") {
-                self.rope_scaling_mscale_all_dim = Some(v);
-            }
-            if let Some(v) = rp.boolean("truncate") {
-                self.rope_scaling_truncate = Some(v);
-            }
+        if let Some(rp) = o.object("rope_scaling") {
+            self.rope_scaling_type = rp.string("rope_type").or_else(|| rp.string("type"));
+            self.rope_scaling_factor = rp.f32("factor");
+            self.rope_scaling_original_context = rp.u32("original_max_position_embeddings");
+            self.rope_scaling_low_freq_factor = rp.f32("low_freq_factor");
+            self.rope_scaling_high_freq_factor = rp.f32("high_freq_factor");
         }
         if let Some(v) = o.u32("full_attention_interval") {
             self.full_attention_interval = Some(v);
@@ -3642,61 +3012,6 @@ impl HfConfig {
                 self.rope_yarn_beta_slow = Some(v);
             }
         }
-        // ---- Qwen4Exp keys (qwen4_exp text_config; SEMANTICS.md field notes) ----
-        for (field, key) in [
-            (&mut self.indexer_n_heads, "indexer_n_heads"),
-            (&mut self.indexer_kv_heads, "indexer_kv_heads"),
-            (&mut self.indexer_head_dim, "indexer_head_dim"),
-            (&mut self.indexer_compress_ratio, "indexer_compress_ratio"),
-            (&mut self.indexer_budget, "indexer_budget"),
-            (&mut self.hc_count, "hc_count"),
-            (&mut self.hc_lowrank, "hc_lowrank"),
-            (&mut self.ngram_size, "ngram_size"),
-            (&mut self.heads_per_ngram, "heads_per_ngram"),
-            (
-                &mut self.make_ngram_vocab_size_divisible_by,
-                "make_ngram_vocab_size_divisible_by",
-            ),
-            (&mut self.split_ngram_parts, "split_ngram_parts"),
-            (&mut self.ple_embed_dim, "ple_embed_dim"),
-            (&mut self.ple_conv_kernel_size, "ple_conv_kernel_size"),
-        ] {
-            if let Some(v) = o.u32(key) {
-                *field = Some(v);
-            }
-        }
-        if let Some(v) = o.u64("ngram_vocab_size_base") {
-            self.ngram_vocab_size_base = Some(v);
-        }
-        if let Some(v) = o.u32_array("ple_layer_ids") {
-            self.ple_layer_ids = Some(v);
-        }
-        if let Some(v) = o.string("output_gate_type") {
-            self.output_gate_type = Some(v);
-        }
-        // Scalar on the pinned artifact; a list takes its FIRST entry (modular L621).
-        if let Some(v) = o
-            .u32("eos_token_id")
-            .or_else(|| o.u32_array("eos_token_id").and_then(|v| v.first().copied()))
-        {
-            self.eos_token_id = Some(v);
-        }
-        if let Some(rp) = o.object("rope_parameters") {
-            if let Some(v) = rp.u32_array("mrope_section") {
-                self.mrope_section = Some(v);
-            }
-            if let Some(v) = rp.boolean("mrope_interleaved") {
-                self.mrope_interleaved = Some(v);
-            }
-        }
-        if let Some(m) = o.object("mtp") {
-            if let Some(v) = m.u32("num_hidden_layers") {
-                self.qwen4exp_mtp_num_hidden_layers = Some(v);
-            }
-            if let Some(v) = m.f32("rope_theta") {
-                self.qwen4exp_mtp_rope_theta = Some(v);
-            }
-        }
         // ---- Step35 keys ----
         if let Some(v) = o.object("attention_other_setting") {
             self.attention_other_num_heads = v.u32("num_attention_heads");
@@ -3791,10 +3106,7 @@ impl JsonObj {
         self.fields.iter().map(|(k, v)| (k.as_str(), v.as_str()))
     }
 
-    // pub (was pub(crate)): the memra-engine ep-map reader (`ep_map.rs`) parses the
-    // shared `memra-ep-map-v1` JSON with the same minimal house parser instead of
-    // adding a serde dependency to the engine.
-    pub fn raw(&self, key: &str) -> Option<&str> {
+    pub(crate) fn raw(&self, key: &str) -> Option<&str> {
         self.fields.get(key).map(|s| s.as_str())
     }
 
@@ -4026,7 +3338,7 @@ fn read_value_raw(b: &[u8], i: &mut usize) -> String {
 }
 
 #[cfg(test)]
-pub(crate) mod hf_tests {
+mod hf_tests {
     use super::*;
 
     const QWEN3_17B: &str = r#"{
@@ -4720,7 +4032,6 @@ pub(crate) mod hf_tests {
           "hidden_act": "silu"
         }"#;
         let c = HfConfig::parse(json);
-        assert!(!c.preserve_checkpoint_bf16);
         assert_eq!(Arch::from_hf_model_type(&c.model_type), Arch::Hy3);
         assert!((c.rope_theta - 11_158_840.0).abs() < 1.0);
         let mc = ModelConfig::from_hf(&c);
@@ -4766,224 +4077,6 @@ pub(crate) mod hf_tests {
         assert_eq!(hy3.first_k_dense_replace, 1);
         assert!(hy3.qk_norm);
         assert_eq!(hy3.hidden_act, "silu");
-        assert!(!hy3.weight_only_nvfp4);
-
-        let modelopt = HfConfig::parse(
-            r#"{"model_type":"hy_v3","num_hidden_layers":2,"hidden_size":8,
-            "num_attention_heads":2,"intermediate_size":16,"vocab_size":32,
-            "max_position_embeddings":32,
-            "quantization_config":{"quant_method":"modelopt","quant_algo":"MIXED_PRECISION"}}"#,
-        );
-        assert!(modelopt.preserve_checkpoint_bf16);
-
-        let w4a16 = HfConfig::parse(
-            r#"{"model_type":"hy_v3","num_hidden_layers":2,"hidden_size":8,
-            "num_attention_heads":2,"intermediate_size":16,"vocab_size":32,
-            "max_position_embeddings":32,
-            "quantization_config":{"quant_method":"modelopt","quant_algo":"W4A16_NVFP4"}}"#,
-        );
-        assert_eq!(w4a16.quant_algo.as_deref(), Some("W4A16_NVFP4"));
-        assert!(
-            ModelConfig::from_hf(&w4a16)
-                .hy3
-                .as_ref()
-                .unwrap()
-                .weight_only_nvfp4
-        );
-    }
-
-    /// qwen4_exp text_config as the pinned artifact ships it (Qwen/Qwen3.8-Flash-Next @
-    /// de4b8e4d, research/qwen4exp-bringup-20260829/raw/config.json) — real values, every
-    /// family key, nested under text_config like the real file.
-    pub(crate) fn qwen4exp_config_json() -> String {
-        let mut layer_types = Vec::new();
-        for il in 0..48u32 {
-            layer_types.push(if (il + 1) % 4 == 0 {
-                "\"full_attention\""
-            } else {
-                "\"linear_attention\""
-            });
-        }
-        let lt = layer_types.join(",");
-        format!(
-            r#"{{
-          "architectures": ["Qwen4ExpForConditionalGeneration"],
-          "model_type": "qwen4_exp",
-          "image_token_id": 248056,
-          "text_config": {{
-            "model_type": "qwen4_exp_text",
-            "eos_token_id": 248044,
-            "full_attention_interval": 4,
-            "hc_count": 4,
-            "hc_lowrank": 320,
-            "head_dim": 256,
-            "heads_per_ngram": 8,
-            "hidden_size": 2560,
-            "indexer_budget": 2048,
-            "indexer_compress_ratio": 4,
-            "indexer_head_dim": 128,
-            "indexer_kv_heads": 1,
-            "indexer_n_heads": 4,
-            "layer_types": [{lt}],
-            "linear_conv_kernel_dim": 4,
-            "linear_key_head_dim": 128,
-            "linear_num_key_heads": 16,
-            "linear_num_value_heads": 48,
-            "linear_value_head_dim": 128,
-            "make_ngram_vocab_size_divisible_by": 128,
-            "max_position_embeddings": 262144,
-            "moe_intermediate_size": 640,
-            "mtp": {{"hybrid": true, "layer_types": ["full_attention"],
-                     "num_hidden_layers": 1, "rope_theta": 10000000}},
-            "mtp_num_hidden_layers": 1,
-            "ngram_size": 3,
-            "ngram_vocab_size_base": 20000000,
-            "num_attention_heads": 24,
-            "num_experts": 512,
-            "num_experts_per_tok": 10,
-            "num_hidden_layers": 48,
-            "num_key_value_heads": 2,
-            "output_gate_type": "sigmoid",
-            "partial_rotary_factor": 0.25,
-            "ple_conv_kernel_size": 4,
-            "ple_embed_dim": 2560,
-            "ple_layer_ids": [2],
-            "rms_norm_eps": 1e-06,
-            "rope_parameters": {{"mrope_interleaved": true, "mrope_section": [11, 11, 10],
-                                 "partial_rotary_factor": 0.25, "rope_theta": 10000000,
-                                 "rope_type": "default"}},
-            "shared_expert_intermediate_size": 640,
-            "split_ngram_parts": 128,
-            "tie_word_embeddings": false,
-            "vocab_size": 248320
-          }},
-          "vision_config": {{
-            "deepstack_visual_indexes": [],
-            "depth": 27,
-            "hidden_act": "gelu_pytorch_tanh",
-            "hidden_size": 1152,
-            "in_channels": 3,
-            "intermediate_size": 4304,
-            "model_type": "qwen4_exp",
-            "num_heads": 16,
-            "num_position_embeddings": 2304,
-            "out_hidden_size": 2560,
-            "patch_size": 16,
-            "spatial_merge_size": 2,
-            "temporal_patch_size": 2
-          }}
-        }}"#
-        )
-    }
-
-    #[test]
-    fn parse_qwen4exp_all_family_fields() {
-        let c = HfConfig::parse(&qwen4exp_config_json());
-        assert_eq!(c.model_type, "qwen4_exp_text");
-        assert_eq!(Arch::from_hf_model_type(&c.model_type), Arch::Qwen4Exp);
-        let mc = ModelConfig::from_hf(&c);
-        assert_eq!(mc.arch, Arch::Qwen4Exp);
-        assert_eq!(mc.n_layer, 49, "48 trunk + 1 MTP (GGUF convention)");
-        assert_eq!(mc.nextn_predict_layers, 1);
-        assert_eq!(mc.n_embd, 2560);
-        assert_eq!(mc.n_head, 24);
-        assert_eq!(mc.n_head_kv, 2);
-        assert_eq!(mc.head_dim_k, 256);
-        assert_eq!(mc.n_vocab, 248320);
-        assert_eq!(mc.full_attention_interval, 4);
-        // partial rope 0.25 * 256 = 64, theta 1e7 (rope_parameters wins)
-        assert_eq!(mc.rope_dim_count, 64);
-        assert_eq!(mc.rope_freq_base, 10_000_000.0);
-        // mrope sections stored, not implemented (text-only positions are plain rope)
-        assert_eq!(mc.rope_sections, vec![11, 11, 10]);
-        // GDN geometry from the linear_* keys: QK 16x128, V 48x128, conv k=4
-        let ssm = mc.ssm.as_ref().expect("qwen4_exp has GDN layers");
-        assert_eq!(ssm.group_count, 16);
-        assert_eq!(ssm.time_step_rank, 48);
-        assert_eq!(ssm.state_size, 128);
-        assert_eq!(ssm.inner_size, 6144);
-        assert_eq!(ssm.conv_kernel, 4);
-        // MoE: 512 experts top-10, intermediate 640, gated shared expert 640
-        let moe = mc.moe.as_ref().expect("qwen4_exp is MoE");
-        assert_eq!(
-            (
-                moe.expert_count,
-                moe.expert_used_count,
-                moe.expert_ff_length,
-                moe.expert_shared_ff_length
-            ),
-            (512, 10, 640, 640)
-        );
-        // family sub-config
-        let q = mc.qwen4exp.as_ref().expect("qwen4exp config");
-        assert_eq!(
-            (q.indexer_n_heads, q.indexer_kv_heads, q.indexer_head_dim),
-            (4, 1, 128)
-        );
-        assert_eq!((q.indexer_compress_ratio, q.indexer_budget), (4, 2048));
-        assert_eq!(q.indexer_budget_blocks(), 512);
-        assert_eq!((q.hc_count, q.hc_lowrank), (4, 320));
-        assert_eq!((q.ngram_size, q.heads_per_ngram), (3, 8));
-        assert_eq!(q.ngram_heads(), 16);
-        assert_eq!(q.ngram_head_embed_dim(), 160);
-        assert_eq!(q.ngram_vocab_size_base, 20_000_000);
-        assert_eq!(q.make_ngram_vocab_size_divisible_by, 128);
-        assert_eq!(q.split_ngram_parts, 128);
-        // ple_layer_ids is ONE-indexed: config [2] = checkpoint layers.1 (census receipt:
-        // model.language_model.layers.1.ple.conv1d.weight)
-        assert_eq!(q.ple_layer_ids, vec![2]);
-        assert_eq!(q.ple_checkpoint_layers(), vec![1]);
-        assert!(q.has_ple(1) && !q.has_ple(2));
-        assert_eq!((q.ple_embed_dim, q.ple_conv_kernel_size), (2560, 4));
-        assert_eq!(q.output_gate_type, "sigmoid");
-        // scalar on the artifact; PLE history pad + segment-reset id
-        assert_eq!(q.eos_token_id, Some(248_044));
-        assert_eq!(q.mrope_section, vec![11, 11, 10]);
-        assert!(q.mrope_interleaved);
-        assert_eq!(q.mtp_num_hidden_layers, 1);
-        assert_eq!(q.mtp_rope_theta, 10_000_000.0);
-        // ViT tower: family struct is faithful; the GENERIC vision config stays None (the
-        // gemma-keyed parse would fabricate wrong geometry, and the tower side-loads).
-        assert!(mc.vision.is_none());
-        assert!(mc.multimodal.is_none());
-        let vt = q.vision.as_ref().expect("qwen4exp vision config");
-        assert_eq!(
-            (vt.depth, vt.hidden_size, vt.intermediate_size),
-            (27, 1152, 4304)
-        );
-        assert_eq!((vt.num_heads, vt.num_position_embeddings), (16, 2304));
-        assert_eq!(
-            (vt.patch_size, vt.temporal_patch_size, vt.in_channels),
-            (16, 2, 3)
-        );
-        assert_eq!((vt.out_hidden_size, vt.merger_in()), (2560, 4608));
-        // layer classification: (il+1)%4==0 full, else GDN linear; MTP tail full
-        assert_eq!(mc.layer_kind(3), LayerKind::FullAttention);
-        assert_eq!(mc.layer_kind(0), LayerKind::LinearAttention);
-        assert_eq!(mc.layer_kind(48), LayerKind::FullAttention);
-        assert_eq!(mc.n_full_attn_layers(), 13, "12 QSA trunk + 1 MTP");
-        // fused [q|gate] declared by the arch (q_proj [2*24*256, 2560] measured)
-        assert!(mc.attn_out_gate());
-        // geometry table: interval rule with FusedQ on full layers ONLY — a FusedQ row on a
-        // GDN layer would make q_gate_split read past in_proj widths.
-        let table = mc.geometry.as_ref().expect("qwen4_exp geometry table");
-        assert_eq!(table.layer_classes().len(), 49);
-        let linear = mc.layer_geometry(0).unwrap();
-        assert_eq!(linear.mixer, LayerKind::LinearAttention);
-        assert_eq!(linear.attention_gate, AttentionGateKind::None);
-        let full = mc.layer_geometry(3).unwrap();
-        assert_eq!(full.mixer, LayerKind::FullAttention);
-        assert_eq!((full.n_head, full.n_head_kv), (24, 2));
-        assert_eq!((full.head_dim_k, full.head_dim_v), (256, 256));
-        assert_eq!(full.n_rot, 64);
-        assert_eq!(full.rope_base, 10_000_000.0);
-        assert_eq!(full.window, None);
-        assert_eq!(full.attention_gate, AttentionGateKind::FusedQ);
-        assert_eq!(
-            mc.layer_geometry(48).unwrap().mixer,
-            LayerKind::FullAttention,
-            "MTP tail layer is full attention"
-        );
     }
 
     /// deepseek_v4 config with `n_extra` drafter entries appended to the 43 trunk

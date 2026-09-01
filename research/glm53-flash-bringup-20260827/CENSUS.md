@@ -19,14 +19,8 @@ config.json banked beside this file. Counts below are exact.
   = `wk`, `wq_b`, `weights_proj`, `k_norm(.weight/.bias)`,
   `index_kpool_compress_ape`, `index_kpool_compress_gate`. MLA projections are
   FP8 EXCEPT `kv_b_proj` (BF16 — it is absorbed/expanded at runtime).
-  NoPE: qk_rope_head_dim=0, `mla_use_nope: true` — no rotary in the MLA path,
-  AND NONE IN THE INDEXER EITHER (corrected 2026-08-30): the 5.3 reference's
-  `Glm5NextTextIndexer.forward` (modular_glm5_next-ref.py:771) computes
-  `q = wq_b(q_resid)` and `k = k_norm(wk(x))` with no rotary application, and the
-  file never reads the config key `indexer_rope_interleave` — the key ships in
-  config.json but is dead for this architecture (the only rotary in the reference
-  is the vision tower's `Glm5NextVisionRotaryEmbedding`). The earlier text here
-  inferred an indexer rope from the config key; the reference never applies one.
+  NoPE: qk_rope_head_dim=0, `mla_use_nope: true` — no rotary in the MLA path;
+  indexer has its own rope (`indexer_rope_interleave`).
 - **MoE ×43** (42 sparse decoder + MTP layer; first 3 dense): 288 experts ×
   gate/up/down (FP8) = 12,384 per proj; router `gate.weight` +
   `e_score_correction_bias` (noaux_tc, sigmoid scoring, routed_scaling 2.5);

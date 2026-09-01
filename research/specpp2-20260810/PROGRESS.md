@@ -1,6 +1,6 @@
 # specpp2 — PP-2 speculative decode placement/schedule lane
 
-Branch: `lane/cx-specpp2`, base/starting tip `e874528a`. Rig: box1 rented cloud pair,
+Branch: `lane/cx-specpp2`, base/starting tip `e874528a`. Rig: box1 hyperscaler pair,
 2x RTX PRO 6000 Blackwell Server 96 GB. Model: Step-3.7-flash IQ4_XS + embedded MTP.
 
 ## Fixed question and decision rule

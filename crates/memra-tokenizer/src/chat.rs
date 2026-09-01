@@ -41,7 +41,7 @@ pub enum Val {
 }
 
 /// One tool call attached to a prior assistant turn.
-/// `params` values are pre-rendered strings for the qwen/step/HY3 arms (string arguments raw,
+/// `params` values are pre-rendered strings for the qwen/step arms (string arguments raw,
 /// everything else JSON-rendered by the caller). `args`/`id` carry the gemma4 arm's typed
 /// arguments and the OpenAI `tool_calls[].id` used to resolve tool-response names.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -55,8 +55,8 @@ pub struct ToolCall {
 }
 
 /// One chat turn for the tools-capable renderer (`apply_chat_template_tools`).
-/// The `reasoning` field is consumed by gemma4 and HY3; `tool_call_id`/`tool_name`/
-/// `tool_responses` are gemma4-only. The qwen/step arms use role/content/tool_calls.
+/// The `reasoning`/`tool_call_id`/`tool_name`/`tool_responses` fields are read ONLY by the
+/// gemma4 arm; the qwen/step arms use `role`/`content`/`tool_calls` and leave the rest default.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Turn {
     pub role: String,
@@ -492,7 +492,8 @@ pub fn apply_chat_template_tools_ex(
             dsv4_encoding,
         );
     }
-    // step35: its own dialect all the way through, tools included. Must precede the
+    // step35: its own dialect all the way through, tools included (unlike hy3/gemma4, which
+    // reject tool features — step35 HAS a tools branch and it is reproduced). Must precede the
     // qwen arm: the step35 template contains `<tools>`, `<think>` and `add_generation_prompt`,
     // so every qwen marker check below matches it. `ThinkMode` is ignored (no `enable_thinking`
     // in this template => `think_switch` is false => NoThink is already a documented no-op);
@@ -527,30 +528,13 @@ pub fn apply_chat_template_tools_ex(
         }
         return apply_glm5_template(turns, add_generation_prompt, tools_struct, reasoning_effort);
     }
-    // Tencent HY3: the pinned shipping template has a complete tools branch using suffixed
-    // special tokens (`<tool_calls:opensource>`, `<arg_key:opensource>`, ...). It also owns
-    // the no_think/low/high reasoning ladder. Reproduce the one template for plain, reasoning,
-    // declarations, assistant calls and tool-result history so those surfaces cannot drift.
-    if template.is_some_and(|t| t.contains("hy_User")) {
-        let effort = match (think, reasoning_effort) {
-            (ThinkMode::Think, Some("high")) => "high",
-            (ThinkMode::Think, _) => "low",
-            _ => "no_think",
-        };
-        return Ok(apply_hy3_template_tools(
-            turns,
-            add_generation_prompt,
-            tools_json,
-            effort,
-        ));
-    }
     // gemma4 TOOLUSE dialect (`<|turn>` turn framing + the `<|tool>` declaration marker):
     // the official Google tooluse template is the rendering LAW (research/gemma4-tools-20260817
     // /official-tooluse-template.jinja). Engages for tool DEFINITIONS, tool_calls, tool-role
     // turns AND plain/thinking requests on this trunk. A `<|turn>` template WITHOUT `<|tool>`
     // has no committed tools reference and falls through to the reject/plain arm below.
-    // Must precede the plain `<|turn>` arm and the qwen marker checks (the tooluse template
-    // carries no `<tools>`, so it would not match those).
+    // Must precede the hy3/`<|turn>` arm (which would otherwise reject tools) and the qwen
+    // marker checks (the tooluse template carries no `<tools>`, so it would not match those).
     if template.is_some_and(|t| t.contains("<|turn>") && t.contains("<|tool>")) {
         // QAT-trunk variant emits a CLOSED thought channel on the thinking-off generation
         // prompt; the official served trunk emits a bare `<|turn>model\n`. Keyed on the exact
@@ -565,9 +549,13 @@ pub fn apply_chat_template_tools_ex(
             closed_tail,
         ));
     }
-    if template.is_some_and(|t| t.contains("<|turn>")) {
-        // Plain-gemma4 dialect: no committed tools rendering reference. ThinkMode maps to the
+    if template.is_some_and(|t| t.contains("hy_User") || t.contains("<|turn>")) {
+        // hy3 / plain-gemma4 dialects: no committed tools rendering reference — reject tool
+        // features even if the raw jinja happens to mention <tools>. ThinkMode maps to each
         // arch's native mechanism (thinking goldens, render-thinking-goldens.py):
+        //   hy3    -> the template's own reasoning_effort input: no_think (its default,
+        //             = ThinkMode::Default/NoThink) or low/high (open think, ThinkMode::Think
+        //             at the level the caller resolved — effort carries it).
         //   gemma4 -> enable_thinking: default(false) = Default/NoThink;
         //             Think = <|think|> system token + open generation turn.
         if has_tool_features {
@@ -577,6 +565,16 @@ pub fn apply_chat_template_tools_ex(
             .iter()
             .map(|t| (t.role.as_str(), t.content.as_str()))
             .collect();
+        if template.is_some_and(|t| t.contains("hy_User")) {
+            // hy3's accepted set is exactly no_think|low|high; OpenAI medium clamps to low
+            // (the template has no medium level and raises on unknown strings).
+            let effort = match (think, reasoning_effort) {
+                (ThinkMode::Think, Some("high")) => "high",
+                (ThinkMode::Think, _) => "low",
+                _ => "no_think",
+            };
+            return Ok(apply_hy3_template(&messages, add_generation_prompt, effort));
+        }
         return Ok(apply_gemma4_template(
             &messages,
             add_generation_prompt,
@@ -831,11 +829,7 @@ format: an inner <function=...>\n...\n</function> block must be nested within <t
 ///
 /// Not reproduced (needs data `Turn` does not carry, tracked, cannot fire from an OpenAI client):
 /// the `name == "observation"` alias that renames a non-leading `system` turn's role to
-/// `observation`. The `<im_patch>` image-content path is handled UPSTREAM of this template
-/// (lane/step37-vision, 2026-08-30): when the step vision seam is armed, the server's
-/// content walker (`content_to_text_vision_step`) renders each image part's full pad-token
-/// expansion and the template macro's text-separator law into the turn content string, so
-/// the content arrives here as literal text and passes through verbatim.
+/// `observation`, and the `<im_patch>` image-content path (this is a VLM; memra is text-only here).
 fn apply_step35_template(
     turns: &[Turn],
     add_generation_prompt: bool,
@@ -985,7 +979,7 @@ fn apply_step35_template(
     out
 }
 
-/// Text-only compatibility entry for the Hy3 `chat_template.jinja`.
+/// Text-only reproduction of the Hy3 `chat_template.jinja` (no tools, no `is_training`).
 /// `effort` is the template's own `reasoning_effort` input — `"no_think"` / `"low"` /
 /// `"high"`, its full accepted set (the jinja `raise_exception`s on anything else; undefined
 /// defaults to `'no_think'`, so callers with no opinion pass `"no_think"`):
@@ -1005,26 +999,6 @@ fn apply_hy3_template(
     add_generation_prompt: bool,
     effort: &str,
 ) -> String {
-    let turns: Vec<Turn> = messages
-        .iter()
-        .map(|(role, content)| Turn {
-            role: (*role).to_string(),
-            content: (*content).to_string(),
-            ..Default::default()
-        })
-        .collect();
-    apply_hy3_template_tools(&turns, add_generation_prompt, &[], effort)
-}
-
-/// Exact text/tools reproduction of Tencent HY3's pinned shipping template
-/// (`chat_template.jinja` SHA-256 7fc351fe...). `tools_json` entries are the request's
-/// function objects serialized by the HTTP layer in client order, matching jinja `tojson`.
-fn apply_hy3_template_tools(
-    turns: &[Turn],
-    add_generation_prompt: bool,
-    tools_json: &[String],
-    effort: &str,
-) -> String {
     const BOS: &str = "<\u{ff5c}hy_begin_of_sentence:opensource\u{ff5c}>";
     const USER: &str = "<\u{ff5c}hy_User:opensource\u{ff5c}>";
     const ASSISTANT: &str = "<\u{ff5c}hy_Assistant:opensource\u{ff5c}>";
@@ -1032,166 +1006,42 @@ fn apply_hy3_template_tools(
     const REASONING: &str = "<\u{ff5c}reasoning_mode:opensource\u{ff5c}>";
     const THINK_BEGIN: &str = "<think:opensource>";
     const THINK_END: &str = "</think:opensource>";
-    const TOOLCALLS_BEGIN: &str = "<tool_calls:opensource>";
-    const TOOLCALLS_END: &str = "</tool_calls:opensource>";
-    const TOOLCALL_BEGIN: &str = "<tool_call:opensource>";
-    const TOOLCALL_END: &str = "</tool_call:opensource>";
-    const TOOL_SEP: &str = "<tool_sep:opensource>";
-    const ARGKEY_BEGIN: &str = "<arg_key:opensource>";
-    const ARGKEY_END: &str = "</arg_key:opensource>";
-    const ARGVALUE_BEGIN: &str = "<arg_value:opensource>";
-    const ARGVALUE_END: &str = "</arg_value:opensource>";
-    const TOOLRESPONSES_BEGIN: &str = "<tool_responses:opensource>";
-    const TOOLRESPONSES_END: &str = "</tool_responses:opensource>";
-    const TOOLRESPONSE_BEGIN: &str = "<tool_response:opensource>";
-    const TOOLRESPONSE_END: &str = "</tool_response:opensource>";
 
     debug_assert!(
         matches!(effort, "no_think" | "low" | "high"),
         "hy3 reasoning_effort must be no_think|low|high, got {effort:?}"
     );
     let mut out = String::from(BOS);
-    let mut system_prompt = String::new();
-    for turn in turns.iter().filter(|turn| turn.role == "system") {
-        system_prompt.push_str(&turn.content);
+    for (role, content) in messages.iter().filter(|(r, _)| *r == "system") {
+        let _ = role;
+        out.push_str(content);
     }
-    out.push_str(&system_prompt);
-    if tools_json.is_empty() {
-        out.push_str(REASONING);
-        out.push_str("reasoning_effort:");
-        out.push_str(effort);
-    } else {
-        if !system_prompt.is_empty() {
-            out.push_str(
-                "\n\n# Tools\n\nYou may call one or more functions to assist with the user query.",
-            );
-        } else {
-            out.push_str(
-                "# Tools\n\nYou may call one or more functions to assist with the user query.",
-            );
-        }
-        out.push_str(
-            "\n\nYou are provided with function signatures within <tools></tools> XML tags:",
-        );
-        out.push_str("\n<tools>\n");
-        for (index, tool) in tools_json.iter().enumerate() {
-            if index > 0 {
-                out.push('\n');
-            }
-            out.push_str(tool);
-        }
-        out.push_str("\n</tools>\n\n");
-        out.push_str("For function call returns, you should first print ");
-        out.push_str(TOOLCALLS_BEGIN);
-        out.push('\n');
-        out.push_str("For each function call, you should return object like:\n");
-        out.push_str(TOOLCALL_BEGIN);
-        out.push_str("{function-name}");
-        out.push_str(TOOL_SEP);
-        out.push('\n');
-        out.push_str(ARGKEY_BEGIN);
-        out.push_str("{arg-key-1}");
-        out.push_str(ARGKEY_END);
-        out.push('\n');
-        out.push_str(ARGVALUE_BEGIN);
-        out.push_str("{arg-value-1}");
-        out.push_str(ARGVALUE_END);
-        out.push('\n');
-        out.push_str(ARGKEY_BEGIN);
-        out.push_str("{arg-key-2}");
-        out.push_str(ARGKEY_END);
-        out.push('\n');
-        out.push_str(ARGVALUE_BEGIN);
-        out.push_str("{arg-value-2}");
-        out.push_str(ARGVALUE_END);
-        out.push_str("\n...\n");
-        out.push_str(TOOLCALL_END);
-        out.push('\n');
-        out.push_str("At the end of function call returns, you should print ");
-        out.push_str(TOOLCALLS_END);
-        out.push_str(REASONING);
-        out.push_str("reasoning_effort:");
-        out.push_str(effort);
-    }
+    out.push_str(REASONING);
+    out.push_str("reasoning_effort:");
+    out.push_str(effort);
 
-    let last_user = turns.iter().rposition(|turn| turn.role == "user");
-    let preserve_thinking = !tools_json.is_empty();
-    let mut previous_is_tool = false;
-    let mut tool_run_first = true;
-    for (index, turn) in turns.iter().enumerate() {
-        match turn.role.as_str() {
+    let mut last_is_assistant = false;
+    let n = messages.len();
+    for (i, (role, content)) in messages.iter().enumerate() {
+        last_is_assistant = false;
+        match *role {
             "user" => {
-                if previous_is_tool {
-                    out.push_str(TOOLRESPONSES_END);
-                }
                 out.push_str(USER);
-                out.push_str(&turn.content);
-                previous_is_tool = false;
+                out.push_str(content);
             }
             "assistant" => {
-                if previous_is_tool {
-                    out.push_str(TOOLRESPONSES_END);
-                }
-                let keep_reasoning = preserve_thinking || last_user.is_none_or(|last| index > last);
                 out.push_str(ASSISTANT);
                 out.push_str(THINK_BEGIN);
-                if keep_reasoning && let Some(reasoning) = turn.reasoning.as_deref() {
-                    out.push_str(reasoning);
-                }
                 out.push_str(THINK_END);
-                out.push_str(&turn.content);
-                if turn.tool_calls.is_empty() {
-                    if index + 1 < turns.len() {
-                        out.push_str(EOS);
-                    }
-                } else {
-                    tool_run_first = true;
-                    out.push_str(TOOLCALLS_BEGIN);
-                    out.push('\n');
-                    for call in &turn.tool_calls {
-                        out.push_str(TOOLCALL_BEGIN);
-                        out.push_str(&call.name);
-                        out.push_str(TOOL_SEP);
-                        out.push('\n');
-                        for (key, value) in &call.params {
-                            out.push_str(ARGKEY_BEGIN);
-                            out.push_str(key);
-                            out.push_str(ARGKEY_END);
-                            out.push('\n');
-                            out.push_str(ARGVALUE_BEGIN);
-                            out.push_str(value);
-                            out.push_str(ARGVALUE_END);
-                            out.push('\n');
-                        }
-                        out.push_str(TOOLCALL_END);
-                        out.push('\n');
-                    }
-                    out.push_str(TOOLCALLS_END);
+                out.push_str(content);
+                if i + 1 < n {
                     out.push_str(EOS);
-                }
-                previous_is_tool = false;
+                } // template: `not loop.last` gets eos
+                last_is_assistant = true;
             }
-            "tool" => {
-                previous_is_tool = true;
-                if tool_run_first {
-                    out.push_str(TOOLRESPONSES_BEGIN);
-                    out.push('\n');
-                    tool_run_first = false;
-                }
-                out.push_str(TOOLRESPONSE_BEGIN);
-                out.push('\n');
-                out.push_str(&turn.content);
-                out.push('\n');
-                out.push_str(TOOLRESPONSE_END);
-                out.push('\n');
-            }
-            _ => {} // system handled in the header; unknown roles are ignored by the template
+            _ => {} // system handled in the header; tool turns are out of scope here
         }
     }
-    if previous_is_tool {
-        out.push_str(TOOLRESPONSES_END);
-    }
-    let last_is_assistant = turns.last().is_some_and(|turn| turn.role == "assistant");
     if add_generation_prompt && !last_is_assistant {
         out.push_str(ASSISTANT);
         out.push_str(THINK_BEGIN);
@@ -1568,11 +1418,13 @@ fn apply_glm5_template(
     Ok(out)
 }
 
-/// A template carries a tools branch iff it has the qwen/step/HY3 `<tools>` block, the gemma4
-/// tooluse dialect (both the `<|turn>` turn framing and the `<|tool>` declaration marker), the
-/// dsv4 protocol, or the glm5 `<tool_call>` grammar. Shared by the renderer dispatch and the
-/// worker caps probe.
+/// A template carries a tools branch iff it has the qwen/step `<tools>` block, or the gemma4
+/// tooluse dialect (both the `<|turn>` turn framing and the `<|tool>` declaration marker).
+/// hy3 (`hy_User`) never has one. Shared by the renderer dispatch and the worker caps probe.
 pub fn template_has_tools_branch(t: &str) -> bool {
+    if t.contains("hy_User") {
+        return false;
+    }
     template_is_dsv4(t)
         || template_is_glm5(t)
         || t.contains("<tools>")
@@ -2974,7 +2826,7 @@ mod tests {
             ..Default::default()
         }];
         let tools = vec!["{}".to_string()];
-        for tmpl in [None, Some("... <|turn> ...")] {
+        for tmpl in [None, Some("... hy_User ..."), Some("... <|turn> ...")] {
             let err =
                 apply_chat_template_tools(tmpl, &turns, true, &tools, ThinkMode::Default, None);
             assert!(err.is_err(), "template={tmpl:?}");
@@ -3168,97 +3020,6 @@ mod tests {
                        <\u{ff5c}hy_User:opensource\u{ff5c}>more\
                        <\u{ff5c}hy_Assistant:opensource\u{ff5c}><think:opensource>"
         );
-    }
-
-    fn hy3_tools_header(tool: &str, effort: &str) -> String {
-        [
-            "<\u{ff5c}hy_begin_of_sentence:opensource\u{ff5c}>You are concise.\n\n# Tools\n\n",
-            "You may call one or more functions to assist with the user query.\n\n",
-            "You are provided with function signatures within <tools></tools> XML tags:\n",
-            "<tools>\n",
-            tool,
-            "\n</tools>\n\nFor function call returns, you should first print ",
-            "<tool_calls:opensource>\nFor each function call, you should return object like:\n",
-            "<tool_call:opensource>{function-name}<tool_sep:opensource>\n",
-            "<arg_key:opensource>{arg-key-1}</arg_key:opensource>\n",
-            "<arg_value:opensource>{arg-value-1}</arg_value:opensource>\n",
-            "<arg_key:opensource>{arg-key-2}</arg_key:opensource>\n",
-            "<arg_value:opensource>{arg-value-2}</arg_value:opensource>\n...\n",
-            "</tool_call:opensource>\nAt the end of function call returns, you should print ",
-            "</tool_calls:opensource><\u{ff5c}reasoning_mode:opensource\u{ff5c}>reasoning_effort:",
-            effort,
-        ]
-        .concat()
-    }
-
-    #[test]
-    fn hy3_tools_definitions_match_the_pinned_jinja() {
-        const TEMPLATE: &str = "... hy_User ... <tools> ... <tool_calls{}> ...";
-        let tool = r#"{"type": "function", "function": {"name": "get_weather", "description": "Get weather.", "parameters": {"type": "object", "properties": {"city": {"type": "string"}, "days": {"type": "integer"}}, "required": ["city"]}}}"#;
-        let turns = vec![turn("system", "You are concise."), turn("user", "Weather?")];
-        let got = apply_chat_template_tools(
-            Some(TEMPLATE),
-            &turns,
-            true,
-            &[tool.to_string()],
-            ThinkMode::Default,
-            None,
-        )
-        .unwrap();
-        let expected = [
-            &hy3_tools_header(tool, "no_think"),
-            "<\u{ff5c}hy_User:opensource\u{ff5c}>Weather?",
-            "<\u{ff5c}hy_Assistant:opensource\u{ff5c}><think:opensource></think:opensource>",
-        ]
-        .concat();
-        assert_eq!(got, expected);
-        assert!(template_has_tools_branch(TEMPLATE));
-    }
-
-    #[test]
-    fn hy3_tool_call_and_response_history_match_the_pinned_jinja() {
-        const TEMPLATE: &str = "... hy_User ... <tools> ... <tool_calls{}> ...";
-        let tool = r#"{"type": "function", "function": {"name": "get_weather", "description": "Get weather.", "parameters": {"type": "object", "properties": {"city": {"type": "string"}, "days": {"type": "integer"}}, "required": ["city"]}}}"#;
-        let turns = vec![
-            turn("system", "You are concise."),
-            turn("user", "Weather?"),
-            Turn {
-                role: "assistant".into(),
-                reasoning: Some("Need weather.".into()),
-                tool_calls: vec![ToolCall {
-                    name: "get_weather".into(),
-                    params: vec![("city".into(), "Paris".into()), ("days".into(), "2".into())],
-                    ..Default::default()
-                }],
-                ..Default::default()
-            },
-            turn("tool", "sunny"),
-            turn("user", "Summarize."),
-        ];
-        let got = apply_chat_template_tools(
-            Some(TEMPLATE),
-            &turns,
-            true,
-            &[tool.to_string()],
-            ThinkMode::Think,
-            Some("high"),
-        )
-        .unwrap();
-        let expected = [
-            &hy3_tools_header(tool, "high"),
-            "<\u{ff5c}hy_User:opensource\u{ff5c}>Weather?",
-            "<\u{ff5c}hy_Assistant:opensource\u{ff5c}><think:opensource>Need weather.</think:opensource>",
-            "<tool_calls:opensource>\n<tool_call:opensource>get_weather<tool_sep:opensource>\n",
-            "<arg_key:opensource>city</arg_key:opensource>\n<arg_value:opensource>Paris</arg_value:opensource>\n",
-            "<arg_key:opensource>days</arg_key:opensource>\n<arg_value:opensource>2</arg_value:opensource>\n",
-            "</tool_call:opensource>\n</tool_calls:opensource><\u{ff5c}hy_eos:opensource\u{ff5c}>",
-            "<tool_responses:opensource>\n<tool_response:opensource>\nsunny\n",
-            "</tool_response:opensource>\n</tool_responses:opensource>",
-            "<\u{ff5c}hy_User:opensource\u{ff5c}>Summarize.",
-            "<\u{ff5c}hy_Assistant:opensource\u{ff5c}><think:opensource>",
-        ]
-        .concat();
-        assert_eq!(got, expected);
     }
 
     #[test]

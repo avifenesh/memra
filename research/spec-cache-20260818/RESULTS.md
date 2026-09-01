@@ -94,7 +94,7 @@ passed identity on the 12B cell but remains a program pair to watch at 31B.
    suffix-feed program pair passed at 12B but is content/scale-sensitive).
 2. `tools/spec-cache-mixed-gate.sh` — spec-on-cache-hit under c8 batch coexistence
    (>= 2 spec-engaged hit rows in the window, byte identity vs spec-off replay, batch
-   tier >= 0.9x spec-off). Runs on the rented cloud box at the next lane boundary or the
+   tier >= 0.9x spec-off). Runs on the hyperscaler box at the next lane boundary or the
    owner's box when delegated; NEVER on a prod box.
 3. The sold-shape throughput twin: `tools/spec-cache-gate.sh` re-run (its spec-on arms
    now take restored hits on the spec path; assert req/s >= the banked 0.9x floor and
@@ -108,7 +108,7 @@ passed identity on the 12B cell but remains a program pair to watch at 31B.
 
 # 96GB window results (box 2, 2026-08-19) — lane rebased onto v0.92.0
 
-Box: rented 2× RTX PRO 6000 Blackwell Server 96GB, box-2. Branch
+Box: hyperscaler 2× RTX PRO 6000 Blackwell Server 96GB, box-2. Branch
 replayed CLEAN onto v0.92.0 (no conflicts; tip 6ab3e50ff1 + gate-tool commits
 f30273199c/9bda7c89ed). Unit gates re-run on box 2: memra-server 307/0,
 memra-engine --lib 100/0. Production artifacts sha-verified: qwen trunk

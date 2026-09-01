@@ -15,7 +15,6 @@ half — "we tried X and it lost by Y% on Z" cannot be reconstructed from the co
 | [VISION-LANE.md](VISION-LANE.md) | in-engine vision tower, and the parity oracle that gates it |
 | [PUBLIC-BOUNDARY-DETECTION.md](PUBLIC-BOUNDARY-DETECTION.md) | what the public-boundary gate matches, which candidate rules were rejected as too noisy, and why published refs need their own scan |
 | [ORNITH-PAIR-OWNER.md](ORNITH-PAIR-OWNER.md) | why source-verbatim pair-owner MoE ordering stays out of the runtime while its receipts and exact candidate remain banked |
-| [PRO6000-MULTICARD.md](PRO6000-MULTICARD.md) | why PP is the 2–4 card PCIe baseline, and when dense TP or MoE TP/EP/ETP may replace it |
 
 Adding one: a decision that changes a default, a format, a target or an arm belongs here, with
 the measurement that settled it. Superseded records get a banner naming what replaced them —

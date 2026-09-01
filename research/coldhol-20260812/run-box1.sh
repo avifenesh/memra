@@ -5,11 +5,11 @@ set -euo pipefail
 test "${1:-}" = run || { echo "usage: $0 run" >&2; exit 2; }
 
 export PATH=/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:$PATH
-ROOT=${COLDHOL_ROOT:-/opt/scratch/nvme/cx-coldhol}
+ROOT=${COLDHOL_ROOT:-/opt/dl-image/nvme/cx-coldhol}
 REPO=${COLDHOL_REPO:-$ROOT/memra}
 KNEERAISE=$REPO/research/kneeraise-20260812
 FROZEN=$REPO/research/sellgate-20260812
-MODEL=${COLDHOL_MODEL:-/opt/scratch/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf}
+MODEL=${COLDHOL_MODEL:-/opt/dl-image/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf}
 SERVER=${COLDHOL_SERVER:?set COLDHOL_SERVER to the frozen arm binary}
 EXPECTED_SERVER_SHA256=${COLDHOL_EXPECTED_SERVER_SHA256:?set the frozen server sha256}
 RUNTIME_SOURCE=${COLDHOL_RUNTIME_SOURCE:?set the commit used to build the server}

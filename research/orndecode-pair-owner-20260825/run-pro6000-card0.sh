@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MODEL=/opt/scratch/nvme/models/ornith15/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf
-BASE_BIN=/opt/scratch/nvme/wt-ornith-pair-owner-base-20260825/target/release/decode-batch-bench
-CAND_BIN=/opt/scratch/nvme/wt-ornith-pair-owner-20260825/target/release/decode-batch-bench
-OUT=/opt/scratch/nvme/wt-ornith-pair-owner-20260825/research/orndecode-pair-owner-20260825/raw/pro6000-card0/perf
+MODEL=/opt/dl-image/nvme/models/ornith15/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf
+BASE_BIN=/opt/dl-image/nvme/wt-ornith-pair-owner-base-20260825/target/release/decode-batch-bench
+CAND_BIN=/opt/dl-image/nvme/wt-ornith-pair-owner-20260825/target/release/decode-batch-bench
+OUT=/opt/dl-image/nvme/wt-ornith-pair-owner-20260825/research/orndecode-pair-owner-20260825/raw/pro6000-card0/perf
 EXPECTED_MODEL_SHA=72ff9600aa2b0de77a5b27041a84448c2ce88c7b2055529fc23b3cd5bf518fd3
 
 mkdir -p "$OUT"
@@ -31,9 +31,9 @@ if [ "$actual_model_sha" != "$EXPECTED_MODEL_SHA" ]; then
 fi
 sha256sum "$BASE_BIN" "$CAND_BIN" > "$OUT/binary-sha256.txt"
 printf 'model_sha256=%s\n' "$actual_model_sha" > "$OUT/run-meta.txt"
-printf 'base_source=%s\n' "$(git -C /opt/scratch/nvme/wt-ornith-pair-owner-base-20260825 rev-parse HEAD)" >> "$OUT/run-meta.txt"
-printf 'candidate_source=%s\n' "$(git -C /opt/scratch/nvme/wt-ornith-pair-owner-20260825 rev-parse HEAD)" >> "$OUT/run-meta.txt"
-printf 'candidate_diff_sha256=%s\n' "$(git -C /opt/scratch/nvme/wt-ornith-pair-owner-20260825 diff --binary | sha256sum | awk '{print $1}')" >> "$OUT/run-meta.txt"
+printf 'base_source=%s\n' "$(git -C /opt/dl-image/nvme/wt-ornith-pair-owner-base-20260825 rev-parse HEAD)" >> "$OUT/run-meta.txt"
+printf 'candidate_source=%s\n' "$(git -C /opt/dl-image/nvme/wt-ornith-pair-owner-20260825 rev-parse HEAD)" >> "$OUT/run-meta.txt"
+printf 'candidate_diff_sha256=%s\n' "$(git -C /opt/dl-image/nvme/wt-ornith-pair-owner-20260825 diff --binary | sha256sum | awk '{print $1}')" >> "$OUT/run-meta.txt"
 
 telemetry_pid=
 cleanup_telemetry() {

@@ -70,7 +70,7 @@ pub(super) fn tensor_schema(
     options: ContractOptions,
 ) -> Result<TensorContract, TensorContractError> {
     let mut contract = canonical_tensor_schema(config, plan, dialect, options)?;
-    let Some(crate::model_plan::VisionPlan::Factored(vision)) = plan.vision.as_ref() else {
+    let Some(vision) = plan.vision.as_ref() else {
         return Ok(contract);
     };
     if dialect != CheckpointDialect::HfSafetensors {
@@ -241,9 +241,7 @@ mod tests {
     fn vision_config_compiles_to_typed_plan_and_exact_auxiliary_schema() {
         let config = config();
         let plan = PACK.compile_plan(&config).unwrap();
-        let Some(crate::model_plan::VisionPlan::Factored(vision)) = plan.vision.as_ref() else {
-            panic!("gemma4 vision plan must be the factored program");
-        };
+        let vision = plan.vision.as_ref().expect("vision plan");
         assert_eq!(vision.layers.len(), 2);
         assert_eq!(vision.patch.position_axes, 2);
         assert_eq!(vision.patch.position_embedding_size, 10_240);

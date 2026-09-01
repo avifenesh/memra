@@ -9,20 +9,20 @@ should be treated as real).
 ## THE ANSWER (what beats bw24 today, sized)
 
 1. **Prefill / TTFT: vLLM and SGLang beat bw24 decisively, everywhere.**
-   - 27B NVFP4, the cloud PRO 6000: vLLM prefill **10.8-13.1k tok/s vs bw24 1.7-1.9k = 5.6-6.8x**.
+   - 27B NVFP4, Sbox: vLLM prefill **10.8-13.1k tok/s vs bw24 1.7-1.9k = 5.6-6.8x**.
      TTFT on the 6.3k-token agentic prompt: 0.58s vs 3.25s.
-   - 9B, the cloud PRO 6000: SGLang **20.0k**, vLLM 18.0-19.0k vs bw24 5.3-5.9k = **3.1-3.4x**
+   - 9B, Sbox: SGLang **20.0k**, vLLM 18.0-19.0k vs bw24 5.3-5.9k = **3.1-3.4x**
      (and that's bf16 engines out-prefilling a 4-bit bw24).
    - Local 5090: vLLM 27B prefill 4.6-4.9k vs bw24 ~0.79k = **~6x**.
    - Lever to adopt: **chunked-prefill scheduling + native-FP4 (cutlass) GEMM for the
      m-large regime**. vLLM's cutlass FP4 path prefilled 2.4x faster than its own
      marlin path (13.1k vs 5.5k) — the FP4 tensor-core GEMM is the prefill win,
      while staying on dequant-style matvec for decode.
-2. **Decode at matched quant: bw24 still wins vs vLLM, but llama.cpp beats bw24 on the cloud PRO 6000.**
-   - 27B NVFP4 the cloud PRO 6000: bw24 spec 102-128 tok/s vs vLLM best (marlin+MTP) 92-121.
+2. **Decode at matched quant: bw24 still wins vs vLLM, but llama.cpp beats bw24 on Sbox.**
+   - 27B NVFP4 Sbox: bw24 spec 102-128 tok/s vs vLLM best (marlin+MTP) 92-121.
      vLLM only closes the gap on the short prompt (121 vs 128).
    - BUT llama.cpp 27B spec-serve (f16 KV) does **130-159 tok/s — beats bw24 on all
-     three prompts on the cloud PRO 6000** (it did NOT on the local 5090). bw24's decode tuning is
+     three prompts on Sbox** (it did NOT on the local 5090). bw24's decode tuning is
      rig-specific to the laptop 5090; on the 1.8TB/s RTX PRO 6000 it leaves decode
      on the table. Same story at 9B plain: llama 182-186 vs bw24 plain 126-137.
    - vLLM CUDA-graph decode: worth ~3% at bs=1 on this hybrid-GDN model (local:
@@ -47,11 +47,11 @@ should be treated as real).
 | candidate | evidence | size of prize |
 |---|---|---|
 | Chunked-prefill scheduling + FP4-GEMM prefill path | vLLM 27B 10.8-13.1k vs bw24 1.9k on same GPU/model/prompt | 5.6-6.8x prefill, TTFT 3.25s -> 0.6s |
-| Rig-adaptive decode tuning (the cloud PRO 6000 regression) | llama 27B spec 130-159 vs bw24 102-128 on the cloud PRO 6000; reversed on 5090 | 1.25-1.3x decode on big-BW GPUs |
+| Rig-adaptive decode tuning (Sbox regression) | llama 27B spec 130-159 vs bw24 102-128 on Sbox; reversed on 5090 | 1.25-1.3x decode on big-BW GPUs |
 | FlashInfer prefill/GEMM kernels | untested — flashinfer paths (vLLM auto-default) require JIT-on-first-use; blocked by no-JIT rule this run | unknown, likely ≥ cutlass path |
 | CUDA-graph decode | +3% at bs=1 (GDN hybrid limits capture to decode-only) | negligible for bs=1 |
 
-## Results — the cloud PRO 6000 box (RTX PRO 6000 Blackwell Server 96GB, sm_120, CUDA 13.2)
+## Results — Sbox box (RTX PRO 6000 Blackwell Server 96GB, sm_120, CUDA 13.2)
 
 All four engines, same hardware, same model files or same-quant checkpoints.
 p1 = 28 tok prompt, p2 = 1845, p3 = 6257. gen = 256 tok, temp 0, ignore_eos.
@@ -97,7 +97,7 @@ TTFT (s), 9B: bw24 .080/.350/1.063 · llama .038/.166/.503 · vLLM .046/.097/.34
 
 ## Results — local rig (RTX 5090 Laptop 24GB, sm_120, CUDA 13.1) — partial
 
-vLLM measured before the study relocated to the cloud PRO 6000 (GPU-politeness: k-quant agent
+vLLM measured before the study relocated to Sbox (GPU-politeness: k-quant agent
 owns the local GPU). bw24/llama numbers are the standing reference (free clocks).
 
 | engine + config | p1 prefill / gen | p2 prefill / gen | p3 prefill / gen |
@@ -117,10 +117,10 @@ bw24's local prefill ~6x — the prefill conclusion holds on both boxes.
 
 ## Caveats / provenance
 
-- vLLM 0.24.0 (the cloud PRO 6000 venv ~/venvs/vllm-bench, cu130 torch 2.11) and
+- vLLM 0.24.0 (Sbox venv ~/venvs/vllm-bench, cu130 torch 2.11) and
   0.22.1rc1.dev481 (local uv tool install). SGLang 0.5.9 + transformers 5.13
-  (the cloud PRO 6000 venv ~/venvs/sglang-bench), sgl_kernel AOT + flashinfer_cubin prebuilt.
-- the cloud PRO 6000 llama.cpp master 94875285e rebuilt with CMAKE_CUDA_ARCHITECTURES=120 (stock
+  (Sbox venv ~/venvs/sglang-bench), sgl_kernel AOT + flashinfer_cubin prebuilt.
+- Sbox llama.cpp master 94875285e rebuilt with CMAKE_CUDA_ARCHITECTURES=120 (stock
   build lacked sm_120 → "no kernel image"). bw24 at ea9fcb4 (A2 expert-grouped prefill).
 - 27B HF checkpoint: sakamakismile/Qwen3.6-27B-Text-NVFP4-MTP (modelopt NVFP4,
   group 16, MTP head included; local copy qwen36-27b-text-nvfp4-mtp-hf +
@@ -154,7 +154,7 @@ Same exact prompts, N=3 medians, bw24 K=3 pmin0.15+frspec vs llama serve config 
 Movement since image 4: p3 0.87x -> 0.97x (gap 12.9 -> 1.9 tok/s), p1 now WINS +10%. pp gap narrowed 2.6x -> 1.6x (W4A8-MMQ default + ARC B).
 bw24-only capabilities now: session KV reuse (turn-start 42.6x at 40k history; llama has prompt-cache but not cross-request continuation in our serve config), exactness self-consistency contract, 278k-token 9B on 24GB.
 llama still ahead: pp throughput 1.6x (their stream-K + fixup tail), p2/p3 gen by 1-5%.
-OPEN to flip p2/p3: ARC A aligned-KV probe (in flight on the cloud PRO 6000), k-quant b4 tranche, draft-head cost.
+OPEN to flip p2/p3: ARC A aligned-KV probe (in flight Sbox), k-quant b4 tranche, draft-head cost.
 
 ### 9B (same image, K=2 pmin0.3 vs llama MTP draft config)
 

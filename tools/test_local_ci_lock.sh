@@ -38,14 +38,10 @@ PIDS=()
 # orphans re-parent to init and become unfindable. SIGKILL on purpose: it models the
 # worst-case death (no traps run) — the lock must survive exactly that.
 kill_tree() {
-    local pid=$1 kid
-    # Process depth differs across shells and container launchers: the lock-holding
-    # sleep may be a grandchild rather than a direct child. Walk descendants first so
-    # SIGKILL cannot orphan a deeper process that inherited the lock fd.
-    while read -r kid; do
-        [ -n "$kid" ] && kill_tree "$kid"
-    done < <(ps -o pid= --ppid "$pid" 2>/dev/null)
-    kill -9 "$pid" 2>/dev/null
+    local pid=$1 kids
+    kids=$(ps -o pid= --ppid "$pid" 2>/dev/null | tr '\n' ' ')
+    # shellcheck disable=SC2086
+    kill -9 $kids "$pid" 2>/dev/null
 }
 cleanup() {
     local p

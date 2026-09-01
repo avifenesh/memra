@@ -4,10 +4,10 @@ Companion to DECISION.md. Raw quotes preserved here so the decision doc's citati
 audited without re-opening the sources. Gathered 2026-08-03, repo tree 69cdd1eb
 (restructure/public-split), no GPU runs.
 
-## 1. The cloudbox fp8_lt probe row — full recovered fragment
+## 1. The sbox fp8_lt probe row — full recovered fragment
 
-`research/tune-data/cloud-rtx6000.jsonl` line 39 is a `recovered-fragment` wrapper whose `raw`
-field is the original row (ts 2026-07-08T03:30:00+03:00, rig cloud-rtx6000-sm120-188sm, commit
+`research/tune-data/sbox-rtx6000.jsonl` line 39 is a `recovered-fragment` wrapper whose `raw`
+field is the original row (ts 2026-07-08T03:30:00+03:00, rig sbox-rtx6000-sm120-188sm, commit
 lane/prefill-fp8). Key fields verbatim:
 
 - change: "FP8-ACT PREFILL CARD — MICRO-PROBE PHASE (probe-first law): cuBLASLt FP8-E4M3 GEMM

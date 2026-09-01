@@ -5,8 +5,8 @@ LOGD=$HOME/lane1/research/q27-mtp-20260801/vllm
 python3 -m venv $V
 $V/bin/pip install -U pip wheel > $LOGD/pip-base.log 2>&1
 $V/bin/pip install "huggingface_hub[hf_transfer]" >> $LOGD/pip-base.log 2>&1
-sudo mkdir -p /opt/scratch/nvme/hf && sudo chown ubuntu:ubuntu /opt/scratch/nvme/hf
-HF_HOME=/opt/scratch/nvme/hf HF_HUB_ENABLE_HF_TRANSFER=1 $V/bin/hf download Qwen/Qwen3.6-27B-FP8 > $LOGD/dl-fp8.log 2>&1 &
+sudo mkdir -p /opt/dl-image/nvme/hf && sudo chown ubuntu:ubuntu /opt/dl-image/nvme/hf
+HF_HOME=/opt/dl-image/nvme/hf HF_HUB_ENABLE_HF_TRANSFER=1 $V/bin/hf download Qwen/Qwen3.6-27B-FP8 > $LOGD/dl-fp8.log 2>&1 &
 DLPID=$!
 $V/bin/pip install vllm > $LOGD/pip-vllm.log 2>&1
 echo "vllm install rc=$?"

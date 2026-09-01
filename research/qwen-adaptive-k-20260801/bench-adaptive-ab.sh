@@ -17,7 +17,7 @@ OUT="$HOME/lane3/research/qwen-adaptive-k-20260801"
 mkdir -p "$OUT"
 export CUDA_VISIBLE_DEVICES=3
 
-Q27=/opt/scratch/nvme/models/Qwen3.6-27B-Q4_K_M.gguf
+Q27=/opt/dl-image/nvme/models/Qwen3.6-27B-Q4_K_M.gguf
 Q35="$HOME/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf"
 # The 35B GGUF carries NO nextn tensors (nextn=0 — captured in gate-q35 first attempt);
 # its spec config loads the own-gen trimmed NVFP4 head sidecar via MEMRA_MTP_DRAFT

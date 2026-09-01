@@ -85,23 +85,20 @@ What this list does **not** claim, stated so nobody reads more into it:
   `#else` is a **runtime** failure on a shipped binary that every compile gate here passes.
   That gap is now measured by `tools/fatbin-lookup-census.py` — which is how sm_89's 20 missing
   kernels were found and why sm_89 stopped shipping. See "Known unshippable arch" below.
-- **sm_100a (B200): compiles and is CI-covered since lane/glm5-b200-prep-20260901; still NOT
-  auto-detected and NOT released.** The 2026-08-23 state was "it does not compile" (two
-  stub-gate polarity bugs, fixed then, plus a wrong `__CUDA_ARCH__ >= 1000` guard in
-  `cu/mmq_q8_0_f32acc.cu` that admitted the one arch rejecting the f8f6f4 MMA — fixed by the
-  b200-prep lane, `>= 1200`). Current state, measured by a 29-cell per-arch census (13 fatbin + 16 static-lib TUs)
-  (`research/glm5-b200-prep-20260901/`): every cell of a `MEMRA_CUDA_ARCH=100a` build compiles clean,
-  `ci.yml`'s `release-arch-mirror` carries a `100a` compile cell so it stays that way, and the
-  fatbin census passes with two DECLARED exceptions (`qmatvec_gemm_nvfp4_fp4` — the `MEMRA_FP4`
-  door asserts the 120a property on sm_100a builds, and kernel_check's Stage-C FP4 arm keys on
-  the same property so 100a records a skip cell; portable builds keep their pre-existing
-  early-return/refusal path; `qmatvec_gemm_q8_0_wgmma` — all call sites
-  compiled out under `cfg!(memra_hopper_mma)`). `detect_arch()` still refuses to select it
-  because **compiling is not running**: zero exactness gates and zero serving receipts exist on
-  sm_100a silicon, and the sm_120a block-scale MMQ prefill family is fail-closed stubs there
-  (the tuned-prefill port is a named B200 box-window lane, not a build fix). It stays an
-  **explicit** `MEMRA_CUDA_ARCH=100a` opt-in until the B200 bring-up banks runtime receipts.
-  Owner: the B200 bring-up lane (`research/glm5-b200-prep-20260901/LANE.md`).
+- **sm_100a (B200): NOT auto-detected any more, and not compiled.** The choice was "compile it
+  or refuse to detect it", and it was settled by measurement: **it does not compile.**
+  `MEMRA_CUDA_ARCH=100a` dies with
+  `ptxas ... error : Instruction 'mma with block scale' not supported on .target 'sm_100a'`
+  at ~40 sites in `cu/mmq_nvfp4_w4a8.cu`. The cause is a stub-gate polarity bug: that file is
+  swapped for its fail-closed stub only when `portable` (89|90a), while the block-scale MMA it
+  uses is sm_120a-only — compare `cu/mmq_fp4.cu` in the same chain, which correctly gates on
+  `cuda_arch != "120a"`. And even with that fixed, the fatbin census reports two looked-up
+  kernels absent from its fatbins (`qmatvec_gemm_nvfp4_fp4`, `qmatvec_gemm_q8_0_wgmma`).
+  So `detect_arch()` no longer selects it: a B200 owner used to be handed a confusing ptxas wall
+  on a target nothing had ever compiled. It remains an **explicit** `MEMRA_CUDA_ARCH=100a`
+  opt-in so the engine lane that fixes it has a way in, and a `cargo:warning` says exactly why
+  it was not chosen. Adding a CI cell for it would simply be red; fixing the two defects comes
+  first. Owner: engine lane.
 - **The glibc/OS axis.** `release.yml` builds two glibc floors; CI mirrors only the arch axis.
   The OS changes the libc requirement of the shipped binary, not the source set or the symbols,
   so one OS cannot miss a compile or link failure the other would catch.
@@ -217,9 +214,9 @@ noted.
 | # | Finding | Fails at | Owner |
 |---|---|---|---|
 | 1 | **`tools/check-flags.sh`'s grandfather list is inert but still non-blocking.** `research/docsync3-20260811/flags-drift.txt` holds 75 names; **all 75 are now documented in `docs/FLAGS.md`**, so every exemption is dead. Verified by probe in a throwaway tree: with a baselined name present in the list, deleting its `docs/FLAGS.md` row still **exits 0** (the name prints under "uncovered runtime names" as a non-fatal line); removing it from the baseline makes the same tree exit 1. **For those 75 names, deleting documentation keeps the gate green.** Changes gate semantics, so it needs an owner ruling, not a lane. The fix shape is the one `tools/fatbin-lookup-exceptions.txt` already uses: give the list a drift check that refuses a dead entry. | merge (silently not at all) | owner ruling |
-| 2 | **`MEMRA_FP4=1` panics on sm_89/sm_90a.** The Stage-C FP4 gate (`src/lib.rs:15979`) is an ENV door, not an arch predicate, so it can reach `qmatvec_gemm_nvfp4_fp4`, which portable arches do not compile. Declared in `tools/fatbin-lookup-exceptions.txt` because no default path reaches it. Fix: also test `portable_mma_gated()` and refuse by name. *(Since resolved twice over: the portable refusal landed 2026-08-23 (`refuse_portable_force`), and lane/glm5-b200-prep-20260901 replaced the enumeration with the 120a PROPERTY after finding the same door — plus kernel_check's Stage-C arm — reachable on sm_100a builds.)* | first use, opt-in only | engine lane |
+| 2 | **`MEMRA_FP4=1` panics on sm_89/sm_90a.** The Stage-C FP4 gate (`src/lib.rs:15979`) is an ENV door, not an arch predicate, so it can reach `qmatvec_gemm_nvfp4_fp4`, which portable arches do not compile. Declared in `tools/fatbin-lookup-exceptions.txt` because no default path reaches it. Fix: also test `portable_mma_gated()` and refuse by name. | first use, opt-in only | engine lane |
 | 3 | **sm_89's 20 missing kernels** — `cu/hybrid.cu:1575-2238` has no `#else`, and the batched GDN call site `src/hybrid_forward.rs:3912` is unguarded where its single-sequence twin (`src/lib.rs:23967`) is guarded. sm_89 no longer ships because of it. | first batched GDN decode | engine lane |
-| 4 | **The stub-gate polarity bug is a CLASS, not a one-off — and this is the entry that matters most.** `build.rs`'s substitution chain guards each sm_120a-only MMA translation unit; two of the three tested `portable` (an ENUMERATION of `89\|90a`) where the property is `!= 120a`. Both were fixed 2026-08-23, and the second was found only by fixing the first and watching the ptxas failure MOVE (`mmq_nvfp4_w4a8.cu` → `mmq_fp8_blk.cu`, ~40 then ~400 sites). **The cost was never sm_100a specifically: an enumeration means every future non-120a arch silently inherits the breakage.** `cu/mmq_fp4.cu` in the same chain always had the correct test — the inconsistency was the tell. The durable fix is a census asserting every stub-substituted TU is stubbed on every arch lacking its instruction class, rather than fixing them one at a time. **sm_100a still does not compile after both fixes**: a THIRD unit, `cu/mmq_q8_0_f32acc.cu` (~256 sites), fails for a different reason — its `build.rs` entry says it "needs no portable stub" because an in-TU `__CUDA_ARCH__ >= 1000` guard covers its f8f6f4 arm, and that threshold is wrong (1000 *is* sm_100a, so the guard admits the arch that rejects the instruction). Polarity was separable and cheap; sm_100a is not. *(Since resolved: lane/glm5-b200-prep-20260901 fixed the threshold to `>= 1200`, sm_100a compiles 29/29 census cells and ci.yml carries a 100a compile cell — see the sm_100a bullet above for current state.)* | explicit opt-in build today; the NEXT new arch, silently | engine lane |
+| 4 | **The stub-gate polarity bug is a CLASS, not a one-off — and this is the entry that matters most.** `build.rs`'s substitution chain guards each sm_120a-only MMA translation unit; two of the three tested `portable` (an ENUMERATION of `89\|90a`) where the property is `!= 120a`. Both were fixed 2026-08-23, and the second was found only by fixing the first and watching the ptxas failure MOVE (`mmq_nvfp4_w4a8.cu` → `mmq_fp8_blk.cu`, ~40 then ~400 sites). **The cost was never sm_100a specifically: an enumeration means every future non-120a arch silently inherits the breakage.** `cu/mmq_fp4.cu` in the same chain always had the correct test — the inconsistency was the tell. The durable fix is a census asserting every stub-substituted TU is stubbed on every arch lacking its instruction class, rather than fixing them one at a time. **sm_100a still does not compile after both fixes**: a THIRD unit, `cu/mmq_q8_0_f32acc.cu` (~256 sites), fails for a different reason — its `build.rs` entry says it "needs no portable stub" because an in-TU `__CUDA_ARCH__ >= 1000` guard covers its f8f6f4 arm, and that threshold is wrong (1000 *is* sm_100a, so the guard admits the arch that rejects the instruction). Polarity was separable and cheap; sm_100a is not. | explicit opt-in build today; the NEXT new arch, silently | engine lane |
 | 5 | **Published-crate `cargo test` escape.** `crates/memra-server/src/main.rs` (9 sites) and `crates/memra-gguf/src/source.rs:2233` read `{CARGO_MANIFEST_DIR}/../../research/...`. `cargo publish --verify` builds but does not test, so this is not a publish blocker; it breaks a contributor building from the published tarball. | consumer, from a crates.io tarball | release lane |
 | 6 | **Three orphan fixtures with no automated caller** — `tools/test_check_hardware_gate.py` (the teeth for `tools/check_hardware_gate.py`, which `tools/hooks/pre-push` *does* invoke in `step-pro` mode), `tools/test_cpu_expert_shm.sh`, `tools/check-batch-exact.py`. A live push gate whose teeth nobody runs. | nothing runs it | release lane |
 | 7 | **`release.yml`'s stable-name upload is silently conditional.** It is produced only by the `ubuntu-22.04 && 120a` coordinate under `if: env.STABLE_NAME != ''`, so if that coordinate ever changes the upload skips silently and `if-no-files-found: error` never fires. That asset is the `cargo-binstall` / `install.sh` target. | release, silently | release lane |

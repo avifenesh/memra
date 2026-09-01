@@ -18,7 +18,7 @@ T=$HOME/memra
 R=$HOME/spec-scratch
 M35=$HOME/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
 D35=$HOME/models/draft-35b-owntrim-nvfp4head-q4blk.gguf
-M27=/opt/scratch/nvme/models/Qwen3.6-27B-Q4_K_M.gguf
+M27=/opt/dl-image/nvme/models/Qwen3.6-27B-Q4_K_M.gguf
 P=$T/research/e2e/prompts/board-2048.txt
 mkdir -p "$R"
 
@@ -97,7 +97,7 @@ vllm)
   L=$R/q27-vllm-spec$K.log
   { gpustate; } > "$L" 2>&1
   cd "$T"
-  HF_HOME=/opt/scratch/nvme/hf CUDA_HOME=/usr/local/cuda PATH=$HOME/vllm-env/bin:/usr/local/cuda/bin:$PATH \
+  HF_HOME=/opt/dl-image/nvme/hf CUDA_HOME=/usr/local/cuda PATH=$HOME/vllm-env/bin:/usr/local/cuda/bin:$PATH \
     CPATH=$SHIM/include LIBRARY_PATH=$SHIM/lib LD_LIBRARY_PATH=$SHIM/lib:${LD_LIBRARY_PATH:-} \
     flock /tmp/gpu-h100.lock timeout 3600 "$HOME/vllm-env/bin/python3" bench_vllm.py \
     --model Qwen/Qwen3.6-27B-FP8 --runs 3 --spec-k "$K" \

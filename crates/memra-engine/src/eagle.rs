@@ -358,7 +358,6 @@ impl Eagle3Scratch {
                 len: 0,
                 ring: None,
                 len_d: e.htod_i32(&[0])?,
-                base_d: None,
             },
         })
     }

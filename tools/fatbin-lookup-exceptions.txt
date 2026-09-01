@@ -68,7 +68,7 @@
 # because the lookups still exist in the source; the refusal is what makes them unreachable.
 89 f32_to_bf16_bulk         # cu/hybrid.cu:1623. Reached only via MEMRA_FA3=1, which now refuses
 89 qmatvec_gemm_nvfp4_fp4   # cu/qmatvec_gemm.cu:1234. Only via MEMRA_FP4, which now refuses
-89 qmatvec_gemm_q8_0_wgmma  # all call sites behind cfg!(memra_hopper_mma) — compiled out on 89
+89 qmatvec_gemm_q8_0_wgmma  # both call sites behind cfg!(memra_hopper_mma) — compiled out on 89
 
 # =============================================================================================
 # sm_90a (Hopper). Portable, but MEMRA_HOPPER_MMA re-enables the sm_80-class tensor-core paths,
@@ -77,31 +77,10 @@
                             # reachable via MEMRA_FP4, which now refuses on portable builds
 
 # =============================================================================================
-# sm_100a (datacenter Blackwell, B200). Compile-covered by a ci.yml matrix cell since
-# lane/glm5-b200-prep-20260901; NOT in release.yml (zero runtime receipts on the silicon — see
-# build.rs detect_arch). Only the sm_120a-only MMA-kind kernels are missing.
-100a qmatvec_gemm_nvfp4_fp4   # build.rs compiles cu/qmatvec_gemm.cu with -DMEMRA_DISABLE_NATIVE_FP4=1
-                              # on 100a (mxf4 block-scale MMA is sm_120a-only). TWO reachable-in-
-                              # principle call chains, both now guarded on the 120a PROPERTY:
-                              # the MEMRA_FP4 door asserts MEMRA_BUILT_CUDA_ARCH == 120a (lib.rs,
-                              # the nvfp4_native_prefill gate — refuses at the switch, by name),
-                              # and kernel_check's Stage-C FP4 arm keys `nvfp4_checks` on the same
-                              # property (kernel_check.rs — it records a SKIP cell on 100a; its
-                              # old !portable gate reached this lookup with no env force at all,
-                              # found by this row's first review).
-100a qmatvec_gemm_q8_0_wgmma  # wgmma is Hopper-only. All THREE call sites (src/mmq_ffi.rs,
-                              # src/lib.rs, and kernel_check's wgmma-mirror arm) are inside
-                              # `cfg!(memra_hopper_mma)` blocks, a COMPILE-TIME cfg that build.rs
-                              # sets only for 90a — false on 100a, so the branches are not in the
-                              # binary at all. Same strongest-kind guard as the sm_120a entry
-                              # below.
-
-# =============================================================================================
 # sm_120a (the serving arch). One entry, and it is the strongest kind of guard there is.
-120a qmatvec_gemm_q8_0_wgmma  # wgmma is Hopper-only. All THREE call sites (src/mmq_ffi.rs:1374,
-                              # src/lib.rs:16316, and kernel_check's wgmma-mirror arm) are inside
-                              # `cfg!(memra_hopper_mma)` blocks, a COMPILE-TIME cfg that is false
-                              # here, so the branch is not in
+120a qmatvec_gemm_q8_0_wgmma  # wgmma is Hopper-only. BOTH call sites (src/mmq_ffi.rs:1374,
+                              # src/lib.rs:16316) are inside `if cfg!(memra_hopper_mma) && …`,
+                              # a COMPILE-TIME cfg that is false here, so the branch is not in
                               # the binary at all and the lookup cannot execute. This is why the
                               # census must never be landed without this line: it would red CI
                               # on the arch we actually serve, on a false positive.
