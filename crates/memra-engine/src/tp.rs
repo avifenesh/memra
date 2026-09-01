@@ -527,32 +527,6 @@ fn partition_expert_owner_routes(
              tokens={tokens} experts_per_token={experts_per_token}"
         ));
     }
-    let per_rank = expert_count / ranks;
-    let ranges = (0..ranks)
-        .map(|rank| rank * per_rank..(rank + 1) * per_rank)
-        .collect::<Vec<_>>();
-    partition_expert_owner_routes_ranges(&ranges, tokens, experts_per_token, selected)
-}
-
-fn partition_expert_owner_routes_ranges(
-    ranges: &[Range<usize>],
-    tokens: usize,
-    experts_per_token: usize,
-    selected: &[usize],
-) -> Result<Vec<ExpertOwnerRoutes>, String> {
-    let expert_count = ranges.last().map(|range| range.end).unwrap_or(0);
-    if ranges.is_empty()
-        || tokens == 0
-        || experts_per_token == 0
-        || ranges[0].start != 0
-        || ranges.iter().any(Range::is_empty)
-        || ranges.windows(2).any(|pair| pair[0].end != pair[1].start)
-    {
-        return Err(format!(
-            "invalid expert-owner range geometry ranges={ranges:?} tokens={tokens} \
-             experts_per_token={experts_per_token}"
-        ));
-    }
     let pairs = tokens
         .checked_mul(experts_per_token)
         .ok_or("expert-owner route count overflow")?;
@@ -562,7 +536,8 @@ fn partition_expert_owner_routes_ranges(
             selected.len()
         ));
     }
-    let mut owners = (0..ranges.len())
+    let per_rank = expert_count / ranks;
+    let mut owners = (0..ranks)
         .map(|rank| ExpertOwnerRoutes {
             rank,
             selected: Vec::new(),
@@ -576,13 +551,8 @@ fn partition_expert_owner_routes_ranges(
                 "expert-owner route {pair} selects expert {expert} outside 0..{expert_count}"
             ));
         }
-        let rank = ranges
-            .iter()
-            .position(|range| range.contains(&expert))
-            .ok_or_else(|| {
-                format!("expert-owner route {pair} cannot assign expert {expert} in {ranges:?}")
-            })?;
-        owners[rank].selected.push(expert - ranges[rank].start);
+        let rank = expert / per_rank;
+        owners[rank].selected.push(expert - rank * per_rank);
         owners[rank].token_rows.push(pair / experts_per_token);
         owners[rank].global_pairs.push(pair);
     }
@@ -10202,15 +10172,6 @@ impl ResidentNvfp4ExpertParallel {
             .map(|rank| rank.expert_range.clone())
             .collect()
     }
-
-    fn owner(&self, expert: usize) -> Option<(usize, usize)> {
-        self.ranks.iter().enumerate().find_map(|(rank, weights)| {
-            weights
-                .expert_range
-                .contains(&expert)
-                .then_some((rank, expert - weights.expert_range.start))
-        })
-    }
 }
 
 fn nvfp4_repack_matrix(matrix: Nvfp4BlockMatrix<'_>) -> Vec<u8> {
@@ -11183,6 +11144,7 @@ impl TpE4m3HostBounce {
         if !route_weights.iter().all(|weight| weight.is_finite()) {
             return Err("NVFP4 EP route weights contain a non-finite value".into());
         }
+        let experts_per_rank = experts.expert_count / experts.ranks.len();
         let mut output = vec![0.0f32; tokens * experts.input_width];
         for token in 0..tokens {
             let input_row = &input[token * experts.input_width..(token + 1) * experts.input_width];
@@ -11196,9 +11158,8 @@ impl TpE4m3HostBounce {
                     )
                     .into());
                 }
-                let (owner, local) = experts.owner(expert).ok_or_else(|| {
-                    format!("NVFP4 EP cannot assign selected expert {expert} to a resident rank")
-                })?;
+                let owner = expert / experts_per_rank;
+                let local = expert - owner * experts_per_rank;
                 let rank = &experts.ranks[owner];
                 let engine = &self.ranks[owner];
                 let _main = engine.gpu.enter_main()?;
@@ -11324,8 +11285,9 @@ impl TpE4m3HostBounce {
             )
             .into());
         }
-        let owner_routes = partition_expert_owner_routes_ranges(
-            &experts.expert_ranges(),
+        let owner_routes = partition_expert_owner_routes(
+            experts.expert_count,
+            world,
             tokens,
             experts_per_token,
             selected,
@@ -16002,17 +15964,6 @@ mod tests {
             super::parallel_ep_expert_ranges(192, 4, Some(1)).unwrap(),
             vec![0..1, 1..65, 65..129, 129..192]
         );
-        let owners = super::partition_expert_owner_routes_ranges(
-            &[0..1, 1..65, 65..129, 129..192],
-            1,
-            8,
-            &[0, 1, 64, 65, 128, 129, 191, 2],
-        )
-        .unwrap();
-        assert_eq!(owners[0].selected, vec![0]);
-        assert_eq!(owners[1].selected, vec![0, 63, 1]);
-        assert_eq!(owners[2].selected, vec![0, 63]);
-        assert_eq!(owners[3].selected, vec![0, 62]);
         assert!(super::parallel_ep_expert_ranges(3, 4, Some(1)).is_err());
         assert!(super::parallel_ep_expert_ranges(192, 4, Some(190)).is_err());
     }
