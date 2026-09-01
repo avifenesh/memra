@@ -43,6 +43,10 @@ IDS=${IDS:-$HOME/realgate/ladder-ids.txt}
 LOCK=${LOCK:-/tmp/q48fn-measure.lock}
 CARD=${CARD:-0}
 CARD_TOTAL_MIB=${CARD_TOTAL_MIB:-97887}
+# The flock cells re-enter through a fresh `bash -c`, which inherits only EXPORTED vars:
+# without this line need_card sees an empty CARD_TOTAL_MIB, its arithmetic fails every
+# iteration, and the guard burns its full 900 s before exit 90 (first live run, 2026-09-01).
+export CARD CARD_TOTAL_MIB
 Q=$OUT/QUEUE.log
 mkdir -p "$OUT"
 log(){ printf '[%s] downsel: %s\n' "$(date -u +%FT%TZ)" "$*" >> "$Q"; }
