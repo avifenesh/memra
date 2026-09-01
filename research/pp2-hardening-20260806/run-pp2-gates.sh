@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pp2-hardening Phase 1 gate battery — 2x RTX PRO 6000 (cloud-2card), 2026-08-06.
+# pp2-hardening Phase 1 gate battery — 2x RTX PRO 6000 (sbox-2card), 2026-08-06.
 # Receipts to ~/receipts/pp2/gates/. tee first, parse second. Params baked as literals.
 set -uo pipefail
 cd ~/memra

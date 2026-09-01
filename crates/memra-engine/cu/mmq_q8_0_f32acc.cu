@@ -190,13 +190,7 @@ namespace memra_accprobe_mma {
 #define MEMRA_ACCPROBE_UE8M0_ONE 0x7F7F7F7Fu   // four ue8m0 bytes, each 2^0
     static __device__ __forceinline__ void mma_f32(
             float * __restrict__ d, const int * __restrict__ a, const int b0, const int b1) {
-// >= 1200, NOT >= 1000: the f8f6f4 MMA kind (plain and block_scale forms alike) is the
-// GeForce-Blackwell sm_120a encoding. Datacenter Blackwell sm_100a is ALSO >= 1000 yet ptxas
-// rejects it ("Instruction 'mma with block scale' not supported on .target 'sm_100a'"), so the
-// old >= 1000 guard admitted the one arch that rejects the instruction and single-handedly
-// broke `MEMRA_CUDA_ARCH=100a cargo build` (measured 2026-08-23, re-measured and fixed
-// lane/glm5-b200-prep-20260901 — census: this TU was the ONLY failure of 29 arm-A cells).
-#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 1200
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 1000
 #ifdef MEMRA_ACCPROBE_PLAIN_MMA
         asm("mma.sync.aligned.kind::f8f6f4.m16n8k32.row.col.f32.e4m3.e4m3.f32 "
             "{%0, %1, %2, %3}, {%4, %5, %6, %7}, {%8, %9}, {%0, %1, %2, %3};"
@@ -211,8 +205,7 @@ namespace memra_accprobe_mma {
               "r"(MEMRA_ACCPROBE_UE8M0_ONE), "r"(MEMRA_ACCPROBE_UE8M0_ONE));
 #endif
 #else
-        // Only sm_120a carries .kind::f8f6f4 (pre-Blackwell lacks the kind entirely; datacenter
-        // sm_100a rejects this encoding too). The F32 arm fails closed rather than silently
+        // Pre-Blackwell has no .kind::f8f6f4. The F32 arm fails closed rather than silently
         // measuring something else; the S32 arm still builds and runs everywhere.
         (void) a; (void) b0; (void) b1; (void) d;
         __trap();

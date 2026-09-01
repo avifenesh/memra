@@ -1,0 +1,134 @@
+{
+ "dflash2": {
+  "label": "dflash2",
+  "all": {
+   "cycles": 951,
+   "acc_at_k": [
+    0.7308,
+    0.4858,
+    0.327,
+    0.2093,
+    0.1367,
+    0.0999,
+    0.0715
+   ],
+   "mean_accepted": 2.061,
+   "tokens_per_cycle": 3.061
+  },
+  "tool": {
+   "cycles": 89,
+   "acc_at_k": [
+    0.8427,
+    0.7416,
+    0.6067,
+    0.4382,
+    0.3933,
+    0.3596,
+    0.2809
+   ],
+   "mean_accepted": 3.663,
+   "tokens_per_cycle": 4.663
+  },
+  "prose": {
+   "cycles": 862,
+   "acc_at_k": [
+    0.7193,
+    0.4594,
+    0.2981,
+    0.1856,
+    0.1102,
+    0.0731,
+    0.0499
+   ],
+   "mean_accepted": 1.896,
+   "tokens_per_cycle": 2.896
+  },
+  "arithmetic": {
+   "decode_tok_s_measured": 21.32,
+   "sequential_verify": {
+    "note": "sequential verify: each drafted token still runs the decode program one at a time, so a cycle of L accepted + 1 bonus costs (L+1) decode steps plus draft overhead; throughput <= plain decode regardless of acceptance",
+    "speedup": "<= 1.0x (none)"
+   },
+   "t_parallel_verify": {
+    "verify=1.0t draft=0.0t": {
+     "projected_tok_s": 65.3,
+     "speedup_vs_plain": 3.06
+    },
+    "verify=1.0t draft=0.2t": {
+     "projected_tok_s": 54.4,
+     "speedup_vs_plain": 2.55
+    },
+    "verify=1.5t draft=0.2t": {
+     "projected_tok_s": 38.4,
+     "speedup_vs_plain": 1.8
+    }
+   }
+  }
+ },
+ "ngram-floor": {
+  "label": "ngram-floor",
+  "all": {
+   "cycles": 2371,
+   "acc_at_k": [
+    0.0768,
+    0.0447,
+    0.0321,
+    0.0207,
+    0.0177,
+    0.0135,
+    0.0118
+   ],
+   "mean_accepted": 0.217,
+   "tokens_per_cycle": 1.217
+  },
+  "tool": {
+   "cycles": 165,
+   "acc_at_k": [
+    0.3333,
+    0.297,
+    0.2424,
+    0.1879,
+    0.1758,
+    0.1576,
+    0.1455
+   ],
+   "mean_accepted": 1.539,
+   "tokens_per_cycle": 2.539
+  },
+  "prose": {
+   "cycles": 2206,
+   "acc_at_k": [
+    0.0576,
+    0.0258,
+    0.0163,
+    0.0082,
+    0.0059,
+    0.0027,
+    0.0018
+   ],
+   "mean_accepted": 0.118,
+   "tokens_per_cycle": 1.118
+  },
+  "arithmetic": {
+   "decode_tok_s_measured": 21.32,
+   "sequential_verify": {
+    "note": "sequential verify: each drafted token still runs the decode program one at a time, so a cycle of L accepted + 1 bonus costs (L+1) decode steps plus draft overhead; throughput <= plain decode regardless of acceptance",
+    "speedup": "<= 1.0x (none)"
+   },
+   "t_parallel_verify": {
+    "verify=1.0t draft=0.0t": {
+     "projected_tok_s": 25.9,
+     "speedup_vs_plain": 1.22
+    },
+    "verify=1.0t draft=0.2t": {
+     "projected_tok_s": 21.6,
+     "speedup_vs_plain": 1.01
+    },
+    "verify=1.5t draft=0.2t": {
+     "projected_tok_s": 15.3,
+     "speedup_vs_plain": 0.72
+    }
+   }
+  }
+ }
+}

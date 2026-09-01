@@ -25,7 +25,7 @@ the same base URL and have public protocol/accounting receipts.
 | 11 | Terms of service | `https://tiyuvta.ai/terms/` — in force, effective 2026-08-12 |
 | 12 | Data policy | Use the exact disclosure below. |
 | 13 | Output modalities | `Text` |
-| 14 | Inference countries | `Canada` — current test endpoint is in Ontario; production region remains pending the cloud-provider hunt. |
+| 14 | Inference countries | `Canada` — current test endpoint is in Ontario; production region remains pending the hyperscaler hunt. |
 | 15 | Headquarters | `Israel` |
 
 ## Submitted infrastructure / offer narrative (historical; do not reuse after cutover)

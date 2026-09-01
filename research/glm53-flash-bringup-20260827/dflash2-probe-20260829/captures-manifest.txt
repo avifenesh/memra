@@ -1,0 +1,18 @@
+feature captures: run-safetensors teacher-forced over prompt+continuation,
+MEMRA_TRACE_LAYER_ROWS layers 5,14,24,33,42, stream-mean contracted, f32 LE.
+argmax line = last-position greedy pick of the capture forward; on finish=stop
+rollouts it must be an EOS-class id (the token the server stopped on).
+
+A4630-f100: rows={4845} files=5 argmax token = 154827  logit = 21.1143  non-finite=0/154880
+A4630-f35: rows={1179} files=5 argmax token = 154827  logit = 13.7704  non-finite=0/154880
+A4630-f60: rows={3236} files=5 argmax token = 154829  logit = 18.5664  non-finite=0/154880
+A4630-f85: rows={4868} files=5 argmax token = 4288  logit = 36.4749  non-finite=0/154880
+B5550-f100: rows={5769} files=5 argmax token = 154827  logit = 23.8676  non-finite=0/154880
+B5550-f35: rows={2318} files=5 argmax token = 220  logit = 26.7681  non-finite=0/154880
+B5550-f60: rows={3331} files=5 argmax token = 334  logit = 28.6160  non-finite=0/154880
+B5550-f85: rows={5011} files=5 argmax token = 154827  logit = 24.1295  non-finite=0/154880
+C6470-f100: rows={6723} files=5 argmax token = 347  logit = 33.7238  non-finite=0/154880
+C6470-f35: rows={2052} files=5 argmax token = 1565  logit = 21.8724  non-finite=0/154880
+C6470-f60: rows={3812} files=5 argmax token = 59341  logit = 30.0725  non-finite=0/154880
+C6470-f85: rows={5453} files=5 argmax token = 3238  logit = 19.8197  non-finite=0/154880
+WARM-f100: rows={683} files=5 argmax token = 4752  logit = 29.1284  non-finite=0/154880

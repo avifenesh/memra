@@ -4,7 +4,7 @@ set -euo pipefail
 REPO=${REPO:?}
 PY=${PY:-/data/venvs/hy3-110gb/bin/python}
 ROOT=${ROOT:-/data/experiments/hy3-110gb}
-SOURCE=${SOURCE:-/opt/scratch/nvme/models/hy3-source}
+SOURCE=${SOURCE:-/opt/dl-image/nvme/models/hy3-source}
 SOURCE_RECEIPT=${SOURCE_RECEIPT:-$ROOT/receipts/source-download.json}
 QUANTIZER_RECEIPT=${QUANTIZER_RECEIPT:-$ROOT/receipts/llama-cpp-quantizer.json}
 ARM=${ARM:?}

@@ -1,7 +1,7 @@
 GLM-5.3-Flash re-baseline at lane head + standard-surface post-deploy battery
 lane/glm53-box, 2026-08-28. Method, instruments, and every stated deviation.
 
-BOX. The rented cloud bench box (2x RTX PRO 6000 Blackwell Server 96 GB, 499 GB RAM, 48 vCPU); box
+BOX. The sbox bench box (2x RTX PRO 6000 Blackwell Server 96 GB, 499 GB RAM, 48 vCPU); box
 identity lives in the private ops repo, never here. Rented bench hardware, not a serving box,
 so heavy work is allowed. Card 0 serves; card 1 idle throughout (see FINDINGS.txt close-out).
 Artifact ~/models/glm53-nvfp4 (NVFP4). All timing on the box; the rig 5090 is correctness-only.
@@ -77,7 +77,7 @@ BACKGROUND LOAD, and exactly which rows it can touch.
       only its token counts, finish reasons and text are used, and none of those are timing.
       No perf row in this lane comes from that window.
   (b) From ~13:55 UTC, a throttled, ionice'd 178 GB artifact transfer OFF this box to stand up a
-      second rented box, coordinated by the lane coordinator. It was HELD at this lane's request until
+      second sbox, coordinated by the lane coordinator. It was HELD at this lane's request until
       the interleaved timing pair finished at 13:55, so ALL FOUR timing boots (OLD1, NEW1, OLD2,
       NEW2) are outside it. Everything after 13:55 in this lane is correctness work, surface
       battery, follow-ups, context ladder, cold/restored, degeneration rate, where a disk and

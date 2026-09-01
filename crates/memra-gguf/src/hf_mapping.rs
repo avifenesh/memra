@@ -990,17 +990,6 @@ pub fn resolve_ggml(ggml: &str, cfg: &ModelConfig) -> Option<HfTarget> {
             "indexer.k_norm.bias" => Some("self_attn.indexer.k_norm.bias"),
             "indexer.kpool_gate.weight" => Some("self_attn.indexer.index_kpool_compress_gate"),
             "indexer.kpool_ape.weight" => Some("self_attn.indexer.index_kpool_compress_ape"),
-            // NextN/MTP glue. glm5_next stores the MTP scaffolding FLAT under the appended
-            // layer (census: `layers.45.{enorm,hnorm,eh_proj,shared_head.norm}`), with the
-            // norms VERBATIM (no +1 fold anywhere in this family) — so every row is a plain
-            // rename, unlike the step35/qwen35 arms above. `nextn.shared_head_head.weight`
-            // is deliberately NOT mapped: this checkpoint ships no private MTP head (the
-            // NextN block projects through the trunk `lm_head`), and an unmapped name reads
-            // as ABSENT, which is exactly the loader's trunk-head fallback.
-            "nextn.enorm.weight" => Some("enorm.weight"),
-            "nextn.hnorm.weight" => Some("hnorm.weight"),
-            "nextn.eh_proj.weight" => Some("eh_proj.weight"),
-            "nextn.shared_head_norm.weight" => Some("shared_head.norm.weight"),
             _ => None,
         };
         if let Some(hf) = plain {
@@ -1209,14 +1198,11 @@ mod tests {
                     conv_kernel: 4,
                     state_width: 32768,
                 },
-                ple: None,
-                sparse_overlay: None,
             }],
             output_norm: norm,
             logits: Vec::new(),
             mtp_blocks: Vec::new(),
             drafter: None,
-            exit_mixer: None,
             draft_source: DraftSourcePlan::Embedded,
             sampling_defaults: None,
             partition_boundaries: Vec::new(),
@@ -1508,190 +1494,6 @@ mod tests {
             "the fixture's compiled contract changed size. Raise this number when the plan grows \
              a tensor; NEVER lower it to make a red pin green — a shrinking count is the surface \
              this gate exists to cover going unwatched"
-        );
-    }
-
-    /// The NextN/MTP twin of the completeness pin above: with `num_nextn_predict_layers: 1` the
-    /// contract grows the appended MTP block (MLA + k-pool indexer + MoE at index n_trunk, plus
-    /// the enorm/hnorm/eh_proj/shared_head.norm glue), and EVERY GGUF spelling the embedded MTP
-    /// loader asks for must resolve through `resolve_ggml` onto the HF contract's name for the
-    /// same `TensorId`. Written 2026-08-30 with the glm5 MTP-execution lane: the four
-    /// `nextn.*` glue names had no glm5_next mapping row, so `src.has("blk.N.nextn.eh_proj.weight")`
-    /// answered false and the embedded-MTP loop silently loaded NO head (`break` at offset 0) —
-    /// the artifact carries every MTP tensor; the ggml->HF resolver was the refusal.
-    #[test]
-    fn glm5_next_mtp_block_resolves_through_the_engine_map() {
-        use crate::tensor_contract::{
-            CheckpointDialect, ContractOptions, LayerTensor, MtpTensor, OutputHead, TensorContract,
-            TensorId,
-        };
-
-        let json = mla_mini_config_json()
-            .replace(
-                r#""mlp_layer_types": ["dense", "dense"]"#,
-                r#""mlp_layer_types": ["dense", "sparse"]"#,
-            )
-            .replace(
-                r#""first_k_dense_replace": 2"#,
-                r#""first_k_dense_replace": 1"#,
-            )
-            .replace(
-                r#""num_nextn_predict_layers": 0"#,
-                r#""num_nextn_predict_layers": 1"#,
-            );
-        let cfg = ModelConfig::from_hf(&crate::config::HfConfig::parse(&json));
-        assert_eq!(cfg.nextn_predict_layers, 1);
-        assert_eq!(
-            cfg.n_layer, 3,
-            "n_layer counts trunk + the appended MTP block"
-        );
-        let plan = crate::model_packs::for_config(&cfg)
-            .expect("glm5_next model pack matches the mini config")
-            .compile_plan(&cfg)
-            .expect("mini glm5_next plan with an MTP block compiles");
-        assert_eq!(plan.mtp_blocks.len(), 1);
-        let block = &plan.mtp_blocks[0];
-        assert_eq!(block.layer.index, 2, "the MTP block is the appended layer");
-        assert!(
-            matches!(
-                block.layer.attention,
-                crate::model_plan::AttentionPlan::Mla(
-                    crate::model_plan::MlaAttentionPlan::LatentKv {
-                        sparse_index: crate::model_plan::SparseIndexPlan::Own {
-                            kpool: Some(_),
-                            ..
-                        },
-                        ..
-                    }
-                )
-            ),
-            "the glm5_next MTP block is MLA with its OWN k-pool indexer (census: the 12th \
-             indexer tensor set lives on the MTP layer)"
-        );
-        assert!(
-            matches!(block.layer.mlp, crate::model_plan::MlpPlan::Moe(_)),
-            "the glm5_next MTP block mirrors a MoE trunk layer"
-        );
-        assert!(
-            matches!(
-                block.layer.residual,
-                crate::model_plan::ResidualTopology::Serial
-            ),
-            "the NextN layer carries NO hc_* tensors (census: 45 trunk rows only) — serial \
-             residual outside the stream stack"
-        );
-
-        let opts = ContractOptions {
-            output_head: OutputHead::TiedToEmbedding,
-        };
-        let gguf =
-            TensorContract::for_plan(&plan, CheckpointDialect::Gguf, opts).expect("gguf contract");
-        let hf = TensorContract::for_plan(&plan, CheckpointDialect::HfSafetensors, opts)
-            .expect("hf contract");
-
-        // Structural exceptions, asserted rather than assumed (same law as the trunk pin):
-        // 1. the MLA conversion split (HF ships only the fused kv_b_proj);
-        // 2. the MTP OutputProjection: a GGUF artifact may carry a private
-        //    `nextn.shared_head_head.weight`, but this HF checkpoint family ships none — the
-        //    HF dialect declares NO name for it and the loader's trunk-head fallback is the
-        //    correct read, so the GGUF spelling must NOT resolve.
-        let head_id = TensorId::Mtp {
-            depth: 0,
-            tensor: MtpTensor::OutputProjection,
-        };
-        assert!(
-            !hf.requirements.iter().any(|h| h.id == head_id),
-            "the HF dialect must not declare a private MTP head for glm5_next"
-        );
-        assert!(
-            resolve_ggml("blk.2.nextn.shared_head_head.weight", &cfg).is_none(),
-            "nextn.shared_head_head must stay UNMAPPED for glm5_next: absent is the \
-             trunk-head fallback, and a mapped-but-missing name would still read absent \
-             while a wrong mapping would project through the wrong matrix"
-        );
-
-        let expert_bank = |tensor: LayerTensor| -> Option<&'static str> {
-            match tensor {
-                LayerTensor::MoeExpertGateBank => Some("gate"),
-                LayerTensor::MoeExpertUpBank => Some("up"),
-                LayerTensor::MoeExpertDownBank => Some("down"),
-                _ => None,
-            }
-        };
-
-        let mut checked_mtp = 0usize;
-        for requirement in &gguf.requirements {
-            // Only the MTP block's requirements: the trunk rows are the previous pin's.
-            let mtp_owned = matches!(requirement.id, TensorId::Mtp { .. })
-                || matches!(requirement.id, TensorId::Layer { index: 2, .. });
-            if !mtp_owned {
-                continue;
-            }
-            if requirement.id == head_id {
-                continue; // exception 2 above
-            }
-            if matches!(requirement.id, TensorId::QuantAux { .. }) {
-                continue;
-            }
-            if matches!(
-                requirement.id,
-                TensorId::Layer {
-                    tensor: LayerTensor::MlaKeyUp | LayerTensor::MlaValueUp,
-                    ..
-                }
-            ) {
-                continue; // exception 1 above, pinned by the MLA name test
-            }
-            let ggml = requirement
-                .names
-                .first()
-                .unwrap_or_else(|| {
-                    panic!("GGUF contract requirement {:?} has no name", requirement.id)
-                })
-                .clone();
-            let want = hf
-                .requirements
-                .iter()
-                .find(|h| h.id == requirement.id)
-                .unwrap_or_else(|| {
-                    panic!(
-                        "HF contract declares no {:?} (GGUF names it {ggml})",
-                        requirement.id
-                    )
-                });
-            let ask = match requirement.id {
-                TensorId::Layer { index, tensor } if expert_bank(tensor).is_some() => {
-                    format!(
-                        "blk.{index}.ffn_{}_exps.0.weight",
-                        expert_bank(tensor).unwrap()
-                    )
-                }
-                _ => ggml.clone(),
-            };
-            let got = match resolve_ggml(&ask, &cfg) {
-                Some(HfTarget::Plain(hf)) | Some(HfTarget::Transform { hf, .. }) => hf,
-                None => panic!(
-                    "no glm5_next ggml->HF mapping for {ask} ({:?}) — the embedded MTP loader \
-                     reads through resolve_ggml, and an unmapped name reads as ABSENT, which \
-                     for `nextn.eh_proj.weight` silently loads NO MTP head at all. The HF \
-                     contract declares this tensor as {:?}",
-                    requirement.id, want.names
-                ),
-            };
-            assert!(
-                want.names.contains(&got),
-                "{ask} ({:?}) resolves to {got}, which is not one of the HF contract's names \
-                 {:?} for the same tensor",
-                requirement.id,
-                want.names
-            );
-            checked_mtp += 1;
-        }
-
-        assert_eq!(
-            checked_mtp, 28,
-            "the MTP block's compiled contract changed size. Raise this number when the block \
-             grows a tensor; NEVER lower it to make a red pin green"
         );
     }
 

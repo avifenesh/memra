@@ -1,9 +1,0 @@
-The user is showing me output from what appears to be a network monitoring tool (possibly Little Snitch, LuLu, or similar) showing multiple processes listening on various ports, all bound to every interface (0.0.0.0 or similar), which makes them reachable from the network.
-
-Let me analyze what's shown:
-
-1. **node-MainThread on :4173** - This is typically Vite's preview server default port (4173). Node.js process.
-2. **python3 on :4177** - Python process on a port near 4173, possibly another dev server
-3. **node-MainThread on :4321** - Node.js on 4321 (could be a dev server, Storybook, etc.)
-4. **unknown process on :5601** - Port 5601 is the default Kibana port! This is likely Kibana (Elasticsearch UI)
-5. **

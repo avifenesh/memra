@@ -54,6 +54,64 @@ pub fn emit_tokens(token_ids: &[u32]) {
     writeln!(file, "tokens\t{ids}").ok();
 }
 
+static ROWS: OnceLock<Option<(std::path::PathBuf, Vec<i64>)>> = OnceLock::new();
+
+/// `MEMRA_TRACE_LAYER_ROWS=<dir>` + `MEMRA_TRACE_LAYER_ROWS_LAYERS=5,14,24,33,42`:
+/// dump the CONTRACTED (mean over hyper streams) residual-stream row of every token at the
+/// named layers, one raw little-endian f32 file per layer (`<dir>/layer<il>.f32`,
+/// `[rows, hidden]` row-major). The contraction is the same arithmetic the glm5_next DFlash2
+/// integration pins for its aux-hidden capture (`hc_contract`: mean over the `hc_mult`
+/// stream blocks of the completed layer output), so these files are drafter context
+/// features, not a debugging trace. Off by default; one OnceLock read when off.
+fn rows_cfg() -> Option<&'static (std::path::PathBuf, Vec<i64>)> {
+    ROWS.get_or_init(|| {
+        let dir = std::env::var_os("MEMRA_TRACE_LAYER_ROWS")?;
+        let layers: Vec<i64> = std::env::var("MEMRA_TRACE_LAYER_ROWS_LAYERS")
+            .ok()?
+            .split(',')
+            .filter_map(|s| s.trim().parse().ok())
+            .collect();
+        let dir = std::path::PathBuf::from(dir);
+        std::fs::create_dir_all(&dir)
+            .unwrap_or_else(|error| panic!("MEMRA_TRACE_LAYER_ROWS={dir:?}: {error}"));
+        Some((dir, layers))
+    })
+    .as_ref()
+}
+
+/// True when the layer-rows dump wants this plan layer. Callers use it to skip a readback.
+pub fn layer_rows_wanted(layer: i64) -> bool {
+    rows_cfg().is_some_and(|(_, layers)| layers.contains(&layer))
+}
+
+/// Contract `[rows, streams, width]` token-major data to `[rows, width]` by the stream mean
+/// and write it as raw little-endian f32. Truncates any previous file for the layer: one
+/// forward per process is the supported shape (run-safetensors).
+pub fn emit_layer_rows(layer: i64, rows: usize, streams: usize, width: usize, data: &[f32]) {
+    let Some((dir, _)) = rows_cfg() else { return };
+    if rows == 0 || streams == 0 || width == 0 || data.len() != rows * streams * width {
+        panic!(
+            "layer-rows {layer}: {} values is not rows {rows} x streams {streams} x width {width}",
+            data.len()
+        );
+    }
+    let mut out = Vec::with_capacity(rows * width * 4);
+    let inv = 1.0f32 / streams as f32;
+    for t in 0..rows {
+        let tok = &data[t * streams * width..(t + 1) * streams * width];
+        for i in 0..width {
+            let mut sum = 0.0f32;
+            for k in 0..streams {
+                sum += tok[k * width + i];
+            }
+            out.extend_from_slice(&(sum * inv).to_le_bytes());
+        }
+    }
+    let path = dir.join(format!("layer{layer}.f32"));
+    std::fs::write(&path, &out)
+        .unwrap_or_else(|error| panic!("layer-rows {}: {error}", path.display()));
+}
+
 /// Emit the last token row of a `[rows, width]` row-major activation.
 ///
 /// `layer` is the plan layer index, or `-1` for the trunk-level stages (`expand`, `collapse`).

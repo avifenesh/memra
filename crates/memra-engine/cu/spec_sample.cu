@@ -567,29 +567,6 @@ extern "C" __global__ void gumbel_perturb_filtered_f32(
     y[i] = x[i] / temp + (-__logf(-__logf(u01(v))));
 }
 
-// Graph-capturable twin of gumbel_perturb_filtered_f32 (lane/step37-draft-graph-serving):
-// the sampling-event counter comes from DEVICE memory (`ctr[0]`, the gumbel_perturb_ctr_f32
-// contract) and (row_max, th) come from DEVICE stat slots (the filter_stats outputs, one row).
-// Arithmetic is expression-for-expression the host-scalar kernel above — same e0 filter test,
-// same Philox lane mapping, same perturb expression — so an in-graph filtered draw is
-// bit-identical to the eager arm's at the same (seed, counter, stats) values.
-extern "C" __global__ void gumbel_perturb_filtered_ctr_f32(
-        const float* __restrict__ x, float* __restrict__ y, int n,
-        uint32_t seed_lo, uint32_t seed_hi, const uint32_t* __restrict__ ctr, float temp,
-        const float* __restrict__ stat_max, const float* __restrict__ stat_th) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= n) return;
-    const float row_max = stat_max[0];
-    const float th = stat_th[0];
-    const float invT = temp > 0.0f ? 1.0f / temp : 1.0f;
-    const float e0 = __expf((x[i] - row_max) * invT);
-    if (e0 < th) { y[i] = -3.4e38f; return; }
-    if (temp <= 0.0f) { y[i] = x[i]; return; }
-    uint4 r = philox4(seed_lo, seed_hi, (uint32_t) (i >> 2), ctr[0]);
-    uint32_t v = (i & 3) == 0 ? r.x : (i & 3) == 1 ? r.y : (i & 3) == 2 ? r.z : r.w;
-    y[i] = x[i] / temp + (-__logf(-__logf(u01(v))));
-}
-
 // Column twin of gumbel_perturb_filtered_f32 over stacked logits [B, n_vocab], with the
 // per-row (row_max, th) read from DEVICE buffers at `stat` (filter_stats output slots) —
 // the serving batched tick's filtered device sampler: no D2H of stats, no row copy. Same

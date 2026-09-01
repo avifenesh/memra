@@ -158,7 +158,7 @@ chunk per call: projections via `Engine::matmul` (tensor-core for the NVFP4 memb
 one `mla_attn_gathered`/`mla_attn_absorbed` launch over the chunk. The kernels are
 custom f32 (not flash-class, not tensor-core: `mla_ffi.rs:353,648`), but DSA caps
 attended keys at 2048+tail and only 11 main-stack layers are MLA, and the banked bench
-says this whole subsystem is milliseconds: `../kpool-bench-frankfurt-crossover.txt`
+says this whole subsystem is milliseconds: `../kpool-bench-Frankfurt-crossover.txt`
 has, at t_q=512, score 0.80-41 ms and attend ~5 ms per layer per call across ctx 4k-1M
 (pool-key build is incremental and flat ~0.01 ms/step). Even scaled to t_q=4096 this is
 sub-second per chunk across all 11 layers. NOT the wall. (The ring-OFF 2.4x prefill
@@ -452,6 +452,6 @@ baseline attribution, and bank the phase table beside this file.
 | BF16 trunk prefill at 15-20 TFLOP/s, f32 dequant per call | `docs/FLAGS.md:864` (`MEMRA_PP_BF16`) |
 | grouped NVFP4 GEMM prime 170-270 TFLOP/s; per-token routes 240 s at m=4092; 3.5-4.9 s vs 29 s+ fallback (step37) | `crates/memra-engine/src/lib.rs:675-686`, `hybrid_forward.rs:6777-6798` |
 | KDA sequential-scan prefill is deliberate; chunked twin named follow-up | `crates/memra-engine/src/kda.rs:13-23` |
-| kpool/MLA subsystem is ms-class per layer per call | `../kpool-bench-frankfurt-crossover.txt` |
+| kpool/MLA subsystem is ms-class per layer per call | `../kpool-bench-Frankfurt-crossover.txt` |
 | fused epilogue exactness + five red arms, both provenances | `../moe-epilogue-receipts/README.md`, `AB-PLAN-RESIDENCY.md` |
 | qwen3.8 prefill ~1-2.5k tok/s on the same engine (batched pairs arm engaged) | internal serving receipts, 2026-08-29 (private ops repo) |

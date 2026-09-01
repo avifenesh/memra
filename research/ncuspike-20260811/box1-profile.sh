@@ -5,9 +5,9 @@ set -euo pipefail
 PHASE=${1:?usage: box1-profile.sh <nsys|ncu> [kernel-regex]}
 KERNEL_REGEX=${2:-}
 
-REPO=${NCUSPIKE_REPO:-/opt/scratch/nvme/memra-cx-ncuspike-src}
-TARGET=${NCUSPIKE_TARGET:-/opt/scratch/nvme/memra-cx-ncuspike-target}
-RUN_ROOT=${NCUSPIKE_RUN_ROOT:-/opt/scratch/nvme/ncuspike-20260811}
+REPO=${NCUSPIKE_REPO:-/opt/dl-image/nvme/memra-cx-ncuspike-src}
+TARGET=${NCUSPIKE_TARGET:-/opt/dl-image/nvme/memra-cx-ncuspike-target}
+RUN_ROOT=${NCUSPIKE_RUN_ROOT:-/opt/dl-image/nvme/ncuspike-20260811}
 MODEL_ROOT=${NCUSPIKE_MODEL_ROOT:-/home/ubuntu/step37/models/step-3.7-flash}
 MODEL=$MODEL_ROOT/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
 PROMPT=$REPO/tools/fast-gate/prompts/probe.txt
@@ -31,7 +31,7 @@ snapshot() {
     {
         echo "label=$label"
         echo "ts=$(date -u +%FT%TZ)"
-        df -h /tmp /opt/scratch/nvme
+        df -h /tmp /opt/dl-image/nvme
         free -h
         swapon --show
         nvidia-smi \

@@ -1,8 +1,0 @@
-  ptxas /tmp/tmpxft_00166f5a_00000000-6_mmq_q8_0_f32acc.ptx, line 14571; error   : Instruction 'mma with block scale' not supported on .target 'sm_100a'
-  ptxas fatal   : Ptx assembly aborted due to errors
-
-  thread 'main' (1463262) panicked at crates/memra-engine/build.rs:635:13:
-  nvcc static-lib build failed for cu/mmq_q8_0_f32acc.cu
-  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
-
-[exited with code 0]

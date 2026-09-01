@@ -148,34 +148,7 @@ pub fn pp_f16_capacity_ok(free: usize, need: usize) -> bool {
 /// Decode never reaches it — callers gate on m >= 16.
 pub fn pp_bf16_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| {
-        let on = matches!(std::env::var("MEMRA_PP_BF16").as_deref(), Ok("1"));
-        // ANNOUNCE PER FLAG VALUE, printed in BOTH arms (the moe-grouped-prefill pattern):
-        // an A/B grep must distinguish "flag off" from "flag on but never consulted" without
-        // the line being an arm-local cost. First consult happens on the first bf16-resident
-        // prefill GEMM (the door's own condition chain), so a boot that never primes a
-        // bf16-resident weight prints nothing, which is itself the honest reading.
-        eprintln!(
-            "[bf16-tc] flag={} (MEMRA_PP_BF16; engagement is the per-shape ENGAGED line + \
-             the dispatch counter)",
-            if on { "on" } else { "off" }
-        );
-        on
-    })
-}
-
-/// Engagement counter for the resident-BF16 tensor-core prefill GEMM (`MEMRA_PP_BF16`),
-/// incremented once per ACCEPTED `bf16_tc_gemm` launch at the invocation itself, after the
-/// cuBLASLt decline check, so a declined shape does not count. Same reason the
-/// moe-grouped-prefill counter exists: the per-shape ENGAGED eprintln dedups by shape, so a
-/// gate that must assert "the door ran N times for this workload" needs a counter at the
-/// invocation, not a log grep (LAW:wiring-assertions-match-prose).
-pub static BF16_TC_DISPATCHES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-/// Snapshot of [`BF16_TC_DISPATCHES`]. Gates take a before/after pair around a workload and
-/// assert on the delta.
-pub fn bf16_tc_dispatches() -> u64 {
-    BF16_TC_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
+    *ON.get_or_init(|| matches!(std::env::var("MEMRA_PP_BF16").as_deref(), Ok("1")))
 }
 
 /// Resident scratch (fp8_ffi::Fp8Scratch pattern): fp16 activation (grown to the largest m*k
@@ -201,7 +174,7 @@ impl F16Scratch {
     }
 }
 
-pub(crate) const F16_WS_BYTES: usize = 64 << 20;
+const F16_WS_BYTES: usize = 64 << 20;
 
 impl crate::Engine {
     /// Swap the resident f16 scratch (task #14 capture isolation). Returns the previous
@@ -341,7 +314,6 @@ impl crate::Engine {
         // that did -- and a correctness gate whose two arms ran the SAME code reports a
         // byte-identical MATCH for the wrong reason. Announced once per shape, same as the
         // decline, so it costs one line per distinct GEMM and nothing per token.
-        BF16_TC_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         {
             static ACCEPTED: std::sync::Mutex<
                 Option<std::collections::HashSet<(usize, usize, usize)>>,

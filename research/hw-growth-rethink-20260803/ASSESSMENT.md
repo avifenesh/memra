@@ -197,7 +197,7 @@ it until a shape shows up where §1 says it matters (TP, N≥8, migration-heavy)
 
 $12,099 new / $9.5–11k refurb (re-verified current, Thunder Compute + Newegg 2026-08-01/02
 — hw-buy's numbers hold). 96 GB/card, native stock-driver P2P (verified both directions,
-L1T Dec-2025 + our own cloud PRO 6000), same sm_120a fatbins byte-for-byte (proven on the cloud PRO 6000 July
+L1T Dec-2025 + our own Sbox), same sm_120a fatbins byte-for-byte (proven on Sbox July
 bring-up), MIG, pro driver (no EULA asterisk), 3-yr warranty, best-in-class resale
 (RTX 6000 Ada: 75–100% retention at 3.5 yr).
 
@@ -213,12 +213,12 @@ metered demand or the fleet moves to a colo.
 ### (d) DGX-class — owner named it; checked, and it splits three ways
 
 - **DGX Spark (GB10, 128 GB unified, $4,699** after the Feb-2026 +$700 memory-shortage raise,
-  OC3D 2026-02-27; widely in stock at the major retailers (Best Buy/Newegg and others)): **disqualified for serving.**
+  OC3D 2026-02-27; widely in stock — Amazon/Best Buy/Newegg): **disqualified for serving.**
   273 GB/s LPDDR5X (NVIDIA docs; Tom's Hardware review 2026-01-27) is ~15% of one 5090 —
   bandwidth-bound decode lands ~7x slower per replica; 48 SMs. Arch is **sm_121**
   (kubesimplify GB10 teardown 2026-06) — our sm_120a SASS does not load on CC 12.1; ARM
   (Grace) host = new build lane on top. Weeks-class engine work for a box that can't serve.
-  At most a $4.7k big-memory *dev toy* — and cloud PRO 6000 rentals already cover that need better.
+  At most a $4.7k big-memory *dev toy* — and Sbox rentals already cover that need better.
 - **DGX Station (GB300, 288 GB HBM3e @ ~8 TB/s + 496 GB LPDDR5X @ 396 GB/s, ConnectX-8):
   real but wrong price class.** Shipping via OEMs since ~June 2026 at **$97–123k**, 4–13 wk
   lead (pi3g.com 2026-06-17; aiHola pre-order ~$97k 2026-03-17). Superb single-node hy3 box
@@ -314,7 +314,7 @@ which is exactly what (e) encodes.
 | **Host-staged PP boundary transport** (pinned D2H→H2D double-buffer arm in pp.rs; guard downgrade from refuse→bounce) | now — critical path of (a)/(e); also the fallback for (b) | transport arm + ppn-gate bit-identity + full battery on a 2x5090 host | **days** |
 | Bounce-latency measurement (replaces the 30–60 µs projection in §1.2) | with the above | one bench on the first owned/rented pair | hours |
 | Patched-P2P qualification (aikitoria) | only if TP/N≥8/migration shape appears | gate battery per driver bump, recurring | days + recurring tax — deferred |
-| PRO 6000 bring-up | first PRO purchase | zero (sm_120a proven on the cloud PRO 6000; cloud-rtx6000.jsonl exists) | ~0 |
+| PRO 6000 bring-up | first PRO purchase | zero (sm_120a proven on Sbox; sbox-rtx6000.jsonl exists) | ~0 |
 | 8x H100 bring-up | fleet stage | zero (sm_90a merged; rented-fleet receipts) | ~0 |
 | DGX Spark (sm_121 + ARM) / Station (sm_103 + ARM) / Rubin (unknown CC + ARM) | not on the path | new arch lane(s), H100-scale each | weeks–months — avoided by this plan |
 
@@ -355,7 +355,7 @@ bought on faith.
 
 - DGX Spark price raise to $4,699: overclock3d.net 2026-02-27. Specs/stock: docs.nvidia.com
   DGX Spark hardware guide; tomshardware.com GB10 review 2026-01-27 (273 GB/s); Best
-  Buy/Newegg and other retailer listings. sm_121: blog.kubesimplify.com GB10 teardown (2026-06-05).
+  Buy/Amazon/Newegg listings. sm_121: blog.kubesimplify.com GB10 teardown (2026-06-05).
 - DGX Station GB300: pi3g.com 2026-06-17 ($97–123k, 4–13 wk lead, 748 GB = 496 LPDDR5X @
   396 GB/s + 252–288 HBM3e); aihola.com 2026-03-17 (~$97k OEM pre-orders); servethehome.com
   2026-03-30.
@@ -389,7 +389,7 @@ same money class as the rejected 5090 pair) or the 2-card 192 GB PP-2 box (§4.1
 hw-buy, $24-28k) when earnings justify. Rationale: 96 GB/card serves 45-90 GB SKUs
 day one AND multi-replica small SKUs via MIG; native P2P means card #2..#N compound
 into one scaling group; same sm_120a — every kernel, gate, and receipt from the 5090
-rigs transfers (cloud PRO 6000 receipts already proved byte-identical fatbins on this exact card
+rigs transfers (Sbox receipts already proved byte-identical fatbins on this exact card
 class); workstation resale 75-100% nominal retention.
 
 Trade-off accepted knowingly: 2x5090 has 2x the aggregate bandwidth per dollar for

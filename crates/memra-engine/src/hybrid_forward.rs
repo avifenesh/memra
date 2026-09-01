@@ -2,10 +2,6 @@
 //! linear-attention (Gated DeltaNet) or full-attention mixer, then SwiGLU FFN. Matches
 //! llama.cpp src/models/qwen35.cpp node-for-node.
 
-// lane/clippy-zero-restore-20260901: index loops here mirror the llama.cpp reference
-// node-for-node (header above); iterator reshapes are not bit-neutral by inspection.
-#![allow(clippy::needless_range_loop)]
-
 use crate::Engine;
 use crate::cache::Cache;
 use cudarc::driver::CudaSlice;
@@ -181,132 +177,73 @@ fn empty_cache_layers<T>(n: usize) -> Vec<Option<T>> {
     std::iter::repeat_with(|| None).take(n).collect()
 }
 
-fn prime_cache_stage_for_layer(fence: &[usize], layer: usize) -> usize {
-    debug_assert!(fence.len() >= 3);
-    match fence[1..fence.len() - 1].binary_search(&layer) {
-        Ok(index) => index + 1,
-        Err(index) => index,
-    }
-}
-
-fn move_prime_cache_layers<T>(
-    parent: &mut [Option<T>],
-    stages: &mut [Vec<Option<T>>],
-    fence: &[usize],
-) {
-    assert_eq!(stages.len() + 1, fence.len());
-    assert!(stages.iter().all(|stage| stage.len() == parent.len()));
-    for (layer, value) in parent.iter_mut().enumerate() {
-        let stage = prime_cache_stage_for_layer(fence, layer);
-        debug_assert!(stages[stage][layer].is_none());
-        stages[stage][layer] = value.take();
-    }
-}
-
-#[cfg(test)]
-fn restore_prime_cache_layers<T>(
-    parent: &mut [Option<T>],
-    stages: &mut [Vec<Option<T>>],
-    fence: &[usize],
-) {
-    assert_eq!(stages.len() + 1, fence.len());
-    assert!(stages.iter().all(|stage| stage.len() == parent.len()));
-    for (layer, value) in parent.iter_mut().enumerate() {
-        let stage = prime_cache_stage_for_layer(fence, layer);
-        debug_assert!(value.is_none());
-        *value = stages[stage][layer].take();
-    }
-}
-
-/// Temporarily move a PP cache's layer state into independently-owned stage shells. The stage
-/// walkers then receive disjoint `&mut Cache` values and can run on separate host threads without
-/// aliasing. GPU buffers are moved, not copied; Drop restores every layer and publishes the last
-/// position completed by every stage.
+/// Temporarily move a PP-2 cache's layer state into two independently-owned cache shells.
+/// The stage walkers then receive disjoint `&mut Cache` values and can run on separate host
+/// threads without aliasing. GPU buffers are moved, not copied; Drop restores every layer
+/// and publishes the last position completed by both stages.
 struct PrimeCacheStages<'a> {
     parent: &'a mut Cache,
-    fence: Vec<usize>,
-    stages: Vec<std::sync::Mutex<Cache>>,
-    committed: bool,
+    cut: usize,
+    stage0: Cache,
+    stage1: Cache,
 }
 
 impl<'a> PrimeCacheStages<'a> {
-    fn new(parent: &'a mut Cache, fence: &[usize]) -> Self {
+    fn new(parent: &'a mut Cache, cut: usize) -> Self {
         let n = parent.kv.len();
         assert_eq!(parent.recur.len(), n, "cache layer vectors disagree");
-        assert_eq!(parent.tp_kv.len(), n, "cache layer vectors disagree");
         assert_eq!(parent.latent.len(), n, "cache layer vectors disagree");
-        let n_stages = fence.len().checked_sub(1).expect("PP cache fence is empty");
-        assert!((2..=4).contains(&n_stages), "PP cache needs 2..=4 stages");
-        assert_eq!(fence[0], 0, "PP cache fence must start at layer zero");
-        assert!(
-            fence.windows(2).all(|pair| pair[0] < pair[1]),
-            "PP cache fence must be strictly increasing"
-        );
-        assert!(fence[n_stages] <= n, "PP cache fence exceeds {n} layers");
-
-        let mut latent: Vec<_> = (0..n_stages).map(|_| empty_cache_layers(n)).collect();
-        let mut g5_recur: Vec<_> = (0..n_stages).map(|_| empty_cache_layers(n)).collect();
-        let mut g5_latent: Vec<_> = (0..n_stages).map(|_| empty_cache_layers(n)).collect();
-        let mut kv: Vec<_> = (0..n_stages).map(|_| empty_cache_layers(n)).collect();
-        let mut tp_kv: Vec<_> = (0..n_stages).map(|_| empty_cache_layers(n)).collect();
-        let mut recur: Vec<_> = (0..n_stages).map(|_| empty_cache_layers(n)).collect();
-        move_prime_cache_layers(&mut parent.kv, &mut kv, fence);
-        move_prime_cache_layers(&mut parent.tp_kv, &mut tp_kv, fence);
-        move_prime_cache_layers(&mut parent.recur, &mut recur, fence);
-
-        move_prime_cache_layers(&mut parent.latent, &mut latent, fence);
-        move_prime_cache_layers(&mut parent.glm5_tp_recur, &mut g5_recur, fence);
-        move_prime_cache_layers(&mut parent.glm5_tp_latent_peer, &mut g5_latent, fence);
+        assert!(cut <= n, "PP-2 cache cut {cut} exceeds {n} layers");
+        let mut kv0 = empty_cache_layers(n);
+        let mut kv1 = empty_cache_layers(n);
+        let mut tp_kv0 = empty_cache_layers(n);
+        let mut tp_kv1 = empty_cache_layers(n);
+        let mut recur0 = empty_cache_layers(n);
+        let mut recur1 = empty_cache_layers(n);
+        let mut latent0 = empty_cache_layers(n);
+        let mut latent1 = empty_cache_layers(n);
+        for i in 0..cut {
+            kv0[i] = parent.kv[i].take();
+            tp_kv0[i] = parent.tp_kv[i].take();
+            recur0[i] = parent.recur[i].take();
+            latent0[i] = parent.latent[i].take();
+        }
+        for i in cut..n {
+            kv1[i] = parent.kv[i].take();
+            tp_kv1[i] = parent.tp_kv[i].take();
+            recur1[i] = parent.recur[i].take();
+            latent1[i] = parent.latent[i].take();
+        }
         let pos = parent.pos;
         let max_ctx = parent.max_ctx;
-        // Indexed rather than zipped: six per-stage layer vectors (main's kv/tp_kv/recur plus
-        // this lane's latent/glm5_tp_recur/glm5_tp_latent_peer) do not read as a zip chain, and
-        // a nested-tuple pattern is exactly where a field silently lands on the wrong stage.
-        let stages = (0..n_stages)
-            .map(|stage| {
-                std::sync::Mutex::new(Cache {
-                    kv: std::mem::take(&mut kv[stage]),
-                    tp_kv: std::mem::take(&mut tp_kv[stage]),
-                    recur: std::mem::take(&mut recur[stage]),
-                    latent: std::mem::take(&mut latent[stage]),
-                    glm5_tp_recur: std::mem::take(&mut g5_recur[stage]),
-                    glm5_tp_latent_peer: std::mem::take(&mut g5_latent[stage]),
-                    pos,
-                    max_ctx,
-                    tainted: false,
-                    last_logits_dev: None,
-                    dflash_taps: None,
-                    hc_taps: None,
-                })
-            })
-            .collect();
         Self {
             parent,
-            fence: fence.to_vec(),
-            stages,
-            committed: false,
+            cut,
+            stage0: Cache {
+                kv: kv0,
+                tp_kv: tp_kv0,
+                recur: recur0,
+                latent: latent0,
+                pos,
+                max_ctx,
+                last_logits_dev: None,
+                dflash_taps: None,
+            },
+            stage1: Cache {
+                kv: kv1,
+                tp_kv: tp_kv1,
+                recur: recur1,
+                latent: latent1,
+                pos,
+                max_ctx,
+                last_logits_dev: None,
+                dflash_taps: None,
+            },
         }
     }
 
-    fn pp2_parts(&mut self) -> (&mut Cache, &mut Cache) {
-        assert_eq!(self.stages.len(), 2);
-        let (stage0, stage1) = self.stages.split_at_mut(1);
-        (
-            stage0[0]
-                .get_mut()
-                .unwrap_or_else(|poisoned| poisoned.into_inner()),
-            stage1[0]
-                .get_mut()
-                .unwrap_or_else(|poisoned| poisoned.into_inner()),
-        )
-    }
-
-    fn stages(&self) -> &[std::sync::Mutex<Cache>] {
-        &self.stages
-    }
-
-    fn commit(&mut self) {
-        self.committed = true;
+    fn parts(&mut self) -> (&mut Cache, &mut Cache) {
+        (&mut self.stage0, &mut self.stage1)
     }
 }
 
@@ -314,10 +251,11 @@ impl Drop for PrimeCacheStages<'_> {
     fn drop(&mut self) {
         let n = self.parent.kv.len();
         for i in 0..n {
-            let stage = prime_cache_stage_for_layer(&self.fence, i);
-            let source = self.stages[stage]
-                .get_mut()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let source = if i < self.cut {
+                &mut self.stage0
+            } else {
+                &mut self.stage1
+            };
             debug_assert!(self.parent.kv[i].is_none());
             debug_assert!(self.parent.tp_kv[i].is_none());
             debug_assert!(self.parent.recur[i].is_none());
@@ -326,187 +264,8 @@ impl Drop for PrimeCacheStages<'_> {
             self.parent.tp_kv[i] = source.tp_kv[i].take();
             self.parent.recur[i] = source.recur[i].take();
             self.parent.latent[i] = source.latent[i].take();
-            self.parent.glm5_tp_recur[i] = source.glm5_tp_recur[i].take();
-            self.parent.glm5_tp_latent_peer[i] = source.glm5_tp_latent_peer[i].take();
         }
-        self.parent.pos = self
-            .stages
-            .iter_mut()
-            .map(|stage| {
-                stage
-                    .get_mut()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner())
-                    .pos
-            })
-            .min()
-            .unwrap_or(self.parent.pos);
-        if !self.committed {
-            self.parent.mark_tainted();
-        }
-    }
-}
-
-/// Fail-stop transaction marker for concat-prime paths. These paths mutate several independent
-/// caches before their final epilogue can fail; an error must make every member permanently
-/// ineligible for retry/reuse rather than replaying a queue over partially advanced state.
-struct CacheTaintGuard {
-    caches: Vec<*mut Cache>,
-    committed: bool,
-}
-
-impl CacheTaintGuard {
-    fn arm(caches: &mut [&mut Cache]) -> Self {
-        Self {
-            caches: caches
-                .iter_mut()
-                .map(|cache| *cache as *mut Cache)
-                .collect(),
-            committed: false,
-        }
-    }
-
-    fn commit(&mut self) {
-        self.committed = true;
-    }
-}
-
-impl Drop for CacheTaintGuard {
-    fn drop(&mut self) {
-        if self.committed {
-            return;
-        }
-        for cache in &self.caches {
-            // SAFETY: `arm` receives the function's unique cache references. The guard never
-            // escapes that call or dereferences them until unwind/return after active borrows end.
-            unsafe { (&mut **cache).mark_tainted() };
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct PrimePpWaveSlot {
-    wave: usize,
-    slot: usize,
-}
-
-#[derive(Debug)]
-enum PrimePpSignal {
-    Slot(PrimePpWaveSlot),
-    Error(String),
-}
-
-#[derive(Default)]
-struct PrimePpWaveCredits {
-    next_wave: usize,
-    pending: std::collections::VecDeque<PrimePpWaveSlot>,
-}
-
-impl PrimePpWaveCredits {
-    fn release_required(&self) -> Option<PrimePpWaveSlot> {
-        (self.pending.len() == 2).then(|| self.pending[0])
-    }
-
-    fn record_release(&mut self, released: PrimePpWaveSlot) -> Result<(), String> {
-        let expected =
-            self.pending.front().copied().ok_or_else(|| {
-                "prime PP received a slot release with no pending wave".to_string()
-            })?;
-        if released != expected {
-            return Err(format!(
-                "prime PP slot release {:?} does not match oldest pending {:?}",
-                released, expected
-            ));
-        }
-        self.pending.pop_front();
-        Ok(())
-    }
-
-    fn record_send(&mut self, sent: PrimePpWaveSlot) -> Result<(), String> {
-        if sent.wave != self.next_wave {
-            return Err(format!(
-                "prime PP sent wave {} while wave {} was next",
-                sent.wave, self.next_wave
-            ));
-        }
-        if sent.slot >= 2 {
-            return Err(format!(
-                "prime PP boundary returned invalid slot {}",
-                sent.slot
-            ));
-        }
-        if self.pending.iter().any(|pending| pending.slot == sent.slot) {
-            return Err(format!(
-                "prime PP reused slot {} before its exact-wave release",
-                sent.slot
-            ));
-        }
-        self.pending.push_back(sent);
-        self.next_wave += 1;
-        Ok(())
-    }
-}
-
-fn recv_prime_pp_signal(
-    receiver: &std::sync::mpsc::Receiver<PrimePpSignal>,
-    expected: PrimePpWaveSlot,
-    exact_slot: bool,
-    label: &str,
-) -> Result<PrimePpWaveSlot, String> {
-    match receiver.recv() {
-        Ok(PrimePpSignal::Error(error)) => Err(error),
-        Ok(PrimePpSignal::Slot(received))
-            if received.wave == expected.wave
-                && (!exact_slot || received.slot == expected.slot) =>
-        {
-            if received.slot >= 2 {
-                Err(format!(
-                    "{label}: wave {} carried invalid slot {}",
-                    received.wave, received.slot
-                ))
-            } else {
-                Ok(received)
-            }
-        }
-        Ok(PrimePpSignal::Slot(received)) => Err(format!(
-            "{label}: expected wave/slot {:?}, received {:?}",
-            expected, received
-        )),
-        Err(_) => Err(format!(
-            "{label}: channel closed while waiting for wave {}",
-            expected.wave
-        )),
-    }
-}
-
-fn send_prime_pp_signal(
-    sender: &std::sync::mpsc::Sender<PrimePpSignal>,
-    signal: PrimePpSignal,
-    label: &str,
-) -> Result<(), String> {
-    sender
-        .send(signal)
-        .map_err(|_| format!("{label}: channel closed"))
-}
-
-struct PrimePpWave<'a> {
-    start: usize,
-    end: usize,
-    tokens: &'a [u32],
-}
-
-struct PrimePpStageChannels {
-    incoming: Option<std::sync::mpsc::Receiver<PrimePpSignal>>,
-    release_upstream: Option<std::sync::mpsc::Sender<PrimePpSignal>>,
-    outgoing: std::sync::mpsc::Sender<PrimePpSignal>,
-    released_downstream: std::sync::mpsc::Receiver<PrimePpSignal>,
-}
-
-impl PrimePpStageChannels {
-    fn notify_failure(&self, error: &str) {
-        if let Some(upstream) = &self.release_upstream {
-            let _ = upstream.send(PrimePpSignal::Error(error.to_string()));
-        }
-        let _ = self.outgoing.send(PrimePpSignal::Error(error.to_string()));
+        self.parent.pos = self.stage0.pos.min(self.stage1.pos);
     }
 }
 
@@ -615,56 +374,6 @@ fn moe_fused_epi_enabled() -> bool {
     std::env::var("MEMRA_MOE_FUSED_EPI")
         .map(|v| v != "0")
         .unwrap_or(false)
-}
-
-/// `MEMRA_HC_DECODE_WS` — the persistent hc-glue decode workspace (lane/glm5-decode-diet
-/// lever 2): the T=1 hc decode walk lands its glue transients (mixes, gates, comb, collapse
-/// y, both norm scratches, the per-site post output) in one per-engine `HyperDecodeWs`
-/// instead of ~12 fresh `cuMemAllocAsync`+free pairs per layer per token (the launch-diet
-/// census's 2,358-calls/token class). Same kernels, same call order, same operand bytes —
-/// byte identity ON/OFF gated by `tests/hc_decode_ws_gpu.rs`.
-///
-/// DEFAULT OFF, deliberately (docs/FLAGS.md row): the alloc-call reduction is proven on the
-/// rig by counter receipt, but the ms/token value is arithmetic against the box's measured
-/// launch/alloc constants — nothing has been measured on serving hardware yet. Unmeasured
-/// behavior does not default ON.
-///
-/// Read PER CALL, not latched (the `MEMRA_MOE_FUSED_EPI` rollback-seam precedent).
-fn hyper_decode_ws_on() -> bool {
-    std::env::var("MEMRA_HC_DECODE_WS").as_deref() == Ok("1")
-}
-
-/// Engagement counter for the workspace walk — the receipt the gate and any box A/B arm
-/// must show (engagement lines are receipts, never inferred).
-pub static HC_DECODE_WS_DISPATCHES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
-/// `MEMRA_MLA_TC_PREFILL` — the glm5_next tensor-core MLA prefill chain
-/// (lane/glm5-mla-tc-prefill, 2026-08-30): at prefill widths the three per-position f32
-/// kernels the launch-diet census named (`memra_mla_attn_gathered_kernel` 139 ms +
-/// `memra_mla_absorb_q_kernel` 44.5 ms + `memra_mla_decompress_v_kernel` 43.6 ms per
-/// layer-chunk, 75.8% of a 98%-GPU-busy cold prime) are replaced by two strided-batched
-/// bf16 tensor-core GEMMs (absorb / decompress, one launch each) and one gathered
-/// flash-attention MMA kernel (`fa_mla_gathered_bf16`). Selection, the latent cache, the
-/// q/kv projections, and decode are UNTOUCHED.
-///
-/// DEFAULT ON (owner acceptance 2026-08-30, "why not? i dont see why not", on the two-box
-/// A/B receipts): interleaved x5 fresh boots per arm on BOTH the Server-Edition and
-/// Workstation-Edition 4-card boxes, zero violations, zero argmax flips across 20 boots,
-/// TTFD -62%..-69% (7.45->2.83 s @4.6k / 6.58->2.51 s), prefill 619-724 -> 1629-2255 tok/s,
-/// vendor-default sampled twin -66/-67%, decode untouched, engagement receipted in every ON
-/// boot with no cuBLASLt declines (docs/FLAGS.md row carries the pointers). The numeric
-/// config remains band-gated (bf16 operands, f32 accumulate — the fa_prefill/MEMRA_PP_BF16
-/// class, `tests/mla_tc_prefill_gpu.rs`, never bit). `MEMRA_MLA_TC_PREFILL=0` is the
-/// rollback seam.
-///
-/// Read PER CALL, not latched (the `MEMRA_MOE_FUSED_EPI` rollback-seam precedent): the gate
-/// flips both arms inside one test process, and a latched flag would make the second arm
-/// silently a copy of the first.
-fn mla_tc_prefill_enabled() -> bool {
-    std::env::var("MEMRA_MLA_TC_PREFILL")
-        .map(|v| v != "0")
-        .unwrap_or(true)
 }
 
 /// Expert-grouped dispatch remains opt-in after the local 5090 transfer gate rejected the
@@ -805,17 +514,6 @@ fn moe_dev_enabled() -> bool {
 
 /// Device sigmoid top-k is the default for Step-3.7 / M3 / Hy3 / GLM-DSA. `MEMRA_SIG_ROUTER=0` restores
 /// the full-logit DtoH plus `moe_route_sigmoid_host` oracle without changing expert dispatch.
-/// Where the verify-rows MoE pair's routed selection lives for one layer-call
-/// (lane/glm5-moe-loc door D). `Host` is the shipped arm: the router's pinned readback gave the
-/// host `sel`/`w`, and the host builds the pointer/scale tables. `Dev` is door D's arm: the
-/// router's own device `sel_idx`/`sel_w` are still live, so the tables are built where they are
-/// and the readback (2 DtoH + a full `cuStreamSynchronize` per MoE layer-call) never happens.
-/// ONE launch path consumes both — only the table build differs, term-for-term identically.
-enum VrowsSel<'a> {
-    Host(&'a [u32], &'a [f32]),
-    Dev(&'a CudaSlice<i32>, &'a CudaSlice<f32>),
-}
-
 fn sigmoid_router_enabled() -> bool {
     static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *E.get_or_init(|| {
@@ -876,41 +574,6 @@ fn q8_expert_supported(qt: i32) -> bool {
         || (kq && (qt == crate::QT_Q3_K || qt == crate::QT_Q4_K || qt == crate::QT_Q6_K))
 }
 
-/// ModelOpt `W4A16_NVFP4` is weight-only: feeding its expert weights a q8_1 activation changes
-/// the declared numeric program to W4A8. Keep the established q8 path for every other artifact,
-/// but force Hy3 W4A16 experts through the BF16-activation `qmatvec_view` oracle.
-fn q8_expert_supported_for_model(cfg: &ModelConfig, qt: i32) -> bool {
-    let weight_only_nvfp4 = cfg.hy3.as_ref().is_some_and(|hy3| hy3.weight_only_nvfp4);
-    q8_expert_supported(qt) && !(weight_only_nvfp4 && qt == crate::QT_NVFP4)
-}
-
-fn moe_q8_enabled_for_model(cfg: &ModelConfig, m: &MoeWeights) -> bool {
-    m.has_uniform_expert_layout()
-        && moe_q8_enabled()
-        && q8_expert_supported_for_model(cfg, m.gate_exps.qtype)
-        && q8_expert_supported_for_model(cfg, m.up_exps.qtype)
-        && q8_expert_supported_for_model(cfg, m.down_exps.qtype)
-}
-
-#[cfg(test)]
-mod w4a16_dispatch_tests {
-    use super::q8_expert_supported_for_model;
-    use memra_gguf::config::{HfConfig, ModelConfig};
-
-    #[test]
-    fn hy3_w4a16_never_admits_q8_activations() {
-        let hf = HfConfig::parse(
-            r#"{"model_type":"hy_v3","num_hidden_layers":2,"hidden_size":8,
-            "num_attention_heads":2,"intermediate_size":16,"vocab_size":32,
-            "max_position_embeddings":32,
-            "quantization_config":{"quant_method":"modelopt","quant_algo":"W4A16_NVFP4"}}"#,
-        );
-        let cfg = ModelConfig::from_hf(&hf);
-        assert!(!q8_expert_supported_for_model(&cfg, crate::QT_NVFP4));
-        assert!(q8_expert_supported_for_model(&cfg, crate::QT_IQ4_XS));
-    }
-}
-
 /// The decode-once (_dec) and IQ-MMA expert kernels dequant via IQ-specific extractors —
 /// k-quant tensors must fall to the _em dot path instead.
 fn q8_expert_dec_supported(qt: i32) -> bool {
@@ -961,80 +624,31 @@ fn cpu_expert_profile_admit_enabled() -> bool {
 /// kernel needs T >= d_conv-1). Callers: generate / generate_spec.
 pub const PRIME_MIN_T: usize = 16;
 
-/// CUDA grid dimensions y and z cap at 65,535 (an architecture constant on every compute
-/// capability we target; only grid.x is 2^31-1). Several prime-path kernels launch with the
-/// call's token count in grid.y — the fused GDN conv (`ssm_conv1d_gdn_state_f32`,
-/// lib.rs `ssm_conv1d_gdn_state_pad`), the dp4a matvec family taken at out_f < 128
-/// (`qmatvec*_fast`/`qmatvec_dp4a_named`, which is where the GDN ssm_beta/ssm_alpha
-/// projections land), and the MoE `router_gemv` — so ONE prime call must never carry more
-/// tokens than this. A monolithic prime above it is a guaranteed
-/// `DriverError(CUDA_ERROR_INVALID_VALUE)` at launch: measured on ornith-1.5 serving with
-/// MEMRA_PRIME_CHUNK=0 (cold 64,984 PASS / 65,643 FAIL, darklanes
-/// research/ornith-move-20260829 F2; re-hit on prod by the 2026-09-01 stress campaign at
-/// 66,045/79,717/82,440), and the same wall was hit and chunk-walked away by the glm5 1M
-/// lane's ppN prime.
-pub const CUDA_GRID_YZ_MAX: usize = 65_535;
-
-/// Widest prime range that stays launch-legal through the ring-off tail fold of
-/// `fixed_prime_chunk_ranges_for_ring`: a trailing remainder shorter than `PRIME_MIN_T`
-/// folds INTO the previous range, widening it by up to `PRIME_MIN_T - 1` tokens, so the
-/// cap keeps `chunk + PRIME_MIN_T - 1 <= CUDA_GRID_YZ_MAX`. With this value every
-/// t <= 65,535 still schedules as the identical single monolithic range (t <= chunk, or
-/// the fold collapses the split), so behavior below the CUDA wall is byte-for-byte
-/// unchanged — only prompts that today CANNOT launch get chunked.
-pub const PRIME_CHUNK_LAUNCH_CAP: usize = CUDA_GRID_YZ_MAX - (PRIME_MIN_T - 1);
-
-/// The explicit-`MEMRA_PRIME_CHUNK` chunk width, ring-aware. Extracted pure for tests.
-/// Ring ON keeps the historical clamp to `PRIME_CHUNK_MAX_TOKENS`. Ring OFF preserves the
-/// operator's value except at the CUDA launch wall: `0` ("monolithic") now means
-/// "monolithic up to `PRIME_CHUNK_LAUNCH_CAP`", and any larger explicit value is capped
-/// there too — an uncapped value above the wall never produced output, only
-/// CUDA_ERROR_INVALID_VALUE (see `CUDA_GRID_YZ_MAX`).
-fn explicit_prime_chunk(parsed: usize, ring_on: bool) -> usize {
-    if ring_on {
-        if parsed == 0 {
-            crate::cache::PRIME_CHUNK_MAX_TOKENS
-        } else {
-            parsed.min(crate::cache::PRIME_CHUNK_MAX_TOKENS)
-        }
-    } else if parsed == 0 {
-        PRIME_CHUNK_LAUNCH_CAP
-    } else {
-        parsed.min(PRIME_CHUNK_LAUNCH_CAP)
-    }
-}
-
 /// MEMRA_STEP_GEMM_PRIME_SUFFIX: does a CONTINUATION prime (`cache.pos > 0` — a rewound
 /// session's suffix, or a prompt remainder split across scheduler ticks) ride the batched
 /// GEMM prime, like a fresh prompt does?
 ///
-/// DEFAULT ON since 2026-08-29, by decision, under the flip bar the OFF-era FLAGS row
-/// wrote down (never byte identity — a prime-decomposition m-dependence that EVERY
-/// measured prime path shares, walk included, bars that gate for all of them):
-///  1. vendor-default sampled rows: the blind, rubric-pre-registered 8-turn quality A/B
-///     (research/step37-sampled-quality-20260828, 72/72 valid rows, engagement receipts
-///     per row) — WARM-GEMM sits inside COLD's own self-spread at t4 and t8 (t8 carried
-///     at n=16; the round-1 walk-over-gemm signal collapsed at p~0.91).
-///  2. the 8-turn cache-on twin: warm TTFT 0.58 s (door) vs 7.15 s (walk) on the real
-///     warm serving shape, zero faults.
-///  3. the batched prime's own standard: acceptance 0.80-0.86 across all arms with the
-///     door arm highest at t8; interleaved arms; zero ILLEGAL/#87/panics in 19 boots.
+/// DEFAULT OFF IN THIS COMMIT, by decision (lane/gemm-suffix, 2026-08-28), and the decision
+/// is the ordering rather than the destination: unmeasured behaviour does not default ON, and
+/// this lane's own byte-identity sweep and TTFT cell were still queued on the box GPU lock
+/// when the code landed. The `seq_end` fix beneath is NOT gated on this door — it is
+/// unconditional, because the chunk-local `seq_end` it replaces is wrong for a fresh prompt
+/// of 4096+k tokens (k in [PRIME_MIN_T, 512)) with no continuation anywhere in sight.
 ///
-/// Precondition shipped first: the SWA-ring checkpoint restore fix (c9a617ca99) — real
-/// session reuse crosses the grow path before any door question matters.
-/// Why it is worth it, measured: the walk continuation costs 5.5978 ms/suffix-token
-/// against this path's 0.99 ms/token (five-point sweep, R^2 0.9976), a 7.97x suffix
-/// slope collapse.
+/// THE FLIP TO ON is the follow-up commit in this lane, and it carries the receipts:
+/// greedy byte-identity between a cold full prime of P and a rewound-plus-suffix prime
+/// reaching the same P, swept across suffix lengths that bracket the 512-row SWA window and
+/// the 4096-token chunk width; plus the interleaved growing-conversation TTFT cell. Why it is
+/// worth flipping: the walk continuation measures 5.5978 ms/suffix-token against this path's
+/// 0.99 ms/token (coordinator's five-point sweep, R^2 0.9976), so a rewind only pays below
+/// ~217 suffix tokens and session-affinity reuse on a growing agentic conversation was a
+/// 1.012x wash.
 ///
-/// The `seq_end` fix beneath is NOT gated on this door — it is unconditional, because
-/// the chunk-local `seq_end` it replaced is wrong for a fresh prompt of 4096+k tokens
-/// (k in [PRIME_MIN_T, 512)) with no continuation anywhere in sight.
-///
-/// `=0` is the kill switch (continuations back on the walk, fresh primes keep the fast
-/// path); `=1` forces; `MEMRA_STEP_GEMM_PRIME=0` remains the whole-path seam. Read per
-/// call, not cached — probes flip it in process.
+/// `=1` forces the suffix arm ON, `=0` (and unset, for now) leaves continuations on the walk
+/// while fresh primes keep the fast path; `MEMRA_STEP_GEMM_PRIME=0` remains the whole-path
+/// seam. Read per call, not cached — probes flip it in process.
 fn step_gemm_prime_suffix_on() -> bool {
-    std::env::var("MEMRA_STEP_GEMM_PRIME_SUFFIX").as_deref() != Ok("0")
+    std::env::var("MEMRA_STEP_GEMM_PRIME_SUFFIX").as_deref() == Ok("1")
 }
 
 /// Widest tick the MoE DEV per-token program serves (lane/orndecode-20260822). PRIME_MIN_T
@@ -1057,32 +671,26 @@ fn prime_pp2_auto_geometry(n_layers: usize) -> bool {
         && crate::pp::pp_cuts(n_layers).is_some_and(|cuts| cuts.len() == 3)
 }
 
-fn prime_ppn_wave_auto_geometry(n_layers: usize) -> bool {
-    crate::pp::prime_pp_on()
-        && !crate::pp::pp2_streams_off()
-        && crate::pp::pp_wave_on() == Ok(true)
-        && crate::pp::pp_cuts(n_layers).is_some_and(|cuts| matches!(cuts.len(), 4 | 5))
-}
-
-fn prime_pipeline_auto_geometry(n_layers: usize) -> bool {
-    prime_pp2_auto_geometry(n_layers) || prime_ppn_wave_auto_geometry(n_layers)
-}
-
-/// Effective internal prime chunk. An explicit MEMRA_PRIME_CHUNK is authoritative up to the
-/// CUDA launch wall (`PRIME_CHUNK_LAUNCH_CAP`; 0 = monolithic up to that wall — see
-/// `explicit_prime_chunk`).
-/// Pipelined PP primes use the measured PP-2 geometry: up to eight microchunks, never below
-/// 128 tokens, while the legacy 4096-token cap remains the long-context bound. PP-3/4 inherit
-/// only the geometry when their separate MEMRA_PP_WAVE door is explicitly open.
+/// Effective internal prime chunk. An explicit MEMRA_PRIME_CHUNK is authoritative.
+/// Naked PP-2 primes use the measured pipeline geometry: up to eight microchunks, never
+/// below 128 tokens, while the legacy 4096-token cap remains the long-context bound.
 pub fn prime_chunk_tokens(t: usize, n_layers: usize) -> usize {
     if let Ok(value) = std::env::var("MEMRA_PRIME_CHUNK") {
         let parsed = value
             .parse::<usize>()
             .unwrap_or(crate::cache::PRIME_CHUNK_MAX_TOKENS);
-        return explicit_prime_chunk(parsed, crate::cache::swa_ring_on());
+        return if crate::cache::swa_ring_on() {
+            if parsed == 0 {
+                crate::cache::PRIME_CHUNK_MAX_TOKENS
+            } else {
+                parsed.min(crate::cache::PRIME_CHUNK_MAX_TOKENS)
+            }
+        } else {
+            parsed
+        };
     }
     let chunk = crate::cache::PRIME_CHUNK_MAX_TOKENS;
-    if prime_pipeline_auto_geometry(n_layers) && t >= 2 * PRIME_PIPE_MIN_CHUNK {
+    if prime_pp2_auto_geometry(n_layers) && t >= 2 * PRIME_PIPE_MIN_CHUNK {
         chunk.min(
             t.div_ceil(PRIME_PIPE_MICROBATCHES)
                 .max(PRIME_PIPE_MIN_CHUNK),
@@ -1165,8 +773,8 @@ fn dynamic_prime_chunk_ranges(
     ranges
 }
 
-/// Internal prime ranges. A pipelined PP prime defaults to a short-fill, equal-modeled-time
-/// schedule; MEMRA_PRIME_CHUNK_SCHED=fixed restores the measured
+/// Internal prime ranges. The naked PP-2 pipeline defaults to a short-fill,
+/// equal-modeled-time schedule; MEMRA_PRIME_CHUNK_SCHED=fixed restores the measured
 /// equal-token ranges. An explicit MEMRA_PRIME_CHUNK always retains fixed semantics.
 ///
 /// `gdn_grid`: the model runs the chunked GDN WY scan (`HybridModel::gdn_prime_grid_on`) —
@@ -1185,7 +793,7 @@ pub fn prime_chunk_ranges(t: usize, n_layers: usize, gdn_grid: bool) -> Vec<(usi
     if explicit_chunk {
         return fixed;
     }
-    let ranges = if !dynamic || !prime_pipeline_auto_geometry(n_layers) {
+    let ranges = if !dynamic || !prime_pp2_auto_geometry(n_layers) {
         fixed
     } else {
         dynamic_prime_chunk_ranges(t, chunk, &fixed)
@@ -1251,10 +859,8 @@ pub fn prime_chunk_ranges(t: usize, n_layers: usize, gdn_grid: bool) -> Vec<(usi
 /// nothing at all.
 ///
 /// A prompt at or under one chunk takes the monolithic body unchanged, and `MEMRA_PRIME_CHUNK=0`
-/// restores the monolithic walk up to `PRIME_CHUNK_LAUNCH_CAP` (65,520 tokens; the CUDA
-/// grid.y wall is 65,535 and the old walk always died at launch above it, 08-29 ppN receipts)
-/// — the rollback seam, and the oracle arm the correctness gate compares against, both now
-/// bounded by that cap; longer prompts split at the cap even under `0`.
+/// restores the monolithic walk at any length — the rollback seam, and the oracle arm the
+/// correctness gate compares against.
 pub fn hyper_prime_ranges(t: usize, n_layers: usize, gdn_grid: bool) -> Vec<(usize, usize)> {
     prime_chunk_ranges(t, n_layers, gdn_grid)
 }
@@ -1269,69 +875,6 @@ pub fn hyper_prime_call_rows(t: usize, n_layers: usize, gdn_grid: bool) -> usize
         .map(|&(start, end)| end - start)
         .max()
         .unwrap_or(0)
-}
-
-/// Per-request prefill WORKSPACE coefficients for a HyperConnections trunk, published to
-/// admission (lane/glm5-gpf-workspace, 2026-08-30). `None` for every non-hyper model: their
-/// admission arithmetic is byte-identical to the pre-lane behavior.
-///
-/// These are the FORMULA behind the 262k 2-card cell's measured ~0.8 MiB/token/card prefill
-/// wall (`research/glm53-flash-bringup-20260827/262k-2card-20260830/LANE.md`), not the slope
-/// itself: each term is the size of a named allocation in the walk, summed per token of ONE
-/// prime call. On GLM-5.3-Flash geometry (H=4096, S=4, F=2048, U=8, heads=64, qk=256, v=256,
-/// topk=2048, P=4) `chunk_token_bytes` evaluates to ~0.86 MiB — the receipt's slope with the
-/// conservative side up. The attribution table naming every term lives in
-/// `research/glm53-flash-bringup-20260827/gpf-workspace-20260830/LANE.md` §1.
-#[derive(Debug, Clone, Copy)]
-pub struct HyperPrimeWorkspaceShape {
-    /// Bytes of per-call prefill transients PER TOKEN OF ONE PRIME CALL: the double-buffered
-    /// `[t, streams, hidden]` stream state + ppN boundary slots, the pre/norm transients, the
-    /// grouped-MoE staging (CSR activations + three f32 partial planes + f16 mirrors + scatter
-    /// planes), the MLA query/attention planes, the k-pool idx plane, and the prime-tail
-    /// hidden/norm pair. Multiplied by [`hyper_prime_call_rows`] this bounds the workspace of
-    /// the CHUNKED prime; on the monolithic rollback (`MEMRA_PRIME_CHUNK=0`) the call rows are
-    /// the whole prompt up to `PRIME_CHUNK_LAUNCH_CAP` (65,535 launch-legal max; admission
-    /// re-derives `hyper_prime_call_rows` so the arithmetic stays consistent either way) and
-    /// the same product stays honest.
-    pub chunk_token_bytes: usize,
-    /// Bytes per PROMPT token that live for the WHOLE prime on the last stage: the returned
-    /// pre-output_norm `hiddens` stack (`n_embd` f32), consumed by the MTP-spec `prompt_h`
-    /// and the embed capture.
-    pub prompt_bytes_per_token: usize,
-    /// DSA k-pool group size `P`, or 0 when the model runs no k-pool indexer. The selection
-    /// score plane of ONE call is `call_rows * (ctx / P)` f32 — the one prefill transient that
-    /// stays COUPLED TO CONTEXT DEPTH after chunking (it is the allocation the 3-card 1M prime
-    /// died on at 97.2 GiB).
-    pub kpool_score_pool: usize,
-    /// Trunk layer count, for re-deriving [`hyper_prime_call_rows`] at admission time with the
-    /// same env-sensitive schedule the prime itself will walk.
-    pub n_layers: usize,
-    /// The model's own GDN grid-alignment input to the schedule.
-    pub gdn_grid: bool,
-}
-
-impl HyperPrimeWorkspaceShape {
-    /// The admission charge for one request: workspace of the LARGEST prime call this request
-    /// can produce, plus the ctx-coupled score plane at that call width, plus the prompt-long
-    /// hiddens stack.
-    ///
-    /// Keyed on PROMPT rows, deliberately not on `ctx_cap`: every term here is a function of
-    /// what the PRIME walks, and a `max_tokens`-omitted request carries a `ctx_cap` of the
-    /// whole server window — charging the window would refuse every vendor-default short
-    /// prompt on a deep-window box for workspace it never allocates. A continuation request's
-    /// `prompt` is the full rendered conversation (the suffix optimization is internal
-    /// reuse), so the score plane's `t_kv` is covered too.
-    pub fn admission_bytes(&self, prompt_rows: usize) -> usize {
-        let rows = hyper_prime_call_rows(prompt_rows, self.n_layers, self.gdn_grid);
-        let chunk = self.chunk_token_bytes.saturating_mul(rows);
-        let score = prompt_rows
-            .checked_div(self.kpool_score_pool)
-            .map(|pools| rows.saturating_mul(pools).saturating_mul(size_of::<f32>()))
-            .unwrap_or(0);
-        chunk
-            .saturating_add(score)
-            .saturating_add(self.prompt_bytes_per_token.saturating_mul(prompt_rows))
-    }
 }
 
 /// Snap AUTO prime-range internal boundaries DOWN to the GDN WY-chunk grid (lane/
@@ -1460,11 +1003,11 @@ impl HybridModel {
     /// engine? Native P2P (peer copies replace the host staging) AND a shared root context
     /// (the device buffers must be addressable on both sides — the TP registry builds its
     /// own Engine per rank, so this is a real seam, not a formality).
-    fn full_attn_tp_device_resident(e: &Engine, tp: &crate::hybrid::StepTpQkv) -> bool {
+    fn step35_tp_device_resident(e: &Engine, tp: &crate::hybrid::StepTpQkv) -> bool {
         tp.runtime.native_p2p() && tp.runtime.root_shares_ctx(e)
     }
 
-    pub(crate) fn full_attn_tp_qkv(
+    fn step35_tp_qkv(
         &self,
         e: &Engine,
         fa: &FullAttnLayer,
@@ -1488,7 +1031,7 @@ impl HybridModel {
         // instead of dtoh+htod; kernels, peer copies, and gather order are shared code).
         // The host arm below remains the transport for !native_p2p (host staging IS that
         // transport) and for a root context this engine cannot address.
-        if Self::full_attn_tp_device_resident(e, tp) {
+        if Self::step35_tp_device_resident(e, tp) {
             // Producer fence: h was written on THIS engine's stream; the TP ranks read it
             // on theirs (same context, different streams).
             e.stream().synchronize()?;
@@ -1501,7 +1044,7 @@ impl HybridModel {
             let v = tp
                 .runtime
                 .bf16_column_parallel_resident_native_device(&tp.v, h, t)?;
-            Self::full_attn_tp_log_once(tp, "qkv", "device-resident");
+            Self::step35_tp_log_once(tp, "qkv", "device-resident");
             return Ok(Some(vec![q, k, v]));
         }
         let host = e.dtoh_view(&h.slice(0..values))?;
@@ -1529,14 +1072,14 @@ impl HybridModel {
                 .bf16_column_parallel_resident(&tp.v, &host, t)?
                 .gathered
         };
-        Self::full_attn_tp_log_once(tp, "qkv", "host-canonical");
+        Self::step35_tp_log_once(tp, "qkv", "host-canonical");
         Ok(Some(vec![e.htod(&q)?, e.htod(&k)?, e.htod(&v)?]))
     }
 
     /// One transport banner per (projection, transport) — the old per-call eprintln fired
     /// on EVERY layer of EVERY step, itself a decode-rate cost on the path this lane is
     /// unbouncing (the sibling grouped-EP path already learned this).
-    fn full_attn_tp_log_once(tp: &crate::hybrid::StepTpQkv, proj: &str, activation: &'static str) {
+    fn step35_tp_log_once(tp: &crate::hybrid::StepTpQkv, proj: &str, activation: &'static str) {
         use std::sync::atomic::{AtomicBool, Ordering};
         static LOGGED: [AtomicBool; 4] = [
             AtomicBool::new(false),
@@ -1566,7 +1109,7 @@ impl HybridModel {
         );
     }
 
-    pub(crate) fn full_attn_tp_o(
+    fn step35_tp_o(
         &self,
         e: &Engine,
         fa: &FullAttnLayer,
@@ -1579,12 +1122,12 @@ impl HybridModel {
         // DEVICE-RESIDENT NATIVE PATH — the O-projection half of the same finding: no DtoH
         // of the attention output, no host O staging, root-resident reduction consumed in
         // place (byte-identical shared core: `step_bf16_row_native_reduce_from_root`).
-        if Self::full_attn_tp_device_resident(e, tp) {
+        if Self::step35_tp_device_resident(e, tp) {
             e.stream().synchronize()?; // producer fence, as the QKV half
             let output = tp
                 .runtime
                 .step_bf16_row_parallel_resident_native_device(&tp.o, activation, tokens)?;
-            Self::full_attn_tp_log_once(tp, "o", "device-resident");
+            Self::step35_tp_log_once(tp, "o", "device-resident");
             return Ok(Some(output));
         }
         let host = e.dtoh(activation)?;
@@ -1595,18 +1138,18 @@ impl HybridModel {
             tp.runtime
                 .step_bf16_row_parallel_resident(&tp.o, &host, tokens)?
         };
-        Self::full_attn_tp_log_once(tp, "o", "host-canonical");
+        Self::step35_tp_log_once(tp, "o", "host-canonical");
         Ok(Some(e.htod(&output)?))
     }
 
-    fn full_attn_o(
+    fn step35_o(
         &self,
         e: &Engine,
         fa: &FullAttnLayer,
         activation: &CudaSlice<f32>,
         tokens: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        match self.full_attn_tp_o(e, fa, activation, tokens)? {
+        match self.step35_tp_o(e, fa, activation, tokens)? {
             Some(output) => Ok(output),
             None => e.matmul(&fa.wo, activation, tokens),
         }
@@ -1655,8 +1198,7 @@ impl HybridModel {
                 "{path} runs a serial residual, but this model's ModelPlan declares \
                  ResidualTopology::HyperConnections{{ streams: {}, collapse: {:?} }}. Refusing: \
                  that path would compute a different model. Converted paths: forward, \
-                 forward_last, prime_cache, decode_step, and the batched serving chain \
-                 decode_step_batch / _sampled / _lean / _masked.",
+                 forward_last, prime_cache, decode_step.",
                 topology.streams, topology.collapse
             )
             .into());
@@ -1784,82 +1326,21 @@ impl HybridModel {
         tokens: &[u32],
         cache: &mut Cache,
         queued_after: usize,
-        overlay: Option<&crate::vision::EmbedOverlay>,
     ) -> Result<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
         let topology = *self
             .hyper
             .as_ref()
             .ok_or("prime_cache_hyper on a model with no HyperConnections topology")?;
         // M2 ppN door for the mHC prime (see `forward_hyper`'s note). glm5_next has no
-        // batched prime arm: the split twin is a straight layer-range split with the
-        // [t, streams, hidden] state on the wire.
-        //
-        // CHUNKED, like the single-engine walk below (lane/glm53-1m-demo, 2026-08-29 — the
-        // follow-up the previous note named). The monolithic ppN prime carried the WHOLE
-        // prompt as one call, which capped it three independent ways on the 4x96 GB box:
-        // per-call transients proportional to t OOM'd from ~32k tokens, and every launch
-        // that places t in grid.y (kda_conv_silu, kda_gate, rms_norm over rows, the router)
-        // hits the CUDA 65,535 grid.y ceiling from t=65,536 (measured: instant
-        // CUDA_ERROR_INVALID_VALUE at a 128,566-token prime, receipts in
-        // research/glm53-flash-bringup-20260827/1m-demo-20260829/). The chunk loop reuses
-        // the SAME schedule as the single-engine walk (`hyper_prime_ranges`), so per-chunk
-        // t is bounded and — because the per-chunk staged walk is bit-identical to the
-        // per-chunk unsplit walk (glm5_hyper_ppn_gate arm 2) — the chunked ppN prime
-        // composes to bit-identity with the chunked single-engine prime over the same
-        // schedule. `queued_after + (t - end)` keeps the REQUEST-level `seq_end` invariant
-        // across chunks (each call recomputes pos0+start + (end-start) + rest = pos0 + t +
-        // queued_after). A prompt at or under one chunk takes the monolithic ppN body
-        // unchanged, and `MEMRA_PRIME_CHUNK=0` restores the monolithic walk up to
-        // PRIME_CHUNK_LAUNCH_CAP (grid.y-legal ceiling; above it the old walk always died
-        // at launch) — the same rollback seam the single-engine chunk walk documents.
+        // batched prime arm: `prime_cache_hyper` IS the monolithic walk, so the split twin
+        // is a straight layer-range split with the [t, streams, hidden] state on the wire.
+        // NOTE: the ppN twin primes monolithically; the chunked-prime capacity bound below
+        // covers the single-engine walk only. Chunking the ppN prime is a named follow-up.
         if let Some(fence) = crate::pp::pp_cuts(self.layers.len()) {
             if !self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::Pipeline) {
                 return Err("pipeline rewrite is not qualified for this ModelPlan".into());
             }
-            // The mixed-embedding overlay rides the ppN twin too (lane/glm5-vision-default-on,
-            // 2026-08-30): the splice is an EMBEDDING-INTAKE transform, and the ppN walk embeds
-            // on stage 0 only — every later stage receives the already-expanded stream state.
-            // Under the chunked ppN prime each chunk takes the overlay WINDOWED to its own
-            // call-relative range (`EmbedOverlay::window`, the same rebase seam the serve
-            // prefill tick uses), so splice placement is chunk-schedule-invariant. Gated by
-            // glm5-hyper-ppn-gate's overlay arm (bit-identity vs the substituted-token truth,
-            // red arm = shifted spans).
-            let n_embd = self.cfg.n_embd as usize;
-            let t = tokens.len();
-            if cache.pos + t > cache.max_ctx {
-                return Err("prime_cache: prompt exceeds cache max_ctx".into());
-            }
-            let ranges = hyper_prime_ranges(t, self.layers.len(), self.gdn_prime_grid_on());
-            if ranges.len() == 1 {
-                return self.prime_cache_hyper_ppn(
-                    e,
-                    tokens,
-                    cache,
-                    queued_after,
-                    &topology,
-                    &fence,
-                    overlay,
-                );
-            }
-            let mut hiddens = e.uninit(t * n_embd)?;
-            let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
-            for &(start, end) in &ranges {
-                let ov = overlay.and_then(|o| o.window(start, end - start));
-                let (l, hs, x) = self.prime_cache_hyper_ppn(
-                    e,
-                    &tokens[start..end],
-                    cache,
-                    queued_after + (t - end),
-                    &topology,
-                    &fence,
-                    ov.as_ref(),
-                )?;
-                e.copy_into(&mut hiddens, start * n_embd, &x, (end - start) * n_embd)?;
-                last = Some((l, hs));
-            }
-            let (logits, h_seed) =
-                last.expect("hyper_prime_ranges never returns an empty schedule");
-            return Ok((logits, h_seed, hiddens));
+            return self.prime_cache_hyper_ppn(e, tokens, cache, queued_after, &topology, &fence);
         }
         let n_embd = self.cfg.n_embd as usize;
         let t = tokens.len();
@@ -1872,74 +1353,17 @@ impl HybridModel {
         let seq_end = cache.pos + t + queued_after;
         let ranges = hyper_prime_ranges(t, self.layers.len(), self.gdn_prime_grid_on());
         if ranges.len() == 1 {
-            return self.prime_chunk_hyper(e, tokens, cache, seq_end, 0, overlay);
+            return self.prime_chunk_hyper(e, tokens, cache, seq_end);
         }
         let mut hiddens = e.uninit(t * n_embd)?;
         let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
         for &(start, end) in &ranges {
-            let (l, hs, x) =
-                self.prime_chunk_hyper(e, &tokens[start..end], cache, seq_end, start, overlay)?;
+            let (l, hs, x) = self.prime_chunk_hyper(e, &tokens[start..end], cache, seq_end)?;
             e.copy_into(&mut hiddens, start * n_embd, &x, (end - start) * n_embd)?;
             last = Some((l, hs));
         }
         let (logits, h_seed) = last.expect("hyper_prime_ranges never returns an empty schedule");
         Ok((logits, h_seed, hiddens))
-    }
-
-    /// Publish this model's prefill-workspace coefficients to admission
-    /// (lane/glm5-gpf-workspace, 2026-08-30). `None` for every non-hyper trunk — the server's
-    /// admission arithmetic is then byte-identical to the pre-lane behavior for that family.
-    ///
-    /// Term-by-term, each anchored on a named allocation of the hyper prime walk (glm5 numbers
-    /// in parentheses; the full attribution table is the lane doc's §1):
-    ///   * stream state, double-buffered at `hyper::post`, PLUS the ppN boundary tx/rx pair of
-    ///     the same `[t, streams, hidden]` payload: `4 * S * H * 4` (256 KiB/token);
-    ///   * pre/norm transients (`hyper::pre` y + `rms_norm` h/z + ffn_out): `4 * H * 4`
-    ///     (64 KiB/token);
-    ///   * prime-tail hidden/norm pair (`collapse` + output-norm stack): `2 * H * 4`
-    ///     (32 KiB/token);
-    ///   * grouped-MoE prefill staging (`moe_ffn_grouped_prefill_sigmoid`): the f16 CSR
-    ///     activations `U*2H`, three f32 partial planes `3*U*4F` (gate/up/act), the f16 down
-    ///     mirror `U*2F`, the CSR-order down output + pair-order permute `2*U*4H`, and the
-    ///     scatter target `4H` — `U*(10H + 14F) + 4H` (560 KiB/token);
-    ///   * MLA query/attention planes: `heads * (qk_head_dim + v_head_dim) * 4`
-    ///     (128 KiB/token) and the k-pool idx plane `(topk/P + 1) * 4` (~2 KiB/token).
-    ///
-    /// Validation against truth: at GLM-5.3-Flash geometry the sum is ~0.92 MiB per call
-    /// token, against the 262k cell's MEASURED retained slope of ~0.8 MiB/token/card
-    /// (vramwatch.csv: +6.3 GiB across the 8,072-token prime) — the formula sits above the
-    /// measurement, never below it. The ctx-coupled score plane and the prompt-long hiddens
-    /// stack are separate coefficients on the shape; see [`HyperPrimeWorkspaceShape`].
-    pub fn hyper_prime_workspace_shape(&self) -> Option<HyperPrimeWorkspaceShape> {
-        let topology = self.hyper.as_ref()?;
-        let h = self.cfg.n_embd as usize;
-        let s = topology.streams;
-        let f32b = std::mem::size_of::<f32>();
-        // Stream state (x2) + ppN boundary slots (x2), pre/norm transients, prime tail.
-        let mut chunk_token_bytes = 4 * s * h * f32b + 4 * h * f32b + 2 * h * f32b;
-        if let Some(moe) = self.cfg.moe.as_ref() {
-            let u = moe.expert_used_count as usize;
-            let f = moe.expert_ff_length as usize;
-            chunk_token_bytes += u * (10 * h + 14 * f) + 4 * h;
-        }
-        let mut kpool_score_pool = 0;
-        if let Some(glm5) = self.cfg.glm5.as_ref() {
-            let heads = self.cfg.n_head as usize;
-            chunk_token_bytes +=
-                heads * (glm5.qk_head_dim as usize + glm5.v_head_dim as usize) * f32b;
-            if glm5.index_kpool > 0 {
-                chunk_token_bytes += (glm5.index_topk as usize / glm5.index_kpool as usize + 1)
-                    * std::mem::size_of::<i32>();
-                kpool_score_pool = glm5.index_kpool as usize;
-            }
-        }
-        Some(HyperPrimeWorkspaceShape {
-            chunk_token_bytes,
-            prompt_bytes_per_token: h * f32b,
-            kpool_score_pool,
-            n_layers: self.layers.len(),
-            gdn_grid: self.gdn_prime_grid_on(),
-        })
     }
 
     /// One T=1 decode step under the mHC residual: `decode_step_h`'s contract over the hc layer
@@ -2064,6 +1488,11 @@ impl HybridModel {
                     &e.dtoh(&x)?,
                 );
             }
+            if memra_reference::hidden_trace::layer_rows_wanted(il as i64) {
+                let data = e.dtoh(&x)?;
+                let streams = data.len() / (t * n_embd);
+                memra_reference::hidden_trace::emit_layer_rows(il as i64, t, streams, n_embd, &data);
+            }
         }
         Ok(x)
     }
@@ -2101,20 +1530,7 @@ impl HybridModel {
                     self.full_attn_prime(e, fa, &h, None, pos_d, t, cache, il, seq_end)?
                 }
                 Mixer::Linear(la) => self.linear_attn_prime(e, la, &h, None, t, cache, il)?,
-                Mixer::Mla(mla) if mla.tp.is_some() => {
-                    self.mla_tp_attn_cached(e, mla, &h, pos_d, t, il, cache, false)?
-                }
                 Mixer::Mla(mla) => self.mla_attn_cached(e, mla, &h, pos_d, t, il, cache)?,
-                Mixer::Kda(la) if la.tp.is_some() => crate::glm5_tp::kda_tp_cached(
-                    e,
-                    la,
-                    &h,
-                    t,
-                    eps,
-                    cache,
-                    il,
-                    crate::kda::ConvArm::Prefill,
-                )?,
                 Mixer::Kda(la) => crate::kda::kda_prime_cached(e, la, &h, t, eps, cache, il)?,
             };
             x = crate::hyper::post(e, topology, &mixed, &x, &mix, t, n_embd)?;
@@ -2131,9 +1547,6 @@ impl HybridModel {
             )?;
             let ffn_out = self.hyper_ffn_branch(e, layer, &z, t, il, true)?;
             x = crate::hyper::post(e, topology, &ffn_out, &x, &mix, t, n_embd)?;
-            // glm5 DFlash2 feature tap (lane/glm5-dflash-draft-src): the CONTRACTED
-            // completed layer output, host-staged — one Option check when unarmed.
-            self.glm5_hc_tap(e, cache, topology, il, &x, t)?;
         }
         Ok(x)
     }
@@ -2151,14 +1564,6 @@ impl HybridModel {
         pos: usize,
         cache: &mut Cache,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        // MEMRA_HC_DECODE_WS=1 (default OFF, read per call — rollback seam): the persistent-
-        // workspace twin of this walk. Same kernels, same call order, same operand bytes;
-        // only the hc-glue allocations (mixes/gates/comb/y/h/z/post-out, ~12 alloc+free pairs
-        // per layer per token of the census's 2,358) disappear. Byte identity ON/OFF is gated
-        // by hc_decode_ws_gpu.rs; refusal shapes fall through to the allocating walk below.
-        if hyper_decode_ws_on() {
-            return self.hyper_range_decode_ws(e, topology, x, lo, hi, pos_d, pos, cache);
-        }
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         for il in lo..hi {
@@ -2173,20 +1578,7 @@ impl HybridModel {
             let mixed = match &layer.mixer {
                 Mixer::Full(fa) => self.full_attn_decode(e, fa, &h, pos_d, pos, cache, il)?,
                 Mixer::Linear(la) => self.linear_attn_decode(e, la, &h, cache, il)?,
-                Mixer::Mla(mla) if mla.tp.is_some() => {
-                    self.mla_tp_attn_cached(e, mla, &h, pos_d, 1, il, cache, false)?
-                }
                 Mixer::Mla(mla) => self.mla_attn_cached(e, mla, &h, pos_d, 1, il, cache)?,
-                Mixer::Kda(la) if la.tp.is_some() => crate::glm5_tp::kda_tp_cached(
-                    e,
-                    la,
-                    &h,
-                    1,
-                    eps,
-                    cache,
-                    il,
-                    crate::kda::ConvArm::Decode,
-                )?,
                 Mixer::Kda(la) => crate::kda::kda_decode_cached(e, la, &h, eps, cache, il)?,
             };
             x = crate::hyper::post(e, topology, &mixed, &x, &mix, 1, n_embd)?;
@@ -2205,252 +1597,6 @@ impl HybridModel {
             x = crate::hyper::post(e, topology, &ffn_out, &x, &mix, 1, n_embd)?;
         }
         Ok(x)
-    }
-
-    /// The persistent-workspace twin of `hyper_range_decode` (MEMRA_HC_DECODE_WS, lever 2 of
-    /// the decode diet). One `HyperDecodeWs` per engine (so each ppN stage owns its own,
-    /// allocated on its own device); the walk TAKES it from the engine pool, rotates the
-    /// stream state against `ws.xb` (an ownership swap, not a copy), and puts it back. The
-    /// mixers and the FFN/MoE branches are the SAME calls with the SAME inputs — their
-    /// internal allocations are untouched by this lever.
-    #[allow(clippy::too_many_arguments)]
-    fn hyper_range_decode_ws(
-        &self,
-        e: &Engine,
-        topology: &crate::hyper::HyperTopology,
-        x: CudaSlice<f32>,
-        lo: usize,
-        hi: usize,
-        pos_d: &CudaSlice<i32>,
-        pos: usize,
-        cache: &mut Cache,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let n_embd = self.cfg.n_embd as usize;
-        let mut ws = match e.hyper_ws_take() {
-            Some(ws) if ws.matches(topology, n_embd) => ws,
-            _ => crate::hyper::HyperDecodeWs::new(e, topology, n_embd)?,
-        };
-        if HC_DECODE_WS_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
-            eprintln!(
-                "[hc-decode-ws] engaged streams={} hidden={n_embd} (persistent hc-glue \
-                 workspace, per-engine pool; MEMRA_HC_DECODE_WS=1)",
-                topology.streams
-            );
-        }
-        let out =
-            self.hyper_range_decode_ws_body(e, topology, x, lo, hi, pos_d, pos, cache, &mut ws);
-        e.hyper_ws_put(ws);
-        out
-    }
-
-    /// The walk itself — `hyper_range_decode`'s loop with the hc glue landing in `ws`.
-    /// KEPT CALL-FOR-CALL IN STEP with the allocating walk above: same kernels, same order
-    /// (pre -> rms_norm -> mixer -> post -> pre -> rms_norm -> ffn -> post), so the
-    /// byte-identity gate is a structural claim, not a coincidence.
-    #[allow(clippy::too_many_arguments)]
-    fn hyper_range_decode_ws_body(
-        &self,
-        e: &Engine,
-        topology: &crate::hyper::HyperTopology,
-        mut x: CudaSlice<f32>,
-        lo: usize,
-        hi: usize,
-        pos_d: &CudaSlice<i32>,
-        pos: usize,
-        cache: &mut Cache,
-        ws: &mut crate::hyper::HyperDecodeWs,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let n_embd = self.cfg.n_embd as usize;
-        let eps = self.cfg.rms_eps;
-        for il in lo..hi {
-            let layer = &self.layers[il];
-            let hyper = layer.hyper.as_ref().ok_or_else(|| {
-                format!("layer {il} carries no hyper-connection weights under an hc plan")
-            })?;
-
-            crate::hyper::pre_t1_ws(e, topology, &hyper.attn, &x, ws, n_embd)?;
-            e.rms_norm(
-                &ws.y,
-                layer.attn_norm.float_data(),
-                &mut ws.h,
-                n_embd,
-                1,
-                eps,
-            )?;
-            let mixed = match &layer.mixer {
-                Mixer::Full(fa) => self.full_attn_decode(e, fa, &ws.h, pos_d, pos, cache, il)?,
-                Mixer::Linear(la) => self.linear_attn_decode(e, la, &ws.h, cache, il)?,
-                Mixer::Mla(mla) => self.mla_attn_cached(e, mla, &ws.h, pos_d, 1, il, cache)?,
-                Mixer::Kda(la) => crate::kda::kda_decode_cached(e, la, &ws.h, eps, cache, il)?,
-            };
-            crate::hyper::post_t1_ws(e, topology, &mixed, &x, ws, n_embd)?;
-            std::mem::swap(&mut x, &mut ws.xb);
-
-            crate::hyper::pre_t1_ws(e, topology, &hyper.mlp, &x, ws, n_embd)?;
-            e.rms_norm(
-                &ws.y,
-                layer.post_attn_norm.float_data(),
-                &mut ws.z,
-                n_embd,
-                1,
-                eps,
-            )?;
-            let ffn_out = self.hyper_ffn_branch(e, layer, &ws.z, 1, il, false)?;
-            crate::hyper::post_t1_ws(e, topology, &ffn_out, &x, ws, n_embd)?;
-            std::mem::swap(&mut x, &mut ws.xb);
-        }
-        Ok(x)
-    }
-
-    /// One hc layer RANGE `[lo, hi)` of the BATCHED T=1 decode step: B independent sessions
-    /// share one walk over the `[B, streams, n_embd]` stream state. The batched twin of
-    /// `hyper_range_decode`, and the trunk of `decode_step_batch_hyper` (decode_batch.rs).
-    ///
-    /// SHAPE — batched where the arithmetic is row-independent, per-session where the state
-    /// is, decode-exact where a reduction is width-dependent:
-    ///
-    ///   * The hc glue (`expand`/`pre_finish` kernels/`post`) is block-per-token by
-    ///     construction (grid over t), so t=B batches it with per-row bytes unchanged.
-    ///   * The hc mixing GEMM is the ONE width-dependent reduction in the glue
-    ///     (cuBLASLt's n-dependent split — the lt_ndep probe), so this walk calls
-    ///     `hyper::pre_exact`, which runs each row through the m=1 program the serial step
-    ///     runs. rms_norm at m=B is a per-row program.
-    ///   * The MIXERS (KDA conv ring + delta rule, MLA latent rows + kpool indexer plane,
-    ///     and the Full/Linear classes for completeness) hold per-session recurrent or
-    ///     latent state, so each session's row is routed to ITS OWN cache through the SAME
-    ///     t=1 call its solo step makes — the per-seq loop is the v1 exactness doctrine
-    ///     from this module's sibling (`decode_batch.rs` header), and the row copies in and
-    ///     out are arithmetic-free materializations.
-    ///   * The FFN batches at t=B: the MoE body's router is the fixed per-row program at
-    ///     t < PRIME_MIN_T, expert dispatch is per-token, and the shexp trio rides the
-    ///     per-column decode-exact arm at decode widths; the dense branch runs per-row so
-    ///     each row executes the serial `hyper_ffn_branch` program verbatim.
-    ///
-    /// EXACTNESS BAR: row b of a B-row step must be BIT-IDENTICAL to session b decoding
-    /// alone through `decode_step_hyper` — full-logit compare, per step. Gate:
-    /// `glm5-hyper-batch-gate` (fixture-driven, red-armed with a swapped-row and a
-    /// wrong-cache-slot mutation; receipts in
-    /// `research/glm53-flash-bringup-20260827/batched-decode-gate/`).
-    ///
-    /// `pos_rows[bi]` is session bi's single-position device buffer, uploaded by the caller
-    /// through THIS range's engine (the per-stage pos_d law under a pp split). `caches[bi]`
-    /// advances exactly as its solo step would; `cache.pos` itself is bumped by the caller's
-    /// epilogue, never here.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn hyper_batch_range_decode(
-        &self,
-        e: &Engine,
-        topology: &crate::hyper::HyperTopology,
-        mut x: CudaSlice<f32>,
-        lo: usize,
-        hi: usize,
-        pos_rows: &[CudaSlice<i32>],
-        caches: &mut [&mut Cache],
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let b_n = caches.len();
-        assert_eq!(
-            pos_rows.len(),
-            b_n,
-            "hyper_batch_range_decode: pos_rows built for a different batch width"
-        );
-        let n_embd = self.cfg.n_embd as usize;
-        let eps = self.cfg.rms_eps;
-        for il in lo..hi {
-            let layer = &self.layers[il];
-            let hyper = layer.hyper.as_ref().ok_or_else(|| {
-                format!("layer {il} carries no hyper-connection weights under an hc plan")
-            })?;
-
-            let (y, mix) = crate::hyper::pre_exact(e, topology, &hyper.attn, &x, b_n, n_embd)?;
-            let mut h = e.uninit(b_n * n_embd)?;
-            e.rms_norm(&y, layer.attn_norm.float_data(), &mut h, n_embd, b_n, eps)?;
-            // ---- mixers: per-session, each row through its OWN cache (the t=1 serial
-            // program — cross-session contamination here is the failure mode the gate's
-            // swapped-row mutation exists to catch) ----
-            let mut mixed = e.uninit(b_n * n_embd)?;
-            for bi in 0..b_n {
-                let mut h_row = e.uninit(n_embd)?;
-                e.dtod_copy_view(&h.slice(bi * n_embd..(bi + 1) * n_embd), &mut h_row)?;
-                let cache: &mut Cache = &mut *caches[bi];
-                let pos = cache.pos;
-                let out_row = match &layer.mixer {
-                    Mixer::Full(fa) => {
-                        self.full_attn_decode(e, fa, &h_row, &pos_rows[bi], pos, cache, il)?
-                    }
-                    Mixer::Linear(la) => self.linear_attn_decode(e, la, &h_row, cache, il)?,
-                    Mixer::Mla(mla) => {
-                        self.mla_attn_cached(e, mla, &h_row, &pos_rows[bi], 1, il, cache)?
-                    }
-                    Mixer::Kda(la) => crate::kda::kda_decode_cached(e, la, &h_row, eps, cache, il)?,
-                };
-                e.copy_into(&mut mixed, bi * n_embd, &out_row, n_embd)?;
-            }
-            x = crate::hyper::post(e, topology, &mixed, &x, &mix, b_n, n_embd)?;
-
-            let (y, mix) = crate::hyper::pre_exact(e, topology, &hyper.mlp, &x, b_n, n_embd)?;
-            let mut z = e.uninit(b_n * n_embd)?;
-            e.rms_norm(
-                &y,
-                layer.post_attn_norm.float_data(),
-                &mut z,
-                n_embd,
-                b_n,
-                eps,
-            )?;
-            let ffn_out = self.hyper_ffn_branch_batch(e, layer, &z, b_n, il, false)?;
-            x = crate::hyper::post(e, topology, &ffn_out, &x, &mix, b_n, n_embd)?;
-        }
-        Ok(x)
-    }
-
-    /// The FFN branch of the batched hc decode walk (see `hyper_batch_range_decode`).
-    ///
-    /// MoE batches at t=B — that is the weight win this walk exists for (one stream of the
-    /// routed experts serves B rows), and every stage of `moe_ffn_il_zq8` is per-row exact
-    /// at decode widths (router: fixed per-row program at t < PRIME_MIN_T; experts:
-    /// per-(token,expert) programs; shexp: the per-column decode-exact arm). The DENSE
-    /// branch runs PER ROW through the serial `hyper_ffn_branch` instead: its
-    /// `matmul_group` dispatch carries no per-row bit-identity contract across widths for
-    /// every weight class this walk must serve, and a first-k-dense plan carries one such
-    /// layer — per-row costs nothing and each row executes the solo step's program verbatim.
-    /// `vrows` (lane/glm5-vrest): the VERIFY walk's batched arm (`MEMRA_GLM5_VERIFY_BATCH`)
-    /// passes `true`, which lets the MoE body take the pairs-shaped batched routed-expert
-    /// program across the t rows (`moe_vrows_pairs_q8` — bit-identical per row, fail-closed
-    /// to the sequential loop for every unqualified shape). The batched DECODE walk
-    /// (`decode_step_batch_hyper`) passes `false` — its priced dispatch class stays
-    /// byte-stable; porting it is a named follow-up with its own re-price. The DENSE branch
-    /// is per-row in both arms (its `matmul_group` dispatch carries no cross-width per-row
-    /// bit-identity contract for every weight class this walk must serve; ~3 layers, named
-    /// out of scope in the vrest attribution).
-    pub(crate) fn hyper_ffn_branch_batch(
-        &self,
-        e: &Engine,
-        layer: &crate::hybrid::HybridLayer,
-        z: &CudaSlice<f32>,
-        b_n: usize,
-        il: usize,
-        vrows: bool,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let n_embd = self.cfg.n_embd as usize;
-        match &layer.ffn {
-            crate::hybrid::Ffn::Dense { .. } => {
-                let mut out = e.uninit(b_n * n_embd)?;
-                for bi in 0..b_n {
-                    let mut z_row = e.uninit(n_embd)?;
-                    e.dtod_copy_view(&z.slice(bi * n_embd..(bi + 1) * n_embd), &mut z_row)?;
-                    let row = self.hyper_ffn_branch(e, layer, &z_row, 1, il, false)?;
-                    e.copy_into(&mut out, bi * n_embd, &row, n_embd)?;
-                }
-                Ok(out)
-            }
-            crate::hybrid::Ffn::Moe(m) => {
-                if vrows {
-                    self.moe_ffn_il_zq8_vrows(e, m, z, b_n, il as u16)
-                } else {
-                    self.moe_ffn_il_zq8(e, m, z, None, b_n, il as u16)
-                }
-            }
-        }
     }
 
     // =============================== M2 ppN, mHC arm ===============================
@@ -2642,7 +1788,6 @@ impl HybridModel {
     /// The returned device buffers (`h_seed`, `hiddens`) are owned by the LAST stage's engine,
     /// the same contract `decode_step_h_ppn` publishes for its `h_seed`.
     #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-    #[allow(clippy::too_many_arguments)]
     fn prime_cache_hyper_ppn(
         &self,
         e: &Engine,
@@ -2651,7 +1796,6 @@ impl HybridModel {
         queued_after: usize,
         topology: &crate::hyper::HyperTopology,
         fence: &[usize],
-        overlay: Option<&crate::vision::EmbedOverlay>,
     ) -> Result<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
@@ -2662,21 +1806,10 @@ impl HybridModel {
         }
         let seq_end = cache.pos + t + queued_after;
         let pos: Vec<i32> = (cache.pos as i32..(cache.pos + t) as i32).collect();
-        // glm5 DFlash2 feature tap: set ONCE per call, before any stage walk — every stage
-        // range of this chunk writes the same rows at the chunk's absolute offset.
-        if let Some(sink) = cache.hc_taps.as_mut() {
-            sink.base = cache.pos;
-        }
 
         if crate::pp::pp2_streams_off() {
             let pos_d = e.htod_i32(&pos)?;
-            let mut embedded = self.embed(e, tokens)?;
-            if let Some(ov) = overlay {
-                // Mixed-embedding splice at embedding intake (the same point the streams-on
-                // arm and prime_chunk_hyper use). The caller's overlay is already windowed
-                // to THIS call (prefill_tick rebases spans call-relative), so chunk_off = 0.
-                ov.splice_into(e, &mut embedded, 0, t, n_embd)?;
-            }
+            let embedded = self.embed(e, tokens)?;
             let mut x = crate::hyper::expand(e, topology, &embedded, t, n_embd)?;
             x = self.hyper_range_prime(
                 e, topology, x, fence[0], fence[1], &pos_d, t, cache, seq_end,
@@ -2708,58 +1841,12 @@ impl HybridModel {
                 "PpNRt stage count {} != fence stages {n_st}",
                 rt.n_stages()
             );
-            let caller_stream = e.stream();
-            rt.fence_stages_behind(&caller_stream)?;
-            // OVERLAY RESIDENCY LAW (rewritten in lane/glm53-vision-ppn, 2026-09-01; was the
-            // OVERLAY DEVICE LAW). The splice reads `overlay.rows` through stage 0's engine,
-            // so those rows must live in STAGE 0's CUDA context. That is the real invariant,
-            // and it is what is checked.
-            //
-            // The pre-lane check was `!std::ptr::eq(rt.engine(0, e), e)` — "stage 0 must BE
-            // the primary engine". It refused the deployed 3-card shape outright: the worker's
-            // primary engine follows the LAST pp stage (`worker::worker_device`, and that is
-            // load-bearing — pinning the primary to stage 0 was the v0.72 tag-blocker-2
-            // regressor, 112.5 -> 17.5 tok/s on spec+PP), so with MEMRA_PP_DEVICES=0,1,2 the
-            // primary is dev2 while stage 0 owns dev0 and `PpNRt::build` hands stage 0 its
-            // own Engine. Vision was therefore unservable on the ppN shape with the only
-            // in-tag rollback costing ~3x decode (MEMRA_PP_STREAMS=0). The fix is to PUBLISH
-            // the overlay into stage 0's context at construction
-            // (`EmbedOverlay::new_published`, driven by `vision_intake_engine` below), never
-            // to relax the check: the identity now passes because the pointers ARE in the
-            // right domain.
-            //
-            // ORDERING, the seam the accrace lane taught (MEMRA_PP_EXIT_PUBLISH): rows built
-            // on the caller's stream are covered by `fence_stages_behind` above, which orders
-            // every stage stream behind the caller before stage 0 issues its splice; rows
-            // published onto the intake engine were host-synchronized when they were uploaded.
-            // Both producers are ordered before this body's first stage-0 kernel.
-            if let Some(ov) = overlay
-                && !ov.resident_in(rt.engine(0, e))
-            {
-                return Err(format!(
-                    "vision embedding overlay rows are resident on dev{} but pp stage 0's \
-                     embedding intake runs on dev{}: the overlay must be published into the \
-                     intake engine's context (build it with EmbedOverlay::new_published; \
-                     MEMRA_VISION_OVERLAY_PUBLISH=0 pins the pre-publication program, whose \
-                     only vision-capable shape is MEMRA_PP_STREAMS=0)",
-                    ov.ctx().ordinal(),
-                    rt.engine(0, e).ctx().ordinal(),
-                )
-                .into());
-            }
+            rt.fence_stages_behind(&e.stream())?;
             let mut slot = {
                 let _st0 = rt.enter(0);
                 let e0 = rt.engine(0, e);
                 let pos_d = e0.htod_i32(&pos)?;
-                let mut embedded = self.embed(e0, tokens)?;
-                if let Some(ov) = overlay {
-                    // Mixed-embedding splice at stage-0 embedding intake, BEFORE stream
-                    // expansion — the reference's execute_multimodal splice point. Stages
-                    // s > 0 only ever see the [t, streams, hidden] boundary payload, so no
-                    // other stage carries overlay arithmetic. chunk_off = 0: the caller's
-                    // overlay is already windowed to this call.
-                    ov.splice_into(e0, &mut embedded, 0, t, n_embd)?;
-                }
+                let embedded = self.embed(e0, tokens)?;
                 let x = crate::hyper::expand(e0, topology, &embedded, t, n_embd)?;
                 let x = self.hyper_range_prime(
                     e0, topology, x, fence[0], fence[1], &pos_d, t, cache, seq_end,
@@ -2784,33 +1871,22 @@ impl HybridModel {
                 )?;
                 slot = rt.tx(s, &x, t * width)?;
             }
-            let out = {
-                let _stl = rt.enter(n_st - 1);
-                let el = rt.engine(n_st - 1, e);
-                let pos_d = el.htod_i32(&pos)?;
-                let x = rt.rx(n_st - 2, slot, t * width)?;
-                let x = self.hyper_range_prime(
-                    el,
-                    topology,
-                    x,
-                    fence[n_st - 1],
-                    fence[n_st],
-                    &pos_d,
-                    t,
-                    cache,
-                    seq_end,
-                )?;
-                self.hyper_prime_tail(el, topology, &x, t, n_embd, eps, cache)?
-            };
-            // EXIT PUBLICATION (lane/glm5-accrace 2026-09-01, the same law the batched and
-            // spec ppN bodies carry): `hyper_prime_tail`'s dtoh drains the LAST stage only,
-            // and the TX-wait chain reaches each earlier stage just as far as its `ev_tx`.
-            // Every earlier stage's stream still holds the tail its stage-scope locals
-            // enqueue on drop, and the caller resumes here to allocate (the glm5 spec
-            // session's MTP plane warm, the worker's next step). Anatomy + receipts:
-            // `PpNRt::publish_all_to`.
-            rt.publish_all_to(&caller_stream)?;
-            Ok(out)
+            let _stl = rt.enter(n_st - 1);
+            let el = rt.engine(n_st - 1, e);
+            let pos_d = el.htod_i32(&pos)?;
+            let x = rt.rx(n_st - 2, slot, t * width)?;
+            let x = self.hyper_range_prime(
+                el,
+                topology,
+                x,
+                fence[n_st - 1],
+                fence[n_st],
+                &pos_d,
+                t,
+                cache,
+                seq_end,
+            )?;
+            self.hyper_prime_tail(el, topology, &x, t, n_embd, eps, cache)
         }
     }
 
@@ -2825,8 +1901,6 @@ impl HybridModel {
         tokens: &[u32],
         cache: &mut Cache,
         seq_end: usize,
-        chunk_off: usize,
-        overlay: Option<&crate::vision::EmbedOverlay>,
     ) -> Result<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
         let topology = *self
             .hyper
@@ -2837,21 +1911,8 @@ impl HybridModel {
         let eps = self.cfg.rms_eps;
         let pos: Vec<i32> = (cache.pos as i32..(cache.pos + t) as i32).collect();
         let pos_d = e.htod_i32(&pos)?;
-        // glm5 DFlash2 feature tap: chunked primes write their rows at the chunk's absolute
-        // offset (cache.pos advances per chunk — the dflash_taps.base precedent).
-        if let Some(sink) = cache.hc_taps.as_mut() {
-            sink.base = cache.pos;
-        }
 
-        let mut embedded = self.embed(e, tokens)?;
-        if let Some(ov) = overlay {
-            // Mixed-embedding splice (shared with the ppN twin — EmbedOverlay::splice_into):
-            // image rows overwrite placeholder-token embeddings inside this chunk's
-            // prompt-relative window [chunk_off, chunk_off+t), BEFORE stream expansion —
-            // the reference's splice point (execute_multimodal replaces rows before
-            // hc_expand).
-            ov.splice_into(e, &mut embedded, chunk_off, t, n_embd)?;
-        }
+        let embedded = self.embed(e, tokens)?;
         let mut x = crate::hyper::expand(e, &topology, &embedded, t, n_embd)?;
 
         for (il, layer) in self.layers.iter().enumerate() {
@@ -2867,20 +1928,7 @@ impl HybridModel {
                     self.full_attn_prime(e, fa, &h, None, &pos_d, t, cache, il, seq_end)?
                 }
                 Mixer::Linear(la) => self.linear_attn_prime(e, la, &h, None, t, cache, il)?,
-                Mixer::Mla(mla) if mla.tp.is_some() => {
-                    self.mla_tp_attn_cached(e, mla, &h, &pos_d, t, il, cache, false)?
-                }
                 Mixer::Mla(mla) => self.mla_attn_cached(e, mla, &h, &pos_d, t, il, cache)?,
-                Mixer::Kda(la) if la.tp.is_some() => crate::glm5_tp::kda_tp_cached(
-                    e,
-                    la,
-                    &h,
-                    t,
-                    eps,
-                    cache,
-                    il,
-                    crate::kda::ConvArm::Prefill,
-                )?,
                 Mixer::Kda(la) => crate::kda::kda_prime_cached(e, la, &h, t, eps, cache, il)?,
             };
             x = crate::hyper::post(e, &topology, &mixed, &x, &mix, t, n_embd)?;
@@ -2897,9 +1945,6 @@ impl HybridModel {
             )?;
             let ffn_out = self.hyper_ffn_branch(e, layer, &z, t, il, true)?;
             x = crate::hyper::post(e, &topology, &ffn_out, &x, &mix, t, n_embd)?;
-            // glm5 DFlash2 feature tap (see hyper_range_prime — the unsplit chunk walk
-            // taps the same completed-layer-output contraction).
-            self.glm5_hc_tap(e, cache, &topology, il, &x, t)?;
         }
 
         let hiddens =
@@ -3377,41 +2422,11 @@ impl HybridModel {
         self.prime_cache_overlaid(e, tokens, cache, queued_after, None)
     }
 
-    /// The engine that owns EMBEDDING INTAKE for the current placement — the engine whose
-    /// context a vision overlay's rows must live in (`EmbedOverlay::new_published`).
-    ///
-    /// It is NOT always the primary engine. Under a per-stage-stream ppN split the embedding
-    /// happens on stage 0 (`prime_cache_hyper_ppn` embeds inside the stage-0 scope and every
-    /// later stage sees only the expanded stream state), and stage 0 gets its own Engine
-    /// whenever its device differs from the primary's — which is the deployed 3-card shape,
-    /// because the worker's primary engine follows the LAST stage. On a single-device
-    /// placement, with the door shut, or on the `MEMRA_PP_STREAMS=0` seam, intake is the
-    /// primary engine and this returns `e` unchanged (byte-identical to the pre-lane path).
-    ///
-    /// This mirrors `prime_cache_hyper`'s own door test deliberately, and the ppN prime's
-    /// residency refusal is the enforcement: if this ever picks the wrong engine, the prime
-    /// fails CLOSED with a named error instead of peer-reading an overlay.
-    pub fn vision_intake_engine<'a>(
-        &self,
-        e: &'a Engine,
-    ) -> Result<&'a Engine, Box<dyn std::error::Error>> {
-        if self.hyper.is_some()
-            && !crate::pp::pp2_streams_off()
-            && crate::pp::pp_cuts(self.layers.len()).is_some()
-        {
-            let rt = crate::pp::PpNRt::get(e)?;
-            return Ok(rt.engine(0, e));
-        }
-        Ok(e)
-    }
-
     /// `prime_cache` with a vision embedding overlay (lane/vision): image merger outputs
     /// replace the `<|image_pad|>` token embeddings at prompt-relative positions before the
     /// trunk walk — the mixed-embedding prime. Text-only callers use `prime_cache` (overlay
-    /// None, byte-identical path). Scope: the serial chunk walk, the single-engine hyper walk,
-    /// and the hyper ppN twin (splice at stage-0 embedding intake; lane/glm5-vision-default-on,
-    /// gated by glm5-hyper-ppn-gate's overlay arm). The serial PP-2 pipelined prime and
-    /// gemma4 E4B still refuse loudly.
+    /// None, byte-identical path). v1 scope: the serial chunk walk only — PP prime arms and
+    /// gemma4 refuse loudly (the vision serving box is single-GPU).
     #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn prime_cache_overlaid(
         &self,
@@ -3421,20 +2436,14 @@ impl HybridModel {
         queued_after: usize,
         overlay: Option<&crate::vision::EmbedOverlay>,
     ) -> Result<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
-        cache.ensure_usable("prime_cache")?;
         if self.hyper.is_some() {
-            // The mixed-embedding splice lands BEFORE stream expansion (the same point
-            // the reference's execute_multimodal replaces rows — before hc_expand), so
-            // the hyper walk needs no overlay-specific arithmetic (lane/glm5-vision).
-            return self.prime_cache_hyper(e, tokens, cache, queued_after, overlay);
+            if overlay.is_some() {
+                return Err(self
+                    .refuse_hyper("vision embed overlay prime")
+                    .expect_err("hyper is Some"));
+            }
+            return self.prime_cache_hyper(e, tokens, cache, queued_after);
         }
-        let _pp_walk =
-            if crate::pp::pp_cuts(self.layers.len()).is_some() && !crate::pp::pp2_streams_off() {
-                let rt = crate::pp::PpNRt::get(e)?;
-                Some(rt.acquire_walk("prime_cache")?)
-            } else {
-                None
-            };
         let n_embd = self.cfg.n_embd as usize;
         let t = tokens.len();
         // MEMRA_PRIME_TROWS=1: prefill through the same-session t-row walk (per-row t=1
@@ -3572,15 +2581,6 @@ impl HybridModel {
             // spans become bidirectional attention islands (lane/gemma-vision).
             return self.gemma4_prime(e, tokens, cache, overlay);
         }
-        if crate::pp::prime_pipe_on()
-            && crate::pp::prime_pp_on()
-            && !crate::pp::pp2_streams_off()
-            && crate::pp::pp_cuts(self.layers.len())
-                .is_some_and(|fence| matches!(fence.len(), 4 | 5))
-        {
-            crate::pp::pp_wave_on()
-                .map_err(|reason| -> Box<dyn std::error::Error> { reason.into() })?;
-        }
         let ranges = prime_chunk_ranges(t, self.layers.len(), self.gdn_prime_grid_on());
         // CHUNK-ORDER INVARIANCE (lane/chunk-invariance, 2026-08-05; vLLM #38561 shape).
         // MEMRA_PRIME_CHUNK is documented as a memory-transient knob, but it also decides
@@ -3622,61 +2622,32 @@ impl HybridModel {
         if ranges.len() == 1 {
             return self.prime_chunk(e, tokens, cache, seq_end, 0, overlay);
         }
-        // PIPELINED PP PRIME. PP-2 retains its independently-qualified two-stage schedule;
-        // PP-3/4 require the explicit MEMRA_PP_WAVE=1 persistent-stage wavefront. The serial
-        // split stays reachable through MEMRA_PRIME_PIPE=0 and is the exactness oracle.
-        if crate::pp::prime_pipe_on() && crate::pp::prime_pp_on() && !crate::pp::pp2_streams_off() {
-            if let Some(fence) = crate::pp::pp_cuts(self.layers.len()).filter(|f| f.len() == 3) {
-                if overlay.is_some() {
-                    return Err(
-                        "vision embedding overlay + pipelined PP prime unsupported (v1); \
+        // PIPELINED PP-2 PRIME (lane/cx-pipeline-prime, 2026-08-08): overlap stage 0 of
+        // chunk N+1 with stage 1 of chunk N. The serial split stays reachable through
+        // MEMRA_PRIME_PIPE=0 and is the exactness oracle. N>2 keeps the serial walker;
+        // this lane owns the balanced two-stage schedule only.
+        if crate::pp::prime_pipe_on()
+            && crate::pp::prime_pp_on()
+            && !crate::pp::pp2_streams_off()
+            && let Some(fence) = crate::pp::pp_cuts(self.layers.len()).filter(|f| f.len() == 3)
+        {
+            if overlay.is_some() {
+                return Err(
+                    "vision embedding overlay + pipelined PP prime unsupported (v1); \
                          run the serial prime (single device or MEMRA_PRIME_PIPE=0)"
-                            .into(),
-                    );
-                }
-                if crate::pp::pp_multi_stream_same_device() {
-                    return Err(
-                        "prime chunk pipeline refused with 2 stage streams on one device — \
+                        .into(),
+                );
+            }
+            if crate::pp::pp_multi_stream_same_device() {
+                return Err(
+                    "prime chunk pipeline refused with 2 stage streams on one device — \
                          that concurrent-stream placement remains quarantined by the deferred \
                          pp flake record. Use one device per stage or MEMRA_PRIME_PIPE=0 for \
                          the serial split."
-                            .into(),
-                    );
-                }
-                return self.prime_cache_pp2_pipelined(e, tokens, cache, seq_end, &ranges, &fence);
+                        .into(),
+                );
             }
-            if let Some(fence) =
-                crate::pp::pp_cuts(self.layers.len()).filter(|f| matches!(f.len(), 4 | 5))
-            {
-                let wave_on = crate::pp::pp_wave_on()
-                    .map_err(|reason| -> Box<dyn std::error::Error> { reason.into() })?;
-                let stages = fence.len() - 1;
-                if crate::pp::pp_wave_route_enabled(
-                    wave_on,
-                    crate::pp::pp2_overlap(),
-                    stages,
-                    ranges.len(),
-                ) {
-                    if overlay.is_some() {
-                        return Err(
-                            "vision embedding overlay + pipelined PP prime unsupported; \
-                             run the serial prime (MEMRA_PP_WAVE=0 or MEMRA_PRIME_PIPE=0)"
-                                .into(),
-                        );
-                    }
-                    let rt = crate::pp::PpNRt::get(e)?;
-                    let double_slot = crate::pp::pp2_overlap();
-                    crate::pp::pp_wave_eligibility(
-                        stages,
-                        double_slot,
-                        rt.host_bounce_active(),
-                        rt.repeated_stage_device(),
-                    )
-                    .map_err(|reason| -> Box<dyn std::error::Error> { reason.into() })?;
-                    return self
-                        .prime_cache_ppn_pipelined(e, tokens, cache, seq_end, &ranges, &fence);
-                }
-            }
+            return self.prime_cache_pp2_pipelined(e, tokens, cache, seq_end, &ranges, &fence);
         }
         let mut hiddens = e.uninit(t * n_embd)?;
         let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
@@ -3731,8 +2702,8 @@ impl HybridModel {
 
         let mut hiddens = e.uninit(t * n_embd)?;
         let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
-        let mut stage_caches = PrimeCacheStages::new(cache, fence);
-        let (cache0, cache1) = stage_caches.pp2_parts();
+        let mut stage_caches = PrimeCacheStages::new(cache, fence[1]);
+        let (cache0, cache1) = stage_caches.parts();
         let (first_start, first_end) = ranges[0];
         let mut slot = self.prime_pp2_stage0_enqueue(
             e,
@@ -3797,12 +2768,10 @@ impl HybridModel {
                         let e1 = rt.engine(1, e);
                         self.prime_chunk_epilogue(e1, x, end - start, cache1)?
                     };
-                    let next = match stage0.join() {
-                        Ok(result) => {
-                            result.map_err(|err| -> Box<dyn std::error::Error> { err.into() })?
-                        }
-                        Err(payload) => std::panic::resume_unwind(payload),
-                    };
+                    let next = stage0
+                        .join()
+                        .map_err(|_| "pipeprime stage-0 host walker panicked")?
+                        .map_err(|err| -> Box<dyn std::error::Error> { err.into() })?;
                     Ok((out, Some(next)))
                 })?
             } else {
@@ -3844,405 +2813,7 @@ impl HybridModel {
         debug_assert_eq!(cache0.pos, initial_base + t);
         debug_assert_eq!(cache1.pos, initial_base + t);
         let (logits, h_seed) = last.unwrap();
-        stage_caches.commit();
         Ok((logits, h_seed, hiddens))
-    }
-
-    /// PP-3/4 prime wavefront: one prompt microchunk is one wave. One scoped host worker owns each
-    /// non-head stage for the whole walk; the caller thread owns the head stage. Forward boundary
-    /// messages preserve wave order, while reverse exact-wave acknowledgements are sent only after
-    /// downstream `rx` has recorded `ev_rx`. An upstream stage therefore cannot cycle back to either
-    /// shared slot before that slot's current generation has a host-observed release point.
-    ///
-    /// PP-2 remains on its independently qualified scheduler above. This path is reachable only
-    /// through MEMRA_PP_WAVE=1 and the topology gate.
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-    fn prime_cache_ppn_pipelined(
-        &self,
-        e: &Engine,
-        tokens: &[u32],
-        cache: &mut Cache,
-        seq_end: usize,
-        ranges: &[(usize, usize)],
-        fence: &[usize],
-    ) -> Result<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
-        let stages = fence.len().saturating_sub(1);
-        debug_assert!((3..=4).contains(&stages));
-        debug_assert!(ranges.len() >= 2);
-        let rt = crate::pp::PpNRt::get(e)?;
-        assert_eq!(
-            rt.n_stages(),
-            stages,
-            "prime wavefront PpNRt/fence stage mismatch"
-        );
-        let n_embd = self.cfg.n_embd as usize;
-        let initial_base = cache.pos;
-        let caller_stream = e.stream();
-        let primary_context = crate::pp::PrimaryContextRestore::new(e);
-
-        rt.fence_stages_behind(&caller_stream)?;
-        let max_payload = ranges
-            .iter()
-            .map(|(start, end)| (end - start) * n_embd)
-            .max()
-            .unwrap_or(0);
-        for boundary in 0..stages - 1 {
-            rt.prepare_overlap_slots(boundary, max_payload)?;
-        }
-
-        let mut stage_caches = PrimeCacheStages::new(cache, fence);
-        let waves: Vec<_> = ranges
-            .iter()
-            .map(|&(start, end)| PrimePpWave {
-                start,
-                end,
-                tokens: &tokens[start..end],
-            })
-            .collect();
-        let mut forward_senders = Vec::with_capacity(stages - 1);
-        let mut forward_receivers = Vec::with_capacity(stages - 1);
-        let mut release_senders = Vec::with_capacity(stages - 1);
-        let mut release_receivers = Vec::with_capacity(stages - 1);
-        for _ in 0..stages - 1 {
-            let (forward_sender, forward_receiver) = std::sync::mpsc::channel();
-            let (release_sender, release_receiver) = std::sync::mpsc::channel();
-            forward_senders.push(Some(forward_sender));
-            forward_receivers.push(Some(forward_receiver));
-            release_senders.push(Some(release_sender));
-            release_receivers.push(Some(release_receiver));
-        }
-        let mut stage_channels = Vec::with_capacity(stages - 1);
-        for stage in 0..stages - 1 {
-            stage_channels.push(Some(PrimePpStageChannels {
-                incoming: (stage > 0).then(|| forward_receivers[stage - 1].take().unwrap()),
-                release_upstream: (stage > 0).then(|| release_senders[stage - 1].take().unwrap()),
-                outgoing: forward_senders[stage].take().unwrap(),
-                released_downstream: release_receivers[stage].take().unwrap(),
-            }));
-        }
-        let head_incoming = forward_receivers[stages - 2].take().unwrap();
-        let head_release = release_senders[stages - 2].take().unwrap();
-        // allow: one-shot composite type; naming it would hide the shape that matters here —
-        // this is the head stage's per-wave output, indexed by wave.
-        #[allow(clippy::type_complexity)]
-        let mut results: Vec<Option<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>)>> =
-            std::iter::repeat_with(|| None).take(waves.len()).collect();
-        let walk_result = std::thread::scope(|scope| -> Result<(), Box<dyn std::error::Error>> {
-            let waves_ref = &waves;
-            let mut handles = Vec::with_capacity(stages - 1);
-            // `stage` is a STAGE ID, not merely an index: it indexes two different containers
-            // (`stage_channels`, `stage_caches.stages()`) and is passed to the worker as the
-            // stage it owns. An iterator form would keep only one of the three uses.
-            #[allow(clippy::needless_range_loop)]
-            for stage in 0..stages - 1 {
-                let channels = stage_channels[stage].take().unwrap();
-                let cache_state = &stage_caches.stages()[stage];
-                handles.push(scope.spawn(move || -> Result<(), String> {
-                    let result = self.prime_ppn_wave_worker(
-                        e,
-                        rt,
-                        waves_ref,
-                        cache_state,
-                        channels.incoming.as_ref(),
-                        channels.release_upstream.as_ref(),
-                        &channels.outgoing,
-                        &channels.released_downstream,
-                        stage,
-                        seq_end,
-                        fence,
-                        initial_base,
-                    );
-                    if let Err(error) = &result {
-                        channels.notify_failure(&error.to_string());
-                    }
-                    result.map_err(|error| error.to_string())
-                }));
-            }
-
-            let mut head_panic = None;
-            let head_result = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-                || -> Result<(), Box<dyn std::error::Error>> {
-                    let mut head_cache = stage_caches.stages()[stages - 1]
-                        .lock()
-                        .map_err(|_| "prime PP head cache lock poisoned")?;
-                    for (wave_index, wave) in waves_ref.iter().enumerate() {
-                        let incoming = recv_prime_pp_signal(
-                            &head_incoming,
-                            PrimePpWaveSlot {
-                                wave: wave_index,
-                                slot: 0,
-                            },
-                            false,
-                            "prime PP head input",
-                        )?;
-                        results[wave_index] = Some(self.prime_ppn_wave_final(
-                            e,
-                            rt,
-                            wave,
-                            &mut head_cache,
-                            incoming,
-                            &head_release,
-                            seq_end,
-                            fence,
-                            initial_base,
-                        )?);
-                    }
-                    Ok(())
-                },
-            )) {
-                Ok(result) => result,
-                Err(payload) => {
-                    head_panic = Some(payload);
-                    Err("prime PP head-stage host walker panicked".into())
-                }
-            };
-            if let Err(error) = &head_result {
-                let _ = head_release.send(PrimePpSignal::Error(error.to_string()));
-            }
-            let mut first_error = head_result.err().map(|error| error.to_string());
-            let mut worker_panic = None;
-            for handle in handles {
-                match handle.join() {
-                    Ok(Ok(())) => {}
-                    Ok(Err(error)) => {
-                        first_error.get_or_insert(error);
-                    }
-                    Err(payload) => {
-                        if worker_panic.is_none() {
-                            worker_panic = Some(payload);
-                        }
-                    }
-                }
-            }
-            if let Some(payload) = head_panic {
-                std::panic::resume_unwind(payload);
-            }
-            if let Some(payload) = worker_panic {
-                std::panic::resume_unwind(payload);
-            }
-            if let Some(error) = first_error {
-                return Err(error.into());
-            }
-            Ok(())
-        });
-        let publish_result = if walk_result.is_ok() {
-            Some(rt.publish_to(stages - 1, &caller_stream))
-        } else {
-            None
-        };
-        let restore_result = primary_context.restore();
-        walk_result?;
-        if let Some(result) = publish_result {
-            result?;
-        }
-        restore_result?;
-        let mut hiddens = e.uninit(tokens.len() * n_embd)?;
-        let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
-        for (wave_index, (wave, result)) in waves.iter().zip(results).enumerate() {
-            debug_assert_eq!((wave.start, wave.end), ranges[wave_index]);
-            let out = result.ok_or("prime PP wavefront completed without a head-stage result")?;
-            e.copy_into(
-                &mut hiddens,
-                wave.start * n_embd,
-                &out.2,
-                (wave.end - wave.start) * n_embd,
-            )?;
-            last = Some((out.0, out.1));
-            crate::pp::PRIME_SPLIT_CHUNKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        }
-        stage_caches.commit();
-        drop(stage_caches);
-
-        static LOGGED: std::sync::Once = std::sync::Once::new();
-        LOGGED.call_once(|| {
-            eprintln!(
-                "[pp-wave] PP{stages} prime wavefront engaged: microchunks={} \
-                 (experimental, MEMRA_PP_WAVE=1)",
-                ranges.len(),
-            );
-        });
-        let (logits, h_seed) = last.expect("prime PP wavefront produced no microchunk");
-        crate::pp::record_pp_wave_tick();
-        Ok((logits, h_seed, hiddens))
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn prime_ppn_wave_worker(
-        &self,
-        e: &Engine,
-        rt: &crate::pp::PpNRt,
-        waves: &[PrimePpWave<'_>],
-        cache: &std::sync::Mutex<Cache>,
-        incoming: Option<&std::sync::mpsc::Receiver<PrimePpSignal>>,
-        release_upstream: Option<&std::sync::mpsc::Sender<PrimePpSignal>>,
-        outgoing: &std::sync::mpsc::Sender<PrimePpSignal>,
-        released_downstream: &std::sync::mpsc::Receiver<PrimePpSignal>,
-        stage: usize,
-        seq_end: usize,
-        fence: &[usize],
-        initial_base: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        debug_assert_eq!(incoming.is_some(), stage > 0);
-        debug_assert_eq!(release_upstream.is_some(), stage > 0);
-        let mut cache = cache
-            .lock()
-            .map_err(|_| "prime PP cache stage lock poisoned")?;
-        let mut credits = PrimePpWaveCredits::default();
-        for (wave_index, wave) in waves.iter().enumerate() {
-            let incoming = match incoming {
-                Some(receiver) => Some(recv_prime_pp_signal(
-                    receiver,
-                    PrimePpWaveSlot {
-                        wave: wave_index,
-                        slot: 0,
-                    },
-                    false,
-                    "prime PP stage input",
-                )?),
-                None => None,
-            };
-            let sent = self.prime_ppn_wave_stage(
-                e,
-                rt,
-                wave,
-                &mut cache,
-                stage,
-                incoming,
-                release_upstream,
-                &mut credits,
-                released_downstream,
-                seq_end,
-                fence,
-                initial_base,
-            )?;
-            send_prime_pp_signal(outgoing, PrimePpSignal::Slot(sent), "prime PP stage output")?;
-        }
-        while let Some(expected) = credits.pending.front().copied() {
-            let released = recv_prime_pp_signal(
-                released_downstream,
-                expected,
-                true,
-                "prime PP final slot release",
-            )?;
-            credits.record_release(released)?;
-        }
-        Ok(())
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn prime_ppn_wave_stage(
-        &self,
-        e: &Engine,
-        rt: &crate::pp::PpNRt,
-        wave: &PrimePpWave<'_>,
-        cache: &mut Cache,
-        stage: usize,
-        incoming: Option<PrimePpWaveSlot>,
-        release_upstream: Option<&std::sync::mpsc::Sender<PrimePpSignal>>,
-        credits: &mut PrimePpWaveCredits,
-        released_downstream: &std::sync::mpsc::Receiver<PrimePpSignal>,
-        seq_end: usize,
-        fence: &[usize],
-        initial_base: usize,
-    ) -> Result<PrimePpWaveSlot, Box<dyn std::error::Error>> {
-        debug_assert!(stage + 1 < fence.len() - 1);
-        let t = wave.end - wave.start;
-        let base = initial_base + wave.start;
-        debug_assert_eq!(cache.pos, base, "prime PP stage advanced out of order");
-        let n_embd = self.cfg.n_embd as usize;
-        let payload = t * n_embd;
-        let positions: Vec<i32> = (base as i32..(base + t) as i32).collect();
-        rt.bind_stage(stage)?;
-        let _stage = rt.enter(stage);
-        let engine = rt.engine(stage, e);
-        let positions_d = engine.htod_i32(&positions)?;
-        let x = if stage == 0 {
-            debug_assert!(incoming.is_none());
-            self.embed(engine, wave.tokens)?
-        } else {
-            let incoming = incoming.ok_or("prime PP stage has no incoming boundary slot")?;
-            let x = rt.rx(stage - 1, incoming.slot, payload)?;
-            send_prime_pp_signal(
-                release_upstream.ok_or("prime PP stage has no upstream release channel")?,
-                PrimePpSignal::Slot(incoming),
-                "prime PP upstream slot release",
-            )?;
-            x
-        };
-        let x = {
-            let _wave_cell = crate::pp::enter_pp_wave_cell();
-            let _overlap = crate::pp::enter_prime_pipe_stage();
-            self.prime_layers(
-                engine,
-                x,
-                fence[stage],
-                fence[stage + 1],
-                &positions_d,
-                t,
-                base,
-                cache,
-                seq_end,
-            )?
-        };
-        if let Some(expected) = credits.release_required() {
-            let released =
-                recv_prime_pp_signal(released_downstream, expected, true, "prime PP slot credit")?;
-            credits.record_release(released)?;
-        }
-        let sent = PrimePpWaveSlot {
-            wave: credits.next_wave,
-            slot: rt.tx_pipelined(stage, &x, payload)?,
-        };
-        credits.record_send(sent)?;
-        cache.pos = base + t;
-        Ok(sent)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-    fn prime_ppn_wave_final(
-        &self,
-        e: &Engine,
-        rt: &crate::pp::PpNRt,
-        wave: &PrimePpWave<'_>,
-        cache: &mut Cache,
-        incoming: PrimePpWaveSlot,
-        release_upstream: &std::sync::mpsc::Sender<PrimePpSignal>,
-        seq_end: usize,
-        fence: &[usize],
-        initial_base: usize,
-    ) -> Result<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
-        let stage = fence.len() - 2;
-        let t = wave.end - wave.start;
-        let base = initial_base + wave.start;
-        debug_assert_eq!(cache.pos, base, "prime PP head stage advanced out of order");
-        let n_embd = self.cfg.n_embd as usize;
-        let payload = t * n_embd;
-        let positions: Vec<i32> = (base as i32..(base + t) as i32).collect();
-        rt.bind_stage(stage)?;
-        let _stage = rt.enter(stage);
-        let engine = rt.engine(stage, e);
-        let positions_d = engine.htod_i32(&positions)?;
-        let x = rt.rx(stage - 1, incoming.slot, payload)?;
-        send_prime_pp_signal(
-            release_upstream,
-            PrimePpSignal::Slot(incoming),
-            "prime PP head slot release",
-        )?;
-        let _wave_cell = crate::pp::enter_pp_wave_cell();
-        let _overlap = crate::pp::enter_prime_pipe_stage();
-        let x = self.prime_layers(
-            engine,
-            x,
-            fence[stage],
-            fence[stage + 1],
-            &positions_d,
-            t,
-            base,
-            cache,
-            seq_end,
-        )?;
-        self.prime_chunk_epilogue(engine, x, t, cache)
     }
 
     /// One prime chunk: the full layer stack over `tokens`, continuing from the cache's current
@@ -4385,12 +2956,23 @@ impl HybridModel {
             // Mixed-embedding splice: image rows overwrite the pad-token embeddings that
             // fall inside this chunk's prompt-relative window [chunk_off, chunk_off+t).
             // Images larger than one prime chunk straddle boundaries, hence the clipping.
-            //
-            // Through the SHARED `EmbedOverlay::splice_into` (lane/glm53-vision-ppn): this
-            // site used to carry its own byte-identical copy of that loop, which meant the
-            // overlay residency law had to be re-stated per call site. One implementation,
-            // one law, and the splice point cannot drift between arms.
-            ov.splice_into(e, &mut x_embed, chunk_off, t, self.cfg.n_embd as usize)?;
+            let n_embd = self.cfg.n_embd as usize;
+            for &(pos, row_off, n_rows) in &ov.spans {
+                let lo = pos.max(chunk_off);
+                let hi = (pos + n_rows).min(chunk_off + t);
+                if lo < hi {
+                    let src_row = row_off + (lo - pos);
+                    let view = ov
+                        .rows
+                        .slice(src_row * n_embd..(src_row + (hi - lo)) * n_embd);
+                    e.copy_view_into(
+                        &mut x_embed,
+                        (lo - chunk_off) * n_embd,
+                        &view,
+                        (hi - lo) * n_embd,
+                    )?;
+                }
+            }
         }
         let x = self.prime_layers(
             e,
@@ -4598,20 +3180,7 @@ impl HybridModel {
             && !self.uses_sliding_gated_moe_program()
             && lo == 0
             && hi == n_layers
-            && std::env::var("MEMRA_PRIME_SEG").as_deref() == Ok("1")
-            // GRAPH-LAUNCH HEADROOM GUARD (see spec::GRAPH_LAUNCH_MIN_FREE): below the
-            // driver-free floor this prime call takes the eager fused else-arm (the
-            // byte-identical twin the opt-in was gated against) instead of replaying
-            // the S-mid/S-glue segment graphs into an exhausted card. Probe runs only
-            // when the opt-in flag is armed (short-circuit order).
-            && {
-                let ok = crate::spec::graph_launch_headroom_ok(e);
-                if !ok {
-                    static NOTED: std::sync::Once = std::sync::Once::new();
-                    NOTED.call_once(|| crate::spec::graph_replay_suspended_note("prime-seg"));
-                }
-                ok
-            };
+            && std::env::var("MEMRA_PRIME_SEG").as_deref() == Ok("1");
         if let Some((sg, sm, _, st)) = seg.as_mut()
             && **st != t
         {
@@ -5209,7 +3778,6 @@ impl HybridModel {
         h_seed_out: &mut CudaSlice<f32>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         self.refuse_hyper("prime_chunk_captured")?;
-        cache.ensure_usable("prime_chunk_captured")?;
         let cfg = &self.cfg;
         let n_embd = cfg.n_embd as usize;
         let eps = cfg.rms_eps;
@@ -5657,7 +4225,6 @@ impl HybridModel {
                 "step35 batched prime: seq_end must cover this chunk"
             );
         }
-        let mut transaction = CacheTaintGuard::arm(caches);
         // MEMRA_STEP35_PRIME_BATCH_TSEND=1: CANARY SEAM restoring the pre-fix chunk-local
         // `seq_end` (this chunk's own length, which `ts[s]` used to supply here). It is suffix-
         // and chunk-VARIANT by construction, so the suffix byte-identity gate MUST break under
@@ -5812,7 +4379,6 @@ impl HybridModel {
             self.step35_prime_batch_epilogue(e, x, &ts, &offs, caches)?
         };
         crate::pp::STEP35_PRIME_BATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        transaction.commit();
         Ok(out)
     }
 
@@ -5840,9 +4406,6 @@ impl HybridModel {
         caches: &mut [&mut Cache],
     ) -> Result<Vec<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>)>, Box<dyn std::error::Error>> {
         self.refuse_hyper("prime_cache_batch")?;
-        for cache in caches.iter() {
-            cache.ensure_usable("prime_cache_batch")?;
-        }
         if crate::pp::pp_cuts(self.layers.len()).is_some()
             && !self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::Pipeline)
         {
@@ -5861,25 +4424,13 @@ impl HybridModel {
                     "[rewrite] carried-prime.v1 unqualified; using individual native eager primes"
                 );
             });
-            let mut transaction = CacheTaintGuard::arm(caches);
-            let result: Result<Vec<_>, Box<dyn std::error::Error>> = prompts
+            return prompts
                 .iter()
                 .copied()
                 .zip(caches.iter_mut())
                 .map(|(prompt, cache)| self.prime_cache(e, prompt, cache, 0))
                 .collect();
-            if result.is_ok() {
-                transaction.commit();
-            }
-            return result;
         }
-        let _pp_walk =
-            if crate::pp::pp_cuts(self.layers.len()).is_some() && !crate::pp::pp2_streams_off() {
-                let rt = crate::pp::PpNRt::get(e)?;
-                Some(rt.acquire_walk("prime_cache_batch")?)
-            } else {
-                None
-            };
         let cfg = &self.cfg;
         let n_embd = cfg.n_embd as usize;
         let eps = cfg.rms_eps;
@@ -5913,15 +4464,6 @@ impl HybridModel {
                 .collect();
             return self.step35_prime_cache_batch(e, prompts, caches, &seq_ends);
         }
-        if crate::pp::pp_cuts(self.layers.len()).is_some() && !crate::pp::pp2_streams_off() {
-            let rt = crate::pp::PpNRt::get(e)?;
-            if rt.cross_device() {
-                return Err(
-                    "prime_cache_batch: generic dense concat prime has no cross-device PP split; use individual prime_cache calls"
-                        .into(),
-                );
-            }
-        }
         let ts: Vec<usize> = prompts.iter().map(|p| p.len()).collect();
         for &t in &ts {
             assert!(
@@ -5935,7 +4477,6 @@ impl HybridModel {
                 "prime_cache_batch: prompt exceeds cache max_ctx"
             );
         }
-        let mut transaction = CacheTaintGuard::arm(caches);
         let total: usize = ts.iter().sum();
         let offs: Vec<usize> = ts
             .iter()
@@ -6376,7 +4917,6 @@ impl HybridModel {
             caches[s].pos += ts[s];
             out.push((logits, h_seed, hidden_all.remove(0)));
         }
-        transaction.commit();
         Ok(out)
     }
 
@@ -7293,13 +5833,8 @@ impl HybridModel {
         // qwen35: wq output = head_dim*2*n_head (fused [q|gate] per head). M3/Hy3: NO output
         // gate — wq out = n_head*head_dim, no split (see prime-path note).
         let gated = geometry.attention_gate == memra_gguf::config::AttentionGateKind::FusedQ;
-        // A load-time full-attention TP plan owns the same Q/K/V projections for every
-        // architecture. Fall back to the original grouped owner-device projection when this
-        // layer has no TP sidecar.
-        let mut g3 = match self.full_attn_tp_qkv(e, fa, h, t)? {
-            Some(g3) => g3,
-            None => e.matmul_group(&[&fa.wq, &fa.wk, &fa.wv], h, t)?,
-        };
+        // grouped: one f16 activation convert feeds q/k/v (matmul_group)
+        let mut g3 = e.matmul_group(&[&fa.wq, &fa.wk, &fa.wv], h, t)?;
         let v = g3.pop().unwrap();
         let mut k = g3.pop().unwrap();
         let qf = g3.pop().unwrap();
@@ -7382,8 +5917,9 @@ impl HybridModel {
             None => attn,
         };
 
-        // O follows the same generic load-time TP plan as Q/K/V.
-        self.full_attn_o(e, fa, &attn_g, t)
+        // o projection
+        let o = e.matmul(&fa.wo, &attn_g, t)?;
+        Ok(o)
     }
 
     /// The absorb/decompress operands (`attn_k_b` / `attn_v_b`) are 3D and are ALWAYS the Float
@@ -7418,10 +5954,7 @@ impl HybridModel {
     /// `slot` and then attends rows `0..slot + t`, which is exactly the oracle's convention
     /// that the queries are the LAST `t_q` rows of the cache (`crate::mla::MlaInputs`).
     /// Returns the post-`wo` block output [t, n_embd].
-    #[allow(clippy::too_many_arguments)]
-    // allow: the parameter list mirrors the kernel/FFI/call contract (rows_exact is the
-    // verify-batch matmul-class selector, lane/glm5-verify-batch); bundling into a struct
-    // is a refactor, not a lint fix
+    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn mla_attn_core(
         &self,
         e: &Engine,
@@ -7433,48 +5966,6 @@ impl HybridModel {
         latent: &mut CudaSlice<f32>,
         index_plane: Option<IndexerPlanes<'_>>,
         slot: usize,
-        rows_exact: bool,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let attn = self.mla_attn_core_pre_wo(
-            e,
-            mla,
-            h,
-            pos_d,
-            t,
-            il,
-            latent,
-            index_plane,
-            slot,
-            rows_exact,
-        )?;
-        // Verify-batch wo seam (lane/glm5-verify-batch): the rows arm routes the output
-        // projection decode-exact, same as every projection inside the core — the wo
-        // dispatch moved here with the TP split, its routing did not change.
-        if rows_exact {
-            e.matmul_rows_exact(&mla.wo, &attn, t)
-        } else {
-            e.matmul(&mla.wo, &attn, t)
-        }
-    }
-
-    /// [`mla_attn_core`] up to (and excluding) the output projection: returns the
-    /// per-head attention output `[t, n_head * d_v]`. Split out for the glm5 TP-2 seam,
-    /// whose column-parallel `wo` runs over the cross-rank GATHERED heads — the plain path
-    /// is the wrapper above, byte-for-byte the pre-split body (the wo matmul moved,
-    /// nothing else).
-    #[allow(clippy::too_many_arguments)]
-    fn mla_attn_core_pre_wo(
-        &self,
-        e: &Engine,
-        mla: &crate::hybrid::MlaAttnLayer,
-        h: &CudaSlice<f32>,
-        pos_d: &CudaSlice<i32>,
-        t: usize,
-        il: usize,
-        latent: &mut CudaSlice<f32>,
-        index_plane: Option<IndexerPlanes<'_>>,
-        slot: usize,
-        rows_exact: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let g = mla.geom;
         let cfg = &self.cfg;
@@ -7487,26 +5978,13 @@ impl HybridModel {
             "layer {il}: MlaGeom latent_dim disagrees with kv_rank + d_rope"
         );
         let t_kv = slot + t;
-        // Verify-batch matmul seam (lane/glm5-verify-batch): rows_exact routes every
-        // projection through the decode-exact classes so each of the t rows is
-        // bit-identical to the t=1 decode program (matmul_rows_exact contract); false =
-        // the unchanged dispatch for every other caller (prime keeps its classes).
-        let mm = |w: &crate::model::GpuTensor,
-                  x: &CudaSlice<f32>|
-         -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-            if rows_exact {
-                e.matmul_rows_exact(w, x, t)
-            } else {
-                e.matmul(w, x, t)
-            }
-        };
 
         // --- q path: wq_a -> q_a_norm -> wq_b -> per-head [nope | rope] ---
-        let q_a = mm(&mla.wq_a, h)?;
+        let q_a = e.matmul(&mla.wq_a, h, t)?;
         let q_lora = mla.wq_b.in_features();
         let mut q_an = e.uninit(t * q_lora)?;
         e.rms_norm(&q_a, mla.q_a_norm.float_data(), &mut q_an, q_lora, t, eps)?;
-        let q = mm(&mla.wq_b, &q_an)?;
+        let q = e.matmul(&mla.wq_b, &q_an, t)?;
         // Per head the row is [nope | rope] contiguous, so t*nh rows of width dn+dr split with
         // the same kernel the latent row uses — the two layouts are the same shape.
         let mut q_nope = e.uninit(t * nh * dn)?;
@@ -7517,7 +5995,7 @@ impl HybridModel {
         e.mla_rope_interleaved(&mut q_pe, pos_d, t, nh, dr, base)?;
 
         // --- kv path: wkv_a -> [c_kv (rms-normed) | k_pe (roped, NOT normed)] ---
-        let kv = mm(&mla.wkv_a, h)?;
+        let kv = e.matmul(&mla.wkv_a, h, t)?;
         let mut c_kv = e.uninit(t * r)?;
         let mut k_pe = e.uninit((t * dr).max(1))?;
         e.mla_split_latent(&kv, &mut c_kv, &mut k_pe, t, r, dr)?;
@@ -7531,7 +6009,7 @@ impl HybridModel {
         // plane already lets it (the reference concatenates into the indexer cache, then scores).
         let gathered = match (&mla.index, index_plane) {
             (Some(indexer), Some(plane)) => {
-                Some(self.mla_kpool_select(e, indexer, h, &q_an, plane, t, slot, il, rows_exact)?)
+                Some(self.mla_kpool_select(e, indexer, h, &q_an, plane, t, slot, il)?)
             }
             (Some(_), None) => {
                 return Err(format!(
@@ -7547,61 +6025,6 @@ impl HybridModel {
         // --- absorbed MLA core over the latent plane ---
         let wk_b = Self::mla_split_operand(&mla.wk_b, "attn_k_b", il);
         let wv_b = Self::mla_split_operand(&mla.wv_b, "attn_v_b", il);
-
-        // MEMRA_MLA_TC_PREFILL door (default OFF; flag read per call — the rollback seam).
-        // Engagement conditions, every one load-bearing:
-        //   * a gathered selection exists — the door serves the DSA arm only; the dense
-        //     absorbed arm (GLM-5.2, no indexer) keeps the f32 kernel it was gated on;
-        //   * d_rope == 0 (NoPE) — the TC kernel treats the latent row as both K and V,
-        //     which is only the whole truth when there is no rope plane;
-        //   * kv_rank == 512 — the kernel's stamped head dim (glm5_next / GLM-5.2 class);
-        //   * t >= 16 — prefill widths only. Decode (t == 1) and short resumes NEVER enter,
-        //     which is what the decode byte-identity gate proves rather than assumes.
-        // Anything else falls through to the unchanged f32 kernels below — behavior identical
-        // to the flag being off.
-        // A chain returning Ok(None) is a cuBLASLt shape DECLINE (announced once per shape);
-        // the let-chain then simply does not match and the f32 kernels below serve the call.
-        // glm5 TP composition guard (lane/glm5-composition): the TC prefill chain's gate
-        // ran on the FULL-head geometry only; a head shard (any rank) declines it by name
-        // and falls through to the f32 kernels below — behavior identical to the flag
-        // being off for that layer, announced once. The composed door re-gates on the box
-        // (real-artifact kv_rank 512 shapes; the rig fixtures are kv_rank 16 and never
-        // reach this chain).
-        // The announce shares the chain's OWN conjuncts (gathered + !portable_mma_gated),
-        // so it can never blame TP for a decline the missing DSA gather or the MMA gate
-        // caused (#82 review).
-        if mla.tp_shard
-            && gathered.is_some()
-            && dr == 0
-            && r == 512
-            && t >= 16
-            && !crate::portable_mma_gated()
-            && mla_tc_prefill_enabled()
-        {
-            static TP_TC_DECLINE: std::sync::Once = std::sync::Once::new();
-            TP_TC_DECLINE.call_once(|| {
-                eprintln!(
-                    "[mla-tc-prefill] DECLINED on glm5-TP head shards: the door's gate ran \
-                     on full-head geometry; shards ride the f32 prefill kernels until the \
-                     TP composition gate lands (pin MEMRA_MLA_TC_PREFILL=0 to silence)"
-                );
-            });
-        }
-        if let Some((idx, slots)) = &gathered
-            && dr == 0
-            && r == 512
-            && t >= 16
-            && !rows_exact // verify-batch stays on the decode-exact classes (t <= 15 anyway)
-            && !crate::portable_mma_gated()
-            && !mla.tp_shard
-            && mla_tc_prefill_enabled()
-            && let Some(attn) = self.mla_tc_prefill_chain(
-                e, wk_b, wv_b, &q_nope, latent, idx, *slots, t, t_kv, nh, dn, dv, r, g.scale,
-            )?
-        {
-            return Ok(attn);
-        }
-
         let mut q_lat = e.uninit(t * nh * r)?;
         e.mla_absorb_q(&q_nope, wk_b, &mut q_lat, t, nh, dn, r)?;
         let mut o_lat = e.uninit(t * nh * r)?;
@@ -7616,141 +6039,7 @@ impl HybridModel {
         let mut attn = e.uninit(t * nh * dv)?;
         e.mla_decompress_v(&o_lat, wv_b, &mut attn, t, nh, dv, r)?;
 
-        Ok(attn)
-    }
-
-    /// The MEMRA_MLA_TC_PREFILL chain: absorb and decompress as strided-batched bf16
-    /// tensor-core GEMMs, attention as the gathered bf16 MMA kernel. Returns `Ok(None)` when
-    /// cuBLASLt declines a GEMM shape (announced once per shape) so the caller falls back to
-    /// the f32 kernels; every other failure is a hard error.
-    ///
-    /// FORM CHOICE, stated for the record (the dual-form MLA law): every fast engine runs
-    /// MATERIALIZED (per-head MHA) attention at DENSE prefill and absorbed MQA at decode.
-    /// glm5_next prefill is NOT dense: the DSA indexer caps every query at topk+tail rows and
-    /// selects ONE list per query SHARED ACROSS ALL 64 HEADS. That shared list is what makes
-    /// the ABSORBED form the GEMM-shaped one here — the head axis is the MMA m, the shared
-    /// latent rows are one B operand per tile — while materializing K/V would give every head
-    /// its own K plane and destroy exactly that sharing (back to per-(query,head) matvecs on
-    /// the gathered walk). It is also FlashMLA's own sparse-prefill geometry (q 576/512 over
-    /// gathered latent rows). Queries whose selection is trivial (visible <= topk: the lists
-    /// ARE the full causal prefix, emitted by the selector itself) ride the SAME kernel with
-    /// the identity gather — there is no separate dense program to gate.
-    ///
-    /// Transient cost per (layer, chunk) at the census shape (t=2313, t_kv=4626): bf16 q_lat
-    /// 152 MB + bf16 latent window 4.7 MB + bf16 q_nope/o_lat copies ~230 MB — all freed with
-    /// the call. (The materialized-K/V alternative would have been 4096 x 64 x (256+256) x 2B
-    /// = 256 MB/layer-chunk of K/V ALONE, plus the per-head-K program cost above.) Weight
-    /// bf16 converts (wk_b/wv_b, 8.4M elems each) run per call, ~50 us class; a resident
-    /// mirror is a later diet, not correctness.
-    #[allow(clippy::too_many_arguments)]
-    fn mla_tc_prefill_chain(
-        &self,
-        e: &Engine,
-        wk_b: &CudaSlice<f32>,
-        wv_b: &CudaSlice<f32>,
-        q_nope: &CudaSlice<f32>,
-        latent: &CudaSlice<f32>,
-        idx: &CudaSlice<i32>,
-        width: usize,
-        t: usize,
-        t_kv: usize,
-        nh: usize,
-        dn: usize,
-        dv: usize,
-        r: usize,
-        scale: f32,
-    ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
-        // Once-per-shape decline announce (the bf16_tc_gemm pattern): a door that quietly
-        // stops engaging reads exactly like a door that never helped.
-        fn declined(stage: &str, m: usize, n: usize, k: usize, batch: usize) {
-            type ShapeSet = std::collections::HashSet<(usize, usize, usize, usize)>;
-            static SAID: std::sync::Mutex<Option<ShapeSet>> = std::sync::Mutex::new(None);
-            let mut g = SAID.lock().unwrap();
-            if g.get_or_insert_with(std::collections::HashSet::new)
-                .insert((m, n, k, batch))
-            {
-                eprintln!(
-                    "[mla-tc-prefill] DECLINED at {stage} m={m} n={n} k={k} batch={batch} \
-                     (no cuBLASLt heuristic) — this call falls back to the f32 MLA kernels"
-                );
-            }
-        }
-        // Weights and activations to bf16. The converts require n % 4 == 0; every operand here
-        // is a multiple of the head dims (dn/dv/r all >= 16 and % 4 == 0 on the shapes the door
-        // admits), asserted rather than assumed.
-        for (name, n) in [
-            ("wk_b", nh * r * dn),
-            ("wv_b", nh * dv * r),
-            ("q_nope", t * nh * dn),
-            ("latent", t_kv * r),
-        ] {
-            debug_assert!(
-                n.is_multiple_of(4),
-                "mla-tc-prefill: {name} elems {n} % 4 != 0"
-            );
-            let _ = (name, n);
-        }
-        let wk_bf = e.f32_to_bf16(wk_b, nh * r * dn)?;
-        let wv_bf = e.f32_to_bf16(wv_b, nh * dv * r)?;
-        let qn_bf = e.f32_to_bf16(q_nope, t * nh * dn)?;
-        // absorb: per head h, q_lat[:,h,:] [t, r] = q_nope[:,h,:] [t, dn] @ W_uk[h] [r, dn]^T.
-        // wk_b is the conversion-split (h, l, p) plane, contiguous in p == the reduction axis:
-        // per head it IS the [n=r, k=dn] row-major operand. bf16 out feeds the attention kernel.
-        let mut q_lat_bf = e.alloc_u8_uninit(t * nh * r * 2)?;
-        if !e.mla_bf16_gemm_sb_bf16out(
-            &wk_bf,
-            &qn_bf,
-            &mut q_lat_bf,
-            t,
-            r,
-            dn,
-            nh * dn,
-            dn,
-            nh * r,
-            r,
-            nh,
-        )? {
-            declined("absorb", t, r, dn, nh);
-            return Ok(None);
-        }
-        // The latent window rows 0..t_kv (this call's rows were appended above), bf16.
-        let cache_bf = e.f32_to_bf16(latent, t_kv * r)?;
-        let mut o_lat = e.uninit(t * nh * r)?;
-        e.mla_attn_gathered_tc(
-            &q_lat_bf, &cache_bf, idx, &mut o_lat, nh, r, t, width, scale,
-        )?;
-        // decompress: per head h, attn[:,h,:] [t, dv] = o_lat[:,h,:] [t, r] @ W_uv[h] [dv, r]^T.
-        // wv_b is (h, j, l), contiguous in l == the reduction axis: per head [n=dv, k=r].
-        let o_bf = e.f32_to_bf16(&o_lat, t * nh * r)?;
-        let mut attn = e.uninit(t * nh * dv)?;
-        if !e.mla_bf16_gemm_sb_f32out(
-            &wv_bf,
-            &o_bf,
-            &mut attn,
-            t,
-            dv,
-            r,
-            nh * r,
-            r,
-            nh * dv,
-            dv,
-            nh,
-        )? {
-            declined("decompress", t, dv, r, nh);
-            return Ok(None);
-        }
-        crate::MLA_TC_PREFILL_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        {
-            static ANNOUNCED: std::sync::Once = std::sync::Once::new();
-            ANNOUNCED.call_once(|| {
-                eprintln!(
-                    "[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC \
-                     GEMMs, attention = fa_mla_gathered_bf16 (t={t}, t_kv={t_kv}, nh={nh}, \
-                     width={width}); dispatches counted in MLA_TC_PREFILL_DISPATCHES"
-                );
-            });
-        }
-        Ok(Some(attn))
+        e.matmul(&mla.wo, &attn, t)
     }
 
     /// Layer-scoped wrapper: names the layer in any selection failure.
@@ -7765,9 +6054,8 @@ impl HybridModel {
         t: usize,
         slot: usize,
         il: usize,
-        rows_exact: bool,
     ) -> Result<(CudaSlice<i32>, usize), Box<dyn std::error::Error>> {
-        Self::mla_kpool_indices_ex(e, indexer, h, q_resid, plane, t, slot, rows_exact).map_err(
+        Self::mla_kpool_indices(e, indexer, h, q_resid, plane, t, slot).map_err(
             |source| -> Box<dyn std::error::Error> {
                 format!("layer {il}: DSA k-pool selection failed: {source}").into()
             },
@@ -7800,33 +6088,6 @@ impl HybridModel {
         t: usize,
         slot: usize,
     ) -> Result<(CudaSlice<i32>, usize), Box<dyn std::error::Error>> {
-        Self::mla_kpool_indices_ex(e, indexer, h, q_resid, plane, t, slot, false)
-    }
-
-    /// [`Self::mla_kpool_indices`] with the verify-batch matmul-class selector
-    /// (lane/glm5-verify-batch): `rows_exact` routes the indexer's four projections
-    /// through the decode-exact classes so each of the t rows is bit-identical to the
-    /// t=1 decode program; `false` is the unchanged dispatch.
-    #[allow(clippy::too_many_arguments)]
-    pub fn mla_kpool_indices_ex(
-        e: &Engine,
-        indexer: &crate::hybrid::MlaIndexer,
-        h: &CudaSlice<f32>,
-        q_resid: &CudaSlice<f32>,
-        plane: IndexerPlanes<'_>,
-        t: usize,
-        slot: usize,
-        rows_exact: bool,
-    ) -> Result<(CudaSlice<i32>, usize), Box<dyn std::error::Error>> {
-        let mm = |w: &crate::model::GpuTensor,
-                  x: &CudaSlice<f32>|
-         -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-            if rows_exact {
-                e.matmul_rows_exact(w, x, t)
-            } else {
-                e.matmul(w, x, t)
-            }
-        };
         /// `nn.LayerNorm` default epsilon. The indexer's k_norm is a LayerNorm, so it does NOT
         /// take the model's `rms_norm_eps` (census: "eps 1e-5, NOT rms_norm_eps"); they coincide
         /// numerically on GLM-5.3-Flash and the constant keeps them from being coupled.
@@ -7881,7 +6142,7 @@ impl HybridModel {
 
         // 1. packed state rows [k | gate], appended at `slot` — the same [a|b] row shape the
         //    latent plane uses, so `mla_append_latent` packs it with no new kernel.
-        let k_raw = mm(&indexer.wk, h)?;
+        let k_raw = e.matmul(&indexer.wk, h, t)?;
         let mut k_norm = e.uninit(t * d)?;
         e.layer_norm_bias(
             &k_raw,
@@ -7892,7 +6153,7 @@ impl HybridModel {
             t,
             INDEX_NORM_EPS,
         )?;
-        let gate = mm(&indexer.kpool_gate, h)?;
+        let gate = e.matmul(&indexer.kpool_gate, h, t)?;
 
         // 2. pool keys over every COMPLETE pool in the cache — INCREMENTALLY. A pool's key is a
         //    function of its own `pool` state rows (append-only, never rewritten) and the constant
@@ -7972,8 +6233,8 @@ impl HybridModel {
         let pool_keys = &*pool_keys;
 
         // 3. score + head mix, 4. top-k -> raw rows + tail.
-        let q_index = mm(&indexer.wq_b, q_resid)?;
-        let head_weights = mm(&indexer.weights_proj, h)?;
+        let q_index = e.matmul(&indexer.wq_b, q_resid, t)?;
+        let head_weights = e.matmul(&indexer.weights_proj, h, t)?;
         let mut score = e.uninit((t * n_pools).max(1))?;
         e.mla_kpool_score(
             &q_index,
@@ -8015,13 +6276,6 @@ impl HybridModel {
         t: usize,
         il: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        if mla.tp.is_some() {
-            return Err(format!(
-                "layer {il}: MLA layer is glm5-TP-sharded (MEMRA_GLM5_TP): the stateless \
-                 mixer path is unwired for a head shard"
-            )
-            .into());
-        }
         let mut latent = e.uninit(t * mla.geom.latent_dim)?;
         let mut index_plane = match mla.index.as_ref() {
             Some(indexer) => Some(e.uninit(t * indexer.geom.state_width())?),
@@ -8039,7 +6293,7 @@ impl HybridModel {
             state_ring_rows: 0,
             capacity_tokens: t,
         });
-        self.mla_attn_core(e, mla, h, pos_d, t, il, &mut latent, planes, 0, false)
+        self.mla_attn_core(e, mla, h, pos_d, t, il, &mut latent, planes, 0)
     }
 
     /// STATEFUL MLA arm (prime and T=1 decode): appends into the session's latent plane and
@@ -8056,56 +6310,6 @@ impl HybridModel {
         il: usize,
         cache: &mut Cache,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        self.mla_attn_cached_inner(e, mla, h, pos_d, t, il, cache, false)
-    }
-
-    /// [`Self::mla_attn_cached`] on the VERIFY-BATCH matmul classes (lane/glm5-verify-batch):
-    /// the SAME core at t=K+1 rows with every internal projection routed decode-exact
-    /// (`matmul_rows_exact`), so row r of the batched call is bit-identical to the t=1
-    /// `mla_attn_cached` call the per-row verify walk makes at position pos0+r. Causality
-    /// within the batch is per-query by construction: the kpool selection masks pools
-    /// invisible to each query and appends each query's OWN raw tail
-    /// (`first_pos + t + 1`), and the gathered attention walks each query's own idx list
-    /// (-1 padding arithmetic-invariant). Held by `glm5_tparallel_verify_gpu` gates 1+2
-    /// running the batched arm. ONLY the glm5 verify-batch walk calls this.
-    #[allow(clippy::too_many_arguments)] // allow: mirrors mla_attn_cached's contract
-    pub fn mla_attn_cached_rows_exact(
-        &self,
-        e: &Engine,
-        mla: &crate::hybrid::MlaAttnLayer,
-        h: &CudaSlice<f32>,
-        pos_d: &CudaSlice<i32>,
-        t: usize,
-        il: usize,
-        cache: &mut Cache,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        self.mla_attn_cached_inner(e, mla, h, pos_d, t, il, cache, true)
-    }
-
-    #[allow(clippy::too_many_arguments)] // allow: mirrors mla_attn_cached's contract
-    fn mla_attn_cached_inner(
-        &self,
-        e: &Engine,
-        mla: &crate::hybrid::MlaAttnLayer,
-        h: &CudaSlice<f32>,
-        pos_d: &CudaSlice<i32>,
-        t: usize,
-        il: usize,
-        cache: &mut Cache,
-        rows_exact: bool,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        // glm5 TP fail-closed choke point, covering BOTH plain entries (decode/prime AND
-        // the verify-batch rows arm): a TP-sharded layer holds heads/2 and a per-rank
-        // latent replica — running it on the plain path would compute a silently-halved
-        // mixer against the wrong plane, so it refuses by name instead.
-        if mla.tp.is_some() {
-            return Err(format!(
-                "layer {il}: MLA layer is glm5-TP-sharded (MEMRA_GLM5_TP): the plain mixer \
-                 path is unwired for a head shard — only the TP decode/prime walk may \
-                 execute it (rows_exact={rows_exact})"
-            )
-            .into());
-        }
         // Read before the layer borrow: it sizes the resident pool-key plane, which the ring'd
         // state plane's own length can no longer stand in for.
         let max_ctx = cache.max_ctx;
@@ -8115,34 +6319,6 @@ impl HybridModel {
                  must declare StatePlan::LatentKvCache for it"
             )
         })?;
-        let attn =
-            self.mla_attn_cached_pre_wo(e, mla, h, pos_d, t, il, layer, max_ctx, rows_exact)?;
-        // Verify-batch wo seam: the rows arm keeps its decode-exact output projection —
-        // the wo dispatch moved here with the TP split, its routing did not change.
-        if rows_exact {
-            e.matmul_rows_exact(&mla.wo, &attn, t)
-        } else {
-            e.matmul(&mla.wo, &attn, t)
-        }
-    }
-
-    /// The stateful MLA call against ONE latent plane, up to (and excluding) the output
-    /// projection. The plain path wraps it above (canonical plane + `wo`); the glm5 TP-2
-    /// walk calls it once per rank (root shard on the canonical plane, peer shard on the
-    /// replicated peer plane) and joins the halves through the column-parallel `wo`.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn mla_attn_cached_pre_wo(
-        &self,
-        e: &Engine,
-        mla: &crate::hybrid::MlaAttnLayer,
-        h: &CudaSlice<f32>,
-        pos_d: &CudaSlice<i32>,
-        t: usize,
-        il: usize,
-        layer: &mut memra_kv::LatentKvLayer,
-        max_ctx: usize,
-        rows_exact: bool,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let slot = layer.len;
         let width = layer.width;
         assert_eq!(
@@ -8181,8 +6357,10 @@ impl HybridModel {
             state_ring_rows: index_ring_rows,
             capacity_tokens: max_ctx,
         });
-        let out =
-            self.mla_attn_core_pre_wo(e, mla, h, pos_d, t, il, &mut rows, planes, slot, rows_exact);
+        let out = self.mla_attn_core(e, mla, h, pos_d, t, il, &mut rows, planes, slot);
+        let layer = cache.latent[il]
+            .as_mut()
+            .expect("latent plane still present");
         layer.rows = rows;
         layer.index_rows = index_rows;
         layer.index_pool_keys = pool_keys;
@@ -8198,135 +6376,11 @@ impl HybridModel {
             pools_ready
         };
         let out = out?;
-        // Resolve the layer's RESIDENT pool copy (the state plan does not carry `pool`; the
-        // latent-plane snapshot path reads this field to address the tail ring). A nonzero
-        // resident value that disagrees with the loaded geometry is corruption, not a race:
-        // there is exactly one geometry per loaded layer.
-        if let Some(indexer) = mla.index.as_ref() {
-            let pool = indexer.geom.pool;
-            if layer.index_pool != 0 && layer.index_pool != pool {
-                return Err(format!(
-                    "layer {il}: resident indexer pool {} != loaded geometry pool {pool}",
-                    layer.index_pool,
-                )
-                .into());
-            }
-            layer.index_pool = pool;
-        }
         layer.len = slot + t;
         let len_i32 = i32::try_from(layer.len).map_err(|_| "latent length exceeds i32 mirror")?;
-        // Door H (`MEMRA_GLM5_HTOD_DIET`): the async `i32_set_k` launch instead of this
-        // SYNCHRONIZING pageable 4-byte copy — 11 of these per round, one per MLA trunk layer.
-        e.i32_mirror_store(&mut layer.len_d, len_i32)?;
+        let stream = e.stream();
+        stream.memcpy_htod(&[len_i32], &mut layer.len_d)?;
         Ok(out)
-    }
-
-    /// The glm5 TP MLA walk for one prime/decode call (`mla` is the ROOT head shard; its
-    /// sidecar carries the peer shards + runtime). Replicated per-token work runs on EVERY
-    /// rank from identical inputs (wq_a/wkv_a/indexer/k-pool selection — identical bytes by
-    /// determinism on uniform hardware, gate-held); each rank attends with its heads over
-    /// its OWN latent replica; the attention parts are gathered through the armed transport
-    /// and each rank's COLUMN-parallel `wo` slice computes its slice of the output with the
-    /// plain matvec kernel — no cross-rank arithmetic anywhere.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn mla_tp_attn_cached(
-        &self,
-        e: &Engine,
-        mla: &crate::hybrid::MlaAttnLayer,
-        h: &CudaSlice<f32>,
-        pos_d: &CudaSlice<i32>,
-        t: usize,
-        il: usize,
-        cache: &mut Cache,
-        rows_exact: bool,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let tp = mla
-            .tp
-            .as_ref()
-            .ok_or("mla_tp_attn_cached called on an unsharded layer")?;
-        let rt = &tp.rt;
-        let ranks = tp.ranks();
-        let g = mla.geom; // SHARD geometry: n_head = full/ranks
-        let hl = g.n_head;
-        let dv = g.d_v;
-        let full_heads = tp.full_heads;
-        let n_embd = tp.n_embd;
-        let hh = n_embd / ranks;
-        let max_ctx = cache.max_ctx;
-
-        // HOP 1 — fan-out of the mixer input and positions to every peer rank. Both move the
-        // WHOLE buffer, exactly as the v1 arm did, so the transport arms move identical
-        // byte ranges (lane/glm5-tp-transport).
-        let hop = rt.hop(e);
-        let h_peers = crate::tp_transport::fanout_f32(&hop, h, h.len())?;
-        let pos_peers = crate::tp_transport::fanout_i32(&hop, pos_d, pos_d.len())?;
-
-        // Peer replica planes (lazily geometry-cloned from the canonical plane).
-        {
-            let canonical = cache.latent[il].as_ref().ok_or_else(|| {
-                format!("layer {il}: glm5 TP MLA walk found no canonical latent plane")
-            })?;
-            crate::glm5_tp::ensure_mla_peer_latent(
-                rt,
-                canonical,
-                &mut cache.glm5_tp_latent_peer[il],
-            )?;
-        }
-
-        // Peer passes first (each rank's heads over its replica), then root (canonical
-        // plane unchanged) — v1's issue order at two ranks. `rows_exact` threads the
-        // caller's matmul class through every rank: false = the prime/decode walk
-        // (byte-for-byte the pre-composition arm), true = the spec x TP verify walk
-        // (lane/glm5-composition) riding the same rows-exact classes as the unsharded
-        // verify walk.
-        let mut attn: Vec<Option<CudaSlice<f32>>> = (0..ranks).map(|_| None).collect();
-        for r in 1..ranks {
-            let layer = &mut cache.glm5_tp_latent_peer[il].as_mut().unwrap()[r - 1];
-            attn[r] = Some(self.mla_attn_cached_pre_wo(
-                &rt.peers[r - 1],
-                &tp.peers[r - 1],
-                &h_peers[r - 1],
-                &pos_peers[r - 1],
-                t,
-                il,
-                layer,
-                max_ctx,
-                rows_exact,
-            )?);
-        }
-        attn[0] = {
-            let layer = cache.latent[il].as_mut().unwrap();
-            Some(self.mla_attn_cached_pre_wo(e, mla, h, pos_d, t, il, layer, max_ctx, rows_exact)?)
-        };
-
-        // HOP 2 — gather the per-head parts into the FULL [t, full_heads*dv] layout on
-        // every rank. `full_heads * dv == ranks * (hl * dv)` by the shard map.
-        let part = hl * dv;
-        debug_assert_eq!(full_heads * dv, ranks * part);
-        let attn_refs: Vec<&CudaSlice<f32>> = attn
-            .iter()
-            .map(|a| a.as_ref().expect("filled above"))
-            .collect();
-        let fulls = crate::tp_transport::gather_parts(&hop, &attn_refs, t, part)?;
-
-        // Column-parallel wo slices + output concat (pure movement). The verify walk's
-        // wo rides the rows-exact class, exactly like the unsharded verify walk's wo.
-        let mut ys = Vec::with_capacity(ranks);
-        if rows_exact {
-            ys.push(e.matmul_rows_exact(&mla.wo, &fulls[0], t)?);
-            for r in 1..ranks {
-                ys.push(rt.peers[r - 1].matmul_rows_exact(&tp.peers[r - 1].wo, &fulls[r], t)?);
-            }
-        } else {
-            ys.push(e.matmul(&mla.wo, &fulls[0], t)?);
-            for r in 1..ranks {
-                ys.push(rt.peers[r - 1].matmul(&tp.peers[r - 1].wo, &fulls[r], t)?);
-            }
-        }
-        // HOP 3 — concat the column parts into the mixer output on ROOT.
-        debug_assert_eq!(n_embd, ranks * hh);
-        let y_refs: Vec<&CudaSlice<f32>> = ys.iter().collect();
-        crate::tp_transport::concat_parts_on_root(&hop, &y_refs, t, hh)
     }
 
     /// Linear-attention (Gated DeltaNet) mixer (qwen35 :338-470).
@@ -8485,7 +6539,6 @@ impl HybridModel {
             false,
             None,
             self.uses_sliding_gated_moe_program(),
-            false,
         )
     }
 
@@ -8511,7 +6564,6 @@ impl HybridModel {
             true,
             Some(&self.step_grouped_prefill),
             self.uses_sliding_gated_moe_program(),
-            false,
         )
     }
 
@@ -8539,35 +6591,6 @@ impl HybridModel {
             false,
             None,
             self.uses_sliding_gated_moe_program(),
-            false,
-        )
-    }
-
-    /// Verify-rows twin of [`Self::moe_ffn_il_zq8`] (lane/glm5-vrest): the SAME routing and
-    /// dispatch decisions with the pairs-shaped batched routed-expert arm armed. Only the
-    /// verify walk's batched arm (`MEMRA_GLM5_VERIFY_BATCH`, t>=2) calls this; every
-    /// unqualified shape inside falls closed to the byte-identical sequential loop.
-    pub(crate) fn moe_ffn_il_zq8_vrows(
-        &self,
-        e: &Engine,
-        m: &MoeWeights,
-        z: &CudaSlice<f32>,
-        t: usize,
-        il: u16,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        Self::moe_ffn_inner(
-            e,
-            m,
-            z,
-            None,
-            t,
-            &self.cfg,
-            il,
-            self.max_moe_block(),
-            false,
-            None,
-            self.uses_sliding_gated_moe_program(),
-            true,
         )
     }
 
@@ -8587,9 +6610,7 @@ impl HybridModel {
         il: u16,
         max_block: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        Self::moe_ffn_inner(
-            e, m, z, None, t, cfg, il, max_block, false, None, false, false,
-        )
+        Self::moe_ffn_inner(e, m, z, None, t, cfg, il, max_block, false, None, false)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -8606,7 +6627,6 @@ impl HybridModel {
         prefill: bool,
         grouped_prefill: Option<&std::sync::Mutex<crate::hybrid::StepEpGroupedPrefill>>,
         sliding_gated_moe: bool,
-        vrows: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let worker_io = crate::spill_pread::worker_enabled();
         let epoch_lfu = std::env::var_os("MEMRA_MOE_LFU_DECAY").is_some();
@@ -8618,13 +6638,6 @@ impl HybridModel {
                 }
                 Ok(())
             })?;
-        }
-        if let Some(ep) = &m.glm5_ep {
-            // glm5 TP-2 EP walk (MEMRA_GLM5_TP): whole-expert halves, root router, slot-ordered
-            // canonical combine. Every other arm of this function is unreachable for an
-            // EP-armed layer by construction. `prefill` keys the EP grouped-prime arm
-            // (MEMRA_GLM5_EP_GROUPED_PRIME) exactly as it keys the plain grouped arm below.
-            return Self::moe_ffn_glm5_ep(e, m, ep, z, zq8, t, cfg, il, prefill);
         }
         if m.step_ep.is_some() || m.step_tp.is_some() {
             let moe = cfg
@@ -9045,23 +7058,6 @@ impl HybridModel {
                     w_d,
                 )?;
                 crate::moesd::record_device_routes(e, il, n_expert, n_used, sel_d)?;
-                // FAIL-CLOSED for the route taps: this walk keeps the selection
-                // device-side, so `trace_moe_routes` (MEMRA_MOE_TRACE /
-                // MEMRA_MOE_WEIGHT_TRACE) never sees its rows. Every other MoE walk is
-                // either host-routed (the taps ride the existing readback) or forced to
-                // the host-visible path by observation mode — this one is neither. A
-                // trace that silently misses whole layers poisons any placement mint
-                // built on it (LAW:coactivation-expert-placement measurement leg), so an
-                // armed tap refuses by name instead of dropping rows.
-                if std::env::var("MEMRA_MOE_TRACE").is_ok()
-                    || std::env::var("MEMRA_MOE_WEIGHT_TRACE").is_ok()
-                {
-                    return Err("MEMRA_MOE_TRACE/MEMRA_MOE_WEIGHT_TRACE cannot trace the \
-                         device-routed step TP walk (selection never returns to host; \
-                         tracing would add a new sync). Route through the host-router \
-                         arm — refused rather than silently dropping rows"
-                        .into());
-                }
                 // MEMRA_SHEXP_OVERLAP=1: issue the shared expert from the routes
                 // PREJOIN hook so it executes while the peer rank drains its sweep
                 // (fills dev0's join wait); apply adds the identical values after.
@@ -9182,158 +7178,6 @@ impl HybridModel {
                 }
                 return Ok(output);
             }
-            let automatic_ep_device_router = crate::tp::parallel_ep_device_router_enabled()?;
-            let automatic_ep_q8_act = crate::tp::parallel_ep_q8_act_enabled()?;
-            let automatic_ep_q8_scope = crate::tp::parallel_ep_q8_scope()?;
-            crate::tp::parallel_ep_q8_gu_paired_enabled(
-                automatic_ep_q8_act,
-                automatic_ep_q8_scope,
-            )?;
-            let automatic_ep_q8_active =
-                automatic_ep_q8_act && t <= crate::tp::NVFP4_EP_Q8_BATCH_CAP;
-            if automatic_ep_q8_scope.is_some() && !automatic_ep_q8_act {
-                return Err(
-                    "MEMRA_PARALLEL_EP_Q8_SCOPE requires MEMRA_PARALLEL_EP_Q8_ACT=1".into(),
-                );
-            }
-            if automatic_ep_q8_act && !automatic_ep_device_router {
-                return Err(
-                    "MEMRA_PARALLEL_EP_Q8_ACT=1 requires MEMRA_PARALLEL_EP_DEVICE_ROUTER=1".into(),
-                );
-            }
-            if automatic_ep_q8_act && m.step_ep.as_ref().is_none_or(|ep| !ep.nvfp4_device_routes) {
-                return Err(
-                    "MEMRA_PARALLEL_EP_Q8_ACT=1 requires automatic W4A16 whole-expert EP".into(),
-                );
-            }
-            if t <= crate::tp::NVFP4_EP_DEVICE_ROUTER_BATCH_CAP
-                && automatic_ep_device_router
-                && let Some(ep) = &m.step_ep
-                && ep.nvfp4_device_routes
-            {
-                let bank = match &ep.experts {
-                    crate::hybrid::StepEpExpertBank::Nvfp4(bank) => bank,
-                    crate::hybrid::StepEpExpertBank::E4m3(_) => {
-                        return Err("W4A16 device-routed EP reached an E4M3 expert bank".into());
-                    }
-                };
-                let pairs = t
-                    .checked_mul(n_used)
-                    .ok_or("W4A16 device-routed EP pair count overflow")?;
-                let capacity = crate::tp::NVFP4_EP_DEVICE_BATCH_CAP * n_used;
-                /// Per-device persistent route scratch: device ordinal -> (armed capacity in
-                /// pairs, selected-expert rows, route-weight rows). Named because the nested
-                /// form is unreadable at this depth, not to hide it.
-                type EpSelwByDevice =
-                    std::collections::HashMap<usize, (usize, CudaSlice<i32>, CudaSlice<f32>)>;
-                static EP_SELW: std::sync::Mutex<Option<EpSelwByDevice>> =
-                    std::sync::Mutex::new(None);
-                let mut selw = EP_SELW
-                    .lock()
-                    .map_err(|_| "automatic EP device-router workspace lock poisoned")?;
-                let device = e.ctx().ordinal();
-                let workspaces = selw.get_or_insert_with(Default::default);
-                if workspaces
-                    .get(&device)
-                    .is_none_or(|(cap, ..)| *cap < capacity)
-                {
-                    workspaces.insert(
-                        device,
-                        (
-                            capacity,
-                            e.htod_i32(&vec![0i32; capacity])?,
-                            e.htod(&vec![0.0f32; capacity])?,
-                        ),
-                    );
-                }
-                let (_, sel_d, w_d) = workspaces.get_mut(&device).expect("armed above");
-                let (sf, route_norm) = sigmoid;
-                e.moe_router_sigmoid_topk_into(
-                    &logits,
-                    t,
-                    n_expert,
-                    n_used,
-                    m.active_count(),
-                    &m.exp_probs_b_dev,
-                    &m.active_experts_dev,
-                    sf,
-                    route_norm,
-                    sel_d,
-                    w_d,
-                )?;
-                crate::moesd::record_device_routes(e, il, n_expert, n_used, sel_d)?;
-                static SHEXP_OV_AUTO: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-                let shexp_ov = t == 1
-                    && *SHEXP_OV_AUTO
-                        .get_or_init(|| std::env::var("MEMRA_SHEXP_OVERLAP").as_deref() == Ok("1"));
-                let mut ov_issued = false;
-                let mut output = if shexp_ov {
-                    ep.runtime
-                        .run_routed_experts_nvfp4_w4a16_device_routed_prejoin(
-                            bank,
-                            e,
-                            z,
-                            sel_d,
-                            w_d,
-                            t,
-                            n_used,
-                            ep.activation_limit,
-                            || {
-                                ov_issued = Self::shexp_overlap_issue(e, m, z, cfg, il, n_embd)?;
-                                Ok(())
-                            },
-                        )?
-                } else {
-                    ep.runtime.run_routed_experts_nvfp4_w4a16_device_routed(
-                        bank,
-                        e,
-                        z,
-                        sel_d,
-                        w_d,
-                        t,
-                        n_used,
-                        ep.activation_limit,
-                    )?
-                };
-                if output.len() != t * n_embd {
-                    return Err(format!(
-                        "W4A16 device-routed EP output has {} values, expected \
-                         {t}x{n_embd}={}",
-                        output.len(),
-                        t * n_embd,
-                    )
-                    .into());
-                }
-                if ov_issued {
-                    Self::shexp_overlap_apply(e, &mut output, n_embd)?;
-                } else {
-                    Self::moe_ffn_grouped_add_shared(e, m, z, t, cfg, il, &mut output)?;
-                }
-                static DEVICE_ROUTER_LOGGED: std::sync::atomic::AtomicU64 =
-                    std::sync::atomic::AtomicU64::new(0);
-                let layer_bit = 1u64 << (il as u64 % 64);
-                if DEVICE_ROUTER_LOGGED.fetch_or(layer_bit, std::sync::atomic::Ordering::Relaxed)
-                    & layer_bit
-                    == 0
-                {
-                    eprintln!(
-                        "[parallel-ep] execute layer={il} tokens={t} devices={:?} \
-                         router=device expert_transport={} native_p2p={} \
-                         activation=bf16-rounded accumulation={} output=e-device \
-                         performance_claim=false (logged once per layer)",
-                        ep.devices,
-                        ep.runtime.transport_label(),
-                        ep.runtime.native_p2p(),
-                        if automatic_ep_q8_active {
-                            "token-slot-order-q8"
-                        } else {
-                            "token-slot-order"
-                        },
-                    );
-                }
-                debug_assert!(pairs <= capacity);
-                return Ok(output);
-            }
             // MEMRA_STEP_TP_TIMING=1: cumulative cost of the host routing seam (the dtoh here
             // drains every e-stream op queued since the layer's FFN entry, so this bills the
             // router matmul + glue too — the decode-bucket ffn residue decomposes here).
@@ -9373,60 +7217,6 @@ impl HybridModel {
                 .iter()
                 .map(|&expert| expert as usize)
                 .collect::<Vec<_>>();
-            if t <= crate::tp::NVFP4_EP_DEVICE_BATCH_CAP
-                && let Some(ep) = &m.step_ep
-                && ep.nvfp4_device_routes
-            {
-                let bank = match &ep.experts {
-                    crate::hybrid::StepEpExpertBank::Nvfp4(bank) => bank,
-                    crate::hybrid::StepEpExpertBank::E4m3(_) => {
-                        return Err("W4A16 NVFP4 device EP reached an E4M3 expert bank".into());
-                    }
-                };
-                let mut output = ep.runtime.run_routed_experts_nvfp4_w4a16_device_io(
-                    bank,
-                    e,
-                    z,
-                    t,
-                    &selected,
-                    &route_weights,
-                    n_used,
-                    ep.activation_limit,
-                )?;
-                if output.len() != t * n_embd {
-                    return Err(format!(
-                        "W4A16 NVFP4 EP routed output has {} values, expected \
-                         {t}x{n_embd}={}",
-                        output.len(),
-                        t * n_embd,
-                    )
-                    .into());
-                }
-                Self::moe_ffn_grouped_add_shared(e, m, z, t, cfg, il, &mut output)?;
-                static W4A16_EP_LOGGED: std::sync::atomic::AtomicU64 =
-                    std::sync::atomic::AtomicU64::new(0);
-                let layer_bit = 1u64 << (il as u64 % 64);
-                if W4A16_EP_LOGGED.fetch_or(layer_bit, std::sync::atomic::Ordering::Relaxed)
-                    & layer_bit
-                    == 0
-                {
-                    eprintln!(
-                        "[step-ep] execute layer={il} tokens={t} devices={:?} \
-                         expert_transport={} native_p2p={} activation=bf16-rounded \
-                        accumulation={} output=e-device \
-                         performance_claim=false (logged once per layer)",
-                        ep.devices,
-                        ep.runtime.transport_label(),
-                        ep.runtime.native_p2p(),
-                        if t == 1 {
-                            "owner-grouped-rank-order"
-                        } else {
-                            "token-slot-order"
-                        },
-                    );
-                }
-                return Ok(output);
-            }
             // Device-IO routes (t=1): the layer input goes to the ranks as a device row and the
             // combined output comes back as an e-context row — no host round-trip, no host
             // stream sync. Program bytes identical to the host-IO twin (dtoh/htod and dtod
@@ -9685,7 +7475,7 @@ impl HybridModel {
             }
             return Ok(grouped_out);
         }
-        Self::moe_ffn_sequential_zq8(e, m, z, zq8, t, cfg, il, max_block, vrows)
+        Self::moe_ffn_sequential_zq8(e, m, z, zq8, t, cfg, il, max_block)
     }
 
     fn sigmoid_resident_dev_eligible(
@@ -9711,7 +7501,10 @@ impl HybridModel {
             if dev.dev != e.ctx().ordinal() {
                 return false;
             }
-            let q8 = moe_q8_enabled_for_model(cfg, m);
+            let q8 = moe_q8_enabled()
+                && q8_expert_supported(m.gate_exps.qtype)
+                && q8_expert_supported(m.up_exps.qtype)
+                && q8_expert_supported(m.down_exps.qtype);
             let fp8 = dev.fp8_blk.is_some()
                 && m.gate_exps.qtype == crate::QT_F8_E4M3_BLK
                 && m.up_exps.qtype == crate::QT_F8_E4M3_BLK
@@ -9742,7 +7535,7 @@ impl HybridModel {
         il: u16,
         max_block: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        Self::moe_ffn_sequential_zq8(e, m, z, None, t, cfg, il, max_block, false)
+        Self::moe_ffn_sequential_zq8(e, m, z, None, t, cfg, il, max_block)
     }
 
     /// One router-logit selector shared by sequential and grouped dispatch. Real prefill must use
@@ -9784,10 +7577,6 @@ impl HybridModel {
     /// Append the host-visible router selection for one layer/forward when calibration tracing is
     /// enabled. Both sequential and expert-grouped prefill must call this after routing so the
     /// trace is independent of the dispatch optimization selected for the forward.
-    /// `MEMRA_MOE_WEIGHT_TRACE` is also the co-activation measurement input of
-    /// LAW:coactivation-expert-placement (lane/glm5-ep-place: rows ride this existing host
-    /// readback — zero new device syncs; `glm5-tp-gate` arm T holds the ON-identity +
-    /// row-count bar on the glm5 walks).
     fn trace_moe_routes(
         il: u16,
         t: usize,
@@ -9921,8 +7710,6 @@ impl HybridModel {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::too_many_arguments)]
-    // allow: the parameter list mirrors its moe_ffn_inner caller's dispatch contract
     pub(crate) fn moe_ffn_sequential_zq8(
         e: &Engine,
         m: &MoeWeights,
@@ -9932,7 +7719,6 @@ impl HybridModel {
         cfg: &ModelConfig,
         il: u16,
         max_block: usize,
-        vrows: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         use crate::moe_cache::{BlockId, PROJ_DOWN, PROJ_GATE, PROJ_UP};
         let moe = cfg.moe.as_ref().unwrap();
@@ -9954,7 +7740,11 @@ impl HybridModel {
         let lim_shexp = cfg.clamp_shexp_at(il as u32);
         let use_cache = Engine::moe_cache_enabled();
         let uniform_experts = m.has_uniform_expert_layout();
-        let moe_q8 = uniform_experts && moe_q8_enabled_for_model(cfg, m);
+        let moe_q8 = uniform_experts
+            && moe_q8_enabled()
+            && q8_expert_supported(m.gate_exps.qtype)
+            && q8_expert_supported(m.up_exps.qtype)
+            && q8_expert_supported(m.down_exps.qtype);
         // Experimental secondary backend: complete experts already resident in the SLRU stay on
         // CUDA; any expert missing one or more projections runs from the original host GGUF bytes
         // through llama.cpp CPU quant dots. Small-t only keeps decode and speculative verification
@@ -10047,7 +7837,10 @@ impl HybridModel {
             // pairs serves real prefill from 17 up.
             && t > MOE_DEV_MAX_T
             && m.dev_exps.is_some()
-            && moe_q8_enabled_for_model(cfg, m)
+            && moe_q8_enabled()
+            && q8_expert_supported(m.gate_exps.qtype)
+            && q8_expert_supported(m.up_exps.qtype)
+            && q8_expert_supported(m.down_exps.qtype)
             && std::env::var("MEMRA_MOE_PAIRS")
                 .map(|v| v != "0")
                 .unwrap_or(true)
@@ -10106,74 +7899,8 @@ impl HybridModel {
             }
         }
 
-        // SLAB-LOCAL RESIDENT ARM bases, hoisted above the router (lane/glm5-moe-loc door D):
-        // whether the layer can run the DEVICE vrows table build decides HOW it routes, and
-        // that has to be settled before the router runs. Pure immutable pointer reads with no
-        // side effects, so the hoist changes nothing for any other arm; the full rationale for
-        // the arm itself is at the `slab_fused_may_fire` predicate below.
-        let slab_local = m
-            .dev_exps
-            .as_ref()
-            .filter(|d| !d.gu_il && moe_slab_enabled() && d.dev == e.ctx().ordinal());
-        let slab_bases = slab_local.map(|d| {
-            use cudarc::driver::DevicePtr;
-            let s = e.stream();
-            let (pg, _g0) = d.gate.device_ptr(&s);
-            let (pu, _g1) = d.up.device_ptr(&s);
-            let (pd, _g2) = d.down.device_ptr(&s);
-            (pg, pu, pd)
-        });
-        // DOOR D (`MEMRA_MOE_VROWS_DEV_TABLES`, default OFF): route WITHOUT the pinned sel/w
-        // readback and build the pair's pointer/scale tables on device instead. On the serving
-        // shape the host table build is the selection's ONLY consumer, and it costs a full
-        // `cuStreamSynchronize` + 2 DtoH + 2 pageable HtoD + 2 host Vecs per MoE layer-call —
-        // 42 device-wide drains, 84 DtoH and 84 HtoD per ship round (the decode-gap
-        // attribution's "43 cuStreamSynchronize/token ... the per-layer router-admission sync
-        // structure", and 44.6% of the unattributed 71.6 HtoD calls/token).
-        //
-        // The extra conjuncts beyond `vrows_fires` (asserted equal at the dispatch) are exactly
-        // the host-visible consumers of `sel_all` between here and there, each of which would
-        // silently read an empty selection: `moesd::record_host_routes`, `hidden_trace`,
-        // `MEMRA_MOE_TRACE`/`MEMRA_MOE_STATS`/the other `observe_routes` modes. Plus
-        // `sigmoid_router_enabled()`, because `MEMRA_SIG_ROUTER=0` is a full-logit HOST oracle
-        // with no device selection to read. `promote_worker_h2d` needs no conjunct: it requires
-        // t == 1 and this arm requires t >= 2. Any miss falls closed to the host readback.
-        let vrows_dev = vrows
-            && t >= 2
-            && crate::moe_vrows_dev_tables_on()
-            && slab_bases.is_some()
-            && moe_q8
-            && uniform_experts
-            && n_used <= 8
-            && cfg.sigmoid_router().is_some()
-            && matches!(lim_exp, Some(SwigluClamp::Pre(l)) if l > 1e-6)
-            && !cpu_hybrid
-            && sigmoid_router_enabled()
-            && !observe_routes
-            && !memra_reference::hidden_trace::enabled()
-            && !crate::moesd::capture_active();
         // Per-token (sel[8], w[8]) — sigmoid host oracle (M3/Hy3), else fused-router/softmax.
-        // Door D adds a fourth arm returning the router's DEVICE sel/w with no readback.
-        let mut sel_dev: Option<(CudaSlice<i32>, CudaSlice<f32>)> = None;
-        let (sel_all, w_all, routed_cpu_input) = if vrows_dev {
-            let (sf, route_norm) = cfg
-                .sigmoid_router()
-                .expect("vrows_dev carries cfg.sigmoid_router().is_some()");
-            sel_dev = Some(e.moe_router_sigmoid_topk(
-                &logits,
-                t,
-                n_expert,
-                n_used,
-                m.active_count(),
-                &m.exp_probs_b_dev,
-                &m.active_experts_dev,
-                sf,
-                route_norm,
-            )?);
-            crate::MOE_VROWS_ROUTER_SYNCS_AVOIDED
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            (Vec::new(), Vec::new(), None)
-        } else if let Some(sig) = cfg.sigmoid_router() {
+        let (sel_all, w_all, routed_cpu_input) = if let Some(sig) = cfg.sigmoid_router() {
             if cpu_hybrid {
                 let (sel, w, input) = Self::moe_route_sigmoid_with_input(
                     e,
@@ -10324,9 +8051,18 @@ impl HybridModel {
         // strictly worse than staging); under PP-2 without the prime walker this admits
         // stage-0 layers on dev0 and leaves stage-1 layers on the SLRU, which is the honest
         // interim shape. MEMRA_MOE_SLAB=0 = rollback/A-B seam (read per call).
-        // `slab_local` / `slab_bases` are bound ABOVE the router: door D
-        // (`MEMRA_MOE_VROWS_DEV_TABLES`) has to pre-decide the routing arm, and this is the
-        // predicate it needs. Pure immutable pointer reads, so the hoist is behaviour-neutral.
+        let slab_local = m
+            .dev_exps
+            .as_ref()
+            .filter(|d| !d.gu_il && moe_slab_enabled() && d.dev == e.ctx().ordinal());
+        let slab_bases = slab_local.map(|d| {
+            use cudarc::driver::DevicePtr;
+            let s = e.stream();
+            let (pg, _g0) = d.gate.device_ptr(&s);
+            let (pu, _g1) = d.up.device_ptr(&s);
+            let (pd, _g2) = d.down.device_ptr(&s);
+            (pg, pu, pd)
+        });
         // Fused-pair eligibility mirrors the gdec call sites exactly (plain-SiLU epilogue,
         // no macros, m3 clamp excluded, q8-supported qtypes, <=8 experts) — INCLUDING
         // `gdec_enabled()`: the pair IS the gdec kernel pair, so MEMRA_MOE_GDEC=0 must
@@ -10389,39 +8125,13 @@ impl HybridModel {
             && cache_dispatch
             && slab_local.is_none();
         let fused_epi_slab_may_fire = fused_epi_common && slab_bases.is_some();
-        // VERIFY-ROWS BATCHED ROUTED-EXPERT ARM (lane/glm5-vrest, 2026-08-31; rides
-        // `MEMRA_GLM5_VERIFY_BATCH` — only the verify walk's batched arm passes `vrows`).
-        // ONE launch pair covers ALL t x n_used routed pairs (the fused-epilogue kernels'
-        // verify-rows twins) instead of the per-(token,expert) loop's ~49 launches per
-        // token-layer — the flip-reprice cell-2 vrest wall (9.46 ms/row marginal at K=3).
-        // Bit identity per row vs the sequential chain is the bar and it is structural:
-        // routing is the SAME host invocation above; per-pair dots are qmatvec_expert_q8's
-        // g-strided order; the epilogue is swiglu_preclamped_mul_scaled_f32's expression
-        // with the per-expert macro fold exactly where ffn_act_lim/axpy_into fold it; the
-        // down accumulation is the slot-ordered __fmaf_rn chain (the gdec-gated class).
-        // Gated by glm5_verify_batch_gpu (kernel pair vs sequential chain + swapped-pair
-        // and dropped-macro reds) and the glm5_tparallel_verify_gpu walk battery on the
-        // NVFP4+macro serving expert class. Fail-closed: any unqualified shape falls
-        // through to the unchanged loop below. Same slab-only scope as the fused epilogue
-        // (the serving config's provenance); n_used<=8 mirrors its cap.
-        let vrows_fires = vrows
-            && t >= 2
-            && slab_bases.is_some()
-            && moe_q8
-            && uniform_experts
-            && n_used <= 8
-            && cfg.sigmoid_router().is_some()
-            && matches!(lim_exp, Some(SwigluClamp::Pre(l)) if l > 1e-6)
-            && !cpu_hybrid;
-        // moe_out memset elision: EVERY full-row-overwrite arm (gdec, slab fused, fused epilogue,
-        // verify-rows) allocates uninit; a token that falls through to any accumulating loop
-        // zeroes its own row. The fused epilogue's `moe_down8_fma_q8` fully overwrites `dst[o]`,
-        // same as gdec's; `moe_down8_fma_q8_rows` fully overwrites every row.
+        // moe_out memset elision: EVERY full-row-overwrite arm (gdec, slab fused, fused epilogue)
+        // allocates uninit; a token that falls through to any accumulating loop zeroes its own
+        // row. The fused epilogue's `moe_down8_fma_q8` fully overwrites `dst[o]`, same as gdec's.
         let mut moe_out = if gdec_may_fire
             || slab_fused_may_fire
             || fused_epi_may_fire
             || fused_epi_slab_may_fire
-            || vrows_fires
         {
             e.uninit(t * n_embd)?
         } else {
@@ -10434,57 +8144,6 @@ impl HybridModel {
         } else {
             None
         };
-
-        // Door D's predicate was evaluated at the router, BEFORE `vrows_fires` existed. If the
-        // two ever disagreed, the layer would have skipped its readback and then dispatched a
-        // per-row arm holding an EMPTY host selection — a silent wrong-answer class. The two
-        // predicates share every conjunct by construction; assert it rather than hope.
-        if vrows_dev && !vrows_fires {
-            return Err(
-                "MEMRA_MOE_VROWS_DEV_TABLES routed device-only but the verify-rows arm did not \
-                 fire: the door-D and vrows_fires predicates disagree"
-                    .into(),
-            );
-        }
-        if vrows_fires {
-            let Some(SwigluClamp::Pre(limit)) = lim_exp else {
-                return Err(
-                    "verify-rows MoE arm fired without a live PRE clamp: the predicate and \
-                     the dispatch disagree"
-                        .into(),
-                );
-            };
-            let bases = slab_bases.expect("vrows_fires carries slab_bases.is_some()");
-            let sel = match sel_dev.as_ref() {
-                Some((si, sw)) => VrowsSel::Dev(si, sw),
-                None => VrowsSel::Host(&sel_all, &w_all),
-            };
-            Self::moe_vrows_pairs_q8(
-                e,
-                m,
-                z,
-                sel,
-                il,
-                bases,
-                t,
-                n_embd,
-                n_ff_exp,
-                n_used,
-                limit,
-                &mut moe_out,
-            )?;
-            if memra_reference::hidden_trace::enabled() {
-                memra_reference::hidden_trace::emit_last_row(
-                    "routed",
-                    il as i64,
-                    t,
-                    n_embd,
-                    &e.dtoh(&moe_out)?,
-                );
-            }
-            Self::moe_shexp_add(e, m, z, zq8, t, cfg, lim_shexp, &mut moe_out)?;
-            return Ok(moe_out);
-        }
 
         // GPU scratch: one slot per proj, big enough for ONE expert (default stage-every-token path).
         // STAGE 2: LAZY — allocated only if the no-cache staging path actually runs (under
@@ -10827,8 +8486,7 @@ impl HybridModel {
                         )
                     } else {
                         (
-                            m.qmatvec_view(
-                                e,
+                            e.qmatvec_view(
                                 &d.gate,
                                 g0..g0 + gl.len,
                                 &zt,
@@ -10838,8 +8496,7 @@ impl HybridModel {
                                 gl.qtype,
                                 gl.row_bytes,
                             )?,
-                            m.qmatvec_view(
-                                e,
+                            e.qmatvec_view(
                                 &d.up,
                                 u0..u0 + ul.len,
                                 &zt,
@@ -10878,8 +8535,7 @@ impl HybridModel {
                         )?
                     } else {
                         let actv = act.slice(0..n_ff_exp);
-                        m.qmatvec_view(
-                            e,
+                        e.qmatvec_view(
                             &d.down,
                             d0..d0 + dl.len,
                             &actv,
@@ -11057,8 +8713,7 @@ impl HybridModel {
                     let ul = m.up_exps.expert_layout(ex);
                     let dl = m.down_exps.expert_layout(ex);
                     e.stage_expert(m.gate_exps.expert_bytes(ex), sg, 0)?;
-                    let gate = m.qmatvec_view(
-                        e,
+                    let gate = e.qmatvec_view(
                         sg,
                         0..gl.len,
                         &zt,
@@ -11070,8 +8725,7 @@ impl HybridModel {
                     )?;
 
                     e.stage_expert(m.up_exps.expert_bytes(ex), su, 0)?;
-                    let up = m.qmatvec_view(
-                        e,
+                    let up = e.qmatvec_view(
                         su,
                         0..ul.len,
                         &zt,
@@ -11097,8 +8751,7 @@ impl HybridModel {
 
                     e.stage_expert(m.down_exps.expert_bytes(ex), sd, 0)?;
                     let actv = act.slice(0..n_ff_exp);
-                    let y = m.qmatvec_view(
-                        e,
+                    let y = e.qmatvec_view(
                         sd,
                         0..dl.len,
                         &actv,
@@ -11138,870 +8791,13 @@ impl HybridModel {
             );
         }
 
-        Self::moe_shexp_add(e, m, z, zq8, t, cfg, lim_shexp, &mut moe_out)?;
-
-        Ok(moe_out)
-    }
-
-    /// The glm5 TP-2 EP walk (`MEMRA_GLM5_TP`): one MoE layer's routed-expert FFN over
-    /// whole-expert contiguous halves. The ROUTER is the unchanged root-side program
-    /// (`moe_router_logits` + `moe_route_sigmoid_cfg` — bit-identical selection by
-    /// construction); each rank computes its owned slots' UNWEIGHTED expert rows through
-    /// the sequential per-expert program (gate/up qmatvec + `ffn_act_lim` + down qmatvec —
-    /// per-expert-independent dots), the peer's rows return host-canonically, and root
-    /// applies the slot-ordered `axpy` accumulation chain — the same rounded-operation
-    /// sequence the plain sequential walk applies. The ROOT-owned shared expert then adds
-    /// through the extracted `moe_shexp_add`, verbatim.
-    ///
-    /// Three transport arms behind ONE routing (lane/glm5-ep-diet; sel/w are shared so a
-    /// dispatch change can never change selection):
-    ///   * `MEMRA_GLM5_EP_GROUPED_PRIME` (prefill shapes only): per-rank grouped-GEMM prime
-    ///     over the rank slabs — the plain grouped-prefill program split by ownership.
-    ///     Falls closed to the arms below whenever the plain arm's conjuncts do not hold.
-    ///   * `MEMRA_GLM5_EP_DIET`: the v1 walk's kernels and combine chain with dieted data
-    ///     movement — one bulk fan-out, zero per-slot host round-trips, one combine launch.
-    ///     Decode-byte-identical to v1 by construction.
-    ///   * default: the v1 per-slot host-canonical walk, byte-for-byte.
-    #[allow(clippy::too_many_arguments)]
-    fn moe_ffn_glm5_ep(
-        e: &Engine,
-        m: &MoeWeights,
-        ep: &crate::glm5_tp::Glm5EpExps,
-        z: &CudaSlice<f32>,
-        zq8: Option<&(CudaSlice<i8>, CudaSlice<f32>)>,
-        t: usize,
-        cfg: &ModelConfig,
-        il: u16,
-        prefill: bool,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let moe = cfg
-            .moe
-            .as_ref()
-            .ok_or("glm5 EP execution requires MoE model metadata")?;
-        let n_embd = cfg.n_embd as usize;
-        let n_expert = moe.expert_count as usize;
-        let n_used = moe.expert_used_count as usize;
-        let n_ff_exp = moe.expert_ff_length as usize;
-        let sig = cfg
-            .sigmoid_router()
-            .ok_or("glm5 EP execution requires the sigmoid router")?;
-        let lim_exp = cfg.clamp_exp_at(il as u32);
-        let lim_shexp = cfg.clamp_shexp_at(il as u32);
-        if ep.slabs.iter().map(|s| s.n_experts).sum::<usize>() != n_expert {
-            return Err(format!(
-                "glm5 EP slabs cover {:?} experts, model declares {n_expert}",
-                ep.slabs.iter().map(|s| s.n_experts).collect::<Vec<_>>()
-            )
-            .into());
-        }
-        let rt = &ep.rt;
-        let ranks = ep.ranks();
-
-        // Root router, unchanged program (selection bit-identical to the sequential arm).
-        let logits = Self::moe_router_logits(e, m, z, t, cfg)?;
-        let (sel_all, w_all) =
-            Self::moe_route_sigmoid_cfg(e, &logits, t, n_expert, n_used, m, sig)?;
-        crate::moesd::record_host_routes(il, n_expert, n_used, &sel_all)?;
-        // The route trace taps ride this walk too (sel/w are already host-side here);
-        // the EP walk must never be a blind spot for the co-activation measurement.
-        Self::trace_moe_routes(il, t, &sel_all, &w_all)?;
-
-        // EP grouped prime (`MEMRA_GLM5_EP_GROUPED_PRIME`, default OFF): keyed exactly like
-        // the plain grouped-prefill arm (`prefill` + t above the per-token tier) and honoring
-        // the family rollback (`MEMRA_MOE_GROUPED_PREFILL=0` kills it too). The announce
-        // prints once per process PER FLAG VALUE, in both arms, so an A/B grep distinguishes
-        // engagement without the line being an arm-local cost.
-        if prefill && t > MOE_DEV_MAX_T {
-            static EPGP_ANNOUNCED: std::sync::atomic::AtomicU8 =
-                std::sync::atomic::AtomicU8::new(0);
-            let enabled = crate::ep_grouped_prime_on() && moe_grouped_prefill_enabled();
-            let bit = 1u8 << u8::from(enabled);
-            if EPGP_ANNOUNCED.fetch_or(bit, std::sync::atomic::Ordering::Relaxed) & bit == 0 {
-                eprintln!(
-                    "[glm5-ep-grouped-prime] flag={} t={t} il={il} (announce printed in both \
-                     arms; engagement is the dispatch counter + per-layer execute line)",
-                    if enabled { "on" } else { "off" },
-                );
-            }
-            if enabled
-                && let Some(mut out) =
-                    Self::moe_ffn_glm5_ep_grouped_prime(e, m, ep, z, &sel_all, &w_all, t, cfg, il)?
-            {
-                Self::moe_shexp_add(e, m, z, zq8, t, cfg, lim_shexp, &mut out)?;
-                return Ok(out);
-            }
-        }
-
-        // spec x TP composition receipt (the #80 review's confirmed perf-shape finding):
-        // at verify widths (1 < t < prefill) the EP walk PREEMPTS the batched vrows MoE
-        // pair — a composed verify round pays the sequential per-(token,expert) walk per
-        // MoE layer, re-inheriting the vrest wall the vrows lane removed on the unsharded
-        // shape. Announced once so a composed-shape battery cannot mistake a flat
-        // MOE_VROWS_DISPATCHES counter for a wiring bug; the EP-aware vrows arm is the
-        // named lever (composition-20260901/box/CELLS.md).
-        if t > 1 && !prefill {
-            static EP_VERIFY_MARKED: std::sync::atomic::AtomicBool =
-                std::sync::atomic::AtomicBool::new(false);
-            if !EP_VERIFY_MARKED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                eprintln!(
-                    "[glm5-tp-ep] verify rows ride the SEQUENTIAL EP walk (t={t}): the \
-                     batched vrows MoE pair is preempted by EP; the EP-aware vrows arm is \
-                     the named lever performance_claim=false"
-                );
-            }
-        }
-        // EP dispatch diet (`MEMRA_GLM5_EP_DIET`, default OFF): same kernels, same combine
-        // chain, restructured movement. Read per call — `=0`/unset restores the v1 walk.
-        if crate::ep_diet_on() {
-            let mut out = Self::moe_ffn_glm5_ep_diet(e, m, ep, z, &sel_all, &w_all, t, cfg, il)?;
-            Self::moe_shexp_add(e, m, z, zq8, t, cfg, lim_shexp, &mut out)?;
-            return Ok(out);
-        }
-
-        let mut moe_out = e.zeros(t * n_embd)?;
-        use crate::tp_transport::TpTransport as TpXport;
-        let hop = ep.rt.hop(e);
-        // Peer replicas of `z`, one arm each (lane/glm5-tp-transport):
-        //   host-canonical — v1's EXACT pattern: one draining `dtoh` of the whole block here,
-        //     then one row `htod` per token PER PEER RANK inside the loop (at two ranks that
-        //     is byte- and hop-identical to v1). Preserved hop-for-hop so
-        //     `MEMRA_GLM5_TP_TRANSPORT=0` reproduces the banked v1 walk, not a faster cousin.
-        //   peer-pull — ONE device copy of the whole `[t, n_embd]` block per peer rank; rows
-        //     are sliced out of it. Same bytes on the peers, the host uploads and drains
-        //     removed.
-        let z_host = match hop.transport {
-            TpXport::HostCanonical => Some(crate::tp_transport::host_stage_block(
-                &hop,
-                0,
-                z,
-                t * n_embd,
-            )?),
-            TpXport::PeerPull => None,
-        };
-        let z_peer_bulks = match hop.transport {
-            TpXport::PeerPull => Some(crate::tp_transport::fanout_f32(&hop, z, t * n_embd)?),
-            TpXport::HostCanonical => None,
-        };
-        for tok in 0..t {
-            let sel = &sel_all[tok * n_used..(tok + 1) * n_used];
-            let w = &w_all[tok * n_used..(tok + 1) * n_used];
-            let zt = z.slice(tok * n_embd..(tok + 1) * n_embd);
-            // The host-canonical arm materializes this token's peer rows here (v1's
-            // per-token `htod`, one per peer rank); the peer-pull arm slices them out of the
-            // bulk blocks. The holders must outlive the views, hence the two-step.
-            let z_peer_row_holders: Option<Vec<CudaSlice<f32>>> = match &z_host {
-                Some(h) => {
-                    let mut rows = Vec::with_capacity(ranks - 1);
-                    for r in 1..ranks {
-                        rows.push(crate::tp_transport::host_row_to(
-                            &hop,
-                            r,
-                            &h[tok * n_embd..(tok + 1) * n_embd],
-                        )?);
-                    }
-                    Some(rows)
-                }
-                None => None,
-            };
-            // Per slot, in ROUTER SLOT ORDER: compute the UNWEIGHTED expert row on its
-            // owner, then fmaf-accumulate on root — the plain walk's exact chain.
-            for (j, &ex) in sel.iter().enumerate() {
-                let ex = ex as usize;
-                let owner = ep.owner(ex);
-                if owner != 0 {
-                    // Engagement counter FIRST (a red skip still counts as ROUTED).
-                    crate::glm5_tp::GLM5_EP_PEER_SLOT_DISPATCHES
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    // Gate red arm: dropping the peers' slots MUST diverge — the
-                    // non-vacuity proof that the peer ranks contribute real expert work.
-                    if matches!(
-                        crate::glm5_tp::gate_red(),
-                        Ok(Some(crate::glm5_tp::GateRed::SkipPeerCombine))
-                    ) {
-                        continue;
-                    }
-                }
-                let zin_holder;
-                let (dev, slab, zin) = if owner == 0 {
-                    (e, &ep.slabs[0], &zt)
-                } else {
-                    zin_holder = match (&z_peer_row_holders, &z_peer_bulks) {
-                        (Some(rows), _) => rows[owner - 1].slice(0..n_embd),
-                        (None, Some(bulks)) => {
-                            bulks[owner - 1].slice(tok * n_embd..(tok + 1) * n_embd)
-                        }
-                        (None, None) => {
-                            return Err(
-                                "glm5 EP: neither transport arm staged the peer activation".into(),
-                            );
-                        }
-                    };
-                    (
-                        crate::glm5_tp::rank_engine(e, rt, owner),
-                        &ep.slabs[owner],
-                        &zin_holder,
-                    )
-                };
-                // Placement indirection: the owner's slab packs its experts in
-                // ascending-id order; `local_of` is the slot (identical to
-                // `ex - first_expert` under the even split).
-                let local = ep.local_of[ex] as usize;
-                let gl = m.gate_exps.expert_stride;
-                let ul = m.up_exps.expert_stride;
-                let dl = m.down_exps.expert_stride;
-                let gate = dev.qmatvec_view(
-                    &slab.gate,
-                    local * gl..(local + 1) * gl,
-                    zin,
-                    1,
-                    m.gate_exps.in_f,
-                    m.gate_exps.out_f,
-                    m.gate_exps.qtype,
-                    m.gate_exps.row_bytes,
-                )?;
-                let up = dev.qmatvec_view(
-                    &slab.up,
-                    local * ul..(local + 1) * ul,
-                    zin,
-                    1,
-                    m.up_exps.in_f,
-                    m.up_exps.out_f,
-                    m.up_exps.qtype,
-                    m.up_exps.row_bytes,
-                )?;
-                let mut act = dev.uninit(n_ff_exp)?; // activation fully overwrites
-                Self::ffn_act_lim(
-                    dev,
-                    cfg,
-                    &gate,
-                    &up,
-                    m.gate_exps.macro_scale(ex),
-                    m.up_exps.macro_scale(ex),
-                    lim_exp,
-                    &mut act,
-                    n_ff_exp,
-                )?;
-                let actv = act.slice(0..n_ff_exp);
-                let y = dev.qmatvec_view(
-                    &slab.down,
-                    local * dl..(local + 1) * dl,
-                    &actv,
-                    1,
-                    m.down_exps.in_f,
-                    m.down_exps.out_f,
-                    m.down_exps.qtype,
-                    m.down_exps.row_bytes,
-                )?;
-                // The owner's row returns through the armed transport; the root row stays
-                // put. The slot-ordered axpy below is the ONE cross-rank arithmetic site and
-                // it reproduces the sequential walk's accumulate chain operation for
-                // operation — unchanged by which transport delivered the row.
-                let y_root = if owner == 0 {
-                    y
-                } else {
-                    crate::tp_transport::return_row_to_root(&hop, owner, &y, n_embd)?
-                };
-                let mut dst = moe_out.slice_mut(tok * n_embd..(tok + 1) * n_embd);
-                e.axpy_into(
-                    &y_root,
-                    w[j] * m.down_exps.macro_scale(ex),
-                    &mut dst,
-                    n_embd,
-                )?;
-            }
-        }
-
-        Self::moe_shexp_add(e, m, z, zq8, t, cfg, lim_shexp, &mut moe_out)?;
-        Ok(moe_out)
-    }
-
-    /// The DIETED glm5 EP walk (`MEMRA_GLM5_EP_DIET`, lane/glm5-ep-diet): the v1 walk's
-    /// per-slot expert kernels and its exact slot-ordered combine chain, with the data
-    /// movement restructured in whole groups (the tp2-battery's measured 13-18 ms/token v1
-    /// join+dispatch tax, attributed to per-token host fan-out x42 layers + ~4-5 sync
-    /// peer-slot round-trips/layer + interleaved host-blocked issue):
-    ///
-    ///   1. ONE bulk peer z fan-out per layer-call ([t, n_embd] in one upload; SKIPPED
-    ///      entirely when the call routed no peer-owned expert — the placement-map
-    ///      multiplier: a single-rank layer-call moves zero activation bytes off root).
-    ///   2. Peer-owned rows compute back-to-back on the peer stream into a compact block
-    ///      (issue order cannot change bytes: every row is an independent per-expert
-    ///      program; the combine order below is fixed by the id table, not by issue).
-    ///   3. Root-owned rows compute on the root stream, un-blocked by peer returns.
-    ///   4. ONE bulk peer return (peer DtoH + root HtoD of the compact block) replaces the
-    ///      per-slot round-trip dribble.
-    ///   5. ONE `moe_pairs_scatter` launch applies the per-token slot-ordered fmaf chain —
-    ///      the kernel header carries the byte-identity contract vs the zeros +
-    ///      sequential-`axpy_f32` chain this replaces, and the weights are the SAME host
-    ///      fold (`w * macro_scale(ex)`) v1 passed per launch.
-    ///
-    /// BYTE-IDENTICAL to the v1 walk (and to plain, wherever v1 is) by construction: same
-    /// kernels over the same bytes; copies (dtod / bulk DtoH+HtoD) preserve bits; the one
-    /// arithmetic site keeps its exact chain. Transport stays HOST-CANONICAL: the two bulk
-    /// hops of steps 1 and 4 are the named native-P2P swap points for the box arc (the
-    /// `MEMRA_STEP_TP_BULK_P2P` precedent: peer copies 61,452 -> ~21/layer on step; the
-    /// glm5 seam inherits `configure_native_p2p` but does NOT wire it on the rig — the
-    /// same-device dual-context emulation has no real peer transport to qualify).
-    #[allow(clippy::too_many_arguments)]
-    fn moe_ffn_glm5_ep_diet(
-        e: &Engine,
-        m: &MoeWeights,
-        ep: &crate::glm5_tp::Glm5EpExps,
-        z: &CudaSlice<f32>,
-        sel_all: &[u32],
-        w_all: &[f32],
-        t: usize,
-        cfg: &ModelConfig,
-        il: u16,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        use std::sync::atomic::Ordering;
-        let moe = cfg
-            .moe
-            .as_ref()
-            .ok_or("glm5 EP execution requires MoE model metadata")?;
-        let n_embd = cfg.n_embd as usize;
-        let n_used = moe.expert_used_count as usize;
-        let n_ff_exp = moe.expert_ff_length as usize;
-        let lim_exp = cfg.clamp_exp_at(il as u32);
-        let rt = &ep.rt;
-        let n_pairs = t * n_used;
-        if sel_all.len() < n_pairs || w_all.len() < n_pairs || z.len() < t * n_embd {
-            return Err("glm5 EP diet geometry".into());
-        }
-        let red_skip_peer = matches!(
-            crate::glm5_tp::gate_red(),
-            Ok(Some(crate::glm5_tp::GateRed::SkipPeerCombine))
-        );
-
-        // Slab-position table: root-owned pairs pack the slab head in pair order; each peer
-        // rank's pairs pack a contiguous tail segment (so every rank's bulk return is ONE
-        // contiguous upload). `ids[p]` is pair p's slab row; the scatter walks ids in slot
-        // order per token, which is what pins the combine chain to v1's regardless of
-        // packing. At two ranks this is byte-for-byte the original head/tail split.
-        let ranks = ep.ranks();
-        let mut per_rank = vec![0usize; ranks];
-        for &s in sel_all.iter().take(n_pairs) {
-            let ex = s as usize;
-            if ex >= ep.owner_of.len() {
-                return Err(format!("glm5 EP diet: selection {ex} outside the bank").into());
-            }
-            per_rank[ep.owner(ex)] += 1;
-        }
-        let mut base = vec![0usize; ranks];
-        for r in 1..ranks {
-            base[r] = base[r - 1] + per_rank[r - 1];
-        }
-        let mut ids = vec![0i32; n_pairs];
-        {
-            let mut k = vec![0usize; ranks];
-            for (p, id) in ids.iter_mut().enumerate() {
-                let r = ep.owner(sel_all[p] as usize);
-                *id = (base[r] + k[r]) as i32;
-                k[r] += 1;
-            }
-        }
-
-        crate::glm5_tp::GLM5_EP_DIET_DISPATCHES.fetch_add(1, Ordering::Relaxed);
-        for r in 1..ranks {
-            crate::glm5_tp::GLM5_EP_DIET_FANOUT_UPLOADS_AVOIDED.fetch_add(
-                if per_rank[r] > 0 {
-                    (t - 1) as u64
-                } else {
-                    t as u64
-                },
-                Ordering::Relaxed,
-            );
-        }
-        static EP_DIET_MARKED: std::sync::atomic::AtomicBool =
-            std::sync::atomic::AtomicBool::new(false);
-        if !EP_DIET_MARKED.swap(true, Ordering::Relaxed) {
-            eprintln!(
-                "[glm5-ep-diet] engaged: bulk fan-out + compact peer staging + single \
-                 slot-ordered scatter combine; per-slot host round-trips removed \
-                 transport={} performance_claim=false",
-                ep.rt.transport.name(),
-            );
-        }
-
-        // Per-slot expert program, shared verbatim with the v1 walk (same kernels, same
-        // argument order): gate/up qmatvec + ffn_act_lim + down qmatvec on the OWNING rank.
-        let expert_row = |dev: &Engine,
-                          slab: &crate::glm5_tp::EpRankSlab,
-                          zin: &cudarc::driver::CudaView<f32>,
-                          ex: usize|
-         -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-            let local = ep.local_of[ex] as usize;
-            let gl = m.gate_exps.expert_stride;
-            let ul = m.up_exps.expert_stride;
-            let dl = m.down_exps.expert_stride;
-            let gate = dev.qmatvec_view(
-                &slab.gate,
-                local * gl..(local + 1) * gl,
-                zin,
-                1,
-                m.gate_exps.in_f,
-                m.gate_exps.out_f,
-                m.gate_exps.qtype,
-                m.gate_exps.row_bytes,
-            )?;
-            let up = dev.qmatvec_view(
-                &slab.up,
-                local * ul..(local + 1) * ul,
-                zin,
-                1,
-                m.up_exps.in_f,
-                m.up_exps.out_f,
-                m.up_exps.qtype,
-                m.up_exps.row_bytes,
-            )?;
-            let mut act = dev.uninit(n_ff_exp)?; // activation fully overwrites
-            Self::ffn_act_lim(
-                dev,
-                cfg,
-                &gate,
-                &up,
-                m.gate_exps.macro_scale(ex),
-                m.up_exps.macro_scale(ex),
-                lim_exp,
-                &mut act,
-                n_ff_exp,
-            )?;
-            let actv = act.slice(0..n_ff_exp);
-            dev.qmatvec_view(
-                &slab.down,
-                local * dl..(local + 1) * dl,
-                &actv,
-                1,
-                m.down_exps.in_f,
-                m.down_exps.out_f,
-                m.down_exps.qtype,
-                m.down_exps.row_bytes,
-            )
-        };
-
-        // Pass 1 — PEERS: one bulk fan-out per pair-owning rank, then every owned row
-        // back-to-back on that rank's stream into its compact block. No host boundary until
-        // the bulk returns.
-        let hop = ep.rt.hop(e);
-        let mut y_peer_blks: Vec<Option<CudaSlice<f32>>> = (0..ranks).map(|_| None).collect();
-        for r in 1..ranks {
-            if per_rank[r] == 0 {
-                continue;
-            }
-            let dev = crate::glm5_tp::rank_engine(e, rt, r);
-            // SWAP POINT 1 (bulk fan-out) — the named transport shape, to this rank only
-            // (a rank with zero owned pairs moves zero activation bytes off root).
-            let z_r = crate::tp_transport::fanout_f32_to(&hop, r, z, t * n_embd)?;
-            // Under the skip-peer-combine red the block stays ZERO for skipped rows (a red
-            // must drop the peer contribution loudly, never multiply garbage into the chain).
-            let mut blk = if red_skip_peer {
-                dev.zeros(per_rank[r] * n_embd)?
-            } else {
-                dev.uninit(per_rank[r] * n_embd)?
-            };
-            let mut k = 0usize;
-            for tok in 0..t {
-                let sel = &sel_all[tok * n_used..(tok + 1) * n_used];
-                for &ex in sel.iter() {
-                    let ex = ex as usize;
-                    if ep.owner(ex) != r {
-                        continue;
-                    }
-                    // Engagement counters FIRST (a red skip still counts as ROUTED).
-                    crate::glm5_tp::GLM5_EP_PEER_SLOT_DISPATCHES.fetch_add(1, Ordering::Relaxed);
-                    crate::glm5_tp::GLM5_EP_DIET_PEER_ROUNDTRIPS_AVOIDED
-                        .fetch_add(1, Ordering::Relaxed);
-                    if red_skip_peer {
-                        k += 1;
-                        continue;
-                    }
-                    let zt_r = z_r.slice(tok * n_embd..(tok + 1) * n_embd);
-                    let y = expert_row(dev, &ep.slabs[r], &zt_r, ex)?;
-                    dev.copy_into(&mut blk, k * n_embd, &y, n_embd)?;
-                    k += 1;
-                }
-            }
-            y_peer_blks[r] = Some(blk);
-        }
-
-        // Pass 2 — ROOT: every root-owned row into the slab head, never blocked on a peer
-        // return (the v1 walk interleaved root issue behind per-slot peer syncs).
-        let mut y_all = e.uninit(n_pairs * n_embd)?;
-        {
-            let mut k = 0usize;
-            for tok in 0..t {
-                let sel = &sel_all[tok * n_used..(tok + 1) * n_used];
-                let zt = z.slice(tok * n_embd..(tok + 1) * n_embd);
-                for &ex in sel.iter() {
-                    let ex = ex as usize;
-                    if ep.owner(ex) != 0 {
-                        continue;
-                    }
-                    let y = expert_row(e, &ep.slabs[0], &zt, ex)?;
-                    e.copy_into(&mut y_all, k * n_embd, &y, n_embd)?;
-                    k += 1;
-                }
-            }
-        }
-
-        // SWAP POINT 2 (bulk returns) — Pass 3: ONE rank->root block move into each rank's
-        // tail segment. On host-canonical each is the ONE draining peer sync of that rank's
-        // layer-call share, exactly as before; on peer-pull each is one event-ordered device
-        // copy and no host boundary at all.
-        for r in 1..ranks {
-            if let Some(blk) = &y_peer_blks[r] {
-                crate::tp_transport::return_block_to_root(
-                    &hop,
-                    r,
-                    blk,
-                    &mut y_all,
-                    base[r] * n_embd,
-                    per_rank[r] * n_embd,
-                )?;
-                crate::glm5_tp::GLM5_EP_DIET_BULK_RETURNS.fetch_add(1, Ordering::Relaxed);
-            }
-        }
-
-        // Pass 4 — ONE combine launch. Weights are v1's exact host fold, placed at slab
-        // positions; the scatter walks each token's pairs in SLOT order (ids[p], p pair-major),
-        // reproducing zeros + n_used sequential axpy_f32 per the kernel's bit contract.
-        let mut wd = vec![0f32; n_pairs];
-        for ((&id, &w), &s) in ids.iter().zip(w_all.iter()).zip(sel_all.iter()) {
-            wd[id as usize] = w * m.down_exps.macro_scale(s as usize);
-        }
-        let pw = e.htod(&wd)?;
-        let toff: Vec<i32> = (0..=t).map(|tok| (tok * n_used) as i32).collect();
-        let toff_d = e.htod_i32(&toff)?;
-        let ids_d = e.htod_i32(&ids)?;
-        let mut moe_out = e.uninit(t * n_embd)?; // the scatter fully overwrites
-        e.moe_pairs_scatter(&y_all, &pw, &toff_d, &ids_d, &mut moe_out, t, n_embd)?;
-        Ok(moe_out)
-    }
-
-    /// The EP GROUPED PRIME (`MEMRA_GLM5_EP_GROUPED_PRIME`, lane/glm5-ep-diet): the plain
-    /// walk's grouped-prefill program (`moe_ffn_grouped_prefill_sigmoid`, default ON on the
-    /// serving artifact — 85 -> 616-639 tok/s prefill in its box A/B) split by expert
-    /// ownership. Per rank: expert-major CSR over the rank's OWNED (token, expert) pairs,
-    /// one grouped f16 GEMM per projection over the rank's resident EP slab (pointer tables
-    /// minted at arm time), the PRE-clamped SwiGLU epilogue, the per-expert macro folds,
-    /// and the slot-ordered per-token scatter — all composed from the SAME Engine calls the
-    /// plain arm makes, so per-expert GEMM bytes match the plain grouped arm's (grouping is
-    /// per expert, and an expert's token rows all live on its owner). The ONE new
-    /// reassociation is the per-token partial add (root chain + peer chain instead of one
-    /// 8-term chain) — band-gated on minted NVFP4 slabs (`glm5_ep_diet_doors_gpu`), never
-    /// claimed byte.
-    ///
-    /// Returns `Ok(None)` — fall closed to the sequential EP walk — whenever the plain
-    /// grouped arm's own admission would (f16g-ineligible qtypes, bank/top-k shape, no
-    /// sigmoid clamp form). The rig fixture's Q8_0 bank therefore ALWAYS falls closed;
-    /// `glm5-tp-gate`'s grouped arm proves exactly that (dispatch counter pinned 0, walk
-    /// bytes unchanged).
-    #[allow(clippy::too_many_arguments)]
-    fn moe_ffn_glm5_ep_grouped_prime(
-        e: &Engine,
-        m: &MoeWeights,
-        ep: &crate::glm5_tp::Glm5EpExps,
-        z: &CudaSlice<f32>,
-        sel_all: &[u32],
-        w_all: &[f32],
-        t: usize,
-        cfg: &ModelConfig,
-        il: u16,
-    ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
-        use std::sync::atomic::Ordering;
-        let moe = cfg
-            .moe
-            .as_ref()
-            .ok_or("glm5 EP grouped prime requires MoE model metadata")?;
-        let n_embd = cfg.n_embd as usize;
-        let n_expert = moe.expert_count as usize;
-        let n_used = moe.expert_used_count as usize;
-        let n_ff_exp = moe.expert_ff_length as usize;
-        // The plain grouped arm's admission, mirrored term for term (fall closed, never a
-        // new admission class). MEMRA_MOE_GATE is the sequential byte-identity oracle; this
-        // arm is a band class and must not shadow that comparison.
-        if crate::moe_f16g_mode() == 0 || std::env::var("MEMRA_MOE_GATE").is_ok() {
-            return Ok(None);
-        }
-        if !(f16g_proj_ok(m.gate_exps.qtype, n_embd)
-            && f16g_proj_ok(m.up_exps.qtype, n_embd)
-            && f16g_proj_ok(m.down_exps.qtype, n_ff_exp))
-        {
-            return Ok(None);
-        }
-        if n_expert > 512 || n_used == 0 || n_used > 8 {
-            return Ok(None);
-        }
-        let lim_exp = cfg.clamp_exp_at(il as u32);
-        if matches!(lim_exp, Some(SwigluClamp::Post(_))) {
-            return Err(
-                "EP grouped prime is qualified for the PRE-clamped SwiGLU form only; \
-                 a POST-clamp layer must ride the sequential arm"
-                    .into(),
-            );
-        }
-        let n_pairs = t * n_used;
-        if sel_all.len() < n_pairs || w_all.len() < n_pairs || z.len() < t * n_embd {
-            return Err("EP grouped prime geometry".into());
-        }
-        let rt = &ep.rt;
-        let red_skip_peer = matches!(
-            crate::glm5_tp::gate_red(),
-            Ok(Some(crate::glm5_tp::GateRed::SkipPeerCombine))
-        );
-
-        // One rank's whole grouped program: CSR over OWNED pairs -> grouped gate/up GEMMs ->
-        // macro folds -> PRE-clamped epilogue -> grouped down GEMM -> CSR->local permute ->
-        // slot-ordered scatter into the rank partial [t, n_embd] (empty token windows write
-        // 0.0 — the scatter fully overwrites, so partials add cleanly on root).
-        let rank_pass = |dev: &Engine,
-                         rank: u8,
-                         ptr_row: &CudaSlice<u64>,
-                         z_dev: &CudaSlice<f32>|
-         -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
-            // Expert-major CSR restricted to this rank, local pair index l in ascending
-            // global-pair order (so per-token slot order == ascending l).
-            let mut buckets_l: Vec<Vec<i32>> = vec![Vec::new(); n_expert];
-            let mut local_tok = Vec::new(); // token of local pair l
-            let mut local_ex = Vec::new(); // expert of local pair l (macro folds)
-            let mut local_wd = Vec::new(); // v1's exact weight fold, at local positions
-            let mut local_count_per_tok = vec![0i32; t];
-            for p in 0..n_pairs {
-                let ex = sel_all[p] as usize;
-                if ex >= n_expert {
-                    return Err(format!("EP grouped prime selection {ex} >= {n_expert}").into());
-                }
-                if ep.owner(ex) != rank as usize {
-                    continue;
-                }
-                let l = local_tok.len() as i32;
-                buckets_l[ex].push(l);
-                let tok = p / n_used;
-                local_tok.push(tok as i32);
-                local_ex.push(ex);
-                local_wd.push(w_all[p] * m.down_exps.macro_scale(ex));
-                local_count_per_tok[tok] += 1;
-            }
-            let n_owned = local_tok.len();
-            if n_owned == 0 {
-                return Ok(None);
-            }
-            let mut ex_ids: Vec<i32> = Vec::new();
-            let mut ex_off: Vec<i32> = vec![0];
-            let mut ex_pairs: Vec<i32> = Vec::with_capacity(n_owned); // local l, CSR order
-            let mut csr_tok: Vec<i32> = Vec::with_capacity(n_owned);
-            for (e_id, b) in buckets_l.iter().enumerate() {
-                if !b.is_empty() {
-                    ex_ids.push(e_id as i32);
-                    for &l in b {
-                        ex_pairs.push(l);
-                        csr_tok.push(local_tok[l as usize]);
-                    }
-                    ex_off.push(ex_pairs.len() as i32);
-                }
-            }
-            let n_active = ex_ids.len();
-            if n_active == 0 || n_active > 512 {
-                return Err(format!("EP grouped prime n_active {n_active} outside 1..=512").into());
-            }
-
-            let exi = dev.htod_i32(&ex_ids)?;
-            let exo = dev.htod_i32(&ex_off)?;
-            let exp_d = dev.htod_i32(&ex_pairs)?;
-            let csr_tok_d = dev.htod_i32(&csr_tok)?;
-
-            // GATE/UP grouped GEMMs over the rank slab, CSR order end to end.
-            let (z16, zs) = dev.moe_f16g_act(z_dev, Some(&csr_tok_d), n_embd, n_owned)?;
-            let mut g = dev.moe_f16_grouped(
-                ptr_row,
-                0,
-                n_expert,
-                &exi,
-                &ex_off,
-                &exo,
-                &z16,
-                &zs,
-                n_embd,
-                n_ff_exp,
-                n_active,
-                n_owned,
-                m.gate_exps.qtype,
-                m.gate_exps.row_bytes,
-            )?;
-            if m.gate_exps.macros.is_some() {
-                let mg: Vec<f32> = ex_pairs
-                    .iter()
-                    .map(|&l| m.gate_exps.macro_scale(local_ex[l as usize]))
-                    .collect();
-                let mg_d = dev.htod(&mg)?;
-                dev.scale_rows(&mut g, &mg_d, n_ff_exp, n_owned)?;
-            }
-            let mut u = dev.moe_f16_grouped(
-                ptr_row,
-                1,
-                n_expert,
-                &exi,
-                &ex_off,
-                &exo,
-                &z16,
-                &zs,
-                n_embd,
-                n_ff_exp,
-                n_active,
-                n_owned,
-                m.up_exps.qtype,
-                m.up_exps.row_bytes,
-            )?;
-            if m.up_exps.macros.is_some() {
-                let mu: Vec<f32> = ex_pairs
-                    .iter()
-                    .map(|&l| m.up_exps.macro_scale(local_ex[l as usize]))
-                    .collect();
-                let mu_d = dev.htod(&mu)?;
-                dev.scale_rows(&mut u, &mu_d, n_ff_exp, n_owned)?;
-            }
-
-            // Epilogue: PRE-clamped SwiGLU (POST refused above), plain-silu pair otherwise.
-            let act = match lim_exp {
-                Some(SwigluClamp::Pre(limit)) => {
-                    let mut a = dev.uninit(n_owned * n_ff_exp)?;
-                    dev.swiglu_preclamped_mul_scaled(
-                        &g,
-                        &u,
-                        1.0,
-                        1.0,
-                        limit,
-                        &mut a,
-                        n_owned * n_ff_exp,
-                    )?;
-                    a
-                }
-                None => dev.moe_pairs_silu_mul(&g, &u, n_owned * n_ff_exp)?,
-                Some(SwigluClamp::Post(_)) => unreachable!("refused before any launch"),
-            };
-
-            // DOWN grouped GEMM, permute CSR -> local pair order, slot-ordered scatter.
-            let (a16, a_s) = dev.moe_f16g_act(&act, None, n_ff_exp, n_owned)?;
-            let d_csr = dev.moe_f16_grouped(
-                ptr_row,
-                2,
-                n_expert,
-                &exi,
-                &ex_off,
-                &exo,
-                &a16,
-                &a_s,
-                n_ff_exp,
-                n_embd,
-                n_active,
-                n_owned,
-                m.down_exps.qtype,
-                m.down_exps.row_bytes,
-            )?;
-            let y_local = dev.rows_permute(&d_csr, &exp_d, n_owned, n_embd)?;
-            let mut toff: Vec<i32> = Vec::with_capacity(t + 1);
-            let mut acc = 0i32;
-            toff.push(0);
-            for &c in &local_count_per_tok {
-                acc += c;
-                toff.push(acc);
-            }
-            let tids: Vec<i32> = (0..n_owned as i32).collect();
-            let pw = dev.htod(&local_wd)?;
-            let toff_d = dev.htod_i32(&toff)?;
-            let tids_d = dev.htod_i32(&tids)?;
-            let mut partial = dev.uninit(t * n_embd)?; // scatter fully overwrites
-            dev.moe_pairs_scatter(&y_local, &pw, &toff_d, &tids_d, &mut partial, t, n_embd)?;
-            Ok(Some(partial))
-        };
-
-        // Peer passes first (their GEMMs overlap root's), each on its own runtime binding —
-        // the grouped-MoE FFI follows the RUNTIME device, not cudarc's pushed context
-        // (`bind_runtime_device`'s contract). Engagement counters count ROUTED peer pairs
-        // before any red skip, exactly like the sequential walk.
-        let ranks = ep.ranks();
-        let n_peer_pairs = sel_all
-            .iter()
-            .take(n_pairs)
-            .filter(|&&ex| ep.owner(ex as usize) != 0)
-            .count() as u64;
-        crate::glm5_tp::GLM5_EP_PEER_SLOT_DISPATCHES.fetch_add(n_peer_pairs, Ordering::Relaxed);
-        let hop = ep.rt.hop(e);
-        let mut peer_partials: Vec<Option<CudaSlice<f32>>> = (0..ranks).map(|_| None).collect();
-        for r in 1..ranks {
-            let rank_owns_pairs = sel_all
-                .iter()
-                .take(n_pairs)
-                .any(|&ex| ep.owner(ex as usize) == r);
-            if !rank_owns_pairs {
-                continue;
-            }
-            let dev = crate::glm5_tp::rank_engine(e, rt, r);
-            // SWAP POINT 1 (bulk fan-out) — the named transport shape, to this rank only.
-            let z_r = crate::tp_transport::fanout_f32_to(&hop, r, z, t * n_embd)?;
-            dev.bind_runtime_device(dev.ctx().ordinal() as i32)?;
-            let res = rank_pass(dev, r as u8, &ep.ptr_rows[r], &z_r);
-            e.bind_runtime_device(e.ctx().ordinal() as i32)?;
-            peer_partials[r] = res?;
-        }
-        let root_partial = rank_pass(e, 0, &ep.ptr_rows[0], z)?;
-
-        // Root combine: root partial + bulk-returned peer partials (SWAP POINT 2, the named
-        // transport shape). One partial add per contributing rank — the same reassociation
-        // class the two-rank arm band-gated (root chain + per-rank chains instead of one
-        // 8-term chain), never claimed byte. The skip-peer-combine red drops every peer
-        // partial AFTER counting — the loud non-vacuity arm.
-        let mut out = match root_partial {
-            Some(p) => p,
-            None => e.zeros(t * n_embd)?,
-        };
-        for r in 1..ranks {
-            if let Some(pp) = &peer_partials[r]
-                && !red_skip_peer
-            {
-                let pp_root = crate::tp_transport::return_row_to_root(&hop, r, pp, t * n_embd)?;
-                let mut dst = out.slice_mut(0..t * n_embd);
-                e.axpy_into(&pp_root, 1.0, &mut dst, t * n_embd)?;
-                crate::glm5_tp::GLM5_EP_DIET_BULK_RETURNS.fetch_add(1, Ordering::Relaxed);
-            }
-        }
-        crate::glm5_tp::GLM5_EP_GROUPED_PRIME_DISPATCHES.fetch_add(1, Ordering::Relaxed);
-        static EPGP_LOGGED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let layer_bit = 1u64 << (il as u64 % 64);
-        if EPGP_LOGGED.fetch_or(layer_bit, Ordering::Relaxed) & layer_bit == 0 {
-            eprintln!(
-                "[glm5-ep-grouped-prime] execute layer={il} tokens={t} \
-                 provenance=ep-rank-slabs router=sigmoid-host-oracle epilogue=pre-clamped \
-                 combine=rank-partial-add transport={} performance_claim=false \
-                 (logged once per layer)",
-                hop.transport.name(),
-            );
-        }
-        Ok(Some(out))
-    }
-
-    /// Step 3 of the MoE body — SHARED EXPERT (ALWAYS-ON, no routing) on the SAME z —
-    /// qwen35moe only. OLMoE and most vanilla MoE have NO shared expert (the shexp tensors
-    /// are absent / `None`); skip it then. gate_inp_shexp is OPTIONAL: qwen35moe gates the
-    /// shared expert (sigmoid(gate_inp) x sh); MiniMax-M3 (DeepSeek-V3 class) has NO shexp
-    /// gate — the shared expert adds directly. (Extracted verbatim from the sequential body
-    /// so the glm5 EP-2 walk adds the ROOT-owned shared expert through the identical
-    /// program.)
-    #[allow(clippy::too_many_arguments)]
-    fn moe_shexp_add(
-        e: &Engine,
-        m: &MoeWeights,
-        z: &CudaSlice<f32>,
-        zq8: Option<&(CudaSlice<i8>, CudaSlice<f32>)>,
-        t: usize,
-        cfg: &ModelConfig,
-        lim_shexp: Option<memra_gguf::config::SwigluClamp>,
-        moe_out: &mut CudaSlice<f32>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+        // 3. SHARED EXPERT (ALWAYS-ON, no routing) on the SAME z — qwen35moe only. OLMoE and most
+        //    vanilla MoE have NO shared expert (the shexp tensors are absent / `None`); skip it then.
+        // gate_inp_shexp is OPTIONAL: qwen35moe gates the shared expert (sigmoid(gate_inp) x sh);
+        // MiniMax-M3 (DeepSeek-V3 class) has NO shexp gate — the shared expert adds directly.
         if let (Some(gate_shexp), Some(up_shexp), Some(down_shexp)) =
             (&m.gate_shexp, &m.up_shexp, &m.down_shexp)
         {
-            let n_embd = cfg.n_embd as usize;
             let n_ff_sh = gate_shexp.out_features(); // 512
             // Q8 TRUNK-FUSION (decode t=1): gate_shexp+up_shexp are Q8_0 same-shape on the 35B —
             // ONE fused2 launch (also folds the two per-matmul re-quantizes of z into one).
@@ -12050,16 +8846,6 @@ impl HybridModel {
             // expert's contribution into every token's residual, so under cross-request
             // concat prefill a session's hidden state depended on its co-arrivals' token
             // count. MEMRA_ROUTER_PREFILL_EXACT=0 reverts to the batched cuBLASLt linear.
-            // DOOR H (`MEMRA_GLM5_HTOD_DIET`): glm5 has no `ffn_gate_inp_shexp`, so this is the
-            // LIVE arm on the serving artifact and it re-uploaded a constant `vec![1.0f32; t]`
-            // on every MoE layer-call — 42 pageable HtoD per ship round (26.9% of the round's
-            // 156). The resident ones buffer feeds the SAME `add_scaled_rows_f32` kernel the
-            // same 1.0 values, so the arms are bit-identical.
-            if m.gate_inp_shexp.is_none() && crate::htod_diet_on() {
-                crate::HTOD_DIET_AVOIDED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                e.add_scaled_rows_ones(&sh, moe_out, n_embd, t)?;
-                return Ok(());
-            }
             let g = match &m.gate_inp_shexp {
                 Some(gate_inp_shexp) => {
                     if t < PRIME_MIN_T || crate::router_prefill_exact_on() {
@@ -12074,9 +8860,10 @@ impl HybridModel {
                 None => e.htod(&vec![1.0f32; t])?,
             };
             // moe_out[r, :] += sh[r, :] * g[r]   (per-token scalar gate; g=1 ungated)
-            e.add_scaled_rows(&sh, &g, moe_out, n_embd, t)?;
+            e.add_scaled_rows(&sh, &g, &mut moe_out, n_embd, t)?;
         }
-        Ok(())
+
+        Ok(moe_out)
     }
 
     /// Stage-1 (no-cache) per-DECODE-TOKEN H2D bytes: every routed block re-staged every layer every
@@ -13433,7 +10220,10 @@ impl HybridModel {
             } else {
                 (m.gate_exps.row_bytes, m.up_exps.row_bytes)
             };
-            let q8 = moe_q8_enabled_for_model(cfg, m);
+            let q8 = moe_q8_enabled()
+                && q8_expert_supported(m.gate_exps.qtype)
+                && q8_expert_supported(m.up_exps.qtype)
+                && q8_expert_supported(m.down_exps.qtype);
             // SMALL-M ROWS ARM (MEMRA_SPEC_M2, lane/spec-m2): batch the verify token loop —
             // ONE batched z-quantize + ONE gate_up rows launch + ONE act quantize + ONE down
             // rows launch (4 launches/layer, was 4t). BIT-IDENTICAL per token to the serial
@@ -13743,7 +10533,10 @@ impl HybridModel {
             // 80us/launch vs the q8 twins' 15us on the SAME shapes (fixed-build profile: 228
             // f32 launches = 36ms of the 64-tok window). Same q8 gate + kernels as the resident
             // arm above; MEMRA_MOE_Q8=0 restores the byte-identical f32 path.
-            let q8 = moe_q8_enabled_for_model(cfg, m);
+            let q8 = moe_q8_enabled()
+                && q8_expert_supported(m.gate_exps.qtype)
+                && q8_expert_supported(m.up_exps.qtype)
+                && q8_expert_supported(m.down_exps.qtype);
             e.with_moe_cache(max_block, |c, eng| {
                 let row = c
                     .layer_dev_row(il, n_expert, eng)?
@@ -14166,202 +10959,6 @@ impl HybridModel {
             m.down_exps.row_bytes,
         )?;
         crate::MOE_FUSED_EPI_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        Ok(())
-    }
-
-    /// The verify-rows batched routed-expert program (lane/glm5-vrest): one layer-call's
-    /// WHOLE t x n_used pair union through the fused-epilogue kernels' rows twins —
-    /// one gate/up+preclamp launch, one pair-major activation quantize, one down+FMA
-    /// launch — with pointers computed from the resident slab base + ex*stride (the
-    /// sequential slab arm's exact arithmetic) and the macro folds landing exactly where
-    /// `ffn_act_lim` / `axpy_into` land them. `moe_out` rows are FULLY overwritten.
-    #[allow(clippy::too_many_arguments)]
-    // allow: the parameter list mirrors its dispatch-arm caller's contract
-    fn moe_vrows_pairs_q8(
-        e: &Engine,
-        m: &MoeWeights,
-        z: &CudaSlice<f32>,
-        sel: VrowsSel<'_>,
-        il: u16,
-        (pg, pu, pd): (u64, u64, u64),
-        t: usize,
-        n_embd: usize,
-        n_ff_exp: usize,
-        n_used: usize,
-        limit: f32,
-        moe_out: &mut CudaSlice<f32>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let n_pairs = t * n_used;
-        // Door E (MEMRA_MOE_VROWS_DEDUP_ORDER, default OFF): the gate/up launch walks the pair
-        // union EXPERT-MAJOR, reading the visit order from a FOURTH plane appended to the pointer
-        // table (planes: gate | up | down | order). Carrying it in the existing table is what
-        // makes the door free on the host arm — the order plane rides the single `htod_u64_into`
-        // that was already uploading the pointers, so no new transfer and no new pool appear.
-        // Door M (`MEMRA_MOE_VROWS_PACK`) refuses it in the launcher, so do not build the plane
-        // when the refuted pack door is armed.
-        let order_on = crate::moe_vrows_dedup_order_on() && !crate::moe_vrows_pack_on();
-        let n_planes = if order_on { 4 } else { 3 };
-        // Door W (MEMRA_GLM5_VERIFY_WS): the whole staging set — tables, token quantize,
-        // act, pair quantize — draws from the verify workspace and recycles at the end of
-        // the call (vws_* are alloc_uninit/plain-drop with the door off, so the OFF arm is
-        // byte-for-byte the shipped program). Every buffer is fully overwritten before any
-        // read by the SAME kernels (the sites' standing uninit contract).
-        let mut ptrs_d = e.vws_uninit_u64(n_planes * n_pairs)?;
-        let mut scl_d = e.vws_uninit(3 * n_pairs)?;
-        // ONE launch path, TWO table provenances (the fused-epilogue arm's own discipline):
-        // only the plane-major (gate | up | down) pointer/scale tables are built differently,
-        // and door D's kernel evaluates the SAME terms as the host loop, so nothing downstream
-        // can tell the arms apart. See the `moe_vrows_tables_from_sel` kernel comment for the
-        // term-by-term bit-identity argument.
-        match sel {
-            VrowsSel::Host(sel_all, w_all) => {
-                debug_assert_eq!(sel_all.len(), n_pairs);
-                debug_assert_eq!(w_all.len(), n_pairs);
-                let mut ptrs = vec![0u64; n_planes * n_pairs];
-                let mut scl = vec![0f32; 3 * n_pairs];
-                for (p, (&ex, &w)) in sel_all.iter().zip(w_all).enumerate() {
-                    let ex = ex as usize;
-                    ptrs[p] = pg + (ex * m.gate_exps.expert_stride) as u64;
-                    ptrs[n_pairs + p] = pu + (ex * m.up_exps.expert_stride) as u64;
-                    ptrs[2 * n_pairs + p] = pd + (ex * m.down_exps.expert_stride) as u64;
-                    scl[p] = m.gate_exps.macro_scale(ex);
-                    scl[n_pairs + p] = m.up_exps.macro_scale(ex);
-                    // down-proj macro folds into the accumulate weight (1.0 for non-macro
-                    // banks) — the axpy_into fold, verbatim.
-                    scl[2 * n_pairs + p] = w * m.down_exps.macro_scale(ex);
-                }
-                if order_on {
-                    // The order plane rides the SAME upload — the door adds no HtoD on this arm.
-                    ptrs[3 * n_pairs..].copy_from_slice(&crate::vrows_expert_major_order(sel_all));
-                    // The box receipt: the slab reads whose repeat visit this schedule places
-                    // inside the reuse window (host arm only — see MOE_VROWS_SLAB_READS_AVOIDED).
-                    let (visits, distinct) = crate::vrows_overlap_counts(sel_all);
-                    crate::MOE_VROWS_SLAB_READS_AVOIDED
-                        .fetch_add(visits - distinct, std::sync::atomic::Ordering::Relaxed);
-                }
-                e.htod_u64_into(&ptrs, &mut ptrs_d)?;
-                e.htod_f32_into(&scl, &mut scl_d)?;
-                // MEMRA_MOE_VROWS_DEDUP_STAT: size the ONLY remaining byte lever on this pair
-                // (LANE.md §1 — it already runs at ~90% of theoretical DRAM peak, so the sole
-                // way to cut it further is reading a shared expert slab once for the rows that
-                // share it). `1 - distinct/visits` IS that lever; measuring it costs a bitset.
-                if crate::moe_vrows_dedup_stat_on() {
-                    let (visits, distinct) = crate::vrows_overlap_counts(sel_all);
-                    debug_assert_eq!(visits, n_pairs as u64);
-                    crate::MOE_VROWS_PAIR_VISITS
-                        .fetch_add(visits, std::sync::atomic::Ordering::Relaxed);
-                    crate::MOE_VROWS_PAIR_DISTINCT
-                        .fetch_add(distinct, std::sync::atomic::Ordering::Relaxed);
-                    crate::moe_vrows_dedup_report();
-                }
-            }
-            VrowsSel::Dev(sel_d, selw_d) => {
-                let macros = match (
-                    m.gate_exps.macros.as_deref(),
-                    m.up_exps.macros.as_deref(),
-                    m.down_exps.macros.as_deref(),
-                ) {
-                    (Some(g), Some(u), Some(d)) => Some((g, u, d)),
-                    // A partially-macro bank would need per-plane 1.0 defaults the kernel does
-                    // not carry; the serving artifact's three planes are all present or all
-                    // absent, so refuse rather than guess.
-                    (None, None, None) => None,
-                    _ => {
-                        return Err("vrows device tables: expert macro planes are not uniform \
-                                    across gate/up/down"
-                            .into());
-                    }
-                };
-                e.moe_vrows_tables_from_sel(
-                    sel_d,
-                    selw_d,
-                    il,
-                    macros,
-                    (pg, pu, pd),
-                    (
-                        m.gate_exps.expert_stride,
-                        m.up_exps.expert_stride,
-                        m.down_exps.expert_stride,
-                    ),
-                    n_pairs,
-                    &mut ptrs_d,
-                    &mut scl_d,
-                )?;
-                if order_on {
-                    // Door E on the device arm: one extra launch (the host arm gets the plane for
-                    // free inside its existing upload). Bit-identical to the host's stable sort by
-                    // (expert id, pair index) — gated directly against it in glm5_dedup_sched_gpu.
-                    e.moe_vrows_order_from_sel(sel_d, n_pairs, &mut ptrs_d)?;
-                }
-                if crate::MOE_VROWS_DEV_TABLES_DISPATCHES
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                    == 0
-                {
-                    eprintln!(
-                        "[moe-vrows-dev-tables] engaged: pointer/scale tables built on device \
-                         from the router's own sel/w; the per-layer pinned readback and its \
-                         cuStreamSynchronize are skipped (MEMRA_MOE_VROWS_DEV_TABLES=1)"
-                    );
-                }
-            }
-        }
-        // Token rows quantized in one launch; per-row q8_1 bytes are position-independent
-        // (the batched-MMVQ class), bit-gated against the per-token quantize_q8_1_view.
-        let (mut zq, mut zd) = (
-            e.vws_uninit_i8(t * n_embd)?,
-            e.vws_uninit(t * (n_embd / 32))?,
-        );
-        e.quantize_q8_1_into(z, t, n_embd, &mut zq, &mut zd)?;
-        let act = e.moe_gate_up_preclamp8_q8_rows(
-            &ptrs_d,
-            &scl_d,
-            &zq,
-            &zd,
-            limit,
-            n_embd,
-            n_ff_exp,
-            n_used,
-            n_pairs,
-            m.gate_exps.qtype,
-            m.up_exps.qtype,
-            m.gate_exps.row_bytes,
-            m.up_exps.row_bytes,
-        )?;
-        // Pair-major activation quantize: [n_pairs, n_ff] rows in one launch.
-        let (mut aq2, mut ad2) = (
-            e.vws_uninit_i8(n_pairs * n_ff_exp)?,
-            e.vws_uninit(n_pairs * (n_ff_exp / 32))?,
-        );
-        e.quantize_q8_1_into(&act, n_pairs, n_ff_exp, &mut aq2, &mut ad2)?;
-        e.moe_down8_fma_q8_rows(
-            &ptrs_d,
-            &scl_d,
-            &aq2,
-            &ad2,
-            moe_out,
-            n_ff_exp,
-            n_embd,
-            n_used,
-            n_pairs,
-            m.down_exps.qtype,
-            m.down_exps.row_bytes,
-        )?;
-        // Everything above is dead after the down launch (stream-ordered reuse is safe on
-        // this engine's stream, the same guarantee the async free relies on).
-        e.vws_recycle_u64(ptrs_d);
-        e.vws_recycle(scl_d);
-        e.vws_recycle_i8(zq);
-        e.vws_recycle(zd);
-        e.vws_recycle(act);
-        e.vws_recycle_i8(aq2);
-        e.vws_recycle(ad2);
-        if crate::MOE_VROWS_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
-            eprintln!(
-                "[glm5-vrows] verify MoE batched across rows: pairs={n_pairs} (t={t} x \
-                 {n_used}), one gate/up+preclamp launch + one down/FMA launch per layer-call \
-                 (rides MEMRA_GLM5_VERIFY_BATCH)"
-            );
-        }
         Ok(())
     }
 
@@ -14820,8 +11417,7 @@ impl HybridModel {
             // (the same stream the memcpy was issued on, so ordering holds without extra sync).
             let DispatchSlot::Resident(sl) = slot;
             let buf = c.slot(sl);
-            m.qmatvec_view(
-                eng,
+            eng.qmatvec_view(
                 buf,
                 0..layout.len,
                 x,
@@ -14885,8 +11481,7 @@ impl HybridModel {
                 return Ok(None);
             };
             let buf = cache.slot(slot);
-            Ok(Some(m.qmatvec_view(
-                eng,
+            Ok(Some(eng.qmatvec_view(
                 buf,
                 0..layout.len,
                 x,
@@ -14904,8 +11499,7 @@ impl HybridModel {
         }
         let scratch = scratch.as_mut().unwrap();
         e.stage_expert(exps.expert_bytes(ex), scratch, 0)?;
-        m.qmatvec_view(
-            e,
+        e.qmatvec_view(
             scratch,
             0..layout.len,
             x,
@@ -15814,16 +12408,9 @@ impl HybridModel {
                 && cfg.m3.is_none()
                 && e.uses_q8_1_fast(gate_shexp)
                 && e.uses_q8_1_fast(up_shexp);
-            let canonical_w4a16_rows =
-                t <= 32 && m.step_ep.as_ref().is_some_and(|ep| ep.nvfp4_device_routes);
             // MEMRA_BF16_MMV class: both projections in ONE launch (bit-identical per row to
-            // the two matvec_bf16 launches matmul would issue). W4A16 distributed execution
-            // uses the same row program for decode and verify; a t=1-only fusion accumulated
-            // sub-ULP residual drift from the first MoE layer onward.
-            let bf16_dual = if (t == 1 || canonical_w4a16_rows)
-                && crate::Engine::bf16_mmv_on()
-                && n_embd.is_multiple_of(8)
-            {
+            // the two matvec_bf16 launches matmul would issue).
+            let bf16_dual = if t == 1 && crate::Engine::bf16_mmv_on() && n_embd.is_multiple_of(8) {
                 match (gate_shexp, up_shexp) {
                     (
                         crate::model::GpuTensor::FloatBf16 { data: wg, .. },
@@ -15838,17 +12425,17 @@ impl HybridModel {
                 // Persistent shared-expert workspace: sizes are constant across every MoE
                 // layer, so one process-level set pinned by (device, n_embd, n_ff_sh) removes
                 // the four per-layer allocations. Buffers are fully overwritten each call.
-                type SharedExpertWorkspace = (
-                    usize,
-                    usize,
-                    usize,
-                    CudaSlice<f32>,
-                    CudaSlice<f32>,
-                    CudaSlice<f32>,
-                    CudaSlice<f32>,
-                );
+                #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
                 static SHEXP_WS: std::sync::Mutex<
-                    Option<std::collections::HashMap<usize, SharedExpertWorkspace>>,
+                    Option<(
+                        usize,
+                        usize,
+                        usize,
+                        CudaSlice<f32>,
+                        CudaSlice<f32>,
+                        CudaSlice<f32>,
+                        CudaSlice<f32>,
+                    )>,
                 > = std::sync::Mutex::new(None);
                 let down_bf16 = match down_shexp {
                     crate::model::GpuTensor::FloatBf16 { data, .. } => Some(data),
@@ -15857,25 +12444,20 @@ impl HybridModel {
                 let mut guard = SHEXP_WS
                     .lock()
                     .map_err(|_| "shexp workspace lock is poisoned")?;
-                let capacity = if canonical_w4a16_rows { 32 } else { 1 };
-                let device = e.ctx().ordinal();
-                let workspaces = guard.get_or_insert_with(Default::default);
-                if workspaces
-                    .get(&device)
-                    .is_none_or(|(ne, nf, cap, ..)| (*ne, *nf, *cap) != (n_embd, n_ff_sh, capacity))
+                let pins = (e.ctx().ordinal(), n_embd, n_ff_sh);
+                if guard
+                    .as_ref()
+                    .is_none_or(|(d, ne, nf, ..)| (*d, *ne, *nf) != pins)
                 {
-                    workspaces.insert(
-                        device,
-                        (
-                            n_embd,
-                            n_ff_sh,
-                            capacity,
-                            e.uninit(capacity * n_ff_sh)?,
-                            e.uninit(capacity * n_ff_sh)?,
-                            e.uninit(capacity * n_ff_sh)?,
-                            e.uninit(capacity * n_embd)?,
-                        ),
-                    );
+                    *guard = Some((
+                        pins.0,
+                        pins.1,
+                        pins.2,
+                        e.uninit(n_ff_sh)?,
+                        e.uninit(n_ff_sh)?,
+                        e.uninit(n_ff_sh)?,
+                        e.uninit(n_embd)?,
+                    ));
                 }
                 // MEMRA_SHEXP_SPLIT=1: bit-identical row split across both devices; falls
                 // through to the single-device arm when ineligible.
@@ -15884,7 +12466,6 @@ impl HybridModel {
                     let split_on = *ON
                         .get_or_init(|| std::env::var("MEMRA_SHEXP_SPLIT").as_deref() == Ok("1"));
                     if split_on
-                        && t == 1
                         && let (Some(wd), Some(rank1)) = (
                             match down_shexp {
                                 crate::model::GpuTensor::FloatBf16 { data, .. } => Some(data),
@@ -15907,72 +12488,54 @@ impl HybridModel {
                         return Ok(());
                     }
                 }
-                let (_, _, _, gate, up, act, sh_buf) = workspaces
-                    .get_mut(&device)
-                    .expect("shexp workspace initialized above");
+                let (_, _, _, gate, up, act, sh_buf) =
+                    guard.as_mut().expect("shexp workspace initialized above");
                 // FUSION #2b needs the POST form its epilogue hardcodes; m3's swigluoai and
                 // glm5_next's PRE clamp both take the unfused dual-matmul + ffn_act_lim arm.
                 if let (true, Ok(lim_post)) = (cfg.m3.is_none(), Self::fused_post_limit(lim)) {
                     // dual matvec + SwiGLU act in one launch — exact dual per-row program +
                     // exact silu/clamped expression, bit-identical.
-                    if canonical_w4a16_rows {
-                        e.matvec_bf16_dual_silu_rows_into(
-                            wg, wu, z, act, n_embd, n_ff_sh, lim_post, t,
-                        )?;
-                    } else {
-                        e.matvec_bf16_dual_silu_into(wg, wu, z, act, n_embd, n_ff_sh, lim_post)?;
-                    }
+                    e.matvec_bf16_dual_silu_into(wg, wu, z, act, n_embd, n_ff_sh, lim_post)?;
                     let _ = (&gate, &up);
                 } else {
                     e.matvec_bf16_dual_into(wg, wu, z, gate, up, n_embd, n_ff_sh)?;
                     Self::ffn_act_lim(e, cfg, gate, up, 1.0, 1.0, lim, act, n_ff_sh)?;
                 }
                 if let Some(down) = down_bf16 {
-                    if canonical_w4a16_rows {
-                        e.matvec_bf16_rows_into(down, act, sh_buf, n_ff_sh, n_embd, t)?;
-                        let mut sh = e.uninit(t * n_embd)?;
-                        {
-                            let mut dst = sh.slice_mut(0..t * n_embd);
-                            e.stream()
-                                .memcpy_dtod(&sh_buf.slice(0..t * n_embd), &mut dst)?;
+                    // FUSION #2e (gate-less shexp only, MEMRA_FUSE_DOWN_ADDSCALE=0 reverts):
+                    // down matvec + scaled accumulate straight into moe_out in ONE launch —
+                    // exact f32acc per-row program + the exact add_scaled_rows expression
+                    // (dst[r] += y_r * 1.0). Replaces down + ownership alloc + 16KB copy +
+                    // add_scaled (3 launches + alloc -> 1 launch); bit-identical because the
+                    // accumulate consumes the same f32 the split path stored and reloaded.
+                    static FUSE_DA: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+                    let fuse_da = *FUSE_DA.get_or_init(|| {
+                        std::env::var("MEMRA_FUSE_DOWN_ADDSCALE").as_deref() != Ok("0")
+                    });
+                    if fuse_da && m.gate_inp_shexp.is_none() {
+                        static ONES1: std::sync::Mutex<Option<(usize, CudaSlice<f32>)>> =
+                            std::sync::Mutex::new(None);
+                        let mut og = ONES1.lock().map_err(|_| "shexp ones lock is poisoned")?;
+                        if og.as_ref().is_none_or(|(d, _)| *d != e.ctx().ordinal()) {
+                            *og = Some((e.ctx().ordinal(), e.htod(&[1.0f32])?));
                         }
-                        sh
-                    } else {
-                        // FUSION #2e (gate-less shexp only, MEMRA_FUSE_DOWN_ADDSCALE=0 reverts):
-                        // down matvec + scaled accumulate straight into moe_out in ONE launch —
-                        // exact f32acc per-row program + the exact add_scaled_rows expression
-                        // (dst[r] += y_r * 1.0). Replaces down + ownership alloc + 16KB copy +
-                        // add_scaled (3 launches + alloc -> 1 launch); bit-identical because the
-                        // accumulate consumes the same f32 the split path stored and reloaded.
-                        static FUSE_DA: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-                        let fuse_da = *FUSE_DA.get_or_init(|| {
-                            std::env::var("MEMRA_FUSE_DOWN_ADDSCALE").as_deref() != Ok("0")
-                        });
-                        if fuse_da && m.gate_inp_shexp.is_none() {
-                            static ONES1: std::sync::Mutex<Option<(usize, CudaSlice<f32>)>> =
-                                std::sync::Mutex::new(None);
-                            let mut og = ONES1.lock().map_err(|_| "shexp ones lock is poisoned")?;
-                            if og.as_ref().is_none_or(|(d, _)| *d != e.ctx().ordinal()) {
-                                *og = Some((e.ctx().ordinal(), e.htod(&[1.0f32])?));
-                            }
-                            let ones = &og.as_ref().expect("armed above").1;
-                            e.matvec_bf16_down_addscale_into(
-                                down, act, ones, moe_out, n_ff_sh, n_embd,
-                            )?;
-                            return Ok(());
-                        }
-                        e.matvec_bf16_into(down, act, sh_buf, n_ff_sh, n_embd)?;
-                        let sh = e.uninit(n_embd)?;
-                        // One alloc keeps the ownership contract; the copy is 16KB on-stream.
-                        let mut sh = sh;
-                        {
-                            let mut dst = sh.slice_mut(0..n_embd);
-                            e.stream().memcpy_dtod(&sh_buf.slice(0..n_embd), &mut dst)?;
-                        }
-                        sh
+                        let ones = &og.as_ref().expect("armed above").1;
+                        e.matvec_bf16_down_addscale_into(
+                            down, act, ones, moe_out, n_ff_sh, n_embd,
+                        )?;
+                        return Ok(());
                     }
+                    e.matvec_bf16_into(down, act, sh_buf, n_ff_sh, n_embd)?;
+                    let sh = e.uninit(n_embd)?;
+                    // One alloc keeps the ownership contract; the copy is 16KB on-stream.
+                    let mut sh = sh;
+                    {
+                        let mut dst = sh.slice_mut(0..n_embd);
+                        e.stream().memcpy_dtod(&sh_buf.slice(0..n_embd), &mut dst)?;
+                    }
+                    sh
                 } else {
-                    e.matmul(down_shexp, act, t)?
+                    e.matmul(down_shexp, act, 1)?
                 }
             } else if fused {
                 let (zq, zd) = e.quantize_q8_1(z, 1, n_embd)?;
@@ -16040,19 +12603,13 @@ impl HybridModel {
                 // (44.6us x 42, eager gap table 2026-08-21). One persistent ones row per
                 // device serves every layer; larger t (prefill) keeps the plain htod.
                 None if t == 1 => {
-                    static ONES: std::sync::Mutex<
-                        Option<std::collections::HashMap<usize, CudaSlice<f32>>>,
-                    > = std::sync::Mutex::new(None);
+                    static ONES: std::sync::Mutex<Option<(usize, CudaSlice<f32>)>> =
+                        std::sync::Mutex::new(None);
                     let mut guard = ONES.lock().map_err(|_| "shexp ones lock is poisoned")?;
-                    let device = e.ctx().ordinal();
-                    let rows = guard.get_or_insert_with(Default::default);
-                    // One entry lookup, not three (contains_key + insert + get). The vacant arm
-                    // stays fallible, which is why this is `match` and not `or_insert_with`.
-                    use std::collections::hash_map::Entry;
-                    let ones = match rows.entry(device) {
-                        Entry::Occupied(occupied) => occupied.into_mut(),
-                        Entry::Vacant(vacant) => vacant.insert(e.htod(&[1.0f32])?),
-                    };
+                    if guard.as_ref().is_none_or(|(d, _)| *d != e.ctx().ordinal()) {
+                        *guard = Some((e.ctx().ordinal(), e.htod(&[1.0f32])?));
+                    }
+                    let ones = &guard.as_ref().expect("armed above").1;
                     e.add_scaled_rows(&sh, ones, moe_out, n_embd, t)?;
                     return Ok(());
                 }
@@ -16108,7 +12665,10 @@ impl HybridModel {
         let resident_q8 = m.dev_exps.as_ref().filter(|dev| {
             m.has_uniform_expert_layout()
                 && no_exp_macros
-                && moe_q8_enabled_for_model(cfg, m)
+                && moe_q8_enabled()
+                && q8_expert_supported(m.gate_exps.qtype)
+                && q8_expert_supported(m.up_exps.qtype)
+                && q8_expert_supported(m.down_exps.qtype)
                 && moe_slab_enabled()
                 && dev.dev == e.ctx().ordinal()
         });
@@ -16164,7 +12724,11 @@ impl HybridModel {
         let g_len = m.gate_exps.max_expert_bytes();
         let u_len = m.up_exps.max_expert_bytes();
         let d_len = m.down_exps.max_expert_bytes();
-        let moe_q8 = moe_q8_enabled_for_model(cfg, m);
+        let moe_q8 = m.has_uniform_expert_layout()
+            && moe_q8_enabled()
+            && q8_expert_supported(m.gate_exps.qtype)
+            && q8_expert_supported(m.up_exps.qtype)
+            && q8_expert_supported(m.down_exps.qtype);
         // The per-expert slab view is legal only for the ordinary contiguous uniform layout.
         // Interleaved GU slabs require the pointer-table fast path above.
         let slab_local = m
@@ -16311,8 +12875,7 @@ impl HybridModel {
                         dl.row_bytes,
                     )?
                 } else {
-                    let gate = m.qmatvec_view(
-                        e,
+                    let gate = e.qmatvec_view(
                         &dev.gate,
                         gate_start..gate_start + gl.len,
                         &gv,
@@ -16322,8 +12885,7 @@ impl HybridModel {
                         gl.qtype,
                         gl.row_bytes,
                     )?;
-                    let up = m.qmatvec_view(
-                        e,
+                    let up = e.qmatvec_view(
                         &dev.up,
                         up_start..up_start + ul.len,
                         &gv,
@@ -16346,8 +12908,7 @@ impl HybridModel {
                         m_e * n_ff_exp,
                     )?;
                     let actv = act.slice(0..m_e * n_ff_exp);
-                    m.qmatvec_view(
-                        e,
+                    e.qmatvec_view(
                         &dev.down,
                         down_start..down_start + dl.len,
                         &actv,
@@ -16424,8 +12985,7 @@ impl HybridModel {
                     let gate = e.with_moe_cache(max_block, |cache, eng| {
                         let id = BlockId::new(il, PROJ_GATE, ex as u16);
                         let slot = cache.dispatch_source(id, m.gate_exps.expert_source(ex), eng)?;
-                        m.qmatvec_view(
-                            eng,
+                        eng.qmatvec_view(
                             cache.buf(slot),
                             0..gl.len,
                             &gv,
@@ -16439,8 +12999,7 @@ impl HybridModel {
                     let up = e.with_moe_cache(max_block, |cache, eng| {
                         let id = BlockId::new(il, PROJ_UP, ex as u16);
                         let slot = cache.dispatch_source(id, m.up_exps.expert_source(ex), eng)?;
-                        m.qmatvec_view(
-                            eng,
+                        eng.qmatvec_view(
                             cache.buf(slot),
                             0..ul.len,
                             &gv,
@@ -16467,8 +13026,7 @@ impl HybridModel {
                     e.with_moe_cache(max_block, |cache, eng| {
                         let id = BlockId::new(il, PROJ_DOWN, ex as u16);
                         let slot = cache.dispatch_source(id, m.down_exps.expert_source(ex), eng)?;
-                        m.qmatvec_view(
-                            eng,
+                        eng.qmatvec_view(
                             cache.buf(slot),
                             0..dl.len,
                             &actv,
@@ -16536,8 +13094,7 @@ impl HybridModel {
                         dl.row_bytes,
                     )?
                 } else {
-                    let gate = m.qmatvec_view(
-                        e,
+                    let gate = e.qmatvec_view(
                         sg,
                         0..gl.len,
                         &gv,
@@ -16547,8 +13104,7 @@ impl HybridModel {
                         gl.qtype,
                         gl.row_bytes,
                     )?;
-                    let up = m.qmatvec_view(
-                        e,
+                    let up = e.qmatvec_view(
                         su,
                         0..ul.len,
                         &gv,
@@ -16571,8 +13127,7 @@ impl HybridModel {
                         m_e * n_ff_exp,
                     )?;
                     let actv = act.slice(0..m_e * n_ff_exp);
-                    m.qmatvec_view(
-                        e,
+                    e.qmatvec_view(
                         sd,
                         0..dl.len,
                         &actv,
@@ -16796,8 +13351,7 @@ impl HybridModel {
                 let slot = c
                     .resident(BlockId::new(il, PROJ_GATE, ex as u16))
                     .ok_or("lockstep resident expert vanished (cache not frozen?)")?;
-                m.qmatvec_view(
-                    eng,
+                eng.qmatvec_view(
                     c.buf(crate::moe_cache::DispatchSlot::Resident(slot)),
                     0..gl.len,
                     &gv,
@@ -16812,8 +13366,7 @@ impl HybridModel {
                 let slot = c
                     .resident(BlockId::new(il, PROJ_UP, ex as u16))
                     .ok_or("lockstep resident expert vanished (cache not frozen?)")?;
-                m.qmatvec_view(
-                    eng,
+                eng.qmatvec_view(
                     c.buf(crate::moe_cache::DispatchSlot::Resident(slot)),
                     0..ul.len,
                     &gv,
@@ -16841,8 +13394,7 @@ impl HybridModel {
                 let slot = c
                     .resident(BlockId::new(il, PROJ_DOWN, ex as u16))
                     .ok_or("lockstep resident expert vanished (cache not frozen?)")?;
-                m.qmatvec_view(
-                    eng,
+                eng.qmatvec_view(
                     c.buf(crate::moe_cache::DispatchSlot::Resident(slot)),
                     0..dl.len,
                     &actv,
@@ -17792,8 +14344,7 @@ impl HybridModel {
             for (j, &ex) in sel.iter().enumerate() {
                 let ex = ex as usize;
                 let gate = match dev {
-                    Some(d) => m.qmatvec_view(
-                        e,
+                    Some(d) => e.qmatvec_view(
                         &d.gate,
                         ex * g_len..(ex + 1) * g_len,
                         &zt,
@@ -17806,8 +14357,7 @@ impl HybridModel {
                     None => {
                         let sg = sg.as_mut().unwrap();
                         e.stage_expert(m.gate_exps.expert_bytes(ex), sg, 0)?;
-                        m.qmatvec_view(
-                            e,
+                        e.qmatvec_view(
                             sg,
                             0..g_len,
                             &zt,
@@ -17820,8 +14370,7 @@ impl HybridModel {
                     }
                 };
                 let up = match dev {
-                    Some(d) => m.qmatvec_view(
-                        e,
+                    Some(d) => e.qmatvec_view(
                         &d.up,
                         ex * u_len..(ex + 1) * u_len,
                         &zt,
@@ -17834,8 +14383,7 @@ impl HybridModel {
                     None => {
                         let su = su.as_mut().unwrap();
                         e.stage_expert(m.up_exps.expert_bytes(ex), su, 0)?;
-                        m.qmatvec_view(
-                            e,
+                        e.qmatvec_view(
                             su,
                             0..u_len,
                             &zt,
@@ -17851,8 +14399,7 @@ impl HybridModel {
                 e.gelu_tanh_mul(&gate, &up, &mut act, n_ff_exp)?;
                 let actv = act.slice(0..n_ff_exp);
                 let y = match dev {
-                    Some(d) => m.qmatvec_view(
-                        e,
+                    Some(d) => e.qmatvec_view(
                         &d.down,
                         ex * d_len..(ex + 1) * d_len,
                         &actv,
@@ -17865,8 +14412,7 @@ impl HybridModel {
                     None => {
                         let sd = sd.as_mut().unwrap();
                         e.stage_expert(m.down_exps.expert_bytes(ex), sd, 0)?;
-                        m.qmatvec_view(
-                            e,
+                        e.qmatvec_view(
                             sd,
                             0..d_len,
                             &actv,
@@ -18486,10 +15032,6 @@ impl HybridModel {
         // reference's llama_set_causal_attn(false) image batch exactly.
         let island: Option<CudaSlice<i32>> = match overlay {
             Some(ov) => {
-                // The residency law reaches this arm too (lane/glm53-vision-ppn): the splice
-                // arithmetic below differs from the shared helper on purpose (post-scale
-                // placement + island ids), but the pointer it reads obeys the same rule.
-                ov.require_resident(e)?;
                 let mut span_id = vec![-1i32; t];
                 for (i, &(pos, row_off, n_rows)) in ov.spans.iter().enumerate() {
                     if pos + n_rows > t {
@@ -20824,8 +17366,6 @@ impl HybridModel {
         // 2-stage in M2 (the N-stage gate model is the generic-arm 9B); N>2 warns + runs
         // unsplit rather than guessing a fence.
         if let Some(split) = crate::pp::pp2_split(self.layers.len()) {
-            let rt = crate::pp::Pp2Rt::get(e)?;
-            let _walk = rt.acquire_walk("gemma4_decode_step_h_pp2")?;
             return self.gemma4_decode_step_h_pp2(e, token, cache, split);
         }
         if crate::pp::pp_cuts(self.layers.len()).is_some() {
@@ -21125,7 +17665,7 @@ impl HybridModel {
         il: usize,
         seq_end: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let geometry = self.cfg.full_attention_geometry_at(il as u32);
+        let geometry = self.step35_geom(il);
         let hd = geometry.head_dim_k as usize;
         let nkv = geometry.n_head_kv as usize;
         let nh = geometry.n_head as usize;
@@ -21389,13 +17929,13 @@ impl HybridModel {
         t: usize,
         il: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let g3 = match self.full_attn_tp_qkv(e, fa, h, t)? {
+        let g3 = match self.step35_tp_qkv(e, fa, h, t)? {
             Some(g3) => g3,
             None => e.matmul_group(&[&fa.wq, &fa.wk, &fa.wv], h, t)?,
         };
         // Monolithic path: the request ends at t (no chunk loop). See step35_attn_pre_wo's note.
         let ag = self.step35_attn_pre_wo(e, fa, g3, Some(h), None, pos_d, t, None, il, t)?;
-        self.full_attn_o(e, fa, &ag, t)
+        self.step35_o(e, fa, &ag, t)
     }
 
     /// step35 PRIME mixer (the `full_attn_prime` contract: append this chunk's K/V into the
@@ -21435,7 +17975,7 @@ impl HybridModel {
                         .into(),
                 );
             }
-            self.full_attn_tp_qkv(e, fa, h, t)?
+            self.step35_tp_qkv(e, fa, h, t)?
                 .expect("Step Q/K/V TP disappeared after the presence check")
         } else {
             match hx {
@@ -21445,7 +17985,7 @@ impl HybridModel {
         };
         let ag =
             self.step35_attn_pre_wo(e, fa, g3, Some(h), None, pos_d, t, Some(cache), il, seq_end)?;
-        self.full_attn_o(e, fa, &ag, t)
+        self.step35_o(e, fa, &ag, t)
     }
 
     fn ensure_step_tp_kv_cache(
@@ -21459,7 +17999,7 @@ impl HybridModel {
             .step_tp_qkv
             .as_ref()
             .ok_or("Step TP cache hydration lost its resident projections")?;
-        let geometry = self.cfg.full_attention_geometry_at(il as u32);
+        let geometry = self.step35_geom(il);
         let window = geometry.window.map(|window| window as usize);
         let ranks = tp.runtime.devices().len();
         let head_dim = geometry.head_dim_k as usize;
@@ -21593,7 +18133,7 @@ impl HybridModel {
             }
         }
 
-        let geometry = self.cfg.full_attention_geometry_at(il as u32);
+        let geometry = self.step35_geom(il);
         let window = geometry.window.map(|window| window as usize);
         let head_dim = geometry.head_dim_k as usize;
         let heads = geometry.n_head as usize;
@@ -23389,7 +19929,334 @@ impl HybridModel {
         )
     }
 
-    pub(crate) fn step35_tp_decode_attn_resident_v2(
+    /// TWO-COLUMN MoE FFN for the spec verify walk (MEMRA_TCOL_FFN): route both columns
+    /// with the fixed per-row router program (t=2 grid, per-row bit-equal to t=1), run the
+    /// two-column device-routed expert sweep, then the t=1 shared-expert program per
+    /// column. Returns [2, n_embd] on `e`, or None when this layer/config is ineligible
+    /// (caller falls back to the per-column walk).
+    pub(crate) fn step35_verify_moe_tn(
+        &self,
+        e: &Engine,
+        il: usize,
+        z_t: &CudaSlice<f32>,
+        t: usize,
+    ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        let layer = &self.layers[il];
+        let crate::hybrid::Ffn::Moe(m) = &layer.ffn else {
+            return Ok(None);
+        };
+        let Some(tp) = m.step_tp.as_ref() else {
+            return Ok(None);
+        };
+        let crate::hybrid::StepTpExpertBank::Nvfp4(bank) = &tp.experts else {
+            return Ok(None);
+        };
+        if !crate::tp::step_nvfp4_dev_routes_enabled()?
+            || !crate::tp::step_tp_dev_router_enabled()?
+            || !crate::tp::nvfp4_bank_v2_on()
+            || bank.ep2
+        {
+            return Ok(None);
+        }
+        let cfg = &self.cfg;
+        let Some(moe) = cfg.moe.as_ref() else {
+            return Ok(None);
+        };
+        let Some((sf, route_norm)) = cfg.sigmoid_router() else {
+            return Ok(None);
+        };
+        let n_embd = cfg.n_embd as usize;
+        let n_expert = moe.expert_count as usize;
+        let n_used = moe.expert_used_count as usize;
+        if !(2..=32).contains(&t) || z_t.len() < t * n_embd {
+            return Err("verify moe t-row geometry".into());
+        }
+        let trace = std::env::var("MEMRA_TN_TRACE").as_deref() == Ok("1");
+        if trace {
+            eprintln!("[tn-trace] il={il} t={t} logits");
+        }
+        let logits = Self::moe_router_logits(e, m, z_t, t, cfg)?;
+        // Persistent selection rows (host-op diet, same shape law as the t=1 SELW),
+        // sized for the widest walk (t <= 8).
+        #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
+        static SELW2: std::sync::Mutex<Option<(usize, CudaSlice<i32>, CudaSlice<f32>)>> =
+            std::sync::Mutex::new(None);
+        let mut selw = SELW2.lock().map_err(|_| "selw2 lock poisoned")?;
+        if selw.as_ref().is_none_or(|(d, ..)| *d != e.ctx().ordinal()) {
+            *selw = Some((
+                e.ctx().ordinal(),
+                e.htod_i32(&vec![0i32; 32 * n_used])?,
+                e.htod(&vec![0.0f32; 32 * n_used])?,
+            ));
+        }
+        let (_, sel_d, w_d) = selw.as_mut().expect("armed above");
+        if trace {
+            eprintln!("[tn-trace] il={il} topk logits_len={}", logits.len());
+        }
+        e.moe_router_sigmoid_topk_into(
+            &logits,
+            t,
+            n_expert,
+            n_used,
+            m.active_count(),
+            &m.exp_probs_b_dev,
+            &m.active_experts_dev,
+            sf,
+            route_norm,
+            sel_d,
+            w_d,
+        )?;
+        if trace {
+            eprintln!("[tn-trace] il={il} driver");
+        }
+        // MEMRA_MOE_OVERLAP=1: how much would deduping the expert UNION across verify columns
+        // buy? The sweep runs t*n_used slots (n_sel below), so an expert two columns both select
+        // is read TWICE — the "weight re-read per (token,slot)" class the NVFP4 CSR twin fixed
+        // elsewhere (+6.8% at B=8). Whether that is worth building here depends entirely on the
+        // real overlap, which is a property of the router on real traffic, not of the code. One
+        // dtoh per layer under the flag; diagnostic only.
+        if std::env::var("MEMRA_MOE_OVERLAP").as_deref() == Ok("1") {
+            let sel_host = e.dtoh_i32(sel_d)?;
+            let slots = t * n_used;
+            if sel_host.len() >= slots {
+                let mut uniq = std::collections::HashSet::new();
+                for &x in &sel_host[..slots] {
+                    uniq.insert(x);
+                }
+                // BUCKET BY t. The same walk serves BOTH the spec verify (t = K+1) and the
+                // chunked prime (t = MEMRA_PRIME_TROWS_T = 8), and the prime dominates any flat
+                // average: 511 chunks x 45 layers on a 4k prompt against a handful of verify
+                // columns. A pooled number reported the PRIME's overlap as the verify's.
+                type OverlapMap = std::collections::BTreeMap<usize, (u64, u64, u64)>;
+                static BUCKETS: std::sync::Mutex<Option<OverlapMap>> = std::sync::Mutex::new(None);
+                if let Ok(mut g) = BUCKETS.lock() {
+                    let map = g.get_or_insert_with(OverlapMap::new);
+                    let ent = map.entry(t).or_insert((0, 0, 0));
+                    ent.0 += slots as u64;
+                    ent.1 += uniq.len() as u64;
+                    ent.2 += 1;
+                    let total: u64 = map.values().map(|v| v.2).sum();
+                    if total.is_multiple_of(2000) {
+                        let line = map
+                            .iter()
+                            .map(|(tb, (sl, uq, n))| {
+                                format!(
+                                    "t={tb}: slots {:.1} distinct {:.1} dup {:.1}% (n={n})",
+                                    *sl as f64 / *n as f64,
+                                    *uq as f64 / *n as f64,
+                                    100.0 * (1.0 - *uq as f64 / *sl as f64)
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" | ");
+                        eprintln!("[moe-overlap] {line}");
+                    }
+                }
+            }
+        }
+        // MEMRA_TN_PREJOIN: ride the routed sweep's prejoin window with the shared expert's
+        // compute. The verify walk costs ~1.27x the plain decode tick at equal t, and the plain
+        // tick is the path that already has this window (`_routed_prejoin`); the walk left the
+        // stream idle across the peer drain and then ran the shexp serially after the join.
+        // DEFAULT OFF pending its own interleaved cell + the greedy tape: the arm is bit-gateable
+        // by construction (issue order moves, the float expression does not) but "by construction"
+        // is an argument, not a receipt, and an unmeasured door does not default on.
+        let prejoin_shexp = {
+            static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
+            crate::step37_door(&ENV, "MEMRA_TN_PREJOIN")
+        };
+        let mut staged_gate: Option<CudaSlice<f32>> = None;
+        let mut out_t = if prejoin_shexp {
+            let mut staged: Option<CudaSlice<f32>> = None;
+            let out = tp
+                .runtime
+                .run_tensor_parallel_routes_nvfp4_device_routed_tn_prejoin(
+                    bank,
+                    e,
+                    z_t,
+                    sel_d,
+                    w_d,
+                    t,
+                    n_used,
+                    tp.activation_limit,
+                    || {
+                        staged = Self::step35_shexp_rows_compute(e, m, z_t, t, cfg, il as u16)?;
+                        Ok(())
+                    },
+                )?;
+            staged_gate = staged;
+            out
+        } else {
+            tp.runtime
+                .run_tensor_parallel_routes_nvfp4_device_routed_tn(
+                    bank,
+                    e,
+                    z_t,
+                    sel_d,
+                    w_d,
+                    t,
+                    n_used,
+                    tp.activation_limit,
+                )?
+        };
+        if trace {
+            eprintln!("[tn-trace] il={il} shexp out_t={}", out_t.len());
+        }
+        // The prejoin arm already issued the shexp compute above; only its accumulate is left.
+        if let Some(gate) = staged_gate.take() {
+            Self::step35_shexp_rows_apply(e, m, t, cfg, &gate, &mut out_t)?;
+            return Ok(Some(out_t));
+        }
+        // Shared expert: ONE t-row pass through the per-row-exact twins when the bf16
+        // dual-silu shape holds (each row's program == the t=1 fused path); otherwise the
+        // exact t=1 program per column.
+        if !Self::step35_shexp_rows(e, m, z_t, t, cfg, il as u16, &mut out_t)? {
+            let mut z_row = e.uninit(n_embd)?;
+            let mut out_row = e.uninit(n_embd)?;
+            for c in 0..t {
+                e.dtod_copy_view(&z_t.slice(c * n_embd..(c + 1) * n_embd), &mut z_row)?;
+                e.dtod_copy_view(&out_t.slice(c * n_embd..(c + 1) * n_embd), &mut out_row)?;
+                Self::moe_ffn_grouped_add_shared(e, m, &z_row, 1, cfg, il as u16, &mut out_row)?;
+                e.dtod_copy_into(&out_row, &mut out_t, c * n_embd)?;
+            }
+        }
+        Ok(Some(out_t))
+    }
+
+    /// T-ROW shared expert (spec verify / batched serving): dual-silu + down + gate +
+    /// scaled accumulate over all rows in four launches, each the per-row-exact twin of
+    /// the t=1 fused path. Returns false (untouched `out_t`) when the shape is ineligible.
+    ///
+    /// PREJOIN SPLIT (2026-08-26): `_compute` issues the three launches that do not touch `out_t`
+    /// and `_apply` does the one that does, so the compute can ride the routed sweep's prejoin
+    /// window while the accumulate stays after the cross-rank join. This whole-function form is
+    /// kept as the composition of the two halves — same launches, same order, one call.
+    fn step35_shexp_rows(
+        e: &Engine,
+        m: &MoeWeights,
+        z_t: &CudaSlice<f32>,
+        t: usize,
+        cfg: &ModelConfig,
+        il: u16,
+        out_t: &mut CudaSlice<f32>,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        match Self::step35_shexp_rows_compute(e, m, z_t, t, cfg, il)? {
+            Some(gate) => {
+                Self::step35_shexp_rows_apply(e, m, t, cfg, &gate, out_t)?;
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+
+    /// The shexp launches that do NOT read or write `out_t`: dual-silu, down, and the head gate.
+    /// `sh_t` is left in the persistent workspace for `step35_shexp_rows_apply` to accumulate.
+    /// `Ok(None)` = shape ineligible, nothing issued, caller falls back per column.
+    fn step35_shexp_rows_compute(
+        e: &Engine,
+        m: &MoeWeights,
+        z_t: &CudaSlice<f32>,
+        t: usize,
+        cfg: &ModelConfig,
+        il: u16,
+    ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        let n_embd = cfg.n_embd as usize;
+        let (Some(gate_shexp), Some(up_shexp), Some(down_shexp)) =
+            (&m.gate_shexp, &m.up_shexp, &m.down_shexp)
+        else {
+            return Ok(None);
+        };
+        if !crate::Engine::bf16_mmv_on() || !n_embd.is_multiple_of(8) || cfg.m3.is_some() {
+            return Ok(None);
+        }
+        let (
+            crate::model::GpuTensor::FloatBf16 { data: wg, .. },
+            crate::model::GpuTensor::FloatBf16 { data: wu, .. },
+            crate::model::GpuTensor::FloatBf16 { data: wd, .. },
+        ) = (gate_shexp, up_shexp, down_shexp)
+        else {
+            return Ok(None);
+        };
+        let n_ff_sh = gate_shexp.out_features();
+        // POST-form epilogue only (see `fused_post_limit`): a PRE-clamped layer declines
+        // (Ok(None) = nothing issued, caller falls back per column).
+        let Ok(lim) = Self::fused_post_limit(cfg.clamp_shexp_at(il as u32)) else {
+            return Ok(None);
+        };
+        let mut guard = Self::step35_shexp_rows_ws()
+            .lock()
+            .map_err(|_| "shexp rows ws lock is poisoned")?;
+        let pins = (e.ctx().ordinal(), n_embd, n_ff_sh);
+        if guard
+            .as_ref()
+            .is_none_or(|(d, ne, nf, ..)| (*d, *ne, *nf) != pins)
+        {
+            *guard = Some((
+                pins.0,
+                pins.1,
+                pins.2,
+                e.uninit(32 * n_ff_sh)?,
+                e.uninit(32 * n_embd)?,
+            ));
+        }
+        let (_, _, _, act_t, sh_t) = guard.as_mut().expect("armed above");
+        e.matvec_bf16_dual_silu_rows_into(wg, wu, z_t, act_t, n_embd, n_ff_sh, lim, t)?;
+        e.matvec_bf16_rows_into(wd, act_t, sh_t, n_ff_sh, n_embd, t)?;
+        // Head gate: sigmoid_dot_rows is the exact t=1 expression per row; gate-less
+        // shexp accumulates at weight 1 (the fuse_da identity).
+        let gate = match &m.gate_inp_shexp {
+            Some(gate_inp_shexp) => {
+                e.sigmoid_dot_rows(z_t, gate_inp_shexp.float_data(), n_embd, t)?
+            }
+            None => e.htod(&vec![1.0f32; t])?,
+        };
+        Ok(Some(gate))
+    }
+
+    /// Persistent t-row shexp buffers (widest walk t <= 8), shared by the compute and apply
+    /// halves. A `static` inside an associated fn is the seam that lets `_apply` reach the `sh_t`
+    /// that `_compute` filled without threading a device buffer through the prejoin closure
+    /// (cloning a `CudaSlice` would copy on device, which is the opposite of the point).
+    #[allow(clippy::type_complexity)]
+    fn step35_shexp_rows_ws()
+    -> &'static std::sync::Mutex<Option<(usize, usize, usize, CudaSlice<f32>, CudaSlice<f32>)>>
+    {
+        static WS: std::sync::Mutex<Option<(usize, usize, usize, CudaSlice<f32>, CudaSlice<f32>)>> =
+            std::sync::Mutex::new(None);
+        &WS
+    }
+
+    /// The one shexp launch that touches `out_t`: `out_t += sh_t * gate` per row. Kept AFTER the
+    /// routed cross-rank join so the accumulate reads the joined value — same kernel, same operand
+    /// order, same expression as the unsplit form, which is what makes the prejoin arm bit-gateable.
+    fn step35_shexp_rows_apply(
+        e: &Engine,
+        m: &MoeWeights,
+        t: usize,
+        cfg: &ModelConfig,
+        gate: &CudaSlice<f32>,
+        out_t: &mut CudaSlice<f32>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let n_embd = cfg.n_embd as usize;
+        let n_ff_sh = m
+            .gate_shexp
+            .as_ref()
+            .ok_or("shexp apply lost its gate projection")?
+            .out_features();
+        let mut guard = Self::step35_shexp_rows_ws()
+            .lock()
+            .map_err(|_| "shexp rows ws lock is poisoned")?;
+        let pins = (e.ctx().ordinal(), n_embd, n_ff_sh);
+        let (_, _, _, _, sh_t) = guard
+            .as_mut()
+            .filter(|(d, ne, nf, ..)| (*d, *ne, *nf) == pins)
+            .ok_or("shexp apply found no compute-side workspace for this shape")?;
+        e.add_scaled_rows(sh_t, gate, out_t, n_embd, t)?;
+        Ok(())
+    }
+
+    #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
+    fn step35_tp_decode_attn_resident_v2(
         &self,
         e: &Engine,
         fa: &FullAttnLayer,
@@ -23413,13 +20280,13 @@ impl HybridModel {
             return Err("rank-local Step attention has not qualified the FP8 KV cache".into());
         }
 
-        let geometry = self.cfg.full_attention_geometry_at(il as u32);
+        let geometry = self.step35_geom(il);
         let window = geometry.window.map(|window| window as usize);
         let ranks = tp.runtime.devices().len();
         let head_dim = geometry.head_dim_k as usize;
         let heads = geometry.n_head as usize;
         let kv_heads = geometry.n_head_kv as usize;
-        if !heads.is_multiple_of(ranks) || !kv_heads.is_multiple_of(ranks) {
+        if heads % ranks != 0 || kv_heads % ranks != 0 {
             return Err(format!(
                 "Step attention heads q={heads} kv={kv_heads} are not divisible by TP={ranks}"
             )
@@ -23465,15 +20332,14 @@ impl HybridModel {
             .lock()
             .map_err(|_| "Step TP replicated decode input lock is poisoned")?;
 
-        let has_gate = fa.attn_gate.is_some();
         // Gate: with per-rank shards loaded (fused door), the fused QKV+gate kernel computes
         // it rank-locally and the model-engine matmul (and its staging copies) disappears.
         // Otherwise it queues on e's stream BEFORE decode_v2_input_qkv records the entry
         // event, so the rank-stream reads of the staged gate are ordered without a host sync.
-        let use_gate_shards = has_gate
-            && (attention.gate_shards.is_some() || attention.gate_shards_bf16.is_some())
+        let use_gate_shards = (attention.gate_shards.is_some()
+            || attention.gate_shards_bf16.is_some())
             && crate::tp::step_tp_qkv_fused_enabled()?;
-        let gate_raw = if !has_gate || use_gate_shards {
+        let gate_raw = if use_gate_shards {
             None
         } else {
             let gate_weight = fa
@@ -23527,35 +20393,32 @@ impl HybridModel {
         let t_kv_eff = window
             .map(|window| staged_next.min(window))
             .unwrap_or(staged_next);
-        let dcw = crate::tp::step_tp_dcw_enabled()?
-            && (use_gate_shards || (!has_gate && crate::tp::step_tp_qkv_fused_enabled()?))
-            && t_kv_eff >= 96
-            && {
-                let (write_row, would_rebase) = cache.tp_kv[il]
-                    .as_ref()
-                    .expect("distributed cache checked above")
-                    .peek_append_ring(1)?;
-                if !would_rebase {
-                    // Arm the base mirrors on first use: base = logical staged - physical row.
-                    let base = (base_len - write_row) as i32;
-                    let distributed = cache.tp_kv[il]
-                        .as_mut()
-                        .expect("distributed cache checked above");
-                    for rank in 0..ranks {
-                        let engine = tp.runtime.rank_engine(rank).ok_or_else(|| {
-                            format!("Step TP layer {il} has no engine for rank {rank}")
-                        })?;
-                        let _main = engine.gpu.enter_main()?;
-                        let rank_cache = distributed.rank_mut(rank).ok_or_else(|| {
-                            format!("Step TP layer {il} has no KV cache rank {rank}")
-                        })?;
-                        if rank_cache.base_d().is_none() {
-                            rank_cache.arm_base_d(engine.htod_i32(&[base])?);
-                        }
+        let dcw = crate::tp::step_tp_dcw_enabled()? && use_gate_shards && t_kv_eff >= 96 && {
+            let (write_row, would_rebase) = cache.tp_kv[il]
+                .as_ref()
+                .expect("distributed cache checked above")
+                .peek_append_ring(1)?;
+            if !would_rebase {
+                // Arm the base mirrors on first use: base = logical staged - physical row.
+                let base = (base_len - write_row) as i32;
+                let distributed = cache.tp_kv[il]
+                    .as_mut()
+                    .expect("distributed cache checked above");
+                for rank in 0..ranks {
+                    let engine = tp.runtime.rank_engine(rank).ok_or_else(|| {
+                        format!("Step TP layer {il} has no engine for rank {rank}")
+                    })?;
+                    let _main = engine.gpu.enter_main()?;
+                    let rank_cache = distributed
+                        .rank_mut(rank)
+                        .ok_or_else(|| format!("Step TP layer {il} has no KV cache rank {rank}"))?;
+                    if rank_cache.base_d().is_none() {
+                        rank_cache.arm_base_d(engine.htod_i32(&[base])?);
                     }
                 }
-                !would_rebase
-            };
+            }
+            !would_rebase
+        };
         let fuse_rope = dcw
             && crate::tp::fuse_rope_append_on()
             && head_dim == 128
@@ -23599,7 +20462,6 @@ impl HybridModel {
             geometry.rope_base,
             &rope_freqs,
             self.cfg.rms_eps,
-            has_gate,
             fuse_rope,
             tcol_col,
         )?;
@@ -23779,7 +20641,7 @@ impl HybridModel {
                             geometry.attention_scale(),
                             k_tok_bytes_c,
                             v_tok_bytes_c,
-                            has_gate.then_some(&gate[rank]),
+                            Some(&gate[rank]),
                         )?;
                     }
                     continue;
@@ -23800,46 +20662,29 @@ impl HybridModel {
                     physical.start * v_tok_bytes_c,
                     physical.end * v_tok_bytes_c,
                 );
-                if has_gate {
-                    engine.fa_decode_kvmod(
-                        &ws.q[rank],
-                        &k_view,
-                        &v_view,
-                        &mut ws.attn_out[rank],
-                        head_dim,
-                        local_heads,
-                        local_kv_heads,
-                        t_kv,
-                        geometry.attention_scale(),
-                        k_tok_bytes_c,
-                        v_tok_bytes_c,
-                        false,
-                    )?;
-                    engine.attn_head_gate(
-                        &ws.attn_out[rank],
-                        &ws.gate[rank],
-                        &mut ws.gated[rank],
-                        None,
-                        head_dim,
-                        local_heads,
-                        1,
-                    )?;
-                } else {
-                    engine.fa_decode_kvmod(
-                        &ws.q[rank],
-                        &k_view,
-                        &v_view,
-                        &mut ws.gated[rank],
-                        head_dim,
-                        local_heads,
-                        local_kv_heads,
-                        t_kv,
-                        geometry.attention_scale(),
-                        k_tok_bytes_c,
-                        v_tok_bytes_c,
-                        false,
-                    )?;
-                }
+                engine.fa_decode_kvmod(
+                    &ws.q[rank],
+                    &k_view,
+                    &v_view,
+                    &mut ws.attn_out[rank],
+                    head_dim,
+                    local_heads,
+                    local_kv_heads,
+                    t_kv,
+                    geometry.attention_scale(),
+                    k_tok_bytes_c,
+                    v_tok_bytes_c,
+                    false,
+                )?;
+                engine.attn_head_gate(
+                    &ws.attn_out[rank],
+                    &ws.gate[rank],
+                    &mut ws.gated[rank],
+                    None,
+                    head_dim,
+                    local_heads,
+                    1,
+                )?;
             }
 
             // MEMRA_TCOL_OPROJ defer: the verify driver armed a column — stash this
@@ -23999,8 +20844,8 @@ impl HybridModel {
                  qkv_tensor_parallel=true qk_norm_rank_local=true rope_rank_local=true \
                  kv_cache_distributed=true kv_cache_hydrated={hydrated} \
                  attention_tensor_parallel=true attention_scope={} \
-                 input_path=root-device-replicated gate={} gate_tensor_parallel={} \
-                 gate_shards={} o_tensor_parallel=true o_reduce=root-device \
+                 input_path=root-device-replicated gate_tensor_parallel=false \
+                 gate_shards=device-staged o_tensor_parallel=true o_reduce=root-device \
                  local_cache_shadow=true cache_commit=immediate transport={} native_p2p=true \
                  bulk_p2p={} workspace=persistent ordering=evented output=e-device \
                  performance_claim=false (logged once; every decode layer runs this driver)",
@@ -24010,15 +20855,6 @@ impl HybridModel {
                     "rank-local-swa-ring"
                 } else {
                     "rank-local-global"
-                },
-                has_gate,
-                use_gate_shards,
-                if use_gate_shards {
-                    "device-staged"
-                } else if has_gate {
-                    "root-staged"
-                } else {
-                    "none"
                 },
                 tp.runtime.transport_label(),
                 tp.runtime.bulk_p2p(),
@@ -24086,7 +20922,7 @@ impl HybridModel {
                         .into(),
                 );
             }
-            self.full_attn_tp_qkv(e, fa, h, 1)?
+            self.step35_tp_qkv(e, fa, h, 1)?
         } else {
             None
         };
@@ -24223,7 +21059,7 @@ impl HybridModel {
 
         let mut ag = e.uninit(nh * hd)?;
         e.attn_head_gate(&attn, &gt, &mut ag, None, hd, nh, 1)?;
-        self.full_attn_o(e, fa, &ag, 1)
+        self.step35_o(e, fa, &ag, 1)
     }
 }
 
@@ -25076,12 +21912,9 @@ impl HybridModel {
 #[cfg(test)]
 mod prime_chunk_schedule_tests {
     use super::{
-        CUDA_GRID_YZ_MAX, PRIME_CHUNK_LAUNCH_CAP, PRIME_MIN_T, PRIME_PIPE_MIN_CHUNK, PrimePpSignal,
-        PrimePpStageChannels, PrimePpWaveCredits, PrimePpWaveSlot, active_matrix_values,
-        align_prime_ranges_to_gdn, dynamic_prime_chunk_ranges, explicit_prime_chunk,
-        fixed_prime_chunk_ranges, fixed_prime_chunk_ranges_for_ring, move_prime_cache_layers,
-        parse_step_ep_grouped_prefill, parse_step_tp_prefill, prime_cache_stage_for_layer,
-        recv_prime_pp_signal, restore_prime_cache_layers, step_grouped_decode_shape,
+        PRIME_MIN_T, PRIME_PIPE_MIN_CHUNK, active_matrix_values, align_prime_ranges_to_gdn,
+        dynamic_prime_chunk_ranges, fixed_prime_chunk_ranges, fixed_prime_chunk_ranges_for_ring,
+        parse_step_ep_grouped_prefill, parse_step_tp_prefill, step_grouped_decode_shape,
         step_grouped_prefill_shape, step_tp_prefill_shape, validate_step_prime_batch_modes,
     };
 
@@ -25092,215 +21925,6 @@ mod prime_chunk_schedule_tests {
     #[allow(clippy::manual_clamp)] // allow: the min/max chain mirrors the reference arithmetic order in pinned sizing/quant math
     fn auto_chunk(t: usize) -> usize {
         t.div_ceil(8).max(PRIME_PIPE_MIN_CHUNK).min(4096)
-    }
-
-    /// The ornith cold-long 66k defect (darklanes research/ornith-move-20260829 F2,
-    /// re-hit on prod 2026-09-01): MEMRA_PRIME_CHUNK=0 ("monolithic") must not schedule
-    /// a prime range wider than the CUDA grid.y limit, and must stay byte-identical
-    /// (single monolithic range) for every prompt the limit allows.
-    #[test]
-    // assertions_on_constants: the constant relation (cap + fold headroom fits the CUDA
-    // grid wall) IS the invariant under test; a red here means someone moved a constant.
-    #[allow(clippy::assertions_on_constants)]
-    fn monolithic_prime_chunk_caps_at_the_cuda_launch_wall() {
-        // Ring OFF (ornith serving shape): 0 maps to the launch cap, larger explicit
-        // values cap there too, workable explicit values pass through untouched.
-        assert_eq!(explicit_prime_chunk(0, false), PRIME_CHUNK_LAUNCH_CAP);
-        assert_eq!(explicit_prime_chunk(100_000, false), PRIME_CHUNK_LAUNCH_CAP);
-        assert_eq!(explicit_prime_chunk(4096, false), 4096);
-        assert_eq!(
-            explicit_prime_chunk(PRIME_CHUNK_LAUNCH_CAP, false),
-            PRIME_CHUNK_LAUNCH_CAP
-        );
-        // Ring ON keeps the historical PRIME_CHUNK_MAX_TOKENS clamp exactly.
-        assert_eq!(
-            explicit_prime_chunk(0, true),
-            crate::cache::PRIME_CHUNK_MAX_TOKENS
-        );
-        assert_eq!(
-            explicit_prime_chunk(100_000, true),
-            crate::cache::PRIME_CHUNK_MAX_TOKENS
-        );
-        assert_eq!(explicit_prime_chunk(512, true), 512);
-        // The fold headroom the cap exists for.
-        assert!(PRIME_CHUNK_LAUNCH_CAP + PRIME_MIN_T - 1 <= CUDA_GRID_YZ_MAX);
-    }
-
-    #[test]
-    fn capped_monolithic_ranges_are_identical_below_the_wall_and_legal_above() {
-        let chunk = explicit_prime_chunk(0, false);
-        // Every t the CUDA limit allows keeps the exact pre-fix monolithic schedule:
-        // one range covering the whole prompt (t <= chunk directly, or the < PRIME_MIN_T
-        // tail folds the split back into a single range).
-        for t in [
-            PRIME_MIN_T,
-            4096,
-            61_000,
-            64_984,
-            PRIME_CHUNK_LAUNCH_CAP,
-            PRIME_CHUNK_LAUNCH_CAP + 1,
-            CUDA_GRID_YZ_MAX,
-        ] {
-            assert_eq!(
-                fixed_prime_chunk_ranges_for_ring(t, chunk, false),
-                vec![(0, t)],
-                "t={t} must stay a single monolithic range"
-            );
-        }
-        // Above the wall — the sizes the campaign measured failing, the F2 bracket's
-        // first FAIL, and the boundary — every scheduled range must be launch-legal,
-        // contiguous, and full-coverage.
-        for t in [65_536, 65_643, 66_045, 79_717, 82_440, 262_144] {
-            let ranges = fixed_prime_chunk_ranges_for_ring(t, chunk, false);
-            assert!(ranges.len() >= 2, "t={t} must chunk");
-            let mut cursor = 0usize;
-            for &(start, end) in &ranges {
-                assert_eq!(start, cursor, "t={t}: ranges must be contiguous");
-                assert!(
-                    end - start <= CUDA_GRID_YZ_MAX,
-                    "t={t}: range width {} exceeds the CUDA grid.y limit",
-                    end - start
-                );
-                assert!(
-                    end - start >= PRIME_MIN_T,
-                    "t={t}: range width {} below PRIME_MIN_T",
-                    end - start
-                );
-                cursor = end;
-            }
-            assert_eq!(cursor, t, "t={t}: ranges must cover the prompt");
-        }
-        // Dense sweep across the boundary band: no width may ever exceed the limit.
-        for t in (CUDA_GRID_YZ_MAX - 64)..=(CUDA_GRID_YZ_MAX + 2 * PRIME_MIN_T + 64) {
-            for &(start, end) in &fixed_prime_chunk_ranges_for_ring(t, chunk, false) {
-                assert!(
-                    end - start <= CUDA_GRID_YZ_MAX,
-                    "t={t} width {}",
-                    end - start
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn ppn_prime_cache_partition_moves_and_restores_every_layer() {
-        let round_trip = |fence: &[usize], layers: usize| {
-            let original: Vec<Option<usize>> = (0..layers).map(Some).collect();
-            let mut parent = original.clone();
-            let mut stages: Vec<Vec<Option<usize>>> =
-                (0..fence.len() - 1).map(|_| vec![None; layers]).collect();
-
-            move_prime_cache_layers(&mut parent, &mut stages, fence);
-            assert!(parent.iter().all(Option::is_none));
-            for layer in 0..layers {
-                let owner = prime_cache_stage_for_layer(fence, layer);
-                for (stage, values) in stages.iter().enumerate() {
-                    assert_eq!(values[layer], (stage == owner).then_some(layer));
-                }
-            }
-
-            restore_prime_cache_layers(&mut parent, &mut stages, fence);
-            assert_eq!(parent, original);
-            assert!(stages.iter().flatten().all(Option::is_none));
-        };
-
-        // Layers beyond the trunk fence end model MTP/tail state and remain last-stage owned.
-        round_trip(&[0, 5, 8], 10);
-        round_trip(&[0, 2, 5, 8], 10);
-        round_trip(&[0, 1, 3, 6, 8], 10);
-    }
-
-    #[test]
-    fn ppn_prime_wave_credit_requires_the_exact_oldest_wave_and_slot() {
-        let mut credits = PrimePpWaveCredits::default();
-        let wave0 = PrimePpWaveSlot { wave: 0, slot: 1 };
-        let wave1 = PrimePpWaveSlot { wave: 1, slot: 0 };
-        credits.record_send(wave0).unwrap();
-        assert_eq!(credits.release_required(), None);
-        credits.record_send(wave1).unwrap();
-        assert_eq!(credits.release_required(), Some(wave0));
-
-        assert!(
-            credits
-                .record_release(PrimePpWaveSlot { wave: 0, slot: 0 })
-                .unwrap_err()
-                .contains("does not match oldest pending")
-        );
-        assert_eq!(credits.release_required(), Some(wave0));
-        credits.record_release(wave0).unwrap();
-        credits
-            .record_send(PrimePpWaveSlot { wave: 2, slot: 1 })
-            .unwrap();
-        assert!(
-            credits
-                .record_send(PrimePpWaveSlot { wave: 4, slot: 0 })
-                .unwrap_err()
-                .contains("while wave 3 was next")
-        );
-        assert!(
-            credits
-                .record_send(PrimePpWaveSlot { wave: 3, slot: 1 })
-                .unwrap_err()
-                .contains("reused slot 1")
-        );
-    }
-
-    #[test]
-    fn ppn_prime_wave_signal_reports_order_error_injected_error_and_closure() {
-        let expected = PrimePpWaveSlot { wave: 2, slot: 1 };
-
-        let (sender, receiver) = std::sync::mpsc::channel();
-        sender.send(PrimePpSignal::Slot(expected)).unwrap();
-        assert_eq!(
-            recv_prime_pp_signal(&receiver, expected, true, "test").unwrap(),
-            expected
-        );
-
-        let (sender, receiver) = std::sync::mpsc::channel();
-        sender
-            .send(PrimePpSignal::Slot(PrimePpWaveSlot { wave: 3, slot: 1 }))
-            .unwrap();
-        assert!(
-            recv_prime_pp_signal(&receiver, expected, true, "test")
-                .unwrap_err()
-                .contains("expected wave/slot")
-        );
-
-        let (sender, receiver) = std::sync::mpsc::channel();
-        sender
-            .send(PrimePpSignal::Error("injected stage failure".into()))
-            .unwrap();
-        assert_eq!(
-            recv_prime_pp_signal(&receiver, expected, true, "test").unwrap_err(),
-            "injected stage failure"
-        );
-
-        let (upstream_sender, upstream_receiver) = std::sync::mpsc::channel();
-        let (outgoing_sender, outgoing_receiver) = std::sync::mpsc::channel();
-        let (_release_sender, released_downstream) = std::sync::mpsc::channel();
-        PrimePpStageChannels {
-            incoming: None,
-            release_upstream: Some(upstream_sender),
-            outgoing: outgoing_sender,
-            released_downstream,
-        }
-        .notify_failure("injected worker error");
-        assert_eq!(
-            recv_prime_pp_signal(&upstream_receiver, expected, false, "test").unwrap_err(),
-            "injected worker error"
-        );
-        assert_eq!(
-            recv_prime_pp_signal(&outgoing_receiver, expected, false, "test").unwrap_err(),
-            "injected worker error"
-        );
-
-        let (sender, receiver) = std::sync::mpsc::channel::<PrimePpSignal>();
-        drop(sender);
-        assert!(
-            recv_prime_pp_signal(&receiver, expected, true, "test")
-                .unwrap_err()
-                .contains("channel closed while waiting for wave 2")
-        );
     }
 
     /// TOOTH for the PP-auto-ranges GDN grid law (lane/hermes-perf-fixes, 2026-08-23;
@@ -25743,16 +22367,6 @@ impl HybridModel {
             || !crate::tp::step_tp_dev_router_enabled()?
             || !crate::tp::step_nvfp4_dev_routes_enabled()?
         {
-            return Ok(None);
-        }
-        // GRAPH-LAUNCH HEADROOM GUARD (see spec::GRAPH_LAUNCH_MIN_FREE): the eager
-        // token step is this route's byte-identical twin — warmup and rebase tokens
-        // already ride it — so below the driver-free floor the token goes eager
-        // (`Ok(None)` = the caller's eager fallback) instead of feeding cuGraphLaunch
-        // an exhausted card (lane/graph-launch-guard-sweep-20260831).
-        if !crate::spec::graph_launch_headroom_ok(e) {
-            static NOTED: std::sync::Once = std::sync::Once::new();
-            NOTED.call_once(|| crate::spec::graph_replay_suspended_note("step-tp-token"));
             return Ok(None);
         }
         let n_embd = self.cfg.n_embd as usize;
@@ -26321,13 +22935,6 @@ impl HybridModel {
         {
             return Ok(None);
         }
-        // GRAPH-LAUNCH HEADROOM GUARD: same guard, same eager twin as
-        // `step35_token_graph_step` (the chunk is that step replayed k times).
-        if !crate::spec::graph_launch_headroom_ok(e) {
-            static NOTED: std::sync::Once = std::sync::Once::new();
-            NOTED.call_once(|| crate::spec::graph_replay_suspended_note("step-tp-token"));
-            return Ok(None);
-        }
         let n_layers = self.layers.len();
         let pos = cache.pos;
         let staged_next = pos + 1;
@@ -26663,7 +23270,6 @@ impl HybridModel {
                         &rope_freqs,
                         eps,
                         gate_ref,
-                        true,
                         true,
                         false,
                         rank,

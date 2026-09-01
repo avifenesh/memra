@@ -760,7 +760,7 @@ pub(crate) async fn responses(
 #[allow(clippy::too_many_arguments, unused_assignments)]
 fn responses_sse(
     mut rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
-    mut receipt: Option<Box<dyn crate::metering::Receipt>>,
+    mut receipt: Option<crate::ledger::PendingReceipt>,
     env: Envelope,
     model: String,
     mut parser: Option<crate::toolcall::ToolStreamParser>,
@@ -1003,7 +1003,7 @@ fn responses_sse(
                     }
                     if let Some(receipt) = receipt.as_mut()
                         && let Err(err) = receipt.complete(
-                            crate::metering::UsageCounts {
+                            crate::ledger::Usage {
                                 prompt_tokens: n_prompt as u64,
                                 cached_prompt_tokens: n_cached as u64,
                                 completion_tokens: n_tokens as u64,

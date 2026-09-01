@@ -177,7 +177,7 @@
   output, verbatim:
 
   ```text
-  SKIP DUAL-BATCHED-AUX (missing model Qwen3.5-9B-NVFP4-MTP-GGUF.gguf under MEMRA_KC_MODELS_DIR=/opt/scratch/nvme/cx-requal/models)
+  SKIP DUAL-BATCHED-AUX (missing model Qwen3.5-9B-NVFP4-MTP-GGUF.gguf under MEMRA_KC_MODELS_DIR=/opt/dl-image/nvme/cx-requal/models)
   MISSING REQUIRED CELL DUAL-BATCHED-AUX
   Error: "1 required cell(s) missing"
   ```
@@ -260,10 +260,10 @@
   passed 85/85. The complete local console log is retained at
   `/tmp/cx-fencehard-cargo-test.log` with SHA-256
   `116945dfb7e6289479c71ce3ca5ff85d3737d829e105e45e9ef39bffb04d02a5`.
-- Live box1 preflight resolved the cloud instance `<instance-id>` at `<rented-box-ip>` and used its
+- Live box1 preflight resolved hyperscaler instance `<instance-id>` at `<rented-box-ip>` and used its
   pinned `<keypair>` key with `IdentitiesOnly=yes`. Both RTX PRO 6000 GPUs reported 0 MiB,
   0% utilization; the global lock was immediately acquirable, the frozen model directory is
-  present, and the dedicated `/opt/scratch/nvme/cx-fencehard` target is absent. No GPU gate has run
+  present, and the dedicated `/opt/dl-image/nvme/cx-fencehard` target is absent. No GPU gate has run
   yet.
 
 ## 2026-08-12T21:02:58Z — box1 full battery ALL GREEN
@@ -356,7 +356,7 @@
 
 - Box1 preflight at `<rented-box-ip>` found both RTX PRO 6000 GPUs at 0 MiB / 0%, no compute
   applications or gate listeners, `/tmp/memra-gpu.lock` immediately acquirable, and the dedicated
-  `/opt/scratch/nvme/cx-fencealias` target absent. The isolated snapshot is based exactly on
+  `/opt/dl-image/nvme/cx-fencealias` target absent. The isolated snapshot is based exactly on
   `v0.81.2`; its config and worker blobs are `5753fe4f...09e9` and `3401648c...c91c`, identical
   to the locally tested files.
 - The first driver invocation exited 1 during provenance, before lock acquisition, build, or any

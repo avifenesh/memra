@@ -78,7 +78,7 @@ f16g-kq-direct [iq3_s synth in=512 out=300] hybrid(cross=64,deep-tail) vs worksp
 f16g-kq-direct [iq3_s synth in=512 out=300] all-128 vs workspace: maxdiff=0.00e0 OK (byte-identical)
 f16g-kq-direct [iq3_s synth in=512 out=300] all-32-deep-tail vs workspace: maxdiff=0.00e0 OK (byte-identical)
 f16g-kq-direct [iq3_s synth in=512 out=300] all-32-legacy-tail vs workspace: maxdiff=0.00e0 OK (byte-identical)
-SKIP f16g-kq-direct-ornith (missing model ornith-1.0-35b-Q4_K_M.gguf under MEMRA_KC_MODELS_DIR=/opt/scratch/nvme/cx-requal/models)
+SKIP f16g-kq-direct-ornith (missing model ornith-1.0-35b-Q4_K_M.gguf under MEMRA_KC_MODELS_DIR=/opt/dl-image/nvme/cx-requal/models)
 f16g-kq-direct [q35 blk.0.ffn_gate_exps.weight iq3_s in=2048 out=512] hybrid(cross=64,deep-tail) vs workspace: maxdiff=0.00e0 OK (byte-identical)
 f16g-kq-direct [q35 blk.0.ffn_gate_exps.weight iq3_s in=2048 out=512] all-128 vs workspace: maxdiff=0.00e0 OK (byte-identical)
 f16g-kq-direct [q35 blk.0.ffn_gate_exps.weight iq3_s in=2048 out=512] all-32-deep-tail vs workspace: maxdiff=0.00e0 OK (byte-identical)
@@ -91,7 +91,7 @@ iq4xs-mmq [synth] T=16: rel=1.62e-7 OK
 iq4xs-mmq [synth] T=64: rel=2.39e-7 OK
 iq4xs-mmq [synth] T=128: rel=2.38e-7 OK
 iq4xs-mmq [synth] T=512: rel=1.70e-4 OK
-SKIP iq4xs-mmq-real (missing model Kwaipilot_KAT-Coder-V2.5-Dev-IQ4_XS.gguf or Step-3.7-flash-IQ4_XS-00001-of-00003.gguf under MEMRA_KC_MODELS_DIR=/opt/scratch/nvme/cx-requal/models)
+SKIP iq4xs-mmq-real (missing model Kwaipilot_KAT-Coder-V2.5-Dev-IQ4_XS.gguf or Step-3.7-flash-IQ4_XS-00001-of-00003.gguf under MEMRA_KC_MODELS_DIR=/opt/dl-image/nvme/cx-requal/models)
 GEMM blk.0.attn_gate.weight [Q5_K] T=16: rel=4.31e-7 OK
 GEMM blk.0.attn_gate.weight [Q5_K] T=64: rel=3.75e-7 OK
 GEMM blk.0.attn_gate.weight [Q5_K] T=128: rel=3.75e-7 OK
@@ -144,12 +144,12 @@ MMQ-Q8_0 blk.0.ffn_gate_shexp.weight [Q8_0 in=2048 out=512] T=16: rel=3.64e-3 OK
 MMQ-Q8_0 blk.0.ffn_gate_shexp.weight [Q8_0 in=2048 out=512] T=64: rel=3.71e-3 OK
 MMQ-Q8_0 blk.0.ffn_gate_shexp.weight [Q8_0 in=2048 out=512] T=128: rel=4.17e-3 OK
 MMQ-Q8_0 blk.0.ffn_gate_shexp.weight [Q8_0 in=2048 out=512] T=512: rel=4.18e-3 OK
-SKIP q4_0-mmq (missing model gemma-4-12b-it-qat-q4_0.gguf under MEMRA_KC_MODELS_DIR=/opt/scratch/nvme/cx-requal/models)
+SKIP q4_0-mmq (missing model gemma-4-12b-it-qat-q4_0.gguf under MEMRA_KC_MODELS_DIR=/opt/dl-image/nvme/cx-requal/models)
 MMQ-27B blk.0.ffn_down.weight [NVFP4 in=17408 out=5120] T=16: rel=1.12e-1 (W4A4-vs-dp4a band ~0.1) OK
 MMQ-27B blk.0.ffn_down.weight [NVFP4 in=17408 out=5120] T=512: rel=1.54e-1 (W4A4-vs-dp4a band ~0.1) OK
 MMQ-27B blk.0.ffn_gate.weight [NVFP4 in=5120 out=17408] T=16: rel=1.07e-1 (W4A4-vs-dp4a band ~0.1) OK
 MMQ-27B blk.0.ffn_gate.weight [NVFP4 in=5120 out=17408] T=512: rel=8.52e-2 (W4A4-vs-dp4a band ~0.1) OK
-SKIP q4_0-sk-arm (missing model gemma-4-26B_q4_0-it.gguf under MEMRA_KC_MODELS_DIR=/opt/scratch/nvme/cx-requal/models)
+SKIP q4_0-sk-arm (missing model gemma-4-26B_q4_0-it.gguf under MEMRA_KC_MODELS_DIR=/opt/dl-image/nvme/cx-requal/models)
 MMVQ blk.0.ffn_gate.weight [NVFP4] m=1: rel=1.46e-7 OK
 MMVQ blk.0.ffn_gate.weight [NVFP4] m=2: rel=1.42e-7 OK
 E4M3-MMVQ synth [5120x512] m=1: rel=1.73e-7 m1-bits=true OK

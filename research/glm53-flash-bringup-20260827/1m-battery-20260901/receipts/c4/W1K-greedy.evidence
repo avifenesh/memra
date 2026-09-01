@@ -1,9 +1,0 @@
---- [glm5-acc] acceptance lines for this request ---
-[glm5-acc] ctx=1108 burst=19/24 cum=19/24=0.792
---- [glm5-phase] / [glm5-phase-v] (empty unless trace armed) ---
-[glm5-phase] rounds=12 k=3 total=1649.66ms | draft=66.31 verify=1579.63 accept=0.47 roll=1.70 maint=1.55 | per-round ms: draft=5.526 verify=131.636 accept=0.040 roll=0.141 maint=0.129 total=137.472
-[glm5-phase-v] rounds=12 k=3 | per-round ms: vkda=45.515 (scan=0.365) vmla=8.443 vrest=77.677 (vffn=66.093)
---- error census (must be 0) ---
-0
---- errors, if any ---
-[admission] request cost: model="zai/glm-5.3-flash" ctx=1204 path=plain = 23936 B/token x ctx + 1202MB prefill-workspace + 0MB fixed = 1230MB

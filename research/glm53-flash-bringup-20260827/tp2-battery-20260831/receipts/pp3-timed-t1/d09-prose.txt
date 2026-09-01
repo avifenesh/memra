@@ -1,7 +1,0 @@
-The user is asking me to resume and complete an "independent audit" — apparently of some document (PDFs, PNG renders). They reference "the original prompt" with specific requirements: PASS/FAIL, exact field map, ranked defects, deliberate blanks, and concrete corrections.
-
-However, I have no prior context in this conversation. There's no original prompt visible to me, no file paths, no prior shell calls, no document identified. The user says "Your prior shell calls were cancelled only because permission mode was wrong" — but I have no memory of any prior calls because this is the start of the conversation from my perspective.
-
-Also, critically: I don't actually have tool access in this environment. There are no tools defined in my system prompt. I cannot run shell commands, use pdftotext/pdfinfo, or read files. The user claims "You now have auto-approved tool use" but no tools are actually available to me in this conversation.
-
-So what should I do? I should not fabricate an audit report. That would be a serious integrity failure — inventing PASS/FAIL results, field maps, defects, etc., for a document I've never seen. That would be hallucination and potentially harmful (the user might rely on a fabricated

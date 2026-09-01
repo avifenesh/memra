@@ -1,14 +1,14 @@
-[server] starting; models config = [("q35", "/opt/scratch/nvme/cx-percard/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", Some("/opt/scratch/nvme/cx-percard/models/draft-35b-owntrim-nvfp4head-q4blk.gguf"))]
+[server] starting; models config = [("q35", "/opt/dl-image/nvme/cx-percard/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", Some("/opt/dl-image/nvme/cx-percard/models/draft-35b-owntrim-nvfp4head-q4blk.gguf"))]
 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
 [gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
 [worker] Engine ready (device=0, MEMRA_FAST=true)
 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
-[worker] loading model "q35" <- /opt/scratch/nvme/cx-percard/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+[worker] loading model "q35" <- /opt/dl-image/nvme/cx-percard/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
 [moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 100.88GB (expert budget 96.29GB) -> RESIDENT
 [mtp-draft] external draft head: blk.40, source=output.weight, head_vocab=32768 (trimmed, d2t map)
 [moe] resident-experts decision (dev0): experts 0.52GB + trunk 0.41GB vs free 83.60GB (expert budget 81.19GB) -> RESIDENT
-[worker] q35: regime draft attached (/opt/scratch/nvme/cx-percard/models/draft-35b-owntrim-nvfp4head-q4blk.gguf)
+[worker] q35: regime draft attached (/opt/dl-image/nvme/cx-percard/models/draft-35b-owntrim-nvfp4head-q4blk.gguf)
 [worker]   loaded "q35": 41 layers, eos=248046
 [worker] q35: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
 [worker] q35: decode wave cap 8; scheduler tick cap 8

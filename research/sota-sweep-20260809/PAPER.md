@@ -58,7 +58,7 @@ protocol. No number below is invented; each is quoted from its cited source.
    same-silicon bar** (PR ggml-org/llama.cpp#18039, ~2026-06 [shipped]; >2x reasoning-on,
    >3x reasoning-off claimed in-thread, Gemma-4 EAGLE heads included; Q4_K_M "still looks
    good"). Three uses: trained EAGLE-3 heads for GGUF-served families now exist upstream
-   (drafter-supply problem partially externalized — a major cloud vendor also published P-EAGLE
+   (drafter-supply problem partially externalized — hyperscaler also published P-EAGLE
    checkpoints); their hidden-state routing through a GGUF graph is the reference for any
    hidden-state-conditioned drafter in our loader (also needed by #3); and our spec cells
    should be re-compared against a llama.cpp that now has EAGLE, not just draft-model
@@ -93,7 +93,7 @@ fails our argmax gate.
 **What moved since the 08-08 harvest.** The fixed-K-dies-under-load consensus is now
 shipped code, not just papers: DSpark in SGLang v0.5.16 with confidence-scheduled
 variable verify and a compact ragged-verify mode [shipped]; EAGLE-3 in llama.cpp
-[shipped]; P-EAGLE checkpoints published by a major cloud vendor [shipped]. The research edge moved to
+[shipped]; P-EAGLE checkpoints published by hyperscaler [shipped]. The research edge moved to
 (a) draft-source quality for tool-calling traffic (Oilbird: exact-match drafting is an
 ADDRESSING failure, not a coverage failure — +24–29% accepted length by semantic
 re-keying [paper-only]), (b) trees quietly returning via semi-autoregressive drafters

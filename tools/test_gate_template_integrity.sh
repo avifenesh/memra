@@ -456,31 +456,17 @@ assert_grep "canary: it says which check went red instead" \
     'the run went red for the WRONG reason' "$LAST_OUT"
 
 # rc 75: hold the lock so flock times out. Not one assertion runs.
-#
-# The holder must ACTUALLY hold the lock before the gate runs. A fixed `sleep 0.5` raced on
-# slow/loaded runners (observed 2026-09-01 in GitHub CI: the gate won the lock, went red for
-# an unrelated reason, and the assertion below reported "pattern not found: CANARY
-# INCONCLUSIVE .* rc 75" — a flaky RED that says nothing about the property under test).
-# Poll for the holder's own readiness flag instead, and fail loudly if it never arms.
-( flock 9 || exit 1; : > "$WORK/holder.armed"; sleep 30 ) 9>"$WORK/gpu.lock" &
+( flock 9 || exit 1; sleep 30 ) 9>"$WORK/gpu.lock" &
 HOLDER=$!
 echo "$HOLDER" > "$WORK/holder.pid"
-for _ in $(seq 1 100); do
-    [ -e "$WORK/holder.armed" ] && break
-    sleep 0.1
-done
-if [ ! -e "$WORK/holder.armed" ]; then
-    echo "FIXTURE BROKEN: the lock holder never armed in 10s — the rc 75 arm cannot be tested" >&2
-    kill "$HOLDER" 2>/dev/null
-    exit 1
-fi
+sleep 0.5
 run_gate "MEMRA_GPU_LOCK_WAIT=1" -- --canary
 assert_rc "canary: rc 75 (lock timeout) is INCONCLUSIVE, never OK" 1 "$LAST_RC"
 assert_grep "canary: rc 75 is named as the lock timeout" \
     'CANARY INCONCLUSIVE .* rc 75' "$LAST_OUT"
 kill "$HOLDER" 2>/dev/null
 wait "$HOLDER" 2>/dev/null
-rm -f "$WORK/holder.pid" "$WORK/holder.armed"
+rm -f "$WORK/holder.pid"
 
 # ---------------------------------------------------------------------------
 # SKIP CENSUS (Item 2). The tool is exercised against throwaway crates and a stub cargo, so the
