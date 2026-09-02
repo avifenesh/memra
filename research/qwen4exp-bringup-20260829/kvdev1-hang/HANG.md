@@ -169,7 +169,42 @@ can never read as success. It is taken INSIDE the measurement lock
 loads in the matrix above (`A-local-256`, `A-local-2048`) predate the wrapper and did not
 use it; `r4spec262-thinkon` was already resident when it landed.
 
-## 7. Cell rows
+## 7. Second defect, found by fixing the first: the co-prefill workspace outlives its phase
+
+With the KV back on the compute card the 262,144 spec rung ALLOCATES fine and co-prefills
+normally — and then died at the prefill->decode transition:
+
+    # spec-prefill-progress  fill=262144/262144  chunks=128  elapsed_s=1476.3  draft_s=65.4
+    Error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+    Command exited with non-zero status 1
+    WALL 1648.09 s
+
+(trunk card at 96,531 MiB of 97,887 MiB. RECEIPT CUSTODY NOTE: the fix re-run used the
+same `--label`, so it overwrote `spec262-thinkon.log` and
+`ladder-r4spec262-thinkon.tsv` at the same paths; the four lines above are quoted from the
+first attempt. The OOM reproduces by reverting the shed commit. Same-label re-runs
+clobbering a failure log is a lane hygiene lesson from this run.)
+
+Cause: `StepPool::take_*` keeps a parked slot whenever `buf.len() >= len`. That is what
+makes the pool free at steady state, and it is what makes a WIDE phase's slots outlive it.
+The chunked co-prefill parks its t = 2,048 scratch; the spec decode that follows runs at
+t <= k + 1 = 6 and happily re-uses those oversized buffers, so prefill-shaped workspace
+stays resident through a phase that needs a fraction of it. At this depth that is exactly
+the headroom the indexer's device caches need when they cross a power-of-two row boundary
+on the first decode step (`raw_dev` / `pooled_dev` allocate the doubled buffer while the
+old one is still live).
+
+Fix: `StepPool::shed()` drops every parked slot and reports the bytes; the chunked
+co-prefill calls it once after the last chunk and invalidates `StepGraphs` alongside, the
+same way a growing multi-token chunk already does (that invalidation, with its comment
+about stale baked addresses, was already in the code — this reuses its reasoning). No seam
+and no flag: it releases scratch the program has finished with, every `take_*` returns an
+uninitialized buffer that its consumer writes before reading, and `mtp-spec-ring` (chunked
+co-prefill + wide ring, spec-vs-plain byte identity) crosses this exact boundary and is the
+gate. Measured on the cell: **`# spec-prefill-shed workspace_mib=1175.2 chunks=128`** —
+1,175.2 MiB handed back, against the 1,356 MiB of headroom that was not enough.
+
+## 8. Cell rows
 
 **The corrected route allocates and prefills normally.** `# spec-state-allocated
 rung=262144 cap=262193` reports the trunk card at **92,883 MiB / 97,887 MiB** with the
@@ -181,4 +216,15 @@ elapsed_s=340.6), which projects the rung's prefill at ~1,370 s and matches the 
 262k single-card ladder's 1,439 s. The peer-KV route's projection for the same rung is
 ~9 hours.
 
-CELLS-PENDING
+| cell | rung | prefill_s | draft_prefill_s | decode ms/tok | tok/s | accept | rounds | zero_draft | sub_ms | spread | looped | cross_mb | trunk VRAM | draft VRAM |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `r4spec262-thinkon` | 262,144 | **1408.7** | 59.0 | 19.7 | **50.78** | **0.632** | 13 | 0 | [20.0, 19.3, 18.8] | 6.11% | false | 10,738.9 | 96,531 MiB | 24,467 MiB |
+| `r4spec262-thinkoff` | 262,144 | ROW-PENDING | | | | | | | | | | | | |
+| `r4spec262-raw` | 262,144 | ROW-PENDING | | | | | | | | | | | | |
+
+Reading the thinkon row: prefill 1,408.7 s is the plain single-card 262k ladder's 1,439.2 s
+(`../round2-box-receipts/kvq2/ladder-r2ship-262k-idxsel.tsv`) to within 2%, i.e. putting the
+KV back on the compute card costs the prefill nothing; the peer route's projection for the
+same rung is ~9 hours. `# load-lock rc=0 killed=no`, `looped false`, `zero_draft 0`, and
+the untimed-eager caveat in every header applies (these are correctness-arm wall clocks,
+not perf claims).
