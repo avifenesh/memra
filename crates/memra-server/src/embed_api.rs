@@ -100,7 +100,8 @@ struct CaptureOutcome {
 async fn run_capture(
     st: &AppState,
     headers: &HeaderMap,
-    env: &Envelope,
+    parent: &Envelope,
+    capture_index: usize,
     tenant: &auth::TenantCtx,
     model: &str,
     prompt_text: String,
@@ -109,6 +110,12 @@ async fn run_capture(
     deadline: &crate::RequestDeadline,
     body_admission: Option<&crate::BodyAdmissionGuard>,
 ) -> Result<CaptureOutcome, Response> {
+    // ONE LEDGER IDENTITY PER CAPTURE. Each item of a multi-input embeddings / multi-document
+    // rerank request is its own admitted, priced worker request; under the parent id the
+    // ledger's replay guard swallowed equal-cost siblings (N items billed as one) and refused
+    // unequal ones (HTTP 500 after item 0 was billed). See `Envelope::capture_child`.
+    let capture_env = parent.capture_child(capture_index);
+    let env = &capture_env;
     let cache_ns = match crate::tenant_namespace(tenant, &None::<String>) {
         Ok(ns) => ns,
         Err(msg) => return Err(crate::bad_request(msg, Some("cache_salt"))),
@@ -477,6 +484,7 @@ async fn embeddings_with_admission(
             &st,
             &headers,
             &env,
+            index,
             &tenant,
             &req.model,
             input,
@@ -593,6 +601,7 @@ async fn rerank_with_admission(
             &st,
             &headers,
             &env,
+            index,
             &tenant,
             &req.model,
             rerank_prompt(&instruction, &req.query, document),
