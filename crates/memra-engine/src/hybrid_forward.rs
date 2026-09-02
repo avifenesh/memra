@@ -2064,6 +2064,10 @@ impl HybridModel {
                 )?;
                 e.copy_into(&mut hiddens, start * n_embd, &x, (end - start) * n_embd)?;
                 last = Some((l, hs));
+                // FORWARD PROGRESS (memra#50): this chunk's logits are already host-side,
+                // so the device finished it. Stamp the odometer /health reads, so a BUSY
+                // worker mid-long-prefill is never mistaken for a wedged one.
+                crate::progress::note_prime_rows(end - start);
             }
             let (logits, h_seed) =
                 last.expect("hyper_prime_ranges never returns an empty schedule");
@@ -2089,6 +2093,10 @@ impl HybridModel {
                 self.prime_chunk_hyper(e, &tokens[start..end], cache, seq_end, start, overlay)?;
             e.copy_into(&mut hiddens, start * n_embd, &x, (end - start) * n_embd)?;
             last = Some((l, hs));
+            // FORWARD PROGRESS (memra#50): this chunk's logits are already host-side,
+            // so the device finished it. Stamp the odometer /health reads, so a BUSY
+            // worker mid-long-prefill is never mistaken for a wedged one.
+            crate::progress::note_prime_rows(end - start);
         }
         let (logits, h_seed) = last.expect("hyper_prime_ranges never returns an empty schedule");
         Ok((logits, h_seed, hiddens))
@@ -3325,6 +3333,10 @@ impl HybridModel {
             e.copy_into(&mut hiddens, start * n_embd, &out.2, (end - start) * n_embd)?;
             last = Some((out.0, out.1));
             crate::pp::PRIME_SPLIT_CHUNKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            // FORWARD PROGRESS (memra#50): this chunk's logits are already host-side,
+            // so the device finished it. Stamp the odometer /health reads, so a BUSY
+            // worker mid-long-prefill is never mistaken for a wedged one.
+            crate::progress::note_prime_rows(end - start);
             HYPER_PRIME_PIPELINED_CHUNKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
             if let Some(next) = next_slot {
@@ -4016,6 +4028,32 @@ impl HybridModel {
         queued_after: usize,
         overlay: Option<&crate::vision::EmbedOverlay>,
     ) -> Result<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        // FORWARD PROGRESS (memra#50), the CALL-granularity half. Every chunked walk below
+        // stamps `crate::progress` per chunk; a MONOLITHIC walk (a prompt at or under one
+        // chunk, `MEMRA_PRIME_CHUNK=0`, gemma4 v0, the E4B arm) stamps nothing on its way
+        // through and would leave the odometer frozen for the whole prime. Comparing the
+        // event count across the call is what tells the two apart WITHOUT trusting any one
+        // walk to remember: if nothing was stamped, the call's own completion is the only
+        // honest progress point there is, and it is stamped here. The scheduler primes one
+        // session per call, so under the wave shape that produced memra#50 this alone already
+        // beats between sessions.
+        let events_before = crate::progress::events();
+        let out = self.prime_cache_overlaid_inner(e, tokens, cache, queued_after, overlay);
+        if out.is_ok() && crate::progress::events() == events_before {
+            crate::progress::note_prime_rows(tokens.len());
+        }
+        out
+    }
+
+    #[allow(clippy::type_complexity)] // allow: mirrors `prime_cache_overlaid`'s signature
+    fn prime_cache_overlaid_inner(
+        &self,
+        e: &Engine,
+        tokens: &[u32],
+        cache: &mut Cache,
+        queued_after: usize,
+        overlay: Option<&crate::vision::EmbedOverlay>,
+    ) -> Result<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
         cache.ensure_usable("prime_cache")?;
         if self.hyper.is_some() {
             // The mixed-embedding splice lands BEFORE stream expansion (the same point
@@ -4284,6 +4322,10 @@ impl HybridModel {
                 self.prime_chunk(e, &tokens[start..end], cache, seq_end, start, overlay)?;
             e.copy_into(&mut hiddens, start * n_embd, &x, (end - start) * n_embd)?;
             last = Some((l, hs));
+            // FORWARD PROGRESS (memra#50): this chunk's logits are already host-side,
+            // so the device finished it. Stamp the odometer /health reads, so a BUSY
+            // worker mid-long-prefill is never mistaken for a wedged one.
+            crate::progress::note_prime_rows(end - start);
         }
         let (logits, h_seed) = last.unwrap();
         Ok((logits, h_seed, hiddens))
@@ -4425,6 +4467,10 @@ impl HybridModel {
             e.copy_into(&mut hiddens, start * n_embd, &out.2, (end - start) * n_embd)?;
             last = Some((out.0, out.1));
             crate::pp::PRIME_SPLIT_CHUNKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            // FORWARD PROGRESS (memra#50): this chunk's logits are already host-side,
+            // so the device finished it. Stamp the odometer /health reads, so a BUSY
+            // worker mid-long-prefill is never mistaken for a wedged one.
+            crate::progress::note_prime_rows(end - start);
 
             if let Some(next) = next_slot {
                 // The caller copy above reads a stage-1 allocation. Before stage 1 of the
@@ -4644,6 +4690,10 @@ impl HybridModel {
             )?;
             last = Some((out.0, out.1));
             crate::pp::PRIME_SPLIT_CHUNKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            // FORWARD PROGRESS (memra#50): this chunk's logits are already host-side,
+            // so the device finished it. Stamp the odometer /health reads, so a BUSY
+            // worker mid-long-prefill is never mistaken for a wedged one.
+            crate::progress::note_prime_rows(wave.end - wave.start);
         }
         stage_caches.commit();
         drop(stage_caches);
@@ -5659,6 +5709,10 @@ impl HybridModel {
             };
             rt.publish_to(1, &caller_stream)?;
             crate::pp::PRIME_SPLIT_CHUNKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            // FORWARD PROGRESS (memra#50): this chunk's logits are already host-side,
+            // so the device finished it. Stamp the odometer /health reads, so a BUSY
+            // worker mid-long-prefill is never mistaken for a wedged one.
+            crate::progress::note_prime_rows(t);
             return Ok(out);
         }
 
