@@ -366,10 +366,37 @@ respectively (**-0.008%**). The TP cache repair does not regress the plain Qwen 
 median comparison moved with machine state.
 
 The next implementation reuses the existing eager device chain under `MEMRA_SERVE_BATCH=0`, with
-one live session and no speculative, grammar, or penalty program. The opt-in arm emits each
-returned id through the ordinary stop/stream/accounting battery, retains the chain boundary token
-for the next tick, and falls back to the original one-token step if the model declines. A stop,
-EOS, or disconnect inside the submitted chunk taints the overshot cache, which makes retirement
-drop it instead of publishing a hidden suffix through whole-session affinity reuse. Default
-remains 0 until the exact sampled endpoint runs OFF/ON with stop, disconnect, TTFT/ITL, and three
-128-token rows.
+no speculative, grammar, or penalty program. The opt-in arm emits each returned id through the
+ordinary stop/stream/accounting battery, retains the chain boundary token for the next tick, and
+falls back to the original one-token step if the model declines. Every eligible legacy session
+keeps this path when round-robin width changes, avoiding a mid-stream device-draw to stale-host-RNG
+transition. A stop, EOS, or disconnect inside the submitted chunk taints the overshot cache, which
+makes retirement drop it instead of publishing a hidden suffix through whole-session affinity
+reuse. Default remains 0 until the exact sampled endpoint runs OFF/ON with stop, disconnect,
+TTFT/ITL, c2 arrival isolation, and three 128-token rows.
+
+### Dense server-chain qualification
+
+The first local 9B run was excluded because its server log carried no
+`[serve-async-chain] engaged` line: the plan was `Generic`, and the original engine door admitted
+only `SlidingGatedMoe`, so both arms silently used the fallback. The gate now fails on missing
+engagement, and engine eligibility is derived from the actual execution shape: standard residual,
+no Gemma/E4B, HyperConnections or PP cut, and only Full/Linear mixers. MLA and KDA stay refused.
+
+On the local RTX 5090 Laptop GPU, exact dense artifact
+`52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de`, binary
+`ed57077673478b59fe237a24c07c65a0f5bd6ce3e860338069af7017f343ed2a`, one 61-token real
+prompt, no sampling fields, no cache hit, and three 128-token streams:
+
+| arm | sampled post-first tok/s | TTFT | verdict |
+|---|---:|---:|---|
+| chain off | 122.41 | 38.9 ms | control |
+| chain K=8 | **130.70** | 45.0 ms | **+6.77%**, engaged |
+
+The explicit-greedy OFF/ON outputs were byte-identical. Seed 7 and seed 1234 each reproduced
+byte-for-byte between solo and c2 arrival. A newline stop returned `finish_reason=stop` and the log
+proved the overshot cache was refused from reuse; a client disconnect billed two generated tokens,
+left the worker alive, and a following eight-token request completed. No CUDA error, panic, or Xid
+appeared. This qualifies the server mechanism on that dense model and hardware only. The global
+default remains off; the HY3 PRO 6000 sampled cell still decides whether the mechanism advances
+the 64.75 tok/s MoE baseline toward 100 tok/s.

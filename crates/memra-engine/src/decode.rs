@@ -1052,6 +1052,17 @@ impl HybridModel {
     /// `token_d` — so a sampled stream keeps the chain's whole point, which is that no host
     /// sync happens between tokens. The per-step counter advances so each token draws its own
     /// Gumbel noise. Without `MEMRA_HEAD_SPLIT`, the same draw runs on the plain head row.
+    pub fn device_chain_plan_eligible(&self) -> bool {
+        self.hyper.is_none()
+            && !self.is_gemma4_e4b()
+            && !self.uses_gemma_program()
+            && crate::pp::pp_cuts(self.layers.len()).is_none()
+            && self
+                .layers
+                .iter()
+                .all(|layer| matches!(layer.mixer, Mixer::Full(_) | Mixer::Linear(_)))
+    }
+
     #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn decode_step_chain(
         &self,
@@ -1063,7 +1074,7 @@ impl HybridModel {
     ) -> Result<Option<(Vec<u32>, Vec<f32>)>, Box<dyn std::error::Error>> {
         self.refuse_hyper("decode_step_chain")?;
         cache.ensure_usable("decode_step_chain")?;
-        if !self.uses_sliding_gated_moe_program() {
+        if !self.device_chain_plan_eligible() {
             return Ok(None);
         }
         let k = k_target.min(16);

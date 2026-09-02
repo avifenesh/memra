@@ -13787,17 +13787,10 @@ pub fn run(
                 let generated_before = active[i].generated.len();
                 let lane = active[i].lane;
                 let step_started = Instant::now();
-                let sole_live = active.len().saturating_sub(finished.len()) == 1;
-                let step_result = if sole_live {
-                    match step_session_async_chain(&engine, &loaded, &mut active[i]) {
-                        Ok(Some(keep)) => Ok(keep),
-                        Ok(None) => {
-                            step_session(&engine, &loaded, &mut active[i], &mut spec_metrics)
-                        }
-                        Err(err) => Err(err),
-                    }
-                } else {
-                    step_session(&engine, &loaded, &mut active[i], &mut spec_metrics)
+                let step_result = match step_session_async_chain(&engine, &loaded, &mut active[i]) {
+                    Ok(Some(keep)) => Ok(keep),
+                    Ok(None) => step_session(&engine, &loaded, &mut active[i], &mut spec_metrics),
+                    Err(err) => Err(err),
                 };
                 record_output_progress(
                     generated_before,
@@ -21360,10 +21353,12 @@ fn step_spec_pair(
 }
 
 /// Run one legacy-scheduler chunk through the engine's eager device chain. This is deliberately
-/// narrower than the ordinary serving tick: one live session, no reusable prefix-cache tier
-/// (`MEMRA_SERVE_BATCH=0`), no grammar, and no penalties. If the model declines the chain after
-/// the first token was emitted, finish that token with the ordinary decode step so fallback is
-/// observationally identical instead of sampling it twice.
+/// narrower than the ordinary serving tick: no reusable prefix-cache tier
+/// (`MEMRA_SERVE_BATCH=0`), no grammar, and no penalties. Every eligible legacy session keeps
+/// this path as round-robin width changes, so a sampled stream never switches from its
+/// generated-length-indexed device draws back to a host RNG whose counter did not advance. If the
+/// model declines the chain after the first token was emitted, finish that token with the ordinary
+/// decode step so fallback is observationally identical instead of sampling it twice.
 fn step_session_async_chain(
     engine: &Engine,
     loaded: &HashMap<String, LoadedModel>,
@@ -21444,7 +21439,7 @@ fn step_session_async_chain(
     ANNOUNCED.call_once(|| {
         eprintln!(
             "[serve-async-chain] engaged: configured={configured} effective={width} \
-             scheduler=legacy single_session=true model={}",
+             scheduler=legacy model={}",
             s.model
         );
     });
