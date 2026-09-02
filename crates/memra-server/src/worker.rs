@@ -20893,6 +20893,13 @@ fn legacy_async_chain_width(
     (configured >= 2 && room_after_first > 0 && width >= 2).then_some(width)
 }
 
+/// Recheck device-sampling eligibility after the boundary token is accepted. Accepting that
+/// token can populate an initially empty penalty window; dropping the penalty metadata here
+/// would make `decode_step_chain` interpret the request as greedy instead of declining it.
+fn async_chain_devsample(meta: Option<DevSamp>) -> Option<DevSamp> {
+    meta.filter(|sample| sample.penalty.is_none())
+}
+
 /// GraphSession's captured sampler is raw greedy. Penalties change logits before argmax and
 /// therefore stay on the ordinary batched epilogue until a penalty-aware graph is qualified.
 fn graph_sampler_eligible(sm: &Sampler) -> bool {
@@ -21408,13 +21415,21 @@ fn step_session_async_chain(
         s.fed.push(next);
         return Ok(Some(true));
     };
-    let sample = devsample_meta(s).filter(|meta| meta.penalty.is_none());
+    let Some(sample) = async_chain_devsample(devsample_meta(s)) else {
+        s.last_logits = lm.model.decode_step(
+            engine,
+            next,
+            s.cache.as_mut().expect("eligibility checked cache"),
+        )?;
+        s.fed.push(next);
+        return Ok(Some(true));
+    };
     let chained = lm.model.decode_step_chain(
         engine,
         next,
         width,
         s.cache.as_mut().expect("eligibility checked cache"),
-        sample.as_ref(),
+        Some(&sample),
     );
     let chained = match chained {
         Ok(chained) => chained,
@@ -23324,11 +23339,11 @@ mod tests {
     };
     use super::{DraftVerdict, draft_verdict, draft_verdict_message};
     use super::{
-        Event, cached_hit_needs_first_token, carried_prime_batch_eligible, emit_spec_token_events,
-        graph_sampler_eligible, graph_session_env_on, interactive_prefill_budget,
-        interactive_prime_batch_take, legacy_async_chain_width, prefill_tick_take,
-        record_output_progress, record_output_tokens, routed_moe_prefix_split, solo_widen_fresh,
-        spec_visible_len, summarize_confidence, utf8_delta,
+        Event, async_chain_devsample, cached_hit_needs_first_token, carried_prime_batch_eligible,
+        emit_spec_token_events, graph_sampler_eligible, graph_session_env_on,
+        interactive_prefill_budget, interactive_prime_batch_take, legacy_async_chain_width,
+        prefill_tick_take, record_output_progress, record_output_tokens, routed_moe_prefix_split,
+        solo_widen_fresh, spec_visible_len, summarize_confidence, utf8_delta,
     };
     use super::{HashMap, METER_TENANT_CAP, meter_account, meter_cached_credit};
     use super::{KV_FLEX_GRANT, KvFlex, kv_flex_effective_budget, prefix_cache_budget_bytes};
@@ -23402,6 +23417,21 @@ mod tests {
         assert_eq!(legacy_async_chain_width(8, 1, 8), Some(2));
         assert_eq!(legacy_async_chain_width(8, 7, 8), Some(8));
         assert_eq!(legacy_async_chain_width(16, 31, 6), Some(6));
+    }
+
+    #[test]
+    fn async_chain_declines_post_accept_penalties_instead_of_running_greedy() {
+        use memra_engine::decode_batch::{DevPenalty, DevSamp};
+
+        let sampled = DevSamp::new(0.8, 7, 0, 0, 1.0, 0.0);
+        assert!(async_chain_devsample(Some(sampled.clone())).is_some());
+
+        let penalty = DevPenalty::try_new(1.1, 0.0, 0.0, vec![(42, 1)]).unwrap();
+        assert!(
+            async_chain_devsample(Some(sampled.with_penalty(penalty))).is_none(),
+            "penalty metadata must decline the chain, never become greedy None"
+        );
+        assert!(async_chain_devsample(None).is_none());
     }
 
     fn bare_request() -> Request {
