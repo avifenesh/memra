@@ -2993,6 +2993,17 @@ fn load_mtp_head_maybe_nvfp4(
 pub(crate) fn sha256_file_hex8(
     path: &std::path::Path,
 ) -> Result<String, Box<dyn std::error::Error>> {
+    sha256_file_hex(path, 4)
+}
+
+/// First `n_bytes` bytes of sha256 over a file, hex-encoded (streamed). The identity pin
+/// every draft-side artifact receipt prints: `hex8` for drafters, `hex16` for FR-Spec ranks
+/// files (lane/frspec-dflash2-20260902, a ranks file is a per-tokenizer artifact, and a
+/// wrong-model file loads silently unless its bytes are named in the engagement line).
+pub(crate) fn sha256_file_hex(
+    path: &std::path::Path,
+    n_bytes: usize,
+) -> Result<String, Box<dyn std::error::Error>> {
     use sha2::{Digest, Sha256};
     let mut file = std::fs::File::open(path)?;
     let mut hasher = Sha256::new();
@@ -3000,9 +3011,135 @@ pub(crate) fn sha256_file_hex8(
     let digest = hasher.finalize();
     Ok(digest
         .iter()
-        .take(4)
+        .take(n_bytes)
         .map(|byte| format!("{byte:02x}"))
         .collect())
+}
+
+/// STRICT ranks `.txt` parse (lane/frspec-dflash2-20260902): one token id per line, rank
+/// order. Blank lines are skipped; ANY other non-numeric line refuses, the lenient
+/// `filter_map(parse().ok())` arm silently drops a corrupted or wrong-format line, and a
+/// silently shorter ranks list is exactly the wrong-artifact class the DFlash2 slab must
+/// never boot on. Duplicates refuse too (a duplicated id is one fewer distinct draftable
+/// token and a sign the file was hand-edited). Pure: CPU-testable, red arms in
+/// `frspec_ranks_tests`.
+pub fn frspec_parse_ranks_txt_strict(text: &str, what: &str) -> Result<Vec<u32>, String> {
+    let mut out: Vec<u32> = Vec::new();
+    for (lineno, raw) in text.lines().enumerate() {
+        let line = raw.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let id = line.parse::<u32>().map_err(|_| {
+            format!(
+                "{what}: line {} is not a token id ({line:?}); a ranks .txt is one integer id \
+                 per line in rank order",
+                lineno + 1
+            )
+        })?;
+        out.push(id);
+    }
+    Ok(out)
+}
+
+/// Boot-time admission of a ranks list against the head it will index (lane/frspec-dflash2-
+/// 20260902, owner order): non-empty, no duplicate id, every id < `n_vocab` (the head's row
+/// count), and never MORE rows than the head has (a "trim" wider than the vocabulary is a
+/// wrong-model file by construction). Refuses by name; the caller prints the file sha16 in
+/// its engagement line so the refused or admitted bytes are identifiable. Pure.
+pub fn frspec_validate_ranks(d2t: &[u32], n_vocab: usize, what: &str) -> Result<(), String> {
+    if d2t.is_empty() {
+        return Err(format!(
+            "{what}: the ranks artifact yields an EMPTY id list"
+        ));
+    }
+    if d2t.len() > n_vocab {
+        return Err(format!(
+            "{what}: {} ranks for a {n_vocab}-row head: a ranks list wider than the vocabulary \
+             was minted for a different model",
+            d2t.len()
+        ));
+    }
+    if let Some(&bad) = d2t.iter().find(|&&t| t as usize >= n_vocab) {
+        return Err(format!(
+            "{what}: token id {bad} >= head rows {n_vocab}: the ranks artifact was minted for a \
+             different vocabulary (wrong-model file refused at boot)"
+        ));
+    }
+    let mut seen = vec![false; n_vocab];
+    for &t in d2t {
+        if seen[t as usize] {
+            return Err(format!(
+                "{what}: token id {t} appears more than once: a ranks list is a set of distinct \
+                 ids in rank order"
+            ));
+        }
+        seen[t as usize] = true;
+    }
+    Ok(())
+}
+
+/// The row gather every FR-Spec trim arm runs, as PURE host bytes: `rows[t*row_bytes..]` for
+/// each ranked `t`, concatenated in rank order. Split out so the slab byte-identity claim
+/// ("slab row r == head row d2t[r]") is a CPU-testable statement about this function, and
+/// the GPU gate only has to prove the upload preserved it.
+pub fn frspec_gather_rows(rows: &[u8], row_bytes: usize, d2t: &[u32]) -> Vec<u8> {
+    let mut gathered = Vec::with_capacity(d2t.len() * row_bytes);
+    for &t in d2t {
+        let off = t as usize * row_bytes;
+        gathered.extend_from_slice(&rows[off..off + row_bytes]);
+    }
+    gathered
+}
+
+#[cfg(test)]
+mod frspec_ranks_tests {
+    use super::{frspec_gather_rows, frspec_parse_ranks_txt_strict, frspec_validate_ranks};
+
+    #[test]
+    fn strict_parse_skips_blank_lines_and_refuses_anything_else() {
+        let ok = frspec_parse_ranks_txt_strict("5\n\n 7 \n0\n", "t").unwrap();
+        assert_eq!(ok, vec![5, 7, 0]);
+        // Trailing newline / no trailing newline: same list.
+        assert_eq!(
+            frspec_parse_ranks_txt_strict("5\n7", "t").unwrap(),
+            vec![5, 7]
+        );
+        // RED: a header row, a negative id, a float, a comment, every one refuses by line.
+        for bad in ["id\n5\n", "5\n-1\n", "5\n7.0\n", "# ranks\n5\n", "5 7\n"] {
+            let err = frspec_parse_ranks_txt_strict(bad, "t").unwrap_err();
+            assert!(err.contains("is not a token id"), "{bad:?} -> {err}");
+        }
+        // Empty text parses to an empty list; the validator is what refuses it.
+        assert!(frspec_parse_ranks_txt_strict("", "t").unwrap().is_empty());
+    }
+
+    #[test]
+    fn validate_refuses_empty_oob_duplicate_and_wider_than_vocab() {
+        assert!(frspec_validate_ranks(&[3, 1, 0], 4, "t").is_ok());
+        // The full vocabulary as a permutation is admissible (a trim of width n_vocab).
+        assert!(frspec_validate_ranks(&[3, 1, 0, 2], 4, "t").is_ok());
+        let e = frspec_validate_ranks(&[], 4, "t").unwrap_err();
+        assert!(e.contains("EMPTY"), "{e}");
+        let e = frspec_validate_ranks(&[3, 4], 4, "t").unwrap_err();
+        assert!(e.contains("token id 4 >= head rows 4"), "{e}");
+        let e = frspec_validate_ranks(&[3, 1, 3], 4, "t").unwrap_err();
+        assert!(e.contains("token id 3 appears more than once"), "{e}");
+        let e = frspec_validate_ranks(&[0, 1, 2, 3, 0], 4, "t").unwrap_err();
+        assert!(e.contains("5 ranks for a 4-row head"), "{e}");
+    }
+
+    #[test]
+    fn gather_rows_is_the_rank_ordered_row_copy() {
+        // 5 rows of 3 bytes: row t = [t, t+10, t+20].
+        let rows: Vec<u8> = (0..5u8).flat_map(|t| [t, t + 10, t + 20]).collect();
+        let g = frspec_gather_rows(&rows, 3, &[4, 0, 2]);
+        assert_eq!(g, vec![4, 14, 24, 0, 10, 20, 2, 12, 22]);
+        // RED: a permuted d2t must change the slab (the gather is order-preserving).
+        assert_ne!(g, frspec_gather_rows(&rows, 3, &[0, 4, 2]));
+        // Identity d2t reproduces the head byte for byte.
+        assert_eq!(frspec_gather_rows(&rows, 3, &[0, 1, 2, 3, 4]), rows);
+    }
 }
 
 pub(crate) fn frspec_trim_own_head_name(n_trunk: usize) -> String {
@@ -3025,6 +3162,9 @@ pub struct DflashTrimHead {
     pub head: GpuTensor,
     /// FR-Spec draft->target vocab map; `d2t[draft_idx]` = target token id of trimmed row.
     pub d2t: Vec<u32>,
+    /// First 16 hex of sha256 over the ranks artifact's bytes, the identity the engagement
+    /// line prints (`src=<sha16>`), so a wrong-model ranks file is nameable from the log.
+    pub src_sha16: String,
 }
 
 /// Read a MEMRA_FRSPEC_TRIM d2t rank artifact (already `resolve_arg`-resolved): either the d2t
@@ -3078,11 +3218,7 @@ fn frspec_gather_trimmed_head(
         d2t.iter().all(|&t| (t as usize) < out_f),
         "d2t token id >= lm_head rows {out_f}"
     );
-    let mut gathered = Vec::with_capacity(d2t.len() * row_bytes);
-    for &t in d2t {
-        let off = t as usize * row_bytes;
-        gathered.extend_from_slice(&v.bytes[off..off + row_bytes]);
-    }
+    let gathered = frspec_gather_rows(&v.bytes, row_bytes, d2t);
     let want_nvfp4 =
         want_nvfp4_env && matches!(v.ggml_type, GgmlType::BF16) && v.ne[0].is_multiple_of(64);
     if want_nvfp4 {
@@ -3631,10 +3767,15 @@ pub struct HybridModel {
     /// Additional embedded NextN heads, in trained draft-step order. Standalone and trimmed
     /// drafts remain single-head and leave this empty.
     pub mtp_extra: Vec<MtpHead>,
-    /// MEMRA_MTP_SKIP=1 stub: the FR-Spec trimmed draft head kept for the dspark/DFlash2 round
-    /// after the embedded MTP block was skipped (see `DflashTrimHead`). Always `None` when the
-    /// flag is unset; mutually exclusive with a loaded `mtp` by construction.
+    /// The FR-Spec trimmed draft head for a DFlash2 round that has NO trimmed MtpHead to read:
+    /// the MEMRA_MTP_SKIP=1 stub (embedded MTP block skipped), or the glm5 DFlash2 slab
+    /// (drafter loaded, NextN block never loaded, lane/frspec-dflash2-20260902). `None` when
+    /// MEMRA_FRSPEC_TRIM is unset; never co-exists with a target-head-trimmed `mtp`.
     pub dflash_trim: Option<DflashTrimHead>,
+    /// sha16 of the MEMRA_FRSPEC_TRIM ranks artifact whichever trim arm consumed it (MtpHead
+    /// self-trim, MEMRA_MTP_SKIP stub, glm5 DFlash2 slab); `None` = no trim loaded. Printed
+    /// as `src=<sha16>` in the trim engagement lines.
+    pub frspec_src_sha16: Option<String>,
     /// Lazily-uploaded DEVICE copy of the raw embed table (spec/graph hot loops gather rows
     /// on-device instead of host-dequant + htod). ~0.5GB; uploaded once on first use.
     pub embd_gpu: std::sync::OnceLock<cudarc::driver::CudaSlice<u8>>,
@@ -4125,7 +4266,7 @@ impl HybridModel {
         // - no output.weight/token_embd.weight to gather from. FATAL.
         // A model with NO declared NextN block keeps the trim's (b) behavior below: nothing to
         // skip, no stub, no refusal (a global env must not kill a co-loaded plain model).
-        let mtp_skip_trim_d2t: Option<Vec<u32>> = if mtp_skip_requested
+        let mtp_skip_trim_d2t: Option<(Vec<u32>, String)> = if mtp_skip_requested
             && cfg.nextn_predict_layers > 0
             && !crate::model::full_prec_enabled()
         {
@@ -4160,13 +4301,19 @@ impl HybridModel {
                         )
                         .into());
                     }
-                    Some(d2t)
+                    let sha16 = sha256_file_hex(std::path::Path::new(&path), 8)?;
+                    Some((d2t, sha16))
                 }
                 _ => None,
             }
         } else {
             None
         };
+        // The ranks artifact's identity, set by whichever trim arm consumed the file (the
+        // MtpHead self-trim, the MEMRA_MTP_SKIP stub, or the glm5 DFlash2 slab below); the
+        // session engagement line prints it as `src=<sha16>`.
+        let mut frspec_src_sha16: Option<String> =
+            mtp_skip_trim_d2t.as_ref().map(|(_, s)| s.clone());
         if let Some(fence) = crate::pp::pp_cuts(n_trunk) {
             let pipeline = crate::plan_backend::PIPELINE
                 .trunk_capabilities(&plan)
@@ -4740,6 +4887,7 @@ impl HybridModel {
                 // per line, rank order — frspec-owngen writes both). The text form keeps the
                 // fully-safetensors serving path free of GGUF entirely.
                 let d2t: Vec<u32> = frspec_read_d2t(&path)?;
+                frspec_src_sha16 = Some(sha256_file_hex(std::path::Path::new(&path), 8)?);
                 // WHICH HEAD DO THE ROWS COME FROM? For a tied-head family (qwen35) the MTP
                 // block reuses the trunk's `output.weight`, so gathering trunk rows is exact.
                 // The step-3.7-flash family does NOT: each nextn block ships its OWN lm_head,
@@ -4828,8 +4976,8 @@ impl HybridModel {
         // was read and every refusal executed BEFORE the trunk loaded (see the block after
         // n_trunk); rows come from the trunk head by construction, and the own-head artifact
         // shape already refused there.
-        let dflash_trim: Option<DflashTrimHead> = match mtp_skip_trim_d2t {
-            Some(d2t) => {
+        let mut dflash_trim: Option<DflashTrimHead> = match mtp_skip_trim_d2t {
+            Some((d2t, src_sha16)) => {
                 let v = src
                     .find("output.weight")
                     .or_else(|| src.find("token_embd.weight"))
@@ -4857,7 +5005,11 @@ impl HybridModel {
                         None => format!("{:?}", v.ggml_type),
                     },
                 );
-                Some(DflashTrimHead { head, d2t })
+                Some(DflashTrimHead {
+                    head,
+                    d2t,
+                    src_sha16,
+                })
             }
             None => None,
         };
@@ -5007,6 +5159,103 @@ impl HybridModel {
             _ => None,
         };
 
+        // glm5 DFlash2 DRAFT-HEAD RANK TRIM (lane/frspec-dflash2-20260902, owner order: "if the
+        // masked path isn't wired, wire it"). The MtpHead self-trim above only lands when the
+        // NextN block is loaded; the serving DFlash2 route boots WITHOUT it (the q38 VRAM
+        // pattern), so a set MEMRA_FRSPEC_TRIM used to be a SILENT NO-OP there: the boot
+        // receipt said `draft head FULL target vocab` and the drafter projected every round
+        // through the full 154,880-row head. SAME CONTRACT, no new flag: the ranks file named
+        // by MEMRA_FRSPEC_TRIM is gathered ONCE here into an `[n_ranks x d]` slab of the
+        // trunk head's own rows (`frspec_gather_trimmed_head`, the one gather program every
+        // trim arm shares; for glm5_next the trunk head is the draft head BY CONTRACT, the
+        // NextN block ships no private lm_head) and parked in `dflash_trim`, which the
+        // DFlash2 round consumes exactly as it consumes the MEMRA_MTP_SKIP stub: draft
+        // logits over the slab, candidate ids remapped through d2t BEFORE the selector walk,
+        // verify full-vocab and untouched. NUMERIC CLASS: the target's output distribution
+        // and the greedy tape are unchanged by construction (a draft source can only move
+        // acceptance, never output, module doc of glm_spec.rs); the slab's rows are byte-
+        // identical to the head rows they were gathered from (`frspec_gather_rows`).
+        // ADMISSION (owner order): the ranks file is parsed STRICTLY (.txt: every non-blank
+        // line an integer, no duplicates) and validated against the head's row count; a
+        // wrong-model file REFUSES the boot by name with its sha16, never loads silently.
+        // Skipped when the MtpHead self-trim already carries target-head rows (the
+        // MEMRA_GLM5_MTP=1 + trim shape: the round prefers that struct, no second slab) or
+        // the MEMRA_MTP_SKIP stub already built one. Non-glm5 co-loaded models never reach
+        // this arm (the drafter flag is glm5-scoped), so a global env cannot kill them.
+        if cfg.arch.is_glm5_next()
+            && glm5_dflash.is_some()
+            && dflash_trim.is_none()
+            && !crate::model::full_prec_enabled()
+            && !mtp
+                .as_ref()
+                .is_some_and(|m| m.d2t_from_target_head && m.d2t.is_some())
+            && let Ok(spec) = std::env::var("MEMRA_FRSPEC_TRIM")
+            && !spec.is_empty()
+        {
+            let what = "MEMRA_FRSPEC_TRIM on the glm5 DFlash2 draft head";
+            let path = memra_gguf::hf::resolve_arg(&spec)
+                .map_err(|err| format!("{what}: {spec:?}: {err}"))?;
+            let sha16 = sha256_file_hex(std::path::Path::new(&path), 8)?;
+            let d2t: Vec<u32> = if path.ends_with(".txt") {
+                let text = std::fs::read_to_string(&path)
+                    .map_err(|err| format!("{what}: {path}: {err}"))?;
+                frspec_parse_ranks_txt_strict(&text, &format!("{what} ({path}, sha16={sha16})"))?
+            } else {
+                frspec_read_d2t(&path)?
+            };
+            let n_vocab = output.out_features();
+            frspec_validate_ranks(&d2t, n_vocab, &format!("{what} ({path}, sha16={sha16})"))?;
+            let v = src
+                .find("output.weight")
+                .or_else(|| src.find("token_embd.weight"))
+                .ok_or_else(|| {
+                    format!("{what}: model has no output.weight (or tied token_embd.weight)")
+                })?;
+            if v.ne[1] as usize != n_vocab {
+                return Err(format!(
+                    "{what}: source head rows {} != loaded head rows {n_vocab}",
+                    v.ne[1]
+                )
+                .into());
+            }
+            // The slab lives where the drafter and the trunk lm head live: the head engine.
+            let de = crate::pp::layer_engine(e, n_trunk, n_trunk)?;
+            let (head, nvfp4_sizes) = frspec_gather_trimmed_head(
+                de,
+                &v,
+                &d2t,
+                std::env::var("MEMRA_FRSPEC_TRIM_NVFP4").as_deref() == Ok("1"),
+                match src.find("output.scale") {
+                    Some(sv) => f32::from_le_bytes(sv.bytes[..4].try_into().unwrap()),
+                    None => 1.0,
+                },
+            )?;
+            eprintln!(
+                "[frspec-trim] glm5 DFlash2 draft-head slab: {} rows of {} gathered from main \
+                 output.weight ({}) src={sha16} ({path})",
+                d2t.len(),
+                n_vocab,
+                match nvfp4_sizes {
+                    Some((nvfp4_bytes, gathered_bytes)) => format!(
+                        "re-quantized BF16 -> NVFP4, {} MiB, was {} MiB",
+                        nvfp4_bytes >> 20,
+                        gathered_bytes >> 20
+                    ),
+                    None => format!(
+                        "{:?}, {} MiB",
+                        v.ggml_type,
+                        (d2t.len() * (v.bytes.len() / n_vocab)) >> 20
+                    ),
+                },
+            );
+            frspec_src_sha16 = Some(sha16.clone());
+            dflash_trim = Some(DflashTrimHead {
+                head,
+                d2t,
+                src_sha16: sha16,
+            });
+        }
+
         // GLM5-SPEC BOOT RECEIPT (lane/glm5-spec-routing, 2026-08-30): the deploy gate greps
         // the server log for these lines (never-serve-greedy law: spec engagement must be
         // provable from the log, a 200 proves nothing). With MEMRA_GLM5_SPEC unset/0 the boot
@@ -5017,11 +5266,27 @@ impl HybridModel {
         if cfg.arch.is_glm5_next() && crate::glm_spec::glm5_spec_on() {
             match (glm5_dflash.as_ref(), mtp.as_ref()) {
                 (Some(dr), head) => {
-                    let trim_note = match head.and_then(|h| h.d2t.as_ref()) {
-                        Some(map) => {
-                            format!("draft head TRIMMED to {} rows (FR-Spec d2t)", map.len())
-                        }
-                        None => "draft head FULL target vocab".to_string(),
+                    // RANK-TRIMMED = the DFlash2 round WILL draft over a trimmed slab: the
+                    // MtpHead self-trim (target-head rows) or the `dflash_trim` slab, in the
+                    // round's own preference order (`glm5_dflash_trim`). `n_ranks` + the
+                    // ranks file's sha16 make a wrong-model artifact nameable from the log.
+                    let trim_note = match (
+                        head.filter(|h| h.d2t_from_target_head)
+                            .and_then(|h| h.d2t.as_ref())
+                            .filter(|m| !m.is_empty()),
+                        dflash_trim.as_ref(),
+                    ) {
+                        (Some(map), _) => format!(
+                            "draft head RANK-TRIMMED n_ranks={} src={}",
+                            map.len(),
+                            frspec_src_sha16.as_deref().unwrap_or("unknown")
+                        ),
+                        (None, Some(slab)) => format!(
+                            "draft head RANK-TRIMMED n_ranks={} src={}",
+                            slab.d2t.len(),
+                            slab.src_sha16
+                        ),
+                        (None, None) => "draft head FULL target vocab".to_string(),
                     };
                     eprintln!(
                         "[glm5-spec] serve route ARMED: draft source = dflash2 @ {}; {trim_note}; \
@@ -5840,6 +6105,7 @@ impl HybridModel {
             mtp,
             mtp_extra,
             dflash_trim,
+            frspec_src_sha16,
             embd_gpu: std::sync::OnceLock::new(),
             gemma4_aux,
             step35_aux,

@@ -26,6 +26,20 @@
 //!    dflash2 armed (head NOT loaded / head ALSO loaded), native-mtp, fail-closed warn,
 //!    and flag-off = zero `[glm5-spec]` lines. The dflash-vs-mtp VRAM-at-ready delta is
 //!    printed for the lane doc (mini scale; box numbers come with the three-way window).
+//!    Since lane/frspec-dflash2-20260902 the matrix also covers the RANK-TRIMMED arms: the
+//!    slab boot receipt (`draft head RANK-TRIMMED n_ranks=N src=<sha16>`, `FULL target
+//!    vocab` gone), the per-session engagement line, the MtpHead-preferred shape when both
+//!    are loaded, and the three boot REFUSALS (id >= head rows, duplicate id, non-numeric
+//!    line) that a wrong-model ranks file must trip.
+//! 8. RANK-TRIMMED DRAFT HEAD (gate 13, lane/frspec-dflash2-20260902): under the SAME
+//!    `MEMRA_FRSPEC_TRIM=<ranks.txt>` contract the box uses, the DFlash2 round drafts over
+//!    an `[n_ranks x d]` slab. Pinned: the greedy tape is byte-identical trimmed vs untrimmed
+//!    vs plain at K=1..7 while acceptance is free to move; every drafted id lies inside the
+//!    ranks set and the untrimmed census proves the set BINDS (it excludes ids the untrimmed
+//!    drafter actually drafted); the slab rows are bit-identical to the head rows they were
+//!    gathered from; the `rank_trimmed_rounds` counters equal `rounds`; and the RED
+//!    remap-skipped arm (rank ids drafted as token ids) still leaves the tape untouched
+//!    while the drafted sequence moves, the q38 silent defect made loud on this route.
 //!
 //! Rig law (exactness only, never timing):
 //!   NVIDIA_TF32_OVERRIDE=0 flock /tmp/memra-5090.lock \
@@ -35,6 +49,7 @@ use memra_engine::Engine;
 use memra_engine::forward::argmax;
 use memra_engine::glm_spec::{Glm5SpecKnobs, Glm5SpecSession};
 use memra_engine::hybrid::HybridModel;
+use memra_engine::model::GpuTensor;
 use memra_engine::spec::SpecSampling;
 use memra_gguf::GgmlType;
 use memra_gguf::config::{HfConfig, ModelConfig};
@@ -45,9 +60,12 @@ use memra_gguf::tensor_contract::{
     TensorId, TensorMatch,
 };
 use memra_reference::{ReferenceTensor, ReferenceWeights, deterministic_fixture};
+use sha2::{Digest, Sha256};
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 const HIDDEN: usize = 128;
 const VOCAB: u32 = 32;
@@ -494,29 +512,73 @@ fn write_mini_drafter(tag: &str) -> PathBuf {
 // VRAM pattern this lane ships. Env mutations serialized behind gpu_guard by every caller.
 // ---------------------------------------------------------------------------------------------
 
+/// A ranks `.txt` fixture (one id per line, rank order), the box's `MEMRA_FRSPEC_TRIM`
+/// artifact shape, verbatim. The caller that made it deletes it (tmp hygiene).
+fn write_ranks_fixture(tag: &str, ranks: &[u32]) -> PathBuf {
+    let path = std::env::temp_dir().join(format!(
+        "glm5-dflash-ranks-{}-{tag}.txt",
+        std::process::id()
+    ));
+    let text: String = ranks.iter().map(|t| format!("{t}\n")).collect();
+    std::fs::write(&path, text).expect("write ranks fixture");
+    path
+}
+
+/// First 16 hex of sha256 over a file, what the loader prints as `src=<sha16>`.
+fn sha16_of(path: &Path) -> String {
+    let bytes = std::fs::read(path).expect("read ranks fixture");
+    Sha256::digest(&bytes)
+        .iter()
+        .take(8)
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
 struct Harness {
     engine: Engine,
     model: HybridModel,
     plan: ModelPlan,
     drafter_dir: PathBuf,
+    /// The ranks fixture this harness loaded under MEMRA_FRSPEC_TRIM (deleted on drop).
+    ranks_path: Option<PathBuf>,
 }
 
 impl Drop for Harness {
     fn drop(&mut self) {
         // tmp hygiene: the task that made the fixture deletes it.
         std::fs::remove_dir_all(&self.drafter_dir).ok();
+        if let Some(p) = self.ranks_path.as_ref() {
+            std::fs::remove_file(p).ok();
+        }
         // SAFETY: serialized behind gpu_guard by every caller.
-        unsafe { std::env::remove_var("MEMRA_GLM5_DFLASH") };
+        unsafe {
+            std::env::remove_var("MEMRA_GLM5_DFLASH");
+            std::env::remove_var("MEMRA_FRSPEC_TRIM");
+        }
     }
 }
 
 impl Harness {
     fn new(tag: &str) -> Self {
+        Self::build(tag, None)
+    }
+
+    /// The RANK-TRIMMED twin (lane/frspec-dflash2-20260902): `ranks` is written as a `.txt`
+    /// fixture and loaded under `MEMRA_FRSPEC_TRIM`, the box env contract, no other flag.
+    fn with_trim(tag: &str, ranks: &[u32]) -> Self {
+        let path = write_ranks_fixture(tag, ranks);
+        Self::build(tag, Some(path))
+    }
+
+    fn build(tag: &str, ranks_path: Option<PathBuf>) -> Self {
         force_true_f32();
         let drafter_dir = write_mini_drafter(tag);
         // SAFETY: serialized behind gpu_guard by every caller.
         unsafe {
-            std::env::remove_var("MEMRA_FRSPEC_TRIM");
+            match ranks_path.as_ref() {
+                Some(p) => std::env::set_var("MEMRA_FRSPEC_TRIM", p),
+                None => std::env::remove_var("MEMRA_FRSPEC_TRIM"),
+            }
             std::env::remove_var("MEMRA_GLM5_MTP"); // the head is NOT loaded on this route
             std::env::remove_var("MEMRA_GLM5_DFLASH_GATE_RED");
             std::env::set_var("MEMRA_GLM5_DFLASH", &drafter_dir);
@@ -536,11 +598,17 @@ impl Harness {
             model.glm5_dflash.is_some(),
             "MEMRA_GLM5_DFLASH must attach the drafter"
         );
+        assert_eq!(
+            model.dflash_trim.is_some(),
+            ranks_path.is_some(),
+            "the draft-head slab loads iff MEMRA_FRSPEC_TRIM names a ranks file"
+        );
         Self {
             engine,
             model,
             plan,
             drafter_dir,
+            ranks_path,
         }
     }
 
@@ -618,6 +686,53 @@ fn drive_bursts(
         );
     }
     (tape, drafted, accepted, bursts)
+}
+
+/// `drive_bursts` through the gate-instrument entry (`glm5_spec_session_burst_gated`) so a
+/// census / red-arm knob rides every round; same burst-boundary invariants.
+fn drive_gated(
+    h: &Harness,
+    sess: &mut Glm5SpecSession,
+    prompt: &[u32],
+    k: usize,
+    total: usize,
+    burst_target: usize,
+    knobs: &mut Glm5SpecKnobs<'_>,
+) -> (Vec<u32>, usize, usize, usize) {
+    let mut tape: Vec<u32> = Vec::new();
+    let mut drafted = 0usize;
+    let mut accepted = 0usize;
+    let mut bursts = 0usize;
+    while tape.len() < total && !sess.finished() {
+        let room = (total - tape.len()).min(burst_target);
+        let (burst, d, a) = h
+            .model
+            .glm5_spec_session_burst_gated(&h.engine, sess, room, k, &[], knobs)
+            .expect("glm5 dflash gated spec session burst");
+        if burst.is_empty() {
+            break;
+        }
+        bursts += 1;
+        drafted += d;
+        accepted += a;
+        tape.extend(burst);
+        assert_eq!(sess.pos(), sess.committed.len());
+        let mut expect: Vec<u32> = prompt.to_vec();
+        expect.extend_from_slice(&tape[..tape.len() - 1]);
+        assert_eq!(sess.committed, expect);
+    }
+    (tape, drafted, accepted, bursts)
+}
+
+/// A drafted-id CENSUS knob: records every draft the round produced (post-remap, pre-verify)
+/// and returns it unchanged, so the tape stays the natural one. Shared handle so the census
+/// outlives the knobs borrow.
+fn census_knob(census: &Rc<RefCell<Vec<u32>>>) -> impl FnMut(usize, usize, u32) -> u32 + use<> {
+    let c = Rc::clone(census);
+    move |_round: usize, _ki: usize, d: u32| -> u32 {
+        c.borrow_mut().push(d);
+        d
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1078,6 +1193,10 @@ fn helper_emit_dflash_receipts() {
             .glm5_spec_session_burst(&engine, &mut sess, 8, 3, &[])
             .expect("burst");
         eprintln!("[helper] burst={} drafted={d} accepted={a}", burst.len());
+        eprintln!(
+            "[helper] trim_rounds={} rounds={}",
+            sess.rank_trimmed_rounds, sess.rounds
+        );
     }
 }
 
@@ -1086,41 +1205,59 @@ fn helper_emit_dflash_receipts() {
 fn gpu_draft_source_selection_matrix() {
     let _gpu = gpu_guard();
     let drafter_dir = write_mini_drafter("matrix");
-    let run_child =
-        |glm5_spec: Option<&str>, glm5_mtp: Option<&str>, dflash: Option<&Path>| -> String {
-            let exe = std::env::current_exe().expect("test binary path");
-            let mut cmd = std::process::Command::new(exe);
-            cmd.args([
-                "helper_emit_dflash_receipts",
-                "--exact",
-                "--ignored",
-                "--nocapture",
-                "--test-threads=1",
-            ]);
-            cmd.env_remove("MEMRA_GLM5_SPEC");
-            cmd.env_remove("MEMRA_GLM5_MTP");
-            cmd.env_remove("MEMRA_GLM5_DFLASH");
-            cmd.env_remove("MEMRA_GLM5_DFLASH_GATE_RED");
-            cmd.env_remove("MEMRA_FRSPEC_TRIM");
-            cmd.env("NVIDIA_TF32_OVERRIDE", "0");
-            if let Some(v) = glm5_spec {
-                cmd.env("MEMRA_GLM5_SPEC", v);
-            }
-            if let Some(v) = glm5_mtp {
-                cmd.env("MEMRA_GLM5_MTP", v);
-            }
-            if let Some(dir) = dflash {
-                cmd.env("MEMRA_GLM5_DFLASH", dir);
-            }
-            let out = cmd.output().expect("spawn receipt child");
-            assert!(
-                out.status.success(),
-                "receipt child failed (spec={glm5_spec:?} mtp={glm5_mtp:?} dflash={}):\n{}",
-                dflash.is_some(),
-                String::from_utf8_lossy(&out.stderr)
-            );
-            String::from_utf8_lossy(&out.stderr).into_owned()
-        };
+    // `(exit_ok, stderr)`: the refusal arms below assert on a FAILED boot by name.
+    let run_child = |glm5_spec: Option<&str>,
+                     glm5_mtp: Option<&str>,
+                     dflash: Option<&Path>,
+                     trim: Option<&Path>|
+     -> (bool, String) {
+        let exe = std::env::current_exe().expect("test binary path");
+        let mut cmd = std::process::Command::new(exe);
+        cmd.args([
+            "helper_emit_dflash_receipts",
+            "--exact",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1",
+        ]);
+        cmd.env_remove("MEMRA_GLM5_SPEC");
+        cmd.env_remove("MEMRA_GLM5_MTP");
+        cmd.env_remove("MEMRA_GLM5_DFLASH");
+        cmd.env_remove("MEMRA_GLM5_DFLASH_GATE_RED");
+        cmd.env_remove("MEMRA_FRSPEC_TRIM");
+        cmd.env("NVIDIA_TF32_OVERRIDE", "0");
+        if let Some(v) = glm5_spec {
+            cmd.env("MEMRA_GLM5_SPEC", v);
+        }
+        if let Some(v) = glm5_mtp {
+            cmd.env("MEMRA_GLM5_MTP", v);
+        }
+        if let Some(dir) = dflash {
+            cmd.env("MEMRA_GLM5_DFLASH", dir);
+        }
+        if let Some(path) = trim {
+            cmd.env("MEMRA_FRSPEC_TRIM", path);
+        }
+        let out = cmd.output().expect("spawn receipt child");
+        (
+            out.status.success(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )
+    };
+    let run_ok = |glm5_spec: Option<&str>,
+                  glm5_mtp: Option<&str>,
+                  dflash: Option<&Path>,
+                  trim: Option<&Path>|
+     -> String {
+        let (ok, log) = run_child(glm5_spec, glm5_mtp, dflash, trim);
+        assert!(
+            ok,
+            "receipt child failed (spec={glm5_spec:?} mtp={glm5_mtp:?} dflash={} trim={}):\n{log}",
+            dflash.is_some(),
+            trim.is_some()
+        );
+        log
+    };
     let vram_mib = |log: &str| -> u64 {
         log.lines()
             .find_map(|l| l.strip_prefix("[helper] vram-used-at-ready-mib="))
@@ -1130,7 +1267,7 @@ fn gpu_draft_source_selection_matrix() {
     };
 
     // ARM A: dflash2 source, MTP head NOT loaded — the q38 pattern; source line + burst.
-    let log = run_child(Some("1"), None, Some(&drafter_dir));
+    let log = run_ok(Some("1"), None, Some(&drafter_dir), None);
     assert!(
         log.contains("draft source = dflash2 @ "),
         "dflash2 selection receipt missing:\n{log}"
@@ -1140,20 +1277,28 @@ fn gpu_draft_source_selection_matrix() {
         "the head-not-loaded note is the VRAM receipt:\n{log}"
     );
     assert!(
+        log.contains("draft head FULL target vocab"),
+        "no ranks file = the full-head note stays:\n{log}"
+    );
+    assert!(
+        !log.contains("RANK-TRIMMED"),
+        "no ranks file must never print a trim receipt:\n{log}"
+    );
+    assert!(
         log.contains("[helper] burst="),
         "dflash child never burst:\n{log}"
     );
     let vram_dflash = vram_mib(&log);
 
     // ARM B: both loaded — dflash2 wins by selection, stated.
-    let log = run_child(Some("1"), Some("1"), Some(&drafter_dir));
+    let log = run_ok(Some("1"), Some("1"), Some(&drafter_dir), None);
     assert!(
         log.contains("draft source = dflash2 @ ") && log.contains("ALSO loaded"),
         "both-armed selection must state dflash2 wins:\n{log}"
     );
 
     // ARM C: native only — the existing receipts plus the source line.
-    let log = run_child(Some("1"), Some("1"), None);
+    let log = run_ok(Some("1"), Some("1"), None, None);
     assert!(
         log.contains("[glm5-spec] draft source = native-mtp"),
         "native-mtp selection receipt missing:\n{log}"
@@ -1161,28 +1306,345 @@ fn gpu_draft_source_selection_matrix() {
     let vram_mtp = vram_mib(&log);
 
     // ARM D: neither — fail-closed warn, no route.
-    let log = run_child(Some("1"), None, None);
+    let log = run_ok(Some("1"), None, None, None);
     assert!(
         log.contains("[glm5-spec] MEMRA_GLM5_SPEC=1 but no MTP head loaded"),
         "fail-closed warn missing:\n{log}"
     );
 
-    // RED: MEMRA_GLM5_SPEC off must print ZERO [glm5-spec] lines, drafter loaded or not.
-    for dfl in [None, Some(drafter_dir.as_path())] {
-        let log = run_child(None, None, dfl);
+    // ---- RANK-TRIMMED arms (lane/frspec-dflash2-20260902) ----
+    // A partial, reversed ranking: 30 of the 32 ids (ids 4 and 9 excluded), rank r != id.
+    let ranks: Vec<u32> = (0..VOCAB).rev().filter(|t| *t != 4 && *t != 9).collect();
+    let n_ranks = ranks.len();
+    let ranks_path = write_ranks_fixture("matrix-ok", &ranks);
+    let sha16 = sha16_of(&ranks_path);
+
+    // ARM E: dflash2 + ranks, MTP NOT loaded, the box shape. The slab boots, the ARMED line
+    // names n_ranks + the file sha16 (`FULL target vocab` gone), the session engagement line
+    // prints, the round bursts.
+    let log = run_ok(Some("1"), None, Some(&drafter_dir), Some(&ranks_path));
+    let armed = format!("draft head RANK-TRIMMED n_ranks={n_ranks} src={sha16}");
+    assert!(
+        log.contains("[glm5-spec] serve route ARMED: draft source = dflash2 @ ")
+            && log.contains(&armed),
+        "ARMED line must carry `{armed}`:\n{log}"
+    );
+    assert!(
+        !log.contains("FULL target vocab"),
+        "a loaded slab must retire the full-head note:\n{log}"
+    );
+    assert!(
+        log.contains(&format!(
+            "[frspec-trim] glm5 DFlash2 draft-head slab: {n_ranks} rows of {VOCAB} gathered \
+             from main output.weight"
+        )) && log.contains(&format!("src={sha16}")),
+        "slab build receipt missing:\n{log}"
+    );
+    assert!(
+        log.contains(&format!(
+            "[glm5-spec] draft head RANK-TRIMMED n_ranks={n_ranks} src={sha16}"
+        )),
+        "per-session engagement line missing:\n{log}"
+    );
+    assert!(
+        log.contains("[helper] burst=") && log.contains("[helper] trim_rounds="),
+        "trimmed dflash child never burst / never counted:\n{log}"
+    );
+    let trim_rounds: usize = log
+        .lines()
+        .find_map(|l| l.strip_prefix("[helper] trim_rounds="))
+        .and_then(|rest| rest.split_whitespace().next())
+        .and_then(|v| v.parse().ok())
+        .expect("trim_rounds line");
+    assert!(
+        trim_rounds > 0,
+        "the counter must count trimmed rounds:\n{log}"
+    );
+
+    // ARM F: both loaded + ranks, the MtpHead self-trim (target-head rows) is preferred,
+    // the RANK-TRIMMED note still names the file, and NO second slab is built.
+    let log = run_ok(Some("1"), Some("1"), Some(&drafter_dir), Some(&ranks_path));
+    assert!(
+        log.contains(&armed) && log.contains("ALSO loaded"),
+        "MtpHead-preferred shape must still print the RANK-TRIMMED note:\n{log}"
+    );
+    assert!(
+        log.contains("[frspec-trim] self-trimmed head:")
+            && !log.contains("glm5 DFlash2 draft-head slab"),
+        "with a target-head-trimmed MtpHead loaded no second slab may be built:\n{log}"
+    );
+
+    // ARM G (RED, owner order): a ranks file whose max id >= the head's rows is a
+    // wrong-model file, the boot REFUSES by name, quoting the sha16; nothing serves.
+    let mut oob = ranks.clone();
+    oob[3] = VOCAB;
+    let oob_path = write_ranks_fixture("matrix-oob", &oob);
+    let oob_sha = sha16_of(&oob_path);
+    let (ok, log) = run_child(Some("1"), None, Some(&drafter_dir), Some(&oob_path));
+    assert!(
+        !ok && log.contains(&format!("token id {VOCAB} >= head rows {VOCAB}"))
+            && log.contains(&format!("sha16={oob_sha}")),
+        "an out-of-vocab ranks file must refuse the boot by name (ok={ok}):\n{log}"
+    );
+    assert!(
+        !log.contains("RANK-TRIMMED") && !log.contains("[helper] burst="),
+        "a refused ranks file must never reach a receipt or a burst:\n{log}"
+    );
+
+    // ARM H (RED): a duplicated id refuses.
+    let mut dup = ranks.clone();
+    dup[5] = dup[6];
+    let dup_path = write_ranks_fixture("matrix-dup", &dup);
+    let (ok, log) = run_child(Some("1"), None, Some(&drafter_dir), Some(&dup_path));
+    assert!(
+        !ok && log.contains(&format!("token id {} appears more than once", dup[6])),
+        "a duplicated id must refuse the boot (ok={ok}):\n{log}"
+    );
+
+    // ARM I (RED): a non-numeric line refuses (the lenient parse would have dropped it and
+    // booted a SHORTER trim silently, the defect class the strict parser closes).
+    let bad_path = std::env::temp_dir().join(format!(
+        "glm5-dflash-ranks-{}-matrix-bad.txt",
+        std::process::id()
+    ));
+    std::fs::write(&bad_path, "31\n30\nid\n29\n").expect("write bad ranks fixture");
+    let (ok, log) = run_child(Some("1"), None, Some(&drafter_dir), Some(&bad_path));
+    assert!(
+        !ok && log.contains("line 3 is not a token id"),
+        "a non-numeric ranks line must refuse the boot (ok={ok}):\n{log}"
+    );
+
+    // RED: MEMRA_GLM5_SPEC off must print ZERO [glm5-spec] lines, drafter/ranks loaded or not.
+    for (dfl, trim) in [
+        (None, None),
+        (Some(drafter_dir.as_path()), None),
+        (Some(drafter_dir.as_path()), Some(ranks_path.as_path())),
+    ] {
+        let log = run_ok(None, None, dfl, trim);
         assert!(
             !log.contains("[glm5-spec]"),
-            "MEMRA_GLM5_SPEC off (dflash={}) must print no [glm5-spec] line:\n{log}",
-            dfl.is_some()
+            "MEMRA_GLM5_SPEC off (dflash={} trim={}) must print no [glm5-spec] line:\n{log}",
+            dfl.is_some(),
+            trim.is_some()
         );
     }
-    std::fs::remove_dir_all(&drafter_dir).ok(); // tmp hygiene
+    // tmp hygiene: the task that made the fixtures deletes them.
+    for p in [&ranks_path, &oob_path, &dup_path, &bad_path] {
+        std::fs::remove_file(p).ok();
+    }
+    std::fs::remove_dir_all(&drafter_dir).ok();
     println!(
-        "gate 8 PASS: selection matrix green+red; VRAM-at-ready mini-fixture: dflash-boot \
+        "gate 8 PASS: selection matrix green+red incl. the RANK-TRIMMED arms (slab receipt, \
+         MtpHead-preferred, 3 boot refusals); VRAM-at-ready mini-fixture: dflash-boot \
          {vram_dflash} MiB vs mtp-boot {vram_mtp} MiB (delta {} MiB — mini scale; the box \
          three-way window banks the real-artifact delta)",
         vram_dflash as i64 - vram_mtp as i64
     );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Gate 13, RANK-TRIMMED DRAFT HEAD (lane/frspec-dflash2-20260902): under the box's exact
+// `MEMRA_FRSPEC_TRIM=<ranks.txt>` contract the DFlash2 round drafts over the `[n_ranks x d]`
+// slab. The tape is byte-identical trimmed vs untrimmed vs plain (verify is full-vocab and
+// untouched, a draft source can only move acceptance); every drafted id is inside the ranks
+// set and the untrimmed census proves the set BINDS; the slab rows are bit-identical to the
+// head rows they were gathered from; the counters equal `rounds`; and the remap-skipped RED
+// arm moves the drafted sequence while the tape stays put.
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
+fn gpu_dflash_rank_trimmed_head_moves_acceptance_never_the_tape() {
+    let _gpu = gpu_guard();
+    let prompt = tokens(PROMPT, 0xA11CE);
+    let max_new = 20usize;
+    let census_ks = [3usize, K];
+
+    // ARM 0: untrimmed, the plain tape and the drafted-id census per K.
+    let (tape, untrimmed) = {
+        let h = Harness::new("g11u");
+        let tape = plain_tape(&h, &prompt, max_new);
+        let mut per_k: Vec<(usize, Vec<u32>, usize, usize)> = Vec::new();
+        for &k in &census_ks {
+            let census = Rc::new(RefCell::new(Vec::<u32>::new()));
+            let mut record = census_knob(&census);
+            let mut knobs = Glm5SpecKnobs {
+                draft_override: Some(&mut record),
+                ..Default::default()
+            };
+            let mut sess = h
+                .model
+                .glm5_spec_session_new(&h.engine, &prompt, prompt.len() + max_new + k + 8, None)
+                .expect("untrimmed glm5 dflash spec session");
+            let (out, drafted, accepted, _) =
+                drive_gated(&h, &mut sess, &prompt, k, max_new, 3, &mut knobs);
+            assert_eq!(&out[..max_new], &tape[..], "K={k}: untrimmed tape != plain");
+            assert_eq!(
+                sess.rank_trimmed_rounds, 0,
+                "K={k}: no trim loaded, the counter must stay 0"
+            );
+            let ids = census.borrow().clone();
+            assert_eq!(ids.len(), drafted, "K={k}: the census must see every draft");
+            per_k.push((k, ids, drafted, accepted));
+        }
+        (tape, per_k)
+    };
+
+    // The ranks set EXCLUDES the two ids the untrimmed drafter drafted most, so the trim
+    // binds (an unbinding subset would pass every identity check vacuously); REVERSED order
+    // so rank r != token id almost everywhere (the remap is live, not the identity).
+    let mut freq = BTreeMap::<u32, usize>::new();
+    for (_, ids, _, _) in &untrimmed {
+        for &t in ids {
+            *freq.entry(t).or_default() += 1;
+        }
+    }
+    assert!(
+        freq.len() >= 3,
+        "degenerate fixture: only {} distinct drafted ids",
+        freq.len()
+    );
+    let mut by_freq: Vec<(u32, usize)> = freq.iter().map(|(&t, &n)| (t, n)).collect();
+    by_freq.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    let excluded: BTreeSet<u32> = by_freq.iter().take(2).map(|(t, _)| *t).collect();
+    let ranks: Vec<u32> = (0..VOCAB).rev().filter(|t| !excluded.contains(t)).collect();
+    let n_ranks = ranks.len();
+    assert!(n_ranks >= DRAFT_TOPK && n_ranks < VOCAB as usize);
+    let ranks_set: BTreeSet<u32> = ranks.iter().copied().collect();
+
+    // ARM 1: trimmed twin under the box contract.
+    let h = Harness::with_trim("g11t", &ranks);
+    let slab = h.model.dflash_trim.as_ref().expect("the draft-head slab");
+    assert_eq!(
+        slab.d2t, ranks,
+        "slab d2t must be the ranks file, in rank order"
+    );
+    let sha16 = sha16_of(h.ranks_path.as_ref().unwrap());
+    assert_eq!(slab.src_sha16, sha16);
+    assert_eq!(h.model.frspec_src_sha16.as_deref(), Some(sha16.as_str()));
+    assert!(
+        h.model
+            .glm5_dflash_trim()
+            .is_some_and(|(_, d2t)| d2t == ranks.as_slice()),
+        "the round's trim resolution must select the slab"
+    );
+
+    // SLAB BYTE IDENTITY: slab row r == head row d2t[r], bit for bit, read back from the
+    // DEVICE tensors the round actually multiplies through.
+    let (full, slab_rows) = match (&h.model.output, &slab.head) {
+        (GpuTensor::Float { data: f, ne: fne }, GpuTensor::Float { data: sl, ne: sne }) => {
+            assert_eq!(fne, &vec![HIDDEN as u64, VOCAB as u64]);
+            assert_eq!(sne, &vec![HIDDEN as u64, n_ranks as u64]);
+            (
+                h.engine.dtoh(f).expect("head dtoh"),
+                h.engine.dtoh(sl).expect("slab dtoh"),
+            )
+        }
+        _ => panic!("the mini fixture's head is F32 on both sides"),
+    };
+    let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<u32>>();
+    let head_row = |t: u32| bits(&full[t as usize * HIDDEN..(t as usize + 1) * HIDDEN]);
+    for (r, &t) in ranks.iter().enumerate() {
+        assert_eq!(
+            bits(&slab_rows[r * HIDDEN..(r + 1) * HIDDEN]),
+            head_row(t),
+            "slab row {r} != head row {t}"
+        );
+    }
+    // Non-vacuity: head rows are distinct, so a permuted gather could not have passed.
+    assert_ne!(head_row(ranks[0]), head_row(ranks[1]));
+    assert_ne!(bits(&slab_rows[..HIDDEN]), head_row(ranks[1]));
+
+    // Tape identity at every K, census inside the ranks set, counters.
+    let global_before = memra_engine::glm_spec::glm5_rank_trimmed_draft_rounds();
+    let mut trimmed_census: Vec<(usize, Vec<u32>)> = Vec::new();
+    for k in 1..=K {
+        let census = Rc::new(RefCell::new(Vec::<u32>::new()));
+        let mut record = census_knob(&census);
+        let mut knobs = Glm5SpecKnobs {
+            draft_override: Some(&mut record),
+            ..Default::default()
+        };
+        let mut sess = h
+            .model
+            .glm5_spec_session_new(&h.engine, &prompt, prompt.len() + max_new + k + 8, None)
+            .expect("trimmed glm5 dflash spec session");
+        let (out, drafted, accepted, bursts) =
+            drive_gated(&h, &mut sess, &prompt, k, max_new, 3, &mut knobs);
+        assert_eq!(
+            &out[..max_new],
+            &tape[..],
+            "K={k}: RANK-TRIMMED tape diverged from plain greedy ({accepted}/{drafted} over \
+             {bursts} bursts), the slab may only move acceptance, never output"
+        );
+        let ids = census.borrow().clone();
+        assert_eq!(ids.len(), drafted, "K={k}: the census must see every draft");
+        assert!(
+            ids.iter().all(|t| ranks_set.contains(t)),
+            "K={k}: a drafted id lies outside the ranks set: {ids:?}"
+        );
+        assert!(sess.rounds > 0);
+        assert_eq!(
+            sess.rank_trimmed_rounds, sess.rounds,
+            "K={k}: every round drafted through the slab must be counted"
+        );
+        if let Some((_, uids, ud, ua)) = untrimmed.iter().find(|(uk, ..)| *uk == k) {
+            assert!(
+                uids.iter().any(|t| excluded.contains(t)),
+                "K={k}: the untrimmed census never drafted an excluded id, the ranks set \
+                 does not bind and the identity above is vacuous"
+            );
+            println!(
+                "gate 13 K={k}: tape identical; acceptance trimmed {accepted}/{drafted} vs \
+                 untrimmed {ua}/{ud} (free to move; n_ranks={n_ranks}, excluded {excluded:?})"
+            );
+        }
+        trimmed_census.push((k, ids));
+    }
+    assert!(
+        memra_engine::glm_spec::glm5_rank_trimmed_draft_rounds() > global_before,
+        "the process-wide counter must move"
+    );
+
+    // RED ARM: remap skipped, rank ids drafted AS token ids (the q38 silent defect). The
+    // verify walk is full-vocab so the tape stays byte-identical; the drafted sequence must
+    // MOVE (the remap is live) and the counter still counts the slab.
+    {
+        let k = K;
+        let census = Rc::new(RefCell::new(Vec::<u32>::new()));
+        let mut record = census_knob(&census);
+        let mut knobs = Glm5SpecKnobs {
+            draft_override: Some(&mut record),
+            skip_d2t_remap: true,
+            ..Default::default()
+        };
+        let mut sess = h
+            .model
+            .glm5_spec_session_new(&h.engine, &prompt, prompt.len() + max_new + k + 8, None)
+            .expect("red-arm glm5 dflash spec session");
+        let (out, drafted, accepted, _) =
+            drive_gated(&h, &mut sess, &prompt, k, max_new, 3, &mut knobs);
+        assert_eq!(
+            &out[..max_new],
+            &tape[..],
+            "remap-skipped red arm: the tape must STILL be plain (verify arbitrates)"
+        );
+        let ids = census.borrow().clone();
+        let (_, remapped) = trimmed_census
+            .iter()
+            .find(|(tk, _)| *tk == k)
+            .expect("K census");
+        assert_ne!(
+            &ids, remapped,
+            "skipping the d2t remap must change WHICH ids get drafted (the remap is live)"
+        );
+        assert_eq!(sess.rank_trimmed_rounds, sess.rounds);
+        println!(
+            "gate 13 RED PASS: remap skipped -> tape identical, drafted sequence moved \
+             ({accepted}/{drafted} accepted)"
+        );
+    }
+    println!("gate 13 PASS: RANK-TRIMMED slab n_ranks={n_ranks} src={sha16}");
 }
 
 // ---------------------------------------------------------------------------------------------
