@@ -121,3 +121,48 @@ worker tests (`spec_max_prompt_cap_parses_and_caps_strictly_above`,
 tests), `spec_phase` unit tests. Rig: gate 15 plus gates 1-14 of
 `glm5_dflash_session_gpu` (`NVIDIA_TF32_OVERRIDE=0 flock /tmp/memra-5090.lock cargo test
 -p memra-engine --test glm5_dflash_session_gpu -- --ignored --test-threads=1`).
+
+## 6. Boot A (2026-09-03): what the lines said, and the fix it forced
+
+Pair, main + PR #101 build, spec route, `MEMRA_SPEC_PROF=1`, W8 + main doors, no pipelined
+prime, one request per rung, 256 tokens, vendor sampling. `[spec-prof-summary]` as
+delivered (raw per-round and drafter-prime lines: darklanes
+`research/glm5-b200-20260902/box/specdepth/specdepth-a-prof.txt`):
+
+| rung | K | rounds | k_mean | j_mean | accept | tok/round | wall mean / min / med / max (ms) | slow_rounds | draft_mean | verify_mean |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 4k (6,920) | 3 | 64 | 2.23 | 1.41 | 0.629 | 2.41 | 58.8 / 45.7 / 62.8 / 156.3 | 1 | 8.9 | 48.8 |
+| 42k | 3 | 64 | 1.80 | 1.05 | 0.583 | 2.05 | 66.7 / - / 59.7 / 630.2 | - | 16.3 | 49.3 |
+| 128k | 3 | 64 | 1.66 | 0.97 | 0.585 | 1.97 | 126.1 / - / 50.5 / 4525.9 | - | 77.3 | 47.7 |
+| 256k | 3 | 64 | 1.83 | 1.19 | 0.650 | 2.19 | 200.6 / - / 63.7 / 8925.2 | - | 146.1 | 53.6 |
+
+Reading (coordinator + this lane):
+
+1. The steady state is about 2.2 tokens per 55-64 ms round at every depth (35-40 tok/s):
+   the per-round verify at t=4 (~50 ms) is the ceiling, so at 256k the spec route is at
+   parity with plain (43 tok/s with the new DSA door), not 1.5x above it. Accept rate does
+   not collapse with depth (0.58-0.65). `seq` rows: the summary's `seq_rows_total` is in
+   the raw file; the batched arm is the served one.
+2. ONE round per request costs 0.63 / 4.5 / 8.9 s at 42k / 128k / 256k, linear at about
+   35 us per prompt token: `draft_mean x 64` reproduces it (146.1 x 64 = 9.35 s at 256k,
+   77.3 x 64 = 4.9 s at 128k), so it is round 0's `draft` bucket, i.e. the eager ingest.
+   Under the round-cadence door (`MEMRA_SPEC_FIRST_TOKEN_EAGER`, default ON since #93)
+   `glm5_spec_session_burst_inner` emits the anchor BEFORE round 0 runs, so the ingest
+   lands INSIDE decode: 256 tokens over 8.9 s + 255 rounds at 37 tok/s = 16 tok/s, the
+   "15.4" mode; without the stall 37 tok/s, the "32.1" mode. Under the burst-cadence arm
+   it sat inside TTFT. That is the bimodality.
+
+Fix (this lane, same PR): the eager arm ingests the prompt AT SESSION CREATION, before the
+session and its anchor reach the worker (`glm5_dflash_ingest_rows`, shared with round 1);
+`MEMRA_GLM5_DRAFT_PRIME_LAZY=1` restores the round-1 placement. Same rows, same GEMMs,
+same KV bytes; only WHEN moves (second-token latency -> TTFT). Rig gate 15 asserts the
+creation-time coverage. The chunked arm (`MEMRA_GLM5_DRAFT_PRIME_V2`, boot B) already
+ingests at creation and makes the ingest itself cheaper.
+
+Open levers named by the coordinator: (b) verify cost at t=4 is the depth ceiling; the
+DSA door (PR #104, int2) keys its single-pass kernel at t_q=4 and its scorer at all t,
+`verify_mean` under `MEMRA_B200_DSA_DECODE=1` is boot B's twin; (c) the K=5 re-price for a
+rank-trimmed DFlash2 head (#103) is the other lever on tok/round. Follow-up here: overlap
+the drafter ingest with the next trunk chunk on a drafter stream so it costs neither TTFT
+nor decode (needs a second stream plus event fences; the chunked arm is the shape it
+attaches to).
