@@ -14674,11 +14674,19 @@ pub fn run(
                     // re-sent: `park_requeue` rebuilds the request with the prompt only, and
                     // a session that has already emitted cannot be silently restarted, so it
                     // takes the honest error instead. Only pre-emission sessions park.
+                    // "Emitted" is read from BOTH markers (`step_oom_parkable`): `generated`
+                    // is post-burst bookkeeping, `tokens_emitted` is advanced at every SEND
+                    // site, including the round-cadence flush inside a spec burst
+                    // (`MEMRA_SPEC_FIRST_TOKEN_EAGER`, the qwen sse-cadence hook) — a step
+                    // OOM after an in-burst flush must not replay the streamed prefix.
                     Err(err)
                         if is_cuda_oom(&err.to_string())
-                            && step_oom_retries() > 0
-                            && active[i].generated.is_empty()
-                            && active[i].oom_retries < step_oom_retries() =>
+                            && step_oom_parkable(
+                                active[i].generated.len(),
+                                active[i].tokens_emitted,
+                                active[i].oom_retries,
+                                step_oom_retries(),
+                            ) =>
                     {
                         let n_active = active.len();
                         let s = &mut active[i];
@@ -14731,11 +14739,12 @@ pub fn run(
                             active[i].oom_teardown = true;
                             eprintln!(
                                 "[admit-oom] step OOM NOT parked (model {}, retries \
-                                       {}/{}, generated {}): reporting honestly",
+                                       {}/{}, generated {}, streamed {}): reporting honestly",
                                 active[i].model,
                                 active[i].oom_retries,
                                 step_oom_retries(),
-                                active[i].generated.len()
+                                active[i].generated.len(),
+                                active[i].tokens_emitted
                             );
                         }
                         let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
@@ -17138,6 +17147,23 @@ fn admission_headroom(
 /// the identical template + tokenize and produces the session a cold arrival would have. The
 /// retry counter rides along on the Request, keeping the bound per-request across re-admits.
 /// Returns None when the plan cannot produce a prompt (nothing to replay) — caller errors.
+/// STEP-OOM PARK ELIGIBILITY, pure (lane/spec-first-token-eager-20260902, PR #93 review
+/// finding): a session parks and replays ONLY while nothing has reached the client.
+/// Two markers, because they move at different times: `generated_len` is the post-burst
+/// bookkeeping vector, `tokens_emitted` is advanced at every send site — including the
+/// round-cadence flush INSIDE a spec burst (`MEMRA_SPEC_FIRST_TOKEN_EAGER` on the glm5
+/// route, the sse-cadence hook on the qwen route), where `generated` is still empty. A
+/// step-time CUDA OOM after any in-burst flush therefore takes the honest error (a
+/// terminal error event on the stream, no replay) instead of re-sending the prefix.
+fn step_oom_parkable(
+    generated_len: usize,
+    tokens_emitted: usize,
+    oom_retries: u32,
+    max_retries: u32,
+) -> bool {
+    max_retries > 0 && generated_len == 0 && tokens_emitted == 0 && oom_retries < max_retries
+}
+
 fn park_requeue(loaded: &HashMap<String, LoadedModel>, s: &Session) -> Option<Box<Request>> {
     // A plan with no prompt source at all would re-admit into "empty prompt after
     // tokenization" — report the OOM honestly instead of laundering it into a 400.
@@ -21786,6 +21812,9 @@ fn step_session(
                 |event| flush_tx.send(event).is_ok(),
             );
             token_events += emitted.sent;
+            // STREAMED MARKER (PR #93 review): the step-OOM park guard reads
+            // `tokens_emitted`; advance it at the send so a post-flush OOM never replays.
+            s.tokens_emitted += emitted.sent;
             send_ok = emitted.send_ok;
             keep
         };
@@ -21915,6 +21944,7 @@ fn step_session(
                 |event| s.tx.send(event).is_ok(),
             );
             token_events += emitted.sent;
+            s.tokens_emitted += emitted.sent;
             send_ok = emitted.send_ok;
         }
         if send_ok {
@@ -21936,7 +21966,8 @@ fn step_session(
         // EOS text is never streamed (serve-compat, 2026-08-03), but its empty-text token event
         // keeps the id/event/generated receipt 1:1. Engine-committed budget surplus remains only
         // in SpecSession committed/pending state; it never enters these public worker vectors.
-        s.tokens_emitted += token_events;
+        // `tokens_emitted` was advanced at each send site above (the round-cadence hook
+        // and the per-burst arm), never here — the park guard reads it mid-burst.
         s.emitted_bytes = cursor;
         s.decoded_bytes = decoded_visible;
         if !send_ok {
@@ -22766,6 +22797,10 @@ fn step_glm5_spec(
             first_emit_ms = Some(t_step.elapsed().as_secs_f64() * 1e3);
         }
         token_events += emitted.sent;
+        // STREAMED MARKER (PR #93 review): the step-OOM park guard reads `tokens_emitted`
+        // as "already reached the client"; advance it HERE, at the send, so an OOM in a
+        // later round of this burst takes the honest error instead of a replay.
+        s.tokens_emitted += emitted.sent;
         send_ok = emitted.send_ok;
     };
     let sess = s.glm5.as_mut().unwrap();
@@ -22886,7 +22921,11 @@ fn step_glm5_spec(
             break;
         }
     }
-    s.tokens_emitted += emitted.sent;
+    // The round-cadence hook advanced `tokens_emitted` at each send (the park guard's
+    // streamed marker); only the burst-cadence arm advances it here.
+    if !eager_first_token {
+        s.tokens_emitted += emitted.sent;
+    }
     s.emitted_bytes = cursor;
     s.decoded_bytes = decoded_visible;
     if !emitted.send_ok {
@@ -29517,6 +29556,105 @@ mod tests {
         assert!(
             gate.contains("host_telem_published = host_telem;"),
             "the publish body must record the stamp it published"
+        );
+    }
+
+    /// The park guard's eligibility predicate (PR #93 review finding): parking replays
+    /// the prompt on the SAME stream, so it is legal only while nothing reached the
+    /// client — by EITHER marker. `tokens_emitted` is the one that moves mid-burst.
+    #[test]
+    fn step_oom_parkable_refuses_once_anything_streamed() {
+        // Pre-emission, retries left: parks.
+        assert!(super::step_oom_parkable(0, 0, 0, 3));
+        assert!(super::step_oom_parkable(0, 0, 2, 3));
+        // The eager mid-first-burst shape: generated still empty, a slice already sent.
+        assert!(!super::step_oom_parkable(0, 1, 0, 3));
+        assert!(!super::step_oom_parkable(0, 17, 0, 3));
+        // Post-burst bookkeeping filled (the pre-lane guard's own arm).
+        assert!(!super::step_oom_parkable(1, 1, 0, 3));
+        assert!(!super::step_oom_parkable(4, 0, 0, 3));
+        // Retry budget exhausted, or parking disabled outright.
+        assert!(!super::step_oom_parkable(0, 0, 3, 3));
+        assert!(!super::step_oom_parkable(0, 0, 0, 0));
+    }
+
+    /// WIRING (comment-stripped, needles assembled so this test never self-matches): the
+    /// park guard consults the predicate with the session's `tokens_emitted`, and every
+    /// in-burst flush closure advances that marker AT THE SEND, before the burst returns;
+    /// the burst-cadence arms add it exactly once, never twice.
+    #[test]
+    fn step_oom_park_guard_reads_the_streamed_marker_every_flush_advances() {
+        let strip = |src: &str| -> String {
+            src.lines()
+                .map(|l| l.split("//").next().unwrap_or(""))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = strip(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let live_sq = squash(live);
+        let pred = format!("step_oom_parkable{}", "(");
+        // 1. Exactly one definition and one call site in live code.
+        assert_eq!(
+            live.matches(pred.as_str()).count(),
+            2,
+            "expected the predicate's definition plus exactly one guard call"
+        );
+        let guard = format!(
+            "if is_cuda_oom(&err.to_string()) && {pred} active[i].generated.len(), \
+             active[i].tokens_emitted, active[i].oom_retries, step_oom_retries(), ) =>"
+        );
+        assert!(
+            live_sq.contains(guard.as_str()),
+            "the park arm must gate on the predicate fed BOTH markers"
+        );
+        // 2. The glm5 round-cadence hook advances the marker at the send, before the burst.
+        let glm5 = live
+            .split("fn step_glm5_spec(")
+            .nth(1)
+            .expect("step_glm5_spec exists");
+        let glm5_body = &glm5[..glm5.find("\nfn ").unwrap_or(glm5.len())];
+        let hook_start = glm5_body
+            .find("let mut flush_cb = |slice: &[u32]| {")
+            .expect("the glm5 flush closure exists");
+        let hook_end = glm5_body
+            .find("let sess = s.glm5.as_mut().unwrap();")
+            .expect("the burst follows the closure");
+        assert!(hook_start < hook_end);
+        let hook = &glm5_body[hook_start..hook_end];
+        assert!(
+            hook.contains("s.tokens_emitted += emitted.sent;"),
+            "the glm5 flush closure must advance tokens_emitted at the send"
+        );
+        // ...and the burst-cadence arm adds it exactly once more, only when the hook did not.
+        let glm5_sq = squash(glm5_body);
+        assert!(
+            glm5_sq.contains("if !eager_first_token { s.tokens_emitted += emitted.sent; }"),
+            "the post-burst add must be gated to the burst-cadence arm (no double count)"
+        );
+        assert_eq!(
+            glm5_body.matches("s.tokens_emitted += ").count(),
+            2,
+            "glm5: one add in the hook, one gated post-burst add"
+        );
+        // 3. The qwen sse-cadence hook: same marker at the send; the per-burst arm adds
+        //    its own; no unconditional post-burst add remains.
+        let qwen_start = live
+            .find("let mut flush_cb = |slice: &[u32]| -> bool {")
+            .expect("the qwen flush closure exists");
+        let qwen_end = live[qwen_start..]
+            .find("let on_commit: Option<&mut dyn FnMut(&[u32]) -> bool>")
+            .map(|i| qwen_start + i)
+            .expect("on_commit follows the closure");
+        assert!(
+            live[qwen_start..qwen_end].contains("s.tokens_emitted += emitted.sent;"),
+            "the qwen flush closure must advance tokens_emitted at the send"
+        );
+        assert!(
+            !live.contains("s.tokens_emitted += token_events;"),
+            "no post-burst add from the accumulated count may remain (it would double \
+             count the hook's sends and hide the marker from the park guard mid-burst)"
         );
     }
 

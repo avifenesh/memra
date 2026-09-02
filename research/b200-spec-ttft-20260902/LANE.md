@@ -158,6 +158,17 @@ Expected effect: spec TTFT moves from prime + burst (~0.63-0.81 s) to prime + an
 (~0.20 s), i.e. within a few ms of the plain route; per-token cadence becomes one round
 (~30-40 ms at K=3) instead of one burst.
 
+Step-OOM park interplay (PR #93 review finding, fixed in the same PR): the step-OOM
+park path (`park_requeue`) replays the prompt on the SAME stream and is legal only while
+nothing reached the client. Its guard read `generated.is_empty()`, which the eager arm
+fills only after the burst, so a CUDA OOM in a later round of the first burst would have
+parked and re-sent the streamed prefix. Now both flush hooks (this route's and the qwen
+sse-cadence hook, which had the same latent gap) advance `tokens_emitted` at the send,
+and the guard is the pure `step_oom_parkable(generated_len, tokens_emitted, retries, max)`:
+post-flush OOMs take the honest error (terminal error event, no replay); pre-flush OOMs
+still park. Unit truth table + comment-stripped wiring test pin it. The byte-identity
+claim is untouched: the marker is bookkeeping, the emitted ids are the same.
+
 Rollback: `MEMRA_SPEC_FIRST_TOKEN_EAGER=0` (the pre-lane literal is the door-off arm, kept
 verbatim, including the wiring test's `glm5_spec_session_burst(engine, sess, burst_target, k,`
 literal). The default flipped ON on the section 8 receipts (a cadence change, no numeric
