@@ -608,7 +608,7 @@ impl HybridModel {
         }
 
         let pos = Glm5VerifyPos::new(e, pos0, t)?;
-        let embedded = e.htod(&self.embd.gather(n_embd, tokens))?;
+        let embedded = e.htod(&self.embd.try_gather(n_embd, tokens)?)?;
         let x = crate::hyper::expand(e, &topology, &embedded, t, n_embd)?;
         let x = self.glm5_verify_range(
             e,
@@ -1096,7 +1096,7 @@ impl HybridModel {
         // ranges — the shape every hc ppN walk uses for this knob.
         if crate::pp::pp2_streams_off() {
             let pos = pos_on(e)?;
-            let embedded = e.htod(&self.embd.gather(n_embd, tokens))?;
+            let embedded = e.htod(&self.embd.try_gather(n_embd, tokens)?)?;
             let mut x = crate::hyper::expand(e, topology, &embedded, t, n_embd)?;
             x =
                 self.glm5_verify_range(e, topology, x, fence[0], fence[1], &pos, cache, &mut ckpt)?;
@@ -1135,7 +1135,7 @@ impl HybridModel {
             let _st0 = rt.enter(0);
             let e0 = rt.engine(0, e);
             let pos = pos_on(e0)?;
-            let embedded = e0.htod(&self.embd.gather(n_embd, tokens))?;
+            let embedded = e0.htod(&self.embd.try_gather(n_embd, tokens)?)?;
             let x = crate::hyper::expand(e0, topology, &embedded, t, n_embd)?;
             let x = self
                 .glm5_verify_range(e0, topology, x, fence[0], fence[1], &pos, cache, &mut ckpt)?;
@@ -1559,7 +1559,11 @@ impl HybridModel {
         let mut done = 0usize;
         while done < t {
             let tc = (t - done).min(CHUNK);
-            let e_emb = e.htod(&self.embd.gather(n_embd, &tokens_next[done..done + tc]))?;
+            let e_emb = e.htod(
+                &self
+                    .embd
+                    .try_gather(n_embd, &tokens_next[done..done + tc])?,
+            )?;
             let mut e_norm = e.uninit(tc * n_embd)?;
             e.rms_norm(&e_emb, mtp.enorm.float_data(), &mut e_norm, n_embd, tc, eps)?;
             // hnorm over the chunk's hidden rows (one contiguous view copy — rms_norm
@@ -3016,7 +3020,7 @@ impl HybridModel {
         let exact_scope = eh.exact_scope(true);
         let mut block: Vec<u32> = vec![c.mask_token_id; b];
         block[0] = anchor;
-        let noise = eh.htod(&self.embd.gather(n_embd, &block))?;
+        let noise = eh.htod(&self.embd.try_gather(n_embd, &block)?)?;
         let pos_block: Vec<i32> = ((start as i32)..(start + b) as i32).collect();
         let dh = draft.forward_round(eh, kv, &noise, &pos_block)?;
 
