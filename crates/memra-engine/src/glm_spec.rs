@@ -187,10 +187,13 @@ use crate::dflash::{DflashDraft, DflashKv, DsparkDraftSample};
 use crate::forward::argmax;
 use crate::hybrid::{HybridModel, Mixer};
 use crate::spec::SpecSampling;
-use crate::spec_phase::SpecPhaseNs;
+use crate::spec_phase::{ProfClock, SpecFirstTokenProf, SpecPhaseNs, spec_prof_on};
 use cudarc::driver::CudaSlice;
 
 type Res<T> = Result<T, Box<dyn std::error::Error>>;
+/// Round-cadence commit hook of `glm5_spec_session_burst_streamed` (lane/b200-spec-ttft-
+/// 20260902): called with every newly committed slice of a burst, in order, disjoint.
+pub type CommitHook<'a> = &'a mut dyn FnMut(&[u32]);
 
 /// `MEMRA_GLM5_SPEC=1` routes `generate_spec` to the glm5 T-parallel loop. Default OFF:
 /// unset/0 keeps the standing `refuse_hyper` refusal, so serving is byte-identical to the
@@ -1758,9 +1761,18 @@ impl HybridModel {
                     .index as usize,
             ),
         };
+        // FIRST-TOKEN PROFILE (lane/b200-spec-ttft-20260902, `MEMRA_SPEC_PROF=1`): the
+        // head engine resolves before any device work (a pure placement lookup), so the
+        // clock can bound every creation phase on both the primary and head streams.
+        let eh = self.glm5_head_engine(e)?;
+        let mut prof = spec_prof_on().then(SpecFirstTokenProf::default);
+        let mut pclk = prof.as_ref().map(|_| ProfClock::start(e, eh));
         // Stage-owned allocation under a split (each layer's planes on its stage's device,
         // trailing MTP plane on the last stage); door shut = plain `Cache::new_planned`.
         let mut cache = crate::pp::new_cache_planned(e, &self.cfg, &self.plan, ctx_cap)?;
+        if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
+            pf.cache_alloc_ms = ck.lap(e, eh);
+        }
 
         // ---- prime, boundary token, draft-source warm over the prompt ----
         // `prime_cache` routes to its own ppN twin under the split; `hiddens` is owned by
@@ -1779,7 +1791,9 @@ impl HybridModel {
             None => None,
         };
         let (logits0, _seed, hiddens) = self.prime_cache(e, prompt, &mut cache, 0)?;
-        let eh = self.glm5_head_engine(e)?;
+        if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
+            pf.prime_ms = ck.lap(e, eh);
+        }
         // Prompt-boundary capture (lane/glm5-prefix-latent2): taken NOW — after the prime
         // filled every plane to the boundary, before the anchor/draft machinery below and
         // before any burst mutates the conv/ssm state or laps the tail ring. DFlash2-only:
@@ -1791,6 +1805,9 @@ impl HybridModel {
         } else {
             None
         };
+        if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
+            pf.capture_ms = ck.lap(e, eh);
+        }
         let mut sctr = 0u32;
         let anchor = match sampling.as_ref() {
             Some(sp) => {
@@ -1798,6 +1815,9 @@ impl HybridModel {
             }
             None => argmax(&logits0) as u32,
         };
+        if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
+            pf.anchor_ms = ck.lap(e, eh);
+        }
 
         // Keyed on the KIND the general law returned, not on a second local re-derivation:
         // a seam whose answer is recomputed by its consumer is decoration. (`tap_layers` is
@@ -1852,6 +1872,9 @@ impl HybridModel {
                 (Glm5DraftState::NativeMtp, pending)
             }
         };
+        if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
+            pf.draft_alloc_ms = ck.lap(e, eh);
+        }
         // Composition engagement receipt — printed immediately before the session is
         // RETURNED (after every admission law, the d2t vocabulary check, the cache
         // allocation and the prompt prime), so a grep for this line counts sessions that
@@ -1879,6 +1902,7 @@ impl HybridModel {
             max_ctx: ctx_cap,
             mtp_il,
             prefix_capture,
+            prof,
         })
     }
 
@@ -2122,14 +2146,25 @@ impl HybridModel {
             suffix.len(),
             fed.len(),
         ));
-        let (logits_s, _seed, hiddens) = self.prime_cache(e, suffix, &mut cache, 0)?;
+        // FIRST-TOKEN PROFILE (`MEMRA_SPEC_PROF=1`): the restored shape pays no cache or
+        // drafter allocation here (the caller restored both); its prime bucket is the
+        // SUFFIX prime, which is what makes the restore worth having.
         let eh = self.glm5_head_engine(e)?;
+        let mut prof = spec_prof_on().then(SpecFirstTokenProf::default);
+        let mut pclk = prof.as_ref().map(|_| ProfClock::start(e, eh));
+        let (logits_s, _seed, hiddens) = self.prime_cache(e, suffix, &mut cache, 0)?;
+        if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
+            pf.prime_ms = ck.lap(e, eh);
+        }
         // Republish capture at the NEW (deeper) boundary — pos == fed + suffix here.
         let prefix_capture = if glm5_spec_prefix_on() {
             self.glm5_prefix_boundary_capture(e, eh, &cache, &logits_s, &hiddens, cache.pos)
         } else {
             None
         };
+        if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
+            pf.capture_ms = ck.lap(e, eh);
+        }
         let mut sctr = 0u32;
         let anchor = match sampling.as_ref() {
             Some(sp) => crate::spec::sample_boundary_token(
@@ -2142,6 +2177,9 @@ impl HybridModel {
             )?,
             None => argmax(&logits_s) as u32,
         };
+        if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
+            pf.anchor_ms = ck.lap(e, eh);
+        }
         let sink = cache
             .hc_taps
             .take()
@@ -2177,6 +2215,7 @@ impl HybridModel {
             max_ctx: ctx_cap,
             mtp_il: None,
             prefix_capture,
+            prof,
         })
     }
 
@@ -2204,7 +2243,44 @@ impl HybridModel {
         k: usize,
         eos: &[u32],
     ) -> Res<(Vec<u32>, usize, usize)> {
-        self.glm5_spec_session_burst_gated(e, sess, target, k, eos, &mut Glm5SpecKnobs::default())
+        self.glm5_spec_session_burst_inner(
+            e,
+            sess,
+            target,
+            k,
+            eos,
+            &mut Glm5SpecKnobs::default(),
+            None,
+        )
+    }
+
+    /// [`glm5_spec_session_burst`] with a ROUND-CADENCE commit hook (lane/b200-spec-ttft-
+    /// 20260902, the `MEMRA_SPEC_FIRST_TOKEN_EAGER` door's engine half; the spec.rs
+    /// `on_commit` sse-cadence pattern): `on_commit` is called with every newly committed
+    /// slice of the burst — first the prime's anchor alone, then each round's `j` accepted
+    /// drafts + bonus — as DISJOINT, IN-ORDER slices whose concatenation IS the returned
+    /// burst, byte for byte. The hook returns nothing and the loop's control flow never
+    /// reads it, so the tokens produced are exactly `glm5_spec_session_burst`'s; only WHEN
+    /// the caller learns them moves (from burst end to round end). Without a hook the
+    /// first token of a cold session waits for the whole `target`-token burst.
+    pub fn glm5_spec_session_burst_streamed(
+        &self,
+        e: &Engine,
+        sess: &mut Glm5SpecSession,
+        target: usize,
+        k: usize,
+        eos: &[u32],
+        on_commit: CommitHook<'_>,
+    ) -> Res<(Vec<u32>, usize, usize)> {
+        self.glm5_spec_session_burst_inner(
+            e,
+            sess,
+            target,
+            k,
+            eos,
+            &mut Glm5SpecKnobs::default(),
+            Some(on_commit),
+        )
     }
 
     /// [`glm5_spec_session_burst`] with GATE INSTRUMENTS (`Glm5SpecKnobs` — never a serving
@@ -2217,6 +2293,23 @@ impl HybridModel {
         k: usize,
         eos: &[u32],
         knobs: &mut Glm5SpecKnobs<'_>,
+    ) -> Res<(Vec<u32>, usize, usize)> {
+        self.glm5_spec_session_burst_inner(e, sess, target, k, eos, knobs, None)
+    }
+
+    /// The one burst loop behind the three public entries (plain / streamed / gated).
+    #[allow(clippy::too_many_arguments)]
+    // allow: the parameter list is the burst contract plus the two instruments (gate
+    // knobs, commit hook); bundling would hide which inputs are serving vs instrument
+    fn glm5_spec_session_burst_inner(
+        &self,
+        e: &Engine,
+        sess: &mut Glm5SpecSession,
+        target: usize,
+        k: usize,
+        eos: &[u32],
+        knobs: &mut Glm5SpecKnobs<'_>,
+        mut on_commit: Option<CommitHook<'_>>,
     ) -> Res<(Vec<u32>, usize, usize)> {
         let cap = Self::hyper_batch_cap();
         if k == 0 || k + 1 > cap {
@@ -2257,12 +2350,22 @@ impl HybridModel {
         let mut accepted = 0usize;
         let mut phase: Option<SpecPhaseNs> =
             crate::spec_phase::spec_trace_on().then(SpecPhaseNs::default);
+        // FIRST-TOKEN PROFILE: the first burst's wall (its tokens are host-visible at
+        // return, so no drain is needed to bound it).
+        let first_burst = (!sess.anchor_emitted && sess.prof.is_some())
+            .then(|| (std::time::Instant::now(), sess.rounds));
+        // sse-cadence flush cursor: everything in out[..flushed] has been handed to on_commit.
+        let mut flushed = 0usize;
         if !sess.anchor_emitted {
             // The prime's boundary token: emitted exactly once, by the first burst.
             out.push(sess.anchor);
             sess.anchor_emitted = true;
             if eos.contains(&sess.anchor) {
                 sess.done = true;
+            }
+            if let Some(cb) = on_commit.as_mut() {
+                cb(&out[flushed..]);
+                flushed = out.len();
             }
         }
         while out.len() < target && !sess.done {
@@ -2283,9 +2386,24 @@ impl HybridModel {
             }
             out.extend_from_slice(&round_tokens);
             sess.rounds += 1;
+            if let Some(cb) = on_commit.as_mut() {
+                // sse-cadence: this round's accepted drafts + bonus are committed — hand
+                // the caller exactly the not-yet-flushed tail (disjoint, in order).
+                cb(&out[flushed..]);
+                flushed = out.len();
+            }
         }
+        debug_assert!(
+            on_commit.is_none() || flushed == out.len(),
+            "every committed token must have been handed to on_commit"
+        );
         if let Some(ph) = phase.as_ref() {
             ph.emit("glm5-phase", "glm5-phase-v", k);
+        }
+        if let (Some((t0, rounds0)), Some(pf)) = (first_burst, sess.prof.as_mut()) {
+            pf.first_burst_ms = t0.elapsed().as_secs_f64() * 1e3;
+            pf.first_burst_rounds = sess.rounds - rounds0;
+            pf.first_burst_tokens = out.len();
         }
         Ok((out, drafted, accepted))
     }
@@ -2314,6 +2432,11 @@ impl HybridModel {
         // op below runs through the head engine (identity when the door is shut).
         let eh = self.glm5_head_engine(e)?;
         let mut t_mark = phase.as_ref().map(|_| SpecPhaseNs::clock(e, eh));
+        // FIRST-TOKEN PROFILE (`MEMRA_SPEC_PROF=1`): round 1 only — the same drains as the
+        // trace, bucketed into the session's one-shot profile instead of the per-burst
+        // accumulator. `pclk` rides into the DFlash2 draft fn so the prompt ingest (the
+        // drafter prime) gets its own bucket before the draft bucket starts.
+        let mut pclk = (sess.rounds == 0 && sess.prof.is_some()).then(|| ProfClock::start(e, eh));
         // Phase-boundary bump: drain, bucket the elapsed ns, restart the clock. No-op with
         // the trace off (t_mark is None and no stream is ever synchronized).
         macro_rules! bump {
@@ -2322,6 +2445,14 @@ impl HybridModel {
                     let now = SpecPhaseNs::clock(e, eh);
                     ph.$field += now.duration_since(*t0).as_nanos() as u64;
                     *t0 = now;
+                }
+            };
+        }
+        // Profile lap into the named first-round bucket (no-op with the profile off).
+        macro_rules! plap {
+            ($field:ident) => {
+                if let (Some(ck), Some(pf)) = (pclk.as_mut(), sess.prof.as_mut()) {
+                    pf.$field = ck.lap(e, eh);
                 }
             };
         }
@@ -2336,7 +2467,16 @@ impl HybridModel {
         // after this point is shared and source-blind — the exactness seam (module doc).
         let (drafts, qside, mtp_committed_len) = match sess.draft {
             Glm5DraftState::Dflash2 { .. } => {
-                let (d, q) = self.glm5_dflash_round_drafts(eh, sess, k, sp, knobs, p_min, pmin0)?;
+                let (d, q) = self.glm5_dflash_round_drafts(
+                    eh,
+                    sess,
+                    k,
+                    sp,
+                    knobs,
+                    p_min,
+                    pmin0,
+                    pclk.as_mut(),
+                )?;
                 (d, q, 0)
             }
             Glm5DraftState::NativeMtp => {
@@ -2458,6 +2598,7 @@ impl HybridModel {
             }
         };
         bump!(draft);
+        plap!(first_draft_ms);
 
         // DFlash2 source: arm the verify tap — the walk's rows are next round's drafter
         // context features (rows 0..keep survive the accept; the sink is taken in step 7).
@@ -2477,6 +2618,7 @@ impl HybridModel {
         rows.extend_from_slice(&drafts);
         let (vlogits, collapsed, ckpt) = self.glm5_verify_rows(e, &rows, &mut sess.cache)?;
         bump!(verify);
+        plap!(first_verify_ms);
 
         // ---- 4. accept ----
         // ZERO-DRAFT SAMPLED ROUND (PMIN0): the verify batch is just the anchor row —
@@ -2575,6 +2717,7 @@ impl HybridModel {
             }
         };
         bump!(accept);
+        plap!(first_accept_ms);
 
         // ---- 5. commit j drafts + the bonus token ----
         let mut round_tokens: Vec<u32> = Vec::with_capacity(j + 1);
@@ -2590,6 +2733,7 @@ impl HybridModel {
             self.glm5_verify_rollback(e, &mut sess.cache, &ckpt, keep)?;
         }
         bump!(roll);
+        plap!(first_roll_ms);
 
         // ---- 7+8. draft-source state maintenance, SOURCE-KEYED ----
         match &mut sess.draft {
@@ -2630,6 +2774,12 @@ impl HybridModel {
         sess.committed.extend_from_slice(&drafts[..j]);
         sess.anchor = bonus;
         bump!(maint);
+        plap!(first_maint_ms);
+        if let Some(pf) = sess.prof.as_mut()
+            && pclk.is_some()
+        {
+            pf.first_round_tokens = round_tokens.len();
+        }
         if let Some(ph) = phase {
             ph.rounds += 1;
         }
@@ -2727,6 +2877,7 @@ impl HybridModel {
         knobs: &mut Glm5SpecKnobs<'_>,
         p_min: f32,
         pmin0: bool,
+        pclk: Option<&mut ProfClock>,
     ) -> Res<(Vec<u32>, Glm5DraftQ)> {
         let dr = self
             .glm5_dflash
@@ -2744,6 +2895,7 @@ impl HybridModel {
             sctr: _,
             uctr,
             rounds,
+            prof,
             ..
         } = sess;
         let Glm5DraftState::Dflash2 { kv, pending, taps } = state else {
@@ -2765,6 +2917,11 @@ impl HybridModel {
             r0 += t_c;
         }
         pending.clear();
+        // FIRST-TOKEN PROFILE: round 1's ingest is the drafter's prime over the whole
+        // prompt — the one prompt-length-linear cost after the target prime.
+        if let (Some(ck), Some(pf)) = (pclk, prof.as_mut()) {
+            pf.draft_prime_ms = ck.lap(eh, eh);
+        }
         let start = cache.pos;
         debug_assert_eq!(
             kv.len, start,
@@ -3107,12 +3264,21 @@ pub struct Glm5SpecSession {
     /// burst mutates the recurrent/tail state, drained by the worker's sweep. `None` when the
     /// worker did not request capture or when any boundary invariant refused.
     prefix_capture: Option<crate::spec::SpecBoundaryCapture>,
+    /// FIRST-TOKEN PROFILE (lane/b200-spec-ttft-20260902): `Some` iff `MEMRA_SPEC_PROF=1`
+    /// at creation; filled through session creation and round 1 of the first burst, then
+    /// drained by the worker's one `[spec-prof]` line (`take_first_token_prof`).
+    prof: Option<SpecFirstTokenProf>,
 }
 
 impl Glm5SpecSession {
     /// Context capacity of the session's cache (the server's ContextFull guard).
     pub fn cache_max_ctx(&self) -> usize {
         self.max_ctx
+    }
+    /// Drain the first-token profile (doc on the field). `None` with the profile off or
+    /// once drained — the worker prints exactly one line per request.
+    pub fn take_first_token_prof(&mut self) -> Option<SpecFirstTokenProf> {
+        self.prof.take()
     }
     /// Drain the prompt-boundary capture (doc on the field; the dspark
     /// `take_prefix_capture` twin — the worker publishes it against `cache_ref`).
