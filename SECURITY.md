@@ -1,7 +1,7 @@
 # Security Policy
 
 memra loads GGUF and safetensors model files by memory-mapping them and parsing headers/tensor
-metadata directly — a malicious or corrupted model file is untrusted input to a memory-unsafe
+metadata directly: a malicious or corrupted model file is untrusted input to a memory-unsafe
 surface (CUDA kernels, raw byte repacking, mmap'd tensor reads). Treat any parser bug reachable
 from a model file as a security issue, not just a correctness bug.
 
@@ -35,6 +35,6 @@ metrics-access bug out of scope.
 
 ## Response
 
-This is a small research project without a dedicated security team — expect an acknowledgment
+This is a small research project without a dedicated security team. Expect an acknowledgment
 within a reasonable window, not an SLA. Fixes land as normal commits once triaged; there is no
 separate security-release channel at this project's current size.

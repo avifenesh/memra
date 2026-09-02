@@ -136,7 +136,7 @@ The tensor contract (`tensor_contract.rs`) and the engine's ggml -> HF name map
 checkpoint. `TensorCensus`, `memra model inspect`, and the `memra-reference` executor all read
 the CONTRACT. The ENGINE's loader reads the MAP. A row the map is missing does not fail: the
 name resolves to `None` and reads as an ABSENT tensor, and several load sites treat absent as a
-legal shape — a zero-filled router selection bias, a dropped shared expert, a skipped optional
+legal shape: a zero-filled router selection bias, a dropped shared expert, a skipped optional
 projection. The model then loads, serves, and computes something else.
 
 Three such gaps reached a real-artifact load in the GLM-5.3-Flash lane alone: the six mHC
@@ -147,7 +147,7 @@ parameters, the whole MLA family, and both `exp_probs_b.bias` and the PLURAL
 So, for every new architecture: write a completeness pin that compiles the real plan and
 requires EVERY tensor the GGUF-dialect contract declares to resolve through `resolve_ggml`
 onto a name the HF dialect of the SAME contract declares for the SAME `TensorId`. Pin the
-count. No per-name allowlist — an allowlist is exactly how a missing row stays missing.
+count. No per-name allowlist: an allowlist is exactly how a missing row stays missing.
 `glm5_next_every_contract_tensor_resolves_through_the_engine_map` in `hf_mapping.rs` is the
 template; it is CPU-only, needs no checkpoint and no GPU, and it caught the shared-expert gap
 on its first run. Every GPU fixture gate serves tensors under names the test itself chose, so
@@ -243,13 +243,13 @@ generated gate now carries the rules, and the spec is validated against them:
 
 - **The port comes from a reserved band, 18300-18399, and the generator refuses anything else.**
   Hand-written gates own 8002-8317 and 18086-18099. The example in this document used to say
-  **8094**, which is `tools/step35-b2-geometry-gate.sh`'s port — so every gate ever generated
+  **8094**, which is `tools/step35-b2-geometry-gate.sh`'s port, so every gate ever generated
   from it collided with that gate *and* with every sibling generated from the same example. The
   generator now computes the tree's port census by scanning `tools/` (and refuses an implausibly
   small census rather than certifying a port as free), and checks sibling
   `tools/generated-arch-gates/*/gate-spec.json` too.
 - **Each gate gets its own override variable**, derived from the slug:
-  `MEMRA_<SLUG>_B2GEO_PORT`. Not a shared `MEMRA_GATE_PORT` — that re-creates the collision the
+  `MEMRA_<SLUG>_B2GEO_PORT`. Not a shared `MEMRA_GATE_PORT`: that re-creates the collision the
   moment two gates run under one environment.
 - **The gate guards the port at run time** through `tools/port-guard.sh`: a pre-flight refusal
   before the bind, a post-boot assertion that the healthy responder is *our* child, and rc 2
@@ -258,7 +258,7 @@ generated gate now carries the rules, and the spec is validated against them:
 - **A SKIP is fatal by default: exit 77, not exit 0.** A missing artifact, a missing
   `nvidia-smi`, too few GPUs, or a declared-but-absent drafter print the SKIP, append a row to
   `$MEMRA_SKIP_CENSUS` when a census is wired, and exit 77. Set
-  `MEMRA_ARCH_GATE_ALLOW_SKIP=1` to account for a skip deliberately — the run then exits 0 and
+  `MEMRA_ARCH_GATE_ALLOW_SKIP=1` to account for a skip deliberately: the run then exits 0 and
   says out loud that it proves nothing. This is what makes the last line of this section
   enforceable instead of advisory.
 - **A drafter that was requested by env and is absent is a hard FAIL**, never a plain boot.
@@ -266,7 +266,7 @@ generated gate now carries the rules, and the spec is validated against them:
   no-spec run that reports PASS."*
 - **An empty completion is refused.** A 200 answering `{"reasoning": null, "content": null}` is
   non-empty and is not an error, so the old reference guard passed and every concurrent response
-  matched that same null — the byte-identity headline held while the model produced nothing.
+  matched that same null: the byte-identity headline held while the model produced nothing.
 - **The canary needs a declared discriminator.** `batch.canary_expect_regex` names the verdict
   line the injected seam is *guaranteed* to break. A canary that reads "the exit code was
   nonzero" certifies nothing: rc 75 is a GPU-lock timeout in which not one assertion ran.
@@ -347,7 +347,7 @@ The manifest is explicit because the scientific inputs are not derivable:
 - the prompt must cross the actual window/class boundary;
 - chunk and tick sets must straddle the suspected segmentation boundary;
 - the canary seam must change the runtime world and be shown to bite;
-- `canary_expect_regex` must name the verdict line that seam is *guaranteed* to break — only you
+- `canary_expect_regex` must name the verdict line that seam is *guaranteed* to break: only you
   know what the seam does, and the generator cannot infer it;
 - PP topology must match the only valid placement;
 - the concurrency widths must execute B>1; and
@@ -358,7 +358,7 @@ generator refuses on its own authority: pick any free value in 18300-18399 from 
 
 Re-copy the current base probe lists from `tools/fast-gate/map.tsv` before installing generated
 rows. Do not make a canary pass by changing only the expected label, and do not treat `SKIP`
-from a missing artifact or GPU as evidence — the generated gates now enforce that last one with
+from a missing artifact or GPU as evidence: the generated gates now enforce that last one with
 exit 77 rather than leaving it to your judgement, because for two audit rounds it was left to
 judgement and the template shipped `exit 0`.
 
