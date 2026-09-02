@@ -706,12 +706,43 @@ pub(crate) fn b200_matvec_arm_on() -> bool {
 /// `MEMRA_B200_MATVEC_ARM`: on an sm_120a build the var is a documented no-op and the naked
 /// sm_120a defaults stay byte-identical, per the per-hardware arm selection law. Default OFF
 /// everywhere pending its B200 A/B.
-pub(crate) fn b200_gemv_v2_on() -> bool {
-    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+/// `MEMRA_B200_GEMV_V2` as a LEVEL, not a boolean: `0`/unset off, `1` = the v2 family,
+/// `2` = v2 plus the cp.async-staged v3 bf16 walk wherever it fits (v3 falls back to v2 per
+/// call when the shape's dynamic shared memory would exceed the 48 KB default cap or when the
+/// shape wants split-K). Any other value is off, deliberately: a typo must not silently arm a
+/// kernel arm. Same `sm_100a`-BUILD restriction as before.
+pub(crate) fn b200_gemv_v2_level() -> u8 {
+    static V: std::sync::OnceLock<u8> = std::sync::OnceLock::new();
     *V.get_or_init(|| {
-        env!("MEMRA_BUILT_CUDA_ARCH") == "100a"
-            && std::env::var("MEMRA_B200_GEMV_V2").as_deref() == Ok("1")
+        if env!("MEMRA_BUILT_CUDA_ARCH") != "100a" {
+            return 0;
+        }
+        match std::env::var("MEMRA_B200_GEMV_V2").as_deref() {
+            Ok("1") => 1,
+            Ok("2") => 2,
+            _ => 0,
+        }
     })
+}
+
+pub(crate) fn b200_gemv_v2_on() -> bool {
+    b200_gemv_v2_level() >= 1
+}
+
+/// Dynamic shared memory one v3 CTA needs at this block size: `STAGES * R * (nb*8) * 2` bytes of
+/// stage buffers plus `R * nb * 4` bytes of reduction window. Mirrors `MEMRA_GEMV_V3_STAGES` and
+/// `MEMRA_GEMV_V3_REDOFF` in cu/qmatvec.cu; the two MUST move together.
+pub(crate) const GEMV_V3_STAGES: usize = 2;
+pub(crate) fn gemv_v3_smem_bytes(nb: usize) -> usize {
+    GEMV_V3_STAGES * GEMV_V2_ROWS * (nb * 8) * 2 + GEMV_V2_ROWS * nb * 4
+}
+
+/// True if a v3 launch fits the 48 KB default dynamic-shared-memory cap at `mmv_block()`.
+/// 36 KB at the default 128; 72 KB at 256, which does NOT fit and falls back to v2 rather than
+/// opting into `cudaFuncAttributeMaxDynamicSharedMemorySize` for a door that is still pending
+/// its receipt.
+pub(crate) fn gemv_v3_fits() -> bool {
+    gemv_v3_smem_bytes(mmv_block() as usize) <= 48 * 1024
 }
 
 /// Rows per block for the v2 bf16 GEMV family. Mirrors `MEMRA_GEMV_V2_ROWS` in cu/qmatvec.cu;
@@ -20064,6 +20095,53 @@ impl Engine {
         Ok(())
     }
 
+    /// Whether a v3 launch fits the 48 KB default dynamic-shared-memory cap at the current
+    /// `mmv_block()`. Exposed so a bench or gate can skip the arm explicitly instead of
+    /// discovering the decline as a launch error.
+    pub fn gemv_v3_fits(&self) -> bool {
+        gemv_v3_fits()
+    }
+
+    /// The v3 bf16 GEMV launch (`matvec_bf16_v3`): the v2 kernel with its weight tiles staged
+    /// through shared memory by `cp.async` instead of held in registers, which is the only one
+    /// of this lane's three named next-levers that changes the in-flight-bytes arithmetic (see
+    /// the kernel comment and the lane doc's section 9). Bit-identical to `matvec_bf16_v2`, and
+    /// therefore to the shipped kernel: the chunk size is pinned to the shipped per-thread
+    /// stride so a row's accumulation order is unchanged. No split-K twin — v3 is for the wide
+    /// shapes; the caller falls back to v2 when a shape wants a split.
+    pub fn matvec_bf16_v3_raw(
+        &self,
+        w: &CudaSlice<u8>,
+        x: &CudaSlice<f32>,
+        y: &mut CudaSlice<f32>,
+        in_f: usize,
+        out_f: usize,
+        t: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if t == 0 || !in_f.is_multiple_of(8) || x.len() < t * in_f || y.len() < t * out_f {
+            return Err("matvec_bf16_v3 geometry".into());
+        }
+        let nb = mmv_block();
+        let smem = gemv_v3_smem_bytes(nb as usize);
+        if smem > 48 * 1024 {
+            return Err("matvec_bf16_v3 smem over the 48 KB default cap".into());
+        }
+        let f = self.func("matvec_bf16_v3");
+        let cfg = LaunchConfig {
+            grid_dim: (out_f.div_ceil(GEMV_V2_ROWS) as u32, t as u32, 1),
+            block_dim: (nb, 1, 1),
+            shared_mem_bytes: smem as u32,
+        };
+        let (ini, outi) = (in_f as i32, out_f as i32);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(w).arg(x).arg(&mut *y).arg(&ini).arg(&outi);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(())
+    }
+
     /// v2 twin of [`Engine::moe_gate_up_preclamp8_q8`] (`MEMRA_B200_GEMV_V2`): 8 warps/block on
     /// `threadIdx.y` and a g-walk unrolled by two so both groups' weight/scale/activation loads
     /// issue before either dp4a chain runs. Per-warp arithmetic is the shipped kernel's, in the
@@ -23258,11 +23336,20 @@ impl Engine {
         // (the LT door is an instrument, never the product).
         if b200_gemv_v2_on() {
             let ksplit = self.gemv_v2_ksplit(in_f, out_f, t);
+            // v3 (level 2) is the cp.async-staged walk. It has no split-K twin and needs its
+            // 36 KB of dynamic smem to fit the 48 KB default cap, so it declines per call
+            // rather than per process and v2 takes those shapes.
+            let v3 = b200_gemv_v2_level() >= 2 && ksplit == 1 && gemv_v3_fits();
             if GEMV_V2_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+                let arm = if v3 { "v3 (cp.async staged)" } else { "v2" };
                 eprintln!(
-                    "[b200-gemv-v2] engaged t={t} in_f={in_f} out_f={out_f} ksplit={ksplit} \
-                     (MEMRA_B200_GEMV_V2=1)"
+                    "[b200-gemv-v2] engaged arm={arm} t={t} in_f={in_f} out_f={out_f} \
+                     ksplit={ksplit} (MEMRA_B200_GEMV_V2={})",
+                    b200_gemv_v2_level()
                 );
+            }
+            if v3 {
+                return self.matvec_bf16_v3_raw(w, x, y, in_f, out_f, t);
             }
             return self.matvec_bf16_v2_raw(w, x, y, in_f, out_f, t, ksplit);
         }

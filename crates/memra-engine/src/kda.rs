@@ -1577,18 +1577,22 @@ impl Engine {
             in_f,
             dims,
             t,
-            crate::b200_gemv_v2_on(),
+            crate::b200_gemv_v2_level(),
         )
     }
 
     /// The same launch with the arm chosen EXPLICITLY instead of from the memoized
-    /// `MEMRA_B200_GEMV_V2` door, so a bench or gate can drive both arms inside one process
-    /// (`b200_matvec_bench`, the `_arm_raw` precedent). `use_v2` selects
-    /// `qmatvec_kda6_bf16f32_v2`: the three BF16 ranges take the v2 eight-rows-per-block walk
-    /// (activation loaded once and reused across the rows, ten 16 B loads in flight before the
-    /// first fma, one barrier chain per block) instead of `kda6_bf16_rows4`'s four sequential
-    /// rows. Per row the arithmetic is unchanged, so it is BIT-IDENTICAL to the shipped fused
-    /// kernel, which is itself bit-identical per row to `matvec_bf16_f32acc_x4_rows`.
+    /// `MEMRA_B200_GEMV_V2` door, so a bench or gate can drive every arm inside one process
+    /// (`b200_matvec_bench`, the `_arm_raw` precedent).
+    ///
+    /// `arm`: `0` = the shipped `qmatvec_kda6_bf16f32`; `1` = `_v2`, whose three BF16 ranges take
+    /// the eight-rows-per-block walk (activation loaded once and reused across the rows, ten
+    /// 16 B loads in flight before the first fma, one barrier chain per block) instead of
+    /// `kda6_bf16_rows4`'s four sequential rows; `2` = `_v3`, the same walk with its weight
+    /// tiles staged through shared memory by `cp.async` so the in-flight budget stops being
+    /// register-bound. `2` falls back to `1` when v3's dynamic smem would exceed the 48 KB
+    /// default cap. Per row the arithmetic is unchanged in every arm, so all three are
+    /// BIT-IDENTICAL to each other and to `matvec_bf16_f32acc_x4_rows`.
     #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub fn kda_proj_fused6_bf16_arm_raw(
         &self,
@@ -1603,7 +1607,7 @@ impl Engine {
         in_f: usize,
         dims: [usize; 6],
         t: usize,
-        use_v2: bool,
+        arm: u8,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if t == 0 || !in_f.is_multiple_of(128) || x.len() < t * in_f {
             return Err("kda_proj_fused6_bf16 geometry".into());
@@ -1640,23 +1644,32 @@ impl Engine {
                 return Err(format!("kda_proj_fused6_bf16: output {i} too small").into());
             }
         }
-        // Rows per block, and therefore the block partition of the six ranges: 4 for the
-        // shipped kernel, `GEMV_V2_ROWS` for the v2 twin. The v2 kernel takes the R-row
-        // reduction window as DYNAMIC shared memory (R * blockDim.x floats).
-        let rpb = if use_v2 { crate::GEMV_V2_ROWS } else { 4 };
-        let blocks: usize = dims.iter().map(|d| d.div_ceil(rpb)).sum();
-        let f = self.func(if use_v2 {
-            "qmatvec_kda6_bf16f32_v2"
+        // v3 declines to v2 when its staged tiles would not fit the 48 KB default dynamic
+        // shared-memory cap (36 KB at the default mmv_block()=128, 72 KB at 256).
+        let arm = if arm >= 2 && !crate::gemv_v3_fits() {
+            1
         } else {
-            "qmatvec_kda6_bf16f32"
+            arm
+        };
+        // Rows per block, and therefore the block partition of the six ranges: 4 for the
+        // shipped kernel, `GEMV_V2_ROWS` for the v2/v3 twins. v2 takes the R-row reduction
+        // window as DYNAMIC shared memory (R * blockDim.x floats); v3 takes that plus its
+        // cp.async stage buffers.
+        let nb = crate::mmv_block();
+        let rpb = if arm >= 1 { crate::GEMV_V2_ROWS } else { 4 };
+        let blocks: usize = dims.iter().map(|d| d.div_ceil(rpb)).sum();
+        let f = self.func(match arm {
+            0 => "qmatvec_kda6_bf16f32",
+            1 => "qmatvec_kda6_bf16f32_v2",
+            _ => "qmatvec_kda6_bf16f32_v3",
         });
         let cfg = LaunchConfig {
             grid_dim: (blocks as u32, t as u32, 1),
-            block_dim: (crate::mmv_block(), 1, 1),
-            shared_mem_bytes: if use_v2 {
-                (crate::GEMV_V2_ROWS as u32) * crate::mmv_block() * 4
-            } else {
-                0
+            block_dim: (nb, 1, 1),
+            shared_mem_bytes: match arm {
+                0 => 0,
+                1 => (crate::GEMV_V2_ROWS as u32) * nb * 4,
+                _ => crate::gemv_v3_smem_bytes(nb as usize) as u32,
             },
         };
         let inf = in_f as i32;

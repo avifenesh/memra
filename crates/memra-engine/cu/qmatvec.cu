@@ -8,6 +8,7 @@
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
 #include <cuda_fp8.h>
+#include <cuda_pipeline.h>   // cp.async staging for the v3 GEMV family (sm_80+)
 #include <cstdint>
 
 // PDL entry (same contract as kernels.cu): cudaGridDependencySynchronize() orders this
@@ -14149,6 +14150,14 @@ extern "C" __global__ __launch_bounds__(256) void qmatvec_kda6_bf16f32_v2(
             f32_mmvq_row1(W4, xrow, y4 + (size_t)t * out4, in_f, out4, b * R + p);
         return;
     }
+    // BUG FIX (box receipt 2026-09-02, gate-gemv-bench): this `b -= nb` was dropped in the
+    // first cut. The shipped kernel has it; without it the last range's block index still
+    // carries range 4's offset, every `b * R + p` lands past `out5`, `f32_mmvq_row1` returns
+    // for all of them, and y5 is NEVER WRITTEN. On the bench dims that is exactly the observed
+    // failure: MISMATCH n=64 (= out5) max_abs_diff=2.442e2 (= max |y5|), with the other five
+    // ranges bit-identical. Range 5 is the ONLY range with no `if (b < nb)` guard behind it, so
+    // nothing else caught the missing decrement.
+    b -= nb;
     for (int p = 0; p < R; p++)
         f32_mmvq_row1(W5, xrow, y5 + (size_t)t * out5, in_f, out5, b * R + p);
 }
@@ -14252,4 +14261,208 @@ extern "C" __global__ __launch_bounds__(256) void moe_down8_fma_q8_v2(
         for (int k = 0; k < n_used; k++) chain = __fmaf_rn(w.v[k], parts[k], chain);
         dst[o] = chain;
     }
+}
+
+
+// =====================================================================================
+// v3: cp.async-STAGED bf16 GEMV (MEMRA_B200_GEMV_V2=2, lane/b200-gemv-hbm-20260902)
+// =====================================================================================
+//
+// WHY A THIRD FORM. Box receipt 2026-09-02 (B200 dev 0, b200_matvec_bench 5 3): v2 took the
+// bf16 rows from 33.4/30.65 us to 23.7/24.3 us (1.41x / 1.26x) and the fused kda6 group from
+// 100.8 to 65.0 us (1.55x, 3.18 TB/s). 3.18 TB/s is 40% of the 8 TB/s wall — real, and short of
+// the 60% target. The v2 in-flight budget is REGISTER-BOUND and that is what caps it:
+//
+//   v2 kda6  : 96 registers -> 65536/96 = 682 threads/SM, i.e. 5 CTAs of 128 -> 640 threads,
+//              each holding 10 x 16 B = 160 B  =>  ~102 KB per SM outstanding.
+//
+// Of the three levers this lane's open items named, only one changes that number:
+//
+//   persistent CTA        : same loop, fewer launches. In-flight per SM UNCHANGED (~102 KB).
+//                           It attacks launch count, which is the graph lane's axis, not this one.
+//   2-CTA cluster + DSMEM : shares the activation between two CTAs. The activation is already
+//                           only 1/4 of v2's traffic, so the ceiling on the win is ~12% of load
+//                           instructions and in-flight bytes are UNCHANGED.
+//   cp.async / TMA staging: moves the in-flight bytes OUT of registers into shared memory, so
+//                           the budget stops being register-bound entirely.
+//
+//   v3       : 2 stages x 8 rows x (blockDim*8) elements x 2 B = 32 KB in flight per CTA, plus
+//              4 KB of reduction window = 36 KB of smem per CTA. 228 KB/SM / 36 KB = 6 CTAs
+//              =>  ~192 KB per SM outstanding, 1.9x v2, at a register count low enough that
+//              registers stop binding at all. 36 KB also stays under the 48 KB default dynamic
+//              smem cap, so no cudaFuncSetAttribute opt-in is needed.
+//
+// cp.async rather than `cp.async.bulk`/TMA: same arithmetic (both land bytes in smem without
+// occupying registers), a fraction of the machinery, and no mbarrier protocol to get wrong on a
+// part this lane cannot run. TMA remains the follow-up if v3's shape is right and its issue rate
+// is the next wall.
+//
+// THE CHUNK SIZE IS NOT A TUNING KNOB. It is pinned to `blockDim.x * 8`, which is exactly the
+// shipped kernel's per-thread stride, so chunk `c` hands thread `tid` exactly one index
+// `i = c*kch + tid*8` and walking chunks ascending reproduces the shipped `i` sequence
+// EXACTLY. Any other chunk size would reorder a row's accumulation and cost the bit-identity.
+//
+// NO BARRIERS ARE ADDED, and that is load-bearing: thread `tid` issues the copy for
+// `dst + p*kch + tid*8` and later reads THAT SAME ADDRESS, for every one of the R rows. Each
+// thread therefore consumes only bytes it copied itself, `__pipeline_commit`/`wait_prior` are
+// per-thread, and no `__syncthreads` is required between stages -- so v3 keeps v2's
+// one-barrier-chain-per-block property (9.4 KB of DRAM traffic per barrier) while doubling the
+// bytes outstanding. Reissuing a slot overwrites only the issuing thread's own lane, after that
+// thread has read it in program order.
+#define MEMRA_GEMV_V3_STAGES 2
+
+// Elements of `unsigned short` in one stage slot, and the float offset at which the reduction
+// window starts. Both are recomputed identically by the host launcher (`gemv_v3_smem_bytes`).
+#define MEMRA_GEMV_V3_SLOT(R, kch) ((R) * (kch))
+#define MEMRA_GEMV_V3_REDOFF(R, kch) ((MEMRA_GEMV_V3_STAGES * (R) * (kch)) / 2)
+
+template <int R>
+__device__ __forceinline__ void gemv_v3_stage_issue(
+        const unsigned short* const* wr, unsigned short* stage, int in_f, int kch, int c) {
+    const int k0 = c * kch;
+    const int len = min(kch, in_f - k0);
+    unsigned short* dst = stage + (c % MEMRA_GEMV_V3_STAGES) * MEMRA_GEMV_V3_SLOT(R, kch);
+    const int j = (int)threadIdx.x * 8;
+    if (j < len) {
+#pragma unroll
+        for (int p = 0; p < R; p++)
+            __pipeline_memcpy_async(dst + p * kch + j, wr[p] + k0 + j, 16);
+    }
+}
+
+template <int R>
+__device__ __forceinline__ void gemv_v3_walk_bf16(
+        const unsigned short* __restrict__ w, int in_f, int row0, int nrow,
+        const float* __restrict__ x, float (&acc)[R], unsigned short* stage) {
+    const int kch = (int)blockDim.x * 8;      // == the shipped per-thread stride, pinned
+    const int nch = (in_f + kch - 1) / kch;
+    const unsigned short* wr[R];
+#pragma unroll
+    for (int p = 0; p < R; p++) wr[p] = w + (size_t)(row0 + min(p, nrow - 1)) * (size_t)in_f;
+
+    for (int s = 0; s < MEMRA_GEMV_V3_STAGES && s < nch; s++) {
+        gemv_v3_stage_issue<R>(wr, stage, in_f, kch, s);
+        __pipeline_commit();
+    }
+    for (int c = 0; c < nch; c++) {
+        __pipeline_wait_prior(MEMRA_GEMV_V3_STAGES - 1);
+        const int i = c * kch + (int)threadIdx.x * 8;
+        if (i < in_f) {
+            const unsigned short* sb = stage
+                    + (c % MEMRA_GEMV_V3_STAGES) * MEMRA_GEMV_V3_SLOT(R, kch)
+                    + (int)threadIdx.x * 8;
+            const float4 x0 = __ldg(reinterpret_cast<const float4*>(x + i));
+            const float4 x1 = __ldg(reinterpret_cast<const float4*>(x + i + 4));
+#pragma unroll
+            for (int p = 0; p < R; p++) {
+                const unsigned short* wp = sb + p * kch;
+                acc[p] += __uint_as_float((unsigned)wp[0] << 16) * x0.x;
+                acc[p] += __uint_as_float((unsigned)wp[1] << 16) * x0.y;
+                acc[p] += __uint_as_float((unsigned)wp[2] << 16) * x0.z;
+                acc[p] += __uint_as_float((unsigned)wp[3] << 16) * x0.w;
+                acc[p] += __uint_as_float((unsigned)wp[4] << 16) * x1.x;
+                acc[p] += __uint_as_float((unsigned)wp[5] << 16) * x1.y;
+                acc[p] += __uint_as_float((unsigned)wp[6] << 16) * x1.z;
+                acc[p] += __uint_as_float((unsigned)wp[7] << 16) * x1.w;
+            }
+        }
+        if (c + MEMRA_GEMV_V3_STAGES < nch)
+            gemv_v3_stage_issue<R>(wr, stage, in_f, kch, c + MEMRA_GEMV_V3_STAGES);
+        __pipeline_commit();
+    }
+}
+
+// v3 BF16 GEMV. Same grid/block/reduction as `matvec_bf16_v2`, same per-row accumulation order
+// as `matvec_bf16_f32acc_x4_rows` -> BIT-IDENTICAL to both. Dynamic smem =
+// STAGES*R*(blockDim.x*8)*2 + R*blockDim.x*4 bytes.
+extern "C" __global__ __launch_bounds__(256) void matvec_bf16_v3(
+        const unsigned short* __restrict__ w, const float* __restrict__ x,
+        float* __restrict__ y, int in_f, int out_f) {
+    const int R = MEMRA_GEMV_V2_ROWS;
+    const int trow = blockIdx.y;
+    x += (size_t)trow * in_f;
+    y += (size_t)trow * out_f;
+    const int row0 = blockIdx.x * R;
+    const int nrow = min(R, out_f - row0);
+    if (nrow <= 0) return;
+    const int kch = (int)blockDim.x * 8;
+    unsigned short* stage = reinterpret_cast<unsigned short*>(gemv_v2_red);
+    float* red = gemv_v2_red + MEMRA_GEMV_V3_REDOFF(R, kch);
+    float acc[R];
+#pragma unroll
+    for (int p = 0; p < R; p++) acc[p] = 0.0f;
+    gemv_v3_walk_bf16<R>(w, in_f, row0, nrow, x, acc, stage);
+    gemv_v2_reduce_bf16<R>(red, acc, y, row0, nrow);
+}
+
+__device__ __forceinline__ void kda6_bf16_rows8_v3(
+        const unsigned short* __restrict__ w, const float* __restrict__ x,
+        float* __restrict__ y, int in_f, int out_f, int blk) {
+    const int R = MEMRA_GEMV_V2_ROWS;
+    const int row0 = blk * R;
+    const int nrow = min(R, out_f - row0);
+    if (nrow <= 0) return;
+    const int kch = (int)blockDim.x * 8;
+    unsigned short* stage = reinterpret_cast<unsigned short*>(gemv_v2_red);
+    float* red = gemv_v2_red + MEMRA_GEMV_V3_REDOFF(R, kch);
+    float acc[R];
+#pragma unroll
+    for (int p = 0; p < R; p++) acc[p] = 0.0f;
+    gemv_v3_walk_bf16<R>(w, in_f, row0, nrow, x, acc, stage);
+    gemv_v2_reduce_bf16<R>(red, acc, y, row0, nrow);
+}
+
+// v3 twin of the fused KDA six-projection kernel. Range partition, block order and the three
+// f32 ranges are `qmatvec_kda6_bf16f32_v2`'s verbatim (including the `b -= nb` before range 5
+// whose absence was the first cut's y5 bug); only the three BF16 ranges change walk.
+extern "C" __global__ __launch_bounds__(256) void qmatvec_kda6_bf16f32_v3(
+        const unsigned short* __restrict__ W0, const unsigned short* __restrict__ W1,
+        const unsigned short* __restrict__ W2,
+        const float* __restrict__ W3, const float* __restrict__ W4,
+        const float* __restrict__ W5,
+        const float* __restrict__ x,
+        float* __restrict__ y0, float* __restrict__ y1, float* __restrict__ y2,
+        float* __restrict__ y3, float* __restrict__ y4, float* __restrict__ y5,
+        int in_f, int out0, int out1, int out2, int out3, int out4, int out5,
+        int m) {
+    const int R = MEMRA_GEMV_V2_ROWS;
+    int t = blockIdx.y;
+    if (t >= m) return;
+    const float* xrow = x + (size_t)t * in_f;
+    int b = blockIdx.x;
+    int nb;
+    nb = (out0 + R - 1) / R;
+    if (b < nb) {
+        kda6_bf16_rows8_v3(W0, xrow, y0 + (size_t)t * out0, in_f, out0, b);
+        return;
+    }
+    b -= nb;
+    nb = (out1 + R - 1) / R;
+    if (b < nb) {
+        kda6_bf16_rows8_v3(W1, xrow, y1 + (size_t)t * out1, in_f, out1, b);
+        return;
+    }
+    b -= nb;
+    nb = (out2 + R - 1) / R;
+    if (b < nb) {
+        kda6_bf16_rows8_v3(W2, xrow, y2 + (size_t)t * out2, in_f, out2, b);
+        return;
+    }
+    b -= nb;
+    nb = (out3 + R - 1) / R;
+    if (b < nb) {
+        for (int p = 0; p < R; p++)
+            f32_mmvq_row1(W3, xrow, y3 + (size_t)t * out3, in_f, out3, b * R + p);
+        return;
+    }
+    b -= nb;
+    nb = (out4 + R - 1) / R;
+    if (b < nb) {
+        for (int p = 0; p < R; p++)
+            f32_mmvq_row1(W4, xrow, y4 + (size_t)t * out4, in_f, out4, b * R + p);
+        return;
+    }
+    b -= nb;
+    for (int p = 0; p < R; p++)
+        f32_mmvq_row1(W5, xrow, y5 + (size_t)t * out5, in_f, out5, b * R + p);
 }

@@ -14702,6 +14702,22 @@ impl HybridModel {
         // the shipped kernels below — packing only changes which block/warp computes an
         // output, never the per-output arithmetic order. See `b200_matvec_arm_on` and
         // docs/FLAGS.md.
+        // MEMRA_B200_GEMV_V2's MoE v2 twins are MEASURED AND NOT DISPATCHED (box receipt
+        // 2026-09-02, gate-gemv-bench on B200 dev 0, median us over N=5):
+        //
+        //   moe_gate_up_preclamp8_q8   shipped 55.0   _w4 53.3   v2 54.4   -> v2 1.011x, no gain
+        //   moe_down8_fma_q8           shipped 37.6   _w4 36.0   v2 43.2   -> v2 0.870x, REGRESSION
+        //
+        // Both v2 arms came back bit-identical, so this is a speed verdict, not a correctness
+        // one. The down twin's one-block-per-row / warp-per-expert form multiplied the launch
+        // width by 8 and got SLOWER: eight warps in a block now contend for the same L2 sectors
+        // and the shipped kernel's single warp was already covering the latency it was accused
+        // of exposing. The gate/up twin is inside noise of `_w4` and its own static receipt
+        // predicted that (longest LDG burst moved 18 -> 19; the shipped `sl` unroll already had
+        // the depth). So this call site keeps the shipped/`_w4` pair unconditionally: the v2
+        // kernels stay in the fatbin and in `b200_matvec_bench` as measured arms, and the door
+        // no longer overrides `MEMRA_B200_MATVEC_ARM` here. `MEMRA_B200_GEMV_V2` is a bf16-row
+        // and kda6 door now; see docs/FLAGS.md and the lane doc's section 4.
         let use_w4 = crate::b200_matvec_arm_on();
         let act = if use_w4 {
             e.moe_gate_up_preclamp8_q8_w4(
