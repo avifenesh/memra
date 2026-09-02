@@ -1,0 +1,27 @@
+# capacity_guard	waited_s=0
+# qwen4exp_real_gate	label=decode-ab	binary_sha256=69c44eb85b82d4eefb2e08e535beffa47b791be9c5444de84fc07ea3de8fc481	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=false	seams_env=idxsel
+# vram	post-engine	0, 595 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 0 MiB, 97887 MiB | 3, 0 MiB, 97887 MiB
+# load	505.6s
+# vram	post-load	0, 89971 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 0 MiB, 97887 MiB | 3, 0 MiB, 97887 MiB
+# ladder	state-allocated	0, 90451 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 0 MiB, 97887 MiB | 3, 0 MiB, 97887 MiB
+# ladder-progress	fill=16384	elapsed_s=79.9	0, 91827 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 0 MiB, 97887 MiB | 3, 0 MiB, 97887 MiB
+# ladder-progress	fill=32768	elapsed_s=161.8	0, 91923 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 0 MiB, 97887 MiB | 3, 0 MiB, 97887 MiB
+# ladder-rung	32768	161.9	161.9	16	27.4	27.3	27.4	36.44	rounds=3x12 medians=[27.4, 27.3, 27.3] spread=0.05%	false	163555	0, 91965 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 0 MiB, 97887 MiB | 3, 0 MiB, 97887 MiB	13,198,262,1042,7786,283,318,5334,430,281,21,19,348,220,15,13,17,20,553,21378,363,430,21609,26,198,262,1042,660,2615,490,2540,283,17743,10630,18879,973,528
+
+# ladder-jitter	rung=32768	arm=rung-default	n=34 mean=27.44 med=27.35 sd=0.573 cv=2.09% p99=30.73 max=30.73 outliers_1.5x=0
+# ladder-ab	rung=32768	seam=selgroup	arm=off	median_ms=27.34	tok_per_s=36.57	reps=5	medians=[27.34, 27.35, 27.34, 27.33, 27.34]	spread=0.04%	n=80 mean=27.34 med=27.34 sd=0.038 cv=0.14% p99=27.44 max=27.44 outliers_1.5x=0
+# ladder-ab	rung=32768	seam=selgroup	arm=on	median_ms=27.35	tok_per_s=36.57	reps=5	medians=[27.34, 27.35, 27.36, 27.35, 27.34]	spread=0.07%	n=80 mean=27.34 med=27.34 sd=0.038 cv=0.14% p99=27.47 max=27.47 outliers_1.5x=0
+# ladder-ab-verdict	rung=32768	seam=selgroup	off_ms=27.34	on_ms=27.35	speedup=0.9999x	delta_pct=-0.01%	reps_per_arm=5 (escalated)	host_probe=false	vol_cs=49	nonvol_cs=37	threads=3	launch_cpu_migrations=0	launch_cpus_seen=0
+# ladder-ab-restore	seam=selgroup	arm=off
+# ladder receipt: /root/realgate/downsel/ladder-decode-ab.tsv
+# cell	decode-ab
+# seams_env	MEMRA_Q4E_SEAMS=idxsel (+selgroup on the ON arm, harness-flipped)
+# selgroup_arm	off vs auto
+# ckpt	/root/data/q48fn-yarn1m
+# kv_quant	default (owner K=q8_0 / V=q5_1, hardcoded per-family)
+# idxq	default
+# corpus_commit	beadd77e6fa241d9a75210daf8a7a3c6dbeefdb7
+# card	0
+# bin_sha256	69c44eb85b82d4eefb2e08e535beffa47b791be9c5444de84fc07ea3de8fc481

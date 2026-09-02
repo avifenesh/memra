@@ -1464,8 +1464,7 @@ fn sel_v3_on() -> bool {
 // `spec/downsel/` produce; until those exist, ON would be an unmeasured default.
 //
 // Arm: `MEMRA_Q4E_SEAMS=selgroup` (both families AUTO). Per-family shapes for the A/B
-// ladder: `selgroup=dn:4:1+gu:16:2`, `selgroup=dn:8:1+gu:off`, ... Roll back: omit it, or
-// `selgroup=0`.
+// ladder: `selgroup=dn:4:1+gu:16:2`, `selgroup=dn:8:1+gu:off`, ... Roll back: `selgroup=0` (omitting the name arms AUTO since the 2026-09-02 default flip).
 //
 // AUTO derives the shape from the geometry rather than pinning a number, because the two
 // families have different `pairs` and a single global shape would starve one of them:
@@ -1486,14 +1485,22 @@ fn sel_v3_on() -> bool {
 // ROUND-BUDGET-COMPOSITION.md) and the pack kernel's shape differs; if the EP2 lane
 // revives a two-card route through seg C, extend the seam there THEN, with its own gate
 // arm, rather than silently inheriting a shape never measured on the pack kernel.
+// DEFAULT FLIPPED TO AUTO 2026-09-02 on box receipts (research/qwen4exp-bringup-20260829/spec/
+// downsel/box/): cell B (K=5 spec A/B, serving caches q8_0/q5_1 + idxq q8, 5x64 interleaved,
+// arm order flipped per hold, spec-vs-plain byte identity on every arm) auto vs off =
+// 90.07/87.38, 90.60/87.14, 90.08/87.47 tok/s (+3.1/+4.0/+3.0%); cell C t=1 decode 32k
+// 0.9999x/1.0001x, cell D 262k rung 1.0003x (5 reps each) — no depth regression. The
+// pre-registered bar "gain > both arms' spread" was MISSED BY A HAIR on each hold (gain
+// 2.9-3.8% vs spreads 2.3-4.0%) while the sign never flipped across six holds; the owner
+// took the flip on that record (2026-09-02, PR #56). Rollback: `MEMRA_Q4E_SEAMS=selgroup=0`.
 const SEL_GROUP_OFF: u32 = 0;
 const SEL_GROUP_AUTO: u32 = 1;
 /// Down-projection family (`launch_nvfp4_sel_matvec`).
 static SEL_GROUP_DN: std::sync::atomic::AtomicU32 =
-    std::sync::atomic::AtomicU32::new(SEL_GROUP_OFF);
+    std::sync::atomic::AtomicU32::new(SEL_GROUP_AUTO);
 /// Fused gate+up+silu family (`launch_nvfp4_sel_gu_silu`).
 static SEL_GROUP_GU: std::sync::atomic::AtomicU32 =
-    std::sync::atomic::AtomicU32::new(SEL_GROUP_OFF);
+    std::sync::atomic::AtomicU32::new(SEL_GROUP_AUTO);
 
 fn sel_group_dn() -> u32 {
     SEL_GROUP_DN.load(std::sync::atomic::Ordering::Relaxed)
@@ -5961,7 +5968,7 @@ fn launch_nvfp4_sel_matvec(
     if y.len() < n_sel * out_f {
         return Err("qmatvec_nvfp4_modelopt_sel_f32: output shorter than n_sel*out_f".into());
     }
-    // Sub-warp pair groups (`selgroup`, default OFF) take precedence over the v3/v2/v1
+    // Sub-warp pair groups (`selgroup`, default AUTO since 2026-09-02) take precedence over the v3/v2/v1
     // chain when the geometry tiles exactly; `(g=32, rows=4)` reproduces v3's bits.
     let grp = sel_group_resolve(sel_group_dn(), in_f, out_f);
     let v3 = grp.is_none() && sel_v3_on() && in_f % 32 == 0 && out_f % 4 == 0;
@@ -6046,7 +6053,7 @@ fn launch_nvfp4_sel_gu_silu(
     if sel.is_none() == (pack_raw == 0) {
         return Err("qmatvec_nvfp4_modelopt_sel_gu_silu_f32: exactly one of sel/pack".into());
     }
-    // Sub-warp pair groups (`selgroup`, default OFF); `(g=32, rows=4)` reproduces the
+    // Sub-warp pair groups (`selgroup`, default AUTO since 2026-09-02); `(g=32, rows=4)` reproduces the
     // shipped kernel's bits, pack and tok_map modes included.
     let grp = sel_group_resolve(sel_group_gu(), in_f, ff);
     let f = e.func(if grp.is_some() {
