@@ -970,6 +970,36 @@ impl StepPool {
         }
     }
 
+    /// Drop every parked slot and report the bytes returned to the driver.
+    ///
+    /// `take_*` keeps a slot whenever `buf.len() >= len`, which is what makes the pool
+    /// free at steady state — and what makes a WIDE phase's slots outlive it. A chunked
+    /// co-prefill parks its t = 2,048 scratch and the spec decode that follows runs at
+    /// t <= k + 1, so without this the run carries GiBs of prefill-shaped workspace
+    /// through a phase that needs megabytes. At a 262,144 fill that is the difference
+    /// between arriving and `CUDA_ERROR_OUT_OF_MEMORY` (memra#53: the co-prefill finished
+    /// all 128 chunks in 1,476 s and then died at the transition with the trunk card at
+    /// 96,531 MiB of 97,887 MiB).
+    ///
+    /// This is not a behaviour arm and has no seam: it releases scratch the program has
+    /// finished with. Every `take_*` returns an UNINITIALIZED buffer and every consumer
+    /// writes before it reads (the pool's standing contract), so a fresh allocation is
+    /// indistinguishable from a parked one — the `mtp-spec-ring` byte-identity arm crosses
+    /// this exact boundary and is the gate. Captured graphs bake slot addresses, so the
+    /// caller invalidates `StepGraphs` alongside, the same way a growing multi-token chunk
+    /// already does.
+    fn shed(&mut self) -> usize {
+        let bytes = self.f32s.values().map(|b| b.len() * 4).sum::<usize>()
+            + self.i32s.values().map(|b| b.len() * 4).sum::<usize>()
+            + self.u8s.values().map(|b| b.len()).sum::<usize>()
+            + self.u64s.values().map(|b| b.len() * 8).sum::<usize>();
+        self.f32s.clear();
+        self.i32s.clear();
+        self.u8s.clear();
+        self.u64s.clear();
+        bytes
+    }
+
     fn take_i32(
         &mut self,
         e: &Engine,
@@ -15257,6 +15287,18 @@ impl Qwen4ExpGpu {
                     }
                 }
                 dstate.committed = n - 1;
+                // Prefill is over and nothing wider than k + 1 rows runs again in this
+                // generation: hand the t = 2,048 workspace back before the decode phase
+                // asks for its own buffers (see `StepPool::shed`). Graphs bake slot
+                // addresses, so they are invalidated here for the same reason a growing
+                // multi-token chunk invalidates them — at this point they are already
+                // default, because every t > 1 chunk reset them.
+                let shed_bytes = state.ws.shed();
+                state.graphs = StepGraphs::default();
+                println!(
+                    "# spec-prefill-shed\tworkspace_mib={:.1}\tchunks={chunks}",
+                    shed_bytes as f64 / (1024.0 * 1024.0),
+                );
                 debug_assert_eq!(last.len(), vocab);
                 match sampler.as_ref() {
                     None => host_argmax(&last) as u32,
