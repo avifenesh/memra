@@ -222,6 +222,25 @@ counter-based" (spec_sample.cu:1-5).
 | `gumbel_perturb_*`, `softmax_gather_*`, `residual_sample_*`, `filter_stats_f32`, `scatter_trim_logits_*`, `penalize_logits_*` (including heterogeneous sparse serving rows), `mask_logits_f32`, `memra_sctr_inc` | Gumbel-max sampling, top-k/p filtering, penalties, residual (rejection) sampler | sampling chain via MEMRA_TEMP/TOP_K/TOP_P/MIN_P/PENALTY_* plus batched serving `MEMRA_SERVE_DEVPENALTY` |
 | `spec_accept_greedy[_dc]`, `spec_seed_gather`, `spec_rollback_kv/stream`, `spec_fork_*`, `spec_assemble_verify`, `spec_ring_commit`, `spec_adapt_k`, `plain_tok_ring`, misc int copies | spec-decode accept/rollback/fork machinery | MEMRA_SPEC_* family (MEMRA_SPEC_DUAL_T lib.rs; MEMRA_SPEC_DFLASH FLAGS.md:25) |
 
+### cu/dsv4_gpu.cu — mHC (hyper-connections) glue kernels, partial inventory (static-lib TU, not a fatbin; compiled `-fmad=false` for bit-parity with the CPU oracle — build.rs:505-510)
+
+This ~3,700-line file (`memra_dsv4_*` FFI namespace) carries the dsv4/glm5_next dense +
+MoE decode/verify machinery end to end (embed, RoPE, indexer, sink attention, MoE
+route/combine, per-qtype GEMV arms, act-quant, and more) and is shared by BOTH the native
+dsv4 model class (`dsv4_gpu.rs`) and the glm5_next hyper-connections trunk (`hyper.rs`,
+via `dsv4_ffi`). Only the mHC (manifold-constrained hyper-connections) pre/post glue
+family is inventoried below (research/b200-sinkhorn-fusion-20260902); the remaining
+~130 symbols in this TU are not yet in this table.
+
+| symbol | purpose | dispatch flag | FFI binding |
+|---|---|---|---|
+| `dsv4_rowsq_scale_kernel` (:975) | mHC site pre-chain stage 1: rescale the site's raw mixing coefficients by `rsqrt(mean(x^2) + eps)` over the `[streams, hidden]` slab (block per token, f64 8-wide accumulate at pinned blockDim=128) | always, unless subsumed by `MEMRA_HC_FUSED_PRE` | dsv4_ffi.rs |
+| `dsv4_hc_sinkhorn_kernel` (:1395) / `dsv4_hc_sinkhorn_m_kernel` (:2963) | mHC site pre-chain stage 2: Sinkhorn-normalize the rescaled mixes into `pre`/`post`/`comb` gates (single-position / one-block-per-token batched twins; iters serial in one launch) | always, unless subsumed by `MEMRA_HC_FUSED_PRE` | dsv4_ffi.rs |
+| `dsv4_hc_collapse_kernel` (:1025) | mHC site pre-chain stage 3: collapse the `streams` state into the one branch input `y[t,:] = sum_c pre[t,c]*x[t,c,:]` | always, unless subsumed by `MEMRA_HC_FUSED_PRE` | dsv4_ffi.rs |
+| `dsv4_hc_pre_fused_kernel` (:3080) | `rowsq_scale` + `hc_sinkhorn_m` + `hc_collapse` as ONE launch per (site, token); BIT-IDENTICAL to the three-kernel chain by construction (verbatim per-stage bodies, shared-memory operand staging, bit-preserving Sinkhorn stationarity exit) | `MEMRA_HC_FUSED_PRE` (default OFF; lane/glm5-decode-diet 2026-08-31) | dsv4_ffi.rs |
+| `dsv4_hc_post_kernel` (:1053) | mHC post: `out[t,k,:] = post[t,k]*f[t,:] + sum_j comb[t,j,k]*residual[t,j,:]`. `f` is the SITE'S OWN attention or FFN branch output — a separate multi-kernel program (QKV/RoPE/attention core, or MoE/FFN) runs between the pre-chain's collapse write and this kernel's read, which is why no launch fuses this kernel with the pre-chain (research/b200-sinkhorn-fusion-20260902/LANE.md) | always | dsv4_ffi.rs |
+| `dsv4_hc_head_pre_kernel` (:1453) / `dsv4_hc_head_pre_m_kernel` (:3026) | dsv4's `HcCollapse::GatedHead` trunk-exit gate (sigmoid-gated pre-only collapse), single-position / batched twins — distinct from glm5_next's `Mean` exit (`dsv4_hc_mean_kernel`) | `HcCollapse::GatedHead` plans only | dsv4_ffi.rs |
+
 ### MMQ static-lib TUs (prefill GEMM per weight format)
 
 | file | host entry symbols | qtype | arch guard | dispatch flag | FFI binding |
