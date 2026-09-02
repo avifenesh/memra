@@ -71,6 +71,10 @@ pub mod vision_step;
 pub mod cache {
     pub use memra_kv::*;
 }
+/// Cooperative cancellation for long engine calls: a thread-local probe the serving caller
+/// arms around a prime, polled per chunk / layer / EP token stride (lane/glm5-tp-serve-wiring
+/// round 3, memra #14). Unarmed = one thread-local read, never trips.
+pub mod cancel;
 pub mod decode;
 pub mod decode_batch;
 pub mod dflash;
@@ -2014,7 +2018,56 @@ pub(crate) fn ep_diet_armed() -> (bool, &'static str) {
 /// the ONE reassociation is the per-token root+peer partial add (band-gated, never claimed
 /// byte). Read per call.
 pub fn ep_grouped_prime_on() -> bool {
-    ep_grouped_prime_armed().0
+    ep_grouped_prime_resolve(
+        std::env::var("MEMRA_EP_GROUPED_PRIME").ok().as_deref(),
+        std::env::var("MEMRA_GLM5_EP_GROUPED_PRIME").ok().as_deref(),
+    )
+}
+
+/// Pure half of [`ep_grouped_prime_on`]. DEFAULT ON (2026-09-03, lane/glm5-tp-serve-wiring
+/// round 3, memra #14): with NEITHER name set the door is armed, because the only consumer
+/// is the glm5 TP EP walk and without this arm that walk primes at 39-58 tok/s (the
+/// per-token per-slot host-canonical loop; the second TP-2 box gate ran a 245,421-token
+/// prime for 52 minutes without finishing). `=0` on either name is the rollback seam; an
+/// explicit `=1` and a disagreeing pair keep the alias-door semantics (a disagreeing pair
+/// falls CLOSED, loudly, through [`ep_grouped_prime_armed`]). The load-time co-refusal
+/// ("set but MEMRA_GLM5_TP is off") still keys on an EXPLICIT arm through
+/// [`ep_grouped_prime_armed`], so the default never refuses an unsharded load.
+pub(crate) fn ep_grouped_prime_resolve(general: Option<&str>, alias: Option<&str>) -> bool {
+    if general.is_none() && alias.is_none() {
+        return true;
+    }
+    // A set name resolves through the shared alias-door arithmetic; a disagreeing pair
+    // falls closed here and is announced once by `ep_grouped_prime_armed` at load.
+    alias_door_from(
+        ("MEMRA_EP_GROUPED_PRIME", general),
+        ("MEMRA_GLM5_EP_GROUPED_PRIME", alias),
+    )
+    .map(|(armed, _)| armed)
+    .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod ep_grouped_prime_default_tests {
+    use super::ep_grouped_prime_resolve;
+
+    #[test]
+    fn unset_is_on_by_default() {
+        assert!(ep_grouped_prime_resolve(None, None));
+    }
+
+    #[test]
+    fn zero_on_either_name_is_the_rollback_seam() {
+        assert!(!ep_grouped_prime_resolve(Some("0"), None));
+        assert!(!ep_grouped_prime_resolve(None, Some("0")));
+    }
+
+    #[test]
+    fn explicit_one_arms_and_a_disagreeing_pair_falls_closed() {
+        assert!(ep_grouped_prime_resolve(Some("1"), None));
+        assert!(ep_grouped_prime_resolve(None, Some("1")));
+        assert!(!ep_grouped_prime_resolve(Some("1"), Some("0")));
+    }
 }
 
 /// Once-per-process latch for the EP grouped-prime door's disagreeing-pair line.

@@ -661,12 +661,57 @@ I5 one vendor-default sampled request (no sampling params), I6 `/v1/completions`
 route markers with zero `[engine-error]` lines appended during the gate. A skipped item
 yields PARTIAL (exit 3), never PASS.
 
+**Round 2 (the second box gate) and what it changed.** Items 1-7 passed on the pair
+(readiness, pinned id, the greedy 128-token tape identical to PP-2, two concurrent tapes,
+vendor-default sampled, all three surfaces and tools, the EAGER-ONLY route line, zero engine
+errors). Two things failed, both at depth:
+
+- *The sharded prime was unusable at 256k.* The 245,421-token prompt ran 52 minutes
+  without finishing. The chunk schedule was already the single-engine one
+  (`hyper_prime_ranges`, arm 1; the pipelined arm 2 is PP-specific), but two prefill doors
+  were shut under the shard: the EP grouped MoE prime was default OFF
+  (`[glm5-ep-grouped-prime] flag=off`, so every MoE layer-chunk walked the per-token
+  per-slot host-canonical loop, the 39-58 tok/s class) and the TC MLA prefill chain declined
+  every head shard by name (`[mla-tc-prefill] DECLINED on glm5-TP head shards`). Both now
+  engage: `MEMRA_EP_GROUPED_PRIME` defaults ON (its only consumer is the TP EP walk; `=0` is
+  the rollback), and the TC chain runs on shards at the rank's head count with the peer
+  pass under its own runtime-device binding (`MEMRA_MLA_TC_PREFILL=0` is the rollback). Each
+  sharded prime call prints its receipt: `[glm5-tp] prime t=<tokens> chunks=<n>
+  chunk_max=<t> elapsed=<s> rate=<tok/s> ep_grouped_prime_dispatches=+N
+  mla_tc_prefill_dispatches=+N performance_claim=false`.
+- *A client disconnect mid-prime wedged the worker.* After the gate client was killed at
+  52 minutes, the next request was admitted by the HTTP layer and never dequeued, both GPUs
+  idle, no `[abort]` sweep line. An eager-only trunk primes its whole queue in one engine
+  call, and nothing inside that call could observe the closed channel; the per-tick sweep
+  runs only between calls. The engine now carries a cooperative cancel probe
+  (`memra_engine::cancel`: thread-local, armed by `prefill_tick`/`step_session` around the
+  prime with the session channel's closed state, polled per chunk, per layer, and every 64
+  tokens of the sequential EP loop). A trip unwinds the walk with a named `Cancelled`; the
+  worker marks the session aborted and logs `[abort] client disconnected mid-prime: ...`
+  (retire drops the partial cache, never parks it). The probe is unarmed outside the
+  serving prime (one thread-local read per boundary, no flag).
+
+**Gate.** `tools/glm5-tp2-serve-gate.py` runs against the listening server and exits
+non-zero on any request error (the first box script exited 0 on the failure above): I1
+`/readyz`, I2 the pinned id on `/v1/models`, I3 a 128-token greedy tape whose sha16
+(reasoning + content, streamed) must equal the PP-2 tape on the same artifact, I4 the same
+tape twice concurrently (the eager path is load-independent and never enters a batch step),
+I5 one vendor-default sampled request (no sampling params), I6 `/v1/completions` and
+`/v1/messages` round trips, I7 a tool-call request, I8 a 256k-class prompt with its prime
+rate (prompt tokens over TTFT, reported, never thresholded), I10 the same long prompt with
+the socket closed after `--cancel-after` seconds followed by a short request that must
+complete within `--recover-bound` seconds (a stall dumps the server's thread stacks through
+`--server-pid`, eu-stack or gdb, beside the receipts, so a wedge names its wait), I9 the
+boot-log route markers, the `[glm5-tp] prime` receipt, the `[abort]` line, and zero
+`[engine-error]` lines appended during the gate other than the named prime cancel. A
+skipped item yields PARTIAL (exit 3), never PASS.
+
 **Pending.** This lane's host gates are `cargo build`/`cargo test` for
 `memra-server`/`memra-engine`, `cargo fmt`, `cargo clippy -D warnings` (120a and 100a),
-`git diff --check`, `tools/check-flags.sh`. The round-2 box run of the gate above (the greedy
-tape vs PP-2, the sampled request, the 256k prompt, the admission KV sizing on the real
-artifact) is what closes this section; `research/glm5-tp-serve-wiring-20260902/LANE.md`
-carries the serving env, the round-1 receipt pointers, and the box invocation.
+`git diff --check`, `tools/check-flags.sh`. The round-3 box run of the gate above (the 256k
+prime rate with both doors engaged, the mid-prime cancel and bounded recovery) is what
+closes this section; `research/glm5-tp-serve-wiring-20260902/LANE.md` carries the serving
+env, the round-1 and round-2 receipt pointers, and the box invocation.
 
 ## OpenAI tools surface (serve-tools lane, 2026-08-02)
 
