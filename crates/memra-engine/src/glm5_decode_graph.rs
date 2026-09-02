@@ -133,7 +133,7 @@ struct StageGraphs {
     /// wrong-answer or a segfault, whichever the allocator hands back. `pos` continuity catches
     /// a rewind; this catches a re-seat, which `pos` alone cannot see. Verified before every
     /// token's replays; any mismatch drops the stage and re-captures.
-    state_sig: Vec<(usize, u64, u64, u64)>,
+    state_sig: Vec<LayerSig>,
     /// Has an exec of this stage been LAUNCHED since the last time the stream was drained? The
     /// re-capture path destroys execs and frees the buffers they baked, and doing that with a
     /// launch still outstanding is a destroy-in-use; this is what the error line reports so a box
@@ -143,25 +143,8 @@ struct StageGraphs {
 
 /// The `(conv, ssm, ssm_alt)` device pointers of one layer's recurrent state, or `None` when the
 /// layer has no recurrent slot.
-/// PHASE-INVARIANT BY CONSTRUCTION, and that is the whole point. `kda_cached` swaps
-/// `ssm_state` / `ssm_state_alt` on the HOST every step and the replay mirrors that swap, so an
-/// ORDERED triple differs on every single token — which is exactly what the first box run did:
-/// `[glm5-decode-graph] re-capture: a captured layer's recurrent-state buffer moved` fired on
-/// step 2 of the graph arm, on a session where nothing had actually moved. The ping-pong pair is
-/// therefore recorded UNORDERED (min, max): a swap cannot change it, a genuine RE-SEAT (a
-/// different buffer, e.g. a snapshot restore or a reuse-pool rehydrate) still does.
-fn recur_ptrs(e: &Engine, cache: &Cache, il: usize) -> Option<(u64, u64, u64)> {
-    use cudarc::driver::DevicePtr;
-    let rl = cache.recur.get(il)?.as_ref()?;
-    let st = e.stream();
-    let (c, _g0) = rl.conv_state.device_ptr(&st);
-    let (s, _g1) = rl.ssm_state.device_ptr(&st);
-    let (a, _g2) = rl.ssm_state_alt.device_ptr(&st);
-    Some((c, s.min(a), s.max(a)))
-}
-
 /// The buffers a stage's graphs bake, carried across a re-capture unchanged. Splitting them out
-/// is what lets a rebuild destroy ONLY the graphs: see the reuse note in `glm5_capture_stage`.
+/// is what lets a rebuild destroy ONLY the graphs.
 struct StageBufs {
     x_io: CudaSlice<f32>,
     ws: crate::hyper::HyperDecodeWs,
@@ -172,9 +155,9 @@ struct StageBufs {
 #[derive(Default)]
 pub(crate) struct Glm5DecodeGraphs {
     stages: Vec<StageGraphs>,
-    /// `(device ordinal, lo, hi)` keys whose capture FAILED once. A failed capture is a
-    /// permanent eager fall-through for this session rather than a per-token retry: retrying
-    /// would re-thrash the stream every step and turn one refusal into a hot loop.
+    /// `(device ordinal, lo, hi)` keys that are latched to the eager walk for the rest of the
+    /// session: a capture that FAILED once, or (since box run 3) a stage whose state signature
+    /// moved under it. Both are permanent eager fall-throughs rather than per-token retries.
     failed: Vec<(usize, usize, usize)>,
 }
 
@@ -213,6 +196,75 @@ fn kda_runs(m: &HybridModel, lo: usize, hi: usize) -> Vec<(usize, usize)> {
         hi,
         |il| matches!(&m.layers[il].mixer, Mixer::Kda(la) if la.tp.is_none()),
     )
+}
+
+/// One captured layer's state-buffer identity.
+///
+/// PHASE-INVARIANT BY CONSTRUCTION: `kda_cached` swaps `ssm_state`/`ssm_state_alt` on the HOST
+/// every step and the replay mirrors that swap, so the ping-pong pair is recorded UNORDERED
+/// (`p_lo`, `p_hi`). A swap cannot change it; a genuine re-seat still does.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct LayerSig {
+    il: usize,
+    conv: u64,
+    p_lo: u64,
+    p_hi: u64,
+}
+
+fn recur_sig(e: &Engine, cache: &Cache, il: usize) -> Option<LayerSig> {
+    use cudarc::driver::DevicePtr;
+    let rl = cache.recur.get(il)?.as_ref()?;
+    let st = e.stream();
+    let (conv, _g0) = rl.conv_state.device_ptr(&st);
+    let (s, _g1) = rl.ssm_state.device_ptr(&st);
+    let (a, _g2) = rl.ssm_state_alt.device_ptr(&st);
+    Some(LayerSig {
+        il,
+        conv,
+        p_lo: s.min(a),
+        p_hi: s.max(a),
+    })
+}
+
+/// The signature of every layer inside `[lo, hi)`'s captured runs, in capture order.
+fn stage_sig(m: &HybridModel, e: &Engine, cache: &Cache, lo: usize, hi: usize) -> Vec<LayerSig> {
+    kda_runs(m, lo, hi)
+        .iter()
+        .flat_map(|(a, b)| *a..*b)
+        .filter_map(|il| recur_sig(e, cache, il))
+        .collect()
+}
+
+/// NAME what moved, rather than reporting a bare "moved". Box run 3 (2026-09-02) showed the
+/// engine deciding to re-capture on step 2 of a real artifact where the ping-pong swap is the
+/// only thing that should have changed — so the interesting output is WHICH element differs and
+/// what the two pointers were, not that some element did.
+fn sig_diff(old: &[LayerSig], new: &[LayerSig]) -> Option<String> {
+    if old.len() != new.len() {
+        return Some(format!(
+            "layer-count {} -> {} (a captured layer lost or gained its recurrent slot)",
+            old.len(),
+            new.len()
+        ));
+    }
+    for (o, n) in old.iter().zip(new.iter()) {
+        if o.il != n.il {
+            return Some(format!("layer order {} -> {}", o.il, n.il));
+        }
+        if o.conv != n.conv {
+            return Some(format!(
+                "layer {} conv_state 0x{:x} -> 0x{:x}",
+                o.il, o.conv, n.conv
+            ));
+        }
+        if o.p_lo != n.p_lo || o.p_hi != n.p_hi {
+            return Some(format!(
+                "layer {} ssm pair {{0x{:x}, 0x{:x}}} -> {{0x{:x}, 0x{:x}}}",
+                o.il, o.p_lo, o.p_hi, n.p_lo, n.p_hi
+            ));
+        }
+    }
+    None
 }
 
 /// Announce the door's decision, with the reason. Once per DISTINCT message, not once per
@@ -549,13 +601,26 @@ impl HybridModel {
         let n_embd = self.cfg.n_embd as usize;
         let width = topology.streams * n_embd;
 
-        // Read the live state pointers BEFORE the pool takes its mutable borrow of the cache.
-        let live_sig: Vec<(usize, u64, u64, u64)> = kda_runs(self, lo, hi)
-            .iter()
-            .flat_map(|(a, b)| *a..*b)
-            .filter_map(|il| recur_ptrs(e, cache, il).map(|(c, s, a)| (il, c, s, a)))
-            .collect();
-        let mut reuse: Option<StageBufs> = None;
+        // Read the live state signature BEFORE the pool takes its mutable borrow of the cache.
+        let live_sig = stage_sig(self, e, cache, lo, hi);
+        // Reserved for the re-capture path, which is disabled above; a first capture allocates
+        // its own buffers.
+        let reuse: Option<StageBufs> = None;
+        // CONSERVATIVE DECISION (box run 3, 2026-09-02). Two facts from that run drive this.
+        // FIRST: the engine decided to re-capture on step 2 of a real artifact, where the
+        // ping-pong swap is the only thing that should have moved and the signature is already
+        // invariant under it — so something else moves on the real walk and this lane does not yet
+        // know what. SECOND: the short `re-capture:` note printed and the long decision line
+        // immediately after it did NOT, so the `CUDA_ERROR_INVALID_VALUE` comes from the TEARDOWN
+        // between them (the synchronize, the `remove`, or the exec drop), not from `capture_one` —
+        // no `capture-error:` line appeared either.
+        //
+        // So re-capture is DISABLED until a receipt says what moves and why the teardown fails.
+        // An invalidated stage falls through to the byte-identical eager walk and latches, which
+        // (a) removes the failing teardown from the token path entirely and (b) lets the box price
+        // the FIRST-capture case, which is the actual product question. The diff is NAMED so the
+        // next run says which element moved and what the two pointers were.
+        let mut latch_eager = false;
         let need_capture = {
             let pool = self.glm5_graph_pool(cache);
             match pool
@@ -564,59 +629,36 @@ impl HybridModel {
                 .position(|s| s.dev == dev && s.lo == lo && s.hi == hi)
             {
                 Some(i) => {
-                    // Two independent invalidation checks, because they see different failures.
-                    // `pos` continuity catches a REWIND (rollback, reuse retire, prefix restore):
-                    // the state contents and the ping-pong phase are no longer the ones the
-                    // capture described. The pointer signature catches a RE-SEAT: a seam that
-                    // REPLACED a state buffer rather than overwriting it, which leaves the baked
-                    // addresses dangling and which `pos` alone cannot see.
-                    let stale_pos = pool.stages[i].next_pos != pos;
-                    let stale_ptr = pool.stages[i].state_sig != live_sig;
-                    if stale_pos || stale_ptr {
-                        if stale_ptr {
-                            note("re-capture: a captured layer's recurrent-state buffer moved");
-                        } else {
-                            note("re-capture: the session rewound under the pool (pos moved)");
-                        }
-                        // DRAIN BEFORE DESTROYING. A `StageGraphs` owns an instantiated exec plus
-                        // every buffer that exec baked (x_io, the private hc workspace and f16
-                        // scratch, and the capture keeper's transients). Dropping it runs
-                        // cuGraphExecDestroy/cuGraphDestroy and frees those allocations; doing
-                        // that while a replay of the SAME exec is still outstanding on the stream
-                        // is a destroy-in-use, and the driver reports it at the next graph call as
-                        // `CUDA_ERROR_INVALID_VALUE` — which is the error the first box run died
-                        // on, one line after the (spurious) re-capture notice above. The
-                        // synchronize is bounded work that happens only on a real re-capture.
-                        e.stream().synchronize()?;
-                        let mut old = pool.stages.remove(i);
-                        let launched = old.launched_since_sync;
-                        // Destroy ONLY the execs and their keepers; the stage's buffers are handed
-                        // to the rebuild untouched, so nothing this stage owns is freed and
-                        // re-allocated against the same stream-ordered mempool the new graphs'
-                        // alloc nodes draw from.
-                        old.runs.clear();
-                        e.stream().synchronize()?;
+                    let st = &pool.stages[i];
+                    let stale_pos = st.next_pos != pos;
+                    let diff = sig_diff(&st.state_sig, &live_sig);
+                    if stale_pos || diff.is_some() {
                         eprintln!(
-                            "[glm5-decode-graph] re-capture: dev={dev} stage=[{lo}, {hi}) \
-                             stale_pos={stale_pos} stale_ptr={stale_ptr} \
-                             launched_since_sync={launched} stream_capture={} free={} \
-                             (execs destroyed, buffers reused)",
+                            "[glm5-decode-graph] eager-latch dev={dev} stage=[{lo}, {hi}) pos={pos} \
+                             expected_pos={} stale_pos={stale_pos} launched_since_sync={} \
+                             stream_capture={} free={} sig_diff={} \
+                             (re-capture is disabled pending a receipt; this stage runs eager for \
+                             the rest of the session and the walk stays byte-identical)",
+                            st.next_pos,
+                            st.launched_since_sync,
                             capture_status(e),
                             free_mb(e),
+                            diff.as_deref().unwrap_or("none"),
                         );
-                        reuse = Some(StageBufs {
-                            x_io: old.x_io,
-                            ws: old.ws,
-                            f16: old.f16,
-                        });
-                        true
-                    } else {
-                        false
+                        pool.failed.push((dev, lo, hi));
+                        latch_eager = true;
                     }
+                    false
                 }
                 None => true,
             }
         };
+        if latch_eager {
+            // The stale stage is deliberately LEFT IN THE POOL: destroying its execs here is the
+            // very call sequence box run 3 died in, and `glm5_decode_graph_ready` will never
+            // consult it again now that the key is latched. It is released with the cache.
+            return self.hyper_range_decode_eager(e, topology, x, lo, hi, pos_d, pos, cache);
+        }
         if need_capture
             && let Err(err) =
                 self.glm5_capture_stage(e, topology, lo, hi, cache, dev, width, pos, reuse)
@@ -707,11 +749,27 @@ impl HybridModel {
         // before instantiating new graphs against it — which is a plausible source of
         // `CUDA_ERROR_INVALID_VALUE` from `cuGraphInstantiate` and buys nothing. Reused buffers
         // also mean the rebuilt graphs bake the SAME addresses the old ones did.
+        let alloc_ctx = CapCtx {
+            dev,
+            lo,
+            hi,
+            run: 0,
+            runs: runs.len(),
+            a: lo,
+            b: hi,
+            phase: 0,
+            recapture,
+        };
         let (x_io, ws, f16) = match reuse {
             Some(b) => (b.x_io, b.ws, b.f16),
             None => (
-                e.zeros(width)?,
-                crate::hyper::HyperDecodeWs::new(e, topology, n_embd)?,
+                step(e, &alloc_ctx, "alloc(x_io)", e.zeros(width))?,
+                step(
+                    e,
+                    &alloc_ctx,
+                    "alloc(HyperDecodeWs)",
+                    crate::hyper::HyperDecodeWs::new(e, topology, n_embd),
+                )?,
                 None,
             ),
         };
@@ -723,7 +781,12 @@ impl HybridModel {
         // against a capture-time grow. Reused verbatim on a re-capture (see above).
         let f16 = match f16 {
             Some(f) => f,
-            None => crate::f16_ffi::F16Scratch::with_capacity(e, (4 << 20).max(n_embd * 16))?,
+            None => step(
+                e,
+                &alloc_ctx,
+                "alloc(F16Scratch)",
+                crate::f16_ffi::F16Scratch::with_capacity(e, (4 << 20).max(n_embd * 16)),
+            )?,
         };
 
         let mut stage = StageGraphs {
@@ -739,7 +802,7 @@ impl HybridModel {
             state_sig: runs
                 .iter()
                 .flat_map(|(a, b)| *a..*b)
-                .filter_map(|il| recur_ptrs(e, cache, il).map(|(c, s, a)| (il, c, s, a)))
+                .filter_map(|il| recur_sig(e, cache, il))
                 .collect(),
             launched_since_sync: false,
         };
@@ -906,7 +969,18 @@ impl HybridModel {
                 std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
             }
         }
-        let mut out = e.uninit(width)?;
+        let out_ctx = CapCtx {
+            dev,
+            lo,
+            hi,
+            run: 0,
+            runs: 0,
+            a,
+            b,
+            phase: 0,
+            recapture: false,
+        };
+        let mut out = step(e, &out_ctx, "alloc(out)", e.uninit(width))?;
         {
             let pool = self.glm5_graph_pool(cache);
             let st = pool
@@ -914,7 +988,12 @@ impl HybridModel {
                 .iter()
                 .find(|s| s.dev == dev && s.lo == lo && s.hi == hi)
                 .expect("checked above");
-            e.copy_into(&mut out, 0, &st.x_io, width)?;
+            step(
+                e,
+                &out_ctx,
+                "memcpy_dtod(x_io -> out)",
+                e.copy_into(&mut out, 0, &st.x_io, width),
+            )?;
         }
         crate::GLM5_DECODE_GRAPH_REPLAYS.fetch_add(1, Ordering::Relaxed);
         Ok(out)

@@ -465,6 +465,46 @@ through to the byte-identical eager walk for the whole range and latches the sta
 next box run should reach the identity compare and the timing arms even if the rebuild still
 fails — with the `capture-error:` line naming the call.
 
+## 9d. Third box run: the trigger is not the ping-pong, and the failure is in the teardown
+
+Run 3 (int2 `0ea1b07f6`, containing `711b929da`; the new `engaged ... recapture=false
+free=92235/182631MB` line format confirms the binary) printed both `engaged` lines, then the
+short `re-capture: a captured layer's recurrent-state buffer moved` note, then
+`CUDA_ERROR_INVALID_VALUE`. It printed **no** `capture-error:` line, **no** `forced_recapture=`,
+**no** gate re-seat announcement, and **no** long re-capture decision line
+(`gate-glm5-decode-graph-3.txt`). Three readings, all from what did NOT print:
+
+1. **The trigger is the engine, not the gate.** The forced re-seat is at step 32 and never
+   announced itself, so the walk died at step 2. Something OTHER than the ssm ping-pong moves
+   between the first replay and the second on the real artifact. The signature is invariant under
+   the swap by construction (unordered pair) and the unit tests hold, so this lane does not yet
+   know what moves — which is why the diff is now NAMED rather than reported as "moved".
+2. **The failing call is in the TEARDOWN, not in the capture.** The short note prints
+   immediately before `synchronize -> stages.remove -> runs.clear() (exec destroy) -> synchronize`,
+   and the long decision line prints immediately after. The long line never appeared and no
+   `capture-error:` line appeared, so the error comes from one of those four steps — not from
+   `capture_one`, which is fully instrumented and stayed silent.
+3. **The gate never got to prove anything**, because step 2 dies.
+
+**Response: re-capture is DISABLED, and an invalidated stage latches to eager.** When the pos or
+the signature moves, the door prints one line naming the changed element and both pointers
+(`sig_diff=layer 7 ssm pair {0x..., 0x...} -> {0x..., 0x...}`, or `conv_state`, or a layer-count
+change), pushes the key into the pool's `failed` list, and runs the byte-identical eager walk for
+that stage for the rest of the session. The stale stage is deliberately LEFT IN THE POOL:
+destroying its execs is the exact call sequence run 3 died in, and the latch means it is never
+consulted again; it is released with the cache. This does two things at once — it removes the
+failing teardown from the token path entirely, and it lets the box price the FIRST-capture case,
+which is the actual product question.
+
+Every fallible call on the door's per-token path now routes through the same named-error wrapper
+as the capture: `alloc(x_io)`, `alloc(HyperDecodeWs)`, `alloc(F16Scratch)`, `htod_i32(pos_d)`,
+`memcpy_dtod(x -> x_io)`, `cuGraphLaunch`, `alloc(out)`, `memcpy_dtod(x_io -> out)`, plus the
+capture calls from §9c. The gate takes `--trace`, which prints one line per token with the door's
+replay and capture counters, so a run that dies mid-walk says which step it reached.
+
+**Still open, and it is the next receipt to buy:** what moves in the signature on the real
+artifact between step 1 and step 2. The named diff answers it in one line on the next run.
+
 ## 10. Open items
 
 1. **Run the gate on the pair** (`--steps 64 --reps 5`) and bank the receipt. Until then the
@@ -495,10 +535,13 @@ fails — with the `capture-error:` line naming the call.
    hit (a re-capture destroys stage s's graphs while stage s's context is current, by
    construction), but it is a real teardown hazard and wants either a per-context drop guard or
    an explicit release before the cache is dropped.
-8. **If the box points at `cuGraphInstantiate`:** instantiate the rebuilt graphs BEFORE
+8. **Re-enable re-capture** once the named `sig_diff` says what moves and the teardown's failing
+   call is identified. Until then the door prices first-capture only, and any invalidation is an
+   eager latch.
+9. **If the box points at `cuGraphInstantiate`:** instantiate the rebuilt graphs BEFORE
    destroying the old execs (peak VA doubles for one token, which the 2x192 GB pair can carry),
    or find a trim between. Do not do it speculatively — it doubles peak graph memory and the
    receipt has not asked for it yet.
-9. **Serving wiring.** The door is exercised through `decode_step_hyper` / `decode_step_hyper_ppn`
+10. **Serving wiring.** The door is exercised through `decode_step_hyper` / `decode_step_hyper_ppn`
    only. A server-side admission predicate (the `MEMRA_GS_MIN`-style budget gate) is a separate
    decision and is not made here.
