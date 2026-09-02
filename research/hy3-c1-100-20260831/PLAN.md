@@ -408,3 +408,34 @@ binary, request shape, and five-boot A/B, B/A gate. OFF was 44.70 tok/s and K=8 
 identity and both seeded c2 isolation rows passed, and stop-taint plus disconnect recovery stayed
 green. The chain remains a qualified opt-in mechanism whose performance decision is per model and
 hardware, not a generic dense default.
+
+## 2026-09-02 TP verified-prefix dispatch collapse
+
+A current primary-source sweep did not justify an all-expert dense GEMM for this c1 target.
+TensorRT-LLM's [Blackwell DENSEGEMM report](https://github.com/NVIDIA/TensorRT-LLM/blob/181f726d10f713836ad3d19df4016c2d3f5ab631/docs/source/blogs/tech_blog/blog24_MoE_as_Dense_GEMM.md)
+puts its measured sweet spot at 64-208 input tokens and states that the grouped path wins below
+that range; HY3 c1 presents one token. Its [min-latency report](https://github.com/NVIDIA/TensorRT-LLM/blob/181f726d10f713836ad3d19df4016c2d3f5ab631/docs/source/blogs/tech_blog/blog01_Pushing_Latency_Boundaries_Optimizing_DeepSeek-R1_Performance_on_NVIDIA_B200_GPUs.md)
+instead identifies MTP and whole-boundary fusion as the large levers. Memra's selected-slot
+paired expert kernels already remove the batch-1 permutation shape that "sparse experts as GEMMs"
+targets. The actionable adjacent mechanism is therefore the measured TP predictor repair wall,
+not multiplying all 192 experts for one token.
+
+The existing TP predictor repair issued K copy, V copy, and length publication independently for
+every layer and rank. A new native primitive batches uniform layers through one pointer table and
+one kernel per rank. Each block gathers one or more full-width canonical rows with their source
+stride into the rank-local contiguous K/V rows, then publishes the layer's device length after the
+copy. Uniform runtime, target length, row count, packed geometry, physical contiguity, and native
+P2P are all required; any mismatch takes the existing per-layer fallback before a batch launch.
+
+The local exact-geometry gate models a full-accept K=1 round: 80 layers, two accepted rows, rank
+K/V bytes 544/384, canonical strides 1088/768, and 200 timed rounds per arm. Five A/B, B/A rows
+were byte-exact with every one of the 80 length mirrors equal to 130:
+
+| repair boundary | median us/round | verdict |
+|---|---:|---|
+| per-layer K + V + len dispatches | 629.04 | control |
+| one batched kernel | **1.86** | **338x**, exact |
+
+This is an isolated dispatch-boundary receipt, not an end-to-end predictor claim. The live PRO 6000
+cell must show `[tp-kv-verify-batch] engaged`, preserve sampled correctness and acceptance, and beat
+the 13.99 tok/s peer-repair row before the predictor path can advance.

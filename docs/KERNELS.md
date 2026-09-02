@@ -1,7 +1,7 @@
 # Kernel inventory
 
-Derived from code (build.rs, cu/, FFI shims) 2026-09-01 **at commit bbbef06b17** — line
-references resolve against that commit (`git show bbbef06b17:<path>`), not necessarily HEAD.
+Derived from code (build.rs, cu/, FFI shims) 2026-09-02 **at commit 56fe761cc5** — line
+references resolve against that commit (`git show 56fe761cc5:<path>`), not necessarily HEAD.
 Every row comes from a grep or a read; UNKNOWN means not determinable from the code without
 deeper tracing — never guessed. Known drift at merge time (v0.100.0 train, 1e292853de):
 kernels.cu 71→73 entry symbols, qmatvec.cu 251→252; other per-file counts unchanged.
@@ -71,7 +71,7 @@ Facts worth knowing before "cleaning up":
 Legend: FFI binding "fatbin/by-name" = loaded from module by kernel name string;
 "extern in <file>" = Rust `unsafe extern "C"` declaration.
 
-### cu/kernels.cu — 84 symbols (recounted 2026-08-31 by `grep -c 'extern "C" __global__'` — the original inventory's 71 predated several lanes; lane/glm5-matvec touched this file) (fatbin `MEMRA_ENGINE_FATBIN`)
+### cu/kernels.cu — 132 symbols (recounted 2026-09-02 from the current source; includes the TP verified-prefix batched-copy lane) (fatbin `MEMRA_ENGINE_FATBIN`)
 
 Header: "Stage-1 kernels: correctness-first, all f32, no tensor cores" (kernels.cu:1).
 
@@ -93,6 +93,7 @@ Header: "Stage-1 kernels: correctness-first, all f32, no tensor cores" (kernels.
 | `qwen4exp_route_topk_f32` | qwen4_exp DEVICE MoE router (devtwin lane): the full `host_route_softmax_topk` program per token row — softmax over `experts` (order-sensitive reductions SEQUENTIAL on thread 0, host op order verbatim; exp through double, the one non-bit-pinned op), top-`selected` under the pinned tie rule (weight desc, index asc — unsigned bit compare on the non-negative weight domain == total_cmp), renorm with the 6.1035156e-5 floor; writes sel/w rows + an optional slot->token map. Selection ids+order gated EXACT vs the host twin (tiny arm 0f + the `MEMRA_Q4E_ROUTER_AUDIT` live cross-check); weights ULP-documented | f32 (exp via f64) | — | qwen4exp_gpu (`set_router_dev`, **default ON** 2026-08-31 on receipts — pair with `set_idx_cache`) | fatbin/by-name |
 | `qmatvec_bf16w_sel_f32` | device-SELECTED expert twin of `qmatvec_bf16w_f32` over a DeviceBf16 bank (the card-1 draft): grid (out_f, 1, n_sel), slot s reads its expert id from the DEVICE sel array and its rows at sel[s]*out_f*in_f; per-row fmaf chain + reduce tree VERBATIM => BIT-IDENTICAL to the per-slot off_into chain (bf16 oracle sel mode, dup slots, shared-x + slot-x strides) | bf16 w / f32 x | — | qwen4exp_gpu (`set_router_dev` on the DeviceBf16 grouped arm) | fatbin/by-name |
 | `copy_rows_col_f32` | row-window column-slice copy (devtwin indexer cache): dst[dst_row+r] = src[r*stride+col..+width] — exact byte moves, appends idx_proj k-part rows to the DEVICE raw-key cache without a host round trip | f32 | — | qwen4exp_gpu (`set_idx_cache`, **default ON** 2026-08-31 on receipts) | fatbin/by-name |
+| `copy_batch_uniform_kv_u8_set_len` | TP speculative-verify accepted-prefix repair: one block per uniform attention layer gathers strided full-width canonical K/V rows into the launching rank's contiguous quantized cache slice, then publishes that layer's device length; one launch per rank replaces per-layer K/V copies and len writes | q8_0 K / q5_1 V bytes + i32 len | — | native-P2P, uniform-geometry TP verify restore; per-layer repair fallback otherwise | fatbin/by-name |
 | `gdn_scan_naive_f32` | geometry-generic sequential GDN scan, in-kernel q/k l2 + sigmoid(beta); memra-reference twin (any hk/hv incl. tiny 4/4; z-gate composed by caller) | f32 | — | qwen4exp_gpu eager path only | fatbin/by-name |
 | `dwconv_causal_f32` | token-major depthwise causal conv, arbitrary dilation + history rows (GDN conv dil=1, PLE conv dil=max_ngram); modes conv / silu / silu-add | f32 | — | qwen4exp_gpu eager path only | fatbin/by-name |
 | `qmatvec_nvfp4_modelopt_sel_f32` | selected-experts NVFP4 matvec over the AS-STORED modelopt layout (codes [E,out,in/2] + UE4M3 scales [E,out,in/16] + per-expert macro epilogue), W4A16 f32 activations, one launch per projection over all routed experts; x_stride 0 = shared row (gate/up), in_f = per-slot rows (down) | u8-codes/f32 | — | qwen4exp_gpu grouped decode path (t==1, NVFP4 banks; set_moe_sel_path A/B seam) | fatbin/by-name |
