@@ -1718,11 +1718,55 @@ fn gpu_full_cover_restore_bytes_match_plain_decode_and_cold_acceptance() {
         (drafted_cold, accepted_cold),
         "full-cover restored drafter context must be byte-equivalent to the cold session's"
     );
+    // SAMPLED TWIN (review round 1, finding 5). Prod serves vendor-default sampled, and the
+    // anchor draw is the one thing structurally new on this arm: it comes off the ENTRY's
+    // stored boundary row through a FRESH Philox stream at sctr=0 rather than off a prime
+    // this session ran. The bar is the restore's own law (`spec_restore_refusal`'s doc): the
+    // restored session's seed rule is bit-identical to the cold spec path's, so at one seed
+    // the two tapes must be the same bytes. Greedy alone would never see a Philox slip.
+    let seed = 0x5EEDu64;
+    let mut cold_sampled = h
+        .model
+        .glm5_spec_session_new(&h.engine, &prompt, ctx, Some(sampled_cfg(seed)))
+        .expect("cold sampled spec session");
+    let (tape_cold_sampled, _d, _a, _b) =
+        drive_bursts(&h, &mut cold_sampled, &prompt, k, max_new, 7, &[]);
+    let (cache_sampled, logits_sampled) = h.fresh_primed(&prompt, ctx);
+    let dkv_sampled =
+        memra_engine::dflash::DflashKv::from_tail(&h.engine, &dr.draft.cfg, ctx, &tail)
+            .expect("sampled-arm drafter KV rebuilt from the tail");
+    let mut restored_sampled = h
+        .model
+        .glm5_spec_session_from_restored(
+            &h.engine,
+            cache_sampled,
+            &prompt,
+            &[],
+            &logits_sampled,
+            dkv_sampled,
+            ctx,
+            Some(sampled_cfg(seed)),
+        )
+        .expect("full-cover restored sampled spec session");
+    let (tape_restored_sampled, drafted_s, _a_s, _b_s) =
+        drive_bursts(&h, &mut restored_sampled, &prompt, k, max_new, 7, &[]);
+    assert!(
+        drafted_s > 0,
+        "the sampled full-cover restored session must actually draft"
+    );
+    assert_eq!(
+        tape_restored_sampled, tape_cold_sampled,
+        "at one seed the full-cover restored sampled tape must equal the COLD sampled \
+         tape byte for byte: the anchor is drawn from the entry's boundary row at Philox \
+         counter 0, exactly as the cold session draws from its prime's row"
+    );
+
     println!(
         "gate 13 PASS: full-cover restore == plain bytes over {} tokens, acceptance {} / {} \
-         identical to cold",
+         identical to cold; sampled twin == cold sampled over {} tokens at seed {seed:#x}",
         tape.len(),
         accepted,
         drafted,
+        tape_restored_sampled.len(),
     );
 }

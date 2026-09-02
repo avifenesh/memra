@@ -16701,8 +16701,10 @@ fn glm5_sharded_placement_admits(
 ///     full-cover arm is not armed. This is the memra#74 shape: before the arm existed the
 ///     probe skipped it silently and the customer paid plain decode speed for a cache hit
 ///     (measured 30.8 vs 69.7 tok/s decode on the live box, 2026-09-02).
-///   * `full-cover-hit-no-boundary-logits`: armed, but the entry carried no boundary row, so
-///     there is no anchor to start a round from (the `spec_restore_refusal` full-cover rule).
+///   * `full-cover-hit-no-boundary-logits`: armed, but the entry carried no usable boundary
+///     row (absent, or not `n_vocab` wide), so there is no anchor to start a round from (the
+///     `spec_restore_refusal` full-cover rule). The engine refuses this shape too, and its
+///     refusal at the tick is a LOUD REQUEST FAILURE, so the width test lives here as well.
 ///   * `suffix-below-prime-floor`: `0 < suffix_len < PRIME_MIN_T`. A sub-floor suffix under a
 ///     spec session would ride tokenwise `decode_step` inside a prime program: the
 ///     two-programs door the parent lane closed. Unchanged by this lane.
@@ -16713,7 +16715,9 @@ fn glm5_carrier_admits(
     prefix_restore_on: bool,
     fullcover_on: bool,
     suffix_len: usize,
-    has_boundary_logits: bool,
+    // The entry's boundary logits are present AND exactly `n_vocab` wide: the engine's own
+    // full-cover check, mirrored at admission so the decline is a plain hit, not a 500.
+    boundary_row_ok: bool,
 ) -> Result<(), &'static str> {
     if !prefix_restore_on {
         return Err("prefix-restore-off");
@@ -16722,7 +16726,7 @@ fn glm5_carrier_admits(
         if !fullcover_on {
             return Err("full-cover-hit");
         }
-        if !has_boundary_logits {
+        if !boundary_row_ok {
             return Err("full-cover-hit-no-boundary-logits");
         }
         return Ok(());
@@ -18600,6 +18604,9 @@ fn admit(
     // 3): admission pre-validated the shape, so from_restored failing there is an
     // invariant break and FAILS THE REQUEST loudly (the dspark law in step_glm5_spec) —
     // do not build on a tick-time degrade; it does not exist.
+    // Hoisted above the carrier probe (review round 1, nit 6) so the capability predicate
+    // runs ONCE per request: the route decision below consumes this same binding.
+    let glm5_capable = glm5_spec_capable(lm);
     let mut glm5_prefix_restored_dkv: Option<memra_engine::dflash::DflashKv> = None;
     // WHY THE PLAIN PATH TOOK THIS HIT (memra#74). `None` = the request never reached the
     // glm5 carrier probe at all (no prefix hit, or a shape the probe's conjunction excludes);
@@ -18607,7 +18614,7 @@ fn admit(
     // this lane a full-cover hit fell out of the probe silently and the operator read a bare
     // `route=plain ... cold=0 restored=0` with no way to size the cost.
     let mut glm5_carrier_declined: Option<&'static str> = None;
-    if glm5_spec_capable(lm)
+    if glm5_capable
         && serve_spec
         && !vision_req
         && constraint.is_none()
@@ -18623,7 +18630,11 @@ fn admit(
             memra_engine::glm_spec::glm5_spec_prefix_on(),
             memra_engine::glm_spec::glm5_spec_fullcover_on(),
             suffix_len,
-            !carrier.last_logits.is_empty(),
+            // The ENGINE's own width check, mirrored here (review round 1, finding 2). A
+            // restored-arm refusal at the tick is a LOUD REQUEST FAILURE by design (the
+            // dspark law), so an entry with a short or absent boundary row must decline to
+            // the plain hit HERE, by name, instead of becoming a customer 500.
+            carrier.last_logits.len() == lm.model.output.out_features(),
         );
         match admit {
             Err(why) => glm5_carrier_declined = Some(why),
@@ -18655,16 +18666,22 @@ fn admit(
                 }
             }
         }
-        // `no-drafter-tail` printed its own line above; `prefix-restore-off` is a static
-        // posture, not a per-request decision, so it stays on the route line only (a line
-        // per hit saying the operator did not arm a flag is noise, not a receipt).
-        if let Some(why) = glm5_carrier_declined
-            && why != "no-drafter-tail"
-            && why != "prefix-restore-off"
-        {
+        // ONE extra line, and only for an ENTRY ANOMALY (review round 1, finding 3).
+        // `no-drafter-tail` printed its own above. `prefix-restore-off`, `full-cover-hit`
+        // and `suffix-below-prime-floor` are static posture or request shape, already on
+        // the route line's `reason=`, and they land on the highest-volume traffic there is
+        // (retries, eval harnesses, latency probes) — a line per hit restating a flag the
+        // operator did not arm is noise, not a receipt, and it would make the OFF arm
+        // noisier than the pre-lane posture it promises to reproduce. A published entry
+        // with no usable boundary row is different: it is rare, it is a defect in the
+        // capture side, and nothing else would ever say so.
+        if glm5_carrier_declined == Some("full-cover-hit-no-boundary-logits") {
             eprintln!(
-                "[prefix-cache] glm5 spec restore declined ({why}); the plain path serves \
-                 the hit ({} of {} prompt tokens cached, model {})",
+                "[prefix-cache] glm5 spec restore declined (full-cover hit, entry carries \
+                 no usable boundary logits: {} rows, want {}); the plain path serves the \
+                 hit ({} of {} prompt tokens cached, model {})",
+                carrier.last_logits.len(),
+                lm.model.output.out_features(),
                 carrier.fed.len(),
                 prompt.len(),
                 req.model,
@@ -19532,7 +19549,6 @@ fn admit(
     // clamped to the verify walk's K+1 <= 15 decode-exact knee. The prefix cache is inert
     // for this family (latent-bearing caches are refused by the capture guard), so there
     // is no hit-vs-cold trade to price here.
-    let glm5_capable = glm5_spec_capable(lm);
     let glm5_k = if glm5_capable {
         let decision = choose_spec_k(
             spec_k_pin(),
@@ -26923,10 +26939,12 @@ mod tests {
     /// THE memra#74 GATE: a FULL-COVER prefix hit (the repeated-prompt shape) must be an
     /// admissible spec carrier once the arm is armed, and must NAME itself when it is not.
     ///
-    /// RED ARM (run before the fix): with the pre-lane body, which had no `fullcover_on`
-    /// term and dropped out of the probe entirely on `suffix_len < PRIME_MIN_T`, the armed
-    /// row below fails, which is the live defect: the drafter never engaged on a hit and
-    /// decode ran at plain speed (30.8 vs 69.7 tok/s on the box, 2026-09-02).
+    /// RED ARM: the predicate is new, so the red run was this body with the full-cover arm
+    /// removed, i.e. the shipped pre-lane rule ("a full-cover hit is never a carrier")
+    /// expressed in the new shape. The armed row below then fails with
+    /// `left: Err("full-cover-hit"), right: Ok(())`, which IS the live defect: the drafter
+    /// never engaged on a hit and decode ran at plain speed (30.8 vs 69.7 tok/s on the box,
+    /// 2026-09-02). Banked in the PR body.
     #[test]
     fn glm5_full_cover_hit_is_an_admissible_carrier_and_always_names_itself() {
         use super::glm5_carrier_admits;
@@ -27124,44 +27142,49 @@ mod tests {
             .find("else if active[i].gspec_k > 0 {")
             .expect("the gemma arm still exists");
         assert!(glm5_arm < glm5_call && glm5_call < gemma_arm);
+        // EVERY assertion below anchors on the LIVE slice, never on `code` (which contains
+        // this test's own string literals and would satisfy `contains` with itself — the
+        // self-match trap the wiring-assertions law names; three of the round-1 assertions
+        // were born with it).
+        let live_pre_tests = &code[..code.find("mod tests").expect("the test module exists")];
         // 2. The phase-(a) scheduler filter includes glm5 sessions, or they never burst.
-        let filter = code
+        let filter = live_pre_tests
             .find("active[i].spec.is_some()")
             .expect("the phase-a filter exists");
         assert!(
-            code[filter..filter + 300].contains("|| active[i].glm5_on"),
+            live_pre_tests[filter..filter + 300].contains("|| active[i].glm5_on"),
             "the phase-a spec filter must include glm5_on sessions"
         );
         // 3. Admission computes the route through the PURE predicate and the K clamp.
         assert!(
-            code.contains("let glm5_on = glm5_route_admits("),
+            live_pre_tests.contains("let glm5_on = glm5_route_admits("),
             "glm5_on must be computed via glm5_route_admits"
         );
         assert!(
-            code.contains("glm5_clamp_spec_k(decision.k)"),
+            live_pre_tests.contains("glm5_clamp_spec_k(decision.k)"),
             "the chosen K must pass the knee clamp"
         );
         // 3b. THE ROUTE LINE CARRIES A REASON (memra#74). The receipt an operator reads must
         //     never again say `route=plain` with nothing but `cold=0 restored=0` to explain
         //     it: the reason token comes from the same matrix as the decision, and the
         //     carrier's own decline token is threaded into it.
-        let route_line = code
+        let route_line = live_pre_tests
             .find("[glm5-spec] route={} K={glm5_k}")
             .expect("the glm5 admission receipt exists");
         assert!(
-            code[route_line..route_line + 400].contains("reason={}"),
+            live_pre_tests[route_line..route_line + 400].contains("reason={}"),
             "the glm5 route receipt must carry a reason token"
         );
         assert!(
-            code.contains("let plain_reason = glm5_route_decline_reason("),
+            live_pre_tests.contains("let plain_reason = glm5_route_decline_reason("),
             "the reason must come from the pure predicate, never be re-derived at the log site"
         );
         assert!(
-            code.contains("glm5_carrier_declined,"),
+            live_pre_tests.contains("glm5_carrier_declined,"),
             "the carrier's own decline token must be threaded into the route reason"
         );
         assert!(
-            code.contains("let admit = glm5_carrier_admits("),
+            live_pre_tests.contains("let admit = glm5_carrier_admits("),
             "the prefix-hit carrier probe must go through the pure predicate"
         );
         // 4. The session-owned-cache arm: admission must not allocate a plain cache under
@@ -27169,7 +27192,6 @@ mod tests {
         //    keeps the restored cache for the first spec tick to consume. Anchored on the
         //    PRE-TEST slice: the old form of this assertion matched its own string literal
         //    (the self-match trap the wiring-assertions law names).
-        let live_pre_tests = &code[..code.find("mod tests").expect("the test module exists")];
         assert!(
             live_pre_tests.contains(
                 "let cache = if dspark_on || (glm5_on && glm5_prefix_restored_dkv.is_none()) {"
