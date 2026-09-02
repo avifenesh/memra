@@ -578,6 +578,64 @@ Exact Q27/Q35 entry sizes come from `prefix_cache_bytes` deltas in
 Operator `/metrics` exposes permanent shape refusal as `prefix_cache_skips_budget` and temporary
 live-lease pressure as `prefix_cache_skips_pinned`; the first refusal is also a loud server warning.
 
+## TP-2 serving (serving half, memra #14, lane/glm5-tp-serve-wiring-20260902)
+
+The glm5_next (GLM-5.3-Flash) tensor-parallel walk
+(`crates/memra-engine/src/glm5_tp.rs`) is engine-side and byte-gated: head-sharded KDA/MLA,
+EP-N MoE, a swappable transport axis, under `MEMRA_GLM5_TP` (see [FLAGS.md](FLAGS.md)).
+Through v0.124.0 the worker refused that flag outright at spawn regardless of rank count,
+with a single blanket message; the serving lifecycle (per-rank admission, readiness, drain)
+had never been wired or box-gated. This lane wires the serving half.
+
+**What is admitted.** `MEMRA_GLM5_TP` naming exactly **2** devices (TP-2, the general
+`tp_transport` seam: `host-canonical` by default, `peer-pull` under
+`MEMRA_GLM5_TP_TRANSPORT`) is admitted through the worker's spawn path. The model then loads
+through the SAME `HybridModel::load` path every other family uses, so readiness and drain
+are the existing family-agnostic surfaces: a load failure fails `worker::spawn` like any
+other model (`/livez`/`/readyz` never report ready), and SIGTERM drain tracks in-flight HTTP
+requests, not per-device state, so neither needed TP-specific wiring. `/v1/chat/completions`,
+`/v1/completions`, `/v1/messages` (Anthropic), and tools all run through the same worker loop
+PP-2 uses.
+
+**Admission KV accounting.** Root-device admission was already correct for glm5's own
+per-token latent coefficient (`latent_kv_bytes_per_token_for_plan`), but peer-rank state was
+invisible to the cost model. `HybridModel::glm5_tp_unmaterialized_kv_bytes` (mirroring the
+Step family's `step_tp_unmaterialized_kv_bytes`) now charges every peer device until its
+lazily-allocated sidecar is materialized and live CUDA accounting can see it directly:
+fixed bytes per session for KDA peer recurrent state (`conv_state`/`ssm_state`, which never
+grows with context, being a linear-attention state), and `bytes_per_token * capacity` per
+session for MLA peer latent state (the peer plane is a full geometry clone of the
+canonical/root plane, per `glm5_tp::ensure_mla_peer_latent`, so it pays the identical
+per-token coefficient the root already pays for that layer). Wired into the three
+`[admission]` call sites that already carry the Step family's device-keyed charge vector:
+the per-request unmaterialized charge, the active-session pending charge, and the boot
+calibration transient-floor probe.
+
+**What refuses, and how it is named.**
+
+- A rank count other than 2 refuses at spawn, before any model load starts (the check reads
+  the device count out of the raw `MEMRA_GLM5_TP` value without needing the model's trunk
+  length): `MEMRA_GLM5_TP names {ranks} devices: v1 SERVING admits TP-2 only (...)`. TP-4 is
+  engine-qualified (`glm5_tp::GLM5_TP_ALLOWED_RANKS = [2, 4]`) but its serving lifecycle has
+  not been box-gated: a separate increment, not this lane.
+- Every geometry, transport, and co-arm law inside `prepare_glm5_tp_load` is unchanged and
+  still fires at load time: rank divisibility, `MEMRA_PP_STAGES>1` and
+  `MEMRA_STEP_TP`/`MEMRA_STEP_EP` co-arm, the four decode-diet door refusals
+  (`GLM5_TP_REFUSED_DOOR_FLAGS`), and the peer-access/byte-integrity transport ladder.
+- Spec decode on a TP-sharded model stays refused per-session, by name, at the cache layer:
+  `Cache::snapshot`/`snapshot_into` (`"cache snapshot is unwired for glm5 TP rank state
+  (MEMRA_GLM5_TP): per-rank planes are not carried by CacheSnapshot"`) and
+  `glm_spec::glm5_spec_session_new` (`"glm5 spec is co-refused on a MEMRA_GLM5_TP-sharded
+  model: set MEMRA_GLM5_SPEC_TP=1 ..."`). This is unrelated to this door and not touched by
+  it.
+
+**Pending.** This lane's gates are host-only (`cargo build`/`cargo test` for
+`memra-server`/`memra-engine`, `cargo fmt`, `git diff --check`, `tools/check-flags.sh`); no
+GPU was available to it. The byte-identity gate against PP on greedy decode, and the
+admission KV accounting's sizing on a real artifact, are **pending the box run** on the B200
+pair — see `research/glm5-tp-serve-wiring-20260902/LANE.md` for the copy-pasteable
+serving env and the exact receipts that run needs to bank.
+
 ## OpenAI tools surface (serve-tools lane, 2026-08-02)
 
 **STANDARD-SURFACE CONTRACT (2026-08-17).** Every model this engine serves to
