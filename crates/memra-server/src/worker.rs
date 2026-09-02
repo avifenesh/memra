@@ -11264,29 +11264,30 @@ pub fn run(
     // model's trunk length (no model is loaded yet), which is exactly what
     // `glm5_tp_rank_count_from_raw` is for. Every other geometry/co-arm law still runs,
     // unchanged, inside `prepare_glm5_tp_load` at model-load time below.
-    if let Some(raw) = memra_engine::glm5_tp::glm5_tp_env_raw() {
-        if !raw.is_empty() && raw != "0" {
-            match memra_engine::glm5_tp::glm5_tp_rank_count_from_raw(&raw) {
-                Ok(2) => {
-                    eprintln!(
-                        "[worker] MEMRA_GLM5_TP admitted for serving: ranks=2 (TP-2, general \
-                         transport seam); peer-rank KV state reserved through \
-                         glm5_tp_unmaterialized_kv_bytes; spec is refused per-session on a \
-                         sharded model unless MEMRA_GLM5_SPEC_TP=1"
-                    );
-                }
-                Ok(ranks) => {
-                    panic!(
-                        "MEMRA_GLM5_TP names {ranks} devices: v1 SERVING admits TP-2 only \
-                         (the engine's qualified rank envelope is {:?}, but the serving \
-                         admission/readiness gates have only run TP-2; unset MEMRA_GLM5_TP \
-                         or use exactly 2 devices)",
-                        memra_engine::glm5_tp::GLM5_TP_ALLOWED_RANKS
-                    );
-                }
-                Err(err) => {
-                    panic!("MEMRA_GLM5_TP={raw:?}: {err}");
-                }
+    if let Some(raw) = memra_engine::glm5_tp::glm5_tp_env_raw()
+        && !raw.is_empty()
+        && raw != "0"
+    {
+        match memra_engine::glm5_tp::glm5_tp_rank_count_from_raw(&raw) {
+            Ok(2) => {
+                eprintln!(
+                    "[worker] MEMRA_GLM5_TP admitted for serving: ranks=2 (TP-2, general \
+                     transport seam); peer-rank KV state reserved through \
+                     glm5_tp_unmaterialized_kv_bytes; spec is refused per-session on a \
+                     sharded model unless MEMRA_GLM5_SPEC_TP=1"
+                );
+            }
+            Ok(ranks) => {
+                panic!(
+                    "MEMRA_GLM5_TP names {ranks} devices: v1 SERVING admits TP-2 only \
+                     (the engine's qualified rank envelope is {:?}, but the serving \
+                     admission/readiness gates have only run TP-2; unset MEMRA_GLM5_TP \
+                     or use exactly 2 devices)",
+                    memra_engine::glm5_tp::GLM5_TP_ALLOWED_RANKS
+                );
+            }
+            Err(err) => {
+                panic!("MEMRA_GLM5_TP={raw:?}: {err}");
             }
         }
     }
