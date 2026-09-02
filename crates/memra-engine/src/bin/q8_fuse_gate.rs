@@ -55,7 +55,10 @@ fn run_shape(
     ncols: usize,
     n: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    assert!(ncols % 32 == 0, "{label}: ncols must be a multiple of 32");
+    assert!(
+        ncols.is_multiple_of(32),
+        "{label}: ncols must be a multiple of 32"
+    );
     let eps = 1e-6f32;
     let x = gen_vec(0x9E3779B97F4A7C15 ^ ncols as u64, ncols);
     let w = gen_vec(0xD1B54A32D192ED03 ^ ncols as u64, ncols);

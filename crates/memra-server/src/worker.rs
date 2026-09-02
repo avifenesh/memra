@@ -11264,8 +11264,11 @@ pub fn run(
     // model's trunk length (no model is loaded yet), which is exactly what
     // `glm5_tp_rank_count_from_raw` is for. Every other geometry/co-arm law still runs,
     // unchanged, inside `prepare_glm5_tp_load` at model-load time below.
-    if let Some(raw) = memra_engine::glm5_tp::glm5_tp_env_raw() {
-        if !raw.is_empty() && raw != "0" {
+    if let Some(raw) = memra_engine::glm5_tp::glm5_tp_env_raw()
+        && !raw.is_empty()
+        && raw != "0"
+    {
+        {
             match memra_engine::glm5_tp::glm5_tp_rank_count_from_raw(&raw) {
                 Ok(2) => {
                     eprintln!(

@@ -81,6 +81,8 @@ pub mod eagle;
 /// minted by the shared fleet tool from `MEMRA_MOE_WEIGHT_TRACE` traces). No CUDA deps.
 pub mod ep_map;
 pub mod gemma_spec;
+pub mod glm5_decode_graph;
+pub mod glm5_sel_ledger;
 pub mod glm5_tp;
 /// glm5_next T-parallel speculative verify: the rows-walk verify, per-step KDA state-column
 /// rollback, latent/kpool truncation, and the MEMRA_GLM5_SPEC-gated draft->verify->rollback
@@ -258,6 +260,42 @@ pub fn moe_fuse_actq_on() -> bool {
 pub fn glm5_q8_fuse_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_GLM5_Q8_FUSE").as_deref() == Ok("1"))
+}
+
+/// Door `MEMRA_GLM5_DECODE_GRAPH` (lane/b200-glm5-graph-20260902, DEFAULT OFF): capture the
+/// glm5_next T=1 decode walk as replayable per-stage CUDA graphs instead of issuing every
+/// kernel per token. `1` arms it, unset/`0` is the eager walk. Read PER CALL so it is a live
+/// rollback seam, never a process-lifetime latch.
+///
+/// WHAT IS CAPTURED: the maximal CONTIGUOUS runs of KDA-mixer layers inside each pipeline
+/// stage's `[lo, hi)` range, hc glue and routed MoE included. WHAT STAYS EAGER: every
+/// MLA/DSA layer (its launch geometry is derived on the host from `layer.len`, see
+/// `HybridModel::mla_attn_cached_pre_wo`), the decode tail, prefill, and the spec verify
+/// walk (which keeps `MEMRA_SPEC_VERIFY_GRAPH`). See docs/FLAGS.md and
+/// research/b200-glm5-graph-20260902/LANE.md.
+pub fn glm5_decode_graph_on() -> bool {
+    std::env::var("MEMRA_GLM5_DECODE_GRAPH").as_deref() == Ok("1")
+}
+
+/// Captured-run replays (one per graph launch), captures, and the layer count currently
+/// covered by captured runs — the door's engagement receipt, read by the gate bin.
+pub static GLM5_DECODE_GRAPH_REPLAYS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+pub static GLM5_DECODE_GRAPH_CAPTURES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+pub static GLM5_DECODE_GRAPH_LAYERS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// True while a glm5 decode-graph CAPTURE is open on this process. Two engine pools must not
+/// hand a captured graph a buffer they will later re-issue to eager work: a replay would
+/// scribble whatever landed there (the draft-graph root cause, see `capture_graph_retained`).
+/// While this is set, `vws_recycle*` drops instead of returning the buffer to the verify
+/// workspace, so every transient the captured body took stays owned by the graph.
+pub(crate) static GLM5_GRAPH_CAPTURE_OPEN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+pub(crate) fn glm5_graph_capture_open() -> bool {
+    GLM5_GRAPH_CAPTURE_OPEN.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// PREFILL router m-invariance (lane/concat-prime-exact, 2026-08-02). The batched cuBLASLt
@@ -11922,7 +11960,20 @@ impl Engine {
 
     /// Return a dead verify-walk buffer to the pool (no-op with the door off: the buffer
     /// drops to the ordinary async free, the shipped program).
+    /// The capture keeper the glm5 decode-graph door drains into its `RunGraph`. While
+    /// [`glm5_graph_capture_open`] is set, `vws_recycle*` pushes here instead of returning the
+    /// buffer to the verify workspace, so nothing a captured body baked can be re-issued to
+    /// eager work between replays.
+    #[allow(clippy::type_complexity)] // allow: mirrors the field's own type
+    pub(crate) fn glm5_graph_keep(&self) -> &Mutex<Vec<Box<dyn std::any::Any + Send>>> {
+        &self.capture_keep
+    }
+
     pub(crate) fn vws_recycle(&self, s: CudaSlice<f32>) {
+        if glm5_graph_capture_open() {
+            self.capture_keep.lock().unwrap().push(Box::new(s));
+            return;
+        }
         if verify_ws_on() {
             let mut ws = self.verify_ws.lock().unwrap();
             let ws = &mut *ws;
@@ -11932,6 +11983,10 @@ impl Engine {
 
     /// i8 twin of [`Self::vws_recycle`].
     pub(crate) fn vws_recycle_i8(&self, s: CudaSlice<i8>) {
+        if glm5_graph_capture_open() {
+            self.capture_keep.lock().unwrap().push(Box::new(s));
+            return;
+        }
         if verify_ws_on() {
             let mut ws = self.verify_ws.lock().unwrap();
             let ws = &mut *ws;
@@ -11941,6 +11996,10 @@ impl Engine {
 
     /// u64 twin of [`Self::vws_recycle`].
     pub(crate) fn vws_recycle_u64(&self, s: CudaSlice<u64>) {
+        if glm5_graph_capture_open() {
+            self.capture_keep.lock().unwrap().push(Box::new(s));
+            return;
+        }
         if verify_ws_on() {
             let mut ws = self.verify_ws.lock().unwrap();
             let ws = &mut *ws;
