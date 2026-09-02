@@ -6241,6 +6241,72 @@ extern "C" __global__ void moe_down8_fma_q8(
     if (lane == 0) dst[o] = chain;
 }
 
+// ---- WARP-PACKED twins of the plain-decode glm5_next epilogue pair (lane/b200-matvec-occupancy,
+// MEMRA_B200_MATVEC_ARM, 2026-09-02) ----
+//
+// moe_gate_up_preclamp8_q8 / moe_down8_fma_q8 launch block=(32,1,1) — ONE warp per block, same
+// occupancy ceiling the vrest _rows pair hit before its own _w4 twins above: on a card whose
+// per-SM resident-block limit is below its resident-warp limit, a 1-warp block caps occupancy at
+// (block limit)/(warp limit) instead of 100%, and every wave pays full memory latency instead of
+// overlapping it against other resident warps. This is the plain-decode pair the B200 census
+// (2026-09-02, GLM-5.3-Flash NVFP4, PP2) measured at 20.0% + 10.5% of GPU time, ~9x its roofline
+// byte estimate for gate+up (~6us of NVFP4 traffic vs 54.6us measured) — an occupancy/latency
+// signature, not a bandwidth one, on the 148-SM/8-TB/s B200 vs the 188-SM/1.8-TB/s RTX PRO 6000
+// these kernels were tuned for.
+//
+// These twins pack MEMRA_MMVQ_ROWS = 4 warps per block on threadIdx.y — the same standing shape
+// as the _rows_w4 pair above — with the per-warp body VERBATIM: identical expert_dot_g g-strided
+// chain, identical warp_reduce_sum, identical swiglu_preclamped_mul_scaled_f32 epilogue /
+// slot-ordered __fmaf_rn down chain. Packing only changes which block/warp computes a given
+// (o,j) or o output; it moves no bits. Selected only behind MEMRA_B200_MATVEC_ARM=1 (default
+// OFF; door pending its B200 A/B, docs/FLAGS.md).
+extern "C" __global__ void moe_gate_up_preclamp8_q8_w4(
+        wptr8_t gp, wptr8_t up, const signed char* __restrict__ aq, const float* __restrict__ ad,
+        f32x8_t gs, f32x8_t us, float limit,
+        float* __restrict__ act, int in_f, int n_ff, int qt_g, int qt_u, long rb_g, long rb_u) {
+    int o = blockIdx.x * MEMRA_MMVQ_ROWS + threadIdx.y;  // expert-FFN row (packed)
+    int j = blockIdx.y;              // routed slot
+    if (o >= n_ff) return;
+    int lane = threadIdx.x;          // 32 lanes, one warp per (o,j)
+    int nsb = in_f >> 5;
+    const unsigned char* grow = gp.p[j] + (long)o * rb_g;
+    const unsigned char* urow = up.p[j] + (long)o * rb_u;
+    float accg = 0.0f, accu = 0.0f;
+    for (int g = lane; g < nsb; g += 32) {
+        const signed char* aqb = aq + (size_t)g * 32;
+        float d8 = ad[g];
+        accg += expert_dot_g(qt_g, grow, g, aqb, d8);
+        accu += expert_dot_g(qt_u, urow, g, aqb, d8);
+    }
+    accg = warp_reduce_sum(accg);
+    accu = warp_reduce_sum(accu);
+    if (lane == 0) {
+        float u = fmaxf(fminf(accu * us.v[j], limit), -limit);
+        float x = fminf(accg * gs.v[j], limit);
+        act[(size_t)j * n_ff + o] = (x / (1.0f + expf(-x))) * u;
+    }
+}
+extern "C" __global__ void moe_down8_fma_q8_w4(
+        wptr8_t dp, f32x8_t w, const signed char* __restrict__ aq2, const float* __restrict__ ad2,
+        float* __restrict__ dst, int in_f, int out_f, int n_used, int qt, long rb) {
+    int o = blockIdx.x * MEMRA_MMVQ_ROWS + threadIdx.y;
+    if (o >= out_f) return;
+    int lane = threadIdx.x;
+    int nsb = in_f >> 5;
+    float chain = 0.0f;
+    for (int j = 0; j < n_used; j++) {
+        const unsigned char* wrow = dp.p[j] + (long)o * rb;
+        const signed char* arow = aq2 + (size_t)j * in_f;
+        const float* adrow = ad2 + (size_t)j * nsb;
+        float acc = 0.0f;
+        for (int g = lane; g < nsb; g += 32)
+            acc += expert_dot_g(qt, wrow, g, arow + (size_t)g * 32, adrow[g]);
+        acc = warp_reduce_sum(acc);
+        if (lane == 0) chain = __fmaf_rn(w.v[j], acc, chain);
+    }
+    if (lane == 0) dst[o] = chain;
+}
+
 // ---- VERIFY-ROWS twins of the fused glm5_next epilogue pair (lane/glm5-vrest, 2026-08-31) ----
 // ONE launch pair covers ALL t x n_used routed pairs of a spec-verify batch (the pair union
 // across the K+1 rows), replacing the per-(token,expert) sequential loop's 49 launches per
@@ -9894,6 +9960,31 @@ extern "C" __global__ void qmatvec_nvfp4_mmvq_fused2_rp(
     }
 }
 
+// SUB-WAVE GRID-FILL twin of qmatvec_nvfp4_mmvq_fused2_rp (MEMRA_B200_MATVEC_ARM occupancy arm,
+// 2026-09-02): same dispatcher shape, but instantiates nvfp4_mmvq_fused_seg_rp<1> (one row per
+// warp) instead of <2>. With RPW halved, MEMRA_MMVQ_ROWS(4) warps/block still hold, but the grid
+// (nb0+nb1) DOUBLES for the same out0/out1 -> twice the resident warps for the same total output
+// rows, at the cost of each warp re-reading its activation row once more (already resident in
+// L1/L2, per the reuse argument the vrest dedup-schedule lane already made for this family).
+// Per (tensor,row) the seg body is nvfp4_mmvq_fused_seg_rp VERBATIM regardless of RPW -> the r=0
+// iteration of the <2> body and the whole-warp <1> body compute IDENTICAL bits for a given row
+// (same qplane/splane addressing, same dp4a chain, same warp_reduce_sum). Dispatched only when
+// the <2> grid would be sub-wave on this device's SM count (host policy, lib.rs); default OFF.
+extern "C" __global__ void qmatvec_nvfp4_mmvq_fused2_rp_g2(
+        const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
+        const signed char* __restrict__ aq, const float* __restrict__ ad,
+        float* __restrict__ y0, float* __restrict__ y1,
+        int in_f, int out0, int out1, int m, float s0, float s1) {
+    MEMRA_PDL_ENTRY();
+    const int rows_pb = MEMRA_MMVQ_ROWS * 1;
+    const int nb0 = (out0 + rows_pb - 1) / rows_pb;
+    if ((int)blockIdx.x < nb0) {
+        nvfp4_mmvq_fused_seg_rp<1>(W0, aq, ad, y0, in_f, out0, m, 0, s0);
+    } else {
+        nvfp4_mmvq_fused_seg_rp<1>(W1, aq, ad, y1, in_f, out1, m, nb0, s1);
+    }
+}
+
 extern "C" __global__ void qmatvec_nvfp4_mmvq_fused3_rp(
         const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
         const unsigned char* __restrict__ W2, const signed char* __restrict__ aq,
@@ -12266,6 +12357,75 @@ extern "C" __global__ void matvec_bf16_f32acc_x4_rows(
             acc += __uint_as_float((unsigned)wp[5] << 16) * x1.y;
             acc += __uint_as_float((unsigned)wp[6] << 16) * x1.z;
             acc += __uint_as_float((unsigned)wp[7] << 16) * x1.w;
+        }
+        red[threadIdx.x] = acc;
+        __syncthreads();
+        for (int s = blockDim.x / 2; s > 0; s >>= 1) {
+            if (threadIdx.x < s) red[threadIdx.x] += red[threadIdx.x + s];
+            __syncthreads();
+        }
+        if (threadIdx.x == 0) y[row] = red[0];
+        __syncthreads();
+    }
+}
+
+// PREFETCH twin of matvec_bf16_f32acc_x4_rows (MEMRA_B200_MATVEC_ARM occupancy arm,
+// lane/b200-matvec-occupancy, 2026-09-02). B200 census: this pair was 17.0% of GPU time at
+// 24.1us avg over the KDA [8192x4096]/[4096x8192] bf16 projections; roofline for one such
+// projection is ~8us of HBM3e traffic (64 MB / 8 TB/s), so the measured cost is ~3x its byte
+// budget — a latency, not bandwidth, signature on B200's narrower 148-SM/8-TB/s shape.
+//
+// Same grid/block mapping, same 4-row sequential loop, same red[] tree reduction as the
+// shipped kernel; the ONLY change is software-pipelined (double-buffered) K-loop loads: the
+// NEXT iteration's weight/activation reads issue before the CURRENT iteration's 8-fma chain
+// runs, so the load latency for i+stride overlaps the compute for i instead of stalling behind
+// it. The accumulation itself is untouched — same 8 sequential `acc +=` fmas, in the same
+// per-thread i order, for the same i -> bit-identical per (row, token) to the shipped kernel.
+// This is the same class of change as the qmatvec mmvq family's `pf` weight-prefetch variant
+// (mmv-bv doc comment above, `sm_count`): load-issue timing changes, arithmetic order does not.
+extern "C" __global__ void matvec_bf16_f32acc_x4_rows_pf(
+        const unsigned short* __restrict__ w, const float* __restrict__ x,
+        float* __restrict__ y, int in_f, int out_f) {
+    const int trow = blockIdx.y;
+    x += (size_t)trow * in_f;
+    y += (size_t)trow * out_f;
+    __shared__ float red[256];
+    #pragma unroll
+    for (int p = 0; p < 4; p++) {
+        int row = blockIdx.x * 4 + p;
+        if (row >= out_f) return;
+        const unsigned short* wr = w + (size_t)row * in_f;
+        const int stride = blockDim.x * 8;
+        int i = threadIdx.x * 8;
+        bool have = i < in_f;
+        uint4 pack = have ? *reinterpret_cast<const uint4*>(wr + i) : make_uint4(0, 0, 0, 0);
+        float4 x0 = have ? *reinterpret_cast<const float4*>(x + i) : make_float4(0, 0, 0, 0);
+        float4 x1 = have ? *reinterpret_cast<const float4*>(x + i + 4) : make_float4(0, 0, 0, 0);
+        float acc = 0.0f;
+        for (; i < in_f; i += stride) {
+            int ni = i + stride;
+            bool have_next = ni < in_f;
+            uint4 npack;
+            float4 nx0, nx1;
+            if (have_next) {
+                npack = *reinterpret_cast<const uint4*>(wr + ni);
+                nx0 = *reinterpret_cast<const float4*>(x + ni);
+                nx1 = *reinterpret_cast<const float4*>(x + ni + 4);
+            }
+            const unsigned short* wp = reinterpret_cast<const unsigned short*>(&pack);
+            acc += __uint_as_float((unsigned)wp[0] << 16) * x0.x;
+            acc += __uint_as_float((unsigned)wp[1] << 16) * x0.y;
+            acc += __uint_as_float((unsigned)wp[2] << 16) * x0.z;
+            acc += __uint_as_float((unsigned)wp[3] << 16) * x0.w;
+            acc += __uint_as_float((unsigned)wp[4] << 16) * x1.x;
+            acc += __uint_as_float((unsigned)wp[5] << 16) * x1.y;
+            acc += __uint_as_float((unsigned)wp[6] << 16) * x1.z;
+            acc += __uint_as_float((unsigned)wp[7] << 16) * x1.w;
+            if (have_next) {
+                pack = npack;
+                x0 = nx0;
+                x1 = nx1;
+            }
         }
         red[threadIdx.x] = acc;
         __syncthreads();

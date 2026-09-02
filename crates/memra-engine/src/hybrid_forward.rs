@@ -14191,37 +14191,77 @@ impl HybridModel {
             us[j] = m.up_exps.macro_scale(ex);
             wv[j] = w[j] * m.down_exps.macro_scale(ex);
         }
-        let act = e.moe_gate_up_preclamp8_q8(
-            crate::WPtr8(g),
-            crate::WPtr8(u),
-            zq,
-            zd,
-            crate::F32x8(gs),
-            crate::F32x8(us),
-            limit,
-            n_embd,
-            n_ff_exp,
-            n_used,
-            m.gate_exps.qtype,
-            m.up_exps.qtype,
-            m.gate_exps.row_bytes,
-            m.up_exps.row_bytes,
-        )?;
+        // MEMRA_B200_MATVEC_ARM occupancy arm (lane/b200-matvec-occupancy-20260902, sm_100a
+        // only, default OFF): the warp-packed `_w4` twins are bit-identical per (o,j)/(o) to
+        // the shipped kernels below — packing only changes which block/warp computes an
+        // output, never the per-output arithmetic order. See `b200_matvec_arm_on` and
+        // docs/FLAGS.md.
+        let use_w4 = crate::b200_matvec_arm_on();
+        let act = if use_w4 {
+            e.moe_gate_up_preclamp8_q8_w4(
+                crate::WPtr8(g),
+                crate::WPtr8(u),
+                zq,
+                zd,
+                crate::F32x8(gs),
+                crate::F32x8(us),
+                limit,
+                n_embd,
+                n_ff_exp,
+                n_used,
+                m.gate_exps.qtype,
+                m.up_exps.qtype,
+                m.gate_exps.row_bytes,
+                m.up_exps.row_bytes,
+            )?
+        } else {
+            e.moe_gate_up_preclamp8_q8(
+                crate::WPtr8(g),
+                crate::WPtr8(u),
+                zq,
+                zd,
+                crate::F32x8(gs),
+                crate::F32x8(us),
+                limit,
+                n_embd,
+                n_ff_exp,
+                n_used,
+                m.gate_exps.qtype,
+                m.up_exps.qtype,
+                m.gate_exps.row_bytes,
+                m.up_exps.row_bytes,
+            )?
+        };
         // per-slot act quantize: [n_used, n_ff] rows in one quantize launch.
         let (aq2, ad2) = e.quantize_q8_1(&act, n_used, n_ff_exp)?;
         let mut dst = moe_out.slice_mut(tok * n_embd..(tok + 1) * n_embd);
-        e.moe_down8_fma_q8(
-            crate::WPtr8(d),
-            crate::F32x8(wv),
-            &aq2,
-            &ad2,
-            &mut dst,
-            n_ff_exp,
-            n_embd,
-            n_used,
-            m.down_exps.qtype,
-            m.down_exps.row_bytes,
-        )?;
+        if use_w4 {
+            e.moe_down8_fma_q8_w4(
+                crate::WPtr8(d),
+                crate::F32x8(wv),
+                &aq2,
+                &ad2,
+                &mut dst,
+                n_ff_exp,
+                n_embd,
+                n_used,
+                m.down_exps.qtype,
+                m.down_exps.row_bytes,
+            )?;
+        } else {
+            e.moe_down8_fma_q8(
+                crate::WPtr8(d),
+                crate::F32x8(wv),
+                &aq2,
+                &ad2,
+                &mut dst,
+                n_ff_exp,
+                n_embd,
+                n_used,
+                m.down_exps.qtype,
+                m.down_exps.row_bytes,
+            )?;
+        }
         crate::MOE_FUSED_EPI_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Ok(())
     }
