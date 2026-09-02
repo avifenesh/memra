@@ -1,0 +1,4 @@
+B200-FP8-DRY PASS
+dense: ABI present, tcgen05 FP8 + TMEM copy/barrier/alloc/dealloc present
+grouped: ABI present, plain E4M3 tensor-core MMA fallback present
+runtime: explicit MEMRA_FP8_MMQ=1 retained; B200 hardware state is NativeReference, not tuned

@@ -1,0 +1,34 @@
+[server] build: memra-0.123.0-bb6be54d89f0 (id: source-tree, git: 69a2eb3684e1)
+[server] OpenRouter metadata loaded: 1 model(s) from /home/ubuntu/receipts/b200-e2e-nvfp4-20260901T1804Z/metadata.toml
+[server] starting; models config = [("q9", "/home/ubuntu/models/qwen35-9b-nvfp4-mtp-640ced996727/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-k] operator pin K=3: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker] loading model "q9" <- /home/ubuntu/models/qwen35-9b-nvfp4-mtp-640ced996727/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[q8rp] split-plane decode mirrors built: 92 tensors
+[worker]   loaded "q9": 33 layers, eos=248046, stop=[248046]
+[worker] q9: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] q9: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 268MB (268435456 B, configured by MEMRA_PREFIX_CACHE_MB), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "q9": plain 14848 B/token, spec 16704 B/token; fixed residual learns from effective-free deltas
+[fa-pool] grow #0 dev=0 o_len 0 -> 266240 ml_len 0 -> 1040 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 266240 -> 532480 ml_len 1040 -> 2080 (retired kept, zero=false)
+[spec] draft-session state high-water: 41MB (max of parked delta 41MB and capture-time pool peak 9MB; charged per spec admission and gating future captures)
+[fa-pool] grow #2 dev=0 o_len 532480 -> 1064960 ml_len 2080 -> 4160 (retired kept, zero=false)
+[admit-cal] post-probe pool trim: released 1344MB cached back to the driver
+[admit-cal] boot calibration done: model="q9" route=mtp transient floor 1536MB (static was 1536MB; measured 1234MB; probe kv charge 67MB, draft-state 41MB, drafted 48 accepted 47; [dev0 peak-mapped 9536MB rest-mapped 8192MB charged 109MB -> 1234MB]; 0.7s)
+[server] worker ready; serving models: ["q9"]
+[server] listening on http://127.0.0.1:8397
+[meter] admit id=chatcmpl-f192adf0a350b84e1f26c891f9b3d554 tenant=default lane=interactive model="q9"
+[admission] per-session draft-state charge: model="q9" +44MB (measured capture high-water)
+[admission] request cost: model="q9" ctx=9082 path=spec = 16704 B/token x ctx + 0MB prefill-workspace + 0MB fixed = 152MB
+[spec-k] model="q9" tenant="" K=3 source=operator-pin prompt=9010 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q9" 120MB (observed 271MB at ctx 9026 path=spec)
+[fa-pool] grow #3 dev=0 o_len 1064960 -> 2129920 ml_len 4160 -> 8320 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 2129920 -> 4259840 ml_len 8320 -> 16640 (retired kept, zero=false)
+[spec-acc] ctx=9010 burst=6/6 cum=6/6=1.000
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

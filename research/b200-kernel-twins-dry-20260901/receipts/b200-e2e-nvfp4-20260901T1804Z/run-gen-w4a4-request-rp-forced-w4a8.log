@@ -1,0 +1,25 @@
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 trunk layers; optional MTP skipped)
+chat-templated prompt:
+<|im_start|>user
+You are reviewing a CUDA kernel port to NVIDIA B200. List three correctness checks for an NVFP4 matrix multiply, then state the most dangerous silent failure.<|im_end|>
+<|im_start|>assistant
+<think>
+
+prompt text: "You are reviewing a CUDA kernel port to NVIDIA B200. List three correctness checks for an NVFP4 matrix multiply, then state the most dangerous silent failure."
+prompt tokens: [248045, 846, 198, 2523, 513, 32767, 264, 52965, 9705, 2548, 310, 32449, 417, 17, 15, 15, 13, 1697, 2250, 55404, 11988, 364, 449, 23683, 11361, 19, 5979, 29283, 11, 1179, 1528, 279, 1379, 11078, 20413, 7652, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+prefill argmax=8160  decode argmax=8160  logit maxdiff=2.319e0  MATCH
+batched-prime argmax=8160  tokenwise argmax=8160  logit maxdiff=2.499e0  MATCH
+prefill 44 tok in 0.0308s = 1428.5 tok/s (pp44)
+[fa-pool] grow #1 dev=0 o_len 4096 -> 24576 ml_len 16 -> 96 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 24576 -> 49152 ml_len 96 -> 192 (retired kept, zero=false)
+generated 64 tokens in 0.317s = 201.75 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.031s) [stop: MaxNew]
+tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 1965, 25, 271, 16, 13, 220, 2972, 2014, 53983, 279, 5952, 64700, 198, 262, 348, 256, 2972, 1905, 64700, 9988, 286, 264, 52965, 9705, 2548, 310, 32449, 417, 17, 15, 15, 318, 14004, 8884, 17120, 553, 198, 262, 348, 256, 2972, 6065, 64700, 1697, 2250, 55404, 11988, 364, 449, 23683, 11361, 19, 318, 45]
+OUTPUT TEXT: "Here's a thinking process that leads to the suggested response:\n\n1.  **Analyze the Request:**\n    *   **Context:** Reviewing a CUDA kernel port to NVIDIA B200 (Blackwell architecture).\n    *   **Task:** List three correctness checks for an NVFP4 (N"
+--- generated text ---
+Here's a thinking process that leads to the suggested response:
+
+1.  **Analyze the Request:**
+    *   **Context:** Reviewing a CUDA kernel port to NVIDIA B200 (Blackwell architecture).
+    *   **Task:** List three correctness checks for an NVFP4 (N

@@ -149,8 +149,13 @@ echo "$out" | grep -q 'panics at Engine::func' \
 # which flipped the arm's premise and failed CI for the right thing happening — the exact
 # fixture-pinned-to-transient-content trap arm 14's comment warns about. Same idiom as arms
 # 9/10: derive the fixture from the live file and assert the sed actually bit.
-sed 's/"100a", //' "$ci" > "$tmp/ci-no-100a.yml"
-if grep -q '"100a"' "$tmp/ci-no-100a.yml"; then fail "arm 13 setup: sed did not bite"; fi
+sed -e 's/"100a", //' \
+    -e 's/MEMRA_CUDA_ARCH: "100a"/MEMRA_CUDA_ARCH: "120a"/' \
+    "$ci" > "$tmp/ci-no-100a.yml"
+if grep -m1 'cuda_arch:' "$tmp/ci-no-100a.yml" | grep -q '"100a"' \
+   || grep -qE 'MEMRA_CUDA_ARCH:[[:space:]]*"?100a"?' "$tmp/ci-no-100a.yml"; then
+  fail "arm 13 setup: sed did not remove 100a compile coverage"
+fi
 printf '100a  # advisory but uncompiled\n' > "$tmp/adv-dead.txt"
 if out=$("$census_arch" "$tmp/ci-no-100a.yml" "$rel_wf" "$build_rs" "$tmp/adv-dead.txt" 2>&1); then
   fail "arm 13: census allowed an advisory arch that ci never compiles: $out"
@@ -175,6 +180,14 @@ for needed in \
   "tools/stub-abi-census.py" \
   "tools/arch-matrix-census.sh" \
   "tools/test_releasability_census.sh" \
+  "research/b200-kernel-twins-dry-20260901/check-layouts.sh" \
+  "research/b200-kernel-twins-dry-20260901/check-nvfp4.sh" \
+  "research/b200-kernel-twins-dry-20260901/check-fp8.sh" \
+  "tools/test_install_b200_policy.sh" \
+  "tools/test_b200_phase0_harness.sh" \
+  "b200_dry_policy_tests" \
+  "b200_runs_static_nvfp4_checks_without_the_sm120_fatbin_cell" \
+  "synthetic_fixture_covers_codes_scales_and_exact_activation_blocks" \
   "release-arch-mirror:"
 do
   echo "$live" | grep -qF "$needed" \

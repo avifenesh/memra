@@ -24,6 +24,40 @@ receipt immediately. `MEMRA_SKIP_PERF_CI=1` is rejected in this mode. RTX 5090 v
 remains a compatibility follow-up for Step unless the same change also modifies a generic
 5090-facing default.
 
+### B200 dry gate and hardware qualification
+
+Before any B200 device execution, the `sm_100a` backend must pass its host/toolchain
+surface:
+
+```bash
+research/b200-kernel-twins-dry-20260901/check-layouts.sh
+research/b200-kernel-twins-dry-20260901/check-nvfp4.sh
+research/b200-kernel-twins-dry-20260901/check-fp8.sh
+tools/test_install_b200_policy.sh
+tools/test_b200_phase0_harness.sh
+MEMRA_CUDA_ARCH=100a cargo build --release --bins
+MEMRA_CUDA_ARCH=100a cargo test --release -p memra-engine \
+  b200_dry_policy_tests --lib
+```
+
+These gates compile the production translation units, inspect static-archive ABI/SASS, run the
+exact host-constexpr operand/scale layout contract, and prove the release installer still refuses
+an unpublished B200 prebuilt. They never open the CUDA driver. They are CI-wired in the `100a`
+release-arch mirror. A green dry gate alone is not `NativeQualified` and does not replace the sealed
+B200 `kernel-check`, model parity, sampled serving, concurrency, context, rollback, or performance
+battery under `research/b200-kernel-twins-dry-20260901/receipts/`.
+
+For a new box or changed kernel source, inspect the exact phase-0 plan without touching the device:
+
+```bash
+research/b200-kernel-twins-dry-20260901/run-box-phase0.sh --plan
+```
+
+Actual execution requires an explicit non-production acknowledgement, an externally approved
+40-hex commit, a new absolute receipt directory, and optional device indices. The harness refuses a
+dirty tree, non-CC-10.0 GPU, existing compute process, wrong CUDA toolkit, occupied canonical lock,
+or nonempty receipt namespace before launching the synthetic NVFP4/FP8/kernel-check cells.
+
 ## The tiers
 
 | Tier | Wall (5090 rig, measured 2026-08-02) | What runs | When |

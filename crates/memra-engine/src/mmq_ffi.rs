@@ -1262,6 +1262,26 @@ pub fn mmq_q4_enabled() -> bool {
     })
 }
 
+fn nvfp4_use_w4a8(rp: bool, w4a8_explicit: bool, w4a8_default: bool, mmq_explicit: bool) -> bool {
+    // Split-plane weights have no W4A4 loader. Otherwise an explicit W4A8 request wins, then the
+    // default applies only while MEMRA_MMQ is absent (MEMRA_MMQ=1 selects W4A4).
+    rp || w4a8_explicit || (w4a8_default && !mmq_explicit)
+}
+
+#[cfg(test)]
+mod b200_dry_policy_tests {
+    use super::nvfp4_use_w4a8;
+
+    #[test]
+    fn nvfp4_default_and_explicit_routes_do_not_reach_sm100_stubs() {
+        assert!(nvfp4_use_w4a8(false, false, true, false));
+        assert!(!nvfp4_use_w4a8(false, false, true, true));
+        assert!(nvfp4_use_w4a8(false, true, true, true));
+        assert!(nvfp4_use_w4a8(true, false, false, true));
+        assert!(!nvfp4_use_w4a8(false, false, false, false));
+    }
+}
+
 impl Engine {
     /// True if `w` should take a vendored MMQ GEMM under the current env policy (see
     /// `mmq_w4a8_enabled`): NVFP4 needs in_f % 64 == 0, Q4_K/Q5_K need in_f % 256 == 0.
@@ -1276,15 +1296,17 @@ impl Engine {
             // remap, bit-identical output — mmq_nvfp4_w4a8.cu load_tiles_nvfp4_w4a8<is_rp>).
             // The W4A4 loader (mmq_fp4.cu load_tiles_nvfp4_nvfp4) reads 36B GGUF blocks only,
             // so an rp weight with W4A8 disabled falls through to the rp-ported int8 GEMM.
-            // NVFP4 W4A8/W4A4 launchers use .kind::f8f6f4 / mxf4nvf4 tile MMA — sm_100a+/
-            // sm_120a-only. On every portable build (incl. the 90a Hopper-MMA lane) they are
-            // fail-closed link stubs (build.rs), so never offer them here.
+            // The split-plane layout has only a W4A8 loader. Its int8 MMA is native on sm_100a;
+            // optional F8F4 uses the existing bit-identical plain-E4M3 rollback form there.
             GpuTensor::Quant { qtype, rp, .. } if *qtype == crate::QT_NVFP4 && *rp => {
                 !cfg!(memra_portable_cuda)
                     && mmq_w4a8_enabled()
                     && w.in_features().is_multiple_of(64)
             }
-            // GGUF-layout NVFP4 (MEMRA_RP=0): W4A8 (default-on) or the explicit W4A4 opt-in.
+            // GGUF-layout NVFP4: W4A8 stays the accuracy-safe default on both Blackwell families.
+            // The new sm_100a tcgen05 W4A4 twin stays behind the EXISTING MEMRA_MMQ=1 opt-in until
+            // real-B200 exactness and serving gates exist; unmeasured hardware behavior never
+            // defaults on.
             GpuTensor::Quant { qtype, .. } if *qtype == crate::QT_NVFP4 => {
                 !cfg!(memra_portable_cuda)
                     && (mmq_w4a8_enabled() || mmq_opt_in)
@@ -1350,8 +1372,12 @@ impl Engine {
         let w4a8_explicit = std::env::var("MEMRA_MMQ_W4A8")
             .map(|v| v != "0")
             .unwrap_or(false);
-        let use_w4a8 =
-            *rp || w4a8_explicit || (mmq_w4a8_enabled() && std::env::var("MEMRA_MMQ").is_err());
+        let use_w4a8 = nvfp4_use_w4a8(
+            *rp,
+            w4a8_explicit,
+            mmq_w4a8_enabled(),
+            std::env::var("MEMRA_MMQ").is_ok(),
+        );
         match *qtype {
             // STAGE 2: the accuracy-safe int8 W4A8 MMQ tile (weight FP4->int8 dequant + q8_1
             // activation) — handles BOTH weight layouts (rp = A6 split-plane vs GGUF blocks).
@@ -1916,6 +1942,11 @@ impl Engine {
         scale: f32,
         rp: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        // MEMRA_MMQ_F8F4=1: the R-B W4A8-FP8 tile (own numeric config; battery-gated seam).
+        // SM100 compiles this route with the existing plain-E4M3 rollback form; SM120 keeps the
+        // faster block-scale identity form. Both consume the same scratch and numeric program.
+        static F8F4: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let f8f4 = *F8F4.get_or_init(|| std::env::var("MEMRA_MMQ_F8F4").as_deref() == Ok("1"));
         assert!(
             in_f.is_multiple_of(64),
             "MMQ NVFP4 W4A8 requires in_f % 64 == 0, got {in_f}"
@@ -1929,10 +1960,7 @@ impl Engine {
             let (x_p, _gx) = x.device_ptr(&stream);
             let (y_p, _gy) = y.device_ptr_mut(&stream);
             let (s_p, _gs) = scratch.device_ptr_mut(&stream);
-            // MEMRA_MMQ_F8F4=1: the R-B W4A8-FP8 tile (own numeric config; battery-gated seam).
             // Scratch layouts are footprint-identical, so only the entry point swaps.
-            static F8F4: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-            let f8f4 = *F8F4.get_or_init(|| std::env::var("MEMRA_MMQ_F8F4").as_deref() == Ok("1"));
             let rc = unsafe {
                 if f8f4 {
                     memra_mmq_nvfp4_f8f4(
@@ -1995,6 +2023,14 @@ impl Engine {
         out_f: usize,
         scale: f32,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        if cfg!(memra_sm100_tcgen05) && std::env::var("MEMRA_FP8_MMQ").as_deref() != Ok("1") {
+            return Err(
+                "B200 block-FP8 tcgen05 is NativeReference but not tuned; set \
+                 MEMRA_FP8_MMQ=1 only for explicit qualification or research (the pinned \
+                 pp1483 receipt measured 0.173x the established fallback)"
+                    .into(),
+            );
+        }
         assert!(
             in_f.is_multiple_of(16),
             "per-block FP8 MMQ requires in_f % 16 == 0, got {in_f}"
@@ -2057,6 +2093,14 @@ impl Engine {
         in_f: usize,
         out_f: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        if cfg!(memra_sm100_tcgen05) && std::env::var("MEMRA_FP8_MMQ").as_deref() != Ok("1") {
+            return Err(
+                "B200 block-FP8 tcgen05 is NativeReference but not tuned; set \
+                 MEMRA_FP8_MMQ=1 only for explicit qualification or research (the pinned \
+                 pp1483 receipt measured 0.173x the established fallback)"
+                    .into(),
+            );
+        }
         assert!(
             in_f.is_multiple_of(16),
             "per-block FP8 MMQ requires in_f % 16 == 0, got {in_f}"

@@ -373,14 +373,15 @@ jobs:
   # buy nothing this gate is for. If a cell is ever added to release.yml's arch axis,
   # tools/arch-matrix-census.sh turns this workflow red until it is added here too.
   #
-  # 100a (B200) is in the matrix as COMPILE COVERAGE ONLY (lane/glm5-b200-prep-20260901): it is
-  # NOT in release.yml (nothing has ever RUN on sm_100a silicon — build.rs detect_arch carries
-  # the reasons), but the B200 bring-up depends on main staying 100a-compilable, and this cell
+  # 100a (B200) is in this matrix as COMPILE COVERAGE ONLY (lane/glm5-b200-prep-20260901): the
+  # source backend is hardware-qualified and auto-detected, but no prebuilt is in release.yml.
+  # B200 support depends on main staying 100a-compilable, and this cell
   # is what stops the 2026-08-23 shape (an arch whose first compile is the day someone needs
-  # it) from recurring. build.rs gives 100a its own source set (three block-scale-MMA TUs take
-  # their fail-closed stubs, qmatvec_gemm.cu drops the native-FP4 kernel), so only this cell
-  # compiles that set at merge time. Its fatbin census runs with the two DECLARED 100a
-  # exceptions in tools/fatbin-lookup-exceptions.txt.
+  # it) from recurring. build.rs gives 100a its own source set: real NVFP4 W4A8, NVFP4 W4A4
+  # tcgen05, and block-FP8 tcgen05/grouped twins; qmatvec_gemm.cu alone still drops its separate
+  # native-FP4 fatbin kernel. Only this cell compiles that set at merge time. Its static-twin gate
+  # proves the ABI and SASS classes, and its fatbin census carries the two DECLARED 100a exceptions
+  # in tools/fatbin-lookup-exceptions.txt.
   release-arch-mirror:
     runs-on: ubuntu-24.04
     strategy:
@@ -414,6 +415,30 @@ jobs:
         env:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
           MEMRA_CUDA_ARCH: ${{ matrix.cuda_arch }}
+
+      # STATIC B200 TEETH. A successful 100a link is insufficient: replacing a real static-lib
+      # translation unit with an ABI-compatible stub would still link and the fatbin census below
+      # cannot see static archives. These gates compile the exact production TUs, assert their C
+      # ABI symbols, inspect SASS for NVFP4 UTCOMMA.4X / FP8 UTCQMMA / grouped HMMA, and execute
+      # the host-constexpr operand/scale layout bijection test. The policy tests prove block-FP8
+      # remains literal-1 opt-in and install.sh refuses an unpublished B200 prebuilt before network.
+      # Every command is host-only; none opens the CUDA driver.
+      - name: B200 kernel-twin ABI, SASS, layout, and admission gates
+        if: matrix.cuda_arch == '100a'
+        run: |
+          research/b200-kernel-twins-dry-20260901/check-layouts.sh
+          research/b200-kernel-twins-dry-20260901/check-nvfp4.sh
+          research/b200-kernel-twins-dry-20260901/check-fp8.sh
+          tools/test_install_b200_policy.sh
+          tools/test_b200_phase0_harness.sh
+          cargo test --release -p memra-engine b200_dry_policy_tests --lib
+          cargo test --release -p memra-engine --bin kernel-check \
+            b200_runs_static_nvfp4_checks_without_the_sm120_fatbin_cell
+          cargo test --release -p memra-engine --bin nvfp4_mmq_check \
+            synthetic_fixture_covers_codes_scales_and_exact_activation_blocks
+        env:
+          MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+          MEMRA_CUDA_ARCH: "100a"
 
       # THE RUNTIME HALF. Linking an arch does not prove its fatbins hold every kernel the Rust
       # side looks up: Engine::func (src/lib.rs:1418) resolves lazily by name across seven

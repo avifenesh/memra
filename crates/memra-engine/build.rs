@@ -144,9 +144,6 @@ fn detect_arch() -> String {
         .filter(|o| o.status.success())
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .and_then(|s| s.lines().next().map(|l| l.trim().to_string()));
-    // sm_100a IS DELIBERATELY NOT AUTO-SELECTED. It is still accepted as an EXPLICIT
-    // MEMRA_CUDA_ARCH=100a opt-in, but a B200 owner must not have it chosen for them.
-    //
     // HISTORY (2026-08-23): it did not build at all —
     //   ptxas ... error : Instruction 'mma with block scale' not supported on .target 'sm_100a'
     // Three translation units, two distinct causes, found by fixing each and watching the
@@ -164,28 +161,23 @@ fn detect_arch() -> String {
     // exceptions (qmatvec_gemm_nvfp4_fp4 — the MEMRA_FP4 door refuses on non-120a builds;
     // qmatvec_gemm_q8_0_wgmma — call sites compiled out, cfg!(memra_hopper_mma)).
     //
-    // WHY STILL NOT AUTO-SELECTED: compiling is not running. No memra binary has ever executed
-    // on sm_100a silicon — zero exactness gates, zero serving receipts, and the sm_120a-tuned
-    // block-scale MMQ prefill family is fail-closed stubs here. Auto-detect must not hand a
-    // B200 owner an unproven target; the opt-in stays explicit until a B200 box window banks
-    // runtime receipts (the bring-up plan lives in research/glm5-b200-prep-20260901/LANE.md).
-    // Refusing to choose an unexercised target is honest; silently choosing one is the shape
-    // this repo spent 2026-08-23 removing. See docs/RELEASING.md.
+    // HARDWARE CLOSURE (2026-09-01): sm_100a is now auto-selected. The exact 100a binary at
+    // 69a2eb3684e1 passed the synthetic NVFP4 and block-FP8 batteries on one NVIDIA B200, then a
+    // pinned Qwen3.5-9B NVFP4 artifact passed model-backed manifests, K=1..8, vendor-default
+    // sampled serving, concurrency, context refusal, and rollback. The safe W4A8 path remains the
+    // NVFP4 default. True raw-layout W4A4 (`MEMRA_RP=0 MEMRA_MMQ=1`) is correct but measured only
+    // 0.521x raw W4A8 prefill, so it stays explicit. The block-FP8 twin is also correct and serves
+    // a pinned official Qwen3.8-27B-FP8 checkpoint, but measured 0.173x its established fallback
+    // with worse teacher-forced NLL, so `MEMRA_FP8_MMQ=1` stays explicit on this architecture.
+    // Receipts: research/b200-kernel-twins-dry-20260901/receipts/.
     let arch = match cap.as_deref() {
         Some("12.0") | Some("12.1") => "120a",
+        Some("10.0") => "100a",
         Some("9.0") => "90a",
         Some("8.9") => "89",
         _ => "120a",
     };
     match cap.as_deref() {
-        Some("10.0") => println!(
-            "cargo:warning=compute_cap 10.0 (B200) detected: sm_100a is NOT auto-selected \
-             because no memra binary has ever run on that silicon (it compiles and is \
-             CI-covered, but there are zero runtime receipts and the sm_120a block-scale MMQ \
-             prefill family is fail-closed stubs there - see docs/RELEASING.md). Building \
-             {arch} instead, which will NOT run on this device. Set MEMRA_CUDA_ARCH=100a to \
-             opt in explicitly."
-        ),
         Some(c) => println!(
             "cargo:warning=MEMRA_CUDA_ARCH auto-detected {arch} (compute_cap {c}); set MEMRA_CUDA_ARCH to override"
         ),
@@ -243,6 +235,7 @@ fn main() {
         }
         println!("cargo:rustc-check-cfg=cfg(memra_portable_cuda)");
         println!("cargo:rustc-check-cfg=cfg(memra_hopper_mma)");
+        println!("cargo:rustc-check-cfg=cfg(memra_sm100_tcgen05)");
         println!("cargo:rustc-check-cfg=cfg(memra_cutlass)");
         println!("cargo:rustc-env=MEMRA_BUILT_CUDA_ARCH=120a");
         return;
@@ -253,6 +246,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=MEMRA_CUTLASS");
     println!("cargo:rustc-check-cfg=cfg(memra_portable_cuda)");
     println!("cargo:rustc-check-cfg=cfg(memra_hopper_mma)");
+    println!("cargo:rustc-check-cfg=cfg(memra_sm100_tcgen05)");
     println!("cargo:rustc-check-cfg=cfg(memra_cutlass)");
     let cuda_arch = std::env::var("MEMRA_CUDA_ARCH").unwrap_or_else(|_| detect_arch());
     assert!(
@@ -278,6 +272,9 @@ fn main() {
     }
     if hopper_mma {
         println!("cargo:rustc-cfg=memra_hopper_mma");
+    }
+    if cuda_arch == "100a" {
+        println!("cargo:rustc-cfg=memra_sm100_tcgen05");
     }
     // Runtime arch guard reads this (Engine::new): fatbins are single-arch SASS, so the
     // engine verifies the device's compute capability matches the built arch at init.
@@ -306,15 +303,9 @@ fn main() {
         }
         // The hand-written mxf4nvf4 block-scale MMA in qmatvec_gemm.cu is an sm_120a
         // instruction encoding, so omit that opt-in kernel from the sm_100a fatbin.
-        // NOTE (corrected lane/glm5-b200-prep-20260901): the earlier version of this comment
-        // said B200 "uses the accuracy-safe NVFP4 W4A8 int8 path below instead" — it does
-        // NOT: cu/mmq_nvfp4_w4a8.cu is a fail-closed stub on every non-120a arch (the
-        // block-scale int8 form is the same sm_120a-only MMA kind). What an sm_100a build
-        // actually runs for NVFP4 weights today is the dp4a decode matvec family
-        // (cu/qmatvec.cu, `qmatvec_nvfp4_dp4a_sel*` — plain int8 dp4a, compiles clean on
-        // sm_100a) plus cuBLAS/cuBLASLt-class prefill. B200's own FP4 tensor cores are the
-        // tcgen05 family, a different programming model no memra kernel targets yet; a tuned
-        // sm_100a FP4/W4A8 prefill is a port lane, not a flag flip.
+        // qmatvec_gemm's optional native-FP4 fatbin kernel is still the sm_120a encoding and stays
+        // omitted. B200 NVFP4 prefill now lives in the static MMQ archive instead: default W4A8
+        // uses the valid int8 MMA base, while MEMRA_MMQ=1 selects the new tcgen05/TMEM W4A4 twin.
         if cuda_arch == "100a" && src == "cu/qmatvec_gemm.cu" {
             args.push("-DMEMRA_DISABLE_NATIVE_FP4=1");
         }
@@ -521,37 +512,41 @@ fn main() {
             println!("cargo:rerun-if-changed={mmq_src}");
             println!("cargo:rerun-if-changed=cu/mmq_common.cuh");
             println!("cargo:rerun-if-changed=cu/mmq_mma_i8.cuh");
+            println!("cargo:rerun-if-changed=cu/sm100_blockscale_layout.cuh");
             // fa3_prefill.cu includes the shared wgmma header (dedup 2026-08-21).
             println!("cargo:rerun-if-changed=cu/wgmma_common.cuh");
-            let compile_src = if cuda_arch != "120a" && mmq_src == "cu/mmq_fp4.cu" {
-                // The explicit MEMRA_MMQ=1 W4A4 launcher is sm_120a-only (mxf4nvf4
-                // block-scale MMA). Keep its C ABI present on B200 and portable Ada,
-                // but make accidental use fail closed; normal evaluation uses the
-                // separately compiled W4A8 launcher.
-                "cu/mmq_fp4_stub.cu"
-            } else if cuda_arch != "120a" && mmq_src == "cu/mmq_nvfp4_w4a8.cu" {
-                // POLARITY FIXED 2026-08-23: this tested `portable` (89|90a), so sm_100a got the
-                // REAL file — and ptxas refuses it there:
-                //   error : Instruction 'mma with block scale' not supported on .target 'sm_100a'
-                // at ~40 sites. So `MEMRA_CUDA_ARCH=100a` could not build AT ALL, and nothing
-                // noticed because no workflow compiled that arch. `cu/mmq_fp4.cu` one branch up
-                // already had the correct `cuda_arch != "120a"` test; this is the same class of
-                // kernel (block-scale MMA, sm_120a-only in practice) and now shares the test.
-                //
-                // The bug's real cost was not sm_100a specifically: `portable` is a two-arch
-                // ENUMERATION, so every future non-120a arch inherited the breakage silently,
-                // while `!= 120a` is a property. Prefer the property.
-                "cu/mmq_nvfp4_w4a8_stub.cu"
-            } else if cuda_arch != "120a" && mmq_src == "cu/mmq_fp8_blk.cu" {
-                // Per-block FP8 MMQ: same .kind::f8f6f4 gate as the W4A8/F8F4 launchers, and
-                // therefore the SAME polarity fix (2026-08-23). Testing `portable` sent sm_100a
-                // to the real file, which ptxas rejects at ~400 sites. Found by fixing the
-                // mmq_nvfp4_w4a8 branch above and watching the failure MOVE here — the two are
-                // one class, not two bugs.
-                "cu/mmq_fp8_blk_stub.cu"
-            } else {
-                mmq_src
-            };
+            let compile_src =
+                if !matches!(cuda_arch.as_str(), "120a" | "100a") && mmq_src == "cu/mmq_fp4.cu" {
+                    // NVFP4 W4A4 has two native Blackwell programs: sm_120a warp MMA and the
+                    // sm_100a tcgen05/TMEM twin. Other architectures retain the fail-closed ABI.
+                    "cu/mmq_fp4_stub.cu"
+                } else if !matches!(cuda_arch.as_str(), "120a" | "100a")
+                    && mmq_src == "cu/mmq_nvfp4_w4a8.cu"
+                {
+                    // POLARITY FIXED 2026-08-23: this tested `portable` (89|90a), so sm_100a got the
+                    // REAL file — and ptxas refuses it there:
+                    //   error : Instruction 'mma with block scale' not supported on .target 'sm_100a'
+                    // at ~40 sites. So `MEMRA_CUDA_ARCH=100a` could not build AT ALL, and nothing
+                    // noticed because no workflow compiled that arch. `cu/mmq_fp4.cu` one branch up
+                    // already had the correct `cuda_arch != "120a"` test; this is the same class of
+                    // kernel (block-scale MMA, sm_120a-only in practice) and now shares the test.
+                    //
+                    // The bug's real cost was not sm_100a specifically: `portable` is a two-arch
+                    // ENUMERATION, so every future non-120a arch inherited the breakage silently,
+                    // while `!= 120a` is a property. Prefer the property.
+                    "cu/mmq_nvfp4_w4a8_stub.cu"
+                } else if !matches!(cuda_arch.as_str(), "120a" | "100a")
+                    && mmq_src == "cu/mmq_fp8_blk.cu"
+                {
+                    // Per-block FP8 MMQ: same .kind::f8f6f4 gate as the W4A8/F8F4 launchers, and
+                    // therefore the SAME polarity fix (2026-08-23). Testing `portable` sent sm_100a
+                    // to the real file, which ptxas rejects at ~400 sites. Found by fixing the
+                    // mmq_nvfp4_w4a8 branch above and watching the failure MOVE here — the two are
+                    // one class, not two bugs.
+                    "cu/mmq_fp8_blk_stub.cu"
+                } else {
+                    mmq_src
+                };
             println!("cargo:rerun-if-changed={compile_src}");
             let stem = mmq_src
                 .split('/')
@@ -586,9 +581,12 @@ fn main() {
                 if let Some(v) = &w4a8_fold_ceiling {
                     args.push(format!("-DMEMRA_MMQ_FOLD_CEILING={v}"));
                 }
-                if f8f4_plain.as_deref() == Some("1") {
+                if f8f4_plain.as_deref() == Some("1") || cuda_arch == "100a" {
                     args.push("-DMEMRA_F8F4_PLAIN_MMA".into());
                 }
+            }
+            if mmq_src.ends_with("mmq_fp4.cu") && cuda_arch == "100a" {
+                args.push("-DMEMRA_SM100_TCGEN05=1".into());
             }
             if mmq_src.ends_with("mmq_iq_experts.cu") {
                 if let Some(x) = &iqexp_x {
@@ -604,8 +602,11 @@ fn main() {
                 if let Some(x) = &fp8_x {
                     args.push(format!("-DFP8_MMQ_X={x}"));
                 }
-                if fp8blk_plain.as_deref() == Some("1") {
+                if fp8blk_plain.as_deref() == Some("1") || cuda_arch == "100a" {
                     args.push("-DMEMRA_FP8BLK_PLAIN_MMA".into());
+                }
+                if cuda_arch == "100a" {
+                    args.push("-DMEMRA_SM100_TCGEN05=1".into());
                 }
             }
             // RESEARCH INSTRUMENT ARM: ACCPROBE_F32_PLAIN=1 rebuilds the fp8-v3-gate Q1 instrument's

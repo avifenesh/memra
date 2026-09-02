@@ -270,9 +270,52 @@ pub fn fp8_mmq_enabled() -> bool {
 /// `MEMRA_ST_E4M3_BLK=0` / `MEMRA_ST_E4M3=0` also disable this route, by removing the native operand
 /// it consumes — this seam exists for the narrower question (keep native decode residency, revert
 /// only the prefill route).
+fn fp8_blk_mmq_native_policy(value: Option<&str>, sm100_dry_build: bool) -> bool {
+    if sm100_dry_build {
+        value == Some("1")
+    } else {
+        value != Some("0")
+    }
+}
+
 pub fn fp8_blk_mmq_native_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_FP8_MMQ").as_deref() != Ok("0"))
+    *ON.get_or_init(|| {
+        // Dry-built B200 tcgen05 path: explicit ON until real-silicon exactness/serve receipts.
+        fp8_blk_mmq_native_policy(
+            std::env::var("MEMRA_FP8_MMQ").ok().as_deref(),
+            cfg!(memra_sm100_tcgen05),
+        )
+    })
+}
+
+#[cfg(test)]
+mod b200_dry_policy_tests {
+    use super::fp8_blk_mmq_native_policy;
+
+    #[test]
+    fn sm100_dry_build_requires_literal_one() {
+        assert!(!fp8_blk_mmq_native_policy(None, true));
+        assert!(!fp8_blk_mmq_native_policy(Some("0"), true));
+        assert!(fp8_blk_mmq_native_policy(Some("1"), true));
+        assert!(!fp8_blk_mmq_native_policy(Some("yes"), true));
+    }
+
+    #[test]
+    fn qualified_arches_keep_the_existing_default_on_policy() {
+        assert!(fp8_blk_mmq_native_policy(None, false));
+        assert!(!fp8_blk_mmq_native_policy(Some("0"), false));
+        assert!(fp8_blk_mmq_native_policy(Some("1"), false));
+        assert!(fp8_blk_mmq_native_policy(Some("yes"), false));
+    }
+
+    #[test]
+    fn rust_cfg_tracks_the_baked_cuda_arch() {
+        assert_eq!(
+            cfg!(memra_sm100_tcgen05),
+            env!("MEMRA_BUILT_CUDA_ARCH") == "100a"
+        );
+    }
 }
 
 /// Per-tensor e4m3-NaN verdicts, keyed by the weight's device pointer. The hardware MMA reads

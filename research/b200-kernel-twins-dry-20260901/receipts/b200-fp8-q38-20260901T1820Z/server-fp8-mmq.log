@@ -1,0 +1,48 @@
+[server] build: memra-0.123.0-bb6be54d89f0 (id: source-tree, git: 69a2eb3684e1)
+[server] OpenRouter metadata loaded: 1 model(s) from /home/ubuntu/receipts/b200-fp8-q38-20260901T1820Z/metadata.toml
+[server] starting; models config = [("q38fp8", "/home/ubuntu/models/qwen38-27b-fp8-017b9c7af6b5689d5dd426a76e0bc077eb5ca20a", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-k] operator pin K=1: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker] loading model "q38fp8" <- /home/ubuntu/models/qwen38-27b-fp8-017b9c7af6b5689d5dd426a76e0bc077eb5ca20a
+[loader-law] WARNING: output.weight loads as 2D Float ne=[5120, 248320] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.nextn.eh_proj.weight loads as 2D Float ne=[10240, 5120] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[q8rp] split-plane decode mirrors built: 96 tensors
+[worker]   loaded "q38fp8": 65 layers, eos=248046, stop=[248046, 248044]
+[worker] q38fp8: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] q38fp8: decode wave cap 8; scheduler tick cap 8
+[prefix-cache] on: budget 268MB (268435456 B, configured by MEMRA_PREFIX_CACHE_MB), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "q38fp8": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[fa-pool] grow #0 dev=0 o_len 0 -> 399360 ml_len 0 -> 1560 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 399360 -> 798720 ml_len 1560 -> 3120 (retired kept, zero=false)
+[spec] draft-session state high-water: 46MB (max of parked delta 46MB and capture-time pool peak 12MB; charged per spec admission and gating future captures)
+[fa-pool] grow #2 dev=0 o_len 798720 -> 1597440 ml_len 3120 -> 6240 (retired kept, zero=false)
+[admit-cal] post-probe pool trim: released 1856MB cached back to the driver
+[admit-cal] boot calibration done: model="q38fp8" route=mtp transient floor 1682MB (static was 1536MB; measured 1682MB; probe kv charge 127MB, draft-state 46MB, drafted 66 accepted 42; [dev0 peak-mapped 34720MB rest-mapped 32864MB charged 173MB -> 1682MB]; 8.2s)
+[server] worker ready; serving models: ["q38fp8"]
+[server] listening on http://127.0.0.1:8398
+[meter] admit id=chatcmpl-ab102975ddc5206857b671f458094f8a tenant=default lane=interactive model="q38fp8"
+[admission] per-session draft-state charge: model="q38fp8" +49MB (measured capture high-water)
+[admission] request cost: model="q38fp8" ctx=207 path=spec = 31552 B/token x ctx + 0MB prefill-workspace + 0MB fixed = 7MB
+[spec-k] model="q38fp8" tenant="" K=1 source=operator-pin prompt=79 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q38fp8" 308MB (observed 313MB at ctx 151 path=spec)
+[spec-acc] ctx=79 burst=16/16 cum=16/16=1.000
+[prefix-cache] insert probation (spec-boundary): 32 tokens, 157.9MB (resident 157.9MB / 268MB, model q38fp8)
+[spec-acc] ctx=112 burst=12/19 cum=28/35=0.800
+[meter] admit id=chatcmpl-9cb3e1684800a6aa7cae8450c955504b tenant=default lane=interactive model="q38fp8"
+[admission] per-session draft-state charge: model="q38fp8" +49MB (measured capture high-water)
+[admission] request cost: model="q38fp8" ctx=170 path=spec = 31552 B/token x ctx + 0MB prefill-workspace + 308MB fixed = 314MB
+[worker] spec-affinity: declined (identity did not nominate; 1 parked, 82 prompt tokens; model q38fp8)
+[spec-k] model="q38fp8" tenant="" K=1 source=operator-pin prompt=82 cached=0 lcp=32 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-e90d2f294bbe12afab6f0af1e6be157e tenant=default lane=interactive model="q38fp8"
+[worker] spec-affinity: declined (identity did not nominate; 1 parked, 82 prompt tokens; model q38fp8)
+[spec-k] model="q38fp8" tenant="" K=1 source=operator-pin prompt=82 cached=0 lcp=32 active=2 wave=2 placement=single-or-non-pp2
+[prefix-cache] insert probation (spec-boundary): 64 tokens, 158.9MB (resident 316.9MB / 268MB, model q38fp8)
+[prefix-cache] evict (Probation LRU): 32 tokens, 157.9MB (model q38fp8)
+[spec-acc] ctx=82 burst=12/12 cum=12/12=1.000
+[spec-acc] ctx=83 burst=11/11 cum=11/11=1.000
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

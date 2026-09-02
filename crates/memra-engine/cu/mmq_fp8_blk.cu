@@ -97,8 +97,13 @@
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
 #include <cuda_fp8.h>
+#if defined(MEMRA_SM100_TCGEN05)
+#include <cuda/ptx>
+#endif
 #include <cstdint>
 #include <cstdlib>
+
+#include "sm100_blockscale_layout.cuh"
 
 // ======================= vendored ggml/MMQ constants (see mmq_nvfp4_w4a8.cu) =======================
 #define WARP_SIZE 32
@@ -499,6 +504,206 @@ static __global__ void mul_mat_q_fp8_blk(
         out_scale);
 }
 
+// ======================= sm_100a tcgen05 dense twin =======================
+#if defined(MEMRA_SM100_TCGEN05)
+
+// The checkpoint scale grid and the activation quantizer's d4 factors are arbitrary f32 values;
+// they are not silently rounded to UE8M0. tcgen05 therefore computes one unscaled 128-K block at
+// a time with identity UE8M0 scale tensors. Readback applies the existing f32
+// (weight_block_scale * activation_block_scale) fold in ascending K-block order, preserving the
+// production arithmetic contract outside the architecture-specific tensor-core reduction.
+constexpr int SM100_FP8_M = 128;
+constexpr int SM100_FP8_N = 128;
+constexpr int SM100_FP8_K_BLOCK = 128;
+constexpr int SM100_FP8_K_MMA = 32;
+constexpr int SM100_FP8_TMEM_COLS = 256;
+
+constexpr int SM100_FP8_A_OFF = 0;
+constexpr int SM100_FP8_A_BYTES = SM100_FP8_M * SM100_FP8_K_BLOCK;
+constexpr int SM100_FP8_B_OFF = SM100_FP8_A_OFF + SM100_FP8_A_BYTES;
+constexpr int SM100_FP8_B_BYTES = SM100_FP8_N * SM100_FP8_K_BLOCK;
+constexpr int SM100_FP8_SFA_OFF = SM100_FP8_B_OFF + SM100_FP8_B_BYTES;
+constexpr int SM100_FP8_SF_BYTES = 512;
+constexpr int SM100_FP8_SFB_OFF = SM100_FP8_SFA_OFF + SM100_FP8_SF_BYTES;
+constexpr int SM100_FP8_MBAR_OFF = SM100_FP8_SFB_OFF + SM100_FP8_SF_BYTES;
+constexpr int SM100_FP8_TADDR_OFF = SM100_FP8_MBAR_OFF + 16;
+constexpr int SM100_FP8_ACCUM_OFF = GGML_PAD(SM100_FP8_TADDR_OFF + 16, 128);
+constexpr int SM100_FP8_ACCUM_BYTES = SM100_FP8_M * SM100_FP8_N * sizeof(float);
+constexpr int SM100_FP8_SMEM_BYTES = SM100_FP8_ACCUM_OFF + SM100_FP8_ACCUM_BYTES;
+
+static __device__ __forceinline__ uint64_t sm100_fp8_smem_desc(
+        uint32_t saddr, uint32_t leading_byte_offset, uint32_t stride_byte_offset) {
+    uint64_t desc = 0;
+    desc |= (uint64_t) ((saddr & 0x3FFFFu) >> 4);
+    desc |= (uint64_t) ((leading_byte_offset & 0x3FFFFu) >> 4) << 16;
+    desc |= (uint64_t) ((stride_byte_offset & 0x3FFFFu) >> 4) << 32;
+    desc |= (uint64_t) 0b001 << 46;
+    return desc;
+}
+
+static __device__ __forceinline__ uint32_t sm100_fp8_idesc() {
+    uint32_t desc = 0;
+    // A/B type fields remain zero: e4m3.
+    desc |= ((uint32_t) (SM100_FP8_N >> 3) & 0x3Fu) << 17;
+    desc |= 1u << 23; // UE8M0 scale factors; both scale tensors carry identity 0x7f.
+    desc |= ((uint32_t) (SM100_FP8_M >> 7) & 0x3u) << 27;
+    return desc;
+}
+
+__launch_bounds__(SM100_FP8_M, 1)
+static __global__ void mul_mat_q_fp8_blk_sm100(
+        const uint8_t * __restrict__ weights,
+        const float * __restrict__ blk_scales,
+        const block_e4m3_mmq * __restrict__ acts,
+        float * __restrict__ dst,
+        int in_f, int out_f, int n_tokens, int scale_cols, float out_scale) {
+    extern __shared__ __align__(128) uint8_t sm100_smem[];
+    uint8_t * s_a = sm100_smem + SM100_FP8_A_OFF;
+    uint8_t * s_b = sm100_smem + SM100_FP8_B_OFF;
+    uint8_t * s_sfa = sm100_smem + SM100_FP8_SFA_OFF;
+    uint8_t * s_sfb = sm100_smem + SM100_FP8_SFB_OFF;
+    uint64_t * mma_barrier = reinterpret_cast<uint64_t *>(sm100_smem + SM100_FP8_MBAR_OFF);
+    uint32_t * tmem_base_slot = reinterpret_cast<uint32_t *>(sm100_smem + SM100_FP8_TADDR_OFF);
+    float * accum = reinterpret_cast<float *>(sm100_smem + SM100_FP8_ACCUM_OFF);
+
+    const int tid = threadIdx.x;
+    const int token_local = tid;
+    const int token_global = (int) blockIdx.y * SM100_FP8_M + token_local;
+    const int out_local = tid;
+    const int out_global = (int) blockIdx.x * SM100_FP8_N + out_local;
+    const uint32_t barrier_addr = (uint32_t) __cvta_generic_to_shared(mma_barrier);
+
+    // One identity scale per row in the fixed 32x16B warpx4 atom; unused bytes stay zero.
+    reinterpret_cast<uint32_t *>(s_sfa)[tid] = 0;
+    reinterpret_cast<uint32_t *>(s_sfb)[tid] = 0;
+    __syncthreads();
+    s_sfa[memra_sm100::sf1x_offset(tid)] = 0x7f;
+    s_sfb[memra_sm100::sf1x_offset(tid)] = 0x7f;
+
+    if (tid == 0) {
+        asm volatile("mbarrier.init.shared::cta.b64 [%0], 1;" :: "r"(barrier_addr));
+    }
+    __syncthreads();
+    asm volatile("fence.proxy.async;" ::: "memory");
+    __syncthreads();
+
+    if (tid < WARP_SIZE) {
+        asm volatile(
+            "tcgen05.alloc.cta_group::1.sync.aligned.shared::cta.b32 [%0], %1;"
+            :: "r"((uint32_t) __cvta_generic_to_shared(tmem_base_slot)),
+               "r"(SM100_FP8_TMEM_COLS));
+    }
+    __syncthreads();
+
+    const uint32_t tmem_base = tmem_base_slot[0];
+    const uint32_t d_tmem = tmem_base;
+    const uint32_t sfa_tmem = tmem_base + SM100_FP8_N;
+    const uint32_t sfb_tmem = sfa_tmem + 4;
+
+    if (tid == 0) {
+        const uint64_t sfa_desc = sm100_fp8_smem_desc(
+            (uint32_t) __cvta_generic_to_shared(s_sfa), 16, 128);
+        const uint64_t sfb_desc = sm100_fp8_smem_desc(
+            (uint32_t) __cvta_generic_to_shared(s_sfb), 16, 128);
+        asm volatile(
+            "tcgen05.cp.cta_group::1.32x128b.warpx4 [%0], %1;"
+            :: "r"(sfa_tmem), "l"(sfa_desc) : "memory");
+        asm volatile(
+            "tcgen05.cp.cta_group::1.32x128b.warpx4 [%0], %1;"
+            :: "r"(sfb_tmem), "l"(sfb_desc) : "memory");
+    }
+
+    const int n_k_blocks = (in_f + SM100_FP8_K_BLOCK - 1) / SM100_FP8_K_BLOCK;
+    for (int k_block = 0; k_block < n_k_blocks; ++k_block) {
+        const block_e4m3_mmq * act_block = token_global < n_tokens
+            ? acts + (int64_t) k_block * n_tokens + token_global
+            : nullptr;
+
+#pragma unroll
+        for (int c = 0; c < SM100_FP8_K_BLOCK; ++c) {
+            const int core_off = memra_sm100::core_k_outer_offset(tid, c, SM100_FP8_M);
+            s_a[core_off] = act_block ? act_block->qs[c] : 0;
+            const int k_global = k_block * SM100_FP8_K_BLOCK + c;
+            s_b[core_off] = (out_global < out_f && k_global < in_f)
+                ? weights[(int64_t) out_global * in_f + k_global]
+                : 0;
+        }
+        __syncthreads();
+        asm volatile("fence.proxy.async;" ::: "memory");
+        __syncthreads();
+
+        if (tid == 0) {
+            const uint32_t i_desc = sm100_fp8_idesc();
+#pragma unroll
+            for (int sub = 0; sub < SM100_FP8_K_BLOCK / SM100_FP8_K_MMA; ++sub) {
+                const uint32_t a_addr = (uint32_t) __cvta_generic_to_shared(s_a)
+                                      + sub * 2 * 2048;
+                const uint32_t b_addr = (uint32_t) __cvta_generic_to_shared(s_b)
+                                      + sub * 2 * 2048;
+                const uint64_t a_desc = sm100_fp8_smem_desc(a_addr, 2048, 128);
+                const uint64_t b_desc = sm100_fp8_smem_desc(b_addr, 2048, 128);
+                asm volatile(
+                    "{.reg .pred p; setp.ne.u32 p, %6, 0;\n\t"
+                    "tcgen05.mma.cta_group::1.kind::mxf8f6f4.block_scale.scale_vec::1X "
+                    "[%0], %1, %2, %3, [%4], [%5], p;}"
+                    :: "r"(d_tmem), "l"(a_desc), "l"(b_desc), "r"(i_desc),
+                       "r"(sfa_tmem), "r"(sfb_tmem), "r"((uint32_t) sub)
+                    : "memory");
+            }
+            asm volatile(
+                "tcgen05.commit.cta_group::1.mbarrier::arrive::one.b64 [%0];"
+                :: "r"(barrier_addr) : "memory");
+            asm volatile(
+                "{.reg .pred p;\n\t"
+                "WAIT_FP8: mbarrier.try_wait.parity.shared::cta.b64 p, [%0], %1;\n\t"
+                "@!p bra WAIT_FP8;}"
+                :: "r"(barrier_addr), "r"((uint32_t) (k_block & 1)) : "memory");
+        }
+        __syncthreads();
+        asm volatile("tcgen05.fence::after_thread_sync;" ::: "memory");
+        __syncthreads();
+
+        const float act_d = act_block ? act_block->d4[0] : 0.0f;
+        const float weight_d = blk_scales[
+            (size_t) blockIdx.x * (size_t) scale_cols
+            + (size_t) min(k_block, scale_cols - 1)];
+        const float folded_scale = weight_d * act_d;
+        const uint32_t row_tmem = d_tmem + ((uint32_t) token_local << 16);
+
+#pragma unroll 1
+        for (int col0 = 0; col0 < SM100_FP8_N; col0 += 16) {
+            uint32_t partial[16];
+            cuda::ptx::tcgen05_ld_32x32b(partial, row_tmem + col0);
+            cuda::ptx::tcgen05_wait_ld();
+#pragma unroll
+            for (int c = 0; c < 16; ++c) {
+                const int idx = token_local * SM100_FP8_N + col0 + c;
+                const float prior = k_block == 0 ? 0.0f : accum[idx];
+                accum[idx] = fmaf(folded_scale, __uint_as_float(partial[c]), prior);
+            }
+        }
+        __syncthreads();
+    }
+
+#pragma unroll 1
+    for (int c = 0; c < SM100_FP8_N; ++c) {
+        const int out_col = (int) blockIdx.x * SM100_FP8_N + c;
+        if (token_global < n_tokens && out_col < out_f) {
+            dst[(int64_t) token_global * out_f + out_col] =
+                accum[token_local * SM100_FP8_N + c] * out_scale;
+        }
+    }
+
+    __syncthreads();
+    if (tid < WARP_SIZE) {
+        asm volatile(
+            "tcgen05.dealloc.cta_group::1.sync.aligned.b32 %0, %1;"
+            :: "r"(tmem_base), "r"(SM100_FP8_TMEM_COLS));
+        asm volatile("tcgen05.relinquish_alloc_permit.cta_group::1.sync.aligned;");
+    }
+}
+#endif // MEMRA_SM100_TCGEN05
+
 // ======================= activation quantizer (v2: per-128 scale) =======================
 // Twin of quantize_mmq_e4m3_d4_kernel (cu/mmq_nvfp4_f8f4.cu) with the amax reduction widened from
 // 32 to 128 values — exactly one block_e4m3_mmq, which is exactly one warp's 32 lanes x 4 values.
@@ -663,6 +868,7 @@ static __global__ void fp8_blk_count_nan_kernel(
 // it on every call; a cudaDeviceGetAttribute per prefill GEMM would put a driver round-trip in front
 // of every launch. Cached per device ordinal (small fixed table, no allocation, no lock: two racing
 // threads compute the same value).
+#if !defined(MEMRA_SM100_TCGEN05)
 static int memra_fp8_blk_nsm() {
     constexpr int MAX_DEV = 16;
     static int cache[MAX_DEV] = {0};
@@ -687,6 +893,14 @@ static int memra_fp8_blk_nsm() {
     }
     return n;
 }
+#endif
+
+#if defined(MEMRA_SM100_TCGEN05)
+static bool memra_sm100_fp8_opted_in() {
+    const char * value = std::getenv("MEMRA_FP8_MMQ");
+    return value != nullptr && value[0] == '1' && value[1] == '\0';
+}
+#endif
 
 extern "C" {
 
@@ -754,6 +968,9 @@ int memra_mmq_fp8_blk_grouped(
         || n_active > n_expert || n_tokens <= 0 || (in_f % 16) != 0) {
         return 1;
     }
+#if defined(MEMRA_SM100_TCGEN05)
+    if (!memra_sm100_fp8_opted_in()) { return 2904; }
+#endif
     const size_t want_code_stride = (size_t) in_f * (size_t) out_f;
     const size_t want_scale_stride =
         (size_t) ((in_f + FP8_BLK - 1) / FP8_BLK)
@@ -811,6 +1028,9 @@ int memra_mmq_fp8_blk(const void * W_e4m3, const float * blk_scales, const float
                       float * y, int in_f, int out_f, int n_tokens, void * act_scratch,
                       void * stream, float out_scale) {
     if (in_f <= 0 || out_f <= 0 || n_tokens <= 0 || (in_f % 16) != 0) { return 1; }
+#if defined(MEMRA_SM100_TCGEN05)
+    if (!memra_sm100_fp8_opted_in()) { return 2904; }
+#endif
     cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
 
     {   // per-128 activation quantize (v2's own kernel; 128 threads x 4 values == 4 blocks per CTA,
@@ -824,6 +1044,22 @@ int memra_mmq_fp8_blk(const void * W_e4m3, const float * blk_scales, const float
     { cudaError_t e = cudaGetLastError(); if (e != cudaSuccess) { return 1000 + (int) e; } }
 
     const int scale_cols = (in_f + FP8_BLK - 1) / FP8_BLK;
+#if defined(MEMRA_SM100_TCGEN05)
+    {
+        const dim3 grid(
+            (unsigned) ((out_f + SM100_FP8_N - 1) / SM100_FP8_N),
+            (unsigned) ((n_tokens + SM100_FP8_M - 1) / SM100_FP8_M), 1);
+        cudaError_t attr = cudaFuncSetAttribute(
+            mul_mat_q_fp8_blk_sm100,
+            cudaFuncAttributeMaxDynamicSharedMemorySize,
+            SM100_FP8_SMEM_BYTES);
+        if (attr != cudaSuccess) { return 2000 + (int) attr; }
+        mul_mat_q_fp8_blk_sm100<<<grid, SM100_FP8_M, SM100_FP8_SMEM_BYTES, st>>>(
+            (const uint8_t *) W_e4m3, blk_scales,
+            (const block_e4m3_mmq *) act_scratch, y,
+            in_f, out_f, n_tokens, scale_cols, out_scale);
+    }
+#else
     const bool need_check = (out_f % FP8_MMQ_Y) != 0;
     const int * y_q = (const int *) act_scratch;
     const char * x8_env = std::getenv("MEMRA_FP8_MMQ_X8");
@@ -894,6 +1130,7 @@ int memra_mmq_fp8_blk(const void * W_e4m3, const float * blk_scales, const float
         else            { MEMRA_FP8MMQ_LAUNCH(FP8_MMQ_X_SMALL, false); }
     }
     #undef MEMRA_FP8MMQ_LAUNCH
+#endif
 
     cudaError_t e = cudaGetLastError();
     if (e != cudaSuccess) { return 2000 + (int) e; }

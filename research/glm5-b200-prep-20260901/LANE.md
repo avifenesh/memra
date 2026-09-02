@@ -1,5 +1,10 @@
 # glm5 B200 PREP lane (lane/glm5-b200-prep-20260901)
 
+> Current update: `research/b200-kernel-twins-dry-20260901/README.md` supersedes this lane's
+> "no Memra tcgen05 kernel" state for NVFP4 only. The default W4A8 int8 base and an opt-in W4A4
+> tcgen05/TMEM twin now dry-build. Block-FP8 also has a dense tcgen05/TMEM twin plus its legal
+> grouped plain-MMA fallback. They have no current real-B200 runtime qualification.
+
 Owner pivot 2026-09-01: serving launches on the current Workstation cards; the main
 engineering effort moves to 2x B200 + 1M context for GLM-5.3-Flash. NO BOX EXISTS YET
 (the rental waits on the owner's provider ruling; the quote sheet is business content and

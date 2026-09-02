@@ -85,8 +85,8 @@ What this list does **not** claim, stated so nobody reads more into it:
   `#else` is a **runtime** failure on a shipped binary that every compile gate here passes.
   That gap is now measured by `tools/fatbin-lookup-census.py` — which is how sm_89's 20 missing
   kernels were found and why sm_89 stopped shipping. See "Known unshippable arch" below.
-- **sm_100a (B200): compiles and is CI-covered since lane/glm5-b200-prep-20260901; still NOT
-  auto-detected and NOT released.** The 2026-08-23 state was "it does not compile" (two
+- **sm_100a (B200): runtime-qualified from source and auto-detected; no prebuilt is released.**
+  The 2026-08-23 state was "it does not compile" (two
   stub-gate polarity bugs, fixed then, plus a wrong `__CUDA_ARCH__ >= 1000` guard in
   `cu/mmq_q8_0_f32acc.cu` that admitted the one arch rejecting the f8f6f4 MMA — fixed by the
   b200-prep lane, `>= 1200`). Current state, measured by a 29-cell per-arch census (13 fatbin + 16 static-lib TUs)
@@ -96,12 +96,16 @@ What this list does **not** claim, stated so nobody reads more into it:
   door asserts the 120a property on sm_100a builds, and kernel_check's Stage-C FP4 arm keys on
   the same property so 100a records a skip cell; portable builds keep their pre-existing
   early-return/refusal path; `qmatvec_gemm_q8_0_wgmma` — all call sites
-  compiled out under `cfg!(memra_hopper_mma)`). `detect_arch()` still refuses to select it
-  because **compiling is not running**: zero exactness gates and zero serving receipts exist on
-  sm_100a silicon, and the sm_120a block-scale MMQ prefill family is fail-closed stubs there
-  (the tuned-prefill port is a named B200 box-window lane, not a build fix). It stays an
-  **explicit** `MEMRA_CUDA_ARCH=100a` opt-in until the B200 bring-up banks runtime receipts.
-  Owner: the B200 bring-up lane (`research/glm5-b200-prep-20260901/LANE.md`).
+  compiled out under `cfg!(memra_hopper_mma)`). The 2026-09-01 hardware closure at
+  `69a2eb3684e1` passed the sealed synthetic battery on one NVIDIA B200, then pinned-checkpoint
+  model, K=1..8, sampled serving, concurrency, admission, and rollback gates. `detect_arch()` now
+  maps compute capability 10.0 to `100a`. Default NVFP4 W4A8 is `NativeQualified` on the pinned
+  Qwen3.5-9B artifact. Raw-layout W4A4 is correct but remains explicit because it measured 0.521x
+  raw W4A8 prefill. Block-FP8 is `NativeReference` only: its explicit B200 twin is correct and
+  serves the pinned official Qwen3.8-27B-FP8 checkpoint, but measured 0.173x the established
+  fallback with worse teacher-forced NLL. It does not default on. The release installer still
+  refuses B200 before network access because the release manifest publishes no sm_100a binary.
+  Owner and manifests: `research/b200-kernel-twins-dry-20260901/README.md` and `receipts/`.
 - **The glibc/OS axis.** `release.yml` builds two glibc floors; CI mirrors only the arch axis.
   The OS changes the libc requirement of the shipped binary, not the source set or the symbols,
   so one OS cannot miss a compile or link failure the other would catch.

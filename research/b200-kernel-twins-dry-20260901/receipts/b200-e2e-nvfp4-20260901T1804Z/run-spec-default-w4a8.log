@@ -1,0 +1,40 @@
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (33 layers, nextn=1)
+text prompt (158 chars, chat-templated) -> 44 tokens
+prompt tokens: [248045, 846, 198, 2523, 513, 32767, 264, 52965, 9705, 2548, 310, 32449, 417, 17, 15, 15, 13, 1697, 2250, 55404, 11988, 364, 449, 23683, 11361, 19, 5979, 29283, 11, 1179, 1528, 279, 1379, 11078, 20413, 7652, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 4096 -> 24576 ml_len 16 -> 96 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 24576 -> 49152 ml_len 96 -> 192 (retired kept, zero=false)
+
+[generate]   63 tok in 0.368s = 171.15 tok/s (gen-only; this run's prime 0.031s)
+  tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 1965, 25, 271, 16, 13, 220, 2972, 2014, 53983, 279, 5952, 64700, 198, 262, 348, 256, 2972, 1905, 64700, 9988, 286, 264, 52965, 9705, 2548, 310, 32449, 417, 17, 15, 15, 318, 14004, 8884, 17120, 553, 198, 262, 348, 256, 2972, 6065, 64700, 1697, 2250, 55404, 11988, 364, 449, 23683, 11361, 19, 318, 45]
+[spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 4MB; charged per spec admission and gating future captures)
+[fa-pool] grow #3 dev=0 o_len 49152 -> 98304 ml_len 192 -> 384 (retired kept, zero=false)
+
+[generate_spec K=1] 64 tok in 0.264s = 238.89 tok/s (1.40x vs generate; this run's prime 0.031s)
+  acceptance: 31/32 = 96.9%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=2] 64 tok in 0.221s = 285.40 tok/s (1.67x vs generate; this run's prime 0.031s)
+  acceptance: 42/44 = 95.5%   self-consistency: PASS (identical to plain target)
+[fa-pool] grow #4 dev=0 o_len 98304 -> 196608 ml_len 384 -> 768 (retired kept, zero=false)
+
+[generate_spec K=3] 64 tok in 0.218s = 288.78 tok/s (1.69x vs generate; this run's prime 0.031s)
+  acceptance: 45/54 = 83.3%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=4] 64 tok in 0.246s = 256.38 tok/s (1.50x vs generate; this run's prime 0.031s)
+  acceptance: 47/64 = 73.4%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=5] 64 tok in 0.228s = 276.16 tok/s (1.61x vs generate; this run's prime 0.031s)
+  acceptance: 50/65 = 76.9%   self-consistency: PASS (identical to plain target)
+[fa-pool] grow #5 dev=0 o_len 196608 -> 393216 ml_len 768 -> 1536 (retired kept, zero=false)
+
+[generate_spec K=6] 64 tok in 0.231s = 272.53 tok/s (1.59x vs generate; this run's prime 0.031s)
+  acceptance: 51/72 = 70.8%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=7] 64 tok in 0.267s = 235.79 tok/s (1.38x vs generate; this run's prime 0.031s)
+  acceptance: 51/84 = 60.7%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=8] 64 tok in 0.256s = 246.17 tok/s (1.44x vs generate; this run's prime 0.031s)
+  acceptance: 53/80 = 66.2%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===

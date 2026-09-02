@@ -8,6 +8,12 @@ use std::collections::{BTreeMap, BTreeSet};
 const USAGE: &str = "usage: kernel-check [MODEL.gguf] [--require-cell NAME]... \
                      [--require-manifest FILE]";
 
+fn nvfp4_check_capabilities(built_arch: &str) -> (bool, bool) {
+    let stage_c_fp4 = built_arch == "120a";
+    let static_mmq = matches!(built_arch, "120a" | "100a");
+    (stage_c_fp4, static_mmq)
+}
+
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Cli {
     gguf: Option<String>,
@@ -3224,58 +3230,60 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Q4_K/Q8_0/Q4_0 MMQ checks — those kernels are live on Hopper through the
             // hopper_mma re-admission, and the old whole-section skip left the battery
             // blind to the #23 stream-K corruption (2026-07-31).
-            // THE PROPERTY, not an enumeration: this family (Stage-C native mxf4 FP4 +
-            // the static-MMQ W4A8/FP8-blk launchers) exists only in the sm_120a build —
-            // build.rs stubs the static TUs and drops qmatvec_gemm_nvfp4_fp4 on every other
-            // arch. The old `!cfg!(memra_portable_cuda)` admitted sm_100a (not portable,
-            // not 120a), where the Stage-C check reached Engine::func("qmatvec_gemm_nvfp4_fp4")
-            // and panicked "kernel not in any fatbin" with NO env force involved — caught by
-            // the b200-prep lane's PR review against the 100a fatbin-lookup census.
-            let nvfp4_checks = env!("MEMRA_BUILT_CUDA_ARCH") == "120a";
-            if !nvfp4_checks {
+            // Two properties, deliberately separate. The Stage-C qmatvec_gemm FP4 fatbin remains
+            // sm_120a-only. The static W4A4/W4A8/F8F4 family is now real on BOTH Blackwell
+            // branches (120a warp MMA, 100a tcgen05/plain twins). Conflating them made kernel-check
+            // skip every new B200 model-backed NVFP4 cell even though the archive held the kernels.
+            let (stage_c_fp4_checks, static_nvfp4_checks) =
+                nvfp4_check_capabilities(env!("MEMRA_BUILT_CUDA_ARCH"));
+            if !static_nvfp4_checks {
                 cells.skip(
                     "nvfp4-gemm:native-static",
-                    "native FP4/static-MMQ capability unavailable on this CUDA target",
+                    "static NVFP4 MMQ capability unavailable on this CUDA target",
                 );
             }
             if !(cfg!(memra_portable_cuda) && !cfg!(memra_hopper_mma)) {
-                if nvfp4_checks {
-                    // Stage-C FP4 (mxf4nvf4 block-scale tensor-core) vs the f32 dequant oracle on NVFP4.
-                    // FP4 is LOSSY (e2m1 activations + e2m1 weights; scale side is lossless ue4m3) — NOT
-                    // bit-equivalent. Compare to cpu_linear(dequant(W)) and expect rel ~1e-2..6e-2.
-                    if let Some(t) = g
-                        .find("blk.0.ffn_gate.weight")
-                        .filter(|t| t.ggml_type == GgmlType::NVFP4)
-                    {
-                        use memra_gguf::dequant;
-                        use memra_runtime::cpu_linear;
-                        let in_f = t.ne[0] as usize;
-                        let out_f = t.ne[1] as usize;
-                        let raw = g.tensor_data(t);
-                        let row_bytes = raw.len() / out_f;
-                        let w_f32 = dequant::dequantize(GgmlType::NVFP4, raw, in_f * out_f);
-                        let wd = e.htod_bytes(raw)?;
-                        for tt in [16usize, 64, 128, 512] {
-                            let x: Vec<f32> = (0..tt * in_f).map(|i| pr(i + 83) * 0.1).collect();
-                            let xd = e.htod(&x)?;
-                            let cpu = cpu_linear(&x, &w_f32, tt, in_f, out_f);
-                            let yb = e.dtoh(&e.qmatvec_gemm_nvfp4_fp4_raw(
-                                &wd, &xd, tt, in_f, out_f, row_bytes,
-                            )?)?;
-                            let d = maxdiff(&cpu, &yb);
-                            let scale = cpu.iter().map(|v| v.abs()).fold(0.0, f32::max).max(1e-3);
-                            let rel = d / scale;
-                            // FP4 is LOSSY: e2m1 ACTIVATION quant (8 grid points/16-block) drives rel ~0.1-0.15
-                            // (the weight side is bit-exact — proven by probe/fp4_4x_final.cu maxrel=0). This rel
-                            // is INFORMATIONAL, NOT a hard gate: the AUTHORITATIVE FP4 gate is end-to-end argmax
-                            // (MEMRA_FP4 run-hybrid/run-gen), which holds on the 9B and is the arbiter per the plan.
-                            println!(
-                                "FP4-GEMM blk.0.ffn_gate.weight [NVFP4] T={tt}: rel={rel:.2e} (informational; \
+                if static_nvfp4_checks {
+                    if stage_c_fp4_checks {
+                        // Stage-C FP4 (mxf4nvf4 block-scale tensor-core) vs the f32 dequant oracle on NVFP4.
+                        // FP4 is LOSSY (e2m1 activations + e2m1 weights; scale side is lossless ue4m3) — NOT
+                        // bit-equivalent. Compare to cpu_linear(dequant(W)) and expect rel ~1e-2..6e-2.
+                        if let Some(t) = g
+                            .find("blk.0.ffn_gate.weight")
+                            .filter(|t| t.ggml_type == GgmlType::NVFP4)
+                        {
+                            use memra_gguf::dequant;
+                            use memra_runtime::cpu_linear;
+                            let in_f = t.ne[0] as usize;
+                            let out_f = t.ne[1] as usize;
+                            let raw = g.tensor_data(t);
+                            let row_bytes = raw.len() / out_f;
+                            let w_f32 = dequant::dequantize(GgmlType::NVFP4, raw, in_f * out_f);
+                            let wd = e.htod_bytes(raw)?;
+                            for tt in [16usize, 64, 128, 512] {
+                                let x: Vec<f32> =
+                                    (0..tt * in_f).map(|i| pr(i + 83) * 0.1).collect();
+                                let xd = e.htod(&x)?;
+                                let cpu = cpu_linear(&x, &w_f32, tt, in_f, out_f);
+                                let yb = e.dtoh(&e.qmatvec_gemm_nvfp4_fp4_raw(
+                                    &wd, &xd, tt, in_f, out_f, row_bytes,
+                                )?)?;
+                                let d = maxdiff(&cpu, &yb);
+                                let scale =
+                                    cpu.iter().map(|v| v.abs()).fold(0.0, f32::max).max(1e-3);
+                                let rel = d / scale;
+                                // FP4 is LOSSY: e2m1 ACTIVATION quant (8 grid points/16-block) drives rel ~0.1-0.15
+                                // (the weight side is bit-exact — proven by probe/fp4_4x_final.cu maxrel=0). This rel
+                                // is INFORMATIONAL, NOT a hard gate: the AUTHORITATIVE FP4 gate is end-to-end argmax
+                                // (MEMRA_FP4 run-hybrid/run-gen), which holds on the 9B and is the arbiter per the plan.
+                                println!(
+                                    "FP4-GEMM blk.0.ffn_gate.weight [NVFP4] T={tt}: rel={rel:.2e} (informational; \
                               authoritative gate = argmax) {}",
-                                if rel < 2e-1 { "OK" } else { "HIGH" }
-                            );
+                                    if rel < 2e-1 { "OK" } else { "HIGH" }
+                                );
+                            }
                         }
-                    }
+                    } // stage_c_fp4_checks
                     // --- VENDORED llama NVFP4 MMQ GEMM vs the f32 dequant oracle. ---
                     // W4A4-native (mxf4nvf4 block-scale mma). The e2m1 ACTIVATION grid is the lossy side
                     // (the weight side is bit-exact — probe/fp4_4x_final.cu maxrel=0), so this rel measures
@@ -3570,7 +3578,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             "model lacks NVFP4 blk.0.ffn_gate.weight",
                         );
                     }
-                } // nvfp4_checks
+                } // static_nvfp4_checks
                 // --- VENDORED llama Q4_K/Q5_K MMQ GEMM vs the f32 dequant oracle. ---
                 // W-exact (int8 tile-load dequant is lossless for k-quants) + q8_1 int8 activation ->
                 // rel should sit in the int8-activation band (~1e-3..1e-2). A layout/scale bug shows as
@@ -9012,5 +9020,13 @@ mod tests {
             None
         );
         assert_eq!(output_cell_name("GPU: NVIDIA RTX 5090"), None);
+    }
+
+    #[test]
+    fn b200_runs_static_nvfp4_checks_without_the_sm120_fatbin_cell() {
+        assert_eq!(nvfp4_check_capabilities("100a"), (false, true));
+        assert_eq!(nvfp4_check_capabilities("120a"), (true, true));
+        assert_eq!(nvfp4_check_capabilities("90a"), (false, false));
+        assert_eq!(nvfp4_check_capabilities("89"), (false, false));
     }
 }
