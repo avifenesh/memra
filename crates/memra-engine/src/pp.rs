@@ -2953,6 +2953,64 @@ impl PpNRt {
         self.stages[s].engine.as_ref().unwrap_or(primary)
     }
 
+    /// Order `dst`'s OWN stream behind everything already enqueued on `src`'s OWN stream
+    /// (memra#95).
+    ///
+    /// This is NOT [`Self::fence_stages_behind`] and the difference is the whole bug that
+    /// named it. A stage owns TWO streams: `StageRt::stream`, which only carries work issued
+    /// inside an [`Self::enter`] scope (the ambient override), and — for every stage `s > 0`,
+    /// including stages on the PRIMARY device, per the per-stage Engine isolation above — the
+    /// stage's own [`Engine`]'s stream, which is what `rt.engine(s, e)` launches on when the
+    /// caller is NOT inside an enter scope. `fence_stages_behind` orders the first kind and
+    /// says nothing about the second. Any body that hands a stage engine to a helper WITHOUT
+    /// entering the stage (the glm5 spec round's whole draft phase does exactly that, through
+    /// `glm5_head_engine`) needs this one instead.
+    ///
+    /// Same-Engine and same-stream calls are no-ops. Two Engines sharing a CUDA context (the
+    /// deployed shape: the stage engines retain the same primary context) get an event record
+    /// plus a stream wait, fully async. Genuinely different contexts (a stage on another
+    /// device) fall back to draining `src` on the host, which is correct everywhere and costs
+    /// one sync at session build, never per round.
+    ///
+    /// TWO DELIBERATE ASYMMETRIES, both of which a "tidy it up" edit would get wrong:
+    ///
+    /// * the SOURCE side reads `src.stream()`, the ambient-override-aware accessor, because
+    ///   the work being ordered was issued through the same accessor and must be the same
+    ///   stream even if a caller ever runs this inside a stage or `enter_main` scope. The
+    ///   DESTINATION side reads `dst.gpu.main_stream()`, override-blind, because the reader
+    ///   being ordered (the glm5 draft phase) provably never enters a scope, so its launches
+    ///   go to that Engine's own stream and to nothing else.
+    /// * the context test is VALUE equality, not `Arc::ptr_eq`. `CudaContext::new` allocates a
+    ///   fresh `Arc` per call even though `primary_ctx::retain` hands back the same
+    ///   `CUcontext`, so every stage Engine on the primary device has a distinct `Arc` for the
+    ///   same context: `Arc::ptr_eq` would be false forever, the event path would be dead
+    ///   code, and every restored session would pay a host sync on the TTFT path this feature
+    ///   exists to protect (review round 2 on PR #100).
+    ///
+    /// Parked on `PpNRt` rather than made a free function so it sits beside
+    /// `fence_stages_behind`: the pair is the documentation.
+    pub fn order_engine_behind(
+        src: &Engine,
+        dst: &Engine,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if std::ptr::eq(src, dst) {
+            return Ok(());
+        }
+        let s = src.stream();
+        let d = dst.gpu.main_stream();
+        if Arc::ptr_eq(&s, d) {
+            return Ok(());
+        }
+        if src.ctx() == dst.ctx() {
+            let ev = s.context().new_event(None)?;
+            ev.record(&s)?;
+            d.wait(&ev)?;
+        } else {
+            s.synchronize()?;
+        }
+        Ok(())
+    }
+
     /// Bind this OS thread to stage `s`'s CUDA context before issuing work there.
     pub fn bind_stage(&self, s: usize) -> Result<(), Box<dyn std::error::Error>> {
         self.stages[s].ctx.bind_to_thread()?;

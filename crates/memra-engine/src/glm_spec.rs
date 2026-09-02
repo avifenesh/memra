@@ -2239,6 +2239,42 @@ impl HybridModel {
         let n_embd = self.cfg.n_embd as usize;
         let taps = glm5_dflash_tap_layers(&dr.draft, self.layers.len())?;
         let eh = self.glm5_head_engine(e)?;
+        // ---- STREAM ORDERING, UNCONDITIONAL AND BEFORE THE SUFFIX BRANCH (memra#95, the
+        // fleet-fatal full-cover panic).
+        //
+        // Everything this session restores was written on the CALLER's stream, in the
+        // worker's admission path: the trunk planes by `prefix_restore_at`, and the DFlash2
+        // drafter ctx KV by `DflashKv::from_tail` (worker.rs, the "glm5 spec restore, half 1
+        // of 2" block — a fresh allocation plus per-layer `memset_zeros_view` +
+        // `copy_range_into`). The draft phase of round 1 then READS that KV through
+        // `eh` = `glm5_head_engine`, which under a live ppN split is the last stage's OWN
+        // Engine (`pp::PpNRt::build` gives every stage s>0 its own Engine even on the primary
+        // device, for scratch-pool isolation) and is used OUTSIDE any `rt.enter` scope — so
+        // it launches on that Engine's own stream, which is neither the caller's stream nor
+        // the stage stream. Nothing ordered the two, and the drafter's first `forward_round`
+        // could read the ctx rows before the import landed.
+        //
+        // `fence_stages_behind` is NOT the fix and was the first thing this lane got wrong:
+        // it orders `StageRt::stream`, the enter-scope stream, and says nothing about a stage
+        // ENGINE's own stream. `order_engine_behind` is the seam for a body that hands a
+        // stage engine to a helper without entering the stage.
+        //
+        // Why only the FULL-COVER arm: the suffix arm calls `prime_cache` on `e`, whose
+        // logits come back through `Engine::dtoh` (a `stream().synchronize()`), which drains
+        // the caller's stream before round 1 ever runs. The full-cover arm has no prime and
+        // no device readback at all between the import and the round — the anchor is drawn
+        // from the entry's host-side boundary logits — so it is the only restored path with
+        // nothing between the two. That is why production never saw this on the suffix path,
+        // and it is why the ordering is done HERE, once per session and for both arms,
+        // instead of relying on a host sync that belongs to the prime.
+        //
+        // The measured failure: a NaN drafter row -> the top-k selector's documented
+        // exhausted-slot sentinel (`0xffffffff`, `cu/kernels.cu` `topk_rows_f32` and its
+        // sharded twin) -> `walk: candidate 4294967295 outside codebook vocab` at
+        // dflash.rs:221/:804, on the FIRST round of a restored session (the receipts put the
+        // panic between the `RESTORED session` line and the round's first `[glm5-acc]`),
+        // fleet-fatal after one respawn.
+        crate::pp::PpNRt::order_engine_behind(e, eh)?;
         // FIRST-TOKEN PROFILE (`MEMRA_SPEC_PROF=1`): the restored shape pays no cache or
         // drafter allocation here (the caller restored both); its prime bucket is the
         // SUFFIX prime (0 on a full-cover hit), which is what makes the restore worth having.
