@@ -11273,8 +11273,10 @@ pub fn run(
                 eprintln!(
                     "[worker] MEMRA_GLM5_TP admitted for serving: ranks=2 (TP-2, general \
                      transport seam); peer-rank KV state reserved through \
-                     glm5_tp_unmaterialized_kv_bytes; spec is refused per-session on a \
-                     sharded model unless MEMRA_GLM5_SPEC_TP=1"
+                     glm5_tp_unmaterialized_kv_bytes; batched mHC decode is refused by name \
+                     on the sharded model (per-session TP decode walk, see the EAGER-ONLY \
+                     line after load); spec is refused per-session on a sharded model \
+                     unless MEMRA_GLM5_SPEC_TP=1"
                 );
             }
             Ok(ranks) => {
@@ -11731,8 +11733,20 @@ pub fn run(
         .collect();
     for n in &eager_only {
         if eager_decode.contains(n) {
-            let class = loaded
-                .get(n)
+            let lm = loaded.get(n);
+            if lm.is_some_and(|lm| lm.model.glm5_tp_sharded()) {
+                // glm5 TP-sharded trunk (MEMRA_GLM5_TP, memra #14): the batched mHC decode
+                // arm is refused by name whatever MEMRA_HYPER_BATCH says; every session
+                // decodes on the per-session TP walk. Grep anchor for the TP-2 box gate.
+                eprintln!(
+                    "[worker] {n}: EAGER-ONLY serving (glm5-TP-sharded trunk, MEMRA_GLM5_TP): \
+                       batched mHC decode (MEMRA_HYPER_BATCH) is refused by name on a sharded \
+                       model, every session decodes on the per-session TP walk; monolithic \
+                       prefill, no graph promotion, no prime batching"
+                );
+                continue;
+            }
+            let class = lm
                 .filter(|lm| memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan))
                 .map_or("gemma4 class", |_| "hyper-connections residual");
             eprintln!(
@@ -20674,8 +20688,60 @@ fn gemma4_batched_decode_model(lm: &LoadedModel) -> bool {
 /// gemma4 carve-out, ONLY the two decode scheduling sites consume this: prime batching,
 /// graph promotion, and every speculative entry point stay eager-only for this topology.
 fn hyper_batched_decode_model(lm: &LoadedModel) -> bool {
-    memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan)
-        && HybridModel::hyper_batch_on()
+    hyper_batched_decode_route(
+        memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan),
+        HybridModel::hyper_batch_on(),
+        lm.model.glm5_tp_sharded(),
+    )
+}
+
+/// Pure half of `hyper_batched_decode_model`: the unit-testable predicate. The call site
+/// supplies the plan's topology bit, the `MEMRA_HYPER_BATCH` switch, and the model's own
+/// per-layer glm5 TP sharding (`HybridModel::glm5_tp_sharded`, a load-time property, never
+/// the env).
+///
+/// A glm5-TP-sharded trunk (`MEMRA_GLM5_TP`, memra #14, lane/glm5-tp-serve-wiring) NEVER
+/// takes the batched chunks, whatever `MEMRA_HYPER_BATCH` says: the batched hc walk
+/// (`decode_step_batch_hyper`) dispatches the PLAIN per-session mixer calls, which a head
+/// shard poisons by name at the `kda_core` choke point. The first TP-2 box gate
+/// (2026-09-02, `MEMRA_HYPER_BATCH` default ON) booted, primed, and then failed EVERY
+/// request at its first decode tick with `batch step: KDA layer is glm5-TP-sharded ...
+/// (t=1, arm decode)`. The ONLY TP program with byte-identity receipts is the per-session
+/// eager walk (`hyper_range_decode`/`hyper_range_prime`, glm5-tp-gate), so a sharded model
+/// stays in `eager_decode` (per-session TP decode, chunk cap 1) and the engine entry
+/// refuses by name as the second fence. Wiring TP mixer arms into the batched walk is a
+/// named follow-up that needs a sharded-fixture arm of `glm5-hyper-batch-gate` (B-row tick
+/// vs solo TP decode, bit-identical) and its own box A/B before it may route here.
+fn hyper_batched_decode_route(hyper_trunk: bool, hyper_batch_on: bool, tp_sharded: bool) -> bool {
+    hyper_trunk && hyper_batch_on && !tp_sharded
+}
+
+#[cfg(test)]
+mod hyper_batched_decode_route_tests {
+    use super::hyper_batched_decode_route;
+
+    #[test]
+    fn unsharded_hyper_trunk_takes_batched_chunks_when_on() {
+        assert!(hyper_batched_decode_route(true, true, false));
+    }
+
+    #[test]
+    fn kill_switch_keeps_unsharded_trunk_eager() {
+        assert!(!hyper_batched_decode_route(true, false, false));
+    }
+
+    #[test]
+    fn non_hyper_trunk_never_routes_here() {
+        assert!(!hyper_batched_decode_route(false, true, false));
+        assert!(!hyper_batched_decode_route(false, true, true));
+    }
+
+    #[test]
+    fn glm5_tp_sharded_trunk_stays_eager_regardless_of_hyper_batch() {
+        // The 2026-09-02 TP-2 box gate shape: MEMRA_HYPER_BATCH default ON, model sharded.
+        assert!(!hyper_batched_decode_route(true, true, true));
+        assert!(!hyper_batched_decode_route(true, false, true));
+    }
 }
 
 fn stage_grammar_mask(engine: &Engine, s: &mut Session) -> Result<(), String> {

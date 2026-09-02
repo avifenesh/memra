@@ -241,3 +241,112 @@ What that run needs to bank, at minimum:
    the same as any other model, and the process exits 0.
 
 None of this is claimed done. This LANE.md states it as the next box run's checklist.
+
+## Box round 1 (2026-09-02): every request failed at the first decode tick
+
+The B200 pair ran the integration binary with this lane's wiring under
+`MEMRA_GLM5_TP=all@0,1 MEMRA_RP=0 MEMRA_CTX=262144` (darklanes
+`research/glm5-b200-20260902/box/tp2/boot-tp2-262144.log` and `gate-262144-rp0.log`).
+What the receipts say, in order:
+
+1. Spawn admitted the door: `[worker] MEMRA_GLM5_TP admitted for serving: ranks=2 ...`,
+   `[glm5-tp-preflight] armed ranks=2 devices=[0, 1] layers=45 kda_shard=34 mla_shard=11
+   moe_ep=42 kda_heads_per_rank=32 mla_heads_per_rank=32 experts_per_rank=144
+   transport=host-canonical`, `[server] listening on http://127.0.0.1:18400`. Readiness and
+   the pinned id answered. The `[admission]` device plan carried the new peer charge
+   (`dev1 ... tp-kv 83MB`).
+2. The prime ran through the TP prime walk (`[bf16-tc] ENGAGED m=155 ...` lines, no error).
+3. EVERY request then died at its first decode token:
+   `[engine-error] class=Engine batch step: KDA layer is glm5-TP-sharded (MEMRA_GLM5_TP):
+   the plain mixer path is unwired for a head shard, only the TP decode/prime walk may
+   execute it (t=1, arm decode)`. HTTP 500 on the greedy item, `completion_tokens: null` on
+   all three sampled reps.
+4. The box script printed `[tp2] rc=0` anyway: its exit status was the drain step's, not
+   the requests'.
+
+Root cause. `MEMRA_HYPER_BATCH` is DEFAULT ON (2026-08-31), so the worker classed the mHC
+trunk as BATCHED DECODE and every decode tick went through `decode_step_batch_hyper` ->
+`hyper_batch_range_decode`, whose per-session mixer loop dispatches the PLAIN
+`kda_decode_cached` / `mla_attn_cached` calls. A head shard refuses those by name at the
+`kda_core` choke point (the fail-closed surface working as designed). The eager per-session
+walk (`hyper_range_decode`, `hyper_range_prime`) already carries the TP arms
+(`glm5_tp::kda_tp_cached`, `mla_tp_attn_cached`); the batched walk never did.
+
+### The fix: one numeric program, the batched tick refused by name
+
+Decision: a glm5-TP-sharded model NEVER takes the batched mHC decode chunks; every step
+of every session (prime, t=1, and each later tick) runs on the per-session eager TP walk.
+Not the alternative (wiring the TP mixer calls into `hyper_batch_range_decode`), because:
+
+- The only TP program with receipts is the eager walk: `glm5-tp-gate` holds decode (t=1)
+  split-vs-plain BYTE identity per layer class and at model level, and the prime near-tie
+  class is documented and banded. The batched composition (batched hc glue at m=B +
+  per-session TP mixers + the EP MoE walk at t=B) has no gate at all:
+  `glm5-hyper-batch-gate`'s fixture is unsharded.
+- CLAUDE.md's one-numeric-program law names batched-vs-solo as a pair to keep honest:
+  either make the crossing impossible or prove bit-identity in a serving-shape gate. A
+  session whose numeric program depends on how many peers are queued is the eosclass
+  failure shape. Refusing makes the crossing impossible today; the proof is the named
+  follow-up.
+- The serving items this round needs (readiness, identity, a greedy tape identical to
+  PP-2, vendor-default sampled, a 256k prompt) are all single-program items. Concurrency
+  on the eager path is per-session round-robin, one token per tick per session (the
+  gemma4 eager-only precedent), which is functional, not fast.
+
+Code:
+
+- `HybridModel::glm5_tp_sharded()` (hybrid.rs): the model's own per-layer sharding, never
+  the env (the #80 review finding). The two inline copies in `glm_spec.rs` now call it.
+- `worker.rs`: `hyper_batched_decode_model` -> pure `hyper_batched_decode_route(hyper_trunk,
+  hyper_batch_on, tp_sharded)`, sharded => false in both `MEMRA_HYPER_BATCH` arms (four host
+  tests, both arms). A sharded model therefore lands in `eager_decode` (chunk cap 1) and
+  the boot log names it after load: `[worker] <model>: EAGER-ONLY serving (glm5-TP-sharded
+  trunk, MEMRA_GLM5_TP): batched mHC decode (MEMRA_HYPER_BATCH) is refused by name on a
+  sharded model, every session decodes on the per-session TP walk; monolithic prefill, no
+  graph promotion, no prime batching`. The spawn-time admitted line says the same.
+- `decode_step_batch_hyper` (decode_batch.rs): refuses a sharded trunk by name before any
+  row is touched (second fence; reaching it is a scheduler bug).
+- `docs/FLAGS.md` (`MEMRA_GLM5_TP` DECODE ROUTE, `MEMRA_HYPER_BATCH` sharded clause),
+  `docs/SERVING.md` (decode route + gate), `glm5_tp.rs` module doc (the stale "worker
+  refuses the flag outright" sentence).
+
+Named follow-up (not this lane): a sharded-fixture arm of `glm5-hyper-batch-gate` (B-row
+tick vs solo TP decode, full-logit bit identity, red-armed) and a box A/B of eager vs
+batched under TP-2, before `hyper_batched_decode_route` may admit a sharded model.
+
+### The gate that fails when a request fails
+
+`tools/glm5-tp2-serve-gate.py` replaces the box script's request items. It runs against
+the listening server and its exit status IS the verdict: 1 on any failed item, 3 when an
+item was skipped for a missing input (PARTIAL, never PASS), 0 only on 9/9. Items: I1
+`/readyz`, I2 pinned id on `/v1/models`, I3 128-token greedy tape (temperature 0,
+`reasoning_effort` low, streamed, sha16 over reasoning + content exactly as the floor
+bench assembles it) equal to the PP-2 tape sha16, I4 the same tape twice concurrently
+(both equal), I5 one vendor-default sampled request (no sampling params, 512 tokens,
+completion_tokens > 0, no loop), I6 `/v1/completions` + `/v1/messages`, I7 a tool-call
+request, I8 a 256k-class prompt (`prompt_tokens >= --long-min-tokens`, default 200000),
+I9 boot-log route markers plus zero `[engine-error]` / `batch step:` lines appended during
+the gate. One JSONL receipt row per item plus a summary row (`--out`).
+
+Red-armed on the rig against a mock server before it shipped: PASS 9/9 (exit 0); a wrong
+expected sha fails I3 and I4 (exit 1); the box's exact failure shape (HTTP 500 carrying
+`batch step: KDA layer is glm5-TP-sharded`) fails every tape item (exit 1); a dead port
+fails (exit 1); missing `--long-prompt`/`--boot-log` yields PARTIAL (exit 3); a missing
+prompt file is a usage error (exit 2).
+
+Box invocation (round 2):
+
+```
+MEMRA_GLM5_TP=all@0,1 MEMRA_RP=0 MEMRA_CTX=262144 MEMRA_MAX_SESSIONS=4 \
+  memra-server ... 2>&1 | tee /root/lane/boot-tp2.log &
+# wait for "[server] listening", then:
+python3 tools/glm5-tp2-serve-gate.py --base http://127.0.0.1:18400 \
+  --model zai/glm-5.3-flash --prompt /root/prompts/digits.txt \
+  --expect-sha16 9437b599f6b9d2a9 --long-prompt /root/prompts/<256k-file>.txt \
+  --boot-log /root/lane/boot-tp2.log --out /root/lane/tp2-gate-r2.jsonl
+echo "gate rc=$?"     # 0 = PASS, 1 = FAIL, 3 = PARTIAL (an item was skipped)
+```
+
+`9437b599f6b9d2a9` is the PP-2 digits tape on this artifact (128 greedy tokens, effort
+low, bench.py assembly). Bank `boot-tp2.log` and `tp2-gate-r2.jsonl` next to the round-1
+receipts.

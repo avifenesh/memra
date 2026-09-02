@@ -40,8 +40,13 @@
 //! head/expert counts that do not divide, duplicate devices (serving parse), co-armed
 //! `MEMRA_PP_STAGES>1`, `MEMRA_STEP_TP`/`MEMRA_STEP_EP`. A sharded layer POISONS every plain
 //! path: `kda_core`, `mla_attn_cached` and the batched walks refuse a TP-armed layer by
-//! name. The memra-server worker refuses the flag outright (serving wiring is the named
-//! box-lane increment, not v1).
+//! name. SERVING (lane/glm5-tp-serve-wiring-20260902, memra #14): the memra-server worker
+//! admits TP-2 through the same load path every family uses, and keeps a sharded model on
+//! the per-session eager TP walk: the batched mHC decode tick (`MEMRA_HYPER_BATCH`) is
+//! refused by name for a sharded trunk at the worker's route predicate
+//! (`hyper_batched_decode_model`, `HybridModel::glm5_tp_sharded`) and again at the engine
+//! entry (`decode_step_batch_hyper`), because the batched walk has no TP mixer arm and no
+//! bit-identity receipt against the eager TP walk.
 //!
 //! Engagement markers: `[glm5-tp-preflight]`, `[glm5-tp-kda]`, `[glm5-tp-mla]`,
 //! `[glm5-tp-ep]`, `[glm5-tp-transport]` — every marker carries `performance_claim=false`,

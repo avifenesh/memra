@@ -629,12 +629,44 @@ calibration transient-floor probe.
   model: set MEMRA_GLM5_SPEC_TP=1 ..."`). This is unrelated to this door and not touched by
   it.
 
-**Pending.** This lane's gates are host-only (`cargo build`/`cargo test` for
-`memra-server`/`memra-engine`, `cargo fmt`, `git diff --check`, `tools/check-flags.sh`); no
-GPU was available to it. The byte-identity gate against PP on greedy decode, and the
-admission KV accounting's sizing on a real artifact, are **pending the box run** on the B200
-pair — see `research/glm5-tp-serve-wiring-20260902/LANE.md` for the copy-pasteable
-serving env and the exact receipts that run needs to bank.
+**Decode route (round 2, after the first two-GPU box gate, 2026-09-02).** A sharded model
+decodes on the per-session eager TP walk, never in the batched mHC decode chunks, whatever
+`MEMRA_HYPER_BATCH` says. The first box gate proved why: with the batched arm at its default
+ON, the server admitted TP-2, primed the prompt through the TP prime walk, and then failed
+EVERY request at its first decode tick with `batch step: KDA layer is glm5-TP-sharded
+(MEMRA_GLM5_TP): the plain mixer path is unwired for a head shard ... (t=1, arm decode)`.
+The batched walk (`hyper_batch_range_decode`) dispatches the plain per-session mixer calls,
+which a head shard refuses by name at the `kda_core` choke point. The fix keeps one numeric
+program per request rather than adding a second TP program: `hyper_batched_decode_model`
+now keys on `HybridModel::glm5_tp_sharded` (the model's own per-layer sharding, never the
+env), so a sharded model sits in the worker's eager per-session decode set (chunk cap 1,
+per-session `decode_step_hyper`, the walk `glm5-tp-gate` holds byte-identical to the plain
+walk at t=1), and `decode_step_batch_hyper` refuses a sharded trunk by name as the second
+fence. The boot log names the route after load:
+`[worker] <model>: EAGER-ONLY serving (glm5-TP-sharded trunk, MEMRA_GLM5_TP): batched mHC
+decode (MEMRA_HYPER_BATCH) is refused by name on a sharded model, every session decodes on
+the per-session TP walk; ...`. Wiring TP mixer arms into the batched walk instead would
+promote a batched-vs-solo pair (batched hc glue at m=B, per-session TP mixers, the EP MoE
+walk at t=B) that no gate has proven bit-identical (`glm5-hyper-batch-gate`'s fixture is
+unsharded); that is the named follow-up, with its own sharded-fixture gate arm and box A/B,
+before a sharded model may enter the chunks.
+
+**Gate.** `tools/glm5-tp2-serve-gate.py` runs against the listening server and exits
+non-zero on any request error (the first box script exited 0 on the failure above): I1
+`/readyz`, I2 the pinned id on `/v1/models`, I3 a 128-token greedy tape whose sha16
+(reasoning + content, streamed) must equal the PP-2 tape on the same artifact, I4 the same
+tape twice concurrently (the eager path is load-independent and never enters a batch step),
+I5 one vendor-default sampled request (no sampling params), I6 `/v1/completions` and
+`/v1/messages` round trips, I7 a tool-call request, I8 a 256k-class prompt, I9 the boot-log
+route markers with zero `[engine-error]` lines appended during the gate. A skipped item
+yields PARTIAL (exit 3), never PASS.
+
+**Pending.** This lane's host gates are `cargo build`/`cargo test` for
+`memra-server`/`memra-engine`, `cargo fmt`, `cargo clippy -D warnings` (120a and 100a),
+`git diff --check`, `tools/check-flags.sh`. The round-2 box run of the gate above (the greedy
+tape vs PP-2, the sampled request, the 256k prompt, the admission KV sizing on the real
+artifact) is what closes this section; `research/glm5-tp-serve-wiring-20260902/LANE.md`
+carries the serving env, the round-1 receipt pointers, and the box invocation.
 
 ## OpenAI tools surface (serve-tools lane, 2026-08-02)
 

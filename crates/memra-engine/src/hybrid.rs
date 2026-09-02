@@ -3803,6 +3803,24 @@ impl HybridModel {
         Ok(out)
     }
 
+    /// True when any trunk layer's mixer carries a glm5 TP head shard (`MEMRA_GLM5_TP`
+    /// armed at load, memra #14). The predicate is the MODEL's own per-layer sharding, the
+    /// same truth the spec co-refusal and the verify walk key on, never the env: sharding is
+    /// a load-time property, and an env read is bypassable after load (set/load/unset) and
+    /// spuriously refuses an unsharded model in a process that still carries the env (the
+    /// #80 review's confirmed finding).
+    ///
+    /// Consumers: the worker's batched-decode route (`hyper_batched_decode_model` keeps a
+    /// sharded model on the per-session eager TP walk), the engine-side refusal at
+    /// `decode_step_batch_hyper` (second fence, by name), and the glm5 spec session seams.
+    pub fn glm5_tp_sharded(&self) -> bool {
+        self.layers.iter().any(|l| match &l.mixer {
+            Mixer::Kda(la) => la.tp.is_some(),
+            Mixer::Mla(mla) => mla.tp.is_some(),
+            _ => false,
+        })
+    }
+
     /// Device-local bytes that are not yet materialized for this cache's glm5 TP peer-rank
     /// state (`MEMRA_GLM5_TP`; memra #14, lane/glm5-tp-serve-wiring).
     ///

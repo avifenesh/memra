@@ -1615,11 +1615,7 @@ impl HybridModel {
         // and an env read here is bypassable after load (set/load/unset) and spuriously
         // refuses an UNSHARDED model in a process that still carries the env (the #80
         // review's confirmed finding).
-        let tp_sharded = self.layers.iter().any(|l| match &l.mixer {
-            Mixer::Kda(la) => la.tp.is_some(),
-            Mixer::Mla(mla) => mla.tp.is_some(),
-            _ => false,
-        });
+        let tp_sharded = self.glm5_tp_sharded();
         if tp_sharded {
             if !glm5_spec_tp_on() {
                 return Err(
@@ -2004,11 +2000,7 @@ impl HybridModel {
         }
         // The composition laws a cold session enforces hold here too, fail-closed and by
         // name — a restored session must never be the door around an admission law.
-        let tp_sharded = self.layers.iter().any(|l| match &l.mixer {
-            Mixer::Kda(la) => la.tp.is_some(),
-            Mixer::Mla(mla) => mla.tp.is_some(),
-            _ => false,
-        });
+        let tp_sharded = self.glm5_tp_sharded();
         if tp_sharded {
             return Err(
                 "restored glm5 spec sessions carry no TP arm (the spec x TP composition is \
