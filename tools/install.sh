@@ -5,9 +5,11 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/avifenesh/memra/main/tools/install.sh | sh
 #
-# Arch selection: sm_120a (RTX 50-series, default) / sm_100a (B200) / sm_90a (Hopper) /
-# sm_89 (Ada, portable build) — auto-detected from nvidia-smi when present, override with
-# MEMRA_CUDA_ARCH. Requirements at RUN time: Linux x86_64, NVIDIA driver >= 580 (CUDA 13
+# Arch selection: sm_120a (RTX 50-series, default) / sm_100a (B200 source build) /
+# sm_90a (Hopper) / sm_89 (Ada portable). B200 is runtime-qualified from source but has no
+# published prebuilt, so the release installer refuses it before network access. Other targets
+# auto-detect from nvidia-smi; override with MEMRA_CUDA_ARCH.
+# Requirements at RUN time: Linux x86_64, NVIDIA driver >= 580 (CUDA 13
 # runtime support), and the CUDA 13 runtime libraries (cudart, cublas, cublasLt). The glibc
 # floor is NOT stated here on purpose — it is read out of the release's own SHA256SUMS and
 # matched against this host (see the block below). Model weights are NOT bundled —
@@ -25,16 +27,9 @@ command -v tar  >/dev/null 2>&1 || err "tar is required"
 [ "$(uname -s)" = "Linux" ]   || err "prebuilt binaries are Linux-only; build from source: cargo install memra-server"
 [ "$(uname -m)" = "x86_64" ]  || err "prebuilt binaries are x86_64-only; build from source: cargo install memra-server"
 
-# Resolve version: explicit MEMRA_VERSION or the latest release tag.
-VERSION="${MEMRA_VERSION:-}"
-if [ -z "$VERSION" ]; then
-    VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
-        | grep -m1 '"tag_name"' | cut -d'"' -f4) || err "could not resolve latest release"
-fi
-
 # Resolve CUDA arch: explicit MEMRA_CUDA_ARCH, else nvidia-smi compute cap, else 120a.
-# The 10.0 -> 100a row exists because crates/memra-engine/build.rs::detect_arch has it and
-# this table used to not: two copies of one mapping, and the copy users run was the stale one.
+# B200 is recognized but refused before any network call because no sm_100a release asset is
+# published yet. Source builds auto-detect it and carry their own hardware-qualified gates.
 ARCH="${MEMRA_CUDA_ARCH:-}"
 if [ -z "$ARCH" ] && command -v nvidia-smi >/dev/null 2>&1; then
     cap=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 | tr -d ' ') || cap=""
@@ -46,6 +41,19 @@ if [ -z "$ARCH" ] && command -v nvidia-smi >/dev/null 2>&1; then
     esac
 fi
 ARCH="${ARCH:-120a}"
+[ "$ARCH" != "100a" ] || err "B200 sm_100a is source-only in the release installer: the
+runtime-qualified backend has no published prebuilt yet. Build from source on the B200:
+    MEMRA_CUDA_ARCH=100a cargo build --release --bins
+(`MEMRA_CUDA_ARCH` is optional on the B200 because source builds auto-detect compute capability
+10.0). Use only model and kernel paths covered by the B200 receipt matrix."
+
+# Resolve version only after arch admission, so a known-unpublished B200 target fails locally
+# instead of making a GitHub API request and later blaming a missing release asset.
+VERSION="${MEMRA_VERSION:-}"
+if [ -z "$VERSION" ]; then
+    VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
+        | grep -m1 '"tag_name"' | cut -d'"' -f4) || err "could not resolve latest release"
+fi
 
 BASE="https://github.com/$REPO/releases/download/$VERSION"
 TMP=$(mktemp -d)

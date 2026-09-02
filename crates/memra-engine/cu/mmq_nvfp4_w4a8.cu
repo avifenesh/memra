@@ -88,7 +88,7 @@
 // FP4 e2m1 reconstruction LUT (ggml-common.h kvalues_mxfp4 == kvalues_fp4).
 __constant__ int8_t kvalues_mxfp4[16] = { 0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12 };
 
-static __device__ __forceinline__ int get_int_b4(const void * x, const int & i32) {
+[[maybe_unused]] static __device__ __forceinline__ int get_int_b4(const void * x, const int & i32) {
     return ((const int *) x)[i32]; // assume >= 4 byte alignment
 }
 

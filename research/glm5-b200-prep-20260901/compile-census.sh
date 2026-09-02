@@ -7,12 +7,15 @@
 # (build.rs asserts on the first failure; a census must see them all).
 #
 # Three arms:
-#   A  build.rs-faithful sm_100a: stub substitutions honored (mmq_fp4 ->
-#      mmq_fp4_stub, mmq_nvfp4_w4a8 -> stub, mmq_fp8_blk -> stub), fa3_prefill
+#   A  build.rs-faithful sm_100a: mmq_fp4 compiles its native tcgen05 twin,
+#      mmq_nvfp4_w4a8 compiles its W4A8 base plus the optional F8F4 plain-MMA fallback,
+#      mmq_fp8_blk compiles its dense tcgen05 twin plus the plain-MMA grouped fallback,
+#      and fa3_prefill
 #      gets -DMEMRA_FA3_STUB, qmatvec_gemm gets -DMEMRA_DISABLE_NATIVE_FP4=1,
-#      dsv4_gpu gets -fmad=false. This is what MEMRA_CUDA_ARCH=100a cargo build
-#      would attempt, TU by TU.
-#   B  real-file sm_100a: the three stubbed TUs and fa3_prefill compiled from
+#      and dsv4_gpu gets -fmad=false. This is what MEMRA_CUDA_ARCH=100a cargo build
+#      attempts, TU by TU.
+#   B  real-file sm_100a: the W4A8 F8F4 fast form and FP8 TU compiled without their SM100
+#      plain/tcgen05 selections, plus fa3_prefill
 #      their REAL sources (no stub, no -DMEMRA_FA3_STUB). This is the
 #      needs-port catalog, not a build config.
 #   C  compute_100 (non-a) fatbin probe, informational: build.rs does NOT
@@ -63,9 +66,7 @@ done
 
 # ---- static-lib TUs, arm A (build.rs-faithful, 100a) ----
 GC="arch=compute_100a,code=sm_100a"
-declare -A SUB=( [cu/mmq_fp4.cu]=cu/mmq_fp4_stub.cu
-                 [cu/mmq_nvfp4_w4a8.cu]=cu/mmq_nvfp4_w4a8_stub.cu
-                 [cu/mmq_fp8_blk.cu]=cu/mmq_fp8_blk_stub.cu )
+declare -A SUB=()
 statics=(cu/mmq_fp4.cu cu/mmq_q45k.cu cu/mmq_nvfp4_w4a8.cu cu/mmq_iq_experts.cu
          cu/mmq_q8_0.cu cu/mmq_q4_0.cu cu/fp8_prefill.cu cu/f16_prefill.cu
          cu/mmq_nvfp4_f8f4.cu cu/fa3_prefill.cu cu/moe_f16_grouped.cu
@@ -74,12 +75,16 @@ statics=(cu/mmq_fp4.cu cu/mmq_q45k.cu cu/mmq_nvfp4_w4a8.cu cu/mmq_iq_experts.cu
 for src in "${statics[@]}"; do
   real=$src; comp=${SUB[$src]:-$src}
   args=(-gencode "$GC" -O3 -std=c++17 --expt-relaxed-constexpr)
+  [ "$src" = cu/mmq_fp4.cu ] && args+=(-DMEMRA_SM100_TCGEN05=1)
+  [ "$src" = cu/mmq_nvfp4_w4a8.cu ] && args+=(-DMEMRA_F8F4_PLAIN_MMA=1)
+  [ "$src" = cu/mmq_fp8_blk.cu ] && args+=(-DMEMRA_FP8BLK_PLAIN_MMA=1 -DMEMRA_SM100_TCGEN05=1)
   [ "$src" = cu/fa3_prefill.cu ] && args+=(-DMEMRA_FA3_STUB)   # cuda_arch != 90a
   [ "$src" = cu/dsv4_gpu.cu ] && args+=(-fmad=false)
   stem=$(basename "$src" .cu)
   run A "$src" static-obj "$OUTDIR/A/${stem}.o" "${args[@]}" -c "$comp"
   # ---- arm B: the real file wherever arm A substituted or stubbed ----
-  if [ "$comp" != "$src" ] || [ "$src" = cu/fa3_prefill.cu ]; then
+  if [ "$comp" != "$src" ] || [ "$src" = cu/fa3_prefill.cu ] \
+     || [ "$src" = cu/mmq_nvfp4_w4a8.cu ] || [ "$src" = cu/mmq_fp8_blk.cu ]; then
     run B "$src" static-obj "$OUTDIR/B/${stem}.o" \
       -gencode "$GC" -O3 -std=c++17 --expt-relaxed-constexpr -c "$src"
   fi

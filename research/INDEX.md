@@ -29,6 +29,7 @@ arxiv-scope-20260813 | Models per paper: median 3, range 2 to 10, mean 4.4. | FI
 audit-fixes-20260805 | kernel-check's bit-identity gates (incl. fp8-blk Q8_0 bit-parity and the MMQ paths) all GREEN, satisfying the brief's "if kernel-check shows any bit change, STOP" condition with no stop. | RESULTS.md
 audit-fixes2-20260805 | - | RAW-ONLY
 b1fix-20260810 | PASS — ship the fail-closed correctness fix. | RESULTS.md
+b200-kernel-twins-dry-20260901 | B200 hardware closure: NVFP4 W4A8 NativeQualified on pinned Qwen3.5-9B; true W4A4 correct but 0.521x; block-FP8 NativeReference and 0.173x fallback. Sealed synthetic, model, serving, concurrency, admission, rollback, and performance receipts. | README.md
 basics | - | RAW-ONLY
 batchdraft-20260808 | large target-verify headroom exists, but concatenating into today's contiguous m=16 verify is a measured regression. Build a true per-cache B x T verifier... | RESULTS.md
 batched-tick-20260801 | Mechanism receipt: tick p50 24.5 -> 13.9 ms = -10.6 ms ~= the measured 10.9 ms host sample cost. The lever removed exactly what the cost table said it would. | increments.md

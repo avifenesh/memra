@@ -1,4 +1,4 @@
-// mmq_fp4.cu — NVFP4 W4A4 block-scale MMQ prefill GEMM (vendored floor, ggml-decoupled, sm_120a).
+// mmq_fp4.cu — NVFP4 W4A4 block-scale MMQ prefill GEMM.
 //
 // This is the 5150-pp512 kernel from llama.cpp brought into memra wholesale (the user's "copy the
 // working fast kernel, tune the edges" mandate). Source: /data/projects/llama.cpp/ggml/src/ggml-cuda/
@@ -30,9 +30,14 @@
 #if CUDART_VERSION >= 12080
 #include <cuda_fp4.h>
 #endif
+#if defined(MEMRA_SM100_TCGEN05)
+#include <cuda/ptx>
+#endif
 #include <cstdint>
 #include <cfloat>
 #include <cmath>
+
+#include "sm100_blockscale_layout.cuh"
 
 // ======================= ggml constants/macros (vendored, sm_120) =======================
 #define BLACKWELL_MMA_AVAILABLE
@@ -95,9 +100,11 @@ __device__ __forceinline__ uint8_t ggml_cuda_float_to_fp4_e2m1(float x, float e)
     return static_cast<uint8_t>(best_i | sign_bit);
 }
 
+#if !defined(MEMRA_SM100_TCGEN05)
 static __device__ __forceinline__ int get_int_b4(const void * x, const int & i32) {
     return ((const int *) x)[i32]; // assume >= 4 byte alignment
 }
+#endif
 
 // ======================= weight / activation block structs =======================
 // llama block_nvfp4 (ggml-common.h): 36 bytes = 4 UE4M3 scales (per 16) + 32 packed e2m1 (64 vals).
@@ -120,7 +127,8 @@ struct block_fp4_mmq {
     int8_t   qs[4 * 32];                // 256 e2m1 values packed 2/byte
 };
 
-// ======================= mma.cuh: tile<>, loads, block-scaled FP4 mma =======================
+// ======================= sm_120a warp-MMA implementation =======================
+#if !defined(MEMRA_SM100_TCGEN05)
 namespace ggml_cuda_mma {
     enum data_layout {
         DATA_LAYOUT_I_MAJOR = 0,
@@ -452,6 +460,221 @@ static __global__ void mul_mat_q_nvfp4(
         x, offset_x, y + offset_y, ids_dst_shared, dst + offset_dst, y_scale_tile, stride_row_x,
         ncols_y, stride_col_dst, tile_x_max_i, tile_y_max_j, 0, blocks_per_ne00, out_scale);
 }
+#endif // !MEMRA_SM100_TCGEN05
+
+// ======================= sm_100a tcgen05 twin =======================
+#if defined(MEMRA_SM100_TCGEN05)
+
+// Datacenter Blackwell does not implement sm_120a's warp-scoped mma.block_scale encoding.
+// Its checkpoint-faithful NVFP4 program is CTA-scoped tcgen05.mma with the accumulator and both
+// scale-factor tensors in TMEM. The 128x128x64 tile below is the production ABI twin of the
+// sm_120a W4A4 kernel above; it consumes the same block_nvfp4 weights and block_fp4_mmq activation
+// scratch, so no format conversion or alternate numeric program is hidden behind the arch split.
+//
+// This first production form is deliberately synchronous at each K=64 slice. It establishes the
+// exact program and a real C-ABI kernel before the later B200 box window prices TMA staging and
+// deeper commit groups. A dry compile can prove the instruction/symbol surface, but only the
+// real-hardware gate can promote or tune it.
+constexpr int SM100_NVFP4_M = 128;
+constexpr int SM100_NVFP4_N = 128;
+constexpr int SM100_NVFP4_K = 64;
+constexpr int SM100_NVFP4_PACKED_K = SM100_NVFP4_K / 2;
+constexpr int SM100_NVFP4_TMEM_COLS = 256;
+
+static __device__ __forceinline__ uint64_t sm100_tcgen05_smem_desc(
+        uint32_t saddr, uint32_t leading_byte_offset, uint32_t stride_byte_offset) {
+    uint64_t desc = 0;
+    desc |= (uint64_t) ((saddr & 0x3FFFFu) >> 4);
+    desc |= (uint64_t) ((leading_byte_offset & 0x3FFFFu) >> 4) << 16;
+    desc |= (uint64_t) ((stride_byte_offset & 0x3FFFFu) >> 4) << 32;
+    desc |= (uint64_t) 0b001 << 46;
+    return desc;
+}
+
+static __device__ __forceinline__ uint32_t sm100_tcgen05_nvf4_idesc() {
+    uint32_t desc = 0;
+    desc |= 1u << 7;  // A = e2m1
+    desc |= 1u << 10; // B = e2m1
+    desc |= ((uint32_t) (SM100_NVFP4_N >> 3) & 0x3Fu) << 17;
+    // bit 23 clear: UE4M3 scale factors (NVFP4). Setting it selects UE8M0 (MXFP4).
+    desc |= ((uint32_t) (SM100_NVFP4_M >> 7) & 0x3u) << 27;
+    return desc;
+}
+
+__launch_bounds__(SM100_NVFP4_M, 1)
+static __global__ void mul_mat_q_nvfp4_sm100(
+        const block_nvfp4 * __restrict__ weights,
+        const block_fp4_mmq * __restrict__ acts,
+        float * __restrict__ dst,
+        const float * __restrict__ act_scale,
+        int in_f, int out_f, int n_tokens, float out_scale) {
+    __shared__ __align__(128) uint8_t s_a[SM100_NVFP4_M * SM100_NVFP4_PACKED_K];
+    __shared__ __align__(128) uint8_t s_b[SM100_NVFP4_N * SM100_NVFP4_PACKED_K];
+    __shared__ __align__(128) uint8_t s_sfa[SM100_NVFP4_M * 4];
+    __shared__ __align__(128) uint8_t s_sfb[SM100_NVFP4_N * 4];
+    __shared__ __align__(16) uint64_t mma_barrier[1];
+    __shared__ __align__(16) uint32_t tmem_base_slot[1];
+
+    const int tid = threadIdx.x;
+    const int token = (int) blockIdx.y * SM100_NVFP4_M + tid;
+    const int out_row = (int) blockIdx.x * SM100_NVFP4_N + tid;
+    const int blocks_per_weight_row = in_f / QK_NVFP4;
+    const int act_blocks_per_k_plane = n_tokens;
+    const uint32_t barrier_addr = (uint32_t) __cvta_generic_to_shared(mma_barrier);
+
+    if (tid == 0) {
+        asm volatile("mbarrier.init.shared::cta.b64 [%0], 1;" :: "r"(barrier_addr));
+    }
+    __syncthreads();
+
+    if (tid < WARP_SIZE) {
+        asm volatile(
+            "tcgen05.alloc.cta_group::1.sync.aligned.shared::cta.b32 [%0], %1;"
+            :: "r"((uint32_t) __cvta_generic_to_shared(tmem_base_slot)),
+               "r"(SM100_NVFP4_TMEM_COLS));
+    }
+    __syncthreads();
+
+    const uint32_t tmem_base = tmem_base_slot[0];
+    const uint32_t d_tmem = tmem_base;
+    const uint32_t sfa_tmem = tmem_base + SM100_NVFP4_N;
+    const uint32_t sfb_tmem = sfa_tmem + 4;
+    int k_slice = 0;
+
+    for (int k0 = 0; k0 < in_f; k0 += SM100_NVFP4_K, ++k_slice) {
+        const int act_k_block = k0 / QK_K;
+        const int act_k_quarter = (k0 % QK_K) / SM100_NVFP4_K;
+
+        if (token < n_tokens) {
+            const block_fp4_mmq * a_block =
+                acts + (int64_t) act_k_block * act_blocks_per_k_plane + token;
+            const uint8_t * a_codes = reinterpret_cast<const uint8_t *>(a_block->qs)
+                                      + act_k_quarter * SM100_NVFP4_PACKED_K;
+            const uint8_t * a_scales = reinterpret_cast<const uint8_t *>(a_block->d4)
+                                       + act_k_quarter * 4;
+#pragma unroll
+            for (int c = 0; c < SM100_NVFP4_PACKED_K; ++c) {
+                const int core_off =
+                    memra_sm100::core_row_outer_offset(tid, c, SM100_NVFP4_PACKED_K);
+                s_a[core_off] = a_codes[c];
+            }
+#pragma unroll
+            for (int j = 0; j < 4; ++j) {
+                s_sfa[memra_sm100::sf4x_offset(tid, j)] = a_scales[j];
+            }
+        } else {
+#pragma unroll
+            for (int c = 0; c < SM100_NVFP4_PACKED_K; ++c) {
+                const int core_off =
+                    memra_sm100::core_row_outer_offset(tid, c, SM100_NVFP4_PACKED_K);
+                s_a[core_off] = 0;
+            }
+#pragma unroll
+            for (int j = 0; j < 4; ++j) {
+                s_sfa[memra_sm100::sf4x_offset(tid, j)] = 0;
+            }
+        }
+
+        if (out_row < out_f) {
+            const block_nvfp4 * b_block =
+                weights + (int64_t) out_row * blocks_per_weight_row + (k0 / QK_NVFP4);
+#pragma unroll
+            for (int c = 0; c < SM100_NVFP4_PACKED_K; ++c) {
+                const int core_off =
+                    memra_sm100::core_row_outer_offset(tid, c, SM100_NVFP4_PACKED_K);
+                s_b[core_off] = b_block->qs[c];
+            }
+#pragma unroll
+            for (int j = 0; j < 4; ++j) {
+                s_sfb[memra_sm100::sf4x_offset(tid, j)] = b_block->d[j];
+            }
+        } else {
+#pragma unroll
+            for (int c = 0; c < SM100_NVFP4_PACKED_K; ++c) {
+                const int core_off =
+                    memra_sm100::core_row_outer_offset(tid, c, SM100_NVFP4_PACKED_K);
+                s_b[core_off] = 0;
+            }
+#pragma unroll
+            for (int j = 0; j < 4; ++j) {
+                s_sfb[memra_sm100::sf4x_offset(tid, j)] = 0;
+            }
+        }
+
+        __syncthreads();
+        asm volatile("fence.proxy.async;" ::: "memory");
+        __syncthreads();
+
+        if (tid == 0) {
+            const uint64_t a_desc = sm100_tcgen05_smem_desc(
+                (uint32_t) __cvta_generic_to_shared(s_a), 128, 256);
+            const uint64_t b_desc = sm100_tcgen05_smem_desc(
+                (uint32_t) __cvta_generic_to_shared(s_b), 128, 256);
+            const uint64_t sfa_desc = sm100_tcgen05_smem_desc(
+                (uint32_t) __cvta_generic_to_shared(s_sfa), 16, 128);
+            const uint64_t sfb_desc = sm100_tcgen05_smem_desc(
+                (uint32_t) __cvta_generic_to_shared(s_sfb), 16, 128);
+            const uint32_t i_desc = sm100_tcgen05_nvf4_idesc();
+
+            asm volatile(
+                "tcgen05.cp.cta_group::1.32x128b.warpx4 [%0], %1;"
+                :: "r"(sfa_tmem), "l"(sfa_desc) : "memory");
+            asm volatile(
+                "tcgen05.cp.cta_group::1.32x128b.warpx4 [%0], %1;"
+                :: "r"(sfb_tmem), "l"(sfb_desc) : "memory");
+            asm volatile(
+                "{.reg .pred p; setp.ne.u32 p, %6, 0;\n\t"
+                "tcgen05.mma.cta_group::1.kind::mxf4nvf4.block_scale.scale_vec::4X "
+                "[%0], %1, %2, %3, [%4], [%5], p;}"
+                :: "r"(d_tmem), "l"(a_desc), "l"(b_desc), "r"(i_desc),
+                   "r"(sfa_tmem), "r"(sfb_tmem), "r"((uint32_t) k_slice)
+                : "memory");
+            asm volatile(
+                "tcgen05.commit.cta_group::1.mbarrier::arrive::one.b64 [%0];"
+                :: "r"(barrier_addr) : "memory");
+            asm volatile(
+                "{.reg .pred p;\n\t"
+                "WAIT_NVFP4: mbarrier.try_wait.parity.shared::cta.b64 p, [%0], %1;\n\t"
+                "@!p bra WAIT_NVFP4;}"
+                :: "r"(barrier_addr), "r"((uint32_t) (k_slice & 1)) : "memory");
+        }
+        __syncthreads();
+    }
+
+    asm volatile("tcgen05.fence::after_thread_sync;" ::: "memory");
+    __syncthreads();
+
+    const int warp = tid / WARP_SIZE;
+    const int lane = tid % WARP_SIZE;
+    const int token_local = warp * WARP_SIZE + lane;
+    const int token_global = (int) blockIdx.y * SM100_NVFP4_M + token_local;
+    const uint32_t row_tmem = d_tmem + ((uint32_t) token_local << 16);
+
+#pragma unroll 1
+    for (int col0 = 0; col0 < SM100_NVFP4_N; col0 += 32) {
+        uint32_t accum[32];
+        cuda::ptx::tcgen05_ld_32x32b(accum, row_tmem + col0);
+        cuda::ptx::tcgen05_wait_ld();
+#pragma unroll
+        for (int c = 0; c < 32; ++c) {
+            const int out_global = (int) blockIdx.x * SM100_NVFP4_N + col0 + c;
+            if (token_global < n_tokens && out_global < out_f) {
+                const float scale = act_scale ? act_scale[token_global] : 1.0f;
+                dst[(int64_t) token_global * out_f + out_global] =
+                    __uint_as_float(accum[c]) * out_scale * scale;
+            }
+        }
+    }
+
+    __syncthreads();
+    if (tid < WARP_SIZE) {
+        asm volatile(
+            "tcgen05.dealloc.cta_group::1.sync.aligned.b32 %0, %1;"
+            :: "r"(tmem_base), "r"(SM100_NVFP4_TMEM_COLS));
+        asm volatile("tcgen05.relinquish_alloc_permit.cta_group::1.sync.aligned;");
+    }
+}
+#endif // MEMRA_SM100_TCGEN05
 
 // ======================= activation quantizer (quantize.cu quantize_mmq_nvfp4) =======================
 //
@@ -1058,6 +1281,7 @@ static float * mmq_nvfp4_scale_ptr(void * s, int in_f, int n_tokens) {
 }
 
 // Dynamic-smem byte count for the mul_mat_q kernel at mmq_x=MMQ_X (must opt-in via cudaFuncSetAttribute).
+#if !defined(MEMRA_SM100_TCGEN05)
 static size_t mmq_nvfp4_nbytes_shared() {
     const size_t nbs_ids = (size_t) MMQ_X * sizeof(int);
     const size_t nbs_x   = (size_t) MMQ_Y * MMQ_MMA_TILE_X_K_FP4 * sizeof(int);
@@ -1065,6 +1289,7 @@ static size_t mmq_nvfp4_nbytes_shared() {
     const size_t pad     = (size_t) MMQ_NWARPS * MMQ_WARP_SIZE * sizeof(int);
     return nbs_ids + nbs_x + GGML_PAD(nbs_y, pad);
 }
+#endif
 
 // Run the NVFP4 W4A4 MMQ prefill GEMM. y[n_tokens, out_f] = act[n_tokens, in_f] @ W[out_f, in_f]^T.
 //   W_nvfp4_blocks : raw memra NVFP4 weight rows (block_nvfp4 = 36B blocks, in_f/64 per row).
@@ -1145,25 +1370,33 @@ int memra_mmq_nvfp4_ex2(const void * W_nvfp4_blocks, const float * act_f32, floa
         if (e != cudaSuccess) { return 1000 + (int) e; }
     }
 
-    // ---- 2) launch mul_mat_q NVFP4 (conventional xy-tiling) ----
+    // ---- 2) launch the arch-native NVFP4 GEMM twin ----
     // mmq_args mapping (mmq.cu): ncols_x=in_f, nrows_x=out_f, ncols_dst=n_tokens,
     //   stride_row_x = blocks per weight row = in_f/QK_NVFP4, ncols_y = n_tokens,
     //   stride_col_dst = out_f (dst row stride), blocks_per_ne00 = in_f/QK_NVFP4.
+    const char * W  = (const char *) W_nvfp4_blocks;
+#if defined(MEMRA_SM100_TCGEN05)
+    {
+        const dim3 grid(
+            (unsigned) ((out_f + SM100_NVFP4_N - 1) / SM100_NVFP4_N),
+            (unsigned) ((n_tokens + SM100_NVFP4_M - 1) / SM100_NVFP4_M), 1);
+        mul_mat_q_nvfp4_sm100<<<grid, SM100_NVFP4_M, 0, st>>>(
+            (const block_nvfp4 *) W_nvfp4_blocks,
+            (const block_fp4_mmq *) act_scratch,
+            y, act_scale, in_f, out_f, n_tokens, out_scale);
+    }
+#else
     const int stride_row_x   = in_f / QK_NVFP4;          // block_nvfp4 per weight row
     const int blocks_per_ne00 = in_f / QK_NVFP4;
     const int stride_col_dst = out_f;
     const int ncols_y        = n_tokens;
-
     const int nty = (out_f    + MMQ_Y - 1) / MMQ_Y;
     const int ntx = (n_tokens + MMQ_X - 1) / MMQ_X;
     const dim3 grid((unsigned) nty, (unsigned) ntx, 1);
     const dim3 block(MMQ_WARP_SIZE, MMQ_NWARPS, 1);
     const size_t smem = mmq_nvfp4_nbytes_shared();
-
     const bool need_check = (out_f % MMQ_Y) != 0;
     const int * y_q = (const int *) act_scratch;
-    const char * W  = (const char *) W_nvfp4_blocks;
-
     if (need_check) {
         cudaFuncSetAttribute(mul_mat_q_nvfp4<MMQ_X, true>, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
         mul_mat_q_nvfp4<MMQ_X, true><<<grid, block, smem, st>>>(
@@ -1175,6 +1408,7 @@ int memra_mmq_nvfp4_ex2(const void * W_nvfp4_blocks, const float * act_f32, floa
             W, y_q, y, act_scale, out_f, n_tokens, stride_row_x, ncols_y, stride_col_dst,
             blocks_per_ne00, out_scale);
     }
+#endif
     {
         cudaError_t e = cudaGetLastError();
         if (e != cudaSuccess) { return 1000 + (int) e; }

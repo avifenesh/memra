@@ -1,0 +1,42 @@
+[loader-law] WARNING: output.weight loads as 2D Float ne=[5120, 248320] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.nextn.eh_proj.weight loads as 2D Float ne=[10240, 5120] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[q8rp] split-plane decode mirrors built: 96 tensors
+loaded safetensors (65 layers, nextn=1)
+text prompt (128 chars, chat-templated) -> 37 tokens
+prompt tokens: [248045, 846, 198, 2523, 513, 66350, 449, 32439, 23, 42903, 4560, 383, 32449, 417, 17, 15, 15, 13, 79091, 303, 2250, 61446, 31969, 1204, 310, 10817, 20413, 26079, 5787, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 6144 -> 36864 ml_len 24 -> 144 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 36864 -> 73728 ml_len 144 -> 288 (retired kept, zero=false)
+
+[generate]   63 tok in 0.859s = 73.30 tok/s (gen-only; this run's prime 0.431s)
+  tokens: [760, 1156, 369, 9859, 883, 66350, 449, 32439, 23, 42903, 4560, 383, 32449, 417, 17, 15, 15, 318, 14004, 8884, 17120, 8, 321, 11352, 1204, 310, 10817, 328, 66336, 26079, 5787, 1149, 6558, 728, 1683, 883, 1092, 411, 3254, 303, 2193, 13, 271, 11361, 23, 318, 23, 14813, 18484, 1406, 8, 42903, 383, 417, 17, 15, 15, 25, 198, 12, 417, 17, 15, 15]
+[spec] draft-session state high-water: 37MB (max of parked delta 37MB and capture-time pool peak 4MB; charged per spec admission and gating future captures)
+[fa-pool] grow #3 dev=0 o_len 73728 -> 147456 ml_len 288 -> 576 (retired kept, zero=false)
+
+[generate_spec K=1] 64 tok in 0.750s = 84.02 tok/s (1.15x vs generate; this run's prime 0.431s)
+  acceptance: 30/33 = 90.9%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=2] 64 tok in 0.801s = 78.67 tok/s (1.07x vs generate; this run's prime 0.431s)
+  acceptance: 39/52 = 75.0%   self-consistency: PASS (identical to plain target)
+[fa-pool] grow #4 dev=0 o_len 147456 -> 294912 ml_len 576 -> 1152 (retired kept, zero=false)
+
+[generate_spec K=3] 64 tok in 0.781s = 80.70 tok/s (1.10x vs generate; this run's prime 0.431s)
+  acceptance: 44/60 = 73.3%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=4] 64 tok in 0.964s = 65.37 tok/s (0.89x vs generate; this run's prime 0.431s)
+  acceptance: 45/76 = 59.2%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=5] 64 tok in 1.089s = 57.87 tok/s (0.79x vs generate; this run's prime 0.431s)
+  acceptance: 46/90 = 51.1%   self-consistency: PASS (identical to plain target)
+[fa-pool] grow #5 dev=0 o_len 294912 -> 589824 ml_len 1152 -> 2304 (retired kept, zero=false)
+
+[generate_spec K=6] 64 tok in 1.248s = 50.47 tok/s (0.69x vs generate; this run's prime 0.431s)
+  acceptance: 46/108 = 42.6%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=7] 64 tok in 1.394s = 45.20 tok/s (0.62x vs generate; this run's prime 0.431s)
+  acceptance: 46/126 = 36.5%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=8] 64 tok in 1.517s = 41.52 tok/s (0.57x vs generate; this run's prime 0.431s)
+  acceptance: 46/144 = 31.9%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===

@@ -1,0 +1,27 @@
+[loader-law] WARNING: output.weight loads as 2D Float ne=[5120, 248320] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[q8rp] split-plane decode mirrors built: 96 tensors
+loaded Qwen35 from safetensors (64 trunk layers; optional MTP skipped)
+chat-templated prompt:
+<|im_start|>user
+You are validating an FP8 inference engine on NVIDIA B200. Explain in three concise bullets how to detect silent scaling errors.<|im_end|>
+<|im_start|>assistant
+<think>
+
+prompt text: "You are validating an FP8 inference engine on NVIDIA B200. Explain in three concise bullets how to detect silent scaling errors."
+prompt tokens: [248045, 846, 198, 2523, 513, 66350, 449, 32439, 23, 42903, 4560, 383, 32449, 417, 17, 15, 15, 13, 79091, 303, 2250, 61446, 31969, 1204, 310, 10817, 20413, 26079, 5787, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+[ttft] prompt_tokens=37 prefill_wall_s=0.524 (verify-class batched prefill; time to first generated token from a warm model)
+fp8-mmq dispatches after prefill: 0  (hook entries=1 gate_off=0 no_operand=1 bad_shape=0 bad_scale=0 nan=0)
+verify-prefill argmax=760  decode argmax=760  logit maxdiff=5.043e-1  MATCH
+[fa-pool] grow #1 dev=0 o_len 6144 -> 36864 ml_len 24 -> 144 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 36864 -> 73728 ml_len 144 -> 288 (retired kept, zero=false)
+generated 64 tokens in 0.814s = 78.65 tok/s (ST greedy decode)
+tokens: [760, 1156, 369, 9859, 883, 66350, 449, 32439, 23, 42903, 4560, 383, 32449, 417, 17, 15, 15, 318, 14004, 8884, 17120, 8, 321, 11352, 1204, 310, 10817, 328, 66336, 26079, 5787, 1149, 6558, 728, 1683, 883, 1092, 411, 3254, 303, 2193, 13, 271, 11361, 23, 318, 23, 14813, 18484, 1406, 8, 42903, 383, 417, 17, 15, 15, 25, 198, 12, 417, 17, 15, 15]
+storage DECODE-WINDOW: 0.00 GB physical reads
+OUTPUT TEXT: "The user is asking about validating an FP8 inference engine on NVIDIA B200 (Blackwell architecture) and specifically how to detect \"silent scaling errors.\" Let me think about what this means in context.\n\nFP8 (8-bit floating point) inference on B200:\n- B200"
+--- generated text ---
+The user is asking about validating an FP8 inference engine on NVIDIA B200 (Blackwell architecture) and specifically how to detect "silent scaling errors." Let me think about what this means in context.
+
+FP8 (8-bit floating point) inference on B200:
+- B200
+fp8-mmq dispatches: 0

@@ -34,9 +34,10 @@ MEMRA_CUDA_ARCH=120a \
   sh tools/install.sh
 ```
 
-`MEMRA_CUDA_ARCH` normally comes from `nvidia-smi`. Published release manifests may contain builds
-for `sm_120a`, `sm_100a`, `sm_90a`, and `sm_89`; the installer fails with the available list when
-the selected release has no matching archive.
+`MEMRA_CUDA_ARCH` normally comes from `nvidia-smi`. Published release manifests contain the
+release-qualified architectures. B200 `sm_100a` is currently source-only: the installer recognizes
+compute 10.0 and refuses before network access rather than downloading or suggesting an unqualified
+prebuilt.
 
 Verify the installed CUDA path:
 
@@ -62,9 +63,17 @@ cargo build --release
 export PATH="$PWD/target/release:$PATH"
 ```
 
-The build detects the local compute capability. Set `MEMRA_CUDA_ARCH` only when cross-building or
-selecting a different configured backend. See [docs/FLAGS.md](FLAGS.md) for build-time variables
-and [docs/TESTING.md](TESTING.md) before changing kernels or runtime paths.
+The source build detects B200 compute capability 10.0 and selects `sm_100a`. The explicit form is
+useful for cross-building or for making the target visible in a build receipt:
+
+```bash
+MEMRA_CUDA_ARCH=100a cargo build --release --bins
+```
+
+The release installer still refuses B200 because no `sm_100a` prebuilt is published. Source support
+is hardware-qualified but model-specific: use the NVFP4 and FP8 states in [the B200 card](rigs/b200.md)
+instead of treating one successful build as universal model support. For other targets, set
+`MEMRA_CUDA_ARCH` only when cross-building or selecting a different configured backend.
 
 ## First model
 

@@ -1,0 +1,13 @@
+cell=qwen9b-plain-short
+control_sha=0b346597c0743e71febe1e76d66124aec538bda4
+candidate_sha=229e0c296309e678b3bf7374c39f49633a402fe6
+protocol=interleaved_A_B_N5_one_exclusive_lock_same_thermal_window
+model=/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+prompt=/home/avifenesh/projects/wt-memra-b200-kernel-twins-20260901/research/gemma4-bringup/e4b-chat-watercycle-ids.txt
+ngen=128
+power_profile=balanced
+3459375979fa0d0b0bd1769a8e971ccfd25859e757f042a94f9f6a851f1199e4  /home/avifenesh/projects/wt-memra-b200-perf-control-20260902/target/release/run-gen
+9a4948d6a4cac31ea6a2279de6e7f5cecebe60681dafd161341f5ddd7a089968  /home/avifenesh/projects/wt-memra-b200-kernel-twins-20260901/target/release/run-gen
+52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de  /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 61, 180 MHz, 10.52 W, 595.84
+compute_apps_at_entry:

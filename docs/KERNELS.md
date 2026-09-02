@@ -44,13 +44,18 @@ Two artifact kinds (build.rs:251-257, 337-458, 583-642):
   `mmq_q8_0_f32acc.cu` (build.rs:423-442).
 - **Separate static lib**: `cutlass_fp4_sm120.cu`, sm_120a-only, opt-in `MEMRA_CUTLASS`
   build env (build.rs:236-237, 583-642).
-- **Stub swaps** (fail-closed twins, build.rs:445-457): non-120a → `mmq_fp4_stub.cu`;
-  portable (89/90a) → `mmq_nvfp4_w4a8_stub.cu`, `mmq_fp8_blk_stub.cu`; arch != 90a →
+- **Stub swaps** (fail-closed twins, build.rs): arches other than 120a/100a →
+  `mmq_fp4_stub.cu`, `mmq_nvfp4_w4a8_stub.cu`, and `mmq_fp8_blk_stub.cu`;
+  arch != 90a →
   fa3_prefill compiled with `-DMEMRA_FA3_STUB` (build.rs:525-526; stubs return rc 3 /
   nonzero).
 - Fatbins are single-arch SASS; arch chosen by `MEMRA_CUDA_ARCH` or nvidia-smi detect,
   fallback 120a (build.rs:136-162, 221-239). `MEMRA_PORTABLE_CUDA=1` defined for 89/90a
   builds (build.rs:233, 265).
+- **SM100 block-scale layouts** — `cu/sm100_blockscale_layout.cuh` owns the exact row-outer,
+  K-core-outer, 4X-scale, and 1X-scale address helpers used by the NVFP4 and FP8 twins. The
+  host-only `research/b200-kernel-twins-dry-20260901/check-layouts.sh` gate proves each value
+  layout is a bounded bijection and the scale atoms have the intended coverage.
 
 Facts worth knowing before "cleaning up":
 
@@ -222,10 +227,10 @@ counter-based" (spec_sample.cu:1-5).
 | mmq_q8_0.cu | `memra_mmq_q8_0`, `_act_bytes` | Q8_0 (W8A8 int8) | portable sm_75+ (header) | MEMRA_PP_Q8MMQ, default ON since 2026-07-09 (mmq_ffi.rs:479-490) | mmq_ffi.rs:183-187 |
 | mmq_q4_0.cu | `memra_mmq_q4_0`, `_act_bytes`, `_quant_act`, `_gemm`, `_gemm_sk`, `_fixup_bytes`, `_set_clc` | Q4_0 (W4A8) | CLC arm `__CUDA_ARCH_LIST__ >= 1000` (mmq_q4_0.cu:45) | MEMRA_PP_Q4MMQ (mmq_ffi.rs:516-520), MEMRA_MMQ_SK / _SK_FORM (mmq_ffi.rs:929-949), MEMRA_MMQ_CLC (mmq_ffi.rs:267) | mmq_ffi.rs:229-284 |
 | mmq_q45k.cu | `memra_mmq_q4_K`, `memra_mmq_q5_K`, `_act_bytes` (DS4 layout: Q4_K/Q5_K carry min-offset) | Q4_K, Q5_K (W4A8) | sm_89 L40S branch noted (mmq_q45k.cu:23); hard guard UNKNOWN | MEMRA_MMQ_W4A8 seam, default-on (mmq_ffi.rs:450-457) | mmq_ffi.rs:157-181 |
-| mmq_fp4.cu | `memra_mmq_nvfp4`, `_ex`, `_ex2`, `_act_bytes` (+residual-correct) | NVFP4 (W4A4 mxf4nvf4) | sm_120a-only; stub for `cuda_arch != "120a"` (build.rs:445-450) | MEMRA_MMQ=1 explicit opt-in (mmq_ffi.rs:452, 534); MEMRA_MMQ_RESIDUAL_K (mmq_ffi.rs:464-472) | mmq_ffi.rs:30-82 |
-| mmq_nvfp4_w4a8.cu | `memra_mmq_nvfp4_w4a8`, `_act_bytes`; second TU section (line 1476+): `memra_mmq_nvfp4_f8f4`, `_quantize_act` | NVFP4 weights + q8_1 acts; f8f4 route = e4m3 acts | stubbed on 89/90a (build.rs:451-454); f8f6f4 arm needs sm_100a+ | MEMRA_MMQ_W4A8 (default-on, =0 escape); MEMRA_MMQ_F8F4; MEMRA_MMQ_F8F4_PLAIN (build.rs:411) | mmq_ffi.rs:84-123 |
+| mmq_fp4.cu | `memra_mmq_nvfp4`, `_ex`, `_ex2`, `_act_bytes` (+residual-correct) | NVFP4 W4A4, same GGUF bytes on both Blackwell families | sm_120a warp MMA; sm_100a `tcgen05.mma` + TMEM twin (`MEMRA_SM100_TCGEN05`); stub elsewhere | `MEMRA_RP=0 MEMRA_MMQ=1` explicit opt-in; B200 exact/model gates pass, but pp1483 is 0.521x raw W4A8 | mmq_ffi.rs |
+| mmq_nvfp4_w4a8.cu | `memra_mmq_nvfp4_w4a8`, `_act_bytes`; optional `memra_mmq_nvfp4_f8f4` | NVFP4 weights + q8_1 acts; optional f8f4 route = e4m3 acts | 120a uses int8 W4A8 + fast block-scale F8F4; 100a uses the same W4A8 plus bit-identical plain-E4M3 F8F4; full TU stub on 89/90a | MEMRA_MMQ_W4A8 default-on; MEMRA_MMQ_F8F4 remains opt-in | mmq_ffi.rs |
 | mmq_nvfp4_f8f4.cu | `memra_mmq_nvfp4_f8f4_act_bytes` (:96), `_quantize_act` (:105) | e4m3 activation quantizer (compiles on sm_89 too) | — | MEMRA_MMQ_F8F4 | mmq_ffi.rs:105-111 |
-| mmq_fp8_blk.cu | `memra_mmq_fp8_blk`, `_act_bytes`, `_scale_rows`, `_scale_cols`, `memra_fp8_blk_count_nan` | FP8 E4M3 block-128 | .kind::f8f6f4 sm_100a+ (stub header); stub on 89/90a (build.rs:455-457) | MEMRA_ST_E4M3_BLK (fp8_ffi.rs:87); native path fp8_blk_mmq_native_enabled (fp8_ffi.rs:273) | mmq_ffi.rs:125-155 |
+| mmq_fp8_blk.cu | `memra_mmq_fp8_blk`, `_act_bytes`, `_scale_rows`, `_scale_cols`, `_quantize_act`, `_grouped`, `memra_fp8_blk_count_nan` | FP8 E4M3 block-128, original f32 grid retained | sm_120a warp MMA; sm_100a dense `tcgen05`/TMEM twin plus legal plain-MMA grouped fallback; stub on 89/90a | native source default on 120a; explicit `MEMRA_FP8_MMQ=1` on 100a, `NativeReference` only after 0.173x fallback pp1483 | mmq_ffi.rs / fp8_ffi.rs |
 | mmq_iq_experts.cu | `memra_mmq_iq_experts`, `memra_mmq_iq4xs_dense` (needs `in_f % 256 == 0`, :870), `_quantize_act`, `_fused_act_quant`, `_act_bytes` | IQ3_S, IQ4_XS (W4A8), 35B MoE prefill | smem guard vs sm_120a ~99KB (:849, :870) | MEMRA_MOE_MMA (mmq_ffi.rs:286), MEMRA_PP_IQMMQ (mmq_ffi.rs:502-506), MEMRA_IQ_FAST=0 kill (mmq_ffi.rs:574) | mmq_ffi.rs:288-345 |
 | mmq_q8_0_f32acc.cu | `memra_accprobe_act_bytes`, `_gemm_s32`, `_gemm_f32` — "THE Q1 INSTRUMENT for the FP8-ST v3 gate (research-only)… never linked into a serving path" (:1; build.rs:439) | Q8_0, f32-acc probe | `#if __CUDA_ARCH__ >= 1000` (:193) | NONE (research) | mmq_ffi.rs:206-227 |
 
@@ -242,9 +247,9 @@ counter-based" (spec_sample.cu:1-5).
 
 ### Stub files (fail-closed twins)
 
-- `mmq_fp4_stub.cu` — `memra_mmq_nvfp4{,_ex,_ex2,_act_bytes}` for non-120a.
-- `mmq_nvfp4_w4a8_stub.cu` — `memra_mmq_nvfp4_w4a8{,_act_bytes}`, `memra_mmq_nvfp4_f8f4` for sm_89/90a.
-- `mmq_fp8_blk_stub.cu` — `memra_mmq_fp8_blk{,_act_bytes,_scale_rows,_scale_cols}`, `memra_fp8_blk_count_nan` for sm_89.
+- `mmq_fp4_stub.cu` — `memra_mmq_nvfp4{,_ex,_ex2,_act_bytes}` outside sm_120a/sm_100a.
+- `mmq_nvfp4_w4a8_stub.cu` — full W4A8/F8F4 ABI on sm_89/90a; sm_100a compiles both real routes.
+- `mmq_fp8_blk_stub.cu` — block-FP8 ABI outside sm_120a/sm_100a.
 
 ## Shared MMQ headers vs remaining private copies
 
