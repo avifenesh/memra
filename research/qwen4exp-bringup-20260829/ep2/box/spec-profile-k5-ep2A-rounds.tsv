@@ -1,0 +1,68 @@
+# qwen4exp_real_gate	label=ep2A-rounds	binary_sha256=82c5465fbd82522abebdef5b5b7158a016986078f94b5a2fcdf922261a4f3b43	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=true	seams_env=idxsel,kvq,idxq
+# spec-profile k=5 tokens=64 rounds=18 total_ms=2272.3 draft_ms=168.4 verify_ms=621.3 attributed_ms=774.1
+# scope	ROUNDS ONLY (prompt + draft prefill split into the prefill table below; prefill_ms=1479.0 draft_prefill_ms=32.7 prefill_attributed_ms=1484.9)
+section	calls_per_round	total_ms	ms_per_round	pct_of_attributed
+moe.sel_grouped	48.0	158.8	8.823	20.5
+hyper.read	96.0	117.7	6.540	15.2
+mtp.lm_head	5.0	75.5	4.195	9.8
+gdn.proj	36.0	74.5	4.136	9.6
+gdn.conv_scan	36.0	57.3	3.181	7.4
+moe.shared	53.0	43.1	2.393	5.6
+qsa.proj	17.0	29.5	1.639	3.8
+gdn.norm_gate_out	36.0	26.6	1.480	3.4
+moe.router	53.0	24.9	1.381	3.2
+qsa.sdpa	17.0	23.7	1.317	3.1
+lm_head	1.0	20.0	1.110	2.6
+mtp.qsa	5.0	19.8	1.101	2.6
+mtp.moe	5.0	16.1	0.894	2.1
+ple.key_gate	1.0	13.9	0.772	1.8
+hyper.write	96.0	13.5	0.749	1.7
+qsa.gate_wo	17.0	11.8	0.655	1.5
+qsa.idx_proj	17.0	11.3	0.625	1.5
+moe.sel_bf16	5.0	11.2	0.619	1.4
+mtp.hyper.read	10.0	6.9	0.383	0.9
+mtp.fuse	5.0	6.7	0.375	0.9
+mtp.exit	5.0	3.3	0.181	0.4
+ple.conv_write	1.0	2.1	0.115	0.3
+qsa.mask_h2d	17.0	1.5	0.082	0.2
+mtp.hyper.write	10.0	1.3	0.075	0.2
+exit.mixer	1.0	1.2	0.068	0.2
+logits.argmax	1.0	0.9	0.051	0.1
+ple.host_ngram_gather	1.0	0.7	0.039	0.1
+entry.embed	1.0	0.4	0.020	0.0
+ple.h2d	1.0	0.2	0.010	0.0
+# prefill-section	total_ms	pct_of_prefill_attributed
+prefill:moe.dequant	688.5	46.4
+prefill:moe.expert_gemms	329.8	22.2
+prefill:moe.idx_gather	105.8	7.1
+prefill:lm_head	69.0	4.6
+prefill:hyper.read	60.9	4.1
+prefill:moe.router	49.9	3.4
+prefill:gdn.proj	44.3	3.0
+prefill:gdn.conv_scan	28.7	1.9
+prefill:mtp.moe	24.5	1.7
+prefill:logits.dtoh	22.5	1.5
+prefill:gdn.norm_gate_out	16.3	1.1
+prefill:qsa.proj	13.0	0.9
+prefill:moe.shared	13.0	0.9
+prefill:qsa.gate_wo	6.0	0.4
+prefill:mtp.fuse	1.9	0.1
+prefill:mtp.qsa	1.8	0.1
+prefill:mtp.lm_head	1.7	0.1
+prefill:mtp.hyper.read	1.4	0.1
+prefill:qsa.sdpa	1.1	0.1
+prefill:hyper.write	1.1	0.1
+prefill:moe.reduce	0.8	0.1
+prefill:mtp.exit	0.6	0.0
+prefill:exit.mixer	0.6	0.0
+prefill:ple.host_ngram_gather	0.6	0.0
+prefill:qsa.idx_proj	0.3	0.0
+prefill:ple.key_gate	0.3	0.0
+prefill:entry.embed	0.1	0.0
+prefill:moe.sel_bf16	0.1	0.0
+prefill:ple.conv_write	0.1	0.0
+prefill:qsa.mask_h2d	0.1	0.0
+prefill:ple.h2d	0.1	0.0
+prefill:mtp.hyper.write	0.0	0.0
