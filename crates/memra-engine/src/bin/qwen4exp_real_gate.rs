@@ -4390,11 +4390,16 @@ fn main() -> Res<()> {
             fed.push(argmax(&row) as u32);
             plain_rows.push(row);
         }
-        // The plain state is dropped BEFORE the spec-armed one is allocated wherever that
-        // is possible — but it is not: the rows have to be compared against a live second
-        // walk, so both prefixes coexist. That is the two-state cost named above, and it is
-        // why this gate reports its own VRAM line.
+        // The plain rows are compared as HOST copies against the second walk, so the plain
+        // state does NOT have to coexist with the spec-armed one — the earlier comment here
+        // said it did, and that belief is what kept two deep states resident through six
+        // OOMs. It is dropped below, before the second allocation.
         let t_spec = Instant::now();
+        // The plain rows are on the host now; release the plain state BEFORE the chunk state
+        // is allocated. Two deep states (~2.9 GB each at fill 131,072) plus a 2,048-row chunk's
+        // transients sit at ~8 GB against the ~7.9 GB a 96 GB card has left after the trunk
+        // (89,971 MiB) — the ring-bounded stash alone still OOMed (attempt 7, 2026-09-02).
+        drop(sa);
         let mut sb = model.alloc_state_reserve(&engine, fill + n + k1 + 2, chunk, None)?;
         // RING-bounded wide stash, not the whole-history default: `spec_arm` keeps
         // (fill + n + k1 + 2) x wide x f32 of seed rows — 5.4 GB at fill 131,072, 2.7 GB at
