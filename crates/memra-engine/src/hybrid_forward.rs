@@ -9763,6 +9763,59 @@ impl HybridModel {
         Self::moe_ffn_sequential_zq8(e, m, z, zq8, t, cfg, il, max_block, vrows)
     }
 
+    /// One line per (arm, routed layer) under `MEMRA_GLM5_GRAPH_TRACE`, printed by BOTH the
+    /// device-table arm and the host-oracle arm so a box run can diff them field for field.
+    ///
+    /// It carries the per-expert MACRO SCALES for the SELECTED experts, not just a `macros=bool`.
+    /// That is deliberate: `HostExps::macro_scale(e)` is exactly `macros[e]` (model.rs), so the
+    /// device table kernel's `mac_g[ex]` and the host loop's `macro_scale(ex)` are the same lookup
+    /// — which the rig gate confirmed — and the only way a difference can still exist is if the
+    /// two arms are handed different SELECTIONS or different PLANES. Printing the values makes
+    /// that visible instead of inferred.
+    #[allow(clippy::too_many_arguments)] // allow: a diagnostic line's fields are its whole purpose
+    fn dump_moe_t1_inputs(
+        e: &Engine,
+        arm: &str,
+        m: &MoeWeights,
+        cfg: &ModelConfig,
+        il: u16,
+        t: usize,
+        n_used: usize,
+        n_expert: usize,
+        sel: &[u32],
+        w: &[f32],
+    ) {
+        if crate::GLM5_VROWS_T1_SHAPE_DUMPED.fetch_add(1, std::sync::atomic::Ordering::Relaxed) >= 4
+        {
+            return;
+        }
+        let mac = |x: &crate::model::HostExps| -> Vec<f32> {
+            sel.iter().map(|&ex| x.macro_scale(ex as usize)).collect()
+        };
+        eprintln!(
+            "[glm5-vrows-t1] arm={arm} dev={} il={il} t={t} n_used={n_used} n_pairs={} \
+             n_expert={n_expert} limit={:?} gu_il={:?} qtypes=({},{},{}) row_bytes=({},{},{}) \
+             strides=({},{},{}) macros={} sel={sel:?} w={w:?} mac_g={:?} mac_u={:?} mac_d={:?}",
+            e.ctx().ordinal(),
+            t * n_used,
+            cfg.clamp_exp_at(il as u32),
+            m.dev_exps.as_ref().map(|d| d.gu_il),
+            m.gate_exps.qtype,
+            m.up_exps.qtype,
+            m.down_exps.qtype,
+            m.gate_exps.row_bytes,
+            m.up_exps.row_bytes,
+            m.down_exps.row_bytes,
+            m.gate_exps.expert_stride,
+            m.up_exps.expert_stride,
+            m.down_exps.expert_stride,
+            m.gate_exps.macros.is_some(),
+            mac(&m.gate_exps),
+            mac(&m.up_exps),
+            mac(&m.down_exps),
+        );
+    }
+
     /// Would the T=1 DEVICE-TABLE MoE arm (`vrows_t1_dev`) fire for this layer? The
     /// decode-graph door must answer this BEFORE it opens a capture region: a layer that falls
     /// through to the host readback would issue a `cuStreamSynchronize` inside the capture and
@@ -10331,43 +10384,22 @@ impl HybridModel {
             if let Some((si, sw)) = sel_dev.as_ref() {
                 crate::glm5_sel_ledger::record_device(e, il, si, sw)?;
             }
-            // MEMRA_GLM5_GRAPH_TRACE, first MoE layer only, and ONLY outside a capture region
-            // (the readback below is illegal inside one). Box runs 4-6 put the corruption in this
-            // arm, but BOTH rig gates clear it: the device table VALUES match the host arithmetic
-            // bit for bit even at strides past 4 GiB (`glm5_vrows_dev_tables_gpu`), and the
-            // kernel pair matches the sequential chain bit for bit at t=1 on an NVFP4 slab with
-            // live macros and a biting clamp (`glm5_verify_batch_gpu`, loop now from t=1). So the
-            // divergence is in the INPUTS this arm is handed on the real artifact, not in the
-            // arithmetic — and this line is the cheapest way to see them.
-            if crate::glm5_graph_trace_on()
-                && !crate::glm5_graph_capture_open()
-                && let Some((si, sw)) = sel_dev.as_ref()
-                && crate::GLM5_VROWS_T1_SHAPE_DUMPED
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                    < 2
-            {
-                let sel_h = e.dtoh_i32(si)?;
-                let w_h = e.dtoh(sw)?;
-                eprintln!(
-                    "[glm5-vrows-t1] dev={} il={il} t={t} n_used={n_used} n_pairs={} \
-                     n_expert={n_expert} limit={:?} gu_il={:?} qtypes=({},{},{}) \
-                     row_bytes=({},{},{}) strides=({},{},{}) macros={} sel={:?} w={:?}",
-                    e.ctx().ordinal(),
-                    t * n_used,
-                    lim_exp,
-                    m.dev_exps.as_ref().map(|d| d.gu_il),
-                    m.gate_exps.qtype,
-                    m.up_exps.qtype,
-                    m.down_exps.qtype,
-                    m.gate_exps.row_bytes,
-                    m.up_exps.row_bytes,
-                    m.down_exps.row_bytes,
-                    m.gate_exps.expert_stride,
-                    m.up_exps.expert_stride,
-                    m.down_exps.expert_stride,
-                    m.gate_exps.macros.is_some(),
-                    &sel_h[..sel_h.len().min(8)],
-                    &w_h[..w_h.len().min(8)],
+            // MEMRA_GLM5_GRAPH_TRACE: dump this arm's inputs for the first two routed layers so
+            // the DEVICE arm and the HOST arm can be diffed line for line on the box. Only
+            // outside a capture region — the readback below is illegal inside one.
+            if crate::glm5_graph_trace_on() && !crate::glm5_graph_capture_open() {
+                let (sel_h, w_h) = match sel_dev.as_ref() {
+                    Some((si, sw)) => (
+                        e.dtoh_i32(si)?
+                            .iter()
+                            .map(|&x| x as u32)
+                            .collect::<Vec<_>>(),
+                        e.dtoh(sw)?,
+                    ),
+                    None => (Vec::new(), Vec::new()),
+                };
+                Self::dump_moe_t1_inputs(
+                    e, "device", m, cfg, il, t, n_used, n_expert, &sel_h, &w_h,
                 );
             }
             (Vec::new(), Vec::new(), None)
@@ -10396,6 +10428,25 @@ impl HybridModel {
                 Self::moe_route_cfg(e, &logits, t, n_expert, n_used, m.active_experts.as_deref())?;
             (sel, w, None)
         };
+        // The HOST arm's twin of the dump above (same trace flag, same first two routed layers).
+        // Run 7B could not be diffed against run A because only the device arm printed; with both
+        // arms printing, the first differing field IS the answer.
+        if crate::glm5_graph_trace_on() && !crate::glm5_graph_capture_open() && !sel_all.is_empty()
+        {
+            let last = (t - 1) * n_used;
+            Self::dump_moe_t1_inputs(
+                e,
+                "host",
+                m,
+                cfg,
+                il,
+                t,
+                n_used,
+                n_expert,
+                &sel_all[last..last + n_used],
+                &w_all[last..last + n_used],
+            );
+        }
         crate::moesd::record_host_routes(il, n_expert, n_used, &sel_all)?;
         // The host-oracle twin of the ledger record above (gate instrument only).
         if !sel_all.is_empty() && crate::glm5_sel_ledger::armed() {
@@ -14603,11 +14654,16 @@ impl HybridModel {
                 "[glm5-vrows] verify MoE batched across rows: pairs={n_pairs} (t={t} x \
                  {n_used}), one gate/up+preclamp launch + one down/FMA launch per layer-call \
                  (rides MEMRA_GLM5_VERIFY_BATCH); arm doors: pack={} dedup_order={} \
-                 b200_matvec={} dev_tables={} — the `_rows` pair has several dispatch twins and \
-                 only the plain one has ever run at t=1, so a box log has to say which it took",
+                 b200_matvec={} dev_tables={} (env MEMRA_MOE_VROWS_DEV_TABLES={}) — the `_rows` \
+                 pair has several dispatch twins and only the plain one has ever run at t=1, so a \
+                 box log has to say which it took. `dev_tables` is THIS CALL's provenance, not the \
+                 env: the decode-graph door owns both halves and routes the tables through the \
+                 device build whatever `MEMRA_MOE_VROWS_DEV_TABLES` says (run 7B printed the env \
+                 and read false while the door was building on device, which cost a box window)",
                 crate::moe_vrows_pack_on(),
                 crate::moe_vrows_dedup_order_on(),
                 crate::b200_matvec_arm_on(),
+                matches!(sel, VrowsSel::Dev(..)),
                 crate::moe_vrows_dev_tables_on(),
             );
         }
