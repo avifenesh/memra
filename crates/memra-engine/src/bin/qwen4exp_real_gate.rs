@@ -1160,6 +1160,24 @@ fn parse_args() -> Res<Args> {
         if !args.ladder.windows(2).all(|w| w[0] < w[1]) {
             return Err("--ladder rungs must ascend (partial results bank in order)".into());
         }
+        // kv-dev1 is a SMOKE-depth arm, refused here so the operator learns it now and not
+        // after a 100-second load (the engine's `alloc_state_reserve` guard is the
+        // load-bearing one and checks the exact state capacity, which is a little above the
+        // deepest rung; a rung inside that slack of the ceiling still refuses there).
+        // memra#53: at 262,144 this route showed sm 100% / mem 0% on the trunk card with no
+        // rung row for 113 minutes. It is not a deadlock — the block-list attention form is
+        // a scatter reader and peer memory is not L2-cached, so one 2,048-token prefill
+        // chunk asks ~523 GB across the link, 128 chunks deep.
+        if args.ladder_kv_dev1 {
+            let deepest = *args.ladder.iter().max().expect("non-empty above");
+            let ceiling = memra_engine::qwen4exp_gpu::peer_kv_row_ceiling();
+            if deepest > ceiling {
+                return Err(format!(
+                    "--ladder-kv-dev1 refused at rung {deepest}: peer-resident QSA KV is a                      smoke-depth arm (ceiling {ceiling} rows, MEMRA_Q4E_PEER_KV_MAX_CAP). The                      spec-at-depth route is the SINGLE-CARD KV plus --mtp-dev1: the QSA KV is                      10,368 B/row across the 12 QSA layers (2.7 GiB at 262,144) and fits beside                      the trunk weights, while the ~17.6 GiB MTP draft state is what needs the                      second card. Drop --ladder-kv-dev1 and keep --mtp-dev1."
+                )
+                .into());
+            }
+        }
     }
     Ok(args)
 }
@@ -4578,6 +4596,14 @@ fn main() -> Res<()> {
                     kv_e1.as_ref(),
                 )?;
                 let mut ds = model.mtp_state(de, cap_r)?;
+                // Both states, before a single prefill chunk runs: the spec arm's residency
+                // question ("does the trunk KV fit beside 90 GiB of weights once --mtp-dev1
+                // has moved the ~17.6 GiB draft state off the card?") is answered HERE, in
+                // seconds, instead of being inferred from an OOM 20 minutes into a rung.
+                println!(
+                    "# spec-state-allocated\trung={rung}\tcap={cap_r}\t{}",
+                    nvidia_smi()
+                );
                 let mut o = args.spec_opts;
                 o.prefill_chunk = Some(args.ladder_chunk.max(1));
                 o.wide_ring = Some(4 * args.ladder_chunk.max(spec_k + 2));

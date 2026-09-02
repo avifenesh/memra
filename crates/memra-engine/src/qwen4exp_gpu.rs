@@ -2087,6 +2087,50 @@ fn route_sync_diag() -> bool {
     *C.get_or_init(|| std::env::var("MEMRA_Q4E_ROUTE_SYNC").as_deref() == Ok("1"))
 }
 
+/// Row ceiling for a PEER-RESIDENT QSA KV state (`alloc_state_reserve` with a
+/// `kv_engine` on another card — the `--ladder-kv-dev1` arm). Default 8,192 rows;
+/// `MEMRA_Q4E_PEER_KV_MAX_CAP` moves it for a deliberate re-measurement.
+///
+/// Why there is a ceiling at all (memra#53, lane box, 4x RTX PRO 6000, all pairs PHB,
+/// `nvidia-smi topo -p2p r` OK everywhere). The block-list attention form is the ONLY
+/// read path for a quantized cache, and it is a SCATTER reader: `q4e_sdpa_blocklist_q8q5`
+/// phase 1 is thread-per-position, so the 32 lanes of a warp sit on 32 different cache
+/// rows `k_tok_bytes` apart and every load instruction replays 32 ways into 32 distinct
+/// sectors (the kernel's own comment records this as the measured kvq-at-depth penalty).
+/// On the local card the reading SM's L2 absorbs that replay -- the selected-row working
+/// set is shared by all 24 query heads and by neighbouring query rows in the chunk. Peer
+/// memory is NOT cached in the reading card's L2, so the same access pattern turns into
+/// one PCIe round trip per sector, and the redundancy that L2 used to hide becomes real
+/// wire traffic: at a 262,144 fill a single 2,048-token prefill chunk asks for
+/// 12 layers x 24 heads x 2,048 rows x ~2,052 selected positions x 432 B = ~523 GB across
+/// the link, and there are 128 such chunks. That is why the 262k kv-dev1 cell showed
+/// sm 100% / mem 0% on the trunk card for 113 minutes with no rung row: the SMs were
+/// resident and stalled on peer loads while the local framebuffer sat idle. It was never
+/// a deadlock and no timeout wrapper would have helped.
+///
+/// The placement is also backwards on its own terms. The QSA KV is the SMALL allocation:
+/// 864 B per row per QSA layer (q8_0 K 544 B + q5_1 V 320 B at kv_width 512), 12 QSA
+/// layers = 10,368 B/row, i.e. **2.7 GiB** at a 262,144 capacity. The allocation that
+/// actually does not fit beside 90 GiB of trunk weights is the MTP DRAFT state (~17.6 GiB
+/// at the same capacity), and `load_from_dir_dev1` + `--mtp-dev1` already place that on
+/// card 1. Moving the 2.7 GiB KV instead buys ~2.7 GiB and pays for it with the scatter
+/// cliff above.
+fn peer_kv_max_cap() -> usize {
+    static C: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *C.get_or_init(|| {
+        std::env::var("MEMRA_Q4E_PEER_KV_MAX_CAP")
+            .ok()
+            .and_then(|v| v.trim().parse::<usize>().ok())
+            .unwrap_or(8192)
+    })
+}
+
+/// The `peer_kv_max_cap` ceiling, for callers that want to refuse BEFORE paying a
+/// 100-second checkpoint load (the ladder CLI does this at arg-parse time).
+pub fn peer_kv_row_ceiling() -> usize {
+    peer_kv_max_cap()
+}
+
 const ROUTE_AUDIT_ULP_BOUND: u32 = 8;
 static ROUTE_AUDIT_ROWS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static ROUTE_AUDIT_MAX_ULP: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
@@ -10337,6 +10381,33 @@ impl Qwen4ExpGpu {
         kv_engine: Option<&Engine>,
     ) -> Res<Qwen4ExpState> {
         let kv_e = kv_engine.unwrap_or(e);
+        // Peer-resident KV is admissible only at smoke depth (see `peer_kv_max_cap`):
+        // past the ceiling the block-list attention's scatter reads leave the reading
+        // card's L2 behind and every selected position becomes a PCIe round trip.
+        // Refused HERE rather than discovered as a 100%-sm / 0%-mem non-finish, which is
+        // how memra#53 burned two cells (45 min and 113 min, no rung row either time).
+        if kv_e.ctx().ordinal() != e.ctx().ordinal() {
+            let limit = peer_kv_max_cap();
+            if capacity > limit {
+                return Err(format!(
+                    "qwen4exp_gpu: peer-resident QSA KV refused — capacity {capacity} rows on \
+                     device {} while the attention runs on device {} (ceiling {limit} rows, \
+                     MEMRA_Q4E_PEER_KV_MAX_CAP). The block-list form is the only read path for a \
+                     quantized cache and it is a scatter reader (q4e_sdpa_blocklist_q8q5 phase 1 \
+                     is thread-per-position: 32 lanes on 32 rows, 32 sectors per load \
+                     instruction). Peer memory is not cached in the reading card's L2, so at this \
+                     depth ONE 2,048-token prefill chunk asks ~523 GB across the link and the run \
+                     never finishes — it does not deadlock, it just never arrives. Keep the QSA KV \
+                     on the compute card: it is 10,368 B/row across the 12 QSA layers (2.7 GiB at \
+                     262,144), while the allocation that forces a second card is the MTP draft \
+                     state (~17.6 GiB), which --mtp-dev1 / load_from_dir_dev1 already places \
+                     there.",
+                    kv_e.ctx().ordinal(),
+                    e.ctx().ordinal(),
+                )
+                .into());
+            }
+        }
         let mut layers = Vec::with_capacity(self.layers.len());
         for layer in &self.layers {
             let mixer = match &layer.mixer {
@@ -15120,6 +15191,13 @@ impl Qwen4ExpGpu {
             Some(chunk) if n > chunk => {
                 let mut b = 0usize;
                 let mut last = Vec::new();
+                // The spec arm banks ONE receipt row per rung, at the end. A long
+                // co-prefill therefore looks identical to a hang from the outside, which
+                // is exactly what happened in memra#53: two cells were killed by an
+                // operator (45 min, 113 min) with no way to tell "slow route" from
+                // "stuck". Progress prints on the non-spec ladder's cadence (every 8
+                // chunks, plus the last) so a rung in flight is always observable.
+                let mut chunks = 0usize;
                 while b < n {
                     let mut t = chunk.min(n - b);
                     // Never leave a <= k_cap remainder as its own final piece.
@@ -15165,6 +15243,15 @@ impl Qwen4ExpGpu {
                     }
                     draft_prefill_ms += t_draft.elapsed().as_secs_f64() * 1e3;
                     b += t;
+                    chunks += 1;
+                    if chunks % 8 == 0 || is_last {
+                        println!(
+                            "# spec-prefill-progress\tfill={b}/{n}\tchunks={chunks}\t\
+                             elapsed_s={:.1}\tdraft_s={:.1}",
+                            t_prefill.elapsed().as_secs_f64(),
+                            draft_prefill_ms / 1e3,
+                        );
+                    }
                     if is_last {
                         last = piece;
                     }
