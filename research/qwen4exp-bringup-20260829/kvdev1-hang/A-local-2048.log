@@ -1,0 +1,13 @@
+# qwen4exp_real_gate	label=A-local-2048	binary_sha256=af2bbeece2480be708767d3261d79ec89ad68557f992d379deb6bdcf73cf4961	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=false	seams_env=idxsel
+# vram	post-engine	0, 0 MiB, 97887 MiB | 1, 595 MiB, 97887 MiB | 2, 595 MiB, 97887 MiB | 3, 3 MiB, 97887 MiB
+# load	265.5s
+# vram	post-load	0, 0 MiB, 97887 MiB | 1, 95645 MiB, 97887 MiB | 2, 89971 MiB, 97887 MiB | 3, 3 MiB, 97887 MiB
+# ladder	state-allocated	0, 0 MiB, 97887 MiB | 1, 95677 MiB, 97887 MiB | 2, 90131 MiB, 97887 MiB | 3, 3 MiB, 97887 MiB
+# ladder-progress	fill=2048	elapsed_s=7.8	0, 0 MiB, 97887 MiB | 1, 95677 MiB, 97887 MiB | 2, 90483 MiB, 97887 MiB | 3, 3 MiB, 97887 MiB
+# ladder-rung	2048	9.5	9.5	4	28.5	27.9	28.0	35.12	rounds=3x8 medians=[27.9, 27.9, 27.9] spread=0.03%	false	166327	0, 0 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 90495 MiB, 97887 MiB | 3, 3 MiB, 97887 MiB	5275,437,44577,70157,68282,3842,198,388,3443,516,6239,24628,2031,10083,11,594,57596,11,594,3765,11,10806,5189,7547,2072
+
+# ladder-jitter	rung=2048	arm=rung-default	n=22 mean=28.48 med=27.92 sd=2.709 cv=9.51% p99=40.82 max=40.82 outliers_1.5x=0
+# ladder receipt: /root/realgate/kvdev1hang/ladder-A-local-2048.tsv
+WALL 296.87 s
