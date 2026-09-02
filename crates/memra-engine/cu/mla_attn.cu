@@ -1518,3 +1518,590 @@ extern "C" int memra_mla_attn_gathered_split_f32(const float* q_lat, const float
     MLA_ERR();
     return 0;
 }
+
+// ============================================================ B200 DSA decode door (sm_100a)
+//
+// MEMRA_B200_DSA_DECODE (host seam mla_ffi.rs, default OFF; docs/FLAGS.md row). Owner target
+// 2026-09-02: 230 tok/s plain with the 1M window as the product. The roofline this door was
+// built from is research/b200-dsa-decode-20260902/ROOFLINE.md; the numbers below are quoted
+// from it rather than re-derived, and the geometry is GLM-5.3-Flash NVFP4 on 2x B200 SXM
+// (148 SMs, 8 TB/s HBM3e, 70.5 TFLOP/s f32 FFMA -- there is NO tensor-core path for true f32
+// on Blackwell, so SIMT FFMA is the ceiling every kernel here is measured against).
+//
+// WHAT THE ROOFLINE FOUND, in one paragraph. The latent cache is f32 in this checkout, and the
+// DSA index list is shared across heads (the indexer mixes heads BEFORE selecting), so the
+// gathered set is 2048 x 512 x 4 B = 4.00 MiB per layer per token -- L2-resident on this die,
+// not an HBM problem. `memra_mla_attn_gathered_kernel` costs 726.2 us/layer against a 3.81 us
+// FFMA floor (190x) and a 0.52 us HBM floor (1390x), and it is depth-FLAT because n_slots is
+// pinned at the DSA top-k budget. The cycles go to: 24 `expf` per thread per 8-slot tile where
+// 8 distinct values exist (98.4% redundant, 1.57M per CTA per layer); two barriers per tile
+// with 8 warps and one CTA per SM to hide them; a PV accumulate that re-reads every gathered
+// row from GLOBAL, scalar, after the score pass already read it. Head-batching ("read each row
+// once, serve all 64 heads") is the WRONG fix at t_q=1: it would divide the only 64 CTAs the
+// kernel has to save L2 traffic that is not the bottleneck.
+//
+// So this door does not re-shape the head axis. It (1) stages each tile's KV rows into shared
+// memory once, per warp, with float4 loads, and serves BOTH the score dot and the PV accumulate
+// from that staging; (2) hoists the 8 tile exponentials into registers so `tsum` and the
+// accumulate share them; (3) offers a slot-split arm for the occupancy the head axis cannot
+// give; and (4) replaces the decode pool scorer with one that uses the reuse axis the shipped
+// tile ignores at t_q=1 -- heads.
+
+// ---------------------------------------------------------------- 1. gathered attention, fast
+//
+// `memra_mla_attn_gathered_dsa_kernel` -- BIT-IDENTICAL to `memra_mla_attn_gathered_kernel`.
+//
+// Same grid (`t_q * n_head`, one CTA per (token, head)), same MLA_WARPS-wide slot tiles, same
+// warp-per-slot lane stride, same 5-step `__shfl_down_sync` tree, same `tmax`/`rescale`/`tsum`
+// online-softmax combine, same ascending-`w` accumulate. Every floating-point operation that
+// produces an output element is the same operation on the same operands in the same order, so
+// bit identity is a CONSTRUCTION, not a tolerance -- and `dsa-decode-gate` asserts it bytewise
+// anyway rather than trusting the argument.
+//
+// The three things that change, none of them arithmetic:
+//   * STAGING. Warp `w` copies its own slot's cache row into `s_kv[w]` with `float4` loads
+//     (16 B/thread/instruction, fully coalesced inside the warp), then `__syncwarp()` and reads
+//     it back with the SAME lane stride the shipped kernel uses against global. No
+//     __syncthreads is added: the producer and consumer of `s_kv[w]` are the same warp.
+//   * ONE READ PER ROW PER CTA. The PV accumulate reads `s_kv[w * width + l]` instead of a
+//     second global trip through `cache[tt * width + l]`, so the row crosses the L2/SM boundary
+//     ONCE per head instead of twice. The trailing `__syncthreads()` that already guarded
+//     `s_acc`/`s_score` guards `s_kv` too; the barrier count per tile is unchanged at 2.
+//   * EXP HOISTING. `pw[w] = expf(s_score[w] - mnew)` is evaluated ONCE per thread per tile into
+//     registers and consumed by both the `tsum` fold and every iteration of the `l` loop. The
+//     shipped kernel evaluates it 1 + kv_rank/blockDim.x times (3 at the glm5 shape) -- 24 per
+//     thread per tile against 8 here. Identical values by determinism, so identical bits.
+//
+// SHARED MEMORY: static `s_q + s_qp + s_acc` = 9.2 KB, plus dynamic `s_kv` = MLA_WARPS * width *
+// 4 B (16 KB at the glm5 width 512). The launcher refuses any geometry whose staging exceeds
+// MLA_DSA_KV_SMEM_MAX so this never needs a dynamic-smem opt-in and never silently spills; a
+// refused geometry falls back to the shipped kernel, which is what the host door does with a
+// non-zero return.
+#define MLA_DSA_KV_SMEM_MAX (32 * 1024)
+// Slot-chunk ceiling for the warp-online arm: bounds `s_w[]` in the combine kernel.
+#define MLA_DSA_MAX_CHUNKS 64
+
+extern "C" __global__ void memra_mla_attn_gathered_dsa_kernel(
+    const float* __restrict__ q_lat, const float* __restrict__ q_pe,
+    const float* __restrict__ cache, const int* __restrict__ idx, float* __restrict__ o_lat,
+    int n_head, int kv_rank, int d_rope, int n_slots, float scale) {
+    __shared__ float s_q[MLA_MAX_RANK];
+    __shared__ float s_qp[MLA_MAX_ROPE];
+    __shared__ float s_acc[MLA_MAX_RANK];
+    __shared__ float s_score[MLA_WARPS];
+    __shared__ int s_row[MLA_WARPS];
+    extern __shared__ float s_kv[]; // [MLA_WARPS][width]
+
+    int blk = blockIdx.x; // i * n_head + h
+    int i = blk / n_head;
+    int width = kv_rank + d_rope;
+    int width4 = width >> 2; // the launcher guarantees width % 4 == 0
+    const int* row_idx = idx + (long)i * n_slots;
+
+    for (int l = threadIdx.x; l < kv_rank; l += blockDim.x) {
+        s_q[l] = q_lat[(long)blk * kv_rank + l];
+        s_acc[l] = 0.0f;
+    }
+    for (int p = threadIdx.x; p < d_rope; p += blockDim.x)
+        s_qp[p] = q_pe[(long)blk * d_rope + p];
+    __syncthreads();
+
+    int warp = threadIdx.x / 32;
+    int lane = threadIdx.x % 32;
+    float m = -FLT_MAX;
+    float dsum = 0.0f;
+
+    for (int s0 = 0; s0 < n_slots; s0 += MLA_WARPS) {
+        int s = s0 + warp;
+        int t = (s < n_slots) ? row_idx[s] : -1;
+        float* krow = s_kv + (long)warp * width;
+        if (t >= 0) {
+            const float4* src = (const float4*)(cache + (long)t * width);
+            float4* dst = (float4*)krow;
+            for (int c = lane; c < width4; c += 32) dst[c] = src[c];
+        }
+        __syncwarp();
+        float part = 0.0f;
+        if (t >= 0) {
+            const float* row = krow;
+            for (int l = lane; l < kv_rank; l += 32) part += s_q[l] * row[l];
+            for (int p = lane; p < d_rope; p += 32) part += s_qp[p] * row[kv_rank + p];
+        }
+        for (int off = 16; off > 0; off >>= 1) part += __shfl_down_sync(0xffffffffu, part, off);
+        if (lane == 0) {
+            s_score[warp] = (t >= 0) ? part * scale : -FLT_MAX;
+            s_row[warp] = t;
+        }
+        __syncthreads();
+
+        float tmax = -FLT_MAX;
+#pragma unroll
+        for (int w = 0; w < MLA_WARPS; ++w)
+            if (s_row[w] >= 0) tmax = fmaxf(tmax, s_score[w]);
+        float mnew = fmaxf(m, tmax);
+        float rescale = (m == -FLT_MAX) ? 0.0f : expf(m - mnew);
+        // The whole point: 8 exponentials per thread per tile, not 8 + 8 * (kv_rank/blockDim.x).
+        float pw[MLA_WARPS];
+        float tsum = 0.0f;
+        if (mnew > -FLT_MAX) {
+#pragma unroll
+            for (int w = 0; w < MLA_WARPS; ++w) {
+                if (s_row[w] < 0) {
+                    pw[w] = 0.0f;
+                    continue;
+                }
+                pw[w] = expf(s_score[w] - mnew);
+                tsum += pw[w];
+            }
+        }
+        dsum = dsum * rescale + tsum;
+
+        for (int l = threadIdx.x; l < kv_rank; l += blockDim.x) {
+            float a = s_acc[l] * rescale;
+            if (mnew > -FLT_MAX)
+#pragma unroll
+                for (int w = 0; w < MLA_WARPS; ++w) {
+                    if (s_row[w] < 0) continue;
+                    a += pw[w] * s_kv[(long)w * width + l];
+                }
+            s_acc[l] = a;
+        }
+        m = mnew;
+        __syncthreads();
+    }
+
+    float inv = 1.0f / dsum;
+    for (int l = threadIdx.x; l < kv_rank; l += blockDim.x)
+        o_lat[(long)blk * kv_rank + l] = s_acc[l] * inv;
+}
+
+extern "C" int memra_mla_attn_gathered_dsa_f32(const float* q_lat, const float* q_pe,
+                                               const float* cache, const int* idx, float* o_lat,
+                                               int n_head, int kv_rank, int d_rope, int t_q,
+                                               int n_slots, float scale, void* stream_v) {
+    if (kv_rank > MLA_MAX_RANK) return 40002;
+    if (d_rope > MLA_MAX_ROPE) return 40003;
+    if (n_slots <= 0) return 40015;
+    int width = kv_rank + d_rope;
+    // float4 staging: the row stride and every row start must be 16 B aligned. `cache` is a
+    // device allocation base (256 B aligned), so `width % 4 == 0` is the whole condition.
+    if (width % 4 != 0) return 40020;
+    size_t smem = (size_t)MLA_WARPS * (size_t)width * sizeof(float);
+    if (smem > (size_t)MLA_DSA_KV_SMEM_MAX) return 40021;
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    long blocks = (long)t_q * n_head;
+    if (blocks == 0) return 0;
+    memra_mla_attn_gathered_dsa_kernel<<<(unsigned)blocks, MLA_THREADS, smem, stream>>>(
+        q_lat, q_pe, cache, idx, o_lat, n_head, kv_rank, d_rope, n_slots, scale);
+    MLA_ERR();
+    return 0;
+}
+
+// ------------------------------------------ 2. gathered attention, warp-online (NUMERIC CLASS)
+//
+// NUMERIC CLASS `dsa-warp-online-f32`. NOT bit-identical, and never claimed to be.
+//
+// WHAT THE 5090 CORRECTNESS RUN TAUGHT THIS LANE, recorded because it killed the first design.
+// The single-pass kernel above is bit-identical and, measured, a small LOSS: 446 -> 482 us at
+// t_q=1 and 846 -> 1125 us at t_q=4 (RTX 5090, release, N=3 interleaved, correctness rig, timing
+// diagnostic only per the rig law). The reason is that its two claimed savings were already
+// gone: `expf(s_score[w] - mnew)` is loop-invariant in the `l` loop, so nvcc had ALREADY hoisted
+// it, and the second `cache[tt * width + l]` pass hits L1/L2, so staging the row through shared
+// memory ADDS a full smem write and read per row and buys back only L1 hits. Bit identity, on
+// this kernel, is the binding constraint: the shipped fold is already at a local optimum inside
+// it. So the depth win has to come from a different PROGRAM, named as such.
+//
+// THE PROGRAM. One WARP owns one (token, head, slot-chunk) and holds the whole kv_rank-wide
+// accumulator in REGISTERS, `J = kv_rank / 32` floats per lane. Per slot it loads the cache row
+// ONCE into registers (float4, coalesced, `J/4` instructions per lane), uses those SAME
+// registers for both the QK dot and the PV accumulate, and folds the online softmax
+// warp-locally. Consequences, all of them the roofline's asks:
+//   * EVERY KV ELEMENT IS READ FROM MEMORY EXACTLY ONCE and consumed twice from registers. The
+//     shipped kernel reads it twice per head; the single-pass kernel reads it once and then
+//     round-trips it through shared memory.
+//   * ZERO `__syncthreads`. The shipped kernel pays two barriers per 8-slot tile, 512 per CTA,
+//     with 8 warps and one CTA per SM to hide them. There is no barrier here at all: the fold is
+//     warp-local and the cross-lane reduction is a 5-step `__shfl_xor_sync` butterfly (every
+//     lane ends with the sum, so no broadcast either).
+//   * TRANSCENDENTALS COLLAPSE. Two `expf` per slot per warp (the rescale and the new weight)
+//     against the shipped kernel's ~196k per warp per layer: ~48x fewer.
+//   * The slot chunk is the occupancy knob the head axis cannot provide: at t_q=1 there are 64
+//     independent (token, head) outputs for 148 SMs, and `chunks` multiplies that directly.
+//
+// WHY IT IS NOT BIT-IDENTICAL, stated exactly. The shipped kernel folds in MLA_WARPS-wide tiles
+// (one max and one rescale per 8 slots); this folds per SLOT (a max and a rescale each), and the
+// combine then merges `chunks` partials. Both are the same sum in real arithmetic and neither is
+// the other's rounding. It therefore ships under a NAMED class with an ARGMAX gate over every
+// (token, head) latent row plus a reported maxdiff/max-relative bound (`dsa-decode-gate`), and
+// behind `MEMRA_B200_DSA_DECODE=2`. Level 1 engages only bit-identical arms.
+//
+// `J` and `JP` are TEMPLATE parameters because `acc[J]`, `qv[J]`, `kv[J]` must live in
+// registers: a runtime bound would put them in local memory and lose the entire kernel. A
+// geometry with no instantiation returns 40023 and the host falls through to the shipped path.
+
+template <int J, int JP>
+__global__ __launch_bounds__(MLA_THREADS) void memra_mla_dsa_attn_warp_kernel(
+    const float* __restrict__ q_lat, const float* __restrict__ q_pe,
+    const float* __restrict__ cache, const int* __restrict__ idx, float* __restrict__ part_m,
+    float* __restrict__ part_d, float* __restrict__ part_acc, int n_head, int kv_rank,
+    int d_rope, int n_slots, int chunks, int per, int pairs, float scale) {
+    const int warp = (int)threadIdx.x / 32;
+    const int lane = (int)threadIdx.x % 32;
+    const long g = (long)blockIdx.x * MLA_WARPS + warp; // one warp per (pair, chunk)
+    if (g >= (long)pairs * chunks) return;
+    const int blk = (int)(g / chunks);
+    const int chunk = (int)(g % chunks);
+    const int i = blk / n_head;
+    const int width = kv_rank + d_rope;
+    const int* row_idx = idx + (long)i * n_slots;
+
+    int lo = chunk * per;
+    int hi = lo + per < n_slots ? lo + per : n_slots;
+
+    float qv[J];
+#pragma unroll
+    for (int j = 0; j < J; ++j) qv[j] = q_lat[(long)blk * kv_rank + lane + 32 * j];
+    float qp[JP > 0 ? JP : 1];
+#pragma unroll
+    for (int j = 0; j < JP; ++j) {
+        int p = lane + 32 * j;
+        qp[j] = (p < d_rope) ? q_pe[(long)blk * d_rope + p] : 0.0f;
+    }
+    float acc[J];
+#pragma unroll
+    for (int j = 0; j < J; ++j) acc[j] = 0.0f;
+
+    float m = -FLT_MAX;
+    float dsum = 0.0f;
+
+    for (int s = lo; s < hi; ++s) {
+        int t = row_idx[s];
+        if (t < 0) continue;
+        const float* row = cache + (long)t * width;
+        float kv[J];
+#pragma unroll
+        for (int j = 0; j < J; ++j) kv[j] = row[lane + 32 * j];
+        float kp[JP > 0 ? JP : 1];
+#pragma unroll
+        for (int j = 0; j < JP; ++j) {
+            int p = lane + 32 * j;
+            kp[j] = (p < d_rope) ? row[kv_rank + p] : 0.0f;
+        }
+        float part = 0.0f;
+#pragma unroll
+        for (int j = 0; j < J; ++j) part += qv[j] * kv[j];
+#pragma unroll
+        for (int j = 0; j < JP; ++j) part += qp[j] * kp[j];
+        // Butterfly, not a down-shift: every lane ends holding the full sum, so the accumulate
+        // below needs no broadcast and no shared memory.
+#pragma unroll
+        for (int off = 16; off > 0; off >>= 1) part += __shfl_xor_sync(0xffffffffu, part, off);
+
+        float sc = part * scale;
+        float mnew = fmaxf(m, sc);
+        float rescale = (m == -FLT_MAX) ? 0.0f : expf(m - mnew);
+        float pwt = expf(sc - mnew);
+        dsum = dsum * rescale + pwt;
+#pragma unroll
+        for (int j = 0; j < J; ++j) acc[j] = acc[j] * rescale + pwt * kv[j];
+        m = mnew;
+    }
+
+    // UNNORMALIZED partials: the combine owns the single division, exactly as the shipped
+    // kernel's one `1.0f / dsum` does.
+    long pbase = (long)blk * chunks + chunk;
+    if (lane == 0) {
+        part_m[pbase] = m;
+        part_d[pbase] = dsum;
+    }
+#pragma unroll
+    for (int j = 0; j < J; ++j) part_acc[pbase * kv_rank + lane + 32 * j] = acc[j];
+}
+
+// Merge `chunks` partials per (token, head), in ASCENDING chunk order so the class is
+// deterministic across runs.
+extern "C" __global__ void memra_mla_dsa_attn_combine_kernel(const float* __restrict__ part_m,
+                                                             const float* __restrict__ part_d,
+                                                             const float* __restrict__ part_acc,
+                                                             float* __restrict__ o_lat,
+                                                             int kv_rank, int chunks) {
+    int blk = blockIdx.x;
+    long pbase = (long)blk * chunks;
+
+    __shared__ float s_w[MLA_DSA_MAX_CHUNKS]; // chunk weight exp(m_c - gm)
+    __shared__ float s_inv;
+
+    if (threadIdx.x == 0) {
+        float gm = -FLT_MAX;
+        for (int c = 0; c < chunks; ++c) {
+            float mc = part_m[pbase + c];
+            if (mc > -FLT_MAX) gm = fmaxf(gm, mc);
+        }
+        float den = 0.0f;
+        for (int c = 0; c < chunks; ++c) {
+            float mc = part_m[pbase + c];
+            float w = (mc > -FLT_MAX && gm > -FLT_MAX) ? expf(mc - gm) : 0.0f;
+            s_w[c] = w;
+            den += part_d[pbase + c] * w;
+        }
+        s_inv = 1.0f / den;
+    }
+    __syncthreads();
+
+    for (int l = threadIdx.x; l < kv_rank; l += blockDim.x) {
+        float a = 0.0f;
+        for (int c = 0; c < chunks; ++c) a += part_acc[(pbase + c) * kv_rank + l] * s_w[c];
+        o_lat[(long)blk * kv_rank + l] = a * s_inv;
+    }
+}
+
+/// Slot count per chunk the host must use to size the workspace and to launch. Exposed so the
+/// Rust side cannot compute a different partition than the kernels walk.
+extern "C" int memra_mla_dsa_attn_chunk_span(int n_slots, int chunks) {
+    if (chunks <= 0) return 0;
+    return (n_slots + chunks - 1) / chunks;
+}
+
+template <int J, int JP>
+static void memra_dsa_warp_launch(const float* q_lat, const float* q_pe, const float* cache,
+                                  const int* idx, float* part_m, float* part_d, float* part_acc,
+                                  int n_head, int kv_rank, int d_rope, int n_slots, int chunks,
+                                  int per, long pairs, float scale, cudaStream_t stream) {
+    long warps = pairs * chunks;
+    long blocks = (warps + MLA_WARPS - 1) / MLA_WARPS;
+    memra_mla_dsa_attn_warp_kernel<J, JP><<<(unsigned)blocks, MLA_THREADS, 0, stream>>>(
+        q_lat, q_pe, cache, idx, part_m, part_d, part_acc, n_head, kv_rank, d_rope, n_slots,
+        chunks, per, (int)pairs, scale);
+}
+
+extern "C" int memra_mla_dsa_attn_split_f32(const float* q_lat, const float* q_pe,
+                                            const float* cache, const int* idx, float* o_lat,
+                                            float* part_m, float* part_d, float* part_acc,
+                                            int n_head, int kv_rank, int d_rope, int t_q,
+                                            int n_slots, int chunks, float scale,
+                                            void* stream_v) {
+    if (kv_rank > MLA_MAX_RANK) return 40002;
+    if (d_rope > MLA_MAX_ROPE) return 40003;
+    if (n_slots <= 0) return 40015;
+    if (chunks < 1 || chunks > MLA_DSA_MAX_CHUNKS) return 40022;
+    if (kv_rank % 32 != 0) return 40023;
+    int per = memra_mla_dsa_attn_chunk_span(n_slots, chunks);
+    if (per <= 0) return 40022;
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    long pairs = (long)t_q * n_head;
+    if (pairs == 0) return 0;
+
+    const int j = kv_rank / 32;
+    const int jp = (d_rope + 31) / 32;
+    // Instantiations for the shipped geometries: kv_rank 512 (glm5_next, GLM-5.2) and 1024,
+    // crossed with d_rope 0 (NoPE) and 64 (GLM-5.2 rope). Anything else takes the shipped path.
+#define MLA_DSA_WARP_CASE(JJ, JPP)                                                             \
+    if (j == (JJ) && jp == (JPP)) {                                                            \
+        memra_dsa_warp_launch<JJ, JPP>(q_lat, q_pe, cache, idx, part_m, part_d, part_acc,       \
+                                       n_head, kv_rank, d_rope, n_slots, chunks, per, pairs,   \
+                                       scale, stream);                                         \
+    } else
+    MLA_DSA_WARP_CASE(16, 0)
+    MLA_DSA_WARP_CASE(16, 2)
+    MLA_DSA_WARP_CASE(32, 0)
+    MLA_DSA_WARP_CASE(32, 2) {
+        return 40023;
+    }
+#undef MLA_DSA_WARP_CASE
+    MLA_ERR();
+    memra_mla_dsa_attn_combine_kernel<<<(unsigned)pairs, MLA_THREADS, 0, stream>>>(
+        part_m, part_d, part_acc, o_lat, kv_rank, chunks);
+    MLA_ERR();
+    return 0;
+}
+
+// ------------------------------------------------------- 3. decode pool scoring, head-blocked
+//
+// `memra_mla_kpool_score_dsa_kernel<H, RP, KC>` -- BIT-IDENTICAL to
+// `memra_mla_kpool_score_ref_kernel` (and therefore to the shipped tiled kernel, which is
+// itself gated bit-identical to the reference).
+//
+// WHY THE SHIPPED DECODE PATH IS 44x OFF ITS FLOOR. `n_pools = t_kv / pool`, and the score is
+// `f(q_t, k_p)` with a brand-new `q_t` every token, so NO score survives a decode step: there
+// is no scored-cache formulation of exact DSA top-k and the full scan is required. That makes
+// the stage depth-LINEAR by construction and it is the 31.1 -> 22.7 tok/s slide from 256k to
+// 1M. What is NOT required is running it at 44x the floor. Decode dispatches
+// `memra_kpool_score_tiled_kernel<64, 1, 1, 1, 16>`: BT = TY*RT = 1 query, BP = TX*RP = 64
+// pools, ONE accumulator per thread, so the inner step is RT + RP = 2 shared loads for
+// RT * RP = 1 FFMA. The register blocking that makes the BT=128 prefill tile pay for itself is
+// simply absent at BT=1, and the grid is n_pools/64 blocks of 64 threads (32768 threads at
+// 128k on a die that wants ~300k).
+//
+// THE AXIS THE DECODE SHAPE ACTUALLY HAS IS HEADS. At t_q=1 there is one query but `heads`
+// (32 on the glm5 indexer) independent dots against every pool key, and every one of them
+// reuses the same pool key. This kernel blocks on (head, pool) instead of (query, pool):
+//   * one thread owns RP pools and ALL H heads, holding `dot[H][RP]` in registers;
+//   * pool keys stream through shared memory in KC-wide slabs, staged with coalesced global
+//     reads and stored TRANSPOSED (`ksh[cc][p_local]`, row stride BP+1) so the compute loop's
+//     per-thread read is conflict-free;
+//   * the q slab is `qsh[cc][h]`, read as a `float4` over FOUR HEADS AT A TIME -- every thread
+//     in the block reads the same address, so it is a broadcast, and the load count drops from
+//     H per `c` to H/4. Shared loads per FFMA fall from 2.0 to (RP + H/4) / (H*RP) = 0.156 at
+//     H=32, RP=2, i.e. from ~1/3 of FFMA peak to ~87% of it.
+//   * The q staging read is strided by `d` in global (h is the fast axis in smem, not in
+//     global). Deliberate: the whole q plane is H*d*4 B = 16 KB at the glm5 shape and is
+//     L1/L2-resident, while the conflict-free smem layout it buys is on the hot path.
+//
+// BIT-IDENTITY IS A CONSTRUCTION, and it is the requirement, not a nicety: the selection
+// downstream sorts these scores with a (score DESC, pool index ASC) tie-break, ReLU makes exact
+// 0.0 ties ORDINARY, and a last-ulp move either side of zero moves a pool in or out of the
+// budget. Both invariants the reference kernel's rounding sequence needs are preserved here:
+//   * each `dot[h][r]` accumulates over `c` STRICTLY ASCENDING from +0.0f (the slab loop is
+//     ascending in `c0` and the inner loop ascending in `cc`), one FFMA per term;
+//   * the head mix runs `h` STRICTLY ASCENDING from +0.0f inside ONE thread -- no cross-thread
+//     or cross-warp reassociation anywhere -- and spells all six rounding steps with explicit
+//     `__fmaf_rn` / `__fmul_rn` / `__fadd_rn` intrinsics, so no contraction decision and no
+//     compiler version can fork it. `acc += relu * w` alone would contract to one FMA and round
+//     ONCE where the reference rounds twice.
+// Both accumulators start at +0.0f rather than at the first term, because `(+0.0) + (-0.0)` is
+// `+0.0` while `-0.0` alone is not. `-INFINITY` visibility marks and the out-of-range DROP (not
+// store) rule are copied from the tiled kernel verbatim.
+#define MLA_DSA_SCORE_TPB 128
+
+template <int H, int RP, int KC>
+__global__ __launch_bounds__(MLA_DSA_SCORE_TPB) void memra_mla_kpool_score_dsa_kernel(
+    const float* __restrict__ q, const float* __restrict__ pool_keys,
+    const float* __restrict__ hw, float* __restrict__ score, int d, int n_pools, int pool,
+    int first_pos, float qk_scale, float head_scale) {
+    constexpr int TPB = MLA_DSA_SCORE_TPB;
+    constexpr int BP = TPB * RP;  // pools per block
+    constexpr int SBP = BP + 1;   // +1: transposed stores walk this stride, 1 mod 32 = no conflict
+
+    const int tid = (int)threadIdx.x;
+    const int p0 = (int)blockIdx.x * BP;
+    const int t = (int)blockIdx.y;
+
+    int vis = (first_pos + t + 1) / pool;
+    if (vis > n_pools) vis = n_pools;
+    // Block-uniform (vis depends only on blockIdx.y), decided before the first barrier.
+    if (p0 >= vis) {
+#pragma unroll
+        for (int r = 0; r < RP; ++r) {
+            int p = p0 + tid + r * TPB;
+            if (p < n_pools) score[(long)t * n_pools + p] = -INFINITY;
+        }
+        return;
+    }
+
+    extern __shared__ float dsa_score_sh[];
+    float* qsh = dsa_score_sh;          // [KC][H], float4-read over the head axis
+    float* ksh = dsa_score_sh + KC * H; // [KC][SBP], transposed
+
+    float dot[H][RP];
+#pragma unroll
+    for (int h = 0; h < H; ++h)
+#pragma unroll
+        for (int r = 0; r < RP; ++r) dot[h][r] = 0.0f;
+
+    for (int c0 = 0; c0 < d; c0 += KC) {
+        __syncthreads(); // previous slab's readers are done with qsh/ksh
+        for (int e = tid; e < KC * H; e += TPB) {
+            int cc = e / H, h = e - cc * H;
+            qsh[cc * H + h] = q[((long)t * H + h) * d + c0 + cc];
+        }
+        for (int e = tid; e < BP * KC; e += TPB) {
+            int pl = e / KC, cc = e - pl * KC;
+            int gp = p0 + pl;
+            ksh[cc * SBP + pl] = (gp < n_pools) ? pool_keys[(long)gp * d + c0 + cc] : 0.0f;
+        }
+        __syncthreads();
+
+#pragma unroll 4
+        for (int cc = 0; cc < KC; ++cc) {
+            float kv[RP];
+#pragma unroll
+            for (int r = 0; r < RP; ++r) kv[r] = ksh[cc * SBP + tid + r * TPB];
+#pragma unroll
+            for (int h = 0; h < H; h += 4) {
+                const float4 q4 = *(const float4*)(qsh + cc * H + h);
+#pragma unroll
+                for (int r = 0; r < RP; ++r) {
+                    dot[h + 0][r] = __fmaf_rn(q4.x, kv[r], dot[h + 0][r]);
+                    dot[h + 1][r] = __fmaf_rn(q4.y, kv[r], dot[h + 1][r]);
+                    dot[h + 2][r] = __fmaf_rn(q4.z, kv[r], dot[h + 2][r]);
+                    dot[h + 3][r] = __fmaf_rn(q4.w, kv[r], dot[h + 3][r]);
+                }
+            }
+        }
+    }
+
+    // Head mix, h ASCENDING inside one thread, six rounding steps spelled out.
+    float acc[RP];
+#pragma unroll
+    for (int r = 0; r < RP; ++r) acc[r] = 0.0f;
+#pragma unroll
+    for (int h = 0; h < H; ++h) {
+        float w = __fmul_rn(hw[(long)t * H + h], head_scale);
+#pragma unroll
+        for (int r = 0; r < RP; ++r) {
+            float rl = fmaxf(__fmul_rn(dot[h][r], qk_scale), 0.0f);
+            acc[r] = __fadd_rn(acc[r], __fmul_rn(rl, w));
+        }
+    }
+
+#pragma unroll
+    for (int r = 0; r < RP; ++r) {
+        int p = p0 + tid + r * TPB;
+        if (p >= n_pools) continue;
+        score[(long)t * n_pools + p] = (p < vis) ? acc[r] : -INFINITY;
+    }
+}
+
+template <int H, int RP, int KC>
+static int memra_kpool_score_dsa_launch(const float* q, const float* pool_keys, const float* hw,
+                                        float* score, int t_q, int d, int n_pools, int pool,
+                                        int first_pos, float qk_scale, float head_scale,
+                                        cudaStream_t stream) {
+    constexpr int BP = MLA_DSA_SCORE_TPB * RP;
+    const size_t smem = ((size_t)KC * H + (size_t)KC * (BP + 1)) * sizeof(float);
+    if (smem > 48u * 1024u) return 1;
+    dim3 grid((unsigned)((n_pools + BP - 1) / BP), (unsigned)t_q);
+    memra_mla_kpool_score_dsa_kernel<H, RP, KC>
+        <<<grid, MLA_DSA_SCORE_TPB, smem, stream>>>(q, pool_keys, hw, score, d, n_pools, pool,
+                                                    first_pos, qk_scale, head_scale);
+    return 0;
+}
+
+/// Decode-shaped scorer. Returns 40023 when this geometry has no instantiation (the host door
+/// then falls through to `memra_mla_kpool_score_f32`, the shipped dispatch, unchanged). The
+/// head count is a TEMPLATE parameter because `dot[H][RP]` must live in registers: a runtime
+/// bound would put it in local memory and lose the whole point.
+extern "C" int memra_mla_kpool_score_dsa_f32(const float* q, const float* pool_keys,
+                                             const float* hw, float* score, int t_q, int heads,
+                                             int d, int n_pools, int pool, int first_pos,
+                                             float qk_scale, float head_scale, void* stream_v) {
+    if (pool <= 0) return 40010;
+    if (d <= 0) return 40017;
+    if (t_q <= 0 || n_pools <= 0) return 0;
+    constexpr int KC = 32;
+    if (d % KC != 0) return 40023; // the slab loop is exact, never zero-padded (see edge rules)
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    int rc;
+    switch (heads) {
+        case 16:
+            rc = memra_kpool_score_dsa_launch<16, 2, KC>(q, pool_keys, hw, score, t_q, d, n_pools,
+                                                         pool, first_pos, qk_scale, head_scale,
+                                                         stream);
+            break;
+        case 32:
+            rc = memra_kpool_score_dsa_launch<32, 2, KC>(q, pool_keys, hw, score, t_q, d, n_pools,
+                                                         pool, first_pos, qk_scale, head_scale,
+                                                         stream);
+            break;
+        case 64:
+            rc = memra_kpool_score_dsa_launch<64, 2, KC>(q, pool_keys, hw, score, t_q, d, n_pools,
+                                                         pool, first_pos, qk_scale, head_scale,
+                                                         stream);
+            break;
+        default:
+            return 40023;
+    }
+    if (rc != 0) return 40023;
+    MLA_ERR();
+    return 0;
+}
