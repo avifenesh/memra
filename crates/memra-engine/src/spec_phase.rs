@@ -153,6 +153,94 @@ impl SpecPhaseNs {
     }
 }
 
+/// `MEMRA_SPEC_PROF=1` (lane/b200-spec-ttft-20260902): the ONCE-PER-REQUEST first-token
+/// phase profile for a served spec session — every phase between the session's prime and
+/// the first streamed token, in ms. Distinct from `MEMRA_SPEC_TRACE` (per-burst round
+/// SHARES): this instrument answers "where did the first-token latency go on THIS
+/// request", so it buckets the one-time costs the round trace cannot see (cache alloc,
+/// target prime, boundary draw, drafter KV alloc, the round-1 drafter prime over the
+/// prompt) and the first burst's wall. DEFAULT OFF BY DESIGN: phase boundaries synchronize
+/// the stream (the `SpecPhaseNs::clock` contract), so the traced first burst is a little
+/// slower than the untraced one; the line attributes, the untraced TTFT claims. Read once
+/// per process.
+pub fn spec_prof_on() -> bool {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_SPEC_PROF").as_deref() == Ok("1"))
+}
+
+/// The first-token phase buckets (ms) one served spec session carries until the worker
+/// prints its `[spec-prof]` line after the first burst. Every field is a wall interval
+/// bounded by stream drains on both sides, so the buckets are device-inclusive and
+/// additive; a bucket the route never runs stays 0.0.
+#[derive(Default, Debug, Clone, PartialEq)]
+pub struct SpecFirstTokenProf {
+    /// Session creation: the trunk cache allocation (`pp::new_cache_planned`).
+    pub cache_alloc_ms: f64,
+    /// Session creation: the target prime over the prompt (`prime_cache`), INCLUDING the
+    /// host-staged tap DtoHs the DFlash2 sink takes inside the walk and the prime's own
+    /// full-vocab logits readback.
+    pub prime_ms: f64,
+    /// Session creation: the prompt-boundary prefix capture (0 with the prefix door shut).
+    pub capture_ms: f64,
+    /// Session creation: the boundary token draw (sampled: host logits HtoD + filtered
+    /// Gumbel + readback; greedy: host argmax).
+    pub anchor_ms: f64,
+    /// Session creation: the draft-source state build — DFlash2: `DflashKv::new` at the
+    /// session ctx (2 x n_layer x (ctx + block) x n_kv x head_dim x f32, uninit);
+    /// native MTP: the batched plane fill over the prompt.
+    pub draft_alloc_ms: f64,
+    /// Round 1: the DFlash2 drafter's ctx ingest of the WHOLE prompt's feature rows
+    /// (HtoD of the host-staged taps + `ctx_features` + per-layer k/v projections). The
+    /// only prompt-length-linear cost after the target prime. 0 on the native arm.
+    pub draft_prime_ms: f64,
+    /// Round 1: draft production after the ingest (block forward + lm_head over the
+    /// mask-fill rows + selector walk; native arm: the MTP chain).
+    pub first_draft_ms: f64,
+    /// Round 1: the t=K+1 verify walk.
+    pub first_verify_ms: f64,
+    /// Round 1: the accept walk (device argmaxes / rejection sampling + readbacks).
+    pub first_accept_ms: f64,
+    /// Round 1: the trunk rollback to the accepted prefix.
+    pub first_roll_ms: f64,
+    /// Round 1: draft-source maintenance (tap drain / plane reset + re-seed).
+    pub first_maint_ms: f64,
+    /// Round 1: tokens the round committed (j accepted drafts + the bonus).
+    pub first_round_tokens: usize,
+    /// First burst: wall from burst entry to return, no extra drains. Under the
+    /// round-cadence door (`MEMRA_SPEC_FIRST_TOKEN_EAGER`, default ON) the commit hook
+    /// runs INSIDE this window, so the per-slice detext + channel sends land here too;
+    /// `first_burst_hook_ms` is exactly that share — `first_burst_ms -
+    /// first_burst_hook_ms` is the engine-only wall of the burst on either arm.
+    pub first_burst_ms: f64,
+    /// First burst: time spent inside the caller's commit hook (0 with no hook, i.e.
+    /// `MEMRA_SPEC_FIRST_TOKEN_EAGER=0`). Host-only work: detext + `Event::Token` sends.
+    pub first_burst_hook_ms: f64,
+    /// First burst: rounds it ran and tokens it returned (anchor included).
+    pub first_burst_rounds: usize,
+    pub first_burst_tokens: usize,
+}
+
+/// Phase clock for [`SpecFirstTokenProf`]: `lap` drains the engines' streams and returns
+/// the ms since the previous lap (or `start`). Only ever constructed with the profile on.
+pub(crate) struct ProfClock {
+    t: std::time::Instant,
+}
+
+impl ProfClock {
+    pub(crate) fn start(e: &Engine, eh: &Engine) -> Self {
+        Self {
+            t: SpecPhaseNs::clock(e, eh),
+        }
+    }
+    pub(crate) fn lap(&mut self, e: &Engine, eh: &Engine) -> f64 {
+        let now = SpecPhaseNs::clock(e, eh);
+        let ms = now.duration_since(self.t).as_secs_f64() * 1e3;
+        self.t = now;
+        ms
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{parse_level, spec_trace_level_from};
