@@ -641,6 +641,36 @@ pub(crate) fn b200_matvec_arm_on() -> bool {
     })
 }
 
+/// MEMRA_B200_BF16_GEMV_LT=1: cuBLASLt REFERENCE door for the t=1 bf16 decode row matvec
+/// (lane/b200-gemv-hbm-20260902, docs/FLAGS.md).
+///
+/// WHAT IT IS FOR. The B200 census puts `matvec_bf16_f32acc_x4_rows` at 23.6us for 64 MB of
+/// bf16 weight reads = 2.7 TB/s, 34% of the 8 TB/s HBM3e wall, and `qmatvec_kda6_bf16f32` at
+/// 93.8us for ~200 MB = 2.1 TB/s (26%). Before writing a faster memra kernel it is worth
+/// knowing what a TUNED VENDOR LIBRARY reaches on the same bytes on this part, because that
+/// number bounds what "a well-scheduled GEMV" looks like on sm_100a. This door routes those
+/// rows through `cublasLtMatmul` (m=1, bf16 x bf16 -> f32, the `memra_bf16_pp_gemm` TN plan
+/// with the per-device handle from cu/f16_prefill.cu) so the box can measure it directly.
+///
+/// IT IS A NAMED NUMERIC CLASS, NOT A BIT-IDENTICAL TWIN. Two things change: the ACTIVATION is
+/// cast f32 -> bf16 before the multiply (the shipped kernel keeps the f32 activation and only
+/// widens the bf16 weight), and the summation order over K is cuBLASLt's, not the shipped
+/// per-thread chain + red[] tree. Class name: `bf16_gemv_lt` (the same class
+/// `MEMRA_PP_BF16`'s prefill GEMM already ships under, at m=1). Because of that it is a
+/// REFERENCE door: default OFF, never a serving default, and it is not a candidate for
+/// promotion without its own argmax/serving acceptance.
+///
+/// Restricted to `sm_100a` BUILDS (`MEMRA_BUILT_CUDA_ARCH`, baked in at compile time), like
+/// `MEMRA_B200_MATVEC_ARM`: setting it on an sm_120a build is a documented no-op, so the naked
+/// sm_120a defaults stay byte-identical.
+pub(crate) fn b200_bf16_gemv_lt_on() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| {
+        env!("MEMRA_BUILT_CUDA_ARCH") == "100a"
+            && std::env::var("MEMRA_B200_BF16_GEMV_LT").as_deref() == Ok("1")
+    })
+}
+
 /// MEMRA_STEP_TP_W8=1: q8_0 mirror of the step TP attention projections for DECODE.
 ///
 /// NUMERIC-CLASS door, same class and acceptance as `MEMRA_STEP_TP_QKV_FUSED` /
@@ -22920,6 +22950,16 @@ impl Engine {
                 return self.matvec_bf16_tcols_into(w, x, y, in_f, out_f, t);
             }
             return self.matvec_bf16_tcols16_into(w, x, y, in_f, out_f, t);
+        }
+        // MEMRA_B200_BF16_GEMV_LT (lane/b200-gemv-hbm-20260902): the cuBLASLt REFERENCE door.
+        // Routes this row matvec through the vendor library's m=t bf16 GEMV so a box can
+        // measure what a tuned library reaches on these bytes on sm_100a. NAMED NUMERIC CLASS
+        // `bf16_gemv_lt` (activation cast to bf16 + library summation order), default OFF,
+        // reference only — see `b200_bf16_gemv_lt_on`. Placed AFTER the W8-mirror and
+        // tcols intercepts so their precedence is unchanged, and a cuBLASLt decline falls
+        // through to the shipped kernel below.
+        if b200_bf16_gemv_lt_on() && self.bf16_gemv_lt_into(w, x, y, in_f, out_f, t)? {
+            return Ok(());
         }
         // MEMRA_B200_MATVEC_ARM occupancy arm (lane/b200-matvec-occupancy-20260902): the
         // software-pipelined `_pf` twin double-buffers the K-loop's weight/activation loads
