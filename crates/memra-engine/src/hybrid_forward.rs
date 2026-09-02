@@ -732,6 +732,12 @@ pub fn b200_prime_v2_on() -> bool {
     std::env::var("MEMRA_B200_PRIME_V2").as_deref() == Ok("1")
 }
 
+/// Prime calls whose schedule was decided by `MEMRA_B200_PRIME_V2` arm 1 (the natural chunk).
+/// The engagement counter the gate reads: an armed door that changed no schedule is the exact
+/// failure this lane was written to catch, so "the flag was set" is never the receipt.
+pub static HYPER_PRIME_NATURAL_SCHEDULES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 /// Chunks primed through the pipelined mHC PP-2 walk. The engagement receipt arm 2's
 /// non-vacuity assertion reads: bit identity between two walks that both ran SERIALLY is
 /// vacuous, so the gate requires this to advance.
@@ -1347,11 +1353,28 @@ pub fn hyper_prime_ranges(t: usize, n_layers: usize, gdn_grid: bool) -> Vec<(usi
 /// acquire a fold grid on one path and not the other.
 fn hyper_prime_ranges_natural(t: usize, gdn_grid: bool) -> Vec<(usize, usize)> {
     let ranges = fixed_prime_chunk_ranges(t, crate::cache::PRIME_CHUNK_MAX_TOKENS);
-    if gdn_grid && std::env::var("MEMRA_PRIME_GRID_ALIGN").as_deref() != Ok("0") {
+    let ranges = if gdn_grid && std::env::var("MEMRA_PRIME_GRID_ALIGN").as_deref() != Ok("0") {
         align_prime_ranges_to_gdn(&ranges, t, Engine::gdn_chunk_size())
     } else {
         ranges
+    };
+    HYPER_PRIME_NATURAL_SCHEDULES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    // ENGAGEMENT RECEIPT, once per process. The first box run of this door produced a 22-45%
+    // TTFT win with NO line in the log to grep for it (2026-09-02 boot F): "the flag was set"
+    // is not a receipt, and a door that silently did nothing would read the same way. Print
+    // what the schedule ACTUALLY became, not what was asked for.
+    static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        eprintln!(
+            "[prime-v2] arm1 engaged t={t} chunk={} chunks={} widths={:?} (natural chunk \
+             replaces the PRIME_PIPE_MICROBATCHES geometry; MEMRA_B200_PRIME_V2, logged once \
+             per process)",
+            crate::cache::PRIME_CHUNK_MAX_TOKENS,
+            ranges.len(),
+            ranges.iter().map(|&(a, b)| b - a).collect::<Vec<_>>(),
+        );
     }
+    ranges
 }
 
 /// The largest number of token rows any ONE mHC prime call carries under
@@ -1403,6 +1426,30 @@ pub struct HyperPrimeWorkspaceShape {
     pub n_layers: usize,
     /// The model's own GDN grid-alignment input to the schedule.
     pub gdn_grid: bool,
+    /// FIXED device bytes the `MEMRA_B200_PRIME_V2` arm-3 expert-GEMM workspace takes on the
+    /// stage that runs a MoE layer: the dequanted f16 weight slab, the padded f16 activation,
+    /// the padded f32 output, and the cuBLASLt scratch. It is NOT per token and NOT per
+    /// request — it is one persistent per-engine allocation, reused across the three
+    /// projections of a layer and across every layer — so admission charges it ONCE, and only
+    /// while the door is open (`admission_bytes` reads the door per call, like every other
+    /// consumer of it).
+    ///
+    /// WHY IT IS PUBLISHED AT ALL. This is a multi-GB allocation that appears at PRIME time,
+    /// and `AdmissionCostModel::observe` provably cannot learn a prime-time allocation (it
+    /// measures the admit-time free-VRAM delta) — that is the exact hole the 262k 2-card cell
+    /// banked, where a workspace invisible to admission became a mid-stream engine OOM. A
+    /// performance workspace that silently eats the 1M-context KV budget would be the same
+    /// bug with a different cause.
+    ///
+    /// At GLM-5.3-Flash geometry on a 183 GB B200 (288 experts, H=4096, F=2048, n_pad 128):
+    /// slab 288*4096*2048*2 = 4.83 GB, activation 0.30 GB, output 0.60 GB, cuBLASLt 0.03 GB =
+    /// **~5.77 GB per stage device**, against `MEMRA_MOE_RESIDENT_GB=130` and the KV planes.
+    /// A 1M-context session's KV is ~46 GB (12 MLA layers x 3 KiB/token plus pools and KDA
+    /// state), so 130 + 46 + 5.8 = ~182 GB leaves essentially nothing spare: on the 1M tier
+    /// this arm and a full-depth session do not both fit, and admission now says so instead of
+    /// discovering it mid-prime. Lowering `MEMRA_MOE_RESIDENT_GB` by 6 is the operator's lever
+    /// if both are wanted.
+    pub bgemm_workspace_bytes: usize,
 }
 
 impl HyperPrimeWorkspaceShape {
@@ -1423,9 +1470,18 @@ impl HyperPrimeWorkspaceShape {
             .checked_div(self.kpool_score_pool)
             .map(|pools| rows.saturating_mul(pools).saturating_mul(size_of::<f32>()))
             .unwrap_or(0);
+        // The arm-3 workspace is charged ONCE (not per token) and only while the door is open.
+        // Reading the door here rather than at boot keeps this consistent with every other
+        // consumer of it and keeps the OFF arm byte-identical to the pre-lane arithmetic.
+        let bgemm = if b200_prime_v2_on() {
+            self.bgemm_workspace_bytes
+        } else {
+            0
+        };
         chunk
             .saturating_add(score)
             .saturating_add(self.prompt_bytes_per_token.saturating_mul(prompt_rows))
+            .saturating_add(bgemm)
     }
 }
 
@@ -2058,12 +2114,34 @@ impl HybridModel {
                 kpool_score_pool = glm5.index_kpool as usize;
             }
         }
+        // MEMRA_B200_PRIME_V2 arm-3 workspace, at its WORST case: every expert active
+        // (`n_active = expert_count`, which a prime past a few hundred tokens always reaches)
+        // and `n_pad` at the admission bound below. Worst case is the right case here — the
+        // allocation is persistent, so the first layer that needs the widest one keeps it.
+        let bgemm_workspace_bytes = self
+            .cfg
+            .moe
+            .as_ref()
+            .map(|moe| {
+                let n_expert = moe.expert_count as usize;
+                let f = moe.expert_ff_length as usize;
+                let u = moe.expert_used_count as usize;
+                // The widest `n_pad` this arm will ever allocate for: the pad-ratio guard
+                // refuses anything past MOE_BGEMM_MAX_PAD_RATIO, so at a full chunk the
+                // padded row count cannot exceed that multiple of the real pairs, and the
+                // per-expert bound follows from dividing by the expert count.
+                let pairs = crate::cache::PRIME_CHUNK_MAX_TOKENS * u;
+                let n_pad_bound = Self::moe_bgemm_n_pad(Self::moe_bgemm_pad_bound(pairs, n_expert));
+                crate::mmq_ffi::MoeBgemmNeed::for_layer(n_expert, n_pad_bound, h, f).bytes()
+            })
+            .unwrap_or(0);
         Some(HyperPrimeWorkspaceShape {
             chunk_token_bytes,
             prompt_bytes_per_token: h * f32b,
             kpool_score_pool,
             n_layers: self.layers.len(),
             gdn_grid: self.gdn_prime_grid_on(),
+            bgemm_workspace_bytes,
         })
     }
 
@@ -3097,6 +3175,21 @@ impl HybridModel {
         rt.fence_stages_behind(&caller_stream)?;
         let max_payload = ranges.iter().map(|(s, x)| (x - s) * width).max().unwrap();
         rt.prepare_overlap_slots(0, max_payload)?;
+
+        // ENGAGEMENT RECEIPT, once per process (same reason as arm 1's).
+        static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            eprintln!(
+                "[prime-v2] arm2 pipelined stages=2 chunks={} overlap={} t={t} devices={:?} \
+                 (stage 0 of chunk k+1 overlaps stage 1 of chunk k on two host threads; \
+                 MEMRA_B200_PRIME_V2, logged once per process)",
+                ranges.len(),
+                ranges.len().saturating_sub(1),
+                (0..2)
+                    .map(|s| rt.engine(s, e).ctx().ordinal())
+                    .collect::<Vec<_>>(),
+            );
+        }
 
         let mut hiddens = e.uninit(t * n_embd)?;
         let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
@@ -14989,6 +15082,165 @@ impl HybridModel {
     /// step37 grouped prime already serve prefill with; gated by
     /// `tests/glm5_moe_grouped_prefill_gpu.rs` against `memra_reference` at the fused-epilogue
     /// gate's tolerance class, plus the run-gen first-token argmax gate on real prompts.
+    /// The smallest width arm 3 is admitted at. Below it the padded batch is mostly padding
+    /// (at t=512 the average expert holds 14 of 288 rows) and the dequant of the WHOLE bank is
+    /// not amortized by anything; the shipped direct-from-quant kernel is the right program
+    /// there and stays it.
+    const MOE_BGEMM_MIN_T: usize = 1024;
+
+    /// The most padding arm 3 will accept, as padded-rows / real-rows. Uniform-n strided
+    /// batching is what buys the stream ordering that
+    /// `cublasGemmGroupedBatchedEx` cannot give (boot D's worker kill), and the price is padding
+    /// every expert up to the widest one. At the measured glm5 shape that is cheap — max_m=115
+    /// against n_pad=128 over 283 experts is 1.105 — but a skewed router (one hot expert with
+    /// 400 rows against a bank averaging 50) would make it 3x, and paying 3x the GEMM to reach
+    /// a faster GEMM is a loss. Measured skew decides per layer, per call; there is no
+    /// assumption here to be wrong about.
+    const MOE_BGEMM_MAX_PAD_RATIO_DEFAULT: f64 = 1.35;
+
+    /// `MEMRA_MOE_BGEMM_PAD_RATIO` overrides it. It is a real tuning knob, not a test hatch:
+    /// the right ceiling depends on how much faster cuBLASLt is than the shipped kernel on the
+    /// deployment's shapes, which is a box measurement, and the box A/B wants to sweep it. It
+    /// is also what lets `glm5-prime-v2-gate` reach arm 3 on a 16-expert fixture whose
+    /// deterministic router is far more skewed than a trained 288-expert one (measured 2.94 on
+    /// the fixture against ~1.10 on the real bank) — the gate raises it deliberately and prints
+    /// that it did, rather than the guard being quietly loosened in the product.
+    fn moe_bgemm_max_pad_ratio() -> f64 {
+        std::env::var("MEMRA_MOE_BGEMM_PAD_RATIO")
+            .ok()
+            .and_then(|v| v.parse::<f64>().ok())
+            .filter(|v| v.is_finite() && *v >= 1.0)
+            .unwrap_or(Self::MOE_BGEMM_MAX_PAD_RATIO_DEFAULT)
+    }
+
+    /// Round the widest group up so the batched `n` is tensor-core friendly rather than an odd
+    /// row count; 16 is the mma n-granularity every f16 path here already aligns to.
+    fn moe_bgemm_n_pad(max_m: usize) -> usize {
+        max_m.div_ceil(16) * 16
+    }
+
+    /// The widest per-expert row count the pad-ratio guard can ever admit for a given pair
+    /// count and expert count. Used for the WORKSPACE capacity (so one allocation serves every
+    /// layer) and for the admission charge (so the budget matches the allocation) — never to
+    /// decide whether a layer is admitted, which is the live ratio's job.
+    fn moe_bgemm_pad_bound(n_pairs: usize, n_active: usize) -> usize {
+        if n_active == 0 {
+            return 0;
+        }
+        (n_pairs as f64 * Self::moe_bgemm_max_pad_ratio() / n_active as f64).ceil() as usize
+    }
+
+    /// Decide arm 3 for ONE layer and hand back its workspace, or `None` with a named reason.
+    /// Reading the door per call is the rollback seam; every decline is logged once per process
+    /// because an armed-but-inert door is the failure this whole lane was written to catch.
+    #[allow(clippy::too_many_arguments)] // allow: the list is the arm's admission contract
+    fn moe_bgemm_arm(
+        e: &Engine,
+        m: &MoeWeights,
+        t: usize,
+        n_pairs: usize,
+        n_active: usize,
+        ex_off: &[i32],
+        n_embd: usize,
+        n_ff_exp: usize,
+    ) -> Option<(crate::mmq_ffi::MoeBgemmWs, usize)> {
+        fn bg_decline_once(reason: &str) {
+            static DECLINED: std::sync::atomic::AtomicBool =
+                std::sync::atomic::AtomicBool::new(false);
+            if !DECLINED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                eprintln!(
+                    "[moe-bgemm] DECLINED: {reason} -> the shipped direct-from-quant grouped \
+                     kernel serves these projections (logged once per process)"
+                );
+            }
+        }
+        if !b200_prime_v2_on() {
+            return None;
+        }
+        if t < Self::MOE_BGEMM_MIN_T {
+            bg_decline_once(&format!(
+                "t={t} is below MOE_BGEMM_MIN_T={} — at that width the padded batch is mostly \
+                 padding and the whole-bank dequant amortizes over nothing",
+                Self::MOE_BGEMM_MIN_T
+            ));
+            return None;
+        }
+        // Both banks must be dequantable by the shipped entry AND share the projection shape
+        // the batched layout assumes (gate/up are [n_embd -> n_ff_exp], down is the transpose
+        // pair; the caller passes each projection's own in_f/out_f, so only the qtype gates).
+        if m.gate_exps.qtype != m.up_exps.qtype || m.gate_exps.qtype != m.down_exps.qtype {
+            bg_decline_once("the three expert projections do not share one qtype");
+            return None;
+        }
+        let max_m = ex_off
+            .windows(2)
+            .map(|w| (w[1] - w[0]) as usize)
+            .max()
+            .unwrap_or(0);
+        if max_m == 0 || n_active == 0 || n_pairs == 0 {
+            return None;
+        }
+        let n_pad = Self::moe_bgemm_n_pad(max_m);
+        let ratio = (n_active * n_pad) as f64 / n_pairs as f64;
+        let max_ratio = Self::moe_bgemm_max_pad_ratio();
+        if ratio > max_ratio {
+            bg_decline_once(&format!(
+                "routing skew: {n_active} experts x n_pad {n_pad} = {} padded rows against \
+                 {n_pairs} real ones (ratio {ratio:.2} > {:.2}) — paying that much extra GEMM \
+                 to reach a faster GEMM is a loss",
+                n_active * n_pad,
+                max_ratio
+            ));
+            return None;
+        }
+        // ONE allocation serves all three projections (see `MoeBgemmNeed::for_layer`) AND every
+        // later layer: capacity is taken at the RATIO BOUND, not at this layer's live `n_pad`.
+        // Routing skew moves `n_pad` layer to layer, and sizing on the first layer's value made
+        // the second wider layer miss `fits` and allocate a second multi-GB slab — the exact
+        // allocation churn this pool exists to remove. The bound is also the number
+        // `hyper_prime_workspace_shape` charges admission, so the budget and the allocation are
+        // the same arithmetic rather than two that can drift.
+        let n_pad_cap = Self::moe_bgemm_n_pad(Self::moe_bgemm_pad_bound(n_pairs, n_active));
+        let shape = crate::mmq_ffi::MoeBgemmNeed::for_layer(
+            n_active,
+            n_pad_cap.max(n_pad),
+            n_embd,
+            n_ff_exp,
+        );
+        if let Some(ws) = e.moe_bgemm_ws_take(shape) {
+            return Some((ws, n_pad));
+        }
+        match e.moe_bgemm_ws_new(shape) {
+            Ok(Some(ws)) => {
+                static ARMED: std::sync::atomic::AtomicBool =
+                    std::sync::atomic::AtomicBool::new(false);
+                if !ARMED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                    eprintln!(
+                        "[moe-bgemm] armed dev={} n_active={n_active} n_pad={n_pad} \
+                         hidden={n_embd} expert_ff={n_ff_exp} workspace={:.2} GB (persistent, \
+                         reused across the three projections and every layer; \
+                         MEMRA_B200_PRIME_V2 arm 3)",
+                        e.ctx().ordinal(),
+                        shape.bytes() as f64 / 1e9,
+                    );
+                }
+                Some((ws, n_pad))
+            }
+            Ok(None) => {
+                bg_decline_once(&format!(
+                    "the {:.2} GB arm-3 workspace does not fit on this device alongside the \
+                     resident expert slab and the KV budget",
+                    shape.bytes() as f64 / 1e9
+                ));
+                None
+            }
+            Err(err) => {
+                bg_decline_once(&format!("arm-3 workspace allocation failed: {err}"));
+                None
+            }
+        }
+    }
+
     fn moe_ffn_grouped_prefill_sigmoid(
         e: &Engine,
         m: &MoeWeights,
@@ -15190,19 +15442,65 @@ impl HybridModel {
 
         // 4. GATE/UP grouped GEMMs over the bank, CSR order end-to-end.
         let (z16, zs) = e.moe_f16g_act(z, Some(&csr_tok_d), n_embd, n_pairs)?;
-        let mut g = e.moe_f16_grouped(
-            &dev.ptr_row,
+        // DOOR `MEMRA_B200_PRIME_V2` arm 3: the cuBLASLt strided-batched expert GEMM. `None`
+        // here means the arm declined (door shut, width too small, routing too skewed, no
+        // workspace, or a cuBLASLt shape decline) and every projection below runs the shipped
+        // kernel — behavior identical to the door being shut.
+        let mut bgemm = Self::moe_bgemm_arm(e, m, t, n_pairs, n_active, &ex_off, n_embd, n_ff_exp);
+        let grouped = |bgemm: &mut Option<(crate::mmq_ffi::MoeBgemmWs, usize)>,
+                       proj: i32,
+                       act: &CudaSlice<u8>,
+                       scale: &CudaSlice<f32>,
+                       in_f: usize,
+                       out_f: usize,
+                       qtype: i32,
+                       row_bytes: usize|
+         -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+            if let Some((ws, n_pad)) = bgemm.as_mut()
+                && let Some(y) = e.moe_f16_grouped_batched(
+                    &dev.ptr_row,
+                    proj,
+                    n_expert,
+                    &exi,
+                    &exo,
+                    act,
+                    scale,
+                    in_f,
+                    out_f,
+                    n_active,
+                    *n_pad,
+                    n_pairs,
+                    qtype,
+                    row_bytes,
+                    ws,
+                )?
+            {
+                return Ok(y);
+            }
+            e.moe_f16_grouped(
+                &dev.ptr_row,
+                proj,
+                n_expert,
+                &exi,
+                &ex_off,
+                &exo,
+                act,
+                scale,
+                in_f,
+                out_f,
+                n_active,
+                n_pairs,
+                qtype,
+                row_bytes,
+            )
+        };
+        let mut g = grouped(
+            &mut bgemm,
             0,
-            n_expert,
-            &exi,
-            &ex_off,
-            &exo,
             &z16,
             &zs,
             n_embd,
             n_ff_exp,
-            n_active,
-            n_pairs,
             m.gate_exps.qtype,
             rbg_d,
         )?;
@@ -15214,19 +15512,13 @@ impl HybridModel {
             let mg_d = e.htod(&mg)?;
             e.scale_rows(&mut g, &mg_d, n_ff_exp, n_pairs)?;
         }
-        let mut u = e.moe_f16_grouped(
-            &dev.ptr_row,
+        let mut u = grouped(
+            &mut bgemm,
             1,
-            n_expert,
-            &exi,
-            &ex_off,
-            &exo,
             &z16,
             &zs,
             n_embd,
             n_ff_exp,
-            n_active,
-            n_pairs,
             m.up_exps.qtype,
             rbu_d,
         )?;
@@ -15264,19 +15556,13 @@ impl HybridModel {
 
         // 6. DOWN grouped GEMM (CSR order), permute back to pair order, weighted scatter.
         let (a16, a_s) = e.moe_f16g_act(&act, None, n_ff_exp, n_pairs)?;
-        let d_csr = e.moe_f16_grouped(
-            &dev.ptr_row,
+        let d_csr = grouped(
+            &mut bgemm,
             2,
-            n_expert,
-            &exi,
-            &ex_off,
-            &exo,
             &a16,
             &a_s,
             n_ff_exp,
             n_embd,
-            n_active,
-            n_pairs,
             m.down_exps.qtype,
             m.down_exps.row_bytes,
         )?;
@@ -15290,6 +15576,12 @@ impl HybridModel {
         let mut moe_out = e.uninit(t * n_embd)?;
         e.moe_pairs_scatter(&y_pair, &pw, &toff_d, &tids_d, &mut moe_out, t, n_embd)?;
         let d_down = phase(mprof);
+        // Arm 3's workspace goes back to the engine pool the moment the last projection has
+        // been ISSUED (the buffers are stream-ordered work, not host state), so the next layer
+        // takes it instead of allocating a second multi-GB slab.
+        if let Some((ws, _)) = bgemm.take() {
+            e.moe_bgemm_ws_put(ws);
+        }
 
         // 7. SHARED EXPERT: the canonical clamp-aware grouped add (reads clamp_shexp_at and
         // the optional shexp gate; glm5_next has a live shared expert on every MoE layer).

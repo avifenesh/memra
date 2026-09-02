@@ -24267,6 +24267,9 @@ mod tests {
         const DH: usize = 128; // index_head_dim
         const N_TRUNK: usize = 45;
         let shape = memra_engine::hybrid_forward::HyperPrimeWorkspaceShape {
+            // The arm-3 workspace is charged only while MEMRA_B200_PRIME_V2 is open; this fixture
+            // pins the door-shut arithmetic, so it is 0 here by construction.
+            bgemm_workspace_bytes: 0,
             chunk_token_bytes: 4 * S * H * 4 // stream state x2 + ppN boundary pair
                 + 4 * H * 4 // pre/norm transients
                 + 2 * H * 4 // prime tail
