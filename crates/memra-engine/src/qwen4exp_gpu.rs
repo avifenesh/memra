@@ -1464,8 +1464,7 @@ fn sel_v3_on() -> bool {
 // `spec/downsel/` produce; until those exist, ON would be an unmeasured default.
 //
 // Arm: `MEMRA_Q4E_SEAMS=selgroup` (both families AUTO). Per-family shapes for the A/B
-// ladder: `selgroup=dn:4:1+gu:16:2`, `selgroup=dn:8:1+gu:off`, ... Roll back: omit it, or
-// `selgroup=0`.
+// ladder: `selgroup=dn:4:1+gu:16:2`, `selgroup=dn:8:1+gu:off`, ... Roll back: `selgroup=0` (omitting the name arms AUTO since the 2026-09-02 default flip).
 //
 // AUTO derives the shape from the geometry rather than pinning a number, because the two
 // families have different `pairs` and a single global shape would starve one of them:
