@@ -99,17 +99,26 @@ fn synth_nvfp4_rp_bytes(out_f: usize, in_f: usize, seed: u32) -> Vec<u8> {
     w
 }
 
-/// bf16 weight rows `[out_f, in_f]`, row stride `in_f` u16 code units. Clears the LSB of the
-/// high byte (exponent bit 1) so the 8-bit exponent can never reach 0xFF -> every value is
-/// finite (no Inf/NaN), which is all `matvec_bf16_f32acc_x4_rows`'s reduction cares about.
+/// bf16 weight rows `[out_f, in_f]`, row stride `in_f` u16 code units.
+///
+/// FIXED 2026-09-02 after the first box run. The old generator randomised the whole 16-bit
+/// pattern and only cleared ONE exponent bit, so weights ranged over the full bf16 exponent
+/// (magnitudes to ~2^127). Every element was individually finite, but a 4096-term dot of them
+/// OVERFLOWS f32 — which is invisible while both arms run the same program (inf == inf compares
+/// bit-identical, and shipped-vs-`_pf` did) and becomes `max_abs_diff=inf` the moment an arm
+/// sums in a different order. That is exactly what the LT-reference line reported. The compare
+/// was never broken; the DATA was.
+///
+/// Now: sample the same [-2, 2) range `synth_f32` uses and truncate f32 -> bf16 (drop the low 16
+/// mantissa bits, the bf16 layout by construction). With |w| < 2 and |x| < 2 a 4096-term dot is
+/// bounded by 16384, so every arm's sum is finite and a cross-order diff is a real number.
 fn synth_bf16(out_f: usize, in_f: usize, seed: u32) -> Vec<u8> {
     let mut w = vec![0u8; out_f * in_f * 2];
     let mut r = Lcg(seed);
     for pair in w.chunks_exact_mut(2) {
-        let lo = r.byte();
-        let hi = r.byte() & 0xFE;
-        pair[0] = lo;
-        pair[1] = hi;
+        let v = ((r.byte() as f32) - 128.0) * (1.0 / 64.0);
+        let bits = (v.to_bits() >> 16) as u16;
+        pair.copy_from_slice(&bits.to_le_bytes());
     }
     w
 }
@@ -149,10 +158,22 @@ fn gpu_temp() -> String {
 }
 
 /// Byte-for-byte f32 comparison. Returns (mismatch_count, max_abs_diff).
+///
+/// PANICS on a non-finite value in either arm. A NaN/Inf output makes every downstream verdict
+/// meaningless — bit-identity becomes `inf == inf` and a cross-order diff becomes `inf` — and
+/// the first box run spent a receipt discovering that the hard way (`max_abs_diff=inf` on the
+/// LT-reference line, from a weight generator whose bf16 exponents reached ~2^127). A bench
+/// that cannot produce finite numbers must say so loudly, not print `inf` and move on.
 fn compare(a: &[f32], b: &[f32]) -> (usize, f32) {
     let mut mism = 0usize;
     let mut maxd = 0f32;
-    for (x, y) in a.iter().zip(b.iter()) {
+    for (i, (x, y)) in a.iter().zip(b.iter()).enumerate() {
+        assert!(
+            x.is_finite() && y.is_finite(),
+            "bench arm produced a non-finite value at index {i}: shipped={x} arm={y} — the \
+             synthetic operands overflow f32, so no identity or diff verdict from this run \
+             means anything (see synth_bf16's note)"
+        );
         if x.to_bits() != y.to_bits() {
             mism += 1;
             maxd = maxd.max((x - y).abs());
@@ -554,6 +575,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
 
+        // v3 (MEMRA_B200_GEMV_V2=2): the same walk with its weight tiles staged through shared
+        // memory by cp.async, so the in-flight budget is smem-bound instead of register-bound.
+        // Skipped when its 36 KB (at mmv_block()=128) would not fit the 48 KB default cap.
+        if e.gemv_v3_fits() {
+            let mut y_v3 = e.zeros(out_f)?;
+            e.matvec_bf16_v3_raw(&wcopies[0], &xd, &mut y_v3, in_f, out_f, 1)?;
+            e.stream().synchronize()?;
+            let h_v3 = e.dtoh(&y_v3)?;
+            let (mv, dv) = compare(&h_ship, &h_v3);
+            let mut t_v3 = Vec::with_capacity(iters);
+            for i in 0..iters {
+                let c = i % copies;
+                let mut y = e.zeros(out_f)?;
+                let t0 = Instant::now();
+                e.matvec_bf16_v3_raw(&wcopies[c], &xd, &mut y, in_f, out_f, 1)?;
+                e.stream().synchronize()?;
+                t_v3.push(t0.elapsed().as_secs_f64() * 1e6);
+            }
+            report_arm(
+                &format!("matvec_bf16_v3 {label} (cp.async staged)"),
+                "v3",
+                ship_us,
+                median(&mut t_v3),
+                bytes,
+                mv,
+                dv,
+            );
+        } else {
+            println!("  matvec_bf16_v3 {label}: SKIPPED (v3 smem over the 48 KB default cap)");
+        }
+
         // cuBLASLt REFERENCE arm (MEMRA_B200_BF16_GEMV_LT, lane/b200-gemv-hbm-20260902).
         // Called directly (the door is a process-wide OnceLock, so it cannot flip mid-run).
         // NAMED NUMERIC CLASS `bf16_gemv_lt`: the activation is cast f32 -> bf16 and the K
@@ -822,26 +874,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         let run = |c: usize,
                    outs: &mut [CudaSlice<f32>; 6],
-                   v2: bool|
+                   arm: u8|
          -> Result<(), Box<dyn std::error::Error>> {
             let b = &bf_copies[c];
             e.kda_proj_fused6_bf16_arm_raw(
-                &b[0], &b[1], &b[2], &f32w[0], &f32w[1], &f32w[2], &xd, outs, in_f, dims, 1, v2,
+                &b[0], &b[1], &b[2], &f32w[0], &f32w[1], &f32w[2], &xd, outs, in_f, dims, 1, arm,
             )
+        };
+        // Per-projection identity, not just a total: the first cut's y5 bug (a dropped
+        // `b -= nb` before the last range) showed up as 64 mismatches with the other five
+        // ranges clean, and a single summed count made that one number instead of a location.
+        let cmp6 = |a: &[CudaSlice<f32>; 6],
+                    b: &[CudaSlice<f32>; 6]|
+         -> Result<(usize, f32, String), Box<dyn std::error::Error>> {
+            let mut mism = 0usize;
+            let mut maxd = 0f32;
+            let mut per = Vec::new();
+            for k in 0..6 {
+                let (m, d) = compare(&e.dtoh(&a[k])?, &e.dtoh(&b[k])?);
+                mism += m;
+                maxd = maxd.max(d);
+                per.push(format!("y{k}={m}"));
+            }
+            Ok((mism, maxd, per.join(" ")))
         };
 
         let mut o_ship = mk_outs()?;
-        run(0, &mut o_ship, false)?;
+        run(0, &mut o_ship, 0)?;
         let mut o_v2 = mk_outs()?;
-        run(0, &mut o_v2, true)?;
+        run(0, &mut o_v2, 1)?;
         e.stream().synchronize()?;
-        let mut mism = 0usize;
-        let mut maxd = 0f32;
-        for k in 0..6 {
-            let (m, d) = compare(&e.dtoh(&o_ship[k])?, &e.dtoh(&o_v2[k])?);
-            mism += m;
-            maxd = maxd.max(d);
-        }
+        let (mism, maxd, per2) = cmp6(&o_ship, &o_v2)?;
 
         let mut t_ship = Vec::with_capacity(iters);
         let mut t_v2 = Vec::with_capacity(iters);
@@ -849,13 +912,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let c = i % copies;
             let mut outs = mk_outs()?;
             let t0 = Instant::now();
-            run(c, &mut outs, false)?;
+            run(c, &mut outs, 0)?;
             e.stream().synchronize()?;
             t_ship.push(t0.elapsed().as_secs_f64() * 1e6);
 
             let mut outs = mk_outs()?;
             let t1 = Instant::now();
-            run(c, &mut outs, true)?;
+            run(c, &mut outs, 1)?;
             e.stream().synchronize()?;
             t_v2.push(t1.elapsed().as_secs_f64() * 1e6);
         }
@@ -871,6 +934,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             mism,
             maxd,
         );
+        println!("  per-projection mismatch counts (v2): {per2}");
+
+        if e.gemv_v3_fits() {
+            let mut o_v3 = mk_outs()?;
+            run(0, &mut o_v3, 2)?;
+            e.stream().synchronize()?;
+            let (m3, d3, per3) = cmp6(&o_ship, &o_v3)?;
+            let mut t_v3 = Vec::with_capacity(iters);
+            for i in 0..iters {
+                let c = i % copies;
+                let mut outs = mk_outs()?;
+                let t0 = Instant::now();
+                run(c, &mut outs, 2)?;
+                e.stream().synchronize()?;
+                t_v3.push(t0.elapsed().as_secs_f64() * 1e6);
+            }
+            report_arm(
+                "qmatvec_kda6_bf16f32_v3 (cp.async staged)",
+                "v3",
+                ship_us,
+                median(&mut t_v3),
+                bytes,
+                m3,
+                d3,
+            );
+            println!("  per-projection mismatch counts (v3): {per3}");
+        } else {
+            println!("  qmatvec_kda6_bf16f32_v3: SKIPPED (v3 smem over the 48 KB default cap)");
+        }
         println!(
             "  (kda6 bytes: {:.1} MB bf16 + {:.1} MB f32; shipped GB/s above is over the sum)",
             bf_bytes as f64 / 1e6,
