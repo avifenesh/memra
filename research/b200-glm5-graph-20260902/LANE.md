@@ -678,6 +678,45 @@ Diffing that against the 6A arm's first routed layer pins which input differs. T
 log needs, for the dispatch-arm question raised in §9f, is `[glm5-vrows]` (the engagement line
 carrying `pack= dedup_order= b200_matvec= dev_tables=`), and this new one is `[glm5-vrows-t1]`.
 
+## 9h. Takes 7 and 8: the arm's real inputs, and the macro path cleared
+
+Run 7B's dump, from the instrument added in §9g:
+
+```
+[glm5-vrows] ... arm doors: pack=false dedup_order=false b200_matvec=false dev_tables=false
+[glm5-vrows-t1] dev=0 il=3 t=1 n_used=8 n_pairs=8 n_expert=288 limit=Some(Pre(10.0))
+    gu_il=Some(false) qtypes=(7,7,7) row_bytes=(2304,2304,1152)
+    strides=(4718592,4718592,4718592) macros=true
+    sel=[135, 59, 264, 287, 2, 259, 193, 176] w=[0.7733, 0.4004, ..., 0.1654]
+```
+
+**Every field checks out.** `2304 = 4096/2 + 4096/16` and `1152 = 2048/2 + 2048/16` are exactly
+NVFP4 at block 16 for `in_f = n_embd = 4096` (gate/up) and `in_f = n_ff = 2048` (down);
+`4718592 = 2048 x 2304 = 4096 x 1152` makes both expert strides consistent with their own row
+counts; every `sel` is inside `[0, 288)`; the weights descend like a sigmoid top-k with
+`route_norm`. So the arm is handed a well-formed problem.
+
+**`dev_tables=false` was a reporting bug, not a finding.** That field printed
+`moe_vrows_dev_tables_on()` — the ENV — while the door was routing through the device build
+regardless, because `vrows_t1_dev` does not consult that env at all. Take 8 set
+`MEMRA_MOE_VROWS_DEV_TABLES=1`, the field flipped to `true`, and the tape was unchanged. The
+field now prints THIS CALL's provenance (`matches!(sel, VrowsSel::Dev(..))`) with the env beside
+it, so the two can never be confused again. That mis-report cost a box window; it is the reason
+a diagnostic must report the decision it claims to report and not a nearby proxy.
+
+**The macro path is cleared, and cleanly.** `HostExps::macro_scale(e)` is
+`self.macros.as_ref().map(|m| m[e]).unwrap_or(1.0)` (`model.rs:2922-2924`) — literally `macros[e]`
+— so the rig gate's host reference (`g[ex]`) reproduced the shipped host arm exactly, and the
+device kernel's `mac_g[ex]` is the same lookup. Together with §9f and §9g that clears the table
+values, the macro lookup, and the kernel pair at t=1.
+
+**What is still missing is the other half of the diff.** Run A prints no `[glm5-vrows-t1]` line at
+all, because the host-oracle arm had no dump — so there was nothing to compare 7B's numbers
+against. Both arms now print the same line with `arm=device` / `arm=host`, and both carry the
+per-expert macro scales for the SELECTED experts rather than a `macros=bool`, so a differing
+selection or a differing plane is visible rather than inferred. The first differing field on the
+next paired run is the answer.
+
 ## 10. Open items
 
 1. **Run the gate on the pair** (`--steps 64 --reps 5`) and bank the receipt. Until then the
