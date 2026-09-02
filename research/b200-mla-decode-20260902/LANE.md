@@ -96,9 +96,12 @@ the PRO6000 pair the generic door was tuned on, and B200-vs-PRO6000 could easily
 on which split factor wins (the law's own `MEMRA_MOE_GROUPED` precedent).
 
 - **absorb_q / decompress_v**: reuse the EXISTING split kernels (no new CUDA), wired
-  through a NEW B200-tuned policy (`mla_b200_split_for`, mla_ffi.rs) targeting ~2048
-  blocks instead of ~1024, checked FIRST in `mla_absorb_q`/`mla_decompress_v` (ahead of
-  the generic door, so the two compose rather than race).
+  through a NEW B200 policy (`mla_b200_split_for`, mla_ffi.rs), checked FIRST in
+  `mla_absorb_q`/`mla_decompress_v` (ahead of the generic door, so the two compose rather
+  than race). First cut: a ~2048-block target at every t_q <= 8. Second cut, after the box
+  measurement in section 9 refuted that shape at t_q=4: an explicit per-kernel, per-t_q
+  split table (`MLA_B200_{ABSORB_Q,DECOMPRESS_V,ATTN_GATHERED}_SPLIT`), where a cell of 1
+  is the shipped launcher itself (the twin is never launched with split=1).
 - **attn_gathered**: NEW kernel `memra_mla_attn_gathered_split_kernel` (cu/mla_attn.cu,
   appended after the existing `memra_mla_attn_gathered_f32` launcher). No split existed
   for this kernel before this lane.
@@ -131,12 +134,12 @@ output element's accumulate chain is therefore the exact same sequence of operat
 unsplit kernel computes for that element — only WHICH block runs it differs. Implemented
 as `memra_mla_attn_gathered_split_kernel`.
 
-**Trade-off, stated plainly and confirmed by the correctness-rig timing below:** every
-split factor here also DUPLICATES the dominant score/softmax compute (the walk is redone
-per split block), unlike the near-zero-marginal-cost absorb/decompress splits. The host
-policy (`mla_b200_gathered_split_for`) caps this conservatively (factor <= 4, target 512
-blocks) rather than chasing the same ~2048-block target as the independent-output
-kernels.
+**Trade-off, stated plainly and confirmed by the correctness-rig timing below and by the
+B200 itself (section 9):** every split factor here also DUPLICATES the dominant
+score/softmax compute (the walk is redone per split block), unlike the near-zero-marginal-
+cost absorb/decompress splits. The first-cut host policy capped it at factor <= 4 with a
+512-block target; the shipped policy reads `MLA_B200_ATTN_GATHERED_SPLIT`, which splits
+(split=2) at t_q=1 only, because the box measured split=2 a loss at t_q=4.
 
 ## 5. Correctness receipt (run in this session, on the local 5090)
 
@@ -218,11 +221,20 @@ needs its own B200 measurement, not an assumption that "more CTAs always wins."
 ## 7. Gate invocation
 
 ```
-cd crates/memra-engine
 MEMRA_CUDA_ARCH=<100a|120a> cargo build -p memra-engine --bin mla-decode-arm-gate
 flock /tmp/memra-5090.lock -c \
-  "NVIDIA_TF32_OVERRIDE=0 ./target/debug/mla-decode-arm-gate <device_ordinal>"
+  "NVIDIA_TF32_OVERRIDE=0 ./target/debug/mla-decode-arm-gate <device_ordinal> [rounds]"
 ```
+
+`rounds` defaults to 5. The gate prints the serving table it is checking, then per t_q in
+{1,2,4,8}: the bit-identity verdict for every split in {2,4,8} and the interleaved-round
+mean for every split in {1,2,4,8} (split=1 is the shipped launcher), then a per-t winner
+table (`best` = fastest measured split, `table` = the serving cell, `arm/shipped` = the
+cell's ratio). Exit 0 with a `PASS` line only when every twin is BIT-IDENTICAL and every
+table cell's arm is within 5% of shipped or faster; otherwise one `REGRESSION ...` line per
+failing cell (or `MISMATCH`), a `FAIL` line, exit 1. A `note` line names any cell where the
+fastest measured split differs from the table, which is the edit a B200-class run
+justifies (cite the run in the table comment in mla_ffi.rs).
 
 On the B200 box, replace the lock with `/tmp/memra-gpu.lock` per the lock-names table in
 CLAUDE.md (this is a 2x B200 pair, not the 5090 dev rig or a RTX PRO 6000/RunPod pod — if
@@ -239,7 +251,8 @@ surface" law: do not invent a third name).
    one-time plan-warmup print, or a different build. This determines whether a
    decode-time GEMM replacement kernel is even a real task.
 2. **The B200 A/B itself — the actual perf receipt this door needs before any default
-   flip.** Per the per-hardware-arm-selection and never-serve-greedy laws: interleaved
+   flip.** (The kernel-level half landed 2026-09-02, section 9; the end-to-end serving A/B
+   below is still open.) Per the per-hardware-arm-selection and never-serve-greedy laws: interleaved
    x5, both arms (`MEMRA_B200_MLA_DECODE_ARM=0/1`), fresh boots, greedy exactness gate +
    vendor-default sampled twin with a spec-engagement receipt, real prompts, TTFT/TPOT/ITL
    p50/p95/p99, under `/tmp/memra-gpu.lock` (or the correct lock name for this box class,
@@ -257,3 +270,63 @@ surface" law: do not invent a third name).
 4. Default flip decision, FLAGS.md update to DEFAULT ON, and the two-box (B200 class + a
    second B200 or cross-check box per the two-rig evidence rule) sign-off all wait on
    item 2's receipt.
+
+## 9. B200 measurement (2026-09-02) and the t-keyed split table
+
+The spawning session ran the first-cut gate on the real 2x B200 SXM pair (sm_100a),
+`mla-decode-arm-gate` device 0, geometry nh=64 kv_rank=512 d_nope=256 d_v=256 d_rope=0
+n_slots=2048 pool_rows=32768, N=5, every arm BIT-IDENTICAL to its shipped kernel. That
+gate timed one split per kernel (split=4 for absorb_q/decompress_v, split=2 for
+attn_gathered), at t_q in {1,4}:
+
+| kernel        | t_q | shipped  | arm            | verdict                    |
+|---------------|-----|----------|----------------|----------------------------|
+| absorb_q      | 1   | 81.8 us  | split=4 49.1   | win (-40%)                 |
+| decompress_v  | 1   | 82.2 us  | split=4 48.0   | win (-42%)                 |
+| attn_gathered | 1   | 564.6 us | split=2 516.4  | win (-9%)                  |
+| absorb_q      | 4   | 150.3 us | split=4 133.2  | win (-11%)                 |
+| decompress_v  | 4   | 150.4 us | split=4 246.6  | REGRESSION (+64%), shipped |
+| attn_gathered | 4   | 665.3 us | split=2 822.7  | REGRESSION (+24%), shipped |
+
+Reading: at t_q=1 (64 blocks, well under one wave) every split wins, and the two
+independent-output kernels nearly halve. At t_q=4 (256 blocks before splitting) the die is
+already reasonably filled: absorb_q still gains 11% from split=4, decompress_v LOSES 64%
+(its 256-wide output split 4 ways is 64 outputs per block; the extra blocks cost more in
+launch and tail than they recover), and attn_gathered loses 24% for the reason section 4.1
+predicted (the split repeats the dominant score walk with no occupancy left to buy). t_q=4..8
+is the DFlash2 spec-verify shape the box serves, so the first-cut policy (a ~2048-block
+target at every t_q <= 8) would have cost the spec route while helping plain decode.
+
+**The fix (this commit): key the split on t_q with an explicit table**, one row per kernel,
+index = t_q in 1..=8, a cell of 1 meaning the shipped launcher (the wrapper falls through;
+the twin is never launched at split=1, so "shipped" is the shipped path, not a
+re-implementation of it):
+
+```
+absorb_q      t1=4 t2=1 t3=1 t4=4 t5=1 t6=1 t7=1 t8=1
+decompress_v  t1=4 t2=1 t3=1 t4=1 t5=1 t6=1 t7=1 t8=1
+attn_gathered t1=2 t2=1 t3=1 t4=1 t5=1 t6=1 t7=1 t8=1
+```
+
+Exactly what the run showed and nothing it did not: the measured winner at t_q=1 for all
+three, absorb_q's measured split=4 win at t_q=4, and shipped everywhere else (t_q=2,3,5..8
+are unmeasured, and unmeasured behavior does not go on). The constants live in
+`crates/memra-engine/src/mla_ffi.rs` (`MLA_B200_ABSORB_Q_SPLIT` and siblings) with the
+table above cited in the comment; `mla_b200_arm_table_split` is the pure lookup both the
+serving policy and the gate read, so the two cannot disagree about a cell.
+
+**The gate is now a real check, not a printout.** It times EVERY split in {1,2,4,8} at
+EVERY t_q in {1,2,4,8} for all three kernels (12 cells x 4 arms), in interleaved rounds
+with preallocated outputs (the first cut timed one arm per kernel and allocated the output
+inside the timed region), asserts bit identity for every twin at every t_q, prints the
+per-t winner table, and FAILS (line `REGRESSION`, exit 1) when a serving-table cell is
+slower than shipped by more than 5% (`MLA_B200_ARM_REGRESSION_MARGIN`) at any measured t_q.
+The next box run therefore either confirms the table or names the cell to change; a `note`
+line flags any cell whose fastest measured split differs from the table (t_q=2 and t_q=8
+are new cells with no B200 number yet, so the first run of the new gate is expected to
+print notes there if a split wins; the table only moves on that receipt).
+
+Still open before any default flip (item 2 above): the end-to-end serving A/B on the B200
+(interleaved x5, greedy exactness + vendor-default sampled twin with a spec-engagement
+receipt, TTFT/TPOT/ITL p50/p95/p99), since a kernel-level win at t_q=1 says nothing about
+the served mix of t_q=1 plain steps and t_q=4..8 verify steps.
