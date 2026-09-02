@@ -612,6 +612,24 @@ pub(crate) fn mmv_block() -> u32 {
     })
 }
 
+/// MEMRA_B200_MATVEC_ARM=1: the sm_100a occupancy arms for the plain-decode MoE/matvec family
+/// (lane/b200-matvec-occupancy-20260902, docs/FLAGS.md). The B200 census (2026-09-02,
+/// GLM-5.3-Flash NVFP4, PP2 decode) found `moe_gate_up_preclamp8_q8` / `moe_down8_fma_q8` /
+/// `matvec_bf16_f32acc_x4_rows` running ~3-9x their roofline byte estimate on 2x B200 — an
+/// occupancy/latency signature from kernels tuned for the RTX PRO 6000's 188-SM/1.8-TB/s shape,
+/// not the B200's 148-SM/8-TB/s one. Restricted to `sm_100a` BUILDS (`MEMRA_BUILT_CUDA_ARCH`,
+/// baked in at compile time): setting the var on an `sm_120a` build is a documented no-op, so
+/// the naked sm_120a defaults stay byte-identical (per-hardware arm selection law, CLAUDE.md).
+/// Default OFF everywhere; the arms are BIT-IDENTICAL per-output twins pending their B200 A/B —
+/// see docs/FLAGS.md and research/b200-matvec-occupancy-20260902/LANE.md.
+pub(crate) fn b200_matvec_arm_on() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| {
+        env!("MEMRA_BUILT_CUDA_ARCH") == "100a"
+            && std::env::var("MEMRA_B200_MATVEC_ARM").as_deref() == Ok("1")
+    })
+}
+
 /// MEMRA_STEP_TP_W8=1: q8_0 mirror of the step TP attention projections for DECODE.
 ///
 /// NUMERIC-CLASS door, same class and acceptance as `MEMRA_STEP_TP_QKV_FUSED` /
@@ -6783,6 +6801,105 @@ impl Engine {
         let cfg = LaunchConfig {
             grid_dim: (out_f as u32, 1, 1),
             block_dim: (32, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let (inf, outf, nu, rbi) = (in_f as i32, out_f as i32, n_used as i32, rb as i64);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(&dp)
+            .arg(&w)
+            .arg(aq2)
+            .arg(ad2)
+            .arg(dst)
+            .arg(&inf)
+            .arg(&outf)
+            .arg(&nu)
+            .arg(&qt)
+            .arg(&rbi);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(())
+    }
+
+    /// WARP-PACKED twin of [`Engine::moe_gate_up_preclamp8_q8`] (MEMRA_B200_MATVEC_ARM occupancy
+    /// arm, lane/b200-matvec-occupancy-20260902): MEMRA_MMVQ_ROWS warps/block on threadIdx.y
+    /// instead of one warp/block, same per-warp body -> bit-identical per (o,j). See
+    /// `b200_matvec_arm_on` and docs/FLAGS.md for the door.
+    #[allow(clippy::too_many_arguments)]
+    pub fn moe_gate_up_preclamp8_q8_w4(
+        &self,
+        gp: WPtr8,
+        up: WPtr8,
+        aq: &CudaSlice<i8>,
+        ad: &CudaSlice<f32>,
+        gs: F32x8,
+        us: F32x8,
+        limit: f32,
+        in_f: usize,
+        n_ff: usize,
+        n_used: usize,
+        qt_g: i32,
+        qt_u: i32,
+        rb_g: usize,
+        rb_u: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        debug_assert!(
+            limit > 1e-6,
+            "moe_gate_up_preclamp8_q8_w4 needs a live limit; use moe_gate_up_silu8_q8"
+        );
+        const ROWS: u32 = 4; // MEMRA_MMVQ_ROWS
+        let f = self.func("moe_gate_up_preclamp8_q8_w4");
+        let mut act = self.alloc_uninit::<f32>(n_used * n_ff)?;
+        let cfg = LaunchConfig {
+            grid_dim: ((n_ff as u32).div_ceil(ROWS), n_used as u32, 1),
+            block_dim: (32, ROWS, 1),
+            shared_mem_bytes: 0,
+        };
+        let (inf, nff, rbg, rbu) = (in_f as i32, n_ff as i32, rb_g as i64, rb_u as i64);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(&gp)
+            .arg(&up)
+            .arg(aq)
+            .arg(ad)
+            .arg(&gs)
+            .arg(&us)
+            .arg(&limit)
+            .arg(&mut act)
+            .arg(&inf)
+            .arg(&nff)
+            .arg(&qt_g)
+            .arg(&qt_u)
+            .arg(&rbg)
+            .arg(&rbu);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(act)
+    }
+
+    /// WARP-PACKED twin of [`Engine::moe_down8_fma_q8`] (MEMRA_B200_MATVEC_ARM occupancy arm) —
+    /// see [`Engine::moe_gate_up_preclamp8_q8_w4`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn moe_down8_fma_q8_w4(
+        &self,
+        dp: WPtr8,
+        w: F32x8,
+        aq2: &CudaSlice<i8>,
+        ad2: &CudaSlice<f32>,
+        dst: &mut cudarc::driver::CudaViewMut<f32>,
+        in_f: usize,
+        out_f: usize,
+        n_used: usize,
+        qt: i32,
+        rb: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        const ROWS: u32 = 4; // MEMRA_MMVQ_ROWS
+        let f = self.func("moe_down8_fma_q8_w4");
+        let cfg = LaunchConfig {
+            grid_dim: ((out_f as u32).div_ceil(ROWS), 1, 1),
+            block_dim: (32, ROWS, 1),
             shared_mem_bytes: 0,
         };
         let (inf, outf, nu, rbi) = (in_f as i32, out_f as i32, n_used as i32, rb as i64);
@@ -16676,10 +16793,25 @@ impl Engine {
         }
         let (o0, o1) = (w0.out_features(), w1.out_features());
         const ROWS_PER_BLOCK: u32 = 4; // MEMRA_MMVQ_ROWS
-        const RPW: u32 = 2;
-        let rows_pb = ROWS_PER_BLOCK * RPW;
+        let mut rpw: u32 = 2;
+        let mut kname = "qmatvec_nvfp4_mmvq_fused2_rp";
+        // B200 sub-wave grid-fill (MEMRA_B200_MATVEC_ARM occupancy arm, lane/b200-matvec-
+        // occupancy-20260902): halves RPW to 1 (doubling the grid) when the RPW=2 grid would
+        // leave B200's 148 SMs under a full wave, dispatching the `_g2` twin that
+        // instantiates `nvfp4_mmvq_fused_seg_rp<1>` instead of `<2>`. Per (tensor,row) the
+        // seg body is the same template body regardless of RPW -> bit-identical. Default
+        // OFF; sm_120a keeps the measured RPW=2 default unconditionally.
+        if b200_matvec_arm_on() {
+            let waves_at_rpw2 =
+                (o0 as u32).div_ceil(ROWS_PER_BLOCK * 2) + (o1 as u32).div_ceil(ROWS_PER_BLOCK * 2);
+            if waves_at_rpw2 < 2 * self.sm_count() as u32 {
+                rpw = 1;
+                kname = "qmatvec_nvfp4_mmvq_fused2_rp_g2";
+            }
+        }
+        let rows_pb = ROWS_PER_BLOCK * rpw;
         let nb = |o: usize| (o as u32).div_ceil(rows_pb);
-        let f = self.func("qmatvec_nvfp4_mmvq_fused2_rp");
+        let f = self.func(kname);
         let mut y0 = self.alloc_uninit::<f32>(m * o0)?;
         let mut y1 = self.alloc_uninit::<f32>(m * o1)?;
         let cfg = LaunchConfig {
@@ -16719,12 +16851,7 @@ impl Engine {
                     &s1 as *const _ as *mut _,
                 ];
                 unsafe {
-                    self.launch_pdl(
-                        "qmatvec_nvfp4_mmvq_fused2_rp",
-                        cfg.grid_dim,
-                        cfg.block_dim,
-                        &mut ps,
-                    )?;
+                    self.launch_pdl(kname, cfg.grid_dim, cfg.block_dim, &mut ps)?;
                 }
             }
             return Ok(Some((y0, y1)));
@@ -16795,10 +16922,22 @@ impl Engine {
             return Ok(false);
         }
         const ROWS_PER_BLOCK: u32 = 4; // MEMRA_MMVQ_ROWS
-        const RPW: u32 = 2;
-        let rows_pb = ROWS_PER_BLOCK * RPW;
+        let mut rpw: u32 = 2;
+        let mut kname = "qmatvec_nvfp4_mmvq_fused2_rp";
+        // B200 sub-wave grid-fill (MEMRA_B200_MATVEC_ARM occupancy arm) — see
+        // `matmul_nvfp4_fused2` above for the full rationale; identical policy, alloc-free
+        // caller.
+        if b200_matvec_arm_on() {
+            let waves_at_rpw2 =
+                (o0 as u32).div_ceil(ROWS_PER_BLOCK * 2) + (o1 as u32).div_ceil(ROWS_PER_BLOCK * 2);
+            if waves_at_rpw2 < 2 * self.sm_count() as u32 {
+                rpw = 1;
+                kname = "qmatvec_nvfp4_mmvq_fused2_rp_g2";
+            }
+        }
+        let rows_pb = ROWS_PER_BLOCK * rpw;
         let nb = |o: usize| (o as u32).div_ceil(rows_pb);
-        let f = self.func("qmatvec_nvfp4_mmvq_fused2_rp");
+        let f = self.func(kname);
         let cfg = LaunchConfig {
             grid_dim: (nb(o0) + nb(o1), 1, 1),
             block_dim: (32, ROWS_PER_BLOCK, 1),
@@ -19265,6 +19404,26 @@ impl Engine {
                     .unwrap_or(1)
             });
         }
+        // B200 sub-wave grid-fill (MEMRA_B200_MATVEC_ARM occupancy arm, lane/b200-matvec-
+        // occupancy-20260902): the mr2_rp/RPW=2 default halves the grid vs mr1, which the
+        // decode-kernel census (2026-09-02) found under-filling B200's 148 SMs for the
+        // NVFP4 m=1 decode shapes (qmatvec_nvfp4_mmvq_mr2_rp: 5.2% of GPU time, 11.5us avg
+        // over 30,400 launches). Forcing mr=1 here reuses the ALREADY-SHIPPED
+        // `qmatvec_nvfp4_mmvq_rp` kernel and doubles the grid for the same output rows —
+        // exactly the Q8_0 g2 "SMALL-SHAPE GRID FILL" recipe above, mapped onto NVFP4. Per
+        // row the seg body is IDENTICAL between mr1 and mr2 (same dequant/dp4a/reduce
+        // chain), so this changes zero output bits, only which warp computes which row.
+        // Gated on sm_100a builds only (`b200_matvec_arm_on`); sm_120a keeps its measured
+        // mr2 default unconditionally. Default OFF pending the B200 A/B (docs/FLAGS.md).
+        if qtype == QT_NVFP4
+            && mr == 2
+            && rp
+            && m == 1
+            && b200_matvec_arm_on()
+            && (out_f as u32).div_ceil(ROWS_PER_BLOCK * 2) < 2 * self.sm_count() as u32
+        {
+            mr = 1;
+        }
         let name = match (qtype, mr, rp) {
             (QT_NVFP4, 2, false) => "qmatvec_nvfp4_mmvq_mr2",
             (QT_NVFP4, 2, true) => "qmatvec_nvfp4_mmvq_mr2_rp",
@@ -19445,6 +19604,152 @@ impl Engine {
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let (aq, ad) = self.quantize_q8_1(x, m, in_f)?;
         self.qmatvec_mmvq(bytes, &aq, &ad, m, in_f, out_f, qtype, row_bytes, 1.0, rp)
+    }
+
+    /// Bench-only direct arm selector for the NVFP4 split-plane rp m=1 decode pair
+    /// (b200_matvec_bench.rs). Bypasses `qmatvec_mmvq_into`'s policy AND the
+    /// `MEMRA_B200_MATVEC_ARM` env door (which is read once into a process-wide `OnceLock` and
+    /// so cannot flip mid-process for an in-process A/B) — `use_arm=false` launches
+    /// `qmatvec_nvfp4_mmvq_mr2_rp` (shipped default, RPW=2, half the grid); `true` launches the
+    /// already-shipped `qmatvec_nvfp4_mmvq_rp` (RPW=1, full grid) that the B200 grid-fill arm
+    /// dispatches to. Per-row arithmetic is IDENTICAL between the two (see qmatvec.cu) — only
+    /// the row/warp mapping and the resulting grid size differ.
+    #[allow(clippy::too_many_arguments)]
+    pub fn qmatvec_nvfp4_rp_arm_raw(
+        &self,
+        bytes: &CudaSlice<u8>,
+        aq: &CudaSlice<i8>,
+        ad: &CudaSlice<f32>,
+        m: usize,
+        in_f: usize,
+        out_f: usize,
+        row_bytes: usize,
+        yscale: f32,
+        use_arm: bool,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        const ROWS_PER_BLOCK: u32 = 4; // MEMRA_MMVQ_ROWS
+        let mr: u32 = if use_arm { 1 } else { 2 };
+        let name = if use_arm {
+            "qmatvec_nvfp4_mmvq_rp"
+        } else {
+            "qmatvec_nvfp4_mmvq_mr2_rp"
+        };
+        let f = self.func(name);
+        let rows_per_block = ROWS_PER_BLOCK * mr;
+        let mut y = self.alloc_uninit::<f32>(m * out_f)?;
+        let cfg = LaunchConfig {
+            grid_dim: ((out_f as u32).div_ceil(rows_per_block), m as u32, 1),
+            block_dim: (32, ROWS_PER_BLOCK, 1),
+            shared_mem_bytes: 0,
+        };
+        let (inf, outf, mi, rb) = (in_f as i32, out_f as i32, m as i32, row_bytes as i64);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(bytes)
+            .arg(aq)
+            .arg(ad)
+            .arg(&mut y)
+            .arg(&inf)
+            .arg(&outf)
+            .arg(&mi)
+            .arg(&rb)
+            .arg(&yscale);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(y)
+    }
+
+    /// Bench-only direct arm selector for `qmatvec_nvfp4_mmvq_fused2_rp` (b200_matvec_bench.rs) —
+    /// same rationale as `qmatvec_nvfp4_rp_arm_raw`. `use_arm=false` launches the shipped
+    /// RPW=2 kernel; `true` launches the RPW=1 `_g2` twin (instantiates the same
+    /// `nvfp4_mmvq_fused_seg_rp` template at RPW=1). Per (tensor,row) bit-identical.
+    #[allow(clippy::too_many_arguments)]
+    pub fn qmatvec_nvfp4_fused2_rp_arm_raw(
+        &self,
+        w0: &CudaSlice<u8>,
+        w1: &CudaSlice<u8>,
+        aq: &CudaSlice<i8>,
+        ad: &CudaSlice<f32>,
+        in_f: usize,
+        out0: usize,
+        out1: usize,
+        s0: f32,
+        s1: f32,
+        use_arm: bool,
+    ) -> Result<(CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        const ROWS_PER_BLOCK: u32 = 4; // MEMRA_MMVQ_ROWS
+        let rpw: u32 = if use_arm { 1 } else { 2 };
+        let name = if use_arm {
+            "qmatvec_nvfp4_mmvq_fused2_rp_g2"
+        } else {
+            "qmatvec_nvfp4_mmvq_fused2_rp"
+        };
+        let rows_pb = ROWS_PER_BLOCK * rpw;
+        let nb = |o: usize| (o as u32).div_ceil(rows_pb);
+        let f = self.func(name);
+        let mut y0 = self.alloc_uninit::<f32>(out0)?;
+        let mut y1 = self.alloc_uninit::<f32>(out1)?;
+        let cfg = LaunchConfig {
+            grid_dim: (nb(out0) + nb(out1), 1, 1),
+            block_dim: (32, ROWS_PER_BLOCK, 1),
+            shared_mem_bytes: 0,
+        };
+        let (inf, oi0, oi1, mi) = (in_f as i32, out0 as i32, out1 as i32, 1i32);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(w0)
+            .arg(w1)
+            .arg(aq)
+            .arg(ad)
+            .arg(&mut y0)
+            .arg(&mut y1)
+            .arg(&inf)
+            .arg(&oi0)
+            .arg(&oi1)
+            .arg(&mi)
+            .arg(&s0)
+            .arg(&s1);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok((y0, y1))
+    }
+
+    /// Bench-only direct arm selector for `matvec_bf16_f32acc_x4_rows` (b200_matvec_bench.rs) —
+    /// same rationale as `qmatvec_nvfp4_rp_arm_raw`: bypasses `matvec_bf16_rows_into`'s policy
+    /// stack and the memoized `MEMRA_B200_MATVEC_ARM` door. `use_arm=false` launches the shipped
+    /// kernel; `true` launches the software-pipelined `_pf` twin. Bit-identical per (row,token).
+    #[allow(clippy::too_many_arguments)]
+    pub fn matvec_bf16_f32acc_x4_rows_arm_raw(
+        &self,
+        w: &CudaSlice<u8>,
+        x: &CudaSlice<f32>,
+        y: &mut CudaSlice<f32>,
+        in_f: usize,
+        out_f: usize,
+        t: usize,
+        use_arm: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let name = if use_arm {
+            "matvec_bf16_f32acc_x4_rows_pf"
+        } else {
+            "matvec_bf16_f32acc_x4_rows"
+        };
+        let f = self.func(name);
+        let cfg = LaunchConfig {
+            grid_dim: (out_f.div_ceil(4) as u32, t as u32, 1),
+            block_dim: (mmv_block(), 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let (ini, outi) = (in_f as i32, out_f as i32);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(w).arg(x).arg(&mut *y).arg(&ini).arg(&outi);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(())
     }
 
     /// True if `qtype` has a batched weight-resident (`_b2`/`_b4`) matvec kernel. These mirror the
@@ -22494,7 +22799,18 @@ impl Engine {
             }
             return self.matvec_bf16_tcols16_into(w, x, y, in_f, out_f, t);
         }
-        let f = self.func("matvec_bf16_f32acc_x4_rows");
+        // MEMRA_B200_MATVEC_ARM occupancy arm (lane/b200-matvec-occupancy-20260902): the
+        // software-pipelined `_pf` twin double-buffers the K-loop's weight/activation loads
+        // (next iteration's loads issue before the current iteration's fma chain runs) to
+        // hide DRAM latency on B200's narrower SM/bandwidth shape. Same grid/block/reduction
+        // tree, same per-thread fma order for the same i -> bit-identical per (row,token).
+        // Default OFF; sm_120a keeps the shipped kernel unconditionally.
+        let kname = if b200_matvec_arm_on() {
+            "matvec_bf16_f32acc_x4_rows_pf"
+        } else {
+            "matvec_bf16_f32acc_x4_rows"
+        };
+        let f = self.func(kname);
         let cfg = LaunchConfig {
             grid_dim: (out_f.div_ceil(4) as u32, t as u32, 1),
             block_dim: (mmv_block(), 1, 1),
