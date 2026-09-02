@@ -3803,6 +3803,91 @@ impl HybridModel {
         Ok(out)
     }
 
+    /// Device-local bytes that are not yet materialized for this cache's glm5 TP peer-rank
+    /// state (`MEMRA_GLM5_TP`; memra #14, lane/glm5-tp-serve-wiring).
+    ///
+    /// Mirrors [`Self::step_tp_unmaterialized_kv_bytes`]'s "reserve until the sidecar exists"
+    /// contract for a DIFFERENT allocation shape per sharded mixer class:
+    ///   * KDA-sharded layers (`Mixer::Kda` with `.tp` set): the peer's recurrent
+    ///     conv_state/ssm_state planes (`glm5_tp::ensure_kda_tp_state`) are FIXED SIZE:
+    ///     `(conv_pad + state) * 4` bytes, independent of `capacity` (a linear-attention
+    ///     state never grows with context length).
+    ///   * MLA-sharded layers (`Mixer::Mla` with `.tp` set): the peer's replicated latent
+    ///     plane (`glm5_tp::ensure_mla_peer_latent`) is geometry-cloned from the CANONICAL
+    ///     (root) plane, so it pays the same per-token coefficient as the root's own charge
+    ///     (`latent_kv_bytes_per_token_for_plan`): `bytes_per_token * capacity`, identical
+    ///     to what the root already pays for that layer. This is the accounting hole
+    ///     `latent_kv_bytes_per_token_for_plan`'s doc comment names for the ROOT device
+    ///     (glm5_next's 11 MLA layers were an unmatched `LatentKvCache` term). TP
+    ///     replicates the same plane onto every peer device, so the hole is per-device too
+    ///     until this function closes it.
+    ///
+    /// Both shapes charge only while `cache` (when given) has not yet materialized the
+    /// slot. Once `ensure_kda_tp_state`/`ensure_mla_peer_latent` allocate it, live CUDA
+    /// memory accounting sees the bytes directly and the reserve would double-count.
+    pub fn glm5_tp_unmaterialized_kv_bytes(
+        &self,
+        cache: Option<&crate::cache::Cache>,
+        capacity: usize,
+    ) -> Result<Vec<StepTpKvDeviceAdmission>, String> {
+        if let Some(cache) = cache
+            && (cache.glm5_tp_recur.len() < self.layers.len()
+                || cache.glm5_tp_latent_peer.len() < self.layers.len())
+        {
+            return Err(format!(
+                "glm5 TP admission cache carries {} recur / {} latent-peer slots, model \
+                 trunk has {} layers",
+                cache.glm5_tp_recur.len(),
+                cache.glm5_tp_latent_peer.len(),
+                self.layers.len()
+            ));
+        }
+
+        let mut by_device: HashMap<usize, usize> = HashMap::new();
+        for (layer, weights) in self.layers.iter().enumerate() {
+            match &weights.mixer {
+                Mixer::Kda(la) => {
+                    let Some(tp) = la.tp.as_ref() else { continue };
+                    if cache.is_some_and(|cache| cache.glm5_tp_recur[layer].is_some()) {
+                        continue;
+                    }
+                    let conv_pad = la.conv_width() * (la.conv_kernel() - 1);
+                    let state = la.state_width();
+                    let bytes = (conv_pad + state).saturating_mul(std::mem::size_of::<f32>());
+                    for &device in &tp.rt.peer_devs {
+                        let total = by_device.entry(device).or_default();
+                        *total = total.saturating_add(bytes);
+                    }
+                }
+                Mixer::Mla(mla) => {
+                    let Some(tp) = mla.tp.as_ref() else { continue };
+                    if cache.is_some_and(|cache| cache.glm5_tp_latent_peer[layer].is_some()) {
+                        continue;
+                    }
+                    let per_token = crate::cache::latent_kv_bytes_per_token_for_plan(
+                        &self.cfg,
+                        &self.plan,
+                        layer,
+                        layer + 1,
+                    );
+                    let bytes = per_token.saturating_mul(capacity);
+                    for &device in &tp.rt.peer_devs {
+                        let total = by_device.entry(device).or_default();
+                        *total = total.saturating_add(bytes);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let mut out: Vec<_> = by_device
+            .into_iter()
+            .map(|(device, bytes)| StepTpKvDeviceAdmission { device, bytes })
+            .collect();
+        out.sort_unstable_by_key(|charge| charge.device);
+        Ok(out)
+    }
+
     /// One engine backed by the default memory pool that owns Step TP allocations on `device`.
     pub fn step_tp_rank_engine(&self, device: usize) -> Option<&Engine> {
         self.layers.iter().find_map(|weights| {

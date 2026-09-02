@@ -111,6 +111,28 @@ pub fn parse_glm5_tp_layer_specs(
     crate::tp::parse_layer_specs_for_trunk("MEMRA_GLM5_TP", value, Some(trunk_layers))
 }
 
+/// Cheap rank-count read of a raw `MEMRA_GLM5_TP` value, WITHOUT the trunk length the full
+/// grammar needs to resolve the `all` layer shorthand (lane/glm5-tp-serve-wiring, memra
+/// #14). Every spec in the grammar names its device list after `@`, and every spec in one
+/// load shares the same device list (the "one runtime group" invariant
+/// [`prepare_glm5_tp_load`] enforces), so the device COUNT of the first spec is the rank
+/// count regardless of how the layer half of the grammar resolves. That lets the serving
+/// worker refuse an unsupported rank count BEFORE any model load starts (no trunk layer
+/// count is known yet at that point). This is a serving-admission pre-check only; the
+/// authoritative parse and every geometry/co-arm law still run at load time in
+/// [`prepare_glm5_tp_load`].
+pub fn glm5_tp_rank_count_from_raw(raw: &str) -> Result<usize, String> {
+    let first = raw.split(';').next().unwrap_or("");
+    let (_, devices) = first.split_once('@').ok_or_else(|| {
+        format!("MEMRA_GLM5_TP={raw:?} must be LAYER[-LAYER]@DEVICE,DEVICE[;...]")
+    })?;
+    let ranks = devices.split(',').count();
+    if ranks == 0 {
+        return Err(format!("MEMRA_GLM5_TP={raw:?} names no devices"));
+    }
+    Ok(ranks)
+}
+
 /// Gate-harness knob, never a serving flag: `MEMRA_GLM5_TP_GATE_SAME_DEV=1` builds every
 /// peer rank as an ADDITIONAL CUDA CONTEXT ON THE ROOT DEVICE (the one-card rig gate's
 /// emulation; the ppN same-device-stages precedent). The spec's non-root device ids become
