@@ -331,7 +331,7 @@ reaches the owner's 200 target and it has to justify itself on its own size.
 **Against the pre-registered rule:** (1) MISSED by a hair — gain 2.9-3.8% vs per-arm spreads
 2.3-4.0% on every hold, though the sign never flipped across six holds; (2) PASS (flat);
 (3) PASS (flat); (4) rig gate on the flip tip PASS. The "under ~2%" dead-end clause does not
-bite. Proposed on this record (flip PR): **default ON**, rollback `selgroup=0`; the owner decides. The
+bite. Owner decision 2026-09-02 on this record (PR #56): **default ON**, rollback `selgroup=0`. The
 sampled twin remains owed before any SERVING claim cites the +3%.
 
 Two cell-script defects only the live run could expose, both fixed at source: the flock

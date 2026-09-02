@@ -1492,8 +1492,8 @@ fn sel_v3_on() -> bool {
 // 90.07/87.38, 90.60/87.14, 90.08/87.47 tok/s (+3.1/+4.0/+3.0%); cell C t=1 decode 32k
 // 0.9999x/1.0001x, cell D 262k rung 1.0003x (5 reps each) — no depth regression. The
 // pre-registered bar "gain > both arms' spread" was MISSED BY A HAIR on each hold (gain
-// 2.9-3.8% vs spreads 2.3-4.0%) while the sign never flipped across six holds; the flip
-// PR carries that record for the owner's call. Rollback: `MEMRA_Q4E_SEAMS=selgroup=0`.
+// 2.9-3.8% vs spreads 2.3-4.0%) while the sign never flipped across six holds; the owner
+// took the flip on that record (2026-09-02, PR #56). Rollback: `MEMRA_Q4E_SEAMS=selgroup=0`.
 const SEL_GROUP_OFF: u32 = 0;
 const SEL_GROUP_AUTO: u32 = 1;
 /// Down-projection family (`launch_nvfp4_sel_matvec`).
