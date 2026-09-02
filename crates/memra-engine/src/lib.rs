@@ -302,16 +302,43 @@ pub fn glm5_graph_trace_on() -> bool {
 /// How many times the T=1 device-table MoE arm has dumped its input shape under
 /// `MEMRA_GLM5_GRAPH_TRACE`. Capped at two layers: the question is what the arm is HANDED on the
 /// real artifact, and two routed layers answer it without turning a 64-step run into a log flood.
-pub static GLM5_VROWS_T1_SHAPE_DUMPED: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
+/// Trace-dump budget for the decode-graph door's MoE seam (`MEMRA_GLM5_GRAPH_TRACE`), keyed by
+/// `(kind, arm, layer)`.
+///
+/// It was a pair of process-global counters capped at 4, and take 10 showed exactly why that is
+/// the wrong shape: the gate runs its EAGER arm first, that arm spent the whole budget on one
+/// layer, and the run printed four identical `arm=host il=3` lines and NOT ONE `arm=device`
+/// line — the arm the run existed to observe. A budget for a two-arm comparison has to be per
+/// arm, and a per-layer dump has to be keyed by layer or it reprints the first one.
+///
+/// [`glm5_trace_reset`] clears it at every arm switch so the second arm starts with a full
+/// budget rather than inheriting the first arm's exhaustion.
+/// `(kind, arm, layer)` — one dump slot. Named so the map type stays readable at both use sites.
+type Glm5TraceKey = (&'static str, String, u16);
 
-/// Trace-dump caps for the decode-graph door's MoE seam (`MEMRA_GLM5_GRAPH_TRACE`). Four lines
-/// each: two routed layers on each of the two arms is enough to diff, and a 64-step run must not
-/// become a log flood.
-pub static GLM5_VROWS_T1_ACT_DUMPED: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-pub static GLM5_VROWS_T1_OUT_DUMPED: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
+fn glm5_trace_slots() -> &'static Mutex<std::collections::BTreeSet<Glm5TraceKey>> {
+    static S: std::sync::OnceLock<Mutex<std::collections::BTreeSet<Glm5TraceKey>>> =
+        std::sync::OnceLock::new();
+    S.get_or_init(Default::default)
+}
+
+/// Claim the one dump slot for `(kind, arm, il)`. Returns false once that exact line has printed,
+/// and false past `GLM5_TRACE_MAX_LAYERS` distinct layers for this `(kind, arm)` so a 64-step run
+/// cannot become a log flood.
+pub(crate) fn glm5_trace_take_slot(kind: &'static str, arm: &str, il: u16) -> bool {
+    const GLM5_TRACE_MAX_LAYERS: usize = 8;
+    let mut s = glm5_trace_slots().lock().unwrap();
+    if s.iter().filter(|(k, a, _)| *k == kind && a == arm).count() >= GLM5_TRACE_MAX_LAYERS {
+        return false;
+    }
+    s.insert((kind, arm.to_string(), il))
+}
+
+/// Clear the trace budget. The gate calls this at every arm switch; without it the first arm's
+/// exhaustion silences the second (take 10).
+pub fn glm5_trace_reset() {
+    glm5_trace_slots().lock().unwrap().clear();
+}
 
 /// Captured-run replays (one per graph launch), captures, and the layer count currently
 /// covered by captured runs — the door's engagement receipt, read by the gate bin.

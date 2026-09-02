@@ -753,6 +753,34 @@ reading is mechanical: **`z` agreeing while `zq`/`zd` differ puts the seam at th
 in the kernels** on a shape the fixture does not reach. `nz` carries the same weight it did in
 §9e — a never-written buffer reads `nz0`, an all-NaN one reads full `nz` with `max0`.
 
+## 9j. Take 10: the instrument silenced the arm it existed to observe
+
+Run B printed four identical `arm=host il=3` `[glm5-vrows-act]` lines, `out` lines for il=3..6
+with sane maxima (2.0 / 0.22 / 0.42 / 0.37), and **not one `arm=device` line** — the arm the
+instrument was added for. The tape was wrong as before.
+
+**Two defects in my own instrumentation, both the same mistake.** The budget was a pair of
+process-global counters capped at 4. The gate runs its EAGER arm first, so that arm spent the
+whole budget before the device arm ever ran; and because the counter was not keyed by layer, the
+four lines it did spend were all the same layer. A budget for a two-arm comparison belongs to the
+arm, and a per-layer dump has to be keyed by layer or it reprints the first one.
+
+Both are now one mechanism: `glm5_trace_take_slot(kind, arm, il)` over a `(kind, arm, layer)` set,
+capped at 8 distinct layers per `(kind, arm)`, with `glm5_trace_reset()` called by the gate at
+every arm switch so the second arm starts with a full budget instead of inheriting the first
+arm's exhaustion. `out` for il=3..6 then falls out of the keying rather than needing its own rule.
+
+**And a mislabel fixed before it could cost another window.** `moe_vrows_pairs_q8` is ALSO the
+spec-verify walk's launcher with HOST-built tables, so the hard-coded `arm="device"` I put there
+would have lied on that path. The label now comes from the provenance
+(`VrowsSel::Dev` -> `device`, `VrowsSel::Host` -> `vrows-host`), the same fix the `dev_tables=`
+field needed in §9h. Twice in three takes a diagnostic reported a nearby proxy instead of the
+decision it named; that is the lesson to carry, not the individual bugs.
+
+The device act/out call sites were already the right ones — inside `moe_vrows_pairs_q8`
+immediately after the token quantize and immediately after `moe_down8_fma_q8_rows`. They never
+fired; nothing about their placement needed to change.
+
 ## 10. Open items
 
 1. **Run the gate on the pair** (`--steps 64 --reps 5`) and bank the receipt. Until then the
