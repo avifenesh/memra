@@ -1,0 +1,27 @@
+# qwen4exp_real_gate	label=new-draftgate	binary_sha256=67bd6177d6c6cb9fa83ab9aeafa6c6e9124b13f98c7a51455b470f14d78d6f63	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=f32	idxq=f32	golden_pin=true	seams_env=idxsel
+# draft-gate: engine draft vs host reference MTP twin, 10 probe rows, host_twin_seconds=3.6
+phase	row	max_abs	max_rel	ref_absmax	kl	top1_ref	top1_ours	match
+batched	0	5.221e-5	5.013e-5	1.371e1	0.00000	525	525	true
+batched	1	3.910e-5	3.612e-5	1.500e1	0.00000	9559	9559	true
+batched	2	2.742e-5	2.338e-5	1.945e1	0.00000	37550	37550	true
+batched	3	4.768e-5	3.779e-5	1.753e1	0.00000	287	287	true
+batched	4	5.150e-5	5.057e-5	1.966e1	0.00000	888	888	true
+batched	5	5.746e-5	4.596e-5	1.839e1	0.00000	279	279	true
+batched	6	5.054e-5	4.077e-5	1.796e1	0.00000	15217	15217	true
+batched	7	5.388e-5	5.028e-5	2.169e1	0.00000	5388	5388	true
+batched	8	9.608e-5	7.987e-5	1.395e1	0.00000	13	13	true
+batched	9	9.811e-5	8.786e-5	1.250e1	0.00000	561	561	true
+step	0	5.078e-5	4.888e-5	1.371e1	0.00000	525	525	true
+step	1	3.433e-5	2.919e-5	1.500e1	0.00000	9559	9559	true
+step	2	3.219e-5	2.470e-5	1.945e1	0.00000	37550	37550	true
+step	3	4.196e-5	3.725e-5	1.753e1	0.00000	287	287	true
+step	4	4.959e-5	3.645e-5	1.966e1	0.00000	888	888	true
+step	5	5.341e-5	4.348e-5	1.839e1	0.00000	279	279	true
+step	6	4.530e-5	3.833e-5	1.796e1	0.00000	15217	15217	true
+step	7	5.531e-5	4.131e-5	2.169e1	0.00000	5388	5388	true
+step	8	6.866e-5	6.866e-5	1.395e1	0.00000	13	13	true
+step	9	1.004e-4	9.632e-5	1.250e1	0.00000	561	561	true
+# carrier	max_abs=6.866e-5	max_rel=4.409e-5	ref_absmax=1.636e1
+# verdict	rows=20	argmax_matches=20	worst_abs=1.004e-4	worst_rel=9.632e-5	policy=max_rel<=0.01+argmax	pass=true

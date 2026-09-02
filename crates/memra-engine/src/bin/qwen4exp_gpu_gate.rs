@@ -863,9 +863,17 @@ fn run_defer_arm(
 }
 
 fn main() -> Res<()> {
-    let receipt_path = std::env::args()
-        .nth(1)
-        .ok_or("usage: qwen4exp-gpu-gate <receipt.tsv>")?;
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    // `--write-bank-goldens` MINTS the bank-byte fingerprints instead of checking them.
+    // It exists to be run on the PRE-STREAMING loader (see the bank-bytes arm); running it
+    // on the streaming loader would rubber-stamp whatever that loader produces, so the
+    // receipt records which build minted the file.
+    let write_bank_goldens = argv.iter().any(|a| a == "--write-bank-goldens");
+    let receipt_path = argv
+        .iter()
+        .find(|a| !a.starts_with("--"))
+        .cloned()
+        .ok_or("usage: qwen4exp-gpu-gate <receipt.tsv> [--write-bank-goldens]")?;
     let pack =
         memra_gguf::model_packs::by_alias("qwen4_exp").ok_or("qwen4_exp pack is not registered")?;
     let plan = pack.compile_tiny_plan()?;
@@ -904,10 +912,170 @@ fn main() -> Res<()> {
     if !seams_env.contains("idxq") {
         memra_engine::qwen4exp_gpu::set_idxq("f32");
     }
-    let engine = Engine::new(0)?;
     let mut lines: Vec<String> = Vec::new();
     let mut failures = 0usize;
     let mut summaries: Vec<String> = Vec::new();
+
+    // Arm BANK-BYTES: the loader's MEMORY-ORDERING gate (issue #48). The streaming loader
+    // reads each layer's expert bank off the safetensors mmap inside the upload loop
+    // instead of pre-materializing all 48 layers on host, which is what OOM-killed the
+    // real gate at 179.7 GB anon-RSS on a 180 GB-RAM box. Moving WHEN bytes are read must
+    // not move WHICH bytes: this arm digests every bank projection and compares against
+    // goldens MINTED FROM THE PRE-STREAMING LOADER on the same deterministic fixtures
+    // (`bank-bytes-goldens.tsv`, banked next to this receipt; mint procedure in
+    // research/qwen4exp-bringup-20260829/loader/LOADER-STREAM.md).
+    //
+    // Coverage is every branch of the bank read: fused f32 (dequantized), fused raw bf16
+    // (`host_bf16_banks`), fused NVFP4 code/scale row split, the MTP bank's DeviceBf16
+    // residency at index >= n_trunk, per-expert modelopt stacking, and — with a 12-expert
+    // variant config — the EXPERT ORDER the lexicographic census trap attacks
+    // (`experts.10` sorts before `experts.2`, so an arrival-ordered stack silently
+    // mis-assigns experts on any E > 9; the tiny plan's E=8 cannot see it).
+    {
+        let goldens_path = Path::new(&receipt_path)
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join("bank-bytes-goldens.tsv");
+        // A 12-expert twin of the tiny config: same everything else, E > 9 so the
+        // per-expert name set sorts lexicographically out of numeric order.
+        let cfg12_json = TINY_CONFIG.replace("\"num_experts\":8", "\"num_experts\":12");
+        assert!(
+            cfg12_json != TINY_CONFIG,
+            "tiny config lost its num_experts row — the E>9 order pin is not being built"
+        );
+        let arms: [(&str, DirKind, LoadOptions, &str); 5] = [
+            (
+                "fused-f32",
+                DirKind::Bf16Fused,
+                LoadOptions::default(),
+                TINY_CONFIG,
+            ),
+            (
+                "fused-hostbf16",
+                DirKind::Bf16Fused,
+                LoadOptions {
+                    host_bf16_banks: true,
+                    ..Default::default()
+                },
+                TINY_CONFIG,
+            ),
+            (
+                "fused-mtp-devbf16",
+                DirKind::Bf16Fused,
+                LoadOptions {
+                    load_mtp: true,
+                    ..Default::default()
+                },
+                TINY_CONFIG,
+            ),
+            (
+                "nvfp4-stacked",
+                DirKind::Nvfp4Stacked,
+                LoadOptions::default(),
+                TINY_CONFIG,
+            ),
+            (
+                "nvfp4-perexpert-e12",
+                DirKind::Nvfp4PerExpert,
+                LoadOptions::default(),
+                cfg12_json.as_str(),
+            ),
+        ];
+        let mut measured: Vec<String> = Vec::new();
+        for (label, kind, opts, arm_config) in arms {
+            let acfg = ModelConfig::from_hf(&HfConfig::parse(arm_config));
+            let aplan = pack.compile_plan(&acfg)?;
+            let dir = TempDir(std::env::temp_dir().join(format!(
+                "qwen4exp-gate-bankbytes-{label}-{}",
+                std::process::id()
+            )));
+            synthesize_dir(&dir.0, &acfg, &aplan, kind)?;
+            // `synthesize_dir` always writes the pack's tiny config; the E=12 arm needs the
+            // dir's config.json to describe the dir the loader is about to re-derive its
+            // contract from, or the loader binds an 8-expert contract to 12-expert rows.
+            std::fs::write(dir.0.join("config.json"), arm_config)?;
+            let checkpoint = read_checkpoint_with(&dir.0, opts)?;
+            let prints = checkpoint.bank_fingerprints()?;
+            if prints.is_empty() {
+                return Err(format!("bank-bytes {label}: loader produced no banks").into());
+            }
+            for print in prints {
+                measured.push(format!(
+                    "{label}\t{}\t{}\t{}\t{}\t{}",
+                    print.layer, print.projection, print.kind, print.bytes, print.digest
+                ));
+            }
+        }
+        if write_bank_goldens {
+            let mut body = String::from(
+                "# qwen4exp bank byte fingerprints — sha256 over each expert-bank \
+                 projection's uploaded payload\n# arm\tlayer\tprojection\tkind\tbytes\tsha256\n",
+            );
+            for row in &measured {
+                body.push_str(row);
+                body.push('\n');
+            }
+            std::fs::write(&goldens_path, body)?;
+            println!(
+                "bank-bytes goldens written: {} ({} rows)",
+                goldens_path.display(),
+                measured.len()
+            );
+            // Minting is a GPU-free operation on purpose: it runs on the pre-streaming
+            // build, whose only job here is to state what the bytes WERE.
+            return Ok(());
+        }
+        let banked = std::fs::read_to_string(&goldens_path).map_err(|error| {
+            format!(
+                "bank-bytes goldens {} unreadable ({error}) — mint them with \
+                 --write-bank-goldens on the PRE-STREAMING loader, never on this one",
+                goldens_path.display()
+            )
+        })?;
+        let expected: Vec<&str> = banked
+            .lines()
+            .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
+            .collect();
+        let mut mismatches = 0usize;
+        if expected.len() != measured.len() {
+            mismatches += 1;
+            lines.push(format!(
+                "bank-bytes\trows_banked={}\trows_measured={}\tpass=false",
+                expected.len(),
+                measured.len()
+            ));
+        }
+        for (index, row) in measured.iter().enumerate() {
+            let want = expected.get(index).copied().unwrap_or("<missing>");
+            if want != row.as_str() {
+                mismatches += 1;
+                lines.push(format!(
+                    "bank-bytes\tbanked={want}\tmeasured={row}\tpass=false"
+                ));
+            }
+        }
+        if mismatches > 0 {
+            failures += mismatches;
+        }
+        lines.push(format!(
+            "bank-bytes\tarms=5\trows={}\tmismatches={mismatches}\tpass={}",
+            measured.len(),
+            mismatches == 0
+        ));
+        summaries.push(format!(
+            "bank-bytes: {} bank projections across 5 loader arms {} the pre-streaming \
+             goldens ({} mismatches)",
+            measured.len(),
+            if mismatches == 0 {
+                "BYTE-IDENTICAL to"
+            } else {
+                "DIVERGED from"
+            },
+            mismatches
+        ));
+    }
+
+    let engine = Engine::new(0)?;
 
     // Arm 0: the grouped-decode kernel's own oracle (kernel vs host decoder chain). The
     // tiny arms below cannot reach `qmatvec_nvfp4_modelopt_sel_f32` — the tiny down
@@ -1854,7 +2022,7 @@ fn main() -> Res<()> {
         .collect::<String>();
     let all_tokens: Vec<u32> = prompt.iter().chain(decode_feed.iter()).copied().collect();
     let mut receipt = format!(
-        "# qwen4exp-gpu-gate\tbinary_sha256={sha256}\tpolicy=max_abs<=0.01 max_rel<=0.01 argmax\tprompt_len={}\tdecode_steps={}\tvocab={}\tplan=tiny(qwen4_exp pack)\tarms=fixture,mtp-fixture,dir-bf16,dir-nvfp4-stacked,dir-nvfp4-perexpert,mtp-dir-bf16,mtp-spec-tiny,mtp-spec-defer,mtp-spec-defer-dirbf16,mtp-armed-prefill-bit,mtp-vfuse,fixture-yarn,yarn-identity\ttokens={all_tokens:?}\n",
+        "# qwen4exp-gpu-gate\tbinary_sha256={sha256}\tpolicy=max_abs<=0.01 max_rel<=0.01 argmax\tprompt_len={}\tdecode_steps={}\tvocab={}\tplan=tiny(qwen4_exp pack)\tarms=fixture,mtp-fixture,dir-bf16,dir-nvfp4-stacked,dir-nvfp4-perexpert,mtp-dir-bf16,mtp-spec-tiny,mtp-spec-defer,mtp-spec-defer-dirbf16,mtp-armed-prefill-bit,mtp-vfuse,fixture-yarn,yarn-identity,bank-bytes\ttokens={all_tokens:?}\n",
         prompt.len(),
         decode_feed.len(),
         plan.vocab_size
