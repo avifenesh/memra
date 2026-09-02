@@ -1,0 +1,6 @@
+# qwen4exp_real_gate	label=r3spec262kv1-thinkon	binary_sha256=69c44eb85b82d4eefb2e08e535beffa47b791be9c5444de84fc07ea3de8fc481	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=false	seams_env=idxsel
+# vram	post-engine	0, 0 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 595 MiB, 97887 MiB | 3, 595 MiB, 97887 MiB
+# load	130.9s
+# vram	post-load	0, 0 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 89971 MiB, 97887 MiB | 3, 9555 MiB, 97887 MiB

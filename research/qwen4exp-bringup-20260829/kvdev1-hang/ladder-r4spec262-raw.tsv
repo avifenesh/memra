@@ -1,0 +1,8 @@
+# qwen4exp_real_gate	label=r4spec262-raw	binary_sha256=a9c58196b1383b33be4774dff35e23203ff42f4b2014e1bcc7ab0a5982c929a5	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=false	seams_env=idxsel
+# ladder	rungs=[262144]	chunk=2048	decode=36	kv_dev1=false	spec=Some(5)	ids=1150000	cap=262270
+# vram	pre-ladder	0, 0 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 89971 MiB, 97887 MiB | 3, 9555 MiB, 97887 MiB
+rung	prefill_s	draft_prefill_s	decode_ms_per_tok	tok_per_s	accept	rounds	zero_draft	sub_rounds	spread_pct	looped	cross_mb	vram	continuation_ids
+# spec-shape	source=(none: raw corpus)	suffix_tokens=0
+262144	1409.6	57.4	12.2	82.18	1.000	6	0	sub_ms=[11.0, 11.0, 10.9]	0.95	false	10738.9	0, 0 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 96531 MiB, 97887 MiB | 3, 24467 MiB, 97887 MiB	18,487,5016,1174,198,309,333,198,309,1042,7353,283,13038,14312,2031,68,11,594,76,11,594,39242,11,307,11504,26,198,309,994,2470,1393,430,281,21,19,593
