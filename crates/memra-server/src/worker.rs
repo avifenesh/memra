@@ -16689,6 +16689,103 @@ fn glm5_sharded_placement_admits(
     (2..=3).contains(&fence_stages) && !tp_set(step_tp) && !tp_set(step_ep)
 }
 
+/// Which PREFIX HITS can carry a glm5 spec session (memra#74, lane/glm5-fullcover-spec-route)
+/// (PURE: shape in, verdict out) so the gate exercises every arm without CUDA, and the ONE
+/// place a decline gets its name. `Ok(())` means the request may try to rebuild the drafter
+/// KV from the entry's tail; `Err(token)` is what the route line prints as `reason=`.
+///
+/// The arms, each stated:
+///   * `prefix-restore-off`: `MEMRA_GLM5_SPEC_PREFIX` (x `MEMRA_PREFIX_LATENT`) is unset, so
+///     no entry carries a drafter tail to restore from in the first place.
+///   * `full-cover-hit`: the hit covers the WHOLE prompt (`suffix_len == 0`) and the
+///     full-cover arm is not armed. This is the memra#74 shape: before the arm existed the
+///     probe skipped it silently and the customer paid plain decode speed for a cache hit
+///     (measured 30.8 vs 69.7 tok/s decode on the live box, 2026-09-02).
+///   * `full-cover-hit-no-boundary-logits`: armed, but the entry carried no boundary row, so
+///     there is no anchor to start a round from (the `spec_restore_refusal` full-cover rule).
+///   * `suffix-below-prime-floor`: `0 < suffix_len < PRIME_MIN_T`. A sub-floor suffix under a
+///     spec session would ride tokenwise `decode_step` inside a prime program: the
+///     two-programs door the parent lane closed. Unchanged by this lane.
+///
+/// A hit that admits here can still decline later on `no-drafter-tail` (the entry carries no
+/// draft plane, or its tail does not cover the drafter window); that one needs the engine.
+fn glm5_carrier_admits(
+    prefix_restore_on: bool,
+    fullcover_on: bool,
+    suffix_len: usize,
+    has_boundary_logits: bool,
+) -> Result<(), &'static str> {
+    if !prefix_restore_on {
+        return Err("prefix-restore-off");
+    }
+    if suffix_len == 0 {
+        if !fullcover_on {
+            return Err("full-cover-hit");
+        }
+        if !has_boundary_logits {
+            return Err("full-cover-hit-no-boundary-logits");
+        }
+        return Ok(());
+    }
+    if suffix_len < memra_engine::hybrid_forward::PRIME_MIN_T {
+        return Err("suffix-below-prime-floor");
+    }
+    Ok(())
+}
+
+/// WHY the glm5 route answered `plain`: the same class matrix as [`glm5_route_admits`],
+/// read out instead of collapsed (memra#74). `None` iff `glm5_route_admits` is true over the
+/// same arguments; `the_route_reason_agrees_with_the_route` pins that equivalence over the
+/// whole matrix so the two can never drift apart.
+///
+/// Order matters only for the log: the FIRST failing term is the one an operator can act on,
+/// and the terms are ordered capability -> operator door -> request shape -> session shape.
+/// `carrier_detail` is [`glm5_carrier_admits`]'s verdict for a prefix hit; a warm session
+/// that was never a prefix hit carries `None` and reads `warm-session-no-carrier`.
+#[allow(clippy::too_many_arguments)]
+// allow: the parameter list IS the class matrix, exactly as glm5_route_admits below
+fn glm5_route_decline_reason(
+    capable: bool,
+    serve_spec: bool,
+    k: usize,
+    temp_ok: bool,
+    penalized: bool,
+    constrained: bool,
+    vision: bool,
+    cold_or_restored_carrier: bool,
+    prompt_primeable: bool,
+    carrier_detail: Option<&'static str>,
+) -> Option<&'static str> {
+    if !capable {
+        return Some("model-not-spec-capable");
+    }
+    if !serve_spec {
+        return Some("spec-serving-off");
+    }
+    if k == 0 {
+        return Some("k-shed-to-zero");
+    }
+    if !temp_ok {
+        return Some("sampler-not-spec-eligible");
+    }
+    if penalized {
+        return Some("penalized");
+    }
+    if constrained {
+        return Some("constrained");
+    }
+    if vision {
+        return Some("vision");
+    }
+    if !prompt_primeable {
+        return Some("prompt-below-prime-floor");
+    }
+    if !cold_or_restored_carrier {
+        return Some(carrier_detail.unwrap_or("warm-session-no-carrier"));
+    }
+    None
+}
+
 /// The glm5 serve-time route decision over the request shape, PURE so the routing gate can
 /// exercise the full class matrix without CUDA. Exclusions, each stated:
 ///   * `penalized` (ANY requested penalties, greedy or sampled): the glm5 accept walk has
@@ -18504,8 +18601,13 @@ fn admit(
     // invariant break and FAILS THE REQUEST loudly (the dspark law in step_glm5_spec) —
     // do not build on a tick-time degrade; it does not exist.
     let mut glm5_prefix_restored_dkv: Option<memra_engine::dflash::DflashKv> = None;
-    if memra_engine::glm_spec::glm5_spec_prefix_on()
-        && glm5_spec_capable(lm)
+    // WHY THE PLAIN PATH TOOK THIS HIT (memra#74). `None` = the request never reached the
+    // glm5 carrier probe at all (no prefix hit, or a shape the probe's conjunction excludes);
+    // `Some(token)` names the term that declined, and the route line below prints it. Before
+    // this lane a full-cover hit fell out of the probe silently and the operator read a bare
+    // `route=plain ... cold=0 restored=0` with no way to size the cost.
+    let mut glm5_carrier_declined: Option<&'static str> = None;
+    if glm5_spec_capable(lm)
         && serve_spec
         && !vision_req
         && constraint.is_none()
@@ -18517,28 +18619,56 @@ fn admit(
         && prefix_hit
     {
         let suffix_len = prompt.len().saturating_sub(carrier.fed.len());
-        // Empty-suffix full-cover hits keep the plain boundary-logits resume (faster than
-        // any prime); sub-floor suffixes keep the plain hit (the prime-floor law — a
-        // tokenwise suffix under a spec session is the exact two-programs door this lane
-        // closes). Both are hits, both bill cached, neither is a defect.
-        if suffix_len >= memra_engine::hybrid_forward::PRIME_MIN_T {
-            let tail_dkv = prefix_pin
-                .as_ref()
-                .and_then(|p| px.id_index(p))
-                .and_then(|i| px.entries[&pool_key][i].dspark_draft.as_ref())
-                .and_then(|tail| {
-                    let dr = lm.model.glm5_dflash.as_ref()?;
-                    memra_engine::dflash::DflashKv::from_tail(engine, &dr.draft.cfg, ctx_cap, tail)
-                });
-            match tail_dkv {
-                Some(dkv) => glm5_prefix_restored_dkv = Some(dkv),
-                None => eprintln!(
-                    "[prefix-cache] glm5 spec restore declined (no drafter tail on the \
-                     entry, or the tail does not cover the drafter window); the plain \
-                     path serves the hit (model {})",
-                    req.model,
-                ),
+        let admit = glm5_carrier_admits(
+            memra_engine::glm_spec::glm5_spec_prefix_on(),
+            memra_engine::glm_spec::glm5_spec_fullcover_on(),
+            suffix_len,
+            !carrier.last_logits.is_empty(),
+        );
+        match admit {
+            Err(why) => glm5_carrier_declined = Some(why),
+            Ok(()) => {
+                let tail_dkv = prefix_pin
+                    .as_ref()
+                    .and_then(|p| px.id_index(p))
+                    .and_then(|i| px.entries[&pool_key][i].dspark_draft.as_ref())
+                    .and_then(|tail| {
+                        let dr = lm.model.glm5_dflash.as_ref()?;
+                        memra_engine::dflash::DflashKv::from_tail(
+                            engine,
+                            &dr.draft.cfg,
+                            ctx_cap,
+                            tail,
+                        )
+                    });
+                match tail_dkv {
+                    Some(dkv) => glm5_prefix_restored_dkv = Some(dkv),
+                    None => {
+                        glm5_carrier_declined = Some("no-drafter-tail");
+                        eprintln!(
+                            "[prefix-cache] glm5 spec restore declined (no drafter tail on \
+                             the entry, or the tail does not cover the drafter window); the \
+                             plain path serves the hit (model {})",
+                            req.model,
+                        );
+                    }
+                }
             }
+        }
+        // `no-drafter-tail` printed its own line above; `prefix-restore-off` is a static
+        // posture, not a per-request decision, so it stays on the route line only (a line
+        // per hit saying the operator did not arm a flag is noise, not a receipt).
+        if let Some(why) = glm5_carrier_declined
+            && why != "no-drafter-tail"
+            && why != "prefix-restore-off"
+        {
+            eprintln!(
+                "[prefix-cache] glm5 spec restore declined ({why}); the plain path serves \
+                 the hit ({} of {} prompt tokens cached, model {})",
+                carrier.fed.len(),
+                prompt.len(),
+                req.model,
+            );
         }
     }
     // Downgrade-on-hit (lane/spec-prefix-cache): a restored prefix carrier without a
@@ -19481,9 +19611,29 @@ fn admit(
     }
     if glm5_capable {
         // Admission receipt (the [spec-k] shape): the deploy gate greps route+K per request.
+        // `reason=` is MANDATORY on a plain route (memra#74): `cold=0 restored=0` alone told
+        // an operator that the drafter did not engage but never why, so a full-cover
+        // prefix hit that halved decode speed read the same as a K-shed under load.
+        let plain_reason = glm5_route_decline_reason(
+            glm5_capable,
+            serve_spec,
+            glm5_k,
+            sampler.is_greedy() || sampler.temperature() > 0.0,
+            glm5_penalized,
+            constraint.is_some(),
+            vision_state.is_some(),
+            glm5_cold || glm5_restored_carrier,
+            prompt.len() >= 2,
+            glm5_carrier_declined,
+        );
+        debug_assert_eq!(
+            plain_reason.is_none(),
+            glm5_on,
+            "the route reason and the route decision must agree",
+        );
         eprintln!(
             "[glm5-spec] route={} K={glm5_k} model={:?} tenant={:?} prompt={} \
-             wave={projected_wave} sampled={} penalized={} cold={} restored={}",
+             wave={projected_wave} sampled={} penalized={} cold={} restored={} reason={}",
             if glm5_on { "spec" } else { "plain" },
             req.model,
             crate::auth::meter_key(&req.cache_ns),
@@ -19492,6 +19642,7 @@ fn admit(
             glm5_penalized as u8,
             glm5_cold as u8,
             glm5_prefix_restored_dkv.is_some() as u8,
+            plain_reason.unwrap_or("-"),
         );
     }
     // legacy tokenwise cache only when the spec path did NOT take the session (spec owns its own).
@@ -22470,7 +22621,12 @@ fn step_glm5_spec(
     // admission rebuilt from the entry's tail rides s.glm5_restored_dkv.
     if s.glm5.is_none() {
         let queued: Vec<u32> = s.prefill_queue.drain(..).collect();
-        if queued.is_empty() {
+        // An empty prefill queue is a finished request on the COLD arm (nothing to prime).
+        // On the RESTORED arm it is the FULL-COVER hit (memra#74): the whole prompt is
+        // already in `s.fed` and the restored trunk cache, and the boundary row rides
+        // `s.last_logits`, so there is nothing left to prime and the session starts at the
+        // boundary. Admission is what decides that shape is admissible.
+        if queued.is_empty() && s.glm5_restored_dkv.is_none() {
             finish(s, StopReason::MaxNew);
             return Ok(false);
         }
@@ -22491,6 +22647,7 @@ fn step_glm5_spec(
                         restored,
                         &s.fed,
                         &queued,
+                        &s.last_logits,
                         dkv,
                         s.gspec_ctx,
                         spec_sampling_for(&s.sampler),
@@ -26763,6 +26920,153 @@ mod tests {
         );
     }
 
+    /// THE memra#74 GATE: a FULL-COVER prefix hit (the repeated-prompt shape) must be an
+    /// admissible spec carrier once the arm is armed, and must NAME itself when it is not.
+    ///
+    /// RED ARM (run before the fix): with the pre-lane body, which had no `fullcover_on`
+    /// term and dropped out of the probe entirely on `suffix_len < PRIME_MIN_T`, the armed
+    /// row below fails, which is the live defect: the drafter never engaged on a hit and
+    /// decode ran at plain speed (30.8 vs 69.7 tok/s on the box, 2026-09-02).
+    #[test]
+    fn glm5_full_cover_hit_is_an_admissible_carrier_and_always_names_itself() {
+        use super::glm5_carrier_admits;
+        // (prefix_restore_on, fullcover_on, suffix_len, has_boundary_logits)
+        assert_eq!(
+            glm5_carrier_admits(true, true, 0, true),
+            Ok(()),
+            "a full-cover hit with the arm armed and boundary logits present IS a carrier: \
+             the whole point of memra#74; the restored state is a cold session's state at \
+             the same boundary (trunk cache at fed.len(), drafter ctx KV at fed.len(), no \
+             pending rows, anchor off the entry's boundary row)"
+        );
+        assert_eq!(
+            glm5_carrier_admits(true, false, 0, true),
+            Err("full-cover-hit"),
+            "DISARMED is still the default posture (no GPU receipt yet), but it must NAME \
+             itself so the route line can print reason=full-cover-hit instead of a bare \
+             route=plain with cold=0 restored=0"
+        );
+        assert_eq!(
+            glm5_carrier_admits(true, true, 0, false),
+            Err("full-cover-hit-no-boundary-logits"),
+            "armed but with no boundary row there is no anchor to start a round from: \
+             refuse by name (the spec_restore_refusal full-cover rule)"
+        );
+        assert_eq!(
+            glm5_carrier_admits(false, true, 0, true),
+            Err("prefix-restore-off"),
+            "without MEMRA_GLM5_SPEC_PREFIX no entry carries a drafter tail at all"
+        );
+        // The suffix-bearing arms are UNCHANGED by this lane.
+        assert_eq!(
+            glm5_carrier_admits(true, false, memra_engine::hybrid_forward::PRIME_MIN_T, true),
+            Ok(()),
+            "a suffix at or above the prime floor is the parent lane's carrier, and the \
+             full-cover arm does not gate it"
+        );
+        assert_eq!(
+            glm5_carrier_admits(
+                true,
+                true,
+                memra_engine::hybrid_forward::PRIME_MIN_T - 1,
+                true
+            ),
+            Err("suffix-below-prime-floor"),
+            "a sub-floor suffix still keeps the plain hit (a tokenwise suffix inside a \
+             prime program is the two-programs door the parent lane closed), and it, too, \
+             says so on the route line"
+        );
+    }
+
+    /// The route LINE and the route DECISION are one matrix, read out two ways (memra#74).
+    /// `glm5_route_decline_reason` returns `None` exactly when `glm5_route_admits` is true,
+    /// over every arm, so a future term added to one and forgotten in the other reds here
+    /// instead of shipping a `route=plain reason=-` to an operator.
+    #[test]
+    fn the_route_reason_agrees_with_the_route() {
+        use super::{glm5_route_admits, glm5_route_decline_reason};
+        for capable in [false, true] {
+            for serve_spec in [false, true] {
+                for k in [0usize, 3] {
+                    for temp_ok in [false, true] {
+                        for penalized in [false, true] {
+                            for constrained in [false, true] {
+                                for vision in [false, true] {
+                                    for carrier in [false, true] {
+                                        for primeable in [false, true] {
+                                            let admits = glm5_route_admits(
+                                                capable,
+                                                serve_spec,
+                                                k,
+                                                temp_ok,
+                                                penalized,
+                                                constrained,
+                                                vision,
+                                                carrier,
+                                                primeable,
+                                            );
+                                            let reason = glm5_route_decline_reason(
+                                                capable,
+                                                serve_spec,
+                                                k,
+                                                temp_ok,
+                                                penalized,
+                                                constrained,
+                                                vision,
+                                                carrier,
+                                                primeable,
+                                                None,
+                                            );
+                                            assert_eq!(
+                                                admits,
+                                                reason.is_none(),
+                                                "route/reason disagree at (capable {capable}, \
+                                                 serve_spec {serve_spec}, k {k}, temp_ok \
+                                                 {temp_ok}, penalized {penalized}, constrained \
+                                                 {constrained}, vision {vision}, carrier \
+                                                 {carrier}, primeable {primeable})"
+                                            );
+                                            assert_ne!(
+                                                reason,
+                                                Some(""),
+                                                "a decline reason is never empty"
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // The memra#74 shape end to end: capable, serving, K>0, sampled, unpenalized, a
+        // 67-token prompt, declined ONLY because the full-cover hit is not a carrier. The
+        // route line must carry the carrier's own token, not the generic warm-session one.
+        assert_eq!(
+            glm5_route_decline_reason(
+                true,
+                true,
+                3,
+                true,
+                false,
+                false,
+                false,
+                false,
+                true,
+                Some("full-cover-hit"),
+            ),
+            Some("full-cover-hit"),
+            "the live box's line read `route=plain ... cold=0 restored=0` with no reason; \
+             it must now read reason=full-cover-hit"
+        );
+        assert_eq!(
+            glm5_route_decline_reason(true, true, 3, true, false, false, false, false, true, None,),
+            Some("warm-session-no-carrier"),
+            "a warm session that was never a prefix hit still names itself"
+        );
+    }
+
     /// The K+1 <= 15 hard bound (the shexp decode-exact knee at t=16): only an operator
     /// pin can reach the clamp; every automatic policy depth passes through untouched.
     #[test]
@@ -26836,6 +27140,29 @@ mod tests {
         assert!(
             code.contains("glm5_clamp_spec_k(decision.k)"),
             "the chosen K must pass the knee clamp"
+        );
+        // 3b. THE ROUTE LINE CARRIES A REASON (memra#74). The receipt an operator reads must
+        //     never again say `route=plain` with nothing but `cold=0 restored=0` to explain
+        //     it: the reason token comes from the same matrix as the decision, and the
+        //     carrier's own decline token is threaded into it.
+        let route_line = code
+            .find("[glm5-spec] route={} K={glm5_k}")
+            .expect("the glm5 admission receipt exists");
+        assert!(
+            code[route_line..route_line + 400].contains("reason={}"),
+            "the glm5 route receipt must carry a reason token"
+        );
+        assert!(
+            code.contains("let plain_reason = glm5_route_decline_reason("),
+            "the reason must come from the pure predicate, never be re-derived at the log site"
+        );
+        assert!(
+            code.contains("glm5_carrier_declined,"),
+            "the carrier's own decline token must be threaded into the route reason"
+        );
+        assert!(
+            code.contains("let admit = glm5_carrier_admits("),
+            "the prefix-hit carrier probe must go through the pure predicate"
         );
         // 4. The session-owned-cache arm: admission must not allocate a plain cache under
         //    a glm5 route — EXCEPT the restored carrier (lane/glm5-prefix-latent2), which

@@ -249,6 +249,39 @@ pub fn glm5_spec_prefix_on() -> bool {
     })
 }
 
+/// `MEMRA_GLM5_SPEC_FULLCOVER` (default OFF, lane/glm5-fullcover-spec-route 2026-09-02):
+/// admit the glm5 spec route on a FULL-COVER prefix hit, i.e. a hit whose restored prefix
+/// already covers the whole prompt so there is no suffix left to prime.
+///
+/// WHY IT EXISTS (memra#74): the parent lane refused an empty suffix on the premise that
+/// "the plain boundary-logits resume is faster than any prime". That is true of PREFILL and
+/// says nothing about DECODE: with the drafter left un-armed the whole generation then ran
+/// at plain speed. Measured on the live glm5 box 2026-09-02, same minute and vantage,
+/// vendor-default sampled, 67-token prompt, 512 max_tokens: repeated (full-cover hit)
+/// 29.46 s wall median / 30.8 tok/s decode vs fresh-nonce (cold, route=spec) 57.75 / 69.7.
+/// A cache hit cost the customer half the decode speed on that shape.
+///
+/// WHY IT IS WELL-FORMED: with an empty suffix the restored session's state is exactly a
+/// cold session's at the same boundary: trunk cache at `fed.len()`, drafter ctx KV at
+/// `fed.len()` (`DflashKv::from_tail`, the same rows a cold prime's tap ingest would have
+/// produced), no pending tap rows, and the anchor drawn from the ENTRY's boundary logits by
+/// the same rule the cold burst applies to its own first token. The Dflash2 round invariant
+/// `kv.len == cache.pos` therefore holds at round 1 with `pending` empty. This is the same
+/// full-cover shape the MTP restore has served since lane/spec-cache
+/// (`spec_restore_refusal`: a full-cover hit is admitted whenever the entry carries its
+/// boundary hidden + logits).
+///
+/// DEFAULT OFF BY DESIGN (new-flags law): the arm has NO GPU receipt yet. Byte identity of
+/// the full-cover restored tape against plain decode is GATE 13 of
+/// `glm5_dflash_session_gpu` (`MEMRA_GLM5_SPEC_FULLCOVER=1`), and the serving win needs the
+/// repeated-prompt cell on the glm5 box. Unset restores the pre-lane posture exactly
+/// (full-cover hits serve plain, now with `reason=full-cover-hit` on the route line).
+/// Read PER CALL (the `MEMRA_KDA_FUSED_PROJ` / `MEMRA_GLM5_VERIFY_BATCH` precedent) so one
+/// gate process can drive both arms. Rollback seam: unset.
+pub fn glm5_spec_fullcover_on() -> bool {
+    std::env::var("MEMRA_GLM5_SPEC_FULLCOVER").as_deref() == Ok("1")
+}
+
 /// `MEMRA_GLM5_SPEC_TP` (default OFF, lane/glm5-composition 2026-09-01): admit glm5 spec
 /// SESSIONS on a `MEMRA_GLM5_TP`-armed model. DEFAULT OFF BY DESIGN (new-flags law): the
 /// composition's verify/rollback wiring is rig-gated for correctness (per-rank KDA
@@ -1995,6 +2028,10 @@ impl HybridModel {
         mut cache: Cache,
         fed: &[u32],
         suffix: &[u32],
+        // The ENTRY's boundary logits (`ReuseEntry::last_logits`), read ONLY on the
+        // full-cover arm (`suffix.is_empty()`), where there is no suffix prime to draw the
+        // anchor from. A suffix-bearing restore ignores it and uses the prime's own row.
+        boundary_logits: &[f32],
         dkv: DflashKv,
         ctx_cap: usize,
         sampling: Option<SpecSampling>,
@@ -2049,13 +2086,31 @@ impl HybridModel {
                 "glm5 spec has no penalty arm: penalized requests serve on the plain path".into(),
             );
         }
-        if fed.is_empty() || suffix.is_empty() {
-            return Err(
-                "restored glm5 spec session needs a non-empty restored prefix AND a \
-                 non-empty suffix (empty-suffix full-cover hits keep the plain \
-                 boundary-logits resume)"
-                    .into(),
-            );
+        if fed.is_empty() {
+            return Err("restored glm5 spec session needs a non-empty restored prefix".into());
+        }
+        // FULL-COVER ARM (memra#74, lane/glm5-fullcover-spec-route): an empty suffix is the
+        // repeated-prompt shape. It refuses unless the arm is armed AND the entry carried
+        // its boundary logits: without them there is no anchor row and no way to start a
+        // round, which is exactly the `spec_restore_refusal` full-cover rule for MTP.
+        if suffix.is_empty() {
+            if !glm5_spec_fullcover_on() {
+                return Err(
+                    "restored glm5 spec session needs a non-empty suffix unless \
+                     MEMRA_GLM5_SPEC_FULLCOVER=1 (empty-suffix full-cover hits otherwise \
+                     keep the plain boundary-logits resume)"
+                        .into(),
+                );
+            }
+            if boundary_logits.len() != self.output.out_features() {
+                return Err(format!(
+                    "full-cover glm5 spec restore needs the entry's boundary logits \
+                     ({} rows, got {})",
+                    self.output.out_features(),
+                    boundary_logits.len(),
+                )
+                .into());
+            }
         }
         if cache.pos != fed.len() {
             return Err(format!(
@@ -2116,19 +2171,33 @@ impl HybridModel {
         // boundary; the chunked walk's absolute bases rebase through it).
         let n_embd = self.cfg.n_embd as usize;
         let taps = glm5_dflash_tap_layers(&dr.draft, self.layers.len())?;
-        cache.hc_taps = Some(HcTapSink::new_at(
-            taps.clone(),
-            n_embd,
-            suffix.len(),
-            fed.len(),
-        ));
-        let (logits_s, _seed, hiddens) = self.prime_cache(e, suffix, &mut cache, 0)?;
         let eh = self.glm5_head_engine(e)?;
-        // Republish capture at the NEW (deeper) boundary — pos == fed + suffix here.
-        let prefix_capture = if glm5_spec_prefix_on() {
-            self.glm5_prefix_boundary_capture(e, eh, &cache, &logits_s, &hiddens, cache.pos)
+        // FULL COVER: no suffix, so no prime, no taps and no republish (the entry ALREADY
+        // sits at this boundary, and a capture here would be the same key the worker's has_key
+        // dedupe drops). The boundary row is the entry's own; the drafter ctx KV is already
+        // at `cache.pos` from the tail, so `pending` is empty and round 1's
+        // `kv.len == cache.pos` invariant holds without an ingest.
+        let (logits_s, tap_rows, prefix_capture) = if suffix.is_empty() {
+            (boundary_logits.to_vec(), Vec::new(), None)
         } else {
-            None
+            cache.hc_taps = Some(HcTapSink::new_at(
+                taps.clone(),
+                n_embd,
+                suffix.len(),
+                fed.len(),
+            ));
+            let (logits_s, _seed, hiddens) = self.prime_cache(e, suffix, &mut cache, 0)?;
+            // Republish capture at the NEW (deeper) boundary — pos == fed + suffix here.
+            let capture = if glm5_spec_prefix_on() {
+                self.glm5_prefix_boundary_capture(e, eh, &cache, &logits_s, &hiddens, cache.pos)
+            } else {
+                None
+            };
+            let sink = cache
+                .hc_taps
+                .take()
+                .ok_or("glm5 restored-session suffix tap sink vanished")?;
+            (logits_s, sink.rows, capture)
         };
         let mut sctr = 0u32;
         let anchor = match sampling.as_ref() {
@@ -2142,10 +2211,6 @@ impl HybridModel {
             )?,
             None => argmax(&logits_s) as u32,
         };
-        let sink = cache
-            .hc_taps
-            .take()
-            .ok_or("glm5 restored-session suffix tap sink vanished")?;
         let mut committed = Vec::with_capacity(fed.len() + suffix.len());
         committed.extend_from_slice(fed);
         committed.extend_from_slice(suffix);
@@ -2153,10 +2218,15 @@ impl HybridModel {
         // cached_tokens number alone cannot distinguish a spec restore from a plain hit).
         eprintln!(
             "[glm5-spec] RESTORED session: {} prefix tokens + {} suffix from cache — no \
-             cold prime (drafter tail rows {})",
+             cold prime (drafter tail rows {}, arm {})",
             fed.len(),
             suffix.len(),
             dkv.len,
+            if suffix.is_empty() {
+                "full-cover"
+            } else {
+                "suffix-prime"
+            },
         );
         Ok(Glm5SpecSession {
             cache,
@@ -2166,7 +2236,7 @@ impl HybridModel {
             pending: Vec::new(),
             draft: Glm5DraftState::Dflash2 {
                 kv: dkv,
-                pending: sink.rows,
+                pending: tap_rows,
                 taps,
             },
             sampling,
