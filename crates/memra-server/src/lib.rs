@@ -3280,7 +3280,9 @@ impl Envelope {
     /// 2026-09-02: rerank documents of 80 and 81 prompt tokens at $0.05/1M -> debits 4 and 5).
     /// A distinct child id per capture makes each capture debit exactly once. The HTTP
     /// response and `x-request-id` keep the parent id; children nest under it by prefix
-    /// (`starts_with(parent)`) for reconciliation and log attribution.
+    /// (`starts_with("<parent>.")`, never the bare parent: hex ids carry no `.`, so the dotted
+    /// prefix cannot alias another parent or another child) for reconciliation and log
+    /// attribution.
     fn capture_child(&self, index: usize) -> Self {
         Envelope {
             id: format!("{}.{index}", self.id),
@@ -17867,6 +17869,20 @@ temperature = 0.6
                     n_prompt: 1,
                     n_cached: 0,
                 });
+                // Capture requests (embeddings/rerank) read the prompt's last position: the
+                // real worker answers PromptCapture before Done, and the route 500s without
+                // it. A fixed two-wide hidden state and a yes>no logit pair are enough for
+                // the handler-level tests (unit-norm pooling, top-index ordering).
+                if let Some(spec) = req.capture.as_ref() {
+                    let _ = req.tx.send(Event::PromptCapture {
+                        hidden: spec.hidden.then(|| vec![1.0, 0.0]),
+                        logits: if spec.logit_pieces.is_empty() {
+                            Vec::new()
+                        } else {
+                            vec![2.0, 0.0]
+                        },
+                    });
+                }
                 for step in 0..steps {
                     h.beat_busy();
                     let text = if steps == 1 { "ok" } else { "x" };
@@ -18941,6 +18957,97 @@ temperature = 0.6
             0,
             "slot must free when the stream completes"
         );
+    }
+
+    /// REGRESSION FENCE for the 2026-09-02 rerank/embeddings ledger incident: a multi-item
+    /// capture request opens ONE receipt PER ITEM, each under its own child id
+    /// `<x-request-id>.<index>`, and settles every one of them. Under the old shared parent
+    /// id this test's `opened` list read `[parent, parent, parent]`, which the darklanes
+    /// ledger's replay guard turned into one debit (equal costs) or a 500 (unequal costs).
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK serializes this test against its shared-state peers; holding across the awaits is the point
+    async fn multi_item_capture_requests_open_one_receipt_per_item_under_child_ids() {
+        let _l = drain_lock();
+        let mut st = fake_worker_state();
+        let mock = MockMetering::admit_all();
+        st.metering = Some(mock.clone());
+
+        let resp = embed_api::embeddings_admitted(
+            State(st.clone()),
+            HeaderMap::new(),
+            AdmittedJson(
+                serde_json::from_value(json!({"model": "m", "input": ["a", "bb", "ccc"]})).unwrap(),
+                BodyAdmissionLease(None),
+            ),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let parent = resp.headers()["x-request-id"].to_str().unwrap().to_string();
+        assert!(
+            !parent.contains('.'),
+            "the caller sees the parent id: {parent}"
+        );
+        let body: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(resp.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(body["data"].as_array().map(Vec::len), Some(3));
+        let events = mock.events();
+        let opened: Vec<(String, &'static str)> = events
+            .iter()
+            .filter_map(|e| match e {
+                MeterEvent::Open {
+                    request_id, route, ..
+                } => Some((request_id.clone(), *route)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            opened,
+            vec![
+                (format!("{parent}.0"), "/v1/embeddings"),
+                (format!("{parent}.1"), "/v1/embeddings"),
+                (format!("{parent}.2"), "/v1/embeddings"),
+            ],
+            "one receipt per input, each under its own child id: {events:?}"
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(e, MeterEvent::Complete { .. }))
+                .count(),
+            3,
+            "every input settles its own receipt: {events:?}"
+        );
+
+        let resp = embed_api::rerank_admitted(
+            State(st),
+            HeaderMap::new(),
+            AdmittedJson(
+                serde_json::from_value(
+                    json!({"model": "m", "query": "q", "documents": ["d0", "d1"]}),
+                )
+                .unwrap(),
+                BodyAdmissionLease(None),
+            ),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let parent = resp.headers()["x-request-id"].to_str().unwrap().to_string();
+        let opened: Vec<String> = mock
+            .events()
+            .into_iter()
+            .skip(events.len())
+            .filter_map(|e| match e {
+                MeterEvent::Open {
+                    request_id, route, ..
+                } if route == "/v1/rerank" => Some(request_id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(opened, vec![format!("{parent}.0"), format!("{parent}.1")]);
     }
 
     #[tokio::test]

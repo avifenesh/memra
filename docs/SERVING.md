@@ -789,7 +789,9 @@ tok-check usage crosscheck, cross-binary c1 refs + c1-vs-c16) and
 Two prefill-only routes read the final prompt position of a causal LM instead of
 decoding from it. No decode step runs (`max_new: 0`); admission, lanes, budgets,
 receipts, rate limits and `[meter]` lines are byte-identical to `/v1/completions` —
-one admitted worker request per input, billed as prompt tokens.
+one admitted worker request per input, billed as prompt tokens, each under its own
+ledger id `<x-request-id>.<index>` (the response keeps the parent id; a ledger that keys
+debits by id as a replay guard would otherwise bill N inputs as one).
 
 - `POST /v1/embeddings` (OpenAI schema): `{model, input: string|string[], dimensions?}`.
   The vector is the last-token post-final-norm hidden state, L2-normalized; `dimensions`
@@ -2083,7 +2085,9 @@ configured.
   Multiple keys under one tenant intentionally share that tenant's gauge; issue distinct
   tenants when recipients need independent caps.
 - **Metering seam:** every admitted request logs one flat
-  `[meter] admit id=<x-request-id> tenant=<t> lane=<l> model=<m>` line — the public-repo
+  `[meter] admit id=<x-request-id> tenant=<t> lane=<l> model=<m>` line (for the items of a
+  multi-input `/v1/embeddings` or multi-document `/v1/rerank` request the id is
+  `<x-request-id>.<index>`, one line per item) — the public-repo
   half; the private fork's metering layer joins these against the worker-truth usage
   lines by request id for per-tenant billing.
 

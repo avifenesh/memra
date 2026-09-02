@@ -9,7 +9,9 @@
 //! Admission parity with every other surface, on purpose: the same canonical-model,
 //! tenant-auth, lane, budget-admission, ledger-receipt, rate-limit-slot, backpressure and
 //! `[meter]` sequence as `/v1/completions` — one admitted worker request PER INPUT, so an
-//! embeddings array bills per input exactly like N single calls. Capture requests bypass
+//! embeddings array bills per input exactly like N single calls, each under its own ledger
+//! id `<x-request-id>.<index>` (`Envelope::capture_child`; the ledger keys debits by id as a
+//! replay guard, so siblings sharing the parent id billed as one). Capture requests bypass
 //! every KV reuse tier and the spec path in the worker (a cache hit would skip the prime
 //! the capture reads from), and prime alone — see `worker::CaptureSpec`.
 //!
