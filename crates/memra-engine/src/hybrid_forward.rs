@@ -1669,6 +1669,10 @@ impl HybridModel {
     /// Split out because under hyper-connections the FFN's input is `rms_norm(hc_pre(x))`, not
     /// `rms_norm(x + attn)` — the fused add+norm+quantize forms the serial paths use have no
     /// residual to fold, so this is the unfused dispatch by construction.
+    /// `zq8`: an optional pre-quantized q8_1 pair for `z` (door `MEMRA_GLM5_Q8_FUSE`,
+    /// lane/b200-q8-fuse-20260902 — the caller's norm producer folded the standalone
+    /// `quantize_q8_1(z, ...)` launch into itself). `None` preserves the unfused chain:
+    /// `moe_ffn_il_zq8` re-quantizes `z` itself, byte-identical either way.
     fn hyper_ffn_branch(
         &self,
         e: &Engine,
@@ -1677,6 +1681,7 @@ impl HybridModel {
         t: usize,
         il: usize,
         prefill: bool,
+        zq8: Option<&(CudaSlice<i8>, CudaSlice<f32>)>,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         match &layer.ffn {
             crate::hybrid::Ffn::Dense {
@@ -1707,7 +1712,7 @@ impl HybridModel {
                 if prefill {
                     self.moe_ffn_il_prefill(e, m, z, t, il as u16)
                 } else {
-                    self.moe_ffn_il_zq8(e, m, z, None, t, il as u16)
+                    self.moe_ffn_il_zq8(e, m, z, zq8, t, il as u16)
                 }
             }
         }
@@ -2044,7 +2049,7 @@ impl HybridModel {
                 t,
                 eps,
             )?;
-            let ffn_out = self.hyper_ffn_branch(e, layer, &z, t, il, true)?;
+            let ffn_out = self.hyper_ffn_branch(e, layer, &z, t, il, true, None)?;
             x = crate::hyper::post(e, topology, &ffn_out, &x, &mix, t, n_embd)?;
             if trace {
                 let index = il as i64;
@@ -2129,7 +2134,7 @@ impl HybridModel {
                 t,
                 eps,
             )?;
-            let ffn_out = self.hyper_ffn_branch(e, layer, &z, t, il, true)?;
+            let ffn_out = self.hyper_ffn_branch(e, layer, &z, t, il, true, None)?;
             x = crate::hyper::post(e, topology, &ffn_out, &x, &mix, t, n_embd)?;
             // glm5 DFlash2 feature tap (lane/glm5-dflash-draft-src): the CONTRACTED
             // completed layer output, host-staged — one Option check when unarmed.
@@ -2193,15 +2198,34 @@ impl HybridModel {
 
             let (y, mix) = crate::hyper::pre(e, topology, &hyper.mlp, &x, 1, n_embd)?;
             let mut z = e.uninit(n_embd)?;
-            e.rms_norm(
-                &y,
-                layer.post_attn_norm.float_data(),
-                &mut z,
-                n_embd,
-                1,
-                eps,
-            )?;
-            let ffn_out = self.hyper_ffn_branch(e, layer, &z, 1, il, false)?;
+            // Door MEMRA_GLM5_Q8_FUSE (lane/b200-q8-fuse-20260902, default OFF): fold the
+            // FFN-input rms_norm and its consumer's standalone quantize_q8_1 launch into
+            // ONE kernel. z (f32) is still needed by the router/shexp branches inside
+            // hyper_ffn_branch, so the fused kernel emits both views; moe_ffn_il_zq8 takes
+            // the pre-quantized pair when present and re-quantizes z itself when not —
+            // byte-identical either way (rms_norm_zq8_f32's header carries the identity
+            // argument against rms_norm then quantize_q8_1).
+            let zq8 = if crate::glm5_q8_fuse_on() {
+                Some(e.rms_norm_zq8_f32(
+                    &y,
+                    layer.post_attn_norm.float_data(),
+                    &mut z,
+                    n_embd,
+                    1,
+                    eps,
+                )?)
+            } else {
+                e.rms_norm(
+                    &y,
+                    layer.post_attn_norm.float_data(),
+                    &mut z,
+                    n_embd,
+                    1,
+                    eps,
+                )?;
+                None
+            };
+            let ffn_out = self.hyper_ffn_branch(e, layer, &z, 1, il, false, zq8.as_ref())?;
             x = crate::hyper::post(e, topology, &ffn_out, &x, &mix, 1, n_embd)?;
         }
         Ok(x)
@@ -2287,15 +2311,29 @@ impl HybridModel {
             std::mem::swap(&mut x, &mut ws.xb);
 
             crate::hyper::pre_t1_ws(e, topology, &hyper.mlp, &x, ws, n_embd)?;
-            e.rms_norm(
-                &ws.y,
-                layer.post_attn_norm.float_data(),
-                &mut ws.z,
-                n_embd,
-                1,
-                eps,
-            )?;
-            let ffn_out = self.hyper_ffn_branch(e, layer, &ws.z, 1, il, false)?;
+            // Door MEMRA_GLM5_Q8_FUSE — the workspace twin of the fusion above (same fused
+            // kernel, same byte-identity argument, `ws.z` in place of a fresh allocation).
+            let zq8 = if crate::glm5_q8_fuse_on() {
+                Some(e.rms_norm_zq8_f32(
+                    &ws.y,
+                    layer.post_attn_norm.float_data(),
+                    &mut ws.z,
+                    n_embd,
+                    1,
+                    eps,
+                )?)
+            } else {
+                e.rms_norm(
+                    &ws.y,
+                    layer.post_attn_norm.float_data(),
+                    &mut ws.z,
+                    n_embd,
+                    1,
+                    eps,
+                )?;
+                None
+            };
+            let ffn_out = self.hyper_ffn_branch(e, layer, &ws.z, 1, il, false, zq8.as_ref())?;
             crate::hyper::post_t1_ws(e, topology, &ffn_out, &x, ws, n_embd)?;
             std::mem::swap(&mut x, &mut ws.xb);
         }
@@ -2438,7 +2476,7 @@ impl HybridModel {
                 for bi in 0..b_n {
                     let mut z_row = e.uninit(n_embd)?;
                     e.dtod_copy_view(&z.slice(bi * n_embd..(bi + 1) * n_embd), &mut z_row)?;
-                    let row = self.hyper_ffn_branch(e, layer, &z_row, 1, il, false)?;
+                    let row = self.hyper_ffn_branch(e, layer, &z_row, 1, il, false, None)?;
                     e.copy_into(&mut out, bi * n_embd, &row, n_embd)?;
                 }
                 Ok(out)
@@ -2895,7 +2933,7 @@ impl HybridModel {
                 t,
                 eps,
             )?;
-            let ffn_out = self.hyper_ffn_branch(e, layer, &z, t, il, true)?;
+            let ffn_out = self.hyper_ffn_branch(e, layer, &z, t, il, true, None)?;
             x = crate::hyper::post(e, &topology, &ffn_out, &x, &mix, t, n_embd)?;
             // glm5 DFlash2 feature tap (see hyper_range_prime — the unsplit chunk walk
             // taps the same completed-layer-output contraction).

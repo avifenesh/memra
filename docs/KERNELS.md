@@ -71,7 +71,7 @@ Facts worth knowing before "cleaning up":
 Legend: FFI binding "fatbin/by-name" = loaded from module by kernel name string;
 "extern in <file>" = Rust `unsafe extern "C"` declaration.
 
-### cu/kernels.cu — 132 symbols (recounted 2026-09-02 from the current source; includes the TP verified-prefix batched-copy lane) (fatbin `MEMRA_ENGINE_FATBIN`)
+### cu/kernels.cu — 133 symbols (lane/b200-q8-fuse-20260902 +1: `rms_norm_zq8_f32`; prior recount 2026-09-02, 132, includes the TP verified-prefix batched-copy lane) (fatbin `MEMRA_ENGINE_FATBIN`)
 
 Header: "Stage-1 kernels: correctness-first, all f32, no tensor cores" (kernels.cu:1).
 
@@ -79,7 +79,8 @@ Header: "Stage-1 kernels: correctness-first, all f32, no tensor cores" (kernels.
 |---|---|---|---|---|---|
 | `argmax_*`, `prob_of_token_*` | device argmax / token-prob reduction | f32 logits | PDL macro sm≥900 non-portable (kernels.cu:15) | UNKNOWN | fatbin/by-name |
 | `topk_rows_shard_f32` + `topk_rows_shard_merge_f32` (lane/glm5-matvec 2026-08-31) | EXACT sharded twin pair of `topk_rows_f32` (per-(row, column-shard) partial top-k + per-row shard merge, the standing kernel's insertion/tie rules verbatim on global column indices — discrete selection under (value desc, index asc), output-identical by construction; the standing kernel puts n_rows blocks on the card, 15 blocks/188 SMs at 7 GB/s on the DFlash2 selector) | f32 logits | — | `MEMRA_TOPK_SHARDS` (default ON since the 2026-08-31 mv-battery flip, `=0` = rollback seam, engages at n_cols >= 16384) — `glm5_matvec_doors_gpu` planted-tie bit-gate + rotated-row red | fatbin/by-name |
-| `rms_norm*` family (~15 incl. fused add/scale/QKV/rope, q8_1 out) | RMSNorm variants | f32 in; f32/f16/q8_1 out | same PDL guard | per-model wiring; MEMRA_QKVNORM_W in lib.rs | fatbin/by-name |
+| `rms_norm*` family (~16 incl. fused add/scale/QKV/rope, q8_1 out) | RMSNorm variants | f32 in; f32/f16/q8_1 out | same PDL guard | per-model wiring; MEMRA_QKVNORM_W in lib.rs | fatbin/by-name |
+| `rms_norm_zq8_f32` (lane/b200-q8-fuse-20260902) | z = rms_norm(x,w) emitted BOTH as f32 (kept for callers that also read the un-quantized row — MoE router-logits GEMV, an ungated shexp arm) AND its q8_1 quantization, one launch. Pass 1 = rms_norm_f32's reduction verbatim; pass 2 epilogue = `add_rms_norm_zq8`'s warp-per-block q8_1 form minus its `a+b` add — BIT-IDENTICAL to `rms_norm_f32` then `quantize_q8_1` (qmatvec.cu:585) | f32 in; f32 + q8_1 out | same PDL guard | `MEMRA_GLM5_Q8_FUSE` (default OFF) — wired at the glm5_next mHC T=1 decode FFN-input norm (`hyper_range_decode`/`hyper_range_decode_ws_body` in hybrid_forward.rs) | fatbin/by-name |
 | `rope_neox*` (4 variants) | RoPE NeoX | f32 (+bf16 echo) | — | UNKNOWN | fatbin/by-name |
 | activation family (gelu_tanh_mul, silu_mul incl. scaled/q8_1, swigluoai_mul_scaled, swiglu_clamped_mul_scaled (step35, clamp AFTER silu), swiglu_preclamped_mul_scaled (glm5_next, clamp BEFORE silu, one-sided gate), gelu_tanh) | gated-FFN activations | f32/q8_1 | — | MEMRA_Q8_FFN_FUSE2 (q8 fused arm) | fatbin/by-name |
 | elementwise/util (~25: add/scale/mul/softcap/mask/convert/pack/gather/permute/l2_norm/layer_norm_bias/row_softmax/prefetch_l2) | glue ops | f32/int | — | UNKNOWN | fatbin/by-name |
