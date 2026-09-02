@@ -520,6 +520,13 @@ impl HybridModel {
                 "this trunk has no sigmoid router (the device-table MoE arm needs one)".into(),
             );
         }
+        if crate::glm5_graph_host_moe() {
+            return Some(
+                "MEMRA_GLM5_GRAPH_HOST_MOE forces the host-oracle MoE: its per-layer readback and \
+                 stream drain cannot live inside a capture region (bisect arm)"
+                    .into(),
+            );
+        }
         if !crate::htod_diet_on() {
             return Some(
                 "MEMRA_HTOD_DIET is off: the shared expert still uploads a pageable constant \

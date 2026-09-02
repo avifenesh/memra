@@ -10761,6 +10761,11 @@ impl HybridModel {
         // requires t == 1 and door D required t >= 2).
         let vrows_t1_dev = t == 1
             && crate::glm5_decode_graph_on()
+            // BISECT (MEMRA_GLM5_GRAPH_HOST_MOE, gate harness): stand the device-table arm down
+            // while leaving the door on, so a box run separates the door's two enablers. The
+            // capture refuses by name when this is set — a host readback cannot live inside a
+            // capture region — which is the point: it isolates one enabler at a time.
+            && !crate::glm5_graph_host_moe()
             && !promote_worker_h2d
             && sigmoid_router_enabled()
             && cfg.sigmoid_router().is_some()
@@ -15077,7 +15082,13 @@ impl HybridModel {
             eprintln!(
                 "[glm5-vrows] verify MoE batched across rows: pairs={n_pairs} (t={t} x \
                  {n_used}), one gate/up+preclamp launch + one down/FMA launch per layer-call \
-                 (rides MEMRA_GLM5_VERIFY_BATCH)"
+                 (rides MEMRA_GLM5_VERIFY_BATCH); arm doors: pack={} dedup_order={} \
+                 b200_matvec={} dev_tables={} — the `_rows` pair has several dispatch twins and \
+                 only the plain one has ever run at t=1, so a box log has to say which it took",
+                crate::moe_vrows_pack_on(),
+                crate::moe_vrows_dedup_order_on(),
+                crate::b200_matvec_arm_on(),
+                crate::moe_vrows_dev_tables_on(),
             );
         }
         Ok(())

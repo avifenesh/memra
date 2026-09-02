@@ -278,6 +278,16 @@ pub fn glm5_decode_graph_on() -> bool {
     std::env::var("MEMRA_GLM5_DECODE_GRAPH").as_deref() == Ok("1")
 }
 
+/// `MEMRA_GLM5_GRAPH_HOST_MOE=1` — BISECT knob for `MEMRA_GLM5_DECODE_GRAPH`, gate harness only.
+/// The door has TWO enablers and box run 5 showed they fail independently: (1) the T=1
+/// device-table MoE arm that removes the per-layer router readback, and (2) the capture/replay
+/// itself. With this set the door stays ON but the MoE arm stands down to the host oracle, and
+/// the capture then refuses BY NAME (a host readback inside a capture region is illegal), so a
+/// run isolates enabler 2's absence from enabler 1's behaviour instead of confounding them.
+pub fn glm5_graph_host_moe() -> bool {
+    std::env::var("MEMRA_GLM5_GRAPH_HOST_MOE").as_deref() == Ok("1")
+}
+
 /// `MEMRA_GLM5_GRAPH_TRACE=1` — GATE-HARNESS trace for `MEMRA_GLM5_DECODE_GRAPH`, never a
 /// serving flag. Prints one line per captured-run boundary per token, on BOTH arms and at the
 /// SAME layer boundaries, with a checksum of the stream state leaving that segment. Box run 4
@@ -1859,7 +1869,7 @@ pub fn bf16_tcols_red_fused_dispatches() -> u64 {
 /// launch caps residency at the blocks/SM limit (<=67% of warp slots) and schedules ~65k
 /// one-warp blocks per launch; per-warp body verbatim, bit-identical per (row, pair). Gated
 /// by `glm5_matvec_doors_gpu`. Read per call.
-fn moe_vrows_pack_on() -> bool {
+pub(crate) fn moe_vrows_pack_on() -> bool {
     std::env::var("MEMRA_MOE_VROWS_PACK").as_deref() == Ok("1")
 }
 
@@ -1881,7 +1891,7 @@ pub fn moe_vrows_pack_dispatches() -> u64 {
 /// = 42 device-wide drains + 84 DtoH + 84 HtoD per ship round. Bit-identical: same integer
 /// `base + ex*stride`, same macro-plane lookups, same single `w * macro_down` product. Read per
 /// call; fails closed to the host path whenever any host-visible route consumer is armed.
-fn moe_vrows_dev_tables_on() -> bool {
+pub(crate) fn moe_vrows_dev_tables_on() -> bool {
     std::env::var("MEMRA_MOE_VROWS_DEV_TABLES").as_deref() == Ok("1")
 }
 
@@ -1999,7 +2009,7 @@ pub fn moe_vrows_pair_overlap() -> (u64, u64) {
 /// refuted 4-warp pack) takes precedence in the launcher, and the door engages only when the
 /// order plane is actually present (`ptrs.len() >= 4*n_pairs`), so a direct launcher call with a
 /// 3-plane table keeps the shipped program.
-fn moe_vrows_dedup_order_on() -> bool {
+pub(crate) fn moe_vrows_dedup_order_on() -> bool {
     std::env::var("MEMRA_MOE_VROWS_DEDUP_ORDER").as_deref() == Ok("1")
 }
 

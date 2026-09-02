@@ -550,6 +550,87 @@ token stream and obvious here. The gate also prints step 1's top-1 logit INDEX A
 nonzero count on both arms, so "all-zero logits" and "wrong but valid token" can never again be
 confused for each other.
 
+## 9f. Fifth box run: the trace named the seam, and it is not the capture
+
+Run 5 (int10 `c7cdd0f7f` = `6d8725720`) has the same wrong tape, but the `--trace` output from
+§9e does its job. On the graph arm, dev=0 stage `[0, 24)` is LATCHED to eager (all its segments
+read `arm=eager-run`/`eager-gap`) while dev=1 stage `[24, 45)` replays. The dev=0 segments:
+
+| seg | arm | absmax |
+|---|---|---|
+| `[0, 3)` | eager-run | 1.58e-1 (sane) |
+| `[3, 4)` | eager-gap | 1.9e-1 (sane) |
+| `[4, 7)` | eager-run | **1.356879e19** |
+| `[7, 8)` | eager-gap | 1.35e19 |
+| `[8, 11)` | eager-run | 1.33e19 |
+| `[11, 12)` | eager-gap | 1.31e19 |
+| `[12, 15)` onward | eager-run | absmax 0 with `nz=16384/16384` — all NaN, constant checksum |
+
+**Two conclusions, and the first one closes a whole branch of this investigation.**
+
+1. **The corruption starts inside an `eager-run` segment — door ON, capture NOT in use.** So it
+   is not capture or replay mechanics at all. It is the door's OTHER enabler, the one that runs
+   in both modes: the T=1 device-table MoE arm (`vrows_t1_dev` /
+   `moe_vrows_tables_from_sel`, `n_pairs = n_used`) that replaces the host router readback. It
+   produces 1e19-class values from the first routed layer and NaN five layers later, which is
+   what reading the wrong weight bytes looks like.
+2. **The true eager arm (door OFF) is sane** because it uses the host oracle. The two arms are
+   therefore not one numeric program, which is precisely the claim the door was making.
+
+`nz=16384/16384` with `absmax=0` is the trace earning its keep twice over: a full nonzero count
+with a zero absolute maximum is the signature of an all-NaN buffer, not a zeroed one, and the
+constant checksum from `[12, 15)` on says the NaN is saturating rather than drifting.
+
+**Two instruments added, both aimed at this specific question.**
+
+* **`MEMRA_GLM5_GRAPH_HOST_MOE=1`** (gate harness): the door stays ON but the device-table MoE
+  arm stands down to the host oracle, and the capture then refuses BY NAME (a host readback and
+  its stream drain cannot live inside a capture region). One run with this set separates the two
+  enablers instead of confounding them: if the tape goes sane, the MoE arm is the defect and the
+  capture is clean; if it stays wrong, both are implicated.
+* **`glm5_vrows_dev_tables_gpu`** (rig gate, this lane): compares the DEVICE-built tables against
+  the HOST arithmetic they claim to reproduce — pointer for pointer, scale BIT for bit — with no
+  model and no weights, because the kernel only computes addresses and the bases are never
+  dereferenced. That is what makes it runnable on the exactness-only rig instead of burning a
+  pair window. Four cases: fixture-scale strides (the control, which passes even under a 32-bit
+  product), **serving-scale strides that put the last expert 6 GiB into the gate slab and 12 GiB
+  into the down slab** (the serving posture is `MEMRA_MOE_RESIDENT_GB=130`, so any 32-bit step
+  in `base + ex*stride` wraps exactly here), a macro-free bank, and a spread selection.
+
+**The rig gate RAN and PASSED, all four cases** (5090, 2026-09-02, under
+`flock /tmp/memra-5090.lock`):
+
+```
+[small-strides] OK (24 pointers + 24 scales identical)
+[serving-strides-past-4GiB] OK (24 pointers + 24 scales identical)
+[no-macros] OK (24 pointers + 24 scales identical)
+[spread-selection] OK (24 pointers + 24 scales identical)
+```
+
+That is a real elimination, not a null result: the DEVICE table build reproduces the host
+arithmetic bit for bit **including at strides that put the last expert 6 GiB into the gate slab
+and 12 GiB into the down slab**. So the 32-bit-wrap hypothesis is dead, the plane mix-up is dead,
+and the macro fold and its per-(layer, plane) mirror are correct. Reading the source agrees: the
+kernel uses `long ex` with `long` strides and the launcher passes `i64`.
+
+**What that leaves.** The consumer kernels and their launcher are t-agnostic by inspection —
+`moe_gate_up_preclamp8_q8_rows` derives `tok = pr / n_used`, `moe_down8_fma_q8_rows` takes
+`tok = blockIdx.y`, and the launcher derives `let t = n_pairs / n_used` for its grid, all of
+which are correct at `t = 1`. But that launcher has SEVERAL dispatch twins — the warp-packed
+`_w4` pair (`MEMRA_MOE_VROWS_PACK`, and `MEMRA_B200_MATVEC_ARM` on an sm_100a build), the
+token-major down arm, and the plain pair — and **only the plain one has ever executed at t=1**,
+because the vrows arm was `t >= 2` by construction until this lane. The box binary is an
+int-lane build carrying the B200 matvec occupancy lane, so which twin ran is not knowable from
+the log as it stands. The `[glm5-vrows]` engagement line now prints
+`pack=/dedup_order=/b200_matvec=/dev_tables=` so the next run says it outright.
+
+**Ranked suspects going in**, from the shape of the corruption: a 32-bit step in the pointer
+arithmetic (the kernel itself uses `long ex` and `long` strides, and the launcher passes `i64`,
+so if this is it the wrap is somewhere else in the chain); a plane mix-up (gate/up table used for
+the down projection); the macro fold being dropped or indexed wrong, which on an NVFP4 bank with
+per-expert global scales is worth the documented ~3e4x class of error; and the pre-clamp limit
+not reaching the device-table path. The gate above discriminates the first three directly.
+
 ## 10. Open items
 
 1. **Run the gate on the pair** (`--steps 64 --reps 5`) and bank the receipt. Until then the
