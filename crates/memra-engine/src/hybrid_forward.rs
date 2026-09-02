@@ -6513,6 +6513,7 @@ impl HybridModel {
         out
     }
 
+    #[allow(clippy::type_complexity)] // allow: mirrors `prime_cache_batch`'s signature
     fn prime_cache_batch_inner(
         &self,
         e: &Engine,

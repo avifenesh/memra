@@ -166,8 +166,8 @@ mod tests {
         match before {
             None => assert_eq!(after.rows, 4096),
             Some(b) => {
-                assert!(after.rows >= b.rows + 4096);
-                assert!(after.events >= b.events + 1);
+                assert!(after.rows.saturating_sub(b.rows) >= 4096);
+                assert!(after.events > b.events);
             }
         }
     }
