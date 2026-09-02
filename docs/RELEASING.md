@@ -421,6 +421,24 @@ That's it. Two workflows fire on the tag:
   dispatch `publish=true` input is the recovery door that runs the REAL publish on a ref
   when a tag's run needs finishing.
 
+### Re-running the publish on a tag (learned on v0.124.0, 2026-09-02)
+
+Two refusals that are the guard doing its job, and how to get past each:
+
+- `gh workflow run publish.yml --ref v0.124.0 -f publish=true` reached the runner with
+  `GITHUB_REF_TYPE` not equal to `tag`, and the guard refused ("real publishing requires
+  dispatching the immutable vX.Y.Z tag ref"). Pass the fully qualified ref:
+  `gh workflow run publish.yml --ref refs/tags/vX.Y.Z -f publish=true`.
+- The guard's third refusal ("no claim branch release/claim-vX.Y.Z on origin") fired although the
+  claim had been pushed and release.yml's guard had passed on the same tag 40 minutes earlier:
+  every `release/claim-*` ref had vanished from origin in between, including `release/claim-v0.106.0`,
+  which the section above says must stay. Re-create the claim at the tagged commit through the refs
+  API (a stale local checkout's pre-push hook refuses the push):
+  `gh api repos/avifenesh/memra/git/refs -f ref=refs/heads/release/claim-vX.Y.Z -f sha=<tagged commit>`.
+  Whoever tidies claim refs removes the release guard's memory; do not.
+
+The publish itself is per crate and skip-if-live, so a re-run after a refusal uploads nothing twice.
+
 ## Publishing to crates.io — one-time setup (owner)
 
 - crates.io account (GitHub login), email verified.
