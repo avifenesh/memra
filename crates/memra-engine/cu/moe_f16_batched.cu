@@ -73,8 +73,17 @@
 // pad row (zero-filled). Bucket-agnostic by construction.
 static __global__ void moe_pad_act_map_kernel(
         const __half* __restrict__ act, const int* __restrict__ pad_map,
-        __half* __restrict__ dst, int in_f){
+        __half* __restrict__ dst, int n_rows, int in_f){
     const int r = blockIdx.x + blockIdx.y * gridDim.x;
+    // THE BOUNDS CHECK, and the bug it closes (boot H2, 2026-09-02). The grid is 2D because
+    // the padded row count passes 65,535, and a 2D grid is almost never an exact tile: at
+    // rows=37,696 the launcher picks (32768, 2) = 65,536 threads, so 27,840 of them ran past
+    // the end of `pad_map`, read garbage as a pair index, and wrote `dst + p*in_f` wherever
+    // that pointed. CUDA_ERROR_ILLEGAL_ADDRESS, sticky context poison, HTTP 500 for the rest
+    // of the process. The fixture never caught it because at 8,896 rows the grid is (8896, 1),
+    // an exact tile with zero spare threads — the one shape where the missing guard is
+    // invisible. A 2D grid ALWAYS needs this line.
+    if(r >= n_rows) return;
     const int p = pad_map[r];
     __half* d = dst + (size_t)r * in_f;
     if(p < 0){
@@ -89,8 +98,9 @@ static __global__ void moe_pad_act_map_kernel(
 // The same fold the sk kernel applies in its epilogue (`acc * s0`). Pad rows have no consumer.
 static __global__ void moe_unpad_scale_map_kernel(
         const float* __restrict__ y_pad, const int* __restrict__ pad_map,
-        const float* __restrict__ row_scale, float* __restrict__ y, int out_f){
+        const float* __restrict__ row_scale, float* __restrict__ y, int n_rows, int out_f){
     const int r = blockIdx.x + blockIdx.y * gridDim.x;
+    if(r >= n_rows) return;   // same guard, same reason (see the pad kernel above)
     const int p = pad_map[r];
     if(p < 0) return;
     const float s = row_scale[p];
@@ -99,8 +109,10 @@ static __global__ void moe_unpad_scale_map_kernel(
     for(int c = threadIdx.x; c < out_f; c += blockDim.x) d[c] = src[c] * s;
 }
 
-// grid.x is capped at 65,535 by nothing, but grid.y is — and the padded row count passes
-// 65,535 at glm5 widths, so the launcher splits across x and y and the kernels recombine.
+// The padded row count passes 65,535 at glm5 widths, so the launcher splits the row index
+// across grid.x and grid.y and the kernels recombine it. The split OVER-COVERS whenever `rows`
+// is not a multiple of the x extent, which is why both kernels bounds-check `r` — see the pad
+// kernel's header for what the missing check cost.
 static inline dim3 moe_pad_grid(int rows){
     const int x = rows < 32768 ? rows : 32768;
     const int y = (rows + x - 1) / x;
@@ -112,7 +124,7 @@ extern "C" int memra_moe_pad_act_map_f16(const void* act_f16, const int* pad_map
     if(n_rows_padded <= 0 || in_f <= 0) return 1;
     cudaStream_t st = (cudaStream_t)stream;
     moe_pad_act_map_kernel<<<moe_pad_grid(n_rows_padded), 256, 0, st>>>(
-        (const __half*)act_f16, pad_map, (__half*)dst_f16, in_f);
+        (const __half*)act_f16, pad_map, (__half*)dst_f16, n_rows_padded, in_f);
     cudaError_t e = cudaGetLastError();
     return e ? 1000 + (int)e : 0;
 }
@@ -122,7 +134,7 @@ extern "C" int memra_moe_unpad_scale_map_f32(const float* y_pad, const int* pad_
     if(n_rows_padded <= 0 || out_f <= 0) return 1;
     cudaStream_t st = (cudaStream_t)stream;
     moe_unpad_scale_map_kernel<<<moe_pad_grid(n_rows_padded), 256, 0, st>>>(
-        y_pad, pad_map, row_scale, y, out_f);
+        y_pad, pad_map, row_scale, y, n_rows_padded, out_f);
     cudaError_t e = cudaGetLastError();
     return e ? 1000 + (int)e : 0;
 }

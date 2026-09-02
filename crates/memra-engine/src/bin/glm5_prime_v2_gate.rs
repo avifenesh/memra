@@ -86,7 +86,8 @@ use memra_engine::hybrid_forward::{
     HYPER_PRIME_NATURAL_SCHEDULES, HYPER_PRIME_PIPELINED_CHUNKS, hyper_prime_ranges,
 };
 use memra_engine::{
-    MOE_BGEMM_DISPATCHES, MOE_BGEMM_LAST_BUCKETS, MOE_BGEMM_LAST_PAD_MILLI,
+    MOE_BGEMM_DISPATCHES, MOE_BGEMM_LAST_BUCKETS, MOE_BGEMM_LAST_MAX_BUCKET,
+    MOE_BGEMM_LAST_MIN_BUCKET, MOE_BGEMM_LAST_PAD_MILLI, MOE_BGEMM_LAST_ROWS_PADDED,
     MOE_BGEMM_LAST_SPREAD_MILLI, MOE_GROUPED_PREFILL_DISPATCHES,
 };
 use memra_gguf::GgmlType;
@@ -130,7 +131,7 @@ fn mini_config_json() -> String {
       "hidden_size": 128,
       "intermediate_size": 64,
       "vocab_size": 32,
-      "max_position_embeddings": 16384,
+      "max_position_embeddings": 40960,
       "rms_norm_eps": 1e-05,
       "hidden_act": "silu",
       "swiglu_limit": 10.0,
@@ -169,8 +170,8 @@ fn mini_config_json() -> String {
       "index_kpool_compress": true,
       "indexer_rope_interleave": true,
       "index_share_for_mtp_iteration": true,
-      "n_routed_experts": 16,
-      "num_experts_per_tok": 2,
+      "n_routed_experts": 288,
+      "num_experts_per_tok": 8,
       "moe_intermediate_size": 64,
       "n_shared_experts": 1,
       "scoring_func": "sigmoid",
@@ -295,7 +296,7 @@ fn fixture_source(
             }
         ) {
             let n = tensor.data.len();
-            let bias: Vec<f32> = (0..n).map(|i| -0.055f32 * i as f32).collect();
+            let bias: Vec<f32> = (0..n).map(|i| -0.00018f32 * i as f32).collect();
             let bytes: Vec<u8> = bias.iter().flat_map(|v| v.to_le_bytes()).collect();
             for name in match req.match_mode {
                 TensorMatch::OneOf => &req.names[..1],
@@ -426,6 +427,35 @@ fn bit_mismatches(got: &[f32], want: &[f32]) -> usize {
 /// One prime through the mHC walk on a FRESH cache, with the door state the caller has already
 /// set. Returns the last-row logits and the whole hidden stack: the stack is what sees a defect
 /// that the last row averages away, and a chunk-boundary bug lives in the middle rows.
+/// One prime with a DFlash2 hc tap sink ARMED, returning the sink's host rows alongside the
+/// logits. The sink is what arm 2 used to refuse on, and refusing cost the product route the
+/// entire pipelined-prime win at depth (256,756 tokens on the pair: PLAIN 69.08 s with the door
+/// vs 128.87 s without, SPEC 152.95 vs 153.12 — the door doing nothing at all on the route that
+/// ships). `layer_ids` are tapped layers; any subset of the trunk works because the tap is a
+/// per-layer capture, so the gate picks one layer from EACH stage — the case that matters, since
+/// under the pipeline those two writes come from different threads at different chunk bases.
+fn prime_once_tapped(
+    e: &Engine,
+    m: &HybridModel,
+    plan: &ModelPlan,
+    ids: &[u32],
+    max_ctx: usize,
+    layer_ids: &[usize],
+) -> Result<(Vec<f32>, Vec<f32>), Box<dyn std::error::Error>> {
+    let mut cache = memra_engine::pp::new_cache_planned(e, &m.cfg, plan, max_ctx)?;
+    cache.hc_taps = Some(memra_engine::cache::HcTapSink::new(
+        layer_ids.to_vec(),
+        HIDDEN,
+        ids.len(),
+    ));
+    let (logits, _seed, _hiddens) = m.prime_cache(e, ids, &mut cache, 0)?;
+    let sink = cache
+        .hc_taps
+        .take()
+        .ok_or("the prime must leave its tap sink in place")?;
+    Ok((logits, sink.rows))
+}
+
 fn prime_once(
     e: &Engine,
     m: &HybridModel,
@@ -479,12 +509,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(4096);
     // Arm 3's width must clear `MOE_BGEMM_MIN_T` or the arm declines and the run is vacuous.
+    // T3 must be wide enough that the padded plane passes the pad kernels' 32,768-column
+    // launch-grid split, or the gate runs the ONE geometry in which the boot-H2 defect is
+    // invisible (an exact 1-row grid with no spare threads).
     let t3: usize = std::env::args()
         .nth(4)
         .and_then(|s| s.parse().ok())
         .unwrap_or(4096);
     let red = std::env::var("MEMRA_PRIME_V2_GATE_RED").unwrap_or_default();
-    // red arms: "schedule" (arm 1), "pipe" (arm 2), "bgemm" (arm 3)
+    // red arms: "schedule" (arm 1), "pipe" (arm 2), "bgemm" (arm 3), "taps" (arm 4)
 
     // cuBLASLt f32 rides TF32 on Blackwell by default — wrong for an exactness gate. Must
     // precede the first Engine::new in the process.
@@ -862,6 +895,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 spread_milli as f64 / 1000.0
             ));
         }
+        // THE BOOT-H2 SHAPES. The gate passed that binary minutes before it poisoned the box,
+        // because a 16-expert fixture at 8,896 padded rows cannot produce a 101-expert tail
+        // bucket, a singleton at the widest pad, or a padded plane past the pad kernels'
+        // 32,768-column launch-grid split — and that last one is the geometry the defect lived
+        // in. A fixture that cannot reach a shape cannot defend it.
+        let max_bucket = MOE_BGEMM_LAST_MAX_BUCKET.load(Ordering::Relaxed);
+        let min_bucket = MOE_BGEMM_LAST_MIN_BUCKET.load(Ordering::Relaxed);
+        let rows_padded = MOE_BGEMM_LAST_ROWS_PADDED.load(Ordering::Relaxed);
+        println!(
+            "arm 3 SHAPES    tail bucket {max_bucket} experts, smallest bucket {min_bucket}, \
+             padded rows {rows_padded} (box H2: 101, 1, 37696)"
+        );
+        if max_bucket < 100 {
+            failures.push(format!(
+                "arm 3 FIXTURE TOO NARROW: largest bucket holds {max_bucket} experts; boot H2's \
+                 tail bucket held 101, and a wide tail bucket is a distinct descriptor shape"
+            ));
+        }
+        if min_bucket != 1 {
+            failures.push(format!(
+                "arm 3 FIXTURE TOO NARROW: smallest bucket holds {min_bucket} experts; boot H2 \
+                 had singleton buckets, whose batch=1 strided descriptor is its own case"
+            ));
+        }
+        if rows_padded <= 32_768 {
+            failures.push(format!(
+                "arm 3 FIXTURE TOO NARROW: {rows_padded} padded rows stays under the pad \
+                 kernels' 32,768-column launch-grid split, so the 2D grid is an exact tile with \
+                 no spare threads — the ONE geometry in which the boot-H2 out-of-bounds read is \
+                 invisible. This is exactly why the gate went green and the box died on the \
+                 same binary"
+            ));
+        }
         if pad_milli > 1_350 {
             failures.push(format!(
                 "arm 3: the plan's AGGREGATE pad ratio is {:.3}, past the 1.350 ceiling it is \
@@ -955,10 +1021,94 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // ============== ARM 4: the pipelined walk with a DFlash2 tap sink ARMED ==============
+    //
+    // Arm 2 proves the pipeline is bit-identical when nothing is tapped. This proves it stays
+    // so when the drafter has armed a sink — the shape the PRODUCT route actually runs, and the
+    // one arm 2 used to decline by name. Both walks take the door and the same explicit chunk,
+    // so the schedule is identical and the ONLY axis is serial-vs-pipelined. The bar is BIT
+    // identity on the logits AND on every tap row: the sink is the drafter's entire context, so
+    // a single moved bit there is a different draft.
+    {
+        let ids = tokens(t2, 0x5EED_0004);
+        let max_ctx = t2 + 16;
+        // One tapped layer from EACH stage: under the pipeline those two writes come from
+        // different host threads at different chunk bases, which is the whole hazard. A sink
+        // tapping only one stage's layers would pass while proving nothing.
+        let taps: Vec<usize> = vec![fence[1] - 1, fence[2] - 1];
+        set_env("MEMRA_B200_PRIME_V2", "1");
+        set_env("MEMRA_PRIME_CHUNK", &chunk2.to_string());
+
+        set_env("MEMRA_PRIME_PIPE", "0");
+        let (ref_logits, ref_taps) = prime_once_tapped(&e, &m, &plan, &ids, max_ctx, &taps)?;
+        let serial_pipelined = HYPER_PRIME_PIPELINED_CHUNKS.load(Ordering::Relaxed);
+
+        // RED `taps`: keep the pipeline shut for the door walk too, so nothing is pipelined
+        // with a sink armed and the counter assertion below MUST fire — the exact decline this
+        // arm exists to have removed.
+        if red != "taps" {
+            clear_env("MEMRA_PRIME_PIPE");
+        }
+        let before = HYPER_PRIME_PIPELINED_CHUNKS.load(Ordering::Relaxed);
+        let (got_logits, got_taps) = prime_once_tapped(&e, &m, &plan, &ids, max_ctx, &taps)?;
+        let pipelined = HYPER_PRIME_PIPELINED_CHUNKS.load(Ordering::Relaxed) - before;
+        clear_env("MEMRA_PRIME_CHUNK");
+        clear_env("MEMRA_B200_PRIME_V2");
+
+        let ranges = {
+            set_env("MEMRA_B200_PRIME_V2", "1");
+            set_env("MEMRA_PRIME_CHUNK", &chunk2.to_string());
+            let r = hyper_prime_ranges(t2, LAYERS, m.gdn_prime_grid_on());
+            clear_env("MEMRA_PRIME_CHUNK");
+            clear_env("MEMRA_B200_PRIME_V2");
+            r
+        };
+        let bad_logits = bit_mismatches(&got_logits, &ref_logits);
+        let bad_taps = bit_mismatches(&got_taps, &ref_taps);
+        let nonzero = ref_taps.iter().filter(|v| **v != 0.0).count();
+        println!(
+            "arm 4 TAPPED    t={t2} chunks={} taps={taps:?} rows={} ({nonzero} nonzero): \
+             pipelined-count {pipelined}; bit mismatches logits {bad_logits}/{} taps \
+             {bad_taps}/{}",
+            ranges.len(),
+            ref_taps.len(),
+            got_logits.len(),
+            got_taps.len(),
+        );
+        if serial_pipelined != before {
+            failures.push(
+                "arm 4 CONTROL BROKEN: MEMRA_PRIME_PIPE=0 still pipelined chunks".to_string(),
+            );
+        }
+        if pipelined != ranges.len() as u64 {
+            failures.push(format!(
+                "arm 4 VACUOUS: the pipelined body ran {pipelined} chunk(s), schedule says {} — \
+                 with a sink armed this is the decline arm 2 used to take, and it is exactly \
+                 what cost the product route its win at depth. Check stderr for a \
+                 [hyper-prime-pipe] DECLINED line, and for taps=armed on the arm2 engagement line",
+                ranges.len()
+            ));
+        }
+        if nonzero == 0 {
+            failures.push(
+                "arm 4 VACUOUS: the reference sink is all zeros, so comparing sinks compares \
+                 nothing — the tap never fired"
+                    .to_string(),
+            );
+        }
+        if bad_logits != 0 || bad_taps != 0 {
+            failures.push(format!(
+                "arm 4: the pipelined walk with taps armed is NOT bit-identical — {bad_logits} \
+                 logit bits and {bad_taps} tap bits differ. The tap rows are the drafter's whole \
+                 context; a moved bit there is a different draft"
+            ));
+        }
+    }
+
     if failures.is_empty() {
         println!(
             "glm5-prime-v2-gate: PASS (arm 1 near-tie band + argmax, arm 2 bit-identical, \
-             arm 3 f16-mirror band + control)"
+             arm 3 f16-mirror band + control, arm 4 tapped pipeline bit-identical)"
         );
         Ok(())
     } else {

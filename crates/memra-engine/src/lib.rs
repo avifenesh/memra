@@ -2226,6 +2226,16 @@ pub static MOE_BGEMM_LAST_PAD_MILLI: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 pub static MOE_BGEMM_LAST_SPREAD_MILLI: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
+/// Largest and smallest bucket by expert count, and the padded row count. The gate asserts all
+/// three: boot H2 died on a shape the fixture could not reach (a 101-expert tail bucket, a
+/// singleton at the widest pad, and a padded plane past the 32,768 launch-grid split), and a
+/// fixture that cannot reach a shape cannot defend it.
+pub static MOE_BGEMM_LAST_MAX_BUCKET: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+pub static MOE_BGEMM_LAST_MIN_BUCKET: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+pub static MOE_BGEMM_LAST_ROWS_PADDED: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
 
 pub static MOE_BGEMM_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
