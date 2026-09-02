@@ -58,7 +58,10 @@ fn safe_e4m3(b: u8) -> u8 {
 /// per 64-element sub-block (sblk) = 4 e4m3 scale bytes (one per 16-elem quarter) + 32
 /// nibble-packed quant bytes. `in_f` must be a multiple of 64. Returns (bytes, row_bytes).
 fn synth_nvfp4_expert_row_bytes(out_f: usize, in_f: usize, seed: u32) -> (Vec<u8>, usize) {
-    assert!(in_f % 64 == 0, "expert nvfp4 layout needs in_f % 64 == 0");
+    assert!(
+        in_f.is_multiple_of(64),
+        "expert nvfp4 layout needs in_f % 64 == 0"
+    );
     let nsb64 = in_f / 64;
     let row_bytes = nsb64 * 36;
     let mut w = vec![0u8; out_f * row_bytes];
@@ -78,7 +81,10 @@ fn synth_nvfp4_expert_row_bytes(out_f: usize, in_f: usize, seed: u32) -> (Vec<u8
 /// `nvfp4_mmvq_fused_seg_rp` (qmatvec.cu): quant plane `[out_f, nsb64*32]` followed by scale
 /// plane `[out_f, nsb64*4]`. `in_f` must be a multiple of 64.
 fn synth_nvfp4_rp_bytes(out_f: usize, in_f: usize, seed: u32) -> Vec<u8> {
-    assert!(in_f % 64 == 0, "rp nvfp4 layout needs in_f % 64 == 0");
+    assert!(
+        in_f.is_multiple_of(64),
+        "rp nvfp4 layout needs in_f % 64 == 0"
+    );
     let nsb64 = in_f / 64;
     let qplane_len = out_f * nsb64 * 32;
     let splane_len = out_f * nsb64 * 4;

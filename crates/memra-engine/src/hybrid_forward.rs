@@ -1673,6 +1673,7 @@ impl HybridModel {
     /// lane/b200-q8-fuse-20260902 — the caller's norm producer folded the standalone
     /// `quantize_q8_1(z, ...)` launch into itself). `None` preserves the unfused chain:
     /// `moe_ffn_il_zq8` re-quantizes `z` itself, byte-identical either way.
+    #[allow(clippy::too_many_arguments)]
     fn hyper_ffn_branch(
         &self,
         e: &Engine,
