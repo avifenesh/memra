@@ -66,7 +66,7 @@ library embedded in your application.
 ## Choose a path
 
 **By model:** [Qwen3.8 27B](docs/models/qwen38-27b.md) ·
-[Qwen3.8 Flash Next](docs/models/qwen38-flash-next.md) (NativeReference bring-up) ·
+[Qwen3.8 Flash Next](docs/models/qwen38-flash-next.md) (bring-up only) ·
 [Qwen3.5 9B](docs/models/qwen35-9b.md) · [Qwen3.6 27B](docs/models/qwen36-27b.md) ·
 [Qwen3.6 35B-A3B](docs/models/qwen36-35b-a3b.md) ·
 [Qwen-AgentWorld 35B-A3B](docs/models/qwen-agentworld-35b-a3b.md) ·
