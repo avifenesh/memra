@@ -1,7 +1,7 @@
 # Kernel inventory
 
-Derived from code (build.rs, cu/, FFI shims) 2026-09-02 **at commit 56fe761cc5** — line
-references resolve against that commit (`git show 56fe761cc5:<path>`), not necessarily HEAD.
+Derived from code (build.rs, cu/, FFI shims) 2026-09-02 **at commit 6a131edb** — line
+references resolve against that commit (`git show 6a131edb:<path>`), not necessarily HEAD.
 Every row comes from a grep or a read; UNKNOWN means not determinable from the code without
 deeper tracing — never guessed. Known drift at merge time (v0.100.0 train, 1e292853de):
 kernels.cu 71→73 entry symbols, qmatvec.cu 251→252; other per-file counts unchanged.
