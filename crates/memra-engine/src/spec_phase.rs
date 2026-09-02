@@ -89,6 +89,16 @@ pub(crate) struct SpecPhaseNs {
 }
 
 impl SpecPhaseNs {
+    /// Fold another accumulator in (the per-round depth log feeding the per-burst trace).
+    pub(crate) fn add(&mut self, o: &SpecPhaseNs) {
+        self.draft += o.draft;
+        self.verify += o.verify;
+        self.accept += o.accept;
+        self.roll += o.roll;
+        self.maint += o.maint;
+        self.rounds += o.rounds;
+    }
+
     /// Phase-boundary clock: drain the engines' streams so the elapsed time since the last
     /// clock is attributable to the phase that just ran (the dspark `clock(stats, e)`
     /// contract). `eh` == `e` when the ppN door is shut; under a split the verify walk's own
@@ -219,7 +229,125 @@ pub struct SpecFirstTokenProf {
     /// First burst: rounds it ran and tokens it returned (anchor included).
     pub first_burst_rounds: usize,
     pub first_burst_tokens: usize,
+    // ---- depth attribution (lane/spec-route-depth-20260902) ----
+    /// Session creation: the prime tap sink's HOST allocation (`HcTapSink::new`, a
+    /// `[prompt, n_taps * hidden]` f32 Vec: 21 GB at 256k) — eager arm only.
+    pub sink_alloc_ms: f64,
+    /// Inside the target prime: the host-staged tap DtoHs (five synchronous readbacks per
+    /// prime chunk, accumulated by the walk) — eager arm only; a share of `prime_ms`.
+    pub prime_tap_dtoh_ms: f64,
+    /// Drafter prime split: host->device movement of the tap rows (pageable HtoD on the
+    /// eager arm; device slot DtoH into pinned + host interleave + async HtoD on the
+    /// chunked arm), the fc feature GEMM (`ctx_features`), the 5-layer k/v ingest.
+    pub draft_prime_h2d_ms: f64,
+    pub draft_prime_feat_ms: f64,
+    pub draft_prime_kv_ms: f64,
+    /// Drafter prime geometry: rows ingested, chunks, and which arm ran
+    /// (`eager` = round-1 ingest in 256-row chunks from the host sink; `chunked` =
+    /// `MEMRA_GLM5_DRAFT_PRIME_V2`, ingest per prime chunk from device-staged taps).
+    pub draft_prime_rows: usize,
+    pub draft_prime_chunks: usize,
+    pub draft_prime_arm: &'static str,
+    /// The drafter ctx KV allocation at the session ctx, in MB (uninit; 2 x n_layer x
+    /// (ctx + block) x n_kv x head_dim x f32).
+    pub draft_kv_mb: f64,
+    /// Free device memory per device ordinal, before the trunk cache allocation and after
+    /// the drafter KV allocation — the graph-launch headroom guard and every pool-growth
+    /// path key on it, so a per-boot bimodality shows up here first.
+    pub free_mb_before: Vec<(usize, u64)>,
+    pub free_mb_after: Vec<(usize, u64)>,
 }
+
+/// Rounds the per-round depth log keeps per session (lane/spec-route-depth-20260902).
+pub const SPEC_PROF_ROUNDS: usize = 64;
+
+/// One verify round's attribution row (`MEMRA_SPEC_PROF=1`, first
+/// [`SPEC_PROF_ROUNDS`] rounds of a session). Phase buckets are drained like the trace's
+/// (shares under drains, so `wall_ms` is the round's traced wall); `k` is the drafted
+/// count that entered the verify (after the confidence gate), `j` the accepted drafts,
+/// `ctx` the trunk rows at round entry, `seq_rows` the verify rows that took the PER-ROW
+/// mixer arm instead of the batched one (0 = every layer batched — a non-zero count at
+/// depth names the slow-path suspect by itself).
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
+pub struct SpecRoundProf {
+    pub wall_ms: f32,
+    pub draft_ms: f32,
+    pub verify_ms: f32,
+    pub accept_ms: f32,
+    pub rest_ms: f32,
+    pub k: u16,
+    pub j: u16,
+    pub ctx: u32,
+    pub seq_rows: u32,
+}
+
+/// The per-session round log behind `[spec-prof-rounds]` / `[spec-prof-summary]`.
+#[derive(Default, Debug)]
+pub struct SpecRoundsLog {
+    pub rounds: Vec<SpecRoundProf>,
+    /// Rows already handed to the printer (`fresh` returns the tail past it).
+    pub printed: usize,
+    pub summarized: bool,
+}
+
+impl SpecRoundsLog {
+    pub fn wants_more(&self) -> bool {
+        self.rounds.len() < SPEC_PROF_ROUNDS
+    }
+    pub fn push(&mut self, r: SpecRoundProf) {
+        if self.wants_more() {
+            self.rounds.push(r);
+        }
+    }
+    /// Rows not yet printed; marks them printed.
+    pub fn fresh(&mut self) -> &[SpecRoundProf] {
+        let from = self.printed;
+        self.printed = self.rounds.len();
+        &self.rounds[from..]
+    }
+    /// One-line summary over the logged rounds: acceptance, tokens per round, the wall
+    /// distribution (mean/min/median/max) and how many rounds sit past 1.5x the median
+    /// (a within-boot bimodality count), the verify mean, and the per-row-arm row total.
+    pub fn summary(&self) -> String {
+        let n = self.rounds.len();
+        if n == 0 {
+            return "rounds=0".to_string();
+        }
+        let nf = n as f64;
+        let k: f64 = self.rounds.iter().map(|r| r.k as f64).sum::<f64>();
+        let j: f64 = self.rounds.iter().map(|r| r.j as f64).sum::<f64>();
+        let mut walls: Vec<f32> = self.rounds.iter().map(|r| r.wall_ms).collect();
+        walls.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let med = walls[n / 2];
+        let mean = walls.iter().map(|&w| w as f64).sum::<f64>() / nf;
+        let slow = walls.iter().filter(|&&w| w > 1.5 * med).count();
+        let verify_mean = self.rounds.iter().map(|r| r.verify_ms as f64).sum::<f64>() / nf;
+        let draft_mean = self.rounds.iter().map(|r| r.draft_ms as f64).sum::<f64>() / nf;
+        let seq: u64 = self.rounds.iter().map(|r| r.seq_rows as u64).sum();
+        format!(
+            "rounds={n} k_mean={:.2} j_mean={:.2} accept={:.3} tok_per_round={:.2} \
+             wall_ms mean={:.1} min={:.1} med={:.1} max={:.1} slow_rounds(>1.5x med)={slow} \
+             draft_mean={:.1} verify_mean={:.1} seq_rows_total={seq} ctx_first={} ctx_last={}",
+            k / nf,
+            j / nf,
+            if k > 0.0 { j / k } else { 0.0 },
+            (j + nf) / nf,
+            mean,
+            walls[0],
+            med,
+            walls[n - 1],
+            draft_mean,
+            verify_mean,
+            self.rounds[0].ctx,
+            self.rounds[n - 1].ctx,
+        )
+    }
+}
+
+/// Verify rows that took the PER-ROW mixer arm (lane/spec-route-depth-20260902):
+/// incremented by `glm5_verify_range` on the sequential loop, sampled per round by the
+/// depth log. Module-level atomic, the `V_KDA_NS` precedent (single-session instrument).
+pub(crate) static V_SEQ_ROWS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// Phase clock for [`SpecFirstTokenProf`]: `lap` drains the engines' streams and returns
 /// the ms since the previous lap (or `start`). Only ever constructed with the profile on.

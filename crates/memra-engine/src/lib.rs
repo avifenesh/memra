@@ -2,8 +2,8 @@
 
 use cudarc::driver::sys::CUfunction_attribute_enum::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES;
 use cudarc::driver::{
-    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DeviceSlice, LaunchConfig,
-    PushKernelArg,
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DevicePtrMut, DeviceSlice,
+    LaunchConfig, PushKernelArg,
 };
 use cudarc::nvrtc::Ptx;
 use std::sync::{Arc, Mutex};
@@ -11817,6 +11817,81 @@ impl Engine {
         self.gpu.stream().synchronize()?;
         Ok(())
     }
+    /// f32 twin of [`Self::dtoh_u8_into_pinned`] (lane/spec-route-depth-20260902): D2H the
+    /// first `n` floats of `d` into a pinned CACHEABLE host buffer, synchronized before
+    /// returning (the caller CPU-reads the rows right after).
+    pub fn dtoh_f32_into_pinned(
+        &self,
+        d: &CudaSlice<f32>,
+        dst: &mut PinnedHostBuf,
+        n: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if n > d.len() || n * std::mem::size_of::<f32>() > dst.len() {
+            return Err(format!(
+                "dtoh_f32_into_pinned range {n} floats exceeds src {} or pinned dst {} bytes",
+                d.len(),
+                dst.len(),
+            )
+            .into());
+        }
+        if n == 0 {
+            return Ok(());
+        }
+        // SAFETY: the pinned buffer is page-aligned (malloc_host) and holds >= n f32s.
+        let host: &mut [f32] = unsafe {
+            std::slice::from_raw_parts_mut(dst.as_mut_slice().as_mut_ptr() as *mut f32, n)
+        };
+        self.gpu.stream().memcpy_dtoh(&d.slice(0..n), host)?;
+        self.gpu.stream().synchronize()?;
+        Ok(())
+    }
+
+    /// ASYNC H2D of the first `n` floats of a pinned host buffer into a fresh device slice
+    /// (lane/spec-route-depth-20260902: the chunked drafter prime's tap upload). Queued on
+    /// the worker stream and NOT synchronized: the copy is DMA from page-locked memory, and
+    /// every consumer is stream-ordered behind it. CONTRACT: the caller must not write
+    /// `src` again until the stream has passed this copy (synchronize, or a later blocking
+    /// readback on the same stream) — the chunked prime synchronizes at the end of each
+    /// chunk's ingest before it refills the staging buffer.
+    pub fn htod_f32_from_pinned_async(
+        &self,
+        src: &PinnedHostBuf,
+        n: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        if n * std::mem::size_of::<f32>() > src.len() {
+            return Err(format!(
+                "htod_f32_from_pinned_async range {n} floats exceeds pinned src {} bytes",
+                src.len(),
+            )
+            .into());
+        }
+        let mut d = self.uninit(n)?;
+        if n == 0 {
+            return Ok(d);
+        }
+        // SAFETY: page-aligned pinned allocation with >= n f32s (checked above).
+        let host: &[f32] =
+            unsafe { std::slice::from_raw_parts(src.as_slice().as_ptr() as *const f32, n) };
+        let stream = self.gpu.stream();
+        let s: &CudaStream = &stream;
+        {
+            let (pd, _guard) = d.device_ptr_mut(s);
+            // SAFETY: `pd` is a live device allocation of n f32s on this stream; `host` is
+            // page-locked memory the caller keeps alive and unmodified until the stream
+            // passes the copy (the documented contract).
+            unsafe { cudarc::driver::result::memcpy_htod_async(pd, host, s.cu_stream())? };
+        }
+        Ok(d)
+    }
+
+    /// Free device memory on this engine's device, in MB (`cuMemGetInfo`; 0 on error).
+    pub fn free_mem_mb(&self) -> u64 {
+        self.ctx()
+            .mem_get_info()
+            .map(|(f, _)| f as u64 >> 20)
+            .unwrap_or(0)
+    }
+
     pub fn zeros(&self, n: usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         SCRATCH_ALLOC_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let s = self.gpu.stream().alloc_zeros::<f32>(n)?;

@@ -2453,7 +2453,13 @@ pub struct HcTapSink {
     /// DESIGN — a `[prompt, hidden]` per-slot device transient at 16k-prompt depth is
     /// ~1.3 GiB of VRAM the prime must not hold, and the prime's per-chunk DtoH amortizes
     /// over >= 256 rows (DFlash2 TTFT is near-constant already, 3way cell 4).
+    /// (lane/spec-route-depth-20260902: the chunked drafter prime arms a device-staged
+    /// sink PER PRIME CHUNK via `new_device_staged_at`, so the transient is one chunk's
+    /// rows, never the prompt's.)
     pub device_stage: bool,
+    /// Host-staged writes: nanoseconds the walk spent in the synchronous tap DtoHs
+    /// (lane/spec-route-depth-20260902 attribution; 0 on device-staged sinks).
+    pub dtoh_ns: u64,
 }
 
 impl HcTapSink {
@@ -2468,6 +2474,7 @@ impl HcTapSink {
             origin: 0,
             dev: (0..n_taps).map(|_| None).collect(),
             device_stage: false,
+            dtoh_ns: 0,
         }
     }
 
@@ -2486,6 +2493,31 @@ impl HcTapSink {
         Self {
             device_stage: true,
             ..Self::new(layer_ids, hidden, t)
+        }
+    }
+
+    /// Device-staged sink anchored at absolute position `origin` (lane/spec-route-depth-
+    /// 20260902): one prime CHUNK's tap rows, staged on the writing engine's device, drained
+    /// by the chunked drafter prime right after that chunk's walk. The host `rows` Vec is
+    /// left EMPTY on purpose (nothing reads it; the eager sink's per-prompt host Vec is the
+    /// 21 GB-at-256k cost this constructor exists to avoid).
+    pub fn new_device_staged_at(
+        layer_ids: Vec<usize>,
+        hidden: usize,
+        t: usize,
+        origin: usize,
+    ) -> Self {
+        let n_taps = layer_ids.len();
+        Self {
+            layer_ids,
+            rows: Vec::new(),
+            hidden,
+            t,
+            base: 0,
+            origin,
+            dev: (0..n_taps).map(|_| None).collect(),
+            device_stage: true,
+            dtoh_ns: 0,
         }
     }
 }
