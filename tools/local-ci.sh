@@ -125,30 +125,65 @@ cargo build --release || { echo "local-ci: build FAILED"; exit 1; }
 # that same version, and bump rust-version + the ci.yml pin + the rig together in one
 # lane (the gate's first CI run redded on a stable that moved overnight; receipt in the
 # ci.yml toolchain-pin comment).
-if [ "${MEMRA_CI_CLIPPY:-1}" = "1" ]; then
-    echo "== local-ci: clippy gate (-D warnings) =="
-    cargo clippy --release --all-targets -j8 -- -D warnings \
-        || { echo "local-ci: clippy gate FAILED — the workspace stays clippy-zero (fix or #[allow] with a stated reason)"; exit 1; }
+cpu_chain() {
+    if [ "${MEMRA_CI_CLIPPY:-1}" = "1" ]; then
+        echo "== local-ci: clippy gate (-D warnings) =="
+        cargo clippy --release --all-targets -j8 -- -D warnings \
+            || { echo "local-ci: clippy gate FAILED — the workspace stays clippy-zero (fix or #[allow] with a stated reason)"; return 1; }
+    else
+        echo "local-ci: clippy gate SKIPPED (MEMRA_CI_CLIPPY=0)" >&2
+    fi
+    echo "== local-ci: memra-server HTTP-surface unit suite =="
+    if ! cargo test --release -p memra-server -j8; then
+        echo "local-ci: memra-server unit suite FAILED"; return 1
+    fi
+    # ENGINE LIB SUITE (memra#18, ci-diet lane 2026-09-02). vision::tests and every other
+    # memra-engine lib test ran NOWHERE: ci.yml ran `cargo test -p memra-engine cpu_experts
+    # --lib`, a NAME FILTER. The CPU-safe part of the suite runs here (358 tests, measured with
+    # CUDA_VISIBLE_DEVICES empty on 2026-09-02: 358 passed, 0 failed, 3 ignored); the three
+    # `#[ignore]` tests that need a CUDA device run below, on the GPU chain, under the lock.
+    echo "== local-ci: memra-engine lib suite (CPU-safe part) =="
+    if ! cargo test --release -p memra-engine --lib -j8; then
+        echo "local-ci: memra-engine lib suite FAILED"; return 1
+    fi
+}
+# OVERLAP (ci-diet lane 2026-09-02). The three steps above are CPU-bound and touch no GPU;
+# every gate below the lock is GPU-bound and leaves most cores idle. Serial, the correctness
+# stage paid their sum; overlapped, it pays the larger of the two chains. Only in the
+# correctness mode: a perf mode serializes everything, because a compile sharing the box with
+# a timing cell is exactly the co-resident noise the perf rows refuse (window_clean). The chain
+# is forked BEFORE acquire_gpu_lock so it never inherits fd 9 (the sccache trap's shape).
+# MEMRA_CI_OVERLAP=0 restores the serial order, announced. Joined by join_cpu_chain below;
+# a chain failure fails the run with the chain's own log.
+CPU_LOG=""
+CPU_PID=""
+# A GPU gate that exits 1 must not leave the chain compiling on an idle rig: kill the chain's
+# children (cargo) and the chain, keep its log for the post-mortem. A joined chain has CPU_PID
+# cleared, so a normal exit does nothing here.
+trap 'if [ -n "${CPU_PID:-}" ] && kill -0 "$CPU_PID" 2>/dev/null; then pkill -TERM -P "$CPU_PID" 2>/dev/null || true; kill "$CPU_PID" 2>/dev/null || true; echo "local-ci: CPU chain killed on exit; its log is kept at $CPU_LOG" >&2; fi' EXIT
+if [ "$MODE" = "--correctness" ] && [ "${MEMRA_CI_OVERLAP:-1}" = "1" ]; then
+    CPU_LOG=$(mktemp "${TMPDIR:-/tmp}/local-ci-cpu-chain.XXXXXX")
+    echo "local-ci: CPU chain (clippy, memra-server suite, memra-engine lib suite) running alongside the GPU gates; log $CPU_LOG"
+    cpu_chain > "$CPU_LOG" 2>&1 &
+    CPU_PID=$!
 else
-    echo "local-ci: clippy gate SKIPPED (MEMRA_CI_CLIPPY=0)" >&2
+    [ "$MODE" = "--correctness" ] && echo "local-ci: CPU chain overlap SKIPPED (MEMRA_CI_OVERLAP=0), running serially" >&2
+    cpu_chain || exit 1
 fi
-
-# HTTP-SURFACE UNIT SUITE (lane/vendor-default-sampling, 2026-08-19). CPU-only, ~1s, and it
-# was in NO automated gate: this battery ran `cargo build` but never `cargo test`, and at the
-# time .github/workflows/ci.yml ran only `cargo test -p memra-engine cpu_experts --lib` (the
-# v0.96.0 train also landed gate-integrity-r2's ci.yml suites — CUDA-free crates, memra-server,
-# parity bins — which cover the executors this battery is not on; THIS line stays the fatal
-# enforcement in the battery that gates every merge and tag). So every
-# request-contract invariant the server owns — the omitted-vs-explicit sampling law, explicit
-# `temperature: 0` staying true greedy, the four API surfaces agreeing, metadata boot
-# validation, the fresh-seed default — was verified only when a human remembered to run it by
-# hand. Those are product laws; they belong in the gate that "gates every merge and tag"
-# (docs/TESTING.md). FATAL, not a warning: a broken request contract is not a drift notice.
-# -j8 per the rig CPU cap; the perf stage below owns the GPU and this stage never touches it.
-echo "== local-ci: memra-server HTTP-surface unit suite =="
-if ! cargo test --release -p memra-server -j8; then
-    echo "local-ci: memra-server unit suite FAILED"; exit 1
-fi
+join_cpu_chain() {
+    [ -n "$CPU_PID" ] || return 0
+    if wait "$CPU_PID"; then
+        echo "== local-ci: CPU chain joined: PASS =="
+        grep -E '^(== local-ci|test result)' "$CPU_LOG" | sed 's/^/    /' || true
+    else
+        echo "== local-ci: CPU chain FAILED (full log follows) =="
+        cat "$CPU_LOG"
+        rm -f "$CPU_LOG"
+        exit 1
+    fi
+    rm -f "$CPU_LOG"
+    CPU_PID=""
+}
 
 if ! tools/check-flags.sh; then
     echo "local-ci: WARNING — new MEMRA_* flag drift detected (non-fatal; correctness battery continues)"
@@ -598,6 +633,14 @@ if [ "${MEMRA_CI_HITGATE:-1}" = "1" ] && [ -x tools/spec-on-cache-hit-gate.sh ];
     fi
 fi
 
+# The CPU chain must land before the stage is called green, and the engine's three
+# `#[ignore]` GPU tests run here, under the lock this run already holds (the vision test
+# names that condition in its own ignore reason). Serial runs have CPU_PID empty; join is a no-op.
+join_cpu_chain
+echo "== local-ci: memra-engine lib suite (GPU-only #[ignore] tests) =="
+if ! cargo test --release -p memra-engine --lib -j8 -- --ignored; then
+    echo "local-ci: memra-engine GPU-only lib tests FAILED"; exit 1
+fi
 [ "$MODE" = "--correctness" ] && exit 0
 
 echo "== local-ci: perf stage ($MODE) =="
