@@ -1,8 +1,9 @@
-# HY3 plain c1 — 100 tok/s program
+# HY3 native multi-GPU serving program
 
-Status: active. Success is not a speculative or aggregate-throughput substitute.
+Status: closed by owner on 2026-09-02. The former numerical throughput target is retired; the
+measured results below remain historical development evidence.
 
-## Bound target
+## Closed measurement scope
 
 - Artifact index:
   `0f22f6fc51ac7e39b7510a77c77098c4fd7c722e9e6cfdb9782247c37f1b6afd`.
@@ -10,20 +11,19 @@ Status: active. Success is not a speculative or aggregate-throughput substitute.
 - Runtime: native Memra automatic placement, one request, `MEMRA_SERVE_SPEC=0`.
 - Product-shape row: request carries no sampling fields; the server resolves the artifact's
   configured sampling defaults.
-- Pass: at least 128 non-looped output tokens at more than 100 output tok/s on c1, x3
-  interleaved fresh-boot repetitions; escalate to x5 under the standing spread rule.
 - Correctness: finite logits, plain greedy tape/argmax gate where the numeric class is exact,
   bounded full-logit and symmetric teacher-forcing gates for any new numeric class, tools and
   reasoning surfaces, cache-on multi-turn twin, context/admission, disconnect rollback, and
   `tools/local-ci.sh --perf`.
 
-The merged sampled baseline is 35.73 tok/s, or 27.99 ms/token. The target is below
-10.00 ms/token: 17.99 ms must leave the critical path.
+The program began from a merged sampled baseline of 35.73 tok/s, or 27.99 ms/token. That baseline
+and every later row are retained to explain the engineering decisions; none is an open acceptance
+target after closure.
 
 ## Evidence already banked
 
 The only saved Nsight capture is a K=1 speculative round window, not a plain-decode capture.
-It cannot price the whole c1 target. It does contain exactly 40 target-trunk automatic-EP calls,
+It cannot price the whole c1 workload. It does contain exactly 40 target-trunk automatic-EP calls,
 so the routed-expert kernels inside that shared target forward remain useful:
 
 | target-trunk automatic-EP phase | measured max-rank kernel class |
@@ -35,7 +35,7 @@ so the routed-expert kernels inside that shared target forward remain useful:
 | route mirror | about 2 us/layer |
 
 The capture's 316 blocking DtoH calls belong to the MTP/draft host-visible route, not plain
-automatic EP. They must not be charged to the c1 target.
+automatic EP. They must not be charged to the c1 workload.
 
 Source inspection of the plain automatic-EP path establishes:
 
@@ -47,9 +47,11 @@ Source inspection of the plain automatic-EP path establishes:
 - automatic EP keeps attention, dense layer 0, shared MLP, and the LM head on the root rather than
   composing rank-local TP attention with whole-expert EP.
 
-## Ranked attack ledger
+## Historical attack ledger
 
-Predictions are hypotheses until a same-window box A/B prices them.
+This was the ranked ledger while the program was active. Predictions remained hypotheses until a
+same-window box A/B priced them; closure creates no unfinished obligation to run the remaining
+rows.
 
 | priority | mechanism | predicted saving | acceptance / kill gate |
 |---:|---|---:|---|
@@ -178,10 +180,9 @@ reusable events, ping-pong staging, no per-call allocation, no host synchronizat
 9.461 us/join; two joins across 80 layers price at about 1.51 ms/token before overlap. Receipt:
 `receipts/tp2-replicated-row-join-20260901.txt`.
 
-This is substrate evidence, not the 100 tok/s result. Next implementation: retain the residual on
-the TP pair, use the persistent join at the attention and FFN ownership boundaries, keep EP4
-experts whole, and profile each integrated rung. The pass condition at the top of this file is
-unchanged.
+This is substrate evidence, not an end-to-end serving result. The then-proposed continuation was
+to retain the residual on the TP pair, use the persistent join at the attention and FFN ownership
+boundaries, keep EP4 experts whole, and profile each integrated rung. That continuation is closed.
 
 ## 2026-09-01 four-card continuation: profile-driven boundary diet
 
@@ -226,8 +227,8 @@ throughput moved 8.86 -> **10.34 tok/s** while D2D calls fell **50,927 -> 20,447
 **51,054 -> 9,694**, and kernel launches fell by **25,840**. Its fused
 `qk_norm_rope_append_inc_dcw` and `fa_decode_vec_q_v3_dcw` kernels appear in the capture. GPU0
 still summed 1,458.5 ms of kernels over the decode window versus 906.9 / 270.4 / 274.1 ms on the
-other cards. The best uninstrumented row is 13.90 ms/token, so the 100 tok/s target still needs
-about **3.90 ms/token** removed.
+other cards. The best uninstrumented row was 13.90 ms/token; at the time, the former target implied
+about **3.90 ms/token** more would have needed to leave the path.
 
 Correctness so far: every real-artifact rung above kept the prompt prefill/decode argmax at 40129.
 The current-best max-diff is 8.912e-1, the already-declared W8 numeric class. Forcing its own
@@ -285,9 +286,8 @@ wrappers were removed; only the reusable probe and raw NCU reports remain. Repor
 The exact PRO 6000 profile independently bounds this arc. On root device 0, paired gate/up plus
 down totaled 223.809 ms in the captured request, while the adjacent root costs were scalar FA
 178.442 ms, shared BF16 dual-SiLU 173.599 ms, Q8 QKV 161.035 ms, Q8 output projection
-127.764 ms, and vector FA 70.289 ms. Expert-row ILP cannot supply the remaining 3.90 ms/token.
-The next paid cell profiles and attacks the attention/shared-dense dependency groups; another
-expert-row layout is not justified by these counters.
+127.764 ms, and vector FA 70.289 ms. Expert-row ILP could not supply the then-measured 3.90
+ms/token gap. A further expert-row layout was not justified by these counters.
 
 ### Shared-expert BF16 closure
 
@@ -347,10 +347,9 @@ constant-number dependency group; another per-layer copy variant is rejected.
 
 The serving result also corrects the earlier `71.93 tok/s` interpretation: that number came from
 the generation harness with `MEMRA_ASYNC_CHAIN=8`, a mechanism the server request path did not
-engage. The current comparable server baseline is **64.75 tok/s**, leaving 5.44 ms/token to reach
-100 tok/s. The next plain-path cell profiles server-side dependency groups and either integrates a
-coarse persistent chain into the server or rejects it on measured wall time; expert-row and
-shared-BF16 reschedules are already closed by the counters above.
+engage. The current comparable server baseline is **64.75 tok/s**. The former numerical finish
+line is no longer an acceptance criterion. Expert-row and shared-BF16 reschedules remain closed by
+the counters above.
 
 Post-rebase `tools/local-ci.sh --perf` on exact head `6acc5a6d17063760127bc29f6265b7bf75e7791f`
 passed the workspace clippy gate, 550 server tests, flags and drafter-wiring checks, 107 available
@@ -398,8 +397,8 @@ byte-for-byte between solo and c2 arrival. A newline stop returned `finish_reaso
 proved the overshot cache was refused from reuse; a client disconnect billed two generated tokens,
 left the worker alive, and a following eight-token request completed. No CUDA error, panic, or Xid
 appeared. This qualifies the server mechanism on that dense model and hardware only. The global
-default remains off; the HY3 PRO 6000 sampled cell still decides whether the mechanism advances
-the 64.75 tok/s MoE baseline toward 100 tok/s.
+default remains off. The HY3 PRO 6000 sampled cell was not run before owner closure, so this lane
+makes no MoE server-chain performance claim.
 
 The second dense plan confirms compatibility but rejects a family-wide speed conclusion. Q38 27B,
 artifact `1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a`, used the same
@@ -411,7 +410,7 @@ hardware, not a generic dense default.
 
 ## 2026-09-02 TP verified-prefix dispatch collapse
 
-A current primary-source sweep did not justify an all-expert dense GEMM for this c1 target.
+A current primary-source sweep did not justify an all-expert dense GEMM for this c1 workload.
 TensorRT-LLM's [Blackwell DENSEGEMM report](https://github.com/NVIDIA/TensorRT-LLM/blob/181f726d10f713836ad3d19df4016c2d3f5ab631/docs/source/blogs/tech_blog/blog24_MoE_as_Dense_GEMM.md)
 puts its measured sweet spot at 64-208 input tokens and states that the grouped path wins below
 that range; HY3 c1 presents one token. Its [min-latency report](https://github.com/NVIDIA/TensorRT-LLM/blob/181f726d10f713836ad3d19df4016c2d3f5ab631/docs/source/blogs/tech_blog/blog01_Pushing_Latency_Boundaries_Optimizing_DeepSeek-R1_Performance_on_NVIDIA_B200_GPUs.md)
@@ -436,9 +435,9 @@ were byte-exact with every one of the 80 length mirrors equal to 130:
 | per-layer K + V + len dispatches | 629.04 | control |
 | one batched kernel | **1.86** | **338x**, exact |
 
-This is an isolated dispatch-boundary receipt, not an end-to-end predictor claim. The live PRO 6000
-cell must show `[tp-kv-verify-batch] engaged`, preserve sampled correctness and acceptance, and beat
-the 13.99 tok/s peer-repair row before the predictor path can advance.
+This is an isolated dispatch-boundary receipt, not an end-to-end predictor claim. A live PRO 6000
+cell would have needed to show `[tp-kv-verify-batch] engaged`, preserve sampled correctness and
+acceptance, and beat the 13.99 tok/s peer-repair row before a predictor-performance claim.
 
 The model-free two-rank P2P gate then exercised the actual `TpE4m3HostBounce` path on four-card
 development hardware, using ranks 0 and 1. Native peer integrity passed in both directions. Both
@@ -447,5 +446,23 @@ per-layer repair measured 1,412.34 us/round; the batched path measured 13.27 us/
 That hardware control also bounds the prize: at roughly 80 K=1 rounds, batching removes only about
 112 ms from a roughly nine-second 128-token predictor request. It cannot explain the multi-second
 gap to plain. The dominant predictor wall is verify/draft compute and its round synchronization,
-not cache-copy byte volume. Keep the batch implementation pending the live endpoint gate, but
-remove it if the sampled e2e delta misses the 3% retention bar.
+not cache-copy byte volume. The program closed before the sampled endpoint cell, so the batch
+implementation carries correctness and isolated-boundary evidence only.
+
+## 2026-09-02 owner closure
+
+The owner retired the numerical throughput aim and closed the program before the staged replacement
+host completed its artifact transfer. The transfer was stopped, the development instance was
+destroyed, and no model load or repeated cold repack was started on that host.
+
+Final scope:
+
+- the dense server-chain mechanism remains qualified only for the exact model/hardware rows above,
+  with its global default off;
+- the TP verified-prefix repair and its batched P2P primitive retain their exact local and
+  two-rank hardware receipts;
+- no live HY3 sampled endpoint ran for the batched repair or the server-chain arm after those
+  changes, so neither carries a HY3 serving-performance claim;
+- HY3 TP2 predictor remains off for this placement, and this document does not claim
+  `NativeTuned`, a production rollout, or achievement of the retired target;
+- there is no pending provider rental or GPU cell attached to this program.
