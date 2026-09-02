@@ -1,0 +1,8 @@
+# qwen4exp_real_gate	label=r3trace-thinkoff-32k	binary_sha256=69c44eb85b82d4eefb2e08e535beffa47b791be9c5444de84fc07ea3de8fc481	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=false	seams_env=idxsel
+# ladder	rungs=[32768]	chunk=2048	decode=60	kv_dev1=false	spec=Some(5)	ids=1150000	cap=32934
+# vram	pre-ladder	0, 0 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 89971 MiB, 97887 MiB | 3, 9555 MiB, 97887 MiB
+rung	prefill_s	draft_prefill_s	decode_ms_per_tok	tok_per_s	accept	rounds	zero_draft	sub_rounds	spread_pct	looped	cross_mb	vram	continuation_ids
+# spec-shape	source=/root/realgate/shapes/thinkoff-prompts.tsv	suffix_tokens=43
+32768	161.7	5.9	20.9	47.87	0.545	30	3	sub_ms=[21.2, 21.7, 20.3]	6.84	false	1344.6	0, 0 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 92947 MiB, 97887 MiB | 3, 12979 MiB, 97887 MiB	8160,369,279,13996,314,264,13852,5829,2764,4667,5792,709,310,1510,7449,14,11093,7561,3055,440,449,15673,314,279,40355,44026,321,19260,4203,13,271,13962,16722,21964,58303,5534,318,12929,8,271,71093,13670,198,989,8355,283,1325,482,3720,4515,271,1628,59649,2939,7188,28638,11,4667,8,313

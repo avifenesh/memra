@@ -1,0 +1,15 @@
+[2026-09-01T21:35:13Z] q2: queue2 start (physical cards 2,3; host RAM 353G)
+[2026-09-01T21:35:13Z] q2: cell trace-thinkon-32k (-s)
+[2026-09-01T21:41:45Z] q2: cell trace-thinkon-32k rc=143 bytes=
+[2026-09-01T21:42:15Z] q2: cards clear after 30s, starting trace-thinkoff-32k
+[2026-09-01T21:42:15Z] q2: cell trace-thinkoff-32k (-s)
+[2026-09-01T21:47:24Z] q2: cell trace-thinkoff-32k rc=0 bytes=165116
+[2026-09-01T21:47:25Z] q2: cell trace-raw-32k (-s)
+[2026-09-01T21:58:13Z] q2: cell trace-raw-32k rc=0 bytes=142755
+[2026-09-01T21:58:13Z] q2: traces done; spec262kv1 reruns
+[2026-09-01T21:58:13Z] q2: cell spec262kv1-thinkon acquiring -x
+[2026-09-01T23:52:59Z] q2: STOPPED by operator — spec262kv1-thinkon HANG (sm100/mem0 spin, 113 min, receipt spec262kv1-thinkon.HANG.md); kv-dev1 262k cells BLOCKED pending a hang lane
+[2026-09-01T23:53:15Z] q2: RERUN cell trace-thinkon-32k (-s)
+[2026-09-02T00:15:13Z] q2: RERUN trace-thinkon-32k rc=0 bytes=
+[2026-09-02T01:18:43Z] q2: RERUN#3 trace-thinkon-32k (-s, via load lock)
+[2026-09-02T01:56:36Z] q2: RERUN#3 trace-thinkon-32k rc=0 bytes=148738
