@@ -20,6 +20,7 @@ jobs:
       - name: Immutable GitHub Action pin census
         run: |
           tools/check-action-pins.sh
+          tools/test_action_pins.sh
           tools/test_install_authenticity.sh
           tools/test_boundary_refs_guard.sh
 

@@ -6,9 +6,9 @@ set -euo pipefail
 bad=0
 scan_uses() {
   if command -v rg >/dev/null 2>&1; then
-    rg -n '^[[:space:]]*- uses:' .github/workflows
+    rg -n '^[[:space:]]*(-[[:space:]]+)?uses:' .github/workflows
   else
-    grep -RnHE '^[[:space:]]*- uses:' .github/workflows
+    grep -RnHE '^[[:space:]]*(-[[:space:]]+)?uses:' .github/workflows
   fi
 }
 while IFS=: read -r file line rest; do
