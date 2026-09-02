@@ -8022,6 +8022,90 @@ impl HybridModel {
         }
     }
 
+    /// Door `MEMRA_GLM5_Q8_FUSE` extended to the W8 q8_0-mirror path
+    /// (lane/b200-q8fuse-w8-20260902): `wq_a` and `wkv_a` both read the SAME `h`, so when
+    /// `MEMRA_GLM5_W8` has rerouted both through their q8_0 mirrors, each independently
+    /// re-quantizing `h` is the same redundant shape the KDA twin
+    /// (`kda::Engine::kda_proj_qkv_qmirror3`) removes. Quantizes ONCE and reuses the pair
+    /// for both via the `_pre` twins. Returns `None` (the caller falls through to its
+    /// existing `mm(&mla.wq_a, h)` / `mm(&mla.wkv_a, h)` dispatch) on any shape either
+    /// underlying W8 arm would itself refuse, so the identity claim holds by construction:
+    /// the SAME deterministic `quantize_q8_1` kernel runs once instead of twice over
+    /// bit-identical `h`.
+    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
+    fn mla_proj_qa_kv_qmirror2(
+        &self,
+        e: &Engine,
+        mla: &crate::hybrid::MlaAttnLayer,
+        h: &CudaSlice<f32>,
+        t: usize,
+        rows_exact: bool,
+    ) -> Result<Option<(CudaSlice<f32>, CudaSlice<f32>)>, Box<dyn std::error::Error>> {
+        if !(crate::glm5_q8_fuse_on() && crate::glm5_w8_on() && Engine::bf16_mmv_on()) {
+            return Ok(None);
+        }
+        if rows_exact {
+            if !(2..=32).contains(&t) {
+                return Ok(None);
+            }
+        } else if t != 1 {
+            return Ok(None);
+        }
+        use crate::model::GpuTensor;
+        fn bf16_of(w: &GpuTensor) -> Option<(&CudaSlice<u8>, usize, usize)> {
+            match w {
+                GpuTensor::FloatBf16 { data, .. } => {
+                    Some((data, w.in_features(), w.out_features()))
+                }
+                _ => None,
+            }
+        }
+        let (Some((bqa, in_qa, out_qa)), Some((bkv, in_kv, out_kv))) =
+            (bf16_of(&mla.wq_a), bf16_of(&mla.wkv_a))
+        else {
+            return Ok(None);
+        };
+        let in_f = in_qa;
+        if in_kv != in_f
+            || !in_f.is_multiple_of(32)
+            || out_qa < 64
+            || out_kv < 64
+            || h.len() < t * in_f
+        {
+            return Ok(None);
+        }
+        let nblk = in_f / 32;
+        let mut aq = e.alloc_i8_uninit(t * in_f)?;
+        let mut ad = e.alloc_uninit::<f32>(t * nblk)?;
+        e.quantize_q8_1_into(h, t, in_f, &mut aq, &mut ad)?;
+        let mut yqa = e.uninit(t * out_qa)?;
+        let mut ykv = e.uninit(t * out_kv)?;
+        let ok = if rows_exact {
+            e.matvec_bf16_via_q8_mirror_t_pre(bqa, &aq, &ad, &mut yqa, in_f, out_qa, t)?
+                .is_some()
+                && e.matvec_bf16_via_q8_mirror_t_pre(bkv, &aq, &ad, &mut ykv, in_f, out_kv, t)?
+                    .is_some()
+        } else {
+            e.matvec_bf16_via_q8_mirror_pre(bqa, &aq, &ad, &mut yqa, in_f, out_qa)?
+                .is_some()
+                && e.matvec_bf16_via_q8_mirror_pre(bkv, &aq, &ad, &mut ykv, in_f, out_kv)?
+                    .is_some()
+        };
+        if !ok {
+            return Ok(None);
+        }
+        if crate::GLM5_W8_QFUSE_MLA_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            == 0
+        {
+            eprintln!(
+                "[glm5-q8-fuse] engaged W8-mirror MLA wq_a/wkv_a t={t} rows_exact={rows_exact} \
+                 in_f={in_f} (one quantize_q8_1 replaces two; MEMRA_GLM5_Q8_FUSE=1 + \
+                 MEMRA_GLM5_W8=1)"
+            );
+        }
+        Ok(Some((yqa, ykv)))
+    }
+
     /// [`mla_attn_core`] up to (and excluding) the output projection: returns the
     /// per-head attention output `[t, n_head * d_v]`. Split out for the glm5 TP-2 seam,
     /// whose column-parallel `wo` runs over the cross-rank GATHERED heads — the plain path
@@ -8066,8 +8150,17 @@ impl HybridModel {
             }
         };
 
+        // Door MEMRA_GLM5_Q8_FUSE extended to the W8 q8_0-mirror path
+        // (lane/b200-q8fuse-w8-20260902): wq_a and wkv_a share `h`, so try the fused
+        // quantize-once pair before falling back to the two independent `mm()` calls
+        // below (each of which would re-quantize `h` itself under the W8 mirror).
+        let qa_kv_fused = self.mla_proj_qa_kv_qmirror2(e, mla, h, t, rows_exact)?;
+        let (q_a, kv_pref) = match qa_kv_fused {
+            Some((qa, kv)) => (qa, Some(kv)),
+            None => (mm(&mla.wq_a, h)?, None),
+        };
+
         // --- q path: wq_a -> q_a_norm -> wq_b -> per-head [nope | rope] ---
-        let q_a = mm(&mla.wq_a, h)?;
         let q_lora = mla.wq_b.in_features();
         let mut q_an = e.uninit(t * q_lora)?;
         e.rms_norm(&q_a, mla.q_a_norm.float_data(), &mut q_an, q_lora, t, eps)?;
@@ -8082,7 +8175,10 @@ impl HybridModel {
         e.mla_rope_interleaved(&mut q_pe, pos_d, t, nh, dr, base)?;
 
         // --- kv path: wkv_a -> [c_kv (rms-normed) | k_pe (roped, NOT normed)] ---
-        let kv = mm(&mla.wkv_a, h)?;
+        let kv = match kv_pref {
+            Some(kv) => kv,
+            None => mm(&mla.wkv_a, h)?,
+        };
         let mut c_kv = e.uninit(t * r)?;
         let mut k_pe = e.uninit((t * dr).max(1))?;
         e.mla_split_latent(&kv, &mut c_kv, &mut k_pe, t, r, dr)?;

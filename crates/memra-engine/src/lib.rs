@@ -900,6 +900,22 @@ pub(crate) fn glm5_w8_on() -> bool {
 pub(crate) static GLM5_W8_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
+/// Dispatch counter for `MEMRA_GLM5_Q8_FUSE` extended to the W8 q8_0-mirror KDA qkv group
+/// (lane/b200-q8fuse-w8-20260902): one `quantize_q8_1` in place of the three
+/// `matvec_bf16_via_q8_mirror[_t]` calls wq/wk/wv would otherwise each issue against the
+/// SAME `x`. Distinct from `GLM5_W8_DISPATCHES` (which counts the mirror's OWN engagement,
+/// fused or not) and from `GLM5_W8_QFUSE_MLA_DISPATCHES` (the MLA wq_a/wkv_a twin) so a
+/// census can attribute launches removed to the right producer.
+pub(crate) static GLM5_W8_QFUSE_KDA_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// Dispatch counter for `MEMRA_GLM5_Q8_FUSE` extended to the W8 q8_0-mirror MLA wq_a/wkv_a
+/// pair (lane/b200-q8fuse-w8-20260902): one `quantize_q8_1` in place of the two
+/// `matvec_bf16_via_q8_mirror[_t]` calls wq_a/wkv_a would otherwise each issue against the
+/// SAME `h`.
+pub(crate) static GLM5_W8_QFUSE_MLA_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 /// MEMRA_W8_VIEW=1: extend the W8 hybrid half to the ROW-RANGE-VIEW GEMVs, i.e. the lo halves
 /// that `MEMRA_HEAD_SPLIT` and `MEMRA_SHEXP_OVERLAP` keep on rank 0. NOT a step37 family door
 /// and NOT armed by `arm_step37_serving_defaults`: it stays off until it carries its own
@@ -22690,6 +22706,96 @@ impl Engine {
         Ok(Some(()))
     }
 
+    /// Pre-quantized twin of `matvec_bf16_via_q8_mirror_t` (lane/b200-q8fuse-w8-20260902):
+    /// the mirror-build path is VERBATIM (same lock, same cache key, same
+    /// `encode_q8_0_from_bf16`/`build_q8_rp4_raw`), but the activation is the CALLER's
+    /// `(aq, ad)` instead of a fresh per-call `quantize_q8_1_into` — for siblings sharing the
+    /// same `x` (`kda_proj_qkv_qmirror3`). BIT-IDENTICAL to `matvec_bf16_via_q8_mirror_t`:
+    /// the kernel dispatch below is VERBATIM, and `(aq, ad)` are the SAME bytes
+    /// `quantize_q8_1_into(x, t, in_f, ...)` would have produced (same kernel, same input).
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::map_entry)] // allow: the init body is fallible (`?`); Entry::or_insert_with cannot propagate errors
+    pub fn matvec_bf16_via_q8_mirror_t_pre(
+        &self,
+        data: &CudaSlice<u8>,
+        aq: &CudaSlice<i8>,
+        ad: &CudaSlice<f32>,
+        y: &mut CudaSlice<f32>,
+        in_f: usize,
+        out_f: usize,
+        t: usize,
+    ) -> Result<Option<()>, Box<dyn std::error::Error>> {
+        use cudarc::driver::DevicePtr;
+        let key = {
+            let s = self.gpu.stream();
+            let (p, _g) = data.device_ptr(&s);
+            (p, in_f as u32, out_f as u32)
+        };
+        {
+            let mut mirrors = self
+                .w8_mirrors
+                .lock()
+                .map_err(|_| "w8 mirror map is poisoned")?;
+            if !mirrors.contains_key(&key) {
+                let mut interleaved = self.alloc_u8_uninit(out_f * Self::q8_0_row_bytes(in_f))?;
+                self.encode_q8_0_from_bf16(data, &mut interleaved, in_f, out_f)?;
+                let planar = self.build_q8_rp4_raw(&interleaved, in_f, out_f)?;
+                mirrors.insert(key, planar);
+            }
+        }
+        let mirrors = self
+            .w8_mirrors
+            .lock()
+            .map_err(|_| "w8 mirror map is poisoned")?;
+        let mirror = mirrors.get(&key).expect("built above");
+        const ROWS_PER_BLOCK: u32 = 4;
+        let (ini, of) = (in_f as i32, out_f as i32);
+        if q8t_wonce_on() && t <= 32 {
+            let f = self.func(if t <= 8 {
+                "qmatvec_q8_0_rows_tw"
+            } else {
+                "qmatvec_q8_0_rows_tw32"
+            });
+            let cfg = LaunchConfig {
+                grid_dim: ((out_f as u32).div_ceil(ROWS_PER_BLOCK), 1, 1),
+                block_dim: (32, ROWS_PER_BLOCK, 1),
+                shared_mem_bytes: 0,
+            };
+            let ti = t as i32;
+            let __s_b = self.gpu.stream();
+            let mut b = __s_b.launch_builder(&f);
+            b.arg(mirror)
+                .arg(aq)
+                .arg(ad)
+                .arg(&mut *y)
+                .arg(&ini)
+                .arg(&of)
+                .arg(&ti);
+            unsafe {
+                b.launch(cfg)?;
+            }
+            return Ok(Some(()));
+        }
+        let f = self.func("qmatvec_q8_0_rows_t");
+        let cfg = LaunchConfig {
+            grid_dim: ((out_f as u32).div_ceil(ROWS_PER_BLOCK), t as u32, 1),
+            block_dim: (32, ROWS_PER_BLOCK, 1),
+            shared_mem_bytes: 0,
+        };
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(mirror)
+            .arg(aq)
+            .arg(ad)
+            .arg(&mut *y)
+            .arg(&ini)
+            .arg(&of);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(Some(()))
+    }
+
     /// Get-or-build this bf16 weight's q8_0 mirror and run the GEMV through it. Returns
     /// `None` when the shape has no mirror form, so the caller falls back to bf16.
     #[allow(clippy::map_entry)] // allow: the init body is fallible (`?`); Entry::or_insert_with cannot propagate errors
@@ -22748,6 +22854,71 @@ impl Engine {
         let act = self.w8_act.lock().map_err(|_| "w8 act map is poisoned")?;
         let mirror = mirrors.get(&key).expect("built above");
         let (aq, ad) = act.get(&in_f).expect("built above");
+        self.qmatvec_mmvq_into(
+            mirror,
+            aq,
+            ad,
+            1,
+            in_f,
+            out_f,
+            QT_Q8_0,
+            Self::q8_0_row_bytes(in_f),
+            1.0,
+            true,
+            y,
+        )?;
+        Ok(Some(()))
+    }
+
+    /// Pre-quantized twin of `matvec_bf16_via_q8_mirror` (lane/b200-q8fuse-w8-20260902): the
+    /// mirror-build stays IDENTICAL (same lock, same cache key, same
+    /// `encode_q8_0_from_bf16`/`build_q8_rp4_raw`), but the activation is the CALLER's
+    /// `(aq, ad)` instead of a fresh `quantize_q8_1_into(x, ...)` — for a caller
+    /// (`kda_proj_qkv_qmirror3`) that already produced the identical pair once and is
+    /// calling this for several sibling weights over the SAME `x`. BIT-IDENTICAL to
+    /// `matvec_bf16_via_q8_mirror`: the mirror body and `qmatvec_mmvq_into` call are
+    /// VERBATIM, and `(aq, ad)` are the SAME bytes `quantize_q8_1_into(x, 1, in_f, ...)`
+    /// would have produced (same kernel, same input, deterministic).
+    #[allow(clippy::map_entry)] // allow: the init body is fallible (`?`); Entry::or_insert_with cannot propagate errors
+    pub fn matvec_bf16_via_q8_mirror_pre(
+        &self,
+        data: &CudaSlice<u8>,
+        aq: &CudaSlice<i8>,
+        ad: &CudaSlice<f32>,
+        y: &mut CudaSlice<f32>,
+        in_f: usize,
+        out_f: usize,
+    ) -> Result<Option<()>, Box<dyn std::error::Error>> {
+        use cudarc::driver::DevicePtr;
+        let key = {
+            let s = self.gpu.stream();
+            let (p, _g) = data.device_ptr(&s);
+            (p, in_f as u32, out_f as u32)
+        };
+        {
+            let mut mirrors = self
+                .w8_mirrors
+                .lock()
+                .map_err(|_| "w8 mirror map is poisoned")?;
+            if !mirrors.contains_key(&key) {
+                let mut interleaved = self.alloc_u8_uninit(out_f * Self::q8_0_row_bytes(in_f))?;
+                self.encode_q8_0_from_bf16(data, &mut interleaved, in_f, out_f)?;
+                let planar = self.build_q8_rp4_raw(&interleaved, in_f, out_f)?;
+                mirrors.insert(key, planar);
+                if std::env::var("MEMRA_W8_TRACE").as_deref() == Ok("1") {
+                    eprintln!(
+                        "[w8-mirror] built (pre-quantized caller) in_f={in_f} out_f={out_f} \
+                         mirrors={}",
+                        mirrors.len()
+                    );
+                }
+            }
+        }
+        let mirrors = self
+            .w8_mirrors
+            .lock()
+            .map_err(|_| "w8 mirror map is poisoned")?;
+        let mirror = mirrors.get(&key).expect("built above");
         self.qmatvec_mmvq_into(
             mirror,
             aq,
