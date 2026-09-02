@@ -38,10 +38,12 @@ tokenwise reference. `FLIP-NEARTIE` there is the documented cross-config drift c
 
 Paste actual pass/fail output (or relevant tail), not "gates pass." A kernel that reduces in different floating-point order can flip an argmax at tight logit margins, which has silently broken "faster" kernels before (`research/tune-data/`), so a green run *right now, on your branch* is required, not an assumption.
 
-Changes touching the Hopper (sm_90a) lane additionally run its one-command battery on an
-H100: `tools/validate-h100.sh <model.gguf> [--quick]` runs kernel-check config pins (incl. the
+Changes touching the Hopper (sm_90a) lane build from source (`MEMRA_CUDA_ARCH=90a`) and run its
+gates directly on an H100 — kernel-check config pins (incl. the
 KQRP, f16-mirror, f16g-sk, and batched-seqs pins), decode-batch (config + strict, gates 1–3 incl.
-gate3c lean-logits), decode-dc, graph-decode, and graph-session. `ALL GATES GREEN` output
+gate3c lean-logits), decode-dc, graph-decode, and graph-session. (These lived in the
+`tools/validate-h100.sh` one-command battery until it was retired with the Hopper CI lane on
+2026-09-02.) `ALL GATES GREEN` output
 pasted, same rule as above. Gate1's config-mode verdict is the multi-seed fraction rule
 (#47): FAIL iff >= 4 of 6 `MEMRA_GATE_SEED` draws diverge before step 3 (near-tie seeds
 are legal FP dice, plumbing fails every draw); `MEMRA_GATE_CANARY=1` is the teeth check

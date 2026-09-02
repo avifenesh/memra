@@ -5,9 +5,11 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/avifenesh/memra/main/tools/install.sh | sh
 #
-# Arch selection: sm_120a (RTX 50-series, default) / sm_100a (B200 source build) /
-# sm_90a (Hopper) / sm_89 (Ada portable). B200 is runtime-qualified from source but has no
-# published prebuilt, so the release installer refuses it before network access. Other targets
+# Arch selection: sm_120a (RTX 50-series, default — the ONLY prebuilt since 2026-09-02) /
+# sm_100a (B200 source build) / sm_90a (Hopper source build) / sm_89 (Ada source build).
+# B200 is runtime-qualified from source but has no published prebuilt, so the release installer
+# refuses it before network access; sm_90a/sm_89 prebuilts were retired the same day and the
+# installer likewise points their users at a source build. Other targets
 # auto-detect from nvidia-smi; override with MEMRA_CUDA_ARCH.
 # Requirements at RUN time: Linux x86_64, NVIDIA driver >= 580 (CUDA 13
 # runtime support), and the CUDA 13 runtime libraries (cudart, cublas, cublasLt). The glibc

@@ -427,15 +427,15 @@ scored evidence. They do not change the naked sm_120a build or its performance d
 Build: arch auto-detects on an H100 (`MEMRA_CUDA_ARCH=90a` forces). Hopper promotions are
 compile-gated behind `memra_hopper_mma` — the naked sm_120a build stays byte-identical.
 Evidence ledger: `ARCHITECTURE-H100.md` (append-only; every
-promoted config, every mechanism refutation). Gate battery: `tools/validate-h100.sh
-<model.gguf> [--quick]` — kernel-check config pins, decode-batch (config + strict),
-decode-dc, graph-decode, graph-session. LAWS learned the hard way on this lane (do not
-relearn them): (1) every perf claim is interleaved x5 on-box — cross-run AND cross-day
+promoted config, every mechanism refutation). Gate battery: retired with the Hopper CI lane
+(2026-09-02) — run kernel-check config pins, decode-batch (config + strict), decode-dc,
+graph-decode, graph-session directly on Hopper hardware. LAWS learned the hard way on this lane
+(do not relearn them): (1) every perf claim is interleaved x5 on-box — cross-run AND cross-day
 comparisons are clock-drift-invalid, INCLUDING the competitor denominator; (2) thresholds
 and verdicts calibrated on old cores/kernels must be re-swept when the code under them
 moves (five stale-verdict finds in one day, rounds 35-36); (3) anything guarding a live
-lane belongs INSIDE validate-h100.sh — gates outside the battery rot silently; (4) wgmma
-kernels are form-sensitive on nvcc 13.1 (C7514/15/17/19 family): measure every scheduling
+lane belongs INSIDE a battery that actually runs — gates outside a battery rot silently; (4)
+wgmma kernels are form-sensitive on nvcc 13.1 (C7514/15/17/19 family): measure every scheduling
 change, never assume. Flags catalog: `docs/FLAGS.md §7`.
 
 ## Measurements and decisions are a corpus — maintain them (owner call 2026-08-16)

@@ -45,7 +45,7 @@ grandfather list without a drift check silently absorbs findings it was never gr
 
 Usage: tools/fatbin-lookup-census.py --arch <120a|100a|90a|89> [--out-dir DIR] [--crate DIR]
   --out-dir defaults to the newest target/*/build/memra-engine-*/out containing fatbins.
-Callers: ci.yml release-arch-mirror (after the build, per arch),
+Callers: ci.yml arch-coverage (after the build, per arch),
          tools/test_fatbin_lookup_census.sh (teeth).
 """
 

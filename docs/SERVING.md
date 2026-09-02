@@ -2369,16 +2369,18 @@ Serving flags (batch cap, device sampling, lean logits, prime batching, spec bur
 cataloged in [FLAGS.md §7](FLAGS.md) under "Serving (memra-server)"; fleet topology knobs
 (`GPUS`, `REPLICAS_PER_GPU`, `CAP`, ports, health cadence) are env-overridable at the top of
 `tools/serve-fleet.sh`. The exactness contract holds under batching: `decode-batch-gate` runs
-inside `tools/validate-h100.sh` **twice** — `--mode config --batch 8` (the default-env battery,
+in `tools/local-ci.sh` in both modes — `--mode config --batch 8` (the default-env battery,
 fused tier live in the reference) and `--mode strict --batch 4` under the equalized composition
-(`MEMRA_MMVQ=0 MEMRA_NO_FUSE_NORMQ=1`). Each invocation runs gate1 (B=1 vs `decode_step_h`),
+(`MEMRA_MMVQ=0 MEMRA_NO_FUSE_NORMQ=1`) — and ran twice inside `tools/validate-h100.sh` before
+that battery was retired with the Hopper lane (2026-09-02). Each invocation runs gate1 (B=1 vs
+`decode_step_h`),
 gate2 (per-seq isolation — batchmates must not change your stream), and gate3, whose three
 sub-checks are (a) device-argmax == host-argmax of the same row, (b) sampled draws at B=N ==
 the same metas at B=1, and (c) `gate3c`, lean-vs-full logits identity. **`gate3c` is a
 sub-check of gate3, not a fourth gate** — gate3 prints one PASS/FAIL line covering all three,
 so a green line is the only signal that (c) ran; the sub-check names surface in the output only
 when one fails. The stage-split modes (`--mode pp`, `--mode ppspec`) SKIP gate1/2/3 by design —
-they are single-device jurisdiction — and neither PP mode is wired into `validate-h100.sh`; PP
+they are single-device jurisdiction — and neither PP mode was ever wired into `validate-h100.sh`; PP
 exactness has its own invocations (see [TESTING.md](TESTING.md)).
 
 ## First-token cross-config drift (batched prime) — stated honestly

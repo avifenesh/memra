@@ -134,8 +134,11 @@ echo "$out" | grep -q 'arch-census: OK' || fail "arm 11: no OK line: $out"
 # Arm 12 — THE INVARIANT THAT MAKES "advisory" SAFE: an arch whose fatbin census is
 #          non-blocking must never appear in release.yml's matrix. Without this, the advisory
 #          list is just a way to ship a panicking binary quietly — which is what v0.107.0's
-#          sm_89 asset did.
-printf '90a  # pretend advisory\n' > "$tmp/adv-shipped.txt"
+#          sm_89 asset did. The fixture arch must be one release.yml actually builds (120a
+#          since the 2026-09-02 retirement of the sm_89/sm_90a lanes), not a retired arch:
+#          a retired advisory trips the dead-entry refusal instead, and the arm would be
+#          proving the wrong tooth.
+printf '120a  # pretend advisory\n' > "$tmp/adv-shipped.txt"
 if out=$("$census_arch" "$ci" "$rel_wf" "$build_rs" "$tmp/adv-shipped.txt" 2>&1); then
   fail "arm 12: census allowed an advisory arch to stay in release.yml's matrix: $out"
 fi
@@ -148,8 +151,12 @@ echo "$out" | grep -q 'panics at Engine::func' \
 # ci.yml never compiling 100a, and the b200-prep lane (2026-09-01) added a 100a compile cell,
 # which flipped the arm's premise and failed CI for the right thing happening — the exact
 # fixture-pinned-to-transient-content trap arm 14's comment warns about. Same idiom as arms
-# 9/10: derive the fixture from the live file and assert the sed actually bit.
-sed -e 's/"100a", //' \
+# 9/10: derive the fixture from the live file and assert the sed actually bit. Both 100a
+# occurrences are rewritten (the matrix axis and the B200 teeth step's env), whatever the
+# matrix's current shape — it was ["100a", "90a", "89"] once and is ["100a"] since the
+# 2026-09-02 arch retirement.
+sed -e 's/cuda_arch: \["100a"\]/cuda_arch: ["120a"]/' \
+    -e 's/"100a", //' \
     -e 's/MEMRA_CUDA_ARCH: "100a"/MEMRA_CUDA_ARCH: "120a"/' \
     "$ci" > "$tmp/ci-no-100a.yml"
 if grep -m1 'cuda_arch:' "$tmp/ci-no-100a.yml" | grep -q '"100a"' \
@@ -171,9 +178,9 @@ echo "$out" | grep -q 'advisory \[' \
   || fail "arm 14: OK line does not report the advisory set at all: $out"
 
 # ── wiring ────────────────────────────────────────────────────────────────────────────────
-# Arm 12 — ci.yml must actually invoke all three censuses, this fixture, and the arch mirror
-# job. Comment lines are stripped first: a plain substring search would match the explanatory
-# comments above each step and pass even after the step itself was deleted.
+# Arm 12 — ci.yml must actually invoke all three censuses, this fixture, and the
+# arch-coverage job. Comment lines are stripped first: a plain substring search would match the
+# explanatory comments above each step and pass even after the step itself was deleted.
 live=$(grep -vE '^\s*#' "$ci")
 for needed in \
   "tools/workspace-publish-census.sh" \
@@ -188,7 +195,7 @@ for needed in \
   "b200_dry_policy_tests" \
   "b200_runs_static_nvfp4_checks_without_the_sm120_fatbin_cell" \
   "synthetic_fixture_covers_codes_scales_and_exact_activation_blocks" \
-  "release-arch-mirror:"
+  "arch-coverage:"
 do
   echo "$live" | grep -qF "$needed" \
     || fail "arm 12: $ci does not invoke '$needed' (comments stripped) — the census exists but nothing runs it"

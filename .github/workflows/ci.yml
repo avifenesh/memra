@@ -142,7 +142,7 @@ jobs:
         run: tools/test_releasability_census.sh
 
       # Teeth for the fatbin-vs-lookup census. The census itself runs per arch in the
-      # release-arch-mirror job (it needs a build); its refusals are proven here with a stub
+      # arch-coverage job (it needs a build); its refusals are proven here with a stub
       # cuobjdump, in both directions of exceptions-file rot.
       - name: Fatbin-lookup census teeth
         run: tools/test_fatbin_lookup_census.sh
@@ -362,22 +362,28 @@ jobs:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
           MEMRA_CUDA_ARCH: "120a"
 
-  # ── release-arch mirror ────────────────────────────────────────────────────────────────────
-  # (2026-08-23). release.yml builds {120a, 90a, 89}; the build job compiles 120a only, so TWO
-  # of the three release arches were compiled for the first time by the tag. Not theoretical:
-  # crates/memra-engine/build.rs substitutes DIFFERENT SOURCE FILES for the non-120a arches
-  # (cu/mmq_fp4_stub.cu, cu/mmq_nvfp4_w4a8_stub.cu, cu/mmq_fp8_blk_stub.cu), and when 58ce746ad3
-  # added two entry points to cu/mmq_fp8_blk.cu without mirroring them into the stub, sm_89 and
-  # sm_90a stopped LINKING while main stayed green. v0.105.0 and v0.106.0 both died on it.
-  # Measured cells (run 32609839631): 90a 553 s, 89 558 s; parallel, so no added wall time.
-  # ONLY THE ARCH AXIS, not release.yml's glibc axis: the libc floor changes the requirement of
-  # the SHIPPED BINARY, not the source set, the symbols, or the link. If a cell is ever added
-  # to release.yml's arch axis, tools/arch-matrix-census.sh turns this workflow red until it is
-  # added here too. 100a is compiled here and NOT shipped. Its B200 source backend is
-  # hardware-qualified and auto-detected, with real NVFP4 W4A8/W4A4 and block-FP8 twins; the
-  # static B200 gate below proves their ABI/SASS/layout. Remaining absent fatbin symbols are
-  # guarded and declared individually in tools/fatbin-lookup-exceptions.txt.
-  release-arch-mirror:
+  # ── non-primary arch coverage ──────────────────────────────────────────────────────────────
+  # (2026-09-02) sm_89 and sm_90a left CI and the release matrix together, by owner ruling —
+  # the arch-matrix census forbids the half-state where release builds an arch CI does not
+  # compile, so "remove the Ada/Hopper CI" and "stop shipping their tarballs" were one
+  # decision. Ada/Hopper users build from source; build.rs still accepts 90a/89 and the stub
+  # ABI census still keeps cu/*_stub.cu mirroring their real twins for exactly that.
+  #
+  # What this job still owes: B200 (sm_100a) compile + census + static-teeth coverage. The
+  # B200 backend is hardware-qualified and auto-detected, with real NVFP4 W4A8/W4A4 and
+  # block-FP8 twins; the static gate below proves their ABI/SASS/layout. Remaining absent
+  # fatbin symbols are guarded and declared individually in tools/fatbin-lookup-exceptions.txt.
+  # If a cell is ever added to release.yml's arch axis, tools/arch-matrix-census.sh turns this
+  # workflow red until that arch is compiled in CI too (here or in the build job).
+  #
+  # History this job carries: build.rs substitutes DIFFERENT SOURCE FILES per arch, and when
+  # 58ce746ad3 added two entry points to cu/mmq_fp8_blk.cu without mirroring them into the
+  # stub, sm_89 and sm_90a stopped LINKING while main stayed green — v0.105.0 and v0.106.0
+  # both died on it (that is why the stub-ABI census runs on every push). Measured cells
+  # (run 32609839631): 90a 553 s, 89 558 s, 100a comparable; parallel, no added wall time.
+  # The glibc axis is deliberately NOT mirrored: it changes the libc requirement of the
+  # SHIPPED BINARY, not the source set, the symbols, or the link.
+  arch-coverage:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-24.04
@@ -385,7 +391,7 @@ jobs:
     strategy:
       fail-fast: false      # one arch failing must not hide the other's result
       matrix:
-        cuda_arch: ["100a", "90a", "89"]
+        cuda_arch: ["100a"]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # cuda-cuobjdump-13-1 is here for the fatbin census below, and it is a SEPARATE package
@@ -418,7 +424,6 @@ jobs:
       # remains literal-1 opt-in and install.sh refuses an unpublished B200 prebuilt before network.
       # Every command is host-only; none opens the CUDA driver.
       - name: B200 kernel-twin ABI, SASS, layout, and admission gates
-        if: matrix.cuda_arch == '100a'
         run: |
           research/b200-kernel-twins-dry-20260901/check-layouts.sh
           research/b200-kernel-twins-dry-20260901/check-nvfp4.sh

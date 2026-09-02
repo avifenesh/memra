@@ -66,7 +66,7 @@ done
 #
 # A skip is now REPORTED and FATAL BY DEFAULT (exit 77, distinct from a real red so a caller
 # can tell them apart), recorded into $MEMRA_SKIP_CENSUS when the census is wired, and
-# releasable only by NAMING the override. That is the shape tools/validate-h100.sh uses for
+# releasable only by NAMING the override. That is the shape tools/validate-h100.sh used, before
 # kernel-check's skip budget: an accounted skip, never an invisible one.
 # ---------------------------------------------------------------------------
 SKIP_EXIT=77
