@@ -101,7 +101,7 @@ default; the 5090 run used 65536 to stay clear of the desktop. Lock name: `/tmp/
 per the lock-names table in CLAUDE.md; the 5090 run used `/tmp/memra-5090.lock`. If neither is
 right for this box class, ask before a scored run rather than inventing a third name.)
 
-## 6. Receipts
+## 6. Receipts (superseded in part by section 8; kept for the two-machine comparison)
 
 - `dsa-decode-gate 0 3 65536` **PASS** on the local RTX 5090, 2026-09-03, release, N=3
   interleaved (`gate-5090-20260903.txt`): every bit-identical arm matched bytewise at all five
@@ -129,3 +129,79 @@ right for this box class, ask before a scored run rather than inventing a third 
 4. `docs/FLAGS.md` carries TWO rows for `MEMRA_B200_MLA_DECODE_ARM` (a merge artifact from the
    sibling lane's two cuts). Not touched here to keep this lane's diff clean; worth one dedup
    commit by whoever owns that row.
+
+
+## 8. B200 receipts, the width rule, and the serving A/B (2026-09-03)
+
+Full detail in `ROOFLINE.md` sections 8 and 9; logs `gate-b200-20260903.txt` and
+`gate-5090-20260903.txt`.
+
+### 8.1 Kernel gate on the pair (device 0, N=5, engine `f3a0091cd`)
+
+- **Scorer BIT-IDENTICAL at every cell**, 3.97x (128k t_q=1: 167.8 -> 42.3 us), 6.86x (256k),
+  5.79x (1M: 852.0 -> 147.2), and 7.31x / 7.64x / 6.98x at t_q=4.
+- **Gathered, arm 32 at t_q=1**: 54.3-57.1 us against 552.1-556.3 shipped, **10.2x**, argmax
+  MATCH at 128k, 256k and 1M.
+- **The run FAILED as captured**: 4 ARGMAX lines at kv=131072 / t_q=4, every swept chunk count
+  moving 1 of 256 latent rows.
+
+### 8.2 What that failure bought: `MLA_DSA_NAMED_CLASS_T_MAX = 1`
+
+The named class is now admissible at PLAIN DECODE ONLY. t_q=4..8 is the DFlash2 spec-verify
+shape, where a moved argmax is a moved draft acceptance, so the spec-verify batch never sees it.
+`mla_dsa_attn_arm_effective` enforces it in CODE, and demotes an offending cell to the **shipped**
+kernel — the path that cannot be wrong, not the one that happens to be bit-identical at some
+width nobody measured. The gate keeps MEASURING the class at t_q=4 and prints an `INFO` line when
+it moves, so a future proposal to raise the rule arrives with evidence instead of an inference
+from t_q=1.
+
+### 8.3 The two machines disagreed in both directions
+
+| | 5090 (82 SM) | B200 (148 SM) |
+|---|---|---|
+| single-pass at t_q=4 | 30% LOSS | 3.5-7.4% WIN |
+| best chunks at t_q=1 | 16 | 32 (16 loses by 1.45x) |
+
+Same code both times. That is the per-hardware-arm-selection law producing a real conflict, and
+it is why `dsa-decode-gate`'s TIMING bar is now hard only on an sm_100a build (the only hardware
+a 100a binary runs on) and prints as a `DIAGNOSTIC` elsewhere. Correctness bars stay hard on
+every device. Shipped table: **t_q=1 -> 32**, **t_q=4 -> 1** (bit-identical, so the spec-verify
+width carries no numeric risk at all), **0** at the unmeasured widths.
+
+### 8.4 Serving A/B, vendor-default sampling, 256,756-token prompt
+
+| door | 256k decode | 66-token | engagement |
+|---|---|---|---|
+| off | 30.07 tok/s | 48.5 | - |
+| `=1` | **33.0** (+9.7%) | 48.2 | `kpool_score arm=head-blocked class=bit-identical` |
+| `=2` | **43.04** (+43.1%) | 50.8 | `attn_gathered arm=warp-online chunks=16 class=dsa-warp-online-f32` |
+
+TTFT 69.1 s in all three: prefill untouched, as designed. Flat short, +43% deep — the shape a
+depth mechanism should have. And the gate PREDICTED both deltas to within 5% (scorer implied 315
+us/layer vs 330.3 measured; gathered implied 750 vs the 726.2 nsys census), which is the receipt
+that the synthetic shapes track the real path.
+
+**The +43.1% was measured with chunks=16 and the shipped table now says 32.** That serving number
+is a LOWER BOUND for the shipped configuration, not a receipt of it. The edit is worth ~0.27
+ms/token at 256k (~43.0 -> ~43.5 tok/s), not a second +43%.
+
+### 8.5 Default-ON candidacy
+
+Candidate on sm_100a at both levels (`=1` everywhere, `=2` at t_q=1); still OFF here. Open:
+
+1. **128-token greedy tape on the real artifact, off vs `=2`** — the argmax gate is the
+   kernel-level admission bar for a named class; a byte tape on the real checkpoint is the
+   model-level one. Coordinator runs it next round.
+2. Serving A/B re-run on the shipped table (chunks=32).
+3. kv=2048 and kv=32768 are absent from the relayed B200 capture.
+
+`=1` is the easier call: bit-identical at every measured cell, +9.7% at 256k, no class to admit.
+
+### 8.6 Next lane: `kpool_select`
+
+Now the largest MLA/DSA item the door does not touch: ~170 us/layer, **1.87 ms/token**, ONE CTA
+at t=1 (0.68% of the die), 8 radix passes over `n_pools`, depth-linear. It needs a hierarchical
+multi-CTA radix select — and it can be made **EXACT rather than banded**, because the 64-bit
+order key `(desc32(score) << 32) | pool_index` is already a total, tie-broken, distinct order, so
+a hierarchical select over it returns the same set the single-CTA kernel does. That argument is
+the lane's starting point.

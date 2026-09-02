@@ -190,7 +190,11 @@ Every arm's split/chunk factor is read from a `t_q`-keyed table whose unmeasured
 (= the shipped kernel), following the same discipline as PR #83: the box run either confirms a
 cell or names the one to change.
 
-## 7. What the door actually measured (RTX 5090, correctness rig, 2026-09-03)
+## 7. First measurement (RTX 5090, correctness rig, 2026-09-03) — SUPERSEDED BY §8
+
+Kept in full because §7.1 is a finding, not a number, and because the two machines disagreeing
+in both directions is itself the receipt for the per-hardware-arm-selection law. The TABLE
+CELLS this section proposed were overruled by the B200 run in §8.
 
 `dsa-decode-gate 0 3 65536`, release, N=3 interleaved rounds, full log
 `gate-5090-20260903.txt` in this directory. **Rig law applies**: the 5090 throttles, so these
@@ -274,3 +278,159 @@ not as a claim.
 3. `memra_mla_kpool_select_kernel` (section 3) is now the largest untouched depth item at 1.87
    ms/token and 1 CTA at t_q=1. It needs a hierarchical multi-CTA radix select with its own
    order-preservation argument.
+
+
+## 8. The B200 run (2x B200 SXM pair, sm_100a, 2026-09-03) — the binding one
+
+`dsa-decode-gate` device 0, N=5 interleaved, engine `f3a0091cd`. Relayed by the session that
+owns the pair; banked here as `gate-b200-20260903.txt`, source
+`darklanes:research/glm5-b200-20260902/box/gates/gate-dsa-decode.txt`. The relayed capture
+begins mid-128k, so `kv=2048` and `kv=32768` are not in it; the gathered stage is depth-flat and
+the three contexts present agree to a few percent, but those two cells are **unconfirmed on this
+box** and the arm table cites only what is below.
+
+### 8.1 `kpool_score` — BIT-IDENTICAL at every cell, 4.0-7.6x
+
+| context | t_q=1 shipped -> arm | t_q=4 shipped -> arm |
+|---|---|---|
+| 128k | 167.8 -> 42.3 us (**3.97x**) | 482.7 -> 66.0 us (**7.31x**) |
+| 256k | 330.3 -> 48.1 us (**6.86x**) | 812.4 -> 106.3 us (**7.64x**) |
+| 1M | 852.0 -> 147.2 us (**5.79x**) | 3261.2 -> 467.3 us (**6.98x**) |
+
+Bit-identical everywhere, so this is a speed choice and nothing else, and it is the depth-linear
+half: the gap grows with context exactly where the 1M window needed it.
+
+### 8.2 `attn_gathered` — and the width rule the run forced
+
+| t_q | context | shipped | single-pass (1) | c=4 | c=8 | c=16 | **c=32** |
+|---|---|---|---|---|---|---|---|
+| 1 | 128k | 556.3 | 573.1 | 272.9 | 136.9 | 80.5 | **57.1** |
+| 1 | 256k | 553.3 | 572.4 | 273.3 | 136.7 | 79.7 | **54.8** |
+| 1 | 1M | 552.1 | 571.5 | 273.1 | 139.0 | 79.9 | **54.3** |
+| 4 | 128k | 641.3 | **618.8** | 276.9 | 156.0 | 159.6 | 131.3 |
+| 4 | 256k | 663.1 | **616.6** | 277.1 | 154.7 | 158.9 | 131.8 |
+| 4 | 1M | 667.6 | **618.5** | 277.5 | 156.5 | 160.1 | 132.3 |
+
+**The run FAILED as captured**, and the failure is the most important thing in it: at
+`kv=131072, t_q=4`, EVERY swept chunk count (4, 8, 16, 32) moved **1 of 256** latent-row
+argmaxes, maxdiff ~1.7e-6. The class was clean at t_q=1 in all three box contexts (0 of 64) and
+clean at t_q=4 at 256k and 1M — but t_q=4..8 is the DFlash2 spec-verify shape, where a moved
+argmax is a moved draft acceptance.
+
+**`MLA_DSA_NAMED_CLASS_T_MAX = 1`.** The named class is admissible at plain decode only.
+`mla_dsa_attn_arm_effective` demotes any arm >= 2 above that width to the **shipped** kernel — in
+code, not by table convention, and to the path that cannot be wrong rather than the one that
+happens to be bit-identical. The gate keeps MEASURING the class at t_q=4 (a move there prints,
+with an `INFO` line saying why it is not a failure) so that a future proposal to raise the rule
+arrives with evidence instead of an inference from t_q=1.
+
+### 8.3 The two machines disagree, in both directions
+
+| | 5090 (82 SM) | B200 (148 SM) |
+|---|---|---|
+| single-pass at t_q=4 | 1119-1154 vs 854-882 — a **30% loss** | 616.6-618.8 vs 641.3-667.6 — a **3.5-7.4% win** |
+| best chunk count at t_q=1 | **16** (69.6 us), 32 loses | **32** (54.3 us), 16 loses by 1.45x |
+
+Same code, both times. 148 SMs want `64 * 32` = 2048 warps and pay off the shared-memory staging
+the 82-SM part could not. This is the per-hardware-arm-selection law producing an actual
+disagreement rather than a hypothetical one, and it is why the gate's TIMING bar is now hard only
+on an sm_100a build (the only hardware a 100a binary runs on) and prints as a `DIAGNOSTIC`
+elsewhere. Correctness bars stay hard on every device.
+
+### 8.4 Shipped table, and where the 1M token lands
+
+`MLA_DSA_ATTN_ARM`: **t_q=1 -> 32**, **t_q=4 -> 1** (bit-identical, so the spec-verify width
+carries no numeric risk at all), **0** at t_q=2,3,5..8 (unmeasured).
+
+Applying the box ratios at 1M / t_q=1 (10.2x gathered, 5.79x score) to the nsys census in §5 —
+ratios, not absolute microseconds, since the gate's shapes are synthetic:
+
+| stage | before | after | note |
+|---|---|---|---|
+| `attn_gathered` | 7.99 ms | ~0.78 ms | arm 32 |
+| `kpool_score` | ~14 ms | ~2.4 ms | bit-identical |
+| **`kpool_select`** | **1.87 ms** | **1.87 ms** | **untouched — now the largest MLA/DSA item** |
+| `absorb_q` + `decompress_v` | 1.56 ms | 1.56 ms | PR #83's door |
+| **MLA/DSA total** | **~25.4 ms** | **~6.6 ms** | of a 44.1 -> ~25.3 ms token |
+
+That is 22.7 -> ~39.5 tok/s at 1M **on kernel arithmetic alone**; the serving A/B (plain 256k,
+door off / =1 / =2) is running on the pair and is what actually decides it.
+
+### 8.5 Next item: `kpool_select`
+
+With the scorer down 4-7.6x, `memra_mla_kpool_select_kernel` is no longer hidden behind it: ~170
+us/layer, **1.87 ms/token**, ~28% of the remaining MLA/DSA budget, running on **ONE CTA at t=1**
+(0.68% of the die) doing 8 radix passes over `n_pools`, and depth-linear. It has no
+independent-output axis for the output-range technique, so it needs a hierarchical multi-CTA
+radix select carrying its own order-preservation argument — the 64-bit order key
+`(desc32(score) << 32) | pool_index` is already an exact, total, tie-broken order, so a
+hierarchical select over it can be made EXACT rather than banded. That is the next lane.
+
+
+## 9. The serving A/B (2x B200 pair, plain route, 2026-09-03) — the one that decides it
+
+Relayed by the session that owns the pair. int21, plain route, PP-2 resident, all doors + W8 +
+`GEMV_V2` + `HC=2` + `PRIME_V2`, the `MEMRA_B200_MLA_DECODE_ARM` split arm OFF, **vendor-default
+sampling** (never-serve-greedy law), 256,756-token prompt, 256 tokens generated.
+
+| door | 256k decode | vs off | engagement line from the server log |
+|---|---|---|---|
+| off | **30.07 tok/s** | - | - |
+| `=1` | **33.0 tok/s** | **+9.7%** | `kpool_score t=1 arm=head-blocked heads=32 pools=64189 class=bit-identical` |
+| `=2` | **43.04 tok/s** | **+43.1%** | `attn_gathered t=1 arm=warp-online chunks=16 class=dsa-warp-online-f32` |
+
+TTFT 69.1 s in all three arms: prefill is untouched, as designed (the door is `t_q <= 8` only).
+Short context (66-token code prompt): off 48.5, `=1` 48.2, `=2` 50.8 tok/s — the door is a
+DEPTH mechanism and behaves like one, flat at 66 tokens and +43% at 256k, which is exactly the
+shape the 1M window needed.
+
+### 9.1 The gate predicted the serving deltas to within 5%
+
+Worth recording, because it is the reason a synthetic kernel gate was worth building at all:
+
+- **Scorer.** Serving delta off -> `=1` is 2.96 ms/token. The gate's 256k / t_q=1 ratio is
+  6.86x, which implies a shipped scorer cost of `2.96 / (1 - 1/6.86)` = **3.47 ms/token = 315
+  us/layer**. The gate measured the shipped kernel at **330.3 us/layer**. Within **4.6%**.
+- **Gathered.** Serving delta `=1` -> `=2` is 7.06 ms/token. The gate's 256k / t_q=1 ratio at
+  chunks=16 is `553.3/79.7` = 6.94x, implying a shipped cost of **8.25 ms/token = 750 us/layer**.
+  The nsys census in §1 says **726.2 us/layer**. Within **3.3%**.
+
+The synthetic shapes reproduce the real serving costs on both stages. The roofline's absolute
+floors can be trusted at the same resolution.
+
+### 9.2 The receipt does not cover the shipped table — say it plainly
+
+**The +43.1% was measured with `chunks=16`.** The shipped `MLA_DSA_ATTN_ARM` now says **32**,
+because the kernel gate on the same silicon measured 54.3-57.1 us against 79.7-80.5 us at t_q=1
+for every context (1.47x). So the serving number is a **lower bound for the shipped
+configuration, not a receipt of it**, and a default-ON decision needs the A/B re-run on the
+shipped table.
+
+Expected size of that re-run, so nobody expects a second +43%: at 256k the 16 -> 32 edit saves
+`(79.7 - 54.8)` = 24.9 us/layer x 11 layers = **0.27 ms/token**, i.e. 23.24 -> 22.97 ms, about
+**43.0 -> 43.5 tok/s**. The gathered stage is no longer the bottleneck at 256k once it is down
+6.9x; the remaining budget has moved elsewhere.
+
+### 9.3 Default-ON candidacy, and what is still open
+
+The coordinator's read: default-ON candidate on sm_100a at both levels (`=1` everywhere, `=2` at
+t_q=1). What still stands between here and that flip:
+
+1. **A greedy tape on the real artifact for `=2`** — 128-token byte-identity tape, door off vs
+   `=2`, on the box. The argmax gate is the kernel-level admission bar for a named class; a
+   greedy tape on the real checkpoint is the model-level one. Coordinator is running it next
+   round. `=1` does not need it (bit-identical), but gets it for free in the same run.
+2. **Re-run the serving A/B on the shipped table** (chunks=32), per §9.2.
+3. The two shallow contexts (kv=2048, kv=32768) are not in the relayed B200 capture (§8) — a
+   full-ladder box run closes that.
+
+`=1` is the easier call: bit-identical at every measured cell, +9.7% at 256k, flat at 66 tokens,
+no numeric class to admit. `=2` carries the named class and is confined to plain decode by
+`MLA_DSA_NAMED_CLASS_T_MAX` = 1 precisely so the spec-verify batch never sees it.
+
+### 9.4 Where the 1M budget stands now
+
+With `=2` at 43.04 tok/s the 256k token is 23.24 ms. The stages this door does not touch are now
+the majority of the MLA/DSA budget, and `kpool_select` — ~170 us/layer, **1.87 ms/token**, ONE
+CTA at t=1, depth-linear — is the largest of them. §8.5 has the design note. That is the lane
+that follows this one.
