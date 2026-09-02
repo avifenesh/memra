@@ -101,9 +101,10 @@ Sealed receipt namespaces:
   respectively, a -0.27% delta and `NO_CODE_REGRESSION` verdict.
 
 The public PR preserves every engine-source hash in that hardware tip's
-`source-manifest.sha256`. Its publish-history cleanup only replaces two raw f32 logits vectors
-with `pp-logits.sha256`, so arbitrary binary receipt bytes cannot impersonate public-boundary
-provider or credential patterns. The rerun preserves the same support-state decision.
+`source-manifest.sha256`; `PUBLISH-MAP.txt` records the tested-to-published mapping. Its
+publish-history cleanup only replaces two raw f32 logits vectors with `pp-logits.sha256`, so
+arbitrary binary receipt bytes cannot impersonate public-boundary provider or credential
+patterns. The rerun preserves the same support-state decision.
 Qwen3.5-9B NVFP4 W4A8 remains `NativeQualified`; raw W4A4 stays explicit. Block FP8 remains
 explicit `NativeReference` and the implicit kernel-check arm refuses by policy before the
 explicit qualification rerun is allowed.
