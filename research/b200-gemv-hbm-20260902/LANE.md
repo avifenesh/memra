@@ -1,11 +1,11 @@
 # B200 sm_100a HBM-speed decode matvecs
 
-Status: kernels, dispatch, doors, docs and bench written; both arches build clean
-(`MEMRA_CUDA_ARCH=100a` and `120a`), `cargo fmt --all -- --check`, `tools/check-flags.sh` and
-`cargo clippy --release --all-targets -- -D warnings` all green. **NO GPU ON THIS BOX** — every
-throughput number below is either the nsys census that motivated the lane or a static build
-receipt (ptxas registers, SASS load bursts). Nothing here is a measurement of the new kernels.
-Both doors default OFF and stay OFF until the B200 A/B lands.
+Status: **round 1 benched on the box; round 2 (bug fix + verdicts acted on + v3) written and
+pending its receipt.** Both arches build clean (`MEMRA_CUDA_ARCH=100a` and `120a`),
+`cargo fmt --all -- --check`, `tools/check-flags.sh` and
+`cargo clippy --release --all-targets -- -D warnings` all green. No GPU on this box; section 8
+carries the box's own numbers and section 9 the v3 arithmetic, which is design, not measurement.
+Both doors default OFF.
 
 Branch: `lane/b200-gemv-hbm-20260902`, from `lane/glm5-b200-int2-20260902` (which carries the
 per-device cuBLASLt fix and the doors `MEMRA_B200_MATVEC_ARM`, `MEMRA_KDA_FUSED_PROJ`,
@@ -196,18 +196,20 @@ MEMRA_GPU_LOCK=/tmp/memra-gpu.lock \
 another arm paid for.) Every arm is called DIRECTLY by name through `_raw`/`_arm_raw` Engine
 entries, bypassing the env doors — both doors memoize into a process-wide `OnceLock` and cannot
 flip mid-process. Per family it prints per-launch us, **GB/s = bytes moved / kernel time**, and
-either `bit-identical` or `MISMATCH n=... max_abs_diff=...` (never a silent pass).
+either `bit-identical` or `MISMATCH n=... max_abs_diff=...` (never a silent pass), and it
+PANICS on any non-finite output rather than printing `inf` (see section 8.4).
 
 Families, in print order:
 
 1. `moe_gate_up_preclamp8_q8` — shipped vs `_w4` vs **v2** (n_embd 4096, ff 1536, 8 experts, NVFP4)
 2. `moe_down8_fma_q8` — shipped vs `_w4` vs **v2** (1536 -> 4096, 8 experts)
 3. `matvec_bf16_f32acc_x4_rows` — shipped vs `_pf` vs **v2 (with the chosen ksplit printed)** vs
-   **LT-reference**, at [4096 -> 8192] and [8192 -> 4096]
+   **v3 (cp.async staged)** vs **LT-reference**, at [4096 -> 8192] and [8192 -> 4096]
 4. `qmatvec_nvfp4_mmvq_mr2_rp` — shipped vs grid-fill (previous lane)
 5. `qmatvec_nvfp4_mmvq_fused2_rp` — shipped vs `_g2` (previous lane)
-6. **`qmatvec_kda6_bf16f32`** — shipped vs **v2**, at the census's hottest shape: in_f 4096,
-   dims [8192, 8192, 8192, 128, 128, 64], 192 MB bf16 + 5.2 MB f32
+6. **`qmatvec_kda6_bf16f32`** — shipped vs **v2** vs **v3**, at the census's hottest shape:
+   in_f 4096, dims [8192, 8192, 8192, 128, 128, 64], 192 MB bf16 + 5.2 MB f32, with
+   PER-PROJECTION mismatch counts (`y0=.. .. y5=..`) on both arms
 
 The bf16 GB/s denominators are weight bytes only (`in_f * out_f * 2`); the kda6 line prints its
 bf16 and f32 byte split so the sum is auditable.
@@ -228,31 +230,156 @@ selection law. `MEMRA_B200_GEMV_V2` takes precedence over `MEMRA_B200_MATVEC_ARM
 
 FLAGS.md rows and KERNELS.md rows land in the same commits as their reads and their `.cu`.
 
-## 8. Open items (owner-visible, not silently dropped)
+## 8. Round 1: the box receipt, and what it changed
 
-1. **The B200 A/B itself.** No number in this lane is a measurement of the new kernels. The
-   session that owns the pair runs the bench above under `MEMRA_GPU_LOCK` between its A/B
-   rounds; the doors' defaults move only on that receipt, and a serving decision additionally
-   needs the vendor-default sampled twin per the never-serve-greedy law.
-2. **Whether 60% of HBM is reached is unknown.** The static receipts say the loads are issued and
-   the barriers are gone; they cannot say what the memory system does with them. If v2 lands
-   short, the next levers in order are: (a) a persistent-CTA form so a block streams many row
-   tiles without relaunch, (b) `cp.async.bulk` / TMA for the weight tiles on sm_100a, (c) 2-CTA
-   clusters sharing the activation through distributed shared memory.
-3. **The 36 B NVFP4 block layout is the binding constraint on the expert kernels** and this lane
-   did not touch it. A 16 B-aligned split-plane repack (the layout the `_rp` family already uses)
-   would unlock 128-bit weight loads there. That is an artifact/format change with its own
-   qualification, not a kernel lane.
-4. **The gate/up arm's static burst barely moved** (item in section 5). If the box shows it flat,
-   the honest read is that the shipped `sl` unroll already had the depth and the remaining gap is
-   the 4-byte load granularity of item 3, not scheduling.
-5. **`bf16_gemv_v2_splitk` is unexercised by any shipped shape.** It is built, deterministic and
-   benchable, but the GLM-5.3 decode shapes all pick ksplit=1. It needs its own acceptance
-   (kernel-check tolerance, not a bit tape) before anything routes through it deliberately.
-6. **The NVFP4 rp singles/fused pair** (12.2 and 9.9 us in the census) keeps the previous lane's
-   grid-fill arms; this lane added nothing there.
-7. **Three clippy defects on the base branch were fixed in-lane, not disclaimed**:
-   `hyper_ffn_branch`'s argument count (`hybrid_forward.rs`), two doc/type-complexity lints in
-   `hc_fused_gate.rs`, a `manual_is_multiple_of` in `q8_fuse_gate.rs`, and a collapsible `if` in
-   `memra-server/src/worker.rs`. `cargo clippy --release --all-targets -- -D warnings` is green
-   on this branch; it was red on the base.
+`b200_matvec_bench 5 3`, B200 dev 0, int2 `18df26ad6`, 2026-09-02. Medians over N=5 interleaved,
+shipped -> `MEMRA_B200_MATVEC_ARM` -> v2:
+
+| family | shipped | arm | v2 | v2 vs shipped | identity |
+|---|---:|---:|---:|---|---|
+| `matvec_bf16` kda up 4096->8192 | 33.4 | 28.5 | **23.7** (2.83 TB/s) | **1.409x** | bit-identical |
+| `matvec_bf16` kda down 8192->4096 | 30.65 | 24.9 | **24.3** | **1.26x** | bit-identical |
+| `qmatvec_kda6_bf16f32` | 100.8 | — | **65.0** (3.18 TB/s) | **1.55x** | MISMATCH n=64 |
+| `moe_gate_up_preclamp8_q8` | 55.0 | 53.3 | 54.4 | 1.011x | bit-identical |
+| `moe_down8_fma_q8` | 37.6 | 36.0 | 43.2 | **0.870x** | bit-identical |
+| `qmatvec_nvfp4_mmvq_mr2_rp` (prev lane) | 20.0 | 18.0 | — | 1.11x | — |
+| `qmatvec_nvfp4_mmvq_fused2_rp` (prev lane) | 23.2 | 22.0 | — | 1.05x | — |
+| `bf16_gemv_lt` reference | — | — | 32.3 (both shapes) | 1.03x / **0.95x** | class, max_abs_diff=inf |
+
+Against section 1's roofline: kda6 went 26% -> **40%** of the 8 TB/s wall, the bf16 rows
+34% -> **35%** at 8192 out and 34% -> **~40%** at 8192 in. Real, and short of 60%.
+
+### 8.1 The kda6 mismatch was a real bug, and it was mine
+
+`MISMATCH n=64 max_abs_diff=2.442e2`, and the serving A/B was correctly aborted — a mismatching
+kernel never enters a serving arm.
+
+Cause: the first cut of `qmatvec_kda6_bf16f32_v2` **dropped the `b -= nb` before the LAST of the
+six ranges.** The block index therefore still carried range 4's offset when it reached range 5,
+every `b * R + p` landed past `out5`, `f32_mmvq_row1` returned for all of them, and y5 was NEVER
+WRITTEN. The numbers name the bug exactly: n=64 is `out5` on the bench dims, and 2.442e2 is
+`max |y5|` against an output buffer left at zeros. The other five ranges were bit-identical.
+
+Why nothing caught it: range 5 is the only one of the six with no `if (b < nb)` guard behind it,
+so an off-by-a-range index has nowhere to fail loudly. Fixed, with the reasoning in the kernel
+comment. **The bench now prints PER-PROJECTION mismatch counts** (`y0=.. y1=.. ... y5=..`) for
+both the v2 and v3 arms, because a single summed count turned a location into one number.
+
+### 8.2 The MoE v2 twins are measured and NOT dispatched
+
+- gate/up: 54.4 vs `_w4`'s 53.3 — inside noise, no gain. Its own static receipt predicted this
+  (section 5: the longest LDG burst moved only 18 -> 19, because the shipped `sl` unroll already
+  had the depth). Called in section 5 before the box ran, and the box agreed.
+- down: 43.2 vs `_w4`'s 36.0 — a **20% REGRESSION**, bit-identical. The one-block-per-row /
+  warp-per-expert form multiplied the launch width by 8 and got slower: eight warps in a block
+  now contend for the same L2 sectors, and the shipped single warp was already covering the
+  latency it stood accused of exposing. The 0.43-of-a-wave framing in section 1 was a correct
+  count and the wrong diagnosis.
+
+`moe_fused_epi_launch` now keeps the shipped/`_w4` pair unconditionally and the door no longer
+overrides `MEMRA_B200_MATVEC_ARM` there. The two v2 kernels stay in the fatbin and in the bench
+as measured arms, because a refuted arm with a number on it is worth more than a deleted one.
+`MEMRA_B200_GEMV_V2` is a bf16-row and kda6 door now.
+
+### 8.3 cuBLASLt at m=1 is not a ceiling — the reference door did its job
+
+32.3 us on BOTH bf16 shapes: 1.03x the shipped kernel at 4096->8192 and **0.95x, a loss**, at
+8192->4096, against v2's 23.7 / 24.3. The library has no answer for an m=1 GEMV of this shape.
+
+That is exactly the question the door was built to answer, and the answer retires a whole class
+of doubt: the decode matvec gap is not "memra is badly scheduled versus a tuned GEMM library".
+`MEMRA_B200_BF16_GEMV_LT` therefore stays what it was declared as — an instrument, default OFF,
+no promotion path.
+
+### 8.4 `max_abs_diff=inf` was the BENCH, not the compare
+
+The LT line reported `inf`. The compare was fine; the synthetic weights were not. The old
+`synth_bf16` randomised the whole 16-bit pattern and cleared only one exponent bit, so bf16
+magnitudes reached ~2^127 and a 4096-term dot OVERFLOWED f32. That is invisible while both arms
+run the same program (`inf == inf` compares bit-identical, which is why shipped-vs-`_pf` looked
+clean) and becomes `inf` the instant an arm sums in a different order.
+
+Fixed two ways: `synth_bf16` now samples the same [-2, 2) range as the activations and truncates
+f32 -> bf16, so a full dot is bounded by 16384; and `compare` **panics** on a non-finite value
+rather than printing `inf`, because a bench that cannot produce finite numbers must say so
+loudly. Round 1's bit-identity verdicts still stand (identical programs), but they were weaker
+evidence than they looked.
+
+## 9. Round 2: v3, the cp.async-staged walk (`MEMRA_B200_GEMV_V2=2`)
+
+v2 is at 40% of the wall and its in-flight budget is **register-bound**:
+
+    v2 kda6: 96 registers -> 65536/96 = 682 threads/SM -> 5 CTAs of 128 = 640 threads,
+             each holding 10 x 16 B = 160 B          =>  ~102 KB per SM outstanding.
+
+Of the three levers section 8 of the first cut named, only one moves that number. The arithmetic,
+done before choosing:
+
+| lever | effect on in-flight bytes/SM | verdict |
+|---|---|---|
+| persistent CTA | **unchanged** (~102 KB) — same loop, fewer launches | attacks launch count, which is the graph lane's axis, not this one |
+| 2-CTA cluster sharing the activation via DSMEM | **unchanged**; saves activation traffic only, and the activation is already just 1/4 of v2's bytes | ceiling ~12% of load instructions |
+| **`cp.async` / TMA staging into shared memory** | **~192 KB (1.9x)** — the budget stops being register-bound | taken |
+
+v3 stages the weight tiles global -> shared with `__pipeline_memcpy_async` (16 B per thread per
+row) instead of holding them in registers: 2 stages x 8 rows x (blockDim.x * 8) elements x 2 B =
+**32 KB in flight per CTA**, plus the 4 KB reduction window = 36 KB of dynamic smem, so
+228 / 36 = **6 CTAs/SM => ~192 KB per SM outstanding**, and the register count falls to 58
+(`matvec_bf16_v3`) / 64 (`qmatvec_kda6_bf16f32_v3`) so registers stop binding at all. 36 KB also
+stays under the 48 KB default dynamic-smem cap, so no `cudaFuncSetAttribute` opt-in is needed —
+at `mmv_block()=256` it would be 72 KB, and the launcher declines to v2 there rather than opting
+in for a door still pending its receipt.
+
+`cp.async` rather than `cp.async.bulk`/TMA: identical in-flight arithmetic (both land bytes in
+smem without occupying registers), a fraction of the machinery, and no mbarrier protocol to get
+wrong on a part this lane cannot run. TMA is the follow-up if v3's shape is right and its issue
+rate becomes the next wall.
+
+**It adds no barriers**, which is load-bearing and is why v3 keeps v2's 9.4 KB-per-barrier
+property while doubling the bytes outstanding: thread `tid` issues the copy for
+`dst + p*kch + tid*8` and later reads THAT SAME address, for every one of the 8 rows. Each thread
+consumes only bytes it copied itself, `__pipeline_commit`/`__pipeline_wait_prior` are per-thread,
+and reissuing a slot overwrites only the issuing thread's own lane after that thread has read it
+in program order. No `__syncthreads` between stages.
+
+**Still bit-identical.** The K chunk is PINNED to `blockDim.x * 8` — exactly the shipped
+per-thread stride — so chunk `c` hands thread `tid` exactly one index `i = c*kch + tid*8`, and
+walking chunks ascending reproduces the shipped `i` sequence element for element. Any other chunk
+size would reorder a row's accumulation and cost the identity; it is not a tuning knob.
+
+SASS receipt (sm_100a, nvcc 13.1, -O3): `matvec_bf16_v3` = 24 `LDGSTS` (8 rows x 3 issue sites)
++ 2 `LDG` (the activation `float4` pair) + 57 `LDS`, 58 registers, 0 spill.
+`qmatvec_kda6_bf16f32_v3` = 72 `LDGSTS` + 96 `LDG` (its three f32 ranges) + 153 `LDS`, 64
+registers, 0 spill.
+
+The door became a LEVEL rather than a boolean: `1` = v2, `2` = v2 plus v3 wherever it fits, any
+other value off (a typo must not arm a kernel arm). v3 declines per call — not per process — when
+a shape wants split-K or when its smem does not fit.
+
+## 10. Open items (owner-visible, not silently dropped)
+
+1. **v3 has no receipt.** Section 9 is in-flight-bytes arithmetic and static SASS, not
+   throughput. The box runs `b200_matvec_bench 5 3` again: the bf16 and kda6 families now print
+   a `v3` line with us, GB/s and per-projection identity next to the shipped and v2 lines.
+   Nothing about level 2 moves without it.
+2. **If v3 also lands short of 60%**, the remaining ladder in order is: `cp.async.bulk`/TMA (same
+   arithmetic, higher issue rate and no per-thread address math), then 2-CTA clusters on top of
+   staging, then attacking the reduction epilogue itself (v2/v3 still spend 7 barriers per block
+   on it).
+3. **The 36 B NVFP4 block layout remains the binding constraint on the expert kernels**, and
+   round 1 confirmed it from the other side: both MoE v2 arms were bit-identical and neither was
+   faster, so the gap there is the 4-byte load granularity, not scheduling. A 16 B-aligned
+   split-plane repack (the layout the `_rp` family already uses) would unlock 128-bit weight
+   loads. That is an artifact/format change with its own qualification, not a kernel lane.
+4. **`bf16_gemv_v2_splitk` is still unexercised by any shipped shape** and still needs its own
+   acceptance (kernel-check tolerance, not a bit tape) before anything routes through it. v3 has
+   no split-K twin by design.
+5. **The serving A/B was aborted in round 1** by the kda6 mismatch and has not run. With the bug
+   fixed it needs the full battery, including the vendor-default sampled twin per the
+   never-serve-greedy law, before any default moves.
+6. **The NVFP4 rp singles/fused pair** keeps the previous lane's grid-fill arms (1.11x / 1.05x on
+   this run); this lane added nothing there.
+7. **Clippy defects that were red on the base branch were fixed in-lane, not disclaimed**:
+   `hyper_ffn_branch`'s argument count (`hybrid_forward.rs`), two lints in `hc_fused_gate.rs`, a
+   `manual_is_multiple_of` in `q8_fuse_gate.rs`, and a collapsible `if` in
+   `memra-server/src/worker.rs`.
