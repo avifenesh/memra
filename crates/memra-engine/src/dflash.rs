@@ -141,6 +141,48 @@ fn cb_row(cb: &[u8], tok: usize, rank: usize) -> Vec<f32> {
     bf16_to_f32(&cb[tok * rank * 2..(tok + 1) * rank * 2])
 }
 
+/// The per-row top-k selector's EXHAUSTED-SLOT sentinel. `topk_rows_f32` and its sharded twin
+/// (`cu/kernels.cu`) fill a slot they could not fill with `0xffffffff`: a row with fewer than
+/// `k` FINITE values — in practice an all-NaN logits row, since every comparison against NaN
+/// is false and a NaN therefore never enters a candidate list.
+pub const TOPK_EMPTY_SLOT: u32 = u32::MAX;
+
+/// Refuse a candidate buffer the selector could not fill (memra#95).
+///
+/// A sentinel row reaching the walk means the DRAFT LOGITS were not a number, which is a
+/// broken invariant upstream (memra#95: a restored full-cover glm5 session read its drafter
+/// ctx KV on a pp stage stream before the caller's import had landed). Two reasons this is a
+/// guard at the proposal seam and not a clamp:
+///
+/// * clamping would silently draft a wrong token, and the drafts feed the verify batch — a
+///   worse outcome than any failure, per the exactness law;
+/// * the walk's own `assert!(c < vocab)` is the last line of defence inside a PURE function,
+///   and it kills the GPU WORKER THREAD, which is fleet-fatal (one respawn, then
+///   the process exits and every in-flight session on the box dies). Returning `Err` here
+///   fails ONE request instead, the same trade `crate::spec::guard_vocab_token` makes for the
+///   native-MTP chain's sentinel (memra#87). The assert stays where it is.
+///
+/// `bound` is the selector's own column space (`n_vocab` for a full head, the trim's rank
+/// count for an FR-Spec head): checked BEFORE any d2t remap, because remapping a sentinel
+/// would index the map out of bounds and panic before the walk is ever reached.
+pub fn dflash2_guard_candidates(cand: &[u32], bound: usize, ctx: &str) -> Result<(), String> {
+    for (i, &c) in cand.iter().enumerate() {
+        if c as usize >= bound {
+            let why = if c == TOPK_EMPTY_SLOT {
+                " (the top-k selector's exhausted-slot sentinel: the draft logits row carried \
+                   fewer than top_k finite values, i.e. it was NaN)"
+            } else {
+                ""
+            };
+            return Err(format!(
+                "{ctx}: DFlash2 candidate slot {i} is {c}, outside the selector's {bound} \
+                 columns{why}"
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Greedy selector walk (reference `CandidateSelector.select` at T=0): per draft
 /// slot p, score(k) = unary[p,k] + <pred_codebook[prev] .* hidden_proj_row[p],
 /// succ_codebook[cand[p,k]]>, argmax over the top-k candidate set; the CHOSEN
@@ -2103,6 +2145,8 @@ impl DflashDraft {
         let hproj_d = e.matmul(&d2.hidden_proj, rows, nd)?;
         let unary = e.dtoh(&vals_d)?;
         let mut cand = e.dtoh_u32(&idx_d)?;
+        // memra#95: refuse a selector row the top-k could not fill, BEFORE the d2t remap.
+        dflash2_guard_candidates(&cand, n_vocab, "dflash2 greedy proposal")?;
         // TRIMMED draft head (lane/dflash2-head-trim, 2026-08-25): `dl` was scored over the
         // FR-Spec-gathered rows, so candidate index i names trimmed row i — remap to the true
         // token id BEFORE the selector walk (the codebooks and the verify block index the full
@@ -2159,6 +2203,8 @@ impl DflashDraft {
         let hproj_d = e.matmul(&d2.hidden_proj, rows, nd)?;
         let unary = e.dtoh(&vals_d)?;
         let mut cand = e.dtoh_u32(&idx_d)?;
+        // memra#95: refuse a selector row the top-k could not fill, BEFORE the d2t remap.
+        dflash2_guard_candidates(&cand, n_vocab, "dflash2 sampled proposal")?;
         // Trimmed-head remap — see the greedy arm. The q the walk reports is the softmax
         // over the candidate SET it actually proposed (ids are labels, not indices into a
         // distribution), so the rejection-verify contract is unchanged by the remap.
@@ -5320,6 +5366,116 @@ mod dflash2_tests {
         DsparkHarvest, dflash2_walk_greedy, dflash2_walk_sampled, dspark_commit_limit,
         rejection_accept_len,
     };
+
+    // ================= memra#95: the full-cover restore panic =================
+    //
+    // `walk: candidate 4294967295 outside codebook vocab` (dflash.rs:221 greedy, :804
+    // sampled) on the FIRST round of a `MEMRA_GLM5_SPEC_FULLCOVER=1` restored session,
+    // fleet-fatal. `4294967295` is the top-k selector's exhausted-slot sentinel, so the
+    // draft logits row was NaN; the row was NaN because the full-cover arm is the only
+    // restored path that never calls `prime_cache`, and therefore never inherited
+    // `prime_cache_hyper_ppn`'s `fence_stages_behind` between the CALLER-stream drafter-KV
+    // import (`DflashKv::from_tail`, at admission) and the round's first kernel on the
+    // pp head stage's own stream. Two gates below: the ordering seam, and the blast radius.
+
+    /// The sentinel a top-k row that could not be filled carries into the walk.
+    #[test]
+    fn an_unfilled_selector_slot_is_refused_by_name_not_clamped() {
+        // top_k = 4, one draft slot; the selector filled two slots and gave up (an all-NaN
+        // tail of the row), which is exactly what `topk_rows_f32` writes.
+        let cand = [7u32, 11, super::TOPK_EMPTY_SLOT, super::TOPK_EMPTY_SLOT];
+        let why = super::dflash2_guard_candidates(&cand, 1000, "gate")
+            .expect_err("an exhausted slot must be refused");
+        assert!(why.contains("slot 2"), "{why}");
+        assert!(why.contains("4294967295"), "{why}");
+        assert!(
+            why.contains("exhausted-slot sentinel") && why.contains("NaN"),
+            "the refusal must name the mechanism, not just the number: {why}"
+        );
+        // An ordinary out-of-range id is refused too (the trimmed head's rank space is
+        // narrower than the vocab, and a remap of a bad rank would panic in the map).
+        assert!(super::dflash2_guard_candidates(&[7, 1000], 1000, "gate").is_err());
+        // A well-formed row passes, and the bound is exclusive.
+        super::dflash2_guard_candidates(&[0, 999, 500, 1], 1000, "gate").expect("clean row");
+    }
+
+    /// The walk's own assert is the LAST line of defence and stays exactly where it is:
+    /// the guard above refuses one request, this refuses the round.
+    #[test]
+    #[should_panic(expected = "walk: candidate")]
+    fn the_walk_assert_survives_the_guard() {
+        const V: usize = 8;
+        const R: usize = 2;
+        const K: usize = 2;
+        let pred = vec![0u8; V * R * 2];
+        let succ = vec![0u8; V * R * 2];
+        let cand = [1u32, super::TOPK_EMPTY_SLOT];
+        let _ = dflash2_walk_greedy(&pred, &succ, V, R, K, &[0.0; K], &cand, &[0.0; R], 0, 1);
+    }
+
+    /// WIRING GATE (invocations in comment-stripped source, never prose — the
+    /// wiring-assertions-match-prose law). Both halves of the memra#95 fix are LIVE code.
+    #[test]
+    fn the_fullcover_restore_ordering_seam_is_live_in_comment_stripped_source() {
+        let strip = |src: &str| -> String {
+            src.lines()
+                .map(|l| l.split("//").next().unwrap_or(""))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        // 1. THE CAUSE. `glm5_spec_session_from_restored` fences the pp stage streams behind
+        //    the caller BEFORE the suffix branch, so the fence covers the full-cover arm
+        //    (which has no prime to inherit one from) and does not depend on `prime_cache`.
+        let glm5 = strip(include_str!("glm_spec.rs"));
+        let body = glm5
+            .find("pub fn glm5_spec_session_from_restored(")
+            .expect("the restored-session builder exists");
+        let end = glm5[body..]
+            .find("fn glm5_d2t(")
+            .expect("the builder's end anchor exists")
+            + body;
+        let scope = &glm5[body..end];
+        let fence = scope.find("fence_stages_behind(&e.stream())").expect(
+            "the restored-session builder must fence the pp stage streams behind the caller",
+        );
+        let branch = scope
+            .find("let (logits_s, tap_rows, prefix_capture) = if suffix.is_empty()")
+            .expect("the full-cover branch exists");
+        assert!(
+            fence < branch,
+            "the fence must precede the full-cover/suffix branch: a fence inside the suffix \
+             arm is the shipped hole (memra#95)"
+        );
+        assert!(
+            scope[..fence].contains("if crate::pp::pp_cuts(self.layers.len()).is_some()"),
+            "the fence must be door-guarded like every other ppN seam"
+        );
+
+        // 2. THE BLAST RADIUS. Both proposal seams guard the candidate buffer BEFORE the
+        //    d2t remap (a sentinel would index the map out of bounds) and before the walk.
+        let d2 = strip(include_str!("dflash.rs"));
+        let live = &d2[..d2.find("mod tests").expect("this test module exists")];
+        for (seam, arm) in [
+            ("pub fn dflash2_propose_greedy_q(", "greedy"),
+            ("pub(crate) fn dflash2_propose_sampled(", "sampled"),
+        ] {
+            let at = live
+                .find(seam)
+                .unwrap_or_else(|| panic!("{arm} proposal seam exists"));
+            let window = &live[at..at + 4000];
+            let guard = window
+                .find("dflash2_guard_candidates(&cand, n_vocab,")
+                .unwrap_or_else(|| panic!("the {arm} proposal must guard its candidates"));
+            let remap = window
+                .find("*c = map[*c as usize];")
+                .unwrap_or_else(|| panic!("the {arm} proposal still remaps through d2t"));
+            assert!(
+                guard < remap,
+                "the {arm} guard must run before the d2t remap"
+            );
+        }
+    }
 
     #[test]
     fn max_tokens_caps_the_committed_prefix_not_only_the_visible_slice() {

@@ -2211,6 +2211,35 @@ impl HybridModel {
             )
             .into());
         }
+        // ---- PP STREAM ORDERING, UNCONDITIONAL (memra#95, the fleet-fatal full-cover panic).
+        // Everything this session restores was written on the CALLER's stream, in the worker's
+        // admission path: the trunk planes by `prefix_restore_at`, and the DFlash2 drafter ctx
+        // KV by `DflashKv::from_tail` (worker.rs, the "glm5 spec restore, half 1 of 2" block —
+        // a fresh allocation plus per-layer `memset_zeros_view` + `copy_range_into`). Round 1
+        // then reads that drafter KV from `glm5_head_engine`, which under a live ppN split is
+        // the LAST STAGE's engine on ITS OWN stream. Nothing orders that stream behind the
+        // caller, so the drafter's first `forward_round` could read the ctx rows before the
+        // import landed (and cudarc's pool could hand the import a block whose stage-stream
+        // lifetime had not retired — the accrace hazard, `glm5_verify_rollback`'s note).
+        //
+        // The SUFFIX arm never showed it because `prime_cache` runs first and
+        // `prime_cache_hyper_ppn` opens with `rt.fence_stages_behind(&caller_stream)`; the
+        // trunk verify has its own fence (`glm5_verify_rows`). The FULL-COVER arm skips the
+        // prime by construction, so it had no fence at all between the import and the first
+        // stage-stream kernel: the measured failure is a NaN drafter row -> the top-k
+        // selector's documented exhausted-slot sentinel (`0xffffffff`, kernels.cu
+        // `topk_rows_f32` and its sharded twin) -> `walk: candidate 4294967295 outside
+        // codebook vocab` at dflash.rs:221/:804, on the FIRST round of a restored session
+        // (the receipts show the panic between the `RESTORED session` line and the round's
+        // first `[glm5-acc]`), fleet-fatal after one respawn.
+        //
+        // Fenced here, ONCE per session and for BOTH arms, rather than inside the full-cover
+        // branch: the suffix arm's fence is incidental (it belongs to the prime, not to this
+        // contract) and a later prime-free path would inherit the same hole. One event record
+        // plus n_stages waits; a no-op when the door is shut or the streams seam is off.
+        if crate::pp::pp_cuts(self.layers.len()).is_some() && !crate::pp::pp2_streams_off() {
+            crate::pp::PpNRt::get(e)?.fence_stages_behind(&e.stream())?;
+        }
         let n_vocab = self.output.out_features();
         if let Some(map) = self.glm5_d2t() {
             if map.iter().any(|&t| t as usize >= n_vocab) {
