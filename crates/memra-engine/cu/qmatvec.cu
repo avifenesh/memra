@@ -14466,3 +14466,277 @@ extern "C" __global__ __launch_bounds__(256) void qmatvec_kda6_bf16f32_v3(
     for (int p = 0; p < R; p++)
         f32_mmvq_row1(W5, xrow, y5 + (size_t)t * out5, in_f, out5, b * R + p);
 }
+
+// =====================================================================================
+// W8-POSTURE q8_0 DECODE MATVECS (MEMRA_B200_GEMV_V2=1, lane/b200-gemv-hbm-20260902 round 3)
+// =====================================================================================
+//
+// WHY THESE AND NOT THE BF16 ONES. Serving A/B pair 1 on the pair (2026-09-02) moved NOTHING:
+// 49.2 -> 49.3 tok/s code, 48.8 -> 48.7 prose, and the boot log printed no gemv engagement line
+// at all. The door had nothing to dispatch, because the serving base now runs the q8_0 trunk
+// mirror (MEMRA_GLM5_W8, PR #86, +10% plain): `matvec_bf16_rows_into` reroutes every bf16-
+// resident KDA/MLA projection through `matvec_bf16_via_q8_mirror(_t)` BEFORE the bf16 arms are
+// reached, so `matvec_bf16_f32acc_x4_rows` and `qmatvec_kda6_bf16f32` are simply not on the
+// t=1 decode path in the posture we serve. The bf16 v2/v3 arms stay for the non-W8 posture.
+//
+// THE KERNELS THAT ACTUALLY SERVE THE W8 TRUNK (read off lib.rs, not guessed):
+//   t == 1        `matvec_bf16_via_q8_mirror` -> `qmatvec_mmvq_into(.., QT_Q8_0, rp=true)`
+//                 -> `qmatvec_q8_0_mmvq_rp` (4 warps/block, 1 row/warp) for the glm5 shapes;
+//                    `qmatvec_q8_0_mmvq_rp_g2` only when out_f/4 < 4*SMs (out_f < 2368 on
+//                    B200, so not the 4096/8192 KDA rows); `_rpca`/`_mr2_rp` are off by
+//                    measurement (mr2 lost on H100: halving the grid costs more than 2-row ILP).
+//   t in 2..=32   `matvec_bf16_via_q8_mirror_t` -> `qmatvec_q8_0_rows_tw` (t<=8, the verify
+//                 width) / `_tw32` (t<=32) under MEMRA_Q8T_WONCE, else `qmatvec_q8_0_rows_t`.
+//
+// THE IN-FLIGHT PROBLEM, same shape as the bf16 one and arrived at the same way. The q8_0 rp
+// mirror is 32 B of quants + a 2 B scale per 32-element block, split into a quant plane and a
+// scale plane, so unlike NVFP4's 36 B blocks every weight fetch is ALREADY an aligned 16 B
+// `__ldcs` — there is no load-width lever here. What there is:
+//
+//   * `qmatvec_q8_0_mmvq_rp` reads 36 B of ACTIVATION (32 B `aq` + a 4 B `ad` scale) for every
+//     34 B of WEIGHT, per lane, per block-iteration. The activation is identical for every one
+//     of the 8192 rows in the launch, so those bytes are L1/L2 hits — but they are 50% of the
+//     kernel's load INSTRUCTIONS and they sit in the dependency chain ahead of every dp4a. This
+//     is the same 2:1 activation:weight ratio that cost `matvec_bf16_f32acc_x4_rows` its
+//     bandwidth, in a different dtype.
+//   * at in_f=4096 a lane walks nblk/32 = 4 block-iterations, un-unrolled, so it holds ONE
+//     block's loads at a time.
+//
+// The v2 twins stage the q8_1 activation into shared memory ONCE PER CTA (in_f + nblk*4 bytes,
+// 4.6 KB at in_f=4096 — one barrier, then every warp reads it from smem), pack 8 warps per
+// block instead of 4, and unroll the block walk by two so BOTH iterations' weight and scale
+// loads issue before either dp4a chain runs.
+//
+// BIT-IDENTICAL per output row: the per-row program is untouched — same warp-per-row mapping,
+// same `blk = lane, lane+32, ...` walk, same eight `dp4a` in the same order, same
+// `acc += dw * ad[blk] * (float)sumi` association, same `warp_reduce_sum`, same lane-0 store.
+// Staging copies bytes without changing them; unrolling reorders LOAD ISSUE, not accumulation;
+// packing only changes which warp owns a row.
+
+// Warps per block for the v2 q8_0 twins (the shipped kernels use MEMRA_MMVQ_ROWS = 4).
+#define MEMRA_Q8_V2_ROWS 8
+
+// One CTA-wide copy of this token row's q8_1 activation into shared memory. `saq` must be 16 B
+// aligned (it is: dynamic smem base) and `in_f % 32 == 0`, so `sad` lands 16 B aligned too.
+// Ends in a __syncthreads: the ONLY barrier these kernels have.
+__device__ __forceinline__ void q8_0_stage_act(
+        const signed char* __restrict__ arow, const float* __restrict__ adrow,
+        signed char* saq, float* sad, int in_f, int nblk) {
+    const int tid = (int)threadIdx.y * (int)blockDim.x + (int)threadIdx.x;
+    const int nthr = (int)blockDim.x * (int)blockDim.y;
+    int4* d4 = reinterpret_cast<int4*>(saq);
+    const int4* s4 = reinterpret_cast<const int4*>(arow);
+    for (int i = tid; i < in_f / 16; i += nthr) d4[i] = __ldg(s4 + i);
+    for (int i = tid; i < nblk; i += nthr) sad[i] = __ldg(adrow + i);
+    __syncthreads();
+}
+
+// The shipped `qmatvec_q8_0_mmvq_rp` per-row body, reading the staged activation and walking
+// `blk` two iterations at a time. `y` is already offset to this token row.
+__device__ __forceinline__ void q8_0_mmvq_row1_rp_v2(
+        const unsigned char* __restrict__ W, int out_f, int o, int nblk,
+        const signed char* saq, const float* sad, float* __restrict__ y) {
+    if (o >= out_f) return;
+    const int lane = (int)threadIdx.x;
+    const unsigned char* wq;
+    const unsigned short* wd;
+    q8_0_rp_planes(W, out_f, o, nblk, &wq, &wd);
+    float acc = 0.0f;
+    int blk = lane;
+    for (; blk + 32 < nblk; blk += 64) {
+        const int nb2 = blk + 32;
+        // Both iterations' weight and scale loads issue before either dp4a chain.
+        int4 wa0 = __ldcs((const int4*)(wq + (size_t)blk * 32));
+        int4 wa1 = __ldcs((const int4*)(wq + (size_t)blk * 32 + 16));
+        int4 wb0 = __ldcs((const int4*)(wq + (size_t)nb2 * 32));
+        int4 wb1 = __ldcs((const int4*)(wq + (size_t)nb2 * 32 + 16));
+        float dwa = half_to_float(wd[blk]);
+        float dwb = half_to_float(wd[nb2]);
+        const int4* a4a = (const int4*)(saq + blk * 32);
+        const int4* a4b = (const int4*)(saq + nb2 * 32);
+        int4 aa0 = a4a[0], aa1 = a4a[1];
+        int4 ab0 = a4b[0], ab1 = a4b[1];
+        int wia[8] = { wa0.x, wa0.y, wa0.z, wa0.w, wa1.x, wa1.y, wa1.z, wa1.w };
+        int aqa[8] = { aa0.x, aa0.y, aa0.z, aa0.w, aa1.x, aa1.y, aa1.z, aa1.w };
+        int wib[8] = { wb0.x, wb0.y, wb0.z, wb0.w, wb1.x, wb1.y, wb1.z, wb1.w };
+        int aqb[8] = { ab0.x, ab0.y, ab0.z, ab0.w, ab1.x, ab1.y, ab1.z, ab1.w };
+        int sa = 0, sb = 0;
+        #pragma unroll
+        for (int k = 0; k < 8; k++) sa = dp4a(wia[k], aqa[k], sa);
+        #pragma unroll
+        for (int k = 0; k < 8; k++) sb = dp4a(wib[k], aqb[k], sb);
+        acc += dwa * sad[blk] * (float)sa;
+        acc += dwb * sad[nb2] * (float)sb;
+    }
+    for (; blk < nblk; blk += 32) {
+        int4 w01 = __ldcs((const int4*)(wq + (size_t)blk * 32));
+        int4 w23 = __ldcs((const int4*)(wq + (size_t)blk * 32 + 16));
+        int wi[8] = { w01.x, w01.y, w01.z, w01.w, w23.x, w23.y, w23.z, w23.w };
+        float dw = half_to_float(wd[blk]);
+        const int4* a4 = (const int4*)(saq + blk * 32);
+        int4 a01 = a4[0], a23 = a4[1];
+        int aq4[8] = { a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w };
+        int sumi = 0;
+        #pragma unroll
+        for (int k = 0; k < 8; k++) sumi = dp4a(wi[k], aq4[k], sumi);
+        acc += dw * sad[blk] * (float)sumi;
+    }
+    acc = warp_reduce_sum(acc);
+    if (lane == 0) y[o] = acc;
+}
+
+// v2 twin of `qmatvec_q8_0_mmvq_rp` (the t=1 W8 trunk kernel). grid = (out_f/8, m, 1),
+// block = (32, 8, 1), dynamic smem = in_f + nblk*4 bytes. BIT-IDENTICAL per output.
+extern "C" __global__ __launch_bounds__(256) void qmatvec_q8_0_mmvq_rp_v2(
+        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
+        const float* __restrict__ ad, float* __restrict__ y,
+        int in_f, int out_f, int m, long row_bytes) {
+    (void)row_bytes;
+    const int t = blockIdx.y;
+    if (t >= m) return;
+    const int nblk = in_f / 32;
+    extern __shared__ float gemv_v2_red[];
+    signed char* saq = reinterpret_cast<signed char*>(gemv_v2_red);
+    float* sad = reinterpret_cast<float*>(saq + in_f);
+    q8_0_stage_act(aq + (size_t)t * in_f, ad + (size_t)t * nblk, saq, sad, in_f, nblk);
+    const int o = blockIdx.x * MEMRA_Q8_V2_ROWS + (int)threadIdx.y;
+    q8_0_mmvq_row1_rp_v2(W, out_f, o, nblk, saq, sad, y + (size_t)t * out_f);
+}
+
+// v2 twin of `qmatvec_q8_0_rows_tw` (the VERIFY-width t<=MEMRA_Q8T_TMAX W8 kernel). The
+// weight-once t-column structure is the shipped kernel's verbatim — one weight fetch feeds all
+// t columns — so the activation is NOT staged here (t*in_f would be 32 KB at t=8); the levers
+// are the 8-warp packing and the block walk unrolled by two. BIT-IDENTICAL per (row, column):
+// same `acc[c] += dw * ad[c*nblk + blk] * (float)sumi` in the same blk order.
+extern "C" __global__ __launch_bounds__(256) void qmatvec_q8_0_rows_tw_v2(
+        const unsigned char* __restrict__ W,
+        const signed char* __restrict__ aq, const float* __restrict__ ad,
+        float* __restrict__ y, int in_f, int out_f, int t) {
+    const int row = blockIdx.x * MEMRA_Q8_V2_ROWS + (int)threadIdx.y;
+    if (row >= out_f) return;
+    const int lane = (int)threadIdx.x;
+    const int nblk = in_f / 32;
+    const unsigned char* wq;
+    const unsigned short* wd;
+    q8_0_rp_planes(W, out_f, row, nblk, &wq, &wd);
+    float acc[MEMRA_Q8T_TMAX];
+    #pragma unroll
+    for (int c = 0; c < MEMRA_Q8T_TMAX; c++) acc[c] = 0.0f;
+    int blk = lane;
+    for (; blk + 32 < nblk; blk += 64) {
+        const int nb2 = blk + 32;
+        int4 wa0 = __ldcs((const int4*)(wq + (size_t)blk * 32));
+        int4 wa1 = __ldcs((const int4*)(wq + (size_t)blk * 32 + 16));
+        int4 wb0 = __ldcs((const int4*)(wq + (size_t)nb2 * 32));
+        int4 wb1 = __ldcs((const int4*)(wq + (size_t)nb2 * 32 + 16));
+        float dwa = half_to_float(wd[blk]);
+        float dwb = half_to_float(wd[nb2]);
+        int wia[8] = { wa0.x, wa0.y, wa0.z, wa0.w, wa1.x, wa1.y, wa1.z, wa1.w };
+        int wib[8] = { wb0.x, wb0.y, wb0.z, wb0.w, wb1.x, wb1.y, wb1.z, wb1.w };
+        for (int c = 0; c < t; c++) {
+            const int4* a4a = (const int4*)(aq + (size_t)c * in_f + blk * 32);
+            const int4* a4b = (const int4*)(aq + (size_t)c * in_f + nb2 * 32);
+            int4 aa0 = a4a[0], aa1 = a4a[1];
+            int4 ab0 = a4b[0], ab1 = a4b[1];
+            int aqa[8] = { aa0.x, aa0.y, aa0.z, aa0.w, aa1.x, aa1.y, aa1.z, aa1.w };
+            int aqb[8] = { ab0.x, ab0.y, ab0.z, ab0.w, ab1.x, ab1.y, ab1.z, ab1.w };
+            int sa = 0, sb = 0;
+            #pragma unroll
+            for (int k = 0; k < 8; k++) sa = dp4a(wia[k], aqa[k], sa);
+            #pragma unroll
+            for (int k = 0; k < 8; k++) sb = dp4a(wib[k], aqb[k], sb);
+            acc[c] += dwa * ad[(size_t)c * nblk + blk] * (float)sa;
+            acc[c] += dwb * ad[(size_t)c * nblk + nb2] * (float)sb;
+        }
+    }
+    for (; blk < nblk; blk += 32) {
+        int4 w01 = __ldcs((const int4*)(wq + (size_t)blk * 32));
+        int4 w23 = __ldcs((const int4*)(wq + (size_t)blk * 32 + 16));
+        int wi[8] = { w01.x, w01.y, w01.z, w01.w, w23.x, w23.y, w23.z, w23.w };
+        float dw = half_to_float(wd[blk]);
+        for (int c = 0; c < t; c++) {
+            const int4* aq16 = (const int4*)(aq + (size_t)c * in_f + blk * 32);
+            int4 a01 = aq16[0], a23 = aq16[1];
+            int aq4[8] = { a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w };
+            int sumi = 0;
+            #pragma unroll
+            for (int k = 0; k < 8; k++) sumi = dp4a(wi[k], aq4[k], sumi);
+            acc[c] += dw * ad[(size_t)c * nblk + blk] * (float)sumi;
+        }
+    }
+    for (int c = 0; c < t; c++) {
+        float a = warp_reduce_sum(acc[c]);
+        if (lane == 0) y[(size_t)c * out_f + row] = a;
+    }
+}
+
+// FUSED six-projection KDA group for the W8 posture. The W8 path had NO fused twin: the
+// existing `qmatvec_kda6_q8f32_mmvq` addresses INTERLEAVED 34 B blocks (a resident plain-layout
+// Q8_0 tensor), while `MEMRA_GLM5_W8`'s mirror is the SPLIT-PLANE rp4 form, and
+// `MEMRA_KDA_FUSED_PROJ`'s bf16 arm declines outright whenever the W8 door is on. So the six
+// projections run as six separate launches today. This is the fusion: same six-unequal-range
+// block split as `qmatvec_kda6_bf16f32`, the three mirrored ranges on the rp v2 body, the three
+// f32 low-rank/beta ranges on `f32_mmvq_row1`.
+//
+// NUMERIC CLASSES, unchanged from the sibling fused kernels: the three q8_0 ranges are
+// BIT-IDENTICAL to `qmatvec_q8_0_mmvq_rp` per row; the three f32 ranges replace cuBLASLt with
+// the same deterministic warp tree the q8 arm of `MEMRA_KDA_FUSED_PROJ` already ships and has
+// pinned (a reduction-order class, not a new one).
+extern "C" __global__ __launch_bounds__(256) void qmatvec_kda6_q8f32_rp_v2(
+        const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
+        const unsigned char* __restrict__ W2,
+        const float* __restrict__ W3, const float* __restrict__ W4,
+        const float* __restrict__ W5,
+        const signed char* __restrict__ aq, const float* __restrict__ ad,
+        const float* __restrict__ x,
+        float* __restrict__ y0, float* __restrict__ y1, float* __restrict__ y2,
+        float* __restrict__ y3, float* __restrict__ y4, float* __restrict__ y5,
+        int in_f, int out0, int out1, int out2, int out3, int out4, int out5,
+        int m) {
+    const int R = MEMRA_Q8_V2_ROWS;
+    const int t = blockIdx.y;
+    if (t >= m) return;
+    const int nblk = in_f / 32;
+    extern __shared__ float gemv_v2_red[];
+    signed char* saq = reinterpret_cast<signed char*>(gemv_v2_red);
+    float* sad = reinterpret_cast<float*>(saq + in_f);
+    // Staged BEFORE the range branch so the barrier inside is block-uniform.
+    q8_0_stage_act(aq + (size_t)t * in_f, ad + (size_t)t * nblk, saq, sad, in_f, nblk);
+    const float* xrow = x + (size_t)t * in_f;
+    int b = blockIdx.x;
+    int nb;
+    nb = (out0 + R - 1) / R;
+    if (b < nb) {
+        q8_0_mmvq_row1_rp_v2(W0, out0, b * R + (int)threadIdx.y, nblk, saq, sad,
+                             y0 + (size_t)t * out0);
+        return;
+    }
+    b -= nb;
+    nb = (out1 + R - 1) / R;
+    if (b < nb) {
+        q8_0_mmvq_row1_rp_v2(W1, out1, b * R + (int)threadIdx.y, nblk, saq, sad,
+                             y1 + (size_t)t * out1);
+        return;
+    }
+    b -= nb;
+    nb = (out2 + R - 1) / R;
+    if (b < nb) {
+        q8_0_mmvq_row1_rp_v2(W2, out2, b * R + (int)threadIdx.y, nblk, saq, sad,
+                             y2 + (size_t)t * out2);
+        return;
+    }
+    b -= nb;
+    nb = (out3 + R - 1) / R;
+    if (b < nb) {
+        f32_mmvq_row1(W3, xrow, y3 + (size_t)t * out3, in_f, out3, b * R + (int)threadIdx.y);
+        return;
+    }
+    b -= nb;
+    nb = (out4 + R - 1) / R;
+    if (b < nb) {
+        f32_mmvq_row1(W4, xrow, y4 + (size_t)t * out4, in_f, out4, b * R + (int)threadIdx.y);
+        return;
+    }
+    b -= nb;
+    f32_mmvq_row1(W5, xrow, y5 + (size_t)t * out5, in_f, out5, b * R + (int)threadIdx.y);
+}
