@@ -639,6 +639,14 @@ fn hyper_decode_ws_on() -> bool {
 pub static HC_DECODE_WS_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
+/// Engagement counter for door `MEMRA_GLM5_Q8_FUSE` (lane/b200-q8-fuse-20260902) — every
+/// call into `rms_norm_zq8_f32` from the mHC T=1 decode walk increments this, and the FIRST
+/// increment prints `[glm5-q8-fuse] engaged` once per boot. Needed so a box A/B or nsys
+/// census can prove the fused kernel actually ran rather than inferring it from a green
+/// diff (wiring-assertions law).
+pub static GLM5_Q8_FUSE_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 /// `MEMRA_MLA_TC_PREFILL` — the glm5_next tensor-core MLA prefill chain
 /// (lane/glm5-mla-tc-prefill, 2026-08-30): at prefill widths the three per-position f32
 /// kernels the launch-diet census named (`memra_mla_attn_gathered_kernel` 139 ms +
@@ -1673,6 +1681,7 @@ impl HybridModel {
     /// lane/b200-q8-fuse-20260902 — the caller's norm producer folded the standalone
     /// `quantize_q8_1(z, ...)` launch into itself). `None` preserves the unfused chain:
     /// `moe_ffn_il_zq8` re-quantizes `z` itself, byte-identical either way.
+    #[allow(clippy::too_many_arguments)] // allow: mirrors the mixer/FFN dispatch contract every sibling walk in this file shares; bundling into a struct is a refactor, not a lint fix, and would touch every call site for no behavior change.
     fn hyper_ffn_branch(
         &self,
         e: &Engine,
@@ -2206,14 +2215,18 @@ impl HybridModel {
             // byte-identical either way (rms_norm_zq8_f32's header carries the identity
             // argument against rms_norm then quantize_q8_1).
             let zq8 = if crate::glm5_q8_fuse_on() {
-                Some(e.rms_norm_zq8_f32(
+                let pair = e.rms_norm_zq8_f32(
                     &y,
                     layer.post_attn_norm.float_data(),
                     &mut z,
                     n_embd,
                     1,
                     eps,
-                )?)
+                )?;
+                if GLM5_Q8_FUSE_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+                    eprintln!("[glm5-q8-fuse] engaged (rms_norm_zq8_f32, hyper_range_decode)");
+                }
+                Some(pair)
             } else {
                 e.rms_norm(
                     &y,
@@ -2314,14 +2327,20 @@ impl HybridModel {
             // Door MEMRA_GLM5_Q8_FUSE — the workspace twin of the fusion above (same fused
             // kernel, same byte-identity argument, `ws.z` in place of a fresh allocation).
             let zq8 = if crate::glm5_q8_fuse_on() {
-                Some(e.rms_norm_zq8_f32(
+                let pair = e.rms_norm_zq8_f32(
                     &ws.y,
                     layer.post_attn_norm.float_data(),
                     &mut ws.z,
                     n_embd,
                     1,
                     eps,
-                )?)
+                )?;
+                if GLM5_Q8_FUSE_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+                    eprintln!(
+                        "[glm5-q8-fuse] engaged (rms_norm_zq8_f32, hyper_range_decode_ws_body)"
+                    );
+                }
+                Some(pair)
             } else {
                 e.rms_norm(
                     &ws.y,
