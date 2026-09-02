@@ -4391,8 +4391,9 @@ fn main() -> Res<()> {
         let mut receipt = header.clone();
         receipt.push_str(&format!(
             "# verify-bit-deep: plain t==1 rows vs t=={k1} chunk rows, same fed tokens, \
-             SEEDED FROM A {fill}-TOKEN CORPUS PREFIX (chunk {chunk}), n={n}\n\
-             row\tabs_pos\tchunk\tbit_identical\n"
+             SEEDED FROM A {fill}-TOKEN CORPUS PREFIX (chunk {chunk}), n={n}, wide_ring_rows={}\n\
+             row\tabs_pos\tchunk\tbit_identical\n",
+            2 * chunk
         ));
         let t_seed = Instant::now();
         let mut sa = model.alloc_state_reserve(&engine, fill + n + 2, chunk, None)?;
@@ -4412,13 +4413,24 @@ fn main() -> Res<()> {
             fed.push(argmax(&row) as u32);
             plain_rows.push(row);
         }
-        // The plain state is dropped BEFORE the spec-armed one is allocated wherever that
-        // is possible — but it is not: the rows have to be compared against a live second
-        // walk, so both prefixes coexist. That is the two-state cost named above, and it is
-        // why this gate reports its own VRAM line.
+        // The plain rows are compared as HOST copies against the second walk, so the plain
+        // state does NOT have to coexist with the spec-armed one — the earlier comment here
+        // said it did, and that belief is what kept two deep states resident through six
+        // OOMs. It is dropped below, before the second allocation.
         let t_spec = Instant::now();
+        // The plain rows are on the host now; release the plain state BEFORE the chunk state
+        // is allocated. Two deep states (~2.9 GB each at fill 131,072) plus a 2,048-row chunk's
+        // transients sit at ~8 GB against the ~7.9 GB a 96 GB card has left after the trunk
+        // (89,971 MiB) — the ring-bounded stash alone still OOMed (attempt 7, 2026-09-02).
+        drop(sa);
         let mut sb = model.alloc_state_reserve(&engine, fill + n + k1 + 2, chunk, None)?;
-        model.spec_arm(&engine, &mut sb, k1)?;
+        // RING-bounded wide stash, not the whole-history default: `spec_arm` keeps
+        // (fill + n + k1 + 2) x wide x f32 of seed rows — 5.4 GB at fill 131,072, 2.7 GB at
+        // 65,536 — beside two deep states on a card the trunk already fills to 89,971 of
+        // 97,887 MiB, which is why every deep attempt OOMed (2026-08-31 x3, 2026-09-02 x3,
+        // with AND without the goldens pin). This instrument consumes each chunk before the
+        // next lands and reads at most k1 rows back, so 2*chunk rows is the honest bound.
+        model.spec_arm_ring(&engine, &mut sb, k1, 2 * chunk)?;
         for piece in seed.chunks(chunk) {
             let _ = model.prefill_extend(&engine, piece, &mut sb, chunk)?;
         }

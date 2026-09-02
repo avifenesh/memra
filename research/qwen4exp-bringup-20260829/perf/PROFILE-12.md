@@ -417,6 +417,21 @@ Three failures on the box, the first a real sizing defect (§9) and attempts 2-3
 and ~96 GB free — i.e. the instrument, not the seam. It is itself intra-arm, so it cannot add assurance
 the truth pin does not already give, and the flip does not wait on it.
 
+
+### 8b. CLOSED 2026-09-02 — `--verify-bit-deep 131072` PASSES on the serving caches
+
+`# verdict fill=131072 rows=24 mismatched=0 policy=bit-identity pass=true`, `kv_quant=q8_0/q5_1
+idxq=q8 golden_pin=false`, plecache and selgroup at their (ON) defaults, peak 94,845 of
+97,887 MiB. Receipts: `kvq/vbdeep-box/` (the eight attempts' logs are all there).
+
+The "instrument, not the seam" reading in §8/§9 was right and the instrument had TWO
+sizing defects, neither the goldens pin: `spec_arm` kept a WHOLE-HISTORY wide stash
+((fill+n+k1+2) x 10,240 x f32 = 5.4 GB at 131k) and the plain state stayed resident while
+the spec-armed one was allocated although its rows had already been copied to host (~2.9 GB
+per deep state). Attempts 1-3 (08-31) and 4-6 (09-02: with the pin, without it, at half fill)
+OOMed on both; attempt 7 (ring bounded to 2*chunk) still OOMed on the second; attempt 8
+(ring + `drop(sa)` before the second allocation) passed. Fixed in memra PR #64.
+
 ## 9. Open
 
 - **The 262,144 A/B is MEASURED** (§10a): 1.4620x, on the third attempt — the first two died on
