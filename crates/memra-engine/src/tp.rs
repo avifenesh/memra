@@ -1771,6 +1771,16 @@ pub struct TpE4m3HostBounce {
     decode_v2: std::sync::Mutex<Vec<StepTpDecodeV2Ws>>,
 }
 
+pub struct TpKvVerifiedLayer<'a> {
+    pub cache: &'a mut ResidentTpKvCache,
+    pub start: usize,
+    pub logical_len: usize,
+    pub source_k_raw: u64,
+    pub source_v_raw: u64,
+    pub source_k_tok_bytes: usize,
+    pub source_v_tok_bytes: usize,
+}
+
 /// Persistent two-rank all-reduce for one replicated f32 row.
 ///
 /// Each rank pushes its local partial directly into a peer-resident staging row, records one
@@ -2536,6 +2546,102 @@ impl TpE4m3HostBounce {
         }
         cache.rewind_to(logical_len)?;
         Ok(())
+    }
+
+    /// Batch the accepted verify rows of every uniform TP-attention layer into one kernel per
+    /// rank. Returns `false` before enqueueing anything when the layer group is not uniform, so
+    /// the caller can use the existing per-layer repair without splitting semantics.
+    pub fn restore_tp_kv_layers_from_device(
+        &self,
+        layers: &mut [TpKvVerifiedLayer<'_>],
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        let Some(first) = layers.first() else {
+            return Ok(false);
+        };
+        if !self.native_p2p || first.start >= first.logical_len {
+            return Ok(false);
+        }
+        let ranks = self.ranks.len();
+        let rows = first.logical_len - first.start;
+        let logical_len = first.logical_len;
+        let k_row_bytes = first.cache.k_tok_bytes();
+        let v_row_bytes = first.cache.v_tok_bytes();
+        let k_src_stride = first.source_k_tok_bytes;
+        let v_src_stride = first.source_v_tok_bytes;
+        let Some(expected_k_stride) = k_row_bytes.checked_mul(ranks) else {
+            return Ok(false);
+        };
+        let Some(expected_v_stride) = v_row_bytes.checked_mul(ranks) else {
+            return Ok(false);
+        };
+        if k_src_stride != expected_k_stride || v_src_stride != expected_v_stride {
+            return Ok(false);
+        }
+
+        for layer in layers.iter() {
+            self.validate_tp_kv_cache(layer.cache)?;
+            if layer.cache.committed_len() != layer.cache.staged_len()
+                || layer.start > layer.logical_len
+                || layer.logical_len != logical_len
+                || layer.logical_len - layer.start != rows
+                || layer.cache.k_tok_bytes() != k_row_bytes
+                || layer.cache.v_tok_bytes() != v_row_bytes
+                || layer.source_k_tok_bytes != k_src_stride
+                || layer.source_v_tok_bytes != v_src_stride
+            {
+                return Ok(false);
+            }
+            let physical = layer.cache.physical_range(layer.start, layer.logical_len)?;
+            if physical.len() != rows {
+                return Ok(false);
+            }
+        }
+
+        for rank in 0..ranks {
+            let engine = &self.ranks[rank];
+            let _main = engine.gpu.enter_main()?;
+            let stream = engine.stream();
+            let n = layers.len();
+            let mut table = vec![0u64; 5 * n];
+            for (index, layer) in layers.iter_mut().enumerate() {
+                let physical = layer.cache.physical_range(layer.start, layer.logical_len)?;
+                let rank_cache = layer
+                    .cache
+                    .rank_mut(rank)
+                    .ok_or_else(|| format!("TP KV cache has no rank {rank}"))?;
+                table[index] = layer.source_k_raw + (rank * k_row_bytes) as u64;
+                table[n + index] = layer.source_v_raw + (rank * v_row_bytes) as u64;
+                table[2 * n + index] = rank_cache.k_mut().device_ptr(&stream).0
+                    + (physical.start * k_row_bytes) as u64;
+                table[3 * n + index] = rank_cache.v_mut().device_ptr(&stream).0
+                    + (physical.start * v_row_bytes) as u64;
+                table[4 * n + index] = rank_cache.len_d_mut().device_ptr(&stream).0;
+            }
+            let table = engine.htod_u64(&table)?;
+            engine.copy_batch_uniform_kv_u8_set_len(
+                &table,
+                n,
+                rows,
+                k_row_bytes,
+                v_row_bytes,
+                k_src_stride,
+                v_src_stride,
+                logical_len,
+            )?;
+        }
+        let layer_count = layers.len();
+        for layer in layers.iter_mut() {
+            layer.cache.publish_device_rewind(logical_len)?;
+        }
+        static ANNOUNCED: std::sync::Once = std::sync::Once::new();
+        ANNOUNCED.call_once(|| {
+            eprintln!(
+                "[tp-kv-verify-batch] engaged: layers={} ranks={ranks} rows={rows} \
+                 k_row_bytes={k_row_bytes} v_row_bytes={v_row_bytes}",
+                layer_count
+            );
+        });
+        Ok(true)
     }
 
     pub fn append_tp_kv_transaction(

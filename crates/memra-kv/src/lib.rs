@@ -2062,6 +2062,23 @@ impl ResidentTpKvCache {
         self.state.rewind(target, self.capacity)?;
         Ok(())
     }
+
+    /// Publish a rewind whose device length mirrors were already written in-order by the
+    /// caller's rank-local kernels. This is host bookkeeping only; using it without those device
+    /// writes would split the cache's host/device visibility contract.
+    pub fn publish_device_rewind(
+        &mut self,
+        target: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if !self.can_rewind_to(target) {
+            return Err(format!(
+                "TP KV device rewind target {target} is outside the resident cache window/capacity"
+            )
+            .into());
+        }
+        self.state.rewind(target, self.capacity)?;
+        Ok(())
+    }
 }
 
 pub struct Cache {
@@ -3214,6 +3231,20 @@ mod tp_transaction_tests {
         assert!(state.active.is_none());
         assert!(state.validate(transaction).is_err());
         assert!(state.rewind(9, 8).is_err());
+    }
+
+    #[test]
+    fn device_rewind_updates_host_visibility_after_external_rank_writes() {
+        let mut cache = empty_tp_cache(8);
+        let transaction = cache.begin_transaction().unwrap();
+        let staged = cache.append_target(transaction, 5).unwrap();
+        cache.publish_append(transaction, staged).unwrap();
+        let committed = cache.commit_target(transaction, 5).unwrap();
+        cache.publish_finalize(transaction, committed).unwrap();
+        cache.publish_device_rewind(3).unwrap();
+        assert_eq!(cache.committed_len(), 3);
+        assert_eq!(cache.staged_len(), 3);
+        assert!(cache.publish_device_rewind(9).is_err());
     }
 
     #[test]

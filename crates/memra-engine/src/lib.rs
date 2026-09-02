@@ -5850,6 +5850,62 @@ impl Engine {
         Ok(())
     }
 
+    /// Copy one uniform quantized K/V row range for each layer in `table` and publish every
+    /// layer's device length in the same launch. Table layout is five pointer planes:
+    /// K source, V source, K destination, V destination, and i32 length destination.
+    #[allow(clippy::too_many_arguments)] // allow: row bytes and source strides are independent K/V geometry and collapsing them would hide the peer-layout contract
+    pub fn copy_batch_uniform_kv_u8_set_len(
+        &self,
+        table: &CudaSlice<u64>,
+        n: usize,
+        rows: usize,
+        k_row_bytes: usize,
+        v_row_bytes: usize,
+        k_src_stride: usize,
+        v_src_stride: usize,
+        logical_len: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if n == 0 || rows == 0 || (k_row_bytes == 0 && v_row_bytes == 0) {
+            return Ok(());
+        }
+        if table.len() < 5 * n {
+            return Err(format!(
+                "TP KV repair table has {} words, expected at least {}",
+                table.len(),
+                5 * n
+            )
+            .into());
+        }
+        let ni = i32::try_from(n).map_err(|_| "TP KV repair layer count exceeds i32")?;
+        let rows = i32::try_from(rows).map_err(|_| "TP KV repair rows exceed i32")?;
+        let kb = i32::try_from(k_row_bytes).map_err(|_| "TP KV repair K bytes exceed i32")?;
+        let vb = i32::try_from(v_row_bytes).map_err(|_| "TP KV repair V bytes exceed i32")?;
+        let ks = i32::try_from(k_src_stride).map_err(|_| "TP KV repair K stride exceeds i32")?;
+        let vs = i32::try_from(v_src_stride).map_err(|_| "TP KV repair V stride exceeds i32")?;
+        let len = i32::try_from(logical_len).map_err(|_| "TP KV repair length exceeds i32")?;
+        let f = self.func("copy_batch_uniform_kv_u8_set_len");
+        let cfg = LaunchConfig {
+            grid_dim: (n as u32, 1, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let stream = self.gpu.stream();
+        let mut builder = stream.launch_builder(&f);
+        builder
+            .arg(table)
+            .arg(&ni)
+            .arg(&rows)
+            .arg(&kb)
+            .arg(&vb)
+            .arg(&ks)
+            .arg(&vs)
+            .arg(&len);
+        unsafe {
+            builder.launch(cfg)?;
+        }
+        Ok(())
+    }
+
     /// H2D refresh of an EXISTING u64 pointer table IN PLACE (stable pointer — the batched
     /// state-copy tables are refreshed per round because the GDN ssm handles ping-pong).
     pub fn htod_u64_into(

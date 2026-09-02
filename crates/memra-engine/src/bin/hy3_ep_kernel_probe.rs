@@ -12,6 +12,13 @@ const HIDDEN: usize = 4096;
 const EXPERT_WIDTH: usize = 1536;
 const PAIRS: usize = 8;
 const LOCAL_EXPERTS: usize = 2;
+const TP_KV_LAYERS: usize = 80;
+const TP_K_BYTES: usize = 544;
+const TP_V_BYTES: usize = 384;
+const TP_K_SRC_STRIDE: usize = 2 * TP_K_BYTES;
+const TP_V_SRC_STRIDE: usize = 2 * TP_V_BYTES;
+const TP_KV_ROWS: usize = 2;
+const TP_KV_LEN: i32 = 130;
 
 struct Rng(u64);
 
@@ -279,6 +286,127 @@ impl Probe {
     }
 }
 
+struct KvRestoreProbe {
+    engine: Engine,
+    k_src: Vec<CudaSlice<u8>>,
+    v_src: Vec<CudaSlice<u8>>,
+    k_dst: Vec<CudaSlice<u8>>,
+    v_dst: Vec<CudaSlice<u8>>,
+    lens: Vec<CudaSlice<i32>>,
+    table: CudaSlice<u64>,
+}
+
+impl KvRestoreProbe {
+    fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        let engine = Engine::new(0)?;
+        let mut k_src = Vec::with_capacity(TP_KV_LAYERS);
+        let mut v_src = Vec::with_capacity(TP_KV_LAYERS);
+        let mut k_dst = Vec::with_capacity(TP_KV_LAYERS);
+        let mut v_dst = Vec::with_capacity(TP_KV_LAYERS);
+        let mut lens = Vec::with_capacity(TP_KV_LAYERS);
+        for layer in 0..TP_KV_LAYERS {
+            let k = (0..TP_KV_ROWS * TP_K_SRC_STRIDE)
+                .map(|index| (layer as u8).wrapping_mul(17).wrapping_add(index as u8))
+                .collect::<Vec<_>>();
+            let v = (0..TP_KV_ROWS * TP_V_SRC_STRIDE)
+                .map(|index| (layer as u8).wrapping_mul(29).wrapping_add(index as u8))
+                .collect::<Vec<_>>();
+            k_src.push(engine.htod_bytes(&k)?);
+            v_src.push(engine.htod_bytes(&v)?);
+            k_dst.push(engine.alloc_u8(TP_KV_ROWS * TP_K_BYTES)?);
+            v_dst.push(engine.alloc_u8(TP_KV_ROWS * TP_V_BYTES)?);
+            lens.push(engine.htod_i32(&[0])?);
+        }
+        let stream = engine.stream();
+        let mut table = vec![0u64; 5 * TP_KV_LAYERS];
+        for layer in 0..TP_KV_LAYERS {
+            table[layer] = k_src[layer].device_ptr(&stream).0;
+            table[TP_KV_LAYERS + layer] = v_src[layer].device_ptr(&stream).0;
+            table[2 * TP_KV_LAYERS + layer] = k_dst[layer].device_ptr(&stream).0;
+            table[3 * TP_KV_LAYERS + layer] = v_dst[layer].device_ptr(&stream).0;
+            table[4 * TP_KV_LAYERS + layer] = lens[layer].device_ptr(&stream).0;
+        }
+        let table = engine.htod_u64(&table)?;
+        engine.stream().synchronize()?;
+        Ok(Self {
+            engine,
+            k_src,
+            v_src,
+            k_dst,
+            v_dst,
+            lens,
+            table,
+        })
+    }
+
+    fn baseline(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        for layer in 0..TP_KV_LAYERS {
+            for row in 0..TP_KV_ROWS {
+                self.engine.copy_u8_range_into(
+                    &mut self.k_dst[layer],
+                    row * TP_K_BYTES,
+                    &self.k_src[layer],
+                    row * TP_K_SRC_STRIDE,
+                    TP_K_BYTES,
+                )?;
+                self.engine.copy_u8_range_into(
+                    &mut self.v_dst[layer],
+                    row * TP_V_BYTES,
+                    &self.v_src[layer],
+                    row * TP_V_SRC_STRIDE,
+                    TP_V_BYTES,
+                )?;
+            }
+            self.engine.set_i32_one(&mut self.lens[layer], TP_KV_LEN)?;
+        }
+        Ok(())
+    }
+
+    fn batched(&self) -> Result<(), Box<dyn std::error::Error>> {
+        self.engine.copy_batch_uniform_kv_u8_set_len(
+            &self.table,
+            TP_KV_LAYERS,
+            TP_KV_ROWS,
+            TP_K_BYTES,
+            TP_V_BYTES,
+            TP_K_SRC_STRIDE,
+            TP_V_SRC_STRIDE,
+            TP_KV_LEN as usize,
+        )
+    }
+
+    fn validate(&self) -> Result<(), Box<dyn std::error::Error>> {
+        for layer in 0..TP_KV_LAYERS {
+            let k_source = self.engine.dtoh_u8(&self.k_src[layer])?;
+            let k_expected = (0..TP_KV_ROWS)
+                .flat_map(|row| {
+                    k_source[row * TP_K_SRC_STRIDE..row * TP_K_SRC_STRIDE + TP_K_BYTES]
+                        .iter()
+                        .copied()
+                })
+                .collect::<Vec<_>>();
+            if k_expected != self.engine.dtoh_u8(&self.k_dst[layer])? {
+                return Err(format!("TP KV K mismatch at layer {layer}").into());
+            }
+            let v_source = self.engine.dtoh_u8(&self.v_src[layer])?;
+            let v_expected = (0..TP_KV_ROWS)
+                .flat_map(|row| {
+                    v_source[row * TP_V_SRC_STRIDE..row * TP_V_SRC_STRIDE + TP_V_BYTES]
+                        .iter()
+                        .copied()
+                })
+                .collect::<Vec<_>>();
+            if v_expected != self.engine.dtoh_u8(&self.v_dst[layer])? {
+                return Err(format!("TP KV V mismatch at layer {layer}").into());
+            }
+            if self.engine.dtoh_i32_one(&self.lens[layer])? != TP_KV_LEN {
+                return Err(format!("TP KV length mismatch at layer {layer}").into());
+            }
+        }
+        Ok(())
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mode = std::env::args()
         .nth(1)
@@ -289,6 +417,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(1000);
     if iterations == 0 {
         return Err("iterations must be nonzero".into());
+    }
+    if mode == "kv_restore_baseline" || mode == "kv_restore_batch" {
+        let mut probe = KvRestoreProbe::new()?;
+        for _ in 0..5 {
+            if mode == "kv_restore_baseline" {
+                probe.baseline()?;
+            } else {
+                probe.batched()?;
+            }
+        }
+        probe.engine.stream().synchronize()?;
+        let started = std::time::Instant::now();
+        for _ in 0..iterations {
+            if mode == "kv_restore_baseline" {
+                probe.baseline()?;
+            } else {
+                probe.batched()?;
+            }
+        }
+        probe.engine.stream().synchronize()?;
+        let microseconds = started.elapsed().as_secs_f64() * 1.0e6 / iterations as f64;
+        probe.validate()?;
+        println!(
+            "HY3_TP_KV_RESTORE_PROBE mode={mode} iterations={iterations} \
+             us_per_round={microseconds:.3} layers={TP_KV_LAYERS} k_bytes={TP_K_BYTES} \
+             v_bytes={TP_V_BYTES} rows={TP_KV_ROWS} logical_len={TP_KV_LEN} exact=true"
+        );
+        return Ok(());
     }
     let mut probe = Probe::new()?;
     for _ in 0..20 {
