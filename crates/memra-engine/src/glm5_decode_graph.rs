@@ -82,6 +82,11 @@ use std::sync::atomic::Ordering;
 type Res<T> = Result<T, Box<dyn std::error::Error>>;
 
 /// One captured contiguous KDA-layer run, in both recurrent-state ping-pong phases.
+///
+/// FIELD ORDER IS LOAD-BEARING. Rust drops fields in declaration order, so `graphs` (which
+/// destroys the instantiated execs) must be declared BEFORE `_keeper` (which frees the buffers
+/// those execs baked). Freeing first and destroying second is a use-after-free inside the driver.
+/// The same reasoning orders `StageGraphs`: `runs` before `x_io`/`ws`/`f16`.
 struct RunGraph {
     lo: usize,
     hi: usize,
@@ -133,6 +138,13 @@ struct StageGraphs {
 
 /// The `(conv, ssm, ssm_alt)` device pointers of one layer's recurrent state, or `None` when the
 /// layer has no recurrent slot.
+/// PHASE-INVARIANT BY CONSTRUCTION, and that is the whole point. `kda_cached` swaps
+/// `ssm_state` / `ssm_state_alt` on the HOST every step and the replay mirrors that swap, so an
+/// ORDERED triple differs on every single token — which is exactly what the first box run did:
+/// `[glm5-decode-graph] re-capture: a captured layer's recurrent-state buffer moved` fired on
+/// step 2 of the graph arm, on a session where nothing had actually moved. The ping-pong pair is
+/// therefore recorded UNORDERED (min, max): a swap cannot change it, a genuine RE-SEAT (a
+/// different buffer, e.g. a snapshot restore or a reuse-pool rehydrate) still does.
 fn recur_ptrs(e: &Engine, cache: &Cache, il: usize) -> Option<(u64, u64, u64)> {
     use cudarc::driver::DevicePtr;
     let rl = cache.recur.get(il)?.as_ref()?;
@@ -140,13 +152,17 @@ fn recur_ptrs(e: &Engine, cache: &Cache, il: usize) -> Option<(u64, u64, u64)> {
     let (c, _g0) = rl.conv_state.device_ptr(&st);
     let (s, _g1) = rl.ssm_state.device_ptr(&st);
     let (a, _g2) = rl.ssm_state_alt.device_ptr(&st);
-    Some((c, s, a))
+    Some((c, s.min(a), s.max(a)))
 }
 
 /// Per-session pool: one [`StageGraphs`] per pipeline stage this cache has decoded through.
 #[derive(Default)]
 pub(crate) struct Glm5DecodeGraphs {
     stages: Vec<StageGraphs>,
+    /// `(device ordinal, lo, hi)` keys whose capture FAILED once. A failed capture is a
+    /// permanent eager fall-through for this session rather than a per-token retry: retrying
+    /// would re-thrash the stream every step and turn one refusal into a hot loop.
+    failed: Vec<(usize, usize, usize)>,
 }
 
 /// Maximal contiguous runs of `[lo, hi)` over which `capturable` holds. Split out from
@@ -296,6 +312,20 @@ impl HybridModel {
         lo: usize,
         hi: usize,
     ) -> bool {
+        // A stage whose capture already failed once stays eager for the life of this session —
+        // the reason was printed then, so this arm is silent by design.
+        if cache
+            .glm5_decode_graph
+            .as_ref()
+            .and_then(|b| b.downcast_ref::<Glm5DecodeGraphs>())
+            .is_some_and(|p| {
+                p.failed
+                    .iter()
+                    .any(|&(d, l, h)| d == e.ctx().ordinal() && l == lo && h == hi)
+            })
+        {
+            return false;
+        }
         if let Some(why) = self.glm5_decode_graph_refusal(e, cache, lo, hi) {
             note(&format!("eager: {why}"));
             return false;
@@ -355,8 +385,24 @@ impl HybridModel {
                     if stale_pos || stale_ptr {
                         if stale_ptr {
                             note("re-capture: a captured layer's recurrent-state buffer moved");
+                        } else {
+                            note("re-capture: the session rewound under the pool (pos moved)");
                         }
-                        pool.stages.remove(i);
+                        // DRAIN BEFORE DESTROYING. A `StageGraphs` owns an instantiated exec plus
+                        // every buffer that exec baked (x_io, the private hc workspace and f16
+                        // scratch, and the capture keeper's transients). Dropping it runs
+                        // cuGraphExecDestroy/cuGraphDestroy and frees those allocations; doing
+                        // that while a replay of the SAME exec is still outstanding on the stream
+                        // is a destroy-in-use, and the driver reports it at the next graph call as
+                        // `CUDA_ERROR_INVALID_VALUE` — which is the error the first box run died
+                        // on, one line after the (spurious) re-capture notice above. The
+                        // synchronize is bounded work that happens only on a real re-capture.
+                        e.stream().synchronize()?;
+                        let old = pool.stages.remove(i);
+                        drop(old);
+                        // The frees the drop just issued are stream-ordered too; the new capture
+                        // must not race them for the same pool addresses.
+                        e.stream().synchronize()?;
                         true
                     } else {
                         false
@@ -365,8 +411,21 @@ impl HybridModel {
                 None => true,
             }
         };
-        if need_capture {
-            self.glm5_capture_stage(e, topology, lo, hi, cache, dev, width, pos)?;
+        if need_capture
+            && let Err(err) = self.glm5_capture_stage(e, topology, lo, hi, cache, dev, width, pos)
+        {
+            // A CAPTURE FAILURE IS NEVER THE REQUEST'S PROBLEM. This route has a byte-identical
+            // eager twin, so a failed capture degrades to it instead of failing the token. The
+            // stage is latched off for this session so the next token does not retry (and
+            // re-thrash the stream) forever, and the reason is printed once.
+            note(&format!(
+                "eager from here on stage=[{lo}, {hi}) dev={dev}: capture failed ({err})"
+            ));
+            // The failed capture may have left transients queued; drain before eager work reuses
+            // the stream, and record the refusal so `glm5_decode_graph_ready` yields immediately.
+            let _ = e.stream().synchronize();
+            self.glm5_graph_pool(cache).failed.push((dev, lo, hi));
+            return self.hyper_range_decode_eager(e, topology, x, lo, hi, pos_d, pos, cache);
         }
 
         let runs: Vec<(usize, usize)> = kda_runs(self, lo, hi);
