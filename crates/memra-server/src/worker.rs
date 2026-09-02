@@ -14674,11 +14674,19 @@ pub fn run(
                     // re-sent: `park_requeue` rebuilds the request with the prompt only, and
                     // a session that has already emitted cannot be silently restarted, so it
                     // takes the honest error instead. Only pre-emission sessions park.
+                    // "Emitted" is read from BOTH markers (`step_oom_parkable`): `generated`
+                    // is post-burst bookkeeping, `tokens_emitted` is advanced at every SEND
+                    // site, including the round-cadence flush inside a spec burst
+                    // (`MEMRA_SPEC_FIRST_TOKEN_EAGER`, the qwen sse-cadence hook) — a step
+                    // OOM after an in-burst flush must not replay the streamed prefix.
                     Err(err)
                         if is_cuda_oom(&err.to_string())
-                            && step_oom_retries() > 0
-                            && active[i].generated.is_empty()
-                            && active[i].oom_retries < step_oom_retries() =>
+                            && step_oom_parkable(
+                                active[i].generated.len(),
+                                active[i].tokens_emitted,
+                                active[i].oom_retries,
+                                step_oom_retries(),
+                            ) =>
                     {
                         let n_active = active.len();
                         let s = &mut active[i];
@@ -14731,11 +14739,12 @@ pub fn run(
                             active[i].oom_teardown = true;
                             eprintln!(
                                 "[admit-oom] step OOM NOT parked (model {}, retries \
-                                       {}/{}, generated {}): reporting honestly",
+                                       {}/{}, generated {}, streamed {}): reporting honestly",
                                 active[i].model,
                                 active[i].oom_retries,
                                 step_oom_retries(),
-                                active[i].generated.len()
+                                active[i].generated.len(),
+                                active[i].tokens_emitted
                             );
                         }
                         let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
@@ -16689,6 +16698,107 @@ fn glm5_sharded_placement_admits(
     (2..=3).contains(&fence_stages) && !tp_set(step_tp) && !tp_set(step_ep)
 }
 
+/// Which PREFIX HITS can carry a glm5 spec session (memra#74, lane/glm5-fullcover-spec-route)
+/// (PURE: shape in, verdict out) so the gate exercises every arm without CUDA, and the ONE
+/// place a decline gets its name. `Ok(())` means the request may try to rebuild the drafter
+/// KV from the entry's tail; `Err(token)` is what the route line prints as `reason=`.
+///
+/// The arms, each stated:
+///   * `prefix-restore-off`: `MEMRA_GLM5_SPEC_PREFIX` (x `MEMRA_PREFIX_LATENT`) is unset, so
+///     no entry carries a drafter tail to restore from in the first place.
+///   * `full-cover-hit`: the hit covers the WHOLE prompt (`suffix_len == 0`) and the
+///     full-cover arm is not armed. This is the memra#74 shape: before the arm existed the
+///     probe skipped it silently and the customer paid plain decode speed for a cache hit
+///     (measured 30.8 vs 69.7 tok/s decode on the live box, 2026-09-02).
+///   * `full-cover-hit-no-boundary-logits`: armed, but the entry carried no usable boundary
+///     row (absent, or not `n_vocab` wide), so there is no anchor to start a round from (the
+///     `spec_restore_refusal` full-cover rule). The engine refuses this shape too, and its
+///     refusal at the tick is a LOUD REQUEST FAILURE, so the width test lives here as well.
+///   * `suffix-below-prime-floor`: `0 < suffix_len < PRIME_MIN_T`. A sub-floor suffix under a
+///     spec session would ride tokenwise `decode_step` inside a prime program: the
+///     two-programs door the parent lane closed. Unchanged by this lane.
+///
+/// A hit that admits here can still decline later on `no-drafter-tail` (the entry carries no
+/// draft plane, or its tail does not cover the drafter window); that one needs the engine.
+fn glm5_carrier_admits(
+    prefix_restore_on: bool,
+    fullcover_on: bool,
+    suffix_len: usize,
+    // The entry's boundary logits are present AND exactly `n_vocab` wide: the engine's own
+    // full-cover check, mirrored at admission so the decline is a plain hit, not a 500.
+    boundary_row_ok: bool,
+) -> Result<(), &'static str> {
+    if !prefix_restore_on {
+        return Err("prefix-restore-off");
+    }
+    if suffix_len == 0 {
+        if !fullcover_on {
+            return Err("full-cover-hit");
+        }
+        if !boundary_row_ok {
+            return Err("full-cover-hit-no-boundary-logits");
+        }
+        return Ok(());
+    }
+    if suffix_len < memra_engine::hybrid_forward::PRIME_MIN_T {
+        return Err("suffix-below-prime-floor");
+    }
+    Ok(())
+}
+
+/// WHY the glm5 route answered `plain`: the same class matrix as [`glm5_route_admits`],
+/// read out instead of collapsed (memra#74). `None` iff `glm5_route_admits` is true over the
+/// same arguments; `the_route_reason_agrees_with_the_route` pins that equivalence over the
+/// whole matrix so the two can never drift apart.
+///
+/// Order matters only for the log: the FIRST failing term is the one an operator can act on,
+/// and the terms are ordered capability -> operator door -> request shape -> session shape.
+/// `carrier_detail` is [`glm5_carrier_admits`]'s verdict for a prefix hit; a warm session
+/// that was never a prefix hit carries `None` and reads `warm-session-no-carrier`.
+#[allow(clippy::too_many_arguments)]
+// allow: the parameter list IS the class matrix, exactly as glm5_route_admits below
+fn glm5_route_decline_reason(
+    capable: bool,
+    serve_spec: bool,
+    k: usize,
+    temp_ok: bool,
+    penalized: bool,
+    constrained: bool,
+    vision: bool,
+    cold_or_restored_carrier: bool,
+    prompt_primeable: bool,
+    carrier_detail: Option<&'static str>,
+) -> Option<&'static str> {
+    if !capable {
+        return Some("model-not-spec-capable");
+    }
+    if !serve_spec {
+        return Some("spec-serving-off");
+    }
+    if k == 0 {
+        return Some("k-shed-to-zero");
+    }
+    if !temp_ok {
+        return Some("sampler-not-spec-eligible");
+    }
+    if penalized {
+        return Some("penalized");
+    }
+    if constrained {
+        return Some("constrained");
+    }
+    if vision {
+        return Some("vision");
+    }
+    if !prompt_primeable {
+        return Some("prompt-below-prime-floor");
+    }
+    if !cold_or_restored_carrier {
+        return Some(carrier_detail.unwrap_or("warm-session-no-carrier"));
+    }
+    None
+}
+
 /// The glm5 serve-time route decision over the request shape, PURE so the routing gate can
 /// exercise the full class matrix without CUDA. Exclusions, each stated:
 ///   * `penalized` (ANY requested penalties, greedy or sampled): the glm5 accept walk has
@@ -17037,6 +17147,23 @@ fn admission_headroom(
 /// the identical template + tokenize and produces the session a cold arrival would have. The
 /// retry counter rides along on the Request, keeping the bound per-request across re-admits.
 /// Returns None when the plan cannot produce a prompt (nothing to replay) — caller errors.
+/// STEP-OOM PARK ELIGIBILITY, pure (lane/spec-first-token-eager-20260902, PR #93 review
+/// finding): a session parks and replays ONLY while nothing has reached the client.
+/// Two markers, because they move at different times: `generated_len` is the post-burst
+/// bookkeeping vector, `tokens_emitted` is advanced at every send site — including the
+/// round-cadence flush INSIDE a spec burst (`MEMRA_SPEC_FIRST_TOKEN_EAGER` on the glm5
+/// route, the sse-cadence hook on the qwen route), where `generated` is still empty. A
+/// step-time CUDA OOM after any in-burst flush therefore takes the honest error (a
+/// terminal error event on the stream, no replay) instead of re-sending the prefix.
+fn step_oom_parkable(
+    generated_len: usize,
+    tokens_emitted: usize,
+    oom_retries: u32,
+    max_retries: u32,
+) -> bool {
+    max_retries > 0 && generated_len == 0 && tokens_emitted == 0 && oom_retries < max_retries
+}
+
 fn park_requeue(loaded: &HashMap<String, LoadedModel>, s: &Session) -> Option<Box<Request>> {
     // A plan with no prompt source at all would re-admit into "empty prompt after
     // tokenization" — report the OOM honestly instead of laundering it into a 400.
@@ -18503,9 +18630,17 @@ fn admit(
     // 3): admission pre-validated the shape, so from_restored failing there is an
     // invariant break and FAILS THE REQUEST loudly (the dspark law in step_glm5_spec) —
     // do not build on a tick-time degrade; it does not exist.
+    // Hoisted above the carrier probe (review round 1, nit 6) so the capability predicate
+    // runs ONCE per request: the route decision below consumes this same binding.
+    let glm5_capable = glm5_spec_capable(lm);
     let mut glm5_prefix_restored_dkv: Option<memra_engine::dflash::DflashKv> = None;
-    if memra_engine::glm_spec::glm5_spec_prefix_on()
-        && glm5_spec_capable(lm)
+    // WHY THE PLAIN PATH TOOK THIS HIT (memra#74). `None` = the request never reached the
+    // glm5 carrier probe at all (no prefix hit, or a shape the probe's conjunction excludes);
+    // `Some(token)` names the term that declined, and the route line below prints it. Before
+    // this lane a full-cover hit fell out of the probe silently and the operator read a bare
+    // `route=plain ... cold=0 restored=0` with no way to size the cost.
+    let mut glm5_carrier_declined: Option<&'static str> = None;
+    if glm5_capable
         && serve_spec
         && !vision_req
         && constraint.is_none()
@@ -18517,28 +18652,66 @@ fn admit(
         && prefix_hit
     {
         let suffix_len = prompt.len().saturating_sub(carrier.fed.len());
-        // Empty-suffix full-cover hits keep the plain boundary-logits resume (faster than
-        // any prime); sub-floor suffixes keep the plain hit (the prime-floor law — a
-        // tokenwise suffix under a spec session is the exact two-programs door this lane
-        // closes). Both are hits, both bill cached, neither is a defect.
-        if suffix_len >= memra_engine::hybrid_forward::PRIME_MIN_T {
-            let tail_dkv = prefix_pin
-                .as_ref()
-                .and_then(|p| px.id_index(p))
-                .and_then(|i| px.entries[&pool_key][i].dspark_draft.as_ref())
-                .and_then(|tail| {
-                    let dr = lm.model.glm5_dflash.as_ref()?;
-                    memra_engine::dflash::DflashKv::from_tail(engine, &dr.draft.cfg, ctx_cap, tail)
-                });
-            match tail_dkv {
-                Some(dkv) => glm5_prefix_restored_dkv = Some(dkv),
-                None => eprintln!(
-                    "[prefix-cache] glm5 spec restore declined (no drafter tail on the \
-                     entry, or the tail does not cover the drafter window); the plain \
-                     path serves the hit (model {})",
-                    req.model,
-                ),
+        let admit = glm5_carrier_admits(
+            memra_engine::glm_spec::glm5_spec_prefix_on(),
+            memra_engine::glm_spec::glm5_spec_fullcover_on(),
+            suffix_len,
+            // The ENGINE's own width check, mirrored here (review round 1, finding 2). A
+            // restored-arm refusal at the tick is a LOUD REQUEST FAILURE by design (the
+            // dspark law), so an entry with a short or absent boundary row must decline to
+            // the plain hit HERE, by name, instead of becoming a customer 500.
+            carrier.last_logits.len() == lm.model.output.out_features(),
+        );
+        match admit {
+            Err(why) => glm5_carrier_declined = Some(why),
+            Ok(()) => {
+                let tail_dkv = prefix_pin
+                    .as_ref()
+                    .and_then(|p| px.id_index(p))
+                    .and_then(|i| px.entries[&pool_key][i].dspark_draft.as_ref())
+                    .and_then(|tail| {
+                        let dr = lm.model.glm5_dflash.as_ref()?;
+                        memra_engine::dflash::DflashKv::from_tail(
+                            engine,
+                            &dr.draft.cfg,
+                            ctx_cap,
+                            tail,
+                        )
+                    });
+                match tail_dkv {
+                    Some(dkv) => glm5_prefix_restored_dkv = Some(dkv),
+                    None => {
+                        glm5_carrier_declined = Some("no-drafter-tail");
+                        eprintln!(
+                            "[prefix-cache] glm5 spec restore declined (no drafter tail on \
+                             the entry, or the tail does not cover the drafter window); the \
+                             plain path serves the hit (model {})",
+                            req.model,
+                        );
+                    }
+                }
             }
+        }
+        // ONE extra line, and only for an ENTRY ANOMALY (review round 1, finding 3).
+        // `no-drafter-tail` printed its own above. `prefix-restore-off`, `full-cover-hit`
+        // and `suffix-below-prime-floor` are static posture or request shape, already on
+        // the route line's `reason=`, and they land on the highest-volume traffic there is
+        // (retries, eval harnesses, latency probes) — a line per hit restating a flag the
+        // operator did not arm is noise, not a receipt, and it would make the OFF arm
+        // noisier than the pre-lane posture it promises to reproduce. A published entry
+        // with no usable boundary row is different: it is rare, it is a defect in the
+        // capture side, and nothing else would ever say so.
+        if glm5_carrier_declined == Some("full-cover-hit-no-boundary-logits") {
+            eprintln!(
+                "[prefix-cache] glm5 spec restore declined (full-cover hit, entry carries \
+                 no usable boundary logits: {} rows, want {}); the plain path serves the \
+                 hit ({} of {} prompt tokens cached, model {})",
+                carrier.last_logits.len(),
+                lm.model.output.out_features(),
+                carrier.fed.len(),
+                prompt.len(),
+                req.model,
+            );
         }
     }
     // Downgrade-on-hit (lane/spec-prefix-cache): a restored prefix carrier without a
@@ -19402,7 +19575,6 @@ fn admit(
     // clamped to the verify walk's K+1 <= 15 decode-exact knee. The prefix cache is inert
     // for this family (latent-bearing caches are refused by the capture guard), so there
     // is no hit-vs-cold trade to price here.
-    let glm5_capable = glm5_spec_capable(lm);
     let glm5_k = if glm5_capable {
         let decision = choose_spec_k(
             spec_k_pin(),
@@ -19481,9 +19653,29 @@ fn admit(
     }
     if glm5_capable {
         // Admission receipt (the [spec-k] shape): the deploy gate greps route+K per request.
+        // `reason=` is MANDATORY on a plain route (memra#74): `cold=0 restored=0` alone told
+        // an operator that the drafter did not engage but never why, so a full-cover
+        // prefix hit that halved decode speed read the same as a K-shed under load.
+        let plain_reason = glm5_route_decline_reason(
+            glm5_capable,
+            serve_spec,
+            glm5_k,
+            sampler.is_greedy() || sampler.temperature() > 0.0,
+            glm5_penalized,
+            constraint.is_some(),
+            vision_state.is_some(),
+            glm5_cold || glm5_restored_carrier,
+            prompt.len() >= 2,
+            glm5_carrier_declined,
+        );
+        debug_assert_eq!(
+            plain_reason.is_none(),
+            glm5_on,
+            "the route reason and the route decision must agree",
+        );
         eprintln!(
             "[glm5-spec] route={} K={glm5_k} model={:?} tenant={:?} prompt={} \
-             wave={projected_wave} sampled={} penalized={} cold={} restored={}",
+             wave={projected_wave} sampled={} penalized={} cold={} restored={} reason={}",
             if glm5_on { "spec" } else { "plain" },
             req.model,
             crate::auth::meter_key(&req.cache_ns),
@@ -19492,6 +19684,7 @@ fn admit(
             glm5_penalized as u8,
             glm5_cold as u8,
             glm5_prefix_restored_dkv.is_some() as u8,
+            plain_reason.unwrap_or("-"),
         );
     }
     // legacy tokenwise cache only when the spec path did NOT take the session (spec owns its own).
@@ -21619,6 +21812,9 @@ fn step_session(
                 |event| flush_tx.send(event).is_ok(),
             );
             token_events += emitted.sent;
+            // STREAMED MARKER (PR #93 review): the step-OOM park guard reads
+            // `tokens_emitted`; advance it at the send so a post-flush OOM never replays.
+            s.tokens_emitted += emitted.sent;
             send_ok = emitted.send_ok;
             keep
         };
@@ -21748,6 +21944,7 @@ fn step_session(
                 |event| s.tx.send(event).is_ok(),
             );
             token_events += emitted.sent;
+            s.tokens_emitted += emitted.sent;
             send_ok = emitted.send_ok;
         }
         if send_ok {
@@ -21769,7 +21966,8 @@ fn step_session(
         // EOS text is never streamed (serve-compat, 2026-08-03), but its empty-text token event
         // keeps the id/event/generated receipt 1:1. Engine-committed budget surplus remains only
         // in SpecSession committed/pending state; it never enters these public worker vectors.
-        s.tokens_emitted += token_events;
+        // `tokens_emitted` was advanced at each send site above (the round-cadence hook
+        // and the per-burst arm), never here — the park guard reads it mid-burst.
         s.emitted_bytes = cursor;
         s.decoded_bytes = decoded_visible;
         if !send_ok {
@@ -22463,6 +22661,15 @@ fn step_glm5_spec(
         finish(s, StopReason::MaxNew);
         return Ok(false);
     }
+    // FIRST-TOKEN PROFILE (lane/b200-spec-ttft-20260902, `MEMRA_SPEC_PROF=1`): the
+    // worker's half of the one `[spec-prof]` line — wall from this step's entry, the
+    // admission-to-step wait, the session-creation wall and the first-emit mark; the
+    // engine's per-phase buckets ride the session and are drained after the first burst.
+    let t_step = Instant::now();
+    let first_tick = s.glm5.is_none();
+    let prof_on = first_tick && memra_engine::spec_phase::spec_prof_on();
+    let since_admit_ms = prof_on.then(|| s.t0.elapsed().as_secs_f64() * 1e3);
+    let mut session_ms: Option<f64> = None;
     // turn 1: prime (the session owns its cache; s.cache stays None). Cold sessions drain
     // the whole prompt from the prefill queue; the RESTORED carrier (lane/glm5-prefix-
     // latent2) drains only the suffix — the restored prefix already sits in s.fed and the
@@ -22470,7 +22677,12 @@ fn step_glm5_spec(
     // admission rebuilt from the entry's tail rides s.glm5_restored_dkv.
     if s.glm5.is_none() {
         let queued: Vec<u32> = s.prefill_queue.drain(..).collect();
-        if queued.is_empty() {
+        // An empty prefill queue is a finished request on the COLD arm (nothing to prime).
+        // On the RESTORED arm it is the FULL-COVER hit (memra#74): the whole prompt is
+        // already in `s.fed` and the restored trunk cache, and the boundary row rides
+        // `s.last_logits`, so there is nothing left to prime and the session starts at the
+        // boundary. Admission is what decides that shape is admissible.
+        if queued.is_empty() && s.glm5_restored_dkv.is_none() {
             finish(s, StopReason::MaxNew);
             return Ok(false);
         }
@@ -22491,6 +22703,7 @@ fn step_glm5_spec(
                         restored,
                         &s.fed,
                         &queued,
+                        &s.last_logits,
                         dkv,
                         s.gspec_ctx,
                         spec_sampling_for(&s.sampler),
@@ -22518,6 +22731,9 @@ fn step_glm5_spec(
         if let Some(trace) = s.ttft.as_ref() {
             trace.mark_prime_end();
         }
+        if prof_on {
+            session_ms = Some(t_step.elapsed().as_secs_f64() * 1e3);
+        }
         for &tok in &queued {
             s.fed.push(tok);
             s.sampler.accept(tok);
@@ -22530,11 +22746,81 @@ fn step_glm5_spec(
         .and_then(|v| v.parse().ok())
         .unwrap_or(32);
     let burst_target = request_room.min(burst_t);
+    // FIRST-TOKEN EAGER door (lane/b200-spec-ttft-20260902, `MEMRA_SPEC_FIRST_TOKEN_EAGER`,
+    // DEFAULT ON, `=0` = rollback): publish at ROUND cadence instead of burst cadence — the
+    // qwen route's sse-cadence shape (2026-08-05) ported to this session. OFF (the pre-lane
+    // literal): the first Event::Token of a cold request waits for the WHOLE first burst
+    // (`MEMRA_SPEC_BURST` = 32 tokens at the route's per-token decode cost) even though
+    // the prime's own token was known when `glm5_spec_session_new` returned — measured on
+    // a 2x B200 pair as +0.45-0.60 s over the plain route's TTFT on a 66-token prompt.
+    // ON: the engine hands the worker every committed slice (the anchor first, then each
+    // round's accepted drafts + bonus) and the worker emits it immediately — the same
+    // pair measured spec TTFT 0.647-0.804 s -> 0.185-0.238 s (plain 0.19-0.21 s) with
+    // wall-inclusive tok/s unchanged and the 128-token greedy tape sha identical across
+    // six boots (FLAGS.md row, receipts pointer). NUMERIC CLASS: the burst loop's control
+    // flow never reads the hook and the emitted ids are the same `burst` vector in the
+    // same order — the token stream is byte-identical ON/OFF; only the event timing
+    // moves. The post-burst bookkeeping below (sampler/generated/fed, stop reasons) is
+    // shared by both arms and unchanged.
+    let eager_first_token = spec_first_token_eager_on();
+    let eos_ids = s.params.eos.clone();
+    let tok_ref = &lm.tok;
+    let mut decoded_visible = std::mem::take(&mut s.decoded_bytes);
+    let mut cursor = s.emitted_bytes;
+    let mut emit_remaining = request_room;
+    let mut eos_seen = false;
+    let mut send_ok = true;
+    let mut token_events = 0usize;
+    let mut first_emit_ms: Option<f64> = None;
+    let flush_tx = s.tx.clone();
+    let ttft_trace = s.ttft.clone();
+    let mut flush_cb = |slice: &[u32]| {
+        if eos_seen || emit_remaining == 0 || slice.is_empty() || !send_ok {
+            // post-EOS / budget exhausted / nothing new / client gone: the tail stays
+            // committed in the session; accounting happens post-burst.
+            return;
+        }
+        if let Some(trace) = ttft_trace.as_ref() {
+            trace.mark_first_decode();
+        }
+        let emitted = emit_spec_token_events(
+            slice,
+            &mut emit_remaining,
+            &mut decoded_visible,
+            &mut cursor,
+            &eos_ids,
+            &mut eos_seen,
+            |id| tok_ref.decode_bytes_special(&[id], true),
+            |event| flush_tx.send(event).is_ok(),
+        );
+        if emitted.sent > 0 && first_emit_ms.is_none() && prof_on {
+            first_emit_ms = Some(t_step.elapsed().as_secs_f64() * 1e3);
+        }
+        token_events += emitted.sent;
+        // STREAMED MARKER (PR #93 review): the step-OOM park guard reads `tokens_emitted`
+        // as "already reached the client"; advance it HERE, at the send, so an OOM in a
+        // later round of this burst takes the honest error instead of a replay.
+        s.tokens_emitted += emitted.sent;
+        send_ok = emitted.send_ok;
+    };
     let sess = s.glm5.as_mut().unwrap();
     let rounds_before = sess.rounds;
-    let (burst, dr, ac) =
+    let (burst, dr, ac) = if eager_first_token {
+        lm.model.glm5_spec_session_burst_streamed(
+            engine,
+            sess,
+            burst_target,
+            k,
+            &s.params.eos,
+            &mut flush_cb,
+        )?
+    } else {
         lm.model
-            .glm5_spec_session_burst(engine, sess, burst_target, k, &s.params.eos)?;
+            .glm5_spec_session_burst(engine, sess, burst_target, k, &s.params.eos)?
+    };
+    #[allow(clippy::drop_non_drop)]
+    // allow: ends flush_cb's captures of the emit state before it is read below
+    drop(flush_cb);
     let rounds_delta = s.glm5.as_ref().unwrap().rounds - rounds_before;
     s.spec_rounds += rounds_delta as u64;
     s.spec_drafted += dr;
@@ -22559,24 +22845,73 @@ fn step_glm5_spec(
     {
         trace.mark_first_decode();
     }
-    let eos_ids = s.params.eos.clone();
     let public_len = spec_visible_len(&burst, request_room, &eos_ids);
     let public_burst = &burst[..public_len];
-    let mut decoded_visible = std::mem::take(&mut s.decoded_bytes);
-    let mut cursor = s.emitted_bytes;
-    let mut emit_remaining = request_room;
-    let mut eos_seen = false;
-    let tok_ref = &lm.tok;
-    let emitted = emit_spec_token_events(
-        public_burst,
-        &mut emit_remaining,
-        &mut decoded_visible,
-        &mut cursor,
-        &eos_ids,
-        &mut eos_seen,
-        |id| tok_ref.decode_bytes_special(&[id], true),
-        |event| s.tx.send(event).is_ok(),
-    );
+    let emitted = if eager_first_token {
+        // Every public id already went out at round cadence; the shared stopping rule
+        // (budget, first EOS inclusive) makes the flushed count equal `public_len`.
+        SpecEmitResult {
+            sent: token_events,
+            send_ok,
+        }
+    } else {
+        let emitted = emit_spec_token_events(
+            public_burst,
+            &mut emit_remaining,
+            &mut decoded_visible,
+            &mut cursor,
+            &eos_ids,
+            &mut eos_seen,
+            |id| tok_ref.decode_bytes_special(&[id], true),
+            |event| s.tx.send(event).is_ok(),
+        );
+        if emitted.sent > 0 && prof_on {
+            first_emit_ms = Some(t_step.elapsed().as_secs_f64() * 1e3);
+        }
+        emitted
+    };
+    if prof_on {
+        // ONE line per request, after the first burst's emission: the engine buckets
+        // (session creation + round 1 + the burst wall) beside the worker marks.
+        let pf = s
+            .glm5
+            .as_mut()
+            .and_then(|sess| sess.take_first_token_prof())
+            .unwrap_or_default();
+        eprintln!(
+            "[spec-prof] route=glm5 model={:?} prompt={} K={k} burst_target={burst_target} \
+             eager={} | since_admit_ms={:.1} session_ms={:.1} (cache_alloc={:.1} \
+             prime={:.1} capture={:.1} anchor={:.1} draft_alloc={:.1}) | round1_ms: \
+             draft_prime={:.1} draft={:.1} verify={:.1} accept={:.1} roll={:.1} \
+             maint={:.1} tokens={} | burst1: wall_ms={:.1} hook_ms={:.1} rounds={} \
+             tokens={} | first_emit_ms={} step_ms={:.1}",
+            s.model,
+            s.fed.len(),
+            eager_first_token as u8,
+            since_admit_ms.unwrap_or(0.0),
+            session_ms.unwrap_or(0.0),
+            pf.cache_alloc_ms,
+            pf.prime_ms,
+            pf.capture_ms,
+            pf.anchor_ms,
+            pf.draft_alloc_ms,
+            pf.draft_prime_ms,
+            pf.first_draft_ms,
+            pf.first_verify_ms,
+            pf.first_accept_ms,
+            pf.first_roll_ms,
+            pf.first_maint_ms,
+            pf.first_round_tokens,
+            pf.first_burst_ms,
+            pf.first_burst_hook_ms,
+            pf.first_burst_rounds,
+            pf.first_burst_tokens,
+            first_emit_ms
+                .map(|ms| format!("{ms:.1}"))
+                .unwrap_or_else(|| "na".to_string()),
+            t_step.elapsed().as_secs_f64() * 1e3,
+        );
+    }
     let mut stop: Option<StopReason> = None;
     for &tok in public_burst {
         s.sampler.accept(tok);
@@ -22587,7 +22922,11 @@ fn step_glm5_spec(
             break;
         }
     }
-    s.tokens_emitted += emitted.sent;
+    // The round-cadence hook advanced `tokens_emitted` at each send (the park guard's
+    // streamed marker); only the burst-cadence arm advances it here.
+    if !eager_first_token {
+        s.tokens_emitted += emitted.sent;
+    }
     s.emitted_bytes = cursor;
     s.decoded_bytes = decoded_visible;
     if !emitted.send_ok {
@@ -22686,6 +23025,16 @@ fn oom_teardown_fence(engine: &Engine, loaded: &HashMap<String, LoadedModel>) {
             );
         }
     });
+}
+
+/// `MEMRA_SPEC_FIRST_TOKEN_EAGER` (lane/b200-spec-ttft-20260902), DEFAULT ON since the
+/// 2026-09-02 box receipts (FLAGS.md row): the glm5 spec route publishes committed tokens
+/// at ROUND cadence instead of burst cadence (doc at the `step_glm5_spec` call site).
+/// `=0` is the rollback seam (burst-cadence emission, the pre-lane literal). Read per
+/// burst, the `MEMRA_SPEC_BURST` / `MEMRA_SSE_PER_BURST` convention (a few hundred ns;
+/// never a OnceLock, so a gate can flip it between bursts in one process).
+fn spec_first_token_eager_on() -> bool {
+    std::env::var("MEMRA_SPEC_FIRST_TOKEN_EAGER").as_deref() != Ok("0")
 }
 
 /// BOOT ADMISSION CALIBRATION door (lane/step37-vram-admission-20260830), DEFAULT ON.
@@ -26763,6 +27112,155 @@ mod tests {
         );
     }
 
+    /// THE memra#74 GATE: a FULL-COVER prefix hit (the repeated-prompt shape) must be an
+    /// admissible spec carrier once the arm is armed, and must NAME itself when it is not.
+    ///
+    /// RED ARM: the predicate is new, so the red run was this body with the full-cover arm
+    /// removed, i.e. the shipped pre-lane rule ("a full-cover hit is never a carrier")
+    /// expressed in the new shape. The armed row below then fails with
+    /// `left: Err("full-cover-hit"), right: Ok(())`, which IS the live defect: the drafter
+    /// never engaged on a hit and decode ran at plain speed (30.8 vs 69.7 tok/s on the box,
+    /// 2026-09-02). Banked in the PR body.
+    #[test]
+    fn glm5_full_cover_hit_is_an_admissible_carrier_and_always_names_itself() {
+        use super::glm5_carrier_admits;
+        // (prefix_restore_on, fullcover_on, suffix_len, has_boundary_logits)
+        assert_eq!(
+            glm5_carrier_admits(true, true, 0, true),
+            Ok(()),
+            "a full-cover hit with the arm armed and boundary logits present IS a carrier: \
+             the whole point of memra#74; the restored state is a cold session's state at \
+             the same boundary (trunk cache at fed.len(), drafter ctx KV at fed.len(), no \
+             pending rows, anchor off the entry's boundary row)"
+        );
+        assert_eq!(
+            glm5_carrier_admits(true, false, 0, true),
+            Err("full-cover-hit"),
+            "DISARMED is still the default posture (no GPU receipt yet), but it must NAME \
+             itself so the route line can print reason=full-cover-hit instead of a bare \
+             route=plain with cold=0 restored=0"
+        );
+        assert_eq!(
+            glm5_carrier_admits(true, true, 0, false),
+            Err("full-cover-hit-no-boundary-logits"),
+            "armed but with no boundary row there is no anchor to start a round from: \
+             refuse by name (the spec_restore_refusal full-cover rule)"
+        );
+        assert_eq!(
+            glm5_carrier_admits(false, true, 0, true),
+            Err("prefix-restore-off"),
+            "without MEMRA_GLM5_SPEC_PREFIX no entry carries a drafter tail at all"
+        );
+        // The suffix-bearing arms are UNCHANGED by this lane.
+        assert_eq!(
+            glm5_carrier_admits(true, false, memra_engine::hybrid_forward::PRIME_MIN_T, true),
+            Ok(()),
+            "a suffix at or above the prime floor is the parent lane's carrier, and the \
+             full-cover arm does not gate it"
+        );
+        assert_eq!(
+            glm5_carrier_admits(
+                true,
+                true,
+                memra_engine::hybrid_forward::PRIME_MIN_T - 1,
+                true
+            ),
+            Err("suffix-below-prime-floor"),
+            "a sub-floor suffix still keeps the plain hit (a tokenwise suffix inside a \
+             prime program is the two-programs door the parent lane closed), and it, too, \
+             says so on the route line"
+        );
+    }
+
+    /// The route LINE and the route DECISION are one matrix, read out two ways (memra#74).
+    /// `glm5_route_decline_reason` returns `None` exactly when `glm5_route_admits` is true,
+    /// over every arm, so a future term added to one and forgotten in the other reds here
+    /// instead of shipping a `route=plain reason=-` to an operator.
+    #[test]
+    fn the_route_reason_agrees_with_the_route() {
+        use super::{glm5_route_admits, glm5_route_decline_reason};
+        for capable in [false, true] {
+            for serve_spec in [false, true] {
+                for k in [0usize, 3] {
+                    for temp_ok in [false, true] {
+                        for penalized in [false, true] {
+                            for constrained in [false, true] {
+                                for vision in [false, true] {
+                                    for carrier in [false, true] {
+                                        for primeable in [false, true] {
+                                            let admits = glm5_route_admits(
+                                                capable,
+                                                serve_spec,
+                                                k,
+                                                temp_ok,
+                                                penalized,
+                                                constrained,
+                                                vision,
+                                                carrier,
+                                                primeable,
+                                            );
+                                            let reason = glm5_route_decline_reason(
+                                                capable,
+                                                serve_spec,
+                                                k,
+                                                temp_ok,
+                                                penalized,
+                                                constrained,
+                                                vision,
+                                                carrier,
+                                                primeable,
+                                                None,
+                                            );
+                                            assert_eq!(
+                                                admits,
+                                                reason.is_none(),
+                                                "route/reason disagree at (capable {capable}, \
+                                                 serve_spec {serve_spec}, k {k}, temp_ok \
+                                                 {temp_ok}, penalized {penalized}, constrained \
+                                                 {constrained}, vision {vision}, carrier \
+                                                 {carrier}, primeable {primeable})"
+                                            );
+                                            assert_ne!(
+                                                reason,
+                                                Some(""),
+                                                "a decline reason is never empty"
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // The memra#74 shape end to end: capable, serving, K>0, sampled, unpenalized, a
+        // 67-token prompt, declined ONLY because the full-cover hit is not a carrier. The
+        // route line must carry the carrier's own token, not the generic warm-session one.
+        assert_eq!(
+            glm5_route_decline_reason(
+                true,
+                true,
+                3,
+                true,
+                false,
+                false,
+                false,
+                false,
+                true,
+                Some("full-cover-hit"),
+            ),
+            Some("full-cover-hit"),
+            "the live box's line read `route=plain ... cold=0 restored=0` with no reason; \
+             it must now read reason=full-cover-hit"
+        );
+        assert_eq!(
+            glm5_route_decline_reason(true, true, 3, true, false, false, false, false, true, None,),
+            Some("warm-session-no-carrier"),
+            "a warm session that was never a prefix hit still names itself"
+        );
+    }
+
     /// The K+1 <= 15 hard bound (the shexp decode-exact knee at t=16): only an operator
     /// pin can reach the clamp; every automatic policy depth passes through untouched.
     #[test]
@@ -26820,29 +27318,56 @@ mod tests {
             .find("else if active[i].gspec_k > 0 {")
             .expect("the gemma arm still exists");
         assert!(glm5_arm < glm5_call && glm5_call < gemma_arm);
+        // EVERY assertion below anchors on the LIVE slice, never on `code` (which contains
+        // this test's own string literals and would satisfy `contains` with itself — the
+        // self-match trap the wiring-assertions law names; three of the round-1 assertions
+        // were born with it).
+        let live_pre_tests = &code[..code.find("mod tests").expect("the test module exists")];
         // 2. The phase-(a) scheduler filter includes glm5 sessions, or they never burst.
-        let filter = code
+        let filter = live_pre_tests
             .find("active[i].spec.is_some()")
             .expect("the phase-a filter exists");
         assert!(
-            code[filter..filter + 300].contains("|| active[i].glm5_on"),
+            live_pre_tests[filter..filter + 300].contains("|| active[i].glm5_on"),
             "the phase-a spec filter must include glm5_on sessions"
         );
         // 3. Admission computes the route through the PURE predicate and the K clamp.
         assert!(
-            code.contains("let glm5_on = glm5_route_admits("),
+            live_pre_tests.contains("let glm5_on = glm5_route_admits("),
             "glm5_on must be computed via glm5_route_admits"
         );
         assert!(
-            code.contains("glm5_clamp_spec_k(decision.k)"),
+            live_pre_tests.contains("glm5_clamp_spec_k(decision.k)"),
             "the chosen K must pass the knee clamp"
+        );
+        // 3b. THE ROUTE LINE CARRIES A REASON (memra#74). The receipt an operator reads must
+        //     never again say `route=plain` with nothing but `cold=0 restored=0` to explain
+        //     it: the reason token comes from the same matrix as the decision, and the
+        //     carrier's own decline token is threaded into it.
+        let route_line = live_pre_tests
+            .find("[glm5-spec] route={} K={glm5_k}")
+            .expect("the glm5 admission receipt exists");
+        assert!(
+            live_pre_tests[route_line..route_line + 400].contains("reason={}"),
+            "the glm5 route receipt must carry a reason token"
+        );
+        assert!(
+            live_pre_tests.contains("let plain_reason = glm5_route_decline_reason("),
+            "the reason must come from the pure predicate, never be re-derived at the log site"
+        );
+        assert!(
+            live_pre_tests.contains("glm5_carrier_declined,"),
+            "the carrier's own decline token must be threaded into the route reason"
+        );
+        assert!(
+            live_pre_tests.contains("let admit = glm5_carrier_admits("),
+            "the prefix-hit carrier probe must go through the pure predicate"
         );
         // 4. The session-owned-cache arm: admission must not allocate a plain cache under
         //    a glm5 route — EXCEPT the restored carrier (lane/glm5-prefix-latent2), which
         //    keeps the restored cache for the first spec tick to consume. Anchored on the
         //    PRE-TEST slice: the old form of this assertion matched its own string literal
         //    (the self-match trap the wiring-assertions law names).
-        let live_pre_tests = &code[..code.find("mod tests").expect("the test module exists")];
         assert!(
             live_pre_tests.contains(
                 "let cache = if dspark_on || (glm5_on && glm5_prefix_restored_dkv.is_none()) {"
@@ -26879,6 +27404,22 @@ mod tests {
         assert!(
             step_body.contains("emit_spec_token_events("),
             "glm5 bursts must emit through the shared one-event-per-public-id machinery"
+        );
+        // 5b. The FIRST-TOKEN EAGER door (lane/b200-spec-ttft-20260902): the door read
+        //     selects the streamed burst twin, whose hook emits through the SAME machinery
+        //     (both arms are invocations; the door-off arm keeps the literal above).
+        assert!(
+            step_body.contains("let eager_first_token = spec_first_token_eager_on();"),
+            "the eager door must be read per burst inside step_glm5_spec"
+        );
+        assert!(
+            step_body.contains("lm.model.glm5_spec_session_burst_streamed("),
+            "the eager arm must drive the streamed burst twin"
+        );
+        assert!(
+            step_body.matches("emit_spec_token_events(").count() >= 2,
+            "both the round-cadence hook and the burst-cadence arm must emit through \
+             emit_spec_token_events"
         );
         // 6. The capability predicate carries the flag, the manifest, the sealed-bundle
         //    surface and the ppN refusal — each an invocation, not a comment.
@@ -29016,6 +29557,105 @@ mod tests {
         assert!(
             gate.contains("host_telem_published = host_telem;"),
             "the publish body must record the stamp it published"
+        );
+    }
+
+    /// The park guard's eligibility predicate (PR #93 review finding): parking replays
+    /// the prompt on the SAME stream, so it is legal only while nothing reached the
+    /// client — by EITHER marker. `tokens_emitted` is the one that moves mid-burst.
+    #[test]
+    fn step_oom_parkable_refuses_once_anything_streamed() {
+        // Pre-emission, retries left: parks.
+        assert!(super::step_oom_parkable(0, 0, 0, 3));
+        assert!(super::step_oom_parkable(0, 0, 2, 3));
+        // The eager mid-first-burst shape: generated still empty, a slice already sent.
+        assert!(!super::step_oom_parkable(0, 1, 0, 3));
+        assert!(!super::step_oom_parkable(0, 17, 0, 3));
+        // Post-burst bookkeeping filled (the pre-lane guard's own arm).
+        assert!(!super::step_oom_parkable(1, 1, 0, 3));
+        assert!(!super::step_oom_parkable(4, 0, 0, 3));
+        // Retry budget exhausted, or parking disabled outright.
+        assert!(!super::step_oom_parkable(0, 0, 3, 3));
+        assert!(!super::step_oom_parkable(0, 0, 0, 0));
+    }
+
+    /// WIRING (comment-stripped, needles assembled so this test never self-matches): the
+    /// park guard consults the predicate with the session's `tokens_emitted`, and every
+    /// in-burst flush closure advances that marker AT THE SEND, before the burst returns;
+    /// the burst-cadence arms add it exactly once, never twice.
+    #[test]
+    fn step_oom_park_guard_reads_the_streamed_marker_every_flush_advances() {
+        let strip = |src: &str| -> String {
+            src.lines()
+                .map(|l| l.split("//").next().unwrap_or(""))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = strip(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let live_sq = squash(live);
+        let pred = format!("step_oom_parkable{}", "(");
+        // 1. Exactly one definition and one call site in live code.
+        assert_eq!(
+            live.matches(pred.as_str()).count(),
+            2,
+            "expected the predicate's definition plus exactly one guard call"
+        );
+        let guard = format!(
+            "if is_cuda_oom(&err.to_string()) && {pred} active[i].generated.len(), \
+             active[i].tokens_emitted, active[i].oom_retries, step_oom_retries(), ) =>"
+        );
+        assert!(
+            live_sq.contains(guard.as_str()),
+            "the park arm must gate on the predicate fed BOTH markers"
+        );
+        // 2. The glm5 round-cadence hook advances the marker at the send, before the burst.
+        let glm5 = live
+            .split("fn step_glm5_spec(")
+            .nth(1)
+            .expect("step_glm5_spec exists");
+        let glm5_body = &glm5[..glm5.find("\nfn ").unwrap_or(glm5.len())];
+        let hook_start = glm5_body
+            .find("let mut flush_cb = |slice: &[u32]| {")
+            .expect("the glm5 flush closure exists");
+        let hook_end = glm5_body
+            .find("let sess = s.glm5.as_mut().unwrap();")
+            .expect("the burst follows the closure");
+        assert!(hook_start < hook_end);
+        let hook = &glm5_body[hook_start..hook_end];
+        assert!(
+            hook.contains("s.tokens_emitted += emitted.sent;"),
+            "the glm5 flush closure must advance tokens_emitted at the send"
+        );
+        // ...and the burst-cadence arm adds it exactly once more, only when the hook did not.
+        let glm5_sq = squash(glm5_body);
+        assert!(
+            glm5_sq.contains("if !eager_first_token { s.tokens_emitted += emitted.sent; }"),
+            "the post-burst add must be gated to the burst-cadence arm (no double count)"
+        );
+        assert_eq!(
+            glm5_body.matches("s.tokens_emitted += ").count(),
+            2,
+            "glm5: one add in the hook, one gated post-burst add"
+        );
+        // 3. The qwen sse-cadence hook: same marker at the send; the per-burst arm adds
+        //    its own; no unconditional post-burst add remains.
+        let qwen_start = live
+            .find("let mut flush_cb = |slice: &[u32]| -> bool {")
+            .expect("the qwen flush closure exists");
+        let qwen_end = live[qwen_start..]
+            .find("let on_commit: Option<&mut dyn FnMut(&[u32]) -> bool>")
+            .map(|i| qwen_start + i)
+            .expect("on_commit follows the closure");
+        assert!(
+            live[qwen_start..qwen_end].contains("s.tokens_emitted += emitted.sent;"),
+            "the qwen flush closure must advance tokens_emitted at the send"
+        );
+        assert!(
+            !live.contains("s.tokens_emitted += token_events;"),
+            "no post-burst add from the accumulated count may remain (it would double \
+             count the hook's sends and hide the marker from the park guard mid-burst)"
         );
     }
 
