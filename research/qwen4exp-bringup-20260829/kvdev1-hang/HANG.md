@@ -220,7 +220,7 @@ elapsed_s=340.6), which projects the rung's prefill at ~1,370 s and matches the 
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | `r4spec262-thinkon` | 262,144 | **1408.7** | 59.0 | 19.7 | **50.78** | **0.632** | 13 | 0 | [20.0, 19.3, 18.8] | 6.11% | false | 10,738.9 | 96,531 MiB | 24,467 MiB |
 | `r4spec262-thinkoff` | 262,144 | **1409.1** | 57.4 | 23.7 | **42.16** | **0.567** | 19 | 1 | [29.6, 23.7, 18.4] | **46.96%** | false | 10,738.9 | 96,563 MiB | 24,467 MiB |
-| `r4spec262-raw` | 262,144 | ROW-PENDING | | | | | | | | | | | | |
+| `r4spec262-raw` | 262,144 | **1409.6** | 57.4 | 12.2 | **82.18** | **1.000** | 6 | 0 | [11.0, 11.0, 10.9] | 0.95% | false | 10,738.9 | 96,531 MiB | 24,467 MiB |
 
 Reading the thinkon row: prefill 1,408.7 s is the plain single-card 262k ladder's 1,439.2 s
 (`../round2-box-receipts/kvq2/ladder-r2ship-262k-idxsel.tsv`) to within 2%, i.e. putting the
@@ -235,3 +235,19 @@ round is prohibitive — the driver says so at the call site), so the first thir
 generation's residency warm-up (29.6 -> 23.7 -> 18.4 ms). It is a shape signal, not a
 comparable rate; nothing here is quoted as a perf number and no serving decision rides on
 these rows. `looped false` on every cell, so no greedy-degeneracy exclusion applies.
+
+`r4spec262-raw`'s **accept 1.000** (6 rounds, 36 tokens, every drafted token accepted) is
+the shape, not a win: the raw arm continues a document with no task turn appended, which is
+the most predictable continuation available, so acceptance saturates and its 82.18 tok/s is
+not comparable to the shaped arms. All three cells decode GREEDY (no
+`--ladder-spec-sampled`), so the standing rule applies — greedy is the instrument that makes
+byte-exactness gates possible, never the product, and no serving decision may be taken from
+these rows. What the three rows DO show, and what the spec-shape instrument exists for, is
+that the acceptance rate is what moves with prompt shape at this depth: thinkon 0.632 ->
+19.7 ms/tok, thinkoff 0.567 -> 23.7, raw 1.000 -> 12.2, on identical prefill.
+
+The three prefills land at **1408.7 / 1409.1 / 1409.6 s** — within 0.9 s of each other
+across three shapes, i.e. prefill at this depth is shape-independent (all three feed exactly
+262,144 tokens; the shape is a suffix swap inside the same fill), and all three shed the
+same **1,175.2 MiB** of co-prefill workspace. Every cell carries
+`# load-lock rc=0 killed=no`, so none of them is an OOM-killed run reading as success.
