@@ -13787,7 +13787,18 @@ pub fn run(
                 let generated_before = active[i].generated.len();
                 let lane = active[i].lane;
                 let step_started = Instant::now();
-                let step_result = step_session(&engine, &loaded, &mut active[i], &mut spec_metrics);
+                let sole_live = active.len().saturating_sub(finished.len()) == 1;
+                let step_result = if sole_live {
+                    match step_session_async_chain(&engine, &loaded, &mut active[i]) {
+                        Ok(Some(keep)) => Ok(keep),
+                        Ok(None) => {
+                            step_session(&engine, &loaded, &mut active[i], &mut spec_metrics)
+                        }
+                        Err(err) => Err(err),
+                    }
+                } else {
+                    step_session(&engine, &loaded, &mut active[i], &mut spec_metrics)
+                };
                 record_output_progress(
                     generated_before,
                     active[i].generated.len(),
@@ -20865,6 +20876,30 @@ fn devsample_meta(s: &Session) -> Option<DevSamp> {
     Some(meta)
 }
 
+/// Opt-in eager device chain for the legacy, non-persistent scheduler. The engine caps the
+/// width at 16; parsing here keeps the server arm on the same numeric contract as run-gen.
+fn serve_async_chain_k() -> usize {
+    static K: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *K.get_or_init(|| {
+        std::env::var("MEMRA_ASYNC_CHAIN")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0)
+            .min(16)
+    })
+}
+
+fn legacy_async_chain_width(
+    configured: usize,
+    room_after_first: usize,
+    cache_rows: usize,
+) -> Option<usize> {
+    let width = configured
+        .min(room_after_first.saturating_add(1))
+        .min(cache_rows);
+    (configured >= 2 && room_after_first > 0 && width >= 2).then_some(width)
+}
+
 /// GraphSession's captured sampler is raw greedy. Penalties change logits before argmax and
 /// therefore stay on the ordinary batched epilogue until a penalty-aware graph is qualified.
 fn graph_sampler_eligible(sm: &Sampler) -> bool {
@@ -21322,6 +21357,120 @@ fn step_spec_pair(
         spec_metrics,
     )?;
     Ok((keep_a, keep_b))
+}
+
+/// Run one legacy-scheduler chunk through the engine's eager device chain. This is deliberately
+/// narrower than the ordinary serving tick: one live session, no reusable prefix-cache tier
+/// (`MEMRA_SERVE_BATCH=0`), no grammar, and no penalties. If the model declines the chain after
+/// the first token was emitted, finish that token with the ordinary decode step so fallback is
+/// observationally identical instead of sampling it twice.
+fn step_session_async_chain(
+    engine: &Engine,
+    loaded: &HashMap<String, LoadedModel>,
+    s: &mut Session,
+) -> Result<Option<bool>, Box<dyn std::error::Error>> {
+    let configured = serve_async_chain_k();
+    if configured < 2
+        || !s.prefill_done
+        || s.spec.is_some()
+        || s.gspec_k > 0
+        || s.dspark_on
+        || s.constraint.is_some()
+        || s.cache.is_none()
+        || confidence_trace_enabled()
+    {
+        return Ok(None);
+    }
+    let Some(pre_sample) = devsample_meta(s) else {
+        return Ok(None);
+    };
+    if pre_sample.penalty.is_some() {
+        return Ok(None);
+    }
+
+    let (keep, next) = advance_sample_emit(loaded, s);
+    let Some(next) = next else {
+        return Ok(Some(keep));
+    };
+    let room = s.budget.saturating_sub(s.generated.len());
+    if room == 0 {
+        finish(s, StopReason::MaxNew);
+        return Ok(Some(false));
+    }
+    let cache = s.cache.as_ref().expect("eligibility checked cache");
+    let cache_rows = cache.max_ctx.saturating_sub(cache.pos);
+    if cache_rows == 0 {
+        finish(s, StopReason::ContextFull);
+        return Ok(Some(false));
+    }
+    let lm = &loaded[&s.model];
+    let Some(width) = legacy_async_chain_width(configured, room, cache_rows) else {
+        s.last_logits = lm.model.decode_step(
+            engine,
+            next,
+            s.cache.as_mut().expect("eligibility checked cache"),
+        )?;
+        s.fed.push(next);
+        return Ok(Some(true));
+    };
+    let sample = devsample_meta(s).filter(|meta| meta.penalty.is_none());
+    let chained = lm.model.decode_step_chain(
+        engine,
+        next,
+        width,
+        s.cache.as_mut().expect("eligibility checked cache"),
+        sample.as_ref(),
+    );
+    let chained = match chained {
+        Ok(chained) => chained,
+        Err(err) => {
+            s.cache
+                .as_mut()
+                .expect("eligibility checked cache")
+                .mark_tainted();
+            return Err(err);
+        }
+    };
+    let Some((ids, last_logits)) = chained else {
+        s.last_logits = lm.model.decode_step(
+            engine,
+            next,
+            s.cache.as_mut().expect("eligibility checked cache"),
+        )?;
+        s.fed.push(next);
+        return Ok(Some(true));
+    };
+    static ANNOUNCED: std::sync::Once = std::sync::Once::new();
+    ANNOUNCED.call_once(|| {
+        eprintln!(
+            "[serve-async-chain] engaged: configured={configured} effective={width} \
+             scheduler=legacy single_session=true model={}",
+            s.model
+        );
+    });
+
+    s.fed.push(next);
+    s.last_logits = last_logits;
+    for &token in &ids[..ids.len() - 1] {
+        let (keep, ()) = advance_token_emit(loaded, s, token);
+        if !keep {
+            // Later launches in this already-submitted chunk may have appended rows beyond the
+            // public stop/disconnect boundary. The response is complete, but its cache must not
+            // enter the whole-session affinity pool with that hidden suffix.
+            s.cache
+                .as_mut()
+                .expect("eligibility checked cache")
+                .mark_tainted();
+            return Ok(Some(false));
+        }
+        s.fed.push(token);
+    }
+    if s.generated.len() >= s.budget {
+        finish(s, StopReason::MaxNew);
+        return Ok(Some(false));
+    }
+    s.device_next = ids.last().copied();
+    Ok(Some(true))
 }
 
 fn step_session(
@@ -23182,9 +23331,9 @@ mod tests {
     use super::{
         Event, cached_hit_needs_first_token, carried_prime_batch_eligible, emit_spec_token_events,
         graph_sampler_eligible, graph_session_env_on, interactive_prefill_budget,
-        interactive_prime_batch_take, prefill_tick_take, record_output_progress,
-        record_output_tokens, routed_moe_prefix_split, solo_widen_fresh, spec_visible_len,
-        summarize_confidence, utf8_delta,
+        interactive_prime_batch_take, legacy_async_chain_width, prefill_tick_take,
+        record_output_progress, record_output_tokens, routed_moe_prefix_split, solo_widen_fresh,
+        spec_visible_len, summarize_confidence, utf8_delta,
     };
     use super::{HashMap, METER_TENANT_CAP, meter_account, meter_cached_credit};
     use super::{KV_FLEX_GRANT, KvFlex, kv_flex_effective_budget, prefix_cache_budget_bytes};
@@ -23247,6 +23396,17 @@ mod tests {
             healthy_rx.recv().await,
             Some(Event::Token { id: 7, .. })
         ));
+    }
+
+    #[test]
+    fn legacy_async_chain_width_reserves_one_boundary_token() {
+        assert_eq!(legacy_async_chain_width(0, 8, 8), None);
+        assert_eq!(legacy_async_chain_width(1, 8, 8), None);
+        assert_eq!(legacy_async_chain_width(8, 0, 8), None);
+        assert_eq!(legacy_async_chain_width(8, 8, 1), None);
+        assert_eq!(legacy_async_chain_width(8, 1, 8), Some(2));
+        assert_eq!(legacy_async_chain_width(8, 7, 8), Some(8));
+        assert_eq!(legacy_async_chain_width(16, 31, 6), Some(6));
     }
 
     fn bare_request() -> Request {

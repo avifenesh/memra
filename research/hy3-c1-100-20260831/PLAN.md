@@ -364,3 +364,12 @@ same-window settle used the immediate pre-fix parent `a6c9aaad` as A and this re
 interleaved A/B five times under one exclusive GPU lock. Medians were 132.90 and 132.89 tok/s
 respectively (**-0.008%**). The TP cache repair does not regress the plain Qwen cell; the historic
 median comparison moved with machine state.
+
+The next implementation reuses the existing eager device chain under `MEMRA_SERVE_BATCH=0`, with
+one live session and no speculative, grammar, or penalty program. The opt-in arm emits each
+returned id through the ordinary stop/stream/accounting battery, retains the chain boundary token
+for the next tick, and falls back to the original one-token step if the model declines. A stop,
+EOS, or disconnect inside the submitted chunk taints the overshot cache, which makes retirement
+drop it instead of publishing a hidden suffix through whole-session affinity reuse. Default
+remains 0 until the exact sampled endpoint runs OFF/ON with stop, disconnect, TTFT/ITL, and three
+128-token rows.
