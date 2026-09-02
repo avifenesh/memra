@@ -219,7 +219,7 @@ elapsed_s=340.6), which projects the rung's prefill at ~1,370 s and matches the 
 | cell | rung | prefill_s | draft_prefill_s | decode ms/tok | tok/s | accept | rounds | zero_draft | sub_ms | spread | looped | cross_mb | trunk VRAM | draft VRAM |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | `r4spec262-thinkon` | 262,144 | **1408.7** | 59.0 | 19.7 | **50.78** | **0.632** | 13 | 0 | [20.0, 19.3, 18.8] | 6.11% | false | 10,738.9 | 96,531 MiB | 24,467 MiB |
-| `r4spec262-thinkoff` | 262,144 | ROW-PENDING | | | | | | | | | | | | |
+| `r4spec262-thinkoff` | 262,144 | **1409.1** | 57.4 | 23.7 | **42.16** | **0.567** | 19 | 1 | [29.6, 23.7, 18.4] | **46.96%** | false | 10,738.9 | 96,563 MiB | 24,467 MiB |
 | `r4spec262-raw` | 262,144 | ROW-PENDING | | | | | | | | | | | | |
 
 Reading the thinkon row: prefill 1,408.7 s is the plain single-card 262k ladder's 1,439.2 s
@@ -228,3 +228,10 @@ KV back on the compute card costs the prefill nothing; the peer route's projecti
 same rung is ~9 hours. `# load-lock rc=0 killed=no`, `looped false`, `zero_draft 0`, and
 the untimed-eager caveat in every header applies (these are correctness-arm wall clocks,
 not perf claims).
+
+`r4spec262-thinkoff`'s **46.96% sub-round spread** is stated, not hidden: the spec arm's
+sub-rounds are thirds of ONE generation's round-wall samples (a fresh 1M prefill per timing
+round is prohibitive — the driver says so at the call site), so the first third carries the
+generation's residency warm-up (29.6 -> 23.7 -> 18.4 ms). It is a shape signal, not a
+comparable rate; nothing here is quoted as a perf number and no serving decision rides on
+these rows. `looped false` on every cell, so no greedy-degeneracy exclusion applies.
