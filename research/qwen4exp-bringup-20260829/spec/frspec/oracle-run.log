@@ -1,0 +1,207 @@
+[oracle] tokenizer tokenizer-vendor.json id_space=248077
+[oracle] agentic: 36993491 tokens, 56769 distinct ids
+[oracle] prose: 5479689 tokens, 37313 distinct ids
+[owngen] 404851 tokens, 11854 distinct ids (/home/avifenesh/projects/wt-q4e-frspec/research/qwen4exp-bringup-20260829/spec/mtp10/ranks-owngen-big.txt.gz)
+[write] /home/avifenesh/projects/wt-q4e-frspec/research/qwen4exp-bringup-20260829/spec/frspec/q4e-ranks-sxc32768.txt
+[write] /home/avifenesh/projects/wt-q4e-frspec/research/qwen4exp-bringup-20260829/spec/frspec/q4e-ranks-prose-32768.txt
+[write] /home/avifenesh/projects/wt-q4e-frspec/research/qwen4exp-bringup-20260829/spec/frspec/q4e-ranks-mixed-32768.txt
+[write] /home/avifenesh/projects/wt-q4e-frspec/research/qwen4exp-bringup-20260829/spec/frspec/q4e-ranks-ogblend-32768.txt
+[chains] shapes: efflow=1280tok/5chains, long=512tok/2chains, raw=1280tok/5chains, thinkoff=1792tok/7chains, thinkon=1792tok/7chains
+{
+ "calibration": {
+  "raw": {
+   "q_at_n11854": 0.14766,
+   "accept_len_loss": 0.20703,
+   "A": 1.4021,
+   "H": 0.09451,
+   "refit_ratio": 0.8714,
+   "measured_ratio": 0.8824,
+   "refit_error": -0.011
+  },
+  "thinkon": {
+   "q_at_n11854": 0.09542,
+   "accept_len_loss": 0.04687,
+   "A": 0.4912,
+   "H": 0.06301,
+   "refit_ratio": 1.014,
+   "measured_ratio": 1.0144,
+   "refit_error": -0.0004
+  },
+  "thinkoff": {
+   "q_at_n11854": 0.15625,
+   "accept_len_loss": 0.27247,
+   "A": 1.7438,
+   "H": 0.09451,
+   "refit_ratio": 0.7995,
+   "measured_ratio": 0.905,
+   "refit_error": -0.1055
+  }
+ },
+ "prediction": {
+  "raw": {
+   "sxc32768_n4096": 0.7378,
+   "sxc32768_n8192": 0.8149,
+   "sxc32768_n12288": 0.8664,
+   "sxc32768_n16384": 0.8938,
+   "sxc32768_n24576": 0.9554,
+   "sxc32768_n32768": 1.0011,
+   "sxc32768_n49152": 0.9943,
+   "sxc32768_n65536": 0.9876,
+   "sxc32768_n98304": 0.9746,
+   "prose-32768_n4096": 0.5192,
+   "prose-32768_n8192": 0.6835,
+   "prose-32768_n12288": 0.7449,
+   "prose-32768_n16384": 0.8361,
+   "prose-32768_n24576": 0.9195,
+   "prose-32768_n32768": 0.982,
+   "prose-32768_n49152": 0.9753,
+   "prose-32768_n65536": 0.9688,
+   "prose-32768_n98304": 0.956,
+   "mixed-32768_n4096": 0.7197,
+   "mixed-32768_n8192": 0.8329,
+   "mixed-32768_n12288": 0.8785,
+   "mixed-32768_n16384": 0.883,
+   "mixed-32768_n24576": 0.9554,
+   "mixed-32768_n32768": 1.0094,
+   "mixed-32768_n49152": 1.0026,
+   "mixed-32768_n65536": 0.9959,
+   "mixed-32768_n98304": 0.9827,
+   "ogblend-32768_n4096": 0.7269,
+   "ogblend-32768_n8192": 0.845,
+   "ogblend-32768_n12288": 0.8592,
+   "ogblend-32768_n16384": 0.8878,
+   "ogblend-32768_n24576": 0.9638,
+   "ogblend-32768_n32768": 1.0154,
+   "ogblend-32768_n49152": 1.0085,
+   "ogblend-32768_n65536": 1.0018,
+   "ogblend-32768_n98304": 0.9885
+  },
+  "thinkon": {
+   "sxc32768_n4096": 0.9226,
+   "sxc32768_n8192": 0.9934,
+   "sxc32768_n12288": 1.0302,
+   "sxc32768_n16384": 1.036,
+   "sxc32768_n24576": 1.0523,
+   "sxc32768_n32768": 1.0561,
+   "sxc32768_n49152": 1.0515,
+   "sxc32768_n65536": 1.0469,
+   "sxc32768_n98304": 1.0379,
+   "prose-32768_n4096": 0.9404,
+   "prose-32768_n8192": 1.0173,
+   "prose-32768_n12288": 1.0334,
+   "prose-32768_n16384": 1.0352,
+   "prose-32768_n24576": 1.0509,
+   "prose-32768_n32768": 1.0521,
+   "prose-32768_n49152": 1.0475,
+   "prose-32768_n65536": 1.0429,
+   "prose-32768_n98304": 1.0339,
+   "mixed-32768_n4096": 0.9299,
+   "mixed-32768_n8192": 1.01,
+   "mixed-32768_n12288": 1.036,
+   "mixed-32768_n16384": 1.048,
+   "mixed-32768_n24576": 1.0526,
+   "mixed-32768_n32768": 1.0521,
+   "mixed-32768_n49152": 1.0475,
+   "mixed-32768_n65536": 1.0429,
+   "mixed-32768_n98304": 1.0339,
+   "ogblend-32768_n4096": 0.9752,
+   "ogblend-32768_n8192": 1.0243,
+   "ogblend-32768_n12288": 1.0383,
+   "ogblend-32768_n16384": 1.041,
+   "ogblend-32768_n24576": 1.0544,
+   "ogblend-32768_n32768": 1.0521,
+   "ogblend-32768_n49152": 1.0475,
+   "ogblend-32768_n65536": 1.0429,
+   "ogblend-32768_n98304": 1.0339
+  },
+  "thinkoff": {
+   "sxc32768_n4096": 0.6015,
+   "sxc32768_n8192": 0.7686,
+   "sxc32768_n12288": 0.8336,
+   "sxc32768_n16384": 0.878,
+   "sxc32768_n24576": 1.0048,
+   "sxc32768_n32768": 1.0247,
+   "sxc32768_n49152": 1.0178,
+   "sxc32768_n65536": 1.011,
+   "sxc32768_n98304": 0.9976,
+   "prose-32768_n4096": 0.315,
+   "prose-32768_n8192": 0.5115,
+   "prose-32768_n12288": 0.6197,
+   "prose-32768_n16384": 0.7254,
+   "prose-32768_n24576": 0.8655,
+   "prose-32768_n32768": 0.9484,
+   "prose-32768_n49152": 0.942,
+   "prose-32768_n65536": 0.9357,
+   "prose-32768_n98304": 0.9233,
+   "mixed-32768_n4096": 0.5886,
+   "mixed-32768_n8192": 0.7686,
+   "mixed-32768_n12288": 0.841,
+   "mixed-32768_n16384": 0.8983,
+   "mixed-32768_n24576": 0.9644,
+   "mixed-32768_n32768": 1.0247,
+   "mixed-32768_n49152": 1.0178,
+   "mixed-32768_n65536": 1.011,
+   "mixed-32768_n98304": 0.9976,
+   "ogblend-32768_n4096": 0.5822,
+   "ogblend-32768_n8192": 0.7343,
+   "ogblend-32768_n12288": 0.8752,
+   "ogblend-32768_n16384": 0.9036,
+   "ogblend-32768_n24576": 0.9644,
+   "ogblend-32768_n32768": 1.0247,
+   "ogblend-32768_n49152": 1.0178,
+   "ogblend-32768_n65536": 1.011,
+   "ogblend-32768_n98304": 0.9976
+  }
+ }
+}
+[
+ {
+  "topN": 1024,
+  "owngen_mass_sxc32768": 0.57384,
+  "owngen_mass_prose-32768": 0.60629,
+  "owngen_mass_mixed-32768": 0.6028,
+  "owngen_mass_ogblend-32768": 0.76827
+ },
+ {
+  "topN": 2048,
+  "owngen_mass_sxc32768": 0.66621,
+  "owngen_mass_prose-32768": 0.69118,
+  "owngen_mass_mixed-32768": 0.6896,
+  "owngen_mass_ogblend-32768": 0.85218
+ },
+ {
+  "topN": 4096,
+  "owngen_mass_sxc32768": 0.75523,
+  "owngen_mass_prose-32768": 0.78705,
+  "owngen_mass_mixed-32768": 0.78714,
+  "owngen_mass_ogblend-32768": 0.91997
+ },
+ {
+  "topN": 8192,
+  "owngen_mass_sxc32768": 0.85016,
+  "owngen_mass_prose-32768": 0.88688,
+  "owngen_mass_mixed-32768": 0.86872,
+  "owngen_mass_ogblend-32768": 0.97089
+ },
+ {
+  "topN": 16384,
+  "owngen_mass_sxc32768": 0.94274,
+  "owngen_mass_prose-32768": 0.9463,
+  "owngen_mass_mixed-32768": 0.94645,
+  "owngen_mass_ogblend-32768": 0.99889
+ },
+ {
+  "topN": 32768,
+  "owngen_mass_sxc32768": 0.9857,
+  "owngen_mass_prose-32768": 0.98597,
+  "owngen_mass_mixed-32768": 0.98764,
+  "owngen_mass_ogblend-32768": 1.0
+ },
+ {
+  "topN": 65536,
+  "owngen_mass_sxc32768": 0.9857,
+  "owngen_mass_prose-32768": 0.98597,
+  "owngen_mass_mixed-32768": 0.98764,
+  "owngen_mass_ogblend-32768": 1.0
+ }
+]

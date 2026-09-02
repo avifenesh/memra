@@ -1,0 +1,38 @@
+# qwen4exp_real_gate	label=fs-og-thinkoff	binary_sha256=415dfecbe1707e1e62adb78097ce62983ae811ffc72e6a2648f45d3628e3ae8d	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=true	seams_env=idxsel,kvq,idxq
+# vram	post-engine	0, 595 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 0 MiB, 97887 MiB | 3, 0 MiB, 97887 MiB
+# load	93.0s
+# vram	post-load	0, 95283 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 0 MiB, 97887 MiB | 3, 0 MiB, 97887 MiB
+# draft-trim	ranks=/root/realgate/frspec/q4e-ranks-ogblend-32768.txt	available=32768	armed_n=32768	build_s=0.1	vram	0, 95443 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 0 MiB, 97887 MiB | 3, 0 MiB, 97887 MiB
+# qwen4exp_real_gate	label=fs-og-thinkoff	binary_sha256=415dfecbe1707e1e62adb78097ce62983ae811ffc72e6a2648f45d3628e3ae8d	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=true	seams_env=idxsel,kvq,idxq
+# trim-ab k=5 trim_n=32768 vocab=248320: full-vocab draft head vs FR-Spec trimmed head, interleaved, fresh states per arm per rep, ARM ORDER FLIPPED on odd reps
+# order = position of the arm INSIDE its rep (1 = ran first): an arm that is always second carries whatever the first arm left behind (clocks, allocator, caches), and a fixed order hides that inside the mean
+rep	arm	order	draft_head_rows	tokens	ms_per_token	tok_per_s	accept_rate	mean_accept_len	draft_ms_share	hist
+0	full	1	248320	256	10.32	96.87	0.689	2.88	0.15	15,22,23,18,9,2
+0	trim	2	32768	256	9.75	102.53	0.689	2.78	0.08	17,25,23,16,8,3
+1	trim	1	32768	256	9.71	103.00	0.689	2.78	0.08	17,25,23,16,8,3
+1	full	2	248320	256	10.15	98.52	0.689	2.88	0.15	15,22,23,18,9,2
+2	full	1	248320	256	10.14	98.66	0.689	2.88	0.15	15,22,23,18,9,2
+2	trim	2	32768	256	9.42	106.14	0.689	2.78	0.08	17,25,23,16,8,3
+# arm full	mean_of_means_ms=10.20	min=10.14	max=10.32	spread_pct=1.832	tok_per_s=98.01	mean_accept_rate=0.689	mean_accept_len=2.88
+# arm trim	mean_of_means_ms=9.63	min=9.42	max=9.75	spread_pct=3.439	tok_per_s=103.87	mean_accept_rate=0.689	mean_accept_len=2.78
+# speedup_trim_over_full	1.0598
+# rep0_full_vs_trim_first_divergence	-1
+# rep0_full	12189,488,3105,914,3300,279,3050,1970,11,353,668,19264,279,13996,1608,264,2972,34099,1340,3010,332,314,264,13852,5829,2764,4667,5792,709,318,68,1257,2487,5122,264,999,466,78304,264,4475,553,4844,11,353,668,10033,279,4581,4203,364,279,19260,13,271,13962,12996,25,12851,318,7259,58303,8,271,71093,13670,198,320,16722,4667,5792,709,198,1628,26720,3598,11,4667,8,313,198,220,434,4319,6134,3203,5488,318,68,1257,2487,5767,3134,466,999,1301,8,198,220,13850,4903,574,313,198,262,413,318,306,1981,359,11469,837,313,198,406,434,4451,35718,20624,25,1118,1344,369,1412,11,2018,369,795,198,406,4667,1693,4451,482,7678,2937,4418,819,1174,198,262,333,745,313,198,406,4667,4806,11,313,850,11,803,25,359,59605,6,17574,198,262,333,198,220,2390,220,16,15,15,1174,198,92,198,71093,271,13962,4486,25,20776,10052,11158,41096,271,1206,5335,411,11,567,2972,9797,332,279,4667,5792,709,303,264,1510,20396,27653,1061,72346,279,4581,1412,50921,25,413,279,4667,20539,449,1412,11,279,7076,57409,26,413,424,20539,795,11,279,7076,61161,13,271,71093,13670,198,320,90463,3203,14,11093,709,198,7449,709,26720,6322,3598,8,313,198,220,460,491,7076,1148,16815,11,7602,8,574,313,198
+# rep0_trim	12189,488,3105,914,3300,279,3050,1970,11,353,668,19264,279,13996,1608,264,2972,34099,1340,3010,332,314,264,13852,5829,2764,4667,5792,709,318,68,1257,2487,5122,264,999,466,78304,264,4475,553,4844,11,353,668,10033,279,4581,4203,364,279,19260,13,271,13962,12996,25,12851,318,7259,58303,8,271,71093,13670,198,320,16722,4667,5792,709,198,1628,26720,3598,11,4667,8,313,198,220,434,4319,6134,3203,5488,318,68,1257,2487,5767,3134,466,999,1301,8,198,220,13850,4903,574,313,198,262,413,318,306,1981,359,11469,837,313,198,406,434,4451,35718,20624,25,1118,1344,369,1412,11,2018,369,795,198,406,4667,1693,4451,482,7678,2937,4418,819,1174,198,262,333,745,313,198,406,4667,4806,11,313,850,11,803,25,359,59605,6,17574,198,262,333,198,220,2390,220,16,15,15,1174,198,92,198,71093,271,13962,4486,25,20776,10052,11158,41096,271,1206,5335,411,11,567,2972,9797,332,279,4667,5792,709,303,264,1510,20396,27653,1061,72346,279,4581,1412,50921,25,413,279,4667,20539,449,1412,11,279,7076,57409,26,413,424,20539,795,11,279,7076,61161,13,271,71093,13670,198,320,90463,3203,14,11093,709,198,7449,709,26720,6322,3598,8,313,198,220,460,491,7076,1148,16815,11,7602,8,574,313,198
+
+# trim-ab receipt: /root/realgate/frspec/ab-trim-k5-n32768-fs-og-thinkoff.tsv
+# greedy prompt 0: first_divergence=0 matched=0/43 prefill=0.82s mean_decode=13.5ms
+# greedy prompt 1: first_divergence=0 matched=0/51 prefill=0.90s mean_decode=13.5ms
+# greedy prompt 2: first_divergence=0 matched=0/64 prefill=1.01s mean_decode=13.6ms
+# greedy prompt 3: first_divergence=0 matched=0/65 prefill=1.01s mean_decode=13.6ms
+# greedy receipt: /root/realgate/frspec/greedy-gate-fs-og-thinkoff.tsv
+# spec-gate prompt 0: first_divergence=-1 accept_rate=0.689 mean_len=2.78 spec=9.4ms plain=14.2ms
+# spec-gate prompt 1: first_divergence=-1 accept_rate=0.730 mean_len=3.20 spec=8.7ms plain=14.0ms
+# spec-gate prompt 2: first_divergence=-1 accept_rate=0.773 mean_len=3.71 spec=8.0ms plain=14.2ms
+# spec-gate prompt 3: first_divergence=-1 accept_rate=0.831 mean_len=4.06 spec=7.6ms plain=14.1ms
+# spec-gate receipt: /root/realgate/frspec/spec-gate-k5-fs-og-thinkoff.tsv
+# load-lock	rc=0	killed=no
