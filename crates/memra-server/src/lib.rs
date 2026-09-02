@@ -6279,14 +6279,14 @@ fn openrouter_supported_parameters(
     if is_chat && caps.is_some_and(|c| c.qwen_think || c.effort_levels || c.gemma_think) {
         parameters.insert("reasoning".into(), json!({ "type": "boolean" }));
     }
-    // glm5 has no reasoning on/off (its template cannot close the think tail), so
-    // it gets no `reasoning` boolean above. What it DOES have is a three-rung
-    // effort ladder, and issue #75 made publishing it part of the fix: an
-    // OpenRouter client tuning depth needs to see low|high|max as the levels, not
-    // discover by experiment. `medium` is accepted and mapped to high
-    // (`glm5_effort_level`), but the native rungs are what this feed states, and
-    // an enum here that lists medium would advertise a rung the template does not
-    // define.
+    // glm5 has a three-rung effort ladder, and issue #75 made publishing it part
+    // of the fix: an OpenRouter client tuning depth needs to see low|high|max as
+    // the levels, not discover by experiment. `medium` is accepted and mapped to
+    // high (`glm5_effort_level`), but the native rungs are what this feed states,
+    // and an enum here that lists medium would advertise a rung the template does
+    // not define. (glm5 also matches the generic `reasoning` boolean arm above
+    // through qwen_think/effort_levels; that advertisement is a separate question
+    // from this ladder, tracked in its own issue.)
     if is_chat && caps.is_some_and(|c| c.glm5) {
         parameters.insert(
             "reasoning_effort".into(),
