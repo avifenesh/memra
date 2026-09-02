@@ -13,6 +13,7 @@
 //!     `pre_t1_ws -> rms_norm -> mixer -> post_t1_ws -> pre_t1_ws -> rms_norm -> ffn -> post_t1_ws`.
 //!   * `dsv4_gpu.rs` verify-batch path: `hc_post (attn) -> hc_pre_batch_dev (ffn site) ->
 //!     rmsnorm -> moe_verify_dev -> hc_post (ffn)`.
+//!
 //! In both, `hc_post` sits on the OTHER side of a full attention or FFN sub-layer from the
 //! collapse it would need to share a kernel launch with, and the site AFTER it starts with
 //! its own mixes GEMM before `rowsq_scale` runs. No same-launch fusion bridges either gap
@@ -32,15 +33,38 @@
 //! the box evidence `MEMRA_HC_FUSED_PRE`'s FLAGS.md row says it is still missing) and times
 //! `hc_post` alone for census-completeness — clearly NOT claimed as fused with anything.
 //!
+//! B200 box receipt (2x SXM, dev 0, N=5, bit-bad=0 at t=1/4/8), `=1` vs unfused: t=1
+//! unfused=112.6us fused=101.0us (`hc_post` alone=13.8us); t=4 unfused=118.2us
+//! fused=117.6us; t=8 unfused=140.6us fused=123.0us — matches nsys's 32.8us/launch figure
+//! once host launch+sync overhead is subtracted, and is the receipt `MEMRA_HC_FUSED_PRE`'s
+//! FLAGS.md row named as missing.
+//!
+//! `MEMRA_HC_FUSED_PRE=2` (lane/b200-sinkhorn-fusion-20260902 follow-up, same door): that
+//! B200 receipt showed the `=1` kernel itself (`dsv4_hc_pre_fused_kernel`) at 32.8us/launch
+//! average in serving, 15.6% of GPU time — at t=1 the real per-site math (hc=4, d=4096) is
+//! tiny, so most of that time is up to 20 serial `__syncthreads()` pairs over a 128-thread
+//! block synchronizing work only threads t<hc (all within warp 0) ever touch. `=2`
+//! (`dsv4_hc_pre_fused_v2_kernel`) runs the Sinkhorn stage warp-0-only with `__syncwarp()`
+//! in place of `__syncthreads()` when hc<=4 — a synchronization-primitive substitution
+//! only (same operands, same order), so it is bit-identical to `=1` and to the unfused
+//! chain by construction; the host wrapper falls back to `=1`'s kernel for hc>4. This gate
+//! proves `=2`'s bit-identity against BOTH the unfused chain and `=1`, and times all three
+//! arms at every tested t.
+//!
 //! Run under the fleet GPU lock: `MEMRA_GPU_LOCK=/tmp/memra-gpu.lock` (box1 / any 2x RTX
 //! PRO 6000 pair / B200 pods — see CLAUDE.md "Lock names are a correctness surface").
 //!
-//! Usage: hc-fused-gate [device]   exit 0 on PASS (bit-identical fused vs unfused at every
-//! tested t), prints per-arm N=5 timings (us) to stdout as both a table and one JSON line.
+//! Usage: hc-fused-gate [device]   exit 0 on PASS (bit-identical unfused / fused(=1) /
+//! fused(=2) at every tested t), prints per-arm N=5 timings (us) to stdout as both a table
+//! and one JSON line.
 
 use cudarc::driver::{CudaContext, DevicePtr, DevicePtrMut};
 use memra_engine::dsv4_ffi as k;
 use std::os::raw::c_void;
+
+/// (pre, post, comb, y) — the fused/unfused pre-chain's four outputs.
+type Hc4 = (Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>);
+type Res<T> = Result<T, Box<dyn std::error::Error>>;
 
 const HC: usize = 4; // GLM-5.3-Flash mHC stream count
 const D: usize = 4096; // GLM-5.3-Flash n_embd
@@ -79,10 +103,7 @@ fn site(t: usize, salt: u64) -> Site {
 }
 
 /// Sum of to_bits mismatches across pre/post/comb/y.
-fn bit_diffs(
-    a: &(Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>),
-    b: &(Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>),
-) -> usize {
+fn bit_diffs(a: &Hc4, b: &Hc4) -> usize {
     let cmp = |x: &[f32], y: &[f32]| {
         x.iter()
             .zip(y)
@@ -118,103 +139,150 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let scale_d = stream.clone_htod(&s.scale)?;
         let base_d = stream.clone_htod(&s.base)?;
 
-        let run_unfused =
-            || -> Result<(Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>), Box<dyn std::error::Error>> {
-                let mut mixes_d = stream.clone_htod(&s.mixes)?;
-                let mut pre_d = stream.alloc_zeros::<f32>(t * HC)?;
-                let mut post_d = stream.alloc_zeros::<f32>(t * HC)?;
-                let mut comb_d = stream.alloc_zeros::<f32>(t * HC * HC)?;
-                let mut y_d = stream.alloc_zeros::<f32>(t * D)?;
-                unsafe {
-                    let rc = k::memra_dsv4_rowsq_scale(
-                        x_d.device_ptr(&stream).0 as *const f32,
-                        mixes_d.device_ptr_mut(&stream).0 as *mut f32,
-                        t as i32,
-                        (HC * D) as i32,
-                        rows as i32,
-                        EPS,
-                        sp(&stream),
-                    );
-                    assert_eq!(rc, 0, "rowsq_scale rc");
-                    let rc = k::memra_dsv4_hc_sinkhorn_m(
-                        mixes_d.device_ptr(&stream).0 as *const f32,
-                        scale_d.device_ptr(&stream).0 as *const f32,
-                        base_d.device_ptr(&stream).0 as *const f32,
-                        pre_d.device_ptr_mut(&stream).0 as *mut f32,
-                        post_d.device_ptr_mut(&stream).0 as *mut f32,
-                        comb_d.device_ptr_mut(&stream).0 as *mut f32,
-                        t as i32,
-                        HC as i32,
-                        ITERS,
-                        EPS,
-                        sp(&stream),
-                    );
-                    assert_eq!(rc, 0, "hc_sinkhorn_m rc");
-                    let rc = k::memra_dsv4_hc_collapse(
-                        x_d.device_ptr(&stream).0 as *const f32,
-                        pre_d.device_ptr(&stream).0 as *const f32,
-                        y_d.device_ptr_mut(&stream).0 as *mut f32,
-                        t as i32,
-                        HC as i32,
-                        D as i32,
-                        sp(&stream),
-                    );
-                    assert_eq!(rc, 0, "hc_collapse rc");
-                }
-                stream.synchronize()?;
-                Ok((
-                    stream.clone_dtoh(&pre_d)?,
-                    stream.clone_dtoh(&post_d)?,
-                    stream.clone_dtoh(&comb_d)?,
-                    stream.clone_dtoh(&y_d)?,
-                ))
-            };
+        let run_unfused = || -> Res<Hc4> {
+            let mut mixes_d = stream.clone_htod(&s.mixes)?;
+            let mut pre_d = stream.alloc_zeros::<f32>(t * HC)?;
+            let mut post_d = stream.alloc_zeros::<f32>(t * HC)?;
+            let mut comb_d = stream.alloc_zeros::<f32>(t * HC * HC)?;
+            let mut y_d = stream.alloc_zeros::<f32>(t * D)?;
+            unsafe {
+                let rc = k::memra_dsv4_rowsq_scale(
+                    x_d.device_ptr(&stream).0 as *const f32,
+                    mixes_d.device_ptr_mut(&stream).0 as *mut f32,
+                    t as i32,
+                    (HC * D) as i32,
+                    rows as i32,
+                    EPS,
+                    sp(&stream),
+                );
+                assert_eq!(rc, 0, "rowsq_scale rc");
+                let rc = k::memra_dsv4_hc_sinkhorn_m(
+                    mixes_d.device_ptr(&stream).0 as *const f32,
+                    scale_d.device_ptr(&stream).0 as *const f32,
+                    base_d.device_ptr(&stream).0 as *const f32,
+                    pre_d.device_ptr_mut(&stream).0 as *mut f32,
+                    post_d.device_ptr_mut(&stream).0 as *mut f32,
+                    comb_d.device_ptr_mut(&stream).0 as *mut f32,
+                    t as i32,
+                    HC as i32,
+                    ITERS,
+                    EPS,
+                    sp(&stream),
+                );
+                assert_eq!(rc, 0, "hc_sinkhorn_m rc");
+                let rc = k::memra_dsv4_hc_collapse(
+                    x_d.device_ptr(&stream).0 as *const f32,
+                    pre_d.device_ptr(&stream).0 as *const f32,
+                    y_d.device_ptr_mut(&stream).0 as *mut f32,
+                    t as i32,
+                    HC as i32,
+                    D as i32,
+                    sp(&stream),
+                );
+                assert_eq!(rc, 0, "hc_collapse rc");
+            }
+            stream.synchronize()?;
+            Ok((
+                stream.clone_dtoh(&pre_d)?,
+                stream.clone_dtoh(&post_d)?,
+                stream.clone_dtoh(&comb_d)?,
+                stream.clone_dtoh(&y_d)?,
+            ))
+        };
 
-        let run_fused =
-            || -> Result<(Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>), Box<dyn std::error::Error>> {
-                let mixes_d = stream.clone_htod(&s.mixes)?; // read-only: the fused kernel applies rowsq internally
-                let mut pre_d = stream.alloc_zeros::<f32>(t * HC)?;
-                let mut post_d = stream.alloc_zeros::<f32>(t * HC)?;
-                let mut comb_d = stream.alloc_zeros::<f32>(t * HC * HC)?;
-                let mut y_d = stream.alloc_zeros::<f32>(t * D)?;
-                unsafe {
-                    let rc = k::memra_dsv4_hc_pre_fused(
-                        x_d.device_ptr(&stream).0 as *const f32,
-                        mixes_d.device_ptr(&stream).0 as *const f32,
-                        scale_d.device_ptr(&stream).0 as *const f32,
-                        base_d.device_ptr(&stream).0 as *const f32,
-                        pre_d.device_ptr_mut(&stream).0 as *mut f32,
-                        post_d.device_ptr_mut(&stream).0 as *mut f32,
-                        comb_d.device_ptr_mut(&stream).0 as *mut f32,
-                        y_d.device_ptr_mut(&stream).0 as *mut f32,
-                        t as i32,
-                        HC as i32,
-                        D as i32,
-                        ITERS,
-                        EPS,
-                        std::ptr::null_mut(),
-                        sp(&stream),
-                    );
-                    assert_eq!(rc, 0, "hc_pre_fused rc");
-                }
-                stream.synchronize()?;
-                Ok((
-                    stream.clone_dtoh(&pre_d)?,
-                    stream.clone_dtoh(&post_d)?,
-                    stream.clone_dtoh(&comb_d)?,
-                    stream.clone_dtoh(&y_d)?,
-                ))
-            };
+        let run_fused = || -> Res<Hc4> {
+            let mixes_d = stream.clone_htod(&s.mixes)?; // read-only: the fused kernel applies rowsq internally
+            let mut pre_d = stream.alloc_zeros::<f32>(t * HC)?;
+            let mut post_d = stream.alloc_zeros::<f32>(t * HC)?;
+            let mut comb_d = stream.alloc_zeros::<f32>(t * HC * HC)?;
+            let mut y_d = stream.alloc_zeros::<f32>(t * D)?;
+            unsafe {
+                let rc = k::memra_dsv4_hc_pre_fused(
+                    x_d.device_ptr(&stream).0 as *const f32,
+                    mixes_d.device_ptr(&stream).0 as *const f32,
+                    scale_d.device_ptr(&stream).0 as *const f32,
+                    base_d.device_ptr(&stream).0 as *const f32,
+                    pre_d.device_ptr_mut(&stream).0 as *mut f32,
+                    post_d.device_ptr_mut(&stream).0 as *mut f32,
+                    comb_d.device_ptr_mut(&stream).0 as *mut f32,
+                    y_d.device_ptr_mut(&stream).0 as *mut f32,
+                    t as i32,
+                    HC as i32,
+                    D as i32,
+                    ITERS,
+                    EPS,
+                    std::ptr::null_mut(),
+                    sp(&stream),
+                );
+                assert_eq!(rc, 0, "hc_pre_fused rc");
+            }
+            stream.synchronize()?;
+            Ok((
+                stream.clone_dtoh(&pre_d)?,
+                stream.clone_dtoh(&post_d)?,
+                stream.clone_dtoh(&comb_d)?,
+                stream.clone_dtoh(&y_d)?,
+            ))
+        };
+
+        // MEMRA_HC_FUSED_PRE=2 (lane/b200-sinkhorn-fusion-20260902 follow-up): same
+        // stages as the fused kernel above, Sinkhorn warp-scoped for hc<=4. This gate
+        // proves it bit-identical to BOTH the unfused chain and the =1 fused kernel.
+        let run_fused_v2 = || -> Res<Hc4> {
+            let mixes_d = stream.clone_htod(&s.mixes)?;
+            let mut pre_d = stream.alloc_zeros::<f32>(t * HC)?;
+            let mut post_d = stream.alloc_zeros::<f32>(t * HC)?;
+            let mut comb_d = stream.alloc_zeros::<f32>(t * HC * HC)?;
+            let mut y_d = stream.alloc_zeros::<f32>(t * D)?;
+            unsafe {
+                let rc = k::memra_dsv4_hc_pre_fused_v2(
+                    x_d.device_ptr(&stream).0 as *const f32,
+                    mixes_d.device_ptr(&stream).0 as *const f32,
+                    scale_d.device_ptr(&stream).0 as *const f32,
+                    base_d.device_ptr(&stream).0 as *const f32,
+                    pre_d.device_ptr_mut(&stream).0 as *mut f32,
+                    post_d.device_ptr_mut(&stream).0 as *mut f32,
+                    comb_d.device_ptr_mut(&stream).0 as *mut f32,
+                    y_d.device_ptr_mut(&stream).0 as *mut f32,
+                    t as i32,
+                    HC as i32,
+                    D as i32,
+                    ITERS,
+                    EPS,
+                    std::ptr::null_mut(),
+                    sp(&stream),
+                );
+                assert_eq!(rc, 0, "hc_pre_fused_v2 rc");
+            }
+            stream.synchronize()?;
+            Ok((
+                stream.clone_dtoh(&pre_d)?,
+                stream.clone_dtoh(&post_d)?,
+                stream.clone_dtoh(&comb_d)?,
+                stream.clone_dtoh(&y_d)?,
+            ))
+        };
 
         let unfused_out = run_unfused()?;
         let fused_out = run_fused()?;
+        let fused_v2_out = run_fused_v2()?;
         let bad = bit_diffs(&unfused_out, &fused_out);
+        let bad_v2_vs_unfused = bit_diffs(&unfused_out, &fused_v2_out);
+        let bad_v2_vs_v1 = bit_diffs(&fused_out, &fused_v2_out);
         println!(
-            "[correctness] t={t} hc={HC} d={D}: fused-vs-unfused bit-bad={bad}/{} {}",
-            t * HC + t * HC + t * HC * HC + t * D,
-            if bad == 0 { "PASS" } else { "FAIL" }
+            "[correctness] t={t} hc={HC} d={D}: fused(=1)-vs-unfused bit-bad={bad}/{tot} {} | \
+             fused(=2)-vs-unfused bit-bad={bad_v2_vs_unfused}/{tot} {} | \
+             fused(=2)-vs-fused(=1) bit-bad={bad_v2_vs_v1}/{tot} {}",
+            if bad == 0 { "PASS" } else { "FAIL" },
+            if bad_v2_vs_unfused == 0 {
+                "PASS"
+            } else {
+                "FAIL"
+            },
+            if bad_v2_vs_v1 == 0 { "PASS" } else { "FAIL" },
+            tot = t * HC + t * HC + t * HC * HC + t * D,
         );
-        if bad != 0 {
+        if bad != 0 || bad_v2_vs_unfused != 0 || bad_v2_vs_v1 != 0 {
             fails += 1;
         }
 
@@ -232,6 +300,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let t0 = std::time::Instant::now();
             let _ = run_fused()?;
             fused_us.push(t0.elapsed().as_micros() as u64);
+        }
+        let mut fused_v2_us = Vec::with_capacity(N_TIMED);
+        for _ in 0..N_TIMED {
+            stream.synchronize()?;
+            let t0 = std::time::Instant::now();
+            let _ = run_fused_v2()?;
+            fused_v2_us.push(t0.elapsed().as_micros() as u64);
         }
 
         // ---- hc_post alone, N=5: census-context only, NOT fused with anything ----
@@ -268,11 +343,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let mean = |v: &[u64]| v.iter().sum::<u64>() as f64 / v.len() as f64;
         timing_rows.push(format!(
-            "t={t:<2} unfused(rowsq+sinkhorn+collapse)={:>7.1}us/call  fused(hc_pre_fused)={:>7.1}us/call  hc_post(unfused, not part of this fusion)={:>7.1}us/call  runs={unfused_us:?} / {fused_us:?} / {post_us:?}",
-            mean(&unfused_us), mean(&fused_us), mean(&post_us)
+            "t={t:<2} unfused(rowsq+sinkhorn+collapse)={:>7.1}us/call  fused(=1,hc_pre_fused)={:>7.1}us/call  fused(=2,hc_pre_fused_v2)={:>7.1}us/call  hc_post(unfused, not part of this fusion)={:>7.1}us/call  runs={unfused_us:?} / {fused_us:?} / {fused_v2_us:?} / {post_us:?}",
+            mean(&unfused_us), mean(&fused_us), mean(&fused_v2_us), mean(&post_us)
         ));
         json_arms.push(format!(
-            "{{\"t\":{t},\"hc\":{HC},\"d\":{D},\"bit_bad\":{bad},\"unfused_us\":{unfused_us:?},\"fused_us\":{fused_us:?},\"hc_post_us\":{post_us:?}}}"
+            "{{\"t\":{t},\"hc\":{HC},\"d\":{D},\"bit_bad_v1\":{bad},\"bit_bad_v2_vs_unfused\":{bad_v2_vs_unfused},\"bit_bad_v2_vs_v1\":{bad_v2_vs_v1},\"unfused_us\":{unfused_us:?},\"fused_us\":{fused_us:?},\"fused_v2_us\":{fused_v2_us:?},\"hc_post_us\":{post_us:?}}}"
         ));
     }
 
@@ -286,7 +361,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if fails == 0 {
         println!(
-            "hc-fused-gate: PASS ({} shapes, bit-identical fused vs unfused)",
+            "hc-fused-gate: PASS ({} shapes, bit-identical unfused vs fused(=1) vs fused(=2))",
             3
         );
         Ok(())
