@@ -498,6 +498,39 @@ fi
 if [ "${MEMRA_CI_GWSTRESS:-1}" = "1" ] && [ -x tools/graph-warmup-stress-gate.sh ]; then
     tools/graph-warmup-stress-gate.sh || { echo "graph-warmup-stress FAIL"; exit 1; }
 fi
+# GRAPH-LANE EXACTNESS (rehomed 2026-09-02 from tools/validate-h100.sh, deleted with the
+# Hopper CI lane): decode-dc (device counters, bit-identity), graph-decode (capture/replay
+# bit-identity), graph-session (serving GraphSession vs generate_graph — the sm_120a serving
+# decode path, NOT a Hopper artifact). Their old battery's round-35 incident is the origin of
+# law 3: graph-decode-gate rotted OUTSIDE a battery for weeks, an emission off-by-one in the
+# gate masquerading as 171/256 stream corruption. Deleting the battery without rehoming them
+# recreated exactly that condition (caught in PR #73 review). Bins are built EXPLICITLY — the
+# stale-binary rot the old battery refused to gate on. Verdict lines are grepped, never
+# assumed from exit codes. MEMRA_CI_GRAPH=0 skips.
+if [ "${MEMRA_CI_GRAPH:-1}" = "1" ]; then
+    GRAPH_MODEL="${MEMRA_CI_GRAPH_MODEL:-$DBG_NVFP4}"
+    if [ -f "$GRAPH_MODEL" ]; then
+        cargo build --release -p memra-engine \
+            --bin decode-dc-gate --bin graph-decode-gate --bin graph-session-gate \
+            || { echo "graph-lane bins BUILD FAIL — refusing to gate on stale binaries"; exit 1; }
+        out=$(target/release/decode-dc-gate "$GRAPH_MODEL" 2>&1)
+        echo "$out" | tail -1 | grep -q "PASS" \
+            || { echo "$out" | tail -5; echo "decode-dc-gate FAIL"; exit 1; }
+        echo "decode-dc-gate: PASS"
+        out=$(target/release/graph-decode-gate "$GRAPH_MODEL" 2>&1)
+        echo "$out" | tail -1 | grep -q "PASS" \
+            || { echo "$out" | tail -5; echo "graph-decode-gate FAIL"; exit 1; }
+        echo "graph-decode-gate: PASS"
+        out=$(target/release/graph-session-gate "$GRAPH_MODEL" 2>&1)
+        echo "$out" | tail -1 | grep -q "ALL GREEN" \
+            || { echo "$out" | tail -5; echo "graph-session-gate FAIL"; exit 1; }
+        echo "graph-session-gate: ALL GREEN"
+    elif [ -n "${MEMRA_CI_GRAPH_MODEL:-}" ]; then
+        echo "graph-lane: MEMRA_CI_GRAPH_MODEL set but not a file: $GRAPH_MODEL"; exit 1
+    else
+        echo "graph-lane exactness: SKIP (no model at $GRAPH_MODEL)"
+    fi
+fi
 echo "correctness stage: GREEN"
 
 # normal-usage serving battery (2026-07-30): OpenAI surface, streaming, determinism,

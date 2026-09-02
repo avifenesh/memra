@@ -389,11 +389,13 @@ Two holes in this stage were closed by that same red (2026-08-06):
   `accept`, but running it costs a server boot, so it lands at tier 2.
 - **H100/sm_90a lane (retired from CI 2026-09-02)**: `tools/validate-h100.sh` was deleted with
   the sm_89/sm_90a arch retirement — the Hopper lane no longer has a standing battery. Its
-  lessons outlived it: kernel-check config pins and both `decode-batch-gate` modes run in
-  `tools/local-ci.sh`; the graph-lane gates (`decode-dc-gate`, `graph-decode-gate`,
-  `graph-session-gate`) remain runnable directly on Hopper hardware, and the reason they lived
-  inside a battery is still law 3: `graph-decode-gate` "rotted OUTSIDE this battery for weeks"
-  (an emission off-by-one in the gate masqueraded as 171/256 stream corruption). A Hopper
+  gates were all rehomed: kernel-check config pins and both `decode-batch-gate` modes already
+  ran in `tools/local-ci.sh`, and the graph-lane exactness gates (`decode-dc-gate`,
+  `graph-decode-gate`, `graph-session-gate` — the last of which guards the sm_120a serving
+  GraphSession path, not a Hopper artifact) moved into `local-ci.sh` in the same retirement
+  (PR #73 review caught them briefly orphaned). The reason they lived inside a battery is
+  still law 3: `graph-decode-gate` "rotted OUTSIDE this battery for weeks" (an emission
+  off-by-one in the gate masqueraded as 171/256 stream corruption). A Hopper
   source build (`MEMRA_CUDA_ARCH=90a`) still compiles and stays stub-ABI-guarded.
 - **Cross-model blast radius**: tier 1 probes one model per kernel class; the full per-model
   matrix runs at tier 2.
