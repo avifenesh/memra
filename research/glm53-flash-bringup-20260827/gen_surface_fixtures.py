@@ -30,10 +30,10 @@ counterpart in the Rust path:
     would otherwise take `visible_text`'s else-arm and render the literal `None`);
   - role `developer` -> `system` (OpenAI's o-series rename, normalized for every dialect);
   - `reasoning_effort` -> the template's `reasoning_effort` kwarg through memra's canonical
-    ladder: absent stays absent, `low`/`medium` -> `low` (the documented clamp-down: the
-    template has no medium rung and its `else` arm is MAX, so falling through would answer a
-    request to reason less with the model's deepest setting), `high` -> `high`,
-    `xhigh`/`max`/`ultra` -> `max`. See `chat::glm5_effort_level`.
+    ladder: absent stays absent, `low` -> `low`, `medium` -> `high` (owner ruling 2026-09-02,
+    issue #75: the middle ask onto the middle rung of this low|high|max ladder; the law kept
+    is that a sub-max ask never falls through the template's `else` arm, which is MAX),
+    `high` -> `high`, `xhigh`/`max`/`ultra` -> `max`. See `chat::glm5_effort_level`.
 
 NOT COVERED (the arm documents each; no OpenAI/Anthropic/Responses request can express them):
 the native `tool_reference` content type, the list-of-outputs tool-message shape
@@ -55,7 +55,7 @@ FIXDIR = os.path.join(HERE, "surface-fixtures")
 # memra's canonical reasoning_effort ladder -> this template's kwarg (chat::glm5_effort_level).
 EFFORT = {
     "low": "low",
-    "medium": "low",
+    "medium": "high",
     "high": "high",
     "max": "max",
     "xhigh": "max",
@@ -168,7 +168,7 @@ case(
     ]),
 )
 case("03-effort-low", base([msg("user", "hi")], reasoning_effort="low"))
-case("04-effort-medium-clamps-low", base([msg("user", "hi")], reasoning_effort="medium"))
+case("04-effort-medium-maps-high", base([msg("user", "hi")], reasoning_effort="medium"))
 case("05-effort-high", base([msg("user", "hi")], reasoning_effort="high"))
 case("06-effort-max", base([msg("user", "hi")], reasoning_effort="max"))
 case("07-tools-declaration", base([msg("user", "weather in Paris?")], tools=[WEATHER, SEARCH]))

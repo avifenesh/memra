@@ -14,7 +14,10 @@ Support state: **NativeReference**. Bring-up is gated on the bench box's two-car
   (`crates/memra-engine/src/glm5_tp.rs`), MTP spec (`glm_spec.rs`), and vision
   (`vision_glm5.rs`). The template's always-rendered `Reasoning Effort: {Low|High|Max}`
   line and unconditional `<think>` tail are probed and documented in
-  [serving](../SERVING.md).
+  [serving](../SERVING.md). The effort ladder is exactly those three rungs with `max`
+  the template default; a client `medium` maps to `high` (issue #75), `max`/`xhigh`/
+  `ultra` reach `max` by name, and `none`/`minimal` are a named 400 (no off switch).
+  The OpenRouter feed publishes the levels as `reasoning_effort: low|high|max`.
 - Bring-up receipts: `research/glm53-flash-bringup-20260827/` (tensor census, 262k
   two-card, batched decode gate); vision and multi-card batteries under
   `research/glm5-vision-20260830/` and `research/glm53-vision-ppn-20260901/`.

@@ -6279,6 +6279,20 @@ fn openrouter_supported_parameters(
     if is_chat && caps.is_some_and(|c| c.qwen_think || c.effort_levels || c.gemma_think) {
         parameters.insert("reasoning".into(), json!({ "type": "boolean" }));
     }
+    // glm5 has a three-rung effort ladder, and issue #75 made publishing it part
+    // of the fix: an OpenRouter client tuning depth needs to see low|high|max as
+    // the levels, not discover by experiment. `medium` is accepted and mapped to
+    // high (`glm5_effort_level`), but the native rungs are what this feed states,
+    // and an enum here that lists medium would advertise a rung the template does
+    // not define. (glm5 also matches the generic `reasoning` boolean arm above
+    // through qwen_think/effort_levels; that advertisement is a separate question
+    // from this ladder, tracked in its own issue.)
+    if is_chat && caps.is_some_and(|c| c.glm5) {
+        parameters.insert(
+            "reasoning_effort".into(),
+            json!({ "type": "enum", "values": ["low", "high", "max"] }),
+        );
+    }
     serde_json::Value::Object(parameters)
 }
 
@@ -11105,9 +11119,11 @@ mod tests {
         for (sent, line) in [
             (None, "Max"),
             (Some("low"), "Low"),
-            // no medium rung in this ladder: clamp DOWN, never through the template's
-            // `else` arm (which is Max — answering "reason less" with the deepest setting).
-            (Some("medium"), "Low"),
+            // no medium rung in this ladder: the middle ask maps UP to the middle
+            // rung (owner ruling 2026-09-02, issue #75). Never through the
+            // template's `else` arm, which is Max: answering "reason less" with
+            // the deepest setting.
+            (Some("medium"), "High"),
             (Some("high"), "High"),
             (Some("xhigh"), "Max"),
             (Some("max"), "Max"),
@@ -11521,12 +11537,23 @@ mod tests {
         );
         assert!(glm_params.get("json_mode").is_none(), "{glm_params}");
         assert!(glm_params.get("tools").is_some(), "{glm_params}");
+        // Issue #75: glm5's published levels are its native rungs. The enum is
+        // glm5-scoped, not a generic effort advertisement.
+        assert_eq!(
+            glm_params.get("reasoning_effort"),
+            Some(&json!({ "type": "enum", "values": ["low", "high", "max"] })),
+            "{glm_params}"
+        );
         let qwen_params = openrouter_supported_parameters(Some(&tool_caps()), None, true);
         assert!(
             qwen_params.get("structured_outputs").is_some(),
             "{qwen_params}"
         );
         assert!(qwen_params.get("json_mode").is_some(), "{qwen_params}");
+        assert!(
+            qwen_params.get("reasoning_effort").is_none(),
+            "{qwen_params}"
+        );
     }
 
     /// The catalog must not advertise the checkpoint's trained context as a serving claim.
