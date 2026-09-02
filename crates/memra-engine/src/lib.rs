@@ -706,6 +706,29 @@ pub(crate) fn step_tp_w8_on() -> bool {
     step37_door(&ENV, "MEMRA_STEP_TP_W8")
 }
 
+/// MEMRA_GLM5_W8=1 (default OFF, unset/0 = bf16): q8_0 mirror of the bf16-resident glm5_next
+/// KDA and MLA decode projections, modeled on `MEMRA_STEP_TP_W8`'s hybrid half but its OWN
+/// independent door — a strict boolean, NOT step37-family-armed and NOT gated behind
+/// `MEMRA_W8_HYBRID`. Reuses the SAME building block: `matvec_bf16_via_q8_mirror` /
+/// `matvec_bf16_via_q8_mirror_t` (pointer-keyed, built on first decode use, `w8_mirrors`/
+/// `w8_act` caches shared with the step37 door). NUMERIC-CLASS door, same class and
+/// acceptance shape as `MEMRA_STEP_TP_W8`: the per-row arithmetic becomes an int8 dp4a dot
+/// with per-32 scales instead of a bf16xf32 fma chain, so the acceptance is the argmax gate
+/// (`glm5_w8_gate`), not a bit tape. Motivation (nsys, 2x B200, GLM-5.3-Flash NVFP4 mint,
+/// resident PP2, plain decode t=1): ~15 GB/token weight reads per token, of which the
+/// BF16-resident KDA/MLA projections (`matvec_bf16_f32acc_x4_rows`, 211 launches/token,
+/// ~13.5 GB/token) dominate; the mirror halves that class's per-weight bytes (2 B bf16 -> ~
+/// 1.0625 B q8_0). See docs/FLAGS.md for the bytes/token arithmetic and rollback seam.
+pub(crate) fn glm5_w8_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_GLM5_W8").as_deref() == Ok("1"))
+}
+
+/// Dispatch counter for `MEMRA_GLM5_W8`'s decode-tier engagement, announced once (the
+/// no-announce-cannot-be-read-both-ways lesson from `MEMRA_W8_VIEW`).
+pub(crate) static GLM5_W8_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 /// MEMRA_W8_VIEW=1: extend the W8 hybrid half to the ROW-RANGE-VIEW GEMVs, i.e. the lo halves
 /// that `MEMRA_HEAD_SPLIT` and `MEMRA_SHEXP_OVERLAP` keep on rank 0. NOT a step37 family door
 /// and NOT armed by `arm_step37_serving_defaults`: it stays off until it carries its own
@@ -1008,6 +1031,8 @@ pub struct Engine {
     /// carries the PARENT's base pointer when the range starts at row 0, so a pointer-only key
     /// would hand the head-split lo half (4096 x 64448) the full head's mirror (4096 x 128896)
     /// and read 2x past the rows it owns. The shape is part of the identity of a mirror.
+    /// SECOND CONSUMER (2026-09-02): `MEMRA_GLM5_W8` reuses this SAME cache for the glm5_next
+    /// KDA/MLA decode trunk — independent door, same building block, same key shape.
     w8_mirrors: Mutex<std::collections::HashMap<(u64, u32, u32), CudaSlice<u8>>>,
     /// Per-`in_f` q8_1 activation scratch for those mirrors (allocating per call would cost
     /// more than the door saves).
@@ -22841,6 +22866,42 @@ impl Engine {
         {
             return Ok(());
         }
+        // MEMRA_GLM5_W8, t in 2..=32: the glm5 verify-rows walk's KDA/MLA projections route
+        // through the SAME t-column q8 mirror the step37 hybrid arm above uses (independent
+        // door, independent predicate — the owner wants this receipted on its own, not folded
+        // into the step37 lane). Bit-identical to t single-row q8_0 mirror calls by the
+        // mirror's own construction (matvec_bf16_via_q8_mirror_t's contract).
+        if (2..=32).contains(&t)
+            && glm5_w8_on()
+            && in_f.is_multiple_of(32)
+            && out_f >= 64
+            && let Some(()) = self.matvec_bf16_via_q8_mirror_t(w, x, y, in_f, out_f, t)?
+        {
+            if GLM5_W8_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+                eprintln!(
+                    "[glm5-w8] engaged t={t} in_f={in_f} out_f={out_f} (q8_0 mirror, \
+                     MEMRA_GLM5_W8=1)"
+                );
+            }
+            return Ok(());
+        }
+        // MEMRA_GLM5_W8, t == 1: the decode-tier q8 mirror for the glm5_next KDA/MLA trunk.
+        // Same building block MEMRA_STEP_TP_W8's hybrid half calls two blocks up
+        // (matvec_bf16_via_q8_mirror); independent door, independent receipts.
+        if t == 1
+            && glm5_w8_on()
+            && in_f.is_multiple_of(32)
+            && out_f >= 64
+            && let Some(()) = self.matvec_bf16_via_q8_mirror(w, x, y, in_f, out_f)?
+        {
+            if GLM5_W8_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+                eprintln!(
+                    "[glm5-w8] engaged t=1 in_f={in_f} out_f={out_f} (q8_0 mirror, \
+                     MEMRA_GLM5_W8=1)"
+                );
+            }
+            return Ok(());
+        }
         // MEMRA_BF16_TCOLS_WIDE (lane/glm5-matvec door T, default ON since 2026-08-31): t=2..=16 rides the
         // weight-once t-column class instead of the grid.y=t per-token weight re-read below.
         // Placed AFTER the W8-mirror intercepts (their precedence unchanged). Bit-identical
@@ -23141,11 +23202,35 @@ impl Engine {
         m: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         use crate::model::GpuTensor;
+        // MEMRA_GLM5_W8: the glm5 verify-rows walk's KDA/MLA projections take the SAME q8_0
+        // mirror the plain t=1/small-t decode arm uses in `matvec_bf16_rows_into` — placed
+        // BEFORE the tcols check below so the door's own class (not the bf16 tcols class) wins
+        // when it engages. Independent of MEMRA_STEP_TP_W8/MEMRA_W8_HYBRID.
+        if let GpuTensor::FloatBf16 { data, .. } = w
+            && (2..=32).contains(&m)
+            && Self::bf16_mmv_on()
+            && w.in_features().is_multiple_of(32)
+            && w.out_features() >= 64
+            && glm5_w8_on()
+        {
+            let (in_f, out_f) = (w.in_features(), w.out_features());
+            let mut y = self.vws_uninit(m * out_f)?;
+            if let Some(()) = self.matvec_bf16_via_q8_mirror_t(data, x, &mut y, in_f, out_f, m)? {
+                if GLM5_W8_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+                    eprintln!(
+                        "[glm5-w8] engaged rows-exact m={m} in_f={in_f} out_f={out_f} \
+                         (q8_0 mirror, MEMRA_GLM5_W8=1)"
+                    );
+                }
+                return Ok(y);
+            }
+        }
         if let GpuTensor::FloatBf16 { data, .. } = w
             && (2..=8).contains(&m)
             && Self::bf16_mmv_on()
             && w.in_features().is_multiple_of(8)
             && !(step_tp_w8_on() && w8_hybrid_on())
+            && !glm5_w8_on()
         {
             let (in_f, out_f) = (w.in_features(), w.out_features());
             // Door W: rows-exact is verify-walk-only by contract, so its y is a pooled
