@@ -313,3 +313,52 @@ sk128v form is bound elsewhere — the `mma.sync.m16n8k16` issue rate on sm_100a
 dequant, or L2/smem traffic. Every one of those says the same thing: the remaining gap is the
 instruction class, not the schedule around it, and the way to a different instruction class
 without writing tcgen05 is a library GEMM on a dequantized slab. That is arm 3.
+
+
+## §8 Arm 3 bucketed (boot H's decline, and the fix)
+
+Boot H ran arms 1+2 at boot F's TTFT and then declined arm 3 on every layer:
+`[moe-bgemm] DECLINED: routing skew: 288 experts x n_pad 816 = 235,008 padded rows against
+32,768 real (ratio 7.17 > 1.35)`. That is the guard doing its job on a real property of the
+model, not a tuning miss: glm5's routing is skewed BY DESIGN (measured 2026-09-02, Gini 0.575
+over 288 experts, busiest expert 77% of a layer's tokens, median 1.3%), so ONE uniform-n batch
+across the whole bank pads every expert up to the busiest one and can never meet any sane cap.
+
+**Fix: bucket.** Sort the active experts by row count, cut them into contiguous buckets, and
+issue one cuBLASLt strided-batched call per bucket per projection — still stream-ordered, still
+one slab, still one dequant. Heavy head experts land in singleton buckets, the long tail shares
+one. The pad/unpad kernels stay ONE launch each whatever K is because they walk a `pad_map`
+(one entry per padded row: the CSR pair it carries, or -1), which is also the only structure
+that has to be right for the layout to be correct.
+
+**The per-bucket target is swept, not guessed** — four O(n) passes per call, keeping the
+partition with the smallest AGGREGATE padding. A tighter target is NOT monotonically better: it
+narrows buckets, which only helps while the bucket budget can absorb the extra ones. On the
+modelled 288-expert profile: 1.163 at 16 buckets against 2.207 at 8 for the same target, and
+1.325 for the natural 8-bucket partition at the loosest target. That is why `MOE_BGEMM_MAX_BUCKETS`
+is 16 (48 launches per MoE layer against a layer measured at 16.5 ms — the launches are noise)
+and why the sweep exists at all.
+
+**Held two ways.** `moe_bgemm_plan_tests` is host-only, no GPU, on the measured 288-expert
+profile — the width the fixture cannot reach and the width the defect had. It asserts the
+profile really is the measured one, that the unbucketed ratio is still past 5x (the control:
+if that ever stops being true, the bucketer is being credited for a problem that no longer
+exists), that bucketing lands under 1.25 with headroom, that buckets tile the expert list and
+the padded plane exactly, that the expert order is a permutation, that every real pair appears
+in the pad map exactly once, and that each expert's rows stay contiguous in one bucket.
+
+The gate's fixture now reproduces the skew rather than assuming it: its sigmoid router
+correction bias is overwritten with a geometric profile, and arm 3 asserts the partition from
+the engine's own published plan stats (`MOE_BGEMM_LAST_{BUCKETS,PAD_MILLI,SPREAD_MILLI}`)
+rather than parsing a log line — K >= 2, an n_pad spread >= 4x, and the aggregate ratio inside
+the ceiling. Rig run: `buckets=7 pad=[2960,1248,768,608,304,32,16] pad_ratio=1.086`, spread
+106.5x, 9/9 dispatches, and a cap of 1.0 makes it decline (the ceiling's own red arm).
+
+**Route taken, since both were open:** bucketed strided-batched, NOT ordering
+`cublasGemmGroupedBatchedEx` with events. Grouped-batched needs no padding, but the ordering
+question is exactly what killed the worker in boot D, and "we believe the library honours
+`cublasSetStream` on 13.1" is a belief about a closed-source scheduler that would be load-bearing
+for correctness on every future toolkit. Bucketing costs ~9% padding on the measured profile and
+buys an ordering guarantee that is structural rather than empirical. If a future measurement
+shows the padding is the binding cost, the grouped route can be revisited with a real ordering
+receipt; it should not be taken on trust.

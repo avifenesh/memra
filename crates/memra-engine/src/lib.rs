@@ -2342,6 +2342,18 @@ pub fn mla_tc_prefill_dispatches() -> u64 {
 /// MEMRA_B200_PRIME_V2 arm-3 dispatches: one per (layer, projection) that actually ran the
 /// cuBLASLt strided-batched expert GEMM. The gate's non-vacuity assertion reads it — a band
 /// comparison between two runs of the SHIPPED kernel would pass while proving nothing.
+/// Arm-3 plan stats from the most recent admitted layer, published so a gate can ASSERT the
+/// partition instead of parsing a log line: bucket count, aggregate pad ratio x1000, and the
+/// spread (widest bucket `n_pad` / narrowest) x1000. The spread is the direct measure of the
+/// routing skew the bucketer exists for — a uniform router yields one bucket and a spread of
+/// 1000, which proves nothing about this path.
+pub static MOE_BGEMM_LAST_BUCKETS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+pub static MOE_BGEMM_LAST_PAD_MILLI: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+pub static MOE_BGEMM_LAST_SPREAD_MILLI: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 pub static MOE_BGEMM_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 

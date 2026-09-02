@@ -85,7 +85,10 @@ use memra_engine::hybrid::HybridModel;
 use memra_engine::hybrid_forward::{
     HYPER_PRIME_NATURAL_SCHEDULES, HYPER_PRIME_PIPELINED_CHUNKS, hyper_prime_ranges,
 };
-use memra_engine::{MOE_BGEMM_DISPATCHES, MOE_GROUPED_PREFILL_DISPATCHES};
+use memra_engine::{
+    MOE_BGEMM_DISPATCHES, MOE_BGEMM_LAST_BUCKETS, MOE_BGEMM_LAST_PAD_MILLI,
+    MOE_BGEMM_LAST_SPREAD_MILLI, MOE_GROUPED_PREFILL_DISPATCHES,
+};
 use memra_gguf::GgmlType;
 use memra_gguf::config::{HfConfig, ModelConfig};
 use memra_gguf::model_plan::{ModelPlan, StatePlan};
@@ -275,6 +278,40 @@ fn fixture_source(
         // class") and arm 3 has nothing to test. NVFP4 is also the shipped artifact's own class
         // (tiyuvta/GLM-5.3-Flash-NVFP4), which is the encoding this gate should be arguing
         // about. Same choice `tests/glm5_moe_grouped_prefill_gpu.rs` makes, for the same reason.
+        // ROUTER SKEW, deliberately built in. glm5's real routing is skewed BY DESIGN --
+        // measured on the artifact 2026-09-02: Gini 0.575 over 288 experts, the busiest expert
+        // taking 77% of a layer's tokens and the median 1.3%. A fixture whose routing is
+        // near-uniform proves NOTHING about the bucketed GEMM: every expert would land in one
+        // bucket, the partition would never be exercised, and the pad ratio would be ~1.0 by
+        // luck. So the sigmoid router's per-expert correction bias is overwritten with a
+        // geometric profile that reproduces that shape at 16 experts. `deterministic_fixture`
+        // gives it a near-flat bias; this is the one tensor this gate does not take from it,
+        // and the gate asserts the resulting frequency profile rather than trusting it.
+        if matches!(
+            req.id,
+            TensorId::Layer {
+                tensor: LayerTensor::MoeRouterBias,
+                ..
+            }
+        ) {
+            let n = tensor.data.len();
+            let bias: Vec<f32> = (0..n).map(|i| -0.055f32 * i as f32).collect();
+            let bytes: Vec<u8> = bias.iter().flat_map(|v| v.to_le_bytes()).collect();
+            for name in match req.match_mode {
+                TensorMatch::OneOf => &req.names[..1],
+                TensorMatch::All => req.names.as_slice(),
+            } {
+                tensors.insert(
+                    name.clone(),
+                    OwnedTensor {
+                        bytes: bytes.clone(),
+                        ne: req.shape.clone(),
+                        ggml_type: GgmlType::F32,
+                    },
+                );
+            }
+            continue;
+        }
         let (bytes, ggml_type) = if is_expert_bank(&req.id) {
             (
                 memra_gguf::nvfp4_repack::f32_to_nvfp4(&tensor.data),
@@ -759,18 +796,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let ids = tokens(t3, 0x5EED_0003);
         let max_ctx = t3 + 16;
+        let trace_path =
+            std::env::temp_dir().join(format!("memra-prime-v2-routes-{}.txt", std::process::id()));
+        let _ = std::fs::remove_file(&trace_path);
         // An explicit chunk pins BOTH walks to one call. Arm 1 is therefore inert here.
         set_env("MEMRA_PRIME_CHUNK", &t3.to_string());
-        // The pad-ratio ceiling is raised DELIBERATELY and said out loud. This fixture's
-        // 16-expert deterministic router is far more skewed than a trained 288-expert one
-        // (measured 2.94 here against ~1.10 on the real bank), so at the shipped 1.35 default
-        // the arm correctly declines and there is nothing to compare. Raising it exercises the
-        // arm; the guard itself is asserted separately below at its own default.
-        set_env("MEMRA_MOE_BGEMM_PAD_RATIO", "8.0");
-        println!(
-            "arm 3 NOTE      MEMRA_MOE_BGEMM_PAD_RATIO=8.0 for this arm (fixture router skew); \
-             the shipped default 1.35 is asserted below"
-        );
+        // Runs at the SHIPPED default ceiling. Before bucketing this arm could not: one
+        // uniform-n batch over a skewed bank pads to the busiest expert, which on the real
+        // artifact cost 7.17x and declined on every layer of every boot. Meeting 1.35 on a
+        // deliberately skewed fixture IS the claim this arm makes.
+        clear_env("MEMRA_MOE_BGEMM_PAD_RATIO");
         clear_env("MEMRA_B200_PRIME_V2");
         let ranges = hyper_prime_ranges(t3, LAYERS, m.gdn_prime_grid_on());
         assert_eq!(
@@ -786,11 +821,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             set_env("MEMRA_B200_PRIME_V2", "1");
         }
         let before = MOE_BGEMM_DISPATCHES.load(Ordering::Relaxed);
+        // ROUTE PROFILE RECEIPT. The bucketer only matters under skew, so the gate MEASURES the
+        // skew it built rather than asserting the bias tensor it wrote. Rows come from the
+        // router trace the grouped prefill already emits for every call, so this costs nothing.
+        set_env(
+            "MEMRA_MOE_TRACE",
+            trace_path.to_str().expect("utf-8 trace path"),
+        );
         let (got_logits, got_stack) = prime_once(&e, &m, &plan, &ids, max_ctx)?;
+        clear_env("MEMRA_MOE_TRACE");
         let dispatches = MOE_BGEMM_DISPATCHES.load(Ordering::Relaxed) - before;
         clear_env("MEMRA_B200_PRIME_V2");
         clear_env("MEMRA_PRIME_CHUNK");
         clear_env("MEMRA_MOE_BGEMM_PAD_RATIO");
+
+        // THE PARTITION, asserted from the engine's own published plan stats rather than from
+        // a log line. The bucketer only matters under skew, so a fixture that routed uniformly
+        // would put every expert in one bucket and prove nothing about this path.
+        let buckets = MOE_BGEMM_LAST_BUCKETS.load(Ordering::Relaxed);
+        let pad_milli = MOE_BGEMM_LAST_PAD_MILLI.load(Ordering::Relaxed);
+        let spread_milli = MOE_BGEMM_LAST_SPREAD_MILLI.load(Ordering::Relaxed);
+        println!(
+            "arm 3 BUCKETS   K={buckets} aggregate pad ratio {:.3} (cap 1.350) n_pad spread \
+             {:.1}x across buckets",
+            pad_milli as f64 / 1000.0,
+            spread_milli as f64 / 1000.0
+        );
+        if buckets < 2 {
+            failures.push(format!(
+                "arm 3 FIXTURE NOT SKEWED: the planner produced {buckets} bucket(s), so the \
+                 partition was never exercised. The bucketer exists ONLY because glm5's routing \
+                 is skewed by design (Gini 0.575, busiest expert 77% of tokens, median 1.3%), \
+                 and a uniform fixture proves nothing about it"
+            ));
+        }
+        if spread_milli < 4_000 {
+            failures.push(format!(
+                "arm 3 FIXTURE NOT SKEWED: widest bucket n_pad is only {:.1}x the narrowest — \
+                 the fixture's router bias is not reproducing the real artifact's spread",
+                spread_milli as f64 / 1000.0
+            ));
+        }
+        if pad_milli > 1_350 {
+            failures.push(format!(
+                "arm 3: the plan's AGGREGATE pad ratio is {:.3}, past the 1.350 ceiling it is \
+                 supposed to hold — bucketing did not bound the padding",
+                pad_milli as f64 / 1000.0
+            ));
+        }
 
         // Every MoE layer runs three projections through the arm.
         let moe_layers = plan
@@ -844,9 +922,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let ctrl = relative(&ctrl_logits, &ref_logits);
         println!("arm 3 CONTROL   one-token prompt change moves logits {ctrl:.3e}");
 
-        // THE GUARD ITSELF, at its shipped default: this fixture's skew is past 1.35, so with
-        // the override cleared the arm MUST decline and dispatch nothing. Without this, raising
-        // the ratio above would be indistinguishable from the guard not existing.
+        // THE CEILING ITSELF still has to bite, or "the plan met 1.35" would be a statement
+        // about a check that does not exist. 1.0 is unreachable by construction (n_pad is
+        // 16-aligned, so any expert whose rows are not a multiple of 16 pads), so the arm MUST
+        // decline and dispatch nothing.
+        set_env("MEMRA_MOE_BGEMM_PAD_RATIO", "1.0");
         set_env("MEMRA_PRIME_CHUNK", &t3.to_string());
         set_env("MEMRA_B200_PRIME_V2", "1");
         let guard_before = MOE_BGEMM_DISPATCHES.load(Ordering::Relaxed);
@@ -854,15 +934,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let guard_dispatches = MOE_BGEMM_DISPATCHES.load(Ordering::Relaxed) - guard_before;
         clear_env("MEMRA_B200_PRIME_V2");
         clear_env("MEMRA_PRIME_CHUNK");
+        clear_env("MEMRA_MOE_BGEMM_PAD_RATIO");
         println!(
-            "arm 3 GUARD     at the shipped pad-ratio default: dispatches {guard_dispatches} \
-             (want 0 on this fixture's 2.94 skew)"
+            "arm 3 CEILING   at an unreachable cap of 1.0: dispatches {guard_dispatches} \
+             (want 0)"
         );
         if guard_dispatches != 0 {
             failures.push(format!(
-                "arm 3 GUARD BROKEN: the pad-ratio ceiling admitted {guard_dispatches} \
-                 dispatch(es) at its shipped default on a fixture measured at 2.94 skew — the \
-                 guard is not doing anything, so the override above proves nothing"
+                "arm 3 CEILING BROKEN: the pad-ratio ceiling admitted {guard_dispatches} \
+                 dispatch(es) at a cap of 1.0, which 16-aligned padding cannot meet — the \
+                 ceiling is not doing anything, so the plan meeting 1.35 proves nothing"
             ));
         }
         if ctrl <= TOL_BGEMM {
