@@ -199,23 +199,123 @@ runs it on the box and banks the output under this directory (e.g.
 | `MEMRA_HC_FUSED_PRE=1` (existing, unmodified by this lane) | 2 (`hc_pre_fused`, `hc_post`) | -50% launches, -92.6% of this chain's GPU time per the B200 census above |
 | requested `MEMRA_HC_FUSED_CHAIN` (all 4 in one launch) | not achievable | — |
 
+## Follow-up: MEMRA_HC_FUSED_PRE=2 — cutting the `=1` kernel's own launch latency
+
+A B200 box receipt (real hardware, nsys, plain decode t=1, `MEMRA_HC_FUSED_PRE=1` ON, both
+devices) landed after the section above was written: `dsv4_hc_pre_fused_kernel` (the `=1`
+kernel) measured **29,160 launches x 32.8 us avg = 15.6% of GPU time, ~4.3 ms/token (130
+launches/token)** — now the SECOND-largest kernel in the whole decode profile. At t=1 the
+real per-site math is tiny (hc=4, d=4096), so almost all of that 32.8 us is latency, not
+compute: the Sinkhorn stage's up to 20 serial iterations each pay a `__syncthreads()` pair
+— a 128-thread, up-to-4-warp barrier — to synchronize work that only threads `t<hc` (and
+the `t<hc*hc` snapshot/writeback strided loops) ever touch.
+
+`hc-fused-gate` confirmed this directly (N=5, B200 dev 0, `=1` vs the unfused chain,
+bit-bad=0 at every tested t): wall us/call — t=1 unfused=112.6 fused=101.0 (`hc_post`
+alone, for context, unrelated to this fusion, =13.8); t=4 unfused=118.2 fused=117.6; t=8
+unfused=140.6 fused=123.0. This matches nsys's per-launch figure once host launch+sync
+overhead is subtracted, and is exactly the receipt `MEMRA_HC_FUSED_PRE`'s FLAGS.md row
+named as missing for the `=1` arm.
+
+### The fix: `dsv4_hc_pre_fused_v2_kernel`, door value `MEMRA_HC_FUSED_PRE=2`
+
+Same door, a second value — not a new door, per the flags doctrine (one door per
+mechanism family; a value selects the arm). `cu/dsv4_gpu.cu:3262`
+(`dsv4_hc_pre_fused_v2_kernel`) + `cu/dsv4_gpu.cu:3380`
+(`memra_dsv4_hc_pre_fused_v2`), FFI at `dsv4_ffi.rs`, dispatch in `hyper.rs`
+(`HcFusedPreArm::{Off,V1,V2}`, `hc_fused_pre_arm()`).
+
+**Stage 1 (rowsq) and stage 3 (collapse): unchanged, copied verbatim from
+`dsv4_hc_pre_fused_kernel`.**
+
+- Rowsq's reduction tree shape (and therefore its bits) is a function of `blockDim`,
+  which is why `=1`'s own kernel doc already calls `blockDim=128` "LOAD-BEARING" — moving
+  it to fewer threads would be a different numeric class, not a latency fix. Checked and
+  rejected for that reason (the task's own "check whether rowsq and collapse can share a
+  warp" question): rowsq cannot move to a warp without breaking bit-identity.
+- Collapse's output does NOT depend on `blockDim` at all — each `y[i]` is one thread's own
+  sequential loop over `spre[0..hc-1]`, so which thread computes it, or how many total
+  threads exist, never changes a bit. Checked and also rejected, but for the opposite
+  reason: shrinking it to one warp would only cost parallelism over `d=4096` elements
+  (more sequential loop iterations per thread) with zero bit-identity benefit, since
+  collapse was never the bottleneck (the census's own `dsv4_hc_collapse_kernel` row, when
+  unfused, is the cheapest of the four named kernels).
+
+**Stage 2 (Sinkhorn): the actual change.** For `hc<=4` (GLM-5.3-Flash's own shape), every
+shared-memory index this stage ever touches — `smix[0..rows-1]` (rows=(2+hc)*hc<=24),
+`comb`/`sprev[0..hc*hc-1]` (<=16), `spre[0..hc-1]`, `schanged` — lives at index < 32, i.e.
+entirely inside warp 0's lane range. The stage runs inside `if (t < 32)` (warp-uniform:
+all 32 lanes of warp 0 take it together, the other three warps skip it together — no
+intra-warp divergence anywhere), with every `__syncthreads()` in that scope replaced by
+`__syncwarp()`.
+
+**Bit-identity argument.** This is a synchronization-primitive substitution only: every
+operand, every operator, and every sequential summation order inside each `if (t < hc)` /
+`if (t < hc*hc)` arm is copied verbatim from `=1`'s body (the same `for k in 0..hc: sum +=
+comb[...]` sequential loops, the same order of operations). A barrier does not touch a
+mantissa — replacing "wait for all 128 threads" with "wait for all 32 lanes of warp 0"
+changes WHEN memory becomes visible across a group of threads that were never touching
+that memory in the first place (threads 32..127 never read or wrote any Sinkhorn-stage
+shared index in `=1` either, gated as they already were on `t<hc`/`t<hc*hc`, both <32 for
+this hc range). No FLOP, no operand, no order changed, so `=2`'s stage-2 outputs are
+bit-identical to `=1`'s by construction. `hc-fused-gate` asserts this directly:
+`to_bits()` equality on pre/post/comb/y, unfused vs `=1` vs `=2`, at every tested t.
+
+**One real `__syncthreads()` remains**, between stage 2 and stage 3: collapse reads
+`spre[]` with the FULL 128-thread block, and warp 0's writes must become visible across
+warp boundaries — `__syncwarp()` cannot do that (it only orders memory within its own
+warp), so this barrier is not optional and is not a further latency target.
+
+**hc>4 fallback, stated rather than built around.** For hc in 5..=8 (`DSV4_HC_MAX`),
+`rows=(2+hc)*hc` exceeds 32 (hc=5 -> 35), so the warp-0-only invariant no longer holds —
+some shared indices the kernel would need live in warp 1 or beyond. This lane did not
+build a multi-warp partial-sync scheme for that case: it is unverifiable on a GPU-less
+worktree, and GLM-5.3-Flash (the shape this follow-up was asked to speed up) is hc=4.
+`memra_dsv4_hc_pre_fused_v2`'s host wrapper checks `rows>32` and falls back to calling
+`memra_dsv4_hc_pre_fused` (`=1`'s kernel) internally, so `MEMRA_HC_FUSED_PRE=2` is always
+correct and only sometimes faster than `=1` — never a numerics risk for a wider trunk.
+
+**Register/shuffle reduction — considered, not built.** The task brief's own example
+suggested holding Sinkhorn's row/column sums in registers via warp shuffles instead of
+shared memory + `__syncwarp()`. That is a real further latency lever (fewer shared-memory
+round-trips) but was not attempted here: getting the lane-to-index mapping, the shuffle
+mask (`hc*hc` active lanes), and the "no separate barrier needed because `__shfl_sync`
+itself is a convergence point" reasoning exactly right, with zero ability to run it on a
+GPU in this worktree, is a correctness risk this lane chose not to take blind. The
+shared-memory + `__syncwarp()` version is fully verifiable by inspection (it changes no
+arithmetic at all) and is the dominant win per the census (the barrier count, not the
+memory residency, is what the profile says is expensive). Flagged as a follow-up once a
+box can verify it directly, not attempted as a "good enough" excuse.
+
+### Launch count / cost, updated
+
+| arm | launches/site (of the 4 named kernels) | per-launch cost |
+|---|---|---|
+| today (all doors OFF) | 4 | baseline |
+| `MEMRA_HC_FUSED_PRE=1` | 2 (`hc_pre_fused`, `hc_post`) | `hc_pre_fused` itself now measured at 32.8 us/launch avg on B200 serving — 15.6% of GPU time, second-largest kernel |
+| `MEMRA_HC_FUSED_PRE=2` | 2 (`hc_pre_fused_v2`, `hc_post`) | same launch count as `=1`; cuts `hc_pre_fused`'s IN-KERNEL latency by replacing up to 20 block-wide (`__syncthreads()`) barrier pairs with warp-wide (`__syncwarp()`) ones — `hc-fused-gate`'s own box receipt for `=2` is pending the next box window (not yet measured; the gate reports a third `fused_v2` column at every tested t) |
+
 ## Open items (for the parent session / flag owner, not this lane)
 
-1. **Run `hc-fused-gate` on the B200 box** under `MEMRA_GPU_LOCK=/tmp/memra-gpu.lock`
-   and bank the output here. This is the missing evidence named in `MEMRA_HC_FUSED_PRE`'s
-   FLAGS.md row ("NOT default-ON: no throughput receipt").
-2. **Flip decision for `MEMRA_HC_FUSED_PRE`** is not this lane's call (per its own FLAGS.md
+1. **Run `hc-fused-gate` on the B200 box for the `=2` arm** and bank the per-call us here
+   (the gate now reports a `fused_v2` column alongside `unfused`/`fused` at t in
+   {1, 4, 8}). This is the missing `=2` receipt the FLAGS.md row and this doc both note.
+
+
+2. **Run `hc-fused-gate` on the B200 box for the `=1` arm** — DONE, see the receipt
+   above; banked in `MEMRA_HC_FUSED_PRE`'s FLAGS.md row and this doc.
+3. **Flip decision for `MEMRA_HC_FUSED_PRE`** is not this lane's call (per its own FLAGS.md
    row: "Flip condition: interleaved x3 fresh-boot A/B on the serving card class … greedy +
    vendor-default sampled twin, engagement announce in BOTH arms" — a serving-shape
    decision, owned by whoever runs that battery). This lane only supplies the per-kernel
    timing piece of that evidence, at the pinned production shape, on B200.
-3. **`hc_post` reduction stays open as a genuinely different, larger increment**: the only
+4. **`hc_post` reduction stays open as a genuinely different, larger increment**: the only
    way to shrink its launch count further is to fuse it with the attention or FFN branch
    it brackets (an epilogue on the o-projection GEMM on one side, or the FFN/MoE combine
    on the other) — that is GEMM/attention/MoE-kernel work, a different lane's authority,
    and a different (larger, riskier) numeric-class question than this lane was scoped to
    answer. Not attempted here; named for whoever owns those kernels next.
-4. **dsv4-native `hc_pre_batch_dev` has no fused-door option at all** (`dsv4_gpu.rs:8338-8437`
+5. **dsv4-native `hc_pre_batch_dev` has no fused-door option at all** (`dsv4_gpu.rs:8338-8437`
    always runs the three-kernel unfused chain, unlike `hyper.rs::pre_finish_into` which
    checks `MEMRA_HC_FUSED_PRE`). Out of scope for GLM-5.3-Flash (which routes through
    `hyper.rs`, not this dsv4-native path) but worth a note for whoever next touches the
