@@ -95,7 +95,8 @@ library embedded in your application.
 memra is a from-scratch LLM inference engine: a Rust host runtime driving hand-written CUDA
 kernels, compiled ahead of time into fatbins embedded in the binary, with no Python and no
 framework in the serving path. It targets one card class at a time and is tuned separately for
-RTX PRO 6000 Blackwell and RTX 5090 (sm_120a), with Hopper (sm_90a) as a compile-covered lane.
+RTX PRO 6000 Blackwell and RTX 5090 (sm_120a), with B200 (sm_100a) as a runtime-qualified
+source lane and Hopper/Ada supported via source builds.
 The design constraints and the decisions they forced are in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ### Crates

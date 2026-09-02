@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# Teeth fixture for the round-2 gate-integrity fixes (GATE-INTEGRITY-20260819, A-1/A-2/A-9/
+# Teeth fixture for the round-2 gate-integrity fixes (GATE-INTEGRITY-20260819, A-9/
 # A-10/A-16). One arm per fix, and every arm FORCES the failure so the check is proven able to
 # fail for the RIGHT reason. A gate nobody has seen go red is not evidence.
+#
+# A-1/A-2 (the discarded-suite and kernel-check-skip verdicts in tools/validate-h100.sh) were
+# retired with that battery on 2026-09-02, when the sm_90a lane left CI by owner ruling. Their
+# shapes live on where they were copied to: tools/skip-census.py ("THE SHAPE, copied
+# deliberately from round 2's kernel-check fix in tools/validate-h100.sh") and local-ci.sh's
+# kernel-check verdict line.
 #
 # What it does NOT need: a GPU, a model, a network, or the CUDA toolkit. Throwaway repos under
 # mktemp, stub binaries on PATH, and a real TCP listener for the port arms.
@@ -25,12 +31,13 @@ SCRATCH=$(mktemp -d "${TMPDIR:-/tmp}/gate-integrity-r2-XXXXXX")
 # /tmp hygiene law: the task that creates scratch deletes it.
 trap 'rm -rf "$SCRATCH"; rm -f "$VERDICTS"' EXIT
 
-# A-1: 6 · A-2: 5 · A-9: 5 · A-16: 6 teeth/control + 7 wiring · A-10: 4 lock-gate + 5 prime-split
-# + 2 comparator-evidence = 40. It is an EQUALITY, not a floor: this constant has already caught
+# A-9: 5 · A-16: 6 teeth/control + 7 wiring · A-10: 4 lock-gate + 5 prime-split
+# + 2 comparator-evidence = 29 (was 40 before the A-1/A-2 arms left with validate-h100.sh,
+# 2026-09-02). It is an EQUALITY, not a floor: this constant has already caught
 # three of its own miscounts (19 vs 23 in test_check_flags; 24 then 38 here) and it is what turns
 # an arm that silently stops running — a `bad` branch replacing four assertions with one, a
 # `continue` added to a loop — into a red run instead of a smaller green one.
-EXPECTED_ASSERTIONS=40
+EXPECTED_ASSERTIONS=29
 
 ok()   { printf 'ok   %s\n' "$1"; printf 'PASS %s\n' "$1" >> "$VERDICTS"; }
 bad()  { printf 'FAIL %s\n' "$1" >&2; printf 'FAIL %s\n' "$1" >> "$VERDICTS"; }
@@ -56,120 +63,6 @@ assert_rc() {
     local label=$1 want=$2 got=$3
     if [ "$got" = "$want" ]; then ok "$label"; else bad "$label (rc=$got want=$want)"; fi
 }
-
-# ---------------------------------------------------------------------------
-# A fake repo just big enough to run tools/validate-h100.sh with stub binaries.
-#
-# The point is to reach the two verdict blocks the fix rewrote. The later gates (decode-batch,
-# graph-*) will fail against stubs and that is fine: every assertion here is on the SPECIFIC
-# line the fix emits, never on the script's overall exit code — which is itself the discipline
-# the old code got wrong (it looked at nothing).
-# ---------------------------------------------------------------------------
-mk_h100_repo() { # $1 cargo-test-output  $2 cargo-test-rc  $3 kernel-check-output  $4 kc-rc
-    local test_out=$1 test_rc=$2 kc_out=$3 kc_rc=$4 root
-    root=$(mktemp -d "$SCRATCH/h100-XXXXXX")
-    # The stub cargo goes in $HOME/.cargo/bin, not just on PATH: validate-h100.sh PREPENDS
-    # `$HOME/.cargo/bin` to PATH itself, so a stub placed only in $PATH loses to the real cargo.
-    # (Found by this fixture on its first run, which is the point of writing one.)
-    mkdir -p "$root/tools" "$root/crates/memra-engine/cu" "$root/target/release" \
-             "$root/.cargo/bin"
-    : > "$root/crates/memra-engine/cu/kernels.cu"
-    : > "$root/crates/memra-engine/build.rs"
-    cp "$SRC/validate-h100.sh" "$root/tools/"
-    printf 'CELL-A\n' > "$root/tools/kernel-check-27b.cells"
-    printf 'CELL-B\n' > "$root/tools/kernel-check-step35.cells"
-    # stub cargo: `build` succeeds silently, `test` replays the scripted suite output/status.
-    cat > "$root/.cargo/bin/cargo" <<STUB
-#!/usr/bin/env bash
-if [ "\$1" = "test" ]; then
-    cat <<'OUT'
-$test_out
-OUT
-    exit $test_rc
-fi
-exit 0
-STUB
-    cat > "$root/target/release/kernel-check" <<STUB
-#!/usr/bin/env bash
-cat <<'OUT'
-$kc_out
-OUT
-exit $kc_rc
-STUB
-    # every other gate binary: a stub that fails, so nothing here can accidentally read green.
-    for b in decode-batch-gate decode-dc-gate graph-decode-gate graph-session-gate \
-             decode-batch-bench; do
-        printf '#!/usr/bin/env bash\necho "stub"\nexit 1\n' > "$root/target/release/$b"
-    done
-    chmod +x "$root/.cargo/bin/cargo" "$root/target/release/"*
-    printf '%s' "$root"
-}
-run_h100() { # $1 root -> stdout+stderr, rc in RC
-    local root=$1 out
-    out=$(cd "$root" && HOME="$root" MEMRA_NVCC=/bin/true \
-        bash tools/validate-h100.sh /dev/null --quick 2>&1)
-    RC=$?
-    printf '%s' "$out"
-}
-
-GREEN_SUITE='running 12 tests
-test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s'
-RED_SUITE='running 12 tests
-test policy::tests::a_law FAILED
-
-failures:
-    policy::tests::a_law
-
-test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s'
-FILTERED_SUITE='running 0 tests
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s'
-
-echo "=== A-1: the engine unit suite is a gate, not a discarded tail ==="
-# TEETH: the suite is RED. The pre-fix line was `cargo test ... | tail -1` with no pipefail, no
-# verdict grep and FAIL never set, so this printed "VALIDATE-H100: ALL GATES GREEN".
-out=$(run_h100 "$(mk_h100_repo "$RED_SUITE" 101 'ALL GREEN (12 cells, 0 skipped)' 0)")
-assert_has "A-1 teeth: a red engine suite is named as a failure" \
-    "$out" "UNIT-SUITE(memra-engine) FAIL"
-assert_not "A-1 teeth: a red engine suite cannot print ALL GATES GREEN" \
-    "$out" "VALIDATE-H100: ALL GATES GREEN"
-assert_has "A-1 teeth: the failing test name is surfaced, not swallowed" \
-    "$out" "policy::tests::a_law"
-
-# TEETH: the suite is VACUOUS (a name filter matched nothing). This is the live shape of
-# .github/workflows/ci.yml's `cargo test -p memra-engine cpu_experts --lib`.
-out=$(run_h100 "$(mk_h100_repo "$FILTERED_SUITE" 0 'ALL GREEN (12 cells, 0 skipped)' 0)")
-assert_has "A-1 teeth: a filtered-to-nothing suite is refused" \
-    "$out" "FILTERED OUT of an unfiltered run"
-
-# CONTROL: a green suite must not be reported as a failure (a check that always fails is
-# equally useless).
-out=$(run_h100 "$(mk_h100_repo "$GREEN_SUITE" 0 'ALL GREEN (12 cells, 0 skipped)' 0)")
-assert_has "A-1 control: a green suite reports its own count" \
-    "$out" "unit suite(memra-engine): 12 passed, 0 failed, 0 filtered out"
-assert_not "A-1 control: a green suite is not called a failure" \
-    "$out" "UNIT-SUITE(memra-engine) FAIL"
-
-echo "=== A-2: kernel-check skips are accounted, and the manifests are required ==="
-# TEETH: `ALL GREEN (12 cells, 3 skipped)` matched the pre-fix `grep -q "ALL GREEN"`.
-out=$(run_h100 "$(mk_h100_repo "$GREEN_SUITE" 0 'ALL GREEN (12 cells, 3 skipped)' 0)")
-assert_has "A-2 teeth: skipped cells are fatal by default" \
-    "$out" "KERNEL-CHECK FAIL — 3 cell(s) skipped, budget 0"
-assert_has "A-2 teeth: the refusal names the accounted-skip override" \
-    "$out" "MEMRA_H100_KC_SKIP_BUDGET=3"
-# TEETH: a banner with no counters (an older/other binary) must not satisfy the verdict shape.
-out=$(run_h100 "$(mk_h100_repo "$GREEN_SUITE" 0 'ALL GREEN' 0)")
-assert_has "A-2 teeth: a counterless ALL GREEN is not a verdict" \
-    "$out" "KERNEL-CHECK FAIL — no verdict line"
-# CONTROL: an explicitly accounted skip budget passes, and says so.
-root=$(mk_h100_repo "$GREEN_SUITE" 0 'ALL GREEN (12 cells, 3 skipped)' 0)
-out=$(cd "$root" && HOME="$root" MEMRA_NVCC=/bin/true MEMRA_H100_KC_SKIP_BUDGET=3 \
-    bash tools/validate-h100.sh /dev/null --quick 2>&1)
-assert_has "A-2 control: an accounted budget passes and records the count" \
-    "$out" "kernel-check: 12 cells, 3 skipped (budget 3)"
-# CONTROL: the manifests are passed at all (the teeth local-ci.sh had and this file did not).
-assert_has "A-2 control: both cell manifests are required on the command line" \
-    "$(grep -A3 'require-manifest' "$SRC/validate-h100.sh" | head -8)" \
-    "kernel-check-step35.cells"
 
 echo "=== A-9: the flags fixture asserts the CENSUS, not just the doc ==="
 # TEETH: a census that cannot SEE the flag, while docs/FLAGS.md still documents it — the exact

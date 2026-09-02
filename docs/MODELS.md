@@ -68,10 +68,11 @@ weight than a wishlist, and they are read.
   settings, and its own defaults where they differ. Local 5090 performance is never traded away to
   simplify a remote default; a perf claim needs numbers from both cards before it sets a global one,
   and one-card evidence sets a one-card default at most.
-- **Hopper `sm_90a`** — separately compile-gated H100 lane with its own validation battery and
-  evidence ledger in [ARCHITECTURE-H100.md](../ARCHITECTURE-H100.md). Secondary: it does not change the
-  naked `sm_120a` build or its defaults.
-- **Ada `sm_89`** — portable prebuilt target, not a tuned performance target.
+- **Hopper `sm_90a`** — separately compile-gated H100 source-build lane with its evidence
+  ledger in [ARCHITECTURE-H100.md](../ARCHITECTURE-H100.md). Secondary: it does not change the
+  naked `sm_120a` build or its defaults. Its standing battery was retired with the Hopper CI
+  lane (2026-09-02); run the gates directly on Hopper hardware.
+- **Ada `sm_89`** — portable source-build lane, not a tuned performance target.
 - **B200 `sm_100a`** — runtime-qualified source backend with automatic source-build detection;
   no prebuilt is published. Pinned Qwen3.5-9B NVFP4 is `NativeQualified` on default W4A8.
   Opt-in W4A4 is correct but 0.521x raw W4A8 prefill. Pinned Qwen3.8-27B block-FP8 is

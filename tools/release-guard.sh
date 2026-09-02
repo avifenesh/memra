@@ -15,7 +15,7 @@
 # perfectly bumped v0.105.0 would have failed identically, and v0.106.0 proved it by
 # doing exactly that with Cargo and tag in agreement. Blaming version discipline stopped
 # anyone looking for a day; a wrong postmortem is worse than none. The gate for THAT
-# class is tools/stub-abi-census.py plus ci.yml's release-arch-mirror job — this guard
+# class is tools/stub-abi-census.py plus ci.yml's arch-coverage job — this guard
 # never could have caught it, and does not claim to.
 #
 # Three refusals, all fail-closed:

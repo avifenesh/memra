@@ -146,6 +146,24 @@ cpu_chain() {
     if ! cargo test --release -p memra-engine --lib -j8; then
         echo "local-ci: memra-engine lib suite FAILED"; return 1
     fi
+    # GGUF ARTIFACT-PRESENT SKIP CENSUS (rehomed 2026-09-02 from tools/validate-h100.sh,
+    # deleted with the Hopper CI lane; PR #73 review caught the orphaning — the deleted
+    # battery was the only executor that ran the artifact-gated memra-gguf tests WITH their
+    # artifacts present, and ci.yml's budget-12 arm runs where every one of them skips by
+    # design). Budget 10 is MEASURED on this rig (2026-09-02: 212 passed, 10 skipped —
+    # ckpt/twin, Hy3-repack and /tmp/iq3s_raw.bin artifacts not staged here), stated out
+    # loud per the ci.yml precedent, and every skip still prints and still counts. An 11th
+    # skip means an artifact regressed further: refuse it. MEMRA_CI_GGUF=0 skips.
+    if [ "${MEMRA_CI_GGUF:-1}" = "1" ]; then
+        echo "== local-ci: memra-gguf artifact-present skip census =="
+        if ! MEMRA_CI_GGUF_SKIP_BUDGET=10 python3 tools/skip-census.py run \
+                --budget-var MEMRA_CI_GGUF_SKIP_BUDGET --min-passed 200 \
+                -- cargo test --release -j8 -p memra-gguf --lib; then
+            echo "local-ci: gguf artifact-present skip census FAILED"; return 1
+        fi
+    else
+        echo "local-ci: gguf skip census SKIPPED (MEMRA_CI_GGUF=0)" >&2
+    fi
 }
 # OVERLAP (ci-diet lane 2026-09-02). The three steps above are CPU-bound and touch no GPU;
 # every gate below the lock is GPU-bound and leaves most cores idle. Serial, the correctness
@@ -274,6 +292,19 @@ echo "$kc_out" | grep '^SKIP ' || true
 out=$(echo "$kc_out" | tail -1)
 echo "$out" | grep -q '^ALL GREEN ([0-9][0-9]* cells, [0-9][0-9]* skipped)$' \
     || { echo "kernel-check FAIL"; exit 1; }
+# SKIP ACCOUNTING (rehomed 2026-09-02 from tools/validate-h100.sh, deleted with the Hopper CI
+# lane; PR #73 review caught the enforcement gap). Budget 11 is MEASURED, not fudged (rig,
+# 2026-09-02, default model lookup): 10 missing-model cells (q35 IQ4_XS/dtype5 family,
+# gemma-4-12B/26B q4_0, ornith-35B, KAT-Coder/Step-3.7 IQ4_XS, 27B NVFP4 twins — the flat
+# MEMRA_KC_MODELS_DIR candidates do not cover this rig's subdirectory layout) plus the
+# sigrouter-served-replay env-capture cell. A 12th skip means an artifact regressed further:
+# refuse it. Tighten the budget when models get staged, never widen it silently.
+kc_skipped=$(echo "$out" | sed -n 's/^ALL GREEN ([0-9][0-9]* cells, \([0-9][0-9]*\) skipped)$/\1/p')
+if [ "${kc_skipped:-99}" -gt "${MEMRA_CI_KC_SKIP_BUDGET:-11}" ]; then
+    echo "kernel-check FAIL — ${kc_skipped} cell(s) skipped, budget ${MEMRA_CI_KC_SKIP_BUDGET:-11}"
+    echo "  (set MEMRA_CI_KC_SKIP_BUDGET only to account for a deliberate new skip, out loud)"
+    exit 1
+fi
 echo "kernel-check: $out"
 
 # SAMPLED-SPEC DISTRIBUTIONAL ORACLE (lane/sampledspec, wired in by lane/sampled-hit-spec):
@@ -497,6 +528,39 @@ fi
 # gates outside the battery rot silently. MEMRA_CI_GWSTRESS=0 skips.
 if [ "${MEMRA_CI_GWSTRESS:-1}" = "1" ] && [ -x tools/graph-warmup-stress-gate.sh ]; then
     tools/graph-warmup-stress-gate.sh || { echo "graph-warmup-stress FAIL"; exit 1; }
+fi
+# GRAPH-LANE EXACTNESS (rehomed 2026-09-02 from tools/validate-h100.sh, deleted with the
+# Hopper CI lane): decode-dc (device counters, bit-identity), graph-decode (capture/replay
+# bit-identity), graph-session (serving GraphSession vs generate_graph — the sm_120a serving
+# decode path, NOT a Hopper artifact). Their old battery's round-35 incident is the origin of
+# law 3: graph-decode-gate rotted OUTSIDE a battery for weeks, an emission off-by-one in the
+# gate masquerading as 171/256 stream corruption. Deleting the battery without rehoming them
+# recreated exactly that condition (caught in PR #73 review). Bins are built EXPLICITLY — the
+# stale-binary rot the old battery refused to gate on. Verdict lines are grepped, never
+# assumed from exit codes. MEMRA_CI_GRAPH=0 skips.
+if [ "${MEMRA_CI_GRAPH:-1}" = "1" ]; then
+    GRAPH_MODEL="${MEMRA_CI_GRAPH_MODEL:-$DBG_NVFP4}"
+    if [ -f "$GRAPH_MODEL" ]; then
+        cargo build --release -p memra-engine \
+            --bin decode-dc-gate --bin graph-decode-gate --bin graph-session-gate \
+            || { echo "graph-lane bins BUILD FAIL — refusing to gate on stale binaries"; exit 1; }
+        out=$(target/release/decode-dc-gate "$GRAPH_MODEL" 2>&1)
+        echo "$out" | tail -1 | grep -q "PASS" \
+            || { echo "$out" | tail -5; echo "decode-dc-gate FAIL"; exit 1; }
+        echo "decode-dc-gate: PASS"
+        out=$(target/release/graph-decode-gate "$GRAPH_MODEL" 2>&1)
+        echo "$out" | tail -1 | grep -q "PASS" \
+            || { echo "$out" | tail -5; echo "graph-decode-gate FAIL"; exit 1; }
+        echo "graph-decode-gate: PASS"
+        out=$(target/release/graph-session-gate "$GRAPH_MODEL" 2>&1)
+        echo "$out" | tail -1 | grep -q "ALL GREEN" \
+            || { echo "$out" | tail -5; echo "graph-session-gate FAIL"; exit 1; }
+        echo "graph-session-gate: ALL GREEN"
+    elif [ -n "${MEMRA_CI_GRAPH_MODEL:-}" ]; then
+        echo "graph-lane: MEMRA_CI_GRAPH_MODEL set but not a file: $GRAPH_MODEL"; exit 1
+    else
+        echo "graph-lane exactness: SKIP (no model at $GRAPH_MODEL)"
+    fi
 fi
 echo "correctness stage: GREEN"
 

@@ -55,13 +55,13 @@ release time was not exercised at merge time.** That is the shape this section e
 | memra-server's request contracts hold | `cargo test --release -p memra-server` | `ci.yml` `server-tests` (parallel job) · `tools/local-ci.sh` | 469 s |
 | Every memra-engine lib test has a caller, unfiltered, through the skip census (memra#18) | `tools/skip-census.py run ... -- cargo test --release -p memra-engine --lib`, budget 0, floor 300 passed; the three `#[ignore]` GPU tests run in `tools/local-ci.sh` on the rig | `ci.yml` `engine-tests` (parallel job) · `tools/local-ci.sh` | 358 passed in 0.39 s once built (rig, 2026-09-02) |
 | A docs-only change set never skips a compile it needed | `tools/ci-change-class.sh`: fail closed on every doubt; `ci.yml` gates the compile jobs on `code != 'false'` under `!cancelled()` | `ci.yml` `changes` job; teeth `tools/test_ci_change_class.sh` (14 arms) in `gates` | under 1 s |
-| **Every arch LINKS, shipped or not** | same command at sm_90a and sm_89 — the arches where `build.rs` substitutes stub `.cu` files. CI covers a SUPERSET of the release matrix on purpose: sm_89 is compile-covered but no longer shipped | `ci.yml` `release-arch-mirror` (parallel) | 553 / 558 s measured, **0 s added wall time** |
+| **Every non-primary arch with its own source set LINKS** | same command at sm_100a (B200). sm_89/sm_90a left CI and the release matrix together on 2026-09-02 by owner ruling; their SOURCE builds still compile, and `tools/stub-abi-census.py` still keeps `cu/*_stub.cu` mirroring the real twins for anyone who builds them | `ci.yml` `arch-coverage` (parallel) | 100a cell measured at the 553-558 s class of the retired 90a/89 cells, **0 s added wall time** |
 | CI never silently stops covering a release arch | `tools/arch-matrix-census.sh` | pre-push · `ci.yml` · `release.yml` guard | 0.01 s |
 | Every fail-closed stub still mirrors its real twin's ABI | `tools/stub-abi-census.py` | pre-push · `ci.yml` · both tag workflows | 0.08 s |
 | crates.io can publish the whole workspace | `tools/workspace-publish-census.sh` (members vs `publish.yml` list, topological order, no `publish = false` dependency) | pre-push · `ci.yml` · both tag workflows | 0.06 s |
 | Those three censuses can actually fail | `tools/test_releasability_census.sh` — 15 arms, every refusal forced, plus wiring and the advisory invariant | `ci.yml` | 0.7 s |
 | **Every crate packages from its own tarball** (nothing reaching outside a crate root, `Cargo.lock` still resolves) | `cargo publish --workspace --exclude memra-probe --locked --dry-run` | `ci.yml` `publish-dryrun` (parallel) | 372 s, **0 s added wall time** |
-| **Every kernel the Rust side looks up is IN the fatbins for that arch** | `tools/fatbin-lookup-census.py` — `cuobjdump --list-text` vs `Engine::func` literals | `ci.yml` `release-arch-mirror`, per arch | seconds, inside a cell already running |
+| **Every kernel the Rust side looks up is IN the fatbins for that arch** | `tools/fatbin-lookup-census.py` — `cuobjdump --list-text` vs `Engine::func` literals | `ci.yml` `arch-coverage`, per arch | seconds, inside a cell already running |
 | Those refusals can fail, in both directions of exceptions rot | `tools/test_fatbin_lookup_census.sh` — 16 arms | `ci.yml` | 0.74 s |
 | An arch with known-missing kernels can never be shipped | `tools/arch-matrix-census.sh` refusal 3 (advisory ⇒ not in `release.yml`) | pre-push · `ci.yml` · `release.yml` guard | 0.01 s |
 | `tools/install.sh` asks for an asset the release actually has | the glibc floor is read from the release's own `SHA256SUMS`, never restated | — (removed the duplication rather than gating it) | — |
@@ -79,7 +79,7 @@ Until 2026-09-02 every check in the table lived in one serial `build` job: 42 mi
 380 s, boundary check 125 s, allowlist drift 124 s), while the three parallel jobs finished in under
 15 min. The chain is now nine jobs. `gates` (every text census and fixture plus the CUDA-free unit
 suites) and `boundary` always run; `build`, `clippy`, `server-tests`, `engine-tests`, the three
-`release-arch-mirror` cells and `publish-dryrun` run when `tools/ci-change-class.sh` says the change
+`arch-coverage` cell and `publish-dryrun` run when `tools/ci-change-class.sh` says the change
 set touches something a compiler, linker or packager reads. A docs, research or corpus-only push
 therefore finishes in the time of the text gates. Any doubt (zero or unreachable base, empty diff,
 unknown event, a crate README, anything under `crates/`, `tools/`, `.github/`, `Cargo.*`) compiles.
@@ -108,14 +108,15 @@ What this list does **not** claim, stated so nobody reads more into it:
   kernels lazily and panics on a miss, so an arch-scoped `#if` that drops a kernel with no
   `#else` is a **runtime** failure on a shipped binary that every compile gate here passes.
   That gap is now measured by `tools/fatbin-lookup-census.py` — which is how sm_89's 20 missing
-  kernels were found and why sm_89 stopped shipping. See "Known unshippable arch" below.
+  kernels were found and why sm_89 stopped shipping (first on 2026-08-23 over this, then for
+  good in the 2026-09-02 arch retirement — see the sm_89 section below).
 - **sm_100a (B200): runtime-qualified from source and auto-detected; no prebuilt is released.**
   The 2026-08-23 state was "it does not compile" (two
   stub-gate polarity bugs, fixed then, plus a wrong `__CUDA_ARCH__ >= 1000` guard in
   `cu/mmq_q8_0_f32acc.cu` that admitted the one arch rejecting the f8f6f4 MMA — fixed by the
   b200-prep lane, `>= 1200`). Current state, measured by a 29-cell per-arch census (13 fatbin + 16 static-lib TUs)
   (`research/glm5-b200-prep-20260901/`): every cell of a `MEMRA_CUDA_ARCH=100a` build compiles clean,
-  `ci.yml`'s `release-arch-mirror` carries a `100a` compile cell so it stays that way, and the
+  `ci.yml`'s `arch-coverage` job compiles `100a` so it stays that way, and the
   fatbin census passes with two DECLARED exceptions (`qmatvec_gemm_nvfp4_fp4` — the `MEMRA_FP4`
   door asserts the 120a property on sm_100a builds, and kernel_check's Stage-C FP4 arm keys on
   the same property so 100a records a skip cell; portable builds keep their pre-existing
@@ -165,21 +166,28 @@ message ("`MEMRA_FA3=1` forces a kernel path this build does not contain: it nee
 fa3/bf16 kernels…"). Same idiom as `gemm_fatbin_bytes`'s existing refusal for
 `MEMRA_GEMM_FATBIN` — one shape for "this switch cannot work on this build."
 
-**sm_89 therefore ships.** Per owner ruling: fix the guard, do not drop the arch — dropping one
-removes a whole GPU class, and "we stopped offering it" is a worse answer to a user than "it
-works." It was briefly out of `release.yml`'s matrix while this was being traced; it is back.
+**sm_89 shipped from 2026-08-23 to 2026-09-02.** The ruling above ("fix the guard, do not drop
+the arch") answered a FALSE panic claim, and the fix held: v0.107-v0.123 carried working sm_89
+and sm_90a prebuilts. **Superseded 2026-09-02 by an economics ruling, not a defect:** the
+sm_89/sm_90a release lanes and their CI cells were retired together — `tools/arch-matrix-census.sh`
+forbids shipping an arch CI does not compile, so the two halves were one decision. Ada/Hopper
+users build from source (`MEMRA_CUDA_ARCH=89|90a`; `build.rs` still accepts both, the stub-ABI
+census still guards those builds, and the per-symbol reachability reasoning below still applies
+to them). B200 keeps compile+census coverage in CI and is deliberately not shipped either.
 
 #### The gate itself: `tools/fatbin-lookup-census.py`
 
-Runs per arch inside `ci.yml`'s `release-arch-mirror` cells, after the build:
+Runs per arch inside `ci.yml`'s `arch-coverage` job, after the build:
 `cuobjdump --list-text` (a **host** tool — no GPU) over every fatbin `Engine::func` searches,
 diffed against the `.func(…)` / `.func_g(…)` literals in the crate's Rust sources. Seconds, no new
 job, no added wall time. Refusals: no fatbins, a missing module, a fatbin yielding zero kernels,
 zero Rust lookups, an arch mismatch, a looked-up name in no fatbin and not declared, and
 **exceptions-file rot in either direction**.
 
-Measured on real builds of all three shipped arches: **sm_120a 1 declared, sm_90a 1 declared,
-sm_89 20 declared, 0 unexcused anywhere.** Every declaration carries its reachability argument.
+Measured on real builds of all three then-shipped arches (2026-08-23, before the
+2026-09-02 retirement): **sm_120a 1 declared, sm_90a 1 declared, sm_89 20 declared, 0 unexcused
+anywhere.** Every declaration carries its reachability argument. The census CI runs today is at
+sm_100a: **2 declared (`qmatvec_gemm_nvfp4_fp4`, `qmatvec_gemm_q8_0_wgmma`), 0 unexcused.**
 
 **It must never be landed without its exceptions file.** The sm_120a entry alone
 (`qmatvec_gemm_q8_0_wgmma`, behind a compile-time `cfg!(memra_hopper_mma)` that is false there)
@@ -198,13 +206,13 @@ in a customer's first request rather than in CI. Recorded here as an open gap wi
 so it is not rediscovered.
 
 **Proposed gate — read the fatbin nvcc actually emitted, not the preprocessor's likely output.**
-After each `release-arch-mirror` cell builds, run `cuobjdump --list-text` over the produced
+After each `arch-coverage` cell builds, run `cuobjdump --list-text` over the produced
 fatbins, collect the `extern "C" __global__` names actually present, and diff against the set of
 string literals passed to `Engine::func`. `cuobjdump` is a **host** tool — no GPU.
 
 | | |
 |---|---|
-| **Cost** | seconds. It piggybacks on the `release-arch-mirror` cells that already run (553 / 558 s), so **no new job and no added wall time** |
+| **Cost** | seconds. It piggybacks on the `arch-coverage` cell that already runs (the retired 90a/89 cells measured 553 / 558 s; 100a is the same class), so **no new job and no added wall time** |
 | **Needs** | nothing CI does not already install (the CUDA toolkit is there for nvcc) |
 | **Runs** | inside the existing arch cells, per arch — the arch dimension is the whole point: sm_120a was green at 109 `kernel-check` cells while the portable arches were the broken ones |
 
@@ -217,7 +225,8 @@ Why not the alternatives, stated so the choice is auditable:
   the path runs, and **we cannot run it**: it needs real sm_89 (Ada) and sm_90a (Hopper) silicon.
   The rig is sm_120a. Prod boxes are untouchable. This would need rented Ada/Hopper hardware, and
   it is the honest answer to "does it run" — the proposed census proves only that *the kernel is
-  in the fatbin*. That residual gap should be stated whenever sm_89/sm_90a are called supported.
+  in the fatbin*. That residual gap should be stated whenever sm_89/sm_90a source builds are
+  called supported (no prebuilt has shipped since 2026-09-02).
 - **On the rig:** a lookup panic is an exactness question, not a timing one, so the rig's
   throttle does not disqualify it — but the rig cannot build or run sm_89/sm_90a SASS, so it
   cannot answer this for the arches that are actually broken.
@@ -234,7 +243,8 @@ Two design constraints the gate must satisfy, both learned the hard way this wee
    cries wolf gets bypassed. The `docs/FLAGS.md` pattern applies: a census plus a file of
    declared arch-conditional lookups, so a *new* unguarded one is what shows up.
 
-Until it exists, sm_89 and sm_90a assets are compile-proven only.
+Since 2026-09-02 no sm_89 or sm_90a asset ships at all; Ada/Hopper source builds are
+compile- and census-proven only, and the CI census runs at sm_100a.
 
 ### Open releasability findings, with owners
 
@@ -246,7 +256,7 @@ noted.
 |---|---|---|---|
 | 1 | **`tools/check-flags.sh`'s grandfather list is inert but still non-blocking.** `research/docsync3-20260811/flags-drift.txt` holds 75 names; **all 75 are now documented in `docs/FLAGS.md`**, so every exemption is dead. Verified by probe in a throwaway tree: with a baselined name present in the list, deleting its `docs/FLAGS.md` row still **exits 0** (the name prints under "uncovered runtime names" as a non-fatal line); removing it from the baseline makes the same tree exit 1. **For those 75 names, deleting documentation keeps the gate green.** Changes gate semantics, so it needs an owner ruling, not a lane. The fix shape is the one `tools/fatbin-lookup-exceptions.txt` already uses: give the list a drift check that refuses a dead entry. | merge (silently not at all) | owner ruling |
 | 2 | **`MEMRA_FP4=1` panics on sm_89/sm_90a.** The Stage-C FP4 gate (`src/lib.rs:15979`) is an ENV door, not an arch predicate, so it can reach `qmatvec_gemm_nvfp4_fp4`, which portable arches do not compile. Declared in `tools/fatbin-lookup-exceptions.txt` because no default path reaches it. Fix: also test `portable_mma_gated()` and refuse by name. *(Since resolved twice over: the portable refusal landed 2026-08-23 (`refuse_portable_force`), and lane/glm5-b200-prep-20260901 replaced the enumeration with the 120a PROPERTY after finding the same door — plus kernel_check's Stage-C arm — reachable on sm_100a builds.)* | first use, opt-in only | engine lane |
-| 3 | **sm_89's 20 missing kernels** — `cu/hybrid.cu:1575-2238` has no `#else`, and the batched GDN call site `src/hybrid_forward.rs:3912` is unguarded where its single-sequence twin (`src/lib.rs:23967`) is guarded. sm_89 no longer ships because of it. | first batched GDN decode | engine lane |
+| 3 | **sm_89's 20 missing kernels** — `cu/hybrid.cu:1575-2238` has no `#else`, and the batched GDN call site `src/hybrid_forward.rs:3912` is unguarded where its single-sequence twin (`src/lib.rs:23967`) is guarded. *(History: sm_89 stopped shipping over this on 2026-08-23, shipped again once the tracing above showed the hits unreachable, and left the matrix for good in the 2026-09-02 arch retirement.)* | first batched GDN decode, source builds only | engine lane |
 | 4 | **The stub-gate polarity bug is a CLASS, not a one-off — and this is the entry that matters most.** `build.rs`'s substitution chain guards each sm_120a-only MMA translation unit; two of the three tested `portable` (an ENUMERATION of `89\|90a`) where the property is `!= 120a`. Both were fixed 2026-08-23, and the second was found only by fixing the first and watching the ptxas failure MOVE (`mmq_nvfp4_w4a8.cu` → `mmq_fp8_blk.cu`, ~40 then ~400 sites). **The cost was never sm_100a specifically: an enumeration means every future non-120a arch silently inherits the breakage.** `cu/mmq_fp4.cu` in the same chain always had the correct test — the inconsistency was the tell. The durable fix is a census asserting every stub-substituted TU is stubbed on every arch lacking its instruction class, rather than fixing them one at a time. **sm_100a still does not compile after both fixes**: a THIRD unit, `cu/mmq_q8_0_f32acc.cu` (~256 sites), fails for a different reason — its `build.rs` entry says it "needs no portable stub" because an in-TU `__CUDA_ARCH__ >= 1000` guard covers its f8f6f4 arm, and that threshold is wrong (1000 *is* sm_100a, so the guard admits the arch that rejects the instruction). Polarity was separable and cheap; sm_100a is not. *(Since resolved: lane/glm5-b200-prep-20260901 fixed the threshold to `>= 1200`, sm_100a compiles 29/29 census cells and ci.yml carries a 100a compile cell — see the sm_100a bullet above for current state.)* | explicit opt-in build today; the NEXT new arch, silently | engine lane |
 | 5 | **Published-crate `cargo test` escape.** `crates/memra-server/src/main.rs` (9 sites) and `crates/memra-gguf/src/source.rs:2233` read `{CARGO_MANIFEST_DIR}/../../research/...`. `cargo publish --verify` builds but does not test, so this is not a publish blocker; it breaks a contributor building from the published tarball. | consumer, from a crates.io tarball | release lane |
 | 6 | **Three orphan fixtures with no automated caller** — `tools/test_check_hardware_gate.py` (the teeth for `tools/check_hardware_gate.py`, which `tools/hooks/pre-push` *does* invoke in `step-pro` mode), `tools/test_cpu_expert_shm.sh`, `tools/check-batch-exact.py`. A live push gate whose teeth nobody runs. | nothing runs it | release lane |
@@ -404,7 +414,8 @@ Before tagging, in this order:
 
 That's it. Two workflows fire on the tag:
 
-- `release` — builds the prebuilt binary matrix (glibc 2.35/2.39 x sm_120a/sm_90a/sm_89,
+- `release` — builds the prebuilt binary matrix (glibc 2.35/2.39 x sm_120a — the only prebuilt
+  arch since 2026-09-02; Ada/Hopper build from source and B200 is CI-covered but unshipped,
   fatbins embedded — self-contained), drafts the changelog from conventional commits since
   the previous tag (`tools/changelog.sh` — `perf:`/`feat:`/`fix:`/`config:`/`docs:` grouped;
   `data:`/`chore:` dropped as research-log noise), attaches tarballs + `SHA256SUMS` + the

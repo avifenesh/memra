@@ -948,7 +948,8 @@ config below followed the repo law:
 harness proof -> engine seam -> full battery (kernel-check pins, greedy/stream identity,
 decode/prime/graph gates, interleaved x5 A/B) -> default-ON with a `=0` revert. The
 evidence ledger is [ARCHITECTURE-H100.md](../ARCHITECTURE-H100.md); the one-command
-battery is `tools/validate-h100.sh <model.gguf> [--quick]`.
+battery (`tools/validate-h100.sh`) was retired with the Hopper CI lane on 2026-09-02 —
+run the same gates directly.
 
 ### Promoted defaults (Hopper; `=0` reverts each)
 

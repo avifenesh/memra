@@ -387,14 +387,16 @@ Two holes in this stage were closed by that same red (2026-08-06):
   clock-independent: an acceptance FAIL is real evidence, unlike a tok/s FAIL (below).
   fast-gate's tier-1 probes still do not see it: a spec-pipeline or NVFP4-prefill diff maps
   `accept`, but running it costs a server boot, so it lands at tier 2.
-- **H100/sm_90a lane**: `tools/validate-h100.sh [--quick]` on an H100, per its own laws. Its
-  contents are worth naming here, because three of them exist in no other battery: kernel-check
-  with config pins, `decode-batch-gate --mode config` (B=8) and `--mode strict` (B=4 equalized),
-  then the **graph lane**: `decode-dc-gate`, `graph-decode-gate`, `graph-session-gate`. The
-  script's own header explains why they live there: `graph-decode-gate` "rotted OUTSIDE this
-  battery for weeks" (an emission off-by-one in the gate masqueraded as 171/256 stream
-  corruption), which is the origin of law 3: anything guarding a live lane belongs inside the
-  battery.
+- **H100/sm_90a lane (retired from CI 2026-09-02)**: `tools/validate-h100.sh` was deleted with
+  the sm_89/sm_90a arch retirement — the Hopper lane no longer has a standing battery. Its
+  gates were all rehomed: kernel-check config pins and both `decode-batch-gate` modes already
+  ran in `tools/local-ci.sh`, and the graph-lane exactness gates (`decode-dc-gate`,
+  `graph-decode-gate`, `graph-session-gate` — the last of which guards the sm_120a serving
+  GraphSession path, not a Hopper artifact) moved into `local-ci.sh` in the same retirement
+  (PR #73 review caught them briefly orphaned). The reason they lived inside a battery is
+  still law 3: `graph-decode-gate` "rotted OUTSIDE this battery for weeks" (an emission
+  off-by-one in the gate masqueraded as 171/256 stream corruption). A Hopper
+  source build (`MEMRA_CUDA_ARCH=90a`) still compiles and stays stub-ABI-guarded.
 - **Cross-model blast radius**: tier 1 probes one model per kernel class; the full per-model
   matrix runs at tier 2.
 - **Multi-GPU (PP-N) exactness**: needs 2+ cards, so it is neither in fast-gate nor in
@@ -544,7 +546,8 @@ plain server and the spec-only assertion passes vacuously.
 `cargo test`: 51 files across 10 crates carry `#[test]`, and `memra-server` (13 files) and
 `memra-tokenizer` (5) had no caller in any gate or workflow. `.github/workflows/ci.yml` now runs
 the CUDA-free crate suites, memra-server's, and the parity-geometry rule's; `tools/validate-h100.sh`
-runs `memra-engine --lib` as a real verdict instead of `| tail -1`.
+(since deleted with the Hopper lane, 2026-09-02) was the first place `memra-engine --lib` ran as
+a real verdict instead of `| tail -1`.
 
 **D · fail-open.** A counted-then-dropped verdict term; a missing golden that returns SKIP with
 the failure counter untouched.
@@ -570,8 +573,8 @@ ran, including `nv27b_twin_parity`, where the `n_rot` rotary-width geometry chec
 caller.
 
 The mechanism is `tools/skip-census.py` plus the `tools/skip-census.tsv` manifest, and it is
-deliberately harness-level (the same place `validate-h100.sh` gates kernel-check's skip count)
-rather than in the tests:
+deliberately harness-level (the same place `tools/validate-h100.sh` used to gate kernel-check's
+skip count, before the Hopper battery was retired) rather than in the tests:
 
 - `verify`: the STATIC census (every `#[test]` in the crate that prints SKIP and returns) is
   compared with the manifest in BOTH directions. An undeclared test fails (it would be born
@@ -584,9 +587,12 @@ rather than in the tests:
   `$MEMRA_SKIP_CENSUS`. A **missing** file fails: absent is ambiguous between "nothing skipped"
   and "the census was never wired", and the second reads as the first.
 
-Where the budgets live, and why they differ: `tools/validate-h100.sh` uses **0** because the rig
-has the artifacts, so a skip there means one went missing (measured on the dev rig 2026-08-20:
-90 passed, 7 skipped, minimax-m3, hy3-reap50, `/tmp/iq3s_raw.bin` not staged).
+Where the budgets live and why they differ: `tools/local-ci.sh` runs the memra-gguf census
+WITH artifacts present at budget 10 (rehomed 2026-09-02 from the deleted Hopper battery;
+measured on the rig: 212 passed, 10 skipped — ckpt/twin, Hy3-repack and iq3s artifacts not
+staged there) and enforces kernel-check's skipped cells against a budget of 11 (missing-model
+cells plus the sigrouter env capture). `local-ci.sh` keeps the same discipline by
+requiring kernel-check's full verdict shape.
 `.github/workflows/ci.yml` uses **12** because a hosted runner has no `/data` at all: twelve is
 the number of model-backed assertions CI is blind to, stated out loud instead of hidden inside a
 green `90 passed`. If it grows, CI reds.

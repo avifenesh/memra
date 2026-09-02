@@ -4,7 +4,8 @@ name: release
 # conventional commits, publish the GitHub release with prebuilt binaries attached.
 # The exactness battery already ran on the rig before the tag (docs/RELEASING.md) —
 # CI here is the build check + the paperwork. Matrix: glibc floor (ubuntu-22.04 = 2.35,
-# ubuntu-24.04 = 2.39) x CUDA arch (sm_120a primary, sm_90a Hopper, sm_89 portable Ada).
+# ubuntu-24.04 = 2.39) x CUDA arch (sm_120a — the only prebuilt since 2026-09-02; Ada/Hopper
+# build from source, B200 is CI-covered but not shipped).
 # Binaries are self-contained (fatbins embedded, crates-release lane 2026-08-04); users
 # need the NVIDIA driver + CUDA 13 runtime libs, not the toolkit. The ubuntu-22.04
 # sm_120a cell additionally uploads under a stable name (no glibc in the filename) —
@@ -46,14 +47,17 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-22.04, ubuntu-24.04]
-        # All three arches ship. sm_89 was briefly removed on 2026-08-23 when a name-level
-        # census reported 20 looked-up kernels missing from its fatbins; tracing every call site
-        # showed 18 were unreachable (the GDN varlen chain is gated through gdn_mma_enabled ->
-        # !portable_mma_gated()) and the other two were reachable only through env doors that now
-        # refuse. Reasons are written per symbol in tools/fatbin-lookup-exceptions.txt.
-        # Owner ruling: fix the guard, do not drop the arch — "we stopped offering it" is a worse
-        # answer to a user than "it works".
-        cuda_arch: ["120a", "90a", "89"]
+        # ONLY sm_120a ships (owner ruling, 2026-09-02): the sm_89 and sm_90a prebuilt lanes
+        # are retired together with their CI cells — tools/arch-matrix-census.sh forbids
+        # shipping an arch CI does not compile, so the two halves were one decision. This
+        # supersedes the 2026-08-23 ruling ("fix the guard, do not drop the arch"): that ruling
+        # was about a FALSE panic claim, which was fixed and shipped (v0.107-v0.123 carried
+        # working sm_89/sm_90a assets); the 2026-09-02 retirement is an economics decision,
+        # not a defect response. Ada/Hopper users build from source (build.rs still accepts
+        # 89/90a and the stub-ABI census still guards those source builds); the per-symbol
+        # reachability reasoning stays in tools/fatbin-lookup-exceptions.txt. B200 (sm_100a)
+        # is compile+census covered in ci.yml's arch-coverage job and deliberately NOT shipped.
+        cuda_arch: ["120a"]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -89,8 +93,8 @@ jobs:
             echo ""
             echo "Requirements: NVIDIA driver with CUDA 13.x runtime support (>= 580), the CUDA 13"
             echo "runtime libraries (cudart, cublas, cublasLt), and glibc >= $glibc."
-            echo "sm_120a = RTX 50-series (the tuned target); sm_90a = Hopper/H100 lane;"
-            echo "sm_89 = portable Ada build (runs, NOT performance-tuned — see README)."
+            echo "sm_120a = RTX 50-series (the tuned target). Prebuilts publish sm_120a only;"
+            echo "other arches (Hopper, Ada, B200) build from source with MEMRA_CUDA_ARCH."
             echo ""
             echo "Quick start: ./kernel-check   # expect: ALL GREEN: kernels match CPU reference."
             echo "Docs: https://github.com/avifenesh/memra"

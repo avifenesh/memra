@@ -437,7 +437,7 @@ core-matrix pairings probed for bf16/tf32/s8: one byte-geometry, three MMA kinds
 
 - Evidence ledger (every verdict and refutation): [`ARCHITECTURE-H100.md`](../ARCHITECTURE-H100.md)
 - Flags + promoted defaults: [`docs/FLAGS.md` §7](FLAGS.md)
-- One-command battery: `tools/validate-h100.sh <model.gguf> [--quick]`
+- One-command battery (retired with the Hopper lane 2026-09-02; run the gates directly)
 
 ## Prefix-cache depth is the dominant serving lever (2026-08-13, RTX PRO 6000 WS, single card)
 
