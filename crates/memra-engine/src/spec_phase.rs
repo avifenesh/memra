@@ -207,9 +207,15 @@ pub struct SpecFirstTokenProf {
     pub first_maint_ms: f64,
     /// Round 1: tokens the round committed (j accepted drafts + the bonus).
     pub first_round_tokens: usize,
-    /// First burst: wall from burst entry to return (no extra drains; the burst's tokens
-    /// are host-visible at return, so this IS the un-instrumented wall of the burst).
+    /// First burst: wall from burst entry to return, no extra drains. Under the
+    /// round-cadence door (`MEMRA_SPEC_FIRST_TOKEN_EAGER`, default ON) the commit hook
+    /// runs INSIDE this window, so the per-slice detext + channel sends land here too;
+    /// `first_burst_hook_ms` is exactly that share — `first_burst_ms -
+    /// first_burst_hook_ms` is the engine-only wall of the burst on either arm.
     pub first_burst_ms: f64,
+    /// First burst: time spent inside the caller's commit hook (0 with no hook, i.e.
+    /// `MEMRA_SPEC_FIRST_TOKEN_EAGER=0`). Host-only work: detext + `Event::Token` sends.
+    pub first_burst_hook_ms: f64,
     /// First burst: rounds it ran and tokens it returned (anchor included).
     pub first_burst_rounds: usize,
     pub first_burst_tokens: usize,

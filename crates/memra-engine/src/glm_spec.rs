@@ -2424,6 +2424,9 @@ impl HybridModel {
         // return, so no drain is needed to bound it).
         let first_burst = (!sess.anchor_emitted && sess.prof.is_some())
             .then(|| (std::time::Instant::now(), sess.rounds));
+        // The hook's own share of the first burst's wall (host-only detext + sends), so
+        // the profile can separate engine time from emission time under the eager door.
+        let mut hook_ns: u64 = 0;
         // sse-cadence flush cursor: everything in out[..flushed] has been handed to on_commit.
         let mut flushed = 0usize;
         if !sess.anchor_emitted {
@@ -2434,7 +2437,11 @@ impl HybridModel {
                 sess.done = true;
             }
             if let Some(cb) = on_commit.as_mut() {
+                let t_cb = first_burst.map(|_| std::time::Instant::now());
                 cb(&out[flushed..]);
+                if let Some(t_cb) = t_cb {
+                    hook_ns += t_cb.elapsed().as_nanos() as u64;
+                }
                 flushed = out.len();
             }
         }
@@ -2459,7 +2466,11 @@ impl HybridModel {
             if let Some(cb) = on_commit.as_mut() {
                 // sse-cadence: this round's accepted drafts + bonus are committed — hand
                 // the caller exactly the not-yet-flushed tail (disjoint, in order).
+                let t_cb = first_burst.map(|_| std::time::Instant::now());
                 cb(&out[flushed..]);
+                if let Some(t_cb) = t_cb {
+                    hook_ns += t_cb.elapsed().as_nanos() as u64;
+                }
                 flushed = out.len();
             }
         }
@@ -2472,6 +2483,7 @@ impl HybridModel {
         }
         if let (Some((t0, rounds0)), Some(pf)) = (first_burst, sess.prof.as_mut()) {
             pf.first_burst_ms = t0.elapsed().as_secs_f64() * 1e3;
+            pf.first_burst_hook_ms = hook_ns as f64 / 1e6;
             pf.first_burst_rounds = sess.rounds - rounds0;
             pf.first_burst_tokens = out.len();
         }

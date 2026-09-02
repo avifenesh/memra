@@ -22883,8 +22883,8 @@ fn step_glm5_spec(
              eager={} | since_admit_ms={:.1} session_ms={:.1} (cache_alloc={:.1} \
              prime={:.1} capture={:.1} anchor={:.1} draft_alloc={:.1}) | round1_ms: \
              draft_prime={:.1} draft={:.1} verify={:.1} accept={:.1} roll={:.1} \
-             maint={:.1} tokens={} | burst1: wall_ms={:.1} rounds={} tokens={} | \
-             first_emit_ms={} step_ms={:.1}",
+             maint={:.1} tokens={} | burst1: wall_ms={:.1} hook_ms={:.1} rounds={} \
+             tokens={} | first_emit_ms={} step_ms={:.1}",
             s.model,
             s.fed.len(),
             eager_first_token as u8,
@@ -22903,6 +22903,7 @@ fn step_glm5_spec(
             pf.first_maint_ms,
             pf.first_round_tokens,
             pf.first_burst_ms,
+            pf.first_burst_hook_ms,
             pf.first_burst_rounds,
             pf.first_burst_tokens,
             first_emit_ms

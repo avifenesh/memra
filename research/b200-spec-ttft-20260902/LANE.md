@@ -119,8 +119,11 @@ Fields (ms): `since_admit_ms` (Session creation to the first spec tick), `sessio
 (`glm5_spec_session_new` wall) split into `cache_alloc`, `prime` (target prime incl. the
 tap DtoHs and the logits readback), `capture`, `anchor`, `draft_alloc`; `round1_ms:`
 `draft_prime` (the drafter ingest of the whole prompt), `draft`, `verify`, `accept`,
-`roll`, `maint`, `tokens`; `burst1: wall_ms rounds tokens`; `first_emit_ms` (first
-`Event::Token` send, from step entry); `step_ms`.
+`roll`, `maint`, `tokens`; `burst1: wall_ms hook_ms rounds tokens` (`hook_ms` = time inside
+the round-cadence commit hook, detext + sends, 0 with the eager door off; under the
+default-ON door the hook runs inside the burst window, so `wall_ms - hook_ms` is the
+engine-only burst wall on either arm); `first_emit_ms` (first `Event::Token` send, from
+step entry); `step_ms`.
 
 Box invocation (the spec-route boot from section 1, plus the timer; one boot, the same
 66-token prompt, vendor-default sampling, `stream: true`):
