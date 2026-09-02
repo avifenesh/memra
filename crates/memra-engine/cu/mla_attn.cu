@@ -1389,8 +1389,8 @@ extern "C" int memra_mla_attn_gathered_f32(const float* q_lat, const float* q_pe
 // syncthreads-per-tile online-softmax fold with no float4/uint4 vectorization — a latency,
 // not a throughput, bound.
 //
-// SPLIT DESIGN, output-range only (mirrors `memra_mla_attn_gathered_split_kernel`'s absorb/
-// decompress siblings above, decode-diet lever 4, MEMRA_MLA_DECODE_SPLIT). Unlike those two
+// SPLIT DESIGN, output-range only (mirrors the absorb_q_split / decompress_v_split siblings
+// above, decode-diet lever 4, MEMRA_MLA_DECODE_SPLIT). Unlike those two
 // pure independent-output matvecs, attn_gathered's OUTPUT elements (o_lat[blk][l], l in
 // 0..kv_rank) all share ONE softmax normalizer (m, dsum) computed by walking every tile of the
 // SAME gathered slot list. Splitting the walk itself across CTAs (segment the slots, combine
@@ -1413,11 +1413,14 @@ extern "C" int memra_mla_attn_gathered_f32(const float* q_lat, const float* q_pe
 // TRADE-OFF, stated plainly: this trades REDUNDANT tile-walk compute (the dominant cost, ~42.3
 // us of the kernel) for more CTAs — every split factor `> 1` repeats the full slot walk that
 // many times. Unlike the absorb/decompress splits (near-zero marginal cost per split), this is
-// only a net win if the box is latency/occupancy-bound at t<=8, which is a real hardware
-// question, not a code one. The host policy below (`mla_b200_gathered_split_for` in
-// mla_ffi.rs) caps the factor conservatively (default target: fill one wave, not many) and the
-// A/B receipt is PENDING on the B200 box — this kernel exists so that A/B can be run, not
-// because the split factor is already known to win.
+// only a net win if the box is latency/occupancy-bound, which is a hardware question, not a
+// code one, and the 2x B200 pair answered it 2026-09-02 (`mla-decode-arm-gate` device 0, N=5,
+// bit-identical): split=2 wins at t_q=1 (564.6 -> 516.4 us) and LOSES at t_q=4 (665.3 ->
+// 822.7 us), the DFlash2 spec-verify shape. The host policy (`mla_b200_split_for` in
+// mla_ffi.rs) therefore reads the factor from the t_q-keyed table
+// `MLA_B200_ATTN_GATHERED_SPLIT`, which splits at t_q=1 only and ships the unsplit kernel at
+// every other width; the gate fails (`REGRESSION`) if a table cell is slower than shipped by
+// more than 5% on a later run.
 extern "C" __global__ void memra_mla_attn_gathered_split_kernel(
     const float* __restrict__ q_lat, const float* __restrict__ q_pe,
     const float* __restrict__ cache, const int* __restrict__ idx, float* __restrict__ o_lat,
