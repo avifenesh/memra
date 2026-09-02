@@ -1427,11 +1427,12 @@ every iteration, plus a phase:
 |---|---|---|
 | `loading` | 503 | weights are not resident; the process answers nothing yet. On a FIRST load the port is not bound yet (bind follows the load), so a probe sees connection-refused — the same verdict for k8s and `serve-fleet.sh`. This state is reached over HTTP during a **respawn**, which is the case that matters |
 | `idle` | 200 at any beat age | the worker blocks in `rx.recv()` — an idle server legitimately stamps nothing for hours, and a naive age check would call every quiet server dead |
-| `busy` | 200 while the beat advances, 503 past `MEMRA_HEALTH_STALL_S` (120s) | work in flight must make progress; the bound covers a max-context prefill tick (see FLAGS for the derivation) |
+| `busy` | 200 while FORWARD PROGRESS advances, 503 past `MEMRA_HEALTH_STALL_S` (120s) | work in flight must make progress. Two signals attest it and the verdict takes the fresher: the scheduler heartbeat (one loop pass) and the engine's prime odometer (one completed prime chunk, stamped where the chunk's logits are already host-side). A long monolithic prefill therefore reads BUSY-and-healthy while it is genuinely progressing; a wedged worker advances neither signal and still 503s within the bound (memra#50, 2026-09-03; `MEMRA_HEALTH_PROGRESS=0` restores beat-age-only semantics). What it does NOT catch: a hang inside ONE chunk (same detection time as before), a livelock that keeps completing chunks without finishing requests, and per-session starvation (the odometer is process-global) |
 | `dead` / fault latched | 503 immediately | worker panic or fatal Xid — a latch, not a timeout, so the flip is instant |
 
 The response body is `{status, models, worker:{phase, beat_age_ms, tick_max_ms,
-stall_threshold_ms, generation, xid_warnings}}`, plus a top-level `detail` on a red (which is
+stall_threshold_ms, forward_progress_age_ms, prime_progress:{rows, chunks, age_ms}|null,
+generation, xid_warnings}}`, plus a top-level `detail` on a red (which is
 where a quoted panic payload lands). `status` is `ok` / `draining` / `unhealthy` on
 `/health`-`/livez` and `ready` / `not_ready` on `/readyz`. So a red is self-explaining and
 `tick_max_ms` — the longest scheduler iteration this process actually observed — is the live

@@ -14,10 +14,49 @@
 //!     MEANINGLESS here (an idle server legitimately stamps nothing for hours), so idle is
 //!     unconditionally healthy. This distinction is load-bearing: a naive "beat age" check
 //!     would report every quiet server as dead.
-//!   * `PHASE_BUSY` — work is in flight, so the beat MUST advance. Age past the stall
-//!     threshold = the worker is wedged (hung kernel, wedged card, deadlock) -> 503.
+//!   * `PHASE_BUSY`, work is in flight, so FORWARD PROGRESS must advance. See "BUSY IS NOT
+//!     HUNG" below: the beat is one of two progress signals, not the only one. No forward
+//!     progress past the stall threshold = the worker is wedged (hung kernel, wedged card,
+//!     deadlock) -> 503.
 //!   * `PHASE_DEAD` / a recorded fault (worker panic, GPU fault) -> 503 immediately, no
 //!     threshold wait.
+//!
+//! BUSY IS NOT HUNG (memra#50, lane/health-busy-vs-hung, 2026-09-03). The heartbeat is stamped
+//! ONCE PER SCHEDULER ITERATION, so it measures "a loop pass ended", not "the worker moved".
+//! Those come apart the moment ONE iteration legitimately runs longer than the threshold, and
+//! they did, measured: on the glm5 ship-gate stress arm (darklanes
+//! `research/glm5-serving-launch-20260901/soak-20260901/RESULT.md`, RED finding 1) waves of 8
+//! to 22 admitted sessions carrying 20k-88k-token prompts primed inside one iteration, no beat
+//! landed for >120 s while the worker was PROGRESSING NORMALLY, `/health` answered 503
+//! `unhealthy` for three guard ticks, and the supervisor SIGTERMed a server with 22 requests
+//! in flight: every one lost, plus a 40 s model load, for nothing. Raising the threshold (the
+//! deployment's own mitigation, 480 s) buys time and trades it for an 8-minute blind spot on a
+//! REAL hang. It does not make the signal honest.
+//!
+//! THE CONTRACT, in words. A BUSY worker is HEALTHY while it can attest FORWARD PROGRESS, and
+//! UNHEALTHY when it cannot attest any for `MEMRA_HEALTH_STALL_S`. Two signals attest it, and
+//! the verdict takes the FRESHER of the two (`min` of the ages):
+//!   1. the scheduler heartbeat, one loop pass completed (`beat`, `beat_busy`);
+//!   2. the engine's forward-progress odometer (`memra_engine::progress`), one PRIME CHUNK
+//!      completed, stamped where the chunk's logits are already host-side, i.e. where the
+//!      device has demonstrably finished that chunk's work.
+//! Only a live worker can move either. So "no completion in N seconds" (which a 90 s prefill
+//! satisfies while perfectly healthy) stops being the question, and "no forward progress in N
+//! seconds" becomes it. `MEMRA_HEALTH_STALL_S` keeps its name, its default and its 120 s
+//! derivation below; what changed is that the quantity it bounds is now progress, not silence.
+//!
+//! WHAT THIS DESIGN CANNOT DETECT, stated so no operator reads more into a 200:
+//!   * A worker looping forever INSIDE one chunk (wedged kernel, hung driver call, deadlock in
+//!     one prime call) still takes the full threshold to show up. This fix removes false
+//!     restarts; it does not speed up true-hang detection.
+//!   * A LIVELOCK that keeps completing chunks without ever finishing a request reads healthy.
+//!     Liveness is not progress-toward-the-answer; the first-token deadline and admission own
+//!     that question, and memra#50's second and third asks are where they get answered.
+//!   * Per-SESSION starvation reads healthy: the odometer is process-global by construction,
+//!     which is the right granularity for "should this PROCESS be restarted?" and the wrong
+//!     one for any per-request SLO.
+//!   * A deployment pinning `MEMRA_PRIME_CHUNK=0` (the monolithic rollback seam) gets chunk
+//!     granularity of up to 65,520 tokens, so it is back to sizing the threshold by hand.
 //!
 //! THE STALL THRESHOLD (`MEMRA_HEALTH_STALL_S`, default 120 s) must cover the longest
 //! LEGITIMATE single iteration, which is a max-context prefill tick, not a decode step:
@@ -120,6 +159,52 @@ pub fn stall_threshold_ms() -> u64 {
         * 1000
 }
 
+/// What a forward-progress source reports. `age_ms` is milliseconds since the last advance;
+/// `rows`/`events` are the odometer's counts, published for operators and never gated on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ForwardProgress {
+    pub rows: u64,
+    pub events: u64,
+    pub age_ms: u64,
+}
+
+/// A forward-progress source: `None` means "this process has nothing to attest yet" (a worker
+/// that has never primed anything), in which case the verdict falls back to beat age alone.
+///
+/// It is a stored closure rather than a direct call into `memra_engine::progress` so the stall
+/// branch stays deterministically testable on the host: the odometer is a process-global, and
+/// a test binary running branches in parallel cannot own one. The production source IS that
+/// global; tests inject a local one. Same reasoning as `stall_ms` above, the branch that
+/// decides "restart this box" does not get to be the untested one.
+pub type ProgressSource = Arc<dyn Fn() -> Option<ForwardProgress> + Send + Sync>;
+
+/// MEMRA_HEALTH_PROGRESS (default 1 = ON): feed the engine's forward-progress odometer into the
+/// BUSY stall verdict. `=0` is the rollback seam, pure beat-age semantics, the pre-memra#50
+/// behaviour, byte-identical.
+///
+/// DEFAULT ON, deliberately, with the reason stated (the flags law). OFF is the arm with the
+/// measured defect: it declares a busy, progressing worker unhealthy and gets a server with 22
+/// requests in flight SIGTERMed (darklanes RESULT.md RED finding 1). ON can only ever make a
+/// verdict LESS eager to restart, it takes the fresher of two liveness signals, so the risk
+/// it carries is a delayed hang detection, and it carries none: a hung worker advances neither
+/// signal, so its detection time is unchanged at `MEMRA_HEALTH_STALL_S`. A default that ships
+/// OFF here would mean shipping the known-broken arm to every deployment that does not read
+/// FLAGS.md.
+fn progress_signal_enabled() -> bool {
+    std::env::var("MEMRA_HEALTH_PROGRESS").as_deref() != Ok("0")
+}
+
+/// The production forward-progress source: the engine's prime odometer.
+fn engine_progress_source() -> ProgressSource {
+    Arc::new(|| {
+        memra_engine::progress::snapshot().map(|p| ForwardProgress {
+            rows: p.rows,
+            events: p.events,
+            age_ms: p.age_ms,
+        })
+    })
+}
+
 /// Inference-liveness state shared by the worker thread, the GPU watcher, and the HTTP layer.
 ///
 /// Every field the health decision depends on is an ATOMIC: the handler must be able to
@@ -152,6 +237,9 @@ pub struct WorkerHealth {
     peer_probe_integrity_degraded: AtomicBool,
     /// the stall bound this instance enforces, resolved once at construction.
     stall_ms: u64,
+    /// forward-progress source consulted alongside the beat (memra#50). `None` = the
+    /// `MEMRA_HEALTH_PROGRESS=0` rollback seam: pure beat-age semantics.
+    progress: Option<ProgressSource>,
 }
 
 pub type SharedHealth = Arc<WorkerHealth>;
@@ -171,6 +259,7 @@ impl Default for WorkerHealth {
             peer_probe_deferred_intervals: AtomicU64::new(0),
             peer_probe_integrity_degraded: AtomicBool::new(false),
             stall_ms: stall_threshold_ms(),
+            progress: progress_signal_enabled().then(engine_progress_source),
         }
     }
 }
@@ -186,6 +275,21 @@ impl WorkerHealth {
     pub(crate) fn with_stall_ms(stall_ms: u64) -> SharedHealth {
         Arc::new(Self {
             stall_ms,
+            // No injected source: the pre-memra#50 beat-age-only arm, which is what the
+            // existing stall tests were written against and must keep asserting.
+            progress: None,
+            ..Default::default()
+        })
+    }
+
+    /// Same, with an injected forward-progress source, the memra#50 arm. Tests only: the
+    /// production source is a process-global odometer, and a red arm for "a busy worker that
+    /// is PROGRESSING reads healthy" has to drive progress deterministically.
+    #[cfg(test)]
+    pub(crate) fn with_stall_and_progress(stall_ms: u64, progress: ProgressSource) -> SharedHealth {
+        Arc::new(Self {
+            stall_ms,
+            progress: Some(progress),
             ..Default::default()
         })
     }
@@ -320,10 +424,36 @@ impl WorkerHealth {
         now_ms().saturating_sub(self.beat_ms.load(Ordering::Acquire))
     }
 
+    /// Milliseconds since this process last attested FORWARD PROGRESS, the fresher of the
+    /// scheduler heartbeat and the engine's prime odometer (memra#50; see the module doc's
+    /// "BUSY IS NOT HUNG"). Lock-free: two relaxed loads, one acquire load and one
+    /// `Instant::now()`, so the verdict can still be computed while the worker is wedged.
+    ///
+    /// The odometer can only ever make this SMALLER, so this cannot turn a healthy verdict
+    /// into an unhealthy one, the change is strictly in the direction of not restarting a
+    /// server that is working.
+    fn forward_progress_age_ms(&self) -> u64 {
+        let beat = self.beat_age_ms();
+        match self.progress.as_ref().and_then(|p| p()) {
+            Some(p) => beat.min(p.age_ms),
+            None => beat,
+        }
+    }
+
     /// Is the worker stalled? Only meaningful while BUSY — an idle worker legitimately stamps
     /// nothing, and a loading worker is covered by readiness, not liveness.
-    fn stalled(&self) -> bool {
-        self.phase.load(Ordering::Acquire) == PHASE_BUSY && self.beat_age_ms() > self.stall_ms
+    ///
+    /// BUSY-but-progressing is NOT stalled: the quantity bounded here is time without forward
+    /// progress, not time without a loop pass. That distinction is the whole of memra#50.
+    /// `Some(age)` when BUSY and that age exceeds the bound. Returns the age it judged rather
+    /// than a bare bool so `live()` reports the number that PRODUCED the verdict: recomputing
+    /// it for the message would print a second, later sample.
+    fn stalled_for_ms(&self) -> Option<u64> {
+        if self.phase.load(Ordering::Acquire) != PHASE_BUSY {
+            return None;
+        }
+        let age = self.forward_progress_age_ms();
+        (age > self.stall_ms).then_some(age)
     }
 
     /// LIVENESS (`/health`, `/livez`): should this process be restarted? Draining is NOT a
@@ -347,12 +477,15 @@ impl WorkerHealth {
         match self.phase.load(Ordering::Acquire) {
             PHASE_DEAD => Err("worker thread is gone".into()),
             PHASE_LOADING => Err("worker is (re)loading weights".into()),
-            _ if self.stalled() => Err(format!(
-                "worker stalled: no scheduler-loop progress for {} ms (threshold {} ms)",
-                self.beat_age_ms(),
-                self.stall_ms
-            )),
-            _ => Ok(()),
+            _ => match self.stalled_for_ms() {
+                Some(age) => Err(format!(
+                    "worker stalled: no forward progress for {age} ms (beat age {} ms, \
+                     threshold {} ms)",
+                    self.beat_age_ms(),
+                    self.stall_ms
+                )),
+                None => Ok(()),
+            },
         }
     }
 
@@ -374,6 +507,8 @@ impl WorkerHealth {
             generation: self.generation(),
             xid_warns: self.xid_warns.load(Ordering::Relaxed),
             stall_threshold_ms: self.stall_ms,
+            forward_progress_age_ms: self.forward_progress_age_ms(),
+            progress: self.progress.as_ref().and_then(|p| p()),
         }
     }
 }
@@ -386,6 +521,14 @@ pub struct HealthSnapshot {
     pub generation: u32,
     pub xid_warns: u64,
     pub stall_threshold_ms: u64,
+    /// The quantity the stall verdict actually bounds (memra#50): the fresher of the beat age
+    /// and the prime odometer's age. Equal to `beat_age_ms` on the
+    /// `MEMRA_HEALTH_PROGRESS=0` seam and before the first chunk of the process.
+    pub forward_progress_age_ms: u64,
+    /// The engine odometer itself, `None` until this process completes its first prime chunk
+    /// (or when the progress signal is off). Published so an operator watching a long prefill
+    /// can see WHICH signal is holding the server healthy.
+    pub progress: Option<ForwardProgress>,
 }
 
 // ---------------------------------------------------------------------------
@@ -804,6 +947,141 @@ mod tests {
             classify_xid("NVRM: GPU at PCI:0000:01:00 has been initialized"),
             None
         );
+    }
+
+    /// A test progress source over a local counter, so the memra#50 arms are deterministic
+    /// and do not touch the process-global engine odometer.
+    fn test_progress() -> (Arc<AtomicU64>, ProgressSource) {
+        // Stores the epoch-ms of the last simulated advance; `u64::MAX` = never advanced.
+        let last = Arc::new(AtomicU64::new(u64::MAX));
+        let seen = last.clone();
+        let src: ProgressSource = Arc::new(move || {
+            let v = seen.load(Ordering::Acquire);
+            (v != u64::MAX).then(|| ForwardProgress {
+                rows: 4096,
+                events: 1,
+                age_ms: now_ms().saturating_sub(v),
+            })
+        });
+        (last, src)
+    }
+
+    /// RED ARM 1 (memra#50), direction "busy must not read hung". A worker that has NOT
+    /// stamped a scheduler beat for longer than the stall bound, but IS completing prime
+    /// chunks, is HEALTHY. This is the glm5 stress shape in miniature: one scheduler
+    /// iteration priming 20k-88k-token prompts for 8-22 sessions, no loop pass ending, the
+    /// worker progressing the whole time.
+    ///
+    /// On the pre-memra#50 code this test FAILS: `stalled()` read beat age alone, so this
+    /// asserted `live().is_ok()` on a verdict that was `Err("worker stalled...")`, the exact
+    /// 503 that got a server with 22 requests in flight SIGTERMed.
+    #[test]
+    fn a_busy_worker_that_is_still_priming_chunks_is_live_however_stale_the_beat() {
+        let (advance, src) = test_progress();
+        // 200 ms bound against 20 ms steps: a 10x margin, so a loaded host cannot turn this
+        // into a flake. The bound still has to be REACHED, which the stale beat below does.
+        let h = WorkerHealth::with_stall_and_progress(200, src);
+        h.mark_ready();
+        h.beat_busy();
+        // The beat goes stale and STAYS stale: nothing calls beat() again for the rest of the
+        // test, exactly as a worker inside one long prefill cannot.
+        std::thread::sleep(Duration::from_millis(400));
+        assert!(
+            h.beat_age_ms() > 200,
+            "the beat must be genuinely stale or this asserts nothing"
+        );
+        // ... but chunks keep landing, each well inside the bound.
+        for _ in 0..5 {
+            advance.store(now_ms(), Ordering::Release);
+            std::thread::sleep(Duration::from_millis(20));
+            assert!(
+                h.live().is_ok(),
+                "a BUSY worker completing prime chunks is progressing, not hung: {:?}",
+                h.live()
+            );
+            assert_eq!(h.snapshot().phase, PHASE_BUSY);
+        }
+        // And the snapshot says WHICH signal held it healthy, so an operator can see it.
+        let snap = h.snapshot();
+        assert!(snap.beat_age_ms > 200);
+        assert!(
+            snap.forward_progress_age_ms <= 200,
+            "forward progress age {} must be the fresh number, not the beat age {}",
+            snap.forward_progress_age_ms,
+            snap.beat_age_ms
+        );
+        assert!(snap.progress.is_some(), "the odometer must be published");
+    }
+
+    /// RED ARM 2 (memra#50), the other direction: the fix must not blind the check. A worker
+    /// whose beat AND odometer both freeze is UNHEALTHY within the bound, a genuine hang
+    /// (wedged kernel, deadlock inside one chunk) advances neither signal.
+    ///
+    /// This is the arm that would fail if someone "fixed" memra#50 by making BUSY
+    /// unconditionally healthy, or by beating from a thread that is not the worker.
+    #[test]
+    fn a_worker_whose_progress_also_froze_is_unhealthy_within_the_bound() {
+        let (advance, src) = test_progress();
+        let h = WorkerHealth::with_stall_and_progress(20, src);
+        h.mark_ready();
+        h.beat_busy();
+        advance.store(now_ms(), Ordering::Release);
+        assert!(h.live().is_ok(), "fresh on both signals");
+        // Both signals freeze. Nothing else changes.
+        std::thread::sleep(Duration::from_millis(60));
+        let why = h.live().expect_err("a frozen worker must be unhealthy");
+        assert!(
+            why.contains("no forward progress"),
+            "the reason must name the quantity actually bounded: {why}"
+        );
+        assert!(h.ready(false).is_err(), "and it must not be routed traffic");
+    }
+
+    /// The odometer can only ever make the verdict LESS eager to restart. A source that
+    /// reports a STALE progress age must not rescue a stale beat, and must not make a FRESH
+    /// beat look stalled either, `min` of the two ages, never `max`, never a replacement.
+    #[test]
+    fn a_stale_odometer_neither_rescues_nor_condemns() {
+        let src: ProgressSource = Arc::new(|| {
+            Some(ForwardProgress {
+                rows: 1,
+                events: 1,
+                age_ms: 10_000,
+            })
+        });
+        let h = WorkerHealth::with_stall_and_progress(20, src);
+        h.mark_ready();
+        h.beat_busy();
+        // fresh beat, ancient odometer -> live (the beat is the fresher signal).
+        assert!(h.live().is_ok(), "a fresh beat is progress on its own");
+        std::thread::sleep(Duration::from_millis(40));
+        // stale beat, ancient odometer -> unhealthy.
+        assert!(
+            h.live().is_err(),
+            "neither signal is fresh: this IS a stall"
+        );
+    }
+
+    /// The `MEMRA_HEALTH_PROGRESS=0` rollback seam: with no source, the verdict is
+    /// byte-identical to the pre-memra#50 beat-age semantics. `with_stall_ms` is that arm,
+    /// and `idle_is_healthy_at_any_age_but_busy_stalls` below is its assertion; this one
+    /// pins that a `None` source is what produces it, so the seam cannot rot silently.
+    #[test]
+    fn no_progress_source_is_the_pre_fix_beat_age_verdict() {
+        let h = WorkerHealth::with_stall_ms(20);
+        h.mark_ready();
+        h.beat_busy();
+        std::thread::sleep(Duration::from_millis(40));
+        assert!(
+            h.live().is_err(),
+            "with the seam pulled, a stale beat alone stalls the worker again"
+        );
+        let snap = h.snapshot();
+        assert_eq!(
+            snap.forward_progress_age_ms, snap.beat_age_ms,
+            "with no source the published progress age IS the beat age"
+        );
+        assert!(snap.progress.is_none());
     }
 
     #[test]

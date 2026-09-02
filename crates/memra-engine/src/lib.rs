@@ -97,6 +97,7 @@ pub mod moesd;
 pub mod parallel;
 pub mod plan_backend;
 pub mod pp;
+pub mod progress;
 /// qwen4_exp (Qwen3.8-Flash-Next) GPU eager forward — onboarding phase 7, correctness arm
 /// gated against memra-reference (research/qwen4exp-bringup-20260829/GPU-EAGER.md).
 pub mod qwen4exp_gpu;

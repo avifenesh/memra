@@ -9,7 +9,9 @@
 //!   GET  /health, GET /livez     -> the SAME handler (`health_live`): INFERENCE liveness, not
 //!                                     process liveness. {"status":"ok"|"draining"|"unhealthy",
 //!                                     "models":[...], "worker":{phase, beat_age_ms, tick_max_ms,
-//!                                     stall_threshold_ms, generation, xid_warnings}} + a
+//!                                     stall_threshold_ms, forward_progress_age_ms,
+//!                                     prime_progress{rows,chunks,age_ms}|null, generation,
+//!                                     xid_warnings}} + a
 //!                                     top-level "detail" on a red. Draining stays 200; dead /
 //!                                     GPU-faulted / stalled / loading is 503 (serve-hardening
 //!                                     2026-08-06).
@@ -5688,6 +5690,15 @@ fn health_payload(st: &AppState, status: &str, detail: Option<&str>) -> serde_js
             "beat_age_ms": s.beat_age_ms,
             "tick_max_ms": s.tick_max_ms,
             "stall_threshold_ms": s.stall_threshold_ms,
+            // memra#50: the quantity the stall verdict bounds. `beat_age_ms` alone is the
+            // number that lied under a long prefill; this is the one to watch and the one a
+            // deployment sizes `MEMRA_HEALTH_STALL_S` against.
+            "forward_progress_age_ms": s.forward_progress_age_ms,
+            "prime_progress": s.progress.map(|p| json!({
+                "rows": p.rows,
+                "chunks": p.events,
+                "age_ms": p.age_ms,
+            })),
             "generation": s.generation,
             "xid_warnings": s.xid_warns,
         },
