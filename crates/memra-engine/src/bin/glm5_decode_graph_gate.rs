@@ -127,6 +127,7 @@ fn run_arm(
     graph_door: bool,
     ledger: bool,
     reseat_at: Option<usize>,
+    trace: bool,
 ) -> ArmOut {
     // SAFETY: single-threaded gate binary; the doors are read per call by the engine, and no
     // other thread exists to observe the environment mid-flight.
@@ -157,6 +158,15 @@ fn run_arm(
     let t0 = Instant::now();
     let mut recaptured = false;
     for step in 1..steps {
+        // `--trace`: one line per token with the door's counters, so a run that dies mid-walk says
+        // which step it reached and whether the door was still replaying at that point.
+        if trace {
+            eprintln!(
+                "[gate] step {step} door={graph_door} replays={} captures={}",
+                memra_engine::GLM5_DECODE_GRAPH_REPLAYS.load(Ordering::Relaxed),
+                memra_engine::GLM5_DECODE_GRAPH_CAPTURES.load(Ordering::Relaxed),
+            );
+        }
         // FORCED RE-SEAT ARM: make the pool's invalidation path RUN, rather than hope a real
         // session trips it. Without this the gate passes while re-capture is broken — which is
         // exactly how the first box run reached `CUDA_ERROR_INVALID_VALUE` in production
@@ -228,13 +238,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let prompt_len: usize = arg_val(&rest, "--prompt-len")
         .and_then(|v| v.parse().ok())
         .unwrap_or(64);
+    let trace = rest.iter().any(|a| a == "--trace");
     let artifact = std::env::var("GLM5_ARTIFACT").map_err(
         |_| "GLM5_ARTIFACT must name the glm5_next artifact directory (safetensors checkpoint)",
     )?;
 
     println!(
         "[glm5-decode-graph-gate] artifact={artifact} steps={steps} reps={reps} \
-         prompt_len={prompt_len} MEMRA_PP_DEVICES={:?} MEMRA_PP_STAGES={:?} \
+         prompt_len={prompt_len} trace={trace} MEMRA_PP_DEVICES={:?} MEMRA_PP_STAGES={:?} \
          MEMRA_HTOD_DIET={:?} MEMRA_HC_DECODE_WS={:?}",
         std::env::var("MEMRA_PP_DEVICES").ok(),
         std::env::var("MEMRA_PP_STAGES").ok(),
@@ -268,10 +279,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // re-capture rather than only on a pool that was captured once and never invalidated. The
     // eager arm has no pool, so the re-seat would prove nothing there and is not run.
     let reseat_at = Some((steps / 2).max(2));
-    let (eager_tape, eager_rows, _, _) = run_arm(&e, &m, &prompt, steps, false, true, None)?;
+    let (eager_tape, eager_rows, _, _) = run_arm(&e, &m, &prompt, steps, false, true, None, trace)?;
     let replays_before = memra_engine::GLM5_DECODE_GRAPH_REPLAYS.load(Ordering::Relaxed);
     let (graph_tape, graph_rows, _, recaptured) =
-        run_arm(&e, &m, &prompt, steps, true, true, reseat_at)?;
+        run_arm(&e, &m, &prompt, steps, true, true, reseat_at, trace)?;
     let replays = memra_engine::GLM5_DECODE_GRAPH_REPLAYS.load(Ordering::Relaxed) - replays_before;
     let captured_layers = memra_engine::GLM5_DECODE_GRAPH_LAYERS.load(Ordering::Relaxed);
     let captures = memra_engine::GLM5_DECODE_GRAPH_CAPTURES.load(Ordering::Relaxed);
@@ -385,8 +396,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for r in 0..reps {
         // Timing arms take the un-perturbed walk: a forced re-capture is a correctness arm,
         // never a measured configuration.
-        let (_, _, a, _) = run_arm(&e, &m, &prompt, steps, false, false, None)?;
-        let (_, _, b, _) = run_arm(&e, &m, &prompt, steps, true, false, None)?;
+        let (_, _, a, _) = run_arm(&e, &m, &prompt, steps, false, false, None, false)?;
+        let (_, _, b, _) = run_arm(&e, &m, &prompt, steps, true, false, None, false)?;
         println!("  rep {r}: eager {a:.3} ms/token   graph {b:.3} ms/token");
         eager_ms.push(a);
         graph_ms.push(b);
