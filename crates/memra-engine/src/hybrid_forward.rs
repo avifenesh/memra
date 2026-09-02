@@ -719,6 +719,36 @@ fn mla_tc_prefill_enabled() -> bool {
 /// Read PER CALL (the `MEMRA_MLA_TC_PREFILL` rollback-seam precedent): `glm5-prime-v2-gate`
 /// flips both arms inside one process, and a latched flag would make the second arm a copy of
 /// the first.
+/// Where `hyper_range_prime` finds the DFlash2 hc tap sink for the walk it is running.
+///
+/// The serial walks read it from the cache, exactly as before. The PIPELINED prime cannot:
+/// [`PrimeCacheStages`] gives each stage a cache shell with `hc_taps: None`, and the two stage
+/// threads are on DIFFERENT CHUNKS at the same moment, so the sink's single `base` field cannot
+/// describe both. So the pipelined walk shares ONE sink and passes each stage its own base.
+///
+/// SHARING RATHER THAN SPLITTING, because splitting is unaffordable: a prime sink spans the
+/// whole prompt (`HcTapSink::new(taps, n_embd, plen)`), which at depth is gigabytes of host
+/// rows, and a per-stage copy would double it.
+///
+/// SHARING IS SAFE BY CONSTRUCTION, and this is the argument the bit-identity claim rests on.
+/// A tap write lands at `(base - origin + r) * n_taps * hidden + slot * hidden` for r in 0..t.
+/// Two things make the two stages' writes disjoint, and either alone would be enough:
+///
+///   * DIFFERENT SLOT COLUMNS. A tapped layer belongs to exactly one stage — the same fact
+///     `glm5_tap_drain` already relies on to pick a slot's owning engine — so stage 0 writes
+///     only the columns of layers below the fence and stage 1 only those above it.
+///   * DIFFERENT ROWS. The stages run different chunks, so their `base` windows do not overlap.
+///
+/// The mutex is therefore not protecting against a data race on the values; it is what makes
+/// the shared `&mut` legal, and it is held only for the row memcpy — the contraction and the
+/// device-to-host readback happen outside it.
+pub(crate) enum HcTapArm<'a, 's: 'a> {
+    /// Read the sink from the cache. Every serial walk; byte-identical to the pre-lane path.
+    FromCache,
+    /// The pipelined mHC prime: one shared sink, this stage's chunk base.
+    Shared(&'a std::sync::Mutex<&'s mut crate::cache::HcTapSink>, usize),
+}
+
 /// One named line per process when the pipelined mHC prime arm declines. A door that is armed
 /// and inert must say so: the grouped MoE prefill's own `decline_once` exists because this
 /// exact shape (flag announced ON, arm returning early on every layer) cost a 24k prime its
@@ -740,6 +770,12 @@ pub fn b200_prime_v2_on() -> bool {
 /// Chunks primed through the pipelined mHC PP-2 walk. The engagement receipt arm 2's
 /// non-vacuity assertion reads: bit identity between two walks that both ran SERIALLY is
 /// vacuous, so the gate requires this to advance.
+/// Prime calls whose schedule was decided by `MEMRA_B200_PRIME_V2` arm 1 (the natural chunk).
+/// The engagement counter the gate reads: an armed door that changed no schedule is the exact
+/// failure this lane was written to catch, so "the flag was set" is never the receipt.
+pub static HYPER_PRIME_NATURAL_SCHEDULES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 pub static HYPER_PRIME_PIPELINED_CHUNKS: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
@@ -1352,11 +1388,28 @@ pub fn hyper_prime_ranges(t: usize, n_layers: usize, gdn_grid: bool) -> Vec<(usi
 /// acquire a fold grid on one path and not the other.
 fn hyper_prime_ranges_natural(t: usize, gdn_grid: bool) -> Vec<(usize, usize)> {
     let ranges = fixed_prime_chunk_ranges(t, crate::cache::PRIME_CHUNK_MAX_TOKENS);
-    if gdn_grid && std::env::var("MEMRA_PRIME_GRID_ALIGN").as_deref() != Ok("0") {
+    let ranges = if gdn_grid && std::env::var("MEMRA_PRIME_GRID_ALIGN").as_deref() != Ok("0") {
         align_prime_ranges_to_gdn(&ranges, t, Engine::gdn_chunk_size())
     } else {
         ranges
+    };
+    HYPER_PRIME_NATURAL_SCHEDULES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    // ENGAGEMENT RECEIPT, once per process. The first box run of this door produced a 22-45%
+    // TTFT win with NO line in the log to grep for it: "the flag was set" is not a receipt, and
+    // a door that silently did nothing would read the same way. Print what the schedule ACTUALLY
+    // became, not what was asked for.
+    static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        eprintln!(
+            "[prime-v2] arm1 engaged t={t} chunk={} chunks={} widths={:?} (natural chunk \
+             replaces the PRIME_PIPE_MICROBATCHES geometry; MEMRA_B200_PRIME_V2, logged once \
+             per process)",
+            crate::cache::PRIME_CHUNK_MAX_TOKENS,
+            ranges.len(),
+            ranges.iter().map(|&(a, b)| b - a).collect::<Vec<_>>(),
+        );
     }
+    ranges
 }
 
 /// The largest number of token rows any ONE mHC prime call carries under
@@ -1959,16 +2012,41 @@ impl HybridModel {
                         "a vision embedding overlay is present: the splice is a stage-0 \
                          embedding-intake transform whose gate ran on the serial ppN body",
                     );
-                } else if cache.hc_taps.is_some() {
-                    hyper_pipe_decline_once(
-                        "the DFlash2 hc tap sink is ARMED: the per-stage cache shells carry \
-                         hc_taps: None, so the draft-source rows would go silently missing",
-                    );
                 } else {
+                    // The DFlash2 hc tap sink used to refuse here, and that refusal was the
+                    // whole product-route cost: on the pair at 256,756 tokens the SPEC route
+                    // measured 152.95 s with the door on against 153.12 s off (arm 2 never
+                    // engaged), while the PLAIN route got 69.08 s against 128.87 s. The sink is
+                    // now SHARED across the two stage threads instead of being lost to
+                    // `PrimeCacheStages`' `hc_taps: None` shells — see `HcTapArm` for why that
+                    // is sound and stays byte-identical to the serial walk's sink.
                     let seq_end = cache.pos + t + queued_after;
-                    return self.prime_cache_hyper_pp2_pipelined(
-                        e, tokens, cache, seq_end, &topology, &ranges, &fence,
-                    );
+                    let mut sink = cache.hc_taps.take();
+                    let out = {
+                        let lock = sink.as_mut().map(std::sync::Mutex::new);
+                        self.prime_cache_hyper_pp2_pipelined(
+                            e,
+                            tokens,
+                            cache,
+                            seq_end,
+                            &topology,
+                            &ranges,
+                            &fence,
+                            lock.as_ref(),
+                        )
+                    };
+                    // Restore the sink whatever happened: a failed prime still owns its
+                    // draft-source rows, and losing them silently is the shape this change
+                    // exists to remove.
+                    if let Some(mut s) = sink {
+                        // Parity with the serial walk, which leaves `base` at the last chunk's
+                        // absolute start after the loop.
+                        if let Some(&(last, _)) = ranges.last() {
+                            s.base = cache.pos.saturating_sub(t).saturating_add(last);
+                        }
+                        cache.hc_taps = Some(s);
+                    }
+                    return out;
                 }
             }
             let mut hiddens = e.uninit(t * n_embd)?;
@@ -2203,6 +2281,7 @@ impl HybridModel {
     /// stage's KDA conv ring / delta-rule state and its MLA latent rows + kpool indexer plane
     /// are written by the SAME engine `pp::new_cache` allocated them on.
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)] // allow: the list is the walk contract plus the tap arm
     fn hyper_range_prime(
         &self,
         e: &Engine,
@@ -2214,6 +2293,7 @@ impl HybridModel {
         t: usize,
         cache: &mut Cache,
         seq_end: usize,
+        taps: HcTapArm<'_, '_>,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
@@ -2287,7 +2367,17 @@ impl HybridModel {
             x = crate::hyper::post(e, topology, &ffn_out, &x, &mix, t, n_embd)?;
             // glm5 DFlash2 feature tap (lane/glm5-dflash-draft-src): the CONTRACTED
             // completed layer output, host-staged — one Option check when unarmed.
-            self.glm5_hc_tap(e, cache, topology, il, &x, t)?;
+            match &taps {
+                HcTapArm::FromCache => self.glm5_hc_tap(e, cache, topology, il, &x, t)?,
+                HcTapArm::Shared(sink, base) => {
+                    // Lock held for the row copy only (see `HcTapArm`'s header for why sharing
+                    // is sound); the contraction and the readback inside are this stage's own.
+                    let mut guard = sink
+                        .lock()
+                        .map_err(|_| "hc tap sink lock poisoned by a failed stage walk")?;
+                    self.glm5_hc_tap_into(e, &mut guard, *base, topology, il, &x, t)?;
+                }
+            }
             mark(e, 3, &mut pt, &mut ph);
         }
         if prof {
@@ -2891,7 +2981,16 @@ impl HybridModel {
             }
             let mut x = crate::hyper::expand(e, topology, &embedded, t, n_embd)?;
             x = self.hyper_range_prime(
-                e, topology, x, fence[0], fence[1], &pos_d, t, cache, seq_end,
+                e,
+                topology,
+                x,
+                fence[0],
+                fence[1],
+                &pos_d,
+                t,
+                cache,
+                seq_end,
+                HcTapArm::FromCache,
             )?;
             for s in 1..fence.len() - 1 {
                 let boundary_tx = e.clone_dtod(&x)?;
@@ -2906,6 +3005,7 @@ impl HybridModel {
                     t,
                     cache,
                     seq_end,
+                    HcTapArm::FromCache,
                 )?;
             }
             return self.hyper_prime_tail(e, topology, &x, t, n_embd, eps, cache);
@@ -2974,7 +3074,16 @@ impl HybridModel {
                 }
                 let x = crate::hyper::expand(e0, topology, &embedded, t, n_embd)?;
                 let x = self.hyper_range_prime(
-                    e0, topology, x, fence[0], fence[1], &pos_d, t, cache, seq_end,
+                    e0,
+                    topology,
+                    x,
+                    fence[0],
+                    fence[1],
+                    &pos_d,
+                    t,
+                    cache,
+                    seq_end,
+                    HcTapArm::FromCache,
                 )?;
                 rt.tx(0, &x, t * width)?
             };
@@ -2993,6 +3102,7 @@ impl HybridModel {
                     t,
                     cache,
                     seq_end,
+                    HcTapArm::FromCache,
                 )?;
                 slot = rt.tx(s, &x, t * width)?;
             }
@@ -3011,6 +3121,7 @@ impl HybridModel {
                     t,
                     cache,
                     seq_end,
+                    HcTapArm::FromCache,
                 )?;
                 self.hyper_prime_tail(el, topology, &x, t, n_embd, eps, cache)?
             };
@@ -3063,9 +3174,16 @@ impl HybridModel {
         topology: &crate::hyper::HyperTopology,
         ranges: &[(usize, usize)],
         fence: &[usize],
+        taps: Option<&std::sync::Mutex<&mut crate::cache::HcTapSink>>,
     ) -> Result<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
         debug_assert_eq!(fence.len(), 3);
         debug_assert!(ranges.len() >= 2);
+        // Each stage call gets its OWN chunk base; the sink itself is shared. See `HcTapArm`
+        // for why that is sound (disjoint slot columns AND disjoint row windows).
+        let arm = |base: usize| match taps {
+            Some(sink) => HcTapArm::Shared(sink, base),
+            None => HcTapArm::FromCache,
+        };
         let rt = crate::pp::PpNRt::get(e)?;
         assert_eq!(
             rt.n_stages(),
@@ -3086,6 +3204,26 @@ impl HybridModel {
         let max_payload = ranges.iter().map(|(s, x)| (x - s) * width).max().unwrap();
         rt.prepare_overlap_slots(0, max_payload)?;
 
+        // ENGAGEMENT RECEIPT, once per TAP STATE rather than once per process. The armed case
+        // is the one the product route runs and the one this arm used to refuse, so a log that
+        // only ever showed the first state reached could show `taps=none` forever while the
+        // interesting half went unrecorded.
+        static SAID: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+        let bit = 1u8 << u8::from(taps.is_some());
+        if SAID.fetch_or(bit, std::sync::atomic::Ordering::Relaxed) & bit == 0 {
+            eprintln!(
+                "[prime-v2] arm2 pipelined stages=2 chunks={} overlap={} t={t} devices={:?} \
+                 taps={} (stage 0 of chunk k+1 overlaps stage 1 of chunk k on two host \
+                 threads; MEMRA_B200_PRIME_V2, logged once per process)",
+                ranges.len(),
+                ranges.len().saturating_sub(1),
+                (0..2)
+                    .map(|s| rt.engine(s, e).ctx().ordinal())
+                    .collect::<Vec<_>>(),
+                if taps.is_some() { "armed" } else { "none" },
+            );
+        }
+
         let mut hiddens = e.uninit(t * n_embd)?;
         let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
         let mut stage_caches = PrimeCacheStages::new(cache, fence);
@@ -3100,6 +3238,7 @@ impl HybridModel {
             seq_end,
             fence,
             initial_base + first_start,
+            arm(initial_base + first_start),
         )?;
         cache0.pos = initial_base + first_end;
 
@@ -3128,6 +3267,7 @@ impl HybridModel {
                                 seq_end,
                                 fence,
                                 next_base,
+                                arm(next_base),
                             )
                             .map_err(|err| err.to_string())?;
                         cache0_stage.pos = initial_base + next_end;
@@ -3143,6 +3283,7 @@ impl HybridModel {
                         seq_end,
                         fence,
                         base,
+                        arm(base),
                     )?;
                     let out = {
                         rt.bind_stage(1)?;
@@ -3169,6 +3310,7 @@ impl HybridModel {
                     seq_end,
                     fence,
                     base,
+                    arm(base),
                 )?;
                 let out = {
                     rt.bind_stage(1)?;
@@ -3217,6 +3359,7 @@ impl HybridModel {
         seq_end: usize,
         fence: &[usize],
         base: usize,
+        taps: HcTapArm<'_, '_>,
     ) -> Result<usize, Box<dyn std::error::Error>> {
         let t = tokens.len();
         let n_embd = self.cfg.n_embd as usize;
@@ -3230,7 +3373,7 @@ impl HybridModel {
         let x = crate::hyper::expand(e0, topology, &embedded, t, n_embd)?;
         let _overlap = crate::pp::enter_prime_pipe_stage();
         let x = self.hyper_range_prime(
-            e0, topology, x, fence[0], fence[1], &pos_d, t, cache, seq_end,
+            e0, topology, x, fence[0], fence[1], &pos_d, t, cache, seq_end, taps,
         )?;
         rt.tx_pipelined(0, &x, t * width)
     }
@@ -3250,6 +3393,7 @@ impl HybridModel {
         seq_end: usize,
         fence: &[usize],
         base: usize,
+        taps: HcTapArm<'_, '_>,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let n_embd = self.cfg.n_embd as usize;
         let width = topology.streams * n_embd;
@@ -3261,7 +3405,7 @@ impl HybridModel {
         let x = rt.rx(0, slot, t * width)?;
         let _overlap = crate::pp::enter_prime_pipe_stage();
         self.hyper_range_prime(
-            e1, topology, x, fence[1], fence[2], &pos_d, t, cache, seq_end,
+            e1, topology, x, fence[1], fence[2], &pos_d, t, cache, seq_end, taps,
         )
     }
 
