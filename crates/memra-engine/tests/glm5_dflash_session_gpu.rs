@@ -1341,19 +1341,34 @@ fn gpu_restored_session_bytes_match_plain_decode_and_cold_acceptance() {
     drop(donor);
 
     // The restored trunk cache: primed to exactly the boundary (scope note above).
-    let (boundary_cache, _logits) = h.fresh_primed(prefix, ctx);
+    let (boundary_cache, boundary_logits) = h.fresh_primed(prefix, ctx);
 
-    // RED: shape refusals fire before any prime — empty suffix, pos/fed disagreement.
+    // RED: shape refusals fire before any prime: empty suffix with the full-cover arm
+    // DISARMED (memra#74: `MEMRA_GLM5_SPEC_FULLCOVER` unset is the shipped default and must
+    // keep the pre-lane refusal verbatim), and pos/fed disagreement.
     {
+        assert!(
+            std::env::var("MEMRA_GLM5_SPEC_FULLCOVER").is_err(),
+            "gate 11 pins the DISARMED posture; run gate 13 for the armed one"
+        );
         let (c2, _) = h.fresh_primed(prefix, ctx);
         let dkv_red =
             memra_engine::dflash::DflashKv::from_tail(&h.engine, &dr.draft.cfg, ctx, &tail)
                 .expect("red-arm dkv");
         assert!(
             h.model
-                .glm5_spec_session_from_restored(&h.engine, c2, prefix, &[], dkv_red, ctx, None)
+                .glm5_spec_session_from_restored(
+                    &h.engine,
+                    c2,
+                    prefix,
+                    &[],
+                    &boundary_logits,
+                    dkv_red,
+                    ctx,
+                    None,
+                )
                 .is_err(),
-            "RED: an empty suffix must refuse (full-cover hits keep the plain resume)"
+            "RED: an empty suffix must refuse while MEMRA_GLM5_SPEC_FULLCOVER is unset"
         );
         let (c3, _) = h.fresh_primed(prefix, ctx);
         let dkv_red2 =
@@ -1366,6 +1381,7 @@ fn gpu_restored_session_bytes_match_plain_decode_and_cold_acceptance() {
                     c3,
                     &prefix[..prefix.len() - 1],
                     suffix,
+                    &boundary_logits,
                     dkv_red2,
                     ctx,
                     None,
@@ -1379,7 +1395,16 @@ fn gpu_restored_session_bytes_match_plain_decode_and_cold_acceptance() {
     // the tail, and the served bytes must be the plain continuation's.
     let mut restored = h
         .model
-        .glm5_spec_session_from_restored(&h.engine, boundary_cache, prefix, suffix, dkv, ctx, None)
+        .glm5_spec_session_from_restored(
+            &h.engine,
+            boundary_cache,
+            prefix,
+            suffix,
+            &boundary_logits,
+            dkv,
+            ctx,
+            None,
+        )
         .expect("restored spec session");
     let (tape, drafted, accepted, _bursts) =
         drive_bursts(&h, &mut restored, &prompt, k, max_new, 7, &[]);
@@ -1514,10 +1539,19 @@ fn gpu_restored_continuation_is_bit_identical_to_the_split_prime_cold_twin() {
     let dkv = memra_engine::dflash::DflashKv::from_tail(&h.engine, &dr.draft.cfg, ctx, &tail)
         .expect("drafter KV rebuilt from the tail");
     drop(donor);
-    let (boundary_cache, _bl) = h.fresh_primed(prefix, ctx);
+    let (boundary_cache, bl) = h.fresh_primed(prefix, ctx);
     let mut restored = h
         .model
-        .glm5_spec_session_from_restored(&h.engine, boundary_cache, prefix, suffix, dkv, ctx, None)
+        .glm5_spec_session_from_restored(
+            &h.engine,
+            boundary_cache,
+            prefix,
+            suffix,
+            &bl,
+            dkv,
+            ctx,
+            None,
+        )
         .expect("restored spec session");
     let (tape_spec, drafted, _accepted, _bursts) =
         drive_bursts(&h, &mut restored, &prompt, k, max_new, 7, &[]);
@@ -1541,4 +1575,284 @@ fn gpu_restored_continuation_is_bit_identical_to_the_split_prime_cold_twin() {
         max_delta,
         tape_mono == tape_split,
     );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Gate 13, FULL-COVER RESTORE (memra#74, lane/glm5-fullcover-spec-route 2026-09-02): a prefix
+// hit that covers the WHOLE prompt leaves no suffix to prime. The parent lane refused that
+// shape and served it PLAIN, which on the live glm5 box cost the customer half the decode
+// speed on every repeated prompt (30.8 vs 69.7 tok/s decode, same minute and vantage,
+// 2026-09-02). `MEMRA_GLM5_SPEC_FULLCOVER=1` admits it: trunk cache at the boundary, drafter
+// ctx KV rebuilt from the published tail, NO prime, NO pending tap rows, and the anchor drawn
+// from the ENTRY's boundary logits by the cold burst's own rule.
+//
+// THE BAR, same as gate 11: the served tape must be byte-identical to plain decode, and the
+// drafter must see a byte-equivalent context to a cold session's, so acceptance must match
+// the cold session's exactly. Acceptance is the sensitive half: a wrong tail cut or a missing
+// ingest moves those counts while the tape stays green.
+//
+// This is the gate the deploy lane runs before the flag may flip on a serving box.
+// ---------------------------------------------------------------------------------------------
+
+/// Sets `MEMRA_GLM5_SPEC_FULLCOVER=1` for the life of the value and removes it on drop, so a
+/// panicking gate cannot leave the arm armed for gate 11's disarmed-posture assertion. Safe
+/// because every gate in this binary holds `gpu_guard()` while it runs.
+struct FullCoverArm;
+
+impl FullCoverArm {
+    fn arm() -> Self {
+        // SAFETY: the caller holds gpu_guard(), which serializes every test in this binary.
+        unsafe { std::env::set_var("MEMRA_GLM5_SPEC_FULLCOVER", "1") };
+        Self
+    }
+}
+
+impl Drop for FullCoverArm {
+    fn drop(&mut self) {
+        // SAFETY: as above, still under gpu_guard().
+        unsafe { std::env::remove_var("MEMRA_GLM5_SPEC_FULLCOVER") };
+    }
+}
+
+#[test]
+#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
+fn gpu_full_cover_restore_bytes_match_plain_decode_and_cold_acceptance() {
+    let _gpu = gpu_guard();
+    let h = Harness::new("g13");
+    let prompt = tokens(PROMPT, 0xF00C);
+    let max_new = 20usize;
+    let k = 3usize;
+    let ctx = prompt.len() + max_new + K + 8;
+
+    // The byte reference: plain decode over the whole prompt.
+    let tape_plain = plain_tape(&h, &prompt, max_new);
+
+    // The acceptance reference: a COLD spec session over the same prompt.
+    let mut cold = h
+        .model
+        .glm5_spec_session_new(&h.engine, &prompt, ctx, None)
+        .expect("cold spec session");
+    let (tape_cold, drafted_cold, accepted_cold, _) =
+        drive_bursts(&h, &mut cold, &prompt, k, max_new, 7, &[]);
+    assert_eq!(
+        tape_cold,
+        tape_plain[..tape_cold.len()],
+        "cold spec tape must match plain decode"
+    );
+
+    // DONOR: a cold spec session over the WHOLE prompt whose drafter tail is exported AT the
+    // prompt boundary: the publication a full-cover entry carries.
+    let mut donor = h
+        .model
+        .glm5_spec_session_new(&h.engine, &prompt, ctx, None)
+        .expect("donor spec session over the whole prompt");
+    let (_donor_burst, donor_drafted, _, _) = drive_bursts(&h, &mut donor, &prompt, k, 4, 4, &[]);
+    assert!(donor_drafted > 0, "the donor must have drafted (kv filled)");
+    let tail = donor
+        .export_draft_tail(&h.engine, prompt.len())
+        .expect("drafter tail export at the prompt boundary");
+    let dr = h.model.glm5_dflash.as_ref().expect("drafter attached");
+    drop(donor);
+
+    // The restored trunk cache + the entry's boundary logits, both at pos == prompt.len().
+    let (boundary_cache, boundary_logits) = h.fresh_primed(&prompt, ctx);
+    let dkv = memra_engine::dflash::DflashKv::from_tail(&h.engine, &dr.draft.cfg, ctx, &tail)
+        .expect("drafter KV rebuilt from the tail");
+
+    let _arm = FullCoverArm::arm();
+
+    // RED: armed, but with NO boundary logits there is no anchor row: refuse, never guess.
+    {
+        let (c2, _) = h.fresh_primed(&prompt, ctx);
+        let dkv_red =
+            memra_engine::dflash::DflashKv::from_tail(&h.engine, &dr.draft.cfg, ctx, &tail)
+                .expect("red-arm dkv");
+        assert!(
+            h.model
+                .glm5_spec_session_from_restored(
+                    &h.engine,
+                    c2,
+                    &prompt,
+                    &[],
+                    &[],
+                    dkv_red,
+                    ctx,
+                    None,
+                )
+                .is_err(),
+            "RED: a full-cover restore without the entry's boundary logits must refuse"
+        );
+    }
+
+    let mut restored = h
+        .model
+        .glm5_spec_session_from_restored(
+            &h.engine,
+            boundary_cache,
+            &prompt,
+            &[],
+            &boundary_logits,
+            dkv,
+            ctx,
+            None,
+        )
+        .expect("full-cover restored spec session");
+    let (tape, drafted, accepted, _bursts) =
+        drive_bursts(&h, &mut restored, &prompt, k, max_new, 7, &[]);
+    assert!(
+        drafted > 0,
+        "the full-cover restored session must actually draft"
+    );
+    assert_eq!(
+        tape,
+        tape_plain[..tape.len()],
+        "full-cover restored spec tape must be BYTE-IDENTICAL to plain decode"
+    );
+    assert_eq!(
+        tape.len(),
+        tape_cold.len(),
+        "full-cover restored and cold sessions must serve the same tape length"
+    );
+    assert_eq!(
+        (drafted, accepted),
+        (drafted_cold, accepted_cold),
+        "full-cover restored drafter context must be byte-equivalent to the cold session's"
+    );
+    // SAMPLED TWIN (review round 1, finding 5). Prod serves vendor-default sampled, and the
+    // anchor draw is the one thing structurally new on this arm: it comes off the ENTRY's
+    // stored boundary row through a FRESH Philox stream at sctr=0 rather than off a prime
+    // this session ran. The bar is the restore's own law (`spec_restore_refusal`'s doc): the
+    // restored session's seed rule is bit-identical to the cold spec path's, so at one seed
+    // the two tapes must be the same bytes. Greedy alone would never see a Philox slip.
+    let seed = 0x5EEDu64;
+    let mut cold_sampled = h
+        .model
+        .glm5_spec_session_new(&h.engine, &prompt, ctx, Some(sampled_cfg(seed)))
+        .expect("cold sampled spec session");
+    let (tape_cold_sampled, _d, _a, _b) =
+        drive_bursts(&h, &mut cold_sampled, &prompt, k, max_new, 7, &[]);
+    let (cache_sampled, logits_sampled) = h.fresh_primed(&prompt, ctx);
+    let dkv_sampled =
+        memra_engine::dflash::DflashKv::from_tail(&h.engine, &dr.draft.cfg, ctx, &tail)
+            .expect("sampled-arm drafter KV rebuilt from the tail");
+    let mut restored_sampled = h
+        .model
+        .glm5_spec_session_from_restored(
+            &h.engine,
+            cache_sampled,
+            &prompt,
+            &[],
+            &logits_sampled,
+            dkv_sampled,
+            ctx,
+            Some(sampled_cfg(seed)),
+        )
+        .expect("full-cover restored sampled spec session");
+    let (tape_restored_sampled, drafted_s, _a_s, _b_s) =
+        drive_bursts(&h, &mut restored_sampled, &prompt, k, max_new, 7, &[]);
+    assert!(
+        drafted_s > 0,
+        "the sampled full-cover restored session must actually draft"
+    );
+    assert_eq!(
+        tape_restored_sampled, tape_cold_sampled,
+        "at one seed the full-cover restored sampled tape must equal the COLD sampled \
+         tape byte for byte: the anchor is drawn from the entry's boundary row at Philox \
+         counter 0, exactly as the cold session draws from its prime's row"
+    );
+
+    println!(
+        "gate 13 PASS: full-cover restore == plain bytes over {} tokens, acceptance {} / {} \
+         identical to cold; sampled twin == cold sampled over {} tokens at seed {seed:#x}",
+        tape.len(),
+        accepted,
+        drafted,
+        tape_restored_sampled.len(),
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Gate 14 — ROUND-CADENCE COMMIT HOOK (lane/b200-spec-ttft-20260902, the engine half of
+// `MEMRA_SPEC_FIRST_TOKEN_EAGER`): `glm5_spec_session_burst_streamed` hands the hook
+// disjoint in-order slices whose concatenation IS the returned burst, the first slice is
+// the prime's anchor ALONE (the first token is available before any round runs), and the
+// tokens are byte-identical to the un-hooked twin on a fresh session — greedy AND sampled
+// (pinned seed). The hook only moves WHEN the caller learns a token, never WHICH.
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
+fn gpu_dflash_streamed_burst_slices_concat_to_the_unhooked_burst() {
+    let _gpu = gpu_guard();
+    let h = Harness::new("g14");
+    let prompt = tokens(PROMPT, 0xA11CE);
+    let max_new = 20usize;
+    let k = 3usize;
+    let tape = plain_tape(&h, &prompt, max_new);
+    for (arm, sampling) in [
+        ("greedy", None),
+        ("sampled", Some(sampled_cfg(0x5EED_0B20))),
+    ] {
+        // Un-hooked twin: one burst of `max_new` on a fresh session.
+        let mut plain_sess = h
+            .model
+            .glm5_spec_session_new(&h.engine, &prompt, prompt.len() + max_new + k + 8, sampling)
+            .expect("glm5 dflash spec session (un-hooked twin)");
+        let (plain_burst, pd, pa) = h
+            .model
+            .glm5_spec_session_burst(&h.engine, &mut plain_sess, max_new, k, &[])
+            .expect("un-hooked burst");
+        // Hooked arm: same request, every committed slice recorded as it lands.
+        let mut sess = h
+            .model
+            .glm5_spec_session_new(&h.engine, &prompt, prompt.len() + max_new + k + 8, sampling)
+            .expect("glm5 dflash spec session (streamed)");
+        let mut slices: Vec<Vec<u32>> = Vec::new();
+        let (burst, d, a) = h
+            .model
+            .glm5_spec_session_burst_streamed(&h.engine, &mut sess, max_new, k, &[], &mut |s| {
+                slices.push(s.to_vec())
+            })
+            .expect("streamed burst");
+        let concat: Vec<u32> = slices.iter().flatten().copied().collect();
+        assert_eq!(
+            concat, burst,
+            "{arm}: the hook's slices must concatenate to the returned burst"
+        );
+        assert_eq!(
+            slices.first().map(|s| s.as_slice()),
+            Some(&burst[..1]),
+            "{arm}: the first slice must be the prime's anchor alone"
+        );
+        assert!(
+            slices.iter().all(|s| !s.is_empty()),
+            "{arm}: the hook never sees an empty slice"
+        );
+        assert_eq!(
+            slices.len(),
+            1 + sess.rounds,
+            "{arm}: one slice per round plus the anchor slice"
+        );
+        assert_eq!(
+            (burst.clone(), d, a),
+            (plain_burst.clone(), pd, pa),
+            "{arm}: the streamed burst must be byte-identical to the un-hooked twin \
+             (tokens AND counters)"
+        );
+        if arm == "greedy" {
+            assert_eq!(
+                &burst[..max_new],
+                &tape[..],
+                "greedy streamed burst diverged from plain decode"
+            );
+        }
+        assert_eq!(sess.pos(), sess.committed.len());
+        println!(
+            "gate 14 PASS ({arm}): {} slices over {} rounds concatenate to the {}-token burst, \
+             byte-identical to the un-hooked twin ({a}/{d} accepted)",
+            slices.len(),
+            sess.rounds,
+            burst.len()
+        );
+    }
 }
