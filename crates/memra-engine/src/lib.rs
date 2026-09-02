@@ -249,6 +249,17 @@ pub fn moe_fuse_actq_on() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_MOE_FUSE_ACTQ").as_deref() != Ok("0"))
 }
 
+/// Door `MEMRA_GLM5_Q8_FUSE` (lane/b200-q8-fuse-20260902, DEFAULT OFF pending the box A/B):
+/// on the glm5_next mHC decode trunk (`hyper_range_decode` / `hyper_range_decode_ws_body`),
+/// fold the FFN-input rms_norm and its consumer's standalone `quantize_q8_1` launch into
+/// ONE `rms_norm_zq8_f32` launch. Byte-identical to the unfused chain (see that kernel's
+/// header in cu/kernels.cu); this door only changes launch count. See docs/FLAGS.md and
+/// research/b200-q8-fuse-20260902/LANE.md.
+pub fn glm5_q8_fuse_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_GLM5_Q8_FUSE").as_deref() == Ok("1"))
+}
+
 /// PREFILL router m-invariance (lane/concat-prime-exact, 2026-08-02). The batched cuBLASLt
 /// router GEMM changes a row's logits when OTHER rows join the call (probed: first change at
 /// m=65 on the Ornith-35B router, 3.9e-3 — while the MMQ/f16 trunk GEMMs are bit-identical
@@ -13565,6 +13576,56 @@ impl Engine {
             b.launch(cfg)?;
         }
         Ok(())
+    }
+
+    /// Door `MEMRA_GLM5_Q8_FUSE` (lane/b200-q8-fuse-20260902): RMSNorm emitting BOTH the f32
+    /// normed row `z` (needed by callers that also read the un-quantized row — the MoE router
+    /// logits, an ungated shared-expert path) AND its q8_1 quantization (int8 qs + per-32 f32
+    /// scale), in one launch. Removes the standalone `quantize_q8_1(&z, ...)` launch a caller
+    /// would otherwise issue against the identical bytes. BIT-IDENTICAL to
+    /// `rms_norm(x,w,&mut z,ncols,nrows,eps)` then `quantize_q8_1(&z,nrows,ncols)` — see
+    /// `rms_norm_zq8_f32`'s header in cu/kernels.cu for the identity argument. MUST launch at
+    /// `rms_block()`, the SAME blockDim `rms_norm` uses: the sum-of-squares block-reduce tree
+    /// depends on blockDim (per-thread stride, shfl-tree depth), so a fixed 1024 would diverge
+    /// from `rms_norm`'s actual per-model blockDim (256 by default; 1024 only where a loader
+    /// overrides `RMS_BLOCK_DEFAULT`, e.g. gemma4) — caught by `q8_fuse_gate`'s ncols=1536 shape
+    /// before this landed (README: keep this dynamic, never hardcode the block size again).
+    pub fn rms_norm_zq8_f32(
+        &self,
+        x: &CudaSlice<f32>,
+        w: &CudaSlice<f32>,
+        z: &mut CudaSlice<f32>,
+        ncols: usize,
+        nrows: usize,
+        eps: f32,
+    ) -> Result<(CudaSlice<i8>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        assert!(ncols.is_multiple_of(32));
+        let nblk = ncols / 32;
+        let mut q = self.alloc_uninit::<i8>(nrows * ncols)?; // full-overwrite output
+        let mut d = self.alloc_uninit::<f32>(nrows * nblk)?; // full-overwrite output
+        let f = self.func("rms_norm_zq8_f32");
+        // One block per row, blockDim = rms_block() — MUST match `rms_norm`'s launch exactly
+        // (see the doc comment above); the kernel body is blockDim-generic (rms_norm_f32's
+        // reduce shape), so this is the only thing that has to track it.
+        let cfg = LaunchConfig {
+            grid_dim: (nrows as u32, 1, 1),
+            block_dim: (rms_block(), 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let (nc, ep) = (ncols as i32, eps);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(x)
+            .arg(w)
+            .arg(&mut *z)
+            .arg(&mut q)
+            .arg(&mut d)
+            .arg(&nc)
+            .arg(&ep);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok((q, d))
     }
 
     /// Slot-fed quantize_q8_1 twin (alloc-free capture lane).
