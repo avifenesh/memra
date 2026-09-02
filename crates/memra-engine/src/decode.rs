@@ -675,7 +675,7 @@ impl HybridModel {
         let pos = cache.pos;
         let pos_d = e.htod_i32(&[pos as i32])?;
 
-        let mut x = e.htod(&self.embd.gather(n_embd, &[token]))?;
+        let mut x = e.htod(&self.embd.try_gather(n_embd, &[token])?)?;
         let mut aux: Vec<CudaSlice<f32>> = Vec::with_capacity(aux_layers.len());
         let mut hy3_layer0 = None;
 
@@ -817,7 +817,7 @@ impl HybridModel {
                 let (embd_qt, embd_rb) = self.embd.qt_and_row_bytes(n_embd);
                 e.embed_gather_device(embd_gpu, tok_d, n_embd, embd_qt, embd_rb)?
             }
-            _ => e.htod(&self.embd.gather(n_embd, &[token]))?,
+            _ => e.htod(&self.embd.try_gather(n_embd, &[token])?)?,
         };
 
         // CROSS-LAYER ADD+NORM FUSION (launch-arc 2026-07-07): layer il's post-FFN residual add
@@ -1423,7 +1423,7 @@ impl HybridModel {
             let _st0 = rt.enter(0);
             let e0 = rt.engine(0, e);
             let pos_d = e0.htod_i32(&[pos as i32])?;
-            let x = e0.htod(&self.embd.gather(n_embd, &[token]))?;
+            let x = e0.htod(&self.embd.try_gather(n_embd, &[token])?)?;
             let x = self.decode_layers_eager(e0, x, fence[0], fence[1], &pos_d, pos, cache)?;
             rt.tx(0, &x, n_embd)?
             // x + pos_d drop here: freed stream-ordered on stage-0's stream after use.
@@ -1490,7 +1490,7 @@ impl HybridModel {
         let pos_d = e.htod_i32(&[pos as i32])?;
 
         // ---- STAGE 0: embed (the table lives with stage 0) + layers [0, fence[1]) ----
-        let x = e.htod(&self.embd.gather(n_embd, &[token]))?;
+        let x = e.htod(&self.embd.try_gather(n_embd, &[token])?)?;
         let mut x = self.decode_layers_eager(e, x, fence[0], fence[1], &pos_d, pos, cache)?;
 
         // ---- each later stage: explicit [n_embd] handoff (TX copy, RX copy) + range ----
@@ -1600,7 +1600,7 @@ impl HybridModel {
             let _st0 = rt.enter(0);
             let e0 = rt.engine(0, e);
             let pos_d = e0.htod_i32(&[pos as i32])?;
-            let x = e0.htod(&self.embd.gather(n_embd, &[token]))?;
+            let x = e0.htod(&self.embd.try_gather(n_embd, &[token])?)?;
             let x = self.decode_layers_eager(e0, x, fence[0], fence[1], &pos_d, pos, cache)?;
             rt.tx(0, &x, n_embd)?
         };
@@ -1664,7 +1664,7 @@ impl HybridModel {
         let mut x: Vec<CudaSlice<f32>> = Vec::with_capacity(m);
         for (s, &token) in tokens.iter().enumerate() {
             pos_d.push(e.htod_i32(&[caches[s].pos as i32])?);
-            x.push(e.htod(&self.embd.gather(n_embd, &[token]))?);
+            x.push(e.htod(&self.embd.try_gather(n_embd, &[token])?)?);
         }
         let mut pending: Vec<Option<(CudaSlice<f32>, CudaSlice<f32>)>> =
             (0..m).map(|_| None).collect();

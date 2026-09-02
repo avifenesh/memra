@@ -675,6 +675,110 @@ fn mla_tc_prefill_enabled() -> bool {
         .unwrap_or(true)
 }
 
+/// `MEMRA_B200_PRIME_V2` — the B200 (sm_100a) mHC PRIME schedule door
+/// (lane/b200-prefill-roofline-20260902, **default OFF**). It arms two changes to the
+/// HyperConnections prime and nothing else; decode, spec, batch and every non-hyper trunk are
+/// untouched by construction (the only two call sites are `hyper_prime_ranges` and
+/// `prime_cache_hyper`'s pp branch).
+///
+/// WHY, measured. `prime_chunk_tokens` applies the `PRIME_PIPE_MICROBATCHES = 8` geometry
+/// whenever a PP-2 stage fence exists, so a 4096-token glm5 prime splits into EIGHT calls. That
+/// geometry belongs to [`HybridModel::prime_cache_pp2_pipelined`], the SERIAL trunk's
+/// microbatched PP-2 prime — the hyper walk has never called it, so glm5 pays the split and
+/// collects none of the overlap. The split is not free: every one of the 288 experts is hit at
+/// any width past a few hundred tokens, so a MoE layer reads its WHOLE 4.08 GB slab once per
+/// CALL. Eight calls read 1,369.8 GB where one reads 171.2 GB; the HBM floor rises 21.4 ->
+/// 171.2 ms, the 4k prime crosses from compute-bound to memory-bound (854 -> 107 FLOP/B against
+/// a B200 ridge of 275), and pairs-per-expert falls 113.8 -> 14.2, under the grouped GEMM's
+/// `MEMRA_F16G_SK_CROSS` 64-row tile crossover. The 41.9k prime, whose chunk clamps at
+/// `PRIME_CHUNK_MAX_TOKENS` instead, runs 3.3x more efficient per FLOP on the same binary
+/// (87.0 vs 26.6 TFLOP/s) — the same fact from the other side. Arithmetic:
+/// `research/b200-prefill-roofline-20260902/roofline.py`.
+///
+/// ARM 1 (schedule): `hyper_prime_ranges` takes the natural chunk
+/// (`PRIME_CHUNK_MAX_TOKENS`, the same clamp the 41.9k prime already gets) instead of the
+/// microbatch geometry. An explicit `MEMRA_PRIME_CHUNK` stays authoritative and turns this arm
+/// off for that call, so the operator override is never overridden.
+/// ARM 2 (pipeline): with two or more chunks the ppN prime runs
+/// [`HybridModel::prime_cache_hyper_pp2_pipelined`] — stage 0 of chunk k+1 on device 0 while
+/// stage 1 of chunk k runs on device 1, on two scoped host threads over disjoint per-stage
+/// caches. Two threads are REQUIRED, not a style choice: the grouped MoE prefill's sigmoid
+/// host-oracle drains the stage stream once per layer, so two CUDA streams on one host thread
+/// serialize however the calls are ordered (the same finding `prime_cache_pp2_pipelined`
+/// records for the serial trunk).
+///
+/// NUMERIC CLASS. Arm 1 is NOT bit-identical and no chunk-size change on this trunk ever was:
+/// `Engine::linear` — the cuBLASLt f32 mixes GEMM in `hyper::pre` — is not m-invariant, the
+/// arms diverge at ROW 0 where no cross-token state can reach, and `hyper_prime_ranges`' own
+/// header documents the near-tie. The bar is the calibrated band
+/// `tests/glm5_chunked_prime_gpu.rs` already holds the chunked prime to (relative maxdiff
+/// <= 2e-5, five orders below the 1.813e0 signature of a real chunk-invariance defect) plus
+/// argmax equality. Arm 2 IS bit-identical by construction: same ranges, same per-chunk
+/// program, same operand bytes — only which host thread issues a stage and when changes.
+///
+/// Read PER CALL (the `MEMRA_MLA_TC_PREFILL` rollback-seam precedent): `glm5-prime-v2-gate`
+/// flips both arms inside one process, and a latched flag would make the second arm a copy of
+/// the first.
+/// Where `hyper_range_prime` finds the DFlash2 hc tap sink for the walk it is running.
+///
+/// The serial walks read it from the cache, exactly as before. The PIPELINED prime cannot:
+/// [`PrimeCacheStages`] gives each stage a cache shell with `hc_taps: None`, and the two stage
+/// threads are on DIFFERENT CHUNKS at the same moment, so the sink's single `base` field cannot
+/// describe both. So the pipelined walk shares ONE sink and passes each stage its own base.
+///
+/// SHARING RATHER THAN SPLITTING, because splitting is unaffordable: a prime sink spans the
+/// whole prompt (`HcTapSink::new(taps, n_embd, plen)`), which at depth is gigabytes of host
+/// rows, and a per-stage copy would double it.
+///
+/// SHARING IS SAFE BY CONSTRUCTION, and this is the argument the bit-identity claim rests on.
+/// A tap write lands at `(base - origin + r) * n_taps * hidden + slot * hidden` for r in 0..t.
+/// Two things make the two stages' writes disjoint, and either alone would be enough:
+///
+///   * DIFFERENT SLOT COLUMNS. A tapped layer belongs to exactly one stage — the same fact
+///     `glm5_tap_drain` already relies on to pick a slot's owning engine — so stage 0 writes
+///     only the columns of layers below the fence and stage 1 only those above it.
+///   * DIFFERENT ROWS. The stages run different chunks, so their `base` windows do not overlap.
+///
+/// The mutex is therefore not protecting against a data race on the values; it is what makes
+/// the shared `&mut` legal, and it is held only for the row memcpy — the contraction and the
+/// device-to-host readback happen outside it.
+pub(crate) enum HcTapArm<'a, 's: 'a> {
+    /// Read the sink from the cache. Every serial walk; byte-identical to the pre-lane path.
+    FromCache,
+    /// The pipelined mHC prime: one shared sink, this stage's chunk base.
+    Shared(&'a std::sync::Mutex<&'s mut crate::cache::HcTapSink>, usize),
+}
+
+/// One named line per process when the pipelined mHC prime arm declines. A door that is armed
+/// and inert must say so: the grouped MoE prefill's own `decline_once` exists because this
+/// exact shape (flag announced ON, arm returning early on every layer) cost a 24k prime its
+/// speed while the boot log said the door was on.
+fn hyper_pipe_decline_once(reason: &str) {
+    static DECLINED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if !DECLINED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        eprintln!(
+            "[hyper-prime-pipe] DECLINED: {reason} -> the serial per-chunk stage walk serves \
+             this prime (MEMRA_B200_PRIME_V2 arm 1 is unaffected; logged once per process)"
+        );
+    }
+}
+
+pub fn b200_prime_v2_on() -> bool {
+    std::env::var("MEMRA_B200_PRIME_V2").as_deref() == Ok("1")
+}
+
+/// Chunks primed through the pipelined mHC PP-2 walk. The engagement receipt arm 2's
+/// non-vacuity assertion reads: bit identity between two walks that both ran SERIALLY is
+/// vacuous, so the gate requires this to advance.
+/// Prime calls whose schedule was decided by `MEMRA_B200_PRIME_V2` arm 1 (the natural chunk).
+/// The engagement counter the gate reads: an armed door that changed no schedule is the exact
+/// failure this lane was written to catch, so "the flag was set" is never the receipt.
+pub static HYPER_PRIME_NATURAL_SCHEDULES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+pub static HYPER_PRIME_PIPELINED_CHUNKS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 /// Expert-grouped dispatch remains opt-in after the local 5090 transfer gate rejected the
 /// default flip. `=0` selects the established path, while any other explicit value enables the
 /// grouped research arm for the current call.
@@ -1264,7 +1368,48 @@ pub fn prime_chunk_ranges(t: usize, n_layers: usize, gdn_grid: bool) -> Vec<(usi
 /// — the rollback seam, and the oracle arm the correctness gate compares against, both now
 /// bounded by that cap; longer prompts split at the cap even under `0`.
 pub fn hyper_prime_ranges(t: usize, n_layers: usize, gdn_grid: bool) -> Vec<(usize, usize)> {
+    // DOOR `MEMRA_B200_PRIME_V2` arm 1 (default OFF; see the door's header for the arithmetic
+    // and the numeric class). The delegation above inherits `PRIME_PIPE_MICROBATCHES` from a
+    // pipeline this walk does not run; under the door the mHC prime takes the NATURAL chunk
+    // instead. An explicit `MEMRA_PRIME_CHUNK` is still authoritative -- the operator override
+    // must not be overridden by a door, and `prime_chunk_tokens` already honors it, so the
+    // door simply stands aside rather than re-deciding.
+    if b200_prime_v2_on() && std::env::var_os("MEMRA_PRIME_CHUNK").is_none() {
+        return hyper_prime_ranges_natural(t, gdn_grid);
+    }
     prime_chunk_ranges(t, n_layers, gdn_grid)
+}
+
+/// The mHC prime schedule with the microbatch geometry removed: fixed ranges at
+/// `PRIME_CHUNK_MAX_TOKENS`, the SAME clamp `prime_chunk_tokens` already hands a prompt too
+/// long for the microbatch split (which is why the 41.9k prime is 3.3x more efficient per FLOP
+/// than the 4k one on the same binary). The GDN grid law still applies: `align_prime_ranges_to_gdn`
+/// is the same call the auto schedule makes, kept here so a chunked-KDA prefill twin cannot
+/// acquire a fold grid on one path and not the other.
+fn hyper_prime_ranges_natural(t: usize, gdn_grid: bool) -> Vec<(usize, usize)> {
+    let ranges = fixed_prime_chunk_ranges(t, crate::cache::PRIME_CHUNK_MAX_TOKENS);
+    let ranges = if gdn_grid && std::env::var("MEMRA_PRIME_GRID_ALIGN").as_deref() != Ok("0") {
+        align_prime_ranges_to_gdn(&ranges, t, Engine::gdn_chunk_size())
+    } else {
+        ranges
+    };
+    HYPER_PRIME_NATURAL_SCHEDULES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    // ENGAGEMENT RECEIPT, once per process. The first box run of this door produced a 22-45%
+    // TTFT win with NO line in the log to grep for it: "the flag was set" is not a receipt, and
+    // a door that silently did nothing would read the same way. Print what the schedule ACTUALLY
+    // became, not what was asked for.
+    static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        eprintln!(
+            "[prime-v2] arm1 engaged t={t} chunk={} chunks={} widths={:?} (natural chunk \
+             replaces the PRIME_PIPE_MICROBATCHES geometry; MEMRA_B200_PRIME_V2, logged once \
+             per process)",
+            crate::cache::PRIME_CHUNK_MAX_TOKENS,
+            ranges.len(),
+            ranges.iter().map(|&(a, b)| b - a).collect::<Vec<_>>(),
+        );
+    }
+    ranges
 }
 
 /// The largest number of token rows any ONE mHC prime call carries under
@@ -1855,6 +2000,55 @@ impl HybridModel {
                     overlay,
                 );
             }
+            // DOOR `MEMRA_B200_PRIME_V2` arm 2 (default OFF): overlap stage 0 of chunk k+1 with
+            // stage 1 of chunk k. Every conjunct is load-bearing and every decline is named --
+            // an arm that quietly did not run is the failure mode this lane's own roofline was
+            // written to catch.
+            if b200_prime_v2_on() && !crate::pp::pp2_streams_off() && fence.len() == 3 {
+                if !crate::pp::prime_pipe_on() {
+                    hyper_pipe_decline_once("MEMRA_PRIME_PIPE=0 (the operator rollback seam)");
+                } else if overlay.is_some() {
+                    hyper_pipe_decline_once(
+                        "a vision embedding overlay is present: the splice is a stage-0 \
+                         embedding-intake transform whose gate ran on the serial ppN body",
+                    );
+                } else {
+                    // The DFlash2 hc tap sink used to refuse here, and that refusal was the
+                    // whole product-route cost: on the pair at 256,756 tokens the SPEC route
+                    // measured 152.95 s with the door on against 153.12 s off (arm 2 never
+                    // engaged), while the PLAIN route got 69.08 s against 128.87 s. The sink is
+                    // now SHARED across the two stage threads instead of being lost to
+                    // `PrimeCacheStages`' `hc_taps: None` shells — see `HcTapArm` for why that
+                    // is sound and stays byte-identical to the serial walk's sink.
+                    let seq_end = cache.pos + t + queued_after;
+                    let mut sink = cache.hc_taps.take();
+                    let out = {
+                        let lock = sink.as_mut().map(std::sync::Mutex::new);
+                        self.prime_cache_hyper_pp2_pipelined(
+                            e,
+                            tokens,
+                            cache,
+                            seq_end,
+                            &topology,
+                            &ranges,
+                            &fence,
+                            lock.as_ref(),
+                        )
+                    };
+                    // Restore the sink whatever happened: a failed prime still owns its
+                    // draft-source rows, and losing them silently is the shape this change
+                    // exists to remove.
+                    if let Some(mut s) = sink {
+                        // Parity with the serial walk, which leaves `base` at the last chunk's
+                        // absolute start after the loop.
+                        if let Some(&(last, _)) = ranges.last() {
+                            s.base = cache.pos.saturating_sub(t).saturating_add(last);
+                        }
+                        cache.hc_taps = Some(s);
+                    }
+                    return out;
+                }
+            }
             let mut hiddens = e.uninit(t * n_embd)?;
             let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
             for &(start, end) in &ranges {
@@ -1984,7 +2178,7 @@ impl HybridModel {
         let pos = cache.pos;
         let pos_d = e.htod_i32(&[pos as i32])?;
 
-        let embedded = e.htod(&self.embd.gather(n_embd, &[token]))?;
+        let embedded = e.htod(&self.embd.try_gather(n_embd, &[token])?)?;
         let mut x = crate::hyper::expand(e, &topology, &embedded, 1, n_embd)?;
 
         x = self.hyper_range_decode(e, &topology, x, 0, self.layers.len(), &pos_d, pos, cache)?;
@@ -2087,6 +2281,7 @@ impl HybridModel {
     /// stage's KDA conv ring / delta-rule state and its MLA latent rows + kpool indexer plane
     /// are written by the SAME engine `pp::new_cache` allocated them on.
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)] // allow: the list is the walk contract plus the tap arm
     fn hyper_range_prime(
         &self,
         e: &Engine,
@@ -2098,9 +2293,31 @@ impl HybridModel {
         t: usize,
         cache: &mut Cache,
         seq_end: usize,
+        taps: HcTapArm<'_, '_>,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
+        // MEMRA_PRIME_PROF=1: per-phase wall inside the mHC prime walk, sync-bounded (each mark
+        // drains the stage stream, so absolute time inflates -- the SPLIT is the signal).
+        //
+        // WHY IT LIVES HERE TOO. The pre-existing `[prime-prof]` marks are in
+        // `step35_prime_batch_layers`, the step37 BATCHED prime, which refuses on the first
+        // non-`Mixer::Full` layer -- glm5_next never enters it, so `MEMRA_PRIME_PROF=1` on a
+        // glm5 box printed nothing at all for the walk that actually ran. The four slots are
+        // this walk's four phase classes, in issue order: the attention-site hc glue and norm,
+        // the mixer (KDA scan / MLA+DSA), the FFN-site hc glue and norm, and the FFN itself
+        // (grouped MoE, or the dense MLP on layers 0..first_k_dense). The per-layer MoE
+        // breakdown is the `[moe-grouped-prefill-prof]` line the same flag already prints.
+        let prof = std::env::var("MEMRA_PRIME_PROF").as_deref() == Ok("1");
+        let mut ph = [0f64; 4]; // 0 attn-site glue+norm, 1 mixer, 2 ffn-site glue+norm, 3 ffn
+        let mut pt = std::time::Instant::now();
+        let mark = |e: &Engine, acc: usize, pt: &mut std::time::Instant, ph: &mut [f64; 4]| {
+            if prof {
+                let _ = e.stream().synchronize();
+                ph[acc] += pt.elapsed().as_secs_f64() * 1e3;
+                *pt = std::time::Instant::now();
+            }
+        };
         for il in lo..hi {
             let layer = &self.layers[il];
             let hyper = layer.hyper.as_ref().ok_or_else(|| {
@@ -2110,6 +2327,7 @@ impl HybridModel {
             let (y, mix) = crate::hyper::pre(e, topology, &hyper.attn, &x, t, n_embd)?;
             let mut h = e.uninit(t * n_embd)?;
             e.rms_norm(&y, layer.attn_norm.float_data(), &mut h, n_embd, t, eps)?;
+            mark(e, 0, &mut pt, &mut ph);
             let mixed = match &layer.mixer {
                 Mixer::Full(fa) => {
                     self.full_attn_prime(e, fa, &h, None, pos_d, t, cache, il, seq_end)?
@@ -2131,6 +2349,7 @@ impl HybridModel {
                 )?,
                 Mixer::Kda(la) => crate::kda::kda_prime_cached(e, la, &h, t, eps, cache, il)?,
             };
+            mark(e, 1, &mut pt, &mut ph);
             x = crate::hyper::post(e, topology, &mixed, &x, &mix, t, n_embd)?;
 
             let (y, mix) = crate::hyper::pre(e, topology, &hyper.mlp, &x, t, n_embd)?;
@@ -2143,11 +2362,37 @@ impl HybridModel {
                 t,
                 eps,
             )?;
+            mark(e, 2, &mut pt, &mut ph);
             let ffn_out = self.hyper_ffn_branch(e, layer, &z, t, il, true, None)?;
             x = crate::hyper::post(e, topology, &ffn_out, &x, &mix, t, n_embd)?;
             // glm5 DFlash2 feature tap (lane/glm5-dflash-draft-src): the CONTRACTED
             // completed layer output, host-staged — one Option check when unarmed.
-            self.glm5_hc_tap(e, cache, topology, il, &x, t)?;
+            match &taps {
+                HcTapArm::FromCache => self.glm5_hc_tap(e, cache, topology, il, &x, t)?,
+                HcTapArm::Shared(sink, base) => {
+                    // Lock held for the row copy only (see `HcTapArm`'s header for why sharing
+                    // is sound); the contraction and the readback inside are this stage's own.
+                    let mut guard = sink
+                        .lock()
+                        .map_err(|_| "hc tap sink lock poisoned by a failed stage walk")?;
+                    self.glm5_hc_tap_into(e, &mut guard, *base, topology, il, &x, t)?;
+                }
+            }
+            mark(e, 3, &mut pt, &mut ph);
+        }
+        if prof {
+            // Same shape as the step35 line (walk, token count, layer count, four ms fields);
+            // the KEYS name this walk's phases rather than step37's, because a line labelled
+            // `norm+qkv` for an mHC site would be a lie that reads like a measurement.
+            eprintln!(
+                "[prime-prof] walk=hyper t={t} layers={} attn_glue={:.0}ms mixer={:.0}ms \
+                 ffn_glue={:.0}ms ffn={:.0}ms",
+                hi - lo,
+                ph[0],
+                ph[1],
+                ph[2],
+                ph[3]
+            );
         }
         Ok(x)
     }
@@ -2736,7 +2981,16 @@ impl HybridModel {
             }
             let mut x = crate::hyper::expand(e, topology, &embedded, t, n_embd)?;
             x = self.hyper_range_prime(
-                e, topology, x, fence[0], fence[1], &pos_d, t, cache, seq_end,
+                e,
+                topology,
+                x,
+                fence[0],
+                fence[1],
+                &pos_d,
+                t,
+                cache,
+                seq_end,
+                HcTapArm::FromCache,
             )?;
             for s in 1..fence.len() - 1 {
                 let boundary_tx = e.clone_dtod(&x)?;
@@ -2751,6 +3005,7 @@ impl HybridModel {
                     t,
                     cache,
                     seq_end,
+                    HcTapArm::FromCache,
                 )?;
             }
             return self.hyper_prime_tail(e, topology, &x, t, n_embd, eps, cache);
@@ -2819,7 +3074,16 @@ impl HybridModel {
                 }
                 let x = crate::hyper::expand(e0, topology, &embedded, t, n_embd)?;
                 let x = self.hyper_range_prime(
-                    e0, topology, x, fence[0], fence[1], &pos_d, t, cache, seq_end,
+                    e0,
+                    topology,
+                    x,
+                    fence[0],
+                    fence[1],
+                    &pos_d,
+                    t,
+                    cache,
+                    seq_end,
+                    HcTapArm::FromCache,
                 )?;
                 rt.tx(0, &x, t * width)?
             };
@@ -2838,6 +3102,7 @@ impl HybridModel {
                     t,
                     cache,
                     seq_end,
+                    HcTapArm::FromCache,
                 )?;
                 slot = rt.tx(s, &x, t * width)?;
             }
@@ -2856,6 +3121,7 @@ impl HybridModel {
                     t,
                     cache,
                     seq_end,
+                    HcTapArm::FromCache,
                 )?;
                 self.hyper_prime_tail(el, topology, &x, t, n_embd, eps, cache)?
             };
@@ -2869,6 +3135,278 @@ impl HybridModel {
             rt.publish_all_to(&caller_stream)?;
             Ok(out)
         }
+    }
+
+    /// DOOR `MEMRA_B200_PRIME_V2` arm 2: the PIPELINED mHC PP-2 prime. Stage 0 of chunk k+1
+    /// runs on device 0 while stage 1 of chunk k runs on device 1, over disjoint per-stage
+    /// caches ([`PrimeCacheStages`]), on two scoped host threads.
+    ///
+    /// TWO HOST THREADS ARE REQUIRED, not a style choice, and this is the whole reason the
+    /// serial chunk loop in `prime_cache_hyper` gets no overlap for free: the grouped MoE
+    /// prefill's sigmoid host oracle drains its stage's stream ONCE PER LAYER
+    /// (`Engine::moe_router_sigmoid_topk_host`), 21 times per stage per chunk on the deployed
+    /// 24/21 cut. Two CUDA streams driven from one host thread therefore serialize however the
+    /// calls are ordered — the host is the serializer, not the device. `prime_cache_pp2_pipelined`
+    /// records exactly this finding for the serial trunk; this is its mHC twin, and the two
+    /// schedulers are deliberately kept in the same shape so a fix to one reads as a fix to the
+    /// other.
+    ///
+    /// BIT-IDENTICAL to the serial chunk loop at the SAME ranges: every chunk runs the same
+    /// `hyper_range_prime` calls on the same operand bytes through the same stage engines, and
+    /// the boundary payload is an exact copy of the `[t, streams, hidden]` state. Only which
+    /// host thread issues a stage, and when, changes. That is arm 2's bar in
+    /// `glm5-prime-v2-gate`; arm 1 (the schedule) carries the near-tie band instead, and the two
+    /// axes are separated so a scheduling bug cannot hide inside a tolerance.
+    ///
+    /// REFUSALS, by name rather than by silence. A vision overlay declines (the splice is a
+    /// stage-0 embedding-intake transform whose gate ran on the serial ppN body), and an ARMED
+    /// hc tap sink declines because [`PrimeCacheStages`] gives each stage shell
+    /// `hc_taps: None` — the DFlash2 draft-source rows would go quietly missing, which is the
+    /// exact shape of a loud failure failing quietly. Both fall back to the serial chunk loop.
+    #[allow(clippy::too_many_arguments)] // allow: mirrors prime_cache_pp2_pipelined's contract
+    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
+    fn prime_cache_hyper_pp2_pipelined(
+        &self,
+        e: &Engine,
+        tokens: &[u32],
+        cache: &mut Cache,
+        seq_end: usize,
+        topology: &crate::hyper::HyperTopology,
+        ranges: &[(usize, usize)],
+        fence: &[usize],
+        taps: Option<&std::sync::Mutex<&mut crate::cache::HcTapSink>>,
+    ) -> Result<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        debug_assert_eq!(fence.len(), 3);
+        debug_assert!(ranges.len() >= 2);
+        // Each stage call gets its OWN chunk base; the sink itself is shared. See `HcTapArm`
+        // for why that is sound (disjoint slot columns AND disjoint row windows).
+        let arm = |base: usize| match taps {
+            Some(sink) => HcTapArm::Shared(sink, base),
+            None => HcTapArm::FromCache,
+        };
+        let rt = crate::pp::PpNRt::get(e)?;
+        assert_eq!(
+            rt.n_stages(),
+            2,
+            "the pipelined mHC prime requires exactly two PP stages"
+        );
+        let n_embd = self.cfg.n_embd as usize;
+        let eps = self.cfg.rms_eps;
+        let width = topology.streams * n_embd;
+        let t = tokens.len();
+        let initial_base = cache.pos;
+        let caller_stream = e.stream();
+
+        // #87 reverse publication before any new stage allocation, then prewarm both boundary
+        // slots while the stage streams are empty — a lazily grown slot B after stage 1(N) is
+        // queued would synchronize that stream and erase the first overlap.
+        rt.fence_stages_behind(&caller_stream)?;
+        let max_payload = ranges.iter().map(|(s, x)| (x - s) * width).max().unwrap();
+        rt.prepare_overlap_slots(0, max_payload)?;
+
+        // ENGAGEMENT RECEIPT, once per TAP STATE rather than once per process. The armed case
+        // is the one the product route runs and the one this arm used to refuse, so a log that
+        // only ever showed the first state reached could show `taps=none` forever while the
+        // interesting half went unrecorded.
+        static SAID: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+        let bit = 1u8 << u8::from(taps.is_some());
+        if SAID.fetch_or(bit, std::sync::atomic::Ordering::Relaxed) & bit == 0 {
+            eprintln!(
+                "[prime-v2] arm2 pipelined stages=2 chunks={} overlap={} t={t} devices={:?} \
+                 taps={} (stage 0 of chunk k+1 overlaps stage 1 of chunk k on two host \
+                 threads; MEMRA_B200_PRIME_V2, logged once per process)",
+                ranges.len(),
+                ranges.len().saturating_sub(1),
+                (0..2)
+                    .map(|s| rt.engine(s, e).ctx().ordinal())
+                    .collect::<Vec<_>>(),
+                if taps.is_some() { "armed" } else { "none" },
+            );
+        }
+
+        let mut hiddens = e.uninit(t * n_embd)?;
+        let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
+        let mut stage_caches = PrimeCacheStages::new(cache, fence);
+        let (cache0, cache1) = stage_caches.pp2_parts();
+        let (first_start, first_end) = ranges[0];
+        let mut slot = self.prime_hyper_pp2_stage0_enqueue(
+            e,
+            rt,
+            topology,
+            &tokens[first_start..first_end],
+            cache0,
+            seq_end,
+            fence,
+            initial_base + first_start,
+            arm(initial_base + first_start),
+        )?;
+        cache0.pos = initial_base + first_end;
+
+        for (i, &(start, end)) in ranges.iter().enumerate() {
+            let base = initial_base + start;
+            debug_assert_eq!(
+                cache1.pos, base,
+                "stage 1 must drain chunks in original position order"
+            );
+            let (out, next_slot) = if let Some(&(next_start, next_end)) = ranges.get(i + 1) {
+                let next_base = initial_base + next_start;
+                debug_assert_eq!(
+                    cache0.pos, next_base,
+                    "stage 0 must issue chunks in original position order"
+                );
+                let cache0_stage = &mut *cache0;
+                std::thread::scope(|scope| -> Result<_, Box<dyn std::error::Error>> {
+                    let stage0 = scope.spawn(move || -> Result<usize, String> {
+                        let next = self
+                            .prime_hyper_pp2_stage0_enqueue(
+                                e,
+                                rt,
+                                topology,
+                                &tokens[next_start..next_end],
+                                cache0_stage,
+                                seq_end,
+                                fence,
+                                next_base,
+                                arm(next_base),
+                            )
+                            .map_err(|err| err.to_string())?;
+                        cache0_stage.pos = initial_base + next_end;
+                        Ok(next)
+                    });
+                    let x = self.prime_hyper_pp2_stage1_enqueue(
+                        e,
+                        rt,
+                        topology,
+                        slot,
+                        end - start,
+                        cache1,
+                        seq_end,
+                        fence,
+                        base,
+                        arm(base),
+                    )?;
+                    let out = {
+                        rt.bind_stage(1)?;
+                        let _st1 = rt.enter(1);
+                        let e1 = rt.engine(1, e);
+                        self.hyper_prime_tail(e1, topology, &x, end - start, n_embd, eps, cache1)?
+                    };
+                    let next = match stage0.join() {
+                        Ok(result) => {
+                            result.map_err(|err| -> Box<dyn std::error::Error> { err.into() })?
+                        }
+                        Err(payload) => std::panic::resume_unwind(payload),
+                    };
+                    Ok((out, Some(next)))
+                })?
+            } else {
+                let x = self.prime_hyper_pp2_stage1_enqueue(
+                    e,
+                    rt,
+                    topology,
+                    slot,
+                    end - start,
+                    cache1,
+                    seq_end,
+                    fence,
+                    base,
+                    arm(base),
+                )?;
+                let out = {
+                    rt.bind_stage(1)?;
+                    let _st1 = rt.enter(1);
+                    let e1 = rt.engine(1, e);
+                    self.hyper_prime_tail(e1, topology, &x, end - start, n_embd, eps, cache1)?
+                };
+                (out, None)
+            };
+
+            rt.publish_to(1, &caller_stream)?;
+            e.copy_into(&mut hiddens, start * n_embd, &out.2, (end - start) * n_embd)?;
+            last = Some((out.0, out.1));
+            crate::pp::PRIME_SPLIT_CHUNKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            HYPER_PRIME_PIPELINED_CHUNKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+            if let Some(next) = next_slot {
+                // The caller copy above reads a stage-1 allocation. Before stage 1 of the next
+                // chunk can allocate or reuse blocks, mirror #87's body-entry fence. Stage
+                // 0(N+1) is already queued before this wait is appended, so its overlap with
+                // stage 1(N) is preserved.
+                rt.fence_stages_behind(&caller_stream)?;
+                slot = next;
+            }
+        }
+
+        debug_assert_eq!(cache0.pos, initial_base + t);
+        debug_assert_eq!(cache1.pos, initial_base + t);
+        let (logits, h_seed) = last.expect("the pipelined mHC prime ran at least one chunk");
+        stage_caches.commit();
+        Ok((logits, h_seed, hiddens))
+    }
+
+    /// Stage 0 of one pipelined mHC prime chunk: embed, expand to the `[t, streams, hidden]`
+    /// stream state, walk `fence[0]..fence[1]`, hand the state to the boundary. The mHC twin of
+    /// [`Self::prime_pp2_stage0_enqueue`]; the ONLY differences are the stream expansion and the
+    /// `streams * n_embd` payload width.
+    #[allow(clippy::too_many_arguments)] // allow: mirrors prime_pp2_stage0_enqueue's contract
+    fn prime_hyper_pp2_stage0_enqueue(
+        &self,
+        e: &Engine,
+        rt: &crate::pp::PpNRt,
+        topology: &crate::hyper::HyperTopology,
+        tokens: &[u32],
+        cache: &mut Cache,
+        seq_end: usize,
+        fence: &[usize],
+        base: usize,
+        taps: HcTapArm<'_, '_>,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
+        let t = tokens.len();
+        let n_embd = self.cfg.n_embd as usize;
+        let width = topology.streams * n_embd;
+        let pos: Vec<i32> = (base as i32..(base + t) as i32).collect();
+        rt.bind_stage(0)?;
+        let _st0 = rt.enter(0);
+        let e0 = rt.engine(0, e);
+        let pos_d = e0.htod_i32(&pos)?;
+        let embedded = self.embed(e0, tokens)?;
+        let x = crate::hyper::expand(e0, topology, &embedded, t, n_embd)?;
+        let _overlap = crate::pp::enter_prime_pipe_stage();
+        let x = self.hyper_range_prime(
+            e0, topology, x, fence[0], fence[1], &pos_d, t, cache, seq_end, taps,
+        )?;
+        rt.tx_pipelined(0, &x, t * width)
+    }
+
+    /// Stage 1 of one pipelined mHC prime chunk: receive the stream state, walk
+    /// `fence[1]..fence[2]`. The caller runs [`Self::hyper_prime_tail`] on the result, which is
+    /// where `cache.pos` advances — exactly as the serial ppN body orders it.
+    #[allow(clippy::too_many_arguments)] // allow: mirrors prime_pp2_stage1_enqueue's contract
+    fn prime_hyper_pp2_stage1_enqueue(
+        &self,
+        e: &Engine,
+        rt: &crate::pp::PpNRt,
+        topology: &crate::hyper::HyperTopology,
+        slot: usize,
+        t: usize,
+        cache: &mut Cache,
+        seq_end: usize,
+        fence: &[usize],
+        base: usize,
+        taps: HcTapArm<'_, '_>,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let n_embd = self.cfg.n_embd as usize;
+        let width = topology.streams * n_embd;
+        let pos: Vec<i32> = (base as i32..(base + t) as i32).collect();
+        rt.bind_stage(1)?;
+        let _st1 = rt.enter(1);
+        let e1 = rt.engine(1, e);
+        let pos_d = e1.htod_i32(&pos)?;
+        let x = rt.rx(0, slot, t * width)?;
+        let _overlap = crate::pp::enter_prime_pipe_stage();
+        self.hyper_range_prime(
+            e1, topology, x, fence[1], fence[2], &pos_d, t, cache, seq_end, taps,
+        )
     }
 
     /// ONE call of the mHC prime walk. Carries `tokens.len()` rows of stream state and of every
@@ -3045,7 +3583,7 @@ impl HybridModel {
 
         if crate::pp::pp2_streams_off() {
             let pos_d = e.htod_i32(&[pos as i32])?;
-            let embedded = e.htod(&self.embd.gather(n_embd, &[token]))?;
+            let embedded = e.htod(&self.embd.try_gather(n_embd, &[token])?)?;
             let mut x = crate::hyper::expand(e, topology, &embedded, 1, n_embd)?;
             x = self.hyper_range_decode(e, topology, x, fence[0], fence[1], &pos_d, pos, cache)?;
             for s in 1..fence.len() - 1 {
@@ -3079,7 +3617,7 @@ impl HybridModel {
             let _st0 = rt.enter(0);
             let e0 = rt.engine(0, e);
             let pos_d = e0.htod_i32(&[pos as i32])?;
-            let embedded = e0.htod(&self.embd.gather(n_embd, &[token]))?;
+            let embedded = e0.htod(&self.embd.try_gather(n_embd, &[token])?)?;
             let x = crate::hyper::expand(e0, topology, &embedded, 1, n_embd)?;
             let x =
                 self.hyper_range_decode(e0, topology, x, fence[0], fence[1], &pos_d, pos, cache)?;
@@ -14548,6 +15086,35 @@ impl HybridModel {
             );
             return Ok(None);
         }
+        // MODE 1 IS REFUSED ON THIS WALK (2026-09-02, lane/b200-prefill-roofline). Mode 1 is
+        // dequant-into-a-workspace + `cublasGemmGroupedBatchedEx`, and that API issues through
+        // cuBLAS-INTERNAL streams that are NOT ordered with ours — the round-46 NaN race this
+        // file's own header records, whose only mitigation here is a full stream sync placed
+        // AFTER the `h2f_scaled` pass, i.e. after the unordered read has already happened.
+        //
+        // MEASURED, and the reason this is a refusal rather than a note. Box boot D on the 2x
+        // B200 pair (`MEMRA_PRIME_CHUNK=4096 MEMRA_MOE_F16G=1`, everything else as the passing
+        // boot C): the trunk went silently wrong somewhere in the 42 MoE layers — by layer 43 a
+        // 4096-token chunk reported `n_active=14` where boots A-C showed 209-283, which is a
+        // router seeing a destroyed residual — then the corrupt logits produced a token id near
+        // `i32::MAX`, the embed gather panicked, the GPU worker died, the respawn died on the
+        // same prime, and every request after it was connection refused. One door, one numeric
+        // race, a fleet outage. glm5_next reaches this arm with 283 concurrent groups where the
+        // families that qualified mode 1 reach it with a fraction of that, which is the most
+        // likely reason the race is deterministic here and was not there.
+        //
+        // Scope, stated so this is not read as wider than it is: this refuses mode 1 for the
+        // glm5 sigmoid grouped PREFILL only. Every other mode-1 caller is untouched and keeps
+        // whatever evidence it already had. The replacement for this walk is the door's own
+        // dequant-once arm, which runs on OUR stream and cannot take this race.
+        if crate::moe_f16g_mode() == 1 {
+            decline_once(
+                "MEMRA_MOE_F16G=1 is REFUSED on the glm5 sigmoid grouped prefill:                  cublasGemmGroupedBatchedEx issues on cuBLAS-internal streams unordered with                  ours, and on this walk's 283-group shape that race silently destroyed the                  trunk and killed the worker (2026-09-02 boot D, research/glm5-b200-20260902/                 box/prefill/). Use MEMRA_MOE_F16G=2 (the default) or the MEMRA_B200_PRIME_V2                  dequant-once arm",
+                t,
+                il,
+            );
+            return Ok(None);
+        }
         // MEMRA_MOE_GATE is the BYTE-identity oracle between sequential-class dispatches; this
         // arm is a different numeric class with its own reference-band gate, so it must not
         // shadow that comparison.
@@ -20364,7 +20931,7 @@ impl HybridModel {
                 let (qt, rb) = self.embd.qt_and_row_bytes(n_embd);
                 e.embed_gather_device_td(embd_gpu, td, t, n_embd, qt, rb)?
             }
-            None => e.htod(&self.embd.gather(n_embd, tokens))?,
+            None => e.htod(&self.embd.try_gather(n_embd, tokens)?)?,
         };
         e.scale_inplace(&mut x, (n_embd as f32).sqrt(), t * n_embd)?;
         let mut h_carry: Option<(CudaSlice<i8>, CudaSlice<f32>)> = None;
@@ -20963,7 +21530,7 @@ impl HybridModel {
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         let pos_d = e.htod_i32(&[cache.pos as i32])?;
-        let mut x = e.htod(&self.embd.gather(n_embd, &[token]))?;
+        let mut x = e.htod(&self.embd.try_gather(n_embd, &[token])?)?;
         e.scale_inplace(&mut x, (n_embd as f32).sqrt(), n_embd)?;
         // cross-layer fusion: each tail's closing add+scale also EMITS the next layer's
         // attn-normed input pre-quantized q8_1 (the mixer consumes only quantized matmuls).
@@ -21079,7 +21646,7 @@ impl HybridModel {
                 &e0.stream(),
                 "gemma4_decode_step_h_pp2.stage0.pos_d",
             );
-            let mut x = e0.htod(&self.embd.gather(n_embd, &[token]))?;
+            let mut x = e0.htod(&self.embd.try_gather(n_embd, &[token])?)?;
             e0.scale_inplace(&mut x, (n_embd as f32).sqrt(), n_embd)?;
             let x = self.gemma4_decode_layers(e0, x, 0, split, &pos_d, cache)?;
             rt.tx(0, &x, n_embd)?
@@ -21123,7 +21690,7 @@ impl HybridModel {
         let pos_d = e.htod_i32(&[cache.pos as i32])?;
 
         // ---- STAGE 0: embed + sqrt(n_embd) scale + layers [0, split) ----
-        let mut x = e.htod(&self.embd.gather(n_embd, &[token]))?;
+        let mut x = e.htod(&self.embd.try_gather(n_embd, &[token])?)?;
         e.scale_inplace(&mut x, (n_embd as f32).sqrt(), n_embd)?;
         let x = self.gemma4_decode_layers(e, x, 0, split, &pos_d, cache)?;
 
@@ -24865,7 +25432,7 @@ impl HybridModel {
         let t = tokens.len();
         let pos: Vec<i32> = (0..t).map(|i| (pos0 + i) as i32).collect();
         let pos_d = e.htod_i32(&pos)?;
-        let mut x = e.htod(&self.embd.gather(n_embd, tokens))?;
+        let mut x = e.htod(&self.embd.try_gather(n_embd, tokens)?)?;
         e.scale_inplace(&mut x, (n_embd as f32).sqrt(), t * n_embd)?;
         let inp_pl = self.gemma4_e4b_inp_pl(e, tokens, &x, t)?;
         self.gemma4_e4b_trunk_core(e, x, inp_pl, &pos_d, t, cache, None, true, head_last)

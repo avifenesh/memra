@@ -608,7 +608,7 @@ impl HybridModel {
         }
 
         let pos = Glm5VerifyPos::new(e, pos0, t)?;
-        let embedded = e.htod(&self.embd.gather(n_embd, tokens))?;
+        let embedded = e.htod(&self.embd.try_gather(n_embd, tokens)?)?;
         let x = crate::hyper::expand(e, &topology, &embedded, t, n_embd)?;
         let x = self.glm5_verify_range(
             e,
@@ -940,9 +940,48 @@ impl HybridModel {
         let Some(sink) = cache.hc_taps.as_mut() else {
             return Ok(());
         };
+        let base = sink.base;
+        self.glm5_hc_tap_into(e, sink, base, topology, il, x, t)
+    }
+
+    /// [`Self::glm5_hc_tap`] with the sink and its row base passed EXPLICITLY instead of read
+    /// from the cache.
+    ///
+    /// The pipelined mHC prime needs this seam. Its two stage threads run different CHUNKS at
+    /// the same moment, so a single `sink.base` field cannot describe both, and
+    /// [`PrimeCacheStages`] hands each stage a cache shell with `hc_taps: None` — which is why
+    /// arm 2 used to refuse outright when the DFlash2 drafter had armed a sink. Passing the
+    /// base per call is what makes one shared sink correct for two concurrent walks.
+    #[allow(clippy::too_many_arguments)] // allow: the list is the tap contract, base included
+    pub(crate) fn glm5_hc_tap_into(
+        &self,
+        e: &Engine,
+        sink: &mut HcTapSink,
+        base_abs: usize,
+        topology: &crate::hyper::HyperTopology,
+        il: usize,
+        x: &CudaSlice<f32>,
+        t: usize,
+    ) -> Res<()> {
         let Some(slot) = sink.layer_ids.iter().position(|&l| l == il) else {
             return Ok(());
         };
+        let saved = sink.base;
+        sink.base = base_abs;
+        let out = self.glm5_hc_tap_slot(e, sink, slot, topology, x, t);
+        sink.base = saved;
+        out
+    }
+
+    fn glm5_hc_tap_slot(
+        &self,
+        e: &Engine,
+        sink: &mut HcTapSink,
+        slot: usize,
+        topology: &crate::hyper::HyperTopology,
+        x: &CudaSlice<f32>,
+        t: usize,
+    ) -> Res<()> {
         let h = sink.hidden;
         let n_taps = sink.layer_ids.len();
         // Sink-relative row of this walk's row 0 (doc on `HcTapSink::origin`): fresh-prompt
@@ -1096,7 +1135,7 @@ impl HybridModel {
         // ranges — the shape every hc ppN walk uses for this knob.
         if crate::pp::pp2_streams_off() {
             let pos = pos_on(e)?;
-            let embedded = e.htod(&self.embd.gather(n_embd, tokens))?;
+            let embedded = e.htod(&self.embd.try_gather(n_embd, tokens)?)?;
             let mut x = crate::hyper::expand(e, topology, &embedded, t, n_embd)?;
             x =
                 self.glm5_verify_range(e, topology, x, fence[0], fence[1], &pos, cache, &mut ckpt)?;
@@ -1135,7 +1174,7 @@ impl HybridModel {
             let _st0 = rt.enter(0);
             let e0 = rt.engine(0, e);
             let pos = pos_on(e0)?;
-            let embedded = e0.htod(&self.embd.gather(n_embd, tokens))?;
+            let embedded = e0.htod(&self.embd.try_gather(n_embd, tokens)?)?;
             let x = crate::hyper::expand(e0, topology, &embedded, t, n_embd)?;
             let x = self
                 .glm5_verify_range(e0, topology, x, fence[0], fence[1], &pos, cache, &mut ckpt)?;
@@ -1559,7 +1598,11 @@ impl HybridModel {
         let mut done = 0usize;
         while done < t {
             let tc = (t - done).min(CHUNK);
-            let e_emb = e.htod(&self.embd.gather(n_embd, &tokens_next[done..done + tc]))?;
+            let e_emb = e.htod(
+                &self
+                    .embd
+                    .try_gather(n_embd, &tokens_next[done..done + tc])?,
+            )?;
             let mut e_norm = e.uninit(tc * n_embd)?;
             e.rms_norm(&e_emb, mtp.enorm.float_data(), &mut e_norm, n_embd, tc, eps)?;
             // hnorm over the chunk's hidden rows (one contiguous view copy — rms_norm
@@ -3016,7 +3059,7 @@ impl HybridModel {
         let exact_scope = eh.exact_scope(true);
         let mut block: Vec<u32> = vec![c.mask_token_id; b];
         block[0] = anchor;
-        let noise = eh.htod(&self.embd.gather(n_embd, &block))?;
+        let noise = eh.htod(&self.embd.try_gather(n_embd, &block)?)?;
         let pos_block: Vec<i32> = ((start as i32)..(start + b) as i32).collect();
         let dh = draft.forward_round(eh, kv, &noise, &pos_block)?;
 
