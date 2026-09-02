@@ -9814,8 +9814,7 @@ impl HybridModel {
     ) {
         if !crate::glm5_graph_trace_on()
             || crate::glm5_graph_capture_open()
-            || crate::GLM5_VROWS_T1_ACT_DUMPED.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                >= 4
+            || !crate::glm5_trace_take_slot("act", arm, il)
         {
             return;
         }
@@ -9835,8 +9834,7 @@ impl HybridModel {
     fn trace_moe_out(e: &Engine, arm: &str, il: u16, out: &CudaSlice<f32>) {
         if !crate::glm5_graph_trace_on()
             || crate::glm5_graph_capture_open()
-            || crate::GLM5_VROWS_T1_OUT_DUMPED.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                >= 4
+            || !crate::glm5_trace_take_slot("out", arm, il)
         {
             return;
         }
@@ -9871,8 +9869,7 @@ impl HybridModel {
         sel: &[u32],
         w: &[f32],
     ) {
-        if crate::GLM5_VROWS_T1_SHAPE_DUMPED.fetch_add(1, std::sync::atomic::Ordering::Relaxed) >= 4
-        {
+        if !crate::glm5_trace_take_slot("shape", arm, il) {
             return;
         }
         let mac = |x: &crate::model::HostExps| -> Vec<f32> {
@@ -14700,7 +14697,15 @@ impl HybridModel {
             e.vws_uninit(t * (n_embd / 32))?,
         );
         e.quantize_q8_1_into(z, t, n_embd, &mut zq, &mut zd)?;
-        Self::trace_moe_act(e, "device", il, t, z, &zq, &zd);
+        // LABEL FROM THE PROVENANCE, not from the call site. `moe_vrows_pairs_q8` is also the
+        // spec-verify walk's launcher with HOST-built tables, so a hard-coded "device" here would
+        // be a lie on that path — and a mislabelled arm is exactly the class of mistake that cost
+        // a box window in take 7.
+        let vrows_arm = match sel {
+            VrowsSel::Dev(..) => "device",
+            VrowsSel::Host(..) => "vrows-host",
+        };
+        Self::trace_moe_act(e, vrows_arm, il, t, z, &zq, &zd);
         let act = e.moe_gate_up_preclamp8_q8_rows(
             &ptrs_d,
             &scl_d,
@@ -14735,7 +14740,7 @@ impl HybridModel {
             m.down_exps.qtype,
             m.down_exps.row_bytes,
         )?;
-        Self::trace_moe_out(e, "device", il, moe_out);
+        Self::trace_moe_out(e, vrows_arm, il, moe_out);
         // Everything above is dead after the down launch (stream-ordered reuse is safe on
         // this engine's stream, the same guarantee the async free relies on).
         e.vws_recycle_u64(ptrs_d);

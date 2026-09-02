@@ -152,6 +152,10 @@ fn run_arm(
         }
     }
     glm5_sel_ledger::reset_host();
+    // RESET THE TRACE BUDGET AT THE ARM SWITCH. Take 10 printed four identical `arm=host il=3`
+    // lines and not one `arm=device` line: the budget was process-global, the eager arm runs
+    // first, and it spent the whole thing. A two-arm comparison's budget belongs to the arm.
+    memra_engine::glm5_trace_reset();
 
     let mut cache = Cache::new(e, &m.cfg, prompt.len() + steps + 8)?;
     let (logits, _h_seed, _hiddens) = m.prime_cache(e, prompt, &mut cache, 0)?;
