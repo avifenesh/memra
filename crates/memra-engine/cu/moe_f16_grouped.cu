@@ -1858,10 +1858,15 @@ int memra_moe_f16g_h2f(const void* src_f16, float* dst, size_t n, void* stream){
 // the grouped API's type matrix has no 16F-in/32F-out combo).
 int memra_moe_f16g_gemm(const void* w_f16, const void* act_f16, void* y,
         const int* ex_off_host, int n_active, int in_f, int out_f, void* stream){
-    static cublasHandle_t handle = nullptr;
-    if(!handle){
-        if(cublasCreate(&handle) != CUBLAS_STATUS_SUCCESS) return 3;
+    // per-device handles: a cuBLAS handle is bound to the device current at cublasCreate, and
+    // a shared one fails from the other PP stage on a 2x B200 pair (2026-09-02, f16_prefill.cu).
+    static cublasHandle_t handles[64] = {};
+    int dev = 0;
+    if(cudaGetDevice(&dev) != cudaSuccess || dev < 0 || dev >= 64) dev = 0;
+    if(!handles[dev]){
+        if(cublasCreate(&handles[dev]) != CUBLAS_STATUS_SUCCESS) return 3;
     }
+    cublasHandle_t handle = handles[dev];
     cublasSetStream(handle, reinterpret_cast<cudaStream_t>(stream));
 
     // per-group host arrays (n_active <= a few hundred; stack-scale, heap for safety)
