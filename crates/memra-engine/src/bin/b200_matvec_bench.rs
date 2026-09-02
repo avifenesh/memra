@@ -58,7 +58,10 @@ fn safe_e4m3(b: u8) -> u8 {
 /// per 64-element sub-block (sblk) = 4 e4m3 scale bytes (one per 16-elem quarter) + 32
 /// nibble-packed quant bytes. `in_f` must be a multiple of 64. Returns (bytes, row_bytes).
 fn synth_nvfp4_expert_row_bytes(out_f: usize, in_f: usize, seed: u32) -> (Vec<u8>, usize) {
-    assert!(in_f % 64 == 0, "expert nvfp4 layout needs in_f % 64 == 0");
+    assert!(
+        in_f.is_multiple_of(64),
+        "expert nvfp4 layout needs in_f % 64 == 0"
+    );
     let nsb64 = in_f / 64;
     let row_bytes = nsb64 * 36;
     let mut w = vec![0u8; out_f * row_bytes];
@@ -78,7 +81,10 @@ fn synth_nvfp4_expert_row_bytes(out_f: usize, in_f: usize, seed: u32) -> (Vec<u8
 /// `nvfp4_mmvq_fused_seg_rp` (qmatvec.cu): quant plane `[out_f, nsb64*32]` followed by scale
 /// plane `[out_f, nsb64*4]`. `in_f` must be a multiple of 64.
 fn synth_nvfp4_rp_bytes(out_f: usize, in_f: usize, seed: u32) -> Vec<u8> {
-    assert!(in_f % 64 == 0, "rp nvfp4 layout needs in_f % 64 == 0");
+    assert!(
+        in_f.is_multiple_of(64),
+        "rp nvfp4 layout needs in_f % 64 == 0"
+    );
     let nsb64 = in_f / 64;
     let qplane_len = out_f * nsb64 * 32;
     let splane_len = out_f * nsb64 * 4;
@@ -166,6 +172,29 @@ fn report(label: &str, shipped_us: f64, arm_us: f64, bytes: f64, mism: usize, ma
     };
     println!(
         "{label:<40} shipped={shipped_us:>9.2}us ({gbs_shipped:>7.1} GB/s)  arm={arm_us:>9.2}us ({gbs_arm:>7.1} GB/s)  speedup={speedup:>6.3}x  {bits}"
+    );
+}
+
+/// One extra arm against the shipped baseline, on its own line.
+fn report_arm(
+    label: &str,
+    arm: &str,
+    base_us: f64,
+    arm_us: f64,
+    bytes: f64,
+    mism: usize,
+    maxd: f32,
+) {
+    let gbs = bytes / arm_us / 1e3;
+    let bits = if mism == 0 {
+        "bit-identical".to_string()
+    } else {
+        format!("MISMATCH n={mism} max_abs_diff={maxd:.3e}")
+    };
+    println!(
+        "{:<40} {arm}={arm_us:>9.2}us ({gbs:>7.1} GB/s)  vs shipped={:>6.3}x  {bits}",
+        format!("  {label}"),
+        base_us / arm_us
     );
 }
 
@@ -267,14 +296,50 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             t_arm.push(t1.elapsed().as_secs_f64() * 1e6);
         }
         let bytes = (n_used * n_ff * row_bytes * 2) as f64; // gate + up
+        let ship_us = median(&mut t_ship);
         report(
             "moe_gate_up_preclamp8_q8 (w4)",
-            median(&mut t_ship),
+            ship_us,
             median(&mut t_arm),
             bytes,
             mism,
             maxd,
         );
+
+        // MEMRA_B200_GEMV_V2 arm: 8 warps/block + g-walk unrolled by two.
+        {
+            let g0 = wptr8(&gate_copies[0], &stream);
+            let u0 = wptr8(&up_copies[0], &stream);
+            let v2_act = e.moe_gate_up_preclamp8_q8_v2(
+                g0, u0, &aq, &ad, gs, us, limit, n_embd, n_ff, n_used, QT_NVFP4, QT_NVFP4,
+                row_bytes, row_bytes,
+            )?;
+            e.stream().synchronize()?;
+            let h_v2 = e.dtoh(&v2_act)?;
+            let (mv, dv) = compare(&h_shipped, &h_v2);
+            let mut t_v2 = Vec::with_capacity(iters);
+            for i in 0..iters {
+                let c = i % copies;
+                let g = wptr8(&gate_copies[c], &stream);
+                let u = wptr8(&up_copies[c], &stream);
+                let t0 = Instant::now();
+                let _ = e.moe_gate_up_preclamp8_q8_v2(
+                    g, u, &aq, &ad, gs, us, limit, n_embd, n_ff, n_used, QT_NVFP4, QT_NVFP4,
+                    row_bytes, row_bytes,
+                )?;
+                e.stream().synchronize()?;
+                t_v2.push(t0.elapsed().as_secs_f64() * 1e6);
+            }
+            report_arm(
+                "moe_gate_up_preclamp8_q8_v2",
+                "v2",
+                ship_us,
+                median(&mut t_v2),
+                bytes,
+                mv,
+                dv,
+            );
+        }
     }
 
     // -----------------------------------------------------------------------------------
@@ -357,14 +422,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             t_arm.push(t1.elapsed().as_secs_f64() * 1e6);
         }
         let bytes = (n_used * n_embd * row_bytes) as f64;
+        let ship_us = median(&mut t_ship);
         report(
             "moe_down8_fma_q8 (w4)",
-            median(&mut t_ship),
+            ship_us,
             median(&mut t_arm),
             bytes,
             mism,
             maxd,
         );
+
+        // MEMRA_B200_GEMV_V2 arm: one block per output row, warp j owning expert slot j.
+        {
+            let mut y_v2 = e.zeros(n_embd)?;
+            let d0 = wptr8(&down_copies[0], &stream);
+            {
+                let mut dst = y_v2.slice_mut(0..n_embd);
+                e.moe_down8_fma_q8_v2(
+                    d0, w, &aq2, &ad2, &mut dst, n_ff, n_embd, n_used, QT_NVFP4, row_bytes,
+                )?;
+            }
+            e.stream().synchronize()?;
+            let h_v2 = e.dtoh(&y_v2)?;
+            let (mv, dv) = compare(&h_ship, &h_v2);
+            let mut t_v2 = Vec::with_capacity(iters);
+            for i in 0..iters {
+                let c = i % copies;
+                let mut y = e.zeros(n_embd)?;
+                let d = wptr8(&down_copies[c], &stream);
+                let t0 = Instant::now();
+                {
+                    let mut dst = y.slice_mut(0..n_embd);
+                    e.moe_down8_fma_q8_v2(
+                        d, w, &aq2, &ad2, &mut dst, n_ff, n_embd, n_used, QT_NVFP4, row_bytes,
+                    )?;
+                }
+                e.stream().synchronize()?;
+                t_v2.push(t0.elapsed().as_secs_f64() * 1e6);
+            }
+            report_arm(
+                "moe_down8_fma_q8_v2",
+                "v2",
+                ship_us,
+                median(&mut t_v2),
+                bytes,
+                mv,
+                dv,
+            );
+        }
     }
 
     // -----------------------------------------------------------------------------------
@@ -417,6 +522,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             mism,
             maxd,
         );
+
+        // MEMRA_B200_GEMV_V2 arm: 8 rows/block accumulated concurrently on one activation
+        // load, ten 16 B `ld.global.nc` loads in flight before the first fma, one barrier
+        // chain per block. ksplit comes from the same chooser the dispatch uses, and is
+        // printed so a sub-2-wave shape's `bf16_gemv_v2_splitk` class is never silent.
+        {
+            let ksplit = e.gemv_v2_ksplit(in_f, out_f, 1);
+            let mut y_v2 = e.zeros(out_f)?;
+            e.matvec_bf16_v2_raw(&wcopies[0], &xd, &mut y_v2, in_f, out_f, 1, ksplit)?;
+            e.stream().synchronize()?;
+            let h_v2 = e.dtoh(&y_v2)?;
+            let (mv, dv) = compare(&h_ship, &h_v2);
+            let mut t_v2 = Vec::with_capacity(iters);
+            for i in 0..iters {
+                let c = i % copies;
+                let mut y = e.zeros(out_f)?;
+                let t0 = Instant::now();
+                e.matvec_bf16_v2_raw(&wcopies[c], &xd, &mut y, in_f, out_f, 1, ksplit)?;
+                e.stream().synchronize()?;
+                t_v2.push(t0.elapsed().as_secs_f64() * 1e6);
+            }
+            report_arm(
+                &format!("matvec_bf16_v2 {label} (ksplit={ksplit})"),
+                "v2",
+                ship_us,
+                median(&mut t_v2),
+                bytes,
+                mv,
+                dv,
+            );
+        }
 
         // cuBLASLt REFERENCE arm (MEMRA_B200_BF16_GEMV_LT, lane/b200-gemv-hbm-20260902).
         // Called directly (the door is a process-wide OnceLock, so it cannot flip mid-run).
@@ -644,6 +780,101 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             bytes,
             mism,
             maxd,
+        );
+    }
+
+    // -----------------------------------------------------------------------------------
+    // Family 6: qmatvec_kda6_bf16f32 / _v2 (the census's single hottest launch: 93.8us for
+    // ~200 MB of bf16 reads = 2.1 TB/s, 26% of the 8 TB/s HBM3e wall). GLM-5.3-Flash KDA
+    // stage-1 six-projection group: three bf16 [8192, 4096] mixer projections (that is where
+    // the ~192 MB lives) plus the three small f32 low-rank/beta rows.
+    // -----------------------------------------------------------------------------------
+    {
+        let in_f = 4096usize;
+        let dims = [8192usize, 8192, 8192, 128, 128, 64];
+        let h_bf = synth_bf16(dims[0], in_f, 0x2468_ACE0);
+        let x = synth_f32(in_f, 0x1357_9BDF);
+        let xd = e.htod(&x)?;
+        let f32w: Vec<CudaSlice<f32>> = (3..6)
+            .map(|k| e.htod(&synth_f32(dims[k] * in_f, 0xA0A0 + k as u32)))
+            .collect::<Result<_, _>>()?;
+        // Distinct device copies per iteration so no run is served a warm L2 the others paid for.
+        let bf_copies: Vec<[CudaSlice<u8>; 3]> = (0..copies)
+            .map(
+                |_| -> Result<[CudaSlice<u8>; 3], Box<dyn std::error::Error>> {
+                    Ok([
+                        e.htod_bytes(&h_bf)?,
+                        e.htod_bytes(&h_bf)?,
+                        e.htod_bytes(&h_bf)?,
+                    ])
+                },
+            )
+            .collect::<Result<_, _>>()?;
+        let mk_outs = || -> Result<[CudaSlice<f32>; 6], Box<dyn std::error::Error>> {
+            Ok([
+                e.zeros(dims[0])?,
+                e.zeros(dims[1])?,
+                e.zeros(dims[2])?,
+                e.zeros(dims[3])?,
+                e.zeros(dims[4])?,
+                e.zeros(dims[5])?,
+            ])
+        };
+        let run = |c: usize,
+                   outs: &mut [CudaSlice<f32>; 6],
+                   v2: bool|
+         -> Result<(), Box<dyn std::error::Error>> {
+            let b = &bf_copies[c];
+            e.kda_proj_fused6_bf16_arm_raw(
+                &b[0], &b[1], &b[2], &f32w[0], &f32w[1], &f32w[2], &xd, outs, in_f, dims, 1, v2,
+            )
+        };
+
+        let mut o_ship = mk_outs()?;
+        run(0, &mut o_ship, false)?;
+        let mut o_v2 = mk_outs()?;
+        run(0, &mut o_v2, true)?;
+        e.stream().synchronize()?;
+        let mut mism = 0usize;
+        let mut maxd = 0f32;
+        for k in 0..6 {
+            let (m, d) = compare(&e.dtoh(&o_ship[k])?, &e.dtoh(&o_v2[k])?);
+            mism += m;
+            maxd = maxd.max(d);
+        }
+
+        let mut t_ship = Vec::with_capacity(iters);
+        let mut t_v2 = Vec::with_capacity(iters);
+        for i in 0..iters {
+            let c = i % copies;
+            let mut outs = mk_outs()?;
+            let t0 = Instant::now();
+            run(c, &mut outs, false)?;
+            e.stream().synchronize()?;
+            t_ship.push(t0.elapsed().as_secs_f64() * 1e6);
+
+            let mut outs = mk_outs()?;
+            let t1 = Instant::now();
+            run(c, &mut outs, true)?;
+            e.stream().synchronize()?;
+            t_v2.push(t1.elapsed().as_secs_f64() * 1e6);
+        }
+        let bf_bytes = 3 * dims[0] * in_f * 2;
+        let f32_bytes = (dims[3] + dims[4] + dims[5]) * in_f * 4;
+        let bytes = (bf_bytes + f32_bytes) as f64;
+        let ship_us = median(&mut t_ship);
+        report(
+            "qmatvec_kda6_bf16f32 (v2)",
+            ship_us,
+            median(&mut t_v2),
+            bytes,
+            mism,
+            maxd,
+        );
+        println!(
+            "  (kda6 bytes: {:.1} MB bf16 + {:.1} MB f32; shipped GB/s above is over the sum)",
+            bf_bytes as f64 / 1e6,
+            f32_bytes as f64 / 1e6
         );
     }
 

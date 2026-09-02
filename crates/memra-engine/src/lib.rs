@@ -641,6 +641,50 @@ pub(crate) fn b200_matvec_arm_on() -> bool {
     })
 }
 
+/// MEMRA_B200_GEMV_V2=1: the sm_100a HBM-speed rewrite of the t=1 decode matvec class
+/// (lane/b200-gemv-hbm-20260902, docs/FLAGS.md, research/b200-gemv-hbm-20260902/LANE.md).
+///
+/// WHY A REWRITE AND NOT ANOTHER OCCUPANCY ARM. The B200 census has these kernels at 11-34% of
+/// the 8 TB/s HBM3e wall with every existing door ON, and the previous lane's warp-packing and
+/// prefetch arms bought ~5% — so the residual is not block-slot occupancy. It is BYTES IN
+/// FLIGHT PER SM: Little's law at 8 TB/s and a ~700 ns HBM3e round trip wants ~5.6 MB of reads
+/// outstanding across the die (~38 KB per SM) at all times, and the shipped kernels hold one
+/// weight load per thread per K step behind a serially dependent fma chain.
+///
+/// The v2 family is the SAME arithmetic, rescheduled: 8 rows per block accumulated
+/// CONCURRENTLY with the activation loaded once and reused across them, a two-stage software
+/// pipeline that issues 10 independent 16 B `ld.global.nc` loads before the first fma consumes
+/// one, the 8 rows' reductions run in lockstep so a block pays ONE barrier chain instead of
+/// four, a warp-shuffle tail, `__launch_bounds__`, and grids that cover the die (the down
+/// projection goes from `out_f` warps wide to `out_f * n_used`).
+///
+/// EVERY DISPATCHED ARM IS BIT-IDENTICAL to its shipped twin per output element. The one
+/// exception is the split-K arm (`matvec_bf16_v2_sk` + its fixed-order combine), a NAMED
+/// numeric class `bf16_gemv_v2_splitk` that only engages when a shape's row grid cannot cover
+/// two waves of CTAs on this die; the shipped GLM-5.3 decode shapes never reach it.
+///
+/// Restricted to `sm_100a` BUILDS (`MEMRA_BUILT_CUDA_ARCH`, baked in at compile time), like
+/// `MEMRA_B200_MATVEC_ARM`: on an sm_120a build the var is a documented no-op and the naked
+/// sm_120a defaults stay byte-identical, per the per-hardware arm selection law. Default OFF
+/// everywhere pending its B200 A/B.
+pub(crate) fn b200_gemv_v2_on() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| {
+        env!("MEMRA_BUILT_CUDA_ARCH") == "100a"
+            && std::env::var("MEMRA_B200_GEMV_V2").as_deref() == Ok("1")
+    })
+}
+
+/// Rows per block for the v2 bf16 GEMV family. Mirrors `MEMRA_GEMV_V2_ROWS` in cu/qmatvec.cu;
+/// the two MUST move together (the launcher's grid and dynamic-smem size are derived from it).
+pub(crate) const GEMV_V2_ROWS: usize = 8;
+
+/// Engagement counter for `MEMRA_B200_GEMV_V2` (lane/b200-gemv-hbm-20260902). Counted at the
+/// arm's own call site, the `moe_grouped_prefill_dispatches` precedent: a door that never
+/// actually took its path must not be indistinguishable from one that did.
+pub(crate) static GEMV_V2_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 /// MEMRA_B200_BF16_GEMV_LT=1: cuBLASLt REFERENCE door for the t=1 bf16 decode row matvec
 /// (lane/b200-gemv-hbm-20260902, docs/FLAGS.md).
 ///
@@ -19868,6 +19912,199 @@ impl Engine {
         Ok(())
     }
 
+    /// Split-K degree for the v2 bf16 GEMV at this shape, on this device. Returns 1 (the
+    /// BIT-IDENTICAL single-pass kernel) whenever the row grid already covers two waves of CTAs
+    /// over `sm_count()`; otherwise the smallest split that does, capped so every K chunk still
+    /// gives each thread at least one full 8-element step. A returned value > 1 selects the
+    /// NAMED numeric class `bf16_gemv_v2_splitk`.
+    pub fn gemv_v2_ksplit(&self, in_f: usize, out_f: usize, t: usize) -> usize {
+        let blocks = out_f.div_ceil(GEMV_V2_ROWS) * t.max(1);
+        let want = 2 * self.sm_count().max(1) as usize;
+        if blocks >= want || blocks == 0 {
+            return 1;
+        }
+        let per_step = mmv_block() as usize * 8;
+        let max_ks = (in_f / per_step).max(1);
+        want.div_ceil(blocks).clamp(1, max_ks)
+    }
+
+    /// The v2 bf16 GEMV launch (`matvec_bf16_v2`, or the split-K pair when `ksplit > 1`).
+    /// POLICY-FREE: `ksplit` is the caller's choice so a gate or bench can drive both classes
+    /// through one entry. `block_dim` is `mmv_block()` — the same blockDim the shipped kernel
+    /// pins, because the reduction tree's shape (and therefore its bits) is a function of it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn matvec_bf16_v2_raw(
+        &self,
+        w: &CudaSlice<u8>,
+        x: &CudaSlice<f32>,
+        y: &mut CudaSlice<f32>,
+        in_f: usize,
+        out_f: usize,
+        t: usize,
+        ksplit: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if t == 0 || !in_f.is_multiple_of(8) || x.len() < t * in_f || y.len() < t * out_f {
+            return Err("matvec_bf16_v2 geometry".into());
+        }
+        let nb = mmv_block();
+        let smem = (GEMV_V2_ROWS as u32) * nb * 4;
+        let rows = out_f.div_ceil(GEMV_V2_ROWS) as u32;
+        let (ini, outi) = (in_f as i32, out_f as i32);
+        if ksplit <= 1 {
+            let f = self.func("matvec_bf16_v2");
+            let cfg = LaunchConfig {
+                grid_dim: (rows, t as u32, 1),
+                block_dim: (nb, 1, 1),
+                shared_mem_bytes: smem,
+            };
+            let __s_b = self.gpu.stream();
+            let mut b = __s_b.launch_builder(&f);
+            b.arg(w).arg(x).arg(&mut *y).arg(&ini).arg(&outi);
+            unsafe {
+                b.launch(cfg)?;
+            }
+            return Ok(());
+        }
+        // Chunks are a multiple of 8 elements so every thread's 16 B loads stay aligned. The
+        // EFFECTIVE split is recomputed from the chunk size: a requested ksplit whose last
+        // plane would start past in_f must not be launched, or the combine would sum a plane
+        // the kernel never wrote.
+        let chunk = in_f.div_ceil(8).div_ceil(ksplit) * 8;
+        let eff = in_f.div_ceil(chunk).max(1);
+        let mut part = self.alloc_uninit::<f32>(eff * t * out_f)?;
+        let ks = eff as i32;
+        {
+            let f = self.func("matvec_bf16_v2_sk");
+            let cfg = LaunchConfig {
+                grid_dim: (rows, t as u32, eff as u32),
+                block_dim: (nb, 1, 1),
+                shared_mem_bytes: smem,
+            };
+            let __s_b = self.gpu.stream();
+            let mut b = __s_b.launch_builder(&f);
+            b.arg(w).arg(x).arg(&mut part).arg(&ini).arg(&outi).arg(&ks);
+            unsafe {
+                b.launch(cfg)?;
+            }
+        }
+        let f = self.func("matvec_bf16_v2_sk_combine");
+        let n = (out_f * t) as u32;
+        let cfg = LaunchConfig {
+            grid_dim: (n.div_ceil(256), 1, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let ti = t as i32;
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(&part).arg(&mut *y).arg(&outi).arg(&ti).arg(&ks);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(())
+    }
+
+    /// v2 twin of [`Engine::moe_gate_up_preclamp8_q8`] (`MEMRA_B200_GEMV_V2`): 8 warps/block on
+    /// `threadIdx.y` and a g-walk unrolled by two so both groups' weight/scale/activation loads
+    /// issue before either dp4a chain runs. Per-warp arithmetic is the shipped kernel's, in the
+    /// shipped per-accumulator order -> bit-identical per (o, j).
+    #[allow(clippy::too_many_arguments)]
+    pub fn moe_gate_up_preclamp8_q8_v2(
+        &self,
+        gp: WPtr8,
+        up: WPtr8,
+        aq: &CudaSlice<i8>,
+        ad: &CudaSlice<f32>,
+        gs: F32x8,
+        us: F32x8,
+        limit: f32,
+        in_f: usize,
+        n_ff: usize,
+        n_used: usize,
+        qt_g: i32,
+        qt_u: i32,
+        rb_g: usize,
+        rb_u: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        debug_assert!(
+            limit > 1e-6,
+            "moe_gate_up_preclamp8_q8_v2 needs a live limit; use moe_gate_up_silu8_q8"
+        );
+        const ROWS: u32 = 8;
+        let f = self.func("moe_gate_up_preclamp8_q8_v2");
+        let mut act = self.alloc_uninit::<f32>(n_used * n_ff)?;
+        let cfg = LaunchConfig {
+            grid_dim: ((n_ff as u32).div_ceil(ROWS), n_used as u32, 1),
+            block_dim: (32, ROWS, 1),
+            shared_mem_bytes: 0,
+        };
+        let (inf, nff, rbg, rbu) = (in_f as i32, n_ff as i32, rb_g as i64, rb_u as i64);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(&gp)
+            .arg(&up)
+            .arg(aq)
+            .arg(ad)
+            .arg(&gs)
+            .arg(&us)
+            .arg(&limit)
+            .arg(&mut act)
+            .arg(&inf)
+            .arg(&nff)
+            .arg(&qt_g)
+            .arg(&qt_u)
+            .arg(&rbg)
+            .arg(&rbu);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(act)
+    }
+
+    /// v2 twin of [`Engine::moe_down8_fma_q8`] (`MEMRA_B200_GEMV_V2`): ONE BLOCK per output row
+    /// with warp `j` owning expert slot `j`, so the launch is `out_f * n_used` warps wide
+    /// instead of `out_f` and the eight experts' bytes are in flight together. The slot chain
+    /// is still one thread walking `j` ascending with `__fmaf_rn` on the same per-expert warp
+    /// partials -> bit-identical per output row.
+    #[allow(clippy::too_many_arguments)]
+    pub fn moe_down8_fma_q8_v2(
+        &self,
+        dp: WPtr8,
+        w: F32x8,
+        aq2: &CudaSlice<i8>,
+        ad2: &CudaSlice<f32>,
+        dst: &mut cudarc::driver::CudaViewMut<f32>,
+        in_f: usize,
+        out_f: usize,
+        n_used: usize,
+        qt: i32,
+        rb: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let f = self.func("moe_down8_fma_q8_v2");
+        let cfg = LaunchConfig {
+            grid_dim: (out_f as u32, 1, 1),
+            block_dim: (32, 8, 1),
+            shared_mem_bytes: 0,
+        };
+        let (inf, outf, nu, rbi) = (in_f as i32, out_f as i32, n_used as i32, rb as i64);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(&dp)
+            .arg(&w)
+            .arg(aq2)
+            .arg(ad2)
+            .arg(dst)
+            .arg(&inf)
+            .arg(&outf)
+            .arg(&nu)
+            .arg(&qt)
+            .arg(&rbi);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(())
+    }
+
     /// True if `qtype` has a batched weight-resident (`_b2`/`_b4`) matvec kernel. These mirror the
     /// `_mmvq` kernels but iterate the m token columns INSIDE one warp/row, so the weight bytes leave
     /// HBM/L2 once for m tokens (vs grid.y=m re-reading m times). The 5 daily-hot dtypes have them.
@@ -22950,6 +23187,24 @@ impl Engine {
                 return self.matvec_bf16_tcols_into(w, x, y, in_f, out_f, t);
             }
             return self.matvec_bf16_tcols16_into(w, x, y, in_f, out_f, t);
+        }
+        // MEMRA_B200_GEMV_V2 (lane/b200-gemv-hbm-20260902): the HBM-speed rewrite. Same
+        // arithmetic as the shipped kernel, rescheduled for bytes-in-flight (8 rows per block
+        // accumulated concurrently on one activation load, 10 independent 16 B loads issued
+        // before the first fma, one barrier chain per block instead of four). BIT-IDENTICAL per
+        // (row, token) at ksplit=1, which is what every GLM-5.3 decode shape picks; a shape too
+        // narrow to cover two CTA waves takes the named `bf16_gemv_v2_splitk` class instead.
+        // Placed BEFORE the cuBLASLt reference door so that with both set the memra kernel wins
+        // (the LT door is an instrument, never the product).
+        if b200_gemv_v2_on() {
+            let ksplit = self.gemv_v2_ksplit(in_f, out_f, t);
+            if GEMV_V2_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+                eprintln!(
+                    "[b200-gemv-v2] engaged t={t} in_f={in_f} out_f={out_f} ksplit={ksplit} \
+                     (MEMRA_B200_GEMV_V2=1)"
+                );
+            }
+            return self.matvec_bf16_v2_raw(w, x, y, in_f, out_f, t, ksplit);
         }
         // MEMRA_B200_BF16_GEMV_LT (lane/b200-gemv-hbm-20260902): the cuBLASLt REFERENCE door.
         // Routes this row matvec through the vendor library's m=t bf16 GEMV so a box can
