@@ -1280,8 +1280,11 @@ impl Engine {
         // admits wq/wk/wv to raw bf16 residency, where the Q8_0 arm below never binds. Its
         // bit-identity bar is against `matvec_bf16_f32acc_x4_rows` (matmul's FloatBf16
         // decode-tier arm), so it refuses wherever that arm would not be the unfused program:
-        // MEMRA_BF16_MMV off (the chunked cuBLASLt GEMM class), or the W8 mirror doors on
-        // (matvec_bf16_rows_into reroutes through the q8 mirror when BOTH are set).
+        // MEMRA_BF16_MMV off (the chunked cuBLASLt GEMM class), the step37 W8 mirror doors on
+        // (matvec_bf16_rows_into reroutes through the q8 mirror when BOTH are set), or
+        // MEMRA_GLM5_W8 on (2026-09-02, lane/b200-glm5-w8: the SAME reroute, independent
+        // door — this fused kernel's bit-identity claim is against the unmirrored bf16
+        // program, so it must decline whichever door moved that program's target).
         let bf16 = |w: &GpuTensor| -> Option<usize> {
             match w {
                 GpuTensor::FloatBf16 { .. } => Some(w.in_features()),
@@ -1289,7 +1292,10 @@ impl Engine {
             }
         };
         if let (Some(in_q), Some(in_k), Some(in_v)) = (bf16(&la.wq), bf16(&la.wk), bf16(&la.wv)) {
-            if !Self::bf16_mmv_on() || (crate::step_tp_w8_on() && crate::w8_hybrid_on()) {
+            if !Self::bf16_mmv_on()
+                || (crate::step_tp_w8_on() && crate::w8_hybrid_on())
+                || crate::glm5_w8_on()
+            {
                 return Ok(None);
             }
             let in_f = in_q;
