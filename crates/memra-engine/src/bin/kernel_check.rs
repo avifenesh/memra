@@ -111,6 +111,20 @@ impl CellTracker {
     }
 }
 
+const FP8_BLK_MMQ_POLICY_CELL: &str = "E4M3-BLK-MMQ-VIEW";
+
+fn fp8_blk_mmq_policy_cell_enabled(cells: &mut CellTracker, enabled: bool) -> bool {
+    if enabled {
+        true
+    } else {
+        cells.skip(
+            FP8_BLK_MMQ_POLICY_CELL,
+            "explicit FP8 MMQ policy is off; default fallback coverage continues",
+        );
+        false
+    }
+}
+
 std::thread_local! {
     static OBSERVED_CELLS: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
 }
@@ -4852,6 +4866,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     //     therefore tests every code the kernel can LEGALLY see, and the refusal covers the rest.
     // ---
     {
+        // The native prefill-MMQ view comparison is one explicit-policy subcell inside a much
+        // larger default-path E4M3-BLK battery. On B200, unset/0 deliberately keeps that native
+        // prefill route off. Record one named skip instead of calling its refusal wrapper and
+        // aborting every later kernel-check cell. The explicit phase-0 qualification sets
+        // MEMRA_FP8_MMQ=1 and therefore still executes this subcell with full teeth.
+        let run_fp8_blk_mmq_policy_cell = fp8_blk_mmq_policy_cell_enabled(
+            &mut cells,
+            memra_engine::fp8_ffi::fp8_blk_mmq_native_enabled(),
+        );
         // Host e4m3 decode in the HARDWARE convention the kernel uses (e4m3x2_to_f32x2 ->
         // __nv_cvt_fp8x2_to_halfraw2): sign / 4-bit exp (bias 7) / 3-bit mantissa, subnormals at
         // 2^-9 granularity, magnitude 0x7F == NaN. Deliberately NOT nvfp4_repack::fp8_e4m3_to_f32
@@ -5007,7 +5030,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let got = e.dtoh(&e.qmatvec_e4m3_blk_mmvq(
                         &wd, &aqd, &add, &scd, mm, in_f, out_f, in_f, scols,
                     )?)?;
-                    if exact && in_f == 512 && out_f == 128 && mm == 1 {
+                    if exact
+                        && in_f == 512
+                        && out_f == 128
+                        && mm == 1
+                        && run_fp8_blk_mmq_policy_cell
+                    {
                         let wv = wd.slice(0..wb.len());
                         let sv = scd.slice(0..sc.len());
                         let xv = xd.slice(0..in_f);
@@ -9028,5 +9056,22 @@ mod tests {
         assert_eq!(nvfp4_check_capabilities("120a"), (true, true));
         assert_eq!(nvfp4_check_capabilities("90a"), (false, false));
         assert_eq!(nvfp4_check_capabilities("89"), (false, false));
+    }
+
+    #[test]
+    fn explicit_fp8_mmq_subcell_skips_without_aborting_default_coverage() {
+        let mut default_cells = CellTracker::default();
+        assert!(!fp8_blk_mmq_policy_cell_enabled(&mut default_cells, false));
+        assert_eq!(
+            default_cells
+                .skipped
+                .get(FP8_BLK_MMQ_POLICY_CELL)
+                .map(String::as_str),
+            Some("explicit FP8 MMQ policy is off; default fallback coverage continues")
+        );
+
+        let mut explicit_cells = CellTracker::default();
+        assert!(fp8_blk_mmq_policy_cell_enabled(&mut explicit_cells, true));
+        assert!(explicit_cells.skipped.is_empty());
     }
 }

@@ -179,6 +179,11 @@ target/release/kernel-check /absolute/immutable/model.gguf \
   research/b200-kernel-twins-dry-20260901/kernel-check-nvfp4.cells
 ```
 
+With the default B200 policy, this command records `SKIP E4M3-BLK-MMQ-VIEW` and continues: that
+single subcell targets the explicit block-FP8 prefill twin, while the default E4M3-BLK MMVQ and
+all later exactness cells still run. Phase 0 sets `MEMRA_FP8_MMQ=1` deliberately and therefore
+executes the skipped subcell as part of explicit FP8 qualification.
+
 Run it once in default W4A8 mode and once with `MEMRA_MMQ_F8F4=1`; the W4A4 static cells execute in
 the same battery. Artifact-specific `run-gen`, `run-spec`, and serving commands are selected only
 after the box and immutable checkpoint identities are known.

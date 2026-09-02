@@ -47,6 +47,12 @@ release-arch mirror. A green dry gate alone is not `NativeQualified` and does no
 B200 `kernel-check`, model parity, sampled serving, concurrency, context, rollback, or performance
 battery under `research/b200-kernel-twins-dry-20260901/receipts/`.
 
+On a default-env B200 build, `kernel-check` keeps the explicit block-FP8 prefill route off, records
+`SKIP E4M3-BLK-MMQ-VIEW`, and continues through the rest of the default exactness battery. The
+phase-0 qualification harness deliberately sets `MEMRA_FP8_MMQ=1`, so its explicit block-FP8
+oracle and the same MMQ-view subcell still execute. A default-posture battery must never enable a
+non-default route just to avoid an early refusal.
+
 For a new box or changed kernel source, inspect the exact phase-0 plan without touching the device:
 
 ```bash
