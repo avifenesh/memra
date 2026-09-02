@@ -2077,6 +2077,10 @@ impl HybridModel {
             let mut hiddens = e.uninit(t * n_embd)?;
             let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
             for &(start, end) in &ranges {
+                // Cooperative cancel boundary (crate::cancel): a disconnected client stops
+                // the prime at the next chunk instead of holding the stages for the rest of
+                // the prompt. Unarmed callers pay one thread-local read.
+                crate::cancel::check("prime chunk", start, t)?;
                 let ov = overlay.and_then(|o| o.window(start, end - start));
                 let (l, hs, x) = self.prime_cache_hyper_ppn(
                     e,
@@ -2104,19 +2108,62 @@ impl HybridModel {
         // above carries verbatim (`+ queued_after` closes the serve-split axis).
         let seq_end = cache.pos + t + queued_after;
         let ranges = hyper_prime_ranges(t, self.layers.len(), self.gdn_prime_grid_on());
-        if ranges.len() == 1 {
-            return self.prime_chunk_hyper(e, tokens, cache, seq_end, 0, overlay);
+        // glm5 TP prime receipt (lane/glm5-tp-serve-wiring round 3, memra #14): the sharded
+        // walk rides the SAME chunk schedule as the single-engine walk (arm 1, the natural
+        // chunk; the pipelined arm 2 is PP-specific). What the box could not read off the
+        // second gate's log was WHICH prefill doors engaged under the shard, so the line
+        // names the two that decide the rate (EP grouped MoE prime, TC MLA prefill) by their
+        // dispatch counters over THIS call, plus tokens/chunks/elapsed/rate. Printed per
+        // prime call on a sharded model only; unsharded walks are byte-identical.
+        let tp_receipt = self.glm5_tp_sharded().then(|| {
+            (
+                std::time::Instant::now(),
+                crate::glm5_tp::glm5_ep_grouped_prime_dispatches(),
+                crate::mla_tc_prefill_dispatches(),
+            )
+        });
+        let walked = (|| -> Result<_, Box<dyn std::error::Error>> {
+            if ranges.len() == 1 {
+                return self.prime_chunk_hyper(e, tokens, cache, seq_end, 0, overlay);
+            }
+            let mut hiddens = e.uninit(t * n_embd)?;
+            let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
+            for &(start, end) in &ranges {
+                // Cooperative cancel boundary (crate::cancel): a disconnected client stops
+                // the prime at the next chunk; the completed chunks stay in the cache and
+                // the caller drops it. Unarmed callers pay one thread-local read.
+                crate::cancel::check("prime chunk", start, t)?;
+                let (l, hs, x) =
+                    self.prime_chunk_hyper(e, &tokens[start..end], cache, seq_end, start, overlay)?;
+                e.copy_into(&mut hiddens, start * n_embd, &x, (end - start) * n_embd)?;
+                last = Some((l, hs));
+            }
+            let (logits, h_seed) =
+                last.expect("hyper_prime_ranges never returns an empty schedule");
+            Ok((logits, h_seed, hiddens))
+        })();
+        if let Some((t0, epgp0, tc0)) = tp_receipt {
+            let secs = t0.elapsed().as_secs_f64();
+            let epgp = crate::glm5_tp::glm5_ep_grouped_prime_dispatches() - epgp0;
+            let tc = crate::mla_tc_prefill_dispatches() - tc0;
+            let chunk_max = ranges.iter().map(|&(s, e)| e - s).max().unwrap_or(t);
+            match &walked {
+                Ok(_) => eprintln!(
+                    "[glm5-tp] prime t={t} chunks={} chunk_max={chunk_max} elapsed={secs:.2}s \
+                     rate={:.0} tok/s ep_grouped_prime_dispatches=+{epgp} \
+                     mla_tc_prefill_dispatches=+{tc} performance_claim=false",
+                    ranges.len(),
+                    t as f64 / secs.max(1e-9),
+                ),
+                Err(err) if crate::cancel::is_cancelled(err.as_ref()) => eprintln!(
+                    "[glm5-tp] prime CANCELLED t={t} pos={} elapsed={secs:.2}s \
+                     ep_grouped_prime_dispatches=+{epgp} mla_tc_prefill_dispatches=+{tc}: {err}",
+                    cache.pos,
+                ),
+                Err(_) => {}
+            }
         }
-        let mut hiddens = e.uninit(t * n_embd)?;
-        let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
-        for &(start, end) in &ranges {
-            let (l, hs, x) =
-                self.prime_chunk_hyper(e, &tokens[start..end], cache, seq_end, start, overlay)?;
-            e.copy_into(&mut hiddens, start * n_embd, &x, (end - start) * n_embd)?;
-            last = Some((l, hs));
-        }
-        let (logits, h_seed) = last.expect("hyper_prime_ranges never returns an empty schedule");
-        Ok((logits, h_seed, hiddens))
+        walked
     }
 
     /// Publish this model's prefill-workspace coefficients to admission
@@ -2369,6 +2416,8 @@ impl HybridModel {
             }
         };
         for il in lo..hi {
+            // Cooperative cancel boundary (crate::cancel), per layer of a stage range.
+            crate::cancel::check("prime layer", il, hi)?;
             let layer = &self.layers[il];
             let hyper = layer.hyper.as_ref().ok_or_else(|| {
                 format!("layer {il} carries no hyper-connection weights under an hc plan")
@@ -3523,7 +3572,11 @@ impl HybridModel {
         }
         let mut x = crate::hyper::expand(e, &topology, &embedded, t, n_embd)?;
 
+        let n_layers = self.layers.len();
         for (il, layer) in self.layers.iter().enumerate() {
+            // Cooperative cancel boundary (crate::cancel), per layer: a chunk on the sharded
+            // walk can run tens of seconds, so the disconnect sweep must not wait for it.
+            crate::cancel::check("prime layer", il, n_layers)?;
             let hyper = layer.hyper.as_ref().ok_or_else(|| {
                 format!("layer {il} carries no hyper-connection weights under an hc plan")
             })?;
@@ -8335,6 +8388,18 @@ impl HybridModel {
         // The announce shares the chain's OWN conjuncts (gathered + !portable_mma_gated),
         // so it can never blame TP for a decline the missing DSA gather or the MMA gate
         // caused (#82 review).
+        // glm5 TP composition (lane/glm5-tp-serve-wiring round 3, memra #14): the chain now
+        // ENGAGES on a head shard. Every kernel in it takes the head count as a parameter
+        // (`nh` = this rank's heads; the strided-batched GEMMs batch over nh, the gathered
+        // MMA kernel walks 16-head bands of nh), so a 32-head shard is the same program at
+        // half the batch, and the peer pass runs under its own runtime-device binding
+        // (`mla_tp_attn_cached`). The previous decline was fail-closed conservatism: the
+        // door's rig gate ran full-head geometry only. The real-artifact receipt is the
+        // TP-2 box gate (greedy 128-token tape vs the PP-2 tape, the 256k prime rate on
+        // the `[glm5-tp] prime` line); the second box gate measured the f32 fallback at
+        // well under 80 tok/s for a 245k prompt. Announced once, on the first shard call
+        // that is a real candidate (the chain's own conjuncts, so a missing DSA gather or
+        // the MMA gate can never be blamed on TP).
         if mla.tp_shard
             && gathered.is_some()
             && dr == 0
@@ -8343,12 +8408,13 @@ impl HybridModel {
             && !crate::portable_mma_gated()
             && mla_tc_prefill_enabled()
         {
-            static TP_TC_DECLINE: std::sync::Once = std::sync::Once::new();
-            TP_TC_DECLINE.call_once(|| {
+            static TP_TC_ENGAGE: std::sync::Once = std::sync::Once::new();
+            TP_TC_ENGAGE.call_once(|| {
                 eprintln!(
-                    "[mla-tc-prefill] DECLINED on glm5-TP head shards: the door's gate ran \
-                     on full-head geometry; shards ride the f32 prefill kernels until the \
-                     TP composition gate lands (pin MEMRA_MLA_TC_PREFILL=0 to silence)"
+                    "[mla-tc-prefill] ENGAGED on glm5-TP head shards: nh={nh} per rank \
+                     (same absorb/decompress GEMMs + fa_mla_gathered_bf16 at the shard's \
+                     head count; real-artifact receipt = the TP-2 box gate; \
+                     MEMRA_MLA_TC_PREFILL=0 is the rollback) performance_claim=false"
                 );
             });
         }
@@ -8358,7 +8424,6 @@ impl HybridModel {
             && t >= 16
             && !rows_exact // verify-batch stays on the decode-exact classes (t <= 15 anyway)
             && !crate::portable_mma_gated()
-            && !mla.tp_shard
             && mla_tc_prefill_enabled()
             && let Some(attn) = self.mla_tc_prefill_chain(
                 e, wk_b, wv_b, &q_nope, latent, idx, *slots, t, t_kv, nh, dn, dv, r, g.scale,
@@ -9047,8 +9112,16 @@ impl HybridModel {
         let mut attn: Vec<Option<CudaSlice<f32>>> = (0..ranks).map(|_| None).collect();
         for r in 1..ranks {
             let layer = &mut cache.glm5_tp_latent_peer[il].as_mut().unwrap()[r - 1];
-            attn[r] = Some(self.mla_attn_cached_pre_wo(
-                &rt.peers[r - 1],
+            // The peer pass runs under ITS runtime-device binding (the EP grouped-prime
+            // precedent): the TC prefill chain it may now take (round 3) is runtime-API
+            // FFI (cuBLASLt strided-batched GEMMs + the gathered MMA launcher) and follows
+            // the RUNTIME device, not cudarc's pushed context. The f32 kernels are driver
+            // launches on the peer's own stream and are unaffected either way. Root is
+            // re-bound before its own pass whatever the peer pass returned.
+            let dev = &rt.peers[r - 1];
+            dev.bind_runtime_device(dev.ctx().ordinal() as i32)?;
+            let res = self.mla_attn_cached_pre_wo(
+                dev,
                 &tp.peers[r - 1],
                 &h_peers[r - 1],
                 &pos_peers[r - 1],
@@ -9057,7 +9130,9 @@ impl HybridModel {
                 layer,
                 max_ctx,
                 rows_exact,
-            )?);
+            );
+            e.bind_runtime_device(e.ctx().ordinal() as i32)?;
+            attn[r] = Some(res?);
         }
         attn[0] = {
             let layer = cache.latent[il].as_mut().unwrap();
@@ -12333,6 +12408,12 @@ impl HybridModel {
             TpXport::HostCanonical => None,
         };
         for tok in 0..t {
+            // Cooperative cancel boundary (crate::cancel) every EP_TOKEN_STRIDE tokens: this
+            // per-token per-slot loop is the walk that runs minutes per layer-chunk when the
+            // grouped arm falls closed, so a disconnect must be seen inside it.
+            if tok % crate::cancel::EP_TOKEN_STRIDE == 0 {
+                crate::cancel::check("ep sequential token", tok, t)?;
+            }
             let sel = &sel_all[tok * n_used..(tok + 1) * n_used];
             let w = &w_all[tok * n_used..(tok + 1) * n_used];
             let zt = z.slice(tok * n_embd..(tok + 1) * n_embd);

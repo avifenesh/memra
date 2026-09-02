@@ -20505,13 +20505,44 @@ fn prefill_tick(
             .as_ref()
             .and_then(|v| v.overlay.as_ref())
             .and_then(|o| o.window(fed_len, take));
-        let (l, _h, x) = lm.model.prime_cache_overlaid(
-            engine,
-            &chunk,
-            s.cache.as_mut().unwrap(),
-            s.prefill_queue.len(),
-            ov_window.as_ref(),
-        )?;
+        // DISCONNECT MID-PRIME (lane/glm5-tp-serve-wiring round 3, memra #14): an
+        // eager-only trunk primes its whole queue in this ONE call, so the per-tick
+        // disconnect sweep cannot see a closed channel until it returns. The engine's
+        // cooperative cancel probe (memra_engine::cancel, polled per chunk / layer / EP
+        // token stride) is armed on this thread for the call and reads the session's own
+        // channel state; a trip unwinds the walk with a named `Cancelled`, the session is
+        // marked aborted (retire DROPS the partial cache, never parks it), and the
+        // metering log line lands here. Every other error keeps its path.
+        let primed = {
+            let probe_tx = s.tx.clone();
+            let _cancel = memra_engine::cancel::arm(Arc::new(move || probe_tx.is_closed()));
+            lm.model.prime_cache_overlaid(
+                engine,
+                &chunk,
+                s.cache.as_mut().unwrap(),
+                s.prefill_queue.len(),
+                ov_window.as_ref(),
+            )
+        };
+        let (l, _h, x) = match primed {
+            Ok(out) => out,
+            Err(err) => {
+                if memra_engine::cancel::is_cancelled(err.as_ref()) {
+                    s.aborted = true;
+                    eprintln!(
+                        "[abort] client disconnected mid-prime: model {:?}, prompt {} \
+                         ({} primed before the cancel, {} queued), {} generated, {:.2}s: {err}",
+                        s.model,
+                        s.n_prompt,
+                        s.cache.as_ref().map_or(0, |c| c.pos),
+                        s.prefill_queue.len(),
+                        s.generated.len(),
+                        s.t0.elapsed().as_secs_f64()
+                    );
+                }
+                return Err(err);
+            }
+        };
         s.last_logits = l;
         // PROMPT CAPTURE (lane/embed-serve): this chunk finished the prompt — read the
         // final position off THIS call's hidden stack (later chunks would not exist).
@@ -21984,12 +22015,38 @@ fn step_session(
             let chunk: Vec<u32> = s.prefill_queue.drain(..take).collect();
             // REQUEST-LEVEL seq_end: the rest of prefill_queue is the same request's remainder
             // (see prefill_tick — the tick-budget segmentation must not steer arithmetic).
-            let (l, _h, x) = lm.model.prime_cache(
-                engine,
-                &chunk,
-                s.cache.as_mut().unwrap(),
-                s.prefill_queue.len(),
-            )?;
+            // Cancel probe armed for the call (see prefill_tick's twin): a disconnect
+            // mid-prime unwinds with `Cancelled`, the session is marked aborted.
+            let primed = {
+                let probe_tx = s.tx.clone();
+                let _cancel = memra_engine::cancel::arm(Arc::new(move || probe_tx.is_closed()));
+                lm.model.prime_cache(
+                    engine,
+                    &chunk,
+                    s.cache.as_mut().unwrap(),
+                    s.prefill_queue.len(),
+                )
+            };
+            let (l, _h, x) = match primed {
+                Ok(out) => out,
+                Err(err) => {
+                    if memra_engine::cancel::is_cancelled(err.as_ref()) {
+                        s.aborted = true;
+                        eprintln!(
+                            "[abort] client disconnected mid-prime: model {:?}, prompt {} \
+                             ({} primed before the cancel, {} queued), {} generated, \
+                             {:.2}s: {err}",
+                            s.model,
+                            s.n_prompt,
+                            s.cache.as_ref().map_or(0, |c| c.pos),
+                            s.prefill_queue.len(),
+                            s.generated.len(),
+                            s.t0.elapsed().as_secs_f64()
+                        );
+                    }
+                    return Err(err);
+                }
+            };
             s.last_logits = l;
             // PROMPT CAPTURE (lane/embed-serve): this chunk finished the prompt — read the
             // final position off THIS call's hidden stack (later chunks would not exist)

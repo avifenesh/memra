@@ -350,3 +350,87 @@ echo "gate rc=$?"     # 0 = PASS, 1 = FAIL, 3 = PARTIAL (an item was skipped)
 `9437b599f6b9d2a9` is the PP-2 digits tape on this artifact (128 greedy tokens, effort
 low, bench.py assembly). Bank `boot-tp2.log` and `tp2-gate-r2.jsonl` next to the round-1
 receipts.
+
+## Box round 2 (2026-09-02, int16 039e9246b = 7c8f76da0): short items pass, depth fails twice
+
+Receipts: darklanes `research/glm5-b200-20260902/box/tp2/boot-tp2-r2-hung.log` (+ the
+tp2gate2 run log). `MEMRA_GLM5_TP=all@0,1 MEMRA_RP=0 MEMRA_CTX=262144 MEMRA_MAX_SESSIONS=4`,
+`tools/glm5-tp2-serve-gate.py`.
+
+- Items 1-7 PASS: readyz, pinned id, the greedy 128-token tape equal to the PP-2 tape, two
+  concurrent tapes, vendor-default sampled, completions + messages, tools; the boot log
+  carries `[worker] ... EAGER-ONLY serving (glm5-TP-sharded trunk ...)` and zero
+  `[engine-error]` lines through those items.
+- Item 8 (the 245,421-token prompt) ran 52 minutes without finishing, both cards ~60%
+  busy. The boot log names why: `[glm5-ep-grouped-prime] flag=off t=67 il=3` (the EP
+  grouped MoE prime is default OFF, so every MoE layer-chunk walked the per-token per-slot
+  host-canonical loop; the FLAGS row already priced that class at 39-58 tok/s) and
+  `[mla-tc-prefill] DECLINED on glm5-TP head shards` (the TC chain refused shards by name,
+  f32 kernels instead). The chunk schedule itself was already the single-engine one
+  (`hyper_prime_ranges` -> `prime_chunk_hyper`, TP mixer arms in place): the wall was the
+  two doors, not the chunking.
+- After the gate client was killed (rc=143) the follow-up 66-token probe was admitted by
+  the HTTP layer at 21:42 (`[meter] admit ...`, the last line of the log) and never
+  dequeued in 32 minutes, both GPUs idle, `/v1/models` still 200. No `[abort] client
+  disconnected` sweep line and no `[admission] request cost` for the probe: the worker
+  thread never returned to its tick from the prime call.
+
+### Root causes, as far as the receipts and the code take them
+
+1. Prime rate: two closed doors (above). Not a chunking gap.
+2. Wedge: the engine had NO cancellation seam at all (`grep -ri cancel crates/memra-engine/src`
+   found only a comment). An eager-only trunk primes its whole queue in ONE `prime_cache`
+   call (`prefill_tick`: `take = q` for `eager_mono`), so a closed client channel is
+   invisible until the call returns; the per-tick disconnect sweep (`s.tx.is_closed()` at
+   the tick top) runs only between calls. The transport carries no host-side wait that a
+   disconnect could leave hanging (host-canonical staging is sync copies, no threads,
+   channels, events or locks; the peer-pull events are not armed), so the code-level
+   finding is the missing unwind, not a specific blocked primitive. Whether the worker was
+   still inside the 52-minute prime at the kill (at ~78 tok/s the 245k prime completes at
+   ~52.4 min, so the kill may have landed in its last chunks) or blocked after it cannot be
+   read from this log; round 3's gate dumps the server's thread stacks on any recovery
+   stall (`--server-pid`, eu-stack or gdb), so a wedge that survives the cancel seam names
+   its wait.
+
+### Fixes (this commit)
+
+- `MEMRA_EP_GROUPED_PRIME` default ON (`ep_grouped_prime_resolve`, host-tested; `=0` on
+  either name is the rollback; the load-time "set but MEMRA_GLM5_TP is off" co-refusal
+  still keys on an explicit arm; the walk exists only under `MEMRA_GLM5_TP`).
+- The TC MLA prefill chain ENGAGES on head shards (the `!mla.tp_shard` conjunct removed;
+  every kernel takes `nh`; announce `[mla-tc-prefill] ENGAGED on glm5-TP head shards:
+  nh=32 per rank ...`). The peer pass in `mla_tp_attn_cached` runs under
+  `bind_runtime_device` (runtime-API FFI follows the runtime device; the EP grouped-prime
+  precedent), root re-bound after.
+- `[glm5-tp] prime t=<tokens> chunks=<n> chunk_max=<t> elapsed=<s> rate=<tok/s>
+  ep_grouped_prime_dispatches=+N mla_tc_prefill_dispatches=+N performance_claim=false`
+  per sharded prime call (`prime_cache_hyper`), or `[glm5-tp] prime CANCELLED ...`.
+- `memra_engine::cancel`: thread-local cooperative cancel probe. `prefill_tick` and
+  `step_session` arm it around the prime with `tx.is_closed()`; polled per prime chunk
+  (both walks), per layer (`prime_chunk_hyper`, `hyper_range_prime`), every 64 tokens in
+  the sequential EP MoE loop. A trip unwinds with `Cancelled`; the worker marks the
+  session aborted (`[abort] client disconnected mid-prime: ...`) so retire DROPS the
+  partial cache. Unarmed callers pay one thread-local read per boundary; no new flag.
+- Gate: I8 reports `prime_tok_s`; new I10 cancels the long prompt after `--cancel-after`
+  seconds (socket shutdown) and requires a short request to complete within
+  `--recover-bound` seconds, dumping server stacks on a stall; I9 requires the
+  `[glm5-tp] prime` line (when I8 ran) and the `[abort] client disconnected` line (when I10
+  ran) and ignores the named prime-cancel error only.
+
+Box invocation (round 3):
+
+```
+MEMRA_GLM5_TP=all@0,1 MEMRA_RP=0 MEMRA_CTX=262144 MEMRA_MAX_SESSIONS=4 \
+  memra-server ... 2>&1 | tee /root/lane/boot-tp2-r3.log &
+# wait for "[server] listening", then (PID = the memra-server pid):
+python3 tools/glm5-tp2-serve-gate.py --base http://127.0.0.1:18400 \
+  --model zai/glm-5.3-flash --prompt /root/prompts/digits.txt \
+  --expect-sha16 9437b599f6b9d2a9 --long-prompt /root/prompts/<256k-file>.txt \
+  --boot-log /root/lane/boot-tp2-r3.log --server-pid $PID \
+  --cancel-after 8 --recover-bound 180 --out /root/lane/tp2-gate-r3.jsonl
+echo "gate rc=$?"     # 0 = PASS (10/10), 1 = FAIL, 3 = PARTIAL
+```
+
+Expected new receipts in the boot log: `[glm5-ep-grouped-prime] flag=on`, `[mla-tc-prefill]
+ENGAGED on glm5-TP head shards: nh=32 per rank`, `[glm5-tp] prime t=245421 ... rate=... tok/s`,
+`[glm5-tp] prime CANCELLED ...` followed by `[abort] client disconnected mid-prime: ...`.
