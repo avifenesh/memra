@@ -19,12 +19,9 @@ Since the qualified pipeline landed, three more surfaces serve on the same endpo
   boot and keep MTP spec engaged. Receipts: `research/step37-vision-20260830/`.
 - **Structured output** (lane/step37-postthink-grammar): `response_format`
   `json_object`/`json_schema` served post-think — the think phase runs unconstrained as
-  trained, the grammar engages from the tokenizer's `
-</think>
-
-` close token. Fail-closed
-  named 400s if generation ends inside the reasoning channel. Receipts:
-  `research/step37-postthink-grammar-20260830/`.
+  trained, and the grammar clamps every token from the tokenizer's atomic think-close
+  token (id 128799). Fail-closed named 400s if generation ends inside the reasoning
+  channel. Receipts: `research/step37-postthink-grammar-20260830/`.
 - **Draft-graph serving** (lane/step37-draft-graph-serving-20260830): the 3-head
   step-modulo draft chain is CUDA-graph captured on the serving shape, greedy and
   filtered-sampling arms byte-identical to eager. Receipts:
