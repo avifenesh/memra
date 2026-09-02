@@ -5236,6 +5236,12 @@ fn active_unmaterialized_tp_kv(
             .model
             .step_tp_unmaterialized_kv_bytes(Some(cache), cache.max_ctx)?;
         merge_tp_kv_charges(&mut totals, &charges);
+        // glm5 TP-2 peer-rank state (memra #14): the same "reserve until the sidecar
+        // exists" contract as the step charge above, one call per active session's cache.
+        let glm5_charges = model
+            .model
+            .glm5_tp_unmaterialized_kv_bytes(Some(cache), cache.max_ctx)?;
+        merge_tp_kv_charges(&mut totals, &glm5_charges);
     }
     Ok(totals)
 }
@@ -11235,6 +11241,56 @@ pub fn run(
     }
     log_spec_gate_policy();
 
+    // glm5 TP-2 door (MEMRA_GLM5_TP, lane/glm5-tp-serve-wiring-20260902, memra #14): the
+    // engine's TP walk (`crates/memra-engine/src/glm5_tp.rs`) is byte-gated and loads
+    // through the SAME model-load path every other family uses (`HybridModel::load`,
+    // the loop right below this check), so admitting the flag here is the whole SERVING
+    // half. Peer-rank admission KV accounting is wired through
+    // `HybridModel::glm5_tp_unmaterialized_kv_bytes` (the `[admission]` call sites this
+    // worker already runs for the step family), readiness/drain are the existing
+    // family-agnostic HTTP-layer paths (a load failure fails spawn like any other model;
+    // SIGTERM drain tracks in-flight requests, not per-device state), and spec x TP stays
+    // refused per-session by name at the cache layer
+    // (`memra-kv::Cache::snapshot`/`snapshot_into`, `glm_spec::glm5_spec_session_new`)
+    // unless `MEMRA_GLM5_SPEC_TP=1` lifts it (unrelated to this door).
+    //
+    // v1 SERVING admits TP-2 only: the box gate this lane runs exercises two devices, and
+    // the engine's own qualified envelope (`glm5_tp::GLM5_TP_ALLOWED_RANKS`, TP-2 and TP-4)
+    // is wider than what serving has been proven against. TP-4 stays refused BY NAME here,
+    // as a rank count outside the serving-qualified {2}, rather than silently loading a
+    // 4-rank model the admission/readiness gates have not held. The check runs BEFORE any
+    // model load starts (this is above the `loaded` build loop), so a refused rank count
+    // never pays a wasted weight load; the rank count is read from the raw env WITHOUT the
+    // model's trunk length (no model is loaded yet), which is exactly what
+    // `glm5_tp_rank_count_from_raw` is for. Every other geometry/co-arm law still runs,
+    // unchanged, inside `prepare_glm5_tp_load` at model-load time below.
+    if let Some(raw) = memra_engine::glm5_tp::glm5_tp_env_raw() {
+        if !raw.is_empty() && raw != "0" {
+            match memra_engine::glm5_tp::glm5_tp_rank_count_from_raw(&raw) {
+                Ok(2) => {
+                    eprintln!(
+                        "[worker] MEMRA_GLM5_TP admitted for serving: ranks=2 (TP-2, general \
+                         transport seam); peer-rank KV state reserved through \
+                         glm5_tp_unmaterialized_kv_bytes; spec is refused per-session on a \
+                         sharded model unless MEMRA_GLM5_SPEC_TP=1"
+                    );
+                }
+                Ok(ranks) => {
+                    panic!(
+                        "MEMRA_GLM5_TP names {ranks} devices: v1 SERVING admits TP-2 only \
+                         (the engine's qualified rank envelope is {:?}, but the serving \
+                         admission/readiness gates have only run TP-2; unset MEMRA_GLM5_TP \
+                         or use exactly 2 devices)",
+                        memra_engine::glm5_tp::GLM5_TP_ALLOWED_RANKS
+                    );
+                }
+                Err(err) => {
+                    panic!("MEMRA_GLM5_TP={raw:?}: {err}");
+                }
+            }
+        }
+    }
+
     let (constraint_result_tx, constraint_result_rx) =
         std::sync::mpsc::channel::<crate::constrained::ConstraintCompileResult>();
     let mut loaded: HashMap<String, LoadedModel> = HashMap::new();
@@ -11752,18 +11808,6 @@ pub fn run(
                 gemma_drafts.insert(n.clone(), d);
             }
         }
-    }
-
-    // glm5 TP-2 door (MEMRA_GLM5_TP, lane/glm5-tp2): the SERVER wiring for the TP walk is
-    // unwired in v1 — per-session TP state ownership, admission accounting, and rollback
-    // seams are the named box-lane increment. Fail LOUD at spawn rather than serve a
-    // program the serving gates have not held (same guard law as the dspark block below).
-    if memra_engine::glm5_tp::glm5_tp_armed() {
-        panic!(
-            "MEMRA_GLM5_TP is set on a serving worker: the glm5 TP-2 seam is \
-             engine/gate-only in v1 (serving wiring is the named tp2-lane box increment); \
-             unset it"
-        );
     }
 
     // DSPARK SPEC drafter attach (lane/dspark-q38-recover serve route): one DflashDraft
@@ -13108,7 +13152,7 @@ pub fn run(
                     );
                 }
                 let reserve = reserve.saturating_add(vg_debt);
-                let request_tp_kv = match loaded[&model_key]
+                let mut request_tp_kv = match loaded[&model_key]
                     .model
                     .step_tp_unmaterialized_kv_bytes(None, admission_cap)
                 {
@@ -13121,6 +13165,23 @@ pub fn run(
                         continue;
                     }
                 };
+                // glm5 TP-2 peer-rank state (memra #14): the request's own unmaterialized
+                // charge, merged onto the same device-keyed vector the step charge above
+                // built (both feed `parallel_device_requirements` identically since the
+                // type is a shared device+bytes shape, not a step-only one).
+                match loaded[&model_key]
+                    .model
+                    .glm5_tp_unmaterialized_kv_bytes(None, admission_cap)
+                {
+                    Ok(charges) => merge_tp_kv_charges(&mut request_tp_kv, &charges),
+                    Err(err) => {
+                        fail_request(
+                            req,
+                            EngineError::engine(format!("glm5 TP KV admission plan failed: {err}")),
+                        );
+                        continue;
+                    }
+                }
                 let pending_tp_kv = match active_unmaterialized_tp_kv(&active, &loaded) {
                     Ok(charges) => charges,
                     Err(err) => {
@@ -22865,10 +22926,19 @@ fn run_boot_calibration(
                 oom_teardown_fence(engine, loaded);
                 let charged_kv = admission_costs[name].context_bytes(probe_ctx, true);
                 let charged_draft = lm.model.draft_session_admission_bytes();
-                let tp_kv = lm
+                let mut tp_kv = lm
                     .model
                     .step_tp_unmaterialized_kv_bytes(None, probe_ctx)
                     .unwrap_or_default();
+                // glm5 TP-2 peer-rank state (memra #14): fold into the same charge vector
+                // the boot calibration floor subtracts below, so the measured transient
+                // floor never double-counts the reserved peer-rank bytes.
+                merge_tp_kv_charges(
+                    &mut tp_kv,
+                    &lm.model
+                        .glm5_tp_unmaterialized_kv_bytes(None, probe_ctx)
+                        .unwrap_or_default(),
+                );
                 let primary = engine.ctx().ordinal();
                 // Read the driver-visible peak (RESERVED high watermark: everything the pool
                 // MAPPED at the burst's deepest point), then TRIM, then read what stays live.
