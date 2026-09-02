@@ -163,7 +163,10 @@ cell_spec_ab(){
       # so both arms measure on the shipped q8_0/q5_1 + idxq q8 caches the flip rule is about.
       # (First live run 2026-09-01 measured 3 reps under the f32 pin before revuto caught it;
       # those receipts are kept under spec-ab-f32pin/ as a same-config ratio, not the number.)
-      seams="$base,kvq,idxq"; [ "$arm" = auto ] && seams="$base,kvq,idxq,selgroup"
+      # OFF is PINNED (`selgroup=0`), never expressed by omission: since the 2026-09-02 default flip
+      # an omitted seam name means AUTO, and an off-vs-auto label on an auto-vs-auto run would
+      # read as "the seam stopped working" (revuto, PR #56).
+      seams="$base,kvq,idxq,selgroup=0"; [ "$arm" = auto ] && seams="$base,kvq,idxq,selgroup"
       lf="$out/spec-ab-rep$rep-$arm.log"
       { printf "# capacity_guard\twaited_s=%s\n" "$w"
         printf "# arm\t%s\n# seams_env\tMEMRA_Q4E_SEAMS=%s\n" "$arm" "$seams"
@@ -176,7 +179,7 @@ cell_spec_ab(){
   log "cell $label rc=$?"
   for arm in off auto; do
     receipt_head "$OUT/spec-ab-rep$rep-$arm.log" "$label-$arm" \
-      "$BASE_SEAMS,kvq,idxq$([ $arm = auto ] && echo ,selgroup)" "$arm"
+      "$BASE_SEAMS,kvq,idxq$([ $arm = auto ] && echo ,selgroup || echo ,selgroup=0)" "$arm"
     printf '# bin_sha256\t%s\n' "$(bin_sha "$BIN")" >> "$OUT/spec-ab-rep$rep-$arm.log"
   done
 }
