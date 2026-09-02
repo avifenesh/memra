@@ -186,6 +186,11 @@ which stopped being true).
 
 ## The box gate this lane cannot run
 
+Runs from the integration branch `lane/glm5-b200-int-20260902` (coordinator note,
+2026-09-02): this lane's branch merged onto `ff3dd4038`, the cuBLASLt per-device-handle
+fix the PP2 boot on the B200 pair needed. Not this branch alone: the box gate below is
+the integration branch's job, once merged there.
+
 No GPU, so none of this is exercised on real hardware yet: TP-2 model load reaching
 `listening on`, a live `/v1/chat/completions` (and `/v1/completions`, `/v1/messages`,
 tools) round trip, the admission KV numbers against a real artifact's actual VRAM
