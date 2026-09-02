@@ -410,6 +410,61 @@ KDA layers carry `recur` and MLA/DSA layers carry `latent`, so it is inside a ca
 being first it is on the head stage, which is the device the gate's engine owns. The timing arms
 run un-perturbed; a forced re-capture is a correctness arm, never a measured configuration.
 
+## 9c. Second box run: the re-capture itself fails, and what is now instrumented
+
+Run 2 (int2 `18df26ad6`, containing `dd05246b9`) died the same way: both stages engaged, one
+`re-capture` line, then `CUDA_ERROR_INVALID_VALUE`, rc=1 at ~70 s
+(`gate-glm5-decode-graph-2.txt`). Two readings follow, and the second is the actionable one.
+
+**The phase-invariance fix landed.** Run 1 died at 57 s with the re-capture firing on step 2 (the
+spurious per-token one). Run 2 got ~13 s further and the re-capture is the gate's own FORCED
+re-seat at step 32 — the arm added in `dd05246b9` doing exactly what it was added to do. The
+signature no longer fires on a phase swap.
+
+**The re-capture path itself returns INVALID_VALUE, and drain-before-destroy was not sufficient.**
+One deduction narrows this a long way: `cudarc`'s `CudaGraph::drop` runs
+`cuGraphExecDestroy`/`cuGraphDestroy` and DISCARDS the result, and `CUDA_ERROR_INVALID_VALUE` is
+not a sticky error. So the error we see is returned by a call **this code makes and propagates** —
+inside the capture block, or one of the synchronizes, allocations or copies around it. It cannot
+be the destroy itself failing silently.
+
+So this lane instruments precisely those calls rather than guessing again. `capture_one` is a
+deliberate re-implementation of `Engine::capture_graph_retained_nowarm` (same RELAXED mode, same
+`AUTO_FREE_ON_LAUNCH` flag, same event-tracking discipline) for one reason: that helper returns a
+bare `DriverError` and cannot distinguish `cuStreamBeginCapture` from
+`cuStreamEndCapture`+instantiate from `cuGraphUpload`. Every failable step now routes through
+`step()` and prints, before propagating:
+
+```
+[glm5-decode-graph] capture-error: call=<which> dev=N stage=[lo, hi) run=i/n layers=[a, b)
+    phase=p recapture=true|false stream_capture=none|ACTIVE|INVALIDATED free=X/YMB ledger=bool
+    err=...
+```
+
+Named calls: `pre-begin-status`, `synchronize(before begin_capture)`,
+`cuStreamBeginCapture(RELAXED)`, `capture body` (the walk, including the ledger's `memcpy_dtod`
+taps), `cuStreamEndCapture+cuGraphInstantiate`, `cuGraphUpload`, `htod_i32(pos_d)`,
+`memcpy_dtod(x -> x_io)`, `cuGraphLaunch`. The re-capture decision also prints its own line with
+`stale_pos`, `stale_ptr`, `launched_since_sync`, the stream's capture status and free VRAM, and
+the rebuild's `engaged` line is NOT deduplicated (a `note` would hide the second one).
+
+**Candidates, and where each one would now show up.**
+
+| candidate | fits INVALID_VALUE? | how it shows / what was done |
+|---|---|---|
+| `cuStreamBeginCapture` on a stream still ACTIVE, or INVALIDATED by an earlier failed EndCapture | yes, directly | probed BEFORE the begin and refused by name: `call=pre-begin-status stream_capture=ACTIVE`. A failing capture body now still calls EndCapture, so a body error can no longer leave the stream ACTIVE for the next begin |
+| `cuGraphInstantiate` against a mempool churned immediately beforehand | yes | **removed as a variable**: a re-capture now REUSES `x_io`, the private hc workspace and the private f16 scratch, so a rebuild allocates and frees nothing of its own against the stream-ordered pool the graphs' alloc nodes draw from, and the rebuilt graphs bake the same addresses |
+| graph-owned memory of 12 just-destroyed `AUTO_FREE_ON_LAUNCH` execs not yet reclaimed when 12 new alloc-bearing graphs instantiate | yes, and this is the leading structural hypothesis | would print `call=cuStreamEndCapture+cuGraphInstantiate ... recapture=true`. Next move if so: instantiate the new graphs BEFORE destroying the old (peak VA doubles for one token), or trim graph memory between |
+| ledger `memcpy_dtod` tap with a changed destination | no (slots allocated once, fixed size) | would print `call=capture body` with the inner error; `ledger=` is on every line so a run can be re-taken with it off |
+| an already-instantiated graph handed back to capture | no | each capture returns a fresh `CudaGraph`; nothing is re-instantiated |
+| `cudaGraphExecUpdate` fed an exec from another run | ruled out | this route has no exec-update path; `graph_update::fa_apply` is not on it |
+| the ping-pong twin capturing against the moved buffer while the other phase's exec still references the old one | possible | the re-seat's `cuMemFreeAsync` of the old state buffer is issued before the execs are destroyed; the drain now separates them, and `launched_since_sync` reports whether an exec was live |
+
+**And a capture failure no longer takes the request with it** (already in `dd05246b9`): it falls
+through to the byte-identical eager walk for the whole range and latches the stage off, so the
+next box run should reach the identity compare and the timing arms even if the rebuild still
+fails — with the `capture-error:` line naming the call.
+
 ## 10. Open items
 
 1. **Run the gate on the pair** (`--steps 64 --reps 5`) and bank the receipt. Until then the
@@ -440,6 +495,10 @@ run un-perturbed; a forced re-capture is a correctness arm, never a measured con
    hit (a re-capture destroys stage s's graphs while stage s's context is current, by
    construction), but it is a real teardown hazard and wants either a per-context drop guard or
    an explicit release before the cache is dropped.
-8. **Serving wiring.** The door is exercised through `decode_step_hyper` / `decode_step_hyper_ppn`
+8. **If the box points at `cuGraphInstantiate`:** instantiate the rebuilt graphs BEFORE
+   destroying the old execs (peak VA doubles for one token, which the 2x192 GB pair can carry),
+   or find a trim between. Do not do it speculatively — it doubles peak graph memory and the
+   receipt has not asked for it yet.
+9. **Serving wiring.** The door is exercised through `decode_step_hyper` / `decode_step_hyper_ppn`
    only. A server-side admission predicate (the `MEMRA_GS_MIN`-style budget gate) is a separate
    decision and is not made here.
