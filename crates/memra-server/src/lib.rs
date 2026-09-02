@@ -19042,8 +19042,10 @@ temperature = 0.6
             .skip(events.len())
             .filter_map(|e| match e {
                 MeterEvent::Open {
-                    request_id, route, ..
-                } if route == "/v1/rerank" => Some(request_id),
+                    request_id,
+                    route: "/v1/rerank",
+                    ..
+                } => Some(request_id),
                 _ => None,
             })
             .collect();
