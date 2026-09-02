@@ -315,4 +315,9 @@ if (( total != EXPECTED_ASSERTIONS )); then
         "$total" "$EXPECTED_ASSERTIONS" >&2
     exit 3
 fi
-(( fail == 0 ))
+(( fail == 0 )) || exit 1
+
+# Sibling fixture over the same registry: docs/FLAGS.md table shape (memra #22). Chained here so
+# it has a caller in the step ci.yml already runs ("Flags census self-test"); it keeps its own
+# assertion count, so the 24 above stay exactly what they were.
+exec tools/test_docs_registry_census.sh

@@ -156,6 +156,15 @@ fi
 # ---------------------------------------------------------------------------------
 # Verdict.
 # ---------------------------------------------------------------------------------
+# FLAGS.md table shape (memra #22). GitHub splits a cell on every unescaped `|`, backticks
+# included, so a row documenting `route=spec|plain` renders its default in the wrong column;
+# 14 rows were malformed when this arm landed (2026-09-02). Escape-aware, fenced blocks skipped,
+# zero tables refuses. Teeth: tools/test_docs_registry_census.sh (chained from test_check_flags.sh).
+flags_table_out=""
+if ! flags_table_out=$(python3 tools/flags-table-census.py docs/FLAGS.md 2>&1); then
+    printf '%s\n' "$flags_table_out" >> "$violations"
+fi
+
 if [[ -s "$violations" ]]; then
     cat "$violations" >&2
     exit 1
@@ -165,3 +174,4 @@ echo "docs-registry-census: KERNELS.md file references=$kernel_ref_count, all re
 echo "docs-registry-census: MODELS.md support-state tokens=$state_count, all in the three-state vocabulary"
 echo "docs-registry-census: ROUTER.md lines=$router_lines (cap 60)"
 echo "docs-registry-census: check-flags --list answered with $flags_count runtime names (coverage enforced by check-flags.sh itself)"
+echo "docs-registry-census: $flags_table_out"

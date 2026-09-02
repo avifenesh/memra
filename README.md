@@ -90,101 +90,67 @@ library embedded in your application.
 [multimodal](docs/workloads/multimodal.md) ·
 [large models on multiple GPUs](docs/workloads/multi-gpu.md)
 
-## What v0.123.0 ships
+## Overview
 
-The glm5_next bring-up consolidation, the step37 NVFP4 program restore with its first
-default flips, and two new-architecture bring-ups. Flag defaults are per-row decisions with
-receipts in [docs/FLAGS.md](docs/FLAGS.md); numbers below carry their lane receipt paths and
-are lane measurements, not serving claims.
+memra is a from-scratch LLM inference engine: a Rust host runtime driving hand-written CUDA
+kernels, compiled ahead of time into fatbins embedded in the binary, with no Python and no
+framework in the serving path. It targets one card class at a time and is tuned separately for
+RTX PRO 6000 Blackwell and RTX 5090 (sm_120a), with Hopper (sm_90a) as a compile-covered lane.
+The design constraints and the decisions they forced are in [ARCHITECTURE.md](ARCHITECTURE.md).
 
-- **glm5_next (GLM-5.3-Flash) full serving stack**, bring-up state: the 45-layer hybrid
-  KDA+MLA/DSA architecture with sigmoid 288-expert MoE, Sinkhorn mHC, NoPE MLA and the DSA
-  indexer, under a 3-card pipeline recipe (resident PP3, SPLITS 15,30). Ships the batched
-  spec-verify walk (`MEMRA_GLM5_VERIFY_BATCH`, default ON, bit-gated per row), the DFlash2
-  drafter spec session (`MEMRA_GLM5_SPEC` + auto-K + confidence floor), MLA tensor-core
-  attention default ON (TTFD −62 to −69% on two boxes), hyper-batch default ON, vision
-  default ON, the weight-read-once matvec door family default ON (T/X/K/W; mv-battery
-  2026-08-31), verify-rows MoE kernels at 90% DRAM peak, and dedup-schedule/EP-diet doors
-  default OFF pending box pricing. Greedy instrument figure on the ship recipe: 71.49 tok/s
-  (3 cards); receipts under `research/glm53-flash-bringup-20260827/`. NOT serving-exposed:
-  the serving bar (100 tok/s at ctx 262144) is an open lane, and no product claim ships here.
-- **glm5 TP widened to rank 4, and spec decode composes with TP** (`GLM5_TP_ALLOWED_RANKS
-  = [2, 4]`, TP-3 refuses by name): per-rank transport with an all-ordered-pairs
-  byte-integrity ladder, peer-shard KDA/MLA sidecars, rig-gated bit identity; the blanket
-  spec-session co-refusal on a TP-armed model becomes a gated admission behind
-  `MEMRA_GLM5_SPEC_TP` (default OFF by design) with sharded verify/rollback through the
-  batched walk only. The peer-pull transport door and movement census landed with the
-  fail-closed TP matrix (`research/glm53-flash-bringup-20260827/composition-20260901/`).
-- **`apply_penalties_dense`**: the host sampler's O(n_vocab) per-token hash-and-sort on
-  penalized sampled rows replaced by a dense pass, bit-identical by a 24-case `to_bits`
-  gate (old scan form kept as the oracle). Found by the host-audit lane tracing a live
-  prod shape; `MEMRA_WORKER_AFFINITY` ships alongside as a default-OFF diagnostic seam whose
-  box battery measured null on every arm (`research/glm53-flash-bringup-20260827/host-audit-20260901/`).
-- **step37 NVFP4 bank-v3: the 2026-08-29 corruption root-caused and the programs restored.**
-  The defect was a defaulted `in_f = 0` scale-fetch argument in the prefill grouped GEMM
-  (right codes, wrong scale, every k-block but the first) — the slot-major layout was
-  innocent. The default is deleted so the compiler enforces all call sites; the three
-  removed programs return under three separate strict doors gated by the device-side
-  `nvfp4-bank-oracle` with a behavioural teeth arm. First default flips ride the deploy-grade
-  12-boot battery: `MEMRA_NVFP4_BANK_SM` + `MEMRA_NVFP4_SEL_DOWN8` default ON as one coupled
-  decision (+5.44% decode / +5.92% wall on the vendor-default sampled shape, per-boot ranges
-  separated 4/4, 16/16-turn cache twin holds; engages on the device-routed TP path — see
-  the eligibility conditions in docs/FLAGS.md), `MEMRA_NVFP4_SEL_GU` stays OFF
-  (`research/step37-bankv3-20260901/`).
-- **hy3 native tune**: automatic expert-parallel device router with batch-cap admission,
-  masked MTP, an internal W4A8/mixed-Q8 activation scope for whole-expert EP, generic TP
-  attention composed with expert EP, and the shared-expert overlap door
-  (`MEMRA_SHEXP_OVERLAP`, default OFF).
-- **qwen4_exp (Qwen3.8-Flash-Next) bring-up**, NativeReference + GPU-eager with exactness
-  gates: hybrid GDN 3:1 QSA, 512-expert softmax top-k router with gated shared expert,
-  4-branch gated residual, PLE n-gram embedding, YaRN with refuse-at-parse for unimplemented
-  keys. Loader/reference lane only; no serving exposure and no product claims
-  (`research/qwen4exp-bringup-20260829/`).
-- **Public-boundary checker hardened for symlinks**: a tracked symlink publishes only its
-  target string and is scanned as such, never dereferenced (a box-absolute link crashed the
-  checker on CI runners); the tree itself now carries zero box-absolute links.
+### Crates
 
-## What v0.122.0 ships
+| Crate | Owns |
+|---|---|
+| `memra-engine` | The CUDA engine: kernels, model programs, KV cache, speculative decoding, multi-GPU placement |
+| `memra-server` | OpenAI-compatible HTTP serving (chat, completions, Messages, Responses, embeddings, rerank), admission, prefix cache |
+| `memra-gguf` | GGUF and safetensors loading, quant-format decode, tensor inventory, model packs and the support-state enum |
+| `memra-tokenizer` | GGUF-native BPE and SPM tokenizer with chat templates |
+| `memra-sampling` | Host-side sampler chain (temperature, top-k, top-p, penalties) |
+| `memra-kv` | KV-cache format policy (q8_0, q5_1, q4_0, fp8 block layouts) |
+| `memra-lanes` | Serving-lane types, SLO admission policy, engine-truth step stats |
+| `memra-reference` | Portable unfused reference executor for correctness gates |
+| `memra-runtime` | CUDA runtime scaffolding (context, GEMM checks) |
+| `memra-validate` | Numeric validation helpers (reference comparisons, tolerance gates) |
+| `memra-cli` | Model onboarding compiler: `memra model inspect`, `model pack`, `model verify` |
+| `memra-probe` | Unpublished dev spike (`publish = false`) |
 
-KV host tier and serving-guard release. Every new flag defaults OFF with an audited row in
-[docs/FLAGS.md](docs/FLAGS.md); numbers below are from the 2026-08-31 qualification pod battery
-(2x RTX PRO 6000 Blackwell 96 GB).
+### Support states
 
-- **Graph-launch guard on every serving-reachable captured-graph route.** When driver-free
-  memory drops below the 256 MB launch floor, captured-graph replay suspends with a
-  route-tagged `graph replay suspended:` line and the request serves on the eager arms
-  (fail-closed to eager, never a segfault into an exhausted card). Fired 5/5 squeeze runs on
-  each of the q38 verify-graph, ornith MTP verify-graph, and step37 TP-2 routes; zero
-  suspended lines at healthy headroom.
-- **Prefix-cache host spill tier**, `MEMRA_KV_HOST_MB` (default OFF): device-cache evictions
-  demote verbatim into pinned host RAM and promote back through the existing restore path,
-  byte-lossless by construction. Gates: restored-vs-cold byte identity (ON == OFF bytes,
-  verify digests ok, teeth arm inverts as required); the 8-turn larger-prompt cache twin
-  holds TTFT flat (0.61 to 0.77 s p50) through turn 8 while the no-tier arm grows to
-  3.88 s p50, a 5.6x p50 TTFT gap at turn 8 in that shape.
-- **Tenant lifecycle purge and per-tenant share cap.** `PurgeHandle::purge_tenant` clears a
-  tenant's resident host-tier and unpinned device entries on key revocation or deletion
-  (`/admin/tenants/{tenant}/purge`); `MEMRA_KV_HOST_TENANT_PCT` (default 50) caps one
-  tenant's share of the host pool.
-- **Plain-pool park compaction**, `MEMRA_KV_PARK_COMPACT` (default OFF): a retiring
-  continuation-pool session parks at exactly its committed length instead of its ladder cap;
-  resume restores the parked rows, byte identity after replay 4/4 under the step-OOM
-  adjacency battery.
-- **Agent-pause KV demotion**, `MEMRA_KV_PAUSE_DEMOTE` (default OFF): a turn that ends in a
-  completed tool call arms a pause candidate and demotes its boundary state to the host tier
-  after `MEMRA_KV_PAUSE_DEMOTE_MS` (default 5000 ms, set from the A3 gap census). Natural
-  `tool_calls` arm 6/6 on both boots; 16 verify-ok round trips, 0 failed; co-run decode tax
-  -1.80% median.
-- **Predictive-admission shadow receipts**, `MEMRA_ADMIT_PREDICT_SHADOW` (default OFF):
-  log-only per-request admit/reject verdicts with the full KV book; nothing is rejected.
-- **Boot calibration probes the served route**: the admission floor probe rides the route the
-  model actually serves (q38 dspark boot charges zero MTP draft-state; the ornith MTP route
-  charges its real measured draft state).
-- **Verify-graph pool debt charged by struct**: the MTP verify-graph pool no longer escapes
-  admission (by-struct reserved debt plus a per-session measured capture charge).
-- **Offline expert-placement map builder**, `tools/build_expert_placement_map.py` (frozen
-  format `memra-ep-map-v1`; strategies coactivation, frequency, even; selftest 10/10 with
-  proven teeth).
+Support is specific to a model, quantization, and drafter combination, never to a format. There
+are exactly three positive states, the enum `NativeSupport` in
+`crates/memra-gguf/src/model_packs/mod.rs`:
+
+- **NativeReference**: the plan compiles and runs in memra's reference executor. Bring-up
+  evidence only.
+- **NativeQualified**: the required checkpoint and serving gates pass.
+- **NativeTuned**: qualified, plus current receipts for the optimized rewrites the deployment
+  selects.
+
+"Loads", "shares an architecture name", and "works through another engine" are not support
+states. [docs/MODELS.md](docs/MODELS.md) is the support matrix; each entry in
+[docs/models/](docs/models/) is the shortest recommended path for one model.
+
+### Correctness gates
+
+Every fast path is promoted only against its own oracle. Kernel-level bit identity
+(`kernel-check`), argmax parity of generation against the reference path (`run-gen`),
+speculative-decode self-consistency across draft lengths (`run-spec`), and served-path
+byte identity (spec versus plain, restored versus cold) are the standing battery; GitHub CI is
+compile-only, so the battery runs on a GPU before a merge or a tag. Greedy decoding is the
+instrument, not the product: it is what makes byte-level gates possible. The gate catalog and
+what each one proves is [docs/TESTING.md](docs/TESTING.md).
+
+### Releases
+
+Tagged releases carry prebuilt binaries (the installer above reads them) and publish the
+workspace to crates.io. The repository history was rebuilt from a content snapshot on
+2026-09-01 (a zero-history swap), so the GitHub Releases list here starts again with the first
+tag cut on this history; crates.io is continuous, with `memra-engine 0.123.0` published
+2026-09-01T04:59Z from old-history commit `bc0952fe5`, which is tag `v0.123.0`. The notes for
+v0.122.0 and v0.123.0 are kept in
+[docs/archive/RELEASE-NOTES-v0.122.0-v0.123.0.md](docs/archive/RELEASE-NOTES-v0.122.0-v0.123.0.md).
+Release mechanics are in [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Documentation
 
@@ -198,13 +164,13 @@ KV host tier and serving-guard release. Every new flag defaults OFF with an audi
 | [Models](docs/MODELS.md) | Supported checkpoints, formats, drafters, and hardware |
 | [Serving](docs/SERVING.md) | HTTP contract, caching, auth, admission, multi-GPU, operations |
 | [API surfaces](docs/API-SURFACES.md) | Anthropic Messages and OpenAI Responses compatibility |
-| Embeddings & rerank | `/v1/embeddings` (OpenAI schema) and `/v1/rerank` (Cohere shape) — prefill-only capture surfaces, [Serving](docs/SERVING.md) |
+| Embeddings and rerank | `/v1/embeddings` (OpenAI schema) and `/v1/rerank` (Cohere shape): prefill-only capture surfaces, [Serving](docs/SERVING.md) |
 | [Performance](docs/PERFORMANCE.md) | Measurements, methodology, rigs, and receipts |
 | [Flags](docs/FLAGS.md) | Audited environment-variable reference |
 | [Testing](docs/TESTING.md) | Correctness gates and evidence requirements |
 | [Architecture](ARCHITECTURE.md) | Runtime structure and Blackwell implementation ledger |
 | [Decisions](docs/decisions/) | Adopted and rejected design choices with evidence |
-| [Releases](https://github.com/avifenesh/memra/releases) | Changelog and release artifacts |
+| [Releases](https://github.com/avifenesh/memra/releases) | Release artifacts; notes for the pre-swap tags in [docs/archive/](docs/archive/RELEASE-NOTES-v0.122.0-v0.123.0.md) |
 
 ## Issues and requests
 
@@ -226,5 +192,5 @@ runners. Start with [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Built by [Avi Fenesh](https://github.com/avifenesh) at
+MIT, see [LICENSE](LICENSE). Built by [Avi Fenesh](https://github.com/avifenesh) at
 [tiyuvta](https://tiyuvta.ai).
