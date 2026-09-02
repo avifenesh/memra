@@ -307,7 +307,7 @@ impl Eagle3Draft {
 
         // e = TARGET embedding of prev_tok (EAGLE3 shares the target's token embedding).
         // eN = input_layernorm(e); gN = hidden_norm(g); residual = PRE-norm g (norm_after_residual).
-        let e_emb = e.htod(&target.embd.gather(n, &[prev_tok]))?;
+        let e_emb = e.htod(&target.embd.try_gather(n, &[prev_tok])?)?;
         let mut e_norm = e.zeros(n)?;
         e.rms_norm(
             &e_emb,

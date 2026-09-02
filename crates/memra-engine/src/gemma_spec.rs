@@ -532,7 +532,7 @@ impl HybridModel {
         cache: &Cache,
     ) -> Result<(CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
         let nb = d.n_backbone;
-        let mut xs = e.htod(&self.embd.gather(nb, &[token]))?;
+        let mut xs = e.htod(&self.embd.try_gather(nb, &[token])?)?;
         e.scale_inplace(&mut xs, (nb as f32).sqrt(), nb)?;
         let pos_d = e.htod_i32(&[pos as i32])?;
         self.gemma4_draft_trunk_from_x(e, d, &xs, h, &pos_d, cache, None)

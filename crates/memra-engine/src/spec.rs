@@ -4747,7 +4747,7 @@ impl HybridModel {
         // expands this one row on CPU and transfers n_embd f32 values instead.
         let e_emb = match embd_dev {
             Some((g, qt, rb)) => e.embed_gather_device_t(g, &[e_tok], n_embd, qt, rb)?,
-            None => e.htod(&self.embd.gather(n_embd, &[e_tok]))?,
+            None => e.htod(&self.embd.try_gather(n_embd, &[e_tok])?)?,
         };
 
         // op 1/2: e_norm = RMSNorm(e, enorm); h_norm = RMSNorm(h_seed, hnorm)
@@ -5015,7 +5015,7 @@ impl HybridModel {
         // Same op chain as `mtp_head_forward_dev_at` (ops 1-12), same kernels — only the
         // attention arm differs: `mla_attn_cached` on the plan's own MTP plane instead of
         // `mtp_full_attn_dc` on the MtpScratch.
-        let e_emb = e.htod(&self.embd.gather(n_embd, &[e_tok]))?;
+        let e_emb = e.htod(&self.embd.try_gather(n_embd, &[e_tok])?)?;
         let mut e_norm = e.zeros(n_embd)?;
         e.rms_norm(&e_emb, mtp.enorm.float_data(), &mut e_norm, n_embd, 1, eps)?;
         let mut h_norm = e.zeros(n_embd)?;
@@ -5649,7 +5649,7 @@ impl HybridModel {
         // ops A/1/2: embed + the two input norms, T-wide.
         let e_emb = match embd_dev {
             Some((g, qt, rb)) => e.embed_gather_device_t(g, tokens, n_embd, qt, rb)?,
-            None => e.htod(&self.embd.gather(n_embd, tokens))?,
+            None => e.htod(&self.embd.try_gather(n_embd, tokens)?)?,
         };
         let mut e_norm = e.zeros(t * n_embd)?;
         e.rms_norm(&e_emb, mtp.enorm.float_data(), &mut e_norm, n_embd, t, eps)?;
@@ -6338,7 +6338,7 @@ impl HybridModel {
                     vtok_dev.is_none(),
                     "device-token verify requires the resident embed table (embd_dev)"
                 );
-                e.htod(&self.embd.gather(n_embd, tokens))?
+                e.htod(&self.embd.try_gather(n_embd, tokens)?)?
             }
         };
 
@@ -6633,7 +6633,7 @@ impl HybridModel {
                     e0.embed_gather_device_td(g, vtok, t, n_embd, qt, rb)?
                 }
                 (None, Some((g, qt, rb))) => e0.embed_gather_device_t(g, tokens, n_embd, qt, rb)?,
-                _ => e0.htod(&self.embd.gather(n_embd, tokens))?,
+                _ => e0.htod(&self.embd.try_gather(n_embd, tokens)?)?,
             };
             let x = self.verify_layers(
                 e0, x, fence[0], fence[1], &pos_d, pos0, t, cache, ckpt, stream, None,
@@ -9614,7 +9614,7 @@ impl HybridModel {
         let t = tokens.len();
         let pos_vec: Vec<i32> = (0..t).map(|i| (pos0 + i) as i32).collect();
         let pos_d = e.htod_i32(&pos_vec)?;
-        let mut x = e.htod(&self.embd.gather(n_embd, tokens))?;
+        let mut x = e.htod(&self.embd.try_gather(n_embd, tokens)?)?;
         let mut aux_last: Vec<CudaSlice<f32>> = Vec::with_capacity(aux_layers.len());
         let mut aux_pred: Vec<CudaSlice<f32>> = Vec::new();
         let want_pred = pred_col.is_some();

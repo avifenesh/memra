@@ -1330,17 +1330,52 @@ impl EmbedHost {
         (qt, row_bytes)
     }
 
-    /// Gather rows for tokens -> [T, n_embd] f32. Dequant per-row from raw bytes.
-    pub fn gather(&self, n_embd: usize, tokens: &[u32]) -> Vec<f32> {
+    /// Rows this embedding table actually holds — the ONLY bound that matters for a gather,
+    /// and not the same number as `cfg.vocab_size` on a padded table.
+    pub fn rows(&self, n_embd: usize) -> usize {
         let (blk, tsize) = self.ggml_type.block_and_type_size();
         let row_bytes = (n_embd as u64 / blk * tsize) as usize;
+        self.raw.len().checked_div(row_bytes).unwrap_or(0)
+    }
+
+    /// Gather rows for tokens -> [T, n_embd] f32, dequant per row from raw bytes, REFUSING an
+    /// out-of-range id by name.
+    ///
+    /// WHY THIS IS A RESULT AND NOT A SLICE. 2026-09-02, 2x B200, boot D
+    /// (`MEMRA_PRIME_CHUNK=4096 MEMRA_MOE_F16G=1`): the mode-1 expert GEMM corrupted the trunk,
+    /// the logits went bad, the sampler handed back an id near `i32::MAX`, and this function's
+    /// `self.raw[off..off + row_bytes]` panicked with `range start index 17592186036224 out of
+    /// range`. That panic took the GPU WORKER down, the respawn hit it again, and every request
+    /// after it was connection refused — one numeric bug in one door became a fleet outage
+    /// (`research/glm5-b200-20260902/box/prefill/`, and LAW: engine panics are fleet-fatal).
+    /// The numeric bug is fixed at its own site; this guard is the reason the NEXT one costs a
+    /// request instead of a fleet. The message names the id, the bound and the likely upstream,
+    /// because a bounds error with no attribution sends the next reader to the wrong file.
+    pub fn try_gather(&self, n_embd: usize, tokens: &[u32]) -> Result<Vec<f32>, String> {
+        let (blk, tsize) = self.ggml_type.block_and_type_size();
+        let row_bytes = (n_embd as u64 / blk * tsize) as usize;
+        let rows = self.rows(n_embd);
         let mut x = vec![0f32; tokens.len() * n_embd];
         for (ti, &tok) in tokens.iter().enumerate() {
+            if tok as usize >= rows {
+                return Err(format!(
+                    "embed gather: token id {tok} at position {ti} is outside this table's                      {rows} rows ({} raw bytes / {row_bytes} B per row, dtype {:?}). An                      out-of-range id is produced UPSTREAM — corrupt logits, a sampler reading                      a stale or non-finite row, or a tokenizer/vocab mismatch — so fix it                      there; this refusal exists so the worker does not die on the slice",
+                    self.raw.len(),
+                    self.ggml_type,
+                ));
+            }
             let off = tok as usize * row_bytes;
             let row = dequant::dequantize(self.ggml_type, &self.raw[off..off + row_bytes], n_embd);
             x[ti * n_embd..ti * n_embd + n_embd].copy_from_slice(&row);
         }
-        x
+        Ok(x)
+    }
+
+    /// [`Self::try_gather`] for the call sites that cannot return an error (probes, gates).
+    /// Serving paths take `try_gather` — see its header for why the difference is load-bearing.
+    pub fn gather(&self, n_embd: usize, tokens: &[u32]) -> Vec<f32> {
+        self.try_gather(n_embd, tokens)
+            .unwrap_or_else(|err| panic!("{err}"))
     }
 }
 
@@ -1457,7 +1492,7 @@ impl Model {
         tokens: &[u32],
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let n_embd = self.cfg.n_embd as usize;
-        let x = self.embd.gather(n_embd, tokens);
+        let x = self.embd.try_gather(n_embd, tokens)?;
         e.htod(&x)
     }
 }
