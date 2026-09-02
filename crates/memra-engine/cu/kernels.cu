@@ -755,6 +755,64 @@ extern "C" __global__ void rms_norm_q8_1(const float* __restrict__ x, const floa
     }
 }
 
+// ---- RMSNorm with BOTH the f32 normed row AND a fused q8_1 quantize output (door
+// MEMRA_GLM5_Q8_FUSE, lane/b200-q8-fuse-20260902). Computes z = rms_norm(x)*w and writes it
+// out in f32 (a caller downstream may still need the un-quantized row — e.g. the MoE router
+// logits GEMV, or a gate/up pair whose fused2 kernel does not consume a pre-quantized
+// operand) AND its q8_1 quantization (out_q int8 + out_d f32 per-32 scale) in ONE launch, so
+// a caller that needs both views no longer pays a standalone `quantize_q8_1` launch plus a
+// second HBM read of `z`. BIT-IDENTICAL to rms_norm_f32(x,w,z) then quantize_q8_1(z,...):
+// the scale `s = rsqrt(mean(x^2)+eps)` reduction reads x in the same strided order as
+// rms_norm_f32/rms_norm_q8_1 (VERBATIM pass 1); the normed value z[i] = (x[i]*s)*w[i] is the
+// SAME association rms_norm_f32 stores; the per-32-block amax/d=amax/127/id=1/d/
+// __float2int_rn rounding is quantize_q8_1's exactly (VERBATIM the warp-per-block epilogue
+// `add_rms_norm_zq8` uses below, itself pinned bit-identical to quantize_q8_1 there — this
+// kernel is that same epilogue minus the `a+b` residual add). One block per row (decode:
+// nrows=1). ncols must be a multiple of 32 (n_embd always is).
+extern "C" __global__ void rms_norm_zq8_f32(const float* __restrict__ x, const float* __restrict__ w,
+                                            float* __restrict__ z,
+                                            signed char* __restrict__ out_q, float* __restrict__ out_d,
+                                            int ncols, float eps) {
+    MEMRA_PDL_ENTRY();
+    int row = blockIdx.x;
+    int tid = threadIdx.x;
+    const float* xr = x + (size_t)row * ncols;
+    float* zr = z + (size_t)row * ncols;
+    int nblk = ncols / 32;
+    // pass 1: sum of squares -> scale (identical reduction to rms_norm_f32 / rms_norm_q8_1)
+    float sum = 0.0f;
+    for (int i = tid; i < ncols; i += blockDim.x) { float v = xr[i]; sum += v * v; }
+    __shared__ float s[32];
+    for (int o = 16; o > 0; o >>= 1) sum += __shfl_down_sync(0xffffffff, sum, o);
+    if ((tid & 31) == 0) s[tid >> 5] = sum;
+    __syncthreads();
+    if (tid < 32) {
+        float v = (tid < (blockDim.x + 31) / 32) ? s[tid] : 0.0f;
+        for (int o = 16; o > 0; o >>= 1) v += __shfl_down_sync(0xffffffff, v, o);
+        if (tid == 0) s[0] = v;
+    }
+    __syncthreads();
+    float scale = rsqrtf(s[0] / ncols + eps);
+    // pass 2: z = x*scale*w (VERBATIM rms_norm_f32's epilogue expression), then quantize_q8_1's
+    // exact per-32-block amax/127/round epilogue over the SAME z values (VERBATIM
+    // add_rms_norm_zq8's warp-per-block form, below).
+    signed char* base_q = out_q + (size_t)row * ncols;
+    float* base_d = out_d + (size_t)row * nblk;
+    int lane = tid & 31;
+    for (int blk = tid >> 5; blk < nblk; blk += blockDim.x >> 5) {
+        int i = blk * 32 + lane;
+        float v = (xr[i] * scale) * w[i];
+        zr[i] = v;
+        float amax = fabsf(v);
+        #pragma unroll
+        for (int o = 16; o > 0; o >>= 1) amax = fmaxf(amax, __shfl_xor_sync(0xffffffffu, amax, o));
+        float d = amax / 127.0f;
+        float id = d > 0.0f ? 1.0f / d : 0.0f;
+        base_q[i] = (signed char)__float2int_rn(v * id);
+        if (lane == 0) base_d[blk] = d;
+    }
+}
+
 // ---- add+RMSNorm with FUSED q8_1 quantize epilogue. res = a+b (written out for the next residual);
 // then z = rms_norm(res)*w emitted directly as q8_1. Fuses add_rms_norm + quantize_q8_1 for the FFN
 // input path (z feeds ffn_gate/ffn_up matvecs, both q8_1-fast). BIT-IDENTICAL to add_rms_norm_f32
