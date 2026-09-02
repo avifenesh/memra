@@ -5888,7 +5888,7 @@ impl HybridModel {
             let (qt, rb) = self.embd.qt_and_row_bytes(n_embd);
             return e.embed_gather_device_td(tbl, &tok_d, tokens.len(), n_embd, qt, rb);
         }
-        let x = self.embd.gather(n_embd, tokens);
+        let x = self.embd.try_gather(n_embd, tokens)?;
         e.htod(&x)
     }
 }

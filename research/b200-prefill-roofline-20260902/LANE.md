@@ -50,10 +50,11 @@ Paths are `crates/memra-engine/src/`.
    microbatched PP-2 prime. The hyper walk never calls it (`prime_cache_hyper` loops
    `prime_cache_hyper_ppn` in a plain `for`, `:1855-1866`), so glm5 pays the split and gets none of
    the pipelining. Cost: expert-slab traffic is per CALL, so 8 chunks read 1,369.8 GB instead of
-   171.2 GB, the HBM floor rises 21.4 -> 171.2 ms and the 4k prime flips MEMORY-bound
-   (intensity 854 -> 107 FLOP/B, under the 275 ridge); and pairs/expert falls 113.8 -> 14.2,
-   which is below the GEMM's tile crossover (next item). At 41.9k the same rule gives chunk 4096
-   and pairs/expert 113.8 — which is exactly why the big prompt is 3.3x more efficient per FLOP.
+   171.2 GB and pairs/expert falls 113.8 -> 14.2, below the GEMM's tile crossover (next item).
+   CORRECTED BY THE BOX (§4): the roofline crossing this produces (intensity 854 -> 107 FLOP/B,
+   under the 275 ridge) is real but NOT the operative cause — the kernel runs ~30x below BOTH
+   floors, so the penalty is tile padding and small-m inefficiency, not bandwidth. Measured
+   penalty is ~2x per token, not the 3.3x estimated here.
 3. `:2715 prime_cache_hyper_ppn`, per chunk: stage 0 scope (`:2761-2790`) embeds, `hyper::expand`,
    `:2085 hyper_range_prime(0,24)`, `rt.tx`; then stage 1 scope (`:2848-2862`) `rt.rx`,
    `hyper_range_prime(24,45)`, `:3007 hyper_prime_tail`. **No overlap of any kind**: device 1 is
@@ -177,3 +178,58 @@ cost is the in-kernel serial T-loop, not launches.
 Waiting on the box phase timers (`MEMRA_PRIME_PROF=1` at 4k / 24k / 128k, true cold TTFT, and
 the `[moe-sk-form]` line) before choosing between L1+L2 and L1+L4/L5 for
 `MEMRA_B200_PRIME_V2` (default OFF, FLAGS row, `glm5-prime-v2-gate`).
+
+
+## §4 BOX RECEIPTS (2x B200, int2 8c31be2f4, all doors + W8, cold primes, prefix cache off)
+
+Boot A, `MEMRA_PRIME_PROF=1`, summing every `[moe-grouped-prefill-prof]` (layer, chunk) line:
+
+| rung | schedule | MoE | TTFT | per token per MoE layer |
+|---|---|---|---|---|
+| 4k (6,920 tok) | 8 chunks 433/1016/981/950/922/896/872/850 | 5.09 s | 5.5 s | 7.3-8.3 us |
+| 42k (41,866) | 4x2048 then ten of ~4393..3634 | 15.8 s | 16.7 s | 4.1 us (5.5 us at 2048) |
+| 128k (128.7k) | ~31 chunks | ~44 s | ~113 s | attention/KDA own the rest |
+
+Boot B (baseline) vs boot C (`MEMRA_PRIME_CHUNK=4096`): 4k **4.08 -> 2.68 s**, 1,697 -> 2,577
+tok/s (**-34%**); 42k 16.7 -> 16.69 s and 128k 56.3 -> 56.1 s, both unchanged because their
+chunks already clamped at 4096. **L1 is confirmed and is the door's arm 1.** Boot D
+(`+ MEMRA_MOE_F16G=1`) is a DEFECT, not a number — see below.
+
+Three corrections the box forced on §(a)/§(c):
+
+1. **L5 is refuted.** `[moe-sk-form] dev=0 qt=7 sms=148 occ128=2 occ32=8 occt=7 cross=64
+   xcross=64 bdb=0 in_f=4096 out_f=2048 n_active=283 max_m=115` — the 128-row form IS running
+   (occ128=2, not the silent -1 fallback the kernel header warns about) and cross=64 is live.
+   The sm_120-tuned-constants hypothesis was the wrong suspect.
+2. **The expert GEMM is neither compute- nor byte-bound.** A 4096-token MoE layer chunk is
+   ~1.24 TFLOP in 16.5 ms = **75 TFLOP/s = 3.4% of the 2.2 PFLOPS bf16 peak**, and the ~2.7 GB
+   of expert bytes it touches is **0.34 ms** at HBM speed. Both floors are ~30x away: this is a
+   kernel-efficiency problem, ~15x below what a bf16 grouped GEMM should reach on this part.
+   Inside the MoE at 4096, gemm_gu ~9.0 ms : down_scatter ~4.5 ms : shared ~1.2 ms — 2:1,
+   proportional to FLOPs, so no single projection is anomalous.
+3. **The plateau is ~2,500 tok/s at every depth**, which is that kernel wall and nothing else.
+   L1 gets the 4k rung up to the plateau; it cannot cross it.
+
+**Boot D defect, and what it cost.** `MEMRA_MOE_F16G=1` (mode 1: dequant-into-a-workspace +
+`cublasGemmGroupedBatchedEx`) destroyed the trunk. By layer 43 a 4096-token chunk reported
+`n_active=14` where boots A-C showed 209-283 — a router seeing a wrecked residual — then the
+corrupt logits produced a token id near `i32::MAX`, `EmbedHost::gather` panicked on
+`self.raw[off..off + row_bytes]` (`range start index 17592186036224`, = 2^44), the GPU worker
+died, the respawn died on the same prime, and every request after it was connection refused.
+Root cause, from the code rather than from the log: `cublasGemmGroupedBatchedEx` issues on
+cuBLAS-INTERNAL streams not ordered with ours — the round-46 NaN race that
+`cu/moe_f16_grouped.cu`'s own header records — and mode 1's only mitigation is a full stream
+sync placed AFTER the `h2f_scaled` pass, i.e. after the unordered read has already happened.
+glm5_next reaches this arm with 283 concurrent groups where the families that qualified mode 1
+reach it with a fraction of that. Two fixes landed in this lane: mode 1 is REFUSED by name on
+the glm5 sigmoid grouped prefill, and `EmbedHost::try_gather` turns an out-of-range id into a
+named request error instead of a fleet-fatal worker panic. **L4 as it exists is dead;** the
+replacement is the door's dequant-once arm on OUR stream.
+
+## §5 Re-ranked, post-box
+
+L1 (shipped as arm 1, receipt boot C, -34% at 4k) -> **the expert GEMM itself** (dequant once
+into a persistent f16 slab, then a cuBLASLt STRIDED-BATCHED matmul on our stream with the CSR
+padded to a uniform n per expert: one launch per projection, no internal-stream race, no
+per-projection sync, no 4.75 GB alloc/free per projection) -> L2 overlap (arm 2, shipped, pays
+only at >= 2 chunks so it is a 42k/128k lever, not a 4k one) -> L3 device-side router.

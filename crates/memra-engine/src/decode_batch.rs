@@ -858,7 +858,7 @@ impl HybridModel {
         let eps = self.cfg.rms_eps;
         let pos = caches[0].pos;
         let pos_d = e.htod_i32(&[pos as i32])?;
-        let x = e.htod(&self.embd.gather(n_embd, &[token]))?;
+        let x = e.htod(&self.embd.try_gather(n_embd, &[token])?)?;
         // the SHARED m=1 trunk: same function decode_step_h runs, so every m=1 fusion
         // (cross-layer add+norm+q8_1, fused SwiGLU, lever 1's gate+up dual) fires here.
         let x = self.decode_layers_eager(e, x, 0, self.layers.len(), &pos_d, pos, caches[0])?;
@@ -1456,7 +1456,7 @@ impl HybridModel {
             let mut ph_last = std::time::Instant::now();
             let pos_v: Vec<i32> = caches.iter().map(|c| c.pos as i32).collect();
             let pos_d = e.htod_i32(&pos_v)?;
-            let x = e.htod(&self.embd.gather(n_embd, tokens))?;
+            let x = e.htod(&self.embd.try_gather(n_embd, tokens)?)?;
             ph_mark(e, 0, &mut ph_last)?;
             let x = self.step35_decode_batch_layers(
                 e,
@@ -1505,7 +1505,7 @@ impl HybridModel {
         let ctx = self.batch_layer_ctx(e, caches, 0, n_layers)?;
 
         // Embed all B tokens -> x [B, n_embd] (host gather, one H2D).
-        let x = e.htod(&self.embd.gather(n_embd, tokens))?;
+        let x = e.htod(&self.embd.try_gather(n_embd, tokens)?)?;
         ph_mark(e, 0, &mut ph_last)?;
 
         let x = self.decode_batch_layers(e, x, caches, &ctx, &pos_d, &mut ph_last)?;
@@ -1875,7 +1875,7 @@ impl HybridModel {
             if transfer.is_some() || incoming.is_some() {
                 return Err("PP wave stage 0 received an incoming transfer".into());
             }
-            let x = engine.htod(&self.embd.gather(n_embd, wave.tokens))?;
+            let x = engine.htod(&self.embd.try_gather(n_embd, wave.tokens)?)?;
             ph_mark(engine, 0, &mut wave.phase_last)?;
             x
         } else {
@@ -2230,7 +2230,7 @@ impl HybridModel {
         let e0 = rt.engine(0, e);
         let pos_v: Vec<i32> = caches.iter().map(|c| c.pos as i32).collect();
         let pos_d = e0.htod_i32(&pos_v)?;
-        let x = e0.htod(&self.embd.gather(n_embd, tokens))?;
+        let x = e0.htod(&self.embd.try_gather(n_embd, tokens)?)?;
         ph_mark(e0, 0, &mut ph_last)?;
         let timing_start = dual_pp_timing_event(e0, "stage0 start event");
         let x = {
@@ -2523,7 +2523,7 @@ impl HybridModel {
             let e0 = rt.engine(0, e);
             let pos_v: Vec<i32> = caches.iter().map(|c| c.pos as i32).collect();
             let pos_d = e0.htod_i32(&pos_v)?;
-            let x = e0.htod(&self.embd.gather(n_embd, tokens))?;
+            let x = e0.htod(&self.embd.try_gather(n_embd, tokens)?)?;
             ph_mark(e0, 0, &mut ph_last)?;
             let x = if b1_stage_fast {
                 self.decode_layers_eager(e0, x, fence[0], fence[1], &pos_d, pos0, caches[0])?
@@ -2757,7 +2757,7 @@ impl HybridModel {
 
         let mut ph_last = std::time::Instant::now();
         let pos_rows = Self::hyper_batch_pos_rows(e, caches)?;
-        let embedded = e.htod(&self.embd.gather(n_embd, tokens))?;
+        let embedded = e.htod(&self.embd.try_gather(n_embd, tokens)?)?;
         let mut x = crate::hyper::expand(e, &topology, &embedded, b_n, n_embd)?;
         ph_mark(e, 0, &mut ph_last)?;
         x = self.hyper_batch_range_decode(
@@ -2853,7 +2853,7 @@ impl HybridModel {
         // serial hc ppn walk uses for this knob.
         if crate::pp::pp2_streams_off() {
             let pos_rows = Self::hyper_batch_pos_rows(e, caches)?;
-            let embedded = e.htod(&self.embd.gather(n_embd, tokens))?;
+            let embedded = e.htod(&self.embd.try_gather(n_embd, tokens)?)?;
             let mut x = crate::hyper::expand(e, topology, &embedded, b_n, n_embd)?;
             ph_mark(e, 0, &mut ph_last)?;
             x = self
@@ -2903,7 +2903,7 @@ impl HybridModel {
             let _st0 = rt.enter(0);
             let e0 = rt.engine(0, e);
             let pos_rows = Self::hyper_batch_pos_rows(e0, caches)?;
-            let embedded = e0.htod(&self.embd.gather(n_embd, tokens))?;
+            let embedded = e0.htod(&self.embd.try_gather(n_embd, tokens)?)?;
             let x = crate::hyper::expand(e0, topology, &embedded, b_n, n_embd)?;
             ph_mark(e0, 0, &mut ph_last)?;
             let x = self
@@ -4268,7 +4268,7 @@ impl HybridModel {
         // per-session rope positions (each sequence at its own depth).
         let pos_v: Vec<i32> = caches.iter().map(|c| c.pos as i32).collect();
         let pos_d = e.htod_i32(&pos_v)?;
-        let mut x = e.htod(&self.embd.gather(n_embd, tokens))?;
+        let mut x = e.htod(&self.embd.try_gather(n_embd, tokens)?)?;
         e.scale_inplace(&mut x, (n_embd as f32).sqrt(), b_n * n_embd)?;
         // cross-layer carry: each tail emits the next layer's attn-normed q8_1 input.
         let mut h_carry: Option<(CudaSlice<i8>, CudaSlice<f32>)> = None;
@@ -4538,7 +4538,7 @@ impl HybridModel {
                 let _st0 = rt.enter(0);
                 let e0 = rt.engine(0, e);
                 let pos_d = e0.htod_i32(&positions)?;
-                let x = e0.htod(&self.embd.gather(n_embd, tokens))?;
+                let x = e0.htod(&self.embd.try_gather(n_embd, tokens)?)?;
                 ph_mark(e0, 0, &mut ph_last)?;
                 let x = self.step35_decode_rows_layers(
                     e0,
@@ -4585,7 +4585,7 @@ impl HybridModel {
             }
         } else {
             let pos_d = e.htod_i32(&positions)?;
-            let x = e.htod(&self.embd.gather(n_embd, tokens))?;
+            let x = e.htod(&self.embd.try_gather(n_embd, tokens)?)?;
             ph_mark(e, 0, &mut ph_last)?;
             let x = self.step35_decode_rows_layers(
                 e,

@@ -3018,7 +3018,7 @@ impl crate::hybrid::HybridModel {
             // ---- draft: block = [last, MASK x b-1] ----
             let mut block: Vec<u32> = vec![c.mask_token_id; b];
             block[0] = last;
-            let mut noise = e.htod(&self.embd.gather(n_embd, &block))?;
+            let mut noise = e.htod(&self.embd.try_gather(n_embd, &block)?)?;
             if emb_scale != 1.0 {
                 e.scale_inplace(&mut noise, emb_scale, b * n_embd)?;
             }
@@ -3452,7 +3452,7 @@ impl crate::hybrid::HybridModel {
             let exact_scope = e.exact_scope(true);
             let mut block: Vec<u32> = vec![c.mask_token_id; b];
             block[0] = last;
-            let noise = e.htod(&self.embd.gather(n_embd, &block))?;
+            let noise = e.htod(&self.embd.try_gather(n_embd, &block)?)?;
             let pos_block: Vec<i32> = ((start as i32)..(start + b) as i32).collect();
             let dh = draft.forward_round(e, &mut dkv, &noise, &pos_block)?;
             // Harvest: logits over rows r0..r0+nd (Dflash: mask rows 1..b-1, fill
@@ -4827,7 +4827,7 @@ impl crate::hybrid::HybridModel {
             let exact_scope = e.exact_scope(true);
             let mut block: Vec<u32> = vec![c.mask_token_id; b];
             block[0] = sess.last;
-            let noise = e.htod(&self.embd.gather(n_embd, &block))?;
+            let noise = e.htod(&self.embd.try_gather(n_embd, &block)?)?;
             let pos_block: Vec<i32> = ((start as i32)..(start + b) as i32).collect();
             let dh = draft.forward_round(e, &mut sess.dkv, &noise, &pos_block)?;
             // Harvest: logits over rows r0..r0+nd (see the bin arm / the postmortem).
