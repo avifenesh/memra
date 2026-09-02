@@ -136,7 +136,7 @@ Expected shape on the current binary (door OFF): `first_emit_ms` ~= `session_ms`
 `burst1.wall_ms`, with `burst1.wall_ms` ~= 0.40 s and `prime` ~= 0.19 s. Add
 `MEMRA_TTFT_TRACE=1` to see the HTTP-side `sse_handoff_ms` beside it.
 
-## 5. The door: `MEMRA_SPEC_FIRST_TOKEN_EAGER=1` (default OFF)
+## 5. The door: `MEMRA_SPEC_FIRST_TOKEN_EAGER` (default ON since the section 8 receipts; `=0` = rollback)
 
 What it does: `step_glm5_spec` drives `glm5_spec_session_burst_streamed`, which calls a
 hook with every committed slice as it lands (the prime's anchor first, ALONE; then each
@@ -158,11 +158,10 @@ Expected effect: spec TTFT moves from prime + burst (~0.63-0.81 s) to prime + an
 (~0.20 s), i.e. within a few ms of the plain route; per-token cadence becomes one round
 (~30-40 ms at K=3) instead of one burst.
 
-Rollback: unset (the pre-lane literal is the door-off arm, kept verbatim, including the
-wiring test's `glm5_spec_session_burst(engine, sess, burst_target, k,` literal).
-
-Box A/B to flip the default: the section 1 protocol, both arms, interleaved, six boots per
-arm, sampled + greedy byte tapes equal across arms, `[glm5-acc]` counters equal.
+Rollback: `MEMRA_SPEC_FIRST_TOKEN_EAGER=0` (the pre-lane literal is the door-off arm, kept
+verbatim, including the wiring test's `glm5_spec_session_burst(engine, sess, burst_target, k,`
+literal). The default flipped ON on the section 8 receipts (a cadence change, no numeric
+change).
 
 ## 6. Follow-ups this lane names, not does
 
@@ -189,3 +188,29 @@ arm, sampled + greedy byte tapes equal across arms, `[glm5-acc]` counters equal.
 - Rig gate to run on the box or the 5090 before the default flips:
   `NVIDIA_TF32_OVERRIDE=0 flock /tmp/memra-5090.lock cargo test -p memra-engine --test
   glm5_dflash_session_gpu gpu_dflash_streamed_burst -- --ignored --test-threads=1`.
+
+## 8. Box receipts (2026-09-02): the door measured, the default flipped
+
+2x B200 pair, GLM-5.3-Flash NVFP4, DFlash2 K=3, vendor-default sampling, the 66-token
+prompt, 5 warm reps per boot, three interleaved fresh-boot pairs (door OFF -> door ON):
+
+| prompt | TTFT, door OFF (s) | TTFT, door ON (s) | plain route, same prompt |
+|---|---|---|---|
+| code | 0.674 / 0.647 / 0.653 | 0.187 / 0.226 / 0.225 | 0.19-0.21 s |
+| prose | 0.785 / 0.740 / 0.804 | 0.185 / 0.237 / 0.238 | 0.19-0.21 s |
+
+Wall-inclusive tok/s unchanged: code 72.1 / 73.2 / 73.6 -> 73.2 / 73.1 / 73.3, prose
+51.5 / 52.2 / 51.6 -> 51.8 / 51.8 / 50.5. The 128-token greedy digits tape sha
+`9437b599f6b9d2a9` is identical on all six boots.
+
+`MEMRA_SPEC_PROF=1` attribution on the same pair with the door OFF: prime 185 ms,
+burst1 432-475 ms (9-10 rounds, 32-35 tokens), first_emit 619-662 ms. Rank 1 of section 3
+measured as predicted; the remaining buckets are the single-digit-ms class.
+
+Rig gate `gpu_dflash_streamed_burst_slices_concat_to_the_unhooked_burst`: PASS on the 5090.
+
+Raw: darklanes `research/glm5-b200-20260902/floor/raw/ab-spec-{w8s,eager}-{1,2,3}/` (the
+A/B) and `research/glm5-b200-20260902/box/` (the spec-prof lines).
+
+Decision: default ON for the glm5 spec route, `=0` the rollback seam (FLAGS.md row). The
+dspark route's identical shape stays untouched, a named follow-up.

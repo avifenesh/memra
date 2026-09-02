@@ -22715,19 +22715,22 @@ fn step_glm5_spec(
         .and_then(|v| v.parse().ok())
         .unwrap_or(32);
     let burst_target = request_room.min(burst_t);
-    // FIRST-TOKEN EAGER door (lane/b200-spec-ttft-20260902, `MEMRA_SPEC_FIRST_TOKEN_EAGER=1`,
-    // DEFAULT OFF): publish at ROUND cadence instead of burst cadence — the qwen route's
-    // sse-cadence shape (2026-08-05) ported to this session. OFF (the pre-lane literal):
-    // the first Event::Token of a cold request waits for the WHOLE first burst
+    // FIRST-TOKEN EAGER door (lane/b200-spec-ttft-20260902, `MEMRA_SPEC_FIRST_TOKEN_EAGER`,
+    // DEFAULT ON, `=0` = rollback): publish at ROUND cadence instead of burst cadence — the
+    // qwen route's sse-cadence shape (2026-08-05) ported to this session. OFF (the pre-lane
+    // literal): the first Event::Token of a cold request waits for the WHOLE first burst
     // (`MEMRA_SPEC_BURST` = 32 tokens at the route's per-token decode cost) even though
     // the prime's own token was known when `glm5_spec_session_new` returned — measured on
-    // the 2x B200 pair as +0.45-0.60 s over the plain route's TTFT on a 66-token prompt.
+    // a 2x B200 pair as +0.45-0.60 s over the plain route's TTFT on a 66-token prompt.
     // ON: the engine hands the worker every committed slice (the anchor first, then each
-    // round's accepted drafts + bonus) and the worker emits it immediately. NUMERIC CLASS:
-    // the burst loop's control flow never reads the hook and the emitted ids are the same
-    // `burst` vector in the same order — the token stream is byte-identical ON/OFF; only
-    // the event timing moves. The post-burst bookkeeping below (sampler/generated/fed,
-    // stop reasons) is shared by both arms and unchanged.
+    // round's accepted drafts + bonus) and the worker emits it immediately — the same
+    // pair measured spec TTFT 0.647-0.804 s -> 0.185-0.238 s (plain 0.19-0.21 s) with
+    // wall-inclusive tok/s unchanged and the 128-token greedy tape sha identical across
+    // six boots (FLAGS.md row, receipts pointer). NUMERIC CLASS: the burst loop's control
+    // flow never reads the hook and the emitted ids are the same `burst` vector in the
+    // same order — the token stream is byte-identical ON/OFF; only the event timing
+    // moves. The post-burst bookkeeping below (sampler/generated/fed, stop reasons) is
+    // shared by both arms and unchanged.
     let eager_first_token = spec_first_token_eager_on();
     let eos_ids = s.params.eos.clone();
     let tok_ref = &lm.tok;
@@ -22984,13 +22987,14 @@ fn oom_teardown_fence(engine: &Engine, loaded: &HashMap<String, LoadedModel>) {
     });
 }
 
-/// `MEMRA_SPEC_FIRST_TOKEN_EAGER=1` (lane/b200-spec-ttft-20260902), DEFAULT OFF: the glm5
-/// spec route publishes committed tokens at ROUND cadence instead of burst cadence (doc at
-/// the `step_glm5_spec` call site). Read per burst, the `MEMRA_SPEC_BURST` /
-/// `MEMRA_SSE_PER_BURST` convention (a few hundred ns; never a OnceLock, so a gate can
-/// flip it between bursts in one process). Rollback seam: unset.
+/// `MEMRA_SPEC_FIRST_TOKEN_EAGER` (lane/b200-spec-ttft-20260902), DEFAULT ON since the
+/// 2026-09-02 box receipts (FLAGS.md row): the glm5 spec route publishes committed tokens
+/// at ROUND cadence instead of burst cadence (doc at the `step_glm5_spec` call site).
+/// `=0` is the rollback seam (burst-cadence emission, the pre-lane literal). Read per
+/// burst, the `MEMRA_SPEC_BURST` / `MEMRA_SSE_PER_BURST` convention (a few hundred ns;
+/// never a OnceLock, so a gate can flip it between bursts in one process).
 fn spec_first_token_eager_on() -> bool {
-    std::env::var("MEMRA_SPEC_FIRST_TOKEN_EAGER").as_deref() == Ok("1")
+    std::env::var("MEMRA_SPEC_FIRST_TOKEN_EAGER").as_deref() != Ok("0")
 }
 
 /// BOOT ADMISSION CALIBRATION door (lane/step37-vram-admission-20260830), DEFAULT ON.
