@@ -385,13 +385,13 @@ no Gemma/E4B, HyperConnections or PP cut, and only Full/Linear mixers. MLA and K
 
 On the local RTX 5090 Laptop GPU, exact dense artifact
 `52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de`, binary
-`ed57077673478b59fe237a24c07c65a0f5bd6ce3e860338069af7017f343ed2a`, one 61-token real
-prompt, no sampling fields, no cache hit, and three 128-token streams:
+`74a2b0b86754b60624ba928a5943de7422d0a86c8f998b24f9ce24838e230dc2`, one 61-token real
+prompt, no sampling fields, no cache hit, and five fresh boots per arm in A/B, B/A order:
 
 | arm | sampled post-first tok/s | TTFT | verdict |
 |---|---:|---:|---|
-| chain off | 122.41 | 38.9 ms | control |
-| chain K=8 | **130.70** | 45.0 ms | **+6.77%**, engaged |
+| chain off | 120.40 | 36.4 ms | control; 120.10-121.29 spread |
+| chain K=8 | **131.90** | 38.0 ms | **+9.55%**; 131.70-132.05 spread; engaged 5/5 |
 
 The explicit-greedy OFF/ON outputs were byte-identical. Seed 7 and seed 1234 each reproduced
 byte-for-byte between solo and c2 arrival. A newline stop returned `finish_reason=stop` and the log
