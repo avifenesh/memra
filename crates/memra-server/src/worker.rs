@@ -10003,6 +10003,78 @@ struct ReplayPlan {
     max_prompt_tokens: Option<usize>,
 }
 
+/// Can this placement deliver a vision overlay to embedding intake? Decided ONCE at worker
+/// boot (`run`, after every tower has loaded and before readiness), for every loaded tower
+/// family at once, and published to `VISION_PLACEMENT_SERVING` so every family's media-part
+/// intake refuses image parts at the waist instead of 500ing mid-prefill. Text rendering
+/// never reads it.
+///
+/// `towers` names the tower families that actually loaded (`None` = family not loaded); with
+/// none loaded there is no image path and the answer is `true`. `publish` is the door value
+/// `run` resolved ONCE, unconditionally, before any tower decision (PR #28: an unrecognized
+/// value is a boot panic there, never a value `new_published` discovers on a customer's first
+/// image); this function never reads the environment. Every loaded model's intake engine is
+/// compared against the tower engine (`HybridModel::vision_intake_engine`; the towers always
+/// run on `engine`). A cross-context intake with publication forbidden (`=0`) is inadmissible.
+///
+/// One `overlay intake:` boot line per loaded family per model, under the family's own log
+/// tag: the glm5 line keeps the exact format the 3-card battery greps
+/// (`research/glm53-vision-ppn-20260901/box/interleave.sh`).
+fn vision_placement_admissible(
+    engine: &Engine,
+    loaded: &HashMap<String, LoadedModel>,
+    towers: &[Option<&str>],
+    publish: memra_engine::vision::OverlayPublish,
+) -> bool {
+    let towers: Vec<&str> = towers.iter().flatten().copied().collect();
+    if towers.is_empty() {
+        return true;
+    }
+    let families = towers.join(",");
+    let mut servable = true;
+    for (name, lm) in loaded {
+        let intake = lm.model.vision_intake_engine(engine).unwrap_or_else(|e| {
+            panic!(
+                "vision ({families}): the embedding-intake engine for {name}'s placement \
+                 could not be resolved: {e}"
+            )
+        });
+        let cross = intake.ctx().cu_ctx() != engine.ctx().cu_ctx();
+        let ok = !cross || publish != memra_engine::vision::OverlayPublish::Never;
+        for tag in &towers {
+            // The glm5 line keeps PR #28's exact shape, glm5_models count included.
+            let glm5_models = if *tag == "glm5-vision" {
+                format!(
+                    " glm5_models={}",
+                    loaded
+                        .values()
+                        .filter(|lm| lm.model.cfg.arch.is_glm5_next())
+                        .count()
+                )
+            } else {
+                String::new()
+            };
+            eprintln!(
+                "[{tag}] overlay intake: tower dev{} -> intake dev{} \
+                 (cross_context={cross}) publish={publish:?} servable={ok}{glm5_models}",
+                engine.ctx().ordinal(),
+                intake.ctx().ordinal()
+            );
+            if !ok {
+                eprintln!(
+                    "[{tag}] IMAGE INPUT DISABLED: this placement embeds on another CUDA \
+                     context and MEMRA_VISION_OVERLAY_PUBLISH=0 forbids publishing the \
+                     overlay there. Image requests refuse at intake instead of failing \
+                     mid-prefill; unset the door (default auto) to serve images, or run \
+                     MEMRA_PP_STREAMS=0 (~3x decode cost)"
+                );
+            }
+        }
+        servable &= ok;
+    }
+    servable
+}
+
 /// Build a session's embedding overlay: tower forward per image, merger rows concatenated
 /// into one device buffer. Drops the host patch buffers afterwards. No-op if already built.
 ///
@@ -11911,93 +11983,20 @@ pub fn run(
             }
             tower
         };
-    // Publish the serving decision to the HTTP intake (main.rs glm5_vision_enabled):
-    // image_url parts route to the glm5 planner iff a tower is actually loaded, whatever
-    // combination of default/flag/dir produced it — AND the placement can actually deliver
-    // the overlay to embedding intake.
-    //
     // THE OVERLAY-PUBLISH DOOR IS RESOLVED HERE, ONCE, FOR EVERY VISION FAMILY
-    // (memra-next#25). It is the first input `EmbedOverlay::new_published` consumes and every
-    // family's overlay goes through that function, so an unrecognized value is a BOOT death —
-    // the same shape as an unloadable tower above. It used to be read per session inside
-    // new_published while only the glm5 branch below validated anything, which meant a typo'd
-    // door on a gemma / qwen-VL / step37 deployment (step37 serves vision in production) booted
-    // clean and then 500'd mid-prefill on the first image request: exactly the failure this lane
-    // removed for glm5, left live for the others. A family-scoped guard on a family-agnostic
-    // door is how that recurs, so the resolution is unconditional and the value is threaded.
+    // (memra-next#25, PR #28). It is the first input `EmbedOverlay::new_published` consumes and
+    // every family's overlay goes through that function, so an unrecognized value is a BOOT
+    // death — the same shape as an unloadable tower above. It used to be read per session inside
+    // new_published while only the glm5 branch validated anything, which meant a typo'd door on
+    // a gemma / qwen-VL / step37 deployment (step37 serves vision in production) booted clean
+    // and then 500'd mid-prefill on the first image request. A family-scoped guard on a
+    // family-agnostic door is how that recurs, so the resolution is unconditional and the value
+    // is threaded: into the placement decision below and into every overlay build.
     let overlay_publish = memra_engine::vision::overlay_publish_mode()
         .unwrap_or_else(|e| panic!("vision overlay publish door: {e}"));
-
-    // PLACEMENT ADMISSIBILITY (lane/glm53-vision-ppn, 2026-09-01). A loaded tower is not
-    // sufficient. The overlay's rows have to be resident in the context of the engine that
-    // embeds (pp stage 0 under a per-stage-stream split), which the tower's own engine is NOT
-    // on the deployed multi-card shape. `EmbedOverlay::new_published` closes that by default;
-    // pinned to `MEMRA_VISION_OVERLAY_PUBLISH=0` it cannot, and the refusal would land
-    // MID-PREFILL on a live request (a 500, which is exactly what the launch window saw).
-    // Decide it ONCE here and refuse at the HTTP waist instead — the same named 4xx the
-    // `MEMRA_GLM5_VISION=0` kill switch produces.
-    let glm5_vision_servable = match glm5_tower.as_ref() {
-        None => false,
-        Some(_) => {
-            match loaded
-                .values()
-                .find(|lm| lm.model.cfg.arch.is_glm5_next())
-                .map(|lm| lm.model.vision_intake_engine(&engine))
-            {
-                // FAIL CLOSED (memra-next#24). This used to be `true`, and it is REACHABLE: the
-                // `MEMRA_GLM5_VISION_DIR` branch loads a tower with no requirement that a
-                // glm5_next model be loaded at all, so DIR-set-and-no-glm5-model advertised
-                // image serving on a placement whose intake was never checked. Refusing costs
-                // nothing — no glm5 model means no glm5 image traffic to serve.
-                None => {
-                    eprintln!(
-                        "[glm5-vision] IMAGE INPUT DISABLED: a glm5 tower is loaded but no \
-                         glm5_next model is, so the embedding-intake placement cannot be \
-                         checked. Refusing at intake rather than advertising an unverified path"
-                    );
-                    false
-                }
-                Some(Err(e)) => panic!(
-                    "glm5 vision: the embedding-intake engine for this placement could not be \
-                     resolved: {e}"
-                ),
-                Some(Ok(intake)) => {
-                    let cross = intake.ctx().cu_ctx() != engine.ctx().cu_ctx();
-                    let servable =
-                        !cross || overlay_publish != memra_engine::vision::OverlayPublish::Never;
-                    // NOTE, and it is a real limit: `find` takes the FIRST glm5_next model while
-                    // `vision_intake_engine` keys on that model's own layer count via
-                    // `pp_cuts`. A deployment serving TWO glm5_next models decides from one of
-                    // them, so the other can still meet the prime's named refusal mid-request.
-                    // One vision family per deployment is the standing law; two glm5 TRUNKS
-                    // under one tower is outside what this check covers, and it is stated rather
-                    // than silently assumed away.
-                    eprintln!(
-                        "[glm5-vision] overlay intake: tower dev{} -> intake dev{} \
-                         (cross_context={cross}) publish={overlay_publish:?} \
-                         servable={servable} glm5_models={}",
-                        engine.ctx().ordinal(),
-                        intake.ctx().ordinal(),
-                        loaded
-                            .values()
-                            .filter(|lm| lm.model.cfg.arch.is_glm5_next())
-                            .count(),
-                    );
-                    if !servable {
-                        eprintln!(
-                            "[glm5-vision] IMAGE INPUT DISABLED: this placement embeds on \
-                             another CUDA context and MEMRA_VISION_OVERLAY_PUBLISH=0 forbids \
-                             publishing the overlay there. Image requests refuse at intake \
-                             instead of failing mid-prefill; unset the door (default auto) to \
-                             serve images, or run MEMRA_PP_STREAMS=0 (~3x decode cost)"
-                        );
-                    }
-                    servable
-                }
-            }
-        }
-    };
-    crate::GLM5_VISION_SERVING.store(glm5_vision_servable, std::sync::atomic::Ordering::Release);
+    // The glm5 serving decision (main.rs glm5_vision_enabled) is published BELOW, after every
+    // tower has loaded: `tower loaded && a glm5_next model loaded && placement admissible`, the
+    // placement half decided once for all four families (`vision_placement_admissible`).
     // STEP37 vision tower (lane/step37-vision): loaded once at spawn from the serving
     // artifact's own directory (the perception_encoder tensors live unquantized inside
     // the checkpoint — MEMRA_STEP_VISION_DIR points at the model dir). Fail LOUD at boot
@@ -12022,6 +12021,49 @@ pub fn run(
             ),
             Err(_) => None,
         };
+    // PLACEMENT ADMISSIBILITY, for EVERY vision family (memra #25; lane/glm53-vision-ppn
+    // shipped it for glm5 alone). A loaded tower is not sufficient: the overlay's rows have to
+    // be resident in the context of the engine that embeds (pp stage 0 under a per-stage-
+    // stream split), which the tower's own engine is NOT on a multi-card ppN shape.
+    // `EmbedOverlay::new_published` closes that by default; pinned to
+    // `MEMRA_VISION_OVERLAY_PUBLISH=0` it cannot, and the refusal would land MID-PREFILL on a
+    // live request (a 500, which is exactly what the glm5 launch window saw). Decide it ONCE
+    // here, from the door value resolved above, and refuse at the HTTP waist instead: every
+    // media-accepting arm reads `VISION_PLACEMENT_SERVING` (`lib.rs vision_placement_admits`),
+    // so the refusal is the same named 400 the kill switches produce, and text rendering never
+    // moves with it. The glm5-only placement guard is how step37 (serving vision in production)
+    // could boot clean and 500 mid-prefill.
+    let vision_placement_servable = vision_placement_admissible(
+        &engine,
+        &loaded,
+        &[
+            vision_tower.as_ref().map(|_| "vision"),
+            gemma_tower.as_ref().map(|_| "gemma-vision"),
+            glm5_tower.as_ref().map(|_| "glm5-vision"),
+            step_tower.as_ref().map(|_| "step-vision"),
+        ],
+        overlay_publish,
+    );
+    crate::VISION_PLACEMENT_SERVING.store(
+        vision_placement_servable,
+        std::sync::atomic::Ordering::Release,
+    );
+    // FAIL CLOSED (memra-next#24, kept from PR #28): the `MEMRA_GLM5_VISION_DIR` branch loads a
+    // tower with no requirement that a glm5_next model be loaded at all, so DIR-set-and-no-
+    // glm5-model must not advertise image serving on a placement whose intake was never
+    // checked. Refusing costs nothing — no glm5 model means no glm5 image traffic to serve.
+    let glm5_model_loaded = loaded.values().any(|lm| lm.model.cfg.arch.is_glm5_next());
+    if glm5_tower.is_some() && !glm5_model_loaded {
+        eprintln!(
+            "[glm5-vision] IMAGE INPUT DISABLED: a glm5 tower is loaded but no glm5_next model \
+             is, so the embedding-intake placement cannot be checked. Refusing at intake rather \
+             than advertising an unverified path"
+        );
+    }
+    crate::GLM5_VISION_SERVING.store(
+        glm5_tower.is_some() && glm5_model_loaded && vision_placement_servable,
+        std::sync::atomic::Ordering::Release,
+    );
     // Cross-request prefix cache (token-prefix keyed, budget-bound; see the module doc above).
     let mut px = PrefixCache::default();
     // Pinned-host spill tier behind it (lane/kv-host-spill-20260830; default OFF, see
@@ -30916,6 +30958,122 @@ mod host_handoff_tests {
             lib.contains("prefix_host_handoff_imported_entries")
                 && lib.contains("prefix_host_handoff_skips"),
             "the /metrics render must expose the handoff counters"
+        );
+    }
+}
+
+/// memra #25: the boot path (`run`) decides vision placement admissibility once, over every
+/// tower family, after the last tower loads and before readiness fires. Anchored on
+/// comment-stripped source (wiring-assertions law); the slice is `run`'s body, which is where
+/// the towers load (`spawn` only hands the thread off).
+#[cfg(test)]
+mod vision_placement_admissibility_tests {
+    fn live_src() -> String {
+        let src: String = include_str!("worker.rs")
+            .lines()
+            .map(|l| match l.find("//") {
+                Some(i) => &l[..i],
+                None => l,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let end = src
+            .find("\nmod vision_placement_admissibility_tests")
+            .expect("this test module exists");
+        src[..end].to_string()
+    }
+
+    /// `run`'s body: from its signature to the first column-0 `}`. Non-vacuity: the slice must
+    /// hold the readiness send, which is what proves it is the boot path and not a stub.
+    fn run_body(live: &str) -> &str {
+        let start = live
+            .find("\npub fn run(")
+            .expect("the worker boot path is `run`");
+        let body = &live[start + 1..];
+        let end = body.find("\n}\n").expect("run closes");
+        let body = &body[..end];
+        assert!(
+            body.contains("ready_tx.send(Ok("),
+            "the slice must be the boot path that fires readiness"
+        );
+        body
+    }
+
+    #[test]
+    fn the_door_is_resolved_once_on_the_boot_path_and_threaded_into_the_shared_decision() {
+        let live = live_src();
+        let run = run_body(&live);
+        assert_eq!(
+            run.matches("overlay_publish_mode()").count(),
+            1,
+            "run resolves the door exactly once"
+        );
+        assert!(
+            run.contains(
+                "\n    let overlay_publish = memra_engine::vision::overlay_publish_mode()"
+            ),
+            "the one resolution is top-level in run (unconditional), never under a family guard \
+             (the glm5-only shape that let step37 boot clean and 500 mid-prefill)"
+        );
+        let decision = live
+            .split("fn vision_placement_admissible(")
+            .nth(1)
+            .expect("the shared decision exists");
+        let decision = &decision[..decision.find("\n}\n").expect("decision closes")];
+        assert!(
+            decision.contains("publish: memra_engine::vision::OverlayPublish,")
+                && !decision.contains("overlay_publish_mode()"),
+            "the shared decision takes the resolved door and never reads the environment"
+        );
+    }
+
+    #[test]
+    fn run_decides_placement_over_all_four_towers_and_derives_both_statics() {
+        let live = live_src();
+        let run = run_body(&live);
+        let call = run
+            .find("let vision_placement_servable = vision_placement_admissible(")
+            .expect("run calls the shared decision");
+        let args = &run[call..call + 600];
+        for tower in [
+            "vision_tower.as_ref().map(|_| \"vision\")",
+            "gemma_tower.as_ref().map(|_| \"gemma-vision\")",
+            "glm5_tower.as_ref().map(|_| \"glm5-vision\")",
+            "step_tower.as_ref().map(|_| \"step-vision\")",
+        ] {
+            assert!(
+                args.contains(tower),
+                "the decision must see every tower family: {tower}"
+            );
+        }
+        // Whitespace-free so rustfmt's line breaking cannot move this assertion.
+        let flat: String = run.chars().filter(|c| !c.is_whitespace()).collect();
+        assert!(
+            flat.contains("crate::VISION_PLACEMENT_SERVING.store(vision_placement_servable,"),
+            "the family-agnostic static must carry the decision"
+        );
+        assert!(
+            flat.contains("],overlay_publish,);"),
+            "the call threads the door value run resolved"
+        );
+        assert!(
+            flat.contains(
+                "crate::GLM5_VISION_SERVING.store(glm5_tower.is_some()&&glm5_model_loaded&&vision_placement_servable,"
+            ),
+            "glm5's own static folds in tower, model (memra-next#24 fail-closed) and placement"
+        );
+        // The step tower is the last to load; the decision must come AFTER it so a step37
+        // deployment is judged with its tower present, and BEFORE readiness so no customer
+        // request can observe the static's pre-decision default.
+        let step_load = run
+            .find("MEMRA_STEP_VISION_DIR")
+            .expect("the step tower loads in run");
+        let ready = run
+            .find("ready_tx.send(Ok(")
+            .expect("readiness fires in run");
+        assert!(
+            step_load < call && call < ready,
+            "placement is decided after every tower has loaded and before readiness"
         );
     }
 }
