@@ -1292,9 +1292,16 @@ impl Engine {
             }
         };
         if let (Some(in_q), Some(in_k), Some(in_v)) = (bf16(&la.wq), bf16(&la.wk), bf16(&la.wv)) {
+            // MEMRA_B200_BF16_GEMV_LT (lane/b200-gemv-hbm-20260902) reroutes the SAME
+            // unfused target (`matvec_bf16_f32acc_x4_rows`) to a cuBLASLt reference GEMV, so
+            // this fused arm declines for exactly the reason it declines for the W8 mirrors:
+            // its bit-identity bar is against the unmirrored, unrerouted bf16 program. With
+            // the door on, the three bf16 projections fall to the unfused group and each one
+            // takes the library GEMV, which is what the reference door is there to measure.
             if !Self::bf16_mmv_on()
                 || (crate::step_tp_w8_on() && crate::w8_hybrid_on())
                 || crate::glm5_w8_on()
+                || crate::b200_bf16_gemv_lt_on()
             {
                 return Ok(None);
             }

@@ -414,14 +414,56 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             t_arm.push(t1.elapsed().as_secs_f64() * 1e6);
         }
         let bytes = (in_f * out_f * 2) as f64;
+        let ship_us = median(&mut t_ship);
         report(
             &format!("matvec_bf16_f32acc_x4_rows (pf) {label}"),
-            median(&mut t_ship),
+            ship_us,
             median(&mut t_arm),
             bytes,
             mism,
             maxd,
         );
+
+        // cuBLASLt REFERENCE arm (MEMRA_B200_BF16_GEMV_LT, lane/b200-gemv-hbm-20260902).
+        // Called directly (the door is a process-wide OnceLock, so it cannot flip mid-run).
+        // NAMED NUMERIC CLASS `bf16_gemv_lt`: the activation is cast f32 -> bf16 and the K
+        // summation order is the library's, so a byte mismatch here is EXPECTED and the max
+        // abs diff is the number to read, not the mismatch count.
+        {
+            let mut y_lt = e.zeros(out_f)?;
+            let took = e.bf16_gemv_lt_into(&wcopies[0], &xd, &mut y_lt, in_f, out_f, 1)?;
+            e.stream().synchronize()?;
+            if !took {
+                println!(
+                    "{:<40} cuBLASLt DECLINED this shape (see the [b200-bf16-gemv-lt] line above)",
+                    format!("  bf16_gemv_lt {label}")
+                );
+            } else {
+                let h_lt = e.dtoh(&y_lt)?;
+                let (mism_lt, maxd_lt) = compare(&h_ship, &h_lt);
+                let mut t_lt = Vec::with_capacity(iters);
+                for i in 0..iters {
+                    let c = i % copies;
+                    let mut y = e.zeros(out_f)?;
+                    let t0 = Instant::now();
+                    e.bf16_gemv_lt_into(&wcopies[c], &xd, &mut y, in_f, out_f, 1)?;
+                    e.stream().synchronize()?;
+                    t_lt.push(t0.elapsed().as_secs_f64() * 1e6);
+                }
+                let lt_us = median(&mut t_lt);
+                let gbs = bytes / lt_us / 1e3;
+                let cls = if mism_lt == 0 {
+                    "bit-identical (unexpected for this class)".to_string()
+                } else {
+                    format!("class bf16_gemv_lt: n={mism_lt} max_abs_diff={maxd_lt:.3e}")
+                };
+                println!(
+                    "{:<40} LT-ref={lt_us:>9.2}us ({gbs:>7.1} GB/s)  vs shipped={:>6.3}x  {cls}",
+                    format!("  bf16_gemv_lt {label}"),
+                    ship_us / lt_us
+                );
+            }
+        }
     }
 
     // -----------------------------------------------------------------------------------

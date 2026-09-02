@@ -451,6 +451,36 @@ process-wide `OnceLock` and cannot flip mid-process) with a bit-for-bit output c
 pending the B200 box A/B** — this flag ships default OFF and stays OFF until that A/B lands;
 see `research/b200-matvec-occupancy-20260902/LANE.md`. Rollback seam: unset or `=0`.
 
+| flag | default | what it does |
+|---|---|---|
+| `MEMRA_B200_BF16_GEMV_LT` | **off** | `1` = route the bf16 decode row matvec (`matvec_bf16_rows_into`, i.e. `matvec_bf16_f32acc_x4_rows`) through `cublasLtMatmul` at m=t instead of the memra kernel. REFERENCE DOOR, not a serving arm. Restricted to `sm_100a` BUILDS (`MEMRA_BUILT_CUDA_ARCH`, compiled in), so it is a documented no-op on sm_120a. |
+
+**`MEMRA_B200_BF16_GEMV_LT` (2026-09-02, lane/b200-gemv-hbm-20260902).** WHY IT EXISTS: the
+census above puts `matvec_bf16_f32acc_x4_rows` at 23.6us for 64 MB of bf16 weight reads =
+**2.7 TB/s, 34% of B200's 8 TB/s HBM3e wall**, and the fused `qmatvec_kda6_bf16f32` at 93.8us
+for ~200 MB = **2.1 TB/s (26%)**. Before writing a faster memra kernel it is worth knowing what
+a TUNED VENDOR LIBRARY reaches on exactly those bytes on exactly this part, because that number
+bounds what "a well-scheduled GEMV" looks like on sm_100a and tells the next arm whether it is
+chasing a scheduling gap or a hardware one. cuBLAS/cuBLASLt are already linked libraries here
+(`cu/f16_prefill.cu`, `MEMRA_PP_F16`/`MEMRA_PP_BF16`), so this adds no dependency; it reuses the
+same TN plan cache and the same PER-DEVICE handle (a `cublasLtHandle_t` created with another
+device current returned `CUBLAS_STATUS_EXECUTION_FAILED` on the 2x B200 pair, 2026-09-02).
+
+NUMERIC CLASS `bf16_gemv_lt`, DEFAULT OFF, and it is NOT a bit-identical twin — two things
+change and both are stated rather than measured away: (1) the ACTIVATION is cast f32 -> bf16
+before the multiply (the shipped kernel keeps the f32 activation and only widens the bf16
+weight), (2) the K summation order is the library's, not the shipped per-thread chain plus
+`red[]` tree. It is therefore a MEASUREMENT INSTRUMENT: it may not become a serving default, and
+promotion would need its own argmax/serving acceptance, not this row. `MEMRA_KDA_FUSED_PROJ`'s
+bf16 arm declines while this door is on, for the same reason it declines under the W8 mirrors —
+its bit-identity bar is against the unrerouted `matvec_bf16_f32acc_x4_rows` — which is also what
+puts the three KDA bf16 projections through the library GEMV. A cuBLASLt refusal (unaligned
+weight, no algo) DECLINES the shape back to the shipped kernel and is announced once per shape;
+engagement is announced once per shape too, so an arm that never took the path cannot look like
+one that did. Bench: `b200_matvec_bench` prints shipped vs LT-reference us/GB\s per bf16 family.
+Receipt pending the box run; see `research/b200-gemv-hbm-20260902/LANE.md`. Rollback seam: unset
+or `=0`.
+
 ### Build-time (build.rs / nvcc)
 
 | flag | default | what it does |
