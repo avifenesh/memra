@@ -334,15 +334,22 @@ Run on the rig, 2026-09-02, `MEMRA_CUDA_ARCH` as noted:
 * `cargo fmt --all -- --check` clean.
 * `tools/check-flags.sh`: `runtime literal reads=806`, no uncovered runtime names — every
   `MEMRA_*` read resolves against `docs/FLAGS.md`, including both this lane's names.
-* `cargo clippy --release --all-targets -- -D warnings` (120a): clippy-zero. FOUR findings were
-  raised and all four fixed in this lane rather than disclaimed. Two were this lane's own —
-  `hyper_ffn_branch`'s argument count (an allow with its reason, since the list mirrors the hc
-  site's dispatch contract) and a `contains_key`-then-`insert` in the ledger (rewritten through
-  `Entry::Vacant`, which the fallible allocation needs anyway). Two were already on the lane
-  base and had never been reached, because the first two aborted the run before clippy got to
-  those targets: a manual `% 32 == 0` in `bin/q8_fuse_gate.rs` and a collapsible `if` in
-  `memra-server`'s worker. All code in the repo is ours; a finding is not "pre-existing", it is
-  unfixed.
+* `cargo clippy --release --all-targets -- -D warnings` (120a): **clippy-zero**, which took
+  four iterations to reach because the run stops at the first failing crate and each fix
+  uncovered the next target. Findings, all fixed here rather than disclaimed:
+  1. `hyper_ffn_branch`'s argument count — an allow with its reason, since the list mirrors the
+     hc site's dispatch contract (this lane's, from the walk edits);
+  2. `contains_key`-then-`insert` in the ledger — rewritten through `Entry::Vacant`, which the
+     fallible allocation wanted anyway (this lane's);
+  3. a complex return type on the gate bin's arm runner — named as `ArmOut` (this lane's);
+  4. a manual `% 32 == 0` in `bin/q8_fuse_gate.rs`, a collapsible `if` in `memra-server`'s
+     worker, two manual `% 64 == 0` in `bin/b200_matvec_bench.rs`, and five doc-list-indent
+     plus two complex-type findings in `bin/hc_fused_gate.rs` — all already on the lane base
+     and never reached, because the earlier failures aborted the run first.
+
+  All code in the repo is ours: a finding is not "pre-existing", it is unfixed. Reaching
+  clippy-zero is what makes this branch's CI clippy job green, so it belongs in this lane
+  whether or not this lane wrote the line.
 * `cargo test -p memra-engine --lib` (120a): **367 passed, 0 failed, 3 ignored**, including this
   lane's two run-splitter tests.
 * `cargo check -p memra-engine --bins` green on both `MEMRA_CUDA_ARCH=120a` and `100a`.

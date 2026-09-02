@@ -77,6 +77,11 @@ fn median(v: &mut [f64]) -> f64 {
 ///
 /// The ledger is drained PER STEP: its device slots are overwritten every token, so a drain at
 /// the end would only ever see the last one.
+///
+/// [`ArmOut`] names the arm's shape once: the token tape, the per-(step, layer) selection rows,
+/// and the per-token wall milliseconds.
+type ArmOut = Result<(Vec<u32>, Vec<Vec<SelRow>>, f64), Box<dyn std::error::Error>>;
+
 fn run_arm(
     e: &Engine,
     m: &HybridModel,
@@ -84,7 +89,7 @@ fn run_arm(
     steps: usize,
     graph_door: bool,
     ledger: bool,
-) -> Result<(Vec<u32>, Vec<Vec<SelRow>>, f64), Box<dyn std::error::Error>> {
+) -> ArmOut {
     // SAFETY: single-threaded gate binary; the doors are read per call by the engine, and no
     // other thread exists to observe the environment mid-flight.
     unsafe {
