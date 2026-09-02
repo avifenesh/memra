@@ -4383,40 +4383,161 @@ impl OptiForkState {
     }
 }
 
-fn rewind_tp_kv_verified_prefix(
-    tp_kv: &mut [Option<crate::tp::ResidentTpKvCache>],
-    saved_lens: &[Option<usize>],
-    accepted: usize,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if tp_kv.len() != saved_lens.len() {
-        return Err("spec TP KV snapshot shape mismatch".into());
-    }
-    for (layer, (cache, saved)) in tp_kv.iter_mut().zip(saved_lens).enumerate() {
-        match (cache.as_mut(), *saved) {
-            (Some(cache), Some(saved)) => {
-                let target = saved
-                    .checked_add(accepted)
-                    .ok_or("spec TP KV committed length overflow")?;
-                cache.rewind_to(target)?;
-            }
-            (None, None) => {}
-            _ => {
-                return Err(
-                    format!("spec TP KV layer {layer} changed shape since its snapshot").into(),
-                );
-            }
-        }
-    }
-    Ok(())
-}
-
 /// MEMRA_SPEC_ROUND_PROF counters: whole-round wall, so the round can be weighed against the
 /// draft-step ([spec-anatomy]) and verify-walk ([tcol-prof]) splits we already print.
 static ROUND_PROF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
 static ROUND_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static ROUND_N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+fn validate_tp_kv_snapshot_shape(
+    tp_kv: &[Option<crate::tp::ResidentTpKvCache>],
+    saved_lens: &[Option<usize>],
+) -> Result<(), Box<dyn std::error::Error>> {
+    if tp_kv.len() != saved_lens.len() {
+        return Err("spec TP KV snapshot shape mismatch".into());
+    }
+    for (layer, (cache, saved)) in tp_kv.iter().zip(saved_lens).enumerate() {
+        if cache.is_some() != saved.is_some() {
+            return Err(
+                format!("spec TP KV layer {layer} changed shape since its snapshot").into(),
+            );
+        }
+    }
+    Ok(())
+}
+
 impl HybridModel {
+    fn restore_step_tp_kv_verified_prefix(
+        &self,
+        e: &Engine,
+        cache: &mut Cache,
+        snap: &crate::cache::CacheSnapshot,
+        accepted: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        validate_tp_kv_snapshot_shape(&cache.tp_kv, &snap.tp_kv_len)?;
+        e.stream().synchronize()?;
+        {
+            let (local_layers, distributed_layers) = (&cache.kv, &mut cache.tp_kv);
+            let stream = e.gpu.stream();
+            let mut runtime: Option<std::sync::Arc<crate::tp::TpE4m3HostBounce>> = None;
+            let mut uniform_runtime = true;
+            let mut batch = Vec::new();
+            for (il, (distributed_slot, local_slot)) in distributed_layers
+                .iter_mut()
+                .zip(local_layers.iter())
+                .enumerate()
+            {
+                let (Some(distributed), Some(saved)) =
+                    (distributed_slot.as_mut(), snap.tp_kv_len[il])
+                else {
+                    continue;
+                };
+                let target = saved
+                    .checked_add(accepted)
+                    .ok_or("spec TP KV batch restore length overflow")?;
+                let local = local_slot
+                    .as_ref()
+                    .ok_or_else(|| format!("spec TP KV layer {il} lost its owning cache"))?;
+                if local.len < target {
+                    return Err(format!(
+                        "spec TP KV layer {il} local length {} precedes restore target {target}",
+                        local.len
+                    )
+                    .into());
+                }
+                let physical = local.physical_rows(saved, target)?;
+                if physical.len() != accepted {
+                    return Err(format!(
+                        "spec TP KV layer {il} restore [{saved},{target}) is not contiguous"
+                    )
+                    .into());
+                }
+                let Mixer::Full(fa) = &self.layers[il].mixer else {
+                    return Err(format!("spec TP KV layer {il} is not full attention").into());
+                };
+                let tp = fa
+                    .step_tp_qkv
+                    .as_ref()
+                    .ok_or_else(|| format!("spec TP KV layer {il} lost its TP runtime"))?;
+                if let Some(first) = runtime.as_ref() {
+                    if !std::sync::Arc::ptr_eq(first, &tp.runtime) {
+                        uniform_runtime = false;
+                        break;
+                    }
+                } else {
+                    runtime = Some(tp.runtime.clone());
+                }
+                use cudarc::driver::DevicePtr;
+                let (k_base, _k_guard) = local.k.device_ptr(&stream);
+                let (v_base, _v_guard) = local.v.device_ptr(&stream);
+                batch.push(crate::tp::TpKvVerifiedLayer {
+                    cache: distributed,
+                    start: saved,
+                    logical_len: target,
+                    source_k_raw: k_base + (physical.start * local.k_tok_bytes) as u64,
+                    source_v_raw: v_base + (physical.start * local.v_tok_bytes) as u64,
+                    source_k_tok_bytes: local.k_tok_bytes,
+                    source_v_tok_bytes: local.v_tok_bytes,
+                });
+            }
+            if uniform_runtime
+                && let Some(runtime) = runtime
+                && runtime.restore_tp_kv_layers_from_device(&mut batch)?
+            {
+                return Ok(());
+            }
+        }
+        for il in 0..self.layers.len() {
+            let (Some(distributed), Some(saved)) = (cache.tp_kv[il].as_mut(), snap.tp_kv_len[il])
+            else {
+                continue;
+            };
+            let target = saved
+                .checked_add(accepted)
+                .ok_or("spec TP KV restore length overflow")?;
+            let local = cache.kv[il]
+                .as_ref()
+                .ok_or_else(|| format!("spec TP KV layer {il} lost its owning cache"))?;
+            if local.len < target {
+                return Err(format!(
+                    "spec TP KV layer {il} local length {} precedes restore target {target}",
+                    local.len
+                )
+                .into());
+            }
+            let physical = local.physical_rows(saved, target)?;
+            if physical.len() != accepted {
+                return Err(format!(
+                    "spec TP KV layer {il} restore [{saved},{target}) is not contiguous"
+                )
+                .into());
+            }
+            use cudarc::driver::DevicePtr;
+            let stream = e.gpu.stream();
+            let (k_base, _k_guard) = local.k.device_ptr(&stream);
+            let (v_base, _v_guard) = local.v.device_ptr(&stream);
+            let k_raw = k_base + (physical.start * local.k_tok_bytes) as u64;
+            let v_raw = v_base + (physical.start * local.v_tok_bytes) as u64;
+            let Mixer::Full(fa) = &self.layers[il].mixer else {
+                return Err(format!("spec TP KV layer {il} is not full attention").into());
+            };
+            let tp = fa
+                .step_tp_qkv
+                .as_ref()
+                .ok_or_else(|| format!("spec TP KV layer {il} lost its TP runtime"))?;
+            tp.runtime.restore_tp_kv_rows_from_device(
+                distributed,
+                saved,
+                target,
+                k_raw,
+                v_raw,
+                local.k_tok_bytes,
+                local.v_tok_bytes,
+            )?;
+        }
+        Ok(())
+    }
+
     fn mtp_head_count(&self) -> usize {
         usize::from(self.mtp.is_some()) + self.mtp_extra.len()
     }
@@ -9315,7 +9436,6 @@ impl HybridModel {
                 batched_cols = true;
             }
         }
-        rewind_tp_kv_verified_prefix(&mut cache.tp_kv, &snap.tp_kv_len, j)?;
         for il in 0..self.layers.len() {
             if let (Some(kvl), Some(saved)) = (cache.kv[il].as_mut(), snap.kv_len[il]) {
                 kvl.len = saved + j;
@@ -9403,6 +9523,7 @@ impl HybridModel {
                 }
             }
         }
+        self.restore_step_tp_kv_verified_prefix(e, cache, snap, j)?;
         cache.pos = snap.pos + j;
         Ok(())
     }
@@ -15531,6 +15652,7 @@ impl HybridModel {
                 // trunk hidden (the last verify column). set_len first: a p-min break may have
                 // left one extra chain append at that slot. Partial accepts need NO fill (the
                 // chain already covered every accepted position; round-start set_len truncates).
+                self.restore_step_tp_kv_verified_prefix(e, &mut *cache, &snap, t_v)?;
                 let mut vh_seed = e.zeros(n_embd)?;
                 e.copy_view_into(
                     &mut vh_seed,
@@ -16606,32 +16728,22 @@ mod mtp_chain_tests {
 
 #[cfg(test)]
 mod tp_verified_prefix_tests {
-    use super::rewind_tp_kv_verified_prefix;
+    use super::validate_tp_kv_snapshot_shape;
     use crate::tp::ResidentTpKvCache;
 
-    fn cache_with_committed_len(committed: usize) -> ResidentTpKvCache {
-        let mut cache = ResidentTpKvCache::new(Vec::new(), 1, 1, 1, 1, 8);
-        let transaction = cache.begin_transaction().unwrap();
-        let target = cache.append_target(transaction, committed).unwrap();
-        cache.publish_append(transaction, target).unwrap();
-        let target = cache.commit_target(transaction, committed).unwrap();
-        cache.publish_finalize(transaction, target).unwrap();
-        cache
+    #[test]
+    fn snapshot_shape_accepts_matching_tp_presence() {
+        let layers = vec![
+            Some(ResidentTpKvCache::new(Vec::new(), 1, 1, 1, 1, 8)),
+            None,
+        ];
+        validate_tp_kv_snapshot_shape(&layers, &[Some(2), None]).unwrap();
     }
 
     #[test]
-    fn replay_free_prefix_rewinds_tp_visibility_to_snapshot_plus_accepts() {
-        let mut layers = vec![Some(cache_with_committed_len(5)), None];
-        rewind_tp_kv_verified_prefix(&mut layers, &[Some(2), None], 1).unwrap();
-        let cache = layers[0].as_ref().unwrap();
-        assert_eq!(cache.committed_len(), 3);
-        assert_eq!(cache.staged_len(), 3);
-    }
-
-    #[test]
-    fn replay_free_prefix_rejects_a_changed_tp_cache_shape() {
-        let mut layers = vec![Some(cache_with_committed_len(1))];
-        let error = rewind_tp_kv_verified_prefix(&mut layers, &[None], 1)
+    fn snapshot_shape_rejects_changed_tp_presence() {
+        let layers = vec![Some(ResidentTpKvCache::new(Vec::new(), 1, 1, 1, 1, 8))];
+        let error = validate_tp_kv_snapshot_shape(&layers, &[None])
             .unwrap_err()
             .to_string();
         assert!(error.contains("changed shape"), "unexpected error: {error}");

@@ -12278,6 +12278,50 @@ extern "C" __global__ void matvec_bf16_f32acc_x4_rows(
     }
 }
 
+// TP2 row-parallel decode partial: identical BF16 expansion, multiply/add order and
+// red[256] tree as matvec_bf16_f32acc_x4_rows, restricted to one aligned contiguous K range.
+// Each rank computes every output row over its K half; Tp2ReplicatedRowJoin then adds
+// (rank0, rank1) in the same order on both cards. The cross-rank association is a deliberate
+// TP numeric class and is gated against the unsplit full-row program.
+extern "C" __global__ void matvec_bf16_f32acc_x4_range(
+        const unsigned short* __restrict__ w, const float* __restrict__ x,
+        float* __restrict__ y, int in_f, int out_f, int k_start, int k_len) {
+    __shared__ float red[256];
+    #pragma unroll
+    for (int p = 0; p < 4; p++) {
+        int row = blockIdx.x * 4 + p;
+        if (row >= out_f) return;
+        const unsigned short* wr = w + (size_t)row * in_f;
+        float acc = 0.0f;
+        const int stride = blockDim.x * 8;
+        const int k_end = k_start + k_len;
+#pragma unroll 4
+        for (int i = k_start + threadIdx.x * 8; i < k_end; i += stride) {
+            uint4 pack = *reinterpret_cast<const uint4*>(wr + i);
+            const unsigned short* wp = reinterpret_cast<const unsigned short*>(&pack);
+            const int local_i = i - k_start;
+            float4 x0 = *reinterpret_cast<const float4*>(x + local_i);
+            float4 x1 = *reinterpret_cast<const float4*>(x + local_i + 4);
+            acc += __uint_as_float((unsigned)wp[0] << 16) * x0.x;
+            acc += __uint_as_float((unsigned)wp[1] << 16) * x0.y;
+            acc += __uint_as_float((unsigned)wp[2] << 16) * x0.z;
+            acc += __uint_as_float((unsigned)wp[3] << 16) * x0.w;
+            acc += __uint_as_float((unsigned)wp[4] << 16) * x1.x;
+            acc += __uint_as_float((unsigned)wp[5] << 16) * x1.y;
+            acc += __uint_as_float((unsigned)wp[6] << 16) * x1.z;
+            acc += __uint_as_float((unsigned)wp[7] << 16) * x1.w;
+        }
+        red[threadIdx.x] = acc;
+        __syncthreads();
+        for (int s = blockDim.x / 2; s > 0; s >>= 1) {
+            if (threadIdx.x < s) red[threadIdx.x] += red[threadIdx.x + s];
+            __syncthreads();
+        }
+        if (threadIdx.x == 0) y[row] = red[0];
+        __syncthreads();
+    }
+}
+
 // T-COLUMN twin of matvec_bf16_f32acc_x4 (lane/glm5-verify-batch, the varlen-batched-cores
 // pattern): one block owns 4 output rows for ALL t tokens, so the weight pack is loaded ONCE
 // per (row, K-step) and reused across tokens — vs the _rows twin's grid.y=t per-token weight

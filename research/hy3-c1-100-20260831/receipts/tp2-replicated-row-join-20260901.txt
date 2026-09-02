@@ -1,0 +1,16 @@
+TP2_REPLICATED_ROW_JOIN PASS
+date=2026-09-01
+repo_base=49d1d6f6594a7df52d3fed3268c5355026e3fae7
+hardware=2x NVIDIA RTX PRO 6000 Blackwell Workstation Edition 96GB
+power_limit=600W each
+transport=native PCIe P2P
+width_f32=4096
+payload_bytes=16384
+repetitions=10000
+us_per_join=9.461
+rank0_output=bit-identical to rank0_partial + rank1_partial
+rank1_output=bit-identical to rank0_partial + rank1_partial
+peer_integrity=PASS both directions at 16KiB,64KiB,1MiB,64MiB
+per_call_allocations=0
+per_call_host_synchronizations=0
+default_decision=substrate only; no model path or default is enabled by this receipt

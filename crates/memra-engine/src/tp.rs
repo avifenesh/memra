@@ -8,7 +8,7 @@
 use crate::Engine;
 use crate::mmq_ffi::{DeviceExpertCsr, ExpertCsr, Fp8GroupedWorkspace};
 use crate::parallel::{PRODUCT_MAX_CARDS, STEP37_TRUNK_LAYERS};
-use cudarc::driver::{CudaEvent, CudaSlice, DeviceSlice};
+use cudarc::driver::{CudaEvent, CudaSlice, DevicePtr, DeviceSlice, LaunchConfig, PushKernelArg};
 use std::ops::Range;
 
 /// Previous gate output per (rank, t), so the determ probe can report the SHAPE of a divergence
@@ -1771,6 +1771,74 @@ pub struct TpE4m3HostBounce {
     decode_v2: std::sync::Mutex<Vec<StepTpDecodeV2Ws>>,
 }
 
+pub struct TpKvVerifiedLayer<'a> {
+    pub cache: &'a mut ResidentTpKvCache,
+    pub start: usize,
+    pub logical_len: usize,
+    pub source_k_raw: u64,
+    pub source_v_raw: u64,
+    pub source_k_tok_bytes: usize,
+    pub source_v_tok_bytes: usize,
+}
+
+/// Persistent two-rank all-reduce for one replicated f32 row.
+///
+/// Each rank pushes its local partial directly into a peer-resident staging row, records one
+/// reusable event, waits for the peer's corresponding event, then adds `(rank0, rank1)` in that
+/// same operand order on both devices. Two staging rows per direction are enough because join
+/// `j + 1` is ordered after each rank's add at join `j`, so overwriting parity `j` cannot race its
+/// peer consumer. The collective allocates nothing and performs no host synchronization per call.
+pub struct Tp2ReplicatedRowJoin {
+    width: usize,
+    parity: usize,
+    stage0: [CudaSlice<f32>; 2],
+    stage1: [CudaSlice<f32>; 2],
+    stage0_raw: [u64; 2],
+    stage1_raw: [u64; 2],
+    event0: [CudaEvent; 2],
+    event1: [CudaEvent; 2],
+}
+
+fn validate_tp2_replicated_row_join(
+    ranks: usize,
+    native_p2p: bool,
+    width: usize,
+) -> Result<(), String> {
+    if ranks != 2 {
+        return Err(format!(
+            "replicated-row join requires exactly two ranks, got {ranks}"
+        ));
+    }
+    if !native_p2p {
+        return Err("replicated-row join requires native P2P".into());
+    }
+    if width == 0 || width > i32::MAX as usize {
+        return Err(format!(
+            "replicated-row join width must be in 1..={}, got {width}",
+            i32::MAX
+        ));
+    }
+    Ok(())
+}
+
+fn launch_tp2_peer_push(
+    engine: &Engine,
+    source: &CudaSlice<f32>,
+    destination: u64,
+    width: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let function = engine.func("q4e_push_f32");
+    let config = LaunchConfig::for_num_elems(width as u32);
+    let width = width as i64;
+    let stream = engine.gpu.stream();
+    let mut launch = stream.launch_builder(&function);
+    launch.arg(source).arg(&destination).arg(&width);
+    unsafe {
+        launch.launch(config)?;
+    }
+    Ok(())
+}
+
 /// Persistent workspace of the v2 rank-local decode-attention driver.
 ///
 /// Buffers live in their producing rank's CUDA context, are never freed, and events are
@@ -2085,6 +2153,102 @@ impl TpE4m3HostBounce {
         self.ranks.get(rank)
     }
 
+    /// Allocate the persistent ping-pong staging and event state for a two-rank replicated-row
+    /// all-reduce. The caller owns one instance per concurrently live collective sequence.
+    pub fn prepare_tp2_replicated_row_join(
+        &self,
+        width: usize,
+    ) -> Result<Tp2ReplicatedRowJoin, Box<dyn std::error::Error>> {
+        validate_tp2_replicated_row_join(self.ranks.len(), self.native_p2p, width)?;
+        let rank0 = &self.ranks[0];
+        let rank1 = &self.ranks[1];
+
+        let (stage0, stage0_raw, event0) = {
+            let _main = rank0.gpu.enter_main()?;
+            let stage = [rank0.zeros(width)?, rank0.zeros(width)?];
+            let stream = rank0.gpu.stream();
+            let raw = [
+                stage[0].device_ptr(&stream).0,
+                stage[1].device_ptr(&stream).0,
+            ];
+            let events = [rank0.ctx().new_event(None)?, rank0.ctx().new_event(None)?];
+            (stage, raw, events)
+        };
+        let (stage1, stage1_raw, event1) = {
+            let _main = rank1.gpu.enter_main()?;
+            let stage = [rank1.zeros(width)?, rank1.zeros(width)?];
+            let stream = rank1.gpu.stream();
+            let raw = [
+                stage[0].device_ptr(&stream).0,
+                stage[1].device_ptr(&stream).0,
+            ];
+            let events = [rank1.ctx().new_event(None)?, rank1.ctx().new_event(None)?];
+            (stage, raw, events)
+        };
+        Ok(Tp2ReplicatedRowJoin {
+            width,
+            parity: 0,
+            stage0,
+            stage1,
+            stage0_raw,
+            stage1_raw,
+            event0,
+            event1,
+        })
+    }
+
+    /// Sum one rank-local partial from each of two ranks and publish the same canonical
+    /// `(rank0 + rank1)` row on both devices. The method only enqueues work; subsequent work on
+    /// each rank's stream consumes its corresponding output without a host fence.
+    pub fn tp2_replicated_row_join(
+        &self,
+        join: &mut Tp2ReplicatedRowJoin,
+        partial0: &CudaSlice<f32>,
+        partial1: &CudaSlice<f32>,
+        output0: &mut CudaSlice<f32>,
+        output1: &mut CudaSlice<f32>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        validate_tp2_replicated_row_join(self.ranks.len(), self.native_p2p, join.width)?;
+        let rank0 = &self.ranks[0];
+        let rank1 = &self.ranks[1];
+        let width = join.width;
+        if partial0.len() < width
+            || partial1.len() < width
+            || output0.len() < width
+            || output1.len() < width
+            || partial0.ordinal() != rank0.ctx().ordinal()
+            || output0.ordinal() != rank0.ctx().ordinal()
+            || partial1.ordinal() != rank1.ctx().ordinal()
+            || output1.ordinal() != rank1.ctx().ordinal()
+        {
+            return Err("replicated-row join buffer geometry or ownership mismatch".into());
+        }
+
+        let parity = join.parity;
+        {
+            let _main = rank0.gpu.enter_main()?;
+            launch_tp2_peer_push(rank0, partial0, join.stage1_raw[parity], width)?;
+            join.event0[parity].record(&rank0.gpu.stream())?;
+        }
+        {
+            let _main = rank1.gpu.enter_main()?;
+            launch_tp2_peer_push(rank1, partial1, join.stage0_raw[parity], width)?;
+            join.event1[parity].record(&rank1.gpu.stream())?;
+        }
+        {
+            let _main = rank0.gpu.enter_main()?;
+            rank0.gpu.stream().wait(&join.event1[parity])?;
+            rank0.add(partial0, &join.stage0[parity], output0, width)?;
+        }
+        {
+            let _main = rank1.gpu.enter_main()?;
+            rank1.gpu.stream().wait(&join.event0[parity])?;
+            rank1.add(&join.stage1[parity], partial1, output1, width)?;
+        }
+        join.parity ^= 1;
+        Ok(())
+    }
+
     pub fn allocate_tp_kv_cache(
         &self,
         kv_dim_k: usize,
@@ -2295,6 +2459,189 @@ impl TpE4m3HostBounce {
         }
         cache.publish_hydration(logical_len, resident_start)?;
         Ok(())
+    }
+
+    /// Restore rows retained from a speculative verify walk into an already-live distributed
+    /// cache. The verify oracle appends canonical full-width quantized K/V rows on the model
+    /// device. Each destination rank pulls its own contiguous KV-head slice over native P2P; its
+    /// length mirror is published on that same rank stream after every row copy.
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore_tp_kv_rows_from_device(
+        &self,
+        cache: &mut ResidentTpKvCache,
+        start: usize,
+        logical_len: usize,
+        source_k_raw: u64,
+        source_v_raw: u64,
+        source_k_tok_bytes: usize,
+        source_v_tok_bytes: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.validate_tp_kv_cache(cache)?;
+        if cache.committed_len() != cache.staged_len() {
+            return Err(format!(
+                "TP KV verify restore requires quiescent state, got committed/staged={}/{}",
+                cache.committed_len(),
+                cache.staged_len()
+            )
+            .into());
+        }
+        if start > logical_len || logical_len > cache.capacity() {
+            return Err(format!(
+                "TP KV verify restore range [{start},{logical_len}) exceeds capacity {}",
+                cache.capacity()
+            )
+            .into());
+        }
+        let rows = logical_len - start;
+        let physical = cache.physical_range(start, logical_len)?;
+        if physical.len() != rows {
+            return Err(format!(
+                "TP KV verify restore range [{start},{logical_len}) is not physically contiguous"
+            )
+            .into());
+        }
+        let ranks = self.ranks.len();
+        let k_tok_bytes = cache.k_tok_bytes();
+        let v_tok_bytes = cache.v_tok_bytes();
+        if source_k_tok_bytes != k_tok_bytes * ranks || source_v_tok_bytes != v_tok_bytes * ranks {
+            return Err(format!(
+                "TP KV verify source token bytes k={source_k_tok_bytes} v={source_v_tok_bytes} \
+                 do not match distributed k={}x{ranks} v={}x{ranks}",
+                k_tok_bytes, v_tok_bytes
+            )
+            .into());
+        }
+        for rank in 0..self.ranks.len() {
+            let engine = &self.ranks[rank];
+            let _main = engine.gpu.enter_main()?;
+            use cudarc::driver::DevicePtr;
+            let stream = engine.stream();
+            let k_offset = physical
+                .start
+                .checked_mul(k_tok_bytes)
+                .ok_or("TP KV verify K offset overflow")?;
+            let v_offset = physical
+                .start
+                .checked_mul(v_tok_bytes)
+                .ok_or("TP KV verify V offset overflow")?;
+            let rank_cache = cache
+                .rank_mut(rank)
+                .ok_or_else(|| format!("TP KV cache has no rank {rank}"))?;
+            let k_dst = {
+                let (pointer, _guard) = rank_cache.k_mut().device_ptr(&stream);
+                pointer
+            };
+            let v_dst = {
+                let (pointer, _guard) = rank_cache.v_mut().device_ptr(&stream);
+                pointer
+            };
+            for row in 0..rows {
+                let k_src = source_k_raw + (row * source_k_tok_bytes + rank * k_tok_bytes) as u64;
+                let v_src = source_v_raw + (row * source_v_tok_bytes + rank * v_tok_bytes) as u64;
+                let k_out = k_dst + (k_offset + row * k_tok_bytes) as u64;
+                let v_out = v_dst + (v_offset + row * v_tok_bytes) as u64;
+                raw_copy_bytes(k_out, k_src, k_tok_bytes, engine)?;
+                raw_copy_bytes(v_out, v_src, v_tok_bytes, engine)?;
+            }
+        }
+        cache.rewind_to(logical_len)?;
+        Ok(())
+    }
+
+    /// Batch the accepted verify rows of every uniform TP-attention layer into one kernel per
+    /// rank. Returns `false` before enqueueing anything when the layer group is not uniform, so
+    /// the caller can use the existing per-layer repair without splitting semantics.
+    pub fn restore_tp_kv_layers_from_device(
+        &self,
+        layers: &mut [TpKvVerifiedLayer<'_>],
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        let Some(first) = layers.first() else {
+            return Ok(false);
+        };
+        if !self.native_p2p || first.start >= first.logical_len {
+            return Ok(false);
+        }
+        let ranks = self.ranks.len();
+        let rows = first.logical_len - first.start;
+        let logical_len = first.logical_len;
+        let k_row_bytes = first.cache.k_tok_bytes();
+        let v_row_bytes = first.cache.v_tok_bytes();
+        let k_src_stride = first.source_k_tok_bytes;
+        let v_src_stride = first.source_v_tok_bytes;
+        let Some(expected_k_stride) = k_row_bytes.checked_mul(ranks) else {
+            return Ok(false);
+        };
+        let Some(expected_v_stride) = v_row_bytes.checked_mul(ranks) else {
+            return Ok(false);
+        };
+        if k_src_stride != expected_k_stride || v_src_stride != expected_v_stride {
+            return Ok(false);
+        }
+
+        for layer in layers.iter() {
+            self.validate_tp_kv_cache(layer.cache)?;
+            if layer.cache.committed_len() != layer.cache.staged_len()
+                || layer.start > layer.logical_len
+                || layer.logical_len != logical_len
+                || layer.logical_len - layer.start != rows
+                || layer.cache.k_tok_bytes() != k_row_bytes
+                || layer.cache.v_tok_bytes() != v_row_bytes
+                || layer.source_k_tok_bytes != k_src_stride
+                || layer.source_v_tok_bytes != v_src_stride
+            {
+                return Ok(false);
+            }
+            let physical = layer.cache.physical_range(layer.start, layer.logical_len)?;
+            if physical.len() != rows {
+                return Ok(false);
+            }
+        }
+
+        for rank in 0..ranks {
+            let engine = &self.ranks[rank];
+            let _main = engine.gpu.enter_main()?;
+            let stream = engine.stream();
+            let n = layers.len();
+            let mut table = vec![0u64; 5 * n];
+            for (index, layer) in layers.iter_mut().enumerate() {
+                let physical = layer.cache.physical_range(layer.start, layer.logical_len)?;
+                let rank_cache = layer
+                    .cache
+                    .rank_mut(rank)
+                    .ok_or_else(|| format!("TP KV cache has no rank {rank}"))?;
+                table[index] = layer.source_k_raw + (rank * k_row_bytes) as u64;
+                table[n + index] = layer.source_v_raw + (rank * v_row_bytes) as u64;
+                table[2 * n + index] = rank_cache.k_mut().device_ptr(&stream).0
+                    + (physical.start * k_row_bytes) as u64;
+                table[3 * n + index] = rank_cache.v_mut().device_ptr(&stream).0
+                    + (physical.start * v_row_bytes) as u64;
+                table[4 * n + index] = rank_cache.len_d_mut().device_ptr(&stream).0;
+            }
+            let table = engine.htod_u64(&table)?;
+            engine.copy_batch_uniform_kv_u8_set_len(
+                &table,
+                n,
+                rows,
+                k_row_bytes,
+                v_row_bytes,
+                k_src_stride,
+                v_src_stride,
+                logical_len,
+            )?;
+        }
+        let layer_count = layers.len();
+        for layer in layers.iter_mut() {
+            layer.cache.publish_device_rewind(logical_len)?;
+        }
+        static ANNOUNCED: std::sync::Once = std::sync::Once::new();
+        ANNOUNCED.call_once(|| {
+            eprintln!(
+                "[tp-kv-verify-batch] engaged: layers={} ranks={ranks} rows={rows} \
+                 k_row_bytes={k_row_bytes} v_row_bytes={v_row_bytes}",
+                layer_count
+            );
+        });
+        Ok(true)
     }
 
     pub fn append_tp_kv_transaction(
@@ -15129,6 +15476,27 @@ mod bank_v2_layout_tests {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn replicated_row_join_is_strictly_tp2_native_and_nonempty() {
+        assert!(super::validate_tp2_replicated_row_join(2, true, 4096).is_ok());
+        assert!(
+            super::validate_tp2_replicated_row_join(1, true, 4096)
+                .unwrap_err()
+                .contains("exactly two ranks")
+        );
+        assert!(
+            super::validate_tp2_replicated_row_join(4, true, 4096)
+                .unwrap_err()
+                .contains("exactly two ranks")
+        );
+        assert!(
+            super::validate_tp2_replicated_row_join(2, false, 4096)
+                .unwrap_err()
+                .contains("native P2P")
+        );
+        assert!(super::validate_tp2_replicated_row_join(2, true, 0).is_err());
+    }
 
     #[test]
     fn door_composition_refuses_first_armed_flag_by_name() {

@@ -5850,6 +5850,62 @@ impl Engine {
         Ok(())
     }
 
+    /// Copy one uniform quantized K/V row range for each layer in `table` and publish every
+    /// layer's device length in the same launch. Table layout is five pointer planes:
+    /// K source, V source, K destination, V destination, and i32 length destination.
+    #[allow(clippy::too_many_arguments)] // allow: row bytes and source strides are independent K/V geometry and collapsing them would hide the peer-layout contract
+    pub fn copy_batch_uniform_kv_u8_set_len(
+        &self,
+        table: &CudaSlice<u64>,
+        n: usize,
+        rows: usize,
+        k_row_bytes: usize,
+        v_row_bytes: usize,
+        k_src_stride: usize,
+        v_src_stride: usize,
+        logical_len: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if n == 0 || rows == 0 || (k_row_bytes == 0 && v_row_bytes == 0) {
+            return Ok(());
+        }
+        if table.len() < 5 * n {
+            return Err(format!(
+                "TP KV repair table has {} words, expected at least {}",
+                table.len(),
+                5 * n
+            )
+            .into());
+        }
+        let ni = i32::try_from(n).map_err(|_| "TP KV repair layer count exceeds i32")?;
+        let rows = i32::try_from(rows).map_err(|_| "TP KV repair rows exceed i32")?;
+        let kb = i32::try_from(k_row_bytes).map_err(|_| "TP KV repair K bytes exceed i32")?;
+        let vb = i32::try_from(v_row_bytes).map_err(|_| "TP KV repair V bytes exceed i32")?;
+        let ks = i32::try_from(k_src_stride).map_err(|_| "TP KV repair K stride exceeds i32")?;
+        let vs = i32::try_from(v_src_stride).map_err(|_| "TP KV repair V stride exceeds i32")?;
+        let len = i32::try_from(logical_len).map_err(|_| "TP KV repair length exceeds i32")?;
+        let f = self.func("copy_batch_uniform_kv_u8_set_len");
+        let cfg = LaunchConfig {
+            grid_dim: (n as u32, 1, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let stream = self.gpu.stream();
+        let mut builder = stream.launch_builder(&f);
+        builder
+            .arg(table)
+            .arg(&ni)
+            .arg(&rows)
+            .arg(&kb)
+            .arg(&vb)
+            .arg(&ks)
+            .arg(&vs)
+            .arg(&len);
+        unsafe {
+            builder.launch(cfg)?;
+        }
+        Ok(())
+    }
+
     /// H2D refresh of an EXISTING u64 pointer table IN PLACE (stable pointer — the batched
     /// state-copy tables are refreshed per round because the GDN ssm handles ping-pong).
     pub fn htod_u64_into(
@@ -22450,6 +22506,70 @@ impl Engine {
         b.arg(w).arg(x).arg(&mut *y).arg(&ini).arg(&outi);
         unsafe {
             b.launch(cfg)?;
+        }
+        Ok(())
+    }
+
+    /// One aligned K-range partial of the t=1 BF16 row matvec. This is the row-parallel TP
+    /// building block: every rank computes all output rows over a disjoint K range from its
+    /// compact local activation shard, then the persistent replicated-row collective sums the
+    /// partials. The kernel preserves the unsplit program inside each range; the cross-rank
+    /// association is separately gated.
+    #[allow(clippy::too_many_arguments)]
+    pub fn matvec_bf16_col_range_into(
+        &self,
+        w: &CudaSlice<u8>,
+        x: &CudaSlice<f32>,
+        y: &mut CudaSlice<f32>,
+        in_f: usize,
+        out_f: usize,
+        k_start: usize,
+        k_len: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let weight_bytes = in_f
+            .checked_mul(out_f)
+            .and_then(|elements| elements.checked_mul(2))
+            .ok_or("BF16 column-range matvec geometry")?;
+        let k_end = k_start
+            .checked_add(k_len)
+            .ok_or("BF16 column-range matvec geometry")?;
+        if w.len() < weight_bytes
+            || x.len() < k_len
+            || y.len() < out_f
+            || in_f > i32::MAX as usize
+            || out_f > i32::MAX as usize
+            || k_start > i32::MAX as usize
+            || k_len > i32::MAX as usize
+            || in_f == 0
+            || out_f == 0
+            || k_len == 0
+            || !in_f.is_multiple_of(8)
+            || !k_start.is_multiple_of(8)
+            || !k_len.is_multiple_of(8)
+            || k_end > in_f
+        {
+            return Err("BF16 column-range matvec geometry".into());
+        }
+        let function = self.func("matvec_bf16_f32acc_x4_range");
+        let config = LaunchConfig {
+            grid_dim: (out_f.div_ceil(4) as u32, 1, 1),
+            block_dim: (mmv_block(), 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let (in_f, out_f, k_start, k_len) =
+            (in_f as i32, out_f as i32, k_start as i32, k_len as i32);
+        let stream = self.gpu.stream();
+        let mut launch = stream.launch_builder(&function);
+        launch
+            .arg(w)
+            .arg(x)
+            .arg(y)
+            .arg(&in_f)
+            .arg(&out_f)
+            .arg(&k_start)
+            .arg(&k_len);
+        unsafe {
+            launch.launch(config)?;
         }
         Ok(())
     }

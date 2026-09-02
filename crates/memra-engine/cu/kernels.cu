@@ -2673,6 +2673,56 @@ extern "C" __global__ void copy_batch_uniform_f32(
     }
 }
 
+// Speculative TP-cache verified-prefix repair. One block owns one layer and copies its accepted
+// quantized K/V byte ranges, then publishes that layer's device length after the bytes are
+// visible. table = [k_src x n, v_src x n, k_dst x n, v_dst x n, len_dst x n]. The source may
+// be peer memory; the destination and len pointer belong to the launching rank. Exact HY3 TP2
+// geometry is k_bytes=544 and v_bytes=384 per accepted row and rank, but the scalar fallback
+// keeps the primitive layout-generic.
+extern "C" __global__ void copy_batch_uniform_kv_u8_set_len(
+        const unsigned long long* __restrict__ table,
+        int n,
+        int rows,
+        int k_row_bytes,
+        int v_row_bytes,
+        int k_src_stride,
+        int v_src_stride,
+        int logical_len) {
+    const int r = blockIdx.x;
+    if (r >= n) return;
+    const unsigned char* __restrict__ k_src = (const unsigned char*)(size_t)table[r];
+    const unsigned char* __restrict__ v_src = (const unsigned char*)(size_t)table[n + r];
+    unsigned char* __restrict__ k_dst = (unsigned char*)(size_t)table[2 * n + r];
+    unsigned char* __restrict__ v_dst = (unsigned char*)(size_t)table[3 * n + r];
+    int* __restrict__ len_dst = (int*)(size_t)table[4 * n + r];
+
+    for (int row = 0; row < rows; ++row) {
+        const unsigned char* __restrict__ ks = k_src + row * k_src_stride;
+        unsigned char* __restrict__ kd = k_dst + row * k_row_bytes;
+        const bool k_aligned = (((size_t)ks | (size_t)kd) & 15) == 0 && (k_row_bytes & 15) == 0;
+        if (k_aligned) {
+            const uint4* __restrict__ src = (const uint4*)ks;
+            uint4* __restrict__ dst = (uint4*)kd;
+            for (int i = threadIdx.x; i < (k_row_bytes >> 4); i += blockDim.x) dst[i] = src[i];
+        } else {
+            for (int i = threadIdx.x; i < k_row_bytes; i += blockDim.x) kd[i] = ks[i];
+        }
+
+        const unsigned char* __restrict__ vs = v_src + row * v_src_stride;
+        unsigned char* __restrict__ vd = v_dst + row * v_row_bytes;
+        const bool v_aligned = (((size_t)vs | (size_t)vd) & 15) == 0 && (v_row_bytes & 15) == 0;
+        if (v_aligned) {
+            const uint4* __restrict__ src = (const uint4*)vs;
+            uint4* __restrict__ dst = (uint4*)vd;
+            for (int i = threadIdx.x; i < (v_row_bytes >> 4); i += blockDim.x) dst[i] = src[i];
+        } else {
+            for (int i = threadIdx.x; i < v_row_bytes; i += blockDim.x) vd[i] = vs[i];
+        }
+    }
+    __syncthreads();
+    if (threadIdx.x == 0) *len_dst = logical_len;
+}
+
 // ---- Indirect-source copy (engine-bundle slice 3) ----
 // src address is read from a device pointer-table entry at RUN time — the gdn ping-pong
 // redirects through the same 6-entry table the scan kernels consume, so a CAPTURED graph
