@@ -171,6 +171,9 @@ fn latent_plan_layers_charge_the_cache_they_allocate() {
 #[test]
 fn the_admission_workspace_charge_is_chunk_bounded() {
     let shape = HyperPrimeWorkspaceShape {
+        // The arm-3 workspace is charged only while MEMRA_B200_PRIME_V2 is open; this fixture
+        // pins the door-shut arithmetic, so it is 0 here by construction.
+        bgemm_workspace_bytes: 0,
         chunk_token_bytes: 1_000,
         prompt_bytes_per_token: 10,
         kpool_score_pool: 4,

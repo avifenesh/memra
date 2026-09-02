@@ -1245,6 +1245,20 @@ pub struct Engine {
     /// fused-router sel/w readback — one async DtoH pair + ONE sync instead of two synced dtohs.
     /// Grown lazily; reused every MoE layer (single-threaded decode serializes on the sync).
     router_stage: Mutex<Option<PinnedStage>>,
+    /// MEMRA_B200_PRIME_V2 arm-3 expert-GEMM workspace, ONE per engine (so each PP stage owns
+    /// its own on its own device). Three buffers: the dequanted f16 weight slab
+    /// `[n_active][out_f][in_f]`, the padded f16 activation `[n_active][n_pad][in_f]`, and the
+    /// padded f32 output `[n_active][n_pad][out_f]`, plus the cuBLASLt scratch.
+    ///
+    /// PERSISTENT ON PURPOSE. The slab is 4.75 GB at glm5 geometry (283 active x 2048 x 4096 x
+    /// 2 B) and the shipped mode-1 path allocated one PER PROJECTION — 126 allocate/free pairs
+    /// of a 4.75 GB block per chunk. It is reused across the three projections of a layer and
+    /// across every layer, because each projection's weights are dead the instant its GEMM is
+    /// issued; the alternative (all three resident) would be 14.2 GB for no benefit. Every
+    /// element is fully overwritten before it is read, which is what makes reuse
+    /// byte-identical, and a second concurrent walk on the same engine simply takes the
+    /// shipped kernel instead of allocating a second slab.
+    moe_bgemm_ws: Mutex<Option<crate::mmq_ffi::MoeBgemmWs>>,
     /// Persistent hc-glue decode workspace (MEMRA_HC_DECODE_WS, lane/glm5-decode-diet lever 2).
     /// Pooled per engine like `fa_part_pool`: the buffers are pure per-step scratch (every
     /// element fully overwritten before read each step), so one slot per engine is correct
@@ -2304,6 +2318,12 @@ pub fn mla_tc_prefill_dispatches() -> u64 {
 /// call site. Same reason the fused-epilogue counter exists: the observation env vars divert
 /// dispatch, so a counter at the invocation is the only honest engagement receipt
 /// (LAW:wiring-assertions-match-prose). Read via [`moe_grouped_prefill_dispatches`].
+/// MEMRA_B200_PRIME_V2 arm-3 dispatches: one per (layer, projection) that actually ran the
+/// cuBLASLt strided-batched expert GEMM. The gate's non-vacuity assertion reads it — a band
+/// comparison between two runs of the SHIPPED kernel would pass while proving nothing.
+pub static MOE_BGEMM_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 pub static MOE_GROUPED_PREFILL_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
@@ -2562,6 +2582,7 @@ impl Engine {
             argmax_partials: Mutex::new(None),
             prime_deqw_ws: Mutex::new(None),
             router_stage: Mutex::new(None),
+            moe_bgemm_ws: Mutex::new(None),
             hyper_decode_ws: Mutex::new(None),
             verify_ws: Mutex::new(VerifyWs::default()),
             vrows_macro_dev: Mutex::new(std::collections::HashMap::new()),
@@ -11996,6 +12017,28 @@ impl Engine {
     /// Take the pooled hc-glue decode workspace (MEMRA_HC_DECODE_WS) for one step's walk; put
     /// it back with [`Self::hyper_ws_put`]. A `None` here means another walk holds it (or it
     /// was never built) — the caller allocates fresh, which is always correct.
+    /// Take the arm-3 expert-GEMM workspace if this engine has one that fits the requested
+    /// shape, else `None` — the caller then builds one, or declines to the shipped kernel when
+    /// the allocation fails. `None` also means another walk on this engine holds it.
+    pub(crate) fn moe_bgemm_ws_take(
+        &self,
+        need: crate::mmq_ffi::MoeBgemmNeed,
+    ) -> Option<crate::mmq_ffi::MoeBgemmWs> {
+        let mut guard = self.moe_bgemm_ws.lock().ok()?;
+        let fits = guard.as_ref().is_some_and(|ws| ws.fits(need));
+        if fits { guard.take() } else { None }
+    }
+
+    /// Return the workspace to this engine's pool. A workspace whose buffers were grown by the
+    /// caller comes back at its new size, which is why `fits` compares capacities rather than
+    /// exact shapes: routing skew moves `n_pad` layer to layer and regrowing every time would
+    /// reintroduce the allocation churn this pool exists to remove.
+    pub(crate) fn moe_bgemm_ws_put(&self, ws: crate::mmq_ffi::MoeBgemmWs) {
+        if let Ok(mut guard) = self.moe_bgemm_ws.lock() {
+            *guard = Some(ws);
+        }
+    }
+
     pub(crate) fn hyper_ws_take(&self) -> Option<crate::hyper::HyperDecodeWs> {
         self.hyper_decode_ws.lock().unwrap().take()
     }

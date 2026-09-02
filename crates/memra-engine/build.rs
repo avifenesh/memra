@@ -484,6 +484,7 @@ fn main() {
             "cu/mmq_nvfp4_f8f4.cu",
             "cu/fa3_prefill.cu",
             "cu/moe_f16_grouped.cu",
+            "cu/moe_f16_batched.cu",
             "cu/fp8_blk_dequant.cu",
             "cu/mmq_fp8_blk.cu",
             // Q1 instrument of the FP8-ST v3 gate lane: the Q8_0 MMQ floor with the

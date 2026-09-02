@@ -233,3 +233,83 @@ into a persistent f16 slab, then a cuBLASLt STRIDED-BATCHED matmul on our stream
 padded to a uniform n per expert: one launch per projection, no internal-stream race, no
 per-projection sync, no 4.75 GB alloc/free per projection) -> L2 overlap (arm 2, shipped, pays
 only at >= 2 chunks so it is a 42k/128k lever, not a 4k one) -> L3 device-side router.
+
+
+## §6 Arm 3 shipped, and how to run the gate
+
+**Box invocation, exactly:**
+
+```
+CUDA_VISIBLE_DEVICES=0,1 MEMRA_PP_STAGES=2 MEMRA_PP_DEVICES=0,1 NVIDIA_TF32_OVERRIDE=0 \
+  glm5-prime-v2-gate
+```
+
+and NOTHING else. The gate is self-contained by construction after the 2026-09-02 box run
+(int7 0ea1b07f6) exited 101 on the vacuity assert: it now computes the PP cut from the fixture's
+own layer list and pins `MEMRA_PP_SPLITS` itself before any runtime exists, and it clears
+`MEMRA_B200_PRIME_V2`, `MEMRA_PRIME_CHUNK`, `MEMRA_PRIME_PIPE` and `MEMRA_MOE_BGEMM_PAD_RATIO`
+so no inherited value can decide an arm. Verified by running it with `MEMRA_PP_SPLITS=3` in the
+environment: it still selects `cut=2` and passes. The assert stays as the check that the pin
+worked. Red arms: `MEMRA_PRIME_V2_GATE_RED=schedule|pipe|bgemm`, all three confirmed to exit 1
+on the rig. The shexp `[loader-law]` warnings the box saw are gone (the fixture's shared-expert
+trio is Q8_0 now — those weights ARE matmul-class, so F32 was the fixture being wrong); the
+remaining `[loader-law]` lines are the F32 trunk weights this fixture shares with
+`glm5-hyper-ppn-gate` and `glm5-hyper-batch-gate`, same wall, not a signal from this gate.
+
+**Rig run 2026-09-02 (5090, exactness only, no timing claim), all three arms PASS:**
+
+```
+arm 1 SCHEDULE  t=4096: shipped 8 chunks [256,602,580,563,545,531,516,503] -> door 1 chunk
+arm 1 SCHEDULE  logits rel 4.153e-5 stack rel 3.016e-2 (f16-mirror grouped class) argmax 3 vs 3
+arm 1 CONTROL   shipped reschedule to 2 chunks: logits rel 2.664e-5 stack rel 8.929e-2
+arm 2 PIPELINE  chunks=2: serial pipelined-count 0, door 2; bit mismatches 0/32 and 0/1048576
+arm 3 BGEMM     dispatches 9/9; logits rel 0.000e0 stack rel 0.000e0; argmax 21 vs 21
+arm 3 CONTROL   one-token prompt change moves logits 1.118e0
+arm 3 GUARD     at the shipped pad-ratio default: dispatches 0 (want 0 on 2.94 fixture skew)
+```
+
+**One finding worth the owner's attention, from arm 1's row profile.** The hidden stack moves
+more than a naive band allows, and the row attribution says why: the error is CONFINED to
+whichever chunk the schedule ends on (`per-eighth worst [5.9e-3 6.1e-3 6.8e-2 5.6e-3 6.0e-3
+4.7e-3 7.9e-2 9.0e-2]`), not spread. The mechanism is this trunk's DSA k-pool selection being
+DISCRETE: each query takes `index_topk / index_kpool` pools, and any numeric perturbation can
+flip a near-tied pool, which moves that row discontinuously. On the fixture that is 3 pools per
+query, so one flip is a third of the attention mass; the real model takes 512, where one flip is
+0.2%. It is NOT introduced by the door: an ALREADY-SHIPPED reschedule (an explicit
+`MEMRA_PRIME_CHUNK`, door shut) moves the stack 8.9e-2 where the door moves it 3.0e-2 — the door
+moves it LESS. Arm 1's bar is therefore relative to that control (4x headroom) with an absolute
+band on the logits and absolute argmax equality, which are what a caller actually sees. Anyone
+quoting a hidden-stack number for this trunk across schedules should quote the control with it.
+
+**Arm 3 workspace against the 130 GB resident slab.** ~5.8 GB per stage device at GLM-5.3-Flash
+geometry: slab 288 x 4096 x 2048 x 2 = 4.83 GB, padded activation 0.30, padded output 0.60,
+cuBLASLt scratch 0.03. It is charged to admission once per request while the door is open
+(`HyperPrimeWorkspaceShape::bgemm_workspace_bytes`), never per token, because
+`AdmissionCostModel::observe` provably cannot learn a prime-time allocation — that is the 262k
+2-card hole. On a 183 GB B200 with `MEMRA_MOE_RESIDENT_GB=130` that leaves ~47 GB against a
+1M-context session's ~46 GB of KV: **on the 1M tier this arm and a full-depth session do not
+both fit**, and admission now refuses instead of finding out mid-prime. Dropping
+`MEMRA_MOE_RESIDENT_GB` to 124 is the lever if both are wanted.
+
+
+## §7 Box A/B for arms 1+2 (boot F), and what boot E killed
+
+| boot | 4k (6,920 tok) | 42k (41,866) | 128k (128,059) |
+|---|---|---|---|
+| B baseline | 4.08 s / 1,697 tok/s | 16.73 s | 56.30 s |
+| C `MEMRA_PRIME_CHUNK=4096` | 2.68 / 2,577 | 16.69 | 56.11 |
+| E C + `MEMRA_F16G_BDB=1` | 2.70 | 16.70 | 56.15 |
+| **F `MEMRA_B200_PRIME_V2=1`** | **2.09 / 3,307** | **9.59 / 4,364** | **30.63 / 4,181** |
+
+Boot F against boot C: **-22% at 4k, -43% at 42k, -45% at 128k**; against baseline -49 / -43 /
+-46%. Decode unchanged (35-37 tok/s in the tail), no errors. Arm 1 is the 4k win and arm 2 is
+the depth win, which is exactly the shape predicted in §5: arm 2 needs two or more chunks, and
+4k is one chunk under arm 1.
+
+**Boot E killed the cheap kernel lever.** `MEMRA_F16G_BDB=1` engaged (`[moe-sk-form] ... bdb=1
+... n_active=288 max_m=816`) and measured within noise of boot C at every depth. So the shipped
+schedule's single-B-buffer dequant/mma serialization is NOT where the 16.5 ms goes, and the
+sk128v form is bound elsewhere — the `mma.sync.m16n8k16` issue rate on sm_100a, the in-register
+dequant, or L2/smem traffic. Every one of those says the same thing: the remaining gap is the
+instruction class, not the schedule around it, and the way to a different instruction class
+without writing tcgen05 is a library GEMM on a dequantized slab. That is arm 3.
