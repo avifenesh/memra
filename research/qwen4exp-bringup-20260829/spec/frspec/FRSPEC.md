@@ -169,4 +169,61 @@ Instrument changes in this lane's commit: the trim A/B now FLIPS the arm order o
 and prints each arm's own spread, and the vendor-default sampled probe runs on BOTH trim
 arms in one boot instead of on whichever arm the CLI left live.
 
-RESULTS: filled in below when the cells land.
+### Pass 1 (`box-pre57/`, branch based on 24d775458 — before PR #57's StepPool shed)
+
+x3, arm order flipped per rep, chains byte-identical in every arm
+(`rep0_full_vs_trim_first_divergence = -1`), spec-gate byte identity 4/4 at 256 tokens with
+the trim ARMED, sampled twin engaged on both arms:
+
+| cell | shape | policy | ranks | full tok/s | trim tok/s | ratio | accept full->trim | len full->trim | draft share |
+|---|---|---|---|---|---|---|---|---|---|
+| A | thinkon | adapt k_lo=1, pmin 0.3 | ogblend | 81.79 | 86.09 | **1.0525** | 0.608 -> 0.603 | 1.94 -> 1.92 | 0.12 -> 0.07 |
+| D | thinkoff | adapt k_lo=1, pmin 0.3 | ogblend | 98.01 | 103.87 | **1.0598** | 0.689 -> 0.689 | 2.88 -> 2.78 | 0.16 -> 0.07 |
+| B | raw (bench) | fixed K=5 | ogblend | 128.64 | 128.97 | 1.0026 | 0.840 -> 0.745 | 5.12 -> 4.65 | 0.18 -> 0.09 |
+| C | raw (bench) | fixed K=5 | **sxc (corpus only)** | 128.75 | 127.64 | 0.9913 | 0.840 -> 0.745 | 5.12 -> 4.65 | 0.18 -> 0.09 |
+
+Every arm's within-arm spread cleared the 0.5% escalation threshold (thinkon 0.510/0.440,
+thinkoff 1.832/3.439, raw 1.773/3.040, sxc-raw 2.088/2.226) and the raw verdict sat inside
+the pooled spread, so rules (a) and (b) of LAW:interleave-x3-default both fired and the
+pairs are re-cut at x5 below.
+
+### Pass 2 — the claim rows, x5 on the shipped program (rebased onto v0.124.0 / c04c1da9b)
+
+`qwen4exp_real_gate.frspec2`, binary sha256 `ba3d443bf309bf8d2f7001723f64d07f223770e8430d25f4a091dcfa30260485`.
+
+| cell | shape | policy | full tok/s | trim tok/s | ratio | accept full->trim | len full->trim | spread full/trim |
+|---|---|---|---|---|---|---|---|---|
+| A2 | thinkon | adapt k_lo=1, pmin 0.3 | 84.62 | 90.23 | **1.0663** | 0.599 -> 0.611 | 1.94 -> 1.94 | 0.750% / 0.272% |
+
+At x5 the full arm still spreads 0.750%, but the verdict margin (6.63%) is ~6x that and well
+outside 2x the pooled spread, so rule (b) does not fire again. Per-rep sign is 5/5 for the
+trim, in both arm orders. **Acceptance did not pay for the head this time**: accept rate
+rose 0.599 -> 0.611 and mean accept length was unchanged at 1.94, because at this width the
+only chain steps the trim can move are those whose full-vocab top-1 is out of set, and its
+best in-set token matches the target about as often as the full head's did.
+
+Supporting receipts, same boot: width sweep (below), hidden-state gate 10/10 argmax
+agreement, `spec-gate` byte identity 4/4 at 256 tokens with the trim armed (accept
+0.611/0.652/0.790/0.754 across the four thinkon prompts), and the vendor-default sampled
+twin on BOTH arms — full 79.65 tok/s with 34/65 accepting rounds, trim 84.12 tok/s with
+39/66, 128 tokens each (above the token floor of TRAP:short-sampled-row-fakes-tok-s; the
+arms share one boot, and this row is an engagement receipt, not the perf claim).
+
+### Width: chosen, not inherited
+
+thinkon at ship policy, one run per width plus the full-vocab control, shipped program:
+
+| draft head rows | tok/s | accept | mean accept len | draft share | chain == control |
+|---|---|---|---|---|---|
+| 248,320 (control) | 81.88 | 0.599 | 1.94 | 0.12 | yes |
+| 8,192 | 86.26 | 0.584 | 1.91 | 0.06 | yes |
+| 16,384 | 87.12 | 0.596 | 1.94 | 0.07 | yes |
+| 32,768 | 88.20 | 0.611 | 1.94 | 0.07 | yes |
+
+### Round-cost reconciliation
+
+The profile puts `mtp.lm_head` at 9.8% of a FIXED-K=5 round. Under the ship policy the p-min
+guard and the accepted+1 window shorten the chain, so the head is a smaller share of the
+round: the measured `draft_ms_share` moves 0.12 -> 0.07 at 32,768, i.e. ~5 points of the
+round, and the trim collects it. The two numbers describe different round shapes, not a
+discrepancy.
