@@ -233,6 +233,50 @@ sha256 over 9.9 MB of logits is the load path's byte oracle on the real artifact
 not of this change; the identity statement above is old-loader-vs-new-loader on the same
 artifact, which is the question this lane has to answer.
 
+### What this buys the box: two lanes can load at once again
+
+The pre-streaming peak, 185.8 GiB = **199.5 GB**, is why the box grew a load serializer. Two
+concurrent loads of this artifact need **399 GB on a 353 GB host**, so they cannot coexist, and
+the measurement lock does not stop them (shared holders load concurrently). The consequence was
+receipted on this box while this lane was measuring:
+
+```
+[Wed Sep  2 00:15:09 2026] qwen4exp_real_g invoked oom-killer: ... oom_score_adj=0
+[Wed Sep  2 00:15:09 2026] oom-kill:constraint=CONSTRAINT_NONE, ..., global_oom,
+    task_memcg=/user.slice/user-0.slice/session-35.scope, task=qwen4exp_real_g, pid=28271
+[Wed Sep  2 00:15:09 2026] Out of memory: Killed process 28271 (qwen4exp_real_g)
+    total-vm:780465532kB anon-rss:180808124kB
+```
+
+That is the GLOBAL killer (`CONSTRAINT_NONE`) taking **another lane's run**, and this lane's
+`old-cap230` arm was one of the loads in that window (it peaked 185.8 GiB at 00:15:39Z). Not a
+cgroup kill and not this lane's own process: a co-tenant lost a run because two 180 GB loads met
+on a 353 GB box. Compare the intended kill 16 minutes earlier, which is the same message with a
+different constraint and a different memcg:
+
+```
+[Tue Sep  1 23:59:16 2026] oom-kill:constraint=CONSTRAINT_MEMCG, ...,
+    oom_memcg=/system.slice/q4e-old-cap150.scope, task=qwen4exp_real_g, pid=25952
+```
+
+**A `MemoryMax` cap does not make an arm polite.** It bounds the capped process; the host still
+hands it every byte up to the cap. So every real-artifact launch on this box now composes
+`~/realgate/bin/q4e-load-lock.sh` (exclusive load lock + `MemAvailable >= LOAD_NEED_GB`, held
+through the load phase only) INSIDE the `systemd-run` scope and INSIDE `flock -s`, which is how
+`box/run-cap.sh` is banked:
+
+```
+flock -s /tmp/q48fn-measure.lock          # wait for exclusive holders, block new ones
+  systemd-run --scope -p MemoryMax=<cap> -p MemorySwapMax=0
+    q4e-load-lock.sh <logfile>            # exclusive LOAD lock + MemAvailable gate
+      /usr/bin/time -v <binary> ...
+```
+
+The serializer's `LOAD_NEED_GB` default of 200 is exactly the pre-streaming peak. **This change is
+what lets that number drop:** at 118.9 GiB = 127.7 GB, two concurrent loads need **255 GB of the
+353 GB host** and fit with ~98 GB to spare. Once no pre-streaming binary loads this artifact
+anymore, the gate can go to ~130 and the box stops serializing loads it no longer needs to.
+
 ### Lock discipline: one arm ran without the lock, and that was wrong
 
 `old-cap150` executed while a co-tenant lane held `flock -x` on `/tmp/q48fn-measure.lock`. The
@@ -296,6 +340,7 @@ second card and is the first thing to run if TP2 is next.
 | `hidden-gate-new-cap150.tsv`, `greedy-gate-new-cap150.tsv` | the gate tables compared for identity |
 | `new-draftgate.log`, `draft-gate-new-draftgate.tsv` | the `mtp_reference_weights` coverage arm |
 | `run-cap.sh`, `cell.sh`, `chain2.sh`, `draft-arm.sh`, `anon-sampler.sh`, `compare-identity.sh` | the invocations, verbatim |
+| `q4e-load-lock.sh` | the box load serializer, as composed by the corrected `run-cap.sh` |
 | `CELL.log` | the cell's own timeline including the identity comparison output |
 
 `cell.sh` is banked as it RAN, lock-free fallback and all; `run-cap.sh` is banked in its
@@ -317,5 +362,8 @@ Follow-ups this lane deliberately did not do, named rather than left implicit:
    above. Load-time only.
 2. **Trunk f32 streaming** — the remaining ~20 GB host set. Only worth doing if a box class
    below ~150 GB becomes interesting.
-3. **The n-gram table stays anon on purpose** (see above). Any future lane proposing to mmap it
+3. **Drop the box load serializer's `LOAD_NEED_GB` from 200 to ~130** once no pre-streaming
+   binary loads this artifact — see the two-concurrent-loads arithmetic above. That is the number
+   this change actually buys the fleet.
+4. **The n-gram table stays anon on purpose** (see above). Any future lane proposing to mmap it
    owns the mid-decode page-fault question first.

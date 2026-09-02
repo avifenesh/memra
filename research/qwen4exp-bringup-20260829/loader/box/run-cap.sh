@@ -3,12 +3,20 @@
 # reproduces the 180 GB-RAM 2-card box class, and record peak RSS.
 # args: <label> <binary> <MemoryMax>
 #
-# LOCK POLICY (lane law, owner correction 2026-09-02). This box is shared and every
-# real-artifact load on it takes /tmp/q48fn-measure.lock -s and WAITS, however long that
-# takes. Shared is enough for untimed work: it makes this arm wait behind exclusive holders
-# and blocks new exclusive holders while it loads. A 174 GB load hammers memory bandwidth,
-# so running one beside somebody's timed arms corrupts their receipts even when this arm
-# takes no card of theirs. There is no lock-free fallback and no timeout.
+# LOCK POLICY (lane law, two owner corrections on 2026-09-02). TWO locks, both mandatory:
+#
+#   1. /tmp/q48fn-measure.lock -s, waited for however long it takes, no fallback and no
+#      timeout. Shared is enough for untimed work: it makes this arm wait behind exclusive
+#      holders and blocks new exclusive holders while it loads. A 174 GB load hammers memory
+#      bandwidth, so running one beside somebody's timed arms corrupts their receipts even
+#      when this arm takes no card of theirs.
+#   2. ~/realgate/bin/q4e-load-lock.sh, composed INSIDE the systemd-run scope. The measure
+#      lock does not stop this: shared holders load concurrently, and two concurrent loads of
+#      this artifact exceed the 353 GB host, so the GLOBAL OOM killer takes one of them
+#      (receipted 2026-09-02 00:15:09Z: another lane's run, CONSTRAINT_NONE, anon-rss
+#      180.8 GB, while this lane's old-cap230 arm sat at ~185 GiB). A MemoryMax cap does NOT
+#      make an arm safe for co-tenants: it bounds this process, and the host still hands it
+#      every byte up to the cap.
 set -uo pipefail
 lbl="$1"; bin="$2"; cap="$3"
 out=/root/realgate/loaderout
@@ -30,8 +38,12 @@ log="$out/$lbl.log"
 gate() {
   env CUDA_VISIBLE_DEVICES=1 MEMRA_Q4E_SEAMS=idxsel \
     systemd-run --scope --unit="q4e-$lbl" -p MemoryMax="$cap" -p MemorySwapMax=0 \
-      /usr/bin/time -v "$bin" /root/data/q48fn-yarn1m "$out" --label "$lbl" --mtp \
-        --goldens /root/realgate/dump --prompts /root/realgate/shapes/thinkon-prompts.tsv
+      /root/realgate/bin/q4e-load-lock.sh "$out/$lbl.gate.log" \
+        /usr/bin/time -v "$bin" /root/data/q48fn-yarn1m "$out" --label "$lbl" --mtp \
+          --goldens /root/realgate/dump --prompts /root/realgate/shapes/thinkon-prompts.tsv
+  local rc=$?
+  cat "$out/$lbl.gate.log" 2>/dev/null
+  return $rc
 }
 
 # Hold the shared lock on fd 9 for the whole arm (append-open: never truncate a co-tenant's
