@@ -22830,14 +22830,19 @@ fn step_glm5_spec(
         // greps this line for spec engagement — a 200 alone proves nothing
         // (never-serve-greedy law). usage.spec (rounds/drafted/accepted) rides the same
         // counters through finish().
+        // `trim_rounds` = the session's rounds drafted through a RANK-TRIMMED head
+        // (lane/frspec-dflash2-20260902): == rounds when the trim is engaged, 0 when the
+        // draft head is full-vocab, the per-request twin of the boot receipt's
+        // `RANK-TRIMMED n_ranks=` line. Appended, so prefix greps of this line stand.
         eprintln!(
-            "[glm5-acc] ctx={} burst={}/{} cum={}/{}={:.3}",
+            "[glm5-acc] ctx={} burst={}/{} cum={}/{}={:.3} trim_rounds={}",
             s.fed.len(),
             ac,
             dr,
             s.spec_accepted,
             s.spec_drafted,
-            s.spec_accepted as f64 / s.spec_drafted.max(1) as f64
+            s.spec_accepted as f64 / s.spec_drafted.max(1) as f64,
+            s.glm5.as_ref().unwrap().rank_trimmed_rounds
         );
     }
     if let Some(trace) = s.ttft.as_ref()
