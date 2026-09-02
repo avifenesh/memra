@@ -162,9 +162,11 @@ pub const TOPK_EMPTY_SLOT: u32 = u32::MAX;
 ///   fails ONE request instead, the same trade `crate::spec::guard_vocab_token` makes for the
 ///   native-MTP chain's sentinel (memra#87). The assert stays where it is.
 ///
-/// `bound` is the selector's own column space (`n_vocab` for a full head, the trim's rank
-/// count for an FR-Spec head): checked BEFORE any d2t remap, because remapping a sentinel
-/// would index the map out of bounds and panic before the walk is ever reached.
+/// `bound` is the selector's own column space: the `n_vocab` the caller handed `topk_rows`,
+/// which on a trimmed FR-Spec head is the trim's rank count and on a full head is the target
+/// vocabulary. Checked BEFORE any d2t remap, because remapping a sentinel would index the map
+/// out of bounds and panic before the walk is ever reached; the map is pre-checked to cover
+/// `n_vocab`, so passing this bound also proves the remap safe.
 ///
 /// ASSUMES UNMASKED DRAFT LOGITS, which is what both proposal seams feed it today: `dl` is a
 /// raw `matmul` output and constrained requests never take the spec route, so a row cannot
@@ -5511,20 +5513,24 @@ mod dflash2_tests {
         let rest = &pp[helper..];
         let hbody = &rest[..rest.find("\n    pub fn ").unwrap_or(rest.len().min(2000))];
         assert!(
-            hbody.contains("src.gpu.main_stream()") && hbody.contains("dst.gpu.main_stream()"),
-            "the helper must act on the two ENGINES' own streams"
+            hbody.contains("let s = src.stream();") && hbody.contains("dst.gpu.main_stream()"),
+            "the helper must order the two ENGINES' own streams, source side through the \
+             ambient-aware accessor and destination side through the override-blind one"
         );
         assert!(
-            !hbody.contains("self.stages"),
-            "the helper must not reach for StageRt::stream: that is the seam that did not \
-             cover the drafter"
+            hbody.contains("if src.ctx() == dst.ctx() {"),
+            "the context test must be VALUE equality: CudaContext::new allocates a fresh Arc \
+             per call for the same primary context, so Arc::ptr_eq would make the async event \
+             path dead code and every restored session would pay a host sync"
         );
 
         // 2. THE BLAST RADIUS. Both proposal seams guard the candidate buffer BEFORE the
         //    d2t remap (a sentinel would index the map out of bounds) and before the walk.
         let d2 = strip(include_str!("dflash.rs"));
         // Cut at the FIRST test module so no assertion can be satisfied by this test's own
-        // string literals (the self-match trap the wiring-assertions law names).
+        // string literals (the self-match trap the wiring-assertions law names). Note this
+        // leaves only the pre-test part of the file live: a seam added AFTER the first
+        // `#[cfg(test)]` would be invisible here and would need its own anchor.
         let live = &d2[..d2.find("#[cfg(test)]").expect("this file has test modules")];
         for (seam, arm) in [
             ("pub fn dflash2_propose_greedy_q(", "greedy"),
