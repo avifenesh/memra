@@ -644,14 +644,16 @@ parsing only — zero engine changes**:
   | Gemma-4 family (12B/26B/31B/E4B) | `enable_thinking`, template default **false** | thinking **OFF** (closed `<\|channel>thought\n<channel\|>`) | closed channel | `<\|think\|>` system token + open turn | same | same |
   | Hy3 | template's own `reasoning_effort:` `no_think\|low\|high` | `no_think` (its jinja default) | `no_think` | `low`, open `<think:opensource>` | `low` (clamp — no medium level) | `high`, open think |
   | Step-3.7-Flash (`step35`) | `Reasoning: {level}` string in the system turn; `<think>` tail **unconditional** | no `Reasoning:` line (template default) | `Reasoning: low` (clamp — no off level) | `Reasoning: low` | `Reasoning: medium` | `Reasoning: high` |
-  | GLM-5.3-Flash (`glm5_next`) | `<\|system\|>Reasoning Effort: {Low\|High\|Max}` line, ALWAYS rendered; `<think>` tail **unconditional**, no off switch anywhere in the template | `Reasoning Effort: Max` (the template's own `else` arm) | **400** — the template cannot close its think tail (`qwen_think && !think_switch`) | `Reasoning Effort: Low` | `Reasoning Effort: Low` (clamp DOWN — no medium rung, and the template's `else` is Max) | `Reasoning Effort: High` |
+  | GLM-5.3-Flash (`glm5_next`) | `<\|system\|>Reasoning Effort: {Low\|High\|Max}` line, ALWAYS rendered; `<think>` tail **unconditional**, no off switch anywhere in the template | `Reasoning Effort: Max` (the template's own `else` arm) | **400** — the template cannot close its think tail (`qwen_think && !think_switch`) | `Reasoning Effort: Low` | `Reasoning Effort: High` (maps UP — no medium rung, `high` is the middle rung; owner ruling 2026-09-02, issue #75) | `Reasoning Effort: High` |
 
   GLM-5.3-Flash is the second model (after deepseek-v4 0731) whose template distinguishes a
   rung **above** `high`: `xhigh`/`max`/`ultra` canonicalize to `max` there instead of clamping
   into `high`, so `Reasoning Effort: Max` — the model's own default — stays reachable by name.
-  `medium` is the one rung it does not define, and it clamps DOWN to `Low` rather than falling
-  through the template's `else` arm to `Max`: answering "reason less" with the model's deepest
-  setting is the never-corrupt-clamp law read backwards (same reasoning as Hy3's medium clamp).
+  `medium` is the one rung it does not define; it maps to `high`, the middle ask onto the
+  middle rung (the 2026-09-02 ruling superseded an earlier clamp-down to `low`). The law that
+  ruling keeps: a sub-max ask never falls through the template's `else` arm to `Max`, because
+  answering "reason less" with the model's deepest setting is the never-corrupt-clamp law read
+  backwards.
 
   Level strings reach only templates that consume one (spawn-time `effort_levels` probe,
   keyed on the jinja's own `reasoning_effort is defined` input test — true for step35, Hy3

@@ -1292,22 +1292,27 @@ pub fn template_is_glm5(t: &str) -> bool {
 ///
 /// | client `reasoning_effort` | rendered line |
 /// |---|---|
-/// | (absent)                  | `Reasoning Effort: Max` — the template's own default |
+/// | (absent)                  | `Reasoning Effort: Max` (the template's own default) |
 /// | `low`                     | `Reasoning Effort: Low` |
-/// | `medium`                  | `Reasoning Effort: Low` — see below |
+/// | `medium`                  | `Reasoning Effort: High` (see below) |
 /// | `high`                    | `Reasoning Effort: High` |
-/// | `xhigh` / `max` / `ultra` | `Reasoning Effort: Max` — the real tier above high |
+/// | `xhigh` / `max` / `ultra` | `Reasoning Effort: Max` (the real tier above high) |
 ///
-/// `medium` CLAMPS DOWN to `low` rather than falling through to the template's `else 'max'`.
-/// The else-arm is the template's *unset* default, not its medium rung: routing a client's
-/// `medium` there would answer a request to reason LESS with the model's deepest setting, the
-/// never-corrupt-clamp law read backwards. hy3 already clamps `medium` -> `low` for the same
-/// reason (its ladder has no medium either); GLM differs from hy3 only in having a rung above
-/// `high`, which is why `canonical_effort_for` must not fold `max` into `high` for this model.
+/// `medium` maps UP to `high`: the middle ask onto the middle rung (owner ruling
+/// 2026-09-02, issue #75, superseding the 2026-08-27 clamp-down to `low`). This
+/// ladder has no medium rung, and `high` is the closest one to what a medium ask
+/// means. The law the mapping must keep is that a sub-max ask NEVER falls through
+/// the template's `else` arm to `max`: its `else` is the *unset* default, not a
+/// medium rung, and routing "reason less" there would answer with the model's
+/// deepest setting. (`max` stays reachable by name: `xhigh`/`max`/`ultra`
+/// canonicalize to it below.) hy3 still clamps `medium` -> `low`; its ladder has
+/// no rung above high, so the closest rung there is down, and that model's
+/// mapping is its own call, not a precedent either way.
 fn glm5_effort_level(reasoning_effort: Option<&str>) -> Result<&'static str, String> {
     match reasoning_effort {
         None => Ok("Max"),
-        Some("low") | Some("medium") => Ok("Low"),
+        Some("low") => Ok("Low"),
+        Some("medium") => Ok("High"),
         Some("high") => Ok("High"),
         Some("max") | Some("xhigh") | Some("ultra") => Ok("Max"),
         // `none`/`minimal` never arrive here: the serve path refuses an explicit off-request on
