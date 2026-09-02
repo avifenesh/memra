@@ -760,6 +760,10 @@ pub(crate) fn b200_gemv_v2_on() -> bool {
 /// stage buffers plus `R * nb * 4` bytes of reduction window. Mirrors `MEMRA_GEMV_V3_STAGES` and
 /// `MEMRA_GEMV_V3_REDOFF` in cu/qmatvec.cu; the two MUST move together.
 pub(crate) const GEMV_V3_STAGES: usize = 2;
+
+/// Warps per block for the v2 q8_0 W8-posture twins. Mirrors `MEMRA_Q8_V2_ROWS` in
+/// cu/qmatvec.cu (the shipped kernels use `MEMRA_MMVQ_ROWS` = 4); the two MUST move together.
+pub(crate) const Q8_V2_ROWS: u32 = 8;
 pub(crate) fn gemv_v3_smem_bytes(nb: usize) -> usize {
     GEMV_V3_STAGES * GEMV_V2_ROWS * (nb * 8) * 2 + GEMV_V2_ROWS * nb * 4
 }
@@ -20240,6 +20244,271 @@ impl Engine {
         Ok(())
     }
 
+    /// v2 twin of `qmatvec_q8_0_mmvq_rp` — the kernel that actually serves the t=1 decode
+    /// trunk in the `MEMRA_GLM5_W8` posture (`matvec_bf16_via_q8_mirror` ->
+    /// `qmatvec_mmvq_into(.., QT_Q8_0, rp=true)`). Stages the q8_1 activation into shared
+    /// memory once per CTA (the shipped kernel re-reads 36 B of activation per 34 B of weight,
+    /// per lane, per block-iteration), packs 8 warps per block, and unrolls the block walk by
+    /// two. BIT-IDENTICAL per output row: the per-row warp program is untouched.
+    #[allow(clippy::too_many_arguments)]
+    pub fn qmatvec_q8_0_rp_v2_raw(
+        &self,
+        w: &CudaSlice<u8>,
+        aq: &CudaSlice<i8>,
+        ad: &CudaSlice<f32>,
+        y: &mut CudaSlice<f32>,
+        in_f: usize,
+        out_f: usize,
+        t: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if t == 0 || !in_f.is_multiple_of(32) || y.len() < t * out_f {
+            return Err("qmatvec_q8_0_rp_v2 geometry".into());
+        }
+        let smem = Self::q8_v2_smem_bytes(in_f);
+        if smem > 48 * 1024 {
+            return Err("qmatvec_q8_0_rp_v2 smem over the 48 KB default cap".into());
+        }
+        let f = self.func("qmatvec_q8_0_mmvq_rp_v2");
+        let cfg = LaunchConfig {
+            grid_dim: ((out_f as u32).div_ceil(Q8_V2_ROWS), t as u32, 1),
+            block_dim: (32, Q8_V2_ROWS, 1),
+            shared_mem_bytes: smem as u32,
+        };
+        let (ini, outi, mi, rb) = (in_f as i32, out_f as i32, t as i32, 0i64);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(w)
+            .arg(aq)
+            .arg(ad)
+            .arg(&mut *y)
+            .arg(&ini)
+            .arg(&outi)
+            .arg(&mi)
+            .arg(&rb);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(())
+    }
+
+    /// v2 twin of `qmatvec_q8_0_rows_tw` — the VERIFY-width (t <= 8) W8 kernel reached through
+    /// `matvec_bf16_via_q8_mirror_t` under `MEMRA_Q8T_WONCE`. The weight-once t-column structure
+    /// is the shipped kernel's, so the activation is NOT staged (t*in_f would be 32 KB at t=8);
+    /// the levers are the 8-warp packing and the block walk unrolled by two. BIT-IDENTICAL per
+    /// (row, column).
+    #[allow(clippy::too_many_arguments)]
+    pub fn qmatvec_q8_0_rows_tw_v2_raw(
+        &self,
+        w: &CudaSlice<u8>,
+        aq: &CudaSlice<i8>,
+        ad: &CudaSlice<f32>,
+        y: &mut CudaSlice<f32>,
+        in_f: usize,
+        out_f: usize,
+        t: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if t == 0 || t > 8 || !in_f.is_multiple_of(32) || y.len() < t * out_f {
+            return Err("qmatvec_q8_0_rows_tw_v2 geometry".into());
+        }
+        let f = self.func("qmatvec_q8_0_rows_tw_v2");
+        let cfg = LaunchConfig {
+            grid_dim: ((out_f as u32).div_ceil(Q8_V2_ROWS), 1, 1),
+            block_dim: (32, Q8_V2_ROWS, 1),
+            shared_mem_bytes: 0,
+        };
+        let (ini, outi, ti) = (in_f as i32, out_f as i32, t as i32);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(w)
+            .arg(aq)
+            .arg(ad)
+            .arg(&mut *y)
+            .arg(&ini)
+            .arg(&outi)
+            .arg(&ti);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(())
+    }
+
+    /// Bench-only direct arm selector for the W8 verify-width kernel (`b200_matvec_bench`,
+    /// the `_arm_raw` precedent): `use_v2=false` launches the shipped `qmatvec_q8_0_rows_tw`
+    /// (4 warps/block), `true` the v2 twin. Bypasses `matvec_bf16_via_q8_mirror_t`'s policy
+    /// stack and the memoized door.
+    #[allow(clippy::too_many_arguments)]
+    pub fn qmatvec_q8_0_rows_tw_arm_raw(
+        &self,
+        w: &CudaSlice<u8>,
+        aq: &CudaSlice<i8>,
+        ad: &CudaSlice<f32>,
+        y: &mut CudaSlice<f32>,
+        in_f: usize,
+        out_f: usize,
+        t: usize,
+        use_v2: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if use_v2 {
+            return self.qmatvec_q8_0_rows_tw_v2_raw(w, aq, ad, y, in_f, out_f, t);
+        }
+        let f = self.func("qmatvec_q8_0_rows_tw");
+        let cfg = LaunchConfig {
+            grid_dim: ((out_f as u32).div_ceil(4), 1, 1),
+            block_dim: (32, 4, 1),
+            shared_mem_bytes: 0,
+        };
+        let (ini, outi, ti) = (in_f as i32, out_f as i32, t as i32);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(w)
+            .arg(aq)
+            .arg(ad)
+            .arg(&mut *y)
+            .arg(&ini)
+            .arg(&outi)
+            .arg(&ti);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(())
+    }
+
+    /// The FUSED six-projection KDA group for the `MEMRA_GLM5_W8` posture: one launch replaces
+    /// the six separate `matvec_bf16_via_q8_mirror` calls (and their six redundant activation
+    /// quantizes) the W8 path makes today. `bq`/`bk`/`bv` are the BF16 sources — they are the
+    /// mirror cache keys, not the operands; their q8_0 rp4 mirrors are built on first use
+    /// exactly as `matvec_bf16_via_q8_mirror` builds them, so nothing about residency changes.
+    ///
+    /// The W8 path had NO fused twin: `qmatvec_kda6_q8f32_mmvq` addresses interleaved 34 B
+    /// blocks (a resident plain-layout Q8_0 tensor) while the W8 mirror is the split-plane rp4
+    /// form, and `MEMRA_KDA_FUSED_PROJ`'s bf16 arm declines outright whenever W8 is on.
+    ///
+    /// NUMERIC CLASSES, unchanged from the sibling fused kernels: the three mirrored ranges are
+    /// bit-identical to `qmatvec_q8_0_mmvq_rp` per row; the three f32 low-rank/beta ranges
+    /// replace cuBLASLt with the same deterministic warp tree the q8 arm of
+    /// `MEMRA_KDA_FUSED_PROJ` already ships and has pinned.
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::map_entry)] // allow: the init body is fallible (`?`); Entry::or_insert_with cannot propagate errors
+    pub fn kda_proj_fused6_q8rp_raw(
+        &self,
+        bq: &CudaSlice<u8>,
+        bk: &CudaSlice<u8>,
+        bv: &CudaSlice<u8>,
+        wfa: &CudaSlice<f32>,
+        wga: &CudaSlice<f32>,
+        wb: &CudaSlice<f32>,
+        x: &CudaSlice<f32>,
+        outs: &mut [CudaSlice<f32>; 6],
+        in_f: usize,
+        dims: [usize; 6],
+        t: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use cudarc::driver::DevicePtr;
+        if t == 0 || t > 32 || !in_f.is_multiple_of(32) || x.len() < t * in_f {
+            return Err("kda_proj_fused6_q8rp geometry".into());
+        }
+        let smem = Self::q8_v2_smem_bytes(in_f);
+        if smem > 48 * 1024 {
+            return Err("kda_proj_fused6_q8rp smem over the 48 KB default cap".into());
+        }
+        for (i, (o, want)) in outs.iter().zip(dims).enumerate() {
+            if o.len() < t * want {
+                return Err(format!("kda_proj_fused6_q8rp: output {i} too small").into());
+            }
+        }
+        let nblk = in_f / 32;
+        // Mirror keys, and the get-or-build, are `matvec_bf16_via_q8_mirror`'s verbatim.
+        let keys: Vec<(u64, u32, u32)> = {
+            let s = self.gpu.stream();
+            [(bq, dims[0]), (bk, dims[1]), (bv, dims[2])]
+                .iter()
+                .map(|(d, out)| {
+                    let (p, _g) = d.device_ptr(&s);
+                    (p, in_f as u32, *out as u32)
+                })
+                .collect()
+        };
+        {
+            let mut mirrors = self
+                .w8_mirrors
+                .lock()
+                .map_err(|_| "w8 mirror map is poisoned")?;
+            for ((d, out), key) in [(bq, dims[0]), (bk, dims[1]), (bv, dims[2])]
+                .iter()
+                .zip(&keys)
+            {
+                if !mirrors.contains_key(key) {
+                    let mut interleaved = self.alloc_u8_uninit(out * Self::q8_0_row_bytes(in_f))?;
+                    self.encode_q8_0_from_bf16(d, &mut interleaved, in_f, *out)?;
+                    let planar = self.build_q8_rp4_raw(&interleaved, in_f, *out)?;
+                    mirrors.insert(*key, planar);
+                }
+            }
+        }
+        // ONE activation quantize for all six projections. The unfused W8 path runs this once
+        // per projection on the same `x` — six identical launches per layer.
+        let akey = in_f * 64 + t.min(32);
+        {
+            let mut act = self.w8_act.lock().map_err(|_| "w8 act map is poisoned")?;
+            if !act.contains_key(&akey) {
+                let aq = self.alloc_i8_uninit(32 * in_f)?;
+                let ad = self.alloc_uninit::<f32>(32 * nblk)?;
+                act.insert(akey, (aq, ad));
+            }
+            let (aq, ad) = act.get_mut(&akey).expect("just inserted");
+            self.quantize_q8_1_into(x, t, in_f, aq, ad)?;
+        }
+        let mirrors = self
+            .w8_mirrors
+            .lock()
+            .map_err(|_| "w8 mirror map is poisoned")?;
+        let act = self.w8_act.lock().map_err(|_| "w8 act map is poisoned")?;
+        let (aq, ad) = act.get(&akey).expect("built above");
+        let m0 = mirrors.get(&keys[0]).expect("built above");
+        let m1 = mirrors.get(&keys[1]).expect("built above");
+        let m2 = mirrors.get(&keys[2]).expect("built above");
+        let blocks: usize = dims.iter().map(|d| d.div_ceil(Q8_V2_ROWS as usize)).sum();
+        let f = self.func("qmatvec_kda6_q8f32_rp_v2");
+        let cfg = LaunchConfig {
+            grid_dim: (blocks as u32, t as u32, 1),
+            block_dim: (32, Q8_V2_ROWS, 1),
+            shared_mem_bytes: smem as u32,
+        };
+        let inf = in_f as i32;
+        let d = dims.map(|v| v as i32);
+        let mi = t as i32;
+        let [o0, o1, o2, o3, o4, o5] = outs;
+        let stream = self.gpu.stream();
+        let mut b = stream.launch_builder(&f);
+        b.arg(m0)
+            .arg(m1)
+            .arg(m2)
+            .arg(wfa)
+            .arg(wga)
+            .arg(wb)
+            .arg(aq)
+            .arg(ad)
+            .arg(x)
+            .arg(&mut *o0)
+            .arg(&mut *o1)
+            .arg(&mut *o2)
+            .arg(&mut *o3)
+            .arg(&mut *o4)
+            .arg(&mut *o5)
+            .arg(&inf)
+            .arg(&d[0])
+            .arg(&d[1])
+            .arg(&d[2])
+            .arg(&d[3])
+            .arg(&d[4])
+            .arg(&d[5])
+            .arg(&mi);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(())
+    }
+
     /// v2 twin of [`Engine::moe_gate_up_preclamp8_q8`] (`MEMRA_B200_GEMV_V2`): 8 warps/block on
     /// `threadIdx.y` and a g-walk unrolled by two so both groups' weight/scale/activation loads
     /// issue before either dp4a chain runs. Per-warp arithmetic is the shipped kernel's, in the
@@ -22416,6 +22685,13 @@ impl Engine {
         in_f / 32 * 34
     }
 
+    /// Dynamic shared memory one q8_0 v2 CTA needs: the staged q8_1 activation, `in_f` int8
+    /// plus `in_f/32` f32 scales. 4.6 KB at in_f=4096. Mirrors the layout in cu/qmatvec.cu's
+    /// `q8_0_stage_act`.
+    pub fn q8_v2_smem_bytes(in_f: usize) -> usize {
+        in_f + (in_f / 32) * 4
+    }
+
     /// Encode a resident bf16 weight slab into its q8_0 mirror (MEMRA_STEP_TP_W8). Runs once
     /// per matrix at load; the block program is the one `quant_K_block` writes for the KV
     /// cache, so the two formats cannot drift apart.
@@ -22660,6 +22936,19 @@ impl Engine {
         // MEMRA_Q8T_WONCE=1: the weight-once twin — one row grid, each weight int4 loaded once
         // and dotted against all t columns. The `_t` form re-streams the shared weights per
         // column through __ldcs (measured 1.43-1.67x a single-column call for 2 columns).
+        // MEMRA_B200_GEMV_V2, verify width: the t<=8 weight-once kernel is what the spec walk
+        // runs in the W8 posture. Same weight-once structure, 8 warps per block and the block
+        // walk unrolled by two; bit-identical per (row, column). t in 9..=32 keeps `_tw32`.
+        if b200_gemv_v2_on() && q8t_wonce_on() && t <= 8 {
+            if GEMV_V2_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+                eprintln!(
+                    "[b200-gemv-v2] engaged arm=q8_rows_tw_v2 t={t} in_f={in_f} out_f={out_f} \
+                     (W8 verify walk; MEMRA_B200_GEMV_V2=1)"
+                );
+            }
+            self.qmatvec_q8_0_rows_tw_v2_raw(mirror, aq, ad, y, in_f, out_f, t)?;
+            return Ok(Some(()));
+        }
         if q8t_wonce_on() && t <= 32 {
             let f = self.func(if t <= 8 {
                 "qmatvec_q8_0_rows_tw"
@@ -22854,6 +23143,26 @@ impl Engine {
         let act = self.w8_act.lock().map_err(|_| "w8 act map is poisoned")?;
         let mirror = mirrors.get(&key).expect("built above");
         let (aq, ad) = act.get(&in_f).expect("built above");
+        // MEMRA_B200_GEMV_V2 (lane/b200-gemv-hbm-20260902 round 3). THIS is the t=1 decode
+        // kernel in the posture we actually serve: the bf16 arms further up
+        // `matvec_bf16_rows_into` are unreachable once MEMRA_GLM5_W8 reroutes here, which is
+        // why serving A/B pair 1 moved nothing (49.2 -> 49.3 tok/s, no engagement line). The v2
+        // twin stages the q8_1 activation into shared memory once per CTA — the shipped
+        // `qmatvec_q8_0_mmvq_rp` re-reads 36 B of activation per 34 B of weight, per lane, per
+        // block-iteration — packs 8 warps per block and unrolls the block walk by two.
+        // Bit-identical per output row; declines to the shipped dispatch when the staged
+        // activation would not fit the 48 KB default smem cap.
+        if b200_gemv_v2_on() && in_f.is_multiple_of(32) && Self::q8_v2_smem_bytes(in_f) <= 48 * 1024
+        {
+            if GEMV_V2_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+                eprintln!(
+                    "[b200-gemv-v2] engaged arm=q8_rp_v2 t=1 in_f={in_f} out_f={out_f} \
+                     (W8 posture; MEMRA_B200_GEMV_V2=1)"
+                );
+            }
+            self.qmatvec_q8_0_rp_v2_raw(mirror, aq, ad, y, in_f, out_f, 1)?;
+            return Ok(Some(()));
+        }
         self.qmatvec_mmvq_into(
             mirror,
             aq,
