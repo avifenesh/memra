@@ -1,4 +1,5 @@
-//! Gate for door `MEMRA_GLM5_Q8_FUSE` (lane/b200-q8-fuse-20260902).
+//! Gate for door `MEMRA_GLM5_Q8_FUSE` (lane/b200-q8-fuse-20260902, extended in
+//! lane/b200-q8fuse-w8-20260902 to the W8 q8_0-mirror producer path).
 //!
 //! Compares the SHIPPED two-launch chain (`rms_norm` then `quantize_q8_1`) against the fused
 //! one-launch producer (`rms_norm_zq8_f32`) on synthetic inputs, per fused site shape:
@@ -11,11 +12,21 @@
 //!     touches only the n_embd site (see research/b200-q8-fuse-20260902/LANE.md "open items"
 //!     for the KDA/MoE-activation producer sites still on the unfused chain).
 //!
-//! Asserts BYTE-IDENTICAL bytes (f32 z, int8 qs, f32 per-32 scale) between the two arms and
-//! prints N=5 per-launch us for each half of the chain and for the fused kernel. No model
-//! checkpoint needed — this is a pure kernel-shape gate, run on any CUDA device (no CPU-time
-//! quota concern: five short launches per shape).
+//! Also compares the W8 q8_0-mirror path (lane/b200-q8fuse-w8-20260902, `MEMRA_GLM5_W8`):
+//! synthetic bf16-resident weights standing in for KDA's wq/wk/wv (which share one input `x`)
+//! at t=1 (`matmul`'s FloatBf16 branch -> `matvec_bf16_via_q8_mirror`) and a representative
+//! t in 2..=32 (`matmul_rows_exact`'s FloatBf16 branch -> `matvec_bf16_via_q8_mirror_t`)
+//! against quantizing `x` ONCE and reusing the pair via the `_pre` twins
+//! (`kda_proj_qkv_qmirror3`'s internals). Doors `MEMRA_GLM5_Q8_FUSE` / `MEMRA_GLM5_W8` /
+//! `MEMRA_BF16_MMV` are forced on in-process so the comparison exercises the real dispatch.
+//!
+//! Asserts BYTE-IDENTICAL bytes (f32 z, int8 qs, f32 per-32 scale / f32 matvec output)
+//! between the two arms and prints N=5 per-launch us for each half of the chain and for the
+//! fused kernel where applicable. No model checkpoint needed — this is a pure kernel-shape
+//! gate, run on any CUDA device (no CPU-time quota concern: a handful of short launches per
+//! shape).
 use memra_engine::Engine;
+use memra_engine::model::GpuTensor;
 
 /// Deterministic, dependency-free pseudo-random f32 generator (xorshift64) — avoids adding a
 /// `rand` dependency for a gate binary. Seeded per-shape so the two arms compare on IDENTICAL
@@ -40,6 +51,22 @@ impl Xorshift64 {
         let unit = (bits as f32) / (1u32 << 24) as f32; // [0,1)
         (unit - 0.5) * 8.0
     }
+}
+
+fn f32_to_bf16_bytes(v: f32) -> [u8; 2] {
+    let bits = (v.to_bits() >> 16) as u16;
+    bits.to_le_bytes()
+}
+
+/// Row-major [out_f, in_f] bf16 weight bytes, matching `matmul`'s FloatBf16 layout contract
+/// (`data.len() == in_f * out_f * 2`).
+fn gen_bf16_weight(seed: u64, in_f: usize, out_f: usize) -> Vec<u8> {
+    let mut rng = Xorshift64::new(seed);
+    let mut bytes = Vec::with_capacity(in_f * out_f * 2);
+    for _ in 0..(in_f * out_f) {
+        bytes.extend_from_slice(&f32_to_bf16_bytes(rng.next_f32()));
+    }
+    bytes
 }
 
 fn gen_vec(seed: u64, n: usize) -> Vec<f32> {
@@ -158,11 +185,122 @@ fn run_shape(
     Ok(())
 }
 
+/// W8 q8_0-mirror KDA-qkv fusion gate (lane/b200-q8fuse-w8-20260902): three synthetic
+/// bf16-resident weights (standing in for wq/wk/wv, which share one input `x`) compared
+/// chain-vs-fused. `t == 1` exercises `matvec_bf16_via_q8_mirror`/`_pre` (via `matmul`);
+/// `t > 1` exercises `matvec_bf16_via_q8_mirror_t`/`_pre` (via `matmul_rows_exact`, the
+/// verify-rows dispatch). Doors are forced on for the whole process (set once in `main`).
+fn run_w8_kda_shape(
+    e: &Engine,
+    label: &str,
+    in_f: usize,
+    t: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    assert!(
+        in_f.is_multiple_of(32),
+        "{label}: in_f must be a multiple of 32"
+    );
+    let outs = [576usize, 576, 4096]; // representative wq/wk/wv-shaped out widths, all >= 64
+    let x = gen_vec(
+        0xA5A5_A5A5_A5A5_A5A5 ^ (in_f as u64) ^ ((t as u64) << 32),
+        t * in_f,
+    );
+    let x_d = e.htod(&x)?;
+
+    let mut weights: Vec<GpuTensor> = Vec::new();
+    for (i, &out_f) in outs.iter().enumerate() {
+        let bytes = gen_bf16_weight(
+            0x00C0_FFEE ^ (i as u64) ^ ((in_f as u64) << 20),
+            in_f,
+            out_f,
+        );
+        let data = e.upload_u8(&bytes)?;
+        weights.push(GpuTensor::FloatBf16 {
+            data,
+            ne: vec![in_f as u64, out_f as u64],
+        });
+    }
+
+    // chain: each weight independently through the real dispatch (matmul / matmul_rows_exact),
+    // which re-quantizes x itself under MEMRA_GLM5_W8 — the shipped program.
+    let mut chain_ys: Vec<Vec<f32>> = Vec::new();
+    for w in &weights {
+        let y = if t == 1 {
+            e.matmul(w, &x_d, t)?
+        } else {
+            e.matmul_rows_exact(w, &x_d, t)?
+        };
+        chain_ys.push(e.dtoh(&y)?);
+    }
+
+    // fused: quantize x ONCE, reuse the pair across all three via the _pre twins
+    // (kda_proj_qkv_qmirror3's own internals, exercised directly here).
+    let nblk = in_f / 32;
+    let mut aq = e.alloc_i8_uninit(t * in_f)?;
+    let mut ad = e.uninit(t * nblk)?;
+    e.quantize_q8_1_into(&x_d, t, in_f, &mut aq, &mut ad)?;
+    let mut fused_ys: Vec<Vec<f32>> = Vec::new();
+    for w in &weights {
+        let out_f = w.out_features();
+        let GpuTensor::FloatBf16 { data, .. } = w else {
+            unreachable!("only FloatBf16 weights constructed above");
+        };
+        let mut y = e.uninit(t * out_f)?;
+        let ok = if t == 1 {
+            e.matvec_bf16_via_q8_mirror_pre(data, &aq, &ad, &mut y, in_f, out_f)?
+                .is_some()
+        } else {
+            e.matvec_bf16_via_q8_mirror_t_pre(data, &aq, &ad, &mut y, in_f, out_f, t)?
+                .is_some()
+        };
+        assert!(
+            ok,
+            "{label}: mirror pre-quantized call refused a shape the chain arm accepted"
+        );
+        fused_ys.push(e.dtoh(&y)?);
+    }
+
+    let mut ok = true;
+    for (i, (c, fu)) in chain_ys.iter().zip(&fused_ys).enumerate() {
+        if c != fu {
+            ok = false;
+            for j in 0..c.len() {
+                if c[j].to_bits() != fu[j].to_bits() {
+                    println!(
+                        "  {label} t={t} weight {i} first mismatch at j={j}: chain={:.9e} \
+                         fused={:.9e}",
+                        c[j], fu[j]
+                    );
+                    break;
+                }
+            }
+        }
+    }
+    println!(
+        "[q8-fuse-gate] {label} t={t} in_f={in_f} -> {}",
+        if ok { "PASS" } else { "FAIL" }
+    );
+    if !ok {
+        return Err(format!("{label} t={t}: W8-mirror fused arm diverged from the chain").into());
+    }
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let n: usize = std::env::args()
         .nth(1)
         .and_then(|s| s.parse().ok())
         .unwrap_or(5);
+    // Doors forced on for this whole process so the W8 shapes below exercise the real
+    // dispatch (matmul's FloatBf16 branch, matmul_rows_exact's FloatBf16 branch,
+    // kda_proj_qkv_qmirror3's own preconditions) rather than a bypass. Edition 2024 requires
+    // the unsafe block for a process-wide env mutation (single-threaded gate, set once
+    // before any other thread could read it).
+    unsafe {
+        std::env::set_var("MEMRA_GLM5_Q8_FUSE", "1");
+        std::env::set_var("MEMRA_GLM5_W8", "1");
+        std::env::set_var("MEMRA_BF16_MMV", "1");
+    }
     let e = Engine::new(0)?;
 
     // glm5_next trunk width — the site this lane actually wired (hyper_range_decode's
@@ -174,6 +312,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // glm5_next MoE expert-ff width (expert_ff_length) — candidate shape for the activation
     // (silu/gate*up -> q8_1) fusion site, also still unfused; see LANE.md open items.
     run_shape(&e, "glm5_next-moe_ff_exp", 1536, n)?;
+
+    // W8 q8_0-mirror KDA qkv fusion (lane/b200-q8fuse-w8-20260902): glm5_next's trunk width
+    // at t=1 (decode) and a representative verify-rows width t=4.
+    run_w8_kda_shape(&e, "glm5_next-w8-kda-qkv", 4096, 1)?;
+    run_w8_kda_shape(&e, "glm5_next-w8-kda-qkv", 4096, 4)?;
 
     println!("[q8-fuse-gate] ALL SHAPES PASS (byte-identical fused vs chain)");
     Ok(())

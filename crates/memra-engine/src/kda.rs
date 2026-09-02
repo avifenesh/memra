@@ -379,20 +379,42 @@ pub(crate) fn kda_core_gated(
     // claim would not hold, so the fall-through arm is always the unchanged program.
     let mut g6 = match e.kda_proj_fused6(la, x, t)? {
         Some(outs) => outs,
-        None if rows_exact => {
-            // Verify-rows matmul class: per-weight decode-exact dispatch (the tcols /
-            // batched-MMVQ / per-token-linear classes — each row bit-identical to the
-            // t=1 program by the matmul_rows_exact contract).
-            [&la.wq, &la.wk, &la.wv, &la.f_a, &la.g_a, &la.b_proj]
-                .into_iter()
-                .map(|w| e.matmul_rows_exact(w, x, t))
-                .collect::<Result<Vec<_>, _>>()?
+        None => {
+            // Door MEMRA_GLM5_Q8_FUSE extended to the W8 q8_0-mirror path
+            // (lane/b200-q8fuse-w8-20260902): wq/wk/wv share `x`, so when the W8 mirror
+            // has rerouted all three, quantize x ONCE and reuse it for all three instead
+            // of each re-quantizing independently. f_a/g_a/b_proj (plain f32, nothing to
+            // fold) keep their existing per-weight dispatch either way.
+            let (q_raw, k_raw, v_raw) = match e.kda_proj_qkv_qmirror3(la, x, t, rows_exact)? {
+                Some([q, k, v]) => (q, k, v),
+                None if rows_exact => (
+                    e.matmul_rows_exact(&la.wq, x, t)?,
+                    e.matmul_rows_exact(&la.wk, x, t)?,
+                    e.matmul_rows_exact(&la.wv, x, t)?,
+                ),
+                None => {
+                    let mut qkv = e.matmul_group(&[&la.wq, &la.wk, &la.wv], x, t)?;
+                    let v = qkv.pop().unwrap();
+                    let k = qkv.pop().unwrap();
+                    let q = qkv.pop().unwrap();
+                    (q, k, v)
+                }
+            };
+            let others = if rows_exact {
+                // Verify-rows matmul class: per-weight decode-exact dispatch (the tcols /
+                // batched-MMVQ / per-token-linear classes — each row bit-identical to the
+                // t=1 program by the matmul_rows_exact contract).
+                [&la.f_a, &la.g_a, &la.b_proj]
+                    .into_iter()
+                    .map(|w| e.matmul_rows_exact(w, x, t))
+                    .collect::<Result<Vec<_>, _>>()?
+            } else {
+                e.matmul_group(&[&la.f_a, &la.g_a, &la.b_proj], x, t)?
+            };
+            let mut g6 = vec![q_raw, k_raw, v_raw];
+            g6.extend(others);
+            g6
         }
-        None => e.matmul_group(
-            &[&la.wq, &la.wk, &la.wv, &la.f_a, &la.g_a, &la.b_proj],
-            x,
-            t,
-        )?,
     };
     let beta_raw = g6.pop().unwrap(); // [T, heads]
     let gate_down = g6.pop().unwrap(); // [T, head_dim]
@@ -1211,6 +1233,107 @@ impl Engine {
             .arg(&ep);
         unsafe { b.launch(cfg)? };
         Ok(())
+    }
+
+    /// Door `MEMRA_GLM5_Q8_FUSE` extended to the W8 q8_0-mirror path (lane/b200-q8fuse-w8-20260902):
+    /// wq/wk/wv all read the SAME `x`, so when `MEMRA_GLM5_W8` has rerouted them through
+    /// `matvec_bf16_via_q8_mirror[_t]`, each one independently re-quantizing `x` is exactly
+    /// the "producer re-derives what a sibling already computed" shape this door already
+    /// removes at the mHC norm sites. Quantizes ONCE and reuses the pair for all three via
+    /// the `_pre` twins. f_a/g_a/b_proj are plain f32 `Float` weights (no W8 mirror, no
+    /// `quantize_q8_1` to fold) and are NOT this function's concern — the caller keeps
+    /// dispatching them unchanged.
+    ///
+    /// `rows_exact` selects which W8 dispatch arm this must match: `false` is the t==1
+    /// decode-tier arm (`matvec_bf16_via_q8_mirror`, `matmul`'s FloatBf16 branch); `true` is
+    /// the t in 2..=32 verify-rows arm (`matvec_bf16_via_q8_mirror_t`, `matmul_rows_exact`'s
+    /// FloatBf16 branch). Returns `None` (the caller falls through to its existing per-weight
+    /// dispatch) on any shape either underlying arm would itself refuse — every guard here is
+    /// copied from the two arms' own preconditions in `lib.rs`, so a shape this function
+    /// accepts is a shape that arm would have engaged anyway; the identity claim is that the
+    /// SAME deterministic `quantize_q8_1` kernel runs once instead of three times over
+    /// bit-identical `x`, and `matvec_bf16_via_q8_mirror[_t]_pre` run the SAME mirror-build +
+    /// `qmatvec_mmvq_into` body the unfused calls do.
+    pub fn kda_proj_qkv_qmirror3(
+        &self,
+        la: &KdaAttnLayer,
+        x: &CudaSlice<f32>,
+        t: usize,
+        rows_exact: bool,
+    ) -> Result<Option<[CudaSlice<f32>; 3]>, Box<dyn std::error::Error>> {
+        if !(crate::glm5_q8_fuse_on() && crate::glm5_w8_on() && Self::bf16_mmv_on()) {
+            return Ok(None);
+        }
+        if rows_exact {
+            if !(2..=32).contains(&t) {
+                return Ok(None);
+            }
+        } else if t != 1 {
+            return Ok(None);
+        }
+        fn bf16_of(w: &GpuTensor) -> Option<(&CudaSlice<u8>, usize, usize)> {
+            match w {
+                GpuTensor::FloatBf16 { data, .. } => {
+                    Some((data, w.in_features(), w.out_features()))
+                }
+                _ => None,
+            }
+        }
+        let (Some((bq, in_q, out_q)), Some((bk, in_k, out_k)), Some((bv, in_v, out_v))) =
+            (bf16_of(&la.wq), bf16_of(&la.wk), bf16_of(&la.wv))
+        else {
+            return Ok(None);
+        };
+        let in_f = in_q;
+        // Matches the W8 mirror arms' own preconditions (in_f % 32, out_f >= 64) plus the
+        // group-fusion requirement that all three share one input width.
+        if in_k != in_f
+            || in_v != in_f
+            || !in_f.is_multiple_of(32)
+            || out_q < 64
+            || out_k < 64
+            || out_v < 64
+            || x.len() < t * in_f
+        {
+            return Ok(None);
+        }
+        let nblk = in_f / 32;
+        let mut aq = self.alloc_i8_uninit(t * in_f)?;
+        let mut ad = self.alloc_uninit::<f32>(t * nblk)?;
+        self.quantize_q8_1_into(x, t, in_f, &mut aq, &mut ad)?;
+        let mut yq = self.uninit(t * out_q)?;
+        let mut yk = self.uninit(t * out_k)?;
+        let mut yv = self.uninit(t * out_v)?;
+        let ok = if rows_exact {
+            self.matvec_bf16_via_q8_mirror_t_pre(bq, &aq, &ad, &mut yq, in_f, out_q, t)?
+                .is_some()
+                && self
+                    .matvec_bf16_via_q8_mirror_t_pre(bk, &aq, &ad, &mut yk, in_f, out_k, t)?
+                    .is_some()
+                && self
+                    .matvec_bf16_via_q8_mirror_t_pre(bv, &aq, &ad, &mut yv, in_f, out_v, t)?
+                    .is_some()
+        } else {
+            self.matvec_bf16_via_q8_mirror_pre(bq, &aq, &ad, &mut yq, in_f, out_q)?
+                .is_some()
+                && self
+                    .matvec_bf16_via_q8_mirror_pre(bk, &aq, &ad, &mut yk, in_f, out_k)?
+                    .is_some()
+                && self
+                    .matvec_bf16_via_q8_mirror_pre(bv, &aq, &ad, &mut yv, in_f, out_v)?
+                    .is_some()
+        };
+        if !ok {
+            return Ok(None);
+        }
+        if crate::GLM5_W8_QFUSE_KDA_DISPATCHES.fetch_add(1, Ordering::Relaxed) == 0 {
+            eprintln!(
+                "[glm5-q8-fuse] engaged W8-mirror KDA qkv t={t} rows_exact={rows_exact} \
+                 in_f={in_f} (one quantize_q8_1 replaces three; MEMRA_GLM5_Q8_FUSE=1 + \
+                 MEMRA_GLM5_W8=1)"
+            );
+        }
+        Ok(Some([yq, yk, yv]))
     }
 
     /// The `MEMRA_KDA_FUSED_PROJ` door: run the KDA stage-1 six-projection group as ONE
