@@ -5968,7 +5968,7 @@ fn launch_nvfp4_sel_matvec(
     if y.len() < n_sel * out_f {
         return Err("qmatvec_nvfp4_modelopt_sel_f32: output shorter than n_sel*out_f".into());
     }
-    // Sub-warp pair groups (`selgroup`, default OFF) take precedence over the v3/v2/v1
+    // Sub-warp pair groups (`selgroup`, default AUTO since 2026-09-02) take precedence over the v3/v2/v1
     // chain when the geometry tiles exactly; `(g=32, rows=4)` reproduces v3's bits.
     let grp = sel_group_resolve(sel_group_dn(), in_f, out_f);
     let v3 = grp.is_none() && sel_v3_on() && in_f % 32 == 0 && out_f % 4 == 0;
@@ -6053,7 +6053,7 @@ fn launch_nvfp4_sel_gu_silu(
     if sel.is_none() == (pack_raw == 0) {
         return Err("qmatvec_nvfp4_modelopt_sel_gu_silu_f32: exactly one of sel/pack".into());
     }
-    // Sub-warp pair groups (`selgroup`, default OFF); `(g=32, rows=4)` reproduces the
+    // Sub-warp pair groups (`selgroup`, default AUTO since 2026-09-02); `(g=32, rows=4)` reproduces the
     // shipped kernel's bits, pack and tok_map modes included.
     let grp = sel_group_resolve(sel_group_gu(), in_f, ff);
     let f = e.func(if grp.is_some() {

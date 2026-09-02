@@ -13,7 +13,7 @@
 # (lanes 20-31 idle for the whole kernel) and the gate+up launch pairs=80 (a 3-vs-2 tail).
 # The `selgroup` seam runs the same math over a SUB-WARP of g lanes with 4 rows per lane.
 # Ceiling: 6.42% of the K=5 round (136.2 -> 145.5 tok/s). Rig-composed realization estimate:
-# ~4.2% (~142 tok/s). Default is OFF; the flip rule is DOWNSEL.md section 6.
+# ~4.2% (~142 tok/s). Default is ON (AUTO) since 2026-09-02 on the receipts in DOWNSEL.md section 6a; an OFF arm must be pinned as `selgroup=0`.
 #
 # FOUR RULES, none optional, each from a receipted failure:
 #  1. flock -x around the ENTIRE invocation - load, prefill AND timing. An in-instrument lock

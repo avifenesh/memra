@@ -45,7 +45,7 @@ is arithmetic over rows that carried the full receipt headers when they were cut
 - **Perfect acceptance** (accept_len = K, unattainable): ms/token = 3.16 + 15.1/K
   → 198 tok/s at K=8, 213 at K=10. So even a perfect draft only *touches* 200 —
   the flat floor is that dominant.
-- **selgroup** (receipted, default-OFF pending box cells): cuts the 2.10 slope's MoE
+- **selgroup** (receipted; default ON since 2026-09-02, box cells: +3.0-4.0% K=5, flat at depth): cuts the 2.10 slope's MoE
   share, ceiling 6.42% end-to-end → ~145 tok/s. Real, worth landing, not the gap.
 - **Accept-side gains** (FR-Spec-style masking, guard tuning): at a plausible
   per-position 0.93, accept_len(K=10) ≈ 7-8 → ~160 tok/s. Also not the gap.
