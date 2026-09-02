@@ -198,7 +198,10 @@ same width, and why cell C measures exactly that pair.
 Card 0 of the lane box, serving caches (`MEMRA_Q4E_SEAMS=idxsel,kvq,idxq`; selgroup
 default-ON since PR #56, nothing extra pinned), draft co-resident with the trunk
 (`mtp_dev1=false` — one card, and every shape prompt here is 43-105 tokens, well inside the
-~400-token co-resident ceiling `../MTP-SPEC.md` measured). Script: `frspec-cells.sh`.
+~400-token co-resident ceiling `../MTP-SPEC.md` measured). Scripts: `frspec-cells.sh`
+(pass 1) and `frspec-cells{2,3,4}.sh` (pass 2 — three files, because a bash script must
+never be edited while bash is reading it: appending a case arm to the pass-1 script shifted
+its read offset and killed the driver after cell D, `syntax error near unexpected token )`).
 Instrument changes in this lane's commit: the trim A/B now FLIPS the arm order on odd reps
 and prints each arm's own spread, and the vendor-default sampled probe runs on BOTH trim
 arms in one boot instead of on whichever arm the CLI left live.
