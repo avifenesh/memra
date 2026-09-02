@@ -245,6 +245,15 @@ impl HybridModel {
                 ));
             }
         }
+        // The selection dump reads the device-table arm's rows back with a DtoH per
+        // layer-call, which a capture region refuses. The arm itself still engages (eager),
+        // so the dump records the door's own selection program; only the replay is lost.
+        if crate::moe_sel_dump::armed() {
+            return Some(format!(
+                "{} is armed (it reads the device selection back per layer-call)",
+                crate::moe_sel_dump::ENV
+            ));
+        }
         if crate::spill_pread::worker_enabled() && crate::spill_pread::copy_h2d_enabled() {
             return Some("the NVMe worker H2D promotion reads the host selection".into());
         }

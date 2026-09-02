@@ -9131,6 +9131,7 @@ impl HybridModel {
                          arm — refused rather than silently dropping rows"
                         .into());
                 }
+                crate::moe_sel_dump::refuse_device_only("the device-routed step TP walk")?;
                 // MEMRA_SHEXP_OVERLAP=1: issue the shared expert from the routes
                 // PREJOIN hook so it executes while the peer rank drains its sweep
                 // (fills dev0's join wait); apply adds the identical values after.
@@ -9331,6 +9332,9 @@ impl HybridModel {
                     w_d,
                 )?;
                 crate::moesd::record_device_routes(e, il, n_expert, n_used, sel_d)?;
+                crate::moe_sel_dump::refuse_device_only(
+                    "the automatic W4A16 device-routed EP walk",
+                )?;
                 static SHEXP_OV_AUTO: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
                 let shexp_ov = t == 1
                     && *SHEXP_OV_AUTO
@@ -9896,6 +9900,12 @@ impl HybridModel {
         weights: &[f32],
     ) -> Result<(), Box<dyn std::error::Error>> {
         use std::io::Write as _;
+        // MEMRA_MOE_SEL_DUMP (lane/moe-coactivation-20260902): the binary per-token twin of
+        // the two text taps below. Unlike them it diverts no dispatch (it is in no
+        // `observe_routes` conjunct) and so sees the served arm's rows; the device-routed
+        // single-device arms record themselves through `moe_sel_dump::record_device`. One
+        // OnceLock read when unset.
+        crate::moe_sel_dump::record_host(il, t, sel_all, weights)?;
         if let Ok(path) = std::env::var("MEMRA_MOE_TRACE") {
             let mut f = std::fs::OpenOptions::new()
                 .create(true)
@@ -10319,6 +10329,11 @@ impl HybridModel {
             // host oracle reads back. No sync, no DtoH, no allocation — see glm5_sel_ledger.rs.
             if let Some((si, sw)) = sel_dev.as_ref() {
                 crate::glm5_sel_ledger::record_device(e, il, si, sw)?;
+                // MEMRA_MOE_SEL_DUMP: the device-table arm's own rows (one DtoH pair per
+                // layer-call, diagnostic only; unset = one OnceLock read). The host twin
+                // below hands `trace_moe_routes` an empty selection, so this is the only
+                // record this arm makes.
+                crate::moe_sel_dump::record_device(e, il, t, n_used, si, sw)?;
             }
             (Vec::new(), Vec::new(), None)
         } else if let Some(sig) = cfg.sigmoid_router() {
@@ -12840,6 +12855,7 @@ impl HybridModel {
             route_norm,
         )?;
         crate::moesd::record_device_routes(e, il, n_expert, n_used, &sel_d)?;
+        crate::moe_sel_dump::record_device(e, il, t, n_used, &sel_d, &w_d)?;
         if let Some(fp8) = dev.fp8_blk.as_ref() {
             debug_assert_eq!(m.gate_exps.qtype, crate::QT_F8_E4M3_BLK);
             debug_assert_eq!(m.up_exps.qtype, crate::QT_F8_E4M3_BLK);
