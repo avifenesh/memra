@@ -10331,6 +10331,45 @@ impl HybridModel {
             if let Some((si, sw)) = sel_dev.as_ref() {
                 crate::glm5_sel_ledger::record_device(e, il, si, sw)?;
             }
+            // MEMRA_GLM5_GRAPH_TRACE, first MoE layer only, and ONLY outside a capture region
+            // (the readback below is illegal inside one). Box runs 4-6 put the corruption in this
+            // arm, but BOTH rig gates clear it: the device table VALUES match the host arithmetic
+            // bit for bit even at strides past 4 GiB (`glm5_vrows_dev_tables_gpu`), and the
+            // kernel pair matches the sequential chain bit for bit at t=1 on an NVFP4 slab with
+            // live macros and a biting clamp (`glm5_verify_batch_gpu`, loop now from t=1). So the
+            // divergence is in the INPUTS this arm is handed on the real artifact, not in the
+            // arithmetic — and this line is the cheapest way to see them.
+            if crate::glm5_graph_trace_on()
+                && !crate::glm5_graph_capture_open()
+                && let Some((si, sw)) = sel_dev.as_ref()
+                && crate::GLM5_VROWS_T1_SHAPE_DUMPED
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    < 2
+            {
+                let sel_h = e.dtoh_i32(si)?;
+                let w_h = e.dtoh(sw)?;
+                eprintln!(
+                    "[glm5-vrows-t1] dev={} il={il} t={t} n_used={n_used} n_pairs={} \
+                     n_expert={n_expert} limit={:?} gu_il={:?} qtypes=({},{},{}) \
+                     row_bytes=({},{},{}) strides=({},{},{}) macros={} sel={:?} w={:?}",
+                    e.ctx().ordinal(),
+                    t * n_used,
+                    lim_exp,
+                    m.dev_exps.as_ref().map(|d| d.gu_il),
+                    m.gate_exps.qtype,
+                    m.up_exps.qtype,
+                    m.down_exps.qtype,
+                    m.gate_exps.row_bytes,
+                    m.up_exps.row_bytes,
+                    m.down_exps.row_bytes,
+                    m.gate_exps.expert_stride,
+                    m.up_exps.expert_stride,
+                    m.down_exps.expert_stride,
+                    m.gate_exps.macros.is_some(),
+                    &sel_h[..sel_h.len().min(8)],
+                    &w_h[..w_h.len().min(8)],
+                );
+            }
             (Vec::new(), Vec::new(), None)
         } else if let Some(sig) = cfg.sigmoid_router() {
             if cpu_hybrid {

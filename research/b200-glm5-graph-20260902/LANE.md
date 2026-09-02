@@ -631,6 +631,53 @@ the down projection); the macro fold being dropped or indexed wrong, which on an
 per-expert global scales is worth the documented ~3e4x class of error; and the pre-clamp limit
 not reaching the device-table path. The gate above discriminates the first three directly.
 
+## 9g. Sixth box run: bisect settles it, and BOTH rig gates clear the arm
+
+Run 6 ran the bisect from §9f, and it is unambiguous:
+
+| arm | result |
+|---|---|
+| **6A** `MEMRA_GLM5_GRAPH_HOST_MOE=1` (door on, MoE stands down to the host oracle, capture refuses by name) | **ZERO token mismatches**; eager 30.882 vs "graph" 30.894 ms/token (both eager). Gate fails only as VACUOUS (`replays=0`, forced re-seat vacuous) — exactly as designed |
+| **6B** `MEMRA_GLM5_GRAPH_HOST_MOE=0` | identical to takes 4 and 5: `TOKEN MISMATCH step 1: eager=437 graph=0` onward |
+
+So the defect is the T=1 device-table MoE arm and nothing else. The capture is clean: with it
+refused and only the eager walk running, the tape is correct on the same binary. That is the
+cleanest possible statement of where the remaining work is, and it took a purpose-built bisect to
+get it rather than another guess.
+
+**And then both rig gates cleared that arm.**
+
+1. `glm5_vrows_dev_tables_gpu` (§9f): device-built tables match the host arithmetic pointer for
+   pointer and scale bit for bit, **including at strides past 4 GiB**. Table build clean.
+2. `glm5_verify_batch_gpu::gpu_moe_vrows_pairs_match_sequential_chain_bitwise`, with its loop
+   **extended from `2..=8` to `1..=8`** by this lane: `gate 4 PASS t=1: 128 outputs
+   bit-identical`, on an NVFP4 slab with a live macro plane and a clamp small enough to bite in
+   both signs, with both red arms still biting. Kernel pair clean at t=1.
+
+That loop starting at 2 is worth stating plainly: **the vrows pair was `t >= 2` by construction**
+(only the spec-verify walk reached it), so the t=1 form of the program had never executed anywhere
+until this door routed decode through it. A coverage hole that wide is exactly where a defect
+hides — but the hole is now closed and the program is bit-identical there.
+
+**So the arithmetic is exonerated on both halves, and the divergence is in the INPUTS the arm is
+handed on the real artifact.** The fixture differs from the serving shape in every dimension that
+is not the arithmetic: 16 experts vs 256, in_f 128 / n_ff 64 vs the real widths, no shared expert,
+no `gu_il`, no `MEMRA_MOE_RESIDENT_GB=130` slab, no door-E order plane, and a `z` that is a plain
+buffer rather than the hc workspace's `ws.z`.
+
+**Instrument added, and it is the cheapest thing that can answer it.** Under
+`MEMRA_GLM5_GRAPH_TRACE` and only OUTSIDE a capture region, the T=1 device arm dumps its inputs
+for the first two routed layers:
+
+```
+[glm5-vrows-t1] dev=N il=L t=1 n_used=8 n_pairs=8 n_expert=E limit=Some(Pre(x)) gu_il=Some(b)
+    qtypes=(qg,qu,qd) row_bytes=(...) strides=(...) macros=bool sel=[..] w=[..]
+```
+
+Diffing that against the 6A arm's first routed layer pins which input differs. The grep the box
+log needs, for the dispatch-arm question raised in §9f, is `[glm5-vrows]` (the engagement line
+carrying `pack= dedup_order= b200_matvec= dev_tables=`), and this new one is `[glm5-vrows-t1]`.
+
 ## 10. Open items
 
 1. **Run the gate on the pair** (`--steps 64 --reps 5`) and bank the receipt. Until then the

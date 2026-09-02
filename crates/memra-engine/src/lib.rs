@@ -298,6 +298,12 @@ pub fn glm5_graph_trace_on() -> bool {
     std::env::var("MEMRA_GLM5_GRAPH_TRACE").as_deref() == Ok("1")
 }
 
+/// How many times the T=1 device-table MoE arm has dumped its input shape under
+/// `MEMRA_GLM5_GRAPH_TRACE`. Capped at two layers: the question is what the arm is HANDED on the
+/// real artifact, and two routed layers answer it without turning a 64-step run into a log flood.
+pub static GLM5_VROWS_T1_SHAPE_DUMPED: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 /// Captured-run replays (one per graph launch), captures, and the layer count currently
 /// covered by captured runs — the door's engagement receipt, read by the gate bin.
 pub static GLM5_DECODE_GRAPH_REPLAYS: std::sync::atomic::AtomicU64 =
