@@ -1542,3 +1542,89 @@ fn gpu_restored_continuation_is_bit_identical_to_the_split_prime_cold_twin() {
         tape_mono == tape_split,
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// Gate 10 — ROUND-CADENCE COMMIT HOOK (lane/b200-spec-ttft-20260902, the engine half of
+// `MEMRA_SPEC_FIRST_TOKEN_EAGER`): `glm5_spec_session_burst_streamed` hands the hook
+// disjoint in-order slices whose concatenation IS the returned burst, the first slice is
+// the prime's anchor ALONE (the first token is available before any round runs), and the
+// tokens are byte-identical to the un-hooked twin on a fresh session — greedy AND sampled
+// (pinned seed). The hook only moves WHEN the caller learns a token, never WHICH.
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
+fn gpu_dflash_streamed_burst_slices_concat_to_the_unhooked_burst() {
+    let _gpu = gpu_guard();
+    let h = Harness::new("g10");
+    let prompt = tokens(PROMPT, 0xA11CE);
+    let max_new = 20usize;
+    let k = 3usize;
+    let tape = plain_tape(&h, &prompt, max_new);
+    for (arm, sampling) in [
+        ("greedy", None),
+        ("sampled", Some(sampled_cfg(0x5EED_0B20))),
+    ] {
+        // Un-hooked twin: one burst of `max_new` on a fresh session.
+        let mut plain_sess = h
+            .model
+            .glm5_spec_session_new(&h.engine, &prompt, prompt.len() + max_new + k + 8, sampling)
+            .expect("glm5 dflash spec session (un-hooked twin)");
+        let (plain_burst, pd, pa) = h
+            .model
+            .glm5_spec_session_burst(&h.engine, &mut plain_sess, max_new, k, &[])
+            .expect("un-hooked burst");
+        // Hooked arm: same request, every committed slice recorded as it lands.
+        let mut sess = h
+            .model
+            .glm5_spec_session_new(&h.engine, &prompt, prompt.len() + max_new + k + 8, sampling)
+            .expect("glm5 dflash spec session (streamed)");
+        let mut slices: Vec<Vec<u32>> = Vec::new();
+        let (burst, d, a) = h
+            .model
+            .glm5_spec_session_burst_streamed(&h.engine, &mut sess, max_new, k, &[], &mut |s| {
+                slices.push(s.to_vec())
+            })
+            .expect("streamed burst");
+        let concat: Vec<u32> = slices.iter().flatten().copied().collect();
+        assert_eq!(
+            concat, burst,
+            "{arm}: the hook's slices must concatenate to the returned burst"
+        );
+        assert_eq!(
+            slices.first().map(|s| s.as_slice()),
+            Some(&burst[..1]),
+            "{arm}: the first slice must be the prime's anchor alone"
+        );
+        assert!(
+            slices.iter().all(|s| !s.is_empty()),
+            "{arm}: the hook never sees an empty slice"
+        );
+        assert_eq!(
+            slices.len(),
+            1 + sess.rounds,
+            "{arm}: one slice per round plus the anchor slice"
+        );
+        assert_eq!(
+            (burst.clone(), d, a),
+            (plain_burst.clone(), pd, pa),
+            "{arm}: the streamed burst must be byte-identical to the un-hooked twin \
+             (tokens AND counters)"
+        );
+        if arm == "greedy" {
+            assert_eq!(
+                &burst[..max_new],
+                &tape[..],
+                "greedy streamed burst diverged from plain decode"
+            );
+        }
+        assert_eq!(sess.pos(), sess.committed.len());
+        println!(
+            "gate 10 PASS ({arm}): {} slices over {} rounds concatenate to the {}-token burst, \
+             byte-identical to the un-hooked twin ({a}/{d} accepted)",
+            slices.len(),
+            sess.rounds,
+            burst.len()
+        );
+    }
+}

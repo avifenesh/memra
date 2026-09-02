@@ -22527,6 +22527,15 @@ fn step_glm5_spec(
         finish(s, StopReason::MaxNew);
         return Ok(false);
     }
+    // FIRST-TOKEN PROFILE (lane/b200-spec-ttft-20260902, `MEMRA_SPEC_PROF=1`): the
+    // worker's half of the one `[spec-prof]` line — wall from this step's entry, the
+    // admission-to-step wait, the session-creation wall and the first-emit mark; the
+    // engine's per-phase buckets ride the session and are drained after the first burst.
+    let t_step = Instant::now();
+    let first_tick = s.glm5.is_none();
+    let prof_on = first_tick && memra_engine::spec_phase::spec_prof_on();
+    let since_admit_ms = prof_on.then(|| s.t0.elapsed().as_secs_f64() * 1e3);
+    let mut session_ms: Option<f64> = None;
     // turn 1: prime (the session owns its cache; s.cache stays None). Cold sessions drain
     // the whole prompt from the prefill queue; the RESTORED carrier (lane/glm5-prefix-
     // latent2) drains only the suffix — the restored prefix already sits in s.fed and the
@@ -22582,6 +22591,9 @@ fn step_glm5_spec(
         if let Some(trace) = s.ttft.as_ref() {
             trace.mark_prime_end();
         }
+        if prof_on {
+            session_ms = Some(t_step.elapsed().as_secs_f64() * 1e3);
+        }
         for &tok in &queued {
             s.fed.push(tok);
             s.sampler.accept(tok);
@@ -22594,11 +22606,74 @@ fn step_glm5_spec(
         .and_then(|v| v.parse().ok())
         .unwrap_or(32);
     let burst_target = request_room.min(burst_t);
+    // FIRST-TOKEN EAGER door (lane/b200-spec-ttft-20260902, `MEMRA_SPEC_FIRST_TOKEN_EAGER=1`,
+    // DEFAULT OFF): publish at ROUND cadence instead of burst cadence — the qwen route's
+    // sse-cadence shape (2026-08-05) ported to this session. OFF (the pre-lane literal):
+    // the first Event::Token of a cold request waits for the WHOLE first burst
+    // (`MEMRA_SPEC_BURST` = 32 tokens at the route's per-token decode cost) even though
+    // the prime's own token was known when `glm5_spec_session_new` returned — measured on
+    // the 2x B200 pair as +0.45-0.60 s over the plain route's TTFT on a 66-token prompt.
+    // ON: the engine hands the worker every committed slice (the anchor first, then each
+    // round's accepted drafts + bonus) and the worker emits it immediately. NUMERIC CLASS:
+    // the burst loop's control flow never reads the hook and the emitted ids are the same
+    // `burst` vector in the same order — the token stream is byte-identical ON/OFF; only
+    // the event timing moves. The post-burst bookkeeping below (sampler/generated/fed,
+    // stop reasons) is shared by both arms and unchanged.
+    let eager_first_token = spec_first_token_eager_on();
+    let eos_ids = s.params.eos.clone();
+    let tok_ref = &lm.tok;
+    let mut decoded_visible = std::mem::take(&mut s.decoded_bytes);
+    let mut cursor = s.emitted_bytes;
+    let mut emit_remaining = request_room;
+    let mut eos_seen = false;
+    let mut send_ok = true;
+    let mut token_events = 0usize;
+    let mut first_emit_ms: Option<f64> = None;
+    let flush_tx = s.tx.clone();
+    let ttft_trace = s.ttft.clone();
+    let mut flush_cb = |slice: &[u32]| {
+        if eos_seen || emit_remaining == 0 || slice.is_empty() || !send_ok {
+            // post-EOS / budget exhausted / nothing new / client gone: the tail stays
+            // committed in the session; accounting happens post-burst.
+            return;
+        }
+        if let Some(trace) = ttft_trace.as_ref() {
+            trace.mark_first_decode();
+        }
+        let emitted = emit_spec_token_events(
+            slice,
+            &mut emit_remaining,
+            &mut decoded_visible,
+            &mut cursor,
+            &eos_ids,
+            &mut eos_seen,
+            |id| tok_ref.decode_bytes_special(&[id], true),
+            |event| flush_tx.send(event).is_ok(),
+        );
+        if emitted.sent > 0 && first_emit_ms.is_none() && prof_on {
+            first_emit_ms = Some(t_step.elapsed().as_secs_f64() * 1e3);
+        }
+        token_events += emitted.sent;
+        send_ok = emitted.send_ok;
+    };
     let sess = s.glm5.as_mut().unwrap();
     let rounds_before = sess.rounds;
-    let (burst, dr, ac) =
+    let (burst, dr, ac) = if eager_first_token {
+        lm.model.glm5_spec_session_burst_streamed(
+            engine,
+            sess,
+            burst_target,
+            k,
+            &s.params.eos,
+            &mut flush_cb,
+        )?
+    } else {
         lm.model
-            .glm5_spec_session_burst(engine, sess, burst_target, k, &s.params.eos)?;
+            .glm5_spec_session_burst(engine, sess, burst_target, k, &s.params.eos)?
+    };
+    #[allow(clippy::drop_non_drop)]
+    // allow: ends flush_cb's captures of the emit state before it is read below
+    drop(flush_cb);
     let rounds_delta = s.glm5.as_ref().unwrap().rounds - rounds_before;
     s.spec_rounds += rounds_delta as u64;
     s.spec_drafted += dr;
@@ -22623,24 +22698,72 @@ fn step_glm5_spec(
     {
         trace.mark_first_decode();
     }
-    let eos_ids = s.params.eos.clone();
     let public_len = spec_visible_len(&burst, request_room, &eos_ids);
     let public_burst = &burst[..public_len];
-    let mut decoded_visible = std::mem::take(&mut s.decoded_bytes);
-    let mut cursor = s.emitted_bytes;
-    let mut emit_remaining = request_room;
-    let mut eos_seen = false;
-    let tok_ref = &lm.tok;
-    let emitted = emit_spec_token_events(
-        public_burst,
-        &mut emit_remaining,
-        &mut decoded_visible,
-        &mut cursor,
-        &eos_ids,
-        &mut eos_seen,
-        |id| tok_ref.decode_bytes_special(&[id], true),
-        |event| s.tx.send(event).is_ok(),
-    );
+    let emitted = if eager_first_token {
+        // Every public id already went out at round cadence; the shared stopping rule
+        // (budget, first EOS inclusive) makes the flushed count equal `public_len`.
+        SpecEmitResult {
+            sent: token_events,
+            send_ok,
+        }
+    } else {
+        let emitted = emit_spec_token_events(
+            public_burst,
+            &mut emit_remaining,
+            &mut decoded_visible,
+            &mut cursor,
+            &eos_ids,
+            &mut eos_seen,
+            |id| tok_ref.decode_bytes_special(&[id], true),
+            |event| s.tx.send(event).is_ok(),
+        );
+        if emitted.sent > 0 && prof_on {
+            first_emit_ms = Some(t_step.elapsed().as_secs_f64() * 1e3);
+        }
+        emitted
+    };
+    if prof_on {
+        // ONE line per request, after the first burst's emission: the engine buckets
+        // (session creation + round 1 + the burst wall) beside the worker marks.
+        let pf = s
+            .glm5
+            .as_mut()
+            .and_then(|sess| sess.take_first_token_prof())
+            .unwrap_or_default();
+        eprintln!(
+            "[spec-prof] route=glm5 model={:?} prompt={} K={k} burst_target={burst_target} \
+             eager={} | since_admit_ms={:.1} session_ms={:.1} (cache_alloc={:.1} \
+             prime={:.1} capture={:.1} anchor={:.1} draft_alloc={:.1}) | round1_ms: \
+             draft_prime={:.1} draft={:.1} verify={:.1} accept={:.1} roll={:.1} \
+             maint={:.1} tokens={} | burst1: wall_ms={:.1} rounds={} tokens={} | \
+             first_emit_ms={} step_ms={:.1}",
+            s.model,
+            s.fed.len(),
+            eager_first_token as u8,
+            since_admit_ms.unwrap_or(0.0),
+            session_ms.unwrap_or(0.0),
+            pf.cache_alloc_ms,
+            pf.prime_ms,
+            pf.capture_ms,
+            pf.anchor_ms,
+            pf.draft_alloc_ms,
+            pf.draft_prime_ms,
+            pf.first_draft_ms,
+            pf.first_verify_ms,
+            pf.first_accept_ms,
+            pf.first_roll_ms,
+            pf.first_maint_ms,
+            pf.first_round_tokens,
+            pf.first_burst_ms,
+            pf.first_burst_rounds,
+            pf.first_burst_tokens,
+            first_emit_ms
+                .map(|ms| format!("{ms:.1}"))
+                .unwrap_or_else(|| "na".to_string()),
+            t_step.elapsed().as_secs_f64() * 1e3,
+        );
+    }
     let mut stop: Option<StopReason> = None;
     for &tok in public_burst {
         s.sampler.accept(tok);
@@ -22750,6 +22873,15 @@ fn oom_teardown_fence(engine: &Engine, loaded: &HashMap<String, LoadedModel>) {
             );
         }
     });
+}
+
+/// `MEMRA_SPEC_FIRST_TOKEN_EAGER=1` (lane/b200-spec-ttft-20260902), DEFAULT OFF: the glm5
+/// spec route publishes committed tokens at ROUND cadence instead of burst cadence (doc at
+/// the `step_glm5_spec` call site). Read per burst, the `MEMRA_SPEC_BURST` /
+/// `MEMRA_SSE_PER_BURST` convention (a few hundred ns; never a OnceLock, so a gate can
+/// flip it between bursts in one process). Rollback seam: unset.
+fn spec_first_token_eager_on() -> bool {
+    std::env::var("MEMRA_SPEC_FIRST_TOKEN_EAGER").as_deref() == Ok("1")
 }
 
 /// BOOT ADMISSION CALIBRATION door (lane/step37-vram-admission-20260830), DEFAULT ON.
@@ -26952,6 +27084,22 @@ mod tests {
         assert!(
             step_body.contains("emit_spec_token_events("),
             "glm5 bursts must emit through the shared one-event-per-public-id machinery"
+        );
+        // 5b. The FIRST-TOKEN EAGER door (lane/b200-spec-ttft-20260902): the door read
+        //     selects the streamed burst twin, whose hook emits through the SAME machinery
+        //     (both arms are invocations; the door-off arm keeps the literal above).
+        assert!(
+            step_body.contains("let eager_first_token = spec_first_token_eager_on();"),
+            "the eager door must be read per burst inside step_glm5_spec"
+        );
+        assert!(
+            step_body.contains("lm.model.glm5_spec_session_burst_streamed("),
+            "the eager arm must drive the streamed burst twin"
+        );
+        assert!(
+            step_body.matches("emit_spec_token_events(").count() >= 2,
+            "both the round-cadence hook and the burst-cadence arm must emit through \
+             emit_spec_token_events"
         );
         // 6. The capability predicate carries the flag, the manifest, the sealed-bundle
         //    surface and the ppN refusal — each an invocation, not a comment.
