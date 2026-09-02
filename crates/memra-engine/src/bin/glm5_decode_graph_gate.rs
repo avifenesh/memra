@@ -167,8 +167,9 @@ fn run_arm(
             let l = m.decode_step(e, tok, &mut cache)?;
             let after = memra_engine::GLM5_DECODE_GRAPH_CAPTURES.load(Ordering::Relaxed);
             recaptured = after > before;
-            println!(
-                "  forced re-seat at step {step} (layer {il:?}): captures {before} -> {after}"
+            eprintln!(
+                "[gate] forced re-seat at step {step} (layer {il:?}): captures {before} -> \
+                 {after}, recaptured={recaptured}"
             );
             tok = argmax(&l) as u32;
             tape.push(tok);
@@ -275,6 +276,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let captured_layers = memra_engine::GLM5_DECODE_GRAPH_LAYERS.load(Ordering::Relaxed);
     let captures = memra_engine::GLM5_DECODE_GRAPH_CAPTURES.load(Ordering::Relaxed);
 
+    // REPORTED FIRST, on purpose: a run that dies later still says how far the door got.
+    println!(
+        "door: replays={replays} captures={captures} captured_layers={captured_layers} \
+         forced_recapture={recaptured}"
+    );
+    use std::io::Write;
+    let _ = std::io::stdout().flush();
+
     let mut fail = Vec::new();
 
     // NON-VACUITY: an eager fall-through would make the arms trivially equal.
@@ -363,8 +372,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!(
         "identity: tokens {}/{} match; selections {}/{} match (head device only under a pp \
-         split); door replays={replays} captures={captures} captured_layers={captured_layers} \
-         forced_recapture={recaptured}",
+         split)",
         eager_tape.len() - tok_mismatch,
         eager_tape.len(),
         compared - sel_mismatch,

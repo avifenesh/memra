@@ -134,6 +134,11 @@ struct StageGraphs {
     /// a rewind; this catches a re-seat, which `pos` alone cannot see. Verified before every
     /// token's replays; any mismatch drops the stage and re-captures.
     state_sig: Vec<(usize, u64, u64, u64)>,
+    /// Has an exec of this stage been LAUNCHED since the last time the stream was drained? The
+    /// re-capture path destroys execs and frees the buffers they baked, and doing that with a
+    /// launch still outstanding is a destroy-in-use; this is what the error line reports so a box
+    /// run can say whether that was the state, rather than leaving it to inference.
+    launched_since_sync: bool,
 }
 
 /// The `(conv, ssm, ssm_alt)` device pointers of one layer's recurrent state, or `None` when the
@@ -153,6 +158,14 @@ fn recur_ptrs(e: &Engine, cache: &Cache, il: usize) -> Option<(u64, u64, u64)> {
     let (s, _g1) = rl.ssm_state.device_ptr(&st);
     let (a, _g2) = rl.ssm_state_alt.device_ptr(&st);
     Some((c, s.min(a), s.max(a)))
+}
+
+/// The buffers a stage's graphs bake, carried across a re-capture unchanged. Splitting them out
+/// is what lets a rebuild destroy ONLY the graphs: see the reuse note in `glm5_capture_stage`.
+struct StageBufs {
+    x_io: CudaSlice<f32>,
+    ws: crate::hyper::HyperDecodeWs,
+    f16: Option<crate::f16_ffi::F16Scratch>,
 }
 
 /// Per-session pool: one [`StageGraphs`] per pipeline stage this cache has decoded through.
@@ -212,6 +225,173 @@ fn note(msg: &str) {
     if seen.lock().unwrap().insert(msg.to_string()) {
         eprintln!("[glm5-decode-graph] {msg}");
     }
+}
+
+/// Where a capture is when something fails, for the one-line error report. The rig cannot
+/// reproduce this path (no glm5 artifact, exactness-only card), so the box run is the only probe
+/// and it has to come back with enough to name the failing driver call rather than a bare
+/// `DriverError(CUDA_ERROR_INVALID_VALUE)`.
+#[derive(Clone, Copy)]
+struct CapCtx {
+    dev: usize,
+    lo: usize,
+    hi: usize,
+    run: usize,
+    runs: usize,
+    a: usize,
+    b: usize,
+    phase: usize,
+    /// False for the pool's first build, true for every rebuild after an invalidation. This is
+    /// THE axis that matters: the first build works on the box and the rebuild does not.
+    recapture: bool,
+}
+
+impl std::fmt::Display for CapCtx {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "dev={} stage=[{}, {}) run={}/{} layers=[{}, {}) phase={} recapture={}",
+            self.dev,
+            self.lo,
+            self.hi,
+            self.run,
+            self.runs,
+            self.a,
+            self.b,
+            self.phase,
+            self.recapture
+        )
+    }
+}
+
+/// `cuStreamIsCapturing` on this engine's stream. A capture that begins on a stream already
+/// ACTIVE or INVALIDATED is one of the few things that returns `CUDA_ERROR_INVALID_VALUE` from
+/// `cuStreamBeginCapture`, and it is invisible without asking.
+fn capture_status(e: &Engine) -> &'static str {
+    use cudarc::driver::sys;
+    let mut st = sys::CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE;
+    let rc = unsafe { sys::cuStreamIsCapturing(e.stream().cu_stream(), &mut st) };
+    if rc != sys::CUresult::CUDA_SUCCESS {
+        return "query-failed";
+    }
+    match st {
+        sys::CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE => "none",
+        sys::CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_ACTIVE => "ACTIVE",
+        // The enum is exhaustive in cudarc 0.19, so no catch-all arm (clippy rejects an
+        // unreachable one). A future CUDA status would be a compile error here, which is the
+        // right way to find out.
+        sys::CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_INVALIDATED => "INVALIDATED",
+    }
+}
+
+fn free_mb(e: &Engine) -> String {
+    match e.ctx().mem_get_info() {
+        Ok((free, total)) => format!("{}/{}MB", free >> 20, total >> 20),
+        Err(_) => "?".to_string(),
+    }
+}
+
+/// The error line every failable step in this module routes through. Printed BEFORE the error is
+/// returned, so a run that dies still says which call, where, and what the stream looked like.
+fn capture_error(e: &Engine, ctx: &CapCtx, call: &str, err: &dyn std::fmt::Display) {
+    eprintln!(
+        "[glm5-decode-graph] capture-error: call={call} {ctx} stream_capture={} free={} \
+         ledger={} err={err}",
+        capture_status(e),
+        free_mb(e),
+        crate::glm5_sel_ledger::armed(),
+    );
+}
+
+/// Run one failable driver step with context: report before propagating.
+fn step<T>(
+    e: &Engine,
+    ctx: &CapCtx,
+    call: &str,
+    r: Result<T, Box<dyn std::error::Error>>,
+) -> Res<T> {
+    match r {
+        Ok(v) => Ok(v),
+        Err(err) => {
+            capture_error(e, ctx, call, &err);
+            Err(err)
+        }
+    }
+}
+
+/// ONE capture, every driver step named. This is a deliberate re-implementation of
+/// `Engine::capture_graph_retained_nowarm` (same mode, same instantiate flag, same
+/// event-tracking discipline) for one reason: that helper returns a bare `DriverError` and the
+/// box run cannot tell `cuStreamBeginCapture` from `cuStreamEndCapture`+instantiate from
+/// `cuGraphUpload`. Keep the two in step if either moves.
+///
+/// The stream's capture status is probed BEFORE the begin. A stream left ACTIVE (a previous
+/// capture that never ended) or INVALIDATED (a capture killed by an illegal in-region operation)
+/// makes `cuStreamBeginCapture` return `CUDA_ERROR_INVALID_VALUE`, and that is one of the very
+/// few callers that produce exactly this error.
+fn capture_one<F>(e: &Engine, ctx: &CapCtx, mut body: F) -> Res<CudaGraph>
+where
+    F: FnMut(&Engine) -> Res<()>,
+{
+    use cudarc::driver::sys::{CUgraphInstantiate_flags, CUstreamCaptureMode};
+    let pre = capture_status(e);
+    if pre != "none" {
+        capture_error(
+            e,
+            ctx,
+            "pre-begin-status",
+            &format!("stream capture status is {pre}"),
+        );
+        return Err(format!("glm5 decode graph: stream capture status {pre} before begin").into());
+    }
+    step(
+        e,
+        ctx,
+        "synchronize(before begin_capture)",
+        e.stream().synchronize().map_err(Into::into),
+    )?;
+    // Capture is strictly single-stream; cudarc's per-buffer cross-stream event waits are not
+    // permitted inside a capture region (the `capture_graph` note in lib.rs).
+    let was_tracking = e.ctx().is_event_tracking();
+    if was_tracking {
+        unsafe { e.ctx().disable_event_tracking() };
+    }
+    let out = (|| -> Res<CudaGraph> {
+        step(
+            e,
+            ctx,
+            "cuStreamBeginCapture(RELAXED)",
+            e.stream()
+                .begin_capture(CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED)
+                .map_err(Into::into),
+        )?;
+        // The body's own error is reported by whichever `step` inside it failed; a body failure
+        // still has to END the capture or the stream stays ACTIVE and every later begin fails.
+        let body_res = body(e);
+        let ended = e
+            .stream()
+            .end_capture(CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH);
+        if let Err(err) = body_res {
+            capture_error(e, ctx, "capture body", &err);
+            return Err(err);
+        }
+        let graph = step(
+            e,
+            ctx,
+            "cuStreamEndCapture+cuGraphInstantiate",
+            ended.map_err(Into::into),
+        )?
+        .ok_or_else(|| {
+            capture_error(e, ctx, "cuStreamEndCapture", &"capture produced no graph");
+            "glm5 decode graph: capture produced no graph (stream was not capturing)"
+        })?;
+        step(e, ctx, "cuGraphUpload", graph.upload().map_err(Into::into))?;
+        Ok(graph)
+    })();
+    if was_tracking {
+        unsafe { e.ctx().enable_event_tracking() };
+    }
+    out
 }
 
 impl HybridModel {
@@ -375,6 +555,7 @@ impl HybridModel {
             .flat_map(|(a, b)| *a..*b)
             .filter_map(|il| recur_ptrs(e, cache, il).map(|(c, s, a)| (il, c, s, a)))
             .collect();
+        let mut reuse: Option<StageBufs> = None;
         let need_capture = {
             let pool = self.glm5_graph_pool(cache);
             match pool
@@ -407,11 +588,27 @@ impl HybridModel {
                         // on, one line after the (spurious) re-capture notice above. The
                         // synchronize is bounded work that happens only on a real re-capture.
                         e.stream().synchronize()?;
-                        let old = pool.stages.remove(i);
-                        drop(old);
-                        // The frees the drop just issued are stream-ordered too; the new capture
-                        // must not race them for the same pool addresses.
+                        let mut old = pool.stages.remove(i);
+                        let launched = old.launched_since_sync;
+                        // Destroy ONLY the execs and their keepers; the stage's buffers are handed
+                        // to the rebuild untouched, so nothing this stage owns is freed and
+                        // re-allocated against the same stream-ordered mempool the new graphs'
+                        // alloc nodes draw from.
+                        old.runs.clear();
                         e.stream().synchronize()?;
+                        eprintln!(
+                            "[glm5-decode-graph] re-capture: dev={dev} stage=[{lo}, {hi}) \
+                             stale_pos={stale_pos} stale_ptr={stale_ptr} \
+                             launched_since_sync={launched} stream_capture={} free={} \
+                             (execs destroyed, buffers reused)",
+                            capture_status(e),
+                            free_mb(e),
+                        );
+                        reuse = Some(StageBufs {
+                            x_io: old.x_io,
+                            ws: old.ws,
+                            f16: old.f16,
+                        });
                         true
                     } else {
                         false
@@ -421,7 +618,8 @@ impl HybridModel {
             }
         };
         if need_capture
-            && let Err(err) = self.glm5_capture_stage(e, topology, lo, hi, cache, dev, width, pos)
+            && let Err(err) =
+                self.glm5_capture_stage(e, topology, lo, hi, cache, dev, width, pos, reuse)
         {
             // A CAPTURE FAILURE IS NEVER THE REQUEST'S PROBLEM. This route has a byte-identical
             // eager twin, so a failed capture degrades to it instead of failing the token. The
@@ -485,6 +683,7 @@ impl HybridModel {
     /// the opposite pointer assignment. Two passes leave the host fields back where they started,
     /// so the pool starts at phase 0.
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)] // allow: the capture's inputs are the stage's identity plus the reusable buffer set
     fn glm5_capture_stage(
         &self,
         e: &Engine,
@@ -495,18 +694,37 @@ impl HybridModel {
         dev: usize,
         width: usize,
         pos: usize,
+        reuse: Option<StageBufs>,
     ) -> Res<()> {
         let n_embd = self.cfg.n_embd as usize;
         let runs = kda_runs(self, lo, hi);
-        let x_io = e.zeros(width)?;
-        let ws = crate::hyper::HyperDecodeWs::new(e, topology, n_embd)?;
+        let recapture = reuse.is_some();
+        // BUFFER REUSE ON RE-CAPTURE, and this is a correctness argument, not a saving. On a
+        // rebuild the ONLY thing that has to change is the graphs; `x_io`, the private hc
+        // workspace and the private f16 scratch hold no state across tokens (every one is fully
+        // overwritten before any read). Freeing them and allocating new ones churns the same
+        // stream-ordered mempool the captured graphs' own alloc nodes draw from, immediately
+        // before instantiating new graphs against it — which is a plausible source of
+        // `CUDA_ERROR_INVALID_VALUE` from `cuGraphInstantiate` and buys nothing. Reused buffers
+        // also mean the rebuilt graphs bake the SAME addresses the old ones did.
+        let (x_io, ws, f16) = match reuse {
+            Some(b) => (b.x_io, b.ws, b.f16),
+            None => (
+                e.zeros(width)?,
+                crate::hyper::HyperDecodeWs::new(e, topology, n_embd)?,
+                None,
+            ),
+        };
         // Pre-sized GENEROUSLY on purpose: this is the m=1 activation staging buffer, and a
         // lazy GROW inside the capture region would be a mem node whose address the next launch
         // recycles. 4 MiB covers any single decode row this trunk can present (up to 2M f16
         // elements) with room over the widest KDA/MoE feature width, and the `ws` half is a fixed
         // 64 MiB by construction (`F16_WS_BYTES`). A few MiB of headroom is the right trade
-        // against a capture-time grow.
-        let f16 = crate::f16_ffi::F16Scratch::with_capacity(e, (4 << 20).max(n_embd * 16))?;
+        // against a capture-time grow. Reused verbatim on a re-capture (see above).
+        let f16 = match f16 {
+            Some(f) => f,
+            None => crate::f16_ffi::F16Scratch::with_capacity(e, (4 << 20).max(n_embd * 16))?,
+        };
 
         let mut stage = StageGraphs {
             dev,
@@ -523,6 +741,7 @@ impl HybridModel {
                 .flat_map(|(a, b)| *a..*b)
                 .filter_map(|il| recur_ptrs(e, cache, il).map(|(c, s, a)| (il, c, s, a)))
                 .collect(),
+            launched_since_sync: false,
         };
         // Pre-arm the gate ledger's per-layer slots BEFORE the capture opens: an allocation
         // inside a capture region becomes a graph mem node whose address the next launch
@@ -541,16 +760,36 @@ impl HybridModel {
             // The captured bodies take verify-workspace transients; while this flag is set the
             // pool RETAINS instead of recycling, so nothing the graph baked is ever re-issued.
             crate::GLM5_GRAPH_CAPTURE_OPEN.store(true, Ordering::Relaxed);
-            let pos_d = e.htod_i32(&[pos as i32])?;
-            for (a, b) in &runs {
+            let mut ctx = CapCtx {
+                dev,
+                lo,
+                hi,
+                run: 0,
+                runs: runs.len(),
+                a: 0,
+                b: 0,
+                phase: 0,
+                recapture,
+            };
+            let pos_d = step(
+                e,
+                &ctx,
+                "htod_i32(pos_d)",
+                e.htod_i32(&[pos as i32]).map(Some),
+            )?
+            .expect("htod returned a buffer");
+            for (ri, (a, b)) in runs.iter().enumerate() {
                 let (a, b) = (*a, *b);
-                let mut phase_graphs: Vec<(CudaGraph, Vec<Box<dyn std::any::Any + Send>>)> =
-                    Vec::with_capacity(2);
-                for _phase in 0..2 {
+                ctx.run = ri;
+                ctx.a = a;
+                ctx.b = b;
+                let mut phase_graphs: Vec<CudaGraph> = Vec::with_capacity(2);
+                for phase in 0..2 {
+                    ctx.phase = phase;
                     let x_cell = std::cell::RefCell::new(&mut stage.x_io);
                     let ws_cell = std::cell::RefCell::new(&mut stage.ws);
                     let cache_cell = std::cell::RefCell::new(&mut *cache);
-                    let g = e.capture_graph_retained_nowarm(|e| {
+                    let g = capture_one(e, &ctx, |e| {
                         self.hyper_range_decode_ws_body(
                             e,
                             topology,
@@ -566,15 +805,16 @@ impl HybridModel {
                     phase_graphs.push(g);
                 }
                 let mut it = phase_graphs.into_iter();
-                let (g0, mut k0) = it.next().expect("phase 0 captured");
-                let (g1, k1) = it.next().expect("phase 1 captured");
-                k0.extend(k1);
-                k0.extend(std::mem::take(&mut *e.glm5_graph_keep().lock().unwrap()));
+                let g0 = it.next().expect("phase 0 captured");
+                let g1 = it.next().expect("phase 1 captured");
+                // Everything the two captured bodies took from the verify workspace, held for the
+                // life of the graphs that baked it (see `Engine::glm5_graph_keep`).
+                let keeper = std::mem::take(&mut *e.glm5_graph_keep().lock().unwrap());
                 stage.runs.push(RunGraph {
                     lo: a,
                     hi: b,
                     graphs: [g0, g1],
-                    _keeper: k0,
+                    _keeper: keeper,
                 });
                 crate::GLM5_DECODE_GRAPH_LAYERS.fetch_add((b - a) as u64, Ordering::Relaxed);
             }
@@ -584,12 +824,20 @@ impl HybridModel {
         stage.f16 = e.f16_scratch_swap(prev_f16);
         captured?;
         crate::GLM5_DECODE_GRAPH_CAPTURES.fetch_add(1, Ordering::Relaxed);
-        note(&format!(
-            "engaged dev={dev} stage=[{lo}, {hi}) runs={} captured_layers={} (2 ping-pong phases \
-             each; MLA/DSA layers stay eager)",
+        // Not `note`: a rebuild must print EVERY time, or a box log cannot tell one capture from
+        // six. Only the first-build line is deduplicated.
+        let line = format!(
+            "engaged dev={dev} stage=[{lo}, {hi}) runs={} captured_layers={} recapture={recapture} \
+             free={} (2 ping-pong phases each; MLA/DSA layers stay eager)",
             stage.runs.len(),
             stage.runs.iter().map(|r| r.hi - r.lo).sum::<usize>(),
-        ));
+            free_mb(e),
+        );
+        if recapture {
+            eprintln!("[glm5-decode-graph] {line}");
+        } else {
+            note(&line);
+        }
         self.glm5_graph_pool(cache).stages.push(stage);
         Ok(())
     }
@@ -623,11 +871,30 @@ impl HybridModel {
                 .find(|r| r.lo == a && r.hi == b)
                 .ok_or_else(|| format!("glm5 decode graph: no captured run [{a}, {b})"))?;
             phase = st.phase;
-            e.copy_into(&mut st.x_io, 0, &x, width)?;
+            let ctx = CapCtx {
+                dev,
+                lo,
+                hi,
+                run: 0,
+                runs: st.runs.len(),
+                a,
+                b,
+                phase,
+                recapture: false,
+            };
+            step(
+                e,
+                &ctx,
+                "memcpy_dtod(x -> x_io)",
+                e.copy_into(&mut st.x_io, 0, &x, width),
+            )?;
             let prev = e.f16_scratch_swap(st.f16.take());
             let launched = run.graphs[phase].launch();
             st.f16 = e.f16_scratch_swap(prev);
-            launched?;
+            // Set BEFORE propagating: a launch that errored may still have been submitted, and
+            // the re-capture path has to assume the exec is live when it decides to destroy it.
+            st.launched_since_sync = true;
+            step(e, &ctx, "cuGraphLaunch", launched.map_err(Into::into))?;
             st.phase ^= 1;
         }
         // The eager walk swaps `ssm_state`/`ssm_state_alt` once per KDA layer per step
