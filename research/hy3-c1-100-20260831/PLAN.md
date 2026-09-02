@@ -400,3 +400,11 @@ left the worker alive, and a following eight-token request completed. No CUDA er
 appeared. This qualifies the server mechanism on that dense model and hardware only. The global
 default remains off; the HY3 PRO 6000 sampled cell still decides whether the mechanism advances
 the 64.75 tok/s MoE baseline toward 100 tok/s.
+
+The second dense plan confirms compatibility but rejects a family-wide speed conclusion. Q38 27B,
+artifact `1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a`, used the same
+binary, request shape, and five-boot A/B, B/A gate. OFF was 44.70 tok/s and K=8 was 45.98 tok/s
+(+2.86%), below the 3% retention bar; TTFT was 107.7 vs 108.3 ms. Engagement fired 5/5, greedy
+identity and both seeded c2 isolation rows passed, and stop-taint plus disconnect recovery stayed
+green. The chain remains a qualified opt-in mechanism whose performance decision is per model and
+hardware, not a generic dense default.
