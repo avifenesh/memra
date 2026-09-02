@@ -10457,6 +10457,92 @@ impl HybridModel {
         Self::moe_ffn_sequential_zq8(e, m, z, zq8, t, cfg, il, max_block, vrows)
     }
 
+    /// FNV-1a over the bits, plus the two things a checksum alone cannot say: how many entries
+    /// are nonzero, and the largest magnitude. Take 5's `nz=16384/16384 absmax=0` is what an
+    /// all-NaN buffer looks like, and `nz=0` is what a never-written one looks like; neither is
+    /// distinguishable from "wrong" by a hash.
+    fn sum_f32(v: &[f32]) -> String {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        let (mut nz, mut absmax) = (0usize, 0f32);
+        for x in v {
+            h ^= x.to_bits() as u64;
+            h = h.wrapping_mul(0x100_0000_01b3);
+            if *x != 0.0 {
+                nz += 1;
+            }
+            if x.abs() > absmax {
+                absmax = x.abs();
+            }
+        }
+        format!("0x{h:016x}/nz{nz}of{}/max{absmax:.4e}", v.len())
+    }
+
+    fn sum_i8(v: &[i8]) -> String {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        let mut nz = 0usize;
+        for x in v {
+            h ^= *x as u8 as u64;
+            h = h.wrapping_mul(0x100_0000_01b3);
+            if *x != 0 {
+                nz += 1;
+            }
+        }
+        format!("0x{h:016x}/nz{nz}of{}", v.len())
+    }
+
+    /// THE ACTIVATION THE CONSUMER ACTUALLY READS, checksummed immediately before its launch, on
+    /// both arms. Take 9 established that the two arms receive identical `sel`/`w`/macros/strides/
+    /// limit, so the divergence is inside the consumer call — and the leading hypothesis is that
+    /// the q8_1 activation the device pair reads is stale or unwritten rather than this token's
+    /// hidden state. `z` is the shared f32 input: if `z` agrees across arms but `zq`/`zd` do not,
+    /// the quantize is the seam; if all three agree, the kernels are.
+    #[allow(clippy::too_many_arguments)] // allow: a diagnostic line's fields are its whole purpose
+    fn trace_moe_act(
+        e: &Engine,
+        arm: &str,
+        il: u16,
+        t: usize,
+        z: &CudaSlice<f32>,
+        zq: &CudaSlice<i8>,
+        zd: &CudaSlice<f32>,
+    ) {
+        if !crate::glm5_graph_trace_on()
+            || crate::glm5_graph_capture_open()
+            || crate::GLM5_VROWS_T1_ACT_DUMPED.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                >= 4
+        {
+            return;
+        }
+        let (zs, qs, ds) = (e.dtoh(z), e.dtoh_i8(zq), e.dtoh(zd));
+        match (zs, qs, ds) {
+            (Ok(zv), Ok(qv), Ok(dv)) => eprintln!(
+                "[glm5-vrows-act] arm={arm} il={il} t={t} z={} zq={} zd={}",
+                Self::sum_f32(&zv),
+                Self::sum_i8(&qv),
+                Self::sum_f32(&dv),
+            ),
+            _ => eprintln!("[glm5-vrows-act] arm={arm} il={il} readback failed"),
+        }
+    }
+
+    /// The routed-MoE output of ONE layer, on both arms — the other end of the same seam.
+    fn trace_moe_out(e: &Engine, arm: &str, il: u16, out: &CudaSlice<f32>) {
+        if !crate::glm5_graph_trace_on()
+            || crate::glm5_graph_capture_open()
+            || crate::GLM5_VROWS_T1_OUT_DUMPED.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                >= 4
+        {
+            return;
+        }
+        match e.dtoh(out) {
+            Ok(v) => eprintln!(
+                "[glm5-vrows-out] arm={arm} il={il} out={}",
+                Self::sum_f32(&v)
+            ),
+            Err(err) => eprintln!("[glm5-vrows-out] arm={arm} il={il} readback failed ({err})"),
+        }
+    }
+
     /// One line per (arm, routed layer) under `MEMRA_GLM5_GRAPH_TRACE`, printed by BOTH the
     /// device-table arm and the host-oracle arm so a box run can diff them field for field.
     ///
@@ -11514,6 +11600,7 @@ impl HybridModel {
                     tok_q8 = Some(e.quantize_q8_1_view(&zt, 1, n_embd)?);
                 }
                 let (zq, zd) = tok_q8.as_ref().unwrap();
+                Self::trace_moe_act(e, "host", il, t, z, zq, zd);
                 let act = e.moe_gate_up_silu8_q8(
                     crate::WPtr8(gp),
                     crate::WPtr8(up),
@@ -11569,6 +11656,7 @@ impl HybridModel {
                     tok_q8 = Some(e.quantize_q8_1_view(&zt, 1, n_embd)?);
                 }
                 let (zq, zd) = tok_q8.as_ref().unwrap();
+                Self::trace_moe_act(e, "host", il, t, z, zq, zd);
                 Self::moe_fused_epi_launch(
                     e,
                     m,
@@ -11604,6 +11692,7 @@ impl HybridModel {
                     tok_q8 = Some(e.quantize_q8_1_view(&zt, 1, n_embd)?);
                 }
                 let (zq, zd) = tok_q8.as_ref().unwrap();
+                Self::trace_moe_act(e, "host", il, t, z, zq, zd);
                 if Self::moe_fused_epi_token_q8(
                     e,
                     m,
@@ -11628,6 +11717,7 @@ impl HybridModel {
                     tok_q8 = Some(e.quantize_q8_1_view(&zt, 1, n_embd)?);
                 }
                 let (zq, zd) = tok_q8.as_ref().unwrap();
+                Self::trace_moe_act(e, "host", il, t, z, zq, zd);
                 if Self::moe_gdec_token_q8(
                     e,
                     m,
@@ -11760,6 +11850,7 @@ impl HybridModel {
                             tok_q8 = Some(e.quantize_q8_1_view(&zt, 1, n_embd)?);
                         }
                         let (zq, zd) = tok_q8.as_ref().unwrap();
+                        Self::trace_moe_act(e, "host", il, t, z, zq, zd);
                         (
                             e.qmatvec_expert_q8(
                                 &d.gate,
@@ -11889,12 +11980,14 @@ impl HybridModel {
                     }
                     let gate = if gate_q8 {
                         let (zq, zd) = tok_q8.as_ref().unwrap();
+                        Self::trace_moe_act(e, "host", il, t, z, zq, zd);
                         Self::moe_cached_gemm_q8(e, il, PROJ_GATE, ex, m, max_block, zq, zd)?
                     } else {
                         Self::moe_cached_gemm(e, il, PROJ_GATE, ex, m, max_block, &zt)?
                     };
                     let up = if up_q8 {
                         let (zq, zd) = tok_q8.as_ref().unwrap();
+                        Self::trace_moe_act(e, "host", il, t, z, zq, zd);
                         Self::moe_cached_gemm_q8(e, il, PROJ_UP, ex, m, max_block, zq, zd)?
                     } else {
                         Self::moe_cached_gemm(e, il, PROJ_UP, ex, m, max_block, &zt)?
@@ -12097,6 +12190,7 @@ impl HybridModel {
             );
         }
 
+        Self::trace_moe_out(e, "host", il, &moe_out);
         Self::moe_shexp_add(e, m, z, zq8, t, cfg, lim_shexp, &mut moe_out)?;
 
         Ok(moe_out)
@@ -15328,6 +15422,7 @@ impl HybridModel {
             e.vws_uninit(t * (n_embd / 32))?,
         );
         e.quantize_q8_1_into(z, t, n_embd, &mut zq, &mut zd)?;
+        Self::trace_moe_act(e, "device", il, t, z, &zq, &zd);
         let act = e.moe_gate_up_preclamp8_q8_rows(
             &ptrs_d,
             &scl_d,
@@ -15362,6 +15457,7 @@ impl HybridModel {
             m.down_exps.qtype,
             m.down_exps.row_bytes,
         )?;
+        Self::trace_moe_out(e, "device", il, moe_out);
         // Everything above is dead after the down launch (stream-ordered reuse is safe on
         // this engine's stream, the same guarantee the async free relies on).
         e.vws_recycle_u64(ptrs_d);
