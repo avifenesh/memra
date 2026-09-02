@@ -411,6 +411,14 @@ Expected size of that re-run, so nobody expects a second +43%: at 256k the 16 ->
 **43.0 -> 43.5 tok/s**. The gathered stage is no longer the bottleneck at 256k once it is down
 6.9x; the remaining budget has moved elsewhere.
 
+### 9.2b The `=1` arm shipped is not quite the `=1` arm measured, either
+
+The `=1` row (33.0 tok/s) was produced by a binary whose table had `t_q=4 -> 0`. The shipped
+table puts the BIT-IDENTICAL single-pass kernel at that cell, which the box measured a 3.5-7.4%
+win. No numeric risk (bit-identical is bit-identical), but it is a behaviour change from the
+receipted arm, and t_q=4 is a SPEC-route width that a plain-route A/B barely exercises. The spec
+route is where that cell has to be re-measured; the plain 256k number is unaffected by it.
+
 ### 9.3 Default-ON candidacy, and what is still open
 
 The coordinator's read: default-ON candidate on sm_100a at both levels (`=1` everywhere, `=2` at
@@ -423,6 +431,7 @@ t_q=1). What still stands between here and that flip:
 2. **Re-run the serving A/B on the shipped table** (chunks=32), per §9.2.
 3. The two shallow contexts (kv=2048, kv=32768) are not in the relayed B200 capture (§8) — a
    full-ladder box run closes that.
+4. The `t_q=4 -> 1` cell needs a SPEC-route measurement (§9.2b), not a plain-route one.
 
 `=1` is the easier call: bit-identical at every measured cell, +9.7% at 256k, flat at 66 tokens,
 no numeric class to admit. `=2` carries the named class and is confined to plain decode by
