@@ -907,6 +907,27 @@ mod body_limit_tests {
         let active_response = String::from_utf8_lossy(&bytes);
         assert!(active_response.contains("200 OK"), "{active_response}");
         assert!(active_response.contains("slow-ok"), "{active_response}");
+
+        // HTTP/2 keepalive constructs its timer during the handshake. If the H2 builder
+        // does not receive a TokioTimer, hyper panics in the connection task and the
+        // response future sees a dropped connection instead of this 200.
+        let h2_stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        let (mut h2_client, h2_connection) = h2::client::handshake(h2_stream).await.unwrap();
+        let h2_driver = tokio::spawn(h2_connection);
+        let request = axum::http::Request::builder()
+            .uri(format!("http://{address}/"))
+            .body(())
+            .unwrap();
+        let (response, _) = h2_client.send_request(request, true).unwrap();
+        let response = tokio::time::timeout(std::time::Duration::from_millis(500), response)
+            .await
+            .expect("HTTP/2 handshake and response must complete")
+            .expect("HTTP/2 connection must stay alive through the response");
+        assert_eq!(response.status(), StatusCode::OK);
+        drop(h2_client);
+        h2_driver.abort();
+        let _ = h2_driver.await;
+
         let _ = shutdown_tx.send(());
         server.await.unwrap().unwrap();
     }
@@ -4865,6 +4886,7 @@ where
                     .max_headers(64);
                 builder
                     .http2()
+                    .timer(hyper_util::rt::TokioTimer::new())
                     .max_concurrent_streams(MAX_HTTP2_STREAMS_PER_CONNECTION)
                     .keep_alive_interval(Some(std::time::Duration::from_secs(30)))
                     .keep_alive_timeout(std::time::Duration::from_secs(10));
