@@ -121,6 +121,12 @@ jobs:
       - name: Release-guard teeth fixture
         run: tools/test_release_guard.sh
 
+      # Changelog teeth (2026-09-02): the tag walk, the skip list, the explicit FROM, and the
+      # history-root baseline that keeps the first tag on the rebuilt history from dropping the
+      # 108 pre-snapshot commits (docs/RELEASING.md, "The 2026-09-01 history swap").
+      - name: Changelog teeth fixture
+        run: tools/test_changelog.sh
+
       # RELEASABILITY CENSUSES (2026-08-23). THE THING THAT FAILS AT RELEASE TIME IS NOT
       # EXERCISED AT MERGE TIME: v0.105.0 and v0.106.0 both died on `rust-lld: error:
       # undefined symbol` in the sm_89 cell, plus a half-finished crates.io publish that
