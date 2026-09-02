@@ -394,9 +394,10 @@ jobs:
       # cuda-cuobjdump-13-1 is here for the fatbin census below, and it is a SEPARATE package
       # from cuda-nvcc-13-1 — the first run of that census failed in CI for exactly this reason
       # (the census refused, correctly, rather than reporting a vacuous pass). It is a host tool;
-      # no GPU and no runtime libs.
-      - name: Install CUDA 13.1 (nvcc + headers + cuobjdump — no GPU needed)
-        run: tools/install-cuda-ci.sh cuda-cuobjdump-13-1
+      # no GPU and no runtime libs. cuobjdump delegates SASS decoding to nvdisasm, which is also
+      # packaged separately; the first B200 static-SASS run proved both are required.
+      - name: Install CUDA 13.1 (nvcc + headers + SASS tools — no GPU needed)
+        run: tools/install-cuda-ci.sh cuda-cuobjdump-13-1 cuda-nvdisasm-13-1
 
       # Mirrors the release exactly, so it builds on the release's toolchain: the repo-root
       # rust-toolchain.toml pin (which release.yml now names explicitly too). Floating
