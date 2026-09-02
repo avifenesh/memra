@@ -351,3 +351,16 @@ engage. The current comparable server baseline is **64.75 tok/s**, leaving 5.44 
 100 tok/s. The next plain-path cell profiles server-side dependency groups and either integrates a
 coarse persistent chain into the server or rejects it on measured wall time; expert-row and
 shared-BF16 reschedules are already closed by the counters above.
+
+Post-rebase `tools/local-ci.sh --perf` on exact head `6acc5a6d17063760127bc29f6265b7bf75e7791f`
+passed the workspace clippy gate, 550 server tests, flags and drafter-wiring checks, 107 available
+kernel cells, the sampled-spec distribution oracle, both installed decode-batch numeric classes,
+graph warmup/canary stress, plain serve/cache accounting, 64 concurrent streams, and both normal
+and teeth arms of the installed Qwen spec-on-cache-hit gate. Q35, Gemma, and 27B arms named their
+missing local artifacts and skipped; this receipt makes no claim for them.
+
+The sole red was the cross-day `qwen9b-plain-short` timing tripwire at 131.29 tok/s. Its required
+same-window settle used the immediate pre-fix parent `a6c9aaad` as A and this rebased head as B,
+interleaved A/B five times under one exclusive GPU lock. Medians were 132.90 and 132.89 tok/s
+respectively (**-0.008%**). The TP cache repair does not regress the plain Qwen cell; the historic
+median comparison moved with machine state.
