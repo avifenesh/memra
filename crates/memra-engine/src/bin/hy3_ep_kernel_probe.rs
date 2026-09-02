@@ -7,6 +7,7 @@
 
 use cudarc::driver::{CudaSlice, DevicePtr};
 use memra_engine::Engine;
+use memra_engine::tp::{TpE4m3HostBounce, TpKvVerifiedLayer};
 
 const HIDDEN: usize = 4096;
 const EXPERT_WIDTH: usize = 1536;
@@ -407,6 +408,149 @@ impl KvRestoreProbe {
     }
 }
 
+struct KvRestoreP2pProbe {
+    engine: Engine,
+    runtime: TpE4m3HostBounce,
+    caches: Vec<memra_engine::cache::ResidentTpKvCache>,
+    k_src: Vec<CudaSlice<u8>>,
+    v_src: Vec<CudaSlice<u8>>,
+}
+
+impl KvRestoreP2pProbe {
+    fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        let engine = Engine::new(0)?;
+        let runtime = TpE4m3HostBounce::new_native_p2p(&[0, 1])?;
+        let mut caches = Vec::with_capacity(TP_KV_LAYERS);
+        let mut k_src = Vec::with_capacity(TP_KV_LAYERS);
+        let mut v_src = Vec::with_capacity(TP_KV_LAYERS);
+        let zeros_k = vec![0u8; 128 * TP_K_SRC_STRIDE];
+        let zeros_v = vec![0u8; 128 * TP_V_SRC_STRIDE];
+        for layer in 0..TP_KV_LAYERS {
+            let mut cache = runtime.allocate_tp_kv_cache(1024, 1024, 256)?;
+            runtime.hydrate_tp_kv_cache(&mut cache, 128, &zeros_k, &zeros_v)?;
+            caches.push(cache);
+            let k = (0..TP_KV_ROWS * TP_K_SRC_STRIDE)
+                .map(|index| (layer as u8).wrapping_mul(17).wrapping_add(index as u8))
+                .collect::<Vec<_>>();
+            let v = (0..TP_KV_ROWS * TP_V_SRC_STRIDE)
+                .map(|index| (layer as u8).wrapping_mul(29).wrapping_add(index as u8))
+                .collect::<Vec<_>>();
+            k_src.push(engine.htod_bytes(&k)?);
+            v_src.push(engine.htod_bytes(&v)?);
+        }
+        engine.stream().synchronize()?;
+        for rank in 0..2 {
+            runtime
+                .rank_engine(rank)
+                .ok_or("TP KV P2P probe lost a rank engine")?
+                .stream()
+                .synchronize()?;
+        }
+        Ok(Self {
+            engine,
+            runtime,
+            caches,
+            k_src,
+            v_src,
+        })
+    }
+
+    fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let stream = self.engine.stream();
+        let mut layers = self
+            .caches
+            .iter_mut()
+            .zip(&self.k_src)
+            .zip(&self.v_src)
+            .map(|((cache, k), v)| TpKvVerifiedLayer {
+                cache,
+                start: 128,
+                logical_len: 130,
+                source_k_raw: k.device_ptr(&stream).0,
+                source_v_raw: v.device_ptr(&stream).0,
+                source_k_tok_bytes: TP_K_SRC_STRIDE,
+                source_v_tok_bytes: TP_V_SRC_STRIDE,
+            })
+            .collect::<Vec<_>>();
+        if !self.runtime.restore_tp_kv_layers_from_device(&mut layers)? {
+            return Err("TP KV P2P batch unexpectedly declined exact geometry".into());
+        }
+        Ok(())
+    }
+
+    fn run_baseline(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let stream = self.engine.stream();
+        for layer in 0..TP_KV_LAYERS {
+            self.runtime.restore_tp_kv_rows_from_device(
+                &mut self.caches[layer],
+                128,
+                130,
+                self.k_src[layer].device_ptr(&stream).0,
+                self.v_src[layer].device_ptr(&stream).0,
+                TP_K_SRC_STRIDE,
+                TP_V_SRC_STRIDE,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn synchronize(&self) -> Result<(), Box<dyn std::error::Error>> {
+        for rank in 0..2 {
+            self.runtime
+                .rank_engine(rank)
+                .ok_or("TP KV P2P probe lost a rank engine")?
+                .stream()
+                .synchronize()?;
+        }
+        Ok(())
+    }
+
+    fn validate(&self) -> Result<(), Box<dyn std::error::Error>> {
+        for layer in 0..TP_KV_LAYERS {
+            let k_source = self.engine.dtoh_u8(&self.k_src[layer])?;
+            let v_source = self.engine.dtoh_u8(&self.v_src[layer])?;
+            let lengths = self.runtime.tp_kv_device_lengths(&self.caches[layer])?;
+            if lengths != [TP_KV_LEN, TP_KV_LEN]
+                || self.caches[layer].committed_len() != TP_KV_LEN as usize
+            {
+                return Err(format!("TP KV P2P length mismatch at layer {layer}").into());
+            }
+            for rank in 0..2 {
+                let rank_cache = self.caches[layer]
+                    .rank(rank)
+                    .ok_or_else(|| format!("TP KV P2P cache lost rank {rank}"))?;
+                let engine = self
+                    .runtime
+                    .rank_engine(rank)
+                    .ok_or_else(|| format!("TP KV P2P runtime lost rank {rank}"))?;
+                let k_actual = engine.dtoh_u8(rank_cache.k())?;
+                let v_actual = engine.dtoh_u8(rank_cache.v())?;
+                for row in 0..TP_KV_ROWS {
+                    let k_expected = &k_source[row * TP_K_SRC_STRIDE + rank * TP_K_BYTES
+                        ..row * TP_K_SRC_STRIDE + (rank + 1) * TP_K_BYTES];
+                    let k_begin = (128 + row) * TP_K_BYTES;
+                    if &k_actual[k_begin..k_begin + TP_K_BYTES] != k_expected {
+                        return Err(format!(
+                            "TP KV P2P K mismatch at layer {layer} rank {rank} row {row}"
+                        )
+                        .into());
+                    }
+                    let v_expected = &v_source[row * TP_V_SRC_STRIDE + rank * TP_V_BYTES
+                        ..row * TP_V_SRC_STRIDE + (rank + 1) * TP_V_BYTES];
+                    let v_begin = (128 + row) * TP_V_BYTES;
+                    if &v_actual[v_begin..v_begin + TP_V_BYTES] != v_expected {
+                        return Err(format!(
+                            "TP KV P2P V mismatch at layer {layer} rank {rank} row {row}"
+                        )
+                        .into());
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mode = std::env::args()
         .nth(1)
@@ -443,6 +587,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "HY3_TP_KV_RESTORE_PROBE mode={mode} iterations={iterations} \
              us_per_round={microseconds:.3} layers={TP_KV_LAYERS} k_bytes={TP_K_BYTES} \
              v_bytes={TP_V_BYTES} rows={TP_KV_ROWS} logical_len={TP_KV_LEN} exact=true"
+        );
+        return Ok(());
+    }
+    if mode == "kv_restore_p2p" || mode == "kv_restore_p2p_baseline" {
+        let mut probe = KvRestoreP2pProbe::new()?;
+        for _ in 0..5 {
+            if mode == "kv_restore_p2p" {
+                probe.run()?;
+            } else {
+                probe.run_baseline()?;
+            }
+        }
+        probe.synchronize()?;
+        let started = std::time::Instant::now();
+        for _ in 0..iterations {
+            if mode == "kv_restore_p2p" {
+                probe.run()?;
+            } else {
+                probe.run_baseline()?;
+            }
+        }
+        probe.synchronize()?;
+        let microseconds = started.elapsed().as_secs_f64() * 1.0e6 / iterations as f64;
+        probe.validate()?;
+        println!(
+            "HY3_TP_KV_RESTORE_P2P_PROBE mode={mode} iterations={iterations} \
+             us_per_round={microseconds:.3} layers={TP_KV_LAYERS} ranks=2 rows={TP_KV_ROWS} \
+             exact=true"
         );
         return Ok(());
     }

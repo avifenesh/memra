@@ -439,3 +439,13 @@ were byte-exact with every one of the 80 length mirrors equal to 130:
 This is an isolated dispatch-boundary receipt, not an end-to-end predictor claim. The live PRO 6000
 cell must show `[tp-kv-verify-batch] engaged`, preserve sampled correctness and acceptance, and beat
 the 13.99 tok/s peer-repair row before the predictor path can advance.
+
+The model-free two-rank P2P gate then exercised the actual `TpE4m3HostBounce` path on four-card
+development hardware, using ranks 0 and 1. Native peer integrity passed in both directions. Both
+rank caches, both device length mirrors, all 80 layers, and both accepted rows were exact. The old
+per-layer repair measured 1,412.34 us/round; the batched path measured 13.27 us/round, about 106x.
+That hardware control also bounds the prize: at roughly 80 K=1 rounds, batching removes only about
+112 ms from a roughly nine-second 128-token predictor request. It cannot explain the multi-second
+gap to plain. The dominant predictor wall is verify/draft compute and its round synchronization,
+not cache-copy byte volume. Keep the batch implementation pending the live endpoint gate, but
+remove it if the sampled e2e delta misses the 3% retention bar.
