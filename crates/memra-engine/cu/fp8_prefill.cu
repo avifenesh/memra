@@ -78,8 +78,11 @@ struct Fp8Plan {
     cublasLtMatmulAlgo_t algo;
 };
 std::mutex g_mu;
-cublasLtHandle_t g_lt = nullptr;
-std::map<std::tuple<int, int, int>, Fp8Plan>* g_plans = nullptr;  // leaked on purpose (process-lifetime)
+// Per-device handles (see f16_prefill.cu): a shared handle used from a non-creating device
+// returned CUBLAS_STATUS_EXECUTION_FAILED on a 2x B200 pair (2026-09-02).
+static const int kMemraMaxDevices = 64;
+cublasLtHandle_t g_lt_dev[kMemraMaxDevices] = {};
+std::map<std::tuple<int, int, int, int>, Fp8Plan>* g_plans = nullptr;  // leaked on purpose (process-lifetime)
 }  // namespace
 
 // Run one FP8 prefill GEMM. Layout mirrors the probe exactly:
@@ -117,12 +120,15 @@ extern "C" int memra_fp8_pp_gemm(
     // 2) cuBLASLt FP8 TN matmul with the (m,n,k)-cached plan. The lock covers plan build AND the
     //    per-call B_SCALE_POINTER refresh + enqueue (the desc is shared mutable state).
     std::lock_guard<std::mutex> guard(g_mu);
-    if (!g_lt) {
-        cublasStatus_t s = cublasLtCreate(&g_lt);
+    int dev = 0;
+    if (cudaGetDevice(&dev) != cudaSuccess || dev < 0 || dev >= kMemraMaxDevices) dev = 0;
+    if (!g_lt_dev[dev]) {
+        cublasStatus_t s = cublasLtCreate(&g_lt_dev[dev]);
         if (s != CUBLAS_STATUS_SUCCESS) return (int)s;
     }
-    if (!g_plans) g_plans = new std::map<std::tuple<int, int, int>, Fp8Plan>();
-    auto key = std::make_tuple(m, n, k);
+    cublasLtHandle_t g_lt = g_lt_dev[dev];
+    if (!g_plans) g_plans = new std::map<std::tuple<int, int, int, int>, Fp8Plan>();
+    auto key = std::make_tuple(dev, m, n, k);
     auto it = g_plans->find(key);
     if (it == g_plans->end()) {
         Fp8Plan p{};

@@ -254,6 +254,28 @@ extern "C" int memra_q5_K_dequant_f16(const void* w_q5k, void* w_f16, long out_f
 
 // ---- host: cached cuBLASLt plans (fp8_prefill.cu pattern) ------------------------------------
 
+
+// Per-device cuBLASLt handles. A cublasLtHandle_t is bound to the device that was current at
+// cublasLtCreate; using it with another device current returned CUBLAS_STATUS_EXECUTION_FAILED
+// (13) on every bf16 GEMM issued from PP stage 1 on a 2x B200 SXM pair (2026-09-02, lane
+// glm5-b200), while the SM120 PP pairs tolerated the shared handle. Each device gets its own
+// handle, created lazily with that device current; plan caches carry the device in their key.
+static const int kMemraMaxDevices = 64;
+static inline int memra_lt_current_device() {
+    int dev = 0;
+    if (cudaGetDevice(&dev) != cudaSuccess || dev < 0 || dev >= kMemraMaxDevices) return 0;
+    return dev;
+}
+static inline cublasStatus_t memra_lt_handle_for_device(cublasLtHandle_t* slots, int dev,
+                                                        cublasLtHandle_t* out) {
+    if (!slots[dev]) {
+        cublasStatus_t s = cublasLtCreate(&slots[dev]);
+        if (s != CUBLAS_STATUS_SUCCESS) return s;
+    }
+    *out = slots[dev];
+    return CUBLAS_STATUS_SUCCESS;
+}
+
 namespace {
 struct F16Plan {
     cublasLtMatmulDesc_t op;
@@ -261,8 +283,8 @@ struct F16Plan {
     cublasLtMatmulAlgo_t algo;
 };
 std::mutex g_mu16;
-cublasLtHandle_t g_lt16 = nullptr;
-std::map<std::tuple<int, int, int>, F16Plan>* g_plans16 = nullptr;  // leaked (process-lifetime)
+cublasLtHandle_t g_lt16_dev[kMemraMaxDevices] = {};
+std::map<std::tuple<int, int, int, int>, F16Plan>* g_plans16 = nullptr;  // leaked (process-lifetime)
 }  // namespace
 
 // Standalone f32->fp16 activation convert (grouped-dispatch entry: hybrid layers run 2-4
@@ -290,12 +312,14 @@ extern "C" int memra_f16_pp_gemm_pre(
     void* stream_v) {
     cudaStream_t stream = (cudaStream_t)stream_v;
     std::lock_guard<std::mutex> guard(g_mu16);
-    if (!g_lt16) {
-        cublasStatus_t s = cublasLtCreate(&g_lt16);
+    const int dev = memra_lt_current_device();
+    cublasLtHandle_t g_lt16 = nullptr;
+    {
+        cublasStatus_t s = memra_lt_handle_for_device(g_lt16_dev, dev, &g_lt16);
         if (s != CUBLAS_STATUS_SUCCESS) return (int)s;
     }
-    if (!g_plans16) g_plans16 = new std::map<std::tuple<int, int, int>, F16Plan>();
-    auto key = std::make_tuple(m, n, k);
+    if (!g_plans16) g_plans16 = new std::map<std::tuple<int, int, int, int>, F16Plan>();
+    auto key = std::make_tuple(dev, m, n, k);
     auto it = g_plans16->find(key);
     if (it == g_plans16->end()) {
         F16Plan p{};
@@ -381,8 +405,8 @@ extern "C" int memra_bf16_cvt(const float* x_f32, void* xb_bf16, size_t nelem, v
 
 namespace {
 std::mutex g_mubf;
-cublasLtHandle_t g_ltbf = nullptr;
-std::map<std::tuple<int, int, int>, F16Plan>* g_plansbf = nullptr;  // leaked (process-lifetime)
+cublasLtHandle_t g_ltbf_dev[kMemraMaxDevices] = {};
+std::map<std::tuple<int, int, int, int>, F16Plan>* g_plansbf = nullptr;  // leaked (process-lifetime)
 }  // namespace
 
 // One BF16 prefill GEMM on a PRE-CONVERTED activation: y[m,n] row-major = x[m,k] @ W[n,k]^T,
@@ -392,12 +416,14 @@ extern "C" int memra_bf16_pp_gemm_pre(
     int m, int n, int k, void* ws, size_t ws_bytes, void* stream_v) {
     cudaStream_t stream = (cudaStream_t)stream_v;
     std::lock_guard<std::mutex> lk(g_mubf);
-    if (!g_ltbf) {
-        cublasStatus_t cs = cublasLtCreate(&g_ltbf);
+    const int dev = memra_lt_current_device();
+    cublasLtHandle_t g_ltbf = nullptr;
+    {
+        cublasStatus_t cs = memra_lt_handle_for_device(g_ltbf_dev, dev, &g_ltbf);
         if (cs != CUBLAS_STATUS_SUCCESS) return 40000 + (int)cs;
     }
-    if (!g_plansbf) g_plansbf = new std::map<std::tuple<int, int, int>, F16Plan>();
-    auto key = std::make_tuple(m, n, k);
+    if (!g_plansbf) g_plansbf = new std::map<std::tuple<int, int, int, int>, F16Plan>();
+    auto key = std::make_tuple(dev, m, n, k);
     auto it = g_plansbf->find(key);
     if (it == g_plansbf->end()) {
         F16Plan p{};
@@ -448,10 +474,10 @@ extern "C" int memra_bf16_pp_gemm_pre(
 
 namespace {
 std::mutex g_musb;
-cublasLtHandle_t g_ltsb = nullptr;
+cublasLtHandle_t g_ltsb_dev[kMemraMaxDevices] = {};
 // keyed on every shape/stride/dtype degree of freedom — a plan reused across a different stride
 // would silently read the wrong rows.
-std::map<std::tuple<int, int, int, long, long, long, long, int, int>, F16Plan>* g_planssb =
+std::map<std::tuple<int, int, int, int, long, long, long, long, int, int>, F16Plan>* g_planssb =
     nullptr;  // leaked (process-lifetime)
 }  // namespace
 
@@ -465,14 +491,16 @@ extern "C" int memra_bf16_gemm_sb(
     void* ws, size_t ws_bytes, void* stream_v) {
     cudaStream_t stream = (cudaStream_t)stream_v;
     std::lock_guard<std::mutex> lk(g_musb);
-    if (!g_ltsb) {
-        cublasStatus_t cs = cublasLtCreate(&g_ltsb);
+    const int dev = memra_lt_current_device();
+    cublasLtHandle_t g_ltsb = nullptr;
+    {
+        cublasStatus_t cs = memra_lt_handle_for_device(g_ltsb_dev, dev, &g_ltsb);
         if (cs != CUBLAS_STATUS_SUCCESS) return 40000 + (int)cs;
     }
     if (!g_planssb)
-        g_planssb = new std::map<std::tuple<int, int, int, long, long, long, long, int, int>,
+        g_planssb = new std::map<std::tuple<int, int, int, int, long, long, long, long, int, int>,
                                  F16Plan>();
-    auto key = std::make_tuple(m, n, k, x_rs, x_bs, y_rs, y_bs, batch, y_is_bf16);
+    auto key = std::make_tuple(dev, m, n, k, x_rs, x_bs, y_rs, y_bs, batch, y_is_bf16);
     auto it = g_planssb->find(key);
     if (it == g_planssb->end()) {
         F16Plan p{};
