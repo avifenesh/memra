@@ -3215,6 +3215,189 @@ extern "C" int memra_dsv4_hc_pre_fused(const float* x, const float* mixes, const
     return 0;
 }
 
+// ---- hc pre-chain FUSED v2 (MEMRA_HC_FUSED_PRE=2, lane/b200-sinkhorn-fusion-20260902
+// follow-up). Same stage 1 (rowsq) and stage 3 (collapse) as dsv4_hc_pre_fused_kernel
+// above, copied VERBATIM — rowsq's reduction tree is a function of blockDim=128 (see that
+// kernel's own "128 threads is LOAD-BEARING" note) so it cannot move to a warp without
+// becoming a different numeric class, and collapse already runs at full block width for
+// throughput (its per-output-element value does not depend on thread count at all: each
+// `y[i]` is one thread's own sequential loop over `spre[0..hc-1]`, so blockDim never
+// touches its bits — "share a warp with rowsq" was checked and would only cost
+// parallelism on d=4096 elements, not gain anything, so it is left at full block width).
+//
+// The B200 nsys census that opened this follow-up (research/b200-sinkhorn-fusion-20260902/
+// LANE.md) measured dsv4_hc_pre_fused_kernel itself at 32.8 us/launch average with
+// MEMRA_HC_FUSED_PRE=1 in serving, now the second-largest kernel: at t=1 the real
+// per-token math (hc=4, d=4096) is small, so almost all of that 32.8 us is the stage-2
+// Sinkhorn loop's up-to-20 `__syncthreads()` PAIRS — a 128-thread, up-to-4-warp barrier,
+// paid twenty-odd times to synchronize work that only threads t<hc (and the t<hc*hc
+// snapshot/writeback strided loops) ever touch.
+//
+// THE ONE CHANGE: for hc<=4, rows=(2+hc)*hc<=24 and hc*hc<=16 — every shared-memory
+// index stage 2 ever reads or writes (smix[0..rows-1], comb/sprev[0..hc*hc-1],
+// spre[0..hc-1], schanged) is < 32, i.e. lives entirely inside warp 0's lane range
+// (t=threadIdx.x 0..31). Stage 2 below is dsv4_hc_pre_fused_kernel's stage 2 body
+// VERBATIM — same operands, same operations, same sequential summation order inside
+// each `if (t < hc)` / `if (t < hc*hc)` arm — wrapped in `if (t < 32)` (warp-uniform: all
+// 32 lanes of warp 0 take it together, the other three warps skip it together, so there
+// is no intra-warp divergence anywhere) with every `__syncthreads()` in that scope
+// replaced by `__syncwarp()`. This is a SYNCHRONIZATION-PRIMITIVE SUBSTITUTION ONLY: no
+// operand, no operator, no summation order changes, so the values stage 2 produces are
+// bit-identical to v1's by construction — a barrier does not touch a mantissa. Threads
+// 32..127 did no work in stage 2 in v1 either (every write there is already gated on
+// t<hc or t<hc*hc, both <32 for this hc range); they simply no longer pay for barriers
+// guarding work they were never part of.
+//
+// ONE real `__syncthreads()` remains, between stage 2 and stage 3: collapse reads
+// `spre[]` with the FULL 128-thread block, and warp 0's writes must become visible
+// across warp boundaries — `__syncwarp()` cannot do that (it only orders memory within
+// its own warp), so this barrier is not optional and is not a place to save more time.
+//
+// hc>4 (rows>32, e.g. hc=5 -> rows=35): the warp-0-only invariant above no longer holds
+// (some shared indices this kernel would touch live in warp 1+), and this lane did not
+// build a multi-warp partial-sync scheme for it — unverifiable on a GPU-less worktree
+// and not the shape this follow-up was asked to speed up (GLM-5.3-Flash is hc=4). The
+// host wrapper below falls back to calling dsv4_hc_pre_fused_kernel (v1) for hc>4, so
+// MEMRA_HC_FUSED_PRE=2 is always correct, only sometimes faster than =1.
+extern "C" __global__ void dsv4_hc_pre_fused_v2_kernel(
+        const float* __restrict__ x, const float* __restrict__ mixes_all,
+        const float* __restrict__ scale, const float* __restrict__ base,
+        float* __restrict__ pre_all, float* __restrict__ post_all,
+        float* __restrict__ comb_all, float* __restrict__ y, int w, int rows, int hc, int d,
+        int iters, float eps, int* __restrict__ niters) {
+    int p = blockIdx.x;
+    int t = threadIdx.x;
+    int B = blockDim.x;
+
+    // ---- stage 1: rowsq — VERBATIM dsv4_hc_pre_fused_kernel, unchanged.
+    const float* xr = x + (long)p * w;
+    double acc = 0.0;
+    {
+        int i = t;
+        for (; i + 7 * B < w; i += 8 * B) {
+            float v0 = xr[i], v1 = xr[i + B], v2 = xr[i + 2 * B], v3 = xr[i + 3 * B];
+            float v4 = xr[i + 4 * B], v5 = xr[i + 5 * B], v6 = xr[i + 6 * B], v7 = xr[i + 7 * B];
+            acc += (double)v0 * (double)v0;
+            acc += (double)v1 * (double)v1;
+            acc += (double)v2 * (double)v2;
+            acc += (double)v3 * (double)v3;
+            acc += (double)v4 * (double)v4;
+            acc += (double)v5 * (double)v5;
+            acc += (double)v6 * (double)v6;
+            acc += (double)v7 * (double)v7;
+        }
+        for (; i < w; i += B) {
+            double v = (double)xr[i];
+            acc += v * v;
+        }
+    }
+    __shared__ double shd[128];
+    double tot = dsv4_block_sum(acc, shd);
+    float rsq = 1.0f / sqrtf((float)(tot / (double)w) + eps);
+
+    __shared__ float smix[(2 + DSV4_HC_MAX) * DSV4_HC_MAX];
+    const float* mixes = mixes_all + (long)p * rows;
+    for (int i = t; i < rows; i += B) smix[i] = mixes[i] * rsq;
+
+    float* pre = pre_all + (long)p * hc;
+    float* post = post_all + (long)p * hc;
+    float* combg = comb_all + (long)p * hc * hc;
+    __shared__ float spre[DSV4_HC_MAX];
+    __shared__ float comb[DSV4_HC_MAX * DSV4_HC_MAX];
+    __shared__ float sprev[DSV4_HC_MAX * DSV4_HC_MAX];
+    __shared__ unsigned schanged;
+    int done = 0;
+
+    // ---- stage 2: Sinkhorn, WARP-0-ONLY (valid because the caller only reaches this
+    // kernel when hc<=4 — see memra_dsv4_hc_pre_fused_v2). Every write and every read
+    // below lives at shared index < 32.
+    if (t < 32) {
+        __syncwarp(); // smix writes above (by lanes < rows <= 24) visible to all 32 lanes
+        if (t < hc) {
+            float pv = dsv4_sigmoid(smix[t] * scale[0] + base[t]) + eps;
+            pre[t] = pv;
+            spre[t] = pv;
+            post[t] = 2.0f * dsv4_sigmoid(smix[hc + t] * scale[1] + base[hc + t]);
+        }
+        if (t < hc * hc) comb[t] = smix[2 * hc + t] * scale[2] + base[2 * hc + t];
+        __syncwarp();
+        if (t < hc) {
+            float* row = comb + t * hc;
+            float mx = -INFINITY;
+            for (int k = 0; k < hc; k++) mx = fmaxf(mx, row[k]);
+            float sum = 0.0f;
+            for (int k = 0; k < hc; k++) {
+                row[k] = expf(row[k] - mx);
+                sum += row[k];
+            }
+            for (int k = 0; k < hc; k++) row[k] = row[k] / sum + eps;
+        }
+        __syncwarp();
+        for (int it = 0; it < iters; it++) {
+            if (it > 0) {
+                if (t < hc * hc) sprev[t] = comb[t];
+                if (t == 0) schanged = 0u;
+                __syncwarp();
+                if (t < hc) {
+                    float sum = 0.0f;
+                    for (int k = 0; k < hc; k++) sum += comb[t * hc + k];
+                    for (int k = 0; k < hc; k++) comb[t * hc + k] /= sum + eps;
+                }
+                __syncwarp();
+            }
+            if (t < hc) {
+                float sum = 0.0f;
+                for (int j = 0; j < hc; j++) sum += comb[j * hc + t];
+                for (int j = 0; j < hc; j++) comb[j * hc + t] /= sum + eps;
+            }
+            __syncwarp();
+            done = it + 1;
+            if (it > 0) {
+                unsigned ch = 0u;
+                if (t < hc * hc)
+                    ch = (unsigned)(__float_as_uint(sprev[t]) != __float_as_uint(comb[t]));
+                if (ch) atomicOr(&schanged, 1u);
+                __syncwarp();
+                unsigned stop = (schanged == 0u);
+                __syncwarp();
+                if (stop) break; // bitwise-stationary: every later iteration is identity
+            }
+        }
+        if (niters && t == 0) niters[p] = done;
+        if (t < hc * hc) combg[t] = comb[t];
+    }
+    __syncthreads(); // cross-warp: stage 3 (full block) needs spre[] visible everywhere
+
+    // ---- stage 3: collapse — VERBATIM dsv4_hc_pre_fused_kernel, unchanged.
+    float* yr = y + (long)p * d;
+    for (int i = t; i < d; i += B) {
+        float acc2 = 0.0f;
+        for (int c = 0; c < hc; c++) acc2 += spre[c] * xr[(long)c * d + i];
+        yr[i] = acc2;
+    }
+}
+
+extern "C" int memra_dsv4_hc_pre_fused_v2(const float* x, const float* mixes, const float* scale,
+                                          const float* base, float* pre, float* post,
+                                          float* comb, float* y, int s, int hc, int d,
+                                          int iters, float eps, int* niters, void* stream_v) {
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    if (s < 1 || hc < 1 || hc > DSV4_HC_MAX || d < 1 || iters < 1) return 40021;
+    int w = hc * d;
+    int rows = (2 + hc) * hc;
+    if (rows > 32) {
+        // hc>4: the warp-0-only invariant above does not hold. Fall back to v1 rather
+        // than an unverified multi-warp scheme — see the kernel doc comment above.
+        return memra_dsv4_hc_pre_fused(x, mixes, scale, base, pre, post, comb, y, s, hc, d,
+                                       iters, eps, niters, stream_v);
+    }
+    dsv4_hc_pre_fused_v2_kernel<<<(unsigned)s, 128, 0, stream>>>(x, mixes, scale, base, pre, post,
+                                                                 comb, y, w, rows, hc, d, iters,
+                                                                 eps, niters);
+    DSV4_ERR();
+    return 0;
+}
+
 // ---- MoE routing, one block per position (dsv4_route_kernel's body verbatim on the
 // position's own raw/sel/selw/order slices and its OWN token id — the hash layers'
 // tid2eid row is per token, which is exactly why a round needs a token ARRAY).

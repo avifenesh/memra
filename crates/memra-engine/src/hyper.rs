@@ -302,20 +302,41 @@ pub struct HcMix {
     pub comb: CudaSlice<f32>,
 }
 
-/// Engagement counter for the fused pre-chain door (`MEMRA_HC_FUSED_PRE=1`): incremented at
-/// the arm's own call site, announced once per boot — the spec-engagement receipt the gate
-/// and any box A/B arm must show ([bf16-mmv] RESIDENT lesson: engagement lines are receipts,
-/// never inferred).
+/// Engagement counter for the fused pre-chain door's `=1` arm: incremented at the arm's own
+/// call site, announced once per boot — the spec-engagement receipt the gate and any box A/B
+/// arm must show ([bf16-mmv] RESIDENT lesson: engagement lines are receipts, never inferred).
 pub static HC_FUSED_PRE_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
-/// `MEMRA_HC_FUSED_PRE=1` (default OFF): the three-kernel site pre-chain (rowsq_scale +
-/// Sinkhorn + collapse) runs as ONE `memra_dsv4_hc_pre_fused` launch per site — bit-identical
-/// to the unfused chain by construction (verbatim bodies, asserted bytewise in
-/// `hc_fused_pre_gpu.rs`). Read PER CALL (the `MEMRA_MOE_FUSED_EPI` rollback-seam precedent),
-/// so both arms alternate inside one process and the flag is a live rollback seam.
-fn hc_fused_pre_on() -> bool {
-    std::env::var("MEMRA_HC_FUSED_PRE").as_deref() == Ok("1")
+/// Engagement counter for the fused pre-chain door's `=2` arm (lane/b200-sinkhorn-fusion-
+/// 20260902 follow-up), same discipline as `HC_FUSED_PRE_DISPATCHES`.
+pub static HC_FUSED_PRE_V2_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// The three states of `MEMRA_HC_FUSED_PRE` (default OFF): the unfused three-kernel chain,
+/// the `=1` fused kernel (`memra_dsv4_hc_pre_fused`, lane/glm5-decode-diet 2026-08-31), or
+/// the `=2` fused kernel (`memra_dsv4_hc_pre_fused_v2`, lane/b200-sinkhorn-fusion-20260902 —
+/// same stages, warp-scoped Sinkhorn sync). Any other value (unset, `0`, or unrecognized)
+/// stays `Off`, the existing "read per call" rollback-seam contract.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HcFusedPreArm {
+    Off,
+    V1,
+    V2,
+}
+
+/// `MEMRA_HC_FUSED_PRE` (default OFF, both `1` and `2` opt in): the three-kernel site
+/// pre-chain (rowsq_scale + Sinkhorn + collapse) runs as ONE launch per site — bit-identical
+/// to the unfused chain by construction in both arms (verbatim bodies, asserted bytewise in
+/// `hc_fused_pre_gpu.rs` for `=1` and by `hc-fused-gate` for `=1` vs `=2`). Read PER CALL
+/// (the `MEMRA_MOE_FUSED_EPI` rollback-seam precedent), so arms can alternate inside one
+/// process and the flag is a live rollback seam.
+fn hc_fused_pre_arm() -> HcFusedPreArm {
+    match std::env::var("MEMRA_HC_FUSED_PRE").as_deref() {
+        Ok("1") => HcFusedPreArm::V1,
+        Ok("2") => HcFusedPreArm::V2,
+        _ => HcFusedPreArm::Off,
+    }
 }
 
 /// Model entry (`hc_expand`): `[tokens, hidden]` embeddings -> `[tokens, streams, hidden]`.
@@ -446,39 +467,71 @@ fn pre_finish_into(
     let eps = topology.epsilon;
     let stream = e.stream();
 
-    // FUSED PRE-CHAIN DOOR (lane/glm5-decode-diet). Engages at any t (the kernel is
-    // block-per-token, per-token bytes t-invariant like the unfused chain) whenever the
-    // stream count fits the kernel's static shared arrays; every other shape falls through
-    // to the unchanged three-kernel program below. The kernel reads the RAW mixes and
-    // applies the rowsq rescale internally, so the in-place scale write below is subsumed
-    // (nothing reads the scaled mixes after this function either way).
-    if hc_fused_pre_on() && streams <= 8 {
-        unsafe {
-            ck(
-                "hc_pre_fused",
-                k::memra_dsv4_hc_pre_fused(
-                    dpf!(x, &stream),
-                    dpf!(mixes, &stream),
-                    dpf!(site.scale, &stream),
-                    dpf!(site.base, &stream),
-                    dpm!(pre_gates, &stream),
-                    dpm!(post, &stream),
-                    dpm!(comb, &stream),
-                    dpm!(y, &stream),
-                    t as i32,
-                    streams as i32,
-                    hidden as i32,
-                    topology.sinkhorn_iterations as i32,
-                    eps,
-                    std::ptr::null_mut(),
-                    sp(&stream),
+    // FUSED PRE-CHAIN DOOR (lane/glm5-decode-diet; `=2` arm lane/b200-sinkhorn-fusion-
+    // 20260902). Engages at any t (block-per-token, per-token bytes t-invariant like the
+    // unfused chain) whenever the stream count fits the kernel's static shared arrays;
+    // every other shape falls through to the unchanged three-kernel program below. Both
+    // kernels read the RAW mixes and apply the rowsq rescale internally, so the in-place
+    // scale write below is subsumed (nothing reads the scaled mixes after this function
+    // either way).
+    let fused_arm = hc_fused_pre_arm();
+    if fused_arm != HcFusedPreArm::Off && streams <= 8 {
+        let (label, rc) = unsafe {
+            match fused_arm {
+                HcFusedPreArm::V1 => (
+                    "hc_pre_fused",
+                    k::memra_dsv4_hc_pre_fused(
+                        dpf!(x, &stream),
+                        dpf!(mixes, &stream),
+                        dpf!(site.scale, &stream),
+                        dpf!(site.base, &stream),
+                        dpm!(pre_gates, &stream),
+                        dpm!(post, &stream),
+                        dpm!(comb, &stream),
+                        dpm!(y, &stream),
+                        t as i32,
+                        streams as i32,
+                        hidden as i32,
+                        topology.sinkhorn_iterations as i32,
+                        eps,
+                        std::ptr::null_mut(),
+                        sp(&stream),
+                    ),
                 ),
-            )?;
-        }
-        if HC_FUSED_PRE_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+                HcFusedPreArm::V2 => (
+                    "hc_pre_fused_v2",
+                    k::memra_dsv4_hc_pre_fused_v2(
+                        dpf!(x, &stream),
+                        dpf!(mixes, &stream),
+                        dpf!(site.scale, &stream),
+                        dpf!(site.base, &stream),
+                        dpm!(pre_gates, &stream),
+                        dpm!(post, &stream),
+                        dpm!(comb, &stream),
+                        dpm!(y, &stream),
+                        t as i32,
+                        streams as i32,
+                        hidden as i32,
+                        topology.sinkhorn_iterations as i32,
+                        eps,
+                        std::ptr::null_mut(),
+                        sp(&stream),
+                    ),
+                ),
+                HcFusedPreArm::Off => unreachable!("guarded by the enclosing if"),
+            }
+        };
+        ck(label, rc)?;
+        let (counter, tag) = match fused_arm {
+            HcFusedPreArm::V1 => (&HC_FUSED_PRE_DISPATCHES, "1"),
+            HcFusedPreArm::V2 => (&HC_FUSED_PRE_V2_DISPATCHES, "2"),
+            HcFusedPreArm::Off => unreachable!("guarded by the enclosing if"),
+        };
+        if counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
             eprintln!(
-                "[hc-fused-pre] engaged streams={streams} hidden={hidden} t={t} (one launch \
-                 replaces rowsq_scale + sinkhorn + collapse per site; MEMRA_HC_FUSED_PRE=1)"
+                "[hc-fused-pre] engaged streams={streams} hidden={hidden} t={t} arm={tag} \
+                 (one launch replaces rowsq_scale + sinkhorn + collapse per site; \
+                 MEMRA_HC_FUSED_PRE={tag})"
             );
         }
         return Ok(());

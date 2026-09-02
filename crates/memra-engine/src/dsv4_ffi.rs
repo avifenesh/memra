@@ -593,6 +593,30 @@ unsafe extern "C" {
         niters: *mut i32,
         stream: *mut c_void,
     ) -> i32;
+    /// `MEMRA_HC_FUSED_PRE=2` (lane/b200-sinkhorn-fusion-20260902 follow-up): same stages
+    /// and same signature as `memra_dsv4_hc_pre_fused` above; the Sinkhorn stage runs
+    /// warp-0-only with `__syncwarp()` instead of `__syncthreads()` when hc<=4 (rows<=32),
+    /// falling back to `memra_dsv4_hc_pre_fused` internally otherwise. Bit-identical to
+    /// both the three-kernel chain and to the `=1` fused kernel by construction (a
+    /// synchronization-primitive substitution only, no operand/order change).
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_hc_pre_fused_v2(
+        x: *const f32,
+        mixes: *const f32,
+        scale: *const f32,
+        base: *const f32,
+        pre: *mut f32,
+        post: *mut f32,
+        comb: *mut f32,
+        y: *mut f32,
+        s: i32,
+        hc: i32,
+        d: i32,
+        iters: i32,
+        eps: f32,
+        niters: *mut i32,
+        stream: *mut c_void,
+    ) -> i32;
     #[allow(clippy::too_many_arguments)]
     pub fn memra_dsv4_hc_head_pre_m(
         mixes: *const f32,
