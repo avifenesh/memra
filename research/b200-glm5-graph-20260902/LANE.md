@@ -357,6 +357,59 @@ Run on the rig, 2026-09-02, `MEMRA_CUDA_ARCH` as noted:
   `moe_gate_up_preclamp8_q8_rows`, `moe_down8_fma_q8_rows` and the unchanged KDA/hc kernels, so
   there is no `docs/KERNELS.md` row to add. Stated explicitly rather than silently skipped.
 
+## 9b. First box run, and the two defects it found (2026-09-02)
+
+`glm5-decode-graph-gate` on the pair (int2 head `8c31be2f4`, real artifact, PP2 resident,
+`--steps 64 --reps 5 --prompt-len 64`) exited `rc=1` after 57 s. Receipt:
+`darklanes research/glm5-b200-20260902/box/gates/gate-glm5-decode-graph.txt`. The engagement
+half worked exactly as designed:
+
+```
+[moe-vrows-dev-tables] engaged ...
+[glm5-vrows] verify MoE batched across rows: pairs=8 (t=1 x 8) ...
+[glm5-decode-graph] engaged dev=0 stage=[0, 24) runs=6 captured_layers=18 (2 ping-pong phases each; MLA/DSA layers stay eager)
+[glm5-decode-graph] engaged dev=1 stage=[24, 45) runs=6 captured_layers=16 (...)
+[glm5-decode-graph] re-capture: a captured layer's recurrent-state buffer moved
+Error: DriverError(CUDA_ERROR_INVALID_VALUE, "invalid argument")
+```
+
+Both stages captured (34 layers across 12 runs) and the first token replayed. Then two defects
+fired in sequence, and the second only existed because of the first.
+
+**Defect 1 — the pointer signature was not phase-invariant, so it fired every token.**
+`recur_ptrs` recorded the ORDERED triple `(conv, ssm, alt)`. But `kda::kda_cached` swaps
+`ssm_state`/`ssm_state_alt` on the host every step, and the replay MIRRORS that swap by design
+(§4, the parity twins) — so the live triple differs from the captured one on every single token,
+on a session where nothing moved. The re-capture notice in the log is spurious: it fired on step
+2. Fixed by recording the ping-pong pair UNORDERED, `(conv, min(ssm, alt), max(ssm, alt))`: a
+phase swap cannot change it, a genuine re-seat still does. This is the root cause; nothing else
+in the log had to be wrong for the run to die.
+
+**Defect 2 — the re-capture path destroyed a live exec.** `pool.stages.remove(i)` dropped the
+`StageGraphs`, which runs `cuGraphExecDestroy`/`cuGraphDestroy` AND frees every buffer the exec
+baked (`x_io`, the private hc workspace and f16 scratch, the capture keeper's transients) — with
+the previous replay of that same exec still outstanding on the stream. That is a destroy-in-use,
+and `CUDA_ERROR_INVALID_VALUE` at the next graph call is how the driver reports it. Fixed by
+draining the stream BEFORE the remove, and again after (the drop's frees are stream-ordered too),
+so the new capture cannot race them for the same pool addresses. The drop ORDER inside the
+structs was already right — `graphs` before `_keeper`, `runs` before `x_io`/`ws`/`f16` — and now
+says so in a comment, because Rust field order is the only thing enforcing it.
+
+**Defect 3, by inspection rather than by receipt — a capture failure failed the request.**
+`glm5_capture_stage`'s error propagated out of `decode_step`. This route has a byte-identical
+eager twin; a failed capture now degrades to it for the whole range, prints once
+(`[glm5-decode-graph] eager from here on stage=[lo, hi) dev=N: capture failed (...)`), and
+LATCHES the stage off for the session so the next token does not retry and re-thrash the stream.
+
+**The gate could not have caught any of this, so it now forces the path.** Halfway through the
+graph arm it RE-SEATS the first recurrent layer — a fresh buffer holding the same bytes, which is
+the shape of a snapshot restore or a reuse-pool rehydrate — so identity must hold ACROSS a
+re-capture, and the run FAILS as vacuous if no re-capture happened
+(`forced_recapture=` in the verdict line). The re-seated layer is the first with a `recur` slot:
+KDA layers carry `recur` and MLA/DSA layers carry `latent`, so it is inside a captured run, and
+being first it is on the head stage, which is the device the gate's engine owns. The timing arms
+run un-perturbed; a forced re-capture is a correctness arm, never a measured configuration.
+
 ## 10. Open items
 
 1. **Run the gate on the pair** (`--steps 64 --reps 5`) and bank the receipt. Until then the
@@ -381,6 +434,12 @@ Run on the rig, 2026-09-02, `MEMRA_CUDA_ARCH` as noted:
    `HyperConnections`/KDA/MLA, so `DECODE_GRAPH.trunk_capabilities(plan).cuda_graph.supported`
    is false for glm5_next and the plan-level rewrite stays unqualified. Widening that table is
    a receipt-backed change and belongs AFTER the gate is green on the pair, not before.
-7. **Serving wiring.** The door is exercised through `decode_step_hyper` / `decode_step_hyper_ppn`
+7. **Teardown context.** The pool lives on the `Cache`, and under a pp split it holds graphs
+   created in more than one CUDA context. When the `Cache` drops, those destructors run under
+   whichever context is current, which is not necessarily each graph's own. Not the error the box
+   hit (a re-capture destroys stage s's graphs while stage s's context is current, by
+   construction), but it is a real teardown hazard and wants either a per-context drop guard or
+   an explicit release before the cache is dropped.
+8. **Serving wiring.** The door is exercised through `decode_step_hyper` / `decode_step_hyper_ppn`
    only. A server-side admission predicate (the `MEMRA_GS_MIN`-style budget gate) is a separate
    decision and is not made here.

@@ -29,6 +29,14 @@
 //! the comparison is like for like). The TOKEN comparison is unaffected and covers every stage
 //! end to end.
 //!
+//! THE RE-CAPTURE PATH IS EXERCISED ON PURPOSE. Halfway through the graph arm the gate RE-SEATS
+//! one captured layer's recurrent state — a fresh buffer holding the same bytes — which is the
+//! shape of a snapshot restore or a reuse-pool rehydrate and the only thing the pool's pointer
+//! signature exists to catch. The run then has to stay byte-identical ACROSS the re-capture, and
+//! the gate FAILS if no re-capture actually happened. This arm exists because the first box run
+//! reached `CUDA_ERROR_INVALID_VALUE` inside that path in production, on a gate that could not
+//! have caught it.
+//!
 //! NON-VACUITY IS ENFORCED. The gate refuses to pass unless (1) the door actually engaged
 //! (`GLM5_DECODE_GRAPH_REPLAYS > 0` and captured layers > 0) — an eager fall-through would make
 //! arm B a copy of arm A and the comparison meaningless; and (2) the ledger actually recorded
@@ -80,8 +88,37 @@ fn median(v: &mut [f64]) -> f64 {
 ///
 /// [`ArmOut`] names the arm's shape once: the token tape, the per-(step, layer) selection rows,
 /// and the per-token wall milliseconds.
-type ArmOut = Result<(Vec<u32>, Vec<Vec<SelRow>>, f64), Box<dyn std::error::Error>>;
+type ArmOut = Result<(Vec<u32>, Vec<Vec<SelRow>>, f64, bool), Box<dyn std::error::Error>>;
 
+/// RE-SEAT one captured layer's recurrent state: allocate a fresh buffer, copy the CURRENT bytes
+/// into it, and put it in the cache's slot. The walk is arithmetically untouched (same bytes,
+/// same kernels) but the device POINTER the captured graphs baked is now stale — which is the
+/// exact shape of a snapshot restore or a reuse-pool rehydrate, and the only thing the pool's
+/// pointer signature exists to catch.
+///
+/// The first layer carrying a recurrent slot is a KDA layer (MLA/DSA layers carry `latent`, not
+/// `recur`), so it sits inside a captured run; and being the first, it is on the HEAD stage,
+/// which is the device this binary's engine owns — so the fresh allocation and the copy are local.
+fn reseat_first_recurrent_layer(
+    e: &Engine,
+    cache: &mut Cache,
+) -> Result<Option<usize>, Box<dyn std::error::Error>> {
+    let Some((il, rl)) = cache
+        .recur
+        .iter_mut()
+        .enumerate()
+        .find_map(|(i, r)| r.as_mut().map(|r| (i, r)))
+    else {
+        return Ok(None);
+    };
+    let n = rl.ssm_state.len();
+    let mut fresh = e.uninit(n)?;
+    e.copy_into(&mut fresh, 0, &rl.ssm_state, n)?;
+    rl.ssm_state = fresh;
+    Ok(Some(il))
+}
+
+#[allow(clippy::too_many_arguments)] // allow: one arm knob per axis the gate drives; a struct would hide them at the call site
 fn run_arm(
     e: &Engine,
     m: &HybridModel,
@@ -89,6 +126,7 @@ fn run_arm(
     steps: usize,
     graph_door: bool,
     ledger: bool,
+    reseat_at: Option<usize>,
 ) -> ArmOut {
     // SAFETY: single-threaded gate binary; the doors are read per call by the engine, and no
     // other thread exists to observe the environment mid-flight.
@@ -117,7 +155,36 @@ fn run_arm(
 
     e.stream().synchronize()?;
     let t0 = Instant::now();
-    for _ in 1..steps {
+    let mut recaptured = false;
+    for step in 1..steps {
+        // FORCED RE-SEAT ARM: make the pool's invalidation path RUN, rather than hope a real
+        // session trips it. Without this the gate passes while re-capture is broken — which is
+        // exactly how the first box run reached `CUDA_ERROR_INVALID_VALUE` in production
+        // instead of here.
+        if reseat_at == Some(step) && graph_door {
+            let before = memra_engine::GLM5_DECODE_GRAPH_CAPTURES.load(Ordering::Relaxed);
+            let il = reseat_first_recurrent_layer(e, &mut cache)?;
+            let l = m.decode_step(e, tok, &mut cache)?;
+            let after = memra_engine::GLM5_DECODE_GRAPH_CAPTURES.load(Ordering::Relaxed);
+            recaptured = after > before;
+            println!(
+                "  forced re-seat at step {step} (layer {il:?}): captures {before} -> {after}"
+            );
+            tok = argmax(&l) as u32;
+            tape.push(tok);
+            if ledger {
+                let dev = e.ctx().ordinal();
+                let mut step_rows = glm5_sel_ledger::drain_device(e)?;
+                let host = glm5_sel_ledger::take_host();
+                if !host.is_empty() {
+                    step_rows = host;
+                }
+                step_rows.retain(|r| r.dev == dev);
+                step_rows.sort_by_key(|r| (r.dev, r.layer));
+                rows.push(step_rows);
+            }
+            continue;
+        }
         let l = m.decode_step(e, tok, &mut cache)?;
         tok = argmax(&l) as u32;
         tape.push(tok);
@@ -146,7 +213,7 @@ fn run_arm(
     e.stream().synchronize()?;
     let ms_per_token =
         t0.elapsed().as_secs_f64() * 1000.0 / (steps.saturating_sub(1)).max(1) as f64;
-    Ok((tape, rows, ms_per_token))
+    Ok((tape, rows, ms_per_token, recaptured))
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -196,9 +263,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
 
     // ---- identity arms ----
-    let (eager_tape, eager_rows, _) = run_arm(&e, &m, &prompt, steps, false, true)?;
+    // The graph arm forces a RE-SEAT halfway through, so identity is proven ACROSS a
+    // re-capture rather than only on a pool that was captured once and never invalidated. The
+    // eager arm has no pool, so the re-seat would prove nothing there and is not run.
+    let reseat_at = Some((steps / 2).max(2));
+    let (eager_tape, eager_rows, _, _) = run_arm(&e, &m, &prompt, steps, false, true, None)?;
     let replays_before = memra_engine::GLM5_DECODE_GRAPH_REPLAYS.load(Ordering::Relaxed);
-    let (graph_tape, graph_rows, _) = run_arm(&e, &m, &prompt, steps, true, true)?;
+    let (graph_tape, graph_rows, _, recaptured) =
+        run_arm(&e, &m, &prompt, steps, true, true, reseat_at)?;
     let replays = memra_engine::GLM5_DECODE_GRAPH_REPLAYS.load(Ordering::Relaxed) - replays_before;
     let captured_layers = memra_engine::GLM5_DECODE_GRAPH_LAYERS.load(Ordering::Relaxed);
     let captures = memra_engine::GLM5_DECODE_GRAPH_CAPTURES.load(Ordering::Relaxed);
@@ -210,6 +282,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         fail.push(format!(
             "VACUOUS: the door never replayed (replays={replays}, captured_layers={captured_layers}, \
              captures={captures}). The refusal reason is on stderr as [glm5-decode-graph] eager: ..."
+        ));
+    }
+    if !recaptured {
+        fail.push(format!(
+            "VACUOUS RE-CAPTURE ARM: the forced re-seat at step {reseat_at:?} did not make the \
+             pool re-capture, so this run says nothing about the invalidation path. Either the \
+             re-seated layer is not inside a captured run, or the pointer signature no longer \
+             sees a re-seat."
         ));
     }
     if eager_rows.iter().all(|r| r.is_empty()) || graph_rows.iter().all(|r| r.is_empty()) {
@@ -283,7 +363,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!(
         "identity: tokens {}/{} match; selections {}/{} match (head device only under a pp \
-         split); door replays={replays} captures={captures} captured_layers={captured_layers}",
+         split); door replays={replays} captures={captures} captured_layers={captured_layers} \
+         forced_recapture={recaptured}",
         eager_tape.len() - tok_mismatch,
         eager_tape.len(),
         compared - sel_mismatch,
@@ -294,8 +375,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut eager_ms = Vec::with_capacity(reps);
     let mut graph_ms = Vec::with_capacity(reps);
     for r in 0..reps {
-        let (_, _, a) = run_arm(&e, &m, &prompt, steps, false, false)?;
-        let (_, _, b) = run_arm(&e, &m, &prompt, steps, true, false)?;
+        // Timing arms take the un-perturbed walk: a forced re-capture is a correctness arm,
+        // never a measured configuration.
+        let (_, _, a, _) = run_arm(&e, &m, &prompt, steps, false, false, None)?;
+        let (_, _, b, _) = run_arm(&e, &m, &prompt, steps, true, false, None)?;
         println!("  rep {r}: eager {a:.3} ms/token   graph {b:.3} ms/token");
         eager_ms.push(a);
         graph_ms.push(b);
