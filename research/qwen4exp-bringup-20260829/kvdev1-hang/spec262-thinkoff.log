@@ -1,0 +1,28 @@
+# qwen4exp_real_gate	label=r4spec262-thinkoff	binary_sha256=a9c58196b1383b33be4774dff35e23203ff42f4b2014e1bcc7ab0a5982c929a5	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=false	seams_env=idxsel
+# vram	post-engine	0, 0 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 595 MiB, 97887 MiB | 3, 595 MiB, 97887 MiB
+# load	173.8s
+# vram	post-load	0, 0 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 89971 MiB, 97887 MiB | 3, 9555 MiB, 97887 MiB
+# spec-state-allocated	rung=262144	cap=262193	0, 0 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 92883 MiB, 97887 MiB | 3, 9811 MiB, 97887 MiB
+# spec-prefill-progress	fill=16384/262144	chunks=8	elapsed_s=82.7	draft_s=2.9
+# spec-prefill-progress	fill=32768/262144	chunks=16	elapsed_s=167.7	draft_s=5.9
+# spec-prefill-progress	fill=49152/262144	chunks=24	elapsed_s=253.6	draft_s=9.0
+# spec-prefill-progress	fill=65536/262144	chunks=32	elapsed_s=340.7	draft_s=12.3
+# spec-prefill-progress	fill=81920/262144	chunks=40	elapsed_s=428.8	draft_s=15.5
+# spec-prefill-progress	fill=98304/262144	chunks=48	elapsed_s=518.0	draft_s=18.9
+# spec-prefill-progress	fill=114688/262144	chunks=56	elapsed_s=608.1	draft_s=22.4
+# spec-prefill-progress	fill=131072/262144	chunks=64	elapsed_s=699.3	draft_s=26.0
+# spec-prefill-progress	fill=147456/262144	chunks=72	elapsed_s=791.6	draft_s=29.6
+# spec-prefill-progress	fill=163840/262144	chunks=80	elapsed_s=885.0	draft_s=33.3
+# spec-prefill-progress	fill=180224/262144	chunks=88	elapsed_s=979.3	draft_s=37.1
+# spec-prefill-progress	fill=196608/262144	chunks=96	elapsed_s=1074.8	draft_s=41.0
+# spec-prefill-progress	fill=212992/262144	chunks=104	elapsed_s=1171.2	draft_s=45.0
+# spec-prefill-progress	fill=229376/262144	chunks=112	elapsed_s=1268.6	draft_s=49.0
+# spec-prefill-progress	fill=245760/262144	chunks=120	elapsed_s=1367.0	draft_s=53.2
+# spec-prefill-progress	fill=262144/262144	chunks=128	elapsed_s=1466.5	draft_s=57.4
+# spec-prefill-shed	workspace_mib=1175.2	chunks=128
+# ladder-spec-rung	262144	1409.1	57.4	23.7	42.16	0.567	19	1	sub_ms=[29.6, 23.7, 18.4]	46.96	false	10738.9	0, 0 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 96563 MiB, 97887 MiB | 3, 24467 MiB, 97887 MiB	8160,579,279,13996,13,8439,488,3105,914,24147,279,3889,709,11,353,3172,958,264,17697,4667,5792,709,430,279,3010,1892,279,5215,16298,310,866,709,314,411,5893,13
+
+# ladder receipt: /root/realgate/kvdev1hang/ladder-r4spec262-thinkoff.tsv
+# load-lock	rc=0	killed=no
