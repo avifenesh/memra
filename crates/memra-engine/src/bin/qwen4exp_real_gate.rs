@@ -1170,7 +1170,7 @@ fn parse_args() -> Res<Args> {
         // chunk asks ~523 GB across the link, 128 chunks deep.
         if args.ladder_kv_dev1 {
             let deepest = *args.ladder.iter().max().expect("non-empty above");
-            let ceiling = memra_engine::qwen4exp_gpu::peer_kv_row_ceiling();
+            let ceiling = memra_engine::qwen4exp_gpu::peer_kv_max_cap();
             if deepest > ceiling {
                 return Err(format!(
                     "--ladder-kv-dev1 refused at rung {deepest}: peer-resident QSA KV is a \

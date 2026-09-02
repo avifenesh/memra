@@ -2119,7 +2119,8 @@ fn route_sync_diag() -> bool {
 
 /// Row ceiling for a PEER-RESIDENT QSA KV state (`alloc_state_reserve` with a
 /// `kv_engine` on another card — the `--ladder-kv-dev1` arm). Default 8,192 rows;
-/// `MEMRA_Q4E_PEER_KV_MAX_CAP` moves it for a deliberate re-measurement.
+/// `MEMRA_Q4E_PEER_KV_MAX_CAP` moves it for a deliberate re-measurement. `pub` so the
+/// ladder CLI can refuse at arg-parse time, BEFORE paying a ~100 s checkpoint load.
 ///
 /// Why there is a ceiling at all (memra#53, lane box, 4x RTX PRO 6000, all pairs PHB,
 /// `nvidia-smi topo -p2p r` OK everywhere). The block-list attention form is the ONLY
@@ -2145,7 +2146,7 @@ fn route_sync_diag() -> bool {
 /// at the same capacity), and `load_from_dir_dev1` + `--mtp-dev1` already place that on
 /// card 1. Moving the 2.7 GiB KV instead buys ~2.7 GiB and pays for it with the scatter
 /// cliff above.
-fn peer_kv_max_cap() -> usize {
+pub fn peer_kv_max_cap() -> usize {
     static C: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
     *C.get_or_init(|| {
         std::env::var("MEMRA_Q4E_PEER_KV_MAX_CAP")
@@ -2153,12 +2154,6 @@ fn peer_kv_max_cap() -> usize {
             .and_then(|v| v.trim().parse::<usize>().ok())
             .unwrap_or(8192)
     })
-}
-
-/// The `peer_kv_max_cap` ceiling, for callers that want to refuse BEFORE paying a
-/// 100-second checkpoint load (the ladder CLI does this at arg-parse time).
-pub fn peer_kv_row_ceiling() -> usize {
-    peer_kv_max_cap()
 }
 
 const ROUTE_AUDIT_ULP_BOUND: u32 = 8;
