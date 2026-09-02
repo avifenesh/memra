@@ -1,0 +1,42 @@
+# qwen4exp_real_gate	label=fs2-sxc-raw	binary_sha256=ba3d443bf309bf8d2f7001723f64d07f223770e8430d25f4a091dcfa30260485	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=true	seams_env=idxsel,kvq,idxq
+# vram	post-engine	0, 595 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 0 MiB, 97887 MiB | 3, 0 MiB, 97887 MiB
+# load	91.6s
+# vram	post-load	0, 95283 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 0 MiB, 97887 MiB | 3, 0 MiB, 97887 MiB
+# draft-trim	ranks=/root/realgate/frspec/q4e-ranks-sxc32768.txt	available=32768	armed_n=32768	build_s=0.1	vram	0, 95443 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 0 MiB, 97887 MiB | 3, 0 MiB, 97887 MiB
+# qwen4exp_real_gate	label=fs2-sxc-raw	binary_sha256=ba3d443bf309bf8d2f7001723f64d07f223770e8430d25f4a091dcfa30260485	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=true	seams_env=idxsel,kvq,idxq
+# trim-ab k=5 trim_n=32768 vocab=248320: full-vocab draft head vs FR-Spec trimmed head, interleaved, fresh states per arm per rep, ARM ORDER FLIPPED on odd reps
+# order = position of the arm INSIDE its rep (1 = ran first): an arm that is always second carries whatever the first arm left behind (clocks, allocator, caches), and a fixed order hides that inside the mean
+rep	arm	order	draft_head_rows	tokens	ms_per_token	tok_per_s	accept_rate	mean_accept_len	draft_ms_share	hist
+0	full	1	248320	256	7.59	131.84	0.840	5.12	0.19	1,2,5,6,0,36
+0	trim	2	32768	256	7.56	132.21	0.745	4.65	0.10	3,4,9,5,2,32
+1	trim	1	32768	256	7.65	130.75	0.745	4.65	0.10	3,4,9,5,2,32
+1	full	2	248320	256	7.53	132.87	0.840	5.12	0.19	1,2,5,6,0,36
+2	full	1	248320	256	7.44	134.45	0.840	5.12	0.19	1,2,5,6,0,36
+2	trim	2	32768	256	7.42	134.85	0.745	4.65	0.10	3,4,9,5,2,32
+3	trim	1	32768	256	7.25	137.88	0.745	4.65	0.10	3,4,9,5,2,32
+3	full	2	248320	256	7.32	136.66	0.840	5.12	0.19	1,2,5,6,0,36
+4	full	1	248320	256	7.30	137.02	0.840	5.12	0.19	1,2,5,6,0,36
+4	trim	2	32768	256	7.23	138.25	0.745	4.65	0.11	3,4,9,5,2,32
+# arm full	mean_of_means_ms=7.43	min=7.30	max=7.59	spread_pct=3.859	tok_per_s=134.54	mean_accept_rate=0.840	mean_accept_len=5.12
+# arm trim	mean_of_means_ms=7.42	min=7.23	max=7.65	spread_pct=5.590	tok_per_s=134.72	mean_accept_rate=0.745	mean_accept_len=4.65
+# speedup_trim_over_full	1.0014
+# rep0_full_vs_trim_first_divergence	-1
+# rep0_full	271,248068,271,248069,271,71093,12305,198,1005,19876,25,198,262,687,1259,2251,3676,701,11,1009,28,15,11,1727,5675,1590,198,285,638,10518,283,1009,198,285,638,4381,283,1727,1358,727,10562,22517,39914,36053,7080,16,25,19876,11,1103,17,25,19876,8,1411,19876,25,198,262,4071,198,262,38754,1330,10300,10278,11140,1083,799,10300,10278,1103,13,198,1031,262,17167,25,198,285,1103,16,25,10877,314,279,1118,10300,10278,1103,13,198,285,1103,17,25,10877,314,279,2018,10300,10278,1103,13,198,1031,262,5019,25,198,285,10877,314,279,25170,10300,10278,1103,13,198,262,4071,198,262,653,4091,264,16782,2357,310,8418,430,279,1151,314,279,25170,1103,198,262,16782,283,19876,7,15,8,198,262,1428,283,16782,6987,262,653,83739,2107,11140,321,9150,7552,198,262,1345,1103,16,321,1103,17,25,198,285,413,1103,16,10518,2564,1103,17,10518,25,198,309,1428,4381,283,1103,16,198,309,1103,16,283,1103,16,4381,198,285,745,25,198,309,1428,4381,283,1103,17,198,309,1103,17,283,1103,17,4381,198,285,1428,283,1428,4381,6987,262,653,46772,279,9376,5255,494,2892,1103,16,466,1103,17,198,262,413,1103,16,25,198,285,1428,4381,283,1103,16,198,262,4265,1103,17,25,198,285,1428
+# rep0_trim	271,248068,271,248069,271,71093,12305,198,1005,19876,25,198,262,687,1259,2251,3676,701,11,1009,28,15,11,1727,5675,1590,198,285,638,10518,283,1009,198,285,638,4381,283,1727,1358,727,10562,22517,39914,36053,7080,16,25,19876,11,1103,17,25,19876,8,1411,19876,25,198,262,4071,198,262,38754,1330,10300,10278,11140,1083,799,10300,10278,1103,13,198,1031,262,17167,25,198,285,1103,16,25,10877,314,279,1118,10300,10278,1103,13,198,285,1103,17,25,10877,314,279,2018,10300,10278,1103,13,198,1031,262,5019,25,198,285,10877,314,279,25170,10300,10278,1103,13,198,262,4071,198,262,653,4091,264,16782,2357,310,8418,430,279,1151,314,279,25170,1103,198,262,16782,283,19876,7,15,8,198,262,1428,283,16782,6987,262,653,83739,2107,11140,321,9150,7552,198,262,1345,1103,16,321,1103,17,25,198,285,413,1103,16,10518,2564,1103,17,10518,25,198,309,1428,4381,283,1103,16,198,309,1103,16,283,1103,16,4381,198,285,745,25,198,309,1428,4381,283,1103,17,198,309,1103,17,283,1103,17,4381,198,285,1428,283,1428,4381,6987,262,653,46772,279,9376,5255,494,2892,1103,16,466,1103,17,198,262,413,1103,16,25,198,285,1428,4381,283,1103,16,198,262,4265,1103,17,25,198,285,1428
+
+# trim-ab receipt: /root/realgate/frspec/ab-trim-k5-n32768-fs2-sxc-raw.tsv
+# greedy prompt 0: first_divergence=-1 matched=64/64 prefill=0.28s mean_decode=12.9ms
+# greedy prompt 1: first_divergence=8 matched=8/64 prefill=0.18s mean_decode=12.8ms
+# greedy prompt 2: first_divergence=-1 matched=64/64 prefill=0.19s mean_decode=12.8ms
+# greedy prompt 3: first_divergence=26 matched=26/64 prefill=0.28s mean_decode=12.8ms
+# greedy receipt: /root/realgate/frspec/greedy-gate-fs2-sxc-raw.tsv
+# spec-gate prompt 0: first_divergence=-1 accept_rate=0.745 mean_len=4.65 spec=7.3ms plain=13.6ms
+# spec-gate prompt 1: first_divergence=-1 accept_rate=0.186 mean_len=1.94 spec=17.3ms plain=13.5ms
+# spec-gate prompt 2: first_divergence=-1 accept_rate=0.474 mean_len=3.37 spec=10.0ms plain=13.4ms
+# spec-gate prompt 3: first_divergence=-1 accept_rate=0.347 mean_len=2.72 spec=12.3ms plain=13.4ms
+# spec-gate receipt: /root/realgate/frspec/spec-gate-k5-fs2-sxc-raw.tsv
+# load-lock	rc=0	killed=no

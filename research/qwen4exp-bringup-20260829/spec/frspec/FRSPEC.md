@@ -223,36 +223,98 @@ pairs are re-cut at x5 below.
 
 ### Pass 2 — the claim rows, x5 on the shipped program (rebased onto v0.124.0 / c04c1da9b)
 
-`qwen4exp_real_gate.frspec2`, binary sha256 `ba3d443bf309bf8d2f7001723f64d07f223770e8430d25f4a091dcfa30260485`.
+`qwen4exp_real_gate.frspec2`, binary sha256
+`ba3d443bf309bf8d2f7001723f64d07f223770e8430d25f4a091dcfa30260485`. x5 interleaved, arm order
+flipped on odd reps, fresh states per arm per rep, chains byte-identical in every arm
+(`rep0_full_vs_trim_first_divergence = -1`), receipts in `box/`:
 
-| cell | shape | policy | full tok/s | trim tok/s | ratio | accept full->trim | len full->trim | spread full/trim |
-|---|---|---|---|---|---|---|---|---|
-| A2 | thinkon | adapt k_lo=1, pmin 0.3 | 84.62 | 90.23 | **1.0663** | 0.599 -> 0.611 | 1.94 -> 1.94 | 0.750% / 0.272% |
+| cell | shape | policy | ranks | full tok/s | trim tok/s | ratio | accept full->trim | len full->trim | spread f/t | per-rep ranges |
+|---|---|---|---|---|---|---|---|---|---|---|
+| A2 | thinkon | adapt k_lo=1, pmin 0.3 | ogblend | 84.62 | 90.23 | **1.0663** | 0.599 -> 0.611 | 1.94 -> 1.94 | 0.750% / 0.272% | disjoint |
+| B2 | thinkoff | adapt k_lo=1, pmin 0.3 | ogblend | 107.47 | 115.86 | **1.0781** | 0.715 -> 0.713 | 3.01 -> 3.01 | 3.789% / 3.590% | disjoint |
+| C2 | efflow | adapt k_lo=1, pmin 0.3 | ogblend | 93.91 | 99.13 | **1.0556** | 0.612 -> 0.599 | 2.49 -> 2.44 | 3.485% / 2.436% | disjoint |
+| D2 | raw (bench) | fixed K=5 | ogblend | 135.20 | 135.47 | 1.0020 | 0.840 -> 0.745 | 5.12 -> 4.65 | 3.989% / 5.441% | overlapping |
+| E2 | raw (bench) | fixed K=5 | sxc (control) | 134.54 | 134.72 | 1.0014 | 0.840 -> 0.745 | 5.12 -> 4.65 | 3.859% / 5.590% | overlapping |
 
-At x5 the full arm still spreads 0.750%, but the verdict margin (6.63%) is ~6x that and well
-outside 2x the pooled spread, so rule (b) does not fire again. Per-rep sign is 5/5 for the
-trim, in both arm orders. **Acceptance did not pay for the head this time**: accept rate
-rose 0.599 -> 0.611 and mean accept length was unchanged at 1.94, because at this width the
-only chain steps the trim can move are those whose full-vocab top-1 is out of set, and its
-best in-set token matches the target about as often as the full head's did.
+**The three served shapes win and the win is not a spread artifact**: every rep of the trim
+arm is faster than every rep of the full arm in both arm orders (e.g. thinkoff trim
+8.53-8.84 ms against full 9.20-9.55), which is a stronger statement than the spread
+arithmetic and is the reason the x5 verdicts stand despite 2.4-3.8% within-arm spreads on
+the two shapes whose prompts are short.
 
-Supporting receipts, same boot: width sweep (below), hidden-state gate 10/10 argmax
-agreement, `spec-gate` byte identity 4/4 at 256 tokens with the trim armed (accept
-0.611/0.652/0.790/0.754 across the four thinkon prompts), and the vendor-default sampled
-twin on BOTH arms — full 79.65 tok/s with 34/65 accepting rounds, trim 84.12 tok/s with
-39/66, 128 tokens each (above the token floor of TRAP:short-sampled-row-fakes-tok-s; the
-arms share one boot, and this row is an engagement receipt, not the perf claim).
+**The bench shape is a no-verdict, in both classes.** raw's 0.20% and 0.14% sit deep inside
+4-5.5% spreads, so this lane claims nothing there beyond the obvious: at N=32,768 the
+-11.8% mtp10 measured at N=11,854 on this shape is gone. Its accept-len cost is real and
+visible (5.12 -> 4.65) and it is fully paid for by the cheaper head.
+
+**Acceptance did not pay for the head on the served shapes**: thinkon accept ROSE
+0.599 -> 0.611 with mean length unchanged, thinkoff 0.715 -> 0.713 with length unchanged,
+efflow -0.013 / -0.05. At this width the only chain steps a trim can move are those whose
+full-vocab top-1 is out of set, and its best in-set token matches the target about as often
+as the full head's did.
+
+Vendor-default sampled twin, both arms in the SAME boot (`--spec-sampled`, temp 1.0 /
+top_p 0.95 / top_k 20, seed 0x5eedcafe, 128 tokens per arm — above the token floor of
+TRAP:short-sampled-row-fakes-tok-s), engagement required per arm:
+
+| shape | full tok/s (accepting rounds) | trim tok/s (accepting rounds) |
+|---|---|---|
+| thinkon | 79.65 (34/65) | 84.12 (39/66) |
+| thinkoff | 98.94 (37/44) | 106.61 (37/44) |
+| efflow | 89.05 (40/53) | 96.00 (40/50) |
+
+Exactness, every cell: `--trim-ab` chain identity `-1`; `--spec-gate 256` byte identity
+`pass=true` on all five cells WITH the trim armed; hidden-state gate 10/10 argmax agreement
+on all three ship-policy boots; every swept width's chain equal to the full-vocab control.
+The plain greedy gate on the dump prompts reproduces the banked KV-quant signature exactly
+(p0 -1/64, p1 8/8, p2 -1/64, p3 26/26 — the rows of `../../kvq/box/greedy-gate-kvq-raw.tsv`),
+i.e. the quantized-cache numeric program, untouched by this lane.
 
 ### Width: chosen, not inherited
 
-thinkon at ship policy, one run per width plus the full-vocab control, shipped program:
+thinkon at ship policy, one run per width plus the full-vocab control, shipped program
+(`box/trim-sweep-k5-fs2-og-thinkon.tsv` and `...-w64.tsv`, two boots):
 
 | draft head rows | tok/s | accept | mean accept len | draft share | chain == control |
 |---|---|---|---|---|---|
-| 248,320 (control) | 81.88 | 0.599 | 1.94 | 0.12 | yes |
+| 248,320 (control) | 81.88 / 81.90 | 0.599 | 1.94 | 0.12 | yes |
 | 8,192 | 86.26 | 0.584 | 1.91 | 0.06 | yes |
 | 16,384 | 87.12 | 0.596 | 1.94 | 0.07 | yes |
-| 32,768 | 88.20 | 0.611 | 1.94 | 0.07 | yes |
+| **32,768** | **88.20 / 86.99** | 0.611 | 1.94 | 0.07 | yes |
+| 49,152 | 86.64 | 0.603 | 1.92 | 0.07 | yes |
+| 65,536 | 86.86 | 0.600 | 1.92 | 0.08 | yes |
+
+The knee is interior and it is 32,768: below it coverage costs more than the head saves,
+above it the head costs more than coverage adds, and 49,152/65,536 are flat-to-worse. The
+estimator predicted that shape before any of these boots existed (1.052 / 1.048 / 1.043).
+
+### Estimator vs measurement, per cell (`predict_cells.py`)
+
+`q` on the chain each cell actually ran, `H` from that cell's own two `draft_ms_share`
+values, `A` the single imported constant:
+
+| cell | q | H | A | predicted | measured |
+|---|---|---|---|---|---|
+| thinkon | 0.0156 | 0.0576 | 0.491 | 1.0446 | 1.0663 |
+| thinkoff | 0.0195 | 0.0783 | 1.744 | 1.0364 | 1.0781 |
+| efflow | 0.0156 | 0.0760 | 0.491 | 1.0624 | 1.0556 |
+| raw (ogblend) | 0.0508 | 0.0991 | 1.402 | 1.0162 | 1.0020 |
+| raw (sxc) | 0.0625 | 0.1014 | 1.402 | 1.0004 | 1.0014 |
+
+Direction right in 5/5, magnitude within 0.7-4.2 points, and it is conservative exactly
+where §2 said it would be (thinkoff, whose window sits above the adaptive floor). It is an
+instrument for DECIDING (width, class, whether to boot at all), never a substitute for the
+A/B.
+
+### What the cells could NOT settle: the class
+
+The own-gen-headed blend is the artifact because it covers **100% of this model's own
+emitted mass against the corpus classes' 96.5-96.7%** (§3) and because the pooled-chain
+estimate separates the classes on code-shaped text (0.82 vs 1.02). The measured control does
+NOT establish it: on the ONE chain `--trim-ab` runs for the raw shape both classes are well
+covered (q 0.0625 vs 0.0508) and the two cells came out 1.0014 vs 1.0020 — indistinguishable
+inside their spreads. Anyone re-opening the class question needs cells on chains where the
+classes' coverage actually differs, not this pair.
 
 ### Round-cost reconciliation
 

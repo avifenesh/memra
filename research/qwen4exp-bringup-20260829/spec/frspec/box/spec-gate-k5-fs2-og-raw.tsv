@@ -1,0 +1,14 @@
+# qwen4exp_real_gate	label=fs2-og-raw	binary_sha256=ba3d443bf309bf8d2f7001723f64d07f223770e8430d25f4a091dcfa30260485	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=true	seams_env=idxsel,kvq,idxq
+# spec-gate k=5 tokens=256: plain greedy vs spec chains, byte identity
+prompt	first_divergence	accept_rate	mean_accept_len	hist	spec_ms_per_token	plain_ms_per_token	pass
+0	-1	0.745	4.65	4,3,9,5,1,33	7.22	13.63	true
+# round-cost	prompt=0	rounds=55	chain_ms=3.30	replay_ms=0.23	verify_ms=29.97	cross_ms=0.000	zero_draft=0	guard_stops=0
+1	-1	0.198	2.00	78,15,14,8,5,8	16.76	13.47	true
+# round-cost	prompt=1	rounds=128	chain_ms=3.13	replay_ms=0.16	verify_ms=29.99	cross_ms=0.000	zero_draft=0	guard_stops=0
+2	-1	0.474	3.37	18,14,11,7,7,19	9.99	13.42	true
+# round-cost	prompt=2	rounds=76	chain_ms=3.19	replay_ms=0.21	verify_ms=30.07	cross_ms=0.000	zero_draft=0	guard_stops=0
+3	-1	0.365	2.81	34,12,15,9,8,13	11.90	13.45	true
+# round-cost	prompt=3	rounds=91	chain_ms=3.16	replay_ms=0.19	verify_ms=29.93	cross_ms=0.000	zero_draft=0	guard_stops=0
+# verdict	policy=byte-identity	pass=true
