@@ -319,6 +319,26 @@ the lane as a priced dead end rather than carry a live seam nobody flips — the
 26.4% of the round and its ceiling is 6.4%, so there is no version of this lever that
 reaches the owner's 200 target and it has to justify itself on its own size.
 
+### 6a. The cells ran (box, 2026-09-01/02) — receipts in `box/`
+
+| cell | result |
+|---|---|
+| A shape ladder (t=6, box card) | auto section 162.6 us vs shipped 194.4 us = **1.195x** (vs bit-identical control 1.102x); t=1 pass confirms the same knee |
+| B spec A/B, serving caches, K=5 thinkon, 5x64 x3 holds | auto **90.07 / 90.60 / 90.08** vs off **87.38 / 87.14 / 87.47** tok/s = +3.1 / +4.0 / +3.0%; f32-pinned first run (kept in `box/spec-ab-f32pin/`) +2.6 / +3.1 / +2.9%; `first_divergence=-1` every arm |
+| C t=1 decode A/B, 32k | 0.9999x, 1.0001x (5 reps, escalated) |
+| D 262k rung | 1.0003x (5 reps, escalated) |
+
+**Against the pre-registered rule:** (1) MISSED by a hair — gain 2.9-3.8% vs per-arm spreads
+2.3-4.0% on every hold, though the sign never flipped across six holds; (2) PASS (flat);
+(3) PASS (flat); (4) rig gate on the flip tip PASS. The "under ~2%" dead-end clause does not
+bite. Proposed on this record (flip PR): **default ON**, rollback `selgroup=0`; the owner decides. The
+sampled twin remains owed before any SERVING claim cites the +3%.
+
+Two cell-script defects only the live run could expose, both fixed at source: the flock
+re-entry shell never saw `CARD_TOTAL_MIB` (#44), and cell B lacked `--goldens/--prompts` —
+the binary's spec section is gated on `--goldens` (#49); with them, the f32 exactness pin
+arms unless `kvq,idxq` are named in the seams (also #49).
+
 ## 7. Where the section's time still is, for whoever holds this next
 
 - **Warp packing, still unpriced at the chunk shape.** `block_dim` is 32 and the revert that

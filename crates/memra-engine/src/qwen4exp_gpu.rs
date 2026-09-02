@@ -1486,14 +1486,22 @@ fn sel_v3_on() -> bool {
 // ROUND-BUDGET-COMPOSITION.md) and the pack kernel's shape differs; if the EP2 lane
 // revives a two-card route through seg C, extend the seam there THEN, with its own gate
 // arm, rather than silently inheriting a shape never measured on the pack kernel.
+// DEFAULT FLIPPED TO AUTO 2026-09-02 on box receipts (research/qwen4exp-bringup-20260829/spec/
+// downsel/box/): cell B (K=5 spec A/B, serving caches q8_0/q5_1 + idxq q8, 5x64 interleaved,
+// arm order flipped per hold, spec-vs-plain byte identity on every arm) auto vs off =
+// 90.07/87.38, 90.60/87.14, 90.08/87.47 tok/s (+3.1/+4.0/+3.0%); cell C t=1 decode 32k
+// 0.9999x/1.0001x, cell D 262k rung 1.0003x (5 reps each) — no depth regression. The
+// pre-registered bar "gain > both arms' spread" was MISSED BY A HAIR on each hold (gain
+// 2.9-3.8% vs spreads 2.3-4.0%) while the sign never flipped across six holds; the flip
+// PR carries that record for the owner's call. Rollback: `MEMRA_Q4E_SEAMS=selgroup=0`.
 const SEL_GROUP_OFF: u32 = 0;
 const SEL_GROUP_AUTO: u32 = 1;
 /// Down-projection family (`launch_nvfp4_sel_matvec`).
 static SEL_GROUP_DN: std::sync::atomic::AtomicU32 =
-    std::sync::atomic::AtomicU32::new(SEL_GROUP_OFF);
+    std::sync::atomic::AtomicU32::new(SEL_GROUP_AUTO);
 /// Fused gate+up+silu family (`launch_nvfp4_sel_gu_silu`).
 static SEL_GROUP_GU: std::sync::atomic::AtomicU32 =
-    std::sync::atomic::AtomicU32::new(SEL_GROUP_OFF);
+    std::sync::atomic::AtomicU32::new(SEL_GROUP_AUTO);
 
 fn sel_group_dn() -> u32 {
     SEL_GROUP_DN.load(std::sync::atomic::Ordering::Relaxed)
