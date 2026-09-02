@@ -1,0 +1,12 @@
+# changelog baseline: what a history root stands for.
+#
+# When tools/changelog.sh finds NO release tag reachable from the target ref it falls back
+# to the root commit. On a history rebuilt from a content snapshot (2026-09-01) that root is
+# not "the beginning": it stands for an old-history commit that sat N commits past the last
+# real release, and the release notes must say so or the first tag on the new history
+# silently drops every pre-snapshot change from the public record.
+#
+# Columns (tab-separated): <root commit sha> <predecessor release tag> <old-history commit
+# the root snapshots> <archive notes path, appended to the draft>. One row per history root;
+# a row whose root is not the current history's root is ignored.
+49d1d6f6594a7df52d3fed3268c5355026e3fae7	v0.123.0	469c8898e	docs/archive/CHANGELOG-preswap-v0.123.0-to-469c8898e.md
