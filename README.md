@@ -66,6 +66,7 @@ library embedded in your application.
 ## Choose a path
 
 **By model:** [Qwen3.8 27B](docs/models/qwen38-27b.md) ·
+[Qwen3.8 Flash Next](docs/models/qwen38-flash-next.md) (NativeReference bring-up) ·
 [Qwen3.5 9B](docs/models/qwen35-9b.md) · [Qwen3.6 27B](docs/models/qwen36-27b.md) ·
 [Qwen3.6 35B-A3B](docs/models/qwen36-35b-a3b.md) ·
 [Qwen-AgentWorld 35B-A3B](docs/models/qwen-agentworld-35b-a3b.md) ·
@@ -78,7 +79,8 @@ library embedded in your application.
 [Gemma 4 E4B](docs/models/gemma4-e4b.md) ·
 [Step 3.7 Flash](docs/models/step37-flash.md) ·
 [DeepSeek V4 Flash](docs/models/deepseek-v4-flash.md) ·
-[Hy3](docs/models/hy3.md) (NativeReference)
+[GLM-5.3 Flash](docs/models/glm53-flash.md) (NativeReference) ·
+[Hy3](docs/models/hy3.md) (NativeReference · NVFP4 NativeQualified)
 
 **By hardware:** [RTX PRO 6000 Blackwell](docs/rigs/rtx-pro-6000-blackwell.md) ·
 [RTX 5090 / 50-series](docs/rigs/rtx-5090.md) · [H100](docs/rigs/h100.md) ·

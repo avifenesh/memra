@@ -5,6 +5,7 @@ support matrix remains [docs/MODELS.md](../MODELS.md); measurements remain
 [docs/PERFORMANCE.md](../PERFORMANCE.md).
 
 - [Qwen3.8 27B](qwen38-27b.md)
+- [Qwen3.8 Flash Next](qwen38-flash-next.md) — NativeReference bring-up
 - [Qwen3.5 9B](qwen35-9b.md)
 - [Qwen3.6 27B](qwen36-27b.md)
 - [Qwen3.6 35B-A3B](qwen36-35b-a3b.md)
@@ -18,7 +19,8 @@ support matrix remains [docs/MODELS.md](../MODELS.md); measurements remain
 - [Gemma 4 E4B](gemma4-e4b.md)
 - [Step 3.7 Flash 196B-A11B](step37-flash.md)
 - [DeepSeek V4 Flash](deepseek-v4-flash.md) — experimental
-- [Hy3](hy3.md) — NativeReference; checkpoint and serving qualification pending
+- [GLM-5.3 Flash](glm53-flash.md) — NativeReference
+- [Hy3](hy3.md) — NativeReference canonical plan; NativeQualified for the exact NVFP4 artifact
 
 Support is checkpoint-, quantization-, drafter-, and hardware-specific. A card is a route into
 the authoritative docs, not a promise about adjacent checkpoints.
