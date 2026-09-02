@@ -330,3 +330,12 @@ Still open before any default flip (item 2 above): the end-to-end serving A/B on
 (interleaved x5, greedy exactness + vendor-default sampled twin with a spec-engagement
 receipt, TTFT/TPOT/ITL p50/p95/p99), since a kernel-level win at t_q=1 says nothing about
 the served mix of t_q=1 plain steps and t_q=4..8 verify steps.
+
+## 10. Depth follow-on
+
+The same box's end-to-end depth A/B (256k context, DFlash2 spec route) first read as the
+t-keyed arm halving decode; the bisect then found the same slow mode with every B200 door
+off, so the attribution is not established. The gate's kv sweep (2k/32k/128k/256k, cold-L2
+scrub, regression at every (t_q, kv)) lives in lane/b200-mla-depth-20260902:
+`research/b200-mla-depth-20260902/LANE.md`. No depth key in the policy until the plain-route
+arms say the arm itself loses at depth.
