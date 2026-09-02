@@ -13858,3 +13858,398 @@ extern "C" __global__ void qmatvec_q8_0_rows_tw32(
         if (lane == 0) y[(size_t)c * out_f + row] = a;
     }
 }
+
+// =====================================================================================
+// B200 HBM-SPEED DECODE MATVECS (MEMRA_B200_GEMV_V2, lane/b200-gemv-hbm-20260902)
+// =====================================================================================
+//
+// THE ROOFLINE THIS SET IS DESIGNED AGAINST. nsys, 2x B200 SXM (8 TB/s HBM3e, 148 SMs,
+// 228 KB smem/SM), sm_100a build, GLM-5.3-Flash NVFP4 W4A16 mint, resident PP2, plain
+// decode t=1, both devices summed, every occupancy door ON:
+//
+//   qmatvec_kda6_bf16f32           93.8us / ~200 MB  = 2.1 TB/s   (26% of HBM)
+//   moe_gate_up_preclamp8_q8_w4    52.4us / ~50 MB   = 1.0 TB/s   (12%)
+//   moe_down8_fma_q8_w4            28.2us / ~25 MB   = 0.9 TB/s   (11%)
+//   matvec_bf16_f32acc_x4_rows_pf  23.6us / 64 MB    = 2.7 TB/s   (34%)
+//
+// On the RTX PRO 6000 (1.8 TB/s GDDR7, 188 SMs) the same kernels sit near their DRAM wall.
+// On B200 they are 3 to 9x off it, and the previous lane's warp-packing/prefetch arms bought
+// only ~5% — so the remaining gap is NOT block-slot occupancy. It is BYTES IN FLIGHT PER SM.
+// Little's law at 8 TB/s and a ~700 ns HBM3e round trip needs ~5.6 MB of reads outstanding
+// ACROSS THE DIE, i.e. ~38 KB per SM, at all times. The shipped kernels do not get there:
+//
+//   * matvec_bf16_f32acc_x4_rows walks its FOUR rows SEQUENTIALLY, each row ending in a full
+//     red[] tree with a __syncthreads per step (28 barriers per block), and it re-reads the
+//     f32 activation ONCE PER ROW. Per K step a thread has 1 weight load and 2 activation
+//     loads in flight and then stalls on its own 8-fma chain; the activation traffic is 2x
+//     the weight traffic it is trying to stream.
+//   * the NVFP4 expert pair runs one un-unrolled g loop, so a lane holds one group's loads.
+//   * moe_down8_fma_q8 walks its 8 experts SEQUENTIALLY inside ONE warp, so the whole kernel
+//     is out_f warps wide (4096 warps = 0.43 of a full-occupancy B200 wave).
+//
+// Every kernel below is the SAME arithmetic, rescheduled: more independent loads in flight
+// per thread, activations loaded once and reused across the rows that share them, reductions
+// batched so R rows pay ONE barrier chain instead of R, and grids that cover the die. All of
+// them are BIT-IDENTICAL to their shipped twin per output element (the split-K arm at the end
+// is the one exception and is a NAMED numeric class). Door MEMRA_B200_GEMV_V2, default OFF.
+
+// Rows per block for the v2 bf16 GEMV. 8 (not the shipped 4) because the activation is loaded
+// ONCE per K step and reused across all R rows: at R=8 a block reads 8*in_f*2 B of weight
+// against in_f*4 B of activation (4:1) where the shipped kernel reads 4*in_f*2 against
+// 4*in_f*4 (1:2). It also keeps the grid honest: out_f=8192 -> 1024 CTAs over 148 SMs.
+#define MEMRA_GEMV_V2_ROWS 8
+
+// One dynamic-shared-memory window for the whole v2 family (R * blockDim.x floats). Declared
+// once at file scope: a per-function `extern __shared__` of the same name is a linkage-conflict
+// warning, and every kernel that takes dynamic smem aliases the same window anyway.
+extern __shared__ float gemv_v2_red[];
+
+// Per-thread K walk for R rows at once. `wr[]` are the R row bases (clamped to a live row in
+// the tail block; those lanes' results are discarded, never written). Two-stage software
+// pipeline: stage B's R weight loads plus the 2 activation loads issue BEFORE stage A's R x 8
+// fma chains run, so at R=8 a thread has 10 independent loads (8 x 16 B weight + 2 x 16 B
+// activation = 160 B) outstanding while it computes. At 128 threads/block and the ~5 resident
+// blocks this register budget admits, that is ~100 KB in flight per SM, comfortably past the
+// ~38 KB Little's-law floor.
+//
+// BIT-IDENTITY. For a given row, thread `tid` accumulates exactly the shipped kernel's subset
+// (i = tid*8, +stride, ...) in exactly the shipped order, with the same 8 `acc +=` fma
+// expressions on the same operands. Only the ISSUE order of loads belonging to DIFFERENT rows
+// changes, and the R rows never share an accumulator. `ld.global.nc` (__ldg) changes the cache
+// path, not the value.
+template <int R>
+__device__ __forceinline__ void gemv_v2_walk_bf16(
+        const unsigned short* __restrict__ w, int in_f, int row0, int nrow,
+        const float* __restrict__ x, float (&acc)[R], int k0, int k_end) {
+    const unsigned short* wr[R];
+#pragma unroll
+    for (int p = 0; p < R; p++) wr[p] = w + (size_t)(row0 + min(p, nrow - 1)) * (size_t)in_f;
+    const int stride = (int)blockDim.x * 8;
+    int i = k0 + (int)threadIdx.x * 8;
+    bool have = i < k_end;
+    float4 xa0 = make_float4(0.f, 0.f, 0.f, 0.f), xa1 = xa0;
+    uint4 pa[R];
+#pragma unroll
+    for (int p = 0; p < R; p++) pa[p] = make_uint4(0u, 0u, 0u, 0u);
+    if (have) {
+        xa0 = __ldg(reinterpret_cast<const float4*>(x + i));
+        xa1 = __ldg(reinterpret_cast<const float4*>(x + i + 4));
+#pragma unroll
+        for (int p = 0; p < R; p++) pa[p] = __ldg(reinterpret_cast<const uint4*>(wr[p] + i));
+    }
+    while (have) {
+        const int ni = i + stride;
+        const bool have_next = ni < k_end;
+        float4 xb0 = make_float4(0.f, 0.f, 0.f, 0.f), xb1 = xb0;
+        uint4 pb[R];
+#pragma unroll
+        for (int p = 0; p < R; p++) pb[p] = make_uint4(0u, 0u, 0u, 0u);
+        if (have_next) {
+            xb0 = __ldg(reinterpret_cast<const float4*>(x + ni));
+            xb1 = __ldg(reinterpret_cast<const float4*>(x + ni + 4));
+#pragma unroll
+            for (int p = 0; p < R; p++) pb[p] = __ldg(reinterpret_cast<const uint4*>(wr[p] + ni));
+        }
+#pragma unroll
+        for (int p = 0; p < R; p++) {
+            const unsigned short* wp = reinterpret_cast<const unsigned short*>(&pa[p]);
+            acc[p] += __uint_as_float((unsigned)wp[0] << 16) * xa0.x;
+            acc[p] += __uint_as_float((unsigned)wp[1] << 16) * xa0.y;
+            acc[p] += __uint_as_float((unsigned)wp[2] << 16) * xa0.z;
+            acc[p] += __uint_as_float((unsigned)wp[3] << 16) * xa0.w;
+            acc[p] += __uint_as_float((unsigned)wp[4] << 16) * xa1.x;
+            acc[p] += __uint_as_float((unsigned)wp[5] << 16) * xa1.y;
+            acc[p] += __uint_as_float((unsigned)wp[6] << 16) * xa1.z;
+            acc[p] += __uint_as_float((unsigned)wp[7] << 16) * xa1.w;
+        }
+        i = ni;
+        have = have_next;
+        xa0 = xb0;
+        xa1 = xb1;
+#pragma unroll
+        for (int p = 0; p < R; p++) pa[p] = pb[p];
+    }
+}
+
+// Batched block reduction for the R rows the walk above produced, in the SHIPPED tree's exact
+// order: `red[t] += red[t + s]` for s = blockDim.x/2 down to 1. The R rows run in LOCKSTEP so
+// the block pays ONE barrier per s instead of R chains of them (7 barriers instead of 28 at
+// blockDim=128). Once s reaches 16 the remaining steps live inside one warp, and
+// `__shfl_down_sync` by 16, 8, 4, 2, 1 pairs the SAME lanes in the SAME order as the smem
+// tree does, so the warp tail is the tree, not an approximation of it — taken only when
+// blockDim is a power of two (the shipped `s >>= 1` walk lands on 16 only then; mmv_block()
+// admits 96/160/224 too, and those keep the smem loop verbatim, bug-compatible and all).
+// `red` is R * blockDim.x floats of DYNAMIC shared memory (4 KB at R=8, blockDim=128).
+template <int R>
+__device__ __forceinline__ void gemv_v2_reduce_bf16(
+        float* red, const float (&acc)[R], float* __restrict__ y, int row0, int nrow) {
+    const int nb = (int)blockDim.x;
+    const int tid = (int)threadIdx.x;
+#pragma unroll
+    for (int p = 0; p < R; p++) red[p * nb + tid] = acc[p];
+    __syncthreads();
+    int s = nb >> 1;
+    for (; s >= 32; s >>= 1) {
+        if (tid < s) {
+#pragma unroll
+            for (int p = 0; p < R; p++) red[p * nb + tid] += red[p * nb + tid + s];
+        }
+        __syncthreads();
+    }
+    if ((nb & (nb - 1)) == 0) {
+        const int warp = tid >> 5, lane = tid & 31, nwarps = nb >> 5;
+        for (int p = warp; p < nrow; p += nwarps) {
+            float v = red[p * nb + lane];
+            for (int off = 16; off > 0; off >>= 1) v += __shfl_down_sync(0xffffffff, v, off);
+            if (lane == 0) y[row0 + p] = v;
+        }
+        return;
+    }
+    for (; s > 0; s >>= 1) {
+        if (tid < s) {
+#pragma unroll
+            for (int p = 0; p < R; p++) red[p * nb + tid] += red[p * nb + tid + s];
+        }
+        __syncthreads();
+    }
+    if (tid == 0) {
+        for (int p = 0; p < nrow; p++) y[row0 + p] = red[p * nb];
+    }
+}
+
+// v2 BF16 GEMV, BIT-IDENTICAL twin of matvec_bf16_f32acc_x4_rows. grid = (out_f/8, t, 1),
+// block = mmv_block() (the blockDim is part of the bit-identity claim: the reduction tree's
+// shape is a function of it), dynamic smem = 8 * blockDim.x * 4 B.
+extern "C" __global__ __launch_bounds__(256) void matvec_bf16_v2(
+        const unsigned short* __restrict__ w, const float* __restrict__ x,
+        float* __restrict__ y, int in_f, int out_f) {
+    const int R = MEMRA_GEMV_V2_ROWS;
+    const int trow = blockIdx.y;
+    x += (size_t)trow * in_f;
+    y += (size_t)trow * out_f;
+    const int row0 = blockIdx.x * R;
+    const int nrow = min(R, out_f - row0);
+    if (nrow <= 0) return;
+    float acc[R];
+#pragma unroll
+    for (int p = 0; p < R; p++) acc[p] = 0.0f;
+    gemv_v2_walk_bf16<R>(w, in_f, row0, nrow, x, acc, 0, in_f);
+    gemv_v2_reduce_bf16<R>(gemv_v2_red, acc, y, row0, nrow);
+}
+
+// SPLIT-K arm. NAMED NUMERIC CLASS `bf16_gemv_v2_splitk` — NOT bit-identical: a row's K sum is
+// split into `ksplit` contiguous chunks, each reduced independently, and the chunk partials are
+// added by the combine kernel below. The class exists for shapes whose row grid cannot cover
+// two waves of CTAs on this die (out_f/8 * t < 2 * SM count); the shipped GLM-5.3 KDA decode
+// shapes (out_f 4096/8192 at t=1 -> 512/1024 CTAs vs 296) never reach it, which is why the
+// door's dispatch is bit-identical in practice. The combine order is FIXED and ascending in k
+// (never atomics, never a reduction whose order depends on scheduling), so the class is
+// deterministic: the same input always produces the same bytes.
+// Chunks are multiples of 8 elements so every thread's 16 B loads stay aligned.
+extern "C" __global__ __launch_bounds__(256) void matvec_bf16_v2_sk(
+        const unsigned short* __restrict__ w, const float* __restrict__ x,
+        float* __restrict__ part, int in_f, int out_f, int ksplit) {
+    const int R = MEMRA_GEMV_V2_ROWS;
+    const int trow = blockIdx.y;
+    const int ks = blockIdx.z;
+    const int chunk = ((in_f / 8 + ksplit - 1) / ksplit) * 8;
+    const int k0 = ks * chunk;
+    if (k0 >= in_f) return;
+    const int k_end = min(in_f, k0 + chunk);
+    const float* xr = x + (size_t)trow * in_f;
+    // partial plane ks, token row trow: part[((ks * gridDim.y) + trow) * out_f + row]
+    float* pr = part + ((size_t)ks * gridDim.y + trow) * out_f;
+    const int row0 = blockIdx.x * R;
+    const int nrow = min(R, out_f - row0);
+    if (nrow <= 0) return;
+    float acc[R];
+#pragma unroll
+    for (int p = 0; p < R; p++) acc[p] = 0.0f;
+    gemv_v2_walk_bf16<R>(w, in_f, row0, nrow, xr, acc, k0, k_end);
+    gemv_v2_reduce_bf16<R>(gemv_v2_red, acc, pr, row0, nrow);
+}
+
+// FIXED-ORDER split-K combine: y[row] = sum over ks ASCENDING of part[ks][row]. One thread per
+// (token, row); no atomics, no scheduling-dependent order.
+extern "C" __global__ void matvec_bf16_v2_sk_combine(
+        const float* __restrict__ part, float* __restrict__ y, int out_f, int t, int ksplit) {
+    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= out_f * t) return;
+    const int trow = idx / out_f;
+    const int row = idx - trow * out_f;
+    float s = 0.0f;
+    for (int ks = 0; ks < ksplit; ks++) s += part[((size_t)ks * t + trow) * out_f + row];
+    y[(size_t)trow * out_f + row] = s;
+}
+
+// v2 twin of the fused KDA six-projection BF16 kernel (qmatvec_kda6_bf16f32). Same six ranges
+// in the same block order, same f32 rows through f32_mmvq_row1; the three BF16 ranges take the
+// v2 walk at 8 rows/block instead of kda6_bf16_rows4's four sequential rows, so the fused
+// launch inherits the whole activation-reuse / loads-in-flight / one-barrier-chain design.
+// BIT-IDENTICAL per row to qmatvec_kda6_bf16f32 (which is itself bit-identical per row to
+// matvec_bf16_f32acc_x4_rows). Block = mmv_block(); dynamic smem = 8 * blockDim.x * 4 B.
+__device__ __forceinline__ void kda6_bf16_rows8_v2(
+        const unsigned short* __restrict__ w, const float* __restrict__ x,
+        float* __restrict__ y, int in_f, int out_f, int blk) {
+    const int R = MEMRA_GEMV_V2_ROWS;
+    const int row0 = blk * R;
+    const int nrow = min(R, out_f - row0);
+    if (nrow <= 0) return;
+    float acc[R];
+#pragma unroll
+    for (int p = 0; p < R; p++) acc[p] = 0.0f;
+    gemv_v2_walk_bf16<R>(w, in_f, row0, nrow, x, acc, 0, in_f);
+    gemv_v2_reduce_bf16<R>(gemv_v2_red, acc, y, row0, nrow);
+}
+
+extern "C" __global__ __launch_bounds__(256) void qmatvec_kda6_bf16f32_v2(
+        const unsigned short* __restrict__ W0, const unsigned short* __restrict__ W1,
+        const unsigned short* __restrict__ W2,
+        const float* __restrict__ W3, const float* __restrict__ W4,
+        const float* __restrict__ W5,
+        const float* __restrict__ x,
+        float* __restrict__ y0, float* __restrict__ y1, float* __restrict__ y2,
+        float* __restrict__ y3, float* __restrict__ y4, float* __restrict__ y5,
+        int in_f, int out0, int out1, int out2, int out3, int out4, int out5,
+        int m) {
+    const int R = MEMRA_GEMV_V2_ROWS;
+    int t = blockIdx.y;
+    if (t >= m) return;
+    const float* xrow = x + (size_t)t * in_f;
+    int b = blockIdx.x;
+    int nb;
+    nb = (out0 + R - 1) / R;
+    if (b < nb) {
+        kda6_bf16_rows8_v2(W0, xrow, y0 + (size_t)t * out0, in_f, out0, b);
+        return;
+    }
+    b -= nb;
+    nb = (out1 + R - 1) / R;
+    if (b < nb) {
+        kda6_bf16_rows8_v2(W1, xrow, y1 + (size_t)t * out1, in_f, out1, b);
+        return;
+    }
+    b -= nb;
+    nb = (out2 + R - 1) / R;
+    if (b < nb) {
+        kda6_bf16_rows8_v2(W2, xrow, y2 + (size_t)t * out2, in_f, out2, b);
+        return;
+    }
+    b -= nb;
+    nb = (out3 + R - 1) / R;
+    if (b < nb) {
+        for (int p = 0; p < R; p++)
+            f32_mmvq_row1(W3, xrow, y3 + (size_t)t * out3, in_f, out3, b * R + p);
+        return;
+    }
+    b -= nb;
+    nb = (out4 + R - 1) / R;
+    if (b < nb) {
+        for (int p = 0; p < R; p++)
+            f32_mmvq_row1(W4, xrow, y4 + (size_t)t * out4, in_f, out4, b * R + p);
+        return;
+    }
+    for (int p = 0; p < R; p++)
+        f32_mmvq_row1(W5, xrow, y5 + (size_t)t * out5, in_f, out5, b * R + p);
+}
+
+// ---- v2 twins of the plain-decode glm5_next NVFP4 W4A16 expert pair -------------------------
+//
+// The 36-byte NVFP4 block layout forbids wider loads (a row base plus `sblk*36 + 4 + s*8` is
+// only 4 B aligned, so `uint2`/`uint4` are illegal here and the four `get_int_b4` reads per
+// group are not a missed vectorization). The lever that IS available is depth: the shipped
+// g loop holds ONE group's loads per row, and at in_f=4096 a lane runs only nsb/32 = 4
+// iterations, so it spends most of its life on a dependent dp4a chain with a single 18 B group
+// outstanding. These twins unroll the g walk by two, issuing BOTH groups' weight, scale and
+// activation loads before either dp4a chain runs, and pack 8 warps per block so the SM's
+// resident-block limit never binds before its warp limit.
+//
+// BIT-IDENTITY: `accg += dot(g); accu += dot(g); accg += dot(g+32); accu += dot(g+32)` is the
+// shipped per-accumulator order, unrolled; `expert_dot_g` is called with the same arguments and
+// is a pure function of them. The epilogue and the slot-ordered __fmaf_rn down chain are
+// verbatim. Only which warp runs a given (o, j) and when its loads issue changes.
+extern "C" __global__ __launch_bounds__(256) void moe_gate_up_preclamp8_q8_v2(
+        wptr8_t gp, wptr8_t up, const signed char* __restrict__ aq, const float* __restrict__ ad,
+        f32x8_t gs, f32x8_t us, float limit,
+        float* __restrict__ act, int in_f, int n_ff, int qt_g, int qt_u, long rb_g, long rb_u) {
+    int o = blockIdx.x * (int)blockDim.y + (int)threadIdx.y;   // expert-FFN row (packed)
+    int j = blockIdx.y;                                        // routed slot
+    if (o >= n_ff) return;
+    int lane = threadIdx.x;
+    int nsb = in_f >> 5;
+    const unsigned char* grow = gp.p[j] + (long)o * rb_g;
+    const unsigned char* urow = up.p[j] + (long)o * rb_u;
+    float accg = 0.0f, accu = 0.0f;
+    int g = lane;
+    for (; g + 32 < nsb; g += 64) {
+        const signed char* a0 = aq + (size_t)g * 32;
+        const signed char* a1 = aq + (size_t)(g + 32) * 32;
+        float d80 = ad[g];
+        float d81 = ad[g + 32];
+        float g0 = expert_dot_g(qt_g, grow, g, a0, d80);
+        float u0 = expert_dot_g(qt_u, urow, g, a0, d80);
+        float g1 = expert_dot_g(qt_g, grow, g + 32, a1, d81);
+        float u1 = expert_dot_g(qt_u, urow, g + 32, a1, d81);
+        accg += g0;
+        accu += u0;
+        accg += g1;
+        accu += u1;
+    }
+    for (; g < nsb; g += 32) {
+        const signed char* aqb = aq + (size_t)g * 32;
+        float d8 = ad[g];
+        accg += expert_dot_g(qt_g, grow, g, aqb, d8);
+        accu += expert_dot_g(qt_u, urow, g, aqb, d8);
+    }
+    accg = warp_reduce_sum(accg);
+    accu = warp_reduce_sum(accu);
+    if (lane == 0) {
+        float u = fmaxf(fminf(accu * us.v[j], limit), -limit);
+        float x = fminf(accg * gs.v[j], limit);
+        act[(size_t)j * n_ff + o] = (x / (1.0f + expf(-x))) * u;
+    }
+}
+
+// v2 down projection. The shipped kernel walks its 8 experts SEQUENTIALLY inside ONE warp, so
+// the whole launch is out_f warps wide: 4096 warps for the GLM-5.3 down shape, 0.43 of a
+// full-occupancy B200 wave, and every expert's DRAM round trip is serialized behind the last.
+// Here ONE BLOCK owns one output row and warp j owns expert slot j, so the launch is
+// out_f * n_used warps wide (8x) and the eight experts' bytes are in flight together.
+//
+// STILL BIT-IDENTICAL: each expert's partial is the shipped per-expert g-strided chain plus the
+// same warp_reduce_sum, and the final `chain = __fmaf_rn(w.v[k], part[k], chain)` runs in the
+// SAME ascending slot order on ONE thread. Parallelizing the experts moved no bits because the
+// slot chain was never the parallel part.
+extern "C" __global__ __launch_bounds__(256) void moe_down8_fma_q8_v2(
+        wptr8_t dp, f32x8_t w, const signed char* __restrict__ aq2, const float* __restrict__ ad2,
+        float* __restrict__ dst, int in_f, int out_f, int n_used, int qt, long rb) {
+    int o = blockIdx.x;
+    if (o >= out_f) return;
+    __shared__ float parts[8];
+    int j = (int)threadIdx.y;
+    int lane = (int)threadIdx.x;
+    int nsb = in_f >> 5;
+    if (j < n_used) {
+        const unsigned char* wrow = dp.p[j] + (long)o * rb;
+        const signed char* arow = aq2 + (size_t)j * in_f;
+        const float* adrow = ad2 + (size_t)j * nsb;
+        float acc = 0.0f;
+        int g = lane;
+        for (; g + 32 < nsb; g += 64) {
+            float p0 = expert_dot_g(qt, wrow, g, arow + (size_t)g * 32, adrow[g]);
+            float p1 = expert_dot_g(qt, wrow, g + 32, arow + (size_t)(g + 32) * 32, adrow[g + 32]);
+            acc += p0;
+            acc += p1;
+        }
+        for (; g < nsb; g += 32)
+            acc += expert_dot_g(qt, wrow, g, arow + (size_t)g * 32, adrow[g]);
+        acc = warp_reduce_sum(acc);
+        if (lane == 0) parts[j] = acc;
+    }
+    __syncthreads();
+    if (j == 0 && lane == 0) {
+        float chain = 0.0f;
+        for (int k = 0; k < n_used; k++) chain = __fmaf_rn(w.v[k], parts[k], chain);
+        dst[o] = chain;
+    }
+}
