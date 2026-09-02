@@ -16,10 +16,12 @@
 #
 # tools/skip-census.py run compares the number that ACTUALLY skipped against a named budget,
 # default 0. Where the budgets live and why:
-#   tools/validate-h100.sh    budget 0  — RETIRED with the Hopper lane (2026-09-02). Kept as
-#                                        history: the rig had the artifacts, so a skip there
-#                                        meant one went missing (measured 2026-08-20:
-#                                        90 passed, 0 skipped).
+#   tools/local-ci.sh           gguf budget 10, rig-side with artifacts present (rehomed
+#                                        2026-09-02 from tools/validate-h100.sh, deleted with
+#                                        the Hopper lane). Measured 2026-09-02: 212 passed,
+#                                        10 skipped (ckpt/twin, Hy3-repack, iq3s artifacts not
+#                                        staged). local-ci's kernel-check additionally enforces
+#                                        11 skipped cells against MEMRA_CI_KC_SKIP_BUDGET.
 #   .github/workflows/ci.yml budget 12 — a hosted runner has no /data at all, so all twelve
 #                                        skip. Twelve is therefore the count of model-backed
 #                                        assertions CI is blind to, stated rather than hidden.

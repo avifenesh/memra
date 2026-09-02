@@ -587,10 +587,11 @@ skip count, before the Hopper battery was retired) rather than in the tests:
   `$MEMRA_SKIP_CENSUS`. A **missing** file fails: absent is ambiguous between "nothing skipped"
   and "the census was never wired", and the second reads as the first.
 
-Where the budgets live and why they differ: `tools/validate-h100.sh` used **0** because the rig
-had the artifacts, so a skip there meant one went missing (measured on the dev rig 2026-08-20:
-90 passed, 7 skipped, minimax-m3, hy3-reap50, `/tmp/iq3s_raw.bin` not staged) — the battery was
-retired with the Hopper lane on 2026-09-02, and `local-ci.sh` keeps the same discipline by
+Where the budgets live and why they differ: `tools/local-ci.sh` runs the memra-gguf census
+WITH artifacts present at budget 10 (rehomed 2026-09-02 from the deleted Hopper battery;
+measured on the rig: 212 passed, 10 skipped — ckpt/twin, Hy3-repack and iq3s artifacts not
+staged there) and enforces kernel-check's skipped cells against a budget of 11 (missing-model
+cells plus the sigrouter env capture). `local-ci.sh` keeps the same discipline by
 requiring kernel-check's full verdict shape.
 `.github/workflows/ci.yml` uses **12** because a hosted runner has no `/data` at all: twelve is
 the number of model-backed assertions CI is blind to, stated out loud instead of hidden inside a
