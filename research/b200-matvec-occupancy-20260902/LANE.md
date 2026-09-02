@@ -225,3 +225,18 @@ into their respective single-arch fatbins with no nvcc errors or new warnings.
    already has its own warp-packing arm (`MEMRA_MOE_VROWS_PACK`, lane/glm5-matvec) from a
    prior lane; this lane only extended the SAME idiom to the plain-decode base kernels the
    census actually flagged.
+6. **First box result: flat-to-negative, and unverified as engagement.** On the first boot
+   pair, MEMRA_B200_MATVEC_ARM=1 (all four arms on) measured plain decode 44.6 tok/s versus
+   42.5 tok/s OFF — a small ON-favoring delta, not the win the census motivated, and within
+   the range a single unreplicated pair can produce from noise alone (no interleaved N>=5,
+   no cross-run hash/failure record yet per the owner's A/B protocol). More importantly:
+   **none of the four arms prints an engagement receipt**, so this run does not yet prove the
+   `_w4` / `_pf` / `_g2` kernels executed at all rather than the dispatch silently falling
+   through to the shipped kernels (e.g. a build without `MEMRA_BUILT_CUDA_ARCH=100a` baked in,
+   or a stale binary). An nsys census of the ON arm is queued to confirm
+   `moe_gate_up_preclamp8_q8_w4` / `moe_down8_fma_q8_w4` / `matvec_bf16_f32acc_x4_rows_pf` /
+   `qmatvec_nvfp4_mmvq_fused2_rp_g2` (and the `qmatvec_nvfp4_mmvq_rp` grid-fill dispatch)
+   actually appear in the kernel trace before this number is treated as a finding either way.
+   A follow-up should also add a one-line `eprintln!` engagement receipt on first dispatch
+   (the `BF16_TCOLS_WIDE_DISPATCHES`-style precedent already in this file) so a future run
+   doesn't need nsys just to confirm the door fired.
