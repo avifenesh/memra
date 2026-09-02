@@ -2294,7 +2294,8 @@ pub(crate) fn ep_diet_armed() -> (bool, &'static str) {
     alias_door("MEMRA_EP_DIET", "MEMRA_GLM5_EP_DIET", &EP_DIET_ALIAS_WARNED)
 }
 
-/// `MEMRA_EP_GROUPED_PRIME=1` (default OFF; generalized from `MEMRA_GLM5_EP_GROUPED_PRIME`,
+/// `MEMRA_EP_GROUPED_PRIME=1` (default OFF globally, ON BY NAME for a glm5-TP-sharded trunk
+/// when unset, see [`ep_grouped_prime_resolve`]; generalized from `MEMRA_GLM5_EP_GROUPED_PRIME`,
 /// which stays honored per the flag-alias law — lane/glm5-ep-diet): the EP GROUPED-PRIME door,
 /// general to any expert-parallel MoE walk — "run the family's own chunked grouped MoE prefill
 /// program per rank over each rank's resident expert slab, then add the peer's bulk-returned
@@ -2311,34 +2312,46 @@ pub(crate) fn ep_diet_armed() -> (bool, &'static str) {
 /// (dieted) sequential EP walk. Numeric class: per-expert GEMMs are the plain grouped arm's;
 /// the ONE reassociation is the per-token root+peer partial add (band-gated, never claimed
 /// byte). Read per call.
-pub fn ep_grouped_prime_on() -> bool {
+pub fn ep_grouped_prime_door(glm5_tp_sharded: bool) -> (bool, &'static str) {
     ep_grouped_prime_resolve(
         std::env::var("MEMRA_EP_GROUPED_PRIME").ok().as_deref(),
         std::env::var("MEMRA_GLM5_EP_GROUPED_PRIME").ok().as_deref(),
+        glm5_tp_sharded,
     )
 }
 
-/// Pure half of [`ep_grouped_prime_on`]. DEFAULT ON (2026-09-03, lane/glm5-tp-serve-wiring
-/// round 3, memra #14): with NEITHER name set the door is armed, because the only consumer
-/// is the glm5 TP EP walk and without this arm that walk primes at 39-58 tok/s (the
-/// per-token per-slot host-canonical loop; the second TP-2 box gate ran a 245,421-token
-/// prime for 52 minutes without finishing). `=0` on either name is the rollback seam; an
-/// explicit `=1` and a disagreeing pair keep the alias-door semantics (a disagreeing pair
-/// falls CLOSED, loudly, through [`ep_grouped_prime_armed`]). The load-time co-refusal
-/// ("set but MEMRA_GLM5_TP is off") still keys on an EXPLICIT arm through
-/// [`ep_grouped_prime_armed`], so the default never refuses an unsharded load.
-pub(crate) fn ep_grouped_prime_resolve(general: Option<&str>, alias: Option<&str>) -> bool {
+/// Pure half of [`ep_grouped_prime_door`]: `(armed, source)`. The global default stays OFF
+/// (the flags law: a default flips only with receipts attached). With NEITHER name set the
+/// door resolves BY NAME to the caller's `glm5_tp_sharded` bit (lane/glm5-tp-serve-wiring
+/// round 3, memra #14): ON for a glm5-TP-sharded trunk, where the alternative is the
+/// 39-58 tok/s per-token per-slot host-canonical EP walk (the second TP-2 box gate ran a
+/// 245,421-token prime for 52 minutes without finishing), OFF everywhere else until a
+/// non-sharded EP prime has its own receipt. `=0` on either name pins OFF (the rollback
+/// seam), an explicit `=1` pins ON, and a disagreeing pair keeps the alias-door semantics
+/// (falls CLOSED, announced once by [`ep_grouped_prime_armed`] at load). The load-time
+/// co-refusal ("set but MEMRA_GLM5_TP is off") still keys on an EXPLICIT arm through
+/// [`ep_grouped_prime_armed`], so the sharded pin never refuses an unsharded load.
+pub(crate) fn ep_grouped_prime_resolve(
+    general: Option<&str>,
+    alias: Option<&str>,
+    glm5_tp_sharded: bool,
+) -> (bool, &'static str) {
     if general.is_none() && alias.is_none() {
-        return true;
+        return if glm5_tp_sharded {
+            (true, "sharded-default")
+        } else {
+            (false, "default-off")
+        };
     }
     // A set name resolves through the shared alias-door arithmetic; a disagreeing pair
     // falls closed here and is announced once by `ep_grouped_prime_armed` at load.
-    alias_door_from(
+    let armed = alias_door_from(
         ("MEMRA_EP_GROUPED_PRIME", general),
         ("MEMRA_GLM5_EP_GROUPED_PRIME", alias),
     )
     .map(|(armed, _)| armed)
-    .unwrap_or(false)
+    .unwrap_or(false);
+    (armed, "env")
 }
 
 #[cfg(test)]
@@ -2346,21 +2359,43 @@ mod ep_grouped_prime_default_tests {
     use super::ep_grouped_prime_resolve;
 
     #[test]
-    fn unset_is_on_by_default() {
-        assert!(ep_grouped_prime_resolve(None, None));
+    fn unset_is_on_by_name_for_sharded_trunks_only() {
+        assert_eq!(
+            ep_grouped_prime_resolve(None, None, true),
+            (true, "sharded-default")
+        );
+        assert_eq!(
+            ep_grouped_prime_resolve(None, None, false),
+            (false, "default-off")
+        );
     }
 
     #[test]
-    fn zero_on_either_name_is_the_rollback_seam() {
-        assert!(!ep_grouped_prime_resolve(Some("0"), None));
-        assert!(!ep_grouped_prime_resolve(None, Some("0")));
+    fn zero_on_either_name_pins_off_even_on_a_sharded_trunk() {
+        assert_eq!(
+            ep_grouped_prime_resolve(Some("0"), None, true),
+            (false, "env")
+        );
+        assert_eq!(
+            ep_grouped_prime_resolve(None, Some("0"), true),
+            (false, "env")
+        );
     }
 
     #[test]
-    fn explicit_one_arms_and_a_disagreeing_pair_falls_closed() {
-        assert!(ep_grouped_prime_resolve(Some("1"), None));
-        assert!(ep_grouped_prime_resolve(None, Some("1")));
-        assert!(!ep_grouped_prime_resolve(Some("1"), Some("0")));
+    fn explicit_one_pins_on_and_a_disagreeing_pair_falls_closed() {
+        assert_eq!(
+            ep_grouped_prime_resolve(Some("1"), None, false),
+            (true, "env")
+        );
+        assert_eq!(
+            ep_grouped_prime_resolve(None, Some("1"), false),
+            (true, "env")
+        );
+        assert_eq!(
+            ep_grouped_prime_resolve(Some("1"), Some("0"), true),
+            (false, "env")
+        );
     }
 }
 

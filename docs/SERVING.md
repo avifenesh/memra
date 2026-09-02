@@ -673,8 +673,9 @@ errors). Two things failed, both at depth:
   (`[glm5-ep-grouped-prime] flag=off`, so every MoE layer-chunk walked the per-token
   per-slot host-canonical loop, the 39-58 tok/s class) and the TC MLA prefill chain declined
   every head shard by name (`[mla-tc-prefill] DECLINED on glm5-TP head shards`). Both now
-  engage: `MEMRA_EP_GROUPED_PRIME` defaults ON (its only consumer is the TP EP walk; `=0` is
-  the rollback), and the TC chain runs on shards at the rank's head count with the peer
+  engage: `MEMRA_EP_GROUPED_PRIME` resolves ON by name for a glm5-TP-sharded trunk when
+  unset (off elsewhere until a non-sharded EP prime has its own receipt; the global default
+  stays OFF; `=0` pins it off), and the TC chain runs on shards at the rank's head count with the peer
   pass under its own runtime-device binding (`MEMRA_MLA_TC_PREFILL=0` is the rollback). Each
   sharded prime call prints its receipt: `[glm5-tp] prime t=<tokens> chunks=<n>
   chunk_max=<t> elapsed=<s> rate=<tok/s> ep_grouped_prime_dispatches=+N
