@@ -152,4 +152,33 @@ as `r4spec262-{thinkon,thinkoff,raw}`: the q2.sh invocation verbatim with
       --ladder 262144 --ladder-ids ladder-ids.txt --ladder-chunk 2048 --ladder-decode 36 \
       --ladder-spec 5 [--ladder-spec-shape <shape>-prompts.tsv]
 
+**Box constraint these cells run under (host RAM, not VRAM).** The qwen4_exp loader stages
+the whole 174 GB artifact in host RAM before uploading (~180 GB anon-RSS at peak) and the
+host has 353 GB, so TWO concurrent loads exceed it and the GLOBAL OOM killer takes one —
+receipted on this box 2026-09-02T00:15:09Z (pid 28271, a 32k trace re-run, anon-rss
+180.8 GB, `constraint=CONSTRAINT_NONE`) while other lanes were loading. The measurement
+lock does not prevent it: shared holders load concurrently, and an exclusive holder can be
+loading while a `-s` waiter is not yet in. Worse, the victim's queue line read `rc=0` with
+a log that stopped at the post-engine VRAM line, so a SIGKILL looked like a clean run.
+Every real-artifact launch from `r4spec262-thinkoff` onward therefore goes through
+`~/realgate/bin/q4e-load-lock.sh <log> <cmd...>`: an exclusive load lock plus a
+`MemAvailable >= 200 GB` gate, held only until the binary prints its post-load VRAM line
+and then released, with an explicit `# load-lock rc=.. killed=..` line appended so a kill
+can never read as success. It is taken INSIDE the measurement lock
+(`flock -x /tmp/q48fn-measure.lock -c "... q4e-load-lock.sh ..."`). The two shallow repro
+loads in the matrix above (`A-local-256`, `A-local-2048`) predate the wrapper and did not
+use it; `r4spec262-thinkon` was already resident when it landed.
+
+## 7. Cell rows
+
+**The corrected route allocates and prefills normally.** `# spec-state-allocated
+rung=262144 cap=262193` reports the trunk card at **92,883 MiB / 97,887 MiB** with the
+draft card at 9,811 MiB — the same 92,883 MiB figure `YARN-CELL.md` banked for a 262,144
+single-card allocation, i.e. the 2.7 GiB of QSA KV lands beside the trunk weights with
+~5 GiB of headroom once `--mtp-dev1` has taken the draft state to card 1. Co-prefill runs
+at ~10.7 s per 2,048-token chunk (`# spec-prefill-progress` ... 65536/262144, chunks=32,
+elapsed_s=340.6), which projects the rung's prefill at ~1,370 s and matches the plain
+262k single-card ladder's 1,439 s. The peer-KV route's projection for the same rung is
+~9 hours.
+
 CELLS-PENDING
