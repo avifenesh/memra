@@ -3150,50 +3150,75 @@ fn main() -> Res<()> {
                 top_k: 20,
                 seed: 0x5eed_cafe,
             };
-            let mut ss = model.alloc_state(&engine, spec_prompt.len() + toks + k + 4)?;
-            let mut ds = model.mtp_state(de, spec_prompt.len() + toks + k + 4)?;
-            let report = model.spec_generate_ext(
-                &engine,
-                de,
-                &spec_prompt,
-                toks,
-                k,
-                &mut ss,
-                &mut ds,
-                Some(cfg),
-                args.spec_opts,
-                None,
-            )?;
-            let engaged_rounds: u64 = report.accept_hist.iter().skip(1).sum();
-            let decode_ms = report.total_ms - report.prefill_ms;
-            let per_tok = decode_ms / report.tokens.len().max(1) as f64;
+            // never-serve-greedy: the sampled row is what the customer actually runs, so a
+            // trim that only carries a greedy receipt is not measured on the serving shape.
+            // When a trim is armed, probe BOTH arms in this one boot (the trim flips without
+            // reallocating the gathered head) instead of pinning the arm the CLI happened to
+            // leave live — a second boot would price the arms on two different clocks.
+            let arms: &[bool] = if trim_ids.is_empty() {
+                &[false]
+            } else {
+                &[false, true]
+            };
             let mut receipt = header.clone();
             receipt.push_str(&format!(
-                "# spec-sampled: vendor defaults temp=1.0 top_p=0.95 top_k=20 seed=0x5eedcafe k={k}\n\
-                 # SPEC-ENGAGEMENT\trounds={}\trounds_with_accepts={engaged_rounds}\taccepted={}\tdrafted={}\taccept_hist={}\n\
-                 # timing\ttokens={}\tms_per_token={per_tok:.2}\ttok_per_s={:.2}\n\
-                 # ids\t{}\n",
-                report.rounds,
-                report.accepted,
-                report.drafted,
-                report
-                    .accept_hist
-                    .iter()
-                    .map(|v| v.to_string())
-                    .collect::<Vec<_>>()
-                    .join(","),
-                report.tokens.len(),
-                1e3 / per_tok,
-                csv(&report.tokens),
+                "# spec-sampled: vendor defaults temp=1.0 top_p=0.95 top_k=20 seed=0x5eedcafe k={k}\n"
             ));
+            let mut zero_arms: Vec<&str> = Vec::new();
+            for &on in arms {
+                model.set_draft_trim(on);
+                let arm = if on { "trim" } else { "full" };
+                let width = model.draft_logits_width();
+                let mut ss = model.alloc_state(&engine, spec_prompt.len() + toks + k + 4)?;
+                let mut ds = model.mtp_state(de, spec_prompt.len() + toks + k + 4)?;
+                let report = model.spec_generate_ext(
+                    &engine,
+                    de,
+                    &spec_prompt,
+                    toks,
+                    k,
+                    &mut ss,
+                    &mut ds,
+                    Some(cfg),
+                    args.spec_opts,
+                    None,
+                )?;
+                let engaged_rounds: u64 = report.accept_hist.iter().skip(1).sum();
+                let decode_ms = report.total_ms - report.prefill_ms;
+                let per_tok = decode_ms / report.tokens.len().max(1) as f64;
+                receipt.push_str(&format!(
+                    "# SPEC-ENGAGEMENT\tarm={arm}\tdraft_head_rows={width}\trounds={}\trounds_with_accepts={engaged_rounds}\taccepted={}\tdrafted={}\taccept_hist={}\n\
+                     # timing\tarm={arm}\ttokens={}\tms_per_token={per_tok:.2}\ttok_per_s={:.2}\n\
+                     # ids\tarm={arm}\t{}\n",
+                    report.rounds,
+                    report.accepted,
+                    report.drafted,
+                    report
+                        .accept_hist
+                        .iter()
+                        .map(|v| v.to_string())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                    report.tokens.len(),
+                    1e3 / per_tok,
+                    csv(&report.tokens),
+                ));
+                if engaged_rounds == 0 {
+                    zero_arms.push(arm);
+                }
+            }
+            // Restore the arm the CLI asked for: a trim named on the command line stays live
+            // for the instruments that follow this block.
+            model.set_draft_trim(!trim_ids.is_empty());
             let path = args
                 .out
                 .join(format!("spec-sampled-k{k}-{}.tsv", args.label));
             std::fs::write(&path, &receipt)?;
             println!("{receipt}\n# spec-sampled receipt: {}", path.display());
-            if engaged_rounds == 0 {
+            if !zero_arms.is_empty() {
                 eprintln!(
-                    "spec-sampled: ZERO rounds with accepts — spec not engaged under the sampled shape"
+                    "spec-sampled: ZERO rounds with accepts on arm(s) {} — spec not engaged under the sampled shape",
+                    zero_arms.join(",")
                 );
                 std::process::exit(1);
             }
@@ -3222,15 +3247,26 @@ fn main() -> Res<()> {
         let mut ab = header.clone();
         ab.push_str(&format!(
             "# trim-ab k={k} trim_n={n} vocab={vocab}: full-vocab draft head vs FR-Spec trimmed head, \
-             interleaved, fresh states per arm per rep\n\
-             rep\tarm\tdraft_head_rows\ttokens\tms_per_token\ttok_per_s\taccept_rate\tmean_accept_len\tdraft_ms_share\thist\n"
+             interleaved, fresh states per arm per rep, ARM ORDER FLIPPED on odd reps\n\
+             # order = position of the arm INSIDE its rep (1 = ran first): an arm that is always \
+             second carries whatever the first arm left behind (clocks, allocator, caches), and \
+             a fixed order hides that inside the mean\n\
+             rep\tarm\torder\tdraft_head_rows\ttokens\tms_per_token\ttok_per_s\taccept_rate\tmean_accept_len\tdraft_ms_share\thist\n"
         ));
         let mut arm_means: [Vec<f64>; 2] = [Vec::new(), Vec::new()];
         let mut arm_accept: [Vec<f64>; 2] = [Vec::new(), Vec::new()];
         let mut arm_len: [Vec<f64>; 2] = [Vec::new(), Vec::new()];
         let mut rep0: [Vec<u32>; 2] = [Vec::new(), Vec::new()];
         for rep in 0..reps {
-            for (slot, on) in [(0usize, false), (1usize, true)] {
+            // Flip which arm runs first every other rep. With a fixed order the trimmed arm
+            // is always second, so any within-rep drift (clock, thermal, allocator state)
+            // lands entirely on one arm and survives the mean-of-means.
+            let order: [(usize, bool); 2] = if rep % 2 == 0 {
+                [(0, false), (1, true)]
+            } else {
+                [(1, true), (0, false)]
+            };
+            for (position, (slot, on)) in order.into_iter().enumerate() {
                 model.set_draft_trim(on);
                 let width = model.draft_logits_width();
                 let cap = ab_prompt.len() + toks + k + 4;
@@ -3254,8 +3290,9 @@ fn main() -> Res<()> {
                 arm_accept[slot].push(report.accept_rate());
                 arm_len[slot].push(report.mean_accept_len());
                 ab.push_str(&format!(
-                    "{rep}\t{}\t{width}\t{}\t{per_tok:.2}\t{:.2}\t{:.3}\t{:.2}\t{:.2}\t{}\n",
+                    "{rep}\t{}\t{}\t{width}\t{}\t{per_tok:.2}\t{:.2}\t{:.3}\t{:.2}\t{:.2}\t{}\n",
                     if on { "trim" } else { "full" },
+                    position + 1,
                     report.tokens.len(),
                     1e3 / per_tok,
                     report.accept_rate(),
@@ -3278,10 +3315,14 @@ fn main() -> Res<()> {
             let mean = v.iter().sum::<f64>() / v.len().max(1) as f64;
             let acc = arm_accept[slot].iter().sum::<f64>() / arm_accept[slot].len().max(1) as f64;
             let len = arm_len[slot].iter().sum::<f64>() / arm_len[slot].len().max(1) as f64;
+            let lo = v.iter().copied().fold(f64::INFINITY, f64::min);
+            let hi = v.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            // LAW:interleave-x3-default — every arm reports its own spread so the x3
+            // sufficiency is receipted rather than assumed; >0.5% is the escalation rule.
+            let spread = if mean > 0.0 { (hi - lo) / mean } else { 0.0 };
             ab.push_str(&format!(
-                "# arm {name}\tmean_of_means_ms={mean:.2}\tmin={:.2}\tmax={:.2}\ttok_per_s={:.2}\tmean_accept_rate={acc:.3}\tmean_accept_len={len:.2}\n",
-                v.iter().copied().fold(f64::INFINITY, f64::min),
-                v.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+                "# arm {name}\tmean_of_means_ms={mean:.2}\tmin={lo:.2}\tmax={hi:.2}\tspread_pct={:.3}\ttok_per_s={:.2}\tmean_accept_rate={acc:.3}\tmean_accept_len={len:.2}\n",
+                spread * 100.0,
                 1e3 / mean,
             ));
         }

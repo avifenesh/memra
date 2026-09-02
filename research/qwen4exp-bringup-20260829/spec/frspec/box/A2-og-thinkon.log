@@ -1,0 +1,145 @@
+# qwen4exp_real_gate	label=fs2-og-thinkon	binary_sha256=ba3d443bf309bf8d2f7001723f64d07f223770e8430d25f4a091dcfa30260485	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=true	seams_env=idxsel,kvq,idxq
+# vram	post-engine	0, 595 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 0 MiB, 97887 MiB | 3, 0 MiB, 97887 MiB
+# load	93.2s
+# vram	post-load	0, 95283 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 0 MiB, 97887 MiB | 3, 0 MiB, 97887 MiB
+# draft-trim	ranks=/root/realgate/frspec/q4e-ranks-ogblend-32768.txt	available=32768	armed_n=32768	build_s=0.1	vram	0, 95443 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 0 MiB, 97887 MiB | 3, 0 MiB, 97887 MiB
+# trim-sweep rows=248320: 81.88 tok/s accept=0.599 len=1.94 chain_matches_control=true
+# trim-sweep rows=8192: 86.26 tok/s accept=0.584 len=1.91 chain_matches_control=true
+# trim-sweep rows=16384: 87.12 tok/s accept=0.596 len=1.94 chain_matches_control=true
+# trim-sweep rows=32768: 88.20 tok/s accept=0.611 len=1.94 chain_matches_control=true
+# qwen4exp_real_gate	label=fs2-og-thinkon	binary_sha256=ba3d443bf309bf8d2f7001723f64d07f223770e8430d25f4a091dcfa30260485	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=true	seams_env=idxsel,kvq,idxq
+# trim-sweep k=5 tokens=256 ranks_available=32768: one run per trim width plus the full-vocab control (not interleaved — the width-choice table; --trim-ab is the claim)
+draft_head_rows	tokens	ms_per_token	tok_per_s	accept_rate	mean_accept_len	draft_ms_share	hist	chain_matches_control
+248320	256	12.21	81.88	0.599	1.94	0.12	56,45,18,10,2,1	true
+8192	256	11.59	86.26	0.584	1.91	0.06	60,45,16,9,2,2	true
+16384	256	11.48	87.12	0.596	1.94	0.07	58,43,18,9,2,2	true
+32768	256	11.34	88.20	0.611	1.94	0.07	55,47,19,7,2,2	true
+# verdict	every_width_chain_equals_the_full_vocab_control=true
+# control_chain	1596,1144,4087,1156,25,328,11670,411,4667,5792,5829,709,310,3203,14,11093,11,45328,279,1412,50921,6681,11,321,1910,1092,4203,364,264,19260,421,1429,310,1440,264,4667,1149,271,3850,874,709,3766,13,14235,4222,2466,364,1970,30,1921,6970,3300,13553,5215,30,2570,2640,328,559,4667,5792,5829,709,1,694,38136,13,1165,1144,5707,6970,1622,1970,11,694,1048,628,2873,3683,13,14235,1534,4087,13,14235,381,10631,25,1910,4338,24147,709,26,35020,1420,4437,13996,45328,1412,50921,321,19260,4203,13,14235,6970,6088,413,4667,1647,318,600,11,1067,8,1411,3203,4523,1067,11,3659,1784,13,78503,6681,25,413,4667,2512,13716,6799,30,14235,16097,13,271,22916,4222,2830,3010,25,709,635,51162,2784,11,9566,8,313,2423,9566,3831,11,1067,8,333,1411,3203,709,635,51162,2784,8,313,2423,460,1067,333,694,413,3889,6526,9566,5081,2942,30,20480,30,14235,4581,1412,50921,25,5829,4667,20624,25,1118,1344,1412,11,2018,1067,13,20776,14,11093,25,460,1067,11,2430,1412,13,54184,4203,25,874,4667,26,958,2454,4613,1380,2805,730,466,641,3282,11591,6947,13,1368,3889,11330,9801,4667,321,5743,2414,30,14235,20480,30,10380,413,4667,5792,709,1048,5743,264,10896,30,14235,2466,13,271,12525,3300,13553,12876,310,5335,4667,310
+
+# trim-sweep receipt: /root/realgate/frspec/trim-sweep-k5-fs2-og-thinkon.tsv
+# qwen4exp_real_gate	label=fs2-og-thinkon	binary_sha256=ba3d443bf309bf8d2f7001723f64d07f223770e8430d25f4a091dcfa30260485	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=true	seams_env=idxsel,kvq,idxq
+# spec-sampled: vendor defaults temp=1.0 top_p=0.95 top_k=20 seed=0x5eedcafe k=5
+# SPEC-ENGAGEMENT	arm=full	draft_head_rows=248320	rounds=65	rounds_with_accepts=34	accepted=62	drafted=110	accept_hist=31,18,8,5,2,1
+# timing	arm=full	tokens=128	ms_per_token=12.56	tok_per_s=79.65
+# ids	arm=full	1596,1144,5707,310,1156,25,328,11670,411,4667,5792,5829,709,310,3203,14,11093,11,45328,279,1412,50921,6681,11,321,1910,1092,4203,364,264,19260,421,1429,310,1440,264,4667,1149,2302,3105,914,3300,709,13,14235,2466,364,1970,30,10380,3300,4437,5215,30,2570,4222,23535,13996,694,38136,1970,13,1165,1144,1534,13,16018,1910,4338,3300,709,11,694,6970,2873,13553,3683,13,14235,25705,13,14235,6970,5020,1144,2450,1970,13,8439,874,709,2574,11,628,914,5335,4581,13,1165,1220,1622,1970,13,1921,6970,2830,11941,1340,9989,13,85027,1534,888,63008,220,24,13,14235,4087,25,328,5328,24147,4667,709,3158,1921,3296
+# SPEC-ENGAGEMENT	arm=trim	draft_head_rows=32768	rounds=66	rounds_with_accepts=39	accepted=62	drafted=112	accept_hist=27,26,8,2,1,2
+# timing	arm=trim	tokens=128	ms_per_token=11.89	tok_per_s=84.12
+# ids	arm=trim	1596,1144,5707,310,1156,25,328,11670,411,4667,5792,5829,709,310,3203,14,11093,11,45328,279,1412,50921,6681,11,321,1910,1092,4203,364,264,19260,421,1429,310,1440,264,4667,1149,1921,874,709,3766,13,14235,2466,364,1970,30,1165,1144,1534,4087,4222,6088,1144,709,13,16018,1048,3300,13553,5215,30,2570,2640,328,559,4667,5792,5829,709,1,694,38136,13,1165,1220,2466,1070,310,24147,1970,13,1921,6970,3300,13553,3683,13,14235,25705,13,16018,1910,4338,3300,279,709,26,303,4437,13996,1076,45328,5829,1412,35718,50921,25,1562,4667,440,1412,466,819,1067,13,1368,3203,709,5743,7076,11,19260,874,4860,5055,4667
+
+# spec-sampled receipt: /root/realgate/frspec/spec-sampled-k5-fs2-og-thinkon.tsv
+# qwen4exp_real_gate	label=fs2-og-thinkon	binary_sha256=ba3d443bf309bf8d2f7001723f64d07f223770e8430d25f4a091dcfa30260485	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=true	seams_env=idxsel,kvq,idxq
+# load_seconds=93.2
+# vram	post-load	0, 95283 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 0 MiB, 97887 MiB | 3, 0 MiB, 97887 MiB
+# probe_tokens=10	ids=[760, 3841, 13477, 37550, 33075, 888, 279, 15217, 5388, 13]
+# prefill_seconds=0.27
+# vram	post-prefill	0, 96467 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 0 MiB, 97887 MiB | 3, 0 MiB, 97887 MiB
+record	rows	cols	max_abs	max_rel	mean_abs	ref_absmax
+layer0	10	10240	7.269e-3	7.269e-3	2.142e-4	3.242e-1
+layer1	10	10240	7.227e-3	7.227e-3	3.351e-4	4.551e-1
+layer2	10	10240	9.171e-3	9.171e-3	4.949e-4	5.273e-1
+layer3	10	10240	1.170e-2	1.170e-2	6.661e-4	5.039e-1
+layer4	10	10240	2.533e-2	2.533e-2	9.627e-4	5.000e-1
+layer5	10	10240	3.258e-2	2.334e-2	1.076e-3	3.047e0
+layer6	10	10240	3.166e-2	2.946e-2	1.245e-3	3.078e0
+layer7	10	10240	3.410e-2	3.410e-2	1.510e-3	3.047e0
+layer8	10	10240	3.366e-2	3.366e-2	1.624e-3	3.062e0
+layer9	10	10240	3.346e-2	3.346e-2	1.706e-3	3.062e0
+layer10	10	10240	3.287e-2	3.287e-2	1.765e-3	3.125e0
+layer11	10	10240	3.803e-2	3.277e-2	1.845e-3	3.016e0
+layer12	10	10240	3.474e-2	3.474e-2	1.935e-3	2.953e0
+layer13	10	10240	3.503e-2	3.503e-2	2.030e-3	2.984e0
+layer14	10	10240	3.419e-2	3.419e-2	2.138e-3	3.016e0
+layer15	10	10240	3.449e-2	3.449e-2	2.250e-3	2.953e0
+layer16	10	10240	3.405e-2	3.405e-2	2.427e-3	2.938e0
+layer17	10	10240	3.309e-2	3.309e-2	2.492e-3	2.969e0
+layer18	10	10240	4.513e-2	4.513e-2	2.800e-3	2.969e0
+layer19	10	10240	4.289e-2	4.289e-2	2.918e-3	3.000e0
+layer20	10	10240	4.160e-2	4.160e-2	2.952e-3	2.938e0
+layer21	10	10240	4.064e-2	4.064e-2	3.120e-3	2.969e0
+layer22	10	10240	4.138e-2	4.138e-2	3.378e-3	2.969e0
+layer23	10	10240	4.097e-2	4.097e-2	3.492e-3	2.969e0
+layer24	10	10240	4.676e-2	4.676e-2	3.803e-3	3.828e0
+layer25	10	10240	4.888e-2	4.888e-2	3.889e-3	3.859e0
+layer26	10	10240	5.101e-2	5.101e-2	4.117e-3	5.062e0
+layer27	10	10240	5.238e-2	5.238e-2	4.520e-3	4.750e0
+layer28	10	10240	5.677e-2	5.677e-2	4.884e-3	4.531e0
+layer29	10	10240	6.986e-2	6.986e-2	5.310e-3	4.469e0
+layer30	10	10240	8.134e-2	8.134e-2	5.863e-3	4.438e0
+layer31	10	10240	1.253e-1	1.253e-1	6.262e-3	4.281e0
+layer32	10	10240	1.266e-1	1.266e-1	6.898e-3	3.891e0
+layer33	10	10240	1.523e-1	1.523e-1	7.450e-3	3.844e0
+layer34	10	10240	1.504e-1	1.504e-1	8.196e-3	3.828e0
+layer35	10	10240	1.749e-1	1.749e-1	9.242e-3	3.859e0
+layer36	10	10240	3.782e-1	3.782e-1	1.260e-2	6.844e0
+layer37	10	10240	3.886e-1	3.886e-1	1.453e-2	7.094e0
+layer38	10	10240	3.878e-1	3.878e-1	1.682e-2	7.094e0
+layer39	10	10240	3.842e-1	3.842e-1	2.054e-2	7.188e0
+layer40	10	10240	4.374e-1	4.374e-1	2.461e-2	7.219e0
+layer41	10	10240	4.345e-1	4.345e-1	2.679e-2	7.125e0
+layer42	10	10240	4.743e-1	4.743e-1	2.901e-2	7.156e0
+layer43	10	10240	4.560e-1	4.560e-1	3.247e-2	7.188e0
+layer44	10	10240	7.075e-1	7.075e-1	3.894e-2	1.162e1
+layer45	10	10240	7.749e-1	7.749e-1	4.751e-2	1.169e1
+layer46	10	10240	1.122e0	7.599e-1	5.627e-2	1.350e1
+layer47	10	10240	1.196e0	1.171e0	6.091e-2	2.575e1
+exit_mixer	10	2560	2.071e1	5.750e0	4.609e-1	1.880e2
+logits	10	248320	6.228e0	5.961e0	2.890e-1	1.950e1
+logits_row	max_abs	max_rel	ref_absmax	golden_top1	our_top1	match
+0	3.560e-1	3.560e-1	1.231e1	20438	20438	true
+1	1.133e0	1.046e0	1.431e1	4087	4087	true
+2	1.265e0	1.265e0	1.800e1	37550	37550	true
+3	1.310e0	1.039e0	1.638e1	33075	33075	true
+4	1.633e0	1.515e0	1.888e1	888	888	true
+5	1.827e0	1.738e0	1.862e1	279	279	true
+6	3.153e0	1.937e0	1.950e1	15217	15217	true
+7	2.044e0	1.636e0	1.888e1	5388	5388	true
+8	1.937e0	1.786e0	1.575e1	13	13	true
+9	6.228e0	5.961e0	1.638e1	271	271	true
+# logits_argmax_agreement	10/10
+# probe_logits	/root/realgate/frspec/probe-logits-fs2-og-thinkon.bin	rows=10	vocab=248320
+
+# hidden receipt: /root/realgate/frspec/hidden-gate-fs2-og-thinkon.tsv
+# qwen4exp_real_gate	label=fs2-og-thinkon	binary_sha256=ba3d443bf309bf8d2f7001723f64d07f223770e8430d25f4a091dcfa30260485	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=true	seams_env=idxsel,kvq,idxq
+# trim-ab k=5 trim_n=32768 vocab=248320: full-vocab draft head vs FR-Spec trimmed head, interleaved, fresh states per arm per rep, ARM ORDER FLIPPED on odd reps
+# order = position of the arm INSIDE its rep (1 = ran first): an arm that is always second carries whatever the first arm left behind (clocks, allocator, caches), and a fixed order hides that inside the mean
+rep	arm	order	draft_head_rows	tokens	ms_per_token	tok_per_s	accept_rate	mean_accept_len	draft_ms_share	hist
+0	full	1	248320	256	11.89	84.13	0.599	1.94	0.12	56,45,18,10,2,1
+0	trim	2	32768	256	11.10	90.10	0.611	1.94	0.07	55,47,19,7,2,2
+1	trim	1	32768	256	11.08	90.28	0.611	1.94	0.07	55,47,19,7,2,2
+1	full	2	248320	256	11.80	84.73	0.599	1.94	0.12	56,45,18,10,2,1
+2	full	1	248320	256	11.80	84.75	0.599	1.94	0.12	56,45,18,10,2,1
+2	trim	2	32768	256	11.07	90.35	0.611	1.94	0.07	55,47,19,7,2,2
+3	trim	1	32768	256	11.08	90.25	0.611	1.94	0.07	55,47,19,7,2,2
+3	full	2	248320	256	11.80	84.76	0.599	1.94	0.12	56,45,18,10,2,1
+4	full	1	248320	256	11.80	84.71	0.599	1.94	0.12	56,45,18,10,2,1
+4	trim	2	32768	256	11.09	90.17	0.611	1.94	0.07	55,47,19,7,2,2
+# arm full	mean_of_means_ms=11.82	min=11.80	max=11.89	spread_pct=0.750	tok_per_s=84.62	mean_accept_rate=0.599	mean_accept_len=1.94
+# arm trim	mean_of_means_ms=11.08	min=11.07	max=11.10	spread_pct=0.272	tok_per_s=90.23	mean_accept_rate=0.611	mean_accept_len=1.94
+# speedup_trim_over_full	1.0663
+# rep0_full_vs_trim_first_divergence	-1
+# rep0_full	1596,1144,4087,1156,25,328,11670,411,4667,5792,5829,709,310,3203,14,11093,11,45328,279,1412,50921,6681,11,321,1910,1092,4203,364,264,19260,421,1429,310,1440,264,4667,1149,271,3850,874,709,3766,13,14235,4222,2466,364,1970,30,1921,6970,3300,13553,5215,30,2570,2640,328,559,4667,5792,5829,709,1,694,38136,13,1165,1144,5707,6970,1622,1970,11,694,1048,628,2873,3683,13,14235,1534,4087,13,14235,381,10631,25,1910,4338,24147,709,26,35020,1420,4437,13996,45328,1412,50921,321,19260,4203,13,14235,6970,6088,413,4667,1647,318,600,11,1067,8,1411,3203,4523,1067,11,3659,1784,13,78503,6681,25,413,4667,2512,13716,6799,30,14235,16097,13,271,22916,4222,2830,3010,25,709,635,51162,2784,11,9566,8,313,2423,9566,3831,11,1067,8,333,1411,3203,709,635,51162,2784,8,313,2423,460,1067,333,694,413,3889,6526,9566,5081,2942,30,20480,30,14235,4581,1412,50921,25,5829,4667,20624,25,1118,1344,1412,11,2018,1067,13,20776,14,11093,25,460,1067,11,2430,1412,13,54184,4203,25,874,4667,26,958,2454,4613,1380,2805,730,466,641,3282,11591,6947,13,1368,3889,11330,9801,4667,321,5743,2414,30,14235,20480,30,10380,413,4667,5792,709,1048,5743,264,10896,30,14235,2466,13,271,12525,3300,13553,12876,310,5335,4667,310
+# rep0_trim	1596,1144,4087,1156,25,328,11670,411,4667,5792,5829,709,310,3203,14,11093,11,45328,279,1412,50921,6681,11,321,1910,1092,4203,364,264,19260,421,1429,310,1440,264,4667,1149,271,3850,874,709,3766,13,14235,4222,2466,364,1970,30,1921,6970,3300,13553,5215,30,2570,2640,328,559,4667,5792,5829,709,1,694,38136,13,1165,1144,5707,6970,1622,1970,11,694,1048,628,2873,3683,13,14235,1534,4087,13,14235,381,10631,25,1910,4338,24147,709,26,35020,1420,4437,13996,45328,1412,50921,321,19260,4203,13,14235,6970,6088,413,4667,1647,318,600,11,1067,8,1411,3203,4523,1067,11,3659,1784,13,78503,6681,25,413,4667,2512,13716,6799,30,14235,16097,13,271,22916,4222,2830,3010,25,709,635,51162,2784,11,9566,8,313,2423,9566,3831,11,1067,8,333,1411,3203,709,635,51162,2784,8,313,2423,460,1067,333,694,413,3889,6526,9566,5081,2942,30,20480,30,14235,4581,1412,50921,25,5829,4667,20624,25,1118,1344,1412,11,2018,1067,13,20776,14,11093,25,460,1067,11,2430,1412,13,54184,4203,25,874,4667,26,958,2454,4613,1380,2805,730,466,641,3282,11591,6947,13,1368,3889,11330,9801,4667,321,5743,2414,30,14235,20480,30,10380,413,4667,5792,709,1048,5743,264,10896,30,14235,2466,13,271,12525,3300,13553,12876,310,5335,4667,310
+
+# trim-ab receipt: /root/realgate/frspec/ab-trim-k5-n32768-fs2-og-thinkon.tsv
+# greedy prompt 0: first_divergence=0 matched=0/83 prefill=1.23s mean_decode=13.3ms
+# greedy prompt 1: first_divergence=0 matched=0/91 prefill=1.31s mean_decode=13.3ms
+# greedy prompt 2: first_divergence=0 matched=0/104 prefill=1.43s mean_decode=13.4ms
+# greedy prompt 3: first_divergence=0 matched=0/105 prefill=1.43s mean_decode=13.4ms
+# greedy receipt: /root/realgate/frspec/greedy-gate-fs2-og-thinkon.tsv
+# spec-gate prompt 0: first_divergence=-1 accept_rate=0.611 mean_len=1.94 spec=11.1ms plain=13.9ms
+# spec-gate prompt 1: first_divergence=-1 accept_rate=0.652 mean_len=2.17 spec=10.4ms plain=14.0ms
+# spec-gate prompt 2: first_divergence=-1 accept_rate=0.790 mean_len=3.76 spec=7.8ms plain=14.0ms
+# spec-gate prompt 3: first_divergence=-1 accept_rate=0.754 mean_len=3.46 spec=8.1ms plain=14.1ms
+# spec-gate receipt: /root/realgate/frspec/spec-gate-k5-fs2-og-thinkon.tsv
+# load-lock	rc=0	killed=no

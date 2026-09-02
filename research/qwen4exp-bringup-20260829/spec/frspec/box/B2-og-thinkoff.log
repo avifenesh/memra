@@ -1,0 +1,128 @@
+# qwen4exp_real_gate	label=fs2-og-thinkoff	binary_sha256=ba3d443bf309bf8d2f7001723f64d07f223770e8430d25f4a091dcfa30260485	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=true	seams_env=idxsel,kvq,idxq
+# vram	post-engine	0, 595 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 0 MiB, 97887 MiB | 3, 0 MiB, 97887 MiB
+# load	92.2s
+# vram	post-load	0, 95283 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 0 MiB, 97887 MiB | 3, 0 MiB, 97887 MiB
+# draft-trim	ranks=/root/realgate/frspec/q4e-ranks-ogblend-32768.txt	available=32768	armed_n=32768	build_s=0.1	vram	0, 95443 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 0 MiB, 97887 MiB | 3, 0 MiB, 97887 MiB
+# qwen4exp_real_gate	label=fs2-og-thinkoff	binary_sha256=ba3d443bf309bf8d2f7001723f64d07f223770e8430d25f4a091dcfa30260485	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=true	seams_env=idxsel,kvq,idxq
+# spec-sampled: vendor defaults temp=1.0 top_p=0.95 top_k=20 seed=0x5eedcafe k=5
+# SPEC-ENGAGEMENT	arm=full	draft_head_rows=248320	rounds=44	rounds_with_accepts=37	accepted=83	drafted=119	accept_hist=7,13,11,7,3,3
+# timing	arm=full	tokens=128	ms_per_token=10.11	tok_per_s=98.94
+# ids	arm=full	40,1459,914,1436,279,3050,4667,5792,709,303,678,1876,13,5044,4191,279,1970,488,4035,1040,728,310,5335,13,271,4639,1018,11,1532,579,279,4437,5215,321,279,19260,61170,4203,25,271,550,41096,18264,271,332,9923,318,13105,5792,188912,198,71093,13670,198,1628,59649,5406,11,4667,8,313,198,220,8355,52745,5406,11,359,4609,23,504,318,600,11,795,8,574,313,198,262,413,318,600,8,460,4667,3831,1174,198,262,4667,4806,11,795,1174,198,220,17574,198,92,198,71093,271,332,5836,318,7449,14,11093,188912,198,71093,13670,198,7449,709,59649,5406,8,313,198,220,713,795,283,2454,8355,58701
+# SPEC-ENGAGEMENT	arm=trim	draft_head_rows=32768	rounds=44	rounds_with_accepts=37	accepted=83	drafted=119	accept_hist=7,13,11,7,3,3
+# timing	arm=trim	tokens=128	ms_per_token=9.38	tok_per_s=106.61
+# ids	arm=trim	40,1459,914,1436,279,3050,4667,5792,709,303,678,1876,13,5044,4191,279,1970,488,4035,1040,728,310,5335,13,271,4639,1018,11,1532,579,279,4437,5215,321,279,19260,61170,4203,25,271,550,41096,18264,271,332,9923,318,13105,5792,188912,198,71093,13670,198,1628,59649,5406,11,4667,8,313,198,220,8355,52745,5406,11,359,4609,23,504,318,600,11,795,8,574,313,198,262,413,318,600,8,460,4667,3831,1174,198,262,4667,4806,11,795,1174,198,220,17574,198,92,198,71093,271,332,5836,318,7449,14,11093,188912,198,71093,13670,198,7449,709,59649,5406,8,313,198,220,713,795,283,2454,8355,58701
+
+# spec-sampled receipt: /root/realgate/frspec/spec-sampled-k5-fs2-og-thinkoff.tsv
+# qwen4exp_real_gate	label=fs2-og-thinkoff	binary_sha256=ba3d443bf309bf8d2f7001723f64d07f223770e8430d25f4a091dcfa30260485	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=true	seams_env=idxsel,kvq,idxq
+# load_seconds=92.2
+# vram	post-load	0, 95283 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 0 MiB, 97887 MiB | 3, 0 MiB, 97887 MiB
+# probe_tokens=10	ids=[760, 3841, 13477, 37550, 33075, 888, 279, 15217, 5388, 13]
+# prefill_seconds=0.33
+# vram	post-prefill	0, 95603 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 0 MiB, 97887 MiB | 3, 0 MiB, 97887 MiB
+record	rows	cols	max_abs	max_rel	mean_abs	ref_absmax
+layer0	10	10240	7.269e-3	7.269e-3	2.142e-4	3.242e-1
+layer1	10	10240	7.227e-3	7.227e-3	3.351e-4	4.551e-1
+layer2	10	10240	9.171e-3	9.171e-3	4.949e-4	5.273e-1
+layer3	10	10240	1.170e-2	1.170e-2	6.661e-4	5.039e-1
+layer4	10	10240	2.533e-2	2.533e-2	9.627e-4	5.000e-1
+layer5	10	10240	3.258e-2	2.334e-2	1.076e-3	3.047e0
+layer6	10	10240	3.166e-2	2.946e-2	1.245e-3	3.078e0
+layer7	10	10240	3.410e-2	3.410e-2	1.510e-3	3.047e0
+layer8	10	10240	3.366e-2	3.366e-2	1.624e-3	3.062e0
+layer9	10	10240	3.346e-2	3.346e-2	1.706e-3	3.062e0
+layer10	10	10240	3.287e-2	3.287e-2	1.765e-3	3.125e0
+layer11	10	10240	3.803e-2	3.277e-2	1.845e-3	3.016e0
+layer12	10	10240	3.474e-2	3.474e-2	1.935e-3	2.953e0
+layer13	10	10240	3.503e-2	3.503e-2	2.030e-3	2.984e0
+layer14	10	10240	3.419e-2	3.419e-2	2.138e-3	3.016e0
+layer15	10	10240	3.449e-2	3.449e-2	2.250e-3	2.953e0
+layer16	10	10240	3.405e-2	3.405e-2	2.427e-3	2.938e0
+layer17	10	10240	3.309e-2	3.309e-2	2.492e-3	2.969e0
+layer18	10	10240	4.513e-2	4.513e-2	2.800e-3	2.969e0
+layer19	10	10240	4.289e-2	4.289e-2	2.918e-3	3.000e0
+layer20	10	10240	4.160e-2	4.160e-2	2.952e-3	2.938e0
+layer21	10	10240	4.064e-2	4.064e-2	3.120e-3	2.969e0
+layer22	10	10240	4.138e-2	4.138e-2	3.378e-3	2.969e0
+layer23	10	10240	4.097e-2	4.097e-2	3.492e-3	2.969e0
+layer24	10	10240	4.676e-2	4.676e-2	3.803e-3	3.828e0
+layer25	10	10240	4.888e-2	4.888e-2	3.889e-3	3.859e0
+layer26	10	10240	5.101e-2	5.101e-2	4.117e-3	5.062e0
+layer27	10	10240	5.238e-2	5.238e-2	4.520e-3	4.750e0
+layer28	10	10240	5.677e-2	5.677e-2	4.884e-3	4.531e0
+layer29	10	10240	6.986e-2	6.986e-2	5.310e-3	4.469e0
+layer30	10	10240	8.134e-2	8.134e-2	5.863e-3	4.438e0
+layer31	10	10240	1.253e-1	1.253e-1	6.262e-3	4.281e0
+layer32	10	10240	1.266e-1	1.266e-1	6.898e-3	3.891e0
+layer33	10	10240	1.523e-1	1.523e-1	7.450e-3	3.844e0
+layer34	10	10240	1.504e-1	1.504e-1	8.196e-3	3.828e0
+layer35	10	10240	1.749e-1	1.749e-1	9.242e-3	3.859e0
+layer36	10	10240	3.782e-1	3.782e-1	1.260e-2	6.844e0
+layer37	10	10240	3.886e-1	3.886e-1	1.453e-2	7.094e0
+layer38	10	10240	3.878e-1	3.878e-1	1.682e-2	7.094e0
+layer39	10	10240	3.842e-1	3.842e-1	2.054e-2	7.188e0
+layer40	10	10240	4.374e-1	4.374e-1	2.461e-2	7.219e0
+layer41	10	10240	4.345e-1	4.345e-1	2.679e-2	7.125e0
+layer42	10	10240	4.743e-1	4.743e-1	2.901e-2	7.156e0
+layer43	10	10240	4.560e-1	4.560e-1	3.247e-2	7.188e0
+layer44	10	10240	7.075e-1	7.075e-1	3.894e-2	1.162e1
+layer45	10	10240	7.749e-1	7.749e-1	4.751e-2	1.169e1
+layer46	10	10240	1.122e0	7.599e-1	5.627e-2	1.350e1
+layer47	10	10240	1.196e0	1.171e0	6.091e-2	2.575e1
+exit_mixer	10	2560	2.071e1	5.750e0	4.609e-1	1.880e2
+logits	10	248320	6.228e0	5.961e0	2.890e-1	1.950e1
+logits_row	max_abs	max_rel	ref_absmax	golden_top1	our_top1	match
+0	3.560e-1	3.560e-1	1.231e1	20438	20438	true
+1	1.133e0	1.046e0	1.431e1	4087	4087	true
+2	1.265e0	1.265e0	1.800e1	37550	37550	true
+3	1.310e0	1.039e0	1.638e1	33075	33075	true
+4	1.633e0	1.515e0	1.888e1	888	888	true
+5	1.827e0	1.738e0	1.862e1	279	279	true
+6	3.153e0	1.937e0	1.950e1	15217	15217	true
+7	2.044e0	1.636e0	1.888e1	5388	5388	true
+8	1.937e0	1.786e0	1.575e1	13	13	true
+9	6.228e0	5.961e0	1.638e1	271	271	true
+# logits_argmax_agreement	10/10
+# probe_logits	/root/realgate/frspec/probe-logits-fs2-og-thinkoff.bin	rows=10	vocab=248320
+
+# hidden receipt: /root/realgate/frspec/hidden-gate-fs2-og-thinkoff.tsv
+# qwen4exp_real_gate	label=fs2-og-thinkoff	binary_sha256=ba3d443bf309bf8d2f7001723f64d07f223770e8430d25f4a091dcfa30260485	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=true	seams_env=idxsel,kvq,idxq
+# trim-ab k=5 trim_n=32768 vocab=248320: full-vocab draft head vs FR-Spec trimmed head, interleaved, fresh states per arm per rep, ARM ORDER FLIPPED on odd reps
+# order = position of the arm INSIDE its rep (1 = ran first): an arm that is always second carries whatever the first arm left behind (clocks, allocator, caches), and a fixed order hides that inside the mean
+rep	arm	order	draft_head_rows	tokens	ms_per_token	tok_per_s	accept_rate	mean_accept_len	draft_ms_share	hist
+0	full	1	248320	256	9.55	104.72	0.715	3.01	0.15	13,21,22,15,9,5
+0	trim	2	32768	256	8.84	113.17	0.713	3.01	0.09	13,21,22,15,9,5
+1	trim	1	32768	256	8.73	114.54	0.713	3.01	0.09	13,21,22,15,9,5
+1	full	2	248320	256	9.31	107.42	0.715	3.01	0.16	13,21,22,15,9,5
+2	full	1	248320	256	9.23	108.31	0.715	3.01	0.16	13,21,22,15,9,5
+2	trim	2	32768	256	8.53	117.24	0.713	3.01	0.09	13,21,22,15,9,5
+3	trim	1	32768	256	8.53	117.21	0.713	3.01	0.09	13,21,22,15,9,5
+3	full	2	248320	256	9.20	108.74	0.715	3.01	0.16	13,21,22,15,9,5
+4	full	1	248320	256	9.24	108.27	0.715	3.01	0.16	13,21,22,15,9,5
+4	trim	2	32768	256	8.53	117.28	0.713	3.01	0.09	13,21,22,15,9,5
+# arm full	mean_of_means_ms=9.30	min=9.20	max=9.55	spread_pct=3.789	tok_per_s=107.47	mean_accept_rate=0.715	mean_accept_len=3.01
+# arm trim	mean_of_means_ms=8.63	min=8.53	max=8.84	spread_pct=3.590	tok_per_s=115.86	mean_accept_rate=0.713	mean_accept_len=3.01
+# speedup_trim_over_full	1.0781
+# rep0_full_vs_trim_first_divergence	-1
+# rep0_full	12189,488,3105,914,3300,279,3050,1970,11,353,668,19264,279,13996,1608,264,2972,34099,1340,3010,332,314,264,13852,5829,2764,4667,5792,709,318,68,1257,2487,5122,264,999,466,78304,264,4475,553,4844,11,353,668,10033,279,4581,4203,364,279,19260,13,271,13962,12996,25,12851,318,7259,58303,8,271,71093,13670,198,320,16722,4667,5792,709,198,1628,26720,3598,11,4667,8,313,198,220,434,4319,6134,3203,5488,318,68,1257,2487,5767,3134,466,999,1301,8,198,220,13850,4903,574,313,198,262,413,318,306,1981,359,11469,837,313,198,406,434,4451,35718,4667,20624,25,1118,1344,369,1412,11,2018,369,795,198,406,4667,1693,4451,482,7678,2937,4418,819,1174,198,262,333,745,313,198,406,4667,4806,11,313,850,11,803,25,359,59605,6,17574,198,262,333,198,220,2390,220,16,15,15,1174,198,92,271,320,54184,10121,198,25110,482,16,17,18,504,318,600,11,795,8,574,313,198,220,413,318,600,8,313,198,262,2263,4273,482,1401,16924,1784,6488,1174,198,262,460,26,198,220,333,198,220,2263,1607,482,1008,16924,795,1174,198,13685,198,71093,271,4277,271,13962,4486,25,20776,10052,11158,41096,271,1206,5335,411,11,567,2972,9797,332,279,4667,5792,709,303,264,1510,20396,27653,1061,72346
+# rep0_trim	12189,488,3105,914,3300,279,3050,1970,11,353,668,19264,279,13996,1608,264,2972,34099,1340,3010,332,314,264,13852,5829,2764,4667,5792,709,318,68,1257,2487,5122,264,999,466,78304,264,4475,553,4844,11,353,668,10033,279,4581,4203,364,279,19260,13,271,13962,12996,25,12851,318,7259,58303,8,271,71093,13670,198,320,16722,4667,5792,709,198,1628,26720,3598,11,4667,8,313,198,220,434,4319,6134,3203,5488,318,68,1257,2487,5767,3134,466,999,1301,8,198,220,13850,4903,574,313,198,262,413,318,306,1981,359,11469,837,313,198,406,434,4451,35718,4667,20624,25,1118,1344,369,1412,11,2018,369,795,198,406,4667,1693,4451,482,7678,2937,4418,819,1174,198,262,333,745,313,198,406,4667,4806,11,313,850,11,803,25,359,59605,6,17574,198,262,333,198,220,2390,220,16,15,15,1174,198,92,271,320,54184,10121,198,25110,482,16,17,18,504,318,600,11,795,8,574,313,198,220,413,318,600,8,313,198,262,2263,4273,482,1401,16924,1784,6488,1174,198,262,460,26,198,220,333,198,220,2263,1607,482,1008,16924,795,1174,198,13685,198,71093,271,4277,271,13962,4486,25,20776,10052,11158,41096,271,1206,5335,411,11,567,2972,9797,332,279,4667,5792,709,303,264,1510,20396,27653,1061,72346
+
+# trim-ab receipt: /root/realgate/frspec/ab-trim-k5-n32768-fs2-og-thinkoff.tsv
+# greedy prompt 0: first_divergence=0 matched=0/43 prefill=0.81s mean_decode=13.0ms
+# greedy prompt 1: first_divergence=0 matched=0/51 prefill=0.88s mean_decode=13.0ms
+# greedy prompt 2: first_divergence=0 matched=0/64 prefill=1.00s mean_decode=13.1ms
+# greedy prompt 3: first_divergence=0 matched=0/65 prefill=0.99s mean_decode=13.1ms
+# greedy receipt: /root/realgate/frspec/greedy-gate-fs2-og-thinkoff.tsv
+# spec-gate prompt 0: first_divergence=-1 accept_rate=0.713 mean_len=3.01 spec=8.6ms plain=13.7ms
+# spec-gate prompt 1: first_divergence=-1 accept_rate=0.730 mean_len=3.20 spec=8.3ms plain=13.7ms
+# spec-gate prompt 2: first_divergence=-1 accept_rate=0.818 mean_len=4.13 spec=7.3ms plain=13.8ms
+# spec-gate prompt 3: first_divergence=-1 accept_rate=0.835 mean_len=4.06 spec=7.2ms plain=13.8ms
+# spec-gate receipt: /root/realgate/frspec/spec-gate-k5-fs2-og-thinkoff.tsv
+# load-lock	rc=0	killed=no
