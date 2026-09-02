@@ -304,6 +304,14 @@ pub fn glm5_graph_trace_on() -> bool {
 pub static GLM5_VROWS_T1_SHAPE_DUMPED: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
+/// Trace-dump caps for the decode-graph door's MoE seam (`MEMRA_GLM5_GRAPH_TRACE`). Four lines
+/// each: two routed layers on each of the two arms is enough to diff, and a 64-step run must not
+/// become a log flood.
+pub static GLM5_VROWS_T1_ACT_DUMPED: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+pub static GLM5_VROWS_T1_OUT_DUMPED: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 /// Captured-run replays (one per graph launch), captures, and the layer count currently
 /// covered by captured runs — the door's engagement receipt, read by the gate bin.
 pub static GLM5_DECODE_GRAPH_REPLAYS: std::sync::atomic::AtomicU64 =
@@ -11840,6 +11848,13 @@ impl Engine {
         Ok(v)
     }
     /// Device-to-host copy of a u8 buffer (used to read back the quantized KV cache for validation).
+    /// i8 twin of [`Self::dtoh_u8`], for the decode-graph trace's q8_1 activation checksum
+    /// (`MEMRA_GLM5_GRAPH_TRACE`). Gate harness only: it synchronizes.
+    pub fn dtoh_i8(&self, d: &CudaSlice<i8>) -> Result<Vec<i8>, Box<dyn std::error::Error>> {
+        let v = self.gpu.stream().clone_dtoh(d)?;
+        self.gpu.stream().synchronize()?;
+        Ok(v)
+    }
     pub fn dtoh_u8(&self, d: &CudaSlice<u8>) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let v = self.gpu.stream().clone_dtoh(d)?;
         self.gpu.stream().synchronize()?;

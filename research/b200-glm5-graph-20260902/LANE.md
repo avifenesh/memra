@@ -717,6 +717,42 @@ per-expert macro scales for the SELECTED experts rather than a `macros=bool`, so
 selection or a differing plane is visible rather than inferred. The first differing field on the
 next paired run is the answer.
 
+## 9i. Take 9: the two arms receive IDENTICAL inputs, so the seam is inside the call
+
+Runs 9A (host MoE) and 9B (device MoE) both printed `[glm5-vrows-t1]`, and a diff after stripping
+`arm=` printed **nothing**: `sel`, `w`, the per-expert macro scales, `strides`, `row_bytes`,
+`qtypes`, `limit` and `gu_il` are identical for the dumped layers. 9B still gives
+`TOKEN MISMATCH step 1: eager=437 graph=0`.
+
+**So the device-table consumer is handed exactly the host arm's inputs and computes garbage from
+the first routed run.** Combined with §9f-§9h that leaves nothing in the inputs and nothing in the
+table build or the kernel pair as the fixture exercises them. The remaining differences are things
+the rig fixture does not model: 288 experts against a 130 GB resident slab, the shared expert
+merged into the same call, `gu_il`, the `z` vs `ws.z` activation source, and the door-E order
+plane.
+
+**The addressing hypothesis is now weak and the ordering one is strong.** Every index inside the
+pair is bounded by its own row: `(long)o * rb_g` reaches 2047 x 2304 = 4.7 MB, `(size_t)pr * in_f`
+reaches 7 x 2048, `act[(size_t)pr * n_ff + o]` reaches 16 383 — none of them 32-bit-sensitive, and
+the only large values (the expert base pointers) are u64 from a table this lane already proved
+correct. A genuine out-of-range read against a 130 GB slab would also fault rather than return
+1.36e19. What fits a blow-up at the FIRST routed layer far better is the consumer reading an
+activation that is not this token's hidden state.
+
+**So the activation is now checksummed on both arms, immediately before the launch that reads it**
+(`MEMRA_GLM5_GRAPH_TRACE`, outside a capture region, four lines each):
+
+```
+[glm5-vrows-act] arm=device|host il=L t=1 z=<sum/nz/max> zq=<sum/nz> zd=<sum/nz/max>
+[glm5-vrows-out] arm=device|host il=L out=<sum/nz/max>
+```
+
+`z` is the shared f32 input and `zq`/`zd` are the q8_1 pair the consumer actually reads. The
+reading is mechanical: **`z` agreeing while `zq`/`zd` differ puts the seam at the quantize**
+(stale, unwritten, or ordered after the launch); **all three agreeing while `out` differs puts it
+in the kernels** on a shape the fixture does not reach. `nz` carries the same weight it did in
+§9e — a never-written buffer reads `nz0`, an all-NaN one reads full `nz` with `max0`.
+
 ## 10. Open items
 
 1. **Run the gate on the pair** (`--steps 64 --reps 5`) and bank the receipt. Until then the
