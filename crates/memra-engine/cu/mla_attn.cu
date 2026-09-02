@@ -1377,3 +1377,141 @@ extern "C" int memra_mla_attn_gathered_f32(const float* q_lat, const float* q_pe
     MLA_ERR();
     return 0;
 }
+
+// ------------------------------------------------------- B200 (sm_100a) t<=8 decode arm
+//
+// MEMRA_B200_MLA_DECODE_ARM (host seam mla_ffi.rs, default OFF). Census motivation
+// (nsys, 2x B200 SXM sm_100a, GLM-5.3-Flash NVFP4, plain decode t=1): the 11 MLA/DSA sparse
+// layers' `memra_mla_attn_gathered_kernel` costs 16 x 42.3 us/token. At t_q=1 the grid is
+// `t_q * n_head` = 64 blocks (n_head=64 on the glm5_next/GLM-5.2 geometry) — head-parallel by
+// construction (`blk = i * n_head + h`, ALREADY one CTA per head), but 64 CTAs on a B200 die
+// (~132-148 SMs) is well under one wave, and per-block work is 256 threads running a serial,
+// syncthreads-per-tile online-softmax fold with no float4/uint4 vectorization — a latency,
+// not a throughput, bound.
+//
+// SPLIT DESIGN, output-range only (mirrors `memra_mla_attn_gathered_split_kernel`'s absorb/
+// decompress siblings above, decode-diet lever 4, MEMRA_MLA_DECODE_SPLIT). Unlike those two
+// pure independent-output matvecs, attn_gathered's OUTPUT elements (o_lat[blk][l], l in
+// 0..kv_rank) all share ONE softmax normalizer (m, dsum) computed by walking every tile of the
+// SAME gathered slot list. Splitting the walk itself across CTAs (segment the slots, combine
+// partials) would change the number and order of the online-softmax rescale ops relative to the
+// unsplit kernel's single sequential fold — a DIFFERENT floating-point program, not a
+// launch-geometry change, so that path is refused here on the bit-identity bar this lane
+// requires (see mla-b200-decode-20260902 LANE.md "why not slot-split").
+//
+// What IS bit-identical by construction: splitting the OUTPUT WRITE RANGE the same way
+// absorb_q_split / decompress_v_split do. Every split block runs the score/softmax tile loop
+// IN FULL (full slot walk, same m/dsum sequence, same rounding — the exact per-tile combine
+// code of `memra_mla_attn_gathered_kernel`, unmodified) so the shared normalizer is identical
+// across every chunk; only the final per-l accumulate-and-write loop is restricted to
+// `[lo, hi)`. Each kept output element's accumulate chain (rescale, then w-ascending
+// `expf(...)*cache[...][l]` adds) is therefore the SAME sequence of operations as the unsplit
+// kernel computes for that same l — WHICH block runs it changes, not the arithmetic — so this
+// is bit-identical by the same argument as the absorb/decompress splits (asserted in
+// `mla_decode_arm_gate.rs`).
+//
+// TRADE-OFF, stated plainly: this trades REDUNDANT tile-walk compute (the dominant cost, ~42.3
+// us of the kernel) for more CTAs — every split factor `> 1` repeats the full slot walk that
+// many times. Unlike the absorb/decompress splits (near-zero marginal cost per split), this is
+// only a net win if the box is latency/occupancy-bound at t<=8, which is a real hardware
+// question, not a code one. The host policy below (`mla_b200_gathered_split_for` in
+// mla_ffi.rs) caps the factor conservatively (default target: fill one wave, not many) and the
+// A/B receipt is PENDING on the B200 box — this kernel exists so that A/B can be run, not
+// because the split factor is already known to win.
+extern "C" __global__ void memra_mla_attn_gathered_split_kernel(
+    const float* __restrict__ q_lat, const float* __restrict__ q_pe,
+    const float* __restrict__ cache, const int* __restrict__ idx, float* __restrict__ o_lat,
+    int n_head, int kv_rank, int d_rope, int n_slots, float scale, int split) {
+    __shared__ float s_q[MLA_MAX_RANK];
+    __shared__ float s_qp[MLA_MAX_ROPE];
+    __shared__ float s_acc[MLA_MAX_RANK];
+    __shared__ float s_score[MLA_WARPS];
+    __shared__ int s_row[MLA_WARPS];
+
+    int blk = blockIdx.x / split;   // i * n_head + h
+    int chunk = blockIdx.x % split; // this block's OUTPUT slice of [0, kv_rank)
+    int i = blk / n_head;
+    int width = kv_rank + d_rope;
+    const int* row_idx = idx + (long)i * n_slots;
+
+    int per = (kv_rank + split - 1) / split;
+    int lo = chunk * per;
+    int hi = lo + per < kv_rank ? lo + per : kv_rank;
+
+    // Full q load: the score dot needs the WHOLE kv_rank + d_rope vector regardless of which
+    // output range this block owns.
+    for (int l = threadIdx.x; l < kv_rank; l += blockDim.x) s_q[l] = q_lat[(long)blk * kv_rank + l];
+    for (int p = threadIdx.x; p < d_rope; p += blockDim.x)
+        s_qp[p] = q_pe[(long)blk * d_rope + p];
+    // Accumulator only needs the owned range.
+    for (int l = lo + threadIdx.x; l < hi; l += blockDim.x) s_acc[l] = 0.0f;
+    __syncthreads();
+
+    int warp = threadIdx.x / 32;
+    int lane = threadIdx.x % 32;
+    float m = -FLT_MAX;
+    float dsum = 0.0f;
+
+    for (int s0 = 0; s0 < n_slots; s0 += MLA_WARPS) {
+        int s = s0 + warp;
+        int t = (s < n_slots) ? row_idx[s] : -1;
+        float part = 0.0f;
+        if (t >= 0) {
+            const float* row = cache + (long)t * width;
+            for (int l = lane; l < kv_rank; l += 32) part += s_q[l] * row[l];
+            for (int p = lane; p < d_rope; p += 32) part += s_qp[p] * row[kv_rank + p];
+        }
+        for (int off = 16; off > 0; off >>= 1) part += __shfl_down_sync(0xffffffffu, part, off);
+        if (lane == 0) {
+            s_score[warp] = (t >= 0) ? part * scale : -FLT_MAX;
+            s_row[warp] = t;
+        }
+        __syncthreads();
+
+        float tmax = -FLT_MAX;
+        for (int w = 0; w < MLA_WARPS; ++w)
+            if (s_row[w] >= 0) tmax = fmaxf(tmax, s_score[w]);
+        float mnew = fmaxf(m, tmax);
+        float rescale = (m == -FLT_MAX) ? 0.0f : expf(m - mnew);
+        float tsum = 0.0f;
+        if (mnew > -FLT_MAX)
+            for (int w = 0; w < MLA_WARPS; ++w)
+                if (s_row[w] >= 0) tsum += expf(s_score[w] - mnew);
+        dsum = dsum * rescale + tsum;
+
+        for (int l = lo + threadIdx.x; l < hi; l += blockDim.x) {
+            float a = s_acc[l] * rescale;
+            if (mnew > -FLT_MAX)
+                for (int w = 0; w < MLA_WARPS; ++w) {
+                    int tt = s_row[w];
+                    if (tt < 0) continue;
+                    a += expf(s_score[w] - mnew) * cache[(long)tt * width + l];
+                }
+            s_acc[l] = a;
+        }
+        m = mnew;
+        __syncthreads();
+    }
+
+    float inv = 1.0f / dsum;
+    for (int l = lo + threadIdx.x; l < hi; l += blockDim.x)
+        o_lat[(long)blk * kv_rank + l] = s_acc[l] * inv;
+}
+
+extern "C" int memra_mla_attn_gathered_split_f32(const float* q_lat, const float* q_pe,
+                                                  const float* cache, const int* idx,
+                                                  float* o_lat, int n_head, int kv_rank,
+                                                  int d_rope, int t_q, int n_slots, float scale,
+                                                  int split, void* stream_v) {
+    if (kv_rank > MLA_MAX_RANK) return 40002;
+    if (d_rope > MLA_MAX_ROPE) return 40003;
+    if (n_slots <= 0) return 40015;
+    if (split < 1 || split > kv_rank) return 40003;
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    long blocks = (long)t_q * n_head * split;
+    if (blocks == 0) return 0;
+    memra_mla_attn_gathered_split_kernel<<<(unsigned)blocks, MLA_THREADS, 0, stream>>>(
+        q_lat, q_pe, cache, idx, o_lat, n_head, kv_rank, d_rope, n_slots, scale, split);
+    MLA_ERR();
+    return 0;
+}
