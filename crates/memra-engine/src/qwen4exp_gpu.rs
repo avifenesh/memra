@@ -1236,9 +1236,51 @@ pub mod prof {
             const { RefCell::new(None) };
     }
 
+    thread_local! {
+        /// Rows accumulated BEFORE `split_prefill` (the prompt + draft prefill of a spec
+        /// run), kept apart so a round-shape receipt never absorbs them. Every spec
+        /// profile cut before 2026-09-02 (mtp4/5/6, ep2 cell A) attributed the all-rows
+        /// prompt prefill — which runs the per-expert MoE executor — to the ROUND, which
+        /// is where the "30% per-expert dequant" term in those receipts came from.
+        static PREFILL: RefCell<Option<BTreeMap<&'static str, (f64, u64)>>> =
+            const { RefCell::new(None) };
+        static ROUNDS_ONLY: RefCell<bool> = const { RefCell::new(false) };
+    }
+
     /// Start accumulating (resets any previous accumulation).
     pub fn enable() {
         STATE.with(|s| *s.borrow_mut() = Some(BTreeMap::new()));
+        PREFILL.with(|s| *s.borrow_mut() = None);
+    }
+
+    /// Ask `spec_generate_ext` to call `split_prefill` once its prefills are done, so the
+    /// main accumulation covers ROUNDS ONLY. Instrument-only; default false.
+    pub fn set_rounds_only(on: bool) {
+        ROUNDS_ONLY.with(|s| *s.borrow_mut() = on);
+    }
+
+    pub fn rounds_only() -> bool {
+        ROUNDS_ONLY.with(|s| *s.borrow())
+    }
+
+    /// Move everything accumulated so far into the PREFILL bucket and start the main
+    /// accumulation afresh. No-op unless profiling is on and `rounds_only` was requested.
+    pub fn split_prefill() {
+        if !on() || !rounds_only() {
+            return;
+        }
+        let pre = STATE.with(|s| s.borrow_mut().replace(BTreeMap::new()));
+        PREFILL.with(|s| *s.borrow_mut() = pre);
+    }
+
+    /// Drain the PREFILL bucket (section, total_seconds, calls); empty when no split ran.
+    pub fn take_prefill() -> Vec<(&'static str, f64, u64)> {
+        PREFILL.with(|s| {
+            s.borrow_mut()
+                .take()
+                .map(|map| map.into_iter().map(|(k, (t, c))| (k, t, c)).collect())
+                .unwrap_or_default()
+        })
     }
 
     pub fn on() -> bool {
@@ -15239,6 +15281,8 @@ impl Qwen4ExpGpu {
         dstate.committed = dstate.rows;
         report.draft_prefill_ms = draft_prefill_ms + t_boot.elapsed().as_secs_f64() * 1e3;
         report.draft_ms += report.draft_prefill_ms;
+        // Prefills are done: a rounds-only profile starts HERE (see prof::split_prefill).
+        prof::split_prefill();
 
         let mut m = n; // trunk committed rows; tip sits at position m
         let mut tip = x0;

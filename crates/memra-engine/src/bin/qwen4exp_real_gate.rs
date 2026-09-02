@@ -3050,6 +3050,12 @@ fn main() -> Res<()> {
             let toks = 64usize;
             let mut ss = model.alloc_state(&engine, spec_prompt.len() + toks + k + 4)?;
             let mut ds = model.mtp_state(de, spec_prompt.len() + toks + k + 4)?;
+            // ROUNDS ONLY: the prompt + draft prefill are split into their own table below.
+            // Before 2026-09-02 this profile attributed the all-rows prompt prefill — which
+            // runs the per-expert MoE executor, minutes/chunk-class — to the spec round; that
+            // is where the mtp4/5/6 "30% per-expert dequant" term came from and why their
+            // routed-expert share (48.5%) never matched the nsys round (26.4%).
+            memra_engine::qwen4exp_gpu::prof::set_rounds_only(true);
             memra_engine::qwen4exp_gpu::prof::enable();
             let report = model.spec_generate_ext(
                 &engine,
@@ -3064,12 +3070,17 @@ fn main() -> Res<()> {
                 None,
             )?;
             let mut rows = memra_engine::qwen4exp_gpu::prof::take();
+            let mut pre_rows = memra_engine::qwen4exp_gpu::prof::take_prefill();
+            memra_engine::qwen4exp_gpu::prof::set_rounds_only(false);
             rows.sort_by(|a, b| b.1.total_cmp(&a.1));
+            pre_rows.sort_by(|a, b| b.1.total_cmp(&a.1));
             let attributed_ms: f64 = rows.iter().map(|r| r.1 * 1e3).sum();
+            let prefill_attributed_ms: f64 = pre_rows.iter().map(|r| r.1 * 1e3).sum();
             let rounds = report.rounds.max(1) as f64;
             let mut receipt = header.clone();
             receipt.push_str(&format!(
                 "# spec-profile k={k} tokens={} rounds={} total_ms={:.1} draft_ms={:.1} verify_ms={:.1} attributed_ms={:.1}\n\
+                 # scope\tROUNDS ONLY (prompt + draft prefill split into the prefill table below; prefill_ms={:.1} draft_prefill_ms={:.1} prefill_attributed_ms={:.1})\n\
                  section\tcalls_per_round\ttotal_ms\tms_per_round\tpct_of_attributed\n",
                 report.tokens.len(),
                 report.rounds,
@@ -3077,6 +3088,9 @@ fn main() -> Res<()> {
                 report.draft_ms,
                 report.verify_ms,
                 attributed_ms,
+                report.prefill_ms,
+                report.draft_prefill_ms,
+                prefill_attributed_ms,
             ));
             for (name, seconds, calls) in &rows {
                 receipt.push_str(&format!(
@@ -3085,6 +3099,14 @@ fn main() -> Res<()> {
                     seconds * 1e3,
                     seconds * 1e3 / rounds,
                     seconds * 1e3 / (attributed_ms / 100.0),
+                ));
+            }
+            receipt.push_str("# prefill-section\ttotal_ms\tpct_of_prefill_attributed\n");
+            for (name, seconds, _calls) in &pre_rows {
+                receipt.push_str(&format!(
+                    "prefill:{name}\t{:.1}\t{:.1}\n",
+                    seconds * 1e3,
+                    seconds * 1e3 / (prefill_attributed_ms.max(1e-9) / 100.0),
                 ));
             }
             let path = args
