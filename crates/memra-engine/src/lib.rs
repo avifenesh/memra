@@ -278,6 +278,17 @@ pub fn glm5_decode_graph_on() -> bool {
     std::env::var("MEMRA_GLM5_DECODE_GRAPH").as_deref() == Ok("1")
 }
 
+/// `MEMRA_GLM5_GRAPH_TRACE=1` — GATE-HARNESS trace for `MEMRA_GLM5_DECODE_GRAPH`, never a
+/// serving flag. Prints one line per captured-run boundary per token, on BOTH arms and at the
+/// SAME layer boundaries, with a checksum of the stream state leaving that segment. Box run 4
+/// produced token 0 at every step with the door running cleanly and no error anywhere: the only
+/// way to tell "the captured range wrote nothing the remainder reads" from "the state is wrong
+/// from layer N onward" is to compare the two arms segment by segment, and `nz=` in the line
+/// separates an all-zero hidden from a wrong-but-live one on sight.
+pub fn glm5_graph_trace_on() -> bool {
+    std::env::var("MEMRA_GLM5_GRAPH_TRACE").as_deref() == Ok("1")
+}
+
 /// Captured-run replays (one per graph launch), captures, and the layer count currently
 /// covered by captured runs — the door's engagement receipt, read by the gate bin.
 pub static GLM5_DECODE_GRAPH_REPLAYS: std::sync::atomic::AtomicU64 =
