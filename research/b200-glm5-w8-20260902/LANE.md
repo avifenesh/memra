@@ -3,7 +3,7 @@
 Status: door, dispatch, and gate written; both arches build clean under CI-equivalent local
 builds (`MEMRA_CUDA_ARCH=100a` / `120a`); synthetic gate RUN GREEN on the rig. NO B200 in this
 worktree — the real-artifact argmax gate, the interleaved x5 speed cells, and the
-vendor-default sampled twin with engagement receipts are pending the session that owns the
+vendor-default sampled twin with engagement receipts landed on the pair 2026-09-02 (darklanes research/glm5-b200-20260902/LANE.md 14:27Z/14:48Z; argmax gate PASS, tape identical, +10% plain, +2-4% spec); the paragraph below records what was asked of the session that owns the
 2x B200 pair. Door `MEMRA_GLM5_W8` default OFF everywhere.
 
 Branch: `lane/b200-glm5-w8-20260902` (worktree `wt-b200-w8`), from
@@ -108,7 +108,7 @@ arm) already ships and is already exercised by `MEMRA_STEP_TP_W8`'s battery on s
 lane is a NEW DISPATCH SITE onto EXISTING kernels, not new numeric machinery — see
 `docs/KERNELS.md`'s new row.
 
-## Bytes/token: before vs after, by arithmetic (NOT measured — box run pending)
+## Bytes/token: before vs after, by arithmetic (measured on the pair 2026-09-02: +10% plain, +2-4% spec, receipts in darklanes research/glm5-b200-20260902/LANE.md)
 
 bf16 = 2 B/weight. q8_0 mirror block = 34 B per 32 weights = 1.0625 B/weight (0.53125x bf16).
 
