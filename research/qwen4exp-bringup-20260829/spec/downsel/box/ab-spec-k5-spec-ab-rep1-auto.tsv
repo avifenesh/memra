@@ -1,0 +1,26 @@
+# qwen4exp_real_gate	label=spec-ab-rep1-auto	binary_sha256=69c44eb85b82d4eefb2e08e535beffa47b791be9c5444de84fc07ea3de8fc481	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=true	seams_env=idxsel,kvq,idxq,selgroup
+# spec-ab k=5: plain greedy decode vs spec_generate, fresh states per arm per rep
+rep	arm	tokens	ms_per_token	tok_per_s	accept_rate	mean_accept_len
+0	plain	64	13.47	74.25	-	-
+0	spec	64	11.23	89.08	0.522	3.56
+# round-cost	rep=0	rounds=18	chain_ms=7.07	replay_ms=0.20	verify_ms=31.39	cross_ms=0.000	draft_prefill_ms=18.9	zero_draft=0	guard_stops=0	plain_steps=0	k_decays=[]
+1	plain	64	13.45	74.36	-	-
+1	spec	64	11.18	89.48	0.522	3.56
+# round-cost	rep=1	rounds=18	chain_ms=7.04	replay_ms=0.22	verify_ms=31.24	cross_ms=0.000	draft_prefill_ms=19.2	zero_draft=0	guard_stops=0	plain_steps=0	k_decays=[]
+2	plain	64	13.45	74.34	-	-
+2	spec	64	11.01	90.81	0.522	3.56
+# round-cost	rep=2	rounds=18	chain_ms=7.03	replay_ms=0.22	verify_ms=30.68	cross_ms=0.000	draft_prefill_ms=18.8	zero_draft=0	guard_stops=0	plain_steps=0	k_decays=[]
+3	plain	64	13.46	74.31	-	-
+3	spec	64	10.98	91.05	0.522	3.56
+# round-cost	rep=3	rounds=18	chain_ms=7.05	replay_ms=0.20	verify_ms=30.58	cross_ms=0.000	draft_prefill_ms=18.8	zero_draft=0	guard_stops=0	plain_steps=0	k_decays=[]
+4	plain	64	13.43	74.45	-	-
+4	spec	64	10.79	92.69	0.522	3.56
+# round-cost	rep=4	rounds=18	chain_ms=6.99	replay_ms=0.22	verify_ms=29.93	cross_ms=0.000	draft_prefill_ms=18.7	zero_draft=0	guard_stops=0	plain_steps=0	k_decays=[]
+# arm plain	mean_of_means_ms=13.45	min=13.43	max=13.47	tok_per_s=74.34
+# arm spec	mean_of_means_ms=11.04	min=10.79	max=11.23	tok_per_s=90.60
+# rep0_plain_vs_spec_first_divergence	-1
+# accept_hist_total	15,25,0,15,10,25
+# rep0_plain	1596,1144,4087,1156,25,328,11670,411,4667,5792,5829,709,310,3203,14,11093,11,45328,279,1412,50921,6681,11,321,1910,1092,4203,364,264,19260,421,1429,310,1440,264,4667,1149,271,3850,874,709,3766,13,14235,4222,2466,364,1970,30,1921,6970,3300,13553,5215,30,2570,2640,328,559,4667,5792,5829,709,1
+# rep0_spec	1596,1144,4087,1156,25,328,11670,411,4667,5792,5829,709,310,3203,14,11093,11,45328,279,1412,50921,6681,11,321,1910,1092,4203,364,264,19260,421,1429,310,1440,264,4667,1149,271,3850,874,709,3766,13,14235,4222,2466,364,1970,30,1921,6970,3300,13553,5215,30,2570,2640,328,559,4667,5792,5829,709,1

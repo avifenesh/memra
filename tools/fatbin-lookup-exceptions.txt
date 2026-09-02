@@ -77,9 +77,9 @@
                             # reachable via MEMRA_FP4, which now refuses on portable builds
 
 # =============================================================================================
-# sm_100a (datacenter Blackwell, B200). Compile-covered by a ci.yml matrix cell since
-# lane/glm5-b200-prep-20260901; NOT in release.yml (zero runtime receipts on the silicon — see
-# build.rs detect_arch). Only the sm_120a-only MMA-kind kernels are missing.
+# sm_100a (datacenter Blackwell, B200). Compile-covered by a ci.yml matrix cell and
+# hardware-qualified for the source backend; NOT in release.yml because no prebuilt is published.
+# Only the sm_120a-only MMA-kind kernels are missing.
 100a qmatvec_gemm_nvfp4_fp4   # build.rs compiles cu/qmatvec_gemm.cu with -DMEMRA_DISABLE_NATIVE_FP4=1
                               # on 100a (mxf4 block-scale MMA is sm_120a-only). TWO reachable-in-
                               # principle call chains, both now guarded on the 120a PROPERTY:

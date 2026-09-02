@@ -1236,9 +1236,51 @@ pub mod prof {
             const { RefCell::new(None) };
     }
 
+    thread_local! {
+        /// Rows accumulated BEFORE `split_prefill` (the prompt + draft prefill of a spec
+        /// run), kept apart so a round-shape receipt never absorbs them. Every spec
+        /// profile cut before 2026-09-02 (mtp4/5/6, ep2 cell A) attributed the all-rows
+        /// prompt prefill — which runs the per-expert MoE executor — to the ROUND, which
+        /// is where the "30% per-expert dequant" term in those receipts came from.
+        static PREFILL: RefCell<Option<BTreeMap<&'static str, (f64, u64)>>> =
+            const { RefCell::new(None) };
+        static ROUNDS_ONLY: RefCell<bool> = const { RefCell::new(false) };
+    }
+
     /// Start accumulating (resets any previous accumulation).
     pub fn enable() {
         STATE.with(|s| *s.borrow_mut() = Some(BTreeMap::new()));
+        PREFILL.with(|s| *s.borrow_mut() = None);
+    }
+
+    /// Ask `spec_generate_ext` to call `split_prefill` once its prefills are done, so the
+    /// main accumulation covers ROUNDS ONLY. Instrument-only; default false.
+    pub fn set_rounds_only(on: bool) {
+        ROUNDS_ONLY.with(|s| *s.borrow_mut() = on);
+    }
+
+    pub fn rounds_only() -> bool {
+        ROUNDS_ONLY.with(|s| *s.borrow())
+    }
+
+    /// Move everything accumulated so far into the PREFILL bucket and start the main
+    /// accumulation afresh. No-op unless profiling is on and `rounds_only` was requested.
+    pub fn split_prefill() {
+        if !on() || !rounds_only() {
+            return;
+        }
+        let pre = STATE.with(|s| s.borrow_mut().replace(BTreeMap::new()));
+        PREFILL.with(|s| *s.borrow_mut() = pre);
+    }
+
+    /// Drain the PREFILL bucket (section, total_seconds, calls); empty when no split ran.
+    pub fn take_prefill() -> Vec<(&'static str, f64, u64)> {
+        PREFILL.with(|s| {
+            s.borrow_mut()
+                .take()
+                .map(|map| map.into_iter().map(|(k, (t, c))| (k, t, c)).collect())
+                .unwrap_or_default()
+        })
     }
 
     pub fn on() -> bool {
@@ -1464,8 +1506,7 @@ fn sel_v3_on() -> bool {
 // `spec/downsel/` produce; until those exist, ON would be an unmeasured default.
 //
 // Arm: `MEMRA_Q4E_SEAMS=selgroup` (both families AUTO). Per-family shapes for the A/B
-// ladder: `selgroup=dn:4:1+gu:16:2`, `selgroup=dn:8:1+gu:off`, ... Roll back: omit it, or
-// `selgroup=0`.
+// ladder: `selgroup=dn:4:1+gu:16:2`, `selgroup=dn:8:1+gu:off`, ... Roll back: `selgroup=0` (omitting the name arms AUTO since the 2026-09-02 default flip).
 //
 // AUTO derives the shape from the geometry rather than pinning a number, because the two
 // families have different `pairs` and a single global shape would starve one of them:
@@ -1486,14 +1527,22 @@ fn sel_v3_on() -> bool {
 // ROUND-BUDGET-COMPOSITION.md) and the pack kernel's shape differs; if the EP2 lane
 // revives a two-card route through seg C, extend the seam there THEN, with its own gate
 // arm, rather than silently inheriting a shape never measured on the pack kernel.
+// DEFAULT FLIPPED TO AUTO 2026-09-02 on box receipts (research/qwen4exp-bringup-20260829/spec/
+// downsel/box/): cell B (K=5 spec A/B, serving caches q8_0/q5_1 + idxq q8, 5x64 interleaved,
+// arm order flipped per hold, spec-vs-plain byte identity on every arm) auto vs off =
+// 90.07/87.38, 90.60/87.14, 90.08/87.47 tok/s (+3.1/+4.0/+3.0%); cell C t=1 decode 32k
+// 0.9999x/1.0001x, cell D 262k rung 1.0003x (5 reps each) — no depth regression. The
+// pre-registered bar "gain > both arms' spread" was MISSED BY A HAIR on each hold (gain
+// 2.9-3.8% vs spreads 2.3-4.0%) while the sign never flipped across six holds; the owner
+// took the flip on that record (2026-09-02, PR #56). Rollback: `MEMRA_Q4E_SEAMS=selgroup=0`.
 const SEL_GROUP_OFF: u32 = 0;
 const SEL_GROUP_AUTO: u32 = 1;
 /// Down-projection family (`launch_nvfp4_sel_matvec`).
 static SEL_GROUP_DN: std::sync::atomic::AtomicU32 =
-    std::sync::atomic::AtomicU32::new(SEL_GROUP_OFF);
+    std::sync::atomic::AtomicU32::new(SEL_GROUP_AUTO);
 /// Fused gate+up+silu family (`launch_nvfp4_sel_gu_silu`).
 static SEL_GROUP_GU: std::sync::atomic::AtomicU32 =
-    std::sync::atomic::AtomicU32::new(SEL_GROUP_OFF);
+    std::sync::atomic::AtomicU32::new(SEL_GROUP_AUTO);
 
 fn sel_group_dn() -> u32 {
     SEL_GROUP_DN.load(std::sync::atomic::Ordering::Relaxed)
@@ -5961,7 +6010,7 @@ fn launch_nvfp4_sel_matvec(
     if y.len() < n_sel * out_f {
         return Err("qmatvec_nvfp4_modelopt_sel_f32: output shorter than n_sel*out_f".into());
     }
-    // Sub-warp pair groups (`selgroup`, default OFF) take precedence over the v3/v2/v1
+    // Sub-warp pair groups (`selgroup`, default AUTO since 2026-09-02) take precedence over the v3/v2/v1
     // chain when the geometry tiles exactly; `(g=32, rows=4)` reproduces v3's bits.
     let grp = sel_group_resolve(sel_group_dn(), in_f, out_f);
     let v3 = grp.is_none() && sel_v3_on() && in_f % 32 == 0 && out_f % 4 == 0;
@@ -6046,7 +6095,7 @@ fn launch_nvfp4_sel_gu_silu(
     if sel.is_none() == (pack_raw == 0) {
         return Err("qmatvec_nvfp4_modelopt_sel_gu_silu_f32: exactly one of sel/pack".into());
     }
-    // Sub-warp pair groups (`selgroup`, default OFF); `(g=32, rows=4)` reproduces the
+    // Sub-warp pair groups (`selgroup`, default AUTO since 2026-09-02); `(g=32, rows=4)` reproduces the
     // shipped kernel's bits, pack and tok_map modes included.
     let grp = sel_group_resolve(sel_group_gu(), in_f, ff);
     let f = e.func(if grp.is_some() {
@@ -15232,6 +15281,8 @@ impl Qwen4ExpGpu {
         dstate.committed = dstate.rows;
         report.draft_prefill_ms = draft_prefill_ms + t_boot.elapsed().as_secs_f64() * 1e3;
         report.draft_ms += report.draft_prefill_ms;
+        // Prefills are done: a rounds-only profile starts HERE (see prof::split_prefill).
+        prof::split_prefill();
 
         let mut m = n; // trunk committed rows; tip sits at position m
         let mut tip = x0;
@@ -15655,13 +15706,156 @@ struct BankSrc {
     hidden: usize,
 }
 
+/// One fused bank tensor's read address: the artifact name plus the contract shape the
+/// walk already validated it against ([E, out_f, in_f], logical).
+struct FusedTensorPlan {
+    name: String,
+    shape: [usize; 3],
+}
+
+/// One PER-EXPERT projection's read addresses, in EXPERT ORDER 0..E. The walk builds this
+/// from a numerically-keyed map and checks contiguity there, so this vector's index IS the
+/// expert id — the lexicographic-arrival trap (`experts.10` before `experts.2`) is already
+/// absorbed before anything is read.
+struct PerExpertPlan {
+    names: Vec<String>, // expert order 0..E
+    out_f: usize,
+    in_f: usize,
+    quant: memra_gguf::tensor_contract::QuantConstraint,
+}
+
+enum BankPlanSrc {
+    /// FusedBanks dialect: the fused [E, 2ff, H] gate_up tensor + the [E, H, ff] down.
+    Fused {
+        gate_up: FusedTensorPlan,
+        down: FusedTensorPlan,
+        /// Residency decided at WALK time, exactly as before
+        /// (`LoadOptions::host_bf16_banks`, or an MTP bank at index >= n_trunk): a bf16
+        /// bank keeps raw bytes instead of dequantizing to f32. Fused-only — the
+        /// per-expert modelopt rows are F32 or NVFP4 by geometry, never a bf16 arm.
+        keep_bf16: bool,
+    },
+    /// PerExpertModelopt dialect: one name list per projection.
+    PerExpert {
+        gate: PerExpertPlan,
+        up: PerExpertPlan,
+        down: PerExpertPlan,
+    },
+}
+
+/// WHERE one layer's expert bank lives in the artifact and HOW to bind it — everything
+/// `BankSrc` needs except the bytes.
+///
+/// This is the streaming seam. The walk validates names/shapes/dtypes/geometry/expert
+/// contiguity and records this plan; the bytes are read one LAYER at a time inside the
+/// consuming loop (`from_loaded_checkpoint_dual`, `build_tp2_shard`,
+/// `into_reference_weights`) straight off the safetensors mmap, uploaded, and dropped.
+/// Pre-materializing all 48 layers cost the whole artifact in host anon memory at once
+/// (~72 GB of banks on top of the 102 GB n-gram table and ~20 GB of trunk f32), which
+/// OOM-killed the real gate at 179.7 GB anon-RSS on a 180 GB-RAM box — the cheapest
+/// 2-card class. Nothing about the BYTES changes: the same
+/// `read_bank_tensor`/`read_per_expert`/`assemble_per_expert_bank`/`split_fused_gate_up`
+/// chain runs on the same file offsets in the same expert order, just later.
+struct BankPlan {
+    n_expert: usize,
+    ff: usize,
+    hidden: usize,
+    src: BankPlanSrc,
+}
+
+impl BankPlan {
+    /// Read + assemble THIS layer's bank off the mmap. Peak host cost is one layer's bank
+    /// (~1.5 GB on the real mint), not the artifact.
+    fn read(&self, model: &memra_gguf::safetensors::StModel) -> Res<BankSrc> {
+        let (gate, up, down) = match &self.src {
+            BankPlanSrc::Fused {
+                gate_up,
+                down,
+                keep_bf16,
+            } => {
+                let fused = read_bank_tensor(
+                    model,
+                    &gate_up.name,
+                    gate_up.shape[0],
+                    gate_up.shape[1],
+                    gate_up.shape[2],
+                    *keep_bf16,
+                )?;
+                let (gate, up) = split_fused_gate_up(fused, self.n_expert, self.ff, self.hidden)?;
+                let down = read_bank_tensor(
+                    model,
+                    &down.name,
+                    down.shape[0],
+                    down.shape[1],
+                    down.shape[2],
+                    *keep_bf16,
+                )?;
+                (gate, up, down)
+            }
+            BankPlanSrc::PerExpert { gate, up, down } => (
+                read_per_expert_bank(model, gate)?,
+                read_per_expert_bank(model, up)?,
+                read_per_expert_bank(model, down)?,
+            ),
+        };
+        Ok(BankSrc {
+            gate,
+            up,
+            down,
+            n_expert: self.n_expert,
+            ff: self.ff,
+            hidden: self.hidden,
+        })
+    }
+}
+
+/// WALK-time refusal for a bank tensor whose PAYLOAD is read later: the name must exist in
+/// the census and carry a dtype the bank readers admit.
+///
+/// `StModel::info` is header-only, so this faults no weight page and costs no host memory.
+/// It keeps the contract walk's "every declared name exists" property — a mint missing a
+/// projection is refused before the 102 GB table is allocated and before one byte reaches
+/// the device. Shape, scale siblings, macro finiteness and `input_scale` validity are
+/// checked by `read_bank_tensor`/`read_per_expert` when the layer is read, which is still
+/// load time (before any forward), just per layer instead of all at once.
+fn check_bank_header(model: &memra_gguf::safetensors::StModel, name: &str) -> Res<()> {
+    let info = model
+        .info(name)
+        .ok_or_else(|| format!("qwen4exp_gpu: checkpoint is missing {name}"))?;
+    match info.dtype.as_str() {
+        "BF16" | "F32" | "U8" => Ok(()),
+        other => Err(format!("qwen4exp_gpu: {name} bank dtype {other} unsupported").into()),
+    }
+}
+
+/// Read one per-expert projection in expert order and stack it — the deferred half of the
+/// old walk's `read_per_expert` + `assemble_per_expert_bank` pair, byte-for-byte.
+fn read_per_expert_bank(
+    model: &memra_gguf::safetensors::StModel,
+    plan: &PerExpertPlan,
+) -> Res<BankTensorSrc> {
+    let mut experts = Vec::with_capacity(plan.names.len());
+    for name in &plan.names {
+        experts.push(read_per_expert(
+            model, name, plan.out_f, plan.in_f, plan.quant,
+        )?);
+    }
+    assemble_per_expert_bank(experts)
+}
+
 /// A checkpoint materialized through the pack contract: reference-layout weights for the
 /// trunk + globals (effective norms — the (1+w) fold applied per the module-header rule),
-/// plus the bank/table carriers that stay out of `ReferenceWeights`.
+/// plus the table carrier that stays out of `ReferenceWeights` and the LAZY bank plans.
+///
+/// The open safetensors mmap is part of the value: expert banks are read from it per layer
+/// at consume time (see `BankPlan`). It stays mapped until the checkpoint is dropped, so a
+/// consumer must not outlive it — every consumer here is a constructor that finishes
+/// uploading before returning.
 pub struct LoadedCheckpoint {
     pub plan: ModelPlan,
     pub weights: ReferenceWeights,
-    banks: std::collections::BTreeMap<u32, BankSrc>,
+    model: memra_gguf::safetensors::StModel,
+    bank_plans: std::collections::BTreeMap<u32, BankPlan>,
     tables: std::collections::BTreeMap<u32, Vec<u8>>, // bf16 bytes, [rows, head_dim]
 }
 
@@ -16134,15 +16328,23 @@ pub fn read_checkpoint_with(dir: &std::path::Path, opts: LoadOptions) -> Res<Loa
     let contract = tensor_contract_for(&cfg, &plan, dialect)?;
 
     let mut weights = ReferenceWeights::new();
-    let mut gate_up_banks: std::collections::BTreeMap<u32, BankTensorSrc> = Default::default();
+    let mut gate_up_banks: std::collections::BTreeMap<u32, FusedTensorPlan> = Default::default();
     // Keyed by numeric expert index: the contract iterates the census BTreeMap in
     // LEXICOGRAPHIC name order (experts.10 before experts.2), so per-expert rows arrive
     // out of numeric order on any E > 9 — assembly must not assume arrival order.
     let mut per_expert: std::collections::BTreeMap<
         (u32, u8),
-        std::collections::BTreeMap<u32, PerExpertSrc>,
+        std::collections::BTreeMap<
+            u32,
+            (
+                String,
+                usize,
+                usize,
+                memra_gguf::tensor_contract::QuantConstraint,
+            ),
+        >,
     > = Default::default();
-    let mut down_banks: std::collections::BTreeMap<u32, BankTensorSrc> = Default::default();
+    let mut down_banks: std::collections::BTreeMap<u32, FusedTensorPlan> = Default::default();
     let mut tables: std::collections::BTreeMap<u32, Vec<u8>> = Default::default();
     let n_trunk = plan.layers.len() as u32;
 
@@ -16200,7 +16402,7 @@ pub fn read_checkpoint_with(dir: &std::path::Path, opts: LoadOptions) -> Res<Loa
         } = requirement.id
         {
             let (out_f, in_f) = (requirement.shape[0] as usize, requirement.shape[1] as usize);
-            let src = read_per_expert(&model, name, out_f, in_f, requirement.quant)?;
+            check_bank_header(&model, name)?;
             let proj = match tensor {
                 memra_gguf::tensor_contract::ExpertTensor::Gate => 0u8,
                 memra_gguf::tensor_contract::ExpertTensor::Up => 1,
@@ -16209,7 +16411,7 @@ pub fn read_checkpoint_with(dir: &std::path::Path, opts: LoadOptions) -> Res<Loa
             if per_expert
                 .entry((layer, proj))
                 .or_default()
-                .insert(expert, src)
+                .insert(expert, (name.clone(), out_f, in_f, requirement.quant))
                 .is_some()
             {
                 return Err(format!(
@@ -16225,19 +16427,20 @@ pub fn read_checkpoint_with(dir: &std::path::Path, opts: LoadOptions) -> Res<Loa
                 tensor,
                 LayerTensor::MoeExpertGateUpBank | LayerTensor::MoeExpertDownBank
             ) {
-                let (n_expert, out_f, in_f) = (
+                let shape = [
                     requirement.shape[0] as usize,
                     requirement.shape[1] as usize,
                     requirement.shape[2] as usize,
-                );
-                // The MTP bank (index >= n_trunk) keeps raw bf16 bytes: it goes DEVICE
-                // bf16-resident at build (never f32-expanded — 10 GB vs 5 GB).
-                let keep_bf16 = opts.host_bf16_banks || index >= n_trunk;
-                let bank = read_bank_tensor(&model, name, n_expert, out_f, in_f, keep_bf16)?;
+                ];
+                check_bank_header(&model, name)?;
+                let address = FusedTensorPlan {
+                    name: name.clone(),
+                    shape,
+                };
                 if tensor == LayerTensor::MoeExpertGateUpBank {
-                    gate_up_banks.insert(index, bank);
+                    gate_up_banks.insert(index, address);
                 } else {
-                    down_banks.insert(index, bank);
+                    down_banks.insert(index, address);
                 }
                 continue;
             }
@@ -16286,9 +16489,10 @@ pub fn read_checkpoint_with(dir: &std::path::Path, opts: LoadOptions) -> Res<Loa
         weights.insert(requirement.id.clone(), ReferenceTensor::new(shape, data)?);
     }
 
-    let mut banks = std::collections::BTreeMap::new();
-    // FusedBanks: split the fused gate_up into per-projection halves (trunk layers AND
-    // the MTP block, whose layer plan lives at index n_trunk in plan.mtp_blocks).
+    let mut bank_plans = std::collections::BTreeMap::new();
+    // FusedBanks: pair the fused gate_up with its down twin (trunk layers AND the MTP
+    // block, whose layer plan lives at index n_trunk in plan.mtp_blocks). The fused split
+    // itself happens per layer at read time (`BankPlan::read`).
     for (index, gate_up) in gate_up_banks {
         let down = down_banks
             .remove(&index)
@@ -16298,29 +16502,28 @@ pub fn read_checkpoint_with(dir: &std::path::Path, opts: LoadOptions) -> Res<Loa
         let MlpPlan::Moe(moe) = &layer_plan.mlp else {
             return Err(format!("qwen4exp_gpu: bank on non-MoE layer {index}").into());
         };
-        let (n_expert, ff) = (
-            moe.expert_count as usize,
-            moe.expert_intermediate_size as usize,
-        );
-        let hidden = plan.hidden_size as usize;
-        let (gate, up) = split_fused_gate_up(gate_up, n_expert, ff, hidden)?;
-        banks.insert(
+        bank_plans.insert(
             index,
-            BankSrc {
-                gate,
-                up,
-                down,
-                n_expert,
-                ff,
-                hidden,
+            BankPlan {
+                n_expert: moe.expert_count as usize,
+                ff: moe.expert_intermediate_size as usize,
+                hidden: plan.hidden_size as usize,
+                src: BankPlanSrc::Fused {
+                    gate_up,
+                    down,
+                    // The MTP bank (index >= n_trunk) keeps raw bf16 bytes: it goes DEVICE
+                    // bf16-resident at build (never f32-expanded — 10 GB vs 5 GB).
+                    keep_bf16: opts.host_bf16_banks || index >= n_trunk,
+                },
             },
         );
     }
     if !down_banks.is_empty() {
         return Err("qwen4exp_gpu: down bank without a gate_up twin".into());
     }
-    // PerExpertModelopt: assemble per-projection stacks in expert order.
-    let mut per_layer: std::collections::BTreeMap<u32, [Option<BankTensorSrc>; 3]> =
+    // PerExpertModelopt: order the per-projection name lists by expert index. The STACK
+    // itself is read+concatenated per layer at consume time (`read_per_expert_bank`).
+    let mut per_layer: std::collections::BTreeMap<u32, [Option<PerExpertPlan>; 3]> =
         Default::default();
     for ((layer, proj), experts) in per_expert {
         let layer_plan = plan_layer_at(&plan, layer)
@@ -16338,43 +16541,154 @@ pub fn read_checkpoint_with(dir: &std::path::Path, opts: LoadOptions) -> Res<Loa
             )
             .into());
         }
-        per_layer.entry(layer).or_default()[proj as usize] =
-            Some(assemble_per_expert_bank(experts.into_values().collect())?);
+        // Geometry is uniform across a projection (the census derives it per requirement);
+        // the contiguity check above pins the map to exactly experts 0..E, so
+        // `into_values` yields expert order and its index IS the expert id.
+        let mut names = Vec::with_capacity(count);
+        let mut geometry: Option<(usize, usize, memra_gguf::tensor_contract::QuantConstraint)> =
+            None;
+        for (name, out_f, in_f, quant) in experts.into_values() {
+            match geometry {
+                None => geometry = Some((out_f, in_f, quant)),
+                Some((o, i, q)) if (o, i) == (out_f, in_f) && q == quant => {}
+                Some((o, i, _)) => {
+                    return Err(format!(
+                        "qwen4exp_gpu: layer {layer} proj {proj} mixes expert geometry \
+                         ({out_f}, {in_f}) vs ({o}, {i}) or quant classes"
+                    )
+                    .into());
+                }
+            }
+            names.push(name);
+        }
+        let (out_f, in_f, quant) = geometry
+            .ok_or_else(|| format!("qwen4exp_gpu: layer {layer} proj {proj} has no expert rows"))?;
+        per_layer.entry(layer).or_default()[proj as usize] = Some(PerExpertPlan {
+            names,
+            out_f,
+            in_f,
+            quant,
+        });
     }
     for (layer, mut projections) in per_layer {
         let MlpPlan::Moe(moe) = &plan_layer_at(&plan, layer).expect("checked above").mlp else {
             unreachable!("checked above");
         };
-        let take = |slot: &mut Option<BankTensorSrc>, what: &str| -> Res<BankTensorSrc> {
+        let take = |slot: &mut Option<PerExpertPlan>, what: &str| -> Res<PerExpertPlan> {
             slot.take()
                 .ok_or_else(|| format!("qwen4exp_gpu: layer {layer} missing {what} experts").into())
         };
-        banks.insert(
+        bank_plans.insert(
             layer,
-            BankSrc {
-                gate: take(&mut projections[0], "gate")?,
-                up: take(&mut projections[1], "up")?,
-                down: take(&mut projections[2], "down")?,
+            BankPlan {
                 n_expert: moe.expert_count as usize,
                 ff: moe.expert_intermediate_size as usize,
                 hidden: plan.hidden_size as usize,
+                src: BankPlanSrc::PerExpert {
+                    gate: take(&mut projections[0], "gate")?,
+                    up: take(&mut projections[1], "up")?,
+                    down: take(&mut projections[2], "down")?,
+                },
             },
         );
     }
     Ok(LoadedCheckpoint {
         plan,
         weights,
-        banks,
+        model,
+        bank_plans,
         tables,
     })
 }
 
+/// One expert-bank projection's byte fingerprint — the loader's memory-ordering gate.
+///
+/// A change that only moves WHEN bank bytes are materialized has to leave WHICH bytes
+/// untouched, and "untouched" is a digest, not an argument. `digest` is sha256 over the
+/// projection's payload in device-upload order (NVFP4: codes then scales then the
+/// little-endian macro row; f32/bf16: the raw uploaded bytes), so it pins the expert order,
+/// the fused gate/up split, and the per-expert stack concatenation at once.
+pub struct BankFingerprint {
+    pub layer: u32,
+    /// "gate" | "up" | "down".
+    pub projection: &'static str,
+    /// "f32" | "bf16" | "nvfp4".
+    pub kind: &'static str,
+    pub bytes: usize,
+    /// Lowercase hex sha256.
+    pub digest: String,
+}
+
 impl LoadedCheckpoint {
+    /// Read ONE layer's expert bank off the still-open mmap. The streaming seam every bank
+    /// consumer goes through; the returned source is the caller's to drop.
+    fn read_bank(&self, index: u32) -> Res<BankSrc> {
+        self.bank_plans
+            .get(&index)
+            .ok_or_else(|| format!("qwen4exp_gpu: no bank source for layer {index}"))?
+            .read(&self.model)
+    }
+
+    /// Per-projection byte fingerprints for every bank, read one layer at a time (so this
+    /// costs one layer of host memory, not the artifact). Gate instrument only — see
+    /// `BankFingerprint`; the tiny-fixture gate compares these against banked goldens.
+    pub fn bank_fingerprints(&self) -> Res<Vec<BankFingerprint>> {
+        use sha2::{Digest, Sha256};
+        let mut out = Vec::new();
+        for (&layer, plan) in &self.bank_plans {
+            let bank = plan.read(&self.model)?;
+            for (projection, src) in [("gate", &bank.gate), ("up", &bank.up), ("down", &bank.down)]
+            {
+                let mut hasher = Sha256::new();
+                let (kind, bytes) = match src {
+                    // f32 bit patterns little-endian: the exact bytes `htod` uploads.
+                    BankTensorSrc::F32(data) => {
+                        for value in data {
+                            hasher.update(value.to_le_bytes());
+                        }
+                        ("f32", data.len() * 4)
+                    }
+                    BankTensorSrc::Bf16(raw) => {
+                        hasher.update(raw);
+                        ("bf16", raw.len())
+                    }
+                    BankTensorSrc::Nvfp4 {
+                        codes,
+                        scales,
+                        macros,
+                        ..
+                    } => {
+                        hasher.update(codes);
+                        hasher.update(scales);
+                        for m in macros {
+                            hasher.update(m.to_le_bytes());
+                        }
+                        ("nvfp4", codes.len() + scales.len() + macros.len() * 4)
+                    }
+                };
+                out.push(BankFingerprint {
+                    layer,
+                    projection,
+                    kind,
+                    bytes,
+                    digest: hasher
+                        .finalize()
+                        .iter()
+                        .map(|b| format!("{b:02x}"))
+                        .collect(),
+                });
+            }
+        }
+        Ok(out)
+    }
+
     /// Expand banks and n-gram tables into plain `ReferenceWeights` entries so
     /// memra-reference can execute the checkpoint. TINY/SIBLING SCALE ONLY — the real
     /// artifact's banks/table do not fit host f32; the GPU path never takes this.
     pub fn into_reference_weights(mut self) -> Res<ReferenceWeights> {
-        for (index, bank) in self.banks {
+        let bank_plans = std::mem::take(&mut self.bank_plans);
+        for (index, plan) in bank_plans {
+            let bank = plan.read(&self.model)?;
             let gate = bank_to_f32(&bank.gate, bank.n_expert, bank.ff, bank.hidden)?;
             let up = bank_to_f32(&bank.up, bank.n_expert, bank.ff, bank.hidden)?;
             let down = bank_to_f32(&bank.down, bank.n_expert, bank.hidden, bank.ff)?;
@@ -16427,10 +16741,11 @@ impl LoadedCheckpoint {
     pub fn mtp_reference_weights(&self) -> Res<ReferenceWeights> {
         let mut weights = self.weights.clone();
         let n_trunk = self.plan.layers.len() as u32;
-        for (index, bank) in &self.banks {
+        for (index, plan) in &self.bank_plans {
             if *index < n_trunk {
                 continue;
             }
+            let bank = plan.read(&self.model)?;
             let gate = bank_to_f32(&bank.gate, bank.n_expert, bank.ff, bank.hidden)?;
             let up = bank_to_f32(&bank.up, bank.n_expert, bank.ff, bank.hidden)?;
             let down = bank_to_f32(&bank.down, bank.n_expert, bank.hidden, bank.ff)?;
@@ -16527,7 +16842,8 @@ impl Qwen4ExpGpu {
         let LoadedCheckpoint {
             plan,
             weights,
-            banks,
+            model,
+            bank_plans,
             tables,
         } = checkpoint;
         let mut parts = ExternalParts::default();
@@ -16555,7 +16871,14 @@ impl Qwen4ExpGpu {
                 BankTensorSrc::Bf16(bytes) => BankHalf::HostBf16(bytes),
             })
         };
-        for (index, bank) in banks {
+        // STREAMED: one layer's bank is read off the mmap, uploaded, and dropped before the
+        // next is read. Peak host cost is ONE layer (~1.5 GB on the real mint) instead of
+        // the whole ~72 GB stack, which is what let the real gate load on a 180 GB-RAM box
+        // (receipt: research/qwen4exp-bringup-20260829/loader/LOADER-STREAM.md).
+        // `upload_half` moves each projection into the device slice, so the host copy is
+        // freed at the end of every iteration.
+        for (index, bank_plan) in bank_plans {
+            let bank = bank_plan.read(&model)?;
             let device_bf16 = index >= n_trunk;
             // The MTP bank follows the draft's placement (card 1 when dev1 is armed).
             let bank_e = if device_bf16 { draft_e.unwrap_or(e) } else { e };
@@ -16568,6 +16891,9 @@ impl Qwen4ExpGpu {
                 },
             );
         }
+        // The mmap has no more readers; the model's weights are device-resident and the
+        // table below is host-owned bytes.
+        drop(model);
         for (index, bytes) in tables {
             parts.ngram_tables.insert(index, NgramTable::Bf16(bytes));
         }
@@ -17152,10 +17478,14 @@ pub fn build_tp2_shard(e0: &Engine, e1: &Engine, ckpt: &LoadedCheckpoint) -> Res
         if experts % 2 != 0 {
             return Err("qwen4exp_gpu tp2: odd expert count".into());
         }
-        let bank = ckpt
-            .banks
-            .get(&layer.index)
-            .ok_or("qwen4exp_gpu tp2: missing bank source")?;
+        // Streamed like every other bank consumer: this layer's source is read off the
+        // mmap here and dropped at the end of the iteration. TP2 therefore reads the bank
+        // bytes TWICE per load (once here for the card-1 gather, once in
+        // `from_loaded_checkpoint` for card 0) — a load-time disk/page-cache cost, not a
+        // numerics or steady-state one, and the price of not holding 72 GB of banks on a
+        // host that has 180 GB total. Single-pass shard+model build is a named follow-up.
+        let bank = ckpt.read_bank(layer.index)?;
+        let bank = &bank;
         // The layer's expert placement, resolved ONCE here and carried on the shard so
         // the route split at decode/prefill cannot disagree with what was uploaded.
         let place = placement.layer(layer.index, experts)?;

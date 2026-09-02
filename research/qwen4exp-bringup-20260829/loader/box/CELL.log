@@ -1,0 +1,16 @@
+[2026-09-01T22:48:47Z] new-cap150 starting (MemAvailable=182GB, cap=150G, binary=qwen4exp_real_gate.loader)
+[2026-09-01T23:26:38Z] new-cap150 rc=0
+[2026-09-01T23:26:38Z] old-cap150 starting (MemAvailable=180GB, cap=150G, binary=qwen4exp_real_gate.prestream)
+[2026-09-01T23:59:16Z] old-cap150 rc=143
+[2026-09-02T00:01:46Z] old-cap230 starting (MemAvailable=344GB, cap=230G, binary=qwen4exp_real_gate.prestream)
+[2026-09-02T00:16:06Z] new-cap150b starting (streaming loader, sampler live from t=0)
+[2026-09-02T00:30:14Z] new-cap150b rc=0
+probe-logits prestream sha256 = f6634e4489b1d586127e66a78f6bc125611c7ec8fd7db9bb875fdc18ef0c112c
+probe-logits streamed   sha256 = f6634e4489b1d586127e66a78f6bc125611c7ec8fd7db9bb875fdc18ef0c112c
+probe-logits: BYTE-IDENTICAL
+hidden-gate envelope table: IDENTICAL (62 rows)
+greedy chains: IDENTICAL (5 rows)
+identity_failures=0
+[2026-09-02T00:30:14Z] new-cap150b identity rc=0
+[2026-09-02T00:30:14Z] CHAIN2 DONE
+[2026-09-02T01:03:20Z] new-draftgate rc=0

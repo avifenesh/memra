@@ -332,8 +332,8 @@ lane:
    receipted single-card lever in the lane and it is designed but not built.
 3. **`ple.host_ngram_gather`, 14.1% and GROWING** (+0.048 ms/k, ~12.7 ms extrapolated at
    262k). A host gather on the critical path.
-4. **`selgroup`** (`spec/downsel`, PR #27), 6.42% ceiling, ~4.2% realized, default OFF
-   pending its own box cells. Smaller than EP2, and it stacks with it.
+4. **`selgroup`** (`spec/downsel`, PR #27), 6.42% ceiling, +3.0-4.0% measured on the box (K=5, serving caches), default ON
+   since 2026-09-02 (PR #56). Smaller than EP2, and it stacks with it.
 5. **EP2 itself, honestly sized: a 154-180 tok/s ceiling (centre ~157) against today's
    136.2**, i.e. +13% to +32% at a perfect free split, and needing a t-generic TP2 verify
    path plus a device-side route split before it can touch the spec path at all, neither of

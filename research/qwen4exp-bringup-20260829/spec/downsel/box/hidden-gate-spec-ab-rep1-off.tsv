@@ -1,0 +1,72 @@
+# qwen4exp_real_gate	label=spec-ab-rep1-off	binary_sha256=69c44eb85b82d4eefb2e08e535beffa47b791be9c5444de84fc07ea3de8fc481	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=true	seams_env=idxsel,kvq,idxq
+# load_seconds=158.5
+# vram	post-load	0, 95283 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 0 MiB, 97887 MiB | 3, 0 MiB, 97887 MiB
+# probe_tokens=10	ids=[760, 3841, 13477, 37550, 33075, 888, 279, 15217, 5388, 13]
+# prefill_seconds=0.47
+# vram	post-prefill	0, 95443 MiB, 97887 MiB | 1, 0 MiB, 97887 MiB | 2, 0 MiB, 97887 MiB | 3, 0 MiB, 97887 MiB
+record	rows	cols	max_abs	max_rel	mean_abs	ref_absmax
+layer0	10	10240	7.269e-3	7.269e-3	2.142e-4	3.242e-1
+layer1	10	10240	7.227e-3	7.227e-3	3.351e-4	4.551e-1
+layer2	10	10240	9.171e-3	9.171e-3	4.949e-4	5.273e-1
+layer3	10	10240	1.170e-2	1.170e-2	6.661e-4	5.039e-1
+layer4	10	10240	2.533e-2	2.533e-2	9.627e-4	5.000e-1
+layer5	10	10240	3.258e-2	2.334e-2	1.076e-3	3.047e0
+layer6	10	10240	3.166e-2	2.946e-2	1.245e-3	3.078e0
+layer7	10	10240	3.410e-2	3.410e-2	1.510e-3	3.047e0
+layer8	10	10240	3.366e-2	3.366e-2	1.624e-3	3.062e0
+layer9	10	10240	3.346e-2	3.346e-2	1.706e-3	3.062e0
+layer10	10	10240	3.287e-2	3.287e-2	1.765e-3	3.125e0
+layer11	10	10240	3.803e-2	3.277e-2	1.845e-3	3.016e0
+layer12	10	10240	3.474e-2	3.474e-2	1.935e-3	2.953e0
+layer13	10	10240	3.503e-2	3.503e-2	2.030e-3	2.984e0
+layer14	10	10240	3.419e-2	3.419e-2	2.138e-3	3.016e0
+layer15	10	10240	3.449e-2	3.449e-2	2.250e-3	2.953e0
+layer16	10	10240	3.405e-2	3.405e-2	2.427e-3	2.938e0
+layer17	10	10240	3.309e-2	3.309e-2	2.492e-3	2.969e0
+layer18	10	10240	4.513e-2	4.513e-2	2.800e-3	2.969e0
+layer19	10	10240	4.289e-2	4.289e-2	2.918e-3	3.000e0
+layer20	10	10240	4.160e-2	4.160e-2	2.952e-3	2.938e0
+layer21	10	10240	4.064e-2	4.064e-2	3.120e-3	2.969e0
+layer22	10	10240	4.138e-2	4.138e-2	3.378e-3	2.969e0
+layer23	10	10240	4.097e-2	4.097e-2	3.492e-3	2.969e0
+layer24	10	10240	4.676e-2	4.676e-2	3.803e-3	3.828e0
+layer25	10	10240	4.888e-2	4.888e-2	3.889e-3	3.859e0
+layer26	10	10240	5.101e-2	5.101e-2	4.117e-3	5.062e0
+layer27	10	10240	5.238e-2	5.238e-2	4.520e-3	4.750e0
+layer28	10	10240	5.677e-2	5.677e-2	4.884e-3	4.531e0
+layer29	10	10240	6.986e-2	6.986e-2	5.310e-3	4.469e0
+layer30	10	10240	8.134e-2	8.134e-2	5.863e-3	4.438e0
+layer31	10	10240	1.253e-1	1.253e-1	6.262e-3	4.281e0
+layer32	10	10240	1.266e-1	1.266e-1	6.898e-3	3.891e0
+layer33	10	10240	1.523e-1	1.523e-1	7.450e-3	3.844e0
+layer34	10	10240	1.504e-1	1.504e-1	8.196e-3	3.828e0
+layer35	10	10240	1.749e-1	1.749e-1	9.242e-3	3.859e0
+layer36	10	10240	3.782e-1	3.782e-1	1.260e-2	6.844e0
+layer37	10	10240	3.886e-1	3.886e-1	1.453e-2	7.094e0
+layer38	10	10240	3.878e-1	3.878e-1	1.682e-2	7.094e0
+layer39	10	10240	3.842e-1	3.842e-1	2.054e-2	7.188e0
+layer40	10	10240	4.374e-1	4.374e-1	2.461e-2	7.219e0
+layer41	10	10240	4.345e-1	4.345e-1	2.679e-2	7.125e0
+layer42	10	10240	4.743e-1	4.743e-1	2.901e-2	7.156e0
+layer43	10	10240	4.560e-1	4.560e-1	3.247e-2	7.188e0
+layer44	10	10240	7.075e-1	7.075e-1	3.894e-2	1.162e1
+layer45	10	10240	7.749e-1	7.749e-1	4.751e-2	1.169e1
+layer46	10	10240	1.122e0	7.599e-1	5.627e-2	1.350e1
+layer47	10	10240	1.196e0	1.171e0	6.091e-2	2.575e1
+exit_mixer	10	2560	2.071e1	5.750e0	4.609e-1	1.880e2
+logits	10	248320	6.228e0	5.961e0	2.890e-1	1.950e1
+logits_row	max_abs	max_rel	ref_absmax	golden_top1	our_top1	match
+0	3.560e-1	3.560e-1	1.231e1	20438	20438	true
+1	1.133e0	1.046e0	1.431e1	4087	4087	true
+2	1.265e0	1.265e0	1.800e1	37550	37550	true
+3	1.310e0	1.039e0	1.638e1	33075	33075	true
+4	1.633e0	1.515e0	1.888e1	888	888	true
+5	1.827e0	1.738e0	1.862e1	279	279	true
+6	3.153e0	1.937e0	1.950e1	15217	15217	true
+7	2.044e0	1.636e0	1.888e1	5388	5388	true
+8	1.937e0	1.786e0	1.575e1	13	13	true
+9	6.228e0	5.961e0	1.638e1	271	271	true
+# logits_argmax_agreement	10/10
+# probe_logits	/root/realgate/downsel/probe-logits-spec-ab-rep1-off.bin	rows=10	vocab=248320

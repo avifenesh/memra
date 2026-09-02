@@ -1,0 +1,149 @@
+# lane	q4e-loader-stream-20260901 (memra issue #48)
+# label	new-draftgate
+# binary	/root/realgate/bin/qwen4exp_real_gate.loader
+# binary_sha256	67bd6177d6c6cb9fa83ab9aeafa6c6e9124b13f98c7a51455b470f14d78d6f63
+# arm	--draft-gate (covers mtp_reference_weights)
+# cap	MemoryMax=230G MemorySwapMax=0
+# card	CUDA_VISIBLE_DEVICES=1
+# started	2026-09-02T00:49:02Z
+# lock	acquired -s after 570s of waiting
+Running as unit: q4e-new-draftgate.scope; invocation ID: c33861cf0be34411a55bc9bb63f3d57a
+# qwen4exp_real_gate	label=new-draftgate	binary_sha256=67bd6177d6c6cb9fa83ab9aeafa6c6e9124b13f98c7a51455b470f14d78d6f63	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=f32	idxq=f32	golden_pin=true	seams_env=idxsel
+# vram	post-engine	0, 0 MiB, 97887 MiB | 1, 595 MiB, 97887 MiB | 2, 595 MiB, 97887 MiB | 3, 3 MiB, 97887 MiB
+# load	254.9s
+# vram	post-load	0, 0 MiB, 97887 MiB | 1, 95283 MiB, 97887 MiB | 2, 595 MiB, 97887 MiB | 3, 3 MiB, 97887 MiB
+# qwen4exp_real_gate	label=new-draftgate	binary_sha256=67bd6177d6c6cb9fa83ab9aeafa6c6e9124b13f98c7a51455b470f14d78d6f63	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=f32	idxq=f32	golden_pin=true	seams_env=idxsel
+# draft-gate: engine draft vs host reference MTP twin, 10 probe rows, host_twin_seconds=3.6
+phase	row	max_abs	max_rel	ref_absmax	kl	top1_ref	top1_ours	match
+batched	0	5.221e-5	5.013e-5	1.371e1	0.00000	525	525	true
+batched	1	3.910e-5	3.612e-5	1.500e1	0.00000	9559	9559	true
+batched	2	2.742e-5	2.338e-5	1.945e1	0.00000	37550	37550	true
+batched	3	4.768e-5	3.779e-5	1.753e1	0.00000	287	287	true
+batched	4	5.150e-5	5.057e-5	1.966e1	0.00000	888	888	true
+batched	5	5.746e-5	4.596e-5	1.839e1	0.00000	279	279	true
+batched	6	5.054e-5	4.077e-5	1.796e1	0.00000	15217	15217	true
+batched	7	5.388e-5	5.028e-5	2.169e1	0.00000	5388	5388	true
+batched	8	9.608e-5	7.987e-5	1.395e1	0.00000	13	13	true
+batched	9	9.811e-5	8.786e-5	1.250e1	0.00000	561	561	true
+step	0	5.078e-5	4.888e-5	1.371e1	0.00000	525	525	true
+step	1	3.433e-5	2.919e-5	1.500e1	0.00000	9559	9559	true
+step	2	3.219e-5	2.470e-5	1.945e1	0.00000	37550	37550	true
+step	3	4.196e-5	3.725e-5	1.753e1	0.00000	287	287	true
+step	4	4.959e-5	3.645e-5	1.966e1	0.00000	888	888	true
+step	5	5.341e-5	4.348e-5	1.839e1	0.00000	279	279	true
+step	6	4.530e-5	3.833e-5	1.796e1	0.00000	15217	15217	true
+step	7	5.531e-5	4.131e-5	2.169e1	0.00000	5388	5388	true
+step	8	6.866e-5	6.866e-5	1.395e1	0.00000	13	13	true
+step	9	1.004e-4	9.632e-5	1.250e1	0.00000	561	561	true
+# carrier	max_abs=6.866e-5	max_rel=4.409e-5	ref_absmax=1.636e1
+# verdict	rows=20	argmax_matches=20	worst_abs=1.004e-4	worst_rel=9.632e-5	policy=max_rel<=0.01+argmax	pass=true
+
+# draft-gate receipt: /root/realgate/loaderout/draft-gate-new-draftgate.tsv
+# qwen4exp_real_gate	label=new-draftgate	binary_sha256=67bd6177d6c6cb9fa83ab9aeafa6c6e9124b13f98c7a51455b470f14d78d6f63	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=f32	idxq=f32	golden_pin=true	seams_env=idxsel
+# load_seconds=254.9
+# vram	post-load	0, 0 MiB, 97887 MiB | 1, 95283 MiB, 97887 MiB | 2, 595 MiB, 97887 MiB | 3, 3 MiB, 97887 MiB
+# probe_tokens=10	ids=[760, 3841, 13477, 37550, 33075, 888, 279, 15217, 5388, 13]
+# prefill_seconds=0.59
+# vram	post-prefill	0, 0 MiB, 97887 MiB | 1, 95443 MiB, 97887 MiB | 2, 21299 MiB, 97887 MiB | 3, 3 MiB, 97887 MiB
+record	rows	cols	max_abs	max_rel	mean_abs	ref_absmax
+layer0	10	10240	7.269e-3	7.269e-3	2.142e-4	3.242e-1
+layer1	10	10240	7.227e-3	7.227e-3	3.351e-4	4.551e-1
+layer2	10	10240	9.171e-3	9.171e-3	4.949e-4	5.273e-1
+layer3	10	10240	1.202e-2	1.202e-2	6.533e-4	5.039e-1
+layer4	10	10240	2.477e-2	2.477e-2	9.177e-4	5.000e-1
+layer5	10	10240	4.044e-2	2.371e-2	1.048e-3	3.047e0
+layer6	10	10240	3.950e-2	2.885e-2	1.209e-3	3.078e0
+layer7	10	10240	3.766e-2	3.383e-2	1.463e-3	3.047e0
+layer8	10	10240	3.723e-2	3.318e-2	1.585e-3	3.062e0
+layer9	10	10240	3.919e-2	3.312e-2	1.688e-3	3.062e0
+layer10	10	10240	3.944e-2	3.255e-2	1.754e-3	3.125e0
+layer11	10	10240	4.564e-2	3.282e-2	1.857e-3	3.016e0
+layer12	10	10240	3.580e-2	3.566e-2	1.932e-3	2.953e0
+layer13	10	10240	3.743e-2	3.594e-2	2.006e-3	2.984e0
+layer14	10	10240	3.983e-2	3.503e-2	2.116e-3	3.016e0
+layer15	10	10240	3.942e-2	3.555e-2	2.199e-3	2.953e0
+layer16	10	10240	3.558e-2	3.558e-2	2.407e-3	2.938e0
+layer17	10	10240	3.720e-2	3.451e-2	2.470e-3	2.969e0
+layer18	10	10240	3.623e-2	3.623e-2	2.733e-3	2.969e0
+layer19	10	10240	3.703e-2	3.703e-2	2.841e-3	3.000e0
+layer20	10	10240	3.711e-2	3.711e-2	2.888e-3	2.938e0
+layer21	10	10240	3.958e-2	3.958e-2	3.056e-3	2.969e0
+layer22	10	10240	3.985e-2	3.985e-2	3.297e-3	2.969e0
+layer23	10	10240	4.252e-2	4.252e-2	3.383e-3	2.969e0
+layer24	10	10240	4.700e-2	4.700e-2	3.761e-3	3.828e0
+layer25	10	10240	4.749e-2	4.749e-2	3.844e-3	3.859e0
+layer26	10	10240	4.626e-2	4.626e-2	4.061e-3	5.062e0
+layer27	10	10240	4.926e-2	4.926e-2	4.471e-3	4.750e0
+layer28	10	10240	5.664e-2	5.664e-2	4.873e-3	4.531e0
+layer29	10	10240	8.331e-2	8.331e-2	5.409e-3	4.469e0
+layer30	10	10240	9.552e-2	9.552e-2	5.934e-3	4.438e0
+layer31	10	10240	1.231e-1	1.231e-1	6.308e-3	4.281e0
+layer32	10	10240	1.405e-1	1.405e-1	7.014e-3	3.891e0
+layer33	10	10240	1.635e-1	1.635e-1	7.749e-3	3.844e0
+layer34	10	10240	1.609e-1	1.609e-1	8.464e-3	3.828e0
+layer35	10	10240	1.966e-1	1.966e-1	9.462e-3	3.859e0
+layer36	10	10240	3.481e-1	3.481e-1	1.306e-2	6.844e0
+layer37	10	10240	3.347e-1	3.347e-1	1.492e-2	7.094e0
+layer38	10	10240	3.375e-1	3.375e-1	1.722e-2	7.094e0
+layer39	10	10240	4.348e-1	4.348e-1	2.047e-2	7.188e0
+layer40	10	10240	4.570e-1	4.570e-1	2.438e-2	7.219e0
+layer41	10	10240	4.629e-1	4.629e-1	2.656e-2	7.125e0
+layer42	10	10240	4.587e-1	4.587e-1	2.882e-2	7.156e0
+layer43	10	10240	4.797e-1	4.797e-1	3.210e-2	7.188e0
+layer44	10	10240	8.336e-1	6.478e-1	3.872e-2	1.162e1
+layer45	10	10240	9.429e-1	6.562e-1	4.747e-2	1.169e1
+layer46	10	10240	9.583e-1	7.445e-1	5.574e-2	1.350e1
+layer47	10	10240	1.224e0	9.878e-1	5.999e-2	2.575e1
+exit_mixer	10	2560	2.258e1	5.709e0	4.485e-1	1.880e2
+logits	10	248320	6.181e0	5.643e0	2.789e-1	1.950e1
+logits_row	max_abs	max_rel	ref_absmax	golden_top1	our_top1	match
+0	3.553e-1	3.553e-1	1.231e1	20438	20438	true
+1	1.233e0	1.031e0	1.431e1	4087	4087	true
+2	1.156e0	1.156e0	1.800e1	37550	37550	true
+3	1.355e0	1.185e0	1.638e1	33075	33075	true
+4	1.234e0	1.162e0	1.888e1	888	888	true
+5	1.762e0	1.451e0	1.862e1	279	279	true
+6	3.456e0	2.146e0	1.950e1	15217	15217	true
+7	1.806e0	1.631e0	1.888e1	5388	5388	true
+8	1.874e0	1.754e0	1.575e1	13	13	true
+9	6.181e0	5.643e0	1.638e1	271	271	true
+# logits_argmax_agreement	10/10
+# probe_logits	/root/realgate/loaderout/probe-logits-new-draftgate.bin	rows=10	vocab=248320
+
+# hidden receipt: /root/realgate/loaderout/hidden-gate-new-draftgate.tsv
+# greedy prompt 0: first_divergence=0 matched=0/83 prefill=1.23s mean_decode=13.9ms
+# greedy prompt 1: first_divergence=0 matched=0/91 prefill=1.90s mean_decode=13.8ms
+# greedy prompt 2: first_divergence=0 matched=0/104 prefill=2.23s mean_decode=14.0ms
+# greedy prompt 3: first_divergence=0 matched=0/105 prefill=1.43s mean_decode=13.9ms
+# greedy receipt: /root/realgate/loaderout/greedy-gate-new-draftgate.tsv
+	Command being timed: "/root/realgate/bin/qwen4exp_real_gate.loader /root/data/q48fn-yarn1m /root/realgate/loaderout --label new-draftgate --mtp --draft-gate --goldens /root/realgate/dump --prompts /root/realgate/shapes/thinkon-prompts.tsv"
+	User time (seconds): 45.19
+	System time (seconds): 96.59
+	Percent of CPU this job got: 49%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 4:47.98
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 233786924
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 77658
+	Minor (reclaiming a frame) page faults: 92571856
+	Voluntary context switches: 369068
+	Involuntary context switches: 354
+	Swaps: 0
+	File system inputs: 81026240
+	File system outputs: 19472
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+# rc	0
+# finished	2026-09-02T01:03:20Z

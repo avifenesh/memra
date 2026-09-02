@@ -1,0 +1,21 @@
+# lane	q4e-loader-stream-20260901 (memra issue #48)
+# label	old-cap150
+# binary	/root/realgate/bin/qwen4exp_real_gate.prestream
+# binary_sha256	69c44eb85b82d4eefb2e08e535beffa47b791be9c5444de84fc07ea3de8fc481
+# cap	MemoryMax=150G MemorySwapMax=0
+# card	CUDA_VISIBLE_DEVICES=1
+# seams	MEMRA_Q4E_SEAMS=idxsel
+# ckpt	/root/data/q48fn-yarn1m
+# started	2026-09-01T23:26:38Z
+# free_before	353 total 173 used 180 avail (GB)
+# vram_before	0, 0 MiB|1, 0 MiB|2, 92563 MiB|3, 27187 MiB|
+# lock	NOT ACQUIRED in 1800s (co-tenant holds -x); proceeding lock-free on card 1
+Running as unit: q4e-old-cap150.scope; invocation ID: eb27471f491d41e784dc8de5244a7237
+# qwen4exp_real_gate	label=old-cap150	binary_sha256=69c44eb85b82d4eefb2e08e535beffa47b791be9c5444de84fc07ea3de8fc481	ckpt=/root/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=f32	idxq=f32	golden_pin=true	seams_env=idxsel
+# vram	post-engine	0, 595 MiB, 97887 MiB | 1, 595 MiB, 97887 MiB | 2, 0 MiB, 97887 MiB | 3, 0 MiB, 97887 MiB
+Terminated
+# rc	143
+# finished	2026-09-01T23:59:16Z
+# free_after	353 total 308 used 45 avail (GB)

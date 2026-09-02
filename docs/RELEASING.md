@@ -50,7 +50,11 @@ release time was not exercised at merge time.** That is the shape this section e
 
 | Claim | Proven by | Where it runs | Cost |
 |---|---|---|---|
-| Rust and every CUDA fatbin compile | `cargo build --release --bins` at sm_120a | `ci.yml` `build` | 447 s |
+| Rust and every CUDA fatbin compile | `cargo build --release --bins` at sm_120a | `ci.yml` `build` (its own job since 2026-09-02) | 542 s measured in the serial shape, run 33582547232 |
+| The workspace is clippy-zero | `cargo clippy --release --all-targets -- -D warnings` | `ci.yml` `clippy` (parallel job) · `tools/local-ci.sh` | 380 s |
+| memra-server's request contracts hold | `cargo test --release -p memra-server` | `ci.yml` `server-tests` (parallel job) · `tools/local-ci.sh` | 469 s |
+| Every memra-engine lib test has a caller, unfiltered, through the skip census (memra#18) | `tools/skip-census.py run ... -- cargo test --release -p memra-engine --lib`, budget 0, floor 300 passed; the three `#[ignore]` GPU tests run in `tools/local-ci.sh` on the rig | `ci.yml` `engine-tests` (parallel job) · `tools/local-ci.sh` | 358 passed in 0.39 s once built (rig, 2026-09-02) |
+| A docs-only change set never skips a compile it needed | `tools/ci-change-class.sh`: fail closed on every doubt; `ci.yml` gates the compile jobs on `code != 'false'` under `!cancelled()` | `ci.yml` `changes` job; teeth `tools/test_ci_change_class.sh` (14 arms) in `gates` | under 1 s |
 | **Every arch LINKS, shipped or not** | same command at sm_90a and sm_89 — the arches where `build.rs` substitutes stub `.cu` files. CI covers a SUPERSET of the release matrix on purpose: sm_89 is compile-covered but no longer shipped | `ci.yml` `release-arch-mirror` (parallel) | 553 / 558 s measured, **0 s added wall time** |
 | CI never silently stops covering a release arch | `tools/arch-matrix-census.sh` | pre-push · `ci.yml` · `release.yml` guard | 0.01 s |
 | Every fail-closed stub still mirrors its real twin's ABI | `tools/stub-abi-census.py` | pre-push · `ci.yml` · both tag workflows | 0.08 s |
@@ -67,6 +71,26 @@ release time was not exercised at merge time.** That is the shape this section e
 | No new public-boundary violation | `tools/check-public-boundary.py check` | pre-push · `ci.yml` | 117 s |
 | Every grandfathered boundary grant still describes a live finding | `tools/check-public-boundary.py verify-allowlist` | `ci.yml` | 45.9 s |
 | Release notes measure from the last tag that actually shipped | `tools/changelog.sh` + `tools/changelog-skip-tags.txt` | `release.yml` | <1 s |
+
+### CI wall time, and what a push actually pays (2026-09-02)
+
+Until 2026-09-02 every check in the table lived in one serial `build` job: 42 min wall per push
+(run 33582547232: CPU expert companion 767 s, release build 542 s, memra-server suite 469 s, clippy
+380 s, boundary check 125 s, allowlist drift 124 s), while the three parallel jobs finished in under
+15 min. The chain is now nine jobs. `gates` (every text census and fixture plus the CUDA-free unit
+suites) and `boundary` always run; `build`, `clippy`, `server-tests`, `engine-tests`, the three
+`release-arch-mirror` cells and `publish-dryrun` run when `tools/ci-change-class.sh` says the change
+set touches something a compiler, linker or packager reads. A docs, research or corpus-only push
+therefore finishes in the time of the text gates. Any doubt (zero or unreachable base, empty diff,
+unknown event, a crate README, anything under `crates/`, `tools/`, `.github/`, `Cargo.*`) compiles.
+Wall time for a code push is the slowest single job, the publish dry-run at about 15 min. Superseded
+pull-request runs are cancelled; pushes to `main` never are.
+
+`tools/local-ci.sh` got the same treatment on the rig: in the correctness mode the CPU chain
+(clippy, the memra-server suite, the memra-engine lib suite) runs alongside the GPU gates and is
+joined before the stage is called green; `MEMRA_CI_OVERLAP=0` restores the serial order. Perf modes
+stay serial, because a compile sharing the box with a timing cell is the co-resident noise the perf
+rows refuse.
 
 The two publish checks are **complements, not alternatives**, and the difference is worth
 knowing before anyone deletes one as redundant: `--dry-run` enumerates members from
