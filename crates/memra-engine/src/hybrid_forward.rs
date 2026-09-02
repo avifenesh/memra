@@ -2168,6 +2168,12 @@ impl HybridModel {
         if crate::glm5_decode_graph_on() && self.glm5_decode_graph_ready(e, cache, lo, hi) {
             return self.hyper_range_decode_graphed(e, topology, x, lo, hi, pos_d, pos, cache);
         }
+        // MEMRA_GLM5_GRAPH_TRACE (gate harness): split the eager walk at the SAME run boundaries
+        // the graph arm replays at, so the two arms' checksums line up segment for segment. The
+        // split is a loop split, not a program change — the same kernels in the same order.
+        if crate::glm5_graph_trace_on() {
+            return self.hyper_range_decode_eager_traced(e, topology, x, lo, hi, pos_d, pos, cache);
+        }
         self.hyper_range_decode_eager(e, topology, x, lo, hi, pos_d, pos, cache)
     }
 

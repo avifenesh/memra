@@ -505,6 +505,51 @@ replay and capture counters, so a run that dies mid-walk says which step it reac
 **Still open, and it is the next receipt to buy:** what moves in the signature on the real
 artifact between step 1 and step 2. The named diff answers it in one line on the next run.
 
+## 9e. Fourth box run: the door runs the whole walk, and the tape is zeros
+
+Run 4 (int8 `fc8cbf593` = `5fbd67562`, `--steps 64 --reps 5 --prompt-len 64 --trace`) is the
+first clean run of the mechanism: both stages engaged, **no `sig_diff`, no `capture-error`,
+no eager latch**, and `door: replays=564 captures=2 captured_layers=34 forced_recapture=false` —
+12 replays per token (6 runs x 2 stages) across 47 decode steps. The conservative latch from
+§9d did its job: the walk no longer dies.
+
+**And every token is 0**: `TOKEN MISMATCH step 1: eager=437 graph=0`, `step 2: 444 vs 0`, and so
+on. `argmax` of an all-zero logit vector is 0, so the reading is that the captured range's result
+never reaches the eager remainder.
+
+**What run 4 rules out.** The trace prints at the TOP of each step, and it reads
+`step 1 ... replays=0 captures=0` then `step 2 ... replays=12 captures=2` — so step 1 captured
+AND replayed 12 times. The capture step is not skipping its own launch, which was the first
+hypothesis. The graphs launch, on every step, without error.
+
+**The defect: the replay's output contract was an ARGUMENT, and arguments about aliased buffers
+do not survive a capture.** The hc walk ping-pongs the stream state between `x_io` and `ws.xb`
+(two sites per layer, one `mem::swap` each), and the old contract reasoned that an even number of
+swaps leaves the answer back in `x_io`, which the replay then copied out. Whatever the parity
+actually is on this trunk, the eager remainder was reading a buffer the graph had not written —
+and an untouched `e.zeros(width)` reads exactly as the zero logits observed.
+
+**Fix: record the contract instead of arguing it.** The stage now owns a THIRD buffer, `x_out`,
+and the captured body ENDS with `copy_into(x_out, live_x)` — one memcpy node, inside the graph.
+`x_out` therefore holds that run's output on every replay whatever the parity did, and the replay
+copies from `x_out` into the fresh buffer the eager remainder consumes. The reasoning is gone;
+the copy is in the graph.
+
+**And an instrument so the next run names the seam rather than the symptom.**
+`MEMRA_GLM5_GRAPH_TRACE=1` (armed by `--trace`) prints one line per captured-run boundary per
+token, on BOTH arms and at the SAME layer boundaries:
+
+```
+[glm5-graph-trace] pos=P dev=N stage=[lo, hi) seg=[a, b) arm=graph-run sum=0x... nz=K/W absmax=...
+```
+
+The eager arm reaches those boundaries by splitting its loop at the same run cuts
+(`hyper_range_decode_eager_traced`) — a loop split, not a program change: the same kernels in the
+same order. `nz=` is the point: an all-zero hidden and a wrong-but-live hidden are identical in a
+token stream and obvious here. The gate also prints step 1's top-1 logit INDEX AND VALUE plus the
+nonzero count on both arms, so "all-zero logits" and "wrong but valid token" can never again be
+confused for each other.
+
 ## 10. Open items
 
 1. **Run the gate on the pair** (`--steps 64 --reps 5`) and bank the receipt. Until then the

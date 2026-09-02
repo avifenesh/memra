@@ -117,6 +117,15 @@ struct StageGraphs {
     /// an EVEN number of buffer swaps per layer (post-attn and post-FFN), so a run of any length
     /// leaves its output in this same buffer — that is the replay contract.
     x_io: CudaSlice<f32>,
+    /// DEDICATED OUTPUT. Box run 4 (2026-09-02) had the door running the whole walk cleanly and
+    /// still producing token 0 at every step: zero logits, i.e. the captured range's result never
+    /// reached the eager remainder. The old contract was an ARGUMENT — "the hc walk swaps `x`
+    /// against `ws.xb` twice per layer, so an even number of swaps leaves the output back in
+    /// `x_io`" — and an argument about which of two aliased buffers holds the answer is exactly
+    /// the thing not to rely on inside a captured graph. The captured body now ENDS with a copy
+    /// of its live state into this third buffer, recorded as a memcpy node, so the replay's
+    /// output lands in one known place whatever the parity did.
+    x_out: CudaSlice<f32>,
     /// Private hc-glue workspace, resident during capture and never returned to the engine pool.
     ws: crate::hyper::HyperDecodeWs,
     /// Private f16 GEMM scratch, swapped resident around capture AND around every replay: the
@@ -147,6 +156,7 @@ struct StageGraphs {
 /// is what lets a rebuild destroy ONLY the graphs.
 struct StageBufs {
     x_io: CudaSlice<f32>,
+    x_out: CudaSlice<f32>,
     ws: crate::hyper::HyperDecodeWs,
     f16: Option<crate::f16_ffi::F16Scratch>,
 }
@@ -446,6 +456,52 @@ where
     out
 }
 
+/// Checksum + liveness of a stream-state buffer, for the gate trace. `nz` is the point: an
+/// all-zero hidden and a wrong-but-live hidden look identical in a token stream and completely
+/// different here.
+fn x_sum(e: &Engine, x: &CudaSlice<f32>) -> String {
+    match e.dtoh(x) {
+        Ok(v) => {
+            let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+            let mut nz = 0usize;
+            let mut absmax = 0f32;
+            for f in &v {
+                h ^= f.to_bits() as u64;
+                h = h.wrapping_mul(0x100_0000_01b3);
+                if *f != 0.0 {
+                    nz += 1;
+                }
+                if f.abs() > absmax {
+                    absmax = f.abs();
+                }
+            }
+            format!("sum=0x{h:016x} nz={nz}/{} absmax={absmax:.6e}", v.len())
+        }
+        Err(err) => format!("sum=? ({err})"),
+    }
+}
+
+#[allow(clippy::too_many_arguments)] // allow: a trace line's fields are its whole point
+fn trace_seg(
+    e: &Engine,
+    dev: usize,
+    lo: usize,
+    hi: usize,
+    a: usize,
+    b: usize,
+    arm: &str,
+    pos: usize,
+    x: &CudaSlice<f32>,
+) {
+    if !crate::glm5_graph_trace_on() {
+        return;
+    }
+    eprintln!(
+        "[glm5-graph-trace] pos={pos} dev={dev} stage=[{lo}, {hi}) seg=[{a}, {b}) arm={arm} {}",
+        x_sum(e, x)
+    );
+}
+
 impl HybridModel {
     /// Everything this door needs that is NOT a property of one layer. Returns the refusal
     /// reason so the once-note can name it instead of failing silently.
@@ -533,6 +589,41 @@ impl HybridModel {
             }
         }
         None
+    }
+
+    /// The eager walk, split at the SAME run boundaries the graph arm replays at, so the two
+    /// arms' trace lines line up and the first differing segment names the seam. Splitting the
+    /// loop changes nothing: `hyper_range_decode_eager` over `[lo, m)` then `[m, hi)` issues the
+    /// identical kernel sequence it issues over `[lo, hi)`.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn hyper_range_decode_eager_traced(
+        &self,
+        e: &Engine,
+        topology: &crate::hyper::HyperTopology,
+        mut x: CudaSlice<f32>,
+        lo: usize,
+        hi: usize,
+        pos_d: &CudaSlice<i32>,
+        pos: usize,
+        cache: &mut Cache,
+    ) -> Res<CudaSlice<f32>> {
+        let dev = e.ctx().ordinal();
+        let runs = kda_runs(self, lo, hi);
+        let mut cursor = lo;
+        for (a, b) in runs {
+            if a > cursor {
+                x = self.hyper_range_decode_eager(e, topology, x, cursor, a, pos_d, pos, cache)?;
+                trace_seg(e, dev, lo, hi, cursor, a, "eager-gap", pos, &x);
+            }
+            x = self.hyper_range_decode_eager(e, topology, x, a, b, pos_d, pos, cache)?;
+            trace_seg(e, dev, lo, hi, a, b, "eager-run", pos, &x);
+            cursor = b;
+        }
+        if cursor < hi {
+            x = self.hyper_range_decode_eager(e, topology, x, cursor, hi, pos_d, pos, cache)?;
+            trace_seg(e, dev, lo, hi, cursor, hi, "eager-gap", pos, &x);
+        }
+        Ok(x)
     }
 
     /// Door admission, evaluated BEFORE the walk takes ownership of the stream state so a
@@ -673,12 +764,15 @@ impl HybridModel {
         for (a, b) in runs {
             if a > cursor {
                 x = self.hyper_range_decode_eager(e, topology, x, cursor, a, pos_d, pos, cache)?;
+                trace_seg(e, dev, lo, hi, cursor, a, "graph-gap", pos, &x);
             }
             x = self.glm5_replay_run(e, dev, lo, hi, a, b, x, width, cache)?;
+            trace_seg(e, dev, lo, hi, a, b, "graph-run", pos, &x);
             cursor = b;
         }
         if cursor < hi {
             x = self.hyper_range_decode_eager(e, topology, x, cursor, hi, pos_d, pos, cache)?;
+            trace_seg(e, dev, lo, hi, cursor, hi, "graph-gap", pos, &x);
         }
         {
             let pool = self.glm5_graph_pool(cache);
@@ -751,10 +845,11 @@ impl HybridModel {
             phase: 0,
             recapture,
         };
-        let (x_io, ws, f16) = match reuse {
-            Some(b) => (b.x_io, b.ws, b.f16),
+        let (x_io, x_out, ws, f16) = match reuse {
+            Some(b) => (b.x_io, b.x_out, b.ws, b.f16),
             None => (
                 step(e, &alloc_ctx, "alloc(x_io)", e.zeros(width))?,
+                step(e, &alloc_ctx, "alloc(x_out)", e.zeros(width))?,
                 step(
                     e,
                     &alloc_ctx,
@@ -786,6 +881,7 @@ impl HybridModel {
             hi,
             runs: Vec::with_capacity(runs.len()),
             x_io,
+            x_out,
             ws,
             f16: None,
             phase: 0,
@@ -841,6 +937,7 @@ impl HybridModel {
                 for phase in 0..2 {
                     ctx.phase = phase;
                     let x_cell = std::cell::RefCell::new(&mut stage.x_io);
+                    let out_cell = std::cell::RefCell::new(&mut stage.x_out);
                     let ws_cell = std::cell::RefCell::new(&mut stage.ws);
                     let cache_cell = std::cell::RefCell::new(&mut *cache);
                     let g = capture_one(e, &ctx, |e| {
@@ -854,7 +951,16 @@ impl HybridModel {
                             pos,
                             &mut cache_cell.borrow_mut(),
                             &mut ws_cell.borrow_mut(),
-                        )
+                        )?;
+                        // THE REPLAY CONTRACT, recorded rather than argued. The walk ping-pongs
+                        // the stream state between `x_io` and `ws.xb`, so which physical buffer
+                        // holds the answer at the end is a parity property of the layer count and
+                        // the site count — and box run 4 produced zero logits at every step, which
+                        // is what "the eager remainder read the buffer the graph did not write"
+                        // looks like. One memcpy node into a THIRD buffer removes the question:
+                        // `x_out` holds this run's output on every replay, whatever the parity.
+                        let live = x_cell.borrow();
+                        e.copy_into(&mut out_cell.borrow_mut(), 0, &live, width)
                     })?;
                     phase_graphs.push(g);
                 }
@@ -982,8 +1088,8 @@ impl HybridModel {
             step(
                 e,
                 &out_ctx,
-                "memcpy_dtod(x_io -> out)",
-                e.copy_into(&mut out, 0, &st.x_io, width),
+                "memcpy_dtod(x_out -> out)",
+                e.copy_into(&mut out, 0, &st.x_out, width),
             )?;
         }
         crate::GLM5_DECODE_GRAPH_REPLAYS.fetch_add(1, Ordering::Relaxed);

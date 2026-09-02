@@ -143,6 +143,14 @@ fn run_arm(
             std::env::remove_var("MEMRA_GLM5_GRAPH_SEL_LEDGER");
         }
     }
+    // SAFETY: single-threaded gate binary (same reasoning as the door vars above).
+    unsafe {
+        if trace {
+            std::env::set_var("MEMRA_GLM5_GRAPH_TRACE", "1");
+        } else {
+            std::env::remove_var("MEMRA_GLM5_GRAPH_TRACE");
+        }
+    }
     glm5_sel_ledger::reset_host();
 
     let mut cache = Cache::new(e, &m.cfg, prompt.len() + steps + 8)?;
@@ -197,6 +205,23 @@ fn run_arm(
             continue;
         }
         let l = m.decode_step(e, tok, &mut cache)?;
+        // Step 1's top-1 VALUE, on both arms: an all-zero logit vector argmaxes to 0 and is
+        // indistinguishable from a wrong-but-valid token in the tape alone. Box run 4 read
+        // `graph=0` at every step and this line is what separates the two readings.
+        if step == 1 {
+            let (idx, val) =
+                l.iter()
+                    .enumerate()
+                    .fold((0usize, f32::NEG_INFINITY), |acc, (i, &v)| {
+                        if v > acc.1 { (i, v) } else { acc }
+                    });
+            let nz = l.iter().filter(|v| **v != 0.0).count();
+            eprintln!(
+                "[gate] step 1 door={graph_door} logits: top1 idx={idx} val={val:.6e} \
+                 nonzero={nz}/{}",
+                l.len()
+            );
+        }
         tok = argmax(&l) as u32;
         tape.push(tok);
         if ledger {
