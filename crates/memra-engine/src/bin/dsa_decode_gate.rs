@@ -17,7 +17,13 @@
 //! 2. NUMERIC CLASS `dsa-warp-online-f32`, for the warp-online gathered arm, which is NOT
 //!    bit-identical and never claims to be: an ARGMAX gate over every (token, head) latent row
 //!    against the shipped kernel, plus a reported maxdiff and max relative error. A single
-//!    argmax move fails the gate.
+//!    argmax move at a width where the door CAN serve the class
+//!    (`t_q <= MLA_DSA_NAMED_CLASS_T_MAX`) fails the gate. Above that width the arm is still
+//!    measured and any move is still printed, but it is not a failure, because
+//!    `mla_dsa_attn_arm_effective` demotes arm >= 2 to the shipped kernel there -- that width
+//!    rule exists precisely BECAUSE the 2026-09-03 B200 run moved 1 of 256 rows at
+//!    kv=131072 / t_q=4. Keeping the measurement is how a future proposal to raise the rule
+//!    arrives with evidence instead of an inference from t_q=1.
 //! 3. REGRESSION. At every (context, t_q) the arm the SERVING POLICY would select
 //!    (`mla_ffi::mla_dsa_attn_arm` for the gathered stage, `MLA_DSA_SCORE_MIN_POOLS` for the
 //!    scorer) may not be slower than the kernel it replaces by more than
@@ -39,9 +45,10 @@
 use cudarc::driver::{CudaSlice, DevicePtr, DevicePtrMut};
 use memra_engine::Engine;
 use memra_engine::mla_ffi::{
-    MLA_DSA_ATTN_CHUNK_SWEEP, MLA_DSA_REGRESSION_MARGIN, MLA_DSA_SCORE_MIN_POOLS,
-    memra_mla_attn_gathered_dsa_f32, memra_mla_attn_gathered_f32, memra_mla_dsa_attn_split_f32,
-    memra_mla_kpool_score_dsa_f32, memra_mla_kpool_score_f32, mla_dsa_attn_arm,
+    MLA_DSA_ATTN_CHUNK_SWEEP, MLA_DSA_NAMED_CLASS_T_MAX, MLA_DSA_REGRESSION_MARGIN,
+    MLA_DSA_SCORE_MIN_POOLS, memra_mla_attn_gathered_dsa_f32, memra_mla_attn_gathered_f32,
+    memra_mla_dsa_attn_split_f32, memra_mla_kpool_score_dsa_f32, memra_mla_kpool_score_f32,
+    mla_dsa_attn_arm, mla_dsa_attn_arm_effective,
 };
 use std::os::raw::c_void;
 use std::sync::Arc;
@@ -158,6 +165,15 @@ fn bench_interleaved(
     acc.into_iter().map(|a| a / rounds as f64).collect()
 }
 
+/// Is the TIMING bar a hard check on this build? Only on the class the door targets. `100a`
+/// SASS cannot run anywhere but sm_100, so the build arch is an exact proxy for "this process is
+/// on a B200-class device". Elsewhere a regression line still prints, as a DIAGNOSTIC, because a
+/// laptop 5090's microseconds were never a receipt for a B200-only door and the two machines have
+/// already disagreed in BOTH directions on this lane (the single-pass arm is a 30% loss on the
+/// 5090 and a 3.5-7.4% win on the B200; 16 chunks beat 32 on the 5090 and lost to it on the
+/// B200). CORRECTNESS bars -- bit identity and the argmax gate -- stay hard on every device.
+const TIMING_IS_BINDING: bool = cfg!(memra_sm100_tcgen05);
+
 /// One failed check, collected and printed together at the end.
 struct Failure(String);
 
@@ -186,13 +202,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     println!(
         "  policy: attn_gathered arm table {}  (0 = shipped, 1 = single-pass bit-identical, \
-          n>=2 = warp-online with n chunks); \
-         scorer engages at n_pools >= {MLA_DSA_SCORE_MIN_POOLS}; regression margin \
-         {MLA_DSA_REGRESSION_MARGIN:.2}x",
+          n>=2 = warp-online with n chunks; a cell in parentheses is demoted by the width rule); \
+         named class admissible only at t_q <= {MLA_DSA_NAMED_CLASS_T_MAX}; scorer engages at \
+         n_pools >= {MLA_DSA_SCORE_MIN_POOLS}; regression margin \
+         {MLA_DSA_REGRESSION_MARGIN:.2}x, {}",
         (1..=8)
-            .map(|t| format!("t{t}={}", mla_dsa_attn_arm(t)))
+            .map(|t| {
+                let (raw, eff) = (mla_dsa_attn_arm(t), mla_dsa_attn_arm_effective(t));
+                if raw == eff {
+                    format!("t{t}={eff}")
+                } else {
+                    format!("t{t}={eff}(was {raw})")
+                }
+            })
             .collect::<Vec<_>>()
-            .join(" ")
+            .join(" "),
+        if TIMING_IS_BINDING {
+            "TIMING BINDING (sm_100a build, the door's target class)"
+        } else {
+            "timing DIAGNOSTIC ONLY (non-target build; correctness bars still hard)"
+        }
     );
 
     // ---------------------------------------------------------------- shared device state
@@ -352,11 +381,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if moved == 0 { "MATCH" } else { "MOVED" },
                     ref_arg.len()
                 );
+                // The argmax bar is HARD exactly where the class can be served. Above
+                // MLA_DSA_NAMED_CLASS_T_MAX the door demotes arm >= 2 to the shipped kernel
+                // (`mla_dsa_attn_arm_effective`), so a move there is a recorded property of the
+                // class, not a shipping defect -- and it is the reason the width rule exists:
+                // the 2026-09-03 B200 run moved 1 of 256 rows at kv=131072 / t_q=4 for every
+                // swept chunk count. The arm keeps being MEASURED at those widths so the day
+                // someone proposes raising the rule, the evidence is already on the table.
                 if moved != 0 {
-                    failures.push(Failure(format!(
-                        "ARGMAX attn_gathered warp-online kv={kv} t_q={t} chunks={c}: \
-                         {moved} rows moved"
-                    )));
+                    if t <= MLA_DSA_NAMED_CLASS_T_MAX {
+                        failures.push(Failure(format!(
+                            "ARGMAX attn_gathered warp-online kv={kv} t_q={t} chunks={c}: \
+                             {moved} rows moved at a width where the class IS servable"
+                        )));
+                    } else {
+                        println!(
+                            "    INFO: not a failure -- t_q={t} is above the named-class width \
+                             rule ({MLA_DSA_NAMED_CLASS_T_MAX}), so the door demotes this arm to \
+                             the shipped kernel here. This is why that rule exists."
+                        );
+                    }
                 }
                 split_chunks.push(c);
             }
@@ -416,7 +460,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
 
             // Regression against the arm the policy selects at this width.
-            let policy_arm = mla_dsa_attn_arm(t);
+            let policy_arm = mla_dsa_attn_arm_effective(t);
             let policy_us = match policy_arm {
                 0 => ship_us,
                 1 => dsa_us,
@@ -427,27 +471,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap_or(ship_us),
             };
             if policy_us > ship_us * MLA_DSA_REGRESSION_MARGIN {
-                failures.push(Failure(format!(
-                    "REGRESSION attn_gathered kv={kv} t_q={t} arm={policy_arm}: \
-                     {policy_us:.1} us vs shipped {ship_us:.1} us \
-                     ({:.3}x, margin {MLA_DSA_REGRESSION_MARGIN:.2}x)",
+                let line = format!(
+                    "attn_gathered kv={kv} t_q={t} arm={policy_arm}: {policy_us:.1} us vs \
+                     shipped {ship_us:.1} us ({:.3}x, margin {MLA_DSA_REGRESSION_MARGIN:.2}x)",
                     policy_us / ship_us
-                )));
+                );
+                if TIMING_IS_BINDING {
+                    failures.push(Failure(format!("REGRESSION {line}")));
+                } else {
+                    println!("  DIAGNOSTIC (non-target build, not a failure): {line}");
+                }
             }
+            // The winner this run would justify putting in the table -- and it only ever names
+            // an arm the table is ALLOWED to hold at this width, so a note can never talk the
+            // next editor into an illegal cell.
             let mut best = (0i32, ship_us);
             if dsa_us < best.1 {
                 best = (1, dsa_us);
             }
-            for (c, u) in &split_us {
-                if *u < best.1 {
-                    best = (*c, *u);
+            if t <= MLA_DSA_NAMED_CLASS_T_MAX {
+                for (c, u) in &split_us {
+                    if *u < best.1 {
+                        best = (*c, *u);
+                    }
                 }
             }
             if best.0 != policy_arm {
                 println!(
-                    "  note: kv={kv} t_q={t} fastest gathered arm is {} ({:.1} us), table says \
-                     {policy_arm} -- an arm-table edit this run would justify (cite it in \
-                     mla_ffi.rs)",
+                    "  note: kv={kv} t_q={t} fastest ADMISSIBLE gathered arm is {} ({:.1} us), \
+                     table says {policy_arm} -- an arm-table edit this run would justify (cite it \
+                     in mla_ffi.rs)",
                     best.0, best.1
                 );
             }
@@ -525,11 +578,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             if n_pools >= MLA_DSA_SCORE_MIN_POOLS && sdsa_us > sship_us * MLA_DSA_REGRESSION_MARGIN
             {
-                failures.push(Failure(format!(
-                    "REGRESSION kpool_score kv={kv} t_q={t}: {sdsa_us:.1} us vs shipped \
-                     {sship_us:.1} us ({:.3}x, margin {MLA_DSA_REGRESSION_MARGIN:.2}x)",
+                let line = format!(
+                    "kpool_score kv={kv} t_q={t}: {sdsa_us:.1} us vs shipped {sship_us:.1} us \
+                     ({:.3}x, margin {MLA_DSA_REGRESSION_MARGIN:.2}x)",
                     sdsa_us / sship_us
-                )));
+                );
+                if TIMING_IS_BINDING {
+                    failures.push(Failure(format!("REGRESSION {line}")));
+                } else {
+                    println!("  DIAGNOSTIC (non-target build, not a failure): {line}");
+                }
             }
         }
     }
@@ -538,8 +596,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if failures.is_empty() {
         println!(
             "dsa-decode-gate PASS: every bit-identical arm matched bytewise, every \
-             dsa-warp-online-f32 arm held argmax, and no policy-selected arm regressed beyond \
-             {MLA_DSA_REGRESSION_MARGIN:.2}x at any context in {KVS:?} or t_q in {T_QS:?}"
+             dsa-warp-online-f32 arm held argmax at every width where the door can serve it \
+             (t_q <= {MLA_DSA_NAMED_CLASS_T_MAX}), and no policy-selected arm regressed beyond \
+             {MLA_DSA_REGRESSION_MARGIN:.2}x at any context in {KVS:?} or t_q in {T_QS:?}. \
+             Timing bar was {}.",
+            if TIMING_IS_BINDING {
+                "BINDING"
+            } else {
+                "diagnostic only (non-target build)"
+            }
         );
         return Ok(());
     }

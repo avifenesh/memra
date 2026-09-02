@@ -215,7 +215,11 @@ pub static MLA_DSA_DECODE_DISPATCHES: std::sync::atomic::AtomicU64 =
 ///   rounding, so `dsa-decode-gate` holds it to an ARGMAX gate plus a maxdiff/max-relative bound
 ///   on real-shaped inputs and never to bit identity. It exists because at t_q=1 the gathered
 ///   attention has exactly 64 independent (token, head) outputs for 148 SMs and the slot axis is
-///   the only one that buys parallelism without duplicating the walk.
+///   the only one that buys parallelism without duplicating the walk. ADMISSIBLE ONLY AT
+///   `t_q <= MLA_DSA_NAMED_CLASS_T_MAX` = 1 (plain decode): the 2026-09-03 B200 run saw this
+///   class move 1 of 256 latent-row argmaxes at kv=131072 / t_q=4, and t_q=4..8 is the DFlash2
+///   spec-verify shape where a moved argmax is a moved draft acceptance. Enforced by
+///   `mla_dsa_attn_arm_effective`, not by table convention.
 ///
 /// Rollback seam: unset the var (or set 0). Both arms are read per call, so a rollback is the
 /// next request, not a restart.
@@ -243,43 +247,62 @@ pub const MLA_DSA_ARM_T_MAX: usize = 8;
 /// * `n >= 2` - the WARP-ONLINE arm with `n` slot chunks, numeric class
 ///   `dsa-warp-online-f32`. Level 2 only.
 ///
-/// THE CELLS ARE 5090-DERIVED CANDIDATES, NOT B200 RECEIPTS. Read that sentence before editing
-/// one. Measured with `dsa-decode-gate 0 3 65536` on the local RTX 5090 (release, N=3
-/// interleaved rounds, full log `research/b200-dsa-decode-20260902/gate-5090-20260903.txt`).
-/// Under the rig law (docs/PERFORMANCE.md, "5090 laptop throttles; correctness gates OK, timing
-/// numbers never") those microseconds are a CORRECTNESS receipt and a direction, never a
-/// serving claim -- and this door is compile-gated to sm_100a, so the 5090 cannot even engage
-/// it. Means in us, identical at every context on the ladder to within a few percent because
-/// the gathered stage is depth-flat:
+/// B200-MEASURED, 2026-09-03, and the widths are not free: read the width rule below before
+/// editing a cell. `dsa-decode-gate` on the 2x B200 SXM pair (sm_100a), device 0, N=5
+/// interleaved, engine commit f3a0091cd; banked log
+/// `darklanes:research/glm5-b200-20260902/box/gates/gate-dsa-decode.txt`. Means in us, and the
+/// gathered stage is depth-flat so the three contexts agree to a few percent:
 ///
-/// | arm | t_q=1 | t_q=4 | correctness |
-/// |---|---|---|---|
-/// | shipped | 442-501 | 854-882 | - |
-/// | single-pass (arm 1) | 480-545 | 1119-1154 | BIT-IDENTICAL at every context |
-/// | warp-online, 4 chunks | 206-208 | 241-262 | argmax MATCH, maxdiff <= 1.8e-6 |
-/// | warp-online, 8 chunks | 115-118 | 254-352 | argmax MATCH |
-/// | warp-online, **16 chunks** | **69.6-71.2** | **225.8-259.4** | argmax MATCH |
-/// | warp-online, 32 chunks | 83.4-83.7 | 264.6-267.6 | argmax MATCH |
+/// | t_q | context | shipped | single-pass (1) | c=4 | c=8 | c=16 | **c=32** |
+/// |---|---|---|---|---|---|---|---|
+/// | 1 | 128k | 556.3 | 573.1 | 272.9 | 136.9 | 80.5 | **57.1** |
+/// | 1 | 256k | 553.3 | 572.4 | 273.3 | 136.7 | 79.7 | **54.8** |
+/// | 1 | 1M | 552.1 | 571.5 | 273.1 | 139.0 | 79.9 | **54.3** |
+/// | 4 | 128k | 641.3 | **618.8** | 276.9 | 156.0 | 159.6 | 131.3 |
+/// | 4 | 256k | 663.1 | **616.6** | 277.1 | 154.7 | 158.9 | 131.8 |
+/// | 4 | 1M | 667.6 | **618.5** | 277.5 | 156.5 | 160.1 | 132.3 |
 ///
-/// Two findings that shaped this table. FIRST, the single-pass BIT-IDENTICAL arm is a real
-/// LOSS: both savings it was designed around were already gone (nvcc had hoisted the
-/// loop-invariant `expf` out of the `l` loop, and the second `cache[]` pass hits L1/L2, so
-/// staging through shared memory adds a write and a read and buys back only L1 hits). Bit
-/// identity is the BINDING constraint on that kernel; the shipped fold is already at a local
-/// optimum inside it, which is exactly why the depth win needed a named numeric class. It stays
-/// in the tree as arm 1 because the gate measures it and the receipt above is the reason the
-/// door does not take it. SECOND, 16 chunks beats 32 at both widths: 16 already puts
-/// `64 * 16 = 1024` warps on the die at t_q=1 and 32 starts paying more combine and more
-/// per-chunk softmax setup than it recovers.
+/// THE WIDTH RULE, and it is a correctness rule, not a tuning one. The named class
+/// (`dsa-warp-online-f32`, arm >= 2) is admissible ONLY at `t_q <= MLA_DSA_NAMED_CLASS_T_MAX`
+/// = 1, i.e. plain decode. The same box run that produced the table above ALSO recorded the
+/// class moving an argmax: at `kv=131072, t_q=4` every swept chunk count (4, 8, 16, 32) moved
+/// **1 of 256** latent rows, maxdiff ~1.7e-6. It was argmax-clean at t_q=1 in every measured
+/// cell (0 of 64, three contexts on the box plus five on the 5090) and clean at t_q=4 at 256k
+/// and 1M, but "clean in the cells we measured" is not a proof, and t_q=4..8 is the DFlash2
+/// SPEC-VERIFY shape: a moved argmax there is a moved draft acceptance. So the spec-verify
+/// batch never sees the named class. `mla_dsa_attn_arm_effective` enforces this in code, not by
+/// table convention: a cell >= 2 at any width above the rule is demoted to 0 (the shipped
+/// kernel, the always-safe path), never silently run and never quietly promoted to the
+/// single-pass arm at a width where nobody measured it.
 ///
-/// So the table ships EXACTLY what that run showed and nothing it did not: 16 at t_q=1 and
-/// t_q=4, the two widths measured, and 0 (= the shipped kernel) at t_q=2,3,5..8, which are
-/// unmeasured. The door is default OFF and arm >= 2 additionally needs level 2, so nothing
-/// here reaches a request without two deliberate acts. `dsa-decode-gate` FAILS with a
-/// `REGRESSION` line if a cell of this table is slower than shipped by more than
-/// `MLA_DSA_REGRESSION_MARGIN` on a later run, so a B200 run either confirms these cells or
-/// names the one to change. Cite the run here when a cell moves.
-pub const MLA_DSA_ATTN_ARM: [i32; MLA_DSA_ARM_T_MAX + 1] = [0, 16, 0, 0, 16, 0, 0, 0, 0];
+/// The cells therefore ship exactly what the box measured, under that rule:
+///
+/// * `t_q=1` -> **32**. The fastest arm at every context (54.3-57.1 us, a 10.2x on the shipped
+///   552.1 us at 1M) and argmax-clean at every context. 32 beats 16 by ~1.45x here where it lost
+///   to 16 on the 5090 -- 148 SMs want `64 * 32` = 2048 warps, an 82-SM laptop part does not.
+///   That disagreement is the per-hardware-arm-selection law working as intended.
+/// * `t_q=4` -> **1**, the BIT-IDENTICAL single-pass kernel. On the B200 it is a 3.5-7.4% WIN
+///   (618.5 vs 667.6 us at 1M), the opposite sign from the 5090, where it lost by 30% and this
+///   table shipped 0. Same code, different machine: on 148 SMs the shared-memory staging pays
+///   for itself where on 82 it did not. Bit-identical, so this cell carries no numeric risk at
+///   the spec-verify width at all. Banked evidence covers 128k/256k/1M; the two shallow contexts
+///   were not in the log this cell was set from, and the kernel is depth-flat.
+/// * `t_q=2,3,5..8` -> **0** (shipped). Unmeasured, and unmeasured behavior does not go on.
+///
+/// The door is default OFF and arm >= 2 additionally needs level 2, so nothing here reaches a
+/// request without two deliberate acts. `dsa-decode-gate` FAILS with a `REGRESSION` line if a
+/// cell is slower than shipped by more than `MLA_DSA_REGRESSION_MARGIN` on a later run, so the
+/// next box run either confirms these cells or names the one to change. Cite the run here when
+/// a cell moves.
+pub const MLA_DSA_ATTN_ARM: [i32; MLA_DSA_ARM_T_MAX + 1] = [0, 32, 0, 0, 1, 0, 0, 0, 0];
+
+/// Widest query width at which the NAMED numeric class (`dsa-warp-online-f32`, arm >= 2) may be
+/// selected. 1: plain decode only. Above it the door takes a bit-identical arm or the shipped
+/// kernel, so the DFlash2 spec-verify batch (t_q=4..8) never runs a rounding program that could
+/// move a draft acceptance. Set by the 2026-09-03 B200 run, which observed the class move 1 of
+/// 256 latent-row argmaxes at kv=131072 / t_q=4 for every swept chunk count. Raising this needs
+/// its own argmax evidence at the widths it opens, not an inference from t_q=1.
+pub const MLA_DSA_NAMED_CLASS_T_MAX: usize = 1;
 
 /// Chunk counts `dsa-decode-gate` sweeps for the warp-online arm. The warp arm puts
 /// `t_q * n_head * chunks` WARPS on the die, so chunks is the whole occupancy knob at t_q=1
@@ -304,6 +327,20 @@ pub fn mla_dsa_attn_arm(t_q: usize) -> i32 {
         return 0;
     }
     MLA_DSA_ATTN_ARM[t_q]
+}
+
+/// The arm the door may actually run at this width: the table cell, with the named-class width
+/// rule enforced in CODE rather than by table convention. A cell >= 2 above
+/// `MLA_DSA_NAMED_CLASS_T_MAX` is demoted to 0 (the shipped kernel), not to the single-pass arm
+/// — a width nobody measured gets the path that cannot be wrong, not the path that happens to
+/// be bit-identical. The gate reads this same function, so an edit that violates the rule shows
+/// up as the gate timing a shipped cell, never as a silently-served numeric class.
+pub fn mla_dsa_attn_arm_effective(t_q: usize) -> i32 {
+    let arm = mla_dsa_attn_arm(t_q);
+    if arm >= 2 && t_q > MLA_DSA_NAMED_CLASS_T_MAX {
+        return 0;
+    }
+    arm
 }
 
 /// Geometry refusals from the DSA launchers: the door has nothing for this shape, so the
@@ -1360,8 +1397,10 @@ impl Engine {
         // run moves a cell. See research/b200-dsa-decode-20260902/ROOFLINE.md.
         let dsa_level = mla_dsa_decode_level();
         let dsa_arm = if dsa_level >= 1 && t_q <= MLA_DSA_ARM_T_MAX {
-            let a = mla_dsa_attn_arm(t_q);
-            // Arm >= 2 is the warp-online numeric class; level 1 admits bit-identical arms only.
+            // `_effective` already enforces the named-class width rule (plain decode only, so
+            // the spec-verify batch never sees `dsa-warp-online-f32`); level 2 is the second,
+            // independent admission for the same class.
+            let a = mla_dsa_attn_arm_effective(t_q);
             if a >= 2 && dsa_level < 2 { 0 } else { a }
         } else {
             0
