@@ -445,9 +445,15 @@ impl WorkerHealth {
     ///
     /// BUSY-but-progressing is NOT stalled: the quantity bounded here is time without forward
     /// progress, not time without a loop pass. That distinction is the whole of memra#50.
-    fn stalled(&self) -> bool {
-        self.phase.load(Ordering::Acquire) == PHASE_BUSY
-            && self.forward_progress_age_ms() > self.stall_ms
+    /// `Some(age)` when BUSY and that age exceeds the bound. Returns the age it judged rather
+    /// than a bare bool so `live()` reports the number that PRODUCED the verdict: recomputing
+    /// it for the message would print a second, later sample.
+    fn stalled_for_ms(&self) -> Option<u64> {
+        if self.phase.load(Ordering::Acquire) != PHASE_BUSY {
+            return None;
+        }
+        let age = self.forward_progress_age_ms();
+        (age > self.stall_ms).then_some(age)
     }
 
     /// LIVENESS (`/health`, `/livez`): should this process be restarted? Draining is NOT a
@@ -471,14 +477,15 @@ impl WorkerHealth {
         match self.phase.load(Ordering::Acquire) {
             PHASE_DEAD => Err("worker thread is gone".into()),
             PHASE_LOADING => Err("worker is (re)loading weights".into()),
-            _ if self.stalled() => Err(format!(
-                "worker stalled: no forward progress for {} ms (beat age {} ms, threshold {} \
-                 ms)",
-                self.forward_progress_age_ms(),
-                self.beat_age_ms(),
-                self.stall_ms
-            )),
-            _ => Ok(()),
+            _ => match self.stalled_for_ms() {
+                Some(age) => Err(format!(
+                    "worker stalled: no forward progress for {age} ms (beat age {} ms, \
+                     threshold {} ms)",
+                    self.beat_age_ms(),
+                    self.stall_ms
+                )),
+                None => Ok(()),
+            },
         }
     }
 
@@ -971,20 +978,22 @@ mod tests {
     #[test]
     fn a_busy_worker_that_is_still_priming_chunks_is_live_however_stale_the_beat() {
         let (advance, src) = test_progress();
-        let h = WorkerHealth::with_stall_and_progress(20, src);
+        // 200 ms bound against 20 ms steps: a 10x margin, so a loaded host cannot turn this
+        // into a flake. The bound still has to be REACHED, which the stale beat below does.
+        let h = WorkerHealth::with_stall_and_progress(200, src);
         h.mark_ready();
         h.beat_busy();
         // The beat goes stale and STAYS stale: nothing calls beat() again for the rest of the
         // test, exactly as a worker inside one long prefill cannot.
-        std::thread::sleep(Duration::from_millis(40));
+        std::thread::sleep(Duration::from_millis(400));
         assert!(
-            h.beat_age_ms() > 20,
+            h.beat_age_ms() > 200,
             "the beat must be genuinely stale or this asserts nothing"
         );
-        // ... but chunks keep landing. Five advances across ~50 ms, each well inside the bound.
+        // ... but chunks keep landing, each well inside the bound.
         for _ in 0..5 {
             advance.store(now_ms(), Ordering::Release);
-            std::thread::sleep(Duration::from_millis(10));
+            std::thread::sleep(Duration::from_millis(20));
             assert!(
                 h.live().is_ok(),
                 "a BUSY worker completing prime chunks is progressing, not hung: {:?}",
@@ -994,9 +1003,9 @@ mod tests {
         }
         // And the snapshot says WHICH signal held it healthy, so an operator can see it.
         let snap = h.snapshot();
-        assert!(snap.beat_age_ms > 20);
+        assert!(snap.beat_age_ms > 200);
         assert!(
-            snap.forward_progress_age_ms <= 20,
+            snap.forward_progress_age_ms <= 200,
             "forward progress age {} must be the fresh number, not the beat age {}",
             snap.forward_progress_age_ms,
             snap.beat_age_ms

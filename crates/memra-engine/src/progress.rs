@@ -127,15 +127,29 @@ mod tests {
             .join("\n");
         let calls = code.matches("crate::progress::note_prime_rows(").count();
         assert!(
-            calls >= 7,
+            calls >= 9,
             "the prime walks must stamp the forward-progress odometer (memra#50); found \
-             {calls} live call sites in hybrid_forward.rs"
+             {calls} live call sites in hybrid_forward.rs (7 per-chunk walks plus the two \
+             call-granularity shims)"
         );
-        assert!(
-            code.contains("crate::progress::events()"),
-            "prime_cache_overlaid must still tell a chunked walk from a monolithic one, or a \
-             monolithic prime stamps nothing at all"
+        // Both ENTRY points need the shim, not just one: `prime_cache_batch` does not route
+        // through `prime_cache_overlaid`, and it was the multi-session batched wave prefill's
+        // only coverage gap (review of #106).
+        assert_eq!(
+            code.matches("crate::progress::events()").count(),
+            4,
+            "both prime entries (prime_cache_overlaid, prime_cache_batch) must compare the \
+             event count across the call, or a MONOLITHIC prime on that entry stamps nothing"
         );
+        for entry in [
+            "fn prime_cache_overlaid_inner(",
+            "fn prime_cache_batch_inner(",
+        ] {
+            assert!(
+                code.contains(entry),
+                "the shim for {entry} is gone: its entry is stamping nothing"
+            );
+        }
     }
 
     /// The never-advanced state is DISTINCT from a zero age. Asserted because the whole point

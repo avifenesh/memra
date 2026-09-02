@@ -4144,6 +4144,10 @@ impl HybridModel {
                     (end - start) * n_embd,
                 )?;
                 last = Some((logits, h_seed));
+                // FORWARD PROGRESS (memra#50): this chunk's logits are already host-side,
+                // so the device finished it. Stamp the odometer /health reads, so a BUSY
+                // worker mid-long-prefill is never mistaken for a wedged one.
+                crate::progress::note_prime_rows(end - start);
                 start = end;
             }
             let (logits, h_seed) = last.expect("prime produced no chunk");
@@ -4627,6 +4631,12 @@ impl HybridModel {
                             fence,
                             initial_base,
                         )?);
+                        // FORWARD PROGRESS (memra#50): the head stage's host-side result for
+                        // THIS wave exists here, which is the only point inside a multi-wave
+                        // PP prime where progress is observable while the walk is still
+                        // running. Stamping in the post-join copy loop instead would leave
+                        // /health blind for the whole walk and then fire N stamps at once.
+                        crate::progress::note_prime_rows(wave.end - wave.start);
                     }
                     Ok(())
                 },
@@ -4690,10 +4700,10 @@ impl HybridModel {
             )?;
             last = Some((out.0, out.1));
             crate::pp::PRIME_SPLIT_CHUNKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            // FORWARD PROGRESS (memra#50): this chunk's logits are already host-side,
-            // so the device finished it. Stamp the odometer /health reads, so a BUSY
-            // worker mid-long-prefill is never mistaken for a wedged one.
-            crate::progress::note_prime_rows(wave.end - wave.start);
+            // The forward-progress stamp is NOT here: this loop runs after the wavefront has
+            // been joined, so stamping it would fire every wave's progress at once at the END
+            // of the walk and report nothing at all while the walk is running. It lives on the
+            // head walker instead (memra#50, review of #106).
         }
         stage_caches.commit();
         drop(stage_caches);
@@ -5709,10 +5719,11 @@ impl HybridModel {
             };
             rt.publish_to(1, &caller_stream)?;
             crate::pp::PRIME_SPLIT_CHUNKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            // FORWARD PROGRESS (memra#50): this chunk's logits are already host-side,
-            // so the device finished it. Stamp the odometer /health reads, so a BUSY
-            // worker mid-long-prefill is never mistaken for a wedged one.
-            crate::progress::note_prime_rows(t);
+            // NO forward-progress stamp here (memra#50, review of #106): this is a per-CHUNK
+            // body whose callers already stamp per chunk, and whose single-range case is
+            // stamped by `prime_cache_overlaid`'s call-granularity shim. Stamping here too
+            // would double-count `prime_progress.rows`/`chunks`, and those counts are
+            // published as operator receipts and read by the hardware cell's PASS criterion.
             return Ok(out);
         }
 
@@ -6483,6 +6494,26 @@ impl HybridModel {
     /// as every prefill GEMM change; prime_batch_gate arbitrates (argmax + stream battery).
     #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn prime_cache_batch(
+        &self,
+        e: &Engine,
+        prompts: &[&[u32]],
+        caches: &mut [&mut Cache],
+    ) -> Result<Vec<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>)>, Box<dyn std::error::Error>> {
+        // FORWARD PROGRESS (memra#50, review of #106). This entry does NOT route through
+        // `prime_cache_overlaid`, so without this shim the multi-session batched wave prefill
+        // (`worker.rs`'s interactive prefill tick) was the one prefill path with zero odometer
+        // coverage: its unqualified-rewrite FALLBACK arm calls `prime_cache` per prompt and is
+        // covered, while the fast batched arm was not. Same rule as the other entry: if
+        // nothing below stamped, the call's own completion is the honest progress point.
+        let events_before = crate::progress::events();
+        let out = self.prime_cache_batch_inner(e, prompts, caches);
+        if out.is_ok() && crate::progress::events() == events_before {
+            crate::progress::note_prime_rows(prompts.iter().map(|p| p.len()).sum());
+        }
+        out
+    }
+
+    fn prime_cache_batch_inner(
         &self,
         e: &Engine,
         prompts: &[&[u32]],
