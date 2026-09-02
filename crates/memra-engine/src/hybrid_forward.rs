@@ -14414,14 +14414,41 @@ impl HybridModel {
         // expert working set (a glm5 layer is 288 x 3 blocks against ~285 slots/layer on the
         // serving recipe), and a remote slab must never be dereferenced (m=1 peer reads are the
         // measured 34-150x class). Fail closed: the sequential arm stages as before.
+        // Named decline, once per process (the loud-refusal law): on the 2x B200 pair the
+        // resident decision never ran under MEMRA_ST_PINNED=1 (host-pinned store), this arm
+        // returned None silently on every layer, and a 24k-token prompt primed through the
+        // per-token dispatch at ~220 tok/s while the flag announce said "on". The 4-card 1M
+        // window recorded the same "executes 0 times" shape. A boot must say why.
+        fn decline_once(reason: &str, t: usize, il: u16) {
+            static DECLINED: std::sync::atomic::AtomicBool =
+                std::sync::atomic::AtomicBool::new(false);
+            if !DECLINED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                eprintln!(
+                    "[moe-grouped-prefill] DECLINED t={t} il={il}: {reason} -> the sequential \
+                     per-token dispatch serves this prime (logged once per process)"
+                );
+            }
+        }
         let Some(dev) = m
             .dev_exps
             .as_ref()
             .filter(|d| moe_slab_enabled() && d.dev == e.ctx().ordinal())
         else {
+            decline_once(
+                "no LOCAL resident expert slab (dev_exps is None: the resident-experts decision \
+                 did not select RESIDENT on this device, e.g. MEMRA_ST_PINNED=1 / \
+                 MEMRA_MOE_RESIDENT=0 / a budget below the bank; or MEMRA_MOE_SLAB=0)",
+                t,
+                il,
+            );
             return Ok(None);
         };
         if crate::moe_f16g_mode() == 0 {
+            decline_once(
+                "MEMRA_MOE_F16G=0 (the grouped f16 GEMM class is off)",
+                t,
+                il,
+            );
             return Ok(None);
         }
         // MEMRA_MOE_GATE is the BYTE-identity oracle between sequential-class dispatches; this
@@ -14442,6 +14469,11 @@ impl HybridModel {
             && f16g_proj_ok(m.up_exps.qtype, n_embd)
             && f16g_proj_ok(m.down_exps.qtype, n_ff_exp))
         {
+            decline_once(
+                "an expert projection qtype/shape is outside the grouped f16 GEMM class",
+                t,
+                il,
+            );
             return Ok(None);
         }
         // The sk visitor's direct-lane group cap (mirrors the grouped prime's guard). glm5's
