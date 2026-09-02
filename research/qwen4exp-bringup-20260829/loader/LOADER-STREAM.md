@@ -245,6 +245,46 @@ receipt was lost, but the rule is now unconditional and the fallback is deleted 
 timeout. Recorded here rather than quietly fixed, because the receipt has to say which arm ran
 under which conditions.
 
+### Consumer coverage: every changed bank consumer, and the one that is SKIPPED
+
+The change touches four bank consumers. Three are exercised, one cannot be with one card:
+
+| consumer | covered by | result |
+|---|---|---|
+| `from_loaded_checkpoint_dual` | `new-cap150`, `new-cap150b` (real artifact) | PASS, byte-identical |
+| `into_reference_weights` | tiny-gate `dir-*` arms (rig) | PASS |
+| `mtp_reference_weights` | `new-draftgate` (real artifact) | PASS |
+| `build_tp2_shard` | **nothing — SKIPPED** | see below |
+
+`new-draftgate` exists precisely because no other arm reaches `mtp_reference_weights`, which
+builds the HOST reference MTP twin from the lazily-read MTP bank before the device model reads it
+again:
+
+```
+flock -s 9   # shared measurement lock, waited 570s
+env CUDA_VISIBLE_DEVICES=1 MEMRA_Q4E_SEAMS=idxsel \
+  systemd-run --scope --unit=q4e-new-draftgate -p MemoryMax=230G -p MemorySwapMax=0 \
+    /usr/bin/time -v ~/realgate/bin/qwen4exp_real_gate.loader ~/data/q48fn-yarn1m \
+      ~/realgate/loaderout --label new-draftgate --mtp --draft-gate \
+      --goldens ~/realgate/dump --prompts ~/realgate/shapes/thinkon-prompts.tsv
+```
+
+- **`# verdict rows=20 argmax_matches=20 worst_abs=1.004e-4 worst_rel=9.632e-5 pass=true`**,
+  `# logits_argmax_agreement 10/10`, rc=0, load 254.9 s
+  (`box/draft-gate-new-draftgate.tsv`, `box/new-draftgate.log`).
+- Peak anon **147.2 GiB**, ~28 GiB above the plain streaming arm. That is `--draft-gate` cloning
+  the whole trunk f32 set for its host twin, which is a pre-existing property of that flag and
+  the reason this arm ran at a 230 GiB cap: a 150 GiB result here would have measured the flag,
+  not the loader.
+
+**`build_tp2_shard`: SKIPPED, not PASS.** TP2 needs two engines and this lane was assigned one
+card (cards 0 and 2-3 belong to other queues), so no arm on this box can construct it, and the
+rig has a single GPU. What is known: the two changed lines call the same `BankPlan::read` that is
+byte-verified 63/63 on fixtures and byte-verified on the real artifact through the three
+consumers above, and the refusal path stayed loud (`no bank source for layer N`). What is NOT
+known: that a real TP2 load still builds its card-1 halves correctly end to end. That arm needs a
+second card and is the first thing to run if TP2 is next.
+
 ### Banked receipts (`loader/box/`)
 
 | file | what |
@@ -254,7 +294,8 @@ under which conditions.
 | `old-cap230.log` | the pre-streaming peak measured at a cap above its requirement |
 | `anon-peak.tsv` | anon sampler trace; last line per scope is that arm's peak |
 | `hidden-gate-new-cap150.tsv`, `greedy-gate-new-cap150.tsv` | the gate tables compared for identity |
-| `run-cap.sh`, `cell.sh`, `chain2.sh`, `anon-sampler.sh`, `compare-identity.sh` | the invocations, verbatim |
+| `new-draftgate.log`, `draft-gate-new-draftgate.tsv` | the `mtp_reference_weights` coverage arm |
+| `run-cap.sh`, `cell.sh`, `chain2.sh`, `draft-arm.sh`, `anon-sampler.sh`, `compare-identity.sh` | the invocations, verbatim |
 | `CELL.log` | the cell's own timeline including the identity comparison output |
 
 `cell.sh` is banked as it RAN, lock-free fallback and all; `run-cap.sh` is banked in its
