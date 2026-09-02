@@ -408,6 +408,48 @@ versus 20.621361, and last-logit top-20 overlap 17/20. `MEMRA_FP8_MMQ=1` therefo
 on B200 and the state is `NativeReference`, not `NativeQualified`. Receipts:
 `research/b200-kernel-twins-dry-20260901/receipts/b200-fp8-q38-20260901T1820Z/`.
 
+| flag | default | what it does |
+|---|---|---|
+| `MEMRA_B200_MATVEC_ARM` | **off** | `1` = the sm_100a occupancy arms for the plain-decode MoE/matvec family (lane/b200-matvec-occupancy-20260902). Restricted to `sm_100a` BUILDS at runtime (`MEMRA_BUILT_CUDA_ARCH`, compiled in): setting the var on an `sm_120a` build is a no-op and the naked sm_120a defaults stay byte-identical, per the per-hardware arm selection law. |
+
+**`MEMRA_B200_MATVEC_ARM` (2026-09-02, lane/b200-matvec-occupancy-20260902).** THE MEASUREMENT
+that motivated it: nsys on 2x B200 SXM (sm_100a build, GLM-5.3-Flash NVFP4 W4A16 mint, resident
+expert slab, PP2, plain decode, ~224 generated tokens, both devices summed, ~2,900 launches/token)
+found `moe_gate_up_preclamp8_q8` at **20.0%** of GPU time (24,696 launches, 54.6us avg — ~9x its
+NVFP4 roofline estimate of ~6us for one layer's 8-expert gate+up), `moe_down8_fma_q8` at **10.5%**,
+`matvec_bf16_f32acc_x4_rows` at **17.0%** (47,364 launches, 24.1us avg — ~3x its bf16 roofline
+estimate of ~8us for a [8192,4096] KDA projection), `qmatvec_nvfp4_mmvq_mr2_rp` at **5.2%**
+(30,400 x 11.5us) and `qmatvec_nvfp4_mmvq_fused2_rp` at ~4% (13,440 x 10.0us). B200 is
+memory-LATENCY/occupancy bound in kernels tuned for the RTX PRO 6000 (188 SMs, 1.8 TB/s), not
+bandwidth bound at 148 SMs / 8 TB/s HBM3e.
+
+Four dispatch arms (five kernel-level changes total — arm 1 is a matched gate/up + down pair),
+all bit-identical per output (packing/grid-fill changes which block/warp computes an output,
+never the per-output f32 accumulation order — see the `.cu` kernel comments for each):
+
+1. `moe_gate_up_preclamp8_q8_w4` / `moe_down8_fma_q8_w4` — the existing `MEMRA_MMVQ_ROWS`
+   warp-packing idiom (already shipped for the `_rows`/`_rows_w4` verify pair) applied to the
+   plain-decode base kernels: `block=(32,1,1)` (one warp/block, occupancy-capped by the per-SM
+   resident-BLOCK limit rather than the resident-warp limit) becomes `block=(32,4,1)`.
+2. NVFP4 rp sub-wave grid-fill: when the RPW=2 `qmatvec_nvfp4_mmvq_mr2_rp` grid is under a full
+   wave on this device's SM count (`cudaDevAttrMultiProcessorCount` via `Engine::sm_count`), the
+   dispatch forces RPW=1 and reuses the ALREADY-SHIPPED `qmatvec_nvfp4_mmvq_rp` kernel — doubling
+   the grid for the same output rows. No new kernel; a pure dispatch-policy change
+   (`qmatvec_mmvq_into`, lib.rs).
+3. `qmatvec_nvfp4_mmvq_fused2_rp_g2` — the same grid-fill idea for the fused gate+up dual
+   launch: instantiates the existing `nvfp4_mmvq_fused_seg_rp<1>` template (the shipped kernel
+   instantiates `<2>`) behind the same sub-wave-grid check.
+4. `matvec_bf16_f32acc_x4_rows_pf` — software-pipelined (double-buffered) K-loop loads: the
+   next iteration's weight/activation reads issue before the current iteration's 8-fma chain
+   runs, hiding DRAM latency without touching the fma accumulation order.
+
+A microbench, `crates/memra-engine/src/bin/b200_matvec_bench.rs`
+(`MEMRA_GPU_LOCK=/tmp/memra-gpu.lock cargo run -p memra-engine --release --bin b200_matvec_bench`),
+runs shipped-vs-arm for all five kernels directly (bypassing the env door, which is a
+process-wide `OnceLock` and cannot flip mid-process) with a bit-for-bit output check. **Receipt
+pending the B200 box A/B** — this flag ships default OFF and stays OFF until that A/B lands;
+see `research/b200-matvec-occupancy-20260902/LANE.md`. Rollback seam: unset or `=0`.
+
 ### Build-time (build.rs / nvcc)
 
 | flag | default | what it does |
