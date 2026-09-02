@@ -1930,6 +1930,12 @@ fn gpu_dflash_chunked_drafter_prime_kv_matches_eager_ingest() {
             .model
             .glm5_spec_session_new(&h.engine, &prompt, ctx, None)
             .expect("eager session");
+        assert_eq!(
+            sess.draft_kv_len(),
+            Some(prompt.len()),
+            "the eager arm ingests the prompt AT CREATION by default (before the anchor is \
+             emitted; MEMRA_GLM5_DRAFT_PRIME_LAZY=1 restores the round-1 placement)"
+        );
         kv_after_one_round(&mut sess)
     };
     let (k_v2, v_v2) = {

@@ -242,6 +242,23 @@ pub fn glm5_draft_prime_v2_on() -> bool {
     std::env::var("MEMRA_GLM5_DRAFT_PRIME_V2").as_deref() == Ok("1")
 }
 
+/// `MEMRA_GLM5_DRAFT_PRIME_LAZY` (default OFF, lane/spec-route-depth-20260902): `=1`
+/// restores the pre-lane placement of the EAGER arm's drafter ingest — inside round 1 of
+/// the first burst, i.e. AFTER the prime's anchor token has been emitted under the
+/// round-cadence door. Default (unset): the ingest runs at session creation, before the
+/// session is returned and before any token is emitted. WHY THE FLIP: the 2x B200 pair's
+/// boot A (`MEMRA_SPEC_PROF=1`, main + PR #101) measured the round-0 wall at 0.63 / 4.5 /
+/// 8.9 s for 42k / 128k / 256k prompts (about 35 us per prompt token, the eager ingest)
+/// while every later round sits at 55-64 ms; with the anchor already streamed, that one
+/// round lands INSIDE decode, which is the bimodal "15.4 vs 32.1 tok/s" the pair saw
+/// (256 tokens over 8.9 s + 255 rounds/37 tok/s = 16 tok/s; without the stall, 37). The
+/// work is identical either way (same rows, same GEMMs, same KV bytes: the KV is
+/// position-addressed and nothing touches it between creation and round 1); only WHEN it
+/// runs moves, from the second token's latency to TTFT. Read per session creation.
+pub fn glm5_draft_prime_lazy_on() -> bool {
+    std::env::var("MEMRA_GLM5_DRAFT_PRIME_LAZY").as_deref() == Ok("1")
+}
+
 /// Drafter ctx KV bytes at `cap` rows (the `DflashKv::new` geometry), for the profile.
 fn dflash_kv_bytes(cfg: &crate::dflash::DflashCfg, cap: usize) -> usize {
     2 * cfg.n_layer * (cap + cfg.block_size) * cfg.n_kv * cfg.head_dim * std::mem::size_of::<f32>()
@@ -1986,7 +2003,7 @@ impl HybridModel {
         // `Some` exactly when `dflash_src` is, and the law returns `Dflash2` exactly then, so
         // this is the same program the pre-seam code ran — the `_` arm's refusal is the
         // never-taken proof of that rather than a silent fallback.)
-        let (draft, pending) = match (source_kind, dflash_src, tap_layers) {
+        let (mut draft, pending) = match (source_kind, dflash_src, tap_layers) {
             (crate::spec::DraftSourceKind::Dflash2, Some(dr), Some(taps)) => {
                 if let Some(kv) = v2_kv.take() {
                     // Chunked arm: the KV already holds every prompt row (kv.len == plen);
@@ -2053,6 +2070,30 @@ impl HybridModel {
         };
         if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
             pf.draft_alloc_ms += ck.lap(e, eh);
+        }
+        // EAGER-ARM INGEST AT CREATION (doc on `glm5_draft_prime_lazy_on`): the prompt's tap
+        // rows go into the drafter KV NOW, before the session (and its anchor) is handed to
+        // the worker, unless the lazy seam asks for the round-1 placement. The chunked arm
+        // arrives here with nothing pending.
+        if !glm5_draft_prime_lazy_on()
+            && let (Glm5DraftState::Dflash2 { kv, pending, taps }, Some(dr)) =
+                (&mut draft, dflash_src)
+            && !pending.is_empty()
+        {
+            let rows = std::mem::take(pending);
+            let stats = self.glm5_dflash_ingest_rows(
+                eh,
+                &dr.draft,
+                kv,
+                &rows,
+                taps.len() * n_embd,
+                pclk.as_mut(),
+            )?;
+            if let Some(pf) = prof.as_mut() {
+                stats.write(pf, "eager");
+            }
+        }
+        if let Some(pf) = prof.as_mut() {
             pf.free_mb_after = self.glm5_free_mb(e);
         }
         // Composition engagement receipt — printed immediately before the session is
@@ -2085,6 +2126,47 @@ impl HybridModel {
             prof_rounds: prof.as_ref().map(|_| SpecRoundsLog::default()),
             prof,
         })
+    }
+
+    /// The EAGER drafter ingest (one implementation for session creation and round 1):
+    /// host feature rows `[n, row_w]` -> 256-row pageable HtoD chunks -> `ctx_features` ->
+    /// `ingest_ctx`, appended at `kv.len`. Returns the profile buckets (all 0 with the
+    /// clock absent).
+    fn glm5_dflash_ingest_rows(
+        &self,
+        eh: &Engine,
+        draft: &DflashDraft,
+        kv: &mut DflashKv,
+        rows: &[f32],
+        row_w: usize,
+        mut pclk: Option<&mut ProfClock>,
+    ) -> Res<DraftIngestStats> {
+        debug_assert_eq!(rows.len() % row_w, 0, "ragged feature rows");
+        let n_new = rows.len() / row_w;
+        let mut st = DraftIngestStats {
+            rows: n_new,
+            ..Default::default()
+        };
+        let mut r0 = 0usize;
+        while r0 < n_new {
+            let t_c = (n_new - r0).min(256);
+            let chunk = eh.htod(&rows[r0 * row_w..(r0 + t_c) * row_w])?;
+            if let Some(ck) = pclk.as_deref_mut() {
+                st.h2d_ms += ck.lap(eh, eh);
+            }
+            let feats = draft.ctx_features(eh, &chunk, t_c)?;
+            if let Some(ck) = pclk.as_deref_mut() {
+                st.feat_ms += ck.lap(eh, eh);
+            }
+            let pos_c: Vec<i32> = ((kv.len as i32)..(kv.len + t_c) as i32).collect();
+            draft.ingest_ctx(eh, kv, &feats, &pos_c, t_c)?;
+            if let Some(ck) = pclk.as_deref_mut() {
+                st.kv_ms += ck.lap(eh, eh);
+            }
+            r0 += t_c;
+            st.chunks += 1;
+        }
+        Ok(st)
     }
 
     /// Free device memory per device this model can hold state on (primary + ppN stages),
@@ -3373,45 +3455,27 @@ impl HybridModel {
         let anchor = *anchor;
 
         // ---- 1. ingest pending committed feature rows (positions kv.len..) ----
+        // Under the default placement the PROMPT rows were ingested at session creation
+        // and only the kept verify rows of the previous round arrive here; under
+        // `MEMRA_GLM5_DRAFT_PRIME_LAZY=1` round 1 carries the whole prompt (the pre-lane
+        // literal, the round-0 wall boot A measured at depth).
         let row_w = taps.len() * n_embd;
-        debug_assert_eq!(pending.len() % row_w, 0, "ragged pending feature rows");
-        let n_new = pending.len() / row_w;
-        let mut r0 = 0usize;
         let mut pclk = pclk;
-        let (mut h2d_ms, mut feat_ms, mut kv_ms, mut chunks) = (0f64, 0f64, 0f64, 0usize);
-        while r0 < n_new {
-            let t_c = (n_new - r0).min(256);
-            let chunk = eh.htod(&pending[r0 * row_w..(r0 + t_c) * row_w])?;
-            if let Some(ck) = pclk.as_deref_mut() {
-                h2d_ms += ck.lap(eh, eh);
-            }
-            let feats = draft.ctx_features(eh, &chunk, t_c)?;
-            if let Some(ck) = pclk.as_deref_mut() {
-                feat_ms += ck.lap(eh, eh);
-            }
-            let pos_c: Vec<i32> = ((kv.len as i32)..(kv.len + t_c) as i32).collect();
-            draft.ingest_ctx(eh, kv, &feats, &pos_c, t_c)?;
-            if let Some(ck) = pclk.as_deref_mut() {
-                kv_ms += ck.lap(eh, eh);
-            }
-            r0 += t_c;
-            chunks += 1;
-        }
-        pending.clear();
-        // FIRST-TOKEN PROFILE: round 1's ingest is the drafter's prime over the whole
-        // prompt on the EAGER arm — the one prompt-length-linear cost after the target
-        // prime, split into its host->device, fc and k/v shares (lane/spec-route-depth).
-        // The chunked arm arrives here with nothing pending and keeps its own buckets.
+        let n_new = pending.len() / row_w;
+        let st = if n_new > 0 {
+            let rows = std::mem::take(pending);
+            self.glm5_dflash_ingest_rows(eh, draft, kv, &rows, row_w, pclk.as_deref_mut())?
+        } else {
+            DraftIngestStats::default()
+        };
+        // FIRST-TOKEN PROFILE: the lazy arm's round-1 prompt ingest lands in the
+        // drafter-prime buckets here (a creation-time ingest already wrote them and
+        // leaves nothing prompt-sized pending); the clock is re-based either way.
         if let (Some(ck), Some(pf)) = (pclk, prof.as_mut()) {
             let tail = ck.lap(eh, eh);
-            if n_new > 0 {
-                pf.draft_prime_ms = h2d_ms + feat_ms + kv_ms + tail;
-                pf.draft_prime_h2d_ms = h2d_ms;
-                pf.draft_prime_feat_ms = feat_ms;
-                pf.draft_prime_kv_ms = kv_ms;
-                pf.draft_prime_rows = n_new;
-                pf.draft_prime_chunks = chunks;
-                pf.draft_prime_arm = "eager";
+            if *rounds == 0 && n_new > 0 && pf.draft_prime_arm.is_empty() {
+                st.write(pf, "eager-lazy");
+                pf.draft_prime_ms += tail;
             }
         }
         let start = cache.pos;
@@ -3912,6 +3976,29 @@ impl HybridModel {
         sess.committed.push(sess.anchor);
         let next = argmax(&logits) as u32;
         Ok((sess.cache, next))
+    }
+}
+
+/// Buckets of one eager drafter ingest (`glm5_dflash_ingest_rows`), written into the
+/// first-token profile under the arm name that ran it.
+#[derive(Default, Debug, Clone, Copy)]
+struct DraftIngestStats {
+    h2d_ms: f64,
+    feat_ms: f64,
+    kv_ms: f64,
+    rows: usize,
+    chunks: usize,
+}
+
+impl DraftIngestStats {
+    fn write(&self, pf: &mut SpecFirstTokenProf, arm: &'static str) {
+        pf.draft_prime_ms = self.h2d_ms + self.feat_ms + self.kv_ms;
+        pf.draft_prime_h2d_ms = self.h2d_ms;
+        pf.draft_prime_feat_ms = self.feat_ms;
+        pf.draft_prime_kv_ms = self.kv_ms;
+        pf.draft_prime_rows = self.rows;
+        pf.draft_prime_chunks = self.chunks;
+        pf.draft_prime_arm = arm;
     }
 }
 
