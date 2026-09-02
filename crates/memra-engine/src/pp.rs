@@ -2953,6 +2953,44 @@ impl PpNRt {
         self.stages[s].engine.as_ref().unwrap_or(primary)
     }
 
+    /// Order `dst`'s OWN stream behind everything already enqueued on `src`'s OWN stream
+    /// (memra#95).
+    ///
+    /// This is NOT [`Self::fence_stages_behind`] and the difference is the whole bug that
+    /// named it. A stage owns TWO streams: `StageRt::stream`, which only carries work issued
+    /// inside an [`Self::enter`] scope (the ambient override), and — for every stage `s > 0`,
+    /// including stages on the PRIMARY device, per the per-stage Engine isolation above — the
+    /// stage's own [`Engine`]'s stream, which is what `rt.engine(s, e)` launches on when the
+    /// caller is NOT inside an enter scope. `fence_stages_behind` orders the first kind and
+    /// says nothing about the second. Any body that hands a stage engine to a helper WITHOUT
+    /// entering the stage (the glm5 spec round's whole draft phase does exactly that, through
+    /// `glm5_head_engine`) needs this one instead.
+    ///
+    /// Same-Engine and same-stream calls are no-ops. Contexts that differ (a stage on another
+    /// device) fall back to draining `src` on the host: correct everywhere, and it costs one
+    /// sync at session build, never per round.
+    pub fn order_engine_behind(
+        src: &Engine,
+        dst: &Engine,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if std::ptr::eq(src, dst) {
+            return Ok(());
+        }
+        let s = src.gpu.main_stream();
+        let d = dst.gpu.main_stream();
+        if Arc::ptr_eq(s, d) {
+            return Ok(());
+        }
+        if Arc::ptr_eq(src.ctx(), dst.ctx()) {
+            let ev = s.context().new_event(None)?;
+            ev.record(s)?;
+            d.wait(&ev)?;
+        } else {
+            s.synchronize()?;
+        }
+        Ok(())
+    }
+
     /// Bind this OS thread to stage `s`'s CUDA context before issuing work there.
     pub fn bind_stage(&self, s: usize) -> Result<(), Box<dyn std::error::Error>> {
         self.stages[s].ctx.bind_to_thread()?;

@@ -165,6 +165,16 @@ pub const TOPK_EMPTY_SLOT: u32 = u32::MAX;
 /// `bound` is the selector's own column space (`n_vocab` for a full head, the trim's rank
 /// count for an FR-Spec head): checked BEFORE any d2t remap, because remapping a sentinel
 /// would index the map out of bounds and panic before the walk is ever reached.
+///
+/// ASSUMES UNMASKED DRAFT LOGITS, which is what both proposal seams feed it today: `dl` is a
+/// raw `matmul` output and constrained requests never take the spec route, so a row cannot
+/// legitimately hold fewer than `top_k` finite values. A future masked-draft-logits arm would
+/// have to revisit this, and would want a shorter round rather than a refusal.
+///
+/// NOTE THE SCOPE: both proposal seams are shared with the LIVE dspark/q38 serve arm, not
+/// only the flagged glm5 restore. This changes that route's failure mode too, from a
+/// fleet-fatal worker panic to one refused request. That is the intended direction, and it
+/// is the only behaviour change outside the default-OFF flag.
 pub fn dflash2_guard_candidates(cand: &[u32], bound: usize, ctx: &str) -> Result<(), String> {
     for (i, &c) in cand.iter().enumerate() {
         if c as usize >= bound {
@@ -5381,8 +5391,8 @@ mod dflash2_tests {
     /// The sentinel a top-k row that could not be filled carries into the walk.
     #[test]
     fn an_unfilled_selector_slot_is_refused_by_name_not_clamped() {
-        // top_k = 4, one draft slot; the selector filled two slots and gave up (an all-NaN
-        // tail of the row), which is exactly what `topk_rows_f32` writes.
+        // top_k = 4, one draft slot; the selector filled two slots and gave up, which is what
+        // `topk_rows_f32` writes for a partially finite row.
         let cand = [7u32, 11, super::TOPK_EMPTY_SLOT, super::TOPK_EMPTY_SLOT];
         let why = super::dflash2_guard_candidates(&cand, 1000, "gate")
             .expect_err("an exhausted slot must be refused");
@@ -5392,6 +5402,12 @@ mod dflash2_tests {
             why.contains("exhausted-slot sentinel") && why.contains("NaN"),
             "the refusal must name the mechanism, not just the number: {why}"
         );
+        // THE OBSERVED SHAPE (memra#95): a fully NaN row fills EVERY slot with the sentinel,
+        // so the refusal has to bite at slot 0, before the walk's `prev` chain even starts.
+        let all_nan = [super::TOPK_EMPTY_SLOT; 4];
+        let why0 = super::dflash2_guard_candidates(&all_nan, 1000, "gate")
+            .expect_err("an all-sentinel row must be refused");
+        assert!(why0.contains("slot 0"), "{why0}");
         // An ordinary out-of-range id is refused too (the trimmed head's rank space is
         // narrower than the vocab, and a remap of a bad rank would panic in the map).
         assert!(super::dflash2_guard_candidates(&[7, 1000], 1000, "gate").is_err());
@@ -5404,17 +5420,33 @@ mod dflash2_tests {
     #[test]
     #[should_panic(expected = "walk: candidate")]
     fn the_walk_assert_survives_the_guard() {
-        const V: usize = 8;
-        const R: usize = 2;
-        const K: usize = 2;
-        let pred = vec![0u8; V * R * 2];
-        let succ = vec![0u8; V * R * 2];
+        const VOCAB: usize = 8;
+        const RANK: usize = 2;
+        const TOPK: usize = 2;
+        let pred = vec![0u8; VOCAB * RANK * 2];
+        let succ = vec![0u8; VOCAB * RANK * 2];
         let cand = [1u32, super::TOPK_EMPTY_SLOT];
-        let _ = dflash2_walk_greedy(&pred, &succ, V, R, K, &[0.0; K], &cand, &[0.0; R], 0, 1);
+        let _ = dflash2_walk_greedy(
+            &pred,
+            &succ,
+            VOCAB,
+            RANK,
+            TOPK,
+            &[0.0; TOPK],
+            &cand,
+            &[0.0; RANK],
+            0,
+            1,
+        );
     }
 
-    /// WIRING GATE (invocations in comment-stripped source, never prose — the
+    /// WIRING GATE (invocations in comment-stripped source, never prose, the
     /// wiring-assertions-match-prose law). Both halves of the memra#95 fix are LIVE code.
+    ///
+    /// The ordering half is asserted on the ENGINE-ordering seam, not on
+    /// `fence_stages_behind`: that distinction IS the defect (a stage's enter-scope stream is
+    /// not the stage Engine's own stream, and the draft phase runs on the latter), so a gate
+    /// that accepted either would accept the broken shape.
     #[test]
     fn the_fullcover_restore_ordering_seam_is_live_in_comment_stripped_source() {
         let strip = |src: &str| -> String {
@@ -5424,9 +5456,9 @@ mod dflash2_tests {
                 .join("\n")
         };
 
-        // 1. THE CAUSE. `glm5_spec_session_from_restored` fences the pp stage streams behind
-        //    the caller BEFORE the suffix branch, so the fence covers the full-cover arm
-        //    (which has no prime to inherit one from) and does not depend on `prime_cache`.
+        // 1. THE CAUSE. `glm5_spec_session_from_restored` orders the head/drafter engine
+        //    behind the caller BEFORE the suffix branch, so it covers the full-cover arm
+        //    (which has no prime, and therefore no incidental host sync, to hide behind).
         let glm5 = strip(include_str!("glm_spec.rs"));
         let body = glm5
             .find("pub fn glm5_spec_session_from_restored(")
@@ -5436,26 +5468,49 @@ mod dflash2_tests {
             .expect("the builder's end anchor exists")
             + body;
         let scope = &glm5[body..end];
-        let fence = scope.find("fence_stages_behind(&e.stream())").expect(
-            "the restored-session builder must fence the pp stage streams behind the caller",
-        );
+        let eh = scope
+            .find("let eh = self.glm5_head_engine(e)?;")
+            .expect("the builder resolves the head engine");
+        let order = scope
+            .find("crate::pp::PpNRt::order_engine_behind(e, eh)?;")
+            .expect(
+                "the restored-session builder must order the head engine's own stream behind \
+                 the caller (fence_stages_behind is the WRONG seam: it orders enter-scope \
+                 stage streams, and the draft phase never enters a stage)",
+            );
         let branch = scope
             .find("let (logits_s, tap_rows, prefix_capture) = if suffix.is_empty()")
             .expect("the full-cover branch exists");
         assert!(
-            fence < branch,
-            "the fence must precede the full-cover/suffix branch: a fence inside the suffix \
-             arm is the shipped hole (memra#95)"
+            eh < order && order < branch,
+            "the ordering must sit between the head-engine binding and the full-cover/suffix \
+             branch: after it so it names the right engine, before it so the prime-free arm \
+             is covered"
+        );
+
+        // 1b. The helper it calls really orders the ENGINE streams, not the stage streams.
+        let pp = strip(include_str!("pp.rs"));
+        let helper = pp
+            .find("pub fn order_engine_behind(")
+            .expect("the engine-ordering helper exists");
+        let rest = &pp[helper..];
+        let hbody = &rest[..rest.find("\n    pub fn ").unwrap_or(rest.len().min(2000))];
+        assert!(
+            hbody.contains("src.gpu.main_stream()") && hbody.contains("dst.gpu.main_stream()"),
+            "the helper must act on the two ENGINES' own streams"
         );
         assert!(
-            scope[..fence].contains("if crate::pp::pp_cuts(self.layers.len()).is_some()"),
-            "the fence must be door-guarded like every other ppN seam"
+            !hbody.contains("self.stages"),
+            "the helper must not reach for StageRt::stream: that is the seam that did not \
+             cover the drafter"
         );
 
         // 2. THE BLAST RADIUS. Both proposal seams guard the candidate buffer BEFORE the
         //    d2t remap (a sentinel would index the map out of bounds) and before the walk.
         let d2 = strip(include_str!("dflash.rs"));
-        let live = &d2[..d2.find("mod tests").expect("this test module exists")];
+        // Cut at the FIRST test module so no assertion can be satisfied by this test's own
+        // string literals (the self-match trap the wiring-assertions law names).
+        let live = &d2[..d2.find("#[cfg(test)]").expect("this file has test modules")];
         for (seam, arm) in [
             ("pub fn dflash2_propose_greedy_q(", "greedy"),
             ("pub(crate) fn dflash2_propose_sampled(", "sampled"),
@@ -5463,7 +5518,7 @@ mod dflash2_tests {
             let at = live
                 .find(seam)
                 .unwrap_or_else(|| panic!("{arm} proposal seam exists"));
-            let window = &live[at..at + 4000];
+            let window = live.get(at..at + 4000).unwrap_or(&live[at..]);
             let guard = window
                 .find("dflash2_guard_candidates(&cand, n_vocab,")
                 .unwrap_or_else(|| panic!("the {arm} proposal must guard its candidates"));
