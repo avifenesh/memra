@@ -53,6 +53,82 @@ fn mla_split_announce(kind: &str, t_q: usize, n_head: usize, split: i32) {
     }
 }
 
+/// Engagement counter for the B200 decode arm (`MEMRA_B200_MLA_DECODE_ARM`), announced once
+/// per boot — the receipt the B200 box A/B run must show (see LANE.md, receipt pending).
+pub static MLA_B200_DECODE_ARM_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// `MEMRA_B200_MLA_DECODE_ARM=1` (default OFF, read per call — rollback seam), compile-time
+/// gated to sm_100a builds (`cfg!(memra_sm100_tcgen05)`, set by build.rs for
+/// `MEMRA_CUDA_ARCH=100a`): on a 120a/90a/89 build this is `false` unconditionally, so naked
+/// non-B200 commands and the flag census see no behavior change from a var they cannot even
+/// engage — the arch guard is a compile-time fact here, not a per-call detection cost.
+///
+/// Owner order 2026-09-02: "hardly improve the decode on these cards, before the full 1M."
+/// This is a genuinely separate door from `MEMRA_MLA_DECODE_SPLIT` (glm5-decode-diet lever 4,
+/// rig-generic, target ~1024 blocks, PRO6000-tuned) rather than a rename of it, per the
+/// per-hardware-arm-selection law in CLAUDE.md: B200 SXM carries more SMs per device than the
+/// PRO6000 pair that door was tuned on, and this arm ALSO covers `attn_gathered`, which the
+/// generic split door never touched (no independent-output split existed for it before this
+/// lane — see `memra_mla_attn_gathered_split_kernel` in cu/mla_attn.cu).
+fn mla_b200_decode_arm_on() -> bool {
+    cfg!(memra_sm100_tcgen05) && std::env::var("MEMRA_B200_MLA_DECODE_ARM").as_deref() == Ok("1")
+}
+
+/// Output-range split target for the B200 arm's absorb_q / decompress_v calls. Same
+/// split-invariant arithmetic as `mla_decode_split_for` (bytes are identical at any split —
+/// pure output-range partition of independent per-element matvecs), aimed at a higher block
+/// count than the generic door's ~1024 target since a B200 SXM die carries more SMs than the
+/// PRO6000 pair `MEMRA_MLA_DECODE_SPLIT` was tuned on. Scoped to t_q <= 8 per the owner's
+/// "t=1 (and small-t verify, t<=8)" order — wider widths already reach the TC prefill chain
+/// (`MEMRA_MLA_TC_PREFILL`, t >= 16) or fall through to the generic split door.
+fn mla_b200_split_for(t_q: usize, blocks: usize, out_dim: usize) -> Option<i32> {
+    const B200_TARGET_BLOCKS: usize = 2048;
+    if !mla_b200_decode_arm_on()
+        || t_q == 0
+        || t_q > 8
+        || blocks == 0
+        || blocks >= B200_TARGET_BLOCKS
+    {
+        return None;
+    }
+    let want = B200_TARGET_BLOCKS.div_ceil(blocks);
+    let cap = (out_dim / 32).max(1);
+    let split = want.min(cap);
+    if split <= 1 { None } else { Some(split as i32) }
+}
+
+/// Output-range split target for the B200 arm's `attn_gathered` call. Deliberately far more
+/// conservative than `mla_b200_split_for`: every split factor here repeats the FULL
+/// score/softmax tile walk (the kernel's dominant cost), so unlike the absorb/decompress
+/// splits this is only a net win if the box is occupancy/latency-bound, which is a hardware
+/// question this lane cannot answer without the B200 box (see cu/mla_attn.cu's
+/// `memra_mla_attn_gathered_split_kernel` header and LANE.md "why not slot-split"). Caps at a
+/// small fixed factor (fill roughly one extra wave, not many) rather than chasing the same
+/// ~2048-block target as the independent-output kernels.
+fn mla_b200_gathered_split_for(t_q: usize, blocks: usize, kv_rank: usize) -> Option<i32> {
+    const B200_GATHERED_MAX_SPLIT: i32 = 4;
+    if !mla_b200_decode_arm_on() || t_q == 0 || t_q > 8 || blocks == 0 || blocks >= 512 {
+        return None;
+    }
+    let want = 512usize
+        .div_ceil(blocks)
+        .min(B200_GATHERED_MAX_SPLIT as usize);
+    let cap = (kv_rank / 32).max(1);
+    let split = want.min(cap);
+    if split <= 1 { None } else { Some(split as i32) }
+}
+
+fn mla_b200_split_announce(kind: &str, t_q: usize, n_head: usize, split: i32) {
+    use std::sync::atomic::Ordering;
+    if MLA_B200_DECODE_ARM_DISPATCHES.fetch_add(1, Ordering::Relaxed) == 0 {
+        eprintln!(
+            "[mla-b200-decode-arm] engaged {kind} t={t_q} heads={n_head} split={split} \
+             (sm_100a output-range split; MEMRA_B200_MLA_DECODE_ARM=1)"
+        );
+    }
+}
+
 unsafe extern "C" {
     pub fn memra_mla_rope_interleaved_f32(
         x: *mut f32,
@@ -233,6 +309,26 @@ unsafe extern "C" {
         scale: f32,
         stream: *mut c_void,
     ) -> i32;
+    /// B200 decode-arm twin of `memra_mla_attn_gathered_f32` (MEMRA_B200_MLA_DECODE_ARM): same
+    /// per-l accumulate chain, its output range [0, kv_rank) split across `split` blocks; the
+    /// shared score/softmax tile walk (m, dsum) is recomputed IN FULL, unchanged, by every
+    /// split block — bit-identical by construction, gated in `mla_decode_arm_gate.rs`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_mla_attn_gathered_split_f32(
+        q_lat: *const f32,
+        q_pe: *const f32,
+        cache: *const f32,
+        idx: *const i32,
+        o_lat: *mut f32,
+        n_head: i32,
+        kv_rank: i32,
+        d_rope: i32,
+        t_q: i32,
+        n_slots: i32,
+        scale: f32,
+        split: i32,
+        stream: *mut c_void,
+    ) -> i32;
     /// Strided-batched BF16 tensor-core GEMM (cu/f16_prefill.cu): per batch b,
     /// `y_b[m, n] = x_b[m, k] @ w_b[n, k]^T`, f32 accumulate, y f32 or bf16 by flag.
     /// The MEMRA_MLA_TC_PREFILL absorb/decompress engine (one launch replaces the
@@ -389,6 +485,27 @@ impl Engine {
         kv_rank: usize,
     ) -> Res<()> {
         let s = self.stream();
+        // MEMRA_B200_MLA_DECODE_ARM door (checked first: sm_100a-tuned target, wider than the
+        // generic door's; both split kernels are the same one, so this is only a policy pick).
+        if let Some(split) = mla_b200_split_for(t_q, t_q * n_head, kv_rank) {
+            mla_b200_split_announce("absorb_q", t_q, n_head, split);
+            return unsafe {
+                ck(
+                    "absorb_q_split_b200",
+                    memra_mla_absorb_q_split_f32(
+                        q_nope.device_ptr(&s).0 as *const f32,
+                        wk_b.device_ptr(&s).0 as *const f32,
+                        q_lat.device_ptr_mut(&s).0 as *mut f32,
+                        t_q as i32,
+                        n_head as i32,
+                        d_nope as i32,
+                        kv_rank as i32,
+                        split,
+                        s.cu_stream() as *mut c_void,
+                    ),
+                )
+            };
+        }
         // MEMRA_MLA_DECODE_SPLIT door: same bytes at any split (see mla_decode_split_for).
         if let Some(split) = mla_decode_split_for(t_q * n_head, kv_rank) {
             mla_split_announce("absorb_q", t_q, n_head, split);
@@ -439,6 +556,26 @@ impl Engine {
         kv_rank: usize,
     ) -> Res<()> {
         let s = self.stream();
+        // MEMRA_B200_MLA_DECODE_ARM door (checked first, see mla_absorb_q above).
+        if let Some(split) = mla_b200_split_for(t_q, t_q * n_head, d_v) {
+            mla_b200_split_announce("decompress_v", t_q, n_head, split);
+            return unsafe {
+                ck(
+                    "decompress_v_split_b200",
+                    memra_mla_decompress_v_split_f32(
+                        o_lat.device_ptr(&s).0 as *const f32,
+                        wv_b.device_ptr(&s).0 as *const f32,
+                        out.device_ptr_mut(&s).0 as *mut f32,
+                        t_q as i32,
+                        n_head as i32,
+                        d_v as i32,
+                        kv_rank as i32,
+                        split,
+                        s.cu_stream() as *mut c_void,
+                    ),
+                )
+            };
+        }
         // MEMRA_MLA_DECODE_SPLIT door: same bytes at any split (see mla_decode_split_for).
         if let Some(split) = mla_decode_split_for(t_q * n_head, d_v) {
             mla_split_announce("decompress_v", t_q, n_head, split);
@@ -918,6 +1055,32 @@ impl Engine {
         scale: f32,
     ) -> Res<()> {
         let s = self.stream();
+        // MEMRA_B200_MLA_DECODE_ARM door: conservative output-range split (see
+        // mla_b200_gathered_split_for header — this repeats the score/softmax walk per split,
+        // unlike the absorb/decompress splits, so the cap is deliberately small).
+        if let Some(split) = mla_b200_gathered_split_for(t_q, t_q * n_head, kv_rank) {
+            mla_b200_split_announce("attn_gathered", t_q, n_head, split);
+            return unsafe {
+                ck(
+                    "attn_gathered_split_b200",
+                    memra_mla_attn_gathered_split_f32(
+                        q_lat.device_ptr(&s).0 as *const f32,
+                        q_pe.device_ptr(&s).0 as *const f32,
+                        cache.device_ptr(&s).0 as *const f32,
+                        idx.device_ptr(&s).0 as *const i32,
+                        o_lat.device_ptr_mut(&s).0 as *mut f32,
+                        n_head as i32,
+                        kv_rank as i32,
+                        d_rope as i32,
+                        t_q as i32,
+                        n_slots as i32,
+                        scale,
+                        split,
+                        s.cu_stream() as *mut c_void,
+                    ),
+                )
+            };
+        }
         unsafe {
             ck(
                 "attn_gathered",
