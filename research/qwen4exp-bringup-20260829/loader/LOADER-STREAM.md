@@ -165,12 +165,26 @@ not on taste:
 `/sys/fs/cgroup/system.slice/q4e-<label>.scope/memory.stat` (sampler `box/anon-sampler.sh`,
 receipt `box/anon-peak.tsv`) and cross-read from `/proc/<pid>/status:RssAnon`.
 
-| arm | binary | cap | result | peak anon |
-|---|---|---|---|---|
-| `new-cap150` | streaming, sha256 `67bd6177d6c6cb9f...` | 150 GiB | **rc=0, loaded and gated** | 116.5 GiB |
-| `old-cap150` | pre-streaming, sha256 `69c44eb85b82d4ee...` | 150 GiB | **rc=143, cgroup OOM-killed during load** | 149.4 GiB (hit the cap) |
+| arm | binary | cap | result | load | peak anon |
+|---|---|---|---|---|---|
+| `old-cap150` | pre-streaming `69c44eb85b82d4ee...` | 150 GiB | **cgroup OOM-killed during load** | — | 149.4 GiB (walked into the cap) |
+| `old-cap230` | pre-streaming `69c44eb85b82d4ee...` | 230 GiB | rc=0, argmax 10/10 | 420.5 s | **185.8 GiB** |
+| `new-cap150` | streaming `67bd6177d6c6cb9f...` | 150 GiB | **rc=0, argmax 10/10** | 457.0 s | 116.5 GiB (single sample) |
+| `new-cap150b` | streaming `67bd6177d6c6cb9f...` | 150 GiB | **rc=0, argmax 10/10** | 150.4 s | **118.9 GiB** (sampled from t=0) |
 
-`old-cap150`, the defect reproduced under the cap:
+**Peak host anon: 185.8 GiB -> 118.9 GiB, down 66.9 GiB (36%)** — the ~72 GB of expert banks
+that no longer sit on host at once, less the one-layer staging that replaced them.
+
+Why the 180 GB box died and now will not: 185.8 GiB is **199.5 GB**, so the pre-streaming
+loader needed more host memory than that box class HAS. 118.9 GiB is **127.7 GB**, leaving
+~52 GB of margin on the same box.
+
+`old-cap230` exists because `old-cap150` only proves a lower bound (">150 GiB, killed"). A cap
+above the requirement measures the real peak AND still protects the box from a runaway — the
+number in that row is what the pre-streaming loader actually needs.
+
+`old-cap150`, the defect reproduced under the cap (the kernel killed the gate process; the
+scope's `/usr/bin/time` wrapper then reported `Terminated`, rc 143):
 
 ```
 Memory cgroup out of memory: Killed process 25952 (qwen4exp_real_g)
@@ -182,10 +196,15 @@ straight into the 150 GiB wall and the cgroup killed it, exactly the shape of th
 180 GB-box OOM (`anon-rss:179739000kB`). Same binary, same artifact, same card, 4 GB less
 than the cap of headroom: the pre-streaming loader cannot load this artifact on this box class.
 
-`new-cap150` on the same cap: **loaded, `# load 457.0s`, `# logits_argmax_agreement 10/10`**,
-and `# vram post-load` on card 1 = **95283 MiB — the same VRAM to the MiB** as the
-pre-streaming reference run (`spec-ab-rep0-off`, 95283 MiB on card 0). Device residency did
-not move.
+The streaming arms on the same cap: **loaded, `# logits_argmax_agreement 10/10`**, and
+`# vram post-load` on card 1 = **95283 MiB — the same VRAM to the MiB** as the pre-streaming
+reference run (`spec-ab-rep0-off`, 95283 MiB on card 0). Device residency did not move.
+
+Load wall clocks are NOT a claim from this lane and are not comparable across these rows: the
+box was shared and page-cache state differed per arm (the same streaming binary read 457.0 s
+with a cold/contended cache and 150.4 s warm, against 420.5 s for the pre-streaming arm and
+138.2 s for the reference run). What the numbers do rule out is a load-time collapse: streaming
+per layer did not turn a ~140 s load into a multiple of itself.
 
 ### Real-artifact byte identity (`compare-identity.sh new-cap150`)
 
@@ -226,3 +245,36 @@ receipt was lost, but the rule is now unconditional and the fallback is deleted 
 timeout. Recorded here rather than quietly fixed, because the receipt has to say which arm ran
 under which conditions.
 
+### Banked receipts (`loader/box/`)
+
+| file | what |
+|---|---|
+| `new-cap150.log`, `new-cap150b.log` | streaming arms, full gate output under the 150 GiB cap |
+| `old-cap150.log` | the OOM death under the same cap |
+| `old-cap230.log` | the pre-streaming peak measured at a cap above its requirement |
+| `anon-peak.tsv` | anon sampler trace; last line per scope is that arm's peak |
+| `hidden-gate-new-cap150.tsv`, `greedy-gate-new-cap150.tsv` | the gate tables compared for identity |
+| `run-cap.sh`, `cell.sh`, `chain2.sh`, `anon-sampler.sh`, `compare-identity.sh` | the invocations, verbatim |
+| `CELL.log` | the cell's own timeline including the identity comparison output |
+
+`cell.sh` is banked as it RAN, lock-free fallback and all; `run-cap.sh` is banked in its
+corrected form (unbounded `flock -s`). The difference is the point of the lock-discipline
+section above.
+
+## Verdict
+
+The streaming loader cuts peak host anon on the real artifact from **185.8 GiB to 118.9 GiB**
+and turns a three-times-reproduced OOM kill on the cheapest 2-card box class into a clean load
+that passes the gate, while the bytes it uploads are provably unchanged: 63/63 bank projections
+byte-identical to pre-streaming goldens on the tiny fixtures, and an identical 9.9 MB
+probe-logits sha256 plus identical envelope table and greedy chains against a pre-streaming
+reference run on the real artifact. No flag, no numerics change, no new env read.
+
+Follow-ups this lane deliberately did not do, named rather than left implicit:
+
+1. **TP2 single-pass shard+model build** — removes the double read of bank bytes described
+   above. Load-time only.
+2. **Trunk f32 streaming** — the remaining ~20 GB host set. Only worth doing if a box class
+   below ~150 GB becomes interesting.
+3. **The n-gram table stays anon on purpose** (see above). Any future lane proposing to mmap it
+   owns the mid-decode page-fault question first.
