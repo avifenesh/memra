@@ -20,6 +20,23 @@
 // arm is a LOSS if cuBLASLt does not clear roughly 300 TFLOP/s on these shapes, which is
 // exactly what the gate's per-phase line and the box A/B are for.
 //
+// BUCKETED, because glm5's routing is skewed BY DESIGN. Measured on the real artifact
+// 2026-09-02: Gini 0.575 over 288 experts, the busiest expert takes 77% of a layer's tokens and
+// the median 1.3%. One uniform-n batch over all 288 therefore pads to the busiest expert's row
+// count and costs 7.17x the real work (`288 x n_pad 816 = 235,008 padded rows against 32,768
+// real`) — the first cut of this arm declined on every layer of every boot for exactly that
+// reason, which is the decline line doing its job. The fix is the standard one: sort the active
+// experts by row count, cut them into K contiguous buckets so each bucket's rows are within the
+// pad ceiling of each other, and issue ONE strided-batched call per bucket per projection. The
+// heavy head experts land in small (often singleton) buckets; the long tail shares one. K is
+// chosen per call from the measured counts, never assumed.
+//
+// The pad/unpad kernels do NOT know about buckets. They walk a `pad_map`: one entry per padded
+// row, holding either the CSR pair index that row carries or -1 for padding. That keeps them
+// one launch each whatever K is, and it is the only structure that has to be right for the
+// bucket layout to be correct — the GEMM just needs each bucket's slice to be contiguous, which
+// the caller arranges by dequanting the expert slab in BUCKET ORDER.
+//
 // WHY STRIDED-BATCHED AND NOT GROUPED. `cublasGemmGroupedBatchedEx` takes variable n per group
 // and needs no padding — and it issues on cuBLAS-INTERNAL streams that are NOT ordered with the
 // caller's. On the glm5 walk's 283-group shape that race silently destroyed the trunk and took
@@ -51,57 +68,61 @@
 #include <mutex>
 #include <tuple>
 
-// ---- pad: CSR-order f16 activations -> [n_active][n_pad][in_f], zeros past each group ----
-// One block per padded row. `ex_off` is the DEVICE CSR offset array (n_active + 1).
-static __global__ void moe_pad_act_kernel(
-        const __half* __restrict__ act, const int* __restrict__ ex_off,
-        __half* __restrict__ dst, int n_pad, int in_f){
-    const int g = blockIdx.y;
-    const int j = blockIdx.x;
-    const int lo = ex_off[g], m_e = ex_off[g + 1] - lo;
-    __half* d = dst + ((size_t)g * n_pad + j) * in_f;
-    if(j >= m_e){
+// ---- pad: CSR-order f16 activations -> the bucketed padded plane, driven by `pad_map` ----
+// One block per PADDED row. `pad_map[r]` is the CSR pair index that row carries, or -1 for a
+// pad row (zero-filled). Bucket-agnostic by construction.
+static __global__ void moe_pad_act_map_kernel(
+        const __half* __restrict__ act, const int* __restrict__ pad_map,
+        __half* __restrict__ dst, int in_f){
+    const int r = blockIdx.x + blockIdx.y * gridDim.x;
+    const int p = pad_map[r];
+    __half* d = dst + (size_t)r * in_f;
+    if(p < 0){
         for(int v = threadIdx.x; v < in_f; v += blockDim.x) d[v] = __float2half(0.0f);
         return;
     }
-    const __half* s = act + (size_t)(lo + j) * in_f;
+    const __half* s = act + (size_t)p * in_f;
     for(int v = threadIdx.x; v < in_f; v += blockDim.x) d[v] = s[v];
 }
 
-// ---- unpad: [n_active][n_pad][out_f] f32 -> CSR-order [n_pairs][out_f] with the per-pair
-// amax scale folded, the same fold the sk kernel applies in its epilogue (`acc * s0`). ----
-static __global__ void moe_unpad_scale_kernel(
-        const float* __restrict__ y_pad, const int* __restrict__ ex_off,
-        const float* __restrict__ row_scale, float* __restrict__ y,
-        int n_pad, int out_f){
-    const int g = blockIdx.y;
-    const int j = blockIdx.x;
-    const int lo = ex_off[g], m_e = ex_off[g + 1] - lo;
-    if(j >= m_e) return;
-    const int p = lo + j;
+// ---- unpad: padded f32 plane -> CSR-order [n_pairs][out_f], per-pair amax scale folded ----
+// The same fold the sk kernel applies in its epilogue (`acc * s0`). Pad rows have no consumer.
+static __global__ void moe_unpad_scale_map_kernel(
+        const float* __restrict__ y_pad, const int* __restrict__ pad_map,
+        const float* __restrict__ row_scale, float* __restrict__ y, int out_f){
+    const int r = blockIdx.x + blockIdx.y * gridDim.x;
+    const int p = pad_map[r];
+    if(p < 0) return;
     const float s = row_scale[p];
-    const float* src = y_pad + ((size_t)g * n_pad + j) * out_f;
+    const float* src = y_pad + (size_t)r * out_f;
     float* d = y + (size_t)p * out_f;
     for(int c = threadIdx.x; c < out_f; c += blockDim.x) d[c] = src[c] * s;
 }
 
-extern "C" int memra_moe_pad_act_f16(const void* act_f16, const int* ex_off_dev,
-        void* dst_f16, int n_active, int n_pad, int in_f, void* stream){
-    if(n_active <= 0 || n_pad <= 0 || in_f <= 0) return 1;
+// grid.x is capped at 65,535 by nothing, but grid.y is — and the padded row count passes
+// 65,535 at glm5 widths, so the launcher splits across x and y and the kernels recombine.
+static inline dim3 moe_pad_grid(int rows){
+    const int x = rows < 32768 ? rows : 32768;
+    const int y = (rows + x - 1) / x;
+    return dim3((unsigned)x, (unsigned)y, 1);
+}
+
+extern "C" int memra_moe_pad_act_map_f16(const void* act_f16, const int* pad_map,
+        void* dst_f16, int n_rows_padded, int in_f, void* stream){
+    if(n_rows_padded <= 0 || in_f <= 0) return 1;
     cudaStream_t st = (cudaStream_t)stream;
-    dim3 grid((unsigned)n_pad, (unsigned)n_active, 1);
-    moe_pad_act_kernel<<<grid, 256, 0, st>>>((const __half*)act_f16, ex_off_dev,
-                                             (__half*)dst_f16, n_pad, in_f);
+    moe_pad_act_map_kernel<<<moe_pad_grid(n_rows_padded), 256, 0, st>>>(
+        (const __half*)act_f16, pad_map, (__half*)dst_f16, in_f);
     cudaError_t e = cudaGetLastError();
     return e ? 1000 + (int)e : 0;
 }
 
-extern "C" int memra_moe_unpad_scale_f32(const float* y_pad, const int* ex_off_dev,
-        const float* row_scale, float* y, int n_active, int n_pad, int out_f, void* stream){
-    if(n_active <= 0 || n_pad <= 0 || out_f <= 0) return 1;
+extern "C" int memra_moe_unpad_scale_map_f32(const float* y_pad, const int* pad_map,
+        const float* row_scale, float* y, int n_rows_padded, int out_f, void* stream){
+    if(n_rows_padded <= 0 || out_f <= 0) return 1;
     cudaStream_t st = (cudaStream_t)stream;
-    dim3 grid((unsigned)n_pad, (unsigned)n_active, 1);
-    moe_unpad_scale_kernel<<<grid, 256, 0, st>>>(y_pad, ex_off_dev, row_scale, y, n_pad, out_f);
+    moe_unpad_scale_map_kernel<<<moe_pad_grid(n_rows_padded), 256, 0, st>>>(
+        y_pad, pad_map, row_scale, y, out_f);
     cudaError_t e = cudaGetLastError();
     return e ? 1000 + (int)e : 0;
 }
@@ -133,11 +154,19 @@ std::map<std::tuple<int, int, int, int, int>, BPlan>* g_plans_b = nullptr;  // p
 //   D = y   + g*n_pad*out_f(row-major [n_pad][out_f] == col-major out_f x n_pad, ldd = out_f).
 // That is the SAME mapping mode 1's grouped call uses per group (ma=out_f, na=m_e, ka=in_f,
 // lda=ldb=in_f, ldc=out_f); only the batching mechanism and the output dtype differ.
+// `*_off` are ELEMENT offsets into the three planes, so one bucket's slice is addressed without
+// the caller doing pointer arithmetic on device handles. Each bucket's experts are contiguous in
+// the slab (the caller dequants in bucket order), which is what makes the stride uniform.
 extern "C" int memra_moe_bgemm_f16_strided(
-        const void* w_f16, const void* act_f16, float* y_f32,
-        int n_active, int n_pad, int in_f, int out_f,
+        const void* w_f16, size_t w_off, const void* act_f16, size_t act_off,
+        float* y_f32, size_t y_off,
+        int batch, int n_pad, int in_f, int out_f,
         void* ws, size_t ws_bytes, void* stream_v){
-    if(n_active <= 0 || n_pad <= 0 || in_f <= 0 || out_f <= 0) return 1;
+    const int n_active = batch;
+    if(batch <= 0 || n_pad <= 0 || in_f <= 0 || out_f <= 0) return 1;
+    const __half* A = (const __half*)w_f16 + w_off;
+    const __half* B = (const __half*)act_f16 + act_off;
+    float* D = y_f32 + y_off;
     cudaStream_t stream = (cudaStream_t)stream_v;
     std::lock_guard<std::mutex> guard(g_mu_b);
     int dev = 0;
@@ -188,8 +217,8 @@ extern "C" int memra_moe_bgemm_f16_strided(
     BPlan& plan = it->second;
     if(!plan.have_algo) return 2;
     float alpha = 1.f, beta = 0.f;
-    cublasStatus_t s = cublasLtMatmul(lt, plan.op, &alpha, w_f16, plan.la, act_f16, plan.lb,
-                                      &beta, y_f32, plan.ld, y_f32, plan.ld, &plan.algo,
+    cublasStatus_t s = cublasLtMatmul(lt, plan.op, &alpha, A, plan.la, B, plan.lb,
+                                      &beta, D, plan.ld, D, plan.ld, &plan.algo,
                                       ws, ws_bytes, stream);
     if(s != CUBLAS_STATUS_SUCCESS) return 30000 + (int)s;
     return 0;

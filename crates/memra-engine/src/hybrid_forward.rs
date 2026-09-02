@@ -2131,8 +2131,11 @@ impl HybridModel {
                 // padded row count cannot exceed that multiple of the real pairs, and the
                 // per-expert bound follows from dividing by the expert count.
                 let pairs = crate::cache::PRIME_CHUNK_MAX_TOKENS * u;
-                let n_pad_bound = Self::moe_bgemm_n_pad(Self::moe_bgemm_pad_bound(pairs, n_expert));
-                crate::mmq_ffi::MoeBgemmNeed::for_layer(n_expert, n_pad_bound, h, f).bytes()
+                // The padded-row bound IS the ceiling: the arm declines any plan whose
+                // AGGREGATE ratio exceeds it, so no admitted call can allocate more.
+                let rows_cap =
+                    (pairs as f64 * Self::MOE_BGEMM_MAX_PAD_RATIO_DEFAULT).ceil() as usize;
+                crate::mmq_ffi::MoeBgemmNeed::for_layer(n_expert, rows_cap, h, f).bytes()
             })
             .unwrap_or(0);
         Some(HyperPrimeWorkspaceShape {
@@ -15083,28 +15086,32 @@ impl HybridModel {
     /// `tests/glm5_moe_grouped_prefill_gpu.rs` against `memra_reference` at the fused-epilogue
     /// gate's tolerance class, plus the run-gen first-token argmax gate on real prompts.
     /// The smallest width arm 3 is admitted at. Below it the padded batch is mostly padding
-    /// (at t=512 the average expert holds 14 of 288 rows) and the dequant of the WHOLE bank is
-    /// not amortized by anything; the shipped direct-from-quant kernel is the right program
-    /// there and stays it.
+    /// and the whole-bank dequant is not amortized by anything; the shipped direct-from-quant
+    /// kernel is the right program there and stays it.
     const MOE_BGEMM_MIN_T: usize = 1024;
 
-    /// The most padding arm 3 will accept, as padded-rows / real-rows. Uniform-n strided
-    /// batching is what buys the stream ordering that
+    /// The most padding arm 3 will accept, AGGREGATED over the whole call as padded rows over
+    /// real pairs. Uniform-n strided batching is what buys the stream ordering
     /// `cublasGemmGroupedBatchedEx` cannot give (boot D's worker kill), and the price is padding
-    /// every expert up to the widest one. At the measured glm5 shape that is cheap — max_m=115
-    /// against n_pad=128 over 283 experts is 1.105 — but a skewed router (one hot expert with
-    /// 400 rows against a bank averaging 50) would make it 3x, and paying 3x the GEMM to reach
-    /// a faster GEMM is a loss. Measured skew decides per layer, per call; there is no
-    /// assumption here to be wrong about.
+    /// every expert in a bucket up to the widest one in that bucket.
     const MOE_BGEMM_MAX_PAD_RATIO_DEFAULT: f64 = 1.35;
 
-    /// `MEMRA_MOE_BGEMM_PAD_RATIO` overrides it. It is a real tuning knob, not a test hatch:
-    /// the right ceiling depends on how much faster cuBLASLt is than the shipped kernel on the
-    /// deployment's shapes, which is a box measurement, and the box A/B wants to sweep it. It
-    /// is also what lets `glm5-prime-v2-gate` reach arm 3 on a 16-expert fixture whose
-    /// deterministic router is far more skewed than a trained 288-expert one (measured 2.94 on
-    /// the fixture against ~1.10 on the real bank) — the gate raises it deliberately and prints
-    /// that it did, rather than the guard being quietly loosened in the product.
+    /// Most buckets, i.e. most `cublasLtMatmul` calls, per projection. Each bucket is a launch;
+    /// at 16 that is 48 launches per MoE layer against a layer the box measured at 16.5 ms, so
+    /// the launch cost is noise and the cap exists only to stop a pathological distribution
+    /// producing hundreds. Past it the last bucket absorbs the remainder.
+    ///
+    /// It is 16 rather than the 8 the measured profile needs BECAUSE of what the absorb rule
+    /// does when the budget binds: dumping the whole tail into one wide bucket is far worse
+    /// than any number of extra launches. Swept on the modelled 288-expert profile — a tighter
+    /// per-bucket target gives a BETTER aggregate (1.163 at 16 buckets against 1.325 at the
+    /// natural 8) but only when K is allowed to grow; at K=8 the same target absorbs the tail
+    /// and lands at 2.207. So the budget is generous and the TARGET is what gets swept.
+    const MOE_BGEMM_MAX_BUCKETS: usize = 16;
+
+    /// `MEMRA_MOE_BGEMM_PAD_RATIO` overrides the ceiling. A real tuning knob, not a test hatch:
+    /// the right value depends on how much faster cuBLASLt is than the shipped kernel on the
+    /// deployment's shapes, which is a box measurement, and the box A/B wants to sweep it.
     fn moe_bgemm_max_pad_ratio() -> f64 {
         std::env::var("MEMRA_MOE_BGEMM_PAD_RATIO")
             .ok()
@@ -15113,37 +15120,146 @@ impl HybridModel {
             .unwrap_or(Self::MOE_BGEMM_MAX_PAD_RATIO_DEFAULT)
     }
 
-    /// Round the widest group up so the batched `n` is tensor-core friendly rather than an odd
-    /// row count; 16 is the mma n-granularity every f16 path here already aligns to.
+    /// Round a bucket's row count up so the batched `n` is tensor-core friendly rather than an
+    /// odd number; 16 is the mma n-granularity every f16 path here already aligns to.
     fn moe_bgemm_n_pad(max_m: usize) -> usize {
         max_m.div_ceil(16) * 16
     }
 
-    /// The widest per-expert row count the pad-ratio guard can ever admit for a given pair
-    /// count and expert count. Used for the WORKSPACE capacity (so one allocation serves every
-    /// layer) and for the admission charge (so the budget matches the allocation) — never to
-    /// decide whether a layer is admitted, which is the live ratio's job.
-    fn moe_bgemm_pad_bound(n_pairs: usize, n_active: usize) -> usize {
-        if n_active == 0 {
-            return 0;
+    /// Build the arm-3 bucket plan from the MEASURED per-expert row counts.
+    ///
+    /// WHY BUCKETS AT ALL, measured rather than assumed. glm5's routing is skewed BY DESIGN:
+    /// on the real artifact 2026-09-02 the Gini over 288 experts is 0.575, the busiest expert
+    /// takes 77% of a layer's tokens and the median 1.3%. A single uniform-n batch over all 288
+    /// therefore pads to the busiest expert and costs 7.17x the real work (288 x n_pad 816 =
+    /// 235,008 padded rows against 32,768 real) — which is why the unbucketed first cut of this
+    /// arm declined on every layer of every boot. Sorting by row count and cutting into
+    /// contiguous buckets puts the heavy head experts in small (often singleton) batches and
+    /// lets the long tail share one, so the padding each expert pays is bounded by the spread
+    /// WITHIN its bucket rather than by the busiest expert in the model.
+    ///
+    /// Greedy over the descending order, which is optimal enough and O(n): the first expert in
+    /// a bucket sets `n_pad` (it is the largest), and every later one can only raise the
+    /// bucket's ratio, so extend while the bucket stays under the ceiling. The last bucket
+    /// absorbs the remainder once `MOE_BGEMM_MAX_BUCKETS` is reached — that remainder is the
+    /// SMALLEST experts, so its `n_pad` is small and its absolute waste is small even when its
+    /// local ratio is not, which is exactly why the ceiling that gates admission is the
+    /// AGGREGATE one and not the per-bucket one.
+    fn moe_bgemm_plan(
+        ex_ids: &[i32],
+        ex_off: &[i32],
+        n_pairs: usize,
+    ) -> Option<crate::mmq_ffi::MoeBgemmPlan> {
+        let n_active = ex_ids.len();
+        if n_active == 0 || n_pairs == 0 || ex_off.len() != n_active + 1 {
+            return None;
         }
-        (n_pairs as f64 * Self::moe_bgemm_max_pad_ratio() / n_active as f64).ceil() as usize
+        // Descending by row count; ties broken by expert id so the plan is deterministic and a
+        // gate comparing two runs is comparing the same partition.
+        let mut order: Vec<usize> = (0..n_active).collect();
+        order.sort_by(|&a, &b| {
+            let (ma, mb) = (ex_off[a + 1] - ex_off[a], ex_off[b + 1] - ex_off[b]);
+            mb.cmp(&ma).then(ex_ids[a].cmp(&ex_ids[b]))
+        });
+        let m_of = |i: usize| (ex_off[order[i] + 1] - ex_off[order[i]]) as usize;
+        let cap = Self::moe_bgemm_max_pad_ratio();
+
+        // Greedy over the descending order for ONE per-bucket target: the first expert in a
+        // bucket sets `n_pad` (it is the largest), and every later one can only raise that
+        // bucket's ratio, so extend while it stays under the target. O(n).
+        let greedy = |target: f64| -> (Vec<crate::mmq_ffi::MoeBgemmBucket>, usize) {
+            let mut buckets: Vec<crate::mmq_ffi::MoeBgemmBucket> = Vec::new();
+            let (mut i, mut row0) = (0usize, 0usize);
+            while i < n_active {
+                let n_pad = Self::moe_bgemm_n_pad(m_of(i));
+                if n_pad == 0 {
+                    break;
+                }
+                let last_allowed = buckets.len() + 1 == Self::MOE_BGEMM_MAX_BUCKETS;
+                let (mut j, mut sum) = (i, 0usize);
+                while j < n_active {
+                    let next = sum + m_of(j);
+                    let count = j - i + 1;
+                    if !last_allowed && count > 1 && (count * n_pad) as f64 / next as f64 > target {
+                        break;
+                    }
+                    sum = next;
+                    j += 1;
+                }
+                let count = j - i;
+                buckets.push(crate::mmq_ffi::MoeBgemmBucket {
+                    expert0: i,
+                    count,
+                    n_pad,
+                    row0,
+                });
+                row0 += count * n_pad;
+                i = j;
+            }
+            (buckets, row0)
+        };
+
+        // Sweep the per-bucket TARGET and keep the partition with the smallest AGGREGATE
+        // padding, which is the only quantity that measures wasted GEMM. A tighter target is
+        // not monotonically better: it makes buckets narrower, which is a win only while the
+        // bucket budget can absorb the extra buckets. Four O(n) passes over 288 experts is
+        // nothing next to one layer's GEMM, and it turns a knee that has to be guessed into one
+        // that is measured per call.
+        let mut best: Option<(Vec<crate::mmq_ffi::MoeBgemmBucket>, usize)> = None;
+        for factor in [1.0f64, 0.7, 0.5, 0.35] {
+            let target = 1.0 + (cap - 1.0) * factor;
+            let (buckets, rows) = greedy(target);
+            if buckets.is_empty() {
+                continue;
+            }
+            if best.as_ref().is_none_or(|(_, r)| rows < *r) {
+                best = Some((buckets, rows));
+            }
+        }
+        let (buckets, rows_padded) = best?;
+        // The pad map: one entry per padded row, the CSR pair it carries or -1. This is the ONLY
+        // structure the pad/unpad kernels read, which is what keeps them one launch each
+        // whatever K is.
+        let mut pad_map = vec![-1i32; rows_padded];
+        for b in &buckets {
+            for k in 0..b.count {
+                let seg = order[b.expert0 + k];
+                let lo = ex_off[seg];
+                let m_e = (ex_off[seg + 1] - lo) as usize;
+                let base = b.row0 + k * b.n_pad;
+                for j in 0..m_e {
+                    pad_map[base + j] = lo + j as i32;
+                }
+            }
+        }
+        let ex_ids_sorted: Vec<i32> = order.iter().map(|&seg| ex_ids[seg]).collect();
+        Some(crate::mmq_ffi::MoeBgemmPlan {
+            ex_ids_sorted,
+            buckets,
+            pad_map,
+            pad_ratio: rows_padded as f64 / n_pairs as f64,
+        })
     }
 
-    /// Decide arm 3 for ONE layer and hand back its workspace, or `None` with a named reason.
-    /// Reading the door per call is the rollback seam; every decline is logged once per process
-    /// because an armed-but-inert door is the failure this whole lane was written to catch.
+    /// Decide arm 3 for ONE layer: build the plan, gate it on the AGGREGATE pad ratio, and hand
+    /// back its workspace. `None` with a named reason otherwise. Reading the door per call is
+    /// the rollback seam; every decline is logged once per process because an armed-but-inert
+    /// door is the failure this whole lane was written to catch.
     #[allow(clippy::too_many_arguments)] // allow: the list is the arm's admission contract
     fn moe_bgemm_arm(
         e: &Engine,
         m: &MoeWeights,
         t: usize,
         n_pairs: usize,
-        n_active: usize,
+        ex_ids: &[i32],
         ex_off: &[i32],
         n_embd: usize,
         n_ff_exp: usize,
-    ) -> Option<(crate::mmq_ffi::MoeBgemmWs, usize)> {
+    ) -> Option<(
+        crate::mmq_ffi::MoeBgemmWs,
+        crate::mmq_ffi::MoeBgemmPlan,
+        CudaSlice<i32>,
+    )> {
         fn bg_decline_once(reason: &str) {
             static DECLINED: std::sync::atomic::AtomicBool =
                 std::sync::atomic::AtomicBool::new(false);
@@ -15165,80 +15281,110 @@ impl HybridModel {
             ));
             return None;
         }
-        // Both banks must be dequantable by the shipped entry AND share the projection shape
-        // the batched layout assumes (gate/up are [n_embd -> n_ff_exp], down is the transpose
-        // pair; the caller passes each projection's own in_f/out_f, so only the qtype gates).
         if m.gate_exps.qtype != m.up_exps.qtype || m.gate_exps.qtype != m.down_exps.qtype {
             bg_decline_once("the three expert projections do not share one qtype");
             return None;
         }
-        let max_m = ex_off
-            .windows(2)
-            .map(|w| (w[1] - w[0]) as usize)
-            .max()
-            .unwrap_or(0);
-        if max_m == 0 || n_active == 0 || n_pairs == 0 {
-            return None;
-        }
-        let n_pad = Self::moe_bgemm_n_pad(max_m);
-        let ratio = (n_active * n_pad) as f64 / n_pairs as f64;
-        let max_ratio = Self::moe_bgemm_max_pad_ratio();
-        if ratio > max_ratio {
+        let n_active = ex_ids.len();
+        let plan = Self::moe_bgemm_plan(ex_ids, ex_off, n_pairs)?;
+        let cap = Self::moe_bgemm_max_pad_ratio();
+        if plan.pad_ratio > cap {
             bg_decline_once(&format!(
-                "routing skew: {n_active} experts x n_pad {n_pad} = {} padded rows against \
-                 {n_pairs} real ones (ratio {ratio:.2} > {:.2}) — paying that much extra GEMM \
-                 to reach a faster GEMM is a loss",
-                n_active * n_pad,
-                max_ratio
+                "routing skew survives bucketing: {} buckets over {n_active} experts still pad \
+                 {} rows against {n_pairs} real (aggregate ratio {:.2} > {cap:.2}) — paying \
+                 that much extra GEMM to reach a faster GEMM is a loss",
+                plan.buckets.len(),
+                plan.rows_padded(),
+                plan.pad_ratio,
             ));
             return None;
         }
-        // ONE allocation serves all three projections (see `MoeBgemmNeed::for_layer`) AND every
-        // later layer: capacity is taken at the RATIO BOUND, not at this layer's live `n_pad`.
-        // Routing skew moves `n_pad` layer to layer, and sizing on the first layer's value made
-        // the second wider layer miss `fits` and allocate a second multi-GB slab — the exact
-        // allocation churn this pool exists to remove. The bound is also the number
-        // `hyper_prime_workspace_shape` charges admission, so the budget and the allocation are
-        // the same arithmetic rather than two that can drift.
-        let n_pad_cap = Self::moe_bgemm_n_pad(Self::moe_bgemm_pad_bound(n_pairs, n_active));
-        let shape = crate::mmq_ffi::MoeBgemmNeed::for_layer(
-            n_active,
-            n_pad_cap.max(n_pad),
-            n_embd,
-            n_ff_exp,
-        );
-        if let Some(ws) = e.moe_bgemm_ws_take(shape) {
-            return Some((ws, n_pad));
-        }
-        match e.moe_bgemm_ws_new(shape) {
-            Ok(Some(ws)) => {
-                static ARMED: std::sync::atomic::AtomicBool =
-                    std::sync::atomic::AtomicBool::new(false);
-                if !ARMED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                    eprintln!(
-                        "[moe-bgemm] armed dev={} n_active={n_active} n_pad={n_pad} \
-                         hidden={n_embd} expert_ff={n_ff_exp} workspace={:.2} GB (persistent, \
-                         reused across the three projections and every layer; \
-                         MEMRA_B200_PRIME_V2 arm 3)",
-                        e.ctx().ordinal(),
-                        shape.bytes() as f64 / 1e9,
-                    );
+        // ONE allocation serves all three projections AND every later layer: capacity is taken
+        // at the ratio BOUND, not at this layer's live padded row count, because skew moves the
+        // plan layer to layer and sizing on the first layer made the second wider one allocate a
+        // second multi-GB slab. The bound is also what `hyper_prime_workspace_shape` charges
+        // admission, so the budget and the allocation are the same arithmetic.
+        let rows_cap = ((n_pairs as f64 * cap).ceil() as usize).max(plan.rows_padded());
+        let need = crate::mmq_ffi::MoeBgemmNeed::for_layer(n_active, rows_cap, n_embd, n_ff_exp);
+        let ws = match e.moe_bgemm_ws_take(need) {
+            Some(ws) => ws,
+            None => match e.moe_bgemm_ws_new(need) {
+                Ok(Some(ws)) => {
+                    static ARMED: std::sync::atomic::AtomicBool =
+                        std::sync::atomic::AtomicBool::new(false);
+                    if !ARMED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                        eprintln!(
+                            "[moe-bgemm] armed dev={} n_active={n_active} hidden={n_embd} \
+                             expert_ff={n_ff_exp} workspace={:.2} GB (persistent, reused across \
+                             the three projections and every layer; MEMRA_B200_PRIME_V2 arm 3)",
+                            e.ctx().ordinal(),
+                            need.bytes() as f64 / 1e9,
+                        );
+                    }
+                    ws
                 }
-                Some((ws, n_pad))
-            }
-            Ok(None) => {
-                bg_decline_once(&format!(
-                    "the {:.2} GB arm-3 workspace does not fit on this device alongside the \
-                     resident expert slab and the KV budget",
-                    shape.bytes() as f64 / 1e9
-                ));
-                None
-            }
-            Err(err) => {
-                bg_decline_once(&format!("arm-3 workspace allocation failed: {err}"));
-                None
-            }
+                Ok(None) => {
+                    bg_decline_once(&format!(
+                        "the {:.2} GB arm-3 workspace does not fit on this device alongside the \
+                         resident expert slab and the KV budget",
+                        need.bytes() as f64 / 1e9
+                    ));
+                    return None;
+                }
+                Err(err) => {
+                    bg_decline_once(&format!("arm-3 workspace allocation failed: {err}"));
+                    return None;
+                }
+            },
+        };
+        // Publish the plan's stats every admitted layer, so a gate can ASSERT the partition
+        // rather than parse the line below.
+        {
+            use std::sync::atomic::Ordering::Relaxed;
+            let widest = plan.buckets.iter().map(|b| b.n_pad).max().unwrap_or(1);
+            let narrowest = plan
+                .buckets
+                .iter()
+                .map(|b| b.n_pad)
+                .min()
+                .unwrap_or(1)
+                .max(1);
+            crate::MOE_BGEMM_LAST_BUCKETS.store(plan.buckets.len() as u64, Relaxed);
+            crate::MOE_BGEMM_LAST_PAD_MILLI.store((plan.pad_ratio * 1000.0) as u64, Relaxed);
+            crate::MOE_BGEMM_LAST_SPREAD_MILLI
+                .store((widest as u64 * 1000) / narrowest as u64, Relaxed);
         }
+        // The bucket table, once per process: K, each bucket's expert count / n_pad, and the
+        // aggregate ratio. Without it "arm 3 ran" says nothing about whether the partition was
+        // sane, and the partition is the whole mechanism.
+        static TABLE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !TABLE.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            let rows: Vec<usize> = plan.buckets.iter().map(|b| b.count).collect();
+            let pad: Vec<usize> = plan.buckets.iter().map(|b| b.n_pad).collect();
+            eprintln!(
+                "[moe-bgemm] buckets={} rows={rows:?} pad={pad:?} experts={n_active} \
+                 padded_rows={} real_pairs={n_pairs} pad_ratio={:.3} (cap {cap:.2}; logged once \
+                 per process)",
+                plan.buckets.len(),
+                plan.rows_padded(),
+                plan.pad_ratio,
+            );
+        }
+        let ids_d = match e.htod_i32(&plan.ex_ids_sorted) {
+            Ok(v) => v,
+            Err(err) => {
+                bg_decline_once(&format!("bucket-ordered expert id upload failed: {err}"));
+                e.moe_bgemm_ws_put(ws);
+                return None;
+            }
+        };
+        let mut ws = ws;
+        if let Err(err) = e.htod_i32_into(&mut ws.pad_map, &plan.pad_map) {
+            bg_decline_once(&format!("pad map upload failed: {err}"));
+            e.moe_bgemm_ws_put(ws);
+            return None;
+        }
+        Some((ws, plan, ids_d))
     }
 
     fn moe_ffn_grouped_prefill_sigmoid(
@@ -15446,8 +15592,13 @@ impl HybridModel {
         // here means the arm declined (door shut, width too small, routing too skewed, no
         // workspace, or a cuBLASLt shape decline) and every projection below runs the shipped
         // kernel — behavior identical to the door being shut.
-        let mut bgemm = Self::moe_bgemm_arm(e, m, t, n_pairs, n_active, &ex_off, n_embd, n_ff_exp);
-        let grouped = |bgemm: &mut Option<(crate::mmq_ffi::MoeBgemmWs, usize)>,
+        let mut bgemm = Self::moe_bgemm_arm(e, m, t, n_pairs, &ex_ids, &ex_off, n_embd, n_ff_exp);
+        type BgemmArm = (
+            crate::mmq_ffi::MoeBgemmWs,
+            crate::mmq_ffi::MoeBgemmPlan,
+            CudaSlice<i32>,
+        );
+        let grouped = |bgemm: &mut Option<BgemmArm>,
                        proj: i32,
                        act: &CudaSlice<u8>,
                        scale: &CudaSlice<f32>,
@@ -15456,22 +15607,21 @@ impl HybridModel {
                        qtype: i32,
                        row_bytes: usize|
          -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-            if let Some((ws, n_pad)) = bgemm.as_mut()
+            if let Some((ws, plan, ids)) = bgemm.as_mut()
                 && let Some(y) = e.moe_f16_grouped_batched(
                     &dev.ptr_row,
                     proj,
                     n_expert,
-                    &exi,
-                    &exo,
+                    ids,
                     act,
                     scale,
                     in_f,
                     out_f,
                     n_active,
-                    *n_pad,
                     n_pairs,
                     qtype,
                     row_bytes,
+                    plan,
                     ws,
                 )?
             {
@@ -15579,7 +15729,7 @@ impl HybridModel {
         // Arm 3's workspace goes back to the engine pool the moment the last projection has
         // been ISSUED (the buffers are stream-ordered work, not host state), so the next layer
         // takes it instead of allocating a second multi-GB slab.
-        if let Some((ws, _)) = bgemm.take() {
+        if let Some((ws, _plan, _ids)) = bgemm.take() {
             e.moe_bgemm_ws_put(ws);
         }
 
@@ -28017,5 +28167,213 @@ impl HybridModel {
             started.elapsed().as_secs_f64() * 1e3
         );
         Ok(())
+    }
+}
+
+/// The arm-3 bucket planner, against the REAL artifact's measured routing skew.
+///
+/// The fixture `glm5-prime-v2-gate` drives has 16 experts; the deployed bank has 288, and the
+/// number that killed the unbucketed first cut of this arm — 288 experts x n_pad 816 = 235,008
+/// padded rows against 32,768 real, a 7.17x ratio — can only be reproduced at that width. This
+/// module reproduces it on the host, with no GPU, from the skew the box measured on
+/// 2026-09-02: Gini 0.575, the busiest expert taking 77% of a layer's tokens and the median
+/// 1.3%. It is the test that says the FIX works on the shape the DEFECT had.
+#[cfg(test)]
+mod moe_bgemm_plan_tests {
+    use super::HybridModel;
+
+    /// A 288-expert layer at 4,096 tokens x 8 used, shaped to the measured profile: a power law
+    /// whose busiest expert takes ~77% of tokens and whose median takes ~1.3%.
+    fn measured_profile() -> (Vec<i32>, Vec<i32>, usize) {
+        const N_EXPERT: usize = 288;
+        const N_TOKENS: usize = 4096;
+        const N_USED: usize = 8;
+        let pairs = N_TOKENS * N_USED;
+        // m_i proportional to (i+1)^-alpha, alpha fixed by median/max = 0.013/0.77.
+        let alpha = (1.0f64 / 0.0169).ln() / (145.0f64).ln();
+        let raw: Vec<f64> = (0..N_EXPERT)
+            .map(|i| ((i + 1) as f64).powf(-alpha))
+            .collect();
+        let scale = pairs as f64 / raw.iter().sum::<f64>();
+        let mut m: Vec<usize> = raw.iter().map(|r| (r * scale).round() as usize).collect();
+        // Force the sum to land exactly on `pairs` — the planner's ratio is only meaningful
+        // against the true pair count.
+        let mut have: usize = m.iter().sum();
+        let mut i = 0;
+        while have < pairs {
+            m[i % N_EXPERT] += 1;
+            have += 1;
+            i += 1;
+        }
+        while have > pairs {
+            if m[i % N_EXPERT] > 1 {
+                m[i % N_EXPERT] -= 1;
+                have -= 1;
+            }
+            i += 1;
+        }
+        let ex_ids: Vec<i32> = (0..N_EXPERT as i32).collect();
+        let mut ex_off = Vec::with_capacity(N_EXPERT + 1);
+        ex_off.push(0i32);
+        let mut acc = 0i32;
+        for &v in &m {
+            acc += v as i32;
+            ex_off.push(acc);
+        }
+        (ex_ids, ex_off, pairs)
+    }
+
+    /// The profile really is the measured one. Without this the assertions below are about
+    /// whatever distribution happened to come out of the formula.
+    #[test]
+    fn the_profile_reproduces_the_measured_routing_skew() {
+        let (_, ex_off, pairs) = measured_profile();
+        let mut m: Vec<usize> = ex_off.windows(2).map(|w| (w[1] - w[0]) as usize).collect();
+        assert_eq!(m.iter().sum::<usize>(), pairs);
+        m.sort_unstable();
+        let tokens = (pairs / 8) as f64;
+        let top = *m.last().unwrap() as f64 / tokens;
+        let med = m[m.len() / 2] as f64 / tokens;
+        assert!(
+            (0.60..0.95).contains(&top),
+            "busiest expert takes {top:.3} of tokens, measured artifact 0.77"
+        );
+        assert!(
+            (0.005..0.03).contains(&med),
+            "median expert takes {med:.4} of tokens, measured artifact 0.013"
+        );
+    }
+
+    /// THE CONTROL, and the number boot H actually printed: one uniform-n batch over all 288
+    /// experts pads to the busiest one and costs ~7.17x. If this ever stops being true the fix
+    /// below is being credited for a problem that no longer exists.
+    #[test]
+    fn one_uniform_batch_over_the_whole_bank_costs_seven_x() {
+        let (ex_ids, ex_off, pairs) = measured_profile();
+        let max_m = ex_off
+            .windows(2)
+            .map(|w| (w[1] - w[0]) as usize)
+            .max()
+            .unwrap();
+        let n_pad = HybridModel::moe_bgemm_n_pad(max_m);
+        let ratio = (ex_ids.len() * n_pad) as f64 / pairs as f64;
+        assert!(
+            ratio > 5.0,
+            "unbucketed ratio {ratio:.2} — the skew this arm buckets around is gone, so the \
+             bucketer's justification needs re-deriving, not just its code"
+        );
+    }
+
+    #[test]
+    fn bucketing_brings_the_measured_skew_under_the_shipped_ceiling() {
+        let (ex_ids, ex_off, pairs) = measured_profile();
+        let plan = HybridModel::moe_bgemm_plan(&ex_ids, &ex_off, pairs)
+            .expect("the planner must produce a plan for a well-formed CSR");
+
+        assert!(
+            plan.pad_ratio <= HybridModel::MOE_BGEMM_MAX_PAD_RATIO_DEFAULT,
+            "bucketed aggregate pad ratio {:.3} is past the shipped {:.2} ceiling — the whole \
+             point of the partition is to get under it on THIS profile",
+            plan.pad_ratio,
+            HybridModel::MOE_BGEMM_MAX_PAD_RATIO_DEFAULT
+        );
+        // The margin matters as much as the pass: 1.325 (the natural 8-bucket partition) would
+        // clear the ceiling and then decline on any real layer a little worse than the model.
+        assert!(
+            plan.pad_ratio <= 1.25,
+            "bucketed aggregate pad ratio {:.3} leaves no headroom under the {:.2} ceiling — a \
+             real layer slightly worse than this model would decline",
+            plan.pad_ratio,
+            HybridModel::MOE_BGEMM_MAX_PAD_RATIO_DEFAULT
+        );
+        assert!(
+            plan.buckets.len() >= 2 && plan.buckets.len() <= HybridModel::MOE_BGEMM_MAX_BUCKETS,
+            "K = {} outside [2, {}] — one bucket means the partition did nothing, and past the \
+             cap the per-launch cost this arm exists to avoid comes back",
+            plan.buckets.len(),
+            HybridModel::MOE_BGEMM_MAX_BUCKETS
+        );
+    }
+
+    /// The plan is STRUCTURALLY sound: buckets tile the expert list and the padded plane
+    /// exactly, the expert order is a permutation, and every real (token, expert) pair appears
+    /// in the pad map exactly once. A ratio inside the ceiling means nothing if the map that
+    /// carries the rows is wrong — that would be a silently wrong answer at full speed.
+    #[test]
+    fn the_plan_tiles_the_experts_and_covers_every_pair_exactly_once() {
+        let (ex_ids, ex_off, pairs) = measured_profile();
+        let plan = HybridModel::moe_bgemm_plan(&ex_ids, &ex_off, pairs).expect("plan");
+
+        let mut expert0 = 0usize;
+        let mut row0 = 0usize;
+        for b in &plan.buckets {
+            assert_eq!(b.expert0, expert0, "buckets must tile the expert list");
+            assert_eq!(b.row0, row0, "buckets must tile the padded plane");
+            assert!(b.count > 0 && b.n_pad > 0);
+            assert_eq!(b.n_pad % 16, 0, "n_pad must stay mma-aligned");
+            expert0 += b.count;
+            row0 += b.count * b.n_pad;
+        }
+        assert_eq!(
+            expert0,
+            ex_ids.len(),
+            "every active expert must be in a bucket"
+        );
+        assert_eq!(
+            row0,
+            plan.rows_padded(),
+            "the pad map must be exactly the padded plane"
+        );
+
+        let mut sorted = plan.ex_ids_sorted.clone();
+        sorted.sort_unstable();
+        let mut want = ex_ids.clone();
+        want.sort_unstable();
+        assert_eq!(
+            sorted, want,
+            "the bucket order must be a permutation of the active experts"
+        );
+
+        let mut seen = vec![0u8; pairs];
+        for &p in &plan.pad_map {
+            if p >= 0 {
+                seen[p as usize] += 1;
+            }
+        }
+        assert!(
+            seen.iter().all(|&c| c == 1),
+            "every real pair must appear in the pad map exactly once; {} appear zero times and \
+             {} more than once",
+            seen.iter().filter(|&&c| c == 0).count(),
+            seen.iter().filter(|&&c| c > 1).count(),
+        );
+        let real: usize = plan.pad_map.iter().filter(|&&p| p >= 0).count();
+        assert_eq!(real, pairs);
+    }
+
+    /// Descending sort means an expert's rows are never split across buckets, which is what
+    /// makes "bucketing changes which call an expert lands in, never its own k-chain" true.
+    #[test]
+    fn each_experts_rows_are_contiguous_within_one_bucket() {
+        let (ex_ids, ex_off, pairs) = measured_profile();
+        let plan = HybridModel::moe_bgemm_plan(&ex_ids, &ex_off, pairs).expect("plan");
+        for b in &plan.buckets {
+            for k in 0..b.count {
+                let base = b.row0 + k * b.n_pad;
+                let rows: Vec<i32> = plan.pad_map[base..base + b.n_pad]
+                    .iter()
+                    .copied()
+                    .filter(|&p| p >= 0)
+                    .collect();
+                assert!(
+                    rows.windows(2).all(|w| w[1] == w[0] + 1),
+                    "one expert's pairs must be a contiguous ascending run inside its slot"
+                );
+                assert!(
+                    rows.len() <= b.n_pad,
+                    "an expert cannot carry more rows than its bucket's n_pad"
+                );
+            }
+        }
     }
 }

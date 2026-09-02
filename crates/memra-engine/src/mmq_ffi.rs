@@ -736,45 +736,87 @@ mod grouped_fp8_tests {
     }
 }
 
+/// One bucket of the arm-3 GEMM: `count` experts, contiguous in the slab, each padded to
+/// `n_pad` rows, starting at padded row `row0`. Every bucket is one `cublasLtMatmul` call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct MoeBgemmBucket {
+    /// Index of this bucket's first expert in the BUCKET-ORDERED expert list (which is also its
+    /// index in the dequanted slab, because the slab is dequanted in that order).
+    pub expert0: usize,
+    pub count: usize,
+    pub n_pad: usize,
+    /// First padded row of this bucket in the padded activation/output planes.
+    pub row0: usize,
+}
+
+/// The per-call arm-3 plan: the bucket-ordered expert list, the buckets over it, and the
+/// pad map that makes the pad/unpad kernels bucket-agnostic.
+#[derive(Debug, Clone)]
+pub(crate) struct MoeBgemmPlan {
+    /// Expert ids in BUCKET order — what gets uploaded as `ex_ids` so the dequant writes the
+    /// slab in that order and every bucket's slice is contiguous.
+    pub ex_ids_sorted: Vec<i32>,
+    pub buckets: Vec<MoeBgemmBucket>,
+    /// One entry per padded row: the CSR pair index it carries, or -1 for padding.
+    pub pad_map: Vec<i32>,
+    /// Padded rows / real pairs, over the WHOLE call. This is the number the ceiling gates,
+    /// because it is the only one that measures wasted GEMM.
+    pub pad_ratio: f64,
+}
+
+impl MoeBgemmPlan {
+    pub fn rows_padded(&self) -> usize {
+        self.pad_map.len()
+    }
+}
+
 /// The element counts one arm-3 call needs from its workspace. Stated as ELEMENTS, not as a
 /// shape, because the three projections do not share one: gate/up are `[n_ff_exp, n_embd]` and
 /// down is `[n_embd, n_ff_exp]`, so `in_f` and `out_f` SWAP between them while the weight
 /// product `in_f * out_f` stays identical. One allocation therefore serves all three, and the
-/// pool compares capacity rather than shape — `n_pad` also moves with routing skew layer to
-/// layer, and regrowing on every move would reintroduce the allocation churn this pool exists
-/// to remove.
+/// pool compares capacity rather than shape — the padded row count also moves with routing skew
+/// layer to layer, and regrowing on every move would reintroduce the allocation churn this pool
+/// exists to remove.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct MoeBgemmNeed {
     /// `[n_active][out_f][in_f]` f16 dequanted weight slab.
     pub w_elems: usize,
-    /// `[n_active][n_pad][in_f]` f16 padded activation.
+    /// `[rows_padded][in_f]` f16 padded activation.
     pub act_elems: usize,
-    /// `[n_active][n_pad][out_f]` f32 padded output.
+    /// `[rows_padded][out_f]` f32 padded output.
     pub y_elems: usize,
+    /// `[rows_padded]` i32 pad map.
+    pub map_elems: usize,
 }
 
 impl MoeBgemmNeed {
     /// The allocation an arm-3 workspace must cover to serve EVERY projection of one MoE layer:
     /// the weight product is projection-invariant, and the activation/output planes take the
     /// wider of the two feature widths.
-    pub fn for_layer(n_active: usize, n_pad: usize, n_embd: usize, n_ff_exp: usize) -> Self {
+    pub fn for_layer(n_active: usize, rows_padded: usize, n_embd: usize, n_ff_exp: usize) -> Self {
         let wide = n_embd.max(n_ff_exp);
         MoeBgemmNeed {
             w_elems: n_active * n_embd * n_ff_exp,
-            act_elems: n_active * n_pad * wide,
-            y_elems: n_active * n_pad * wide,
+            act_elems: rows_padded * wide,
+            y_elems: rows_padded * wide,
+            map_elems: rows_padded,
         }
     }
     /// Total device bytes, including the cuBLASLt scratch. This is the function the server's
     /// admission arithmetic calls, so the number in the workspace budget and the number
     /// actually allocated cannot drift.
     pub fn bytes(&self) -> usize {
-        self.w_elems * 2 + self.act_elems * 2 + self.y_elems * 4 + MOE_BGEMM_LT_WS_BYTES
+        self.w_elems * 2
+            + self.act_elems * 2
+            + self.y_elems * 4
+            + self.map_elems * 4
+            + MOE_BGEMM_LT_WS_BYTES
     }
     fn covers(&self, need: &MoeBgemmNeed) -> bool {
         self.w_elems >= need.w_elems
             && self.act_elems >= need.act_elems
             && self.y_elems >= need.y_elems
+            && self.map_elems >= need.map_elems
     }
 }
 
@@ -788,6 +830,7 @@ pub(crate) struct MoeBgemmWs {
     pub w_f16: CudaSlice<u8>,
     pub act_pad: CudaSlice<u8>,
     pub y_pad: CudaSlice<f32>,
+    pub pad_map: CudaSlice<i32>,
     pub lt: CudaSlice<u8>,
     cap: MoeBgemmNeed,
 }
@@ -807,10 +850,11 @@ impl Engine {
         &self,
         need: MoeBgemmNeed,
     ) -> Result<Option<MoeBgemmWs>, Box<dyn std::error::Error>> {
-        let (Ok(w_f16), Ok(act_pad), Ok(y_pad), Ok(lt)) = (
+        let (Ok(w_f16), Ok(act_pad), Ok(y_pad), Ok(pad_map), Ok(lt)) = (
             self.alloc_uninit::<u8>(need.w_elems * 2),
             self.alloc_uninit::<u8>(need.act_elems * 2),
             self.alloc_uninit::<f32>(need.y_elems),
+            self.alloc_uninit::<i32>(need.map_elems),
             self.alloc_uninit::<u8>(MOE_BGEMM_LT_WS_BYTES),
         ) else {
             return Ok(None);
@@ -819,6 +863,7 @@ impl Engine {
             w_f16,
             act_pad,
             y_pad,
+            pad_map,
             lt,
             cap: need,
         }))
@@ -1173,37 +1218,39 @@ unsafe extern "C" {
     ) -> i32;
 
     // ---- MoE grouped f16 GEMM (cu/moe_f16_grouped.cu, round 46 arc 2) ----
-    /// MEMRA_B200_PRIME_V2 arm 3 (cu/moe_f16_batched.cu): CSR-order f16 activations ->
-    /// `[n_active][n_pad][in_f]`, zero-filled past each group's real rows.
-    pub fn memra_moe_pad_act_f16(
+    /// MEMRA_B200_PRIME_V2 arm 3 (cu/moe_f16_batched.cu): CSR-order f16 activations -> the
+    /// BUCKETED padded plane. `pad_map[r]` is the CSR pair index padded row `r` carries, or -1
+    /// for a pad row. Bucket-agnostic: one launch whatever K is.
+    pub fn memra_moe_pad_act_map_f16(
         act_f16: *const core::ffi::c_void,
-        ex_off_dev: *const i32,
+        pad_map: *const i32,
         dst_f16: *mut core::ffi::c_void,
-        n_active: i32,
-        n_pad: i32,
+        n_rows_padded: i32,
         in_f: i32,
         stream: *mut core::ffi::c_void,
     ) -> i32;
-    /// Arm 3: `[n_active][n_pad][out_f]` f32 -> CSR-order `[n_pairs][out_f]` with the per-pair
-    /// amax scale folded, the same fold the sk kernel applies in its epilogue.
-    pub fn memra_moe_unpad_scale_f32(
+    /// Arm 3: the padded f32 plane -> CSR-order `[n_pairs][out_f]` with the per-pair amax scale
+    /// folded, the same fold the sk kernel applies in its epilogue. Pad rows have no consumer.
+    pub fn memra_moe_unpad_scale_map_f32(
         y_pad: *const f32,
-        ex_off_dev: *const i32,
+        pad_map: *const i32,
         row_scale: *const f32,
         y: *mut f32,
-        n_active: i32,
-        n_pad: i32,
+        n_rows_padded: i32,
         out_f: i32,
         stream: *mut core::ffi::c_void,
     ) -> i32;
-    /// Arm 3: ONE cuBLASLt strided-batched f16 matmul per projection, on the caller's stream.
-    /// `rc == 2` is a cuBLASLt shape DECLINE (no heuristic), not an error — the caller falls
-    /// back to the shipped kernel and announces it once.
+    /// Arm 3: ONE cuBLASLt strided-batched f16 matmul per BUCKET per projection, on the
+    /// caller's stream. `*_off` are element offsets into the three planes. `rc == 2` is a
+    /// cuBLASLt shape DECLINE (no heuristic), not an error.
     pub fn memra_moe_bgemm_f16_strided(
         w_f16: *const core::ffi::c_void,
+        w_off: usize,
         act_f16: *const core::ffi::c_void,
+        act_off: usize,
         y_f32: *mut f32,
-        n_active: i32,
+        y_off: usize,
+        batch: i32,
         n_pad: i32,
         in_f: i32,
         out_f: i32,
@@ -2506,48 +2553,51 @@ impl Engine {
     // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     #[allow(clippy::manual_is_multiple_of)]
     // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
-    /// MEMRA_B200_PRIME_V2 arm 3: dequant ONCE into the persistent f16 slab, pad the CSR to a
-    /// uniform rows-per-expert, run ONE cuBLASLt strided-batched matmul on OUR stream, unpad
-    /// with the per-pair amax scale folded. Returns `Ok(None)` on every DECLINE shape so the
-    /// caller runs the shipped kernel with behavior identical to the door being shut.
+    /// MEMRA_B200_PRIME_V2 arm 3: dequant ONCE into the persistent f16 slab in BUCKET order,
+    /// pad the CSR through the plan's `pad_map`, run ONE cuBLASLt strided-batched matmul PER
+    /// BUCKET on OUR stream, unpad with the per-pair amax scale folded. Returns `Ok(None)` on
+    /// every DECLINE shape so the caller runs the shipped kernel with behavior identical to the
+    /// door being shut.
     ///
-    /// Declines (each announced once by the caller): a qtype outside the dequant class, a
-    /// padding ratio the caller already rejected, a workspace allocation that does not fit, and
-    /// a cuBLASLt shape with no heuristic (`rc == 2`). Every other rc is a hard error — a GEMM
-    /// that failed is not a GEMM that can be silently skipped.
+    /// Declines (each announced once by the caller): a qtype outside the dequant class, a plan
+    /// the caller already rejected on its aggregate pad ratio, a workspace allocation that does
+    /// not fit, and a cuBLASLt shape with no heuristic (`rc == 2`). Every other rc is a hard
+    /// error — a GEMM that failed is not a GEMM that can be silently skipped.
     ///
-    /// The numeric class is the f16-mirror grouped class, unchanged: A is the same dequanted
-    /// f16 weight `memra_moe_f16g_dequant` produces for the shipped workspace path, B is the
-    /// same amax-normalized f16 activation `moe_f16g_act` gathers (only MOVED by the pad
-    /// kernel), accumulation is f32, and the amax scale folds on the way out exactly as the sk
-    /// kernel folds it. Only the GEMM's reduction ORDER differs, so the bar is the band.
+    /// The numeric class is the f16-mirror grouped class, unchanged: A is the same dequanted f16
+    /// weight `memra_moe_f16g_dequant` produces for the shipped workspace path, B is the same
+    /// amax-normalized f16 activation `moe_f16g_act` gathers (only MOVED by the pad kernel),
+    /// accumulation is f32, and the amax scale folds on the way out exactly as the sk kernel
+    /// folds it. Only the GEMM's reduction ORDER differs, so the bar is the band. Bucketing
+    /// changes WHICH call an expert lands in, never any expert's own k-chain: an expert's rows
+    /// are all in one bucket and its GEMM is the same [out_f x m_e x in_f] problem either way.
     #[allow(clippy::too_many_arguments)] // allow: mirrors moe_f16_grouped's call contract
     pub(crate) fn moe_f16_grouped_batched(
         &self,
         table: &CudaSlice<u64>,
         proj: i32,
         n_expert: usize,
-        ex_ids: &CudaSlice<i32>,
-        ex_off_dev: &CudaSlice<i32>,
+        ex_ids_sorted: &CudaSlice<i32>,
         act_f16: &CudaSlice<u8>,
         act_scale: &CudaSlice<f32>,
         in_f: usize,
         out_f: usize,
         n_active: usize,
-        n_pad: usize,
         n_pairs: usize,
         qtype: i32,
         row_bytes: usize,
+        plan: &MoeBgemmPlan,
         ws: &mut MoeBgemmWs,
     ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
         let mut y = self.alloc_uninit::<f32>(n_pairs * out_f)?;
         let stream = self.gpu.stream();
-        // 1. DEQUANT the active experts into the persistent slab. The shipped entry, reused
-        // verbatim: this arm adds no dequant of its own, so the weight bytes the GEMM sees are
-        // the same bytes the shipped workspace path would have produced.
+        // 1. DEQUANT the active experts into the persistent slab, IN BUCKET ORDER (the caller
+        // uploaded `ex_ids_sorted`). The shipped entry, reused verbatim: this arm adds no
+        // dequant of its own, so the weight bytes the GEMM sees are the bytes the shipped
+        // workspace path would have produced — only their order in the slab differs.
         {
             let (tab_p, _g0) = table.device_ptr(&stream);
-            let (ei_p, _g1) = ex_ids.device_ptr(&stream);
+            let (ei_p, _g1) = ex_ids_sorted.device_ptr(&stream);
             let (w_p, _g2) = ws.w_f16.device_ptr_mut(&stream);
             let rc = unsafe {
                 memra_moe_f16g_dequant(
@@ -2564,8 +2614,6 @@ impl Engine {
                     stream.cu_stream() as *mut core::ffi::c_void,
                 )
             };
-            // rc == 2 from the dequant means "unsupported qtype" — a decline, matching the
-            // shipped entry's own contract for that return.
             if rc == 2 {
                 return Ok(None);
             }
@@ -2573,28 +2621,28 @@ impl Engine {
                 return Err(format!("memra_moe_f16g_dequant (arm 3) rc={rc}").into());
             }
         }
-        // 2. PAD the CSR-order activations to a uniform rows-per-expert.
+        let rows_padded = plan.rows_padded();
+        // 2. PAD through the map. One launch, whatever K is.
         {
             let (a_p, _g0) = act_f16.device_ptr(&stream);
-            let (off_p, _g1) = ex_off_dev.device_ptr(&stream);
+            let (m_p, _g1) = ws.pad_map.device_ptr(&stream);
             let (d_p, _g2) = ws.act_pad.device_ptr_mut(&stream);
             let rc = unsafe {
-                memra_moe_pad_act_f16(
+                memra_moe_pad_act_map_f16(
                     a_p as *const core::ffi::c_void,
-                    off_p as *const i32,
+                    m_p as *const i32,
                     d_p as *mut core::ffi::c_void,
-                    n_active as i32,
-                    n_pad as i32,
+                    rows_padded as i32,
                     in_f as i32,
                     stream.cu_stream() as *mut core::ffi::c_void,
                 )
             };
             if rc != 0 {
-                return Err(format!("memra_moe_pad_act_f16 rc={rc}").into());
+                return Err(format!("memra_moe_pad_act_map_f16 rc={rc}").into());
             }
         }
-        // 3. ONE strided-batched matmul on our stream.
-        {
+        // 3. ONE strided-batched matmul PER BUCKET, all on our stream.
+        for b in &plan.buckets {
             let lt_bytes = ws.lt.len();
             let (w_p, _g0) = ws.w_f16.device_ptr(&stream);
             let (a_p, _g1) = ws.act_pad.device_ptr(&stream);
@@ -2603,10 +2651,13 @@ impl Engine {
             let rc = unsafe {
                 memra_moe_bgemm_f16_strided(
                     w_p as *const core::ffi::c_void,
+                    b.expert0 * out_f * in_f,
                     a_p as *const core::ffi::c_void,
+                    b.row0 * in_f,
                     y_p as *mut f32,
-                    n_active as i32,
-                    n_pad as i32,
+                    b.row0 * out_f,
+                    b.count as i32,
+                    b.n_pad as i32,
                     in_f as i32,
                     out_f as i32,
                     ws_p as *mut core::ffi::c_void,
@@ -2624,23 +2675,22 @@ impl Engine {
         // 4. UNPAD back to CSR order with the per-pair amax scale folded.
         {
             let (yp_p, _g0) = ws.y_pad.device_ptr(&stream);
-            let (off_p, _g1) = ex_off_dev.device_ptr(&stream);
+            let (m_p, _g1) = ws.pad_map.device_ptr(&stream);
             let (s_p, _g2) = act_scale.device_ptr(&stream);
             let (y_p, _g3) = y.device_ptr_mut(&stream);
             let rc = unsafe {
-                memra_moe_unpad_scale_f32(
+                memra_moe_unpad_scale_map_f32(
                     yp_p as *const f32,
-                    off_p as *const i32,
+                    m_p as *const i32,
                     s_p as *const f32,
                     y_p as *mut f32,
-                    n_active as i32,
-                    n_pad as i32,
+                    rows_padded as i32,
                     out_f as i32,
                     stream.cu_stream() as *mut core::ffi::c_void,
                 )
             };
             if rc != 0 {
-                return Err(format!("memra_moe_unpad_scale_f32 rc={rc}").into());
+                return Err(format!("memra_moe_unpad_scale_map_f32 rc={rc}").into());
             }
         }
         crate::MOE_BGEMM_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
