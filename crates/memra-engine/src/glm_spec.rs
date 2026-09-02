@@ -907,9 +907,48 @@ impl HybridModel {
         let Some(sink) = cache.hc_taps.as_mut() else {
             return Ok(());
         };
+        let base = sink.base;
+        self.glm5_hc_tap_into(e, sink, base, topology, il, x, t)
+    }
+
+    /// [`Self::glm5_hc_tap`] with the sink and its row base passed EXPLICITLY instead of read
+    /// from the cache.
+    ///
+    /// The pipelined mHC prime needs this seam. Its two stage threads run different CHUNKS at
+    /// the same moment, so a single `sink.base` field cannot describe both, and
+    /// [`PrimeCacheStages`] hands each stage a cache shell with `hc_taps: None` — which is why
+    /// arm 2 used to refuse outright when the DFlash2 drafter had armed a sink. Passing the
+    /// base per call is what makes one shared sink correct for two concurrent walks.
+    #[allow(clippy::too_many_arguments)] // allow: the list is the tap contract, base included
+    pub(crate) fn glm5_hc_tap_into(
+        &self,
+        e: &Engine,
+        sink: &mut HcTapSink,
+        base_abs: usize,
+        topology: &crate::hyper::HyperTopology,
+        il: usize,
+        x: &CudaSlice<f32>,
+        t: usize,
+    ) -> Res<()> {
         let Some(slot) = sink.layer_ids.iter().position(|&l| l == il) else {
             return Ok(());
         };
+        let saved = sink.base;
+        sink.base = base_abs;
+        let out = self.glm5_hc_tap_slot(e, sink, slot, topology, x, t);
+        sink.base = saved;
+        out
+    }
+
+    fn glm5_hc_tap_slot(
+        &self,
+        e: &Engine,
+        sink: &mut HcTapSink,
+        slot: usize,
+        topology: &crate::hyper::HyperTopology,
+        x: &CudaSlice<f32>,
+        t: usize,
+    ) -> Res<()> {
         let h = sink.hidden;
         let n_taps = sink.layer_ids.len();
         // Sink-relative row of this walk's row 0 (doc on `HcTapSink::origin`): fresh-prompt

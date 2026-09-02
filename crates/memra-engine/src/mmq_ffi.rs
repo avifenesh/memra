@@ -768,6 +768,145 @@ impl MoeBgemmPlan {
     pub fn rows_padded(&self) -> usize {
         self.pad_map.len()
     }
+
+    /// EVERY address this plan will make a kernel or a GEMM touch, checked on the HOST before
+    /// anything launches. Returns the first violation by name; the caller refuses the arm and
+    /// the shipped kernel serves the layer.
+    ///
+    /// WHY THIS EXISTS RATHER THAN TRUST (boot H2, 2026-09-02). A descriptor that points one
+    /// element outside its plane does not return an error — it corrupts the CUDA context, and
+    /// the context is STICKY: the failing prime returned `rc=30013` (this file's own
+    /// `30000 + CUBLAS_STATUS_EXECUTION_FAILED`, a CONSEQUENCE of the poison rather than its
+    /// cause), and then every later request on that process answered
+    /// `CUDA_ERROR_ILLEGAL_ADDRESS` and HTTP 500 until it was restarted. That is the
+    /// fleet-fatal class. A GPU-side guard cannot help — by the time a kernel notices, the
+    /// context is already gone — so the check has to happen before the first launch, on
+    /// numbers the host already has.
+    ///
+    /// `cap` is the WORKSPACE capacity, not this plan's own size: the workspace is sized once
+    /// at the ratio bound and reused across layers whose plans differ, so "the plan is
+    /// self-consistent" is not the same statement as "the plan fits the buffers it will run
+    /// against", and it was the second one that failed.
+    pub fn validate(
+        &self,
+        n_active: usize,
+        n_pairs: usize,
+        cap: &MoeBgemmNeed,
+        n_embd: usize,
+        n_ff_exp: usize,
+    ) -> Result<(), String> {
+        let rows = self.rows_padded();
+        if self.ex_ids_sorted.len() != n_active {
+            return Err(format!(
+                "bucket order holds {} experts, the CSR has {n_active}",
+                self.ex_ids_sorted.len()
+            ));
+        }
+        if self.buckets.is_empty() {
+            return Err("plan has no buckets".to_string());
+        }
+        // Buckets must TILE both the expert list and the padded plane exactly. A gap would
+        // leave uninitialized padded rows in the GEMM's operand; an overlap would have two
+        // buckets writing the same output rows.
+        let (mut expert0, mut row0) = (0usize, 0usize);
+        for (i, b) in self.buckets.iter().enumerate() {
+            if b.count == 0 || b.n_pad == 0 {
+                return Err(format!(
+                    "bucket {i} is empty (count {} n_pad {})",
+                    b.count, b.n_pad
+                ));
+            }
+            if b.expert0 != expert0 {
+                return Err(format!(
+                    "bucket {i} starts at expert {} but the previous buckets end at {expert0}",
+                    b.expert0
+                ));
+            }
+            if b.row0 != row0 {
+                return Err(format!(
+                    "bucket {i} starts at padded row {} but the previous buckets end at {row0}",
+                    b.row0
+                ));
+            }
+            let end_expert = b
+                .expert0
+                .checked_add(b.count)
+                .ok_or("expert index overflow")?;
+            let span = b
+                .count
+                .checked_mul(b.n_pad)
+                .ok_or("bucket row span overflow")?;
+            let end_row = b.row0.checked_add(span).ok_or("padded row overflow")?;
+            if end_expert > n_active {
+                return Err(format!(
+                    "bucket {i} covers experts [{}, {end_expert}) past the {n_active} active",
+                    b.expert0
+                ));
+            }
+            if end_row > rows {
+                return Err(format!(
+                    "bucket {i} covers padded rows [{}, {end_row}) past the {rows}-row plane",
+                    b.row0
+                ));
+            }
+            // The three GEMM planes, at the WIDEST projection so one check covers gate/up/down.
+            let wide = n_embd.max(n_ff_exp);
+            let a_end = end_expert
+                .checked_mul(n_embd)
+                .and_then(|v| v.checked_mul(n_ff_exp))
+                .ok_or("slab offset overflow")?;
+            if a_end > cap.w_elems {
+                return Err(format!(
+                    "bucket {i} reads slab elements up to {a_end}, workspace holds {}",
+                    cap.w_elems
+                ));
+            }
+            let b_end = end_row
+                .checked_mul(wide)
+                .ok_or("activation offset overflow")?;
+            if b_end > cap.act_elems {
+                return Err(format!(
+                    "bucket {i} reads padded activations up to {b_end}, workspace holds {}",
+                    cap.act_elems
+                ));
+            }
+            let c_end = end_row.checked_mul(wide).ok_or("output offset overflow")?;
+            if c_end > cap.y_elems {
+                return Err(format!(
+                    "bucket {i} writes padded outputs up to {c_end}, workspace holds {}",
+                    cap.y_elems
+                ));
+            }
+            expert0 = end_expert;
+            row0 = end_row;
+        }
+        if expert0 != n_active {
+            return Err(format!(
+                "buckets cover {expert0} experts, the CSR has {n_active}"
+            ));
+        }
+        if row0 != rows {
+            return Err(format!(
+                "buckets cover {row0} padded rows, the map has {rows}"
+            ));
+        }
+        if rows > cap.map_elems {
+            return Err(format!(
+                "pad map is {rows} rows, the workspace buffer holds {}",
+                cap.map_elems
+            ));
+        }
+        // Every map entry must be -1 or a REAL pair index. A garbage entry here is exactly what
+        // the missing kernel bounds check produced, and it is what turns into a wild write.
+        for (r, &pair) in self.pad_map.iter().enumerate() {
+            if pair < -1 || (pair >= 0 && pair as usize >= n_pairs) {
+                return Err(format!(
+                    "pad map row {r} carries pair index {pair}, outside [-1, {n_pairs})"
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 /// The element counts one arm-3 call needs from its workspace. Stated as ELEMENTS, not as a

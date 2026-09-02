@@ -714,6 +714,32 @@ fn mla_tc_prefill_enabled() -> bool {
 /// Read PER CALL (the `MEMRA_MLA_TC_PREFILL` rollback-seam precedent): `glm5-prime-v2-gate`
 /// flips both arms inside one process, and a latched flag would make the second arm a copy of
 /// the first.
+/// Where `hyper_range_prime` finds the DFlash2 hc tap sink for the walk it is running.
+///
+/// The serial walks read it from the cache, exactly as before. The PIPELINED prime cannot:
+/// [`PrimeCacheStages`] gives each stage a cache shell with `hc_taps: None`, and the two stage
+/// threads are on DIFFERENT CHUNKS at the same moment, so the sink's single `base` field cannot
+/// describe both. So the pipelined walk shares ONE sink and passes each stage its own base.
+///
+/// SHARING IS SAFE BY CONSTRUCTION, and this is the argument the bit-identity claim rests on.
+/// A tap write lands at `(base - origin + r) * n_taps * hidden + slot * hidden` for r in 0..t.
+/// Two things make the two stages' writes disjoint, and either alone would be enough:
+///
+///   * DIFFERENT SLOT COLUMNS. A tapped layer belongs to exactly one stage — the same fact
+///     `glm5_tap_drain` already relies on to pick a slot's owning engine — so stage 0 writes
+///     only the columns of layers below the fence and stage 1 only those above it.
+///   * DIFFERENT ROWS. The stages run different chunks, so their `base` windows do not overlap.
+///
+/// The mutex is therefore not protecting against a data race on the values; it is what makes
+/// the shared `&mut` legal, and it is held only for the row memcpy — the contraction and the
+/// device-to-host readback happen outside it.
+pub(crate) enum HcTapArm<'a, 's: 'a> {
+    /// Read the sink from the cache. Every serial walk; byte-identical to the pre-lane path.
+    FromCache,
+    /// The pipelined mHC prime: one shared sink, this stage's chunk base.
+    Shared(&'a std::sync::Mutex<&'s mut crate::cache::HcTapSink>, usize),
+}
+
 /// One named line per process when the pipelined mHC prime arm declines. A door that is armed
 /// and inert must say so: the grouped MoE prefill's own `decline_once` exists because this
 /// exact shape (flag announced ON, arm returning early on every layer) cost a 24k prime its
@@ -2010,16 +2036,42 @@ impl HybridModel {
                         "a vision embedding overlay is present: the splice is a stage-0 \
                          embedding-intake transform whose gate ran on the serial ppN body",
                     );
-                } else if cache.hc_taps.is_some() {
-                    hyper_pipe_decline_once(
-                        "the DFlash2 hc tap sink is ARMED: the per-stage cache shells carry \
-                         hc_taps: None, so the draft-source rows would go silently missing",
-                    );
                 } else {
+                    // The DFlash2 hc tap sink used to refuse here, and that refusal was the
+                    // whole product-route cost: on the SPEC route at 256,756 tokens the pair
+                    // measured 152.95 s with the door on against 153.12 s with it off, i.e.
+                    // arm 2 never engaged, while the PLAIN route (no drafter, no sink) got
+                    // 69.08 s against 128.87 s. The sink is now SHARED across the two stage
+                    // threads instead of being lost to `PrimeCacheStages`' `hc_taps: None`
+                    // shells — see `HcTapArm` for why that is sound and why it stays
+                    // byte-identical to the serial walk's sink.
                     let seq_end = cache.pos + t + queued_after;
-                    return self.prime_cache_hyper_pp2_pipelined(
-                        e, tokens, cache, seq_end, &topology, &ranges, &fence,
-                    );
+                    let mut sink = cache.hc_taps.take();
+                    let out = {
+                        let lock = sink.as_mut().map(std::sync::Mutex::new);
+                        self.prime_cache_hyper_pp2_pipelined(
+                            e,
+                            tokens,
+                            cache,
+                            seq_end,
+                            &topology,
+                            &ranges,
+                            &fence,
+                            lock.as_ref(),
+                        )
+                    };
+                    // Restore the sink whatever happened: a failed prime still owns its
+                    // draft-source rows, and losing them silently is the shape this whole
+                    // change exists to remove.
+                    if let Some(mut s) = sink {
+                        // Parity with the serial walk, which leaves `base` at the last chunk's
+                        // absolute start after the loop.
+                        if let Some(&(last, _)) = ranges.last() {
+                            s.base = cache.pos.saturating_sub(t).saturating_add(last);
+                        }
+                        cache.hc_taps = Some(s);
+                    }
+                    return out;
                 }
             }
             let mut hiddens = e.uninit(t * n_embd)?;
@@ -2279,6 +2331,7 @@ impl HybridModel {
     /// stage's KDA conv ring / delta-rule state and its MLA latent rows + kpool indexer plane
     /// are written by the SAME engine `pp::new_cache` allocated them on.
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)] // allow: the list is the walk contract plus the tap arm
     fn hyper_range_prime(
         &self,
         e: &Engine,
@@ -2290,6 +2343,7 @@ impl HybridModel {
         t: usize,
         cache: &mut Cache,
         seq_end: usize,
+        taps: HcTapArm<'_, '_>,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
@@ -2363,7 +2417,17 @@ impl HybridModel {
             x = crate::hyper::post(e, topology, &ffn_out, &x, &mix, t, n_embd)?;
             // glm5 DFlash2 feature tap (lane/glm5-dflash-draft-src): the CONTRACTED
             // completed layer output, host-staged — one Option check when unarmed.
-            self.glm5_hc_tap(e, cache, topology, il, &x, t)?;
+            match &taps {
+                HcTapArm::FromCache => self.glm5_hc_tap(e, cache, topology, il, &x, t)?,
+                HcTapArm::Shared(sink, base) => {
+                    // Lock held for the row copy only (see `HcTapArm`'s header for why sharing
+                    // is sound); the contraction and the readback inside are this stage's own.
+                    let mut guard = sink
+                        .lock()
+                        .map_err(|_| "hc tap sink lock poisoned by a failed stage walk")?;
+                    self.glm5_hc_tap_into(e, &mut guard, *base, topology, il, &x, t)?;
+                }
+            }
             mark(e, 3, &mut pt, &mut ph);
         }
         if prof {
@@ -2990,7 +3054,16 @@ impl HybridModel {
             }
             let mut x = crate::hyper::expand(e, topology, &embedded, t, n_embd)?;
             x = self.hyper_range_prime(
-                e, topology, x, fence[0], fence[1], &pos_d, t, cache, seq_end,
+                e,
+                topology,
+                x,
+                fence[0],
+                fence[1],
+                &pos_d,
+                t,
+                cache,
+                seq_end,
+                HcTapArm::FromCache,
             )?;
             for s in 1..fence.len() - 1 {
                 let boundary_tx = e.clone_dtod(&x)?;
@@ -3005,6 +3078,7 @@ impl HybridModel {
                     t,
                     cache,
                     seq_end,
+                    HcTapArm::FromCache,
                 )?;
             }
             return self.hyper_prime_tail(e, topology, &x, t, n_embd, eps, cache);
@@ -3073,7 +3147,16 @@ impl HybridModel {
                 }
                 let x = crate::hyper::expand(e0, topology, &embedded, t, n_embd)?;
                 let x = self.hyper_range_prime(
-                    e0, topology, x, fence[0], fence[1], &pos_d, t, cache, seq_end,
+                    e0,
+                    topology,
+                    x,
+                    fence[0],
+                    fence[1],
+                    &pos_d,
+                    t,
+                    cache,
+                    seq_end,
+                    HcTapArm::FromCache,
                 )?;
                 rt.tx(0, &x, t * width)?
             };
@@ -3092,6 +3175,7 @@ impl HybridModel {
                     t,
                     cache,
                     seq_end,
+                    HcTapArm::FromCache,
                 )?;
                 slot = rt.tx(s, &x, t * width)?;
             }
@@ -3110,6 +3194,7 @@ impl HybridModel {
                     t,
                     cache,
                     seq_end,
+                    HcTapArm::FromCache,
                 )?;
                 self.hyper_prime_tail(el, topology, &x, t, n_embd, eps, cache)?
             };
@@ -3162,9 +3247,16 @@ impl HybridModel {
         topology: &crate::hyper::HyperTopology,
         ranges: &[(usize, usize)],
         fence: &[usize],
+        taps: Option<&std::sync::Mutex<&mut crate::cache::HcTapSink>>,
     ) -> Result<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
         debug_assert_eq!(fence.len(), 3);
         debug_assert!(ranges.len() >= 2);
+        // Each stage call gets its OWN chunk base; the sink itself is shared. See `HcTapArm`
+        // for why that is sound (disjoint slot columns AND disjoint row windows).
+        let arm = |base: usize| match taps {
+            Some(sink) => HcTapArm::Shared(sink, base),
+            None => HcTapArm::FromCache,
+        };
         let rt = crate::pp::PpNRt::get(e)?;
         assert_eq!(
             rt.n_stages(),
@@ -3185,18 +3277,24 @@ impl HybridModel {
         let max_payload = ranges.iter().map(|(s, x)| (x - s) * width).max().unwrap();
         rt.prepare_overlap_slots(0, max_payload)?;
 
-        // ENGAGEMENT RECEIPT, once per process (same reason as arm 1's).
-        static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-        if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        // ENGAGEMENT RECEIPT, once per TAP STATE rather than once per process. The armed case
+        // is the one the product route runs and the one this arm used to refuse, so a log that
+        // only ever showed the first state reached could show `taps=none` forever while the
+        // interesting half went unrecorded. Same both-arms shape the grouped-prefill announce
+        // uses.
+        static SAID: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+        let bit = 1u8 << u8::from(taps.is_some());
+        if SAID.fetch_or(bit, std::sync::atomic::Ordering::Relaxed) & bit == 0 {
             eprintln!(
                 "[prime-v2] arm2 pipelined stages=2 chunks={} overlap={} t={t} devices={:?} \
-                 (stage 0 of chunk k+1 overlaps stage 1 of chunk k on two host threads; \
-                 MEMRA_B200_PRIME_V2, logged once per process)",
+                 taps={} (stage 0 of chunk k+1 overlaps stage 1 of chunk k on two host \
+                 threads; MEMRA_B200_PRIME_V2, logged once per process)",
                 ranges.len(),
                 ranges.len().saturating_sub(1),
                 (0..2)
                     .map(|s| rt.engine(s, e).ctx().ordinal())
                     .collect::<Vec<_>>(),
+                if taps.is_some() { "armed" } else { "none" },
             );
         }
 
@@ -3214,6 +3312,7 @@ impl HybridModel {
             seq_end,
             fence,
             initial_base + first_start,
+            arm(initial_base + first_start),
         )?;
         cache0.pos = initial_base + first_end;
 
@@ -3242,6 +3341,7 @@ impl HybridModel {
                                 seq_end,
                                 fence,
                                 next_base,
+                                arm(next_base),
                             )
                             .map_err(|err| err.to_string())?;
                         cache0_stage.pos = initial_base + next_end;
@@ -3257,6 +3357,7 @@ impl HybridModel {
                         seq_end,
                         fence,
                         base,
+                        arm(base),
                     )?;
                     let out = {
                         rt.bind_stage(1)?;
@@ -3283,6 +3384,7 @@ impl HybridModel {
                     seq_end,
                     fence,
                     base,
+                    arm(base),
                 )?;
                 let out = {
                     rt.bind_stage(1)?;
@@ -3331,6 +3433,7 @@ impl HybridModel {
         seq_end: usize,
         fence: &[usize],
         base: usize,
+        taps: HcTapArm<'_, '_>,
     ) -> Result<usize, Box<dyn std::error::Error>> {
         let t = tokens.len();
         let n_embd = self.cfg.n_embd as usize;
@@ -3344,7 +3447,7 @@ impl HybridModel {
         let x = crate::hyper::expand(e0, topology, &embedded, t, n_embd)?;
         let _overlap = crate::pp::enter_prime_pipe_stage();
         let x = self.hyper_range_prime(
-            e0, topology, x, fence[0], fence[1], &pos_d, t, cache, seq_end,
+            e0, topology, x, fence[0], fence[1], &pos_d, t, cache, seq_end, taps,
         )?;
         rt.tx_pipelined(0, &x, t * width)
     }
@@ -3364,6 +3467,7 @@ impl HybridModel {
         seq_end: usize,
         fence: &[usize],
         base: usize,
+        taps: HcTapArm<'_, '_>,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let n_embd = self.cfg.n_embd as usize;
         let width = topology.streams * n_embd;
@@ -3375,7 +3479,7 @@ impl HybridModel {
         let x = rt.rx(0, slot, t * width)?;
         let _overlap = crate::pp::enter_prime_pipe_stage();
         self.hyper_range_prime(
-            e1, topology, x, fence[1], fence[2], &pos_d, t, cache, seq_end,
+            e1, topology, x, fence[1], fence[2], &pos_d, t, cache, seq_end, taps,
         )
     }
 
@@ -15593,6 +15697,11 @@ impl HybridModel {
             crate::MOE_BGEMM_LAST_PAD_MILLI.store((plan.pad_ratio * 1000.0) as u64, Relaxed);
             crate::MOE_BGEMM_LAST_SPREAD_MILLI
                 .store((widest as u64 * 1000) / narrowest as u64, Relaxed);
+            let counts = plan.buckets.iter().map(|b| b.count);
+            crate::MOE_BGEMM_LAST_MAX_BUCKET
+                .store(counts.clone().max().unwrap_or(0) as u64, Relaxed);
+            crate::MOE_BGEMM_LAST_MIN_BUCKET.store(counts.min().unwrap_or(0) as u64, Relaxed);
+            crate::MOE_BGEMM_LAST_ROWS_PADDED.store(plan.rows_padded() as u64, Relaxed);
         }
         // The bucket table, once per process: K, each bucket's expert count / n_pad, and the
         // aggregate ratio. Without it "arm 3 ran" says nothing about whether the partition was
@@ -15609,6 +15718,20 @@ impl HybridModel {
                 plan.rows_padded(),
                 plan.pad_ratio,
             );
+        }
+        // BOUNDS-CHECK THE WHOLE PLAN AGAINST THE WORKSPACE IT WILL RUN ON, before anything
+        // launches. A descriptor one element outside its plane poisons the CUDA context and the
+        // poison is sticky: boot H2 lost every later request on the process to
+        // CUDA_ERROR_ILLEGAL_ADDRESS / HTTP 500. There is no GPU-side recovery from that, so the
+        // check is here, on numbers the host already has, and a failure REFUSES the arm.
+        if let Err(why) = plan.validate(n_active, n_pairs, &need, n_embd, n_ff_exp) {
+            bg_decline_once(&format!(
+                "plan failed its bounds check and was NOT launched: {why}. This is a planner \
+                 defect, not a shape the arm should fall back on quietly — the shipped kernel \
+                 serves the layer and the line above is the bug report"
+            ));
+            e.moe_bgemm_ws_put(ws);
+            return None;
         }
         let ids_d = match e.htod_i32(&plan.ex_ids_sorted) {
             Ok(v) => v,
@@ -28615,5 +28738,300 @@ mod moe_bgemm_plan_tests {
                 );
             }
         }
+    }
+}
+
+/// The BOOT H2 REGRESSION, replayed on the host with no GPU.
+///
+/// 2026-09-02, real artifact, 2x B200: arm 3 armed a 5.95 GB workspace, planned
+/// `buckets=16 pad_ratio=1.150` — a partition that is CORRECT — and then died with
+/// `memra_moe_bgemm_f16_strided rc=30013` (this crate's own
+/// `30000 + CUBLAS_STATUS_EXECUTION_FAILED`, which was a CONSEQUENCE and not the cause),
+/// after which every request on that process answered `CUDA_ERROR_ILLEGAL_ADDRESS` and HTTP
+/// 500 until restart. Sticky context poison: the fleet-fatal class.
+///
+/// The cause was NOT a bucket descriptor. It was the pad/unpad launch geometry. Those kernels
+/// index a padded row as `blockIdx.x + blockIdx.y * gridDim.x`, and the 2D grid over-covers
+/// whenever the row count is not a multiple of the x extent. At 37,696 rows the launcher picks
+/// (32768, 2) = 65,536 threads, so 27,840 of them read `pad_map[r]` past the end of the buffer,
+/// got garbage as a pair index, and wrote through it. The synthetic fixture never saw it: at
+/// 8,896 rows the grid is (8896, 1), an exact tile with zero spare threads — the one shape in
+/// which the missing guard is invisible. That asymmetry is asserted below, because it is the
+/// reason a green gate and a dead box came from the same binary minutes apart.
+#[cfg(test)]
+mod moe_bgemm_boot_h2_tests {
+    use crate::mmq_ffi::{MoeBgemmBucket, MoeBgemmNeed, MoeBgemmPlan};
+
+    const N_EXPERT: usize = 288;
+    const N_PAIRS: usize = 32_768;
+    const HIDDEN: usize = 4096;
+    const FF: usize = 2048;
+    /// Verbatim from `[moe-bgemm] buckets=16 rows=[...] pad=[...]` in
+    /// box `/root/out-b200/logs/boot-prefill-v4.log`.
+    const ROWS: [usize; 16] = [4, 4, 5, 4, 5, 6, 15, 12, 4, 23, 21, 49, 33, 1, 1, 101];
+    const PADS: [usize; 16] = [
+        816, 608, 496, 416, 336, 256, 192, 160, 144, 128, 112, 96, 80, 80, 80, 64,
+    ];
+
+    /// The launcher's grid arithmetic, mirrored from `cu/moe_f16_batched.cu::moe_pad_grid`.
+    fn pad_grid(rows: usize) -> (usize, usize) {
+        let x = if rows < 32768 { rows } else { 32768 };
+        (x, rows.div_ceil(x))
+    }
+
+    /// Rebuild boot H2's plan: the logged bucket table, plus a CSR whose per-expert row counts
+    /// fit their buckets and sum to the logged 32,768 real pairs.
+    fn boot_h2_plan() -> MoeBgemmPlan {
+        let n_active: usize = ROWS.iter().sum();
+        assert_eq!(
+            n_active, N_EXPERT,
+            "the logged bucket table must cover the bank"
+        );
+        let padded: usize = ROWS.iter().zip(PADS).map(|(c, p)| c * p).sum();
+        assert_eq!(
+            padded, 37_696,
+            "the logged table must reproduce padded_rows=37,696"
+        );
+
+        // Per-expert rows: start at each bucket's n_pad, then shave the 4,928-row difference
+        // off the widest buckets first, which is where the real distribution's slack sits.
+        let mut m: Vec<usize> = ROWS
+            .iter()
+            .zip(PADS)
+            .flat_map(|(&c, p)| std::iter::repeat_n(p, c))
+            .collect();
+        let mut excess = padded - N_PAIRS;
+        for v in m.iter_mut() {
+            if excess == 0 {
+                break;
+            }
+            let cut = excess.min(*v / 4);
+            *v -= cut;
+            excess -= cut;
+        }
+        assert_eq!(
+            excess, 0,
+            "the shave must land exactly on the real pair count"
+        );
+        assert_eq!(m.iter().sum::<usize>(), N_PAIRS);
+
+        let mut buckets = Vec::new();
+        let mut pad_map = vec![-1i32; padded];
+        let (mut expert0, mut row0, mut pair) = (0usize, 0usize, 0i32);
+        for (&count, n_pad) in ROWS.iter().zip(PADS) {
+            buckets.push(MoeBgemmBucket {
+                expert0,
+                count,
+                n_pad,
+                row0,
+            });
+            for k in 0..count {
+                let m_e = m[expert0 + k];
+                assert!(m_e <= n_pad, "an expert cannot exceed its bucket's n_pad");
+                for j in 0..m_e {
+                    pad_map[row0 + k * n_pad + j] = pair + j as i32;
+                }
+                pair += m_e as i32;
+            }
+            expert0 += count;
+            row0 += count * n_pad;
+        }
+        MoeBgemmPlan {
+            ex_ids_sorted: (0..N_EXPERT as i32).collect(),
+            buckets,
+            pad_map,
+            pad_ratio: padded as f64 / N_PAIRS as f64,
+        }
+    }
+
+    /// The workspace boot H2 actually armed: `workspace=5.95 GB` at the 1.35 row bound.
+    fn boot_h2_workspace() -> MoeBgemmNeed {
+        let rows_cap = (N_PAIRS as f64 * 1.35).ceil() as usize;
+        let need = MoeBgemmNeed::for_layer(N_EXPERT, rows_cap, HIDDEN, FF);
+        let gb = need.bytes() as f64 / 1e9;
+        assert!(
+            (5.8..6.1).contains(&gb),
+            "the modelled workspace is {gb:.2} GB, the box armed 5.95"
+        );
+        need
+    }
+
+    /// No address any bucket makes a GEMM touch leaves its plane. This is the check the
+    /// coordinator asked for, and it PASSES on the boot-H2 table — which is how we know the
+    /// bucket descriptors were never the defect.
+    #[test]
+    fn every_boot_h2_bucket_descriptor_stays_inside_its_plane() {
+        let plan = boot_h2_plan();
+        let need = boot_h2_workspace();
+        plan.validate(N_EXPERT, N_PAIRS, &need, HIDDEN, FF)
+            .expect("the boot H2 bucket table is self-consistent and fits its workspace");
+    }
+
+    /// THE ACTUAL DEFECT, and the asymmetry that hid it. The launch geometry over-covers at the
+    /// real width and does not at the fixture's, so a kernel that indexes `pad_map` without a
+    /// bounds check is wrong ONLY on the box. Both halves are asserted: without the second, a
+    /// future change to `moe_pad_grid` could make the fixture over-cover too and this test
+    /// would stop describing why the gate passed while the box died.
+    #[test]
+    fn the_pad_launch_grid_overcovers_at_box_widths_and_not_at_fixture_widths() {
+        let (x, y) = pad_grid(37_696);
+        let threads = x * y;
+        assert_eq!((x, y), (32_768, 2));
+        assert!(
+            threads > 37_696,
+            "the 2D grid must over-cover at the box's row count — that over-coverage is what \
+             the kernels' `if (r >= n_rows) return;` guard exists for"
+        );
+        assert_eq!(
+            threads - 37_696,
+            27_840,
+            "27,840 threads ran past the pad map"
+        );
+
+        let (fx, fy) = pad_grid(8_896);
+        assert_eq!((fx, fy), (8_896, 1));
+        assert_eq!(
+            fx * fy,
+            8_896,
+            "the fixture's grid is an EXACT tile, which is precisely why the same binary passed \
+             the gate minutes before it poisoned the box"
+        );
+    }
+
+    /// Those spare threads would have read outside the pad map's allocation, not merely past
+    /// the live rows — so the value they picked up was unconstrained, and the write that
+    /// followed went anywhere.
+    #[test]
+    fn the_overcovering_threads_read_past_the_pad_map_allocation() {
+        let need = boot_h2_workspace();
+        let (x, y) = pad_grid(37_696);
+        assert!(
+            x * y > need.map_elems,
+            "the spare threads ({}) must exceed even the {}-element pad map buffer: had they \
+             only passed the live row count they would still have read allocated memory, and \
+             the failure would have been wrong answers rather than an illegal address",
+            x * y,
+            need.map_elems
+        );
+    }
+
+    /// THE GUARD ITSELF MUST BE PRESENT, asserted against the source.
+    ///
+    /// This test exists because the obvious red arm does NOT work, and that is worth writing
+    /// down rather than discovering twice. Deleting `if (r >= n_rows) return;` from both
+    /// kernels and running the full GPU gate on the rig — with the widened 288-expert fixture,
+    /// 40,368 padded rows, a 120-expert tail bucket and the 2D grid genuinely over-covering by
+    /// 25,168 threads — still PASSED, bit-identical. Two reasons, both structural:
+    ///
+    ///   * reading past an allocation only FAULTS when it crosses a mapped-page boundary. The
+    ///     rig's pad map is 177 KB inside a much larger pool block, so the overrun landed on
+    ///     memory the process owned. The B200's 5.95 GB workspace has a different pool
+    ///     geometry, and there the same read hit an unmapped page: CUDA_ERROR_ILLEGAL_ADDRESS,
+    ///     sticky context poison, HTTP 500 for the rest of the process.
+    ///   * `compute-sanitizer --tool memcheck` does not catch it either: these buffers come
+    ///     from `cuMemAllocAsync`, and memcheck does not bounds-track sub-allocations inside a
+    ///     memory pool. Measured on the rig — the 73 errors it reports on this binary are
+    ///     benign `cuModuleGetFunction` "named symbol not found" probes, identical with and
+    ///     without the guard.
+    ///
+    /// So no end-to-end run on this hardware can defend this line, and a source assertion is
+    /// the honest check rather than a lazy one. It is the same mutation that was actually
+    /// performed (delete the guard, rebuild, run) and the only check that went red for it.
+    #[test]
+    fn both_pad_kernels_bounds_check_their_row_index() {
+        let src = include_str!("../cu/moe_f16_batched.cu");
+        // Strip comments so the prose ABOUT the guard cannot stand in for the guard.
+        let code: String = src
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let guards = code.matches("if(r >= n_rows) return;").count();
+        assert_eq!(
+            guards, 2,
+            "moe_pad_act_map_kernel and moe_unpad_scale_map_kernel must EACH bounds-check the \
+             recombined 2D row index; found {guards} guard(s) in comment-stripped source. The \
+             grid over-covers by construction whenever the padded row count is not a multiple \
+             of 32,768, and without this line those spare threads read a garbage pair index and \
+             write through it (boot H2, 2026-09-02: fleet-fatal context poison)"
+        );
+        for kernel in ["moe_pad_act_map_kernel", "moe_unpad_scale_map_kernel"] {
+            let at = code
+                .find(kernel)
+                .unwrap_or_else(|| panic!("{kernel} must exist in cu/moe_f16_batched.cu"));
+            let body = &code[at..];
+            let guard_at = body.find("if(r >= n_rows) return;").unwrap_or(usize::MAX);
+            let read_at = body.find("pad_map[r]").unwrap_or(usize::MAX);
+            assert!(
+                guard_at < read_at,
+                "{kernel} must bounds-check `r` BEFORE it reads pad_map[r]"
+            );
+        }
+    }
+
+    /// The launcher's grid must always COVER every row (never under-cover, which would leave
+    /// padded rows uninitialized in the GEMM operand) and, at any realistic width, over-cover
+    /// (which is what makes the guard load-bearing). Swept rather than spot-checked so a future
+    /// change to `moe_pad_grid` cannot quietly reintroduce an exact-tile assumption.
+    #[test]
+    fn the_pad_grid_always_covers_and_usually_overcovers() {
+        for rows in [
+            1usize, 15, 4096, 8_896, 32_767, 32_768, 32_769, 40_368, 65_536, 131_073,
+        ] {
+            let (x, y) = pad_grid(rows);
+            assert!(x >= 1 && y >= 1);
+            assert!(
+                x * y >= rows,
+                "grid ({x},{y}) under-covers {rows} rows — padded rows would be left                  uninitialized in the GEMM's operand"
+            );
+            assert!(
+                y <= 65_535,
+                "grid.y {y} exceeds the CUDA limit at {rows} rows"
+            );
+        }
+        // The specific asymmetry that hid the defect, pinned.
+        assert_eq!(pad_grid(8_896).0 * pad_grid(8_896).1, 8_896);
+        assert!(pad_grid(40_368).0 * pad_grid(40_368).1 > 40_368);
+    }
+
+    /// RED ARM for the validator itself. A bounds check that never rejects anything is a check
+    /// with no caller; these are the three descriptor defects it must catch.
+    #[test]
+    fn the_validator_rejects_descriptors_that_leave_their_plane() {
+        let need = boot_h2_workspace();
+
+        let mut gap = boot_h2_plan();
+        gap.buckets[7].row0 += 16;
+        assert!(
+            gap.validate(N_EXPERT, N_PAIRS, &need, HIDDEN, FF).is_err(),
+            "a bucket starting past where the previous one ended must be refused"
+        );
+
+        let mut wide = boot_h2_plan();
+        let last = wide.buckets.len() - 1;
+        wide.buckets[last].n_pad *= 4;
+        assert!(
+            wide.validate(N_EXPERT, N_PAIRS, &need, HIDDEN, FF).is_err(),
+            "a bucket whose rows run past the padded plane must be refused"
+        );
+
+        let mut bad_map = boot_h2_plan();
+        bad_map.pad_map[1234] = N_PAIRS as i32;
+        assert!(
+            bad_map
+                .validate(N_EXPERT, N_PAIRS, &need, HIDDEN, FF)
+                .is_err(),
+            "a pad map entry outside the real CSR must be refused — that is the exact value \
+             the unguarded kernel fabricated"
+        );
+
+        let mut short = boot_h2_plan();
+        short.ex_ids_sorted.pop();
+        assert!(
+            short
+                .validate(N_EXPERT, N_PAIRS, &need, HIDDEN, FF)
+                .is_err(),
+            "an expert list that does not match the CSR must be refused"
+        );
     }
 }
