@@ -1173,7 +1173,12 @@ fn parse_args() -> Res<Args> {
             let ceiling = memra_engine::qwen4exp_gpu::peer_kv_row_ceiling();
             if deepest > ceiling {
                 return Err(format!(
-                    "--ladder-kv-dev1 refused at rung {deepest}: peer-resident QSA KV is a                      smoke-depth arm (ceiling {ceiling} rows, MEMRA_Q4E_PEER_KV_MAX_CAP). The                      spec-at-depth route is the SINGLE-CARD KV plus --mtp-dev1: the QSA KV is                      10,368 B/row across the 12 QSA layers (2.7 GiB at 262,144) and fits beside                      the trunk weights, while the ~17.6 GiB MTP draft state is what needs the                      second card. Drop --ladder-kv-dev1 and keep --mtp-dev1."
+                    "--ladder-kv-dev1 refused at rung {deepest}: peer-resident QSA KV is a \
+                     smoke-depth arm (ceiling {ceiling} rows, MEMRA_Q4E_PEER_KV_MAX_CAP). The \
+                     spec-at-depth route is the SINGLE-CARD KV plus --mtp-dev1: the QSA KV is \
+                     10,368 B/row across the 12 QSA layers (2.7 GiB at 262,144) and fits beside \
+                     the trunk weights, while the ~17.6 GiB MTP draft state is what needs the \
+                     second card. Drop --ladder-kv-dev1 and keep --mtp-dev1."
                 )
                 .into());
             }
