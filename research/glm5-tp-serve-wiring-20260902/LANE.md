@@ -394,9 +394,16 @@ tp2gate2 run log). `MEMRA_GLM5_TP=all@0,1 MEMRA_RP=0 MEMRA_CTX=262144 MEMRA_MAX_
 
 ### Fixes (this commit)
 
-- `MEMRA_EP_GROUPED_PRIME` default ON (`ep_grouped_prime_resolve`, host-tested; `=0` on
-  either name is the rollback; the load-time "set but MEMRA_GLM5_TP is off" co-refusal
-  still keys on an explicit arm; the walk exists only under `MEMRA_GLM5_TP`).
+- `MEMRA_EP_GROUPED_PRIME`: ON BY NAME for glm5-TP-sharded trunks when unset, off
+  elsewhere (`ep_grouped_prime_door(glm5_tp_sharded)` -> `ep_grouped_prime_resolve`,
+  host-tested for every arm; `=0` on either name pins off; the load-time "set but
+  MEMRA_GLM5_TP is off" co-refusal still keys on an explicit arm). The global default
+  stays OFF: the coordinator's correction after 19d435b98 (a default flips only with
+  receipts attached, and the round-3 prime-rate receipt has not landed). The announce
+  names its source (`flag=on source=sharded-default` vs `source=env`); the only reader
+  is `moe_ffn_glm5_ep`, reached only when `arm_moe_ep` armed the EP walk under
+  `MEMRA_GLM5_TP`, so a non-sharded (PP-2) boot prints no `[glm5-ep-grouped-prime]`
+  line and is byte-unchanged.
 - The TC MLA prefill chain ENGAGES on head shards (the `!mla.tp_shard` conjunct removed;
   every kernel takes `nh`; announce `[mla-tc-prefill] ENGAGED on glm5-TP head shards:
   nh=32 per rank ...`). The peer pass in `mla_tp_attn_cached` runs under

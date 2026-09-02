@@ -11289,12 +11289,19 @@ impl HybridModel {
         if prefill && t > MOE_DEV_MAX_T {
             static EPGP_ANNOUNCED: std::sync::atomic::AtomicU8 =
                 std::sync::atomic::AtomicU8::new(0);
-            let enabled = crate::ep_grouped_prime_on() && moe_grouped_prefill_enabled();
+            // The door resolves BY NAME to this walk's sharding (`ep.ranks() >= 2`: an EP
+            // runtime exists only under MEMRA_GLM5_TP, and the preflight refuses ranks < 2),
+            // so unset/unset is ON here and OFF for any non-sharded consumer; `source`
+            // says which (sharded-default / default-off / env) so a boot log grep can
+            // tell a pin from an operator's env.
+            let (door, source) = crate::ep_grouped_prime_door(ep.ranks() >= 2);
+            let enabled = door && moe_grouped_prefill_enabled();
             let bit = 1u8 << u8::from(enabled);
             if EPGP_ANNOUNCED.fetch_or(bit, std::sync::atomic::Ordering::Relaxed) & bit == 0 {
                 eprintln!(
-                    "[glm5-ep-grouped-prime] flag={} t={t} il={il} (announce printed in both \
-                     arms; engagement is the dispatch counter + per-layer execute line)",
+                    "[glm5-ep-grouped-prime] flag={} source={source} t={t} il={il} (announce \
+                     printed in both arms; engagement is the dispatch counter + per-layer \
+                     execute line)",
                     if enabled { "on" } else { "off" },
                 );
             }
