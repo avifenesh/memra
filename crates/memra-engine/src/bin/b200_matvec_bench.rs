@@ -28,7 +28,7 @@
 //!
 //! usage: b200-matvec-bench [iters=5] [copies=3]
 use cudarc::driver::{CudaSlice, CudaStream, DevicePtr};
-use memra_engine::{Engine, F32x8, QT_NVFP4, WPtr8};
+use memra_engine::{Engine, F32x8, QT_NVFP4, QT_Q8_0, WPtr8};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -967,6 +967,287 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "  (kda6 bytes: {:.1} MB bf16 + {:.1} MB f32; shipped GB/s above is over the sum)",
             bf_bytes as f64 / 1e6,
             f32_bytes as f64 / 1e6
+        );
+    }
+
+    // -----------------------------------------------------------------------------------
+    // Families 7-9: the W8 POSTURE. These are the kernels that actually serve t=1 decode and
+    // the t<=8 verify walk once MEMRA_GLM5_W8 is on (PR #86), which is the posture the pair
+    // serves — the bf16 families above are unreachable there. See the lane doc's section 11.
+    // GLM-5.3-Flash KDA shapes; weights are synthesised as bf16 and pushed through the SAME
+    // encode + rp4 split the W8 mirror uses, so the bytes under test are the real mirror form.
+    // -----------------------------------------------------------------------------------
+    for (in_f, out_f, label) in [
+        (4096usize, 8192usize, "kda up 4096->8192"),
+        (8192, 4096, "kda down 8192->4096"),
+    ] {
+        let nblk = in_f / 32;
+        let row_bytes = nblk * 34;
+        let h_bf = synth_bf16(out_f, in_f, 0x0BAD_C0DE);
+        let x = synth_f32(in_f, 0x0FED_CBA9);
+        let xd = e.htod(&x)?;
+        let (aq, ad) = e.quantize_q8_1(&xd, 1, in_f)?;
+        // one bf16 source per copy -> one distinct rp4 mirror per copy (cold L2 per arm)
+        let mirrors: Vec<CudaSlice<u8>> = (0..copies)
+            .map(|_| -> Result<CudaSlice<u8>, Box<dyn std::error::Error>> {
+                let src = e.htod_bytes(&h_bf)?;
+                let mut inter = e.alloc_u8_uninit(out_f * row_bytes)?;
+                e.encode_q8_0_from_bf16(&src, &mut inter, in_f, out_f)?;
+                e.build_q8_rp4_raw(&inter, in_f, out_f)
+            })
+            .collect::<Result<_, _>>()?;
+        let bytes = (out_f * row_bytes) as f64;
+
+        // Family 7: t=1 trunk. shipped qmatvec_q8_0_mmvq_rp vs the v2 twin.
+        {
+            let mut y_ship = e.zeros(out_f)?;
+            e.qmatvec_mmvq_into(
+                &mirrors[0],
+                &aq,
+                &ad,
+                1,
+                in_f,
+                out_f,
+                QT_Q8_0,
+                row_bytes,
+                1.0,
+                true,
+                &mut y_ship,
+            )?;
+            let mut y_v2 = e.zeros(out_f)?;
+            e.qmatvec_q8_0_rp_v2_raw(&mirrors[0], &aq, &ad, &mut y_v2, in_f, out_f, 1)?;
+            e.stream().synchronize()?;
+            let h_ship = e.dtoh(&y_ship)?;
+            let (mism, maxd) = compare(&h_ship, &e.dtoh(&y_v2)?);
+            let mut t_ship = Vec::with_capacity(iters);
+            let mut t_v2 = Vec::with_capacity(iters);
+            for i in 0..iters {
+                let c = i % copies;
+                let mut y = e.zeros(out_f)?;
+                let t0 = Instant::now();
+                e.qmatvec_mmvq_into(
+                    &mirrors[c],
+                    &aq,
+                    &ad,
+                    1,
+                    in_f,
+                    out_f,
+                    QT_Q8_0,
+                    row_bytes,
+                    1.0,
+                    true,
+                    &mut y,
+                )?;
+                e.stream().synchronize()?;
+                t_ship.push(t0.elapsed().as_secs_f64() * 1e6);
+
+                let mut y = e.zeros(out_f)?;
+                let t1 = Instant::now();
+                e.qmatvec_q8_0_rp_v2_raw(&mirrors[c], &aq, &ad, &mut y, in_f, out_f, 1)?;
+                e.stream().synchronize()?;
+                t_v2.push(t1.elapsed().as_secs_f64() * 1e6);
+            }
+            report(
+                &format!("qmatvec_q8_0_mmvq_rp (v2) {label}"),
+                median(&mut t_ship),
+                median(&mut t_v2),
+                bytes,
+                mism,
+                maxd,
+            );
+        }
+
+        // Family 8: verify width t=8. shipped qmatvec_q8_0_rows_tw vs the v2 twin.
+        {
+            let tv = 8usize;
+            let xt = synth_f32(tv * in_f, 0x1234_ABCD);
+            let xtd = e.htod(&xt)?;
+            let (aqt, adt) = e.quantize_q8_1(&xtd, tv, in_f)?;
+            let mut y_ship = e.zeros(tv * out_f)?;
+            e.qmatvec_q8_0_rows_tw_arm_raw(
+                &mirrors[0],
+                &aqt,
+                &adt,
+                &mut y_ship,
+                in_f,
+                out_f,
+                tv,
+                false,
+            )?;
+            let mut y_v2 = e.zeros(tv * out_f)?;
+            e.qmatvec_q8_0_rows_tw_arm_raw(
+                &mirrors[0],
+                &aqt,
+                &adt,
+                &mut y_v2,
+                in_f,
+                out_f,
+                tv,
+                true,
+            )?;
+            e.stream().synchronize()?;
+            let (mism, maxd) = compare(&e.dtoh(&y_ship)?, &e.dtoh(&y_v2)?);
+            let mut t_ship = Vec::with_capacity(iters);
+            let mut t_v2 = Vec::with_capacity(iters);
+            for i in 0..iters {
+                let c = i % copies;
+                let mut y = e.zeros(tv * out_f)?;
+                let t0 = Instant::now();
+                e.qmatvec_q8_0_rows_tw_arm_raw(
+                    &mirrors[c],
+                    &aqt,
+                    &adt,
+                    &mut y,
+                    in_f,
+                    out_f,
+                    tv,
+                    false,
+                )?;
+                e.stream().synchronize()?;
+                t_ship.push(t0.elapsed().as_secs_f64() * 1e6);
+
+                let mut y = e.zeros(tv * out_f)?;
+                let t1 = Instant::now();
+                e.qmatvec_q8_0_rows_tw_arm_raw(
+                    &mirrors[c],
+                    &aqt,
+                    &adt,
+                    &mut y,
+                    in_f,
+                    out_f,
+                    tv,
+                    true,
+                )?;
+                e.stream().synchronize()?;
+                t_v2.push(t1.elapsed().as_secs_f64() * 1e6);
+            }
+            report(
+                &format!("qmatvec_q8_0_rows_tw (v2) t=8 {label}"),
+                median(&mut t_ship),
+                median(&mut t_v2),
+                bytes,
+                mism,
+                maxd,
+            );
+        }
+    }
+
+    // Family 9: the FUSED W8 six-projection group. Reference = the three mirrored projections
+    // launched SEPARATELY through the v2 kernel (what the W8 path does today, one launch each
+    // plus one redundant activation quantize each); arm = one fused launch that also covers the
+    // three f32 low-rank/beta ranges. Identity is checked on y0..y2, where both sides run the
+    // same per-row program; the f32 ranges are the fused kernel's pinned warp-tree class and
+    // have no unfused counterpart here.
+    {
+        let in_f = 4096usize;
+        let dims = [8192usize, 8192, 8192, 128, 128, 64];
+        let nblk = in_f / 32;
+        let row_bytes = nblk * 34;
+        let h_bf = synth_bf16(dims[0], in_f, 0x5EED_1234);
+        let x = synth_f32(in_f, 0x4321_DEEF);
+        let xd = e.htod(&x)?;
+        let (aq, ad) = e.quantize_q8_1(&xd, 1, in_f)?;
+        let f32w: Vec<CudaSlice<f32>> = (3..6)
+            .map(|k| e.htod(&synth_f32(dims[k] * in_f, 0xB0B0 + k as u32)))
+            .collect::<Result<_, _>>()?;
+        let bf_copies: Vec<[CudaSlice<u8>; 3]> = (0..copies)
+            .map(
+                |_| -> Result<[CudaSlice<u8>; 3], Box<dyn std::error::Error>> {
+                    Ok([
+                        e.htod_bytes(&h_bf)?,
+                        e.htod_bytes(&h_bf)?,
+                        e.htod_bytes(&h_bf)?,
+                    ])
+                },
+            )
+            .collect::<Result<_, _>>()?;
+        // separate rp4 mirrors for the unfused reference (the fused entry builds its own,
+        // keyed on the bf16 source pointer)
+        let sep: Vec<[CudaSlice<u8>; 3]> = (0..copies)
+            .map(
+                |c| -> Result<[CudaSlice<u8>; 3], Box<dyn std::error::Error>> {
+                    let mut out = Vec::new();
+                    for k in 0..3 {
+                        let mut inter = e.alloc_u8_uninit(dims[k] * row_bytes)?;
+                        e.encode_q8_0_from_bf16(&bf_copies[c][k], &mut inter, in_f, dims[k])?;
+                        out.push(e.build_q8_rp4_raw(&inter, in_f, dims[k])?);
+                    }
+                    let Ok(m3): Result<[CudaSlice<u8>; 3], _> = out.try_into() else {
+                        return Err("expected exactly 3 mirrors".into());
+                    };
+                    Ok(m3)
+                },
+            )
+            .collect::<Result<_, _>>()?;
+        let mk_outs = || -> Result<[CudaSlice<f32>; 6], Box<dyn std::error::Error>> {
+            Ok([
+                e.zeros(dims[0])?,
+                e.zeros(dims[1])?,
+                e.zeros(dims[2])?,
+                e.zeros(dims[3])?,
+                e.zeros(dims[4])?,
+                e.zeros(dims[5])?,
+            ])
+        };
+        let unfused =
+            |c: usize, outs: &mut [CudaSlice<f32>; 6]| -> Result<(), Box<dyn std::error::Error>> {
+                for k in 0..3 {
+                    e.qmatvec_q8_0_rp_v2_raw(&sep[c][k], &aq, &ad, &mut outs[k], in_f, dims[k], 1)?;
+                }
+                Ok(())
+            };
+        let fused =
+            |c: usize, outs: &mut [CudaSlice<f32>; 6]| -> Result<(), Box<dyn std::error::Error>> {
+                let b = &bf_copies[c];
+                e.kda_proj_fused6_q8rp_raw(
+                    &b[0], &b[1], &b[2], &f32w[0], &f32w[1], &f32w[2], &xd, outs, in_f, dims, 1,
+                )
+            };
+
+        let mut o_sep = mk_outs()?;
+        unfused(0, &mut o_sep)?;
+        let mut o_fus = mk_outs()?;
+        fused(0, &mut o_fus)?;
+        e.stream().synchronize()?;
+        let mut mism = 0usize;
+        let mut maxd = 0f32;
+        let mut per = Vec::new();
+        for k in 0..3 {
+            let (m, d) = compare(&e.dtoh(&o_sep[k])?, &e.dtoh(&o_fus[k])?);
+            mism += m;
+            maxd = maxd.max(d);
+            per.push(format!("y{k}={m}"));
+        }
+
+        let mut t_sep = Vec::with_capacity(iters);
+        let mut t_fus = Vec::with_capacity(iters);
+        for i in 0..iters {
+            let c = i % copies;
+            let mut outs = mk_outs()?;
+            let t0 = Instant::now();
+            unfused(c, &mut outs)?;
+            e.stream().synchronize()?;
+            t_sep.push(t0.elapsed().as_secs_f64() * 1e6);
+
+            let mut outs = mk_outs()?;
+            let t1 = Instant::now();
+            fused(c, &mut outs)?;
+            e.stream().synchronize()?;
+            t_fus.push(t1.elapsed().as_secs_f64() * 1e6);
+        }
+        let bytes = (3 * dims[0] * row_bytes) as f64;
+        report(
+            "kda6 W8: 3x separate -> qmatvec_kda6_q8f32_rp_v2",
+            median(&mut t_sep),
+            median(&mut t_fus),
+            bytes,
+            mism,
+            maxd,
+        );
+        println!(
+            "  per-projection mismatch counts (q8 ranges): {}  (the fused arm additionally \
+             covers the three f32 ranges the separate reference does not launch)",
+            per.join(" ")
         );
     }
 

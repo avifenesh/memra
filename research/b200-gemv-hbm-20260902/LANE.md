@@ -1,10 +1,11 @@
 # B200 sm_100a HBM-speed decode matvecs
 
-Status: **round 1 benched on the box; round 2 (bug fix + verdicts acted on + v3) written and
-pending its receipt.** Both arches build clean (`MEMRA_CUDA_ARCH=100a` and `120a`),
+Status: **rounds 1 and 2 benched on the box; round 3 (the W8 retarget) written and pending its
+receipt.** Both arches build clean (`MEMRA_CUDA_ARCH=100a` and `120a`),
 `cargo fmt --all -- --check`, `tools/check-flags.sh` and
 `cargo clippy --release --all-targets -- -D warnings` all green. No GPU on this box; section 8
-carries the box's own numbers and section 9 the v3 arithmetic, which is design, not measurement.
+carries round 1, section 10 round 2 (where v3 was REFUTED and the serving A/B exposed the
+posture problem), and section 11 the W8 retarget this round ships.
 Both doors default OFF.
 
 Branch: `lane/b200-gemv-hbm-20260902`, from `lane/glm5-b200-int2-20260902` (which carries the
@@ -356,16 +357,117 @@ The door became a LEVEL rather than a boolean: `1` = v2, `2` = v2 plus v3 wherev
 other value off (a typo must not arm a kernel arm). v3 declines per call — not per process — when
 a shape wants split-K or when its smem does not fit.
 
-## 10. Open items (owner-visible, not silently dropped)
+## 10. Round 2 receipt, and the retarget it forced
 
-1. **v3 has no receipt.** Section 9 is in-flight-bytes arithmetic and static SASS, not
-   throughput. The box runs `b200_matvec_bench 5 3` again: the bf16 and kda6 families now print
-   a `v3` line with us, GB/s and per-projection identity next to the shipped and v2 lines.
-   Nothing about level 2 moves without it.
-2. **If v3 also lands short of 60%**, the remaining ladder in order is: `cp.async.bulk`/TMA (same
-   arithmetic, higher issue rate and no per-thread address math), then 2-CTA clusters on top of
-   staging, then attacking the reduction epilogue itself (v2/v3 still spend 7 barriers per block
-   on it).
+Bench round 2 (int8 `fc8cbf593`, `gate-gemv-bench-2.txt`) confirmed the fix and killed v3:
+
+| family | shipped | v2 | v3 (cp.async) |
+|---|---:|---:|---:|
+| `qmatvec_kda6_bf16f32` | 100.25 | **64.56 (1.553x)**, y0..y5 all 0 mismatches | 1.157x |
+| `matvec_bf16` kda up | — | **1.467x** (22.1 us, 3.04 TB/s) | 1.223x |
+| `matvec_bf16` kda down | — | **1.254x** | 1.309x |
+| MoE v2 twins (measured arms) | — | 1.017x / 0.877x | — |
+
+The y5 fix holds: **bit-identical, per projection**. And **v3 is slower than v2 on every
+family**, so level 2 is not a promotion path — the cp.async staging pays more in issue cost and
+smem latency than the 1.9x in-flight bytes buys back. That is the same verdict the shipped
+`qmatvec_q8_0_mmvq_rpca` (a cp.async-staged weight ring for Q8_0) already carries from the H100
+lane, arrived at independently on a different dtype and a different part. Level 2 stays in the
+tree as a measured, refuted arm; it is not a candidate.
+
+### The serving A/B moved nothing, and the reason was the posture
+
+Pair 1 (plain, all doors + `MEMRA_GLM5_W8=1` as the base, W8 vs W8 + `MEMRA_B200_GEMV_V2=1`):
+code 49.2 -> 49.3 tok/s, prose 48.8 -> 48.7. Zero. **And the boot log printed no gemv engagement
+line at all** — the door had nothing to dispatch.
+
+The kernels this lane had been optimising are not on the serving path. With `MEMRA_GLM5_W8` on
+(PR #86, +10% plain), `matvec_bf16_rows_into` reroutes every bf16-resident KDA/MLA projection
+through `matvec_bf16_via_q8_mirror(_t)` BEFORE the bf16 arms are reached, so
+`matvec_bf16_f32acc_x4_rows` and `qmatvec_kda6_bf16f32` are simply not run in the posture we
+serve. Two rounds of bf16 work, correct and measured, aimed at a path the product had already
+left. The engagement counter is what caught it, one line, immediately — which is the argument
+for the announce-once rule, not against it.
+
+## 11. Round 3: the W8 posture
+
+### 11.1 The kernels that actually serve it (read off lib.rs, not guessed)
+
+| where | kernel | how it is reached |
+|---|---|---|
+| **t = 1 decode trunk** | `qmatvec_q8_0_mmvq_rp` | `matvec_bf16_via_q8_mirror` -> `qmatvec_mmvq_into(.., QT_Q8_0, rp=true)`. `_rp_g2` (2 warps/block) only when `out_f/4 < 4*SMs`, i.e. `out_f < 2368` on B200 — not the 4096/8192 KDA rows. `_rpca` and `_mr2_rp` are off by measurement (mr2 lost on H100: halving the grid costs more than 2-row ILP buys). |
+| **t = 2..=8 verify walk** | `qmatvec_q8_0_rows_tw` | `matvec_bf16_via_q8_mirror_t` under `MEMRA_Q8T_WONCE`; `_tw32` for t in 9..=32, `_t` without the door. |
+| **KDA stage-1 group** | six separate launches | `MEMRA_KDA_FUSED_PROJ`'s bf16 arm declines outright under W8 (its bit-identity bar is the unmirrored bf16 program), so nothing fuses them. |
+
+### 11.2 What the W8 census says, and what it rules out
+
+int9 `fc4b71ef7`, all doors + W8, ~224 measured tokens, both devices:
+
+- `qmatvec_q8_0_mmvq_rp` 455.4 ms / 47,364 launches = **9.6 us**, 8.1% of GPU, ~211/token. At
+  [4096 -> 8192] that is 8192 x 128 x 34 B = 35.65 MB per launch = **3.71 TB/s, 46% of the
+  8 TB/s wall** — already the most efficient matvec on the die.
+- the cuBLAS f32 GEMV pair `dot_kernel` (248.5 ms / 72,000 x 3.5 us) + `reduce_1Block_kernel`
+  (145.8 ms / 72,000 x 2.0 us) = 394 ms, **~643 launches/token, ~1.8 ms/token**, for the
+  rank-128 low-rank KDA projections the loader keeps as F32.
+- `quantize_q8_1` 232.7 ms / 118,084 launches x 2.0 us, **~527/token**.
+
+Two things follow, and the second is the lane's actual target now:
+
+1. **The bytes-per-launch design buys much less here.** 46% of the wall is not 26%, and the rp4
+   mirror is a 32 B quant plane plus a 2 B scale plane, so every weight fetch is ALREADY an
+   aligned 16 B `__ldcs`. There is no load-width lever, and the roofline headroom is 1.3x, not
+   3x. The one real inefficiency left in the per-launch program is that a lane reads **36 B of
+   ACTIVATION (32 B `aq` + a 4 B `ad` scale) for every 34 B of weight**, per block-iteration —
+   and that activation is identical for every one of the 8192 rows in the launch. Same 1:1
+   ratio that cost the bf16 kernel its bandwidth, in a different dtype.
+2. **The lever is LAUNCH COUNT.** 211 q8 launches/token plus 643 cuBLAS launches/token plus 527
+   quantizes, against a decode step that has to fit ~34 layers.
+
+### 11.3 What round 3 ships
+
+- `qmatvec_q8_0_mmvq_rp_v2` (t=1) and `qmatvec_q8_0_rows_tw_v2` (t<=8 verify): the activation
+  staged into shared memory ONCE per CTA (`in_f + nblk*4` = 4.6 KB at in_f=4096; one barrier,
+  then every warp reads it from smem), 8 warps per block instead of 4, block walk unrolled by
+  two so both iterations' weight and scale loads issue before either dp4a chain. The `_tw_v2`
+  twin does NOT stage (t*in_f is 32 KB at t=8) — its levers are the packing and the unroll.
+  **Bit-identical per output**: the per-row warp program is untouched, and staging copies bytes
+  without changing them. ptxas: 40 / 62 registers, 0 spill.
+- `qmatvec_kda6_q8f32_rp_v2`: the fusion the W8 path never had. Per KDA layer the stage-1 group
+  costs 3 q8 launches + 3 f32 projections x 2 cuBLAS launches + 6 redundant `quantize_q8_1`
+  calls on the same `x` = **9 launches per layer**; the fused arm makes that **1**. Over 34 KDA
+  layers: **306 -> 34 launches per token**, and the three f32 ranges leave cuBLAS for the same
+  deterministic warp tree the q8 arm of `MEMRA_KDA_FUSED_PROJ` already ships and has pinned.
+  It engages only with BOTH `MEMRA_KDA_FUSED_PROJ` and `MEMRA_B200_GEMV_V2` set, so it carries
+  its own receipt, and without the v2 door W8 declines to the unfused path exactly as before.
+  ptxas: 40 registers, 0 spill, 1 barrier.
+- Bench families 7-9: `qmatvec_q8_0_mmvq_rp` vs v2 at [4096 -> 8192] and [8192 -> 4096];
+  `qmatvec_q8_0_rows_tw` vs v2 at t=8; and the fused group against **three separate v2 launches**
+  (what the W8 path does today), with per-projection identity on y0..y2. Weights are synthesised
+  as bf16 and pushed through the SAME `encode_q8_0_from_bf16` + `build_q8_rp4_raw` the W8 mirror
+  uses, so the bytes under test are the real mirror form, not an approximation of it.
+
+## 12. Open items (owner-visible, not silently dropped)
+
+
+1. **The round-3 q8_0 arms have no receipt.** Everything in section 11.3 is design plus ptxas,
+   not throughput. `b200_matvec_bench 5 3` now prints families 7-9; the door stays OFF until
+   they and a serving A/B in the W8 posture land. This time the engagement lines
+   (`arm=q8_rp_v2`, `arm=q8_rows_tw_v2`, `[kda-fused6] engaged arm=q8rp_v2`) must appear in the
+   boot log before any tok/s number is read — pair 1 is the precedent.
+2. **`f_b` and `g_b` are still on cuBLAS.** They are the `[8192 x 128]` stage-4 halves of the
+   low-rank gate pairs, chained off `f_a`/`g_a`'s outputs, so they cannot join the stage-1
+   launch. At 2 projections x 2 launches x 34 layers that is ~136 launches/token of the census's
+   cuBLAS `dot_kernel`+`reduce_1Block_kernel` pair. Two options, both sized and neither taken
+   here: a two-projection fused f32 GEMV at the stage-4 site, or the loader-law route the census
+   warning names — encode them Q8_0 at load like every other matmul-class weight, which folds
+   them into the existing mmvq dispatch instead of adding a kernel. The second is the better
+   answer and belongs to the loader, not this lane.
+3. **`quantize_q8_1` is ~527 launches/token** (232.7 ms). The fused arm removes six per KDA
+   layer by construction (one quantize feeds all six projections); the rest is the graph lane's.
+4. **v3 (level 2) is REFUTED, not pending**: slower than v2 on every family in round 2. It stays
+   in the tree as a measured arm with its number attached. The `cp.async` verdict now agrees
+   across two dtypes and two parts (this lane on B200 bf16, and the shipped
+   `qmatvec_q8_0_mmvq_rpca` on H100 Q8_0), which is worth more than either alone.
 3. **The 36 B NVFP4 block layout remains the binding constraint on the expert kernels**, and
    round 1 confirmed it from the other side: both MoE v2 arms were bit-identical and neither was
    faster, so the gap there is the 4-byte load granularity, not scheduling. A 16 B-aligned

@@ -56,6 +56,11 @@ pub static KDA_FUSED6_DISPATCHES: AtomicU64 = AtomicU64::new(0);
 /// refuses by design) can attribute engagement to the arm that actually ran.
 pub static KDA_FUSED6_BF16_DISPATCHES: AtomicU64 = AtomicU64::new(0);
 
+/// Same door, W8-MIRROR arm (`qmatvec_kda6_q8f32_rp_v2`, lane/b200-gemv-hbm-20260902 round 3).
+/// Counted separately for the same reason the bf16 arm is: a box A/B on the serving recipe must
+/// be able to attribute engagement to the arm that actually ran.
+pub static KDA_FUSED6_Q8RP_DISPATCHES: AtomicU64 = AtomicU64::new(0);
+
 /// The only head width `memra_kda_scan_s128` is instantiated for, and the only one glm5_next
 /// ships (`linear_attn_config.head_dim = 128`).
 pub const KDA_HEAD_DIM: usize = 128;
@@ -1298,9 +1303,74 @@ impl Engine {
             // its bit-identity bar is against the unmirrored, unrerouted bf16 program. With
             // the door on, the three bf16 projections fall to the unfused group and each one
             // takes the library GEMV, which is what the reference door is there to measure.
+            // W8 POSTURE FUSION (lane/b200-gemv-hbm-20260902 round 3). Under MEMRA_GLM5_W8 the
+            // six projections each reroute through `matvec_bf16_via_q8_mirror`, so this group
+            // runs as SIX separate launches plus six redundant quantizes of the same `x` — and
+            // the bf16 fused arm below cannot serve it, because its bit-identity bar is against
+            // the unmirrored bf16 program. `qmatvec_kda6_q8f32_rp_v2` is the fused twin for
+            // that posture: three mirrored ranges on the rp v2 body (bit-identical to
+            // `qmatvec_q8_0_mmvq_rp` per row) and three f32 ranges on the same deterministic
+            // warp tree the q8 arm of this door already ships and has pinned. Gated on
+            // MEMRA_B200_GEMV_V2 so it carries its own receipt; without that door W8 still
+            // declines to the unfused path exactly as before.
+            if crate::glm5_w8_on() && !(crate::step_tp_w8_on() && crate::w8_hybrid_on()) {
+                if !Self::bf16_mmv_on() || !crate::b200_gemv_v2_on() {
+                    return Ok(None);
+                }
+                let in_f = in_q;
+                if [in_k, in_v, in_fa, in_ga, in_b].iter().any(|&i| i != in_f)
+                    || !in_f.is_multiple_of(128)
+                    || x.len() < t * in_f
+                    || Engine::q8_v2_smem_bytes(in_f) > 48 * 1024
+                {
+                    return Ok(None);
+                }
+                let dims = [
+                    la.wq.out_features(),
+                    la.wk.out_features(),
+                    la.wv.out_features(),
+                    la.f_a.out_features(),
+                    la.g_a.out_features(),
+                    la.b_proj.out_features(),
+                ];
+                let (
+                    GpuTensor::FloatBf16 { data: bq, .. },
+                    GpuTensor::FloatBf16 { data: bk, .. },
+                    GpuTensor::FloatBf16 { data: bv, .. },
+                ) = (&la.wq, &la.wk, &la.wv)
+                else {
+                    unreachable!("bf16() above only admits FloatBf16");
+                };
+                let (
+                    GpuTensor::Float { data: wfa, .. },
+                    GpuTensor::Float { data: wga, .. },
+                    GpuTensor::Float { data: wb, .. },
+                ) = (&la.f_a, &la.g_a, &la.b_proj)
+                else {
+                    unreachable!("f32w() above only admits Float");
+                };
+                let mut outs = [
+                    self.uninit(t * dims[0])?,
+                    self.uninit(t * dims[1])?,
+                    self.uninit(t * dims[2])?,
+                    self.uninit(t * dims[3])?,
+                    self.uninit(t * dims[4])?,
+                    self.uninit(t * dims[5])?,
+                ];
+                self.kda_proj_fused6_q8rp_raw(
+                    bq, bk, bv, wfa, wga, wb, x, &mut outs, in_f, dims, t,
+                )?;
+                if KDA_FUSED6_Q8RP_DISPATCHES.fetch_add(1, Ordering::Relaxed) == 0 {
+                    eprintln!(
+                        "[kda-fused6] engaged arm=q8rp_v2 in_f={in_f} out={dims:?} t={t} (one \
+                         launch replaces the six W8-mirror projections and their six redundant \
+                         activation quantizes; MEMRA_KDA_FUSED_PROJ=1 MEMRA_B200_GEMV_V2=1)"
+                    );
+                }
+                return Ok(Some(outs.into_iter().collect()));
+            }
             if !Self::bf16_mmv_on()
                 || (crate::step_tp_w8_on() && crate::w8_hybrid_on())
-                || crate::glm5_w8_on()
                 || crate::b200_bf16_gemv_lt_on()
             {
                 return Ok(None);
