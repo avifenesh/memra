@@ -108,7 +108,8 @@ What this list does **not** claim, stated so nobody reads more into it:
   kernels lazily and panics on a miss, so an arch-scoped `#if` that drops a kernel with no
   `#else` is a **runtime** failure on a shipped binary that every compile gate here passes.
   That gap is now measured by `tools/fatbin-lookup-census.py` — which is how sm_89's 20 missing
-  kernels were found and why sm_89 stopped shipping. See "Known unshippable arch" below.
+  kernels were found and why sm_89 stopped shipping (first on 2026-08-23 over this, then for
+  good in the 2026-09-02 arch retirement — see the sm_89 section below).
 - **sm_100a (B200): runtime-qualified from source and auto-detected; no prebuilt is released.**
   The 2026-08-23 state was "it does not compile" (two
   stub-gate polarity bugs, fixed then, plus a wrong `__CUDA_ARCH__ >= 1000` guard in

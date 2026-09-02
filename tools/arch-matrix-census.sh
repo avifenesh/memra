@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Arch-matrix census: refuses a CI that compiles fewer arches than the release matrix builds.
 #
-# WHY THIS EXISTS. release.yml builds a 6-cell matrix (2 glibc floors x 3 CUDA arches). ci.yml
+# WHY THIS EXISTS. release.yml built a 6-cell matrix (2 glibc floors x 3 CUDA arches) at the
+# time of the incident this census was born from; since 2026-09-02 it builds 120a only, with
+# 100a compile-covered here in ci.yml and not shipped. ci.yml
 # built ONE arch — and not even explicitly: it set MEMRA_NVCC and left MEMRA_CUDA_ARCH unset, so
 # build.rs::detect_arch() fell back to 120a on every GPU-less runner. crates/memra-engine/
 # build.rs swaps in DIFFERENT SOURCE FILES for the other arches (cu/*_stub.cu on 89 and 90a,
@@ -79,7 +81,8 @@ done
 
 # --- refusal 3: an ADVISORY arch must never be shipped ---------------------------------------
 # tools/fatbin-census-advisory.txt lists arches whose fatbin-vs-lookup census is non-blocking
-# because we already know kernels are missing (sm_89 today: 20 of them, measured). That
+# because we already know kernels are missing (sm_89 was the live case on 2026-08-23: 20 of
+# them, measured). That
 # downgrade is only defensible while such an arch is COMPILE COVERAGE ONLY. The moment it
 # appears in release.yml's matrix it becomes a published tarball that panics at
 # `Engine::func` on first use — which is exactly what v0.107.0's sm_89 asset does, and what
