@@ -183,15 +183,14 @@ the TP pair, use the persistent join at the attention and FFN ownership boundari
 experts whole, and profile each integrated rung. The pass condition at the top of this file is
 unchanged.
 
-## 2026-09-01 Vast continuation: profile-driven boundary diet
+## 2026-09-01 four-card continuation: profile-driven boundary diet
 
-The migrated-repo continuation rented Vast instance `49548335`, a non-production 4x RTX PRO 6000
-Blackwell Workstation host at 600 W/card and $6.8056/hour including 500 GB disk. The pinned public
-artifact revision and index hash above were downloaded once. Raw logs, five Nsight reports/SQLite
-exports, telemetry, forced tapes, and hardware gates were copied and hash-checked before the
-instance was destroyed:
-
-`/home/avifenesh/projects/runpod-receipts/hy3-c1-100-20260901/vast-49548335/raw/`
+The migrated-repo continuation used a non-production 4x RTX PRO 6000 Blackwell Workstation host
+at 600 W/card. The pinned public artifact revision and index hash above were downloaded once. Raw
+logs, five Nsight reports/SQLite exports, telemetry, forced tapes, and hardware gates were copied
+and hash-checked into the private receipt namespace before the host was destroyed. Provider,
+instance, price, and placement evidence stays in the private deployment repository rather than
+this public engine plan.
 
 The strengthened primitive gate used a non-periodic fixed PRNG matrix. On the exact cards:
 
@@ -311,3 +310,44 @@ The unwired interleaved wrapper was removed and `DOWN_X4` remains off. The retai
 the existing q8 mirror numeric class (`MEMRA_W8_HYBRID`) for shared down, dense layer 0, and the
 LM head, combined with attention profiling. Halving streamed bytes is supported by adjacent
 receipts; rescheduling the same BF16 bytes is now falsified for HY3's exact shape.
+
+## 2026-09-02 sampled endpoint and TP predictor closure
+
+The exact artifact then ran through the native OpenAI-compatible server on four RTX PRO 6000
+Blackwell Server Edition cards. Every row below used the same 66-token real prompt, no sampling
+parameters, no prompt-cache hit, 128 streamed output tokens, one warmup, and three repetitions.
+The number shown is median post-first-token throughput; TTFT and total-throughput fields remain in
+the private raw receipts. These are development measurements, not a support-state or product
+claim.
+
+| server arm | sampled tok/s | verdict |
+|---|---:|---|
+| TP2 attention + EP4 + all-Q8, W8 hybrid off | 62.88 | valid plain control |
+| TP2 attention + EP4 + all-Q8, W8 hybrid on | **64.75** | fastest serving row; +3.0% |
+| exact EP4 plain | 32.36 | exact numeric control |
+| exact EP4 predictor K=3 | 26.00 | rejected; 24.9-31.3% acceptance |
+| EP4 Q8 gate/up plain | 41.94 | matched predictor control |
+| EP4 Q8 gate/up predictor K=1 | 46.30 | +10.4%, but below TP2 plain |
+| TP2 predictor K=1, host-staged cache repair | 14.15 | correct, structurally too slow |
+| TP2 predictor K=1, native peer-device cache repair | 13.99 | correct, no improvement |
+
+Before the repair, TP2 prediction failed closed on the next decode because the exact verify walk
+advanced only the canonical full-width K/V cache; the rank-local TP caches retained their old
+length and bytes. The repair copies only the accepted quantized row slices into each rank cache,
+then publishes the matching length mirror. A 16-token warmup and all three 128-token sampled rows
+completed without cache divergence, CUDA failure, or Xid. The peer-device binary was hash-bound
+as `d252b61c93a383dfb33dfb7f02bb8d96cbdf3e0d57f64eed7f3f1c01bfdb0e8e`.
+
+The performance result is the important profile: replacing host staging with direct native P2P
+did not move the wall (14.15 -> 13.99 tok/s), despite 55.0-65.3% K=1 acceptance in the three
+peer-device rows. PCIe byte volume is therefore not the dominant regression. The per-layer repair
+and synchronization topology is. Predictor remains off for this placement. Any follow-up must
+publish verified rows during the verify walk itself or batch the whole 80-layer repair into a
+constant-number dependency group; another per-layer copy variant is rejected.
+
+The serving result also corrects the earlier `71.93 tok/s` interpretation: that number came from
+the generation harness with `MEMRA_ASYNC_CHAIN=8`, a mechanism the server request path did not
+engage. The current comparable server baseline is **64.75 tok/s**, leaving 5.44 ms/token to reach
+100 tok/s. The next plain-path cell profiles server-side dependency groups and either integrates a
+coarse persistent chain into the server or rejects it on measured wall time; expert-row and
+shared-BF16 reschedules are already closed by the counters above.

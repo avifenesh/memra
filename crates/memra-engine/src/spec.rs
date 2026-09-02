@@ -4417,6 +4417,68 @@ static ROUND_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::ne
 static ROUND_N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 impl HybridModel {
+    fn restore_step_tp_kv_verified_prefix(
+        &self,
+        e: &Engine,
+        cache: &mut Cache,
+        snap: &crate::cache::CacheSnapshot,
+        accepted: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if snap.tp_kv_len.len() != cache.tp_kv.len() {
+            return Err("spec TP KV restore snapshot shape mismatch".into());
+        }
+        e.stream().synchronize()?;
+        for il in 0..self.layers.len() {
+            let (Some(distributed), Some(saved)) = (cache.tp_kv[il].as_mut(), snap.tp_kv_len[il])
+            else {
+                continue;
+            };
+            let target = saved
+                .checked_add(accepted)
+                .ok_or("spec TP KV restore length overflow")?;
+            let local = cache.kv[il]
+                .as_ref()
+                .ok_or_else(|| format!("spec TP KV layer {il} lost its owning cache"))?;
+            if local.len < target {
+                return Err(format!(
+                    "spec TP KV layer {il} local length {} precedes restore target {target}",
+                    local.len
+                )
+                .into());
+            }
+            let physical = local.physical_rows(saved, target)?;
+            if physical.len() != accepted {
+                return Err(format!(
+                    "spec TP KV layer {il} restore [{saved},{target}) is not contiguous"
+                )
+                .into());
+            }
+            use cudarc::driver::DevicePtr;
+            let stream = e.gpu.stream();
+            let (k_base, _k_guard) = local.k.device_ptr(&stream);
+            let (v_base, _v_guard) = local.v.device_ptr(&stream);
+            let k_raw = k_base + (physical.start * local.k_tok_bytes) as u64;
+            let v_raw = v_base + (physical.start * local.v_tok_bytes) as u64;
+            let Mixer::Full(fa) = &self.layers[il].mixer else {
+                return Err(format!("spec TP KV layer {il} is not full attention").into());
+            };
+            let tp = fa
+                .step_tp_qkv
+                .as_ref()
+                .ok_or_else(|| format!("spec TP KV layer {il} lost its TP runtime"))?;
+            tp.runtime.restore_tp_kv_rows_from_device(
+                distributed,
+                saved,
+                target,
+                k_raw,
+                v_raw,
+                local.k_tok_bytes,
+                local.v_tok_bytes,
+            )?;
+        }
+        Ok(())
+    }
+
     fn mtp_head_count(&self) -> usize {
         usize::from(self.mtp.is_some()) + self.mtp_extra.len()
     }
@@ -9403,6 +9465,7 @@ impl HybridModel {
                 }
             }
         }
+        self.restore_step_tp_kv_verified_prefix(e, cache, snap, j)?;
         cache.pos = snap.pos + j;
         Ok(())
     }
@@ -15531,6 +15594,7 @@ impl HybridModel {
                 // trunk hidden (the last verify column). set_len first: a p-min break may have
                 // left one extra chain append at that slot. Partial accepts need NO fill (the
                 // chain already covered every accepted position; round-start set_len truncates).
+                self.restore_step_tp_kv_verified_prefix(e, &mut *cache, &snap, t_v)?;
                 let mut vh_seed = e.zeros(n_embd)?;
                 e.copy_view_into(
                     &mut vh_seed,

@@ -2451,6 +2451,93 @@ impl TpE4m3HostBounce {
         Ok(())
     }
 
+    /// Restore rows retained from a speculative verify walk into an already-live distributed
+    /// cache. The verify oracle appends canonical full-width quantized K/V rows on the model
+    /// device. Each destination rank pulls its own contiguous KV-head slice over native P2P; its
+    /// length mirror is published on that same rank stream after every row copy.
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore_tp_kv_rows_from_device(
+        &self,
+        cache: &mut ResidentTpKvCache,
+        start: usize,
+        logical_len: usize,
+        source_k_raw: u64,
+        source_v_raw: u64,
+        source_k_tok_bytes: usize,
+        source_v_tok_bytes: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.validate_tp_kv_cache(cache)?;
+        if cache.committed_len() != cache.staged_len() {
+            return Err(format!(
+                "TP KV verify restore requires quiescent state, got committed/staged={}/{}",
+                cache.committed_len(),
+                cache.staged_len()
+            )
+            .into());
+        }
+        if start > logical_len || logical_len > cache.capacity() {
+            return Err(format!(
+                "TP KV verify restore range [{start},{logical_len}) exceeds capacity {}",
+                cache.capacity()
+            )
+            .into());
+        }
+        let rows = logical_len - start;
+        let physical = cache.physical_range(start, logical_len)?;
+        if physical.len() != rows {
+            return Err(format!(
+                "TP KV verify restore range [{start},{logical_len}) is not physically contiguous"
+            )
+            .into());
+        }
+        let ranks = self.ranks.len();
+        let k_tok_bytes = cache.k_tok_bytes();
+        let v_tok_bytes = cache.v_tok_bytes();
+        if source_k_tok_bytes != k_tok_bytes * ranks || source_v_tok_bytes != v_tok_bytes * ranks {
+            return Err(format!(
+                "TP KV verify source token bytes k={source_k_tok_bytes} v={source_v_tok_bytes} \
+                 do not match distributed k={}x{ranks} v={}x{ranks}",
+                k_tok_bytes, v_tok_bytes
+            )
+            .into());
+        }
+        for rank in 0..self.ranks.len() {
+            let engine = &self.ranks[rank];
+            let _main = engine.gpu.enter_main()?;
+            use cudarc::driver::DevicePtr;
+            let stream = engine.stream();
+            let k_offset = physical
+                .start
+                .checked_mul(k_tok_bytes)
+                .ok_or("TP KV verify K offset overflow")?;
+            let v_offset = physical
+                .start
+                .checked_mul(v_tok_bytes)
+                .ok_or("TP KV verify V offset overflow")?;
+            let rank_cache = cache
+                .rank_mut(rank)
+                .ok_or_else(|| format!("TP KV cache has no rank {rank}"))?;
+            let k_dst = {
+                let (pointer, _guard) = rank_cache.k_mut().device_ptr(&stream);
+                pointer
+            };
+            let v_dst = {
+                let (pointer, _guard) = rank_cache.v_mut().device_ptr(&stream);
+                pointer
+            };
+            for row in 0..rows {
+                let k_src = source_k_raw + (row * source_k_tok_bytes + rank * k_tok_bytes) as u64;
+                let v_src = source_v_raw + (row * source_v_tok_bytes + rank * v_tok_bytes) as u64;
+                let k_out = k_dst + (k_offset + row * k_tok_bytes) as u64;
+                let v_out = v_dst + (v_offset + row * v_tok_bytes) as u64;
+                raw_copy_bytes(k_out, k_src, k_tok_bytes, engine)?;
+                raw_copy_bytes(v_out, v_src, v_tok_bytes, engine)?;
+            }
+        }
+        cache.rewind_to(logical_len)?;
+        Ok(())
+    }
+
     pub fn append_tp_kv_transaction(
         &self,
         cache: &mut ResidentTpKvCache,
