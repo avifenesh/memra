@@ -5379,14 +5379,29 @@ mod dflash2_tests {
 
     // ================= memra#95: the full-cover restore panic =================
     //
-    // `walk: candidate 4294967295 outside codebook vocab` (dflash.rs:221 greedy, :804
-    // sampled) on the FIRST round of a `MEMRA_GLM5_SPEC_FULLCOVER=1` restored session,
+    // `walk: candidate 4294967295 outside codebook vocab` (the greedy and sampled walk
+    // asserts) on the FIRST round of a `MEMRA_GLM5_SPEC_FULLCOVER=1` restored session,
     // fleet-fatal. `4294967295` is the top-k selector's exhausted-slot sentinel, so the
-    // draft logits row was NaN; the row was NaN because the full-cover arm is the only
-    // restored path that never calls `prime_cache`, and therefore never inherited
-    // `prime_cache_hyper_ppn`'s `fence_stages_behind` between the CALLER-stream drafter-KV
-    // import (`DflashKv::from_tail`, at admission) and the round's first kernel on the
-    // pp head stage's own stream. Two gates below: the ordering seam, and the blast radius.
+    // draft logits row was NaN. The row was NaN because the drafter ctx KV is imported on
+    // the CALLER's stream at admission (`DflashKv::from_tail`) while round 1 reads it
+    // through `glm5_head_engine`, which under a live ppN split is the last stage's OWN
+    // Engine used OUTSIDE any `rt.enter` scope, i.e. that Engine's own stream. Nothing
+    // ordered the two.
+    //
+    // THE RETRACTED THEORY, kept because it is what made a wrong fix look right (review
+    // round 1 on PR #100): "the full-cover arm never calls `prime_cache` and therefore
+    // never inherits `prime_cache_hyper_ppn`'s `fence_stages_behind`". That fence has the
+    // SAME blind spot — it orders `StageRt::stream`, the enter-scope stream, not a stage
+    // ENGINE's own stream — so inheriting it would have fixed nothing. What actually shields
+    // the suffix arm is that `prime_cache` returns its logits through `Engine::dtoh`, which
+    // is `stream().synchronize()` on the caller. The full-cover arm has no prime and no
+    // device readback at all between the import and the round (its anchor comes from the
+    // entry's host-side boundary logits), which is why it is the only exposed path, and why
+    // only round 1 dies: from round 2 on, `dflash2_propose_*`'s own `dtoh_u32` drains the
+    // head engine.
+    //
+    // Two gates below: the ordering seam (asserted on the ENGINE-ordering helper, so it
+    // rejects the `fence_stages_behind` shape too), and the blast radius.
 
     /// The sentinel a top-k row that could not be filled carries into the walk.
     #[test]
