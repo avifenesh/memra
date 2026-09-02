@@ -90,7 +90,7 @@ flock -w 600 /tmp/memra-gpu.lock ./target/debug/qwen4exp_gpu_gate \
     research/qwen4exp-bringup-20260829/gpu-eager/tiny-fixture-gate.tsv
 ```
 
-- **PASS, `# verdict failures=0`**, binary sha256 `d256e63b97e15cdd20b44cb5b08e74856caee98c1df455f91b3d007f3571ba68`.
+- **PASS, `# verdict failures=0`**, binary sha256 `cee27dcb3200a358be1ba281dab019b85290e836eb55d80ec7c0585fd09e2ead` (re-run on the rebased HEAD; the earlier pre-rebase run was PASS at `d256e63b97e15cdd...`).
 - `bank-bytes arms=5 rows=63 mismatches=0 pass=true` — banked in the same receipt
   (`gpu-eager/tiny-fixture-gate.tsv`), goldens in `gpu-eager/bank-bytes-goldens.tsv`.
 
