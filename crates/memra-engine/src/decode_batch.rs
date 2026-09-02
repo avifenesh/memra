@@ -2720,6 +2720,29 @@ impl HybridModel {
                     .into(),
             );
         }
+        // glm5 TP-sharded trunk (MEMRA_GLM5_TP, memra #14, lane/glm5-tp-serve-wiring): the
+        // batched hc walk is REFUSED BY NAME, before any row is touched. Its per-session
+        // mixer loop dispatches the plain `kda_decode_cached`/`mla_attn_cached` calls (which
+        // a head shard poisons at the `kda_core` choke point: that is the "batch step: KDA
+        // layer is glm5-TP-sharded" error the first TP-2 box gate hit on EVERY request,
+        // 2026-09-02), and even with the TP mixer calls swapped in, the composition
+        // (batched hc glue at m=B + per-session TP mixers + the EP MoE walk at t=B) has no
+        // bit-identity receipt against the per-session TP decode walk: `glm5-hyper-batch-
+        // gate`'s fixture is unsharded. One numeric program per request (CLAUDE.md): the
+        // ONLY TP program with receipts is the eager walk (`hyper_range_decode`/
+        // `hyper_range_prime`, glm5-tp-gate t=1 byte identity), so the worker keeps a
+        // sharded model out of the batched chunks (`hyper_batched_decode_model`) and this
+        // refusal is the second fence. Reaching it is a scheduler bug, not a request error.
+        if self.glm5_tp_sharded() {
+            return Err(
+                "mHC batched decode is unwired for a glm5-TP-sharded model (MEMRA_GLM5_TP): \
+                 the batched hc walk carries no TP mixer arm and no bit-identity receipt \
+                 against the per-session TP decode walk; sharded models decode on the eager \
+                 per-session path (the worker routes them there by name), so this entry \
+                 must not be reached"
+                    .into(),
+            );
+        }
         let b_n = tokens.len();
         if b_n == 0 || b_n != caches.len() {
             return Err("decode_step_batch_hyper: tokens/caches length mismatch".into());
