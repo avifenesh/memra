@@ -123,7 +123,10 @@ def banked_chains():
             if shape.endswith("_ship"):
                 shape = shape[:-5]
             txt = open(path).read()
-            for cm in re.finditer(r"# (?:rep0_\w+|ids)\t([0-9,]{40,})", txt):
+            # The sampled receipt now tags its chain with the arm (this lane's instrument
+            # change), so accept BOTH forms: a regex that silently stops matching is how a
+            # whole input class disappears from an estimator without failing anything.
+            for cm in re.finditer(r"# (?:rep0_\w+|ids)\t(?:arm=\w+\t)?([0-9,]{40,})", txt):
                 ids = [int(x) for x in cm.group(1).split(",")]
                 shapes.setdefault(shape, []).append((os.path.basename(path), ids))
     return shapes
@@ -166,8 +169,22 @@ def main():
     id_space = tok.get_vocab_size(with_added_tokens=True)
     print(f"[oracle] tokenizer {tok_path} id_space={id_space}", flush=True)
 
+    # The pools are LIVE (agent sessions land continuously), so "reproducible from the
+    # pools by the extractor" is only true against a pinned pool state: measured drift over
+    # 32 minutes moved 1,766/32,768 rank positions and swapped exactly one id in and out of
+    # the blend class's top-32,768. The artifact is therefore pinned by its OWN sha256, and
+    # the corpus that produced it is pinned here by file hash.
+    import hashlib
+    corpus_sha = {}
+    for cname in CLASSES:
+        for path in sorted(glob.glob(os.path.join(CORPUS, cname, "*.txt"))):
+            h = hashlib.sha256()
+            with open(path, "rb") as f:
+                for block in iter(lambda: f.read(1 << 20), b""):
+                    h.update(block)
+            corpus_sha[f"{cname}/{os.path.basename(path)}"] = h.hexdigest()
     report = {"tokenizer": tok_path, "id_space": id_space, "lm_head_rows": VOCAB_ROWS,
-              "topN": TOPN, "classes": {}}
+              "topN": TOPN, "classes": {}, "corpus_sha256": corpus_sha}
     counts = {}
     freqs = {}
     for name in CLASSES:

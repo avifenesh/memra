@@ -222,6 +222,7 @@ def main():
                     files.append(os.path.join(dirpath, fn))
         files.sort()
         a_bytes = p_bytes = turns = p_parts = nfiles = 0
+        a_utf8 = p_utf8 = 0
         capped = False
         with open(os.path.join(OUT, "agentic", pool + ".txt"), "w", encoding="utf-8") as fa, \
              open(os.path.join(OUT, "prose", pool + ".txt"), "w", encoding="utf-8") as fp:
@@ -237,18 +238,27 @@ def main():
                     if turn not in seen_agentic:
                         seen_agentic.add(turn)
                         fa.write(turn + "\n")
+                        # a_bytes counts CHARACTERS (it is also what CAPS compares against,
+                        # so it stays as-is: changing it would change which files the two
+                        # large pools include, i.e. the corpus itself). a_utf8 is what the
+                        # file on disk actually weighs — the two differ by ~0.3% here, and
+                        # reporting only the char count made a stats/file-size mismatch look
+                        # like a file someone else had rewritten.
                         a_bytes += len(turn) + 1
+                        a_utf8 += len(turn.encode("utf-8")) + 1
                         turns += 1
                     c = (content or "").strip()
                     if c and prose_ok(c) and c not in seen_prose:
                         seen_prose.add(c)
                         fp.write(c + "\n\n")
                         p_bytes += len(c) + 2
+                        p_utf8 += len(c.encode("utf-8")) + 2
                         p_parts += 1
         stats[pool] = {"files_read": nfiles, "files_total": len(files),
                        "capped": capped, "turns": turns,
-                       "agentic_bytes": a_bytes, "prose_parts": p_parts,
-                       "prose_bytes": p_bytes}
+                       "agentic_chars": a_bytes, "agentic_utf8_bytes": a_utf8,
+                       "prose_parts": p_parts,
+                       "prose_chars": p_bytes, "prose_utf8_bytes": p_utf8}
         print(pool, stats[pool], flush=True)
     with open(os.path.join(OUT, "extract-stats.json"), "w") as f:
         json.dump(stats, f, indent=1)

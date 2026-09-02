@@ -30,8 +30,9 @@ per call, terminated `<|im_end|>`; the prompt supplies the opening `<think>\n`, 
 line starts inside the reasoning block and never with `<think>`).
 
 Corpus (`/home/avifenesh/projects/colbert-2/data/sessions/{claude,codex,eigen,hermes}`,
-4,922 jsonls at mint time; `extract-stats.json`, `corpus/` is byte-reproducible and not
-committed):
+4,922 jsonls at mint time; `extract-stats.json`; `corpus/` is owner session text and stays
+out of this repo — see the pinning finding below for what "reproducible" does and does not
+mean here):
 
 | class | tokens | distinct ids | top-32,768 covers | pools (tokens) |
 |---|---|---|---|---|
@@ -87,6 +88,39 @@ by (count desc, id asc), take the first N — unseen ids pad ascending into cove
 4. **Mechanical**: 32,768 unique ids per file, all in range, rank order.
 5. **Can't-hallucinate eyeball**: the ogblend head decodes to `13 11 198 15 279 25 220 271`
    = the punctuation/whitespace/`the` class every real emission stream is made of.
+
+### The pools are LIVE, so a ranks artifact is only reproducible if it is PINNED
+
+Caught by accident and then measured, because it changes what the mint may claim: the
+extractor is deterministic against a given pool state (a re-run over the same pools produced
+all 8 corpus files BYTE-IDENTICAL), but the pools are agent session stores that grow while
+the lane runs. Two extractions 32 minutes apart differ, and the uncapped pools are where it
+shows (claude and codex stop at their 48 MiB cap, so new sessions never reach them):
+
+| effect of 32 minutes of live sessions | measured |
+|---|---|
+| agentic class token count | 36,993,491 -> 36,993,213 (-278, 7.5e-6) |
+| ids affected | low byte-fallback pieces only (39, 41, 50, 60, 72, 81, ...) |
+| `q4e-ranks-prose-32768.txt` | byte-identical |
+| `q4e-ranks-sxc32768.txt` | SET identical, 1,766 / 32,768 positions permuted inside tie groups |
+| `q4e-ranks-mixed-32768.txt` | SET identical, 1,810 positions permuted |
+| `q4e-ranks-ogblend-32768.txt` | **SET NOT identical**: 2,214 positions permuted and exactly one id swapped across the cut (70,396 out, 12,530 in) |
+
+So: the ARTIFACT is the pinned object (its own sha256, and the durable copy the deployment
+registry holds), never "re-mint it from the pools". `oracle-report.json` now records the
+sha256 of every corpus file so a mint states the input it actually consumed, and
+`corpus-manifest-20260902T0534Z.txt` is the pool state of the re-extraction (NOT the state
+that produced the shipped ranks, which was 32 minutes earlier — that is precisely the point).
+Every measured cell in §4 consumed the shipped bytes
+(`75a47c461dd9247d948288f24f8897e4720826512993c66f4514f243ead837bc`), so nothing in the
+battery is in doubt.
+
+One stats bug fell out of the same investigation: the extractor's `agentic_bytes` counted
+CHARACTERS while the file on disk holds UTF-8, so the receipt under-reported its own corpus
+by ~0.3% (17,864,884 vs 17,921,500 for eigen) — which is exactly how a stats/file-size
+mismatch gets mistaken for a file somebody else rewrote. It now reports both, and the CAP
+still compares against the char counter because changing that would change which files the
+two large pools include, i.e. the corpus itself.
 
 ### TRAP found in passing: the artifact's tokenizer.json is not the vendor's file
 
