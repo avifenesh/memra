@@ -983,7 +983,153 @@ impl Engine {
     }
 
     /// Absorb: `q_lat[i][h][:] = w_uk[h]ᵀ · q_nope[i][h][:]` (rank space).
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
+    #[allow(clippy::too_many_arguments)]
+    // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
+    /// BENCH-ONLY raw arm dispatch for `mla-coalesce-bench` (structural ncu target): `arm` 0 =
+    /// shipped thread-per-row, 1 = decode-split twin at `split`, 2 = warp-per-row coalesced twin
+    /// at `split` (1 = unsplit). Bypasses every door on purpose so one process can be profiled
+    /// across all three kernels. Not a serving entry point.
+    #[allow(clippy::too_many_arguments)]
+    pub fn mla_absorb_q_raw_arm(
+        &self,
+        q_nope: &CudaSlice<f32>,
+        wk_b: &CudaSlice<f32>,
+        q_lat: &mut CudaSlice<f32>,
+        t_q: usize,
+        n_head: usize,
+        d_nope: usize,
+        kv_rank: usize,
+        arm: u8,
+        split: i32,
+    ) -> Res<()> {
+        let s = self.stream();
+        unsafe {
+            let (q, w, o) = (
+                q_nope.device_ptr(&s).0 as *const f32,
+                wk_b.device_ptr(&s).0 as *const f32,
+                q_lat.device_ptr_mut(&s).0 as *mut f32,
+            );
+            let (t, h, dn, kr) = (t_q as i32, n_head as i32, d_nope as i32, kv_rank as i32);
+            let st = s.cu_stream() as *mut c_void;
+            match arm {
+                0 => ck(
+                    "absorb_q_raw",
+                    memra_mla_absorb_q_f32(q, w, o, t, h, dn, kr, st),
+                ),
+                1 => ck(
+                    "absorb_q_split_raw",
+                    memra_mla_absorb_q_split_f32(q, w, o, t, h, dn, kr, split, st),
+                ),
+                _ => ck(
+                    "absorb_q_wp_raw",
+                    memra_mla_absorb_q_wp_f32(q, w, o, t, h, dn, kr, split, st),
+                ),
+            }
+        }
+    }
+
+    /// BENCH-ONLY raw arm dispatch, decompress twin of `mla_absorb_q_raw_arm`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn mla_decompress_v_raw_arm(
+        &self,
+        o_lat: &CudaSlice<f32>,
+        wv_b: &CudaSlice<f32>,
+        out: &mut CudaSlice<f32>,
+        t_q: usize,
+        n_head: usize,
+        d_v: usize,
+        kv_rank: usize,
+        arm: u8,
+        split: i32,
+    ) -> Res<()> {
+        let s = self.stream();
+        unsafe {
+            let (a, w, o) = (
+                o_lat.device_ptr(&s).0 as *const f32,
+                wv_b.device_ptr(&s).0 as *const f32,
+                out.device_ptr_mut(&s).0 as *mut f32,
+            );
+            let (t, h, dv, kr) = (t_q as i32, n_head as i32, d_v as i32, kv_rank as i32);
+            let st = s.cu_stream() as *mut c_void;
+            match arm {
+                0 => ck(
+                    "decompress_v_raw",
+                    memra_mla_decompress_v_f32(a, w, o, t, h, dv, kr, st),
+                ),
+                1 => ck(
+                    "decompress_v_split_raw",
+                    memra_mla_decompress_v_split_f32(a, w, o, t, h, dv, kr, split, st),
+                ),
+                _ => ck(
+                    "decompress_v_wp_raw",
+                    memra_mla_decompress_v_wp_f32(a, w, o, t, h, dv, kr, split, st),
+                ),
+            }
+        }
+    }
+
+    /// BENCH-ONLY raw dispatch of the fused hc pre-chain for `mla-coalesce-bench` (structural
+    /// ncu target): `arm` 0 = `memra_dsv4_hc_pre_fused_v2` (block 128, the shipped `=2` arm),
+    /// 1 = `_v3` at `block` with the shared-memory Sinkhorn, 2 = `_v3` at `block` with the
+    /// register Sinkhorn (`MEMRA_HC_PRE_SINK_REG`). Bypasses the door readers on purpose. The
+    /// `hc-fused-gate` calls the v1/v2 launchers directly and predates v3, so this is the only
+    /// way to put the register Sinkhorn under a profiler.
+    #[allow(clippy::too_many_arguments)]
+    pub fn hc_pre_raw_arm(
+        &self,
+        x: &CudaSlice<f32>,
+        mixes: &CudaSlice<f32>,
+        scale: &CudaSlice<f32>,
+        base: &CudaSlice<f32>,
+        pre: &mut CudaSlice<f32>,
+        post: &mut CudaSlice<f32>,
+        comb: &mut CudaSlice<f32>,
+        y: &mut CudaSlice<f32>,
+        s_rows: usize,
+        hc: usize,
+        d: usize,
+        iters: usize,
+        eps: f32,
+        arm: u8,
+        block: i32,
+        niters: Option<&mut CudaSlice<i32>>,
+    ) -> Res<()> {
+        let st = self.stream();
+        unsafe {
+            let np: *mut i32 = match niters {
+                Some(n) => n.device_ptr_mut(&st).0 as *mut i32,
+                None => std::ptr::null_mut(),
+            };
+            let (xp, mp, sp, bp) = (
+                x.device_ptr(&st).0 as *const f32,
+                mixes.device_ptr(&st).0 as *const f32,
+                scale.device_ptr(&st).0 as *const f32,
+                base.device_ptr(&st).0 as *const f32,
+            );
+            let (pp, qp, cp, yp) = (
+                pre.device_ptr_mut(&st).0 as *mut f32,
+                post.device_ptr_mut(&st).0 as *mut f32,
+                comb.device_ptr_mut(&st).0 as *mut f32,
+                y.device_ptr_mut(&st).0 as *mut f32,
+            );
+            let (sr, h, dd, it) = (s_rows as i32, hc as i32, d as i32, iters as i32);
+            let cs = st.cu_stream() as *mut c_void;
+            let rc = match arm {
+                0 => crate::dsv4_ffi::memra_dsv4_hc_pre_fused_v2(
+                    xp, mp, sp, bp, pp, qp, cp, yp, sr, h, dd, it, eps, np, cs,
+                ),
+                1 => crate::dsv4_ffi::memra_dsv4_hc_pre_fused_v3(
+                    xp, mp, sp, bp, pp, qp, cp, yp, sr, h, dd, it, eps, np, block, 0, cs,
+                ),
+                _ => crate::dsv4_ffi::memra_dsv4_hc_pre_fused_v3(
+                    xp, mp, sp, bp, pp, qp, cp, yp, sr, h, dd, it, eps, np, block, 1, cs,
+                ),
+            };
+            ck("hc_pre_raw", rc)
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
     pub fn mla_absorb_q(
         &self,
         q_nope: &CudaSlice<f32>,
