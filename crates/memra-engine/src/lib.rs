@@ -2425,6 +2425,73 @@ pub(crate) fn hyper_batch_solo_on() -> bool {
     std::env::var("MEMRA_HYPER_BATCH_SOLO").as_deref() == Ok("1")
 }
 
+/// `MEMRA_HC_PRE_BLOCK=<n>` (default 128, lane/b200-hcpre-wide-20260903): the CUDA block
+/// width of the fused hyper-connection pre-chain, when `MEMRA_HC_FUSED_PRE=2` selected the
+/// v2 arm. 128 is v2 verbatim.
+///
+/// WHY THIS EXISTS. `memra_dsv4_hc_pre_fused_v2` launches one block of 128 threads PER ROW.
+/// At t=1 decode there is one row, so the whole call occupies ONE SM of a B200's 148. nsys
+/// on the 2x B200 pair in the current best posture (2026-09-03) makes it the largest kernel
+/// in the decode profile: 17.5% of kernel time, 31.1 us average, 23,220 launches over 256
+/// profiled tokens = 90.7 per token, which is exactly the 2 sites (attn, mlp) on each of 45
+/// layers. Those 31 us move about 128 KB, i.e. 4.1 GB/s, so the kernel is latency-bound on
+/// four warps rather than limited by its arithmetic.
+///
+/// EXACTNESS, stated rather than assumed. Stage 3 (the collapse) is bit-identical at any
+/// width: each output sums the same hc terms in the same order and only the owning thread
+/// moves. Stage 2 (Sinkhorn) is warp-0-only at every width. Stage 1 (rowsq) is NOT: a wider
+/// block gives `dsv4_block_sum` a different partition of the row, so the double accumulation
+/// order changes. The f32 narrowing of `1/sqrt(tot/w + eps)` is expected to absorb a
+/// last-ulp double difference, but expected is not constructed, so any width other than 128
+/// is the named numeric class `hc_pre_rowsq_blockwide` and carries an argmax gate plus a
+/// greedy tape before it can be a default.
+///
+/// Refuses a value that is not a power of two in [32, 1024], by name, at read time — a bad
+/// width would otherwise reach the launcher and return an opaque 40023.
+/// `MEMRA_HC_PRE_SINK_REG=1` (default OFF, read per call — the rollback seam is its absence):
+/// run the fused hc pre-chain's Sinkhorn stage in registers with `__shfl_sync` instead of
+/// shared memory. Only meaningful alongside `MEMRA_HC_PRE_BLOCK` (it rides the v3 kernel).
+///
+/// WHY, from two nsys measurements rather than an argument. The same kernel at two block
+/// widths on 2x B200 (2026-09-03): 128 threads -> 31.194 us, 1024 threads -> 26.609 us. Stages
+/// 1 and 3 scale with the block and stage 2 does not (warp-0-only at every width), so
+/// S + P = 31.194 and S + P/8 = 26.609 give P = 5.24 us and **S = 25.95 us**. The Sinkhorn is
+/// 83% of the kernel: 90 launches x 25.95 us = 2.34 ms of an 18.44 ms token, 12.7% of the
+/// token, to normalise an hc x hc matrix (16 floats at hc=4) for `hc_sinkhorn_iters` = 20
+/// rounds. It is not arithmetic — per round the shared path does ~2*hc dependent shared loads
+/// per lane plus six `__syncwarp` and a shared `atomicOr`, on ONE warp with nothing resident to
+/// cover the latency.
+///
+/// BIT-IDENTICAL BY CONSTRUCTION, and that is the point of the design. `comb` lives one element
+/// per lane and every row/column sum is gathered with `__shfl_sync` IN THE SAME ORDER the
+/// shared loop used, so the same addends land in the same sequence in the same running float.
+/// This is NOT a numeric class and needs no argmax gate — unlike `hc_pre_rowsq_blockwide`,
+/// which the same door family does carry. A tree reduction would have been fewer instructions
+/// and a different association; it is deliberately not used.
+pub(crate) fn hc_pre_sink_reg() -> bool {
+    std::env::var("MEMRA_HC_PRE_SINK_REG").as_deref() == Ok("1")
+}
+
+pub(crate) fn hc_pre_block() -> usize {
+    match std::env::var("MEMRA_HC_PRE_BLOCK") {
+        Err(_) => 128,
+        Ok(v) if v.is_empty() => 128,
+        Ok(v) => match v.parse::<usize>() {
+            Ok(n) if (32..=1024).contains(&n) && n.is_power_of_two() => n,
+            _ => {
+                static SAID: std::sync::Once = std::sync::Once::new();
+                SAID.call_once(|| {
+                    eprintln!(
+                        "[hc-pre-block] MEMRA_HC_PRE_BLOCK={v:?} is not a power of two in \
+                         [32, 1024]; using 128 (the v2 width, bit-identical to the shipped arm)"
+                    );
+                });
+                128
+            }
+        },
+    }
+}
+
 fn verify_ws_on() -> bool {
     verify_ws_on_from(
         std::env::var("MEMRA_VERIFY_WS").ok().as_deref(),

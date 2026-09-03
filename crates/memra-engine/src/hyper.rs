@@ -498,6 +498,35 @@ fn pre_finish_into(
                         sp(&stream),
                     ),
                 ),
+                // v3 is v2 with the width as a parameter and the register-Sinkhorn door on it.
+                // It is selected when EITHER door is set: at width 128 v3 is bit-identical to v2
+                // (same partition), so routing MEMRA_HC_PRE_SINK_REG=1 through v3 at the default
+                // width changes only the Sinkhorn stage. Measured 2026-09-03: with the guard on
+                // width alone, `MEMRA_HC_PRE_SINK_REG=1` at block 128 dispatched v2 and the door
+                // was unreachable — the announce line said `kernel=hc_pre_fused_v2` and the arm
+                // read 55.86 against a 55.94 baseline, a measurement of nothing.
+                HcFusedPreArm::V2 if crate::hc_pre_block() != 128 || crate::hc_pre_sink_reg() => (
+                    "hc_pre_fused_v3",
+                    k::memra_dsv4_hc_pre_fused_v3(
+                        dpf!(x, &stream),
+                        dpf!(mixes, &stream),
+                        dpf!(site.scale, &stream),
+                        dpf!(site.base, &stream),
+                        dpm!(pre_gates, &stream),
+                        dpm!(post, &stream),
+                        dpm!(comb, &stream),
+                        dpm!(y, &stream),
+                        t as i32,
+                        streams as i32,
+                        hidden as i32,
+                        topology.sinkhorn_iterations as i32,
+                        eps,
+                        std::ptr::null_mut(),
+                        crate::hc_pre_block() as i32,
+                        crate::hc_pre_sink_reg() as i32,
+                        sp(&stream),
+                    ),
+                ),
                 HcFusedPreArm::V2 => (
                     "hc_pre_fused_v2",
                     k::memra_dsv4_hc_pre_fused_v2(
@@ -522,16 +551,35 @@ fn pre_finish_into(
             }
         };
         ck(label, rc)?;
+        // The announce says which KERNEL ran, not which arm was asked for: under
+        // MEMRA_HC_PRE_BLOCK != 128 the V2 arm dispatches `_v3` with a wider block, and a
+        // counter line reading `arm=2` while `_v3` executes is the kind of quiet mismatch a
+        // later reader has to re-derive from nsys. The counter itself stays V2's (the arm is
+        // still V2; the width is a property of that arm), and the width is printed.
+        let block = crate::hc_pre_block();
         let (counter, tag) = match fused_arm {
             HcFusedPreArm::V1 => (&HC_FUSED_PRE_DISPATCHES, "1"),
             HcFusedPreArm::V2 => (&HC_FUSED_PRE_V2_DISPATCHES, "2"),
             HcFusedPreArm::Off => unreachable!("guarded by the enclosing if"),
         };
         if counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+            let kern =
+                if fused_arm == HcFusedPreArm::V2 && (block != 128 || crate::hc_pre_sink_reg()) {
+                    "hc_pre_fused_v3"
+                } else if fused_arm == HcFusedPreArm::V2 {
+                    "hc_pre_fused_v2"
+                } else {
+                    "hc_pre_fused"
+                };
             eprintln!(
                 "[hc-fused-pre] engaged streams={streams} hidden={hidden} t={t} arm={tag} \
-                 (one launch replaces rowsq_scale + sinkhorn + collapse per site; \
-                 MEMRA_HC_FUSED_PRE={tag})"
+                 kernel={kern} block={block} sinkhorn={} (one launch replaces rowsq_scale + \
+                 sinkhorn + collapse per site; MEMRA_HC_FUSED_PRE={tag}, MEMRA_HC_PRE_BLOCK={block})",
+                if crate::hc_pre_sink_reg() {
+                    "registers"
+                } else {
+                    "shared"
+                }
             );
         }
         return Ok(());
