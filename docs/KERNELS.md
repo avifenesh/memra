@@ -18,6 +18,12 @@ its full-vocab twin), and the verify scan-chain segment graphs replay existing l
 Both measured NEGATIVE and both stay default-OFF (trim −16.6%, graphs 0.999× — perf/PROFILE-6.md);
 the launch-issue class is closed for this model at every t, so do not re-propose graph work
 here without a new mechanism.
+frspec-dflash2 lane (2026-09-02) added NO kernel: the glm5 DFlash2 draft-head rank trim is a
+host byte row-gather of the trunk lm head at load (`frspec_gather_rows` -> one `[n_ranks x d]`
+slab, same dtype program as the head: BF16 rows stay `FloatBf16`, NVFP4 rows take the same A6
+repack) and the round's existing `matmul` (bf16 `matvec_bf16_rows_into` at m=7) + `topk_rows_f32`
+over `n_ranks` columns instead of `n_vocab`, only the column count changes; the verify walk is
+untouched.
 devtwin lane (device host-twins, 2026-08-31) +3: `qwen4exp_route_topk_f32`,
 `qmatvec_bf16w_sel_f32`, `copy_rows_col_f32` (rows in the kernels.cu table) — the router
 and indexer HOST TWINS moved device-side, default ON on receipts (spec 1.12-1.19x every

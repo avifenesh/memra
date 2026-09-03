@@ -345,6 +345,18 @@ pub use crate::spec::spec_conf_keep as glm5_conf_keep;
 /// against, exactly as `glm5_conf_keep` does above.
 pub use crate::dflash::DflashDrafter as Glm5DflashDrafter;
 
+/// Process-wide count of verify rounds whose drafts came through a RANK-TRIMMED draft head
+/// (either source; lane/frspec-dflash2-20260902). Gates read it beside the per-session
+/// [`Glm5SpecSession::rank_trimmed_rounds`]; the worker's `[glm5-acc]` line carries the
+/// session's own count.
+static GLM5_RANK_TRIMMED_DRAFT_ROUNDS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// Read [`GLM5_RANK_TRIMMED_DRAFT_ROUNDS`] (doc on the static).
+pub fn glm5_rank_trimmed_draft_rounds() -> u64 {
+    GLM5_RANK_TRIMMED_DRAFT_ROUNDS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Per-session draft-source state (module doc, DRAFT SOURCE SEAM). Selected at session
 /// creation from the model's loaded sources and pinned for the session's lifetime.
 pub(crate) enum Glm5DraftState {
@@ -1808,10 +1820,7 @@ impl HybridModel {
             }
             // Engagement receipt (the dspark trim receipt's shape): the server-log line
             // the trim arm's per-session engagement is verified by.
-            eprintln!(
-                "[glm5-spec] draft head TRIMMED to {} rows (FR-Spec d2t engaged)",
-                map.len(),
-            );
+            eprintln!("{}", self.glm5_trim_engagement_line(map));
         }
         // Confidence-gate engagement receipt (loop-port 2; the deploy-gate greps this —
         // never-serve-greedy law's receipt discipline): armed iff MEMRA_SPEC_PMIN > 0.
@@ -1974,6 +1983,7 @@ impl HybridModel {
             sctr,
             uctr: 0,
             rounds: 0,
+            rank_trimmed_rounds: 0,
             done: false,
             max_ctx: ctx_cap,
             mtp_il,
@@ -2220,10 +2230,7 @@ impl HybridModel {
                 )
                 .into());
             }
-            eprintln!(
-                "[glm5-spec] draft head TRIMMED to {} rows (FR-Spec d2t engaged)",
-                map.len(),
-            );
+            eprintln!("{}", self.glm5_trim_engagement_line(map));
         }
         if glm5_pmin() > 0.0 {
             eprintln!(
@@ -2360,6 +2367,7 @@ impl HybridModel {
             sctr,
             uctr: 0,
             rounds: 0,
+            rank_trimmed_rounds: 0,
             done: false,
             max_ctx: ctx_cap,
             mtp_il: None,
@@ -2368,13 +2376,54 @@ impl HybridModel {
         })
     }
 
-    /// The loaded FR-Spec draft->target map, when a trim artifact actually landed on the
-    /// embedded head (None = full-vocab head, rank id == token id).
+    /// The loaded FR-Spec draft->target map for the session's DRAFT SOURCE (None = full-vocab
+    /// head, rank id == token id). A loaded DFlash2 drafter wins the source selection, so its
+    /// trim ([`Self::glm5_dflash_trim`]) is the map; otherwise the embedded head's own map.
     fn glm5_d2t(&self) -> Option<&[u32]> {
+        if self.glm5_dflash.is_some() {
+            return self.glm5_dflash_trim().map(|(_, d2t)| d2t);
+        }
         self.mtp
             .as_ref()
             .and_then(|head| head.d2t.as_deref())
             .filter(|map| !map.is_empty())
+    }
+
+    /// The DFlash2 round's trimmed draft head `(rows, d2t)`, in the round's preference order:
+    /// the MtpHead self-trim when its rows came from the TARGET head (an external student's
+    /// head is never borrowed), else the `dflash_trim` slab (the MEMRA_MTP_SKIP stub, or the
+    /// glm5 DFlash2 slab built when the NextN block is not loaded, lane/frspec-dflash2-
+    /// 20260902). None = the full trunk head, stated in the boot receipt.
+    pub fn glm5_dflash_trim(&self) -> Option<(&crate::model::GpuTensor, &[u32])> {
+        self.mtp
+            .as_ref()
+            .filter(|m| m.d2t_from_target_head)
+            .and_then(|m| m.shared_head_head.as_ref().zip(m.d2t.as_deref()))
+            .or_else(|| {
+                self.dflash_trim
+                    .as_ref()
+                    .map(|t| (&t.head, t.d2t.as_slice()))
+            })
+            .filter(|(_, d2t)| !d2t.is_empty())
+    }
+
+    /// The trim engagement receipt at session admission (the dspark trim receipt's shape;
+    /// the deploy gate greps the server log for it). Source-keyed wording: the DFlash2 route
+    /// names the slab and the ranks file (`RANK-TRIMMED n_ranks=<n> src=<sha16>`), the native
+    /// chain keeps its line.
+    fn glm5_trim_engagement_line(&self, map: &[u32]) -> String {
+        if self.glm5_dflash.is_some() {
+            format!(
+                "[glm5-spec] draft head RANK-TRIMMED n_ranks={} src={}",
+                map.len(),
+                self.frspec_src_sha16.as_deref().unwrap_or("unknown")
+            )
+        } else {
+            format!(
+                "[glm5-spec] draft head TRIMMED to {} rows (FR-Spec d2t engaged)",
+                map.len()
+            )
+        }
     }
 
     /// ONE serve burst (the worker's per-tick call, `step_glm5_spec`): rounds of
@@ -2760,6 +2809,14 @@ impl HybridModel {
         };
         bump!(draft);
         plap!(first_draft_ms);
+        // RANK-TRIM COUNTER (lane/frspec-dflash2-20260902): this round drafted through a
+        // rank-trimmed head (`d2t` is the source-keyed map the drafts were produced under ,
+        // the DFlash2 slab or the native trimmed chain). Counted on the head, not the remap:
+        // the skip_d2t_remap red arm still ran over the slab.
+        if d2t.is_some() {
+            sess.rank_trimmed_rounds += 1;
+            GLM5_RANK_TRIMMED_DRAFT_ROUNDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
 
         // DFlash2 source: arm the verify tap — the walk's rows are next round's drafter
         // context features (rows 0..keep survive the accept; the sink is taken in step 7).
@@ -3107,24 +3164,21 @@ impl HybridModel {
             let tail = dv.slice(n_embd..b * n_embd);
             eh.copy_view_into(&mut rows_buf, 0, &tail, nd * n_embd)?;
         }
-        // TRIMMED DRAFT HEAD: the dspark serve arm's resolution verbatim — the FR-Spec
-        // self-trim the load path builds on the MTP struct (gathered rows of the target's
-        // own head). Available only when the MTP struct loaded; the DFlash2-without-head
-        // boot (the q38 VRAM pattern) runs the full target head, stated in the boot receipt.
-        let trim = self
-            .mtp
-            .as_ref()
-            .filter(|m| m.d2t_from_target_head)
-            .and_then(|m| m.shared_head_head.as_ref().zip(m.d2t.as_ref()))
-            .filter(|(_, d2t)| !d2t.is_empty());
+        // TRIMMED DRAFT HEAD (`glm5_dflash_trim`): the dspark serve arm's resolution, the
+        // FR-Spec self-trim on the MTP struct when it loaded (gathered rows of the target's
+        // own head), else the `dflash_trim` slab the loader builds for a DFlash2 route that
+        // boots WITHOUT the NextN block (lane/frspec-dflash2-20260902, the serving shape;
+        // before it the `MEMRA_FRSPEC_TRIM` contract was a silent no-op here). Neither = the
+        // full target head, stated in the boot receipt. The draft logits `dl` arrive
+        // `[nd x n_ranks]`; the propose fns remap candidate RANK ids through d2t before the
+        // selector walk; verify stays full-vocab, so the slab moves acceptance only.
+        let trim = self.glm5_dflash_trim();
         let (dl_head, dl_vocab) = match trim {
             Some((head, d2t)) => (head, d2t.len()),
             None => (&self.output, n_vocab),
         };
         // skip_d2t_remap red arm (the q38 defect made loud): candidates stay RANK ids.
-        let trim_d2t = trim
-            .filter(|_| !knobs.skip_d2t_remap)
-            .map(|(_, d2t)| d2t.as_slice());
+        let trim_d2t = trim.filter(|_| !knobs.skip_d2t_remap).map(|(_, d2t)| d2t);
         let dl = eh.matmul(dl_head, &rows_buf, nd)?;
 
         // ---- 4. selector walk (greedy chain / sampled candidate-set walk) ----
@@ -3416,6 +3470,11 @@ pub struct Glm5SpecSession {
     /// Verify rounds completed over the session lifetime (the worker's per-burst
     /// rounds-delta receipt, the dspark `rounds` convention).
     pub rounds: usize,
+    /// Of `rounds`, those whose drafts came through a RANK-TRIMMED draft head (the DFlash2
+    /// slab / MtpHead self-trim / native trimmed chain; lane/frspec-dflash2-20260902). Equals
+    /// `rounds` when a trim is loaded, 0 otherwise, the counter the `[glm5-acc]` receipt
+    /// and the rig gate read; a process-wide twin is `glm5_rank_trimmed_draft_rounds`.
+    pub rank_trimmed_rounds: usize,
     done: bool,
     max_ctx: usize,
     /// MTP draft-plane layer index — `Some` on the native-MTP arm only.
