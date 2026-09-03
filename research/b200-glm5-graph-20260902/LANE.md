@@ -781,6 +781,56 @@ The device act/out call sites were already the right ones — inside `moe_vrows_
 immediately after the token quantize and immediately after `moe_down8_fma_q8_rows`. They never
 fired; nothing about their placement needed to change.
 
+## 9k. Take 11 and the call-site audit: box slots closed, reproduction moves to the rig
+
+Take 11 still prints no `arm=device` act/out line after the per-arm budget fix. **Eleven box
+takes is the limit and the coordinator has closed further slots for this door until the rig
+reproduces the token-0 tape. That is the right call and this lane records it as such.**
+
+**The audit that was asked for, done and verified.**
+
+* `moe_vrows_pairs_q8` has **exactly one** call site: `hybrid_forward.rs:10799`, inside
+  `if vrows_fires`.
+* The rows kernel pair (`moe_gate_up_preclamp8_q8_rows` / `moe_down8_fma_q8_rows`) is launched
+  from **exactly two** places, both inside `moe_vrows_pairs_q8` (`:14709`, `:14730`). There is no
+  second launcher for the door to reach.
+* `vrows_dev` and `vrows_fires` share every conjunct beyond the door term, and both carry
+  `vrows_t1_dev`, so **`vrows_dev` cannot be true while `vrows_fires` is false** — and the
+  `vrows_dev && !vrows_fires` guard would error by name if they ever disagreed.
+* The act print sits immediately before the gate/up launch, inside that one call site, labelled
+  from the provenance (`VrowsSel::Dev` -> `device`).
+
+So the instrumented site IS the door's only path, and the shape dump and the act dump are guarded
+identically. Which leaves exactly two possibilities, and **one free grep on a file already on
+disk decides between them**:
+
+```
+grep -c 'glm5-vrows-t1.*arm=device' gate-glm5-decode-graph-11B.txt
+```
+
+* **> 0** — the device arm does reach `moe_ffn_sequential_zq8`'s device branch, and the act print
+  is being suppressed by its own guard rather than by the path. The only guard that can do that
+  is `!glm5_graph_capture_open()`: a layer inside a CAPTURED run executes host-side exactly once
+  (during capture, where the print is correctly suppressed as illegal) and never again, because a
+  graph REPLAY runs no host code at all. The device arm would then be structurally unobservable
+  at that site, and the checksum has to move to a capture-legal form or to the eager-latched
+  stage.
+* **0** — `vrows_t1_dev` is false on the box and the door's MoE never takes the device arm at
+  all, which contradicts take 7B (whose `[glm5-vrows-t1]` line carried real `sel` values from the
+  device branch, before the `arm=` field existed). The env gained `MEMRA_HYPER_BATCH=1` at take
+  8, which is exactly when the device line disappeared — but `hyper_batch_range_decode` is reached
+  from `decode_batch.rs`'s batched serving tick, not from the gate's `decode_step`, so that
+  should not reroute a single-session walk. If it does, the door is not on the serving path it
+  claims and that is the finding.
+
+**Next, on the rig and not the pair:** a synthetic 288-expert hc trunk in the serving shape,
+driven through the same door entry the gate's graph arm takes, with the box's real routing
+(`/root/out-coact/sel.bin`, `u8 layer, u8 n_sel, n_sel x (u16 expert, f32 w)`), asserting the
+per-layer output checksum against the host arm. The two rig gates this lane already has clear the
+table build and the kernel pair in isolation; what is missing is a fixture that runs the whole
+door path at the serving scale, which is the only thing that can turn this from box-window
+archaeology into a debuggable local failure.
+
 ## 10. Open items
 
 1. **Run the gate on the pair** (`--steps 64 --reps 5`) and bank the receipt. Until then the
