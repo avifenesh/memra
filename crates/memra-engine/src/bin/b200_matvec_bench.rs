@@ -971,6 +971,104 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // -----------------------------------------------------------------------------------
+    // Family 6b: THE nch == 1 RED ARM for the v3 cp.async pipeline.
+    //
+    // This is the arm the `__pipeline_wait_prior` race needed and did not have. v3 stages the
+    // K range in chunks of `blockDim.x * 8` (1024 elements at the default block), so any
+    // projection with in_f <= 1024 has nch == 1: the prologue commits exactly ONE cp.async
+    // batch, and the loop's constant `wait_prior(STAGES - 1)` = `wait_prior(1)` was satisfied
+    // immediately, letting the first read race the thread's own copy and return uninitialised
+    // shared memory. Every earlier bf16 family here uses in_f 4096/8192 (nch 4 and 8), so none
+    // of them could ever fail on it. Two shapes, at and below the boundary, both bit-identity
+    // checked against the shipped kernel. A race is probabilistic, so treat a PASS here as
+    // necessary and not sufficient; a MISMATCH is conclusive.
+    // -----------------------------------------------------------------------------------
+    for (in_f, out_f, label) in [
+        (512usize, 4096usize, "narrow 512->4096 (nch=1)"),
+        (1024, 4096, "narrow 1024->4096 (nch=1, boundary)"),
+    ] {
+        let h_w = synth_bf16(out_f, in_f, 0x0DEF_ACED);
+        let x = synth_f32(in_f, 0x0C0F_FEE1);
+        let xd = e.htod(&x)?;
+        let wcopies: Vec<CudaSlice<u8>> = (0..copies)
+            .map(|_| e.htod_bytes(&h_w))
+            .collect::<Result<_, _>>()?;
+        let bytes = (in_f * out_f * 2) as f64;
+
+        let mut y_ship = e.zeros(out_f)?;
+        e.matvec_bf16_f32acc_x4_rows_arm_raw(&wcopies[0], &xd, &mut y_ship, in_f, out_f, 1, false)?;
+        e.stream().synchronize()?;
+        let h_ship = e.dtoh(&y_ship)?;
+
+        let ksplit = e.gemv_v2_ksplit(in_f, out_f, 1);
+        let mut y_v2 = e.zeros(out_f)?;
+        e.matvec_bf16_v2_raw(&wcopies[0], &xd, &mut y_v2, in_f, out_f, 1, ksplit)?;
+        e.stream().synchronize()?;
+        let (m2, d2) = compare(&h_ship, &e.dtoh(&y_v2)?);
+
+        let mut t_ship = Vec::with_capacity(iters);
+        let mut t_v2 = Vec::with_capacity(iters);
+        for i in 0..iters {
+            let c = i % copies;
+            let mut y = e.zeros(out_f)?;
+            let t0 = Instant::now();
+            e.matvec_bf16_f32acc_x4_rows_arm_raw(&wcopies[c], &xd, &mut y, in_f, out_f, 1, false)?;
+            e.stream().synchronize()?;
+            t_ship.push(t0.elapsed().as_secs_f64() * 1e6);
+
+            let mut y = e.zeros(out_f)?;
+            let t1 = Instant::now();
+            e.matvec_bf16_v2_raw(&wcopies[c], &xd, &mut y, in_f, out_f, 1, ksplit)?;
+            e.stream().synchronize()?;
+            t_v2.push(t1.elapsed().as_secs_f64() * 1e6);
+        }
+        let ship_us = median(&mut t_ship);
+        report(
+            &format!("matvec_bf16 {label} (v2, ksplit={ksplit})"),
+            ship_us,
+            median(&mut t_v2),
+            bytes,
+            m2,
+            d2,
+        );
+
+        if e.gemv_v3_fits() {
+            // Re-run the identity check several times: the bug it guards is a race, so a
+            // single clean read proves less than a repeated one.
+            let mut m3 = 0usize;
+            let mut d3 = 0f32;
+            for _ in 0..iters.max(3) {
+                let mut y_v3 = e.zeros(out_f)?;
+                e.matvec_bf16_v3_raw(&wcopies[0], &xd, &mut y_v3, in_f, out_f, 1)?;
+                e.stream().synchronize()?;
+                let (m, d) = compare(&h_ship, &e.dtoh(&y_v3)?);
+                m3 += m;
+                d3 = d3.max(d);
+            }
+            let mut t_v3 = Vec::with_capacity(iters);
+            for i in 0..iters {
+                let c = i % copies;
+                let mut y = e.zeros(out_f)?;
+                let t0 = Instant::now();
+                e.matvec_bf16_v3_raw(&wcopies[c], &xd, &mut y, in_f, out_f, 1)?;
+                e.stream().synchronize()?;
+                t_v3.push(t0.elapsed().as_secs_f64() * 1e6);
+            }
+            report_arm(
+                &format!("matvec_bf16_v3 {label} [RED ARM: nch=1 cp.async wait]"),
+                "v3",
+                ship_us,
+                median(&mut t_v3),
+                bytes,
+                m3,
+                d3,
+            );
+        } else {
+            println!("  matvec_bf16_v3 {label}: SKIPPED (v3 smem over the 48 KB default cap)");
+        }
+    }
+
+    // -----------------------------------------------------------------------------------
     // Families 7-9: the W8 POSTURE. These are the kernels that actually serve t=1 decode and
     // the t<=8 verify walk once MEMRA_GLM5_W8 is on (PR #86), which is the posture the pair
     // serves — the bf16 families above are unreachable there. See the lane doc's section 11.
