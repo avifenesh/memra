@@ -1001,10 +1001,21 @@ impl Engine {
         // pass whatever split they choose (1 = unsplit). Consulting `mla_decode_split_for` also
         // ticks that door's own dispatch counter, which is correct — it WAS consulted and its
         // partition IS the one running.
-        if mla_coalesce_on() {
-            let split = mla_b200_split_for(MlaB200Kernel::AbsorbQ, t_q, kv_rank)
+        // MEASURED 2026-09-03, 2x B200: at split 1 (64 blocks) warp-per-row REGRESSES -11%
+        // (51.01 vs 57.34): one row in flight per warp with a serial shuffle reduction after
+        // each replaces 16,384 threads x 1 row with 512 warps x 1 row, a 32x loss of memory
+        // parallelism that outweighs the coalescing. At split 16 (1,024 blocks) it is +1.9% on
+        // top of the split. So the door only engages when a split door gave it a grid to spend
+        // the coalescing on; at split 1 it falls through to the dispatch below, unchanged.
+        let coalesce_split = if mla_coalesce_on() {
+            mla_b200_split_for(MlaB200Kernel::AbsorbQ, t_q, kv_rank)
                 .or_else(|| mla_decode_split_for(t_q * n_head, kv_rank))
-                .unwrap_or(1);
+                .unwrap_or(1)
+        } else {
+            1
+        };
+        if coalesce_split > 1 {
+            let split = coalesce_split;
             mla_coalesce_announce("absorb_q", t_q, n_head, split);
             return unsafe {
                 ck(
@@ -1101,10 +1112,21 @@ impl Engine {
         // pass whatever split they choose (1 = unsplit). Consulting `mla_decode_split_for` also
         // ticks that door's own dispatch counter, which is correct — it WAS consulted and its
         // partition IS the one running.
-        if mla_coalesce_on() {
-            let split = mla_b200_split_for(MlaB200Kernel::DecompressV, t_q, d_v)
+        // MEASURED 2026-09-03, 2x B200: at split 1 (64 blocks) warp-per-row REGRESSES -11%
+        // (51.01 vs 57.34): one row in flight per warp with a serial shuffle reduction after
+        // each replaces 16,384 threads x 1 row with 512 warps x 1 row, a 32x loss of memory
+        // parallelism that outweighs the coalescing. At split 16 (1,024 blocks) it is +1.9% on
+        // top of the split. So the door only engages when a split door gave it a grid to spend
+        // the coalescing on; at split 1 it falls through to the dispatch below, unchanged.
+        let coalesce_split = if mla_coalesce_on() {
+            mla_b200_split_for(MlaB200Kernel::DecompressV, t_q, d_v)
                 .or_else(|| mla_decode_split_for(t_q * n_head, d_v))
-                .unwrap_or(1);
+                .unwrap_or(1)
+        } else {
+            1
+        };
+        if coalesce_split > 1 {
+            let split = coalesce_split;
             mla_coalesce_announce("decompress_v", t_q, n_head, split);
             return unsafe {
                 ck(
