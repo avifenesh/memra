@@ -14112,6 +14112,13 @@ impl HybridModel {
 
         // device top-k: sel [t, n_used] i32, w [t, n_used] f32 — stays on device.
         let (sel_d, mut w_d) = e.moe_router_topk(logits, t, n_expert, n_used)?;
+        // MEMRA_MOE_SEL_DUMP: this arm's selection never returns to the host (softmax
+        // device-routed decode/verify, MEMRA_MOE_DEV default ON for any fully-resident
+        // non-sigmoid MoE) — refuse an armed dump by name rather than silently dropping
+        // every record on it, the same law the other device-only walks hold.
+        crate::moe_sel_dump::refuse_device_only(
+            "the softmax device-routed decode arm (moe_ffn_dev)",
+        )?;
         // Down-projection macro fold (compressed-tensors NVFP4 artifacts): one tiny launch,
         // skipped entirely for macro-free experts (every k-quant GGUF).
         if m.has_macros {
