@@ -2,8 +2,8 @@
 
 use cudarc::driver::sys::CUfunction_attribute_enum::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES;
 use cudarc::driver::{
-    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DeviceSlice, LaunchConfig,
-    PushKernelArg,
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DevicePtr, DevicePtrMut,
+    DeviceSlice, LaunchConfig, PushKernelArg,
 };
 use cudarc::nvrtc::Ptx;
 use std::sync::{Arc, Mutex};
@@ -12156,6 +12156,193 @@ impl Engine {
         self.gpu.stream().synchronize()?;
         Ok(())
     }
+    /// f32 twin of [`Self::dtoh_u8_into_pinned`] (lane/spec-route-depth-20260902): D2H the
+    /// first `n` floats of `d` into a pinned CACHEABLE host buffer, synchronized before
+    /// returning (the caller CPU-reads the rows right after).
+    pub fn dtoh_f32_into_pinned(
+        &self,
+        d: &CudaSlice<f32>,
+        dst: &mut PinnedHostBuf,
+        n: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if n > d.len() || n * std::mem::size_of::<f32>() > dst.len() {
+            return Err(format!(
+                "dtoh_f32_into_pinned range {n} floats exceeds src {} or pinned dst {} bytes",
+                d.len(),
+                dst.len(),
+            )
+            .into());
+        }
+        if n == 0 {
+            return Ok(());
+        }
+        // SAFETY: the pinned buffer is page-aligned (malloc_host) and holds >= n f32s.
+        let host: &mut [f32] = unsafe {
+            std::slice::from_raw_parts_mut(dst.as_mut_slice().as_mut_ptr() as *mut f32, n)
+        };
+        self.gpu.stream().memcpy_dtoh(&d.slice(0..n), host)?;
+        self.gpu.stream().synchronize()?;
+        Ok(())
+    }
+
+    /// ASYNC H2D of the first `n` floats of a pinned host buffer into a fresh device slice
+    /// (lane/spec-route-depth-20260902: the chunked drafter prime's tap upload). Queued on
+    /// the worker stream and NOT synchronized: the copy is DMA from page-locked memory, and
+    /// every consumer is stream-ordered behind it. CONTRACT: the caller must not write
+    /// `src` again until the stream has passed this copy (synchronize, or a later blocking
+    /// readback on the same stream) — the chunked prime synchronizes at the end of each
+    /// chunk's ingest before it refills the staging buffer.
+    pub fn htod_f32_from_pinned_async(
+        &self,
+        src: &PinnedHostBuf,
+        n: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        if n * std::mem::size_of::<f32>() > src.len() {
+            return Err(format!(
+                "htod_f32_from_pinned_async range {n} floats exceeds pinned src {} bytes",
+                src.len(),
+            )
+            .into());
+        }
+        let mut d = self.uninit(n)?;
+        if n == 0 {
+            return Ok(d);
+        }
+        // SAFETY: page-aligned pinned allocation with >= n f32s (checked above).
+        let host: &[f32] =
+            unsafe { std::slice::from_raw_parts(src.as_slice().as_ptr() as *const f32, n) };
+        let stream = self.gpu.stream();
+        let s: &CudaStream = &stream;
+        {
+            let (pd, _guard) = d.device_ptr_mut(s);
+            // SAFETY: `pd` is a live device allocation of n f32s on this stream; `host` is
+            // page-locked memory the caller keeps alive and unmodified until the stream
+            // passes the copy (the documented contract).
+            unsafe { cudarc::driver::result::memcpy_htod_async(pd, host, s.cu_stream())? };
+        }
+        Ok(d)
+    }
+
+    /// 2D device-to-device copy (`cuMemcpy2DAsync`): `height` rows of `width_floats` floats
+    /// from `src` (row pitch `src_pitch_floats`) into `dst` at float offset `dst_off_floats`
+    /// (row pitch `dst_pitch_floats`), queued on the worker stream. The strided-scatter
+    /// primitive the device-resident tap ingest uses to interleave per-slot tap planes into
+    /// the drafter fc layout with no host bounce (lane/spec-route-depth-20260902). Same-
+    /// device only; both slices must live on this engine's device.
+    #[allow(clippy::too_many_arguments)]
+    // allow: the parameter list IS the 2D copy descriptor (dst, dst offset, dst pitch,
+    // src, src pitch, width, height); a struct would only rename the same seven fields
+    pub fn copy_2d_dtod_async(
+        &self,
+        dst: &mut CudaSlice<f32>,
+        dst_off_floats: usize,
+        dst_pitch_floats: usize,
+        src: &CudaSlice<f32>,
+        src_pitch_floats: usize,
+        width_floats: usize,
+        height: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if height == 0 || width_floats == 0 {
+            return Ok(());
+        }
+        let f = std::mem::size_of::<f32>();
+        let dst_need = dst_off_floats + (height - 1) * dst_pitch_floats + width_floats;
+        let src_need = (height - 1) * src_pitch_floats + width_floats;
+        if width_floats > src_pitch_floats
+            || width_floats > dst_pitch_floats
+            || dst_need > dst.len()
+            || src_need > src.len()
+        {
+            return Err(format!(
+                "copy_2d_dtod_async out of bounds: dst needs {dst_need} of {}, src needs \
+                 {src_need} of {}, width {width_floats} pitches {src_pitch_floats}/{dst_pitch_floats}",
+                dst.len(),
+                src.len(),
+            )
+            .into());
+        }
+        let stream = self.gpu.stream();
+        let s: &CudaStream = &stream;
+        let (sp, _g0) = src.device_ptr(s);
+        let (dp, _g1) = dst.device_ptr_mut(s);
+        let copy = cudarc::driver::sys::CUDA_MEMCPY2D_st {
+            srcXInBytes: 0,
+            srcY: 0,
+            srcMemoryType: cudarc::driver::sys::CUmemorytype_enum::CU_MEMORYTYPE_DEVICE,
+            srcHost: std::ptr::null(),
+            srcDevice: sp,
+            srcArray: std::ptr::null_mut(),
+            srcPitch: src_pitch_floats * f,
+            dstXInBytes: dst_off_floats * f,
+            dstY: 0,
+            dstMemoryType: cudarc::driver::sys::CUmemorytype_enum::CU_MEMORYTYPE_DEVICE,
+            dstHost: std::ptr::null_mut(),
+            dstDevice: dp,
+            dstArray: std::ptr::null_mut(),
+            dstPitch: dst_pitch_floats * f,
+            WidthInBytes: width_floats * f,
+            Height: height,
+        };
+        // SAFETY: both pointers are live device allocations on this engine's device, bounds
+        // checked above; the copy is stream-ordered on the worker stream.
+        unsafe { cudarc::driver::sys::cuMemcpy2DAsync_v2(&copy, s.cu_stream()).result()? };
+        Ok(())
+    }
+
+    /// Cross-device copy of `n` floats from `src` (on `src_engine`'s device) into `dst` (on
+    /// this engine's device): `cudaMemcpyPeerAsync` with explicit contexts, issued on the
+    /// SOURCE engine's stream (the pp.rs boundary transport's shape) so later writes on
+    /// that stream are ordered behind it. NOT synchronized: the caller drains the source
+    /// stream (or waits an event recorded on it) before consuming `dst` on this engine.
+    /// Rebinds this engine's context on the calling thread before returning.
+    pub fn copy_peer_from_async(
+        &self,
+        dst: &mut CudaSlice<f32>,
+        src_engine: &Engine,
+        src: &CudaSlice<f32>,
+        n: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if n > src.len() || n > dst.len() {
+            return Err(format!(
+                "copy_peer_from_async range {n} exceeds src {} or dst {}",
+                src.len(),
+                dst.len(),
+            )
+            .into());
+        }
+        if n == 0 {
+            return Ok(());
+        }
+        let stream = src_engine.gpu.stream();
+        let s_src: &CudaStream = &stream;
+        let (sp, _g0) = src.device_ptr(s_src);
+        let (dp, _g1) = dst.device_ptr_mut(s_src);
+        src_engine.ctx().bind_to_thread()?;
+        // SAFETY: live allocations on the two named contexts, bounds checked above; the
+        // copy is queued on the source stream with explicit src/dst contexts.
+        let r = unsafe {
+            cudarc::driver::result::memcpy_peer_async(
+                self.ctx().cu_ctx(),
+                dp,
+                src_engine.ctx().cu_ctx(),
+                sp,
+                n * std::mem::size_of::<f32>(),
+                s_src.cu_stream(),
+            )
+        };
+        self.ctx().bind_to_thread()?;
+        r?;
+        Ok(())
+    }
+
+    /// Free device memory on this engine's device, in MB (`cuMemGetInfo`; 0 on error).
+    pub fn free_mem_mb(&self) -> u64 {
+        self.ctx()
+            .mem_get_info()
+            .map(|(f, _)| f as u64 >> 20)
+            .unwrap_or(0)
+    }
+
     pub fn zeros(&self, n: usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         SCRATCH_ALLOC_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let s = self.gpu.stream().alloc_zeros::<f32>(n)?;

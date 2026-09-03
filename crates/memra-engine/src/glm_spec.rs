@@ -187,7 +187,10 @@ use crate::dflash::{DflashDraft, DflashKv, DsparkDraftSample};
 use crate::forward::argmax;
 use crate::hybrid::{HybridModel, Mixer};
 use crate::spec::SpecSampling;
-use crate::spec_phase::{ProfClock, SpecFirstTokenProf, SpecPhaseNs, spec_prof_on};
+use crate::spec_phase::{
+    ProfClock, SPEC_PROF_ROUNDS, SpecFirstTokenProf, SpecPhaseNs, SpecRoundProf, SpecRoundsLog,
+    V_SEQ_ROWS, spec_prof_on,
+};
 use cudarc::driver::CudaSlice;
 
 type Res<T> = Result<T, Box<dyn std::error::Error>>;
@@ -221,6 +224,113 @@ pub fn glm5_spec_on() -> bool {
 /// one process; one env read per verify walk.
 pub fn glm5_verify_batch_on() -> bool {
     std::env::var("MEMRA_GLM5_VERIFY_BATCH").as_deref() != Ok("0")
+}
+
+/// `MEMRA_GLM5_DRAFT_PRIME_V2` (default OFF, lane/spec-route-depth-20260902): the DFlash2
+/// drafter's prompt prime rides the target's own chunk schedule. OFF (the pre-lane
+/// literal): the target prime fills a whole-prompt HOST tap sink (`[prompt, 5 x 4096]`
+/// f32, 21 GB at 256k) through synchronous pageable DtoHs, and round 1 re-uploads it in
+/// 256-row pageable HtoD chunks before the fc + k/v ingest. ON: each prime chunk
+/// (`hyper_prime_ranges`, 4096 rows) arms a DEVICE-staged chunk sink, and right after that
+/// chunk's trunk walk the drafter ingests it: slot DtoH into a pinned cacheable buffer,
+/// host interleave, ASYNC HtoD from pinned, fc + k/v ingest at the chunk width. The trunk
+/// program is byte-identical (the same per-range `prime_cache` calls with the same
+/// `queued_after`); the drafter's KV rows are the same GEMM class at a different M (rig
+/// gate 15 pins bit-identity at equal chunking and tape identity always). Read per session
+/// creation so a gate can flip it in-process. Rollback seam: unset.
+pub fn glm5_draft_prime_v2_on() -> bool {
+    std::env::var("MEMRA_GLM5_DRAFT_PRIME_V2").as_deref() == Ok("1")
+}
+
+/// `MEMRA_GLM5_DRAFT_TAPS_DEVICE` (DEFAULT OFF; `=1` arms it; lane/spec-route-depth-20260902):
+/// the DEVICE-RESIDENT drafter
+/// prime. Boot D on the 2x B200 pair (this arm) against boot C (host taps), TTFT s at
+/// 4k / 42k / 128k / 256k: 4.89 / 16.84 / 56.62 / 129.42 vs 5.32 / 21.23 / 72.90 /
+/// 162.26, drafter prime ms 17.9 / 59.1 / 180.7 / 362.4 vs 91.4 / 561.6 / 4430.8 /
+/// 8868.4, steady rounds and decode-after unchanged (FLAGS row, receipt path there). The trunk prime stays the ONE whole-prompt call (the
+/// chunked arm's per-range calls re-entered the PP-2 microchunk geometry and made the trunk
+/// prime itself far slower — boot B); the tap rows never leave the device: the walk stages
+/// each range's five contracted tap planes on the writing stage's device (a chunk-sized
+/// ring, `HcTapSink::new_device_staged_at`), and at the range boundary the prime's own loop
+/// hands the range to `glm5_taps_range_done`, which interleaves the planes into the fc
+/// layout with 2D device copies (a peer copy first for planes written on another stage),
+/// runs `ctx_features` + `ingest_ctx` at the range width (4096 rows: the batched GEMM
+/// class), and appends to the drafter KV. No DtoH in the prime, no HtoD in the drafter
+/// prime; the eager arm's 7.5 s of pageable HtoD at 256k (boot B's split: h2d 7505.8 of
+/// 8870 ms) goes away outright, and its `tap_dtoh` with it. Read per session creation
+/// (a gate flips it in-process). The host-tap arms (`MEMRA_GLM5_DRAFT_PRIME_V2`,
+/// `MEMRA_GLM5_DRAFT_PRIME_LAZY`) are the default and are reachable whenever this is unset.
+///
+/// DEFAULT OFF DELIBERATELY, and the flip is blocked on two named defects that a review of
+/// the ON default found. Both are properties of the device-staged ring, so neither can bite
+/// while this is unset. FIRST, the `MEMRA_B200_PRIME_V2` arm-2 branch
+/// (`prime_cache_hyper_pp2_pipelined`) never calls
+/// `glm5_taps_range_begin`/`glm5_taps_range_done`, and hands each stage-chunk an ABSOLUTE
+/// base, so from the second range on `glm5_hc_tap_slot` slices past the `sink.t * h` slot
+/// buffer: `slice_mut` panics and takes the worker with it. SECOND, the same-`ordinal`
+/// ingest reads the ring `buf` from the head engine's stream while the next range rewrites
+/// it on the stage engine's stream, with cudarc implicit event tracking disabled in this
+/// repo, so the tap planes can tear into silently wrong drafter ctx KV; verify still
+/// arbitrates the served tape, so the tape-identity gates stay green and would NOT catch
+/// it. Flipping the default needs both fixed AND a gate that fails on each before it
+/// passes.
+pub fn glm5_draft_taps_device_on() -> bool {
+    std::env::var("MEMRA_GLM5_DRAFT_TAPS_DEVICE").as_deref() == Ok("1")
+}
+
+/// The device-resident drafter prime's in-flight state (doc on
+/// [`glm5_draft_taps_device_on`]), carried type-erased on the prime's tap sink
+/// (`HcTapSink::ingest_state`) so the prime's range loop can hand it each range.
+struct Glm5DraftPrimeInflight {
+    kv: DflashKv,
+    taps: Vec<usize>,
+    n_embd: usize,
+    /// Rows the sink ring covers (the largest range the schedule emits).
+    ring: usize,
+    /// Head-device staging for planes written on another stage (lazily sized `ring x h`).
+    stage: Vec<Option<CudaSlice<f32>>>,
+    /// The interleaved `[ring, n_taps * h]` fc input on the head device (lazy).
+    rows_dev: Option<CudaSlice<f32>>,
+    prof_on: bool,
+    copy_ms: f64,
+    feat_ms: f64,
+    kv_ms: f64,
+    chunks: usize,
+}
+
+/// `MEMRA_GLM5_DRAFT_PRIME_LAZY` (default OFF, lane/spec-route-depth-20260902): `=1`
+/// restores the pre-lane placement of the EAGER arm's drafter ingest — inside round 1 of
+/// the first burst, i.e. AFTER the prime's anchor token has been emitted under the
+/// round-cadence door. Default (unset): the ingest runs at session creation, before the
+/// session is returned and before any token is emitted. WHY THE FLIP: the 2x B200 pair's
+/// boot A (`MEMRA_SPEC_PROF=1`, main + PR #101) measured the round-0 wall at 0.63 / 4.5 /
+/// 8.9 s for 42k / 128k / 256k prompts (about 35 us per prompt token, the eager ingest)
+/// while every later round sits at 55-64 ms; with the anchor already streamed, that one
+/// round lands INSIDE decode, which is the bimodal "15.4 vs 32.1 tok/s" the pair saw
+/// (256 tokens over 8.9 s + 255 rounds/37 tok/s = 16 tok/s; without the stall, 37). The
+/// work is identical either way (same rows, same GEMMs, same KV bytes: the KV is
+/// position-addressed and nothing touches it between creation and round 1); only WHEN it
+/// runs moves, from the second token's latency to TTFT. Read per session creation.
+pub fn glm5_draft_prime_lazy_on() -> bool {
+    std::env::var("MEMRA_GLM5_DRAFT_PRIME_LAZY").as_deref() == Ok("1")
+}
+
+/// Drafter ctx KV bytes at `cap` rows (the `DflashKv::new` geometry), for the profile.
+fn dflash_kv_bytes(cfg: &crate::dflash::DflashCfg, cap: usize) -> usize {
+    2 * cfg.n_layer * (cap + cfg.block_size) * cfg.n_kv * cfg.head_dim * std::mem::size_of::<f32>()
+}
+
+/// Pinned host buffer viewed as `n` f32s (page-aligned by construction).
+fn pinned_f32(buf: &crate::PinnedHostBuf, n: usize) -> &[f32] {
+    debug_assert!(n * std::mem::size_of::<f32>() <= buf.len());
+    // SAFETY: malloc_host allocations are page-aligned and the length is checked above.
+    unsafe { std::slice::from_raw_parts(buf.as_slice().as_ptr() as *const f32, n) }
+}
+
+fn pinned_f32_mut(buf: &mut crate::PinnedHostBuf, n: usize) -> &mut [f32] {
+    debug_assert!(n * std::mem::size_of::<f32>() <= buf.len());
+    // SAFETY: as above; exclusive borrow of the buffer.
+    unsafe { std::slice::from_raw_parts_mut(buf.as_mut_slice().as_mut_ptr() as *mut f32, n) }
 }
 
 /// `MEMRA_GLM5_SPEC_PREFIX` (default OFF, lane/glm5-prefix-latent2 2026-09-01): the glm5
@@ -808,6 +918,9 @@ impl HybridModel {
                 // it in stream order before the next row's overwrite, so ONE buffer per
                 // layer replaces t allocations (stream-ordered pool churn is the dsv4
                 // lesson).
+                // Depth attribution (lane/spec-route-depth-20260902): every row that walks
+                // this arm is counted; the per-round log samples the counter.
+                V_SEQ_ROWS.fetch_add(t as u64, std::sync::atomic::Ordering::Relaxed);
                 let mut mixed = e.uninit(t * n_embd)?;
                 let mut h_row = e.uninit(n_embd)?;
                 #[allow(clippy::needless_range_loop)]
@@ -1024,11 +1137,13 @@ impl HybridModel {
             e.copy_into(buf, base * h, &contracted, t * h)?;
             return Ok(());
         }
+        let t_dtoh = std::time::Instant::now();
         let host = e.dtoh(&contracted)?;
         for r in 0..t {
             let dst = (base + r) * n_taps * h + slot * h;
             sink.rows[dst..dst + h].copy_from_slice(&host[r * h..(r + 1) * h]);
         }
+        sink.dtoh_ns += t_dtoh.elapsed().as_nanos() as u64;
         Ok(())
     }
 
@@ -1852,6 +1967,9 @@ impl HybridModel {
         let eh = self.glm5_head_engine(e)?;
         let mut prof = spec_prof_on().then(SpecFirstTokenProf::default);
         let mut pclk = prof.as_ref().map(|_| ProfClock::start(e, eh));
+        if let Some(pf) = prof.as_mut() {
+            pf.free_mb_before = self.glm5_free_mb(e);
+        }
         // Stage-owned allocation under a split (each layer's planes on its stage's device,
         // trailing MTP plane on the last stage); door shut = plain `Cache::new_planned`.
         let mut cache = crate::pp::new_cache_planned(e, &self.cfg, &self.plan, ctx_cap)?;
@@ -1868,17 +1986,123 @@ impl HybridModel {
         let plen = prompt.len();
         let n_embd = self.cfg.n_embd as usize;
         let tap_layers = match dflash_src {
-            Some(dr) => {
-                let taps = glm5_dflash_tap_layers(&dr.draft, self.layers.len())?;
-                cache.hc_taps = Some(HcTapSink::new(taps.clone(), n_embd, plen));
-                Some(taps)
-            }
+            Some(dr) => Some(glm5_dflash_tap_layers(&dr.draft, self.layers.len())?),
             None => None,
         };
-        let (logits0, _seed, hiddens) = self.prime_cache(e, prompt, &mut cache, 0)?;
-        if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
-            pf.prime_ms = ck.lap(e, eh);
-        }
+        // DRAFTER PRIME ARM (lane/spec-route-depth-20260902): the chunked arm primes the
+        // trunk per engine chunk and ingests each chunk's taps into the drafter KV right
+        // after that chunk's walk (`glm5_draft_prime_chunked`); the eager arm (the pre-lane
+        // literal) primes once over a whole-prompt host sink and leaves the ingest to
+        // round 1. `hidden_rows` is the row count of the returned `hiddens` stack (the whole
+        // prompt on the eager arm, the LAST chunk on the chunked arm) — the boundary
+        // capture indexes its last row through it.
+        let mut v2_kv: Option<DflashKv> = None;
+        let (logits0, hiddens, hidden_rows) = match (dflash_src, tap_layers.as_ref()) {
+            (Some(dr), Some(taps)) if glm5_draft_taps_device_on() => {
+                // DEVICE-RESIDENT ARM (doc on `glm5_draft_taps_device_on`): ONE whole-prompt
+                // prime; the ingest happens inside it at every range boundary.
+                let kv = DflashKv::new(eh, &dr.draft.cfg, ctx_cap)?;
+                if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
+                    pf.draft_alloc_ms = ck.lap(e, eh);
+                    pf.draft_kv_mb = dflash_kv_bytes(&dr.draft.cfg, ctx_cap) as f64 / 1e6;
+                }
+                let ring = crate::hybrid_forward::hyper_prime_call_rows(
+                    plen,
+                    self.layers.len(),
+                    self.gdn_prime_grid_on(),
+                );
+                let mut sink = HcTapSink::new_device_staged_at(taps.clone(), n_embd, ring, 0);
+                sink.ingest_state = Some(Box::new(Glm5DraftPrimeInflight {
+                    kv,
+                    taps: taps.clone(),
+                    n_embd,
+                    ring,
+                    stage: (0..taps.len()).map(|_| None).collect(),
+                    rows_dev: None,
+                    prof_on: prof.is_some(),
+                    copy_ms: 0.0,
+                    feat_ms: 0.0,
+                    kv_ms: 0.0,
+                    chunks: 0,
+                }));
+                cache.hc_taps = Some(sink);
+                let (l, _seed, h) = self.prime_cache(e, prompt, &mut cache, 0)?;
+                let walk_ms = pclk.as_mut().map(|ck| ck.lap(e, eh));
+                let mut sink = cache
+                    .hc_taps
+                    .take()
+                    .ok_or("device-resident drafter prime: tap sink vanished")?;
+                let st = sink
+                    .ingest_state
+                    .take()
+                    .ok_or("device-resident drafter prime: ingest state vanished")?
+                    .downcast::<Glm5DraftPrimeInflight>()
+                    .map_err(|_| "device-resident drafter prime: ingest state of the wrong type")?;
+                let st = *st;
+                if st.kv.len != plen {
+                    return Err(format!(
+                        "device-resident drafter prime covered {} of {plen} prompt rows \
+                         (the prime's range loop must hand every range to the ingest)",
+                        st.kv.len
+                    )
+                    .into());
+                }
+                if let (Some(pf), Some(walk)) = (prof.as_mut(), walk_ms) {
+                    // The ingest ran INSIDE the prime walk: split it back out so `prime`
+                    // stays the trunk's share and `draft_prime` the drafter's.
+                    let ingest = st.copy_ms + st.feat_ms + st.kv_ms;
+                    pf.prime_ms = (walk - ingest).max(0.0);
+                    pf.draft_prime_ms = ingest;
+                    pf.draft_prime_h2d_ms = st.copy_ms;
+                    pf.draft_prime_feat_ms = st.feat_ms;
+                    pf.draft_prime_kv_ms = st.kv_ms;
+                    pf.draft_prime_rows = plen;
+                    pf.draft_prime_chunks = st.chunks;
+                    pf.draft_prime_arm = "device";
+                }
+                v2_kv = Some(st.kv);
+                (l, h, plen)
+            }
+            (Some(dr), Some(taps)) if glm5_draft_prime_v2_on() => {
+                let mut kv = DflashKv::new(eh, &dr.draft.cfg, ctx_cap)?;
+                if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
+                    pf.draft_alloc_ms = ck.lap(e, eh);
+                    pf.draft_kv_mb = dflash_kv_bytes(&dr.draft.cfg, ctx_cap) as f64 / 1e6;
+                }
+                let out = self.glm5_draft_prime_chunked(
+                    e,
+                    eh,
+                    &dr.draft,
+                    prompt,
+                    &mut cache,
+                    &mut kv,
+                    taps,
+                    prof.as_mut(),
+                    pclk.as_mut(),
+                )?;
+                v2_kv = Some(kv);
+                out
+            }
+            _ => {
+                if let Some(taps) = tap_layers.as_ref() {
+                    let t_sink = std::time::Instant::now();
+                    cache.hc_taps = Some(HcTapSink::new(taps.clone(), n_embd, plen));
+                    if let Some(pf) = prof.as_mut() {
+                        pf.sink_alloc_ms = t_sink.elapsed().as_secs_f64() * 1e3;
+                    }
+                }
+                let (l, _seed, h) = self.prime_cache(e, prompt, &mut cache, 0)?;
+                if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
+                    pf.prime_ms = ck.lap(e, eh);
+                    pf.prime_tap_dtoh_ms = cache
+                        .hc_taps
+                        .as_ref()
+                        .map(|sk| sk.dtoh_ns as f64 / 1e6)
+                        .unwrap_or(0.0);
+                }
+                (l, h, plen)
+            }
+        };
         // Prompt-boundary capture (lane/glm5-prefix-latent2): taken NOW — after the prime
         // filled every plane to the boundary, before the anchor/draft machinery below and
         // before any burst mutates the conv/ssm state or laps the tail ring. DFlash2-only:
@@ -1886,7 +2110,7 @@ impl HybridModel {
         // capture could be taken, and restore refuses the native source anyway. A refusal
         // drops the capture loudly and the session serves regardless.
         let prefix_capture = if glm5_spec_prefix_on() && dflash_src.is_some() {
-            self.glm5_prefix_boundary_capture(e, eh, &cache, &logits0, &hiddens, plen)
+            self.glm5_prefix_boundary_capture(e, eh, &cache, &logits0, &hiddens, plen, hidden_rows)
         } else {
             None
         };
@@ -1909,24 +2133,41 @@ impl HybridModel {
         // `Some` exactly when `dflash_src` is, and the law returns `Dflash2` exactly then, so
         // this is the same program the pre-seam code ran — the `_` arm's refusal is the
         // never-taken proof of that rather than a silent fallback.)
-        let (draft, pending) = match (source_kind, dflash_src, tap_layers) {
+        let (mut draft, pending) = match (source_kind, dflash_src, tap_layers) {
             (crate::spec::DraftSourceKind::Dflash2, Some(dr), Some(taps)) => {
-                let sink = cache
-                    .hc_taps
-                    .take()
-                    .ok_or("glm5 dflash prime tap sink vanished")?;
-                // Drafter ctx KV on the HEAD engine (where the drafter weights loaded and
-                // every round's chain runs); prompt feature rows ride `pending` so round 1
-                // ingests them through the one chunked path.
-                let kv = DflashKv::new(eh, &dr.draft.cfg, ctx_cap)?;
-                (
-                    Glm5DraftState::Dflash2 {
-                        kv,
-                        pending: sink.rows,
-                        taps,
-                    },
-                    Vec::new(),
-                )
+                if let Some(kv) = v2_kv.take() {
+                    // Chunked arm: the KV already holds every prompt row (kv.len == plen);
+                    // round 1 finds nothing pending and walks straight to its block forward.
+                    debug_assert_eq!(kv.len, plen, "chunked drafter prime must cover the prompt");
+                    (
+                        Glm5DraftState::Dflash2 {
+                            kv,
+                            pending: Vec::new(),
+                            taps,
+                        },
+                        Vec::new(),
+                    )
+                } else {
+                    let sink = cache
+                        .hc_taps
+                        .take()
+                        .ok_or("glm5 dflash prime tap sink vanished")?;
+                    // Drafter ctx KV on the HEAD engine (where the drafter weights loaded and
+                    // every round's chain runs); prompt feature rows ride `pending` so round 1
+                    // ingests them through the one chunked path.
+                    let kv = DflashKv::new(eh, &dr.draft.cfg, ctx_cap)?;
+                    if let Some(pf) = prof.as_mut() {
+                        pf.draft_kv_mb = dflash_kv_bytes(&dr.draft.cfg, ctx_cap) as f64 / 1e6;
+                    }
+                    (
+                        Glm5DraftState::Dflash2 {
+                            kv,
+                            pending: sink.rows,
+                            taps,
+                        },
+                        Vec::new(),
+                    )
+                }
             }
             (crate::spec::DraftSourceKind::Dflash2, _, _) => {
                 return Err(
@@ -1958,7 +2199,32 @@ impl HybridModel {
             }
         };
         if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
-            pf.draft_alloc_ms = ck.lap(e, eh);
+            pf.draft_alloc_ms += ck.lap(e, eh);
+        }
+        // EAGER-ARM INGEST AT CREATION (doc on `glm5_draft_prime_lazy_on`): the prompt's tap
+        // rows go into the drafter KV NOW, before the session (and its anchor) is handed to
+        // the worker, unless the lazy seam asks for the round-1 placement. The chunked arm
+        // arrives here with nothing pending.
+        if !glm5_draft_prime_lazy_on()
+            && let (Glm5DraftState::Dflash2 { kv, pending, taps }, Some(dr)) =
+                (&mut draft, dflash_src)
+            && !pending.is_empty()
+        {
+            let rows = std::mem::take(pending);
+            let stats = self.glm5_dflash_ingest_rows(
+                eh,
+                &dr.draft,
+                kv,
+                &rows,
+                taps.len() * n_embd,
+                pclk.as_mut(),
+            )?;
+            if let Some(pf) = prof.as_mut() {
+                stats.write(pf, "eager");
+            }
+        }
+        if let Some(pf) = prof.as_mut() {
+            pf.free_mb_after = self.glm5_free_mb(e);
         }
         // Composition engagement receipt — printed immediately before the session is
         // RETURNED (after every admission law, the d2t vocabulary check, the cache
@@ -1988,8 +2254,318 @@ impl HybridModel {
             max_ctx: ctx_cap,
             mtp_il,
             prefix_capture,
+            prof_rounds: prof.as_ref().map(|_| SpecRoundsLog::default()),
             prof,
         })
+    }
+
+    /// Range-begin hook of the device-resident drafter prime (called by the prime's range
+    /// loop, `hybrid_forward.rs`): anchor the chunk ring at the range's first row so the
+    /// walk's `base - origin` lands in `[0, ring)`. No-op on every other sink.
+    pub(crate) fn glm5_taps_range_begin(&self, cache: &mut Cache, start: usize) {
+        if let Some(sink) = cache.hc_taps.as_mut()
+            && sink.ingest_state.is_some()
+        {
+            sink.origin = start;
+        }
+    }
+
+    /// Range-done hook of the device-resident drafter prime: the range's tap planes are
+    /// complete on their writing devices (the range call returned host logits, so the last
+    /// stage drained, and every earlier stage's rows were consumed by it), so ingest them
+    /// now. No-op on every other sink; a state of another type is put back untouched.
+    pub(crate) fn glm5_taps_range_done(
+        &self,
+        e: &Engine,
+        cache: &mut Cache,
+        start: usize,
+        end: usize,
+    ) -> Res<()> {
+        let Some(sink) = cache.hc_taps.as_mut() else {
+            return Ok(());
+        };
+        let Some(state) = sink.ingest_state.take() else {
+            return Ok(());
+        };
+        let mut st = match state.downcast::<Glm5DraftPrimeInflight>() {
+            Ok(st) => st,
+            Err(other) => {
+                sink.ingest_state = Some(other);
+                return Ok(());
+            }
+        };
+        let res = self.glm5_taps_ingest_range(e, sink, &mut st, start, end);
+        sink.ingest_state = Some(st);
+        res
+    }
+
+    /// One range of the device-resident drafter prime: per tap slot, the plane on its
+    /// writing device is interleaved into the head-device fc input with a 2D copy (after a
+    /// peer copy into head-device staging when the slot's stage is another device; the
+    /// source stream is drained before the plane is read), then `ctx_features` +
+    /// `ingest_ctx` at the range width append the rows to the drafter KV.
+    fn glm5_taps_ingest_range(
+        &self,
+        e: &Engine,
+        sink: &mut HcTapSink,
+        st: &mut Glm5DraftPrimeInflight,
+        start: usize,
+        end: usize,
+    ) -> Res<()> {
+        let t = end - start;
+        if t == 0 {
+            return Ok(());
+        }
+        if t > st.ring {
+            return Err(format!(
+                "device-resident tap ingest: range {start}..{end} ({t} rows) exceeds the \
+                 sink ring of {} rows",
+                st.ring
+            )
+            .into());
+        }
+        if st.kv.len != start {
+            return Err(format!(
+                "device-resident tap ingest: drafter KV holds {} rows but the range starts \
+                 at {start} (a range was skipped or handed twice)",
+                st.kv.len
+            )
+            .into());
+        }
+        let eh = self.glm5_head_engine(e)?;
+        let dr = self
+            .glm5_dflash
+            .as_ref()
+            .ok_or("device-resident tap ingest without a loaded drafter")?;
+        let h = st.n_embd;
+        let n_taps = st.taps.len();
+        let mut pclk = st.prof_on.then(|| ProfClock::start(e, eh));
+        if st.rows_dev.is_none() {
+            st.rows_dev = Some(eh.uninit(st.ring * n_taps * h)?);
+        }
+        let rows_dev = st.rows_dev.as_mut().expect("just filled");
+        for (slot, &il) in st.taps.iter().enumerate() {
+            let buf = sink.dev[slot].as_ref().ok_or_else(|| {
+                format!(
+                    "device-resident tap ingest: slot {slot} (layer {il}) was never written \
+                     over rows {start}..{end}"
+                )
+            })?;
+            let es = self.glm5_tap_slot_engine(e, il)?;
+            if es.ctx().ordinal() == eh.ctx().ordinal() {
+                eh.copy_2d_dtod_async(rows_dev, slot * h, n_taps * h, buf, h, h, t)?;
+            } else {
+                if st.stage[slot].is_none() {
+                    st.stage[slot] = Some(eh.uninit(st.ring * h)?);
+                }
+                let staging = st.stage[slot].as_mut().expect("just filled");
+                eh.copy_peer_from_async(staging, es, buf, t * h)?;
+                es.stream().synchronize()?;
+                eh.copy_2d_dtod_async(rows_dev, slot * h, n_taps * h, staging, h, h, t)?;
+            }
+        }
+        if let Some(ck) = pclk.as_mut() {
+            st.copy_ms += ck.lap(e, eh);
+        }
+        let feats = dr.draft.ctx_features(eh, rows_dev, t)?;
+        if let Some(ck) = pclk.as_mut() {
+            st.feat_ms += ck.lap(e, eh);
+        }
+        let pos: Vec<i32> = ((st.kv.len as i32)..(st.kv.len + t) as i32).collect();
+        dr.draft.ingest_ctx(eh, &mut st.kv, &feats, &pos, t)?;
+        if let Some(ck) = pclk.as_mut() {
+            st.kv_ms += ck.lap(e, eh);
+        }
+        st.chunks += 1;
+        Ok(())
+    }
+
+    /// The EAGER drafter ingest (one implementation for session creation and round 1):
+    /// host feature rows `[n, row_w]` -> 256-row pageable HtoD chunks -> `ctx_features` ->
+    /// `ingest_ctx`, appended at `kv.len`. Returns the profile buckets (all 0 with the
+    /// clock absent).
+    fn glm5_dflash_ingest_rows(
+        &self,
+        eh: &Engine,
+        draft: &DflashDraft,
+        kv: &mut DflashKv,
+        rows: &[f32],
+        row_w: usize,
+        mut pclk: Option<&mut ProfClock>,
+    ) -> Res<DraftIngestStats> {
+        debug_assert_eq!(rows.len() % row_w, 0, "ragged feature rows");
+        let n_new = rows.len() / row_w;
+        let mut st = DraftIngestStats {
+            rows: n_new,
+            ..Default::default()
+        };
+        let mut r0 = 0usize;
+        while r0 < n_new {
+            let t_c = (n_new - r0).min(256);
+            let chunk = eh.htod(&rows[r0 * row_w..(r0 + t_c) * row_w])?;
+            if let Some(ck) = pclk.as_deref_mut() {
+                st.h2d_ms += ck.lap(eh, eh);
+            }
+            let feats = draft.ctx_features(eh, &chunk, t_c)?;
+            if let Some(ck) = pclk.as_deref_mut() {
+                st.feat_ms += ck.lap(eh, eh);
+            }
+            let pos_c: Vec<i32> = ((kv.len as i32)..(kv.len + t_c) as i32).collect();
+            draft.ingest_ctx(eh, kv, &feats, &pos_c, t_c)?;
+            if let Some(ck) = pclk.as_deref_mut() {
+                st.kv_ms += ck.lap(eh, eh);
+            }
+            r0 += t_c;
+            st.chunks += 1;
+        }
+        Ok(st)
+    }
+
+    /// Free device memory per device this model can hold state on (primary + ppN stages),
+    /// for the depth profile's before/after samples.
+    fn glm5_free_mb(&self, e: &Engine) -> Vec<(usize, u64)> {
+        let mut out = vec![(e.ctx().ordinal(), e.free_mem_mb())];
+        if let Ok(rt) = crate::pp::PpNRt::get(e) {
+            for stage in 0..rt.n_stages() {
+                let se = rt.engine(stage, e);
+                let ord = se.ctx().ordinal();
+                if !out.iter().any(|(o, _)| *o == ord) {
+                    out.push((ord, se.free_mem_mb()));
+                }
+            }
+        }
+        out
+    }
+
+    /// The engine that OWNS tap layer `il`'s device (the stage engine under a live split,
+    /// the caller's engine otherwise) — the `glm5_tap_drain` placement rule, shared.
+    fn glm5_tap_slot_engine<'e>(&self, e: &'e Engine, il: usize) -> Res<&'e Engine> {
+        match crate::pp::pp_cuts(self.layers.len()) {
+            Some(fence) if !crate::pp::pp2_streams_off() => {
+                let rt = crate::pp::PpNRt::get(e)?;
+                let stage = fence
+                    .windows(2)
+                    .position(|w| il >= w[0] && il < w[1])
+                    .ok_or_else(|| format!("tap layer {il} outside every stage range"))?;
+                Ok(rt.engine(stage, e))
+            }
+            _ => Ok(e),
+        }
+    }
+
+    /// CHUNKED DRAFTER PRIME (lane/spec-route-depth-20260902, `MEMRA_GLM5_DRAFT_PRIME_V2`):
+    /// prime the trunk over the engine's own chunk schedule and ingest each chunk's tap
+    /// rows into the drafter KV right after that chunk's walk. Returns the LAST chunk's
+    /// (boundary logits, hidden stack, stack rows).
+    ///
+    /// TRUNK PROGRAM, unchanged: `prime_cache` over `[start, end)` with
+    /// `queued_after = plen - end` is exactly the call the whole-prompt entry makes per
+    /// range (`prime_cache_hyper`'s loop: `queued_after + (t - end)`, `seq_end` invariant),
+    /// so the trunk cache after the loop is byte-identical to the eager arm's — the
+    /// restored-suffix gates (11/12) already pin "continue == cold" for this call shape.
+    ///
+    /// DATA MOVEMENT, the whole point: per chunk, five device slot buffers (one per tap
+    /// layer, on the writing stage's device) are read back into ONE pinned cacheable slot
+    /// buffer (sync, `dtoh_f32_into_pinned`), CPU-interleaved into the pinned
+    /// `[t, n_taps * hidden]` rows buffer (the fc input layout), uploaded ASYNC from pinned
+    /// (`htod_f32_from_pinned_async`), then `ctx_features` + `ingest_ctx` at the chunk
+    /// width. The host transient is two chunk-sized pinned buffers (335 MB + 67 MB at 4096
+    /// rows) instead of the eager arm's `[prompt, 5 x hidden]` pageable Vec; the eager
+    /// arm's 21 GB of pageable DtoH + 21 GB of pageable HtoD at 256k become pinned DMA.
+    /// The ingest kernels are stream-ordered behind the upload; the chunk ends with one
+    /// stream drain so the rows buffer can be refilled (the upload helper's contract).
+    #[allow(clippy::too_many_arguments)]
+    // allow: the parameter list is the prime contract (engines, drafter, prompt, cache,
+    // KV, taps) plus the two profile instruments; bundling would hide which is which
+    fn glm5_draft_prime_chunked(
+        &self,
+        e: &Engine,
+        eh: &Engine,
+        draft: &DflashDraft,
+        prompt: &[u32],
+        cache: &mut Cache,
+        kv: &mut DflashKv,
+        taps: &[usize],
+        mut prof: Option<&mut SpecFirstTokenProf>,
+        mut pclk: Option<&mut ProfClock>,
+    ) -> Res<(Vec<f32>, CudaSlice<f32>, usize)> {
+        let plen = prompt.len();
+        let n_embd = self.cfg.n_embd as usize;
+        let n_taps = taps.len();
+        let ranges = crate::hybrid_forward::hyper_prime_ranges(
+            plen,
+            self.layers.len(),
+            self.gdn_prime_grid_on(),
+        );
+        let t_max = ranges.iter().map(|&(a, b)| b - a).max().unwrap_or(0);
+        let f32b = std::mem::size_of::<f32>();
+        let mut slot_buf = crate::PinnedHostBuf::new(t_max * n_embd * f32b)?;
+        let mut rows_buf = crate::PinnedHostBuf::new(t_max * n_taps * n_embd * f32b)?;
+        let (mut prime_ms, mut h2d_ms, mut feat_ms, mut kv_ms) = (0f64, 0f64, 0f64, 0f64);
+        let mut last: Option<(Vec<f32>, CudaSlice<f32>, usize)> = None;
+        for &(start, end) in &ranges {
+            let t = end - start;
+            cache.hc_taps = Some(HcTapSink::new_device_staged_at(
+                taps.to_vec(),
+                n_embd,
+                t,
+                start,
+            ));
+            let (l, _seed, h) = self.prime_cache(e, &prompt[start..end], cache, plen - end)?;
+            if let Some(ck) = pclk.as_deref_mut() {
+                prime_ms += ck.lap(e, eh);
+            }
+            let mut sink = cache
+                .hc_taps
+                .take()
+                .ok_or("chunked drafter prime: chunk tap sink vanished")?;
+            // ---- drain: device slots -> pinned slot -> interleaved pinned rows ----
+            for (slot, &il) in taps.iter().enumerate() {
+                let buf = sink.dev[slot].take().ok_or_else(|| {
+                    format!(
+                        "chunked drafter prime: tap slot {slot} (layer {il}) was never \
+                         written by the prime walk over rows {start}..{end}"
+                    )
+                })?;
+                let es = self.glm5_tap_slot_engine(e, il)?;
+                es.dtoh_f32_into_pinned(&buf, &mut slot_buf, t * n_embd)?;
+                let src = pinned_f32(&slot_buf, t * n_embd);
+                let dst = pinned_f32_mut(&mut rows_buf, t * n_taps * n_embd);
+                for r in 0..t {
+                    let d0 = (r * n_taps + slot) * n_embd;
+                    dst[d0..d0 + n_embd].copy_from_slice(&src[r * n_embd..(r + 1) * n_embd]);
+                }
+            }
+            let feats_in = eh.htod_f32_from_pinned_async(&rows_buf, t * n_taps * n_embd)?;
+            if let Some(ck) = pclk.as_deref_mut() {
+                h2d_ms += ck.lap(e, eh);
+            }
+            let feats = draft.ctx_features(eh, &feats_in, t)?;
+            if let Some(ck) = pclk.as_deref_mut() {
+                feat_ms += ck.lap(e, eh);
+            }
+            let pos: Vec<i32> = ((kv.len as i32)..(kv.len + t) as i32).collect();
+            draft.ingest_ctx(eh, kv, &feats, &pos, t)?;
+            // The rows buffer is refilled by the next chunk: drain the stream first (the
+            // async-upload contract). Also bounds the kv bucket.
+            eh.stream().synchronize()?;
+            if let Some(ck) = pclk.as_deref_mut() {
+                kv_ms += ck.lap(e, eh);
+            }
+            last = Some((l, h, t));
+        }
+        debug_assert_eq!(kv.len, plen, "chunked drafter prime must cover the prompt");
+        if let Some(pf) = prof.as_mut() {
+            pf.prime_ms = prime_ms;
+            pf.draft_prime_ms = h2d_ms + feat_ms + kv_ms;
+            pf.draft_prime_h2d_ms = h2d_ms;
+            pf.draft_prime_feat_ms = feat_ms;
+            pf.draft_prime_kv_ms = kv_ms;
+            pf.draft_prime_rows = plen;
+            pf.draft_prime_chunks = ranges.len();
+            pf.draft_prime_arm = "chunked";
+        }
+        last.ok_or_else(|| "chunked drafter prime: empty prime schedule".into())
     }
 
     /// Boundary capture for the DEFERRED prefix publication (lane/glm5-prefix-latent2,
@@ -2000,6 +2576,10 @@ impl HybridModel {
     /// append-only planes (latent rows, final pool keys, full-attn KV) are NOT copied here:
     /// the worker slices them from the live cache at publish (`snapshot_plane_at`), which is
     /// legal because the glm5 verify rollback never truncates below the prime boundary.
+    #[allow(clippy::too_many_arguments)]
+    // allow: the parameter list is the capture contract (two engines, the cache, the
+    // boundary logits and hidden stack, the boundary and the stack's own row count);
+    // bundling would hide which row index is which
     fn glm5_prefix_boundary_capture(
         &self,
         e: &Engine,
@@ -2008,6 +2588,9 @@ impl HybridModel {
         logits0: &[f32],
         hiddens: &CudaSlice<f32>,
         plen: usize,
+        // Rows in `hiddens` (its last row is the boundary hidden): the whole prompt on the
+        // eager cold prime, the last chunk on the chunked arm, the suffix on a restore.
+        hidden_rows: usize,
     ) -> Option<crate::spec::SpecBoundaryCapture> {
         debug_assert_eq!(
             cache.pos, plen,
@@ -2064,8 +2647,12 @@ impl HybridModel {
                 None => latent_tails.push(None),
             }
         }
-        let last_h =
-            crate::spec::capture_boundary_hidden(eh, hiddens, plen, self.cfg.n_embd as usize);
+        let last_h = crate::spec::capture_boundary_hidden(
+            eh,
+            hiddens,
+            hidden_rows,
+            self.cfg.n_embd as usize,
+        );
         Some(crate::spec::SpecBoundaryCapture {
             snap,
             pos: plen,
@@ -2307,7 +2894,17 @@ impl HybridModel {
             }
             // Republish capture at the NEW (deeper) boundary — pos == fed + suffix here.
             let capture = if glm5_spec_prefix_on() {
-                self.glm5_prefix_boundary_capture(e, eh, &cache, &logits_s, &hiddens, cache.pos)
+                // `hiddens` is the SUFFIX stack: its last row is the boundary hidden
+                // (indexed through `suffix.len()`, not the absolute boundary).
+                self.glm5_prefix_boundary_capture(
+                    e,
+                    eh,
+                    &cache,
+                    &logits_s,
+                    &hiddens,
+                    cache.pos,
+                    suffix.len(),
+                )
             } else {
                 None
             };
@@ -2372,6 +2969,7 @@ impl HybridModel {
             max_ctx: ctx_cap,
             mtp_il: None,
             prefix_capture,
+            prof_rounds: prof.as_ref().map(|_| SpecRoundsLog::default()),
             prof,
         })
     }
@@ -2580,8 +3178,42 @@ impl HybridModel {
                 sess.done = true;
                 break;
             }
-            let (round_tokens, n_drafted) =
-                self.glm5_spec_round(e, sess, k, d2t, sp_on.as_ref(), knobs, phase.as_mut())?;
+            // DEPTH LOG (lane/spec-route-depth-20260902, `MEMRA_SPEC_PROF=1`): the first
+            // SPEC_PROF_ROUNDS rounds of a session get their own phase accumulator (the
+            // trace's drains), a wall clock, and the per-row-arm row count — folded into
+            // the per-burst trace accumulator afterwards so both instruments agree.
+            let log_round = sess.prof_rounds.as_ref().is_some_and(|l| l.wants_more());
+            let mut rp = log_round.then(SpecPhaseNs::default);
+            let t_round = log_round.then(std::time::Instant::now);
+            let seq0 = V_SEQ_ROWS.load(std::sync::atomic::Ordering::Relaxed);
+            let ctx0 = sess.cache.pos;
+            let (round_tokens, n_drafted) = {
+                let ph: Option<&mut SpecPhaseNs> = match (rp.as_mut(), phase.as_mut()) {
+                    (Some(r), _) => Some(r),
+                    (None, p) => p,
+                };
+                self.glm5_spec_round(e, sess, k, d2t, sp_on.as_ref(), knobs, ph)?
+            };
+            if let (Some(r), Some(t0)) = (rp.as_ref(), t_round) {
+                if let Some(p) = phase.as_mut() {
+                    p.add(r);
+                }
+                if let Some(log) = sess.prof_rounds.as_mut() {
+                    let ms = |ns: u64| ns as f32 / 1e6;
+                    log.push(SpecRoundProf {
+                        wall_ms: t0.elapsed().as_secs_f32() * 1e3,
+                        draft_ms: ms(r.draft),
+                        verify_ms: ms(r.verify),
+                        accept_ms: ms(r.accept),
+                        rest_ms: ms(r.roll + r.maint),
+                        k: n_drafted as u16,
+                        j: (round_tokens.len() - 1) as u16,
+                        ctx: ctx0 as u32,
+                        seq_rows: (V_SEQ_ROWS.load(std::sync::atomic::Ordering::Relaxed) - seq0)
+                            as u32,
+                    });
+                }
+            }
             drafted += n_drafted;
             accepted += round_tokens.len() - 1; // j accepted drafts + the bonus row
             for &tok in &round_tokens {
@@ -3122,23 +3754,28 @@ impl HybridModel {
         let anchor = *anchor;
 
         // ---- 1. ingest pending committed feature rows (positions kv.len..) ----
+        // Under the default placement the PROMPT rows were ingested at session creation
+        // and only the kept verify rows of the previous round arrive here; under
+        // `MEMRA_GLM5_DRAFT_PRIME_LAZY=1` round 1 carries the whole prompt (the pre-lane
+        // literal, the round-0 wall boot A measured at depth).
         let row_w = taps.len() * n_embd;
-        debug_assert_eq!(pending.len() % row_w, 0, "ragged pending feature rows");
+        let mut pclk = pclk;
         let n_new = pending.len() / row_w;
-        let mut r0 = 0usize;
-        while r0 < n_new {
-            let t_c = (n_new - r0).min(256);
-            let chunk = eh.htod(&pending[r0 * row_w..(r0 + t_c) * row_w])?;
-            let feats = draft.ctx_features(eh, &chunk, t_c)?;
-            let pos_c: Vec<i32> = ((kv.len as i32)..(kv.len + t_c) as i32).collect();
-            draft.ingest_ctx(eh, kv, &feats, &pos_c, t_c)?;
-            r0 += t_c;
-        }
-        pending.clear();
-        // FIRST-TOKEN PROFILE: round 1's ingest is the drafter's prime over the whole
-        // prompt — the one prompt-length-linear cost after the target prime.
+        let st = if n_new > 0 {
+            let rows = std::mem::take(pending);
+            self.glm5_dflash_ingest_rows(eh, draft, kv, &rows, row_w, pclk.as_deref_mut())?
+        } else {
+            DraftIngestStats::default()
+        };
+        // FIRST-TOKEN PROFILE: the lazy arm's round-1 prompt ingest lands in the
+        // drafter-prime buckets here (a creation-time ingest already wrote them and
+        // leaves nothing prompt-sized pending); the clock is re-based either way.
         if let (Some(ck), Some(pf)) = (pclk, prof.as_mut()) {
-            pf.draft_prime_ms = ck.lap(eh, eh);
+            let tail = ck.lap(eh, eh);
+            if *rounds == 0 && n_new > 0 && pf.draft_prime_arm.is_empty() {
+                st.write(pf, "eager-lazy");
+                pf.draft_prime_ms += tail;
+            }
         }
         let start = cache.pos;
         debug_assert_eq!(
@@ -3488,9 +4125,50 @@ pub struct Glm5SpecSession {
     /// at creation; filled through session creation and round 1 of the first burst, then
     /// drained by the worker's one `[spec-prof]` line (`take_first_token_prof`).
     prof: Option<SpecFirstTokenProf>,
+    /// DEPTH LOG (lane/spec-route-depth-20260902): the first `SPEC_PROF_ROUNDS` rounds'
+    /// attribution rows, `Some` iff `MEMRA_SPEC_PROF=1`; the worker prints fresh rows after
+    /// every burst and the summary once the log fills or the session ends.
+    prof_rounds: Option<SpecRoundsLog>,
 }
 
 impl Glm5SpecSession {
+    /// The depth log, for the worker's `[spec-prof-rounds]` / `[spec-prof-summary]` lines.
+    pub fn round_log_mut(&mut self) -> Option<&mut SpecRoundsLog> {
+        self.prof_rounds.as_mut()
+    }
+    /// Rounds the depth log keeps (the print cadence's cap).
+    pub fn round_log_cap() -> usize {
+        SPEC_PROF_ROUNDS
+    }
+    /// Drafter ctx rows currently ingested (`None` on the native arm).
+    pub fn draft_kv_len(&self) -> Option<usize> {
+        match &self.draft {
+            Glm5DraftState::Dflash2 { kv, .. } => Some(kv.len),
+            _ => None,
+        }
+    }
+    /// GATE ACCESSOR (rig gate 15): the first `rows` rows of every drafter K and V plane,
+    /// host-side, `row_floats` = n_kv * head_dim. `None` on the native arm.
+    #[allow(clippy::type_complexity)]
+    // allow: (k planes, v planes) is the natural shape for a bit-identity diff
+    pub fn draft_kv_rows_host(
+        &self,
+        e: &Engine,
+        rows: usize,
+        row_floats: usize,
+    ) -> Option<(Vec<Vec<f32>>, Vec<Vec<f32>>)> {
+        let Glm5DraftState::Dflash2 { kv, .. } = &self.draft else {
+            return None;
+        };
+        let n = rows * row_floats;
+        let take = |planes: &[CudaSlice<f32>]| -> Option<Vec<Vec<f32>>> {
+            planes
+                .iter()
+                .map(|p| e.dtoh_view(&p.slice(0..n)).ok())
+                .collect()
+        };
+        Some((take(&kv.k)?, take(&kv.v)?))
+    }
     /// Context capacity of the session's cache (the server's ContextFull guard).
     pub fn cache_max_ctx(&self) -> usize {
         self.max_ctx
@@ -3599,6 +4277,29 @@ impl HybridModel {
         sess.committed.push(sess.anchor);
         let next = argmax(&logits) as u32;
         Ok((sess.cache, next))
+    }
+}
+
+/// Buckets of one eager drafter ingest (`glm5_dflash_ingest_rows`), written into the
+/// first-token profile under the arm name that ran it.
+#[derive(Default, Debug, Clone, Copy)]
+struct DraftIngestStats {
+    h2d_ms: f64,
+    feat_ms: f64,
+    kv_ms: f64,
+    rows: usize,
+    chunks: usize,
+}
+
+impl DraftIngestStats {
+    fn write(&self, pf: &mut SpecFirstTokenProf, arm: &'static str) {
+        pf.draft_prime_ms = self.h2d_ms + self.feat_ms + self.kv_ms;
+        pf.draft_prime_h2d_ms = self.h2d_ms;
+        pf.draft_prime_feat_ms = self.feat_ms;
+        pf.draft_prime_kv_ms = self.kv_ms;
+        pf.draft_prime_rows = self.rows;
+        pf.draft_prime_chunks = self.chunks;
+        pf.draft_prime_arm = arm;
     }
 }
 

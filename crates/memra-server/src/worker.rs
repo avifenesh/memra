@@ -19634,7 +19634,7 @@ fn admit(
         && !dspark_on
         && gspec_k == 0
         && req_spec_k_replay.is_none();
-    let glm5_on = glm5_route_admits(
+    let glm5_admits = glm5_route_admits(
         glm5_capable,
         serve_spec,
         glm5_k,
@@ -19645,6 +19645,22 @@ fn admit(
         glm5_cold || glm5_restored_carrier,
         prompt.len() >= 2,
     );
+    // ROUTE POLICY CAP (lane/spec-route-depth-20260902, `MEMRA_SPEC_MAX_PROMPT`): composed
+    // AFTER every correctness exclusion, so the reason a capped request reports is the cap
+    // only when it would otherwise have routed spec (the other reasons keep precedence).
+    let glm5_capped = glm5_capable && glm5_route_prompt_capped(prompt.len(), spec_max_prompt());
+    let glm5_on = glm5_admits && !glm5_capped;
+    if glm5_admits
+        && glm5_capped
+        && !SPEC_MAX_PROMPT_ANNOUNCED.swap(true, std::sync::atomic::Ordering::AcqRel)
+    {
+        eprintln!(
+            "[glm5-spec] MEMRA_SPEC_MAX_PROMPT={}: prompt {} tokens routed PLAIN (printed once \
+             per process; every capped request carries reason=prompt-above-spec-max)",
+            spec_max_prompt().unwrap_or(0),
+            prompt.len(),
+        );
+    }
     // A carrier the route did not take (K shed to 0 under load, capability lost) serves
     // the PLAIN hit — drop the drafter KV so the session literal below stays truthful and
     // the tick dispatch can never see a dkv on a plain session.
@@ -19667,7 +19683,8 @@ fn admit(
             glm5_cold || glm5_restored_carrier,
             prompt.len() >= 2,
             glm5_carrier_declined,
-        );
+        )
+        .or_else(|| glm5_capped.then_some("prompt-above-spec-max"));
         debug_assert_eq!(
             plain_reason.is_none(),
             glm5_on,
@@ -22889,7 +22906,9 @@ fn step_glm5_spec(
              prime={:.1} capture={:.1} anchor={:.1} draft_alloc={:.1}) | round1_ms: \
              draft_prime={:.1} draft={:.1} verify={:.1} accept={:.1} roll={:.1} \
              maint={:.1} tokens={} | burst1: wall_ms={:.1} hook_ms={:.1} rounds={} \
-             tokens={} | first_emit_ms={} step_ms={:.1}",
+             tokens={} | first_emit_ms={} step_ms={:.1} | draft_prime: arm={} rows={} \
+             chunks={} h2d={:.1} feat={:.1} kv={:.1} | sink_alloc={:.1} tap_dtoh={:.1} \
+             draft_kv_mb={:.0} free_mb_before={:?} free_mb_after={:?}",
             s.model,
             s.fed.len(),
             eager_first_token as u8,
@@ -22915,8 +22934,26 @@ fn step_glm5_spec(
                 .map(|ms| format!("{ms:.1}"))
                 .unwrap_or_else(|| "na".to_string()),
             t_step.elapsed().as_secs_f64() * 1e3,
+            if pf.draft_prime_arm.is_empty() {
+                "none"
+            } else {
+                pf.draft_prime_arm
+            },
+            pf.draft_prime_rows,
+            pf.draft_prime_chunks,
+            pf.draft_prime_h2d_ms,
+            pf.draft_prime_feat_ms,
+            pf.draft_prime_kv_ms,
+            pf.sink_alloc_ms,
+            pf.prime_tap_dtoh_ms,
+            pf.draft_kv_mb,
+            pf.free_mb_before,
+            pf.free_mb_after,
         );
     }
+    // DEPTH LOG (lane/spec-route-depth-20260902): fresh per-round rows after every burst,
+    // the summary once the log fills (or at finish below).
+    glm5_prof_rounds_flush(s, false);
     let mut stop: Option<StopReason> = None;
     for &tok in public_burst {
         s.sampler.accept(tok);
@@ -22935,6 +22972,7 @@ fn step_glm5_spec(
     s.emitted_bytes = cursor;
     s.decoded_bytes = decoded_visible;
     if !emitted.send_ok {
+        glm5_prof_rounds_flush(s, true);
         abort_log(s);
         return Ok(false);
     }
@@ -22954,10 +22992,54 @@ fn step_glm5_spec(
         stop = Some(StopReason::ContextFull);
     }
     if let Some(r) = stop {
+        glm5_prof_rounds_flush(s, true);
         finish(s, r);
         return Ok(false);
     }
     Ok(true)
+}
+
+/// DEPTH LOG PRINTER (lane/spec-route-depth-20260902, `MEMRA_SPEC_PROF=1`): one
+/// `[spec-prof-rounds]` line per burst with the rounds logged since the last print (k =
+/// drafts that entered verify, j = accepted, per-phase ms under drains, `seq` = verify rows
+/// on the per-row arm, `ctx0` = trunk rows at the first listed round), and ONE
+/// `[spec-prof-summary]` line when the log fills (`Glm5SpecSession::round_log_cap` rounds)
+/// or the session ends first. No-op with the profile off (the log is `None`).
+fn glm5_prof_rounds_flush(s: &mut Session, force: bool) {
+    let model = s.model.clone();
+    let (n_prompt, k) = (s.n_prompt, s.glm5_k);
+    let Some(log) = s.glm5.as_mut().and_then(|sess| sess.round_log_mut()) else {
+        return;
+    };
+    let from = log.printed;
+    let fresh: Vec<memra_engine::spec_phase::SpecRoundProf> = log.fresh().to_vec();
+    if !fresh.is_empty() {
+        let col = |f: &dyn Fn(&memra_engine::spec_phase::SpecRoundProf) -> String| {
+            fresh.iter().map(f).collect::<Vec<_>>().join(",")
+        };
+        eprintln!(
+            "[spec-prof-rounds] model={model:?} prompt={n_prompt} K={k} r={from}..{} \
+             k=[{}] j=[{}] wall=[{}] draft=[{}] verify=[{}] accept=[{}] rest=[{}] seq=[{}] \
+             ctx0={}",
+            from + fresh.len() - 1,
+            col(&|r| r.k.to_string()),
+            col(&|r| r.j.to_string()),
+            col(&|r| format!("{:.1}", r.wall_ms)),
+            col(&|r| format!("{:.1}", r.draft_ms)),
+            col(&|r| format!("{:.1}", r.verify_ms)),
+            col(&|r| format!("{:.1}", r.accept_ms)),
+            col(&|r| format!("{:.1}", r.rest_ms)),
+            col(&|r| r.seq_rows.to_string()),
+            fresh[0].ctx,
+        );
+    }
+    if !log.summarized && !log.rounds.is_empty() && (force || !log.wants_more()) {
+        log.summarized = true;
+        eprintln!(
+            "[spec-prof-summary] model={model:?} prompt={n_prompt} K={k} {}",
+            log.summary()
+        );
+    }
 }
 
 fn abort_log(s: &mut Session) {
@@ -23041,6 +23123,37 @@ fn oom_teardown_fence(engine: &Engine, loaded: &HashMap<String, LoadedModel>) {
 fn spec_first_token_eager_on() -> bool {
     std::env::var("MEMRA_SPEC_FIRST_TOKEN_EAGER").as_deref() != Ok("0")
 }
+
+/// `MEMRA_SPEC_MAX_PROMPT=<tokens>` (lane/spec-route-depth-20260902), DEFAULT UNSET =
+/// unlimited: a ROUTE POLICY door — a glm5 spec-eligible request whose prompt is LONGER
+/// than the cap serves the plain route instead (`reason=prompt-above-spec-max` on its
+/// `[glm5-spec] route=plain` line; one `[glm5-spec] MEMRA_SPEC_MAX_PROMPT=` line per
+/// process at the first capped request). Exists because the spec route's decode at depth
+/// measured bimodal on the 2x B200 pair (15.4 / 32.1 / 15.4 tok/s at 256k against 31.1
+/// plain; 10.7 vs 28.3 at 512k; 6.2 vs 27.0 at 1M) while the 66-token shape is 1.48x
+/// plain: the crossover is unmeasured, so the default stays unlimited and the fleet caps
+/// the day it is known. Read once per process. `0`, empty, or junk = unset.
+fn spec_max_prompt() -> Option<usize> {
+    static CAP: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
+    *CAP.get_or_init(|| {
+        parse_spec_max_prompt(std::env::var("MEMRA_SPEC_MAX_PROMPT").ok().as_deref())
+    })
+}
+
+/// Pure parse of the cap (unit-tested): `None`, empty, `0`, or junk = unlimited.
+fn parse_spec_max_prompt(v: Option<&str>) -> Option<usize> {
+    v.and_then(|s| s.trim().parse::<usize>().ok())
+        .filter(|&n| n > 0)
+}
+
+/// Pure cap predicate: true when the route policy sends this prompt PLAIN.
+fn glm5_route_prompt_capped(prompt_len: usize, cap: Option<usize>) -> bool {
+    cap.is_some_and(|c| prompt_len > c)
+}
+
+/// The print-once latch for the cap's engagement line (one per process).
+static SPEC_MAX_PROMPT_ANNOUNCED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 /// BOOT ADMISSION CALIBRATION door (lane/step37-vram-admission-20260830), DEFAULT ON.
 /// `MEMRA_ADMIT_CALIBRATE=0` skips the boot probe and keeps the static
@@ -27266,6 +27379,61 @@ mod tests {
         );
     }
 
+    /// ROUTE POLICY CAP (lane/spec-route-depth-20260902): the parse and the predicate,
+    /// pure. Unset/0/junk = unlimited; the cap is a strict "longer than".
+    #[test]
+    fn spec_max_prompt_cap_parses_and_caps_strictly_above() {
+        use super::{glm5_route_prompt_capped, parse_spec_max_prompt};
+        assert_eq!(parse_spec_max_prompt(None), None);
+        assert_eq!(parse_spec_max_prompt(Some("")), None);
+        assert_eq!(parse_spec_max_prompt(Some("0")), None);
+        assert_eq!(parse_spec_max_prompt(Some("x")), None);
+        assert_eq!(parse_spec_max_prompt(Some(" 131072 ")), Some(131072));
+        assert!(!glm5_route_prompt_capped(66, None), "unset = unlimited");
+        assert!(
+            !glm5_route_prompt_capped(131072, Some(131072)),
+            "at the cap routes spec"
+        );
+        assert!(
+            glm5_route_prompt_capped(131073, Some(131072)),
+            "one past the cap is plain"
+        );
+        assert!(glm5_route_prompt_capped(256_756, Some(131072)));
+    }
+
+    /// WIRING (comment-stripped): the cap composes AFTER the correctness predicate, the
+    /// route reason names it, and the print-once line reads the same door.
+    #[test]
+    fn spec_max_prompt_cap_is_wired_after_the_route_predicate() {
+        let src = include_str!("worker.rs");
+        let code: String = src
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let live = &code[..code.find("mod tests").expect("the test module exists")];
+        let sq: String = live.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            sq.contains(
+                "let glm5_capped = glm5_capable && glm5_route_prompt_capped(prompt.len(), \
+                 spec_max_prompt());"
+            ),
+            "the cap must be computed from the door at admission"
+        );
+        assert!(
+            sq.contains("let glm5_on = glm5_admits && !glm5_capped;"),
+            "the route decision must AND the cap after the correctness predicate"
+        );
+        assert!(
+            sq.contains(".or_else(|| glm5_capped.then_some(\"prompt-above-spec-max\"));"),
+            "a capped request must name the cap as its route reason"
+        );
+        assert!(
+            sq.contains("SPEC_MAX_PROMPT_ANNOUNCED.swap(true"),
+            "the engagement line must be print-once"
+        );
+    }
+
     /// The K+1 <= 15 hard bound (the shexp decode-exact knee at t=16): only an operator
     /// pin can reach the clamp; every automatic policy depth passes through untouched.
     #[test]
@@ -27338,8 +27506,13 @@ mod tests {
         );
         // 3. Admission computes the route through the PURE predicate and the K clamp.
         assert!(
-            live_pre_tests.contains("let glm5_on = glm5_route_admits("),
-            "glm5_on must be computed via glm5_route_admits"
+            live_pre_tests.contains("let glm5_admits = glm5_route_admits("),
+            "the route predicate must be computed via glm5_route_admits"
+        );
+        assert!(
+            live_pre_tests.contains("let glm5_on = glm5_admits && !glm5_capped;"),
+            "glm5_on must be the predicate ANDed with the MEMRA_SPEC_MAX_PROMPT cap \
+             (lane/spec-route-depth-20260902)"
         );
         assert!(
             live_pre_tests.contains("glm5_clamp_spec_k(decision.k)"),
