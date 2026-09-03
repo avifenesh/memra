@@ -18,14 +18,39 @@ use std::os::raw::c_void;
 pub static MLA_DECODE_SPLIT_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
-/// `MEMRA_MLA_DECODE_SPLIT=1` (default OFF, read per call — rollback seam): the absorb /
+/// `MEMRA_MLA_DECODE_SPLIT` (default **ON** since 2026-09-03, `=0` is the rollback seam, read
+/// per call): the absorb /
 /// decompress launchers split each (token, head) block's output range across several blocks.
 /// PURE LAUNCH GEOMETRY: every output element keeps the same one-thread serial dot, so the
 /// bytes are identical for every split value (asserted in `tests/mla_decode_split_gpu.rs`);
 /// only occupancy changes — 64 blocks at t=1 on the glm5 geometry is single-digit-percent
 /// occupancy on the serving card class, the census's ~211 us/layer absorb+decompress pair.
+/// DEFAULT FLIPPED TO ON, 2026-09-03, against this row's own stated flip condition:
+/// "interleaved x3 fresh-boot A/B on the serving card class (x5 on anomaly), greedy +
+/// vendor-default sampled twin, engagement announce in BOTH arms."
+///
+/// All four clauses met on the 2x B200 SXM pair (GLM-5.3-Flash NVFP4, resident PP-2, best
+/// posture), 20 reps per arm, vendor-default sampling, 512-token generations:
+///
+///   round   off      on
+///   1       55.89    58.32
+///   2       55.86    58.29
+///   3       55.89    58.32
+///   median  55.89    58.32     +4.35%, ranges never overlap
+///
+/// No anomaly (the three rounds agree to 0.03 tok/s), so the x5 clause did not trigger. The
+/// greedy 128-token tape is sha16 `9437b599f6b9d2a9` in BOTH arms, which is this door's own
+/// bit-identity claim holding in serving rather than only in `mla_decode_split_gpu.rs`. The
+/// engagement line printed in the on arm and not in the off arm.
+///
+/// The door was OFF for one stated reason and it was never a bad result: "the occupancy win is
+/// arithmetic (blocks 64 -> ~1024) with no throughput receipt — the rig is exactness-only."
+/// This is that receipt.
+///
+/// `=0` restores the shipped one-block-per-(token,head) launchers, read PER CALL, so rollback
+/// needs no rebuild and no restart of anything already running.
 fn mla_decode_split_on() -> bool {
-    std::env::var("MEMRA_MLA_DECODE_SPLIT").as_deref() == Ok("1")
+    std::env::var("MEMRA_MLA_DECODE_SPLIT").as_deref() != Ok("0")
 }
 
 /// The split policy: engage only in the block-starved regime (fewer than 1024 (token, head)
@@ -48,7 +73,8 @@ fn mla_split_announce(kind: &str, t_q: usize, n_head: usize, split: i32) {
     if MLA_DECODE_SPLIT_DISPATCHES.fetch_add(1, Ordering::Relaxed) == 0 {
         eprintln!(
             "[mla-decode-split] engaged {kind} t={t_q} heads={n_head} split={split} \
-             (output-range split of the (token, head) blocks; MEMRA_MLA_DECODE_SPLIT=1)"
+             (output-range split of the (token, head) blocks; default ON since 2026-09-03, \
+             MEMRA_MLA_DECODE_SPLIT=0 to roll back)"
         );
     }
 }
