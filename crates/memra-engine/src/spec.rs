@@ -4413,6 +4413,15 @@ impl HybridModel {
         cache: &mut Cache,
         snap: &crate::cache::CacheSnapshot,
         accepted: usize,
+        // memra#128: what an externally-written (dcw / fa2) layer needs from this call.
+        // PARTIAL accept (commit_verified_prefix): 5e0fffb97 replaced the standalone
+        // rewind_tp_kv_verified_prefix with this restore, so the length shrink to
+        // saved+accepted must still happen here - without it E ran with distributed=259
+        // against local=257. FULL accept: before 5e0fffb97 nothing touched the
+        // distributed length there and it was right (arm A passed); rewinding to
+        // saved+t_v shrinks it by one and the next verify's SWA ring view falls off the
+        // end ("view [5148,5152) is outside resident [0,5151)", arm E2).
+        rewind_external: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         validate_tp_kv_snapshot_shape(&cache.tp_kv, &snap.tp_kv_len)?;
         e.stream().synchronize()?;
@@ -4441,11 +4450,11 @@ impl HybridModel {
                     .checked_add(accepted)
                     .ok_or("spec TP KV batch restore length overflow")?;
                 if distributed.rows_external() {
-                    // The rank rows are already right; only the LENGTH still needs publishing
-                    // (the per-layer restore ends in `rewind_to(logical_len)`, and on the
-                    // full-accept path nothing else does it - skipping that too left
-                    // distributed=259 against local=257, "cache lengths diverged before decode").
-                    distributed.rewind_to(target)?;
+                    // Rank rows already right (written on-device). Length: see the
+                    // `rewind_external` note on the signature.
+                    if rewind_external {
+                        distributed.rewind_to(target)?;
+                    }
                     continue;
                 }
                 let local = local_slot
@@ -4509,7 +4518,9 @@ impl HybridModel {
                 .checked_add(accepted)
                 .ok_or("spec TP KV restore length overflow")?;
             if distributed.rows_external() {
-                distributed.rewind_to(target)?; // length only; see the batched loop (memra#128)
+                if rewind_external {
+                    distributed.rewind_to(target)?;
+                }
                 continue;
             }
             let local = cache.kv[il]
@@ -9540,7 +9551,7 @@ impl HybridModel {
                 }
             }
         }
-        self.restore_step_tp_kv_verified_prefix(e, cache, snap, j)?;
+        self.restore_step_tp_kv_verified_prefix(e, cache, snap, j, true)?;
         cache.pos = snap.pos + j;
         Ok(())
     }
@@ -15669,7 +15680,7 @@ impl HybridModel {
                 // trunk hidden (the last verify column). set_len first: a p-min break may have
                 // left one extra chain append at that slot. Partial accepts need NO fill (the
                 // chain already covered every accepted position; round-start set_len truncates).
-                self.restore_step_tp_kv_verified_prefix(e, &mut *cache, &snap, t_v)?;
+                self.restore_step_tp_kv_verified_prefix(e, &mut *cache, &snap, t_v, false)?;
                 let mut vh_seed = e.zeros(n_embd)?;
                 e.copy_view_into(
                     &mut vh_seed,
