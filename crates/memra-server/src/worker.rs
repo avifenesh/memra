@@ -1253,8 +1253,14 @@ pub enum ErrClass {
     Engine,
 }
 
-/// A classified failure. `message` stays the exact producer text (quoted, never rewritten —
-/// the evidence-discipline law applies to what the client sees too).
+/// A classified failure. `message` is what the CLIENT reads. For producer-authored text
+/// (shed reasons, request-shape refusals, the constraint errors) it stays the exact producer
+/// text. For an engine fault (`EngineError::engine`) it is a stable per-class sentence: the
+/// producer text is a driver or executor Debug string (memra#143: a customer 503 carried
+/// `step error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")`), and that text is
+/// evidence for the operator, not a message for an API consumer. The evidence-discipline law
+/// still holds where the evidence lives: the `[engine-error]` log line quotes the producer
+/// text verbatim, keyed by class, on every construction.
 #[derive(Debug, Clone)]
 pub struct EngineError {
     pub class: ErrClass,
@@ -1346,10 +1352,13 @@ impl EngineError {
         // Log HERE, in the constructor, not at the 27 call sites: an engine fault that only
         // ever appears in the client's 500 body is invisible on a box whose stdout and stderr
         // both go to /dev/null, and a per-site eprintln! is one a future site can forget.
+        // This line is now the ONLY place the producer text goes (memra#143): the client
+        // body below carries the stable per-class sentence, never `DriverError(...)`, never a
+        // CUDA_ error name, never allocation numbers or file paths.
         eprintln!("[engine-error] class={class:?} {message}");
         Self {
             class,
-            message,
+            message: engine_client_message(class).to_string(),
             param: None,
             retry_after_s: None,
         }
@@ -5394,6 +5403,21 @@ fn step_oom_retries() -> u32 {
 /// Is this error a CUDA out-of-memory? Quoted, never inferred (the evidence-discipline law):
 /// the match is on the driver's own error text, so a non-OOM step failure can never be
 /// silently retried as if it were a capacity blip.
+/// The client-facing sentence for an engine fault, by class (memra#143). Stable text: SDKs
+/// and dashboards match on `error.code` (`overloaded` / `engine_error`), and the words here
+/// are the only ones a customer should ever see for a fault whose real description is a
+/// driver Debug string in the `[engine-error]` log line.
+pub(crate) fn engine_client_message(class: ErrClass) -> &'static str {
+    match class {
+        ErrClass::Overloaded => {
+            "the model is temporarily at capacity; retry after the Retry-After delay"
+        }
+        _ => {
+            "the engine could not complete this request; retry, and report the request id if it persists"
+        }
+    }
+}
+
 fn is_cuda_oom(err: &str) -> bool {
     err.contains("CUDA_ERROR_OUT_OF_MEMORY") || err.contains("out of memory")
 }
@@ -23888,6 +23912,37 @@ pub fn spawn(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn engine_fault_bodies_never_carry_driver_text() {
+        // memra#143: the exact text a customer got back on 2026-09-03.
+        let oom = super::EngineError::engine(
+            "step error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, \"out of memory\")",
+        );
+        assert_eq!(oom.class, super::ErrClass::Overloaded);
+        for leak in ["DriverError", "CUDA", "out of memory", "step error"] {
+            assert!(
+                !oom.message.contains(leak),
+                "leaked {leak:?}: {}",
+                oom.message
+            );
+        }
+        assert!(oom.message.contains("Retry-After"), "{}", oom.message);
+        let fault = super::EngineError::engine(
+            "Step TP KV admission plan failed: DriverError(CUDA_ERROR_INVALID_VALUE, \"invalid argument\") at /src/crates/memra-engine/src/tp.rs:1234",
+        );
+        assert_eq!(fault.class, super::ErrClass::Engine);
+        for leak in ["DriverError", "CUDA", "invalid argument", "/src/", ".rs:"] {
+            assert!(
+                !fault.message.contains(leak),
+                "leaked {leak:?}: {}",
+                fault.message
+            );
+        }
+        // Producer-authored text on the other constructors is untouched.
+        let shed = super::EngineError::overloaded("no room");
+        assert_eq!(shed.message, "no room");
+    }
+
     use super::SpecTelemetryWindow;
     use super::context_cache_bytes;
     use super::dead_prime_kill_switch_refusal;
