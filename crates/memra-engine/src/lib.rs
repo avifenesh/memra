@@ -2423,6 +2423,8 @@ pub fn topk_shards_dispatches() -> u64 {
 /// red-armed), so at B=1 the delegation is that contract's own right-hand side.
 pub(crate) fn hyper_batch_solo_on() -> bool {
     std::env::var("MEMRA_HYPER_BATCH_SOLO").as_deref() == Ok("1")
+}
+
 /// `MEMRA_HC_PRE_BLOCK=<n>` (default 128, lane/b200-hcpre-wide-20260903): the CUDA block
 /// width of the fused hyper-connection pre-chain, when `MEMRA_HC_FUSED_PRE=2` selected the
 /// v2 arm. 128 is v2 verbatim.

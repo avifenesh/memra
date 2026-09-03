@@ -543,16 +543,29 @@ fn pre_finish_into(
             }
         };
         ck(label, rc)?;
+        // The announce says which KERNEL ran, not which arm was asked for: under
+        // MEMRA_HC_PRE_BLOCK != 128 the V2 arm dispatches `_v3` with a wider block, and a
+        // counter line reading `arm=2` while `_v3` executes is the kind of quiet mismatch a
+        // later reader has to re-derive from nsys. The counter itself stays V2's (the arm is
+        // still V2; the width is a property of that arm), and the width is printed.
+        let block = crate::hc_pre_block();
         let (counter, tag) = match fused_arm {
             HcFusedPreArm::V1 => (&HC_FUSED_PRE_DISPATCHES, "1"),
             HcFusedPreArm::V2 => (&HC_FUSED_PRE_V2_DISPATCHES, "2"),
             HcFusedPreArm::Off => unreachable!("guarded by the enclosing if"),
         };
         if counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+            let kern = if fused_arm == HcFusedPreArm::V2 && block != 128 {
+                "hc_pre_fused_v3"
+            } else if fused_arm == HcFusedPreArm::V2 {
+                "hc_pre_fused_v2"
+            } else {
+                "hc_pre_fused"
+            };
             eprintln!(
                 "[hc-fused-pre] engaged streams={streams} hidden={hidden} t={t} arm={tag} \
-                 (one launch replaces rowsq_scale + sinkhorn + collapse per site; \
-                 MEMRA_HC_FUSED_PRE={tag})"
+                 kernel={kern} block={block} (one launch replaces rowsq_scale + sinkhorn + \
+                 collapse per site; MEMRA_HC_FUSED_PRE={tag}, MEMRA_HC_PRE_BLOCK={block})"
             );
         }
         return Ok(());
