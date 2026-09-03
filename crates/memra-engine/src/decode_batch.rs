@@ -2731,20 +2731,41 @@ impl HybridModel {
         // B=1. So the A/B measured the door's absence and read flat, which is the correct number
         // for the wrong question.
         //
-        // Extending capture to the batched walk is a separate lane (its trunk is
+        // Extending capture to the batched walk itself is still a separate lane (its trunk is
         // `decode_batch_layers`, with its own per-row geometry). Until then the honest behaviour
         // is to say so, once, rather than let a serving log's silence be read as a refusal.
+        //
+        // `MEMRA_HYPER_BATCH_SOLO=1` CHANGES WHAT IS HONEST HERE, so this line is now keyed on
+        // it. At B=1 that door delegates to `hyper_range_decode`, which is exactly the walk the
+        // graph door is wired into, so the door DOES engage and printing "NOT ON THIS PATH"
+        // would contradict the `[glm5-decode-graph] engaged` lines a few entries below it in the
+        // same log. Measured on the 2x B200 pair 2026-09-03: with the solo door armed, serving
+        // printed `engaged dev=0 stage=[0, 24) runs=6 captured_layers=18` and `engaged dev=1
+        // stage=[24, 45) runs=6 captured_layers=16` — the first time this door has engaged in
+        // serving. A stale warning next to a working door is the same failure class the warning
+        // was written to prevent.
         if crate::glm5_decode_graph_on() {
             static SAID: std::sync::Once = std::sync::Once::new();
             SAID.call_once(|| {
-                eprintln!(
-                    "[glm5-decode-graph] NOT ON THIS PATH: MEMRA_GLM5_DECODE_GRAPH=1 but this \
-                     session decodes through the BATCHED hc walk (MEMRA_HYPER_BATCH=1), and the \
-                     door is wired into the per-session serial walk (hyper_range_decode) only. \
-                     The door will not engage, and will not refuse either, for as long as the \
-                     batched walk is in use. Unset MEMRA_HYPER_BATCH to price the door, or read \
-                     this line as the reason a serving log carries no [glm5-decode-graph] lines."
-                );
+                if crate::hyper_batch_solo_on() {
+                    eprintln!(
+                        "[glm5-decode-graph] reachable via MEMRA_HYPER_BATCH_SOLO=1: this session \
+                         enters the BATCHED hc walk, which delegates to the serial walk \
+                         (hyper_range_decode) at B=1, and that is the walk the door is wired \
+                         into. Expect [glm5-decode-graph] engaged/eager lines. At B>1 the batched \
+                         trunk runs and the door is still not on that path."
+                    );
+                } else {
+                    eprintln!(
+                        "[glm5-decode-graph] NOT ON THIS PATH: MEMRA_GLM5_DECODE_GRAPH=1 but this \
+                         session decodes through the BATCHED hc walk (MEMRA_HYPER_BATCH=1), and \
+                         the door is wired into the per-session serial walk (hyper_range_decode) \
+                         only. The door will not engage, and will not refuse either, for as long \
+                         as the batched walk is in use. Set MEMRA_HYPER_BATCH_SOLO=1 to reach it \
+                         at B=1, unset MEMRA_HYPER_BATCH to price the serial walk, or read this \
+                         line as the reason a serving log carries no [glm5-decode-graph] lines."
+                    );
+                }
             });
         }
         let b_n = tokens.len();

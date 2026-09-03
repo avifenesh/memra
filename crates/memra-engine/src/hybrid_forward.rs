@@ -2714,6 +2714,34 @@ impl HybridModel {
             b_n,
             "hyper_batch_range_decode: pos_rows built for a different batch width"
         );
+        // MEMRA_HYPER_BATCH_SOLO=1 (default OFF, read per call — the rollback seam is its
+        // absence). At B=1 this walk allocates `h` and `mixed`, then allocates a per-row
+        // `h_row` and `dtod_copy_view`s the single row out of `h`, and then calls the SAME
+        // t=1 mixer program `hyper_range_decode` calls. At one row the copy and the extra
+        // allocation are pure overhead.
+        //
+        // THE REASON THIS MATTERS MORE THAN THAT OVERHEAD: this walk is the only hc decode
+        // walk glm5 PP-N serving reaches (`decode_step_batch_hyper` -> `_ppn` -> here), and
+        // it is the one hc walk with NO allocation-workspace door and NO decode-graph door.
+        // Both of those guard `hyper_range_decode_eager`, which is reachable only through
+        // `hyper_range_decode`. Measured 2026-09-03 on the 2x B200 pair: `MEMRA_HC_DECODE_WS=1`
+        // moved serving 55.85 -> 55.96 tok/s (noise) and its once-per-boot `[hc-decode-ws]
+        // engaged` line printed ZERO times, because the walk was never entered. Delegating at
+        // B=1 puts serving on the walk both diets already gate.
+        //
+        // BYTE IDENTITY IS THIS WALK'S OWN CONTRACT, not a new claim: the header above states
+        // "row b of a B-row step must be BIT-IDENTICAL to session b decoding alone through
+        // `decode_step_hyper` — full-logit compare, per step", red-armed by
+        // `glm5-hyper-batch-gate` with swapped-row and wrong-cache-slot mutations. At B=1 the
+        // delegation IS that solo path, so the two arms are equal by the contract the batch
+        // walk is already gated against.
+        //
+        // `cache.pos` is untouched here exactly as before ("`cache.pos` itself is bumped by the
+        // caller's epilogue, never here"): the solo walk does not advance it either.
+        if b_n == 1 && crate::hyper_batch_solo_on() {
+            let pos = caches[0].pos;
+            return self.hyper_range_decode(e, topology, x, lo, hi, &pos_rows[0], pos, caches[0]);
+        }
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         for il in lo..hi {
