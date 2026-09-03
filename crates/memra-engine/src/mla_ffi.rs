@@ -346,6 +346,74 @@ pub fn mla_dsa_attn_arm_effective(t_q: usize) -> i32 {
 /// Geometry refusals from the DSA launchers: the door has nothing for this shape, so the
 /// caller falls through to the shipped kernel instead of failing the request. Every other
 /// non-zero rc (a real cudaError included) still goes through `ck` and surfaces.
+/// Engagement counter for the k-pool SELECT door (`MEMRA_B200_DSA_SELECT`), announced once per
+/// boot: the receipt a B200 A/B has to show.
+pub static MLA_DSA_SELECT_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// `MEMRA_B200_DSA_SELECT=1` (default OFF, read per call: the rollback seam), compile-time gated
+/// to sm_100a builds exactly like its two siblings, so a 120a/90a/89 build sees no behaviour
+/// change from a var it cannot engage.
+///
+/// WHAT IT REPLACES. `memra_mla_kpool_select_kernel` grids `t_q` blocks, so plain decode runs it
+/// on ONE CTA -- 0.68% of a 148-SM die -- sweeping `n_pools` up to ten times (8 MSB-first radix
+/// passes, an optional unique-resolution scan, then the membership count and the emit). It is
+/// depth-LINEAR in `n_pools = t_kv / pool` and it is what the `MEMRA_B200_DSA_DECODE` lane's
+/// scorer fix stopped hiding.
+///
+/// THE CLASS IS EXACT, not banded, and that is a construction rather than a hope. The emitted
+/// plane is a pure function of ONE 64-bit number: the `select_k`-th smallest order key
+/// `(desc32(score) << 32) | pool_index`. That key is a strictly decreasing injection composed
+/// with a unique index, so keys are DISTINCT and "the k-th smallest" is unambiguous; reproducing
+/// it bit-for-bit reproduces the selection bit-for-bit. The parallel pipeline computes the same
+/// key and runs the same `key(p) <= thr` test, so this is a launch-geometry change with an exact
+/// answer. `dsa-select-gate` asserts the `idx` plane byte-identical to the shipped kernel and
+/// carries a RED ARM that must fail first.
+fn mla_dsa_select_on() -> bool {
+    cfg!(memra_sm100_tcgen05) && std::env::var("MEMRA_B200_DSA_SELECT").as_deref() == Ok("1")
+}
+
+/// The select door engages only from this pool count up, and the value is MEASURED, not
+/// inherited. The first `dsa-select-gate` run (RTX 5090, N=3 interleaved -- an exactness rig, so
+/// direction only) put the crossover between 32768 and 65536 pools, i.e. between 128k and 256k
+/// of context:
+///
+/// | n_pools | context | shipped | parallel | ratio |
+/// |---|---|---|---|---|
+/// | 8192 | 32k | 30.3 us (t=4) | 140.9 us | **0.22x** |
+/// | 32768 | 128k | 82.9 us (t=1) | 92.7 us | 0.89x |
+/// | **65536** | **256k** | **150.9 us (t=1)** | **99.5 us** | **1.52x** |
+/// | 262144 | 1M | 554.5 us (t=1) | 174.7 us | **3.17x** |
+///
+/// The pipeline is SIX launches where the shipped kernel is one, so below the crossover that
+/// fixed cost is simply larger than the sweep it removes. That is the honest reason this is a
+/// DEPTH door and not a decode door, and it is why the constant is not a round number copied
+/// from a sibling: an initial guess of 4096 (inherited from `MLA_DSA_SCORE_MIN_POOLS`) would
+/// have shipped a measured 4.6x REGRESSION at 32k, and the gate's regression bar is what caught
+/// it. 65536 is the first swept cell that wins at BOTH measured widths (1.52x at t_q=1, 1.07x
+/// at t_q=4). A B200 run confirms it or names the cell to change.
+pub const MLA_DSA_SELECT_MIN_POOLS: usize = 65_536;
+
+/// Widest query width the select door keys on: decode and the spec-verify batch. Wider widths
+/// already have `t_q` CTAs of parallelism and fall through to the shipped kernel untouched.
+pub const MLA_DSA_SELECT_T_MAX: usize = 8;
+
+/// Whether the serving policy engages the parallel selector at this shape. Pure, so the gate
+/// reads the same predicate the wrapper does and the two cannot drift apart.
+pub fn mla_dsa_select_engages(t_q: usize, n_pools: usize) -> bool {
+    (1..=MLA_DSA_SELECT_T_MAX).contains(&t_q) && n_pools >= MLA_DSA_SELECT_MIN_POOLS
+}
+
+fn mla_dsa_select_announce(t_q: usize, n_pools: usize, n_ctas: i32) {
+    use std::sync::atomic::Ordering;
+    if MLA_DSA_SELECT_DISPATCHES.fetch_add(1, Ordering::Relaxed) == 0 {
+        eprintln!(
+            "[mla-b200-dsa-select] engaged kpool_select t={t_q} pools={n_pools} ctas={n_ctas} \
+             class=exact (sm_100a; MEMRA_B200_DSA_SELECT=1)"
+        );
+    }
+}
+
 fn mla_dsa_geometry_refusal(rc: i32) -> bool {
     matches!(rc, 40020 | 40021 | 40023)
 }
@@ -500,6 +568,45 @@ unsafe extern "C" {
         first_pos: i32,
         qk_scale: f32,
         head_scale: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Ints of scratch one query needs for the parallel selector, given its CTA count.
+    pub fn memra_mla_kpool_select_ws_ints(n_ctas: i32) -> i64;
+    /// CTA count the parallel selector launches per query. The host sizes the workspace from
+    /// this same entry point, so a mismatch is impossible by construction.
+    pub fn memra_mla_kpool_select_ctas(n_pools: i32) -> i32;
+    /// Exact multi-CTA k-pool selection (`MEMRA_B200_DSA_SELECT`): same threshold key, same
+    /// membership test, same emit order, byte-identical `idx`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_mla_kpool_select_dsa_f32(
+        score: *const f32,
+        idx: *mut i32,
+        ws: *mut i32,
+        t_q: i32,
+        n_pools: i32,
+        pool: i32,
+        select_k: i32,
+        width: i32,
+        first_pos: i32,
+        always_tail: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// RED ARM for `dsa-select-gate`, never a serving path: the exact pipeline with the resolved
+    /// threshold deliberately bumped, so the gate can prove its byte comparison actually fails
+    /// on a wrong selection before it is allowed to pass the real kernel.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_mla_kpool_select_dsa_redarm_f32(
+        score: *const f32,
+        idx: *mut i32,
+        ws: *mut i32,
+        t_q: i32,
+        n_pools: i32,
+        pool: i32,
+        select_k: i32,
+        width: i32,
+        first_pos: i32,
+        always_tail: i32,
+        bump: i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_mla_kpool_select_f32(
@@ -1187,6 +1294,33 @@ impl Engine {
         always_tail: bool,
     ) -> Res<()> {
         let s = self.stream();
+        // MEMRA_B200_DSA_SELECT door: the exact multi-CTA selector. Byte-identical output, so
+        // this is a speed choice and nothing else; it engages only where the single-CTA kernel
+        // has parallelism to gain (see MLA_DSA_SELECT_MIN_POOLS).
+        if mla_dsa_select_on() && mla_dsa_select_engages(t_q, n_pools) {
+            let n_ctas = unsafe { memra_mla_kpool_select_ctas(n_pools as i32) };
+            let stride = unsafe { memra_mla_kpool_select_ws_ints(n_ctas) };
+            let mut ws = self.uninit_i32(t_q * stride as usize)?;
+            mla_dsa_select_announce(t_q, n_pools, n_ctas);
+            return unsafe {
+                ck(
+                    "kpool_select_dsa",
+                    memra_mla_kpool_select_dsa_f32(
+                        score.device_ptr(&s).0 as *const f32,
+                        idx.device_ptr_mut(&s).0 as *mut i32,
+                        ws.device_ptr_mut(&s).0 as *mut i32,
+                        t_q as i32,
+                        n_pools as i32,
+                        pool as i32,
+                        select_k as i32,
+                        width as i32,
+                        first_pos as i32,
+                        i32::from(always_tail),
+                        s.cu_stream() as *mut c_void,
+                    ),
+                )
+            };
+        }
         unsafe {
             ck(
                 "kpool_select",
