@@ -605,7 +605,14 @@ fn gpu_moe_vrows_pairs_match_sequential_chain_bitwise() {
     // at the shipped 10.0 the clamp never fires on a small fixture and the FORM is untested).
     let limit = 0.75f32;
 
-    for t in 2..=8usize {
+    // t STARTS AT 1 SINCE lane/b200-glm5-graph-20260902. The vrows pair was `t >= 2` by
+    // construction (only the spec-verify walk reached it), so this loop began at 2 and the t=1
+    // form of the program had never been executed anywhere. The decode-graph door's enabler
+    // routes the T=1 DECODE MoE through the same pair at `n_pairs == n_used`, and box runs 4-6
+    // showed it producing 1e19-class values at the first routed layer and NaN five layers later
+    // while the host-oracle arm on the same binary was clean (run 6A vs 6B). One `1` here is the
+    // whole reproduction: a coverage hole, not a subtle race.
+    for t in 1..=8usize {
         let z = varied(t * in_f, 0x2A + t as u64, 2.0);
         // Distinct expert sets per token (near-disjoint, like real routing) and varied
         // weights; token r's slot pattern differs from token r+1's so a row swap bites.

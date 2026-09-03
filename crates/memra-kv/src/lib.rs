@@ -2131,6 +2131,17 @@ pub struct Cache {
     /// (the probe's capture seam was host-side too). None on every non-dflash2 path
     /// (zero cost: one Option check per layer).
     pub hc_taps: Option<HcTapSink>,
+    /// glm5_next DECODE-GRAPH pool (`MEMRA_GLM5_DECODE_GRAPH`, default OFF): this session's
+    /// captured per-stage CUDA graphs of its contiguous KDA-layer runs. Typed as `Any` because
+    /// the graphs bake `cudarc` handles the ENGINE owns and this crate must not depend on —
+    /// the engine downcasts it (`memra_engine::glm5_decode_graph`).
+    ///
+    /// It belongs on the Cache and nowhere else: a run graph bakes THIS cache's conv-ring and
+    /// recurrent-state device pointers, so it is only valid for this session. The engine-side
+    /// pool records the `pos` it expects next and re-captures rather than replaying whenever a
+    /// seam (rollback, reuse-pool retire, prefix restore) has moved the session under it. Drop
+    /// it (`= None`) in any seam that REPLACES a state buffer rather than overwriting it.
+    pub glm5_decode_graph: Option<Box<dyn std::any::Any + Send>>,
 }
 
 /// The context-linear K/V layout for one full-attention layer. This is the single sizing source
@@ -2798,6 +2809,7 @@ impl Cache {
             tainted: false,
             dflash_taps: None,
             hc_taps: None,
+            glm5_decode_graph: None,
             last_logits_dev: None,
         })
     }
@@ -3368,6 +3380,7 @@ mod tp_transaction_tests {
             tainted: false,
             dflash_taps: None,
             hc_taps: None,
+            glm5_decode_graph: None,
             last_logits_dev: None,
         };
         assert!(!cache.has_swa_ring());
