@@ -10398,8 +10398,29 @@ impl HybridModel {
         // FAIL-CLOSED: every host-visible consumer of the selection must be disarmed, exactly as
         // door D requires, PLUS `promote_worker_h2d` (which door D could ignore because it
         // requires t == 1 and door D required t >= 2).
+        //
+        // KEYED ON THE OPEN CAPTURE, NOT THE DOOR ENV (2026-09-03, box takes 4-11). This arm
+        // exists for ONE reason: a host sel/w readback is illegal inside a stream-capture
+        // region, so a captured T=1 walk has to build its tables on device. Outside a capture
+        // region nothing needs it, and keying it on `glm5_decode_graph_on()` made the door
+        // change the program on paths where it captures NOTHING — the eager fall-through, a
+        // latched stage, a refused stage, and the `MEMRA_GLM5_GRAPH_TRACE` split walk. That
+        // broke the door's own contract ("every refusal falls through byte-identically") and it
+        // is what box take 5 actually caught: the 1.356879e19 blow-up printed on an
+        // `eager-run` trace line, which `hyper_range_decode` only reaches when the graph arm
+        // was NOT taken. Eleven box takes read that as a capture/replay defect; it was a walk
+        // running the device-table arm with no graph in sight.
+        //
+        // `glm5_graph_capture_open()` is set for the duration of `capture_one`'s recording and
+        // clear everywhere else, so the captured body gets the device tables it requires and
+        // every other path gets the shipped host-oracle program, unchanged.
         let vrows_t1_dev = t == 1
-            && crate::glm5_decode_graph_on()
+            // `MEMRA_GLM5_VROWS_T1_DEV` (default OFF, gate harness) forces the arm on with NO
+            // capture and NO graph anywhere in the walk. It is the bisect cell eleven box takes
+            // never had: door ON conflated "device-table MoE at T=1" with "capture and replay",
+            // so a mismatch could not be attributed. With this the two questions are asked one
+            // at a time, and the answer to the first one is a plain decode run.
+            && (crate::glm5_graph_capture_open() || crate::glm5_vrows_t1_dev_forced())
             // BISECT (MEMRA_GLM5_GRAPH_HOST_MOE, gate harness): stand the device-table arm down
             // while leaving the door on, so a box run separates the door's two enablers. The
             // capture refuses by name when this is set — a host readback cannot live inside a
@@ -10465,6 +10486,17 @@ impl HybridModel {
             // decode-graph gate can assert the device arm picks the same experts and weights the
             // host oracle reads back. No sync, no DtoH, no allocation — see glm5_sel_ledger.rs.
             if let Some((si, sw)) = sel_dev.as_ref() {
+                // PRE-ARM OUTSIDE THE CAPTURE, HERE. `record_device` skips a layer that has no
+                // persistent slot (it may never allocate inside a capture region), and the only
+                // other `prearm` caller is `glm5_capture_stage` — so any cell that runs the
+                // device arm WITHOUT capturing recorded zero device rows and the gate reported
+                // `VACUOUS: the selection ledger recorded no rows on one of the arms`. That is
+                // the instrument failing, not the door: box take 12's NO_CAPTURE run died on it.
+                // This call is skipped while a capture is open (allocation is illegal there) and
+                // is a no-op once the slot exists, so the captured path is unchanged.
+                if !crate::glm5_graph_capture_open() {
+                    crate::glm5_sel_ledger::prearm(e, il, n_used)?;
+                }
                 crate::glm5_sel_ledger::record_device(e, il, si, sw)?;
             }
             // MEMRA_GLM5_GRAPH_TRACE: dump this arm's inputs for the first two routed layers so
@@ -10750,6 +10782,34 @@ impl HybridModel {
             && cfg.sigmoid_router().is_some()
             && matches!(lim_exp, Some(SwigluClamp::Pre(l)) if l > 1e-6)
             && !cpu_hybrid;
+        // WHY THE ARM DID NOT FIRE, named rather than inferred (2026-09-03). Twelve box takes
+        // could not tell "the device-table arm ran and was wrong" from "the arm never fired and
+        // the layer took the host-readback loop", because the only evidence was a `arm=host`
+        // label that BOTH the sequential loop and the verify-rows host arm can print. One line
+        // per denying layer, under the door or the trace flag only, settles it on the next run.
+        if t == 1
+            && !vrows_fires
+            && (crate::glm5_decode_graph_on() || crate::glm5_graph_trace_on())
+            && crate::glm5_trace_take_slot("deny", "t1", il)
+        {
+            eprintln!(
+                "[glm5-vrows-t1-deny] dev={} il={il} capture_open={} t1_dev={vrows_t1_dev} \
+                 forced={} slab_bases={} moe_q8={moe_q8} uniform={uniform_experts} \
+                 n_used={n_used} sigmoid_cfg={} pre_clamp={} cpu_hybrid={cpu_hybrid} \
+                 promote_worker_h2d={promote_worker_h2d} observe_routes={observe_routes} \
+                 sig_router_env={} — the T=1 device-table MoE arm stood down and this layer \
+                 takes the host-readback path. Benign with capture_open=false (an eager gap \
+                 layer); with capture_open=true it is the wrong-answer class the router guard \
+                 refuses, and the first denied conjunct on the line is the reason.",
+                e.ctx().ordinal(),
+                crate::glm5_graph_capture_open(),
+                crate::glm5_vrows_t1_dev_forced(),
+                slab_bases.is_some(),
+                cfg.sigmoid_router().is_some(),
+                matches!(lim_exp, Some(SwigluClamp::Pre(l)) if l > 1e-6),
+                sigmoid_router_enabled(),
+            );
+        }
         // moe_out memset elision: EVERY full-row-overwrite arm (gdec, slab fused, fused epilogue,
         // verify-rows) allocates uninit; a token that falls through to any accumulating loop
         // zeroes its own row. The fused epilogue's `moe_down8_fma_q8` fully overwrites `dst[o]`,

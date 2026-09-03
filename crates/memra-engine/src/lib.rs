@@ -304,6 +304,30 @@ pub fn glm5_graph_no_capture() -> bool {
     std::env::var("MEMRA_GLM5_GRAPH_NO_CAPTURE").as_deref() == Ok("1")
 }
 
+/// `MEMRA_GLM5_VROWS_T1_DEV=1` — the T=1 device-table MoE arm, forced ON with no capture, no
+/// graph, and no `MEMRA_GLM5_DECODE_GRAPH` anywhere in the run. Default OFF, gate harness only.
+///
+/// From 2026-09-03 the arm is keyed on an OPEN CAPTURE REGION rather than on the decode-graph
+/// door, because that is the only place it is required (a host sel/w readback cannot live inside
+/// a capture). That keying is what makes the door's eager fall-through byte-identical again, and
+/// it also means the arm can no longer be observed on a plain decode run — so this knob puts it
+/// back within reach of a bisect. It is the cell box takes 4 through 11 never had: they set one
+/// env that turned on BOTH the arm and the capture, so a wrong tape could not be attributed to
+/// either. Run this alone and the answer is unambiguous.
+pub fn glm5_vrows_t1_dev_forced() -> bool {
+    if std::env::var("MEMRA_GLM5_VROWS_T1_DEV").as_deref() == Ok("1") {
+        return true;
+    }
+    // `MEMRA_GLM5_GRAPH_NO_CAPTURE=1` MEANS WHAT ITS DOC SAYS, and after the re-keying above it
+    // would otherwise mean the opposite. Its whole claim is "the device-table MoE arm engages
+    // exactly as it does in serving and the capture never happens"; with the arm keyed on an open
+    // capture, refusing the capture would also stand the arm down and the cell would test
+    // nothing — which is precisely what box take 12 measured (`VACUOUS: the selection ledger
+    // recorded no rows on one of the arms`, 21 host rows against 0 device rows). So the
+    // no-capture knob forces the arm on, and the bisect it was created for actually runs.
+    glm5_graph_no_capture() && glm5_decode_graph_on()
+}
+
 /// `MEMRA_GLM5_GRAPH_TRACE=1` — GATE-HARNESS trace for `MEMRA_GLM5_DECODE_GRAPH`, never a
 /// serving flag. Prints one line per captured-run boundary per token, on BOTH arms and at the
 /// SAME layer boundaries, with a checksum of the stream state leaving that segment. Box run 4
@@ -6648,6 +6672,23 @@ impl Engine {
         scaling_factor: f32,
         route_norm: bool,
     ) -> Result<(Vec<u32>, Vec<f32>), Box<dyn std::error::Error>> {
+        // FAIL LOUD INSIDE A CAPTURE REGION. Under `cudaStreamCaptureModeRelaxed` the DtoH below
+        // is RECORDED, not executed: the call returns success, the pinned stage keeps whatever
+        // bytes it already held, and the caller routes on an uninitialised selection whose expert
+        // ids index the slab out of range. The graph then bakes those garbage pointers and every
+        // replay reproduces them, with no error anywhere — which is exactly the shape twelve
+        // glm5 decode-graph box takes chased: `TOKEN MISMATCH step 1: eager=437 graph=0`, the
+        // same constant token at every step, replays engaged, nothing in the log.
+        //
+        // The decode-graph door admits a stage only when every captured layer's T=1 device-table
+        // MoE arm will fire, so reaching here under an open capture means the admission predicate
+        // and the dispatch predicate disagreed. That is a defect either way; refusing by name
+        // turns it into a named capture failure, and the door's contract sends the token down the
+        // byte-identical eager walk instead of serving the garbage.
+        if glm5_graph_capture_open() {
+            return Err("moe_router_sigmoid_topk_host was reached inside an open CUDA graph                         capture: the host readback would record an unexecuted DtoH and route on                         uninitialised memory. The captured layer's device-table MoE arm did not                         fire, so the capture-admission predicate (glm5_t1_dev_moe_ready) and the                         dispatch predicate (vrows_fires) disagree"
+                .into());
+        }
         let (sel_idx, sel_w) = self.moe_router_sigmoid_topk(
             logits,
             t,

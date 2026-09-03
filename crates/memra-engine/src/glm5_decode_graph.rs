@@ -93,6 +93,24 @@ struct RunGraph {
     /// `[phase 0, phase 1]` — phase p was captured with `recur[il].ssm_state` naming the buffer
     /// the eager walk would read at a step of that parity.
     graphs: [CudaGraph; 2],
+    /// WHICH PING-PONG PHASE THIS RUN'S NEXT REPLAY MUST USE — per RUN, not per stage, and that
+    /// distinction is the whole defect box takes 1 through 12 chased.
+    ///
+    /// `kda_cached` swaps `ssm_state`/`ssm_state_alt` once per KDA layer per token, so a layer's
+    /// buffer assignment alternates with the TOKEN index. Every run of a stage therefore sits at
+    /// the same parity as every other run, and each advances by one per token. Holding one
+    /// `phase` on the stage and flipping it inside `glm5_replay_run` flipped it ONCE PER RUN
+    /// instead: with `r` runs in a stage, run 0 replayed phase 0 (correct), run 1 replayed phase
+    /// 1 while its layers were still at phase 0, run 2 replayed phase 0 again, and so on. A
+    /// wrong-phase graph reads the buffer the eager walk WROTE this token and writes the one it
+    /// READ, which is a plausible-looking wrong answer, not a crash.
+    ///
+    /// It is invisible with one run per stage, which is why the 2-layer rig fixture passed 16
+    /// steps bit-identically and the 8-layer one (runs = [0,3) and [4,7)) failed on the capture
+    /// step with run [0,3) byte-identical and run [4,7) diverging — the first trace that ever
+    /// separated the two. On the box's `runs=6` stages every other run was wrong from token 0,
+    /// which compounds to the constant `graph=0` tape.
+    phase: usize,
     /// Everything the captured bodies allocated and would otherwise return to an engine pool.
     /// Held for the life of the graphs: a transient handed back to the pool and re-issued to
     /// eager work is a buffer every replay scribbles (the draft-graph root cause).
@@ -132,8 +150,6 @@ struct StageGraphs {
     /// graphs bake its cvt/Lt pointers, and an eager GEMM between replays would cross-contaminate
     /// them (the `PrimeGraph` precedent).
     f16: Option<crate::f16_ffi::F16Scratch>,
-    /// Which ping-pong phase the NEXT replay must use.
-    phase: usize,
     /// The `cache.pos` this pool describes. A mismatch means the session moved under the pool.
     next_pos: usize,
     /// `(layer, conv_state, ssm_state, ssm_state_alt)` DEVICE POINTERS as of capture, for every
@@ -899,7 +915,6 @@ impl HybridModel {
             x_out,
             ws,
             f16: None,
-            phase: 0,
             next_pos: pos,
             state_sig: runs
                 .iter()
@@ -989,6 +1004,9 @@ impl HybridModel {
                     lo: a,
                     hi: b,
                     graphs: [g0, g1],
+                    // Capture's two passes leave the host ping-pong fields exactly where they
+                    // started, so every run's first replay is phase 0.
+                    phase: 0,
                     _keeper: keeper,
                 });
                 crate::GLM5_DECODE_GRAPH_LAYERS.fetch_add((b - a) as u64, Ordering::Relaxed);
@@ -1040,17 +1058,17 @@ impl HybridModel {
                 .iter_mut()
                 .find(|s| s.dev == dev && s.lo == lo && s.hi == hi)
                 .ok_or("glm5 decode graph: stage pool vanished between capture and replay")?;
-            let run = st
+            let ri = st
                 .runs
                 .iter()
-                .find(|r| r.lo == a && r.hi == b)
+                .position(|r| r.lo == a && r.hi == b)
                 .ok_or_else(|| format!("glm5 decode graph: no captured run [{a}, {b})"))?;
-            phase = st.phase;
+            phase = st.runs[ri].phase;
             let ctx = CapCtx {
                 dev,
                 lo,
                 hi,
-                run: 0,
+                run: ri,
                 runs: st.runs.len(),
                 a,
                 b,
@@ -1064,13 +1082,14 @@ impl HybridModel {
                 e.copy_into(&mut st.x_io, 0, &x, width),
             )?;
             let prev = e.f16_scratch_swap(st.f16.take());
-            let launched = run.graphs[phase].launch();
+            let launched = st.runs[ri].graphs[phase].launch();
             st.f16 = e.f16_scratch_swap(prev);
             // Set BEFORE propagating: a launch that errored may still have been submitted, and
             // the re-capture path has to assume the exec is live when it decides to destroy it.
             st.launched_since_sync = true;
             step(e, &ctx, "cuGraphLaunch", launched.map_err(Into::into))?;
-            st.phase ^= 1;
+            // THIS RUN's parity advances, and only this run's. See `RunGraph::phase`.
+            st.runs[ri].phase ^= 1;
         }
         // The eager walk swaps `ssm_state`/`ssm_state_alt` once per KDA layer per step
         // (`kda::kda_cached`). The replay wrote the alternate buffer exactly as the eager step

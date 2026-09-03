@@ -897,6 +897,149 @@ rather than a request for a box slot.** `MEMRA_GLM5_GRAPH_NO_CAPTURE` remains th
 if a slot is going spare, but it is no longer the only way to get one, and no box time should be
 spent on this door on my account until the rig has had its turn.
 
+## 9m. The capture half runs on the rig, and take 5's own trace already named the defect
+
+Two things closed on 2026-09-03, one measured and one read back off a box log that had been in
+hand since take 5.
+
+**The capture half is no longer unreachable on the rig.** `crates/memra-engine/tests/
+glm5_decode_graph_capture_gpu.rs` is a glm5_next fixture whose routed-expert planes are emitted
+as NVFP4 (`memra_gguf::nvfp4_repack::f32_to_nvfp4`), which was the single field that made the
+door refuse the shared hc fixture by name. Everything else the door needs the fixture already
+satisfied. The gate drives 16 real decode steps with the door OFF and then ON and compares the
+per-step logits `to_bits`, and it asserts NON-VACUITY on the door's own counters rather than
+inferring engagement from a green diff. First green run, single device, 2-layer geometry:
+
+```
+[moe-vrows-dev-tables] engaged: ... (MEMRA_MOE_VROWS_DEV_TABLES=1)
+[glm5-vrows] ... dev_tables=true (env MEMRA_MOE_VROWS_DEV_TABLES=false)
+[glm5-decode-graph] engaged dev=0 stage=[0, 2) runs=1 captured_layers=2 recapture=false
+                    free=22118/23983MB
+door: captures=1 replays=16 captured_layers=2
+graph door: 16 steps bit-identical to eager (16 replays)
+test result: ok. 1 passed
+```
+
+So a walk that captures and replays, with the T=1 device-table MoE arm live inside the captured
+body, is byte-identical to the eager walk. That is the first direct evidence for the capture
+half, and it does not reproduce the box tape.
+
+**Take 5's trace already said the graph was not involved.** The line that named the seam was
+`seg=[4,7) eager-run absmax=1.356879e19`. The label matters and I did not read it: `eager-run`
+is printed by `hyper_range_decode_eager_traced` (`glm5_decode_graph.rs:634`), and
+`hyper_range_decode` (`hybrid_forward.rs:2168-2176`) reaches that function ONLY when the graph
+arm was not taken — the door tries `glm5_decode_graph_ready` first and returns from
+`hyper_range_decode_graphed` when it succeeds. A `graph-run` / `graph-gap` label is what the
+captured path prints. So the 1.356879e19 blow-up happened on a walk with no capture and no
+replay anywhere in it, and the tape that eleven takes read as a capture/replay defect was the
+device-table MoE arm running on its own.
+
+The reason it could run on its own is the defect: `vrows_t1_dev` was keyed on
+`crate::glm5_decode_graph_on()`, the door's ENV. That made the door change the program on every
+path where it captures nothing — the eager fall-through, a latched stage, a refused stage, and
+the `MEMRA_GLM5_GRAPH_TRACE` split walk — which breaks the door's own stated contract that
+every refusal falls through byte-identically, and it confounded the door's two enablers so
+thoroughly that no box run could attribute a mismatch to either.
+
+**The fix** (`hybrid_forward.rs`, the `vrows_t1_dev` predicate) keys the arm on
+`crate::glm5_graph_capture_open()` instead. Inside a capture region is the only place the arm is
+required at all: a host sel/w readback issues a `cuStreamSynchronize`, which is illegal there.
+Outside one, nothing needs it, and the walk now runs the shipped host-oracle program. The
+captured body still gets the device tables. `MEMRA_GLM5_VROWS_T1_DEV=1` (default OFF, gate
+harness, FLAGS.md row in this commit) forces the arm on with no capture and no graph anywhere,
+which is the bisect cell takes 4 through 11 never had.
+
+What this does NOT settle: whether the device-table arm is exact on the real artifact at
+serving scale in situ. The rig has cleared it four ways now (table values past 4 GiB strides,
+the kernel pair at t=1, the whole consumer at 288 experts / `in_f` 4096 / stride 4718592 driven
+by the box's own routing dump, and now a full capture-and-replay decode), and take 5 says it
+blew up on the box. Those disagree, and the one-env-var run that separates them is
+`MEMRA_GLM5_VROWS_T1_DEV=1` on a plain decode — no door, no graph.
+
+## 9n. ROOT CAUSE, FOUND AND FIXED: the ping-pong phase was per stage, not per run
+
+The rig fixture of §9m passed because it had ONE captured run. Scaling it to the box's geometry
+found it in the first run: 8 layers, `deepseek_sparse_attention` at 3 and 7 (so `kda_runs` splits
+into `[0,3)` and `[4,7)`, the box's own shape), 64 routed experts, `num_experts_per_tok` 8. All
+16 decode steps diverged from the eager walk, starting at the capture step.
+
+`MEMRA_GLM5_GRAPH_TRACE=1` then put the seam on one screen. At `pos=8`, the capture step:
+
+```
+seg=[0, 3) arm=eager-run  sum=0x2a150bb5433fcaf3 absmax=1.296062e0
+seg=[3, 4) arm=eager-gap  sum=0x006822bfb749ebce absmax=1.360538e0
+seg=[4, 7) arm=eager-run  sum=0x7a60c30243421f21 absmax=1.595194e0
+seg=[7, 8) arm=eager-gap  sum=0xab782467d8743d5a absmax=1.810762e0
+seg=[0, 3) arm=graph-run  sum=0x2a150bb5433fcaf3 absmax=1.296062e0   <- IDENTICAL
+seg=[3, 4) arm=graph-gap  sum=0x006822bfb749ebce absmax=1.360538e0   <- IDENTICAL
+seg=[4, 7) arm=graph-run  sum=0x9f3de7b49a145df8 absmax=1.595809e0   <- DIVERGES
+seg=[7, 8) arm=graph-gap  sum=0x5e3aaf8096f1a027 absmax=1.815865e0   <- downstream
+```
+
+The FIRST captured run replays byte-identically. The SECOND does not. That is not a capture
+binding, a stale pointer or a table value; it is an index.
+
+**The defect.** `phase` lived on `StageGraphs` and `glm5_replay_run` flipped it after every
+launch. But the ping-pong parity it selects is a property of the TOKEN, not of the run:
+`kda::kda_cached` swaps `ssm_state`/`ssm_state_alt` once per KDA layer per token, so every run of
+a stage sits at the same parity and each advances by one per token. Flipping a single stage-level
+counter once per run made run 0 replay phase 0 (correct), run 1 replay phase 1 while its layers
+were still at phase 0, run 2 phase 0 again, and so on. A wrong-phase graph reads the buffer the
+eager walk WROTE this token and writes the one it READ: a plausible wrong answer, never a crash,
+never an error.
+
+It is invisible at `runs=1`, which is exactly why §9m's 2-layer fixture was green through 16
+steps. On the box's `runs=6` stages (`[0,24)` on dev 0, `[24,45)` on dev 1) every other run was
+wrong from token 0 on both devices, which compounds to the constant `graph=0` tape takes 4
+through 12 all reported.
+
+**The fix.** `phase` moved into `RunGraph`, initialised to 0 at capture (capture's two passes
+leave the host fields where they started) and advanced per run in `glm5_replay_run`. The rig
+gate, which failed 16/16 steps before it, now reports `graph door: 16 steps bit-identical to
+eager (32 replays)`.
+
+### What else landed with it
+
+1. **The device-table MoE arm is keyed on an OPEN CAPTURE**, not on the door env (§9m). It is
+   required only inside a capture region and nowhere else, and keying it on the env made the
+   door change the program on paths where it captures nothing. `MEMRA_GLM5_VROWS_T1_DEV=1`
+   (default OFF, gate harness) forces it on with no graph, which is the bisect cell takes 4-12
+   never had. Running the rig gate with it set changed NOTHING on either arm, bit for bit: the
+   device-table and host-oracle table provenances are identical in situ, which is the fifth
+   independent clearance of that arm and the reason the phase index was the only thing left.
+
+2. **`moe_router_sigmoid_topk_host` now refuses inside a capture region** (`lib.rs`). Under
+   `cudaStreamCaptureModeRelaxed` its DtoH is RECORDED, not executed: the call returns success,
+   the pinned stage keeps whatever bytes it held, and the caller routes on uninitialised memory
+   whose expert ids index the slab out of range, with the garbage pointers baked into the graph.
+   Nothing in the twelve box logs could have distinguished that from the phase defect. It is now
+   a named capture failure and the door's contract sends the token down the eager walk.
+
+3. **`[glm5-vrows-t1-deny]`** prints, once per layer under the door or the trace flag, every
+   conjunct of the T=1 arm's predicate when it stands down. Twelve takes could not tell "the arm
+   ran and was wrong" from "the arm never fired", because the only evidence was an `arm=host`
+   label that BOTH the sequential loop and the verify-rows host arm can print. (`arm=host` is the
+   SEQUENTIAL loop; the verify-rows host arm prints `arm=vrows-host`. Reading the two as one cost
+   several takes.)
+
+4. **The selection ledger pre-arms outside capture.** `record_device` skips a layer with no
+   persistent slot and the only `prearm` caller was `glm5_capture_stage`, so any cell that ran the
+   device arm WITHOUT capturing recorded zero device rows — which is why box take 12's
+   `MEMRA_GLM5_GRAPH_NO_CAPTURE=1` run reported `VACUOUS: the selection ledger recorded no rows on
+   one of the arms` (21 host rows against 0 device rows). That was the instrument failing, not the
+   door. `MEMRA_GLM5_GRAPH_NO_CAPTURE=1` also now forces the arm on, so the cell tests what its
+   name says.
+
+### The gate that would have caught it on day one
+
+`crates/memra-engine/tests/glm5_decode_graph_capture_gpu.rs`. The property that matters is not
+"a captured walk matches eager" — it is "a captured walk with MORE THAN ONE RUN PER STAGE matches
+eager". The fixture's `layer_types` puts `deepseek_sparse_attention` at 3 and 7 for exactly that
+reason, and its geometry is a lane invariant, not a detail: a single-run fixture is vacuous
+against this defect class and passed 16 steps while the box was producing zeros. The red arm is
+recorded and reproducible: revert `RunGraph::phase` to a stage field and the gate fails 16/16
+steps with run `[0,3)` still byte-identical.
+
 ## 10. Open items
 
 1. **Run the gate on the pair** (`--steps 64 --reps 5`) and bank the receipt. Until then the
