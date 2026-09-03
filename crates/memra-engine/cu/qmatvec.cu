@@ -14345,7 +14345,10 @@ __device__ __forceinline__ void gemv_v3_walk_bf16(
         __pipeline_commit();
     }
     for (int c = 0; c < nch; c++) {
-        __pipeline_wait_prior(MEMRA_GEMV_V3_STAGES - 1);
+        // nch == 1 (in_f <= blockDim.x * 8, i.e. <= 1024 at the default block): the prologue
+        // committed exactly one group, so "all but the newest STAGES-1" waits for nothing and
+        // the read below would race this thread's own cp.async. Wait for everything instead.
+        __pipeline_wait_prior(nch == 1 ? 0 : MEMRA_GEMV_V3_STAGES - 1);
         const int i = c * kch + (int)threadIdx.x * 8;
         if (i < in_f) {
             const unsigned short* sb = stage
