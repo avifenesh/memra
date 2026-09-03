@@ -114,6 +114,12 @@ struct RunGraph {
     /// Everything the captured bodies allocated and would otherwise return to an engine pool.
     /// Held for the life of the graphs: a transient handed back to the pool and re-issued to
     /// eager work is a buffer every replay scribbles (the draft-graph root cause).
+    /// memra#131: the first replay of this run is COMPARED bitwise against an eager walk of the
+    /// same layers on the same input (recurrent state snapshotted and restored around the
+    /// reference), and the stage is latched eager on any mismatch. Until that check has passed
+    /// the door has not earned its `engaged` line: a health flag that is not derived from the
+    /// output is the defect the issue names.
+    checked: bool,
     _keeper: Vec<Box<dyn std::any::Any + Send>>,
 }
 
@@ -872,7 +878,29 @@ impl HybridModel {
                 x = self.hyper_range_decode_eager(e, topology, x, cursor, a, pos_d, pos, cache)?;
                 trace_seg(e, dev, lo, hi, cursor, a, "graph-gap", pos, &x);
             }
-            x = self.glm5_replay_run(e, dev, lo, hi, a, b, x, width, cache)?;
+            // memra#131 SELF-CHECK, once per run per session, BEFORE the door may claim health.
+            let unchecked = self
+                .glm5_graph_pool(cache)
+                .stages
+                .iter()
+                .find(|s| s.dev == dev && s.lo == lo && s.hi == hi)
+                .and_then(|st| st.runs.iter().find(|r| r.lo == a && r.hi == b))
+                .is_some_and(|r| !r.checked);
+            if unchecked {
+                let (x_out, ok) = self.glm5_selfcheck_run(
+                    e, topology, dev, lo, hi, a, b, x, width, pos_d, pos, cache,
+                )?;
+                x = x_out;
+                if !ok {
+                    // The run's state was restored and the eager walk re-run for real; the
+                    // stage is latched eager for the session. Finish this token eager from
+                    // here, byte-identically, and never replay this stage again.
+                    x = self.hyper_range_decode_eager(e, topology, x, b, hi, pos_d, pos, cache)?;
+                    return Ok(x);
+                }
+            } else {
+                x = self.glm5_replay_run(e, dev, lo, hi, a, b, x, width, cache)?;
+            }
             trace_seg(e, dev, lo, hi, a, b, "graph-run", pos, &x);
             cursor = b;
         }
@@ -1081,6 +1109,7 @@ impl HybridModel {
                     // Capture's two passes leave the host ping-pong fields exactly where they
                     // started, so every run's first replay is phase 0.
                     phase: 0,
+                    checked: false,
                     _keeper: keeper,
                 });
                 crate::GLM5_DECODE_GRAPH_LAYERS.fetch_add((b - a) as u64, Ordering::Relaxed);
@@ -1112,6 +1141,133 @@ impl HybridModel {
     /// Replay one captured run: stream state in, launch, stream state out, mirror the host-side
     /// ping-pong the eager step would have done, advance the phase.
     #[allow(clippy::too_many_arguments)]
+    /// memra#131: the first replay of run `[a, b)` checks ITSELF against the eager walk.
+    ///
+    /// Captured runs hold only KDA layers by construction, so their complete mutable state is
+    /// the recurrent trio (`conv_state`, `ssm_state`, `ssm_state_alt`) per layer. Snapshot
+    /// those; run the eager walk on a copy of `x` as the reference; put the state back (bytes
+    /// AND the host ping-pong role, which `kda_cached` swaps); run the replay for real; compare
+    /// the two outputs bitwise.
+    ///
+    /// `(x, true)`: the replay matched, `x` is its output, the run is marked checked — one
+    /// eager run per run per session. `(x, false)`: it did not match; the state is restored a
+    /// second time, the eager walk is run for real from a kept copy of the input so the token
+    /// is correct, the stage is latched eager (`pool.failed`), and a loud line names the run,
+    /// the first differing element and both values — a verdict derived from the OUTPUT rather
+    /// than from the door's opinion of itself.
+    #[allow(clippy::too_many_arguments)]
+    fn glm5_selfcheck_run(
+        &self,
+        e: &Engine,
+        topology: &crate::hyper::HyperTopology,
+        dev: usize,
+        lo: usize,
+        hi: usize,
+        a: usize,
+        b: usize,
+        x: CudaSlice<f32>,
+        width: usize,
+        pos_d: &CudaSlice<i32>,
+        pos: usize,
+        cache: &mut Cache,
+    ) -> Res<(CudaSlice<f32>, bool)> {
+        struct Snap {
+            il: usize,
+            conv: CudaSlice<f32>,
+            ssm: CudaSlice<f32>,
+            alt: CudaSlice<f32>,
+            ssm_ptr: u64,
+        }
+        fn ptr_of(e: &Engine, s: &CudaSlice<f32>) -> u64 {
+            use cudarc::driver::DevicePtr;
+            let st = e.stream();
+            let (p, _g) = s.device_ptr(&st);
+            p as u64
+        }
+        let mut snaps: Vec<Snap> = Vec::with_capacity(b - a);
+        for il in a..b {
+            let rl = cache.recur[il]
+                .as_ref()
+                .ok_or_else(|| format!("self-check: layer {il} carries no recurrent state"))?;
+            let ssm_ptr = ptr_of(e, &rl.ssm_state);
+            let mut conv = e.uninit(rl.conv_state.len())?;
+            let mut ssm = e.uninit(rl.ssm_state.len())?;
+            let mut alt = e.uninit(rl.ssm_state_alt.len())?;
+            e.copy_into(&mut conv, 0, &rl.conv_state, rl.conv_state.len())?;
+            e.copy_into(&mut ssm, 0, &rl.ssm_state, rl.ssm_state.len())?;
+            e.copy_into(&mut alt, 0, &rl.ssm_state_alt, rl.ssm_state_alt.len())?;
+            snaps.push(Snap {
+                il,
+                conv,
+                ssm,
+                alt,
+                ssm_ptr,
+            });
+        }
+        fn restore(e: &Engine, cache: &mut Cache, snaps: &[Snap]) -> Res<()> {
+            for sn in snaps {
+                let rl = cache.recur[sn.il].as_mut().expect("snapshotted above");
+                if ptr_of(e, &rl.ssm_state) != sn.ssm_ptr {
+                    // the eager walk's host ping-pong moved the role; move it back first
+                    std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
+                }
+                e.copy_into(&mut rl.conv_state, 0, &sn.conv, sn.conv.len())?;
+                e.copy_into(&mut rl.ssm_state, 0, &sn.ssm, sn.ssm.len())?;
+                e.copy_into(&mut rl.ssm_state_alt, 0, &sn.alt, sn.alt.len())?;
+            }
+            Ok(())
+        }
+        // Keep the input: the replay consumes `x`, and a mismatch needs it back.
+        let mut x_keep = e.uninit(width)?;
+        e.copy_into(&mut x_keep, 0, &x, width)?;
+        let mut x_copy = e.uninit(width)?;
+        e.copy_into(&mut x_copy, 0, &x, width)?;
+        // Reference: eager on the copy, then put the state back.
+        let x_ref = self.hyper_range_decode_eager(e, topology, x_copy, a, b, pos_d, pos, cache)?;
+        let h_ref = e.dtoh(&x_ref)?;
+        restore(e, cache, &snaps)?;
+        // The real step.
+        let x_rep = self.glm5_replay_run(e, dev, lo, hi, a, b, x, width, cache)?;
+        let h_rep = e.dtoh(&x_rep)?;
+        let first_diff = h_ref
+            .iter()
+            .zip(h_rep.iter())
+            .position(|(r, p)| r.to_bits() != p.to_bits());
+        match first_diff {
+            None => {
+                let pool = self.glm5_graph_pool(cache);
+                if let Some(st) = pool
+                    .stages
+                    .iter_mut()
+                    .find(|s| s.dev == dev && s.lo == lo && s.hi == hi)
+                    && let Some(r) = st.runs.iter_mut().find(|r| r.lo == a && r.hi == b)
+                {
+                    r.checked = true;
+                }
+                note(&format!(
+                    "self-check PASS dev={dev} stage=[{lo}, {hi}) run=[{a}, {b}) pos={pos}: \
+                     first replay is bit-identical to the eager walk on the same state \
+                     ({width} elements); this run is trusted for the session"
+                ));
+                Ok((x_rep, true))
+            }
+            Some(i) => {
+                eprintln!(
+                    "[glm5-decode-graph] SELF-CHECK FAILED dev={dev} stage=[{lo}, {hi}) \
+                     run=[{a}, {b}) pos={pos}: replay differs from the eager walk at element \
+                     {i}/{width} (eager={:e} replay={:e}); the stage is latched EAGER for this \
+                     session and this token is recomputed eager. The door did NOT engage.",
+                    h_ref[i], h_rep[i]
+                );
+                restore(e, cache, &snaps)?;
+                let x_real =
+                    self.hyper_range_decode_eager(e, topology, x_keep, a, b, pos_d, pos, cache)?;
+                self.glm5_graph_pool(cache).failed.push((dev, lo, hi));
+                Ok((x_real, false))
+            }
+        }
+    }
+
     fn glm5_replay_run(
         &self,
         e: &Engine,
