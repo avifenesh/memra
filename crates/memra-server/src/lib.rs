@@ -6459,9 +6459,10 @@ fn openrouter_supported_parameters(
     // the levels, not discover by experiment. `medium` is accepted and mapped to
     // high (`glm5_effort_level`), but the native rungs are what this feed states,
     // and an enum here that lists medium would advertise a rung the template does
-    // not define. (glm5 also matches the generic `reasoning` boolean arm above
-    // through qwen_think/effort_levels; that advertisement is a separate question
-    // from this ladder, tracked in its own issue.)
+    // not define. (glm5 matches the generic `reasoning` boolean arm's template
+    // shape but is excluded from it by the switchless rule above: explicit off
+    // 400s here, issue #108. The enum below is this model's only reasoning
+    // advertisement.)
     if is_chat && caps.is_some_and(|c| c.glm5) {
         parameters.insert(
             "reasoning_effort".into(),
