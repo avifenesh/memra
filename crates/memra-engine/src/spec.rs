@@ -4407,6 +4407,19 @@ fn validate_tp_kv_snapshot_shape(
 }
 
 impl HybridModel {
+    /// memra#128: the canonical-to-rank byte copy that `5e0fffb97` added to
+    /// `restore_step_tp_kv_verified_prefix`. OFF by default (written decision, docs/FLAGS.md
+    /// `MEMRA_STEP_TP_KV_RESTORE`): on step37 NVFP4 TP2 the only shapes that pass the
+    /// production acceptance gate are the engine before the copy (arm A) and the copy skipped
+    /// on every step-TP layer (arm F, byte-identical answers to A); the copy on any layer
+    /// spliced answers or shifted decode (darklanes research/memra128-bisect-20260903).
+    /// `1` re-enables the copy for ordinary-commit layers; on-device-written layers
+    /// (`rows_external`) are skipped either way, their canonical bytes are stale.
+    fn step_tp_kv_restore_copy_on() -> bool {
+        static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ON.get_or_init(|| std::env::var("MEMRA_STEP_TP_KV_RESTORE").ok().as_deref() == Some("1"))
+    }
+
     fn restore_step_tp_kv_verified_prefix(
         &self,
         e: &Engine,
@@ -4449,7 +4462,7 @@ impl HybridModel {
                 let target = saved
                     .checked_add(accepted)
                     .ok_or("spec TP KV batch restore length overflow")?;
-                if distributed.rows_external() {
+                if !Self::step_tp_kv_restore_copy_on() || distributed.rows_external() {
                     // Rank rows already right (written on-device). Length: see the
                     // `rewind_external` note on the signature.
                     if rewind_external {
@@ -4517,7 +4530,7 @@ impl HybridModel {
             let target = saved
                 .checked_add(accepted)
                 .ok_or("spec TP KV restore length overflow")?;
-            if distributed.rows_external() {
+            if !Self::step_tp_kv_restore_copy_on() || distributed.rows_external() {
                 if rewind_external {
                     distributed.rewind_to(target)?;
                 }
