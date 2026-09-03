@@ -11893,9 +11893,13 @@ mod tests {
             model_entry_v1(name, Some(&glm5_caps()), None),
             "the retrieve row must equal the list row for the same model",
         );
-        // A name absent from the roster resolves to None; the handler turns that
-        // into the 404. The empty-string case (a URL like /v1/models/) must
-        // also resolve to None, not to any real model.
+        // A name absent from the roster resolves to None; the handler turns
+        // that into a 404. The empty-string assert is a forward guard rather
+        // than today's reachable behaviour: matchit 0.7 (axum 0.7) does not
+        // match an empty catch-all, so `/v1/models/` 404s at the router before
+        // the handler runs. Matchit 0.8 does match it, at which point the
+        // handler's `"" -> None` path goes live and returns the proper
+        // server-truth 404 body, so the assert is what protects that upgrade.
         assert!(retrieve_model_row(&models, &caps_map, &md, "no/such-model").is_none());
         assert!(retrieve_model_row(&models, &caps_map, &md, "").is_none());
     }
