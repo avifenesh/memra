@@ -247,16 +247,20 @@ Full rig band (RTX 5090, N=5 interleaved, `gate-5090-band-20260903.txt`), t_q=1 
 | 65536 | 262_144 | **1.53x** | **1.07x** |
 | 262144 | 1_048_576 | **3.13x** | **1.95x** |
 
-**`t_q=4` is what holds the floor up.** Plain decode crosses into profit around 49152 pools and
-is a clear 1.44x by 64189; the DFlash2 spec-verify width is still 0.64x at 49152 and only reaches
-parity near 64189. The door engages uniformly across `t_q`, so the floor is set by the worse
-width, and 65536 is the first cell that wins at both.
+**`t_q=4` is what holds the floor up** -- on this rig. Plain decode crosses into profit around
+49152 pools and is a clear 1.44x by 64189; the spec-verify width is still 0.64x at 49152 and only
+reaches parity near 64189, so on 5090 evidence 65536 is the first cell that wins at both.
 
-So the door refuses a 256k rung the rig measures at **1.44x on the plain route**. Closing that
-needs the floor KEYED ON `t_q` -- a lower floor for plain decode, this one kept for spec-verify --
-the way the sibling `MLA_DSA_ATTN_ARM` table is keyed. Deliberately NOT done here: a default-ON PR
-for this door is in flight, and widening which shapes engage underneath it is the wrong order of
-operations. It wants its own PR and a B200 gate run.
+**Section 7d overturned the conclusion, not the observation.** The observation held: the
+spec-verify width is the binding one. The conclusion did not: on the pair that width is 0.94x at
+65536, not the 1.10x this rig showed, so 65536 was not a cell that wins at both and the floor is
+now KEYED -- 65536 for plain decode, 262144 for spec-verify (7d).
+
+What is still NOT done, and must not be confused with the keying that is: **the plain-decode floor
+is still 65536 pools**, so a real 256k rung (64_189 pools) still engages nothing, while this rig
+measures that shape at 1.44x on the plain route. Lowering it needs its own sweep of the
+32768..65536 band ON THE PAIR. The rig's crossover did not transfer at the one point where both
+were measured, so rig evidence is not a basis for widening decode engagement on sm_100a.
 
 ## 7d. Kernel gate ON THE TARGET, and the floor decision it forced (2026-09-03)
 
