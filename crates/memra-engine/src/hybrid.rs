@@ -2092,6 +2092,54 @@ fn build_dev_exps(
     // to 144B past the slab (harmless bytes: the act's zero-padded k-range multiplies
     // every overread weight to zero; the slack only prevents the OOB fault).
     let d = e.htod_bytes_padded(down.bytes.as_bytes(), 144)?;
+    // MEMRA_MOE_EXPERT_RP (memra#147): repack the three slabs on the device into the split-plane
+    // layout. Only whole NVFP4 slabs, only the plain (non-interleaved, non-FP8) provenance, and
+    // only when the quant-plane rows stay 16B-aligned (in_f % 256 == 0 <=> nsb64 % 4 == 0).
+    let rp_want = crate::moe_expert_rp_on()
+        && !gu_il
+        && fp8_host.is_none()
+        && gate.qtype == crate::QT_NVFP4
+        && up.qtype == crate::QT_NVFP4
+        && down.qtype == crate::QT_NVFP4
+        && gate.in_f.is_multiple_of(256)
+        && up.in_f.is_multiple_of(256)
+        && down.in_f.is_multiple_of(256)
+        && gate.row_bytes == gate.in_f / 64 * 36
+        && up.row_bytes == up.in_f / 64 * 36
+        && down.row_bytes == down.in_f / 64 * 36;
+    if crate::moe_expert_rp_on() && !rp_want {
+        static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            eprintln!(
+                "[moe-rp] MEMRA_MOE_EXPERT_RP=1 REFUSED for layer {il}: needs plain NVFP4 gate/up/down \
+                 slabs (qtypes {},{},{}), no MEMRA_MOE_GU_IL, no block-FP8 scales, in_f % 256 == 0 \
+                 (gate/up {}, down {}); this and any layer like it stay interleaved",
+                gate.qtype, up.qtype, down.qtype, gate.in_f, down.in_f
+            );
+        }
+    }
+    let (g, u, d, rp) = if rp_want {
+        let g2 = e.nvfp4_expert_split_repack(&g, n_expert, gate.out_f, gate.in_f / 64)?;
+        let u2 = e.nvfp4_expert_split_repack(&u, n_expert, up.out_f, up.in_f / 64)?;
+        let d2 = e.nvfp4_expert_split_repack(&d, n_expert, down.out_f, down.in_f / 64)?;
+        e.stream().synchronize()?;
+        drop((g, u, d));
+        static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            eprintln!(
+                "[moe-rp] resident expert slabs SPLIT-PLANE from layer {il} (MEMRA_MOE_EXPERT_RP, memra#147): \
+                 gate/up rows={} nsb64={}, down rows={} nsb64={}, n_expert={n_expert}; readers get QT_NVFP4_RP, \
+                 unwired readers refuse by name",
+                gate.out_f,
+                gate.in_f / 64,
+                down.out_f,
+                down.in_f / 64
+            );
+        }
+        (g2, u2, d2, true)
+    } else {
+        (g, u, d, false)
+    };
     let fp8_blk = match fp8_host {
         Some((gate, up, down)) => {
             if e.fp8_blk_nan_count(&g)? != 0
@@ -2139,6 +2187,7 @@ fn build_dev_exps(
         down: d,
         ptr_row,
         gu_il,
+        rp,
         dev: e.ctx().ordinal(),
         fp8_blk,
     }))
@@ -2785,6 +2834,9 @@ pub struct DevExps {
     /// per (expert,row) instead of two scattered 880B streams — the measured 56%-of-wall fix
     /// candidate. Kernels unchanged (stride is already a parameter everywhere).
     pub gu_il: bool,
+    /// The three slabs are split-plane (`MEMRA_MOE_EXPERT_RP`, memra#147): readers must be told
+    /// `QT_NVFP4_RP` (`crate::rp_qt`) or refuse (`crate::moe_rp_refuse`).
+    pub rp: bool,
     /// Native block-E4M3 expert scale slabs, projection-major. When present, the raw checkpoint
     /// code slabs above are the sole resident weight copy and each expert selects its contiguous
     /// scale-grid view.

@@ -10566,12 +10566,13 @@ impl HybridModel {
         };
         eprintln!(
             "[glm5-vrows-t1] arm={arm} dev={} il={il} t={t} n_used={n_used} n_pairs={} \
-             n_expert={n_expert} limit={:?} gu_il={:?} qtypes=({},{},{}) row_bytes=({},{},{}) \
+             n_expert={n_expert} limit={:?} gu_il={:?} rp={:?} qtypes=({},{},{}) row_bytes=({},{},{}) \
              strides=({},{},{}) macros={} sel={sel:?} w={w:?} mac_g={:?} mac_u={:?} mac_d={:?}",
             e.ctx().ordinal(),
             t * n_used,
             cfg.clamp_exp_at(il as u32),
             m.dev_exps.as_ref().map(|d| d.gu_il),
+            m.dev_exps.as_ref().map(|d| d.rp),
             m.gate_exps.qtype,
             m.up_exps.qtype,
             m.down_exps.qtype,
@@ -11061,6 +11062,8 @@ impl HybridModel {
             let (pd, _g2) = d.down.device_ptr(&s);
             (pg, pu, pd)
         });
+        // memra#147: the slab those bases name is split-plane; its readers are told so.
+        let slab_rp = slab_local.is_some_and(|d| d.rp);
         // HOISTED above the router (lane/b200-glm5-graph-20260902): `promote_worker_h2d` reads
         // the HOST selection, so the t=1 device-table arm below must be able to deny itself when
         // the NVMe worker promotion is live. It was safe to compute this after the router while
@@ -11569,6 +11572,7 @@ impl HybridModel {
                 sel,
                 il,
                 bases,
+                slab_rp,
                 t,
                 n_embd,
                 n_ff_exp,
@@ -11731,6 +11735,7 @@ impl HybridModel {
                     n_ff_exp,
                     n_used,
                     limit,
+                    slab_rp,
                 )?;
                 continue;
             }
@@ -13776,6 +13781,10 @@ impl HybridModel {
         il: u16,
         (scaling_factor, route_norm): (f32, bool),
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        crate::moe_rp_refuse(
+            m.dev_exps.as_ref().is_some_and(|d| d.rp),
+            "moe_ffn_sigmoid_dev",
+        )?; // memra#147: no split-plane arm here
         let moe = cfg.moe.as_ref().unwrap();
         let n_embd = cfg.n_embd as usize;
         let n_expert = moe.expert_count as usize;
@@ -14036,6 +14045,7 @@ impl HybridModel {
         t: usize,
         cfg: &ModelConfig,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        crate::moe_rp_refuse(m.dev_exps.as_ref().is_some_and(|d| d.rp), "moe_ffn_pairs")?; // memra#147: no split-plane arm here
         let moe = cfg.moe.as_ref().unwrap();
         let n_embd = cfg.n_embd as usize;
         let n_expert = moe.expert_count as usize;
@@ -14506,6 +14516,7 @@ impl HybridModel {
         il: u16,
         max_block: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        crate::moe_rp_refuse(m.dev_exps.as_ref().is_some_and(|d| d.rp), "moe_ffn_dev")?; // memra#147: no split-plane arm here
         let moe = cfg.moe.as_ref().unwrap();
         let n_embd = cfg.n_embd as usize;
         let n_expert = moe.expert_count as usize;
@@ -15212,6 +15223,7 @@ impl HybridModel {
 
         Self::moe_fused_epi_launch(
             e, m, zq, zd, sel, w, g, u, d, moe_out, tok, n_embd, n_ff_exp, n_used, limit,
+            false, // SLRU slot provenance: interleaved bytes always
         )?;
         Ok(true)
     }
@@ -15243,10 +15255,17 @@ impl HybridModel {
         n_ff_exp: usize,
         n_used: usize,
         limit: f32,
+        rp: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mut gs = [0f32; 8];
         let mut us = [0f32; 8];
         let mut wv = [0f32; 8];
+        // memra#147: split-plane slab provenance -> the kernels take the QT_NVFP4_RP arm.
+        let (qt_g, qt_u, qt_d) = (
+            crate::rp_qt(rp, m.gate_exps.qtype),
+            crate::rp_qt(rp, m.up_exps.qtype),
+            crate::rp_qt(rp, m.down_exps.qtype),
+        );
         for (j, &ex) in sel.iter().enumerate() {
             let ex = ex as usize;
             gs[j] = m.gate_exps.macro_scale(ex);
@@ -15287,8 +15306,8 @@ impl HybridModel {
                 n_embd,
                 n_ff_exp,
                 n_used,
-                m.gate_exps.qtype,
-                m.up_exps.qtype,
+                qt_g,
+                qt_u,
                 m.gate_exps.row_bytes,
                 m.up_exps.row_bytes,
             )?
@@ -15304,8 +15323,8 @@ impl HybridModel {
                 n_embd,
                 n_ff_exp,
                 n_used,
-                m.gate_exps.qtype,
-                m.up_exps.qtype,
+                qt_g,
+                qt_u,
                 m.gate_exps.row_bytes,
                 m.up_exps.row_bytes,
             )?
@@ -15323,7 +15342,7 @@ impl HybridModel {
                 n_ff_exp,
                 n_embd,
                 n_used,
-                m.down_exps.qtype,
+                qt_d,
                 m.down_exps.row_bytes,
             )?;
         } else {
@@ -15336,7 +15355,7 @@ impl HybridModel {
                 n_ff_exp,
                 n_embd,
                 n_used,
-                m.down_exps.qtype,
+                qt_d,
                 m.down_exps.row_bytes,
             )?;
         }
@@ -15359,6 +15378,7 @@ impl HybridModel {
         sel: VrowsSel<'_>,
         il: u16,
         (pg, pu, pd): (u64, u64, u64),
+        rp: bool,
         t: usize,
         n_embd: usize,
         n_ff_exp: usize,
@@ -15506,8 +15526,8 @@ impl HybridModel {
             n_ff_exp,
             n_used,
             n_pairs,
-            m.gate_exps.qtype,
-            m.up_exps.qtype,
+            crate::rp_qt(rp, m.gate_exps.qtype),
+            crate::rp_qt(rp, m.up_exps.qtype),
             m.gate_exps.row_bytes,
             m.up_exps.row_bytes,
         )?;
@@ -15527,7 +15547,7 @@ impl HybridModel {
             n_embd,
             n_used,
             n_pairs,
-            m.down_exps.qtype,
+            crate::rp_qt(rp, m.down_exps.qtype),
             m.down_exps.row_bytes,
         )?;
         Self::trace_moe_out(e, vrows_arm, il, moe_out);
@@ -15606,6 +15626,10 @@ impl HybridModel {
         cfg: &ModelConfig,
         il: u16,
     ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        crate::moe_rp_refuse(
+            m.dev_exps.as_ref().is_some_and(|d| d.rp),
+            "moe_ffn_grouped_prefill_sigmoid",
+        )?; // memra#147: no split-plane arm here
         // Placement: the LOCAL resident slab only. The SLRU cannot serve a 4096-token chunk's
         // expert working set (a glm5 layer is 288 x 3 blocks against ~285 slots/layer on the
         // serving recipe), and a remote slab must never be dereferenced (m=1 peer reads are the
@@ -16264,6 +16288,10 @@ impl HybridModel {
         table: &CudaSlice<u64>,
         gu_il: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        crate::moe_rp_refuse(
+            m.dev_exps.as_ref().is_some_and(|d| d.rp),
+            "moe_ffn_grouped_resident_q8",
+        )?; // memra#147: no split-plane arm here
         let moe = cfg.moe.as_ref().unwrap();
         let n_embd = cfg.n_embd as usize;
         let n_expert = moe.expert_count as usize;
@@ -18632,6 +18660,7 @@ impl HybridModel {
         router_in: &CudaSlice<f32>,
         t: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        crate::moe_rp_refuse(m.dev_exps.as_ref().is_some_and(|d| d.rp), "gemma4_moe")?; // memra#147: no split-plane arm here
         let cfg = &self.cfg;
         let moe = cfg.moe.as_ref().unwrap();
         let n_embd = cfg.n_embd as usize;

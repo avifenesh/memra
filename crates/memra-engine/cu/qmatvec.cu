@@ -5632,7 +5632,62 @@ __device__ __forceinline__ float expert_dot_g(int qtype, const unsigned char* wr
     if (qtype == QT_Q6_K)   return expert_dot_q6k_g(wrow, g, aqb, d8);
     if (qtype == QT_NVFP4)  return expert_dot_nvfp4_g(wrow, g, aqb, d8);
     if (qtype == QT_Q4_0)   return expert_dot_q4_0_g(wrow, g, aqb, d8);
+    // QT_NVFP4_RP (split-plane expert slab, memra#147) has no per-row-pointer form: its scale
+    // plane lives at a row-count-dependent offset, so it is served by expert_dot_nvfp4_rp_g
+    // behind a warp-uniform branch in each kernel. Reaching here with it means a kernel that
+    // was never given that branch received a repacked slab: poison the dot (NaN) so the gate
+    // and the tape scream instead of a silent zero contribution.
+    if (qtype == QT_NVFP4_RP) return __int_as_float(0x7fc00000);
     return 0.0f; // caller gates on supported qtypes
+}
+
+// ---- NVFP4 SPLIT-PLANE expert group dot (lane/moe-expert-rp, memra#147, 2026-09-04) ----
+// WHY: root ncu at the served GLM-5.3-Flash geometry measured moe_gate_up_preclamp8_q8(_w4) at
+// 24.97 L1 sectors per warp global-load request (4 = coalesced, 32 = one sector per lane) and
+// moe_down8_fma_q8_w4 at 18.20: expert_dot_nvfp4_g walks the 36B interleaved GGUF block, so each
+// lane's group is 5 scattered 4B loads at a 36B lane stride. The trunk cured the same disease with
+// the split-plane `_rp` layout (repack_nvfp4_split: quant plane rows x nsb64 x 32B, then scale
+// plane rows x nsb64 x 4B; microprobe m=1 1.34x, bit-identical). This is that cure for the
+// resident expert slabs: per expert the SAME byte permutation, applied at upload (DevExps.rp),
+// and per group ONE 16B-aligned LDG.128 of quants (lane stride 16B, contiguous across the warp)
+// plus one 4B scale word.
+// BIT-IDENTITY (value- and order-level with expert_dot_nvfp4_g): qw.x/qw.y/qw.z/qw.w are the
+// same little-endian ints get_int_b4 read at qs+0/+4/+8/+12 of the group's half-block, the scale
+// byte (cscw >> 8*s) & 0xFF is d_bytes[s], the table lookups, the dp4a order (va.x, vb.x, va.y,
+// vb.y per sl) and the closing d8 * partial are unchanged.
+// ALIGNMENT: the quant plane row is 16B-aligned when the expert base is (cudaMalloc slabs are
+// 256B-aligned, expert_stride = rows*nsb64*36 is a multiple of 16 when nsb64 % 4 == 0, which the
+// host door requires: in_f % 256 == 0). Streaming loads: expert bytes are single-use per token.
+__device__ __forceinline__ float expert_dot_nvfp4_rp_g(const unsigned char* rowq,
+                                                       const unsigned char* rows, int g,
+                                                       const signed char* aqb, float d8) {
+    int sblk = g >> 1;
+    int s0 = (g & 1) * 2;
+    int4 qw = __ldcs((const int4*)(rowq + (size_t)g * 16));
+    int cscw = __ldcs((const int*)(rows + (size_t)sblk * 4));
+    const int* aq4 = (const int*)aqb;
+    float partial = 0.0f;
+    #pragma unroll
+    for (int sl = 0; sl < 2; sl++) {
+        int q4a = (sl == 0) ? qw.x : qw.z;
+        int q4b = (sl == 0) ? qw.y : qw.w;
+        int2 va = get_int_from_table_16_d(q4a, kvalues_mxfp4_d);
+        int2 vb = get_int_from_table_16_d(q4b, kvalues_mxfp4_d);
+        int base = sl * 4;
+        int sumi = 0;
+        sumi = dp4a(va.x, aq4[base + 0], sumi);
+        sumi = dp4a(vb.x, aq4[base + 1], sumi);
+        sumi = dp4a(va.y, aq4[base + 2], sumi);
+        sumi = dp4a(vb.y, aq4[base + 3], sumi);
+        partial += ue4m3_to_f32_d((unsigned char)((cscw >> (8 * (s0 + sl))) & 0xFF)) * (float)sumi;
+    }
+    return d8 * partial;
+}
+// Row o of a split-plane expert whose slab starts at `base` and has `rows` rows of in_f = 64*nsb64.
+__device__ __forceinline__ void nvfp4_rp_row(const unsigned char* base, int o, int rows, int nsb64,
+                                             const unsigned char** q, const unsigned char** sc) {
+    *q  = base + (size_t)o * nsb64 * 32;
+    *sc = base + (size_t)rows * nsb64 * 32 + (size_t)o * nsb64 * 4;
 }
 
 // ---- IQ4_XS WIDE-LOAD group dot (down8 lane 2026-07-08) ----
@@ -6207,6 +6262,19 @@ extern "C" __global__ void moe_gate_up_preclamp8_q8(
     const unsigned char* grow = gp.p[j] + (long)o * rb_g;
     const unsigned char* urow = up.p[j] + (long)o * rb_u;
     float accg = 0.0f, accu = 0.0f;
+    if (qt_g == QT_NVFP4_RP && qt_u == QT_NVFP4_RP) {
+        // split-plane expert slab (memra#147): one LDG.128 + one scale word per group
+        int nsb64 = in_f >> 6;
+        const unsigned char *gq, *gsc, *uq, *usc;
+        nvfp4_rp_row((const unsigned char*)(gp.p[j]), o, n_ff, nsb64, &gq, &gsc);
+        nvfp4_rp_row((const unsigned char*)(up.p[j]), o, n_ff, nsb64, &uq, &usc);
+        for (int g = lane; g < nsb; g += 32) {
+            const signed char* aqb = aq + (size_t)g * 32;
+            float d8 = ad[g];
+            accg += expert_dot_nvfp4_rp_g(gq, gsc, g, aqb, d8);
+            accu += expert_dot_nvfp4_rp_g(uq, usc, g, aqb, d8);
+        }
+    } else
     for (int g = lane; g < nsb; g += 32) {
         const signed char* aqb = aq + (size_t)g * 32;
         float d8 = ad[g];
@@ -6234,6 +6302,14 @@ extern "C" __global__ void moe_down8_fma_q8(
         const signed char* arow = aq2 + (size_t)j * in_f;
         const float* adrow = ad2 + (size_t)j * nsb;
         float acc = 0.0f;
+        if (qt == QT_NVFP4_RP) {
+            // split-plane expert slab (memra#147)
+            int nsb64 = in_f >> 6;
+            const unsigned char *wq, *wsc;
+            nvfp4_rp_row((const unsigned char*)(dp.p[j]), o, out_f, nsb64, &wq, &wsc);
+            for (int g = lane; g < nsb; g += 32)
+                acc += expert_dot_nvfp4_rp_g(wq, wsc, g, arow + (size_t)g * 32, adrow[g]);
+        } else
         for (int g = lane; g < nsb; g += 32)
             acc += expert_dot_g(qt, wrow, g, arow + (size_t)g * 32, adrow[g]);
         acc = warp_reduce_sum(acc);
@@ -6273,6 +6349,19 @@ extern "C" __global__ void moe_gate_up_preclamp8_q8_w4(
     const unsigned char* grow = gp.p[j] + (long)o * rb_g;
     const unsigned char* urow = up.p[j] + (long)o * rb_u;
     float accg = 0.0f, accu = 0.0f;
+    if (qt_g == QT_NVFP4_RP && qt_u == QT_NVFP4_RP) {
+        // split-plane expert slab (memra#147): one LDG.128 + one scale word per group
+        int nsb64 = in_f >> 6;
+        const unsigned char *gq, *gsc, *uq, *usc;
+        nvfp4_rp_row((const unsigned char*)(gp.p[j]), o, n_ff, nsb64, &gq, &gsc);
+        nvfp4_rp_row((const unsigned char*)(up.p[j]), o, n_ff, nsb64, &uq, &usc);
+        for (int g = lane; g < nsb; g += 32) {
+            const signed char* aqb = aq + (size_t)g * 32;
+            float d8 = ad[g];
+            accg += expert_dot_nvfp4_rp_g(gq, gsc, g, aqb, d8);
+            accu += expert_dot_nvfp4_rp_g(uq, usc, g, aqb, d8);
+        }
+    } else
     for (int g = lane; g < nsb; g += 32) {
         const signed char* aqb = aq + (size_t)g * 32;
         float d8 = ad[g];
@@ -6300,6 +6389,14 @@ extern "C" __global__ void moe_down8_fma_q8_w4(
         const signed char* arow = aq2 + (size_t)j * in_f;
         const float* adrow = ad2 + (size_t)j * nsb;
         float acc = 0.0f;
+        if (qt == QT_NVFP4_RP) {
+            // split-plane expert slab (memra#147)
+            int nsb64 = in_f >> 6;
+            const unsigned char *wq, *wsc;
+            nvfp4_rp_row((const unsigned char*)(dp.p[j]), o, out_f, nsb64, &wq, &wsc);
+            for (int g = lane; g < nsb; g += 32)
+                acc += expert_dot_nvfp4_rp_g(wq, wsc, g, arow + (size_t)g * 32, adrow[g]);
+        } else
         for (int g = lane; g < nsb; g += 32)
             acc += expert_dot_g(qt, wrow, g, arow + (size_t)g * 32, adrow[g]);
         acc = warp_reduce_sum(acc);
@@ -6341,6 +6438,19 @@ extern "C" __global__ void moe_gate_up_preclamp8_q8_rows(
     const signed char* arow = aq + (size_t)tok * in_f;
     const float* adrow = ad + (size_t)tok * nsb;
     float accg = 0.0f, accu = 0.0f;
+    if (qt_g == QT_NVFP4_RP && qt_u == QT_NVFP4_RP) {
+        // split-plane expert slab (memra#147): one LDG.128 + one scale word per group
+        int nsb64 = in_f >> 6;
+        const unsigned char *gq, *gsc, *uq, *usc;
+        nvfp4_rp_row((const unsigned char*)((const unsigned char*)ptrs[pr]), o, n_ff, nsb64, &gq, &gsc);
+        nvfp4_rp_row((const unsigned char*)((const unsigned char*)ptrs[n_pairs + pr]), o, n_ff, nsb64, &uq, &usc);
+        for (int g = lane; g < nsb; g += 32) {
+            const signed char* aqb = arow + (size_t)g * 32;
+            float d8 = adrow[g];
+            accg += expert_dot_nvfp4_rp_g(gq, gsc, g, aqb, d8);
+            accu += expert_dot_nvfp4_rp_g(uq, usc, g, aqb, d8);
+        }
+    } else
     for (int g = lane; g < nsb; g += 32) {
         const signed char* aqb = arow + (size_t)g * 32;
         float d8 = adrow[g];
@@ -6375,6 +6485,14 @@ extern "C" __global__ void moe_down8_fma_q8_rows(
         const signed char* arow = aq2 + (size_t)pr * in_f;
         const float* adrow = ad2 + (size_t)pr * nsb;
         float acc = 0.0f;
+        if (qt == QT_NVFP4_RP) {
+            // split-plane expert slab (memra#147)
+            int nsb64 = in_f >> 6;
+            const unsigned char *wq, *wsc;
+            nvfp4_rp_row((const unsigned char*)((const unsigned char*)ptrs[2 * n_pairs + pr]), o, out_f, nsb64, &wq, &wsc);
+            for (int g = lane; g < nsb; g += 32)
+                acc += expert_dot_nvfp4_rp_g(wq, wsc, g, arow + (size_t)g * 32, adrow[g]);
+        } else
         for (int g = lane; g < nsb; g += 32)
             acc += expert_dot_g(qt, wrow, g, arow + (size_t)g * 32, adrow[g]);
         acc = warp_reduce_sum(acc);
@@ -6411,6 +6529,19 @@ extern "C" __global__ void moe_gate_up_preclamp8_q8_rows_w4(
     const signed char* arow = aq + (size_t)tok * in_f;
     const float* adrow = ad + (size_t)tok * nsb;
     float accg = 0.0f, accu = 0.0f;
+    if (qt_g == QT_NVFP4_RP && qt_u == QT_NVFP4_RP) {
+        // split-plane expert slab (memra#147): one LDG.128 + one scale word per group
+        int nsb64 = in_f >> 6;
+        const unsigned char *gq, *gsc, *uq, *usc;
+        nvfp4_rp_row((const unsigned char*)((const unsigned char*)ptrs[pr]), o, n_ff, nsb64, &gq, &gsc);
+        nvfp4_rp_row((const unsigned char*)((const unsigned char*)ptrs[n_pairs + pr]), o, n_ff, nsb64, &uq, &usc);
+        for (int g = lane; g < nsb; g += 32) {
+            const signed char* aqb = arow + (size_t)g * 32;
+            float d8 = adrow[g];
+            accg += expert_dot_nvfp4_rp_g(gq, gsc, g, aqb, d8);
+            accu += expert_dot_nvfp4_rp_g(uq, usc, g, aqb, d8);
+        }
+    } else
     for (int g = lane; g < nsb; g += 32) {
         const signed char* aqb = arow + (size_t)g * 32;
         float d8 = adrow[g];
@@ -6441,6 +6572,14 @@ extern "C" __global__ void moe_down8_fma_q8_rows_w4(
         const signed char* arow = aq2 + (size_t)pr * in_f;
         const float* adrow = ad2 + (size_t)pr * nsb;
         float acc = 0.0f;
+        if (qt == QT_NVFP4_RP) {
+            // split-plane expert slab (memra#147)
+            int nsb64 = in_f >> 6;
+            const unsigned char *wq, *wsc;
+            nvfp4_rp_row((const unsigned char*)((const unsigned char*)ptrs[2 * n_pairs + pr]), o, out_f, nsb64, &wq, &wsc);
+            for (int g = lane; g < nsb; g += 32)
+                acc += expert_dot_nvfp4_rp_g(wq, wsc, g, arow + (size_t)g * 32, adrow[g]);
+        } else
         for (int g = lane; g < nsb; g += 32)
             acc += expert_dot_g(qt, wrow, g, arow + (size_t)g * 32, adrow[g]);
         acc = warp_reduce_sum(acc);
@@ -6509,6 +6648,19 @@ extern "C" __global__ void moe_gate_up_preclamp8_q8_rows_ord(
     const signed char* arow = aq + (size_t)tok * in_f;
     const float* adrow = ad + (size_t)tok * nsb;
     float accg = 0.0f, accu = 0.0f;
+    if (qt_g == QT_NVFP4_RP && qt_u == QT_NVFP4_RP) {
+        // split-plane expert slab (memra#147): one LDG.128 + one scale word per group
+        int nsb64 = in_f >> 6;
+        const unsigned char *gq, *gsc, *uq, *usc;
+        nvfp4_rp_row((const unsigned char*)((const unsigned char*)ptrs[pr]), o, n_ff, nsb64, &gq, &gsc);
+        nvfp4_rp_row((const unsigned char*)((const unsigned char*)ptrs[n_pairs + pr]), o, n_ff, nsb64, &uq, &usc);
+        for (int g = lane; g < nsb; g += 32) {
+            const signed char* aqb = arow + (size_t)g * 32;
+            float d8 = adrow[g];
+            accg += expert_dot_nvfp4_rp_g(gq, gsc, g, aqb, d8);
+            accu += expert_dot_nvfp4_rp_g(uq, usc, g, aqb, d8);
+        }
+    } else
     for (int g = lane; g < nsb; g += 32) {
         const signed char* aqb = arow + (size_t)g * 32;
         float d8 = adrow[g];
@@ -6542,6 +6694,14 @@ extern "C" __global__ void moe_down8_fma_q8_rows_tmaj(
         const signed char* arow = aq2 + (size_t)pr * in_f;
         const float* adrow = ad2 + (size_t)pr * nsb;
         float acc = 0.0f;
+        if (qt == QT_NVFP4_RP) {
+            // split-plane expert slab (memra#147)
+            int nsb64 = in_f >> 6;
+            const unsigned char *wq, *wsc;
+            nvfp4_rp_row((const unsigned char*)((const unsigned char*)ptrs[2 * n_pairs + pr]), o, out_f, nsb64, &wq, &wsc);
+            for (int g = lane; g < nsb; g += 32)
+                acc += expert_dot_nvfp4_rp_g(wq, wsc, g, arow + (size_t)g * 32, adrow[g]);
+        } else
         for (int g = lane; g < nsb; g += 32)
             acc += expert_dot_g(qt, wrow, g, arow + (size_t)g * 32, adrow[g]);
         acc = warp_reduce_sum(acc);
@@ -14742,4 +14902,27 @@ extern "C" __global__ __launch_bounds__(256) void qmatvec_kda6_q8f32_rp_v2(
     }
     b -= nb;
     f32_mmvq_row1(W5, xrow, y5 + (size_t)t * out5, in_f, out5, b * R + (int)threadIdx.y);
+}
+
+// ---- NVFP4 expert slab SPLIT-PLANE repack, device side, once per resident slab at upload
+// (lane/moe-expert-rp, memra#147). The same byte permutation as model.rs repack_nvfp4_split,
+// applied per expert: block (ex, o, s) at src + i*36 ([4B scales][32B quants]) goes to the
+// expert's quant plane (rows x nsb64 x 32B) and scale plane (rows x nsb64 x 4B) in dst. The
+// source is read as 9 aligned u32 words (36B stride from a 256B-aligned slab is 4B-aligned).
+extern "C" __global__ void nvfp4_expert_split_repack(
+        const unsigned char* __restrict__ src, unsigned char* __restrict__ dst,
+        int n_expert, int rows, int nsb64) {
+    size_t per_ex = (size_t)rows * nsb64;
+    size_t nblk = (size_t)n_expert * per_ex;
+    size_t i = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= nblk) return;
+    int ex = (int)(i / per_ex);
+    size_t r = i - (size_t)ex * per_ex;                     // o*nsb64 + s inside the expert
+    const unsigned int* sb = (const unsigned int*)(src + i * 36);
+    size_t ebase = (size_t)ex * per_ex * 36;
+    unsigned int* q = (unsigned int*)(dst + ebase + r * 32);
+    unsigned int* sc = (unsigned int*)(dst + ebase + per_ex * 32 + r * 4);
+    sc[0] = sb[0];
+    #pragma unroll
+    for (int k = 0; k < 8; k++) q[k] = sb[1 + k];
 }

@@ -2416,6 +2416,43 @@ pub(crate) fn dtoh_trace_hit(bytes: usize) {
             loc.line()
         );
     }
+/// `MEMRA_MOE_EXPERT_RP=1` (default OFF, memra#147): the device-RESIDENT NVFP4 expert slabs are
+/// repacked at upload into the trunk's split-plane layout (per expert: quant plane rows x nsb64
+/// x 32B, then scale plane rows x nsb64 x 4B; `nvfp4_expert_split_repack`, a pure byte
+/// permutation) and `DevExps::rp` is set, so the fused T=1 decode pair and the verify-rows pair
+/// read them through `expert_dot_nvfp4_rp_g` (one 16B load + one scale word per lane-group
+/// instead of 5 scattered 4B loads at a 36B lane stride: root ncu measured 24.97 sectors per
+/// warp request on `moe_gate_up_preclamp8_q8_w4`, 4 is coalesced). Host bytes, the SLRU cache
+/// and the TP upload paths stay interleaved and untouched. Every other reader of a resident
+/// slab refuses with a named error (`moe_rp_refuse`) until it is wired, and `expert_dot_g`
+/// poisons an unwired kernel's dot with NaN, so the door cannot be silently wrong.
+pub fn moe_expert_rp_on() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var("MEMRA_MOE_EXPERT_RP").as_deref() == Ok("1"))
+}
+
+/// The qtype a kernel is told for an expert slab: `QT_NVFP4_RP` when the slab it will read is a
+/// split-plane resident slab, the tensor's own qtype otherwise.
+pub fn rp_qt(rp: bool, qt: i32) -> i32 {
+    if rp && qt == QT_NVFP4 {
+        QT_NVFP4_RP
+    } else {
+        qt
+    }
+}
+
+/// A resident-slab reader that has no split-plane arm refuses, by name, instead of reading the
+/// repacked bytes with the interleaved walk (which would be a plausible-looking wrong answer).
+pub fn moe_rp_refuse(rp: bool, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if rp {
+        return Err(format!(
+            "{path}: the resident expert slab is split-plane (MEMRA_MOE_EXPERT_RP=1) and this \
+             path reads experts interleaved; it is not wired for the door (memra#147). Boot \
+             without MEMRA_MOE_EXPERT_RP for this model or wire the path."
+        )
+        .into());
+    }
+    Ok(())
 }
 
 /// `MEMRA_VERIFY_WS` (lane/glm5-matvec door W, default ON since the 2026-08-31 mv-battery
@@ -6517,6 +6554,42 @@ impl Engine {
         let mut dst = scratch.slice_mut(off..off + host_bytes.len()); // CudaViewMut<u8>
         self.gpu.stream().memcpy_htod(host_bytes, &mut dst)?; // accepts &[u8] HostSlice src
         Ok(())
+    }
+
+    /// Split-plane repack of a whole resident NVFP4 expert slab (`n_expert` experts of `rows`
+    /// rows, `nsb64` 64-wide blocks per row) on the device: returns the repacked slab (same
+    /// length), the interleaved source is the caller's to drop. memra#147.
+    pub fn nvfp4_expert_split_repack(
+        &self,
+        src: &CudaSlice<u8>,
+        n_expert: usize,
+        rows: usize,
+        nsb64: usize,
+    ) -> Result<CudaSlice<u8>, Box<dyn std::error::Error>> {
+        let need = n_expert * rows * nsb64 * 36;
+        if src.len() < need {
+            return Err(format!(
+                "nvfp4_expert_split_repack: slab holds {} bytes, {n_expert} x {rows} x {nsb64} x 36 = {need} needed",
+                src.len()
+            )
+            .into());
+        }
+        let f = self.func("nvfp4_expert_split_repack");
+        let mut dst = self.alloc_u8_uninit(src.len())?; // every byte of the repacked region is written; the pad tail is never read
+        let nblk = (n_expert * rows * nsb64) as u32;
+        let cfg = LaunchConfig {
+            grid_dim: (nblk.div_ceil(256), 1, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let (ne, nr, ns) = (n_expert as i32, rows as i32, nsb64 as i32);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(src).arg(&mut dst).arg(&ne).arg(&nr).arg(&ns);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(dst)
     }
 
     /// EDGE-1 §A: fused MoE router. `logits` is the router output [t, n_expert] (device, f32, the
