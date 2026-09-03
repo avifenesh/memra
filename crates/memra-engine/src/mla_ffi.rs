@@ -1390,11 +1390,14 @@ impl Engine {
         scale: f32,
     ) -> Res<()> {
         let s = self.stream();
-        // MEMRA_B200_DSA_DECODE door, checked FIRST: its single-pass kernel subsumes what the
-        // output-range split below buys (both exist to fight the same 64-CTA t_q=1 geometry),
-        // and it does so without repeating the slot walk. Level 2 additionally allows the
-        // slot-split arm; the chunk table is all-1 today, so level 2 is level 1 until a box
-        // run moves a cell. See research/b200-dsa-decode-20260902/ROOFLINE.md.
+        // MEMRA_B200_DSA_DECODE door, checked FIRST: its arms fight the same 64-CTA t_q=1
+        // geometry the output-range split below does, without repeating the slot walk.
+        // THE TWO LEVELS DIFFER TODAY, and the difference is this PR's headline: the shipped
+        // table is [0, 32, 0, 0, 1, ...], so at t_q=1 level 1 takes arm 0 (falls through to
+        // the sibling split door) while level 2 takes warp-online chunks=32 -- +9.7% vs
+        // +43.1% in the 256k serving A/B. The `a >= 2 && dsa_level < 2` guard below exists
+        // precisely because they differ, and the level boundary IS the numeric-class
+        // admission boundary. See research/b200-dsa-decode-20260902/ROOFLINE.md.
         let dsa_level = mla_dsa_decode_level();
         let dsa_arm = if dsa_level >= 1 && t_q <= MLA_DSA_ARM_T_MAX {
             // `_effective` already enforces the named-class width rule (plain decode only, so

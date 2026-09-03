@@ -1590,7 +1590,12 @@ extern "C" __global__ void memra_mla_attn_gathered_dsa_kernel(
     __shared__ float s_acc[MLA_MAX_RANK];
     __shared__ float s_score[MLA_WARPS];
     __shared__ int s_row[MLA_WARPS];
-    extern __shared__ float s_kv[]; // [MLA_WARPS][width]
+    // __align__(16): this array is accessed through `float4` below, and CUDA
+    // guarantees only the element type's alignment for a plain `extern __shared__`
+    // declaration. Same convention as hybrid.cu's `__align__(16)` gdn_k2_smem and
+    // mmq_fp8_blk.cu's `__align__(128)`: a construction, not a reliance on the
+    // base alignment a given toolkit happens to hand out.
+    extern __shared__ __align__(16) float s_kv[]; // [MLA_WARPS][width]
 
     int blk = blockIdx.x; // i * n_head + h
     int i = blk / n_head;
@@ -1988,7 +1993,9 @@ __global__ __launch_bounds__(MLA_DSA_SCORE_TPB) void memra_mla_kpool_score_dsa_k
         return;
     }
 
-    extern __shared__ float dsa_score_sh[];
+    // __align__(16): `qsh` is read through `float4` in the inner loop. See the note
+    // on `s_kv` above.
+    extern __shared__ __align__(16) float dsa_score_sh[];
     float* qsh = dsa_score_sh;          // [KC][H], float4-read over the head axis
     float* ksh = dsa_score_sh + KC * H; // [KC][SBP], transposed
 

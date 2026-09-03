@@ -179,14 +179,16 @@ target is even arithmetically reachable, and the two kernels this lane's door re
     slabs; the `q` plane (`H x d x 4 B` = 16 KB at the glm5 shape) is resident for the whole
     block. LDS per FFMA drops from 2.0 to ~0.125 by holding `RP` dot accumulators per head in
     registers and reading `q` as `float4`.
-- **`=2`** additionally engages `memra_mla_dsa_attn_partial_kernel` +
-  `memra_mla_dsa_attn_combine_kernel`, the slot-split (flash-decoding) arm that is the only way
-  to put more than 64 CTAs on the gathered attention at t=1. It combines per-chunk
-  `(m, dsum, acc)` triples, which is a **different rounding program** from the single sequential
-  2048-slot fold, so it ships under the named numeric class **`dsa-split-softmax-f32`** with an
-  argmax gate on real-shaped inputs, never as a bit-identity claim.
+- **`=2`** additionally engages `memra_mla_dsa_attn_warp_kernel<J,JP>` +
+  `memra_mla_dsa_attn_combine_kernel`, the slot-split arm that is the only way to put more than
+  64 CTAs on the gathered attention at t=1. It folds per SLOT and combines per-chunk
+  `(m, dsum, acc)` triples, which is a **different rounding program** from the shipped kernel's
+  8-slot-tile fold, so it ships under the named numeric class **`dsa-warp-online-f32`** with an
+  argmax gate on real-shaped inputs, never as a bit-identity claim. (Section 7.1 records the
+  bit-identical single-pass kernel this bullet originally named: it was a measured loss, and
+  that is why the depth win needed a named class at all.)
 
-Every arm's split/chunk factor is read from a `t_q`-keyed table whose unmeasured cells are 1
+Every arm's split/chunk factor is read from a `t_q`-keyed table whose unmeasured cells are 0
 (= the shipped kernel), following the same discipline as PR #83: the box run either confirms a
 cell or names the one to change.
 
