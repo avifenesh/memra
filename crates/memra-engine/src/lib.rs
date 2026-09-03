@@ -2406,6 +2406,25 @@ pub fn topk_shards_dispatches() -> u64 {
 /// reaches the spec serving shape). Byte-identical by the sites' own full-overwrite uninit
 /// contract; gated by `glm5_matvec_doors_gpu` (multi-call byte identity + the
 /// `SCRATCH_ALLOC_CALLS` delta receipt). Read per call — the rollback seam.
+/// `MEMRA_HYPER_BATCH_SOLO=1` (default OFF, read per call — the rollback seam is its absence):
+/// at B=1 the batched hc decode walk delegates to the solo walk `hyper_range_decode`.
+///
+/// WHY IT EXISTS. glm5 PP-N serving decodes through `hyper_batch_range_decode`, which is the only
+/// hc decode walk it reaches and the only one with neither the allocation-workspace door
+/// (`MEMRA_HC_DECODE_WS`) nor the decode-graph door (`MEMRA_GLM5_DECODE_GRAPH`) — both of those
+/// guard `hyper_range_decode_eager`, reachable only via `hyper_range_decode`. Measured on the
+/// 2x B200 pair 2026-09-03: forcing `MEMRA_HC_DECODE_WS=1` on serving moved 55.85 -> 55.96 tok/s
+/// (noise) and printed its engagement line ZERO times, because the walk was never entered. At B=1
+/// the batch walk also pays a per-layer `h_row` allocation plus a `dtod_copy_view` of the single
+/// row, which the solo walk does not.
+///
+/// BYTE IDENTITY is the batch walk's own gated contract ("row b of a B-row step must be
+/// BIT-IDENTICAL to session b decoding alone through `decode_step_hyper`", `glm5-hyper-batch-gate`,
+/// red-armed), so at B=1 the delegation is that contract's own right-hand side.
+pub(crate) fn hyper_batch_solo_on() -> bool {
+    std::env::var("MEMRA_HYPER_BATCH_SOLO").as_deref() == Ok("1")
+}
+
 fn verify_ws_on() -> bool {
     verify_ws_on_from(
         std::env::var("MEMRA_VERIFY_WS").ok().as_deref(),
