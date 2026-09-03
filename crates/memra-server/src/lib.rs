@@ -6436,7 +6436,22 @@ fn openrouter_supported_parameters(
             json!({ "type": "enum", "values": ["auto", "none"] }),
         );
     }
-    if is_chat && caps.is_some_and(|c| c.qwen_think || c.effort_levels || c.gemma_think) {
+    // The `reasoning` on/off boolean is a SETTABLE control, not a capability
+    // fact, so it is advertised exactly where the server honours an explicit
+    // off-request: everywhere except the templates the silent-ignore gate
+    // refuses by name (issue #108). The exclusion below IS that gate's
+    // predicate (`qwen_think && !think_switch && !dsv4`, build_chat_request):
+    // glm5 and step35 open an unconditional think tail with no switch, so
+    // `enabled:false` 400s there and the feed must not offer it. Untouched on
+    // purpose: `capabilities.reasoning` on the model row (the model DOES
+    // reason, always on these templates) and the OpenModels supported_features
+    // entry (a capability declaration, not a request parameter).
+    if is_chat
+        && caps.is_some_and(|c| {
+            (c.qwen_think || c.effort_levels || c.gemma_think)
+                && !(c.qwen_think && !c.think_switch && !c.dsv4)
+        })
+    {
         parameters.insert("reasoning".into(), json!({ "type": "boolean" }));
     }
     // glm5 has a three-rung effort ladder, and issue #75 made publishing it part
@@ -11735,6 +11750,13 @@ mod tests {
         // glm5 arm: native rungs only, the accepted-but-aliased `high` stays
         // out of the enum.
         let ladder_params = openrouter_supported_parameters(Some(&ladder_caps()), None, true);
+        // Issue #108: the `reasoning` boolean is a settable control, so the two
+        // switchless force-open templates lose it (explicit off 400s on both);
+        // the switchable qwen shape and the qwen3.8 ladder keep it.
+        assert!(glm_params.get("reasoning").is_none(), "{glm_params}");
+        assert!(step_params.get("reasoning").is_none(), "{step_params}");
+        assert!(qwen_params.get("reasoning").is_some(), "{qwen_params}");
+        assert!(ladder_params.get("reasoning").is_some(), "{ladder_params}");
         assert_eq!(
             ladder_params.get("reasoning_effort"),
             Some(&json!({ "type": "enum", "values": ["xhigh", "medium", "low"] })),
