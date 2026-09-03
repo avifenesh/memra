@@ -498,7 +498,14 @@ fn pre_finish_into(
                         sp(&stream),
                     ),
                 ),
-                HcFusedPreArm::V2 if crate::hc_pre_block() != 128 => (
+                // v3 is v2 with the width as a parameter and the register-Sinkhorn door on it.
+                // It is selected when EITHER door is set: at width 128 v3 is bit-identical to v2
+                // (same partition), so routing MEMRA_HC_PRE_SINK_REG=1 through v3 at the default
+                // width changes only the Sinkhorn stage. Measured 2026-09-03: with the guard on
+                // width alone, `MEMRA_HC_PRE_SINK_REG=1` at block 128 dispatched v2 and the door
+                // was unreachable — the announce line said `kernel=hc_pre_fused_v2` and the arm
+                // read 55.86 against a 55.94 baseline, a measurement of nothing.
+                HcFusedPreArm::V2 if crate::hc_pre_block() != 128 || crate::hc_pre_sink_reg() => (
                     "hc_pre_fused_v3",
                     k::memra_dsv4_hc_pre_fused_v3(
                         dpf!(x, &stream),
@@ -556,17 +563,23 @@ fn pre_finish_into(
             HcFusedPreArm::Off => unreachable!("guarded by the enclosing if"),
         };
         if counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
-            let kern = if fused_arm == HcFusedPreArm::V2 && block != 128 {
-                "hc_pre_fused_v3"
-            } else if fused_arm == HcFusedPreArm::V2 {
-                "hc_pre_fused_v2"
-            } else {
-                "hc_pre_fused"
-            };
+            let kern =
+                if fused_arm == HcFusedPreArm::V2 && (block != 128 || crate::hc_pre_sink_reg()) {
+                    "hc_pre_fused_v3"
+                } else if fused_arm == HcFusedPreArm::V2 {
+                    "hc_pre_fused_v2"
+                } else {
+                    "hc_pre_fused"
+                };
             eprintln!(
                 "[hc-fused-pre] engaged streams={streams} hidden={hidden} t={t} arm={tag} \
-                 kernel={kern} block={block} (one launch replaces rowsq_scale + sinkhorn + \
-                 collapse per site; MEMRA_HC_FUSED_PRE={tag}, MEMRA_HC_PRE_BLOCK={block})"
+                 kernel={kern} block={block} sinkhorn={} (one launch replaces rowsq_scale + \
+                 sinkhorn + collapse per site; MEMRA_HC_FUSED_PRE={tag}, MEMRA_HC_PRE_BLOCK={block})",
+                if crate::hc_pre_sink_reg() {
+                    "registers"
+                } else {
+                    "shared"
+                }
             );
         }
         return Ok(());
