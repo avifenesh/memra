@@ -24080,6 +24080,12 @@ impl Engine {
     /// byte-identical to `sdpa_naive_w` (masked keys contribute exact zeros to same-order
     /// reductions; kernel_check `sdpa_naive_w_lo` pins it). window == 0 (no window) keeps
     /// kv_lo = 0 and is then shape-identical to the legacy kernel, including its bound.
+    ///
+    /// `kv_floor` (lane/spec-exclusions-20260902, the DFlash2 COLD-DRAFTER arm): the first
+    /// key row that EXISTS. `kv_lo` is raised to it, so keys below the floor are never read
+    /// or scored, i.e. the queries attend to a context that is simply shorter than the
+    /// window (the same program a short prompt runs). `0` = the pre-lane clip exactly. The
+    /// floor never clips the query rows themselves: callers pass a floor `<= t_kv - t`.
     #[allow(clippy::too_many_arguments)]
     pub fn sdpa_naive_w_lo(
         &self,
@@ -24095,12 +24101,21 @@ impl Engine {
         scale: f32,
         causal: bool,
         window: usize,
+        kv_floor: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        if kv_floor > t_kv - t {
+            return Err(format!(
+                "sdpa_naive_w_lo: kv_floor {kv_floor} would clip the query rows themselves \
+                 (t_kv {t_kv} - t {t})"
+            )
+            .into());
+        }
         let kv_lo = if window > 0 {
             (t_kv - t + 1).saturating_sub(window)
         } else {
             0
-        };
+        }
+        .max(kv_floor);
         let smem = (t_kv - kv_lo) * 4;
         if smem > 48 * 1024 {
             return Err(format!(

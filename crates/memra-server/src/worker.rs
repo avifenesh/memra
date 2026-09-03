@@ -906,6 +906,37 @@ fn spec_sampling_for(sampler: &Sampler) -> Option<memra_engine::spec::SpecSampli
     })
 }
 
+/// The glm5 spec session's sampling config (lane/spec-exclusions-20260902): `spec_sampling_for`
+/// PLUS the greedy-with-penalties shape. `spec_sampling_for` returns `None` for temperature
+/// 0, which every spec route reads as "greedy verify" — but the glm5 session's penalty arm
+/// (`MEMRA_SPEC_PENALTY=1`) needs the request's penalty coefficients on a GREEDY request too,
+/// so this returns `Some` with `temp: 0.0` whenever a non-identity penalty is armed. The
+/// engine splits the two meanings itself (`sampling.filter(temp > 0)` for the sampled
+/// machinery, `Glm5Penalty::of` for the penalty state), and with the arm dark a `Some(temp 0,
+/// penalized)` refuses at session creation exactly as a sampled penalized one does — which
+/// admission never lets reach the tick (`glm5_penalty_plain`).
+fn glm5_spec_sampling_for(sampler: &Sampler) -> Option<memra_engine::spec::SpecSampling> {
+    let penalized = sampler.penalty_last_n() > 0
+        && (sampler.penalty_repeat() != 1.0
+            || sampler.penalty_freq() != 0.0
+            || sampler.penalty_present() != 0.0);
+    (sampler.temperature() > 0.0 || penalized).then(|| memra_engine::spec::SpecSampling {
+        temp: sampler.temperature(),
+        seed: sampler.seed(),
+        top_k: sampler.top_k() as i32,
+        top_p: sampler.top_p(),
+        min_p: sampler.min_p(),
+        penalty_last_n: sampler.penalty_last_n(),
+        penalty_repeat: sampler.penalty_repeat(),
+        penalty_freq: sampler.penalty_freq(),
+        penalty_present: sampler.penalty_present(),
+    })
+}
+
+/// The print-once latch for the `MEMRA_SPEC_WARM` cold-drafter engagement line.
+static SPEC_WARM_ANNOUNCED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// A fully restored prefix-cache hit already owns the logits needed for its first decode.
 /// Letting an unrelated cold prime run first turns one synchronous prime chunk into cache-hit
 /// TTFT, even though the hit itself has no prefill work left.
@@ -3320,7 +3351,10 @@ const DEFAULT_PREFIX_CACHE_PROTECTED_PCT: usize = 80;
 /// rule a future host tier will need. v2 (lane/spec-on-cache-hit): + optional draft plane
 /// (MTP scratch rows `[0..pos)`) + boundary hidden, published from spec boundary captures.
 /// v3 (lane/glm5-prefix-latent): + per-layer latent (MLA/DSA) plane snapshots.
-const PREFIX_ENTRY_LAYOUT_VERSION: u32 = 3;
+/// v4 (lane/spec-exclusions-20260902): the drafter tail carries its exporter's context
+/// `floor` (`DflashKvTail::floor`, 0 for every pre-lane tail) so a floor-bearing tail from a
+/// cold-drafter session survives the host tier and the handoff field for field.
+const PREFIX_ENTRY_LAYOUT_VERSION: u32 = 4;
 
 /// Max distinct per-tenant metering rows in `Metrics::ns_tokens` (lane/cache-metering).
 /// Past the cap, new tenants/salts aggregate under "(other)" — the totals stay exact,
@@ -6543,6 +6577,7 @@ struct HostDflashTail {
     rows: usize,
     len: usize,
     row_bytes: usize,
+    floor: usize,
 }
 
 /// Field-for-field host mirror of `PrefixEntry`. `layout_version` travels with the entry and a
@@ -7020,6 +7055,7 @@ fn host_entry_from_device(
                 rows: t.rows,
                 len: t.len,
                 row_bytes: t.row_bytes,
+                floor: t.floor,
             })
         }
         None => None,
@@ -7419,6 +7455,7 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
                 rows: t.rows,
                 len: t.len,
                 row_bytes: t.row_bytes,
+                floor: t.floor,
             })
         }
         None => None,
@@ -7863,6 +7900,7 @@ struct HandoffTailRef<'a> {
     rows: usize,
     len: usize,
     row_bytes: usize,
+    floor: usize,
 }
 
 struct HandoffEntryRef<'a> {
@@ -7901,6 +7939,7 @@ struct HandoffTailOwned {
     rows: usize,
     len: usize,
     row_bytes: usize,
+    floor: usize,
 }
 
 #[derive(Debug, PartialEq)]
@@ -7956,6 +7995,7 @@ impl HandoffEntryOwned {
                 rows: t.rows,
                 len: t.len,
                 row_bytes: t.row_bytes,
+                floor: t.floor,
             }),
             last_h: &self.last_h,
             bytes: self.bytes,
@@ -7996,6 +8036,7 @@ fn handoff_entry_ref(e: &HostPrefixEntry) -> HandoffEntryRef<'_> {
             rows: t.rows,
             len: t.len,
             row_bytes: t.row_bytes,
+            floor: t.floor,
         }),
         last_h: &e.last_h,
         bytes: e.bytes,
@@ -8150,7 +8191,7 @@ fn handoff_entry_wire_len(e: &HandoffEntryRef) -> u64 {
         for (k, v) in &t.layers {
             n += f32s_len(k) + f32s_len(v);
         }
-        n += 8 * 4;
+        n += 8 * 5; // base, rows, len, row_bytes, floor (v4)
     }
     n += f32s_len(e.last_h);
     n += 8; // bytes
@@ -8226,6 +8267,7 @@ fn handoff_write_entry<W: std::io::Write>(out: &mut W, e: &HandoffEntryRef) -> R
             w.put_u64(t.rows as u64)?;
             w.put_u64(t.len as u64)?;
             w.put_u64(t.row_bytes as u64)?;
+            w.put_u64(t.floor as u64)?;
         }
         None => w.put_u8(0)?,
     }
@@ -8353,6 +8395,7 @@ fn handoff_parse_entry<R: std::io::Read>(
                 rows: fr.size()?,
                 len: fr.size()?,
                 row_bytes: fr.size()?,
+                floor: fr.size()?,
             })
         }
         f => return Err(format!("bad draft tail flag {f}")),
@@ -8475,6 +8518,7 @@ fn host_entry_from_owned(e: HandoffEntryOwned) -> Result<HostPrefixEntry, String
             rows: t.rows,
             len: t.len,
             row_bytes: t.row_bytes,
+            floor: t.floor,
         }),
         last_h: e.last_h,
         bytes: e.bytes,
@@ -16720,6 +16764,10 @@ fn glm5_sharded_placement_admits(
 ///
 /// A hit that admits here can still decline later on `no-drafter-tail` (the entry carries no
 /// draft plane, or its tail does not cover the drafter window); that one needs the engine.
+/// Under `MEMRA_SPEC_WARM=1` (lane/spec-exclusions-20260902) that decline becomes a COLD
+/// DRAFTER re-arm at the restored boundary (`DflashKv::new_cold_at`) and only its own
+/// refusal (`warm-cold-drafter-refused`: the clip rollback seam is thrown, or the drafter is
+/// the native plane) keeps the hit plain.
 fn glm5_carrier_admits(
     prefix_restore_on: bool,
     fullcover_on: bool,
@@ -16801,10 +16849,12 @@ fn glm5_route_decline_reason(
 
 /// The glm5 serve-time route decision over the request shape, PURE so the routing gate can
 /// exercise the full class matrix without CUDA. Exclusions, each stated:
-///   * `penalized` (ANY requested penalties, greedy or sampled): the glm5 accept walk has
-///     no penalty arm yet — the engine session refuses them loudly; admission keeps those
-///     requests on the plain path where the host sampler applies them (the dspark
-///     penalized-greedy split, extended to sampled until the penalty arm lands gated);
+///   * `penalized` (ANY requested penalties, greedy or sampled, AND the penalty arm dark):
+///     the call site passes `glm5_penalty_plain` = penalized && !`MEMRA_SPEC_PENALTY`
+///     (lane/spec-exclusions-20260902). Dark, the engine session refuses penalties loudly
+///     and admission keeps those requests on the plain path where the host sampler applies
+///     them; under the door the session penalizes its own verify rows (host-order device
+///     arithmetic, the plain sampler's bits) and the class routes spec with `reason=-`;
 ///   * `constrained`: grammar hooks exist only on the qwen spec program;
 ///   * `vision`: the glm5 session prime has no embedding-overlay seam;
 ///   * `!cold`: the session owns its cache and has no restore/resume arm — any reused or
@@ -18633,6 +18683,16 @@ fn admit(
     // Hoisted above the carrier probe (review round 1, nit 6) so the capability predicate
     // runs ONCE per request: the route decision below consumes this same binding.
     let glm5_capable = glm5_spec_capable(lm);
+    // PENALIZED request shape (ANY non-identity penalty, greedy or sampled) and whether it
+    // stays PLAIN on this route: pre-lane every penalized request served plain because the
+    // glm5 accept walk had no penalty arm; under `MEMRA_SPEC_PENALTY=1`
+    // (lane/spec-exclusions-20260902) the engine session penalizes its verify rows itself
+    // (`glm5_spec_sampling_for` carries the config in) and the class routes spec. Hoisted
+    // above the carrier probe so the probe and the route decision read ONE verdict; the
+    // route line still prints the raw `penalized=` shape.
+    let glm5_penalized =
+        greedy_penalized || spec_sampling_for(&sampler).is_some_and(|sp| sp.pen_on());
+    let glm5_penalty_plain = glm5_penalized && !memra_engine::glm_spec::glm5_spec_penalty_on();
     let mut glm5_prefix_restored_dkv: Option<memra_engine::dflash::DflashKv> = None;
     // WHY THE PLAIN PATH TOOK THIS HIT (memra#74). `None` = the request never reached the
     // glm5 carrier probe at all (no prefix hit, or a shape the probe's conjunction excludes);
@@ -18644,8 +18704,8 @@ fn admit(
         && serve_spec
         && !vision_req
         && constraint.is_none()
-        && ((sampler.is_greedy() && !greedy_penalized) || sampler.temperature() > 0.0)
-        && !spec_sampling_for(&sampler).is_some_and(|sp| sp.pen_on())
+        && (sampler.is_greedy() || sampler.temperature() > 0.0)
+        && !glm5_penalty_plain
         && spec_restored.is_none()
         && dspark_prefix_restored.is_none()
         && let Some(carrier) = reused.as_ref()
@@ -18681,13 +18741,67 @@ fn admit(
                 match tail_dkv {
                     Some(dkv) => glm5_prefix_restored_dkv = Some(dkv),
                     None => {
-                        glm5_carrier_declined = Some("no-drafter-tail");
-                        eprintln!(
-                            "[prefix-cache] glm5 spec restore declined (no drafter tail on \
-                             the entry, or the tail does not cover the drafter window); the \
-                             plain path serves the hit (model {})",
-                            req.model,
-                        );
+                        // COLD DRAFTER (lane/spec-exclusions-20260902, `MEMRA_SPEC_WARM=1`):
+                        // the entry carries no usable drafter tail (published by a plain
+                        // session, or the tail does not cover the window). Pre-lane the hit
+                        // served PLAIN for the whole generation. Under the door the drafter
+                        // re-arms EMPTY at the restored boundary and fills from the suffix
+                        // prime's taps on (`DflashKv::new_cold_at`); verify arbitrates, so
+                        // this can only move acceptance, never output. Needs the DFlash2
+                        // source (the restore constructor refuses the native plane anyway).
+                        let cold = memra_engine::glm_spec::glm5_spec_warm_on()
+                            .then_some(lm.model.glm5_dflash.as_ref())
+                            .flatten()
+                            .map(|dr| {
+                                memra_engine::dflash::DflashKv::new_cold_at(
+                                    engine,
+                                    &dr.draft.cfg,
+                                    ctx_cap,
+                                    carrier.fed.len(),
+                                )
+                            });
+                        match cold {
+                            Some(Ok(dkv)) => {
+                                if !SPEC_WARM_ANNOUNCED
+                                    .swap(true, std::sync::atomic::Ordering::AcqRel)
+                                {
+                                    eprintln!(
+                                        "[glm5-spec] MEMRA_SPEC_WARM=1: prefix hit without a \
+                                         drafter tail re-arms a COLD drafter at the restored \
+                                         boundary (printed once per process; every such \
+                                         request carries a [prefix-cache] glm5 cold-drafter \
+                                         line)"
+                                    );
+                                }
+                                eprintln!(
+                                    "[prefix-cache] glm5 cold-drafter restore: {} prefix \
+                                     tokens from cache, drafter context starts EMPTY at \
+                                     that boundary (no tail on the entry; MEMRA_SPEC_WARM=1) \
+                                     (model {})",
+                                    carrier.fed.len(),
+                                    req.model,
+                                );
+                                glm5_prefix_restored_dkv = Some(dkv);
+                            }
+                            Some(Err(why)) => {
+                                glm5_carrier_declined = Some("warm-cold-drafter-refused");
+                                eprintln!(
+                                    "[prefix-cache] glm5 cold-drafter restore REFUSED \
+                                     ({why}); the plain path serves the hit (model {})",
+                                    req.model,
+                                );
+                            }
+                            None => {
+                                glm5_carrier_declined = Some("no-drafter-tail");
+                                eprintln!(
+                                    "[prefix-cache] glm5 spec restore declined (no drafter \
+                                     tail on the entry, or the tail does not cover the \
+                                     drafter window; MEMRA_SPEC_WARM=1 would re-arm a cold \
+                                     drafter); the plain path serves the hit (model {})",
+                                    req.model,
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -19612,8 +19726,6 @@ fn admit(
     } else {
         0
     };
-    let glm5_penalized =
-        greedy_penalized || spec_sampling_for(&sampler).is_some_and(|sp| sp.pen_on());
     let glm5_cold = spec.is_none()
         && spec_resumed == 0
         && seed_fed.is_empty()
@@ -19639,7 +19751,7 @@ fn admit(
         serve_spec,
         glm5_k,
         sampler.is_greedy() || sampler.temperature() > 0.0,
-        glm5_penalized,
+        glm5_penalty_plain,
         constraint.is_some(),
         vision_state.is_some(),
         glm5_cold || glm5_restored_carrier,
@@ -19661,7 +19773,7 @@ fn admit(
             serve_spec,
             glm5_k,
             sampler.is_greedy() || sampler.temperature() > 0.0,
-            glm5_penalized,
+            glm5_penalty_plain,
             constraint.is_some(),
             vision_state.is_some(),
             glm5_cold || glm5_restored_carrier,
@@ -22691,6 +22803,8 @@ fn step_glm5_spec(
         }
         // Sampled admission (T>0): the ONE Sampler->SpecSampling seam (spec_sampling_for),
         // same as the frspec/dspark routes — None = greedy, byte-identical instrument route.
+        // The glm5 twin (`glm5_spec_sampling_for`) additionally carries a GREEDY request's
+        // penalties in (MEMRA_SPEC_PENALTY=1, lane/spec-exclusions-20260902).
         let sess = match s.glm5_restored_dkv.take() {
             Some(dkv) => {
                 let restored = s
@@ -22706,7 +22820,7 @@ fn step_glm5_spec(
                         &s.last_logits,
                         dkv,
                         s.gspec_ctx,
-                        spec_sampling_for(&s.sampler),
+                        glm5_spec_sampling_for(&s.sampler),
                     )
                     // A restored-arm refusal is an invariant break (admission pre-validated
                     // the shape): fail loudly rather than silently switching numeric
@@ -22717,7 +22831,7 @@ fn step_glm5_spec(
                 engine,
                 &queued,
                 s.gspec_ctx,
-                spec_sampling_for(&s.sampler),
+                glm5_spec_sampling_for(&s.sampler),
             ) {
                 Ok(sess) => sess,
                 Err(err) => {
@@ -27084,8 +27198,9 @@ mod tests {
         );
         assert!(
             !glm5_route_admits(true, true, 3, true, true, false, false, true, true),
-            "penalties (greedy OR sampled) must refuse — the glm5 accept walk has no \
-             penalty arm; silently dropping them is the failure class"
+            "penalties (greedy OR sampled) must refuse when the call site says they stay \
+             plain (`glm5_penalty_plain`: the MEMRA_SPEC_PENALTY door is dark); silently \
+             dropping them is the failure class"
         );
         assert!(
             !glm5_route_admits(true, true, 3, true, false, true, false, true, true),
@@ -27109,6 +27224,140 @@ mod tests {
              (token[i+1], hidden[i]) pairs and generate_spec_glm5 refuses at prime time, \
              which is PAST the plain fallback; a one-word prompt serves plain, never a \
              500 (memra#9)"
+        );
+    }
+
+    /// THE PENALTY DOOR (lane/spec-exclusions-20260902): the glm5 session seam carries a
+    /// GREEDY request's penalties in (temp 0, pen_on), stays `None` for a pure greedy
+    /// request (the byte-identical instrument route), and is `spec_sampling_for` for a
+    /// sampled one — field for field.
+    #[test]
+    fn glm5_spec_sampling_seam_carries_greedy_penalties_and_nothing_else() {
+        use super::{glm5_spec_sampling_for, spec_sampling_for};
+        let greedy = Sampler::new(SamplerConfig::default());
+        assert!(
+            glm5_spec_sampling_for(&greedy).is_none(),
+            "pure greedy stays the byte-contract route (None)"
+        );
+        let greedy_pen = Sampler::new(SamplerConfig {
+            penalty_last_n: memra_engine::spec::PEN_WINDOW_MAX,
+            penalty_present: 0.5,
+            ..SamplerConfig::default()
+        });
+        let sp = glm5_spec_sampling_for(&greedy_pen).expect("greedy + penalties carries in");
+        assert_eq!(
+            sp.temp, 0.0,
+            "temperature stays 0: the verify is still greedy"
+        );
+        assert!(sp.pen_on(), "the penalty state must be live on the seam");
+        assert!(
+            spec_sampling_for(&greedy_pen).is_none(),
+            "the shared seam keeps its meaning: None at temperature 0"
+        );
+        let window_off = Sampler::new(SamplerConfig {
+            penalty_last_n: 0,
+            penalty_present: 0.5,
+            ..SamplerConfig::default()
+        });
+        assert!(
+            glm5_spec_sampling_for(&window_off).is_none(),
+            "a coefficient with no window is penalties-absent (the host sampler applies \
+             nothing either)"
+        );
+        let sampled = Sampler::new(SamplerConfig {
+            temperature: 0.7,
+            top_p: 0.9,
+            penalty_last_n: memra_engine::spec::PEN_WINDOW_MAX,
+            penalty_repeat: 1.1,
+            seed: 7,
+            ..SamplerConfig::default()
+        });
+        let a = glm5_spec_sampling_for(&sampled).expect("sampled");
+        let b = spec_sampling_for(&sampled).expect("sampled");
+        assert_eq!(
+            format!("{a:?}"),
+            format!("{b:?}"),
+            "a sampled request must get the shared seam's config, field for field"
+        );
+    }
+
+    /// WIRING (comment-stripped, live slice only): the penalty door composes into the ONE
+    /// verdict both the carrier probe and the route decision read; the warm door lives in
+    /// the probe's no-tail arm with its print-once line; the glm5 tick creates sessions
+    /// through the glm5 seam on BOTH arms (cold and restored).
+    #[test]
+    fn spec_penalty_and_warm_doors_are_wired_in_comment_stripped_source() {
+        let src = include_str!("worker.rs");
+        let code: String = src
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let live = &code[..code.find("mod tests").expect("the test module exists")];
+        let sq: String = live.split_whitespace().collect::<Vec<_>>().join(" ");
+        // 1. ONE verdict, from the engine's door.
+        assert!(
+            sq.contains(
+                "let glm5_penalty_plain = glm5_penalized && \
+                 !memra_engine::glm_spec::glm5_spec_penalty_on();"
+            ),
+            "the penalized-plain verdict must AND the request shape with the engine door"
+        );
+        // 2. The carrier probe reads it (not the raw shape).
+        let probe = sq
+            .find("&& let Some(carrier) = reused.as_ref() && prefix_hit")
+            .expect("the glm5 carrier probe exists");
+        let probe_head = &sq[probe.saturating_sub(400)..probe];
+        assert!(
+            probe_head.contains("&& !glm5_penalty_plain"),
+            "the carrier probe must exclude only penalized-PLAIN requests"
+        );
+        // 3. The route predicate and its reason read the same verdict.
+        for call in ["glm5_route_admits(", "glm5_route_decline_reason("] {
+            let at = sq
+                .find(&format!("= {call}"))
+                .unwrap_or_else(|| panic!("the {call} call exists"));
+            assert!(
+                sq[at..at + 400].contains("glm5_penalty_plain,"),
+                "{call} must receive the penalized-plain verdict"
+            );
+        }
+        // 4. The warm door: the no-tail arm re-arms a cold drafter, names its refusal, and
+        //    announces once.
+        assert!(
+            sq.contains("memra_engine::glm_spec::glm5_spec_warm_on()"),
+            "the warm door must be read at the probe"
+        );
+        assert!(
+            sq.contains("memra_engine::dflash::DflashKv::new_cold_at("),
+            "the warm arm must build the cold drafter through new_cold_at"
+        );
+        assert!(
+            sq.contains("glm5_carrier_declined = Some(\"warm-cold-drafter-refused\");"),
+            "a cold-drafter refusal must name itself on the route line"
+        );
+        assert!(
+            live.split_whitespace()
+                .collect::<String>()
+                .contains("SPEC_WARM_ANNOUNCED.swap(true"),
+            "the warm engagement line must be print-once"
+        );
+        // 5. Both session constructors on the tick go through the glm5 seam.
+        let step = code
+            .split("fn step_glm5_spec(")
+            .nth(1)
+            .expect("step_glm5_spec exists");
+        let step_body = &step[..step.find("\nfn ").unwrap_or(step.len())];
+        assert_eq!(
+            step_body
+                .matches("glm5_spec_sampling_for(&s.sampler)")
+                .count(),
+            2,
+            "the cold and the restored arm must both carry penalties in through the glm5 seam"
+        );
+        assert!(
+            !step_body.contains(" spec_sampling_for(&s.sampler)"),
+            "no bare spec_sampling_for on the glm5 tick (it drops a greedy request's penalties)"
         );
     }
 
@@ -31567,6 +31816,7 @@ mod host_handoff_tests {
                 rows: 2,
                 len: 4,
                 row_bytes: 16,
+                floor: 1,
             }),
             last_h: vec![9.75; 5],
             bytes: 12345,

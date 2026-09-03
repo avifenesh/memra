@@ -406,6 +406,13 @@ impl Sampler {
     /// entry is touched exactly once in both forms, so no float re-association is possible.
     /// `apply_penalties_scan_reference` is kept as the ORACLE and
     /// `dense_penalties_match_the_scan_reference_bitwise` compares them over randomized inputs.
+    ///
+    /// THE HOST ORACLE FOR DEVICE PENALTIES (lane/spec-exclusions-20260902): the memra-engine
+    /// `penalize_logits*` kernels (`cu/spec_sample.cu`, `keskar_penalize_rn`) are written to
+    /// produce these exact f32 bits for the same window, and the glm5 spec route's penalized
+    /// verify rows are gated against `penalized_logits` bit for bit
+    /// (`gpu_device_penalties_are_bit_identical_to_the_host_sampler`). Any change to the
+    /// arithmetic here is a change to the spec route's numerics too; keep the two in step.
     fn apply_penalties_dense(&self, cand: &mut [(u32, f32)]) {
         let n = self.cfg.penalty_last_n;
         if n == 0 {
@@ -457,6 +464,25 @@ impl Sampler {
             c.1 -= cnt as f32 * self.cfg.penalty_freq;
             c.1 -= self.cfg.penalty_present; // presence: applied once if count>0
         }
+    }
+
+    /// The penalized logits row this sampler would score the next token from, as bytes: a
+    /// copy of `logits` with the active penalty window applied through the ONE serving
+    /// penalty pass (`apply_penalties_dense`). Identity when penalties are off (window
+    /// empty or every coefficient neutral), exactly as `sample` sees it.
+    ///
+    /// EXISTS AS THE ORACLE SEAM for the device penalty kernels (lane/spec-exclusions-
+    /// 20260902): a spec route that penalizes verify rows on device claims "the same bits
+    /// the plain sampler produces", and that claim needs the plain sampler's bits to compare
+    /// against, not a re-derivation in a test. `sample` only ever returns the chosen id.
+    pub fn penalized_logits(&self, logits: &[f32]) -> Vec<f32> {
+        let mut cand: Vec<(u32, f32)> = logits
+            .iter()
+            .enumerate()
+            .map(|(i, &l)| (i as u32, l))
+            .collect();
+        self.apply_penalties_dense(&mut cand);
+        cand.into_iter().map(|(_, l)| l).collect()
     }
 
     /// llama.cpp penalty: for each token in the last-n history, repeat-divide/multiply its logit

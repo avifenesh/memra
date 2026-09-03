@@ -1312,7 +1312,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &qd, &kd, &vd, &mut o_ref, hd, nh, nhkv, t, tkv, scale, false, win,
             )?;
             e.sdpa_naive_w_lo(
-                &qd, &kd, &vd, &mut o_lo, hd, nh, nhkv, t, tkv, scale, false, win,
+                &qd, &kd, &vd, &mut o_lo, hd, nh, nhkv, t, tkv, scale, false, win, 0,
             )?;
             let (a, b) = (e.dtoh(&o_ref)?, e.dtoh(&o_lo)?);
             let nbad = a
@@ -1358,7 +1358,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .is_err();
             let mut o_lo = e.zeros(hd * nh * t)?;
             e.sdpa_naive_w_lo(
-                &qd, &kd, &vd, &mut o_lo, hd, nh, nhkv, t, tkv, scale, false, win,
+                &qd, &kd, &vd, &mut o_lo, hd, nh, nhkv, t, tkv, scale, false, win, 0,
             )?;
             let gpu = e.dtoh(&o_lo)?;
             // CPU windowed reference over the visible keys only (masked keys contribute

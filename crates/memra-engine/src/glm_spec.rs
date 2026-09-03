@@ -96,8 +96,11 @@
 //! the q gather reads); nothing in the walk or the rollback changes. Philox counters live
 //! ON the [`Glm5SpecSession`] so randomness never repeats across serve bursts (the
 //! session-continuity law; burst-split invariance is pinned by `glm5_spec_session_gpu`).
-//! PENALIZED sampled requests are refused — no penalty arm yet; the worker keeps them on
-//! the plain path.
+//! PENALIZED requests (greedy and sampled) refuse UNLESS `MEMRA_SPEC_PENALTY=1`
+//! (lane/spec-exclusions-20260902, doc on [`glm5_spec_penalty_on`]): under the arm every
+//! verify round penalizes a copy of the target rows over the per-row evolving session
+//! window with the host sampler's exact arithmetic and the accept reads only that copy; the
+//! worker's admission keeps penalized requests plain while the arm is dark.
 //!
 //! FR-SPEC VOCAB MASKING (owner addition, 2026-08-30 — the house spec recipe, the q38 way):
 //! the loop consumes the existing `MEMRA_FRSPEC_TRIM` contract, no new flag. The loader
@@ -296,6 +299,159 @@ pub fn glm5_spec_fullcover_on() -> bool {
 /// creation. Rollback seam: unset (the co-refusal is restored verbatim).
 pub fn glm5_spec_tp_on() -> bool {
     std::env::var("MEMRA_GLM5_SPEC_TP").as_deref() == Ok("1")
+}
+
+/// `MEMRA_SPEC_PENALTY` (default OFF, lane/spec-exclusions-20260902): admit PENALIZED
+/// requests (repetition / frequency / presence, greedy AND sampled) to the glm5 spec route.
+/// Pre-lane every penalized request served plain (`reason=penalized`), which on agent
+/// harnesses that ship a vendor-default `presence_penalty` was the whole route's 1.48x lost
+/// on the most common request shape there is. THE ARM: every verify round penalizes a COPY of
+/// the target's verify rows on device over the per-row evolving window (`penalize_logits_rows_inc`
+/// — row r sees the session window ++ the drafts before r, exactly the plain sampler's history
+/// at that position), and the accept reads only that copy: greedy argmaxes it, the sampled
+/// walk takes its p from it, the bonus and the residual draw from it; the anchor is drawn the
+/// same way from the prime's boundary row. The DRAFT stays unpenalized (it only proposes;
+/// rejection sampling is unbiased for any proposal). NUMERIC CLASS: the device pass is the
+/// host sampler's arithmetic bit for bit (`keskar_penalize_rn`, gated by
+/// `gpu_device_penalties_are_bit_identical_to_the_host_sampler`), so greedy+penalties keeps
+/// the spec-vs-plain tape identity (gate 15) and sampled+penalties keeps the route's
+/// distribution-exact claim: the accepted stream equals the plain penalized sampler's
+/// distribution. DEFAULT OFF BY DESIGN (new-flags law): the arm has rig receipts only; the
+/// box battery (sampled vendor-default + penalties, 8-turn twin) flips it. Unset = the
+/// pre-lane refusal verbatim (the worker keeps penalized requests plain, by name). Read per
+/// session creation (the `MEMRA_GLM5_SPEC_FULLCOVER` precedent) so one gate process drives
+/// both arms.
+pub fn glm5_spec_penalty_on() -> bool {
+    std::env::var("MEMRA_SPEC_PENALTY").as_deref() == Ok("1")
+}
+
+/// `MEMRA_SPEC_WARM` (default OFF, lane/spec-exclusions-20260902): admit a prefix-hit
+/// CARRIER whose entry carries NO usable drafter tail (`reason=no-drafter-tail`: the entry
+/// was published by a plain session — a K-shed turn, a constrained or vision turn — or its
+/// tail did not cover the drafter window) by re-arming the drafter COLD at the restored
+/// boundary (`DflashKv::new_cold_at`): the trunk restores, the drafter starts with an empty
+/// context at the right absolute position and fills it from the suffix prime's taps and every
+/// committed round. Rows below the floor are never attended (the clipped round attention's
+/// floor arm), so the drafter sees exactly the program a shorter prompt runs. Can only move
+/// ACCEPTANCE, never output (verify arbitrates; gate 18 pins the restored tape against plain
+/// decode). Lives UNDER `MEMRA_GLM5_SPEC_PREFIX` (x `MEMRA_PREFIX_LATENT`): without the restore
+/// door there is no carrier to warm. DEFAULT OFF BY DESIGN: the acceptance cost of the empty
+/// context on the first rounds is unmeasured on the real artifact. Read per request.
+pub fn glm5_spec_warm_on() -> bool {
+    std::env::var("MEMRA_SPEC_WARM").as_deref() == Ok("1")
+}
+
+/// The penalty arm's per-session config (doc on [`glm5_spec_penalty_on`]): the request's
+/// Keskar coefficients and window, INDEPENDENT of the sampling regime — a greedy request
+/// with penalties admits too, which is why this is not folded into `Option<SpecSampling>`
+/// (whose `None` means greedy everywhere else on the route).
+#[derive(Clone, Copy, Debug)]
+pub struct Glm5Penalty {
+    last_n: usize,
+    rep: f32,
+    freq: f32,
+    present: f32,
+}
+
+impl Glm5Penalty {
+    /// `Some` iff the request carries a non-identity penalty with an armed window — THE
+    /// `pen_on` predicate (one definition, `SpecSampling::pen_on`).
+    pub fn of(sp: &SpecSampling) -> Option<Self> {
+        sp.pen_on().then_some(Self {
+            last_n: sp.penalty_last_n,
+            rep: sp.penalty_repeat,
+            freq: sp.penalty_freq,
+            present: sp.penalty_present,
+        })
+    }
+    /// The device window: `penalty_last_n` under the `PEN_WINDOW_MAX` cost bound — the same
+    /// trim the dspark accept walk and the boundary draw apply.
+    fn win(&self) -> usize {
+        self.last_n.min(crate::spec::PEN_WINDOW_MAX)
+    }
+}
+
+/// Print-once latch for the penalty arm's engagement line (one per process).
+static PENALTY_ARM_ANNOUNCED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// The penalty admission law, shared by the cold and restored session constructors: a
+/// penalized request opens a session ONLY under `MEMRA_SPEC_PENALTY=1`; otherwise it refuses
+/// loudly (worker admission owns the exclusion and keeps such requests plain — silently
+/// dropping a request's penalties is the failure class the refusal prevents). Logs the
+/// engagement receipt once per process on the first penalized session that opens.
+fn glm5_penalty_admit(sampling: Option<&SpecSampling>) -> Res<Option<Glm5Penalty>> {
+    let Some(pen) = sampling.and_then(Glm5Penalty::of) else {
+        return Ok(None);
+    };
+    if !glm5_spec_penalty_on() {
+        return Err(
+            "glm5 spec penalty arm is DARK (MEMRA_SPEC_PENALTY unset): penalized requests serve \
+             on the plain path (worker admission owns the exclusion; silently dropping the \
+             request's penalties is the failure class this refusal prevents)"
+                .into(),
+        );
+    }
+    if !PENALTY_ARM_ANNOUNCED.swap(true, std::sync::atomic::Ordering::AcqRel) {
+        eprintln!(
+            "[glm5-spec] penalty arm ENGAGED (MEMRA_SPEC_PENALTY=1): verify rows penalized on \
+             device over the session window (rep={} freq={} present={} last_n={}); printed \
+             once per process, every penalized request carries penalized=1 on its route line",
+            pen.rep, pen.freq, pen.present, pen.last_n,
+        );
+    }
+    Ok(Some(pen))
+}
+
+/// Seed the session's penalty window from its committed prompt (`spec::pen_window_seed`, one
+/// definition of "the window" across every spec route). Empty with penalties off.
+fn glm5_pen_window_seed(pen: Option<&Glm5Penalty>, committed: &[u32]) -> Vec<u32> {
+    match pen {
+        Some(p) => crate::spec::pen_window_seed(&[], committed, p.last_n),
+        None => Vec::new(),
+    }
+}
+
+/// The session's FIRST token from a host boundary-logits row (the prime's, or the entry's on
+/// a full-cover restore) — the plain route's own first-token rule, regime by regime:
+///   * sampled: `sample_boundary_token` (penalize over the window, filter, Gumbel at the
+///     session's Philox counter) — with the window it was always handed empty before;
+///   * greedy + penalties: the plain sampler's `sample` is penalize-then-argmax, so the row
+///     goes to the device, takes the one penalty pass (`penalize_logits`, the same bits the
+///     host produces), and the device argmax (host tie-break contract) picks;
+///   * greedy: the host argmax, byte for byte the pre-lane literal.
+#[allow(clippy::too_many_arguments)]
+// allow: the three regimes' inputs, listed rather than bundled, so the OFF arm reads as the
+// pre-lane literal at the call site
+fn glm5_anchor(
+    eh: &Engine,
+    logits: &[f32],
+    sampling: Option<&SpecSampling>,
+    pen: Option<&Glm5Penalty>,
+    pen_hist: &[u32],
+    sctr: &mut u32,
+    site: &str,
+) -> Res<u32> {
+    match (sampling, pen) {
+        (Some(sp), _) => crate::spec::sample_boundary_token(eh, logits, sp, pen_hist, sctr, site),
+        (None, Some(p)) => {
+            let n = logits.len();
+            let mut col = eh.htod(logits)?;
+            let w0 = pen_hist.len().saturating_sub(p.win());
+            let hist = &pen_hist[w0..];
+            if !hist.is_empty() {
+                let hd = eh.htod_u32_v(hist)?;
+                eh.penalize_logits(&mut col, &hd, hist.len(), p.rep, p.freq, p.present, n)?;
+            }
+            let td = eh.argmax_token_device(&col, n)?;
+            crate::spec::guard_vocab_token(
+                eh.dtoh_u32_one(&td)?,
+                n,
+                &format!("glm5 penalized greedy anchor ({site})"),
+            )
+        }
+        (None, None) => Ok(argmax(logits) as u32),
+    }
 }
 
 /// `MEMRA_SPEC_PMIN`, honored by the glm5 loop (loop-port 2 — the step37 shipping family,
@@ -1671,9 +1827,9 @@ impl HybridModel {
     /// the accept walk all draw through the session's own Philox counters (`sctr` device
     /// events, `uctr` host accept-test uniforms via `spec::host_u01`, tag 0xFFFF_FFFE), so a
     /// session's randomness never repeats across bursts (the session-continuity law).
-    /// PENALIZED sampled requests are refused loudly — the glm5 accept walk has no penalty
-    /// arm yet; worker admission keeps them on the plain path (same split as dspark's
-    /// penalized-greedy exclusion).
+    /// PENALIZED requests (greedy or sampled) open only under `MEMRA_SPEC_PENALTY=1`
+    /// (`glm5_penalty_admit`; doc on [`glm5_spec_penalty_on`]) and refuse loudly otherwise —
+    /// worker admission keeps them on the plain path while the arm is dark.
     pub fn glm5_spec_session_new(
         &self,
         e: &Engine,
@@ -1773,17 +1929,12 @@ impl HybridModel {
         {
             return Err("pipeline rewrite is not qualified for this ModelPlan".into());
         }
+        // PENALTY ARM admission (lane/spec-exclusions-20260902): a penalized request opens
+        // only under MEMRA_SPEC_PENALTY=1; `pen` rides the session for every round, and
+        // `sampling` keeps its route meaning (`None` = greedy verify) — a greedy request
+        // with penalties is `sampling: None, pen: Some`.
+        let pen = glm5_penalty_admit(sampling.as_ref())?;
         let sampling = sampling.filter(|sp| sp.temp > 0.0);
-        if let Some(sp) = sampling.as_ref()
-            && sp.pen_on()
-        {
-            return Err(
-                "glm5 spec has no penalty arm yet: penalized sampled requests serve on the \
-                 plain path (worker admission owns the exclusion; silently dropping the \
-                 request's penalties is the failure class this refusal prevents)"
-                    .into(),
-            );
-        }
         // Room for the prompt, the anchor row and at least one verify round.
         if prompt.len() + 4 > ctx_cap {
             return Err(format!(
@@ -1884,13 +2035,20 @@ impl HybridModel {
         if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
             pf.capture_ms = ck.lap(e, eh);
         }
+        // The penalty window spans the SESSION (`pen_window_seed`): the prompt now, every
+        // committed token from here. Empty with penalties off — the anchor rule below is
+        // then the pre-lane literal in both regimes.
+        let pen_hist = glm5_pen_window_seed(pen.as_ref(), prompt);
         let mut sctr = 0u32;
-        let anchor = match sampling.as_ref() {
-            Some(sp) => {
-                crate::spec::sample_boundary_token(eh, &logits0, sp, &[], &mut sctr, "glm5-prime")?
-            }
-            None => argmax(&logits0) as u32,
-        };
+        let anchor = glm5_anchor(
+            eh,
+            &logits0,
+            sampling.as_ref(),
+            pen.as_ref(),
+            &pen_hist,
+            &mut sctr,
+            "glm5-prime",
+        )?;
         if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
             pf.anchor_ms = ck.lap(e, eh);
         }
@@ -1971,6 +2129,8 @@ impl HybridModel {
             pending,
             draft,
             sampling,
+            pen,
+            pen_hist,
             sctr,
             uctr: 0,
             rounds: 0,
@@ -2145,14 +2305,9 @@ impl HybridModel {
                     .into(),
             );
         }
+        // PENALTY ARM admission: the cold constructor's law, verbatim (doc there).
+        let pen = glm5_penalty_admit(sampling.as_ref())?;
         let sampling = sampling.filter(|sp| sp.temp > 0.0);
-        if let Some(sp) = sampling.as_ref()
-            && sp.pen_on()
-        {
-            return Err(
-                "glm5 spec has no penalty arm: penalized requests serve on the plain path".into(),
-            );
-        }
         if fed.is_empty() {
             return Err("restored glm5 spec session needs a non-empty restored prefix".into());
         }
@@ -2313,24 +2468,26 @@ impl HybridModel {
         if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
             pf.capture_ms = ck.lap(e, eh);
         }
-        let mut sctr = 0u32;
-        let anchor = match sampling.as_ref() {
-            Some(sp) => crate::spec::sample_boundary_token(
-                eh,
-                &logits_s,
-                sp,
-                &[],
-                &mut sctr,
-                "glm5-restore",
-            )?,
-            None => argmax(&logits_s) as u32,
-        };
-        if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
-            pf.anchor_ms = ck.lap(e, eh);
-        }
         let mut committed = Vec::with_capacity(fed.len() + suffix.len());
         committed.extend_from_slice(fed);
         committed.extend_from_slice(suffix);
+        // The penalty window is the whole committed prompt (restored prefix + suffix), which
+        // is what the plain hit's sampler replays too ("penalty history replayed over the
+        // whole prefix"). Empty with penalties off.
+        let pen_hist = glm5_pen_window_seed(pen.as_ref(), &committed);
+        let mut sctr = 0u32;
+        let anchor = glm5_anchor(
+            eh,
+            &logits_s,
+            sampling.as_ref(),
+            pen.as_ref(),
+            &pen_hist,
+            &mut sctr,
+            "glm5-restore",
+        )?;
+        if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
+            pf.anchor_ms = ck.lap(e, eh);
+        }
         // Engagement receipt (the dspark restore's shape — the deploy gate greps this; a
         // cached_tokens number alone cannot distinguish a spec restore from a plain hit).
         eprintln!(
@@ -2357,6 +2514,8 @@ impl HybridModel {
                 taps,
             },
             sampling,
+            pen,
+            pen_hist,
             sctr,
             uctr: 0,
             rounds: 0,
@@ -2781,6 +2940,57 @@ impl HybridModel {
         bump!(verify);
         plap!(first_verify_ms);
 
+        // ---- 3b. PENALTY ARM (lane/spec-exclusions-20260902, MEMRA_SPEC_PENALTY=1) ----
+        // The target rows are penalized IN A COPY over the per-row EVOLVING window: row r
+        // (the target at drafts[r]'s slot; row 0 = the anchor's) sees `pen_win ++
+        // drafts[..r]` — the tokens committed before that position on every path where the
+        // row is consulted, same-round accepts included — through `penalize_logits_rows_inc`
+        // (the dspark accept walk's kernel, host-order arithmetic). Every p read below —
+        // the greedy argmaxes, the sampled stats/gather, the bonus row, the reject-slot
+        // residual — points at that copy, so the accepted stream is the plain penalized
+        // sampler's target: greedy byte-identical (gate 15), sampled distribution-exact.
+        // The anchor joins the window first (it was emitted last round, committed by this
+        // one: the dspark `pen_hist.push(last)` convention); accepted drafts join after the
+        // accept. `pen: None` = no copy, no launch — `plogits` IS `vlogits`, the pre-lane
+        // program byte for byte.
+        let pvl: Option<CudaSlice<f32>> = match sess.pen {
+            Some(p) => {
+                sess.pen_hist.push(sess.anchor);
+                let w0 = sess.pen_hist.len().saturating_sub(p.win());
+                let pen_win = &sess.pen_hist[w0..];
+                let mut hist: Vec<u32> = Vec::with_capacity(pen_win.len() + drafts.len());
+                hist.extend_from_slice(pen_win);
+                hist.extend_from_slice(&drafts);
+                let n_win = pen_win.len();
+                let hd = eh.htod_u32_v(&hist)?;
+                let mut buf = eh.clone_dtod(&vlogits)?;
+                eh.penalize_logits_rows_inc(
+                    &mut buf,
+                    &hd,
+                    n_win,
+                    p.rep,
+                    p.freq,
+                    p.present,
+                    n_vocab,
+                    rows.len(),
+                    p.win(),
+                )?;
+                Some(buf)
+            }
+            None => None,
+        };
+        let plogits: &CudaSlice<f32> = pvl.as_ref().unwrap_or(&vlogits);
+        // The dspark accept walk penalizes internally off `sp.pen_on()`; under the arm it
+        // receives the ALREADY penalized rows and a penalty-neutral config, so the round has
+        // exactly one penalty pass. With the arm off this is `sp` itself, untouched.
+        let sp_accept: Option<SpecSampling> = sp.map(|s| match sess.pen {
+            Some(_) => SpecSampling {
+                penalty_last_n: 0,
+                ..*s
+            },
+            None => *s,
+        });
+
         // ---- 4. accept ----
         // ZERO-DRAFT SAMPLED ROUND (PMIN0): the verify batch is just the anchor row —
         // m=1 = a plain decode step, exactly the llama.cpp gating spec.rs vendored. The
@@ -2791,7 +3001,7 @@ impl HybridModel {
         let (j, bonus) = if let (true, Some(sp)) = (drafts.is_empty(), sp) {
             (
                 0,
-                self.glm5_sampled_bonus(eh, sess, sp, &vlogits, 0, n_vocab)?,
+                self.glm5_sampled_bonus(eh, sess, sp, plogits, 0, n_vocab)?,
             )
         } else {
             match (sp, &qside) {
@@ -2812,7 +3022,7 @@ impl HybridModel {
                     let t = rows.len();
                     let mut vam_d = eh.alloc_u32_zeroed(t)?;
                     for r in 0..t {
-                        eh.argmax_token_device_col(&vlogits, r, n_vocab, &mut vam_d, r)?;
+                        eh.argmax_token_device_col(plogits, r, n_vocab, &mut vam_d, r)?;
                     }
                     let vam = eh.dtoh_u32(&vam_d)?;
                     let mut j = 0usize;
@@ -2820,7 +3030,7 @@ impl HybridModel {
                         j += 1;
                     }
                     if knobs.accept_probe {
-                        self.glm5_accept_probe(eh, sess.rounds, &vlogits, &drafts, &vam, j)?;
+                        self.glm5_accept_probe(eh, sess.rounds, plogits, &drafts, &vam, j)?;
                     }
                     (j, vam[j])
                 }
@@ -2835,7 +3045,7 @@ impl HybridModel {
                     eh,
                     sess,
                     sp,
-                    &vlogits,
+                    plogits,
                     &drafts,
                     draft_idx,
                     draft_logits,
@@ -2843,7 +3053,7 @@ impl HybridModel {
                     d2t,
                     drafts.len(),
                 )?,
-                (Some(sp), Glm5DraftQ::Selector { prop, dl }) => {
+                (Some(_), Glm5DraftQ::Selector { prop, dl }) => {
                     // The q38 serve route's rejection walk, VERBATIM (`dspark_accept_sampled`):
                     // `rows` = [anchor, drafts..] is its cand contract, verify row j arbitrates
                     // rows[j+1], the bonus draws from row k on full accept, and the reject-slot
@@ -2851,13 +3061,13 @@ impl HybridModel {
                     // this session's — randomness never repeats across bursts.
                     let (m, next) = crate::dflash::dspark_accept_sampled(
                         eh,
-                        &vlogits,
+                        plogits,
                         &rows,
                         rows.len(),
                         n_vocab,
                         dl,
                         prop,
-                        sp,
+                        sp_accept.as_ref().expect("sampled arm carries its config"),
                         &[],
                         &mut sess.sctr,
                         &mut sess.uctr,
@@ -2877,6 +3087,10 @@ impl HybridModel {
                 }
             }
         };
+        // Accepted drafts join the penalty window (the bonus joins as next round's anchor).
+        if sess.pen.is_some() {
+            sess.pen_hist.extend_from_slice(&drafts[..j]);
+        }
         bump!(accept);
         plap!(first_accept_ms);
 
@@ -3408,6 +3622,16 @@ pub struct Glm5SpecSession {
     /// `None` / `temp <= 0` = greedy byte-contract route. Fixed for the session — the
     /// worker's admission owns the sampler identity.
     sampling: Option<SpecSampling>,
+    /// PENALTY ARM (lane/spec-exclusions-20260902, `MEMRA_SPEC_PENALTY=1`): the request's
+    /// penalty config when it carries one — independent of `sampling` (a greedy request
+    /// with penalties is `sampling: None, pen: Some`). `None` = no penalty pass anywhere on
+    /// the round, the pre-lane program byte for byte.
+    pen: Option<Glm5Penalty>,
+    /// The session-spanning penalty history (`pen_window_seed` over the prompt, then the
+    /// anchor at every round start and the accepted drafts after every accept — the dspark
+    /// `pen_hist` convention); the verify rows penalize over its last `win()` entries.
+    /// Empty with the arm off.
+    pen_hist: Vec<u32>,
     /// Session-continuity Philox counters (never reset across bursts): `sctr` = device
     /// sampling events (boundary, draft chain, bonus, residual), `uctr` = host accept-test
     /// uniforms (`spec::host_u01`, tag 0xFFFF_FFFE).
