@@ -94,22 +94,22 @@ the dspark route and the `MEMRA_SERVE_DEVPENALTY` serving form therefore moved b
 ulp on penalized logits, inside their distribution-exact class (no byte-identity receipt
 existed for any of them against the host). For SAMPLED, token-for-token identity against
 the plain route is impossible by construction (host SplitMix64 + host CDF draw vs the
-session's device Philox Gumbel); the claim is distributional and rests on gate 16 (same p
+session's device Philox Gumbel); the claim is distributional and rests on gate 18 (same p
 bits) + the walk's exactness.
 
 Gates (rig 5090, exactness only; `crates/memra-engine/tests/glm5_dflash_session_gpu.rs`):
 
-* 15 `gpu_penalized_greedy_spec_tape_matches_the_plain_penalized_sampler`: strong mixed
+* 17 `gpu_penalized_greedy_spec_tape_matches_the_plain_penalized_sampler`: strong mixed
   penalty on the 32-id fixture vocabulary; RED first (door dark: the session refuses and
   names `MEMRA_SPEC_PENALTY`); penalized plain tape != unpenalized plain tape (the penalties
   provably move the tape, so identity is not vacuous); K=1..7 served bursts byte-identical
   to the host `Sampler`'s tape.
-* 16 `gpu_device_penalties_are_bit_identical_to_the_host_sampler`: `penalize_logits_rows_inc`
+* 18 `gpu_device_penalties_are_bit_identical_to_the_host_sampler`: `penalize_logits_rows_inc`
   (5 rows, evolving window) and `penalize_logits` (the anchor) vs `Sampler::penalized_logits`
   (a new public oracle seam on memra-sampling) over random signed rows and a 200-token
   history from a 40-id alphabet with out-of-row ids, for rep-only / freq-only /
   present-only / all / negative coefficients / a 64-window that slides. Zero differing bits.
-* 17 `gpu_penalized_sampled_twin_is_deterministic_split_invariant_and_engaged`: pinned
+* 19 `gpu_penalized_sampled_twin_is_deterministic_split_invariant_and_engaged`: pinned
   seed reproduces, burst split invariant, seed sensitive, and penalized != unpenalized at
   the same seed.
 * worker: `glm5_spec_sampling_seam_carries_greedy_penalties_and_nothing_else`,
@@ -160,7 +160,7 @@ acceptance sits below a full-context session's until the window fills with commi
 a full-cover hit under the arm starts from ZERO context rows (anchor + masks only) and is
 the worst case. That cost is unmeasured and is why the door ships dark.
 
-Gate 18 `gpu_cold_drafter_restore_bytes_match_plain_decode_and_republishes_a_floor_tail`:
+Gate 20 `gpu_cold_drafter_restore_bytes_match_plain_decode_and_republishes_a_floor_tail`:
 RED (clip off: `new_cold_at` refuses); leg 1: fresh boundary cache + cold drafter at the
 prefix boundary, suffix = one drafter block, 12 served tokens byte-identical to plain
 decode, drafted > 0; republish: the exported tail carries `floor == prefix.len()`, starts at
@@ -228,11 +228,11 @@ from the log, greedy only as the byte instrument):
 ## 6. Receipts on this branch (2026-09-03, rig RTX 5090 laptop, exactness only)
 
 * `raw/rig-glm5-dflash-session-gpu.log`: the FULL `glm5_dflash_session_gpu` battery on the
-  lane tree, first run: 16 passed, 2 failed, both test-side (gate 16 handed the host
-  sampler out-of-row ids, which it debug-asserts on; gate 18 exported the tail at `pos()`,
+  lane tree, first run: 16 passed, 2 failed, both test-side (gate 18 handed the host
+  sampler out-of-row ids, which it debug-asserts on; gate 20 exported the tail at `pos()`,
   which the drafter KV trails by the last round's rows). The 14 pre-existing gates (1-14,
-  restore paths included) and gates 15 + 17 passed on that run.
-* `raw/rig-gates-15-18-rerun2.log`: after the two test fixes, gates 15/16/17/18 plus the
+  restore paths included) and gates 17 + 19 passed on that run.
+* `raw/rig-gates-15-18-rerun2.log`: after the two test fixes, gates 17/18/19/20 plus the
   three restore gates (11/12/13) rerun: 7 passed, 0 failed (`finished in 2.46s`).
 * `raw/worker-unit-tests.log`: memra-server lib tests on `glm5_ spec_penalty spec_max
   handoff prefix_entry layout tail_import parked`: 35 passed; memra-engine lib tests on
@@ -309,7 +309,7 @@ traffic class, would show whether any prose-like class clears `j_min`; it is the
 prices (a)'s margin, so it runs either way once (a) exists.
 
 Instrument gap the coordinator named: the greedy+penalty box rows carry timing only
-(penprobe.py), so real-artifact tape identity is unmeasured on the box; gate 15 is the
+(penprobe.py), so real-artifact tape identity is unmeasured on the box; gate 17 is the
 exactness receipt; a two-boot greedy-128 tape cell with the text saved is queued behind
 graph take 13.
 

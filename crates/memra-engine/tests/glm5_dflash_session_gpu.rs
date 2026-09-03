@@ -2633,6 +2633,10 @@ fn gpu_dflash_device_resident_drafter_prime_kv_matches_eager_ingest() {
          acceptance eager {a_e2}/{d_e2} vs device {a_d2}/{d_d2}",
         maxdiff(&k_d2, &k_e2),
         maxdiff(&v_d2, &v_e2)
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
 // Gates 17-20 — THE SPEC EXCLUSIONS LANE (lane/spec-exclusions-20260902): the two doors that
 // admit request classes the route used to serve plain. Every gate here is exactness only.
 //
@@ -3112,7 +3116,7 @@ fn gpu_cold_drafter_restore_bytes_match_plain_decode_and_republishes_a_floor_tai
 }
 
 // ---------------------------------------------------------------------------------------------
-// Gate 19 — PENALIZED SESSIONS REFUSE DEMOTION (revuto finding on the lane/spec-exclusions
+// Gate 21 — PENALIZED SESSIONS REFUSE DEMOTION (revuto finding on the lane/spec-exclusions
 // re-land, 2026-09-03): `glm5_spec_into_demoted`'s flush is one plain `decode_step` +
 // `argmax(&logits)` on the boundary row — no penalty pass. Demoting a penalized greedy
 // session (`sampling: None, pen: Some`) would silently emit that one token unpenalized,
@@ -3158,7 +3162,7 @@ fn gpu_penalized_greedy_session_refuses_demotion() {
     );
 
     println!(
-        "gate 19 PASS: penalized greedy session refuses demotion by name (demote_eligible() \
+        "gate 21 PASS: penalized greedy session refuses demotion by name (demote_eligible() \
          reads pen as well as sampling)"
     );
 }
