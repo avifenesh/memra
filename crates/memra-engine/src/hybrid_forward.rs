@@ -1989,8 +1989,13 @@ impl HybridModel {
                 return Err("prime_cache: prompt exceeds cache max_ctx".into());
             }
             let ranges = hyper_prime_ranges(t, self.layers.len(), self.gdn_prime_grid_on());
+            // Device-resident tap ingest hooks (lane/spec-route-depth-20260902): a no-op
+            // unless the cache's tap sink carries an ingest consumer; then each completed
+            // range's tap rows go straight into the drafter KV at the range boundary, the
+            // one point where every stage's writes for the range have retired.
             if ranges.len() == 1 {
-                return self.prime_cache_hyper_ppn(
+                self.glm5_taps_range_begin(cache, 0);
+                let out = self.prime_cache_hyper_ppn(
                     e,
                     tokens,
                     cache,
@@ -1998,7 +2003,9 @@ impl HybridModel {
                     &topology,
                     &fence,
                     overlay,
-                );
+                )?;
+                self.glm5_taps_range_done(e, cache, 0, t)?;
+                return Ok(out);
             }
             // DOOR `MEMRA_B200_PRIME_V2` arm 2 (default OFF): overlap stage 0 of chunk k+1 with
             // stage 1 of chunk k. Every conjunct is load-bearing and every decline is named --
@@ -2053,6 +2060,7 @@ impl HybridModel {
             let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
             for &(start, end) in &ranges {
                 let ov = overlay.and_then(|o| o.window(start, end - start));
+                self.glm5_taps_range_begin(cache, start);
                 let (l, hs, x) = self.prime_cache_hyper_ppn(
                     e,
                     &tokens[start..end],
@@ -2062,6 +2070,7 @@ impl HybridModel {
                     &fence,
                     ov.as_ref(),
                 )?;
+                self.glm5_taps_range_done(e, cache, start, end)?;
                 e.copy_into(&mut hiddens, start * n_embd, &x, (end - start) * n_embd)?;
                 last = Some((l, hs));
                 // FORWARD PROGRESS (memra#50): this chunk's logits are already host-side,
@@ -2083,14 +2092,20 @@ impl HybridModel {
         // above carries verbatim (`+ queued_after` closes the serve-split axis).
         let seq_end = cache.pos + t + queued_after;
         let ranges = hyper_prime_ranges(t, self.layers.len(), self.gdn_prime_grid_on());
+        // Device-resident tap ingest hooks (doc at the ppN twin above).
         if ranges.len() == 1 {
-            return self.prime_chunk_hyper(e, tokens, cache, seq_end, 0, overlay);
+            self.glm5_taps_range_begin(cache, 0);
+            let out = self.prime_chunk_hyper(e, tokens, cache, seq_end, 0, overlay)?;
+            self.glm5_taps_range_done(e, cache, 0, t)?;
+            return Ok(out);
         }
         let mut hiddens = e.uninit(t * n_embd)?;
         let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
         for &(start, end) in &ranges {
+            self.glm5_taps_range_begin(cache, start);
             let (l, hs, x) =
                 self.prime_chunk_hyper(e, &tokens[start..end], cache, seq_end, start, overlay)?;
+            self.glm5_taps_range_done(e, cache, start, end)?;
             e.copy_into(&mut hiddens, start * n_embd, &x, (end - start) * n_embd)?;
             last = Some((l, hs));
             // FORWARD PROGRESS (memra#50): this chunk's logits are already host-side,

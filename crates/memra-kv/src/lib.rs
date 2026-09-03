@@ -2460,6 +2460,13 @@ pub struct HcTapSink {
     /// Host-staged writes: nanoseconds the walk spent in the synchronous tap DtoHs
     /// (lane/spec-route-depth-20260902 attribution; 0 on device-staged sinks).
     pub dtoh_ns: u64,
+    /// DEVICE-RESIDENT INGEST STATE (lane/spec-route-depth-20260902,
+    /// `MEMRA_GLM5_DRAFT_TAPS_DEVICE`): an engine-owned, type-erased consumer the prime's
+    /// range loop hands each completed range to (`glm5_taps_range_done`), so the tap rows go
+    /// from the trunk's device slots straight into the drafter KV — no DtoH in the prime,
+    /// no HtoD in the drafter prime. Opaque here on purpose: the drafter KV is an engine
+    /// type and this crate stays below it. `None` = the sink is a plain staging sink.
+    pub ingest_state: Option<Box<dyn std::any::Any + Send>>,
 }
 
 impl HcTapSink {
@@ -2475,6 +2482,7 @@ impl HcTapSink {
             dev: (0..n_taps).map(|_| None).collect(),
             device_stage: false,
             dtoh_ns: 0,
+            ingest_state: None,
         }
     }
 
@@ -2518,6 +2526,7 @@ impl HcTapSink {
             dev: (0..n_taps).map(|_| None).collect(),
             device_stage: true,
             dtoh_ns: 0,
+            ingest_state: None,
         }
     }
 }

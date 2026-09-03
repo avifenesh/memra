@@ -242,6 +242,43 @@ pub fn glm5_draft_prime_v2_on() -> bool {
     std::env::var("MEMRA_GLM5_DRAFT_PRIME_V2").as_deref() == Ok("1")
 }
 
+/// `MEMRA_GLM5_DRAFT_TAPS_DEVICE` (default OFF, lane/spec-route-depth-20260902): the
+/// DEVICE-RESIDENT drafter prime. The trunk prime stays the ONE whole-prompt call (the
+/// chunked arm's per-range calls re-entered the PP-2 microchunk geometry and made the trunk
+/// prime itself far slower — boot B); the tap rows never leave the device: the walk stages
+/// each range's five contracted tap planes on the writing stage's device (a chunk-sized
+/// ring, `HcTapSink::new_device_staged_at`), and at the range boundary the prime's own loop
+/// hands the range to `glm5_taps_range_done`, which interleaves the planes into the fc
+/// layout with 2D device copies (a peer copy first for planes written on another stage),
+/// runs `ctx_features` + `ingest_ctx` at the range width (4096 rows: the batched GEMM
+/// class), and appends to the drafter KV. No DtoH in the prime, no HtoD in the drafter
+/// prime; the eager arm's 7.5 s of pageable HtoD at 256k (boot B's split: h2d 7505.8 of
+/// 8870 ms) goes away outright, and its `tap_dtoh` with it. Read per session creation.
+/// Rollback seam: unset.
+pub fn glm5_draft_taps_device_on() -> bool {
+    std::env::var("MEMRA_GLM5_DRAFT_TAPS_DEVICE").as_deref() == Ok("1")
+}
+
+/// The device-resident drafter prime's in-flight state (doc on
+/// [`glm5_draft_taps_device_on`]), carried type-erased on the prime's tap sink
+/// (`HcTapSink::ingest_state`) so the prime's range loop can hand it each range.
+struct Glm5DraftPrimeInflight {
+    kv: DflashKv,
+    taps: Vec<usize>,
+    n_embd: usize,
+    /// Rows the sink ring covers (the largest range the schedule emits).
+    ring: usize,
+    /// Head-device staging for planes written on another stage (lazily sized `ring x h`).
+    stage: Vec<Option<CudaSlice<f32>>>,
+    /// The interleaved `[ring, n_taps * h]` fc input on the head device (lazy).
+    rows_dev: Option<CudaSlice<f32>>,
+    prof_on: bool,
+    copy_ms: f64,
+    feat_ms: f64,
+    kv_ms: f64,
+    chunks: usize,
+}
+
 /// `MEMRA_GLM5_DRAFT_PRIME_LAZY` (default OFF, lane/spec-route-depth-20260902): `=1`
 /// restores the pre-lane placement of the EAGER arm's drafter ingest — inside round 1 of
 /// the first burst, i.e. AFTER the prime's anchor token has been emitted under the
@@ -1933,6 +1970,71 @@ impl HybridModel {
         // capture indexes its last row through it.
         let mut v2_kv: Option<DflashKv> = None;
         let (logits0, hiddens, hidden_rows) = match (dflash_src, tap_layers.as_ref()) {
+            (Some(dr), Some(taps)) if glm5_draft_taps_device_on() => {
+                // DEVICE-RESIDENT ARM (doc on `glm5_draft_taps_device_on`): ONE whole-prompt
+                // prime; the ingest happens inside it at every range boundary.
+                let kv = DflashKv::new(eh, &dr.draft.cfg, ctx_cap)?;
+                if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
+                    pf.draft_alloc_ms = ck.lap(e, eh);
+                    pf.draft_kv_mb = dflash_kv_bytes(&dr.draft.cfg, ctx_cap) as f64 / 1e6;
+                }
+                let ring = crate::hybrid_forward::hyper_prime_call_rows(
+                    plen,
+                    self.layers.len(),
+                    self.gdn_prime_grid_on(),
+                );
+                let mut sink = HcTapSink::new_device_staged_at(taps.clone(), n_embd, ring, 0);
+                sink.ingest_state = Some(Box::new(Glm5DraftPrimeInflight {
+                    kv,
+                    taps: taps.clone(),
+                    n_embd,
+                    ring,
+                    stage: (0..taps.len()).map(|_| None).collect(),
+                    rows_dev: None,
+                    prof_on: prof.is_some(),
+                    copy_ms: 0.0,
+                    feat_ms: 0.0,
+                    kv_ms: 0.0,
+                    chunks: 0,
+                }));
+                cache.hc_taps = Some(sink);
+                let (l, _seed, h) = self.prime_cache(e, prompt, &mut cache, 0)?;
+                let walk_ms = pclk.as_mut().map(|ck| ck.lap(e, eh));
+                let mut sink = cache
+                    .hc_taps
+                    .take()
+                    .ok_or("device-resident drafter prime: tap sink vanished")?;
+                let st = sink
+                    .ingest_state
+                    .take()
+                    .ok_or("device-resident drafter prime: ingest state vanished")?
+                    .downcast::<Glm5DraftPrimeInflight>()
+                    .map_err(|_| "device-resident drafter prime: ingest state of the wrong type")?;
+                let st = *st;
+                if st.kv.len != plen {
+                    return Err(format!(
+                        "device-resident drafter prime covered {} of {plen} prompt rows \
+                         (the prime's range loop must hand every range to the ingest)",
+                        st.kv.len
+                    )
+                    .into());
+                }
+                if let (Some(pf), Some(walk)) = (prof.as_mut(), walk_ms) {
+                    // The ingest ran INSIDE the prime walk: split it back out so `prime`
+                    // stays the trunk's share and `draft_prime` the drafter's.
+                    let ingest = st.copy_ms + st.feat_ms + st.kv_ms;
+                    pf.prime_ms = (walk - ingest).max(0.0);
+                    pf.draft_prime_ms = ingest;
+                    pf.draft_prime_h2d_ms = st.copy_ms;
+                    pf.draft_prime_feat_ms = st.feat_ms;
+                    pf.draft_prime_kv_ms = st.kv_ms;
+                    pf.draft_prime_rows = plen;
+                    pf.draft_prime_chunks = st.chunks;
+                    pf.draft_prime_arm = "device";
+                }
+                v2_kv = Some(st.kv);
+                (l, h, plen)
+            }
             (Some(dr), Some(taps)) if glm5_draft_prime_v2_on() => {
                 let mut kv = DflashKv::new(eh, &dr.draft.cfg, ctx_cap)?;
                 if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
@@ -2126,6 +2228,127 @@ impl HybridModel {
             prof_rounds: prof.as_ref().map(|_| SpecRoundsLog::default()),
             prof,
         })
+    }
+
+    /// Range-begin hook of the device-resident drafter prime (called by the prime's range
+    /// loop, `hybrid_forward.rs`): anchor the chunk ring at the range's first row so the
+    /// walk's `base - origin` lands in `[0, ring)`. No-op on every other sink.
+    pub(crate) fn glm5_taps_range_begin(&self, cache: &mut Cache, start: usize) {
+        if let Some(sink) = cache.hc_taps.as_mut()
+            && sink.ingest_state.is_some()
+        {
+            sink.origin = start;
+        }
+    }
+
+    /// Range-done hook of the device-resident drafter prime: the range's tap planes are
+    /// complete on their writing devices (the range call returned host logits, so the last
+    /// stage drained, and every earlier stage's rows were consumed by it), so ingest them
+    /// now. No-op on every other sink; a state of another type is put back untouched.
+    pub(crate) fn glm5_taps_range_done(
+        &self,
+        e: &Engine,
+        cache: &mut Cache,
+        start: usize,
+        end: usize,
+    ) -> Res<()> {
+        let Some(sink) = cache.hc_taps.as_mut() else {
+            return Ok(());
+        };
+        let Some(state) = sink.ingest_state.take() else {
+            return Ok(());
+        };
+        let mut st = match state.downcast::<Glm5DraftPrimeInflight>() {
+            Ok(st) => st,
+            Err(other) => {
+                sink.ingest_state = Some(other);
+                return Ok(());
+            }
+        };
+        let res = self.glm5_taps_ingest_range(e, sink, &mut st, start, end);
+        sink.ingest_state = Some(st);
+        res
+    }
+
+    /// One range of the device-resident drafter prime: per tap slot, the plane on its
+    /// writing device is interleaved into the head-device fc input with a 2D copy (after a
+    /// peer copy into head-device staging when the slot's stage is another device; the
+    /// source stream is drained before the plane is read), then `ctx_features` +
+    /// `ingest_ctx` at the range width append the rows to the drafter KV.
+    fn glm5_taps_ingest_range(
+        &self,
+        e: &Engine,
+        sink: &mut HcTapSink,
+        st: &mut Glm5DraftPrimeInflight,
+        start: usize,
+        end: usize,
+    ) -> Res<()> {
+        let t = end - start;
+        if t == 0 {
+            return Ok(());
+        }
+        if t > st.ring {
+            return Err(format!(
+                "device-resident tap ingest: range {start}..{end} ({t} rows) exceeds the \
+                 sink ring of {} rows",
+                st.ring
+            )
+            .into());
+        }
+        if st.kv.len != start {
+            return Err(format!(
+                "device-resident tap ingest: drafter KV holds {} rows but the range starts \
+                 at {start} (a range was skipped or handed twice)",
+                st.kv.len
+            )
+            .into());
+        }
+        let eh = self.glm5_head_engine(e)?;
+        let dr = self
+            .glm5_dflash
+            .as_ref()
+            .ok_or("device-resident tap ingest without a loaded drafter")?;
+        let h = st.n_embd;
+        let n_taps = st.taps.len();
+        let mut pclk = st.prof_on.then(|| ProfClock::start(e, eh));
+        if st.rows_dev.is_none() {
+            st.rows_dev = Some(eh.uninit(st.ring * n_taps * h)?);
+        }
+        let rows_dev = st.rows_dev.as_mut().expect("just filled");
+        for (slot, &il) in st.taps.iter().enumerate() {
+            let buf = sink.dev[slot].as_ref().ok_or_else(|| {
+                format!(
+                    "device-resident tap ingest: slot {slot} (layer {il}) was never written \
+                     over rows {start}..{end}"
+                )
+            })?;
+            let es = self.glm5_tap_slot_engine(e, il)?;
+            if es.ctx().ordinal() == eh.ctx().ordinal() {
+                eh.copy_2d_dtod_async(rows_dev, slot * h, n_taps * h, buf, h, h, t)?;
+            } else {
+                if st.stage[slot].is_none() {
+                    st.stage[slot] = Some(eh.uninit(st.ring * h)?);
+                }
+                let staging = st.stage[slot].as_mut().expect("just filled");
+                eh.copy_peer_from_async(staging, es, buf, t * h)?;
+                es.stream().synchronize()?;
+                eh.copy_2d_dtod_async(rows_dev, slot * h, n_taps * h, staging, h, h, t)?;
+            }
+        }
+        if let Some(ck) = pclk.as_mut() {
+            st.copy_ms += ck.lap(e, eh);
+        }
+        let feats = dr.draft.ctx_features(eh, rows_dev, t)?;
+        if let Some(ck) = pclk.as_mut() {
+            st.feat_ms += ck.lap(e, eh);
+        }
+        let pos: Vec<i32> = ((st.kv.len as i32)..(st.kv.len + t) as i32).collect();
+        dr.draft.ingest_ctx(eh, &mut st.kv, &feats, &pos, t)?;
+        if let Some(ck) = pclk.as_mut() {
+            st.kv_ms += ck.lap(e, eh);
+        }
+        st.chunks += 1;
+        Ok(())
     }
 
     /// The EAGER drafter ingest (one implementation for session creation and round 1):
