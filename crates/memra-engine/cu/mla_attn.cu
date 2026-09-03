@@ -2112,3 +2112,530 @@ extern "C" int memra_mla_kpool_score_dsa_f32(const float* q, const float* pool_k
     MLA_ERR();
     return 0;
 }
+
+// ================================================== B200 DSA k-pool SELECT door (sm_100a)
+//
+// MEMRA_B200_DSA_SELECT (host seam mla_ffi.rs, default OFF; docs/FLAGS.md row). The lane that
+// shipped MEMRA_B200_DSA_DECODE took `attn_gathered` and `kpool_score` down ~10x and 4-7.6x on
+// the pair and named THIS kernel as what the scorer had been hiding:
+// `memra_mla_kpool_select_kernel` grids `t_q` blocks, so at plain decode it is ONE CTA -- 0.68%
+// of a 148-SM die -- walking `n_pools` up to ~10 times (8 MSB-first radix passes, an optional
+// unique-resolution scan, then the membership count and the emit). It is depth-LINEAR in
+// `n_pools = t_kv / pool`, and its byte floor is `n_pools * 4 B` per sweep, which at 1M is
+// 1 MB -> ~0.13 us at 8 TB/s against a measured ~170 us. The gap is parallelism, nothing else.
+//
+// EXACT, NOT BANDED. The output is a pure function of ONE 64-bit number: the shipped kernel
+// picks `thr` = the `select_k`-th smallest order key, then emits every pool with
+// `key(p) <= thr`. `memra_kpool_key` is a strictly decreasing injection composed with the pool
+// index, so keys are DISTINCT and "the select_k-th smallest" is unambiguous. Reproducing `thr`
+// bit-for-bit therefore reproduces the selection bit-for-bit -- the parallel kernels below
+// compute the SAME `thr` and run the SAME membership test, so this is a launch-geometry change
+// with an exact answer, not a tolerance. `dsa-select-gate` asserts the emitted `idx` plane
+// byte-identical to the shipped kernel's, and carries a RED ARM (a deliberately wrong
+// threshold) that must fail before the real kernel is allowed to pass.
+//
+// WHY THE HIGH WORD, THEN THE INDEX -- and why that is 2 radix passes, not 8. The key is
+// `(desc32(score) << 32) | pool_index`. The LOW word is the pool index, which is unique per
+// row, so it never needs a radix descent: once the high word (the score) is resolved, the
+// threshold's index is simply the `r`-th smallest index among the pools that TIE at that score,
+// and a rank-`r` selection over an ascending index range is a count plus a scan. So the descent
+// only has to resolve 32 bits, and two 16-bit passes do it. Ties are the common case here, not
+// the corner: ReLU zeroes every head whose query-pool dot is non-positive, so exact 0.0 ties
+// across pools are ORDINARY (the same fact that makes the scorer's bit-identity load-bearing).
+//
+// FIVE LAUNCHES, NO GRID BARRIER, NO SPIN. Each multi-CTA pass ends with the LAST CTA to arrive
+// running the epilogue (`atomicAdd` on a done counter plus `__threadfence()`), the standard
+// two-phase reduction idiom -- so there is no cooperative launch, no persistent-grid residency
+// assumption and no spin-wait that could hang a serving box if occupancy ever changed. The
+// passes are: (1) histogram of the high word's top 16 bits + finite count + descent;
+// (2) histogram of its low 16 bits within the chosen prefix + descent, which fixes `thr_s`;
+// (3) per-CTA count of the tie group + locate the rank-`r` index, which fixes `thr_p`;
+// (4) per-CTA count of members; (5) exclusive-scan the CTA counts and emit. Passes 3 and 4 both
+// end in a last-CTA epilogue; pass 5 reads the scan the pass-4 epilogue wrote.
+//
+// DEGENERATE ANSWERS ARE COPIED, NOT REDERIVED: `n_fin == 0` selects nothing and leaves only the
+// tail, and `n_fin < select_k` clamps the rank so every visible pool is selected. Those are the
+// two answers the shipped kernel's round exhaustion gives, and the gate covers both.
+
+#define MLA_SEL_BINS 65536          // 16-bit radix; the bins live in the global workspace
+#define MLA_SEL_THREADS 256
+#define MLA_SEL_MAX_CTAS 1024
+// Workspace control words, per query. Kept in one cache line's worth of slots for clarity.
+#define MLA_SEL_CTRL_LIVE 0
+#define MLA_SEL_CTRL_K 1
+#define MLA_SEL_CTRL_HI 2      // resolved high word of the threshold key (desc32(score))
+#define MLA_SEL_CTRL_TP 3      // threshold pool index
+#define MLA_SEL_CTRL_DONE 4    // last-CTA arrival counter
+#define MLA_SEL_CTRL_TOTAL 5   // total selected pools
+#define MLA_SEL_CTRL_RANK 6    // rank inside the tie group
+#define MLA_SEL_CTRL_WORDS 8
+
+/// Workspace ints per query: the 16-bit histogram, the control words, and one count per CTA
+/// (used twice: the tie-group counts and the membership counts).
+extern "C" long memra_mla_kpool_select_ws_ints(int n_ctas) {
+    if (n_ctas < 1) n_ctas = 1;
+    return (long)MLA_SEL_BINS + MLA_SEL_CTRL_WORDS + (long)n_ctas;
+}
+
+/// Grid width the launcher uses. Exposed so the host sizes the workspace from the SAME number
+/// the kernels index with; a mismatch here would be an out-of-bounds write, not a slow path.
+extern "C" int memra_mla_kpool_select_ctas(int n_pools) {
+    long want = ((long)n_pools + MLA_SEL_THREADS - 1) / MLA_SEL_THREADS;
+    if (want < 1) want = 1;
+    if (want > MLA_SEL_MAX_CTAS) want = MLA_SEL_MAX_CTAS;
+    return (int)want;
+}
+
+__device__ __forceinline__ unsigned memra_sel_hi(float s, int p) {
+    return (unsigned)(memra_kpool_key(s, p) >> 32);
+}
+
+/// True when this CTA is the last of `n_ctas` to arrive. Standard two-phase-reduction idiom:
+/// the fence orders this CTA's global writes before the counter increment another CTA observes.
+__device__ __forceinline__ bool memra_sel_last_arrival(int* ctrl, int n_ctas) {
+    __shared__ int s_last;
+    __threadfence();
+    if (threadIdx.x == 0) {
+        int prev = atomicAdd(&ctrl[MLA_SEL_CTRL_DONE], 1);
+        s_last = (prev == n_ctas - 1) ? 1 : 0;
+    }
+    __syncthreads();
+    return s_last != 0;
+}
+
+// ---- pass 1 and 2: 16-bit histogram of the high word + descent by the last CTA ------------
+//
+// `pass` 0 histograms bits [31:16] of the high word with no prefix; `pass` 1 histograms bits
+// [15:0] restricted to the resolved top half. Pass 0 also totals the finite pools, which is
+// where the two degenerate answers are decided.
+extern "C" __global__ void memra_mla_kpool_select_hist_kernel(const float* __restrict__ score,
+                                                              int* __restrict__ ws, int n_pools,
+                                                              int select_k, int ws_stride,
+                                                              int n_ctas, int pass) {
+    int t = blockIdx.y;
+    const float* row = score + (long)t * n_pools;
+    int* base = ws + (long)t * ws_stride;
+    unsigned* hist = (unsigned*)base;
+    int* ctrl = base + MLA_SEL_BINS;
+
+    // Zero the histogram cooperatively across the whole grid before anyone accumulates: the
+    // launcher issues a separate clear kernel, so nothing here races the zeroing.
+    int shift = pass == 0 ? 16 : 0;
+    unsigned pre = pass == 0 ? 0u : (unsigned)ctrl[MLA_SEL_CTRL_HI];
+    unsigned mask = pass == 0 ? 0u : 0xffff0000u;
+    int live = pass == 0 ? 1 : ctrl[MLA_SEL_CTRL_LIVE];
+
+    if (live) {
+        unsigned local_fin = 0;
+        for (long p = (long)blockIdx.x * MLA_SEL_THREADS + threadIdx.x; p < n_pools;
+             p += (long)n_ctas * MLA_SEL_THREADS) {
+            float s = row[p];
+            if (!isfinite(s)) continue;
+            unsigned hi = memra_sel_hi(s, (int)p);
+            if ((hi & mask) != pre) continue;
+            ++local_fin;
+            atomicAdd(&hist[(hi >> shift) & 0xffffu], 1u);
+        }
+        if (pass == 0) {
+            // Warp-then-block reduce the finite count so pass 0 needs no second sweep.
+            for (int off = 16; off > 0; off >>= 1)
+                local_fin += __shfl_down_sync(0xffffffffu, local_fin, off);
+            if ((threadIdx.x & 31) == 0) atomicAdd((unsigned*)&ctrl[MLA_SEL_CTRL_RANK], local_fin);
+        }
+    }
+
+    if (!memra_sel_last_arrival(ctrl, n_ctas)) return;
+
+    // DESCENT, run by the last-arriving CTA with ALL 256 threads. A single-threaded walk of
+    // 65536 bins would be ~131 us on its own -- more than the whole kernel this door replaces --
+    // so the bin search is two-level: every thread sums its own contiguous slice of
+    // MLA_SEL_BINS/MLA_SEL_THREADS bins, thread 0 exclusive-scans the 256 slice sums and names
+    // the slice holding rank k, and that one thread re-walks its 256 bins to name the bin and
+    // the running count before it. Same answer as the ascending single-threaded walk, because
+    // both levels are contiguous and ascending.
+    __shared__ unsigned s_slice[MLA_SEL_THREADS];
+    __shared__ int s_owner;
+    __shared__ unsigned s_before;
+    __shared__ int s_go;
+
+    if (threadIdx.x == 0) {
+        ctrl[MLA_SEL_CTRL_DONE] = 0; // rearm for the next pass
+        if (pass == 0) {
+            unsigned n_fin = (unsigned)ctrl[MLA_SEL_CTRL_RANK];
+            if (n_fin == 0u || select_k <= 0 || n_pools <= 0) {
+                ctrl[MLA_SEL_CTRL_LIVE] = 0;
+            } else {
+                ctrl[MLA_SEL_CTRL_LIVE] = 1;
+                ctrl[MLA_SEL_CTRL_K] = (unsigned)select_k > n_fin ? (int)n_fin : select_k;
+            }
+        }
+        s_go = ctrl[MLA_SEL_CTRL_LIVE];
+    }
+    __syncthreads();
+    if (!s_go) return;
+
+    constexpr int SLICE = MLA_SEL_BINS / MLA_SEL_THREADS;
+    unsigned k = (unsigned)ctrl[MLA_SEL_CTRL_K];
+    unsigned mysum = 0;
+    for (int j = threadIdx.x * SLICE; j < (int)threadIdx.x * SLICE + SLICE; ++j) mysum += hist[j];
+    s_slice[threadIdx.x] = mysum;
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        unsigned run = 0;
+        int owner = MLA_SEL_THREADS - 1;
+        for (int j = 0; j < MLA_SEL_THREADS; ++j) {
+            unsigned c = s_slice[j];
+            if (run + c >= k) {
+                owner = j;
+                break;
+            }
+            run += c;
+        }
+        s_owner = owner;
+        s_before = run;
+    }
+    __syncthreads();
+    if ((int)threadIdx.x == s_owner) {
+        unsigned run = s_before;
+        int bin = s_owner * SLICE;
+        for (int j = s_owner * SLICE; j < s_owner * SLICE + SLICE; ++j) {
+            unsigned c = hist[j];
+            if (c == 0u) continue;
+            if (run + c >= k) {
+                bin = j;
+                break;
+            }
+            run += c;
+        }
+        ctrl[MLA_SEL_CTRL_K] = (int)(k - run);
+        ctrl[MLA_SEL_CTRL_HI] = (int)(pre | ((unsigned)bin << shift));
+    }
+    // Pass 0 leaves the bins ZEROED for pass 1, which is what lets the launcher issue ONE clear
+    // kernel instead of one per pass. Safe here and only here: this is the last-arriving CTA, so
+    // every histogram write has landed, and the descent above has already read what it needs
+    // (the barrier orders the owner thread's reads before these writes).
+    __syncthreads();
+    if (pass == 0)
+        for (int j = threadIdx.x; j < MLA_SEL_BINS; j += MLA_SEL_THREADS) hist[j] = 0u;
+}
+
+/// Zero the histogram and the control words once, before pass 0. The workspace comes from an
+/// UNINITIALISED device allocation, so this is what makes the first pass well-defined; pass 0's
+/// own epilogue re-zeroes the bins for pass 1, so this runs once per call, not once per pass.
+extern "C" __global__ void memra_mla_kpool_select_clear_kernel(int* __restrict__ ws,
+                                                               int ws_stride, int n_ctas) {
+    int t = blockIdx.y;
+    int* base = ws + (long)t * ws_stride;
+    for (long j = (long)blockIdx.x * blockDim.x + threadIdx.x; j < MLA_SEL_BINS;
+         j += (long)gridDim.x * blockDim.x)
+        base[j] = 0;
+    int* ctrl = base + MLA_SEL_BINS;
+    if (blockIdx.x == 0 && threadIdx.x == 0) {
+        ctrl[MLA_SEL_CTRL_DONE] = 0;
+        ctrl[MLA_SEL_CTRL_RANK] = 0;
+        ctrl[MLA_SEL_CTRL_HI] = 0;
+        ctrl[MLA_SEL_CTRL_TP] = -1;
+        ctrl[MLA_SEL_CTRL_TOTAL] = 0;
+        ctrl[MLA_SEL_CTRL_LIVE] = 1;
+        ctrl[MLA_SEL_CTRL_K] = 0;
+    }
+    // The per-CTA count slots are written before they are read in every pass, but zero them
+    // anyway so a short grid can never leave a stale word inside the scanned range.
+    for (long j = (long)blockIdx.x * blockDim.x + threadIdx.x; j < n_ctas;
+         j += (long)gridDim.x * blockDim.x)
+        ctrl[MLA_SEL_CTRL_WORDS + j] = 0;
+}
+
+// ---- pass 3: fix `thr_p`, the rank-r smallest INDEX among pools tying at the threshold score
+//
+// After the two histogram passes `ctrl[HI]` is the threshold's high word exactly and `ctrl[K]`
+// is the 1-based rank WITHIN that tie group. Each CTA owns a contiguous pool range and counts
+// its tie members; the last CTA exclusive-scans those counts, finds the CTA holding rank r, and
+// -- because a contiguous range walked ascending yields ascending indices -- re-walks that one
+// range to name the index. The re-walk is one CTA over `n_pools / n_ctas` pools, not over
+// `n_pools`.
+extern "C" __global__ void memra_mla_kpool_select_tie_kernel(const float* __restrict__ score,
+                                                             int* __restrict__ ws, int n_pools,
+                                                             int ws_stride, int n_ctas) {
+    __shared__ int s_cnt;
+    int t = blockIdx.y;
+    const float* row = score + (long)t * n_pools;
+    int* base = ws + (long)t * ws_stride;
+    int* ctrl = base + MLA_SEL_BINS;
+    int* cta = base + MLA_SEL_BINS + MLA_SEL_CTRL_WORDS;
+
+    long chunk = ((long)n_pools + n_ctas - 1) / n_ctas;
+    long lo = (long)blockIdx.x * chunk;
+    long hi_end = lo + chunk;
+    if (lo > n_pools) lo = n_pools;
+    if (hi_end > n_pools) hi_end = n_pools;
+    unsigned target = (unsigned)ctrl[MLA_SEL_CTRL_HI];
+    int live = ctrl[MLA_SEL_CTRL_LIVE];
+
+    if (threadIdx.x == 0) s_cnt = 0;
+    __syncthreads();
+    if (live) {
+        int mine = 0;
+        for (long p = lo + threadIdx.x; p < hi_end; p += MLA_SEL_THREADS) {
+            float s = row[p];
+            if (!isfinite(s)) continue;
+            if (memra_sel_hi(s, (int)p) == target) ++mine;
+        }
+        atomicAdd(&s_cnt, mine);
+    }
+    __syncthreads();
+    if (threadIdx.x == 0) cta[blockIdx.x] = s_cnt;
+
+    if (!memra_sel_last_arrival(ctrl, n_ctas)) return;
+    if (threadIdx.x != 0) return;
+    ctrl[MLA_SEL_CTRL_DONE] = 0;
+    if (!live) return;
+    int r = ctrl[MLA_SEL_CTRL_K];
+    int run = 0, owner = 0;
+    for (int j = 0; j < n_ctas; ++j) {
+        int c = cta[j];
+        if (run + c >= r) {
+            owner = j;
+            break;
+        }
+        run += c;
+    }
+    int need = r - run; // 1-based rank inside the owning CTA's range
+    long olo = (long)owner * chunk;
+    long ohi = olo + chunk;
+    if (olo > n_pools) olo = n_pools;
+    if (ohi > n_pools) ohi = n_pools;
+    int seen = 0;
+    for (long p = olo; p < ohi; ++p) {
+        float s = row[p];
+        if (!isfinite(s)) continue;
+        if (memra_sel_hi(s, (int)p) != target) continue;
+        if (++seen == need) {
+            ctrl[MLA_SEL_CTRL_TP] = (int)p;
+            return;
+        }
+    }
+}
+
+// ---- pass 4: per-CTA membership counts, then the last CTA exclusive-scans them in place ----
+extern "C" __global__ void memra_mla_kpool_select_count_kernel(const float* __restrict__ score,
+                                                               int* __restrict__ ws, int n_pools,
+                                                               int ws_stride, int n_ctas) {
+    __shared__ int s_cnt;
+    int t = blockIdx.y;
+    const float* row = score + (long)t * n_pools;
+    int* base = ws + (long)t * ws_stride;
+    int* ctrl = base + MLA_SEL_BINS;
+    int* cta = base + MLA_SEL_BINS + MLA_SEL_CTRL_WORDS;
+
+    long chunk = ((long)n_pools + n_ctas - 1) / n_ctas;
+    long lo = (long)blockIdx.x * chunk;
+    long hi_end = lo + chunk;
+    if (lo > n_pools) lo = n_pools;
+    if (hi_end > n_pools) hi_end = n_pools;
+    int live = ctrl[MLA_SEL_CTRL_LIVE];
+    unsigned long long thr =
+        ((unsigned long long)(unsigned)ctrl[MLA_SEL_CTRL_HI] << 32) |
+        (unsigned long long)(unsigned)ctrl[MLA_SEL_CTRL_TP];
+
+    if (threadIdx.x == 0) s_cnt = 0;
+    __syncthreads();
+    if (live) {
+        int mine = 0;
+        for (long p = lo + threadIdx.x; p < hi_end; p += MLA_SEL_THREADS) {
+            float s = row[p];
+            if (!isfinite(s)) continue;
+            if (memra_kpool_key(s, (int)p) <= thr) ++mine;
+        }
+        atomicAdd(&s_cnt, mine);
+    }
+    __syncthreads();
+    if (threadIdx.x == 0) cta[blockIdx.x] = s_cnt;
+
+    if (!memra_sel_last_arrival(ctrl, n_ctas)) return;
+    if (threadIdx.x != 0) return;
+    ctrl[MLA_SEL_CTRL_DONE] = 0;
+    int run = 0;
+    for (int j = 0; j < n_ctas; ++j) {
+        int c = cta[j];
+        cta[j] = run;
+        run += c;
+    }
+    ctrl[MLA_SEL_CTRL_TOTAL] = run;
+}
+
+// ---- pass 5: emit, ascending, then the tail and the -1 pad -------------------------------
+//
+// Same emit contract as the shipped kernel: CONTIGUOUS ranges walked ascending, each selected
+// pool expanded to its `pool` raw cache rows, then `always_tail`'s incomplete tail, then -1 to
+// `width`. Two levels of contiguous range (CTA, then thread inside it) instead of one, which
+// preserves ascending order because both levels are contiguous and both are walked ascending.
+extern "C" __global__ void memra_mla_kpool_select_emit_kernel(const float* __restrict__ score,
+                                                              const int* __restrict__ ws,
+                                                              int* __restrict__ idx, int n_pools,
+                                                              int pool, int width, int first_pos,
+                                                              int always_tail, int ws_stride,
+                                                              int n_ctas) {
+    __shared__ int sh_n[MLA_SEL_THREADS];
+    int t = blockIdx.y;
+    const float* row = score + (long)t * n_pools;
+    int* out = idx + (long)t * width;
+    const int* base = ws + (long)t * ws_stride;
+    const int* ctrl = base + MLA_SEL_BINS;
+    const int* cta = base + MLA_SEL_BINS + MLA_SEL_CTRL_WORDS;
+    int tid = threadIdx.x;
+
+    int live = ctrl[MLA_SEL_CTRL_LIVE];
+    int total = ctrl[MLA_SEL_CTRL_TOTAL];
+    unsigned long long thr =
+        ((unsigned long long)(unsigned)ctrl[MLA_SEL_CTRL_HI] << 32) |
+        (unsigned long long)(unsigned)ctrl[MLA_SEL_CTRL_TP];
+
+    long chunk = ((long)n_pools + n_ctas - 1) / n_ctas;
+    long clo = (long)blockIdx.x * chunk;
+    long chi = clo + chunk;
+    if (clo > n_pools) clo = n_pools;
+    if (chi > n_pools) chi = n_pools;
+
+    // Per-thread contiguous sub-range of this CTA's range.
+    long span = chi - clo;
+    long tchunk = (span + MLA_SEL_THREADS - 1) / MLA_SEL_THREADS;
+    long lo = clo + (long)tid * tchunk;
+    long hi_end = lo + tchunk;
+    if (lo > chi) lo = chi;
+    if (hi_end > chi) hi_end = chi;
+
+    int mine = 0;
+    if (live) {
+        for (long p = lo; p < hi_end; ++p) {
+            float s = row[p];
+            if (!isfinite(s)) continue;
+            if (memra_kpool_key(s, (int)p) <= thr) ++mine;
+        }
+    }
+    sh_n[tid] = mine;
+    __syncthreads();
+    if (tid == 0) {
+        int run = 0;
+        for (int j = 0; j < MLA_SEL_THREADS; ++j) {
+            int c = sh_n[j];
+            sh_n[j] = run;
+            run += c;
+        }
+    }
+    __syncthreads();
+    int slot = cta[blockIdx.x] + sh_n[tid];
+    if (live) {
+        for (long p = lo; p < hi_end; ++p) {
+            float s = row[p];
+            if (!isfinite(s)) continue;
+            if (memra_kpool_key(s, (int)p) > thr) continue;
+            for (int j = 0; j < pool; ++j) out[(long)slot * pool + j] = (int)p * pool + j;
+            ++slot;
+        }
+    }
+
+    // The tail and the pad are written once, by CTA 0, exactly as the shipped kernel does.
+    if (blockIdx.x != 0) return;
+    int filled = total * pool;
+    if (always_tail) {
+        int visible = first_pos + t + 1;
+        int tail = visible % pool;
+        for (int j = tid; j < tail; j += MLA_SEL_THREADS) out[filled + j] = visible - tail + j;
+        filled += tail;
+    }
+    for (int j = filled + tid; j < width; j += MLA_SEL_THREADS) out[j] = -1;
+}
+
+/// Exact multi-CTA k-pool selection (`MEMRA_B200_DSA_SELECT`). Byte-identical output to
+/// `memra_mla_kpool_select_f32`: it computes the SAME `select_k`-th smallest order key and runs
+/// the SAME `key(p) <= thr` membership test, only with the work spread over `n_ctas` CTAs per
+/// query instead of one. Six launches per call (clear, two histogram descents, tie locate,
+/// membership count, emit), each ending in a last-CTA epilogue rather than a grid barrier.
+///
+/// `ws` must hold `t_q * memra_mla_kpool_select_ws_ints(memra_mla_kpool_select_ctas(n_pools))`
+/// ints; the host reads both numbers from these entry points so the two cannot disagree about
+/// the layout the kernels index.
+extern "C" int memra_mla_kpool_select_dsa_f32(const float* score, int* idx, int* ws, int t_q,
+                                              int n_pools, int pool, int select_k, int width,
+                                              int first_pos, int always_tail, void* stream_v) {
+    int bad = memra_mla_kpool_select_check(pool, select_k, width, always_tail);
+    if (bad) return bad;
+    if (t_q == 0) return 0;
+    if (n_pools < 0) return 40012;
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    int n_ctas = memra_mla_kpool_select_ctas(n_pools);
+    int ws_stride = (int)memra_mla_kpool_select_ws_ints(n_ctas);
+    dim3 grid((unsigned)n_ctas, (unsigned)t_q);
+
+    dim3 cgrid((unsigned)((MLA_SEL_BINS + MLA_SEL_THREADS - 1) / MLA_SEL_THREADS), (unsigned)t_q);
+    memra_mla_kpool_select_clear_kernel<<<cgrid, MLA_SEL_THREADS, 0, stream>>>(ws, ws_stride,
+                                                                              n_ctas);
+    MLA_ERR();
+    memra_mla_kpool_select_hist_kernel<<<grid, MLA_SEL_THREADS, 0, stream>>>(
+        score, ws, n_pools, select_k, ws_stride, n_ctas, 0);
+    MLA_ERR();
+    memra_mla_kpool_select_hist_kernel<<<grid, MLA_SEL_THREADS, 0, stream>>>(
+        score, ws, n_pools, select_k, ws_stride, n_ctas, 1);
+    MLA_ERR();
+    memra_mla_kpool_select_tie_kernel<<<grid, MLA_SEL_THREADS, 0, stream>>>(score, ws, n_pools,
+                                                                           ws_stride, n_ctas);
+    MLA_ERR();
+    memra_mla_kpool_select_count_kernel<<<grid, MLA_SEL_THREADS, 0, stream>>>(score, ws, n_pools,
+                                                                             ws_stride, n_ctas);
+    MLA_ERR();
+    memra_mla_kpool_select_emit_kernel<<<grid, MLA_SEL_THREADS, 0, stream>>>(
+        score, ws, idx, n_pools, pool, width, first_pos, always_tail, ws_stride, n_ctas);
+    MLA_ERR();
+    return 0;
+}
+
+/// RED-ARM hook for `dsa-select-gate`, never on a serving path. Runs the exact pipeline and then
+/// perturbs the resolved threshold by `bump` before the membership count. The gate calls it with
+/// `bump = -1` and REQUIRES a mismatch: a gate that cannot fail is not a gate, and this is what
+/// proves the byte comparison it runs on the real kernel is actually looking at the selection.
+///
+/// WHY -1 AND NOT +1, learned the hard way on the first run: membership is `key(p) <= thr`, so
+/// RAISING the threshold by one admits pool `thr_p + 1` only if that pool TIES at the threshold
+/// score -- otherwise its key differs in the high word and the set is unchanged, and the red arm
+/// silently matches. LOWERING it by one always drops exactly the threshold pool itself, because
+/// `key(thr_p) == thr` by construction, so the perturbation is guaranteed to move the plane by
+/// one pool (`pool` slots) at every shape. A red arm that can no-op is not a red arm.
+extern "C" __global__ void memra_mla_kpool_select_perturb_kernel(int* __restrict__ ws,
+                                                                 int ws_stride, int bump) {
+    int t = blockIdx.y;
+    int* ctrl = ws + (long)t * ws_stride + MLA_SEL_BINS;
+    if (threadIdx.x == 0) ctrl[MLA_SEL_CTRL_TP] = ctrl[MLA_SEL_CTRL_TP] + bump;
+}
+
+extern "C" int memra_mla_kpool_select_dsa_redarm_f32(const float* score, int* idx, int* ws,
+                                                     int t_q, int n_pools, int pool,
+                                                     int select_k, int width, int first_pos,
+                                                     int always_tail, int bump, void* stream_v) {
+    int bad = memra_mla_kpool_select_check(pool, select_k, width, always_tail);
+    if (bad) return bad;
+    if (t_q == 0) return 0;
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    int n_ctas = memra_mla_kpool_select_ctas(n_pools);
+    int ws_stride = (int)memra_mla_kpool_select_ws_ints(n_ctas);
+    dim3 grid((unsigned)n_ctas, (unsigned)t_q);
+    dim3 cgrid((unsigned)((MLA_SEL_BINS + MLA_SEL_THREADS - 1) / MLA_SEL_THREADS), (unsigned)t_q);
+
+    memra_mla_kpool_select_clear_kernel<<<cgrid, MLA_SEL_THREADS, 0, stream>>>(ws, ws_stride,
+                                                                              n_ctas);
+    memra_mla_kpool_select_hist_kernel<<<grid, MLA_SEL_THREADS, 0, stream>>>(
+        score, ws, n_pools, select_k, ws_stride, n_ctas, 0);
+    memra_mla_kpool_select_hist_kernel<<<grid, MLA_SEL_THREADS, 0, stream>>>(
+        score, ws, n_pools, select_k, ws_stride, n_ctas, 1);
+    memra_mla_kpool_select_tie_kernel<<<grid, MLA_SEL_THREADS, 0, stream>>>(score, ws, n_pools,
+                                                                           ws_stride, n_ctas);
+    dim3 one(1u, (unsigned)t_q);
+    memra_mla_kpool_select_perturb_kernel<<<one, 32, 0, stream>>>(ws, ws_stride, bump);
+    memra_mla_kpool_select_count_kernel<<<grid, MLA_SEL_THREADS, 0, stream>>>(score, ws, n_pools,
+                                                                             ws_stride, n_ctas);
+    MLA_ERR();
+    memra_mla_kpool_select_emit_kernel<<<grid, MLA_SEL_THREADS, 0, stream>>>(
+        score, ws, idx, n_pools, pool, width, first_pos, always_tail, ws_stride, n_ctas);
+    MLA_ERR();
+    return 0;
+}
