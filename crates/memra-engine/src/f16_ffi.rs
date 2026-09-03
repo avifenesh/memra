@@ -357,6 +357,106 @@ impl crate::Engine {
         Ok(Some(y))
     }
 
+    /// cuBLASLt REFERENCE GEMV for the bf16 decode rows (`MEMRA_B200_BF16_GEMV_LT`,
+    /// lane/b200-gemv-hbm-20260902). Same plan `bf16_tc_gemm` builds (TN, CUDA_R_16BF operands,
+    /// f32 accumulate/output, per-device handle) but WRITES INTO the caller's `y` instead of
+    /// allocating one, so the bench times the library GEMV and nothing else. `t` is the token
+    /// count (1 for plain decode); `y` must hold `t * out_f` floats.
+    ///
+    /// NUMERIC CLASS `bf16_gemv_lt`, not a bit-identical twin: the activation is cast f32 ->
+    /// bf16 before the multiply and the K summation order is the library's. Default OFF,
+    /// reference only; see `crate::b200_bf16_gemv_lt_on`.
+    ///
+    /// Returns `Ok(false)` when cuBLASLt declines the shape (unaligned weight, no algo) so the
+    /// caller falls through to the shipped kernel rather than failing the request — the same
+    /// contract `bf16_tc_gemm` uses, and announced once per shape for the same reason.
+    pub fn bf16_gemv_lt_into(
+        &self,
+        data: &CudaSlice<u8>,
+        x: &CudaSlice<f32>,
+        y: &mut CudaSlice<f32>,
+        in_f: usize,
+        out_f: usize,
+        t: usize,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        if t == 0 || x.len() < t * in_f || y.len() < t * out_f {
+            return Err("bf16_gemv_lt geometry".into());
+        }
+        if data.len() < out_f * in_f * 2 {
+            return Err("bf16_gemv_lt weight too small".into());
+        }
+        let need_xh = t * in_f * 2;
+        let mut guard = self.f16_scratch.lock().unwrap();
+        if guard.is_none() {
+            *guard = Some(F16Scratch {
+                xh: self.alloc_u8_uninit(need_xh)?,
+                ws: self.alloc_u8_uninit(F16_WS_BYTES)?,
+                cap_xh: need_xh,
+            });
+        }
+        let s = guard.as_mut().unwrap();
+        if need_xh > s.cap_xh {
+            s.xh = self.alloc_u8_uninit(need_xh)?;
+            s.cap_xh = need_xh;
+        }
+        let rc = {
+            let stream = self.gpu.stream();
+            let (w_p, _gw) = data.device_ptr(&stream);
+            let (x_p, _gx) = x.device_ptr(&stream);
+            let (h_p, _gh) = s.xh.device_ptr_mut(&stream);
+            let (y_p, _gy) = y.device_ptr_mut(&stream);
+            let (ws_p, _gws) = s.ws.device_ptr_mut(&stream);
+            if !(w_p as usize).is_multiple_of(16) {
+                -1
+            } else {
+                unsafe {
+                    memra_bf16_pp_gemm(
+                        w_p as *const core::ffi::c_void,
+                        x_p as *const f32,
+                        h_p as *mut core::ffi::c_void,
+                        y_p as *mut f32,
+                        t as i32,
+                        out_f as i32,
+                        in_f as i32,
+                        ws_p as *mut core::ffi::c_void,
+                        F16_WS_BYTES,
+                        stream.cu_stream() as *mut core::ffi::c_void,
+                    )
+                }
+            }
+        };
+        if rc != 0 {
+            static SAID: std::sync::Mutex<
+                Option<std::collections::HashSet<(usize, usize, usize)>>,
+            > = std::sync::Mutex::new(None);
+            let mut g = SAID.lock().unwrap();
+            let seen = g.get_or_insert_with(std::collections::HashSet::new);
+            if seen.insert((t, out_f, in_f)) {
+                eprintln!(
+                    "[b200-bf16-gemv-lt] DECLINED t={t} n={out_f} k={in_f} rc={rc} \
+                     (1xxxx=cudaError convert, 2xxxx=no cublasLt algo, 3xxxx=matmul status, \
+                     4xxxx=cublasLtCreate, -1=weight not 16B-aligned) — this shape keeps the \
+                     shipped matvec kernel"
+                );
+            }
+            return Ok(false);
+        }
+        {
+            static ACCEPTED: std::sync::Mutex<
+                Option<std::collections::HashSet<(usize, usize, usize)>>,
+            > = std::sync::Mutex::new(None);
+            let mut g = ACCEPTED.lock().unwrap();
+            let seen = g.get_or_insert_with(std::collections::HashSet::new);
+            if seen.insert((t, out_f, in_f)) {
+                eprintln!(
+                    "[b200-bf16-gemv-lt] ENGAGED t={t} n={out_f} k={in_f} (cuBLASLt reference \
+                     GEMV, numeric class bf16_gemv_lt, MEMRA_B200_BF16_GEMV_LT=1)"
+                );
+            }
+        }
+        Ok(true)
+    }
+
     /// Bare FP16 GEMM launch on an fp16 mirror — also the kernel_check gate entry.
     pub fn qmatvec_gemm_f16_raw(
         &self,

@@ -56,6 +56,11 @@ pub static KDA_FUSED6_DISPATCHES: AtomicU64 = AtomicU64::new(0);
 /// refuses by design) can attribute engagement to the arm that actually ran.
 pub static KDA_FUSED6_BF16_DISPATCHES: AtomicU64 = AtomicU64::new(0);
 
+/// Same door, W8-MIRROR arm (`qmatvec_kda6_q8f32_rp_v2`, lane/b200-gemv-hbm-20260902 round 3).
+/// Counted separately for the same reason the bf16 arm is: a box A/B on the serving recipe must
+/// be able to attribute engagement to the arm that actually ran.
+pub static KDA_FUSED6_Q8RP_DISPATCHES: AtomicU64 = AtomicU64::new(0);
+
 /// The only head width `memra_kda_scan_s128` is instantiated for, and the only one glm5_next
 /// ships (`linear_attn_config.head_dim = 128`).
 pub const KDA_HEAD_DIM: usize = 128;
@@ -1292,9 +1297,81 @@ impl Engine {
             }
         };
         if let (Some(in_q), Some(in_k), Some(in_v)) = (bf16(&la.wq), bf16(&la.wk), bf16(&la.wv)) {
+            // MEMRA_B200_BF16_GEMV_LT (lane/b200-gemv-hbm-20260902) reroutes the SAME
+            // unfused target (`matvec_bf16_f32acc_x4_rows`) to a cuBLASLt reference GEMV, so
+            // this fused arm declines for exactly the reason it declines for the W8 mirrors:
+            // its bit-identity bar is against the unmirrored, unrerouted bf16 program. With
+            // the door on, the three bf16 projections fall to the unfused group and each one
+            // takes the library GEMV, which is what the reference door is there to measure.
+            // W8 POSTURE FUSION (lane/b200-gemv-hbm-20260902 round 3). Under MEMRA_GLM5_W8 the
+            // six projections each reroute through `matvec_bf16_via_q8_mirror`, so this group
+            // runs as SIX separate launches plus six redundant quantizes of the same `x` — and
+            // the bf16 fused arm below cannot serve it, because its bit-identity bar is against
+            // the unmirrored bf16 program. `qmatvec_kda6_q8f32_rp_v2` is the fused twin for
+            // that posture: three mirrored ranges on the rp v2 body (bit-identical to
+            // `qmatvec_q8_0_mmvq_rp` per row) and three f32 ranges on the same deterministic
+            // warp tree the q8 arm of this door already ships and has pinned. Gated on
+            // MEMRA_B200_GEMV_V2 so it carries its own receipt; without that door W8 still
+            // declines to the unfused path exactly as before.
+            if crate::glm5_w8_on() && !(crate::step_tp_w8_on() && crate::w8_hybrid_on()) {
+                if !Self::bf16_mmv_on() || !crate::b200_gemv_v2_on() {
+                    return Ok(None);
+                }
+                let in_f = in_q;
+                if [in_k, in_v, in_fa, in_ga, in_b].iter().any(|&i| i != in_f)
+                    || !in_f.is_multiple_of(128)
+                    || x.len() < t * in_f
+                    || Engine::q8_v2_smem_bytes(in_f) > 48 * 1024
+                {
+                    return Ok(None);
+                }
+                let dims = [
+                    la.wq.out_features(),
+                    la.wk.out_features(),
+                    la.wv.out_features(),
+                    la.f_a.out_features(),
+                    la.g_a.out_features(),
+                    la.b_proj.out_features(),
+                ];
+                let (
+                    GpuTensor::FloatBf16 { data: bq, .. },
+                    GpuTensor::FloatBf16 { data: bk, .. },
+                    GpuTensor::FloatBf16 { data: bv, .. },
+                ) = (&la.wq, &la.wk, &la.wv)
+                else {
+                    unreachable!("bf16() above only admits FloatBf16");
+                };
+                let (
+                    GpuTensor::Float { data: wfa, .. },
+                    GpuTensor::Float { data: wga, .. },
+                    GpuTensor::Float { data: wb, .. },
+                ) = (&la.f_a, &la.g_a, &la.b_proj)
+                else {
+                    unreachable!("f32w() above only admits Float");
+                };
+                let mut outs = [
+                    self.uninit(t * dims[0])?,
+                    self.uninit(t * dims[1])?,
+                    self.uninit(t * dims[2])?,
+                    self.uninit(t * dims[3])?,
+                    self.uninit(t * dims[4])?,
+                    self.uninit(t * dims[5])?,
+                ];
+                self.kda_proj_fused6_q8rp_raw(
+                    bq, bk, bv, wfa, wga, wb, x, &mut outs, in_f, dims, t,
+                )?;
+                if KDA_FUSED6_Q8RP_DISPATCHES.fetch_add(1, Ordering::Relaxed) == 0 {
+                    eprintln!(
+                        "[kda-fused6] engaged arm=q8rp_v2 in_f={in_f} out={dims:?} t={t} (one \
+                         launch replaces the six W8-mirror projections and their six redundant \
+                         activation quantizes; MEMRA_KDA_FUSED_PROJ=1 MEMRA_B200_GEMV_V2=1)"
+                    );
+                }
+                return Ok(Some(outs.into_iter().collect()));
+            }
             if !Self::bf16_mmv_on()
                 || (crate::step_tp_w8_on() && crate::w8_hybrid_on())
-                || crate::glm5_w8_on()
+                || crate::b200_bf16_gemv_lt_on()
             {
                 return Ok(None);
             }
@@ -1558,6 +1635,50 @@ impl Engine {
         dims: [usize; 6],
         t: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.kda_proj_fused6_bf16_arm_raw(
+            wq,
+            wk,
+            wv,
+            wfa,
+            wga,
+            wb,
+            x,
+            outs,
+            in_f,
+            dims,
+            t,
+            crate::b200_gemv_v2_level(),
+        )
+    }
+
+    /// The same launch with the arm chosen EXPLICITLY instead of from the memoized
+    /// `MEMRA_B200_GEMV_V2` door, so a bench or gate can drive every arm inside one process
+    /// (`b200_matvec_bench`, the `_arm_raw` precedent).
+    ///
+    /// `arm`: `0` = the shipped `qmatvec_kda6_bf16f32`; `1` = `_v2`, whose three BF16 ranges take
+    /// the eight-rows-per-block walk (activation loaded once and reused across the rows, ten
+    /// 16 B loads in flight before the first fma, one barrier chain per block) instead of
+    /// `kda6_bf16_rows4`'s four sequential rows; `2` = `_v3`, the same walk with its weight
+    /// tiles staged through shared memory by `cp.async` so the in-flight budget stops being
+    /// register-bound. `2` falls back to `1` when v3's dynamic smem would exceed the 48 KB
+    /// default cap. Per row the arithmetic is unchanged in every arm, so all three are
+    /// BIT-IDENTICAL to each other and to `matvec_bf16_f32acc_x4_rows`.
+    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
+    pub fn kda_proj_fused6_bf16_arm_raw(
+        &self,
+        wq: &CudaSlice<u8>,
+        wk: &CudaSlice<u8>,
+        wv: &CudaSlice<u8>,
+        wfa: &CudaSlice<f32>,
+        wga: &CudaSlice<f32>,
+        wb: &CudaSlice<f32>,
+        x: &CudaSlice<f32>,
+        outs: &mut [CudaSlice<f32>; 6],
+        in_f: usize,
+        dims: [usize; 6],
+        t: usize,
+        arm: u8,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if t == 0 || !in_f.is_multiple_of(128) || x.len() < t * in_f {
             return Err("kda_proj_fused6_bf16 geometry".into());
         }
@@ -1593,12 +1714,33 @@ impl Engine {
                 return Err(format!("kda_proj_fused6_bf16: output {i} too small").into());
             }
         }
-        let blocks: usize = dims.iter().map(|d| d.div_ceil(4)).sum();
-        let f = self.func("qmatvec_kda6_bf16f32");
+        // v3 declines to v2 when its staged tiles would not fit the 48 KB default dynamic
+        // shared-memory cap (36 KB at the default mmv_block()=128, 72 KB at 256).
+        let arm = if arm >= 2 && !crate::gemv_v3_fits() {
+            1
+        } else {
+            arm
+        };
+        // Rows per block, and therefore the block partition of the six ranges: 4 for the
+        // shipped kernel, `GEMV_V2_ROWS` for the v2/v3 twins. v2 takes the R-row reduction
+        // window as DYNAMIC shared memory (R * blockDim.x floats); v3 takes that plus its
+        // cp.async stage buffers.
+        let nb = crate::mmv_block();
+        let rpb = if arm >= 1 { crate::GEMV_V2_ROWS } else { 4 };
+        let blocks: usize = dims.iter().map(|d| d.div_ceil(rpb)).sum();
+        let f = self.func(match arm {
+            0 => "qmatvec_kda6_bf16f32",
+            1 => "qmatvec_kda6_bf16f32_v2",
+            _ => "qmatvec_kda6_bf16f32_v3",
+        });
         let cfg = LaunchConfig {
             grid_dim: (blocks as u32, t as u32, 1),
-            block_dim: (crate::mmv_block(), 1, 1),
-            shared_mem_bytes: 0,
+            block_dim: (nb, 1, 1),
+            shared_mem_bytes: match arm {
+                0 => 0,
+                1 => (crate::GEMV_V2_ROWS as u32) * nb * 4,
+                _ => crate::gemv_v3_smem_bytes(nb as usize) as u32,
+            },
         };
         let inf = in_f as i32;
         let d = dims.map(|v| v as i32);
