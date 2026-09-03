@@ -869,21 +869,33 @@ would say so on the first run.
 
 **One box run answers it**, and it is a single env var on a binary that already exists.
 
-**Why the capture half cannot be reproduced on the rig as things stand — a structural limit, not
-a missing effort.** The capture REQUIRES the device-table MoE arm: a host router readback and its
-`cuStreamSynchronize` are illegal inside a capture region, which is the entire reason the T=1
-device arm had to be built before anything could be captured. And that arm requires slab-resident
-uniform q8 experts with a live PRE clamp (`slab_bases.is_some() && moe_q8 && uniform_experts &&
-n_used <= 8 && Pre(l) > 1e-6`). The mini hc fixture the rig's decode gates use
-(`hc_decode_ws_gpu.rs`'s harness) has no resident expert slab and no PRE clamp, so the door
-refuses it by name and a capture gate over it would be vacuous — the failure mode this lane has
-already paid for twice.
+**CORRECTION (same day, before any box slot was spent on it): the capture half is NOT structurally
+unreachable on the rig.** I first wrote here that it was, and offered the coordinator a choice
+between one box env var and "about a day of fixture work". That was wrong, and the wrong half was
+mine: I asserted a structural limit without checking the fixture's own config.
 
-So reproducing the capture locally needs the mini hc fixture EXTENDED with slab-resident clamped
-NVFP4 experts. That is buildable and is the fallback if no box slot can be had; it is a fixture
-change, not a discovery, and it is the next rig task if `MEMRA_GLM5_GRAPH_NO_CAPTURE` cannot be
-run. Stating it now so the choice is explicit rather than implied: one env var on an existing
-binary, or a day of fixture work to reach the same answer locally.
+What the door actually requires of a model, checked field by field against the mini hc fixture
+`hc_decode_ws_gpu.rs` already builds:
+
+| door conjunct | mini fixture today | gap? |
+|---|---|---|
+| glm5 config with a sigmoid router | `"model_type": "glm5_next_text"` | no |
+| `Pre` clamp, `l > 1e-6` | `"swiglu_limit": 1e30`, and `pre_if_live` is `(limit > 1e-6).then_some(Pre(limit))` (`config.rs:2694`) | no |
+| `n_used <= 8` | `num_experts_per_tok: 2` | no |
+| uniform expert layout | deterministic fixture, uniform by construction | no |
+| `slab_bases.is_some()` (resident `dev_exps`) | `build_dev_exps` uploads when the residency budget covers the expert bytes; this fixture's experts are a few KB, so the budget covers them trivially (`hybrid.rs:520`) | no |
+| `moe_q8` (`q8_expert_supported` on all three planes) | fixture expert tensors are f32 | **YES — the only gap** |
+
+So the door is one tensor dtype away from admitting the existing mini fixture: the expert planes
+have to be NVFP4 (or another q8-eligible type) instead of f32, and
+`memra_gguf::nvfp4_repack::f32_to_nvfp4` — already used by `glm5_verify_batch_gpu`'s slab builder —
+is the conversion. That is a bounded change to the fixture's tensor source, not a day of work and
+not a structural wall.
+
+**Which means the capture half is reproducible on the rig, and that is now this lane's next task
+rather than a request for a box slot.** `MEMRA_GLM5_GRAPH_NO_CAPTURE` remains the cheaper answer
+if a slot is going spare, but it is no longer the only way to get one, and no box time should be
+spent on this door on my account until the rig has had its turn.
 
 ## 10. Open items
 
