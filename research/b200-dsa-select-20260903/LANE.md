@@ -241,18 +241,26 @@ the way the sibling `MLA_DSA_ATTN_ARM` table is keyed. Deliberately NOT done her
 for this door is in flight, and widening which shapes engage underneath it is the wrong order of
 operations. It wants its own PR and a B200 gate run.
 
-## 8. Open, and why it is blocked
+## 8. Open
 
-**No box receipt exists for this door, and none can be scheduled.** As of 2026-09-03 the vast.ai
-account is out of credit (`billing_creditonly`, so no auto-topup charges a card) and every
-instance was stopped - the B200 pair, the glm5 prod box, q38 and ornith. Only the owner can
-restore it.
+The 1M serving A/B is DONE (section 7b). What remains:
 
-1. The interleaved plain-route sm_100a A/B at 256k and 1M (x3 fresh boots, vendor sampling,
-   effort low) is **OWED**. The per-token figures in section 6 are PREDICTIONS derived from 5090
-   ratios - the numbers that cell is meant to test, not numbers it produced. Door stays default
-   OFF.
-2. `dsa-select-gate <dev> 5` on the pair, to confirm or move `MLA_DSA_SELECT_MIN_POOLS` - the
-   crossover is a launch-overhead-vs-sweep trade and both terms differ on that silicon.
-3. Rig work remains available (the 5090 is up), so any further exactness or composition work that
-   does not need sm_100a can proceed.
+1. **A default-ON PR.** Justified on evidence now -- exact class, gate green with a red arm that
+   fires, and the largest measured serving win of this lane (+17.5% median at 1M, non-overlapping
+   spreads). Deliberately a SEPARATE change: flipping a default and widening which shapes engage
+   in the same week makes an unexplained regression impossible to attribute to one of them, and a
+   flip deserves its own PR and review rather than riding on a docs correction.
+2. **The `t_q`-keyed floor** (section 7c). The door refuses a 256k rung the rig measures at 1.44x
+   on the plain route, because the uniform floor is set by the worse width (`t_q=4`). Wants its
+   own PR and a B200 `dsa-select-gate` run, since the crossover is a launch-overhead-vs-sweep
+   trade and both terms differ on that silicon. Sequence it AFTER the default flip, not alongside.
+3. **`dsa-select-gate <dev> 5` on the pair** has still not been run -- the serving A/B exercised
+   the door end to end, but the kernel-level ladder (and therefore the crossover that sets
+   `MLA_DSA_SELECT_MIN_POOLS`) is still 5090-only. Item 2 needs it.
+4. The 262_144-token per-token figure in section 6 remains a PREDICTION: the three-pair cell
+   measured 1M only.
+
+Historical note, kept because it explains why this doc was written prediction-first: for part of
+2026-09-03 the vast.ai account was out of credit and every instance was stopped - the B200 pair,
+the glm5 prod box, q38 and ornith - so the A/B could not be scheduled and this section read "OWED".
+That is resolved.
