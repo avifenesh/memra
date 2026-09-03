@@ -242,8 +242,8 @@ pub fn glm5_draft_prime_v2_on() -> bool {
     std::env::var("MEMRA_GLM5_DRAFT_PRIME_V2").as_deref() == Ok("1")
 }
 
-/// `MEMRA_GLM5_DRAFT_TAPS_DEVICE` (DEFAULT ON since boot D, 2026-09-03; `=0` = the
-/// host-tap rollback seam; lane/spec-route-depth-20260902): the DEVICE-RESIDENT drafter
+/// `MEMRA_GLM5_DRAFT_TAPS_DEVICE` (DEFAULT OFF; `=1` arms it; lane/spec-route-depth-20260902):
+/// the DEVICE-RESIDENT drafter
 /// prime. Boot D on the 2x B200 pair (this arm) against boot C (host taps), TTFT s at
 /// 4k / 42k / 128k / 256k: 4.89 / 16.84 / 56.62 / 129.42 vs 5.32 / 21.23 / 72.90 /
 /// 162.26, drafter prime ms 17.9 / 59.1 / 180.7 / 362.4 vs 91.4 / 561.6 / 4430.8 /
@@ -259,9 +259,22 @@ pub fn glm5_draft_prime_v2_on() -> bool {
 /// prime; the eager arm's 7.5 s of pageable HtoD at 256k (boot B's split: h2d 7505.8 of
 /// 8870 ms) goes away outright, and its `tap_dtoh` with it. Read per session creation
 /// (a gate flips it in-process). The host-tap arms (`MEMRA_GLM5_DRAFT_PRIME_V2`,
-/// `MEMRA_GLM5_DRAFT_PRIME_LAZY`) are reachable only under `=0`.
+/// `MEMRA_GLM5_DRAFT_PRIME_LAZY`) are the default and are reachable whenever this is unset.
+///
+/// DEFAULT OFF DELIBERATELY, and the flip is blocked on two named defects that a review of
+/// the ON default found (both are properties of the device-staged ring, so neither can bite
+/// while this is unset):
+///   1. the `MEMRA_B200_PRIME_V2` arm-2 branch (`prime_cache_hyper_pp2_pipelined`) never
+///      calls `glm5_taps_range_begin`/`glm5_taps_range_done`, and hands each stage-chunk an
+///      ABSOLUTE base, so from the second range on `glm5_hc_tap_slot` slices past the
+///      `sink.t * h` slot buffer: `slice_mut` panics and takes the worker with it.
+///   2. the same-`ordinal` ingest reads the ring `buf` from the head engine's stream while
+///      the next range rewrites it on the stage engine's stream, with cudarc implicit event
+///      tracking disabled in this repo, so the tap planes can tear (silently wrong drafter
+///      ctx KV; verify still arbitrates the served tape, so tape-identity gates stay green).
+/// Flipping the default needs both fixed AND a gate that fails on each before it passes.
 pub fn glm5_draft_taps_device_on() -> bool {
-    std::env::var("MEMRA_GLM5_DRAFT_TAPS_DEVICE").as_deref() != Ok("0")
+    std::env::var("MEMRA_GLM5_DRAFT_TAPS_DEVICE").as_deref() == Ok("1")
 }
 
 /// The device-resident drafter prime's in-flight state (doc on

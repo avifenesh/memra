@@ -2070,7 +2070,8 @@ fn gpu_dflash_device_resident_drafter_prime_kv_matches_eager_ingest() {
     let run = |device: bool| -> Gate15Arm {
         // SAFETY: under gpu_guard.
         unsafe { std::env::remove_var("MEMRA_GLM5_DRAFT_PRIME_V2") };
-        // Device taps are the DEFAULT (boot D); the host-tap eager arm is selected by `=0`.
+        // Both arms are set explicitly: device taps are default OFF (the flip is blocked on
+        // the arm-2 range-hook panic and the ring cross-stream race), `=1` arms them.
         let arm = EnvArm::set(
             "MEMRA_GLM5_DRAFT_TAPS_DEVICE",
             if device { "1" } else { "0" },
