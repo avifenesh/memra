@@ -3171,12 +3171,14 @@ pub struct DflashTrimHead {
 /// GGUF container or a plain `.txt` (one token id per line, rank order — frspec-owngen writes
 /// both). Extracted verbatim from the trim arm of `load_from_source_impl` for the
 /// MEMRA_MTP_SKIP stub path, which needs the same list without a loaded MtpHead.
+/// The `.txt` arm is STRICT for every consumer (lane/frspec-dflash2-20260902, revuto finding
+/// on the re-land): a non-blank non-numeric line refuses by name instead of being dropped,
+/// so no trim arm can boot a silently shorter list. Every house writer emits exactly one
+/// integer per line (`memra_gguf::d2t::write_d2t`), so a refusal here is a broken file.
 fn frspec_read_d2t(path: &str) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
     Ok(if path.ends_with(".txt") {
-        std::fs::read_to_string(path)?
-            .lines()
-            .filter_map(|l| l.trim().parse::<u32>().ok())
-            .collect()
+        let text = std::fs::read_to_string(path)?;
+        frspec_parse_ranks_txt_strict(&text, &format!("MEMRA_FRSPEC_TRIM={path}"))?
     } else {
         let tg = GgufFile::open(path)?;
         let d2t_t = tg
@@ -4800,6 +4802,23 @@ impl HybridModel {
                     .or_else(|| src.find("output.weight"))
                     .or_else(|| src.find("token_embd.weight"))
                     .expect("model has no output.weight for FR-Spec trim");
+                // BOOT ADMISSION on this arm too (revuto finding on the re-land of
+                // lane/frspec-dflash2-20260902): the same env var must refuse a wrong-model
+                // file by name with its sha16 whichever arm consumes it, never reach the
+                // gather's assert (a process abort) or boot a shorter list.
+                frspec_validate_ranks(
+                    &d2t,
+                    v.ne[1] as usize,
+                    &format!(
+                        "MEMRA_FRSPEC_TRIM={path} (sha16={}) on {}",
+                        frspec_src_sha16.as_deref().unwrap_or("unknown"),
+                        if from_own_head {
+                            own_head_name.as_str()
+                        } else {
+                            "main output.weight"
+                        }
+                    ),
+                )?;
                 // FLOAT HEADS ARE REAL: step-3.7-flash keeps both `lm_head.weight` and every
                 // `nextn.*.shared_head.output.weight` in BF16 [128896, 4096] even though its
                 // experts are NVFP4, and `from_quant_bytes` PANICS on BF16 ("unsupported
@@ -4879,6 +4898,11 @@ impl HybridModel {
                     .find("output.weight")
                     .or_else(|| src.find("token_embd.weight"))
                     .ok_or("model has no output.weight for FR-Spec trim")?;
+                frspec_validate_ranks(
+                    &d2t,
+                    v.ne[1] as usize,
+                    &format!("MEMRA_MTP_SKIP=1 with MEMRA_FRSPEC_TRIM (sha16={src_sha16})"),
+                )?;
                 let (head, nvfp4_sizes) = frspec_gather_trimmed_head(
                     e,
                     &v,

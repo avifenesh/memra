@@ -27399,7 +27399,7 @@ mod tests {
             .expect("step_glm5_spec exists");
         let step_body = &step[..step.find("\nfn ").unwrap_or(step.len())];
         assert!(
-            step_body.contains("\"[glm5-acc] ctx={} burst={}/{} cum={}/{}={:.3}\""),
+            step_body.contains("\"[glm5-acc] ctx={} burst={}/{} cum={}/{}={:.3} trim_rounds={}\""),
             "the [glm5-acc] engagement line must be emitted by step_glm5_spec"
         );
         assert!(

@@ -1391,6 +1391,20 @@ fn gpu_draft_source_selection_matrix() {
         "a refused ranks file must never reach a receipt or a burst:\n{log}"
     );
 
+    // ARM G2 (RED, the revuto finding on the re-land): the BOTH-LOADED shape consumes the
+    // same env var through the MtpHead self-trim arm; it must refuse the same wrong-model
+    // file by name, never boot a shorter list or abort in the gather's assert.
+    let (ok, log) = run_child(Some("1"), Some("1"), Some(&drafter_dir), Some(&oob_path));
+    assert!(
+        !ok && log.contains(&format!("token id {VOCAB} >= head rows {VOCAB}"))
+            && log.contains(&format!("sha16={oob_sha}")),
+        "the both-loaded shape must refuse an out-of-vocab ranks file by name (ok={ok}):\n{log}"
+    );
+    assert!(
+        !log.contains("RANK-TRIMMED") && !log.contains("[helper] burst="),
+        "a refused ranks file must never reach a receipt or a burst (both loaded):\n{log}"
+    );
+
     // ARM H (RED): a duplicated id refuses.
     let mut dup = ranks.clone();
     dup[5] = dup[6];
@@ -1435,7 +1449,7 @@ fn gpu_draft_source_selection_matrix() {
     std::fs::remove_dir_all(&drafter_dir).ok();
     println!(
         "gate 8 PASS: selection matrix green+red incl. the RANK-TRIMMED arms (slab receipt, \
-         MtpHead-preferred, 3 boot refusals); VRAM-at-ready mini-fixture: dflash-boot \
+         MtpHead-preferred, 3 boot refusals on both shapes); VRAM-at-ready mini-fixture: dflash-boot \
          {vram_dflash} MiB vs mtp-boot {vram_mtp} MiB (delta {} MiB — mini scale; the box \
          three-way window banks the real-artifact delta)",
         vram_dflash as i64 - vram_mtp as i64
