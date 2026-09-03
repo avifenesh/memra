@@ -253,7 +253,7 @@ ingest before the anchor changed where it landed, not what it cost.
 Raw: darklanes `research/glm5-b200-20260902/box/specdepth/cd/`
 (`specdepth-{c,d}-{4k,42k,128k,256k}.jsonl`, `*-prof.txt`, `specdepthc.log`).
 
-Decision (re-land PR): `MEMRA_GLM5_DRAFT_TAPS_DEVICE` default ON, `=0` the host-tap
+Decision (re-land PR), WITHDRAWN BEFORE MERGE, see the note below: `MEMRA_GLM5_DRAFT_TAPS_DEVICE` default ON, `=0` the host-tap
 rollback; rig gate 16 is the exactness receipt (drafter-KV bit-identity and identical
 acceptance host vs device on a one-range prompt, greedy tape byte-identical host vs device
 and to plain on both arms at every chunking). `MEMRA_GLM5_DRAFT_PRIME_V2` stays OFF and
@@ -261,3 +261,21 @@ REJECTED; `MEMRA_GLM5_DRAFT_PRIME_LAZY` is a host-tap-only seam. `MEMRA_SPEC_MAX
 stays unset: the crossover moves with device taps, and the composition cell on the box
 (best posture + pipelined-prime tap sharing + device taps, OFF vs ON x2, then 1M) sets the
 number.
+
+WITHDRAWAL, 2026-09-03, after review of the ON default: the door SHIPS DEFAULT OFF, so the
+paragraph above records the decision as it stood before that, not what merged. Two defects
+block the flip, both properties of the device-staged ring, so neither bites while the door
+is unset. FIRST, the `MEMRA_B200_PRIME_V2` arm-2 branch never calls
+`glm5_taps_range_begin`/`glm5_taps_range_done` and hands each stage-chunk an ABSOLUTE base,
+so from the second range on the slot slice runs past `sink.t * h` and `slice_mut` panics,
+killing the worker. SECOND, the same-`ordinal` ingest reads the ring `buf` on the head
+engine's stream while the next range rewrites it on the stage engine's stream, with cudarc
+implicit event tracking disabled in this repo, so the tap planes can tear into silently
+wrong drafter ctx KV; verify arbitrates the served tape, so the tape-identity gates stay
+GREEN and would not catch it. Flipping the default needs both fixed AND a gate that fails
+on each before it passes.
+
+The boot C and boot D numbers above stand unchanged: they ran with BASE doors and no
+`MEMRA_B200_PRIME_V2`, so defect one was never in their path. But the composition cell named
+in the paragraph above MUST NOT be run until defect one is fixed, because it is exactly taps
+ON plus arm 2 and it would panic the worker on the second range.
