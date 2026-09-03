@@ -225,6 +225,30 @@ from the log, greedy only as the byte instrument):
 4. Both doors OFF in the same window: the route lines must be byte-identical to pre-lane
    (`reason=penalized`, `reason=no-drafter-tail`).
 
-## 6. Receipts on this branch
+## 6. Receipts on this branch (2026-09-03, rig RTX 5090 laptop, exactness only)
 
-Filled at close: rig gate output (`raw/`), fmt/clippy/check-flags lines, PR link.
+* `raw/rig-glm5-dflash-session-gpu.log`: the FULL `glm5_dflash_session_gpu` battery on the
+  lane tree, first run: 16 passed, 2 failed, both test-side (gate 16 handed the host
+  sampler out-of-row ids, which it debug-asserts on; gate 18 exported the tail at `pos()`,
+  which the drafter KV trails by the last round's rows). The 14 pre-existing gates (1-14,
+  restore paths included) and gates 15 + 17 passed on that run.
+* `raw/rig-gates-15-18-rerun2.log`: after the two test fixes, gates 15/16/17/18 plus the
+  three restore gates (11/12/13) rerun: 7 passed, 0 failed (`finished in 2.46s`).
+* `raw/worker-unit-tests.log`: memra-server lib tests on `glm5_ spec_penalty spec_max
+  handoff prefix_entry layout tail_import parked`: 35 passed; memra-engine lib tests on
+  `tail_import dflash penal`: 45 passed.
+* `raw/clippy-120a-rerun.log`, `raw/clippy-100a-rerun.log`: `cargo clippy --workspace
+  --all-targets -- -D warnings` exit 0 on the rig's 120a build and under
+  `MEMRA_CUDA_ARCH=100a` (the two earlier `clippy-*.log` files are the red runs that found
+  the two `bool::then` lints, kept as the record). `cargo fmt --all -- --check` clean,
+  `git diff --check` clean, `tools/check-flags.sh`: 811 runtime reads, no uncovered names.
+* PR: https://github.com/avifenesh/memra/pull/111 (draft).
+
+RIG TRAP found on the way, for the fleet-ops corpus: `flock /tmp/memra-5090.lock cargo test
+...` LEAKS THE LOCK. cargo spawns the sccache server as a daemon; the daemon inherits the
+flock fd and keeps `/tmp/memra-5090.lock` held after the test process exits. Seen twice
+today: `/proc/locks` named a dead PID as the holder, `fuser` showed `sccache` on the lock
+file, and a queue of lanes' `flock` waiters sat blocked on an idle GPU (0%, 47 MiB) until
+`sccache --stop-server` (safe only with no rustc in flight; the server respawns on the next
+compile). Rule: lock the TEST BINARY, never cargo: `cargo test --no-run` first, then
+`flock <lock> target/debug/deps/<bin> <filters> --ignored --test-threads=1`.

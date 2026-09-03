@@ -1,0 +1,23 @@
+   Compiling memra-engine v0.124.1 (/home/avifenesh/projects/wt-spec-exclusions/crates/memra-engine)
+warning: memra-engine@0.124.1: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+    Checking memra-server v0.124.1 (/home/avifenesh/projects/wt-spec-exclusions/crates/memra-server)
+error: unnecessary closure used with `bool::then`
+     --> crates/memra-server/src/worker.rs:18752:36
+      |
+18752 |                           let cold = memra_engine::glm_spec::glm5_spec_warm_on()
+      |  ____________________________________^
+18753 | |                             .then(|| lm.model.glm5_dflash.as_ref())
+      | |___________________________________________________________________^
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#unnecessary_lazy_evaluations
+      = note: `-D clippy::unnecessary-lazy-evaluations` implied by `-D warnings`
+      = help: to override `-D warnings` add `#[allow(clippy::unnecessary_lazy_evaluations)]`
+help: use `then_some` instead
+      |
+18753 -                             .then(|| lm.model.glm5_dflash.as_ref())
+18753 +                             .then_some(lm.model.glm5_dflash.as_ref())
+      |
+
+error: could not compile `memra-server` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+exit=101

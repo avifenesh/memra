@@ -1,0 +1,102 @@
+warning: memra-engine@0.124.1: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.124.1: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.124.1 (/home/avifenesh/projects/wt-spec-exclusions/crates/memra-server)
+   Compiling memra-engine v0.124.1 (/home/avifenesh/projects/wt-spec-exclusions/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.27s
+     Running unittests src/lib.rs (target/debug/deps/memra_server-d4939cfec243c799)
+
+running 35 tests
+test tests::glm5_refuses_what_its_template_cannot_honour ... ok
+test tests::glm5_plain_fast_path_never_drops_replayed_reasoning ... ok
+test tests::glm5_chat_arms_the_native_tool_parser ... ok
+test tests::glm5_reasoning_effort_renders_and_keeps_its_max_tier ... ok
+test toolcall::tests::glm5_back_to_back_calls_need_no_separator ... ok
+test toolcall::tests::glm5_live_emissions_parse_into_the_serve_surface ... ok
+test toolcall::tests::glm5_malformed_span_surfaces_verbatim ... ok
+test toolcall::tests::glm5_newline_holdback_never_swallows_real_content ... ok
+test toolcall::tests::glm5_wire_parses_whole_and_char_by_char ... ok
+test toolcall::tests::glm5_without_tools_is_a_reasoning_splitter_only ... ok
+test worker::host_handoff_tests::host_handoff_header_corruption_refuses_the_whole_file ... ok
+test worker::host_handoff_tests::host_handoff_truncated_stream_aborts_instead_of_inventing_entries ... ok
+test worker::host_handoff_tests::host_handoff_skips_a_corrupt_frame_and_keeps_the_stream_in_register ... ok
+test worker::stop_string_tests::step_vision_spans_layout ... ok
+test worker::tests::fingerprint_nominates_the_parked_session_across_a_rewritten_turn ... ok
+test worker::tests::glm5_full_cover_hit_is_an_admissible_carrier_and_always_names_itself ... ok
+test worker::tests::glm5_route_class_matrix_is_exact ... ok
+test worker::tests::glm5_spec_k_clamp_holds_the_verify_knee ... ok
+test worker::tests::host_cache_refuses_layout_version_and_identity_mismatches ... ok
+test worker::tests::prefix_cache_rejects_wrong_identity_and_layout_version_at_insert ... ok
+test tests::glm5_model_row_does_not_claim_structured_output ... ok
+test worker::host_handoff_tests::host_handoff_verdict_refuses_layout_age_and_stamp_mismatch ... ok
+test worker::tests::prefix_restore_plane_preflight_rejects_corrupt_layouts_before_copy ... ok
+test worker::host_handoff_tests::host_handoff_round_trips_every_field_class ... ok
+test worker::tests::a_plain_step_refuses_a_session_holding_a_glm5_session ... ok
+test tests::one_glm5_request_renders_identical_bytes_on_all_three_surfaces ... ok
+test worker::tests::parked_entry_ceiling_bounds_salt_fanout_and_evicts_global_oldest ... ok
+test tests::glm5_never_renders_chatml ... ok
+test worker::tests::glm5_sharded_placement_matrix_is_exact ... ok
+test tests::glm5_vision_decode_is_deferred_and_grid_pinned ... ok
+test worker::tests::glm5_spec_sampling_seam_carries_greedy_penalties_and_nothing_else ... ok
+test tests::glm5_fixtures_match_the_vendor_jinja ... ok
+test worker::host_handoff_tests::host_handoff_wiring ... ok
+test worker::tests::glm5_route_wiring_is_live_in_comment_stripped_source ... ok
+test worker::tests::spec_penalty_and_warm_doors_are_wired_in_comment_stripped_source ... ok
+
+test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 530 filtered out; finished in 0.06s
+
+exit=0
+warning: memra-engine@0.124.1: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.124.1: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+     Running unittests src/lib.rs (target/debug/deps/memra_engine-0d13caff2d81b73e)
+
+running 45 tests
+test dflash::dflash2_tests::an_unfilled_selector_slot_is_refused_by_name_not_clamped ... ok
+test dflash::dflash2_tests::max_tokens_caps_the_committed_prefix_not_only_the_visible_slice ... ok
+test dflash::dflash2_tests::selector_walk_hidden_gate_participates ... ok
+test dflash::dflash2_tests::selector_walk_unary_term_participates ... ok
+test dflash::dflash2_tests::sampled_walk_records_the_distribution_it_samples ... ok
+test dflash::dflash2_tests::selector_walk_is_a_chain_not_per_slot_argmax ... ok
+test dflash::dflash2_tests::sampled_walk_tiny_temp_matches_greedy ... ok
+test dflash::dflash_precision_tests::default_and_supported_precision_programs_are_explicit ... ok
+test dflash::dflash2_tests::the_walk_assert_survives_the_guard - should panic ... ok
+test dflash::dflash_precision_tests::q5_and_typos_refuse_instead_of_silently_selecting_q8 ... ok
+test dflash::dflash_tensor_contract_tests::attention_and_selector_geometry_refuse_before_cuda ... ok
+test dflash::dflash_tensor_contract_tests::named_tensor_contract_refuses_wrong_dtype_rank_and_shape_before_cuda ... ok
+test dflash::draft_source_seam_tests::empty_and_out_of_trunk_taps_refuse_by_name ... ok
+test dflash::draft_source_seam_tests::taps_resolve_and_the_shift_is_the_callers ... ok
+test dflash::dspark_harvest_tests::dflash_strategy_keeps_mask_fill_harvest ... ok
+test dflash::dspark_harvest_tests::dspark_strategy_requires_shifted_harvest ... ok
+test dflash::dspark_harvest_tests::env_seam_parses_and_refuses ... ok
+test dflash::dflash2_tests::rejection_accept_walk_is_the_leviathan_rule ... ok
+test dflash::dflash2_tests::dflash2_harvest_is_census_keyed ... ok
+test dflash::dspark_harvest_tests::every_candidate_verifies_the_position_its_row_was_trained_for ... ok
+test dflash::dspark_prefix_capture_tests::prompt_end_capture_is_full_prompt_and_one_shot ... ok
+test dflash::dspark_prefix_capture_tests::session_prompt_preflight_matches_dflash2_and_windowed_caps ... ok
+test dflash::dspark_vt_tests::slot_arm_truncates_at_first_low_confidence_slot ... ok
+test dflash::dspark_vt_tests::vt_policy_env_seam_parses_and_refuses ... ok
+test dflash::emit_budget_tests::accepted_run_never_exceeds_max_new ... ok
+test dflash::dspark_vt_tests::confidence_vt_floor_and_cap ... ok
+test dflash::dspark_vt_tests::raw_score_matches_the_parity_gate_dot ... ok
+test dflash::dspark_harvest_tests::strategy_census_reads_the_checkpoint_not_the_env ... ok
+test spec::sampled_graph_key_tests::filtered_regimes_are_capturable_penalties_never ... ok
+test dflash::dflash2_tests::tail_import_refuses_every_geometry_disagreement_and_accepts_the_exported_shape ... ok
+test dsv4_gpu::penalty_cross_pin_tests::penalize_matches_the_sampling_crate_reference ... ok
+test dflash::dspark_harvest_tests::dspark_trained_rows_through_mask_fill_harvest_accept_nothing ... ok
+test dflash::dspark_harvest_tests::ratified_default_harvest_is_strategy_keyed ... ok
+test dflash::dspark_prefix_capture_tests::a_prompt_below_the_prime_floor_never_enters_the_dspark_route ... ok
+test dflash::dspark_harvest_tests::ratified_default_vt_is_confidence_slot_tau_half ... ok
+test dflash::dflash2_tests::sampled_walk_chains_the_drawn_candidate ... ok
+test dflash::dspark_vt_tests::confidence_vt_is_cumprod_survival_not_per_slot_threshold ... ok
+test dflash::dflash2_tests::the_fullcover_restore_ordering_seam_is_live_in_comment_stripped_source ... ok
+test dflash::dflash2_tests::composition_teeth_inverted_accept_fails ... ok
+test dflash::dflash2_tests::composition_teeth_residual_without_q_fails ... ok
+test dflash::dflash2_tests::sampled_round_composition_matches_the_target ... ok
+test dflash::dflash2_tests::penalized_composition_teeth_unpenalized_bonus_fails ... ok
+test dflash::dflash2_tests::penalized_composition_teeth_frozen_window_fails ... ok
+test dflash::dflash2_tests::penalized_composition_teeth_unpenalized_residual_fails ... ok
+test dflash::dflash2_tests::penalized_round_composition_matches_the_penalized_chain ... ok
+
+test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 326 filtered out; finished in 1.69s
+
+exit-engine=0
