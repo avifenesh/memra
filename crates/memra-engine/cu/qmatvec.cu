@@ -5569,20 +5569,20 @@ __device__ __forceinline__ float expert_dot_q6k_g(const unsigned char* wrow, int
 // (same 36B GGUF block walk, same get_int_from_table_16_d + ue4m3 sub-scales, same dp4a order) —
 // bit-identical per (row, group) to the m=1 kernel. The per-expert weight_scale_2 macro is applied
 // by the CALLER (ffn_act_scaled / axpy fold), matching the dense-path contract.
-__device__ __forceinline__ float expert_dot_nvfp4_g(const unsigned char* wrow, int g,
-                                                    const signed char* aqb, float d8) {
-    int sblk = g >> 1;
-    int whichHalf = g & 1;
-    const unsigned char* b = wrow + (long)sblk * 36;
-    const unsigned char* d_bytes = b;
-    const unsigned char* qs = b + 4;
-    int s0 = whichHalf * 2;
+// The arithmetic core shared by the interleaved and the split-plane (rp) expert group dots
+// (2026-09-04, memra#147): `qh` points at the 16 quant bytes of the group's half-block, `d_bytes`
+// at the block's 4 scale bytes, `s0` selects the half's two sub-block scales. Both layouts call
+// THIS body so the compiler sees one expression tree at both sites: same ints (get_int_b4 at
+// qh+0/+4/+8/+12), same table lookups, same dp4a order, same partial/d8 chain.
+__device__ __forceinline__ float expert_dot_nvfp4_core(const unsigned char* qh,
+                                                       const unsigned char* d_bytes, int s0,
+                                                       const signed char* aqb, float d8) {
     const int* aq4 = (const int*)aqb;
     float partial = 0.0f;
     #pragma unroll
     for (int sl = 0; sl < 2; sl++) {
         int s = s0 + sl;
-        const unsigned char* qss = qs + s * 8;
+        const unsigned char* qss = qh + sl * 8;
         int q4a = get_int_b4(qss);
         int q4b = get_int_b4(qss + 4);
         int2 va = get_int_from_table_16_d(q4a, kvalues_mxfp4_d);
@@ -5593,9 +5593,24 @@ __device__ __forceinline__ float expert_dot_nvfp4_g(const unsigned char* wrow, i
         sumi = dp4a(vb.x, aq4[base + 1], sumi);
         sumi = dp4a(va.y, aq4[base + 2], sumi);
         sumi = dp4a(vb.y, aq4[base + 3], sumi);
-        partial += ue4m3_to_f32_d(d_bytes[s]) * (float)sumi;
+        // PINNED arithmetic (2026-09-04): ptxas fused the outer multiply into the caller's add at
+        // the split-plane call site and not at the interleaved one (24 of 12288 gate/up and 1577
+        // of 4096 down outputs differed by 2-4 ulps with one shared source body). The original
+        // shipped bits are: inner multiply-add FUSED, outer d8 multiply SEPARATE. Both are
+        // written as .rn intrinsics so no call site can be compiled differently; verified 0 diffs
+        // against the untouched-main outputs for shipped, _w4 and rp (bench dump compare).
+        partial = __fmaf_rn(ue4m3_to_f32_d(d_bytes[s]), (float)sumi, partial);
     }
-    return d8 * partial;
+    return __fmul_rn(d8, partial);
+}
+__device__ __forceinline__ float expert_dot_nvfp4_g(const unsigned char* wrow, int g,
+                                                    const signed char* aqb, float d8) {
+    int sblk = g >> 1;
+    int whichHalf = g & 1;
+    const unsigned char* b = wrow + (long)sblk * 36;
+    int s0 = whichHalf * 2;
+    // half-block quants: qs = b + 4, the half's 16 bytes start at qs + s0 * 8
+    return expert_dot_nvfp4_core(b + 4 + s0 * 8, b, s0, aqb, d8);
 }
 
 // ---- Q4_0 group dot (gemma4 QAT experts): one 18B block per 32-elem group; the exact
@@ -5663,25 +5678,7 @@ __device__ __forceinline__ float expert_dot_nvfp4_rp_g(const unsigned char* rowq
                                                        const signed char* aqb, float d8) {
     int sblk = g >> 1;
     int s0 = (g & 1) * 2;
-    int4 qw = __ldcs((const int4*)(rowq + (size_t)g * 16));
-    int cscw = __ldcs((const int*)(rows + (size_t)sblk * 4));
-    const int* aq4 = (const int*)aqb;
-    float partial = 0.0f;
-    #pragma unroll
-    for (int sl = 0; sl < 2; sl++) {
-        int q4a = (sl == 0) ? qw.x : qw.z;
-        int q4b = (sl == 0) ? qw.y : qw.w;
-        int2 va = get_int_from_table_16_d(q4a, kvalues_mxfp4_d);
-        int2 vb = get_int_from_table_16_d(q4b, kvalues_mxfp4_d);
-        int base = sl * 4;
-        int sumi = 0;
-        sumi = dp4a(va.x, aq4[base + 0], sumi);
-        sumi = dp4a(vb.x, aq4[base + 1], sumi);
-        sumi = dp4a(va.y, aq4[base + 2], sumi);
-        sumi = dp4a(vb.y, aq4[base + 3], sumi);
-        partial += ue4m3_to_f32_d((unsigned char)((cscw >> (8 * (s0 + sl))) & 0xFF)) * (float)sumi;
-    }
-    return d8 * partial;
+    return expert_dot_nvfp4_core(rowq + (size_t)g * 16, rows + (size_t)sblk * 4, s0, aqb, d8);
 }
 // Row o of a split-plane expert whose slab starts at `base` and has `rows` rows of in_f = 64*nsb64.
 __device__ __forceinline__ void nvfp4_rp_row(const unsigned char* base, int o, int rows, int nsb64,
