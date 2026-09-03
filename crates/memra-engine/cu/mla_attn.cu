@@ -2143,11 +2143,14 @@ extern "C" int memra_mla_kpool_score_dsa_f32(const float* q, const float* pool_k
 // the corner: ReLU zeroes every head whose query-pool dot is non-positive, so exact 0.0 ties
 // across pools are ORDINARY (the same fact that makes the scorer's bit-identity load-bearing).
 //
-// FIVE LAUNCHES, NO GRID BARRIER, NO SPIN. Each multi-CTA pass ends with the LAST CTA to arrive
-// running the epilogue (`atomicAdd` on a done counter plus `__threadfence()`), the standard
-// two-phase reduction idiom -- so there is no cooperative launch, no persistent-grid residency
-// assumption and no spin-wait that could hang a serving box if occupancy ever changed. The
-// passes are: (1) histogram of the high word's top 16 bits + finite count + descent;
+// SIX LAUNCHES, NO GRID BARRIER, NO SPIN. Each multi-CTA pass ends with the LAST CTA to arrive
+// running the epilogue (`__syncthreads()`, then `__threadfence()`, then `atomicAdd` on a done
+// counter -- the full two-phase-reduction idiom; the leading barrier is load-bearing and its
+// absence was a real race, see `memra_sel_last_arrival`), so there is no cooperative launch, no
+// persistent-grid residency assumption and no spin-wait that could hang a serving box if
+// occupancy ever changed. The launches are a one-off `clear` (the workspace arrives
+// uninitialised) followed by five passes: (1) histogram of the high word's top 16 bits + finite
+// count + descent;
 // (2) histogram of its low 16 bits within the chosen prefix + descent, which fixes `thr_s`;
 // (3) per-CTA count of the tie group + locate the rank-`r` index, which fixes `thr_p`;
 // (4) per-CTA count of members; (5) exclusive-scan the CTA counts and emit. Passes 3 and 4 both
