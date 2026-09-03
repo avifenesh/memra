@@ -105,7 +105,12 @@ Found in review on PR #115, not by a gate. Worth remembering when the next lane 
 last-CTA epilogue: the idiom is `__syncthreads()` THEN `__threadfence()` THEN the counter, and
 the leading barrier is the half that is easy to drop.
 
-## 5. Receipts (RTX 5090, N=5 interleaved, 2026-09-03)
+## 5. Receipts, ORIGINAL 5-rung run (RTX 5090, N=5 interleaved, 2026-09-03)
+
+**This is the FIRST log, `gate-5090-20260903.txt`, 40 exactness cells.** The 7-rung ladder that
+supersedes it for every timing figure is section 7c (`gate-5090-band-20260903.txt`, 56 cells).
+Do not mix them: overlapping cells moved on the re-run (t_q=4 at 65536 pools 1.10x -> 1.07x,
+t_q=1 at 262144 pools 3.17x -> 3.13x), which is ordinary run-to-run spread on a laptop part.
 
 `research/b200-dsa-select-20260903/gate-5090-20260903.txt`. **PASS**: red arm DIFFERS, anchor
 IDENTICAL, **40/40 exactness cells EXACT at 20 repeats each (800 comparisons)**.
@@ -115,11 +120,11 @@ it cannot even engage there - the gate reaches the kernels through raw FFI):
 
 | n_pools | context | shipped t_q=1 | parallel | ratio | t_q=4 ratio |
 |---|---|---|---|---|---|
-| 4096 | 16k | 20.5 us | 102.3 | 0.20x | 0.19x |
-| 8192 | 32k | 26.0 us | 101.9 | 0.26x | 0.23x |
-| 32768 | 128k | 83.0 us | 92.8 | 0.89x | 0.45x |
-| **65536** | **256k** | **149.8 us** | **99.9** | **1.50x** | **1.20x** |
-| 262144 | 1M | **557.0 us** | **175.8** | **3.17x** | **1.90x** |
+| 4096 | 16_384 | 20.5 us | 102.3 | 0.20x | 0.19x |
+| 8192 | 32_768 | 26.0 us | 101.9 | 0.26x | 0.23x |
+| 32768 | 131_072 | 83.0 us | 92.8 | 0.89x | 0.45x |
+| **65536** | **262_144** | **149.8 us** | **99.9** | **1.50x** | **1.20x** |
+| 262144 | 1_048_576 | **557.0 us** | **175.8** | **3.17x** | **1.90x** |
 
 Six launches against one kernel is a real fixed cost, so this is a DEPTH door: it loses below
 128k and pays from 256k up. `MLA_DSA_SELECT_MIN_POOLS` is therefore **65536**, measured. The
@@ -164,9 +169,12 @@ kernels, never escaping).
 | streams | The engine has two: `stream()` and `copy_stream` (MoeSlotCache weight prefetch only). All six kernels launch on `stream()`; none of these buffers is touched by `copy_stream`. |
 | slice arithmetic (#114's failure mode) | Kernels index only through `memra_mla_kpool_select_ctas`/`_ws_ints`, the same entry points the host sizes from; verified numerically over n_pools 0/1/255/4096..1M including the 1024-CTA clamp, emit worst case (pool slot 2047, tail slot 2050) under `width` 2051. **No Rust-side slicing of a device buffer anywhere in the path, so there is no `slice_mut` to panic.** |
 
-**What the audit could NOT check, stated rather than assumed:** runtime composition on sm_100a.
-Nothing has exercised `mla_dsa_select_on() == true` end to end, because no sm_100a hardware is
-available (below). The kernels are measured; the door's composition is ARGUED.
+**What the audit still does NOT cover, stated rather than assumed:** it is a STATIC audit, and
+no conjunct has been run in isolation against this door. The door itself HAS now been exercised
+end to end on sm_100a -- the three-pair serving receipt in section 7b is that exercise, and its
+`mla_dsa_select_announce` line only fires when `mla_dsa_select_on() && mla_dsa_select_engages(..)`
+-- but it ran in ONE posture, the full best-posture stack. So what is measured is "the door
+composes with that whole stack", not "the door composes with each of these doors independently".
 
 ## 7b. sm_100a serving receipt (2026-09-03, three pairs, MEASURED)
 
