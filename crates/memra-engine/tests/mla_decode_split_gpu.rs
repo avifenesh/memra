@@ -46,14 +46,17 @@ fn force_true_f32() {
 }
 
 /// The flag is read PER CALL by design (rollback seam). Serialized behind `gpu_guard`.
+///
+/// THE OFF ARM SETS `=0` AND MUST NOT UNSET, since the 2026-09-03 default flip. It used
+/// `remove_var`, which was correct while the door defaulted OFF and became a VACUITY BUG the
+/// moment the default moved: unset now resolves to ON, so the "off" arm would have run the
+/// split path and this gate would have compared split against split and passed, while proving
+/// nothing about the bit identity it exists to assert. Setting `=0` explicitly is the arm the
+/// door's own rollback seam names, and it stays correct under either default.
 fn set_door(on: bool) {
     // SAFETY: all tests in this binary hold `gpu_guard` while touching env or the GPU.
     unsafe {
-        if on {
-            std::env::set_var("MEMRA_MLA_DECODE_SPLIT", "1");
-        } else {
-            std::env::remove_var("MEMRA_MLA_DECODE_SPLIT");
-        }
+        std::env::set_var("MEMRA_MLA_DECODE_SPLIT", if on { "1" } else { "0" });
     }
 }
 
