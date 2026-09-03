@@ -1127,6 +1127,15 @@ fn dflash2_sdpa_clip_on() -> bool {
 /// The DFlash2 round attention over the non-causal symmetric window: one seam for both the
 /// first-light (`forward_block`) and cached (`forward_round`) arms, dispatching the clipped
 /// kernel unless the rollback door is thrown.
+///
+/// `floor` (lane/spec-exclusions-20260902): the KV's first EXISTING ctx row
+/// (`DflashKv::floor`, 0 on every cold-primed or full-tail KV). A COLD-DRAFTER session
+/// (`DflashKv::new_cold_at`) or a short-tail import owns rows only from `floor` up; the
+/// clipped kernel raises its window floor to it and the drafter attends a shorter context,
+/// exactly the program a shorter prompt runs. The legacy full-scan kernel has no floor arm
+/// (it would score the zero rows below the floor at e^0 each and dilute the real context),
+/// so a binding floor under `MEMRA_DFLASH2_SDPA_CLIP=0` refuses by name instead of drafting
+/// silently worse — the cold-drafter constructors refuse the same combination up front.
 #[allow(clippy::too_many_arguments)]
 fn d2_windowed_attn(
     e: &Engine,
@@ -1141,6 +1150,7 @@ fn d2_windowed_attn(
     t_kv: usize,
     scale: f32,
     c: &DflashCfg,
+    floor: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if dflash2_sdpa_clip_on() {
         e.sdpa_naive_w_lo(
@@ -1156,8 +1166,17 @@ fn d2_windowed_attn(
             scale,
             false,
             c.sliding_window,
+            floor,
         )
     } else {
+        if floor > 0 {
+            return Err(
+                "DFlash2 round attention: the drafter KV carries a context floor (cold-drafter \
+                 or short-tail import) and MEMRA_DFLASH2_SDPA_CLIP=0 selects the full-scan \
+                 kernel, which has no floor arm; unset the clip rollback or serve plain"
+                    .into(),
+            );
+        }
         e.sdpa_naive_w(
             q,
             k,
@@ -2506,7 +2525,21 @@ impl DflashDraft {
                 // (asserted at load). Positions must be contiguous — q_pos is derived
                 // in-kernel as (T_kv - T) + qt.
                 debug_assert!(pos.windows(2).all(|w| w[1] == w[0] + 1));
-                d2_windowed_attn(e, &q, &k, &v, &mut attn, hd, nh, nkv, b, ctx + b, scale, c)?;
+                d2_windowed_attn(
+                    e,
+                    &q,
+                    &k,
+                    &v,
+                    &mut attn,
+                    hd,
+                    nh,
+                    nkv,
+                    b,
+                    ctx + b,
+                    scale,
+                    c,
+                    0,
+                )?;
             } else if std::env::var("MEMRA_DFLASH_FA").is_ok() {
                 e.fa_prefill(&q, &k, &v, &mut attn, hd, nh, nkv, b, ctx + b, scale, false)?;
             } else {
@@ -2584,6 +2617,14 @@ pub struct DflashKv {
     window_rows: usize,
     /// `n_kv * head_dim * size_of::<f32>()` — the row unit for tail copies.
     row_bytes: usize,
+    /// CONTEXT FLOOR (lane/spec-exclusions-20260902): the first ctx row that EXISTS. `0` on
+    /// every cold-primed KV and every full-tail import (the pre-lane shape). A COLD-DRAFTER
+    /// KV (`new_cold_at`) or a short-tail import (`from_tail` of a tail whose exporter had
+    /// a floor) owns rows only from here up; the round attention's window floor is raised
+    /// to it (`d2_windowed_attn`), so the rows below are never read, and an export never
+    /// publishes them (`export_tail` starts at the floor). The drafter then simply sees a
+    /// shorter context, which can move ACCEPTANCE, never output — verify arbitrates.
+    floor: usize,
 }
 
 impl DflashKv {
@@ -2606,7 +2647,64 @@ impl DflashKv {
             cap,
             window_rows: cfg.sliding_window.saturating_add(cfg.block_size),
             row_bytes: rowsz * std::mem::size_of::<f32>(),
+            floor: 0,
         })
+    }
+
+    /// A COLD DRAFTER at a restored trunk boundary (lane/spec-exclusions-20260902, the
+    /// `MEMRA_SPEC_WARM=1` arm): a fresh KV whose logical length is already `pos` (the
+    /// restored prefix the trunk cache holds) but which owns NO ctx rows below it —
+    /// `floor == len == pos`. The restored prefix's tap features do not exist (the trunk
+    /// planes hold K/V latents, not the tapped residual rows), and re-running the trunk to
+    /// recover them is the prime the restore exists to skip; so instead the drafter starts
+    /// with an empty context at the right absolute position and fills it from the suffix
+    /// prime's taps and every committed round from there, exactly as a cold session over a
+    /// shorter prompt would. Row addressing (rope positions, `kv.len == cache.pos` at every
+    /// round boundary) is identical to a tail import; only the attention floor differs.
+    ///
+    /// The `window_rows` below the floor are zero-filled so a later `export_tail` (which
+    /// starts at the floor anyway) can never publish uninitialised bytes even under a
+    /// future geometry mistake — finite zeros are the same belt `from_tail` wears.
+    ///
+    /// REFUSES under `MEMRA_DFLASH2_SDPA_CLIP=0`: the legacy full-scan kernel has no floor
+    /// arm (`d2_windowed_attn`), and a cold drafter that scored 2048 zero rows at e^0 each
+    /// would draft silently worse; the caller serves the plain hit by name instead.
+    pub fn new_cold_at(
+        e: &Engine,
+        cfg: &DflashCfg,
+        cap: usize,
+        pos: usize,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        if !dflash2_sdpa_clip_on() {
+            return Err(
+                "cold drafter needs the clipped round attention (MEMRA_DFLASH2_SDPA_CLIP=0 \
+                        selects the full-scan kernel, which has no context-floor arm)"
+                    .into(),
+            );
+        }
+        if pos > cap {
+            return Err(
+                format!("cold drafter position {pos} exceeds the session cap {cap}").into(),
+            );
+        }
+        let mut kv = Self::new(e, cfg, cap)?;
+        let rowsz = kv.row_bytes / std::mem::size_of::<f32>();
+        let zero_from = pos.saturating_sub(kv.window_rows);
+        if zero_from < pos {
+            for li in 0..kv.k.len() {
+                e.memset_zeros_view(&mut kv.k[li].slice_mut(zero_from * rowsz..pos * rowsz))?;
+                e.memset_zeros_view(&mut kv.v[li].slice_mut(zero_from * rowsz..pos * rowsz))?;
+            }
+        }
+        kv.len = pos;
+        kv.floor = pos;
+        Ok(kv)
+    }
+
+    /// The first ctx row this KV owns (doc on the field): `0` unless the KV was born as a
+    /// cold drafter or imported from a short (floor-bearing) tail.
+    pub fn floor(&self) -> usize {
+        self.floor
     }
 }
 
@@ -2697,6 +2795,7 @@ impl DflashDraft {
                     ctx + b,
                     scale,
                     c,
+                    kv.floor,
                 )?;
             } else if std::env::var("MEMRA_DFLASH_FA").is_ok() {
                 e.fa_prefill(
@@ -4122,6 +4221,13 @@ impl DsparkSpecSession {
 /// the logical length — every arm here is what makes that "only if" hold. A refusal that
 /// silently stopped firing would let a session attend garbage without crashing, which is the
 /// silent-quality-loss class, so each arm names itself.
+///
+/// `tail_floor` (lane/spec-exclusions-20260902): the EXPORTER's context floor, `0` for
+/// every tail a cold-primed drafter publishes (the pre-lane rule verbatim). A floor-bearing
+/// exporter (`DflashKv::new_cold_at`, or itself a short-tail import) never owned rows below
+/// it, so its tail legitimately covers only `[floor, len)`; the coverage rule then asks for
+/// everything readable ABOVE the floor. A short tail whose exporter had NO floor is still the
+/// refusal it always was.
 #[allow(clippy::too_many_arguments)]
 pub fn tail_geometry_ok(
     tail_layers: usize,
@@ -4129,6 +4235,7 @@ pub fn tail_geometry_ok(
     tail_base: usize,
     tail_rows: usize,
     tail_len: usize,
+    tail_floor: usize,
     kv_layers: usize,
     kv_row_bytes: usize,
     kv_window_rows: usize,
@@ -4146,9 +4253,13 @@ pub fn tail_geometry_ok(
     if tail_base + tail_rows != tail_len {
         return Err("tail does not end at its own logical length");
     }
+    if tail_floor > tail_base {
+        return Err("tail starts below its exporter's context floor");
+    }
     // The whole point of the tail: it must cover everything a round can read. A shorter
-    // tail than the window is only acceptable when the tail IS the entire history.
-    if tail_rows < kv_window_rows.min(tail_len) {
+    // tail than the window is only acceptable when the tail IS the entire history above the
+    // exporter's floor (floor 0: the entire history).
+    if tail_rows < kv_window_rows.min(tail_len - tail_floor) {
         return Err("tail shorter than the drafter's readable window");
     }
     Ok(())
@@ -4173,6 +4284,11 @@ pub struct DflashKvTail {
     pub len: usize,
     /// Bytes per row per layer, carried so an import cannot disagree about the geometry.
     pub row_bytes: usize,
+    /// The exporter's context floor (`DflashKv::floor`): `0` for every tail a cold-primed
+    /// drafter publishes; the first row the exporter ever owned otherwise. Travels with the
+    /// tail so `tail_geometry_ok` can tell a legitimately short tail (nothing below the
+    /// floor ever existed) from a truncated one, and so the import inherits the floor.
+    pub floor: usize,
 }
 
 impl DflashKvTail {
@@ -4195,7 +4311,13 @@ impl DflashKv {
             return None;
         }
         let rowsz = self.row_bytes / std::mem::size_of::<f32>();
-        let rows = self.window_rows.min(upto);
+        // Never below the floor: a floor-bearing KV owns no rows there (doc on `floor`), and
+        // a tail with nothing above the floor has nothing to publish.
+        let floor = self.floor.min(upto);
+        let rows = self.window_rows.min(upto - floor);
+        if rows == 0 {
+            return None;
+        }
         let base = upto - rows;
         let mut layers = Vec::with_capacity(self.k.len());
         for li in 0..self.k.len() {
@@ -4217,6 +4339,7 @@ impl DflashKv {
             rows,
             len: upto,
             row_bytes: self.row_bytes,
+            floor,
         })
     }
 
@@ -4236,6 +4359,13 @@ impl DflashKv {
     ///
     /// This function still REFUSES rather than trusts the window math — if the tail does not
     /// cover the window, the caller gets `None` and must cold-prime.
+    ///
+    /// FLOOR-BEARING TAILS (lane/spec-exclusions-20260902): a tail whose exporter had a
+    /// context floor covers only `[floor, len)` and the import inherits `floor = tail.base`
+    /// (the first row it actually owns), so the round attention never reads the zero rows
+    /// below it. That needs the clipped kernel (`d2_windowed_attn`), so a floor-bearing tail
+    /// under `MEMRA_DFLASH2_SDPA_CLIP=0` refuses here by name. Full tails keep `floor = 0`
+    /// and the pre-lane program exactly.
     pub fn from_tail(e: &Engine, cfg: &DflashCfg, cap: usize, tail: &DflashKvTail) -> Option<Self> {
         let mut kv = Self::new(e, cfg, cap).ok()?;
         if let Err(why) = tail_geometry_ok(
@@ -4244,12 +4374,24 @@ impl DflashKv {
             tail.base,
             tail.rows,
             tail.len,
+            tail.floor,
             kv.k.len(),
             kv.row_bytes,
             kv.window_rows,
             cap,
         ) {
             eprintln!("[dspark] tail import refused: {why}");
+            return None;
+        }
+        // A short tail (rows below the window because the exporter never owned them) makes
+        // this KV floor-bearing; a full tail from a floored exporter does not need the floor
+        // (every readable row is present) and keeps the pre-lane program.
+        let short = tail.rows < kv.window_rows.min(tail.len);
+        if short && !dflash2_sdpa_clip_on() {
+            eprintln!(
+                "[dspark] tail import refused: floor-bearing tail needs the clipped round \
+                 attention (MEMRA_DFLASH2_SDPA_CLIP=0 has no context-floor arm)"
+            );
             return None;
         }
         let rowsz = kv.row_bytes / std::mem::size_of::<f32>();
@@ -4281,6 +4423,9 @@ impl DflashKv {
             .ok()?;
         }
         kv.len = tail.len;
+        if short {
+            kv.floor = tail.base;
+        }
         Some(kv)
     }
 
@@ -5343,13 +5488,32 @@ mod dflash2_tests {
         let win = 2048 + 8; // window_rows = sliding_window + block
         // THE EXPORTED SHAPE: window_rows ending exactly at len, same geometry — accepted.
         assert!(
-            super::tail_geometry_ok(5, rb, 30_329 - win, win, 30_329, 5, rb, win, 34_433).is_ok()
+            super::tail_geometry_ok(5, rb, 30_329 - win, win, 30_329, 0, 5, rb, win, 34_433)
+                .is_ok()
         );
         // A short history where the tail IS the whole history — accepted.
-        assert!(super::tail_geometry_ok(5, rb, 0, 100, 100, 5, rb, win, 34_433).is_ok());
+        assert!(super::tail_geometry_ok(5, rb, 0, 100, 100, 0, 5, rb, win, 34_433).is_ok());
+        // FLOOR-BEARING (lane/spec-exclusions-20260902): a cold-drafter exporter at floor
+        // 30_000 owns rows [30_000, 30_329) only, so its 329-row tail is everything readable
+        // above the floor — accepted; the same 329 rows from a floor-0 exporter are the
+        // truncation the pre-lane rule refuses, verbatim; a tail claiming rows BELOW its
+        // exporter's floor is a geometry lie and refuses by name.
+        assert!(
+            super::tail_geometry_ok(5, rb, 30_000, 329, 30_329, 30_000, 5, rb, win, 34_433).is_ok()
+        );
+        assert_eq!(
+            super::tail_geometry_ok(5, rb, 30_000, 329, 30_329, 0, 5, rb, win, 34_433).unwrap_err(),
+            "tail shorter than the drafter's readable window"
+        );
+        assert_eq!(
+            super::tail_geometry_ok(5, rb, 29_990, 339, 30_329, 30_000, 5, rb, win, 34_433)
+                .unwrap_err(),
+            "tail starts below its exporter's context floor"
+        );
         // Every refusal arm, each by name:
-        let arm =
-            |l, r, b, rows, len, cap| super::tail_geometry_ok(l, r, b, rows, len, 5, rb, win, cap);
+        let arm = |l, r, b, rows, len, cap| {
+            super::tail_geometry_ok(l, r, b, rows, len, 0, 5, rb, win, cap)
+        };
         assert_eq!(
             arm(4, rb, 30_329 - win, win, 30_329, 34_433).unwrap_err(),
             "layer count differs from the live drafter"

@@ -50,7 +50,7 @@ use memra_engine::forward::argmax;
 use memra_engine::glm_spec::{Glm5SpecKnobs, Glm5SpecSession};
 use memra_engine::hybrid::HybridModel;
 use memra_engine::model::GpuTensor;
-use memra_engine::spec::SpecSampling;
+use memra_engine::spec::{PEN_WINDOW_MAX, SpecSampling};
 use memra_gguf::GgmlType;
 use memra_gguf::config::{HfConfig, ModelConfig};
 use memra_gguf::model_plan::ModelPlan;
@@ -60,6 +60,7 @@ use memra_gguf::tensor_contract::{
     TensorId, TensorMatch,
 };
 use memra_reference::{ReferenceTensor, ReferenceWeights, deterministic_fixture};
+use memra_sampling::{Sampler, SamplerConfig};
 use sha2::{Digest, Sha256};
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -2632,5 +2633,480 @@ fn gpu_dflash_device_resident_drafter_prime_kv_matches_eager_ingest() {
          acceptance eager {a_e2}/{d_e2} vs device {a_d2}/{d_d2}",
         maxdiff(&k_d2, &k_e2),
         maxdiff(&v_d2, &v_e2)
+// Gates 17-20 — THE SPEC EXCLUSIONS LANE (lane/spec-exclusions-20260902): the two doors that
+// admit request classes the route used to serve plain. Every gate here is exactness only.
+//
+// 19. PENALTY ARM, greedy: a penalized GREEDY request's served tape is byte-identical to the
+//     plain penalized sampler's (the host `Sampler`: prompt accepted into the history, then
+//     penalize-and-argmax per token), K=1..7 across burst boundaries; the penalties visibly
+//     engage (the tape differs from the unpenalized plain tape, so the gate is not vacuous);
+//     and with the door dark the session REFUSES (the pre-lane posture, verbatim).
+// 20. DEVICE PENALTIES == HOST SAMPLER, bit for bit: `penalize_logits_rows_inc` (the round's
+//     per-row evolving window) and `penalize_logits` (the anchor) produce the host
+//     `Sampler::penalized_logits` bytes over random rows and histories with repeats, for
+//     every coefficient class and for a window that slides. This is the property gate 17's
+//     identity rests on; a 1-ulp drift is an argmax flip on a near-tie.
+// 19. PENALTY ARM, sampled: pinned-seed determinism, burst-split invariance, seed
+//     sensitivity — and the penalized tape differs from the unpenalized same-seed tape.
+//     Token-for-token identity against the PLAIN sampled route is impossible by
+//     construction (host SplitMix64 vs the session's device Philox stream); the sampled
+//     claim is distributional and is carried by gate 18 + the rejection walk's exactness.
+// 20. WARM, cold drafter: a restored session whose drafter re-arms EMPTY at the restored
+//     boundary (`DflashKv::new_cold_at`, no tail on the entry) serves the plain tape byte
+//     for byte and actually drafts; a tail exported from it is floor-bearing and imports
+//     with the floor; the re-restored continuation is byte-identical to plain decode again;
+//     and under `MEMRA_DFLASH2_SDPA_CLIP=0` the cold drafter refuses by name.
+//
+// Rig law (exactness only, never timing):
+//   NVIDIA_TF32_OVERRIDE=0 flock /tmp/memra-5090.lock \
+//     cargo test -p memra-engine --test glm5_dflash_session_gpu -- --ignored --test-threads=1
+// ---------------------------------------------------------------------------------------------
+
+/// Sets `MEMRA_SPEC_PENALTY=1` for the life of the value and removes it on drop (the
+/// `FullCoverArm` pattern). Safe because every gate in this binary holds `gpu_guard()`.
+struct PenaltyArm;
+
+impl PenaltyArm {
+    fn arm() -> Self {
+        // SAFETY: the caller holds gpu_guard(), which serializes every test in this binary.
+        unsafe { std::env::set_var("MEMRA_SPEC_PENALTY", "1") };
+        Self
+    }
+}
+
+impl Drop for PenaltyArm {
+    fn drop(&mut self) {
+        // SAFETY: as above, still under gpu_guard().
+        unsafe { std::env::remove_var("MEMRA_SPEC_PENALTY") };
+    }
+}
+
+/// A strong, mixed penalty on the 32-token fixture vocabulary — every coefficient live, the
+/// serve API's window (`PEN_WINDOW_MAX`). Strong on purpose: with a 32-id vocab the plain
+/// tape repeats within a few tokens, so penalties MUST move it or the identity is vacuous.
+fn penalty_cfg(temperature: f32, seed: u64) -> SamplerConfig {
+    SamplerConfig {
+        temperature,
+        penalty_last_n: PEN_WINDOW_MAX,
+        penalty_repeat: 1.3,
+        penalty_freq: 0.35,
+        penalty_present: 0.2,
+        seed,
+        ..SamplerConfig::default()
+    }
+}
+
+/// The worker's `glm5_spec_sampling_for`, field for field: the session seam that carries a
+/// greedy request's penalties in (temp 0) as well as a sampled config.
+fn spec_sampling_of(cfg: &SamplerConfig) -> SpecSampling {
+    SpecSampling {
+        temp: cfg.temperature,
+        seed: cfg.seed,
+        top_k: cfg.top_k as i32,
+        top_p: cfg.top_p,
+        min_p: cfg.min_p,
+        penalty_last_n: cfg.penalty_last_n,
+        penalty_repeat: cfg.penalty_repeat,
+        penalty_freq: cfg.penalty_freq,
+        penalty_present: cfg.penalty_present,
+    }
+}
+
+/// THE PLAIN PENALIZED TAPE: tokenwise decode driven by the host `Sampler` exactly as the
+/// plain worker route drives it — the prompt is `accept`ed into the penalty history, each
+/// step's logits go through `sample` (penalize over the window, then argmax at temperature
+/// 0), and the chosen token is accepted before the next step.
+fn plain_tape_sampler(
+    h: &Harness,
+    prompt: &[u32],
+    max_new: usize,
+    cfg: &SamplerConfig,
+) -> Vec<u32> {
+    let (mut cache, logits) = h.fresh_primed(prompt, prompt.len() + max_new + 16);
+    let mut sampler = Sampler::new(cfg.clone());
+    for &t in prompt {
+        sampler.accept(t);
+    }
+    let mut tape = Vec::with_capacity(max_new);
+    let first = sampler.sample(&logits);
+    sampler.accept(first);
+    tape.push(first);
+    while tape.len() < max_new {
+        let ll = h
+            .model
+            .decode_step(&h.engine, *tape.last().unwrap(), &mut cache)
+            .expect("plain decode step");
+        let t = sampler.sample(&ll);
+        sampler.accept(t);
+        tape.push(t);
+    }
+    tape
+}
+
+#[test]
+#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
+fn gpu_penalized_greedy_spec_tape_matches_the_plain_penalized_sampler() {
+    let _gpu = gpu_guard();
+    let h = Harness::new("g15");
+    let prompt = tokens(PROMPT, 0xA11CE);
+    let max_new = 24usize;
+    let cfg = penalty_cfg(0.0, 0);
+    let tape_pen = plain_tape_sampler(&h, &prompt, max_new, &cfg);
+    let tape_raw = plain_tape(&h, &prompt, max_new);
+    assert_ne!(
+        tape_pen, tape_raw,
+        "the penalties must visibly move the plain tape at this scale, or the identity \
+         below proves nothing"
+    );
+    let ctx = prompt.len() + max_new + K + 8;
+
+    // RED: the door dark is the shipped default and must keep the pre-lane refusal.
+    assert!(
+        std::env::var("MEMRA_SPEC_PENALTY").is_err(),
+        "gate 17 pins the DARK posture first; the arm is thrown below"
+    );
+    let dark = h
+        .model
+        .glm5_spec_session_new(&h.engine, &prompt, ctx, Some(spec_sampling_of(&cfg)));
+    assert!(
+        dark.is_err(),
+        "RED: a penalized session must refuse while MEMRA_SPEC_PENALTY is unset"
+    );
+    let why = dark.err().map(|e| e.to_string()).unwrap_or_default();
+    assert!(
+        why.contains("MEMRA_SPEC_PENALTY"),
+        "the refusal must name the door: {why}"
+    );
+
+    let _arm = PenaltyArm::arm();
+    for k in 1..=K {
+        let mut sess = h
+            .model
+            .glm5_spec_session_new(
+                &h.engine,
+                &prompt,
+                prompt.len() + max_new + k + 8,
+                Some(spec_sampling_of(&cfg)),
+            )
+            .expect("penalized greedy glm5 dflash spec session");
+        let (out, drafted, accepted, bursts) =
+            drive_bursts(&h, &mut sess, &prompt, k, max_new, 3, &[]);
+        assert_eq!(
+            &out[..max_new],
+            &tape_pen[..],
+            "K={k}: penalized greedy spec tape diverged from the plain penalized sampler \
+             ({accepted}/{drafted} over {bursts} bursts)"
+        );
+        assert!(
+            drafted > 0,
+            "K={k}: the penalized session must actually draft"
+        );
+        println!(
+            "gate 17 PASS K={k}: penalized greedy spec == plain penalized sampler over \
+             {bursts} bursts, {accepted}/{drafted} accepted"
+        );
+    }
+}
+
+#[test]
+#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
+fn gpu_device_penalties_are_bit_identical_to_the_host_sampler() {
+    let _gpu = gpu_guard();
+    force_true_f32();
+    let e = Engine::new(0).expect("CUDA engine on device 0");
+    let n = 1000usize; // the logits row width (ids >= n in the history are inert)
+    let nrow = 5usize; // anchor row + 4 drafts
+    let mut state = 0x5EEDu64;
+    let mut next = || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    // Rows with positive AND negative logits (the repeat rule branches on the sign).
+    let rows: Vec<f32> = (0..nrow * n)
+        .map(|_| ((next() % 20_001) as f32 - 10_000.0) / 997.0)
+        .collect();
+    // A long history from a SMALL alphabet so counts run past 1 (ids stay inside the row: the
+    // host sampler is only ever handed in-vocabulary ids and debug-asserts otherwise; the
+    // kernel's own out-of-row no-op is exercised by sample_check's sparse arm).
+    let hist0: Vec<u32> = (0..200).map(|_| (next() % 40) as u32).collect();
+    let drafts: Vec<u32> = (0..nrow - 1).map(|_| (next() % 40) as u32).collect();
+    // (last_n, rep, freq, present): each coefficient alone, all together, and a window that
+    // SLIDES (64 over a 200-token history: every row drops one oldest entry).
+    let classes: [(usize, f32, f32, f32); 6] = [
+        (PEN_WINDOW_MAX, 1.3, 0.0, 0.0),
+        (PEN_WINDOW_MAX, 1.0, 0.35, 0.0),
+        (PEN_WINDOW_MAX, 1.0, 0.0, 0.2),
+        (PEN_WINDOW_MAX, 1.3, 0.35, 0.2),
+        (PEN_WINDOW_MAX, 0.8, -0.1, -0.05),
+        (64, 1.3, 0.35, 0.2),
+    ];
+    for (last_n, rep, freq, present) in classes {
+        let cfg = SamplerConfig {
+            penalty_last_n: last_n,
+            penalty_repeat: rep,
+            penalty_freq: freq,
+            penalty_present: present,
+            ..SamplerConfig::default()
+        };
+        // HOST: row r's window is hist0 ++ drafts[..r], the plain sampler's own history.
+        let mut expect: Vec<f32> = Vec::with_capacity(nrow * n);
+        for r in 0..nrow {
+            let mut s = Sampler::new(cfg.clone());
+            for &t in hist0.iter().chain(drafts[..r].iter()) {
+                s.accept(t);
+            }
+            expect.extend(s.penalized_logits(&rows[r * n..(r + 1) * n]));
+        }
+        // DEVICE, the round's kernel: pen_win = the session window pre-trimmed to `win`,
+        // hist = pen_win ++ drafts, row r penalizes over the last min(win, n_win + r).
+        let win = last_n.min(PEN_WINDOW_MAX);
+        let w0 = hist0.len().saturating_sub(win);
+        let mut hist: Vec<u32> = hist0[w0..].to_vec();
+        let n_win = hist.len();
+        hist.extend_from_slice(&drafts);
+        let hd = e.htod_u32_v(&hist).expect("hist");
+        let mut buf = e.htod(&rows).expect("rows");
+        e.penalize_logits_rows_inc(&mut buf, &hd, n_win, rep, freq, present, n, nrow, win)
+            .expect("penalize_logits_rows_inc");
+        let got = e.dtoh(&buf).expect("dtoh");
+        let bad = got
+            .iter()
+            .zip(&expect)
+            .filter(|(a, b)| a.to_bits() != b.to_bits())
+            .count();
+        assert_eq!(
+            bad,
+            0,
+            "rows_inc (last_n={last_n} rep={rep} freq={freq} present={present}): {bad} of \
+             {} logits differ from the host sampler's bytes",
+            got.len()
+        );
+        let touched = got
+            .iter()
+            .zip(&rows)
+            .filter(|(a, b)| a.to_bits() != b.to_bits())
+            .count();
+        assert!(touched > 0, "the class must actually penalize something");
+        // DEVICE, the anchor's kernel: one row over the trimmed window.
+        let hd0 = e.htod_u32_v(&hist[..n_win]).expect("hist0");
+        let mut col = e.htod(&rows[..n]).expect("row 0");
+        e.penalize_logits(&mut col, &hd0, n_win, rep, freq, present, n)
+            .expect("penalize_logits");
+        let got0 = e.dtoh(&col).expect("dtoh");
+        let bad0 = got0
+            .iter()
+            .zip(&expect[..n])
+            .filter(|(a, b)| a.to_bits() != b.to_bits())
+            .count();
+        assert_eq!(
+            bad0, 0,
+            "penalize_logits (last_n={last_n} rep={rep} freq={freq} present={present}): \
+             {bad0} of {n} logits differ from the host sampler's bytes"
+        );
+        println!(
+            "gate 18 PASS last_n={last_n} rep={rep} freq={freq} present={present}: \
+             {touched} penalized logits over {nrow} rows, all bit-identical to the host"
+        );
+    }
+}
+
+#[test]
+#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
+fn gpu_penalized_sampled_twin_is_deterministic_split_invariant_and_engaged() {
+    let _gpu = gpu_guard();
+    let h = Harness::new("g17");
+    let prompt = tokens(PROMPT, 0xA11CE);
+    let max_new = 24usize;
+    let k = 3usize;
+    let ctx = prompt.len() + max_new + k + 8;
+    let _arm = PenaltyArm::arm();
+
+    let run = |cfg: SamplerConfig, burst_target: usize| -> Vec<u32> {
+        let mut sess = h
+            .model
+            .glm5_spec_session_new(&h.engine, &prompt, ctx, Some(spec_sampling_of(&cfg)))
+            .expect("penalized sampled glm5 dflash spec session");
+        let (tape, d, _a, _b) = drive_bursts(&h, &mut sess, &prompt, k, max_new, burst_target, &[]);
+        assert!(d > 0, "the sampled penalized session must draft");
+        tape[..max_new.min(tape.len())].to_vec()
+    };
+
+    let a = run(penalty_cfg(0.9, 42), 3);
+    let b = run(penalty_cfg(0.9, 42), 3);
+    assert_eq!(a, b, "same seed, same burst split: reproducible");
+    let c = run(penalty_cfg(0.9, 42), max_new);
+    assert_eq!(
+        a, c,
+        "burst-split invariance: the accept uniforms and every draw ride the session's \
+         Philox counters, so the split must not change the stream"
+    );
+    let d = run(penalty_cfg(0.9, 43), 3);
+    assert_ne!(a, d, "a different seed must change the sampled tape");
+    // ENGAGEMENT: the same seed WITHOUT penalties draws from a different target.
+    let unpen = run(
+        SamplerConfig {
+            temperature: 0.9,
+            seed: 42,
+            ..SamplerConfig::default()
+        },
+        3,
+    );
+    assert_ne!(
+        a, unpen,
+        "the penalties must move the sampled target (same seed, same counters, different p)"
+    );
+    println!(
+        "gate 19 PASS: penalized sampled twin deterministic, split-invariant, seed-sensitive, \
+         and distinct from the unpenalized same-seed tape"
+    );
+}
+
+/// Sets `MEMRA_DFLASH2_SDPA_CLIP=0` (the clip rollback seam) for the life of the value.
+struct ClipOff;
+
+impl ClipOff {
+    fn arm() -> Self {
+        // SAFETY: the caller holds gpu_guard().
+        unsafe { std::env::set_var("MEMRA_DFLASH2_SDPA_CLIP", "0") };
+        Self
+    }
+}
+
+impl Drop for ClipOff {
+    fn drop(&mut self) {
+        // SAFETY: as above.
+        unsafe { std::env::remove_var("MEMRA_DFLASH2_SDPA_CLIP") };
+    }
+}
+
+#[test]
+#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
+fn gpu_cold_drafter_restore_bytes_match_plain_decode_and_republishes_a_floor_tail() {
+    let _gpu = gpu_guard();
+    let h = Harness::new("g18");
+    let prompt = tokens(PROMPT, 0xA11CE);
+    let split = PROMPT - BLOCK;
+    let (prefix, suffix) = prompt.split_at(split);
+    let max_new = 40usize;
+    let k = 3usize;
+    let ctx = prompt.len() + max_new + K + 8;
+    let dr = h.model.glm5_dflash.as_ref().expect("drafter attached");
+
+    // The byte reference: plain decode over the whole prompt, long enough for two legs.
+    let tape_plain = plain_tape(&h, &prompt, max_new);
+
+    // RED: the cold drafter needs the clipped round attention (the legacy full-scan kernel
+    // has no context-floor arm and would score the empty rows).
+    {
+        let _clip_off = ClipOff::arm();
+        assert!(
+            memra_engine::dflash::DflashKv::new_cold_at(&h.engine, &dr.draft.cfg, ctx, split)
+                .is_err(),
+            "RED: a cold drafter must refuse under MEMRA_DFLASH2_SDPA_CLIP=0"
+        );
+    }
+
+    // LEG 1: the restored trunk at the prefix boundary + a COLD drafter (no tail anywhere).
+    let (boundary_cache, boundary_logits) = h.fresh_primed(prefix, ctx);
+    let dkv = memra_engine::dflash::DflashKv::new_cold_at(&h.engine, &dr.draft.cfg, ctx, split)
+        .expect("cold drafter at the restored boundary");
+    assert_eq!(
+        dkv.len, split,
+        "the cold drafter sits at the restored boundary"
+    );
+    assert_eq!(dkv.floor(), split, "and owns no rows below it");
+    let mut restored = h
+        .model
+        .glm5_spec_session_from_restored(
+            &h.engine,
+            boundary_cache,
+            prefix,
+            suffix,
+            &boundary_logits,
+            dkv,
+            ctx,
+            None,
+        )
+        .expect("restored spec session with a cold drafter");
+    let n1 = 12usize;
+    let (tape1, drafted1, accepted1, _) = drive_bursts(&h, &mut restored, &prompt, k, n1, 5, &[]);
+    assert!(drafted1 > 0, "the cold-drafter session must actually draft");
+    assert_eq!(
+        tape1,
+        tape_plain[..tape1.len()],
+        "cold-drafter restored tape must be BYTE-IDENTICAL to plain decode (the drafter \
+         can only move acceptance)"
+    );
+
+    // REPUBLISH: the tail exported from the cold-drafter session is FLOOR-BEARING — it
+    // starts at or above the boundary the drafter was born at, never below. Exported at the
+    // PROMPT boundary (the publication a prefix entry carries, gate 13's shape): the drafter
+    // KV covers it after round 1 ingested the suffix taps (the ingest runs at the START of a
+    // round, so `kv.len` trails `pos()` by the last round's rows until the next round).
+    let upto = prompt.len();
+    let tail = restored
+        .export_draft_tail(&h.engine, upto)
+        .expect("tail export from the cold-drafter session");
+    assert_eq!(tail.floor, split, "the tail carries its exporter's floor");
+    assert!(
+        tail.base >= split && tail.base + tail.rows == upto,
+        "the tail covers [{}, {upto}) and nothing below the floor {split}",
+        tail.base
+    );
+    assert!(
+        tail.rows < dr.draft.cfg.sliding_window,
+        "at this scale the tail is SHORT (window {}): the floor is what admits it",
+        dr.draft.cfg.sliding_window
+    );
+    drop(restored);
+
+    // LEG 2: re-restore from the floor-bearing tail at `upto` (the whole prompt) with the
+    // first 8 plain tokens as the suffix; the continuation must be plain decode's
+    // continuation from there, byte for byte.
+    let j0 = 0usize; // index into tape_plain of the first token past `upto`
+    let committed2: Vec<u32> = prompt.to_vec();
+    let suffix2 = &tape_plain[j0..j0 + BLOCK];
+    let dkv2 = memra_engine::dflash::DflashKv::from_tail(&h.engine, &dr.draft.cfg, ctx, &tail)
+        .expect("a floor-bearing tail imports");
+    assert_eq!(
+        dkv2.floor(),
+        tail.base,
+        "the import inherits the floor at the tail's base"
+    );
+    assert_eq!(dkv2.len, upto);
+    let (cache2, logits2) = h.fresh_primed(&committed2, ctx);
+    let prompt2: Vec<u32> = committed2
+        .iter()
+        .copied()
+        .chain(suffix2.iter().copied())
+        .collect();
+    let mut restored2 = h
+        .model
+        .glm5_spec_session_from_restored(
+            &h.engine,
+            cache2,
+            &committed2,
+            suffix2,
+            &logits2,
+            dkv2,
+            ctx,
+            None,
+        )
+        .expect("session restored from the floor-bearing tail");
+    let n2 = 12usize;
+    let (tape2, drafted2, accepted2, _) = drive_bursts(&h, &mut restored2, &prompt2, k, n2, 5, &[]);
+    assert!(drafted2 > 0, "the re-restored session must draft");
+    let expect2 = &tape_plain[j0 + BLOCK..j0 + BLOCK + tape2.len()];
+    assert_eq!(
+        tape2, expect2,
+        "the continuation from the floor-bearing tail must be plain decode's continuation"
+    );
+    println!(
+        "gate 20 PASS: cold-drafter restore == plain bytes ({accepted1}/{drafted1} accepted), \
+         floor tail [{}, {upto}) re-imports with floor {} and continues byte-identical \
+         ({accepted2}/{drafted2} accepted)",
+        tail.base, tail.base
     );
 }
