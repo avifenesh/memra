@@ -109,7 +109,7 @@ mod worker;
 use std::collections::HashMap;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::mpsc::Sender;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use axum::{
     Extension, Json, Router,
@@ -130,6 +130,7 @@ use futures_core::Stream as _;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sha2::{Digest as _, Sha256};
 use tower::ServiceExt as _;
 
 use memra_engine::decode::GenParams;
@@ -1627,18 +1628,75 @@ fn validate_sampling_arm(
     Ok(())
 }
 
+/// The live model-metadata set: the `models` table plus the contract-v2 provider
+/// block from one `MEMRA_MODEL_METADATA` file. Readers hold an `Arc` to the
+/// set, so an atomic swap changes what NEW requests are admitted under while
+/// in-flight requests keep the set they started with (memra#76).
+#[derive(Debug, Clone, Default)]
+struct ModelMetadataSet {
+    models: HashMap<String, OpenRouterModelMetadata>,
+    /// None = the file carries no provider block.
+    provider: Option<ProviderMetadata>,
+}
+
+/// The receipt one metadata load — boot or reload — leaves behind. The sha256
+/// is over the file bytes, so equal receipts mean byte-identical files.
+#[derive(Debug, Clone)]
+pub struct MetadataReloadReceipt {
+    pub path: String,
+    pub sha256: String,
+    pub models: usize,
+    pub has_provider: bool,
+}
+
+fn sha256_hex_bytes(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
+}
+
+/// Read, hash, and validate one metadata file: the SAME checks boot applies
+/// (TOML shape, per-model invariants, every alias present in `MEMRA_MODELS`),
+/// shared by the boot path and the reload handle so validation parity is
+/// structural, not a second copy of the rules (memra#76).
+fn load_model_metadata_file(
+    path: &std::path::Path,
+    models: &[(String, String, Option<String>)],
+) -> Result<(ModelMetadataSet, MetadataReloadReceipt), String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("MEMRA_MODEL_METADATA {path:?}: {e}"))?;
+    let sha256 = sha256_hex_bytes(&bytes);
+    let text =
+        String::from_utf8(bytes).map_err(|e| format!("MEMRA_MODEL_METADATA {path:?}: {e}"))?;
+    let (models_map, provider) = OpenRouterMetadataFile::parse(&text)
+        .map_err(|e| format!("MEMRA_MODEL_METADATA {path:?}: {e}"))?;
+    for alias in models_map.keys() {
+        if !models.iter().any(|(name, _, _)| name == alias) {
+            return Err(format!(
+                "MEMRA_MODEL_METADATA {path:?}: model alias {alias:?} is not present in MEMRA_MODELS"
+            ));
+        }
+    }
+    let receipt = MetadataReloadReceipt {
+        path: path.to_string_lossy().into_owned(),
+        sha256,
+        models: models_map.len(),
+        has_provider: provider.is_some(),
+    };
+    Ok((
+        ModelMetadataSet {
+            models: models_map,
+            provider,
+        },
+        receipt,
+    ))
+}
+
 fn load_openrouter_metadata(
     models: &[(String, String, Option<String>)],
-) -> Result<
-    (
-        HashMap<String, OpenRouterModelMetadata>,
-        Option<ProviderMetadata>,
-    ),
-    String,
-> {
+) -> Result<ModelMetadataSet, String> {
     let path = match std::env::var("MEMRA_MODEL_METADATA") {
         Ok(path) => path,
-        Err(_) => return Ok((HashMap::new(), None)),
+        Err(_) => return Ok(ModelMetadataSet::default()),
     };
     let p = std::path::Path::new(&path);
     if !p.is_file() {
@@ -1646,22 +1704,61 @@ fn load_openrouter_metadata(
             "MEMRA_MODEL_METADATA={path:?} is not an existing TOML file"
         ));
     }
-    let text =
-        std::fs::read_to_string(p).map_err(|e| format!("MEMRA_MODEL_METADATA {path:?}: {e}"))?;
-    let (metadata, provider) = OpenRouterMetadataFile::parse(&text)
-        .map_err(|e| format!("MEMRA_MODEL_METADATA {path:?}: {e}"))?;
-    for alias in metadata.keys() {
-        if !models.iter().any(|(name, _, _)| name == alias) {
-            return Err(format!(
-                "MEMRA_MODEL_METADATA {path:?}: model alias {alias:?} is not present in MEMRA_MODELS"
-            ));
-        }
-    }
+    let (set, receipt) = load_model_metadata_file(p, models)?;
     eprintln!(
-        "[server] OpenRouter metadata loaded: {} model(s) from {path}",
-        metadata.len()
+        "[server] OpenRouter metadata loaded: {} model(s), sha256 {} from {path}",
+        receipt.models, receipt.sha256,
     );
-    Ok((metadata, provider))
+    Ok(set)
+}
+
+/// The engine half of the deployment admin `POST /admin/reload-metadata`
+/// (memra#76): re-read the boot `MEMRA_MODEL_METADATA` file, validate it with
+/// the boot checks, and atomically swap it for new requests. A failed reload
+/// keeps the old set — validation runs BEFORE the swap, never on it.
+///
+/// In-flight requests are unaffected by construction: handlers resolve their
+/// metadata from an `Arc` cloned at admission, so they keep the set they
+/// started with. Weights, kernel-shaping flags, and the `MEMRA_MODELS` roster
+/// are out of scope and untouched: an alias the boot roster does not name is
+/// rejected exactly like at boot.
+///
+/// Memory-only: unlike the worker-command handles this one needs no drop on
+/// the shutdown signal.
+#[derive(Clone)]
+pub struct MetadataReloadHandle {
+    cell: Arc<RwLock<Arc<ModelMetadataSet>>>,
+    /// The boot `MEMRA_MODELS` names: the alias subset check runs against the
+    /// resident roster, never a re-read one.
+    models: Arc<Vec<String>>,
+    /// The boot-resolved metadata path. None = unconfigured at boot.
+    path: Option<std::path::PathBuf>,
+}
+
+impl MetadataReloadHandle {
+    /// Reload the metadata file. Returns the receipt on success; the old set
+    /// stays live on any failure.
+    pub fn reload(&self) -> Result<MetadataReloadReceipt, String> {
+        let path = self.path.as_ref().ok_or_else(|| {
+            "model metadata reload: MEMRA_MODEL_METADATA was not configured at boot".to_string()
+        })?;
+        let model_tuples: Vec<(String, String, Option<String>)> = self
+            .models
+            .iter()
+            .map(|name| (name.clone(), String::new(), None))
+            .collect();
+        let (set, receipt) = load_model_metadata_file(path, &model_tuples)?;
+        let mut guard = self
+            .cell
+            .write()
+            .map_err(|_| "model metadata reload: cell poisoned".to_string())?;
+        *guard = Arc::new(set);
+        eprintln!(
+            "[server] model metadata reloaded: {} model(s), sha256 {} from {}",
+            receipt.models, receipt.sha256, receipt.path,
+        );
+        Ok(receipt)
+    }
 }
 
 #[derive(Clone)]
@@ -1669,9 +1766,11 @@ struct AppState {
     cmd_tx: Sender<Cmd>,
     models: Arc<Vec<String>>,
     caps: Arc<HashMap<String, ModelCaps>>,
-    openrouter_metadata: Arc<HashMap<String, OpenRouterModelMetadata>>,
-    /// Contract-v2 provider identity from the metadata file (None = no provider block).
-    provider_metadata: Arc<Option<ProviderMetadata>>,
+    /// Live model metadata (memra#76): swapped atomically by the reload
+    /// handle. Handlers resolve through [`AppState::metadata`], which clones
+    /// the current `Arc` — the clone they admit under is the set they serve
+    /// with, so a reload never changes an in-flight request.
+    openrouter_metadata: Arc<RwLock<Arc<ModelMetadataSet>>>,
     /// Optional admission + usage accounting behind the metering seam. Terminal usage is
     /// synced before the HTTP completion is published; the CUDA-owner worker never performs
     /// accounting I/O. None ⇔ no accounting configured (the old `request_ledger: None`).
@@ -1705,6 +1804,16 @@ struct AppState {
 }
 
 impl AppState {
+    /// The metadata set this request is admitted under: a clone of the live
+    /// `Arc`, so a concurrent reload swaps future admissions, never this one.
+    /// A poisoned lock yields the last set rather than failing the request —
+    /// the `Arc` inside is still a valid set either way.
+    fn metadata(&self) -> Arc<ModelMetadataSet> {
+        self.openrouter_metadata
+            .read()
+            .map(|guard| guard.clone())
+            .unwrap_or_else(|poisoned| poisoned.into_inner().clone())
+    }
     /// THE per-request vendor-defaults lookup: every surface handler resolves this model's
     /// omitted-field sampling defaults through this one body (operator metadata first, arch
     /// caps second — `SamplingDefaults::resolve`). Handlers call this instead of composing
@@ -1719,7 +1828,7 @@ impl AppState {
     /// gets is decided by its resolved thinking mode inside the one builder
     /// (`ModelSamplingDefaults::for_mode`), never at a surface's own call site.
     fn sampling_defaults(&self, model: &str) -> ModelSamplingDefaults {
-        ModelSamplingDefaults::resolve(self.openrouter_metadata.get(model), self.caps.get(model))
+        ModelSamplingDefaults::resolve(self.metadata().models.get(model), self.caps.get(model))
     }
 }
 
@@ -5044,6 +5153,10 @@ impl ServerWiring {
 /// engine-runtime operations a deployment-side admin surface needs.
 pub struct RuntimeHandles {
     pub trim: TrimHandle,
+    /// Live model-metadata reload (memra#76): the deployment admin surface
+    /// exposes this as `POST /admin/reload-metadata`. Memory-only — unlike the
+    /// worker-command handles it needs no drop on the shutdown signal.
+    pub metadata_reload: MetadataReloadHandle,
     /// Tenant lifecycle purge (lane/kv-tenancy-compaction-20260831): the deployment
     /// admin surface calls this from its key-revocation and tenant-deletion paths.
     pub purge: PurgeHandle,
@@ -5242,13 +5355,18 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
     let metrics_auth = MetricsAuth::new(bind_loopback, api_auth.configured(), metrics_token);
 
     let models = parse_models_config();
-    let (openrouter_metadata, provider_metadata) = match load_openrouter_metadata(&models) {
+    let metadata_set = match load_openrouter_metadata(&models) {
         Ok(loaded) => loaded,
         Err(err) => {
             eprintln!("[server] FATAL: {err}");
             std::process::exit(1);
         }
     };
+    // The boot-resolved metadata path travels with the reload handle: a reload
+    // re-reads THIS file, never a re-resolved env var.
+    let metadata_path = std::env::var("MEMRA_MODEL_METADATA")
+        .ok()
+        .map(std::path::PathBuf::from);
     // The metering seam splits here. The STOCK server ships no accounting: only the
     // engine is open, and admission policy / billing / capture / the provisioning
     // surface are the deployment binary's business (owner razor 2026-08-29). Their
@@ -5332,6 +5450,15 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
         };
     eprintln!("[server] worker ready; serving models: {model_names:?}");
 
+    // Live metadata cell + reload handle (memra#76): built here so the
+    // deployment hook below and AppState share the same cell.
+    let metadata_cell = Arc::new(RwLock::new(Arc::new(metadata_set)));
+    let metadata_reload = MetadataReloadHandle {
+        cell: metadata_cell.clone(),
+        models: model_names.clone(),
+        path: metadata_path,
+    };
+
     // Deployment hook: the worker is live, hand over the runtime handles — INCLUDING
     // the drain shutdown signal. The TrimHandle wraps a worker command sender, and the
     // worker's exit condition is "all senders dropped": a deployment surface that
@@ -5344,6 +5471,7 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
             trim: TrimHandle {
                 cmd_tx: cmd_tx.clone(),
             },
+            metadata_reload,
             purge: PurgeHandle {
                 cmd_tx: cmd_tx.clone(),
             },
@@ -5368,8 +5496,7 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
         cmd_tx,
         models: model_names,
         caps,
-        openrouter_metadata: Arc::new(openrouter_metadata),
-        provider_metadata: Arc::new(provider_metadata),
+        openrouter_metadata: metadata_cell,
         metering: metering_obj,
         budget_tokenizers,
         api_auth,
@@ -6573,7 +6700,7 @@ fn models_openrouter_body(st: &AppState) -> serde_json::Value {
         .models
         .iter()
         .map(|model| {
-            model_entry_openrouter(model, st.caps.get(model), st.openrouter_metadata.get(model))
+            model_entry_openrouter(model, st.caps.get(model), st.metadata().models.get(model))
         })
         .collect();
     json!({ "data": data })
@@ -6667,7 +6794,7 @@ fn models_openmodels_body(st: &AppState) -> Result<serde_json::Value, String> {
         .models
         .iter()
         .map(|model| {
-            model_entry_openmodels(model, st.caps.get(model), st.openrouter_metadata.get(model))
+            model_entry_openmodels(model, st.caps.get(model), st.metadata().models.get(model))
         })
         .collect();
     Ok(json!({ "data": data? }))
@@ -6806,7 +6933,7 @@ async fn list_models_v1(State(st): State<AppState>) -> impl IntoResponse {
     let data: Vec<_> = st
         .models
         .iter()
-        .map(|m| model_entry_v1(m, st.caps.get(m), st.openrouter_metadata.get(m)))
+        .map(|m| model_entry_v1(m, st.caps.get(m), st.metadata().models.get(m)))
         .collect();
     let mut body = json!({
         "object": "list",
@@ -6817,7 +6944,7 @@ async fn list_models_v1(State(st): State<AppState>) -> impl IntoResponse {
     // contract from server truth — 429 rate limits and 503 overload both carry
     // Retry-After (+ the retry-after-ms twin), quota exhaustion is the stable
     // insufficient_balance code on 402, and every response echoes x-request-id.
-    if let Some(provider) = st.provider_metadata.as_ref() {
+    if let Some(provider) = st.metadata().provider.as_ref() {
         body["provider"] = json!({
             "id": provider.id,
             "status_url": provider.status_url,
@@ -8571,7 +8698,7 @@ async fn completions_with_admission(
     request.wire_deadline = Some(deadline.at.into_std());
     if let Err((message, param)) = apply_model_request_limits(
         &mut request,
-        st.openrouter_metadata.get(&model),
+        st.metadata().models.get(&model),
         st.caps.get(&model),
     ) {
         return with_request_id(&env.id, bad_request(&message, Some(param)));
@@ -8893,7 +9020,8 @@ async fn chat_completions_with_admission(
         lane,
         affinity,
         ttft.clone(),
-        st.openrouter_metadata
+        st.metadata()
+            .models
             .get(&model)
             .and_then(|m| m.default_reasoning_effort.as_deref()),
         &st.sampling_defaults(&model),
@@ -8908,7 +9036,7 @@ async fn chat_completions_with_admission(
     plan.request.wire_deadline = Some(deadline.at.into_std());
     if let Err((message, param)) = apply_model_request_limits(
         &mut plan.request,
-        st.openrouter_metadata.get(&model),
+        st.metadata().models.get(&model),
         st.caps.get(&model),
     ) {
         return with_request_id(&env.id, bad_request(&message, Some(param)));
@@ -17955,8 +18083,7 @@ temperature = 0.6
             cmd_tx,
             models: Arc::new(vec!["m".into()]),
             caps: Arc::new(caps),
-            openrouter_metadata: Arc::new(HashMap::new()),
-            provider_metadata: Arc::new(None),
+            openrouter_metadata: Arc::new(RwLock::new(Arc::new(ModelMetadataSet::default()))),
             metering: None,
 
             budget_tokenizers: None,
@@ -19952,6 +20079,176 @@ temperature = 0.6
         // absent block is not an error
         let (_, provider) = OpenRouterMetadataFile::parse("").unwrap();
         assert!(provider.is_none());
+    }
+
+    /// memra#76 reload-handle tests. The load-bearing properties, not the
+    /// parse rules (those have their own tests): validation runs BEFORE the
+    /// swap so a bad file keeps the old set, the swap is atomic for new
+    /// readers while a pre-swap `Arc` keeps serving the old set, and the
+    /// receipt hashes the file bytes.
+    fn write_metadata_tmp(name: &str, body: &str) -> std::path::PathBuf {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "memra-metadata-reload-test-{}-{}-{name}",
+            std::process::id(),
+            COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+        ));
+        std::fs::write(&path, body).unwrap();
+        path
+    }
+
+    fn reload_test_models() -> Vec<(String, String, Option<String>)> {
+        vec![("m".to_string(), "x".to_string(), None)]
+    }
+
+    fn reload_test_handle(path: &std::path::Path, set: ModelMetadataSet) -> MetadataReloadHandle {
+        MetadataReloadHandle {
+            cell: Arc::new(RwLock::new(Arc::new(set))),
+            models: Arc::new(vec!["m".to_string()]),
+            path: Some(path.to_path_buf()),
+        }
+    }
+
+    const RELOAD_V1: &str = r#"
+[models.m]
+[models.m.pricing]
+prompt = "0.00000100"
+completion = "0.00000300"
+"#;
+
+    const RELOAD_V2: &str = r#"
+[models.m]
+[models.m.pricing]
+prompt = "0.00000050"
+completion = "0.00000150"
+"#;
+
+    fn load_v1(path: &std::path::Path) -> ModelMetadataSet {
+        load_model_metadata_file(path, &reload_test_models())
+            .unwrap()
+            .0
+    }
+
+    #[test]
+    fn metadata_reload_swaps_new_readers_and_keeps_inflight_on_old() {
+        let path = write_metadata_tmp("swap.toml", RELOAD_V1);
+        let handle = reload_test_handle(&path, load_v1(&path));
+        // The pre-reload clone is the in-flight request: it must keep v1.
+        let inflight = handle.cell.read().unwrap().clone();
+        assert_eq!(
+            inflight.models["m"].pricing.prompt.as_deref(),
+            Some("0.00000100")
+        );
+
+        std::fs::write(&path, RELOAD_V2).unwrap();
+        let receipt = handle.reload().unwrap();
+        assert_eq!(receipt.models, 1);
+        assert!(!receipt.has_provider);
+
+        let live = handle.cell.read().unwrap().clone();
+        assert_eq!(
+            live.models["m"].pricing.prompt.as_deref(),
+            Some("0.00000050"),
+            "new readers see the reloaded set"
+        );
+        assert_eq!(
+            inflight.models["m"].pricing.prompt.as_deref(),
+            Some("0.00000100"),
+            "the pre-swap Arc still serves the old set"
+        );
+        assert!(!Arc::ptr_eq(&inflight, &live), "the swap replaced the Arc");
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn metadata_reload_rejects_invalid_file_and_keeps_old() {
+        let path = write_metadata_tmp("bad.toml", RELOAD_V1);
+        let handle = reload_test_handle(&path, load_v1(&path));
+
+        std::fs::write(&path, "[models.m]\n[models.m.pricing]\nprompt = \"free\"\n").unwrap();
+        let err = handle.reload().unwrap_err();
+        assert!(err.contains("must be a non-negative"), "{err}");
+        assert_eq!(
+            handle.cell.read().unwrap().models["m"]
+                .pricing
+                .prompt
+                .as_deref(),
+            Some("0.00000100"),
+            "a failed reload keeps the old set"
+        );
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn metadata_reload_rejects_unknown_alias_like_boot() {
+        let path = write_metadata_tmp("alias.toml", RELOAD_V1);
+        let handle = reload_test_handle(&path, load_v1(&path));
+
+        std::fs::write(
+            &path,
+            "[models.ghost]\n[models.ghost.pricing]\nprompt = \"0.00000100\"\n",
+        )
+        .unwrap();
+        let err = handle.reload().unwrap_err();
+        assert!(err.contains("not present in MEMRA_MODELS"), "{err}");
+        assert!(
+            !handle.cell.read().unwrap().models.contains_key("ghost"),
+            "a failed reload keeps the old set"
+        );
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn metadata_reload_receipt_hashes_file_bytes() {
+        let path = write_metadata_tmp("receipt.toml", RELOAD_V1);
+        let handle = reload_test_handle(&path, load_v1(&path));
+        let receipt = handle.reload().unwrap();
+        assert_eq!(receipt.models, 1);
+        assert!(!receipt.has_provider);
+        assert!(
+            receipt.sha256.len() == 64 && receipt.sha256.bytes().all(|b| b.is_ascii_hexdigit()),
+            "sha256 hex, got {:?}",
+            receipt.sha256
+        );
+        assert_eq!(
+            receipt.sha256,
+            sha256_hex_bytes(&std::fs::read(&path).unwrap()),
+            "the receipt hashes the file bytes"
+        );
+
+        std::fs::write(&path, RELOAD_V2).unwrap();
+        let receipt2 = handle.reload().unwrap();
+        assert_ne!(
+            receipt.sha256, receipt2.sha256,
+            "equal receipts mean byte-identical files"
+        );
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn metadata_reload_provider_presence_is_reported() {
+        let path = write_metadata_tmp(
+            "provider.toml",
+            "[provider]\nid = \"t\"\nstatus_url = \"https://status.example.invalid\"\n",
+        );
+        let set = ModelMetadataSet::default();
+        let handle = reload_test_handle(&path, set);
+        let receipt = handle.reload().unwrap();
+        assert_eq!(receipt.models, 0);
+        assert!(receipt.has_provider);
+        assert!(handle.cell.read().unwrap().provider.is_some());
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn metadata_reload_without_boot_path_errors() {
+        let handle = MetadataReloadHandle {
+            cell: Arc::new(RwLock::new(Arc::new(ModelMetadataSet::default()))),
+            models: Arc::new(vec!["m".to_string()]),
+            path: None,
+        };
+        let err = handle.reload().unwrap_err();
+        assert!(err.contains("not configured"), "{err}");
     }
 
     #[test]

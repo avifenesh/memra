@@ -150,7 +150,8 @@ pub(crate) async fn admit_translated(
         lane,
         affinity,
         ttft,
-        st.openrouter_metadata
+        st.metadata()
+            .models
             .get(&model)
             .and_then(|m| m.default_reasoning_effort.as_deref()),
         // Same per-model vendor sampling defaults as /v1/chat/completions and /v1/completions:
@@ -167,7 +168,7 @@ pub(crate) async fn admit_translated(
     plan.request.wire_deadline = Some(deadline.at.into_std());
     if let Err((message, param)) = crate::apply_model_request_limits(
         &mut plan.request,
-        st.openrouter_metadata.get(&model),
+        st.metadata().models.get(&model),
         st.caps.get(&model),
     ) {
         return Err(crate::bad_request(&message, Some(param)));
