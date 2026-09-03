@@ -573,6 +573,12 @@ impl HybridModel {
             "MEMRA_MOE_WEIGHT_TRACE",
             "MEMRA_MOE_INPUT_TRACE_DIR",
             "MEMRA_SIG_ROUTER_LOGIT_TRACE",
+            // `MEMRA_MOE_SEL_DUMP` (main #113, met this lane in a rebase 2026-09-03) is the one
+            // that reads the selection back on the DEVICE arm rather than the host arm, which is
+            // precisely the arm a captured body runs. Its DtoH pair would be RECORDED and not
+            // executed inside a capture region, so the dump would write stale rows and the door
+            // would look fine. Refused by name like every other observer.
+            "MEMRA_MOE_SEL_DUMP",
         ] {
             if std::env::var_os(env).is_some() {
                 return Some(format!(
@@ -716,9 +722,10 @@ impl HybridModel {
 
         // Read the live state signature BEFORE the pool takes its mutable borrow of the cache.
         let live_sig = stage_sig(self, e, cache, lo, hi);
-        // Reserved for the re-capture path, which is disabled above; a first capture allocates
-        // its own buffers.
-        let reuse: Option<StageBufs> = None;
+        // Carried out of a torn-down stage by the re-capture path below, so a rebuild reuses the
+        // buffers the old graphs baked instead of allocating fresh ones. A FIRST capture has
+        // nothing to reuse and this stays None.
+        let mut reuse: Option<StageBufs> = None;
         // CONSERVATIVE DECISION (box run 3, 2026-09-02). Two facts from that run drive this.
         // FIRST: the engine decided to re-capture on step 2 of a real artifact, where the
         // ping-pong swap is the only thing that should have moved and the signature is already
@@ -807,7 +814,30 @@ impl HybridModel {
                 }
                 let stale = self.glm5_graph_pool(cache).stages.remove(i);
                 crate::GLM5_DECODE_GRAPH_RECAPTURES.fetch_add(1, Ordering::Relaxed);
-                drop(stale);
+                // BUFFER REUSE IS THE SAFETY ARGUMENT, so it has to actually happen (revuto
+                // MEDIUM on #116: `reuse` used to be hard-bound `None`, so the rebuild allocated
+                // fresh buffers while this comment and the FLAGS row both claimed it reused
+                // them). Moving the buffers OUT does not free them and does not change their
+                // addresses; it only takes them out of the value whose drop destroys the execs.
+                // The execs therefore die while every address they baked is still live, which is
+                // the ordering `StageGraphs`' field order documents, and the rebuild allocates
+                // and frees nothing of its own against the stream-ordered mempool the graphs'
+                // alloc nodes draw from.
+                let StageGraphs {
+                    runs,
+                    x_io,
+                    x_out,
+                    ws,
+                    f16,
+                    ..
+                } = stale;
+                reuse = Some(StageBufs {
+                    x_io,
+                    x_out,
+                    ws,
+                    f16,
+                });
+                drop(runs);
                 need_capture = true;
             }
         }
@@ -885,7 +915,6 @@ impl HybridModel {
     /// HOST-side swap inside `kda_cached` runs on both passes, which is exactly how phase 1 gets
     /// the opposite pointer assignment. Two passes leave the host fields back where they started,
     /// so the pool starts at phase 0.
-    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)] // allow: the capture's inputs are the stage's identity plus the reusable buffer set
     fn glm5_capture_stage(
         &self,

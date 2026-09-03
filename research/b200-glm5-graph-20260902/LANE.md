@@ -1198,6 +1198,91 @@ match.
 
 Neither arm was ever a token defect. Take 13's token tape was correct on both runs.
 
+## 9q. The serving A/B measured the door's ABSENCE, and why
+
+Take 13's serving A/B ran six boots and every one printed `graph-lines: 0 latch: 0`: zero
+`[glm5-decode-graph]` lines of any kind, refusals included, on the graph-on boots as well as the
+graph-off ones. Decode was flat across arms (43.7/43.2/42.6 code and 43.2/43.3/43.2 prose
+graph-off, against 43.4/43.1/43.8 and 42.5/43.1/43.2 graph-on).
+
+That is not the falsifier of §9o firing. It is the door never running.
+
+**The missing conjunct is the WALK.** `MEMRA_GLM5_DECODE_GRAPH` is wired into
+`hybrid_forward::hyper_range_decode` (`hybrid_forward.rs:2168`), the per-session SERIAL hc walk
+that `decode_step_hyper` and `decode_step_hyper_ppn` run. Serving with `MEMRA_HYPER_BATCH=1`
+routes every session, **including B=1**, through `decode_batch::decode_step_batch_hyper`
+(`decode_batch.rs:2702`), whose trunk is `decode_batch_layers`. Grep is the whole proof: every
+caller of `hyper_range_decode` is in `hybrid_forward.rs` (lines 2195 and 3636-3695), and
+`decode_batch.rs` contains none. The gate binary calls `decode_step`, which is why it armed the
+door fine at `replays=564` on the same binary in the same hour.
+
+Zero lines including refusals was the tell, and I should have read it as one earlier: a refusal
+prints from `glm5_decode_graph_ready`, which is only reached once `glm5_decode_graph_on()` is
+true AND the walk calls `hyper_range_decode`. Silence means the call never happened.
+
+`decode_step_batch_hyper` now says so, once per process, when the door is set on the batched
+walk. A door that silently does nothing in serving is the same failure class as the take 12
+vacuity, and it gets the same treatment: name it in the log rather than let silence be read as a
+refusal.
+
+Extending capture to the batched walk is a separate lane. Its trunk has its own per-row geometry
+and the two walks would need their own identity gate against each other.
+
+## 9r. Composition audit, before any default flip
+
+Sibling lane, 2026-09-03: #114's default flip was withdrawn because turning it ON made another
+door's branch slice past its buffer and panic the worker, and because a ring was read
+cross-stream with event tracking disabled. Neither is catchable by a token tape. This door binds
+buffers at capture time across two PP stages, so the same audit is owed here. What follows
+separates what was CHECKED from what could not be.
+
+### Refused BY NAME, so composition cannot arise
+
+`MEMRA_GLM5_TP` (a sharded KDA layer is not on this path), `MEMRA_SIG_ROUTER=0`,
+`MEMRA_HTOD_DIET` unset, `MEMRA_EVT` (cudarc event tracking: capture refuses cross-stream waits,
+which is exactly #114's second failure mode), the NVMe worker H2D promotion, `moesd` capture,
+`hidden_trace`, and the observer envs `MEMRA_MOE_STATS` / `MOE_TRACE` / `MOE_WEIGHT_TRACE` /
+`MOE_INPUT_TRACE_DIR` / `SIG_ROUTER_LOGIT_TRACE`.
+
+**`MEMRA_MOE_SEL_DUMP` was added to that list in this lane**, and it is the one the rebase found
+rather than the audit. Main's #113 landed a device-arm selection dump at the exact site this lane
+edits, and it does a DtoH pair per layer-call on the DEVICE arm, which is the arm a captured body
+runs. Inside a capture that DtoH is recorded and not executed, so the dump would have written
+stale rows and the door would have looked fine. Refused by name now.
+
+### Checked by reading, on the captured path
+
+Every door read inside the captured body (`hyper.rs` and `kda.rs`, which are the glue and the
+mixer, plus the MoE dispatch):
+
+| door | verdict |
+|---|---|
+| `MEMRA_KDA_FUSED_PROJ` | kernel-group selection only. Declines on TP shards and outside `t in 1..=15`. Capture-clean. |
+| `MEMRA_HC_FUSED_PRE` | fuses three site kernels into one launch. No sync, no HtoD, no host geometry. Capture-clean. Note the reader is `== Ok("1")`, so the posture's `HC_FUSED_PRE=2` is OFF. |
+| `MEMRA_GLM5_Q8_FUSE` | `OnceLock` bool, kernel selection. Capture-clean. |
+| `MEMRA_GLM5_W8` + `MEMRA_B200_GEMV_V2` | the fused six-projection q8 twin. Reads pre-existing mirrored weight ranges; **it bounds-checks rather than slices** (`x.len() < t * in_f` returns `Ok(None)`), which is #114's first failure mode guarded at the site. Capture-clean by reading. |
+| `MEMRA_HC_DECODE_WS` | the door FORCES the workspace walk inside capture whatever this says, because a capture needs stable operand addresses. Stated in the FLAGS row rather than left to a counter. |
+| `MEMRA_MOE_FUSED_EPI` | on the MoE path, but under the door the vrows arm fires instead, so the fused epilogue does not dispatch at t=1. |
+| `MEMRA_KDA_CHUNKED` / `MEMRA_GDN_CHUNKED` | t>1 arms; the captured walk is t=1 only. |
+
+### Could NOT be checked, and this is the honest half
+
+* **Every `sm_100a`-gated door is structurally OFF on the rig.** `b200_gemv_v2_level()` and
+  `b200_matvec_arm_on()` both return early unless `env!("MEMRA_BUILT_CUDA_ARCH") == "100a"`, which
+  a 5090 build never is. So `MEMRA_B200_GEMV_V2`, `MEMRA_B200_MATVEC_ARM`,
+  `MEMRA_B200_MLA_DECODE_ARM` and `MEMRA_B200_DSA_DECODE` have been read but never RUN under a
+  capture. My verdicts on them are code reading, not receipts.
+* **The batched walk** (§9q). The door does not reach it, so their composition is undefined rather
+  than verified.
+* **The whole serving posture together.** The one A/B that would have exercised it did not engage
+  the door, and the hardware is gone: the vast.ai account is out of credit (`billing_creditonly:
+  1`, so auto-topup never charges a card) and every instance including the B200 pair was stopped
+  on 2026-09-03.
+
+**Therefore: no default flip is proposed, and none should be accepted, on this evidence.** The
+door stays OFF. What it has is a green gate on the serial walk and a bit-identity receipt on the
+rig; what it does not have is a single serving token that went through it.
+
 ## 10. Open items
 
 1. **Run the gate on the pair** (`--steps 64 --reps 5`) and bank the receipt. Until then the

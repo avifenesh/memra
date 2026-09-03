@@ -12234,8 +12234,6 @@ impl Engine {
         self.alloc_uninit::<u64>(n)
     }
 
-    /// Return a dead verify-walk buffer to the pool (no-op with the door off: the buffer
-    /// drops to the ordinary async free, the shipped program).
     /// The capture keeper the glm5 decode-graph door drains into its `RunGraph`. While
     /// [`glm5_graph_capture_open`] is set, `vws_recycle*` pushes here instead of returning the
     /// buffer to the verify workspace, so nothing a captured body baked can be re-issued to
@@ -12245,6 +12243,8 @@ impl Engine {
         &self.capture_keep
     }
 
+    /// Return a dead verify-walk buffer to the pool (no-op with the door off: the buffer
+    /// drops to the ordinary async free, the shipped program).
     pub(crate) fn vws_recycle(&self, s: CudaSlice<f32>) {
         if glm5_graph_capture_open() {
             self.capture_keep.lock().unwrap().push(Box::new(s));
