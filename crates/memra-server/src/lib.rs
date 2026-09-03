@@ -1640,7 +1640,8 @@ struct ModelMetadataSet {
 }
 
 /// The receipt one metadata load — boot or reload — leaves behind. The sha256
-/// is over the file bytes, so equal receipts mean byte-identical files.
+/// is over the file bytes, so equal sha256 values mean byte-identical files
+/// (the receipt also carries the path it was read from).
 #[derive(Debug, Clone)]
 pub struct MetadataReloadReceipt {
     pub path: String,
@@ -1728,10 +1729,13 @@ fn load_openrouter_metadata(
 #[derive(Clone)]
 pub struct MetadataReloadHandle {
     cell: Arc<RwLock<Arc<ModelMetadataSet>>>,
-    /// The boot `MEMRA_MODELS` names: the alias subset check runs against the
-    /// resident roster, never a re-read one.
-    models: Arc<Vec<String>>,
-    /// The boot-resolved metadata path. None = unconfigured at boot.
+    /// The boot `MEMRA_MODELS` roster in full: the alias subset check runs
+    /// against the resident roster, never a re-read one, with the same tuples
+    /// boot validated against (only names are read today; the full tuples
+    /// keep a future check from silently changing meaning).
+    models: Arc<Vec<(String, String, Option<String>)>>,
+    /// The boot-resolved metadata path, stored as given so a symlink swap is
+    /// picked up by the reload. None = unconfigured at boot.
     path: Option<std::path::PathBuf>,
 }
 
@@ -1742,17 +1746,18 @@ impl MetadataReloadHandle {
         let path = self.path.as_ref().ok_or_else(|| {
             "model metadata reload: MEMRA_MODEL_METADATA was not configured at boot".to_string()
         })?;
-        let model_tuples: Vec<(String, String, Option<String>)> = self
-            .models
-            .iter()
-            .map(|name| (name.clone(), String::new(), None))
-            .collect();
-        let (set, receipt) = load_model_metadata_file(path, &model_tuples)?;
-        let mut guard = self
-            .cell
-            .write()
-            .map_err(|_| "model metadata reload: cell poisoned".to_string())?;
-        *guard = Arc::new(set);
+        let (set, receipt) = load_model_metadata_file(path, &self.models)?;
+        // The write lock covers the pointer swap only: validation ran before
+        // it, the receipt log after it, so readers never wait on either. A
+        // poisoned lock recovers like the readers do — the `Arc` inside is
+        // still a valid set either way.
+        {
+            let mut guard = self
+                .cell
+                .write()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            *guard = Arc::new(set);
+        }
         eprintln!(
             "[server] model metadata reloaded: {} model(s), sha256 {} from {}",
             receipt.models, receipt.sha256, receipt.path,
@@ -1827,8 +1832,16 @@ impl AppState {
     /// Returns BOTH vendor arms (lane/per-mode-sampling, 2026-08-24); which one a request
     /// gets is decided by its resolved thinking mode inside the one builder
     /// (`ModelSamplingDefaults::for_mode`), never at a surface's own call site.
-    fn sampling_defaults(&self, model: &str) -> ModelSamplingDefaults {
-        ModelSamplingDefaults::resolve(self.metadata().models.get(model), self.caps.get(model))
+    ///
+    /// Takes the pre-cloned set: handlers that consult metadata more than once
+    /// per request clone the set ONCE and resolve everything from it, so one
+    /// admission never mixes two generations across a reload.
+    fn sampling_defaults_in(
+        set: &ModelMetadataSet,
+        caps: &HashMap<String, ModelCaps>,
+        model: &str,
+    ) -> ModelSamplingDefaults {
+        ModelSamplingDefaults::resolve(set.models.get(model), caps.get(model))
     }
 }
 
@@ -5168,8 +5181,10 @@ pub struct RuntimeHandles {
     pub kv_handoff: HostHandoffHandle,
     /// Flips to `true` when the graceful drain completes (the moment the in-tree
     /// admin listener stops). A deployment-side surface MUST end and drop its
-    /// [`TrimHandle`] AND [`PurgeHandle`] on this signal: each handle wraps a worker
-    /// command sender, and the GPU worker only exits when every sender is dropped.
+    /// [`TrimHandle`], [`PurgeHandle`] AND [`HostHandoffHandle`] on this signal:
+    /// each wraps a worker command sender, and the GPU worker only exits when
+    /// every sender is dropped. ([`MetadataReloadHandle`] is memory-only and
+    /// needs no drop.)
     pub shutdown: tokio::sync::watch::Receiver<bool>,
 }
 
@@ -5355,6 +5370,9 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
     let metrics_auth = MetricsAuth::new(bind_loopback, api_auth.configured(), metrics_token);
 
     let models = parse_models_config();
+    // Full boot tuples for the reload handle's alias check (kept before the
+    // worker spawn moves `models`).
+    let metadata_models: Arc<Vec<(String, String, Option<String>)>> = Arc::new(models.clone());
     let metadata_set = match load_openrouter_metadata(&models) {
         Ok(loaded) => loaded,
         Err(err) => {
@@ -5455,7 +5473,7 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
     let metadata_cell = Arc::new(RwLock::new(Arc::new(metadata_set)));
     let metadata_reload = MetadataReloadHandle {
         cell: metadata_cell.clone(),
-        models: model_names.clone(),
+        models: metadata_models,
         path: metadata_path,
     };
 
@@ -6696,12 +6714,11 @@ fn model_entry_openrouter(
 }
 
 fn models_openrouter_body(st: &AppState) -> serde_json::Value {
+    let md = st.metadata();
     let data: Vec<_> = st
         .models
         .iter()
-        .map(|model| {
-            model_entry_openrouter(model, st.caps.get(model), st.metadata().models.get(model))
-        })
+        .map(|model| model_entry_openrouter(model, st.caps.get(model), md.models.get(model)))
         .collect();
     json!({ "data": data })
 }
@@ -6790,12 +6807,11 @@ fn model_entry_openmodels(
 }
 
 fn models_openmodels_body(st: &AppState) -> Result<serde_json::Value, String> {
+    let md = st.metadata();
     let data: Result<Vec<_>, _> = st
         .models
         .iter()
-        .map(|model| {
-            model_entry_openmodels(model, st.caps.get(model), st.metadata().models.get(model))
-        })
+        .map(|model| model_entry_openmodels(model, st.caps.get(model), md.models.get(model)))
         .collect();
     Ok(json!({ "data": data? }))
 }
@@ -6930,10 +6946,13 @@ fn model_entry_v1(
 /// GET /v1/models — the existing OpenAI/OpenRouter catalog listing, enriched with per-model
 /// metadata from the loaded plan (context length, tokenizer, instruct family).
 async fn list_models_v1(State(st): State<AppState>) -> impl IntoResponse {
+    // One generation for the whole body: rows and the provider block come
+    // from the same set, never mixed across a reload.
+    let md = st.metadata();
     let data: Vec<_> = st
         .models
         .iter()
-        .map(|m| model_entry_v1(m, st.caps.get(m), st.metadata().models.get(m)))
+        .map(|m| model_entry_v1(m, st.caps.get(m), md.models.get(m)))
         .collect();
     let mut body = json!({
         "object": "list",
@@ -6944,7 +6963,7 @@ async fn list_models_v1(State(st): State<AppState>) -> impl IntoResponse {
     // contract from server truth — 429 rate limits and 503 overload both carry
     // Retry-After (+ the retry-after-ms twin), quota exhaustion is the stable
     // insufficient_balance code on 402, and every response echoes x-request-id.
-    if let Some(provider) = st.metadata().provider.as_ref() {
+    if let Some(provider) = md.provider.as_ref() {
         body["provider"] = json!({
             "id": provider.id,
             "status_url": provider.status_url,
@@ -8680,6 +8699,9 @@ async fn completions_with_admission(
         Ok(affinity) => affinity,
         Err(msg) => return with_request_id(&env.id, bad_request(&msg, Some("session_id"))),
     };
+    // One metadata generation for this admission (memra#76): the defaults
+    // below and the limits check after it resolve from the same set.
+    let md = st.metadata();
     let mut request = build_request_with_trace(
         &req,
         tx,
@@ -8689,18 +8711,16 @@ async fn completions_with_admission(
         // /v1/completions is a raw-prompt surface: no template render, no thinking
         // control, `ThinkMode::Default` always — so the arm law resolves it to the
         // primary (thinking) arm through the same `for_mode` body the chat builder uses.
-        st.sampling_defaults(&model).for_mode(ThinkMode::Default),
+        AppState::sampling_defaults_in(&md, &st.caps, &model).for_mode(ThinkMode::Default),
     );
     request.cache_ns = cache_ns;
     request.request_id = env.id.clone();
     // The wire deadline rides to the worker beside the receipt identity, so the
     // first-token deadline gate judges the REMAINING deadline at its own tick.
     request.wire_deadline = Some(deadline.at.into_std());
-    if let Err((message, param)) = apply_model_request_limits(
-        &mut request,
-        st.metadata().models.get(&model),
-        st.caps.get(&model),
-    ) {
+    if let Err((message, param)) =
+        apply_model_request_limits(&mut request, md.models.get(&model), st.caps.get(&model))
+    {
         return with_request_id(&env.id, bad_request(&message, Some(param)));
     }
     // FEASIBILITY GATE: a non-streaming request we can see will not finish inside its
@@ -9013,6 +9033,9 @@ async fn chat_completions_with_admission(
         Ok(affinity) => affinity,
         Err(msg) => return with_request_id(&env.id, bad_request(&msg, Some("session_id"))),
     };
+    // One metadata generation for this admission (memra#76): effort, defaults
+    // and the limits check below resolve from the same set.
+    let md = st.metadata();
     let mut plan = match build_chat_request_with_trace(
         req,
         st.caps.get(&model),
@@ -9020,11 +9043,10 @@ async fn chat_completions_with_admission(
         lane,
         affinity,
         ttft.clone(),
-        st.metadata()
-            .models
+        md.models
             .get(&model)
             .and_then(|m| m.default_reasoning_effort.as_deref()),
-        &st.sampling_defaults(&model),
+        &AppState::sampling_defaults_in(&md, &st.caps, &model),
     ) {
         Ok(plan) => plan,
         Err(err) => {
@@ -9036,7 +9058,7 @@ async fn chat_completions_with_admission(
     plan.request.wire_deadline = Some(deadline.at.into_std());
     if let Err((message, param)) = apply_model_request_limits(
         &mut plan.request,
-        st.metadata().models.get(&model),
+        md.models.get(&model),
         st.caps.get(&model),
     ) {
         return with_request_id(&env.id, bad_request(&message, Some(param)));
@@ -20104,7 +20126,7 @@ temperature = 0.6
     fn reload_test_handle(path: &std::path::Path, set: ModelMetadataSet) -> MetadataReloadHandle {
         MetadataReloadHandle {
             cell: Arc::new(RwLock::new(Arc::new(set))),
-            models: Arc::new(vec!["m".to_string()]),
+            models: Arc::new(reload_test_models()),
             path: Some(path.to_path_buf()),
         }
     }
@@ -20244,7 +20266,7 @@ completion = "0.00000150"
     fn metadata_reload_without_boot_path_errors() {
         let handle = MetadataReloadHandle {
             cell: Arc::new(RwLock::new(Arc::new(ModelMetadataSet::default()))),
-            models: Arc::new(vec!["m".to_string()]),
+            models: Arc::new(reload_test_models()),
             path: None,
         };
         let err = handle.reload().unwrap_err();

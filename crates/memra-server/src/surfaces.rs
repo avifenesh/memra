@@ -143,6 +143,9 @@ pub(crate) async fn admit_translated(
     let (tx, rx) = worker::event_channel();
     let affinity = crate::affinity_key(&req.session_id, &req.user, headers)
         .map_err(|message| crate::bad_request(&message, Some("session_id")))?;
+    // One metadata generation for this admission (memra#76): effort, defaults
+    // and the limits check below resolve from the same set.
+    let md = st.metadata();
     let mut plan = match crate::build_chat_request_with_trace(
         req,
         st.caps.get(&model),
@@ -150,15 +153,14 @@ pub(crate) async fn admit_translated(
         lane,
         affinity,
         ttft,
-        st.metadata()
-            .models
+        md.models
             .get(&model)
             .and_then(|m| m.default_reasoning_effort.as_deref()),
         // Same per-model vendor sampling defaults as /v1/chat/completions and /v1/completions:
         // the ONE `AppState::sampling_defaults` body every surface handler calls. This function
         // is the shared admission for the translated surfaces (/v1/messages, /v1/responses), so
         // all four agree by construction, not by three copies matching.
-        &st.sampling_defaults(&model),
+        &crate::AppState::sampling_defaults_in(&md, &st.caps, &model),
     ) {
         Ok(plan) => plan,
         Err(err) => return Err(crate::bad_request(&err, None)),
@@ -168,7 +170,7 @@ pub(crate) async fn admit_translated(
     plan.request.wire_deadline = Some(deadline.at.into_std());
     if let Err((message, param)) = crate::apply_model_request_limits(
         &mut plan.request,
-        st.metadata().models.get(&model),
+        md.models.get(&model),
         st.caps.get(&model),
     ) {
         return Err(crate::bad_request(&message, Some(param)));
