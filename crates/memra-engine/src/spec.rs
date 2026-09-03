@@ -4432,6 +4432,14 @@ impl HybridModel {
                 else {
                     continue;
                 };
+                // memra#128: on the dcw / fa2 verify path the rank rows for [saved, target)
+                // were written on-device and the canonical cache holds only stale bytes for
+                // them (the verify bumps `local.len` and writes nothing). Copying those over
+                // the correct rank rows is exactly what spliced two requests' answers
+                // together on step-3.7-flash. The rewind already kept the right rows; skip.
+                if distributed.rows_external() {
+                    continue;
+                }
                 let target = saved
                     .checked_add(accepted)
                     .ok_or("spec TP KV batch restore length overflow")?;
@@ -4492,6 +4500,9 @@ impl HybridModel {
             else {
                 continue;
             };
+            if distributed.rows_external() {
+                continue; // see the batched loop above (memra#128)
+            }
             let target = saved
                 .checked_add(accepted)
                 .ok_or("spec TP KV restore length overflow")?;
