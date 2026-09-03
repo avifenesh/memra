@@ -714,10 +714,23 @@ pub(crate) fn gemv_v3_fits() -> bool {
 /// the two MUST move together (the launcher's grid and dynamic-smem size are derived from it).
 pub(crate) const GEMV_V2_ROWS: usize = 8;
 
-/// Engagement counter for `MEMRA_B200_GEMV_V2` (lane/b200-gemv-hbm-20260902). Counted at the
-/// arm's own call site, the `moe_grouped_prefill_dispatches` precedent: a door that never
-/// actually took its path must not be indistinguishable from one that did.
-pub(crate) static GEMV_V2_DISPATCHES: std::sync::atomic::AtomicU64 =
+/// Engagement counters for `MEMRA_B200_GEMV_V2` (lane/b200-gemv-hbm-20260902), one per arm,
+/// the `KDA_FUSED6_*` precedent in kda.rs. Counted at each arm's own call site
+/// (`moe_grouped_prefill_dispatches` precedent): a door that never actually took its path must
+/// not be indistinguishable from one that did, and that has to hold PER ARM, not per door. In
+/// the W8 posture the decode t=1 trunk and the t=2..=8 verify walk both engage in the same
+/// process; with one shared print-once gate whichever fired second never announced, and a box
+/// A/B could not attribute engagement to the arm that actually ran. Each counter gates its own
+/// print-once line.
+///
+/// W8 verify width arm, `qmatvec_q8_0_rows_tw_v2` (t in 2..=8).
+pub(crate) static GEMV_V2_Q8_ROWS_TW_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+/// W8 decode t=1 trunk arm, `qmatvec_q8_0_rp_v2`.
+pub(crate) static GEMV_V2_Q8_RP_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+/// bf16 row arm, `matvec_bf16_v2` (level 1) or `matvec_bf16_v3` (level 2); the line names which.
+pub(crate) static GEMV_V2_BF16_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
 /// MEMRA_B200_BF16_GEMV_LT=1: cuBLASLt REFERENCE door for the t=1 bf16 decode row matvec
@@ -22782,7 +22795,8 @@ impl Engine {
         // runs in the W8 posture. Same weight-once structure, 8 warps per block and the block
         // walk unrolled by two; bit-identical per (row, column). t in 9..=32 keeps `_tw32`.
         if b200_gemv_v2_on() && q8t_wonce_on() && t <= 8 {
-            if GEMV_V2_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+            if GEMV_V2_Q8_ROWS_TW_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0
+            {
                 eprintln!(
                     "[b200-gemv-v2] engaged arm=q8_rows_tw_v2 t={t} in_f={in_f} out_f={out_f} \
                      (W8 verify walk; MEMRA_B200_GEMV_V2=1)"
@@ -22906,7 +22920,7 @@ impl Engine {
         // activation would not fit the 48 KB default smem cap.
         if b200_gemv_v2_on() && in_f.is_multiple_of(32) && Self::q8_v2_smem_bytes(in_f) <= 48 * 1024
         {
-            if GEMV_V2_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+            if GEMV_V2_Q8_RP_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
                 eprintln!(
                     "[b200-gemv-v2] engaged arm=q8_rp_v2 t=1 in_f={in_f} out_f={out_f} \
                      (W8 posture; MEMRA_B200_GEMV_V2=1)"
@@ -23589,7 +23603,7 @@ impl Engine {
             // 36 KB of dynamic smem to fit the 48 KB default cap, so it declines per call
             // rather than per process and v2 takes those shapes.
             let v3 = b200_gemv_v2_level() >= 2 && ksplit == 1 && gemv_v3_fits();
-            if GEMV_V2_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+            if GEMV_V2_BF16_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
                 let arm = if v3 { "v3 (cp.async staged)" } else { "v2" };
                 eprintln!(
                     "[b200-gemv-v2] engaged arm={arm} t={t} in_f={in_f} out_f={out_f} \
