@@ -292,6 +292,23 @@ pub fn glm5_graph_host_moe() -> bool {
     std::env::var("MEMRA_GLM5_GRAPH_HOST_MOE").as_deref() == Ok("1")
 }
 
+/// `MEMRA_GLM5_GRAPH_NO_CAPTURE=1` — THE OTHER HALF OF THE BISECT, and the half that was missing.
+///
+/// `MEMRA_GLM5_GRAPH_HOST_MOE=1` turns OFF the device-table MoE arm AND makes the capture refuse
+/// by name, so box run 6 compared "neither enabler" against "both enablers". That is not a
+/// bisect, and calling it one was wrong: it could never attribute the defect to one of the two.
+/// This knob supplies the missing cell — the device-table MoE arm ENGAGES exactly as it does in
+/// serving, and the capture never happens, so the whole walk runs eagerly.
+///
+/// The rig has since cleared the MoE arm end to end, including at serving scale (288 experts,
+/// `in_f` 4096, `expert_stride` 4718592) driven by the box's own routing dump, so the expected
+/// result is a CORRECT tape — which would pin the defect on the capture and exonerate the arm.
+/// A wrong tape here would instead mean the arm behaves differently in situ than in the fixture,
+/// and would say so on the first run rather than after another round of guessing.
+pub fn glm5_graph_no_capture() -> bool {
+    std::env::var("MEMRA_GLM5_GRAPH_NO_CAPTURE").as_deref() == Ok("1")
+}
+
 /// `MEMRA_GLM5_GRAPH_TRACE=1` — GATE-HARNESS trace for `MEMRA_GLM5_DECODE_GRAPH`, never a
 /// serving flag. Prints one line per captured-run boundary per token, on BOTH arms and at the
 /// SAME layer boundaries, with a checksum of the stream state leaving that segment. Box run 4

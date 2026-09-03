@@ -520,6 +520,14 @@ impl HybridModel {
                 "this trunk has no sigmoid router (the device-table MoE arm needs one)".into(),
             );
         }
+        if crate::glm5_graph_no_capture() {
+            return Some(
+                "MEMRA_GLM5_GRAPH_NO_CAPTURE: capture disabled while the door's device-table MoE \
+                 arm stays engaged (the half of the bisect MEMRA_GLM5_GRAPH_HOST_MOE could not \
+                 supply, since that one turns off both enablers at once)"
+                    .into(),
+            );
+        }
         if crate::glm5_graph_host_moe() {
             return Some(
                 "MEMRA_GLM5_GRAPH_HOST_MOE forces the host-oracle MoE: its per-layer readback and \

@@ -781,6 +781,110 @@ The device act/out call sites were already the right ones — inside `moe_vrows_
 immediately after the token quantize and immediately after `moe_down8_fma_q8_rows`. They never
 fired; nothing about their placement needed to change.
 
+## 9k. Take 11 and the call-site audit: box slots closed, reproduction moves to the rig
+
+Take 11 still prints no `arm=device` act/out line after the per-arm budget fix. **Eleven box
+takes is the limit and the coordinator has closed further slots for this door until the rig
+reproduces the token-0 tape. That is the right call and this lane records it as such.**
+
+**The audit that was asked for, done and verified.**
+
+* `moe_vrows_pairs_q8` has **exactly one** call site: `hybrid_forward.rs:10799`, inside
+  `if vrows_fires`.
+* The rows kernel pair (`moe_gate_up_preclamp8_q8_rows` / `moe_down8_fma_q8_rows`) is launched
+  from **exactly two** places, both inside `moe_vrows_pairs_q8` (`:14709`, `:14730`). There is no
+  second launcher for the door to reach.
+* `vrows_dev` and `vrows_fires` share every conjunct beyond the door term, and both carry
+  `vrows_t1_dev`, so **`vrows_dev` cannot be true while `vrows_fires` is false** — and the
+  `vrows_dev && !vrows_fires` guard would error by name if they ever disagreed.
+* The act print sits immediately before the gate/up launch, inside that one call site, labelled
+  from the provenance (`VrowsSel::Dev` -> `device`).
+
+So the instrumented site IS the door's only path, and the shape dump and the act dump are guarded
+identically. Which leaves exactly two possibilities, and **one free grep on a file already on
+disk decides between them**:
+
+```
+grep -c 'glm5-vrows-t1.*arm=device' gate-glm5-decode-graph-11B.txt
+```
+
+* **> 0** — the device arm does reach `moe_ffn_sequential_zq8`'s device branch, and the act print
+  is being suppressed by its own guard rather than by the path. The only guard that can do that
+  is `!glm5_graph_capture_open()`: a layer inside a CAPTURED run executes host-side exactly once
+  (during capture, where the print is correctly suppressed as illegal) and never again, because a
+  graph REPLAY runs no host code at all. The device arm would then be structurally unobservable
+  at that site, and the checksum has to move to a capture-legal form or to the eager-latched
+  stage.
+* **0** — `vrows_t1_dev` is false on the box and the door's MoE never takes the device arm at
+  all, which contradicts take 7B (whose `[glm5-vrows-t1]` line carried real `sel` values from the
+  device branch, before the `arm=` field existed). The env gained `MEMRA_HYPER_BATCH=1` at take
+  8, which is exactly when the device line disappeared — but `hyper_batch_range_decode` is reached
+  from `decode_batch.rs`'s batched serving tick, not from the gate's `decode_step`, so that
+  should not reroute a single-session walk. If it does, the door is not on the serving path it
+  claims and that is the finding.
+
+**Next, on the rig and not the pair:** a synthetic 288-expert hc trunk in the serving shape,
+driven through the same door entry the gate's graph arm takes, with the box's real routing
+(`/root/out-coact/sel.bin`, `u8 layer, u8 n_sel, n_sel x (u16 expert, f32 w)`), asserting the
+per-layer output checksum against the host arm. The two rig gates this lane already has clear the
+table build and the kernel pair in isolation; what is missing is a fixture that runs the whole
+door path at the serving scale, which is the only thing that can turn this from box-window
+archaeology into a debuggable local failure.
+
+## 9l. The serving-shape reproduction PASSES, and that exposes an error in my own bisect
+
+`glm5_vrows_t1_serving_shape_gpu` ran on the rig at the exact serving shape — 288 experts,
+`in_f` 4096 / `n_ff` 2048, `row_bytes` 2304/2304/1152, `expert_stride` 4 718 592 (all asserted
+against the box dump), three 1.36 GB banks — driven by the box's OWN routing records from
+`box/sel-slice-50mb.bin`. Six real selections, host tables vs `moe_vrows_tables_from_sel`, same
+kernel pair, same bytes:
+
+```
+rec0 layer=3 sel=[42, 7, 246, 19, 169, 85, 71, 204]   host 0x941b6b4f7efcb312  dev 0x941b6b4f7efcb312  diffs 0/4096
+rec1 layer=3 sel=[116, 10, 226, 47, 77, 181, 190, 273] host 0x5aa77b7e3c6d95fa  dev 0x5aa77b7e3c6d95fa  diffs 0/4096
+... all six bit-identical, absmax 8.7e4 - 1.35e5, nz 4096/4096
+```
+
+**The device-table MoE arm is now cleared end to end**: table values (past 4 GiB strides), the
+kernel pair at t=1, and the whole consumer at serving scale with real routing. Three independent
+rig gates, no diff anywhere.
+
+**And that elimination exposes an error in the bisect I shipped.** `MEMRA_GLM5_GRAPH_HOST_MOE=1`
+stands the MoE arm down **and** makes the capture refuse by name. So box run 6 compared *neither
+enabler* (6A, correct tape) against *both enablers* (6B, wrong tape). **That is not a bisect**,
+and §9g called it one. It could never attribute the defect to one of the two, and I read it as
+having attributed it to the MoE arm — which the rig has now shown is clean. The reasoning that
+followed from take 6 onward inherited that mistake.
+
+**The missing cell, added:** `MEMRA_GLM5_GRAPH_NO_CAPTURE=1` — the device-table MoE arm engages
+exactly as in serving, the capture never happens, the walk runs eagerly.
+
+**Expected result, written down before the run so it cannot be rationalised afterwards: a CORRECT
+tape.** That would pin the defect on the capture/replay and exonerate the arm, consistent with all
+three rig gates. A wrong tape would instead mean the arm behaves differently in situ than in the
+fixture — the remaining difference being the things the fixture does not model: the shared expert
+merged into the same call, `ws.z` as the activation source, and the verify-workspace pool
+(`vws_uninit*`) supplying `zq`/`zd`/`ptrs`/`scl`/`aq2`/`ad2` instead of fresh buffers — and it
+would say so on the first run.
+
+**One box run answers it**, and it is a single env var on a binary that already exists.
+
+**Why the capture half cannot be reproduced on the rig as things stand — a structural limit, not
+a missing effort.** The capture REQUIRES the device-table MoE arm: a host router readback and its
+`cuStreamSynchronize` are illegal inside a capture region, which is the entire reason the T=1
+device arm had to be built before anything could be captured. And that arm requires slab-resident
+uniform q8 experts with a live PRE clamp (`slab_bases.is_some() && moe_q8 && uniform_experts &&
+n_used <= 8 && Pre(l) > 1e-6`). The mini hc fixture the rig's decode gates use
+(`hc_decode_ws_gpu.rs`'s harness) has no resident expert slab and no PRE clamp, so the door
+refuses it by name and a capture gate over it would be vacuous — the failure mode this lane has
+already paid for twice.
+
+So reproducing the capture locally needs the mini hc fixture EXTENDED with slab-resident clamped
+NVFP4 experts. That is buildable and is the fallback if no box slot can be had; it is a fixture
+change, not a discovery, and it is the next rig task if `MEMRA_GLM5_GRAPH_NO_CAPTURE` cannot be
+run. Stating it now so the choice is explicit rather than implied: one env var on an existing
+binary, or a day of fixture work to reach the same answer locally.
+
 ## 10. Open items
 
 1. **Run the gate on the pair** (`--steps 64 --reps 5`) and bank the receipt. Until then the
