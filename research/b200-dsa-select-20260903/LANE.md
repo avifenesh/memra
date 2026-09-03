@@ -9,8 +9,8 @@ hiding. No B200 in this worktree; the local RTX 5090 was used for EXACTNESS and 
 `memra_mla_kpool_select_kernel` grids `t_q` blocks, so plain decode runs the whole selection on
 **ONE CTA** - 0.68% of a 148-SM die - sweeping `n_pools` up to ten times (8 MSB-first radix
 passes, an optional unique-resolution scan, the membership count, the emit). Depth-LINEAR in
-`n_pools = t_kv / pool`. Measured on the 5090 at t_q=1: 83.0 us/layer at 128k, 149.8 at 256k,
-**557.0 at 1M** - against a byte floor of `n_pools * 4 B` = 1 MB per sweep, ~0.13 us at 8 TB/s.
+`n_pools = t_kv / pool`. Measured on the 5090 at t_q=1: 82.7 us/layer at 131_072 tokens, 149.4 at
+262_144, **551.4 at 1_048_576** - against a byte floor of `n_pools * 4 B` = 1 MB per sweep, ~0.13 us at 8 TB/s.
 The gap is parallelism, nothing else.
 
 ## 2. Exact, not banded - and why that is a construction
@@ -118,35 +118,44 @@ IDENTICAL, **40/40 exactness cells EXACT at 20 repeats each (800 comparisons)**.
 Timing, direction only under the rig law (the 5090 throttles and this door is sm_100a-gated, so
 it cannot even engage there - the gate reaches the kernels through raw FFI):
 
-| n_pools | context | shipped t_q=1 | parallel | ratio | t_q=4 ratio |
+TRANSCRIBED FROM `gate-5090-20260903.txt` AS IT STANDS. An earlier version of this table was
+built from a PREVIOUS run of the gate whose log this file later overwrote, so it disagreed with
+its own citation (t_q=4 at 65536 read 1.20x against the log's 1.10x, and the whole t_q=4 column
+was off). Numbers here are now read out of the file:
+
+| n_pools | context (tokens) | shipped t_q=1 | parallel | ratio | t_q=4 ratio |
 |---|---|---|---|---|---|
-| 4096 | 16_384 | 20.5 us | 102.3 | 0.20x | 0.19x |
-| 8192 | 32_768 | 26.0 us | 101.9 | 0.26x | 0.23x |
-| 32768 | 131_072 | 83.0 us | 92.8 | 0.89x | 0.45x |
-| **65536** | **262_144** | **149.8 us** | **99.9** | **1.50x** | **1.20x** |
-| 262144 | 1_048_576 | **557.0 us** | **175.8** | **3.17x** | **1.90x** |
+| 4096 | 16_384 | 20.3 us | 101.7 | 0.20x | 0.19x |
+| 8192 | 32_768 | 25.7 us | 101.6 | 0.25x | 0.21x |
+| 32768 | 131_072 | 82.7 us | 92.1 | 0.90x | 0.49x |
+| **65536** | **262_144** | **149.4 us** | **97.3** | **1.53x** | **1.10x** |
+| 262144 | 1_048_576 | **551.4 us** | **174.0** | **3.17x** | **1.97x** |
 
-Six launches against one kernel is a real fixed cost, so this is a DEPTH door: it loses below
-128k and pays from 256k up. `MLA_DSA_SELECT_MIN_POOLS` is therefore **65536**, measured. The
-constant was initially 4096, copied from the scorer's `MLA_DSA_SCORE_MIN_POOLS`; that would have
-shipped a measured **4.6x regression at 32k**, and the gate's own regression bar is what caught
-it.
+Six launches against one kernel is a real fixed cost, so this is a DEPTH door: on this rig it
+loses below 131_072 tokens and pays from 262_144 up. The constant was initially 4096, copied from
+the scorer's `MLA_DSA_SCORE_MIN_POOLS`; that would have shipped a measured **4.6x regression at
+32_768 tokens**, and the gate's own regression bar is what caught it. **The floor this section
+argued for was later overturned on the target** -- see section 7d, where t_q=4 at 65536 pools is
+0.94x on the pair against the 1.10x above, and the floor became keyed on `t_q`.
 
-## 6. Predicted saving (superseded at 1M by the measured receipt in section 7b)
+## 6. Predictions, SUPERSEDED -- kept only to show what transferred and what did not
 
-Per token = per layer x 11 MLA/DSA layers, at t_q=1, applying the 5090 ratios:
+Both rows below have since been measured end to end on the pair. Kept because the comparison is
+the useful part, not the numbers.
 
-| context | shipped | with the door | **saving** |
-|---|---|---|---|
-| 256k | 1.65 ms/token | 1.10 ms/token | **0.55 ms/token** |
-| 1M | 6.13 ms/token | 1.93 ms/token | **4.19 ms/token** |
+Per token = per layer x 11 MLA/DSA layers at t_q=1, applying 5090 ratios:
 
-Those absolute numbers are 5090 microseconds and will not transfer; the RATIOS are the
-prediction. Scaling by the previous lane's measured 5090-to-B200 factor on the sibling scorer
-(3093.7 -> 852.0 us at 1M, ~3.6x), a B200 shipped selector at 1M should sit near ~155 us/layer =
-~1.7 ms/token, and the parallel arm should do RELATIVELY BETTER there than on an 82-SM part
-because the whole point is filling SMs. So the box cell has two numbers to beat: **>= 1.5x at
-256k and >= 3.2x at 1M**, both at t_q=1.
+| context (tokens) | predicted saving | what the pair actually measured |
+|---|---|---|
+| 262_144 | 0.55 ms/token (>= 1.5x) | **about +2% end to end** (section 7e) -- the prediction was wrong IN KIND: 1.5x was a kernel ratio, and at that depth the selector is a small share of the token |
+| 1_048_576 | 4.19 ms/token (>= 3.2x) | **4.26 ms/token, +17.5%** (section 7b) -- transferred to within 1.7% |
+
+Note the row labels: these are 262_144 and 1_048_576 TOKENS, i.e. the 65536- and 262144-pool
+cells. A rung called "256k" is 64_189 pools and does not engage at all (section 7c).
+
+The lesson worth keeping: a kernel ratio becomes a serving number only after weighting by that
+kernel's share of the token. At 1M the selector's share is large, so the ratio carried almost
+exactly; just above the floor its share is small, so a 1.5x kernel ratio was worth ~2%.
 
 ## 7. Composition audit (2026-09-03, static)
 
@@ -337,7 +346,7 @@ from target evidence (7d), and the last prediction is measured (7e). What remain
    carrying a policy change plus its evidence.
 2. **The `t_q >= 2` band between 65536 and 262144 pools is unswept.** The spec-verify floor sits
    at 262144 because that is the only measured win at those widths, not because 262144 is where
-   the crossover is. If the spec route matters at 256k-1M, sweeping that band on the pair would
+   the crossover is. If the spec route matters between 262_144 and 1_048_576 tokens, sweeping that band would
    likely lower it. Cheap: it is a `dsa-select-gate` ladder edit and one box run.
 3. **The composition audit (7) is still static.** No conjunct has been run in isolation; the
    end-to-end evidence is one posture, the full best-posture stack.
