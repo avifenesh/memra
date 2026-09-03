@@ -3110,3 +3110,55 @@ fn gpu_cold_drafter_restore_bytes_match_plain_decode_and_republishes_a_floor_tai
         tail.base, tail.base
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// Gate 19 — PENALIZED SESSIONS REFUSE DEMOTION (revuto finding on the lane/spec-exclusions
+// re-land, 2026-09-03): `glm5_spec_into_demoted`'s flush is one plain `decode_step` +
+// `argmax(&logits)` on the boundary row — no penalty pass. Demoting a penalized greedy
+// session (`sampling: None, pen: Some`) would silently emit that one token unpenalized,
+// exactly the failure class `glm5_penalty_admit`'s refusal exists to prevent and the reason
+// dspark keeps penalized-greedy off its own spec route structurally. `demote_eligible` must
+// read `pen` as well as `sampling`, and the handoff must refuse loudly, the same shape gate 9
+// (glm5_spec_session_gpu.rs) already pins for sampled sessions.
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
+fn gpu_penalized_greedy_session_refuses_demotion() {
+    let _gpu = gpu_guard();
+    let h = Harness::new("g19");
+    let prompt = tokens(PROMPT, 0xA11CE);
+    let max_new = 12usize;
+    let cfg = penalty_cfg(0.0, 0);
+    let ctx = prompt.len() + max_new + K + 8;
+
+    let _arm = PenaltyArm::arm();
+    let mut sess = h
+        .model
+        .glm5_spec_session_new(&h.engine, &prompt, ctx, Some(spec_sampling_of(&cfg)))
+        .expect("penalized greedy glm5 dflash spec session");
+    let _ = drive_bursts(&h, &mut sess, &prompt, K, max_new, 3, &[]);
+
+    assert!(
+        !sess.demote_eligible(),
+        "a penalized greedy session must NOT be demotion-eligible: the flush's plain \
+         argmax carries no penalty pass and would silently drop the request's penalties"
+    );
+
+    let err = match h.model.glm5_spec_into_demoted(&h.engine, sess) {
+        Ok(_) => panic!(
+            "penalized greedy demote must refuse loudly, not silently emit an unpenalized \
+             token"
+        ),
+        Err(err) => err,
+    };
+    assert!(
+        err.to_string().contains("sampled") || err.to_string().to_lowercase().contains("penal"),
+        "the refusal should name why a penalized session stays on spec, got: {err}"
+    );
+
+    println!(
+        "gate 19 PASS: penalized greedy session refuses demotion by name (demote_eligible() \
+         reads pen as well as sampling)"
+    );
+}

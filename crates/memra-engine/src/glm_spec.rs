@@ -4446,11 +4446,18 @@ impl Glm5SpecSession {
         self.done
     }
     /// True when the session is a legal demotion source (loop-port fold-in, map #8):
-    /// GREEDY only — a sampled session's committed stream depends on its session-owned
-    /// Philox counters, and the plain batched sampler is a different random program
-    /// mid-request (the exact exclusion the MTP and dspark sweeps carry).
+    /// GREEDY, UNPENALIZED only. A sampled session's committed stream depends on its
+    /// session-owned Philox counters, and the plain batched sampler is a different random
+    /// program mid-request (the exact exclusion the MTP and dspark sweeps carry). A
+    /// penalized session (`pen: Some`, lane/spec-exclusions-20260902) is excluded the same
+    /// way: the demotion flush (`glm5_spec_into_demoted`) argmaxes the boundary row RAW —
+    /// no penalty pass — so demoting one would silently drop the request's penalties for
+    /// that token, the exact failure class `glm5_penalty_admit`'s refusal exists to
+    /// prevent, and dspark's structural reason for keeping penalized-greedy off spec
+    /// entirely (revuto finding on the re-land, 2026-09-03). Penalized sessions therefore
+    /// stay on spec until they end, like sampled ones.
     pub fn demote_eligible(&self) -> bool {
-        self.sampling.is_none()
+        self.sampling.is_none() && self.pen.is_none()
     }
 }
 
@@ -4483,12 +4490,16 @@ impl HybridModel {
         mut sess: Glm5SpecSession,
     ) -> Res<(Cache, u32)> {
         if !sess.demote_eligible() {
-            return Err(
-                "glm5 demote: sampled sessions stay on spec until they end (session-owned \
-                 Philox vs the worker sampler is an unmeasured distributional seam — the \
-                 MTP sweep's exclusion, verbatim)"
-                    .into(),
-            );
+            let why = if sess.sampling.is_some() {
+                "sampled sessions stay on spec until they end (session-owned Philox vs the \
+                 worker sampler is an unmeasured distributional seam — the MTP sweep's \
+                 exclusion, verbatim)"
+            } else {
+                "penalized sessions stay on spec until they end (this flush's plain argmax \
+                 carries no penalty pass; demoting would silently drop the request's \
+                 penalties for that token, lane/spec-exclusions-20260902)"
+            };
+            return Err(format!("glm5 demote: {why}").into());
         }
         if sess.cache.pos + 1 > sess.max_ctx {
             return Err(format!(
