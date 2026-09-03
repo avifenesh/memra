@@ -127,7 +127,7 @@ constant was initially 4096, copied from the scorer's `MLA_DSA_SCORE_MIN_POOLS`;
 shipped a measured **4.6x regression at 32k**, and the gate's own regression bar is what caught
 it.
 
-## 6. Predicted saving, for the box cell to beat
+## 6. Predicted saving, for the box cell to beat (PREDICTIONS, not measurements)
 
 Per token = per layer x 11 MLA/DSA layers, at t_q=1, applying the 5090 ratios:
 
@@ -143,10 +143,43 @@ prediction. Scaling by the previous lane's measured 5090-to-B200 factor on the s
 because the whole point is filling SMs. So the box cell has two numbers to beat: **>= 1.5x at
 256k and >= 3.2x at 1M**, both at t_q=1.
 
-## 7. Open
+## 7. Composition audit (2026-09-03, static)
 
-1. The interleaved plain-route B200 A/B at 256k and 1M (x3 fresh boots, vendor sampling, effort
-   low), queued with the coordinator behind the running chain. Door stays default OFF until it
-   lands.
+Written out because a sibling lane's default flip was withdrawn (#114) for a compose-time defect
+that no tape-identity gate catches, and because this lane's own `memra_sel_last_arrival` bug was
+the same class: correct in isolation, wrong in combination, invisible to every gate in the tree.
+
+**Buffers this path touches.** `score` (read-only; allocated and filled immediately before the
+call, hybrid_forward.rs:8658), `idx` (written here, allocated at :8673, consumed later by
+`mla_attn_gathered`), `ws` (allocated per call inside the wrapper, touched only by the six
+kernels, never escaping).
+
+| conjunct | verdict |
+|---|---|
+| `MEMRA_B200_DSA_DECODE=1` / `=2` | The ONLY door that meets these buffers: `=1` may replace the producer of `score`, `=2` the consumer of `idx`. Same stream, strict producer -> select -> consumer order, no shared scratch. Composes. |
+| `MEMRA_B200_MATVEC_ARM`, `MEMRA_GLM5_W8`, `MEMRA_B200_GEMV_V2` | Change the `mm()` producing `q_index`/`head_weights`, i.e. the VALUES in `score`. Input data, not a shared buffer; the exactness claim is conditional on the score plane handed in, not on how it was computed. Composes. |
+| `MEMRA_HC_FUSED_PRE`, `MEMRA_KDA_FUSED_PROJ`, `MEMRA_GLM5_Q8_FUSE` | Do not appear anywhere in the kpool call chain (hybrid_forward.rs:8439-8690). Disjoint. |
+| `MEMRA_B200_PRIME_V2` arms 1+2 | The mHC PRIME schedule (hybrid_forward.rs:678-1405), a prefill mechanism; this door is `t_q <= 8` only. Disjoint by width AND by code path. |
+| `MEMRA_GLM5_DECODE_GRAPH` | `ws` goes through `uninit_i32` -> `alloc_uninit` -> stream-ordered `alloc` + `keep_if_capturing`, the identical contract `score`, `idx` and the sibling lane's `part_*` buffers already use here. Composes for the same reason they do. |
+| streams | The engine has two: `stream()` and `copy_stream` (MoeSlotCache weight prefetch only). All six kernels launch on `stream()`; none of these buffers is touched by `copy_stream`. |
+| slice arithmetic (#114's failure mode) | Kernels index only through `memra_mla_kpool_select_ctas`/`_ws_ints`, the same entry points the host sizes from; verified numerically over n_pools 0/1/255/4096..1M including the 1024-CTA clamp, emit worst case (pool slot 2047, tail slot 2050) under `width` 2051. **No Rust-side slicing of a device buffer anywhere in the path, so there is no `slice_mut` to panic.** |
+
+**What the audit could NOT check, stated rather than assumed:** runtime composition on sm_100a.
+Nothing has exercised `mla_dsa_select_on() == true` end to end, because no sm_100a hardware is
+available (below). The kernels are measured; the door's composition is ARGUED.
+
+## 8. Open, and why it is blocked
+
+**No box receipt exists for this door, and none can be scheduled.** As of 2026-09-03 the vast.ai
+account is out of credit (`billing_creditonly`, so no auto-topup charges a card) and every
+instance was stopped - the B200 pair, the glm5 prod box, q38 and ornith. Only the owner can
+restore it.
+
+1. The interleaved plain-route sm_100a A/B at 256k and 1M (x3 fresh boots, vendor sampling,
+   effort low) is **OWED**. The per-token figures in section 6 are PREDICTIONS derived from 5090
+   ratios - the numbers that cell is meant to test, not numbers it produced. Door stays default
+   OFF.
 2. `dsa-select-gate <dev> 5` on the pair, to confirm or move `MLA_DSA_SELECT_MIN_POOLS` - the
    crossover is a launch-overhead-vs-sweep trade and both terms differ on that silicon.
+3. Rig work remains available (the 5090 is up), so any further exactness or composition work that
+   does not need sm_100a can proceed.
