@@ -316,6 +316,28 @@ pub fn glm5_graph_no_capture() -> bool {
 /// back within reach of a bisect. It is the cell box takes 4 through 11 never had: they set one
 /// env that turned on BOTH the arm and the capture, so a wrong tape could not be attributed to
 /// either. Run this alone and the answer is unambiguous.
+/// `MEMRA_GLM5_GRAPH_RECAPTURE=1` (default OFF): when a captured stage is invalidated (its
+/// `cache.pos` moved, or a recurrent-state buffer was re-seated rather than overwritten), REBUILD
+/// it instead of latching that stage to the eager walk for the rest of the session.
+///
+/// Default OFF is a decision, not an omission. Box run 3 (2026-09-02) died in the teardown with
+/// `CUDA_ERROR_INVALID_VALUE`: it destroyed a stage's execs, and freed every buffer they baked,
+/// with a replay of those same execs still outstanding. That is a destroy-in-use, and the fix is
+/// ordering (drain the stream, THEN drop, and refuse to drop at all if the drain fails), which is
+/// what the armed path now does. But the latch is not a workaround, it is a correct product
+/// behaviour on its own: an invalidated stage falls through to the byte-identical eager walk, so
+/// the only cost of NOT rebuilding is that one stage of one session stops being graphed. Nothing
+/// is wrong, only slower.
+///
+/// So the door ships with the latch and this knob exists to take the rebuild's receipt. It is
+/// what the gate's forced-re-seat arm needs in order to exercise the invalidation path at all:
+/// with the knob off that arm was asserting on a path the engine deliberately does not take, and
+/// box take 13 duly reported `VACUOUS RE-CAPTURE ARM` on a run whose tokens were all correct.
+/// Counter: `GLM5_DECODE_GRAPH_RECAPTURES`.
+pub fn glm5_graph_recapture_on() -> bool {
+    std::env::var("MEMRA_GLM5_GRAPH_RECAPTURE").as_deref() == Ok("1")
+}
+
 pub fn glm5_vrows_t1_dev_forced() -> bool {
     if std::env::var("MEMRA_GLM5_VROWS_T1_DEV").as_deref() == Ok("1") {
         return true;
@@ -389,6 +411,9 @@ pub static GLM5_DECODE_GRAPH_REPLAYS: std::sync::atomic::AtomicU64 =
 pub static GLM5_DECODE_GRAPH_CAPTURES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 pub static GLM5_DECODE_GRAPH_LAYERS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+/// Stages torn down and rebuilt by the armed re-capture path (`MEMRA_GLM5_GRAPH_RECAPTURE`).
+pub static GLM5_DECODE_GRAPH_RECAPTURES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
 /// True while a glm5 decode-graph CAPTURE is open on this process. Two engine pools must not

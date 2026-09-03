@@ -1126,6 +1126,78 @@ Line 4 (`capture_open=true` on a deny) and line 5 (the router guard) are the two
 exist for takes 1 through 12 and are the reason a thirteenth take should not need a fourteenth:
 either of them names the exact conjunct that failed, on the first line it prints.
 
+## 9p. Box take 13: green, and the split that changes what this door is for
+
+2x B200, 2026-09-03, `c79dc5230`, 64 steps x 5 reps interleaved. **Zero token mismatches on both
+runs.** Receipts: `research/glm5-b200-20260902/box/graph13/gate-13{N,B}.{txt,full}` (darklanes).
+
+| run | door | receipt | eager ms/token | graph ms/token | delta |
+|---|---|---|---|---|---|
+| B | full | `replays=564 captures=2 captured_layers=34 forced_recapture=false` | 30.655 | 21.068 | **-31.28%** |
+| N | `NO_CAPTURE=1`, device arm forced on | `replays=0 captures=0 captured_layers=0` | 30.567 | 21.477 | -29.74% |
+
+**The split is the finding, and it is not what this lane was built to prove.** Removing the
+per-MoE-layer host router readback and its device-wide drain is ~93% of the prize. The capture and
+replay on top of it buys 21.48 to 21.07 ms, about 2%. Twelve takes were spent debugging the 2%.
+
+Two consequences:
+
+1. The FLAGS row now says this plainly. The door's value is the drains it removes; the replay is
+   the small tail.
+2. The device-table MoE arm is worth considering as its own serving flag on ranges where capture
+   refuses. That is a separate decision, it is NOT made by this lane, and it would need its own
+   acceptance (the arm is currently reachable only inside a capture region or through
+   `MEMRA_GLM5_VROWS_T1_DEV`, which is a gate knob and says so).
+
+My §9o prediction called +13% to +21% with a central ~59 tok/s, from launch-gap arithmetic alone,
+and explicitly parked the drain removal as unpriced upside. The measured -31.28% is above that
+band, and the run N row says why: the drains WERE the prize and the gap arithmetic was the small
+half. The prediction was right about direction and wrong about mechanism, which is the more
+useful way to be wrong, and it is recorded rather than quietly restated.
+
+### The two failing gate arms, both instrument defects, both fixed
+
+**1. `VACUOUS RE-CAPTURE ARM`.** The arm asserts that a forced re-seat makes the pool re-capture,
+but re-capture had been DISABLED since box run 3 (§9d), so the arm was asserting on a path the
+engine deliberately does not take. Fixed on both sides:
+
+* `MEMRA_GLM5_GRAPH_RECAPTURE=1` (default OFF, FLAGS row in the same commit) chooses REBUILD over
+  latch on an invalidated stage, with the ordering box run 3 got wrong: drain the stream, THEN
+  drop the stage, and refuse to drop at all if the drain fails.
+* The rig gate now takes that receipt with no box slot. It replaces a captured layer's `ssm_state`
+  with a fresh allocation holding the same bytes, and the engine names what moved:
+
+  ```
+  [gate] reseat il=0 ssm 0x304af5000 -> 0x304bafe00 (alt 0x304ae5000)
+  [glm5-decode-graph] re-capture dev=0 stage=[0, 8) pos=16 expected_pos=16 stale_pos=false
+                      launched_since_sync=true stream_capture=none free=23417/23983MB
+                      sig_diff=layer 0 ssm pair {0x304ae5000, 0x304af5000} -> {0x304ae5000, 0x304bafe00}
+  re-capture arm: 16 steps bit-identical across 1 forced rebuilds
+  ```
+
+  No `CUDA_ERROR_INVALID_VALUE`. The teardown works when the drain precedes the drop.
+* `glm5-decode-graph-gate` arms the knob for its own forced-re-seat arm, so a box run takes the
+  sm_100a receipt without an env change, and it now counts `GLM5_DECODE_GRAPH_RECAPTURES` rather
+  than a capture delta (a latched stage leaves the capture counter alone too, so the delta could
+  not tell "rebuilt" from "latched").
+
+The DEFAULT stays latch, and that is deliberate: an invalidated stage falls through to the
+byte-identical eager walk, so the only cost of not rebuilding is that one stage of one session
+stops being graphed. Nothing is wrong, only slower. The knob exists to price the rebuild, not
+because the latch is a workaround.
+
+**2. `step 0: ledger row count 21 (eager) != 6 (graph)`.** Also the instrument. The eager arm
+produces only HOST rows: 21 on the head stage, which is 24 layers minus the 3 dense ones. The
+graph arm produces BOTH, because the captured KDA runs route through the device-table arm into the
+persistent device slots while the eager MLA/DSA gap layers still read their selection back on the
+host: 15 device rows plus 6 host rows, which is the same 21. The gate said
+`if !host.is_empty() { step_rows = host; }`, which threw the 15 device rows away the moment a
+single gap layer pushed a host row. It now MERGES by `(dev, layer)`, and drops any device slot
+still carrying its `-1` sentinel so a wiring miss shows as a MISSING row rather than an accidental
+match.
+
+Neither arm was ever a token defect. Take 13's token tape was correct on both runs.
+
 ## 10. Open items
 
 1. **Run the gate on the pair** (`--steps 64 --reps 5`) and bank the receipt. Until then the

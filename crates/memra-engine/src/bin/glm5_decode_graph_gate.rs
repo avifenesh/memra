@@ -181,6 +181,17 @@ fn run_arm(
         } else {
             std::env::remove_var("MEMRA_GLM5_GRAPH_TRACE");
         }
+        // ARM THE REBUILD FOR THE FORCED-RE-SEAT ARM. The engine's DEFAULT on an invalidated
+        // stage is to latch it to the byte-identical eager walk, which is a correct product
+        // behaviour, not a workaround, so `MEMRA_GLM5_GRAPH_RECAPTURE` is default OFF. Box take
+        // 13 therefore reported `VACUOUS RE-CAPTURE ARM` on a run whose tokens were all correct:
+        // the arm was asserting on a path the engine deliberately does not take. The gate arms
+        // the knob for exactly the arm that exists to exercise it.
+        if reseat_at.is_some() {
+            std::env::set_var("MEMRA_GLM5_GRAPH_RECAPTURE", "1");
+        } else {
+            std::env::remove_var("MEMRA_GLM5_GRAPH_RECAPTURE");
+        }
     }
     glm5_sel_ledger::reset_host();
     // RESET THE TRACE BUDGET AT THE ARM SWITCH. Take 10 printed four identical `arm=host il=3`
@@ -215,10 +226,14 @@ fn run_arm(
         // exactly how the first box run reached `CUDA_ERROR_INVALID_VALUE` in production
         // instead of here.
         if reseat_at == Some(step) && graph_door {
-            let before = memra_engine::GLM5_DECODE_GRAPH_CAPTURES.load(Ordering::Relaxed);
+            // Count REBUILDS, not captures: a stage that latched to eager also leaves the
+            // capture counter alone, so the capture delta could not tell "rebuilt" from
+            // "latched" and would have read the latch as a re-capture the moment any other
+            // stage happened to capture in the same step.
+            let before = memra_engine::GLM5_DECODE_GRAPH_RECAPTURES.load(Ordering::Relaxed);
             let il = reseat_first_recurrent_layer(e, &mut cache)?;
             let l = m.decode_step(e, tok, &mut cache)?;
-            let after = memra_engine::GLM5_DECODE_GRAPH_CAPTURES.load(Ordering::Relaxed);
+            let after = memra_engine::GLM5_DECODE_GRAPH_RECAPTURES.load(Ordering::Relaxed);
             recaptured = after > before;
             eprintln!(
                 "[gate] forced re-seat at step {step} (layer {il:?}): captures {before} -> \
@@ -356,10 +371,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if !recaptured {
         fail.push(format!(
-            "VACUOUS RE-CAPTURE ARM: the forced re-seat at step {reseat_at:?} did not make the \
-             pool re-capture, so this run says nothing about the invalidation path. Either the \
+            "VACUOUS RE-CAPTURE ARM: the forced re-seat at step {reseat_at:?} did not rebuild a \
+             stage, so this run says nothing about the invalidation path. The gate arms \
+             MEMRA_GLM5_GRAPH_RECAPTURE for this arm, so the knob is not the reason. Either the \
              re-seated layer is not inside a captured run, or the pointer signature no longer \
-             sees a re-seat."
+             sees a re-seat: the engine prints `sig_diff=` on the decision line either way."
         ));
     }
     if eager_rows.iter().all(|r| r.is_empty()) || graph_rows.iter().all(|r| r.is_empty()) {

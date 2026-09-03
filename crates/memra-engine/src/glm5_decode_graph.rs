@@ -734,7 +734,10 @@ impl HybridModel {
         // the FIRST-capture case, which is the actual product question. The diff is NAMED so the
         // next run says which element moved and what the two pointers were.
         let mut latch_eager = false;
-        let need_capture = {
+        // `MEMRA_GLM5_GRAPH_RECAPTURE=1` (default OFF) chooses REBUILD over latch when the stage
+        // is invalidated. See the flag's doc in lib.rs for why the default is what it is.
+        let recapture_armed = crate::glm5_graph_recapture_on();
+        let mut need_capture = {
             let pool = self.glm5_graph_pool(cache);
             match pool
                 .stages
@@ -747,25 +750,67 @@ impl HybridModel {
                     let diff = sig_diff(&st.state_sig, &live_sig);
                     if stale_pos || diff.is_some() {
                         eprintln!(
-                            "[glm5-decode-graph] eager-latch dev={dev} stage=[{lo}, {hi}) pos={pos} \
+                            "[glm5-decode-graph] {} dev={dev} stage=[{lo}, {hi}) pos={pos} \
                              expected_pos={} stale_pos={stale_pos} launched_since_sync={} \
-                             stream_capture={} free={} sig_diff={} \
-                             (re-capture is disabled pending a receipt; this stage runs eager for \
-                             the rest of the session and the walk stays byte-identical)",
+                             stream_capture={} free={} sig_diff={}",
+                            if recapture_armed {
+                                "re-capture"
+                            } else {
+                                "eager-latch (MEMRA_GLM5_GRAPH_RECAPTURE is off; this stage runs \
+                                 eager for the rest of the session and the walk stays \
+                                 byte-identical)"
+                            },
                             st.next_pos,
                             st.launched_since_sync,
                             capture_status(e),
                             free_mb(e),
                             diff.as_deref().unwrap_or("none"),
                         );
-                        pool.failed.push((dev, lo, hi));
-                        latch_eager = true;
+                        if recapture_armed {
+                            // ORDER IS THE WHOLE FIX for box run 3's `CUDA_ERROR_INVALID_VALUE`.
+                            // That run destroyed a stage's execs (and freed every buffer they
+                            // baked) with a replay of those same execs still outstanding, which is
+                            // a destroy-in-use. Drain FIRST, then drop, and only then capture.
+                            true
+                        } else {
+                            pool.failed.push((dev, lo, hi));
+                            latch_eager = true;
+                            false
+                        }
+                    } else {
+                        false
                     }
-                    false
                 }
                 None => true,
             }
         };
+        if recapture_armed && !latch_eager && need_capture {
+            // A stage already in the pool has to be torn down before its key can be captured
+            // again; a first capture has nothing to remove and the drain is a no-op there.
+            let present = {
+                let pool = self.glm5_graph_pool(cache);
+                pool.stages
+                    .iter()
+                    .position(|s| s.dev == dev && s.lo == lo && s.hi == hi)
+            };
+            if let Some(i) = present {
+                if let Err(err) = e.stream().synchronize() {
+                    // A drain that fails leaves the outstanding replay unaccounted for, so the
+                    // one thing not to do is destroy the exec anyway. Latch and stay eager.
+                    note(&format!(
+                        "eager from here on stage=[{lo}, {hi}) dev={dev}: the pre-teardown drain \
+                         failed ({err}), so the stale execs are left alone"
+                    ));
+                    self.glm5_graph_pool(cache).failed.push((dev, lo, hi));
+                    return self
+                        .hyper_range_decode_eager(e, topology, x, lo, hi, pos_d, pos, cache);
+                }
+                let stale = self.glm5_graph_pool(cache).stages.remove(i);
+                crate::GLM5_DECODE_GRAPH_RECAPTURES.fetch_add(1, Ordering::Relaxed);
+                drop(stale);
+                need_capture = true;
+            }
+        }
         if latch_eager {
             // The stale stage is deliberately LEFT IN THE POOL: destroying its execs here is the
             // very call sequence box run 3 died in, and `glm5_decode_graph_ready` will never

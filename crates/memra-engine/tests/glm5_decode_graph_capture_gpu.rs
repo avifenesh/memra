@@ -260,7 +260,51 @@ impl Harness {
 
     /// Prime + `steps` decode steps; returns per-step logits bits and the SCRATCH_ALLOC_CALLS
     /// delta across ONLY the decode loop (the workspace's claim is a decode claim).
+    /// Replace one captured layer's `ssm_state` with a FRESH allocation holding the same bytes.
+    /// The graphs baked the old address, so this is the re-seat the pool's state signature exists
+    /// to catch: `pos` continuity cannot see it, and a stage that replayed through it would be
+    /// reading freed memory.
+    fn reseat_first_recurrent_layer(
+        &self,
+        cache: &mut memra_engine::cache::Cache,
+    ) -> Option<usize> {
+        let (il, rl) = cache
+            .recur
+            .iter_mut()
+            .enumerate()
+            .find_map(|(i, r)| r.as_mut().map(|r| (i, r)))?;
+        use cudarc::driver::DevicePtr;
+        let n = rl.ssm_state.len();
+        let mut fresh = self.engine.uninit(n).expect("fresh ssm_state");
+        self.engine
+            .copy_into(&mut fresh, 0, &rl.ssm_state, n)
+            .expect("copy the state into the fresh buffer");
+        {
+            let st = self.engine.stream();
+            let (old_p, _g0) = rl.ssm_state.device_ptr(&st);
+            let (alt_p, _g1) = rl.ssm_state_alt.device_ptr(&st);
+            let (new_p, _g2) = fresh.device_ptr(&st);
+            eprintln!("[gate] reseat il={il} ssm 0x{old_p:x} -> 0x{new_p:x} (alt 0x{alt_p:x})");
+        }
+        rl.ssm_state = fresh;
+        Some(il)
+    }
+
     fn decode_bits(&self, ids: &[u32], prompt: usize, steps: usize) -> (Vec<Vec<u32>>, u64) {
+        self.decode_bits_reseat(ids, prompt, steps, None)
+    }
+
+    /// `reseat_at`: force the pool's invalidation path at that step by re-seating a captured
+    /// layer's recurrent state. With `MEMRA_GLM5_GRAPH_RECAPTURE=1` the stage rebuilds; without
+    /// it the stage latches to the eager walk. Both must stay byte-identical to the eager arm,
+    /// which is the point of running it here rather than only on the box.
+    fn decode_bits_reseat(
+        &self,
+        ids: &[u32],
+        prompt: usize,
+        steps: usize,
+        reseat_at: Option<usize>,
+    ) -> (Vec<Vec<u32>>, u64) {
         let mut cache =
             memra_engine::cache::Cache::new_planned(&self.engine, &self.model.cfg, &self.plan, 64)
                 .expect("cache for the mini hc model");
@@ -271,6 +315,10 @@ impl Harness {
         let alloc0 = SCRATCH_ALLOC_CALLS.load(Ordering::Relaxed);
         let mut out = Vec::with_capacity(steps);
         for step in 0..steps {
+            if reseat_at == Some(step) {
+                let il = self.reseat_first_recurrent_layer(&mut cache);
+                eprintln!("[gate] forced re-seat at step {step} (layer {il:?})");
+            }
             let logits = self
                 .model
                 .decode_step(&self.engine, ids[prompt + step], &mut cache)
@@ -361,4 +409,58 @@ fn graph_door_decode_matches_eager_bitwise() {
         "{bad}/{steps} decode steps diverge between the eager walk and the captured/replayed one"
     );
     println!("graph door: {steps} steps bit-identical to eager ({replays} replays)");
+
+    // ARM 2 — THE INVALIDATION PATH, exercised rather than hoped for. A captured layer's
+    // `ssm_state` is replaced mid-run with a fresh allocation holding the same bytes: the graphs
+    // baked the old address, `pos` continuity cannot see the move, and a stage that replayed
+    // through it would read freed memory. `MEMRA_GLM5_GRAPH_RECAPTURE=1` makes the stage REBUILD
+    // (drain, drop the execs, capture again); with the knob off it latches to the eager walk.
+    //
+    // Both outcomes must stay byte-identical to the eager tape, and that is the assert. Box run 3
+    // died in exactly this teardown with `CUDA_ERROR_INVALID_VALUE` (it destroyed execs with a
+    // replay still outstanding), and box take 13 could not retest it because the engine no longer
+    // takes the path: the gate reported `VACUOUS RE-CAPTURE ARM` on a run whose tokens were all
+    // correct. This arm is where that receipt comes from now, on the rig, with no box slot.
+    let recaptures_before = memra_engine::GLM5_DECODE_GRAPH_RECAPTURES.load(Ordering::Relaxed);
+    // SAFETY: single-threaded test; the doors are read per call by the engine. The door itself
+    // has to go back ON here: the graphed arm above unsets it when it finishes, and running this
+    // arm without it is exactly the vacuity the assert below exists to catch (it caught it).
+    unsafe {
+        std::env::set_var("MEMRA_GLM5_DECODE_GRAPH", "1");
+        std::env::set_var("MEMRA_GLM5_GRAPH_RECAPTURE", "1");
+    }
+    let (reseated, _) = h.decode_bits_reseat(&ids, prompt, steps, Some(steps / 2));
+    let recaptures =
+        memra_engine::GLM5_DECODE_GRAPH_RECAPTURES.load(Ordering::Relaxed) - recaptures_before;
+    // SAFETY: same as above.
+    unsafe {
+        std::env::remove_var("MEMRA_GLM5_GRAPH_RECAPTURE");
+        std::env::remove_var("MEMRA_GLM5_DECODE_GRAPH");
+    }
+    assert!(
+        recaptures > 0,
+        "VACUOUS RE-CAPTURE ARM: the forced re-seat at step {} did not rebuild any stage \
+         (recaptures={recaptures}). Either the re-seated layer is not inside a captured run, or \
+         the pointer signature no longer sees a re-seat.",
+        steps / 2
+    );
+    let mut bad_rs = 0usize;
+    for (step, (a, b)) in eager.iter().zip(&reseated).enumerate() {
+        if a != b {
+            if bad_rs < 4 {
+                let i = a.iter().zip(b).position(|(x, y)| x != y).unwrap_or(0);
+                println!(
+                    "  RE-SEAT step {step}: first differing logit {i}: eager {} graph {}",
+                    f32::from_bits(a[i]),
+                    f32::from_bits(b[i])
+                );
+            }
+            bad_rs += 1;
+        }
+    }
+    assert_eq!(
+        bad_rs, 0,
+        "{bad_rs}/{steps} steps diverge across a forced re-capture ({recaptures} rebuilds)"
+    );
+    println!("re-capture arm: {steps} steps bit-identical across {recaptures} forced rebuilds");
 }
