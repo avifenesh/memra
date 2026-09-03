@@ -6453,6 +6453,17 @@ fn openrouter_supported_parameters(
             json!({ "type": "enum", "values": ["low", "high", "max"] }),
         );
     }
+    // Qwen3.8 carries its own ladder too (`ModelCaps::qwen_effort`): xhigh is
+    // the template default, medium is the template's own "no steering" rung,
+    // low steers brief, and `high` is aliased to `xhigh` by the template
+    // itself (issue #124; same fix shape as the glm5 arm above). Native rungs
+    // only: `high` is accepted but is not a rung this template defines.
+    if is_chat && caps.is_some_and(|c| c.qwen_effort && !c.glm5) {
+        parameters.insert(
+            "reasoning_effort".into(),
+            json!({ "type": "enum", "values": ["xhigh", "medium", "low"] }),
+        );
+    }
     serde_json::Value::Object(parameters)
 }
 
@@ -11718,6 +11729,16 @@ mod tests {
         assert!(
             qwen_params.get("reasoning_effort").is_none(),
             "{qwen_params}"
+        );
+        // Issue #124: the plain qwen switch advertises no levels, but the
+        // qwen3.8 ladder shape publishes its native rungs. Same rule as the
+        // glm5 arm: native rungs only, the accepted-but-aliased `high` stays
+        // out of the enum.
+        let ladder_params = openrouter_supported_parameters(Some(&ladder_caps()), None, true);
+        assert_eq!(
+            ladder_params.get("reasoning_effort"),
+            Some(&json!({ "type": "enum", "values": ["xhigh", "medium", "low"] })),
+            "{ladder_params}"
         );
     }
 
