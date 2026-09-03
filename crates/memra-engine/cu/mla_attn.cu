@@ -255,6 +255,131 @@ extern "C" int memra_mla_decompress_v_f32(const float* o_lat, const float* wv_b,
     return 0;
 }
 
+// ------------------------------------------- coalesced warp-per-row twins (lane/mla-coalesce)
+//
+// THE DEFECT, and it is orthogonal to the decode-split twins below. `memra_mla_absorb_q_kernel`
+// gives output row `l` to THREAD `l` and has that thread walk its row serially:
+//
+//     for (int l = threadIdx.x; l < kv_rank; l += blockDim.x) {
+//         const float* row = w + (long)l * d_nope;
+//         for (int p = 0; p < d_nope; ++p) acc += smem[p] * row[p];
+//
+// At any step `p` the 32 lanes of a warp read `w[l*d_nope + p]` for 32 consecutive `l`, which
+// are `d_nope` floats apart = 1 KB on the served artifact (qk_nope_head_dim 256). Every lane's
+// load lands in its own sector: a warp that
+// could pull ONE 128-byte transaction pulls 32. `memra_mla_decompress_v_kernel` is the same
+// loop with the roles swapped and a `kv_rank` float = 2 KB stride, which is worse.
+//
+// Measured on 2x B200 SXM (GLM-5.3-Flash, current best posture, nsys 2026-09-03): the pair is
+// 70.8 + 70.6 us per launch x 11 MLA layers = 1.56 ms of an 18.44 ms token. On the served
+// geometry (num_attention_heads 64, kv_lora_rank 512, qk_nope_head_dim 256, v_head_dim 256) it
+// reads 33.6 MB of f32 wk_b and 33.6 MB of wv_b PER LAYER, so 738 MB per token. At 8 TB/s that
+// is 0.092 ms. It takes 1.56 ms: 5.9% of roofline, a 17x gap, and this access pattern is the
+// mechanism rather than another sighting of the 11-34% band.
+//
+// THE FIX: a WARP owns an output row instead of a thread. Lane k reads `row[p]` at
+// p = k, k+32, ..., so the warp's 32 loads are 32 CONSECUTIVE floats = one 128 B transaction,
+// and the row finishes with a shuffle reduction.
+//
+// NUMERIC CLASS `mla_warp_row_reduce`, named rather than hidden: the per-output sum is no
+// longer one thread's serial ascending-index dot. It is 32 lane-partial sums (each ascending,
+// stride 32) combined by a shuffle tree. Same terms, same values, different association — so
+// this is NOT bit-identical to the shipped kernels and it is NOT the decode-split twins'
+// contract, which deliberately kept the serial dot so it could claim bit identity. Door
+// MEMRA_MLA_COALESCE, default OFF, and it needs a greedy tape plus an argmax gate.
+//
+// COMPOSES WITH THE SPLIT rather than competing with it: the two fix different halves. The
+// split raises the GRID (t_q*n_head blocks -> ~1024) and leaves the loads uncoalesced; this
+// fixes the LOADS and leaves the grid alone. So these kernels take the same `split`/`chunk`
+// output-range partition, and `split == 1` is the unsplit case.
+
+__device__ __forceinline__ float mla_warp_sum(float v) {
+    #pragma unroll
+    for (int off = 16; off > 0; off >>= 1) v += __shfl_down_sync(0xffffffffu, v, off);
+    return v;
+}
+
+extern "C" __global__ void memra_mla_absorb_q_wp_kernel(const float* __restrict__ q_nope,
+                                                        const float* __restrict__ wk_b,
+                                                        float* __restrict__ q_lat, int n_head,
+                                                        int d_nope, int kv_rank, int split) {
+    extern __shared__ float smem[];
+    int blk = blockIdx.x / split;
+    int chunk = blockIdx.x % split;
+    int h = blk % n_head;
+    const float* qn = q_nope + (long)blk * d_nope;
+    for (int p = threadIdx.x; p < d_nope; p += blockDim.x) smem[p] = qn[p];
+    __syncthreads();
+    const float* w = wk_b + (long)h * kv_rank * d_nope;
+    int per = (kv_rank + split - 1) / split;
+    int lo = chunk * per;
+    int hi = lo + per < kv_rank ? lo + per : kv_rank;
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int nwarp = blockDim.x >> 5;
+    for (int l = lo + warp; l < hi; l += nwarp) {
+        const float* row = w + (long)l * d_nope;
+        float acc = 0.0f;
+        for (int p = lane; p < d_nope; p += 32) acc += smem[p] * row[p];
+        acc = mla_warp_sum(acc);
+        if (lane == 0) q_lat[(long)blk * kv_rank + l] = acc;
+    }
+}
+
+extern "C" __global__ void memra_mla_decompress_v_wp_kernel(const float* __restrict__ o_lat,
+                                                            const float* __restrict__ wv_b,
+                                                            float* __restrict__ out, int n_head,
+                                                            int d_v, int kv_rank, int split) {
+    extern __shared__ float smem[];
+    int blk = blockIdx.x / split;
+    int chunk = blockIdx.x % split;
+    int h = blk % n_head;
+    const float* ol = o_lat + (long)blk * kv_rank;
+    for (int l = threadIdx.x; l < kv_rank; l += blockDim.x) smem[l] = ol[l];
+    __syncthreads();
+    const float* w = wv_b + (long)h * d_v * kv_rank;
+    int per = (d_v + split - 1) / split;
+    int lo = chunk * per;
+    int hi = lo + per < d_v ? lo + per : d_v;
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int nwarp = blockDim.x >> 5;
+    for (int j = lo + warp; j < hi; j += nwarp) {
+        const float* row = w + (long)j * kv_rank;
+        float acc = 0.0f;
+        for (int l = lane; l < kv_rank; l += 32) acc += row[l] * smem[l];
+        acc = mla_warp_sum(acc);
+        if (lane == 0) out[(long)blk * d_v + j] = acc;
+    }
+}
+
+extern "C" int memra_mla_absorb_q_wp_f32(const float* q_nope, const float* wk_b, float* q_lat,
+                                         int t_q, int n_head, int d_nope, int kv_rank, int split,
+                                         void* stream_v) {
+    if (split < 1 || split > kv_rank) return 40003;
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    long blocks = (long)t_q * n_head * split;
+    if (blocks == 0) return 0;
+    memra_mla_absorb_q_wp_kernel<<<(unsigned)blocks, MLA_THREADS, d_nope * sizeof(float),
+                                   stream>>>(q_nope, wk_b, q_lat, n_head, d_nope, kv_rank, split);
+    MLA_ERR();
+    return 0;
+}
+
+extern "C" int memra_mla_decompress_v_wp_f32(const float* o_lat, const float* wv_b, float* out,
+                                             int t_q, int n_head, int d_v, int kv_rank, int split,
+                                             void* stream_v) {
+    if (split < 1 || split > d_v) return 40003;
+    if (kv_rank > MLA_MAX_RANK) return 40002;
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    long blocks = (long)t_q * n_head * split;
+    if (blocks == 0) return 0;
+    memra_mla_decompress_v_wp_kernel<<<(unsigned)blocks, MLA_THREADS, kv_rank * sizeof(float),
+                                       stream>>>(o_lat, wv_b, out, n_head, d_v, kv_rank, split);
+    MLA_ERR();
+    return 0;
+}
+
 // ---------------------------------------------------- decode-split twins (lane/glm5-decode-diet)
 //
 // PURE LAUNCH-GEOMETRY RESTRUCTURE, BIT-GATED (lever 4 of the decode diet, 2026-08-31). At

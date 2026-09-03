@@ -18,39 +18,43 @@ use std::os::raw::c_void;
 pub static MLA_DECODE_SPLIT_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
-/// `MEMRA_MLA_DECODE_SPLIT` (default **ON** since 2026-09-03, `=0` is the rollback seam, read
-/// per call): the absorb /
+/// `MEMRA_MLA_DECODE_SPLIT=1` (default OFF, read per call — rollback seam): the absorb /
 /// decompress launchers split each (token, head) block's output range across several blocks.
 /// PURE LAUNCH GEOMETRY: every output element keeps the same one-thread serial dot, so the
 /// bytes are identical for every split value (asserted in `tests/mla_decode_split_gpu.rs`);
 /// only occupancy changes — 64 blocks at t=1 on the glm5 geometry is single-digit-percent
 /// occupancy on the serving card class, the census's ~211 us/layer absorb+decompress pair.
-/// DEFAULT FLIPPED TO ON, 2026-09-03, against this row's own stated flip condition:
-/// "interleaved x3 fresh-boot A/B on the serving card class (x5 on anomaly), greedy +
-/// vendor-default sampled twin, engagement announce in BOTH arms."
+/// Engagement counter for the coalesced warp-per-row door (`MEMRA_MLA_COALESCE`).
+pub static MLA_COALESCE_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// `MEMRA_MLA_COALESCE=1` (default OFF, read per call — the rollback seam is its absence):
+/// dispatch the warp-per-row absorb/decompress kernels instead of the shipped thread-per-row
+/// ones. See `memra_mla_absorb_q_wp_f32` for the defect and the numeric class.
 ///
-/// All four clauses met on the 2x B200 SXM pair (GLM-5.3-Flash NVFP4, resident PP-2, best
-/// posture), 20 reps per arm, vendor-default sampling, 512-token generations:
-///
-///   round   off      on
-///   1       55.89    58.32
-///   2       55.86    58.29
-///   3       55.89    58.32
-///   median  55.89    58.32     +4.35%, ranges never overlap
-///
-/// No anomaly (the three rounds agree to 0.03 tok/s), so the x5 clause did not trigger. The
-/// greedy 128-token tape is sha16 `9437b599f6b9d2a9` in BOTH arms, which is this door's own
-/// bit-identity claim holding in serving rather than only in `mla_decode_split_gpu.rs`. The
-/// engagement line printed in the on arm and not in the off arm.
-///
-/// The door was OFF for one stated reason and it was never a bad result: "the occupancy win is
-/// arithmetic (blocks 64 -> ~1024) with no throughput receipt — the rig is exactness-only."
-/// This is that receipt.
-///
-/// `=0` restores the shipped one-block-per-(token,head) launchers, read PER CALL, so rollback
-/// needs no rebuild and no restart of anything already running.
+/// It composes with whichever split door is armed rather than replacing it: the split doors
+/// choose the output-range partition (the GRID), this door chooses how a row is read (the
+/// LOADS), and `split == 1` is simply the unsplit partition. So the dispatch below asks the
+/// existing policy for a split first and passes whatever it returns.
+fn mla_coalesce_on() -> bool {
+    std::env::var("MEMRA_MLA_COALESCE").as_deref() == Ok("1")
+}
+
+/// Announce once per boot, naming the kernel and the split it composed with, because a door
+/// that silently changes which kernel runs is the failure class this lane spent a day on.
+fn mla_coalesce_announce(which: &str, t_q: usize, n_head: usize, split: i32) {
+    use std::sync::atomic::Ordering;
+    if MLA_COALESCE_DISPATCHES.fetch_add(1, Ordering::Relaxed) == 0 {
+        eprintln!(
+            "[mla-coalesce] engaged {which} t_q={t_q} n_head={n_head} split={split} \
+             (warp-per-row coalesced loads + shuffle reduction; numeric class \
+             mla_warp_row_reduce; MEMRA_MLA_COALESCE=1)"
+        );
+    }
+}
+
 fn mla_decode_split_on() -> bool {
-    std::env::var("MEMRA_MLA_DECODE_SPLIT").as_deref() != Ok("0")
+    std::env::var("MEMRA_MLA_DECODE_SPLIT").as_deref() == Ok("1")
 }
 
 /// The split policy: engage only in the block-starved regime (fewer than 1024 (token, head)
@@ -73,8 +77,7 @@ fn mla_split_announce(kind: &str, t_q: usize, n_head: usize, split: i32) {
     if MLA_DECODE_SPLIT_DISPATCHES.fetch_add(1, Ordering::Relaxed) == 0 {
         eprintln!(
             "[mla-decode-split] engaged {kind} t={t_q} heads={n_head} split={split} \
-             (output-range split of the (token, head) blocks; default ON since 2026-09-03, \
-             MEMRA_MLA_DECODE_SPLIT=0 to roll back)"
+             (output-range split of the (token, head) blocks; MEMRA_MLA_DECODE_SPLIT=1)"
         );
     }
 }
@@ -540,6 +543,45 @@ unsafe extern "C" {
         kv_rank: i32,
         stream: *mut c_void,
     ) -> i32;
+    /// COALESCED warp-per-row twin of `memra_mla_absorb_q_f32` (`MEMRA_MLA_COALESCE`,
+    /// lane/mla-coalesce). The shipped kernel gives output row `l` to THREAD `l`, which then
+    /// walks its row serially, so at step `p` a warp's 32 lanes read addresses `d_nope` floats
+    /// (512 B) apart and pull 32 transactions where one would do. Here a WARP owns a row and
+    /// lane `k` reads `row[k], row[k+32], ...`, which is one 128-byte transaction per step,
+    /// finished by a shuffle reduction. Takes the same `split` output-range partition as the
+    /// decode-split twins, so the two doors COMPOSE: the split fixes the GRID, this fixes the
+    /// LOADS. NAMED NUMERIC CLASS `mla_warp_row_reduce`: the per-output sum becomes 32
+    /// lane-partial sums combined by a shuffle tree instead of one serial ascending dot, so
+    /// this is NOT bit-identical and NOT the split twins' contract.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_mla_absorb_q_wp_f32(
+        q_nope: *const f32,
+        wk_b: *const f32,
+        q_lat: *mut f32,
+        t_q: i32,
+        n_head: i32,
+        d_nope: i32,
+        kv_rank: i32,
+        split: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// COALESCED warp-per-row twin of `memra_mla_decompress_v_f32` (`MEMRA_MLA_COALESCE`).
+    /// Same defect and same fix as `memra_mla_absorb_q_wp_f32`, and worse in the shipped form:
+    /// the lane stride there is `kv_rank` floats (2 KB), and with `d_v` typically 128 against
+    /// `MLA_THREADS` 256 half the block never enters the loop. Numeric class
+    /// `mla_warp_row_reduce`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_mla_decompress_v_wp_f32(
+        o_lat: *const f32,
+        wv_b: *const f32,
+        out: *mut f32,
+        t_q: i32,
+        n_head: i32,
+        d_v: i32,
+        kv_rank: i32,
+        split: i32,
+        stream: *mut c_void,
+    ) -> i32;
     /// Decode-split twin of `memra_mla_absorb_q_f32` (MEMRA_MLA_DECODE_SPLIT): the same
     /// per-output serial dot, its output range split across `split` blocks — bit-identical
     /// by construction, gated in `tests/mla_decode_split_gpu.rs`.
@@ -953,6 +995,45 @@ impl Engine {
         kv_rank: usize,
     ) -> Res<()> {
         let s = self.stream();
+        // MEMRA_MLA_COALESCE door, checked FIRST because it changes how a row is READ, which
+        // is orthogonal to every door below (they choose the output-range partition). It reuses
+        // their policy rather than replacing it: ask the B200 arm, then the generic split, and
+        // pass whatever split they choose (1 = unsplit). Consulting `mla_decode_split_for` also
+        // ticks that door's own dispatch counter, which is correct — it WAS consulted and its
+        // partition IS the one running.
+        // MEASURED 2026-09-03, 2x B200: at split 1 (64 blocks) warp-per-row REGRESSES -11%
+        // (51.01 vs 57.34): one row in flight per warp with a serial shuffle reduction after
+        // each replaces 16,384 threads x 1 row with 512 warps x 1 row, a 32x loss of memory
+        // parallelism that outweighs the coalescing. At split 16 (1,024 blocks) it is +1.9% on
+        // top of the split. So the door only engages when a split door gave it a grid to spend
+        // the coalescing on; at split 1 it falls through to the dispatch below, unchanged.
+        let coalesce_split = if mla_coalesce_on() {
+            mla_b200_split_for(MlaB200Kernel::AbsorbQ, t_q, kv_rank)
+                .or_else(|| mla_decode_split_for(t_q * n_head, kv_rank))
+                .unwrap_or(1)
+        } else {
+            1
+        };
+        if coalesce_split > 1 {
+            let split = coalesce_split;
+            mla_coalesce_announce("absorb_q", t_q, n_head, split);
+            return unsafe {
+                ck(
+                    "absorb_q_wp",
+                    memra_mla_absorb_q_wp_f32(
+                        q_nope.device_ptr(&s).0 as *const f32,
+                        wk_b.device_ptr(&s).0 as *const f32,
+                        q_lat.device_ptr_mut(&s).0 as *mut f32,
+                        t_q as i32,
+                        n_head as i32,
+                        d_nope as i32,
+                        kv_rank as i32,
+                        split,
+                        s.cu_stream() as *mut c_void,
+                    ),
+                )
+            };
+        }
         // MEMRA_B200_MLA_DECODE_ARM door (checked first; split from the t_q-keyed table
         // MLA_B200_ABSORB_Q_SPLIT, a 1 cell falls through to the doors below; the split twin is
         // the same kernel the generic door launches, so this is only a policy pick).
@@ -1025,6 +1106,45 @@ impl Engine {
         kv_rank: usize,
     ) -> Res<()> {
         let s = self.stream();
+        // MEMRA_MLA_COALESCE door, checked FIRST because it changes how a row is READ, which
+        // is orthogonal to every door below (they choose the output-range partition). It reuses
+        // their policy rather than replacing it: ask the B200 arm, then the generic split, and
+        // pass whatever split they choose (1 = unsplit). Consulting `mla_decode_split_for` also
+        // ticks that door's own dispatch counter, which is correct — it WAS consulted and its
+        // partition IS the one running.
+        // MEASURED 2026-09-03, 2x B200: at split 1 (64 blocks) warp-per-row REGRESSES -11%
+        // (51.01 vs 57.34): one row in flight per warp with a serial shuffle reduction after
+        // each replaces 16,384 threads x 1 row with 512 warps x 1 row, a 32x loss of memory
+        // parallelism that outweighs the coalescing. At split 16 (1,024 blocks) it is +1.9% on
+        // top of the split. So the door only engages when a split door gave it a grid to spend
+        // the coalescing on; at split 1 it falls through to the dispatch below, unchanged.
+        let coalesce_split = if mla_coalesce_on() {
+            mla_b200_split_for(MlaB200Kernel::DecompressV, t_q, d_v)
+                .or_else(|| mla_decode_split_for(t_q * n_head, d_v))
+                .unwrap_or(1)
+        } else {
+            1
+        };
+        if coalesce_split > 1 {
+            let split = coalesce_split;
+            mla_coalesce_announce("decompress_v", t_q, n_head, split);
+            return unsafe {
+                ck(
+                    "decompress_v_wp",
+                    memra_mla_decompress_v_wp_f32(
+                        o_lat.device_ptr(&s).0 as *const f32,
+                        wv_b.device_ptr(&s).0 as *const f32,
+                        out.device_ptr_mut(&s).0 as *mut f32,
+                        t_q as i32,
+                        n_head as i32,
+                        d_v as i32,
+                        kv_rank as i32,
+                        split,
+                        s.cu_stream() as *mut c_void,
+                    ),
+                )
+            };
+        }
         // MEMRA_B200_MLA_DECODE_ARM door (checked first, table MLA_B200_DECOMPRESS_V_SPLIT; see
         // mla_absorb_q above).
         if let Some(split) = mla_b200_split_for(MlaB200Kernel::DecompressV, t_q, d_v) {
