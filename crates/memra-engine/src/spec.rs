@@ -4422,6 +4422,8 @@ impl HybridModel {
             let mut runtime: Option<std::sync::Arc<crate::tp::TpE4m3HostBounce>> = None;
             let mut uniform_runtime = true;
             let mut batch = Vec::new();
+            // Lives until after the batch submission below; see the note at the push site.
+            let mut guards = Vec::new();
             for (il, (distributed_slot, local_slot)) in distributed_layers
                 .iter_mut()
                 .zip(local_layers.iter())
@@ -4468,8 +4470,25 @@ impl HybridModel {
                     runtime = Some(tp.runtime.clone());
                 }
                 use cudarc::driver::DevicePtr;
-                let (k_base, _k_guard) = local.k.device_ptr(&stream);
-                let (v_base, _v_guard) = local.v.device_ptr(&stream);
+                // THE GUARDS MUST OUTLIVE THE BATCH, not the loop iteration.
+                //
+                // `device_ptr` hands back (address, guard); the guard is what keeps the buffer's
+                // stream-ordered association alive, and dropping it tells the allocator the
+                // memory is free to reuse on this stream. The per-layer predecessor of this code
+                // called `restore_tp_kv_rows_from_device` INSIDE this scope, so the guard was
+                // alive for the copy. Batching kept the raw addresses and let the guards drop at
+                // the end of each iteration, so `restore_tp_kv_layers_from_device` below copied
+                // from addresses the allocator had been free to hand to someone else since.
+                //
+                // Measured effect (darklanes bisect 2026-09-03, memra#128, step-3.7-flash on
+                // 2x RTX PRO 6000 TP): answers spliced together out of two different requests —
+                // "Got it, let's's a KV cache is a user wan" — plus tool_calls=0 on a
+                // tool-carrying request and a 500 on the next round. Reverting to the commit
+                // before this batching passed the same gate on the same box minutes apart.
+                let (k_base, k_guard) = local.k.device_ptr(&stream);
+                let (v_base, v_guard) = local.v.device_ptr(&stream);
+                guards.push(k_guard);
+                guards.push(v_guard);
                 batch.push(crate::tp::TpKvVerifiedLayer {
                     cache: distributed,
                     start: saved,
@@ -4484,8 +4503,10 @@ impl HybridModel {
                 && let Some(runtime) = runtime
                 && runtime.restore_tp_kv_layers_from_device(&mut batch)?
             {
+                drop(guards);
                 return Ok(());
             }
+            drop(guards);
         }
         for il in 0..self.layers.len() {
             let (Some(distributed), Some(saved)) = (cache.tp_kv[il].as_mut(), snap.tp_kv_len[il])
