@@ -2448,6 +2448,30 @@ pub(crate) fn hyper_batch_solo_on() -> bool {
 ///
 /// Refuses a value that is not a power of two in [32, 1024], by name, at read time — a bad
 /// width would otherwise reach the launcher and return an opaque 40023.
+/// `MEMRA_HC_PRE_SINK_REG=1` (default OFF, read per call — the rollback seam is its absence):
+/// run the fused hc pre-chain's Sinkhorn stage in registers with `__shfl_sync` instead of
+/// shared memory. Only meaningful alongside `MEMRA_HC_PRE_BLOCK` (it rides the v3 kernel).
+///
+/// WHY, from two nsys measurements rather than an argument. The same kernel at two block
+/// widths on 2x B200 (2026-09-03): 128 threads -> 31.194 us, 1024 threads -> 26.609 us. Stages
+/// 1 and 3 scale with the block and stage 2 does not (warp-0-only at every width), so
+/// S + P = 31.194 and S + P/8 = 26.609 give P = 5.24 us and **S = 25.95 us**. The Sinkhorn is
+/// 83% of the kernel: 90 launches x 25.95 us = 2.34 ms of an 18.44 ms token, 12.7% of the
+/// token, to normalise an hc x hc matrix (16 floats at hc=4) for `hc_sinkhorn_iters` = 20
+/// rounds. It is not arithmetic — per round the shared path does ~2*hc dependent shared loads
+/// per lane plus six `__syncwarp` and a shared `atomicOr`, on ONE warp with nothing resident to
+/// cover the latency.
+///
+/// BIT-IDENTICAL BY CONSTRUCTION, and that is the point of the design. `comb` lives one element
+/// per lane and every row/column sum is gathered with `__shfl_sync` IN THE SAME ORDER the
+/// shared loop used, so the same addends land in the same sequence in the same running float.
+/// This is NOT a numeric class and needs no argmax gate — unlike `hc_pre_rowsq_blockwide`,
+/// which the same door family does carry. A tree reduction would have been fewer instructions
+/// and a different association; it is deliberately not used.
+pub(crate) fn hc_pre_sink_reg() -> bool {
+    std::env::var("MEMRA_HC_PRE_SINK_REG").as_deref() == Ok("1")
+}
+
 pub(crate) fn hc_pre_block() -> usize {
     match std::env::var("MEMRA_HC_PRE_BLOCK") {
         Err(_) => 128,

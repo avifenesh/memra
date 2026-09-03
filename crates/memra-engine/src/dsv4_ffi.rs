@@ -644,6 +644,15 @@ unsafe extern "C" {
         eps: f32,
         niters: *mut i32,
         block: i32,
+        // `MEMRA_HC_PRE_SINK_REG=1`: run stage 2 (Sinkhorn) in REGISTERS with `__shfl_sync`
+        // instead of shared memory. BIT-IDENTICAL by construction, not a numeric class: every
+        // row/column sum is gathered in the SAME order the shared loop used
+        // (`for k: sum += __shfl_sync(mask, cv, r*hc+k)` against `for k: sum += comb[t*hc+k]`),
+        // so the same addends land in the same sequence in the same running float. A tree
+        // reduction would be fewer instructions and a different association; it is deliberately
+        // not used. Falls back to the shared path when `hc*hc > 32` (the matrix must fit one
+        // warp), checked in the launcher rather than assumed.
+        sink_reg: i32,
         stream: *mut c_void,
     ) -> i32;
     #[allow(clippy::too_many_arguments)]
