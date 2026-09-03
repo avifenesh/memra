@@ -166,3 +166,65 @@ rank-trimmed DFlash2 head (#103) is the other lever on tok/round. Follow-up here
 the drafter ingest with the next trunk chunk on a drafter stream so it costs neither TTFT
 nor decode (needs a second stream plus event fences; the chunked arm is the shape it
 attaches to).
+
+## 7. Boot B (2026-09-03): the chunked arm measured, rejected; the device-resident arm
+
+Pair, same build as boot A plus `MEMRA_GLM5_DRAFT_PRIME_V2=1`; TTFT / wall / decode-after
+per rung (boot A eager in parentheses):
+
+| rung | TTFT (s) | wall (s) | decode-after (tok/s) |
+|---|---|---|---|
+| 4k | 13.39 (5.34) | 17.44 (9.23) | 42.2 (42.1) |
+| 42k | 34.05 (21.11) | 40.28 (26.98) | 36.1 (35.4) |
+| 128k | 106.86 (68.03) | 113.08 (78.66) | 37.9 (20.2) |
+| 256k | 230.74 (153.11) | 237.92 (168.97) | 35.7 (16.1) |
+
+The chunked arm removed the giant round (max 64-74 ms, slow_rounds 0, draft_mean 7.4 flat)
+and moved MORE work into the first-token window: wall worse at every depth (+8 s at 4k,
++69 s at 256k). REJECTED as shipped. Two causes, both this lane's:
+
+1. The trunk was NOT the same call shape. The per-range `prime_cache` calls re-enter
+   `hyper_prime_ranges` for each piece, and under the PP-2 microchunk geometry
+   (`prime_pipeline_auto_geometry`: up to eight microchunks, never below 128 rows) a
+   4096-row piece is re-split into 128-row microchunks, so the trunk prime ran far finer
+   than the whole-prompt entry's own schedule (`chunks=8` at 4k). The section 3 claim
+   "the same per-range call the whole-prompt entry makes" holds only when the schedule is
+   uniform; it is not under that geometry. Lesson banked: a chunk schedule is a property
+   of the WHOLE call, so any arm that wants the trunk unchanged must keep the one call and
+   hook its loop, never re-issue pieces.
+2. The pinned bounce is slower per row than the pageable path it replaced: the chunked
+   arm's own split at 4k reads `arm=chunked rows=6920 chunks=8 h2d=90.2 feat=7.1 kv=7.7`
+   against the eager arm's `h2d=59 feat=15.5 kv=24.7`.
+
+The eager arm's split names the real cost: `draft_prime: arm=eager rows=256756
+chunks=1003 h2d=7505.8 feat=430.5 kv=934.4` (ms) at 256k, i.e. 85% of the 8.87 s drafter
+prime is the pageable synchronous HtoD of the tap rows (rows=6920: h2d 59 / feat 15.5 /
+kv 24.7; 41866: h2d 351; 128059: h2d 3800).
+
+The fix, built here as `MEMRA_GLM5_DRAFT_TAPS_DEVICE=1` (default OFF until boot C):
+
+- ONE whole-prompt prime, program and schedule untouched. The prime's own range loop
+  (`prime_cache_hyper`, both the ppN and the single-engine loops, single-range paths
+  included) calls `glm5_taps_range_begin` / `glm5_taps_range_done` around each range; both
+  are no-ops unless the cache's tap sink carries an ingest consumer.
+- The taps never leave the device: a chunk-sized ring per writing stage
+  (`HcTapSink::new_device_staged_at`, ring = `hyper_prime_call_rows`), and at the range
+  boundary (the last stage returned host logits, so every stage's rows for the range
+  have retired) the consumer interleaves the five planes into the fc layout with 2D
+  device copies (`Engine::copy_2d_dtod_async`, `cuMemcpy2DAsync`); a plane written on
+  another stage takes a `cudaMemcpyPeerAsync` into head-device staging first
+  (`Engine::copy_peer_from_async`, issued on the source stream, which is drained before
+  the read, so the ring can be rewritten by the next range).
+- `ctx_features` + `ingest_ctx` at the range width (4096 rows: the batched GEMM class),
+  63 launches per 256k instead of 1,003; feat + kv are then the whole drafter prime.
+- VRAM: 335 MB ring per writing device plus 335 MB interleaved input and per-cross-plane
+  staging on the head device; never prompt-sized.
+- Profile: `draft_prime: arm=device`, `h2d` = the copy share (peer + 2D), `prime` = the
+  walk minus the ingest (the ingest ran inside it).
+- Rig gate 16 pins KV bit-identity and identical acceptance against the eager arm on a
+  one-range prompt, tape identity vs plain on both arms at every chunking, and reports
+  the KV diff and acceptance delta under a forced two-range prime.
+
+Boot C invocation: the section 2 boot plus `MEMRA_GLM5_DRAFT_TAPS_DEVICE=1`; compare the
+`draft_prime:` split and the per-rung TTFT / wall against boot A. Expected at 256k: the
+7.5 s `h2d` gone, `tap_dtoh` gone from `prime`, feat + kv well under boot A's 1.36 s.

@@ -2017,3 +2017,124 @@ fn gpu_dflash_chunked_drafter_prime_kv_matches_eager_ingest() {
          chunked {a_v}/{d_v}"
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// Gate 16 — DEVICE-RESIDENT DRAFTER PRIME (lane/spec-route-depth-20260902,
+// `MEMRA_GLM5_DRAFT_TAPS_DEVICE`): the trunk prime stays the one whole-prompt call, the tap
+// planes never leave the device (chunk ring on the writing stage, 2D-copy interleave on the
+// head device, fc + k/v ingest at the range width inside the prime's own range loop), and the
+// drafter KV is BIT-IDENTICAL to the eager arm's when both ingest the prompt as one range;
+// the served tape is byte-identical to plain decode on both arms at every chunking. The
+// forced multi-range arm (`MEMRA_PRIME_CHUNK=16`, two ranges of 16 + 8 against the eager
+// arm's one 24-row ingest) REPORTS the KV max-abs-diff and the acceptance delta (a GEMM
+// whose per-row bits depend on M moves drafts only; verify arbitrates).
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
+fn gpu_dflash_device_resident_drafter_prime_kv_matches_eager_ingest() {
+    let _gpu = gpu_guard();
+    let h = Harness::new("g16");
+    let prompt = tokens(PROMPT, 0xA11CE);
+    let max_new = 20usize;
+    let k = 3usize;
+    let ctx = prompt.len() + max_new + k + 8;
+    let tape = plain_tape(&h, &prompt, max_new);
+    let cfg = &h
+        .model
+        .glm5_dflash
+        .as_ref()
+        .expect("drafter attached")
+        .draft
+        .cfg;
+    let row_floats = cfg.n_kv * cfg.head_dim;
+    let bits = |planes: &[Vec<f32>]| -> Vec<Vec<u32>> {
+        planes
+            .iter()
+            .map(|p| p.iter().map(|f| f.to_bits()).collect())
+            .collect()
+    };
+    let maxdiff = |a: &[Vec<f32>], b: &[Vec<f32>]| -> f32 {
+        a.iter()
+            .zip(b)
+            .flat_map(|(x, y)| x.iter().zip(y).map(|(p, q)| (p - q).abs()))
+            .fold(0f32, f32::max)
+    };
+    // One session on the named arm: KV rows right after creation (both arms ingest the
+    // whole prompt at creation), then the served tape over 4-token bursts.
+    let run = |device: bool| -> Gate15Arm {
+        // SAFETY: under gpu_guard.
+        unsafe { std::env::remove_var("MEMRA_GLM5_DRAFT_PRIME_V2") };
+        let arm = device.then(|| EnvArm::set("MEMRA_GLM5_DRAFT_TAPS_DEVICE", "1"));
+        let mut sess = h
+            .model
+            .glm5_spec_session_new(&h.engine, &prompt, ctx, None)
+            .expect("session");
+        drop(arm);
+        assert_eq!(
+            sess.draft_kv_len(),
+            Some(prompt.len()),
+            "device={device}: the drafter KV must cover the prompt at creation"
+        );
+        let (kk, vv) = sess
+            .draft_kv_rows_host(&h.engine, prompt.len(), row_floats)
+            .expect("dflash session exports its KV rows");
+        let (mut out, mut d, mut a) = (Vec::new(), 0usize, 0usize);
+        while out.len() < max_new && !sess.finished() {
+            let (b, bd, ba) = h
+                .model
+                .glm5_spec_session_burst(&h.engine, &mut sess, 4, k, &[])
+                .expect("burst");
+            if b.is_empty() {
+                break;
+            }
+            out.extend(b);
+            d += bd;
+            a += ba;
+        }
+        (out, d, a, kk, vv)
+    };
+    // ---- arm A: the default schedule (one range): bit-identical KV, identical tape ----
+    let (out_e, d_e, a_e, k_e, v_e) = run(false);
+    let (out_d, d_d, a_d, k_d, v_d) = run(true);
+    assert_eq!(
+        bits(&k_d),
+        bits(&k_e),
+        "one range: device-resident K planes != eager"
+    );
+    assert_eq!(
+        bits(&v_d),
+        bits(&v_e),
+        "one range: device-resident V planes != eager"
+    );
+    assert_eq!(&out_e[..max_new], &tape[..], "eager arm: tape == plain");
+    assert_eq!(&out_d[..max_new], &tape[..], "device arm: tape == plain");
+    assert_eq!(
+        (d_d, a_d),
+        (d_e, a_e),
+        "one range: identical KV must give identical acceptance"
+    );
+    // ---- arm B: forced two-range prime: the trunk is chunked identically on both arms;
+    // the device arm ingests at 16 + 8, the eager arm at 24. Tape is the bar; the KV diff
+    // and the acceptance delta are reported.
+    let _chunk = EnvArm::set("MEMRA_PRIME_CHUNK", "16");
+    let (out_e2, d_e2, a_e2, k_e2, v_e2) = run(false);
+    let (out_d2, d_d2, a_d2, k_d2, v_d2) = run(true);
+    assert_eq!(
+        &out_e2[..max_new],
+        &tape[..],
+        "eager arm, chunked trunk: tape == plain"
+    );
+    assert_eq!(
+        &out_d2[..max_new],
+        &tape[..],
+        "device arm, chunked trunk: tape == plain"
+    );
+    println!(
+        "gate 16 PASS: one-range KV bit-identical ({a_e}/{d_e} accepted both arms); two-range \
+         (PRIME_CHUNK=16) tape == plain on both arms, KV max-abs-diff k={:e} v={:e}, \
+         acceptance eager {a_e2}/{d_e2} vs device {a_d2}/{d_d2}",
+        maxdiff(&k_d2, &k_e2),
+        maxdiff(&v_d2, &v_e2)
+    );
+}
