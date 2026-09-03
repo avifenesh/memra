@@ -4407,12 +4407,34 @@ fn validate_tp_kv_snapshot_shape(
 }
 
 impl HybridModel {
+    /// memra#128: the canonical-to-rank byte copy that `5e0fffb97` added to
+    /// `restore_step_tp_kv_verified_prefix`. OFF by default (written decision, docs/FLAGS.md
+    /// `MEMRA_STEP_TP_KV_RESTORE`): on step37 NVFP4 TP2 the only shapes that pass the
+    /// production acceptance gate are the engine before the copy (arm A) and the copy skipped
+    /// on every step-TP layer (arm F, byte-identical answers to A); the copy on any layer
+    /// spliced answers or shifted decode (darklanes research/memra128-bisect-20260903).
+    /// `1` re-enables the copy for ordinary-commit layers; on-device-written layers
+    /// (`rows_external`) are skipped either way, their canonical bytes are stale.
+    fn step_tp_kv_restore_copy_on() -> bool {
+        static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ON.get_or_init(|| std::env::var("MEMRA_STEP_TP_KV_RESTORE").ok().as_deref() == Some("1"))
+    }
+
     fn restore_step_tp_kv_verified_prefix(
         &self,
         e: &Engine,
         cache: &mut Cache,
         snap: &crate::cache::CacheSnapshot,
         accepted: usize,
+        // memra#128: what an externally-written (dcw / fa2) layer needs from this call.
+        // PARTIAL accept (commit_verified_prefix): 5e0fffb97 replaced the standalone
+        // rewind_tp_kv_verified_prefix with this restore, so the length shrink to
+        // saved+accepted must still happen here - without it E ran with distributed=259
+        // against local=257. FULL accept: before 5e0fffb97 nothing touched the
+        // distributed length there and it was right (arm A passed); rewinding to
+        // saved+t_v shrinks it by one and the next verify's SWA ring view falls off the
+        // end ("view [5148,5152) is outside resident [0,5151)", arm E2).
+        rewind_external: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         validate_tp_kv_snapshot_shape(&cache.tp_kv, &snap.tp_kv_len)?;
         e.stream().synchronize()?;
@@ -4432,9 +4454,22 @@ impl HybridModel {
                 else {
                     continue;
                 };
+                // memra#128: on the dcw / fa2 verify path the rank rows for [saved, target)
+                // were written on-device and the canonical cache holds only stale bytes for
+                // them (the verify bumps `local.len` and writes nothing). Copying those over
+                // the correct rank rows is exactly what spliced two requests' answers
+                // together on step-3.7-flash. The rewind already kept the right rows; skip.
                 let target = saved
                     .checked_add(accepted)
                     .ok_or("spec TP KV batch restore length overflow")?;
+                if !Self::step_tp_kv_restore_copy_on() || distributed.rows_external() {
+                    // Rank rows already right (written on-device). Length: see the
+                    // `rewind_external` note on the signature.
+                    if rewind_external {
+                        distributed.rewind_to(target)?;
+                    }
+                    continue;
+                }
                 let local = local_slot
                     .as_ref()
                     .ok_or_else(|| format!("spec TP KV layer {il} lost its owning cache"))?;
@@ -4495,6 +4530,12 @@ impl HybridModel {
             let target = saved
                 .checked_add(accepted)
                 .ok_or("spec TP KV restore length overflow")?;
+            if !Self::step_tp_kv_restore_copy_on() || distributed.rows_external() {
+                if rewind_external {
+                    distributed.rewind_to(target)?;
+                }
+                continue;
+            }
             let local = cache.kv[il]
                 .as_ref()
                 .ok_or_else(|| format!("spec TP KV layer {il} lost its owning cache"))?;
@@ -9523,7 +9564,7 @@ impl HybridModel {
                 }
             }
         }
-        self.restore_step_tp_kv_verified_prefix(e, cache, snap, j)?;
+        self.restore_step_tp_kv_verified_prefix(e, cache, snap, j, true)?;
         cache.pos = snap.pos + j;
         Ok(())
     }
@@ -15652,7 +15693,7 @@ impl HybridModel {
                 // trunk hidden (the last verify column). set_len first: a p-min break may have
                 // left one extra chain append at that slot. Partial accepts need NO fill (the
                 // chain already covered every accepted position; round-start set_len truncates).
-                self.restore_step_tp_kv_verified_prefix(e, &mut *cache, &snap, t_v)?;
+                self.restore_step_tp_kv_verified_prefix(e, &mut *cache, &snap, t_v, false)?;
                 let mut vh_seed = e.zeros(n_embd)?;
                 e.copy_view_into(
                     &mut vh_seed,

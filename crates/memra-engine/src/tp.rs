@@ -2809,6 +2809,9 @@ impl TpE4m3HostBounce {
         let target = cache.commit_target(transaction, accepted_rows)?;
         self.set_tp_kv_len_mirrors(cache, target)?;
         cache.publish_finalize(transaction, target)?;
+        // This path derived the rank rows from the canonical rows, so a later restore from
+        // the canonical cache is at worst redundant. See `rows_external`.
+        cache.mark_rows_external(false);
         Ok(())
     }
 
@@ -2826,6 +2829,10 @@ impl TpE4m3HostBounce {
         self.validate_tp_kv_cache(cache)?;
         let target = cache.commit_target(transaction, accepted_rows)?;
         cache.publish_finalize(transaction, target)?;
+        // The rank rows were written on-device by the caller (dcw / fa2 verify); the
+        // canonical model-device cache only had its length advanced and holds stale content
+        // for these rows. A verified-prefix restore must skip this layer (memra#128).
+        cache.mark_rows_external(true);
         Ok(())
     }
 

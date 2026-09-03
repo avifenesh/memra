@@ -1569,6 +1569,13 @@ pub struct ResidentTpKvCache {
     capacity: usize,
     ring: Option<KvRing>,
     state: TpKvTransactionState,
+    /// True when the most recent commit landed rows that were written DIRECTLY on the rank
+    /// devices (the dcw / fa2 verify path: `commit_tp_kv_transaction_external`), so the
+    /// model-device canonical cache holds NO authoritative content for those rows - only
+    /// its length was advanced. A restore that copies canonical rows over them copies
+    /// stale bytes from an earlier request (memra#128). Cleared by the ordinary commit,
+    /// whose per-rank quantize/append loop derives the rank rows FROM the canonical rows.
+    external_rows: bool,
 }
 
 impl ResidentTpKvCache {
@@ -1632,11 +1639,22 @@ impl ResidentTpKvCache {
             capacity,
             ring,
             state: TpKvTransactionState::new(),
+            external_rows: false,
         }
     }
 
     pub fn begin_transaction(&mut self) -> Result<TpKvTransaction, String> {
         self.state.begin()
+    }
+
+    /// Whether the committed rank rows were written on-device by an external append (dcw /
+    /// fa2 verify), so the canonical model-device rows must NOT be copied over them.
+    pub fn rows_external(&self) -> bool {
+        self.external_rows
+    }
+
+    pub fn mark_rows_external(&mut self, external: bool) {
+        self.external_rows = external;
     }
 
     pub fn committed_len(&self) -> usize {
