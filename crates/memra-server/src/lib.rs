@@ -114,7 +114,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use axum::{
     Extension, Json, Router,
     body::Body,
-    extract::{DefaultBodyLimit, FromRequest, Query, Request as AxumRequest, State},
+    extract::{DefaultBodyLimit, FromRequest, Path, Query, Request as AxumRequest, State},
     http::{
         HeaderMap, StatusCode,
         header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING},
@@ -5548,6 +5548,15 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
         .route("/readyz", get(health_ready))
         .route("/models", get(list_models))
         .route("/v1/models", get(list_models_v1))
+        // GET /v1/models/{id}: the standard OpenAI `models.retrieve()` surface
+        // (issue #123: neither form existed, so every box 404'd it while the
+        // list answered fine). One wildcard route carries both spellings a
+        // slash-in-id name reaches it under: `qwen/qwen3.8-27b` with a raw
+        // slash (the tail matches everything after the prefix) and
+        // `qwen%2Fqwen3.8-27b` (how OpenAI SDKs percent-encode the id when it
+        // contains one). axum percent-decodes the wildcard capture, so both
+        // arrive at the handler as the roster form.
+        .route("/v1/models/*id", get(retrieve_model_v1))
         .route("/v1/auth/check", get(auth_check))
         .route("/v1/completions", post(completions_admitted))
         .route("/v1/embeddings", post(embed_api::embeddings_admitted))
@@ -7011,6 +7020,53 @@ async fn list_models_v1(State(st): State<AppState>) -> impl IntoResponse {
         });
     }
     Json(body)
+}
+
+/// The lookup `list_models_v1` performs, exposed as one pure function so a
+/// unit test can pin "the retrieve row equals the list row" without building
+/// the whole AppState. A slash-in-id name arrives here in its roster form
+/// (both URL spellings are percent-decoded by axum before the handler; see
+/// `retrieve_route_delivers_both_id_spellings_to_one_handler`).
+fn retrieve_model_row(
+    models: &[String],
+    caps: &HashMap<String, ModelCaps>,
+    md: &ModelMetadataSet,
+    id: &str,
+) -> Option<serde_json::Value> {
+    models
+        .iter()
+        .find(|m| m.as_str() == id)
+        .map(|name| model_entry_v1(name, caps.get(name), md.models.get(name)))
+}
+
+/// GET /v1/models/{id}: the standard OpenAI `models.retrieve()` surface (issue
+/// #123: neither route existed, so every box 404'd it while `/v1/models` answered
+/// fine). One wildcard route carries both spellings a slash-in-id name reaches
+/// it under, so a client's own choice of encoding cannot miss:
+///
+///   /v1/models/qwen/qwen3.8-27b         (raw slash; wildcard tail as-is)
+///   /v1/models/qwen%2Fqwen3.8-27b       (percent-encoded; OpenAI SDK default)
+///
+/// axum 0.7's `*id` wildcard percent-decodes the matched tail (measured: both
+/// spellings arrive here as `qwen/qwen3.8-27b`, pinned by
+/// `retrieve_route_delivers_both_id_spellings_to_one_handler`), so the id is
+/// used as-is. One pass at `st.models`, the same row the list publishes (see
+/// `retrieve_model_row`): `model_entry_v1` has no second code path, so a
+/// retrieve can never disagree with a list about one model. An unknown id is a
+/// 404 with the server-truth error body and `x-should-retry: false`, matching
+/// the shape every other client-visible 4xx on this surface carries.
+async fn retrieve_model_v1(State(st): State<AppState>, Path(id): Path<String>) -> Response {
+    let md = st.metadata();
+    match retrieve_model_row(&st.models, &st.caps, &md, &id) {
+        Some(row) => Json(row).into_response(),
+        None => error_response_coded(
+            StatusCode::NOT_FOUND,
+            &format!("model {id:?} not found"),
+            "invalid_request_error",
+            Some("id"),
+            Some("model_not_found"),
+        ),
+    }
 }
 
 /// Per-lane counters + engine-truth interactive step latency (sidecar-compatible shape —
@@ -11813,6 +11869,67 @@ mod tests {
             published_context_length(Some(&caps), Some(&wide)),
             Some(1_048_576)
         );
+    }
+
+    // ---- GET /v1/models/{id} (issue #123, standard models.retrieve surface) ----------
+
+    /// The lookup is the LIST's lookup: same name, same row. A slash-in-id
+    /// model (the whole point: `zai/glm-5.3-flash` used to 404) resolves to
+    /// exactly what `list_models_v1` publishes for it, and an unknown id is
+    /// `None`, which the handler turns into a 404 with the server-truth
+    /// error body. No second source of truth on the row: the pure helper
+    /// calls `model_entry_v1`, so a drift between list and retrieve is not
+    /// constructible.
+    #[test]
+    fn retrieve_model_row_matches_the_list_row_for_a_slash_name() {
+        let name = "zai/glm-5.3-flash";
+        let caps_map = HashMap::from([(name.to_string(), glm5_caps())]);
+        let models = vec![name.to_string()];
+        let md = ModelMetadataSet::default();
+        let got = retrieve_model_row(&models, &caps_map, &md, name).expect("known id resolves");
+        assert_eq!(got["id"], json!(name));
+        assert_eq!(
+            got,
+            model_entry_v1(name, Some(&glm5_caps()), None),
+            "the retrieve row must equal the list row for the same model",
+        );
+        // A name absent from the roster resolves to None; the handler turns that
+        // into the 404. The empty-string case (a URL like /v1/models/) must
+        // also resolve to None, not to any real model.
+        assert!(retrieve_model_row(&models, &caps_map, &md, "no/such-model").is_none());
+        assert!(retrieve_model_row(&models, &caps_map, &md, "").is_none());
+    }
+
+    /// What `retrieve_model_v1` assumes about axum 0.7's `*id` wildcard on
+    /// both spellings a slash-in-id name reaches it under, and what axum
+    /// actually hands the handler: a stub handler echoes the raw
+    /// `Path<String>`, so the assertion below locks in axum's percent-decode
+    /// behaviour for wildcard captures. If a future axum changes it, this
+    /// test goes red rather than shipping a subtle 404 nobody observed.
+    #[tokio::test]
+    async fn retrieve_route_delivers_both_id_spellings_to_one_handler() {
+        async fn echo(Path(id): Path<String>) -> String {
+            id
+        }
+        let app = Router::new().route("/v1/models/*id", get(echo));
+        for url in [
+            "/v1/models/zai/glm-5.3-flash",
+            "/v1/models/zai%2Fglm-5.3-flash",
+            "/v1/models/zai%2fglm-5.3-flash",
+        ] {
+            let resp = app
+                .clone()
+                .oneshot(axum::http::Request::get(url).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::OK, "{url}");
+            let raw = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
+            let got = String::from_utf8(raw.to_vec()).unwrap();
+            assert_eq!(
+                got, "zai/glm-5.3-flash",
+                "wildcard extraction for {url}: axum 0.7 percent-decodes the tail, so the raw-slash and %2F spellings arrive identical",
+            );
+        }
     }
 
     // ---- deepseek-v4 (encoding_dsv4) template arm (lane 5, 2026-08-18) --------------------
