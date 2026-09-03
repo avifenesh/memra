@@ -1274,6 +1274,35 @@ impl HybridModel {
         // The real step.
         let x_rep = self.glm5_replay_run(e, dev, lo, hi, a, b, x, width, cache)?;
         let h_rep = e.dtoh(&x_rep)?;
+        // A NaN replay compared to a NaN eager walk is bit-identical, so an output-and-state
+        // compare on poisoned data is a vacuous PASS. Box trace 2026-09-03 (memra#131): every
+        // segment of dev 1's stage carried nz=16384/16384 absmax=0, the all-NaN signature, and
+        // every run there "passed". Non-finite data is a failure of this stage's INPUT or of
+        // the replay, and the line says which, with counts, so the poison can be walked back.
+        let nonfinite = |v: &[f32]| v.iter().filter(|x| !x.is_finite()).count();
+        let (nf_in, nf_ref, nf_rep) = {
+            let h_in = e.dtoh(&x_keep)?;
+            (nonfinite(&h_in), nonfinite(&h_ref), nonfinite(&h_rep))
+        };
+        if nf_in + nf_ref + nf_rep > 0 {
+            eprintln!(
+                "[glm5-decode-graph] SELF-CHECK FAILED dev={dev} stage=[{lo}, {hi}) \
+                 run=[{a}, {b}) pos={pos} replay={k} phase={phase}: NON-FINITE data: input \
+                 {nf_in}/{width}, eager output {nf_ref}/{width}, replay output {nf_rep}/{width} \
+                 (a NaN-identical compare proves nothing); the stage is latched EAGER for this \
+                 session and this token is recomputed eager. The door did NOT engage.{}",
+                if nf_in > 0 {
+                    " The INPUT was already poisoned: the defect is upstream of this stage."
+                } else {
+                    ""
+                }
+            );
+            restore(e, cache, &snaps)?;
+            let x_real =
+                self.hyper_range_decode_eager(e, topology, x_keep, a, b, pos_d, pos, cache)?;
+            self.glm5_graph_pool(cache).failed.push((dev, lo, hi));
+            return Ok((x_real, false));
+        }
         let first_diff = h_ref
             .iter()
             .zip(h_rep.iter())
