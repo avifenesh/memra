@@ -1,0 +1,70 @@
+# dsa-decode-gate, 2x B200 SXM pair (sm_100a), device 0, N=5 interleaved, engine f3a0091cd.
+# Relayed from the session that owns the pair, 2026-09-03. Banked source:
+#   darklanes:research/glm5-b200-20260902/box/gates/gate-dsa-decode.txt
+# NOTE: the kv=2048 and kv=32768 sections are not in the relayed capture (it begins
+# mid-128k). The gathered stage is depth-flat, and the three contexts present agree to
+# a few percent, but the two shallow cells are UNCONFIRMED on this box and the arm table
+# cites only what is below.
+# This run FAILED as captured: the 4 ARGMAX lines at kv=131072 / t_q=4 are what put the
+# named-class width rule (MLA_DSA_NAMED_CLASS_T_MAX = 1) into the door.
+
+  t_q=1 attn_gathered warp-online chunks=32 [dsa-warp-online-f32]: argmax MATCH (0/64 rows moved), maxdiff 1.639e-6, max-rel 3.281e-6
+  t_q=1 attn_gathered us: shipped 556.3  single-pass 573.1  chunks=4 272.9  chunks=8 136.9  chunks=16 80.5  chunks=32 57.1   (N=5 interleaved)
+  note: kv=131072 t_q=1 fastest gathered arm is 32 (57.1 us), table says 16 -- an arm-table edit this run would justify (cite it in mla_ffi.rs)
+  t_q=1 kpool_score head-blocked: BIT-IDENTICAL
+  t_q=1 kpool_score us: shipped 167.8  head-blocked 42.3  (3.97x)   (N=5 interleaved)
+  t_q=4 attn_gathered single-pass: BIT-IDENTICAL
+  t_q=4 attn_gathered warp-online chunks=4 [dsa-warp-online-f32]: argmax MOVED (1/256 rows moved), maxdiff 1.699e-6, max-rel 3.488e-6
+  t_q=4 attn_gathered warp-online chunks=8 [dsa-warp-online-f32]: argmax MOVED (1/256 rows moved), maxdiff 1.788e-6, max-rel 3.672e-6
+  t_q=4 attn_gathered warp-online chunks=16 [dsa-warp-online-f32]: argmax MOVED (1/256 rows moved), maxdiff 1.758e-6, max-rel 3.611e-6
+  t_q=4 attn_gathered warp-online chunks=32 [dsa-warp-online-f32]: argmax MOVED (1/256 rows moved), maxdiff 1.669e-6, max-rel 3.331e-6
+  t_q=4 attn_gathered us: shipped 641.3  single-pass 618.8  chunks=4 276.9  chunks=8 156.0  chunks=16 159.6  chunks=32 131.3   (N=5 interleaved)
+  note: kv=131072 t_q=4 fastest gathered arm is 32 (131.3 us), table says 16 -- an arm-table edit this run would justify (cite it in mla_ffi.rs)
+  t_q=4 kpool_score head-blocked: BIT-IDENTICAL
+  t_q=4 kpool_score us: shipped 482.7  head-blocked 66.0  (7.31x)   (N=5 interleaved)
+
+== context 262144 tokens (n_pools 65536, gather window 262144 rows) ==
+  t_q=1 attn_gathered single-pass: BIT-IDENTICAL
+  t_q=1 attn_gathered warp-online chunks=4 [dsa-warp-online-f32]: argmax MATCH (0/64 rows moved), maxdiff 1.669e-6, max-rel 3.320e-6
+  t_q=1 attn_gathered warp-online chunks=8 [dsa-warp-online-f32]: argmax MATCH (0/64 rows moved), maxdiff 1.609e-6, max-rel 3.201e-6
+  t_q=1 attn_gathered warp-online chunks=16 [dsa-warp-online-f32]: argmax MATCH (0/64 rows moved), maxdiff 1.609e-6, max-rel 3.201e-6
+  t_q=1 attn_gathered warp-online chunks=32 [dsa-warp-online-f32]: argmax MATCH (0/64 rows moved), maxdiff 1.550e-6, max-rel 3.071e-6
+  t_q=1 attn_gathered us: shipped 553.3  single-pass 572.4  chunks=4 273.3  chunks=8 136.7  chunks=16 79.7  chunks=32 54.8   (N=5 interleaved)
+  note: kv=262144 t_q=1 fastest gathered arm is 32 (54.8 us), table says 16 -- an arm-table edit this run would justify (cite it in mla_ffi.rs)
+  t_q=1 kpool_score head-blocked: BIT-IDENTICAL
+  t_q=1 kpool_score us: shipped 330.3  head-blocked 48.1  (6.86x)   (N=5 interleaved)
+  t_q=4 attn_gathered single-pass: BIT-IDENTICAL
+  t_q=4 attn_gathered warp-online chunks=4 [dsa-warp-online-f32]: argmax MATCH (0/256 rows moved), maxdiff 1.848e-6, max-rel 3.556e-6
+  t_q=4 attn_gathered warp-online chunks=8 [dsa-warp-online-f32]: argmax MATCH (0/256 rows moved), maxdiff 1.848e-6, max-rel 3.594e-6
+  t_q=4 attn_gathered warp-online chunks=16 [dsa-warp-online-f32]: argmax MATCH (0/256 rows moved), maxdiff 1.907e-6, max-rel 3.785e-6
+  t_q=4 attn_gathered warp-online chunks=32 [dsa-warp-online-f32]: argmax MATCH (0/256 rows moved), maxdiff 1.848e-6, max-rel 3.594e-6
+  t_q=4 attn_gathered us: shipped 663.1  single-pass 616.6  chunks=4 277.1  chunks=8 154.7  chunks=16 158.9  chunks=32 131.8   (N=5 interleaved)
+  note: kv=262144 t_q=4 fastest gathered arm is 32 (131.8 us), table says 16 -- an arm-table edit this run would justify (cite it in mla_ffi.rs)
+  t_q=4 kpool_score head-blocked: BIT-IDENTICAL
+  t_q=4 kpool_score us: shipped 812.4  head-blocked 106.3  (7.64x)   (N=5 interleaved)
+
+== context 1048576 tokens (n_pools 262144, gather window 262144 rows) ==
+  t_q=1 attn_gathered single-pass: BIT-IDENTICAL
+  t_q=1 attn_gathered warp-online chunks=4 [dsa-warp-online-f32]: argmax MATCH (0/64 rows moved), maxdiff 1.669e-6, max-rel 3.320e-6
+  t_q=1 attn_gathered warp-online chunks=8 [dsa-warp-online-f32]: argmax MATCH (0/64 rows moved), maxdiff 1.609e-6, max-rel 3.201e-6
+  t_q=1 attn_gathered warp-online chunks=16 [dsa-warp-online-f32]: argmax MATCH (0/64 rows moved), maxdiff 1.609e-6, max-rel 3.201e-6
+  t_q=1 attn_gathered warp-online chunks=32 [dsa-warp-online-f32]: argmax MATCH (0/64 rows moved), maxdiff 1.550e-6, max-rel 3.071e-6
+  t_q=1 attn_gathered us: shipped 552.1  single-pass 571.5  chunks=4 273.1  chunks=8 139.0  chunks=16 79.9  chunks=32 54.3   (N=5 interleaved)
+  note: kv=1048576 t_q=1 fastest gathered arm is 32 (54.3 us), table says 16 -- an arm-table edit this run would justify (cite it in mla_ffi.rs)
+  t_q=1 kpool_score head-blocked: BIT-IDENTICAL
+  t_q=1 kpool_score us: shipped 852.0  head-blocked 147.2  (5.79x)   (N=5 interleaved)
+  t_q=4 attn_gathered single-pass: BIT-IDENTICAL
+  t_q=4 attn_gathered warp-online chunks=4 [dsa-warp-online-f32]: argmax MATCH (0/256 rows moved), maxdiff 1.848e-6, max-rel 3.556e-6
+  t_q=4 attn_gathered warp-online chunks=8 [dsa-warp-online-f32]: argmax MATCH (0/256 rows moved), maxdiff 1.848e-6, max-rel 3.594e-6
+  t_q=4 attn_gathered warp-online chunks=16 [dsa-warp-online-f32]: argmax MATCH (0/256 rows moved), maxdiff 1.907e-6, max-rel 3.785e-6
+  t_q=4 attn_gathered warp-online chunks=32 [dsa-warp-online-f32]: argmax MATCH (0/256 rows moved), maxdiff 1.848e-6, max-rel 3.594e-6
+  t_q=4 attn_gathered us: shipped 667.6  single-pass 618.5  chunks=4 277.5  chunks=8 156.5  chunks=16 160.1  chunks=32 132.3   (N=5 interleaved)
+  note: kv=1048576 t_q=4 fastest gathered arm is 32 (132.3 us), table says 16 -- an arm-table edit this run would justify (cite it in mla_ffi.rs)
+  t_q=4 kpool_score head-blocked: BIT-IDENTICAL
+  t_q=4 kpool_score us: shipped 3261.2  head-blocked 467.3  (6.98x)   (N=5 interleaved)
+
+ARGMAX attn_gathered warp-online kv=131072 t_q=4 chunks=4: 1 rows moved
+ARGMAX attn_gathered warp-online kv=131072 t_q=4 chunks=8: 1 rows moved
+ARGMAX attn_gathered warp-online kv=131072 t_q=4 chunks=16: 1 rows moved
+ARGMAX attn_gathered warp-online kv=131072 t_q=4 chunks=32: 1 rows moved
+dsa-decode-gate FAIL: 4 failing check(s)

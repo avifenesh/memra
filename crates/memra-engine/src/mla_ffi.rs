@@ -186,6 +186,180 @@ fn mla_b200_split_announce(kind: &str, t_q: usize, n_head: usize, split: i32) {
     }
 }
 
+/// Engagement counter for the DSA decode door (`MEMRA_B200_DSA_DECODE`), announced once per
+/// boot per arm: the receipt a B200 box A/B has to show.
+pub static MLA_DSA_DECODE_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// `MEMRA_B200_DSA_DECODE` (default OFF = 0, read per call: the rollback seam), compile-time
+/// gated to sm_100a builds exactly like its sibling `MEMRA_B200_MLA_DECODE_ARM`, so a
+/// 120a/90a/89 build sees no behavior change from a var it cannot engage.
+///
+/// THE DOOR IS A LEVEL, not a boolean, and the level is the numeric-class boundary:
+///
+/// * `0` (default) - nothing engages. Every kernel is the shipped one.
+/// * `1` - the BIT-IDENTICAL arms only: `memra_mla_attn_gathered_dsa_kernel` (same fold, same
+///   lane stride, same shuffle tree; what changes is that each tile's KV rows are staged once
+///   into shared memory with float4 loads and serve BOTH the score dot and the PV accumulate,
+///   and that the 8 tile exponentials are hoisted into registers instead of being recomputed
+///   3x per thread per tile) and `memra_mla_kpool_score_dsa_kernel` (head-blocked decode
+///   scorer; c-ascending dot, h-ascending mix, all six rounding steps spelled with explicit
+///   intrinsics). Both are asserted bytewise by `dsa-decode-gate`, not merely argued.
+/// * `2` - additionally admits the WARP-ONLINE gathered arm
+///   (`memra_mla_dsa_attn_warp_kernel` + `memra_mla_dsa_attn_combine_kernel`), numeric class
+///   **`dsa-warp-online-f32`**: one warp owns one (token, head, slot-chunk) and holds the whole
+///   kv_rank-wide accumulator in registers, so every KV element is read from memory ONCE and
+///   consumed twice from registers, there is not a single `__syncthreads`, and the two `expf`
+///   per slot replace ~196k per warp per layer. It folds PER SLOT and merges `chunks` partials,
+///   where the shipped kernel folds in 8-slot tiles: same sum in real arithmetic, different
+///   rounding, so `dsa-decode-gate` holds it to an ARGMAX gate plus a maxdiff/max-relative bound
+///   on real-shaped inputs and never to bit identity. It exists because at t_q=1 the gathered
+///   attention has exactly 64 independent (token, head) outputs for 148 SMs and the slot axis is
+///   the only one that buys parallelism without duplicating the walk. ADMISSIBLE ONLY AT
+///   `t_q <= MLA_DSA_NAMED_CLASS_T_MAX` = 1 (plain decode): the 2026-09-03 B200 run saw this
+///   class move 1 of 256 latent-row argmaxes at kv=131072 / t_q=4, and t_q=4..8 is the DFlash2
+///   spec-verify shape where a moved argmax is a moved draft acceptance. Enforced by
+///   `mla_dsa_attn_arm_effective`, not by table convention.
+///
+/// Rollback seam: unset the var (or set 0). Both arms are read per call, so a rollback is the
+/// next request, not a restart.
+fn mla_dsa_decode_level() -> u32 {
+    if !cfg!(memra_sm100_tcgen05) {
+        return 0;
+    }
+    match std::env::var("MEMRA_B200_DSA_DECODE").as_deref() {
+        Ok("1") => 1,
+        Ok("2") => 2,
+        _ => 0,
+    }
+}
+
+/// Widest query width the DSA decode door keys on. Wider widths fall through untouched: the
+/// `MEMRA_B200_MLA_DECODE_ARM` split door if set, then the shipped kernels (t >= 16 reaches
+/// `MEMRA_MLA_TC_PREFILL` before either).
+pub const MLA_DSA_ARM_T_MAX: usize = 8;
+
+/// Which gathered-attention arm the door selects, keyed on t_q (index = t_q in
+/// 1..=MLA_DSA_ARM_T_MAX; index 0 unused):
+///
+/// * `0` - the SHIPPED kernel (`memra_mla_attn_gathered_f32`). The door does nothing here.
+/// * `1` - the single-pass BIT-IDENTICAL kernel (`memra_mla_attn_gathered_dsa_f32`).
+/// * `n >= 2` - the WARP-ONLINE arm with `n` slot chunks, numeric class
+///   `dsa-warp-online-f32`. Level 2 only.
+///
+/// B200-MEASURED, 2026-09-03, and the widths are not free: read the width rule below before
+/// editing a cell. `dsa-decode-gate` on the 2x B200 SXM pair (sm_100a), device 0, N=5
+/// interleaved, engine commit f3a0091cd; banked log
+/// `darklanes:research/glm5-b200-20260902/box/gates/gate-dsa-decode.txt`. Means in us, and the
+/// gathered stage is depth-flat so the three contexts agree to a few percent:
+///
+/// | t_q | context | shipped | single-pass (1) | c=4 | c=8 | c=16 | **c=32** |
+/// |---|---|---|---|---|---|---|---|
+/// | 1 | 128k | 556.3 | 573.1 | 272.9 | 136.9 | 80.5 | **57.1** |
+/// | 1 | 256k | 553.3 | 572.4 | 273.3 | 136.7 | 79.7 | **54.8** |
+/// | 1 | 1M | 552.1 | 571.5 | 273.1 | 139.0 | 79.9 | **54.3** |
+/// | 4 | 128k | 641.3 | **618.8** | 276.9 | 156.0 | 159.6 | 131.3 |
+/// | 4 | 256k | 663.1 | **616.6** | 277.1 | 154.7 | 158.9 | 131.8 |
+/// | 4 | 1M | 667.6 | **618.5** | 277.5 | 156.5 | 160.1 | 132.3 |
+///
+/// THE WIDTH RULE, and it is a correctness rule, not a tuning one. The named class
+/// (`dsa-warp-online-f32`, arm >= 2) is admissible ONLY at `t_q <= MLA_DSA_NAMED_CLASS_T_MAX`
+/// = 1, i.e. plain decode. The same box run that produced the table above ALSO recorded the
+/// class moving an argmax: at `kv=131072, t_q=4` every swept chunk count (4, 8, 16, 32) moved
+/// **1 of 256** latent rows, maxdiff ~1.7e-6. It was argmax-clean at t_q=1 in every measured
+/// cell (0 of 64, three contexts on the box plus five on the 5090) and clean at t_q=4 at 256k
+/// and 1M, but "clean in the cells we measured" is not a proof, and t_q=4..8 is the DFlash2
+/// SPEC-VERIFY shape: a moved argmax there is a moved draft acceptance. So the spec-verify
+/// batch never sees the named class. `mla_dsa_attn_arm_effective` enforces this in code, not by
+/// table convention: a cell >= 2 at any width above the rule is demoted to 0 (the shipped
+/// kernel, the always-safe path), never silently run and never quietly promoted to the
+/// single-pass arm at a width where nobody measured it.
+///
+/// The cells therefore ship exactly what the box measured, under that rule:
+///
+/// * `t_q=1` -> **32**. The fastest arm at every context (54.3-57.1 us, a 10.2x on the shipped
+///   552.1 us at 1M) and argmax-clean at every context. 32 beats 16 by ~1.45x here where it lost
+///   to 16 on the 5090 -- 148 SMs want `64 * 32` = 2048 warps, an 82-SM laptop part does not.
+///   That disagreement is the per-hardware-arm-selection law working as intended.
+/// * `t_q=4` -> **1**, the BIT-IDENTICAL single-pass kernel. On the B200 it is a 3.5-7.4% WIN
+///   (618.5 vs 667.6 us at 1M), the opposite sign from the 5090, where it lost by 30% and this
+///   table shipped 0. Same code, different machine: on 148 SMs the shared-memory staging pays
+///   for itself where on 82 it did not. Bit-identical, so this cell carries no numeric risk at
+///   the spec-verify width at all. Banked evidence covers 128k/256k/1M; the two shallow contexts
+///   were not in the log this cell was set from, and the kernel is depth-flat.
+/// * `t_q=2,3,5..8` -> **0** (shipped). Unmeasured, and unmeasured behavior does not go on.
+///
+/// The door is default OFF and arm >= 2 additionally needs level 2, so nothing here reaches a
+/// request without two deliberate acts. `dsa-decode-gate` FAILS with a `REGRESSION` line if a
+/// cell is slower than shipped by more than `MLA_DSA_REGRESSION_MARGIN` on a later run, so the
+/// next box run either confirms these cells or names the one to change. Cite the run here when
+/// a cell moves.
+pub const MLA_DSA_ATTN_ARM: [i32; MLA_DSA_ARM_T_MAX + 1] = [0, 32, 0, 0, 1, 0, 0, 0, 0];
+
+/// Widest query width at which the NAMED numeric class (`dsa-warp-online-f32`, arm >= 2) may be
+/// selected. 1: plain decode only. Above it the door takes a bit-identical arm or the shipped
+/// kernel, so the DFlash2 spec-verify batch (t_q=4..8) never runs a rounding program that could
+/// move a draft acceptance. Set by the 2026-09-03 B200 run, which observed the class move 1 of
+/// 256 latent-row argmaxes at kv=131072 / t_q=4 for every swept chunk count. Raising this needs
+/// its own argmax evidence at the widths it opens, not an inference from t_q=1.
+pub const MLA_DSA_NAMED_CLASS_T_MAX: usize = 1;
+
+/// Chunk counts `dsa-decode-gate` sweeps for the warp-online arm. The warp arm puts
+/// `t_q * n_head * chunks` WARPS on the die, so chunks is the whole occupancy knob at t_q=1
+/// (64 pairs alone is 8 CTAs of 8 warps); 64 is the kernel's ceiling (`MLA_DSA_MAX_CHUNKS`).
+pub const MLA_DSA_ATTN_CHUNK_SWEEP: [i32; 4] = [4, 8, 16, 32];
+
+/// The decode scorer engages only from this pool count up. Below it the block count
+/// (`n_pools / (128 * 2)`) cannot fill the die and the shipped dispatch's own measured
+/// crossover already sends small-pool decode to the reference kernel, which wins there
+/// (cu/mla_attn.cu, MLA_KPOOL_SMALL_TILE_MIN_POOLS note). 4096 pools = 16 blocks = 16k context
+/// at the shipped pool size 4.
+pub const MLA_DSA_SCORE_MIN_POOLS: usize = 4096;
+
+/// The gate's regression bar, shared with the sibling arm's: an arm may not be slower than the
+/// kernel it replaces by more than 5%.
+pub const MLA_DSA_REGRESSION_MARGIN: f64 = 1.05;
+
+/// The gathered-attention arm code at this width (see [`MLA_DSA_ATTN_ARM`]). Pure, so the gate
+/// can read the policy on any build including the 120a ones where the door is dead.
+pub fn mla_dsa_attn_arm(t_q: usize) -> i32 {
+    if t_q == 0 || t_q > MLA_DSA_ARM_T_MAX {
+        return 0;
+    }
+    MLA_DSA_ATTN_ARM[t_q]
+}
+
+/// The arm the door may actually run at this width: the table cell, with the named-class width
+/// rule enforced in CODE rather than by table convention. A cell >= 2 above
+/// `MLA_DSA_NAMED_CLASS_T_MAX` is demoted to 0 (the shipped kernel), not to the single-pass arm
+/// — a width nobody measured gets the path that cannot be wrong, not the path that happens to
+/// be bit-identical. The gate reads this same function, so an edit that violates the rule shows
+/// up as the gate timing a shipped cell, never as a silently-served numeric class.
+pub fn mla_dsa_attn_arm_effective(t_q: usize) -> i32 {
+    let arm = mla_dsa_attn_arm(t_q);
+    if arm >= 2 && t_q > MLA_DSA_NAMED_CLASS_T_MAX {
+        return 0;
+    }
+    arm
+}
+
+/// Geometry refusals from the DSA launchers: the door has nothing for this shape, so the
+/// caller falls through to the shipped kernel instead of failing the request. Every other
+/// non-zero rc (a real cudaError included) still goes through `ck` and surfaces.
+fn mla_dsa_geometry_refusal(rc: i32) -> bool {
+    matches!(rc, 40020 | 40021 | 40023)
+}
+
+fn mla_dsa_announce(kind: &str, t_q: usize, detail: &str) {
+    use std::sync::atomic::Ordering;
+    if MLA_DSA_DECODE_DISPATCHES.fetch_add(1, Ordering::Relaxed) == 0 {
+        eprintln!(
+            "[mla-b200-dsa-decode] engaged {kind} t={t_q} {detail} \
+             (sm_100a; MEMRA_B200_DSA_DECODE)"
+        );
+    }
+}
+
 unsafe extern "C" {
     pub fn memra_mla_rope_interleaved_f32(
         x: *mut f32,
@@ -371,6 +545,69 @@ unsafe extern "C" {
     /// shared score/softmax tile walk (m, dsum) is recomputed IN FULL, unchanged, by every
     /// split block — bit-identical by construction, gated in `mla_decode_arm_gate.rs`.
     #[allow(clippy::too_many_arguments)]
+    /// Single-pass bit-identical rewrite of `memra_mla_attn_gathered_f32`
+    /// (`MEMRA_B200_DSA_DECODE>=1`): each tile's KV rows staged once into shared memory with
+    /// float4 loads and read back for BOTH the score dot and the PV accumulate, the 8 tile
+    /// exponentials hoisted into registers. Same grid, same fold, same bits. Returns 40020
+    /// (width not a multiple of 4) or 40021 (staging over the smem cap) for a geometry it
+    /// refuses, and the caller falls through to the shipped kernel.
+    pub fn memra_mla_attn_gathered_dsa_f32(
+        q_lat: *const f32,
+        q_pe: *const f32,
+        cache: *const f32,
+        idx: *const i32,
+        o_lat: *mut f32,
+        n_head: i32,
+        kv_rank: i32,
+        d_rope: i32,
+        t_q: i32,
+        n_slots: i32,
+        scale: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Slot-per-chunk span the partial kernel walks. The host MUST size the workspace and
+    /// launch from this, never from its own division, so the two cannot disagree.
+    pub fn memra_mla_dsa_attn_chunk_span(n_slots: i32, chunks: i32) -> i32;
+    /// Warp-online slot-split gathered attention, numeric class `dsa-warp-online-f32`
+    /// (`MEMRA_B200_DSA_DECODE=2`). `part_m` / `part_d` hold `t_q * n_head * chunks` floats
+    /// each; `part_acc` holds `t_q * n_head * chunks * kv_rank`. Returns 40023 for a
+    /// (kv_rank, d_rope) with no template instantiation, and the caller takes the shipped path.
+    pub fn memra_mla_dsa_attn_split_f32(
+        q_lat: *const f32,
+        q_pe: *const f32,
+        cache: *const f32,
+        idx: *const i32,
+        o_lat: *mut f32,
+        part_m: *mut f32,
+        part_d: *mut f32,
+        part_acc: *mut f32,
+        n_head: i32,
+        kv_rank: i32,
+        d_rope: i32,
+        t_q: i32,
+        n_slots: i32,
+        chunks: i32,
+        scale: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Head-blocked decode pool scorer (`MEMRA_B200_DSA_DECODE>=1`), bit-identical to
+    /// `memra_mla_kpool_score_ref_f32`. Returns 40023 when this (heads, d) has no
+    /// instantiation, and the caller falls through to the shipped dispatch.
+    pub fn memra_mla_kpool_score_dsa_f32(
+        q: *const f32,
+        pool_keys: *const f32,
+        hw: *const f32,
+        score: *mut f32,
+        t_q: i32,
+        heads: i32,
+        d: i32,
+        n_pools: i32,
+        pool: i32,
+        first_pos: i32,
+        qk_scale: f32,
+        head_scale: f32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_mla_attn_gathered_split_f32(
         q_lat: *const f32,
         q_pe: *const f32,
@@ -432,6 +669,10 @@ fn ck(what: &str, rc: i32) -> Res<()> {
         }
         40014 => " (index-list width is narrower than select_k * pool + pool - 1)",
         40015 => " (empty gathered candidate list — a zero softmax denominator)",
+        40020 => " (latent row width is not a multiple of 4 — the DSA float4 staging needs it)",
+        40021 => " (DSA tile staging exceeds MLA_DSA_KV_SMEM_MAX)",
+        40022 => " (DSA slot-chunk count out of range — 1..=64)",
+        40023 => " (no DSA scorer instantiation for this (heads, d))",
         r if (10000..20000).contains(&r) => " (cudaError)",
         _ => "",
     };
@@ -827,6 +1068,41 @@ impl Engine {
         head_scale: f32,
     ) -> Res<()> {
         let s = self.stream();
+        // MEMRA_B200_DSA_DECODE door (level >= 1): the head-blocked decode scorer. Engages only
+        // at decode widths and only from MLA_DSA_SCORE_MIN_POOLS up, where the block count can
+        // fill the die; below that the shipped dispatch's own measured crossover already sends
+        // decode to the reference kernel, which wins there. Bit-identical, so this is a speed
+        // choice and nothing else. See research/b200-dsa-decode-20260902/ROOFLINE.md §2.
+        if mla_dsa_decode_level() >= 1
+            && (1..=MLA_DSA_ARM_T_MAX).contains(&t_q)
+            && n_pools >= MLA_DSA_SCORE_MIN_POOLS
+        {
+            let rc = unsafe {
+                memra_mla_kpool_score_dsa_f32(
+                    q.device_ptr(&s).0 as *const f32,
+                    pool_keys.device_ptr(&s).0 as *const f32,
+                    head_weights.device_ptr(&s).0 as *const f32,
+                    score.device_ptr_mut(&s).0 as *mut f32,
+                    t_q as i32,
+                    heads as i32,
+                    d as i32,
+                    n_pools as i32,
+                    pool as i32,
+                    first_pos as i32,
+                    qk_scale,
+                    head_scale,
+                    s.cu_stream() as *mut c_void,
+                )
+            };
+            if !mla_dsa_geometry_refusal(rc) {
+                mla_dsa_announce(
+                    "kpool_score",
+                    t_q,
+                    &format!("arm=head-blocked heads={heads} pools={n_pools} class=bit-identical"),
+                );
+                return ck("kpool_score_dsa", rc);
+            }
+        }
         unsafe {
             ck(
                 "kpool_score",
@@ -1114,6 +1390,79 @@ impl Engine {
         scale: f32,
     ) -> Res<()> {
         let s = self.stream();
+        // MEMRA_B200_DSA_DECODE door, checked FIRST: its arms fight the same 64-CTA t_q=1
+        // geometry the output-range split below does, without repeating the slot walk.
+        // THE TWO LEVELS DIFFER TODAY, and the difference is this PR's headline: the shipped
+        // table is [0, 32, 0, 0, 1, ...], so at t_q=1 level 1 takes arm 0 (falls through to
+        // the sibling split door) while level 2 takes warp-online chunks=32 -- +9.7% vs
+        // +43.1% in the 256k serving A/B. The `a >= 2 && dsa_level < 2` guard below exists
+        // precisely because they differ, and the level boundary IS the numeric-class
+        // admission boundary. See research/b200-dsa-decode-20260902/ROOFLINE.md.
+        let dsa_level = mla_dsa_decode_level();
+        let dsa_arm = if dsa_level >= 1 && t_q <= MLA_DSA_ARM_T_MAX {
+            // `_effective` already enforces the named-class width rule (plain decode only, so
+            // the spec-verify batch never sees `dsa-warp-online-f32`); level 2 is the second,
+            // independent admission for the same class.
+            let a = mla_dsa_attn_arm_effective(t_q);
+            if a >= 2 && dsa_level < 2 { 0 } else { a }
+        } else {
+            0
+        };
+        if dsa_arm >= 2 {
+            let cells = t_q * n_head * dsa_arm as usize;
+            let mut part_m = self.uninit(cells)?;
+            let mut part_d = self.uninit(cells)?;
+            let mut part_acc = self.uninit(cells * kv_rank)?;
+            let rc = unsafe {
+                memra_mla_dsa_attn_split_f32(
+                    q_lat.device_ptr(&s).0 as *const f32,
+                    q_pe.device_ptr(&s).0 as *const f32,
+                    cache.device_ptr(&s).0 as *const f32,
+                    idx.device_ptr(&s).0 as *const i32,
+                    o_lat.device_ptr_mut(&s).0 as *mut f32,
+                    part_m.device_ptr_mut(&s).0 as *mut f32,
+                    part_d.device_ptr_mut(&s).0 as *mut f32,
+                    part_acc.device_ptr_mut(&s).0 as *mut f32,
+                    n_head as i32,
+                    kv_rank as i32,
+                    d_rope as i32,
+                    t_q as i32,
+                    n_slots as i32,
+                    dsa_arm,
+                    scale,
+                    s.cu_stream() as *mut c_void,
+                )
+            };
+            if !mla_dsa_geometry_refusal(rc) {
+                mla_dsa_announce(
+                    "attn_gathered",
+                    t_q,
+                    &format!("arm=warp-online chunks={dsa_arm} class=dsa-warp-online-f32"),
+                );
+                return ck("attn_gathered_dsa_warp", rc);
+            }
+        } else if dsa_arm == 1 {
+            let rc = unsafe {
+                memra_mla_attn_gathered_dsa_f32(
+                    q_lat.device_ptr(&s).0 as *const f32,
+                    q_pe.device_ptr(&s).0 as *const f32,
+                    cache.device_ptr(&s).0 as *const f32,
+                    idx.device_ptr(&s).0 as *const i32,
+                    o_lat.device_ptr_mut(&s).0 as *mut f32,
+                    n_head as i32,
+                    kv_rank as i32,
+                    d_rope as i32,
+                    t_q as i32,
+                    n_slots as i32,
+                    scale,
+                    s.cu_stream() as *mut c_void,
+                )
+            };
+            if !mla_dsa_geometry_refusal(rc) {
+                mla_dsa_announce("attn_gathered", t_q, "arm=single-pass class=bit-identical");
+                return ck("attn_gathered_dsa", rc);
+            }
+        }
         // MEMRA_B200_MLA_DECODE_ARM door: output-range split from the t_q-keyed table
         // MLA_B200_ATTN_GATHERED_SPLIT. This twin repeats the score/softmax walk per split
         // block, unlike the absorb/decompress splits, which is why the B200 run found it a win
