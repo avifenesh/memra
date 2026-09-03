@@ -127,7 +127,7 @@ constant was initially 4096, copied from the scorer's `MLA_DSA_SCORE_MIN_POOLS`;
 shipped a measured **4.6x regression at 32k**, and the gate's own regression bar is what caught
 it.
 
-## 6. Predicted saving, for the box cell to beat (PREDICTIONS, not measurements)
+## 6. Predicted saving (superseded at 1M by the measured receipt in section 7b)
 
 Per token = per layer x 11 MLA/DSA layers, at t_q=1, applying the 5090 ratios:
 
@@ -168,36 +168,47 @@ kernels, never escaping).
 Nothing has exercised `mla_dsa_select_on() == true` end to end, because no sm_100a hardware is
 available (below). The kernels are measured; the door's composition is ARGUED.
 
-## 7b. First sm_100a serving signal (2026-09-03, ONE pair, provisional)
+## 7b. sm_100a serving receipt (2026-09-03, three pairs, MEASURED)
 
-B200 pair, best posture on main `3908a431`, vendor sampling, fresh boot per arm, 1M plain route:
+Main `3908a431` built fresh on the B200 pair, best posture, vendor sampling, 1_027_024-token
+prompt (256_756 pools), measured rep only, fresh boot per arm. Receipts:
+`darklanes:research/glm5-b200-20260902/box/dsasel2/`, driver `box/dsasel2.sh`.
 
-| rung | off | on |
-|---|---|---|
-| 1M decode | 34.70 | **41.32 tok/s (+19.1%)** |
-| 1M TTFT | 486.8 s | 487.0 s (flat) |
-| short code decode | 50.81 | 50.62 (flat -- cannot engage) |
+| pair | 1M decode OFF | 1M decode ON | delta |
+|---|---|---|---|
+| 1 | 35.17 | 41.00 | +16.6% |
+| 2 | 34.95 | 41.07 | +17.5% |
+| 3 | 34.72 | 41.09 | +18.3% |
+| **median** | **34.95** | **41.07** | **+17.5%** |
+
+**The OFF and ON spreads do not overlap** (off 34.72-35.17, on 41.00-41.09), which is this lane's
+bar for a real win rather than a boot difference.
+
+In per-token terms: **28.61 -> 24.35 ms, 4.26 ms saved**, against the rig-derived prediction of
+4.19 ms over 11 MLA/DSA layers. **The ratio transferred to within 1.7%** -- a stronger statement
+about deriving a serving prediction from a synthetic kernel gate than about the number itself.
+
+Controls all behaved:
 
 ```
 [mla-b200-dsa-select] engaged kpool_select t=1 pools=256756 ctas=1003 class=exact
   (sm_100a; MEMRA_B200_DSA_SELECT=1)
 ```
 
-TTFT flat is the right shape for a decode-only door, and the short rung is flat because it sits
-below the floor. The rig-derived prediction (~4.19 ms/token over 11 layers, which on the off
-arm's 28.7 ms/token lands near 41 tok/s) transferred almost exactly.
+`select=1 pools=256756 ctas=1003` on all three ON arms and `select=0` on all three OFF arms; TTFT
+flat at 488-496 s on both arms, which is what a decode-only door requires; and the 66-token
+control unchanged across all six boots because it sits far below the pool floor.
 
-**This is one pair, not a median.** The interleaved x3 run is still in flight; its medians are
-what this doc should eventually quote, and until then the section 6 per-token figures stay
-PREDICTIONS.
+**Where this lands on the lane's ladder:** 1M decode went 22.7 base -> 34.9 with
+`MEMRA_B200_DSA_DECODE` -> **41.07 with this door on top, 1.81x over where the lane started**.
 
-**The `RemoteDisconnected` in that run was harness fratricide, not this door.** A follow-up knee
-cell waited on a `grep -q "ALL DONE"` marker that an earlier aborted pass had already written to
-the same log, so its wait loop fell through immediately and it `pkill`ed the live server
-mid-request while booting its own beside it. The engine behaved correctly throughout
-(`SIGTERM: draining (1 in flight, deadline 30s)`), the client simply saw the socket close. No
-panic, no defect in this path. Recorded here so it is not later misread as a stability question
-about the door.
+### 7b.1 The `RemoteDisconnected` from the first pass was harness fratricide, not this door
+
+Recorded so it is not later misread as a stability question. A follow-up knee cell waited on a
+`grep -q "ALL DONE"` marker that an earlier aborted pass had already written to the same log, so
+its wait loop fell through immediately and it `pkill`ed the live server mid-request while booting
+its own beside it. The engine behaved correctly throughout (`SIGTERM: draining (1 in flight,
+deadline 30s)`); the client simply saw the socket close. No panic, no defect in this path.
 
 ## 7c. The floor is 262_144 tokens, and a "256k" rung is under it
 
