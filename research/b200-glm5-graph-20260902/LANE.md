@@ -1040,6 +1040,92 @@ against this defect class and passed 16 steps while the box was producing zeros.
 recorded and reproducible: revert `RunGraph::phase` to a stage field and the gate fails 16/16
 steps with run `[0,3)` still byte-identical.
 
+## 9o. Take 13 prediction, stated BEFORE the A/B, and what to grep
+
+Written ahead of the numbers so it can be wrong on the record.
+
+### What the door removes
+
+The captured span is 34 of the 45 trunk layers (box take 12: `runs=6 captured_layers=18` on
+dev 0's `[0, 24)`, `captured_layers=16` on dev 1's `[24, 45)`). Every launch in those layers is
+replaced by ONE `cuGraphLaunch` per run, so about 11-12 graph launches per token in total.
+
+What stays EAGER, by construction:
+
+* the 11 MLA/DSA layers (§2.2, §7): their kpool grid width, `select_k` and output size are all
+  derived on the host from `layer.len`, so a captured node would replay last token's geometry;
+* the hc expand at the trunk entry and the collapse at the tail;
+* `pos_d` (one `htod_i32` per stage per token);
+* the PP hop between stage 0 and stage 1;
+* the tail `e.dtoh(&logits)` and host sampling (`hybrid_forward.rs:3126`), which is one
+  device-wide drain per token and is NOT removable by this door.
+
+### The arithmetic
+
+Coordinator's baseline: ~2,400 launches/token at 50.8 tok/s = 19.69 ms/token. At the nsys-
+measured ~2.2 us of launch/gap each (§1), issue cost is ~5.28 ms, about 27% of the token.
+
+The captured 34 layers do NOT hold 34/45 of the launches, because an MLA/DSA layer carries the
+kpool machinery and a KDA layer's mixer is ~13 launches (§2.3). Bracketing it: if an MLA layer
+costs the same as a KDA layer the captured fraction is 76%; if it costs twice as much,
+34/(34 + 2x11) = 61%. So 1,460-1,820 launches move inside graphs, worth 3.2-4.0 ms of gap.
+
+Graph replay is not free either. A replayed node still costs driver dispatch, so recovery is
+~70-85% of the removed gap: **2.2-3.4 ms off a 19.69 ms token, i.e. 16.3-17.5 ms, i.e. 57-61
+tok/s, i.e. +13% to +21%.** Central call: **~59 tok/s.**
+
+NOT priced in, and pure upside: the door also removes 31 of the 42 per-token device-wide
+`cuStreamSynchronize` drains (the 42 MoE sites minus the 11 on MLA/DSA layers, which stay
+eager), because the device-table MoE arm inside the captured body never reads the selection back.
+A drain on a 2-card PP2 pipeline costs more than gap arithmetic charges it. If take 13 lands
+above +21% that is where it came from.
+
+**Floor case, and the falsifier:** if B200 kernels at this shape are big enough to hide issue
+cost, the gain collapses to +3-5%. So: if `[glm5-decode-graph] engaged` prints on both stages
+with ~12 replays/token and tok/s moves less than 3%, the 6 ms gap was not on the critical path
+on this silicon, and the door is a concurrency-scaling lever rather than a single-stream one.
+That is a real outcome, not a failure, and it should be recorded as one.
+
+### Composition with the best posture, resolved flag by flag
+
+| posture name | resolves to | where it runs | captured? |
+|---|---|---|---|
+| `KDA_FUSED_PROJ=1` | `MEMRA_KDA_FUSED_PROJ` (`kda.rs:1244`) | INSIDE the captured body | yes, as-is. Pure kernel-group selection, no sync, no HtoD, no host geometry. Declines on TP shards and outside `t in 1..=15`; t=1 decode qualifies |
+| `MATVEC_ARM=1` | `MEMRA_B200_MATVEC_ARM` (`lib.rs:778`) | inside, `OnceLock`-cached | yes, as-is. Bit-identical per-output kernel twins, `sm_100a` builds only |
+| `Q8_FUSE=1` | `MEMRA_GLM5_Q8_FUSE` (`lib.rs:262`) | inside, `OnceLock`-cached | yes, as-is |
+| `HC_FUSED_PRE=2` | `MEMRA_HC_FUSED_PRE` (`hyper.rs:318`) | INSIDE (2 hc sites per layer) | **the reader is `== Ok("1")`, so the value `2` is OFF on this branch.** Either the runner maps it, or the best posture has been running without the fused pre-chain. Worth settling before the A/B is read as a posture number |
+| `DSA_DECODE=2` | most likely `MEMRA_B200_MLA_DECODE_ARM` | the MLA/DSA layers, which are the door's EAGER GAPS | composes trivially: the door never captures those layers, so the two are disjoint |
+| `PRIME_V2=1` | a prime-path door | prime only | no decode interaction |
+| `W8=1` | `MEMRA_STEP_TP_W8` is the only `W8` door in the tree | step37 TP attention projections | names a STEP37 path. Verify it engages at all on glm5_next before crediting it in the posture |
+| `GEMV_V2=1`, `BGEMM_PAD_RATIO=1.0` | do not resolve to any `MEMRA_*` reader in this branch | unknown | resolve from the runner before crediting them |
+
+Resolve the last three with
+`grep -oE 'MEMRA_[A-Z0-9_]+' /root/lane/graphgate13.sh | sort -u` against
+`grep -oE 'MEMRA_[A-Z0-9_]+' crates/memra-engine/src/*.rs | sort -u`.
+
+The general rule, and it is now enforced rather than argued: a flag is capture-compatible iff its
+arm adds no host sync, no pageable HtoD, no geometry derived from `cache.pos`, and no buffer it
+reallocates per token. Everything in the posture above is kernel selection, which is none of
+those. The global hazards (`MEMRA_HTOD_DIET` off, `MEMRA_SIG_ROUTER=0`, the observation modes,
+event tracking, TP sharding) are refused BY NAME in `glm5_decode_graph_refusal`, and the two new
+guards catch the rest.
+
+### What to grep in the serving log
+
+```sh
+grep -c '\[glm5-decode-graph\] engaged'                    # expect 2, one per PP stage
+grep    '\[glm5-decode-graph\] eager-latch'                # expect ZERO; a hit names sig_diff
+grep    '\[glm5-decode-graph\] eager: '                    # the refusal reasons, by name
+grep    'capture failed'                                    # a named capture failure
+grep    'glm5-vrows-t1-deny.*capture_open=true'             # MUST be empty
+grep    'reached inside an open CUDA graph capture'         # the new router guard
+grep    '\[kda-fused-proj\] DECLINED'                      # composition decline
+```
+
+Line 4 (`capture_open=true` on a deny) and line 5 (the router guard) are the two that did not
+exist for takes 1 through 12 and are the reason a thirteenth take should not need a fourteenth:
+either of them names the exact conjunct that failed, on the first line it prints.
+
 ## 10. Open items
 
 1. **Run the gate on the pair** (`--steps 64 --reps 5`) and bank the receipt. Until then the
