@@ -831,6 +831,60 @@ table build and the kernel pair in isolation; what is missing is a fixture that 
 door path at the serving scale, which is the only thing that can turn this from box-window
 archaeology into a debuggable local failure.
 
+## 9l. The serving-shape reproduction PASSES, and that exposes an error in my own bisect
+
+`glm5_vrows_t1_serving_shape_gpu` ran on the rig at the exact serving shape — 288 experts,
+`in_f` 4096 / `n_ff` 2048, `row_bytes` 2304/2304/1152, `expert_stride` 4 718 592 (all asserted
+against the box dump), three 1.36 GB banks — driven by the box's OWN routing records from
+`box/sel-slice-50mb.bin`. Six real selections, host tables vs `moe_vrows_tables_from_sel`, same
+kernel pair, same bytes:
+
+```
+rec0 layer=3 sel=[42, 7, 246, 19, 169, 85, 71, 204]   host 0x941b6b4f7efcb312  dev 0x941b6b4f7efcb312  diffs 0/4096
+rec1 layer=3 sel=[116, 10, 226, 47, 77, 181, 190, 273] host 0x5aa77b7e3c6d95fa  dev 0x5aa77b7e3c6d95fa  diffs 0/4096
+... all six bit-identical, absmax 8.7e4 - 1.35e5, nz 4096/4096
+```
+
+**The device-table MoE arm is now cleared end to end**: table values (past 4 GiB strides), the
+kernel pair at t=1, and the whole consumer at serving scale with real routing. Three independent
+rig gates, no diff anywhere.
+
+**And that elimination exposes an error in the bisect I shipped.** `MEMRA_GLM5_GRAPH_HOST_MOE=1`
+stands the MoE arm down **and** makes the capture refuse by name. So box run 6 compared *neither
+enabler* (6A, correct tape) against *both enablers* (6B, wrong tape). **That is not a bisect**,
+and §9g called it one. It could never attribute the defect to one of the two, and I read it as
+having attributed it to the MoE arm — which the rig has now shown is clean. The reasoning that
+followed from take 6 onward inherited that mistake.
+
+**The missing cell, added:** `MEMRA_GLM5_GRAPH_NO_CAPTURE=1` — the device-table MoE arm engages
+exactly as in serving, the capture never happens, the walk runs eagerly.
+
+**Expected result, written down before the run so it cannot be rationalised afterwards: a CORRECT
+tape.** That would pin the defect on the capture/replay and exonerate the arm, consistent with all
+three rig gates. A wrong tape would instead mean the arm behaves differently in situ than in the
+fixture — the remaining difference being the things the fixture does not model: the shared expert
+merged into the same call, `ws.z` as the activation source, and the verify-workspace pool
+(`vws_uninit*`) supplying `zq`/`zd`/`ptrs`/`scl`/`aq2`/`ad2` instead of fresh buffers — and it
+would say so on the first run.
+
+**One box run answers it**, and it is a single env var on a binary that already exists.
+
+**Why the capture half cannot be reproduced on the rig as things stand — a structural limit, not
+a missing effort.** The capture REQUIRES the device-table MoE arm: a host router readback and its
+`cuStreamSynchronize` are illegal inside a capture region, which is the entire reason the T=1
+device arm had to be built before anything could be captured. And that arm requires slab-resident
+uniform q8 experts with a live PRE clamp (`slab_bases.is_some() && moe_q8 && uniform_experts &&
+n_used <= 8 && Pre(l) > 1e-6`). The mini hc fixture the rig's decode gates use
+(`hc_decode_ws_gpu.rs`'s harness) has no resident expert slab and no PRE clamp, so the door
+refuses it by name and a capture gate over it would be vacuous — the failure mode this lane has
+already paid for twice.
+
+So reproducing the capture locally needs the mini hc fixture EXTENDED with slab-resident clamped
+NVFP4 experts. That is buildable and is the fallback if no box slot can be had; it is a fixture
+change, not a discovery, and it is the next rig task if `MEMRA_GLM5_GRAPH_NO_CAPTURE` cannot be
+run. Stating it now so the choice is explicit rather than implied: one env var on an existing
+binary, or a day of fixture work to reach the same answer locally.
+
 ## 10. Open items
 
 1. **Run the gate on the pair** (`--steps 64 --reps 5`) and bank the receipt. Until then the
