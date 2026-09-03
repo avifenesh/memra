@@ -170,7 +170,7 @@ jobs:
             --budget-var MEMRA_GGUF_SKIP_BUDGET --min-passed 130 \
             -- cargo test -p memra-gguf -p memra-tokenizer -p memra-validate -p memra-sampling --lib
 
-  # ── public boundary: what a public MIT repo is permitted to publish ─────────────────────────
+  # ── public boundary: what the public repository is permitted to publish ─────────────────────
   # Its own job because the two steps together are ~250 s and share nothing with the fixtures
   # above; a red here names which question failed ("a new violation appeared" vs "an old
   # exemption stopped describing reality") because they are SEPARATE steps.
@@ -186,7 +186,7 @@ jobs:
           python3 tools/check-public-boundary.py check
 
       # ALLOWLIST DRIFT (2026-08-23). `verify-allowlist` had NO automated caller anywhere and
-      # governs what a public MIT repo is permitted to publish across 685 pinned entries. It is
+      # governs what the public repository is permitted to publish across 685 pinned entries. It is
       # the half of the boundary policy that fails SILENTLY: `check` asks "is any tracked blob
       # a violation that is not grandfathered"; it never asks whether a grant still describes
       # anything real. Fail-closed: rc=1 on any drifted entry fails the job. Never --prune here;

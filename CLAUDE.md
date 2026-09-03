@@ -272,9 +272,10 @@ and isn't worth automating at this update cadence.
 
 ## memra is a public engine, not a product (owner call 2026-08-16)
 
-Anyone can use this. It is MIT, it runs on hardware a reader owns, and it must read that
-way — an engine someone can clone and serve with, not the backing story of a service they
-have to buy. The business lives in darklanes and on the website.
+Anyone can inspect, modify, and use this for the permitted purposes in FSL-1.1-ALv2. It runs
+on hardware a reader owns, and it must read that way — an engine someone can clone and serve
+with, not the backing story of a service they have to buy. The business lives in darklanes and
+on the website.
 
 So, concretely:
 

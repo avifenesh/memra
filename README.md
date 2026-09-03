@@ -1,7 +1,7 @@
 # memra
 
 [![ci](https://github.com/avifenesh/memra/actions/workflows/ci.yml/badge.svg)](https://github.com/avifenesh/memra/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: FSL-1.1-ALv2](https://img.shields.io/badge/license-FSL--1.1--ALv2-blue.svg)](LICENSE)
 [![release](https://img.shields.io/github/v/release/avifenesh/memra)](https://github.com/avifenesh/memra/releases/latest)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-tiyuvta-0A66C2?logo=linkedin)](https://www.linkedin.com/company/tiyuvta-ai)
 
@@ -195,5 +195,9 @@ runners. Start with [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-MIT, see [LICENSE](LICENSE). Built by [Avi Fenesh](https://github.com/avifenesh) at
-[tiyuvta](https://tiyuvta.ai).
+[FSL-1.1-ALv2](LICENSE). Each version becomes available under Apache-2.0 two years after
+it is first made available. Earlier revisions and package releases remain under the license
+that accompanied them. Third-party components retain their own terms; see
+[THIRD-PARTY.md](crates/memra-engine/THIRD-PARTY.md).
+
+Built by [Avi Fenesh](https://github.com/avifenesh) at [tiyuvta](https://tiyuvta.ai).

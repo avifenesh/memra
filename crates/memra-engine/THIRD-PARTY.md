@@ -36,4 +36,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-memra itself is MIT-licensed (repository-root LICENSE, Copyright (c) 2026 Avi Fenesh).
+Except for the separately licensed third-party material identified above, memra is distributed
+under FSL-1.1-ALv2 (repository-root LICENSE, Copyright 2026 Avi Fenesh). The third-party-derived
+files retain their MIT notices and remain available under the applicable third-party terms.

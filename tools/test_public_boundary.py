@@ -1012,8 +1012,9 @@ class VerifyAllowlistTests(unittest.TestCase):
     Until 2026-08-23 this mode had NO automated caller anywhere — not `ci.yml`, not
     `boundary-refs.yml`, not the pre-push hook — and no test in this file touched `cmd_verify`.
     The only evidence it had ever passed was two transcript lines in
-    `research/public-boundary-20260814/PROGRESS.md`. That is a gate governing what a public MIT
-    repo is permitted to publish, with 685 pinned entries, running only when a human remembered.
+    `research/public-boundary-20260814/PROGRESS.md`. That is a gate governing what the public
+    repository is permitted to publish, with 685 pinned entries, running only when a human
+    remembered.
 
     The allowlist is the half of the boundary policy that decides what is EXEMPT, so it is the
     half that fails silently: an entry whose file was edited, deleted or remediated keeps sitting
@@ -1212,7 +1213,7 @@ class UnstatablePathTests(unittest.TestCase):
     traverse gives PermissionError. That killed the whole gate in CI: it died on
     `.../mv-battery-20260831/receipts/c3/off-1 -> /root/out-mv/c2/off-1` and therefore
     scanned NOTHING after it, while the same tree passed on a workstation whose Python
-    returned False instead of raising. A gate that governs what a public MIT repo may
+    returned False instead of raising. A gate that governs what the public repository may
     publish must not be silenced by one unreadable path, and must not silently skip it
     either.
 
