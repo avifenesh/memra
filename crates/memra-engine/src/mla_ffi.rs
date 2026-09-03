@@ -374,24 +374,49 @@ fn mla_dsa_select_on() -> bool {
 }
 
 /// The select door engages only from this pool count up, and the value is MEASURED, not
-/// inherited. The first `dsa-select-gate` run (RTX 5090, N=3 interleaved -- an exactness rig, so
-/// direction only) put the crossover between 32768 and 65536 pools, i.e. between 128k and 256k
-/// of context:
+/// inherited.
 ///
-/// | n_pools | context | shipped | parallel | ratio |
-/// |---|---|---|---|---|
-/// | 8192 | 32k | 30.3 us (t=4) | 140.9 us | **0.22x** |
-/// | 32768 | 128k | 82.9 us (t=1) | 92.7 us | 0.89x |
-/// | **65536** | **256k** | **150.9 us (t=1)** | **99.5 us** | **1.52x** |
-/// | 262144 | 1M | 554.5 us (t=1) | 174.7 us | **3.17x** |
+/// **THE FLOOR IN TOKENS IS 262_144 EXACTLY (65536 pools x pool 4), AND A PROMPT CALLED "256k"
+/// IS USUALLY BELOW IT.** Read that before sizing any cell against this door. A 256k serving
+/// rung is ~256_756 tokens, which is 64_189 pools -- 1_347 pools and 5_388 tokens short, 2.06%
+/// under the floor -- so it engages NOTHING and measures noise. This cost a real B200 cell on
+/// 2026-09-03: the rung was sized from an earlier note that said "n_pools >= 65536 (256k context
+/// at pool=4)", which is true only if "256k" means the binary 262_144 and not the ~256.8k a
+/// prompt of that name actually carries. Every context figure below is therefore written as an
+/// exact token count, never as a "k".
+///
+/// Measured, RTX 5090, N=5 interleaved -- an exactness rig, so direction only:
+///
+/// | n_pools | context (tokens) | t_q=1 | t_q=4 |
+/// |---|---|---|---|
+/// | 4096 | 16_384 | 0.20x | 0.19x |
+/// | 8192 | 32_768 | 0.25x | 0.25x |
+/// | 32768 | 131_072 | 0.90x | 0.51x |
+/// | 49152 | 196_608 | **1.13x** | 0.64x |
+/// | 64189 | 256_756 | **1.44x** | 1.02x |
+/// | **65536** | **262_144** | **1.53x** | **1.07x** |
+/// | 262144 | 1_048_576 | **3.13x** | **1.95x** |
 ///
 /// The pipeline is SIX launches where the shipped kernel is one, so below the crossover that
 /// fixed cost is simply larger than the sweep it removes. That is the honest reason this is a
-/// DEPTH door and not a decode door, and it is why the constant is not a round number copied
-/// from a sibling: an initial guess of 4096 (inherited from `MLA_DSA_SCORE_MIN_POOLS`) would
-/// have shipped a measured 4.6x REGRESSION at 32k, and the gate's regression bar is what caught
-/// it. 65536 is the first swept cell that wins at BOTH measured widths (1.52x at t_q=1, 1.07x
-/// at t_q=4). A B200 run confirms it or names the cell to change.
+/// DEPTH door. An initial guess of 4096 (inherited from `MLA_DSA_SCORE_MIN_POOLS`) would have
+/// shipped a measured 4.6x REGRESSION at 32_768 tokens, and the gate's regression bar caught it.
+///
+/// **`t_q=4` IS WHAT HOLDS THIS FLOOR UP, not `t_q=1`.** Plain decode crosses into profit around
+/// 49152 pools (196_608 tokens, 1.13x) and is a clear 1.44x by 64189; the DFlash2 spec-verify
+/// width is still 0.64x at 49152 and only reaches parity around 64189 (1.02x). Because the door
+/// engages uniformly across `t_q <= MLA_DSA_SELECT_T_MAX`, the floor is set by the WORSE width,
+/// and 65536 is the first swept cell that wins at both.
+///
+/// KNOWN GAP, worth a decision rather than a shrug: a real 256k serving rung (64_189 pools) sits
+/// 2.06% under this floor, so the door refuses a shape the rig measures at **1.44x on the plain
+/// route**. Covering it does not need this constant moved -- it needs the floor KEYED ON `t_q`,
+/// the way the sibling `MLA_DSA_ATTN_ARM` table is keyed, with a lower floor for plain decode
+/// and this one retained for the spec-verify widths. That change is deliberately NOT made here:
+/// a default-ON PR for this door is in flight, and quietly widening which shapes engage
+/// underneath it is the wrong order of operations. It needs its own PR and a B200 gate run,
+/// because the crossover is a launch-overhead-vs-sweep trade and both terms differ on that
+/// silicon.
 pub const MLA_DSA_SELECT_MIN_POOLS: usize = 65_536;
 
 /// Widest query width the select door keys on: decode and the spec-verify batch. Wider widths

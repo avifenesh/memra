@@ -168,6 +168,68 @@ kernels, never escaping).
 Nothing has exercised `mla_dsa_select_on() == true` end to end, because no sm_100a hardware is
 available (below). The kernels are measured; the door's composition is ARGUED.
 
+## 7b. First sm_100a serving signal (2026-09-03, ONE pair, provisional)
+
+B200 pair, best posture on main `3908a431`, vendor sampling, fresh boot per arm, 1M plain route:
+
+| rung | off | on |
+|---|---|---|
+| 1M decode | 34.70 | **41.32 tok/s (+19.1%)** |
+| 1M TTFT | 486.8 s | 487.0 s (flat) |
+| short code decode | 50.81 | 50.62 (flat -- cannot engage) |
+
+```
+[mla-b200-dsa-select] engaged kpool_select t=1 pools=256756 ctas=1003 class=exact
+  (sm_100a; MEMRA_B200_DSA_SELECT=1)
+```
+
+TTFT flat is the right shape for a decode-only door, and the short rung is flat because it sits
+below the floor. The rig-derived prediction (~4.19 ms/token over 11 layers, which on the off
+arm's 28.7 ms/token lands near 41 tok/s) transferred almost exactly.
+
+**This is one pair, not a median.** The interleaved x3 run is still in flight; its medians are
+what this doc should eventually quote, and until then the section 6 per-token figures stay
+PREDICTIONS.
+
+**The `RemoteDisconnected` in that run was harness fratricide, not this door.** A follow-up knee
+cell waited on a `grep -q "ALL DONE"` marker that an earlier aborted pass had already written to
+the same log, so its wait loop fell through immediately and it `pkill`ed the live server
+mid-request while booting its own beside it. The engine behaved correctly throughout
+(`SIGTERM: draining (1 in flight, deadline 30s)`), the client simply saw the socket close. No
+panic, no defect in this path. Recorded here so it is not later misread as a stability question
+about the door.
+
+## 7c. The floor is 262_144 tokens, and a "256k" rung is under it
+
+`MLA_DSA_SELECT_MIN_POOLS` is 65536 pools, which at `pool = 4` is **262_144 tokens exactly**. A
+serving rung called "256k" is usually ~256_756 tokens = **64_189 pools, 2.06% under the floor**,
+so it engages nothing. That cost a real B200 rung on 2026-09-03, sized from an earlier note of
+mine that read "n_pools >= 65536 (256k context at pool=4)" -- true only if "256k" means the
+binary 262_144. Every context figure in this lane is now an exact token count.
+
+Full rig band (RTX 5090, N=5 interleaved, `gate-5090-band-20260903.txt`), t_q=1 / t_q=4:
+
+| n_pools | tokens | t_q=1 | t_q=4 |
+|---|---|---|---|
+| 4096 | 16_384 | 0.20x | 0.19x |
+| 8192 | 32_768 | 0.25x | 0.25x |
+| 32768 | 131_072 | 0.90x | 0.51x |
+| 49152 | 196_608 | **1.13x** | 0.64x |
+| 64189 | 256_756 | **1.44x** | 1.02x |
+| 65536 | 262_144 | **1.53x** | **1.07x** |
+| 262144 | 1_048_576 | **3.13x** | **1.95x** |
+
+**`t_q=4` is what holds the floor up.** Plain decode crosses into profit around 49152 pools and
+is a clear 1.44x by 64189; the DFlash2 spec-verify width is still 0.64x at 49152 and only reaches
+parity near 64189. The door engages uniformly across `t_q`, so the floor is set by the worse
+width, and 65536 is the first cell that wins at both.
+
+So the door refuses a 256k rung the rig measures at **1.44x on the plain route**. Closing that
+needs the floor KEYED ON `t_q` -- a lower floor for plain decode, this one kept for spec-verify --
+the way the sibling `MLA_DSA_ATTN_ARM` table is keyed. Deliberately NOT done here: a default-ON PR
+for this door is in flight, and widening which shapes engage underneath it is the wrong order of
+operations. It wants its own PR and a B200 gate run.
+
 ## 8. Open, and why it is blocked
 
 **No box receipt exists for this door, and none can be scheduled.** As of 2026-09-03 the vast.ai

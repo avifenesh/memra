@@ -43,8 +43,16 @@ const POOL: usize = 4;
 const SELECT_K: usize = 512;
 const WIDTH: usize = SELECT_K * POOL + POOL - 1;
 
-/// Pool counts swept: `n_pools = t_kv / pool`, so these are 16k, 32k, 128k, 256k and 1M context.
-const POOLS: [usize; 5] = [4_096, 8_192, 32_768, 65_536, 262_144];
+/// Pool counts swept, written with the EXACT token count each one means (`n_pools * pool`),
+/// never as a "k": 16_384, 32_768, 131_072, 196_608, 256_756, 262_144 and 1_048_576 tokens.
+///
+/// 49152 and 64189 exist because the band between 32768 and 65536 pools was unswept and a real
+/// 256k serving rung lands inside it: ~256_756 tokens is 64_189 pools, 2.06% UNDER the shipped
+/// `MLA_DSA_SELECT_MIN_POOLS` floor of 65536, so the door engages nothing there. A B200 cell was
+/// sized against that rung on 2026-09-03 and measured noise for exactly this reason. These two
+/// cells put numbers on the band so the floor can be argued from data instead of from a round
+/// number.
+const POOLS: [usize; 7] = [4_096, 8_192, 32_768, 49_152, 64_189, 65_536, 262_144];
 const T_QS: [usize; 2] = [1, 4];
 
 /// Times each exactness cell is re-run. The pipeline synchronises through last-CTA arrivals, so
@@ -305,7 +313,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ---------------------------------------------------------------- exactness + timing
     for &n_pools in &POOLS {
-        println!("\n== n_pools {n_pools} (kv {} tokens) ==", n_pools * POOL);
+        println!(
+            "\n== n_pools {n_pools} ({} tokens){} ==",
+            n_pools * POOL,
+            if n_pools >= MLA_DSA_SELECT_MIN_POOLS {
+                ""
+            } else {
+                "  [BELOW THE DOOR FLOOR - the door does not engage here]"
+            }
+        );
         for &t in &T_QS {
             let first_pos = n_pools * POOL - t;
             for shape in Shape::ALL {
