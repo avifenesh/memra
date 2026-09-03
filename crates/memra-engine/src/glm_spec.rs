@@ -242,8 +242,12 @@ pub fn glm5_draft_prime_v2_on() -> bool {
     std::env::var("MEMRA_GLM5_DRAFT_PRIME_V2").as_deref() == Ok("1")
 }
 
-/// `MEMRA_GLM5_DRAFT_TAPS_DEVICE` (default OFF, lane/spec-route-depth-20260902): the
-/// DEVICE-RESIDENT drafter prime. The trunk prime stays the ONE whole-prompt call (the
+/// `MEMRA_GLM5_DRAFT_TAPS_DEVICE` (DEFAULT ON since boot D, 2026-09-03; `=0` = the
+/// host-tap rollback seam; lane/spec-route-depth-20260902): the DEVICE-RESIDENT drafter
+/// prime. Boot D on the 2x B200 pair (this arm) against boot C (host taps), TTFT s at
+/// 4k / 42k / 128k / 256k: 4.89 / 16.84 / 56.62 / 129.42 vs 5.32 / 21.23 / 72.90 /
+/// 162.26, drafter prime ms 17.9 / 59.1 / 180.7 / 362.4 vs 91.4 / 561.6 / 4430.8 /
+/// 8868.4, steady rounds and decode-after unchanged (FLAGS row, receipt path there). The trunk prime stays the ONE whole-prompt call (the
 /// chunked arm's per-range calls re-entered the PP-2 microchunk geometry and made the trunk
 /// prime itself far slower — boot B); the tap rows never leave the device: the walk stages
 /// each range's five contracted tap planes on the writing stage's device (a chunk-sized
@@ -253,10 +257,11 @@ pub fn glm5_draft_prime_v2_on() -> bool {
 /// runs `ctx_features` + `ingest_ctx` at the range width (4096 rows: the batched GEMM
 /// class), and appends to the drafter KV. No DtoH in the prime, no HtoD in the drafter
 /// prime; the eager arm's 7.5 s of pageable HtoD at 256k (boot B's split: h2d 7505.8 of
-/// 8870 ms) goes away outright, and its `tap_dtoh` with it. Read per session creation.
-/// Rollback seam: unset.
+/// 8870 ms) goes away outright, and its `tap_dtoh` with it. Read per session creation
+/// (a gate flips it in-process). The host-tap arms (`MEMRA_GLM5_DRAFT_PRIME_V2`,
+/// `MEMRA_GLM5_DRAFT_PRIME_LAZY`) are reachable only under `=0`.
 pub fn glm5_draft_taps_device_on() -> bool {
-    std::env::var("MEMRA_GLM5_DRAFT_TAPS_DEVICE").as_deref() == Ok("1")
+    std::env::var("MEMRA_GLM5_DRAFT_TAPS_DEVICE").as_deref() != Ok("0")
 }
 
 /// The device-resident drafter prime's in-flight state (doc on

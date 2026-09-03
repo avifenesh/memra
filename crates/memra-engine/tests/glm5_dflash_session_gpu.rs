@@ -1894,6 +1894,9 @@ type Gate15Arm = (Vec<u32>, usize, usize, Vec<Vec<f32>>, Vec<Vec<f32>>);
 #[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
 fn gpu_dflash_chunked_drafter_prime_kv_matches_eager_ingest() {
     let _gpu = gpu_guard();
+    // Both arms here are HOST-TAP arms; the device-resident arm is the default since boot
+    // D, so it is switched off for this gate (gate 16 owns host-vs-device).
+    let _host_taps = EnvArm::set("MEMRA_GLM5_DRAFT_TAPS_DEVICE", "0");
     let h = Harness::new("g15");
     let prompt = tokens(PROMPT, 0xA11CE);
     let max_new = 20usize;
@@ -2023,8 +2026,10 @@ fn gpu_dflash_chunked_drafter_prime_kv_matches_eager_ingest() {
 // `MEMRA_GLM5_DRAFT_TAPS_DEVICE`): the trunk prime stays the one whole-prompt call, the tap
 // planes never leave the device (chunk ring on the writing stage, 2D-copy interleave on the
 // head device, fc + k/v ingest at the range width inside the prime's own range loop), and the
-// drafter KV is BIT-IDENTICAL to the eager arm's when both ingest the prompt as one range;
-// the served tape is byte-identical to plain decode on both arms at every chunking. The
+// drafter KV is BIT-IDENTICAL to the eager (host-tap) arm's when both ingest the prompt as
+// one range; the served GREEDY tape is byte-identical between host taps and device taps and
+// to plain decode on both arms at every chunking: the exactness receipt of the default flip
+// to device taps (boot D, 2026-09-03). The
 // forced multi-range arm (`MEMRA_PRIME_CHUNK=16`, two ranges of 16 + 8 against the eager
 // arm's one 24-row ingest) REPORTS the KV max-abs-diff and the acceptance delta (a GEMM
 // whose per-row bits depend on M moves drafts only; verify arbitrates).
@@ -2065,7 +2070,11 @@ fn gpu_dflash_device_resident_drafter_prime_kv_matches_eager_ingest() {
     let run = |device: bool| -> Gate15Arm {
         // SAFETY: under gpu_guard.
         unsafe { std::env::remove_var("MEMRA_GLM5_DRAFT_PRIME_V2") };
-        let arm = device.then(|| EnvArm::set("MEMRA_GLM5_DRAFT_TAPS_DEVICE", "1"));
+        // Device taps are the DEFAULT (boot D); the host-tap eager arm is selected by `=0`.
+        let arm = EnvArm::set(
+            "MEMRA_GLM5_DRAFT_TAPS_DEVICE",
+            if device { "1" } else { "0" },
+        );
         let mut sess = h
             .model
             .glm5_spec_session_new(&h.engine, &prompt, ctx, None)
@@ -2110,6 +2119,11 @@ fn gpu_dflash_device_resident_drafter_prime_kv_matches_eager_ingest() {
     assert_eq!(&out_e[..max_new], &tape[..], "eager arm: tape == plain");
     assert_eq!(&out_d[..max_new], &tape[..], "device arm: tape == plain");
     assert_eq!(
+        out_d, out_e,
+        "GREEDY TAPE IDENTITY, host taps vs device taps (the default flip's exactness \
+         receipt): the served tapes must be byte-identical"
+    );
+    assert_eq!(
         (d_d, a_d),
         (d_e, a_e),
         "one range: identical KV must give identical acceptance"
@@ -2129,6 +2143,10 @@ fn gpu_dflash_device_resident_drafter_prime_kv_matches_eager_ingest() {
         &out_d2[..max_new],
         &tape[..],
         "device arm, chunked trunk: tape == plain"
+    );
+    assert_eq!(
+        out_d2, out_e2,
+        "two ranges: greedy tape identity host taps vs device taps"
     );
     println!(
         "gate 16 PASS: one-range KV bit-identical ({a_e}/{d_e} accepted both arms); two-range \

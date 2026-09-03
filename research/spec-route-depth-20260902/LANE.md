@@ -228,3 +228,36 @@ The fix, built here as `MEMRA_GLM5_DRAFT_TAPS_DEVICE=1` (default OFF until boot 
 Boot C invocation: the section 2 boot plus `MEMRA_GLM5_DRAFT_TAPS_DEVICE=1`; compare the
 `draft_prime:` split and the per-rung TTFT / wall against boot A. Expected at 256k: the
 7.5 s `h2d` gone, `tap_dtoh` gone from `prime`, feat + kv well under boot A's 1.36 s.
+
+## 8. Boots C and D (2026-09-03): the device-resident arm wins at every depth; default ON
+
+Pair, the lane branch at 106051c4 built on the box, BASE doors (no pipelined prime, no
+DSA door, matching boot A), `MEMRA_SPEC_PROF=1`, one vendor-sampled request per rung, 256
+tokens. Boot C = host taps with the creation-time eager ingest (58de86d7c); boot D = the
+same plus `MEMRA_GLM5_DRAFT_TAPS_DEVICE=1`.
+
+| rung | C TTFT s | D TTFT s | C draft_prime ms | D draft_prime ms |
+|---|---|---|---|---|
+| 4k (6920) | 5.32 | 4.89 | 91.4 | 17.9 |
+| 42k (41866) | 21.23 | 16.84 | 561.6 | 59.1 |
+| 128k (128059) | 72.90 | 56.62 | 4430.8 | 180.7 |
+| 256k (256756) | 162.26 | 129.42 | 8868.4 | 362.4 |
+
+The 7.5 s pageable h2d at 256k is gone (24x on the drafter prime), and the trunk prime
+itself dropped 151.7 -> 128.5 s at 256k: the host tap sink (its 21 GB allocation and the
+five synchronous DtoHs per chunk) sat inside the prime window. Steady rounds unchanged
+(56-64 ms, 2.0-2.4 tok/round, accept 0.53-0.72); decode-after 33.8 -> 35.0 at 256k. Boot
+C against boot A was NEUTRAL on the drafter prime (8868 vs 8870 ms): moving the eager
+ingest before the anchor changed where it landed, not what it cost.
+
+Raw: darklanes `research/glm5-b200-20260902/box/specdepth/cd/`
+(`specdepth-{c,d}-{4k,42k,128k,256k}.jsonl`, `*-prof.txt`, `specdepthc.log`).
+
+Decision (re-land PR): `MEMRA_GLM5_DRAFT_TAPS_DEVICE` default ON, `=0` the host-tap
+rollback; rig gate 16 is the exactness receipt (drafter-KV bit-identity and identical
+acceptance host vs device on a one-range prompt, greedy tape byte-identical host vs device
+and to plain on both arms at every chunking). `MEMRA_GLM5_DRAFT_PRIME_V2` stays OFF and
+REJECTED; `MEMRA_GLM5_DRAFT_PRIME_LAZY` is a host-tap-only seam. `MEMRA_SPEC_MAX_PROMPT`
+stays unset: the crossover moves with device taps, and the composition cell on the box
+(best posture + pipelined-prime tap sharing + device taps, OFF vs ON x2, then 1M) sets the
+number.
