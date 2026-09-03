@@ -262,17 +262,18 @@ pub fn glm5_draft_prime_v2_on() -> bool {
 /// `MEMRA_GLM5_DRAFT_PRIME_LAZY`) are the default and are reachable whenever this is unset.
 ///
 /// DEFAULT OFF DELIBERATELY, and the flip is blocked on two named defects that a review of
-/// the ON default found (both are properties of the device-staged ring, so neither can bite
-/// while this is unset):
-///   1. the `MEMRA_B200_PRIME_V2` arm-2 branch (`prime_cache_hyper_pp2_pipelined`) never
-///      calls `glm5_taps_range_begin`/`glm5_taps_range_done`, and hands each stage-chunk an
-///      ABSOLUTE base, so from the second range on `glm5_hc_tap_slot` slices past the
-///      `sink.t * h` slot buffer: `slice_mut` panics and takes the worker with it.
-///   2. the same-`ordinal` ingest reads the ring `buf` from the head engine's stream while
-///      the next range rewrites it on the stage engine's stream, with cudarc implicit event
-///      tracking disabled in this repo, so the tap planes can tear (silently wrong drafter
-///      ctx KV; verify still arbitrates the served tape, so tape-identity gates stay green).
-/// Flipping the default needs both fixed AND a gate that fails on each before it passes.
+/// the ON default found. Both are properties of the device-staged ring, so neither can bite
+/// while this is unset. FIRST, the `MEMRA_B200_PRIME_V2` arm-2 branch
+/// (`prime_cache_hyper_pp2_pipelined`) never calls
+/// `glm5_taps_range_begin`/`glm5_taps_range_done`, and hands each stage-chunk an ABSOLUTE
+/// base, so from the second range on `glm5_hc_tap_slot` slices past the `sink.t * h` slot
+/// buffer: `slice_mut` panics and takes the worker with it. SECOND, the same-`ordinal`
+/// ingest reads the ring `buf` from the head engine's stream while the next range rewrites
+/// it on the stage engine's stream, with cudarc implicit event tracking disabled in this
+/// repo, so the tap planes can tear into silently wrong drafter ctx KV; verify still
+/// arbitrates the served tape, so the tape-identity gates stay green and would NOT catch
+/// it. Flipping the default needs both fixed AND a gate that fails on each before it
+/// passes.
 pub fn glm5_draft_taps_device_on() -> bool {
     std::env::var("MEMRA_GLM5_DRAFT_TAPS_DEVICE").as_deref() == Ok("1")
 }

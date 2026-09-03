@@ -1894,8 +1894,9 @@ type Gate15Arm = (Vec<u32>, usize, usize, Vec<Vec<f32>>, Vec<Vec<f32>>);
 #[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
 fn gpu_dflash_chunked_drafter_prime_kv_matches_eager_ingest() {
     let _gpu = gpu_guard();
-    // Both arms here are HOST-TAP arms; the device-resident arm is the default since boot
-    // D, so it is switched off for this gate (gate 16 owns host-vs-device).
+    // Both arms here are HOST-TAP arms. The device-resident arm is default OFF (its flip is
+    // blocked on the arm-2 range-hook panic and the ring cross-stream race), so this `=0` is
+    // an explicit pin rather than an override; gate 16 owns host-vs-device.
     let _host_taps = EnvArm::set("MEMRA_GLM5_DRAFT_TAPS_DEVICE", "0");
     let h = Harness::new("g15");
     let prompt = tokens(PROMPT, 0xA11CE);
