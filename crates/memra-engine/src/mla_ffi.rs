@@ -1129,6 +1129,7 @@ impl Engine {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn mla_absorb_q(
         &self,
         q_nope: &CudaSlice<f32>,
