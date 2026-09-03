@@ -1536,6 +1536,16 @@ class now comes from the producer:
 | bad / disabled api key | 401 / 403 | `authentication_error` | — | `x-should-retry: false` |
 | worker channel dropped (`cmd_tx.send` fails) | 503 | `server_error` | `overloaded` | `Retry-After: 2` + `retry-after-ms: 2000` |
 
+Engine-fault bodies carry a stable sentence, never the producer text (memra#143, 2026-09-04):
+`overloaded` reads "the model is temporarily at capacity; retry after the Retry-After delay",
+`engine_error` reads "the engine could not complete this request; retry, and report the
+request id if it persists". The producer text (a driver or executor Debug string such as
+`step error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")`) goes to the
+`[engine-error] class=... <text>` server-log line on every construction and nowhere else; that
+line is the operator's evidence and is why serving boxes must not send stdout/stderr to
+`/dev/null` without a log file. Producer-authored refusals (shed reasons, request-shape
+errors, constraint errors) keep their exact text.
+
 Unknown model is a deliberate **400, not 404**: OpenRouter's uptime math counts 404s
 against the provider and excludes 400s, and the `code` is what clients branch on either
 way. `Retry-After` is always integer seconds ≤ 60 (RFC 9110 delay-seconds; litellm honors

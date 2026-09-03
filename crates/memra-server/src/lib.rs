@@ -15053,7 +15053,16 @@ default_reasoning_effort = "always"
             .filter_map(|l| l.strip_prefix("data: "))
             .collect();
         let err: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
-        assert_eq!(err["error"]["message"], "boom");
+        // memra#143: the producer text ("boom") is log-only; the client sees the stable
+        // per-class sentence.
+        assert_eq!(
+            err["error"]["message"],
+            worker::engine_client_message(worker::ErrClass::Engine)
+        );
+        assert!(
+            !body.contains("boom"),
+            "producer text leaked into the stream: {body}"
+        );
         assert_eq!(err["error"]["type"], "server_error");
         assert_eq!(err["error"]["code"], "engine_error");
         assert_eq!(lines.last(), Some(&"[DONE]"));
