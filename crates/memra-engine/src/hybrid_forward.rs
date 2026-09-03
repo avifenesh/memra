@@ -277,6 +277,9 @@ impl<'a> PrimeCacheStages<'a> {
                     last_logits_dev: None,
                     dflash_taps: None,
                     hc_taps: None,
+                    // Per-stage split caches start with no captured graphs: a run graph bakes the
+                    // state pointers of the cache it was captured against, and this one is new.
+                    glm5_decode_graph: None,
                 })
             })
             .collect();
@@ -928,7 +931,7 @@ enum VrowsSel<'a> {
     Dev(&'a CudaSlice<i32>, &'a CudaSlice<f32>),
 }
 
-fn sigmoid_router_enabled() -> bool {
+pub(crate) fn sigmoid_router_enabled() -> bool {
     static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *E.get_or_init(|| {
         std::env::var("MEMRA_SIG_ROUTER")
@@ -2411,6 +2414,37 @@ impl HybridModel {
         &self,
         e: &Engine,
         topology: &crate::hyper::HyperTopology,
+        x: CudaSlice<f32>,
+        lo: usize,
+        hi: usize,
+        pos_d: &CudaSlice<i32>,
+        pos: usize,
+        cache: &mut Cache,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        // DOOR `MEMRA_GLM5_DECODE_GRAPH` (lane/b200-glm5-graph-20260902, default OFF, read PER
+        // CALL): replay this stage's captured KDA-layer runs instead of issuing them. Every
+        // refusal shape returns None and falls through to the eager walk below, byte-identically
+        // — see crates/memra-engine/src/glm5_decode_graph.rs for what is captured and why the
+        // MLA/DSA layers are not.
+        if crate::glm5_decode_graph_on() && self.glm5_decode_graph_ready(e, cache, lo, hi) {
+            return self.hyper_range_decode_graphed(e, topology, x, lo, hi, pos_d, pos, cache);
+        }
+        // MEMRA_GLM5_GRAPH_TRACE (gate harness): split the eager walk at the SAME run boundaries
+        // the graph arm replays at, so the two arms' checksums line up segment for segment. The
+        // split is a loop split, not a program change — the same kernels in the same order.
+        if crate::glm5_graph_trace_on() {
+            return self.hyper_range_decode_eager_traced(e, topology, x, lo, hi, pos_d, pos, cache);
+        }
+        self.hyper_range_decode_eager(e, topology, x, lo, hi, pos_d, pos, cache)
+    }
+
+    /// The eager T=1 hc decode walk over `[lo, hi)` — the program every other arm is measured
+    /// against, and the fall-through of the decode-graph door above.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn hyper_range_decode_eager(
+        &self,
+        e: &Engine,
+        topology: &crate::hyper::HyperTopology,
         mut x: CudaSlice<f32>,
         lo: usize,
         hi: usize,
@@ -2527,8 +2561,10 @@ impl HybridModel {
                 topology.streams
             );
         }
-        let out =
-            self.hyper_range_decode_ws_body(e, topology, x, lo, hi, pos_d, pos, cache, &mut ws);
+        let mut x = x;
+        let out = self
+            .hyper_range_decode_ws_body(e, topology, &mut x, lo, hi, pos_d, pos, cache, &mut ws)
+            .map(|()| x);
         e.hyper_ws_put(ws);
         out
     }
@@ -2538,18 +2574,18 @@ impl HybridModel {
     /// (pre -> rms_norm -> mixer -> post -> pre -> rms_norm -> ffn -> post), so the
     /// byte-identity gate is a structural claim, not a coincidence.
     #[allow(clippy::too_many_arguments)]
-    fn hyper_range_decode_ws_body(
+    pub(crate) fn hyper_range_decode_ws_body(
         &self,
         e: &Engine,
         topology: &crate::hyper::HyperTopology,
-        mut x: CudaSlice<f32>,
+        x: &mut CudaSlice<f32>,
         lo: usize,
         hi: usize,
         pos_d: &CudaSlice<i32>,
         pos: usize,
         cache: &mut Cache,
         ws: &mut crate::hyper::HyperDecodeWs,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         for il in lo..hi {
@@ -2558,7 +2594,7 @@ impl HybridModel {
                 format!("layer {il} carries no hyper-connection weights under an hc plan")
             })?;
 
-            crate::hyper::pre_t1_ws(e, topology, &hyper.attn, &x, ws, n_embd)?;
+            crate::hyper::pre_t1_ws(e, topology, &hyper.attn, x, ws, n_embd)?;
             e.rms_norm(
                 &ws.y,
                 layer.attn_norm.float_data(),
@@ -2573,10 +2609,10 @@ impl HybridModel {
                 Mixer::Mla(mla) => self.mla_attn_cached(e, mla, &ws.h, pos_d, 1, il, cache)?,
                 Mixer::Kda(la) => crate::kda::kda_decode_cached(e, la, &ws.h, eps, cache, il)?,
             };
-            crate::hyper::post_t1_ws(e, topology, &mixed, &x, ws, n_embd)?;
-            std::mem::swap(&mut x, &mut ws.xb);
+            crate::hyper::post_t1_ws(e, topology, &mixed, x, ws, n_embd)?;
+            std::mem::swap(x, &mut ws.xb);
 
-            crate::hyper::pre_t1_ws(e, topology, &hyper.mlp, &x, ws, n_embd)?;
+            crate::hyper::pre_t1_ws(e, topology, &hyper.mlp, x, ws, n_embd)?;
             // Door MEMRA_GLM5_Q8_FUSE — the workspace twin of the fusion above (same fused
             // kernel, same byte-identity argument, `ws.z` in place of a fresh allocation).
             let zq8 = if crate::glm5_q8_fuse_on() {
@@ -2606,10 +2642,10 @@ impl HybridModel {
                 None
             };
             let ffn_out = self.hyper_ffn_branch(e, layer, &ws.z, 1, il, false, zq8.as_ref())?;
-            crate::hyper::post_t1_ws(e, topology, &ffn_out, &x, ws, n_embd)?;
-            std::mem::swap(&mut x, &mut ws.xb);
+            crate::hyper::post_t1_ws(e, topology, &ffn_out, x, ws, n_embd)?;
+            std::mem::swap(x, &mut ws.xb);
         }
-        Ok(x)
+        Ok(())
     }
 
     /// One hc layer RANGE `[lo, hi)` of the BATCHED T=1 decode step: B independent sessions
@@ -10373,6 +10409,174 @@ impl HybridModel {
         Self::moe_ffn_sequential_zq8(e, m, z, zq8, t, cfg, il, max_block, vrows)
     }
 
+    /// FNV-1a over the bits, plus the two things a checksum alone cannot say: how many entries
+    /// are nonzero, and the largest magnitude. Take 5's `nz=16384/16384 absmax=0` is what an
+    /// all-NaN buffer looks like, and `nz=0` is what a never-written one looks like; neither is
+    /// distinguishable from "wrong" by a hash.
+    fn sum_f32(v: &[f32]) -> String {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        let (mut nz, mut absmax) = (0usize, 0f32);
+        for x in v {
+            h ^= x.to_bits() as u64;
+            h = h.wrapping_mul(0x100_0000_01b3);
+            if *x != 0.0 {
+                nz += 1;
+            }
+            if x.abs() > absmax {
+                absmax = x.abs();
+            }
+        }
+        format!("0x{h:016x}/nz{nz}of{}/max{absmax:.4e}", v.len())
+    }
+
+    fn sum_i8(v: &[i8]) -> String {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        let mut nz = 0usize;
+        for x in v {
+            h ^= *x as u8 as u64;
+            h = h.wrapping_mul(0x100_0000_01b3);
+            if *x != 0 {
+                nz += 1;
+            }
+        }
+        format!("0x{h:016x}/nz{nz}of{}", v.len())
+    }
+
+    /// THE ACTIVATION THE CONSUMER ACTUALLY READS, checksummed immediately before its launch, on
+    /// both arms. Take 9 established that the two arms receive identical `sel`/`w`/macros/strides/
+    /// limit, so the divergence is inside the consumer call — and the leading hypothesis is that
+    /// the q8_1 activation the device pair reads is stale or unwritten rather than this token's
+    /// hidden state. `z` is the shared f32 input: if `z` agrees across arms but `zq`/`zd` do not,
+    /// the quantize is the seam; if all three agree, the kernels are.
+    #[allow(clippy::too_many_arguments)] // allow: a diagnostic line's fields are its whole purpose
+    fn trace_moe_act(
+        e: &Engine,
+        arm: &str,
+        il: u16,
+        t: usize,
+        z: &CudaSlice<f32>,
+        zq: &CudaSlice<i8>,
+        zd: &CudaSlice<f32>,
+    ) {
+        if !crate::glm5_graph_trace_on()
+            || crate::glm5_graph_capture_open()
+            || !crate::glm5_trace_take_slot("act", arm, il)
+        {
+            return;
+        }
+        let (zs, qs, ds) = (e.dtoh(z), e.dtoh_i8(zq), e.dtoh(zd));
+        match (zs, qs, ds) {
+            (Ok(zv), Ok(qv), Ok(dv)) => eprintln!(
+                "[glm5-vrows-act] arm={arm} il={il} t={t} z={} zq={} zd={}",
+                Self::sum_f32(&zv),
+                Self::sum_i8(&qv),
+                Self::sum_f32(&dv),
+            ),
+            _ => eprintln!("[glm5-vrows-act] arm={arm} il={il} readback failed"),
+        }
+    }
+
+    /// The routed-MoE output of ONE layer, on both arms — the other end of the same seam.
+    fn trace_moe_out(e: &Engine, arm: &str, il: u16, out: &CudaSlice<f32>) {
+        if !crate::glm5_graph_trace_on()
+            || crate::glm5_graph_capture_open()
+            || !crate::glm5_trace_take_slot("out", arm, il)
+        {
+            return;
+        }
+        match e.dtoh(out) {
+            Ok(v) => eprintln!(
+                "[glm5-vrows-out] arm={arm} il={il} out={}",
+                Self::sum_f32(&v)
+            ),
+            Err(err) => eprintln!("[glm5-vrows-out] arm={arm} il={il} readback failed ({err})"),
+        }
+    }
+
+    /// One line per (arm, routed layer) under `MEMRA_GLM5_GRAPH_TRACE`, printed by BOTH the
+    /// device-table arm and the host-oracle arm so a box run can diff them field for field.
+    ///
+    /// It carries the per-expert MACRO SCALES for the SELECTED experts, not just a `macros=bool`.
+    /// That is deliberate: `HostExps::macro_scale(e)` is exactly `macros[e]` (model.rs), so the
+    /// device table kernel's `mac_g[ex]` and the host loop's `macro_scale(ex)` are the same lookup
+    /// — which the rig gate confirmed — and the only way a difference can still exist is if the
+    /// two arms are handed different SELECTIONS or different PLANES. Printing the values makes
+    /// that visible instead of inferred.
+    #[allow(clippy::too_many_arguments)] // allow: a diagnostic line's fields are its whole purpose
+    fn dump_moe_t1_inputs(
+        e: &Engine,
+        arm: &str,
+        m: &MoeWeights,
+        cfg: &ModelConfig,
+        il: u16,
+        t: usize,
+        n_used: usize,
+        n_expert: usize,
+        sel: &[u32],
+        w: &[f32],
+    ) {
+        if !crate::glm5_trace_take_slot("shape", arm, il) {
+            return;
+        }
+        let mac = |x: &crate::model::HostExps| -> Vec<f32> {
+            sel.iter().map(|&ex| x.macro_scale(ex as usize)).collect()
+        };
+        eprintln!(
+            "[glm5-vrows-t1] arm={arm} dev={} il={il} t={t} n_used={n_used} n_pairs={} \
+             n_expert={n_expert} limit={:?} gu_il={:?} qtypes=({},{},{}) row_bytes=({},{},{}) \
+             strides=({},{},{}) macros={} sel={sel:?} w={w:?} mac_g={:?} mac_u={:?} mac_d={:?}",
+            e.ctx().ordinal(),
+            t * n_used,
+            cfg.clamp_exp_at(il as u32),
+            m.dev_exps.as_ref().map(|d| d.gu_il),
+            m.gate_exps.qtype,
+            m.up_exps.qtype,
+            m.down_exps.qtype,
+            m.gate_exps.row_bytes,
+            m.up_exps.row_bytes,
+            m.down_exps.row_bytes,
+            m.gate_exps.expert_stride,
+            m.up_exps.expert_stride,
+            m.down_exps.expert_stride,
+            m.gate_exps.macros.is_some(),
+            mac(&m.gate_exps),
+            mac(&m.up_exps),
+            mac(&m.down_exps),
+        );
+    }
+
+    /// Would the T=1 DEVICE-TABLE MoE arm (`vrows_t1_dev`) fire for this layer? The
+    /// decode-graph door must answer this BEFORE it opens a capture region: a layer that falls
+    /// through to the host readback would issue a `cuStreamSynchronize` inside the capture and
+    /// take down the whole request instead of yielding to the eager walk. The conjuncts below
+    /// are the layer-shaped half of the dispatch predicate (the process-shaped half — traces,
+    /// observers, the NVMe promotion, `MEMRA_HTOD_DIET` — is checked once by the door itself).
+    pub(crate) fn glm5_t1_dev_moe_ready(
+        e: &Engine,
+        layer: &crate::hybrid::HybridLayer,
+        cfg: &ModelConfig,
+        il: usize,
+    ) -> bool {
+        let crate::hybrid::Ffn::Moe(m) = &layer.ffn else {
+            // A dense FFN carries no router and no selection: nothing to read back, so the
+            // layer is capture-clean on its own.
+            return true;
+        };
+        let Some(moe) = cfg.moe.as_ref() else {
+            return false;
+        };
+        let slab_local = m
+            .dev_exps
+            .as_ref()
+            .is_some_and(|d| !d.gu_il && moe_slab_enabled() && d.dev == e.ctx().ordinal());
+        slab_local
+            && m.has_uniform_expert_layout()
+            && moe_q8_enabled_for_model(cfg, m)
+            && moe.expert_used_count as usize <= 8
+            && matches!(cfg.clamp_exp_at(il as u32), Some(SwigluClamp::Pre(l)) if l > 1e-6)
+            && !crate::cpu_experts::configured()
+    }
+
     fn sigmoid_resident_dev_eligible(
         e: &Engine,
         m: &MoeWeights,
@@ -10814,6 +11018,72 @@ impl HybridModel {
             let (pd, _g2) = d.down.device_ptr(&s);
             (pg, pu, pd)
         });
+        // HOISTED above the router (lane/b200-glm5-graph-20260902): `promote_worker_h2d` reads
+        // the HOST selection, so the t=1 device-table arm below must be able to deny itself when
+        // the NVMe worker promotion is live. It was safe to compute this after the router while
+        // door D required `t >= 2` (the promotion requires `t == 1`); the decode-graph door
+        // lifts that exclusion, so the conjunct has to exist before the arm is chosen.
+        let worker_disk_prefetch =
+            cache_dispatch && crate::spill_pread::worker_enabled() && !cpu_hybrid;
+        let promote_worker_h2d =
+            t == 1 && worker_disk_prefetch && crate::spill_pread::copy_h2d_enabled();
+        // DOOR `MEMRA_GLM5_DECODE_GRAPH` (lane/b200-glm5-graph-20260902, default OFF): the T=1
+        // DECODE twin of door D. On the glm5_next serving shape the per-MoE-layer selection is
+        // read back through a pinned stage plus a full `cuStreamSynchronize`
+        // (`Engine::moe_router_sigmoid_topk_host`) for the sole purpose of letting the HOST
+        // compute `base + ex*stride` — 42 device-wide drains per token, and the reason the T=1
+        // walk cannot be captured as a CUDA graph at all (a capture region admits no sync and no
+        // pageable HtoD). This arm keeps the selection on device and builds the same pointer and
+        // scale tables with `moe_vrows_tables_from_sel`, then runs the verify-rows kernel pair at
+        // `n_pairs = n_used`.
+        //
+        // BIT IDENTITY, and why it is a claim about ONE program: the rows twins
+        // (`moe_gate_up_preclamp8_q8_rows` / `moe_down8_fma_q8_rows`) are the per-row form of the
+        // fused epilogue, which is itself the per-token form of the sequential
+        // `qmatvec_expert_q8` + `ffn_act_lim` + `axpy_into` chain — same g-strided dots, same
+        // pre-clamped SwiGLU expression, same slot-ordered `__fmaf_rn` accumulation, same macro
+        // folds in the same places. The table VALUES are term-for-term the host loop's (exact
+        // integer `base + ex*stride`, the same macro planes, one IEEE-754 product for
+        // `w * macro_down`). At t=1 this is the single-row case of the claim the vrest lane
+        // already gated at t>=2, and `glm5_decode_graph_gate` re-proves it per token per layer.
+        //
+        // FAIL-CLOSED: every host-visible consumer of the selection must be disarmed, exactly as
+        // door D requires, PLUS `promote_worker_h2d` (which door D could ignore because it
+        // requires t == 1 and door D required t >= 2).
+        //
+        // KEYED ON THE OPEN CAPTURE, NOT THE DOOR ENV (2026-09-03, box takes 4-11). This arm
+        // exists for ONE reason: a host sel/w readback is illegal inside a stream-capture
+        // region, so a captured T=1 walk has to build its tables on device. Outside a capture
+        // region nothing needs it, and keying it on `glm5_decode_graph_on()` made the door
+        // change the program on paths where it captures NOTHING — the eager fall-through, a
+        // latched stage, a refused stage, and the `MEMRA_GLM5_GRAPH_TRACE` split walk. That
+        // broke the door's own contract ("every refusal falls through byte-identically") and it
+        // is what box take 5 actually caught: the 1.356879e19 blow-up printed on an
+        // `eager-run` trace line, which `hyper_range_decode` only reaches when the graph arm
+        // was NOT taken. Eleven box takes read that as a capture/replay defect; it was a walk
+        // running the device-table arm with no graph in sight.
+        //
+        // `glm5_graph_capture_open()` is set for the duration of `capture_one`'s recording and
+        // clear everywhere else, so the captured body gets the device tables it requires and
+        // every other path gets the shipped host-oracle program, unchanged.
+        let vrows_t1_dev = t == 1
+            // `MEMRA_GLM5_VROWS_T1_DEV` (default OFF, gate harness) forces the arm on with NO
+            // capture and NO graph anywhere in the walk. It is the bisect cell eleven box takes
+            // never had: door ON conflated "device-table MoE at T=1" with "capture and replay",
+            // so a mismatch could not be attributed. With this the two questions are asked one
+            // at a time, and the answer to the first one is a plain decode run.
+            && (crate::glm5_graph_capture_open() || crate::glm5_vrows_t1_dev_forced())
+            // BISECT (MEMRA_GLM5_GRAPH_HOST_MOE, gate harness): stand the device-table arm down
+            // while leaving the door on, so a box run separates the door's two enablers. The
+            // capture refuses by name when this is set — a host readback cannot live inside a
+            // capture region — which is the point: it isolates one enabler at a time.
+            && !crate::glm5_graph_host_moe()
+            && !promote_worker_h2d
+            && sigmoid_router_enabled()
+            && cfg.sigmoid_router().is_some()
+            && !observe_routes
+            && !memra_reference::hidden_trace::enabled()
+            && !crate::moesd::capture_active();
         // DOOR D (`MEMRA_MOE_VROWS_DEV_TABLES`, default OFF): route WITHOUT the pinned sel/w
         // readback and build the pair's pointer/scale tables on device instead. On the serving
         // shape the host table build is the selection's ONLY consumer, and it costs a full
@@ -10827,11 +11097,11 @@ impl HybridModel {
         // silently read an empty selection: `moesd::record_host_routes`, `hidden_trace`,
         // `MEMRA_MOE_TRACE`/`MEMRA_MOE_STATS`/the other `observe_routes` modes. Plus
         // `sigmoid_router_enabled()`, because `MEMRA_SIG_ROUTER=0` is a full-logit HOST oracle
-        // with no device selection to read. `promote_worker_h2d` needs no conjunct: it requires
-        // t == 1 and this arm requires t >= 2. Any miss falls closed to the host readback.
-        let vrows_dev = vrows
-            && t >= 2
-            && crate::moe_vrows_dev_tables_on()
+        // with no device selection to read. `promote_worker_h2d` USED to need no conjunct here
+        // (it requires t == 1 and door D required t >= 2); the T=1 decode-graph arm above lifts
+        // that exclusion and carries the conjunct itself. Any miss falls closed to the host
+        // readback.
+        let vrows_dev = ((vrows && t >= 2 && crate::moe_vrows_dev_tables_on()) || vrows_t1_dev)
             && slab_bases.is_some()
             && moe_q8
             && uniform_experts
@@ -10863,12 +11133,52 @@ impl HybridModel {
             )?);
             crate::MOE_VROWS_ROUTER_SYNCS_AVOIDED
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            // GATE INSTRUMENT (MEMRA_GLM5_GRAPH_SEL_LEDGER, never a serving flag): capture-legal
+            // D2D of this layer's device selection into a pre-armed persistent slot, so the
+            // decode-graph gate can assert the device arm picks the same experts and weights the
+            // host oracle reads back. No sync, no DtoH, no allocation — see glm5_sel_ledger.rs.
             if let Some((si, sw)) = sel_dev.as_ref() {
                 // MEMRA_MOE_SEL_DUMP: the device-table arm's own rows (one DtoH pair per
                 // layer-call, diagnostic only; unset = one OnceLock read). The host twin
                 // below hands `trace_moe_routes` an empty selection, so this is the only
                 // record this arm makes.
+                //
+                // COMPOSITION with the decode-graph door: that DtoH pair cannot run inside a
+                // capture region, so `glm5_decode_graph_refusal` refuses the door BY NAME while
+                // this dump is armed. Without that refusal the pair would be RECORDED and not
+                // executed, the dump would silently write stale rows, and the door would look
+                // fine (2026-09-03, when the two lanes met in a rebase).
                 crate::moe_sel_dump::record_device(e, il, t, n_used, si, sw)?;
+                // PRE-ARM OUTSIDE THE CAPTURE, HERE. `record_device` skips a layer that has no
+                // persistent slot (it may never allocate inside a capture region), and the only
+                // other `prearm` caller is `glm5_capture_stage` — so any cell that runs the
+                // device arm WITHOUT capturing recorded zero device rows and the gate reported
+                // `VACUOUS: the selection ledger recorded no rows on one of the arms`. That is
+                // the instrument failing, not the door: box take 12's NO_CAPTURE run died on it.
+                // This call is skipped while a capture is open (allocation is illegal there) and
+                // is a no-op once the slot exists, so the captured path is unchanged.
+                if !crate::glm5_graph_capture_open() {
+                    crate::glm5_sel_ledger::prearm(e, il, n_used)?;
+                }
+                crate::glm5_sel_ledger::record_device(e, il, si, sw)?;
+            }
+            // MEMRA_GLM5_GRAPH_TRACE: dump this arm's inputs for the first two routed layers so
+            // the DEVICE arm and the HOST arm can be diffed line for line on the box. Only
+            // outside a capture region — the readback below is illegal inside one.
+            if crate::glm5_graph_trace_on() && !crate::glm5_graph_capture_open() {
+                let (sel_h, w_h) = match sel_dev.as_ref() {
+                    Some((si, sw)) => (
+                        e.dtoh_i32(si)?
+                            .iter()
+                            .map(|&x| x as u32)
+                            .collect::<Vec<_>>(),
+                        e.dtoh(sw)?,
+                    ),
+                    None => (Vec::new(), Vec::new()),
+                };
+                Self::dump_moe_t1_inputs(
+                    e, "device", m, cfg, il, t, n_used, n_expert, &sel_h, &w_h,
+                );
             }
             (Vec::new(), Vec::new(), None)
         } else if let Some(sig) = cfg.sigmoid_router() {
@@ -10896,7 +11206,36 @@ impl HybridModel {
                 Self::moe_route_cfg(e, &logits, t, n_expert, n_used, m.active_experts.as_deref())?;
             (sel, w, None)
         };
+        // The HOST arm's twin of the dump above (same trace flag, same first two routed layers).
+        // Run 7B could not be diffed against run A because only the device arm printed; with both
+        // arms printing, the first differing field IS the answer.
+        if crate::glm5_graph_trace_on() && !crate::glm5_graph_capture_open() && !sel_all.is_empty()
+        {
+            let last = (t - 1) * n_used;
+            Self::dump_moe_t1_inputs(
+                e,
+                "host",
+                m,
+                cfg,
+                il,
+                t,
+                n_used,
+                n_expert,
+                &sel_all[last..last + n_used],
+                &w_all[last..last + n_used],
+            );
+        }
         crate::moesd::record_host_routes(il, n_expert, n_used, &sel_all)?;
+        // The host-oracle twin of the ledger record above (gate instrument only).
+        if !sel_all.is_empty() && crate::glm5_sel_ledger::armed() {
+            let last = (t - 1) * n_used;
+            crate::glm5_sel_ledger::record_host(
+                e.ctx().ordinal(),
+                il,
+                &sel_all[last..last + n_used],
+                &w_all[last..last + n_used],
+            );
+        }
         if memra_reference::hidden_trace::enabled() {
             memra_reference::hidden_trace::emit_last_row(
                 "router",
@@ -10931,10 +11270,6 @@ impl HybridModel {
         // The CPU backend reads mmap-backed model bytes directly. Positioned-read worker buffers
         // are CUDA write-combined staging allocations and are intentionally not CPU-compute inputs;
         // do not spend NVMe bandwidth filling them for a layer whose misses go to CPU.
-        let worker_disk_prefetch =
-            cache_dispatch && crate::spill_pread::worker_enabled() && !cpu_hybrid;
-        let promote_worker_h2d =
-            t == 1 && worker_disk_prefetch && crate::spill_pread::copy_h2d_enabled();
         if promote_worker_h2d {
             let mut selected_blocks = Vec::with_capacity(n_used * 3);
             for &ex in sel_all.iter().take(n_used) {
@@ -11102,8 +11437,7 @@ impl HybridModel {
         // NVFP4+macro serving expert class. Fail-closed: any unqualified shape falls
         // through to the unchanged loop below. Same slab-only scope as the fused epilogue
         // (the serving config's provenance); n_used<=8 mirrors its cap.
-        let vrows_fires = vrows
-            && t >= 2
+        let vrows_fires = ((vrows && t >= 2) || vrows_t1_dev)
             && slab_bases.is_some()
             && moe_q8
             && uniform_experts
@@ -11111,6 +11445,34 @@ impl HybridModel {
             && cfg.sigmoid_router().is_some()
             && matches!(lim_exp, Some(SwigluClamp::Pre(l)) if l > 1e-6)
             && !cpu_hybrid;
+        // WHY THE ARM DID NOT FIRE, named rather than inferred (2026-09-03). Twelve box takes
+        // could not tell "the device-table arm ran and was wrong" from "the arm never fired and
+        // the layer took the host-readback loop", because the only evidence was a `arm=host`
+        // label that BOTH the sequential loop and the verify-rows host arm can print. One line
+        // per denying layer, under the door or the trace flag only, settles it on the next run.
+        if t == 1
+            && !vrows_fires
+            && (crate::glm5_decode_graph_on() || crate::glm5_graph_trace_on())
+            && crate::glm5_trace_take_slot("deny", "t1", il)
+        {
+            eprintln!(
+                "[glm5-vrows-t1-deny] dev={} il={il} capture_open={} t1_dev={vrows_t1_dev} \
+                 forced={} slab_bases={} moe_q8={moe_q8} uniform={uniform_experts} \
+                 n_used={n_used} sigmoid_cfg={} pre_clamp={} cpu_hybrid={cpu_hybrid} \
+                 promote_worker_h2d={promote_worker_h2d} observe_routes={observe_routes} \
+                 sig_router_env={} — the T=1 device-table MoE arm stood down and this layer \
+                 takes the host-readback path. Benign with capture_open=false (an eager gap \
+                 layer); with capture_open=true it is the wrong-answer class the router guard \
+                 refuses, and the first denied conjunct on the line is the reason.",
+                e.ctx().ordinal(),
+                crate::glm5_graph_capture_open(),
+                crate::glm5_vrows_t1_dev_forced(),
+                slab_bases.is_some(),
+                cfg.sigmoid_router().is_some(),
+                matches!(lim_exp, Some(SwigluClamp::Pre(l)) if l > 1e-6),
+                sigmoid_router_enabled(),
+            );
+        }
         // moe_out memset elision: EVERY full-row-overwrite arm (gdec, slab fused, fused epilogue,
         // verify-rows) allocates uninit; a token that falls through to any accumulating loop
         // zeroes its own row. The fused epilogue's `moe_down8_fma_q8` fully overwrites `dst[o]`,
@@ -11253,6 +11615,7 @@ impl HybridModel {
                     tok_q8 = Some(e.quantize_q8_1_view(&zt, 1, n_embd)?);
                 }
                 let (zq, zd) = tok_q8.as_ref().unwrap();
+                Self::trace_moe_act(e, "host", il, t, z, zq, zd);
                 let act = e.moe_gate_up_silu8_q8(
                     crate::WPtr8(gp),
                     crate::WPtr8(up),
@@ -11308,6 +11671,7 @@ impl HybridModel {
                     tok_q8 = Some(e.quantize_q8_1_view(&zt, 1, n_embd)?);
                 }
                 let (zq, zd) = tok_q8.as_ref().unwrap();
+                Self::trace_moe_act(e, "host", il, t, z, zq, zd);
                 Self::moe_fused_epi_launch(
                     e,
                     m,
@@ -11343,6 +11707,7 @@ impl HybridModel {
                     tok_q8 = Some(e.quantize_q8_1_view(&zt, 1, n_embd)?);
                 }
                 let (zq, zd) = tok_q8.as_ref().unwrap();
+                Self::trace_moe_act(e, "host", il, t, z, zq, zd);
                 if Self::moe_fused_epi_token_q8(
                     e,
                     m,
@@ -11367,6 +11732,7 @@ impl HybridModel {
                     tok_q8 = Some(e.quantize_q8_1_view(&zt, 1, n_embd)?);
                 }
                 let (zq, zd) = tok_q8.as_ref().unwrap();
+                Self::trace_moe_act(e, "host", il, t, z, zq, zd);
                 if Self::moe_gdec_token_q8(
                     e,
                     m,
@@ -11499,6 +11865,7 @@ impl HybridModel {
                             tok_q8 = Some(e.quantize_q8_1_view(&zt, 1, n_embd)?);
                         }
                         let (zq, zd) = tok_q8.as_ref().unwrap();
+                        Self::trace_moe_act(e, "host", il, t, z, zq, zd);
                         (
                             e.qmatvec_expert_q8(
                                 &d.gate,
@@ -11628,12 +11995,14 @@ impl HybridModel {
                     }
                     let gate = if gate_q8 {
                         let (zq, zd) = tok_q8.as_ref().unwrap();
+                        Self::trace_moe_act(e, "host", il, t, z, zq, zd);
                         Self::moe_cached_gemm_q8(e, il, PROJ_GATE, ex, m, max_block, zq, zd)?
                     } else {
                         Self::moe_cached_gemm(e, il, PROJ_GATE, ex, m, max_block, &zt)?
                     };
                     let up = if up_q8 {
                         let (zq, zd) = tok_q8.as_ref().unwrap();
+                        Self::trace_moe_act(e, "host", il, t, z, zq, zd);
                         Self::moe_cached_gemm_q8(e, il, PROJ_UP, ex, m, max_block, zq, zd)?
                     } else {
                         Self::moe_cached_gemm(e, il, PROJ_UP, ex, m, max_block, &zt)?
@@ -11836,6 +12205,7 @@ impl HybridModel {
             );
         }
 
+        Self::trace_moe_out(e, "host", il, &moe_out);
         Self::moe_shexp_add(e, m, z, zq8, t, cfg, lim_shexp, &mut moe_out)?;
 
         Ok(moe_out)
@@ -15074,6 +15444,15 @@ impl HybridModel {
             e.vws_uninit(t * (n_embd / 32))?,
         );
         e.quantize_q8_1_into(z, t, n_embd, &mut zq, &mut zd)?;
+        // LABEL FROM THE PROVENANCE, not from the call site. `moe_vrows_pairs_q8` is also the
+        // spec-verify walk's launcher with HOST-built tables, so a hard-coded "device" here would
+        // be a lie on that path — and a mislabelled arm is exactly the class of mistake that cost
+        // a box window in take 7.
+        let vrows_arm = match sel {
+            VrowsSel::Dev(..) => "device",
+            VrowsSel::Host(..) => "vrows-host",
+        };
+        Self::trace_moe_act(e, vrows_arm, il, t, z, &zq, &zd);
         let act = e.moe_gate_up_preclamp8_q8_rows(
             &ptrs_d,
             &scl_d,
@@ -15108,6 +15487,7 @@ impl HybridModel {
             m.down_exps.qtype,
             m.down_exps.row_bytes,
         )?;
+        Self::trace_moe_out(e, vrows_arm, il, moe_out);
         // Everything above is dead after the down launch (stream-ordered reuse is safe on
         // this engine's stream, the same guarantee the async free relies on).
         e.vws_recycle_u64(ptrs_d);
@@ -15121,7 +15501,18 @@ impl HybridModel {
             eprintln!(
                 "[glm5-vrows] verify MoE batched across rows: pairs={n_pairs} (t={t} x \
                  {n_used}), one gate/up+preclamp launch + one down/FMA launch per layer-call \
-                 (rides MEMRA_GLM5_VERIFY_BATCH)"
+                 (rides MEMRA_GLM5_VERIFY_BATCH); arm doors: pack={} dedup_order={} \
+                 b200_matvec={} dev_tables={} (env MEMRA_MOE_VROWS_DEV_TABLES={}) — the `_rows` \
+                 pair has several dispatch twins and only the plain one has ever run at t=1, so a \
+                 box log has to say which it took. `dev_tables` is THIS CALL's provenance, not the \
+                 env: the decode-graph door owns both halves and routes the tables through the \
+                 device build whatever `MEMRA_MOE_VROWS_DEV_TABLES` says (run 7B printed the env \
+                 and read false while the door was building on device, which cost a box window)",
+                crate::moe_vrows_pack_on(),
+                crate::moe_vrows_dedup_order_on(),
+                crate::b200_matvec_arm_on(),
+                matches!(sel, VrowsSel::Dev(..)),
+                crate::moe_vrows_dev_tables_on(),
             );
         }
         Ok(())

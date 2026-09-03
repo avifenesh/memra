@@ -81,6 +81,8 @@ pub mod eagle;
 /// minted by the shared fleet tool from `MEMRA_MOE_WEIGHT_TRACE` traces). No CUDA deps.
 pub mod ep_map;
 pub mod gemma_spec;
+pub mod glm5_decode_graph;
+pub mod glm5_sel_ledger;
 pub mod glm5_tp;
 /// glm5_next T-parallel speculative verify: the rows-walk verify, per-step KDA state-column
 /// rollback, latent/kpool truncation, and the MEMRA_GLM5_SPEC-gated draft->verify->rollback
@@ -260,6 +262,170 @@ pub fn moe_fuse_actq_on() -> bool {
 pub fn glm5_q8_fuse_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_GLM5_Q8_FUSE").as_deref() == Ok("1"))
+}
+
+/// Door `MEMRA_GLM5_DECODE_GRAPH` (lane/b200-glm5-graph-20260902, DEFAULT OFF): capture the
+/// glm5_next T=1 decode walk as replayable per-stage CUDA graphs instead of issuing every
+/// kernel per token. `1` arms it, unset/`0` is the eager walk. Read PER CALL so it is a live
+/// rollback seam, never a process-lifetime latch.
+///
+/// WHAT IS CAPTURED: the maximal CONTIGUOUS runs of KDA-mixer layers inside each pipeline
+/// stage's `[lo, hi)` range, hc glue and routed MoE included. WHAT STAYS EAGER: every
+/// MLA/DSA layer (its launch geometry is derived on the host from `layer.len`, see
+/// `HybridModel::mla_attn_cached_pre_wo`), the decode tail, prefill, and the spec verify
+/// walk (which keeps `MEMRA_SPEC_VERIFY_GRAPH`). See docs/FLAGS.md and
+/// research/b200-glm5-graph-20260902/LANE.md.
+pub fn glm5_decode_graph_on() -> bool {
+    std::env::var("MEMRA_GLM5_DECODE_GRAPH").as_deref() == Ok("1")
+}
+
+/// `MEMRA_GLM5_GRAPH_HOST_MOE=1` — BISECT knob for `MEMRA_GLM5_DECODE_GRAPH`, gate harness only.
+/// The door has TWO enablers and box run 5 showed they fail independently: (1) the T=1
+/// device-table MoE arm that removes the per-layer router readback, and (2) the capture/replay
+/// itself. With this set the door stays ON but the MoE arm stands down to the host oracle, and
+/// the capture then refuses BY NAME (a host readback inside a capture region is illegal), so a
+/// run isolates enabler 2's absence from enabler 1's behaviour instead of confounding them.
+pub fn glm5_graph_host_moe() -> bool {
+    std::env::var("MEMRA_GLM5_GRAPH_HOST_MOE").as_deref() == Ok("1")
+}
+
+/// `MEMRA_GLM5_GRAPH_NO_CAPTURE=1` — THE OTHER HALF OF THE BISECT, and the half that was missing.
+///
+/// `MEMRA_GLM5_GRAPH_HOST_MOE=1` turns OFF the device-table MoE arm AND makes the capture refuse
+/// by name, so box run 6 compared "neither enabler" against "both enablers". That is not a
+/// bisect, and calling it one was wrong: it could never attribute the defect to one of the two.
+/// This knob supplies the missing cell — the device-table MoE arm ENGAGES exactly as it does in
+/// serving, and the capture never happens, so the whole walk runs eagerly.
+///
+/// The rig has since cleared the MoE arm end to end, including at serving scale (288 experts,
+/// `in_f` 4096, `expert_stride` 4718592) driven by the box's own routing dump, so the expected
+/// result is a CORRECT tape — which would pin the defect on the capture and exonerate the arm.
+/// A wrong tape here would instead mean the arm behaves differently in situ than in the fixture,
+/// and would say so on the first run rather than after another round of guessing.
+pub fn glm5_graph_no_capture() -> bool {
+    std::env::var("MEMRA_GLM5_GRAPH_NO_CAPTURE").as_deref() == Ok("1")
+}
+
+/// `MEMRA_GLM5_VROWS_T1_DEV=1` — the T=1 device-table MoE arm, forced ON with no capture, no
+/// graph, and no `MEMRA_GLM5_DECODE_GRAPH` anywhere in the run. Default OFF, gate harness only.
+///
+/// From 2026-09-03 the arm is keyed on an OPEN CAPTURE REGION rather than on the decode-graph
+/// door, because that is the only place it is required (a host sel/w readback cannot live inside
+/// a capture). That keying is what makes the door's eager fall-through byte-identical again, and
+/// it also means the arm can no longer be observed on a plain decode run — so this knob puts it
+/// back within reach of a bisect. It is the cell box takes 4 through 11 never had: they set one
+/// env that turned on BOTH the arm and the capture, so a wrong tape could not be attributed to
+/// either. Run this alone and the answer is unambiguous.
+/// `MEMRA_GLM5_GRAPH_RECAPTURE=1` (default OFF): when a captured stage is invalidated (its
+/// `cache.pos` moved, or a recurrent-state buffer was re-seated rather than overwritten), REBUILD
+/// it instead of latching that stage to the eager walk for the rest of the session.
+///
+/// Default OFF is a decision, not an omission. Box run 3 (2026-09-02) died in the teardown with
+/// `CUDA_ERROR_INVALID_VALUE`: it destroyed a stage's execs, and freed every buffer they baked,
+/// with a replay of those same execs still outstanding. That is a destroy-in-use, and the fix is
+/// ordering (drain the stream, THEN drop, and refuse to drop at all if the drain fails), which is
+/// what the armed path now does. But the latch is not a workaround, it is a correct product
+/// behaviour on its own: an invalidated stage falls through to the byte-identical eager walk, so
+/// the only cost of NOT rebuilding is that one stage of one session stops being graphed. Nothing
+/// is wrong, only slower.
+///
+/// So the door ships with the latch and this knob exists to take the rebuild's receipt. It is
+/// what the gate's forced-re-seat arm needs in order to exercise the invalidation path at all:
+/// with the knob off that arm was asserting on a path the engine deliberately does not take, and
+/// box take 13 duly reported `VACUOUS RE-CAPTURE ARM` on a run whose tokens were all correct.
+/// Counter: `GLM5_DECODE_GRAPH_RECAPTURES`.
+pub fn glm5_graph_recapture_on() -> bool {
+    std::env::var("MEMRA_GLM5_GRAPH_RECAPTURE").as_deref() == Ok("1")
+}
+
+pub fn glm5_vrows_t1_dev_forced() -> bool {
+    if std::env::var("MEMRA_GLM5_VROWS_T1_DEV").as_deref() == Ok("1") {
+        return true;
+    }
+    // `MEMRA_GLM5_GRAPH_NO_CAPTURE=1` MEANS WHAT ITS DOC SAYS, and after the re-keying above it
+    // would otherwise mean the opposite. Its whole claim is "the device-table MoE arm engages
+    // exactly as it does in serving and the capture never happens"; with the arm keyed on an open
+    // capture, refusing the capture would also stand the arm down and the cell would test
+    // nothing — which is precisely what box take 12 measured (`VACUOUS: the selection ledger
+    // recorded no rows on one of the arms`, 21 host rows against 0 device rows). So the
+    // no-capture knob forces the arm on, and the bisect it was created for actually runs.
+    glm5_graph_no_capture() && glm5_decode_graph_on()
+}
+
+/// `MEMRA_GLM5_GRAPH_TRACE=1` — GATE-HARNESS trace for `MEMRA_GLM5_DECODE_GRAPH`, never a
+/// serving flag. Prints one line per captured-run boundary per token, on BOTH arms and at the
+/// SAME layer boundaries, with a checksum of the stream state leaving that segment. Box run 4
+/// produced token 0 at every step with the door running cleanly and no error anywhere: the only
+/// way to tell "the captured range wrote nothing the remainder reads" from "the state is wrong
+/// from layer N onward" is to compare the two arms segment by segment, and `nz=` in the line
+/// separates an all-zero hidden from a wrong-but-live one on sight.
+pub fn glm5_graph_trace_on() -> bool {
+    std::env::var("MEMRA_GLM5_GRAPH_TRACE").as_deref() == Ok("1")
+}
+
+/// How many times the T=1 device-table MoE arm has dumped its input shape under
+/// `MEMRA_GLM5_GRAPH_TRACE`. Capped at two layers: the question is what the arm is HANDED on the
+/// real artifact, and two routed layers answer it without turning a 64-step run into a log flood.
+/// Trace-dump budget for the decode-graph door's MoE seam (`MEMRA_GLM5_GRAPH_TRACE`), keyed by
+/// `(kind, arm, layer)`.
+///
+/// It was a pair of process-global counters capped at 4, and take 10 showed exactly why that is
+/// the wrong shape: the gate runs its EAGER arm first, that arm spent the whole budget on one
+/// layer, and the run printed four identical `arm=host il=3` lines and NOT ONE `arm=device`
+/// line — the arm the run existed to observe. A budget for a two-arm comparison has to be per
+/// arm, and a per-layer dump has to be keyed by layer or it reprints the first one.
+///
+/// [`glm5_trace_reset`] clears it at every arm switch so the second arm starts with a full
+/// budget rather than inheriting the first arm's exhaustion.
+/// `(kind, arm, layer)` — one dump slot. Named so the map type stays readable at both use sites.
+type Glm5TraceKey = (&'static str, String, u16);
+
+fn glm5_trace_slots() -> &'static Mutex<std::collections::BTreeSet<Glm5TraceKey>> {
+    static S: std::sync::OnceLock<Mutex<std::collections::BTreeSet<Glm5TraceKey>>> =
+        std::sync::OnceLock::new();
+    S.get_or_init(Default::default)
+}
+
+/// Claim the one dump slot for `(kind, arm, il)`. Returns false once that exact line has printed,
+/// and false past `GLM5_TRACE_MAX_LAYERS` distinct layers for this `(kind, arm)` so a 64-step run
+/// cannot become a log flood.
+pub(crate) fn glm5_trace_take_slot(kind: &'static str, arm: &str, il: u16) -> bool {
+    const GLM5_TRACE_MAX_LAYERS: usize = 8;
+    let mut s = glm5_trace_slots().lock().unwrap();
+    if s.iter().filter(|(k, a, _)| *k == kind && a == arm).count() >= GLM5_TRACE_MAX_LAYERS {
+        return false;
+    }
+    s.insert((kind, arm.to_string(), il))
+}
+
+/// Clear the trace budget. The gate calls this at every arm switch; without it the first arm's
+/// exhaustion silences the second (take 10).
+pub fn glm5_trace_reset() {
+    glm5_trace_slots().lock().unwrap().clear();
+}
+
+/// Captured-run replays (one per graph launch), captures, and the layer count currently
+/// covered by captured runs — the door's engagement receipt, read by the gate bin.
+pub static GLM5_DECODE_GRAPH_REPLAYS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+pub static GLM5_DECODE_GRAPH_CAPTURES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+pub static GLM5_DECODE_GRAPH_LAYERS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+/// Stages torn down and rebuilt by the armed re-capture path (`MEMRA_GLM5_GRAPH_RECAPTURE`).
+pub static GLM5_DECODE_GRAPH_RECAPTURES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// True while a glm5 decode-graph CAPTURE is open on this process. Two engine pools must not
+/// hand a captured graph a buffer they will later re-issue to eager work: a replay would
+/// scribble whatever landed there (the draft-graph root cause, see `capture_graph_retained`).
+/// While this is set, `vws_recycle*` drops instead of returning the buffer to the verify
+/// workspace, so every transient the captured body took stays owned by the graph.
+pub(crate) static GLM5_GRAPH_CAPTURE_OPEN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+pub(crate) fn glm5_graph_capture_open() -> bool {
+    GLM5_GRAPH_CAPTURE_OPEN.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// PREFILL router m-invariance (lane/concat-prime-exact, 2026-08-02). The batched cuBLASLt
@@ -1814,7 +1980,7 @@ pub fn bf16_tcols_red_fused_dispatches() -> u64 {
 /// launch caps residency at the blocks/SM limit (<=67% of warp slots) and schedules ~65k
 /// one-warp blocks per launch; per-warp body verbatim, bit-identical per (row, pair). Gated
 /// by `glm5_matvec_doors_gpu`. Read per call.
-fn moe_vrows_pack_on() -> bool {
+pub(crate) fn moe_vrows_pack_on() -> bool {
     std::env::var("MEMRA_MOE_VROWS_PACK").as_deref() == Ok("1")
 }
 
@@ -1836,7 +2002,7 @@ pub fn moe_vrows_pack_dispatches() -> u64 {
 /// = 42 device-wide drains + 84 DtoH + 84 HtoD per ship round. Bit-identical: same integer
 /// `base + ex*stride`, same macro-plane lookups, same single `w * macro_down` product. Read per
 /// call; fails closed to the host path whenever any host-visible route consumer is armed.
-fn moe_vrows_dev_tables_on() -> bool {
+pub(crate) fn moe_vrows_dev_tables_on() -> bool {
     std::env::var("MEMRA_MOE_VROWS_DEV_TABLES").as_deref() == Ok("1")
 }
 
@@ -1954,7 +2120,7 @@ pub fn moe_vrows_pair_overlap() -> (u64, u64) {
 /// refuted 4-warp pack) takes precedence in the launcher, and the door engages only when the
 /// order plane is actually present (`ptrs.len() >= 4*n_pairs`), so a direct launcher call with a
 /// 3-plane table keeps the shipped program.
-fn moe_vrows_dedup_order_on() -> bool {
+pub(crate) fn moe_vrows_dedup_order_on() -> bool {
     std::env::var("MEMRA_MOE_VROWS_DEDUP_ORDER").as_deref() == Ok("1")
 }
 
@@ -6680,6 +6846,23 @@ impl Engine {
         scaling_factor: f32,
         route_norm: bool,
     ) -> Result<(Vec<u32>, Vec<f32>), Box<dyn std::error::Error>> {
+        // FAIL LOUD INSIDE A CAPTURE REGION. Under `cudaStreamCaptureModeRelaxed` the DtoH below
+        // is RECORDED, not executed: the call returns success, the pinned stage keeps whatever
+        // bytes it already held, and the caller routes on an uninitialised selection whose expert
+        // ids index the slab out of range. The graph then bakes those garbage pointers and every
+        // replay reproduces them, with no error anywhere — which is exactly the shape twelve
+        // glm5 decode-graph box takes chased: `TOKEN MISMATCH step 1: eager=437 graph=0`, the
+        // same constant token at every step, replays engaged, nothing in the log.
+        //
+        // The decode-graph door admits a stage only when every captured layer's T=1 device-table
+        // MoE arm will fire, so reaching here under an open capture means the admission predicate
+        // and the dispatch predicate disagreed. That is a defect either way; refusing by name
+        // turns it into a named capture failure, and the door's contract sends the token down the
+        // byte-identical eager walk instead of serving the garbage.
+        if glm5_graph_capture_open() {
+            return Err("moe_router_sigmoid_topk_host was reached inside an open CUDA graph                         capture: the host readback would record an unexecuted DtoH and route on                         uninitialised memory. The captured layer's device-table MoE arm did not                         fire, so the capture-admission predicate (glm5_t1_dev_moe_ready) and the                         dispatch predicate (vrows_fires) disagree"
+                .into());
+        }
         let (sel_idx, sel_w) = self.moe_router_sigmoid_topk(
             logits,
             t,
@@ -11924,6 +12107,13 @@ impl Engine {
         Ok(v)
     }
     /// Device-to-host copy of a u8 buffer (used to read back the quantized KV cache for validation).
+    /// i8 twin of [`Self::dtoh_u8`], for the decode-graph trace's q8_1 activation checksum
+    /// (`MEMRA_GLM5_GRAPH_TRACE`). Gate harness only: it synchronizes.
+    pub fn dtoh_i8(&self, d: &CudaSlice<i8>) -> Result<Vec<i8>, Box<dyn std::error::Error>> {
+        let v = self.gpu.stream().clone_dtoh(d)?;
+        self.gpu.stream().synchronize()?;
+        Ok(v)
+    }
     pub fn dtoh_u8(&self, d: &CudaSlice<u8>) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let v = self.gpu.stream().clone_dtoh(d)?;
         self.gpu.stream().synchronize()?;
@@ -12044,9 +12234,22 @@ impl Engine {
         self.alloc_uninit::<u64>(n)
     }
 
+    /// The capture keeper the glm5 decode-graph door drains into its `RunGraph`. While
+    /// [`glm5_graph_capture_open`] is set, `vws_recycle*` pushes here instead of returning the
+    /// buffer to the verify workspace, so nothing a captured body baked can be re-issued to
+    /// eager work between replays.
+    #[allow(clippy::type_complexity)] // allow: mirrors the field's own type
+    pub(crate) fn glm5_graph_keep(&self) -> &Mutex<Vec<Box<dyn std::any::Any + Send>>> {
+        &self.capture_keep
+    }
+
     /// Return a dead verify-walk buffer to the pool (no-op with the door off: the buffer
     /// drops to the ordinary async free, the shipped program).
     pub(crate) fn vws_recycle(&self, s: CudaSlice<f32>) {
+        if glm5_graph_capture_open() {
+            self.capture_keep.lock().unwrap().push(Box::new(s));
+            return;
+        }
         if verify_ws_on() {
             let mut ws = self.verify_ws.lock().unwrap();
             let ws = &mut *ws;
@@ -12056,6 +12259,10 @@ impl Engine {
 
     /// i8 twin of [`Self::vws_recycle`].
     pub(crate) fn vws_recycle_i8(&self, s: CudaSlice<i8>) {
+        if glm5_graph_capture_open() {
+            self.capture_keep.lock().unwrap().push(Box::new(s));
+            return;
+        }
         if verify_ws_on() {
             let mut ws = self.verify_ws.lock().unwrap();
             let ws = &mut *ws;
@@ -12065,6 +12272,10 @@ impl Engine {
 
     /// u64 twin of [`Self::vws_recycle`].
     pub(crate) fn vws_recycle_u64(&self, s: CudaSlice<u64>) {
+        if glm5_graph_capture_open() {
+            self.capture_keep.lock().unwrap().push(Box::new(s));
+            return;
+        }
         if verify_ws_on() {
             let mut ws = self.verify_ws.lock().unwrap();
             let ws = &mut *ws;

@@ -2720,6 +2720,33 @@ impl HybridModel {
                     .into(),
             );
         }
+        // THE DOOR IS NOT ON THIS WALK, AND A SILENT NO-OP IS THE SAME FAILURE CLASS AS A
+        // VACUOUS GATE. Take 13's serving A/B (2026-09-03) passed `MEMRA_GLM5_DECODE_GRAPH=1`
+        // through the serve script and got SIX boots with zero `[glm5-decode-graph]` lines of any
+        // kind, refusals included, while the same binary's gate harness armed the door fine
+        // (`replays=564`). The missing conjunct is the walk: `MEMRA_GLM5_DECODE_GRAPH` is wired
+        // into `hybrid_forward::hyper_range_decode`, the per-session SERIAL hc walk that
+        // `decode_step_hyper` / `decode_step_hyper_ppn` run, and serving with
+        // `MEMRA_HYPER_BATCH=1` routes every session through THIS batched walk instead, including
+        // B=1. So the A/B measured the door's absence and read flat, which is the correct number
+        // for the wrong question.
+        //
+        // Extending capture to the batched walk is a separate lane (its trunk is
+        // `decode_batch_layers`, with its own per-row geometry). Until then the honest behaviour
+        // is to say so, once, rather than let a serving log's silence be read as a refusal.
+        if crate::glm5_decode_graph_on() {
+            static SAID: std::sync::Once = std::sync::Once::new();
+            SAID.call_once(|| {
+                eprintln!(
+                    "[glm5-decode-graph] NOT ON THIS PATH: MEMRA_GLM5_DECODE_GRAPH=1 but this \
+                     session decodes through the BATCHED hc walk (MEMRA_HYPER_BATCH=1), and the \
+                     door is wired into the per-session serial walk (hyper_range_decode) only. \
+                     The door will not engage, and will not refuse either, for as long as the \
+                     batched walk is in use. Unset MEMRA_HYPER_BATCH to price the door, or read \
+                     this line as the reason a serving log carries no [glm5-decode-graph] lines."
+                );
+            });
+        }
         let b_n = tokens.len();
         if b_n == 0 || b_n != caches.len() {
             return Err("decode_step_batch_hyper: tokens/caches length mismatch".into());
