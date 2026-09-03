@@ -252,3 +252,91 @@ file, and a queue of lanes' `flock` waiters sat blocked on an idle GPU (0%, 47 M
 `sccache --stop-server` (safe only with no rustc in flight; the server respawns on the next
 compile). Rule: lock the TEST BINARY, never cargo: `cargo test --no-run` first, then
 `flock <lock> target/debug/deps/<bin> <filters> --ignored --test-threads=1`.
+
+## 7. Box battery on the penalty door (coordinator, 2026-09-03) and the default-ON path
+
+int26 = main 71ab178ea + this branch, 2x B200 pair, presence 0.6 / frequency 0.3,
+vendor-default sampled, 512 tokens x5 medians, two interleaved fresh boots. Receipts:
+darklanes `research/glm5-b200-20260902/box/exclab/` (exclab.log, raw/*.jsonl, exclab.sh,
+penprobe.py).
+
+| arm | code decode (pass 1 / 2) | prose decode (pass 1 / 2) |
+|---|---|---|
+| P0 plain boot | 45.3 / 45.3 | 45.3 / 45.3 |
+| P1 spec boot, door dark (penalized excluded to plain) | 45.2 / 45.4 | 45.1 / 45.3 |
+| P2 spec + `MEMRA_SPEC_PENALTY=1` | 63.7 / 67.2 | 43.4 / 45.8 |
+
+Log facts on P2: `[glm5-spec] penalty arm ENGAGED (MEMRA_SPEC_PENALTY=1): verify rows
+penalized on device over the session window (rep=1 freq=0.3 present=0.6 last_n=8192)`,
+every request `route=spec ... sampled=1 penalized=1`. P1: the exclusion routes right at
+zero cost. Unpenalized reference on this posture: spec 86.6 / 58.8 vs plain 50.8 (the plain
+path under penalties is ~10% slower than unpenalized: the host penalty pass).
+
+Reading: the door pays on code (+41 / +48%) and is flat to slightly negative on prose
+(-4 / +1%): the penalty moves the verify distribution away from the drafter and the
+acceptance pays the gain back. Not a default flip on two prompts. `MEMRA_SPEC_PENALTY`
+stays default OFF with this table on its FLAGS row; the exclusion stays shipped.
+
+WHAT THE GATE READS ON PENALIZED ROWS: nothing about acceptance. `choose_spec_k`
+(W:4803) reads the projected wave against `MEMRA_SPEC_GATE_LOW/HIGH` (2/4 single-card) and
+the prompt/cache lengths; at c=1 the wave is 1 <= LOW so K=3 always, and HIGH is the
+greedy-demotion concurrency floor, unreachable at c=1. The only acceptance reader is the
+ADSD detector (`AdsdDetector`, tenant window 8, z <= -3, rate drop >= 0.20, 3 sustained):
+DETECTION-ONLY, tenant-keyed, feeds no route. That is why SPEC_GATE_LOW=2/HIGH=4 did not
+shed at 41-45 tok/s: the gate has no term that could.
+
+THE DEFAULT-ON PATH, chosen: (a) an acceptance-keyed CLASS SHED. Why (a) over (b): prose-
+like output is the majority of agent traffic, so a wider prompt set can only confirm the
+prose arm is flat; a default needs the door to win where it wins and step aside where it
+does not. Design, for the next increment (not on this branch):
+
+* Signal: per-(model, class) trailing acceptance from the `[glm5-acc]` burst counters
+  (accepted/drafted at the round K), class = exactly what the route line prints
+  (`penalized=1`), so the shed is grep-able by the same token.
+* Threshold: the break-even accepted-drafts-per-round `j_min = R/P - 1`, R = spec round
+  wall, P = plain decode step, both read off the box's `[spec-prof-rounds]` lines
+  (`MEMRA_SPEC_PROF=1`) per model/placement; hysteresis = the ADSD sustained-observation
+  shape (N bursts above `j_min + margin` to re-admit).
+* Decision point: ADMISSION only. A new penalized request routes plain with
+  `reason=penalized-acc-below-floor` while the class is below the floor; a running session
+  never switches program (the one-numeric-program law names spec-verify vs plain as a
+  pair to keep honest; the sampled arms are different RNG programs).
+* Receipt: one print-once `[glm5-spec] penalized class shed armed: j_min=..` line and the
+  reason token on every shed request; the FLAGS row carries the box floor.
+
+(b), the measurement alternative: the SXC pools through the same exclab harness, per
+traffic class, would show whether any prose-like class clears `j_min`; it is the cell that
+prices (a)'s margin, so it runs either way once (a) exists.
+
+Instrument gap the coordinator named: the greedy+penalty box rows carry timing only
+(penprobe.py), so real-artifact tape identity is unmeasured on the box; gate 15 is the
+exactness receipt; a two-boot greedy-128 tape cell with the text saved is queued behind
+graph take 13.
+
+## 8. `MEMRA_SPEC_WARM` box cell, the request shape
+
+Boot (a non-serving glm5 DFlash2 box): `MEMRA_GLM5_SPEC=1 MEMRA_GLM5_DFLASH=<pinned>
+MEMRA_PREFIX_LATENT=1 MEMRA_GLM5_SPEC_PREFIX=1 MEMRA_SPEC_WARM=1`, `MEMRA_SPEC_PENALTY`
+UNSET (that is what manufactures a tail-less entry). Same tenant key and `cache_salt`
+throughout.
+
+1. Turn 1, the tail-less publisher: prompt P of >= 64 tokens (`PREFIX_CACHE_MIN_TOKENS`;
+   use a ~600-token system + user), `presence_penalty: 0.6`, `max_tokens 256`. Expect
+   `route=plain ... penalized=1 reason=penalized`; the PLAIN session publishes the latent
+   entry with no drafter tail.
+2. Turn 2, the hit: P + the turn-1 answer + a new user turn S of >= 16 tokens
+   (`PRIME_MIN_T`; below it the hit reads `suffix-below-prime-floor`), NO penalties,
+   `max_tokens 512`, greedy for the byte instrument and a vendor-default sampled twin.
+   Expect once per process `[glm5-spec] MEMRA_SPEC_WARM=1: prefix hit without a drafter
+   tail re-arms a COLD drafter ...`, per request `[prefix-cache] glm5 cold-drafter restore:
+   N prefix tokens from cache, drafter context starts EMPTY ...`, the route line
+   `route=spec ... cold=0 restored=1 reason=-`, then `[glm5-acc]` bursts.
+3. Controls, same boot and window: (i) `MEMRA_SPEC_WARM` unset: turn 2 reads
+   `reason=no-drafter-tail`, the plain hit's decode tok/s and TTFT; (ii) the cold miss:
+   P + S with a fresh nonce, `route=spec cold=1`: the full-context drafter's acceptance
+   ceiling; (iii) the tail-carrying restore: turn 1 sent WITHOUT penalties (spec session,
+   publishes a tail), then the same turn 2: `restored=1` via the tail, the acceptance
+   reference the cold drafter is measured against.
+4. Report per arm: turn-2 TTFT, decode tok/s, `[glm5-acc] cum=A/D` at the end of the
+   request, and the greedy text sha across (i)/(ii)/(iii)/WARM: identical is the exactness
+   receipt; the WARM arm's acceptance against (iii) is the cost of the empty context.
