@@ -165,7 +165,7 @@ Release mechanics are in [docs/RELEASING.md](docs/RELEASING.md).
 | [Workload cards](docs/workloads/) | Recommended use by request shape |
 | [Cookbook](docs/COOKBOOK.md) | Copy-paste model and card configurations |
 | [Models](docs/MODELS.md) | Supported checkpoints, formats, drafters, and hardware |
-| [Serving](docs/SERVING.md) | HTTP contract, caching, auth, admission, multi-GPU, operations |
+| [Serving](docs/SERVING.md) | HTTP contract, caching, auth, admission, multi-GPU, operations. Since v0.125.0 a DFlash2 draft proposal carrying the top-k selector's exhausted-slot sentinel refuses that one request by name instead of panicking the GPU worker, and a BUSY worker is judged on forward progress rather than heartbeat silence |
 | [API surfaces](docs/API-SURFACES.md) | Anthropic Messages and OpenAI Responses compatibility |
 | Embeddings and rerank | `/v1/embeddings` (OpenAI schema) and `/v1/rerank` (Cohere shape): prefill-only capture surfaces; every item of a multi-item request is metered under its own ledger id `<x-request-id>.<index>` (v0.124.1), [Serving](docs/SERVING.md) |
 | [Performance](docs/PERFORMANCE.md) | Measurements, methodology, rigs, and receipts |
