@@ -4437,12 +4437,17 @@ impl HybridModel {
                 // them (the verify bumps `local.len` and writes nothing). Copying those over
                 // the correct rank rows is exactly what spliced two requests' answers
                 // together on step-3.7-flash. The rewind already kept the right rows; skip.
-                if distributed.rows_external() {
-                    continue;
-                }
                 let target = saved
                     .checked_add(accepted)
                     .ok_or("spec TP KV batch restore length overflow")?;
+                if distributed.rows_external() {
+                    // The rank rows are already right; only the LENGTH still needs publishing
+                    // (the per-layer restore ends in `rewind_to(logical_len)`, and on the
+                    // full-accept path nothing else does it - skipping that too left
+                    // distributed=259 against local=257, "cache lengths diverged before decode").
+                    distributed.rewind_to(target)?;
+                    continue;
+                }
                 let local = local_slot
                     .as_ref()
                     .ok_or_else(|| format!("spec TP KV layer {il} lost its owning cache"))?;
@@ -4500,12 +4505,13 @@ impl HybridModel {
             else {
                 continue;
             };
-            if distributed.rows_external() {
-                continue; // see the batched loop above (memra#128)
-            }
             let target = saved
                 .checked_add(accepted)
                 .ok_or("spec TP KV restore length overflow")?;
+            if distributed.rows_external() {
+                distributed.rewind_to(target)?; // length only; see the batched loop (memra#128)
+                continue;
+            }
             let local = cache.kv[il]
                 .as_ref()
                 .ok_or_else(|| format!("spec TP KV layer {il} lost its owning cache"))?;
