@@ -47,6 +47,11 @@ const WIDTH: usize = SELECT_K * POOL + POOL - 1;
 const POOLS: [usize; 5] = [4_096, 8_192, 32_768, 65_536, 262_144];
 const T_QS: [usize; 2] = [1, 4];
 
+/// Times each exactness cell is re-run. The pipeline synchronises through last-CTA arrivals, so
+/// a barrier bug there is a race whose failure mode is a silent wrong selection; repeating widens
+/// the window. A net, not a proof -- see `memra_sel_last_arrival` in cu/mla_attn.cu.
+const EXACT_REPEATS: usize = 20;
+
 /// Is the TIMING bar a hard check on this build? Only on the class the door targets: `100a`
 /// SASS cannot run anywhere but sm_100, so the build arch is an exact proxy. The sibling
 /// `dsa-decode-gate` carries the same rule, and for the same reason -- the two machines this
@@ -330,42 +335,60 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         cu,
                     )
                 };
-                let rc2 = unsafe {
-                    memra_mla_kpool_select_dsa_f32(
-                        sp,
-                        ap,
-                        wp,
-                        t as i32,
-                        n_pools as i32,
-                        POOL as i32,
-                        SELECT_K as i32,
-                        WIDTH as i32,
-                        first_pos as i32,
-                        1,
-                        cu,
-                    )
-                };
-                assert_eq!((rc1, rc2), (0, 0), "launch rc at {n_pools}/{t}");
+                assert_eq!(rc1, 0, "shipped launch rc at {n_pools}/{t}");
                 stream.synchronize()?;
-                let (x, y) = (e.dtoh_i32(&idx_ship)?, e.dtoh_i32(&idx_arm)?);
-                let same = x[..t * WIDTH] == y[..t * WIDTH];
-                let diff = x[..t * WIDTH]
-                    .iter()
-                    .zip(&y[..t * WIDTH])
-                    .filter(|(a, b)| a != b)
-                    .count();
+                let x = e.dtoh_i32(&idx_ship)?;
+                // REPEATS. The pipeline synchronises its passes through last-CTA arrivals, so a
+                // barrier bug there is a RACE whose failure mode is a silent wrong selection,
+                // not a crash. One clean comparison says very little about that; repeating the
+                // cell widens the window. It does NOT prove absence -- on an idle device the
+                // window stays small and `racecheck` is shared-memory only. The ordering
+                // argument written on `memra_sel_last_arrival` is the actual evidence; this is
+                // a net, not a proof.
+                let mut same = true;
+                let mut diff = 0usize;
+                for _ in 0..EXACT_REPEATS {
+                    let rc2 = unsafe {
+                        memra_mla_kpool_select_dsa_f32(
+                            sp,
+                            ap,
+                            wp,
+                            t as i32,
+                            n_pools as i32,
+                            POOL as i32,
+                            SELECT_K as i32,
+                            WIDTH as i32,
+                            first_pos as i32,
+                            1,
+                            cu,
+                        )
+                    };
+                    assert_eq!(rc2, 0, "door launch rc at {n_pools}/{t}");
+                    stream.synchronize()?;
+                    let y = e.dtoh_i32(&idx_arm)?;
+                    let d = x[..t * WIDTH]
+                        .iter()
+                        .zip(&y[..t * WIDTH])
+                        .filter(|(a, b)| a != b)
+                        .count();
+                    if d != 0 {
+                        same = false;
+                        diff = diff.max(d);
+                    }
+                }
                 println!(
                     "  t_q={t} {:34} {}",
                     shape.name(),
                     if same {
                         "EXACT".to_string()
                     } else {
-                        format!("MISMATCH ({diff}/{} slots)", t * WIDTH)
+                        format!("MISMATCH (worst {diff}/{} slots)", t * WIDTH)
                     }
                 );
                 if !same {
                     failures.push(format!(
-                        "EXACTNESS n_pools={n_pools} t_q={t} shape={} : {diff} slots differ",
+                        "EXACTNESS n_pools={n_pools} t_q={t} shape={} : {diff} slots differ \
+                         (worst of {EXACT_REPEATS} repeats)",
                         shape.name()
                     ));
                 }

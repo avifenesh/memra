@@ -72,10 +72,43 @@ at the threshold score, and otherwise the set is unchanged. Lowering by one alwa
 threshold pool itself, because `key(thr_p) == thr` by construction. A red arm that can no-op is
 not a red arm, and for one run every exactness cell below it was vacuous.
 
+## 4b. The race review caught, and why no gate could have
+
+`memra_sel_last_arrival` originally read `__threadfence(); if (tid == 0) atomicAdd(&done, 1);`
+with **no block barrier first**. That is wrong, and it was wrong in exactly the pass that matters:
+
+`__threadfence()` orders only the CALLING THREAD's prior global writes. The histogram pass's data
+is written by all 256 threads (`atomicAdd(&hist[..])`) and by eight warp leaders (the finite
+count), with only warp-scoped `__shfl_down_sync` between those writes and the arrival call. So a
+CTA's thread 0 could publish that CTA's arrival while its own warp 7 had not yet issued its
+histogram atomics. Whichever CTA then observed the full count -- on another SM, synchronised only
+through the counter -- would run the descent on a histogram missing those bins and an
+undercounted `n_fin`, producing a wrong `ctrl[HI]` and a wrong rank clamp. A **silent,
+non-deterministic break of the exact byte-identity this whole door exists to provide.**
+
+The sibling `tie` and `count` passes were correct by accident of shape: they reduce through
+shared memory, `__syncthreads()`, and let thread 0 alone write `cta[blockIdx.x]`, so thread 0's
+own fence covered the only write that mattered. The histogram pass had no such funnel.
+
+Fixed by putting the `__syncthreads()` inside the helper, ahead of the fence, so every call site
+gets the CUDA Programming Guide's `threadFenceReduction` idiom in full rather than three call
+sites each getting it right or wrong on their own.
+
+**Nothing in the tree could have caught this.** `compute-sanitizer racecheck` is shared-memory
+only; `synccheck` looks for barrier divergence; and this gate runs on an idle device where the
+window is vanishingly small. The original 40/40 EXACT receipt did not speak to it, and the
+re-run after the fix does not either -- **the ordering argument is the evidence, and the gate
+only shows the fix costs nothing.** The exactness cells now repeat 20x each (800 comparisons) as
+a net rather than a proof, and the reasoning is written on the helper so it is not re-derived.
+
+Found in review on PR #115, not by a gate. Worth remembering when the next lane reaches for a
+last-CTA epilogue: the idiom is `__syncthreads()` THEN `__threadfence()` THEN the counter, and
+the leading barrier is the half that is easy to drop.
+
 ## 5. Receipts (RTX 5090, N=5 interleaved, 2026-09-03)
 
 `research/b200-dsa-select-20260903/gate-5090-20260903.txt`. **PASS**: red arm DIFFERS, anchor
-IDENTICAL, **40/40 exactness cells EXACT**.
+IDENTICAL, **40/40 exactness cells EXACT at 20 repeats each (800 comparisons)**.
 
 Timing, direction only under the rig law (the 5090 throttles and this door is sm_100a-gated, so
 it cannot even engage there - the gate reaches the kernels through raw FFI):

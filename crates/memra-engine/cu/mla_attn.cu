@@ -2190,10 +2190,36 @@ __device__ __forceinline__ unsigned memra_sel_hi(float s, int p) {
     return (unsigned)(memra_kpool_key(s, p) >> 32);
 }
 
-/// True when this CTA is the last of `n_ctas` to arrive. Standard two-phase-reduction idiom:
-/// the fence orders this CTA's global writes before the counter increment another CTA observes.
+/// True when this CTA is the last of `n_ctas` to arrive, and the point at which THIS CTA's
+/// global writes become visible to whichever CTA arrives last. The CUDA Programming Guide's
+/// `threadFenceReduction` idiom, spelled with BOTH barriers it needs:
+///
+///   `__syncthreads()` FIRST, then `__threadfence()`, then the counter increment by thread 0.
+///
+/// THE LEADING BARRIER IS LOAD-BEARING and its absence was a real, silent race (caught in review
+/// on PR #115, never by a gate -- see below). `__threadfence()` orders only the CALLING THREAD's
+/// prior writes. The histogram pass's data is written by all 256 threads (`atomicAdd(&hist[..])`)
+/// and by eight warp leaders (the finite count), with only warp-scoped `__shfl_down_sync` between
+/// those writes and this call. Without a block barrier, thread 0 could publish this CTA's arrival
+/// while warp 7 had not yet issued its histogram atomics; the CTA that then observes the full
+/// count -- on another SM, having synchronised only through the counter -- would run the descent
+/// on a histogram missing those bins and an undercounted `n_fin`, producing a wrong `ctrl[HI]`
+/// and a wrong rank clamp. That is a non-deterministic break of the exact byte-identity this
+/// whole door exists to provide. The barrier makes thread 0's device-scope fence publish the
+/// WHOLE CTA's writes, which is what the idiom requires and what the sibling passes were already
+/// getting for free by reducing through shared memory and letting thread 0 be the sole writer.
+///
+/// NOTHING IN THE TREE CAN CATCH THIS, which is why it is written down rather than left to a
+/// gate: `compute-sanitizer racecheck` is shared-memory only, `synccheck` looks for barrier
+/// divergence, and `dsa-select-gate` runs each exactness cell on an idle device where the window
+/// is vanishingly small. The 40/40 EXACT receipt did not speak to it and a re-run does not
+/// either -- the argument above is the evidence, and the gate only shows the fix costs nothing.
+///
+/// Every call site invokes this from ALL threads of the block unconditionally, which the leading
+/// `__syncthreads()` requires; keep it that way.
 __device__ __forceinline__ bool memra_sel_last_arrival(int* ctrl, int n_ctas) {
     __shared__ int s_last;
+    __syncthreads(); // publish every thread's writes to the block before thread 0 fences them
     __threadfence();
     if (threadIdx.x == 0) {
         int prev = atomicAdd(&ctrl[MLA_SEL_CTRL_DONE], 1);
