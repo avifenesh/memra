@@ -57,9 +57,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         e.mla_decompress_v_raw_arm(&o_lat, &wv_b, &mut out, t_q, n_head, d_v, kv_rank, 2, 1)?;
         e.mla_decompress_v_raw_arm(&o_lat, &wv_b, &mut out, t_q, n_head, d_v, kv_rank, 2, 8)?;
     }
+    // hc pre-chain, served geometry: hc=4 streams, d=4096, one row (t=1), sinkhorn iters=20.
+    let (hc, d, rows_mix, it) = (4usize, 4096usize, (2 + 4) * 4usize, 20usize);
+    let hx = e.htod(&randf(hc * d, 5))?;
+    let hmix = e.htod(&randf(rows_mix, 6))?;
+    let hscale = e.htod(&[0.5f32, 0.5, 0.5])?;
+    let hbase = e.htod(&randf(rows_mix, 7))?;
+    let mut hpre = e.htod(&vec![0f32; hc])?;
+    let mut hpost = e.htod(&vec![0f32; hc])?;
+    let mut hcomb = e.htod(&vec![0f32; hc * hc])?;
+    let mut hy = e.htod(&vec![0f32; d])?;
+    let mut rounds = [0i32; 3];
+    for _ in 0..iters {
+        for (arm, blk) in [(0u8, 128i32), (1, 512), (2, 512)] {
+            let mut nit = e.htod_i32(&[0i32])?;
+            e.hc_pre_raw_arm(
+                &hx,
+                &hmix,
+                &hscale,
+                &hbase,
+                &mut hpre,
+                &mut hpost,
+                &mut hcomb,
+                &mut hy,
+                1,
+                hc,
+                d,
+                it,
+                1e-6,
+                arm,
+                blk,
+                Some(&mut nit),
+            )?;
+            e.stream().synchronize()?;
+            rounds[arm as usize] = e.dtoh_i32(&nit)?[0];
+        }
+    }
     e.stream().synchronize()?;
     println!(
-        "mla-coalesce-bench: {iters} iteration(s) of 8 launches on device {dev}; profile with ncu"
+        "hc pre-chain Sinkhorn rounds actually run (of {it}): v2@128={} v3@512-shared={} v3@512-registers={}  (early exit fires if < {it})",
+        rounds[0], rounds[1], rounds[2]
+    );
+    println!(
+        "mla-coalesce-bench: {iters} iteration(s) of 8 MLA + 3 hc-pre launches on device {dev}; profile with ncu"
     );
     Ok(())
 }

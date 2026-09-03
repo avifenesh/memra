@@ -1068,6 +1068,67 @@ impl Engine {
         }
     }
 
+    /// BENCH-ONLY raw dispatch of the fused hc pre-chain for `mla-coalesce-bench` (structural
+    /// ncu target): `arm` 0 = `memra_dsv4_hc_pre_fused_v2` (block 128, the shipped `=2` arm),
+    /// 1 = `_v3` at `block` with the shared-memory Sinkhorn, 2 = `_v3` at `block` with the
+    /// register Sinkhorn (`MEMRA_HC_PRE_SINK_REG`). Bypasses the door readers on purpose. The
+    /// `hc-fused-gate` calls the v1/v2 launchers directly and predates v3, so this is the only
+    /// way to put the register Sinkhorn under a profiler.
+    #[allow(clippy::too_many_arguments)]
+    pub fn hc_pre_raw_arm(
+        &self,
+        x: &CudaSlice<f32>,
+        mixes: &CudaSlice<f32>,
+        scale: &CudaSlice<f32>,
+        base: &CudaSlice<f32>,
+        pre: &mut CudaSlice<f32>,
+        post: &mut CudaSlice<f32>,
+        comb: &mut CudaSlice<f32>,
+        y: &mut CudaSlice<f32>,
+        s_rows: usize,
+        hc: usize,
+        d: usize,
+        iters: usize,
+        eps: f32,
+        arm: u8,
+        block: i32,
+        niters: Option<&mut CudaSlice<i32>>,
+    ) -> Res<()> {
+        let st = self.stream();
+        unsafe {
+            let np: *mut i32 = match niters {
+                Some(n) => n.device_ptr_mut(&st).0 as *mut i32,
+                None => std::ptr::null_mut(),
+            };
+            let (xp, mp, sp, bp) = (
+                x.device_ptr(&st).0 as *const f32,
+                mixes.device_ptr(&st).0 as *const f32,
+                scale.device_ptr(&st).0 as *const f32,
+                base.device_ptr(&st).0 as *const f32,
+            );
+            let (pp, qp, cp, yp) = (
+                pre.device_ptr_mut(&st).0 as *mut f32,
+                post.device_ptr_mut(&st).0 as *mut f32,
+                comb.device_ptr_mut(&st).0 as *mut f32,
+                y.device_ptr_mut(&st).0 as *mut f32,
+            );
+            let (sr, h, dd, it) = (s_rows as i32, hc as i32, d as i32, iters as i32);
+            let cs = st.cu_stream() as *mut c_void;
+            let rc = match arm {
+                0 => crate::dsv4_ffi::memra_dsv4_hc_pre_fused_v2(
+                    xp, mp, sp, bp, pp, qp, cp, yp, sr, h, dd, it, eps, np, cs,
+                ),
+                1 => crate::dsv4_ffi::memra_dsv4_hc_pre_fused_v3(
+                    xp, mp, sp, bp, pp, qp, cp, yp, sr, h, dd, it, eps, np, block, 0, cs,
+                ),
+                _ => crate::dsv4_ffi::memra_dsv4_hc_pre_fused_v3(
+                    xp, mp, sp, bp, pp, qp, cp, yp, sr, h, dd, it, eps, np, block, 1, cs,
+                ),
+            };
+            ck("hc_pre_raw", rc)
+        }
+    }
+
     pub fn mla_absorb_q(
         &self,
         q_nope: &CudaSlice<f32>,
