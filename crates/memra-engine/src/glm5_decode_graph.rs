@@ -1138,9 +1138,6 @@ impl HybridModel {
         Ok(())
     }
 
-    /// Replay one captured run: stream state in, launch, stream state out, mirror the host-side
-    /// ping-pong the eager step would have done, advance the phase.
-    #[allow(clippy::too_many_arguments)]
     /// memra#131: the first replay of run `[a, b)` checks ITSELF against the eager walk.
     ///
     /// Captured runs hold only KDA layers by construction, so their complete mutable state is
@@ -1182,7 +1179,7 @@ impl HybridModel {
             use cudarc::driver::DevicePtr;
             let st = e.stream();
             let (p, _g) = s.device_ptr(&st);
-            p as u64
+            p
         }
         let mut snaps: Vec<Snap> = Vec::with_capacity(b - a);
         for il in a..b {
@@ -1268,6 +1265,9 @@ impl HybridModel {
         }
     }
 
+    /// Replay one captured run: stream state in, launch, stream state out, mirror the host-side
+    /// ping-pong the eager step would have done, advance the phase.
+    #[allow(clippy::too_many_arguments)]
     fn glm5_replay_run(
         &self,
         e: &Engine,
