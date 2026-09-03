@@ -412,6 +412,21 @@ shipped vs v2 vs v3, bit-identity against the shipped kernel, and repeats the v3
 sufficient, a MISMATCH is conclusive. Stated on the bench line itself as `[RED ARM: nch=1
 cp.async wait]`.
 
+### 10.2 One shared engagement counter silenced two of the three arms (revuto, PR #109)
+
+Also found on the re-land. The three v2 call sites (the bf16 arm in `matvec_bf16_rows_into`, the
+t=1 W8 trunk arm in `matvec_bf16_via_q8_mirror`, and the t<=8 verify arm in
+`matvec_bf16_via_q8_mirror_t`) shared ONE `GEMV_V2_DISPATCHES`, and each gated its print-once on
+`fetch_add(..) == 0`. So only the first arm to fire in a process ever announced itself, and under
+`MEMRA_GLM5_W8` the trunk and verify arms both fire in the same process: one was always silent.
+
+That is precisely the failure the announce-once rule exists to prevent, and this lane already
+paid for it once. Serving A/B pair 1 read as "the door did nothing" when the truth was "the door
+never engaged", and only the absence of an engagement line told us which. Split into
+`GEMV_V2_BF16_DISPATCHES`, `GEMV_V2_Q8_RP_DISPATCHES` and `GEMV_V2_Q8_ROWS_TW_DISPATCHES`: the
+same per-arm shape `KDA_FUSED6_BF16_DISPATCHES` / `KDA_FUSED6_Q8RP_DISPATCHES` already carries,
+so a box A/B can attribute engagement to the arm that actually ran.
+
 ## 11. Round 3: the W8 posture
 
 ### 11.1 The kernels that actually serve it (read off lib.rs, not guessed)
@@ -476,7 +491,8 @@ Two things follow, and the second is the lane's actual target now:
    not throughput. `b200_matvec_bench 5 3` now prints families 7-9; the door stays OFF until
    they and a serving A/B in the W8 posture land. This time the engagement lines
    (`arm=q8_rp_v2`, `arm=q8_rows_tw_v2`, `[kda-fused6] engaged arm=q8rp_v2`) must appear in the
-   boot log before any tok/s number is read — pair 1 is the precedent.
+   boot log before any tok/s number is read (pair 1 is the precedent, and section 10.2 is why
+   all three can now actually print).
 2. **`f_b` and `g_b` are still on cuBLAS.** They are the `[8192 x 128]` stage-4 halves of the
    low-rank gate pairs, chained off `f_a`/`g_a`'s outputs, so they cannot join the stage-1
    launch. At 2 projections x 2 launches x 34 layers that is ~136 launches/token of the census's

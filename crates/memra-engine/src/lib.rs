@@ -836,10 +836,28 @@ pub(crate) fn gemv_v3_fits() -> bool {
 /// the two MUST move together (the launcher's grid and dynamic-smem size are derived from it).
 pub(crate) const GEMV_V2_ROWS: usize = 8;
 
-/// Engagement counter for `MEMRA_B200_GEMV_V2` (lane/b200-gemv-hbm-20260902). Counted at the
+/// Engagement counters for `MEMRA_B200_GEMV_V2` (lane/b200-gemv-hbm-20260902). Counted at each
 /// arm's own call site, the `moe_grouped_prefill_dispatches` precedent: a door that never
 /// actually took its path must not be indistinguishable from one that did.
-pub(crate) static GEMV_V2_DISPATCHES: std::sync::atomic::AtomicU64 =
+///
+/// ONE COUNTER PER ARM, and that is the whole point (revuto on PR #109, 2026-09-03). These
+/// three sites had shared a single counter while each gated its print-once on
+/// `fetch_add(..) == 0`, so only the FIRST arm to fire in a process ever announced itself.
+/// Under `MEMRA_GLM5_W8` the t=1 trunk arm and the verify-width arm both fire in the same
+/// process, so one of them was always silent — and a silent arm is exactly the failure the
+/// announce-once rule exists to prevent (it is how serving A/B pair 1 was read as "the door did
+/// nothing" rather than "the door never engaged"). Same shape as `KDA_FUSED6_BF16_DISPATCHES`
+/// vs `KDA_FUSED6_Q8RP_DISPATCHES`: per-arm counters so a box A/B can attribute engagement to
+/// the arm that actually ran.
+///
+/// The bf16 v2/v3 arm (`matvec_bf16_rows_into`), i.e. the NON-W8 posture.
+pub static GEMV_V2_BF16_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+/// The t=1 W8 trunk arm (`matvec_bf16_via_q8_mirror` -> `qmatvec_q8_0_mmvq_rp_v2`).
+pub static GEMV_V2_Q8_RP_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+/// The t<=8 W8 verify-width arm (`matvec_bf16_via_q8_mirror_t` -> `qmatvec_q8_0_rows_tw_v2`).
+pub static GEMV_V2_Q8_ROWS_TW_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
 /// MEMRA_B200_BF16_GEMV_LT=1: cuBLASLt REFERENCE door for the t=1 bf16 decode row matvec
@@ -23097,7 +23115,8 @@ impl Engine {
         // runs in the W8 posture. Same weight-once structure, 8 warps per block and the block
         // walk unrolled by two; bit-identical per (row, column). t in 9..=32 keeps `_tw32`.
         if b200_gemv_v2_on() && q8t_wonce_on() && t <= 8 {
-            if GEMV_V2_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+            if GEMV_V2_Q8_ROWS_TW_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0
+            {
                 eprintln!(
                     "[b200-gemv-v2] engaged arm=q8_rows_tw_v2 t={t} in_f={in_f} out_f={out_f} \
                      (W8 verify walk; MEMRA_B200_GEMV_V2=1)"
@@ -23311,7 +23330,7 @@ impl Engine {
         // activation would not fit the 48 KB default smem cap.
         if b200_gemv_v2_on() && in_f.is_multiple_of(32) && Self::q8_v2_smem_bytes(in_f) <= 48 * 1024
         {
-            if GEMV_V2_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+            if GEMV_V2_Q8_RP_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
                 eprintln!(
                     "[b200-gemv-v2] engaged arm=q8_rp_v2 t=1 in_f={in_f} out_f={out_f} \
                      (W8 posture; MEMRA_B200_GEMV_V2=1)"
@@ -24059,7 +24078,7 @@ impl Engine {
             // 36 KB of dynamic smem to fit the 48 KB default cap, so it declines per call
             // rather than per process and v2 takes those shapes.
             let v3 = b200_gemv_v2_level() >= 2 && ksplit == 1 && gemv_v3_fits();
-            if GEMV_V2_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+            if GEMV_V2_BF16_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
                 let arm = if v3 { "v3 (cp.async staged)" } else { "v2" };
                 eprintln!(
                     "[b200-gemv-v2] engaged arm={arm} t={t} in_f={in_f} out_f={out_f} \
