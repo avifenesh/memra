@@ -2,6 +2,10 @@
 
 Issues welcome anytime. PRs welcome **only when they carry proof**, per the rules below: CI is compile-only (no GPU runners on either target arch), so a human reviewer is the only gate between claim and merged code. Unproven PRs (no gates run, no numbers, "should be faster", AI-generated diffs with no on-device verification) will be closed, not debated. This is not gatekeeping: every accepted kernel becomes load-bearing in a correctness contract (see [Testing](docs/TESTING.md)), and reverting a bad merge costs far more than rejecting an unproven one.
 
+By submitting a contribution, you agree to license it under
+[FSL-1.1-ALv2](LICENSE), including its future Apache-2.0 grant. If you cannot grant
+those rights, state that before submitting the contribution.
+
 ## Before you write code
 
 1. Read [`research/tune-data/*.jsonl`](research/tune-data/) for your target kernel/model. Labeled corpus of *every* prior tuning attempt, wins and losses both. If your idea was already tried and rejected, the record says why. Re-proposing a measured loss without new evidence is spam.

@@ -37,7 +37,7 @@ members = []
 
 [workspace.package]
 version = "0.103.0"
-license = "MIT"
+license = "FSL-1.1-ALv2"
 
 [workspace.dependencies]
 memra-gguf = { path = "crates/memra-gguf", version = "=0.103.0" }
