@@ -498,6 +498,27 @@ fn pre_finish_into(
                         sp(&stream),
                     ),
                 ),
+                HcFusedPreArm::V2 if crate::hc_pre_block() != 128 => (
+                    "hc_pre_fused_v3",
+                    k::memra_dsv4_hc_pre_fused_v3(
+                        dpf!(x, &stream),
+                        dpf!(mixes, &stream),
+                        dpf!(site.scale, &stream),
+                        dpf!(site.base, &stream),
+                        dpm!(pre_gates, &stream),
+                        dpm!(post, &stream),
+                        dpm!(comb, &stream),
+                        dpm!(y, &stream),
+                        t as i32,
+                        streams as i32,
+                        hidden as i32,
+                        topology.sinkhorn_iterations as i32,
+                        eps,
+                        std::ptr::null_mut(),
+                        crate::hc_pre_block() as i32,
+                        sp(&stream),
+                    ),
+                ),
                 HcFusedPreArm::V2 => (
                     "hc_pre_fused_v2",
                     k::memra_dsv4_hc_pre_fused_v2(

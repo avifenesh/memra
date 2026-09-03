@@ -2423,6 +2423,47 @@ pub fn topk_shards_dispatches() -> u64 {
 /// red-armed), so at B=1 the delegation is that contract's own right-hand side.
 pub(crate) fn hyper_batch_solo_on() -> bool {
     std::env::var("MEMRA_HYPER_BATCH_SOLO").as_deref() == Ok("1")
+/// `MEMRA_HC_PRE_BLOCK=<n>` (default 128, lane/b200-hcpre-wide-20260903): the CUDA block
+/// width of the fused hyper-connection pre-chain, when `MEMRA_HC_FUSED_PRE=2` selected the
+/// v2 arm. 128 is v2 verbatim.
+///
+/// WHY THIS EXISTS. `memra_dsv4_hc_pre_fused_v2` launches one block of 128 threads PER ROW.
+/// At t=1 decode there is one row, so the whole call occupies ONE SM of a B200's 148. nsys
+/// on the 2x B200 pair in the current best posture (2026-09-03) makes it the largest kernel
+/// in the decode profile: 17.5% of kernel time, 31.1 us average, 23,220 launches over 256
+/// profiled tokens = 90.7 per token, which is exactly the 2 sites (attn, mlp) on each of 45
+/// layers. Those 31 us move about 128 KB, i.e. 4.1 GB/s, so the kernel is latency-bound on
+/// four warps rather than limited by its arithmetic.
+///
+/// EXACTNESS, stated rather than assumed. Stage 3 (the collapse) is bit-identical at any
+/// width: each output sums the same hc terms in the same order and only the owning thread
+/// moves. Stage 2 (Sinkhorn) is warp-0-only at every width. Stage 1 (rowsq) is NOT: a wider
+/// block gives `dsv4_block_sum` a different partition of the row, so the double accumulation
+/// order changes. The f32 narrowing of `1/sqrt(tot/w + eps)` is expected to absorb a
+/// last-ulp double difference, but expected is not constructed, so any width other than 128
+/// is the named numeric class `hc_pre_rowsq_blockwide` and carries an argmax gate plus a
+/// greedy tape before it can be a default.
+///
+/// Refuses a value that is not a power of two in [32, 1024], by name, at read time — a bad
+/// width would otherwise reach the launcher and return an opaque 40023.
+pub(crate) fn hc_pre_block() -> usize {
+    match std::env::var("MEMRA_HC_PRE_BLOCK") {
+        Err(_) => 128,
+        Ok(v) if v.is_empty() => 128,
+        Ok(v) => match v.parse::<usize>() {
+            Ok(n) if (32..=1024).contains(&n) && n.is_power_of_two() => n,
+            _ => {
+                static SAID: std::sync::Once = std::sync::Once::new();
+                SAID.call_once(|| {
+                    eprintln!(
+                        "[hc-pre-block] MEMRA_HC_PRE_BLOCK={v:?} is not a power of two in \
+                         [32, 1024]; using 128 (the v2 width, bit-identical to the shipped arm)"
+                    );
+                });
+                128
+            }
+        },
+    }
 }
 
 fn verify_ws_on() -> bool {

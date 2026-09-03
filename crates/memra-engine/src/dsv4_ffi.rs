@@ -617,6 +617,35 @@ unsafe extern "C" {
         niters: *mut i32,
         stream: *mut c_void,
     ) -> i32;
+    /// `memra_dsv4_hc_pre_fused_v2` with the block size as a parameter (door
+    /// `MEMRA_HC_PRE_BLOCK`, lane/b200-hcpre-wide-20260903). v2 hardcodes `<<<s, 128>>>`,
+    /// one block per row, so at t=1 decode the whole call is ONE block of 128 threads on a
+    /// 148-SM B200 and nsys prices it as the LARGEST kernel in the decode profile (17.5%,
+    /// 31.1 us avg, 90.7 launches per token = 2 per layer x 45 layers). It moves ~128 KB in
+    /// those 31 us, which is 4.1 GB/s: four warps cannot cover HBM latency. `block` = 128
+    /// reproduces v2's thread partition exactly and is therefore bit-identical to it; wider
+    /// blocks change stage 1's `dsv4_block_sum` partition (stage 3 stays bit-identical at
+    /// any width, and stage 2 is warp-0-only either way), which is the NAMED NUMERIC CLASS
+    /// `hc_pre_rowsq_blockwide`. Refuses a `block` that is not a power of two in [32, 1024].
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_hc_pre_fused_v3(
+        x: *const f32,
+        mixes: *const f32,
+        scale: *const f32,
+        base: *const f32,
+        pre: *mut f32,
+        post: *mut f32,
+        comb: *mut f32,
+        y: *mut f32,
+        s: i32,
+        hc: i32,
+        d: i32,
+        iters: i32,
+        eps: f32,
+        niters: *mut i32,
+        block: i32,
+        stream: *mut c_void,
+    ) -> i32;
     #[allow(clippy::too_many_arguments)]
     pub fn memra_dsv4_hc_head_pre_m(
         mixes: *const f32,
