@@ -402,6 +402,28 @@ extern "C" __global__ void residual_sample_sparse_q_f32(
     *out_tok = (uint32_t) min(i, n - 1);
 }
 
+// THE ONE Keskar scalar rule, HOST-ORDER AND HOST-ROUNDED (lane/spec-exclusions-20260902).
+// It is the plain sampler's `apply_penalties_dense` (memra-sampling) statement for statement:
+//   if rep != 1 { v = v > 0 ? v / rep : v * rep }   v -= cnt * freq;   v -= present;
+// Every device penalty kernel below routes through it, so a verify row the glm5 spec route
+// penalizes on device carries the SAME f32 bits the host sampler would have produced for the
+// same window — the property the greedy spec-vs-plain tape identity under penalties rests
+// on (a 1-ulp difference is an argmax flip on a near-tie, and a near-tie is one token in a
+// long tape). Two things the pre-lane form got wrong for that purpose, both fixed here:
+//   * the freq/presence step was ONE subtraction of a sum, `v -= freq*cnt + present`, which
+//     rounds differently from the host's two subtractions; and
+//   * nvcc's default -fmad=true is free to contract `v - freq*cnt` into an FMA (one rounding
+//     where the host does two). The `__f*_rn` intrinsics are the documented way to forbid
+//     that contraction per operation without changing the file-wide flags.
+// `-prec-div=true` (the default) already makes `/` IEEE-rounded; `__fdiv_rn` states it.
+__device__ __forceinline__ float keskar_penalize_rn(float v, int cnt, float rep, float freq,
+                                                    float present) {
+    if (rep != 1.0f) v = v > 0.0f ? __fdiv_rn(v, rep) : __fmul_rn(v, rep);
+    v = __fsub_rn(v, __fmul_rn((float) cnt, freq));
+    v = __fsub_rn(v, present);
+    return v;
+}
+
 // Keskar-style repetition/frequency/presence penalties applied IN PLACE to a logits copy —
 // history-dependent, so both the verify column (p) and the draft head (q) get the SAME pass
 // before filtering (symmetry keeps rejection sampling exact for the penalized+filtered target).
@@ -417,10 +439,7 @@ extern "C" __global__ void penalize_logits_f32(
     for (int j = 0; j < i; ++j) if (hist[j] == id) return;
     int cnt = 1;
     for (int j = i + 1; j < n_hist; ++j) if (hist[j] == id) ++cnt;
-    float v = x[id];
-    if (rep != 1.0f) v = v > 0.0f ? v / rep : v * rep;
-    v -= freq * (float) cnt + present;
-    x[id] = v;
+    x[id] = keskar_penalize_rn(x[id], cnt, rep, freq, present);
 }
 
 // ---------------- 6c. filter_stats, cooperative multi-block form (lane/samplat) ----------------
@@ -628,16 +647,13 @@ extern "C" __global__ void penalize_logits_rows_f32(
     int cnt = 1;
     for (int j = i + 1; j < n_hist; ++j) if (hist[j] == id) ++cnt;
     float* xr = x + (size_t) r * n;
-    float v = xr[id];
-    if (rep != 1.0f) v = v > 0.0f ? v / rep : v * rep;
-    v -= freq * (float) cnt + present;
-    xr[id] = v;
+    xr[id] = keskar_penalize_rn(xr[id], cnt, rep, freq, present);
 }
 
 // Serving-batch penalty form: the host sampler already maintains the exact sliding-window
 // counts, so upload only unique (token,count) entries for each heterogeneous request. One
 // thread owns one distinct row/token pair: no atomics, no history-squared dedup scan, and the
-// scalar rule is expression-for-expression the two history forms above.
+// scalar rule is the one `keskar_penalize_rn` the two history forms above use.
 extern "C" __global__ void penalize_logits_sparse_rows_f32(
         float* __restrict__ x,
         const uint32_t* __restrict__ ids,
@@ -657,12 +673,7 @@ extern "C" __global__ void penalize_logits_sparse_rows_f32(
     const uint32_t id = ids[i];
     if (id >= (uint32_t) n) return;
     float* xr = x + (size_t) rows[r] * n;
-    float v = xr[id];
-    const float rep = reps[r];
-    if (rep != 1.0f) v = v > 0.0f ? v / rep : v * rep;
-    v -= freqs[r] * (float) counts[i];
-    v -= presents[r];
-    xr[id] = v;
+    xr[id] = keskar_penalize_rn(xr[id], (int) counts[i], reps[r], freqs[r], presents[r]);
 }
 
 // ROW-INCREMENTAL variant (dspark PENALIZED-SAMPLED admission, lane/dspark-penalized-
@@ -693,10 +704,7 @@ extern "C" __global__ void penalize_logits_rows_inc_f32(
     int cnt = 1;
     for (int j = i + 1; j < len; ++j) if (h[j] == id) ++cnt;
     float* xr = x + (size_t) r * n;
-    float v = xr[id];
-    if (rep != 1.0f) v = v > 0.0f ? v / rep : v * rep;
-    v -= freq * (float) cnt + present;
-    xr[id] = v;
+    xr[id] = keskar_penalize_rn(xr[id], cnt, rep, freq, present);
 }
 
 // ROUND-STREAM stage (a) (2026-07-10, HANDOVER design): the greedy accept walk ON DEVICE —
