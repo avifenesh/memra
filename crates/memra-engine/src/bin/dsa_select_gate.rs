@@ -30,10 +30,11 @@
 use cudarc::driver::{CudaSlice, DevicePtr, DevicePtrMut};
 use memra_engine::Engine;
 use memra_engine::mla_ffi::{
-    MLA_DSA_REGRESSION_MARGIN, MLA_DSA_SELECT_MIN_POOLS, memra_mla_kpool_select_ctas,
-    memra_mla_kpool_select_dsa_f32, memra_mla_kpool_select_dsa_redarm_f32,
-    memra_mla_kpool_select_f32, memra_mla_kpool_select_ref_f32, memra_mla_kpool_select_ws_ints,
-    mla_dsa_select_engages,
+    MLA_DSA_REGRESSION_MARGIN, MLA_DSA_SELECT_MIN_POOLS, MLA_DSA_SELECT_MIN_POOLS_SPEC,
+    memra_mla_kpool_select_ctas, memra_mla_kpool_select_dsa_f32,
+    memra_mla_kpool_select_dsa_redarm_f32, memra_mla_kpool_select_f32,
+    memra_mla_kpool_select_ref_f32, memra_mla_kpool_select_ws_ints, mla_dsa_select_engages,
+    mla_dsa_select_floor,
 };
 use std::os::raw::c_void;
 use std::sync::Arc;
@@ -43,8 +44,16 @@ const POOL: usize = 4;
 const SELECT_K: usize = 512;
 const WIDTH: usize = SELECT_K * POOL + POOL - 1;
 
-/// Pool counts swept: `n_pools = t_kv / pool`, so these are 16k, 32k, 128k, 256k and 1M context.
-const POOLS: [usize; 5] = [4_096, 8_192, 32_768, 65_536, 262_144];
+/// Pool counts swept, written with the EXACT token count each one means (`n_pools * pool`),
+/// never as a "k": 16_384, 32_768, 131_072, 196_608, 256_756, 262_144 and 1_048_576 tokens.
+///
+/// 49152 and 64189 exist because the band between 32768 and 65536 pools was unswept and a real
+/// 256k serving rung lands inside it: ~256_756 tokens is 64_189 pools, 2.06% UNDER the shipped
+/// `MLA_DSA_SELECT_MIN_POOLS` floor of 65536, so the door engages nothing there. A B200 cell was
+/// sized against that rung on 2026-09-03 and measured noise for exactly this reason. These two
+/// cells put numbers on the band so the floor can be argued from data instead of from a round
+/// number.
+const POOLS: [usize; 7] = [4_096, 8_192, 32_768, 49_152, 64_189, 65_536, 262_144];
 const T_QS: [usize; 2] = [1, 4];
 
 /// Times each exactness cell is re-run. The pipeline synchronises through last-CTA arrivals, so
@@ -171,7 +180,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!(
         "dsa-select-gate: device {dev}, pool={POOL} select_k={SELECT_K} width={WIDTH}, \
-         rounds={rounds}, engages at n_pools >= {MLA_DSA_SELECT_MIN_POOLS}, timing bar {}",
+         rounds={rounds}, floor is KEYED ON t_q (t_q=1: n_pools >= \
+         {MLA_DSA_SELECT_MIN_POOLS}; t_q >= 2: >= {MLA_DSA_SELECT_MIN_POOLS_SPEC}, because a \
+         uniform floor admitted a shape that REGRESSES on sm_100a), timing bar {}",
         if TIMING_IS_BINDING {
             "BINDING (sm_100a build)"
         } else {
@@ -305,7 +316,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ---------------------------------------------------------------- exactness + timing
     for &n_pools in &POOLS {
-        println!("\n== n_pools {n_pools} (kv {} tokens) ==", n_pools * POOL);
+        println!(
+            "\n== n_pools {n_pools} ({} tokens){} ==",
+            n_pools * POOL,
+            if n_pools >= MLA_DSA_SELECT_MIN_POOLS {
+                ""
+            } else {
+                "  [BELOW THE DOOR FLOOR - the door does not engage here]"
+            }
+        );
         for &t in &T_QS {
             let first_pos = n_pools * POOL - t;
             for shape in Shape::ALL {
@@ -450,8 +469,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             if !mla_dsa_select_engages(t, n_pools) {
                 println!(
-                    "  note: the policy does NOT engage here (n_pools < {MLA_DSA_SELECT_MIN_POOLS} \
-                     or t_q > 8), so the row above is information, not a bar"
+                    "  note: the policy does NOT engage here -- the floor for t_q={t} is {} pools \
+                     -- so the row above is information, not a bar",
+                    mla_dsa_select_floor(t)
                 );
             }
         }
