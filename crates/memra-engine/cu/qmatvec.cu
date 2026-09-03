@@ -14345,7 +14345,17 @@ __device__ __forceinline__ void gemv_v3_walk_bf16(
         __pipeline_commit();
     }
     for (int c = 0; c < nch; c++) {
-        __pipeline_wait_prior(MEMRA_GEMV_V3_STAGES - 1);
+        // RACE FIX (revuto on PR #109, 2026-09-03). The prologue commits min(STAGES, nch)
+        // batches, so at iteration c the number outstanding is min(STAGES, nch) + c minus the
+        // completed ones, and leaving batches 0..c done means allowing at most
+        // min(STAGES, nch) - 1 outstanding. The constant `STAGES - 1` is only that when
+        // nch >= STAGES. With nch == 1 -- in_f <= blockDim.x * 8, i.e. <= 1024 at the default
+        // block, reachable from the shipped dispatch for any t=1 bf16 projection that narrow,
+        // and kda6 v3's ranges share this walk -- exactly ONE batch is ever committed, so
+        // wait_prior(1) is satisfied immediately and the first read races the thread's OWN
+        // cp.async: nondeterministic garbage out of uninitialised shared memory. Kept in
+        // revuto's literal form so this branch and the #109 re-land carry the identical patch.
+        __pipeline_wait_prior(nch == 1 ? 0 : MEMRA_GEMV_V3_STAGES - 1);
         const int i = c * kch + (int)threadIdx.x * 8;
         if (i < in_f) {
             const unsigned short* sb = stage

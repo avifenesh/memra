@@ -369,7 +369,7 @@ Bench round 2 (int8 `fc8cbf593`, `gate-gemv-bench-2.txt`) confirmed the fix and 
 | MoE v2 twins (measured arms) | — | 1.017x / 0.877x | — |
 
 The y5 fix holds: **bit-identical, per projection**. And **v3 is slower than v2 on every
-family**, so level 2 is not a promotion path — the cp.async staging pays more in issue cost and
+family**, so level 2 is not a promotion path and **v3 stays the NON-SELECTED arm** — the cp.async staging pays more in issue cost and
 smem latency than the 1.9x in-flight bytes buys back. That is the same verdict the shipped
 `qmatvec_q8_0_mmvq_rpca` (a cp.async-staged weight ring for Q8_0) already carries from the H100
 lane, arrived at independently on a different dtype and a different part. Level 2 stays in the
@@ -388,6 +388,29 @@ through `matvec_bf16_via_q8_mirror(_t)` BEFORE the bf16 arms are reached, so
 serve. Two rounds of bf16 work, correct and measured, aimed at a path the product had already
 left. The engagement counter is what caught it, one line, immediately — which is the argument
 for the announce-once rule, not against it.
+
+### 10.1 The v3 cp.async prologue under-waited at nch == 1 (revuto, PR #109)
+
+Found on the main re-land, not by any arm this lane had. `gemv_v3_walk_bf16`'s prologue commits
+`min(STAGES, nch)` batches, so at iteration `c` the correct allowance is
+`min(STAGES, nch) - 1` outstanding — and the loop used the CONSTANT `STAGES - 1`, which is only
+that when `nch >= STAGES`. With `nch == 1` (in_f <= `blockDim.x * 8`, i.e. <= 1024 at the default
+block) exactly one batch is ever committed, `__pipeline_wait_prior(1)` is satisfied immediately,
+and the first read races the thread's OWN `cp.async`: nondeterministic garbage out of
+uninitialised shared memory. Reachable from the shipped dispatch at `MEMRA_B200_GEMV_V2=2` for
+any t=1 bf16 projection that narrow, and kda6 v3's three BF16 ranges share the same walk.
+
+Fixed as `__pipeline_wait_prior(nch == 1 ? 0 : MEMRA_GEMV_V3_STAGES - 1)`, kept in revuto's
+literal form so this branch and the #109 re-land carry the identical patch.
+
+**Why no arm here caught it, and what now does.** Every bf16 family in the bench used in_f
+4096/8192 — `nch` 4 and 8 — so the narrow case was never executed, in either direction. That is
+the checks-need-a-red-arm law: a PASS with no arm covering the change class is worth nothing.
+Family 6b now runs in_f 512 and 1024 (below the boundary and exactly at it) at out_f 4096,
+shipped vs v2 vs v3, bit-identity against the shipped kernel, and repeats the v3 identity check
+`max(iters, 3)` times because the defect it guards is a race — a PASS there is necessary and not
+sufficient, a MISMATCH is conclusive. Stated on the bench line itself as `[RED ARM: nch=1
+cp.async wait]`.
 
 ## 11. Round 3: the W8 posture
 
@@ -464,8 +487,10 @@ Two things follow, and the second is the lane's actual target now:
    answer and belongs to the loader, not this lane.
 3. **`quantize_q8_1` is ~527 launches/token** (232.7 ms). The fused arm removes six per KDA
    layer by construction (one quantize feeds all six projections); the rest is the graph lane's.
-4. **v3 (level 2) is REFUTED, not pending**: slower than v2 on every family in round 2. It stays
-   in the tree as a measured arm with its number attached. The `cp.async` verdict now agrees
+4. **v3 (level 2) is REFUTED, not pending, and stays the NON-SELECTED arm**: slower than v2 on
+   every family in round 2 (1.223x / 1.309x on the bf16 rows and 1.157x on kda6, against v2's
+   1.467x / 1.254x / 1.553x). It stays in the tree as a measured arm with its number attached,
+   and with the nch == 1 `cp.async` race section 10.1 records fixed. The `cp.async` verdict now agrees
    across two dtypes and two parts (this lane on B200 bf16, and the shipped
    `qmatvec_q8_0_mmvq_rpca` on H100 Q8_0), which is worth more than either alone.
 3. **The 36 B NVFP4 block layout remains the binding constraint on the expert kernels**, and

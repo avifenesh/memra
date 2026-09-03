@@ -602,7 +602,15 @@ Four things that receipt settled, and each changed the code rather than the pros
    now samples the same [-2, 2) range as the activations and `compare` PANICS on a non-finite
    value rather than printing `inf`.)
 
-**LEVEL 2 (v3) IS STILL PENDING ITS RECEIPT.** v2's in-flight budget is register-bound (96
+**LEVEL 2 (v3) IS REFUTED AND NON-SELECTED** (bench round 2 on the pair: 1.223x / 1.309x on the
+bf16 rows and 1.157x on kda6, against v2's 1.467x / 1.254x / 1.553x — slower than v2 on every
+family). It stays in the tree as a measured arm with its number attached; it is not a promotion
+path. Its `cp.async` pipeline wait is `nch == 1 ? 0 : STAGES - 1`, not the constant
+`STAGES - 1`: the prologue commits `min(STAGES, nch)` batches, so a single-chunk K range
+(in_f <= blockDim.x*8, i.e. <= 1024 at the default block) commits ONE batch and the constant form
+let the first read race the thread's own copy (revuto, PR #109; bench family 6b is the red arm
+that class never had). The arithmetic that motivated it, kept because the refutation is only
+readable against it: v2's in-flight budget is register-bound (96
 registers on the kda6 kernel -> ~102 KB per SM outstanding), which is what caps it at 40% of the
 wall. Of the three levers this lane had named, only staging changes that number: a persistent CTA
 leaves in-flight bytes unchanged (it attacks launch count, the graph lane's axis), and a 2-CTA
