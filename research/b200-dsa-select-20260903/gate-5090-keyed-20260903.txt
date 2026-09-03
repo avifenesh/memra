@@ -1,0 +1,100 @@
+dsa-select-gate: device 0, pool=4 select_k=512 width=2051, rounds=5, floor is KEYED ON t_q (t_q=1: n_pools >= 65536; t_q >= 2: >= 262144, because a uniform floor admitted a shape that REGRESSES on sm_100a), timing bar DIAGNOSTIC ONLY (non-target build; correctness bars still hard)
+  anchor: shipped radix vs in-tree reference selector at 4096 pools: IDENTICAL
+  RED ARM (threshold lowered by 1, always drops the threshold pool): DIFFERS -- the byte comparison DOES detect a wrong selection
+
+== n_pools 4096 (16384 tokens)  [BELOW THE DOOR FLOOR - the door does not engage here] ==
+  t_q=1 mixed(40% zero ties)               EXACT
+  t_q=1 all-ties(every finite score +0.0)  EXACT
+  t_q=1 sparse(n_fin < select_k)           EXACT
+  t_q=1 empty(all -inf)                    EXACT
+  t_q=1 us: shipped 20.7  parallel 102.6  (0.20x)   (N=5 interleaved)
+  note: the policy does NOT engage here -- the floor for t_q=1 is 65536 pools -- so the row above is information, not a bar
+  t_q=4 mixed(40% zero ties)               EXACT
+  t_q=4 all-ties(every finite score +0.0)  EXACT
+  t_q=4 sparse(n_fin < select_k)           EXACT
+  t_q=4 empty(all -inf)                    EXACT
+  t_q=4 us: shipped 20.0  parallel 109.2  (0.18x)   (N=5 interleaved)
+  note: the policy does NOT engage here -- the floor for t_q=4 is 262144 pools -- so the row above is information, not a bar
+
+== n_pools 8192 (32768 tokens)  [BELOW THE DOOR FLOOR - the door does not engage here] ==
+  t_q=1 mixed(40% zero ties)               EXACT
+  t_q=1 all-ties(every finite score +0.0)  EXACT
+  t_q=1 sparse(n_fin < select_k)           EXACT
+  t_q=1 empty(all -inf)                    EXACT
+  t_q=1 us: shipped 25.9  parallel 102.7  (0.25x)   (N=5 interleaved)
+  note: the policy does NOT engage here -- the floor for t_q=1 is 65536 pools -- so the row above is information, not a bar
+  t_q=4 mixed(40% zero ties)               EXACT
+  t_q=4 all-ties(every finite score +0.0)  EXACT
+  t_q=4 sparse(n_fin < select_k)           EXACT
+  t_q=4 empty(all -inf)                    EXACT
+  t_q=4 us: shipped 30.2  parallel 133.9  (0.23x)   (N=5 interleaved)
+  note: the policy does NOT engage here -- the floor for t_q=4 is 262144 pools -- so the row above is information, not a bar
+
+== n_pools 32768 (131072 tokens)  [BELOW THE DOOR FLOOR - the door does not engage here] ==
+  t_q=1 mixed(40% zero ties)               EXACT
+  t_q=1 all-ties(every finite score +0.0)  EXACT
+  t_q=1 sparse(n_fin < select_k)           EXACT
+  t_q=1 empty(all -inf)                    EXACT
+  t_q=1 us: shipped 82.9  parallel 92.4  (0.90x)   (N=5 interleaved)
+  note: the policy does NOT engage here -- the floor for t_q=1 is 65536 pools -- so the row above is information, not a bar
+  t_q=4 mixed(40% zero ties)               EXACT
+  t_q=4 all-ties(every finite score +0.0)  EXACT
+  t_q=4 sparse(n_fin < select_k)           EXACT
+  t_q=4 empty(all -inf)                    EXACT
+  t_q=4 us: shipped 85.4  parallel 169.8  (0.50x)   (N=5 interleaved)
+  note: the policy does NOT engage here -- the floor for t_q=4 is 262144 pools -- so the row above is information, not a bar
+
+== n_pools 49152 (196608 tokens)  [BELOW THE DOOR FLOOR - the door does not engage here] ==
+  t_q=1 mixed(40% zero ties)               EXACT
+  t_q=1 all-ties(every finite score +0.0)  EXACT
+  t_q=1 sparse(n_fin < select_k)           EXACT
+  t_q=1 empty(all -inf)                    EXACT
+  t_q=1 us: shipped 328.5  parallel 105.5  (3.12x)   (N=5 interleaved)
+  note: the policy does NOT engage here -- the floor for t_q=1 is 65536 pools -- so the row above is information, not a bar
+  t_q=4 mixed(40% zero ties)               EXACT
+  t_q=4 all-ties(every finite score +0.0)  EXACT
+  t_q=4 sparse(n_fin < select_k)           EXACT
+  t_q=4 empty(all -inf)                    EXACT
+  t_q=4 us: shipped 119.2  parallel 175.2  (0.68x)   (N=5 interleaved)
+  note: the policy does NOT engage here -- the floor for t_q=4 is 262144 pools -- so the row above is information, not a bar
+
+== n_pools 64189 (256756 tokens)  [BELOW THE DOOR FLOOR - the door does not engage here] ==
+  t_q=1 mixed(40% zero ties)               EXACT
+  t_q=1 all-ties(every finite score +0.0)  EXACT
+  t_q=1 sparse(n_fin < select_k)           EXACT
+  t_q=1 empty(all -inf)                    EXACT
+  t_q=1 us: shipped 153.0  parallel 105.2  (1.45x)   (N=5 interleaved)
+  note: the policy does NOT engage here -- the floor for t_q=1 is 65536 pools -- so the row above is information, not a bar
+  t_q=4 mixed(40% zero ties)               EXACT
+  t_q=4 all-ties(every finite score +0.0)  EXACT
+  t_q=4 sparse(n_fin < select_k)           EXACT
+  t_q=4 empty(all -inf)                    EXACT
+  t_q=4 us: shipped 222.8  parallel 209.0  (1.07x)   (N=5 interleaved)
+  note: the policy does NOT engage here -- the floor for t_q=4 is 262144 pools -- so the row above is information, not a bar
+
+== n_pools 65536 (262144 tokens) ==
+  t_q=1 mixed(40% zero ties)               EXACT
+  t_q=1 all-ties(every finite score +0.0)  EXACT
+  t_q=1 sparse(n_fin < select_k)           EXACT
+  t_q=1 empty(all -inf)                    EXACT
+  t_q=1 us: shipped 159.0  parallel 103.5  (1.54x)   (N=5 interleaved)
+  t_q=4 mixed(40% zero ties)               EXACT
+  t_q=4 all-ties(every finite score +0.0)  EXACT
+  t_q=4 sparse(n_fin < select_k)           EXACT
+  t_q=4 empty(all -inf)                    EXACT
+  t_q=4 us: shipped 224.1  parallel 195.2  (1.15x)   (N=5 interleaved)
+  note: the policy does NOT engage here -- the floor for t_q=4 is 262144 pools -- so the row above is information, not a bar
+
+== n_pools 262144 (1048576 tokens) ==
+  t_q=1 mixed(40% zero ties)               EXACT
+  t_q=1 all-ties(every finite score +0.0)  EXACT
+  t_q=1 sparse(n_fin < select_k)           EXACT
+  t_q=1 empty(all -inf)                    EXACT
+  t_q=1 us: shipped 555.7  parallel 174.2  (3.19x)   (N=5 interleaved)
+  t_q=4 mixed(40% zero ties)               EXACT
+  t_q=4 all-ties(every finite score +0.0)  EXACT
+  t_q=4 sparse(n_fin < select_k)           EXACT
+  t_q=4 empty(all -inf)                    EXACT
+  t_q=4 us: shipped 840.1  parallel 520.7  (1.61x)   (N=5 interleaved)
+
+dsa-select-gate PASS: red arm failed as required, the shipped radix kernel matches the in-tree reference, and the parallel selector is EXACT (byte-identical `idx`) at every shape in {mixed, all-ties, sparse, empty} x n_pools [4096, 8192, 32768, 49152, 64189, 65536, 262144] x t_q [1, 4]. Timing bar was diagnostic only.

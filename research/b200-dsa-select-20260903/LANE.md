@@ -249,26 +249,100 @@ the way the sibling `MLA_DSA_ATTN_ARM` table is keyed. Deliberately NOT done her
 for this door is in flight, and widening which shapes engage underneath it is the wrong order of
 operations. It wants its own PR and a B200 gate run.
 
+## 7d. Kernel gate ON THE TARGET, and the floor decision it forced (2026-09-03)
+
+`dsa-select-gate`, 2x B200 SXM (sm_100a), dev 0, N=5 interleaved, binary built from main
+`3908a431`. Receipts: `darklanes:research/glm5-b200-20260902/box/selgate/gate-b200.{txt,full}`,
+driver `box/selgate.sh`.
+
+**Exactness is perfect on sm_100a: 40/40 cells EXACT** across mixed, all-ties, sparse and empty by
+t_q 1 and 4, anchor against the in-tree reference selector IDENTICAL, and **the RED ARM DIFFERS**.
+The gate is non-vacuous on the target, not only on the rig -- which is what the whole
+exact-not-banded argument rested on.
+
+| pools | tokens | t_q=1 | t_q=4 |
+|---|---|---|---|
+| 4_096 | 16_384 | 0.20x | 0.20x |
+| 8_192 | 32_768 | 0.25x | 0.28x |
+| 32_768 | 131_072 | 0.67x | 0.35x |
+| **65_536** | **262_144** | **1.31x** | **0.94x** |
+| 262_144 | 1_048_576 | **2.81x** | **2.06x** |
+
+**That run FAILED its own regression bar**, and the failure is the finding:
+
+```
+REGRESSION kpool_select n_pools=65536 t_q=4: 311.6 us vs shipped 292.7 us (1.064x, margin 1.05x)
+```
+
+The uniform floor of 65536 was chosen from RTX 5090 data, where `t_q=4` at that point measured
+1.07x -- a small win. On the silicon this door is gated to it is **0.94x, a 6.5% loss**. So the
+floor **admitted a shape that regresses on the target**, and the door is sm_100a-only: its floor
+had been set by evidence from a card it never runs on. That is a policy-CORRECTNESS defect, not a
+missed optimisation.
+
+### The decision
+
+**The floor is now keyed on `t_q`** (`mla_dsa_select_floor`):
+
+| width | floor | why |
+|---|---|---|
+| `t_q == 1` (plain decode) | 65536 pools = 262_144 tokens | B200-measured **1.31x** |
+| `t_q >= 2` (spec verify) | 262144 pools = 1_048_576 tokens | B200-measured **2.06x**, the only pool count where this width was measured to win |
+
+Both are measured cells with **no interpolation**; everything between them at `t_q >= 2` is
+unswept, and unswept shapes do not engage.
+
+This lands together with the evidence rather than waiting for a separate PR, which is the opposite
+of the sequencing argued in section 8 for the default flip -- and deliberately so. That argument
+was about WIDENING engagement while flipping a default. This **narrows** engagement: it removes a
+measured regression and adds nothing. Narrowing to delete a known-bad shape is strictly
+derisking, and holding it back would mean knowingly leaving a floor that fails its own gate.
+
+Nothing here touches the 1M serving result: that cell ran `t_q=1`, and at 262144 pools the kernel
+is 2.81x at t_q=1 and 2.06x at t_q=4, so the door is good for both routes there. The +17.5%
+end-to-end stands.
+
+### The 5090 read this corrects
+
+Section 7c called 65536 "the first cell that wins at BOTH measured widths". True on the rig, false
+on the target: the rig put t_q=4 at 1.07x there, the pair puts it at 0.94x. The rig band table in
+7c is kept as-is because it is an accurate record of that rig -- but **quote section 7d for any
+sm_100a decision**, and treat the 5090 crossover as a direction that did not transfer.
+
+## 7e. The last prediction, now measured
+
+The floor cell (`box/selfloor.sh`, two pairs, door OFF vs ON) measured the rung just above the
+plain-decode floor end to end:
+
+| rung | pools | result |
+|---|---|---|
+| 264_290 tokens (just OVER the floor) | 66_072 | **about +2%** -- deltas +2.7% and +1.2%, arms do not overlap across the two pairs |
+| 249_251 tokens (just UNDER) | 62_312 | arms overlap, the two pairs disagree in sign -- what no effect looks like, the negative control behaving correctly with the door armed |
+
+That **replaces** the old "~0.55 ms/token, >= 1.5x at 262_144" prediction, which was wrong in KIND
+rather than degree: 1.5x was a KERNEL ratio, and at that depth the selector is a small share of
+the token, so it converts to a couple of percent end to end. The lesson is worth keeping: a kernel
+ratio only becomes a serving number after it is weighted by that kernel's share of the token, and
+at 1M the selector's share is large (hence +17.5%) while just above the floor it is not.
+
 ## 8. Open
 
-The 1M serving A/B is DONE (section 7b). What remains:
+The 1M serving A/B is done (7b), the kernel gate has run on the target (7d), the floor is keyed
+from target evidence (7d), and the last prediction is measured (7e). What remains:
 
-1. **A default-ON PR.** Justified on evidence now -- exact class, gate green with a red arm that
-   fires, and the largest measured serving win of this lane (+17.5% median at 1M, non-overlapping
-   spreads). Deliberately a SEPARATE change: flipping a default and widening which shapes engage
-   in the same week makes an unexplained regression impossible to attribute to one of them, and a
-   flip deserves its own PR and review rather than riding on a docs correction.
-2. **The `t_q`-keyed floor** (section 7c). The door refuses a 256k rung the rig measures at 1.44x
-   on the plain route, because the uniform floor is set by the worse width (`t_q=4`). Wants its
-   own PR and a B200 `dsa-select-gate` run, since the crossover is a launch-overhead-vs-sweep
-   trade and both terms differ on that silicon. Sequence it AFTER the default flip, not alongside.
-3. **`dsa-select-gate <dev> 5` on the pair** has still not been run -- the serving A/B exercised
-   the door end to end, but the kernel-level ladder (and therefore the crossover that sets
-   `MLA_DSA_SELECT_MIN_POOLS`) is still 5090-only. Item 2 needs it.
-4. The 262_144-token per-token figure in section 6 remains a PREDICTION: the three-pair cell
-   measured 1M only.
+1. **A default-ON PR.** Now unblocked. The case: the class is exact by construction and the gate
+   proved it EXACT on sm_100a itself (40/40, anchor identical, red arm fires); +17.5% median at 1M
+   with non-overlapping spreads; and the floor no longer admits the shape that regressed. Still a
+   SEPARATE PR from this one -- a default flip deserves its own review, and this PR is already
+   carrying a policy change plus its evidence.
+2. **The `t_q >= 2` band between 65536 and 262144 pools is unswept.** The spec-verify floor sits
+   at 262144 because that is the only measured win at those widths, not because 262144 is where
+   the crossover is. If the spec route matters at 256k-1M, sweeping that band on the pair would
+   likely lower it. Cheap: it is a `dsa-select-gate` ladder edit and one box run.
+3. **The composition audit (7) is still static.** No conjunct has been run in isolation; the
+   end-to-end evidence is one posture, the full best-posture stack.
 
 Historical note, kept because it explains why this doc was written prediction-first: for part of
 2026-09-03 the vast.ai account was out of credit and every instance was stopped - the B200 pair,
-the glm5 prod box, q38 and ornith - so the A/B could not be scheduled and this section read "OWED".
-That is resolved.
+the glm5 prod box, q38 and ornith - so no sm_100a cell could be scheduled and this section read
+"OWED". That is resolved.

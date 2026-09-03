@@ -30,10 +30,11 @@
 use cudarc::driver::{CudaSlice, DevicePtr, DevicePtrMut};
 use memra_engine::Engine;
 use memra_engine::mla_ffi::{
-    MLA_DSA_REGRESSION_MARGIN, MLA_DSA_SELECT_MIN_POOLS, memra_mla_kpool_select_ctas,
-    memra_mla_kpool_select_dsa_f32, memra_mla_kpool_select_dsa_redarm_f32,
-    memra_mla_kpool_select_f32, memra_mla_kpool_select_ref_f32, memra_mla_kpool_select_ws_ints,
-    mla_dsa_select_engages,
+    MLA_DSA_REGRESSION_MARGIN, MLA_DSA_SELECT_MIN_POOLS, MLA_DSA_SELECT_MIN_POOLS_SPEC,
+    memra_mla_kpool_select_ctas, memra_mla_kpool_select_dsa_f32,
+    memra_mla_kpool_select_dsa_redarm_f32, memra_mla_kpool_select_f32,
+    memra_mla_kpool_select_ref_f32, memra_mla_kpool_select_ws_ints, mla_dsa_select_engages,
+    mla_dsa_select_floor,
 };
 use std::os::raw::c_void;
 use std::sync::Arc;
@@ -179,7 +180,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!(
         "dsa-select-gate: device {dev}, pool={POOL} select_k={SELECT_K} width={WIDTH}, \
-         rounds={rounds}, engages at n_pools >= {MLA_DSA_SELECT_MIN_POOLS}, timing bar {}",
+         rounds={rounds}, floor is KEYED ON t_q (t_q=1: n_pools >= \
+         {MLA_DSA_SELECT_MIN_POOLS}; t_q >= 2: >= {MLA_DSA_SELECT_MIN_POOLS_SPEC}, because a \
+         uniform floor admitted a shape that REGRESSES on sm_100a), timing bar {}",
         if TIMING_IS_BINDING {
             "BINDING (sm_100a build)"
         } else {
@@ -466,8 +469,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             if !mla_dsa_select_engages(t, n_pools) {
                 println!(
-                    "  note: the policy does NOT engage here (n_pools < {MLA_DSA_SELECT_MIN_POOLS} \
-                     or t_q > 8), so the row above is information, not a bar"
+                    "  note: the policy does NOT engage here -- the floor for t_q={t} is {} pools \
+                     -- so the row above is information, not a bar",
+                    mla_dsa_select_floor(t)
                 );
             }
         }

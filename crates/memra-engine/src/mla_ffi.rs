@@ -373,51 +373,49 @@ fn mla_dsa_select_on() -> bool {
     cfg!(memra_sm100_tcgen05) && std::env::var("MEMRA_B200_DSA_SELECT").as_deref() == Ok("1")
 }
 
-/// The select door engages only from this pool count up, and the value is MEASURED, not
-/// inherited.
+/// Pool-count floor for PLAIN DECODE (`t_q == 1`). The floor for the spec-verify widths is
+/// separate and much higher: see [`MLA_DSA_SELECT_MIN_POOLS_SPEC`].
 ///
 /// **THE FLOOR IN TOKENS IS 262_144 EXACTLY (65536 pools x pool 4), AND A PROMPT CALLED "256k"
 /// IS USUALLY BELOW IT.** Read that before sizing any cell against this door. A 256k serving
 /// rung is ~256_756 tokens, which is 64_189 pools -- 1_347 pools and 5_388 tokens short, 2.06%
 /// under the floor -- so it engages NOTHING and measures noise. This cost a real B200 cell on
-/// 2026-09-03: the rung was sized from an earlier note that said "n_pools >= 65536 (256k context
-/// at pool=4)", which is true only if "256k" means the binary 262_144 and not the ~256.8k a
-/// prompt of that name actually carries. Every context figure below is therefore written as an
-/// exact token count, never as a "k".
+/// 2026-09-03. Every context figure here is an exact token count, never a "k".
 ///
-/// Measured, RTX 5090, N=5 interleaved -- an exactness rig, so direction only:
+/// MEASURED ON THE TARGET, 2026-09-03 (`dsa-select-gate`, 2x B200 SXM sm_100a, dev 0, N=5
+/// interleaved, binary built from main `3908a431`; receipts
+/// `darklanes:research/glm5-b200-20260902/box/selgate/gate-b200.{txt,full}`, driver
+/// `box/selgate.sh`):
 ///
-/// | n_pools | context (tokens) | t_q=1 | t_q=4 |
+/// | pools | tokens | t_q=1 | t_q=4 |
 /// |---|---|---|---|
-/// | 4096 | 16_384 | 0.20x | 0.19x |
-/// | 8192 | 32_768 | 0.25x | 0.25x |
-/// | 32768 | 131_072 | 0.90x | 0.51x |
-/// | 49152 | 196_608 | **1.13x** | 0.64x |
-/// | 64189 | 256_756 | **1.44x** | 1.02x |
-/// | **65536** | **262_144** | **1.53x** | **1.07x** |
-/// | 262144 | 1_048_576 | **3.13x** | **1.95x** |
+/// | 4_096 | 16_384 | 0.20x | 0.20x |
+/// | 8_192 | 32_768 | 0.25x | 0.28x |
+/// | 32_768 | 131_072 | 0.67x | 0.35x |
+/// | **65_536** | **262_144** | **1.31x** | **0.94x** |
+/// | 262_144 | 1_048_576 | **2.81x** | **2.06x** |
 ///
-/// The pipeline is SIX launches where the shipped kernel is one, so below the crossover that
-/// fixed cost is simply larger than the sweep it removes. That is the honest reason this is a
-/// DEPTH door. An initial guess of 4096 (inherited from `MLA_DSA_SCORE_MIN_POOLS`) would have
-/// shipped a measured 4.6x REGRESSION at 32_768 tokens, and the gate's regression bar caught it.
+/// WHY THIS IS KEYED ON `t_q` AND NOT ONE NUMBER, and it is a policy-CORRECTNESS fix rather
+/// than a tuning one. A single floor of 65536 was chosen from RTX 5090 data, where `t_q=4` at
+/// that point measured 1.07x -- a small win. On the silicon this door is actually gated to it is
+/// **0.94x, a 6.5% LOSS**, and `dsa-select-gate`'s own regression bar caught it
+/// (`REGRESSION kpool_select n_pools=65536 t_q=4: 311.6 us vs shipped 292.7 us (1.064x)`). A
+/// uniform floor therefore ADMITTED A SHAPE THAT REGRESSES ON THE TARGET: the door is
+/// sm_100a-only, and its floor was set by evidence from a card it never runs on. Keying the
+/// floor removes that shape without giving up either measured win.
 ///
-/// **`t_q=4` IS WHAT HOLDS THIS FLOOR UP, not `t_q=1`.** Plain decode crosses into profit around
-/// 49152 pools (196_608 tokens, 1.13x) and is a clear 1.44x by 64189; the DFlash2 spec-verify
-/// width is still 0.64x at 49152 and only reaches parity around 64189 (1.02x). Because the door
-/// engages uniformly across `t_q <= MLA_DSA_SELECT_T_MAX`, the floor is set by the WORSE width,
-/// and 65536 is the first swept cell that wins at both.
-///
-/// KNOWN GAP, worth a decision rather than a shrug: a real 256k serving rung (64_189 pools) sits
-/// 2.06% under this floor, so the door refuses a shape the rig measures at **1.44x on the plain
-/// route**. Covering it does not need this constant moved -- it needs the floor KEYED ON `t_q`,
-/// the way the sibling `MLA_DSA_ATTN_ARM` table is keyed, with a lower floor for plain decode
-/// and this one retained for the spec-verify widths. That change is deliberately NOT made here:
-/// a default-ON PR for this door is in flight, and quietly widening which shapes engage
-/// underneath it is the wrong order of operations. It needs its own PR and a B200 gate run,
-/// because the crossover is a launch-overhead-vs-sweep trade and both terms differ on that
-/// silicon.
+/// Both values are measured cells with NO interpolation. `t_q == 1` keeps 65536 (1.31x on the
+/// pair). `t_q >= 2` takes 262144, the ONLY pool count where the spec-verify width was measured
+/// to win (2.06x); everything between 65536 and 262144 at those widths is unswept, and unswept
+/// shapes do not engage.
 pub const MLA_DSA_SELECT_MIN_POOLS: usize = 65_536;
+
+/// Pool-count floor for the DFlash2 spec-verify widths (`t_q >= 2`), where the parallel selector
+/// needs far more pools to pay for its six launches: the shipped kernel already has `t_q` CTAs
+/// of parallelism at those widths, so there is much less to win. B200-measured 0.94x at 65536
+/// pools and 2.06x at 262144, so this is 262144 -- the only measured win. See
+/// [`MLA_DSA_SELECT_MIN_POOLS`] for the full ladder and why the floor is keyed at all.
+pub const MLA_DSA_SELECT_MIN_POOLS_SPEC: usize = 262_144;
 
 /// Widest query width the select door keys on: decode and the spec-verify batch. Wider widths
 /// already have `t_q` CTAs of parallelism and fall through to the shipped kernel untouched.
@@ -426,7 +424,21 @@ pub const MLA_DSA_SELECT_T_MAX: usize = 8;
 /// Whether the serving policy engages the parallel selector at this shape. Pure, so the gate
 /// reads the same predicate the wrapper does and the two cannot drift apart.
 pub fn mla_dsa_select_engages(t_q: usize, n_pools: usize) -> bool {
-    (1..=MLA_DSA_SELECT_T_MAX).contains(&t_q) && n_pools >= MLA_DSA_SELECT_MIN_POOLS
+    if !(1..=MLA_DSA_SELECT_T_MAX).contains(&t_q) {
+        return false;
+    }
+    n_pools >= mla_dsa_select_floor(t_q)
+}
+
+/// The pool-count floor at this width. Keyed because a single floor admitted a shape that
+/// REGRESSES on sm_100a (t_q=4 at 65536 pools, 0.94x on the pair); see
+/// [`MLA_DSA_SELECT_MIN_POOLS`]. Pure, so the gate reads the same floor the wrapper does.
+pub fn mla_dsa_select_floor(t_q: usize) -> usize {
+    if t_q == 1 {
+        MLA_DSA_SELECT_MIN_POOLS
+    } else {
+        MLA_DSA_SELECT_MIN_POOLS_SPEC
+    }
 }
 
 fn mla_dsa_select_announce(t_q: usize, n_pools: usize, n_ctas: i32) {
