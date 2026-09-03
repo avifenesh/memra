@@ -2115,10 +2115,13 @@ What the ENGINE owns, and exposes publicly:
 - `memra_server::ServerWiring` — `stock()` runs the open engine with NO accounting;
   `with_metering(factory)` compiles a deployment's implementation in;
   `claiming(var)` declares which deployment-surface env vars that binary consumes
-  itself; `on_ready(RuntimeHandles { trim, shutdown })` hands over the engine trim
-  handle and the drain shutdown signal at worker-ready. A deployment surface MUST end
-  and drop its `TrimHandle` on the shutdown signal — the handle wraps a worker command
-  sender, and the GPU worker only exits when every sender drops.
+  itself; `on_ready(RuntimeHandles { trim, metadata_reload, .. })` hands over
+  the engine trim handle, the model-metadata reload handle, and the drain shutdown
+  signal at worker-ready. A deployment surface MUST end
+  and drop its `TrimHandle` (and its `PurgeHandle` and `HostHandoffHandle`, which
+  wrap worker command senders like it) on the shutdown signal — the GPU worker
+  only exits when every sender drops.
+  (`MetadataReloadHandle` is memory-only and needs no drop.)
 - The handler obligations behind that seam are tested here with a recording mock
   (deadline partial vs unbilled, worker-truth usage sync, admission-denial mapping,
   disconnect partials, byte-exact capture feeding); what the counts COST is the

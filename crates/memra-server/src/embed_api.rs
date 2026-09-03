@@ -175,7 +175,7 @@ async fn run_capture(
     };
     if let Err((message, param)) = crate::apply_model_request_limits(
         &mut request,
-        st.openrouter_metadata.get(model),
+        st.metadata().models.get(model),
         st.caps.get(model),
     ) {
         return Err(crate::bad_request(&message, Some(param)));
