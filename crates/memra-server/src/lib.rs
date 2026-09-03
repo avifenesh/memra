@@ -1727,8 +1727,8 @@ fn load_openrouter_metadata(
 /// Memory-only: unlike the worker-command handles this one needs no drop on
 /// the shutdown signal.
 ///
-/// `Default` is the unwired state (empty set, no path): a reload on it fails
-/// closed, which is what deployment-surface tests assert the pre-ready route
+/// `Default` is the unwired state (empty set, empty roster, no path): a reload
+/// on it fails closed, which is what deployment-surface tests assert the pre-ready route
 /// with — beyond that, surfaces receive the wired handle from `on_ready`.
 #[derive(Clone, Default)]
 pub struct MetadataReloadHandle {
