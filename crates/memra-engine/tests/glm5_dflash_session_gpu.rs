@@ -2640,12 +2640,12 @@ fn gpu_dflash_device_resident_drafter_prime_kv_matches_eager_ingest() {
 // Gates 17-20 — THE SPEC EXCLUSIONS LANE (lane/spec-exclusions-20260902): the two doors that
 // admit request classes the route used to serve plain. Every gate here is exactness only.
 //
-// 19. PENALTY ARM, greedy: a penalized GREEDY request's served tape is byte-identical to the
+// 17. PENALTY ARM, greedy: a penalized GREEDY request's served tape is byte-identical to the
 //     plain penalized sampler's (the host `Sampler`: prompt accepted into the history, then
 //     penalize-and-argmax per token), K=1..7 across burst boundaries; the penalties visibly
 //     engage (the tape differs from the unpenalized plain tape, so the gate is not vacuous);
 //     and with the door dark the session REFUSES (the pre-lane posture, verbatim).
-// 20. DEVICE PENALTIES == HOST SAMPLER, bit for bit: `penalize_logits_rows_inc` (the round's
+// 18. DEVICE PENALTIES == HOST SAMPLER, bit for bit: `penalize_logits_rows_inc` (the round's
 //     per-row evolving window) and `penalize_logits` (the anchor) produce the host
 //     `Sampler::penalized_logits` bytes over random rows and histories with repeats, for
 //     every coefficient class and for a window that slides. This is the property gate 17's
