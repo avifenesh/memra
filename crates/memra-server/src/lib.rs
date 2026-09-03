@@ -1726,7 +1726,11 @@ fn load_openrouter_metadata(
 ///
 /// Memory-only: unlike the worker-command handles this one needs no drop on
 /// the shutdown signal.
-#[derive(Clone)]
+///
+/// `Default` is the unwired state (empty set, no path): a reload on it fails
+/// closed, which is what deployment-surface tests assert the pre-ready route
+/// with — beyond that, surfaces receive the wired handle from `on_ready`.
+#[derive(Clone, Default)]
 pub struct MetadataReloadHandle {
     cell: Arc<RwLock<Arc<ModelMetadataSet>>>,
     /// The boot `MEMRA_MODELS` roster in full: the alias subset check runs
