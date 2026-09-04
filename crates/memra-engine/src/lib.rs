@@ -933,13 +933,28 @@ fn q8_row_ilp_note(site: &str) {
     }
 }
 
-/// `MEMRA_NVFP4_ROW_ILP=1` (lane/glm5-nvfp4-row-ilp-20260904, default OFF): the NVFP4
+/// `MEMRA_NVFP4_ROW_ILP` (lane/glm5-nvfp4-row-ilp-20260904; default ON on sm_100a builds since
+/// 2026-09-04, OFF elsewhere, `=0`/`=1` override): the NVFP4
 /// split-plane trunk matvec (`qmatvec_nvfp4_mmvq_mr2_rp`, and `qmatvec_nvfp4_mmvq_rp` when the
 /// B200 grid-fill arm picks mr1) takes its `_ilp` twin: four groups' loads per lane issued
 /// ahead of the table lookups and dp4a chains, same per-row accumulation order. Read PER CALL.
 /// Why and receipts: the kernel header in cu/qmatvec.cu and docs/FLAGS.md.
 pub(crate) fn nvfp4_row_ilp_on() -> bool {
-    std::env::var("MEMRA_NVFP4_ROW_ILP").as_deref() == Ok("1")
+    nvfp4_row_ilp_on_from(
+        std::env::var("MEMRA_NVFP4_ROW_ILP").ok().as_deref(),
+        env!("MEMRA_BUILT_CUDA_ARCH"),
+    )
+}
+
+/// The pure parse behind [`nvfp4_row_ilp_on`]: `1` arms, `0` disarms, unset follows the BUILD
+/// ARCH (ON for `100a`, OFF otherwise): the twins carry a 2x B200 receipt (+1.98% alone, +2.55%
+/// with the grid fill, darklanes research/glm5-b200-20260902/LANE.md, nvab) and no SM120 one.
+pub fn nvfp4_row_ilp_on_from(v: Option<&str>, built_arch: &str) -> bool {
+    match v.map(str::trim) {
+        Some("1") => true,
+        Some("0") => false,
+        _ => built_arch == "100a",
+    }
 }
 
 /// Engagement counter for `MEMRA_NVFP4_ROW_ILP`; gates take a delta.
@@ -951,7 +966,8 @@ pub fn nvfp4_row_ilp_dispatches() -> u64 {
     NVFP4_ROW_ILP_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// `MEMRA_B200_MR1_FILL=<blocks per SM>` (lane/glm5-nvfp4-row-ilp-20260904, default 2 = the
+/// `MEMRA_B200_MR1_FILL=<blocks per SM>` (lane/glm5-nvfp4-row-ilp-20260904; default 16 since
+/// 2026-09-04, receipt +2.03% alone / +2.55% with the ILP twin on the pair; 2 was the
 /// lane/b200-matvec-occupancy-20260902 threshold): the B200 grid-fill arm of the NVFP4 m=1
 /// decode matvec (under `MEMRA_B200_MATVEC_ARM=1`) forces mr1 (two warps per row pair -> one
 /// warp per row, the shipped `qmatvec_nvfp4_mmvq_rp`) when the mr2 grid would be fewer than
@@ -964,7 +980,7 @@ pub(crate) fn b200_mr1_fill() -> u32 {
             .ok()
             .and_then(|v| v.trim().parse::<u32>().ok())
             .filter(|&n| n >= 1)
-            .unwrap_or(2)
+            .unwrap_or(16)
     })
 }
 
@@ -2838,6 +2854,15 @@ mod verify_ws_flag_tests {
 #[cfg(test)]
 mod moe_vrows_ilp_default_tests {
     use super::moe_vrows_ilp_on_from;
+
+    #[test]
+    fn nvfp4_row_ilp_arch_keyed_default() {
+        use super::nvfp4_row_ilp_on_from;
+        assert!(nvfp4_row_ilp_on_from(None, "100a"));
+        assert!(!nvfp4_row_ilp_on_from(None, "120a"));
+        assert!(nvfp4_row_ilp_on_from(Some("1"), "120a"));
+        assert!(!nvfp4_row_ilp_on_from(Some("0"), "100a"));
+    }
 
     #[test]
     fn q8_row_ilp_arch_keyed_default() {
