@@ -96,14 +96,33 @@ __device__ __forceinline__ float dsv4_e2m1_rne(float v) {
 __device__ __forceinline__ float dsv4_sigmoid(float x) { return 1.0f / (1.0f + expf(-x)); }
 
 // block tree-reduce of double partials in shared memory (deterministic: fixed tree).
+// Block reduction with a SHUFFLE tail. Same pairing and same order as the all-shared tree it
+// replaces -- level `off` still computes `x[tid] + x[tid + off]`, descending -- so it is
+// bit-identical by construction, not a numeric class.
+//
+// WHY THE TAIL IS SHUFFLES AND NOT JUST A CHEAPER BARRIER. ncu on the hc pre-chain's kernel at
+// the served decode shape (grid 1, block 512, 2026-09-04) samples the stalls as
+// short_scoreboard 8, wait 6, barrier 3, long_scoreboard 0: the dominant stall is SHARED-MEMORY
+// dependent access, global memory never stalls at all, and barriers are a third of what shared
+// traffic costs. A warp-tail that kept the shared round trips and only swapped __syncthreads for
+// __syncwarp measured NEUTRAL (7103 vs 7200 ns) for exactly that reason. From `off <= 16` every
+// active lane and every value it needs live in warp 0, so `__shfl_down_sync(m, v, off)` delivers
+// lane tid+off's value directly and the shared round trip disappears.
 __device__ __forceinline__ double dsv4_block_sum(double v, double* sh) {
     int tid = threadIdx.x;
     sh[tid] = v;
     __syncthreads();
-    for (int off = blockDim.x >> 1; off > 0; off >>= 1) {
+    int off = blockDim.x >> 1;
+    for (; off >= 32; off >>= 1) {
         if (tid < off) sh[tid] += sh[tid + off];
         __syncthreads();
     }
+    if (tid < 32) {
+        double x = sh[tid];
+        for (; off > 0; off >>= 1) x += __shfl_down_sync(0xffffffffu, x, off);
+        if (tid == 0) sh[0] = x;
+    }
+    __syncthreads();
     return sh[0];
 }
 
@@ -2154,14 +2173,33 @@ extern "C" int memra_dsv4_argmax(const float* v, long n, int* out, void* stream_
 // only) or the rung reverts.
 
 // float twin of dsv4_block_sum (same fixed tree).
+// Block reduction with a SHUFFLE tail. Same pairing and same order as the all-shared tree it
+// replaces -- level `off` still computes `x[tid] + x[tid + off]`, descending -- so it is
+// bit-identical by construction, not a numeric class.
+//
+// WHY THE TAIL IS SHUFFLES AND NOT JUST A CHEAPER BARRIER. ncu on the hc pre-chain's kernel at
+// the served decode shape (grid 1, block 512, 2026-09-04) samples the stalls as
+// short_scoreboard 8, wait 6, barrier 3, long_scoreboard 0: the dominant stall is SHARED-MEMORY
+// dependent access, global memory never stalls at all, and barriers are a third of what shared
+// traffic costs. A warp-tail that kept the shared round trips and only swapped __syncthreads for
+// __syncwarp measured NEUTRAL (7103 vs 7200 ns) for exactly that reason. From `off <= 16` every
+// active lane and every value it needs live in warp 0, so `__shfl_down_sync(m, v, off)` delivers
+// lane tid+off's value directly and the shared round trip disappears.
 __device__ __forceinline__ float dsv4_block_sum_f32(float v, float* sh) {
     int tid = threadIdx.x;
     sh[tid] = v;
     __syncthreads();
-    for (int off = blockDim.x >> 1; off > 0; off >>= 1) {
+    int off = blockDim.x >> 1;
+    for (; off >= 32; off >>= 1) {
         if (tid < off) sh[tid] += sh[tid + off];
         __syncthreads();
     }
+    if (tid < 32) {
+        float x = sh[tid];
+        for (; off > 0; off >>= 1) x += __shfl_down_sync(0xffffffffu, x, off);
+        if (tid == 0) sh[0] = x;
+    }
+    __syncthreads();
     return sh[0];
 }
 
