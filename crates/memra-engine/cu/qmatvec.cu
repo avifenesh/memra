@@ -6702,21 +6702,47 @@ __device__ __forceinline__ nvfp4_grp_regs nvfp4_v1_load_g(const unsigned char* w
 __device__ __forceinline__ float nvfp4_regs_dot(const nvfp4_grp_regs& r, const int* aq4, float d8) {
     return expert_dot_nvfp4_core_regs(r.q0, r.q1, r.q2, r.q3, r.d0, r.d1, aq4, d8);
 }
+// The slot-major (QT_NVFP4_V2) group loader (lane/glm5-moe-rows-ilp-v2-20260904): slot g's 16
+// quant bytes at g*16 (one 16 B window per lane, contiguous across the warp) and its two UE4M3
+// scale bytes at nsb*16 + (g>>1)*4 + s0, exactly the bytes `expert_dot_nvfp4_v2_g` reads.
+__device__ __forceinline__ nvfp4_grp_regs nvfp4_v2_load_g(const unsigned char* wrow, int g, int nsb) {
+    const unsigned char* qh = wrow + (size_t)g * 16;
+    const unsigned char* sc = wrow + (size_t)nsb * 16 + (size_t)(g >> 1) * 4 + (g & 1) * 2;
+    nvfp4_grp_regs r;
+    r.q0 = get_int_b4(qh);
+    r.q1 = get_int_b4(qh + 4);
+    r.q2 = get_int_b4(qh + 8);
+    r.q3 = get_int_b4(qh + 12);
+    r.d0 = sc[0];
+    r.d1 = sc[1];
+    return r;
+}
+template <bool V2>
+__device__ __forceinline__ nvfp4_grp_regs nvfp4_load_g(const unsigned char* wrow, int g, int nsb) {
+    return V2 ? nvfp4_v2_load_g(wrow, g, nsb) : nvfp4_v1_load_g(wrow, g);
+}
+template <bool V2>
+__device__ __forceinline__ float nvfp4_tail_dot(const unsigned char* wrow, int g, int nsb,
+                                                const signed char* aqb, float d8) {
+    return V2 ? expert_dot_nvfp4_v2_g(wrow, g, nsb, aqb, d8) : expert_dot_nvfp4_g(wrow, g, aqb, d8);
+}
 // gate/up per-warp body: two planes, loads hoisted 4 groups deep, then 2, then singles.
+// V2 selects the slot-major loader (same core, same order; only the byte addresses move).
+template <bool V2>
 __device__ __forceinline__ void moe_gate_up_nvfp4_rows_ilp_body(
         const unsigned char* __restrict__ grow, const unsigned char* __restrict__ urow,
         const signed char* __restrict__ arow, const float* __restrict__ adrow, int nsb, int lane,
         float& accg, float& accu) {
     int g = lane;
     for (; g + 96 < nsb; g += 128) {
-        nvfp4_grp_regs g0 = nvfp4_v1_load_g(grow, g);
-        nvfp4_grp_regs g1 = nvfp4_v1_load_g(grow, g + 32);
-        nvfp4_grp_regs g2 = nvfp4_v1_load_g(grow, g + 64);
-        nvfp4_grp_regs g3 = nvfp4_v1_load_g(grow, g + 96);
-        nvfp4_grp_regs u0 = nvfp4_v1_load_g(urow, g);
-        nvfp4_grp_regs u1 = nvfp4_v1_load_g(urow, g + 32);
-        nvfp4_grp_regs u2 = nvfp4_v1_load_g(urow, g + 64);
-        nvfp4_grp_regs u3 = nvfp4_v1_load_g(urow, g + 96);
+        nvfp4_grp_regs g0 = nvfp4_load_g<V2>(grow, g, nsb);
+        nvfp4_grp_regs g1 = nvfp4_load_g<V2>(grow, g + 32, nsb);
+        nvfp4_grp_regs g2 = nvfp4_load_g<V2>(grow, g + 64, nsb);
+        nvfp4_grp_regs g3 = nvfp4_load_g<V2>(grow, g + 96, nsb);
+        nvfp4_grp_regs u0 = nvfp4_load_g<V2>(urow, g, nsb);
+        nvfp4_grp_regs u1 = nvfp4_load_g<V2>(urow, g + 32, nsb);
+        nvfp4_grp_regs u2 = nvfp4_load_g<V2>(urow, g + 64, nsb);
+        nvfp4_grp_regs u3 = nvfp4_load_g<V2>(urow, g + 96, nsb);
         const int* a0 = (const int*)(arow + (size_t)g * 32);
         const int* a1 = (const int*)(arow + (size_t)(g + 32) * 32);
         const int* a2 = (const int*)(arow + (size_t)(g + 64) * 32);
@@ -6732,10 +6758,10 @@ __device__ __forceinline__ void moe_gate_up_nvfp4_rows_ilp_body(
         accu += nvfp4_regs_dot(u3, a3, d83);
     }
     for (; g + 32 < nsb; g += 64) {
-        nvfp4_grp_regs g0 = nvfp4_v1_load_g(grow, g);
-        nvfp4_grp_regs g1 = nvfp4_v1_load_g(grow, g + 32);
-        nvfp4_grp_regs u0 = nvfp4_v1_load_g(urow, g);
-        nvfp4_grp_regs u1 = nvfp4_v1_load_g(urow, g + 32);
+        nvfp4_grp_regs g0 = nvfp4_load_g<V2>(grow, g, nsb);
+        nvfp4_grp_regs g1 = nvfp4_load_g<V2>(grow, g + 32, nsb);
+        nvfp4_grp_regs u0 = nvfp4_load_g<V2>(urow, g, nsb);
+        nvfp4_grp_regs u1 = nvfp4_load_g<V2>(urow, g + 32, nsb);
         const int* a0 = (const int*)(arow + (size_t)g * 32);
         const int* a1 = (const int*)(arow + (size_t)(g + 32) * 32);
         float d80 = adrow[g], d81 = adrow[g + 32];
@@ -6747,34 +6773,35 @@ __device__ __forceinline__ void moe_gate_up_nvfp4_rows_ilp_body(
     for (; g < nsb; g += 32) {
         const signed char* aqb = arow + (size_t)g * 32;
         float d8 = adrow[g];
-        accg += expert_dot_nvfp4_g(grow, g, aqb, d8);
-        accu += expert_dot_nvfp4_g(urow, g, aqb, d8);
+        accg += nvfp4_tail_dot<V2>(grow, g, nsb, aqb, d8);
+        accu += nvfp4_tail_dot<V2>(urow, g, nsb, aqb, d8);
     }
 }
 // down per-warp body: one plane, same hoisting; returns the un-reduced lane partial.
+template <bool V2>
 __device__ __forceinline__ float moe_down_nvfp4_rows_ilp_body(
         const unsigned char* __restrict__ wrow, const signed char* __restrict__ arow,
         const float* __restrict__ adrow, int nsb, int lane) {
     float acc = 0.0f;
     int g = lane;
     for (; g + 96 < nsb; g += 128) {
-        nvfp4_grp_regs w0 = nvfp4_v1_load_g(wrow, g);
-        nvfp4_grp_regs w1 = nvfp4_v1_load_g(wrow, g + 32);
-        nvfp4_grp_regs w2 = nvfp4_v1_load_g(wrow, g + 64);
-        nvfp4_grp_regs w3 = nvfp4_v1_load_g(wrow, g + 96);
+        nvfp4_grp_regs w0 = nvfp4_load_g<V2>(wrow, g, nsb);
+        nvfp4_grp_regs w1 = nvfp4_load_g<V2>(wrow, g + 32, nsb);
+        nvfp4_grp_regs w2 = nvfp4_load_g<V2>(wrow, g + 64, nsb);
+        nvfp4_grp_regs w3 = nvfp4_load_g<V2>(wrow, g + 96, nsb);
         acc += nvfp4_regs_dot(w0, (const int*)(arow + (size_t)g * 32), adrow[g]);
         acc += nvfp4_regs_dot(w1, (const int*)(arow + (size_t)(g + 32) * 32), adrow[g + 32]);
         acc += nvfp4_regs_dot(w2, (const int*)(arow + (size_t)(g + 64) * 32), adrow[g + 64]);
         acc += nvfp4_regs_dot(w3, (const int*)(arow + (size_t)(g + 96) * 32), adrow[g + 96]);
     }
     for (; g + 32 < nsb; g += 64) {
-        nvfp4_grp_regs w0 = nvfp4_v1_load_g(wrow, g);
-        nvfp4_grp_regs w1 = nvfp4_v1_load_g(wrow, g + 32);
+        nvfp4_grp_regs w0 = nvfp4_load_g<V2>(wrow, g, nsb);
+        nvfp4_grp_regs w1 = nvfp4_load_g<V2>(wrow, g + 32, nsb);
         acc += nvfp4_regs_dot(w0, (const int*)(arow + (size_t)g * 32), adrow[g]);
         acc += nvfp4_regs_dot(w1, (const int*)(arow + (size_t)(g + 32) * 32), adrow[g + 32]);
     }
     for (; g < nsb; g += 32)
-        acc += expert_dot_nvfp4_g(wrow, g, arow + (size_t)g * 32, adrow[g]);
+        acc += nvfp4_tail_dot<V2>(wrow, g, nsb, arow + (size_t)g * 32, adrow[g]);
     return acc;
 }
 __device__ __forceinline__ void moe_gate_up_rows_ilp_warp(
@@ -6790,7 +6817,9 @@ __device__ __forceinline__ void moe_gate_up_rows_ilp_warp(
     const float* adrow = ad + (size_t)tok * nsb;
     float accg = 0.0f, accu = 0.0f;
     if (qt_g == QT_NVFP4 && qt_u == QT_NVFP4) {
-        moe_gate_up_nvfp4_rows_ilp_body(grow, urow, arow, adrow, nsb, lane, accg, accu);
+        moe_gate_up_nvfp4_rows_ilp_body<false>(grow, urow, arow, adrow, nsb, lane, accg, accu);
+    } else if (qt_g == QT_NVFP4_V2 && qt_u == QT_NVFP4_V2) {
+        moe_gate_up_nvfp4_rows_ilp_body<true>(grow, urow, arow, adrow, nsb, lane, accg, accu);
     } else {
         accg = accu = __int_as_float(0x7fc00000);  // wiring error: poison, never a silent zero
     }
@@ -6836,8 +6865,9 @@ __device__ __forceinline__ void moe_down_rows_ilp_warp(
         const unsigned char* wrow = (const unsigned char*)ptrs[2 * n_pairs + pr] + (long)o * rb;
         const signed char* arow = aq2 + (size_t)pr * in_f;
         const float* adrow = ad2 + (size_t)pr * nsb;
-        float acc = (qt == QT_NVFP4) ? moe_down_nvfp4_rows_ilp_body(wrow, arow, adrow, nsb, lane)
-                                     : __int_as_float(0x7fc00000);
+        float acc = (qt == QT_NVFP4)      ? moe_down_nvfp4_rows_ilp_body<false>(wrow, arow, adrow, nsb, lane)
+                    : (qt == QT_NVFP4_V2) ? moe_down_nvfp4_rows_ilp_body<true>(wrow, arow, adrow, nsb, lane)
+                                          : __int_as_float(0x7fc00000);
         acc = warp_reduce_sum(acc);
         if (lane == 0) chain = __fmaf_rn(scl[2 * n_pairs + pr], acc, chain);
     }

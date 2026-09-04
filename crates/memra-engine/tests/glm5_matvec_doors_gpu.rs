@@ -499,6 +499,41 @@ fn moe_pairs_program(
     limit: f32,
     mutate: impl Fn(&mut Vec<u64>, &mut Vec<f32>, usize),
 ) -> Vec<f32> {
+    moe_pairs_program_qt(
+        e,
+        slabs,
+        slabs_d,
+        macros,
+        z,
+        sel,
+        w,
+        t,
+        n_used,
+        (in_f, n_ff),
+        limit,
+        mutate,
+        memra_engine::QT_NVFP4,
+    )
+}
+
+/// [`moe_pairs_program`] with the expert qtype explicit (QT_NVFP4 interleaved, or QT_NVFP4_V2
+/// slot-major for slabs repacked by `nvfp4_expert_split_repack`).
+#[allow(clippy::too_many_arguments)]
+fn moe_pairs_program_qt(
+    e: &Engine,
+    slabs: &(cudarc::driver::CudaSlice<u8>, usize, usize),
+    slabs_d: &(cudarc::driver::CudaSlice<u8>, usize, usize),
+    macros: &(Vec<f32>, Vec<f32>, Vec<f32>),
+    z: &[f32],
+    sel: &[u32],
+    w: &[f32],
+    t: usize,
+    n_used: usize,
+    (in_f, n_ff): (usize, usize),
+    limit: f32,
+    mutate: impl Fn(&mut Vec<u64>, &mut Vec<f32>, usize),
+    qt: i32,
+) -> Vec<f32> {
     use cudarc::driver::DevicePtr;
     let (slab_gu, rb_gu, stride_gu) = slabs;
     let (slab_d, rb_d, stride_d) = slabs_d;
@@ -524,19 +559,7 @@ fn moe_pairs_program(
     let (zq, zd) = e.quantize_q8_1(&z_d, t, in_f).expect("batched quantize");
     let act = e
         .moe_gate_up_preclamp8_q8_rows(
-            &ptrs_d,
-            &scl_d,
-            &zq,
-            &zd,
-            limit,
-            in_f,
-            n_ff,
-            n_used,
-            n_pairs,
-            memra_engine::QT_NVFP4,
-            memra_engine::QT_NVFP4,
-            *rb_gu,
-            *rb_gu,
+            &ptrs_d, &scl_d, &zq, &zd, limit, in_f, n_ff, n_used, n_pairs, qt, qt, *rb_gu, *rb_gu,
         )
         .expect("gate/up rows launch");
     let (aq2, ad2) = e
@@ -544,17 +567,7 @@ fn moe_pairs_program(
         .expect("pair act quantize");
     let mut out = e.uninit(t * in_f).expect("out");
     e.moe_down8_fma_q8_rows(
-        &ptrs_d,
-        &scl_d,
-        &aq2,
-        &ad2,
-        &mut out,
-        n_ff,
-        in_f,
-        n_used,
-        n_pairs,
-        memra_engine::QT_NVFP4,
-        *rb_d,
+        &ptrs_d, &scl_d, &aq2, &ad2, &mut out, n_ff, in_f, n_used, n_pairs, qt, *rb_d,
     )
     .expect("down rows launch");
     e.dtoh(&out).expect("pairs readback")
@@ -998,5 +1011,136 @@ fn gpu_moe_ilp_matches_shipped_pair_bitwise() {
             "in_f={in_f}: ILP swapped-pair red arm produced identical outputs"
         );
         println!("door I RED bites in_f={in_f}: {d} outputs differ with swapped pair rows");
+    }
+}
+
+/// Door I on the SLOT-MAJOR expert layout (`QT_NVFP4_V2`, the `MEMRA_MOE_EXPERT_RP` resident
+/// repack): the `_ilp` twins' V2 loader vs the shipped pair on the same repacked slabs, bitwise,
+/// at the served nsb classes; and the repacked shipped pair vs the interleaved shipped pair
+/// (the layout identity the rp lane gated, re-bitten here so the V2 reference is not vacuous).
+#[test]
+#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
+fn gpu_moe_ilp_v2_matches_shipped_pair_bitwise() {
+    let _gpu = gpu_guard();
+    force_true_f32();
+    let e = Engine::new(0).expect("CUDA engine on device 0");
+    let (n_expert, n_used) = (16usize, 8usize);
+    let limit = 0.75f32;
+    let mk_sel = |t: usize| -> (Vec<u32>, Vec<f32>) {
+        (
+            (0..t * n_used)
+                .map(|p| ((p * 5 + p / n_used) % n_expert) as u32)
+                .collect(),
+            (0..t * n_used)
+                .map(|p| 0.1 + 0.03 * (p % 11) as f32)
+                .collect(),
+        )
+    };
+    let macros = (
+        (0..n_expert)
+            .map(|i| 0.5 + 0.07 * i as f32)
+            .collect::<Vec<_>>(),
+        (0..n_expert)
+            .map(|i| 1.6 - 0.05 * i as f32)
+            .collect::<Vec<_>>(),
+        (0..n_expert)
+            .map(|i| 0.8 + 0.04 * i as f32)
+            .collect::<Vec<_>>(),
+    );
+    for &(in_f, n_ff) in &[(256usize, 64usize), (4096, 2048)] {
+        let slabs = nvfp4_slab(&e, n_expert, n_ff, in_f, 0x2D0 + in_f as u64);
+        let slabs_d = nvfp4_slab(&e, n_expert, in_f, n_ff, 0xD2D + n_ff as u64);
+        let v2 = (
+            e.nvfp4_expert_split_repack(&slabs.0, n_expert, n_ff, in_f / 64)
+                .expect("gate/up repack"),
+            slabs.1,
+            slabs.2,
+        );
+        let v2_d = (
+            e.nvfp4_expert_split_repack(&slabs_d.0, n_expert, in_f, n_ff / 64)
+                .expect("down repack"),
+            slabs_d.1,
+            slabs_d.2,
+        );
+        for t in [1usize, 3, 8] {
+            let z = varied(t * in_f, 0x21 + t as u64 + in_f as u64, 2.0);
+            let (sel, w) = mk_sel(t);
+            let want_v1 = without_flag("MEMRA_MOE_VROWS_ILP", || {
+                moe_pairs_program(
+                    &e,
+                    &slabs,
+                    &slabs_d,
+                    &macros,
+                    &z,
+                    &sel,
+                    &w,
+                    t,
+                    n_used,
+                    (in_f, n_ff),
+                    limit,
+                    |_, _, _| {},
+                )
+            });
+            let want_v2 = without_flag("MEMRA_MOE_VROWS_ILP", || {
+                moe_pairs_program_qt(
+                    &e,
+                    &v2,
+                    &v2_d,
+                    &macros,
+                    &z,
+                    &sel,
+                    &w,
+                    t,
+                    n_used,
+                    (in_f, n_ff),
+                    limit,
+                    |_, _, _| {},
+                    memra_engine::QT_NVFP4_V2,
+                )
+            });
+            let d = bit_diffs(&want_v2, &want_v1);
+            assert_eq!(
+                d, 0,
+                "in_f={in_f} t={t}: the repacked shipped pair diverged from the interleaved shipped pair in {d} outputs"
+            );
+            let d0 = memra_engine::moe_vrows_ilp_dispatches();
+            let got_v2 = with_flag("MEMRA_MOE_VROWS_ILP", || {
+                moe_pairs_program_qt(
+                    &e,
+                    &v2,
+                    &v2_d,
+                    &macros,
+                    &z,
+                    &sel,
+                    &w,
+                    t,
+                    n_used,
+                    (in_f, n_ff),
+                    limit,
+                    |_, _, _| {},
+                    memra_engine::QT_NVFP4_V2,
+                )
+            });
+            assert!(
+                memra_engine::moe_vrows_ilp_dispatches() >= d0 + 2,
+                "in_f={in_f} t={t}: the ILP door did not engage on V2 slabs"
+            );
+            let nan = got_v2.iter().filter(|v| v.is_nan()).count();
+            assert_eq!(
+                nan, 0,
+                "in_f={in_f} t={t}: the V2 ILP twin poisoned {nan} outputs"
+            );
+            let d = bit_diffs(&got_v2, &want_v2);
+            assert_eq!(
+                d,
+                0,
+                "in_f={in_f} n_ff={n_ff} t={t}: the V2 _ilp pair diverged from the shipped V2 pair in {d}/{} outputs",
+                t * in_f
+            );
+            println!(
+                "door I/V2 PASS in_f={in_f} n_ff={n_ff} t={t}: {} outputs bit-identical",
+                t * in_f
+            );
+        }
     }
 }

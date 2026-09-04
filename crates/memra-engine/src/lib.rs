@@ -2130,9 +2130,10 @@ fn moe_vrows_ilp_refuse(site: &str, qt: i32) {
     static SAID: std::sync::Once = std::sync::Once::new();
     SAID.call_once(|| {
         eprintln!(
-            "[moe-vrows-ilp] REFUSED at {site}: MEMRA_MOE_VROWS_ILP=1 but the expert qtype is \
-             {qt}, not QT_NVFP4 ({QT_NVFP4}); the shipped kernel runs (the ILP twins hoist the \
-             interleaved NVFP4 group loads and no other layout)"
+            "[moe-vrows-ilp] REFUSED at {site}: MEMRA_MOE_VROWS_ILP is on but the expert qtype is \
+             {qt}, neither QT_NVFP4 ({QT_NVFP4}) nor QT_NVFP4_V2 ({QT_NVFP4_V2}); the shipped \
+             kernel runs (the ILP twins hoist the NVFP4 group loads, interleaved or slot-major, \
+             and no other layout)"
         );
     });
 }
@@ -7848,7 +7849,9 @@ impl Engine {
         // MEMRA_MOE_VROWS_ILP (lane/glm5-moe-rows-ilp-20260904, default OFF): the `_ilp` twins,
         // interleaved-NVFP4 only, composed with door M as `_w4_ilp`. Refuses by name otherwise.
         let ilp = moe_vrows_ilp_on()
-            && if qt_g == QT_NVFP4 && qt_u == QT_NVFP4 {
+            && if (qt_g == QT_NVFP4 && qt_u == QT_NVFP4)
+                || (qt_g == QT_NVFP4_V2 && qt_u == QT_NVFP4_V2)
+            {
                 true
             } else {
                 moe_vrows_ilp_refuse("gate/up", if qt_g == QT_NVFP4 { qt_u } else { qt_g });
@@ -7972,7 +7975,7 @@ impl Engine {
         let tmaj = !packed && moe_vrows_down_tmaj_on() && out_f <= 65535;
         // MEMRA_MOE_VROWS_ILP: the down `_ilp` twins, interleaved-NVFP4 only (see gate/up).
         let ilp = moe_vrows_ilp_on()
-            && if qt == QT_NVFP4 {
+            && if qt == QT_NVFP4 || qt == QT_NVFP4_V2 {
                 true
             } else {
                 moe_vrows_ilp_refuse("down", qt);
