@@ -53,6 +53,7 @@ cachespec-20260809 | On box1, requests 2 through 11 grew from 1,223 to 7,770 unc
 canonflip-20260813 | - | RAW-ONLY
 cap256k-20260809 | PASS on the local RTX 5090 proof rig. | RESULTS.md
 capbase-20260809 | All 96 streams eventually completed, all failure scans were empty, and every row reported zero step-OOM parks. | RESULTS.md
+check-flags-pipefail-20260904 | tools/test_check_flags.sh now tests membership in its captured live census without a pipe whose producer can be killed by a successful early rg -q exit. The census itself was correct; the self-test was timing-dependent under set -o pipefail and falsely reported two present flags as absent. | RESULTS.md
 chunk-invariance-20260805 | Root cause: NOT reduction order. A numeric-CLASS edge at the first chunk boundary. | VERDICT.md
 chunkcap-20260810 | KEEP cap 8. Do not lift it and do not expose an upward Step35 serving knob. | RESULTS.md
 chunkinv-flip-20260805 | both pinned prompts (97-tok turn1, 149-tok turn2) CHUNK-INVARIANT — prefill logits bit-identical at every chunk size (chunks 2048/64/32, `first_div_pos=-1`, `maxdiff=0.000e0`, streams identical). | VERDICT.md

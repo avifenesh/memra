@@ -245,7 +245,11 @@ uncovered=$(printf '%s\n' "$live_out" \
     | rg -o 'MEMRA_[A-Z0-9_]+' || true)
 
 for want in MEMRA_ALLOW_UNKNOWN_PRETOKENIZER MEMRA_FATBIN MEMRA_MOE_MMAP_ADVICE; do
-    if printf '%s\n' "$census" | rg -qx -- "$want"; then
+    # Feed the captured census directly. Under this script's `pipefail`,
+    # `printf ... | rg -q` can invert a successful early match when `rg` closes the large
+    # census pipe and `printf` exits on SIGPIPE. Which flag passes then depends on pipe-buffer
+    # timing rather than census membership.
+    if rg -qx -- "$want" <<< "$census"; then
         printf 'ok   live: %s is IN THE CENSUS\n' "$want"; pass=$((pass+1))
     else
         printf 'FAIL live: %s is NOT in the census — the gate cannot see this read\n' "$want" >&2
@@ -256,7 +260,7 @@ for want in MEMRA_ALLOW_UNKNOWN_PRETOKENIZER MEMRA_FATBIN MEMRA_MOE_MMAP_ADVICE;
     else
         printf 'FAIL live: %s undocumented\n' "$want" >&2; fail=$((fail+1))
     fi
-    if printf '%s\n' "$uncovered" | rg -qx -- "$want"; then
+    if rg -qx -- "$want" <<< "$uncovered"; then
         printf 'FAIL live: %s is in the gate UNCOVERED list\n' "$want" >&2; fail=$((fail+1))
     else
         printf 'ok   live: %s is not reported uncovered\n' "$want"; pass=$((pass+1))
