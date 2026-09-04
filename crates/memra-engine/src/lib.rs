@@ -936,39 +936,17 @@ pub(crate) fn b200_gemv_v2_on() -> bool {
 /// at 71-76%, and the same lever already paid on both sibling walks (`matvec_bf16_v2`/`v3` and
 /// `q8_0_mmvq_row1_rp_v2_ilp`). The e4m3 family had no twin, and the B200 hybrid mint makes it the
 /// KDA hot path by quantizing all six KDA projections to per-tensor e4m3 on 34 of 45 layers.
-/// Arm ladder for `MEMRA_E4M3_ROW_ILP`, sized by arithmetic (owner ruling 2026-09-04, "use math,
-/// not guessing") rather than by copying `qmatvec_kda6_q8f32_rp_v2`'s 8 rows per block.
+/// `MEMRA_E4M3_ROW_ILP`: 0 = shipped serial walk, 1 = ILP loads-in-flight. Nothing else.
 ///
-/// MEASURED INPUT (ptxas -v, sm_100a): 38 registers per thread for the ILP kernel, 36 for the
-/// staged twin. At 40 after allocation granularity a warp costs 1280 registers, so B200's 65536
-/// per SM allow 51 warps -- below the 64-warp cap, and far above the ~96-register guess that made
-/// R=16 look like it would collapse to one block per SM.
-///
-///   R    staging cost/row = 4608/(R*4096)   warps/SM   blocks/SM
-///   4    28%                                48         12
-///   8    14%                                48          6
-///   16    7%                                48          3
-///   32    3.5%                              32          1
-///
-/// Staging is paid once per block and reused by every warp, so its per-row cost falls as 1/R,
-/// while occupancy is FLAT through R=16 and only falls at R=32 -- where a single resident block
-/// also leaves nothing to overlap the `__syncthreads`. R=16 with staging is therefore the
-/// predicted optimum and R=32 the predicted cliff.
-///
-///   0 serial (4 rows)   1 ILP (4 rows)   2 ILP r8   3 ILP r8+staged
-///   4 ILP r16           5 ILP r16+staged                 6 ILP r32+staged
-///
-/// Arms 2/4 (no staging) sit beside 3/5 (staged) so the bench separates "more rows per block"
-/// from "stage the activation" instead of conflating them, which is what the first cut did.
+/// A ladder of wider blocks (8, 16, 32 rows) and CTA-staged activations was built and priced on
+/// 2x B200 (3 reps x 15 interleaved iters, every arm bit-identical). Every one of them LOST:
+/// r8 0.988-0.993, r8+staged 0.932-0.934, r16 0.970-0.972, r16+staged 0.919-0.926,
+/// r32+staged 0.739-0.746, against ILP-at-4-rows' 1.003-1.015. The arms are gone; the reasons are
+/// the durable part and live in `qmatvec.cu` beside this kernel and in
+/// VERDICT:e4m3-fused6-wider-blocks-and-staged-activation-KILLED.
 pub fn e4m3_row_ilp_level() -> u32 {
     static LVL: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
-    *LVL.get_or_init(|| {
-        std::env::var("MEMRA_E4M3_ROW_ILP")
-            .ok()
-            .and_then(|v| v.trim().parse::<u32>().ok())
-            .filter(|&v| v <= 6)
-            .unwrap_or(0)
-    })
+    *LVL.get_or_init(|| u32::from(std::env::var("MEMRA_E4M3_ROW_ILP").as_deref() == Ok("1")))
 }
 
 pub fn e4m3_row_ilp_on() -> bool {
@@ -19967,7 +19945,7 @@ impl Engine {
     /// The six-group launch with the arm chosen EXPLICITLY rather than from the door. The gate
     /// drives every arm in one process, which a `OnceLock`-backed flag read cannot express;
     /// keeping the policy in the wrapper above means the gate still exercises the served program.
-    /// `arm`: see `e4m3_row_ilp_level` for the ladder (0 serial .. 6 ILP r32+staged).
+    /// `arm`: 0 = serial, 1 = ILP.
     #[allow(clippy::too_many_arguments)]
     pub fn e4m3_fused6_into_arm(
         &self,
@@ -19981,27 +19959,20 @@ impl Engine {
         outs: &mut [CudaSlice<f32>; 6],
         arm: u32,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        // grid_dim, block_dim and the kernel's ROWS template argument must agree exactly, or the
-        // range split addresses rows that do not exist. One table, so they cannot drift apart.
-        let (name, rows_per_block, staged) = match arm {
-            0 => ("qmatvec_e4m3_mmvq_fused6", 4u32, false),
-            1 => ("qmatvec_e4m3_mmvq_fused6_ilp", 4, false),
-            2 => ("qmatvec_e4m3_mmvq_fused6_ilp_r8", 8, false),
-            3 => ("qmatvec_e4m3_mmvq_fused6_ilp_r8_sa", 8, true),
-            4 => ("qmatvec_e4m3_mmvq_fused6_ilp_r16", 16, false),
-            5 => ("qmatvec_e4m3_mmvq_fused6_ilp_r16_sa", 16, true),
-            _ => ("qmatvec_e4m3_mmvq_fused6_ilp_r32_sa", 32, true),
-        };
+        const ROWS_PER_BLOCK: u32 = 4;
         let blocks: u32 = dims
             .iter()
-            .map(|&o| (o as u32).div_ceil(rows_per_block))
+            .map(|&o| (o as u32).div_ceil(ROWS_PER_BLOCK))
             .sum();
-        let f = self.func(name);
-        let smem = in_f + (in_f / 32) * 4;
+        let f = self.func(if arm >= 1 {
+            "qmatvec_e4m3_mmvq_fused6_ilp"
+        } else {
+            "qmatvec_e4m3_mmvq_fused6"
+        });
         let cfg = LaunchConfig {
             grid_dim: (blocks, 1, 1),
-            block_dim: (32, rows_per_block, 1),
-            shared_mem_bytes: if staged { smem as u32 } else { 0 },
+            block_dim: (32, ROWS_PER_BLOCK, 1),
+            shared_mem_bytes: 0,
         };
         let inf = in_f as i32;
         let o: [i32; 6] = std::array::from_fn(|i| dims[i] as i32);

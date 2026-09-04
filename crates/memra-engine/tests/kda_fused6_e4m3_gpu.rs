@@ -139,14 +139,12 @@ fn e4m3_fused_six_is_bit_identical_to_six_separate_launches() {
             .any(|(a, b)| a.to_bits() != b.to_bits()),
         "range 2 produced the same output from a different weight plane: pointers are not per-range"
     );
-    // MEMRA_E4M3_ROW_ILP ARMS 1..6. Three axes move across the ladder and none of them is
-    // arithmetic: WHEN loads issue (ILP), WHICH warp computes a row (4, 8, 16, 32 rows/block),
-    // and WHICH MEMORY SPACE the shared activation is read from (staged or not). So every arm
-    // must match the serial walk BIT for bit, which also makes it match the six separate
-    // per-tensor launches above. Gating the whole ladder here means a rows-per-block value whose
-    // grid_dim and block_dim disagree with its kernel's ROWS argument shows up as wrong output
-    // rather than as a silently short result.
-    for arm in 1u32..=6 {
+    // MEMRA_E4M3_ROW_ILP ARM. The ILP walk changes only WHEN loads issue: four blocks in flight
+    // per lane, folded into `acc` in the same ascending order. It never touches a row's own
+    // arithmetic, so it must match the serial walk BIT for bit, which also makes it match the six
+    // separate per-tensor launches above. (The wider-block and staged-activation arms this loop
+    // once carried were measured and removed; see the verdict in qmatvec.cu.)
+    for arm in [1u32] {
         let got = e
             .qmatvec_e4m3_fused6_raw(w6, &x, in_f, dims, in_f, ws, arm)
             .unwrap_or_else(|err| panic!("fused six arm {arm}: {err}"));

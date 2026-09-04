@@ -4357,21 +4357,7 @@ __device__ __forceinline__ void e4m3_mmvq_batched(
 // separate m=1 launches -- that identity is the gate, not an approximation claim. Each range
 // keeps its OWN per-tensor weight scale, because in this class the scale is a per-tensor
 // property (unlike Q8_0, whose scale is always 1.0). -----
-// ROWS and SMEM_ACT: the two axes that separate this kernel from `qmatvec_kda6_q8f32_rp_v2`,
-// which stages its activation in shared memory and WINS. That kernel runs MEMRA_Q8_V2_ROWS = 8
-// warps per block; this family's MEMRA_MMVQ_ROWS is 4. Staging is paid ONCE per block and reused
-// by every warp in it, so at 4 rows the same __syncthreads and dynamic-smem occupancy are
-// amortized over half as many rows.
-//
-// The first attempt staged at ROWS = 4 and lost consistently on B200 (50.4 us against the serial
-// walk's 47.6, 0.938-0.951x over four interleaved runs). That is a result about ROWS = 4, NOT
-// about staging: parameterising both axes here lets the bench separate "more rows per block" from
-// "stage the activation" instead of conflating them, which is what the first cut did.
-//
-// BIT IDENTITY holds on both axes. ROWS only changes WHICH warp computes a row, never the row's
-// own arithmetic (same lane stride, same warp tree); SMEM_ACT only changes which memory space the
-// same bytes are read from, in the same order.
-template <int ILP, int ROWS, bool SMEM_ACT>
+template <int ILP>
 __device__ __forceinline__ void e4m3_fused6_body(
         const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
         const unsigned char* __restrict__ W2, const unsigned char* __restrict__ W3,
@@ -4385,34 +4371,13 @@ __device__ __forceinline__ void e4m3_fused6_body(
     float* const ys[6] = {y0, y1, y2, y3, y4, y5};
     const int outs[6] = {out0, out1, out2, out3, out4, out5};
     const float wss[6] = {ws0, ws1, ws2, ws3, ws4, ws5};
-    const signed char* aq_use = aq;
-    const float* ad_use = ad;
-    extern __shared__ unsigned char e4m3_f6_smem[];
-    if (SMEM_ACT) {
-        // Staged BEFORE the range branch so the barrier is block-uniform (the same ordering
-        // constraint kda6_q8f32_rp_v2_body documents). Every range shares ONE activation and each
-        // block belongs entirely to one range, so the staging is valid whichever range it serves.
-        const int nblk = in_f / 32;
-        signed char* saq = (signed char*)e4m3_f6_smem;
-        float* sad = (float*)(e4m3_f6_smem + in_f);
-        const int tid = threadIdx.y * blockDim.x + threadIdx.x;
-        const int nthreads = blockDim.x * blockDim.y;
-        // int4 copies: in_f % 32 == 0 is a precondition of this family, so in_f % 16 == 0 too.
-        const int4* src4 = (const int4*)aq;
-        int4* dst4 = (int4*)saq;
-        for (int i = tid; i < in_f / 16; i += nthreads) dst4[i] = src4[i];
-        for (int i = tid; i < nblk; i += nthreads) sad[i] = ad[i];
-        __syncthreads();
-        aq_use = saq;
-        ad_use = sad;
-    }
     int b = blockIdx.x;
 #pragma unroll
     for (int i = 0; i < 6; ++i) {
-        const int nb = (outs[i] + ROWS - 1) / ROWS;
+        const int nb = (outs[i] + MEMRA_MMVQ_ROWS - 1) / MEMRA_MMVQ_ROWS;
         if (b < nb) {
-            e4m3_mmvq_row1_ilp<ILP>(Ws[i], aq_use, ad_use, ys[i], in_f, outs[i], row_bytes, wss[i],
-                                    b * ROWS + (int)threadIdx.y);
+            e4m3_mmvq_row1_ilp<ILP>(Ws[i], aq, ad, ys[i], in_f, outs[i], row_bytes, wss[i],
+                                    b * MEMRA_MMVQ_ROWS + (int)threadIdx.y);
             return;
         }
         b -= nb;
@@ -4428,55 +4393,30 @@ extern "C" __global__ void qmatvec_e4m3_mmvq_fused6(
         float* __restrict__ y3, float* __restrict__ y4, float* __restrict__ y5,
         int in_f, int out0, int out1, int out2, int out3, int out4, int out5,
         long row_bytes, float ws0, float ws1, float ws2, float ws3, float ws4, float ws5) {
-    e4m3_fused6_body<1, MEMRA_MMVQ_ROWS, false>(W0, W1, W2, W3, W4, W5, aq, ad, y0, y1, y2, y3, y4, y5, in_f, out0,
+    e4m3_fused6_body<1>(W0, W1, W2, W3, W4, W5, aq, ad, y0, y1, y2, y3, y4, y5, in_f, out0,
                         out1, out2, out3, out4, out5, row_bytes, ws0, ws1, ws2, ws3, ws4, ws5);
 }
 
 // MEMRA_E4M3_ROW_ILP twin of the six-group: identical range split and identical per-row
 // arithmetic, four blocks' loads in flight per lane instead of one (see e4m3_row_dot_ilp).
-// ROWS ladder for the staging question, sized by arithmetic rather than by copying the sibling
-// kernel's 8 (owner, 2026-09-04: "use math, not guessing").
+// ROWS AND STAGING: MEASURED, KILLED, NOT RE-DERIVED. A ladder of arms was built here (8/16/32
+// rows per block, with and without the activation staged in shared memory) and priced on 2x B200,
+// 3 reps x 15 interleaved iters, every arm bit-identical:
 //
-// MEASURED INPUT (ptxas -v, sm_100a): the ILP kernel uses 38 registers per thread, the staged twin
-// 36 -- not the ~96 a first guess assumed. At 40 registers after allocation granularity a warp
-// costs 1280, so B200's 65536 registers per SM allow 51 warps, below the 64-warp hardware cap.
+//   serial 4 rows 46.7-47.0us = 1.000 | ILP 4 rows 1.003-1.015 | r8 0.988-0.993
+//   r8+staged 0.932-0.934 | r16 0.970-0.972 | r16+staged 0.919-0.926 | r32+staged 0.739-0.746
 //
-//   R    staging cost per row      warps/SM    blocks/SM
-//        = 4608 / (R * 4096)       = 32*R<=51*32
-//   4    28%                       48          12
-//   8    14%                       48           6
-//   16    7%                       48           3
-//   32    3.5%                     32           1
-//
-// Staging is paid once per block and reused by every warp in it, so its cost per row falls as 1/R.
-// Occupancy is flat at 48 warps/SM through R=16 and only falls at R=32, where a single resident
-// block also leaves nothing to overlap the __syncthreads. So R=16 is the predicted optimum and
-// R=32 the predicted cliff; both are built so the prediction can be falsified on the part.
-//
-// Every arm is BIT-IDENTICAL: R changes only WHICH warp computes a row, never the row's own
-// arithmetic, and staging only changes which memory space the same bytes are read from.
-#define MEMRA_E4M3_F6_KERNEL(NAME, ILP_N, ROWS_N, SMEM_N)                                      \
-    extern "C" __global__ void NAME(                                                           \
-            const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,        \
-            const unsigned char* __restrict__ W2, const unsigned char* __restrict__ W3,        \
-            const unsigned char* __restrict__ W4, const unsigned char* __restrict__ W5,        \
-            const signed char* __restrict__ aq, const float* __restrict__ ad,                  \
-            float* __restrict__ y0, float* __restrict__ y1, float* __restrict__ y2,            \
-            float* __restrict__ y3, float* __restrict__ y4, float* __restrict__ y5,            \
-            int in_f, int out0, int out1, int out2, int out3, int out4, int out5,              \
-            long row_bytes, float ws0, float ws1, float ws2, float ws3, float ws4,             \
-            float ws5) {                                                                       \
-        e4m3_fused6_body<ILP_N, ROWS_N, SMEM_N>(W0, W1, W2, W3, W4, W5, aq, ad, y0, y1, y2,    \
-                                                y3, y4, y5, in_f, out0, out1, out2, out3,      \
-                                                out4, out5, row_bytes, ws0, ws1, ws2, ws3,     \
-                                                ws4, ws5);                                     \
-    }
-
-MEMRA_E4M3_F6_KERNEL(qmatvec_e4m3_mmvq_fused6_ilp_r8, 4, 8, false)
-MEMRA_E4M3_F6_KERNEL(qmatvec_e4m3_mmvq_fused6_ilp_r8_sa, 4, 8, true)
-MEMRA_E4M3_F6_KERNEL(qmatvec_e4m3_mmvq_fused6_ilp_r16, 4, 16, false)
-MEMRA_E4M3_F6_KERNEL(qmatvec_e4m3_mmvq_fused6_ilp_r16_sa, 4, 16, true)
-MEMRA_E4M3_F6_KERNEL(qmatvec_e4m3_mmvq_fused6_ilp_r32_sa, 4, 32, true)
+// Every widening and every staging variant LOST, so the shipped 4 rows/block unstaged stands and
+// the arms are gone. Two reasons, worth more than the arms and separable only because the
+// unstaged arms were built beside the staged ones:
+//   * Widening loses BEFORE any staging. ptxas -v: 38 registers/thread, so warps/SM is FLAT at 48
+//     across R=4..16 and the variable that actually moved was BLOCKS per SM (12 -> 6 -> 3).
+//     Block-level parallelism is what hides this kernel's memory latency.
+//   * Staging costs a near-CONSTANT ~6 points at every R rather than falling as 1/R, so its cost
+//     is the __syncthreads and the smem read path, not the one-time copy.
+// VERDICT:e4m3-fused6-wider-blocks-and-staged-activation-KILLED and
+// LAW:size-a-block-from-measured-registers-and-count-blocks-not-warps (darklanes corpus);
+// numbers in research/glm5-b200-mint-20260904/LANE.md.
 
 extern "C" __global__ void qmatvec_e4m3_mmvq_fused6_ilp(
         const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
@@ -4487,7 +4427,7 @@ extern "C" __global__ void qmatvec_e4m3_mmvq_fused6_ilp(
         float* __restrict__ y3, float* __restrict__ y4, float* __restrict__ y5,
         int in_f, int out0, int out1, int out2, int out3, int out4, int out5,
         long row_bytes, float ws0, float ws1, float ws2, float ws3, float ws4, float ws5) {
-    e4m3_fused6_body<4, MEMRA_MMVQ_ROWS, false>(W0, W1, W2, W3, W4, W5, aq, ad, y0, y1, y2, y3, y4, y5, in_f, out0,
+    e4m3_fused6_body<4>(W0, W1, W2, W3, W4, W5, aq, ad, y0, y1, y2, y3, y4, y5, in_f, out0,
                         out1, out2, out3, out4, out5, row_bytes, ws0, ws1, ws2, ws3, ws4, ws5);
 }
 extern "C" __global__ void qmatvec_e4m3_mmvq_b2(
