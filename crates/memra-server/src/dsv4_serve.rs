@@ -23,19 +23,24 @@
 //!
 //! Deliberate v1 limitations, stated not smuggled:
 //!   - `min_p` REFUSES (not implemented on the dsv4 sampler);
-//!   - no prefix/continuation caches: `n_cached` is honestly 0 on every request;
+//!   - parked-prefix reuse is opt-in through `MEMRA_DSV4_KV_HOST_MB`: live compact state
+//!     moves to pinned host RAM and restores on a strict, PC-ISO exact-token prefix;
+//!     active-device scheduling is still FIFO in this slice;
 //!   - no response_format/grammar (refused by name);
 //!   - streaming granularity is the spec ROUND (or every plain token) — the commit
 //!     callback seam on the gated drivers, `None` = byte-identical bench behavior.
 
 use crate::worker::{EngineError, Event, ModelCaps, Request, SpecUsage};
 use memra_engine::dsv4_gpu::{
-    Dsv4Gpu, Dsv4PenaltyCfg, Dsv4SampleCfg, dsv4_penalize_row, dsv4_sample_row, resolve_vt,
+    DecodeState, DsparkState, Dsv4Gpu, Dsv4HostDecodeState, Dsv4HostDsparkState, Dsv4PenaltyCfg,
+    Dsv4SampleCfg, dsv4_penalize_row, dsv4_sample_row, resolve_vt,
 };
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::{Tokenizer, chat};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Instant;
 
 /// Cheap boot-time probe; the engine loader re-validates every field strictly.
 pub fn is_dsv4_dir(dir: &Path) -> bool {
@@ -51,6 +56,147 @@ pub struct Dsv4Model {
     pub max_seq: usize,
     pub spec: bool,
     pub eos: u32,
+    pub host_cache_bytes: usize,
+}
+
+struct ParkedEntry {
+    toks: Vec<u32>,
+    affinity: Option<String>,
+    trunk: Dsv4HostDecodeState,
+    dspark: Option<Dsv4HostDsparkState>,
+    bytes: usize,
+    last_use: Instant,
+    id: u64,
+}
+
+/// DSV4's dedicated parked-session tier. The model already compresses active KV by 4x/128x;
+/// this pool solves a different problem: inactive conversations should not reserve their
+/// compact state on both GPUs. Entries are exact-token-prefix keyed inside the request's
+/// PC-ISO namespace and consumed on restore, so host and device never hold duplicate warm
+/// state past the DMA boundary.
+struct Dsv4HostCache {
+    entries: HashMap<String, Vec<ParkedEntry>>,
+    total_bytes: usize,
+    budget: usize,
+    next_id: u64,
+    disabled: bool,
+}
+
+const DSV4_HOST_CACHE_MIN_TOKENS: usize = 128;
+
+impl Dsv4HostCache {
+    fn new(budget: usize) -> Self {
+        Self {
+            entries: HashMap::new(),
+            total_bytes: 0,
+            budget,
+            next_id: 0,
+            disabled: false,
+        }
+    }
+
+    fn armed(&self) -> bool {
+        self.budget > 0 && !self.disabled
+    }
+
+    fn disable(&mut self, why: &str) {
+        if !self.disabled {
+            eprintln!(
+                "[dsv4-host] TIER DISABLED: {why}. No pageable fallback; lower \
+                 MEMRA_DSV4_KV_HOST_MB or fix pinned-memory capacity and restart"
+            );
+        }
+        self.disabled = true;
+    }
+
+    /// Consume the longest STRICT exact-token prefix. Strictness guarantees the caller has
+    /// at least one suffix token to feed, which reconstructs next-token logits without storing
+    /// a 129k-f32 row per entry. Affinity is only a tie-breaker; it never bypasses token match.
+    fn take(
+        &mut self,
+        cache_ns: &str,
+        affinity: Option<&str>,
+        prompt: &[u32],
+        need_dspark: bool,
+    ) -> Option<ParkedEntry> {
+        let pool = self.entries.get(cache_ns)?;
+        let mut best: Option<(usize, usize, bool, u64)> = None;
+        for (i, entry) in pool.iter().enumerate() {
+            let n = entry.toks.len();
+            if n < DSV4_HOST_CACHE_MIN_TOKENS
+                || n >= prompt.len()
+                || prompt[..n] != entry.toks[..]
+                || (need_dspark && entry.dspark.is_none())
+            {
+                continue;
+            }
+            let affinity_match = affinity.is_some() && affinity == entry.affinity.as_deref();
+            let candidate = (i, n, affinity_match, entry.id);
+            if best.is_none_or(|(_, bn, ba, bid)| {
+                n > bn
+                    || (n == bn && affinity_match && !ba)
+                    || (n == bn && affinity_match == ba && entry.id > bid)
+            }) {
+                best = Some(candidate);
+            }
+        }
+        let (i, _, _, _) = best?;
+        let pool = self
+            .entries
+            .get_mut(cache_ns)
+            .expect("pool survived lookup");
+        let entry = pool.swap_remove(i);
+        self.total_bytes = self.total_bytes.saturating_sub(entry.bytes);
+        if pool.is_empty() {
+            self.entries.remove(cache_ns);
+        }
+        Some(entry)
+    }
+
+    fn insert(&mut self, cache_ns: String, mut entry: ParkedEntry) {
+        if !self.armed() || entry.bytes > self.budget {
+            return;
+        }
+        // Exact state supersedes an older identical boundary in the same namespace.
+        if let Some(pool) = self.entries.get_mut(&cache_ns)
+            && let Some(i) = pool.iter().position(|e| e.toks == entry.toks)
+        {
+            let old = pool.swap_remove(i);
+            self.total_bytes = self.total_bytes.saturating_sub(old.bytes);
+        }
+        entry.id = self.next_id;
+        self.next_id += 1;
+        entry.last_use = Instant::now();
+        self.total_bytes += entry.bytes;
+        self.entries.entry(cache_ns).or_default().push(entry);
+        while self.total_bytes > self.budget {
+            let victim = self
+                .entries
+                .iter()
+                .flat_map(|(ns, pool)| {
+                    pool.iter()
+                        .enumerate()
+                        .map(move |(i, e)| (e.last_use, e.id, ns.clone(), i))
+                })
+                .min_by_key(|(last_use, id, _, _)| (*last_use, *id));
+            let Some((_, _, ns, i)) = victim else {
+                break;
+            };
+            let pool = self.entries.get_mut(&ns).expect("victim pool exists");
+            let dead = pool.swap_remove(i);
+            self.total_bytes = self.total_bytes.saturating_sub(dead.bytes);
+            if pool.is_empty() {
+                self.entries.remove(&ns);
+            }
+            eprintln!(
+                "[dsv4-host] evict LRU: {} tokens, {:.1} MiB (resident {:.1}/{:.1} MiB)",
+                dead.toks.len(),
+                dead.bytes as f64 / 1048576.0,
+                self.total_bytes as f64 / 1048576.0,
+                self.budget as f64 / 1048576.0,
+            );
+        }
+    }
 }
 
 /// Load the 2-card dsv4 stack. The serving numeric contract is keyed on the
@@ -85,17 +231,32 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(8192);
+    let host_cache_mb = match std::env::var("MEMRA_DSV4_KV_HOST_MB") {
+        Err(_) => 0usize,
+        Ok(raw) => raw
+            .trim()
+            .parse::<usize>()
+            .map_err(|_| format!("MEMRA_DSV4_KV_HOST_MB {raw:?} is not a non-negative integer"))?,
+    };
+    let host_cache_bytes = host_cache_mb
+        .checked_mul(1024 * 1024)
+        .ok_or_else(|| "MEMRA_DSV4_KV_HOST_MB byte count overflow".to_string())?;
     let gpu = Dsv4Gpu::load(dir, &devices, variant, max_seq)?;
     let spec = gpu.dspark.is_some();
     let eos = tok.eos_id();
     eprintln!(
         "[dsv4-serve] {name}: loaded on devices {devices:?}, contract {variant:?}, \
-         max_seq {max_seq}, drafter {}",
+         max_seq {max_seq}, drafter {}, parked-host-cache {}",
         if spec {
             "RESIDENT (spec route armed)"
         } else {
             "absent (plain only)"
-        }
+        },
+        if host_cache_bytes == 0 {
+            "OFF (MEMRA_DSV4_KV_HOST_MB=0)".to_string()
+        } else {
+            format!("{host_cache_mb} MiB")
+        },
     );
     Ok(Dsv4Model {
         gpu: Arc::new(gpu),
@@ -103,6 +264,7 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
         max_seq,
         spec,
         eos,
+        host_cache_bytes,
     })
 }
 
@@ -145,6 +307,7 @@ pub fn spawn(name: String, m: Dsv4Model) -> std::sync::mpsc::Sender<Box<Request>
     std::thread::Builder::new()
         .name(format!("dsv4-serve-{name}"))
         .spawn(move || {
+            let mut host_cache = Dsv4HostCache::new(m.host_cache_bytes);
             while let Ok(mut req) = rx.recv() {
                 // The worker's DSV4 channel is unbounded, so the hard admission reservation
                 // remains held until this serving thread actually receives the request. Merely
@@ -154,7 +317,7 @@ pub fn spawn(name: String, m: Dsv4Model) -> std::sync::mpsc::Sender<Box<Request>
                     continue; // client gone while queued
                 }
                 let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    serve_one(&m, &mut req)
+                    serve_one(&m, &mut host_cache, &mut req)
                 }));
                 match r {
                     Ok(Ok(())) => {}
@@ -305,7 +468,7 @@ impl<'a> Emit<'a> {
         true
     }
 
-    fn finish(self, n_prompt: usize, elapsed_s: f64, spec: Option<SpecUsage>) {
+    fn finish(self, n_prompt: usize, n_cached: usize, elapsed_s: f64, spec: Option<SpecUsage>) {
         if self.client_gone {
             return; // receipts stay with the terminal-less stream (HTTP layer owns it)
         }
@@ -314,7 +477,7 @@ impl<'a> Emit<'a> {
             stop_reason: self.stop_reason.unwrap_or("length").to_string(),
             n_tokens: self.ids.len(),
             n_prompt,
-            n_cached: 0,
+            n_cached,
             elapsed_s,
             spec,
         });
@@ -396,7 +559,180 @@ fn render_prompt(m: &Dsv4Model, req: &Request) -> Result<Vec<u32>, EngineError> 
     Ok(prompt)
 }
 
-fn serve_one(m: &Dsv4Model, req: &mut Request) -> Result<(), EngineError> {
+struct RestoredPrefix {
+    state: DecodeState,
+    dstate: Option<DsparkState>,
+    logits: Vec<f32>,
+    n_cached: usize,
+}
+
+/// Feed the strict suffix after a restored plain trunk boundary. Intermediate rows need no
+/// host logits, so they use the 4-byte device-argmax path and discard the value; only the
+/// final suffix token returns the row that seeds generation.
+fn continue_plain_prefix(
+    m: &Dsv4Model,
+    suffix: &[u32],
+    state: &mut DecodeState,
+) -> Result<Vec<f32>, String> {
+    if suffix.is_empty() {
+        return Err("dsv4 restored continuation needs a non-empty suffix".into());
+    }
+    let mut last = None;
+    for (i, &tok) in suffix.iter().enumerate() {
+        if i + 1 == suffix.len() {
+            last = Some(m.gpu.decode_step(tok, state)?);
+        } else {
+            let _ = m.gpu.decode_step_greedy(tok, state)?;
+        }
+    }
+    Ok(last.expect("non-empty suffix has final logits"))
+}
+
+fn try_restore_prefix(
+    m: &Dsv4Model,
+    host: &mut Dsv4HostCache,
+    req: &Request,
+    prompt: &[u32],
+    capacity: usize,
+    need_dspark: bool,
+) -> Option<RestoredPrefix> {
+    if !host.armed() {
+        return None;
+    }
+    let entry = host.take(&req.cache_ns, req.affinity.as_deref(), prompt, need_dspark)?;
+    let n_cached = entry.toks.len();
+    let bytes = entry.bytes;
+    let t0 = Instant::now();
+    let restored = (|| -> Result<RestoredPrefix, String> {
+        let mut state = m.gpu.restore_decode_state_for(&entry.trunk, capacity)?;
+        let suffix = &prompt[n_cached..];
+        if need_dspark {
+            let host_dstate = entry
+                .dspark
+                .as_ref()
+                .ok_or_else(|| "dsv4 host hit missing required DSpark state".to_string())?;
+            let mut dstate = m.gpu.restore_dspark_state(host_dstate)?;
+            let logits = m
+                .gpu
+                .dspark_continue_prefix(suffix, &mut state, &mut dstate)?;
+            Ok(RestoredPrefix {
+                state,
+                dstate: Some(dstate),
+                logits,
+                n_cached,
+            })
+        } else {
+            let logits = continue_plain_prefix(m, suffix, &mut state)?;
+            Ok(RestoredPrefix {
+                state,
+                dstate: None,
+                logits,
+                n_cached,
+            })
+        }
+    })();
+    match restored {
+        Ok(hit) => {
+            eprintln!(
+                "[dsv4-host] hit: {} cached + {} suffix tokens, {:.1} MiB, {:.1} ms, dspark={need_dspark}",
+                hit.n_cached,
+                prompt.len() - hit.n_cached,
+                bytes as f64 / 1048576.0,
+                t0.elapsed().as_secs_f64() * 1000.0,
+            );
+            Some(hit)
+        }
+        Err(err) => {
+            eprintln!(
+                "[dsv4-host] restore failed after consuming {n_cached}-token entry ({err}); cold prefill"
+            );
+            None
+        }
+    }
+}
+
+fn park_prefix(
+    m: &Dsv4Model,
+    host: &mut Dsv4HostCache,
+    req: &Request,
+    toks: Vec<u32>,
+    state: &DecodeState,
+    dstate: Option<&DsparkState>,
+) {
+    if !host.armed() || toks.len() < DSV4_HOST_CACHE_MIN_TOKENS {
+        return;
+    }
+    let t0 = Instant::now();
+    let parked = (|| -> Result<ParkedEntry, String> {
+        let trunk = m.gpu.snapshot_decode_state(state)?;
+        if trunk.pos() != toks.len() {
+            return Err(format!(
+                "snapshot pos {} != token boundary {}",
+                trunk.pos(),
+                toks.len()
+            ));
+        }
+        let dspark = dstate.map(|s| m.gpu.snapshot_dspark_state(s)).transpose()?;
+        let bytes = trunk.bytes() + dspark.as_ref().map_or(0, Dsv4HostDsparkState::bytes);
+        Ok(ParkedEntry {
+            toks,
+            affinity: req.affinity.clone(),
+            trunk,
+            dspark,
+            bytes,
+            last_use: Instant::now(),
+            id: 0,
+        })
+    })();
+    match parked {
+        Ok(entry) => {
+            let n = entry.toks.len();
+            let bytes = entry.bytes;
+            host.insert(req.cache_ns.clone(), entry);
+            eprintln!(
+                "[dsv4-host] park: {n} tokens, {:.1} MiB, {:.1} ms (resident {:.1}/{:.1} MiB)",
+                bytes as f64 / 1048576.0,
+                t0.elapsed().as_secs_f64() * 1000.0,
+                host.total_bytes as f64 / 1048576.0,
+                host.budget as f64 / 1048576.0,
+            );
+        }
+        Err(err) => host.disable(&format!("snapshot failed: {err}")),
+    }
+}
+
+/// Token boundary represented by a completed request's device state. The final emitted token
+/// is commonly still pending (state one token behind), which is a valid strict prefix for the
+/// next turn. State ahead of the visible stream can happen when a speculative round commits
+/// before an EOS/stop callback; that shape is not cacheable without a semantic rollback.
+fn processed_prefix_tokens(
+    prompt: &[u32],
+    emitted: &[u32],
+    state_pos: usize,
+) -> Result<Vec<u32>, String> {
+    let consumed_generated = state_pos.checked_sub(prompt.len()).ok_or_else(|| {
+        format!(
+            "device state pos {state_pos} precedes prompt boundary {}",
+            prompt.len()
+        )
+    })?;
+    if consumed_generated > emitted.len() {
+        return Err(format!(
+            "device state consumed {consumed_generated} generated tokens, stream committed only {}",
+            emitted.len()
+        ));
+    }
+    let mut toks = Vec::with_capacity(prompt.len() + consumed_generated);
+    toks.extend_from_slice(prompt);
+    toks.extend_from_slice(&emitted[..consumed_generated]);
+    Ok(toks)
+}
+
+fn serve_one(
+    m: &Dsv4Model,
+    host_cache: &mut Dsv4HostCache,
+    req: &mut Request,
+) -> Result<(), EngineError> {
     let t0 = std::time::Instant::now();
     if req.grammar.is_some() {
         return Err(EngineError::invalid_param(
@@ -444,9 +780,13 @@ fn serve_one(m: &Dsv4Model, req: &mut Request) -> Result<(), EngineError> {
             "min_p",
         ));
     }
+    let use_spec = m.spec && !(greedy && penalties_set);
+    let session_capacity = prompt.len() + budget;
+    let mut restored = try_restore_prefix(m, host_cache, req, &prompt, session_capacity, use_spec);
+    let n_cached = restored.as_ref().map_or(0, |hit| hit.n_cached);
     let _ = req.tx.send(Event::PromptUsage {
         n_prompt: prompt.len(),
-        n_cached: 0,
+        n_cached,
     });
 
     let mut eos_set = req.params.eos.clone();
@@ -455,8 +795,10 @@ fn serve_one(m: &Dsv4Model, req: &mut Request) -> Result<(), EngineError> {
     }
     let mut emit = Emit::new(&m.tok, &req.tx, eos_set, &req.stop_strings, budget);
     let mut spec_usage: Option<SpecUsage> = None;
+    let state_to_park: DecodeState;
+    let mut dstate_to_park: Option<DsparkState> = None;
 
-    if m.spec && !(greedy && penalties_set) {
+    if use_spec {
         // the env-seam depth/window policy — exactly the bench drivers' law
         let depth_cap = std::env::var("MEMRA_DSV4_SPEC_DEPTH")
             .ok()
@@ -470,14 +812,61 @@ fn serve_one(m: &Dsv4Model, req: &mut Request) -> Result<(), EngineError> {
             std::env::var("MEMRA_DSV4_VT_FLOOR").ok().as_deref(),
         )
         .map_err(EngineError::engine)?;
-        let mut state = m.gpu.alloc_decode_state().map_err(EngineError::engine)?;
-        let mut dstate = m.gpu.dspark_alloc_state().map_err(EngineError::engine)?;
+        let (mut state, mut dstate, initial_logits) = if let Some(hit) = restored.take() {
+            (
+                hit.state,
+                hit.dstate.expect("DSpark restore returned DSpark state"),
+                Some(hit.logits),
+            )
+        } else {
+            (
+                m.gpu
+                    .alloc_decode_state_for(session_capacity)
+                    .map_err(EngineError::engine)?,
+                m.gpu.dspark_alloc_state().map_err(EngineError::engine)?,
+                None,
+            )
+        };
         let mut vstate = m.gpu.alloc_verify_state().map_err(EngineError::engine)?;
         // generation budget + 1: the drivers count the head token of the final round
         // inside n_new; Emit owns the exact budget/EOS truncation either way.
         let n_new = budget;
         let mut cb = |new: &[u32]| emit.push(new);
-        let run = if greedy {
+        let run = if let Some(initial_logits) = initial_logits.as_deref() {
+            if greedy {
+                m.gpu.spec_greedy_batched_stream_restored(
+                    prompt.len(),
+                    initial_logits,
+                    n_new,
+                    &mut state,
+                    &mut dstate,
+                    &mut vstate,
+                    depth_cap,
+                    vt,
+                    Some(&mut cb),
+                )
+            } else {
+                let cfg = Dsv4SampleCfg {
+                    temperature: sc.temperature,
+                    top_p: sc.top_p,
+                    top_k: sc.top_k,
+                    seed: sc.seed,
+                };
+                m.gpu.spec_sampled_batched_pen_restored(
+                    &prompt,
+                    initial_logits,
+                    n_new,
+                    &mut state,
+                    &mut dstate,
+                    &mut vstate,
+                    depth_cap,
+                    vt,
+                    &cfg,
+                    pen_cfg.as_ref(),
+                    Some(&mut cb),
+                )
+            }
+        } else if greedy {
             m.gpu.spec_greedy_batched_stream(
                 &prompt,
                 n_new,
@@ -518,13 +907,23 @@ fn serve_one(m: &Dsv4Model, req: &mut Request) -> Result<(), EngineError> {
                 .sum(),
             accepted: run.rounds.iter().map(|r| r.accepts as u64).sum(),
         });
+        state_to_park = state;
+        dstate_to_park = Some(dstate);
     } else {
         // trunk-only plain loops
-        let mut state = m.gpu.alloc_decode_state().map_err(EngineError::engine)?;
-        let pre = m
-            .gpu
-            .prefill_with_cache(&prompt, &mut state)
-            .map_err(EngineError::engine)?;
+        let (mut state, pre_logits) = if let Some(hit) = restored.take() {
+            (hit.state, hit.logits)
+        } else {
+            let mut state = m
+                .gpu
+                .alloc_decode_state_for(session_capacity)
+                .map_err(EngineError::engine)?;
+            let pre = m
+                .gpu
+                .prefill_with_cache(&prompt, &mut state)
+                .map_err(EngineError::engine)?;
+            (state, pre.logits)
+        };
         let p0 = prompt.len();
         // running penalty window: prompt ++ every committed token (rung-2 slice 2)
         let mut window: Vec<u32> = if pen_cfg.is_some() {
@@ -534,11 +933,11 @@ fn serve_one(m: &Dsv4Model, req: &mut Request) -> Result<(), EngineError> {
         };
         if greedy {
             let mut t = if let Some(pc) = &pen_cfg {
-                let mut row = pre.logits.clone();
+                let mut row = pre_logits.clone();
                 dsv4_penalize_row(&mut row, &window, pc);
                 argmax(&row)
             } else {
-                argmax(&pre.logits)
+                argmax(&pre_logits)
             };
             let mut step = 0usize;
             while emit.push(&[t]) {
@@ -576,7 +975,7 @@ fn serve_one(m: &Dsv4Model, req: &mut Request) -> Result<(), EngineError> {
                 }
                 dsv4_sample_row(row, pos, &cfg)
             };
-            let mut row0 = pre.logits.clone();
+            let mut row0 = pre_logits;
             let mut t = draw(&mut row0, p0, &window).map_err(EngineError::engine)?;
             let mut step = 0usize;
             while emit.push(&[t]) {
@@ -594,9 +993,35 @@ fn serve_one(m: &Dsv4Model, req: &mut Request) -> Result<(), EngineError> {
                 t = draw(&mut row, p0 + step, &window).map_err(EngineError::engine)?;
             }
         }
+        state_to_park = state;
     }
 
-    emit.finish(prompt.len(), t0.elapsed().as_secs_f64(), spec_usage);
+    let park_toks = match processed_prefix_tokens(&prompt, &emit.ids, state_to_park.pos) {
+        Ok(toks) => Some(toks),
+        Err(err) => {
+            // A speculative round commits before its callback. If an EOS/stop lands inside that
+            // round, state may be ahead of the user-visible stream; without a semantic rollback
+            // that state is not cacheable, and pretending otherwise would poison the next turn.
+            eprintln!("[dsv4-host] skip park: {err}");
+            None
+        }
+    };
+    emit.finish(
+        prompt.len(),
+        n_cached,
+        t0.elapsed().as_secs_f64(),
+        spec_usage,
+    );
+    if let Some(toks) = park_toks {
+        park_prefix(
+            m,
+            host_cache,
+            req,
+            toks,
+            &state_to_park,
+            dstate_to_park.as_ref(),
+        );
+    }
     Ok(())
 }
 
@@ -612,7 +1037,7 @@ fn argmax(v: &[f32]) -> u32 {
 
 #[cfg(test)]
 mod unicode_window_tests {
-    use super::{scan_stop_cut, snap};
+    use super::{processed_prefix_tokens, scan_stop_cut, snap};
 
     /// The box10 owner-serve panic class: a long generation whose fixed-offset scan
     /// window (len-64) lands INSIDE a multi-byte char ('’', 3 bytes). Both live
@@ -662,6 +1087,29 @@ mod unicode_window_tests {
             cut2,
             text2.len(),
             "exclusive straddle clamps at emitted text"
+        );
+    }
+
+    #[test]
+    fn parked_token_boundary_accepts_pending_tail_and_refuses_state_ahead() {
+        let prompt = [10, 11, 12];
+        let emitted = [20, 21, 22];
+        assert_eq!(
+            processed_prefix_tokens(&prompt, &emitted, 5).unwrap(),
+            [10, 11, 12, 20, 21],
+            "the final emitted token may be pending and belongs to the next suffix"
+        );
+        assert!(
+            processed_prefix_tokens(&prompt, &emitted, 7)
+                .unwrap_err()
+                .contains("stream committed only 3"),
+            "spec state ahead of the visible stream must not enter the host tier"
+        );
+        assert!(
+            processed_prefix_tokens(&prompt, &emitted, 2)
+                .unwrap_err()
+                .contains("precedes prompt boundary"),
+            "a corrupt pre-prompt state is refused rather than saturating to zero"
         );
     }
 }

@@ -3,7 +3,7 @@
 | | Recommended use |
 |---|---|
 | **Status** | Experimental engine support; functional and gated, not serving-grade |
-| **Path** | Official safetensors checkpoint through the dedicated two-card implementation |
+| **Path** | Exact-source sharded Safetensors checkpoint through the dedicated two-card implementation; no GGUF conversion |
 | **Hardware** | Two-card target used by the experimental gate |
 | **Use this when** | You are evaluating or contributing to the experimental path, not deploying it as a supported server |
 

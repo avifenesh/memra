@@ -24,6 +24,7 @@
 //! perf claims belong to later lanes.
 
 use std::collections::BTreeMap;
+use std::ops::Range;
 use std::os::raw::c_void;
 use std::path::Path;
 
@@ -401,6 +402,10 @@ pub struct DsparkState {
     /// layers 40/41/42, written by the decode step (and consumed by write_rings /
     /// forward_spec).
     pub taps: CudaSlice<f32>,
+    /// Row in `taps` that carries the newest committed position. The speculative driver used
+    /// to keep this cursor only on its stack; making it session state is what lets a parked
+    /// conversation resume without re-prefilling the full prompt to reconstruct the drafter.
+    pub tap_head: usize,
 }
 
 /// One drafter proposal (host view). `out_ids[0]` is the input token; margins/top1
@@ -580,13 +585,168 @@ pub struct StepWs {
 pub struct DecodeState {
     pub caches: Vec<LayerCache>,
     pub pos: usize,
+    /// Token capacity of this session's cache allocation. This is independently planned
+    /// below the model-wide `Dsv4Gpu::max_seq`, so a 1M-capable server does not charge every
+    /// short concurrent request for one million rows.
+    pub capacity: usize,
     /// allocated cache bytes per device index (gate (e): measured vs design math)
     pub cache_bytes: Vec<u64>,
     /// lane 8: per-stage step workspace (Some iff the load-time decode path is Device)
     pub ws: Option<Vec<StepWs>>,
 }
 
+/// One contiguous f32 range in a stage-owned pinned-host slab. DSV4 keeps its compact
+/// long-context state on the layer's owning GPU while a session is active; this is the
+/// lossless parked-session representation used to free that VRAM without expanding the
+/// compressed state back into token-wise K/V. The range is in f32 elements, not bytes.
+#[derive(Clone)]
+struct Dsv4HostSpan {
+    stage: usize,
+    range: Range<usize>,
+}
+
+/// Field-for-field live-state map for one trunk layer. Append-only stores copy only their
+/// high-water rows; SWA rings and compressor pending state copy in full. Verify-transient
+/// rows and [`StepWs`] are scratch, so they are deliberately absent and freshly allocated
+/// on restore.
+struct Dsv4HostLayer {
+    kvc: Dsv4HostSpan,
+    n_blocks: usize,
+    pend_kv: Option<Dsv4HostSpan>,
+    pend_score: Option<Dsv4HostSpan>,
+    ikvc: Option<Dsv4HostSpan>,
+    i_blocks: usize,
+    ipend_kv: Option<Dsv4HostSpan>,
+    ipend_score: Option<Dsv4HostSpan>,
+}
+
+/// Pinned-host image of one DSV4 decode state. One allocation per pipeline stage keeps a
+/// 1M-token park to two large DMA slabs rather than thousands of page-locked allocations.
+/// The type is intentionally opaque: only [`Dsv4Gpu::snapshot_decode_state`] and
+/// [`Dsv4Gpu::restore_decode_state`] may interpret its layout.
+pub struct Dsv4HostDecodeState {
+    stages: Vec<crate::PinnedHostBuf>,
+    layers: Vec<Dsv4HostLayer>,
+    pos: usize,
+    capacity: usize,
+    bytes: usize,
+}
+
+impl Dsv4HostDecodeState {
+    /// Bytes resident in pinned host RAM (live compact state only).
+    pub fn bytes(&self) -> usize {
+        self.bytes
+    }
+
+    /// Number of already-consumed tokens represented by this image.
+    pub fn pos(&self) -> usize {
+        self.pos
+    }
+}
+
+/// Pinned-host image of the small DSpark session state: three persistent 128-token rings and
+/// the newest trunk tap. Draft-transient ring rows and the other tap rows are scratch and are
+/// not copied. This is kept separate from [`Dsv4HostDecodeState`] so plain deployments pay
+/// neither the allocation nor the metadata.
+pub struct Dsv4HostDsparkState {
+    slab: crate::PinnedHostBuf,
+    rings: Vec<Range<usize>>,
+    tap: Range<usize>,
+    bytes: usize,
+    block_size: usize,
+}
+
+impl Dsv4HostDsparkState {
+    pub fn bytes(&self) -> usize {
+        self.bytes
+    }
+}
+
 // ---------------------------------------------------------------- small launch helpers
+
+fn dsv4_host_span(stage: usize, elems: usize, totals: &mut [usize]) -> Dsv4HostSpan {
+    let start = totals[stage];
+    totals[stage] = start
+        .checked_add(elems)
+        .expect("dsv4 host-state element count overflow");
+    Dsv4HostSpan {
+        stage,
+        range: start..start + elems,
+    }
+}
+
+fn dsv4_pinned_f32(buf: &crate::PinnedHostBuf, range: Range<usize>) -> &[f32] {
+    let byte_start = range.start * std::mem::size_of::<f32>();
+    let byte_end = range.end * std::mem::size_of::<f32>();
+    assert!(byte_end <= buf.len(), "dsv4 pinned read outside slab");
+    // SAFETY: cudaHostAlloc is page-aligned, byte_start is f32-aligned, and the bound above
+    // proves the returned region lies wholly inside the owned allocation.
+    unsafe {
+        std::slice::from_raw_parts(
+            buf.as_slice()[byte_start..byte_end].as_ptr() as *const f32,
+            range.len(),
+        )
+    }
+}
+
+fn dsv4_pinned_f32_mut(buf: &mut crate::PinnedHostBuf, range: Range<usize>) -> &mut [f32] {
+    let byte_start = range.start * std::mem::size_of::<f32>();
+    let byte_end = range.end * std::mem::size_of::<f32>();
+    assert!(byte_end <= buf.len(), "dsv4 pinned write outside slab");
+    // SAFETY: same alignment and ownership proof as dsv4_pinned_f32; the mutable borrow of
+    // `buf` guarantees this range cannot alias another host slice in this call.
+    unsafe {
+        std::slice::from_raw_parts_mut(
+            buf.as_mut_slice()[byte_start..byte_end].as_mut_ptr() as *mut f32,
+            range.len(),
+        )
+    }
+}
+
+fn dsv4_dtoh_span(
+    stream: &std::sync::Arc<CudaStream>,
+    src: &CudaSlice<f32>,
+    slab: &mut crate::PinnedHostBuf,
+    span: &Dsv4HostSpan,
+) -> Res<()> {
+    let n = span.range.len();
+    if n > src.len() {
+        return Err(format!(
+            "dsv4 host snapshot range {n} exceeds device plane {}",
+            src.len()
+        ));
+    }
+    if n == 0 {
+        return Ok(());
+    }
+    let host = dsv4_pinned_f32_mut(slab, span.range.clone());
+    stream
+        .memcpy_dtoh(&src.slice(0..n), host)
+        .map_err(e("dsv4 state dtoh"))
+}
+
+fn dsv4_htod_span(
+    stream: &std::sync::Arc<CudaStream>,
+    slab: &crate::PinnedHostBuf,
+    span: &Dsv4HostSpan,
+    dst: &mut CudaSlice<f32>,
+) -> Res<()> {
+    let host = dsv4_pinned_f32(slab, span.range.clone());
+    if host.len() > dst.len() {
+        return Err(format!(
+            "dsv4 host restore range {} exceeds device plane {}",
+            host.len(),
+            dst.len()
+        ));
+    }
+    if host.is_empty() {
+        return Ok(());
+    }
+    let mut view = dst.slice_mut(0..host.len());
+    stream
+        .memcpy_htod(host, &mut view)
+        .map_err(e("dsv4 state htod"))
+}
 
 fn sp(stream: &CudaStream) -> *mut c_void {
     stream.cu_stream() as *mut c_void
@@ -3506,6 +3666,13 @@ impl Dsv4Gpu {
     pub fn prefill_with_cache(&self, ids: &[u32], state: &mut DecodeState) -> Res<ForwardOut> {
         assert_eq!(state.pos, 0, "prefill_with_cache needs a fresh DecodeState");
         assert!(!ids.is_empty(), "empty prompt");
+        if ids.len() > state.capacity {
+            return Err(format!(
+                "dsv4 prefill {} tokens exceeds session cache capacity {}",
+                ids.len(),
+                state.capacity
+            ));
+        }
         let out = self
             .forward_impl(ids, None, None, Some(state))?
             .expect("prefill logits");
@@ -3524,6 +3691,14 @@ impl Dsv4Gpu {
         let d = self.model.cfg();
         let s = ids.len();
         assert!(s <= self.max_seq, "seq {s} > max_seq {}", self.max_seq);
+        if let Some(cache) = state.as_deref()
+            && s > cache.capacity
+        {
+            return Err(format!(
+                "dsv4 forward {s} tokens exceeds session cache capacity {}",
+                cache.capacity
+            ));
+        }
         let hidden = mc.n_embd as usize;
         let hc = d.hc_mult as usize;
         let n_trunk = mc.n_layer - mc.nextn_predict_layers;
@@ -3884,6 +4059,21 @@ impl Dsv4Gpu {
     /// register_buffer shape) on each layer's owning stage. Returns a fresh state
     /// (pos = 0) ready for [`Self::prefill_with_cache`].
     pub fn alloc_decode_state(&self) -> Res<DecodeState> {
+        self.alloc_decode_state_for(self.max_seq)
+    }
+
+    /// Capacity-planned twin of [`Self::alloc_decode_state`]. `capacity` is the maximum
+    /// token position this one session may consume; model-wide RoPE and kernel workspaces
+    /// remain built for `self.max_seq`. This is the concurrency seam for a 1M-capable
+    /// server: one 1M request may reserve the full compact cache, while ordinary sessions
+    /// reserve only prompt + output and coexist in the remaining VRAM.
+    pub fn alloc_decode_state_for(&self, capacity: usize) -> Res<DecodeState> {
+        if capacity == 0 || capacity > self.max_seq {
+            return Err(format!(
+                "dsv4 decode capacity {capacity} outside 1..={} model limit",
+                self.max_seq
+            ));
+        }
         let d = self.model.cfg();
         let mc = &self.model.mc;
         let win = d.sliding_window as usize;
@@ -3910,7 +4100,7 @@ impl Dsv4Gpu {
             let ratio = layer.ratio;
             #[allow(clippy::manual_checked_ops)]
             // allow: the explicit zero guard names the degenerate-ratio case; checked ops would hide the sentinel
-            let cap_blocks = if ratio != 0 { self.max_seq / ratio } else { 0 };
+            let cap_blocks = if ratio != 0 { capacity / ratio } else { 0 };
             let kvc_rows = win + cap_blocks + trans_rows;
             let mut bytes = (kvc_rows * hd * 4) as u64;
             let kvc = stream
@@ -3975,9 +4165,223 @@ impl Dsv4Gpu {
         Ok(DecodeState {
             caches,
             pos: 0,
+            capacity,
             cache_bytes,
             ws,
         })
+    }
+
+    /// Move the LIVE compact state of a parked DSV4 session into pinned host RAM.
+    ///
+    /// The full-capacity device allocations are intentionally not copied. At one million
+    /// tokens that would preserve dead tail bytes and the verify scratch, defeating the
+    /// model's compressed-state advantage. Instead this copies the 128-token SWA rings,
+    /// append-only compressed rows through each high-water mark, and the compressor/indexer
+    /// pending state. Copy commands are queued per stage and synchronized once per stage.
+    pub fn snapshot_decode_state(&self, state: &DecodeState) -> Res<Dsv4HostDecodeState> {
+        if state.pos == 0 {
+            return Err("cannot snapshot an unprimed dsv4 decode state".into());
+        }
+        let d = self.model.cfg();
+        let win = d.sliding_window as usize;
+        let hd = d.head_dim as usize;
+        if state.caches.len() != self.layer_stage.len() {
+            return Err(format!(
+                "dsv4 state has {} layer caches, runtime expects {}",
+                state.caches.len(),
+                self.layer_stage.len()
+            ));
+        }
+
+        // Layout pass: one monotonically packed slab per owning stage.
+        let mut totals = vec![0usize; self.stages.len()];
+        let mut layers = Vec::with_capacity(state.caches.len());
+        for (il, cache) in state.caches.iter().enumerate() {
+            let stage = self.layer_stage[il];
+            let st = &self.stages[stage];
+            let layer = st
+                .layers
+                .iter()
+                .find(|l| l.il == il as u32)
+                .unwrap_or_else(|| panic!("layer {il} not on stage {stage}"));
+            let kvc_elems = (win + cache.n_blocks)
+                .checked_mul(hd)
+                .ok_or_else(|| format!("layer {il} kvc live-size overflow"))?;
+            if kvc_elems > cache.kvc.len() {
+                return Err(format!(
+                    "layer {il} live kvc rows exceed allocation: {kvc_elems} > {}",
+                    cache.kvc.len()
+                ));
+            }
+            let span_opt = |p: Option<&CudaSlice<f32>>, totals: &mut [usize]| {
+                p.map(|p| dsv4_host_span(stage, p.len(), totals))
+            };
+            let ikvc = match (&cache.ikvc, &layer.idx) {
+                (Some(p), Some(ix)) => {
+                    let elems = cache
+                        .i_blocks
+                        .checked_mul(ix.cmp.d)
+                        .ok_or_else(|| format!("layer {il} indexer live-size overflow"))?;
+                    if elems > p.len() {
+                        return Err(format!(
+                            "layer {il} live indexer rows exceed allocation: {elems} > {}",
+                            p.len()
+                        ));
+                    }
+                    Some(dsv4_host_span(stage, elems, &mut totals))
+                }
+                (None, None) => None,
+                _ => {
+                    return Err(format!("layer {il} indexer cache/runtime shape mismatch"));
+                }
+            };
+            layers.push(Dsv4HostLayer {
+                kvc: dsv4_host_span(stage, kvc_elems, &mut totals),
+                n_blocks: cache.n_blocks,
+                pend_kv: span_opt(cache.pend_kv.as_ref(), &mut totals),
+                pend_score: span_opt(cache.pend_score.as_ref(), &mut totals),
+                ikvc,
+                i_blocks: cache.i_blocks,
+                ipend_kv: span_opt(cache.ipend_kv.as_ref(), &mut totals),
+                ipend_score: span_opt(cache.ipend_score.as_ref(), &mut totals),
+            });
+        }
+        let bytes = totals.iter().try_fold(0usize, |sum, &n| {
+            n.checked_mul(std::mem::size_of::<f32>())
+                .and_then(|b| sum.checked_add(b))
+                .ok_or_else(|| "dsv4 host-state byte count overflow".to_string())
+        })?;
+        let mut stages = totals
+            .iter()
+            .map(|&n| {
+                crate::PinnedHostBuf::new(n * std::mem::size_of::<f32>())
+                    .map_err(|err| format!("dsv4 pinned host slab alloc failed: {err}"))
+            })
+            .collect::<Res<Vec<_>>>()?;
+
+        // Copy pass. All planes for one layer have the same owner stage by construction.
+        for (il, meta) in layers.iter().enumerate() {
+            let stage = meta.kvc.stage;
+            let st = &self.stages[stage];
+            st.gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind dsv4 snapshot ctx"))?;
+            let stream = st.gpu.stream();
+            let cache = &state.caches[il];
+            let slab = &mut stages[stage];
+            dsv4_dtoh_span(&stream, &cache.kvc, slab, &meta.kvc)?;
+            for (src, span) in [
+                (cache.pend_kv.as_ref(), meta.pend_kv.as_ref()),
+                (cache.pend_score.as_ref(), meta.pend_score.as_ref()),
+                (cache.ikvc.as_ref(), meta.ikvc.as_ref()),
+                (cache.ipend_kv.as_ref(), meta.ipend_kv.as_ref()),
+                (cache.ipend_score.as_ref(), meta.ipend_score.as_ref()),
+            ] {
+                match (src, span) {
+                    (Some(src), Some(span)) => dsv4_dtoh_span(&stream, src, slab, span)?,
+                    (None, None) => {}
+                    _ => return Err(format!("layer {il} host snapshot optional-plane mismatch")),
+                }
+            }
+        }
+        for st in &self.stages {
+            st.gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind dsv4 snapshot sync ctx"))?;
+            st.gpu
+                .stream()
+                .synchronize()
+                .map_err(e("dsv4 snapshot sync"))?;
+        }
+        Ok(Dsv4HostDecodeState {
+            stages,
+            layers,
+            pos: state.pos,
+            capacity: state.capacity,
+            bytes,
+        })
+    }
+
+    /// Re-materialize a normal device decode state from a pinned-host parked image.
+    /// The caller gets fresh verify/step scratch at the parked allocation capacity; only
+    /// live semantic state is uploaded. A runtime/layout mismatch refuses before copying.
+    pub fn restore_decode_state(&self, host: &Dsv4HostDecodeState) -> Res<DecodeState> {
+        self.restore_decode_state_for(host, host.capacity)
+    }
+
+    /// Restore while resizing the device allocation for the incoming request. This is the
+    /// multi-turn growth seam: a short first turn can park a small cache, then a longer turn
+    /// re-materializes it at `capacity` without cold-prefilling the shared prefix.
+    pub fn restore_decode_state_for(
+        &self,
+        host: &Dsv4HostDecodeState,
+        capacity: usize,
+    ) -> Res<DecodeState> {
+        if capacity < host.pos || capacity > self.max_seq {
+            return Err(format!(
+                "dsv4 restore capacity {capacity} outside parked pos {}..={} model limit",
+                host.pos, self.max_seq
+            ));
+        }
+        if host.stages.len() != self.stages.len() || host.layers.len() != self.layer_stage.len() {
+            return Err(format!(
+                "dsv4 host state layout mismatch: {} stages/{} layers, runtime {}/{}",
+                host.stages.len(),
+                host.layers.len(),
+                self.stages.len(),
+                self.layer_stage.len()
+            ));
+        }
+        let mut state = self.alloc_decode_state_for(capacity)?;
+        for (il, meta) in host.layers.iter().enumerate() {
+            let stage = self.layer_stage[il];
+            if meta.kvc.stage != stage {
+                return Err(format!(
+                    "layer {il} host owner {} != runtime stage {stage}",
+                    meta.kvc.stage
+                ));
+            }
+            let st = &self.stages[stage];
+            st.gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind dsv4 restore ctx"))?;
+            let stream = st.gpu.stream();
+            let slab = &host.stages[stage];
+            let cache = &mut state.caches[il];
+            dsv4_htod_span(&stream, slab, &meta.kvc, &mut cache.kvc)?;
+            for (dst, span) in [
+                (cache.pend_kv.as_mut(), meta.pend_kv.as_ref()),
+                (cache.pend_score.as_mut(), meta.pend_score.as_ref()),
+                (cache.ikvc.as_mut(), meta.ikvc.as_ref()),
+                (cache.ipend_kv.as_mut(), meta.ipend_kv.as_ref()),
+                (cache.ipend_score.as_mut(), meta.ipend_score.as_ref()),
+            ] {
+                match (dst, span) {
+                    (Some(dst), Some(span)) if span.stage == stage => {
+                        dsv4_htod_span(&stream, slab, span, dst)?
+                    }
+                    (None, None) => {}
+                    _ => return Err(format!("layer {il} host restore optional-plane mismatch")),
+                }
+            }
+            cache.n_blocks = meta.n_blocks;
+            cache.i_blocks = meta.i_blocks;
+        }
+        for st in &self.stages {
+            st.gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind dsv4 restore sync ctx"))?;
+            st.gpu
+                .stream()
+                .synchronize()
+                .map_err(e("dsv4 restore sync"))?;
+        }
+        state.pos = host.pos;
+        Ok(state)
     }
 
     /// Lane 8: allocate the per-stage step workspace (device decode path only).
@@ -6342,7 +6746,11 @@ impl Dsv4Gpu {
         let d = self.model.cfg();
         let pos = state.pos;
         assert!(pos > 0, "decode_step needs prefill_with_cache first");
-        assert!(pos < self.max_seq, "pos {pos} >= max_seq {}", self.max_seq);
+        assert!(
+            pos < state.capacity,
+            "pos {pos} >= session capacity {}",
+            state.capacity
+        );
         let hidden = mc.n_embd as usize;
         let hc = d.hc_mult as usize;
         let n_trunk = mc.n_layer - mc.nextn_predict_layers;
@@ -6550,7 +6958,11 @@ impl Dsv4Gpu {
         let d = self.model.cfg();
         let pos = state.pos;
         assert!(pos > 0, "decode_step needs prefill_with_cache first");
-        assert!(pos < self.max_seq, "pos {pos} >= max_seq {}", self.max_seq);
+        assert!(
+            pos < state.capacity,
+            "pos {pos} >= session capacity {}",
+            state.capacity
+        );
         let hidden = mc.n_embd as usize;
         let hc = d.hc_mult as usize;
         let n_trunk = mc.n_layer - mc.nextn_predict_layers;
@@ -6736,7 +7148,153 @@ impl Dsv4Gpu {
         let taps = stream
             .alloc_zeros::<f32>((ds.block_size + 1) * ds.targets.len() * hidden)
             .map_err(e("dspark taps"))?;
-        Ok(DsparkState { rings, taps })
+        Ok(DsparkState {
+            rings,
+            taps,
+            tap_head: 0,
+        })
+    }
+
+    /// Park the persistent DSpark state beside a trunk host snapshot. The drafter is tiny
+    /// relative to the trunk weights, but its per-session rings are semantically required:
+    /// dropping them would make a restored turn draft from zeros while the trunk remained
+    /// correct, a silent performance fork.
+    pub fn snapshot_dspark_state(&self, state: &DsparkState) -> Res<Dsv4HostDsparkState> {
+        let ds = self.dspark();
+        if state.rings.len() != ds.blocks.len() || state.tap_head > ds.block_size {
+            return Err("dsv4 dspark state layout/cursor mismatch".into());
+        }
+        let d = self.model.cfg();
+        let win = d.sliding_window as usize;
+        let hd = d.head_dim as usize;
+        let hidden = self.model.mc.n_embd as usize;
+        let tap_elems = ds.targets.len() * hidden;
+        let mut off = 0usize;
+        let mut rings = Vec::with_capacity(state.rings.len());
+        for ring in &state.rings {
+            let n = win * hd;
+            if n > ring.len() {
+                return Err("dsv4 dspark persistent ring exceeds allocation".into());
+            }
+            rings.push(off..off + n);
+            off += n;
+        }
+        let tap = off..off + tap_elems;
+        off += tap_elems;
+        let bytes = off
+            .checked_mul(std::mem::size_of::<f32>())
+            .ok_or_else(|| "dsv4 dspark host-state byte count overflow".to_string())?;
+        let mut slab = crate::PinnedHostBuf::new(bytes)
+            .map_err(|err| format!("dsv4 dspark pinned host alloc failed: {err}"))?;
+        let last = self.stages.len() - 1;
+        let st = &self.stages[last];
+        st.gpu
+            .ctx
+            .bind_to_thread()
+            .map_err(e("bind dsv4 dspark snapshot ctx"))?;
+        let stream = st.gpu.stream();
+        for (src, range) in state.rings.iter().zip(&rings) {
+            let host = dsv4_pinned_f32_mut(&mut slab, range.clone());
+            stream
+                .memcpy_dtoh(&src.slice(0..range.len()), host)
+                .map_err(e("dsv4 dspark ring dtoh"))?;
+        }
+        let tap_src = state
+            .taps
+            .slice(state.tap_head * tap_elems..(state.tap_head + 1) * tap_elems);
+        let tap_host = dsv4_pinned_f32_mut(&mut slab, tap.clone());
+        stream
+            .memcpy_dtoh(&tap_src, tap_host)
+            .map_err(e("dsv4 dspark tap dtoh"))?;
+        stream
+            .synchronize()
+            .map_err(e("dsv4 dspark snapshot sync"))?;
+        Ok(Dsv4HostDsparkState {
+            slab,
+            rings,
+            tap,
+            bytes,
+            block_size: ds.block_size,
+        })
+    }
+
+    /// Restore a parked DSpark image. The newest tap is normalized to row zero; all other
+    /// tap rows and the draft tail are scratch and stay freshly zeroed.
+    pub fn restore_dspark_state(&self, host: &Dsv4HostDsparkState) -> Res<DsparkState> {
+        let ds = self.dspark();
+        if host.block_size != ds.block_size || host.rings.len() != ds.blocks.len() {
+            return Err("dsv4 dspark host state/runtime layout mismatch".into());
+        }
+        let mut state = self.dspark_alloc_state()?;
+        let last = self.stages.len() - 1;
+        let st = &self.stages[last];
+        st.gpu
+            .ctx
+            .bind_to_thread()
+            .map_err(e("bind dsv4 dspark restore ctx"))?;
+        let stream = st.gpu.stream();
+        for (dst, range) in state.rings.iter_mut().zip(&host.rings) {
+            let src = dsv4_pinned_f32(&host.slab, range.clone());
+            if src.len() > dst.len() {
+                return Err("dsv4 dspark host ring exceeds runtime allocation".into());
+            }
+            let mut view = dst.slice_mut(0..src.len());
+            stream
+                .memcpy_htod(src, &mut view)
+                .map_err(e("dsv4 dspark ring htod"))?;
+        }
+        let tap = dsv4_pinned_f32(&host.slab, host.tap.clone());
+        if tap.len() > state.taps.len() {
+            return Err("dsv4 dspark host tap exceeds runtime allocation".into());
+        }
+        let mut tap_dst = state.taps.slice_mut(0..tap.len());
+        stream
+            .memcpy_htod(tap, &mut tap_dst)
+            .map_err(e("dsv4 dspark tap htod"))?;
+        stream
+            .synchronize()
+            .map_err(e("dsv4 dspark restore sync"))?;
+        state.tap_head = 0;
+        Ok(state)
+    }
+
+    /// Consume a non-empty prompt suffix after restoring trunk + DSpark state, returning
+    /// logits for the next position. Every suffix token updates both the trunk's compact
+    /// caches and the drafter's accepted-position rings exactly like cold sequential prime.
+    pub fn dspark_continue_prefix(
+        &self,
+        suffix: &[u32],
+        state: &mut DecodeState,
+        dstate: &mut DsparkState,
+    ) -> Res<Vec<f32>> {
+        if suffix.is_empty() {
+            return Err("dsv4 restored continuation needs a non-empty suffix".into());
+        }
+        if state.pos + suffix.len() > state.capacity {
+            return Err(format!(
+                "dsv4 restored continuation {} + {} exceeds session capacity {}",
+                state.pos,
+                suffix.len(),
+                state.capacity
+            ));
+        }
+        let mut last_logits = None;
+        for (i, &tok) in suffix.iter().enumerate() {
+            let pos = state.pos;
+            if i + 1 == suffix.len() {
+                last_logits = Some(self.decode_step_tap(tok, state, dstate, 0)?);
+            } else {
+                let _ = self.decode_step_greedy_tap(tok, state, dstate, 0)?;
+            }
+            self.dspark_write_rings(dstate, 0, pos)?;
+        }
+        let last = self.stages.len() - 1;
+        self.stages[last]
+            .gpu
+            .stream()
+            .synchronize()
+            .map_err(e("dsv4 restored continuation sync"))?;
+        Ok(last_logits.expect("non-empty suffix has last logits"))
     }
 
     /// main_x = main_norm(main_proj(main_hidden)) (M:853), s rows on the last stage.
@@ -6961,6 +7519,7 @@ impl Dsv4Gpu {
                 .memcpy_dtod(&src, &mut dst)
                 .map_err(e("seed tap row"))?;
         }
+        dstate.tap_head = 0;
         stream.synchronize().map_err(e("prime sync"))?;
         Ok(out)
     }
@@ -7004,6 +7563,7 @@ impl Dsv4Gpu {
                 .memcpy_dtod(&src, &mut dst)
                 .map_err(e("ring write"))?;
         }
+        state.tap_head = tap_row;
         Ok(())
     }
 
@@ -9838,10 +10398,10 @@ impl Dsv4Gpu {
         let pos0 = state.pos;
         assert!(pos0 > 0, "batched verify needs prefill_with_cache first");
         assert!(
-            pos0 + t <= self.max_seq,
-            "round [{pos0}, {}) exceeds max_seq {}",
+            pos0 + t <= state.capacity,
+            "round [{pos0}, {}) exceeds session capacity {}",
             pos0 + t,
-            self.max_seq
+            state.capacity
         );
         let hidden = mc.n_embd as usize;
         let hc = d.hc_mult as usize;
@@ -10256,13 +10816,83 @@ impl Dsv4Gpu {
         vstate: &mut VerifyState,
         depth_cap: usize,
         vt: Dsv4Vt,
-        mut round_cb: Option<&mut dyn FnMut(&[u32]) -> bool>,
+        round_cb: Option<&mut dyn FnMut(&[u32]) -> bool>,
     ) -> Res<SpecRunGpu> {
         let p0 = prompt.len();
         assert!(n_new >= 1, "n_new must be positive");
         let pre = self.dspark_prefill_prime(prompt, state, dstate)?;
+        self.spec_greedy_batched_stream_seeded(
+            p0,
+            &pre.logits,
+            n_new,
+            state,
+            dstate,
+            vstate,
+            depth_cap,
+            vt,
+            round_cb,
+        )
+    }
+
+    /// Speculative greedy generation over a trunk + DSpark state restored at the exact
+    /// prompt boundary. `initial_logits` are produced while feeding the non-empty suffix
+    /// after the cached prefix, so this path performs no cold re-prefill.
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::type_complexity)]
+    pub fn spec_greedy_batched_stream_restored(
+        &self,
+        prompt_len: usize,
+        initial_logits: &[f32],
+        n_new: usize,
+        state: &mut DecodeState,
+        dstate: &mut DsparkState,
+        vstate: &mut VerifyState,
+        depth_cap: usize,
+        vt: Dsv4Vt,
+        round_cb: Option<&mut dyn FnMut(&[u32]) -> bool>,
+    ) -> Res<SpecRunGpu> {
+        if state.pos != prompt_len {
+            return Err(format!(
+                "dsv4 restored spec state pos {} != prompt len {prompt_len}",
+                state.pos
+            ));
+        }
+        if dstate.tap_head != 0 {
+            return Err(format!(
+                "dsv4 restored spec tap cursor {} != normalized row 0",
+                dstate.tap_head
+            ));
+        }
+        self.spec_greedy_batched_stream_seeded(
+            prompt_len,
+            initial_logits,
+            n_new,
+            state,
+            dstate,
+            vstate,
+            depth_cap,
+            vt,
+            round_cb,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::type_complexity)]
+    fn spec_greedy_batched_stream_seeded(
+        &self,
+        p0: usize,
+        initial_logits: &[f32],
+        n_new: usize,
+        state: &mut DecodeState,
+        dstate: &mut DsparkState,
+        vstate: &mut VerifyState,
+        depth_cap: usize,
+        vt: Dsv4Vt,
+        mut round_cb: Option<&mut dyn FnMut(&[u32]) -> bool>,
+    ) -> Res<SpecRunGpu> {
+        assert!(n_new >= 1, "n_new must be positive");
         let mut t_tok = {
-            let lg = &pre.logits;
+            let lg = initial_logits;
             let mut best = 0usize;
             for i in 1..lg.len() {
                 if lg[i] > lg[best] {
@@ -10512,18 +11142,97 @@ impl Dsv4Gpu {
         vt: Dsv4Vt,
         sample: &Dsv4SampleCfg,
         pen: Option<&Dsv4PenaltyCfg>,
+        round_cb: Option<&mut dyn FnMut(&[u32]) -> bool>,
+    ) -> Res<SpecRunGpu> {
+        assert!(n_new >= 1, "n_new must be positive");
+        let pre = self.dspark_prefill_prime(prompt, state, dstate)?;
+        self.spec_sampled_batched_pen_seeded(
+            prompt,
+            &pre.logits,
+            n_new,
+            state,
+            dstate,
+            vstate,
+            depth_cap,
+            vt,
+            sample,
+            pen,
+            round_cb,
+        )
+    }
+
+    /// Sampled DSpark generation over an exact restored prompt boundary. Sampling remains
+    /// position-keyed against the full logical prompt, so the restored and cold routes share
+    /// the same token stream for a fixed seed.
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::type_complexity)]
+    pub fn spec_sampled_batched_pen_restored(
+        &self,
+        prompt: &[u32],
+        initial_logits: &[f32],
+        n_new: usize,
+        state: &mut DecodeState,
+        dstate: &mut DsparkState,
+        vstate: &mut VerifyState,
+        depth_cap: usize,
+        vt: Dsv4Vt,
+        sample: &Dsv4SampleCfg,
+        pen: Option<&Dsv4PenaltyCfg>,
+        round_cb: Option<&mut dyn FnMut(&[u32]) -> bool>,
+    ) -> Res<SpecRunGpu> {
+        if state.pos != prompt.len() {
+            return Err(format!(
+                "dsv4 restored sampled state pos {} != prompt len {}",
+                state.pos,
+                prompt.len()
+            ));
+        }
+        if dstate.tap_head != 0 {
+            return Err(format!(
+                "dsv4 restored sampled tap cursor {} != normalized row 0",
+                dstate.tap_head
+            ));
+        }
+        self.spec_sampled_batched_pen_seeded(
+            prompt,
+            initial_logits,
+            n_new,
+            state,
+            dstate,
+            vstate,
+            depth_cap,
+            vt,
+            sample,
+            pen,
+            round_cb,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::type_complexity)]
+    fn spec_sampled_batched_pen_seeded(
+        &self,
+        prompt: &[u32],
+        initial_logits: &[f32],
+        n_new: usize,
+        state: &mut DecodeState,
+        dstate: &mut DsparkState,
+        vstate: &mut VerifyState,
+        depth_cap: usize,
+        vt: Dsv4Vt,
+        sample: &Dsv4SampleCfg,
+        pen: Option<&Dsv4PenaltyCfg>,
         mut round_cb: Option<&mut dyn FnMut(&[u32]) -> bool>,
     ) -> Res<SpecRunGpu> {
         let p0 = prompt.len();
         assert!(n_new >= 1, "n_new must be positive");
-        let pre = self.dspark_prefill_prime(prompt, state, dstate)?;
         // token at absolute position p0 (output index 0): the seeded draw, keyed p0
         let mut t_tok = if let Some(pc) = pen {
-            let mut row = pre.logits.clone();
+            let mut row = initial_logits.to_vec();
             dsv4_penalize_row(&mut row, prompt, pc);
             dsv4_sample_row(&row, p0, sample)?
         } else {
-            dsv4_sample_row(&pre.logits, p0, sample)?
+            dsv4_sample_row(initial_logits, p0, sample)?
         };
         let mut tokens: Vec<u32> = Vec::with_capacity(n_new);
         let mut rounds: Vec<SpecRoundGpu> = Vec::new();
