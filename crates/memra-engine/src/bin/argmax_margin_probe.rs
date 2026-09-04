@@ -26,8 +26,8 @@
 //! env: engine knobs (MEMRA_FA_SPLIT, MEMRA_Q80_G2, MEMRA_FAST, ...) steer the arm under test.
 
 use memra_engine::Engine;
-use memra_engine::cache::Cache;
 use memra_engine::hybrid::HybridModel;
+use memra_engine::pp::new_cache as new_model_cache;
 use memra_gguf::GgufFile;
 use memra_tokenizer::Tokenizer;
 
@@ -45,6 +45,18 @@ fn top2(l: &[f32]) -> (usize, f32, usize, f32) {
         }
     }
     (i1, v1, i2, v2)
+}
+
+fn validate_placement(
+    sharded_cross_device: bool,
+    has_hyper_prefill: bool,
+) -> Result<(), &'static str> {
+    if sharded_cross_device && !has_hyper_prefill {
+        return Err(
+            "argmax-margin-probe: sharded cross-device prefill is unsupported for this trunk; no measurement was performed",
+        );
+    }
+    Ok(())
 }
 
 fn measurement_row(pos: usize, prefill: (usize, f32), decode: (usize, f32), delta: f32) -> String {
@@ -84,6 +96,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Tokenizer::from_gguf(&g).map_err(|err| format!("tokenizer: {err}"))?,
         )
     };
+    // forward_last has a PP prefill dispatch for the hyper-connection trunk. The
+    // generic trunk still executes prefill through one engine; reject remote
+    // weight placement rather than silently substitute different prime arithmetic.
+    validate_placement(
+        memra_engine::pp::pp_sharded_cross_device(),
+        model.hyper.is_some(),
+    )?;
     let text = std::fs::read_to_string(prompt_file)?;
     let prompt = tok.encode(&text, true);
     let t = prompt.len();
@@ -108,7 +127,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --- config A: the tokenwise decode path, capturing logits at EVERY position ---
     // This is the gate's "decode" side. Stepping the whole prompt gives us, for free, the
     // per-position top-2 margin distribution under one fixed arithmetic config.
-    let mut cache = Cache::new(&e, &model.cfg, t + 8)?;
+    let mut cache = new_model_cache(&e, &model.cfg, t + 8)?;
     let mut dec_at: Vec<Vec<f32>> = Vec::with_capacity(window);
     for (i, &tk) in prompt.iter().enumerate() {
         let l = model.decode_step(&e, tk, &mut cache)?;
@@ -277,7 +296,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
-    use super::measurement_row;
+    use super::{measurement_row, validate_placement};
+
+    #[test]
+    fn unsupported_sharded_prefill_is_rejected() {
+        assert!(validate_placement(true, false).is_err());
+        assert!(validate_placement(true, true).is_ok());
+        assert!(validate_placement(false, false).is_ok());
+        assert!(validate_placement(false, true).is_ok());
+    }
 
     #[test]
     fn table_round_trips_f32_margins() {

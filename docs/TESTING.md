@@ -215,6 +215,10 @@ retain the GGUF loader and tokenizer. This gate compares batched prefill with to
 **serial decode** on the same prompt positions, not the server's batched or speculative
 paths, and supplies no performance result. Checkpoint size and placement still determine
 the required hardware; accepting a directory is not a model qualification receipt.
+The decode cache uses native pipeline placement. Sharded cross-device inputs are accepted
+only for the hyper-connection trunk whose `forward_last` has a pipeline prefill dispatch;
+other sharded trunks are explicitly rejected before measurement. No alternate prime
+arithmetic is substituted to make them pass.
 
 An explicitly requested missing model or probe, a missing prompt, invalid options, or an
 empty/malformed/non-finite/duplicate-position table fails. The measured table must contain
