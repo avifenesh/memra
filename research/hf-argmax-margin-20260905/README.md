@@ -12,10 +12,17 @@ includes the small explained-flip case. Five independent review passes are clean
 that correction.
 
 CPU validation: nine Python test methods with HF/GGUF, negative-input, malformed-table,
-and canary controls; one Rust formatter test; cargo check; formatting and diff checks.
+and canary controls; two Rust tests for formatting and placement refusal; cargo check;
+formatting and diff checks.
 The wrapper tests run in hosted CI. Raw CPU outputs are adjacent.
 
 Real-checkpoint execution is pending. This gate compares prefill against serial decode
 on identical teacher-forced prompt positions. It does not qualify sampled serving,
 batched decode, speculative execution, or every hardware placement. A directory loading
 successfully is not a checkpoint-parity receipt.
+
+The serial decode cache now uses native pipeline placement, matching `run-gen`.
+Sharded cross-device input is refused for trunks without a pipeline `forward_last`
+dispatch. The hyper-connection trunk has that dispatch and remains eligible. This
+restriction avoids silently replacing the measured prefill arithmetic. A targeted
+review of the placement correction is clean; real checkpoint execution remains pending.
