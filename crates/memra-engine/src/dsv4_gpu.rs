@@ -9861,7 +9861,9 @@ impl Dsv4Gpu {
                 let kks: Vec<usize> = nbs.iter().map(|&nb| ix.topk.min(nb)).collect();
                 let tail_max = kks.iter().cloned().max().unwrap_or(0);
                 slots = win + tail_max;
-                if host_math {
+                // Keep T=1 on the pre-batch scalar sequence as an always-live exactness
+                // witness. The hardware gate compares it against every wider transaction.
+                if host_math || t == 1 {
                     for i in 0..t {
                         let pos = pos0 + i;
                         let idx_off = i * vws.idx_stride;
