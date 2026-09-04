@@ -1585,7 +1585,9 @@ extern "C" int memra_dsv4_route(const float* raw, const float* bias, const int* 
 // launches by construction). a_stride_rows = 0 (shared x codes) or 1 (per-slot h rows).
 // DSV4 selected-expert output columns owned by one CTA. Per-column arithmetic is
 // independent and unchanged; widening this only amortizes activation/table setup.
-#define DSV4_FP4_SEL_CPB 8
+// Eight columns was exact-gated on the target pair but rejected: 75.48 vs 75.65 s
+// long-prefill is noise while short DSpark regressed 41.66 -> 40.71 tok/s.
+#define DSV4_FP4_SEL_CPB 4
 
 // Lane-9 rung 2 (BIT-EXACT multi-column blocking): one block owns consecutive
 // output features of one slot — the lane-8 one-col blocks did 2 KB of weight work
