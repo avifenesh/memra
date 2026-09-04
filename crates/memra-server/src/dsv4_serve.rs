@@ -81,6 +81,10 @@ fn resolve_prefill_chunk(raw: Option<&str>, max_seq: usize) -> Result<usize, Str
     Ok(chunk)
 }
 
+fn use_chunked_prefill(chunk: usize, prompt_tokens: usize) -> bool {
+    chunk > 0 && prompt_tokens > chunk
+}
+
 struct ParkedEntry {
     toks: Vec<u32>,
     affinity: Option<String>,
@@ -830,6 +834,13 @@ fn serve_one(
     }
     let use_spec = m.spec && !(greedy && penalties_set);
     let session_capacity = prompt.len() + budget;
+    // A prompt no wider than one configured chunk gets the faster canonical
+    // monolithic prime. It is deliberately not parked: a later, longer cold prompt
+    // uses the chunked numeric regime, so retaining this state would make cache use
+    // choose a different realization. Once prompts exceed the chunk, cold and restored
+    // paths are both chunked and cache-transparent.
+    let short_monolithic =
+        m.prefill_chunk > 0 && !use_chunked_prefill(m.prefill_chunk, prompt.len());
     let mut restored = try_restore_prefix(m, host_cache, req, &prompt, session_capacity, use_spec);
     let n_cached = restored.as_ref().map_or(0, |hit| hit.n_cached);
     let _ = req.tx.send(Event::PromptUsage {
@@ -873,7 +884,7 @@ fn serve_one(
                 .alloc_decode_state_for_transient(session_capacity, transient_rows)
                 .map_err(EngineError::engine)?;
             let mut dstate = m.gpu.dspark_alloc_state().map_err(EngineError::engine)?;
-            let initial_logits = if m.prefill_chunk > 0 {
+            let initial_logits = if m.prefill_chunk > 0 && !short_monolithic {
                 Some(
                     m.gpu
                         .dspark_prefill_prime_chunked(
@@ -984,7 +995,7 @@ fn serve_one(
                 .gpu
                 .alloc_decode_state_for_transient(session_capacity, transient_rows)
                 .map_err(EngineError::engine)?;
-            let logits = if m.prefill_chunk > 0 {
+            let logits = if m.prefill_chunk > 0 && !short_monolithic {
                 m.gpu
                     .prefill_with_cache_chunked(&prompt, &mut state, m.prefill_chunk)
                     .map_err(EngineError::engine)?
@@ -1068,14 +1079,23 @@ fn serve_one(
         state_to_park = state;
     }
 
-    let park_toks = match processed_prefix_tokens(&prompt, &emit.ids, state_to_park.pos) {
-        Ok(toks) => Some(toks),
-        Err(err) => {
-            // A speculative round commits before its callback. If an EOS/stop lands inside that
-            // round, state may be ahead of the user-visible stream; without a semantic rollback
-            // that state is not cacheable, and pretending otherwise would poison the next turn.
-            eprintln!("[dsv4-host] skip park: {err}");
-            None
+    let park_toks = if short_monolithic {
+        eprintln!(
+            "[dsv4-host] skip park: short monolithic prime ({} <= chunk {}); numeric-regime isolation",
+            prompt.len(),
+            m.prefill_chunk
+        );
+        None
+    } else {
+        match processed_prefix_tokens(&prompt, &emit.ids, state_to_park.pos) {
+            Ok(toks) => Some(toks),
+            Err(err) => {
+                // A speculative round commits before its callback. If an EOS/stop lands inside that
+                // round, state may be ahead of the user-visible stream; without a semantic rollback
+                // that state is not cacheable, and pretending otherwise would poison the next turn.
+                eprintln!("[dsv4-host] skip park: {err}");
+                None
+            }
         }
     };
     emit.finish(
@@ -1109,7 +1129,7 @@ fn argmax(v: &[f32]) -> u32 {
 
 #[cfg(test)]
 mod prefill_chunk_flag_tests {
-    use super::resolve_prefill_chunk;
+    use super::{resolve_prefill_chunk, use_chunked_prefill};
 
     #[test]
     fn default_is_off_and_values_are_strictly_bounded() {
@@ -1120,6 +1140,14 @@ mod prefill_chunk_flag_tests {
         assert!(resolve_prefill_chunk(Some("banana"), 1_048_576).is_err());
         assert!(resolve_prefill_chunk(Some("65"), 64).is_err());
         assert!(resolve_prefill_chunk(Some("65"), 1_048_576).is_err());
+    }
+
+    #[test]
+    fn prompts_at_or_below_one_chunk_stay_monolithic() {
+        assert!(!use_chunked_prefill(0, 10_000));
+        assert!(!use_chunked_prefill(32, 1));
+        assert!(!use_chunked_prefill(32, 32));
+        assert!(use_chunked_prefill(32, 33));
     }
 }
 
