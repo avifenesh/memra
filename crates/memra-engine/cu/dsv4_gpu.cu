@@ -3506,6 +3506,20 @@ extern "C" __global__ void dsv4_hc_pre_fused_v3_kernel(
     // Every lane of the warp executes every __shfl_sync (the mask is full and the shuffles sit
     // outside the `l < hc*hc` guard); lanes past the matrix carry a clamped index and a zero
     // value and never write. `niters`, `pre`, `post`, `spre` and `combg` keep their meanings.
+    // MEASURED AND REMOVED: an ALL-REGISTER Sinkhorn arm (every lane holding the whole 4x4
+    // matrix, no shuffles, no ballot) was built here and LOST on 2x B200 -- t=1 98 us against the
+    // shuffle arm's 93, t=4 117 against 102, bit-identical throughout. The reasoning that produced
+    // it ("the lanes are idle, so redundant compute is free") confused LATENCY with THROUGHPUT:
+    // only warp 0 runs this stage either way, so holding all 16 elements per lane multiplies that
+    // one warp's divides by hc*hc -- 640 per lane per call against 40 -- and the extra arithmetic
+    // cancels the saved dependent latency. It did not spill (48 registers, ncu).
+    //
+    // And the premise was wrong anyway. Sweeping MEMRA_HC_GATE_ITERS against THIS kernel with
+    // sink_reg=1 gives 90 us at 1 iteration and 91 at 40: the served Sinkhorn costs ~26 ns per
+    // iteration, about 0.5 us of a 12.7 us kernel. The ~700 ns/iteration that motivated the arm
+    // was the v2 kernel's SHARED-MEMORY Sinkhorn at block 128, a path this one does not take.
+    // The cost here is stages 1 and 3 -- 130 KB moved on ONE block, ~11 GB/s, because the grid is
+    // the sequence length and decode has s = 1. See TRAP:decode-kernel-launched-per-sequence-position.
     if (sink_reg && t < 32) {
         const unsigned MASK = 0xffffffffu;
         __syncwarp();
