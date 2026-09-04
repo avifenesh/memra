@@ -127,7 +127,62 @@ fn bit_diffs(a: &Hc4, b: &Hc4) -> usize {
     cmp(&a.0, &b.0) + cmp(&a.1, &b.1) + cmp(&a.2, &b.2) + cmp(&a.3, &b.3)
 }
 
+/// `MEMRA_HC_BW_PROBE=<MiB>`: measure this part's ACHIEVABLE streaming bandwidth, then exit.
+///
+/// WHY THIS EXISTS. Every decode matvec on the 2x B200 pair tops out near 2.2 TB/s and most sit
+/// far lower, and the whole roofline argument for the 230 tok/s target was written against a
+/// nominal 8 TB/s. That nominal is a spec sheet, not a measurement, and no kernel in the bench
+/// had ever been compared against what the part actually delivers. `dsv4_hc_collapse_kernel` is
+/// the cleanest streamer available without adding a kernel: at hc=4 it reads `4*d` floats and
+/// writes `d`, one pass, fully coalesced, grid `d/256` -- a pure sequential read at any size.
+fn bandwidth_probe(mib: usize) -> Res<()> {
+    let ctx = CudaContext::new(0)?;
+    let stream = ctx.default_stream();
+    // d chosen so the READ side is `mib` MiB: read = 4*d*4 bytes.
+    let d = (mib * 1024 * 1024) / 16;
+    let x = stream.alloc_zeros::<f32>(4 * d)?;
+    let pre = stream.alloc_zeros::<f32>(4)?;
+    let mut y = stream.alloc_zeros::<f32>(d)?;
+    let read_b = (4 * d * 4) as f64;
+    let write_b = (d * 4) as f64;
+    let mut best = f64::MAX;
+    for _ in 0..7 {
+        stream.synchronize()?;
+        let t0 = std::time::Instant::now();
+        unsafe {
+            let rc = k::memra_dsv4_hc_collapse(
+                x.device_ptr(&stream).0 as *const f32,
+                pre.device_ptr(&stream).0 as *const f32,
+                y.device_ptr_mut(&stream).0 as *mut f32,
+                1,
+                4,
+                d as i32,
+                stream.cu_stream() as *mut c_void,
+            );
+            assert_eq!(rc, 0, "hc_collapse rc");
+        }
+        stream.synchronize()?;
+        let us = t0.elapsed().as_secs_f64() * 1e6;
+        if us < best {
+            best = us;
+        }
+    }
+    println!(
+        "[bw-probe] {mib} MiB read + {:.0} MiB write in {best:.1} us => {:.0} GB/s read, \
+         {:.0} GB/s read+write",
+        write_b / 1048576.0,
+        read_b / best / 1e3,
+        (read_b + write_b) / best / 1e3
+    );
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if let Ok(v) = std::env::var("MEMRA_HC_BW_PROBE") {
+        let mib: usize = v.trim().parse().unwrap_or(1024);
+        return bandwidth_probe(mib);
+    }
+
     if std::env::var("NVIDIA_TF32_OVERRIDE").as_deref() != Ok("0") {
         // SAFETY: no CUDA call has been made yet in this process.
         unsafe { std::env::set_var("NVIDIA_TF32_OVERRIDE", "0") };
