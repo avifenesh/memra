@@ -2416,6 +2416,8 @@ pub(crate) fn dtoh_trace_hit(bytes: usize) {
             loc.line()
         );
     }
+}
+
 /// `MEMRA_MOE_EXPERT_RP=1` (default OFF, memra#147): the device-RESIDENT NVFP4 expert slabs are
 /// repacked at upload into the slot-major per-row layout the engine already names
 /// `QT_NVFP4_V2` (per row: slot g's 16 quant bytes at g*16, its two UE4M3 scale bytes at
