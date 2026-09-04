@@ -1427,6 +1427,15 @@ fn read_nvfp4_scale_layout(dir: &std::path::Path) -> std::io::Result<Nvfp4ScaleL
         .unwrap_or("")
         .trim();
     if value.starts_with("Swizzle32x4x4") {
+        // LOAD-TIME ENGAGEMENT RECEIPT. Choosing this layout silently would leave "did the
+        // unswizzle run?" answerable only by inference, and the failure it prevents is a model
+        // that loads and speaks fluently on wrong weights. Announce it, once, at the only place
+        // that decides it.
+        eprintln!(
+            "[nvfp4-scale] layout=Swizzle32x4x4 from {} — per-16 scale planes are unswizzled at \
+             load; repack caches are keyed -swz32x4x4",
+            dir.join("LAYOUT.json").display()
+        );
         Ok(Nvfp4ScaleLayout::Swizzle32x4x4)
     } else if value.eq_ignore_ascii_case("linear") || value.is_empty() {
         Ok(Nvfp4ScaleLayout::Linear)
