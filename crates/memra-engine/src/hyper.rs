@@ -738,6 +738,115 @@ pub fn pre_t1_ws(
 /// `post` at T=1 into the workspace's `xb` slot (the caller swaps `xb` with its in-flight
 /// state). Reads the gates `pre_t1_ws` left in `ws.post`/`ws.comb` — the same kernel, the
 /// same operand bytes as the allocating `post`.
+/// Which of the decode workspace's two norm scratches `pre_t1_ws_zq8` writes: the attention
+/// site's `h` or the MLP site's `z`. Passed as a tag rather than a `&mut` so the function can
+/// take the whole workspace by one mutable borrow and destructure it inside.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum NormDst {
+    H,
+    Z,
+}
+
+pub static HC_PRE_ZQ8_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// `pre_t1_ws` and the `rms_norm_zq8` that consumes its `y`, as ONE launch (door
+/// `MEMRA_HC_PRE_ZQ8`, lane/hcpre-zq8-fusion-20260905). Returns the q8_1 pair the walk would
+/// otherwise get from `Engine::rms_norm_zq8_f32`, with `z` (the normed f32 row) written to
+/// `ws.h` or `ws.z` per `dst`. Returns `None` -- without launching anything -- wherever the
+/// fused kernel's preconditions do not hold, so the caller runs the two-launch program
+/// unchanged: the fused pre arm must be V2 (the v3 kernel is what this body was generated
+/// from), the norm's block must fit inside the pre-chain's, and the site must be within the
+/// v3 kernel's warp-0 invariant.
+#[allow(clippy::too_many_arguments)]
+pub fn pre_t1_ws_zq8(
+    e: &Engine,
+    topology: &HyperTopology,
+    site: &HyperSite,
+    x: &CudaSlice<f32>,
+    ws: &mut HyperDecodeWs,
+    hidden: usize,
+    norm_w: &CudaSlice<f32>,
+    dst: NormDst,
+    eps_norm: f32,
+) -> Res<Option<(CudaSlice<i8>, CudaSlice<f32>)>> {
+    let streams = topology.streams;
+    let rows = topology.rows();
+    let width = streams * hidden;
+    let block = crate::hc_pre_block();
+    let rms_bd = crate::rms_block() as usize;
+    if hc_fused_pre_arm() != HcFusedPreArm::V2
+        || streams > 8
+        || rows > 32
+        || rms_bd > block
+        || !rms_bd.is_multiple_of(32)
+        || !hidden.is_multiple_of(32)
+    {
+        return Ok(None);
+    }
+    let stream = e.stream();
+    {
+        let xr = x.slice(0..width);
+        let wv = site.fn_w.slice(0..site.fn_w.len());
+        let mut yr = ws.mixes.slice_mut(0..rows);
+        e.linear_t1_into(&xr, &wv, &mut yr, width, rows)
+            .map_err(|err| format!("hc pre_t1_ws_zq8 mixes: {err}"))?;
+    }
+    let mut q = e.uninit_i8(hidden)?;
+    let mut d = e.uninit(hidden / 32)?;
+    let HyperDecodeWs {
+        mixes,
+        pre,
+        post,
+        comb,
+        y,
+        h,
+        z,
+        ..
+    } = ws;
+    let zdst: &mut CudaSlice<f32> = match dst {
+        NormDst::H => h,
+        NormDst::Z => z,
+    };
+    unsafe {
+        ck(
+            "hc_pre_zq8",
+            k::memra_dsv4_hc_pre_zq8(
+                dpf!(x, &stream),
+                dpf!(mixes, &stream),
+                dpf!(site.scale, &stream),
+                dpf!(site.base, &stream),
+                dpm!(pre, &stream),
+                dpm!(post, &stream),
+                dpm!(comb, &stream),
+                dpm!(y, &stream),
+                1,
+                streams as i32,
+                hidden as i32,
+                topology.sinkhorn_iterations as i32,
+                topology.epsilon,
+                std::ptr::null_mut(),
+                block as i32,
+                crate::hc_pre_sink_reg() as i32,
+                dpf!(norm_w, &stream),
+                dpm!(zdst, &stream),
+                q.device_ptr_mut(&stream).0 as *mut i8,
+                d.device_ptr_mut(&stream).0 as *mut f32,
+                rms_bd as i32,
+                eps_norm,
+                sp(&stream),
+            ),
+        )?;
+    }
+    if HC_PRE_ZQ8_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+        eprintln!(
+            "[hc-pre-zq8] engaged streams={streams} hidden={hidden} block={block} rms_bd={rms_bd} \
+             (one launch replaces hc_pre_fused_v3 + rms_norm_zq8_f32_v2 per site; MEMRA_HC_PRE_ZQ8=1)"
+        );
+    }
+    Ok(Some((q, d)))
+}
+
 pub fn post_t1_ws(
     e: &Engine,
     topology: &HyperTopology,
