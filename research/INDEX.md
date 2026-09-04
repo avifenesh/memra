@@ -16,6 +16,7 @@ accept-gate-20260806 | Detected values match the f8f4 lane cell-for-cell — thi
 accept-telemetry-20260805 | - | RAW-ONLY
 admission-20260806 | fix-on: contended first-text no longer scales with burst size — 0.12-0.15s at ANY burst, i.e. the SOLO first-text class (0.124s). B128 contended = 10.5x better than fix-off. | VERDICT.md
 admit-oom-20260806 | - | RAW-ONLY
+admit-predict-corrective-20260904 | Corrective follow-up: closes automatic expert-parallel bypass by inspecting loaded model state (lm.model.is_multi_device(), tensor ordinals, PP cuts) before ambient env vars; extracts evaluate_predictive_admission_verdict and evaluate_decoupled_admission production helpers tested across multi-session concurrency; verifies fail-closed boot semantics across 5 real subprocess tests (single GPU, PP, explicit TP/EP, auto EP, and env-unset-after-load). | VERDICT.md
 affinity-20260809 | 12/12 sequential turns (17/17 including burst+postburst) BYTE-IDENTICAL to a true cold... | RESULTS.md
 affroom-20260809 | The live dogfood bug is fixed: capacity no longer vetoes an otherwise-valid plain-affinity checkpoint. | RESULTS.md
 agentworld-20260802 | Stage 5 — verdict: HOLD (do not publish as supported) | README.md
