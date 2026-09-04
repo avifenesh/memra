@@ -372,17 +372,47 @@ pub fn glm5_graph_recapture_on() -> bool {
 }
 
 pub fn glm5_vrows_t1_dev_forced() -> bool {
-    if std::env::var("MEMRA_GLM5_VROWS_T1_DEV").as_deref() == Ok("1") {
-        return true;
+    glm5_vrows_t1_dev_forced_from(
+        std::env::var("MEMRA_GLM5_VROWS_T1_DEV").ok().as_deref(),
+        env!("MEMRA_BUILT_CUDA_ARCH"),
+        glm5_graph_no_capture() && glm5_decode_graph_on(),
+    )
+}
+
+/// The pure parse behind [`glm5_vrows_t1_dev_forced`] (arch-keyed since 2026-09-04): `1` forces
+/// the T=1 device-table MoE arm on every eager layer, `0` leaves the eager layers on the host
+/// readback (the arm still engages inside a capture, which is keyed on the open region, not on
+/// this), and UNSET forces it on `100a` builds. Receipt (darklanes
+/// research/glm5-b200-20260902/LANE.md, t1devab 2026-09-04, 2x B200 pair, composed defaults):
+/// host 79.60/79.81/79.31 -> 79.60 vs forced 84.11/84.19/83.29 -> 84.11, +5.67%, tape
+/// 9437b599f6b9d2a9 on all six boots; the 11 eager MLA-layer MoE calls each lose a pinned
+/// readback plus a device drain. `no_capture_bisect` is the `MEMRA_GLM5_GRAPH_NO_CAPTURE` knob's
+/// own forcing, unchanged.
+pub fn glm5_vrows_t1_dev_forced_from(
+    v: Option<&str>,
+    built_arch: &str,
+    no_capture_bisect: bool,
+) -> bool {
+    match v.map(str::trim) {
+        Some("1") => true,
+        Some("0") => no_capture_bisect,
+        _ => built_arch == "100a" || no_capture_bisect,
     }
-    // `MEMRA_GLM5_GRAPH_NO_CAPTURE=1` MEANS WHAT ITS DOC SAYS, and after the re-keying above it
-    // would otherwise mean the opposite. Its whole claim is "the device-table MoE arm engages
-    // exactly as it does in serving and the capture never happens"; with the arm keyed on an open
-    // capture, refusing the capture would also stand the arm down and the cell would test
-    // nothing — which is precisely what box take 12 measured (`VACUOUS: the selection ledger
-    // recorded no rows on one of the arms`, 21 host rows against 0 device rows). So the
-    // no-capture knob forces the arm on, and the bisect it was created for actually runs.
-    glm5_graph_no_capture() && glm5_decode_graph_on()
+}
+
+#[cfg(test)]
+mod glm5_vrows_t1_dev_default_tests {
+    use super::glm5_vrows_t1_dev_forced_from;
+
+    #[test]
+    fn arch_keyed_default_with_override_and_bisect_knob() {
+        assert!(glm5_vrows_t1_dev_forced_from(None, "100a", false));
+        assert!(!glm5_vrows_t1_dev_forced_from(None, "120a", false));
+        assert!(glm5_vrows_t1_dev_forced_from(None, "120a", true));
+        assert!(glm5_vrows_t1_dev_forced_from(Some("1"), "120a", false));
+        assert!(!glm5_vrows_t1_dev_forced_from(Some("0"), "100a", false));
+        assert!(glm5_vrows_t1_dev_forced_from(Some("0"), "100a", true));
+    }
 }
 
 /// `MEMRA_GLM5_GRAPH_TRACE=1` — GATE-HARNESS trace for `MEMRA_GLM5_DECODE_GRAPH`, never a
