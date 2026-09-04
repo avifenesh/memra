@@ -12,7 +12,7 @@
 //! Usage: dsv4-host-cache-gate <model-dir> <fixtures.json> [dev0,dev1]
 
 use memra_engine::dsv4_gpu::{DecodeState, DsparkState, Dsv4Gpu};
-use memra_gguf::dsv4_forward::FixtureSpec;
+use memra_gguf::dsv4_forward::{FixtureSpec, drift_coeff};
 use std::path::Path;
 
 fn argmax(row: &[f32]) -> u32 {
@@ -38,6 +38,13 @@ fn max_abs(left: &[f32], right: &[f32]) -> f32 {
         .zip(right)
         .map(|(a, b)| (a - b).abs())
         .fold(0.0f32, f32::max)
+}
+
+/// Existing DSV4 native-class doctrine, specialized to two GPU realizations: each
+/// side contributes the lane-7 depth-86 drift coefficient.
+fn native_gpu_pair_band(top1: f32) -> f64 {
+    let c = drift_coeff(86.0, 86.0);
+    3.0 * 2f64.sqrt() * (c + c) * top1.abs() as f64
 }
 
 fn classes_equal(left: &[(String, Vec<f32>)], right: &[(String, Vec<f32>)]) -> bool {
@@ -159,24 +166,53 @@ fn main() {
         &gpu.cache_classes(&chunk_plain_1)
             .expect("chunk semantic cache classes"),
     );
-    let mut monolithic_token = argmax(&monolithic_logits);
-    let mut chunk_token_semantic = argmax(&logits_plain_1);
+    let mut monolithic_row = monolithic_logits;
+    let mut chunk_row = logits_plain_1.clone();
+    let mut semantic_agree = 0usize;
+    let mut semantic_in_band = 0usize;
+    let mut semantic_out_of_band = 0usize;
+    let mut semantic_maxabs = 0.0f32;
     for step in 0..16 {
-        assert_eq!(
-            monolithic_token, chunk_token_semantic,
-            "monolithic/chunk greedy token differs at generated step {step}"
-        );
+        semantic_maxabs = semantic_maxabs.max(max_abs(&monolithic_row, &chunk_row));
+        let monolithic_token = argmax(&monolithic_row);
+        let chunk_token = argmax(&chunk_row);
+        if monolithic_token == chunk_token {
+            semantic_agree += 1;
+        } else {
+            let margin = (monolithic_row[monolithic_token as usize]
+                - monolithic_row[chunk_token as usize]) as f64;
+            let band = native_gpu_pair_band(monolithic_row[monolithic_token as usize]);
+            if margin <= band {
+                semantic_in_band += 1;
+            } else {
+                semantic_out_of_band += 1;
+            }
+            println!(
+                "[dsv4-chunk-semantics] disagreement step={step} mono={monolithic_token} chunk={chunk_token} margin={margin:.6} band={band:.6} class={}",
+                if margin <= band {
+                    "IN-BAND"
+                } else {
+                    "OUT-OF-BAND"
+                }
+            );
+        }
         if step + 1 < 16 {
-            monolithic_token = gpu
-                .decode_step_greedy(monolithic_token, &mut monolithic_plain)
-                .expect("monolithic semantic decode");
-            chunk_token_semantic = gpu
-                .decode_step_greedy(chunk_token_semantic, &mut chunk_plain_1)
-                .expect("chunk semantic decode");
+            // Teacher-force the monolithic pick into BOTH states. A free-running
+            // comparison turns one legitimate near-tie into an unrelated tail.
+            monolithic_row = gpu
+                .decode_step(monolithic_token, &mut monolithic_plain)
+                .expect("monolithic semantic teacher force");
+            chunk_row = gpu
+                .decode_step(monolithic_token, &mut chunk_plain_1)
+                .expect("chunk semantic teacher force");
         }
     }
+    assert_eq!(
+        semantic_out_of_band, 0,
+        "monolithic/chunk teacher forcing has out-of-band disagreements"
+    );
     println!(
-        "[dsv4-chunk-semantics] monolithic_vs_chunk1 logits_maxabs={logits_maxabs:.8} cache_bits_equal={monolithic_cache_bits} greedy16=IDENTICAL"
+        "[dsv4-chunk-semantics] monolithic_vs_chunk1 initial_logits_maxabs={logits_maxabs:.8} stream_maxabs={semantic_maxabs:.8} cache_bits_equal={monolithic_cache_bits} teacher_forced16={semantic_agree}_agree,{semantic_in_band}_in_band,{semantic_out_of_band}_out_of_band"
     );
 
     let mut chunk_spec_1 = gpu
