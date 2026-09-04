@@ -7698,6 +7698,9 @@ impl Dsv4Gpu {
         let mut taps = stream
             .alloc_zeros::<f32>(width * n_t * hidden)
             .map_err(e("dsv4 chunk taps"))?;
+        let mut tap_row = stream
+            .alloc_zeros::<f32>(n_t * hidden)
+            .map_err(e("dsv4 chunk tap row"))?;
         let mut last_logits = None;
         for (i, toks) in suffix.chunks(width).enumerate() {
             let pos0 = state.pos;
@@ -7705,7 +7708,19 @@ impl Dsv4Gpu {
             let (logits, _) =
                 self.verify_batch_dev(toks, state, &mut vstate, Some(&mut taps), final_chunk)?;
             self.commit_verify_dev(state, &mut vstate, toks.len())?;
-            self.dspark_commit_prefill_taps(dstate, &taps, toks.len(), pos0)?;
+            // The existing drafter prime projections use a general GEMM whose numeric
+            // realization changes with m. Keep their canonical m=1 realization until a
+            // separately exact-gated batched DSpark-prime twin lands; trunk chunking still
+            // amortizes the 43-layer target path.
+            for j in 0..toks.len() {
+                let tap_elems = n_t * hidden;
+                let src = taps.slice(j * tap_elems..(j + 1) * tap_elems);
+                let mut dst = tap_row.slice_mut(0..tap_elems);
+                stream
+                    .memcpy_dtod(&src, &mut dst)
+                    .map_err(e("dsv4 chunk tap row copy"))?;
+                self.dspark_commit_prefill_taps(dstate, &tap_row, 1, pos0 + j)?;
+            }
             if let Some(rows) = logits {
                 let vocab = rows.len() / toks.len();
                 last_logits = Some(rows[(toks.len() - 1) * vocab..].to_vec());
