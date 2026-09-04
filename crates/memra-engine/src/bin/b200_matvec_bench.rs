@@ -1247,6 +1247,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 mism,
                 maxd,
             );
+            // MEMRA_Q8_ROW_ILP twin of the v2 walk: bitwise vs SHIPPED, timed vs v2.
+            let mut y_ilp = e.zeros(out_f)?;
+            e.qmatvec_q8_0_rp_v2_raw_arm(&mirrors[0], &aq, &ad, &mut y_ilp, in_f, out_f, 1, true)?;
+            e.stream().synchronize()?;
+            let (mism_i, maxd_i) = compare(&h_ship, &e.dtoh(&y_ilp)?);
+            let mut t_ilp = Vec::with_capacity(iters);
+            let mut t_v2b = Vec::with_capacity(iters);
+            for i in 0..iters {
+                let c = i % copies;
+                let mut y = e.zeros(out_f)?;
+                let t0 = Instant::now();
+                e.qmatvec_q8_0_rp_v2_raw_arm(&mirrors[c], &aq, &ad, &mut y, in_f, out_f, 1, false)?;
+                e.stream().synchronize()?;
+                t_v2b.push(t0.elapsed().as_secs_f64() * 1e6);
+                let mut y = e.zeros(out_f)?;
+                let t1 = Instant::now();
+                e.qmatvec_q8_0_rp_v2_raw_arm(&mirrors[c], &aq, &ad, &mut y, in_f, out_f, 1, true)?;
+                e.stream().synchronize()?;
+                t_ilp.push(t1.elapsed().as_secs_f64() * 1e6);
+            }
+            report(
+                &format!("qmatvec_q8_0_mmvq_rp_v2 -> _ilp (MEMRA_Q8_ROW_ILP) {label}"),
+                median(&mut t_v2b),
+                median(&mut t_ilp),
+                bytes,
+                mism_i,
+                maxd_i,
+            );
         }
 
         // Family 8: verify width t=8. shipped qmatvec_q8_0_rows_tw vs the v2 twin.
@@ -1440,6 +1468,51 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "  per-projection mismatch counts (q8 ranges): {}  (the fused arm additionally \
              covers the three f32 ranges the separate reference does not launch)",
             per.join(" ")
+        );
+        // MEMRA_Q8_ROW_ILP twin of the fused kernel: bitwise vs the fused v2 arm on ALL six
+        // outputs (same program, same f32 ranges), timed against it.
+        let fused_ilp = |c: usize,
+                         outs: &mut [CudaSlice<f32>; 6]|
+         -> Result<(), Box<dyn std::error::Error>> {
+            let b = &bf_copies[c];
+            e.kda_proj_fused6_q8rp_raw_arm(
+                &b[0], &b[1], &b[2], &f32w[0], &f32w[1], &f32w[2], &xd, outs, in_f, dims, 1, true,
+            )
+        };
+        let mut o_fus = mk_outs()?;
+        fused(0, &mut o_fus)?;
+        let mut o_ilp = mk_outs()?;
+        fused_ilp(0, &mut o_ilp)?;
+        e.stream().synchronize()?;
+        let mut mism_i = 0usize;
+        let mut maxd_i = 0f32;
+        for k in 0..6 {
+            let (m, d) = compare(&e.dtoh(&o_fus[k])?, &e.dtoh(&o_ilp[k])?);
+            mism_i += m;
+            maxd_i = maxd_i.max(d);
+        }
+        let mut t_f = Vec::with_capacity(iters);
+        let mut t_i = Vec::with_capacity(iters);
+        for i in 0..iters {
+            let c = i % copies;
+            let mut outs = mk_outs()?;
+            let t0 = Instant::now();
+            fused(c, &mut outs)?;
+            e.stream().synchronize()?;
+            t_f.push(t0.elapsed().as_secs_f64() * 1e6);
+            let mut outs = mk_outs()?;
+            let t1 = Instant::now();
+            fused_ilp(c, &mut outs)?;
+            e.stream().synchronize()?;
+            t_i.push(t1.elapsed().as_secs_f64() * 1e6);
+        }
+        report(
+            "kda6 W8 fused v2 -> _ilp (MEMRA_Q8_ROW_ILP)",
+            median(&mut t_f),
+            median(&mut t_i),
+            bytes,
+            mism_i,
+            maxd_i,
         );
     }
 
