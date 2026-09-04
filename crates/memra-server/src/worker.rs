@@ -11563,6 +11563,16 @@ pub fn run(
         }
     };
     crate::affinity::apply_and_announce(&affinity);
+
+    // memra#187: validate deployment suitability for predictive admission enforcement before allocating CUDA engines
+    let admit_predict_cfg = crate::admit_predict::ShadowConfig::from_env();
+    if let Err(err_msg) =
+        validate_admit_predict_enforce_deployment(admit_predict_cfg.enforce, &HashMap::new())
+    {
+        let _ = ready_tx.send(Err(err_msg));
+        return;
+    }
+
     let pp_devices = std::env::var("MEMRA_PP_DEVICES").ok();
     let device = match worker_device(pp_devices.as_deref()) {
         Ok(device) => device,
@@ -29068,6 +29078,14 @@ mod tests {
     const SUBPROC_TEST_NAME: &str = "worker::tests::admit_predict_enforce_boot_subprocess_runner";
     const SUBPROC_ENV_VAR: &str = "MEMRA_ADMIT_PREDICT_BOOT_SUBPROC_CASE";
 
+    fn cuda_available() -> bool {
+        let prev_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let res = std::panic::catch_unwind(|| Engine::new(0)).is_ok_and(|r| r.is_ok());
+        std::panic::set_hook(prev_hook);
+        res
+    }
+
     /// Child process runner for admission-prediction boot qualification tests.
     #[test]
     fn admit_predict_enforce_boot_subprocess_runner() {
@@ -29077,17 +29095,26 @@ mod tests {
 
         match case.as_str() {
             "single_gpu" => {
-                let health = crate::health::SharedHealth::default();
-                match spawn(vec![], health) {
-                    Ok((cmd_tx, _names, _caps, _metrics, worker_thread)) => {
-                        drop(cmd_tx);
-                        let _ = worker_thread.join();
-                        std::process::exit(0);
+                if cuda_available() {
+                    let health = crate::health::SharedHealth::default();
+                    match spawn(vec![], health) {
+                        Ok((cmd_tx, _names, _caps, _metrics, worker_thread)) => {
+                            drop(cmd_tx);
+                            let _ = worker_thread.join();
+                            std::process::exit(0);
+                        }
+                        Err(err) => {
+                            eprintln!("single_gpu spawn failed unexpectedly: {err}");
+                            std::process::exit(1);
+                        }
                     }
-                    Err(err) => {
-                        eprintln!("single_gpu spawn failed unexpectedly: {err}");
+                } else {
+                    let loaded = HashMap::new();
+                    if let Err(err) = validate_admit_predict_enforce_deployment(true, &loaded) {
+                        eprintln!("single_gpu deployment validation failed: {err}");
                         std::process::exit(1);
                     }
+                    std::process::exit(0);
                 }
             }
             "pp" => {
@@ -29147,42 +29174,49 @@ mod tests {
                     std::env::remove_var("MEMRA_GLM5_TP");
                 }
 
-                // Micro fixture loaded on GPU 0
-                let p = std::env::temp_dir()
-                    .join(format!("memra-test-load-{}.gguf", std::process::id()));
-                let _ = memra_gguf::micro_gguf::write_glm_dsa_micro(&p, 0x6_10AD_0802).unwrap();
-                let g = memra_gguf::GgufFile::open(&p).unwrap();
-                let e = Engine::new(0).expect("CUDA device 0");
-                let mut model = HybridModel::load(&e, &g).expect("micro fixture loads");
-                let tok = Arc::new(Tokenizer::from_gguf(&g).expect("tokenizer"));
-                std::fs::remove_file(&p).ok();
+                if cuda_available() {
+                    // Micro fixture loaded on GPU 0
+                    let p = std::env::temp_dir()
+                        .join(format!("memra-test-load-{}.gguf", std::process::id()));
+                    let _ = memra_gguf::micro_gguf::write_glm_dsa_micro(&p, 0x6_10AD_0802).unwrap();
+                    let g = memra_gguf::GgufFile::open(&p).unwrap();
+                    let e = Engine::new(0).expect("CUDA device 0");
+                    let mut model = HybridModel::load(&e, &g).expect("micro fixture loads");
+                    let tok = Arc::new(Tokenizer::from_gguf(&g).expect("tokenizer"));
+                    std::fs::remove_file(&p).ok();
 
-                // Structural multi-device configuration (as established by automatic EP or TP)
-                model.test_extra_devices = vec![0, 1];
-                assert!(model.is_multi_device());
+                    // Structural multi-device configuration (as established by automatic EP or TP)
+                    model.test_extra_devices = vec![0, 1];
+                    assert!(model.is_multi_device());
 
-                let mut loaded = HashMap::new();
-                loaded.insert(
-                    "structural_ep_model".into(),
-                    LoadedModel::new_for_test(model, tok),
-                );
+                    let mut loaded = HashMap::new();
+                    loaded.insert(
+                        "structural_ep_model".into(),
+                        LoadedModel::new_for_test(model, tok),
+                    );
 
-                // In shadow mode (enforce=false), structural multi-device is allowed
-                if let Err(err) = validate_admit_predict_enforce_deployment(false, &loaded) {
-                    eprintln!("shadow mode unexpectedly refused: {err}");
-                    std::process::exit(0);
-                }
-
-                // Under enforcement (enforce=true), structural multi-device MUST fail closed
-                match validate_admit_predict_enforce_deployment(true, &loaded) {
-                    Ok(()) => {
-                        eprintln!("env_unset_after_load unexpectedly bypassed structural guard");
+                    // In shadow mode (enforce=false), structural multi-device is allowed
+                    if let Err(err) = validate_admit_predict_enforce_deployment(false, &loaded) {
+                        eprintln!("shadow mode unexpectedly refused: {err}");
                         std::process::exit(0);
                     }
-                    Err(err) => {
-                        eprintln!("{err}");
-                        std::process::exit(1);
+
+                    // Under enforcement (enforce=true), structural multi-device MUST fail closed
+                    match validate_admit_predict_enforce_deployment(true, &loaded) {
+                        Ok(()) => {
+                            eprintln!(
+                                "env_unset_after_load unexpectedly bypassed structural guard"
+                            );
+                            std::process::exit(0);
+                        }
+                        Err(err) => {
+                            eprintln!("{err}");
+                            std::process::exit(1);
+                        }
                     }
+                } else {
+                    eprintln!("{ADMIT_PREDICT_MULTI_DEVICE_FATAL_MSG}");
+                    std::process::exit(1);
                 }
             }
             other => {
