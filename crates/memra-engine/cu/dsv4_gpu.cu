@@ -1702,6 +1702,145 @@ extern "C" int memra_dsv4_fp4_gemm_sel_g(const void* a_codes, const float* a_sca
     return 0;
 }
 
+// Prefill-only W4A8 selected-expert fork. Weight bytes remain the artifact's NVFP4
+// split planes; activations use the engine's standard symmetric q8_1 recipe. The
+// codebook integers are 2x E2M1 and the 0.5 factor below restores the exact weight
+// value before the q8 activation approximation enters.
+__device__ __constant__ signed char DSV4_E2M1_I8[16] =
+    {0,1,2,3,4,6,8,12,0,-1,-2,-3,-4,-6,-8,-12};
+
+__device__ __forceinline__ int2 dsv4_e2m1_i8x8(int q4) {
+    const uint32_t* table32 = (const uint32_t*)DSV4_E2M1_I8;
+    uint32_t tmp[2];
+    const uint32_t picks = 0x32103210u | (((uint32_t)q4 & 0x88888888u) >> 1);
+#pragma unroll
+    for (uint32_t i = 0; i < 2; ++i) {
+        const uint32_t shift = 16u * i;
+        const uint32_t low = __byte_perm(table32[0], table32[1], (uint32_t)q4 >> shift);
+        const uint32_t high = __byte_perm(table32[2], table32[3], (uint32_t)q4 >> shift);
+        tmp[i] = __byte_perm(low, high, picks >> shift);
+    }
+    return make_int2(__byte_perm(tmp[0], tmp[1], 0x6420),
+                     __byte_perm(tmp[0], tmp[1], 0x7531));
+}
+
+__device__ __forceinline__ int dsv4_dp4a(int a, int b, int c) {
+#if __CUDA_ARCH__ >= 610
+    return __dp4a(a, b, c);
+#else
+    return c;
+#endif
+}
+
+extern "C" __global__ void dsv4_act_quant_q8_kernel(
+        const float* __restrict__ x, signed char* __restrict__ q,
+        float* __restrict__ sc, int rows, int cols) {
+    long blk = ((long)blockIdx.x * blockDim.x + threadIdx.x) >> 5;
+    int lane = threadIdx.x & 31;
+    int blocks_per_row = cols >> 5;
+    if (blk >= (long)rows * blocks_per_row) return;
+    int row = (int)(blk / blocks_per_row);
+    int group = (int)(blk % blocks_per_row);
+    long off = (long)row * cols + group * 32 + lane;
+    float v = x[off];
+    float amax = fabsf(v);
+#pragma unroll
+    for (int d = 16; d > 0; d >>= 1)
+        amax = fmaxf(amax, __shfl_xor_sync(0xffffffffu, amax, d));
+    float scale = amax / 127.0f;
+    float inv = scale > 0.0f ? 1.0f / scale : 0.0f;
+    q[off] = (signed char)__float2int_rn(v * inv);
+    if (lane == 0) sc[(long)row * blocks_per_row + group] = scale;
+}
+
+extern "C" int memra_dsv4_act_quant_q8(const float* x, void* q, float* sc,
+                                        int rows, int cols, void* stream_v) {
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    if (rows <= 0 || cols <= 0 || cols % 32 != 0) return 40020;
+    long threads = (long)rows * (cols / 32) * 32;
+    dsv4_act_quant_q8_kernel<<<(unsigned)((threads + 255) / 256), 256, 0, stream>>>(
+        x, (signed char*)q, sc, rows, cols);
+    DSV4_ERR();
+    return 0;
+}
+
+extern "C" __global__ void dsv4_fp4_gemm_sel_q8_kernel(
+    const signed char* __restrict__ a, const float* __restrict__ as_,
+    const uint8_t* __restrict__ w_base, const uint8_t* __restrict__ sc_base,
+    const float* __restrict__ s2, const int* __restrict__ sel, int proj,
+    int a_stride_rows, float* __restrict__ out, int n, int kdim,
+    long wstride, long sstride, int a_group) {
+    constexpr int CPB = 4;
+    int col0 = blockIdx.x * CPB;
+    int slot = blockIdx.y;
+    int eid = sel[slot];
+    int groups = kdim >> 5;
+    long arow_i = (a_group > 0) ? (long)(slot / a_group)
+                                  : (a_stride_rows ? (long)slot : 0L);
+    const signed char* arow = a + arow_i * kdim;
+    const float* asrow = as_ + arow_i * groups;
+    const uint8_t* wb = w_base + ((long)eid * 3 + proj) * wstride;
+    const uint8_t* sb = sc_base + ((long)eid * 3 + proj) * sstride;
+    float macro = s2[eid * 3 + proj] * 0.5f;
+    float part[CPB] = {0.0f, 0.0f, 0.0f, 0.0f};
+    for (int g = threadIdx.x; g < groups; g += blockDim.x) {
+        const int4* aq = (const int4*)(arow + (long)g * 32);
+        int4 a01 = aq[0], a23 = aq[1];
+        int av[8] = {a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w};
+#pragma unroll
+        for (int c = 0; c < CPB; ++c) {
+            int col = col0 + c;
+            if (col >= n) break;
+            const uint8_t* wrow = wb + (long)col * (kdim / 2) + (long)g * 16;
+            const uint8_t* srow = sb + (long)col * (kdim / 16) + (long)g * 2;
+            float partial = 0.0f;
+#pragma unroll
+            for (int sub = 0; sub < 2; ++sub) {
+                const uint8_t* q4 = wrow + sub * 8;
+                int2 lohi0 = dsv4_e2m1_i8x8(*(const int*)q4);
+                int2 lohi1 = dsv4_e2m1_i8x8(*(const int*)(q4 + 4));
+                int base = sub * 4;
+                int sumi = 0;
+                sumi = dsv4_dp4a(lohi0.x, av[base + 0], sumi);
+                sumi = dsv4_dp4a(lohi1.x, av[base + 1], sumi);
+                sumi = dsv4_dp4a(lohi0.y, av[base + 2], sumi);
+                sumi = dsv4_dp4a(lohi1.y, av[base + 3], sumi);
+                partial += dsv4_e4m3(srow[sub]) * (float)sumi;
+            }
+            part[c] += (asrow[g] * macro) * partial;
+        }
+    }
+    __shared__ float red[128];
+    int tid = threadIdx.x;
+    for (int c = 0; c < CPB; ++c) {
+        int col = col0 + c;
+        if (col >= n) break;
+        __syncthreads();
+        red[tid] = part[c];
+        __syncthreads();
+        for (int off = 64; off > 0; off >>= 1) {
+            if (tid < off) red[tid] += red[tid + off];
+            __syncthreads();
+        }
+        if (tid == 0) out[(long)slot * n + col] = red[0];
+    }
+}
+
+extern "C" int memra_dsv4_fp4_gemm_sel_q8_g(
+        const void* a, const float* as_, const void* w, const void* wsc,
+        const float* s2, const int* sel, int proj, int a_stride_rows,
+        float* out, int slots, int n, int kdim, long wstride, long sstride,
+        int a_group, void* stream_v) {
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    if (slots <= 0 || slots > 65535 || n <= 0 || kdim % 128 != 0) return 40006;
+    dim3 grid((unsigned)((n + 3) / 4), (unsigned)slots);
+    dsv4_fp4_gemm_sel_q8_kernel<<<grid, 128, 0, stream>>>(
+        (const signed char*)a, as_, (const uint8_t*)w, (const uint8_t*)wsc,
+        s2, sel, proj, a_stride_rows, out, n, kdim, wstride, sstride, a_group);
+    DSV4_ERR();
+    return 0;
+}
+
 // Routed-expert combine: y[i] = sum over slots in ascending-expert-id order (acc starts
 // at 0.0f — the legacy zeroed-y + sequential scatter_add sum order, bit-exact).
 extern "C" __global__ void dsv4_combine_rows_kernel(const float* __restrict__ contrib,

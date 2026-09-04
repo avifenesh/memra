@@ -448,6 +448,9 @@ pub struct Dsv4Gpu {
     /// MEMRA_DSV4_DRAFTER=dspark; None = today's exact behavior everywhere.
     pub dspark: Option<DsparkDev>,
     pub expert_arm: ExpertArm,
+    /// Prefill-only q8-activation DP4A expert fork; decode/spec T<=8 stay on the
+    /// exact e4m3-activation program.
+    pub expert_w4a8: bool,
     pub decode_path: DecodePath,
     /// lane 9 (owner ruling 2026-08-19): island dots on the DEVICE decode path run the
     /// f32-accumulation serving arm when true (fork-gated); false = the f64
@@ -1823,6 +1826,10 @@ impl Dsv4Gpu {
             std::env::var("MEMRA_DSV4_DENSE_ARM").ok().as_deref(),
             on_device,
         )?;
+        let expert_w4a8 = resolve_expert_w4a8(
+            std::env::var("MEMRA_DSV4_EXPERT_W4A8").ok().as_deref(),
+            on_device,
+        )?;
 
         let mut me = Dsv4Gpu {
             model,
@@ -1839,6 +1846,7 @@ impl Dsv4Gpu {
             } else {
                 ExpertArm::Bf16Dequant
             },
+            expert_w4a8,
             decode_path,
             dots_f32,
             chains_f32,
@@ -1850,8 +1858,9 @@ impl Dsv4Gpu {
             hc_head_scale: Vec::new(),
         };
         eprintln!(
-            "[load] expert arm: {:?} | decode path: {:?} | dots arm: {}",
+            "[load] expert arm: {:?} (prefill W4A8 {}) | decode path: {:?} | dots arm: {}",
             me.expert_arm,
+            if me.expert_w4a8 { "ARMED" } else { "off" },
             me.decode_path,
             if me.chains_f32 {
                 "f32x (dots + sink/norm/indexer chains)"
@@ -1880,6 +1889,9 @@ impl Dsv4Gpu {
             return Err(
                 "MEMRA_DSV4_DECODE_PATH=device requires MEMRA_DSV4_EXPERT_ARM=native".to_string(),
             );
+        }
+        if me.expert_w4a8 && me.expert_arm != ExpertArm::Native {
+            return Err("MEMRA_DSV4_EXPERT_W4A8=1 requires the native expert arm".to_string());
         }
 
         // lane 8: peer transport for the PP boundary (pp.rs idiom: cuCtxEnablePeerAccess
@@ -8968,12 +8980,12 @@ impl Dsv4Gpu {
                 selw: f(tmax * topk)?,
                 order: i(tmax * topk)?,
                 xq: b(tmax * hidden)?,
-                xs: f(tmax * hidden / 128)?,
+                xs: f(tmax * hidden / 32)?,
                 g1: f(tmax * topk * inter)?,
                 g3: f(tmax * topk * inter)?,
                 hbuf: f(tmax * topk * inter)?,
                 hq: b(tmax * topk * inter)?,
-                hs: f(tmax * topk * inter / 128)?,
+                hs: f(tmax * topk * inter / 32)?,
                 contrib: f(tmax * topk * hidden)?,
                 y: f(tmax * hidden)?,
                 xb: b(tmax * hidden * 2)?,
@@ -10401,21 +10413,54 @@ impl Dsv4Gpu {
             }
         }
 
+        let w4a8 = self.expert_w4a8 && t > 8 && kind == 0;
         unsafe {
-            ck(
-                "act_quant_fp8 x batch",
-                k::memra_dsv4_act_quant_fp8(
-                    dpf!(vws.xf, &stream),
-                    vws.xq.device_ptr_mut(&stream).0 as *mut c_void,
-                    dpm!(vws.xs, &stream),
-                    t as i32,
-                    hidden as i32,
-                    sp(&stream),
-                ),
-            )?;
-            for (proj, dst) in [(0i32, &mut vws.g1), (2i32, &mut vws.g3)] {
+            if w4a8 {
                 ck(
-                    "fp4_gemm_sel_g w1/w3",
+                    "act_quant_q8 x batch",
+                    k::memra_dsv4_act_quant_q8(
+                        dpf!(vws.xf, &stream),
+                        vws.xq.device_ptr_mut(&stream).0 as *mut c_void,
+                        dpm!(vws.xs, &stream),
+                        t as i32,
+                        hidden as i32,
+                        sp(&stream),
+                    ),
+                )?;
+            } else {
+                ck(
+                    "act_quant_fp8 x batch",
+                    k::memra_dsv4_act_quant_fp8(
+                        dpf!(vws.xf, &stream),
+                        vws.xq.device_ptr_mut(&stream).0 as *mut c_void,
+                        dpm!(vws.xs, &stream),
+                        t as i32,
+                        hidden as i32,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+            for (proj, dst) in [(0i32, &mut vws.g1), (2i32, &mut vws.g3)] {
+                let rc = if w4a8 {
+                    k::memra_dsv4_fp4_gemm_sel_q8_g(
+                        dp!(vws.xq, &stream),
+                        dpf!(vws.xs, &stream),
+                        dp!(layer.experts_w, &stream),
+                        dp!(layer.experts_sc, &stream),
+                        dpf!(layer.experts_s2_dev, &stream),
+                        vws.sel.device_ptr(&stream).0 as *const i32,
+                        proj,
+                        0,
+                        dpm!(*dst, &stream),
+                        slots as i32,
+                        inter as i32,
+                        hidden as i32,
+                        wstride,
+                        sstride,
+                        topk as i32,
+                        sp(&stream),
+                    )
+                } else {
                     k::memra_dsv4_fp4_gemm_sel_g(
                         dp!(vws.xq, &stream),
                         dpf!(vws.xs, &stream),
@@ -10434,8 +10479,9 @@ impl Dsv4Gpu {
                         sstride,
                         topk as i32,
                         sp(&stream),
-                    ),
-                )?;
+                    )
+                };
+                ck("fp4_gemm_sel w1/w3", rc)?;
             }
             ck(
                 "swiglu batch",
@@ -10450,19 +10496,51 @@ impl Dsv4Gpu {
                     sp(&stream),
                 ),
             )?;
-            ck(
-                "act_quant_fp8 h batch",
-                k::memra_dsv4_act_quant_fp8(
-                    dpf!(vws.hbuf, &stream),
-                    vws.hq.device_ptr_mut(&stream).0 as *mut c_void,
-                    dpm!(vws.hs, &stream),
+            if w4a8 {
+                ck(
+                    "act_quant_q8 h batch",
+                    k::memra_dsv4_act_quant_q8(
+                        dpf!(vws.hbuf, &stream),
+                        vws.hq.device_ptr_mut(&stream).0 as *mut c_void,
+                        dpm!(vws.hs, &stream),
+                        slots as i32,
+                        inter as i32,
+                        sp(&stream),
+                    ),
+                )?;
+            } else {
+                ck(
+                    "act_quant_fp8 h batch",
+                    k::memra_dsv4_act_quant_fp8(
+                        dpf!(vws.hbuf, &stream),
+                        vws.hq.device_ptr_mut(&stream).0 as *mut c_void,
+                        dpm!(vws.hs, &stream),
+                        slots as i32,
+                        inter as i32,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+            let down_rc = if w4a8 {
+                k::memra_dsv4_fp4_gemm_sel_q8_g(
+                    dp!(vws.hq, &stream),
+                    dpf!(vws.hs, &stream),
+                    dp!(layer.experts_w, &stream),
+                    dp!(layer.experts_sc, &stream),
+                    dpf!(layer.experts_s2_dev, &stream),
+                    vws.sel.device_ptr(&stream).0 as *const i32,
+                    1,
+                    1,
+                    dpm!(vws.contrib, &stream),
                     slots as i32,
+                    hidden as i32,
                     inter as i32,
+                    wstride,
+                    sstride,
+                    0,
                     sp(&stream),
-                ),
-            )?;
-            ck(
-                "fp4_gemm_sel_g w2",
+                )
+            } else {
                 k::memra_dsv4_fp4_gemm_sel_g(
                     dp!(vws.hq, &stream),
                     dpf!(vws.hs, &stream),
@@ -10481,8 +10559,9 @@ impl Dsv4Gpu {
                     sstride,
                     0,
                     sp(&stream),
-                ),
-            )?;
+                )
+            };
+            ck("fp4_gemm_sel w2", down_rc)?;
             ck(
                 "combine_rows_m",
                 k::memra_dsv4_combine_rows_m(
@@ -11865,6 +11944,17 @@ pub fn resolve_dense_arm(v: Option<&str>, on_device: bool) -> Result<bool, Strin
     }
 }
 
+pub fn resolve_expert_w4a8(v: Option<&str>, on_device: bool) -> Result<bool, String> {
+    match v {
+        None | Some("") | Some("0") => Ok(false),
+        Some("1") if on_device => Ok(true),
+        Some("1") => {
+            Err("MEMRA_DSV4_EXPERT_W4A8=1 requires MEMRA_DSV4_DECODE_PATH=device".to_string())
+        }
+        Some(other) => Err(format!("MEMRA_DSV4_EXPERT_W4A8 '{other}' unknown (0 | 1)")),
+    }
+}
+
 /// ds4f rung 1 — per-round verify-window policy from the drafter's OWN confidence head
 /// (`MEMRA_DSV4_VT={off|slot}`, unset = off = the byte-identical round driver).
 ///
@@ -12195,7 +12285,7 @@ mod peer_probe_tests {
 
 #[cfg(test)]
 mod dense_arm_default_tests {
-    use super::resolve_dense_arm;
+    use super::{resolve_dense_arm, resolve_expert_w4a8};
 
     /// The owner-ratified flip (2026-08-20): unset env on the device decode path = fp8.
     /// Mutating the default back to bf16 fails this with the evidence named.
@@ -12222,6 +12312,15 @@ mod dense_arm_default_tests {
             resolve_dense_arm(Some("q8"), true).is_err(),
             "unknown values refuse"
         );
+    }
+
+    #[test]
+    fn expert_w4a8_is_strict_default_off_and_device_only() {
+        assert_eq!(resolve_expert_w4a8(None, true), Ok(false));
+        assert_eq!(resolve_expert_w4a8(Some("0"), true), Ok(false));
+        assert_eq!(resolve_expert_w4a8(Some("1"), true), Ok(true));
+        assert!(resolve_expert_w4a8(Some("1"), false).is_err());
+        assert!(resolve_expert_w4a8(Some("yes"), true).is_err());
     }
 }
 
