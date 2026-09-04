@@ -57,6 +57,22 @@ pub struct Dsv4Model {
     pub spec: bool,
     pub eos: u32,
     pub host_cache_bytes: usize,
+    pub prefill_chunk: usize,
+}
+
+fn resolve_prefill_chunk(raw: Option<&str>, max_seq: usize) -> Result<usize, String> {
+    let chunk = match raw {
+        None => 0,
+        Some(raw) => raw.trim().parse::<usize>().map_err(|_| {
+            format!("MEMRA_DSV4_PREFILL_CHUNK {raw:?} is not a non-negative integer")
+        })?,
+    };
+    if chunk > max_seq {
+        return Err(format!(
+            "MEMRA_DSV4_PREFILL_CHUNK {chunk} exceeds MEMRA_CTX {max_seq}"
+        ));
+    }
+    Ok(chunk)
 }
 
 struct ParkedEntry {
@@ -241,12 +257,16 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
     let host_cache_bytes = host_cache_mb
         .checked_mul(1024 * 1024)
         .ok_or_else(|| "MEMRA_DSV4_KV_HOST_MB byte count overflow".to_string())?;
+    let prefill_chunk = resolve_prefill_chunk(
+        std::env::var("MEMRA_DSV4_PREFILL_CHUNK").ok().as_deref(),
+        max_seq,
+    )?;
     let gpu = Dsv4Gpu::load(dir, &devices, variant, max_seq)?;
     let spec = gpu.dspark.is_some();
     let eos = tok.eos_id();
     eprintln!(
         "[dsv4-serve] {name}: loaded on devices {devices:?}, contract {variant:?}, \
-         max_seq {max_seq}, drafter {}, parked-host-cache {}",
+         max_seq {max_seq}, drafter {}, parked-host-cache {}, chunked-prefill {}",
         if spec {
             "RESIDENT (spec route armed)"
         } else {
@@ -257,6 +277,11 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
         } else {
             format!("{host_cache_mb} MiB")
         },
+        if prefill_chunk == 0 {
+            "OFF (MEMRA_DSV4_PREFILL_CHUNK=0)".to_string()
+        } else {
+            format!("{prefill_chunk} tokens")
+        },
     );
     Ok(Dsv4Model {
         gpu: Arc::new(gpu),
@@ -265,6 +290,7 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
         spec,
         eos,
         host_cache_bytes,
+        prefill_chunk,
     })
 }
 
@@ -577,6 +603,11 @@ fn continue_plain_prefix(
     if suffix.is_empty() {
         return Err("dsv4 restored continuation needs a non-empty suffix".into());
     }
+    if m.prefill_chunk > 0 {
+        return m
+            .gpu
+            .continue_prefix_chunked(suffix, state, m.prefill_chunk);
+    }
     let mut last = None;
     for (i, &tok) in suffix.iter().enumerate() {
         if i + 1 == suffix.len() {
@@ -604,7 +635,10 @@ fn try_restore_prefix(
     let bytes = entry.bytes;
     let t0 = Instant::now();
     let restored = (|| -> Result<RestoredPrefix, String> {
-        let mut state = m.gpu.restore_decode_state_for(&entry.trunk, capacity)?;
+        let transient_rows = m.prefill_chunk.max(m.gpu.verify_tmax());
+        let mut state =
+            m.gpu
+                .restore_decode_state_for_transient(&entry.trunk, capacity, transient_rows)?;
         let suffix = &prompt[n_cached..];
         if need_dspark {
             let host_dstate = entry
@@ -612,9 +646,17 @@ fn try_restore_prefix(
                 .as_ref()
                 .ok_or_else(|| "dsv4 host hit missing required DSpark state".to_string())?;
             let mut dstate = m.gpu.restore_dspark_state(host_dstate)?;
-            let logits = m
-                .gpu
-                .dspark_continue_prefix(suffix, &mut state, &mut dstate)?;
+            let logits = if m.prefill_chunk > 0 {
+                m.gpu.dspark_continue_prefix_chunked(
+                    suffix,
+                    &mut state,
+                    &mut dstate,
+                    m.prefill_chunk,
+                )?
+            } else {
+                m.gpu
+                    .dspark_continue_prefix(suffix, &mut state, &mut dstate)?
+            };
             Ok(RestoredPrefix {
                 state,
                 dstate: Some(dstate),
@@ -819,13 +861,27 @@ fn serve_one(
                 Some(hit.logits),
             )
         } else {
-            (
-                m.gpu
-                    .alloc_decode_state_for(session_capacity)
-                    .map_err(EngineError::engine)?,
-                m.gpu.dspark_alloc_state().map_err(EngineError::engine)?,
-                None,
-            )
+            let transient_rows = m.prefill_chunk.max(m.gpu.verify_tmax());
+            let mut state = m
+                .gpu
+                .alloc_decode_state_for_transient(session_capacity, transient_rows)
+                .map_err(EngineError::engine)?;
+            let mut dstate = m.gpu.dspark_alloc_state().map_err(EngineError::engine)?;
+            let initial_logits = if m.prefill_chunk > 0 {
+                Some(
+                    m.gpu
+                        .dspark_prefill_prime_chunked(
+                            &prompt,
+                            &mut state,
+                            &mut dstate,
+                            m.prefill_chunk,
+                        )
+                        .map_err(EngineError::engine)?,
+                )
+            } else {
+                None
+            };
+            (state, dstate, initial_logits)
         };
         let mut vstate = m
             .gpu
@@ -917,15 +973,22 @@ fn serve_one(
         let (mut state, pre_logits) = if let Some(hit) = restored.take() {
             (hit.state, hit.logits)
         } else {
+            let transient_rows = m.prefill_chunk.max(m.gpu.verify_tmax());
             let mut state = m
                 .gpu
-                .alloc_decode_state_for(session_capacity)
+                .alloc_decode_state_for_transient(session_capacity, transient_rows)
                 .map_err(EngineError::engine)?;
-            let pre = m
-                .gpu
-                .prefill_with_cache(&prompt, &mut state)
-                .map_err(EngineError::engine)?;
-            (state, pre.logits)
+            let logits = if m.prefill_chunk > 0 {
+                m.gpu
+                    .prefill_with_cache_chunked(&prompt, &mut state, m.prefill_chunk)
+                    .map_err(EngineError::engine)?
+            } else {
+                m.gpu
+                    .prefill_with_cache(&prompt, &mut state)
+                    .map_err(EngineError::engine)?
+                    .logits
+            };
+            (state, logits)
         };
         let p0 = prompt.len();
         // running penalty window: prompt ++ every committed token (rung-2 slice 2)
@@ -1036,6 +1099,21 @@ fn argmax(v: &[f32]) -> u32 {
         }
     }
     best as u32
+}
+
+#[cfg(test)]
+mod prefill_chunk_flag_tests {
+    use super::resolve_prefill_chunk;
+
+    #[test]
+    fn default_is_off_and_values_are_strictly_bounded() {
+        assert_eq!(resolve_prefill_chunk(None, 1_048_576), Ok(0));
+        assert_eq!(resolve_prefill_chunk(Some("0"), 1_048_576), Ok(0));
+        assert_eq!(resolve_prefill_chunk(Some("64"), 1_048_576), Ok(64));
+        assert!(resolve_prefill_chunk(Some("-1"), 1_048_576).is_err());
+        assert!(resolve_prefill_chunk(Some("banana"), 1_048_576).is_err());
+        assert!(resolve_prefill_chunk(Some("65"), 64).is_err());
+    }
 }
 
 #[cfg(test)]

@@ -109,6 +109,88 @@ fn main() {
         "gate requires MEMRA_DSV4_DRAFTER=dspark"
     );
 
+    // Bounded-prefill transaction widths must not change the realized trunk or drafter
+    // state. Width 17 crosses the shipped speculative ceiling (6), so this catches fixed
+    // T_max assumptions instead of merely re-running the DSpark shape.
+    let chunk_width = 17usize;
+    let mut chunk_plain_1 = gpu
+        .alloc_decode_state_for_transient(small_capacity, chunk_width)
+        .expect("chunk plain width-1 state");
+    let mut chunk_plain_17 = gpu
+        .alloc_decode_state_for_transient(small_capacity, chunk_width)
+        .expect("chunk plain width-17 state");
+    let logits_plain_1 = gpu
+        .prefill_with_cache_chunked(prompt, &mut chunk_plain_1, 1)
+        .expect("chunk plain width 1");
+    let logits_plain_17 = gpu
+        .prefill_with_cache_chunked(prompt, &mut chunk_plain_17, chunk_width)
+        .expect("chunk plain width 17");
+    assert!(bits_equal(&logits_plain_1, &logits_plain_17));
+    assert!(classes_equal(
+        &gpu.cache_classes(&chunk_plain_1)
+            .expect("chunk plain classes width 1"),
+        &gpu.cache_classes(&chunk_plain_17)
+            .expect("chunk plain classes width 17"),
+    ));
+
+    let mut chunk_spec_1 = gpu
+        .alloc_decode_state_for_transient(small_capacity, chunk_width)
+        .expect("chunk DSpark width-1 state");
+    let mut chunk_spec_17 = gpu
+        .alloc_decode_state_for_transient(small_capacity, chunk_width)
+        .expect("chunk DSpark width-17 state");
+    let mut chunk_ds_1 = gpu
+        .dspark_alloc_state()
+        .expect("chunk DSpark width-1 rings");
+    let mut chunk_ds_17 = gpu
+        .dspark_alloc_state()
+        .expect("chunk DSpark width-17 rings");
+    let logits_spec_1 = gpu
+        .dspark_prefill_prime_chunked(prompt, &mut chunk_spec_1, &mut chunk_ds_1, 1)
+        .expect("chunk DSpark width 1");
+    let logits_spec_17 = gpu
+        .dspark_prefill_prime_chunked(prompt, &mut chunk_spec_17, &mut chunk_ds_17, chunk_width)
+        .expect("chunk DSpark width 17");
+    assert!(bits_equal(&logits_spec_1, &logits_spec_17));
+    assert!(classes_equal(
+        &gpu.cache_classes(&chunk_spec_1)
+            .expect("chunk DSpark trunk classes width 1"),
+        &gpu.cache_classes(&chunk_spec_17)
+            .expect("chunk DSpark trunk classes width 17"),
+    ));
+    assert!(classes_equal(
+        &gpu.dspark_ring_classes(&chunk_ds_1)
+            .expect("chunk DSpark rings width 1"),
+        &gpu.dspark_ring_classes(&chunk_ds_17)
+            .expect("chunk DSpark rings width 17"),
+    ));
+    let chunk_token = argmax(&logits_spec_1);
+    let chunk_tap_1 = chunk_ds_1.tap_head;
+    let chunk_tap_17 = chunk_ds_17.tap_head;
+    let chunk_prop_1 = gpu
+        .dspark_forward_spec(
+            &mut chunk_ds_1,
+            chunk_token,
+            chunk_tap_1,
+            chunk_spec_1.pos - 1,
+            false,
+        )
+        .expect("chunk DSpark proposal width 1");
+    let chunk_prop_17 = gpu
+        .dspark_forward_spec(
+            &mut chunk_ds_17,
+            chunk_token,
+            chunk_tap_17,
+            chunk_spec_17.pos - 1,
+            false,
+        )
+        .expect("chunk DSpark proposal width 17");
+    assert_eq!(chunk_prop_1.out_ids, chunk_prop_17.out_ids);
+    assert!(bits_equal(
+        &chunk_prop_1.confidence,
+        &chunk_prop_17.confidence
+    ));
+
     // Plain trunk round trip, including restore into a larger capacity allocation.
     let (mut plain_a, mut plain_token) = plain_warm(&gpu, prompt, small_capacity, warm);
     let plain_host = gpu
@@ -195,8 +277,9 @@ fn main() {
     ));
 
     println!(
-        "[dsv4-host-cache-gate] PASS prompt={} warm={} continuation={} capacity={}=>{} plain_host_bytes={} dspark_host_bytes={}",
+        "[dsv4-host-cache-gate] PASS prompt={} chunk_widths=1,{} warm={} continuation={} capacity={}=>{} plain_host_bytes={} dspark_host_bytes={}",
         prompt.len(),
+        chunk_width,
         warm,
         continuation,
         small_capacity,

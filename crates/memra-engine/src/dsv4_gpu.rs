@@ -591,6 +591,9 @@ pub struct DecodeState {
     pub capacity: usize,
     /// allocated cache bytes per device index (gate (e): measured vs design math)
     pub cache_bytes: Vec<u64>,
+    /// Rows reserved after each layer's persistent compressed store for a batched
+    /// speculative or chunked-prefill transaction.
+    transient_rows: usize,
     /// lane 8: per-stage step workspace (Some iff the load-time decode path is Device)
     pub ws: Option<Vec<StepWs>>,
 }
@@ -3687,6 +3690,80 @@ impl Dsv4Gpu {
         Ok(out)
     }
 
+    /// Bounded-memory prefill through the device batched-transaction path. The first
+    /// token establishes every cache class; subsequent chunks are teacher-forced and
+    /// committed in full. This keeps activation and indexer-score memory proportional to
+    /// `chunk`, while persistent compact state remains proportional to admitted context.
+    pub fn prefill_with_cache_chunked(
+        &self,
+        ids: &[u32],
+        state: &mut DecodeState,
+        chunk: usize,
+    ) -> Res<Vec<f32>> {
+        assert_eq!(state.pos, 0, "chunked prefill needs a fresh DecodeState");
+        if ids.is_empty() {
+            return Err("empty dsv4 chunked prefill".into());
+        }
+        if chunk == 0 || chunk > state.transient_rows {
+            return Err(format!(
+                "dsv4 prefill chunk {chunk} outside 1..={} allocated transient rows",
+                state.transient_rows
+            ));
+        }
+        if ids.len() > state.capacity {
+            return Err(format!(
+                "dsv4 prefill {} tokens exceeds session cache capacity {}",
+                ids.len(),
+                state.capacity
+            ));
+        }
+        let first = self.prefill_with_cache(&ids[..1], state)?;
+        if ids.len() == 1 {
+            return Ok(first.logits);
+        }
+        self.continue_prefix_chunked(&ids[1..], state, chunk)
+    }
+
+    /// Teacher-force a non-empty suffix through bounded batched transactions and return
+    /// the next-token row after its final token.
+    pub fn continue_prefix_chunked(
+        &self,
+        suffix: &[u32],
+        state: &mut DecodeState,
+        chunk: usize,
+    ) -> Res<Vec<f32>> {
+        if suffix.is_empty() {
+            return Err("dsv4 chunked continuation needs a non-empty suffix".into());
+        }
+        if chunk == 0 || chunk > state.transient_rows {
+            return Err(format!(
+                "dsv4 continuation chunk {chunk} outside 1..={} allocated transient rows",
+                state.transient_rows
+            ));
+        }
+        if state.pos == 0 || state.pos + suffix.len() > state.capacity {
+            return Err(format!(
+                "dsv4 chunked continuation {} + {} outside primed capacity {}",
+                state.pos,
+                suffix.len(),
+                state.capacity
+            ));
+        }
+        let width = chunk.min(suffix.len());
+        let mut vstate = self.alloc_prefill_state_for(state.capacity, width)?;
+        let mut last_logits = None;
+        for (i, toks) in suffix.chunks(width).enumerate() {
+            let final_chunk = (i + 1) * width >= suffix.len();
+            let (logits, _) = self.verify_batch_dev(toks, state, &mut vstate, None, final_chunk)?;
+            self.commit_verify_dev(state, &mut vstate, toks.len())?;
+            if let Some(rows) = logits {
+                let vocab = rows.len() / toks.len();
+                last_logits = Some(rows[(toks.len() - 1) * vocab..].to_vec());
+            }
+        }
+        Ok(last_logits.expect("final chunk requested logits"))
+    }
+
     fn forward_impl(
         &self,
         ids: &[u32],
@@ -4075,6 +4152,16 @@ impl Dsv4Gpu {
     /// server: one 1M request may reserve the full compact cache, while ordinary sessions
     /// reserve only prompt + output and coexist in the remaining VRAM.
     pub fn alloc_decode_state_for(&self, capacity: usize) -> Res<DecodeState> {
+        self.alloc_decode_state_for_transient(capacity, self.verify_tmax())
+    }
+
+    /// Capacity-planned allocation with an explicit batched-transaction width. The
+    /// width is scratch, not semantic state, and is therefore absent from host snapshots.
+    pub fn alloc_decode_state_for_transient(
+        &self,
+        capacity: usize,
+        transient_rows: usize,
+    ) -> Res<DecodeState> {
         if capacity == 0 || capacity > self.max_seq {
             return Err(format!(
                 "dsv4 decode capacity {capacity} outside 1..={} model limit",
@@ -4092,7 +4179,7 @@ impl Dsv4Gpu {
         // kvc rows [win + cap_blocks, win + cap_blocks + T_max) — where a batched verify
         // round's kv lands so the persistent ring stays read-only until commit (§3.1).
         // Zero rows when the drafter is not loaded: today's exact allocation, byte for byte.
-        let trans_rows = self.verify_tmax();
+        let trans_rows = transient_rows;
         for il in 0..n_trunk {
             let stage_i = self.layer_stage[il as usize];
             let st = &self.stages[stage_i];
@@ -4172,6 +4259,7 @@ impl Dsv4Gpu {
             pos: 0,
             capacity,
             cache_bytes,
+            transient_rows,
             ws,
         })
     }
@@ -4324,6 +4412,17 @@ impl Dsv4Gpu {
         host: &Dsv4HostDecodeState,
         capacity: usize,
     ) -> Res<DecodeState> {
+        self.restore_decode_state_for_transient(host, capacity, self.verify_tmax())
+    }
+
+    /// Restore at a new capacity with scratch sized for the caller's largest batched
+    /// speculative or chunked-prefill transaction.
+    pub fn restore_decode_state_for_transient(
+        &self,
+        host: &Dsv4HostDecodeState,
+        capacity: usize,
+        transient_rows: usize,
+    ) -> Res<DecodeState> {
         if capacity < host.pos || capacity > self.max_seq {
             return Err(format!(
                 "dsv4 restore capacity {capacity} outside parked pos {}..={} model limit",
@@ -4339,7 +4438,7 @@ impl Dsv4Gpu {
                 self.layer_stage.len()
             ));
         }
-        let mut state = self.alloc_decode_state_for(capacity)?;
+        let mut state = self.alloc_decode_state_for_transient(capacity, transient_rows)?;
         for (il, meta) in host.layers.iter().enumerate() {
             let stage = self.layer_stage[il];
             if meta.kvc.stage != stage {
@@ -7529,6 +7628,117 @@ impl Dsv4Gpu {
         Ok(out)
     }
 
+    /// Bounded-memory trunk prefill plus DSpark prime. The first token uses the canonical
+    /// prefill path; every later chunk uses the same batched trunk transaction as
+    /// speculative verification, commits all rows, and advances the drafter rings from
+    /// the captured target-layer taps at their absolute positions.
+    pub fn dspark_prefill_prime_chunked(
+        &self,
+        ids: &[u32],
+        state: &mut DecodeState,
+        dstate: &mut DsparkState,
+        chunk: usize,
+    ) -> Res<Vec<f32>> {
+        if ids.is_empty() {
+            return Err("empty dsv4 DSpark chunked prefill".into());
+        }
+        let first = self.dspark_prefill_prime(&ids[..1], state, dstate)?;
+        if ids.len() == 1 {
+            return Ok(first.logits);
+        }
+        self.dspark_continue_prefix_chunked(&ids[1..], state, dstate, chunk)
+    }
+
+    /// Chunked teacher-forced suffix twin for a restored trunk + DSpark state.
+    pub fn dspark_continue_prefix_chunked(
+        &self,
+        suffix: &[u32],
+        state: &mut DecodeState,
+        dstate: &mut DsparkState,
+        chunk: usize,
+    ) -> Res<Vec<f32>> {
+        if suffix.is_empty() {
+            return Err("dsv4 DSpark chunked continuation needs a non-empty suffix".into());
+        }
+        if chunk == 0 || chunk > state.transient_rows {
+            return Err(format!(
+                "dsv4 DSpark continuation chunk {chunk} outside 1..={} allocated transient rows",
+                state.transient_rows
+            ));
+        }
+        if state.pos == 0 || state.pos + suffix.len() > state.capacity {
+            return Err(format!(
+                "dsv4 DSpark chunked continuation {} + {} outside primed capacity {}",
+                state.pos,
+                suffix.len(),
+                state.capacity
+            ));
+        }
+        let width = chunk.min(suffix.len());
+        let mut vstate = self.alloc_prefill_state_for(state.capacity, width)?;
+        let last = self.stages.len() - 1;
+        let stream = self.stages[last].gpu.stream();
+        let hidden = self.model.mc.n_embd as usize;
+        let n_t = self.dspark().targets.len();
+        let mut taps = stream
+            .alloc_zeros::<f32>(width * n_t * hidden)
+            .map_err(e("dsv4 chunk taps"))?;
+        let mut last_logits = None;
+        for (i, toks) in suffix.chunks(width).enumerate() {
+            let pos0 = state.pos;
+            let final_chunk = (i + 1) * width >= suffix.len();
+            let (logits, _) =
+                self.verify_batch_dev(toks, state, &mut vstate, Some(&mut taps), final_chunk)?;
+            self.commit_verify_dev(state, &mut vstate, toks.len())?;
+            self.dspark_commit_prefill_taps(dstate, &taps, toks.len(), pos0)?;
+            if let Some(rows) = logits {
+                let vocab = rows.len() / toks.len();
+                last_logits = Some(rows[(toks.len() - 1) * vocab..].to_vec());
+            }
+        }
+        Ok(last_logits.expect("final DSpark chunk requested logits"))
+    }
+
+    /// Advance persistent drafter rings from target-layer mean taps for one fully
+    /// committed prefill chunk, then normalize the newest tap to row zero for proposal.
+    fn dspark_commit_prefill_taps(
+        &self,
+        state: &mut DsparkState,
+        main_hidden: &CudaSlice<f32>,
+        s: usize,
+        pos0: usize,
+    ) -> Res<()> {
+        let d = self.model.cfg();
+        let hd = d.head_dim as usize;
+        let win = d.sliding_window as usize;
+        let hidden = self.model.mc.n_embd as usize;
+        let n_t = self.dspark().targets.len();
+        let last = self.stages.len() - 1;
+        let stream = self.stages[last].gpu.stream();
+        let mx = self.dspark_main_x(main_hidden, s)?;
+        let positions: Vec<i32> = (0..s).map(|i| (pos0 + i) as i32).collect();
+        for (bi, blk) in self.dspark().blocks.iter().enumerate() {
+            let kv = self.dspark_main_kv(blk, &mx, s, &positions)?;
+            for i in 0..s {
+                let slot = (pos0 + i) % win;
+                let src = kv.slice(i * hd..(i + 1) * hd);
+                let mut dst = state.rings[bi].slice_mut(slot * hd..(slot + 1) * hd);
+                stream
+                    .memcpy_dtod(&src, &mut dst)
+                    .map_err(e("dsv4 chunk prime ring"))?;
+            }
+        }
+        let tap_elems = n_t * hidden;
+        let src = main_hidden.slice((s - 1) * tap_elems..s * tap_elems);
+        let mut dst = state.taps.slice_mut(0..tap_elems);
+        stream
+            .memcpy_dtod(&src, &mut dst)
+            .map_err(e("dsv4 chunk seed tap"))?;
+        state.tap_head = 0;
+        stream.synchronize().map_err(e("dsv4 chunk prime sync"))?;
+        Ok(())
+    }
+
     /// Ring advance for ONE committed position (§3.1 drafter rule: accepted positions
     /// only). `tap_row` indexes into `state.taps` (the row that holds position `pos`'s
     /// hc-mean concat).
@@ -8552,15 +8762,29 @@ impl Dsv4Gpu {
     /// [`DecodeState`]. In particular, every transient ring base is placed after the
     /// session-sized compressed store, not after the model-wide 1M-token store.
     pub fn alloc_verify_state_for(&self, capacity: usize) -> Res<VerifyState> {
+        let tmax = self.verify_tmax();
+        if tmax == 0 {
+            return Err("alloc_verify_state needs MEMRA_DSV4_DRAFTER=dspark".into());
+        }
+        self.alloc_batched_state_for(capacity, tmax)
+    }
+
+    /// Allocate the same transaction machinery at a wider, explicit chunk width for
+    /// bounded-memory prefill. Unlike speculative verification, this does not require a
+    /// drafter; every row is teacher-forced and committed.
+    pub fn alloc_prefill_state_for(&self, capacity: usize, width: usize) -> Res<VerifyState> {
+        if width == 0 {
+            return Err("dsv4 prefill chunk width must be positive".into());
+        }
+        self.alloc_batched_state_for(capacity, width)
+    }
+
+    fn alloc_batched_state_for(&self, capacity: usize, tmax: usize) -> Res<VerifyState> {
         if capacity == 0 || capacity > self.max_seq {
             return Err(format!(
                 "dsv4 verify capacity {capacity} outside 1..={} model limit",
                 self.max_seq
             ));
-        }
-        let tmax = self.verify_tmax();
-        if tmax == 0 {
-            return Err("alloc_verify_state needs MEMRA_DSV4_DRAFTER=dspark".into());
         }
         if !matches!(self.decode_path, DecodePath::Device { .. }) {
             return Err(
@@ -10422,6 +10646,12 @@ impl Dsv4Gpu {
             return Err(format!(
                 "dsv4 verify capacity {} != decode-state capacity {}; allocate both for the same session admission",
                 vstate.capacity, state.capacity
+            ));
+        }
+        if vstate.tmax > state.transient_rows {
+            return Err(format!(
+                "dsv4 transaction width {} exceeds decode-state transient rows {}; allocate the state for the same or wider transaction",
+                vstate.tmax, state.transient_rows
             ));
         }
         let pos0 = state.pos;
