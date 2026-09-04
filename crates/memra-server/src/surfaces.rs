@@ -100,7 +100,7 @@ pub(crate) async fn admit_translated(
     // Request deadline (lane/deadline-billing): the ONE `parse_timeout_ms` body every
     // surface validates through; the translators pass the field through untouched so a
     // wrong type or range refuses HERE with the same named 400 as the chat surface.
-    let deadline = match crate::parse_timeout_ms(req.timeout_ms.as_ref()) {
+    let deadline = match crate::parse_timeout_ms(req.timeout_ms.as_ref(), req.stream) {
         Ok(ms) => crate::RequestDeadline::starting_now(ms),
         Err(msg) => return Err(crate::bad_request(&msg, Some("timeout_ms"))),
     };
@@ -434,6 +434,9 @@ pub(crate) enum CollectError {
     Ledger,
     /// The engine classified a fault (receipt rejected with its class/status).
     Engine(worker::EngineError),
+    /// A committed-prefill bridge timeout. The bridge is streaming-only, but handling it
+    /// here keeps the event contract total if a future translated surface reuses this body.
+    Deadline(u64),
 }
 
 /// Drain the worker's event stream to a terminal snapshot with EXACTLY the receipt
@@ -499,6 +502,19 @@ pub(crate) async fn collect_final(
                 }
             }
             Event::TokenSnapshot(_) => {}
+            Event::DeadlineExceeded { ms } => {
+                if let Some(receipt) = receipt.as_mut()
+                    && let Err(ledger_err) =
+                        receipt.settle_unbilled("deadline_exceeded", 408, "deadline_exceeded")
+                {
+                    eprintln!(
+                        "[ledger] ERROR: request {} deadline receipt failed: {ledger_err}",
+                        env.id
+                    );
+                    return Err(CollectError::Ledger);
+                }
+                return Err(CollectError::Deadline(ms));
+            }
             Event::Done {
                 stop_reason,
                 n_tokens,

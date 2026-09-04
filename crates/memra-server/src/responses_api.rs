@@ -674,8 +674,9 @@ async fn responses_with_admission(
         deadline,
     } = admission;
     if stream {
-        // Streaming: timeout_ms bounds TIME-TO-FIRST-TOKEN only (held pre-header so a
-        // miss is an honest 408) — same law as the chat surface.
+        // Streaming: timeout_ms bounds TIME-TO-FIRST-TOKEN only. The ordinary <=90 s
+        // path stays pre-header; an explicitly extended deployment may commit during
+        // prefill for SSE keepalives and terminate a later miss in-band, zero debit.
         let rx = match crate::peek_first_token(rx, deadline).await {
             Ok(rx) => rx,
             Err(()) => {
@@ -731,6 +732,13 @@ async fn responses_with_admission(
             return rl.attach(crate::with_request_id(
                 &env.id,
                 crate::engine_error_response(&e),
+            ));
+        }
+        Ok(Err(CollectError::Deadline(ms))) => {
+            drop(guard);
+            return rl.attach(crate::with_request_id(
+                &env.id,
+                crate::deadline_exceeded_response(ms, false),
             ));
         }
         Err(_) => {
@@ -990,6 +998,32 @@ fn responses_sse(
                         break;
                     }
                     prompt_usage = (n_prompt, n_cached);
+                }
+                Event::DeadlineExceeded { ms } => {
+                    let ledger_error = if let Some(receipt) = receipt.as_mut() {
+                        receipt
+                            .settle_unbilled(
+                                "deadline_exceeded",
+                                axum::http::StatusCode::REQUEST_TIMEOUT.as_u16(),
+                                "deadline_exceeded",
+                            )
+                            .err()
+                    } else {
+                        None
+                    };
+                    if ledger_error.is_some() {
+                        stream_fault!(
+                            "request_ledger_unavailable",
+                            "request completion could not be committed to the billing ledger"
+                        );
+                    } else {
+                        stream_fault!(
+                            "deadline_exceeded",
+                            crate::deadline_exceeded_message(ms, true)
+                        );
+                    }
+                    terminal = true;
+                    break;
                 }
                 Event::Token { id: _, text } => {
                     if let Some(receipt) = receipt.as_mut()
@@ -1475,6 +1509,39 @@ mod tests {
             assert!(seq > last);
             last = seq;
         }
+    }
+
+    #[tokio::test]
+    async fn committed_prefill_deadline_uses_the_responses_failed_grammar() {
+        let (tx, rx) = crate::worker::event_channel();
+        tx.send(Event::PromptUsage {
+            n_prompt: 218_000,
+            n_cached: 0,
+        })
+        .unwrap();
+        tx.send(Event::DeadlineExceeded { ms: 180_000 }).unwrap();
+        drop(tx);
+        let resp = responses_sse(
+            rx,
+            None,
+            test_envelope("resp_deadline"),
+            "m".into(),
+            None,
+            Vec::new(),
+            None,
+        )
+        .into_response();
+        let frames = sse_frames(resp).await;
+        assert_eq!(frames[0].0, "response.created");
+        let failed = frames.last().expect("deadline terminal frame");
+        assert_eq!(failed.0, "response.failed");
+        assert_eq!(failed.1["response"]["error"]["code"], "deadline_exceeded");
+        assert!(
+            failed.1["response"]["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("not billed")
+        );
     }
 
     /// GOLDEN TRANSCRIPT (tool round-trip): a template-law tool emission becomes a

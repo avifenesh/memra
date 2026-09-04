@@ -2055,24 +2055,19 @@ fn reset_estimate_s(m: &worker::Metrics) -> u64 {
 // X-RateLimit readings); THIS side's whole contribution to it is honest, prompt 429s with
 // Retry-After. Do not build a second breaker here.
 
-/// `timeout_ms` bounds. The 90 s maximum is a PLATFORM fact, not a preference: Cloudflare's
-/// proxy returns 524 at ~100 s of time-to-headers for a non-streaming response, so any
-/// promise past 90 s would be broken upstream of this server no matter what it does. The
-/// default equals the maximum — "we answer inside 90 s or you don't pay" is the documented
-/// contract for every request, including ones that never heard of the parameter.
+/// Shipped `timeout_ms` bounds. Non-streaming stays at 90 s because it cannot send headers
+/// or heartbeats before completion. Streaming may take a deployment-selected larger TTFT
+/// ceiling only through `MEMRA_STREAM_TTFT_MS_MAX` plus the prefill-commit flag below.
+/// In every mode the default equals that mode's maximum and a time-ground failure bills zero.
 pub(crate) const TIMEOUT_MS_MIN: u64 = 1_000;
 pub(crate) const TIMEOUT_MS_MAX: u64 = 90_000;
 pub(crate) const TIMEOUT_MS_DEFAULT: u64 = 90_000;
 
-/// `MEMRA_TIMEOUT_MS_MAX` — measurement-cell override of the deadline ceiling (docs/FLAGS.md
-/// row of the same name). The 90 s ceiling is a PLATFORM fact of the fronted product route
-/// (Cloudflare 524 at ~100 s of time-to-headers), so raising it is only honest on a
-/// direct-to-server connection, which is exactly the offline capacity/prefill measurement
-/// shape it exists for (lane/glm53-1m-demo: a ~1M-token monolithic prime runs for hours, and
-/// that cell's question is capacity and correctness, not latency). Unset, unparseable, or
-/// below `TIMEOUT_MS_MIN` => the shipped ceiling, behavior byte-identical to before this
-/// function existed. When set, the default follows it, preserving the documented
-/// "default equals the maximum" contract for requests that never pass the parameter.
+/// `MEMRA_TIMEOUT_MS_MAX` remains the direct/non-stream measurement override. It also remains
+/// the fallback streaming ceiling so existing offline long-prefill cells keep their behavior.
+/// A customer-facing deployment that needs a longer STREAMING first-token window uses the
+/// narrower `MEMRA_STREAM_TTFT_MS_MAX` instead; non-streaming responses have no SSE heartbeat
+/// and therefore keep the 90 s product ceiling.
 pub(crate) fn timeout_ms_max() -> u64 {
     static V: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
     *V.get_or_init(|| {
@@ -2084,11 +2079,34 @@ pub(crate) fn timeout_ms_max() -> u64 {
     })
 }
 
+/// Operator-selected maximum and default for STREAMING time to first generated token. Unset
+/// keeps the existing ceiling (or an existing direct-cell `MEMRA_TIMEOUT_MS_MAX` override).
+/// Raising this is safe behind a response-header timeout only together with
+/// `MEMRA_SSE_PREFILL_COMMIT_MS`, which commits the response and starts comment keepalives.
+pub(crate) fn stream_ttft_ms_max() -> u64 {
+    static V: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *V.get_or_init(|| {
+        std::env::var("MEMRA_STREAM_TTFT_MS_MAX")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .filter(|&ms| ms >= TIMEOUT_MS_MIN)
+            .unwrap_or_else(timeout_ms_max)
+    })
+}
+
+fn timeout_ms_default(stream: bool) -> u64 {
+    if stream {
+        stream_ttft_ms_max()
+    } else {
+        timeout_ms_max()
+    }
+}
+
 /// Validate `timeout_ms` (all four surfaces call this ONE body — standard-surface law).
 /// Absent/null => the documented default. Wrong type or out of range => the named-400
 /// message, which always states the range and the streaming escape hatch.
-pub(crate) fn parse_timeout_ms(v: Option<&serde_json::Value>) -> Result<u64, String> {
-    let max = timeout_ms_max();
+pub(crate) fn parse_timeout_ms(v: Option<&serde_json::Value>, stream: bool) -> Result<u64, String> {
+    let max = timeout_ms_default(stream);
     let Some(v) = v.filter(|v| !v.is_null()) else {
         // Default equals the maximum, including under the measurement-cell override.
         return Ok(max);
@@ -2096,20 +2114,17 @@ pub(crate) fn parse_timeout_ms(v: Option<&serde_json::Value>) -> Result<u64, Str
     let Some(ms) = v.as_u64() else {
         return Err(format!(
             "timeout_ms must be an integer number of milliseconds in \
-             {TIMEOUT_MS_MIN}..={max}, got {v}; for work longer than \
-             {max} ms use \"stream\": true — the deadline then bounds only the \
-             time to first token and the stream may run as long as it needs"
+             {TIMEOUT_MS_MIN}..={max}, got {v}; for long work use \"stream\": true — \
+             the deadline then bounds only time to first token and the stream may run \
+             as long as it needs"
         ));
     };
     if !(TIMEOUT_MS_MIN..=max).contains(&ms) {
         return Err(format!(
             "timeout_ms {ms} is outside the accepted range \
-             {TIMEOUT_MS_MIN}..={max} (milliseconds). {max} is a \
-             platform ceiling, not a preference: the fronting proxy fails a non-streaming \
-             response whose headers take ~100 s (HTTP 524), so promising more would be a \
-             lie. For work longer than {max} ms use \"stream\": true — the \
-             deadline then bounds only the time to first token and the stream may run as \
-             long as it needs"
+             {TIMEOUT_MS_MIN}..={max} (milliseconds) for this response mode. For long \
+             work use \"stream\": true — the deadline then bounds only time to first \
+             token and the stream may run as long as it needs"
         ));
     }
     Ok(ms)
@@ -2142,19 +2157,32 @@ impl RequestDeadline {
 /// promise. 408 is deliberately retryable (exempt from `x-should-retry: false` — SDKs
 /// retry it by default) and carries no Retry-After: the miss says nothing about when a
 /// retry would fit, and a made-up window would be a promise this server cannot keep.
-pub(crate) fn deadline_exceeded_response(ms: u64, stream: bool) -> Response {
+pub(crate) fn deadline_exceeded_message(ms: u64, stream: bool) -> String {
     let what = if stream {
         "the first token was produced"
     } else {
         "the response completed"
     };
-    let msg = format!(
-        "deadline of {ms} ms (timeout_ms; default {TIMEOUT_MS_DEFAULT}) elapsed before \
-         {what}; generation was cancelled and this request is not billed"
-    );
+    format!(
+        "deadline of {ms} ms (timeout_ms; default {}) elapsed before \
+         {what}; generation was cancelled and this request is not billed",
+        timeout_ms_default(stream)
+    )
+}
+
+pub(crate) fn deadline_exceeded_error(ms: u64, stream: bool) -> serde_json::Value {
+    error_body(
+        &deadline_exceeded_message(ms, stream),
+        "timeout",
+        Some("timeout_ms"),
+        Some("deadline_exceeded"),
+    )
+}
+
+pub(crate) fn deadline_exceeded_response(ms: u64, stream: bool) -> Response {
     error_response_coded(
         StatusCode::REQUEST_TIMEOUT,
-        &msg,
+        &deadline_exceeded_message(ms, stream),
         "timeout",
         Some("timeout_ms"),
         Some("deadline_exceeded"),
@@ -5309,6 +5337,12 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
         }
         return Ok(());
     }
+    validate_stream_prefill_config().map_err(|message| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("streaming prefill config: {message}"),
+        )
+    })?;
     if let Some(code) = auth::run_cli(&args) {
         std::process::exit(code);
     }
@@ -7166,29 +7200,157 @@ async fn forward_events(mut rx: worker::EventReceiver, tx2: worker::EventSender)
     }
 }
 
-/// STREAMING TTFT DEADLINE (lane/deadline-billing-20260823): hold the response PRE-HEADER
-/// until the first generated event (token, done, or fault) or the deadline, whichever is
-/// first. A deadline miss can then be an honest, retryable 408 — once the first byte of a
-/// 200 is written the response is COMMITTED (see `peek_admission`), and a mid-stream error
-/// chunk is neither a status a router can act on nor a promise-keeping "you don't pay"
-/// signal. This extends the existing pre-header posture (queueing already holds
-/// pre-header until admission) through prefill: headers now commit at first token, which
-/// is bounded by the deadline (<= 90 s), inside the fronting proxy's ~100 s
-/// time-to-headers ceiling.
+/// Continue forwarding a committed streaming response through prefill, enforcing the
+/// original first-token deadline even though HTTP status is already committed. Comment
+/// keepalives are generated by the SSE body while this bridge waits. The synthetic terminal
+/// event lets each wire dialect report the same named, zero-debit timeout in its own grammar.
+async fn forward_prefill_until_first_delivery(
+    mut rx: worker::EventReceiver,
+    tx2: worker::EventSender,
+    deadline: RequestDeadline,
+) {
+    loop {
+        tokio::select! {
+            biased;
+            () = tx2.closed() => break,
+            () = tokio::time::sleep_until(deadline.at) => {
+                let _ = tx2.send(Event::DeadlineExceeded { ms: deadline.ms });
+                break;
+            }
+            ev = rx.recv() => match ev {
+                Some(ev) => {
+                    let first_delivery = matches!(
+                        ev,
+                        Event::Token { .. } | Event::Done { .. } | Event::Error(_)
+                    );
+                    if tx2.send(ev).is_err() {
+                        break;
+                    }
+                    if first_delivery {
+                        forward_events(rx, tx2).await;
+                        break;
+                    }
+                }
+                None => break,
+            },
+        }
+    }
+}
+
+/// Milliseconds from request start before an extended streaming request commits headers and
+/// lets the SSE keepalive protect a long prefill. Zero/unset keeps the old pre-header posture.
+fn sse_prefill_commit_ms() -> Option<u64> {
+    static V: std::sync::OnceLock<Option<u64>> = std::sync::OnceLock::new();
+    *V.get_or_init(|| {
+        std::env::var("MEMRA_SSE_PREFILL_COMMIT_MS")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .filter(|&ms| ms > 0)
+    })
+}
+
+fn validate_stream_prefill_config_values(
+    stream_max: Option<u64>,
+    commit_ms: Option<u64>,
+) -> Result<(), String> {
+    let Some(stream_max) = stream_max else {
+        return Ok(()); // direct-cell MEMRA_TIMEOUT_MS_MAX keeps its existing posture
+    };
+    if stream_max < TIMEOUT_MS_MIN {
+        return Err(format!(
+            "MEMRA_STREAM_TTFT_MS_MAX must be at least {TIMEOUT_MS_MIN}, got {stream_max}"
+        ));
+    }
+    if stream_max <= TIMEOUT_MS_MAX {
+        return Ok(());
+    }
+    let Some(commit_ms) = commit_ms.filter(|ms| *ms > 0) else {
+        return Err(format!(
+            "MEMRA_STREAM_TTFT_MS_MAX={stream_max} extends streaming TTFT past the shipped \
+             {TIMEOUT_MS_MAX} ms pre-header window, but MEMRA_SSE_PREFILL_COMMIT_MS is unset \
+             or zero; refusing a customer promise that cannot start SSE keepalives"
+        ));
+    };
+    if commit_ms >= stream_max {
+        return Err(format!(
+            "MEMRA_SSE_PREFILL_COMMIT_MS={commit_ms} must be below the extended streaming \
+             deadline {stream_max}"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_stream_prefill_config() -> Result<(), String> {
+    let stream_max = match std::env::var("MEMRA_STREAM_TTFT_MS_MAX") {
+        Ok(raw) => Some(
+            raw.parse::<u64>()
+                .map_err(|_| format!("MEMRA_STREAM_TTFT_MS_MAX must be an integer, got {raw:?}"))?,
+        ),
+        Err(std::env::VarError::NotPresent) => None,
+        Err(err) => return Err(format!("MEMRA_STREAM_TTFT_MS_MAX is unreadable: {err}")),
+    };
+    let commit_ms =
+        match std::env::var("MEMRA_SSE_PREFILL_COMMIT_MS") {
+            Ok(raw) => Some(raw.parse::<u64>().map_err(|_| {
+                format!("MEMRA_SSE_PREFILL_COMMIT_MS must be an integer, got {raw:?}")
+            })?),
+            Err(std::env::VarError::NotPresent) => None,
+            Err(err) => return Err(format!("MEMRA_SSE_PREFILL_COMMIT_MS is unreadable: {err}")),
+        };
+    validate_stream_prefill_config_values(stream_max, commit_ms)
+}
+
+/// STREAMING TTFT DEADLINE (lane/deadline-billing-20260823, extended-prefill amendment
+/// memra#195): the shipped <=90 s posture holds the response PRE-HEADER until the first
+/// generated event (token, done, or fault) or the deadline, whichever is first. A miss is
+/// therefore an HTTP 408 a router can act on. When an operator deliberately configures an
+/// extended streaming window, `MEMRA_SSE_PREFILL_COMMIT_MS` bounds that pre-header hold.
+/// Crossing it commits HTTP 200 so the existing SSE comment keepalive can protect the long
+/// prefill from the fronting proxy. The bridge still enforces the original first-token
+/// deadline; a later miss is a dialect-native `deadline_exceeded` terminal event, cancels
+/// generation, and settles zero debit. Non-streaming never takes this path.
 ///
 /// Pre-token events (PromptUsage) are buffered and re-injected in order, so the stream
-/// consumer's receipt discipline is unchanged. On a miss the receiver — and with it the
-/// worker-side event channel — is dropped, which IS the cancel signal: the worker retires
-/// closed-channel requests queued or active at the next tick.
+/// consumer's receipt discipline is unchanged. On either kind of miss the receiver — and
+/// with it the worker-side event channel — is dropped, which IS the cancel signal: the
+/// worker retires closed-channel requests queued or active at the next tick.
 async fn peek_first_token(
-    mut rx: worker::EventReceiver,
+    rx: worker::EventReceiver,
     deadline: RequestDeadline,
 ) -> Result<worker::EventReceiver, ()> {
+    let commit_after = (deadline.ms > TIMEOUT_MS_MAX)
+        .then(sse_prefill_commit_ms)
+        .flatten()
+        .map(std::time::Duration::from_millis);
+    peek_first_token_with_commit(rx, deadline, commit_after).await
+}
+
+async fn peek_first_token_with_commit(
+    mut rx: worker::EventReceiver,
+    deadline: RequestDeadline,
+    commit_after: Option<std::time::Duration>,
+) -> Result<worker::EventReceiver, ()> {
     let mut buffered: Vec<Event> = Vec::new();
+    let request_started_at = deadline
+        .at
+        .checked_sub(std::time::Duration::from_millis(deadline.ms))
+        .unwrap_or_else(tokio::time::Instant::now);
+    let commit_at = commit_after.map(|after| request_started_at + after);
     loop {
-        match tokio::time::timeout_at(deadline.at, rx.recv()).await {
-            Err(_) => return Err(()), // deadline elapsed; dropping rx cancels generation
-            Ok(None) => break,        // worker gone: the stream's closed-channel law handles it
+        let wait_until = commit_at.map_or(deadline.at, |at| at.min(deadline.at));
+        match tokio::time::timeout_at(wait_until, rx.recv()).await {
+            Err(_) if wait_until == deadline.at => {
+                return Err(()); // deadline elapsed; dropping rx cancels generation
+            }
+            Err(_) => {
+                let (tx2, rx2) = worker::event_channel();
+                for ev in buffered {
+                    let _ = tx2.send(ev);
+                }
+                tokio::spawn(forward_prefill_until_first_delivery(rx, tx2, deadline));
+                return Ok(rx2);
+            }
+            Ok(None) => break, // worker gone: the stream's closed-channel law handles it
             Ok(Some(ev)) => {
                 let first_delivery = matches!(
                     ev,
@@ -8771,7 +8933,7 @@ async fn completions_with_admission(
     }
     // Request deadline (lane/deadline-billing): validated with the other request params
     // (a named 400 costs no slot and opens no receipt), armed from this point on.
-    let deadline = match parse_timeout_ms(req.timeout_ms.as_ref()) {
+    let deadline = match parse_timeout_ms(req.timeout_ms.as_ref(), req.stream) {
         Ok(ms) => RequestDeadline::starting_now(ms),
         Err(msg) => return with_request_id(&env.id, bad_request(&msg, Some("timeout_ms"))),
     };
@@ -9087,7 +9249,7 @@ async fn chat_completions_with_admission(
     }
     // Request deadline (lane/deadline-billing): validated with the other request params
     // (a named 400 costs no slot and opens no receipt), armed from this point on.
-    let deadline = match parse_timeout_ms(req.timeout_ms.as_ref()) {
+    let deadline = match parse_timeout_ms(req.timeout_ms.as_ref(), req.stream) {
         Ok(ms) => RequestDeadline::starting_now(ms),
         Err(msg) => return with_request_id(&env.id, bad_request(&msg, Some("timeout_ms"))),
     };
@@ -9523,6 +9685,32 @@ fn sse_response_with_receipt(
                         terminal = true;
                         break;
                     }
+                }
+                Event::DeadlineExceeded { ms } => {
+                    let ledger_error = if let Some(receipt) = receipt.as_mut() {
+                        receipt
+                            .settle_unbilled(
+                                "deadline_exceeded",
+                                StatusCode::REQUEST_TIMEOUT.as_u16(),
+                                "deadline_exceeded",
+                            )
+                            .err()
+                    } else {
+                        None
+                    };
+                    let payload = if ledger_error.is_some() {
+                        request_ledger_error_body().to_string()
+                    } else {
+                        deadline_exceeded_error(ms, true).to_string()
+                    };
+                    if chat || openai_compat() {
+                        yield Ok(SseEvent::default().data(payload));
+                        yield Ok(SseEvent::default().data("[DONE]"));
+                    } else {
+                        yield Ok(SseEvent::default().event("error").data(payload));
+                    }
+                    terminal = true;
+                    break;
                 }
                 Event::Token { id, text } => {
                     if let Some(receipt) = receipt.as_mut()
@@ -10124,6 +10312,22 @@ async fn blocking_response_with_receipt(
                 }
             }
             Event::TokenSnapshot(ids) => tokens = ids,
+            Event::DeadlineExceeded { ms } => {
+                if let Some(receipt) = receipt.as_mut()
+                    && let Err(ledger_err) = receipt.settle_unbilled(
+                        "deadline_exceeded",
+                        StatusCode::REQUEST_TIMEOUT.as_u16(),
+                        "deadline_exceeded",
+                    )
+                {
+                    eprintln!(
+                        "[ledger] ERROR: request {} deadline receipt failed: {ledger_err}",
+                        env.id
+                    );
+                    return request_ledger_error_response();
+                }
+                return deadline_exceeded_response(ms, false);
+            }
             Event::Done {
                 stop_reason,
                 n_tokens,
@@ -15169,20 +15373,21 @@ default_reasoning_effort = "always"
     #[test]
     fn timeout_ms_parses_clamps_nothing_and_names_every_refusal() {
         // Absent / explicit null => the DOCUMENTED default, not "no deadline".
-        assert_eq!(parse_timeout_ms(None).unwrap(), TIMEOUT_MS_DEFAULT);
+        assert_eq!(parse_timeout_ms(None, false).unwrap(), TIMEOUT_MS_DEFAULT);
         assert_eq!(
-            parse_timeout_ms(Some(&serde_json::Value::Null)).unwrap(),
+            parse_timeout_ms(Some(&serde_json::Value::Null), false).unwrap(),
             TIMEOUT_MS_DEFAULT
         );
         // In-range values are honored EXACTLY (no clamping — an out-of-range value is a
         // refusal, because silently shortening a caller's deadline is the accepted-and-
         // ignored class the standard-surface law bans).
         for ms in [TIMEOUT_MS_MIN, 5_000, 45_000, TIMEOUT_MS_MAX] {
-            assert_eq!(parse_timeout_ms(Some(&json!(ms))).unwrap(), ms);
+            assert_eq!(parse_timeout_ms(Some(&json!(ms)), false).unwrap(), ms);
         }
         // Out of range both ways: named 400 stating the range AND the streaming hatch.
         for bad in [0u64, TIMEOUT_MS_MIN - 1, TIMEOUT_MS_MAX + 1, 600_000] {
-            let err = parse_timeout_ms(Some(&json!(bad))).expect_err("out of range must refuse");
+            let err =
+                parse_timeout_ms(Some(&json!(bad)), false).expect_err("out of range must refuse");
             assert!(err.contains("timeout_ms"), "{err}");
             assert!(
                 err.contains(&TIMEOUT_MS_MIN.to_string())
@@ -15196,14 +15401,14 @@ default_reasoning_effort = "always"
         }
         // Unknown types refuse too (never a silent default).
         for bad in [json!("30s"), json!(1.5), json!(true), json!({}), json!([])] {
-            let err = parse_timeout_ms(Some(&bad)).expect_err("bad type must refuse");
+            let err = parse_timeout_ms(Some(&bad), false).expect_err("bad type must refuse");
             assert!(
                 err.contains("timeout_ms") && err.contains("stream"),
                 "{err}"
             );
         }
         // Negative numbers are not u64 — same named refusal, not a panic.
-        assert!(parse_timeout_ms(Some(&json!(-1))).is_err());
+        assert!(parse_timeout_ms(Some(&json!(-1)), false).is_err());
     }
 
     /// The named 400 is IDENTICAL on all four surfaces (standard-surface law) and costs
@@ -15575,6 +15780,213 @@ default_reasoning_effort = "always"
             }),
             "a TTFT miss must settle unbilled under the deadline outcome: {events:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn an_extended_stream_commits_prefill_then_injects_the_original_deadline() {
+        let (tx, rx) = worker::event_channel();
+        tx.send(Event::PromptUsage {
+            n_prompt: 218_000,
+            n_cached: 0,
+        })
+        .unwrap();
+        let deadline = RequestDeadline::starting_now(80);
+        let started = tokio::time::Instant::now();
+        let mut committed =
+            peek_first_token_with_commit(rx, deadline, Some(std::time::Duration::from_millis(10)))
+                .await
+                .expect("the extended stream must commit before first token");
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(60),
+            "the bridge waited for the first-token deadline instead of committing"
+        );
+        assert!(matches!(
+            committed.recv().await,
+            Some(Event::PromptUsage {
+                n_prompt: 218_000,
+                n_cached: 0
+            })
+        ));
+        assert!(matches!(
+            tokio::time::timeout(std::time::Duration::from_millis(150), committed.recv()).await,
+            Ok(Some(Event::DeadlineExceeded { ms: 80 }))
+        ));
+        for _ in 0..50 {
+            if tx.is_closed() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+        }
+        assert!(
+            tx.is_closed(),
+            "dropping the prefill bridge at the deadline must cancel the worker request"
+        );
+    }
+
+    #[test]
+    fn an_extended_streaming_ceiling_requires_an_effective_prefill_commit() {
+        assert!(validate_stream_prefill_config_values(None, None).is_ok());
+        assert!(
+            validate_stream_prefill_config_values(Some(TIMEOUT_MS_MAX), None).is_ok(),
+            "the shipped 90 s posture needs no early commit"
+        );
+        let extended = TIMEOUT_MS_MAX + 90_000;
+        assert!(validate_stream_prefill_config_values(Some(extended), None).is_err());
+        assert!(validate_stream_prefill_config_values(Some(extended), Some(0)).is_err());
+        assert!(validate_stream_prefill_config_values(Some(extended), Some(extended)).is_err());
+        assert!(validate_stream_prefill_config_values(Some(extended), Some(10_000)).is_ok());
+    }
+
+    #[tokio::test]
+    async fn committed_prefill_sends_a_real_keepalive_before_any_generated_token() {
+        let (tx, rx) = worker::event_channel();
+        tx.send(Event::PromptUsage {
+            n_prompt: 218_000,
+            n_cached: 0,
+        })
+        .unwrap();
+        let rx = peek_first_token_with_commit(
+            rx,
+            RequestDeadline::starting_now(30_000),
+            Some(std::time::Duration::from_millis(1)),
+        )
+        .await
+        .unwrap();
+        let response = sse_response(
+            rx,
+            "m".into(),
+            true,
+            None,
+            Envelope::new(true),
+            Vec::new(),
+            None,
+        )
+        .into_response();
+        let mut body = Box::pin(response.into_body().into_data_stream());
+        let frame = tokio::time::timeout(
+            std::time::Duration::from_secs(7),
+            std::future::poll_fn(|cx| body.as_mut().poll_next(cx)),
+        )
+        .await
+        .expect("prefill must send the five-second heartbeat")
+        .expect("stream must remain open")
+        .unwrap();
+        assert!(frame.starts_with(b":"), "expected SSE comment: {frame:?}");
+        assert!(!is_sse_data_frame(&frame));
+        drop(body);
+        tokio::time::timeout(std::time::Duration::from_secs(1), tx.closed())
+            .await
+            .expect("disconnect must cancel silent prefill immediately");
+    }
+
+    /// Manual proxy gate: only synthetic output, using the real bridge and serializer.
+    #[tokio::test]
+    #[ignore = "manual loopback fixture for external proxy qualification"]
+    async fn prefill_proxy_fixture() {
+        async fn response(early: bool) -> Response {
+            let (tx, rx) = worker::event_channel();
+            tx.send(Event::PromptUsage {
+                n_prompt: 1,
+                n_cached: 0,
+            })
+            .unwrap();
+            tokio::spawn(async move {
+                tokio::select! {
+                    () = tx.closed() => return,
+                    () = tokio::time::sleep(std::time::Duration::from_secs(150)) => {}
+                }
+                let _ = tx.send(Event::Token {
+                    id: 1,
+                    text: "synthetic proxy gate".into(),
+                });
+                let _ = tx.send(Event::Done {
+                    stop_reason: "Eos".into(),
+                    n_tokens: 1,
+                    n_prompt: 1,
+                    n_cached: 0,
+                    elapsed_s: 150.0,
+                    spec: None,
+                });
+            });
+            let rx = peek_first_token_with_commit(
+                rx,
+                RequestDeadline::starting_now(180_000),
+                early.then(|| std::time::Duration::from_secs(10)),
+            )
+            .await
+            .unwrap();
+            sse_response(
+                rx,
+                "synthetic".into(),
+                true,
+                None,
+                Envelope::new(true),
+                Vec::new(),
+                None,
+            )
+            .into_response()
+        }
+        let app = Router::new()
+            .route("/early", get(|| response(true)))
+            .route("/held", get(|| response(false)));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:18995")
+            .await
+            .unwrap();
+        eprintln!("prefill proxy fixture listening on 127.0.0.1:18995");
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async {
+                tokio::time::sleep(std::time::Duration::from_secs(720)).await;
+            })
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_committed_prefill_timeout_is_a_named_sse_error_and_zero_debit() {
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let receipt: Box<dyn metering::Receipt> = Box::new(MockReceipt {
+            events: events.clone(),
+            wants_capture: false,
+            prompt: 0,
+            cached: 0,
+            completion: 0,
+            finalized: false,
+        });
+        let (tx, rx) = worker::event_channel();
+        tx.send(Event::PromptUsage {
+            n_prompt: 218_000,
+            n_cached: 0,
+        })
+        .unwrap();
+        tx.send(Event::DeadlineExceeded { ms: 180_000 }).unwrap();
+        drop(tx);
+        let resp = sse_response_with_receipt(
+            rx,
+            "m".into(),
+            true,
+            None,
+            Envelope::new(true),
+            Vec::new(),
+            None,
+            Some(receipt),
+        )
+        .into_response();
+        let lines = sse_data_lines(resp).await;
+        assert_eq!(lines.last().map(String::as_str), Some("[DONE]"));
+        let error: serde_json::Value = serde_json::from_str(&lines[0]).unwrap();
+        assert_eq!(error["error"]["type"], "timeout");
+        assert_eq!(error["error"]["code"], "deadline_exceeded");
+        assert!(
+            error["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("not billed")
+        );
+        assert!(events.lock().unwrap().contains(&MeterEvent::Unbilled {
+            outcome: "deadline_exceeded",
+            status: 408,
+            code: "deadline_exceeded".into(),
+        }));
     }
 
     /// STREAMING, first token DELIVERED inside the deadline: the parameter is SPENT. A
