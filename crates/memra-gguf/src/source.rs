@@ -1963,10 +1963,20 @@ impl SafetensorsSource {
         let (sinfo, sbytes) = self.lookup(&format!("{hf_weight}.nvfp4_scale_e4m3"))?;
         let out_f = winfo.shape[0] as usize;
         let in_f = (winfo.shape[1] as usize) * 2;
-        if !in_f.is_multiple_of(16) {
-            return None;
-        }
-        let scale = self.nvfp4_scale_linear(&sinfo.shape, sbytes, out_f, in_f)?;
+        // This dialect has NEVER validated its scale sibling's shape or length, and no Reza
+        // checkpoint declares a swizzled layout, so the linear path stays byte-for-byte the
+        // historical one: borrow the sibling unchecked. Imposing the shape check the two modelopt
+        // dialects carry would be a silent behaviour change on checkpoints this lane cannot test.
+        // A swizzled Reza checkpoint, if one ever exists, takes the validated path.
+        let scale = match self.nvfp4_scale_layout {
+            Nvfp4ScaleLayout::Linear => Cow::Borrowed(sbytes),
+            Nvfp4ScaleLayout::Swizzle32x4x4 => {
+                if !in_f.is_multiple_of(16) {
+                    return None;
+                }
+                self.nvfp4_scale_linear(&sinfo.shape, sbytes, out_f, in_f)?
+            }
+        };
         Some((out_f, in_f, wbytes, scale, 1.0))
     }
 }
