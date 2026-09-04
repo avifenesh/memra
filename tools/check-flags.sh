@@ -85,15 +85,17 @@ fi
 # lane's "546 census, 0 stale" claim, which was measured through the same hole.
 # memra-gguf/src (6 reads) and memra-probe/src (1) sat outside the census for the same
 # reason. A hand-list has this hole again the next time a crate is added; discovery does not.
+# We also include `src/bin` (memra#120): harness/gate/probe binaries declare operator knobs
+# and benchmark flags that must be documented in FLAGS.md rather than escaping census.
 runtime_dirs=()
 while IFS= read -r runtime_dir; do
     runtime_dirs+=("$runtime_dir")
-done < <(find crates -mindepth 2 -maxdepth 2 -type d -name src 2>/dev/null | sort)
+done < <(find crates -mindepth 2 -maxdepth 3 -type d \( -path '*/src' -o -path '*/src/bin' \) 2>/dev/null | sort)
 
 command -v rg >/dev/null || { echo "check-flags: rg is required" >&2; exit 2; }
 [[ -f "$flag_doc" ]] || { echo "check-flags: missing $flag_doc" >&2; exit 2; }
 if (( ${#runtime_dirs[@]} == 0 )); then
-    echo "check-flags: no crates/*/src found — the census would be vacuously green" >&2
+    echo "check-flags: no crates/*/src or crates/*/src/bin found — the census would be vacuously green" >&2
     exit 2
 fi
 
