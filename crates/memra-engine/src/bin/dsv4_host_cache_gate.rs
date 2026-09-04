@@ -1,0 +1,207 @@
+//! Lossless DSV4 pinned-host park/restore gate.
+//!
+//! One model load, two independent arms:
+//!   * plain trunk state: snapshot -> capacity-growing restore -> identical logits/state;
+//!   * trunk + DSpark state: snapshot -> restore -> identical proposal, logits, trunk
+//!     cache classes and persistent drafter rings.
+//!
+//! Device-to-device equality is the correct instrument here: both arms use the same
+//! numeric realization and differ only by a D2H/H2D state round trip. Every live f32
+//! element is compared by bits. Dead capacity tails and scratch are intentionally absent.
+//!
+//! Usage: dsv4-host-cache-gate <model-dir> <fixtures.json> [dev0,dev1]
+
+use memra_engine::dsv4_gpu::{DecodeState, DsparkState, Dsv4Gpu};
+use memra_gguf::dsv4_forward::FixtureSpec;
+use std::path::Path;
+
+fn argmax(row: &[f32]) -> u32 {
+    let mut best = 0usize;
+    for i in 1..row.len() {
+        if row[i] > row[best] {
+            best = i;
+        }
+    }
+    best as u32
+}
+
+fn bits_equal(a: &[f32], b: &[f32]) -> bool {
+    a.len() == b.len()
+        && a.iter()
+            .zip(b)
+            .all(|(left, right)| left.to_bits() == right.to_bits())
+}
+
+fn classes_equal(left: &[(String, Vec<f32>)], right: &[(String, Vec<f32>)]) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right)
+            .all(|((ln, lv), (rn, rv))| ln == rn && bits_equal(lv, rv))
+}
+
+fn plain_warm(gpu: &Dsv4Gpu, prompt: &[u32], capacity: usize, warm: usize) -> (DecodeState, u32) {
+    let mut state = gpu
+        .alloc_decode_state_for(capacity)
+        .expect("plain capacity-planned state");
+    let pre = gpu
+        .prefill_with_cache(prompt, &mut state)
+        .expect("plain prefill");
+    let mut token = argmax(&pre.logits);
+    for _ in 0..warm {
+        token = gpu
+            .decode_step_greedy(token, &mut state)
+            .expect("plain warm step");
+    }
+    (state, token)
+}
+
+fn dspark_warm(
+    gpu: &Dsv4Gpu,
+    prompt: &[u32],
+    capacity: usize,
+    warm: usize,
+) -> (DecodeState, DsparkState, u32) {
+    let mut state = gpu
+        .alloc_decode_state_for(capacity)
+        .expect("DSpark capacity-planned state");
+    let mut dstate = gpu.dspark_alloc_state().expect("DSpark state");
+    let pre = gpu
+        .dspark_prefill_prime(prompt, &mut state, &mut dstate)
+        .expect("DSpark prefill");
+    let mut token = argmax(&pre.logits);
+    for _ in 0..warm {
+        let pos = state.pos;
+        token = gpu
+            .decode_step_greedy_tap(token, &mut state, &mut dstate, 0)
+            .expect("DSpark warm step");
+        gpu.dspark_write_rings(&mut dstate, 0, pos)
+            .expect("DSpark warm ring write");
+    }
+    (state, dstate, token)
+}
+
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() < 3 {
+        eprintln!("usage: dsv4-host-cache-gate <model-dir> <fixtures.json> [dev0,dev1]");
+        std::process::exit(2);
+    }
+    let model_dir = Path::new(&args[1]);
+    let fixture = FixtureSpec::load(Path::new(&args[2]));
+    let devices: Vec<usize> = args
+        .get(3)
+        .map(|raw| {
+            raw.split(',')
+                .map(|part| part.parse().expect("device index"))
+                .collect()
+        })
+        .unwrap_or_else(|| vec![0, 1]);
+    let prompt = &fixture.tokens_32;
+    let warm = 17usize; // crosses several CSA phases without making the gate slow
+    let continuation = 11usize;
+    let small_capacity = prompt.len() + warm + continuation + 1;
+    let grown_capacity = small_capacity + 97;
+    let gpu = Dsv4Gpu::load(model_dir, &devices, fixture.variant, grown_capacity)
+        .expect("load DSV4 GPU model");
+    assert!(
+        gpu.dspark.is_some(),
+        "gate requires MEMRA_DSV4_DRAFTER=dspark"
+    );
+
+    // Plain trunk round trip, including restore into a larger capacity allocation.
+    let (mut plain_a, mut plain_token) = plain_warm(&gpu, prompt, small_capacity, warm);
+    let plain_host = gpu
+        .snapshot_decode_state(&plain_a)
+        .expect("snapshot plain state");
+    let plain_host_bytes = plain_host.bytes();
+    let mut plain_b = gpu
+        .restore_decode_state_for(&plain_host, grown_capacity)
+        .expect("restore grown plain state");
+    assert_eq!(plain_b.capacity, grown_capacity);
+    assert!(classes_equal(
+        &gpu.cache_classes(&plain_a).expect("plain classes A"),
+        &gpu.cache_classes(&plain_b).expect("plain classes B"),
+    ));
+    for _ in 0..continuation {
+        let row_a = gpu.decode_step(plain_token, &mut plain_a).expect("plain A");
+        let row_b = gpu.decode_step(plain_token, &mut plain_b).expect("plain B");
+        assert!(bits_equal(&row_a, &row_b), "plain restored logits differ");
+        plain_token = argmax(&row_a);
+    }
+    assert!(classes_equal(
+        &gpu.cache_classes(&plain_a).expect("plain final classes A"),
+        &gpu.cache_classes(&plain_b).expect("plain final classes B"),
+    ));
+
+    // Trunk + bundled DSpark state round trip. Proposal equality exercises the restored
+    // newest-tap row; ring equality exercises every persistent drafter row.
+    let (mut spec_a, mut ds_a, spec_token) = dspark_warm(&gpu, prompt, small_capacity, warm);
+    let spec_host = gpu
+        .snapshot_decode_state(&spec_a)
+        .expect("snapshot DSpark trunk");
+    let ds_host = gpu
+        .snapshot_dspark_state(&ds_a)
+        .expect("snapshot DSpark state");
+    let spec_host_bytes = spec_host.bytes() + ds_host.bytes();
+    let mut spec_b = gpu
+        .restore_decode_state_for(&spec_host, grown_capacity)
+        .expect("restore DSpark trunk");
+    let mut ds_b = gpu
+        .restore_dspark_state(&ds_host)
+        .expect("restore DSpark state");
+
+    assert!(classes_equal(
+        &gpu.cache_classes(&spec_a).expect("DSpark trunk classes A"),
+        &gpu.cache_classes(&spec_b).expect("DSpark trunk classes B"),
+    ));
+    assert!(classes_equal(
+        &gpu.dspark_ring_classes(&ds_a).expect("DSpark rings A"),
+        &gpu.dspark_ring_classes(&ds_b).expect("DSpark rings B"),
+    ));
+    let tap_a = ds_a.tap_head;
+    let tap_b = ds_b.tap_head;
+    let prop_a = gpu
+        .dspark_forward_spec(&mut ds_a, spec_token, tap_a, spec_a.pos - 1, false)
+        .expect("DSpark proposal A");
+    let prop_b = gpu
+        .dspark_forward_spec(&mut ds_b, spec_token, tap_b, spec_b.pos - 1, false)
+        .expect("DSpark proposal B");
+    assert_eq!(prop_a.out_ids, prop_b.out_ids, "restored DSpark ids differ");
+    assert!(bits_equal(&prop_a.confidence, &prop_b.confidence));
+
+    let pos_a = spec_a.pos;
+    let pos_b = spec_b.pos;
+    let row_a = gpu
+        .decode_step_tap(spec_token, &mut spec_a, &mut ds_a, 0)
+        .expect("DSpark continuation A");
+    let row_b = gpu
+        .decode_step_tap(spec_token, &mut spec_b, &mut ds_b, 0)
+        .expect("DSpark continuation B");
+    assert!(bits_equal(&row_a, &row_b), "restored DSpark logits differ");
+    gpu.dspark_write_rings(&mut ds_a, 0, pos_a)
+        .expect("DSpark ring A");
+    gpu.dspark_write_rings(&mut ds_b, 0, pos_b)
+        .expect("DSpark ring B");
+    assert!(classes_equal(
+        &gpu.cache_classes(&spec_a).expect("DSpark final trunk A"),
+        &gpu.cache_classes(&spec_b).expect("DSpark final trunk B"),
+    ));
+    assert!(classes_equal(
+        &gpu.dspark_ring_classes(&ds_a)
+            .expect("DSpark final rings A"),
+        &gpu.dspark_ring_classes(&ds_b)
+            .expect("DSpark final rings B"),
+    ));
+
+    println!(
+        "[dsv4-host-cache-gate] PASS prompt={} warm={} continuation={} capacity={}=>{} plain_host_bytes={} dspark_host_bytes={}",
+        prompt.len(),
+        warm,
+        continuation,
+        small_capacity,
+        grown_capacity,
+        plain_host_bytes,
+        spec_host_bytes,
+    );
+}
