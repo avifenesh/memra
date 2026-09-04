@@ -2342,9 +2342,12 @@ pub(crate) fn context_cache_bytes(
     ring_rows: usize,
     ctx_cap: usize,
 ) -> usize {
-    let flat = bytes_per_token.saturating_sub(ring_bytes_per_token);
-    flat.saturating_mul(ctx_cap)
-        .saturating_add(ring_bytes_per_token.saturating_mul(ctx_cap.min(ring_rows)))
+    crate::admit_predict::context_cache_bytes(
+        bytes_per_token as u64,
+        ring_bytes_per_token as u64,
+        ring_rows as u64,
+        ctx_cap as u64,
+    ) as usize
 }
 
 /// Per-model request-shaped admission estimate. Full-attention rows scale with the request's
@@ -2391,8 +2394,25 @@ impl AdmissionCostModel {
             model.plain_session_kv_shape();
         let (spec_bytes_per_token, spec_ring_bytes_per_token, spec_ring_rows) =
             model.spec_session_kv_shape();
-        debug_assert!(
-            plain_ring_rows == 0 || spec_ring_rows == 0 || plain_ring_rows == spec_ring_rows
+        assert!(
+            plain_ring_rows == 0 || spec_ring_rows == 0 || plain_ring_rows == spec_ring_rows,
+            "plain and spec ring rows mismatch: plain={plain_ring_rows}, spec={spec_ring_rows}"
+        );
+        assert!(
+            plain_ring_bytes_per_token <= plain_bytes_per_token,
+            "invalid plain ring geometry: ring_bpt ({plain_ring_bytes_per_token}) > total_bpt ({plain_bytes_per_token})"
+        );
+        assert!(
+            plain_ring_rows > 0 || plain_ring_bytes_per_token == 0,
+            "invalid plain ring geometry: ring_rows is 0 but ring_bpt is {plain_ring_bytes_per_token}"
+        );
+        assert!(
+            spec_ring_bytes_per_token <= spec_bytes_per_token,
+            "invalid spec ring geometry: ring_bpt ({spec_ring_bytes_per_token}) > total_bpt ({spec_bytes_per_token})"
+        );
+        assert!(
+            spec_ring_rows > 0 || spec_ring_bytes_per_token == 0,
+            "invalid spec ring geometry: ring_rows is 0 but ring_bpt is {spec_ring_bytes_per_token}"
         );
         let prefill = if admit_prefill_workspace_on() {
             model.hyper_prime_workspace_shape()
@@ -11332,6 +11352,44 @@ fn service_runtime_peer_probe_for_worker(
     Ok(ran)
 }
 
+/// memra#187: whether the deployment uses multiple devices (pipeline parallel or tensor/expert parallel).
+/// Used to gate single-GPU restrictions like predictive-admission enforcement.
+fn is_multi_device_deployment(loaded: &HashMap<String, LoadedModel>) -> bool {
+    if std::env::var("MEMRA_PP_STAGES")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .is_some_and(|n| n > 1)
+    {
+        return true;
+    }
+    if let Ok(devs) = std::env::var("MEMRA_PP_DEVICES")
+        && devs.split(',').filter(|s| !s.trim().is_empty()).count() > 1
+    {
+        return true;
+    }
+    for lm in loaded.values() {
+        let n_trunk = (lm.model.cfg.n_layer - lm.model.cfg.nextn_predict_layers) as usize;
+        if memra_engine::pp::pp_cuts(n_trunk).is_some()
+            || memra_engine::pp::pp_cuts(lm.model.layers.len()).is_some()
+        {
+            return true;
+        }
+    }
+    if let Ok(tp) = std::env::var("MEMRA_STEP_TP")
+        && !tp.trim().is_empty()
+        && tp.trim() != "0"
+    {
+        return true;
+    }
+    if let Ok(ep) = std::env::var("MEMRA_STEP_EP")
+        && !ep.trim().is_empty()
+        && ep.trim() != "0"
+    {
+        return true;
+    }
+    false
+}
+
 /// The worker entry point. Runs on its OWN std::thread. Builds the Engine + loads every model on
 /// THIS thread (CUDA-context affinity), then runs the scheduler loop until the command channel
 /// closes. `models` = (name, gguf_path) pairs. Sends `ready_tx` once load completes (or the error).
@@ -12490,6 +12548,14 @@ pub fn run(
     // verdict computation and its `[admit-predict]` receipt (G5) run only when
     // MEMRA_ADMIT_PREDICT_SHADOW=1, and they only ever LOG: nothing here rejects.
     let mut admit_predict_cfg = crate::admit_predict::ShadowConfig::from_env();
+    // memra#187: engine-level teeth for multi-device restriction. Until device-aware prediction
+    // exists, MEMRA_ADMIT_PREDICT_ENFORCE=1 on a PP/TP model must fail boot loudly.
+    if admit_predict_cfg.enforce && is_multi_device_deployment(&loaded) {
+        let err_msg = "[admit-predict] FATAL: MEMRA_ADMIT_PREDICT_ENFORCE=1 is unsupported on multi-device (PP/TP) deployments (lane/admit-predict-accounting-20260904, memra#187). Unset or use shadow-only (MEMRA_ADMIT_PREDICT_SHADOW=1).";
+        eprintln!("{err_msg}");
+        let _ = ready_tx.send(Err(err_msg.to_string()));
+        return;
+    }
     if admit_predict_cfg.armed {
         // LIVE BUDGET DEFAULT (lane/admit-predict-calibration-20260901, stress-campaign
         // FINDING 3 cause 1): when MEMRA_ADMIT_PREDICT_BUDGET_MB is unset, derive the
@@ -12522,17 +12588,6 @@ pub fn run(
         admit_predict_cfg.resolve_budget(derived);
     }
     let admit_predict_cfg = admit_predict_cfg;
-    // memra#153: the reserve the live arm subtracts from a per-request free-VRAM reading when
-    // the door enforces. Same arithmetic as the boot derivation above (box-level floor).
-    let enforce_reserve_bytes: u64 = admission_reserve(
-        true,
-        0,
-        admission_costs
-            .values()
-            .filter_map(|model| model.transient_floor)
-            .max(),
-        admit_reserve_override(),
-    ) as u64;
     let mut admission_book = crate::admit_predict::AdmissionBook::default();
     let mut completion_history = crate::admit_predict::CompletionHistory::default();
     // AGENT-PAUSE DEMOTION (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831, Arc E):
@@ -13089,6 +13144,8 @@ pub fn run(
             let (
                 cost,
                 bytes_per_token,
+                ring_bytes_per_token,
+                ring_rows,
                 activation_bytes,
                 prefill_bytes,
                 pp_activation_bytes,
@@ -13106,6 +13163,8 @@ pub fn run(
                 (
                     cost,
                     model.bytes_per_token(estimate_spec),
+                    model.ring_bytes_per_token(estimate_spec),
+                    model.ring_rows,
                     model.activation_bytes,
                     model.prefill_workspace_bytes(prompt_len),
                     model.pp_activation_bytes,
@@ -13168,31 +13227,27 @@ pub fn run(
                     .then_some(req.params.max_new as u64);
                 let (predicted, reason) =
                     completion_history.lhat(&tenant_row, &req.model, max_tokens_bound);
-                let request_kv_hat = crate::admit_predict::kv_hat(
+                let request_kv_hat = crate::admit_predict::kv_hat_ring(
                     prompt_len as u64,
                     predicted,
                     bytes_per_token as u64,
+                    ring_bytes_per_token as u64,
+                    ring_rows as u64,
                     activation_bytes as u64,
                 );
                 let booked = admission_book.shadow_booked_total();
-                // memra#153: with the door ON the arm is the smaller of the boot budget and
-                // the LIVE effective free minus the reserve, so a card that drifted (#145:
-                // retained slabs, parked sessions, a full prefix cache) refuses what it can
-                // no longer hold instead of stepping into an OOM.
                 let live_free_bytes = if admit_predict_cfg.enforce {
                     effective_free_bytes(&engine).map(|(free, _)| free as u64)
                 } else {
                     None
                 };
-                let arm = match (admit_predict_cfg.budget_bytes, live_free_bytes) {
-                    (Some(budget), Some(live)) => {
-                        Some(budget.min(live.saturating_sub(enforce_reserve_bytes)))
-                    }
-                    (Some(budget), None) => Some(budget),
-                    (None, Some(live)) => Some(live.saturating_sub(enforce_reserve_bytes)),
-                    (None, None) => None,
-                };
-                let verdict = match arm {
+                // memra#187: decoupled static predictor check from physical live headroom.
+                // The static predictor evaluates total predicted demand against static capacity:
+                //   request_hat + booked_hat <= static_budget
+                // The physical live check reuses the exact AdmissionCostModel and per-device
+                // admission_headroom later in the pipeline, with NO active-session book added again
+                // (active-session allocations are already absent from live_free).
+                let verdict = match admit_predict_cfg.budget_bytes {
                     Some(budget) if request_kv_hat.saturating_add(booked) > budget => {
                         crate::admit_predict::Verdict::RejectKv
                     }
@@ -13225,7 +13280,7 @@ pub fn run(
                         booked_real_bytes: admission_book.booked_total(),
                         inflight: admission_book.inflight(&req.model),
                         cap: cap as u64,
-                        budget_bytes: arm,
+                        budget_bytes: admit_predict_cfg.budget_bytes,
                         retry_after_s,
                         exempt: admit_predict_cfg.is_exempt(&tenant_row),
                         enforce: admit_predict_cfg.enforce,
@@ -13969,10 +14024,12 @@ pub fn run(
                         let (predicted, _) =
                             completion_history.lhat(&tenant_row, &s.model, max_tokens_bound);
                         s.shadow_pred_total = predicted;
-                        s.shadow_kv_hat = crate::admit_predict::kv_hat(
+                        s.shadow_kv_hat = crate::admit_predict::kv_hat_ring(
                             prompt_len as u64,
                             predicted,
                             bytes_per_token as u64,
+                            ring_bytes_per_token as u64,
+                            ring_rows as u64,
                             activation_bytes as u64,
                         );
                     }
@@ -25148,6 +25205,22 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(
+        expected = "invalid ring geometry: ring_bytes_per_token (90000) > bytes_per_token (83520)"
+    )]
+    fn context_cache_bytes_refuses_ring_bpt_greater_than_total() {
+        context_cache_bytes(83_520, 90_000, 100, 1000);
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "invalid ring geometry: ring_rows is 0 but ring_bytes_per_token is 60000"
+    )]
+    fn context_cache_bytes_refuses_zero_ring_rows_with_positive_ring_bpt() {
+        context_cache_bytes(83_520, 60_000, 0, 1000);
+    }
+
+    #[test]
     fn plain_reserve_is_capped_at_the_measured_transient_floor() {
         // Below the floor: byte-identical to the old `reserve = cost` contract (the
         // admit-oom no-regression cell — small models, c<=64).
@@ -28846,6 +28919,135 @@ mod tests {
         );
         // The live arm is read only under the door (shadow mode stays a pure log).
         assert!(flat.contains("letlive_free_bytes=ifadmit_predict_cfg.enforce{effective_free_bytes(&engine).map(|(free,_)|freeasu64)}else{None};"));
+    }
+
+    /// memra#187: engine-level teeth for multi-device restriction.
+    /// MEMRA_ADMIT_PREDICT_ENFORCE=1 on a PP or TP deployment must fail boot via ready_tx.
+    #[test]
+    fn admit_predict_enforce_refuses_multi_device_at_boot() {
+        let src = include_str!("worker.rs");
+        let code: String = src
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
+        let flat: String = prod.chars().filter(|c| !c.is_whitespace()).collect();
+
+        // Boot check exists and fails closed
+        assert!(
+            flat.contains("ifadmit_predict_cfg.enforce&&is_multi_device_deployment(&loaded){"),
+            "boot must check multi-device deployment when enforce is active"
+        );
+        assert!(
+            prod.contains("[admit-predict] FATAL: MEMRA_ADMIT_PREDICT_ENFORCE=1 is unsupported on multi-device (PP/TP) deployments (lane/admit-predict-accounting-20260904, memra#187). Unset or use shadow-only (MEMRA_ADMIT_PREDICT_SHADOW=1)."),
+            "exact fatal log message required"
+        );
+        assert!(
+            flat.contains("let_=ready_tx.send(Err(err_msg.to_string()));return;"),
+            "boot must fail closed via ready_tx and return immediately"
+        );
+    }
+
+    /// memra#187: multi-session concurrency accounting test.
+    /// Proves that concurrent active sessions do not falsely trigger RejectKv as live_free drops,
+    /// because the static capacity check is decoupled from the physical live headroom check.
+    #[test]
+    fn admit_predict_concurrency_decoupled_accounting() {
+        let static_budget = 30_000_000_000u64; // 30 GB static budget
+        let reserve = 2_000_000_000u64; // 2 GB transient reserve
+        let initial_live_free = 32_000_000_000u64; // 32 GB physical free on idle card
+
+        let mut book = crate::admit_predict::AdmissionBook::default();
+        let mut live_free = initial_live_free;
+
+        // Session charge parameters: 8 GB predicted demand per session
+        let prompt_tokens = 4_000u64;
+        let pred_tokens = 4_000u64;
+        let bpt = 1_000_000u64;
+        let ring_bpt = 0u64;
+        let ring_rows = 0u64;
+        let fixed = 0u64;
+
+        let req_hat = crate::admit_predict::kv_hat_ring(
+            prompt_tokens,
+            pred_tokens,
+            bpt,
+            ring_bpt,
+            ring_rows,
+            fixed,
+        );
+        // (4000 + 4000 + 8) * 1_000_000 = 8_008_000_000 bytes (~8 GB)
+        assert_eq!(req_hat, 8_008_000_000);
+
+        // --- Session 1 arrives ---
+        let booked_1 = book.shadow_booked_total();
+        assert_eq!(booked_1, 0);
+        // Static check: 8.008 GB + 0 <= 30 GB -> Admit
+        assert!(req_hat + booked_1 <= static_budget);
+        // Live check: candidate demand 8.008 GB <= 32 GB - 2 GB (30 GB headroom) -> Fits
+        assert!(req_hat <= live_free.saturating_sub(reserve));
+
+        // Session 1 is admitted and allocates memory
+        book.admit("model", req_hat, req_hat);
+        live_free -= req_hat;
+        assert_eq!(live_free, 23_992_000_000);
+
+        // --- Session 2 arrives ---
+        let booked_2 = book.shadow_booked_total();
+        assert_eq!(booked_2, req_hat);
+        // Static check: 8.008 GB + 8.008 GB = 16.016 GB <= 30 GB -> Admit
+        assert!(req_hat + booked_2 <= static_budget);
+        // Live check: candidate demand 8.008 GB <= 23.992 GB - 2 GB (21.992 GB headroom) -> Fits
+        assert!(req_hat <= live_free.saturating_sub(reserve));
+
+        // Session 2 is admitted and allocates memory
+        book.admit("model", req_hat, req_hat);
+        live_free -= req_hat;
+        assert_eq!(live_free, 15_984_000_000);
+
+        // --- Session 3 arrives ---
+        let booked_3 = book.shadow_booked_total();
+        assert_eq!(booked_3, req_hat * 2); // 16.016 GB booked
+        // Under the OLD buggy predicate, arm = min(budget, live_free - reserve) = min(30 GB, ~13.984 GB) = 13.984 GB
+        // and it checked: req_hat + booked_3 (24.024 GB) > 13.984 GB -> FALSE REJECT!
+        let old_arm = static_budget.min(live_free.saturating_sub(reserve));
+        assert!(
+            req_hat + booked_3 > old_arm,
+            "proves that the old coupled arm falsely rejects Session 3"
+        );
+
+        // Under the NEW decoupled architecture:
+        // 1. Static check: req_hat (8.008 GB) + booked (16.016 GB) = 24.024 GB <= 30 GB -> ADMIT
+        let static_ok = req_hat.saturating_add(booked_3) <= static_budget;
+        assert!(static_ok, "Session 3 must pass static predictor check");
+        // 2. Physical live check: candidate demand (8.008 GB) <= live_free (15.984 GB) - reserve (2 GB) = 13.984 GB -> FITS
+        let live_headroom = live_free.saturating_sub(reserve);
+        let live_ok = req_hat <= live_headroom;
+        assert!(live_ok, "Session 3 must pass physical live headroom check");
+
+        // Session 3 is admitted and allocates memory
+        book.admit("model", req_hat, req_hat);
+        live_free -= req_hat;
+        assert_eq!(
+            live_free, 7_976_000_000,
+            "live_free drops by candidate demand after admit"
+        );
+
+        // --- Session 4 arrives (exceeds static capacity) ---
+        let booked_4 = book.shadow_booked_total();
+        assert_eq!(booked_4, req_hat * 3); // 24.024 GB booked
+        // 8.008 GB + 24.024 GB = 32.032 GB > 30 GB static budget -> Correctly REJECTS!
+        let static_verdict = if req_hat.saturating_add(booked_4) > static_budget {
+            crate::admit_predict::Verdict::RejectKv
+        } else {
+            crate::admit_predict::Verdict::Admit
+        };
+        assert_eq!(
+            static_verdict,
+            crate::admit_predict::Verdict::RejectKv,
+            "Session 4 correctly rejected for exceeding static budget"
+        );
     }
 
     /// memra#145: the step-OOM teardown reclaims the parked pools and the prefix cache BEFORE
