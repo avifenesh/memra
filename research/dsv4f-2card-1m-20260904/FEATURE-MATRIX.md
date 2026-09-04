@@ -207,7 +207,16 @@ critical path is limited by power or clocks.
   capacity 61 -> 158, future continuation 11; plain host 24,123,392 bytes,
   trunk+DSpark 24,958,976 bytes; all proposal ids/confidence bits, rings,
   cache classes and future logits identical)
-- [ ] served 8-turn sampled cache twin with real `n_cached` receipts
+- [x] served cold-vs-restored greedy identity gate, plain and DSpark
+  (`host-cache-serve-gate-19e74601b.json`; 160 cached + 11 suffix; response
+  identity; DSpark 49/69 accepted; no server fault)
+- [x] vendor-default eight-turn sampled serving/cache/spec engagement
+  (`vendor-default-8turn-19e74601b.jsonl`; no sampling parameters; turns 2-8
+  restore 418..693 tokens and DSpark engages on all turns)
+- [ ] fixed-seed sampled cache transparency: turn 2 currently diverges between
+  restored spec-decoded history and cold monolithic prefill
+  (`sampled-seeded-8turn-19e74601b.jsonl`); chunked prefill must unify the
+  realization before this gate may pass
 - [ ] chunked prefill at 256K, 512K and 1M without transient OOM
 - [ ] resumable multi-session scheduler and cross-session batch decode
 - [ ] c1/c2/c4/c8/c16 throughput, fairness and admission cells

@@ -1,0 +1,38 @@
+{
+  "artifact": "tiyuvta/DeepSeek-V4-Flash-0731-NVFP4@bafd09f8cab4f4f4f25e1cdafbcdefc05b90ee38",
+  "binary_sha256": "1fb4c6f6abb23b43eb20156fc7e8a4a2b761be12fa6325f606e710aa7aad4b7b",
+  "hardware": "2x NVIDIA RTX PRO 6000 Blackwell Workstation Edition, PCIe5 x16, PHB, no NVLink",
+  "memra_git": "19e74601bc5f656e3a1c40d2293a73a100360a5f",
+  "power_limit_w": [500, 500],
+  "power_attribution": "none; metadata only",
+  "rows": [
+    {
+      "arm": "dspark",
+      "cached": [0, 160, 0],
+      "completion": 64,
+      "engine_elapsed_s": {"cold": 2.936590804, "restored": 0.993100348},
+      "identity": "byte-equal response text/finish/count",
+      "prompt": 160,
+      "spec": {"acceptance_rate": 0.7101449275362319, "accepted": 49, "drafted": 69, "rounds": 14},
+      "suffix": 11,
+      "wall_s": {"cold": 2.942091, "leader": 2.156692, "restored": 0.998322}
+    },
+    {
+      "arm": "plain",
+      "cached": [0, 160, 0],
+      "completion": 64,
+      "engine_elapsed_s": {"cold": 3.291008773, "restored": 1.383985251},
+      "identity": "byte-equal response text/finish/count",
+      "prompt": 160,
+      "spec": null,
+      "suffix": 11,
+      "wall_s": {"cold": 3.29583, "leader": 2.031854, "restored": 1.388824}
+    }
+  ],
+  "server_engagement": [
+    "drafter DSpark resident on stage 1; spec route armed; parked-host-cache 32768 MiB",
+    "DSpark hit: 160 cached + 11 suffix, 25.3 MiB, 206.3 ms",
+    "plain hit: 160 cached + 11 suffix, 24.5 MiB, 205.5 ms"
+  ],
+  "verdict": "PASS"
+}
