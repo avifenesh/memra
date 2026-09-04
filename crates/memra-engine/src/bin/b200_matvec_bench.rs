@@ -28,7 +28,8 @@
 //!
 //! usage: b200-matvec-bench [iters=5] [copies=3]
 use cudarc::driver::{CudaSlice, CudaStream, DevicePtr};
-use memra_engine::{Engine, F32x8, QT_NVFP4, QT_Q8_0, WPtr8};
+use memra_engine::tp::nvfp4_matrix_v2_permute;
+use memra_engine::{Engine, F32x8, QT_NVFP4, QT_NVFP4_V2, QT_Q8_0, WPtr8};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -182,6 +183,18 @@ fn compare(a: &[f32], b: &[f32]) -> (usize, f32) {
     (mism, maxd)
 }
 
+/// MEMRA_BENCH_DUMP=<dir>: write an arm's raw f32 output for cross-binary bit comparison.
+fn dump(name: &str, v: &[f32]) {
+    if let Ok(dir) = std::env::var("MEMRA_BENCH_DUMP") {
+        let mut bytes = Vec::with_capacity(v.len() * 4);
+        for x in v {
+            bytes.extend_from_slice(&x.to_bits().to_le_bytes());
+        }
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::write(format!("{dir}/{name}.f32"), bytes);
+    }
+}
+
 fn report(label: &str, shipped_us: f64, arm_us: f64, bytes: f64, mism: usize, maxd: f32) {
     let speedup = shipped_us / arm_us;
     let gbs_shipped = bytes / shipped_us / 1e3; // bytes / us == GB/s (1e-6/1e-9 cancel to 1e3)
@@ -291,6 +304,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let h_shipped = e.dtoh(&shipped_act)?;
         let h_arm = e.dtoh(&arm_act)?;
         let (mism, maxd) = compare(&h_shipped, &h_arm);
+        dump("gate_up_shipped", &h_shipped);
+        dump("gate_up_w4", &h_arm);
 
         let mut t_ship = Vec::with_capacity(iters);
         let mut t_arm = Vec::with_capacity(iters);
@@ -325,6 +340,99 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             bytes,
             mism,
             maxd,
+        );
+
+        // MEMRA_MOE_EXPERT_RP arm (memra#147): the SAME expert bytes, split-plane repacked per
+        // expert (nvfp4_matrix_v2_permute, the QT_NVFP4_V2 form) and read by the _w4 twin's QT_NVFP4_V2 branch.
+        // Bit-identity is against the SHIPPED interleaved kernel on copy 0; the perturbation is
+        // applied before the repack so every copy's content matches its interleaved twin.
+        let mk_experts_rp = |seed: u32| -> Result<Vec<CudaSlice<u8>>, Box<dyn std::error::Error>> {
+            (0..n_used)
+                .map(|j| {
+                    let mut d = row_bytes_data.clone();
+                    if let Some(b) = d.first_mut() {
+                        *b ^= (seed.wrapping_add(j as u32) & 0xFF) as u8;
+                    }
+                    e.htod_bytes(&nvfp4_matrix_v2_permute(&d, n_ff, n_embd))
+                })
+                .collect()
+        };
+        let gate_rp: Vec<Vec<CudaSlice<u8>>> = (0..copies)
+            .map(|c| mk_experts_rp(c as u32 * 97))
+            .collect::<Result<_, _>>()?;
+        let up_rp: Vec<Vec<CudaSlice<u8>>> = (0..copies)
+            .map(|c| mk_experts_rp(c as u32 * 197 + 7))
+            .collect::<Result<_, _>>()?;
+        let g0 = wptr8(&gate_rp[0], &stream);
+        let u0 = wptr8(&up_rp[0], &stream);
+        let rp_act = e.moe_gate_up_preclamp8_q8_w4(
+            g0,
+            u0,
+            &aq,
+            &ad,
+            gs,
+            us,
+            limit,
+            n_embd,
+            n_ff,
+            n_used,
+            QT_NVFP4_V2,
+            QT_NVFP4_V2,
+            row_bytes,
+            row_bytes,
+        )?;
+        e.stream().synchronize()?;
+        let h_rp = e.dtoh(&rp_act)?;
+        let (mism_rp, maxd_rp) = compare(&h_shipped, &h_rp);
+        dump("gate_up_rp", &h_rp);
+        for (i, (a, b)) in h_shipped
+            .iter()
+            .zip(h_rp.iter())
+            .enumerate()
+            .filter(|(_, (a, b))| a.to_bits() != b.to_bits())
+            .take(3)
+        {
+            println!(
+                "    rp mismatch gate_up idx={i} (slot={} row={}) shipped={a:e} ({:08x}) rp={b:e} ({:08x})",
+                i / n_ff,
+                i % n_ff,
+                a.to_bits(),
+                b.to_bits()
+            );
+        }
+        let mut t_rp = Vec::with_capacity(iters);
+        for i in 0..iters {
+            let c = i % copies;
+            let g = wptr8(&gate_rp[c], &stream);
+            let u = wptr8(&up_rp[c], &stream);
+            let t1 = Instant::now();
+            let _ = e.moe_gate_up_preclamp8_q8_w4(
+                g,
+                u,
+                &aq,
+                &ad,
+                gs,
+                us,
+                limit,
+                n_embd,
+                n_ff,
+                n_used,
+                QT_NVFP4_V2,
+                QT_NVFP4_V2,
+                row_bytes,
+                row_bytes,
+            )?;
+            e.stream().synchronize()?;
+            t_rp.push(t1.elapsed().as_secs_f64() * 1e6);
+        }
+        report_arm(
+            "moe_gate_up_preclamp8_q8",
+            "w4_v2",
+            ship_us,
+            median(&mut t_rp),
+            bytes,
+            mism_rp,
+            maxd_rp,
         );
 
         // MEMRA_B200_GEMV_V2 arm: 8 warps/block + g-walk unrolled by two.
@@ -413,6 +521,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let h_ship = e.dtoh(&y_ship)?;
         let h_arm = e.dtoh(&y_arm)?;
         let (mism, maxd) = compare(&h_ship, &h_arm);
+        dump("down_shipped", &h_ship);
+        dump("down_w4", &h_arm);
 
         let mut t_ship = Vec::with_capacity(iters);
         let mut t_arm = Vec::with_capacity(iters);
@@ -451,6 +561,88 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             bytes,
             mism,
             maxd,
+        );
+        // MEMRA_MOE_EXPERT_RP arm (memra#147): split-plane down slabs, rows = n_embd.
+        let mk_down_rp = |seed: u32| -> Result<Vec<CudaSlice<u8>>, Box<dyn std::error::Error>> {
+            (0..n_used)
+                .map(|j| {
+                    let mut d = row_bytes_data.clone();
+                    if let Some(b) = d.first_mut() {
+                        *b ^= (seed.wrapping_add(j as u32) & 0xFF) as u8;
+                    }
+                    e.htod_bytes(&nvfp4_matrix_v2_permute(&d, n_embd, n_ff))
+                })
+                .collect()
+        };
+        let down_rp: Vec<Vec<CudaSlice<u8>>> = (0..copies)
+            .map(|c| mk_down_rp(c as u32 * 53 + 3))
+            .collect::<Result<_, _>>()?;
+        let mut y_rp = e.zeros(n_embd)?;
+        let d0 = wptr8(&down_rp[0], &stream);
+        {
+            let mut dst = y_rp.slice_mut(0..n_embd);
+            e.moe_down8_fma_q8_w4(
+                d0,
+                w,
+                &aq2,
+                &ad2,
+                &mut dst,
+                n_ff,
+                n_embd,
+                n_used,
+                QT_NVFP4_V2,
+                row_bytes,
+            )?;
+        }
+        e.stream().synchronize()?;
+        let h_rp = e.dtoh(&y_rp)?;
+        let (mism_rp, maxd_rp) = compare(&h_ship, &h_rp);
+        dump("down_rp", &h_rp);
+        for (i, (a, b)) in h_ship
+            .iter()
+            .zip(h_rp.iter())
+            .enumerate()
+            .filter(|(_, (a, b))| a.to_bits() != b.to_bits())
+            .take(3)
+        {
+            println!(
+                "    rp mismatch down row={i} shipped={a:e} ({:08x}) rp={b:e} ({:08x})",
+                a.to_bits(),
+                b.to_bits()
+            );
+        }
+        let mut t_rp = Vec::with_capacity(iters);
+        for i in 0..iters {
+            let c = i % copies;
+            let mut y = e.zeros(n_embd)?;
+            let d = wptr8(&down_rp[c], &stream);
+            let t1 = Instant::now();
+            {
+                let mut dst = y.slice_mut(0..n_embd);
+                e.moe_down8_fma_q8_w4(
+                    d,
+                    w,
+                    &aq2,
+                    &ad2,
+                    &mut dst,
+                    n_ff,
+                    n_embd,
+                    n_used,
+                    QT_NVFP4_V2,
+                    row_bytes,
+                )?;
+            }
+            e.stream().synchronize()?;
+            t_rp.push(t1.elapsed().as_secs_f64() * 1e6);
+        }
+        report_arm(
+            "moe_down8_fma_q8",
+            "w4_v2",
+            ship_us,
+            median(&mut t_rp),
+            bytes,
+            mism_rp,
+            maxd_rp,
         );
 
         // MEMRA_B200_GEMV_V2 arm: one block per output row, warp j owning expert slot j.

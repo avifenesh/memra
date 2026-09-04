@@ -2441,6 +2441,48 @@ pub(crate) fn dtoh_trace_hit(bytes: usize) {
     }
 }
 
+/// `MEMRA_MOE_EXPERT_RP=1` (default OFF, memra#147): the device-RESIDENT NVFP4 expert slabs are
+/// repacked at upload into the slot-major per-row layout the engine already names
+/// `QT_NVFP4_V2` (per row: slot g's 16 quant bytes at g*16, its two UE4M3 scale bytes at
+/// nsb*16 + g*2; `nvfp4_expert_split_repack`, the same bytes as tp.rs
+/// `nvfp4_matrix_v2_permute`) and `DevExps::rp` is set. Readers are told `QT_NVFP4_V2`
+/// (`rp_qt`): every expert dot goes through `expert_dot_g`'s V2 case on the shared pinned core
+/// (one 16B window per lane-group at a 16B lane stride instead of five scattered 4B loads at
+/// a 36B stride: root ncu measured 24.97 sectors per warp request on
+/// `moe_gate_up_preclamp8_q8_w4`, 4 is coalesced), and the grouped prefill takes its existing
+/// V2 dequant / `kq_fetch<V2>` arms. Host bytes, the SLRU cache and the TP upload paths stay
+/// interleaved and untouched. A resident-slab reader not yet handed the V2 qtype refuses with
+/// a named error (`moe_rp_refuse`) rather than reading repacked bytes interleaved.
+pub fn moe_expert_rp_on() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var("MEMRA_MOE_EXPERT_RP").as_deref() == Ok("1"))
+}
+
+/// The qtype a kernel is told for an expert slab: `QT_NVFP4_V2` (the slot-major per-row layout,
+/// tp.rs `nvfp4_matrix_v2_permute`) when the slab it will read is a repacked resident slab, the
+/// tensor's own qtype otherwise.
+pub fn rp_qt(rp: bool, qt: i32) -> i32 {
+    if rp && qt == QT_NVFP4 {
+        QT_NVFP4_V2
+    } else {
+        qt
+    }
+}
+
+/// A resident-slab reader that has no split-plane arm refuses, by name, instead of reading the
+/// repacked bytes with the interleaved walk (which would be a plausible-looking wrong answer).
+pub fn moe_rp_refuse(rp: bool, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if rp {
+        return Err(format!(
+            "{path}: the resident expert slab is split-plane (MEMRA_MOE_EXPERT_RP=1) and this \
+             path reads experts interleaved; it is not wired for the door (memra#147). Boot \
+             without MEMRA_MOE_EXPERT_RP for this model or wire the path."
+        )
+        .into());
+    }
+    Ok(())
+}
+
 /// `MEMRA_VERIFY_WS` (lane/glm5-matvec door W, default ON since the 2026-08-31 mv-battery
 /// flip; `=0` is the rollback seam; generalized from `MEMRA_GLM5_VERIFY_WS`, which stays
 /// honored as the family alias — OFF-WINS composition: either name `=0` disables, so every
@@ -6547,6 +6589,42 @@ impl Engine {
         let mut dst = scratch.slice_mut(off..off + host_bytes.len()); // CudaViewMut<u8>
         self.gpu.stream().memcpy_htod(host_bytes, &mut dst)?; // accepts &[u8] HostSlice src
         Ok(())
+    }
+
+    /// Split-plane repack of a whole resident NVFP4 expert slab (`n_expert` experts of `rows`
+    /// rows, `nsb64` 64-wide blocks per row) on the device: returns the repacked slab (same
+    /// length), the interleaved source is the caller's to drop. memra#147.
+    pub fn nvfp4_expert_split_repack(
+        &self,
+        src: &CudaSlice<u8>,
+        n_expert: usize,
+        rows: usize,
+        nsb64: usize,
+    ) -> Result<CudaSlice<u8>, Box<dyn std::error::Error>> {
+        let need = n_expert * rows * nsb64 * 36;
+        if src.len() < need {
+            return Err(format!(
+                "nvfp4_expert_split_repack: slab holds {} bytes, {n_expert} x {rows} x {nsb64} x 36 = {need} needed",
+                src.len()
+            )
+            .into());
+        }
+        let f = self.func("nvfp4_expert_split_repack");
+        let mut dst = self.alloc_u8_uninit(src.len())?; // every byte of the repacked region is written; the pad tail is never read
+        let nblk = (n_expert * rows * nsb64) as u32;
+        let cfg = LaunchConfig {
+            grid_dim: (nblk.div_ceil(256), 1, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let (ne, nr, ns) = (n_expert as i32, rows as i32, nsb64 as i32);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(src).arg(&mut dst).arg(&ne).arg(&nr).arg(&ns);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(dst)
     }
 
     /// EDGE-1 §A: fused MoE router. `logits` is the router output [t, n_expert] (device, f32, the
