@@ -277,6 +277,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ))
         };
 
+        // v3 (`memra_dsv4_hc_pre_fused_v3`) is the kernel the ENGINE actually serves -- v2's
+        // stages with the block size and the Sinkhorn arm as parameters. `sink_reg` selects:
+        // 0 = the shared-memory Sinkhorn, 1 = the warp-shuffle register Sinkhorn,
+        // 2 = the ALL-REGISTER arm, where every lane holds the whole 4x4 matrix and the
+        // shuffles and the ballot disappear. All three must be bit-identical to the unfused
+        // chain, because each is a synchronization/placement change over the same addends in
+        // the same order -- never a numeric class. Gating all three here is what lets the
+        // served arm be chosen on speed alone.
+        let run_fused_v3 = |sink_reg: i32, block: i32| -> Res<Hc4> {
+            let mixes_d = stream.clone_htod(&s.mixes)?;
+            let mut pre_d = stream.alloc_zeros::<f32>(t * HC)?;
+            let mut post_d = stream.alloc_zeros::<f32>(t * HC)?;
+            let mut comb_d = stream.alloc_zeros::<f32>(t * HC * HC)?;
+            let mut y_d = stream.alloc_zeros::<f32>(t * D)?;
+            unsafe {
+                let rc = k::memra_dsv4_hc_pre_fused_v3(
+                    x_d.device_ptr(&stream).0 as *const f32,
+                    mixes_d.device_ptr(&stream).0 as *const f32,
+                    scale_d.device_ptr(&stream).0 as *const f32,
+                    base_d.device_ptr(&stream).0 as *const f32,
+                    pre_d.device_ptr_mut(&stream).0 as *mut f32,
+                    post_d.device_ptr_mut(&stream).0 as *mut f32,
+                    comb_d.device_ptr_mut(&stream).0 as *mut f32,
+                    y_d.device_ptr_mut(&stream).0 as *mut f32,
+                    t as i32,
+                    HC as i32,
+                    D as i32,
+                    iters(),
+                    EPS,
+                    std::ptr::null_mut(),
+                    block,
+                    sink_reg,
+                    sp(&stream),
+                );
+                assert_eq!(
+                    rc, 0,
+                    "hc_pre_fused_v3 rc (sink_reg={sink_reg} block={block})"
+                );
+            }
+            stream.synchronize()?;
+            Ok((
+                stream.clone_dtoh(&pre_d)?,
+                stream.clone_dtoh(&post_d)?,
+                stream.clone_dtoh(&comb_d)?,
+                stream.clone_dtoh(&y_d)?,
+            ))
+        };
+
         let unfused_out = run_unfused()?;
         let fused_out = run_fused()?;
         let fused_v2_out = run_fused_v2()?;
@@ -296,7 +344,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if bad_v2_vs_v1 == 0 { "PASS" } else { "FAIL" },
             tot = t * HC + t * HC + t * HC * HC + t * D,
         );
-        if bad != 0 || bad_v2_vs_unfused != 0 || bad_v2_vs_v1 != 0 {
+        // v3's three Sinkhorn arms, at the served 512-wide block, each against the unfused chain.
+        let mut v3_bad = 0usize;
+        for sr in [0i32, 1, 2] {
+            let out = run_fused_v3(sr, 512)?;
+            let b = bit_diffs(&unfused_out, &out);
+            v3_bad += b;
+            println!(
+                "[correctness] t={t} hc={HC} d={D}: v3(sink_reg={sr},block=512)-vs-unfused \
+                 bit-bad={b}/{tot} {}",
+                if b == 0 { "PASS" } else { "FAIL" },
+                tot = t * HC + t * HC + t * HC * HC + t * D,
+            );
+        }
+        if bad != 0 || bad_v2_vs_unfused != 0 || bad_v2_vs_v1 != 0 || v3_bad != 0 {
             fails += 1;
         }
 
@@ -321,6 +382,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let t0 = std::time::Instant::now();
             let _ = run_fused_v2()?;
             fused_v2_us.push(t0.elapsed().as_micros() as u64);
+        }
+
+        // ---- v3's three Sinkhorn arms, N=5 each, at the served 512-wide block ----
+        // These are what the engine actually runs, so this is the comparison that picks the arm.
+        // Wall time includes the dtoh every arm pays equally, so the DIFFERENCE between arms is
+        // the kernel difference; the absolute figures are not a serving-shape claim.
+        let mut v3_us: Vec<(i32, Vec<u64>)> = Vec::new();
+        for sr in [0i32, 1, 2] {
+            let mut us = Vec::with_capacity(N_TIMED);
+            for _ in 0..N_TIMED {
+                stream.synchronize()?;
+                let t0 = std::time::Instant::now();
+                let _ = run_fused_v3(sr, 512)?;
+                us.push(t0.elapsed().as_micros() as u64);
+            }
+            us.sort_unstable();
+            println!(
+                "[v3-timing] t={t} sink_reg={sr} block=512 iters={} median={}us runs={us:?}",
+                iters(),
+                us[us.len() / 2]
+            );
+            v3_us.push((sr, us));
         }
 
         // ---- hc_post alone, N=5: census-context only, NOT fused with anything ----

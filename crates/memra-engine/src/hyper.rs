@@ -536,7 +536,7 @@ fn pre_finish_into(
                         eps,
                         std::ptr::null_mut(),
                         crate::hc_pre_block() as i32,
-                        crate::hc_pre_sink_reg() as i32,
+                        crate::hc_pre_sink_reg_level(),
                         sp(&stream),
                     ),
                 ),

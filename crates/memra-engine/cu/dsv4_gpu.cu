@@ -3506,7 +3506,100 @@ extern "C" __global__ void dsv4_hc_pre_fused_v3_kernel(
     // Every lane of the warp executes every __shfl_sync (the mask is full and the shuffles sit
     // outside the `l < hc*hc` guard); lanes past the matrix carry a clamped index and a zero
     // value and never write. `niters`, `pre`, `post`, `spre` and `combg` keep their meanings.
-    if (sink_reg && t < 32) {
+    // ---- stage 2, ALL-REGISTER (sink_reg == 2, hc == 4): every lane holds the WHOLE 4x4
+    // matrix in its own registers and iterates it independently — no __shfl_sync, no
+    // __any_sync, no shared round trip anywhere in the Sinkhorn.
+    //
+    // WHY. At decode this kernel runs on ONE block, because its grid is the SEQUENCE LENGTH and
+    // s == 1, with a single warp doing the Sinkhorn — so there is no other warp resident to hide
+    // anything and every dependent warp op pays full pipeline latency. Measured on 2x B200 by
+    // sweeping the gate's MEMRA_HC_GATE_ITERS (1/5/10/20/40 -> 11.8/15.9/20.5/27.1/40.7 us), the
+    // shuffle arm costs ~700 ns PER ITERATION: roughly 1330 cycles for 8 shuffles and a ballot.
+    // At the model's 20 iterations that is about HALF the kernel, and the kernel is 10.5% of
+    // decode on the B200 hybrid mint (90 launches/token). Replacing each 4-shuffle row/column
+    // chain with 3 register adds deletes that dependent chain. Computing it redundantly in every
+    // lane is free here: the lanes have nothing else to do, and the alternative is idling.
+    //
+    // EXACTNESS — the same argument as the shuffle arm, for the same reason. The addends and
+    // their SEQUENCE are unchanged: `for (k = 0; k < hc; ++k) sum += m[r*hc+k]` accumulates into
+    // the same running float, in the same order, as `for (k...) sum += __shfl_sync(mask, cv,
+    // r*hc+k)`. Rows never interact with other rows and columns never with other columns, so
+    // walking them one at a time inside one thread reproduces the warp-parallel order exactly.
+    // A tree reduction would be fewer instructions and a DIFFERENT association; deliberately not
+    // used, here or there. The early-exit test is the same bitwise-stationary test, over the same
+    // n2 elements, just as an OR over registers instead of a ballot.
+    //
+    // hc == 4 is required so the 16 elements are indexed by fully-unrolled compile-time bounds
+    // and stay in registers; a dynamic `hc` would spill the array to local memory and lose the
+    // entire point. Any other hc falls to the shuffle arm below, unchanged.
+    if (sink_reg == 2 && hc == 4 && t < 32) {
+        constexpr int H = 4;
+        constexpr int N2 = H * H;
+        __syncwarp();
+        if (t < H) {
+            float pv = dsv4_sigmoid(smix[t] * scale[0] + base[t]) + eps;
+            pre[t] = pv;
+            spre[t] = pv;
+            post[t] = 2.0f * dsv4_sigmoid(smix[H + t] * scale[1] + base[H + t]);
+        }
+        float m[N2];
+#pragma unroll
+        for (int i = 0; i < N2; i++) {
+            m[i] = smix[2 * H + i] * scale[2] + base[2 * H + i];
+        }
+        // initial row softmax — same max order, same post-exp accumulation order, per row
+#pragma unroll
+        for (int r = 0; r < H; r++) {
+            float mx = -INFINITY;
+#pragma unroll
+            for (int k = 0; k < H; k++) mx = fmaxf(mx, m[r * H + k]);
+            float sum = 0.0f;
+#pragma unroll
+            for (int k = 0; k < H; k++) {
+                m[r * H + k] = expf(m[r * H + k] - mx);
+                sum += m[r * H + k];
+            }
+#pragma unroll
+            for (int k = 0; k < H; k++) m[r * H + k] = m[r * H + k] / sum + eps;
+        }
+
+        int done = 0;
+        for (int it = 0; it < iters; it++) {
+            float prev[N2];
+#pragma unroll
+            for (int i = 0; i < N2; i++) prev[i] = m[i];
+            if (it > 0) {
+#pragma unroll
+                for (int r = 0; r < H; r++) {
+                    float rs = 0.0f;
+#pragma unroll
+                    for (int k = 0; k < H; k++) rs += m[r * H + k];
+#pragma unroll
+                    for (int k = 0; k < H; k++) m[r * H + k] = m[r * H + k] / (rs + eps);
+                }
+            }
+#pragma unroll
+            for (int c2 = 0; c2 < H; c2++) {
+                float cs = 0.0f;
+#pragma unroll
+                for (int j = 0; j < H; j++) cs += m[j * H + c2];
+#pragma unroll
+                for (int j = 0; j < H; j++) m[j * H + c2] = m[j * H + c2] / (cs + eps);
+            }
+            done = it + 1;
+            if (it > 0) {
+                unsigned ch = 0u;
+#pragma unroll
+                for (int i = 0; i < N2; i++) {
+                    ch |= (__float_as_uint(prev[i]) != __float_as_uint(m[i])) ? 1u : 0u;
+                }
+                if (ch == 0u) break;
+            }
+        }
+        if (niters && t == 0) niters[p] = done;
+        if (t < N2) combg[t] = m[t];
+    }
+    if (sink_reg == 1 && t < 32) {
         const unsigned MASK = 0xffffffffu;
         __syncwarp();
         if (t < hc) {
@@ -3641,7 +3734,11 @@ extern "C" int memra_dsv4_hc_pre_fused_v3(const float* x, const float* mixes,
     // whole matrix inside one warp: hc*hc <= 32. At the hc <= 4 this launcher already enforces
     // that always holds, but it is checked rather than assumed, and a violation falls back to
     // the shared path instead of reading a lane that does not exist.
-    int sr = (sink_reg && hc * hc <= 32) ? 1 : 0;
+    // sink_reg 2 = the ALL-REGISTER Sinkhorn, which needs hc == 4 so its 16 elements are indexed
+    // by compile-time bounds and stay in registers; anything else degrades to the shuffle arm (1),
+    // which itself needs the whole matrix inside one warp.
+    int sr = 0;
+    if (sink_reg && hc * hc <= 32) sr = (sink_reg >= 2 && hc == 4) ? 2 : 1;
     dsv4_hc_pre_fused_v3_kernel<<<(unsigned)s, (unsigned)block, 0, stream>>>(
         x, mixes, scale, base, pre, post, comb, y, w, rows, hc, d, iters, eps, niters, sr);
     DSV4_ERR();
