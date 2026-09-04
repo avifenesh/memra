@@ -1576,6 +1576,64 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             mism_i,
             maxd_i,
         );
+        // MEMRA_GLM5_Q8_FUSE_ATTN: the launcher fed a PRE-QUANTIZED activation (the q8_1 view a
+        // producer such as rms_norm_zq8_f32 emits) vs its own quantize: bitwise on all six
+        // outputs; the timing delta is the skipped quantize launch.
+        let (aq_pre, ad_pre) = e.quantize_q8_1(&xd, 1, in_f)?;
+        let fused_pre =
+            |c: usize, outs: &mut [CudaSlice<f32>; 6]| -> Result<(), Box<dyn std::error::Error>> {
+                let b = &bf_copies[c];
+                e.kda_proj_fused6_q8rp_raw_pre(
+                    &b[0],
+                    &b[1],
+                    &b[2],
+                    &f32w[0],
+                    &f32w[1],
+                    &f32w[2],
+                    &xd,
+                    outs,
+                    in_f,
+                    dims,
+                    1,
+                    false,
+                    Some((&aq_pre, &ad_pre)),
+                )
+            };
+        let mut o_own = mk_outs()?;
+        fused(0, &mut o_own)?;
+        let mut o_pre = mk_outs()?;
+        fused_pre(0, &mut o_pre)?;
+        e.stream().synchronize()?;
+        let mut mism_p = 0usize;
+        let mut maxd_p = 0f32;
+        for k in 0..6 {
+            let (m, d) = compare(&e.dtoh(&o_own[k])?, &e.dtoh(&o_pre[k])?);
+            mism_p += m;
+            maxd_p = maxd_p.max(d);
+        }
+        let mut t_o = Vec::with_capacity(iters);
+        let mut t_p = Vec::with_capacity(iters);
+        for i in 0..iters {
+            let c = i % copies;
+            let mut outs = mk_outs()?;
+            let t0 = Instant::now();
+            fused(c, &mut outs)?;
+            e.stream().synchronize()?;
+            t_o.push(t0.elapsed().as_secs_f64() * 1e6);
+            let mut outs = mk_outs()?;
+            let t1 = Instant::now();
+            fused_pre(c, &mut outs)?;
+            e.stream().synchronize()?;
+            t_p.push(t1.elapsed().as_secs_f64() * 1e6);
+        }
+        report(
+            "kda6 W8 fused: own quantize -> pre-quantized (MEMRA_GLM5_Q8_FUSE_ATTN)",
+            median(&mut t_o),
+            median(&mut t_p),
+            bytes,
+            mism_p,
+            maxd_p,
+        );
     }
 
     println!("temp_out: {}", gpu_temp());

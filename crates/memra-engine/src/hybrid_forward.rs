@@ -2575,7 +2575,29 @@ impl HybridModel {
 
             let (y, mix) = crate::hyper::pre(e, topology, &hyper.attn, &x, 1, n_embd)?;
             let mut h = e.uninit(n_embd)?;
-            e.rms_norm(&y, layer.attn_norm.float_data(), &mut h, n_embd, 1, eps)?;
+            // MEMRA_GLM5_Q8_FUSE_ATTN (lane/glm5-attn-norm-zq8-20260904, default OFF): on a plain
+            // KDA layer the attention-input norm emits its q8_1 view too, and the fused
+            // six-projection launcher reads it instead of quantizing `h` again. Byte-identical
+            // (rms_norm_zq8_f32 = rms_norm then quantize_q8_1; the launcher's quantize is the
+            // same kernel). Every other mixer keeps the plain norm.
+            let attn_q8 = if crate::glm5_q8_fuse_attn_on()
+                && matches!(&layer.mixer, Mixer::Kda(la) if la.tp.is_none())
+            {
+                let pair =
+                    e.rms_norm_zq8_f32(&y, layer.attn_norm.float_data(), &mut h, n_embd, 1, eps)?;
+                if crate::GLM5_Q8_FUSE_ATTN_DISPATCHES
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    == 0
+                {
+                    eprintln!(
+                        "[glm5-q8-fuse-attn] engaged (rms_norm_zq8_f32 -> kda6, hyper_range_decode)"
+                    );
+                }
+                Some(pair)
+            } else {
+                e.rms_norm(&y, layer.attn_norm.float_data(), &mut h, n_embd, 1, eps)?;
+                None
+            };
             let mixed = match &layer.mixer {
                 Mixer::Full(fa) => self.full_attn_decode(e, fa, &h, pos_d, pos, cache, il)?,
                 Mixer::Linear(la) => self.linear_attn_decode(e, la, &h, cache, il)?,
@@ -2593,7 +2615,15 @@ impl HybridModel {
                     il,
                     crate::kda::ConvArm::Decode,
                 )?,
-                Mixer::Kda(la) => crate::kda::kda_decode_cached(e, la, &h, eps, cache, il)?,
+                Mixer::Kda(la) => crate::kda::kda_decode_cached_q8(
+                    e,
+                    la,
+                    &h,
+                    attn_q8.as_ref().map(|(q, d)| (q, d)),
+                    eps,
+                    cache,
+                    il,
+                )?,
             };
             x = crate::hyper::post(e, topology, &mixed, &x, &mix, 1, n_embd)?;
 
@@ -2700,19 +2730,51 @@ impl HybridModel {
             })?;
 
             crate::hyper::pre_t1_ws(e, topology, &hyper.attn, x, ws, n_embd)?;
-            e.rms_norm(
-                &ws.y,
-                layer.attn_norm.float_data(),
-                &mut ws.h,
-                n_embd,
-                1,
-                eps,
-            )?;
+            // MEMRA_GLM5_Q8_FUSE_ATTN: see the eager walk above; same fusion, workspace form.
+            let attn_q8 = if crate::glm5_q8_fuse_attn_on()
+                && matches!(&layer.mixer, Mixer::Kda(la) if la.tp.is_none())
+            {
+                let pair = e.rms_norm_zq8_f32(
+                    &ws.y,
+                    layer.attn_norm.float_data(),
+                    &mut ws.h,
+                    n_embd,
+                    1,
+                    eps,
+                )?;
+                if crate::GLM5_Q8_FUSE_ATTN_DISPATCHES
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    == 0
+                {
+                    eprintln!(
+                        "[glm5-q8-fuse-attn] engaged (rms_norm_zq8_f32 -> kda6, hyper_range_decode_ws_body)"
+                    );
+                }
+                Some(pair)
+            } else {
+                e.rms_norm(
+                    &ws.y,
+                    layer.attn_norm.float_data(),
+                    &mut ws.h,
+                    n_embd,
+                    1,
+                    eps,
+                )?;
+                None
+            };
             let mixed = match &layer.mixer {
                 Mixer::Full(fa) => self.full_attn_decode(e, fa, &ws.h, pos_d, pos, cache, il)?,
                 Mixer::Linear(la) => self.linear_attn_decode(e, la, &ws.h, cache, il)?,
                 Mixer::Mla(mla) => self.mla_attn_cached(e, mla, &ws.h, pos_d, 1, il, cache)?,
-                Mixer::Kda(la) => crate::kda::kda_decode_cached(e, la, &ws.h, eps, cache, il)?,
+                Mixer::Kda(la) => crate::kda::kda_decode_cached_q8(
+                    e,
+                    la,
+                    &ws.h,
+                    attn_q8.as_ref().map(|(q, d)| (q, d)),
+                    eps,
+                    cache,
+                    il,
+                )?,
             };
             crate::hyper::post_t1_ws(e, topology, &mixed, x, ws, n_embd)?;
             std::mem::swap(x, &mut ws.xb);
