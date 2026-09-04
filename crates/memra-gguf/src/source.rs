@@ -654,6 +654,21 @@ pub trait TensorSource {
     fn st_dir(&self) -> Option<&std::path::Path> {
         None
     }
+    /// A short tag naming the on-disk NVFP4 scale layout this source READ, for the expert repack
+    /// cache key. Empty for the historical linear layout, so existing cache filenames are
+    /// unchanged and every pre-2026-09-04 cache stays valid.
+    ///
+    /// THE TRAP THIS CLOSES. The repack cache lives inside the checkpoint directory and its
+    /// freshness check is SIZE-ONLY (`repack_cache_is_fresh`). Reading the same checkpoint under a
+    /// different scale layout produces a cache of exactly the same size, so a cache written by a
+    /// binary that read a swizzled plane as linear would be silently reused by a binary that
+    /// reads it correctly -- reinstating, from disk, the very corruption `Nvfp4ScaleLayout` exists
+    /// to prevent, and doing it invisibly because the load path never re-reads the source. Putting
+    /// the layout in the cache KEY means the two readings can never collide: a stale cache is
+    /// simply not found, and is rebuilt.
+    fn nvfp4_cache_tag(&self) -> &'static str {
+        ""
+    }
     /// Whether per-expert tensor encodings exposed by this source are an intentional artifact
     /// contract and must be retained even when every expert happens to use the same encoding.
     /// Sparse overlays use this so an all-Q4_K control does not get normalized back to F32.
@@ -2076,6 +2091,12 @@ impl TensorSource for SafetensorsSource {
     fn st_dir(&self) -> Option<&std::path::Path> {
         Some(&self.dir)
     }
+    fn nvfp4_cache_tag(&self) -> &'static str {
+        match self.nvfp4_scale_layout {
+            Nvfp4ScaleLayout::Linear => "",
+            Nvfp4ScaleLayout::Swizzle32x4x4 => "-swz32x4x4",
+        }
+    }
     /// Presence check without the repack: `find` on a plain NVFP4 weight materializes the whole
     /// repacked buffer just to answer `has` (then `load_opt_from_source` repacks AGAIN to load).
     /// The native lookup is header-only, so answer from it first.
@@ -3007,6 +3028,11 @@ mod tests {
         .unwrap();
         let src = SafetensorsSource::open(&dir).unwrap();
         assert_eq!(src.nvfp4_scale_layout, Nvfp4ScaleLayout::Swizzle32x4x4);
+        let swz_tag = src.nvfp4_cache_tag();
+        assert!(
+            !swz_tag.is_empty(),
+            "a swizzled read must key its repack cache"
+        );
         let got = src.find(name).expect("NVFP4 weight").bytes.into_owned();
         drop(src);
         assert_eq!(
@@ -3019,6 +3045,14 @@ mod tests {
         std::fs::remove_file(dir.join("LAYOUT.json")).unwrap();
         let src = SafetensorsSource::open(&dir).unwrap();
         assert_eq!(src.nvfp4_scale_layout, Nvfp4ScaleLayout::Linear);
+        // The expert repack cache lives in the checkpoint dir and is size-only-fresh, so the two
+        // readings MUST NOT share a cache filename: a linear-read cache reused by a swizzled read
+        // would restore the corruption from disk, invisibly.
+        assert_ne!(
+            src.nvfp4_cache_tag(),
+            swz_tag,
+            "linear and swizzled reads share a repack cache key"
+        );
         let raw = src.find(name).expect("NVFP4 weight").bytes.into_owned();
         drop(src);
         assert_ne!(

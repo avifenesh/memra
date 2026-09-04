@@ -1907,8 +1907,9 @@ impl HostExps {
             let cache_dir = dir.join(".memra-repack");
             ensure_repack_cache_dir(&cache_dir)?;
             Some(cache_dir.join(format!(
-                "{}-stacked-{n_expert}x{out_f}x{in_f}.nvfp4",
-                name.replace(['.', '/'], "-")
+                "{}-stacked-{n_expert}x{out_f}x{in_f}{}.nvfp4",
+                name.replace(['.', '/'], "-"),
+                src.nvfp4_cache_tag()
             )))
         } else {
             None
@@ -2408,7 +2409,10 @@ impl HostExps {
                 let cache_path = if let Some(dir) = src.st_dir() {
                     let cache_dir = dir.join(".memra-repack");
                     ensure_repack_cache_dir(&cache_dir)?;
-                    Some(cache_dir.join(format!("blk{il}-{proj}-{n_expert}x{out_f}x{in_f}.nvfp4")))
+                    Some(cache_dir.join(format!(
+                        "blk{il}-{proj}-{n_expert}x{out_f}x{in_f}{}.nvfp4",
+                        src.nvfp4_cache_tag()
+                    )))
                 } else {
                     None
                 };
