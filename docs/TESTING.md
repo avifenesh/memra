@@ -202,13 +202,27 @@ within-config isolation that any fix for that flip relies on.
 run-gen's prefill-vs-decode argmax assert calibrated against the **top-2 margin at the deciding
 position**, because a near-tie flip and a real cache bug are the same red until you measure the
 margin (see `research/q8-argmax-20260806/`). Flags:
-`tools/argmax-margin-gate.sh [<model.gguf>] [--prompt f] [--window N] [--max-flips N]
+`tools/argmax-margin-gate.sh [<model.gguf|hf_dir>] [--prompt f] [--window N] [--max-flips N]
 [--margin-floor F] [--canary] [--logdir D]`. **Effective `--window` default is 12**, not the 24
 the probe binary advertises in its own usage line: the wrapper always passes its own
-`WINDOW=12` (`argmax-margin-gate.sh:70,111`). Worth knowing, since window width *is* this gate's
+`WINDOW=12`. Worth knowing, since window width *is* this gate's
 coverage. Automatic dispatch is limited to `decode.rs`, `forward.rs`, `hybrid_forward.rs`, and
 the gate's own wrapper/probe implementation; `--probes amargin,amarginc` remains the clean-tree
 or deliberate explicit invocation.
+
+HF directories use the native `SafetensorsSource` loader and their HF tokenizer; GGUF inputs
+retain the GGUF loader and tokenizer. This gate compares batched prefill with tokenwise
+**serial decode** on the same prompt positions, not the server's batched or speculative
+paths, and supplies no performance result. Checkpoint size and placement still determine
+the required hardware; accepting a directory is not a model qualification receipt.
+
+An explicitly requested missing model or probe, a missing prompt, invalid options, or an
+empty/malformed/non-finite/duplicate-position table fails. The measured table must contain
+exactly the requested window before canary injection. Automatic discovery with no available
+model remains an explicit SKIP. Machine-consumed margins preserve f32 round-trip precision;
+display rounding must not turn a small explained flip into a false failure. CPU controls:
+`python3 tools/test_argmax_margin_gate.py` and
+`cargo test -p memra-engine --bin argmax-margin-probe` (no GPU execution in these tests).
 
 Also 2026-08-06: `accept` (`tools/accept-gate.sh`, the **served-spec acceptance +
 long-text** assertion). It exists because the battery was *provably* blind to a class:
