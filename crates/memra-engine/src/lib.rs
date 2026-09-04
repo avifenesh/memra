@@ -3934,6 +3934,20 @@ impl Engine {
         })
     }
 
+    /// `MEMRA_NORM_ILP_ZQ8=0` reverts the `rms_norm_zq8_f32_v2` twin ALONE (default ON under
+    /// `MEMRA_NORM_ILP`; lane/glm5-norm-zq8-ilp-20260904). The per-kernel seam exists so the
+    /// box can price this twin against the v1 kernel on ONE binary with every other norm twin
+    /// held, and so a rollback of this kernel does not drag `rms_norm_f32_v2` with it.
+    pub fn norm_ilp_zq8_on() -> bool {
+        static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ON.get_or_init(|| {
+            Self::norm_ilp_on()
+                && std::env::var("MEMRA_NORM_ILP_ZQ8")
+                    .map(|v| v != "0")
+                    .unwrap_or(true)
+        })
+    }
+
     /// Trunk-kernels FFN dual seam (lane/dspark-trunk-kernels-20260820): the qwen35
     /// t-parallel verify FFN pair rides the PROVEN dual gate+up doors
     /// (`matmul_decode_exact_dual_pre` + `silu_mul_scaled_q8_1`, the q27 verify shape —
@@ -14445,11 +14459,34 @@ impl Engine {
         nrows: usize,
         eps: f32,
     ) -> Result<(CudaSlice<i8>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        self.rms_norm_zq8_f32_arm(x, w, z, ncols, nrows, eps, Self::norm_ilp_zq8_on())
+    }
+
+    /// The arm-explicit form of [`Engine::rms_norm_zq8_f32`]: `ilp` selects the
+    /// `rms_norm_zq8_f32_v2` twin (MEMRA_NORM_ILP and MEMRA_NORM_ILP_ZQ8, both default ON; four loads in flight per round
+    /// in both passes, bit-identical by construction, see its header in cu/kernels.cu) over the
+    /// v1 kernel. Public so the gate (`tests/norm_zq8_ilp_gpu.rs`) can run BOTH arms in one
+    /// process; `norm_ilp_on()` is a process-lifetime latch and cannot be flipped mid-test.
+    #[allow(clippy::too_many_arguments)]
+    pub fn rms_norm_zq8_f32_arm(
+        &self,
+        x: &CudaSlice<f32>,
+        w: &CudaSlice<f32>,
+        z: &mut CudaSlice<f32>,
+        ncols: usize,
+        nrows: usize,
+        eps: f32,
+        ilp: bool,
+    ) -> Result<(CudaSlice<i8>, CudaSlice<f32>), Box<dyn std::error::Error>> {
         assert!(ncols.is_multiple_of(32));
         let nblk = ncols / 32;
         let mut q = self.alloc_uninit::<i8>(nrows * ncols)?; // full-overwrite output
         let mut d = self.alloc_uninit::<f32>(nrows * nblk)?; // full-overwrite output
-        let f = self.func("rms_norm_zq8_f32");
+        let f = self.func(if ilp {
+            "rms_norm_zq8_f32_v2"
+        } else {
+            "rms_norm_zq8_f32"
+        });
         // One block per row, blockDim = rms_block() — MUST match `rms_norm`'s launch exactly
         // (see the doc comment above); the kernel body is blockDim-generic (rms_norm_f32's
         // reduce shape), so this is the only thing that has to track it.
