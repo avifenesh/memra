@@ -12043,6 +12043,10 @@ pub fn run(
     let mut next_constraint_id = 0u64;
     // KV prefix-reuse pool (append-only continuation; see ReuseEntry doc). Keyed by
     // (model, namespace) — cross-request continuation state is tenant-scoped too (PC-ISO).
+    // memra#145: consecutive ticks with a step-OOM teardown. The first reclaims the parked
+    // pools and half the device prefix cache; a repeat reclaims the whole cache. Reset by any
+    // tick without a teardown.
+    let mut oom_evict_streak = 0usize;
     let mut reuse: HashMap<PoolKey, Vec<ReuseEntry>> = HashMap::new();
     let mut spec_reuse: HashMap<PoolKey, Vec<SpecReuseEntry>> = HashMap::new();
     let mut dspark_reuse: HashMap<PoolKey, Vec<DsparkReuseEntry>> = HashMap::new();
@@ -16155,6 +16159,43 @@ pub fn run(
             }
         }
         if oom_teardowns > 0 {
+            // memra#145: RECLAIM BEFORE RETRY. Until 2026-09-04 this block only trimmed the
+            // pool, so every park/retry round released the same ~9 GB of freed session state
+            // and walked back into the same wall (orn 2026-09-03: three rounds at 89 GB
+            // pool-used, then a 503, then a card wedged at 88 GB until a SIGTERM; the parked
+            // spec sessions and the 24 GiB prefix cache were the residency, and /admin/trim
+            // proved them reclaimable). A step OOM is the pressure the parked pools and the
+            // cache exist to yield to: drop the parked sessions, evict half the device
+            // prefix cache (all of it on a consecutive OOM tick), THEN fence and trim the
+            // pool so the bytes reach the driver before the parked request re-queues.
+            let parked = (
+                reuse.values().map(Vec::len).sum::<usize>(),
+                spec_reuse.values().map(Vec::len).sum::<usize>(),
+                dspark_reuse.values().map(Vec::len).sum::<usize>(),
+            );
+            reuse.clear();
+            spec_reuse.clear();
+            dspark_reuse.clear();
+            let cache_before = px.total_bytes;
+            let (evicted_n, evicted_bytes) = if oom_evict_streak == 0 {
+                px.evict_to_bytes(cache_before / 2)
+            } else {
+                let n = px.evict_all();
+                (n, cache_before)
+            };
+            oom_evict_streak += 1;
+            eprintln!(
+                "[admit-oom] step-OOM reclaim: parked reuse={} spec={} dspark={} dropped; \
+                 prefix cache evicted {} entries ({}MB) {}MB -> {}MB (oom tick streak {})",
+                parked.0,
+                parked.1,
+                parked.2,
+                evicted_n,
+                evicted_bytes >> 20,
+                cache_before >> 20,
+                px.total_bytes >> 20,
+                oom_evict_streak,
+            );
             // Post-teardown reclaim (lane/step37-vram-admission-20260830): the dropped
             // caches' frees are stream-ordered — fence once more so they have landed in
             // the async pool, then release the pool's cached blocks back to the driver.
@@ -16176,6 +16217,8 @@ pub fn run(
                 trimmed_total / (1 << 20),
                 trim_devices,
             );
+        } else {
+            oom_evict_streak = 0;
         }
         if retired_interactive
             && pb_hold_ms > 0
@@ -28803,6 +28846,45 @@ mod tests {
         );
         // The live arm is read only under the door (shadow mode stays a pure log).
         assert!(flat.contains("letlive_free_bytes=ifadmit_predict_cfg.enforce{effective_free_bytes(&engine).map(|(free,_)|freeasu64)}else{None};"));
+    }
+
+    /// memra#145: the step-OOM teardown reclaims the parked pools and the prefix cache BEFORE
+    /// it fences and trims the pool, and the streak resets on a quiet tick. Anchored on
+    /// invocations in comment-stripped production text.
+    #[test]
+    fn step_oom_teardown_reclaims_before_trim() {
+        let src = include_str!("worker.rs");
+        let code: String = src
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
+        let flat: String = prod.chars().filter(|c| !c.is_whitespace()).collect();
+        let block = flat.find("ifoom_teardowns>0{").expect("teardown block");
+        let end = flat[block..]
+            .find("}else{oom_evict_streak=0;}")
+            .expect("streak reset on a quiet tick")
+            + block;
+        let body = &flat[block..end];
+        for call in [
+            "reuse.clear();",
+            "spec_reuse.clear();",
+            "dspark_reuse.clear();",
+            "px.evict_to_bytes(cache_before/2)",
+            "px.evict_all()",
+        ] {
+            assert!(body.contains(call), "teardown reclaims via {call}");
+        }
+        let reclaim = body.find("reuse.clear();").unwrap();
+        let fence = body
+            .find("oom_teardown_fence(&engine,&loaded);")
+            .expect("fence");
+        let trim = body.find("pool_trim_to_zero()").expect("trim");
+        assert!(
+            reclaim < fence && fence < trim,
+            "reclaim, then fence, then trim"
+        );
     }
 
     #[test]
