@@ -113,6 +113,18 @@ fn bit_diffs(a: &Hc4, b: &Hc4) -> usize {
     cmp(&a.0, &b.0) + cmp(&a.1, &b.1) + cmp(&a.2, &b.2) + cmp(&a.3, &b.3)
 }
 
+fn hc_pre_block() -> i32 {
+    std::env::var("MEMRA_HC_PRE_BLOCK")
+        .ok()
+        .and_then(|v| v.trim().parse::<i32>().ok())
+        .filter(|n| (32..=1024).contains(n) && (*n as u32).is_power_of_two())
+        .unwrap_or(128)
+}
+
+fn hc_pre_sink_reg() -> i32 {
+    i32::from(std::env::var("MEMRA_HC_PRE_SINK_REG").as_deref() == Ok("1"))
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::var("NVIDIA_TF32_OVERRIDE").as_deref() != Ok("0") {
         // SAFETY: no CUDA call has been made yet in this process.
@@ -262,17 +274,68 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 stream.clone_dtoh(&y_d)?,
             ))
         };
+        // THE SERVED ARM (lane/glm5-b200: `MEMRA_HC_PRE_BLOCK` + `MEMRA_HC_PRE_SINK_REG`). The two
+        // arms above are the v1/v2 kernels; serving runs `dsv4_hc_pre_fused_v3_kernel` at block 512
+        // with the register Sinkhorn, and until now no bench drove it, so ncu could not see the
+        // kernel that is 9.4% of a decode token (census3, 2026-09-04). Bit-identity is asserted
+        // against the unfused chain only at block 128 (wider blocks are the named numeric class
+        // `hc_pre_rowsq_blockwide`), so this arm reports its own diff rather than asserting zero.
+        let run_fused_v3 = || -> Res<Hc4> {
+            let mixes_d = stream.clone_htod(&s.mixes)?;
+            let mut pre_d = stream.alloc_zeros::<f32>(t * HC)?;
+            let mut post_d = stream.alloc_zeros::<f32>(t * HC)?;
+            let mut comb_d = stream.alloc_zeros::<f32>(t * HC * HC)?;
+            let mut y_d = stream.alloc_zeros::<f32>(t * D)?;
+            unsafe {
+                let rc = k::memra_dsv4_hc_pre_fused_v3(
+                    x_d.device_ptr(&stream).0 as *const f32,
+                    mixes_d.device_ptr(&stream).0 as *const f32,
+                    scale_d.device_ptr(&stream).0 as *const f32,
+                    base_d.device_ptr(&stream).0 as *const f32,
+                    pre_d.device_ptr_mut(&stream).0 as *mut f32,
+                    post_d.device_ptr_mut(&stream).0 as *mut f32,
+                    comb_d.device_ptr_mut(&stream).0 as *mut f32,
+                    y_d.device_ptr_mut(&stream).0 as *mut f32,
+                    t as i32,
+                    HC as i32,
+                    D as i32,
+                    ITERS,
+                    EPS,
+                    std::ptr::null_mut(),
+                    hc_pre_block(),
+                    hc_pre_sink_reg(),
+                    sp(&stream),
+                );
+                assert_eq!(rc, 0, "hc_pre_fused_v3 rc");
+            }
+            stream.synchronize()?;
+            Ok((
+                stream.clone_dtoh(&pre_d)?,
+                stream.clone_dtoh(&post_d)?,
+                stream.clone_dtoh(&comb_d)?,
+                stream.clone_dtoh(&y_d)?,
+            ))
+        };
 
         let unfused_out = run_unfused()?;
         let fused_out = run_fused()?;
         let fused_v2_out = run_fused_v2()?;
+        // Drive the SERVED kernel too (block/sink_reg from the env), so a profiler attached to
+        // this gate sees `dsv4_hc_pre_fused_v3_kernel` at the width serving actually runs.
+        let fused_v3_out = run_fused_v3()?;
+        let v3_bad = fused_v3_out
+            .0
+            .iter()
+            .zip(fused_v2_out.0.iter())
+            .filter(|(a, b)| a.to_bits() != b.to_bits())
+            .count();
         let bad = bit_diffs(&unfused_out, &fused_out);
         let bad_v2_vs_unfused = bit_diffs(&unfused_out, &fused_v2_out);
         let bad_v2_vs_v1 = bit_diffs(&fused_out, &fused_v2_out);
         println!(
             "[correctness] t={t} hc={HC} d={D}: fused(=1)-vs-unfused bit-bad={bad}/{tot} {} | \
              fused(=2)-vs-unfused bit-bad={bad_v2_vs_unfused}/{tot} {} | \
-             fused(=2)-vs-fused(=1) bit-bad={bad_v2_vs_v1}/{tot} {}",
+             fused(=2)-vs-fused(=1) bit-bad={bad_v2_vs_v1}/{tot} {} | v3(block={}, sink_reg={}) pre-bad-vs-v2={v3_bad}",
             if bad == 0 { "PASS" } else { "FAIL" },
             if bad_v2_vs_unfused == 0 {
                 "PASS"
@@ -280,6 +343,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "FAIL"
             },
             if bad_v2_vs_v1 == 0 { "PASS" } else { "FAIL" },
+            hc_pre_block(),
+            hc_pre_sink_reg(),
             tot = t * HC + t * HC + t * HC * HC + t * D,
         );
         if bad != 0 || bad_v2_vs_unfused != 0 || bad_v2_vs_v1 != 0 {
@@ -306,6 +371,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             stream.synchronize()?;
             let t0 = std::time::Instant::now();
             let _ = run_fused_v2()?;
+            let _ = run_fused_v3()?;
             fused_v2_us.push(t0.elapsed().as_micros() as u64);
         }
 
