@@ -2395,6 +2395,29 @@ pub fn topk_shards_dispatches() -> u64 {
     TOPK_SHARDS_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// `MEMRA_ALLOC_TRACE=1` (gate-harness instrument, default OFF, never a serving flag): every
+/// Engine device allocation funnel (`alloc_uninit` and the zeroed / typed / host-upload
+/// wrappers) prints `[alloc-trace] <bytes> bytes from <file>:<line>` naming the CALLER
+/// (`#[track_caller]`). Why: the nsys trace of the B200 GLM-5.3-Flash decode (2026-09-03)
+/// counted ~1,545 cuMemAllocAsync / cuMemFreeAsync pairs per token (1.8 ms of host API time per
+/// token) with no host stacks; this names the Rust lines that churn the pool.
+pub fn alloc_trace_on() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var("MEMRA_ALLOC_TRACE").as_deref() == Ok("1"))
+}
+
+#[track_caller]
+pub(crate) fn alloc_trace_hit(bytes: usize) {
+    if alloc_trace_on() {
+        let loc = std::panic::Location::caller();
+        eprintln!(
+            "[alloc-trace] {bytes} bytes from {}:{}",
+            loc.file(),
+            loc.line()
+        );
+    }
+}
+
 /// `MEMRA_DTOH_TRACE=1` (gate-harness instrument, default OFF, never a serving flag): every
 /// Engine device-to-host copy prints one line, `[dtoh-trace] <bytes> bytes from <file>:<line>`,
 /// naming the CALLER of the wrapper (`#[track_caller]`). Why: an nsys trace of the B200 decode
@@ -5713,7 +5736,9 @@ impl Engine {
         }
     }
 
+    #[track_caller]
     pub fn htod_bytes(&self, v: &[u8]) -> Result<CudaSlice<u8>, Box<dyn std::error::Error>> {
+        crate::alloc_trace_hit(v.len());
         Ok(self.gpu.stream().clone_htod(v)?)
     }
 
@@ -6436,6 +6461,7 @@ impl Engine {
     }
 
     /// Uninitialized i8 device buffer (decode_batch q8_1 row scratch).
+    #[track_caller]
     pub fn uninit_i8(&self, n: usize) -> Result<CudaSlice<i8>, Box<dyn std::error::Error>> {
         self.alloc_uninit::<i8>(n)
     }
@@ -6478,7 +6504,9 @@ impl Engine {
     }
 
     /// Allocate a reusable u8 GPU scratch buffer (for staged expert weights).
+    #[track_caller]
     pub fn alloc_u8(&self, n: usize) -> Result<CudaSlice<u8>, Box<dyn std::error::Error>> {
+        crate::alloc_trace_hit(n);
         let s = self.gpu.stream().alloc_zeros::<u8>(n)?;
         self.keep_if_capturing(&s);
         Ok(s)
@@ -6487,7 +6515,9 @@ impl Engine {
     /// Uninitialized u8 scratch — skips alloc_zeros' memset. ONLY for staging buffers whose read
     /// range is fully overwritten by a stage_expert H2D before any kernel reads it (LAUNCH-STRUCTURE
     /// STAGE 2: the per-layer MoE scratch trio was 3 dead ~1MB memsets per layer per decode token).
+    #[track_caller]
     pub fn alloc_u8_uninit(&self, n: usize) -> Result<CudaSlice<u8>, Box<dyn std::error::Error>> {
+        crate::alloc_trace_hit(n);
         let s = unsafe { self.gpu.stream().alloc::<u8>(n)? };
         self.keep_if_capturing(&s);
         Ok(s)
@@ -12157,17 +12187,25 @@ impl Engine {
         Ok(())
     }
 
+    #[track_caller]
     pub fn htod(&self, v: &[f32]) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        crate::alloc_trace_hit(v.len() * 4);
         Ok(self.gpu.stream().clone_htod(v)?)
     }
+    #[track_caller]
     pub fn htod_i32(&self, v: &[i32]) -> Result<CudaSlice<i32>, Box<dyn std::error::Error>> {
+        crate::alloc_trace_hit(v.len() * 4);
         Ok(self.gpu.stream().clone_htod(v)?)
     }
     /// i8 upload (moe-devq8-check: synthetic q8_1 activation bytes).
+    #[track_caller]
     pub fn htod_i8(&self, v: &[i8]) -> Result<CudaSlice<i8>, Box<dyn std::error::Error>> {
+        crate::alloc_trace_hit(v.len());
         Ok(self.gpu.stream().clone_htod(v)?)
     }
+    #[track_caller]
     pub fn htod_u64(&self, v: &[u64]) -> Result<CudaSlice<u64>, Box<dyn std::error::Error>> {
+        crate::alloc_trace_hit(v.len() * 8);
         Ok(self.gpu.stream().clone_htod(v)?)
     }
     /// View twin of `dtoh` (lean-logits component 3: D2H one row of a [B, n_vocab] stack).
@@ -12472,7 +12510,9 @@ impl Engine {
             .unwrap_or(0)
     }
 
+    #[track_caller]
     pub fn zeros(&self, n: usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        crate::alloc_trace_hit(n * 4);
         SCRATCH_ALLOC_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let s = self.gpu.stream().alloc_zeros::<f32>(n)?;
         self.keep_if_capturing(&s);
@@ -12913,7 +12953,9 @@ impl Engine {
         Ok(())
     }
 
+    #[track_caller]
     pub fn alloc_u32_zeroed(&self, n: usize) -> Result<CudaSlice<u32>, Box<dyn std::error::Error>> {
+        crate::alloc_trace_hit(n * 4);
         let s = self.gpu.stream().alloc_zeros::<u32>(n)?;
         self.keep_if_capturing(&s);
         Ok(s)
@@ -13172,11 +13214,13 @@ impl Engine {
         }
     }
 
+    #[track_caller]
     fn alloc_uninit<T: cudarc::driver::DeviceRepr + Send + 'static>(
         &self,
         n: usize,
     ) -> Result<CudaSlice<T>, Box<dyn std::error::Error>> {
         SCRATCH_ALLOC_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        crate::alloc_trace_hit(n * std::mem::size_of::<T>());
         let mut s = unsafe { self.gpu.stream().alloc::<T>(n)? };
         // MEMRA_DEBUG_ZERO_ALLOCS=1 (task #14 defect hunt): memset EVERY engine allocation —
         // the global uninit-read discriminator (the prime-fn-scoped zeroing experiment could
@@ -13203,6 +13247,7 @@ impl Engine {
     /// fully overwrites. SAFETY: producing kernel must write every element before any read.
     /// Uninitialized q8_1 activation pair (int8 + per-32 scales) — the fa combine q8-emit
     /// consumers alloc through this (m=1 decode arms).
+    #[track_caller]
     pub fn uninit_q8_pair(
         &self,
         n: usize,
@@ -13213,16 +13258,19 @@ impl Engine {
         ))
     }
 
+    #[track_caller]
     pub fn uninit(&self, n: usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         self.alloc_uninit::<f32>(n)
     }
 
     /// i8 uninitialized scratch (same contract as `uninit`).
+    #[track_caller]
     pub fn alloc_i8_uninit(&self, n: usize) -> Result<CudaSlice<i8>, Box<dyn std::error::Error>> {
         self.alloc_uninit::<i8>(n)
     }
 
     /// i32 uninitialized scratch (same contract as `uninit`) — the DSA indexer's position lists.
+    #[track_caller]
     pub fn uninit_i32(&self, n: usize) -> Result<CudaSlice<i32>, Box<dyn std::error::Error>> {
         self.alloc_uninit::<i32>(n)
     }
