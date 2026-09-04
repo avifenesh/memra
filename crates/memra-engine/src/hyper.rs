@@ -318,8 +318,8 @@ pub static HC_FUSED_PRE_V2_DISPATCHES: std::sync::atomic::AtomicU64 =
 /// the `=2` fused kernel (`memra_dsv4_hc_pre_fused_v2`, lane/b200-sinkhorn-fusion-20260902 —
 /// same stages, warp-scoped Sinkhorn sync). Any other value (unset, `0`, or unrecognized)
 /// stays `Off`, the existing "read per call" rollback-seam contract.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum HcFusedPreArm {
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum HcFusedPreArm {
     Off,
     V1,
     V2,
@@ -332,9 +332,22 @@ enum HcFusedPreArm {
 /// (the `MEMRA_MOE_FUSED_EPI` rollback-seam precedent), so arms can alternate inside one
 /// process and the flag is a live rollback seam.
 fn hc_fused_pre_arm() -> HcFusedPreArm {
-    match std::env::var("MEMRA_HC_FUSED_PRE").as_deref() {
-        Ok("1") => HcFusedPreArm::V1,
-        Ok("2") => HcFusedPreArm::V2,
+    hc_fused_pre_arm_from(
+        std::env::var("MEMRA_HC_FUSED_PRE").ok().as_deref(),
+        env!("MEMRA_BUILT_CUDA_ARCH"),
+    )
+}
+
+/// The pure parse behind [`hc_fused_pre_arm`] (arch-keyed since 2026-09-04): `1` = V1, `2` = V2,
+/// `0` = the unfused chain; UNSET follows the build arch: V2 on `100a` (the served posture on
+/// the 2x B200 pair since 2026-09-02, receipts in darklanes research/glm5-b200-20260902/LANE.md
+/// and the FLAGS row), the unfused chain on every other build until it has its own receipt.
+pub fn hc_fused_pre_arm_from(v: Option<&str>, built_arch: &str) -> HcFusedPreArm {
+    match v.map(str::trim) {
+        Some("1") => HcFusedPreArm::V1,
+        Some("2") => HcFusedPreArm::V2,
+        Some("0") => HcFusedPreArm::Off,
+        _ if built_arch == "100a" => HcFusedPreArm::V2,
         _ => HcFusedPreArm::Off,
     }
 }
