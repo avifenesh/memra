@@ -28,7 +28,6 @@
 //!
 //! usage: b200-matvec-bench [iters=5] [copies=3]
 use cudarc::driver::{CudaSlice, CudaStream, DevicePtr};
-use memra_engine::mmq_ffi::{memra_mmq_nvfp4, memra_mmq_nvfp4_act_bytes};
 use memra_engine::tp::nvfp4_matrix_v2_permute;
 use memra_engine::{Engine, F32x8, QT_NVFP4, QT_NVFP4_V2, QT_Q8_0, WPtr8};
 use std::sync::Arc;
@@ -1640,22 +1639,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("temp_out: {}", gpu_temp());
     // -----------------------------------------------------------------------------------
     // Family 10: THE DECODE-SHAPED FP4 TENSOR-CORE QUESTION (lane/glm5-fp4-tc-decode-20260904).
-    // census3 (2026-09-04) put the MoE rows pair at 2.46 ms of an 11.8 ms token and rig ncu put it
-    // at instruction-issue bound after the ILP twins (long-scoreboard 7-8%, issue-active 68%,
-    // math-pipe throttle 11.5%). The only instruction-count lever left is the tensor core, and on
-    // sm_100a that means `tcgen05.mma.kind::mxf4nvf4.block_scale` — which memra already ships as a
-    // PREFILL GEMM (`memra_mmq_nvfp4` -> `mul_mat_q_nvfp4_sm100`, tile M=128 weight rows x N=128
-    // tokens x K=64). Nobody has ever called it at a DECODE shape. At n_tokens = 1 the N axis
-    // wastes 128x of the tile's math, but the weights still stream exactly once, and math is not
-    // what bounds this kernel — so the question is empirical and the arm below is the whole
-    // experiment: one expert plane (in_f 4096 -> n_ff 2048), the same bytes, dp4a rows vs the
-    // tcgen05 GEMM at n_tokens = 1.
+    // census3 (2026-09-04) put the glm5 MoE rows pair at 2.46 ms of an 11.8 ms token and rig ncu
+    // put it at instruction-issue bound after the ILP twins (long-scoreboard 7-8%, issue-active
+    // 68%, math-pipe throttle 11.5%). The remaining instruction-count lever is the tensor core:
+    // memra already ships an FP4 block-scale GEMM (`memra_mmq_nvfp4`; on sm_100a that is the
+    // tcgen05 twin `mul_mat_q_nvfp4_sm100`, tile M=128 weight rows x N=128 tokens x K=64), and
+    // nobody has called it at a DECODE shape. At n_tokens = 1 the N axis wastes 128x of the
+    // tile's math, but the weights still stream exactly once and math is not what bounds this
+    // kernel, so the question is empirical.
     //
-    // NOT a numeric twin: the MMQ path is W4A4 (it quantizes the activation to e2m1 with per-16
-    // UE4M3 scales, `quantize_mmq_nvfp4_kernel`), while the rows pair is W4A8 (q8_1 int8). The
-    // compare below is a RATE compare with the max-abs-diff printed for the record; the accuracy
-    // question belongs to the re-mint's own eval, and NVIDIA's own Blackwell checkpoint ships
-    // W4A4 for exactly these expert GEMMs (Nemotron-Labs-3-Puzzle-75B-A9B, Table 2).
+    // LIKE FOR LIKE: both arms compute ONE plane, y[out_f] = W . x, on the SAME weight bytes.
+    // Reference = the shipped decode matvec (`qmatvec_nvfp4_mmvq`, W4A8: q8_1 int8 activations);
+    // arm = the FP4 GEMM (W4A4: the launcher quantizes the activation to e2m1 with per-16 UE4M3
+    // scales). The rate compare is therefore fair, and the printed max-abs-diff is a NUMERIC
+    // CLASS reading rather than an identity gate: the accuracy question belongs to the re-mint's
+    // own eval, and NVIDIA's Blackwell checkpoint ships W4A4 for exactly these expert GEMMs
+    // (Nemotron-Labs-3-Puzzle-75B-A9B, Table 2).
     // -----------------------------------------------------------------------------------
     {
         let (in_f, out_f) = (4096usize, 2048usize);
@@ -1668,100 +1667,65 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .collect::<Result<_, _>>()?;
         let bytes = w_bytes.len() as f64;
 
-        // Reference arm: the shipped decode rows kernel on ONE expert (n_pairs = 1).
-        let stream = e.stream();
-        let mut ptrs_h = vec![0u64; 3];
-        let mut scl_h = vec![1.0f32; 3];
-        {
-            use cudarc::driver::DevicePtr;
-            let (base, _g) = wcopies[0].device_ptr(&stream);
-            ptrs_h[0] = base;
-            ptrs_h[1] = base;
-            ptrs_h[2] = base;
-        }
-        scl_h[2] = 1.0;
-        let scl = e.htod(&scl_h)?;
-        let rows_once = |c: usize| -> Result<Vec<f32>, Box<dyn std::error::Error>> {
-            let mut ph = ptrs_h.clone();
-            {
-                use cudarc::driver::DevicePtr;
-                let (base, _g) = wcopies[c].device_ptr(&stream);
-                ph[0] = base;
-                ph[1] = base;
-                ph[2] = base;
-            }
-            let p = e.htod_u64(&ph)?;
-            let act = e.moe_gate_up_preclamp8_q8_rows(
-                &p, &scl, &aq, &ad, 1.0e30, in_f, out_f, 1, 1, QT_NVFP4, QT_NVFP4, row_bytes,
-                row_bytes,
-            )?;
-            e.dtoh(&act)
-        };
-        let want = rows_once(0)?;
-
-        // Arm: the tcgen05 NVFP4 GEMM at n_tokens = 1.
-        let act_bytes = unsafe { memra_mmq_nvfp4_act_bytes(in_f as i32, 1) };
-        let mut scratch = e.alloc_u8_uninit(act_bytes.max(1))?;
-        let mut y_tc = e.zeros(out_f)?;
-        let mmq_once = |c: usize,
-                        y: &mut CudaSlice<f32>,
-                        scratch: &mut CudaSlice<u8>|
-         -> Result<i32, Box<dyn std::error::Error>> {
-            use cudarc::driver::{DevicePtr, DevicePtrMut};
-            let s = e.stream();
-            let (pw, _g0) = wcopies[c].device_ptr(&s);
-            let (px, _g1) = xd.device_ptr(&s);
-            let (py, _g2) = y.device_ptr_mut(&s);
-            let (ps, _g3) = scratch.device_ptr_mut(&s);
-            Ok(unsafe {
-                memra_mmq_nvfp4(
-                    pw as *const core::ffi::c_void,
-                    px as *const f32,
-                    py as *mut f32,
-                    in_f as i32,
-                    out_f as i32,
+        let mmvq_once =
+            |c: usize, y: &mut CudaSlice<f32>| -> Result<(), Box<dyn std::error::Error>> {
+                e.qmatvec_mmvq_into(
+                    &wcopies[c],
+                    &aq,
+                    &ad,
                     1,
-                    ps as *mut core::ffi::c_void,
-                    std::ptr::null_mut(),
+                    in_f,
+                    out_f,
+                    QT_NVFP4,
+                    row_bytes,
                     1.0,
+                    false,
+                    y,
                 )
-            })
+            };
+        // The VALIDATED wrapper (its own scaling convention; `nvfp4_mmq_check` gates it against
+        // an exact host oracle). Calling the raw FFI here instead silently changed the scaling.
+        let mmq_once = |c: usize| -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+            let y = e.qmatvec_mmq_nvfp4_raw(&wcopies[c], &xd, 1, in_f, out_f)?;
+            e.dtoh(&y)
         };
-        let rc = mmq_once(0, &mut y_tc, &mut scratch)?;
+
+        let mut y_ref = e.zeros(out_f)?;
+        mmvq_once(0, &mut y_ref)?;
+        let tc = mmq_once(0);
         e.stream().synchronize()?;
-        if rc != 0 {
-            println!(
-                "fp4-tc decode (tcgen05 NVFP4 GEMM at n_tokens=1): REFUSED rc={rc} \
-                 (non-sm_100a build, or the path declined this shape)"
-            );
+        if let Err(err) = &tc {
+            println!("expert plane t=1: FP4 GEMM REFUSED ({err}) — build or shape declined it");
         } else {
-            let got = e.dtoh(&y_tc)?;
+            let want = e.dtoh(&y_ref)?;
+            let got = tc?;
             let (mism, maxd) = compare(&want, &got);
             let scale = want.iter().fold(0f32, |a, b| a.max(b.abs())).max(1.0);
-            let mut t_rows = Vec::with_capacity(iters);
+            let mut t_ref = Vec::with_capacity(iters);
             let mut t_tc = Vec::with_capacity(iters);
             for i in 0..iters {
                 let c = i % copies;
-                let t0 = Instant::now();
-                let _ = rows_once(c)?;
-                t_rows.push(t0.elapsed().as_secs_f64() * 1e6);
                 let mut y = e.zeros(out_f)?;
+                let t0 = Instant::now();
+                mmvq_once(c, &mut y)?;
+                e.stream().synchronize()?;
+                t_ref.push(t0.elapsed().as_secs_f64() * 1e6);
                 let t1 = Instant::now();
-                mmq_once(c, &mut y, &mut scratch)?;
+                let _ = mmq_once(c)?;
                 e.stream().synchronize()?;
                 t_tc.push(t1.elapsed().as_secs_f64() * 1e6);
             }
             report(
-                "MoE expert plane t=1: dp4a rows -> tcgen05 NVFP4 W4A4 GEMM",
-                median(&mut t_rows),
+                "expert plane t=1: qmatvec_nvfp4_mmvq (W4A8) -> FP4 block-scale GEMM (W4A4)",
+                median(&mut t_ref),
                 median(&mut t_tc),
                 bytes,
                 mism,
                 maxd,
             );
             println!(
-                "  (W4A8 vs W4A4: {mism} of {out_f} outputs differ, max_abs_diff {maxd:.3e}, \
-                 rel {:.3e} — a NUMERIC CLASS compare, not an identity gate)",
+                "  (numeric CLASS compare: {mism} of {out_f} outputs differ, max_abs_diff \
+                 {maxd:.3e}, rel {:.3e} — W4A8 vs W4A4, not an identity gate)",
                 maxd / scale
             );
         }
