@@ -1636,6 +1636,92 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
+    // ---------------------------------------------------------------------------------------
+    // FAMILY: the KDA six on the B200 hybrid mint's own operand (per-tensor e4m3, 1.0 B/weight).
+    //
+    // Prices the three arms of `qmatvec_e4m3_mmvq_fused6` at the SERVED shape without needing a
+    // checkpoint on the box, which is what makes it usable while the mint itself is disk-blocked:
+    //   arm 0  shipped serial walk
+    //   arm 1  MEMRA_E4M3_ROW_ILP=1, four blocks' loads in flight per lane
+    //   arm 2  MEMRA_E4M3_ROW_ILP=2, arm 1 plus the CTA-staged activation
+    // Every arm is claimed BIT-IDENTICAL; a mismatch prints as a WARNING rather than passing.
+    // Interleaved per iteration and rotated over `copies` weight copies so neither arm gets a
+    // warm cache the other did not (interleaved A/B protocol law).
+    {
+        let in_f = 4096usize;
+        let dims = [8192usize, 8192, 8192, 128, 128, 64];
+        let ws = [1.0f32, 0.75, 1.25, 0.5, 2.0, 0.125];
+        let mut rng = Lcg(0x51DE_0904);
+        let planes: Vec<Vec<u8>> = dims
+            .iter()
+            .map(|&o| (0..o * in_f).map(|_| safe_e4m3(rng.byte())).collect())
+            .collect();
+        let dev: Vec<Vec<CudaSlice<u8>>> = (0..copies)
+            .map(|_| {
+                planes
+                    .iter()
+                    .map(|p| e.htod_bytes(p))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .collect::<Result<_, _>>()?;
+        let xh: Vec<f32> = (0..in_f)
+            .map(|i| ((i as f32) * 0.0173).sin() * 0.25)
+            .collect();
+        let xd = e.htod(&xh)?;
+        let bytes = dims.iter().map(|&o| (o * in_f) as f64).sum::<f64>() + (in_f * 5) as f64;
+
+        let run = |c: usize, arm: u32| -> Result<[CudaSlice<f32>; 6], Box<dyn std::error::Error>> {
+            let d = &dev[c];
+            let w = [&d[0], &d[1], &d[2], &d[3], &d[4], &d[5]];
+            e.qmatvec_e4m3_fused6_raw(w, &xd, in_f, dims, in_f, ws, arm)
+        };
+
+        let base = run(0, 0)?;
+        let base_h: Vec<Vec<f32>> = (0..6).map(|k| e.dtoh(&base[k])).collect::<Result<_, _>>()?;
+        let mut t = [
+            Vec::with_capacity(iters),
+            Vec::with_capacity(iters),
+            Vec::with_capacity(iters),
+        ];
+        let mut mism = [0usize; 3];
+        let mut maxd = [0f32; 3];
+        for arm in 1..3usize {
+            let got = run(0, arm as u32)?;
+            for k in 0..6 {
+                let (m, d) = compare(&base_h[k], &e.dtoh(&got[k])?);
+                mism[arm] += m;
+                maxd[arm] = maxd[arm].max(d);
+            }
+        }
+        for i in 0..iters {
+            let c = i % copies;
+            for arm in 0..3usize {
+                let t0 = Instant::now();
+                let _ = run(c, arm as u32)?;
+                e.stream().synchronize()?;
+                t[arm].push(t0.elapsed().as_secs_f64() * 1e6);
+            }
+        }
+        let m0 = median(&mut t[0]);
+        report(
+            "kda6 e4m3 six (mint operand): serial -> ILP",
+            m0,
+            median(&mut t[1]),
+            bytes,
+            mism[1],
+            maxd[1],
+        );
+        report_arm(
+            "kda6 e4m3 six: ILP + CTA-staged activation",
+            "arm2",
+            m0,
+            median(&mut t[2]),
+            bytes,
+            mism[2],
+            maxd[2],
+        );
+    }
+
     println!("temp_out: {}", gpu_temp());
     Ok(())
 }
