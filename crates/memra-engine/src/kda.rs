@@ -50,6 +50,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// grouped-prefill `moe_grouped_prefill_dispatches` precedent: gates and box A/B arms count
 /// dispatches at the arm's own call site instead of inferring engagement from a 200.
 pub static KDA_FUSED6_DISPATCHES: AtomicU64 = AtomicU64::new(0);
+pub static KDA_FUSED6_E4M3_DISPATCHES: AtomicU64 = AtomicU64::new(0);
 
 /// Same door, BF16 operand arm (`qmatvec_kda6_bf16f32`, lane/glm5-decode-diet lever 3).
 /// Counted separately so a box A/B on the serving recipe (MEMRA_BF16_MMV=1, where the q8 arm
@@ -1483,6 +1484,106 @@ impl Engine {
         }
         if !(1..=15).contains(&t) {
             return Ok(None);
+        }
+        // E4M3 SIX-GROUP ARM (lane/glm5-b200-mint-consume, 2026-09-04) — the operand class the
+        // GLM-5.3-Flash B200 hybrid mint actually ships. That mint quantizes ALL SIX KDA
+        // projections to per-tensor e4m3, so under MEMRA_ST_E4M3 (default ON) every one of them
+        // is QT_F8_E4M3-resident at 1.0 B/weight: cheaper than the bf16 serving recipe's 2.0 and
+        // cheaper than the Q8_0 re-encode's 1.0625, with no lossy re-quant hop. The two arms
+        // below cannot serve that shape — they require a FloatBf16 trio plus an f32 trio — so
+        // without this arm the mint's cheapest operand would fall to SIX separate launches on
+        // each of the 34 KDA layers, with six redundant broadcasts of the same activation.
+        //
+        // This is an operand arm of an EXISTING door, not a new one: it rides
+        // MEMRA_KDA_FUSED_PROJ=1 exactly as the bf16 and q8rp arms do, and it additionally
+        // declines wherever the unfused e4m3 program it claims bit-identity against would not
+        // be the shipped one (MEMRA_FAST=0, no MMVQ support for the qtype, or the
+        // MEMRA_E4M3_DUAL=0 rollback that restores per-tensor launches).
+        //
+        // m=1 ONLY. `qmatvec_e4m3_mmvq_fused6` pins the token index at 0, matching the
+        // `e4m3_mmvq_row1` body it shares with the pair and triple. t>1 keeps the caller's arm.
+        let e4m3 = |w: &GpuTensor| -> Option<(usize, usize, f32)> {
+            match w {
+                GpuTensor::Quant {
+                    qtype: crate::QT_F8_E4M3,
+                    row_bytes,
+                    scale,
+                    rp: false,
+                    rp4: None,
+                    blk: None,
+                    ..
+                } => Some((w.in_features(), *row_bytes, *scale)),
+                _ => None,
+            }
+        };
+        if let (Some(e_q), Some(e_k), Some(e_v), Some(e_fa), Some(e_ga), Some(e_b)) = (
+            e4m3(&la.wq),
+            e4m3(&la.wk),
+            e4m3(&la.wv),
+            e4m3(&la.f_a),
+            e4m3(&la.g_a),
+            e4m3(&la.b_proj),
+        ) {
+            let six = [e_q, e_k, e_v, e_fa, e_ga, e_b];
+            let in_f = e_q.0;
+            if t != 1
+                || std::env::var("MEMRA_FAST").as_deref() == Ok("0")
+                || !self.mmvq_supports(crate::QT_F8_E4M3)
+                || !self.e4m3_dual_on()
+                // Every range must share in_f and the q8_1 activation block, and an e4m3 row is
+                // exactly in_f bytes — a row_bytes that disagrees means a padded or foreign
+                // layout this kernel's single `row_bytes` cannot address.
+                || six.iter().any(|&(i, rb, _)| i != in_f || rb != in_f)
+                || !in_f.is_multiple_of(32)
+                || x.len() < in_f
+            {
+                return Ok(None);
+            }
+            let dims = [
+                la.wq.out_features(),
+                la.wk.out_features(),
+                la.wv.out_features(),
+                la.f_a.out_features(),
+                la.g_a.out_features(),
+                la.b_proj.out_features(),
+            ];
+            let ws: [f32; 6] = std::array::from_fn(|i| six[i].2);
+            fn e4m3_bytes(w: &GpuTensor) -> &CudaSlice<u8> {
+                match w {
+                    GpuTensor::Quant { bytes, .. } => bytes,
+                    _ => unreachable!("e4m3() above only admits Quant"),
+                }
+            }
+            let bytes = e4m3_bytes;
+            let w = [
+                bytes(&la.wq),
+                bytes(&la.wk),
+                bytes(&la.wv),
+                bytes(&la.f_a),
+                bytes(&la.g_a),
+                bytes(&la.b_proj),
+            ];
+            // ONE activation quantize for all six ranges — the six-launch path pays this per
+            // projection. `pre_q8` is the W8 posture's pre-quantized pair and does not apply to
+            // this operand class, so the arm always quantizes here.
+            let (aq, ad) = self.quantize_q8_1(x, 1, in_f)?;
+            let mut outs = [
+                self.uninit(dims[0])?,
+                self.uninit(dims[1])?,
+                self.uninit(dims[2])?,
+                self.uninit(dims[3])?,
+                self.uninit(dims[4])?,
+                self.uninit(dims[5])?,
+            ];
+            self.e4m3_fused6_into(w, &aq, &ad, in_f, dims, in_f, ws, &mut outs)?;
+            if KDA_FUSED6_E4M3_DISPATCHES.fetch_add(1, Ordering::Relaxed) == 0 {
+                eprintln!(
+                    "[kda-fused6] engaged arm=e4m3 in_f={in_f} out={dims:?} t={t} (one launch \
+                     replaces the six per-tensor e4m3 projections and their six redundant \
+                     activation quantizes; MEMRA_KDA_FUSED_PROJ=1 MEMRA_ST_E4M3=1)"
+                );
+            }
+            return Ok(Some(outs.into_iter().collect()));
         }
         // The f32 trio is common to both operand arms. Any mismatch = refuse; the caller's
         // arm is the shipped program.

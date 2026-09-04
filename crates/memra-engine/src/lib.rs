@@ -19879,6 +19879,79 @@ impl Engine {
         Ok((y0, y1, y2))
     }
 
+    /// FUSED e4m3 m=1 SIX-GROUP (`qmatvec_e4m3_mmvq_fused6`) — the KDA six-projection group on a
+    /// uniformly-e4m3 checkpoint. Same contract as the pair and the triple: one shared q8_1
+    /// activation, one shared `row_bytes` (e4m3 rows are `in_f` bytes), a per-range weight scale,
+    /// and per (range,row) output BITS identical to six separate m=1 launches.
+    ///
+    /// Writes into caller-owned outputs so the KDA door can keep its existing allocation shape.
+    #[allow(clippy::too_many_arguments)]
+    pub fn e4m3_fused6_into(
+        &self,
+        w: [&CudaSlice<u8>; 6],
+        aq: &CudaSlice<i8>,
+        ad: &CudaSlice<f32>,
+        in_f: usize,
+        dims: [usize; 6],
+        row_bytes: usize,
+        ws: [f32; 6],
+        outs: &mut [CudaSlice<f32>; 6],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        const ROWS_PER_BLOCK: u32 = 4;
+        let blocks: u32 = dims
+            .iter()
+            .map(|&o| (o as u32).div_ceil(ROWS_PER_BLOCK))
+            .sum();
+        let f = self.func("qmatvec_e4m3_mmvq_fused6");
+        let cfg = LaunchConfig {
+            grid_dim: (blocks, 1, 1),
+            block_dim: (32, ROWS_PER_BLOCK, 1),
+            shared_mem_bytes: 0,
+        };
+        let inf = in_f as i32;
+        let o: [i32; 6] = std::array::from_fn(|i| dims[i] as i32);
+        let rbl = row_bytes as i64;
+        let (o0, o1) = outs.split_at_mut(1);
+        let (o1, o2) = o1.split_at_mut(1);
+        let (o2, o3) = o2.split_at_mut(1);
+        let (o3, o4) = o3.split_at_mut(1);
+        let (o4, o5) = o4.split_at_mut(1);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(w[0])
+            .arg(w[1])
+            .arg(w[2])
+            .arg(w[3])
+            .arg(w[4])
+            .arg(w[5])
+            .arg(aq)
+            .arg(ad)
+            .arg(&mut o0[0])
+            .arg(&mut o1[0])
+            .arg(&mut o2[0])
+            .arg(&mut o3[0])
+            .arg(&mut o4[0])
+            .arg(&mut o5[0])
+            .arg(&inf)
+            .arg(&o[0])
+            .arg(&o[1])
+            .arg(&o[2])
+            .arg(&o[3])
+            .arg(&o[4])
+            .arg(&o[5])
+            .arg(&rbl)
+            .arg(&ws[0])
+            .arg(&ws[1])
+            .arg(&ws[2])
+            .arg(&ws[3])
+            .arg(&ws[4])
+            .arg(&ws[5]);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(())
+    }
+
     /// BATCHED FUSED e4m3 pair (m=2..8). The batched kernels carry no `ws` arg (every batched
     /// kernel in the tree is scale-free), so each output takes its own `scale_inplace` — the
     /// SAME post-op the per-tensor batched dispatch applies, hence still bit-identical.
@@ -20241,6 +20314,32 @@ impl Engine {
         self.e4m3_fused3_core(
             b0, b1, b2, &aq, &ad, in_f, out0, out1, out2, row_bytes, ws0, ws1, ws2,
         )
+    }
+
+    /// Raw six-group entry (`qmatvec_e4m3_mmvq_fused6`): quantizes the activation once and
+    /// launches all six ranges. The gate drives mutations through here so a mutated program is
+    /// the exact one the KDA door serves.
+    #[allow(clippy::too_many_arguments)]
+    pub fn qmatvec_e4m3_fused6_raw(
+        &self,
+        w: [&CudaSlice<u8>; 6],
+        x: &CudaSlice<f32>,
+        in_f: usize,
+        dims: [usize; 6],
+        row_bytes: usize,
+        ws: [f32; 6],
+    ) -> Result<[CudaSlice<f32>; 6], Box<dyn std::error::Error>> {
+        let (aq, ad) = self.quantize_q8_1(x, 1, in_f)?;
+        let mut outs = [
+            self.alloc_uninit::<f32>(dims[0])?,
+            self.alloc_uninit::<f32>(dims[1])?,
+            self.alloc_uninit::<f32>(dims[2])?,
+            self.alloc_uninit::<f32>(dims[3])?,
+            self.alloc_uninit::<f32>(dims[4])?,
+            self.alloc_uninit::<f32>(dims[5])?,
+        ];
+        self.e4m3_fused6_into(w, &aq, &ad, in_f, dims, row_bytes, ws, &mut outs)?;
+        Ok(outs)
     }
 
     #[allow(clippy::too_many_arguments)]

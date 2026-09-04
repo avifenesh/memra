@@ -4278,6 +4278,49 @@ __device__ __forceinline__ void e4m3_mmvq_batched(
     e4m3_mmvq_batched_row<MCOLS>(W, aq, ad, y, in_f, out_f, m, row_bytes,
                                  blockIdx.x * MEMRA_MMVQ_ROWS + (int)threadIdx.y);
 }
+// ----- FUSED F8-E4M3 m=1 matvec SIX-GROUP (lane/glm5-b200-mint-consume, 2026-09-04).
+//
+// The GLM-5.3-Flash B200 hybrid mint stores ALL SIX KDA projections (q, k, v, f_a, g_a, b) as
+// per-tensor e4m3, so under MEMRA_ST_E4M3 all six are QT_F8_E4M3-resident at 1.0 B/weight. That
+// is the cheapest operand class any of them has ever had -- the bf16 serving recipe reads 2.0
+// B/w and the Q8_0 re-encode 1.0625 -- but it also means `kda_proj_fused6` cannot serve them:
+// its two arms admit a FloatBf16 trio (+ f32 trio) or the W8 q8-mirror posture, and neither
+// binds on a uniformly-e4m3 group. Without this kernel the mint's cheapest operand would run as
+// SIX separate launches per KDA layer, on 34 of the 45 layers, plus six redundant broadcasts of
+// the same activation.
+//
+// Same block-offset recipe as qmatvec_e4m3_mmvq_fused2/fused3, extended to six ranges: blocks
+// [0,nb0) compute tensor 0, [nb0,nb0+nb1) tensor 1, and so on. All six share in_f (e4m3
+// row_bytes == in_f, so ONE row_bytes) and the SAME q8_1 activation, which is quantized once.
+// Per (tensor,row) the body is e4m3_mmvq_row1, so every output element is BIT-IDENTICAL to six
+// separate m=1 launches -- that identity is the gate, not an approximation claim. Each range
+// keeps its OWN per-tensor weight scale, because in this class the scale is a per-tensor
+// property (unlike Q8_0, whose scale is always 1.0). -----
+extern "C" __global__ void qmatvec_e4m3_mmvq_fused6(
+        const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
+        const unsigned char* __restrict__ W2, const unsigned char* __restrict__ W3,
+        const unsigned char* __restrict__ W4, const unsigned char* __restrict__ W5,
+        const signed char* __restrict__ aq, const float* __restrict__ ad,
+        float* __restrict__ y0, float* __restrict__ y1, float* __restrict__ y2,
+        float* __restrict__ y3, float* __restrict__ y4, float* __restrict__ y5,
+        int in_f, int out0, int out1, int out2, int out3, int out4, int out5,
+        long row_bytes, float ws0, float ws1, float ws2, float ws3, float ws4, float ws5) {
+    const unsigned char* const Ws[6] = {W0, W1, W2, W3, W4, W5};
+    float* const ys[6] = {y0, y1, y2, y3, y4, y5};
+    const int outs[6] = {out0, out1, out2, out3, out4, out5};
+    const float wss[6] = {ws0, ws1, ws2, ws3, ws4, ws5};
+    int b = blockIdx.x;
+#pragma unroll
+    for (int i = 0; i < 6; ++i) {
+        const int nb = (outs[i] + MEMRA_MMVQ_ROWS - 1) / MEMRA_MMVQ_ROWS;
+        if (b < nb) {
+            e4m3_mmvq_row1(Ws[i], aq, ad, ys[i], in_f, outs[i], row_bytes, wss[i],
+                           b * MEMRA_MMVQ_ROWS + (int)threadIdx.y);
+            return;
+        }
+        b -= nb;
+    }
+}
 extern "C" __global__ void qmatvec_e4m3_mmvq_b2(
         const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
         const float* __restrict__ ad, float* __restrict__ y,
