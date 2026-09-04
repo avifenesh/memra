@@ -813,6 +813,94 @@ extern "C" __global__ void rms_norm_zq8_f32(const float* __restrict__ x, const f
     }
 }
 
+// ---- ILP twin of rms_norm_zq8_f32 (lane/glm5-norm-zq8-ilp-20260904, rides MEMRA_NORM_ILP).
+// WHY: the door-ON kernel census of a plain glm5_next t=1 token on the 2x B200 pair (2026-09-04,
+// nsys, 96 tokens) reads rms_norm_zq8_f32 at 46 launches/token x 13.8 us mean (11.1 us min) =
+// 0.64 ms of a ~13.7 ms token, on ONE block of 256 threads: pass 1 is 16 serial dependent
+// scalar loads per thread and pass 2 is 16 serial (load, load, shuffle-tree, store) rounds
+// per warp, both latency chains, while rms_norm_f32_v2 (the same shape, unrolled) measures
+// 4.1 us in the same census. This twin is rms_norm_f32_v2's transformation applied to both
+// passes. EXACTNESS, by construction: pass 1 keeps the SAME per-thread element order
+// (i, i+bd, i+2bd, i+3bd, ...) into ONE accumulator with the same `sum += v*v` statements
+// (same fma chain), and the block reduce is VERBATIM; pass 2's per-32-block epilogue is
+// independent per block (its own warp amax tree over its own 32 values), so hoisting four
+// blocks' loads ahead of their math moves no bits: every `(xr[i] * scale) * w[i]`, every
+// amax tree, every `__float2int_rn(v * id)` and `base_d[blk] = d` is the exact expression
+// on the exact operands rms_norm_zq8_f32 evaluates for that block. Gate:
+// tests/norm_zq8_ilp_gpu.rs (z, q and d bitwise vs the v1 kernel at several ncols and at
+// both 256- and 1024-thread blocks).
+__device__ __forceinline__ void rms_zq8_emit_block(float v, int i, int blk, int lane,
+                                                   float* __restrict__ zr,
+                                                   signed char* __restrict__ base_q,
+                                                   float* __restrict__ base_d) {
+    zr[i] = v;
+    float amax = fabsf(v);
+    #pragma unroll
+    for (int o = 16; o > 0; o >>= 1) amax = fmaxf(amax, __shfl_xor_sync(0xffffffffu, amax, o));
+    float d = amax / 127.0f;
+    float id = d > 0.0f ? 1.0f / d : 0.0f;
+    base_q[i] = (signed char)__float2int_rn(v * id);
+    if (lane == 0) base_d[blk] = d;
+}
+extern "C" __global__ void rms_norm_zq8_f32_v2(const float* __restrict__ x, const float* __restrict__ w,
+                                               float* __restrict__ z,
+                                               signed char* __restrict__ out_q, float* __restrict__ out_d,
+                                               int ncols, float eps) {
+    MEMRA_PDL_ENTRY();
+    int row = blockIdx.x;
+    int tid = threadIdx.x;
+    int bd = blockDim.x;
+    const float* xr = x + (size_t)row * ncols;
+    float* zr = z + (size_t)row * ncols;
+    int nblk = ncols / 32;
+    // pass 1: sum of squares, four independent loads per round, SAME per-thread order into
+    // ONE accumulator (rms_norm_f32_v2's form); block reduce VERBATIM rms_norm_zq8_f32.
+    float sum = 0.0f;
+    int i = tid;
+    for (; i + 3 * bd < ncols; i += 4 * bd) {
+        float v0 = xr[i];
+        float v1 = xr[i + bd];
+        float v2 = xr[i + 2 * bd];
+        float v3 = xr[i + 3 * bd];
+        sum += v0 * v0; sum += v1 * v1; sum += v2 * v2; sum += v3 * v3;
+    }
+    for (; i < ncols; i += bd) { float v = xr[i]; sum += v * v; }
+    __shared__ float s[32];
+    for (int o = 16; o > 0; o >>= 1) sum += __shfl_down_sync(0xffffffff, sum, o);
+    if ((tid & 31) == 0) s[tid >> 5] = sum;
+    __syncthreads();
+    if (tid < 32) {
+        float v = (tid < (blockDim.x + 31) / 32) ? s[tid] : 0.0f;
+        for (int o = 16; o > 0; o >>= 1) v += __shfl_down_sync(0xffffffff, v, o);
+        if (tid == 0) s[0] = v;
+    }
+    __syncthreads();
+    float scale = rsqrtf(s[0] / ncols + eps);
+    // pass 2: four blocks' (x, w) loads in flight per warp round, then the v1 epilogue per
+    // block in the v1 order (blk, blk+nw, blk+2nw, blk+3nw).
+    signed char* base_q = out_q + (size_t)row * ncols;
+    float* base_d = out_d + (size_t)row * nblk;
+    int lane = tid & 31;
+    int nw = bd >> 5;
+    int blk = tid >> 5;
+    for (; blk + 3 * nw < nblk; blk += 4 * nw) {
+        int i0 = blk * 32 + lane;
+        int i1 = (blk + nw) * 32 + lane;
+        int i2 = (blk + 2 * nw) * 32 + lane;
+        int i3 = (blk + 3 * nw) * 32 + lane;
+        float x0 = xr[i0], x1 = xr[i1], x2 = xr[i2], x3 = xr[i3];
+        float w0 = w[i0], w1 = w[i1], w2 = w[i2], w3 = w[i3];
+        rms_zq8_emit_block((x0 * scale) * w0, i0, blk, lane, zr, base_q, base_d);
+        rms_zq8_emit_block((x1 * scale) * w1, i1, blk + nw, lane, zr, base_q, base_d);
+        rms_zq8_emit_block((x2 * scale) * w2, i2, blk + 2 * nw, lane, zr, base_q, base_d);
+        rms_zq8_emit_block((x3 * scale) * w3, i3, blk + 3 * nw, lane, zr, base_q, base_d);
+    }
+    for (; blk < nblk; blk += nw) {
+        int i0 = blk * 32 + lane;
+        rms_zq8_emit_block((xr[i0] * scale) * w[i0], i0, blk, lane, zr, base_q, base_d);
+    }
+}
+
 // ---- add+RMSNorm with FUSED q8_1 quantize epilogue. res = a+b (written out for the next residual);
 // then z = rms_norm(res)*w emitted directly as q8_1. Fuses add_rms_norm + quantize_q8_1 for the FFN
 // input path (z feeds ffn_gate/ffn_up matvecs, both q8_1-fast). BIT-IDENTICAL to add_rms_norm_f32
