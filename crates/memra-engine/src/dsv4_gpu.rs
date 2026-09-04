@@ -4525,7 +4525,7 @@ impl Dsv4Gpu {
         let mut max_latent = 0usize;
         let mut max_d = 0usize;
         let mut max_shift = 0usize;
-        let mut min_ratio = usize::MAX;
+        let mut min_index_ratio = usize::MAX;
         for st in &self.stages {
             for l in &st.layers {
                 for cmp in l.cmp.iter().chain(l.idx.as_ref().map(|ix| &ix.cmp)) {
@@ -4534,12 +4534,14 @@ impl Dsv4Gpu {
                     if cmp.overlap {
                         max_shift = max_shift.max(cmp.ratio * cmp.latent);
                     }
-                    min_ratio = min_ratio.min(cmp.ratio);
+                }
+                if let Some(ix) = &l.idx {
+                    min_index_ratio = min_index_ratio.min(ix.cmp.ratio);
                 }
             }
         }
-        assert!(min_ratio != usize::MAX, "no compressor layers?");
-        let score_cap = self.max_seq / min_ratio + 1;
+        assert!(min_index_ratio != usize::MAX, "no indexer layers?");
+        let score_cap = self.max_seq / min_index_ratio + 1;
         let idx_tail = itopk.max(self.max_seq / 128 + 1);
         // the largest bf16 cvt any device-path gemm() performs (activation side, m=1):
         // wo_b consumes o_groups*o_lora, the o cvt covers heads*hd separately.
@@ -4569,7 +4571,7 @@ impl Dsv4Gpu {
                 kv: f(hd)?,
                 qi: f(iheads * ihd)?,
                 wproj: f(iheads)?,
-                score: f(score_cap)?,
+                score: f(tmax * score_cap)?,
                 idx: i(win + idx_tail)?,
                 o: f(heads * hd)?,
                 o_b: b(heads * hd * 2)?,
@@ -9859,53 +9861,55 @@ impl Dsv4Gpu {
                 let kks: Vec<usize> = nbs.iter().map(|&nb| ix.topk.min(nb)).collect();
                 let tail_max = kks.iter().cloned().max().unwrap_or(0);
                 slots = win + tail_max;
-                for i in 0..t {
-                    let pos = pos0 + i;
-                    let idx_off = i * vws.idx_stride;
-                    unsafe {
-                        ck(
-                            "build_idx_redirect fine",
-                            k::memra_dsv4_build_idx_redirect(
-                                (vws.idx.device_ptr_mut(&stream).0 as usize + idx_off * 4)
-                                    as *mut i32,
-                                pos as i32,
-                                win as i32,
-                                0, // fine layers: -1 pads over the whole tail; top-k overwrites
-                                slots as i32,
-                                pos0 as i32,
-                                trans_base as i32,
-                                sp(&stream),
-                            ),
-                        )?;
-                    }
-                    let nb = nbs[i];
-                    if nb == 0 {
-                        continue;
-                    }
-                    let wscale = ((ix.hd as f64).powf(-0.5) * (ix.heads as f64).powf(-0.5)) as f32;
-                    unsafe {
-                        ck(
-                            "indexer_score batch",
-                            self.indexer_score_arm(
-                                (vws.qi.device_ptr(&stream).0 as usize + i * ix.heads * ix.hd * 4)
-                                    as *const f32,
-                                dpf!(ikvc.as_ref().expect("ikvc"), &stream),
-                                (vws.wproj.device_ptr(&stream).0 as usize + i * ix.heads * 4)
-                                    as *const f32,
-                                wscale,
-                                dpm!(vws.score, &stream),
-                                1,
-                                ix.heads as i32,
-                                ix.hd as i32,
-                                nb as i32,
-                                ratio as i32,
-                                nb as i32,
-                                sp(&stream),
-                            ),
-                        )?;
-                    }
-                    let kk = kks[i];
-                    if host_math {
+                if host_math {
+                    for i in 0..t {
+                        let pos = pos0 + i;
+                        let idx_off = i * vws.idx_stride;
+                        unsafe {
+                            ck(
+                                "build_idx_redirect fine",
+                                k::memra_dsv4_build_idx_redirect(
+                                    (vws.idx.device_ptr_mut(&stream).0 as usize + idx_off * 4)
+                                        as *mut i32,
+                                    pos as i32,
+                                    win as i32,
+                                    0,
+                                    slots as i32,
+                                    pos0 as i32,
+                                    trans_base as i32,
+                                    sp(&stream),
+                                ),
+                            )?;
+                        }
+                        let nb = nbs[i];
+                        if nb == 0 {
+                            continue;
+                        }
+                        let wscale =
+                            ((ix.hd as f64).powf(-0.5) * (ix.heads as f64).powf(-0.5)) as f32;
+                        unsafe {
+                            ck(
+                                "indexer_score batch",
+                                self.indexer_score_arm(
+                                    (vws.qi.device_ptr(&stream).0 as usize
+                                        + i * ix.heads * ix.hd * 4)
+                                        as *const f32,
+                                    dpf!(ikvc.as_ref().expect("ikvc"), &stream),
+                                    (vws.wproj.device_ptr(&stream).0 as usize + i * ix.heads * 4)
+                                        as *const f32,
+                                    wscale,
+                                    dpm!(vws.score, &stream),
+                                    1,
+                                    ix.heads as i32,
+                                    ix.hd as i32,
+                                    nb as i32,
+                                    ratio as i32,
+                                    nb as i32,
+                                    sp(&stream),
+                                ),
+                            )?;
+                        }
+                        let kk = kks[i];
                         let score_h = {
                             let view = vws.score.slice(0..nb);
                             let mut v = vec![0f32; nb];
@@ -9931,19 +9935,59 @@ impl Dsv4Gpu {
                         stream
                             .memcpy_htod(&cidx, &mut dst)
                             .map_err(e("htod idx b"))?;
-                    } else {
+                    }
+                } else {
+                    let nb = nbs[t - 1];
+                    unsafe {
+                        ck(
+                            "build_idx_redirect_m fine",
+                            k::memra_dsv4_build_idx_redirect_m(
+                                vws.idx.device_ptr_mut(&stream).0 as *mut i32,
+                                pos0 as i32,
+                                t as i32,
+                                win as i32,
+                                ratio as i32,
+                                slots as i32,
+                                vws.idx_stride as i32,
+                                trans_base as i32,
+                                1,
+                                sp(&stream),
+                            ),
+                        )?;
+                    }
+                    if nb > 0 {
+                        let wscale =
+                            ((ix.hd as f64).powf(-0.5) * (ix.heads as f64).powf(-0.5)) as f32;
                         unsafe {
-                            let idx_tail_ptr = (vws.idx.device_ptr_mut(&stream).0 as usize
-                                + (idx_off + win) * 4)
-                                as *mut i32;
                             ck(
-                                "topk_idx batch",
-                                k::memra_dsv4_topk_idx(
-                                    dpf!(vws.score, &stream),
+                                "indexer_score_pos_m",
+                                k::memra_dsv4_indexer_score_f32acc_pos_m(
+                                    dpf!(vws.qi, &stream),
+                                    dpf!(ikvc.as_ref().expect("ikvc"), &stream),
+                                    dpf!(vws.wproj, &stream),
+                                    wscale,
+                                    dpm!(vws.score, &stream),
+                                    t as i32,
+                                    ix.heads as i32,
+                                    ix.hd as i32,
                                     nb as i32,
-                                    kk as i32,
+                                    ratio as i32,
+                                    pos0 as i32,
+                                    sp(&stream),
+                                ),
+                            )?;
+                            ck(
+                                "topk_idx_m",
+                                k::memra_dsv4_topk_idx_m(
+                                    dpf!(vws.score, &stream),
+                                    t as i32,
+                                    nb as i32,
+                                    ix.topk as i32,
                                     win as i32,
-                                    idx_tail_ptr,
+                                    vws.idx.device_ptr_mut(&stream).0 as *mut i32,
+                                    vws.idx_stride as i32,
+                                    pos0 as i32,
+                                    ratio as i32,
                                     sp(&stream),
                                 ),
                             )?;
@@ -9953,25 +9997,22 @@ impl Dsv4Gpu {
             } else {
                 let tail_max = nbs.iter().cloned().max().unwrap_or(0);
                 slots = win + tail_max;
-                for (i, &nb_i) in nbs.iter().enumerate() {
-                    let pos = pos0 + i;
-                    let idx_off = i * vws.idx_stride;
-                    unsafe {
-                        ck(
-                            "build_idx_redirect coarse",
-                            k::memra_dsv4_build_idx_redirect(
-                                (vws.idx.device_ptr_mut(&stream).0 as usize + idx_off * 4)
-                                    as *mut i32,
-                                pos as i32,
-                                win as i32,
-                                nb_i as i32,
-                                slots as i32,
-                                pos0 as i32,
-                                trans_base as i32,
-                                sp(&stream),
-                            ),
-                        )?;
-                    }
+                unsafe {
+                    ck(
+                        "build_idx_redirect_m coarse",
+                        k::memra_dsv4_build_idx_redirect_m(
+                            vws.idx.device_ptr_mut(&stream).0 as *mut i32,
+                            pos0 as i32,
+                            t as i32,
+                            win as i32,
+                            ratio as i32,
+                            slots as i32,
+                            vws.idx_stride as i32,
+                            trans_base as i32,
+                            0,
+                            sp(&stream),
+                        ),
+                    )?;
                 }
             }
             // attention compressor: batched projections + position-ordered state machine
@@ -10004,24 +10045,22 @@ impl Dsv4Gpu {
             }
             debug_assert_eq!(*n_blocks, nbs[t - 1], "attn block count (batch)");
         } else {
-            for i in 0..t {
-                let pos = pos0 + i;
-                let idx_off = i * vws.idx_stride;
-                unsafe {
-                    ck(
-                        "build_idx_redirect window-only",
-                        k::memra_dsv4_build_idx_redirect(
-                            (vws.idx.device_ptr_mut(&stream).0 as usize + idx_off * 4) as *mut i32,
-                            pos as i32,
-                            win as i32,
-                            -1,
-                            win as i32,
-                            pos0 as i32,
-                            trans_base as i32,
-                            sp(&stream),
-                        ),
-                    )?;
-                }
+            unsafe {
+                ck(
+                    "build_idx_redirect_m window-only",
+                    k::memra_dsv4_build_idx_redirect_m(
+                        vws.idx.device_ptr_mut(&stream).0 as *mut i32,
+                        pos0 as i32,
+                        t as i32,
+                        win as i32,
+                        0,
+                        win as i32,
+                        vws.idx_stride as i32,
+                        trans_base as i32,
+                        0,
+                        sp(&stream),
+                    ),
+                )?;
             }
         }
 

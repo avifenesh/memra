@@ -1802,6 +1802,65 @@ extern "C" int memra_dsv4_topk_idx(const float* score, int nb, int kk, int win, 
     return 0;
 }
 
+// Batched exact twin for chunked prefill: one independent bitonic block per query
+// row. Scores past that row's causal block limit are already -inf; sorting the common
+// nb_max therefore preserves the same top-k keys and value-desc/index-asc order as
+// launching dsv4_topk_idx_kernel with the shorter per-row nb.
+extern "C" __global__ void dsv4_topk_idx_m_kernel(
+        const float* __restrict__ score, int nb, int topk, int win,
+        int* __restrict__ idx_out, int idx_stride, int pos0, int ratio, int npow2) {
+    extern __shared__ unsigned long long keys[];
+    int row = blockIdx.x;
+    int tid = threadIdx.x;
+    const float* srow = score + (long)row * nb;
+    int lim = min(nb, (pos0 + row + 1) / ratio);
+    int kk = min(topk, lim);
+    for (int i = tid; i < npow2; i += blockDim.x) {
+        unsigned long long key = 0xFFFFFFFFFFFFFFFFull;
+        if (i < nb) {
+            unsigned b = __float_as_uint(srow[i]);
+            unsigned ord = b ^ ((b >> 31) ? 0xFFFFFFFFu : 0x80000000u);
+            key = (((unsigned long long)(~ord)) << 32) | (unsigned)i;
+        }
+        keys[i] = key;
+    }
+    __syncthreads();
+    for (int k = 2; k <= npow2; k <<= 1) {
+        for (int j = k >> 1; j > 0; j >>= 1) {
+            for (int i = tid; i < npow2; i += blockDim.x) {
+                int ixj = i ^ j;
+                if (ixj > i) {
+                    bool up = ((i & k) == 0);
+                    unsigned long long a = keys[i], b = keys[ixj];
+                    if ((a > b) == up) {
+                        keys[i] = b;
+                        keys[ixj] = a;
+                    }
+                }
+            }
+            __syncthreads();
+        }
+    }
+    int* out = idx_out + (long)row * idx_stride + win;
+    for (int i = tid; i < kk; i += blockDim.x)
+        out[i] = (int)(keys[i] & 0xFFFFFFFFull) + win;
+}
+
+extern "C" int memra_dsv4_topk_idx_m(const float* score, int s, int nb, int topk,
+                                      int win, int* idx_out, int idx_stride, int pos0,
+                                      int ratio, void* stream_v) {
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    if (s <= 0 || nb <= 0 || nb > 4096 || topk <= 0 || ratio <= 0 ||
+        idx_stride < win + min(topk, nb)) return 40008;
+    int npow2 = 1;
+    while (npow2 < nb) npow2 <<= 1;
+    size_t smem = (size_t)npow2 * sizeof(unsigned long long);
+    dsv4_topk_idx_m_kernel<<<(unsigned)s, 512, smem, stream>>>(
+        score, nb, topk, win, idx_out, idx_stride, pos0, ratio, npow2);
+    DSV4_ERR();
+    return 0;
+}
+
 // ---- lane-8 sink attention, decode shape (s=1), split into three kernels so the
 // slot dots / per-head softmax / output accumulation each get real parallelism
 // (the monolithic kernel ran 64 blocks re-gathering every kv row per head: 214 µs
@@ -2329,6 +2388,55 @@ extern "C" int memra_dsv4_indexer_score_f32acc(const float* q, const float* ckv,
     return 0;
 }
 
+// Absolute-position batched twin for chunked prefill. Arithmetic is verbatim from
+// dsv4_indexer_score_f32acc_kernel; only the causal limit includes pos0 so all query
+// rows can share one launch and one common nb_max.
+extern "C" __global__ void dsv4_indexer_score_f32acc_pos_m_kernel(
+    const float* __restrict__ q, const float* __restrict__ ckv,
+    const float* __restrict__ w, float wscale, float* __restrict__ score,
+    int s, int heads, int hd, int nb, int ratio, int pos0) {
+    long i = blockIdx.x;
+    if (i >= (long)s * nb) return;
+    int t = (int)(i / nb);
+    int j = (int)(i % nb);
+    int lim = (pos0 + t + 1) / ratio;
+    extern __shared__ float shhf[];
+    if (j >= lim) {
+        if (threadIdx.x == 0) score[i] = -INFINITY;
+        return;
+    }
+    int h = threadIdx.x;
+    if (h < heads) {
+        const float* qr = q + ((long)t * heads + h) * hd;
+        const float* kr = ckv + (long)j * hd;
+        float dacc = 0.0f;
+        for (int x = 0; x < hd; x++) dacc += qr[x] * kr[x];
+        float r = fmaxf(dacc, 0.0f);
+        float ws = w[(long)t * heads + h] * wscale;
+        shhf[h] = r * ws;
+    }
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        float acc = 0.0f;
+        for (int hh = 0; hh < heads; hh++) acc += shhf[hh];
+        score[i] = acc;
+    }
+}
+
+extern "C" int memra_dsv4_indexer_score_f32acc_pos_m(
+    const float* q, const float* ckv, const float* w, float wscale, float* score,
+    int s, int heads, int hd, int nb, int ratio, int pos0, void* stream_v) {
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    long n = (long)s * nb;
+    if (s <= 0 || nb <= 0 || ratio <= 0 || pos0 < 0 || n > 2147483647L ||
+        heads <= 0 || heads > 1024) return 40009;
+    dsv4_indexer_score_f32acc_pos_m_kernel<<<
+        (unsigned)n, heads, (size_t)heads * sizeof(float), stream>>>(
+        q, ckv, w, wscale, score, s, heads, hd, nb, ratio, pos0);
+    DSV4_ERR();
+    return 0;
+}
+
 // twins of the sink dec trio. den rides a FLOAT view of the caller's f64 workspace
 // (written by K2, read by K3 within one call — format internal to this entry point).
 extern "C" __global__ void dsv4_sink_scores_f32acc_kernel(const float* __restrict__ q,
@@ -2533,6 +2641,54 @@ extern "C" int memra_dsv4_build_idx_redirect(int* idx, int pos, int win, int nb,
     int blocks = (cap + threads - 1) / threads;
     dsv4_build_idx_redirect_kernel<<<blocks, threads, 0, stream>>>(idx, pos, win, nb, cap,
                                                                    pos0, trans_base);
+    DSV4_ERR();
+    return 0;
+}
+
+// Batched redirect builder for one contiguous teacher-forced transaction. One flat
+// launch replaces T scalar launches; each (row,slot) expression is verbatim from
+// dsv4_build_idx_redirect_kernel. fine!=0 leaves the compressed tail padded for the
+// batched top-k kernel; coarse layers append every causally complete ratio block.
+extern "C" __global__ void dsv4_build_idx_redirect_m_kernel(
+        int* __restrict__ idx, int pos0, int s, int win, int ratio, int cap,
+        int stride, int trans_base, int fine) {
+    long z = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (z >= (long)s * cap) return;
+    int row = (int)(z / cap);
+    int k = (int)(z % cap);
+    int pos = pos0 + row;
+    int v;
+    if (k < win) {
+        if (pos >= win - 1) {
+            int sp = pos % win;
+            int head = win - 1 - sp;
+            v = (k < head) ? (sp + 1 + k) : (k - head);
+        } else {
+            v = (k <= pos) ? k : -1;
+        }
+        if (v >= 0) {
+            int q = pos - ((pos % win - v + win) % win);
+            if (q >= pos0) v = trans_base + (q - pos0);
+        }
+    } else {
+        int c = k - win;
+        int nb = (fine || ratio <= 0) ? -1 : (pos + 1) / ratio;
+        v = (nb >= 0 && c < nb) ? (win + c) : -1;
+    }
+    idx[(long)row * stride + k] = v;
+}
+
+extern "C" int memra_dsv4_build_idx_redirect_m(
+        int* idx, int pos0, int s, int win, int ratio, int cap, int stride,
+        int trans_base, int fine, void* stream_v) {
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    long n = (long)s * cap;
+    if (s <= 0 || pos0 < 0 || win <= 0 || cap < win || stride < cap ||
+        n > 2147483647L) return 40020;
+    int threads = 128;
+    int blocks = (int)((n + threads - 1) / threads);
+    dsv4_build_idx_redirect_m_kernel<<<blocks, threads, 0, stream>>>(
+        idx, pos0, s, win, ratio, cap, stride, trans_base, fine);
     DSV4_ERR();
     return 0;
 }

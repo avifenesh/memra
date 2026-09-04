@@ -363,6 +363,19 @@ unsafe extern "C" {
         idx_out: *mut i32,
         stream: *mut c_void,
     ) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_topk_idx_m(
+        score: *const f32,
+        s: i32,
+        nb: i32,
+        topk: i32,
+        win: i32,
+        idx_out: *mut i32,
+        idx_stride: i32,
+        pos0: i32,
+        ratio: i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_argmax(v: *const f32, n: i64, out: *mut i32, stream: *mut c_void) -> i32;
     /// iteration-5: `dst[0..cols) = src[idx[slot] * cols ..]`, the index read on the
     /// DEVICE so the DSpark markov chain needs no host round trip between steps.
@@ -458,6 +471,21 @@ unsafe extern "C" {
         stream: *mut c_void,
     ) -> i32;
     #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_indexer_score_f32acc_pos_m(
+        q: *const f32,
+        ckv: *const f32,
+        w: *const f32,
+        wscale: f32,
+        score: *mut f32,
+        s: i32,
+        heads: i32,
+        hd: i32,
+        nb: i32,
+        ratio: i32,
+        pos0: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    #[allow(clippy::too_many_arguments)]
     pub fn memra_dsv4_sink_attn_dec_f32acc(
         q: *const f32,
         kv: *const f32,
@@ -501,6 +529,19 @@ unsafe extern "C" {
         cap: i32,
         pos0: i32,
         trans_base: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_build_idx_redirect_m(
+        idx: *mut i32,
+        pos0: i32,
+        s: i32,
+        win: i32,
+        ratio: i32,
+        cap: i32,
+        stride: i32,
+        trans_base: i32,
+        fine: i32,
         stream: *mut c_void,
     ) -> i32;
 
