@@ -407,5 +407,5 @@ aggregate **26.7 tok/s** through the honest bs=1 FIFO (S7 cell — queueing meas
 hidden, which is why aggregate lands *below* plain single-stream). Compare the served
 flagship at ~259 tok/s single / 238–245 aggregate on one card. The tuning path to
 serving-grade — batched decode, PP-2 placement, round-cost work, prefix cache — is
-tracked in [#32](https://github.com/avifenesh/memra/issues/32); until those rows exist,
+tracked in [#4](https://github.com/avifenesh/memra/issues/4); until those rows exist,
 do not read this section as a serving recommendation.

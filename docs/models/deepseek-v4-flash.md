@@ -8,5 +8,5 @@
 | **Use this when** | You are evaluating or contributing to the experimental path, not deploying it as a supported server |
 
 Read the [DeepSeek section](../MODELS.md#deepseek-v4-checkpoint-dirs-serve-through-their-own-door-lanedsv4-flash-revival-20260822)
-and follow [issue #32](https://github.com/avifenesh/memra/issues/32). Do not infer production support
+and follow [issue #4](https://github.com/avifenesh/memra/issues/4). Do not infer production support
 from a successful load or prompt.

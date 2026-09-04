@@ -54,7 +54,7 @@ seams (`MEMRA_DSV4_DRAFTER`, `MEMRA_DSV4_DEVICES`, `MEMRA_DSV4_SPEC_DEPTH`,
 `MEMRA_DSV4_VT`, `MEMRA_DSV4_VT_TAU`/`_FLOOR`,
 lane/dsv4-flash-revival-20260822). The dsv4 door itself is **experimental engine
 support, not a serving-grade path** (docs/MODELS.md has the posture and the numbers;
-tuning is issue #32). The remaining `MEMRA_DSV4_*` names are that door's bench/gate
+tuning is issue #4). The remaining `MEMRA_DSV4_*` names are that door's bench/gate
 instrument seams (bench drivers, NVTX/profile hooks, gate dumps, sweep inputs),
 covered here as a prefix — none of them is a serving knob.
 Unmerged lane flags stay deliberately absent — they arrive with

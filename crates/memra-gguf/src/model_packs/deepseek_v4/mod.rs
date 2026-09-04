@@ -196,7 +196,16 @@ fn expected_for_pack(config: &ModelConfig) -> std::collections::BTreeMap<String,
     if config.nextn_predict_layers != 3 {
         return expected;
     }
+    // The 0731 serving artifact is the source-exact house mint: only the 43 trunk expert
+    // banks were losslessly recoded to NVFP4, `input_scale` was deliberately omitted because
+    // the native engine quantizes activations dynamically, and all three DSpark expert banks
+    // remain in DeepSeek's MXFP4 container. Keep this contract byte-faithful to that artifact;
+    // NVIDIA's later 0731 mint adds calibrated trunk input_scale tensors but makes the same
+    // `mtp.*` exclusion.
     expected.retain(|name, _| {
+        let trunk_input_scale = name.starts_with("layers.")
+            && name.contains(".ffn.experts.")
+            && name.ends_with(".input_scale");
         let mtp_expert = name.starts_with("mtp.") && name.contains(".ffn.experts.");
         let old_glue = name.starts_with("mtp.")
             && (name.contains(".e_proj")
@@ -205,7 +214,7 @@ fn expected_for_pack(config: &ModelConfig) -> std::collections::BTreeMap<String,
                 || name.ends_with(".hnorm.weight")
                 || name.ends_with(".norm.weight")
                 || name.contains(".hc_head_"));
-        !(mtp_expert || old_glue)
+        !(trunk_input_scale || mtp_expert || old_glue)
     });
     let dsv4 = config.dsv4.as_ref().expect("DSV4 config");
     let moe = config.moe.as_ref().expect("DSV4 MoE config");
@@ -232,6 +241,8 @@ fn expected_for_pack(config: &ModelConfig) -> std::collections::BTreeMap<String,
             },
         );
     };
+    // Rebuild the DSpark expert schema in its source MXFP4 layout. The generic DSV4 census
+    // describes the older one-block NextN program, so the three-block DSpark pack replaces it.
     for block in 0..3u32 {
         for expert in 0..experts {
             for (projection, output, input) in [
@@ -243,29 +254,15 @@ fn expected_for_pack(config: &ModelConfig) -> std::collections::BTreeMap<String,
                 expected.insert(
                     format!("{stem}.weight"),
                     TensorSpec {
-                        dtype: "U8",
+                        dtype: "I8",
                         shape: vec![output, input / 2],
                     },
                 );
                 expected.insert(
-                    format!("{stem}.weight_scale"),
+                    format!("{stem}.scale"),
                     TensorSpec {
-                        dtype: "F8_E4M3",
-                        shape: vec![output, input / 16],
-                    },
-                );
-                expected.insert(
-                    format!("{stem}.weight_scale_2"),
-                    TensorSpec {
-                        dtype: "F32",
-                        shape: Vec::new(),
-                    },
-                );
-                expected.insert(
-                    format!("{stem}.input_scale"),
-                    TensorSpec {
-                        dtype: "F32",
-                        shape: Vec::new(),
+                        dtype: "F8_E8M0",
+                        shape: vec![output, input / 32],
                     },
                 );
             }
@@ -749,8 +746,33 @@ mod tests {
         );
         assert!(contract.requirements.iter().any(|requirement| {
             requirement.names == ["mtp.0.ffn.experts.0.w1.weight"]
-                && requirement.quant == QuantConstraint::Nvfp4
+                && requirement.quant == QuantConstraint::Mxfp4
         }));
+        let trunk = contract
+            .requirements
+            .iter()
+            .find(|requirement| requirement.names == ["layers.0.ffn.experts.0.w1.weight"])
+            .unwrap();
+        assert_eq!(trunk.quant, QuantConstraint::Nvfp4);
+        assert_eq!(
+            trunk.auxiliaries.as_deref(),
+            Some(
+                [
+                    "layers.0.ffn.experts.0.w1.weight_scale".to_string(),
+                    "layers.0.ffn.experts.0.w1.weight_scale_2".to_string(),
+                ]
+                .as_slice()
+            )
+        );
+        let draft = contract
+            .requirements
+            .iter()
+            .find(|requirement| requirement.names == ["mtp.0.ffn.experts.0.w1.weight"])
+            .unwrap();
+        assert_eq!(
+            draft.auxiliaries.as_deref(),
+            Some(["mtp.0.ffn.experts.0.w1.scale".to_string()].as_slice())
+        );
         assert!(contract.requirements.iter().any(|requirement| {
             requirement.names == ["mtp.2.confidence_head.proj.weight"]
                 && requirement.id == TensorId::Dspark(DsparkTensor::ConfidenceProjection)
