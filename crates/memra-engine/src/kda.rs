@@ -265,12 +265,36 @@ pub(crate) enum KdaStash<'a> {
     Rows(&'a mut Option<KdaRowsStash>),
 }
 
+/// `MEMRA_KDA_STEP_TRACE=1` (gate-harness instrument, default OFF, never a serving flag): after
+/// each sub-step of the KDA core, print the non-finite element count of every live buffer on one
+/// line. memra#131 cell 9 placed the graph door's poison inside `kda_decode_cached` at layer 4
+/// (finite input, finite state, all-NaN mixer output after a capture); this names the kernel.
+fn kda_trace_on() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var("MEMRA_KDA_STEP_TRACE").as_deref() == Ok("1"))
+}
+fn kda_trace(e: &Engine, stage: &str, t: usize, bufs: &[(&str, &CudaSlice<f32>)]) {
+    if !kda_trace_on() {
+        return;
+    }
+    let mut line = format!("[kda-step-trace] t={t} {stage}:");
+    for (name, b) in bufs {
+        let n = match e.dtoh(b) {
+            Ok(v) => v.iter().filter(|x| !x.is_finite()).count(),
+            Err(_) => usize::MAX,
+        };
+        line.push_str(&format!(" {name}={n}/{}", b.len()));
+    }
+    eprintln!("{line}");
+}
+
 /// The whole mixer, stage for stage against `memra_reference::kimi_delta_net`.
 ///
 /// `ring` is the fused `[3*qkv, kernel-1]` conv state (zeroed = fresh prefill's zero left pad)
 /// and is updated in place. `state_in`/`state_out` are the `[heads, 128, 128]` recurrent state
 /// in the kernel's transposed `M[col][i]` layout; they MUST be distinct buffers.
-#[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
+#[allow(clippy::too_many_arguments)]
+// allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
 fn kda_core(
     e: &Engine,
     la: &KdaAttnLayer,
@@ -402,6 +426,17 @@ pub(crate) fn kda_core_gated(
     let beta_raw = g6.pop().unwrap(); // [T, heads]
     let gate_down = g6.pop().unwrap(); // [T, head_dim]
     let forget_down = g6.pop().unwrap(); // [T, head_dim]
+    if kda_trace_on() {
+        let mut v: Vec<(&str, &CudaSlice<f32>)> = vec![("x", x)];
+        let names = ["g6_0", "g6_1", "g6_2", "g6_3", "g6_4", "g6_5"];
+        for (k, b) in g6.iter().enumerate() {
+            v.push((names[k.min(5)], b));
+        }
+        v.push(("forget_down", &forget_down));
+        v.push(("gate_down", &gate_down));
+        v.push(("beta_raw", &beta_raw));
+        kda_trace(e, "proj", t, &v);
+    }
     let v_raw = g6.pop().unwrap(); // [T, qkv]
     let k_raw = g6.pop().unwrap();
     let q_raw = g6.pop().unwrap();
@@ -473,6 +508,18 @@ pub(crate) fn kda_core_gated(
     };
     e.l2_norm(&q_conv, &mut q_l2, head_dim, t * heads, KDA_L2_EPS)?;
     e.l2_norm(&k_conv, &mut k_l2, head_dim, t * heads, KDA_L2_EPS)?;
+    kda_trace(
+        e,
+        "conv+l2",
+        t,
+        &[
+            ("q_conv", &q_conv),
+            ("k_conv", &k_conv),
+            ("v_conv", &v_conv),
+            ("q_l2", &q_l2),
+            ("k_l2", &k_l2),
+        ],
+    );
     // Door W: the convs' last readers were the l2 norms (the ring rolls read the raws).
     if rows_exact {
         e.vws_recycle(q_conv);
@@ -507,6 +554,7 @@ pub(crate) fn kda_core_gated(
         e.uninit(t * heads)?
     };
     e.sigmoid(&beta_raw, &mut beta, t * heads)?;
+    kda_trace(e, "gates", t, &[("forget", &forget), ("beta", &beta)]);
     // Door W: forget_down's last reader was the f_b matmul, forget's the gate kernel,
     // beta_raw's the sigmoid.
     if rows_exact {
@@ -535,6 +583,16 @@ pub(crate) fn kda_core_gated(
     e.kda_scan(
         &q_l2, &k_l2, &v_conv, &g_log, &beta, state_in, state_out, &mut core, heads, t, scale,
     )?;
+    kda_trace(
+        e,
+        "scan",
+        t,
+        &[
+            ("state_in", state_in),
+            ("core", &core),
+            ("state_out", state_out),
+        ],
+    );
     if let (Some(ns), Some(t0)) = (scan_clock.take(), scan_t0) {
         let _ = e.stream().synchronize();
         *ns += t0.elapsed().as_nanos() as u64;
@@ -561,6 +619,7 @@ pub(crate) fn kda_core_gated(
         t * heads,
         eps,
     )?;
+    kda_trace(e, "gated_norm", t, &[("gate", &gate), ("gated", &gated)]);
     // Door W: gate_down's last reader was the g_b matmul; core's and gate's the
     // gated-rmsnorm above.
     if rows_exact {
