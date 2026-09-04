@@ -526,6 +526,16 @@ impl PrimePpStageChannels {
 /// not carry — `mla_kpool_indices` allocates it on first use and leaves it resident thereafter.
 /// A caller that hands over a fresh `None` every call (the stateless arm) gets the old
 /// rebuild-everything behaviour, which is exactly right when the state itself is per-call.
+/// The MLA core's PRE segment outputs (lane/glm5-mla-segments-20260904): everything the
+/// append and the attention read from the projections.
+pub(crate) struct MlaPreOut {
+    pub q_nope: CudaSlice<f32>,
+    pub q_pe: CudaSlice<f32>,
+    pub q_an: CudaSlice<f32>,
+    pub c_kv_n: CudaSlice<f32>,
+    pub k_pe: CudaSlice<f32>,
+}
+
 pub struct IndexerPlanes<'a> {
     pub state: &'a mut CudaSlice<f32>,
     pub pool_keys: &'a mut Option<CudaSlice<f32>>,
@@ -8375,6 +8385,13 @@ impl HybridModel {
     /// is the wrapper above, byte-for-byte the pre-split body (the wo matmul moved,
     /// nothing else).
     #[allow(clippy::too_many_arguments)]
+    /// The MLA core split into its three segments (lane/glm5-mla-segments-20260904), same kernels
+    /// in the same order as the single function they replace, so that the decode graph can
+    /// capture the projections (pre) and the attention (post) with the adjacent KDA runs while
+    /// the position-dependent middle (append, pool keys, score, select) stays eager. This is the
+    /// pure refactor step: [`Self::mla_attn_core_pre_wo`] is pre -> mid -> post and every caller
+    /// is unchanged.
+    #[allow(clippy::too_many_arguments)]
     fn mla_attn_core_pre_wo(
         &self,
         e: &Engine,
@@ -8388,17 +8405,46 @@ impl HybridModel {
         slot: usize,
         rows_exact: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let pre = self.mla_seg_pre(e, mla, h, pos_d, t, il, rows_exact)?;
+        let gathered = self.mla_seg_mid(
+            e,
+            mla,
+            h,
+            &pre,
+            latent,
+            index_plane,
+            t,
+            il,
+            slot,
+            rows_exact,
+        )?;
+        self.mla_seg_post(e, mla, pre, gathered, latent, t, il, slot, rows_exact)
+    }
+
+    /// Segment PRE of the MLA core: the q and kv projections, their norms, the latent splits and
+    /// the rope of both position planes. Position enters only through `pos_d` (a device
+    /// pointer), so this segment is capturable.
+    #[allow(clippy::too_many_arguments)]
+    fn mla_seg_pre(
+        &self,
+        e: &Engine,
+        mla: &crate::hybrid::MlaAttnLayer,
+        h: &CudaSlice<f32>,
+        pos_d: &CudaSlice<i32>,
+        t: usize,
+        il: usize,
+        rows_exact: bool,
+    ) -> Result<MlaPreOut, Box<dyn std::error::Error>> {
         let g = mla.geom;
         let cfg = &self.cfg;
         let eps = cfg.rms_eps;
         let base = cfg.rope_freq_base;
-        let (nh, dn, dr, dv, r) = (g.n_head, g.d_nope, g.d_rope, g.d_v, g.kv_rank);
+        let (nh, dn, dr, r) = (g.n_head, g.d_nope, g.d_rope, g.kv_rank);
         assert_eq!(
             g.latent_dim,
             r + dr,
             "layer {il}: MlaGeom latent_dim disagrees with kv_rank + d_rope"
         );
-        let t_kv = slot + t;
         // Verify-batch matmul seam (lane/glm5-verify-batch): rows_exact routes every
         // projection through the decode-exact classes so each of the t rows is
         // bit-identical to the t=1 decode program (matmul_rows_exact contract); false =
@@ -8436,14 +8482,43 @@ impl HybridModel {
         let mut c_kv_n = e.uninit(t * r)?;
         e.rms_norm(&c_kv, mla.kv_a_norm.float_data(), &mut c_kv_n, r, t, eps)?;
         e.mla_rope_interleaved(&mut k_pe, pos_d, t, 1, dr, base)?;
-        e.mla_append_latent(latent, &c_kv_n, &k_pe, slot, t, r, dr)?;
 
         // --- DSA k-pool selection, BEFORE attending: the indexer's own state row for each of
         // this call's tokens is appended first, so a query sees itself exactly as the latent
         // plane already lets it (the reference concatenates into the indexer cache, then scores).
+        Ok(MlaPreOut {
+            q_nope,
+            q_pe,
+            q_an,
+            c_kv_n,
+            k_pe,
+        })
+    }
+
+    /// Segment MID of the MLA core: the latent append at `slot` and the DSA k-pool selection.
+    /// Both derive launch geometry from the host-side `slot`, which is why this segment is the
+    /// one the decode graph leaves eager.
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    fn mla_seg_mid(
+        &self,
+        e: &Engine,
+        mla: &crate::hybrid::MlaAttnLayer,
+        h: &CudaSlice<f32>,
+        pre: &MlaPreOut,
+        latent: &mut CudaSlice<f32>,
+        index_plane: Option<IndexerPlanes<'_>>,
+        t: usize,
+        il: usize,
+        slot: usize,
+        rows_exact: bool,
+    ) -> Result<Option<(CudaSlice<i32>, usize)>, Box<dyn std::error::Error>> {
+        let g = mla.geom;
+        let (dr, r) = (g.d_rope, g.kv_rank);
+        e.mla_append_latent(latent, &pre.c_kv_n, &pre.k_pe, slot, t, r, dr)?;
+        let q_an = &pre.q_an;
         let gathered = match (&mla.index, index_plane) {
             (Some(indexer), Some(plane)) => {
-                Some(self.mla_kpool_select(e, indexer, h, &q_an, plane, t, slot, il, rows_exact)?)
+                Some(self.mla_kpool_select(e, indexer, h, q_an, plane, t, slot, il, rows_exact)?)
             }
             (Some(_), None) => {
                 return Err(format!(
@@ -8457,6 +8532,29 @@ impl HybridModel {
         };
 
         // --- absorbed MLA core over the latent plane ---
+        Ok(gathered)
+    }
+
+    /// Segment POST of the MLA core: the absorbed query, the attention over the selected (or
+    /// full) latent rows, the value decompression. Its geometry is the selection width, which
+    /// is constant past `topk * pool` tokens, so this segment is capturable there.
+    #[allow(clippy::too_many_arguments)]
+    fn mla_seg_post(
+        &self,
+        e: &Engine,
+        mla: &crate::hybrid::MlaAttnLayer,
+        pre: MlaPreOut,
+        gathered: Option<(CudaSlice<i32>, usize)>,
+        latent: &CudaSlice<f32>,
+        t: usize,
+        il: usize,
+        slot: usize,
+        rows_exact: bool,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let g = mla.geom;
+        let (nh, dn, dr, dv, r) = (g.n_head, g.d_nope, g.d_rope, g.d_v, g.kv_rank);
+        let t_kv = slot + t;
+        let MlaPreOut { q_nope, q_pe, .. } = pre;
         let wk_b = Self::mla_split_operand(&mla.wk_b, "attn_k_b", il);
         let wv_b = Self::mla_split_operand(&mla.wv_b, "attn_v_b", il);
 
