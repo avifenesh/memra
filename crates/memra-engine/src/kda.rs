@@ -277,6 +277,13 @@ fn kda_trace(e: &Engine, stage: &str, t: usize, bufs: &[(&str, &CudaSlice<f32>)]
     if !kda_trace_on() {
         return;
     }
+    // A device-to-host copy is illegal inside an open CUDA graph capture (it invalidates the
+    // capture); box cell 11 (memra#131) hit exactly that on the session's first decode step,
+    // which the door captures. Print the stage with a note instead of counting.
+    if crate::glm5_graph_capture_open() {
+        eprintln!("[kda-step-trace] t={t} {stage}: (inside an open graph capture; not counted)");
+        return;
+    }
     let mut line = format!("[kda-step-trace] t={t} {stage}:");
     for (name, b) in bufs {
         let n = match e.dtoh(b) {
