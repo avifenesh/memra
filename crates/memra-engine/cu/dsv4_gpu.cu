@@ -96,14 +96,36 @@ __device__ __forceinline__ float dsv4_e2m1_rne(float v) {
 __device__ __forceinline__ float dsv4_sigmoid(float x) { return 1.0f / (1.0f + expf(-x)); }
 
 // block tree-reduce of double partials in shared memory (deterministic: fixed tree).
+// Block reduction with a WARP TAIL. Same pairing, same order, same addends as the all-barrier
+// tree it replaces -- `sh[tid] += sh[tid + off]` at every level, descending -- so it is
+// bit-identical by construction, not a numeric class. Only the BARRIER changes.
+//
+// WHY. Once `off <= 32` every active thread (tid < off) and every element it reads
+// (sh[tid + off], index < 64 after the off=64 level) lives in warp 0, so a block-wide barrier
+// there stalls up to 512 threads to order work that one warp already orders itself. On the hc
+// pre-chain that reduction is ~3.6 us of an 8.83 us kernel, because at decode the kernel's grid
+// is the sequence length and s=1 leaves ONE block resident with nothing to hide barrier latency
+// (measured: removing stage 1's loop but keeping this reduction still costs 4.1 us). At
+// blockDim 512 this cuts ten block barriers to four.
+//
+// The trailing __syncthreads is required: the warp tail leaves threads outside warp 0 unsynced,
+// and every thread reads sh[0].
 __device__ __forceinline__ double dsv4_block_sum(double v, double* sh) {
     int tid = threadIdx.x;
     sh[tid] = v;
     __syncthreads();
-    for (int off = blockDim.x >> 1; off > 0; off >>= 1) {
+    int off = blockDim.x >> 1;
+    for (; off >= 64; off >>= 1) {
         if (tid < off) sh[tid] += sh[tid + off];
         __syncthreads();
     }
+    if (tid < 32) {
+        for (; off > 0; off >>= 1) {
+            if (tid < off) sh[tid] += sh[tid + off];
+            __syncwarp();
+        }
+    }
+    __syncthreads();
     return sh[0];
 }
 
@@ -2154,14 +2176,36 @@ extern "C" int memra_dsv4_argmax(const float* v, long n, int* out, void* stream_
 // only) or the rung reverts.
 
 // float twin of dsv4_block_sum (same fixed tree).
+// Block reduction with a WARP TAIL. Same pairing, same order, same addends as the all-barrier
+// tree it replaces -- `sh[tid] += sh[tid + off]` at every level, descending -- so it is
+// bit-identical by construction, not a numeric class. Only the BARRIER changes.
+//
+// WHY. Once `off <= 32` every active thread (tid < off) and every element it reads
+// (sh[tid + off], index < 64 after the off=64 level) lives in warp 0, so a block-wide barrier
+// there stalls up to 512 threads to order work that one warp already orders itself. On the hc
+// pre-chain that reduction is ~3.6 us of an 8.83 us kernel, because at decode the kernel's grid
+// is the sequence length and s=1 leaves ONE block resident with nothing to hide barrier latency
+// (measured: removing stage 1's loop but keeping this reduction still costs 4.1 us). At
+// blockDim 512 this cuts ten block barriers to four.
+//
+// The trailing __syncthreads is required: the warp tail leaves threads outside warp 0 unsynced,
+// and every thread reads sh[0].
 __device__ __forceinline__ float dsv4_block_sum_f32(float v, float* sh) {
     int tid = threadIdx.x;
     sh[tid] = v;
     __syncthreads();
-    for (int off = blockDim.x >> 1; off > 0; off >>= 1) {
+    int off = blockDim.x >> 1;
+    for (; off >= 64; off >>= 1) {
         if (tid < off) sh[tid] += sh[tid + off];
         __syncthreads();
     }
+    if (tid < 32) {
+        for (; off > 0; off >>= 1) {
+            if (tid < off) sh[tid] += sh[tid + off];
+            __syncwarp();
+        }
+    }
+    __syncthreads();
     return sh[0];
 }
 
