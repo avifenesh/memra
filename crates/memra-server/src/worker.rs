@@ -1066,6 +1066,11 @@ pub enum Event {
     /// Authoritative terminal token ids for blocking native responses. Streaming consumers ignore
     /// this snapshot; it precedes `Done` and must agree with the per-token event sequence.
     TokenSnapshot(Vec<u32>),
+    /// The streaming first-token deadline elapsed after the HTTP response had to be
+    /// committed so an upstream proxy could receive SSE keepalive comments. This event is
+    /// produced by the HTTP-side prefill bridge, never by the GPU worker. Consumers settle
+    /// it as the named, zero-debit `deadline_exceeded` outcome and close the stream.
+    DeadlineExceeded { ms: u64 },
     /// Terminal event: why we stopped + final token count + timing. `n_prompt` / `n_cached`
     /// are WORKER-TRUTH prompt accounting: total prompt tokens this session fed or resumed —
     /// the tokenized RENDERED prompt (tools block included when one was rendered; the
@@ -1107,6 +1112,7 @@ impl Event {
                 Self::TokenSnapshot(tokens) => {
                     tokens.len().saturating_mul(std::mem::size_of::<u32>())
                 }
+                Self::DeadlineExceeded { .. } => 0,
                 Self::Done { stop_reason, .. } => stop_reason.len(),
                 Self::Error(error) => error.message.len(),
             }

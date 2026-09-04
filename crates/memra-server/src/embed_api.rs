@@ -349,6 +349,12 @@ async fn collect_capture(
                 got_capture = true;
             }
             Event::Token { .. } | Event::TokenSnapshot(_) => {}
+            Event::DeadlineExceeded { ms } => {
+                if let Some(receipt) = receipt.as_mut() {
+                    let _ = receipt.settle_unbilled("deadline_exceeded", 408, "deadline_exceeded");
+                }
+                return Err(rl.attach(crate::deadline_exceeded_response(ms, false)));
+            }
             Event::Done {
                 n_prompt: np,
                 n_cached,
@@ -473,7 +479,7 @@ async fn embeddings_with_admission(
         Ok(t) => t,
         Err(resp) => return crate::with_request_id(&env.id, resp),
     };
-    let deadline = match crate::parse_timeout_ms(req.timeout_ms.as_ref()) {
+    let deadline = match crate::parse_timeout_ms(req.timeout_ms.as_ref(), false) {
         Ok(ms) => crate::RequestDeadline::starting_now(ms),
         Err(msg) => {
             return crate::with_request_id(&env.id, crate::bad_request(&msg, Some("timeout_ms")));
@@ -585,7 +591,7 @@ async fn rerank_with_admission(
         Ok(t) => t,
         Err(resp) => return crate::with_request_id(&env.id, resp),
     };
-    let deadline = match crate::parse_timeout_ms(req.timeout_ms.as_ref()) {
+    let deadline = match crate::parse_timeout_ms(req.timeout_ms.as_ref(), false) {
         Ok(ms) => crate::RequestDeadline::starting_now(ms),
         Err(msg) => {
             return crate::with_request_id(&env.id, crate::bad_request(&msg, Some("timeout_ms")));

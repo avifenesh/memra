@@ -100,7 +100,7 @@ pub(crate) async fn admit_translated(
     // Request deadline (lane/deadline-billing): the ONE `parse_timeout_ms` body every
     // surface validates through; the translators pass the field through untouched so a
     // wrong type or range refuses HERE with the same named 400 as the chat surface.
-    let deadline = match crate::parse_timeout_ms(req.timeout_ms.as_ref()) {
+    let deadline = match crate::parse_timeout_ms(req.timeout_ms.as_ref(), req.stream) {
         Ok(ms) => crate::RequestDeadline::starting_now(ms),
         Err(msg) => return Err(crate::bad_request(&msg, Some("timeout_ms"))),
     };
@@ -280,18 +280,19 @@ pub(crate) async fn admit_translated(
     }
     // BACKPRESSURE (lane/deadline-billing): shed at submission — never after — when the
     // queue is at its bound or the estimated wait cannot fit the request's deadline.
-    let pending_admit = match crate::reserve_pending_admit(st, lane, &rl, deadline) {
-        Ok(guard) => guard,
-        Err((resp, outcome)) => {
-            return Err(crate::ledger_unbilled(
-                receipt,
-                rl.attach(resp),
-                outcome,
-                outcome,
-                &env.id,
-            ));
-        }
-    };
+    let pending_admit =
+        match crate::reserve_pending_admit(st, lane, &rl, deadline.preheader(stream)) {
+            Ok(guard) => guard,
+            Err((resp, outcome)) => {
+                return Err(crate::ledger_unbilled(
+                    receipt,
+                    rl.attach(resp),
+                    outcome,
+                    outcome,
+                    &env.id,
+                ));
+            }
+        };
     // Vision phase 2 (hermes decode-bomb finding, fixed 2026-08-23): canvases expand only after
     // budget and slot admission priced the header-planned pad runs. The process-wide memory
     // permit moves into the worker request and survives streaming until completion/cancellation.
@@ -332,7 +333,8 @@ pub(crate) async fn admit_translated(
     if let Some(ready) = constraint_ready {
         // Bounded by the request's own deadline too — a sub-5s timeout_ms must not be
         // overshot by the compile window (same law as the chat surface).
-        let bound = constrained::CONSTRAINT_COMPILE_TIMEOUT.min(deadline.remaining());
+        let bound =
+            constrained::CONSTRAINT_COMPILE_TIMEOUT.min(deadline.preheader(stream).remaining());
         match tokio::time::timeout(bound, ready).await {
             Ok(Ok(Ok(()))) => {}
             Ok(Ok(Err(err))) => {
@@ -351,10 +353,10 @@ pub(crate) async fn admit_translated(
                     &env.id,
                 ));
             }
-            Err(_) if deadline.remaining().is_zero() => {
+            Err(_) if deadline.preheader(stream).remaining().is_zero() => {
                 return Err(crate::ledger_unbilled(
                     receipt,
-                    rl.attach(crate::deadline_exceeded_response(deadline.ms, stream)),
+                    rl.attach(crate::admission_deadline_response(deadline, stream)),
                     "deadline_exceeded",
                     "deadline_exceeded",
                     &env.id,
@@ -374,7 +376,9 @@ pub(crate) async fn admit_translated(
     }
     // DEADLINE: the admission wait counts against timeout_ms; dropping rx on a miss IS
     // the cancel (the worker prunes closed-channel requests at the next tick).
-    let rx = match tokio::time::timeout_at(deadline.at, crate::peek_admission(rx)).await {
+    let rx = match tokio::time::timeout_at(deadline.preheader(stream).at, crate::peek_admission(rx))
+        .await
+    {
         Ok(Ok(rx)) => rx,
         Ok(Err((resp, error_code))) => {
             return Err(crate::ledger_rejected(
@@ -387,7 +391,7 @@ pub(crate) async fn admit_translated(
         Err(_) => {
             return Err(crate::ledger_unbilled(
                 receipt,
-                rl.attach(crate::deadline_exceeded_response(deadline.ms, stream)),
+                rl.attach(crate::admission_deadline_response(deadline, stream)),
                 "deadline_exceeded",
                 "deadline_exceeded",
                 &env.id,
@@ -434,6 +438,9 @@ pub(crate) enum CollectError {
     Ledger,
     /// The engine classified a fault (receipt rejected with its class/status).
     Engine(worker::EngineError),
+    /// A committed-prefill bridge timeout. The bridge is streaming-only, but handling it
+    /// here keeps the event contract total if a future translated surface reuses this body.
+    Deadline(u64),
 }
 
 /// Drain the worker's event stream to a terminal snapshot with EXACTLY the receipt
@@ -499,6 +506,19 @@ pub(crate) async fn collect_final(
                 }
             }
             Event::TokenSnapshot(_) => {}
+            Event::DeadlineExceeded { ms } => {
+                if let Some(receipt) = receipt.as_mut()
+                    && let Err(ledger_err) =
+                        receipt.settle_unbilled("deadline_exceeded", 408, "deadline_exceeded")
+                {
+                    eprintln!(
+                        "[ledger] ERROR: request {} deadline receipt failed: {ledger_err}",
+                        env.id
+                    );
+                    return Err(CollectError::Ledger);
+                }
+                return Err(CollectError::Deadline(ms));
+            }
             Event::Done {
                 stop_reason,
                 n_tokens,

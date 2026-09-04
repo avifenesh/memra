@@ -1004,15 +1004,16 @@ means anything, and the pins move to the new shape as part of that deploy.
 Owner ruling, 2026-08-23: *"if the time pass and we didnt responed in time we fail and we
 dont bill. if the non response is our fault we should not bill."*
 
-`timeout_ms` is an integer number of milliseconds, accepted in **`1000`..=`90000`**, on
-**every** surface with identical semantics: `/v1/chat/completions`, `/v1/completions`,
-`/v1/messages`, `/v1/responses`. Out of range, or any non-integer type, is a **named 400**
-naming `timeout_ms`, stating the range, and pointing at streaming for longer work — never
-a silent clamp, because quietly shortening a caller's deadline is the accepted-and-ignored
-class the standard-surface law bans.
+`timeout_ms` is an integer number of milliseconds on every generation surface:
+`/v1/chat/completions`, `/v1/completions`, `/v1/messages`, `/v1/responses`. Non-streaming
+accepts **`1000`..=`90000`**. Streaming normally has the same range, but a deployment may
+name a larger streaming-only maximum/default with `MEMRA_STREAM_TTFT_MS_MAX` when it also
+configures the prefill keepalive commit described below. Out of range, or any non-integer
+type, is a named 400 stating the effective range for that response mode. Nothing clamps.
 
-**Default when absent: `90000`.** Every request has a deadline whether or not the client
-knows the parameter exists: *we answer inside 90 s or you don't pay.*
+**Default when absent: the response mode's maximum.** This is 90,000 ms unless a deployment
+explicitly extends streaming TTFT. Every request has a deadline whether or not the client
+knows the parameter exists.
 
 **AMENDED 2026-08-26** (owner: a 30k-token non-streaming request timed out —
 lane/deadline-partial-20260826). That promise covered a request we fail to answer, and it
@@ -1030,30 +1031,38 @@ it had already generated in order to produce that error:
 Full behaviour, including which surfaces deliver partials and why the other two do not, is
 in "Long non-streaming requests: what the deadline does now" below.
 
-The 90 s maximum is a **platform fact, not a preference**: the fronting proxy fails a
-non-streaming response whose time-to-headers reaches ~100 s (Cloudflare `524`), so a
-larger promise would be broken above this server no matter what it did. Work that
-legitimately needs longer belongs on a **stream**, where the deadline bounds only the time
-to first token and the response may then run as long as it needs.
+The 90 s non-streaming maximum reserves margin under a fronting proxy's response timeout:
+a blocking response cannot send headers or a heartbeat before it finishes. Streaming can carry a longer
+first-token deadline only when the deployment pairs `MEMRA_STREAM_TTFT_MS_MAX` with
+`MEMRA_SSE_PREFILL_COMMIT_MS`. If the first generated token has not arrived at the commit
+threshold, Memra commits the SSE response and its existing 5 s comment keepalive starts.
+Comments are transport liveness, not model output, and first-token measurements must ignore
+them. The original TTFT deadline continues to run. Admission has a separate hard deadline
+at the same commit threshold: if capacity has not admitted the request by then, a retryable
+pre-header 408 explains the admission budget and bills zero. Extending TTFT therefore does
+not extend silent queue waiting.
 
 | | non-streaming | streaming (`stream: true`) |
 |---|---|---|
 | what the deadline bounds | the COMPLETE response | **time to first token only** |
 | infeasible before it starts | refused at admission: `400` `nonstream_deadline_infeasible` | never gated |
 | miss with SOME tokens produced | OpenAI-dialect surfaces: **`200` partial, BILLED** (`deadline_partial`, `finish_reason: "error"`); `/v1/messages` + `/v1/responses`: `408`, discarded | cannot happen — the parameter is spent at the first token |
-| miss with ZERO tokens produced | `408`, generation cancelled, **not billed** | `408` **pre-header**, generation cancelled, **not billed** |
+| miss with ZERO tokens produced | `408`, generation cancelled, **not billed** | at <=90 s: `408` pre-header; after an extended stream committed: dialect-native timeout error event under HTTP 200. Both cancel and bill zero |
 | after the first token | — | the parameter is **spent**; the stream runs to completion |
 
-A missed deadline that delivered NOTHING is `408` with the standard error object
-(`type: "timeout"`, `code: "deadline_exceeded"`), a message naming the effective deadline,
-and **no** `Retry-After` — a miss says nothing about when a retry would fit, and inventing a
-window
-would be a promise this server cannot keep. `408` stays retryable (no
-`x-should-retry: false`; SDKs retry it by default). The streaming 408 is deliberately
-**pre-header**: the response is held until the first token, because once the first byte of
-a `200` is written there is no status left for a router to act on and no honest way to say
-"you don't pay". The admission wait counts against the deadline, so a request that can no
-longer be answered in time is cancelled rather than served late.
+A missed deadline that delivered NOTHING carries a message naming the effective budget
+and no invented Retry-After. OpenAI/native errors carry `type: "timeout"` and
+`code: "deadline_exceeded"`; Anthropic errors carry `error.type: "timeout"`, while
+Responses streaming uses `response.error.code: "deadline_exceeded"`.
+Before a response commits this is HTTP 408. After an extended stream committed to keep the
+proxy connection alive, it is the wire dialect's terminal error under HTTP 200: an OpenAI
+`data:` error then `[DONE]`, Responses `response.failed`, Anthropic `event: error`, or the
+native named error event. This is still an honest "you don't pay": the receipt settles the
+same zero-debit `deadline_exceeded` outcome independently of body polling, before cancelling
+the worker. A client disconnect after timeout cannot turn that outcome into abandonment.
+Admission wait counts
+against the deadline, so a request that can no longer answer is cancelled rather than served
+late.
 
 **The billing promise, stated once:** *a request we fail on time grounds costs nothing; a
 response you abandon is billed for what was generated.* A client that walks away
@@ -2149,9 +2158,9 @@ surface; what a tenant may SPEND is not.
 ### Long non-streaming requests: what the deadline does now (2026-08-26)
 
 `timeout_ms` (MIN 1000 / MAX 90000 / DEFAULT 90000) bounds a non-streaming response
-end-to-end. The 90 s maximum is a platform fact, not a preference: the fronting proxy
-fails a non-streaming response whose headers take ~100 s, so a longer promise would be
-broken upstream of this server.
+end-to-end. The 90 s policy reserves margin under the fronting proxy's response timeout.
+Its exact limit belongs to the deployment; increasing the engine limit alone does not
+increase the proxy's limit.
 
 Two behaviours keep that ceiling from eating a customer's work:
 
