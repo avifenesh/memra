@@ -19985,10 +19985,14 @@ impl Engine {
             .iter()
             .map(|&o| (o as u32).div_ceil(ROWS_PER_BLOCK))
             .sum();
-        let f = self.func(if arm >= 1 {
-            "qmatvec_e4m3_mmvq_fused6_ilp"
-        } else {
-            "qmatvec_e4m3_mmvq_fused6"
+        // arms 2/3/4 are the ILP-depth sweep (2, 8, 16); the profile says loads in flight, not
+        // bandwidth, is what this family is short of. Bench-only until one earns a receipt.
+        let f = self.func(match arm {
+            0 => "qmatvec_e4m3_mmvq_fused6",
+            1 => "qmatvec_e4m3_mmvq_fused6_ilp",
+            2 => "qmatvec_e4m3_mmvq_fused6_ilp2",
+            3 => "qmatvec_e4m3_mmvq_fused6_ilp8",
+            _ => "qmatvec_e4m3_mmvq_fused6_ilp16",
         });
         let cfg = LaunchConfig {
             grid_dim: (blocks, 1, 1),

@@ -1682,7 +1682,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let base = run(0, 0)?;
         let base_h: Vec<Vec<f32>> = (0..6).map(|k| e.dtoh(&base[k])).collect::<Result<_, _>>()?;
-        const ARMS: usize = 2;
+        const ARMS: usize = 5;
         let mut t: Vec<Vec<f64>> = (0..ARMS).map(|_| Vec::with_capacity(iters)).collect();
         let mut mism = [0usize; ARMS];
         let mut maxd = [0f32; ARMS];
@@ -1712,6 +1712,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             mism[1],
             maxd[1],
         );
+        for (arm, label) in [(2usize, "ILP=2"), (3, "ILP=8"), (4, "ILP=16")] {
+            report_arm(
+                &format!("kda6 e4m3 six: {label}"),
+                &format!("arm{arm}"),
+                m0,
+                median(&mut t[arm]),
+                bytes,
+                mism[arm],
+                maxd[arm],
+            );
+        }
     }
 
     println!("temp_out: {}", gpu_temp());

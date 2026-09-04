@@ -4418,6 +4418,37 @@ extern "C" __global__ void qmatvec_e4m3_mmvq_fused6(
 // LAW:size-a-block-from-measured-registers-and-count-blocks-not-warps (darklanes corpus);
 // numbers in research/glm5-b200-mint-20260904/LANE.md.
 
+// ILP DEPTH SWEEP (lane/decode-profile-20260904). ncu on the served shape says the limiter is
+// loads in flight, not bandwidth: 43 registers/thread caps the block at 10 per SM = 40 warps, and
+// at ILP 4 that is ~160 outstanding loads per SM, ~740 KB across the part. Covering B200's 8 TB/s
+// at ~700 ns of HBM latency needs roughly 5.6 MB in flight, so this family sits near 13% of what
+// saturation requires -- which is exactly why it measures 27% of the wall on B200 while the same
+// kernel is 87.7% memory-throughput-bound on a 1.8 TB/s part. Deeper ILP buys in-flight bytes at
+// the cost of registers (and so of occupancy); only the part can say where that trades out, so
+// both directions are built and swept.
+//
+// Bit-identical at every depth by the same argument as ILP 4: each block sum is an independent
+// chain and the folds stay in ascending block order.
+#define MEMRA_E4M3_F6_ILP(NAME, N)                                                             \
+    extern "C" __global__ void NAME(                                                           \
+            const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,        \
+            const unsigned char* __restrict__ W2, const unsigned char* __restrict__ W3,        \
+            const unsigned char* __restrict__ W4, const unsigned char* __restrict__ W5,        \
+            const signed char* __restrict__ aq, const float* __restrict__ ad,                  \
+            float* __restrict__ y0, float* __restrict__ y1, float* __restrict__ y2,            \
+            float* __restrict__ y3, float* __restrict__ y4, float* __restrict__ y5,            \
+            int in_f, int out0, int out1, int out2, int out3, int out4, int out5,              \
+            long row_bytes, float ws0, float ws1, float ws2, float ws3, float ws4,             \
+            float ws5) {                                                                       \
+        e4m3_fused6_body<N>(W0, W1, W2, W3, W4, W5, aq, ad, y0, y1, y2, y3, y4, y5, in_f,      \
+                            out0, out1, out2, out3, out4, out5, row_bytes, ws0, ws1, ws2,      \
+                            ws3, ws4, ws5);                                                    \
+    }
+
+MEMRA_E4M3_F6_ILP(qmatvec_e4m3_mmvq_fused6_ilp2, 2)
+MEMRA_E4M3_F6_ILP(qmatvec_e4m3_mmvq_fused6_ilp8, 8)
+MEMRA_E4M3_F6_ILP(qmatvec_e4m3_mmvq_fused6_ilp16, 16)
+
 extern "C" __global__ void qmatvec_e4m3_mmvq_fused6_ilp(
         const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
         const unsigned char* __restrict__ W2, const unsigned char* __restrict__ W3,
