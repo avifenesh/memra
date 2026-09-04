@@ -595,6 +595,13 @@ pub struct DecodeState {
     pub ws: Option<Vec<StepWs>>,
 }
 
+/// Number of persistent compressed rows admitted for one session. Decode allocation
+/// and batched verification must share this exact planner because the latter places its
+/// transient rows immediately after this store.
+fn dsv4_cache_cap_blocks(capacity: usize, ratio: usize) -> usize {
+    capacity.checked_div(ratio).unwrap_or(0)
+}
+
 /// One contiguous f32 range in a stage-owned pinned-host slab. DSV4 keeps its compact
 /// long-context state on the layer's owning GPU while a session is active; this is the
 /// lossless parked-session representation used to free that VRAM without expanding the
@@ -4098,9 +4105,7 @@ impl Dsv4Gpu {
                 .unwrap_or_else(|| panic!("layer {il} not on stage {stage_i}"));
             let layer = &st.layers[lidx];
             let ratio = layer.ratio;
-            #[allow(clippy::manual_checked_ops)]
-            // allow: the explicit zero guard names the degenerate-ratio case; checked ops would hide the sentinel
-            let cap_blocks = if ratio != 0 { capacity / ratio } else { 0 };
+            let cap_blocks = dsv4_cache_cap_blocks(capacity, ratio);
             let kvc_rows = win + cap_blocks + trans_rows;
             let mut bytes = (kvc_rows * hd * 4) as u64;
             let kvc = stream
@@ -8520,6 +8525,10 @@ pub struct VerifyState {
     ws: Vec<VerifyWs>,
     layers: Vec<LayerCkptDev>,
     pub tmax: usize,
+    /// Decode-cache capacity this verify layout was planned against. The transient
+    /// rows live immediately after each layer's capacity-sized compressed store, so
+    /// using a model-wide verify state with a smaller session allocation is unsafe.
+    capacity: usize,
     /// (pos0, t) of the open round; `None` between rounds. `commit_verify_dev` closes it.
     open: Option<(usize, usize)>,
     /// allocated bytes per device index (reported next to the drafter VRAM plan)
@@ -8533,9 +8542,22 @@ impl Dsv4Gpu {
         self.dspark.as_ref().map(|d| d.block_size + 1).unwrap_or(0)
     }
 
-    /// Allocate the batched-verify state (arenas + §3.1 checkpoints). Requires the
-    /// drafter (the only producer of rounds) and the device decode path.
+    /// Allocate the model-limit batched-verify state (arenas + §3.1 checkpoints).
+    /// Capacity-planned serving should use [`Self::alloc_verify_state_for`] instead.
     pub fn alloc_verify_state(&self) -> Res<VerifyState> {
+        self.alloc_verify_state_for(self.max_seq)
+    }
+
+    /// Allocate batched-verify scratch for the same admitted capacity as its
+    /// [`DecodeState`]. In particular, every transient ring base is placed after the
+    /// session-sized compressed store, not after the model-wide 1M-token store.
+    pub fn alloc_verify_state_for(&self, capacity: usize) -> Res<VerifyState> {
+        if capacity == 0 || capacity > self.max_seq {
+            return Err(format!(
+                "dsv4 verify capacity {capacity} outside 1..={} model limit",
+                self.max_seq
+            ));
+        }
         let tmax = self.verify_tmax();
         if tmax == 0 {
             return Err("alloc_verify_state needs MEMRA_DSV4_DRAFTER=dspark".into());
@@ -8693,7 +8715,7 @@ impl Dsv4Gpu {
                 .position(|l| l.il == il as u32)
                 .unwrap_or_else(|| panic!("layer {il} not on stage {stage_i}"));
             let layer = &st.layers[lidx];
-            let cap_blocks = self.max_seq.checked_div(layer.ratio).unwrap_or(0);
+            let cap_blocks = dsv4_cache_cap_blocks(capacity, layer.ratio);
             let mk = |cmp: &CmpDev| -> Res<CmpCkptDev> {
                 let slots = if cmp.overlap {
                     2 * cmp.ratio
@@ -8744,6 +8766,7 @@ impl Dsv4Gpu {
             ws,
             layers,
             tmax,
+            capacity,
             open: None,
             bytes,
         })
@@ -10395,6 +10418,12 @@ impl Dsv4Gpu {
             vstate.tmax
         );
         assert!(vstate.open.is_none(), "verify_batch_dev with an open round");
+        if vstate.capacity != state.capacity {
+            return Err(format!(
+                "dsv4 verify capacity {} != decode-state capacity {}; allocate both for the same session admission",
+                vstate.capacity, state.capacity
+            ));
+        }
         let pos0 = state.pos;
         assert!(pos0 > 0, "batched verify needs prefill_with_cache first");
         assert!(
@@ -11733,6 +11762,29 @@ pub fn vt_slot_drafts(conf: &[f32], tau_logit: f32, floor: usize) -> usize {
         }
     }
     k.max(floor).min(conf.len())
+}
+
+#[cfg(test)]
+mod capacity_planner_tests {
+    use super::dsv4_cache_cap_blocks;
+
+    #[test]
+    fn verify_transient_base_tracks_session_not_model_capacity() {
+        let win = 128usize;
+        let ratio = 128usize;
+        let short_capacity = 235usize;
+        let model_capacity = 1_048_576usize;
+
+        let short_base = win + dsv4_cache_cap_blocks(short_capacity, ratio);
+        let model_base = win + dsv4_cache_cap_blocks(model_capacity, ratio);
+        assert_eq!(short_base, 129);
+        assert_eq!(model_base, 8_320);
+        assert_ne!(
+            short_base, model_base,
+            "session verify must not use 1M base"
+        );
+        assert_eq!(dsv4_cache_cap_blocks(short_capacity, 0), 0);
+    }
 }
 
 #[cfg(test)]

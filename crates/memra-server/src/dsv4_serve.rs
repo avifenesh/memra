@@ -827,7 +827,10 @@ fn serve_one(
                 None,
             )
         };
-        let mut vstate = m.gpu.alloc_verify_state().map_err(EngineError::engine)?;
+        let mut vstate = m
+            .gpu
+            .alloc_verify_state_for(state.capacity)
+            .map_err(EngineError::engine)?;
         // generation budget + 1: the drivers count the head token of the final round
         // inside n_new; Emit owns the exact budget/EOS truncation either way.
         let n_new = budget;
