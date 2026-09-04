@@ -926,6 +926,68 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             mism,
             maxd,
         );
+        // MEMRA_NVFP4_ROW_ILP twins: mr2_ilp and mr1_ilp, each bitwise vs SHIPPED (mr2), timed
+        // against their own non-ILP form.
+        let h_ship = e.dtoh(&y_ship)?;
+        for (use_arm, label) in [(false, "mr2 -> mr2_ilp"), (true, "mr1 -> mr1_ilp")] {
+            let y_i = e.qmatvec_nvfp4_rp_arm_raw_ilp(
+                &wcopies[0],
+                &aq,
+                &ad,
+                1,
+                in_f,
+                out_f,
+                row_bytes,
+                1.0,
+                use_arm,
+                true,
+            )?;
+            e.stream().synchronize()?;
+            let (mism_i, maxd_i) = compare(&h_ship, &e.dtoh(&y_i)?);
+            let mut t_base = Vec::with_capacity(iters);
+            let mut t_ilp = Vec::with_capacity(iters);
+            for i in 0..iters {
+                let c = i % copies;
+                let t0 = Instant::now();
+                let _ = e.qmatvec_nvfp4_rp_arm_raw_ilp(
+                    &wcopies[c],
+                    &aq,
+                    &ad,
+                    1,
+                    in_f,
+                    out_f,
+                    row_bytes,
+                    1.0,
+                    use_arm,
+                    false,
+                )?;
+                e.stream().synchronize()?;
+                t_base.push(t0.elapsed().as_secs_f64() * 1e6);
+                let t1 = Instant::now();
+                let _ = e.qmatvec_nvfp4_rp_arm_raw_ilp(
+                    &wcopies[c],
+                    &aq,
+                    &ad,
+                    1,
+                    in_f,
+                    out_f,
+                    row_bytes,
+                    1.0,
+                    use_arm,
+                    true,
+                )?;
+                e.stream().synchronize()?;
+                t_ilp.push(t1.elapsed().as_secs_f64() * 1e6);
+            }
+            report(
+                &format!("qmatvec_nvfp4 rp {label} (MEMRA_NVFP4_ROW_ILP)"),
+                median(&mut t_base),
+                median(&mut t_ilp),
+                bytes,
+                mism_i,
+                maxd_i,
+            );
+        }
     }
 
     // -----------------------------------------------------------------------------------

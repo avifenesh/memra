@@ -905,6 +905,41 @@ fn q8_row_ilp_note(site: &str) {
     }
 }
 
+/// `MEMRA_NVFP4_ROW_ILP=1` (lane/glm5-nvfp4-row-ilp-20260904, default OFF): the NVFP4
+/// split-plane trunk matvec (`qmatvec_nvfp4_mmvq_mr2_rp`, and `qmatvec_nvfp4_mmvq_rp` when the
+/// B200 grid-fill arm picks mr1) takes its `_ilp` twin: four groups' loads per lane issued
+/// ahead of the table lookups and dp4a chains, same per-row accumulation order. Read PER CALL.
+/// Why and receipts: the kernel header in cu/qmatvec.cu and docs/FLAGS.md.
+pub(crate) fn nvfp4_row_ilp_on() -> bool {
+    std::env::var("MEMRA_NVFP4_ROW_ILP").as_deref() == Ok("1")
+}
+
+/// Engagement counter for `MEMRA_NVFP4_ROW_ILP`; gates take a delta.
+pub static NVFP4_ROW_ILP_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// Snapshot of [`NVFP4_ROW_ILP_DISPATCHES`].
+pub fn nvfp4_row_ilp_dispatches() -> u64 {
+    NVFP4_ROW_ILP_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// `MEMRA_B200_MR1_FILL=<blocks per SM>` (lane/glm5-nvfp4-row-ilp-20260904, default 2 = the
+/// lane/b200-matvec-occupancy-20260902 threshold): the B200 grid-fill arm of the NVFP4 m=1
+/// decode matvec (under `MEMRA_B200_MATVEC_ARM=1`) forces mr1 (two warps per row pair -> one
+/// warp per row, the shipped `qmatvec_nvfp4_mmvq_rp`) when the mr2 grid would be fewer than
+/// this many four-warp blocks per SM. At 2 the 4096-row shapes (512 blocks, 2,048 warps on a
+/// 148-SM part) stay mr2; 16 is one full wave of four-warp blocks (64 warp slots).
+pub(crate) fn b200_mr1_fill() -> u32 {
+    static V: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    *V.get_or_init(|| {
+        std::env::var("MEMRA_B200_MR1_FILL")
+            .ok()
+            .and_then(|v| v.trim().parse::<u32>().ok())
+            .filter(|&n| n >= 1)
+            .unwrap_or(2)
+    })
+}
+
 /// Dynamic shared memory one v3 CTA needs at this block size: `STAGES * R * (nb*8) * 2` bytes of
 /// stage buffers plus `R * nb * 4` bytes of reduction window. Mirrors `MEMRA_GEMV_V3_STAGES` and
 /// `MEMRA_GEMV_V3_REDOFF` in cu/qmatvec.cu; the two MUST move together.
@@ -20465,13 +20500,27 @@ impl Engine {
             && rp
             && m == 1
             && b200_matvec_arm_on()
-            && (out_f as u32).div_ceil(ROWS_PER_BLOCK * 2) < 2 * self.sm_count() as u32
+            && (out_f as u32).div_ceil(ROWS_PER_BLOCK * 2)
+                < b200_mr1_fill() * self.sm_count() as u32
         {
             mr = 1;
         }
+        // MEMRA_NVFP4_ROW_ILP (lane/glm5-nvfp4-row-ilp-20260904, default OFF): the `_ilp` twins
+        // of the two split-plane NVFP4 trunk kernels, same grid, same per-row program.
+        let nv_ilp = qtype == QT_NVFP4 && rp && nvfp4_row_ilp_on();
+        if nv_ilp
+            && NVFP4_ROW_ILP_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0
+        {
+            eprintln!(
+                "[nvfp4-row-ilp] engaged: split-plane NVFP4 trunk matvec with four groups' loads \
+                 per lane ahead of the dp4a chains (MEMRA_NVFP4_ROW_ILP=1, mr={mr})"
+            );
+        }
         let name = match (qtype, mr, rp) {
             (QT_NVFP4, 2, false) => "qmatvec_nvfp4_mmvq_mr2",
+            (QT_NVFP4, 2, true) if nv_ilp => "qmatvec_nvfp4_mmvq_mr2_rp_ilp",
             (QT_NVFP4, 2, true) => "qmatvec_nvfp4_mmvq_mr2_rp",
+            (QT_NVFP4, _, true) if nv_ilp => "qmatvec_nvfp4_mmvq_rp_ilp",
             (QT_NVFP4, _, true) => "qmatvec_nvfp4_mmvq_rp",
             (QT_Q4_0, 1, true) => "qmatvec_q4_0_mmvq_rp",
             (QT_Q4_0, _, true) => "qmatvec_q4_0_mmvq_mr2_rp",
@@ -20539,10 +20588,19 @@ impl Engine {
         if qtype == QT_NVFP4 || qtype == QT_F8_E4M3 {
             // PDL wave-B: the nvfp4 mr2_rp single (gemma wo / generic rp singles) joins
             // the wave-A launch class — 9-arg flavor (fused macro-scale epilogue).
+            // The four split-plane NVFP4 trunk kernels all carry MEMRA_PDL_ENTRY (the mr1
+            // kernel since lane/glm5-nvfp4-row-ilp-20260904), so the grid-fill and ILP twins
+            // ride the same PDL launch class as the shipped mr2 kernel.
             if Self::pdl_on()
                 && Self::pdl_mmvq_on()
                 && Self::pdl_nvfp4q8_on()
-                && name == "qmatvec_nvfp4_mmvq_mr2_rp"
+                && matches!(
+                    name,
+                    "qmatvec_nvfp4_mmvq_mr2_rp"
+                        | "qmatvec_nvfp4_mmvq_mr2_rp_ilp"
+                        | "qmatvec_nvfp4_mmvq_rp"
+                        | "qmatvec_nvfp4_mmvq_rp_ilp"
+                )
             {
                 use cudarc::driver::{DevicePtr, DevicePtrMut};
                 let s = &self.gpu.stream();
@@ -20678,6 +20736,56 @@ impl Engine {
             "qmatvec_nvfp4_mmvq_rp"
         } else {
             "qmatvec_nvfp4_mmvq_mr2_rp"
+        };
+        let f = self.func(name);
+        let rows_per_block = ROWS_PER_BLOCK * mr;
+        let mut y = self.alloc_uninit::<f32>(m * out_f)?;
+        let cfg = LaunchConfig {
+            grid_dim: ((out_f as u32).div_ceil(rows_per_block), m as u32, 1),
+            block_dim: (32, ROWS_PER_BLOCK, 1),
+            shared_mem_bytes: 0,
+        };
+        let (inf, outf, mi, rb) = (in_f as i32, out_f as i32, m as i32, row_bytes as i64);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(bytes)
+            .arg(aq)
+            .arg(ad)
+            .arg(&mut y)
+            .arg(&inf)
+            .arg(&outf)
+            .arg(&mi)
+            .arg(&rb)
+            .arg(&yscale);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(y)
+    }
+
+    /// Bench-only arm selector with the `MEMRA_NVFP4_ROW_ILP` twin as a third axis: `ilp`
+    /// picks `_ilp` for whichever of mr1/mr2 `use_arm` chose.
+    #[allow(clippy::too_many_arguments)]
+    pub fn qmatvec_nvfp4_rp_arm_raw_ilp(
+        &self,
+        bytes: &CudaSlice<u8>,
+        aq: &CudaSlice<i8>,
+        ad: &CudaSlice<f32>,
+        m: usize,
+        in_f: usize,
+        out_f: usize,
+        row_bytes: usize,
+        yscale: f32,
+        use_arm: bool,
+        ilp: bool,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        const ROWS_PER_BLOCK: u32 = 4; // MEMRA_MMVQ_ROWS
+        let mr: u32 = if use_arm { 1 } else { 2 };
+        let name = match (use_arm, ilp) {
+            (true, false) => "qmatvec_nvfp4_mmvq_rp",
+            (true, true) => "qmatvec_nvfp4_mmvq_rp_ilp",
+            (false, false) => "qmatvec_nvfp4_mmvq_mr2_rp",
+            (false, true) => "qmatvec_nvfp4_mmvq_mr2_rp_ilp",
         };
         let f = self.func(name);
         let rows_per_block = ROWS_PER_BLOCK * mr;
