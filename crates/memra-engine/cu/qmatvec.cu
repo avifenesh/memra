@@ -3404,6 +3404,9 @@ extern "C" __global__ void qmatvec_nvfp4_mmvq_rp(
         const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
         const float* __restrict__ ad, float* __restrict__ y,
         int in_f, int out_f, int m, long row_bytes, float yscale) {
+    // PDL entry (lane/glm5-nvfp4-row-ilp-20260904): a no-op without the launch attribute; with
+    // it, the B200 grid-fill (mr1) launches join the PDL class the mr2 kernel already had.
+    MEMRA_PDL_ENTRY();
     int o = blockIdx.x * MEMRA_MMVQ_ROWS + threadIdx.y;
     int t = blockIdx.y;
     if (o >= out_f || t >= m) return;
@@ -3508,6 +3511,145 @@ extern "C" __global__ void qmatvec_nvfp4_mmvq_mr2_rp(
         int in_f, int out_f, int m, long row_bytes, float yscale) {
     MEMRA_PDL_ENTRY();
     nvfp4_mmvq_multirow_rp<2, false>(W, aq, ad, y, in_f, out_f, m, row_bytes, yscale);
+}
+
+// ---- ILP twins of the NVFP4 split-plane trunk matvec (lane/glm5-nvfp4-row-ilp-20260904, door
+// MEMRA_NVFP4_ROW_ILP, default OFF).
+// WHY. `qmatvec_nvfp4_mmvq_mr2_rp` is 74 launches per plain glm5_next t=1 token on the 2x B200
+// pair (door-ON census 2026-09-04: 0.9 ms of a ~13.7 ms token; the 4096-row shapes run a
+// 512-block grid of four warps = 2,048 warps for a 148-SM part) and root ncu on the rig at
+// that shape reads long-scoreboard stalls 68-70% of warp-active cycles, issue-active 37-39%,
+// DRAM 30% of peak, occupancy 49%. Each lane walks its groups serially with ONE 16-byte quant
+// load and one scale word per row in flight. This body issues FOUR groups' loads per lane
+// (RPW rows each) before any table lookup or dp4a, then the shipped single-group tail.
+// EXACTNESS by construction: per row the accumulation order is the shipped one
+// (`acc[r] += adg * partial` for g = lane, lane+32, ... into one accumulator, `partial` built
+// by the same two-sub-block chain), the same bytes are read, the warp tree and the `* yscale`
+// epilogue are verbatim; RPW=1 is the per-row program of `qmatvec_nvfp4_mmvq_rp` and RPW=2
+// that of `qmatvec_nvfp4_mmvq_mr2_rp`. Gate: b200_matvec_bench family 4 (shipped vs both ILP
+// twins bitwise); the box greedy tape holds it at model scale.
+template<int RPW, bool PIN_T0>
+__device__ __forceinline__ void nvfp4_mmvq_multirow_rp_ilp(
+        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
+        const float* __restrict__ ad, float* __restrict__ y,
+        int in_f, int out_f, int m, long row_bytes, float yscale) {
+    int o0 = (blockIdx.x * MEMRA_MMVQ_ROWS + threadIdx.y) * RPW;
+    int t = PIN_T0 ? 0 : blockIdx.y;
+    if (o0 >= out_f || t >= m) return;
+    int lane = threadIdx.x;
+    int nsb = in_f >> 5;
+    int nsb64 = in_f >> 6;
+    const unsigned char* qplane = W;
+    const unsigned char* splane = W + (size_t)out_f * nsb64 * 32;
+    const signed char*   arow = aq + (size_t)t * in_f;
+    const float*         adrow = ad + (size_t)t * nsb;
+    float acc[RPW];
+    #pragma unroll
+    for (int r = 0; r < RPW; r++) acc[r] = 0.0f;
+    int g = lane;
+    for (; g + 96 < nsb; g += 128) {
+        // Four groups' weight words and scale words per row, issued before any math.
+        int4 qw[4][RPW];
+        int cscw[4][RPW];
+        #pragma unroll
+        for (int k = 0; k < 4; k++) {
+            int gk = g + 32 * k;
+            int sblk = gk >> 1;
+            #pragma unroll
+            for (int r = 0; r < RPW; r++) {
+                int o = o0 + r;
+                if (o < out_f) {
+                    qw[k][r] = *(const int4*)(qplane + ((size_t)o * nsb64 + sblk) * 32 + (size_t)(gk & 1) * 16);
+                    cscw[k][r] = *(const int*)(splane + ((size_t)o * nsb64 + sblk) * 4);
+                } else {
+                    qw[k][r] = make_int4(0, 0, 0, 0);
+                    cscw[k][r] = 0;
+                }
+            }
+        }
+        #pragma unroll
+        for (int k = 0; k < 4; k++) {
+            int gk = g + 32 * k;
+            int s0 = (gk & 1) * 2;
+            const int4* aq16 = (const int4*)(arow + (size_t)gk * 32);
+            int4 a01 = aq16[0], a23 = aq16[1];
+            int aq4[8] = { a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w };
+            float adg = adrow[gk];
+            #pragma unroll
+            for (int r = 0; r < RPW; r++) {
+                int o = o0 + r;
+                if (o >= out_f) break;
+                float partial = 0.0f;
+                #pragma unroll
+                for (int sl = 0; sl < 2; sl++) {
+                    int q4a = (sl == 0) ? qw[k][r].x : qw[k][r].z;
+                    int q4b = (sl == 0) ? qw[k][r].y : qw[k][r].w;
+                    int2 va = get_int_from_table_16_d(q4a, kvalues_mxfp4_d);
+                    int2 vb = get_int_from_table_16_d(q4b, kvalues_mxfp4_d);
+                    int base = sl * 4;
+                    int sumi = 0;
+                    sumi = dp4a(va.x, aq4[base + 0], sumi);
+                    sumi = dp4a(vb.x, aq4[base + 1], sumi);
+                    sumi = dp4a(va.y, aq4[base + 2], sumi);
+                    sumi = dp4a(vb.y, aq4[base + 3], sumi);
+                    partial += ue4m3_to_f32_d((unsigned char)((cscw[k][r] >> (8 * (s0 + sl))) & 0xFF)) * (float)sumi;
+                }
+                acc[r] += adg * partial;
+            }
+        }
+    }
+    for (; g < nsb; g += 32) {
+        int sblk = g >> 1;
+        int s0 = (g & 1) * 2;
+        const int4* aq16 = (const int4*)(arow + (size_t)g * 32);
+        int4 a01 = aq16[0], a23 = aq16[1];
+        int aq4[8] = { a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w };
+        float adg = adrow[g];
+        #pragma unroll
+        for (int r = 0; r < RPW; r++) {
+            int o = o0 + r;
+            if (o >= out_f) break;
+            int4 qw = *(const int4*)(qplane + ((size_t)o * nsb64 + sblk) * 32 + (size_t)(g & 1) * 16);
+            int cscw = *(const int*)(splane + ((size_t)o * nsb64 + sblk) * 4);
+            float partial = 0.0f;
+            #pragma unroll
+            for (int sl = 0; sl < 2; sl++) {
+                int q4a = (sl == 0) ? qw.x : qw.z;
+                int q4b = (sl == 0) ? qw.y : qw.w;
+                int2 va = get_int_from_table_16_d(q4a, kvalues_mxfp4_d);
+                int2 vb = get_int_from_table_16_d(q4b, kvalues_mxfp4_d);
+                int base = sl * 4;
+                int sumi = 0;
+                sumi = dp4a(va.x, aq4[base + 0], sumi);
+                sumi = dp4a(vb.x, aq4[base + 1], sumi);
+                sumi = dp4a(va.y, aq4[base + 2], sumi);
+                sumi = dp4a(vb.y, aq4[base + 3], sumi);
+                partial += ue4m3_to_f32_d((unsigned char)((cscw >> (8 * (s0 + sl))) & 0xFF)) * (float)sumi;
+            }
+            acc[r] += adg * partial;
+        }
+    }
+    #pragma unroll
+    for (int r = 0; r < RPW; r++) {
+        int o = o0 + r;
+        if (o >= out_f) break;
+        float a = warp_reduce_sum(acc[r]);
+        if (lane == 0) y[(size_t)t * out_f + o] = a * yscale;
+    }
+}
+extern "C" __global__ void qmatvec_nvfp4_mmvq_rp_ilp(
+        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
+        const float* __restrict__ ad, float* __restrict__ y,
+        int in_f, int out_f, int m, long row_bytes, float yscale) {
+    MEMRA_PDL_ENTRY();
+    nvfp4_mmvq_multirow_rp_ilp<1, false>(W, aq, ad, y, in_f, out_f, m, row_bytes, yscale);
+}
+extern "C" __global__ void qmatvec_nvfp4_mmvq_mr2_rp_ilp(
+        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
+        const float* __restrict__ ad, float* __restrict__ y,
+        int in_f, int out_f, int m, long row_bytes, float yscale) {
+    MEMRA_PDL_ENTRY();
+    nvfp4_mmvq_multirow_rp_ilp<2, false>(W, aq, ad, y, in_f, out_f, m, row_bytes, yscale);
 }
 // DUAL gate+up rp twin (blockIdx.y selects tensor; m==1 asserted host-side like the original).
 extern "C" __global__ void qmatvec_nvfp4_mmvq_dual_mr2_rp(
