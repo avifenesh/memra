@@ -32,8 +32,9 @@
 
 use crate::worker::{EngineError, Event, ModelCaps, Request, SpecUsage};
 use memra_engine::dsv4_gpu::{
-    DecodeState, DsparkState, Dsv4Gpu, Dsv4HostDecodeState, Dsv4HostDsparkState, Dsv4PenaltyCfg,
-    Dsv4SampleCfg, dsv4_penalize_row, dsv4_sample_row, resolve_vt,
+    DSV4_BATCH_WIDTH_MAX, DecodeState, DsparkState, Dsv4Gpu, Dsv4HostDecodeState,
+    Dsv4HostDsparkState, Dsv4PenaltyCfg, Dsv4SampleCfg, dsv4_penalize_row, dsv4_sample_row,
+    resolve_vt,
 };
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::{Tokenizer, chat};
@@ -70,6 +71,11 @@ fn resolve_prefill_chunk(raw: Option<&str>, max_seq: usize) -> Result<usize, Str
     if chunk > max_seq {
         return Err(format!(
             "MEMRA_DSV4_PREFILL_CHUNK {chunk} exceeds MEMRA_CTX {max_seq}"
+        ));
+    }
+    if chunk > DSV4_BATCH_WIDTH_MAX {
+        return Err(format!(
+            "MEMRA_DSV4_PREFILL_CHUNK {chunk} exceeds kernel width {DSV4_BATCH_WIDTH_MAX}"
         ));
     }
     Ok(chunk)
@@ -1109,10 +1115,11 @@ mod prefill_chunk_flag_tests {
     fn default_is_off_and_values_are_strictly_bounded() {
         assert_eq!(resolve_prefill_chunk(None, 1_048_576), Ok(0));
         assert_eq!(resolve_prefill_chunk(Some("0"), 1_048_576), Ok(0));
-        assert_eq!(resolve_prefill_chunk(Some("64"), 1_048_576), Ok(64));
+        assert_eq!(resolve_prefill_chunk(Some("32"), 1_048_576), Ok(32));
         assert!(resolve_prefill_chunk(Some("-1"), 1_048_576).is_err());
         assert!(resolve_prefill_chunk(Some("banana"), 1_048_576).is_err());
         assert!(resolve_prefill_chunk(Some("65"), 64).is_err());
+        assert!(resolve_prefill_chunk(Some("33"), 1_048_576).is_err());
     }
 }
 

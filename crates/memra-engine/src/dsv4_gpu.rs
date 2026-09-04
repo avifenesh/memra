@@ -601,6 +601,8 @@ pub struct DecodeState {
 /// Number of persistent compressed rows admitted for one session. Decode allocation
 /// and batched verification must share this exact planner because the latter places its
 /// transient rows immediately after this store.
+pub const DSV4_BATCH_WIDTH_MAX: usize = 32;
+
 fn dsv4_cache_cap_blocks(capacity: usize, ratio: usize) -> usize {
     capacity.checked_div(ratio).unwrap_or(0)
 }
@@ -3704,7 +3706,7 @@ impl Dsv4Gpu {
         if ids.is_empty() {
             return Err("empty dsv4 chunked prefill".into());
         }
-        if chunk == 0 || chunk > state.transient_rows {
+        if chunk == 0 || chunk > DSV4_BATCH_WIDTH_MAX || chunk > state.transient_rows {
             return Err(format!(
                 "dsv4 prefill chunk {chunk} outside 1..={} allocated transient rows",
                 state.transient_rows
@@ -3735,7 +3737,7 @@ impl Dsv4Gpu {
         if suffix.is_empty() {
             return Err("dsv4 chunked continuation needs a non-empty suffix".into());
         }
-        if chunk == 0 || chunk > state.transient_rows {
+        if chunk == 0 || chunk > DSV4_BATCH_WIDTH_MAX || chunk > state.transient_rows {
             return Err(format!(
                 "dsv4 continuation chunk {chunk} outside 1..={} allocated transient rows",
                 state.transient_rows
@@ -7642,6 +7644,19 @@ impl Dsv4Gpu {
         if ids.is_empty() {
             return Err("empty dsv4 DSpark chunked prefill".into());
         }
+        if chunk == 0 || chunk > DSV4_BATCH_WIDTH_MAX || chunk > state.transient_rows {
+            return Err(format!(
+                "dsv4 DSpark prefill chunk {chunk} outside 1..={} allocated transient rows (kernel max {DSV4_BATCH_WIDTH_MAX})",
+                state.transient_rows
+            ));
+        }
+        if ids.len() > state.capacity {
+            return Err(format!(
+                "dsv4 DSpark prefill {} tokens exceeds session cache capacity {}",
+                ids.len(),
+                state.capacity
+            ));
+        }
         let first = self.dspark_prefill_prime(&ids[..1], state, dstate)?;
         if ids.len() == 1 {
             return Ok(first.logits);
@@ -7660,7 +7675,7 @@ impl Dsv4Gpu {
         if suffix.is_empty() {
             return Err("dsv4 DSpark chunked continuation needs a non-empty suffix".into());
         }
-        if chunk == 0 || chunk > state.transient_rows {
+        if chunk == 0 || chunk > DSV4_BATCH_WIDTH_MAX || chunk > state.transient_rows {
             return Err(format!(
                 "dsv4 DSpark continuation chunk {chunk} outside 1..={} allocated transient rows",
                 state.transient_rows
@@ -8773,8 +8788,10 @@ impl Dsv4Gpu {
     /// bounded-memory prefill. Unlike speculative verification, this does not require a
     /// drafter; every row is teacher-forced and committed.
     pub fn alloc_prefill_state_for(&self, capacity: usize, width: usize) -> Res<VerifyState> {
-        if width == 0 {
-            return Err("dsv4 prefill chunk width must be positive".into());
+        if width == 0 || width > DSV4_BATCH_WIDTH_MAX {
+            return Err(format!(
+                "dsv4 prefill chunk width {width} outside 1..={DSV4_BATCH_WIDTH_MAX}"
+            ));
         }
         self.alloc_batched_state_for(capacity, width)
     }
