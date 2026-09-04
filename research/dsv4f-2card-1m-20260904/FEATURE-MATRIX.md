@@ -213,10 +213,20 @@ critical path is limited by power or clocks.
 - [x] vendor-default eight-turn sampled serving/cache/spec engagement
   (`vendor-default-8turn-19e74601b.jsonl`; no sampling parameters; turns 2-8
   restore 418..693 tokens and DSpark engages on all turns)
-- [ ] fixed-seed sampled cache transparency: turn 2 currently diverges between
-  restored spec-decoded history and cold monolithic prefill
-  (`sampled-seeded-8turn-19e74601b.jsonl`); chunked prefill must unify the
-  realization before this gate may pass
+- [x] fixed-seed sampled cache transparency: the original monolithic cold path
+  diverged at turn 2 (`sampled-seeded-8turn-19e74601b.jsonl`); chunked prefill
+  now gives identical outputs and DSpark telemetry over all eight warm/cold turns
+- [x] bounded device chunk prefill through width 64, with width 1 vs 64 exact
+  cache/logit/DSpark equality and monolithic teacher forcing 15/16 agree plus
+  one 0.290964-margin in-band near-tie, zero out-of-band
+- [x] fixed-seed sampled cache transparency on chunked prefill: eight warm/cold
+  turns produce identical output hashes and identical DSpark telemetry
+- [x] batched prefill indexer selection: scalar T<=8 preserved; wide transactions
+  collapse per-position score/top-k/index launches and improve the 9,952-token
+  TTFT 83.36 -> 75.65 seconds (9.25%)
+- [ ] long-prefill performance remains a blocker: the selected frozen row is only
+  131.48 prompt tok/s, far below the public 4,339 prompt tok/s control
+  (`chunk-prefill-sweep-20260905.jsonl`, `chunk32-long-nsys-6c604f9bf.md`)
 - [ ] chunked prefill at 256K, 512K and 1M without transient OOM
 - [ ] resumable multi-session scheduler and cross-session batch decode
 - [ ] c1/c2/c4/c8/c16 throughput, fairness and admission cells
