@@ -1687,19 +1687,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut maxd = [0f32; 3];
         for arm in 1..3usize {
             let got = run(0, arm as u32)?;
-            for k in 0..6 {
-                let (m, d) = compare(&base_h[k], &e.dtoh(&got[k])?);
+            for (k, want) in base_h.iter().enumerate() {
+                let (m, d) = compare(want, &e.dtoh(&got[k])?);
                 mism[arm] += m;
                 maxd[arm] = maxd[arm].max(d);
             }
         }
         for i in 0..iters {
             let c = i % copies;
-            for arm in 0..3usize {
+            for (arm, ts) in t.iter_mut().enumerate() {
                 let t0 = Instant::now();
                 let _ = run(c, arm as u32)?;
                 e.stream().synchronize()?;
-                t[arm].push(t0.elapsed().as_secs_f64() * 1e6);
+                ts.push(t0.elapsed().as_secs_f64() * 1e6);
             }
         }
         let m0 = median(&mut t[0]);
