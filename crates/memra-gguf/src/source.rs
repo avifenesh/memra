@@ -2524,11 +2524,19 @@ impl TensorSource for SafetensorsSource {
                     // of decode in the mint census, for tensors that move almost no bytes.
                     // This is the fix the tripwire's own message prescribes ("If matmul-class:
                     // Q8_0-encode at load"), name-gated so it cannot widen to another family.
-                    let indexer_matmul =
-                        matches!(ggml_name.rsplit_once('.').map(|(_, t)| t), Some("weight"))
-                            && (ggml_name.ends_with(".indexer.attn_k.weight")
-                                || ggml_name.ends_with(".indexer.kpool_gate.weight")
-                                || ggml_name.ends_with(".indexer.proj.weight"));
+                    //
+                    // DOOR, DEFAULT OFF, and not merely out of caution: the indexer feeds a
+                    // DISCONTINUOUS top-k selection (`index_topk` 2048 keys), which is exactly why
+                    // `is_float_router` keeps the MoE router exact. Q8_0 is a finer grid than the
+                    // BF16 source, so the WEIGHTS lose nothing -- but a score that moves by an ulp
+                    // at the selection boundary changes WHICH keys are attended, and no tok/s
+                    // number answers that. Measurable and off; a default flip needs a
+                    // selection-stability gate.
+                    let indexer_matmul = std::env::var("MEMRA_GLM5_INDEXER_Q8").as_deref()
+                        == Ok("1")
+                        && (ggml_name.ends_with(".indexer.attn_k.weight")
+                            || ggml_name.ends_with(".indexer.kpool_gate.weight")
+                            || ggml_name.ends_with(".indexer.proj.weight"));
                     if !full_prec
                         && !is_float_router
                         && !self.preserves_source_dtype(&hf)
