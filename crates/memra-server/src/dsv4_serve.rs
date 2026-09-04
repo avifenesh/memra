@@ -1115,11 +1115,11 @@ mod prefill_chunk_flag_tests {
     fn default_is_off_and_values_are_strictly_bounded() {
         assert_eq!(resolve_prefill_chunk(None, 1_048_576), Ok(0));
         assert_eq!(resolve_prefill_chunk(Some("0"), 1_048_576), Ok(0));
-        assert_eq!(resolve_prefill_chunk(Some("32"), 1_048_576), Ok(32));
+        assert_eq!(resolve_prefill_chunk(Some("64"), 1_048_576), Ok(64));
         assert!(resolve_prefill_chunk(Some("-1"), 1_048_576).is_err());
         assert!(resolve_prefill_chunk(Some("banana"), 1_048_576).is_err());
         assert!(resolve_prefill_chunk(Some("65"), 64).is_err());
-        assert!(resolve_prefill_chunk(Some("33"), 1_048_576).is_err());
+        assert!(resolve_prefill_chunk(Some("65"), 1_048_576).is_err());
     }
 }
 

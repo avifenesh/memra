@@ -2633,10 +2633,25 @@ extern "C" int memra_dsv4_gemv_bf16_m(const void* w_bf16, const void* x_bf16, fl
                                       void* stream_v) {
     cudaStream_t stream = (cudaStream_t)stream_v;
     if (k % 8 != 0) return 40011;
-    if (m < 1 || m > DSV4_TMAX) return 40020;
+    if (m < 1) return 40020;
     if (xstride <= 0) xstride = k;
     if (ystride <= 0) ystride = n;
     if (xstride % 8 != 0) return 40011;
+    if (m > DSV4_TMAX) {
+        // Wide prefill transaction: tile the exact registered-row kernel instead of
+        // growing its register array without bound. Each output row keeps the same
+        // element order and 128-leaf reduction tree; tiles are independent and may
+        // share the enclosing causal attention transaction.
+        const uint16_t* x = (const uint16_t*)x_bf16;
+        for (int base = 0; base < m; base += 8) {
+            int tile = min(8, m - base);
+            int rc = memra_dsv4_gemv_bf16_m(
+                w_bf16, x + (long)base * xstride, y + (long)base * ystride,
+                tile, n, k, xstride, ystride, stream_v);
+            if (rc != 0) return rc;
+        }
+        return 0;
+    }
     switch (m) {
         DSV4_GEMV_M_CASE(1)
         DSV4_GEMV_M_CASE(2)
@@ -2798,11 +2813,22 @@ extern "C" int memra_dsv4_gemv_fp8_m(const void* w_codes, const float* sc_f32, i
                                      int xstride, int ystride, void* stream_v) {
     cudaStream_t stream = (cudaStream_t)stream_v;
     if (k % 8 != 0) return 40011;
-    if (m < 1 || m > DSV4_TMAX) return 40020;
+    if (m < 1) return 40020;
     if (sc_cols <= 0) return 40012;
     if (xstride <= 0) xstride = k;
     if (ystride <= 0) ystride = n;
     if (xstride % 8 != 0) return 40011;
+    if (m > DSV4_TMAX) {
+        const uint16_t* x = (const uint16_t*)x_bf16;
+        for (int base = 0; base < m; base += 8) {
+            int tile = min(8, m - base);
+            int rc = memra_dsv4_gemv_fp8_m(
+                w_codes, sc_f32, sc_cols, x + (long)base * xstride,
+                y + (long)base * ystride, tile, n, k, xstride, ystride, stream_v);
+            if (rc != 0) return rc;
+        }
+        return 0;
+    }
     switch (m) {
         DSV4_GEMV_FP8_M_CASE(1)
         DSV4_GEMV_FP8_M_CASE(2)
@@ -2888,7 +2914,17 @@ __global__ void dsv4_dots_f32_mrow_kernel(const float* __restrict__ x,
 extern "C" int memra_dsv4_dots_f32_mrow(const float* x, const void* w, int w_is_bf16,
                                         float* y, int s, int k, int n, void* stream_v) {
     cudaStream_t stream = (cudaStream_t)stream_v;
-    if (s < 1 || s > DSV4_TMAX) return 40020;
+    if (s < 1) return 40020;
+    if (s > DSV4_TMAX) {
+        for (int base = 0; base < s; base += 8) {
+            int tile = min(8, s - base);
+            int rc = memra_dsv4_dots_f32_mrow(
+                x + (long)base * k, w, w_is_bf16, y + (long)base * n,
+                tile, k, n, stream_v);
+            if (rc != 0) return rc;
+        }
+        return 0;
+    }
     int threads = 128;
     switch (s) {
         DSV4_DOTS_F32_MROW_CASE(1)
@@ -3012,7 +3048,17 @@ extern "C" int memra_dsv4_dots_f32acc_mrow(const float* x, const void* w, int w_
                                            float* y, int s, int k, int n, void* stream_v) {
     cudaStream_t stream = (cudaStream_t)stream_v;
     if (k % 8 != 0) return 40012;
-    if (s < 1 || s > DSV4_TMAX) return 40020;
+    if (s < 1) return 40020;
+    if (s > DSV4_TMAX) {
+        for (int base = 0; base < s; base += 8) {
+            int tile = min(8, s - base);
+            int rc = memra_dsv4_dots_f32acc_mrow(
+                x + (long)base * k, w, w_is_bf16, y + (long)base * n,
+                tile, k, n, stream_v);
+            if (rc != 0) return rc;
+        }
+        return 0;
+    }
     int threads = 128;
     switch (s) {
         DSV4_DOTS_F32ACC_MROW_CASE(1)

@@ -601,7 +601,7 @@ pub struct DecodeState {
 /// Number of persistent compressed rows admitted for one session. Decode allocation
 /// and batched verification must share this exact planner because the latter places its
 /// transient rows immediately after this store.
-pub const DSV4_BATCH_WIDTH_MAX: usize = 32;
+pub const DSV4_BATCH_WIDTH_MAX: usize = 64;
 
 fn dsv4_cache_cap_blocks(capacity: usize, ratio: usize) -> usize {
     capacity.checked_div(ratio).unwrap_or(0)

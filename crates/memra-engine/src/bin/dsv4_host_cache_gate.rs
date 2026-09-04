@@ -32,6 +32,14 @@ fn bits_equal(a: &[f32], b: &[f32]) -> bool {
             .all(|(left, right)| left.to_bits() == right.to_bits())
 }
 
+fn max_abs(left: &[f32], right: &[f32]) -> f32 {
+    assert_eq!(left.len(), right.len());
+    left.iter()
+        .zip(right)
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f32, f32::max)
+}
+
 fn classes_equal(left: &[(String, Vec<f32>)], right: &[(String, Vec<f32>)]) -> bool {
     left.len() == right.len()
         && left
@@ -100,7 +108,7 @@ fn main() {
     let prompt = &fixture
         .tokens_160
         .as_ref()
-        .expect("fixture tokens_160 required")[..34];
+        .expect("fixture tokens_160 required")[..66];
     let warm = 17usize; // crosses several CSA phases without making the gate slow
     let continuation = 11usize;
     let small_capacity = prompt.len() + warm + continuation + 1;
@@ -113,10 +121,11 @@ fn main() {
     );
 
     // Bounded-prefill transaction widths must not change the realized trunk or drafter
-    // state. Width 32 crosses the shipped speculative ceiling (6) and exercises the
+    // state. Width 64 crosses both the shipped speculative ceiling (6) and the largest
+    // register-specialized twin (32), exercising the tiled exact-kernel fallback and the
     // advertised prefill maximum, so this catches fixed-T assumptions instead of merely
     // re-running the DSpark shape.
-    let chunk_width = 32usize;
+    let chunk_width = 64usize;
     let mut chunk_plain_1 = gpu
         .alloc_decode_state_for_transient(small_capacity, chunk_width)
         .expect("chunk plain width-1 state");
@@ -136,6 +145,39 @@ fn main() {
         &gpu.cache_classes(&chunk_plain_17)
             .expect("chunk plain classes width 17"),
     ));
+    let mut monolithic_plain = gpu
+        .alloc_decode_state_for_transient(small_capacity, chunk_width)
+        .expect("monolithic semantic state");
+    let monolithic_logits = gpu
+        .prefill_with_cache(prompt, &mut monolithic_plain)
+        .expect("monolithic semantic prefill")
+        .logits;
+    let logits_maxabs = max_abs(&monolithic_logits, &logits_plain_1);
+    let monolithic_cache_bits = classes_equal(
+        &gpu.cache_classes(&monolithic_plain)
+            .expect("monolithic semantic cache classes"),
+        &gpu.cache_classes(&chunk_plain_1)
+            .expect("chunk semantic cache classes"),
+    );
+    let mut monolithic_token = argmax(&monolithic_logits);
+    let mut chunk_token_semantic = argmax(&logits_plain_1);
+    for step in 0..16 {
+        assert_eq!(
+            monolithic_token, chunk_token_semantic,
+            "monolithic/chunk greedy token differs at generated step {step}"
+        );
+        if step + 1 < 16 {
+            monolithic_token = gpu
+                .decode_step_greedy(monolithic_token, &mut monolithic_plain)
+                .expect("monolithic semantic decode");
+            chunk_token_semantic = gpu
+                .decode_step_greedy(chunk_token_semantic, &mut chunk_plain_1)
+                .expect("chunk semantic decode");
+        }
+    }
+    println!(
+        "[dsv4-chunk-semantics] monolithic_vs_chunk1 logits_maxabs={logits_maxabs:.8} cache_bits_equal={monolithic_cache_bits} greedy16=IDENTICAL"
+    );
 
     let mut chunk_spec_1 = gpu
         .alloc_decode_state_for_transient(small_capacity, chunk_width)
@@ -194,6 +236,33 @@ fn main() {
         &chunk_prop_1.confidence,
         &chunk_prop_17.confidence
     ));
+    let mut monolithic_spec = gpu
+        .alloc_decode_state_for_transient(small_capacity, chunk_width)
+        .expect("monolithic DSpark semantic state");
+    let mut monolithic_ds = gpu
+        .dspark_alloc_state()
+        .expect("monolithic DSpark semantic rings");
+    let monolithic_spec_logits = gpu
+        .dspark_prefill_prime(prompt, &mut monolithic_spec, &mut monolithic_ds)
+        .expect("monolithic DSpark semantic prefill")
+        .logits;
+    let monolithic_spec_token = argmax(&monolithic_spec_logits);
+    assert_eq!(monolithic_spec_token, chunk_token);
+    let monolithic_tap = monolithic_ds.tap_head;
+    let monolithic_prop = gpu
+        .dspark_forward_spec(
+            &mut monolithic_ds,
+            monolithic_spec_token,
+            monolithic_tap,
+            monolithic_spec.pos - 1,
+            false,
+        )
+        .expect("monolithic DSpark semantic proposal");
+    println!(
+        "[dsv4-chunk-semantics] monolithic_vs_chunk_dspark proposal_ids_equal={} confidence_bits_equal={}",
+        monolithic_prop.out_ids == chunk_prop_1.out_ids,
+        bits_equal(&monolithic_prop.confidence, &chunk_prop_1.confidence),
+    );
 
     // Plain trunk round trip, including restore into a larger capacity allocation.
     let (mut plain_a, mut plain_token) = plain_warm(&gpu, prompt, small_capacity, warm);
