@@ -95,6 +95,11 @@ pub(crate) struct ShadowConfig {
     /// `MEMRA_ADMIT_PREDICT_SHADOW` != "0"/unset. OFF by design: shadow logging is
     /// a measurement act, and unmeasured behavior does not default ON.
     pub armed: bool,
+    /// `MEMRA_ADMIT_PREDICT_ENFORCE=1` (memra#153): the KV verdict REJECTS instead of only
+    /// logging. Implies `armed`. OFF by design: a refusal is a customer-visible act, and
+    /// each box flips it with the receipts of the shape it must refuse (a 164k ornith
+    /// prompt on a drifted card, a 123k step37 prompt) and the shape it must still admit.
+    pub enforce: bool,
     /// The box KV budget arm the KV check compares against, in bytes.
     /// `MEMRA_ADMIT_PREDICT_BUDGET_MB` when set: the explicit operator override.
     /// When unset, the worker fills this in at boot via [`Self::resolve_budget`]
@@ -116,7 +121,8 @@ pub(crate) struct ShadowConfig {
 
 impl ShadowConfig {
     pub(crate) fn from_env() -> Self {
-        let armed = std::env::var("MEMRA_ADMIT_PREDICT_SHADOW").is_ok_and(|v| v != "0");
+        let enforce = std::env::var("MEMRA_ADMIT_PREDICT_ENFORCE").is_ok_and(|v| v == "1");
+        let armed = enforce || std::env::var("MEMRA_ADMIT_PREDICT_SHADOW").is_ok_and(|v| v != "0");
         let budget_bytes = std::env::var("MEMRA_ADMIT_PREDICT_BUDGET_MB")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
@@ -127,6 +133,7 @@ impl ShadowConfig {
             .unwrap_or_default();
         ShadowConfig {
             armed,
+            enforce,
             budget_bytes,
             exempt,
         }
@@ -560,6 +567,13 @@ pub(crate) struct VerdictLine<'a> {
     /// What an enforcing 429 would have sent (would-reject rows only).
     pub retry_after_s: Option<u64>,
     pub exempt: bool,
+    /// memra#153: `1` when the verdict was ENFORCED (a `reject-kv` became a 429), `0`
+    /// when it only logged (shadow), so the D2 grep can separate the two regimes.
+    pub enforce: bool,
+    /// memra#153: the live effective-free reading (driver free + pool cached) taken for this
+    /// request when the door is on; `None` in shadow mode. The arm the enforced verdict
+    /// used is `min(budget_bytes, live_free_bytes - admission reserve)`.
+    pub live_free_bytes: Option<u64>,
 }
 
 /// One grep-stable receipt line, `[admit-predict]`-prefixed, all fields `key=value`.
@@ -568,7 +582,7 @@ pub(crate) fn shadow_verdict_line(line: &VerdictLine<'_>) -> String {
     format!(
         "[admit-predict] id={} tenant={:?} model={:?} verdict={} reason={} prompt={} \
          predicted_completion={} kv_hat={} booked_bytes={} booked_real={} inflight={} \
-         cap={} budget_bytes={} retry_after_s={} exempt={}",
+         cap={} budget_bytes={} retry_after_s={} exempt={} enforce={} live_free_bytes={}",
         line.request_id,
         line.tenant_row,
         line.model,
@@ -584,8 +598,14 @@ pub(crate) fn shadow_verdict_line(line: &VerdictLine<'_>) -> String {
         line.budget_bytes.map_or("unset".into(), |v| v.to_string()),
         line.retry_after_s.map_or("-".into(), |v| v.to_string()),
         u8::from(line.exempt),
+        u8::from(line.enforce),
+        line.live_free_bytes.map_or("-".into(), |v| v.to_string()),
     )
 }
+
+/// memra#153: the client sentence for an enforced `reject-kv`. Stable text, no numbers: the
+/// numbers are on the `[admit-predict]` line, keyed by request id.
+pub(crate) const ENFORCED_KV_REJECT_MESSAGE: &str = "this request's context does not fit the box's free KV right now; retry after the Retry-After delay";
 
 #[cfg(test)]
 mod tests {
@@ -643,7 +663,28 @@ mod tests {
             budget_bytes: Some(35_423 << 20),
             retry_after_s: Some(4),
             exempt: false,
+            enforce: false,
+            live_free_bytes: None,
         }
+    }
+
+    /// memra#153: the enforce flag implies the shadow is armed, and the receipt carries the
+    /// regime and the live reading so the two can be told apart in the same grep.
+    #[test]
+    fn enforce_implies_armed_and_the_line_says_which_regime() {
+        let mut l = line(Verdict::RejectKv);
+        l.enforce = true;
+        l.live_free_bytes = Some(9_000_000_000);
+        let s = shadow_verdict_line(&l);
+        assert!(s.contains(" enforce=1 live_free_bytes=9000000000"), "{s}");
+        let s0 = shadow_verdict_line(&line(Verdict::RejectKv));
+        assert!(s0.ends_with(" enforce=0 live_free_bytes=-"), "{s0}");
+        // The client sentence carries no driver text and no numbers.
+        assert!(
+            !ENFORCED_KV_REJECT_MESSAGE
+                .chars()
+                .any(|c| c.is_ascii_digit())
+        );
     }
 
     /// Locks the receipt's field NAMES and joinability: request id, verdict, reason,
@@ -851,6 +892,7 @@ mod tests {
         // Env override present: derivation must not clobber it.
         let mut cfg = ShadowConfig {
             armed: true,
+            enforce: false,
             budget_bytes: Some(1234),
             exempt: Vec::new(),
         };
@@ -859,6 +901,7 @@ mod tests {
         // Unset env: the boot derivation arms the KV check.
         let mut cfg = ShadowConfig {
             armed: true,
+            enforce: false,
             budget_bytes: None,
             exempt: Vec::new(),
         };
@@ -867,6 +910,7 @@ mod tests {
         // Unset env + no derivation (free-VRAM query failed): stays unarmed.
         let mut cfg = ShadowConfig {
             armed: true,
+            enforce: false,
             budget_bytes: None,
             exempt: Vec::new(),
         };
@@ -875,6 +919,7 @@ mod tests {
         // Disarmed shadow never resolves (no boot line, no budget).
         let mut cfg = ShadowConfig {
             armed: false,
+            enforce: false,
             budget_bytes: None,
             exempt: Vec::new(),
         };
@@ -886,6 +931,7 @@ mod tests {
     fn exempt_matching_strips_tenant_row_prefix() {
         let cfg = ShadowConfig {
             armed: true,
+            enforce: false,
             budget_bytes: None,
             exempt: ShadowConfig::parse_exempt("watchdog-orn, ten_UBB1F6Lf ,,orn-probe-dry"),
         };

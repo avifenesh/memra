@@ -12518,6 +12518,17 @@ pub fn run(
         admit_predict_cfg.resolve_budget(derived);
     }
     let admit_predict_cfg = admit_predict_cfg;
+    // memra#153: the reserve the live arm subtracts from a per-request free-VRAM reading when
+    // the door enforces. Same arithmetic as the boot derivation above (box-level floor).
+    let enforce_reserve_bytes: u64 = admission_reserve(
+        true,
+        0,
+        admission_costs
+            .values()
+            .filter_map(|model| model.transient_floor)
+            .max(),
+        admit_reserve_override(),
+    ) as u64;
     let mut admission_book = crate::admit_predict::AdmissionBook::default();
     let mut completion_history = crate::admit_predict::CompletionHistory::default();
     // AGENT-PAUSE DEMOTION (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831, Arc E):
@@ -12956,6 +12967,8 @@ pub fn run(
                         budget_bytes: admit_predict_cfg.budget_bytes,
                         retry_after_s,
                         exempt: admit_predict_cfg.is_exempt(&tenant_row),
+                        enforce: admit_predict_cfg.enforce,
+                        live_free_bytes: None,
                     })
                 );
             }
@@ -13158,7 +13171,24 @@ pub fn run(
                     activation_bytes as u64,
                 );
                 let booked = admission_book.shadow_booked_total();
-                let verdict = match admit_predict_cfg.budget_bytes {
+                // memra#153: with the door ON the arm is the smaller of the boot budget and
+                // the LIVE effective free minus the reserve, so a card that drifted (#145:
+                // retained slabs, parked sessions, a full prefix cache) refuses what it can
+                // no longer hold instead of stepping into an OOM.
+                let live_free_bytes = if admit_predict_cfg.enforce {
+                    effective_free_bytes(&engine).map(|(free, _)| free as u64)
+                } else {
+                    None
+                };
+                let arm = match (admit_predict_cfg.budget_bytes, live_free_bytes) {
+                    (Some(budget), Some(live)) => {
+                        Some(budget.min(live.saturating_sub(enforce_reserve_bytes)))
+                    }
+                    (Some(budget), None) => Some(budget),
+                    (None, Some(live)) => Some(live.saturating_sub(enforce_reserve_bytes)),
+                    (None, None) => None,
+                };
+                let verdict = match arm {
                     Some(budget) if request_kv_hat.saturating_add(booked) > budget => {
                         crate::admit_predict::Verdict::RejectKv
                     }
@@ -13191,11 +13221,29 @@ pub fn run(
                         booked_real_bytes: admission_book.booked_total(),
                         inflight: admission_book.inflight(&req.model),
                         cap: cap as u64,
-                        budget_bytes: admit_predict_cfg.budget_bytes,
+                        budget_bytes: arm,
                         retry_after_s,
                         exempt: admit_predict_cfg.is_exempt(&tenant_row),
+                        enforce: admit_predict_cfg.enforce,
+                        live_free_bytes,
                     })
                 );
+                // memra#153: ENFORCE. The request has cost no device work yet (post-tokenize,
+                // pre-prefill); refuse it as the shed 429 with the predicted Retry-After
+                // instead of admitting it into a step OOM and three park/retry teardowns.
+                // Exempt tenants (the owner's measuring tenant, the watchdogs) keep the
+                // shadow behaviour so the receipts stay comparable across regimes.
+                if admit_predict_cfg.enforce
+                    && verdict == crate::admit_predict::Verdict::RejectKv
+                    && !admit_predict_cfg.is_exempt(&tenant_row)
+                {
+                    release_admission_reservation(req.lane);
+                    let _ = req.tx.send(Event::Error(EngineError::rate_limit_after(
+                        crate::admit_predict::ENFORCED_KV_REJECT_MESSAGE,
+                        retry_after_s.unwrap_or(5),
+                    )));
+                    continue;
+                }
             }
             // VRAM-AWARE ADMISSION (lane/fast-router, 2026-08-02). The original gate learned
             // one scalar from the first measurable admit. At mixed context that scalar was
@@ -28711,6 +28759,50 @@ mod tests {
             with.estimate(196_579, 164_515, true) - without.estimate(196_579, 164_515, true),
             charged
         );
+    }
+
+    /// memra#153: the enforce branch sits at the D2 seam (after the KV verdict receipt,
+    /// before the VRAM-aware gate and every prefill), releases the admission reservation,
+    /// answers the shed 429 with the stable sentence, and never fires for an exempt tenant.
+    #[test]
+    fn admit_predict_enforce_wiring() {
+        let src = include_str!("worker.rs");
+        let code: String = src
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
+        let flat: String = prod.chars().filter(|c| !c.is_whitespace()).collect();
+        let verdict_line = flat
+            .find("kv_hat_bytes:Some(request_kv_hat),")
+            .expect("the KV verdict receipt exists");
+        let enforce = flat
+            .find("ifadmit_predict_cfg.enforce&&verdict==crate::admit_predict::Verdict::RejectKv&&!admit_predict_cfg.is_exempt(&tenant_row)")
+            .expect("the enforce branch exists with the exempt guard");
+        let gate = prod
+            .find("let reserve = admission_reserve(")
+            .map(|_| {
+                flat.find("letreserve=admission_reserve(")
+                    .expect("flat gate")
+            })
+            .expect("the VRAM-aware gate exists");
+        assert!(
+            verdict_line < enforce && enforce < gate,
+            "enforce sits between the receipt and the real gate"
+        );
+        let branch = &flat[enforce..enforce + 400];
+        assert!(
+            branch.contains("release_admission_reservation(req.lane);"),
+            "the reservation is released"
+        );
+        assert!(branch.contains("EngineError::rate_limit_after(crate::admit_predict::ENFORCED_KV_REJECT_MESSAGE,retry_after_s.unwrap_or(5),)"), "the shed 429 carries the stable sentence and the predicted retry");
+        assert!(
+            branch.contains("continue;"),
+            "the request never reaches prefill"
+        );
+        // The live arm is read only under the door (shadow mode stays a pure log).
+        assert!(flat.contains("letlive_free_bytes=ifadmit_predict_cfg.enforce{effective_free_bytes(&engine).map(|(free,_)|freeasu64)}else{None};"));
     }
 
     #[test]
