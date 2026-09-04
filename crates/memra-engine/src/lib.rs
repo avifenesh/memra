@@ -936,9 +936,23 @@ pub(crate) fn b200_gemv_v2_on() -> bool {
 /// at 71-76%, and the same lever already paid on both sibling walks (`matvec_bf16_v2`/`v3` and
 /// `q8_0_mmvq_row1_rp_v2_ilp`). The e4m3 family had no twin, and the B200 hybrid mint makes it the
 /// KDA hot path by quantizing all six KDA projections to per-tensor e4m3 on 34 of 45 layers.
+/// 0 = shipped serial walk, 1 = ILP loads-in-flight, 2 = ILP plus the CTA-staged activation.
+/// Level 2 additionally stages the shared q8_1 activation in shared memory once per block: the
+/// four warps of a `MEMRA_MMVQ_ROWS = 4` block read the SAME activation, so at the served KDA
+/// width it is half the block's global traffic and three quarters of that is redundant. Costs
+/// `in_f + (in_f/32)*4` bytes of dynamic shared memory (4.6 KB at in_f 4096) and one
+/// `__syncthreads`. Same bytes, same order, same arithmetic.
+pub fn e4m3_row_ilp_level() -> u32 {
+    static LVL: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    *LVL.get_or_init(|| match std::env::var("MEMRA_E4M3_ROW_ILP").as_deref() {
+        Ok("1") => 1,
+        Ok("2") => 2,
+        _ => 0,
+    })
+}
+
 pub fn e4m3_row_ilp_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_E4M3_ROW_ILP").as_deref() == Ok("1"))
+    e4m3_row_ilp_level() > 0
 }
 
 /// `MEMRA_Q8_ROW_ILP` (lane/glm5-q8-row-ilp-20260904; default ON on sm_100a builds since
@@ -19926,13 +19940,14 @@ impl Engine {
             row_bytes,
             ws,
             outs,
-            e4m3_row_ilp_on(),
+            e4m3_row_ilp_level(),
         )
     }
 
-    /// The six-group launch with the ILP arm chosen EXPLICITLY rather than from the door. The
-    /// gate drives both arms in one process, which a `OnceLock`-backed flag read cannot express;
+    /// The six-group launch with the arm chosen EXPLICITLY rather than from the door. The gate
+    /// drives every arm in one process, which a `OnceLock`-backed flag read cannot express;
     /// keeping the policy in the wrapper above means the gate still exercises the served program.
+    /// `arm`: 0 = serial, 1 = ILP, 2 = ILP + CTA-staged activation.
     #[allow(clippy::too_many_arguments)]
     pub fn e4m3_fused6_into_arm(
         &self,
@@ -19944,22 +19959,27 @@ impl Engine {
         row_bytes: usize,
         ws: [f32; 6],
         outs: &mut [CudaSlice<f32>; 6],
-        ilp: bool,
+        arm: u32,
     ) -> Result<(), Box<dyn std::error::Error>> {
         const ROWS_PER_BLOCK: u32 = 4;
         let blocks: u32 = dims
             .iter()
             .map(|&o| (o as u32).div_ceil(ROWS_PER_BLOCK))
             .sum();
-        let f = self.func(if ilp {
-            "qmatvec_e4m3_mmvq_fused6_ilp"
-        } else {
-            "qmatvec_e4m3_mmvq_fused6"
+        // Level 2 stages the activation in dynamic shared memory. It declines to level 1 when the
+        // staging would exceed the 48 KB default dynamic cap: raising that cap is a separate
+        // decision with its own occupancy cost, and this arm has no receipt to spend on it.
+        let smem = in_f + (in_f / 32) * 4;
+        let arm = if arm >= 2 && smem > 48 * 1024 { 1 } else { arm };
+        let f = self.func(match arm {
+            0 => "qmatvec_e4m3_mmvq_fused6",
+            1 => "qmatvec_e4m3_mmvq_fused6_ilp",
+            _ => "qmatvec_e4m3_mmvq_fused6_ilp_sa",
         });
         let cfg = LaunchConfig {
             grid_dim: (blocks, 1, 1),
             block_dim: (32, ROWS_PER_BLOCK, 1),
-            shared_mem_bytes: 0,
+            shared_mem_bytes: if arm >= 2 { smem as u32 } else { 0 },
         };
         let inf = in_f as i32;
         let o: [i32; 6] = std::array::from_fn(|i| dims[i] as i32);
@@ -20381,7 +20401,7 @@ impl Engine {
         dims: [usize; 6],
         row_bytes: usize,
         ws: [f32; 6],
-        ilp: bool,
+        arm: u32,
     ) -> Result<[CudaSlice<f32>; 6], Box<dyn std::error::Error>> {
         let (aq, ad) = self.quantize_q8_1(x, 1, in_f)?;
         let mut outs = [
@@ -20392,7 +20412,7 @@ impl Engine {
             self.alloc_uninit::<f32>(dims[4])?,
             self.alloc_uninit::<f32>(dims[5])?,
         ];
-        self.e4m3_fused6_into_arm(w, &aq, &ad, in_f, dims, row_bytes, ws, &mut outs, ilp)?;
+        self.e4m3_fused6_into_arm(w, &aq, &ad, in_f, dims, row_bytes, ws, &mut outs, arm)?;
         Ok(outs)
     }
 

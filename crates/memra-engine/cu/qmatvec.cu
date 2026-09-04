@@ -4357,7 +4357,16 @@ __device__ __forceinline__ void e4m3_mmvq_batched(
 // separate m=1 launches -- that identity is the gate, not an approximation claim. Each range
 // keeps its OWN per-tensor weight scale, because in this class the scale is a per-tensor
 // property (unlike Q8_0, whose scale is always 1.0). -----
-template <int ILP>
+// SMEM_ACT: stage the shared q8_1 activation ONCE per CTA instead of re-reading it from global
+// for every row. With MEMRA_MMVQ_ROWS = 4 rows per block the four warps read the SAME in_f int8
+// codes and nblk block scales, so activation is HALF the CTA's global traffic (4 x 4096 B of
+// activation against 4 x 4096 B of weight at the served KDA width) and three quarters of it is
+// redundant. Staging costs in_f + nblk*4 bytes of shared memory -- 4.6 KB at in_f 4096, far under
+// the 48 KB default cap -- and one __syncthreads before the rows run.
+//
+// BIT IDENTITY: the same bytes in a different memory space, read in the same order by the same
+// row body. Nothing about the arithmetic moves.
+template <int ILP, bool SMEM_ACT>
 __device__ __forceinline__ void e4m3_fused6_body(
         const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
         const unsigned char* __restrict__ W2, const unsigned char* __restrict__ W3,
@@ -4371,12 +4380,32 @@ __device__ __forceinline__ void e4m3_fused6_body(
     float* const ys[6] = {y0, y1, y2, y3, y4, y5};
     const int outs[6] = {out0, out1, out2, out3, out4, out5};
     const float wss[6] = {ws0, ws1, ws2, ws3, ws4, ws5};
+    const signed char* aq_use = aq;
+    const float* ad_use = ad;
+    extern __shared__ unsigned char e4m3_f6_smem[];
+    if (SMEM_ACT) {
+        // Every range in this kernel shares ONE activation and each block belongs entirely to one
+        // range, so the staging is valid no matter which range this block serves.
+        const int nblk = in_f / 32;
+        signed char* saq = (signed char*)e4m3_f6_smem;
+        float* sad = (float*)(e4m3_f6_smem + in_f);
+        const int tid = threadIdx.y * blockDim.x + threadIdx.x;
+        const int nthreads = blockDim.x * blockDim.y;
+        // int4 copies: in_f % 32 == 0 is a load precondition of this family, so in_f % 16 == 0.
+        const int4* src4 = (const int4*)aq;
+        int4* dst4 = (int4*)saq;
+        for (int i = tid; i < in_f / 16; i += nthreads) dst4[i] = src4[i];
+        for (int i = tid; i < nblk; i += nthreads) sad[i] = ad[i];
+        __syncthreads();
+        aq_use = saq;
+        ad_use = sad;
+    }
     int b = blockIdx.x;
 #pragma unroll
     for (int i = 0; i < 6; ++i) {
         const int nb = (outs[i] + MEMRA_MMVQ_ROWS - 1) / MEMRA_MMVQ_ROWS;
         if (b < nb) {
-            e4m3_mmvq_row1_ilp<ILP>(Ws[i], aq, ad, ys[i], in_f, outs[i], row_bytes, wss[i],
+            e4m3_mmvq_row1_ilp<ILP>(Ws[i], aq_use, ad_use, ys[i], in_f, outs[i], row_bytes, wss[i],
                                     b * MEMRA_MMVQ_ROWS + (int)threadIdx.y);
             return;
         }
@@ -4393,12 +4422,26 @@ extern "C" __global__ void qmatvec_e4m3_mmvq_fused6(
         float* __restrict__ y3, float* __restrict__ y4, float* __restrict__ y5,
         int in_f, int out0, int out1, int out2, int out3, int out4, int out5,
         long row_bytes, float ws0, float ws1, float ws2, float ws3, float ws4, float ws5) {
-    e4m3_fused6_body<1>(W0, W1, W2, W3, W4, W5, aq, ad, y0, y1, y2, y3, y4, y5, in_f, out0,
+    e4m3_fused6_body<1, false>(W0, W1, W2, W3, W4, W5, aq, ad, y0, y1, y2, y3, y4, y5, in_f, out0,
                         out1, out2, out3, out4, out5, row_bytes, ws0, ws1, ws2, ws3, ws4, ws5);
 }
 
 // MEMRA_E4M3_ROW_ILP twin of the six-group: identical range split and identical per-row
 // arithmetic, four blocks' loads in flight per lane instead of one (see e4m3_row_dot_ilp).
+extern "C" __global__ void qmatvec_e4m3_mmvq_fused6_ilp_sa(
+        const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
+        const unsigned char* __restrict__ W2, const unsigned char* __restrict__ W3,
+        const unsigned char* __restrict__ W4, const unsigned char* __restrict__ W5,
+        const signed char* __restrict__ aq, const float* __restrict__ ad,
+        float* __restrict__ y0, float* __restrict__ y1, float* __restrict__ y2,
+        float* __restrict__ y3, float* __restrict__ y4, float* __restrict__ y5,
+        int in_f, int out0, int out1, int out2, int out3, int out4, int out5,
+        long row_bytes, float ws0, float ws1, float ws2, float ws3, float ws4, float ws5) {
+    e4m3_fused6_body<4, true>(W0, W1, W2, W3, W4, W5, aq, ad, y0, y1, y2, y3, y4, y5, in_f, out0,
+                              out1, out2, out3, out4, out5, row_bytes, ws0, ws1, ws2, ws3, ws4,
+                              ws5);
+}
+
 extern "C" __global__ void qmatvec_e4m3_mmvq_fused6_ilp(
         const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
         const unsigned char* __restrict__ W2, const unsigned char* __restrict__ W3,
@@ -4408,7 +4451,7 @@ extern "C" __global__ void qmatvec_e4m3_mmvq_fused6_ilp(
         float* __restrict__ y3, float* __restrict__ y4, float* __restrict__ y5,
         int in_f, int out0, int out1, int out2, int out3, int out4, int out5,
         long row_bytes, float ws0, float ws1, float ws2, float ws3, float ws4, float ws5) {
-    e4m3_fused6_body<4>(W0, W1, W2, W3, W4, W5, aq, ad, y0, y1, y2, y3, y4, y5, in_f, out0,
+    e4m3_fused6_body<4, false>(W0, W1, W2, W3, W4, W5, aq, ad, y0, y1, y2, y3, y4, y5, in_f, out0,
                         out1, out2, out3, out4, out5, row_bytes, ws0, ws1, ws2, ws3, ws4, ws5);
 }
 extern "C" __global__ void qmatvec_e4m3_mmvq_b2(

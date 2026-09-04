@@ -96,7 +96,7 @@ fn e4m3_fused_six_is_bit_identical_to_six_separate_launches() {
 
     let w6 = [&dev[0], &dev[1], &dev[2], &dev[3], &dev[4], &dev[5]];
     let got = e
-        .qmatvec_e4m3_fused6_raw(w6, &x, in_f, dims, in_f, ws, false)
+        .qmatvec_e4m3_fused6_raw(w6, &x, in_f, dims, in_f, ws, 0)
         .expect("fused six");
     for (i, &o) in dims.iter().enumerate() {
         let g = e.dtoh(&got[i]).expect("dtoh");
@@ -116,7 +116,7 @@ fn e4m3_fused_six_is_bit_identical_to_six_separate_launches() {
     let mut swapped = ws;
     swapped.swap(1, 4);
     let alt = e
-        .qmatvec_e4m3_fused6_raw(w6, &x, in_f, dims, in_f, swapped, false)
+        .qmatvec_e4m3_fused6_raw(w6, &x, in_f, dims, in_f, swapped, 0)
         .expect("fused six, swapped scales");
     let a1 = e.dtoh(&alt[1]).expect("dtoh");
     assert!(
@@ -130,7 +130,7 @@ fn e4m3_fused_six_is_bit_identical_to_six_separate_launches() {
     // change range 2's output, which a kernel that mixed up its base pointers would fail.
     let w_mixed = [&dev[0], &dev[1], &dev[0], &dev[3], &dev[4], &dev[5]];
     let mixed = e
-        .qmatvec_e4m3_fused6_raw(w_mixed, &x, in_f, dims, in_f, ws, false)
+        .qmatvec_e4m3_fused6_raw(w_mixed, &x, in_f, dims, in_f, ws, 0)
         .expect("fused six, mixed planes");
     let m2 = e.dtoh(&mixed[2]).expect("dtoh");
     assert!(
@@ -139,21 +139,25 @@ fn e4m3_fused_six_is_bit_identical_to_six_separate_launches() {
             .any(|(a, b)| a.to_bits() != b.to_bits()),
         "range 2 produced the same output from a different weight plane: pointers are not per-range"
     );
-    // MEMRA_E4M3_ROW_ILP ARM. The ILP walk changes only WHEN loads issue: four blocks in flight
-    // per lane, folded into `acc` in the same ascending order. So it must match the serial walk
-    // BIT for bit, which also makes it match the six separate launches above.
-    let ilp = e
-        .qmatvec_e4m3_fused6_raw(w6, &x, in_f, dims, in_f, ws, true)
-        .expect("fused six, ILP arm");
-    for (i, &o) in dims.iter().enumerate() {
-        let g = e.dtoh(&ilp[i]).expect("dtoh");
-        for (r, (a, b)) in g.iter().zip(want[i].iter()).enumerate() {
-            assert_eq!(
-                a.to_bits(),
-                b.to_bits(),
-                "ILP range {i} row {r}: {a} != serial {b} (ILP reorders loads, never arithmetic)"
-            );
+    // MEMRA_E4M3_ROW_ILP ARMS. Level 1 changes only WHEN loads issue (four blocks in flight per
+    // lane, folded in the same ascending order); level 2 additionally moves the shared activation
+    // into shared memory. Neither touches the arithmetic, so both must match the serial walk BIT
+    // for bit, which also makes them match the six separate launches above.
+    for arm in [1u32, 2] {
+        let got = e
+            .qmatvec_e4m3_fused6_raw(w6, &x, in_f, dims, in_f, ws, arm)
+            .unwrap_or_else(|err| panic!("fused six arm {arm}: {err}"));
+        for (i, &o) in dims.iter().enumerate() {
+            let g = e.dtoh(&got[i]).expect("dtoh");
+            assert_eq!(g.len(), o);
+            for (r, (a, b)) in g.iter().zip(want[i].iter()).enumerate() {
+                assert_eq!(
+                    a.to_bits(),
+                    b.to_bits(),
+                    "arm {arm} range {i} row {r}: {a} != serial {b} \
+                     (these arms move loads and memory spaces, never arithmetic)"
+                );
+            }
         }
-        assert_eq!(g.len(), o);
     }
 }
