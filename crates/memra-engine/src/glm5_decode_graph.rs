@@ -1312,6 +1312,58 @@ impl HybridModel {
             });
         }
         restore(e, cache, &snaps)?;
+        // memra#131 cell 6: the reference above took the persistent-workspace walk. Count the
+        // non-finite elements in the ENGINE's pooled workspace (the buffers that walk reads and
+        // writes; the stage pool checked earlier is the capture's private copy), then run a
+        // SECOND reference through the allocating (workspace-free) walk on another copy of the
+        // input and the same restored state, and compare the two bitwise. If the plain walk is
+        // finite while the workspace walk is NaN, the poison is the workspace walk's, not the
+        // layers'.
+        let (nf_ews, nf_ews_first) = match e.hyper_ws_take() {
+            Some(ws) => {
+                let mut total = 0usize;
+                let mut first = String::new();
+                for (name, buf) in [
+                    ("ws.h", &ws.h),
+                    ("ws.y", &ws.y),
+                    ("ws.z", &ws.z),
+                    ("ws.xb", &ws.xb),
+                    ("ws.mixes", &ws.mixes),
+                    ("ws.pre", &ws.pre),
+                    ("ws.post", &ws.post),
+                    ("ws.comb", &ws.comb),
+                ] {
+                    let n = nonfinite(&e.dtoh(buf)?);
+                    if n > 0 && first.is_empty() {
+                        first = format!("{name} {n}/{}", buf.len());
+                    }
+                    total += n;
+                }
+                e.hyper_ws_put(ws);
+                (total, first)
+            }
+            None => (0, "no pooled ws".to_string()),
+        };
+        let mut x_copy2 = e.uninit(width)?;
+        e.copy_into(&mut x_copy2, 0, &x_keep, width)?;
+        crate::hybrid_forward::HC_WS_FORCE_PLAIN.store(true, std::sync::atomic::Ordering::Relaxed);
+        let plain = self.hyper_range_decode_eager(e, topology, x_copy2, a, b, pos_d, pos, cache);
+        crate::hybrid_forward::HC_WS_FORCE_PLAIN.store(false, std::sync::atomic::Ordering::Relaxed);
+        let x_plain = plain?;
+        let h_plain = e.dtoh(&x_plain)?;
+        restore(e, cache, &snaps)?;
+        let nf_plain = nonfinite(&h_plain);
+        let plain_vs_ws = match h_ref
+            .iter()
+            .zip(h_plain.iter())
+            .position(|(r, p)| r.to_bits() != p.to_bits())
+        {
+            None => "bit-identical to the workspace eager".to_string(),
+            Some(i) => format!(
+                "differs from the workspace eager at element {i} (ws={:e} plain={:e})",
+                h_ref[i], h_plain[i]
+            ),
+        };
         // Which verified replay this is for the run, and which ping-pong phase it will use.
         let (k, phase) = {
             let pool = self.glm5_graph_pool(cache);
@@ -1341,7 +1393,8 @@ impl HybridModel {
                  run=[{a}, {b}) pos={pos} replay={k} phase={phase}: NON-FINITE data: input \
                  {nf_in}/{width}, eager output {nf_ref}/{width}, replay output {nf_rep}/{width}; \
                  BEFORE the walk: recurrent state non-finite {nf_state} (first: {}), stage pool \
-                 non-finite {nf_pool} (first: {}) \
+                 non-finite {nf_pool} (first: {}), engine ws non-finite {nf_ews} (first: {}); PLAIN \
+                 eager twin: non-finite {nf_plain}/{width}, {plain_vs_ws} \
                  (a NaN-identical compare proves nothing); the stage is latched EAGER for this \
                  session and this token is recomputed eager. The door did NOT engage.{}",
                 if nf_state_first.is_empty() {
@@ -1353,6 +1406,11 @@ impl HybridModel {
                     "none"
                 } else {
                     &nf_pool_first
+                },
+                if nf_ews_first.is_empty() {
+                    "none"
+                } else {
+                    &nf_ews_first
                 },
                 if nf_in > 0 {
                     " The INPUT was already poisoned: the defect is upstream of this stage."

@@ -633,8 +633,14 @@ fn moe_fused_epi_enabled() -> bool {
 /// behavior does not default ON.
 ///
 /// Read PER CALL, not latched (the `MEMRA_MOE_FUSED_EPI` rollback-seam precedent).
+/// memra#131 cell 6: the graph self-check runs a second, workspace-free eager reference next to
+/// the workspace one; this flag forces the allocating walk for that reference only.
+pub(crate) static HC_WS_FORCE_PLAIN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 fn hyper_decode_ws_on() -> bool {
-    std::env::var("MEMRA_HC_DECODE_WS").as_deref() == Ok("1")
+    !HC_WS_FORCE_PLAIN.load(std::sync::atomic::Ordering::Relaxed)
+        && std::env::var("MEMRA_HC_DECODE_WS").as_deref() == Ok("1")
 }
 
 /// Engagement counter for the workspace walk — the receipt the gate and any box A/B arm
