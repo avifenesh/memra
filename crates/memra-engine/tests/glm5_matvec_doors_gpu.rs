@@ -873,20 +873,24 @@ fn gpu_moe_ilp_matches_shipped_pair_bitwise() {
         for t in [1usize, 3, 8] {
             let z = varied(t * in_f, 0x11 + t as u64 + in_f as u64, 2.0);
             let (sel, w) = mk_sel(t);
-            let want = moe_pairs_program(
-                &e,
-                &slabs,
-                &slabs_d,
-                &macros,
-                &z,
-                &sel,
-                &w,
-                t,
-                n_used,
-                (in_f, n_ff),
-                limit,
-                |_, _, _| {},
-            );
+            // The shipped reference arm is PINNED to `0`: the door is arch-keyed ON for sm_100a
+            // builds since 2026-09-04, and an unset variable there would compare ILP to ILP.
+            let want = without_flag("MEMRA_MOE_VROWS_ILP", || {
+                moe_pairs_program(
+                    &e,
+                    &slabs,
+                    &slabs_d,
+                    &macros,
+                    &z,
+                    &sel,
+                    &w,
+                    t,
+                    n_used,
+                    (in_f, n_ff),
+                    limit,
+                    |_, _, _| {},
+                )
+            });
             for pack in [false, true] {
                 let d0 = memra_engine::moe_vrows_ilp_dispatches();
                 let got = with_flag("MEMRA_MOE_VROWS_ILP", || {
