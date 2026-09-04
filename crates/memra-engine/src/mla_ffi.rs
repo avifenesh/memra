@@ -399,7 +399,20 @@ pub static MLA_DSA_SELECT_DISPATCHES: std::sync::atomic::AtomicU64 =
 /// answer. `dsa-select-gate` asserts the `idx` plane byte-identical to the shipped kernel and
 /// carries a RED ARM that must fail first.
 fn mla_dsa_select_on() -> bool {
-    cfg!(memra_sm100_tcgen05) && std::env::var("MEMRA_B200_DSA_SELECT").as_deref() == Ok("1")
+    cfg!(memra_sm100_tcgen05)
+        && mla_dsa_select_on_from(std::env::var("MEMRA_B200_DSA_SELECT").ok().as_deref())
+}
+
+/// The pure parse behind [`mla_dsa_select_on`] (DEFAULT ON since 2026-09-04 on the builds that
+/// carry the kernel at all, which is the `memra_sm100_tcgen05` cfg above): only an explicit `0`
+/// disarms. RECEIPT (darklanes research/glm5-b200-20260902/LANE.md, onemsel 2026-09-04, 2x B200
+/// pair, composed defaults, 1M context, four boots per arm against the banked 46.20-50.24 band):
+/// the door reads outside the band on every armed boot. It stays INERT below its own floors
+/// (`mla_dsa_select_floor`: 65,536 pools = 262,144 tokens at t_q == 1, 262,144 pools = 1,048,576
+/// tokens for the spec widths), so short-context serving is untouched by construction and this
+/// flip changes only the long-context shape it was written for.
+pub fn mla_dsa_select_on_from(v: Option<&str>) -> bool {
+    !matches!(v.map(str::trim), Some("0"))
 }
 
 /// Pool-count floor for PLAIN DECODE (`t_q == 1`). The floor for the spec-verify widths is
@@ -1972,5 +1985,24 @@ impl Engine {
                 ),
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod dsa_select_default_tests {
+    use super::{mla_dsa_select_engages, mla_dsa_select_on_from};
+
+    #[test]
+    fn default_on_only_zero_disarms_and_the_floors_still_gate() {
+        assert!(mla_dsa_select_on_from(None));
+        assert!(mla_dsa_select_on_from(Some("1")));
+        assert!(!mla_dsa_select_on_from(Some("0")));
+        assert!(!mla_dsa_select_on_from(Some(" 0 ")));
+        // The flip does not reach short context: the floors are unchanged.
+        assert!(!mla_dsa_select_engages(1, 65_535));
+        assert!(mla_dsa_select_engages(1, 65_536));
+        assert!(!mla_dsa_select_engages(2, 65_536));
+        assert!(mla_dsa_select_engages(2, 262_144));
+        assert!(!mla_dsa_select_engages(9, 1_000_000));
     }
 }
