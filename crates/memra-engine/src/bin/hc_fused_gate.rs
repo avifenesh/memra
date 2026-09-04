@@ -68,7 +68,21 @@ type Res<T> = Result<T, Box<dyn std::error::Error>>;
 
 const HC: usize = 4; // GLM-5.3-Flash mHC stream count
 const D: usize = 4096; // GLM-5.3-Flash n_embd
-const ITERS: i32 = 20; // GLM-5.3-Flash hc_sinkhorn_iters (hf_mapping.rs default; hyper.rs/tests)
+/// GLM-5.3-Flash `hc_sinkhorn_iters` (hf_mapping.rs default; hyper.rs/tests).
+///
+/// `MEMRA_HC_GATE_ITERS` overrides it FOR MEASUREMENT ONLY: timing the same kernel at several
+/// iteration counts separates the Sinkhorn's serial per-iteration cost (the slope) from stages 1
+/// and 3 plus launch (the intercept), which is the split that decides whether this kernel is worth
+/// restructuring. It never changes what the engine runs -- only this gate reads it, and the
+/// correctness arms below still run at whatever value is set, so a non-default value still has to
+/// be bit-identical across all three arms.
+fn iters() -> i32 {
+    std::env::var("MEMRA_HC_GATE_ITERS")
+        .ok()
+        .and_then(|v| v.trim().parse::<i32>().ok())
+        .filter(|&v| v >= 1)
+        .unwrap_or(20)
+}
 const EPS: f32 = 1e-6; // GLM-5.3-Flash hc epsilon
 const N_TIMED: usize = 5;
 
@@ -165,7 +179,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     comb_d.device_ptr_mut(&stream).0 as *mut f32,
                     t as i32,
                     HC as i32,
-                    ITERS,
+                    iters(),
                     EPS,
                     sp(&stream),
                 );
@@ -209,7 +223,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     t as i32,
                     HC as i32,
                     D as i32,
-                    ITERS,
+                    iters(),
                     EPS,
                     std::ptr::null_mut(),
                     sp(&stream),
@@ -247,7 +261,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     t as i32,
                     HC as i32,
                     D as i32,
-                    ITERS,
+                    iters(),
                     EPS,
                     std::ptr::null_mut(),
                     sp(&stream),
