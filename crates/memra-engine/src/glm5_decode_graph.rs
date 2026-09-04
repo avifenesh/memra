@@ -1232,6 +1232,57 @@ impl HybridModel {
             }
             Ok(())
         }
+        // memra#131 cell 5: BEFORE anything runs, count non-finite elements in the recurrent
+        // state this run will read and in the stage's pool buffers (the captured bodies' private
+        // workspace and the x_io/x_out cells). Cell 4 showed a FINITE input whose eager reference
+        // came back all-NaN, so the poison sits in one of these two places; this names which.
+        let nonfinite = |v: &[f32]| v.iter().filter(|x| !x.is_finite()).count();
+        let mut nf_state = 0usize;
+        let mut nf_state_first = String::new();
+        for sn in &snaps {
+            for (name, buf) in [
+                ("conv_state", &sn.conv),
+                ("ssm_state", &sn.ssm),
+                ("ssm_state_alt", &sn.alt),
+            ] {
+                let n = nonfinite(&e.dtoh(buf)?);
+                if n > 0 && nf_state_first.is_empty() {
+                    nf_state_first = format!("layer {} {name} {n}/{}", sn.il, buf.len());
+                }
+                nf_state += n;
+            }
+        }
+        let (nf_pool, nf_pool_first) = {
+            let pool = self.glm5_graph_pool(cache);
+            let mut total = 0usize;
+            let mut first = String::new();
+            if let Some(st) = pool
+                .stages
+                .iter()
+                .find(|s| s.dev == dev && s.lo == lo && s.hi == hi)
+            {
+                let bufs: [(&str, &CudaSlice<f32>); 10] = [
+                    ("x_io", &st.x_io),
+                    ("x_out", &st.x_out),
+                    ("ws.h", &st.ws.h),
+                    ("ws.y", &st.ws.y),
+                    ("ws.z", &st.ws.z),
+                    ("ws.xb", &st.ws.xb),
+                    ("ws.mixes", &st.ws.mixes),
+                    ("ws.pre", &st.ws.pre),
+                    ("ws.post", &st.ws.post),
+                    ("ws.comb", &st.ws.comb),
+                ];
+                for (name, buf) in bufs {
+                    let n = nonfinite(&e.dtoh(buf)?);
+                    if n > 0 && first.is_empty() {
+                        first = format!("{name} {n}/{}", buf.len());
+                    }
+                    total += n;
+                }
+            }
+            (total, first)
+        };
         // Keep the input: the replay consumes `x`, and a mismatch needs it back.
         let mut x_keep = e.uninit(width)?;
         e.copy_into(&mut x_keep, 0, &x, width)?;
@@ -1288,13 +1339,29 @@ impl HybridModel {
             eprintln!(
                 "[glm5-decode-graph] SELF-CHECK FAILED dev={dev} stage=[{lo}, {hi}) \
                  run=[{a}, {b}) pos={pos} replay={k} phase={phase}: NON-FINITE data: input \
-                 {nf_in}/{width}, eager output {nf_ref}/{width}, replay output {nf_rep}/{width} \
+                 {nf_in}/{width}, eager output {nf_ref}/{width}, replay output {nf_rep}/{width}; \
+                 BEFORE the walk: recurrent state non-finite {nf_state} (first: {}), stage pool \
+                 non-finite {nf_pool} (first: {}) \
                  (a NaN-identical compare proves nothing); the stage is latched EAGER for this \
                  session and this token is recomputed eager. The door did NOT engage.{}",
+                if nf_state_first.is_empty() {
+                    "none"
+                } else {
+                    &nf_state_first
+                },
+                if nf_pool_first.is_empty() {
+                    "none"
+                } else {
+                    &nf_pool_first
+                },
                 if nf_in > 0 {
                     " The INPUT was already poisoned: the defect is upstream of this stage."
+                } else if nf_state > 0 {
+                    " The recurrent STATE was already poisoned before this run's walk."
+                } else if nf_pool > 0 {
+                    " The stage POOL (workspace / x cells) was already poisoned before this run's walk."
                 } else {
-                    ""
+                    " Input, state and pool were finite: the eager walk itself produced the poison."
                 }
             );
             restore(e, cache, &snaps)?;
