@@ -97,7 +97,10 @@ fn main() {
                 .collect()
         })
         .unwrap_or_else(|| vec![0, 1]);
-    let prompt = &fixture.tokens_160[..34];
+    let prompt = &fixture
+        .tokens_160
+        .as_ref()
+        .expect("fixture tokens_160 required")[..34];
     let warm = 17usize; // crosses several CSA phases without making the gate slow
     let continuation = 11usize;
     let small_capacity = prompt.len() + warm + continuation + 1;
