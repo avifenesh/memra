@@ -2514,12 +2514,27 @@ impl TensorSource for SafetensorsSource {
                     // ignore list). MEMRA_FULL_PREC=1 bypasses this to surface raw BF16 (the engine
                     // keeps them FloatBf16-resident for the MTP-heal protocol).
                     let full_prec = std::env::var("MEMRA_FULL_PREC").as_deref() == Ok("1");
+                    // SMALL MATMUL-CLASS WEIGHTS THE 1M THRESHOLD MISSES (lane/indexer-q8,
+                    // 2026-09-05). The threshold exists to keep norm-class tensors on the exact
+                    // f32 path, but glm5's DSA indexer has three 2-D MATMUL weights under it --
+                    // `indexer.attn_k` and `indexer.kpool_gate` [4096, 128] and `indexer.proj`
+                    // [4096, 32] -- and the loader's own tripwire flags all three by name every
+                    // boot: a Float matmul weight rides cuBLAS f32 GEMV pairs. Those pairs are
+                    // `dot_kernel` + `reduce_1Block_kernel`, 123 launches EACH per token and 5.8%
+                    // of decode in the mint census, for tensors that move almost no bytes.
+                    // This is the fix the tripwire's own message prescribes ("If matmul-class:
+                    // Q8_0-encode at load"), name-gated so it cannot widen to another family.
+                    let indexer_matmul =
+                        matches!(ggml_name.rsplit_once('.').map(|(_, t)| t), Some("weight"))
+                            && (ggml_name.ends_with(".indexer.attn_k.weight")
+                                || ggml_name.ends_with(".indexer.kpool_gate.weight")
+                                || ggml_name.ends_with(".indexer.proj.weight"));
                     if !full_prec
                         && !is_float_router
                         && !self.preserves_source_dtype(&hf)
                         && info.dtype == "BF16"
                         && info.shape.len() == 2
-                        && info.shape.iter().product::<u64>() >= 1_000_000
+                        && (info.shape.iter().product::<u64>() >= 1_000_000 || indexer_matmul)
                     {
                         let ne = info.ne();
                         if (bytes.len() / 2) % 32 == 0 {
