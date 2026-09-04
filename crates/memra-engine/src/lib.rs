@@ -2731,13 +2731,36 @@ pub(crate) fn hyper_batch_solo_on() -> bool {
 /// which the same door family does carry. A tree reduction would have been fewer instructions
 /// and a different association; it is deliberately not used.
 pub(crate) fn hc_pre_sink_reg() -> bool {
-    std::env::var("MEMRA_HC_PRE_SINK_REG").as_deref() == Ok("1")
+    hc_pre_sink_reg_from(
+        std::env::var("MEMRA_HC_PRE_SINK_REG").ok().as_deref(),
+        env!("MEMRA_BUILT_CUDA_ARCH"),
+    )
+}
+
+/// The pure parse behind [`hc_pre_sink_reg`] (arch-keyed since 2026-09-04): `1` arms, `0`
+/// disarms, unset = ON on `100a` builds (receipt +7.86% alone, +10.25% with the 512-wide block,
+/// tape 9437b599f6b9d2a9, darklanes research/glm5-b200-20260902/LANE.md hcpreab), OFF elsewhere.
+pub fn hc_pre_sink_reg_from(v: Option<&str>, built_arch: &str) -> bool {
+    match v.map(str::trim) {
+        Some("1") => true,
+        Some("0") => false,
+        _ => built_arch == "100a",
+    }
+}
+
+/// The build-arch default of `MEMRA_HC_PRE_BLOCK`: 512 on `100a`, 128 elsewhere.
+pub fn hc_pre_block_default(built_arch: &str) -> usize {
+    if built_arch == "100a" { 512 } else { 128 }
 }
 
 pub(crate) fn hc_pre_block() -> usize {
+    // Arch-keyed default since 2026-09-04: 512 on `100a` builds (receipt +10.25% with the
+    // register Sinkhorn, tape 9437b599f6b9d2a9 unchanged, darklanes
+    // research/glm5-b200-20260902/LANE.md hcpreab), 128 (= v2 verbatim) everywhere else.
+    let default = hc_pre_block_default(env!("MEMRA_BUILT_CUDA_ARCH"));
     match std::env::var("MEMRA_HC_PRE_BLOCK") {
-        Err(_) => 128,
-        Ok(v) if v.is_empty() => 128,
+        Err(_) => default,
+        Ok(v) if v.is_empty() => default,
         Ok(v) => match v.parse::<usize>() {
             Ok(n) if (32..=1024).contains(&n) && n.is_power_of_two() => n,
             _ => {
@@ -2745,10 +2768,10 @@ pub(crate) fn hc_pre_block() -> usize {
                 SAID.call_once(|| {
                     eprintln!(
                         "[hc-pre-block] MEMRA_HC_PRE_BLOCK={v:?} is not a power of two in \
-                         [32, 1024]; using 128 (the v2 width, bit-identical to the shipped arm)"
+                         [32, 1024]; using the build default {default}"
                     );
                 });
-                128
+                default
             }
         },
     }
@@ -2882,6 +2905,37 @@ mod moe_vrows_ilp_default_tests {
         assert!(moe_vrows_ilp_on_from(Some("1"), "120a"));
         assert!(!moe_vrows_ilp_on_from(Some("0"), "100a"));
         assert!(!moe_vrows_ilp_on_from(Some(" 0 "), "100a"));
+    }
+}
+
+#[cfg(test)]
+mod hc_pre_default_tests {
+    use super::{hc_pre_block_default, hc_pre_sink_reg_from};
+
+    #[test]
+    fn arch_keyed_defaults_with_explicit_override() {
+        assert_eq!(hc_pre_block_default("100a"), 512);
+        assert_eq!(hc_pre_block_default("120a"), 128);
+        assert!(hc_pre_sink_reg_from(None, "100a"));
+        assert!(!hc_pre_sink_reg_from(None, "120a"));
+        assert!(hc_pre_sink_reg_from(Some("1"), "120a"));
+        assert!(!hc_pre_sink_reg_from(Some("0"), "100a"));
+        assert_eq!(
+            crate::hyper::hc_fused_pre_arm_from(None, "100a"),
+            crate::hyper::HcFusedPreArm::V2
+        );
+        assert_eq!(
+            crate::hyper::hc_fused_pre_arm_from(None, "120a"),
+            crate::hyper::HcFusedPreArm::Off
+        );
+        assert_eq!(
+            crate::hyper::hc_fused_pre_arm_from(Some("0"), "100a"),
+            crate::hyper::HcFusedPreArm::Off
+        );
+        assert_eq!(
+            crate::hyper::hc_fused_pre_arm_from(Some("1"), "100a"),
+            crate::hyper::HcFusedPreArm::V1
+        );
     }
 }
 
