@@ -871,6 +871,26 @@ impl HybridModel {
             // consult it again now that the key is latched. It is released with the cache.
             return self.hyper_range_decode_eager(e, topology, x, lo, hi, pos_d, pos, cache);
         }
+        if need_capture {
+            // memra#131 ROOT CAUSE FIX: warm every run this capture will record. Lazily built
+            // per-weight caches (the MEMRA_GLM5_W8 q8_0 mirrors, built on first decode use) were
+            // being built INSIDE the capture: kernels recorded, never executed, entries marked
+            // built, and every later reader, the door's own eager walk included, read
+            // uninitialised bytes (cells 8/9: finite input, finite state, all-NaN KDA mixer at
+            // the first layer of the second captured run). One eager pass of each captured
+            // range on a COPY of the input, with the recurrent state snapshotted and restored
+            // around it, builds those caches with executed kernels before the capture opens.
+            // Cost: one eager stage walk per capture per session.
+            if let Err(err) = self
+                .glm5_warm_runs_before_capture(e, topology, &x, lo, hi, width, pos_d, pos, cache)
+            {
+                note(&format!(
+                    "eager from here on stage=[{lo}, {hi}) dev={dev}: the pre-capture warm walk failed ({err})"
+                ));
+                self.glm5_graph_pool(cache).failed.push((dev, lo, hi));
+                return self.hyper_range_decode_eager(e, topology, x, lo, hi, pos_d, pos, cache);
+            }
+        }
         if need_capture
             && let Err(err) =
                 self.glm5_capture_stage(e, topology, lo, hi, cache, dev, width, pos, reuse)
@@ -1164,6 +1184,81 @@ impl HybridModel {
     /// AND the host ping-pong role, which `kda_cached` swaps); run the replay for real; compare
     /// the two outputs bitwise.
     ///
+    /// memra#131: run every capturable KDA range of the stage once, eagerly, on a copy of the
+    /// input, with each range's recurrent state (and its ssm role) snapshotted and restored, so
+    /// that every lazily built per-weight cache the walk touches exists BEFORE the capture opens.
+    #[allow(clippy::too_many_arguments)]
+    fn glm5_warm_runs_before_capture(
+        &self,
+        e: &Engine,
+        topology: &crate::hyper::HyperTopology,
+        x: &CudaSlice<f32>,
+        lo: usize,
+        hi: usize,
+        width: usize,
+        pos_d: &CudaSlice<i32>,
+        pos: usize,
+        cache: &mut Cache,
+    ) -> Res<()> {
+        use cudarc::driver::DevicePtr;
+        let runs = kda_runs(self, lo, hi);
+        for (a, b) in runs {
+            struct Snap {
+                il: usize,
+                conv: CudaSlice<f32>,
+                ssm: CudaSlice<f32>,
+                alt: CudaSlice<f32>,
+                ssm_ptr: u64,
+            }
+            let mut snaps: Vec<Snap> = Vec::with_capacity(b - a);
+            for il in a..b {
+                let rl = cache.recur[il]
+                    .as_ref()
+                    .ok_or_else(|| format!("warm: layer {il} carries no recurrent state"))?;
+                let ssm_ptr = {
+                    let st = e.stream();
+                    let (p, _g) = rl.ssm_state.device_ptr(&st);
+                    p
+                };
+                let mut conv = e.uninit(rl.conv_state.len())?;
+                let mut ssm = e.uninit(rl.ssm_state.len())?;
+                let mut alt = e.uninit(rl.ssm_state_alt.len())?;
+                e.copy_into(&mut conv, 0, &rl.conv_state, rl.conv_state.len())?;
+                e.copy_into(&mut ssm, 0, &rl.ssm_state, rl.ssm_state.len())?;
+                e.copy_into(&mut alt, 0, &rl.ssm_state_alt, rl.ssm_state_alt.len())?;
+                snaps.push(Snap {
+                    il,
+                    conv,
+                    ssm,
+                    alt,
+                    ssm_ptr,
+                });
+            }
+            let mut xc = e.uninit(width)?;
+            e.copy_into(&mut xc, 0, x, width)?;
+            let _ = self.hyper_range_decode_eager(e, topology, xc, a, b, pos_d, pos, cache)?;
+            for sn in &snaps {
+                let rl = cache.recur[sn.il].as_mut().expect("snapshotted above");
+                let p = {
+                    let st = e.stream();
+                    let (p, _g) = rl.ssm_state.device_ptr(&st);
+                    p
+                };
+                if p != sn.ssm_ptr {
+                    std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
+                }
+                e.copy_into(&mut rl.conv_state, 0, &sn.conv, sn.conv.len())?;
+                e.copy_into(&mut rl.ssm_state, 0, &sn.ssm, sn.ssm.len())?;
+                e.copy_into(&mut rl.ssm_state_alt, 0, &sn.alt, sn.alt.len())?;
+            }
+            note(&format!(
+                "warmed run [{a}, {b}) before capture (one eager pass on a copy of the input, \
+                 state restored): lazily built per-weight caches now exist"
+            ));
+        }
+        Ok(())
+    }
+
     /// `(x, true)`: the replay matched, `x` is its output, the run is marked checked — one
     /// eager run per run per session. `(x, false)`: it did not match; the state is restored a
     /// second time, the eager walk is run for real from a kept copy of the input so the token
