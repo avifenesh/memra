@@ -264,10 +264,22 @@ pub fn glm5_q8_fuse_on() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_GLM5_Q8_FUSE").as_deref() == Ok("1"))
 }
 
-/// Door `MEMRA_GLM5_DECODE_GRAPH` (lane/b200-glm5-graph-20260902, DEFAULT OFF): capture the
-/// glm5_next T=1 decode walk as replayable per-stage CUDA graphs instead of issuing every
-/// kernel per token. `1` arms it, unset/`0` is the eager walk. Read PER CALL so it is a live
-/// rollback seam, never a process-lifetime latch.
+/// Door `MEMRA_GLM5_DECODE_GRAPH` (lane/b200-glm5-graph-20260902, DEFAULT ON since 2026-09-04):
+/// capture the glm5_next T=1 decode walk as replayable per-stage CUDA graphs instead of
+/// issuing every kernel per token. Unset/`1` arms it, `=0` is the eager walk. Read PER CALL so
+/// `=0` is a live rollback seam, never a process-lifetime latch.
+///
+/// WHY ON (receipts in docs/FLAGS.md and darklanes `research/glm5-b200-20260902/LANE.md`,
+/// cells graphab + graphgates 2026-09-04, 2x B200 SXM PP-2, assembled serving posture): the
+/// corrected door (memra#131 root-caused and fixed in #168) is +9.89% at c1 plain
+/// (66.40 -> 72.97 tok/s, interleaved x3, greedy tape identical to the eager walk on six
+/// boots), passes the 1M-context gate with every self-check green, is inert on the DFlash2
+/// spec route (engaged=0, wall unchanged), and is neutral on the 8-turn vendor-sampled
+/// twin with short turns (the per-session capture + warm + check cost eats the gain there:
+/// that cost is the next lever, not a reason to stay eager). Every refusal shape falls
+/// through to the eager walk byte-identically, and the first replay of every captured run
+/// is compared bitwise against an eager step (`MEMRA_GLM5_GRAPH_SELFCHECK_N`), latching the
+/// stage eager on any mismatch.
 ///
 /// WHAT IS CAPTURED: the maximal CONTIGUOUS runs of KDA-mixer layers inside each pipeline
 /// stage's `[lo, hi)` range, hc glue and routed MoE included. WHAT STAYS EAGER: every
@@ -276,7 +288,15 @@ pub fn glm5_q8_fuse_on() -> bool {
 /// walk (which keeps `MEMRA_SPEC_VERIFY_GRAPH`). See docs/FLAGS.md and
 /// research/b200-glm5-graph-20260902/LANE.md.
 pub fn glm5_decode_graph_on() -> bool {
-    std::env::var("MEMRA_GLM5_DECODE_GRAPH").as_deref() == Ok("1")
+    glm5_decode_graph_on_from(std::env::var("MEMRA_GLM5_DECODE_GRAPH").ok().as_deref())
+}
+
+/// The pure parse behind [`glm5_decode_graph_on`]: only an explicit `0` disarms the door;
+/// unset, `1`, and any other value arm it. Kept separate so the default can be unit-tested
+/// without mutating the process environment (the OFF arm of every gate sets `=0` and this is
+/// the contract that makes that arm non-vacuous).
+pub fn glm5_decode_graph_on_from(v: Option<&str>) -> bool {
+    !matches!(v.map(str::trim), Some("0"))
 }
 
 /// `MEMRA_GLM5_GRAPH_HOST_MOE=1` — BISECT knob for `MEMRA_GLM5_DECODE_GRAPH`, gate harness only.
@@ -2675,6 +2695,22 @@ mod verify_ws_flag_tests {
         // explicit ON on either name keeps the default
         assert!(verify_ws_on_from(Some("1"), None));
         assert!(verify_ws_on_from(None, Some("1")));
+    }
+}
+
+#[cfg(test)]
+mod glm5_decode_graph_default_tests {
+    use super::glm5_decode_graph_on_from;
+
+    /// Default ON since 2026-09-04; only an explicit `0` disarms. The OFF arm of every gate
+    /// and test sets `=0`, and this is the contract that keeps that arm non-vacuous.
+    #[test]
+    fn unset_and_one_arm_only_zero_disarms() {
+        assert!(glm5_decode_graph_on_from(None));
+        assert!(glm5_decode_graph_on_from(Some("1")));
+        assert!(glm5_decode_graph_on_from(Some("")));
+        assert!(!glm5_decode_graph_on_from(Some("0")));
+        assert!(!glm5_decode_graph_on_from(Some(" 0 ")));
     }
 }
 

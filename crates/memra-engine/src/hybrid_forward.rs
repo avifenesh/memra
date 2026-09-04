@@ -2525,8 +2525,9 @@ impl HybridModel {
         pos: usize,
         cache: &mut Cache,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        // DOOR `MEMRA_GLM5_DECODE_GRAPH` (lane/b200-glm5-graph-20260902, default OFF, read PER
-        // CALL): replay this stage's captured KDA-layer runs instead of issuing them. Every
+        // DOOR `MEMRA_GLM5_DECODE_GRAPH` (lane/b200-glm5-graph-20260902, default ON since
+        // 2026-09-04, `=0` disarms, read PER CALL): replay this stage's captured KDA-layer runs
+        // instead of issuing them. Every
         // refusal shape returns None and falls through to the eager walk below, byte-identically
         // — see crates/memra-engine/src/glm5_decode_graph.rs for what is captured and why the
         // MLA/DSA layers are not.
@@ -11162,7 +11163,8 @@ impl HybridModel {
             cache_dispatch && crate::spill_pread::worker_enabled() && !cpu_hybrid;
         let promote_worker_h2d =
             t == 1 && worker_disk_prefetch && crate::spill_pread::copy_h2d_enabled();
-        // DOOR `MEMRA_GLM5_DECODE_GRAPH` (lane/b200-glm5-graph-20260902, default OFF): the T=1
+        // DOOR `MEMRA_GLM5_DECODE_GRAPH` (lane/b200-glm5-graph-20260902, default ON since
+        // 2026-09-04): the T=1
         // DECODE twin of door D. On the glm5_next serving shape the per-MoE-layer selection is
         // read back through a pinned stage plus a full `cuStreamSynchronize`
         // (`Engine::moe_router_sigmoid_topk_host`) for the sole purpose of letting the HOST

@@ -163,10 +163,13 @@ fn run_arm(
     // SAFETY: single-threaded gate binary; the doors are read per call by the engine, and no
     // other thread exists to observe the environment mid-flight.
     unsafe {
+        // The door is DEFAULT ON (2026-09-04), so the eager arm must SET `0`: unsetting the
+        // variable would arm the door on both arms and the byte-identity gate would compare the
+        // graph against itself (the vacuity memra#136 named).
         if graph_door {
             std::env::set_var("MEMRA_GLM5_DECODE_GRAPH", "1");
         } else {
-            std::env::remove_var("MEMRA_GLM5_DECODE_GRAPH");
+            std::env::set_var("MEMRA_GLM5_DECODE_GRAPH", "0");
         }
         if ledger {
             std::env::set_var("MEMRA_GLM5_GRAPH_SEL_LEDGER", "1");
