@@ -388,22 +388,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // These are what the engine actually runs, so this is the comparison that picks the arm.
         // Wall time includes the dtoh every arm pays equally, so the DIFFERENCE between arms is
         // the kernel difference; the absolute figures are not a serving-shape claim.
-        let mut v3_us: Vec<(i32, Vec<u64>)> = Vec::new();
+        // Sweep the BLOCK WIDTH on the served arm. Stages 1 and 3 scale with the block; the
+        // Sinkhorn does not (it is warp-0-only at every width). So the width slope is what says
+        // how much of the kernel is the parallel work -- which is the number that decides whether
+        // giving those stages a real GRID is worth building, and the one thing a single-width
+        // measurement cannot tell you.
+        let mut v3_us: Vec<(i32, i32, Vec<u64>)> = Vec::new();
         for sr in [0i32, 1] {
-            let mut us = Vec::with_capacity(N_TIMED);
-            for _ in 0..N_TIMED {
-                stream.synchronize()?;
-                let t0 = std::time::Instant::now();
-                let _ = run_fused_v3(sr, 512)?;
-                us.push(t0.elapsed().as_micros() as u64);
+            for block in [128i32, 256, 512, 1024] {
+                let mut us = Vec::with_capacity(N_TIMED);
+                for _ in 0..N_TIMED {
+                    stream.synchronize()?;
+                    let t0 = std::time::Instant::now();
+                    let _ = run_fused_v3(sr, block)?;
+                    us.push(t0.elapsed().as_micros() as u64);
+                }
+                us.sort_unstable();
+                println!(
+                    "[v3-timing] t={t} sink_reg={sr} block={block} iters={} median={}us runs={us:?}",
+                    iters(),
+                    us[us.len() / 2]
+                );
+                v3_us.push((sr, block, us));
             }
-            us.sort_unstable();
-            println!(
-                "[v3-timing] t={t} sink_reg={sr} block=512 iters={} median={}us runs={us:?}",
-                iters(),
-                us[us.len() / 2]
-            );
-            v3_us.push((sr, us));
         }
 
         // ---- hc_post alone, N=5: census-context only, NOT fused with anything ----
