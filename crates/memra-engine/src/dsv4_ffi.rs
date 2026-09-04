@@ -756,33 +756,6 @@ unsafe extern "C" {
         a_group: i32,
         stream: *mut c_void,
     ) -> i32;
-    pub fn memra_dsv4_act_quant_q8(
-        x: *const f32,
-        q: *mut c_void,
-        scales: *mut f32,
-        rows: i32,
-        cols: i32,
-        stream: *mut c_void,
-    ) -> i32;
-    #[allow(clippy::too_many_arguments)]
-    pub fn memra_dsv4_fp4_gemm_sel_q8_g(
-        a_q8: *const c_void,
-        a_scales: *const f32,
-        w_codes: *const c_void,
-        w_scales: *const c_void,
-        w_scale2: *const f32,
-        selected: *const i32,
-        projection: i32,
-        a_stride_rows: i32,
-        out: *mut f32,
-        slots: i32,
-        n: i32,
-        kdim: i32,
-        wstride: i64,
-        sstride: i64,
-        a_group: i32,
-        stream: *mut c_void,
-    ) -> i32;
     #[allow(clippy::too_many_arguments)]
     pub fn memra_dsv4_combine_rows_m(
         contrib: *const f32,
