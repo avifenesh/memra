@@ -1037,7 +1037,10 @@ first-token deadline only when the deployment pairs `MEMRA_STREAM_TTFT_MS_MAX` w
 `MEMRA_SSE_PREFILL_COMMIT_MS`. If the first generated token has not arrived at the commit
 threshold, Memra commits the SSE response and its existing 5 s comment keepalive starts.
 Comments are transport liveness, not model output, and first-token measurements must ignore
-them. The original TTFT deadline continues to run.
+them. The original TTFT deadline continues to run. Admission has a separate hard deadline
+at the same commit threshold: if capacity has not admitted the request by then, a retryable
+pre-header 408 explains the admission budget and bills zero. Extending TTFT therefore does
+not extend silent queue waiting.
 
 | | non-streaming | streaming (`stream: true`) |
 |---|---|---|
@@ -1047,13 +1050,17 @@ them. The original TTFT deadline continues to run.
 | miss with ZERO tokens produced | `408`, generation cancelled, **not billed** | at <=90 s: `408` pre-header; after an extended stream committed: dialect-native timeout error event under HTTP 200. Both cancel and bill zero |
 | after the first token | — | the parameter is **spent**; the stream runs to completion |
 
-A missed deadline that delivered NOTHING has `type: "timeout"`, code
-`deadline_exceeded`, a message naming the effective deadline, and no invented Retry-After.
+A missed deadline that delivered NOTHING carries a message naming the effective budget
+and no invented Retry-After. OpenAI/native errors carry `type: "timeout"` and
+`code: "deadline_exceeded"`; Anthropic errors carry `error.type: "timeout"`, while
+Responses streaming uses `response.error.code: "deadline_exceeded"`.
 Before a response commits this is HTTP 408. After an extended stream committed to keep the
 proxy connection alive, it is the wire dialect's terminal error under HTTP 200: an OpenAI
 `data:` error then `[DONE]`, Responses `response.failed`, Anthropic `event: error`, or the
 native named error event. This is still an honest "you don't pay": the receipt settles the
-same zero-debit `deadline_exceeded` outcome before the stream closes. Admission wait counts
+same zero-debit `deadline_exceeded` outcome independently of body polling, before cancelling
+the worker. A client disconnect after timeout cannot turn that outcome into abandonment.
+Admission wait counts
 against the deadline, so a request that can no longer answer is cancelled rather than served
 late.
 

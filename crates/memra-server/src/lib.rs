@@ -100,6 +100,7 @@ mod embed_api;
 /// deployment's own binary — engine-billing-extraction-20260829, owner razor
 /// 2026-08-29: "only engine is open, business is private").
 pub mod metering;
+mod prefill_receipt;
 mod responses_api;
 mod surfaces;
 mod toolcall;
@@ -2139,6 +2140,19 @@ pub(crate) struct RequestDeadline {
 }
 
 impl RequestDeadline {
+    pub(crate) fn preheader(self, stream: bool) -> Self {
+        if !stream || self.ms <= TIMEOUT_MS_MAX {
+            return self;
+        }
+        let Some(commit_ms) = sse_prefill_commit_ms() else {
+            return self;
+        };
+        let ms = self.ms.min(commit_ms);
+        Self {
+            at: self.at - std::time::Duration::from_millis(self.ms - ms),
+            ms,
+        }
+    }
     pub(crate) fn starting_now(ms: u64) -> Self {
         Self {
             at: tokio::time::Instant::now() + std::time::Duration::from_millis(ms),
@@ -2183,6 +2197,24 @@ pub(crate) fn deadline_exceeded_response(ms: u64, stream: bool) -> Response {
     error_response_coded(
         StatusCode::REQUEST_TIMEOUT,
         &deadline_exceeded_message(ms, stream),
+        "timeout",
+        Some("timeout_ms"),
+        Some("deadline_exceeded"),
+    )
+}
+
+pub(crate) fn admission_deadline_response(deadline: RequestDeadline, stream: bool) -> Response {
+    let admission = deadline.preheader(stream);
+    if admission.ms == deadline.ms {
+        return deadline_exceeded_response(deadline.ms, stream);
+    }
+    error_response_coded(
+        StatusCode::REQUEST_TIMEOUT,
+        &format!(
+            "admission did not complete within the {} ms pre-header budget \
+            (streaming first-token timeout_ms={}); generation was cancelled and this request is not billed",
+            admission.ms, deadline.ms
+        ),
         "timeout",
         Some("timeout_ms"),
         Some("deadline_exceeded"),
@@ -7208,15 +7240,22 @@ async fn forward_prefill_until_first_delivery(
     mut rx: worker::EventReceiver,
     tx2: worker::EventSender,
     deadline: RequestDeadline,
+    mut receipt: Option<prefill_receipt::SharedReceipt>,
 ) {
     loop {
         tokio::select! {
             biased;
-            () = tx2.closed() => break,
             () = tokio::time::sleep_until(deadline.at) => {
+                if let Some(receipt) = receipt.as_mut() {
+                    use metering::Receipt;
+                    if let Err(error) = receipt.settle_unbilled("deadline_exceeded", 408, "deadline_exceeded") {
+                        eprintln!("[ledger] ERROR: prefill deadline settlement failed: {error}");
+                    }
+                }
                 let _ = tx2.send(Event::DeadlineExceeded { ms: deadline.ms });
                 break;
             }
+            () = tx2.closed() => break,
             ev = rx.recv() => match ev {
                 Some(ev) => {
                     let first_delivery = matches!(
@@ -7227,6 +7266,7 @@ async fn forward_prefill_until_first_delivery(
                         break;
                     }
                     if first_delivery {
+                        drop(receipt);
                         forward_events(rx, tx2).await;
                         break;
                     }
@@ -7317,18 +7357,30 @@ fn validate_stream_prefill_config() -> Result<(), String> {
 async fn peek_first_token(
     rx: worker::EventReceiver,
     deadline: RequestDeadline,
+    receipt: &mut Option<Box<dyn metering::Receipt>>,
 ) -> Result<worker::EventReceiver, ()> {
     let commit_after = (deadline.ms > TIMEOUT_MS_MAX)
         .then(sse_prefill_commit_ms)
         .flatten()
         .map(std::time::Duration::from_millis);
-    peek_first_token_with_commit(rx, deadline, commit_after).await
+    let shared = commit_after.and_then(|_| prefill_receipt::SharedReceipt::wrap(receipt));
+    peek_first_token_with_receipt(rx, deadline, commit_after, shared).await
 }
 
+#[cfg(test)]
 async fn peek_first_token_with_commit(
+    rx: worker::EventReceiver,
+    deadline: RequestDeadline,
+    commit_after: Option<std::time::Duration>,
+) -> Result<worker::EventReceiver, ()> {
+    peek_first_token_with_receipt(rx, deadline, commit_after, None).await
+}
+
+async fn peek_first_token_with_receipt(
     mut rx: worker::EventReceiver,
     deadline: RequestDeadline,
     commit_after: Option<std::time::Duration>,
+    receipt: Option<prefill_receipt::SharedReceipt>,
 ) -> Result<worker::EventReceiver, ()> {
     let mut buffered: Vec<Event> = Vec::new();
     let request_started_at = deadline
@@ -7347,7 +7399,9 @@ async fn peek_first_token_with_commit(
                 for ev in buffered {
                     let _ = tx2.send(ev);
                 }
-                tokio::spawn(forward_prefill_until_first_delivery(rx, tx2, deadline));
+                tokio::spawn(forward_prefill_until_first_delivery(
+                    rx, tx2, deadline, receipt,
+                ));
                 return Ok(rx2);
             }
             Ok(None) => break, // worker gone: the stream's closed-channel law handles it
@@ -9059,7 +9113,7 @@ async fn completions_with_admission(
     }
     // BACKPRESSURE (lane/deadline-billing): shed at submission — never after — when the
     // queue is at its bound or the estimated wait cannot fit the request's deadline.
-    let pending_admit = match reserve_pending_admit(&st, lane, &rl, deadline) {
+    let pending_admit = match reserve_pending_admit(&st, lane, &rl, deadline.preheader(stream)) {
         Ok(guard) => guard,
         Err((resp, outcome)) => {
             return ledger_unbilled(receipt, rl.attach(resp), outcome, outcome, &env.id);
@@ -9088,7 +9142,8 @@ async fn completions_with_admission(
     // DEADLINE: the admission wait counts against timeout_ms (a queued request that can
     // no longer answer in time is a miss). Dropping rx on a miss IS the cancel — the
     // worker prunes closed-channel requests still queued at the next tick.
-    let rx = match tokio::time::timeout_at(deadline.at, peek_admission(rx)).await {
+    let rx = match tokio::time::timeout_at(deadline.preheader(stream).at, peek_admission(rx)).await
+    {
         Ok(Ok(rx)) => rx,
         Ok(Err((resp, error_code))) => {
             return ledger_rejected(receipt, rl.attach(resp), error_code, &env.id);
@@ -9096,7 +9151,7 @@ async fn completions_with_admission(
         Err(_) => {
             return ledger_unbilled(
                 receipt,
-                rl.attach(deadline_exceeded_response(deadline.ms, stream)),
+                rl.attach(admission_deadline_response(deadline, stream)),
                 "deadline_exceeded",
                 "deadline_exceeded",
                 &env.id,
@@ -9108,7 +9163,8 @@ async fn completions_with_admission(
         // Streaming: timeout_ms bounds TIME-TO-FIRST-TOKEN only. Once the first token has
         // streamed the parameter is spent — a client that walks away mid-stream is the
         // existing "abandoned" path (user fault, partial billed, owner-ratified).
-        let rx = match peek_first_token(rx, deadline).await {
+        let mut receipt = receipt;
+        let rx = match peek_first_token(rx, deadline, &mut receipt).await {
             Ok(rx) => rx,
             Err(()) => {
                 return ledger_unbilled(
@@ -9408,7 +9464,7 @@ async fn chat_completions_with_admission(
     }
     // BACKPRESSURE (lane/deadline-billing): shed at submission — never after — when the
     // queue is at its bound or the estimated wait cannot fit the request's deadline.
-    let pending_admit = match reserve_pending_admit(&st, lane, &rl, deadline) {
+    let pending_admit = match reserve_pending_admit(&st, lane, &rl, deadline.preheader(stream)) {
         Ok(guard) => guard,
         Err((resp, outcome)) => {
             return ledger_unbilled(receipt, rl.attach(resp), outcome, outcome, &env.id);
@@ -9461,7 +9517,8 @@ async fn chat_completions_with_admission(
     // is additionally bounded by the request's own deadline (a sub-5s timeout_ms must not be
     // overshot by the compile window).
     if let Some(ready) = constraint_ready {
-        let bound = constrained::CONSTRAINT_COMPILE_TIMEOUT.min(deadline.remaining());
+        let bound =
+            constrained::CONSTRAINT_COMPILE_TIMEOUT.min(deadline.preheader(stream).remaining());
         match tokio::time::timeout(bound, ready).await {
             Ok(Ok(Ok(()))) => {}
             Ok(Ok(Err(err))) => {
@@ -9480,10 +9537,10 @@ async fn chat_completions_with_admission(
                     &env.id,
                 );
             }
-            Err(_) if deadline.remaining().is_zero() => {
+            Err(_) if deadline.preheader(stream).remaining().is_zero() => {
                 return ledger_unbilled(
                     receipt,
-                    rl.attach(deadline_exceeded_response(deadline.ms, stream)),
+                    rl.attach(admission_deadline_response(deadline, stream)),
                     "deadline_exceeded",
                     "deadline_exceeded",
                     &env.id,
@@ -9500,7 +9557,8 @@ async fn chat_completions_with_admission(
         }
     }
     // DEADLINE: the admission wait counts against timeout_ms — see `completions`.
-    let rx = match tokio::time::timeout_at(deadline.at, peek_admission(rx)).await {
+    let rx = match tokio::time::timeout_at(deadline.preheader(stream).at, peek_admission(rx)).await
+    {
         Ok(Ok(rx)) => rx,
         Ok(Err((resp, error_code))) => {
             return ledger_rejected(receipt, rl.attach(resp), error_code, &env.id);
@@ -9508,7 +9566,7 @@ async fn chat_completions_with_admission(
         Err(_) => {
             return ledger_unbilled(
                 receipt,
-                rl.attach(deadline_exceeded_response(deadline.ms, stream)),
+                rl.attach(admission_deadline_response(deadline, stream)),
                 "deadline_exceeded",
                 "deadline_exceeded",
                 &env.id,
@@ -9517,7 +9575,8 @@ async fn chat_completions_with_admission(
     };
     let resp = if stream {
         // Streaming: timeout_ms bounds TIME-TO-FIRST-TOKEN only — see `completions`.
-        let rx = match peek_first_token(rx, deadline).await {
+        let mut receipt = receipt;
+        let rx = match peek_first_token(rx, deadline, &mut receipt).await {
             Ok(rx) => rx,
             Err(()) => {
                 return ledger_unbilled(
@@ -15849,7 +15908,7 @@ default_reasoning_effort = "always"
                 .env("PREFILL_CONFIG_TEST_CHILD", "1")
                 .env_remove("MEMRA_TIMEOUT_MS_MAX")
                 .env("MEMRA_STREAM_TTFT_MS_MAX", "300000")
-                .env("MEMRA_SSE_PREFILL_COMMIT_MS", "1")
+                .env("MEMRA_SSE_PREFILL_COMMIT_MS", "100")
                 .output()
                 .unwrap();
             assert!(
@@ -15876,7 +15935,7 @@ default_reasoning_effort = "always"
                 .unwrap();
                 let rx = tokio::time::timeout(
                     std::time::Duration::from_secs(2),
-                    peek_first_token(rx, RequestDeadline::starting_now(300_000)),
+                    peek_first_token(rx, RequestDeadline::starting_now(300_000), &mut None),
                 )
                 .await
                 .expect("the configured production peek must commit before first token")
@@ -15885,6 +15944,44 @@ default_reasoning_effort = "always"
                 tokio::time::timeout(std::time::Duration::from_secs(1), tx.closed())
                     .await
                     .unwrap();
+                // Withhold the worker's admission event on every public dialect. The
+                // extended 300s TTFT must still refuse this queue within its 100ms budget.
+                use tower::ServiceExt;
+                for (path, payload) in [
+                    ("/v1/completions", json!({"model":"m","prompt":"t","stream":true,"max_tokens":16})),
+                    ("/v1/chat/completions", json!({"model":"m","messages":[{"role":"user","content":"t"}],"stream":true,"max_tokens":16})),
+                    ("/v1/messages", json!({"model":"m","messages":[{"role":"user","content":"t"}],"stream":true,"max_tokens":16})),
+                    ("/v1/responses", json!({"model":"m","input":"t","stream":true,"max_output_tokens":16})),
+                    ("/v1/chat/completions", json!({"model":"m","messages":[{"role":"user","content":"t"}],"stream":true,"max_tokens":16,"response_format":{"type":"json_object"}})),
+                    ("/v1/responses", json!({"model":"m","input":"t","stream":true,"max_output_tokens":16,"text":{"format":{"type":"json_object"}}})),
+                ] {
+                    let mut st = fake_worker_state();
+                    let (cmd_tx, cmd_rx) = std::sync::mpsc::channel();
+                    st.cmd_tx = cmd_tx;
+                    let mock = MockMetering::admit_all();
+                    st.metering = Some(mock.clone());
+                    let app = Router::new()
+                        .route("/v1/completions", post(completions_admitted))
+                        .route("/v1/chat/completions", post(chat_completions_admitted))
+                        .route("/v1/messages", post(anthropic::messages_admitted))
+                        .route("/v1/responses", post(responses_api::responses_admitted))
+                        .with_state(st);
+                    let response = tokio::time::timeout(std::time::Duration::from_secs(2),
+                        app.oneshot(axum::http::Request::builder().method("POST").uri(path)
+                            .header("content-type", "application/json")
+                            .body(axum::body::Body::from(payload.to_string())).unwrap()))
+                        .await.expect("admission must expire before the proxy ceiling").unwrap();
+                    assert_eq!(response.status(), StatusCode::REQUEST_TIMEOUT, "{path}");
+                    let body = body_value(response).await;
+                    assert!(body["error"]["message"].as_str().unwrap().contains("pre-header budget"), "{path}: {body}");
+                    let Cmd::Generate(req) = cmd_rx.try_recv().expect("request reached admission") else { panic!("unexpected command") };
+                    assert!(req.tx.is_closed(), "{path}: queued work must be cancelled");
+                    worker::release_pending_admit();
+                    worker::release_admission_reservation(req.lane);
+                    assert!(mock.events().contains(&MeterEvent::Unbilled {
+                        outcome: "deadline_exceeded", status: 408, code: "deadline_exceeded".into(),
+                    }));
+                }
             });
     }
 
@@ -16038,6 +16135,142 @@ default_reasoning_effort = "always"
             status: 408,
             code: "deadline_exceeded".into(),
         }));
+    }
+
+    #[tokio::test]
+    async fn expired_prefill_settles_before_an_unpolled_body_is_dropped() {
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut receipt: Option<Box<dyn metering::Receipt>> = Some(Box::new(MockReceipt {
+            events: events.clone(),
+            wants_capture: false,
+            prompt: 0,
+            cached: 0,
+            completion: 0,
+            finalized: false,
+        }));
+        let shared = prefill_receipt::SharedReceipt::wrap(&mut receipt);
+        let (tx, rx) = worker::event_channel();
+        tx.send(Event::PromptUsage {
+            n_prompt: 218_000,
+            n_cached: 0,
+        })
+        .unwrap();
+        let rx = peek_first_token_with_receipt(
+            rx,
+            RequestDeadline::starting_now(100),
+            Some(std::time::Duration::from_millis(1)),
+            shared,
+        )
+        .await
+        .unwrap();
+        let response = sse_response_with_receipt(
+            rx,
+            "m".into(),
+            true,
+            None,
+            Envelope::new(true),
+            Vec::new(),
+            None,
+            receipt,
+        )
+        .into_response();
+        let mut body = Box::pin(response.into_body().into_data_stream());
+        std::future::poll_fn(|cx| {
+            assert!(body.as_mut().poll_next(cx).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        tokio::time::timeout(std::time::Duration::from_secs(1), tx.closed())
+            .await
+            .unwrap();
+        drop(body); // deliberately never consume DeadlineExceeded
+        let events = events.lock().unwrap();
+        assert!(events.contains(&MeterEvent::PromptUsage {
+            prompt: 218_000,
+            cached: 0
+        }));
+        assert!(events.contains(&MeterEvent::Unbilled {
+            outcome: "deadline_exceeded",
+            status: 408,
+            code: "deadline_exceeded".into(),
+        }));
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, MeterEvent::Dropped { .. } | MeterEvent::Complete { .. }))
+        );
+    }
+
+    #[tokio::test]
+    async fn committed_prefill_disarms_deadline_after_first_token_and_bills_completion() {
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut receipt: Option<Box<dyn metering::Receipt>> = Some(Box::new(MockReceipt {
+            events: events.clone(),
+            wants_capture: false,
+            prompt: 0,
+            cached: 0,
+            completion: 0,
+            finalized: false,
+        }));
+        let shared = prefill_receipt::SharedReceipt::wrap(&mut receipt);
+        let (tx, rx) = worker::event_channel();
+        tx.send(Event::PromptUsage {
+            n_prompt: 1,
+            n_cached: 0,
+        })
+        .unwrap();
+        let rx = peek_first_token_with_receipt(
+            rx,
+            RequestDeadline::starting_now(200),
+            Some(std::time::Duration::from_millis(1)),
+            shared,
+        )
+        .await
+        .unwrap();
+        tokio::spawn(async move {
+            let _ = tx.send(Event::Token {
+                id: 1,
+                text: "first".into(),
+            });
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            let _ = tx.send(Event::Token {
+                id: 2,
+                text: "second".into(),
+            });
+            let _ = tx.send(Event::Done {
+                stop_reason: "Eos".into(),
+                n_tokens: 2,
+                n_prompt: 1,
+                n_cached: 0,
+                elapsed_s: 0.3,
+                spec: None,
+            });
+        });
+        let response = sse_response_with_receipt(
+            rx,
+            "m".into(),
+            true,
+            None,
+            Envelope::new(true),
+            Vec::new(),
+            None,
+            receipt,
+        )
+        .into_response();
+        let lines = sse_data_lines(response).await;
+        assert!(lines[0].contains("first") && lines[1].contains("second"));
+        assert_eq!(lines.last().unwrap(), "[DONE]");
+        let events = events.lock().unwrap();
+        assert!(events.contains(&MeterEvent::Complete {
+            prompt: 1,
+            cached: 0,
+            completion: 2
+        }));
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, MeterEvent::Unbilled { .. } | MeterEvent::Dropped { .. }))
+        );
     }
 
     /// STREAMING, first token DELIVERED inside the deadline: the parameter is SPENT. A

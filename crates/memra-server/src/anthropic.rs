@@ -758,7 +758,7 @@ async fn messages_with_admission(
         // Streaming: timeout_ms bounds TIME-TO-FIRST-TOKEN only. The ordinary <=90 s
         // path stays pre-header; an explicitly extended deployment may commit during
         // prefill for SSE keepalives and terminate a later miss in-band, zero debit.
-        let rx = match crate::peek_first_token(rx, deadline).await {
+        let rx = match crate::peek_first_token(rx, deadline, &mut receipt).await {
             Ok(rx) => rx,
             Err(()) => {
                 drop(guard);
