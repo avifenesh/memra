@@ -120,6 +120,64 @@ Relevant current SM120 evidence:
 - HiCache/breakable graph integration issues:
   https://github.com/sgl-project/sglang/issues/25526
 
+## Public beat targets
+
+The strongest reproducible two-card ledger found in the 2026-09-04 sweep is:
+https://github.com/Infatoshi/dsv4-flash-2x-rtxpro6000s/blob/main/docs/BENCHMARKS.md
+with raw rows in:
+https://github.com/Infatoshi/dsv4-flash-2x-rtxpro6000s/blob/main/bench/scoreboard.jsonl
+and
+https://github.com/Infatoshi/dsv4-flash-2x-rtxpro6000s/blob/main/bench/sweep_results.jsonl
+
+Its contract is localhost, two RTX PRO 6000 Workstation cards, fixed prompt,
+greedy/ignore-EOS, 256 generated tokens, usage-block token counts, one warm-up and
+five measured reps. Memra must first reproduce that shape, then run the vendor-default
+sampled twin separately. A vendor-sampled result is never compared numerically with a
+greedy public row.
+
+| matched cell | public result to beat | Memra requirement |
+| --- | ---: | --- |
+| 486-token prompt, c1, plain | 109.48 tok/s | median above 109.48, x5 interleaved with the selected spec arm |
+| 486-token prompt, c1, DSpark K3 | 217.08 tok/s | median above 217.08 and exact spec==plain greedy bytes |
+| 486-token prompt, c16, plain | 577.52 aggregate tok/s | aggregate above 577.52, no FIFO accounting trick, every stream complete |
+| 486-token prompt, c16, DSpark K3 | 700.14 aggregate tok/s | aggregate above 700.14 with per-request acceptance and fairness receipts |
+| 2,044-token prompt, c1, DSpark K3 | 168.09 tok/s | above 168.09 |
+| 8,188-token prompt, c1, plain / DSpark | 69.68 / 103.03 tok/s | beat both on matched arms |
+| 36k warm shared prefix, DSpark | 247 tok/s c1; about 825 aggregate c8 | beat after exact host/prefix restore, reporting cache transfer separately |
+| 504,381-token cold prompt | 116 s TTFT (4,339 input tok/s), 66 decode tok/s at 500k | TTFT below 116 s and depth-matched decode above 66 |
+
+Independent corroboration gives two additional targets:
+
+- A 380 W two-card vLLM run reports 6.8k prefill at 4,167-4,209 tok/s,
+  TTFT 1.63 s and 149-170 tok/s cold decode; warm-context decode reaches 331
+  tok/s. Source:
+  https://github.com/lastloop-ai/vllm-blackwell-guide/blob/main/docs/DEEPSEEK-V4-FLASH.md
+- A current two-card community ledger reports 1M-token prefill at 2,464 tok/s,
+  218.6 decode tok/s and a 2.8M-token KV pool. It lacks enough row-level protocol
+  detail to become the primary claim baseline, but Memra should exceed all three
+  before calling the result state of the art. Source:
+  https://github.com/local-inference-lab/rtx6kpro/blob/master/daily-summaries/2026-07/2026-07-16.md
+
+A TP4 public row reaches 1,047,552-token TTFT 6.46 s and 10.4 decode tok/s at
+that depth with a split-indexer kernel. It is not a two-card comparison, but it
+proves the algorithmic TTFT ceiling is far below the two-card community's
+hundreds-of-seconds path and makes indexer materialization the main Memra prefill
+target. Source:
+https://github.com/ambientlight/rtx-pro-6000-bench/blob/main/docs/DEPLOY-MXFP4-W4A4-DEEPSEEK-V4-FLASH-SM120.md
+
+Every final table must print TTFT, prefill tok/s, decode-only tok/s, total-wall
+tok/s, prompt/output tokens, context depth, sampling, cache state, power cap,
+GPU clocks, artifact revision, Memra SHA and engagement receipts. "Beats public"
+is allowed only where the card count and row contract actually match.
+
+The first Memra plain baseline on the target pair is recorded in
+`public-baseline-6408a3f3a.jsonl`: 44.8966 tok/s mean and 44.8977 median over
+five cold-cache repetitions of the public fixed 24-token prompt and 256-token
+greedy/ignore-EOS output at the provider-enforced 500 W cap. This is below the
+public fixed-prompt 109.3-111.45 tok/s rows. A real-source long-prefill probe also
+hit the 120-second server deadline before returning; neither row is publishable
+performance, and both make decode fusion plus chunked prefill active blockers.
+
 ## Drafter decision
 
 1. **DSpark first.** It is bundled in the exact 0731 checkpoint, trained against
@@ -141,7 +199,11 @@ Relevant current SM120 evidence:
 - [x] capacity-planned device cache allocation
 - [x] live-state pinned-host snapshot/restore implementation
 - [x] strict PC-ISO token-prefix server wiring, default OFF
-- [ ] engine gate: cold vs restore cache classes bit-for-bit, plain and DSpark
+- [x] engine gate: cold vs restore cache classes bit-for-bit, plain and DSpark
+  (`host-cache-gate-6408a3f3a.log`: exact target pair, prompt 32 + 17 warm,
+  capacity 61 -> 158, future continuation 11; plain host 24,123,392 bytes,
+  trunk+DSpark 24,958,976 bytes; all proposal ids/confidence bits, rings,
+  cache classes and future logits identical)
 - [ ] served 8-turn sampled cache twin with real `n_cached` receipts
 - [ ] chunked prefill at 256K, 512K and 1M without transient OOM
 - [ ] resumable multi-session scheduler and cross-session batch decode
