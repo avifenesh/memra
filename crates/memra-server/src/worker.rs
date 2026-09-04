@@ -10088,17 +10088,100 @@ struct ReplayPlan {
 /// One `overlay intake:` boot line per loaded family per model, under the family's own log
 /// tag: the glm5 line keeps the exact format the 3-card battery greps
 /// (`research/glm53-vision-ppn-20260901/box/interleave.sh`).
+/// Where the step-3.7 vision tower lives (memra#152). `rank` names a step TP rank; the
+/// tower's engine is that rank's, resolved from the TP runtime the loaded model already
+/// owns (an `Arc`, so the placement outlives the borrow of `loaded`). `None` = the root
+/// engine, the placement every deployment had before the door.
+struct StepTowerPlacement {
+    pub tower: memra_engine::vision_step::StepVisionTower,
+    rt: Option<(std::sync::Arc<memra_engine::tp::TpE4m3HostBounce>, usize)>,
+}
+
+impl StepTowerPlacement {
+    /// Resolve `MEMRA_STEP_VISION_DEVICE` against the loaded models' step TP runtime. A rank
+    /// the runtime does not have is a boot PANIC (a silent fallback to dev0 would serve the
+    /// old placement under a launcher that says otherwise: the card-keyed-defaults trap).
+    fn from_env(loaded: &HashMap<String, LoadedModel>) -> StepTowerPlacementPlan {
+        let Ok(raw) = std::env::var("MEMRA_STEP_VISION_DEVICE") else {
+            return StepTowerPlacementPlan { rt: None };
+        };
+        let rank: usize = raw.parse().unwrap_or_else(|_| {
+            panic!("MEMRA_STEP_VISION_DEVICE={raw:?}: expected a step TP rank index")
+        });
+        let rt = loaded
+            .values()
+            .find_map(|lm| {
+                lm.model.layers.iter().find_map(|layer| match &layer.ffn {
+                    memra_engine::hybrid::Ffn::Moe(moe) => moe.step_tp.as_ref(),
+                    _ => None,
+                })
+            })
+            .map(|st| st.runtime.clone())
+            .unwrap_or_else(|| {
+                panic!("MEMRA_STEP_VISION_DEVICE={rank}: no step TP runtime is loaded to place the tower on")
+            });
+        if rt.rank_engine(rank).is_none() {
+            panic!(
+                "MEMRA_STEP_VISION_DEVICE={rank}: the step TP runtime has no such rank (ranks: {})",
+                rt.device_names().map(|v| v.len()).unwrap_or(0)
+            );
+        }
+        StepTowerPlacementPlan {
+            rt: Some((rt, rank)),
+        }
+    }
+
+    /// The engine the tower loads on, forwards on, and publishes its overlay from.
+    fn engine<'a>(&'a self, root: &'a Engine) -> &'a Engine {
+        match &self.rt {
+            Some((rt, rank)) => rt.rank_engine(*rank).expect("rank checked at boot"),
+            None => root,
+        }
+    }
+
+    /// Embedding width of the tower's rows (passthrough: callers size intake buffers by it).
+    fn out_width(&self) -> usize {
+        self.tower.out_width()
+    }
+}
+
+/// The resolved placement before the tower is loaded (so the load itself happens on the
+/// chosen engine).
+struct StepTowerPlacementPlan {
+    rt: Option<(std::sync::Arc<memra_engine::tp::TpE4m3HostBounce>, usize)>,
+}
+
+impl StepTowerPlacementPlan {
+    fn engine<'a>(&'a self, root: &'a Engine) -> &'a Engine {
+        match &self.rt {
+            Some((rt, rank)) => rt.rank_engine(*rank).expect("rank checked at boot"),
+            None => root,
+        }
+    }
+    fn describe(&self) -> String {
+        match &self.rt {
+            Some((_, rank)) => format!("step TP rank {rank}"),
+            None => "the root engine".to_string(),
+        }
+    }
+    fn with_tower(self, tower: memra_engine::vision_step::StepVisionTower) -> StepTowerPlacement {
+        StepTowerPlacement { tower, rt: self.rt }
+    }
+}
+
 fn vision_placement_admissible(
     engine: &Engine,
     loaded: &HashMap<String, LoadedModel>,
-    towers: &[Option<&str>],
+    towers: &[Option<(&str, &Engine)>],
     publish: memra_engine::vision::OverlayPublish,
 ) -> bool {
-    let towers: Vec<&str> = towers.iter().flatten().copied().collect();
+    // Each tower carries the engine it lives on (memra#152: the step tower may sit on a TP
+    // rank other than the root), so `cross` is per tower, not per process.
+    let towers: Vec<(&str, &Engine)> = towers.iter().flatten().copied().collect();
     if towers.is_empty() {
         return true;
     }
-    let families = towers.join(",");
+    let families = towers.iter().map(|(t, _)| *t).collect::<Vec<_>>().join(",");
     let mut servable = true;
     for (name, lm) in loaded {
         let intake = lm.model.vision_intake_engine(engine).unwrap_or_else(|e| {
@@ -10107,9 +10190,9 @@ fn vision_placement_admissible(
                  could not be resolved: {e}"
             )
         });
-        let cross = intake.ctx().cu_ctx() != engine.ctx().cu_ctx();
-        let ok = !cross || publish != memra_engine::vision::OverlayPublish::Never;
-        for tag in &towers {
+        for (tag, tower_engine) in &towers {
+            let cross = intake.ctx().cu_ctx() != tower_engine.ctx().cu_ctx();
+            let ok = !cross || publish != memra_engine::vision::OverlayPublish::Never;
             // The glm5 line keeps PR #28's exact shape, glm5_models count included.
             let glm5_models = if *tag == "glm5-vision" {
                 format!(
@@ -10125,7 +10208,7 @@ fn vision_placement_admissible(
             eprintln!(
                 "[{tag}] overlay intake: tower dev{} -> intake dev{} \
                  (cross_context={cross}) publish={publish:?} servable={ok}{glm5_models}",
-                engine.ctx().ordinal(),
+                tower_engine.ctx().ordinal(),
                 intake.ctx().ordinal()
             );
             if !ok {
@@ -10137,8 +10220,8 @@ fn vision_placement_admissible(
                      MEMRA_PP_STREAMS=0 (~3x decode cost)"
                 );
             }
+            servable &= ok;
         }
-        servable &= ok;
     }
     servable
 }
@@ -10165,7 +10248,7 @@ fn build_vision_overlay(
     tower: Option<&memra_engine::vision::VisionTower>,
     gemma_tower: Option<&memra_engine::vision_gemma::GemmaVisionTower>,
     glm5_tower: Option<&memra_engine::vision_glm5::Glm5VisionTower>,
-    step_tower: Option<&memra_engine::vision_step::StepVisionTower>,
+    step_tower: Option<&StepTowerPlacement>,
     n_embd: usize,
     v: &mut VisionState,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -10198,15 +10281,19 @@ fn build_vision_overlay(
     // STEP37: forward each unit (crop tiles first, then the 728 main view — the vendor
     // merge order) through the step tower, concat rows in prompt order.
     if let VisionImages::Step(units) = &mut v.images {
-        let tower = step_tower.ok_or("step vision request without a loaded step tower")?;
+        let placed = step_tower.ok_or("step vision request without a loaded step tower")?;
+        // memra#152: the tower's own engine does the work and is the overlay's source side;
+        // `new_published` carries the rows to the intake context when they differ.
+        let tower_engine = placed.engine(engine);
+        let tower = &placed.tower;
         let total: usize = units.iter().map(|u| u.n_rows()).sum();
-        let mut rows = engine.uninit(total * n_embd)?;
+        let mut rows = tower_engine.uninit(total * n_embd)?;
         let mut off = 0usize;
         for u in units.iter() {
-            off += tower.forward_unit(engine, u, &mut rows, off)?;
+            off += tower.forward_unit(tower_engine, u, &mut rows, off)?;
         }
         v.overlay = Some(memra_engine::vision::EmbedOverlay::new_published(
-            engine,
+            tower_engine,
             intake,
             publish,
             rows,
@@ -12070,25 +12157,35 @@ pub fn run(
     // the checkpoint — MEMRA_STEP_VISION_DIR points at the model dir). Fail LOUD at boot
     // if configured but unloadable; MEMRA_STEP_VISION=0 skips the tower with the dir
     // configured (owner knob: ~8 GB f32-resident). Image requests then 400 at HTTP.
-    let step_tower: Option<memra_engine::vision_step::StepVisionTower> =
-        match std::env::var("MEMRA_STEP_VISION_DIR") {
-            Ok(_) if std::env::var("MEMRA_STEP_VISION").as_deref() == Ok("0") => {
-                eprintln!(
-                    "[step-vision] MEMRA_STEP_VISION=0 — tower NOT loaded, image input disabled"
-                );
-                None
-            }
-            Ok(dir) => Some(
-                memra_engine::vision_step::StepVisionTower::load(
-                    &engine,
-                    std::path::Path::new(&dir),
-                )
-                .unwrap_or_else(|e| {
-                    panic!("MEMRA_STEP_VISION_DIR={dir}: step tower load failed: {e}")
-                }),
-            ),
-            Err(_) => None,
-        };
+    let step_tower: Option<StepTowerPlacement> = match std::env::var("MEMRA_STEP_VISION_DIR") {
+        Ok(_) if std::env::var("MEMRA_STEP_VISION").as_deref() == Ok("0") => {
+            eprintln!("[step-vision] MEMRA_STEP_VISION=0 — tower NOT loaded, image input disabled");
+            None
+        }
+        Ok(dir) => {
+            // MEMRA_STEP_VISION_DEVICE (memra#152): the TP rank whose device holds the tower.
+            // Unset = the root engine (today's placement). On step-3.7-flash TP2 the tower is
+            // 3.96 GB of BF16 upcast to 7.9 GB of f32, parked on dev0, the card that also
+            // carries the non-TP residents and idles at ~6.7 GB free; the same tower on
+            // rank 1 (dev1, ~38 GB free) doubles the headroom a long prompt gets on dev0.
+            // The overlay publish machinery already carries rows across contexts.
+            let placement = StepTowerPlacement::from_env(&loaded);
+            let tower_engine = placement.engine(&engine);
+            let tower = memra_engine::vision_step::StepVisionTower::load(
+                tower_engine,
+                std::path::Path::new(&dir),
+            )
+            .unwrap_or_else(|e| panic!("MEMRA_STEP_VISION_DIR={dir}: step tower load failed: {e}"));
+            eprintln!(
+                "[step-vision] tower placed on {} (dev{}, MEMRA_STEP_VISION_DEVICE={})",
+                placement.describe(),
+                tower_engine.ctx().ordinal(),
+                std::env::var("MEMRA_STEP_VISION_DEVICE").unwrap_or_else(|_| "unset".into()),
+            );
+            Some(placement.with_tower(tower))
+        }
+        Err(_) => None,
+    };
     // PLACEMENT ADMISSIBILITY, for EVERY vision family (memra #25; lane/glm53-vision-ppn
     // shipped it for glm5 alone). A loaded tower is not sufficient: the overlay's rows have to
     // be resident in the context of the engine that embeds (pp stage 0 under a per-stage-
@@ -12105,10 +12202,12 @@ pub fn run(
         &engine,
         &loaded,
         &[
-            vision_tower.as_ref().map(|_| "vision"),
-            gemma_tower.as_ref().map(|_| "gemma-vision"),
-            glm5_tower.as_ref().map(|_| "glm5-vision"),
-            step_tower.as_ref().map(|_| "step-vision"),
+            vision_tower.as_ref().map(|_| ("vision", &engine)),
+            gemma_tower.as_ref().map(|_| ("gemma-vision", &engine)),
+            glm5_tower.as_ref().map(|_| ("glm5-vision", &engine)),
+            step_tower
+                .as_ref()
+                .map(|st| ("step-vision", st.engine(&engine))),
         ],
         overlay_publish,
     );
@@ -17332,7 +17431,7 @@ fn admit(
     dspark_prime_feasible: bool,
     vision_tower: Option<&memra_engine::vision::VisionTower>,
     glm5_tower: Option<&memra_engine::vision_glm5::Glm5VisionTower>,
-    step_tower: Option<&memra_engine::vision_step::StepVisionTower>,
+    step_tower: Option<&StepTowerPlacement>,
 ) -> Result<Session, (EventSender, EngineError)> {
     let dspark_draft_ready = dspark_draft.is_some();
     let lm = &loaded[&req.model];
@@ -20616,7 +20715,7 @@ fn prefill_tick(
     vision_tower: Option<&memra_engine::vision::VisionTower>,
     gemma_tower: Option<&memra_engine::vision_gemma::GemmaVisionTower>,
     glm5_tower: Option<&memra_engine::vision_glm5::Glm5VisionTower>,
-    step_tower: Option<&memra_engine::vision_step::StepVisionTower>,
+    step_tower: Option<&StepTowerPlacement>,
     overlay_publish: memra_engine::vision::OverlayPublish,
 ) -> Result<usize, Box<dyn std::error::Error>> {
     if let Some(trace) = s.ttft.as_ref() {
@@ -32342,12 +32441,17 @@ mod vision_placement_admissibility_tests {
         let call = run
             .find("let vision_placement_servable = vision_placement_admissible(")
             .expect("run calls the shared decision");
-        let args = &run[call..call + 600];
+        // Whitespace-free so rustfmt's line breaking cannot move these assertions (the step
+        // tower's tuple, memra#152, wraps across three lines).
+        let args: String = run[call..call + 700]
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
         for tower in [
-            "vision_tower.as_ref().map(|_| \"vision\")",
-            "gemma_tower.as_ref().map(|_| \"gemma-vision\")",
-            "glm5_tower.as_ref().map(|_| \"glm5-vision\")",
-            "step_tower.as_ref().map(|_| \"step-vision\")",
+            "vision_tower.as_ref().map(|_|(\"vision\",&engine))",
+            "gemma_tower.as_ref().map(|_|(\"gemma-vision\",&engine))",
+            "glm5_tower.as_ref().map(|_|(\"glm5-vision\",&engine))",
+            "step_tower.as_ref().map(|st|(\"step-vision\",st.engine(&engine)))",
         ] {
             assert!(
                 args.contains(tower),
