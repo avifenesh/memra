@@ -24453,8 +24453,10 @@ impl HybridModel {
         if distributed.staged_len() != pos0 {
             return Ok(false);
         }
-        let (_, would_rebase) = distributed.peek_append_ring(t)?;
-        if would_rebase {
+        if distributed.peek_append_ring(t).is_err() {
+            return Ok(false);
+        }
+        if distributed.ring_base().is_none() && pos0 + t > distributed.physical_capacity() {
             return Ok(false);
         }
         // Row 0 sees the smallest view: its post-append effective t_kv must clear both
@@ -24668,7 +24670,7 @@ impl HybridModel {
         {
             let rank0 = distributed.rank(0).ok_or("verify rope pass lost rank 0")?;
             if rank0.base_d().is_none()
-                && distributed.staged_len() + t > distributed.physical_capacity()
+                && distributed.staged_len() > distributed.physical_capacity()
             {
                 return Ok(None);
             }

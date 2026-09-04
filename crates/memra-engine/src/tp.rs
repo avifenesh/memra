@@ -2695,6 +2695,19 @@ impl TpE4m3HostBounce {
         let kv_dim_v = cache.kv_dim_v();
         let k_tok_bytes = cache.k_tok_bytes();
         let v_tok_bytes = cache.v_tok_bytes();
+        if let Some(ring_base) = cache.ring_base() {
+            let base_val = ring_base as i32;
+            for rank in 0..self.ranks.len() {
+                let engine = &self.ranks[rank];
+                let _main = engine.gpu.enter_main()?;
+                let rank_cache = cache
+                    .rank_mut(rank)
+                    .ok_or_else(|| format!("TP KV cache has no rank {rank}"))?;
+                if rank_cache.base_d().is_none() {
+                    rank_cache.arm_base_d(engine.htod_i32(&[base_val])?);
+                }
+            }
+        }
         if let Some(KvRingAppend::Rebase {
             src_row,
             keep_rows,
@@ -2737,14 +2750,11 @@ impl TpE4m3HostBounce {
                 // dcw base mirror (graph increment A): physical row 0 now holds logical
                 // row `new_base`; armed device mirrors track it (rebases are rare host
                 // events, so a host set here is the whole maintenance cost).
-                if rank_cache.base_d().is_some() {
-                    let value = new_base as i32;
-                    let rank_cache = cache
-                        .rank_mut(rank)
-                        .ok_or_else(|| format!("TP KV cache has no rank {rank}"))?;
-                    if let Some(base_d) = rank_cache.base_d_mut() {
-                        engine.set_i32_one(base_d, value)?;
-                    }
+                let value = new_base as i32;
+                if let Some(base_d) = rank_cache.base_d_mut() {
+                    engine.set_i32_one(base_d, value)?;
+                } else {
+                    rank_cache.arm_base_d(engine.htod_i32(&[value])?);
                 }
             }
         }
