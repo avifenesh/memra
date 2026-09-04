@@ -97,7 +97,7 @@ fn main() {
                 .collect()
         })
         .unwrap_or_else(|| vec![0, 1]);
-    let prompt = &fixture.tokens_32;
+    let prompt = &fixture.tokens_160[..34];
     let warm = 17usize; // crosses several CSA phases without making the gate slow
     let continuation = 11usize;
     let small_capacity = prompt.len() + warm + continuation + 1;
@@ -110,9 +110,10 @@ fn main() {
     );
 
     // Bounded-prefill transaction widths must not change the realized trunk or drafter
-    // state. Width 17 crosses the shipped speculative ceiling (6), so this catches fixed
-    // T_max assumptions instead of merely re-running the DSpark shape.
-    let chunk_width = 17usize;
+    // state. Width 32 crosses the shipped speculative ceiling (6) and exercises the
+    // advertised prefill maximum, so this catches fixed-T assumptions instead of merely
+    // re-running the DSpark shape.
+    let chunk_width = 32usize;
     let mut chunk_plain_1 = gpu
         .alloc_decode_state_for_transient(small_capacity, chunk_width)
         .expect("chunk plain width-1 state");
