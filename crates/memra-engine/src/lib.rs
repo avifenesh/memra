@@ -2395,6 +2395,29 @@ pub fn topk_shards_dispatches() -> u64 {
     TOPK_SHARDS_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// `MEMRA_DTOH_TRACE=1` (gate-harness instrument, default OFF, never a serving flag): every
+/// Engine device-to-host copy prints one line, `[dtoh-trace] <bytes> bytes from <file>:<line>`,
+/// naming the CALLER of the wrapper (`#[track_caller]`). Why: an nsys trace of the B200 decode
+/// (2026-09-03) showed two blocking DtoH calls per token (4 B after `argmax_final_f32`, 2112 B
+/// after `moe_router_sigmoid_topk_f32`) each costing ~1.3 ms of queue drain, and the trace has
+/// no host stacks; this names the Rust line that owns each drain.
+pub fn dtoh_trace_on() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var("MEMRA_DTOH_TRACE").as_deref() == Ok("1"))
+}
+
+#[track_caller]
+pub(crate) fn dtoh_trace_hit(bytes: usize) {
+    if dtoh_trace_on() {
+        let loc = std::panic::Location::caller();
+        eprintln!(
+            "[dtoh-trace] {bytes} bytes from {}:{}",
+            loc.file(),
+            loc.line()
+        );
+    }
+}
+
 /// `MEMRA_VERIFY_WS` (lane/glm5-matvec door W, default ON since the 2026-08-31 mv-battery
 /// flip; `=0` is the rollback seam; generalized from `MEMRA_GLM5_VERIFY_WS`, which stays
 /// honored as the family alias — OFF-WINS composition: either name `=0` disables, so every
@@ -12148,15 +12171,19 @@ impl Engine {
         Ok(self.gpu.stream().clone_htod(v)?)
     }
     /// View twin of `dtoh` (lean-logits component 3: D2H one row of a [B, n_vocab] stack).
+    #[track_caller]
     pub fn dtoh_view(
         &self,
         d: &cudarc::driver::CudaView<f32>,
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        crate::dtoh_trace_hit(d.len() * 4);
         let v = self.gpu.stream().clone_dtoh(d)?;
         self.gpu.stream().synchronize()?;
         Ok(v)
     }
+    #[track_caller]
     pub fn dtoh(&self, d: &CudaSlice<f32>) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        crate::dtoh_trace_hit(d.len() * 4);
         let v = self.gpu.stream().clone_dtoh(d)?;
         self.gpu.stream().synchronize()?;
         Ok(v)
@@ -12164,11 +12191,13 @@ impl Engine {
     /// Queue two f32 device-to-host copies on the compute stream, then establish one host
     /// boundary for both. Hy3's CPU/GPU expert split needs the router logits and the MoE input;
     /// issuing them together avoids a second stream synchronization in every trunk layer.
+    #[track_caller]
     pub fn dtoh_pair(
         &self,
         a: &CudaSlice<f32>,
         b: &CudaSlice<f32>,
     ) -> Result<(Vec<f32>, Vec<f32>), Box<dyn std::error::Error>> {
+        crate::dtoh_trace_hit((a.len() + b.len()) * 4);
         let av = self.gpu.stream().clone_dtoh(a)?;
         let bv = self.gpu.stream().clone_dtoh(b)?;
         self.gpu.stream().synchronize()?;
@@ -12176,18 +12205,22 @@ impl Engine {
     }
     /// View-scoped twin of `dtoh_pair` for reusable capacity buffers whose inactive tail must not
     /// cross a shape-sensitive host boundary.
+    #[track_caller]
     pub fn dtoh_pair_views(
         &self,
         a: &cudarc::driver::CudaView<f32>,
         b: &cudarc::driver::CudaView<f32>,
     ) -> Result<(Vec<f32>, Vec<f32>), Box<dyn std::error::Error>> {
+        crate::dtoh_trace_hit((a.len() + b.len()) * 4);
         let av = self.gpu.stream().clone_dtoh(a)?;
         let bv = self.gpu.stream().clone_dtoh(b)?;
         self.gpu.stream().synchronize()?;
         Ok((av, bv))
     }
     /// Device-to-host copy of an i32 buffer (fused-router sel_idx readback).
+    #[track_caller]
     pub fn dtoh_i32(&self, d: &CudaSlice<i32>) -> Result<Vec<i32>, Box<dyn std::error::Error>> {
+        crate::dtoh_trace_hit(d.len() * 4);
         let v = self.gpu.stream().clone_dtoh(d)?;
         self.gpu.stream().synchronize()?;
         Ok(v)
@@ -12195,20 +12228,26 @@ impl Engine {
     /// Device-to-host copy of a u8 buffer (used to read back the quantized KV cache for validation).
     /// i8 twin of [`Self::dtoh_u8`], for the decode-graph trace's q8_1 activation checksum
     /// (`MEMRA_GLM5_GRAPH_TRACE`). Gate harness only: it synchronizes.
+    #[track_caller]
     pub fn dtoh_i8(&self, d: &CudaSlice<i8>) -> Result<Vec<i8>, Box<dyn std::error::Error>> {
+        crate::dtoh_trace_hit(d.len());
         let v = self.gpu.stream().clone_dtoh(d)?;
         self.gpu.stream().synchronize()?;
         Ok(v)
     }
+    #[track_caller]
     pub fn dtoh_u8(&self, d: &CudaSlice<u8>) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        crate::dtoh_trace_hit(d.len());
         let v = self.gpu.stream().clone_dtoh(d)?;
         self.gpu.stream().synchronize()?;
         Ok(v)
     }
+    #[track_caller]
     pub fn dtoh_u8_view(
         &self,
         d: &cudarc::driver::CudaView<u8>,
     ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        crate::dtoh_trace_hit(d.len());
         let v = self.gpu.stream().clone_dtoh(d)?;
         self.gpu.stream().synchronize()?;
         Ok(v)
@@ -12220,12 +12259,14 @@ impl Engine {
     /// overlapped copy-stream variant would queue this on a dedicated D2H stream with an event
     /// handshake against the compute stream; build it only with a tick-stall receipt that says
     /// the sync copy is the bottleneck.
+    #[track_caller]
     pub fn dtoh_u8_into_pinned(
         &self,
         d: &CudaSlice<u8>,
         dst: &mut PinnedHostBuf,
         n: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        crate::dtoh_trace_hit(d.len());
         if n > d.len() || n > dst.len() {
             return Err(format!(
                 "dtoh_u8_into_pinned range {n} exceeds src {} or pinned dst {}",
@@ -12245,12 +12286,14 @@ impl Engine {
     /// f32 twin of [`Self::dtoh_u8_into_pinned`] (lane/spec-route-depth-20260902): D2H the
     /// first `n` floats of `d` into a pinned CACHEABLE host buffer, synchronized before
     /// returning (the caller CPU-reads the rows right after).
+    #[track_caller]
     pub fn dtoh_f32_into_pinned(
         &self,
         d: &CudaSlice<f32>,
         dst: &mut PinnedHostBuf,
         n: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        crate::dtoh_trace_hit(d.len() * 4);
         if n > d.len() || n * std::mem::size_of::<f32>() > dst.len() {
             return Err(format!(
                 "dtoh_f32_into_pinned range {n} floats exceeds src {} or pinned dst {} bytes",
@@ -12830,13 +12873,17 @@ impl Engine {
     pub fn htod_u32_v(&self, v: &[u32]) -> Result<CudaSlice<u32>, Box<dyn std::error::Error>> {
         Ok(self.gpu.stream().clone_htod(v)?)
     }
+    #[track_caller]
     pub fn dtoh_u64(&self, d: &CudaSlice<u64>) -> Result<Vec<u64>, Box<dyn std::error::Error>> {
+        crate::dtoh_trace_hit(d.len() * 8);
         let v = self.gpu.stream().clone_dtoh(d)?;
         self.gpu.stream().synchronize()?;
         Ok(v)
     }
 
+    #[track_caller]
     pub fn dtoh_u32(&self, d: &CudaSlice<u32>) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
+        crate::dtoh_trace_hit(d.len() * 4);
         let v = self.gpu.stream().clone_dtoh(d)?;
         self.gpu.stream().synchronize()?;
         Ok(v)
@@ -12904,7 +12951,9 @@ impl Engine {
         Ok(())
     }
     /// Read a [1] i32 device counter (pos / seqlen) back to host. Tiny D2H + sync.
+    #[track_caller]
     pub fn dtoh_i32_one(&self, d: &CudaSlice<i32>) -> Result<i32, Box<dyn std::error::Error>> {
+        crate::dtoh_trace_hit(d.len() * 4);
         let v = self.gpu.stream().clone_dtoh(d)?;
         self.gpu.stream().synchronize()?;
         Ok(v[0])
@@ -12955,7 +13004,9 @@ impl Engine {
         Ok(())
     }
     /// Read back a [1] u32 device buffer (the argmax token). One tiny D2H + sync.
+    #[track_caller]
     pub fn dtoh_u32_one(&self, d: &CudaSlice<u32>) -> Result<u32, Box<dyn std::error::Error>> {
+        crate::dtoh_trace_hit(d.len() * 4);
         let v = self.gpu.stream().clone_dtoh(d)?;
         self.gpu.stream().synchronize()?;
         Ok(v[0])
