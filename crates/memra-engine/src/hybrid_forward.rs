@@ -2213,8 +2213,19 @@ impl HybridModel {
         let f32b = std::mem::size_of::<f32>();
         // slab planes: 7 f32 + 2 f16 on n_embd, 3 f32 on n_ff; per-call extras: a16 (f16 ff),
         // the f16 pre-norm operand (n_embd), and the x / hn copies (2 f32 n_embd).
-        let call_row_bytes =
+        let mut call_row_bytes =
             (7 + 2) * h * f32b + (2 + 1) * h * 2 + 3 * n_ff_max * f32b + n_ff_max * 2;
+        // Routed-expert staging per row (the grouped f16 GEMM path in `moe_ffn_inner`): the
+        // gathered inputs, three projection planes with f16 mirrors, the down output and
+        // the scatter/partial planes, all sized by the USED expert count and the expert FFN
+        // width. Same term the hyper shape charges. Calibrated 2026-09-04 on ornith (h 2048,
+        // 8 of 256 experts, expert ff 512): the dense planes alone priced 120 KB/row against
+        // a measured 345 KB/row monolithic peak; this term is the missing 221 KB/row.
+        if let Some(moe) = self.cfg.moe.as_ref() {
+            let u = moe.expert_used_count as usize;
+            let f = moe.expert_ff_length as usize;
+            call_row_bytes += u * (10 * h + 14 * f);
+        }
         Some(PrimeWorkspaceShape {
             call_row_bytes,
             prompt_row_bytes: h * f32b,
