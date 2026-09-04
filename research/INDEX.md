@@ -258,6 +258,7 @@ pill-memra-20260804 | PASS on final config — TTFT 33.9 s (~1078 tok/s effectiv
 pinfix-20260809 | Verdict: PASS for both requested code changes and both required gates. | RESULTS.md
 pipeprime-20260808 | The 200-prime soak found zero divergence, liveness failure, or fault; this supports the mechanism verdict without claiming more statistical power than the sample provides. | PROGRESS.md
 plainbatch-20260804 | Verdict: FP NEAR-TIE CLASS CONFIRMED, n-STABLE — no new bug, no code change. | RESULTS.md
+pp-peer-context-probe-20260904 | The reported PP failure does not reproduce on the fresh non-production 4x RTX PRO 6000 Blackwell Server Edition host. Memra's fail-closed PP byte probes are correct and remain unchanged. The rerun did find and fix a separate qualification defect. | RESULTS.md
 pp-leverb-20260807 | R4 pp4096 split/unsplit N=3 ... 270.9/267.6/267.3 vs 142.0/142.3 — the 1.88x holds on the rebased tree | PROGRESS.md
 pp-prefill-20260807 | The brief's increment 2 ("chunked pipelined prefill... the gap is PP transport + scheduling, not GEMM") is refuted as the primary lever. | PROGRESS.md
 pp2-batch-20260806 | Exactness: batched PP-N adds ZERO deviation | RESULTS.md

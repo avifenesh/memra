@@ -421,6 +421,13 @@ undetected; a 256 MB BAR1; an out-of-range CPU affinity mask (25% of all-reduce 
 IOMMU translated mode (the stake is silent device memory corruption, not throughput); ACS
 ReqRedir forcing P2P through the root port; and P-state normalization before timing.
 
+An idle P8 card may legitimately report PCIe Gen1 while its link is power-managed down. The
+script records that state but does not confuse it with the live Gen2 incident above: section 8's
+peer-read ladder wakes every peer-capable card, then section 8b immediately requires the active
+link to reach its maximum generation and width. A below-max reading outside P8 remains an immediate
+hard failure. On a one-card host the active generation can remain unclassified and is emitted as a
+warning for the measured workload's telemetry to close.
+
 Section 8 is the one that cannot be replaced by `nvidia-smi`: it builds and runs
 `tools/peer-read-probe.cu`, a self-contained `simpleP2P`-class **kernel** peer dereference
 (`nvcc -O2 -arch=${MEMRA_CUDA_ARCH:-sm_120} -o peer-read-probe tools/peer-read-probe.cu`).
