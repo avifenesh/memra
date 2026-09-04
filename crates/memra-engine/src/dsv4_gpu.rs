@@ -9863,9 +9863,11 @@ impl Dsv4Gpu {
                 let kks: Vec<usize> = nbs.iter().map(|&nb| ix.topk.min(nb)).collect();
                 let tail_max = kks.iter().cloned().max().unwrap_or(0);
                 slots = win + tail_max;
-                // Keep T=1 on the pre-batch scalar sequence as an always-live exactness
-                // witness. The hardware gate compares it against every wider transaction.
-                if host_math || t == 1 {
+                // Keep the shipped speculative range (today T<=6, conservatively <=8)
+                // on the pre-batch scalar sequence: the batched indexer is a long-prefill
+                // optimization and measured no short-decode win. T=1 also remains the
+                // always-live exactness witness for the width-64 hardware gate.
+                if host_math || t <= 8 {
                     for i in 0..t {
                         let pos = pos0 + i;
                         let idx_off = i * vws.idx_stride;
