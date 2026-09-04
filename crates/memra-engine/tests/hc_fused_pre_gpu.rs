@@ -60,11 +60,7 @@ fn force_true_f32() {
 fn set_door(on: bool) {
     // SAFETY: all tests in this binary hold `gpu_guard` while touching env or the GPU.
     unsafe {
-        if on {
-            std::env::set_var("MEMRA_HC_FUSED_PRE", "1");
-        } else {
-            std::env::remove_var("MEMRA_HC_FUSED_PRE");
-        }
+        std::env::set_var("MEMRA_HC_FUSED_PRE", if on { "1" } else { "0" });
     }
 }
 

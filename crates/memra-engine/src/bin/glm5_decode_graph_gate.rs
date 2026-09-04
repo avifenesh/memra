@@ -163,38 +163,28 @@ fn run_arm(
     // SAFETY: single-threaded gate binary; the doors are read per call by the engine, and no
     // other thread exists to observe the environment mid-flight.
     unsafe {
-        // The door is DEFAULT ON (2026-09-04), so the eager arm must SET `0`: unsetting the
-        // variable would arm the door on both arms and the byte-identity gate would compare the
-        // graph against itself (the vacuity memra#136 named).
-        if graph_door {
-            std::env::set_var("MEMRA_GLM5_DECODE_GRAPH", "1");
-        } else {
-            std::env::set_var("MEMRA_GLM5_DECODE_GRAPH", "0");
-        }
-        if ledger {
-            std::env::set_var("MEMRA_GLM5_GRAPH_SEL_LEDGER", "1");
-        } else {
-            std::env::remove_var("MEMRA_GLM5_GRAPH_SEL_LEDGER");
-        }
+        std::env::set_var(
+            "MEMRA_GLM5_DECODE_GRAPH",
+            if graph_door { "1" } else { "0" },
+        );
+        std::env::set_var(
+            "MEMRA_GLM5_GRAPH_SEL_LEDGER",
+            if ledger { "1" } else { "0" },
+        );
     }
     // SAFETY: single-threaded gate binary (same reasoning as the door vars above).
     unsafe {
-        if trace {
-            std::env::set_var("MEMRA_GLM5_GRAPH_TRACE", "1");
-        } else {
-            std::env::remove_var("MEMRA_GLM5_GRAPH_TRACE");
-        }
+        std::env::set_var("MEMRA_GLM5_GRAPH_TRACE", if trace { "1" } else { "0" });
         // ARM THE REBUILD FOR THE FORCED-RE-SEAT ARM. The engine's DEFAULT on an invalidated
         // stage is to latch it to the byte-identical eager walk, which is a correct product
         // behaviour, not a workaround, so `MEMRA_GLM5_GRAPH_RECAPTURE` is default OFF. Box take
         // 13 therefore reported `VACUOUS RE-CAPTURE ARM` on a run whose tokens were all correct:
         // the arm was asserting on a path the engine deliberately does not take. The gate arms
         // the knob for exactly the arm that exists to exercise it.
-        if reseat_at.is_some() {
-            std::env::set_var("MEMRA_GLM5_GRAPH_RECAPTURE", "1");
-        } else {
-            std::env::remove_var("MEMRA_GLM5_GRAPH_RECAPTURE");
-        }
+        std::env::set_var(
+            "MEMRA_GLM5_GRAPH_RECAPTURE",
+            if reseat_at.is_some() { "1" } else { "0" },
+        );
     }
     glm5_sel_ledger::reset_host();
     // RESET THE TRACE BUDGET AT THE ARM SWITCH. Take 10 printed four identical `arm=host il=3`

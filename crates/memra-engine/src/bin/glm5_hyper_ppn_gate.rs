@@ -562,7 +562,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("[phase] reference A: door OFF, step-by-step decode over the whole sequence");
     // ================= reference: door OFF =================
     // SAFETY: single-threaded; no PP runtime has been built yet in this process.
-    unsafe { std::env::remove_var("MEMRA_PP_STAGES") };
+    unsafe { std::env::set_var("MEMRA_PP_STAGES", "1") };
     assert!(
         memra_engine::pp::pp_cuts(n_layers).is_none(),
         "the reference arm must run with the door SHUT"

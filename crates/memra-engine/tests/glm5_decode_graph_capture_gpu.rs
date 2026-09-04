@@ -364,8 +364,13 @@ fn graph_door_decode_matches_eager_bitwise() {
     // SAFETY: single-threaded test; the doors are read per call by the engine.
     unsafe {
         std::env::set_var("MEMRA_HTOD_DIET", "1");
+<<<<<<< HEAD
         // Default ON since 2026-09-04: the eager arm SETS `0` (unsetting would arm the door
         // here too and the identity below would compare the graph against itself).
+||||||| parent of 7d897bc50 (gates: lint and pin door-OFF arms to prevent vacuous passes on default flips (#136))
+        std::env::remove_var("MEMRA_GLM5_DECODE_GRAPH");
+=======
+>>>>>>> 7d897bc50 (gates: lint and pin door-OFF arms to prevent vacuous passes on default flips (#136))
         std::env::set_var("MEMRA_GLM5_DECODE_GRAPH", "0");
     }
     let cap_before_eager = memra_engine::GLM5_DECODE_GRAPH_CAPTURES.load(Ordering::Relaxed);
@@ -444,7 +449,7 @@ fn graph_door_decode_matches_eager_bitwise() {
         memra_engine::GLM5_DECODE_GRAPH_RECAPTURES.load(Ordering::Relaxed) - recaptures_before;
     // SAFETY: same as above.
     unsafe {
-        std::env::remove_var("MEMRA_GLM5_GRAPH_RECAPTURE");
+        std::env::set_var("MEMRA_GLM5_GRAPH_RECAPTURE", "0");
         std::env::set_var("MEMRA_GLM5_DECODE_GRAPH", "0");
     }
     assert!(

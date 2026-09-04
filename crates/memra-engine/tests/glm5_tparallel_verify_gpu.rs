@@ -68,11 +68,7 @@ fn force_true_f32() {
 fn set_mtp_flag(on: bool) {
     // SAFETY: serialized behind gpu_guard by every caller.
     unsafe {
-        if on {
-            std::env::set_var("MEMRA_GLM5_MTP", "1");
-        } else {
-            std::env::remove_var("MEMRA_GLM5_MTP");
-        }
+        std::env::set_var("MEMRA_GLM5_MTP", if on { "1" } else { "0" });
     }
 }
 

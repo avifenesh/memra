@@ -566,7 +566,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // byte-exact (the hyper-ppn gate's banked correction), slow, and fine for a reference.
     eprintln!("[phase] references: door OFF");
     // SAFETY: single-threaded; no PP runtime has been built yet in this process.
-    unsafe { std::env::remove_var("MEMRA_PP_STAGES") };
+    unsafe { std::env::set_var("MEMRA_PP_STAGES", "1") };
     assert!(
         memra_engine::pp::pp_cuts(n_layers).is_none(),
         "the reference phase must run with the door SHUT"
