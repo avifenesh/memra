@@ -1387,6 +1387,29 @@ impl HybridModel {
             let h_in = e.dtoh(&x_keep)?;
             (nonfinite(&h_in), nonfinite(&h_ref), nonfinite(&h_rep))
         };
+        // memra#131 cell 8: when the reference is poisoned from a finite input, walk the run ONE
+        // LAYER AT A TIME on the restored state and name the first layer whose output is
+        // non-finite (and whether the layer before it was finite), so the defect is placed at a
+        // layer instead of a run.
+        let layer_bisect = if nf_in == 0 && nf_ref > 0 {
+            let mut report = String::new();
+            let mut xl = e.uninit(width)?;
+            e.copy_into(&mut xl, 0, &x_keep, width)?;
+            for il in a..b {
+                let out =
+                    self.hyper_range_decode_eager(e, topology, xl, il, il + 1, pos_d, pos, cache)?;
+                let n = nonfinite(&e.dtoh(&out)?);
+                report.push_str(&format!(" L{il}:{n}"));
+                if n > 0 {
+                    break;
+                }
+                xl = out;
+            }
+            restore(e, cache, &snaps)?;
+            format!("; per-layer non-finite after each layer:{report}")
+        } else {
+            String::new()
+        };
         if nf_in + nf_ref + nf_rep > 0 {
             eprintln!(
                 "[glm5-decode-graph] SELF-CHECK FAILED dev={dev} stage=[{lo}, {hi}) \
@@ -1394,7 +1417,7 @@ impl HybridModel {
                  {nf_in}/{width}, eager output {nf_ref}/{width}, replay output {nf_rep}/{width}; \
                  BEFORE the walk: recurrent state non-finite {nf_state} (first: {}), stage pool \
                  non-finite {nf_pool} (first: {}), engine ws non-finite {nf_ews} (first: {}); PLAIN \
-                 eager twin: non-finite {nf_plain}/{width}, {plain_vs_ws} \
+                 eager twin: non-finite {nf_plain}/{width}, {plain_vs_ws}{layer_bisect} \
                  (a NaN-identical compare proves nothing); the stage is latched EAGER for this \
                  session and this token is recomputed eager. The door did NOT engage.{}",
                 if nf_state_first.is_empty() {
