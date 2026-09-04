@@ -36,7 +36,6 @@ use memra_gguf::dsv4_forward::{
 
 use crate::dsv4_ffi as k;
 use crate::dsv4_ffi::ck;
-use crate::mmq_ffi::{memra_mmq_fp8_blk, memra_mmq_fp8_blk_act_bytes};
 
 type Res<T> = Result<T, String>;
 
@@ -478,9 +477,6 @@ pub struct Dsv4Gpu {
     /// staged residency (same bytes, staged H2D per prefill pass); the legacy path is a
     /// boot refusal and the drafter's cuBLASLt linears keep resident bf16 (no twins).
     pub dense_fp8: bool,
-    /// Opt-in prefill-only tensor-core projection over the same block-FP8 codes and
-    /// scales. Decode/spec T<=8 retain the exact GEMV program.
-    pub prefill_tc: bool,
     /// lane 8: cross-stage boundary events (peer transport), one per boundary,
     /// created in the TX stage's context (cuEventRecord requires event ctx == stream ctx).
     boundary_ev: Vec<cudarc::driver::CudaEvent>,
@@ -1796,11 +1792,6 @@ impl Dsv4Gpu {
             std::env::var("MEMRA_DSV4_DENSE_ARM").ok().as_deref(),
             on_device,
         )?;
-        let prefill_tc = resolve_prefill_tc(
-            std::env::var("MEMRA_DSV4_PREFILL_TC").ok().as_deref(),
-            on_device,
-            dense_fp8,
-        )?;
 
         let mut me = Dsv4Gpu {
             model,
@@ -1822,7 +1813,6 @@ impl Dsv4Gpu {
             chains_f32,
             dspark_head_f32,
             dense_fp8,
-            prefill_tc,
             dspark: None,
             boundary_ev: Vec::new(),
             hc_head_base: Vec::new(),
@@ -1847,9 +1837,8 @@ impl Dsv4Gpu {
         );
         eprintln!(
             "[load] dense arm: {} (iteration-5; fp8 = FP8-blk linears as-stored on the \
-             device decode/verify paths, bit-identical twins); prefill tensor-core {}",
-            if me.dense_fp8 { "fp8" } else { "bf16" },
-            if me.prefill_tc { "ARMED" } else { "off" },
+             device decode/verify paths, bit-identical twins)",
+            if me.dense_fp8 { "fp8" } else { "bf16" }
         );
         if matches!(me.decode_path, DecodePath::Device { .. }) && me.expert_arm != ExpertArm::Native
         {
@@ -9102,7 +9091,6 @@ impl Dsv4Gpu {
     /// f32 cvt + batched GEMV (the m=T twin of `gemm_dev`).
     #[allow(clippy::too_many_arguments)]
     fn gemm_m_dev(
-        &self,
         st: &Stage,
         x_f32: *const f32,
         xb: &mut CudaSlice<u8>,
@@ -9113,46 +9101,6 @@ impl Dsv4Gpu {
         y_ptr: *mut f32,
     ) -> Res<()> {
         let stream = st.gpu.stream();
-        if self.prefill_tc
-            && m > 8
-            && let DW::Fp8 {
-                codes,
-                scales,
-                sc_cols,
-            } = w
-        {
-            let expected_sc_cols = kdim.div_ceil(128) as i32;
-            if sc_cols != expected_sc_cols {
-                return Err(format!(
-                    "dsv4 prefill TC scale columns {sc_cols} != expected {expected_sc_cols}"
-                ));
-            }
-            let scratch_bytes = unsafe { memra_mmq_fp8_blk_act_bytes(kdim as i32, m as i32) };
-            if scratch_bytes > xb.len() {
-                return Err(format!(
-                    "dsv4 prefill TC scratch {scratch_bytes} exceeds transaction buffer {}",
-                    xb.len()
-                ));
-            }
-            let rc = unsafe {
-                memra_mmq_fp8_blk(
-                    codes,
-                    scales,
-                    x_f32,
-                    y_ptr,
-                    kdim as i32,
-                    n as i32,
-                    m as i32,
-                    xb.device_ptr_mut(&stream).0 as *mut c_void,
-                    sp(&stream),
-                    1.0,
-                )
-            };
-            if rc != 0 {
-                return Err(format!("dsv4 prefill TC memra_mmq_fp8_blk rc={rc}"));
-            }
-            return Ok(());
-        }
         unsafe {
             ck(
                 "cvt_bf16 m dev",
@@ -9680,7 +9628,7 @@ impl Dsv4Gpu {
         }
 
         // q path (weights read once for all t rows)
-        self.gemm_m_dev(
+        Self::gemm_m_dev(
             st,
             vws.x.device_ptr(&stream).0 as *const f32,
             &mut vws.gemm_xb,
@@ -9752,7 +9700,7 @@ impl Dsv4Gpu {
         }
 
         // shared K==V latent rows + window QAT, then the TRANSIENT ring write
-        self.gemm_m_dev(
+        Self::gemm_m_dev(
             st,
             vws.x.device_ptr(&stream).0 as *const f32,
             &mut vws.gemm_xb,
@@ -9868,7 +9816,7 @@ impl Dsv4Gpu {
                     )?;
                 }
                 // indexer weights projection, batched
-                self.gemm_m_dev(
+                Self::gemm_m_dev(
                     st,
                     vws.x.device_ptr(&stream).0 as *const f32,
                     &mut vws.gemm_xb,
@@ -10212,7 +10160,7 @@ impl Dsv4Gpu {
                 o_groups * o_lora,
             )?;
         }
-        self.gemm_m_dev(
+        Self::gemm_m_dev(
             st,
             vws.og.device_ptr(&stream).0 as *const f32,
             &mut vws.gemm_xb,
@@ -11861,21 +11809,6 @@ pub fn resolve_dense_arm(v: Option<&str>, on_device: bool) -> Result<bool, Strin
     }
 }
 
-pub fn resolve_prefill_tc(
-    v: Option<&str>,
-    on_device: bool,
-    dense_fp8: bool,
-) -> Result<bool, String> {
-    match v {
-        None | Some("") | Some("0") => Ok(false),
-        Some("1") if on_device && dense_fp8 => Ok(true),
-        Some("1") => {
-            Err("MEMRA_DSV4_PREFILL_TC=1 requires device decode with the fp8 dense arm".to_string())
-        }
-        Some(other) => Err(format!("MEMRA_DSV4_PREFILL_TC '{other}' unknown (0 | 1)")),
-    }
-}
-
 /// ds4f rung 1 — per-round verify-window policy from the drafter's OWN confidence head
 /// (`MEMRA_DSV4_VT={off|slot}`, unset = off = the byte-identical round driver).
 ///
@@ -12199,7 +12132,7 @@ mod peer_probe_tests {
 
 #[cfg(test)]
 mod dense_arm_default_tests {
-    use super::{resolve_dense_arm, resolve_prefill_tc};
+    use super::resolve_dense_arm;
 
     /// The owner-ratified flip (2026-08-20): unset env on the device decode path = fp8.
     /// Mutating the default back to bf16 fails this with the evidence named.
@@ -12226,16 +12159,6 @@ mod dense_arm_default_tests {
             resolve_dense_arm(Some("q8"), true).is_err(),
             "unknown values refuse"
         );
-    }
-
-    #[test]
-    fn prefill_tc_is_strict_default_off_and_requires_device_fp8() {
-        assert_eq!(resolve_prefill_tc(None, true, true), Ok(false));
-        assert_eq!(resolve_prefill_tc(Some("0"), true, true), Ok(false));
-        assert_eq!(resolve_prefill_tc(Some("1"), true, true), Ok(true));
-        assert!(resolve_prefill_tc(Some("1"), false, true).is_err());
-        assert!(resolve_prefill_tc(Some("1"), true, false).is_err());
-        assert!(resolve_prefill_tc(Some("yes"), true, true).is_err());
     }
 }
 
