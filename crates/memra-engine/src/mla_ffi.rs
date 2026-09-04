@@ -1132,10 +1132,10 @@ impl Engine {
                     xp, mp, sp, bp, pp, qp, cp, yp, sr, h, dd, it, eps, np, cs,
                 ),
                 1 => crate::dsv4_ffi::memra_dsv4_hc_pre_fused_v3(
-                    xp, mp, sp, bp, pp, qp, cp, yp, sr, h, dd, it, eps, np, block, 0, cs,
+                    xp, mp, sp, bp, pp, qp, cp, yp, sr, h, dd, it, eps, np, block, 0, 0, cs,
                 ),
                 _ => crate::dsv4_ffi::memra_dsv4_hc_pre_fused_v3(
-                    xp, mp, sp, bp, pp, qp, cp, yp, sr, h, dd, it, eps, np, block, 1, cs,
+                    xp, mp, sp, bp, pp, qp, cp, yp, sr, h, dd, it, eps, np, block, 1, 0, cs,
                 ),
             };
             ck("hc_pre_raw", rc)

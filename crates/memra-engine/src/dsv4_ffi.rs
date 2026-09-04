@@ -653,6 +653,7 @@ unsafe extern "C" {
         // not used. Falls back to the shared path when `hc*hc > 32` (the matrix must fit one
         // warp), checked in the launcher rather than assumed.
         sink_reg: i32,
+        split_collapse: i32,
         stream: *mut c_void,
     ) -> i32;
     #[allow(clippy::too_many_arguments)]

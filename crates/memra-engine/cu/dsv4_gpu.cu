@@ -3437,7 +3437,8 @@ extern "C" __global__ void dsv4_hc_pre_fused_v3_kernel(
         const float* __restrict__ scale, const float* __restrict__ base,
         float* __restrict__ pre_all, float* __restrict__ post_all,
         float* __restrict__ comb_all, float* __restrict__ y, int w, int rows, int hc, int d,
-        int iters, float eps, int* __restrict__ niters, int sink_reg) {
+        int iters, float eps, int* __restrict__ niters, int sink_reg,
+        int split_collapse) {
     int p = blockIdx.x;
     int t = threadIdx.x;
     int B = blockDim.x;
@@ -3626,11 +3627,28 @@ extern "C" __global__ void dsv4_hc_pre_fused_v3_kernel(
     __syncthreads(); // cross-warp: stage 3 (full block) needs spre[] visible everywhere
 
     // ---- stage 3: collapse — VERBATIM dsv4_hc_pre_fused_kernel, unchanged.
-    float* yr = y + (long)p * d;
-    for (int i = t; i < d; i += B) {
-        float acc2 = 0.0f;
-        for (int c = 0; c < hc; c++) acc2 += spre[c] * xr[(long)c * d + i];
-        yr[i] = acc2;
+    //
+    // SKIPPED when the caller runs the SPLIT collapse (`memra_dsv4_hc_collapse`, which already
+    // exists as the unfused chain's third kernel). WHY: at decode this kernel's grid is the
+    // SEQUENCE LENGTH, so s = 1 runs everything on ONE block — 8.77 us for 146 KB of traffic,
+    // about 16.6 GB/s, roughly what a single SM can pull. Widening the block saturates inside
+    // that SM (block 1024 measured WORSE than 512: 9.02 vs 8.77 us) because the limit is
+    // outstanding loads per SM, not threads; BLOCKS are the axis that multiplies memory-level
+    // parallelism. The standalone collapse runs grid(d/256, s) = 16 blocks at d = 4096 and
+    // measures 1.8 us for the same 81 KB.
+    //
+    // Stage 3 is the ONLY stage that can leave this kernel bit-identically: each output is
+    // `sum_c spre[c] * xr[c*d+i]` with the c-sum inside ONE thread, so partitioning i across
+    // blocks moves no arithmetic, and `spre` holds the exact bits already written to `pre`.
+    // Stage 1's reduction cannot leave — repartitioning it changes the summation order, and so
+    // the bits.
+    if (!split_collapse) {
+        float* yr = y + (long)p * d;
+        for (int i = t; i < d; i += B) {
+            float acc2 = 0.0f;
+            for (int c = 0; c < hc; c++) acc2 += spre[c] * xr[(long)c * d + i];
+            yr[i] = acc2;
+        }
     }
 }
 
@@ -3638,7 +3656,7 @@ extern "C" int memra_dsv4_hc_pre_fused_v3(const float* x, const float* mixes,
                                           const float* scale, const float* base, float* pre,
                                           float* post, float* comb, float* y, int s, int hc,
                                           int d, int iters, float eps, int* niters, int block,
-                                          int sink_reg, void* stream_v) {
+                                          int sink_reg, int split_collapse, void* stream_v) {
     cudaStream_t stream = (cudaStream_t)stream_v;
     if (s < 1 || hc < 1 || hc > DSV4_HC_MAX || d < 1 || iters < 1) return 40021;
     // Power of two, at least one warp for the stage-2 invariant, at most the shared array.
@@ -3657,8 +3675,12 @@ extern "C" int memra_dsv4_hc_pre_fused_v3(const float* x, const float* mixes,
     // the shared path instead of reading a lane that does not exist.
     int sr = (sink_reg && hc * hc <= 32) ? 1 : 0;
     dsv4_hc_pre_fused_v3_kernel<<<(unsigned)s, (unsigned)block, 0, stream>>>(
-        x, mixes, scale, base, pre, post, comb, y, w, rows, hc, d, iters, eps, niters, sr);
+        x, mixes, scale, base, pre, post, comb, y, w, rows, hc, d, iters, eps, niters, sr,
+        split_collapse);
     DSV4_ERR();
+    // The split collapse reads `pre` back from global — the exact bits the kernel above just
+    // wrote — and runs stage 3 over a real grid instead of the single block s = 1 forces.
+    if (split_collapse) return memra_dsv4_hc_collapse(x, pre, y, s, hc, d, stream_v);
     return 0;
 }
 // position's own raw/sel/selw/order slices and its OWN token id — the hash layers'
