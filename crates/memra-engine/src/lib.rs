@@ -2869,8 +2869,9 @@ fn q8_census_record(site: &'static std::panic::Location<'static>, m: usize, in_f
     if !*ON.get_or_init(|| std::env::var("MEMRA_Q8_CENSUS").as_deref() == Ok("1")) {
         return;
     }
-    static HIST: OnceLock<Mutex<(u64, HashMap<(String, u32, usize, usize), u64>)>> =
-        OnceLock::new();
+    // (calls so far, per-call-site count keyed by file/line/m/in_f).
+    type Hist = (u64, HashMap<(String, u32, usize, usize), u64>);
+    static HIST: OnceLock<Mutex<Hist>> = OnceLock::new();
     let mut g = HIST
         .get_or_init(|| Mutex::new((0, HashMap::new())))
         .lock()
@@ -2880,7 +2881,7 @@ fn q8_census_record(site: &'static std::panic::Location<'static>, m: usize, in_f
         .or_insert(0) += 1;
     if g.0.is_multiple_of(4096) {
         let mut rows: Vec<_> = g.1.iter().map(|(k, v)| (*v, k.clone())).collect();
-        rows.sort_by(|a, b| b.0.cmp(&a.0));
+        rows.sort_by_key(|r| std::cmp::Reverse(r.0));
         eprintln!(
             "[q8-census] {} quantize_q8_1 calls so far; by call site:",
             g.0
