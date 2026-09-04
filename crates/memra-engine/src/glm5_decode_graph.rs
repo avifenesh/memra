@@ -1387,6 +1387,87 @@ impl HybridModel {
             let h_in = e.dtoh(&x_keep)?;
             (nonfinite(&h_in), nonfinite(&h_ref), nonfinite(&h_rep))
         };
+        // memra#131 cell 8: when the reference is poisoned from a finite input, walk the run ONE
+        // LAYER AT A TIME on the restored state and name the first layer whose output is
+        // non-finite (and whether the layer before it was finite), so the defect is placed at a
+        // layer instead of a run.
+        let layer_bisect = if nf_in == 0 && nf_ref > 0 {
+            let mut report = String::new();
+            let mut xl = e.uninit(width)?;
+            e.copy_into(&mut xl, 0, &x_keep, width)?;
+            let mut first_bad: Option<(usize, CudaSlice<f32>)> = None;
+            for il in a..b {
+                let mut xin = e.uninit(width)?;
+                e.copy_into(&mut xin, 0, &xl, width)?;
+                let out =
+                    self.hyper_range_decode_eager(e, topology, xl, il, il + 1, pos_d, pos, cache)?;
+                let n = nonfinite(&e.dtoh(&out)?);
+                report.push_str(&format!(" L{il}:{n}"));
+                if n > 0 {
+                    first_bad = Some((il, xin));
+                    break;
+                }
+                xl = out;
+            }
+            restore(e, cache, &snaps)?;
+            // memra#131 cell 9: inside the first poisoned layer, the sub-steps of the eager body
+            // on the restored state, each counted: hc pre (attn), norm, KDA mixer, hc post, hc pre
+            // (mlp), norm, MoE FFN, hc post. The first non-finite sub-step is the site.
+            let sub = match first_bad {
+                Some((il, xin)) => {
+                    let n_embd = self.cfg.n_embd as usize;
+                    let eps = self.cfg.rms_eps;
+                    let layer = &self.layers[il];
+                    let mut steps = String::new();
+                    if let Some(hyper) = layer.hyper.as_ref() {
+                        let (y, mix) =
+                            crate::hyper::pre(e, topology, &hyper.attn, &xin, 1, n_embd)?;
+                        steps.push_str(&format!(" pre_attn.y:{}", nonfinite(&e.dtoh(&y)?)));
+                        let mut h = e.uninit(n_embd)?;
+                        e.rms_norm(&y, layer.attn_norm.float_data(), &mut h, n_embd, 1, eps)?;
+                        steps.push_str(&format!(" attn_norm.h:{}", nonfinite(&e.dtoh(&h)?)));
+                        let mixed = match &layer.mixer {
+                            crate::hybrid::Mixer::Kda(la) if la.tp.is_none() => {
+                                Some(crate::kda::kda_decode_cached(e, la, &h, eps, cache, il)?)
+                            }
+                            _ => None,
+                        };
+                        if let Some(mixed) = mixed.as_ref() {
+                            steps.push_str(&format!(" kda_mixer:{}", nonfinite(&e.dtoh(mixed)?)));
+                            let x1 = crate::hyper::post(e, topology, mixed, &xin, &mix, 1, n_embd)?;
+                            steps.push_str(&format!(" post_attn.x:{}", nonfinite(&e.dtoh(&x1)?)));
+                            let (y2, mix2) =
+                                crate::hyper::pre(e, topology, &hyper.mlp, &x1, 1, n_embd)?;
+                            steps.push_str(&format!(" pre_mlp.y:{}", nonfinite(&e.dtoh(&y2)?)));
+                            let mut z = e.uninit(n_embd)?;
+                            e.rms_norm(
+                                &y2,
+                                layer.post_attn_norm.float_data(),
+                                &mut z,
+                                n_embd,
+                                1,
+                                eps,
+                            )?;
+                            steps.push_str(&format!(" mlp_norm.z:{}", nonfinite(&e.dtoh(&z)?)));
+                            let ffn_out =
+                                self.hyper_ffn_branch(e, layer, &z, 1, il, false, None)?;
+                            steps.push_str(&format!(" ffn_out:{}", nonfinite(&e.dtoh(&ffn_out)?)));
+                            let x2 =
+                                crate::hyper::post(e, topology, &ffn_out, &x1, &mix2, 1, n_embd)?;
+                            steps.push_str(&format!(" post_mlp.x:{}", nonfinite(&e.dtoh(&x2)?)));
+                        } else {
+                            steps.push_str(" (mixer is not a plain KDA layer; sub-steps skipped)");
+                        }
+                    }
+                    restore(e, cache, &snaps)?;
+                    format!("; inside L{il} sub-steps non-finite:{steps}")
+                }
+                None => String::new(),
+            };
+            format!("; per-layer non-finite after each layer:{report}{sub}")
+        } else {
+            String::new()
+        };
         if nf_in + nf_ref + nf_rep > 0 {
             eprintln!(
                 "[glm5-decode-graph] SELF-CHECK FAILED dev={dev} stage=[{lo}, {hi}) \
@@ -1394,7 +1475,7 @@ impl HybridModel {
                  {nf_in}/{width}, eager output {nf_ref}/{width}, replay output {nf_rep}/{width}; \
                  BEFORE the walk: recurrent state non-finite {nf_state} (first: {}), stage pool \
                  non-finite {nf_pool} (first: {}), engine ws non-finite {nf_ews} (first: {}); PLAIN \
-                 eager twin: non-finite {nf_plain}/{width}, {plain_vs_ws} \
+                 eager twin: non-finite {nf_plain}/{width}, {plain_vs_ws}{layer_bisect} \
                  (a NaN-identical compare proves nothing); the stage is latched EAGER for this \
                  session and this token is recomputed eager. The door did NOT engage.{}",
                 if nf_state_first.is_empty() {
