@@ -2013,6 +2013,38 @@ pub fn moe_vrows_pack_dispatches() -> u64 {
     MOE_VROWS_PACK_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// `MEMRA_MOE_VROWS_ILP=1` (lane/glm5-moe-rows-ilp-20260904, default OFF): the verify-rows MoE
+/// pair launches its `_ilp` twins, the same per-warp program with the loads of four (then two)
+/// groups per lane issued ahead of their math. Composes with door M (`_w4_ilp`). ONLY the
+/// interleaved NVFP4 expert layout (`QT_NVFP4`): the launchers refuse by name for any other
+/// qtype and keep the shipped kernel. Read PER CALL. Why and receipts: the kernel header in
+/// cu/qmatvec.cu and docs/FLAGS.md.
+pub(crate) fn moe_vrows_ilp_on() -> bool {
+    std::env::var("MEMRA_MOE_VROWS_ILP").as_deref() == Ok("1")
+}
+
+/// Engagement counter for the ILP verify-rows MoE door (`MEMRA_MOE_VROWS_ILP`), both launches.
+pub static MOE_VROWS_ILP_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// Snapshot of [`MOE_VROWS_ILP_DISPATCHES`] — gates take a before/after delta.
+pub fn moe_vrows_ilp_dispatches() -> u64 {
+    MOE_VROWS_ILP_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// One line, once, when the ILP door is armed but the expert layout is not the interleaved
+/// NVFP4 it was written for: a silent fall-through would let a box A/B read the door's absence.
+fn moe_vrows_ilp_refuse(site: &str, qt: i32) {
+    static SAID: std::sync::Once = std::sync::Once::new();
+    SAID.call_once(|| {
+        eprintln!(
+            "[moe-vrows-ilp] REFUSED at {site}: MEMRA_MOE_VROWS_ILP=1 but the expert qtype is \
+             {qt}, not QT_NVFP4 ({QT_NVFP4}); the shipped kernel runs (the ILP twins hoist the \
+             interleaved NVFP4 group loads and no other layout)"
+        );
+    });
+}
+
 /// `MEMRA_MOE_VROWS_DEV_TABLES=1` (lane/glm5-moe-loc door D, default OFF): the verify-rows MoE
 /// pair builds its `ptrs`/`scl` tables ON DEVICE from the router's own `sel`/`w` device output
 /// (`moe_vrows_tables_from_sel`) instead of on the host, and the layer routes through the
@@ -7683,6 +7715,21 @@ impl Engine {
         let packed = moe_vrows_pack_on();
         let ordered =
             !packed && moe_vrows_dedup_order_on() && ptrs.len() >= 4 * n_pairs && n_ff <= 65535;
+        // MEMRA_MOE_VROWS_ILP (lane/glm5-moe-rows-ilp-20260904, default OFF): the `_ilp` twins,
+        // interleaved-NVFP4 only, composed with door M as `_w4_ilp`. Refuses by name otherwise.
+        let ilp = moe_vrows_ilp_on()
+            && if qt_g == QT_NVFP4 && qt_u == QT_NVFP4 {
+                true
+            } else {
+                moe_vrows_ilp_refuse("gate/up", if qt_g == QT_NVFP4 { qt_u } else { qt_g });
+                false
+            };
+        if ilp && MOE_VROWS_ILP_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+            eprintln!(
+                "[moe-vrows-ilp] engaged: verify-rows MoE pair with four groups' loads per lane \
+                 hoisted ahead of their math (MEMRA_MOE_VROWS_ILP=1, packed={packed})"
+            );
+        }
         let (f, cfg) = if packed {
             if MOE_VROWS_PACK_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
                 eprintln!(
@@ -7691,7 +7738,11 @@ impl Engine {
                 );
             }
             (
-                self.func("moe_gate_up_preclamp8_q8_rows_w4"),
+                self.func(if ilp {
+                    "moe_gate_up_preclamp8_q8_rows_w4_ilp"
+                } else {
+                    "moe_gate_up_preclamp8_q8_rows_w4"
+                }),
                 LaunchConfig {
                     grid_dim: ((n_ff as u32).div_ceil(4), n_pairs as u32, 1),
                     block_dim: (32, 4, 1),
@@ -7719,7 +7770,11 @@ impl Engine {
             )
         } else {
             (
-                self.func("moe_gate_up_preclamp8_q8_rows"),
+                self.func(if ilp {
+                    "moe_gate_up_preclamp8_q8_rows_ilp"
+                } else {
+                    "moe_gate_up_preclamp8_q8_rows"
+                }),
                 LaunchConfig {
                     grid_dim: (n_ff as u32, n_pairs as u32, 1),
                     block_dim: (32, 1, 1),
@@ -7785,9 +7840,24 @@ impl Engine {
         // inside the block and keeps its ORIGINAL slot order; only the grid moves. Needs no table
         // plane (the down chain cannot be permuted), so it composes with either table provenance.
         let tmaj = !packed && moe_vrows_down_tmaj_on() && out_f <= 65535;
+        // MEMRA_MOE_VROWS_ILP: the down `_ilp` twins, interleaved-NVFP4 only (see gate/up).
+        let ilp = moe_vrows_ilp_on()
+            && if qt == QT_NVFP4 {
+                true
+            } else {
+                moe_vrows_ilp_refuse("down", qt);
+                false
+            };
+        if ilp {
+            MOE_VROWS_ILP_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
         let (f, cfg) = if packed {
             (
-                self.func("moe_down8_fma_q8_rows_w4"),
+                self.func(if ilp {
+                    "moe_down8_fma_q8_rows_w4_ilp"
+                } else {
+                    "moe_down8_fma_q8_rows_w4"
+                }),
                 LaunchConfig {
                     grid_dim: ((out_f as u32).div_ceil(4), t as u32, 1),
                     block_dim: (32, 4, 1),
@@ -7814,7 +7884,11 @@ impl Engine {
             )
         } else {
             (
-                self.func("moe_down8_fma_q8_rows"),
+                self.func(if ilp {
+                    "moe_down8_fma_q8_rows_ilp"
+                } else {
+                    "moe_down8_fma_q8_rows"
+                }),
                 LaunchConfig {
                     grid_dim: (out_f as u32, t as u32, 1),
                     block_dim: (32, 1, 1),

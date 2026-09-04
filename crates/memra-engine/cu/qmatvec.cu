@@ -5577,17 +5577,18 @@ __device__ __forceinline__ float expert_dot_q6k_g(const unsigned char* wrow, int
 // at the block's 4 scale bytes, `s0` selects the half's two sub-block scales. Both layouts call
 // THIS body so the compiler sees one expression tree at both sites: same ints (get_int_b4 at
 // qh+0/+4/+8/+12), same table lookups, same dp4a order, same partial/d8 chain.
-__device__ __forceinline__ float expert_dot_nvfp4_core(const unsigned char* qh,
-                                                       const unsigned char* d_bytes, int s0,
-                                                       const signed char* aqb, float d8) {
-    const int* aq4 = (const int*)aqb;
+// The register form of the core (lane/glm5-moe-rows-ilp-20260904): the group's four quant
+// ints and two scale bytes ALREADY LOADED, so a caller can hoist several groups' loads ahead
+// of the math. `expert_dot_nvfp4_core` below is this body fed by its own loads: one
+// expression tree at every site, which is the whole pinned-arithmetic argument.
+__device__ __forceinline__ float expert_dot_nvfp4_core_regs(int q4a0, int q4b0, int q4a1, int q4b1,
+                                                            unsigned char d0, unsigned char d1,
+                                                            const int* aq4, float d8) {
     float partial = 0.0f;
     #pragma unroll
     for (int sl = 0; sl < 2; sl++) {
-        int s = s0 + sl;
-        const unsigned char* qss = qh + sl * 8;
-        int q4a = get_int_b4(qss);
-        int q4b = get_int_b4(qss + 4);
+        int q4a = sl == 0 ? q4a0 : q4a1;
+        int q4b = sl == 0 ? q4b0 : q4b1;
         int2 va = get_int_from_table_16_d(q4a, kvalues_mxfp4_d);
         int2 vb = get_int_from_table_16_d(q4b, kvalues_mxfp4_d);
         int base = sl * 4;
@@ -5602,9 +5603,18 @@ __device__ __forceinline__ float expert_dot_nvfp4_core(const unsigned char* qh,
         // shipped bits are: inner multiply-add FUSED, outer d8 multiply SEPARATE. Both are
         // written as .rn intrinsics so no call site can be compiled differently; verified 0 diffs
         // against the untouched-main outputs for shipped, _w4 and rp (bench dump compare).
-        partial = __fmaf_rn(ue4m3_to_f32_d(d_bytes[s]), (float)sumi, partial);
+        partial = __fmaf_rn(ue4m3_to_f32_d(sl == 0 ? d0 : d1), (float)sumi, partial);
     }
     return __fmul_rn(d8, partial);
+}
+__device__ __forceinline__ float expert_dot_nvfp4_core(const unsigned char* qh,
+                                                       const unsigned char* d_bytes, int s0,
+                                                       const signed char* aqb, float d8) {
+    // sl = 0 reads qh+0/+4 and d_bytes[s0]; sl = 1 reads qh+8/+12 and d_bytes[s0+1]: the
+    // exact loads the loop form issued, in registers.
+    return expert_dot_nvfp4_core_regs(get_int_b4(qh), get_int_b4(qh + 4), get_int_b4(qh + 8),
+                                      get_int_b4(qh + 12), d_bytes[s0], d_bytes[s0 + 1],
+                                      (const int*)aqb, d8);
 }
 __device__ __forceinline__ float expert_dot_nvfp4_g(const unsigned char* wrow, int g,
                                                     const signed char* aqb, float d8) {
@@ -6503,6 +6513,213 @@ extern "C" __global__ void moe_down8_fma_q8_rows_w4(
         if (lane == 0) chain = __fmaf_rn(scl[2 * n_pairs + pr], acc, chain);
     }
     if (lane == 0) dst[(size_t)tok * out_f + o] = chain;
+}
+
+// ---- ILP twins of the verify-rows MoE pair (lane/glm5-moe-rows-ilp-20260904, door
+// MEMRA_MOE_VROWS_ILP, default OFF) ----
+//
+// WHY. The pair is the largest kernel-time item of a plain glm5_next t=1 token on the 2x B200
+// pair (door-ON census 2026-09-04: moe_gate_up_preclamp8_q8_rows 43/token x 47.2 us +
+// moe_down8_fma_q8_rows 43/token x 25.7 us = 3.1 ms of a ~13.7 ms token, 22%), and it moves
+// ~71 MB + ~36 MB of expert bytes per launch pair: ~1.5 TB/s useful on an 8 TB/s part. Root
+// ncu on the rig at the served geometry (darklanes research/glm5-b200-20260902/ncu-rig/moe.csv)
+// says WHY: long-scoreboard stalls 55-60% of warp-active cycles, issue-active 36-44%, DRAM at
+// 25-46% of peak; the 4-warp packing (_w4) lifted occupancy 47 -> 76% and DRAM% by a quarter,
+// and priced +0.6..0.9% on the pair. So it is neither occupancy nor arithmetic: every lane
+// walks its groups SERIALLY (g = lane, lane+32, ...; nsb = 128 at in_f 4096 is four rounds
+// for gate/up, two for down at in_f 2048), and each round's six weight loads (four quant ints
+// + two scale bytes per plane) wait on the previous round's dependent chain.
+//
+// WHAT. The same per-warp program with the loads of four (then two) groups per lane issued
+// BEFORE any of their math: `nvfp4_v1_load_g` reads a group's exact bytes into registers
+// (the ints get_int_b4 read at the half-block's +0/+4/+8/+12, the scale bytes d_bytes[s0] and
+// [s0+1]) and `expert_dot_nvfp4_core_regs` is the pinned core on those registers. The
+// accumulation ORDER per plane is unchanged: accg += dot(g), accg += dot(g+32), ... exactly
+// the serial loop's sequence into the same accumulator; accg and accu are separate
+// accumulators so their interleaving moves no bits; the warp tree, the pre-clamp epilogue and
+// the slot-ordered __fmaf_rn down chain are verbatim. ONLY the interleaved NVFP4 layout
+// (QT_NVFP4): the host launcher refuses by name for any other qtype, and the kernel poisons
+// its output (NaN) if it is ever reached with another, so a wiring error screams.
+// Gate: tests/glm5_matvec_doors_gpu.rs (bitwise vs the shipped pair at the served nsb
+// classes, red arms through the door).
+struct nvfp4_grp_regs { int q0, q1, q2, q3; unsigned char d0, d1; };
+__device__ __forceinline__ nvfp4_grp_regs nvfp4_v1_load_g(const unsigned char* wrow, int g) {
+    int sblk = g >> 1;
+    int s0 = (g & 1) * 2;
+    const unsigned char* b = wrow + (long)sblk * 36;
+    const unsigned char* qh = b + 4 + s0 * 8;
+    nvfp4_grp_regs r;
+    r.q0 = get_int_b4(qh);
+    r.q1 = get_int_b4(qh + 4);
+    r.q2 = get_int_b4(qh + 8);
+    r.q3 = get_int_b4(qh + 12);
+    r.d0 = b[s0];
+    r.d1 = b[s0 + 1];
+    return r;
+}
+__device__ __forceinline__ float nvfp4_regs_dot(const nvfp4_grp_regs& r, const int* aq4, float d8) {
+    return expert_dot_nvfp4_core_regs(r.q0, r.q1, r.q2, r.q3, r.d0, r.d1, aq4, d8);
+}
+// gate/up per-warp body: two planes, loads hoisted 4 groups deep, then 2, then singles.
+__device__ __forceinline__ void moe_gate_up_nvfp4_rows_ilp_body(
+        const unsigned char* __restrict__ grow, const unsigned char* __restrict__ urow,
+        const signed char* __restrict__ arow, const float* __restrict__ adrow, int nsb, int lane,
+        float& accg, float& accu) {
+    int g = lane;
+    for (; g + 96 < nsb; g += 128) {
+        nvfp4_grp_regs g0 = nvfp4_v1_load_g(grow, g);
+        nvfp4_grp_regs g1 = nvfp4_v1_load_g(grow, g + 32);
+        nvfp4_grp_regs g2 = nvfp4_v1_load_g(grow, g + 64);
+        nvfp4_grp_regs g3 = nvfp4_v1_load_g(grow, g + 96);
+        nvfp4_grp_regs u0 = nvfp4_v1_load_g(urow, g);
+        nvfp4_grp_regs u1 = nvfp4_v1_load_g(urow, g + 32);
+        nvfp4_grp_regs u2 = nvfp4_v1_load_g(urow, g + 64);
+        nvfp4_grp_regs u3 = nvfp4_v1_load_g(urow, g + 96);
+        const int* a0 = (const int*)(arow + (size_t)g * 32);
+        const int* a1 = (const int*)(arow + (size_t)(g + 32) * 32);
+        const int* a2 = (const int*)(arow + (size_t)(g + 64) * 32);
+        const int* a3 = (const int*)(arow + (size_t)(g + 96) * 32);
+        float d80 = adrow[g], d81 = adrow[g + 32], d82 = adrow[g + 64], d83 = adrow[g + 96];
+        accg += nvfp4_regs_dot(g0, a0, d80);
+        accu += nvfp4_regs_dot(u0, a0, d80);
+        accg += nvfp4_regs_dot(g1, a1, d81);
+        accu += nvfp4_regs_dot(u1, a1, d81);
+        accg += nvfp4_regs_dot(g2, a2, d82);
+        accu += nvfp4_regs_dot(u2, a2, d82);
+        accg += nvfp4_regs_dot(g3, a3, d83);
+        accu += nvfp4_regs_dot(u3, a3, d83);
+    }
+    for (; g + 32 < nsb; g += 64) {
+        nvfp4_grp_regs g0 = nvfp4_v1_load_g(grow, g);
+        nvfp4_grp_regs g1 = nvfp4_v1_load_g(grow, g + 32);
+        nvfp4_grp_regs u0 = nvfp4_v1_load_g(urow, g);
+        nvfp4_grp_regs u1 = nvfp4_v1_load_g(urow, g + 32);
+        const int* a0 = (const int*)(arow + (size_t)g * 32);
+        const int* a1 = (const int*)(arow + (size_t)(g + 32) * 32);
+        float d80 = adrow[g], d81 = adrow[g + 32];
+        accg += nvfp4_regs_dot(g0, a0, d80);
+        accu += nvfp4_regs_dot(u0, a0, d80);
+        accg += nvfp4_regs_dot(g1, a1, d81);
+        accu += nvfp4_regs_dot(u1, a1, d81);
+    }
+    for (; g < nsb; g += 32) {
+        const signed char* aqb = arow + (size_t)g * 32;
+        float d8 = adrow[g];
+        accg += expert_dot_nvfp4_g(grow, g, aqb, d8);
+        accu += expert_dot_nvfp4_g(urow, g, aqb, d8);
+    }
+}
+// down per-warp body: one plane, same hoisting; returns the un-reduced lane partial.
+__device__ __forceinline__ float moe_down_nvfp4_rows_ilp_body(
+        const unsigned char* __restrict__ wrow, const signed char* __restrict__ arow,
+        const float* __restrict__ adrow, int nsb, int lane) {
+    float acc = 0.0f;
+    int g = lane;
+    for (; g + 96 < nsb; g += 128) {
+        nvfp4_grp_regs w0 = nvfp4_v1_load_g(wrow, g);
+        nvfp4_grp_regs w1 = nvfp4_v1_load_g(wrow, g + 32);
+        nvfp4_grp_regs w2 = nvfp4_v1_load_g(wrow, g + 64);
+        nvfp4_grp_regs w3 = nvfp4_v1_load_g(wrow, g + 96);
+        acc += nvfp4_regs_dot(w0, (const int*)(arow + (size_t)g * 32), adrow[g]);
+        acc += nvfp4_regs_dot(w1, (const int*)(arow + (size_t)(g + 32) * 32), adrow[g + 32]);
+        acc += nvfp4_regs_dot(w2, (const int*)(arow + (size_t)(g + 64) * 32), adrow[g + 64]);
+        acc += nvfp4_regs_dot(w3, (const int*)(arow + (size_t)(g + 96) * 32), adrow[g + 96]);
+    }
+    for (; g + 32 < nsb; g += 64) {
+        nvfp4_grp_regs w0 = nvfp4_v1_load_g(wrow, g);
+        nvfp4_grp_regs w1 = nvfp4_v1_load_g(wrow, g + 32);
+        acc += nvfp4_regs_dot(w0, (const int*)(arow + (size_t)g * 32), adrow[g]);
+        acc += nvfp4_regs_dot(w1, (const int*)(arow + (size_t)(g + 32) * 32), adrow[g + 32]);
+    }
+    for (; g < nsb; g += 32)
+        acc += expert_dot_nvfp4_g(wrow, g, arow + (size_t)g * 32, adrow[g]);
+    return acc;
+}
+__device__ __forceinline__ void moe_gate_up_rows_ilp_warp(
+        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
+        const signed char* __restrict__ aq, const float* __restrict__ ad, float limit,
+        float* __restrict__ act, int in_f, int n_ff, int n_used, int n_pairs, int qt_g,
+        int qt_u, long rb_g, long rb_u, int o, int pr, int lane) {
+    int nsb = in_f >> 5;
+    int tok = pr / n_used;
+    const unsigned char* grow = (const unsigned char*)ptrs[pr] + (long)o * rb_g;
+    const unsigned char* urow = (const unsigned char*)ptrs[n_pairs + pr] + (long)o * rb_u;
+    const signed char* arow = aq + (size_t)tok * in_f;
+    const float* adrow = ad + (size_t)tok * nsb;
+    float accg = 0.0f, accu = 0.0f;
+    if (qt_g == QT_NVFP4 && qt_u == QT_NVFP4) {
+        moe_gate_up_nvfp4_rows_ilp_body(grow, urow, arow, adrow, nsb, lane, accg, accu);
+    } else {
+        accg = accu = __int_as_float(0x7fc00000);  // wiring error: poison, never a silent zero
+    }
+    accg = warp_reduce_sum(accg);
+    accu = warp_reduce_sum(accu);
+    if (lane == 0) {
+        float u = fmaxf(fminf(accu * scl[n_pairs + pr], limit), -limit);
+        float x = fminf(accg * scl[pr], limit);
+        act[(size_t)pr * n_ff + o] = (x / (1.0f + expf(-x))) * u;
+    }
+}
+extern "C" __global__ void moe_gate_up_preclamp8_q8_rows_ilp(
+        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
+        const signed char* __restrict__ aq, const float* __restrict__ ad, float limit,
+        float* __restrict__ act, int in_f, int n_ff, int n_used, int n_pairs,
+        int qt_g, int qt_u, long rb_g, long rb_u) {
+    int o = blockIdx.x;
+    int pr = blockIdx.y;
+    if (o >= n_ff || pr >= n_pairs) return;
+    moe_gate_up_rows_ilp_warp(ptrs, scl, aq, ad, limit, act, in_f, n_ff, n_used, n_pairs, qt_g,
+                              qt_u, rb_g, rb_u, o, pr, threadIdx.x);
+}
+extern "C" __global__ void moe_gate_up_preclamp8_q8_rows_w4_ilp(
+        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
+        const signed char* __restrict__ aq, const float* __restrict__ ad, float limit,
+        float* __restrict__ act, int in_f, int n_ff, int n_used, int n_pairs,
+        int qt_g, int qt_u, long rb_g, long rb_u) {
+    int o = blockIdx.x * MEMRA_MMVQ_ROWS + threadIdx.y;
+    int pr = blockIdx.y;
+    if (o >= n_ff || pr >= n_pairs) return;
+    moe_gate_up_rows_ilp_warp(ptrs, scl, aq, ad, limit, act, in_f, n_ff, n_used, n_pairs, qt_g,
+                              qt_u, rb_g, rb_u, o, pr, threadIdx.x);
+}
+__device__ __forceinline__ void moe_down_rows_ilp_warp(
+        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
+        const signed char* __restrict__ aq2, const float* __restrict__ ad2,
+        float* __restrict__ dst, int in_f, int out_f, int n_used, int n_pairs, int qt, long rb,
+        int o, int tok, int lane) {
+    int nsb = in_f >> 5;
+    float chain = 0.0f;
+    for (int j = 0; j < n_used; j++) {
+        int pr = tok * n_used + j;
+        const unsigned char* wrow = (const unsigned char*)ptrs[2 * n_pairs + pr] + (long)o * rb;
+        const signed char* arow = aq2 + (size_t)pr * in_f;
+        const float* adrow = ad2 + (size_t)pr * nsb;
+        float acc = (qt == QT_NVFP4) ? moe_down_nvfp4_rows_ilp_body(wrow, arow, adrow, nsb, lane)
+                                     : __int_as_float(0x7fc00000);
+        acc = warp_reduce_sum(acc);
+        if (lane == 0) chain = __fmaf_rn(scl[2 * n_pairs + pr], acc, chain);
+    }
+    if (lane == 0) dst[(size_t)tok * out_f + o] = chain;
+}
+extern "C" __global__ void moe_down8_fma_q8_rows_ilp(
+        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
+        const signed char* __restrict__ aq2, const float* __restrict__ ad2,
+        float* __restrict__ dst, int in_f, int out_f, int n_used, int n_pairs, int qt, long rb) {
+    int o = blockIdx.x;
+    int tok = blockIdx.y;
+    if (o >= out_f) return;
+    moe_down_rows_ilp_warp(ptrs, scl, aq2, ad2, dst, in_f, out_f, n_used, n_pairs, qt, rb, o, tok,
+                           threadIdx.x);
+}
+extern "C" __global__ void moe_down8_fma_q8_rows_w4_ilp(
+        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
+        const signed char* __restrict__ aq2, const float* __restrict__ ad2,
+        float* __restrict__ dst, int in_f, int out_f, int n_used, int n_pairs, int qt, long rb) {
+    int o = blockIdx.x * MEMRA_MMVQ_ROWS + threadIdx.y;
+    int tok = blockIdx.y;
+    if (o >= out_f) return;
+    moe_down_rows_ilp_warp(ptrs, scl, aq2, ad2, dst, in_f, out_f, n_used, n_pairs, qt, rb, o, tok,
+                           threadIdx.x);
 }
 
 // ---- DEDUP-SCHEDULE twins of the verify-rows MoE pair (lane/glm5-dedup, 2026-08-31) ----
