@@ -41,8 +41,8 @@ temp_dir=$(mktemp -d)
 trap 'rm -rf "$temp_dir"' EXIT
 raw_matches="$temp_dir/raw_matches"
 
-# Scan for remove_var calling MEMRA_* names
-rg -n --no-heading 'remove_var\s*\([[:space:]]*&?"(MEMRA_[A-Z0-9_]+)"' "${target_dirs[@]}" --glob '*.rs' 2>/dev/null > "$raw_matches" || true
+# Scan for remove_var calling MEMRA_* names or variable/field identifiers in tests/bins
+rg -n --no-heading 'remove_var\s*\([[:space:]]*&?("MEMRA_[A-Z0-9_]+"|[a-zA-Z0-9_.]+)[[:space:]]*\)' "${target_dirs[@]}" --glob '*.rs' 2>/dev/null > "$raw_matches" || true
 
 # Parse allowlist into an associative array (path:flag -> 1)
 declare -A allowlist_map=()
@@ -69,14 +69,15 @@ while IFS= read -r match_line || [[ -n "$match_line" ]]; do
     lineno="${rest%%:*}"
     content="${rest#*:}"
 
-    # Extract flag name
-    flag=$(echo "$content" | rg -o 'MEMRA_[A-Z0-9_]+' | head -n 1 || true)
+    # Extract target argument: either literal "MEMRA_..." or variable/field identifier
+    flag=$(echo "$content" | rg -o 'remove_var\s*\([[:space:]]*&?("MEMRA_[A-Z0-9_]+"|[a-zA-Z0-9_.]+)' | sed -E 's/remove_var\s*\([[:space:]]*&?//; s/"//g' | head -n 1 || true)
     [[ -z "$flag" ]] && continue
 
     rel_path="${file_path#$REPO_ROOT/}"
     key="$rel_path:$flag"
+    wildcard_key="$rel_path:*"
 
-    if [[ -n "${allowlist_map[$key]:-}" ]]; then
+    if [[ -n "${allowlist_map[$key]:-}" || -n "${allowlist_map[$wildcard_key]:-}" ]]; then
         allowlisted_count=$((allowlisted_count + 1))
     else
         uncovered_count=$((uncovered_count + 1))

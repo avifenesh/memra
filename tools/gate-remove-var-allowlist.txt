@@ -9,21 +9,14 @@
 crates/memra-engine/src/bin/glm5_hyper_batch_gate.rs:MEMRA_HTOD_DIET # alias hygiene: prevent leaked caller env from outvoting MEMRA_GLM5_HTOD_DIET
 crates/memra-engine/src/bin/glm5_spec_ppn_gate.rs:MEMRA_HTOD_DIET # alias hygiene
 crates/memra-engine/src/bin/glm5_hyper_ppn_gate.rs:MEMRA_HTOD_DIET # alias hygiene
-crates/memra-engine/src/bin/glm5_spec_ppn_gate.rs:MEMRA_PP_STAGES # clear outer stages override to test naked auto geometry
-crates/memra-engine/src/bin/pp2_gate.rs:MEMRA_PP_STAGES # clear outer stages override
 crates/memra-engine/src/bin/pp2_gate.rs:MEMRA_PP_SPLIT # clear outer split override
 
 # Reference arms / baseline resets in diagnostic binaries
 crates/memra-engine/src/bin/w4a4_gate.rs:MEMRA_MMQ # Arm::W4a8Reference baseline
-crates/memra-engine/src/bin/mmvq_bisect.rs:MEMRA_MMVQ # bisection diagnostic tool
 crates/memra-engine/src/bin/fa_hd128_check.rs:MEMRA_FA_FLOOR # baseline comparison
 crates/memra-engine/src/bin/fa_hd128_check.rs:MEMRA_PRIME_DEQW_DB # baseline comparison
-crates/memra-engine/src/bin/ppn_gate.rs:MEMRA_PP_STAGES # stage clearance
-crates/memra-engine/src/bin/ppn_gate.rs:MEMRA_PP_OVERLAP # overlap clearance
-crates/memra-engine/src/bin/ppn_bench.rs:MEMRA_PP_STAGES # benchmark stage clearance
 crates/memra-engine/src/bin/decode_batch_gate.rs:MEMRA_PRIME_PIPE # batch gate probe
 crates/memra-engine/src/bin/decode_batch_gate.rs:MEMRA_PP_HOST_BOUNCE # batch gate probe
-crates/memra-engine/src/bin/decode_batch_gate.rs:MEMRA_PP_STAGES # batch gate probe
 crates/memra-engine/src/bin/decode_batch_gate.rs:MEMRA_BATCH_PP # batch gate probe
 crates/memra-engine/src/bin/decode_batch_gate.rs:MEMRA_PP_ALLOW_UNSPLIT_BATCH # batch gate probe
 crates/memra-engine/src/bin/decode_batch_gate.rs:MEMRA_PP_OVERLAP # batch gate probe
@@ -60,3 +53,13 @@ crates/memra-engine/tests/glm5_dflash_session_gpu.rs:MEMRA_GLM5_SPEC_FULLCOVER #
 crates/memra-engine/tests/glm5_dflash_session_gpu.rs:MEMRA_GLM5_DRAFT_PRIME_V2 # test teardown
 crates/memra-engine/tests/glm5_dflash_session_gpu.rs:MEMRA_SPEC_PENALTY # test teardown
 crates/memra-engine/tests/glm5_dflash_session_gpu.rs:MEMRA_DFLASH2_SDPA_CLIP # test teardown
+
+# Non-literal helper / RAII Drop guard cleanup
+crates/memra-engine/tests/glm5_matvec_doors_gpu.rs:key # with_flag / without_flag helper teardown
+crates/memra-engine/tests/glm5_moe_loc_doors_gpu.rs:key # with_flag helper teardown
+crates/memra-engine/tests/glm5_moe_loc_doors_gpu.rs:k # EnvArm Drop guard teardown
+crates/memra-engine/tests/glm5_dedup_sched_gpu.rs:k # env restore helper
+crates/memra-engine/tests/glm5_dflash_session_gpu.rs:self.0 # EnvGuard Drop guard teardown
+crates/memra-engine/src/bin/decode_batch_gate.rs:self.key # Drop guard cleanup
+crates/memra-engine/src/bin/glm5_tp_gate.rs:k # rm_env helper teardown
+crates/memra-engine/src/bin/glm5_prime_v2_gate.rs:key # clear_env helper teardown

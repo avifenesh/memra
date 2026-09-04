@@ -489,7 +489,11 @@ fn set_env(key: &str, value: &str) {
     unsafe { std::env::set_var(key, value) };
 }
 fn clear_env(key: &str) {
-    unsafe { std::env::remove_var(key) };
+    let off_val = match key {
+        "MEMRA_PP_STAGES" => "1",
+        _ => "0",
+    };
+    unsafe { std::env::set_var(key, off_val) };
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -525,7 +529,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // the assert stays exactly as it is, as the check that the pin worked.
     clear_env("MEMRA_PP_SPLITS");
     clear_env("MEMRA_PP_SPLIT");
-    clear_env("MEMRA_B200_PRIME_V2");
+    set_env("MEMRA_B200_PRIME_V2", "0");
     clear_env("MEMRA_PRIME_CHUNK");
     clear_env("MEMRA_PRIME_PIPE");
 
@@ -613,7 +617,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let ids = tokens(t1, 0x5EED_0001);
         let max_ctx = t1 + 16;
 
-        clear_env("MEMRA_B200_PRIME_V2");
+        set_env("MEMRA_B200_PRIME_V2", "0");
         let gpf_before = MOE_GROUPED_PREFILL_DISPATCHES.load(Ordering::Relaxed);
         let shipped_ranges = hyper_prime_ranges(t1, LAYERS, m.gdn_prime_grid_on());
         let (ref_logits, ref_stack) = prime_once(&e, &m, &plan, &ids, max_ctx)?;
@@ -627,7 +631,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let door_ranges = hyper_prime_ranges(t1, LAYERS, m.gdn_prime_grid_on());
         let (got_logits, got_stack) = prime_once(&e, &m, &plan, &ids, max_ctx)?;
         let nat = HYPER_PRIME_NATURAL_SCHEDULES.load(Ordering::Relaxed) - nat_before;
-        clear_env("MEMRA_B200_PRIME_V2");
+        set_env("MEMRA_B200_PRIME_V2", "0");
 
         println!(
             "arm 1 SCHEDULE  t={t1}: shipped {} chunks {:?} -> door {} chunks {:?} \
@@ -698,7 +702,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // The honest bar is therefore RELATIVE: the door's schedule change must not move the
         // stack MORE than a schedule change the product already ships. Logits keep an absolute
         // band and argmax keeps an absolute equality — those are what a caller sees.
-        clear_env("MEMRA_B200_PRIME_V2");
+        set_env("MEMRA_B200_PRIME_V2", "0");
         set_env("MEMRA_PRIME_CHUNK", &(t1 / 2).to_string());
         let ctrl_ranges = hyper_prime_ranges(t1, LAYERS, m.gdn_prime_grid_on());
         let (ctrl_logits, ctrl_stack) = prime_once(&e, &m, &plan, &ids, max_ctx)?;
@@ -769,7 +773,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let pipe_chunks = HYPER_PRIME_PIPELINED_CHUNKS.load(Ordering::Relaxed) - pipe_before;
         clear_env("MEMRA_PRIME_PIPE");
         clear_env("MEMRA_PRIME_CHUNK");
-        clear_env("MEMRA_B200_PRIME_V2");
+        set_env("MEMRA_B200_PRIME_V2", "0");
 
         let bad_logits = bit_mismatches(&got_logits, &ref_logits);
         let bad_stack = bit_mismatches(&got_stack, &ref_stack);
@@ -841,14 +845,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let (got_logits, got_taps) = prime_once_tapped(&e, &m, &plan, &ids, max_ctx, &taps)?;
         let pipelined = HYPER_PRIME_PIPELINED_CHUNKS.load(Ordering::Relaxed) - before;
         clear_env("MEMRA_PRIME_CHUNK");
-        clear_env("MEMRA_B200_PRIME_V2");
+        set_env("MEMRA_B200_PRIME_V2", "0");
 
         let ranges = {
             set_env("MEMRA_B200_PRIME_V2", "1");
             set_env("MEMRA_PRIME_CHUNK", &chunk2.to_string());
             let r = hyper_prime_ranges(t2, LAYERS, m.gdn_prime_grid_on());
             clear_env("MEMRA_PRIME_CHUNK");
-            clear_env("MEMRA_B200_PRIME_V2");
+            set_env("MEMRA_B200_PRIME_V2", "0");
             r
         };
         let bad_logits = bit_mismatches(&got_logits, &ref_logits);

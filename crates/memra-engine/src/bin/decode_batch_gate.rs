@@ -1681,7 +1681,7 @@ fn pp_battery(
         // ---- REFERENCE: door OFF, unsplit batched body, primary-allocated caches ----
         // Sharded weights stay where the loader put them; peer reads are byte-exact.
         unsafe {
-            std::env::remove_var("MEMRA_PP_STAGES");
+            std::env::set_var("MEMRA_PP_STAGES", "1");
         }
         let mut inputs: Vec<Vec<u32>> = Vec::with_capacity(steps);
         let mut ref_logits: Vec<Vec<Vec<f32>>> = Vec::with_capacity(steps);
@@ -2142,7 +2142,7 @@ fn ppspec_battery(
         // ---- REFERENCE: door OFF, unsplit verify trunk, primary-allocated cache ----
         // Sharded weights stay where the loader put them; peer reads are byte-exact.
         unsafe {
-            std::env::remove_var("MEMRA_PP_STAGES");
+            std::env::set_var("MEMRA_PP_STAGES", "1");
         }
         let mut inputs: Vec<(usize, Vec<u32>)> = Vec::with_capacity(rounds);
         let mut ref_logits: Vec<Vec<f32>> = Vec::with_capacity(rounds);

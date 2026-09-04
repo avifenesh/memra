@@ -63,6 +63,24 @@ RUST
 : > "$tmp_repo/tools/gate-remove-var-allowlist.txt"
 check_case "pinned-set-var-passes" 0 "$tmp_repo/tools/check-no-remove-var-gates.sh"
 
+echo "=== Case 5: Un-allowlisted non-literal remove_var(ident) fails ==="
+cat <<'RUST' > "$tmp_repo/crates/memra-test/tests/gate_test.rs"
+fn set_flag(key: &str, on: bool) {
+    unsafe {
+        if on {
+            std::env::set_var(key, "1");
+        } else {
+            std::env::remove_var(key);
+        }
+    }
+}
+RUST
+check_case "uncovered-ident-remove-var-fails" 1 "$tmp_repo/tools/check-no-remove-var-gates.sh"
+
+echo "=== Case 6: Allowlisted ident remove_var passes ==="
+echo "crates/memra-test/tests/gate_test.rs:key # intentional helper" >> "$tmp_repo/tools/gate-remove-var-allowlist.txt"
+check_case "allowlisted-ident-remove-var-passes" 0 "$tmp_repo/tools/check-no-remove-var-gates.sh"
+
 echo ""
 echo "test_check_no_remove_var_gates summary: $pass passed, $fail failed"
 [[ $fail -eq 0 ]] || exit 1

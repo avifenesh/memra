@@ -2360,7 +2360,7 @@ impl EnvArm {
 impl Drop for EnvArm {
     fn drop(&mut self) {
         // SAFETY: as above, still under gpu_guard().
-        unsafe { std::env::remove_var(self.0) };
+        unsafe { std::env::set_var(self.0, "0") };
     }
 }
 

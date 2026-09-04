@@ -151,7 +151,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ---- reference: door OFF, record full logits at every step + the greedy stream ----
     unsafe {
-        std::env::remove_var("MEMRA_PP_STAGES");
+        std::env::set_var("MEMRA_PP_STAGES", "1");
     }
     let mut cache_ref = memra_engine::cache::Cache::new(&e, &m.cfg, p + n + 8)?;
     let mut inputs: Vec<u32> = Vec::with_capacity(p + n);
@@ -234,7 +234,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         unsafe {
             match overlap_prev {
                 Some(v) => std::env::set_var("MEMRA_PP_OVERLAP", v),
-                None => std::env::remove_var("MEMRA_PP_OVERLAP"),
+                None => std::env::set_var("MEMRA_PP_OVERLAP", "0"),
             }
         }
         Some(arm)

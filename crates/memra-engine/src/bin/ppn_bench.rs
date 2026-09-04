@@ -87,7 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ---- reference stream (door OFF; also the warmup) ----
     let saved_stages = stages_env.clone();
     unsafe {
-        std::env::remove_var("MEMRA_PP_STAGES");
+        std::env::set_var("MEMRA_PP_STAGES", "1");
     }
     let mut inputs: Vec<u32> = Vec::with_capacity(p + g);
     {
@@ -129,7 +129,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // per-arm door state
             unsafe {
                 match arm {
-                    Arm::SerialOff => std::env::remove_var("MEMRA_PP_STAGES"),
+                    Arm::SerialOff => std::env::set_var("MEMRA_PP_STAGES", "1"),
                     _ => std::env::set_var("MEMRA_PP_STAGES", saved_stages.clone().unwrap()),
                 }
                 if arm == Arm::PipelinedPp {
