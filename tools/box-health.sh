@@ -142,18 +142,25 @@ done < "$OUT/clocks-idle.csv"
 # only AFTER verifying maximum.
 log ""
 log "--- 3. PCIe link gen/width negotiated vs max (RESEARCH.md 3.7) ---"
-nvidia-smi --query-gpu=index,pcie.link.gen.current,pcie.link.gen.max,pcie.link.width.current,pcie.link.width.max \
+PCIE_IDLE_DEFERRED=0
+nvidia-smi --query-gpu=index,pstate,pcie.link.gen.current,pcie.link.gen.max,pcie.link.width.current,pcie.link.width.max \
   --format=csv | tee "$OUT/pcie-link.csv" | tee -a "$LOG"
-while IFS=, read -r idx g gm w wm; do
+while IFS=, read -r idx ps g gm w wm; do
   case "$idx" in index|"") continue;; esac
+  PS=$(printf '%s' "$ps" | tr -d ' ')
   G=$(printf '%s' "$g" | tr -dc '0-9'); GM=$(printf '%s' "$gm" | tr -dc '0-9')
   W=$(printf '%s' "$w" | tr -dc '0-9'); WM=$(printf '%s' "$wm" | tr -dc '0-9')
   if [ -n "$G" ] && [ -n "$GM" ] && [ "$G" -lt "$GM" ]; then
-    fail "gpu$idx PCIe gen$G of max gen$GM — §3.7's silent downgrade (Gen2 x16 ran 3.5 h of production undetected)"
+    if [ "$PS" = "P8" ]; then
+      log "note: gpu$idx PCIe gen$G of max gen$GM at P8 — idle link downshift; validation deferred until section 8 wakes the fabric"
+      PCIE_IDLE_DEFERRED=1
+    else
+      fail "gpu$idx PCIe gen$G of max gen$GM at $PS — §3.7's silent downgrade (Gen2 x16 ran 3.5 h of production undetected)"
+    fi
   elif [ -n "$W" ] && [ -n "$WM" ] && [ "$W" -lt "$WM" ]; then
     fail "gpu$idx PCIe width x$W of max x$WM"
   else
-    ok "gpu$idx PCIe gen$G x$W (max gen$GM x$WM)"
+    ok "gpu$idx PCIe gen$G x$W at $PS (max gen$GM x$WM)"
   fi
 done < "$OUT/pcie-link.csv"
 
@@ -289,6 +296,35 @@ else
     fail "peer-read-probe failed to build — see $OUT/peer-read-probe.build.log"
     cat "$OUT/peer-read-probe.build.log" | tail -20 | tee -a "$LOG"
   fi
+fi
+
+# A healthy idle PCIe link may downshift to Gen1 while the GPU is in P8. Section 3 records that
+# state but cannot classify it as the §3.7 production fault. The peer-read ladder above is the
+# first deliberate device load in this script and touches every peer-capable card, so re-read the
+# negotiated link immediately while it is active. This is the decision reading on a multi-card
+# measurement host.
+if [ "$PCIE_IDLE_DEFERRED" -ne 0 ]; then
+  log ""
+  log "--- 8b. PCIe active-link recheck after the peer-read ladder ---"
+  nvidia-smi --query-gpu=index,pstate,pcie.link.gen.current,pcie.link.gen.max,pcie.link.width.current,pcie.link.width.max \
+    --format=csv | tee "$OUT/pcie-link-active.csv" | tee -a "$LOG"
+  while IFS=, read -r idx ps g gm w wm; do
+    case "$idx" in index|"") continue;; esac
+    PS=$(printf '%s' "$ps" | tr -d ' ')
+    G=$(printf '%s' "$g" | tr -dc '0-9'); GM=$(printf '%s' "$gm" | tr -dc '0-9')
+    W=$(printf '%s' "$w" | tr -dc '0-9'); WM=$(printf '%s' "$wm" | tr -dc '0-9')
+    if [ -n "$G" ] && [ -n "$GM" ] && [ "$G" -lt "$GM" ]; then
+      if [ "$PS" = "P8" ]; then
+        warn "gpu$idx returned to P8 before the active-link recheck; PCIe generation remains unclassified until workload telemetry"
+      else
+        fail "gpu$idx active PCIe gen$G of max gen$GM at $PS — §3.7's silent downgrade"
+      fi
+    elif [ -n "$W" ] && [ -n "$WM" ] && [ "$W" -lt "$WM" ]; then
+      fail "gpu$idx active PCIe width x$W of max x$WM at $PS"
+    else
+      ok "gpu$idx active PCIe gen$G x$W at $PS (max gen$GM x$WM)"
+    fi
+  done < "$OUT/pcie-link-active.csv"
 fi
 
 # ---------------------------------------------------------------------------------------
