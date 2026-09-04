@@ -23423,6 +23423,20 @@ impl Engine {
                 .lock()
                 .map_err(|_| "w8 mirror map is poisoned")?;
             if !mirrors.contains_key(&key) {
+                // memra#131: the mirror is built on FIRST DECODE USE. Under an open CUDA graph capture its
+                // quantize and repack kernels would be RECORDED, never executed, the entry inserted as
+                // built, and every later reader (the eager walk included) would read an uninitialised
+                // mirror: that was the all-NaN KDA mixer at the first captured MoE-stage layer. Refuse by
+                // name; the door warms every captured run before it captures, so this only fires when
+                // something reaches an unwarmed weight inside a capture.
+                if crate::glm5_graph_capture_open() {
+                    return Err(format!(
+                        "MEMRA_GLM5_W8: the q8_0 mirror for a {in_f}x{out_f} weight would be built inside an \
+                         open CUDA graph capture (its quantize kernels recorded, never executed; memra#131). \
+                         Warm the walk before capturing."
+                    )
+                    .into());
+                }
                 let mut interleaved = self.alloc_u8_uninit(out_f * Self::q8_0_row_bytes(in_f))?;
                 self.encode_q8_0_from_bf16(data, &mut interleaved, in_f, out_f)?;
                 let planar = self.build_q8_rp4_raw(&interleaved, in_f, out_f)?;
@@ -23537,6 +23551,20 @@ impl Engine {
                 .lock()
                 .map_err(|_| "w8 mirror map is poisoned")?;
             if !mirrors.contains_key(&key) {
+                // memra#131: the mirror is built on FIRST DECODE USE. Under an open CUDA graph capture its
+                // quantize and repack kernels would be RECORDED, never executed, the entry inserted as
+                // built, and every later reader (the eager walk included) would read an uninitialised
+                // mirror: that was the all-NaN KDA mixer at the first captured MoE-stage layer. Refuse by
+                // name; the door warms every captured run before it captures, so this only fires when
+                // something reaches an unwarmed weight inside a capture.
+                if crate::glm5_graph_capture_open() {
+                    return Err(format!(
+                        "MEMRA_GLM5_W8: the q8_0 mirror for a {in_f}x{out_f} weight would be built inside an \
+                         open CUDA graph capture (its quantize kernels recorded, never executed; memra#131). \
+                         Warm the walk before capturing."
+                    )
+                    .into());
+                }
                 let mut interleaved = self.alloc_u8_uninit(out_f * Self::q8_0_row_bytes(in_f))?;
                 self.encode_q8_0_from_bf16(data, &mut interleaved, in_f, out_f)?;
                 let planar = self.build_q8_rp4_raw(&interleaved, in_f, out_f)?;
