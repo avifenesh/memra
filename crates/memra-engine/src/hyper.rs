@@ -537,6 +537,7 @@ fn pre_finish_into(
                         std::ptr::null_mut(),
                         crate::hc_pre_block() as i32,
                         crate::hc_pre_sink_reg() as i32,
+                        crate::hc_pre_split_collapse() as i32,
                         sp(&stream),
                     ),
                 ),

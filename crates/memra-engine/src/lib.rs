@@ -2813,6 +2813,27 @@ pub fn hc_pre_sink_reg_from(v: Option<&str>, built_arch: &str) -> bool {
     }
 }
 
+/// `MEMRA_HC_PRE_SPLIT_COLLAPSE`: run the hc pre-chain's stage 3 as a SEPARATE multi-block
+/// kernel (`memra_dsv4_hc_collapse`, which already exists as the unfused chain's third kernel)
+/// instead of inline in the fused kernel's single block.
+///
+/// DEFAULT OFF pending its model-scale row (new-flags law). WHY IT SHOULD PAY: at decode the
+/// fused kernel's grid is the SEQUENCE LENGTH, so s = 1 puts all three stages on ONE block --
+/// measured 8.77 us for 146 KB, about 16.6 GB/s, roughly a single SM's reach. Widening the block
+/// saturates inside that SM (1024 measured worse than 512: 9.02 vs 8.77 us) because the limit is
+/// outstanding loads per SM, not threads; BLOCKS are the axis that multiplies memory-level
+/// parallelism, and the standalone collapse at grid(d/256, s) = 16 blocks measures 1.8 us for
+/// stage 3's 81 KB. Costs one extra launch per site (90 per token).
+///
+/// EXACTNESS: bit-identical by construction. Each output is `sum_c pre[c] * x[c*d+i]` with the
+/// c-sum inside ONE thread, so partitioning i across blocks moves no arithmetic, and the split
+/// kernel reads back the exact `pre` bits the fused kernel wrote. Stage 1's reduction is NOT
+/// split for exactly the reason stage 3 can be: repartitioning a reduction changes its order.
+pub fn hc_pre_split_collapse() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_HC_PRE_SPLIT_COLLAPSE").as_deref() == Ok("1"))
+}
+
 /// The build-arch default of `MEMRA_HC_PRE_BLOCK`: 512 on `100a`, 128 elsewhere.
 pub fn hc_pre_block_default(built_arch: &str) -> usize {
     if built_arch == "100a" { 512 } else { 128 }
