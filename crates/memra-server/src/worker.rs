@@ -2371,6 +2371,9 @@ struct AdmissionCostModel {
     ring_rows: usize,
     activation_bytes: usize,
     prefill: Option<memra_engine::hybrid_forward::HyperPrimeWorkspaceShape>,
+    /// memra#144: the non-hyper prime's workspace (ornith, qwen-hybrid, step-3.7); `None`
+    /// when the model is a hyper trunk (which publishes `prefill` above) or the door is off.
+    prime: Option<memra_engine::hybrid_forward::PrimeWorkspaceShape>,
     /// Boot-calibrated per-deployment transient floor (lane/step37-vram-admission-20260830):
     /// the measured first-burst transient this deployment's spec path actually dips, charged
     /// as the admission reserve instead of the static `SPEC_SHRINK_RESERVE` constant (which
@@ -2396,6 +2399,11 @@ impl AdmissionCostModel {
         } else {
             None
         };
+        let prime = if admit_prefill_workspace_on() {
+            model.prime_workspace_shape()
+        } else {
+            None
+        };
         Self {
             plain_bytes_per_token,
             spec_bytes_per_token,
@@ -2404,6 +2412,7 @@ impl AdmissionCostModel {
             ring_rows: plain_ring_rows.max(spec_ring_rows),
             activation_bytes: 0,
             prefill,
+            prime,
             transient_floor: None,
             pp_activation_bytes: [0; 4],
             last_logged: None,
@@ -2446,10 +2455,17 @@ impl AdmissionCostModel {
     /// context planes keep charging `ctx_cap` in `context_bytes`, because that IS the eager
     /// allocation (`Cache::new_planned` books latent rows at the session's max_ctx).
     fn prefill_workspace_bytes(&self, prompt_rows: usize) -> usize {
-        self.prefill
+        let hyper = self
+            .prefill
             .as_ref()
             .map(|shape| shape.admission_bytes(prompt_rows))
-            .unwrap_or(0)
+            .unwrap_or(0);
+        let prime = self
+            .prime
+            .as_ref()
+            .map(|shape| shape.admission_bytes(prompt_rows))
+            .unwrap_or(0);
+        hyper.saturating_add(prime)
     }
 
     fn estimate(&self, ctx_cap: usize, prompt_rows: usize, spec: bool) -> usize {
@@ -24885,6 +24901,7 @@ mod tests {
             ring_rows: 0,
             activation_bytes: 64 << 20,
             prefill: None,
+            prime: None,
             transient_floor: None,
             pp_activation_bytes: [0; 4],
             last_logged: None,
@@ -24949,6 +24966,7 @@ mod tests {
             ring_rows: 0,
             activation_bytes: 155 << 20, // the cell's measured fixed residual
             prefill: Some(shape),
+            prime: None,
             transient_floor: None,
             // Single-origin admission ladder: no PP stages, so the per-stage activation
             // plane main added is zero here, matching AdmissionCostModel::new's default.
@@ -25008,6 +25026,7 @@ mod tests {
             ring_rows: 0,
             activation_bytes: 155 << 20,
             prefill: None,
+            prime: None,
             transient_floor: None,
             pp_activation_bytes: [0; 4],
             last_logged: None,
@@ -25414,6 +25433,7 @@ mod tests {
             ring_rows: 0,
             activation_bytes: 0,
             prefill: None,
+            prime: None,
             transient_floor: None,
             pp_activation_bytes: [0; 4],
             last_logged: None,
@@ -28649,6 +28669,50 @@ mod tests {
     /// PREDICTIVE-ADMISSION SHADOW wiring (lane/d2-engine-gaps-20260831, darklanes Arc
     /// D2 gaps G2/G3/G5): anchored on INVOCATIONS in comment-stripped production text,
     /// per the wiring-assertions law: a rationale comment must never satisfy this.
+    /// memra#144: a non-hyper cost model charges the prime workspace, chunk-bounded under a
+    /// chunked prime and prompt-scaled under a monolithic one, and the pre-lane model (no
+    /// shape) still charges nothing (the red arm the receipts were banked against).
+    #[test]
+    fn non_hyper_prime_workspace_is_charged_and_chunk_bounded() {
+        let shape = memra_engine::hybrid_forward::PrimeWorkspaceShape {
+            call_row_bytes: 42 * 2048 + 14 * 2048,
+            prompt_row_bytes: 4 * 2048,
+            n_layers: 41,
+        };
+        let cost =
+            |prime: Option<memra_engine::hybrid_forward::PrimeWorkspaceShape>| AdmissionCostModel {
+                plain_bytes_per_token: 10_208,
+                spec_bytes_per_token: 10_208,
+                plain_ring_bytes_per_token: 0,
+                spec_ring_bytes_per_token: 0,
+                ring_rows: 0,
+                activation_bytes: 129 << 20,
+                prefill: None,
+                prime,
+                transient_floor: None,
+                pp_activation_bytes: [0; 4],
+                last_logged: None,
+            };
+        let with = cost(Some(shape));
+        let without = cost(None);
+        assert_eq!(
+            without.prefill_workspace_bytes(164_515),
+            0,
+            "the pre-lane model charges nothing"
+        );
+        let charged = with.prefill_workspace_bytes(164_515);
+        assert!(
+            charged >= 164_515 * shape.prompt_row_bytes,
+            "hiddens are always charged: {charged}"
+        );
+        // The charge follows the deployment's chunking (MEMRA_PRIME_CHUNK); the pure
+        // arithmetic is pinned in memra-engine. Here: the estimate carries the term.
+        assert_eq!(
+            with.estimate(196_579, 164_515, true) - without.estimate(196_579, 164_515, true),
+            charged
+        );
+    }
+
     #[test]
     fn admit_predict_shadow_wiring() {
         let src = include_str!("worker.rs");

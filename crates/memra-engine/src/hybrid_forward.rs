@@ -1419,6 +1419,48 @@ fn hyper_prime_ranges_natural(t: usize, gdn_grid: bool) -> Vec<(usize, usize)> {
 /// [`hyper_prime_ranges`]. Every per-call transient in the walk — the `t*streams*hidden` stream
 /// state, the MLA query planes, and the DSA indexer's `t * n_pools` score plane — is
 /// proportional to this, so it is the single number a capacity assertion needs.
+/// Admission workspace shape of the NON-hyper prime (memra#144): the GDN / dense-MoE trunk
+/// (ornith, qwen-hybrid) and the step-TP trunk (step-3.7). `prime_layers` keeps its trunk
+/// transients in the retained prime slab pool sized by the CALL's row count
+/// (`prime_slabs_get`): seven f32 `[t, n_embd]` planes (h, x1, z, xa, xb, ffn_out, mixed),
+/// two f16 mirrors (h16, z16), three f32 `[t, n_ff_max]` planes (act, gate, up), plus the
+/// per-call f16 activation (`a16`), the f16 pre-norm operand, and the `x`/`hn` copies the
+/// tail takes. The whole-prompt `hiddens` stack (`[t, n_embd]` f32) lives for the prime.
+/// Before this shape existed the admission line charged `0MB prefill-workspace` on these
+/// paths, which is how a 164k ornith prompt was admitted onto a card that could not hold
+/// its monolithic prime (darklanes research/memra146-ornith-repro-20260904: 22 GB more
+/// resident after a 257k sweep with `MEMRA_PRIME_CHUNK=0` than with 4096) and how a 91k
+/// step37 prompt stepped into a CUDA OOM after admission priced it at 3.1 GB.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrimeWorkspaceShape {
+    /// Bytes per row of ONE prime call (the slab planes above).
+    pub call_row_bytes: usize,
+    /// Bytes per PROMPT row that live for the whole prime (the returned hiddens stack).
+    pub prompt_row_bytes: usize,
+    /// Trunk depth, for the auto chunk geometry (`prime_chunk_tokens`).
+    pub n_layers: usize,
+}
+
+impl PrimeWorkspaceShape {
+    /// The charge for `prompt_rows` with an explicit per-call row count (pure arithmetic,
+    /// what the tests pin).
+    pub fn admission_bytes_with_call_rows(&self, prompt_rows: usize, call_rows: usize) -> usize {
+        let rows = prompt_rows.min(call_rows.max(1));
+        self.call_row_bytes
+            .saturating_mul(rows)
+            .saturating_add(self.prompt_row_bytes.saturating_mul(prompt_rows))
+    }
+
+    /// The charge under the deployment's prime chunking: `MEMRA_PRIME_CHUNK` (0 = monolithic
+    /// up to the launch cap, so the call rows are the whole prompt) or the auto geometry.
+    pub fn admission_bytes(&self, prompt_rows: usize) -> usize {
+        self.admission_bytes_with_call_rows(
+            prompt_rows,
+            prime_chunk_tokens(prompt_rows, self.n_layers),
+        )
+    }
+}
+
 pub fn hyper_prime_call_rows(t: usize, n_layers: usize, gdn_grid: bool) -> usize {
     hyper_prime_ranges(t, n_layers, gdn_grid)
         .iter()
@@ -2144,6 +2186,36 @@ impl HybridModel {
     /// (vramwatch.csv: +6.3 GiB across the 8,072-token prime) — the formula sits above the
     /// measurement, never below it. The ctx-coupled score plane and the prompt-long hiddens
     /// stack are separate coefficients on the shape; see [`HyperPrimeWorkspaceShape`].
+    /// memra#144: the workspace shape of the non-hyper prime; `None` on the hyper trunk,
+    /// which publishes `hyper_prime_workspace_shape` instead. Mirrors `prime_layers`'
+    /// `n_ff_max` rule (the widest dense FFN, never below `n_embd`).
+    pub fn prime_workspace_shape(&self) -> Option<PrimeWorkspaceShape> {
+        if self.hyper.is_some() {
+            return None;
+        }
+        let h = self.cfg.n_embd as usize;
+        let n_ff_max = self
+            .layers
+            .iter()
+            .map(|l| match &l.ffn {
+                crate::hybrid::Ffn::Dense { ffn_gate, .. } => ffn_gate.out_features(),
+                _ => h,
+            })
+            .max()
+            .unwrap_or(h)
+            .max(h);
+        let f32b = std::mem::size_of::<f32>();
+        // slab planes: 7 f32 + 2 f16 on n_embd, 3 f32 on n_ff; per-call extras: a16 (f16 ff),
+        // the f16 pre-norm operand (n_embd), and the x / hn copies (2 f32 n_embd).
+        let call_row_bytes =
+            (7 + 2) * h * f32b + (2 + 1) * h * 2 + 3 * n_ff_max * f32b + n_ff_max * 2;
+        Some(PrimeWorkspaceShape {
+            call_row_bytes,
+            prompt_row_bytes: h * f32b,
+            n_layers: self.layers.len(),
+        })
+    }
+
     pub fn hyper_prime_workspace_shape(&self) -> Option<HyperPrimeWorkspaceShape> {
         let topology = self.hyper.as_ref()?;
         let h = self.cfg.n_embd as usize;
@@ -26355,6 +26427,40 @@ mod prime_chunk_schedule_tests {
     /// re-hit on prod 2026-09-01): MEMRA_PRIME_CHUNK=0 ("monolithic") must not schedule
     /// a prime range wider than the CUDA grid.y limit, and must stay byte-identical
     /// (single monolithic range) for every prompt the limit allows.
+    /// memra#144: the non-hyper prime charge is chunk-bounded under a chunked prime and
+    /// prompt-scaled under a monolithic one, with the whole-prompt hiddens always charged.
+    #[test]
+    fn prime_workspace_shape_is_chunk_bounded_and_prompt_scaled_when_monolithic() {
+        let shape = crate::hybrid_forward::PrimeWorkspaceShape {
+            call_row_bytes: 42 * 2048 + 14 * 2048,
+            prompt_row_bytes: 4 * 2048,
+            n_layers: 41,
+        };
+        let chunked_60k = shape.admission_bytes_with_call_rows(60_000, 4096);
+        let chunked_257k = shape.admission_bytes_with_call_rows(257_000, 4096);
+        let mono_60k = shape.admission_bytes_with_call_rows(60_000, 60_000);
+        let mono_257k = shape.admission_bytes_with_call_rows(257_000, 257_000);
+        // chunked: the call term is the same 4096 rows at both lengths; only hiddens grow
+        assert_eq!(
+            chunked_257k - chunked_60k,
+            (257_000 - 60_000) * shape.prompt_row_bytes
+        );
+        // monolithic: the call term scales with the prompt
+        assert_eq!(
+            mono_257k - mono_60k,
+            (257_000 - 60_000) * (shape.call_row_bytes + shape.prompt_row_bytes)
+        );
+        assert!(
+            mono_257k > chunked_257k * 4,
+            "monolithic 257k must dwarf the chunked charge"
+        );
+        // a prompt shorter than the chunk pays only its own rows
+        assert_eq!(
+            shape.admission_bytes_with_call_rows(100, 4096),
+            100 * (shape.call_row_bytes + shape.prompt_row_bytes)
+        );
+    }
+
     #[test]
     // assertions_on_constants: the constant relation (cap + fold headroom fits the CUDA
     // grid wall) IS the invariant under test; a red here means someone moved a constant.
