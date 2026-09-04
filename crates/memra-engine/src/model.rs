@@ -636,6 +636,15 @@ impl GpuTensor {
         }
     }
 
+    /// CUDA device ordinal this tensor resides on.
+    pub fn ordinal(&self) -> usize {
+        match self {
+            GpuTensor::Quant { bytes, .. } => bytes.ordinal(),
+            GpuTensor::Float { data, .. } => data.ordinal(),
+            GpuTensor::FloatBf16 { data, .. } => data.ordinal(),
+        }
+    }
+
     /// Load a tensor, keeping quant types packed and float types as f32. (GGUF entry point —
     /// thin wrapper over the source-agnostic `load_from_source`; behavior is unchanged.)
     pub fn load(e: &Engine, g: &GgufFile, name: &str) -> Result<Self, Box<dyn std::error::Error>> {

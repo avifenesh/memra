@@ -3896,6 +3896,8 @@ pub struct HybridModel {
     /// admission charges it per spec-capable session. 0 until the first capture is
     /// observed (the boot calibration probe usually supplies it).
     pub(crate) draft_state_bytes: std::sync::atomic::AtomicUsize,
+    /// Test helper: extra device ordinals participating in this model for structural tests.
+    pub test_extra_devices: Vec<usize>,
 }
 
 impl HybridModel {
@@ -3914,6 +3916,88 @@ impl HybridModel {
         self.rewrite_qualifications
             .as_ref()
             .is_none_or(|qualifications| qualifications.allows(surface))
+    }
+
+    /// Return the set of unique CUDA device ordinals touched by this model's resident
+    /// weights, pipeline stages, tensor-parallel attention ranks, and expert-parallel banks.
+    pub fn devices(&self) -> Vec<usize> {
+        let mut devs = std::collections::BTreeSet::new();
+        devs.insert(self.output_norm.ordinal());
+        devs.insert(self.output.ordinal());
+
+        for layer in &self.layers {
+            devs.insert(layer.attn_norm.ordinal());
+            devs.insert(layer.post_attn_norm.ordinal());
+
+            match &layer.mixer {
+                Mixer::Full(full) => {
+                    devs.insert(full.wq.ordinal());
+                    devs.insert(full.wk.ordinal());
+                    devs.insert(full.wv.ordinal());
+                    devs.insert(full.wo.ordinal());
+                    if let Some(tp) = &full.step_tp_qkv {
+                        devs.extend(&tp.devices);
+                        devs.extend(tp.runtime.devices());
+                    }
+                }
+                Mixer::Linear(linear) => {
+                    devs.insert(linear.wqkv.ordinal());
+                    devs.insert(linear.ssm_out.ordinal());
+                }
+                Mixer::Mla(mla) => {
+                    devs.insert(mla.wo.ordinal());
+                }
+                Mixer::Kda(kda) => {
+                    devs.insert(kda.wo.ordinal());
+                }
+            }
+
+            match &layer.ffn {
+                Ffn::Dense {
+                    ffn_gate,
+                    ffn_up,
+                    ffn_down,
+                } => {
+                    devs.insert(ffn_gate.ordinal());
+                    devs.insert(ffn_up.ordinal());
+                    devs.insert(ffn_down.ordinal());
+                }
+                Ffn::Moe(moe) => {
+                    devs.insert(moe.gate_inp.ordinal());
+                    if let Some(step_ep) = &moe.step_ep {
+                        devs.extend(&step_ep.devices);
+                        devs.extend(step_ep.runtime.devices());
+                    }
+                    if let Some(step_tp) = &moe.step_tp {
+                        devs.extend(step_tp.runtime.devices());
+                    }
+                    if let Some(glm5_ep) = &moe.glm5_ep {
+                        devs.extend(glm5_ep.rt.devices());
+                    }
+                }
+            }
+
+            if let Some(gemma4) = &layer.gemma4 {
+                devs.insert(gemma4.ffn_norm.ordinal());
+                devs.insert(gemma4.post_ffw_norm.ordinal());
+            }
+        }
+
+        if let Ok(guard) = self.step_grouped_prefill.lock()
+            && let Some(state) = &guard.state
+        {
+            devs.extend(&state.devices);
+        }
+
+        devs.extend(&self.test_extra_devices);
+
+        devs.into_iter().collect()
+    }
+
+    /// Whether this model spans multiple CUDA devices structurally (via pipeline parallelism,
+    /// tensor parallelism, or expert parallelism).
+    pub fn is_multi_device(&self) -> bool {
+        self.devices().len() > 1
     }
 
     /// Record an observed per-session draft-graph state size (bytes) — high-water only
@@ -6095,6 +6179,7 @@ impl HybridModel {
             hyper_head,
             glm5_dflash,
             draft_state_bytes: std::sync::atomic::AtomicUsize::new(0),
+            test_extra_devices: Vec::new(),
         };
         e.configure_moe_cache_layout(model.moe_cache_block_sizes());
         if force_embd_gpu {
