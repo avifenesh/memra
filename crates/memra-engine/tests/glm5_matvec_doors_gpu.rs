@@ -832,3 +832,167 @@ fn gpu_topk_shards_match_standing_kernel_exactly() {
     );
     println!("door K RED bites: row-4 indices moved under a one-column rotation");
 }
+
+/// Door I (`MEMRA_MOE_VROWS_ILP`): the `_ilp` twins (loads of four, then two, groups per lane
+/// hoisted ahead of their math) vs the shipped pair, BITWISE, at the served nsb classes — gate/up
+/// at in_f 4096 (nsb 128: one four-deep round per lane) and down at in_f = n_ff 2048 (nsb 64: one
+/// two-deep round), plus the small vrest shape (nsb 4: the single tail only) — alone and composed
+/// with door M. Engagement is counted, and the swapped-pair red arm bites THROUGH the door.
+#[test]
+#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
+fn gpu_moe_ilp_matches_shipped_pair_bitwise() {
+    let _gpu = gpu_guard();
+    force_true_f32();
+    let e = Engine::new(0).expect("CUDA engine on device 0");
+    let (n_expert, n_used) = (16usize, 8usize);
+    let limit = 0.75f32;
+    let mk_sel = |t: usize| -> (Vec<u32>, Vec<f32>) {
+        (
+            (0..t * n_used)
+                .map(|p| ((p * 5 + p / n_used) % n_expert) as u32)
+                .collect(),
+            (0..t * n_used)
+                .map(|p| 0.1 + 0.03 * (p % 11) as f32)
+                .collect(),
+        )
+    };
+    let macros = (
+        (0..n_expert)
+            .map(|i| 0.5 + 0.07 * i as f32)
+            .collect::<Vec<_>>(),
+        (0..n_expert)
+            .map(|i| 1.6 - 0.05 * i as f32)
+            .collect::<Vec<_>>(),
+        (0..n_expert)
+            .map(|i| 0.8 + 0.04 * i as f32)
+            .collect::<Vec<_>>(),
+    );
+    for &(in_f, n_ff) in &[(128usize, 64usize), (4096, 2048)] {
+        let slabs = nvfp4_slab(&e, n_expert, n_ff, in_f, 0x1D0 + in_f as u64);
+        let slabs_d = nvfp4_slab(&e, n_expert, in_f, n_ff, 0xD1D + n_ff as u64);
+        for t in [1usize, 3, 8] {
+            let z = varied(t * in_f, 0x11 + t as u64 + in_f as u64, 2.0);
+            let (sel, w) = mk_sel(t);
+            let want = moe_pairs_program(
+                &e,
+                &slabs,
+                &slabs_d,
+                &macros,
+                &z,
+                &sel,
+                &w,
+                t,
+                n_used,
+                (in_f, n_ff),
+                limit,
+                |_, _, _| {},
+            );
+            for pack in [false, true] {
+                let d0 = memra_engine::moe_vrows_ilp_dispatches();
+                let got = with_flag("MEMRA_MOE_VROWS_ILP", || {
+                    if pack {
+                        with_flag("MEMRA_MOE_VROWS_PACK", || {
+                            moe_pairs_program(
+                                &e,
+                                &slabs,
+                                &slabs_d,
+                                &macros,
+                                &z,
+                                &sel,
+                                &w,
+                                t,
+                                n_used,
+                                (in_f, n_ff),
+                                limit,
+                                |_, _, _| {},
+                            )
+                        })
+                    } else {
+                        moe_pairs_program(
+                            &e,
+                            &slabs,
+                            &slabs_d,
+                            &macros,
+                            &z,
+                            &sel,
+                            &w,
+                            t,
+                            n_used,
+                            (in_f, n_ff),
+                            limit,
+                            |_, _, _| {},
+                        )
+                    }
+                });
+                assert!(
+                    memra_engine::moe_vrows_ilp_dispatches() >= d0 + 2,
+                    "in_f={in_f} t={t} pack={pack}: the ILP door did not engage both launches"
+                );
+                let nan = got.iter().filter(|v| v.is_nan()).count();
+                assert_eq!(
+                    nan, 0,
+                    "in_f={in_f} t={t} pack={pack}: the ILP twin poisoned {nan} outputs (qtype wiring)"
+                );
+                let diffs = bit_diffs(&got, &want);
+                assert_eq!(
+                    diffs,
+                    0,
+                    "in_f={in_f} n_ff={n_ff} t={t} pack={pack}: the _ilp pair diverged from the shipped pair in {diffs}/{} outputs",
+                    t * in_f
+                );
+                println!(
+                    "door I PASS in_f={in_f} n_ff={n_ff} t={t} pack={pack}: {} outputs bit-identical",
+                    t * in_f
+                );
+            }
+        }
+        // RED ARM through the ILP door: swapped pair rows must still change the output.
+        let t = 3usize;
+        let z = varied(t * in_f, 0x33 + in_f as u64, 2.0);
+        let (sel, w) = mk_sel(t);
+        let want = with_flag("MEMRA_MOE_VROWS_ILP", || {
+            moe_pairs_program(
+                &e,
+                &slabs,
+                &slabs_d,
+                &macros,
+                &z,
+                &sel,
+                &w,
+                t,
+                n_used,
+                (in_f, n_ff),
+                limit,
+                |_, _, _| {},
+            )
+        });
+        let swapped = with_flag("MEMRA_MOE_VROWS_ILP", || {
+            moe_pairs_program(
+                &e,
+                &slabs,
+                &slabs_d,
+                &macros,
+                &z,
+                &sel,
+                &w,
+                t,
+                n_used,
+                (in_f, n_ff),
+                limit,
+                |ptrs, scl, n_pairs| {
+                    let (a, b) = (0usize, n_used);
+                    for plane in 0..3 {
+                        ptrs.swap(plane * n_pairs + a, plane * n_pairs + b);
+                        scl.swap(plane * n_pairs + a, plane * n_pairs + b);
+                    }
+                },
+            )
+        });
+        let d = bit_diffs(&swapped, &want);
+        assert!(
+            d > 0,
+            "in_f={in_f}: ILP swapped-pair red arm produced identical outputs"
+        );
+        println!("door I RED bites in_f={in_f}: {d} outputs differ with swapped pair rows");
+    }
+}
