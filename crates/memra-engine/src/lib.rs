@@ -921,6 +921,26 @@ pub(crate) fn b200_gemv_v2_on() -> bool {
     b200_gemv_v2_level() >= 1
 }
 
+/// `MEMRA_E4M3_ROW_ILP` (lane/glm5-b200-mint-consume-20260904) — loads-in-flight twin of the
+/// per-tensor e4m3 row walk.
+///
+/// DEFAULT **OFF**, deliberately and with the reason stated (new-flags law). The change is pure
+/// scheduling: `e4m3_row_dot_ilp<4>` issues four blocks' weight and activation loads before any of
+/// the four dependent fma chains consumes one, and folds the four block sums into `acc` in the
+/// SAME ascending order the serial walk uses — bit-identical per row, not a new numeric class.
+/// It ships OFF because it has no ON-part receipt yet: the B200 pair that would price it is still
+/// staging the mint, and this lane does not default a door it has not measured. The rig 5090 can
+/// prove the identity and never the speed (rig exactness-only law).
+///
+/// WHY IT IS EXPECTED TO PAY. This lane's ncu census found every big matvec long-scoreboard-bound
+/// at 71-76%, and the same lever already paid on both sibling walks (`matvec_bf16_v2`/`v3` and
+/// `q8_0_mmvq_row1_rp_v2_ilp`). The e4m3 family had no twin, and the B200 hybrid mint makes it the
+/// KDA hot path by quantizing all six KDA projections to per-tensor e4m3 on 34 of 45 layers.
+pub fn e4m3_row_ilp_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_E4M3_ROW_ILP").as_deref() == Ok("1"))
+}
+
 /// `MEMRA_Q8_ROW_ILP` (lane/glm5-q8-row-ilp-20260904; default ON on sm_100a builds since
 /// 2026-09-04, OFF elsewhere, `=0`/`=1` override): the W8-posture q8_0 row
 /// walk (`qmatvec_q8_0_mmvq_rp_v2` at t=1 and the fused `qmatvec_kda6_q8f32_rp_v2`) takes its
@@ -19897,12 +19917,45 @@ impl Engine {
         ws: [f32; 6],
         outs: &mut [CudaSlice<f32>; 6],
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.e4m3_fused6_into_arm(
+            w,
+            aq,
+            ad,
+            in_f,
+            dims,
+            row_bytes,
+            ws,
+            outs,
+            e4m3_row_ilp_on(),
+        )
+    }
+
+    /// The six-group launch with the ILP arm chosen EXPLICITLY rather than from the door. The
+    /// gate drives both arms in one process, which a `OnceLock`-backed flag read cannot express;
+    /// keeping the policy in the wrapper above means the gate still exercises the served program.
+    #[allow(clippy::too_many_arguments)]
+    pub fn e4m3_fused6_into_arm(
+        &self,
+        w: [&CudaSlice<u8>; 6],
+        aq: &CudaSlice<i8>,
+        ad: &CudaSlice<f32>,
+        in_f: usize,
+        dims: [usize; 6],
+        row_bytes: usize,
+        ws: [f32; 6],
+        outs: &mut [CudaSlice<f32>; 6],
+        ilp: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         const ROWS_PER_BLOCK: u32 = 4;
         let blocks: u32 = dims
             .iter()
             .map(|&o| (o as u32).div_ceil(ROWS_PER_BLOCK))
             .sum();
-        let f = self.func("qmatvec_e4m3_mmvq_fused6");
+        let f = self.func(if ilp {
+            "qmatvec_e4m3_mmvq_fused6_ilp"
+        } else {
+            "qmatvec_e4m3_mmvq_fused6"
+        });
         let cfg = LaunchConfig {
             grid_dim: (blocks, 1, 1),
             block_dim: (32, ROWS_PER_BLOCK, 1),
@@ -20328,6 +20381,7 @@ impl Engine {
         dims: [usize; 6],
         row_bytes: usize,
         ws: [f32; 6],
+        ilp: bool,
     ) -> Result<[CudaSlice<f32>; 6], Box<dyn std::error::Error>> {
         let (aq, ad) = self.quantize_q8_1(x, 1, in_f)?;
         let mut outs = [
@@ -20338,7 +20392,7 @@ impl Engine {
             self.alloc_uninit::<f32>(dims[4])?,
             self.alloc_uninit::<f32>(dims[5])?,
         ];
-        self.e4m3_fused6_into(w, &aq, &ad, in_f, dims, row_bytes, ws, &mut outs)?;
+        self.e4m3_fused6_into_arm(w, &aq, &ad, in_f, dims, row_bytes, ws, &mut outs, ilp)?;
         Ok(outs)
     }
 
