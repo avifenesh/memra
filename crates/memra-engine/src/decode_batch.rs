@@ -2757,8 +2757,9 @@ impl HybridModel {
                     );
                 } else {
                     eprintln!(
-                        "[glm5-decode-graph] NOT ON THIS PATH: MEMRA_GLM5_DECODE_GRAPH=1 but this \
-                         session decodes through the BATCHED hc walk (MEMRA_HYPER_BATCH=1), and \
+                        "[glm5-decode-graph] NOT ON THIS PATH: MEMRA_GLM5_DECODE_GRAPH is on (the \
+                         default since 2026-09-04; =0 disarms it) but this session decodes \
+                         through the BATCHED hc walk (MEMRA_HYPER_BATCH=1), and \
                          the door is wired into the per-session serial walk (hyper_range_decode) \
                          only. The door will not engage, and will not refuse either, for as long \
                          as the batched walk is in use. Set MEMRA_HYPER_BATCH_SOLO=1 to reach it \

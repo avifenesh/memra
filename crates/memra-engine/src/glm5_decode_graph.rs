@@ -1,5 +1,5 @@
 //! glm5_next T=1 DECODE CUDA GRAPHS, per pipeline stage (door `MEMRA_GLM5_DECODE_GRAPH`,
-//! default OFF — lane/b200-glm5-graph-20260902).
+//! default ON since 2026-09-04, `=0` disarms — lane/b200-glm5-graph-20260902).
 //!
 //! WHY THIS EXISTS. The nsys census of a plain t=1 decode token on 2x B200 SXM
 //! (GLM-5.3-Flash NVFP4, resident PP2) reads ~2,900 kernel launches per token and ~6 ms of

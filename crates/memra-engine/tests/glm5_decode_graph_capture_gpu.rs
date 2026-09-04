@@ -364,9 +364,19 @@ fn graph_door_decode_matches_eager_bitwise() {
     // SAFETY: single-threaded test; the doors are read per call by the engine.
     unsafe {
         std::env::set_var("MEMRA_HTOD_DIET", "1");
-        std::env::remove_var("MEMRA_GLM5_DECODE_GRAPH");
+        // Default ON since 2026-09-04: the eager arm SETS `0` (unsetting would arm the door
+        // here too and the identity below would compare the graph against itself).
+        std::env::set_var("MEMRA_GLM5_DECODE_GRAPH", "0");
     }
+    let cap_before_eager = memra_engine::GLM5_DECODE_GRAPH_CAPTURES.load(Ordering::Relaxed);
     let (eager, _) = h.decode_bits(&ids, prompt, steps);
+    // The `=0` seam is the OFF arm's whole claim: had it captured anything, the identity below
+    // would be the graph against itself. Counted, not assumed (the door is default ON).
+    assert_eq!(
+        memra_engine::GLM5_DECODE_GRAPH_CAPTURES.load(Ordering::Relaxed),
+        cap_before_eager,
+        "MEMRA_GLM5_DECODE_GRAPH=0 did not disarm the door: the eager arm captured a graph"
+    );
 
     let cap0 = memra_engine::GLM5_DECODE_GRAPH_CAPTURES.load(Ordering::Relaxed);
     let rep0 = memra_engine::GLM5_DECODE_GRAPH_REPLAYS.load(Ordering::Relaxed);
@@ -375,7 +385,7 @@ fn graph_door_decode_matches_eager_bitwise() {
     }
     let (graphed, _) = h.decode_bits(&ids, prompt, steps);
     unsafe {
-        std::env::remove_var("MEMRA_GLM5_DECODE_GRAPH");
+        std::env::set_var("MEMRA_GLM5_DECODE_GRAPH", "0");
     }
     let captures = memra_engine::GLM5_DECODE_GRAPH_CAPTURES.load(Ordering::Relaxed) - cap0;
     let replays = memra_engine::GLM5_DECODE_GRAPH_REPLAYS.load(Ordering::Relaxed) - rep0;
@@ -423,8 +433,8 @@ fn graph_door_decode_matches_eager_bitwise() {
     // correct. This arm is where that receipt comes from now, on the rig, with no box slot.
     let recaptures_before = memra_engine::GLM5_DECODE_GRAPH_RECAPTURES.load(Ordering::Relaxed);
     // SAFETY: single-threaded test; the doors are read per call by the engine. The door itself
-    // has to go back ON here: the graphed arm above unsets it when it finishes, and running this
-    // arm without it is exactly the vacuity the assert below exists to catch (it caught it).
+    // has to go back ON here: the graphed arm above sets it to `0` when it finishes, and running
+    // this arm without it is exactly the vacuity the assert below exists to catch (it caught it).
     unsafe {
         std::env::set_var("MEMRA_GLM5_DECODE_GRAPH", "1");
         std::env::set_var("MEMRA_GLM5_GRAPH_RECAPTURE", "1");
@@ -435,7 +445,7 @@ fn graph_door_decode_matches_eager_bitwise() {
     // SAFETY: same as above.
     unsafe {
         std::env::remove_var("MEMRA_GLM5_GRAPH_RECAPTURE");
-        std::env::remove_var("MEMRA_GLM5_DECODE_GRAPH");
+        std::env::set_var("MEMRA_GLM5_DECODE_GRAPH", "0");
     }
     assert!(
         recaptures > 0,
