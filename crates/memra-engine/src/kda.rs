@@ -879,19 +879,6 @@ pub fn kda_conv3_on_from(v: Option<&str>, built_arch: &str) -> bool {
     }
 }
 
-#[cfg(test)]
-mod kda_conv3_default_tests {
-    use super::kda_conv3_on_from;
-
-    #[test]
-    fn arch_keyed_default_with_explicit_override() {
-        assert!(kda_conv3_on_from(None, "100a"));
-        assert!(!kda_conv3_on_from(None, "120a"));
-        assert!(kda_conv3_on_from(Some("1"), "120a"));
-        assert!(!kda_conv3_on_from(Some("0"), "100a"));
-    }
-}
-
 /// Engagement counter for `MEMRA_KDA_CONV3`; gates take a delta.
 pub static KDA_CONV3_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
@@ -2012,5 +1999,18 @@ impl Engine {
             .arg(&mi);
         unsafe { b.launch(cfg)? };
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod kda_conv3_default_tests {
+    use super::kda_conv3_on_from;
+
+    #[test]
+    fn arch_keyed_default_with_explicit_override() {
+        assert!(kda_conv3_on_from(None, "100a"));
+        assert!(!kda_conv3_on_from(None, "120a"));
+        assert!(kda_conv3_on_from(Some("1"), "120a"));
+        assert!(!kda_conv3_on_from(Some("0"), "100a"));
     }
 }
