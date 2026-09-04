@@ -4571,7 +4571,7 @@ impl Dsv4Gpu {
                 kv: f(hd)?,
                 qi: f(iheads * ihd)?,
                 wproj: f(iheads)?,
-                score: f(tmax * score_cap)?,
+                score: f(score_cap)?,
                 idx: i(win + idx_tail)?,
                 o: f(heads * hd)?,
                 o_b: b(heads * hd * 2)?,
@@ -8857,7 +8857,7 @@ impl Dsv4Gpu {
         };
         let mut max_d = 0usize;
         let mut max_shift = 0usize;
-        let mut min_ratio = usize::MAX;
+        let mut min_index_ratio = usize::MAX;
         for st in &self.stages {
             for l in &st.layers {
                 for cmp in l.cmp.iter().chain(l.idx.as_ref().map(|ix| &ix.cmp)) {
@@ -8865,12 +8865,14 @@ impl Dsv4Gpu {
                     if cmp.overlap {
                         max_shift = max_shift.max(cmp.ratio * cmp.latent);
                     }
-                    min_ratio = min_ratio.min(cmp.ratio);
+                }
+                if let Some(ix) = &l.idx {
+                    min_index_ratio = min_index_ratio.min(ix.cmp.ratio);
                 }
             }
         }
-        assert!(min_ratio != usize::MAX, "no compressor layers?");
-        let score_cap = self.max_seq / min_ratio + 1;
+        assert!(min_index_ratio != usize::MAX, "no indexer layers?");
+        let score_cap = self.max_seq / min_index_ratio + 1;
         let idx_tail = itopk.max(self.max_seq / 128 + 1);
         let idx_stride = win + idx_tail;
         let max_gemm_k = (o_groups * o_lora).max(hidden).max(q_lora).max(sh_inter);
@@ -8911,7 +8913,7 @@ impl Dsv4Gpu {
                 kv: f(tmax * hd)?,
                 qi: f(tmax * iheads * ihd)?,
                 wproj: f(tmax * iheads)?,
-                score: f(score_cap)?,
+                score: f(tmax * score_cap)?,
                 idx: i(tmax * idx_stride)?,
                 idx_stride,
                 o: f(tmax * heads * hd)?,
