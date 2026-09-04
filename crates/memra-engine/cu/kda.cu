@@ -121,6 +121,41 @@ extern "C" __global__ void memra_kda_conv_silu_decode_f32(
     if (pad > 0) rc[pad - 1] = xv;
 }
 
+// ---- T=1 decode, ALL THREE PLANES in one launch (lane/glm5-kda-conv3-20260904, door
+// MEMRA_KDA_CONV3). The per-plane kernel above is 105 launches per plain glm5_next token on the
+// 2x B200 pair (door-ON census 2026-09-04: 3 per KDA layer x 34 layers, 2.9 us mean each,
+// 32 blocks of 256 threads apiece), three independent launches whose only relation is the
+// plane index. This kernel is that body with `plane = blockIdx.y`: per channel the SAME
+// window read, the SAME `acc` chain in the SAME order, the SAME SiLU, the SAME ring roll on
+// the SAME `fused` row, so every output byte and every ring byte is what the three launches
+// write. Launch: grid=(ceil(qkv/256), 3), block=256.
+extern "C" __global__ void memra_kda_conv_silu_decode3_f32(
+        const float* __restrict__ x0, const float* __restrict__ x1,
+        const float* __restrict__ x2,
+        float* __restrict__ ring,           // [3*qkv, K-1] fused, updated in place
+        const float* __restrict__ w,        // [3*qkv, K] fused
+        float* __restrict__ y0, float* __restrict__ y1, float* __restrict__ y2,
+        int qkv, int K) {
+    int c = blockIdx.x * blockDim.x + threadIdx.x;
+    if (c >= qkv) return;
+    const int plane = blockIdx.y;
+    const float* x_new = plane == 0 ? x0 : (plane == 1 ? x1 : x2);
+    float* y = plane == 0 ? y0 : (plane == 1 ? y1 : y2);
+    const int pad = K - 1;
+    const int fused = plane * qkv + c;
+    float* rc = ring + (size_t)fused * pad;
+    const float* wc = w + (size_t)fused * K;
+    float win[8];
+    for (int j = 0; j < pad; j++) win[j] = rc[j];
+    float xv = x_new[c];
+    float acc = 0.0f;
+    for (int j = 0; j < pad; j++) acc += win[j] * wc[j];
+    acc += xv * wc[pad];
+    y[c] = memra_kda_silu(acc);
+    for (int j = 0; j + 1 < pad; j++) rc[j] = win[j + 1];
+    if (pad > 0) rc[pad - 1] = xv;
+}
+
 // ---- Per-channel forget gate. ----
 // g = gate_lower_bound * sigmoid(exp(A_log[head]) * (f_b(f_a(x)) + dt_bias)), dt_bias per CHANNEL.
 // Emitted as the RAW log-gate: the scan applies expf, matching the GDN convention and keeping
