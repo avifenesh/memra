@@ -1583,22 +1583,26 @@ extern "C" int memra_dsv4_route(const float* raw, const float* bias, const int* 
 // tree), expert id read from sel[blockIdx.y] on device — one launch covers the whole
 // active-expert set of a projection (lane-8 fused dispatch; bit-exact vs the per-expert
 // launches by construction). a_stride_rows = 0 (shared x codes) or 1 (per-slot h rows).
-// Lane-9 rung 2 (BIT-EXACT multi-column blocking): one block owns FOUR consecutive
+// DSV4 selected-expert output columns owned by one CTA. Per-column arithmetic is
+// independent and unchanged; widening this only amortizes activation/table setup.
+#define DSV4_FP4_SEL_CPB 8
+
+// Lane-9 rung 2 (BIT-EXACT multi-column blocking): one block owns consecutive
 // output features of one slot — the lane-8 one-col blocks did 2 KB of weight work
 // per 768-float smem-table init + 7-sync tree (rung-0 lane-9 profile: 37.2 µs/inst,
 // 4.79 ms/step vs the ~2.6 ms weight-bandwidth floor). Per column NOTHING moves:
 // thread t owns groups j ≡ t (mod blockDim) sequential ascending, the in-group order
 // is dsv4_fp4_group_sub verbatim, the expression part += sub * (ws * as) is
 // unchanged, and each column runs the SAME 128-leaf halving tree (sequentially, one
-// per column). The activation vector is L1-hot across the four columns and the
-// table init amortizes 4×.
+// per column). The activation vector is reused across the CPB columns and the
+// table init is amortized CPB-fold.
 extern "C" __global__ void dsv4_fp4_gemm_sel_kernel(
     const uint8_t* __restrict__ a, const float* __restrict__ as_,
     const uint8_t* __restrict__ w_base, const uint8_t* __restrict__ sc_base,
     const float* __restrict__ s2, const int* __restrict__ sel, int proj, int a_stride_rows,
     int kind, float* __restrict__ out, int n, int kdim, long wstride, long sstride,
     int a_group) {
-    const int CPB = 4;
+    const int CPB = DSV4_FP4_SEL_CPB;
     int col0 = blockIdx.x * CPB;   // first output feature of this block
     int slot = blockIdx.y;         // active-expert slot
     int eid = sel[slot];
@@ -1662,7 +1666,8 @@ extern "C" int memra_dsv4_fp4_gemm_sel(const void* a_codes, const float* a_scale
     cudaStream_t stream = (cudaStream_t)stream_v;
     if (kdim % 128 != 0 || (kind != 0 && kind != 1)) return 40005;
     if (slots > 65535 || n > 2147483647) return 40006;
-    dim3 grid((unsigned)((n + 3) / 4), (unsigned)slots);  // lane-9: 4 columns per block
+    dim3 grid((unsigned)((n + DSV4_FP4_SEL_CPB - 1) / DSV4_FP4_SEL_CPB),
+              (unsigned)slots);
     int threads = 128;
     dsv4_fp4_gemm_sel_kernel<<<grid, threads, DSV4_FP4_SMEM(threads), stream>>>(
         (const uint8_t*)a_codes, a_scales, (const uint8_t*)w_base, (const uint8_t*)sc_base,
@@ -1685,7 +1690,8 @@ extern "C" int memra_dsv4_fp4_gemm_sel_g(const void* a_codes, const float* a_sca
     if (kdim % 128 != 0 || (kind != 0 && kind != 1)) return 40005;
     if (slots > 65535 || n > 2147483647) return 40006;
     if (a_group < 0) return 40006;
-    dim3 grid((unsigned)((n + 3) / 4), (unsigned)slots);
+    dim3 grid((unsigned)((n + DSV4_FP4_SEL_CPB - 1) / DSV4_FP4_SEL_CPB),
+              (unsigned)slots);
     int threads = 128;
     dsv4_fp4_gemm_sel_kernel<<<grid, threads, DSV4_FP4_SMEM(threads), stream>>>(
         (const uint8_t*)a_codes, a_scales, (const uint8_t*)w_base, (const uint8_t*)sc_base,
