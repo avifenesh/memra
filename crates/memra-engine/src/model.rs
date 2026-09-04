@@ -697,7 +697,7 @@ impl GpuTensor {
                 None => 1.0,
             };
             let bytes = e.htod_bytes(&memra_gguf::nvfp4_repack::repack_modelopt_to_split(
-                nv.wbytes, nv.wscale, nv.out_f, nv.in_f,
+                nv.wbytes, &nv.wscale, nv.out_f, nv.in_f,
             ))?;
             return Ok(GpuTensor::Quant {
                 bytes,
@@ -1907,8 +1907,9 @@ impl HostExps {
             let cache_dir = dir.join(".memra-repack");
             ensure_repack_cache_dir(&cache_dir)?;
             Some(cache_dir.join(format!(
-                "{}-stacked-{n_expert}x{out_f}x{in_f}.nvfp4",
-                name.replace(['.', '/'], "-")
+                "{}-stacked-{n_expert}x{out_f}x{in_f}{}.nvfp4",
+                name.replace(['.', '/'], "-"),
+                src.nvfp4_cache_tag()
             )))
         } else {
             None
@@ -2408,7 +2409,10 @@ impl HostExps {
                 let cache_path = if let Some(dir) = src.st_dir() {
                     let cache_dir = dir.join(".memra-repack");
                     ensure_repack_cache_dir(&cache_dir)?;
-                    Some(cache_dir.join(format!("blk{il}-{proj}-{n_expert}x{out_f}x{in_f}.nvfp4")))
+                    Some(cache_dir.join(format!(
+                        "blk{il}-{proj}-{n_expert}x{out_f}x{in_f}{}.nvfp4",
+                        src.nvfp4_cache_tag()
+                    )))
                 } else {
                     None
                 };
@@ -2444,7 +2448,7 @@ impl HostExps {
                                     nv.out_f
                                 );
                                 out.write_all(&memra_gguf::nvfp4_repack::repack_modelopt_to_gguf(
-                                    nv.wbytes, nv.wscale, out_f, in_f,
+                                    nv.wbytes, &nv.wscale, out_f, in_f,
                                 ))?;
                             }
                             Ok(())
@@ -2574,7 +2578,7 @@ impl HostExps {
                             nv.out_f
                         );
                         buf.extend_from_slice(&memra_gguf::nvfp4_repack::repack_modelopt_to_gguf(
-                            nv.wbytes, nv.wscale, out_f, in_f,
+                            nv.wbytes, &nv.wscale, out_f, in_f,
                         ));
                     }
                     assert_eq!(buf.len(), total);
@@ -2857,7 +2861,7 @@ impl HostExps {
                 )
             } else if let Some(nv) = src.find_nvfp4_native(&name) {
                 let bytes = memra_gguf::nvfp4_repack::repack_modelopt_to_gguf(
-                    nv.wbytes, nv.wscale, nv.out_f, nv.in_f,
+                    nv.wbytes, &nv.wscale, nv.out_f, nv.in_f,
                 );
                 let row_bytes = nv.in_f / 64 * 36;
                 let byte_len = bytes.len();

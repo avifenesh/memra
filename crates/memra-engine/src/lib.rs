@@ -921,6 +921,38 @@ pub(crate) fn b200_gemv_v2_on() -> bool {
     b200_gemv_v2_level() >= 1
 }
 
+/// `MEMRA_E4M3_ROW_ILP` (lane/glm5-b200-mint-consume-20260904) — loads-in-flight twin of the
+/// per-tensor e4m3 row walk.
+///
+/// DEFAULT **OFF**, deliberately and with the reason stated (new-flags law). The change is pure
+/// scheduling: `e4m3_row_dot_ilp<4>` issues four blocks' weight and activation loads before any of
+/// the four dependent fma chains consumes one, and folds the four block sums into `acc` in the
+/// SAME ascending order the serial walk uses — bit-identical per row, not a new numeric class.
+/// It ships OFF because it has no ON-part receipt yet: the B200 pair that would price it is still
+/// staging the mint, and this lane does not default a door it has not measured. The rig 5090 can
+/// prove the identity and never the speed (rig exactness-only law).
+///
+/// WHY IT IS EXPECTED TO PAY. This lane's ncu census found every big matvec long-scoreboard-bound
+/// at 71-76%, and the same lever already paid on both sibling walks (`matvec_bf16_v2`/`v3` and
+/// `q8_0_mmvq_row1_rp_v2_ilp`). The e4m3 family had no twin, and the B200 hybrid mint makes it the
+/// KDA hot path by quantizing all six KDA projections to per-tensor e4m3 on 34 of 45 layers.
+/// `MEMRA_E4M3_ROW_ILP`: 0 = shipped serial walk, 1 = ILP loads-in-flight. Nothing else.
+///
+/// A ladder of wider blocks (8, 16, 32 rows) and CTA-staged activations was built and priced on
+/// 2x B200 (3 reps x 15 interleaved iters, every arm bit-identical). Every one of them LOST:
+/// r8 0.988-0.993, r8+staged 0.932-0.934, r16 0.970-0.972, r16+staged 0.919-0.926,
+/// r32+staged 0.739-0.746, against ILP-at-4-rows' 1.003-1.015. The arms are gone; the reasons are
+/// the durable part and live in `qmatvec.cu` beside this kernel and in
+/// VERDICT:e4m3-fused6-wider-blocks-and-staged-activation-KILLED.
+pub fn e4m3_row_ilp_level() -> u32 {
+    static LVL: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    *LVL.get_or_init(|| u32::from(std::env::var("MEMRA_E4M3_ROW_ILP").as_deref() == Ok("1")))
+}
+
+pub fn e4m3_row_ilp_on() -> bool {
+    e4m3_row_ilp_level() > 0
+}
+
 /// `MEMRA_Q8_ROW_ILP` (lane/glm5-q8-row-ilp-20260904; default ON on sm_100a builds since
 /// 2026-09-04, OFF elsewhere, `=0`/`=1` override): the W8-posture q8_0 row
 /// walk (`qmatvec_q8_0_mmvq_rp_v2` at t=1 and the fused `qmatvec_kda6_q8f32_rp_v2`) takes its
@@ -19879,6 +19911,113 @@ impl Engine {
         Ok((y0, y1, y2))
     }
 
+    /// FUSED e4m3 m=1 SIX-GROUP (`qmatvec_e4m3_mmvq_fused6`) — the KDA six-projection group on a
+    /// uniformly-e4m3 checkpoint. Same contract as the pair and the triple: one shared q8_1
+    /// activation, one shared `row_bytes` (e4m3 rows are `in_f` bytes), a per-range weight scale,
+    /// and per (range,row) output BITS identical to six separate m=1 launches.
+    ///
+    /// Writes into caller-owned outputs so the KDA door can keep its existing allocation shape.
+    #[allow(clippy::too_many_arguments)]
+    pub fn e4m3_fused6_into(
+        &self,
+        w: [&CudaSlice<u8>; 6],
+        aq: &CudaSlice<i8>,
+        ad: &CudaSlice<f32>,
+        in_f: usize,
+        dims: [usize; 6],
+        row_bytes: usize,
+        ws: [f32; 6],
+        outs: &mut [CudaSlice<f32>; 6],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.e4m3_fused6_into_arm(
+            w,
+            aq,
+            ad,
+            in_f,
+            dims,
+            row_bytes,
+            ws,
+            outs,
+            e4m3_row_ilp_level(),
+        )
+    }
+
+    /// The six-group launch with the arm chosen EXPLICITLY rather than from the door. The gate
+    /// drives every arm in one process, which a `OnceLock`-backed flag read cannot express;
+    /// keeping the policy in the wrapper above means the gate still exercises the served program.
+    /// `arm`: 0 = serial, 1 = ILP.
+    #[allow(clippy::too_many_arguments)]
+    pub fn e4m3_fused6_into_arm(
+        &self,
+        w: [&CudaSlice<u8>; 6],
+        aq: &CudaSlice<i8>,
+        ad: &CudaSlice<f32>,
+        in_f: usize,
+        dims: [usize; 6],
+        row_bytes: usize,
+        ws: [f32; 6],
+        outs: &mut [CudaSlice<f32>; 6],
+        arm: u32,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        const ROWS_PER_BLOCK: u32 = 4;
+        let blocks: u32 = dims
+            .iter()
+            .map(|&o| (o as u32).div_ceil(ROWS_PER_BLOCK))
+            .sum();
+        let f = self.func(if arm >= 1 {
+            "qmatvec_e4m3_mmvq_fused6_ilp"
+        } else {
+            "qmatvec_e4m3_mmvq_fused6"
+        });
+        let cfg = LaunchConfig {
+            grid_dim: (blocks, 1, 1),
+            block_dim: (32, ROWS_PER_BLOCK, 1),
+            shared_mem_bytes: 0,
+        };
+        let inf = in_f as i32;
+        let o: [i32; 6] = std::array::from_fn(|i| dims[i] as i32);
+        let rbl = row_bytes as i64;
+        let (o0, o1) = outs.split_at_mut(1);
+        let (o1, o2) = o1.split_at_mut(1);
+        let (o2, o3) = o2.split_at_mut(1);
+        let (o3, o4) = o3.split_at_mut(1);
+        let (o4, o5) = o4.split_at_mut(1);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(w[0])
+            .arg(w[1])
+            .arg(w[2])
+            .arg(w[3])
+            .arg(w[4])
+            .arg(w[5])
+            .arg(aq)
+            .arg(ad)
+            .arg(&mut o0[0])
+            .arg(&mut o1[0])
+            .arg(&mut o2[0])
+            .arg(&mut o3[0])
+            .arg(&mut o4[0])
+            .arg(&mut o5[0])
+            .arg(&inf)
+            .arg(&o[0])
+            .arg(&o[1])
+            .arg(&o[2])
+            .arg(&o[3])
+            .arg(&o[4])
+            .arg(&o[5])
+            .arg(&rbl)
+            .arg(&ws[0])
+            .arg(&ws[1])
+            .arg(&ws[2])
+            .arg(&ws[3])
+            .arg(&ws[4])
+            .arg(&ws[5]);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(())
+    }
+
     /// BATCHED FUSED e4m3 pair (m=2..8). The batched kernels carry no `ws` arg (every batched
     /// kernel in the tree is scale-free), so each output takes its own `scale_inplace` — the
     /// SAME post-op the per-tensor batched dispatch applies, hence still bit-identical.
@@ -20241,6 +20380,33 @@ impl Engine {
         self.e4m3_fused3_core(
             b0, b1, b2, &aq, &ad, in_f, out0, out1, out2, row_bytes, ws0, ws1, ws2,
         )
+    }
+
+    /// Raw six-group entry (`qmatvec_e4m3_mmvq_fused6`): quantizes the activation once and
+    /// launches all six ranges. The gate drives mutations through here so a mutated program is
+    /// the exact one the KDA door serves.
+    #[allow(clippy::too_many_arguments)]
+    pub fn qmatvec_e4m3_fused6_raw(
+        &self,
+        w: [&CudaSlice<u8>; 6],
+        x: &CudaSlice<f32>,
+        in_f: usize,
+        dims: [usize; 6],
+        row_bytes: usize,
+        ws: [f32; 6],
+        arm: u32,
+    ) -> Result<[CudaSlice<f32>; 6], Box<dyn std::error::Error>> {
+        let (aq, ad) = self.quantize_q8_1(x, 1, in_f)?;
+        let mut outs = [
+            self.alloc_uninit::<f32>(dims[0])?,
+            self.alloc_uninit::<f32>(dims[1])?,
+            self.alloc_uninit::<f32>(dims[2])?,
+            self.alloc_uninit::<f32>(dims[3])?,
+            self.alloc_uninit::<f32>(dims[4])?,
+            self.alloc_uninit::<f32>(dims[5])?,
+        ];
+        self.e4m3_fused6_into_arm(w, &aq, &ad, in_f, dims, row_bytes, ws, &mut outs, arm)?;
+        Ok(outs)
     }
 
     #[allow(clippy::too_many_arguments)]

@@ -280,6 +280,81 @@ pub fn f32_to_q8_0(data: &[f32]) -> Vec<u8> {
 /// (exactly the `row_bytes = total/out_f` the engine computes for an NVFP4 weight).
 ///
 /// Panics if `in_f % 64 != 0` (the NVFP4 K-block constraint) or the input byte counts disagree.
+/// UNSWIZZLE a CUTLASS / vLLM `swizzle_blockscale` NVFP4 scale plane back to the linear
+/// `[out_f, in_f/16]` form every memra NVFP4 reader already consumes
+/// (lane/glm5-b200-mint-reader-20260904).
+///
+/// WHY THIS AND NOT A NEW INDEXER. `tiyuvta/GLM-5.3-Flash-NVFP4-B200-hybrid` (the B200 hybrid mint,
+/// `LAYOUT.json`: `"nvfp4_scale": "Swizzle32x4x4 float8_e4m3fn padded N%128 K%4"`) ships its
+/// QUANTS in exactly the layout `repack_modelopt_to_gguf` already eats — `[N, K/2]` uint8 e2m1,
+/// K-inner, two codes per byte — and differs ONLY in the scale plane, which is swizzled for the
+/// tensor core and padded to N%128 / (K/16)%4. Undoing that permutation at load is one pass over
+/// `N*K/16` bytes (23 MB for the whole checkpoint's experts, against 94 GB of quants), after which
+/// every gated kernel in the engine reads the mint unchanged. The alternative the model card
+/// suggests — teaching the dp4a indexer to address swizzled scales — would put the same
+/// permutation in the inner loop of every expert dot, for the same bytes, forever.
+///
+/// THE LAYOUT, stated so it can be checked rather than believed. With `sN = ceil(out_f/128)*128`
+/// and `sK = ceil(in_f/16/4)*4`, the swizzled plane is the linear `[sN, sK]` plane viewed as
+/// `(sN/128, 4, 32, sK/4, 4)` and permuted to `(sN/128, sK/4, 32, 4, 4)`. So for a linear
+/// coordinate `(n, k)` with `r = (n % 128) / 32`, `lane = n % 32`, `bn = n / 128`, `bk = k / 4`,
+/// `kk = k % 4`, the swizzled byte sits at
+/// `((((bn * (sK/4) + bk) * 32 + lane) * 4 + r) * 4) + kk`.
+/// Padding rows and columns exist in the swizzled plane and are dropped here.
+pub fn unswizzle_blockscale(swizzled: &[u8], out_f: usize, in_f: usize) -> Vec<u8> {
+    assert_eq!(
+        in_f % 16,
+        0,
+        "NVFP4 scale unswizzle requires in_f % 16 == 0, got in_f={in_f}"
+    );
+    let k = in_f / 16; // linear scale columns
+    let s_n = out_f.div_ceil(128) * 128;
+    let s_k = k.div_ceil(4) * 4;
+    assert_eq!(
+        swizzled.len(),
+        s_n * s_k,
+        "swizzled scale plane is {} bytes, expected padded {s_n}x{s_k} = {} for out_f={out_f} in_f={in_f}",
+        swizzled.len(),
+        s_n * s_k
+    );
+    let mut linear = vec![0u8; out_f * k];
+    for n in 0..out_f {
+        let bn = n / 128;
+        let r = (n % 128) / 32;
+        let lane = n % 32;
+        for kc in 0..k {
+            let bk = kc / 4;
+            let kk = kc % 4;
+            let off = ((((bn * (s_k / 4) + bk) * 32 + lane) * 4 + r) * 4) + kk;
+            linear[n * k + kc] = swizzled[off];
+        }
+    }
+    linear
+}
+
+/// The forward permutation, kept beside its inverse so the round trip is testable and so a future
+/// writer (a re-mint, a repack tool) has one definition to agree with.
+pub fn swizzle_blockscale(linear: &[u8], out_f: usize, in_f: usize) -> Vec<u8> {
+    assert_eq!(in_f % 16, 0, "NVFP4 scale swizzle requires in_f % 16 == 0");
+    let k = in_f / 16;
+    assert_eq!(linear.len(), out_f * k, "linear scale plane size");
+    let s_n = out_f.div_ceil(128) * 128;
+    let s_k = k.div_ceil(4) * 4;
+    let mut swz = vec![0u8; s_n * s_k];
+    for n in 0..out_f {
+        let bn = n / 128;
+        let r = (n % 128) / 32;
+        let lane = n % 32;
+        for kc in 0..k {
+            let bk = kc / 4;
+            let kk = kc % 4;
+            let off = ((((bn * (s_k / 4) + bk) * 32 + lane) * 4 + r) * 4) + kk;
+            swz[off] = linear[n * k + kc];
+        }
+    }
+    swz
+}
+
 pub fn repack_modelopt_to_gguf(weight: &[u8], wscale: &[u8], out_f: usize, in_f: usize) -> Vec<u8> {
     assert_eq!(
         in_f % 64,
@@ -1069,4 +1144,69 @@ pub fn f32_to_q5_k(data: &[f32]) -> Vec<u8> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod swizzle_tests {
+    use super::{swizzle_blockscale, unswizzle_blockscale};
+
+    fn plane(out_f: usize, in_f: usize) -> Vec<u8> {
+        // Distinct-per-coordinate bytes so a transposed or shifted read cannot pass by accident.
+        (0..out_f * (in_f / 16))
+            .map(|i| ((i * 37 + i / 251) % 251 + 1) as u8)
+            .collect()
+    }
+
+    #[test]
+    fn round_trip_on_the_served_expert_shapes() {
+        // gate/up [2048, 4096] and down [4096, 2048] of a glm5 expert, plus a padded shape
+        // (out_f % 128 != 0 and (in_f/16) % 4 != 0) so the padding path is exercised.
+        for (out_f, in_f) in [(2048usize, 4096usize), (4096, 2048), (300, 1088)] {
+            let linear = plane(out_f, in_f);
+            let swz = swizzle_blockscale(&linear, out_f, in_f);
+            let back = unswizzle_blockscale(&swz, out_f, in_f);
+            assert_eq!(
+                back, linear,
+                "round trip failed at out_f={out_f} in_f={in_f}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_permutation_is_a_bijection_on_the_unpadded_coordinates() {
+        let (out_f, in_f) = (256usize, 512usize);
+        let k = in_f / 16;
+        let linear = plane(out_f, in_f);
+        let swz = swizzle_blockscale(&linear, out_f, in_f);
+        // Every unpadded coordinate must land on a distinct swizzled offset.
+        let mut seen = std::collections::HashSet::new();
+        let s_k = k.div_ceil(4) * 4;
+        for n in 0..out_f {
+            for kc in 0..k {
+                let off = ((((n / 128 * (s_k / 4) + kc / 4) * 32 + n % 32) * 4 + (n % 128) / 32)
+                    * 4)
+                    + kc % 4;
+                assert!(seen.insert(off), "offset {off} used twice (n={n} k={kc})");
+                assert_eq!(swz[off], linear[n * k + kc]);
+            }
+        }
+        assert_eq!(seen.len(), out_f * k);
+    }
+
+    #[test]
+    fn a_swapped_row_group_is_caught() {
+        // The r (row-group) and lane fields are the two easiest to transpose; a reader that
+        // swapped them would still round-trip against ITSELF, so pin one known offset.
+        let (out_f, in_f) = (128usize, 64usize); // k = 4, s_k = 4
+        let linear = plane(out_f, in_f);
+        let swz = swizzle_blockscale(&linear, out_f, in_f);
+        // n = 33 -> bn 0, r 1, lane 1; k = 2 -> bk 0, kk 2, s_k/4 = 1.
+        // offset = ((((0 * 1 + 0) * 32 + 1) * 4 + 1) * 4) + 2 = 22.
+        let expected = 22usize;
+        assert_eq!(swz[expected], linear[33 * 4 + 2]);
+        assert_eq!(
+            unswizzle_blockscale(&swz, out_f, in_f)[33 * 4 + 2],
+            linear[33 * 4 + 2]
+        );
+    }
 }

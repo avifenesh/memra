@@ -4093,33 +4093,86 @@ extern "C" __global__ void qmatvec_q8_0_mmvq_fused3_b4(
 // and the batched _b2/_b4/_b8 twins below replay the IDENTICAL fmaf chain per column.
 
 // One row x one token: the shared body (bit-contract anchor for the m=1, grid.y=m and batched forms).
-__device__ __forceinline__ float e4m3_row_dot(
+// One 32-element block of the e4m3 row dot: 32 weight bytes x 32 int8 activations, folded into a
+// single f32 chain. Factored out so the serial walk and the ILP walk below CANNOT drift -- they
+// call this same body in the same per-lane order, which is what makes the ILP twin bit-identical
+// rather than merely close.
+__device__ __forceinline__ float e4m3_blk_dot(uint4 w01, uint4 w23, int4 a01, int4 a23) {
+    unsigned wu[8] = { w01.x, w01.y, w01.z, w01.w, w23.x, w23.y, w23.z, w23.w };
+    int au[8] = { a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w };
+    float bs = 0.0f;
+    #pragma unroll
+    for (int k = 0; k < 8; k++) {
+        float2 wlo = e4m3x2_to_f32x2((unsigned short)(wu[k] & 0xFFFF));
+        float2 whi = e4m3x2_to_f32x2((unsigned short)(wu[k] >> 16));
+        int a = au[k];
+        bs = fmaf(wlo.x, (float)(signed char)(a & 0xff), bs);
+        bs = fmaf(wlo.y, (float)(signed char)((a >> 8) & 0xff), bs);
+        bs = fmaf(whi.x, (float)(signed char)((a >> 16) & 0xff), bs);
+        bs = fmaf(whi.y, (float)(a >> 24), bs);   // arithmetic shift: already sign-extended
+    }
+    return bs;
+}
+
+// e4m3 row dot with ILP loads-in-flight (lane/glm5-b200-mint-consume, 2026-09-04).
+//
+// WHY. The serial walk (ILP == 1) issues one block's 2x LDG.128 weight pair + 2x LDG.128
+// activation pair, then immediately consumes them in a dependent 32-fma chain, so the next
+// iteration's loads cannot issue until that chain frees its registers. On this lane's B200 rig
+// ncu census EVERY big matvec was long-scoreboard-bound at 71-76% -- loads-in-flight is the lever
+// class, and this is the e4m3 family's twin of the wins already taken on the bf16 walk
+// (matvec_bf16_v2/v3) and the Q8_0 walk (q8_0_mmvq_row1_rp_v2_ilp).
+//
+// The B200 hybrid mint makes this the KDA hot path: all six KDA projections are per-tensor e4m3,
+// so 34 of 45 layers spend their stage-1 time in exactly this loop.
+//
+// BIT IDENTITY. ILP only changes WHEN loads issue, never the arithmetic: each block's `bs` is an
+// independent chain, and the `acc = fmaf(ad, bs, acc)` folds stay in ascending block order per
+// lane, exactly as the serial walk folds them. The tail runs the same body. `e4m3_row_dot` is
+// literally `e4m3_row_dot_ilp<1>`, so the shipped program is a template instance of this code
+// rather than a copy of it that could drift.
+template <int ILP>
+__device__ __forceinline__ float e4m3_row_dot_ilp(
         const unsigned char* __restrict__ wrow, const signed char* __restrict__ arow,
         const float* __restrict__ adrow, int nblk, int lane) {
     float acc = 0.0f;
-    for (int blk = lane; blk < nblk; blk += 32) {
+    int blk = lane;
+    if (ILP > 1) {
+        for (; blk + 32 * (ILP - 1) < nblk; blk += 32 * ILP) {
+            uint4 w0[ILP], w1[ILP];
+            int4 a0[ILP], a1[ILP];
+            float ad[ILP];
+            // Every load for the group issues before any chain consumes one.
+            #pragma unroll
+            for (int j = 0; j < ILP; ++j) {
+                const uint4* w16 = (const uint4*)(wrow + (long)(blk + 32 * j) * 32);
+                w0[j] = w16[0];
+                w1[j] = w16[1];
+                const int4* aq16 = (const int4*)(arow + (size_t)(blk + 32 * j) * 32);
+                a0[j] = aq16[0];
+                a1[j] = aq16[1];
+                ad[j] = adrow[blk + 32 * j];
+            }
+            #pragma unroll
+            for (int j = 0; j < ILP; ++j) {
+                acc = fmaf(ad[j], e4m3_blk_dot(w0[j], w1[j], a0[j], a1[j]), acc);
+            }
+        }
+    }
+    for (; blk < nblk; blk += 32) {
         // 32 e4m3 weight bytes: 2x LDG.128 (wrow is 32B-aligned: base alloc 256B, row stride
         // in_f % 32 == 0). 32 int8 activation: 2x LDG.128 (same as the q8_0 twin).
-        const uint4* w16 = (const uint4*)(wrow + blk * 32);
-        uint4 w01 = w16[0], w23 = w16[1];
-        unsigned wu[8] = { w01.x, w01.y, w01.z, w01.w, w23.x, w23.y, w23.z, w23.w };
-        const int4* aq16 = (const int4*)(arow + blk * 32);
-        int4 a01 = aq16[0], a23 = aq16[1];
-        int au[8] = { a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w };
-        float bs = 0.0f;
-        #pragma unroll
-        for (int k = 0; k < 8; k++) {
-            float2 wlo = e4m3x2_to_f32x2((unsigned short)(wu[k] & 0xFFFF));
-            float2 whi = e4m3x2_to_f32x2((unsigned short)(wu[k] >> 16));
-            int a = au[k];
-            bs = fmaf(wlo.x, (float)(signed char)(a & 0xff), bs);
-            bs = fmaf(wlo.y, (float)(signed char)((a >> 8) & 0xff), bs);
-            bs = fmaf(whi.x, (float)(signed char)((a >> 16) & 0xff), bs);
-            bs = fmaf(whi.y, (float)(a >> 24), bs);   // arithmetic shift: already sign-extended
-        }
-        acc = fmaf(adrow[blk], bs, acc);
+        const uint4* w16 = (const uint4*)(wrow + (long)blk * 32);
+        const int4* aq16 = (const int4*)(arow + (size_t)blk * 32);
+        acc = fmaf(adrow[blk], e4m3_blk_dot(w16[0], w16[1], aq16[0], aq16[1]), acc);
     }
     return acc;
+}
+
+__device__ __forceinline__ float e4m3_row_dot(
+        const unsigned char* __restrict__ wrow, const signed char* __restrict__ arow,
+        const float* __restrict__ adrow, int nblk, int lane) {
+    return e4m3_row_dot_ilp<1>(wrow, arow, adrow, nblk, lane);
 }
 
 extern "C" __global__ void qmatvec_e4m3_mmvq(
@@ -4142,16 +4195,24 @@ extern "C" __global__ void qmatvec_e4m3_mmvq(
 // warp_reduce_sum, same `* ws` write -> per (tensor,row) output bits identical to a separate
 // m=1 launch. Unlike the Q8_0 twin each range carries its OWN per-tensor weight_scale, because
 // the checkpoint scale is a per-tensor property (Q8_0's is always 1.0). -----
-__device__ __forceinline__ void e4m3_mmvq_row1(
+template <int ILP>
+__device__ __forceinline__ void e4m3_mmvq_row1_ilp(
         const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
         const float* __restrict__ ad, float* __restrict__ y,
         int in_f, int out_f, long row_bytes, float ws, int o) {
     if (o >= out_f) return;
     int lane = threadIdx.x;
     int nblk = in_f / 32;
-    float acc = e4m3_row_dot(W + (long)o * row_bytes, aq, ad, nblk, lane);
+    float acc = e4m3_row_dot_ilp<ILP>(W + (long)o * row_bytes, aq, ad, nblk, lane);
     acc = warp_reduce_sum(acc);
     if (lane == 0) y[o] = acc * ws;
+}
+
+__device__ __forceinline__ void e4m3_mmvq_row1(
+        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
+        const float* __restrict__ ad, float* __restrict__ y,
+        int in_f, int out_f, long row_bytes, float ws, int o) {
+    e4m3_mmvq_row1_ilp<1>(W, aq, ad, y, in_f, out_f, row_bytes, ws, o);
 }
 
 // ----- FUSED F8-E4M3 m=1 matvec PAIR, UNEQUAL out_f (lane/fp8-decode-v1, 2026-08-05). Under
@@ -4277,6 +4338,97 @@ __device__ __forceinline__ void e4m3_mmvq_batched(
         int in_f, int out_f, int m, long row_bytes) {
     e4m3_mmvq_batched_row<MCOLS>(W, aq, ad, y, in_f, out_f, m, row_bytes,
                                  blockIdx.x * MEMRA_MMVQ_ROWS + (int)threadIdx.y);
+}
+// ----- FUSED F8-E4M3 m=1 matvec SIX-GROUP (lane/glm5-b200-mint-consume, 2026-09-04).
+//
+// The GLM-5.3-Flash B200 hybrid mint stores ALL SIX KDA projections (q, k, v, f_a, g_a, b) as
+// per-tensor e4m3, so under MEMRA_ST_E4M3 all six are QT_F8_E4M3-resident at 1.0 B/weight. That
+// is the cheapest operand class any of them has ever had -- the bf16 serving recipe reads 2.0
+// B/w and the Q8_0 re-encode 1.0625 -- but it also means `kda_proj_fused6` cannot serve them:
+// its two arms admit a FloatBf16 trio (+ f32 trio) or the W8 q8-mirror posture, and neither
+// binds on a uniformly-e4m3 group. Without this kernel the mint's cheapest operand would run as
+// SIX separate launches per KDA layer, on 34 of the 45 layers, plus six redundant broadcasts of
+// the same activation.
+//
+// Same block-offset recipe as qmatvec_e4m3_mmvq_fused2/fused3, extended to six ranges: blocks
+// [0,nb0) compute tensor 0, [nb0,nb0+nb1) tensor 1, and so on. All six share in_f (e4m3
+// row_bytes == in_f, so ONE row_bytes) and the SAME q8_1 activation, which is quantized once.
+// Per (tensor,row) the body is e4m3_mmvq_row1, so every output element is BIT-IDENTICAL to six
+// separate m=1 launches -- that identity is the gate, not an approximation claim. Each range
+// keeps its OWN per-tensor weight scale, because in this class the scale is a per-tensor
+// property (unlike Q8_0, whose scale is always 1.0). -----
+template <int ILP>
+__device__ __forceinline__ void e4m3_fused6_body(
+        const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
+        const unsigned char* __restrict__ W2, const unsigned char* __restrict__ W3,
+        const unsigned char* __restrict__ W4, const unsigned char* __restrict__ W5,
+        const signed char* __restrict__ aq, const float* __restrict__ ad,
+        float* __restrict__ y0, float* __restrict__ y1, float* __restrict__ y2,
+        float* __restrict__ y3, float* __restrict__ y4, float* __restrict__ y5,
+        int in_f, int out0, int out1, int out2, int out3, int out4, int out5,
+        long row_bytes, float ws0, float ws1, float ws2, float ws3, float ws4, float ws5) {
+    const unsigned char* const Ws[6] = {W0, W1, W2, W3, W4, W5};
+    float* const ys[6] = {y0, y1, y2, y3, y4, y5};
+    const int outs[6] = {out0, out1, out2, out3, out4, out5};
+    const float wss[6] = {ws0, ws1, ws2, ws3, ws4, ws5};
+    int b = blockIdx.x;
+#pragma unroll
+    for (int i = 0; i < 6; ++i) {
+        const int nb = (outs[i] + MEMRA_MMVQ_ROWS - 1) / MEMRA_MMVQ_ROWS;
+        if (b < nb) {
+            e4m3_mmvq_row1_ilp<ILP>(Ws[i], aq, ad, ys[i], in_f, outs[i], row_bytes, wss[i],
+                                    b * MEMRA_MMVQ_ROWS + (int)threadIdx.y);
+            return;
+        }
+        b -= nb;
+    }
+}
+
+extern "C" __global__ void qmatvec_e4m3_mmvq_fused6(
+        const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
+        const unsigned char* __restrict__ W2, const unsigned char* __restrict__ W3,
+        const unsigned char* __restrict__ W4, const unsigned char* __restrict__ W5,
+        const signed char* __restrict__ aq, const float* __restrict__ ad,
+        float* __restrict__ y0, float* __restrict__ y1, float* __restrict__ y2,
+        float* __restrict__ y3, float* __restrict__ y4, float* __restrict__ y5,
+        int in_f, int out0, int out1, int out2, int out3, int out4, int out5,
+        long row_bytes, float ws0, float ws1, float ws2, float ws3, float ws4, float ws5) {
+    e4m3_fused6_body<1>(W0, W1, W2, W3, W4, W5, aq, ad, y0, y1, y2, y3, y4, y5, in_f, out0,
+                        out1, out2, out3, out4, out5, row_bytes, ws0, ws1, ws2, ws3, ws4, ws5);
+}
+
+// MEMRA_E4M3_ROW_ILP twin of the six-group: identical range split and identical per-row
+// arithmetic, four blocks' loads in flight per lane instead of one (see e4m3_row_dot_ilp).
+// ROWS AND STAGING: MEASURED, KILLED, NOT RE-DERIVED. A ladder of arms was built here (8/16/32
+// rows per block, with and without the activation staged in shared memory) and priced on 2x B200,
+// 3 reps x 15 interleaved iters, every arm bit-identical:
+//
+//   serial 4 rows 46.7-47.0us = 1.000 | ILP 4 rows 1.003-1.015 | r8 0.988-0.993
+//   r8+staged 0.932-0.934 | r16 0.970-0.972 | r16+staged 0.919-0.926 | r32+staged 0.739-0.746
+//
+// Every widening and every staging variant LOST, so the shipped 4 rows/block unstaged stands and
+// the arms are gone. Two reasons, worth more than the arms and separable only because the
+// unstaged arms were built beside the staged ones:
+//   * Widening loses BEFORE any staging. ptxas -v: 38 registers/thread, so warps/SM is FLAT at 48
+//     across R=4..16 and the variable that actually moved was BLOCKS per SM (12 -> 6 -> 3).
+//     Block-level parallelism is what hides this kernel's memory latency.
+//   * Staging costs a near-CONSTANT ~6 points at every R rather than falling as 1/R, so its cost
+//     is the __syncthreads and the smem read path, not the one-time copy.
+// VERDICT:e4m3-fused6-wider-blocks-and-staged-activation-KILLED and
+// LAW:size-a-block-from-measured-registers-and-count-blocks-not-warps (darklanes corpus);
+// numbers in research/glm5-b200-mint-20260904/LANE.md.
+
+extern "C" __global__ void qmatvec_e4m3_mmvq_fused6_ilp(
+        const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
+        const unsigned char* __restrict__ W2, const unsigned char* __restrict__ W3,
+        const unsigned char* __restrict__ W4, const unsigned char* __restrict__ W5,
+        const signed char* __restrict__ aq, const float* __restrict__ ad,
+        float* __restrict__ y0, float* __restrict__ y1, float* __restrict__ y2,
+        float* __restrict__ y3, float* __restrict__ y4, float* __restrict__ y5,
+        int in_f, int out0, int out1, int out2, int out3, int out4, int out5,
+        long row_bytes, float ws0, float ws1, float ws2, float ws3, float ws4, float ws5) {
+    e4m3_fused6_body<4>(W0, W1, W2, W3, W4, W5, aq, ad, y0, y1, y2, y3, y4, y5, in_f, out0,
+                        out1, out2, out3, out4, out5, row_bytes, ws0, ws1, ws2, ws3, ws4, ws5);
 }
 extern "C" __global__ void qmatvec_e4m3_mmvq_b2(
         const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
