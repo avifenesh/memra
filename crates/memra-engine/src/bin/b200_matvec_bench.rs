@@ -1716,8 +1716,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             maxd[1],
         );
         for (arm, label) in [
-            (2usize, "ILP @ 8 rows/block"),
-            (3, "ILP @ 8 rows + staged act"),
+            (2usize, "ILP r8"),
+            (3, "ILP r8 + staged act"),
+            (4, "ILP r16"),
+            (5, "ILP r16 + staged act"),
+            (6, "ILP r32 + staged act"),
         ] {
             report_arm(
                 &format!("kda6 e4m3 six: {label}"),
