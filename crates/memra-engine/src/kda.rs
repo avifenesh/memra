@@ -858,11 +858,38 @@ pub fn kda_prime_cached(
 }
 
 /// One decode step through the cache's KDA state for layer `il`.
-/// `MEMRA_KDA_CONV3=1` (lane/glm5-kda-conv3-20260904, default OFF): the T=1 KDA conv+SiLU
-/// runs its three planes in one launch. Read PER CALL. Why and receipts: the kernel header in
+/// `MEMRA_KDA_CONV3` (lane/glm5-kda-conv3-20260904; default ON on sm_100a builds since 2026-09-04,
+/// OFF elsewhere, `=0`/`=1` override): the T=1 KDA conv+SiLU runs its three planes in one launch. Read PER CALL. Why and receipts: the kernel header in
 /// cu/kda.cu and docs/FLAGS.md.
 pub(crate) fn kda_conv3_on() -> bool {
-    std::env::var("MEMRA_KDA_CONV3").as_deref() == Ok("1")
+    kda_conv3_on_from(
+        std::env::var("MEMRA_KDA_CONV3").ok().as_deref(),
+        env!("MEMRA_BUILT_CUDA_ARCH"),
+    )
+}
+
+/// The pure parse behind [`kda_conv3_on`]: `1` arms, `0` disarms, unset follows the BUILD ARCH
+/// (ON for `100a`, OFF otherwise): the fused launch carries a 2x B200 receipt (+1.82% at c1,
+/// darklanes research/glm5-b200-20260902/LANE.md, convab) and no SM120 one.
+pub fn kda_conv3_on_from(v: Option<&str>, built_arch: &str) -> bool {
+    match v.map(str::trim) {
+        Some("1") => true,
+        Some("0") => false,
+        _ => built_arch == "100a",
+    }
+}
+
+#[cfg(test)]
+mod kda_conv3_default_tests {
+    use super::kda_conv3_on_from;
+
+    #[test]
+    fn arch_keyed_default_with_explicit_override() {
+        assert!(kda_conv3_on_from(None, "100a"));
+        assert!(!kda_conv3_on_from(None, "120a"));
+        assert!(kda_conv3_on_from(Some("1"), "120a"));
+        assert!(!kda_conv3_on_from(Some("0"), "100a"));
+    }
 }
 
 /// Engagement counter for `MEMRA_KDA_CONV3`; gates take a delta.
