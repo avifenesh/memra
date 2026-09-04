@@ -2092,8 +2092,8 @@ fn build_dev_exps(
     // to 144B past the slab (harmless bytes: the act's zero-padded k-range multiplies
     // every overread weight to zero; the slack only prevents the OOB fault).
     let d = e.htod_bytes_padded(down.bytes.as_bytes(), 144)?;
-    // MEMRA_MOE_EXPERT_RP (memra#147): repack the three slabs on the device into the split-plane
-    // layout. Only whole NVFP4 slabs, only the plain (non-interleaved, non-FP8) provenance, and
+    // MEMRA_MOE_EXPERT_RP (memra#147): repack the three slabs on the device into the slot-major
+    // per-row layout (QT_NVFP4_V2). Only whole NVFP4 slabs, only the plain (non-interleaved, non-FP8) provenance, and
     // only when the quant-plane rows stay 16B-aligned (in_f % 256 == 0 <=> nsb64 % 4 == 0).
     let rp_want = crate::moe_expert_rp_on()
         && !gu_il
@@ -2127,8 +2127,8 @@ fn build_dev_exps(
         static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
         if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
             eprintln!(
-                "[moe-rp] resident expert slabs SPLIT-PLANE from layer {il} (MEMRA_MOE_EXPERT_RP, memra#147): \
-                 gate/up rows={} nsb64={}, down rows={} nsb64={}, n_expert={n_expert}; readers get QT_NVFP4_RP, \
+                "[moe-rp] resident expert slabs SLOT-MAJOR (QT_NVFP4_V2) from layer {il} (MEMRA_MOE_EXPERT_RP, memra#147): \
+                 gate/up rows={} nsb64={}, down rows={} nsb64={}, n_expert={n_expert}; readers get QT_NVFP4_V2, \
                  unwired readers refuse by name",
                 gate.out_f,
                 gate.in_f / 64,
@@ -2834,8 +2834,8 @@ pub struct DevExps {
     /// per (expert,row) instead of two scattered 880B streams — the measured 56%-of-wall fix
     /// candidate. Kernels unchanged (stride is already a parameter everywhere).
     pub gu_il: bool,
-    /// The three slabs are split-plane (`MEMRA_MOE_EXPERT_RP`, memra#147): readers must be told
-    /// `QT_NVFP4_RP` (`crate::rp_qt`) or refuse (`crate::moe_rp_refuse`).
+    /// The three slabs are slot-major per row (`QT_NVFP4_V2`; `MEMRA_MOE_EXPERT_RP`, memra#147):
+    /// readers must be told so (`crate::rp_qt`) or refuse (`crate::moe_rp_refuse`).
     pub rp: bool,
     /// Native block-E4M3 expert scale slabs, projection-major. When present, the raw checkpoint
     /// code slabs above are the sole resident weight copy and each expert selects its contiguous

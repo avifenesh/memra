@@ -1047,7 +1047,7 @@ fn f16g_proj_ok(qt: i32, in_f: usize) -> bool {
         // uniform NVFP4, which passed the pairs q8 gate but missed BOTH batched doors
         // (use_mma's dec set and this table), so 14.7k-token prefill rode the per-pair _em
         // fallback — 88.6% of the prime wall (prime-anatomy receipt).
-        crate::QT_NVFP4 => in_f.is_multiple_of(64),
+        crate::QT_NVFP4 | crate::QT_NVFP4_V2 => in_f.is_multiple_of(64),
         _ => false,
     }
 }
@@ -15626,10 +15626,6 @@ impl HybridModel {
         cfg: &ModelConfig,
         il: u16,
     ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
-        crate::moe_rp_refuse(
-            m.dev_exps.as_ref().is_some_and(|d| d.rp),
-            "moe_ffn_grouped_prefill_sigmoid",
-        )?; // memra#147: no split-plane arm here
         // Placement: the LOCAL resident slab only. The SLRU cannot serve a 4096-token chunk's
         // expert working set (a glm5 layer is 288 x 3 blocks against ~285 slots/layer on the
         // serving recipe), and a remote slab must never be dereferenced (m=1 peer reads are the
@@ -15836,7 +15832,7 @@ impl HybridModel {
             n_ff_exp,
             n_active,
             n_pairs,
-            m.gate_exps.qtype,
+            crate::rp_qt(dev.rp, m.gate_exps.qtype), // memra#147: slot-major resident slab
             rbg_d,
         )?;
         if m.gate_exps.macros.is_some() {
@@ -15860,7 +15856,7 @@ impl HybridModel {
             n_ff_exp,
             n_active,
             n_pairs,
-            m.up_exps.qtype,
+            crate::rp_qt(dev.rp, m.up_exps.qtype),
             rbu_d,
         )?;
         if m.up_exps.macros.is_some() {
@@ -15910,7 +15906,7 @@ impl HybridModel {
             n_embd,
             n_active,
             n_pairs,
-            m.down_exps.qtype,
+            crate::rp_qt(dev.rp, m.down_exps.qtype),
             m.down_exps.row_bytes,
         )?;
         let y_pair = e.rows_permute(&d_csr, &exp_d, n_pairs, n_embd)?;

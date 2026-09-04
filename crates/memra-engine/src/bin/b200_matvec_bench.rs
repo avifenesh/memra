@@ -28,8 +28,8 @@
 //!
 //! usage: b200-matvec-bench [iters=5] [copies=3]
 use cudarc::driver::{CudaSlice, CudaStream, DevicePtr};
-use memra_engine::model::repack_nvfp4_split;
-use memra_engine::{Engine, F32x8, QT_NVFP4, QT_NVFP4_RP, QT_Q8_0, WPtr8};
+use memra_engine::tp::nvfp4_matrix_v2_permute;
+use memra_engine::{Engine, F32x8, QT_NVFP4, QT_NVFP4_V2, QT_Q8_0, WPtr8};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -343,7 +343,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
         // MEMRA_MOE_EXPERT_RP arm (memra#147): the SAME expert bytes, split-plane repacked per
-        // expert (repack_nvfp4_split, rows = n_ff) and read by the _w4 twin's QT_NVFP4_RP branch.
+        // expert (nvfp4_matrix_v2_permute, the QT_NVFP4_V2 form) and read by the _w4 twin's QT_NVFP4_V2 branch.
         // Bit-identity is against the SHIPPED interleaved kernel on copy 0; the perturbation is
         // applied before the repack so every copy's content matches its interleaved twin.
         let mk_experts_rp = |seed: u32| -> Result<Vec<CudaSlice<u8>>, Box<dyn std::error::Error>> {
@@ -353,7 +353,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if let Some(b) = d.first_mut() {
                         *b ^= (seed.wrapping_add(j as u32) & 0xFF) as u8;
                     }
-                    e.htod_bytes(&repack_nvfp4_split(&d, n_ff))
+                    e.htod_bytes(&nvfp4_matrix_v2_permute(&d, n_ff, n_embd))
                 })
                 .collect()
         };
@@ -376,8 +376,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             n_embd,
             n_ff,
             n_used,
-            QT_NVFP4_RP,
-            QT_NVFP4_RP,
+            QT_NVFP4_V2,
+            QT_NVFP4_V2,
             row_bytes,
             row_bytes,
         )?;
@@ -417,8 +417,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 n_embd,
                 n_ff,
                 n_used,
-                QT_NVFP4_RP,
-                QT_NVFP4_RP,
+                QT_NVFP4_V2,
+                QT_NVFP4_V2,
                 row_bytes,
                 row_bytes,
             )?;
@@ -427,7 +427,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         report_arm(
             "moe_gate_up_preclamp8_q8",
-            "w4_rp",
+            "w4_v2",
             ship_us,
             median(&mut t_rp),
             bytes,
@@ -570,7 +570,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if let Some(b) = d.first_mut() {
                         *b ^= (seed.wrapping_add(j as u32) & 0xFF) as u8;
                     }
-                    e.htod_bytes(&repack_nvfp4_split(&d, n_embd))
+                    e.htod_bytes(&nvfp4_matrix_v2_permute(&d, n_embd, n_ff))
                 })
                 .collect()
         };
@@ -590,7 +590,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 n_ff,
                 n_embd,
                 n_used,
-                QT_NVFP4_RP,
+                QT_NVFP4_V2,
                 row_bytes,
             )?;
         }
@@ -628,7 +628,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     n_ff,
                     n_embd,
                     n_used,
-                    QT_NVFP4_RP,
+                    QT_NVFP4_V2,
                     row_bytes,
                 )?;
             }
@@ -637,7 +637,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         report_arm(
             "moe_down8_fma_q8",
-            "w4_rp",
+            "w4_v2",
             ship_us,
             median(&mut t_rp),
             bytes,
