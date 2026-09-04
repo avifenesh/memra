@@ -526,6 +526,63 @@ impl PrimePpStageChannels {
 /// not carry — `mla_kpool_indices` allocates it on first use and leaves it resident thereafter.
 /// A caller that hands over a fresh `None` every call (the stateless arm) gets the old
 /// rebuild-everything behaviour, which is exactly right when the state itself is per-call.
+/// The MLA core's PRE/POST handoff buffers, one set per session, reused by every MLA layer
+/// (lane/glm5-mla-capture-20260904, door `MEMRA_MLA_SEG_WS`). WHY: a captured PRE graph and a
+/// captured POST graph must hand each other buffers at STABLE addresses; allocations inside ONE
+/// capture are fine (they become graph alloc nodes, which is how the KDA runs already capture),
+/// but two graphs cannot hand each other a fresh allocation. Every MLA layer of a glm5 model
+/// shares one `MlaGeom`, so one set serves all eleven, sequentially, exactly as the eager walk's
+/// fresh buffers do. BYTE-IDENTICAL by construction: the same kernels write the same values in
+/// the same order to a different address, and every consumer reads the value, never the address
+/// (door W's contract, `MEMRA_VERIFY_WS`).
+/// Engagement counter for `MEMRA_MLA_SEG_WS`; gates take a delta.
+pub static MLA_SEG_WS_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// Snapshot of [`MLA_SEG_WS_DISPATCHES`].
+pub fn mla_seg_ws_dispatches() -> u64 {
+    MLA_SEG_WS_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub(crate) struct MlaSegWs {
+    pub q_nope: CudaSlice<f32>,
+    pub q_pe: CudaSlice<f32>,
+    pub q_an: CudaSlice<f32>,
+    pub c_kv_n: CudaSlice<f32>,
+    pub k_pe: CudaSlice<f32>,
+    /// `(nh, dn, dr, r, q_lora)` this set was sized for; another geometry refuses by name.
+    pub sig: (usize, usize, usize, usize, usize),
+}
+
+impl MlaSegWs {
+    /// Size one set for `t = 1` decode at this layer's geometry.
+    pub(crate) fn new(
+        e: &Engine,
+        nh: usize,
+        dn: usize,
+        dr: usize,
+        r: usize,
+        q_lora: usize,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        Ok(Self {
+            q_nope: e.uninit(nh * dn)?,
+            q_pe: e.uninit((nh * dr).max(1))?,
+            q_an: e.uninit(q_lora)?,
+            c_kv_n: e.uninit(r)?,
+            k_pe: e.uninit(dr.max(1))?,
+            sig: (nh, dn, dr, r, q_lora),
+        })
+    }
+}
+
+/// The three planes segment MID reads, from either the owned `MlaPreOut` or the pooled
+/// [`MlaSegWs`].
+pub(crate) struct MlaMidIn<'a> {
+    pub q_an: &'a CudaSlice<f32>,
+    pub c_kv_n: &'a CudaSlice<f32>,
+    pub k_pe: &'a CudaSlice<f32>,
+}
+
 /// The MLA core's PRE segment outputs (lane/glm5-mla-segments-20260904): everything the
 /// append and the attention read from the projections.
 pub(crate) struct MlaPreOut {
@@ -8405,12 +8462,56 @@ impl HybridModel {
         slot: usize,
         rows_exact: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let pre = self.mla_seg_pre(e, mla, h, pos_d, t, il, rows_exact)?;
+        // MEMRA_MLA_SEG_WS (lane/glm5-mla-capture-20260904, default OFF): run the PRE segment
+        // into the session's stable buffers. Byte-identical (same kernels, same order, a
+        // different destination address), and the seam the capture arc needs.
+        if t == 1 && Engine::mla_seg_ws_on() {
+            let g = mla.geom;
+            let q_lora = mla.wq_b.in_features();
+            let mut ws = e.mla_seg_ws_take(g.n_head, g.d_nope, g.d_rope, g.kv_rank, q_lora)?;
+            let out = (|| -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+                if MLA_SEG_WS_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+                    eprintln!(
+                        "[mla-seg-ws] engaged: the T=1 MLA PRE segment writes the session's \
+                         stable handoff buffers (MEMRA_MLA_SEG_WS=1)"
+                    );
+                }
+                self.mla_seg_pre(e, mla, h, pos_d, t, il, rows_exact, Some(&mut ws))?;
+                let gathered = self.mla_seg_mid(
+                    e,
+                    mla,
+                    h,
+                    MlaMidIn {
+                        q_an: &ws.q_an,
+                        c_kv_n: &ws.c_kv_n,
+                        k_pe: &ws.k_pe,
+                    },
+                    latent,
+                    index_plane,
+                    t,
+                    il,
+                    slot,
+                    rows_exact,
+                )?;
+                self.mla_seg_post(
+                    e, mla, &ws.q_nope, &ws.q_pe, gathered, latent, t, il, slot, rows_exact,
+                )
+            })();
+            e.mla_seg_ws_put(ws);
+            return out;
+        }
+        let pre = self
+            .mla_seg_pre(e, mla, h, pos_d, t, il, rows_exact, None)?
+            .expect("the ws-free PRE segment always returns its own buffers");
         let gathered = self.mla_seg_mid(
             e,
             mla,
             h,
-            &pre,
+            MlaMidIn {
+                q_an: &pre.q_an,
+                c_kv_n: &pre.c_kv_n,
+                k_pe: &pre.k_pe,
+            },
             latent,
             index_plane,
             t,
@@ -8418,7 +8519,18 @@ impl HybridModel {
             slot,
             rows_exact,
         )?;
-        self.mla_seg_post(e, mla, pre, gathered, latent, t, il, slot, rows_exact)
+        self.mla_seg_post(
+            e,
+            mla,
+            &pre.q_nope,
+            &pre.q_pe,
+            gathered,
+            latent,
+            t,
+            il,
+            slot,
+            rows_exact,
+        )
     }
 
     /// Segment PRE of the MLA core: the q and kv projections, their norms, the latent splits and
@@ -8434,7 +8546,8 @@ impl HybridModel {
         t: usize,
         il: usize,
         rows_exact: bool,
-    ) -> Result<MlaPreOut, Box<dyn std::error::Error>> {
+        ws: Option<&mut MlaSegWs>,
+    ) -> Result<Option<MlaPreOut>, Box<dyn std::error::Error>> {
         let g = mla.geom;
         let cfg = &self.cfg;
         let eps = cfg.rms_eps;
@@ -8460,8 +8573,41 @@ impl HybridModel {
         };
 
         // --- q path: wq_a -> q_a_norm -> wq_b -> per-head [nope | rope] ---
-        let q_a = mm(&mla.wq_a, h)?;
         let q_lora = mla.wq_b.in_features();
+        // POOLED destinations (door `MEMRA_MLA_SEG_WS`, t == 1 only): the same kernels write the
+        // same values into the session's stable buffers instead of fresh ones, so a captured PRE
+        // graph and a captured POST graph can hand each other addresses. A layer whose geometry
+        // differs from the set's refuses by name rather than writing past an end.
+        if let Some(ws) = ws {
+            if t != 1 || ws.sig != (nh, dn, dr, r, q_lora) {
+                return Err(format!(
+                    "layer {il}: the MLA segment workspace is sized {:?} for t=1 and this call is \
+                     {:?} at t={t}",
+                    ws.sig,
+                    (nh, dn, dr, r, q_lora)
+                )
+                .into());
+            }
+            let q_a = mm(&mla.wq_a, h)?;
+            e.rms_norm(
+                &q_a,
+                mla.q_a_norm.float_data(),
+                &mut ws.q_an,
+                q_lora,
+                t,
+                eps,
+            )?;
+            let q = mm(&mla.wq_b, &ws.q_an)?;
+            e.mla_split_latent(&q, &mut ws.q_nope, &mut ws.q_pe, t * nh, dn, dr)?;
+            e.mla_rope_interleaved(&mut ws.q_pe, pos_d, t, nh, dr, base)?;
+            let kv = mm(&mla.wkv_a, h)?;
+            let mut c_kv = e.uninit(t * r)?;
+            e.mla_split_latent(&kv, &mut c_kv, &mut ws.k_pe, t, r, dr)?;
+            e.rms_norm(&c_kv, mla.kv_a_norm.float_data(), &mut ws.c_kv_n, r, t, eps)?;
+            e.mla_rope_interleaved(&mut ws.k_pe, pos_d, t, 1, dr, base)?;
+            return Ok(None);
+        }
+        let q_a = mm(&mla.wq_a, h)?;
         let mut q_an = e.uninit(t * q_lora)?;
         e.rms_norm(&q_a, mla.q_a_norm.float_data(), &mut q_an, q_lora, t, eps)?;
         let q = mm(&mla.wq_b, &q_an)?;
@@ -8486,13 +8632,13 @@ impl HybridModel {
         // --- DSA k-pool selection, BEFORE attending: the indexer's own state row for each of
         // this call's tokens is appended first, so a query sees itself exactly as the latent
         // plane already lets it (the reference concatenates into the indexer cache, then scores).
-        Ok(MlaPreOut {
+        Ok(Some(MlaPreOut {
             q_nope,
             q_pe,
             q_an,
             c_kv_n,
             k_pe,
-        })
+        }))
     }
 
     /// Segment MID of the MLA core: the latent append at `slot` and the DSA k-pool selection.
@@ -8504,7 +8650,7 @@ impl HybridModel {
         e: &Engine,
         mla: &crate::hybrid::MlaAttnLayer,
         h: &CudaSlice<f32>,
-        pre: &MlaPreOut,
+        planes: MlaMidIn<'_>,
         latent: &mut CudaSlice<f32>,
         index_plane: Option<IndexerPlanes<'_>>,
         t: usize,
@@ -8514,8 +8660,8 @@ impl HybridModel {
     ) -> Result<Option<(CudaSlice<i32>, usize)>, Box<dyn std::error::Error>> {
         let g = mla.geom;
         let (dr, r) = (g.d_rope, g.kv_rank);
-        e.mla_append_latent(latent, &pre.c_kv_n, &pre.k_pe, slot, t, r, dr)?;
-        let q_an = &pre.q_an;
+        e.mla_append_latent(latent, planes.c_kv_n, planes.k_pe, slot, t, r, dr)?;
+        let q_an = planes.q_an;
         let gathered = match (&mla.index, index_plane) {
             (Some(indexer), Some(plane)) => {
                 Some(self.mla_kpool_select(e, indexer, h, q_an, plane, t, slot, il, rows_exact)?)
@@ -8543,7 +8689,8 @@ impl HybridModel {
         &self,
         e: &Engine,
         mla: &crate::hybrid::MlaAttnLayer,
-        pre: MlaPreOut,
+        q_nope: &CudaSlice<f32>,
+        q_pe: &CudaSlice<f32>,
         gathered: Option<(CudaSlice<i32>, usize)>,
         latent: &CudaSlice<f32>,
         t: usize,
@@ -8554,7 +8701,6 @@ impl HybridModel {
         let g = mla.geom;
         let (nh, dn, dr, dv, r) = (g.n_head, g.d_nope, g.d_rope, g.d_v, g.kv_rank);
         let t_kv = slot + t;
-        let MlaPreOut { q_nope, q_pe, .. } = pre;
         let wk_b = Self::mla_split_operand(&mla.wk_b, "attn_k_b", il);
         let wv_b = Self::mla_split_operand(&mla.wv_b, "attn_v_b", il);
 
@@ -8606,21 +8752,21 @@ impl HybridModel {
             && !mla.tp_shard
             && mla_tc_prefill_enabled()
             && let Some(attn) = self.mla_tc_prefill_chain(
-                e, wk_b, wv_b, &q_nope, latent, idx, *slots, t, t_kv, nh, dn, dv, r, g.scale,
+                e, wk_b, wv_b, q_nope, latent, idx, *slots, t, t_kv, nh, dn, dv, r, g.scale,
             )?
         {
             return Ok(attn);
         }
 
         let mut q_lat = e.uninit(t * nh * r)?;
-        e.mla_absorb_q(&q_nope, wk_b, &mut q_lat, t, nh, dn, r)?;
+        e.mla_absorb_q(q_nope, wk_b, &mut q_lat, t, nh, dn, r)?;
         let mut o_lat = e.uninit(t * nh * r)?;
         match &gathered {
             Some((idx, slots)) => e.mla_attn_gathered(
-                &q_lat, &q_pe, latent, idx, &mut o_lat, nh, r, dr, t, *slots, g.scale,
+                &q_lat, q_pe, latent, idx, &mut o_lat, nh, r, dr, t, *slots, g.scale,
             )?,
             None => e.mla_attn_absorbed(
-                &q_lat, &q_pe, latent, &mut o_lat, nh, r, dr, t, t_kv, g.scale,
+                &q_lat, q_pe, latent, &mut o_lat, nh, r, dr, t, t_kv, g.scale,
             )?,
         }
         let mut attn = e.uninit(t * nh * dv)?;

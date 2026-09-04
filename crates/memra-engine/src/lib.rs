@@ -1553,6 +1553,9 @@ pub struct Engine {
     /// even across sessions; the walk TAKES it for the step and puts it back, and a second
     /// concurrent walk on the same engine simply falls back to fresh allocations.
     hyper_decode_ws: Mutex<Option<crate::hyper::HyperDecodeWs>>,
+    /// Per-session MLA PRE/POST handoff buffers (`MEMRA_MLA_SEG_WS`,
+    /// lane/glm5-mla-capture-20260904); see [`crate::hybrid_forward::MlaSegWs`].
+    mla_seg_ws: Mutex<Option<crate::hybrid_forward::MlaSegWs>>,
     /// Verify-walk allocation workspace (MEMRA_VERIFY_WS — glm5-alias
     /// MEMRA_GLM5_VERIFY_WS honored, OFF-wins; lane/glm5-matvec door W, generalized
     /// lane/glm5-extract-general — the pool is family-agnostic by content): the
@@ -3190,6 +3193,7 @@ impl Engine {
             prime_deqw_ws: Mutex::new(None),
             router_stage: Mutex::new(None),
             hyper_decode_ws: Mutex::new(None),
+            mla_seg_ws: Mutex::new(None),
             verify_ws: Mutex::new(VerifyWs::default()),
             vrows_macro_dev: Mutex::new(std::collections::HashMap::new()),
             shexp_ones: Mutex::new(None),
@@ -12971,6 +12975,35 @@ impl Engine {
 
     pub(crate) fn hyper_ws_put(&self, ws: crate::hyper::HyperDecodeWs) {
         *self.hyper_decode_ws.lock().unwrap() = Some(ws);
+    }
+
+    /// Take the session's MLA segment workspace, creating it at this geometry on first use;
+    /// `None` when the geometry differs from the held set (the caller then runs the owned path).
+    pub(crate) fn mla_seg_ws_take(
+        &self,
+        nh: usize,
+        dn: usize,
+        dr: usize,
+        r: usize,
+        q_lora: usize,
+    ) -> Result<crate::hybrid_forward::MlaSegWs, Box<dyn std::error::Error>> {
+        let held = self.mla_seg_ws.lock().unwrap().take();
+        match held {
+            Some(ws) if ws.sig == (nh, dn, dr, r, q_lora) => Ok(ws),
+            _ => crate::hybrid_forward::MlaSegWs::new(self, nh, dn, dr, r, q_lora),
+        }
+    }
+
+    pub(crate) fn mla_seg_ws_put(&self, ws: crate::hybrid_forward::MlaSegWs) {
+        *self.mla_seg_ws.lock().unwrap() = Some(ws);
+    }
+
+    /// `MEMRA_MLA_SEG_WS=1` (lane/glm5-mla-capture-20260904, default OFF): the T=1 MLA core runs
+    /// its PRE segment into the session's stable buffers instead of fresh allocations, so the
+    /// capture arc can hand a captured PRE graph's outputs to a captured POST graph. Read PER
+    /// CALL. Byte-identical by construction (same kernels, same order, different address).
+    pub(crate) fn mla_seg_ws_on() -> bool {
+        std::env::var("MEMRA_MLA_SEG_WS").as_deref() == Ok("1")
     }
 
     // ---- Verify-walk workspace (MEMRA_VERIFY_WS, door W — see VerifyWs). ----
