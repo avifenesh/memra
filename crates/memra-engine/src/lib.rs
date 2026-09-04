@@ -878,13 +878,28 @@ pub(crate) fn b200_gemv_v2_on() -> bool {
     b200_gemv_v2_level() >= 1
 }
 
-/// `MEMRA_Q8_ROW_ILP=1` (lane/glm5-q8-row-ilp-20260904, default OFF): the W8-posture q8_0 row
+/// `MEMRA_Q8_ROW_ILP` (lane/glm5-q8-row-ilp-20260904; default ON on sm_100a builds since
+/// 2026-09-04, OFF elsewhere, `=0`/`=1` override): the W8-posture q8_0 row
 /// walk (`qmatvec_q8_0_mmvq_rp_v2` at t=1 and the fused `qmatvec_kda6_q8f32_rp_v2`) takes its
 /// `_ilp` twin, the same per-row program with four blocks' loads per lane issued ahead of the
 /// dp4a chains. Read PER CALL (a live rollback seam). Why and receipts: the kernel header in
 /// cu/qmatvec.cu and docs/FLAGS.md.
 pub(crate) fn q8_row_ilp_on() -> bool {
-    std::env::var("MEMRA_Q8_ROW_ILP").as_deref() == Ok("1")
+    q8_row_ilp_on_from(
+        std::env::var("MEMRA_Q8_ROW_ILP").ok().as_deref(),
+        env!("MEMRA_BUILT_CUDA_ARCH"),
+    )
+}
+
+/// The pure parse behind [`q8_row_ilp_on`]: `1` arms, `0` disarms, unset follows the BUILD ARCH
+/// (ON for `100a`, OFF otherwise): the twins carry a 2x B200 receipt (+2.16% at c1, darklanes
+/// research/glm5-b200-20260902/LANE.md, q8ab) and no SM120 one.
+pub fn q8_row_ilp_on_from(v: Option<&str>, built_arch: &str) -> bool {
+    match v.map(str::trim) {
+        Some("1") => true,
+        Some("0") => false,
+        _ => built_arch == "100a",
+    }
 }
 
 /// Engagement counter for `MEMRA_Q8_ROW_ILP` (both launch sites); gates take a delta.
@@ -2040,14 +2055,29 @@ pub fn moe_vrows_pack_dispatches() -> u64 {
     MOE_VROWS_PACK_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// `MEMRA_MOE_VROWS_ILP=1` (lane/glm5-moe-rows-ilp-20260904, default OFF): the verify-rows MoE
-/// pair launches its `_ilp` twins, the same per-warp program with the loads of four (then two)
+/// `MEMRA_MOE_VROWS_ILP` (lane/glm5-moe-rows-ilp-20260904; default ON on sm_100a builds since
+/// 2026-09-04, OFF elsewhere, `=0`/`=1` override): the verify-rows MoE pair launches its `_ilp` twins, the same per-warp program with the loads of four (then two)
 /// groups per lane issued ahead of their math. Composes with door M (`_w4_ilp`). ONLY the
 /// interleaved NVFP4 expert layout (`QT_NVFP4`): the launchers refuse by name for any other
 /// qtype and keep the shipped kernel. Read PER CALL. Why and receipts: the kernel header in
 /// cu/qmatvec.cu and docs/FLAGS.md.
 pub(crate) fn moe_vrows_ilp_on() -> bool {
-    std::env::var("MEMRA_MOE_VROWS_ILP").as_deref() == Ok("1")
+    moe_vrows_ilp_on_from(
+        std::env::var("MEMRA_MOE_VROWS_ILP").ok().as_deref(),
+        env!("MEMRA_BUILT_CUDA_ARCH"),
+    )
+}
+
+/// The pure parse behind [`moe_vrows_ilp_on`]: `1` arms, `0` disarms, unset follows the BUILD
+/// ARCH (ON for `100a`, OFF otherwise), the per-hardware arm selection law: the twins carry a
+/// 2x B200 receipt (+6.0% at c1, darklanes research/glm5-b200-20260902/LANE.md, ilpab) and no
+/// SM120 one, so an sm_120a build keeps its measured default until it has its own.
+pub fn moe_vrows_ilp_on_from(v: Option<&str>, built_arch: &str) -> bool {
+    match v.map(str::trim) {
+        Some("1") => true,
+        Some("0") => false,
+        _ => built_arch == "100a",
+    }
 }
 
 /// Engagement counter for the ILP verify-rows MoE door (`MEMRA_MOE_VROWS_ILP`), both launches.
@@ -2754,6 +2784,30 @@ mod verify_ws_flag_tests {
         // explicit ON on either name keeps the default
         assert!(verify_ws_on_from(Some("1"), None));
         assert!(verify_ws_on_from(None, Some("1")));
+    }
+}
+
+#[cfg(test)]
+mod moe_vrows_ilp_default_tests {
+    use super::moe_vrows_ilp_on_from;
+
+    #[test]
+    fn q8_row_ilp_arch_keyed_default() {
+        use super::q8_row_ilp_on_from;
+        assert!(q8_row_ilp_on_from(None, "100a"));
+        assert!(!q8_row_ilp_on_from(None, "120a"));
+        assert!(q8_row_ilp_on_from(Some("1"), "120a"));
+        assert!(!q8_row_ilp_on_from(Some("0"), "100a"));
+    }
+
+    #[test]
+    fn arch_keyed_default_with_explicit_override() {
+        assert!(moe_vrows_ilp_on_from(None, "100a"));
+        assert!(!moe_vrows_ilp_on_from(None, "120a"));
+        assert!(!moe_vrows_ilp_on_from(None, "90a"));
+        assert!(moe_vrows_ilp_on_from(Some("1"), "120a"));
+        assert!(!moe_vrows_ilp_on_from(Some("0"), "100a"));
+        assert!(!moe_vrows_ilp_on_from(Some(" 0 "), "100a"));
     }
 }
 
