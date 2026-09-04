@@ -878,6 +878,33 @@ pub(crate) fn b200_gemv_v2_on() -> bool {
     b200_gemv_v2_level() >= 1
 }
 
+/// `MEMRA_Q8_ROW_ILP=1` (lane/glm5-q8-row-ilp-20260904, default OFF): the W8-posture q8_0 row
+/// walk (`qmatvec_q8_0_mmvq_rp_v2` at t=1 and the fused `qmatvec_kda6_q8f32_rp_v2`) takes its
+/// `_ilp` twin, the same per-row program with four blocks' loads per lane issued ahead of the
+/// dp4a chains. Read PER CALL (a live rollback seam). Why and receipts: the kernel header in
+/// cu/qmatvec.cu and docs/FLAGS.md.
+pub(crate) fn q8_row_ilp_on() -> bool {
+    std::env::var("MEMRA_Q8_ROW_ILP").as_deref() == Ok("1")
+}
+
+/// Engagement counter for `MEMRA_Q8_ROW_ILP` (both launch sites); gates take a delta.
+pub static Q8_ROW_ILP_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// Snapshot of [`Q8_ROW_ILP_DISPATCHES`].
+pub fn q8_row_ilp_dispatches() -> u64 {
+    Q8_ROW_ILP_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn q8_row_ilp_note(site: &str) {
+    if Q8_ROW_ILP_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+        eprintln!(
+            "[q8-row-ilp] engaged at {site}: q8_0 row walk with four blocks' loads per lane \
+             ahead of the dp4a chains (MEMRA_Q8_ROW_ILP=1)"
+        );
+    }
+}
+
 /// Dynamic shared memory one v3 CTA needs at this block size: `STAGES * R * (nb*8) * 2` bytes of
 /// stage buffers plus `R * nb * 4` bytes of reduction window. Mirrors `MEMRA_GEMV_V3_STAGES` and
 /// `MEMRA_GEMV_V3_REDOFF` in cu/qmatvec.cu; the two MUST move together.
@@ -20926,6 +20953,23 @@ impl Engine {
         out_f: usize,
         t: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.qmatvec_q8_0_rp_v2_raw_arm(w, aq, ad, y, in_f, out_f, t, q8_row_ilp_on())
+    }
+
+    /// Arm-explicit form of [`Engine::qmatvec_q8_0_rp_v2_raw`]: `ilp` selects the
+    /// `MEMRA_Q8_ROW_ILP` twin regardless of the door (the bench prices both on one process).
+    #[allow(clippy::too_many_arguments)]
+    pub fn qmatvec_q8_0_rp_v2_raw_arm(
+        &self,
+        w: &CudaSlice<u8>,
+        aq: &CudaSlice<i8>,
+        ad: &CudaSlice<f32>,
+        y: &mut CudaSlice<f32>,
+        in_f: usize,
+        out_f: usize,
+        t: usize,
+        ilp: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if t == 0 || !in_f.is_multiple_of(32) || y.len() < t * out_f {
             return Err("qmatvec_q8_0_rp_v2 geometry".into());
         }
@@ -20933,7 +20977,14 @@ impl Engine {
         if smem > 48 * 1024 {
             return Err("qmatvec_q8_0_rp_v2 smem over the 48 KB default cap".into());
         }
-        let f = self.func("qmatvec_q8_0_mmvq_rp_v2");
+        if ilp {
+            q8_row_ilp_note("qmatvec_q8_0_mmvq_rp_v2");
+        }
+        let f = self.func(if ilp {
+            "qmatvec_q8_0_mmvq_rp_v2_ilp"
+        } else {
+            "qmatvec_q8_0_mmvq_rp_v2"
+        });
         let cfg = LaunchConfig {
             grid_dim: ((out_f as u32).div_ceil(Q8_V2_ROWS), t as u32, 1),
             block_dim: (32, Q8_V2_ROWS, 1),
@@ -21068,6 +21119,40 @@ impl Engine {
         dims: [usize; 6],
         t: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.kda_proj_fused6_q8rp_raw_arm(
+            bq,
+            bk,
+            bv,
+            wfa,
+            wga,
+            wb,
+            x,
+            outs,
+            in_f,
+            dims,
+            t,
+            q8_row_ilp_on(),
+        )
+    }
+
+    /// Arm-explicit form of [`Engine::kda_proj_fused6_q8rp_raw`]: `ilp` selects the
+    /// `MEMRA_Q8_ROW_ILP` twin of the fused kernel regardless of the door.
+    #[allow(clippy::too_many_arguments)]
+    pub fn kda_proj_fused6_q8rp_raw_arm(
+        &self,
+        bq: &CudaSlice<u8>,
+        bk: &CudaSlice<u8>,
+        bv: &CudaSlice<u8>,
+        wfa: &CudaSlice<f32>,
+        wga: &CudaSlice<f32>,
+        wb: &CudaSlice<f32>,
+        x: &CudaSlice<f32>,
+        outs: &mut [CudaSlice<f32>; 6],
+        in_f: usize,
+        dims: [usize; 6],
+        t: usize,
+        ilp: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         use cudarc::driver::DevicePtr;
         if t == 0 || t > 32 || !in_f.is_multiple_of(32) || x.len() < t * in_f {
             return Err("kda_proj_fused6_q8rp geometry".into());
@@ -21115,10 +21200,10 @@ impl Engine {
         let akey = in_f * 64 + t.min(32);
         {
             let mut act = self.w8_act.lock().map_err(|_| "w8 act map is poisoned")?;
-            if !act.contains_key(&akey) {
+            if let std::collections::hash_map::Entry::Vacant(slot) = act.entry(akey) {
                 let aq = self.alloc_i8_uninit(32 * in_f)?;
                 let ad = self.alloc_uninit::<f32>(32 * nblk)?;
-                act.insert(akey, (aq, ad));
+                slot.insert((aq, ad));
             }
             let (aq, ad) = act.get_mut(&akey).expect("just inserted");
             self.quantize_q8_1_into(x, t, in_f, aq, ad)?;
@@ -21133,7 +21218,14 @@ impl Engine {
         let m1 = mirrors.get(&keys[1]).expect("built above");
         let m2 = mirrors.get(&keys[2]).expect("built above");
         let blocks: usize = dims.iter().map(|d| d.div_ceil(Q8_V2_ROWS as usize)).sum();
-        let f = self.func("qmatvec_kda6_q8f32_rp_v2");
+        if ilp {
+            q8_row_ilp_note("qmatvec_kda6_q8f32_rp_v2");
+        }
+        let f = self.func(if ilp {
+            "qmatvec_kda6_q8f32_rp_v2_ilp"
+        } else {
+            "qmatvec_kda6_q8f32_rp_v2"
+        });
         let cfg = LaunchConfig {
             grid_dim: (blocks as u32, t as u32, 1),
             block_dim: (32, Q8_V2_ROWS, 1),
@@ -23595,10 +23687,10 @@ impl Engine {
         let akey = in_f * 64 + t.min(32);
         {
             let mut act = self.w8_act.lock().map_err(|_| "w8 act map is poisoned")?;
-            if !act.contains_key(&akey) {
+            if let std::collections::hash_map::Entry::Vacant(slot) = act.entry(akey) {
                 let aq = self.alloc_i8_uninit(32 * in_f)?;
                 let ad = self.alloc_uninit::<f32>(32 * nblk)?;
-                act.insert(akey, (aq, ad));
+                slot.insert((aq, ad));
             }
             let (aq, ad) = act.get_mut(&akey).expect("just inserted");
             self.quantize_q8_1_into(x, t, in_f, aq, ad)?;

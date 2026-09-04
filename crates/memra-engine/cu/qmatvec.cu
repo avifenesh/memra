@@ -14863,6 +14863,124 @@ __device__ __forceinline__ void q8_0_mmvq_row1_rp_v2(
     if (lane == 0) y[o] = acc;
 }
 
+// ---- ILP twin of q8_0_mmvq_row1_rp_v2 (lane/glm5-q8-row-ilp-20260904, door MEMRA_Q8_ROW_ILP).
+// WHY. The two kernels this body serves are 1.8 ms of a plain glm5_next t=1 token on the
+// 2x B200 pair (door-ON census 2026-09-04: qmatvec_kda6_q8f32_rp_v2 35/token x 36.2 us =
+// 1.27 ms at ~49% of the part's 8 TB/s for its ~143 MB of mirror bytes, qmatvec_q8_0_mmvq_rp_v2
+// 47/token x 11.5 us). Root ncu on the rig at the served geometry (darklanes
+// research/glm5-b200-20260902/ncu-rig, kda6.csv) reads the row body at 62-72% occupancy,
+// DRAM 46-49% of peak, long-scoreboard stalls 71-76% of warp-active cycles, issue-active
+// 7-12%: latency-bound on global loads. The shipped body walks two blocks per round and its
+// four loads wait on the previous round's dependent chain; this twin issues FOUR blocks' loads
+// per round (eight int4 + four scales per lane) before any dp4a, then the shipped two-deep
+// round, then the shipped tail. EXACTNESS by construction: the per-lane accumulation order is
+// the shipped one (acc += term(blk), term(blk+32), term(blk+64), term(blk+96), ... in the same
+// `dw * sad[blk] * (float)sumi` statement form), the warp tree is verbatim, and the loads are
+// the exact bytes the shipped body reads. Gate: b200_matvec_bench families 7 and 9 print the
+// shipped-vs-ilp bitwise compare; the box greedy tape holds it at model scale.
+__device__ __forceinline__ void q8_0_mmvq_row1_rp_v2_ilp(
+        const unsigned char* __restrict__ W, int out_f, int o, int nblk,
+        const signed char* saq, const float* sad, float* __restrict__ y) {
+    if (o >= out_f) return;
+    const int lane = (int)threadIdx.x;
+    const unsigned char* wq;
+    const unsigned short* wd;
+    q8_0_rp_planes(W, out_f, o, nblk, &wq, &wd);
+    float acc = 0.0f;
+    int blk = lane;
+    for (; blk + 96 < nblk; blk += 128) {
+        const int b1 = blk + 32, b2 = blk + 64, b3 = blk + 96;
+        // Four blocks' weight and scale loads issue before any dp4a chain.
+        int4 w00 = __ldcs((const int4*)(wq + (size_t)blk * 32));
+        int4 w01 = __ldcs((const int4*)(wq + (size_t)blk * 32 + 16));
+        int4 w10 = __ldcs((const int4*)(wq + (size_t)b1 * 32));
+        int4 w11 = __ldcs((const int4*)(wq + (size_t)b1 * 32 + 16));
+        int4 w20 = __ldcs((const int4*)(wq + (size_t)b2 * 32));
+        int4 w21 = __ldcs((const int4*)(wq + (size_t)b2 * 32 + 16));
+        int4 w30 = __ldcs((const int4*)(wq + (size_t)b3 * 32));
+        int4 w31 = __ldcs((const int4*)(wq + (size_t)b3 * 32 + 16));
+        float dw0 = half_to_float(wd[blk]);
+        float dw1 = half_to_float(wd[b1]);
+        float dw2 = half_to_float(wd[b2]);
+        float dw3 = half_to_float(wd[b3]);
+        const int4* a4_0 = (const int4*)(saq + blk * 32);
+        const int4* a4_1 = (const int4*)(saq + b1 * 32);
+        const int4* a4_2 = (const int4*)(saq + b2 * 32);
+        const int4* a4_3 = (const int4*)(saq + b3 * 32);
+        int4 a00 = a4_0[0], a01 = a4_0[1];
+        int4 a10 = a4_1[0], a11 = a4_1[1];
+        int4 a20 = a4_2[0], a21 = a4_2[1];
+        int4 a30 = a4_3[0], a31 = a4_3[1];
+        int wi0[8] = { w00.x, w00.y, w00.z, w00.w, w01.x, w01.y, w01.z, w01.w };
+        int wi1[8] = { w10.x, w10.y, w10.z, w10.w, w11.x, w11.y, w11.z, w11.w };
+        int wi2[8] = { w20.x, w20.y, w20.z, w20.w, w21.x, w21.y, w21.z, w21.w };
+        int wi3[8] = { w30.x, w30.y, w30.z, w30.w, w31.x, w31.y, w31.z, w31.w };
+        int aq0[8] = { a00.x, a00.y, a00.z, a00.w, a01.x, a01.y, a01.z, a01.w };
+        int aq1[8] = { a10.x, a10.y, a10.z, a10.w, a11.x, a11.y, a11.z, a11.w };
+        int aq2[8] = { a20.x, a20.y, a20.z, a20.w, a21.x, a21.y, a21.z, a21.w };
+        int aq3[8] = { a30.x, a30.y, a30.z, a30.w, a31.x, a31.y, a31.z, a31.w };
+        int s0 = 0, s1 = 0, s2 = 0, s3 = 0;
+        #pragma unroll
+        for (int k = 0; k < 8; k++) s0 = dp4a(wi0[k], aq0[k], s0);
+        #pragma unroll
+        for (int k = 0; k < 8; k++) s1 = dp4a(wi1[k], aq1[k], s1);
+        #pragma unroll
+        for (int k = 0; k < 8; k++) s2 = dp4a(wi2[k], aq2[k], s2);
+        #pragma unroll
+        for (int k = 0; k < 8; k++) s3 = dp4a(wi3[k], aq3[k], s3);
+        acc += dw0 * sad[blk] * (float)s0;
+        acc += dw1 * sad[b1] * (float)s1;
+        acc += dw2 * sad[b2] * (float)s2;
+        acc += dw3 * sad[b3] * (float)s3;
+    }
+    for (; blk + 32 < nblk; blk += 64) {
+        const int nb2 = blk + 32;
+        int4 wa0 = __ldcs((const int4*)(wq + (size_t)blk * 32));
+        int4 wa1 = __ldcs((const int4*)(wq + (size_t)blk * 32 + 16));
+        int4 wb0 = __ldcs((const int4*)(wq + (size_t)nb2 * 32));
+        int4 wb1 = __ldcs((const int4*)(wq + (size_t)nb2 * 32 + 16));
+        float dwa = half_to_float(wd[blk]);
+        float dwb = half_to_float(wd[nb2]);
+        const int4* a4a = (const int4*)(saq + blk * 32);
+        const int4* a4b = (const int4*)(saq + nb2 * 32);
+        int4 aa0 = a4a[0], aa1 = a4a[1];
+        int4 ab0 = a4b[0], ab1 = a4b[1];
+        int wia[8] = { wa0.x, wa0.y, wa0.z, wa0.w, wa1.x, wa1.y, wa1.z, wa1.w };
+        int aqa[8] = { aa0.x, aa0.y, aa0.z, aa0.w, aa1.x, aa1.y, aa1.z, aa1.w };
+        int wib[8] = { wb0.x, wb0.y, wb0.z, wb0.w, wb1.x, wb1.y, wb1.z, wb1.w };
+        int aqb[8] = { ab0.x, ab0.y, ab0.z, ab0.w, ab1.x, ab1.y, ab1.z, ab1.w };
+        int sa = 0, sb = 0;
+        #pragma unroll
+        for (int k = 0; k < 8; k++) sa = dp4a(wia[k], aqa[k], sa);
+        #pragma unroll
+        for (int k = 0; k < 8; k++) sb = dp4a(wib[k], aqb[k], sb);
+        acc += dwa * sad[blk] * (float)sa;
+        acc += dwb * sad[nb2] * (float)sb;
+    }
+    for (; blk < nblk; blk += 32) {
+        int4 w01 = __ldcs((const int4*)(wq + (size_t)blk * 32));
+        int4 w23 = __ldcs((const int4*)(wq + (size_t)blk * 32 + 16));
+        int wi[8] = { w01.x, w01.y, w01.z, w01.w, w23.x, w23.y, w23.z, w23.w };
+        float dw = half_to_float(wd[blk]);
+        const int4* a4 = (const int4*)(saq + blk * 32);
+        int4 a01 = a4[0], a23 = a4[1];
+        int aq4[8] = { a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w };
+        int sumi = 0;
+        #pragma unroll
+        for (int k = 0; k < 8; k++) sumi = dp4a(wi[k], aq4[k], sumi);
+        acc += dw * sad[blk] * (float)sumi;
+    }
+    acc = warp_reduce_sum(acc);
+    if (lane == 0) y[o] = acc;
+}
+template <bool ILP>
+__device__ __forceinline__ void q8_0_row_v2_dispatch(
+        const unsigned char* __restrict__ W, int out_f, int o, int nblk,
+        const signed char* saq, const float* sad, float* __restrict__ y) {
+    if (ILP) q8_0_mmvq_row1_rp_v2_ilp(W, out_f, o, nblk, saq, sad, y);
+    else q8_0_mmvq_row1_rp_v2(W, out_f, o, nblk, saq, sad, y);
+}
+
 // v2 twin of `qmatvec_q8_0_mmvq_rp` (the t=1 W8 trunk kernel). grid = (out_f/8, m, 1),
 // block = (32, 8, 1), dynamic smem = in_f + nblk*4 bytes. BIT-IDENTICAL per output.
 extern "C" __global__ __launch_bounds__(256) void qmatvec_q8_0_mmvq_rp_v2(
@@ -14879,6 +14997,22 @@ extern "C" __global__ __launch_bounds__(256) void qmatvec_q8_0_mmvq_rp_v2(
     q8_0_stage_act(aq + (size_t)t * in_f, ad + (size_t)t * nblk, saq, sad, in_f, nblk);
     const int o = blockIdx.x * MEMRA_Q8_V2_ROWS + (int)threadIdx.y;
     q8_0_mmvq_row1_rp_v2(W, out_f, o, nblk, saq, sad, y + (size_t)t * out_f);
+}
+// The MEMRA_Q8_ROW_ILP twin of the kernel above: same staging, same grid, the four-deep row body.
+extern "C" __global__ __launch_bounds__(256) void qmatvec_q8_0_mmvq_rp_v2_ilp(
+        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
+        const float* __restrict__ ad, float* __restrict__ y,
+        int in_f, int out_f, int m, long row_bytes) {
+    (void)row_bytes;
+    const int t = blockIdx.y;
+    if (t >= m) return;
+    const int nblk = in_f / 32;
+    extern __shared__ float gemv_v2_red[];
+    signed char* saq = reinterpret_cast<signed char*>(gemv_v2_red);
+    float* sad = reinterpret_cast<float*>(saq + in_f);
+    q8_0_stage_act(aq + (size_t)t * in_f, ad + (size_t)t * nblk, saq, sad, in_f, nblk);
+    const int o = blockIdx.x * MEMRA_Q8_V2_ROWS + (int)threadIdx.y;
+    q8_0_mmvq_row1_rp_v2_ilp(W, out_f, o, nblk, saq, sad, y + (size_t)t * out_f);
 }
 
 // v2 twin of `qmatvec_q8_0_rows_tw` (the VERIFY-width t<=MEMRA_Q8T_TMAX W8 kernel). The
@@ -14960,7 +15094,10 @@ extern "C" __global__ __launch_bounds__(256) void qmatvec_q8_0_rows_tw_v2(
 // BIT-IDENTICAL to `qmatvec_q8_0_mmvq_rp` per row; the three f32 ranges replace cuBLASLt with
 // the same deterministic warp tree the q8 arm of `MEMRA_KDA_FUSED_PROJ` already ships and has
 // pinned (a reduction-order class, not a new one).
-extern "C" __global__ __launch_bounds__(256) void qmatvec_kda6_q8f32_rp_v2(
+// The body of the fused six-projection W8 kernel, templated on the row walk so the shipped
+// kernel and its MEMRA_Q8_ROW_ILP twin share one program (lane/glm5-q8-row-ilp-20260904).
+template <bool ILP>
+__device__ __forceinline__ void kda6_q8f32_rp_v2_body(
         const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
         const unsigned char* __restrict__ W2,
         const float* __restrict__ W3, const float* __restrict__ W4,
@@ -14985,21 +15122,21 @@ extern "C" __global__ __launch_bounds__(256) void qmatvec_kda6_q8f32_rp_v2(
     int nb;
     nb = (out0 + R - 1) / R;
     if (b < nb) {
-        q8_0_mmvq_row1_rp_v2(W0, out0, b * R + (int)threadIdx.y, nblk, saq, sad,
+        q8_0_row_v2_dispatch<ILP>(W0, out0, b * R + (int)threadIdx.y, nblk, saq, sad,
                              y0 + (size_t)t * out0);
         return;
     }
     b -= nb;
     nb = (out1 + R - 1) / R;
     if (b < nb) {
-        q8_0_mmvq_row1_rp_v2(W1, out1, b * R + (int)threadIdx.y, nblk, saq, sad,
+        q8_0_row_v2_dispatch<ILP>(W1, out1, b * R + (int)threadIdx.y, nblk, saq, sad,
                              y1 + (size_t)t * out1);
         return;
     }
     b -= nb;
     nb = (out2 + R - 1) / R;
     if (b < nb) {
-        q8_0_mmvq_row1_rp_v2(W2, out2, b * R + (int)threadIdx.y, nblk, saq, sad,
+        q8_0_row_v2_dispatch<ILP>(W2, out2, b * R + (int)threadIdx.y, nblk, saq, sad,
                              y2 + (size_t)t * out2);
         return;
     }
@@ -15017,6 +15154,32 @@ extern "C" __global__ __launch_bounds__(256) void qmatvec_kda6_q8f32_rp_v2(
     }
     b -= nb;
     f32_mmvq_row1(W5, xrow, y5 + (size_t)t * out5, in_f, out5, b * R + (int)threadIdx.y);
+}
+extern "C" __global__ __launch_bounds__(256) void qmatvec_kda6_q8f32_rp_v2(
+        const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
+        const unsigned char* __restrict__ W2,
+        const float* __restrict__ W3, const float* __restrict__ W4,
+        const float* __restrict__ W5,
+        const signed char* __restrict__ aq, const float* __restrict__ ad,
+        const float* __restrict__ x,
+        float* __restrict__ y0, float* __restrict__ y1, float* __restrict__ y2,
+        float* __restrict__ y3, float* __restrict__ y4, float* __restrict__ y5,
+        int in_f, int out0, int out1, int out2, int out3, int out4, int out5,
+        int m) {
+    kda6_q8f32_rp_v2_body<false>(W0, W1, W2, W3, W4, W5, aq, ad, x, y0, y1, y2, y3, y4, y5, in_f, out0, out1, out2, out3, out4, out5, m);
+}
+extern "C" __global__ __launch_bounds__(256) void qmatvec_kda6_q8f32_rp_v2_ilp(
+        const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
+        const unsigned char* __restrict__ W2,
+        const float* __restrict__ W3, const float* __restrict__ W4,
+        const float* __restrict__ W5,
+        const signed char* __restrict__ aq, const float* __restrict__ ad,
+        const float* __restrict__ x,
+        float* __restrict__ y0, float* __restrict__ y1, float* __restrict__ y2,
+        float* __restrict__ y3, float* __restrict__ y4, float* __restrict__ y5,
+        int in_f, int out0, int out1, int out2, int out3, int out4, int out5,
+        int m) {
+    kda6_q8f32_rp_v2_body<true>(W0, W1, W2, W3, W4, W5, aq, ad, x, y0, y1, y2, y3, y4, y5, in_f, out0, out1, out2, out3, out4, out5, m);
 }
 
 // ---- NVFP4 expert slab SLOT-MAJOR repack, device side, once per resident slab at upload
