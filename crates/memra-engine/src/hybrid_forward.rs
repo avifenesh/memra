@@ -1878,7 +1878,7 @@ impl HybridModel {
     /// `quantize_q8_1(z, ...)` launch into itself). `None` preserves the unfused chain:
     /// `moe_ffn_il_zq8` re-quantizes `z` itself, byte-identical either way.
     #[allow(clippy::too_many_arguments)] // allow: mirrors the mixer/FFN dispatch contract every sibling walk in this file shares; bundling into a struct is a refactor, not a lint fix, and would touch every call site for no behavior change.
-    fn hyper_ffn_branch(
+    pub(crate) fn hyper_ffn_branch(
         &self,
         e: &Engine,
         layer: &crate::hybrid::HybridLayer,
