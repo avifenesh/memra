@@ -264,6 +264,19 @@ pub fn glm5_q8_fuse_on() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_GLM5_Q8_FUSE").as_deref() == Ok("1"))
 }
 
+/// `MEMRA_GLM5_Q8_FUSE_ATTN=1` (lane/glm5-attn-norm-zq8-20260904, default OFF): the
+/// ATTENTION-input norm of a plain KDA layer in the glm5_next T=1 walk runs `rms_norm_zq8_f32`
+/// and hands its q8_1 view to the fused six-projection launcher, which then skips its own
+/// `quantize_q8_1_into`. The FFN-input twin is `MEMRA_GLM5_Q8_FUSE`. Read PER CALL. Why and
+/// receipts: docs/FLAGS.md.
+pub fn glm5_q8_fuse_attn_on() -> bool {
+    std::env::var("MEMRA_GLM5_Q8_FUSE_ATTN").as_deref() == Ok("1")
+}
+
+/// Engagement counter for `MEMRA_GLM5_Q8_FUSE_ATTN`; gates take a delta.
+pub static GLM5_Q8_FUSE_ATTN_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 /// Door `MEMRA_GLM5_DECODE_GRAPH` (lane/b200-glm5-graph-20260902, DEFAULT ON since 2026-09-04):
 /// capture the glm5_next T=1 decode walk as replayable per-stage CUDA graphs instead of
 /// issuing every kernel per token. Unset/`1` arms it, `=0` is the eager walk. Read PER CALL so
@@ -21261,6 +21274,34 @@ impl Engine {
         t: usize,
         ilp: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.kda_proj_fused6_q8rp_raw_pre(
+            bq, bk, bv, wfa, wga, wb, x, outs, in_f, dims, t, ilp, None,
+        )
+    }
+
+    /// [`Engine::kda_proj_fused6_q8rp_raw_arm`] with an optional PRE-QUANTIZED activation
+    /// (`pre_q8 = Some((aq, ad))`, the q8_1 view of `x` some producer already emitted, e.g.
+    /// `rms_norm_zq8_f32` under `MEMRA_GLM5_Q8_FUSE_ATTN`): the launcher then skips its own
+    /// `quantize_q8_1_into` and reads those planes. `quantize_q8_1_into` is `quantize_q8_1`
+    /// verbatim and `rms_norm_zq8_f32` is `rms_norm` then `quantize_q8_1` bitwise, so the
+    /// bytes are the ones this launcher would have produced (gate `tests/kda_fused_proj_gpu.rs`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn kda_proj_fused6_q8rp_raw_pre(
+        &self,
+        bq: &CudaSlice<u8>,
+        bk: &CudaSlice<u8>,
+        bv: &CudaSlice<u8>,
+        wfa: &CudaSlice<f32>,
+        wga: &CudaSlice<f32>,
+        wb: &CudaSlice<f32>,
+        x: &CudaSlice<f32>,
+        outs: &mut [CudaSlice<f32>; 6],
+        in_f: usize,
+        dims: [usize; 6],
+        t: usize,
+        ilp: bool,
+        pre_q8: Option<(&CudaSlice<i8>, &CudaSlice<f32>)>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         use cudarc::driver::DevicePtr;
         if t == 0 || t > 32 || !in_f.is_multiple_of(32) || x.len() < t * in_f {
             return Err("kda_proj_fused6_q8rp geometry".into());
@@ -21306,7 +21347,7 @@ impl Engine {
         // ONE activation quantize for all six projections. The unfused W8 path runs this once
         // per projection on the same `x` — six identical launches per layer.
         let akey = in_f * 64 + t.min(32);
-        {
+        if pre_q8.is_none() {
             let mut act = self.w8_act.lock().map_err(|_| "w8 act map is poisoned")?;
             if let std::collections::hash_map::Entry::Vacant(slot) = act.entry(akey) {
                 let aq = self.alloc_i8_uninit(32 * in_f)?;
@@ -21321,7 +21362,18 @@ impl Engine {
             .lock()
             .map_err(|_| "w8 mirror map is poisoned")?;
         let act = self.w8_act.lock().map_err(|_| "w8 act map is poisoned")?;
-        let (aq, ad) = act.get(&akey).expect("built above");
+        let (aq, ad): (&CudaSlice<i8>, &CudaSlice<f32>) = match pre_q8 {
+            Some((aq, ad)) => {
+                if aq.len() < t * in_f || ad.len() < t * nblk {
+                    return Err("kda_proj_fused6_q8rp: pre-quantized activation too small".into());
+                }
+                (aq, ad)
+            }
+            None => {
+                let (aq, ad) = act.get(&akey).expect("built above");
+                (aq, ad)
+            }
+        };
         let m0 = mirrors.get(&keys[0]).expect("built above");
         let m1 = mirrors.get(&keys[1]).expect("built above");
         let m2 = mirrors.get(&keys[2]).expect("built above");

@@ -314,6 +314,7 @@ fn kda_core(
     arm: ConvArm,
     stash: KdaStash<'_>,
     scan_clock: Option<&mut u64>,
+    pre_q8: KdaPreQ8<'_>,
 ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
     // glm5 TP fail-closed choke point: every plain KDA entry (stateless, prime, decode,
     // stash — INCLUDING the batched verify-rows walk, `kda_verify_rows_cached`) funnels
@@ -338,7 +339,7 @@ fn kda_core(
     // did not change.
     let rows_exact = matches!(stash, KdaStash::Rows(_));
     let gated = kda_core_gated(
-        e, la, x, t, eps, ring, state_in, state_out, arm, stash, scan_clock,
+        e, la, x, t, eps, ring, state_in, state_out, arm, stash, scan_clock, pre_q8,
     )?;
     if rows_exact {
         let y = e.matmul_rows_exact(&la.wo, &gated, t);
@@ -372,6 +373,7 @@ pub(crate) fn kda_core_gated(
     arm: ConvArm,
     stash: KdaStash<'_>,
     mut scan_clock: Option<&mut u64>,
+    pre_q8: KdaPreQ8<'_>,
 ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
     let heads = la.heads();
     let head_dim = la.head_dim();
@@ -413,7 +415,7 @@ pub(crate) fn kda_core_gated(
     // this trunk (ENGINE-SURVEY.md C1) and the step37 QKV_FUSED transfer (TRANSFER-MAP lever 1).
     // `kda_proj_fused6` refuses (returns None) on any operand/env shape where its bit-identity
     // claim would not hold, so the fall-through arm is always the unchanged program.
-    let mut g6 = match e.kda_proj_fused6(la, x, t)? {
+    let mut g6 = match e.kda_proj_fused6_pre(la, x, t, pre_q8)? {
         Some(outs) => outs,
         None if rows_exact => {
             // Verify-rows matmul class: per-weight decode-exact dispatch (the tcols /
@@ -719,6 +721,7 @@ pub fn kda_attn(
         ConvArm::Prefill,
         KdaStash::None,
         None,
+        None,
     )
 }
 
@@ -747,6 +750,7 @@ pub fn kda_attn_prime(
         ConvArm::Prefill,
         KdaStash::None,
         None,
+        None,
     )
 }
 
@@ -773,6 +777,7 @@ pub fn kda_attn_decode(
         ConvArm::Decode,
         KdaStash::None,
         None,
+        None,
     )
 }
 
@@ -794,6 +799,7 @@ fn kda_cached(
     arm: ConvArm,
     stash: KdaStash<'_>,
     scan_clock: Option<&mut u64>,
+    pre_q8: KdaPreQ8<'_>,
 ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
     let rl = cache.recur[il].as_mut().ok_or_else(|| {
         format!(
@@ -819,6 +825,7 @@ fn kda_cached(
             arm,
             stash,
             scan_clock,
+            pre_q8,
         )?
     };
     std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
@@ -846,6 +853,7 @@ pub fn kda_prime_cached(
         ConvArm::Prefill,
         KdaStash::None,
         None,
+        None,
     )
 }
 
@@ -866,6 +874,37 @@ pub fn kda_conv3_dispatches() -> u64 {
     KDA_CONV3_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// A pre-quantized q8_1 view of the mixer input (`(aq, ad)` from `rms_norm_zq8_f32`), or
+/// `None` for the launcher to quantize itself. Threaded from the walk to the fused
+/// six-projection launcher (`MEMRA_GLM5_Q8_FUSE_ATTN`, lane/glm5-attn-norm-zq8-20260904).
+pub type KdaPreQ8<'a> = Option<(&'a CudaSlice<i8>, &'a CudaSlice<f32>)>;
+
+/// [`kda_decode_cached`] with the mixer input's q8_1 view already emitted by the caller's norm
+/// (`MEMRA_GLM5_Q8_FUSE_ATTN`): identical launches minus the fused launcher's own quantize.
+pub fn kda_decode_cached_q8(
+    e: &Engine,
+    la: &KdaAttnLayer,
+    x: &CudaSlice<f32>,
+    pre_q8: KdaPreQ8<'_>,
+    eps: f32,
+    cache: &mut Cache,
+    il: usize,
+) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+    kda_cached(
+        e,
+        la,
+        x,
+        1,
+        eps,
+        cache,
+        il,
+        ConvArm::Decode,
+        KdaStash::None,
+        None,
+        pre_q8,
+    )
+}
+
 pub fn kda_decode_cached(
     e: &Engine,
     la: &KdaAttnLayer,
@@ -884,6 +923,7 @@ pub fn kda_decode_cached(
         il,
         ConvArm::Decode,
         KdaStash::None,
+        None,
         None,
     )
 }
@@ -910,6 +950,7 @@ pub fn kda_decode_cached_stash(
         il,
         ConvArm::Decode,
         KdaStash::Decode(&mut stash),
+        None,
         None,
     )?;
     let stash = stash.ok_or("kda_core returned without filling the requested scan stash")?;
@@ -952,6 +993,7 @@ pub fn kda_verify_rows_cached(
         ConvArm::Prefill,
         KdaStash::Rows(&mut stash),
         scan_clock,
+        None,
     )?;
     let stash = stash.ok_or("kda_core returned without filling the requested rows stash")?;
     Ok((out, stash))
@@ -1393,6 +1435,19 @@ impl Engine {
         x: &CudaSlice<f32>,
         t: usize,
     ) -> Result<Option<Vec<CudaSlice<f32>>>, Box<dyn std::error::Error>> {
+        self.kda_proj_fused6_pre(la, x, t, None)
+    }
+
+    /// [`Engine::kda_proj_fused6`] with an optional pre-quantized activation for the W8 arm
+    /// (`MEMRA_GLM5_Q8_FUSE_ATTN`); every other arm ignores it (they quantize per projection or
+    /// run bf16) and stays the program it was.
+    pub fn kda_proj_fused6_pre(
+        &self,
+        la: &KdaAttnLayer,
+        x: &CudaSlice<f32>,
+        t: usize,
+        pre_q8: KdaPreQ8<'_>,
+    ) -> Result<Option<Vec<CudaSlice<f32>>>, Box<dyn std::error::Error>> {
         if std::env::var("MEMRA_KDA_FUSED_PROJ").as_deref() != Ok("1") {
             return Ok(None);
         }
@@ -1504,8 +1559,20 @@ impl Engine {
                     self.uninit(t * dims[4])?,
                     self.uninit(t * dims[5])?,
                 ];
-                self.kda_proj_fused6_q8rp_raw(
-                    bq, bk, bv, wfa, wga, wb, x, &mut outs, in_f, dims, t,
+                self.kda_proj_fused6_q8rp_raw_pre(
+                    bq,
+                    bk,
+                    bv,
+                    wfa,
+                    wga,
+                    wb,
+                    x,
+                    &mut outs,
+                    in_f,
+                    dims,
+                    t,
+                    crate::q8_row_ilp_on(),
+                    pre_q8,
                 )?;
                 if KDA_FUSED6_Q8RP_DISPATCHES.fetch_add(1, Ordering::Relaxed) == 0 {
                     eprintln!(
