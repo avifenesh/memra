@@ -1641,9 +1641,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     //
     // Prices the three arms of `qmatvec_e4m3_mmvq_fused6` at the SERVED shape without needing a
     // checkpoint on the box, which is what makes it usable while the mint itself is disk-blocked:
-    //   arm 0  shipped serial walk
-    //   arm 1  MEMRA_E4M3_ROW_ILP=1, four blocks' loads in flight per lane
-    //   arm 2  MEMRA_E4M3_ROW_ILP=2, arm 1 plus the CTA-staged activation
+    //   0 serial (4 rows)  1 ILP (4)  2 ILP r8  3 ILP r8+staged
+    //   4 ILP r16          5 ILP r16+staged        6 ILP r32+staged
+    //
+    // The no-staging arms (2, 4) sit beside the staged ones (3, 5) so the two axes stay separable:
+    // staging at 4 rows/block measured 0.938-0.951x here and the tempting read was "the activation
+    // is already cached, staging never pays" -- but qmatvec_kda6_q8f32_rp_v2 stages and WINS, at 8
+    // warps per block against this family's 4, so that first cut had conflated row count with
+    // staging. ptxas -v then put real numbers on it (38 registers, so 51 warps/SM, occupancy flat
+    // through R=16 and falling only at R=32), which is why the ladder stops where it does and why
+    // R=32 is here at all: it is the predicted cliff, built so the prediction can be falsified.
     // Every arm is claimed BIT-IDENTICAL; a mismatch prints as a WARNING rather than passing.
     // Interleaved per iteration and rotated over `copies` weight copies so neither arm gets a
     // warm cache the other did not (interleaved A/B protocol law).
@@ -1678,14 +1685,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let base = run(0, 0)?;
         let base_h: Vec<Vec<f32>> = (0..6).map(|k| e.dtoh(&base[k])).collect::<Result<_, _>>()?;
-        let mut t = [
-            Vec::with_capacity(iters),
-            Vec::with_capacity(iters),
-            Vec::with_capacity(iters),
-        ];
-        let mut mism = [0usize; 3];
-        let mut maxd = [0f32; 3];
-        for arm in 1..3usize {
+        const ARMS: usize = 7;
+        let mut t: Vec<Vec<f64>> = (0..ARMS).map(|_| Vec::with_capacity(iters)).collect();
+        let mut mism = [0usize; ARMS];
+        let mut maxd = [0f32; ARMS];
+        for arm in 1..ARMS {
             let got = run(0, arm as u32)?;
             for (k, want) in base_h.iter().enumerate() {
                 let (m, d) = compare(want, &e.dtoh(&got[k])?);
@@ -1711,15 +1715,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             mism[1],
             maxd[1],
         );
-        report_arm(
-            "kda6 e4m3 six: ILP + CTA-staged activation",
-            "arm2",
-            m0,
-            median(&mut t[2]),
-            bytes,
-            mism[2],
-            maxd[2],
-        );
+        for (arm, label) in [
+            (2usize, "ILP @ 8 rows/block"),
+            (3, "ILP @ 8 rows + staged act"),
+        ] {
+            report_arm(
+                &format!("kda6 e4m3 six: {label}"),
+                &format!("arm{arm}"),
+                m0,
+                median(&mut t[arm]),
+                bytes,
+                mism[arm],
+                maxd[arm],
+            );
+        }
     }
 
     println!("temp_out: {}", gpu_temp());
