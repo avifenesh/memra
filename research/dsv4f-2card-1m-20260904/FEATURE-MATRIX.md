@@ -177,6 +177,9 @@ greedy/ignore-EOS output at the provider-enforced 500 W cap. This is below the
 public fixed-prompt 109.3-111.45 tok/s rows. A real-source long-prefill probe also
 hit the 120-second server deadline before returning; neither row is publishable
 performance, and both make decode fusion plus chunked prefill active blockers.
+The power cap is receipt metadata only: no power-limited diagnosis or 600 W
+projection is permitted unless phase-level profiling shows that the measured
+critical path is limited by power or clocks.
 
 ## Drafter decision
 
