@@ -234,6 +234,18 @@ impl Glm5TpRt {
         self.peers.len() + 1
     }
 
+    /// Distinct device ordinals participating in this runtime.
+    pub fn devices(&self) -> Vec<usize> {
+        let mut devs = Vec::with_capacity(1 + self.peer_devs.len());
+        devs.push(self.root_dev);
+        for &d in &self.peer_devs {
+            if !devs.contains(&d) {
+                devs.push(d);
+            }
+        }
+        devs
+    }
+
     /// Freeze the transport for this runtime: read the flag, grant peer access (real groups
     /// only), and run the byte-integrity pull ladder over every ordered rank pair. Called
     /// from the preflight BEFORE any layer is sharded, so a bad fabric refuses the load

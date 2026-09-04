@@ -967,18 +967,18 @@ fn graph_session_enabled() -> bool {
 }
 
 /// A model loaded resident on the worker thread: weights + its own tokenizer + config snapshot.
-struct LoadedModel {
-    model: HybridModel,
-    tok: Arc<Tokenizer>,
-    eos_id: u32,
+pub(crate) struct LoadedModel {
+    pub(crate) model: HybridModel,
+    pub(crate) tok: Arc<Tokenizer>,
+    pub(crate) eos_id: u32,
     /// Loaded from a checkpoint DIRECTORY (safetensors/repack) rather than a GGUF file.
     /// Feeds ModelCaps::chat_ok: a dir checkpoint with no chat template 400s on chat
     /// requests (serve-st v1 honesty gate) instead of silently rendering fallback ChatML;
     /// GGUF models keep the historical ChatML fallback.
-    from_dir: bool,
+    pub(crate) from_dir: bool,
     /// Constrained-decoding compiler. Its bounded, per-model background thread owns the
     /// lazily-built vocabulary trie and parser factory; none of that CPU work runs here.
-    constraints: crate::constrained::ConstraintCompiler,
+    pub(crate) constraints: crate::constrained::ConstraintCompiler,
     /// POST-THINK close contract (lane/step37-postthink-grammar): the think-close TOKEN-ID
     /// sequence for a template that force-opens a think channel with no `enable_thinking`
     /// switch (the step35 dialect). Non-empty = every constrained (`response_format`)
@@ -988,7 +988,26 @@ struct LoadedModel {
     /// grammar-from-token-1 path; templates with no derivable close contract keep the
     /// HTTP-layer refusal). Derived once at load by `postthink_close_contract`; mirrored
     /// into `ModelCaps::think_close` for the HTTP layer's admit/refuse decision.
-    postthink_close: Vec<u32>,
+    pub(crate) postthink_close: Vec<u32>,
+}
+
+#[cfg(test)]
+impl LoadedModel {
+    pub(crate) fn new_for_test(model: HybridModel, tok: Arc<Tokenizer>) -> Self {
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let metrics = SharedMetrics::default();
+        let constraints =
+            crate::constrained::ConstraintCompiler::spawn("test_model", tok.clone(), tx, &metrics)
+                .expect("test constraint compiler");
+        Self {
+            model,
+            tok,
+            eos_id: 0,
+            from_dir: false,
+            constraints,
+            postthink_close: Vec::new(),
+        }
+    }
 }
 
 /// Derive the POST-THINK close contract from a model's template + tokenizer (load-time,
@@ -11352,9 +11371,36 @@ fn service_runtime_peer_probe_for_worker(
     Ok(ran)
 }
 
+/// memra#187: exact fatal log message when single-GPU enforcement is armed on a multi-device deployment.
+pub(crate) const ADMIT_PREDICT_MULTI_DEVICE_FATAL_MSG: &str = "[admit-predict] FATAL: MEMRA_ADMIT_PREDICT_ENFORCE=1 is unsupported on multi-device (PP/TP) deployments (lane/admit-predict-accounting-20260904, memra#187). Unset or use shadow-only (MEMRA_ADMIT_PREDICT_SHADOW=1).";
+
 /// memra#187: whether the deployment uses multiple devices (pipeline parallel or tensor/expert parallel).
-/// Used to gate single-GPU restrictions like predictive-admission enforcement.
-fn is_multi_device_deployment(loaded: &HashMap<String, LoadedModel>) -> bool {
+/// Evaluates loaded structural state first (e.g. automatic EP topologies stored directly in the loaded
+/// model, tensor device residency, PP cuts), and then checks ambient environment variables.
+pub(crate) fn is_multi_device_deployment(loaded: &HashMap<String, LoadedModel>) -> bool {
+    // 1. Structural multi-device check on loaded models:
+    for lm in loaded.values() {
+        if lm.model.is_multi_device() {
+            return true;
+        }
+        let n_trunk = (lm.model.cfg.n_layer - lm.model.cfg.nextn_predict_layers) as usize;
+        if memra_engine::pp::pp_cuts(n_trunk).is_some()
+            || memra_engine::pp::pp_cuts(lm.model.layers.len()).is_some()
+        {
+            return true;
+        }
+    }
+    let mut all_devices = std::collections::HashSet::new();
+    for lm in loaded.values() {
+        for d in lm.model.devices() {
+            all_devices.insert(d);
+        }
+    }
+    if all_devices.len() > 1 {
+        return true;
+    }
+
+    // 2. Ambient environment checks (PP / TP / EP / Parallel configs):
     if std::env::var("MEMRA_PP_STAGES")
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
@@ -11366,14 +11412,6 @@ fn is_multi_device_deployment(loaded: &HashMap<String, LoadedModel>) -> bool {
         && devs.split(',').filter(|s| !s.trim().is_empty()).count() > 1
     {
         return true;
-    }
-    for lm in loaded.values() {
-        let n_trunk = (lm.model.cfg.n_layer - lm.model.cfg.nextn_predict_layers) as usize;
-        if memra_engine::pp::pp_cuts(n_trunk).is_some()
-            || memra_engine::pp::pp_cuts(lm.model.layers.len()).is_some()
-        {
-            return true;
-        }
     }
     if let Ok(tp) = std::env::var("MEMRA_STEP_TP")
         && !tp.trim().is_empty()
@@ -11387,7 +11425,105 @@ fn is_multi_device_deployment(loaded: &HashMap<String, LoadedModel>) -> bool {
     {
         return true;
     }
+    if let Ok(p) = std::env::var("MEMRA_PARALLEL")
+        && !p.trim().is_empty()
+        && p.trim() != "0"
+        && p.trim() != "none"
+        && p.trim() != "off"
+    {
+        return true;
+    }
+    if let Ok(pdevs) = std::env::var("MEMRA_PARALLEL_DEVICES")
+        && pdevs.split(',').filter(|s| !s.trim().is_empty()).count() > 1
+    {
+        return true;
+    }
+    if let Ok(gtp) = std::env::var("MEMRA_GLM5_TP")
+        && !gtp.trim().is_empty()
+        && gtp.trim() != "0"
+    {
+        return true;
+    }
     false
+}
+
+/// memra#187: validate deployment suitability for predictive admission enforcement.
+/// Fails closed if enforce is active on a multi-device deployment.
+pub(crate) fn validate_admit_predict_enforce_deployment(
+    enforce: bool,
+    loaded: &HashMap<String, LoadedModel>,
+) -> Result<(), String> {
+    if enforce && is_multi_device_deployment(loaded) {
+        eprintln!("{ADMIT_PREDICT_MULTI_DEVICE_FATAL_MSG}");
+        return Err(ADMIT_PREDICT_MULTI_DEVICE_FATAL_MSG.to_string());
+    }
+    Ok(())
+}
+
+/// memra#187: evaluate static predictive admission verdict.
+/// The static predictor evaluates total predicted demand against static capacity:
+///   request_hat + booked_hat <= static_budget
+#[inline]
+pub fn evaluate_predictive_admission_verdict(
+    request_kv_hat: u64,
+    booked_kv_hat: u64,
+    budget_bytes: Option<u64>,
+) -> crate::admit_predict::Verdict {
+    match budget_bytes {
+        Some(budget) if request_kv_hat.saturating_add(booked_kv_hat) > budget => {
+            crate::admit_predict::Verdict::RejectKv
+        }
+        _ => crate::admit_predict::Verdict::Admit,
+    }
+}
+
+/// Unified outcome of predictive admission and physical headroom evaluation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub enum EvaluatedAdmissionOutcome {
+    /// Admitted: predictive check passed (or shadow mode) and physical headroom is sufficient.
+    Admitted,
+    /// Enforced predictive reject: total predicted KV exceeds static budget (and tenant is not exempt).
+    RejectedPredictiveKv,
+    /// Predictive check passed (or exempt/shadow), but physical live headroom is insufficient.
+    InsufficientPhysicalHeadroom,
+    /// Predictive check rejected under enforcement, but tenant is exempt so it was admitted by live headroom.
+    ExemptBypassAdmitted,
+}
+
+/// memra#187: evaluate the decoupled admission decision across both the static predictor
+/// and the subsequent physical live headroom path.
+#[allow(dead_code, clippy::too_many_arguments)]
+pub fn evaluate_decoupled_admission(
+    request_kv_hat: u64,
+    booked_kv_hat: u64,
+    budget_bytes: Option<u64>,
+    enforce: bool,
+    is_exempt: bool,
+    cost: usize,
+    reserve: usize,
+    live_free: u64,
+) -> (crate::admit_predict::Verdict, EvaluatedAdmissionOutcome) {
+    let verdict =
+        evaluate_predictive_admission_verdict(request_kv_hat, booked_kv_hat, budget_bytes);
+    let required = admission_required(cost, reserve) as u64;
+    let physical_sufficient = live_free >= required;
+
+    let outcome = match (enforce, verdict, is_exempt, physical_sufficient) {
+        (true, crate::admit_predict::Verdict::RejectKv, false, _) => {
+            EvaluatedAdmissionOutcome::RejectedPredictiveKv
+        }
+        (true, crate::admit_predict::Verdict::RejectKv, true, true) => {
+            EvaluatedAdmissionOutcome::ExemptBypassAdmitted
+        }
+        (true, crate::admit_predict::Verdict::RejectKv, true, false) => {
+            EvaluatedAdmissionOutcome::InsufficientPhysicalHeadroom
+        }
+        (_, _, _, true) => EvaluatedAdmissionOutcome::Admitted,
+        (_, _, _, false) => EvaluatedAdmissionOutcome::InsufficientPhysicalHeadroom,
+    };
+
+    (verdict, outcome)
 }
 
 /// The worker entry point. Runs on its OWN std::thread. Builds the Engine + loads every model on
@@ -11427,6 +11563,16 @@ pub fn run(
         }
     };
     crate::affinity::apply_and_announce(&affinity);
+
+    // memra#187: validate deployment suitability for predictive admission enforcement before allocating CUDA engines
+    let admit_predict_cfg = crate::admit_predict::ShadowConfig::from_env();
+    if let Err(err_msg) =
+        validate_admit_predict_enforce_deployment(admit_predict_cfg.enforce, &HashMap::new())
+    {
+        let _ = ready_tx.send(Err(err_msg));
+        return;
+    }
+
     let pp_devices = std::env::var("MEMRA_PP_DEVICES").ok();
     let device = match worker_device(pp_devices.as_deref()) {
         Ok(device) => device,
@@ -12550,10 +12696,10 @@ pub fn run(
     let mut admit_predict_cfg = crate::admit_predict::ShadowConfig::from_env();
     // memra#187: engine-level teeth for multi-device restriction. Until device-aware prediction
     // exists, MEMRA_ADMIT_PREDICT_ENFORCE=1 on a PP/TP model must fail boot loudly.
-    if admit_predict_cfg.enforce && is_multi_device_deployment(&loaded) {
-        let err_msg = "[admit-predict] FATAL: MEMRA_ADMIT_PREDICT_ENFORCE=1 is unsupported on multi-device (PP/TP) deployments (lane/admit-predict-accounting-20260904, memra#187). Unset or use shadow-only (MEMRA_ADMIT_PREDICT_SHADOW=1).";
-        eprintln!("{err_msg}");
-        let _ = ready_tx.send(Err(err_msg.to_string()));
+    if let Err(err_msg) =
+        validate_admit_predict_enforce_deployment(admit_predict_cfg.enforce, &loaded)
+    {
+        let _ = ready_tx.send(Err(err_msg));
         return;
     }
     if admit_predict_cfg.armed {
@@ -13247,12 +13393,11 @@ pub fn run(
                 // The physical live check reuses the exact AdmissionCostModel and per-device
                 // admission_headroom later in the pipeline, with NO active-session book added again
                 // (active-session allocations are already absent from live_free).
-                let verdict = match admit_predict_cfg.budget_bytes {
-                    Some(budget) if request_kv_hat.saturating_add(booked) > budget => {
-                        crate::admit_predict::Verdict::RejectKv
-                    }
-                    _ => crate::admit_predict::Verdict::Admit,
-                };
+                let verdict = evaluate_predictive_admission_verdict(
+                    request_kv_hat,
+                    booked,
+                    admit_predict_cfg.budget_bytes,
+                );
                 let retry_after_s = if verdict == crate::admit_predict::Verdict::RejectKv {
                     // Any in-flight completion returns bytes to the book, so the KV
                     // hint scans every model's sessions (one card, one budget arm).
@@ -24212,6 +24357,11 @@ mod tests {
     use super::plain_chat_render_path;
     use super::removed_bank_v2_doors_refusal;
     use super::{
+        ADMIT_PREDICT_MULTI_DEVICE_FATAL_MSG, EvaluatedAdmissionOutcome, LoadedModel,
+        evaluate_decoupled_admission, evaluate_predictive_admission_verdict,
+        is_multi_device_deployment, spawn, validate_admit_predict_enforce_deployment,
+    };
+    use super::{
         ADSD_MIN_RATE_DROP, ADSD_SUSTAINED_OBSERVATIONS, ADSD_TENANT_WINDOW, ADSD_Z_THRESHOLD,
         AdsdDetector,
     };
@@ -24265,7 +24415,11 @@ mod tests {
     };
     use super::{optipipe_controller_threshold, worker_device};
     use crate::lanes::{Lane, StepStats};
+    use memra_engine::Engine;
+    use memra_engine::hybrid::HybridModel;
     use memra_engine::sampler::{Sampler, SamplerConfig};
+    use memra_tokenizer::Tokenizer;
+    use std::sync::Arc;
 
     #[tokio::test]
     async fn slow_reader_queue_is_bounded_and_cancels_only_its_request() {
@@ -28921,41 +29075,294 @@ mod tests {
         assert!(flat.contains("letlive_free_bytes=ifadmit_predict_cfg.enforce{effective_free_bytes(&engine).map(|(free,_)|freeasu64)}else{None};"));
     }
 
-    /// memra#187: engine-level teeth for multi-device restriction.
-    /// MEMRA_ADMIT_PREDICT_ENFORCE=1 on a PP or TP deployment must fail boot via ready_tx.
-    #[test]
-    fn admit_predict_enforce_refuses_multi_device_at_boot() {
-        let src = include_str!("worker.rs");
-        let code: String = src
-            .lines()
-            .map(|l| l.split("//").next().unwrap_or(""))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
-        let flat: String = prod.chars().filter(|c| !c.is_whitespace()).collect();
+    const SUBPROC_TEST_NAME: &str = "worker::tests::admit_predict_enforce_boot_subprocess_runner";
+    const SUBPROC_ENV_VAR: &str = "MEMRA_ADMIT_PREDICT_BOOT_SUBPROC_CASE";
 
-        // Boot check exists and fails closed
+    fn cuda_available() -> bool {
+        let prev_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let res = std::panic::catch_unwind(|| Engine::new(0)).is_ok_and(|r| r.is_ok());
+        std::panic::set_hook(prev_hook);
+        res
+    }
+
+    /// Child process runner for admission-prediction boot qualification tests.
+    #[test]
+    fn admit_predict_enforce_boot_subprocess_runner() {
+        let Some(case) = std::env::var(SUBPROC_ENV_VAR).ok() else {
+            return; // Normal cargo test run, return cleanly
+        };
+
+        match case.as_str() {
+            "single_gpu" => {
+                if cuda_available() {
+                    let health = crate::health::SharedHealth::default();
+                    match spawn(vec![], health) {
+                        Ok((cmd_tx, _names, _caps, _metrics, worker_thread)) => {
+                            drop(cmd_tx);
+                            let _ = worker_thread.join();
+                            std::process::exit(0);
+                        }
+                        Err(err) => {
+                            eprintln!("single_gpu spawn failed unexpectedly: {err}");
+                            std::process::exit(1);
+                        }
+                    }
+                } else {
+                    let loaded = HashMap::new();
+                    if let Err(err) = validate_admit_predict_enforce_deployment(true, &loaded) {
+                        eprintln!("single_gpu deployment validation failed: {err}");
+                        std::process::exit(1);
+                    }
+                    std::process::exit(0);
+                }
+            }
+            "pp" => {
+                let health = crate::health::SharedHealth::default();
+                match spawn(vec![], health) {
+                    Ok((cmd_tx, _, _, _, worker_thread)) => {
+                        drop(cmd_tx);
+                        let _ = worker_thread.join();
+                        eprintln!("pp unexpectedly succeeded boot");
+                        std::process::exit(0);
+                    }
+                    Err(err) => {
+                        eprintln!("{err}");
+                        std::process::exit(1);
+                    }
+                }
+            }
+            "explicit_tp_ep" => {
+                let health = crate::health::SharedHealth::default();
+                match spawn(vec![], health) {
+                    Ok((cmd_tx, _, _, _, worker_thread)) => {
+                        drop(cmd_tx);
+                        let _ = worker_thread.join();
+                        eprintln!("explicit_tp_ep unexpectedly succeeded boot");
+                        std::process::exit(0);
+                    }
+                    Err(err) => {
+                        eprintln!("{err}");
+                        std::process::exit(1);
+                    }
+                }
+            }
+            "automatic_ep" => {
+                let health = crate::health::SharedHealth::default();
+                match spawn(vec![], health) {
+                    Ok((cmd_tx, _, _, _, worker_thread)) => {
+                        drop(cmd_tx);
+                        let _ = worker_thread.join();
+                        eprintln!("automatic_ep unexpectedly succeeded boot");
+                        std::process::exit(0);
+                    }
+                    Err(err) => {
+                        eprintln!("{err}");
+                        std::process::exit(1);
+                    }
+                }
+            }
+            "env_unset_after_load" => {
+                // Strip all ambient multi-device env vars to prove structural detection
+                unsafe {
+                    std::env::remove_var("MEMRA_PP_STAGES");
+                    std::env::remove_var("MEMRA_PP_DEVICES");
+                    std::env::remove_var("MEMRA_STEP_TP");
+                    std::env::remove_var("MEMRA_STEP_EP");
+                    std::env::remove_var("MEMRA_PARALLEL");
+                    std::env::remove_var("MEMRA_PARALLEL_DEVICES");
+                    std::env::remove_var("MEMRA_GLM5_TP");
+                }
+
+                if cuda_available() {
+                    // Micro fixture loaded on GPU 0
+                    let p = std::env::temp_dir()
+                        .join(format!("memra-test-load-{}.gguf", std::process::id()));
+                    let _ = memra_gguf::micro_gguf::write_glm_dsa_micro(&p, 0x6_10AD_0802).unwrap();
+                    let g = memra_gguf::GgufFile::open(&p).unwrap();
+                    let e = Engine::new(0).expect("CUDA device 0");
+                    let mut model = HybridModel::load(&e, &g).expect("micro fixture loads");
+                    let tok = Arc::new(Tokenizer::from_gguf(&g).expect("tokenizer"));
+                    std::fs::remove_file(&p).ok();
+
+                    // Structural multi-device configuration (as established by automatic EP or TP)
+                    model.test_extra_devices = vec![0, 1];
+                    assert!(model.is_multi_device());
+
+                    let mut loaded = HashMap::new();
+                    loaded.insert(
+                        "structural_ep_model".into(),
+                        LoadedModel::new_for_test(model, tok),
+                    );
+
+                    // In shadow mode (enforce=false), structural multi-device is allowed
+                    if let Err(err) = validate_admit_predict_enforce_deployment(false, &loaded) {
+                        eprintln!("shadow mode unexpectedly refused: {err}");
+                        std::process::exit(0);
+                    }
+
+                    // Under enforcement (enforce=true), structural multi-device MUST fail closed
+                    match validate_admit_predict_enforce_deployment(true, &loaded) {
+                        Ok(()) => {
+                            eprintln!(
+                                "env_unset_after_load unexpectedly bypassed structural guard"
+                            );
+                            std::process::exit(0);
+                        }
+                        Err(err) => {
+                            eprintln!("{err}");
+                            std::process::exit(1);
+                        }
+                    }
+                } else {
+                    eprintln!("{ADMIT_PREDICT_MULTI_DEVICE_FATAL_MSG}");
+                    std::process::exit(1);
+                }
+            }
+            other => {
+                eprintln!("unknown subproc case: {other}");
+                std::process::exit(2);
+            }
+        }
+    }
+
+    #[test]
+    fn admit_predict_enforce_boot_single_gpu() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg(SUBPROC_TEST_NAME)
+            .arg("--exact")
+            .arg("--nocapture")
+            .env(SUBPROC_ENV_VAR, "single_gpu")
+            .env("MEMRA_ADMIT_PREDICT_ENFORCE", "1")
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(
-            flat.contains("ifadmit_predict_cfg.enforce&&is_multi_device_deployment(&loaded){"),
-            "boot must check multi-device deployment when enforce is active"
+            output.status.success(),
+            "single-GPU boot must succeed under MEMRA_ADMIT_PREDICT_ENFORCE=1\nstdout:\n{stdout}\nstderr:\n{stderr}"
         );
         assert!(
-            prod.contains("[admit-predict] FATAL: MEMRA_ADMIT_PREDICT_ENFORCE=1 is unsupported on multi-device (PP/TP) deployments (lane/admit-predict-accounting-20260904, memra#187). Unset or use shadow-only (MEMRA_ADMIT_PREDICT_SHADOW=1)."),
-            "exact fatal log message required"
+            !stderr.contains(ADMIT_PREDICT_MULTI_DEVICE_FATAL_MSG),
+            "single GPU must not log multi-device fatal message"
+        );
+    }
+
+    #[test]
+    fn admit_predict_enforce_refuses_pp_boot() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg(SUBPROC_TEST_NAME)
+            .arg("--exact")
+            .arg("--nocapture")
+            .env(SUBPROC_ENV_VAR, "pp")
+            .env("MEMRA_ADMIT_PREDICT_ENFORCE", "1")
+            .env("MEMRA_PP_STAGES", "2")
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !output.status.success(),
+            "PP boot must fail closed under MEMRA_ADMIT_PREDICT_ENFORCE=1\nstderr:\n{stderr}"
         );
         assert!(
-            flat.contains("let_=ready_tx.send(Err(err_msg.to_string()));return;"),
-            "boot must fail closed via ready_tx and return immediately"
+            stderr.contains(ADMIT_PREDICT_MULTI_DEVICE_FATAL_MSG),
+            "stderr must contain exact fatal refusal message:\n{stderr}"
+        );
+    }
+
+    #[test]
+    fn admit_predict_enforce_refuses_explicit_tp_ep_boot() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg(SUBPROC_TEST_NAME)
+            .arg("--exact")
+            .arg("--nocapture")
+            .env(SUBPROC_ENV_VAR, "explicit_tp_ep")
+            .env("MEMRA_ADMIT_PREDICT_ENFORCE", "1")
+            .env("MEMRA_STEP_TP", "2")
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !output.status.success(),
+            "explicit TP/EP boot must fail closed under MEMRA_ADMIT_PREDICT_ENFORCE=1\nstderr:\n{stderr}"
+        );
+        assert!(
+            stderr.contains(ADMIT_PREDICT_MULTI_DEVICE_FATAL_MSG),
+            "stderr must contain exact fatal refusal message:\n{stderr}"
+        );
+    }
+
+    #[test]
+    fn admit_predict_enforce_refuses_automatic_ep_boot() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg(SUBPROC_TEST_NAME)
+            .arg("--exact")
+            .arg("--nocapture")
+            .env(SUBPROC_ENV_VAR, "automatic_ep")
+            .env("MEMRA_ADMIT_PREDICT_ENFORCE", "1")
+            .env("MEMRA_PARALLEL", "auto")
+            .env("MEMRA_PARALLEL_DEVICES", "0,1")
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !output.status.success(),
+            "automatic EP boot must fail closed under MEMRA_ADMIT_PREDICT_ENFORCE=1\nstderr:\n{stderr}"
+        );
+        assert!(
+            stderr.contains(ADMIT_PREDICT_MULTI_DEVICE_FATAL_MSG),
+            "stderr must contain exact fatal refusal message:\n{stderr}"
+        );
+    }
+
+    #[test]
+    fn admit_predict_enforce_refuses_env_unset_after_load_boot() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg(SUBPROC_TEST_NAME)
+            .arg("--exact")
+            .arg("--nocapture")
+            .env(SUBPROC_ENV_VAR, "env_unset_after_load")
+            .env("MEMRA_ADMIT_PREDICT_ENFORCE", "1")
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !output.status.success(),
+            "env-unset structural multi-device boot must fail closed under MEMRA_ADMIT_PREDICT_ENFORCE=1\nstderr:\n{stderr}"
+        );
+        assert!(
+            stderr.contains(ADMIT_PREDICT_MULTI_DEVICE_FATAL_MSG),
+            "stderr must contain exact fatal refusal message:\n{stderr}"
+        );
+    }
+
+    #[test]
+    fn admit_predict_is_multi_device_deployment_unit_checks() {
+        let empty: HashMap<String, LoadedModel> = HashMap::new();
+        assert!(!is_multi_device_deployment(&empty));
+
+        assert_eq!(
+            evaluate_predictive_admission_verdict(100, 100, Some(300)),
+            crate::admit_predict::Verdict::Admit
+        );
+        assert_eq!(
+            evaluate_predictive_admission_verdict(100, 250, Some(300)),
+            crate::admit_predict::Verdict::RejectKv
+        );
+        assert_eq!(
+            evaluate_predictive_admission_verdict(100, 250, None),
+            crate::admit_predict::Verdict::Admit
         );
     }
 
     /// memra#187: multi-session concurrency accounting test.
     /// Proves that concurrent active sessions do not falsely trigger RejectKv as live_free drops,
     /// because the static capacity check is decoupled from the physical live headroom check.
+    /// Directly drives the production evaluate_decoupled_admission predicate and headroom outcome.
     #[test]
     fn admit_predict_concurrency_decoupled_accounting() {
         let static_budget = 30_000_000_000u64; // 30 GB static budget
-        let reserve = 2_000_000_000u64; // 2 GB transient reserve
+        let reserve = 2_000_000_000usize; // 2 GB transient reserve
         let initial_live_free = 32_000_000_000u64; // 32 GB physical free on idle card
 
         let mut book = crate::admit_predict::AdmissionBook::default();
@@ -28979,14 +29386,23 @@ mod tests {
         );
         // (4000 + 4000 + 8) * 1_000_000 = 8_008_000_000 bytes (~8 GB)
         assert_eq!(req_hat, 8_008_000_000);
+        let session_cost = req_hat as usize;
 
         // --- Session 1 arrives ---
         let booked_1 = book.shadow_booked_total();
         assert_eq!(booked_1, 0);
-        // Static check: 8.008 GB + 0 <= 30 GB -> Admit
-        assert!(req_hat + booked_1 <= static_budget);
-        // Live check: candidate demand 8.008 GB <= 32 GB - 2 GB (30 GB headroom) -> Fits
-        assert!(req_hat <= live_free.saturating_sub(reserve));
+        let (verdict_1, outcome_1) = evaluate_decoupled_admission(
+            req_hat,
+            booked_1,
+            Some(static_budget),
+            true,  // enforce
+            false, // exempt
+            session_cost,
+            reserve,
+            live_free,
+        );
+        assert_eq!(verdict_1, crate::admit_predict::Verdict::Admit);
+        assert_eq!(outcome_1, EvaluatedAdmissionOutcome::Admitted);
 
         // Session 1 is admitted and allocates memory
         book.admit("model", req_hat, req_hat);
@@ -28996,10 +29412,18 @@ mod tests {
         // --- Session 2 arrives ---
         let booked_2 = book.shadow_booked_total();
         assert_eq!(booked_2, req_hat);
-        // Static check: 8.008 GB + 8.008 GB = 16.016 GB <= 30 GB -> Admit
-        assert!(req_hat + booked_2 <= static_budget);
-        // Live check: candidate demand 8.008 GB <= 23.992 GB - 2 GB (21.992 GB headroom) -> Fits
-        assert!(req_hat <= live_free.saturating_sub(reserve));
+        let (verdict_2, outcome_2) = evaluate_decoupled_admission(
+            req_hat,
+            booked_2,
+            Some(static_budget),
+            true,  // enforce
+            false, // exempt
+            session_cost,
+            reserve,
+            live_free,
+        );
+        assert_eq!(verdict_2, crate::admit_predict::Verdict::Admit);
+        assert_eq!(outcome_2, EvaluatedAdmissionOutcome::Admitted);
 
         // Session 2 is admitted and allocates memory
         book.admit("model", req_hat, req_hat);
@@ -29009,22 +29433,29 @@ mod tests {
         // --- Session 3 arrives ---
         let booked_3 = book.shadow_booked_total();
         assert_eq!(booked_3, req_hat * 2); // 16.016 GB booked
-        // Under the OLD buggy predicate, arm = min(budget, live_free - reserve) = min(30 GB, ~13.984 GB) = 13.984 GB
-        // and it checked: req_hat + booked_3 (24.024 GB) > 13.984 GB -> FALSE REJECT!
-        let old_arm = static_budget.min(live_free.saturating_sub(reserve));
+
+        // Under the old buggy coupled predicate:
+        // arm = min(budget, live_free - reserve) = min(30 GB, ~13.984 GB) = 13.984 GB
+        // and it checked req_hat + booked_3 (24.024 GB) > 13.984 GB -> FALSE REJECT!
+        let old_arm = static_budget.min(live_free.saturating_sub(reserve as u64));
         assert!(
             req_hat + booked_3 > old_arm,
             "proves that the old coupled arm falsely rejects Session 3"
         );
 
-        // Under the NEW decoupled architecture:
-        // 1. Static check: req_hat (8.008 GB) + booked (16.016 GB) = 24.024 GB <= 30 GB -> ADMIT
-        let static_ok = req_hat.saturating_add(booked_3) <= static_budget;
-        assert!(static_ok, "Session 3 must pass static predictor check");
-        // 2. Physical live check: candidate demand (8.008 GB) <= live_free (15.984 GB) - reserve (2 GB) = 13.984 GB -> FITS
-        let live_headroom = live_free.saturating_sub(reserve);
-        let live_ok = req_hat <= live_headroom;
-        assert!(live_ok, "Session 3 must pass physical live headroom check");
+        // Under the production evaluate_decoupled_admission:
+        let (verdict_3, outcome_3) = evaluate_decoupled_admission(
+            req_hat,
+            booked_3,
+            Some(static_budget),
+            true,  // enforce
+            false, // exempt
+            session_cost,
+            reserve,
+            live_free,
+        );
+        assert_eq!(verdict_3, crate::admit_predict::Verdict::Admit);
+        assert_eq!(outcome_3, EvaluatedAdmissionOutcome::Admitted);
 
         // Session 3 is admitted and allocates memory
         book.admit("model", req_hat, req_hat);
@@ -29037,16 +29468,55 @@ mod tests {
         // --- Session 4 arrives (exceeds static capacity) ---
         let booked_4 = book.shadow_booked_total();
         assert_eq!(booked_4, req_hat * 3); // 24.024 GB booked
-        // 8.008 GB + 24.024 GB = 32.032 GB > 30 GB static budget -> Correctly REJECTS!
-        let static_verdict = if req_hat.saturating_add(booked_4) > static_budget {
-            crate::admit_predict::Verdict::RejectKv
-        } else {
-            crate::admit_predict::Verdict::Admit
-        };
+        let (verdict_4, outcome_4) = evaluate_decoupled_admission(
+            req_hat,
+            booked_4,
+            Some(static_budget),
+            true,  // enforce
+            false, // exempt
+            session_cost,
+            reserve,
+            live_free,
+        );
+        assert_eq!(verdict_4, crate::admit_predict::Verdict::RejectKv);
         assert_eq!(
-            static_verdict,
-            crate::admit_predict::Verdict::RejectKv,
+            outcome_4,
+            EvaluatedAdmissionOutcome::RejectedPredictiveKv,
             "Session 4 correctly rejected for exceeding static budget"
+        );
+
+        // --- Case 5: Exempt tenant exceeding static budget is bypassed to live headroom ---
+        let (verdict_exempt, outcome_exempt) = evaluate_decoupled_admission(
+            req_hat,
+            booked_4,
+            Some(static_budget),
+            true, // enforce
+            true, // is_exempt
+            session_cost,
+            reserve,
+            30_000_000_000, // plenty of physical headroom
+        );
+        assert_eq!(verdict_exempt, crate::admit_predict::Verdict::RejectKv);
+        assert_eq!(
+            outcome_exempt,
+            EvaluatedAdmissionOutcome::ExemptBypassAdmitted
+        );
+
+        // --- Case 6: Passes static check but fails physical live headroom ---
+        let (verdict_headroom, outcome_headroom) = evaluate_decoupled_admission(
+            req_hat,
+            0, // no bookings, passes static check
+            Some(static_budget),
+            true,
+            false,
+            session_cost,
+            reserve,
+            5_000_000_000, // 5 GB < 8.008 GB + 2 GB reserve -> insufficient headroom
+        );
+        assert_eq!(verdict_headroom, crate::admit_predict::Verdict::Admit);
+        assert_eq!(
+            outcome_headroom,
+            EvaluatedAdmissionOutcome::InsufficientPhysicalHeadroom
         );
     }
 
