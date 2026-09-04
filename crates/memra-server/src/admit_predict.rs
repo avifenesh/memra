@@ -465,21 +465,66 @@ impl Verdict {
     }
 }
 
-/// The D2 contract's per-request KV charge:
-/// `kv_hat = B/token x (prompt + L_hat + slack) + fixed`.
+/// Exact context allocation for a cache with one physically capped row class.
+///
+/// Refuses invalid ring geometry (fails closed):
+/// - `ring_bytes_per_token <= bytes_per_token`
+/// - `ring_rows == 0 => ring_bytes_per_token == 0`
+///
+/// Saturation is reserved strictly for numeric arithmetic overflow.
+pub(crate) fn context_cache_bytes(
+    bytes_per_token: u64,
+    ring_bytes_per_token: u64,
+    ring_rows: u64,
+    ctx_cap: u64,
+) -> u64 {
+    assert!(
+        ring_bytes_per_token <= bytes_per_token,
+        "invalid ring geometry: ring_bytes_per_token ({ring_bytes_per_token}) > bytes_per_token ({bytes_per_token})"
+    );
+    assert!(
+        ring_rows > 0 || ring_bytes_per_token == 0,
+        "invalid ring geometry: ring_rows is 0 but ring_bytes_per_token is {ring_bytes_per_token}"
+    );
+    let flat = bytes_per_token.saturating_sub(ring_bytes_per_token);
+    flat.saturating_mul(ctx_cap)
+        .saturating_add(ring_bytes_per_token.saturating_mul(ctx_cap.min(ring_rows)))
+}
+
+/// The D2 contract's per-request KV charge with SWA ring awareness:
+/// `kv_hat = context_cache_bytes(total_bpt, ring_bpt, ring_rows, prompt + predicted + slack) + fixed`.
+pub(crate) fn kv_hat_ring(
+    prompt_tokens: u64,
+    predicted_completion: u64,
+    bytes_per_token: u64,
+    ring_bytes_per_token: u64,
+    ring_rows: u64,
+    fixed_bytes: u64,
+) -> u64 {
+    let ctx_hat = prompt_tokens
+        .saturating_add(predicted_completion)
+        .saturating_add(CTX_HAT_SLACK);
+    context_cache_bytes(bytes_per_token, ring_bytes_per_token, ring_rows, ctx_hat)
+        .saturating_add(fixed_bytes)
+}
+
+/// The flat-geometry specialization of [`kv_hat_ring`] (ring_bytes_per_token = 0, ring_rows = 0).
+/// Bit-identical to legacy kv_hat.
+#[allow(dead_code)]
 pub(crate) fn kv_hat(
     prompt_tokens: u64,
     predicted_completion: u64,
     bytes_per_token: u64,
     fixed_bytes: u64,
 ) -> u64 {
-    bytes_per_token
-        .saturating_mul(
-            prompt_tokens
-                .saturating_add(predicted_completion)
-                .saturating_add(CTX_HAT_SLACK),
-        )
-        .saturating_add(fixed_bytes)
+    kv_hat_ring(
+        prompt_tokens,
+        predicted_completion,
+        bytes_per_token,
+        0,
+        0,
+        fixed_bytes,
+    )
 }
 
 /// G6 (shadow half): the Retry-After an enforcing reject would send: the earliest
@@ -841,6 +886,70 @@ mod tests {
         assert_eq!(kv_hat(100, 50, 1_000, 7), 1_000 * (100 + 50 + 8) + 7);
         // Saturates rather than overflowing on absurd inputs.
         assert_eq!(kv_hat(u64::MAX, u64::MAX, 2, 1), u64::MAX);
+    }
+
+    #[test]
+    fn kv_hat_ring_below_at_above_ring_rows() {
+        let total_bpt = 1_000u64;
+        let ring_bpt = 600u64;
+        let ring_rows = 100u64;
+        let fixed = 50u64;
+
+        // Below ring_rows: prompt=40, pred=20 => ctx = 40 + 20 + 8 = 68 < 100
+        // SWA layer has not wrapped: all 68 rows charged at total_bpt
+        assert_eq!(
+            kv_hat_ring(40, 20, total_bpt, ring_bpt, ring_rows, fixed),
+            total_bpt * 68 + fixed
+        );
+
+        // At ring_rows: prompt=70, pred=22 => ctx = 70 + 22 + 8 = 100 == 100
+        assert_eq!(
+            kv_hat_ring(70, 22, total_bpt, ring_bpt, ring_rows, fixed),
+            total_bpt * 100 + fixed
+        );
+
+        // Above ring_rows: prompt=200, pred=100 => ctx = 200 + 100 + 8 = 308 > 100
+        // Flat (total - ring) = 400 * 308 = 123_200
+        // Ring = 600 * 100 = 60_000
+        // Total = 183_200 + 50 = 183_250 (much less than 1000 * 308 + 50 = 308_050)
+        assert_eq!(
+            kv_hat_ring(200, 100, total_bpt, ring_bpt, ring_rows, fixed),
+            (total_bpt - ring_bpt) * 308 + ring_bpt * ring_rows + fixed
+        );
+    }
+
+    #[test]
+    fn kv_hat_ring_flat_model_equivalence() {
+        // When ring_rows == 0 and ring_bpt == 0, kv_hat_ring is identical to flat kv_hat.
+        let prompt = 500u64;
+        let pred = 1200u64;
+        let bpt = 83_520u64;
+        let fixed = 10_000_000u64;
+        assert_eq!(
+            kv_hat_ring(prompt, pred, bpt, 0, 0, fixed),
+            kv_hat(prompt, pred, bpt, fixed)
+        );
+    }
+
+    #[test]
+    fn kv_hat_ring_saturation_on_overflow() {
+        assert_eq!(kv_hat_ring(u64::MAX, u64::MAX, 2, 1, 10, 1), u64::MAX);
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "invalid ring geometry: ring_bytes_per_token (700) > bytes_per_token (500)"
+    )]
+    fn kv_hat_ring_refuses_ring_bpt_greater_than_total() {
+        kv_hat_ring(100, 50, 500, 700, 100, 0);
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "invalid ring geometry: ring_rows is 0 but ring_bytes_per_token is 200"
+    )]
+    fn kv_hat_ring_refuses_zero_ring_rows_with_positive_ring_bpt() {
+        kv_hat_ring(100, 50, 500, 200, 0, 0);
     }
 
     #[test]
