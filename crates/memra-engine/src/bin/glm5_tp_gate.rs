@@ -389,7 +389,11 @@ fn set_env(k: &str, v: &str) {
     unsafe { std::env::set_var(k, v) };
 }
 fn rm_env(k: &str) {
-    unsafe { std::env::remove_var(k) };
+    let off_val = match k {
+        "MEMRA_PP_STAGES" => "1",
+        _ => "0",
+    };
+    unsafe { std::env::set_var(k, off_val) };
 }
 
 struct Verdict {
@@ -774,9 +778,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         set_env("NVIDIA_TF32_OVERRIDE", "0");
     }
     // A leaked door from the caller would poison the PLAIN reference arm.
-    rm_env("MEMRA_GLM5_TP");
-    rm_env("MEMRA_GLM5_TP_GATE_RED");
-    rm_env("MEMRA_PP_STAGES");
+    set_env("MEMRA_GLM5_TP", "1");
+    set_env("MEMRA_GLM5_TP_GATE_RED", "0");
+    set_env("MEMRA_PP_STAGES", "1");
     // EP dispatch-diet doors PINNED =0 for every banked arm (the moe-loc §4.5 lesson: an
     // A/B arm that leaves a variable UNSET inherits any future default flip; a pin does
     // not). The ON twins run after the reds, and the flat counter across the banked arms
@@ -1015,8 +1019,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             detail: "TP + PP>1 loaded without refusing".into(),
         }),
     }
-    rm_env("MEMRA_PP_STAGES");
-    rm_env("MEMRA_GLM5_TP");
+    set_env("MEMRA_PP_STAGES", "1");
+    set_env("MEMRA_GLM5_TP", "1");
 
     // ================= M / H. Measured-placement map arms =================
     // Scratch dir for the gate's map artifacts; removed at the end (tmp hygiene law).

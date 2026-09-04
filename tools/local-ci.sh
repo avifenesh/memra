@@ -213,6 +213,15 @@ if ! tools/test_check_flags.sh >/dev/null; then
     tools/test_check_flags.sh || true
 fi
 
+# Gate lint: prevent vacuous gates caused by remove_var on door flags (memra#136)
+if ! tools/check-no-remove-var-gates.sh; then
+    echo "local-ci: WARNING — un-allowlisted remove_var on door flag detected (memra#136)"
+fi
+if ! tools/test_check_no_remove_var_gates.sh >/dev/null; then
+    echo "local-ci: WARNING — check-no-remove-var-gates self-test FAILED" >&2
+    tools/test_check_no_remove_var_gates.sh || true
+fi
+
 # DRAFTER-ATTACH WIRING (2026-08-19). FATAL, and it runs before any GPU cell because it needs
 # none. tools/assert-drafter-attached.sh was wired into FIVE gates and had never executed once;
 # its first run failed because the gemma arm's assertion was unsatisfiable by construction

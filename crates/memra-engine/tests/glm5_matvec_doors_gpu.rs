@@ -56,7 +56,7 @@ fn with_flag<T>(key: &str, f: impl FnOnce() -> T) -> T {
     // SAFETY: serialized behind gpu_guard by every caller.
     unsafe { std::env::set_var(key, "1") };
     let r = f();
-    unsafe { std::env::remove_var(key) };
+    unsafe { std::env::set_var(key, "0") };
     r
 }
 
@@ -75,7 +75,7 @@ fn without_flag<T>(key: &str, f: impl FnOnce() -> T) -> T {
     // SAFETY: serialized behind gpu_guard by every caller.
     unsafe { std::env::set_var(key, "0") };
     let r = f();
-    unsafe { std::env::remove_var(key) };
+    unsafe { std::env::set_var(key, "0") };
     r
 }
 

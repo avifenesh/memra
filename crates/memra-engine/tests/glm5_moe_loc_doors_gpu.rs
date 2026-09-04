@@ -37,7 +37,7 @@ fn force_true_f32() {
 fn with_flag<T>(key: &str, f: impl FnOnce() -> T) -> T {
     unsafe { std::env::set_var(key, "1") };
     let out = f();
-    unsafe { std::env::remove_var(key) };
+    unsafe { std::env::set_var(key, "0") };
     out
 }
 
@@ -50,7 +50,7 @@ struct EnvArm(Vec<String>);
 impl Drop for EnvArm {
     fn drop(&mut self) {
         for k in &self.0 {
-            unsafe { std::env::remove_var(k) };
+            unsafe { std::env::set_var(k, "0") };
         }
     }
 }

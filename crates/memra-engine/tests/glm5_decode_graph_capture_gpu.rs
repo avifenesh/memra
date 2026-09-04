@@ -444,7 +444,7 @@ fn graph_door_decode_matches_eager_bitwise() {
         memra_engine::GLM5_DECODE_GRAPH_RECAPTURES.load(Ordering::Relaxed) - recaptures_before;
     // SAFETY: same as above.
     unsafe {
-        std::env::remove_var("MEMRA_GLM5_GRAPH_RECAPTURE");
+        std::env::set_var("MEMRA_GLM5_GRAPH_RECAPTURE", "0");
         std::env::set_var("MEMRA_GLM5_DECODE_GRAPH", "0");
     }
     assert!(

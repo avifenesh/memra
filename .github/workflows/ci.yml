@@ -84,6 +84,13 @@ jobs:
           command -v rg >/dev/null || sudo apt-get install -y -q ripgrep
           tools/test_check_flags.sh
 
+      # Gate lint: prevent vacuous gates caused by remove_var on door flags (memra#136)
+      - name: Gate remove_var lint & self-test
+        run: |
+          command -v rg >/dev/null || sudo apt-get install -y -q ripgrep
+          tools/check-no-remove-var-gates.sh
+          tools/test_check_no_remove_var_gates.sh
+
       # Docs-registry census (2026-08-30): every file-shaped reference in docs/KERNELS.md
       # resolves against the tracked tree, docs/MODELS.md names support states only from the
       # three-state vocabulary, docs/ROUTER.md exists and stays at or under 60 lines. Text

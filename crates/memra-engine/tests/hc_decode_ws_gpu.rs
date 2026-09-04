@@ -55,11 +55,7 @@ fn force_true_f32() {
 fn set_flag(name: &str, on: bool) {
     // SAFETY: all tests in this binary hold `gpu_guard` while touching env or the GPU.
     unsafe {
-        if on {
-            std::env::set_var(name, "1");
-        } else {
-            std::env::remove_var(name);
-        }
+        std::env::set_var(name, if on { "1" } else { "0" });
     }
 }
 

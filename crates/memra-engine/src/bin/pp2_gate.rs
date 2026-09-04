@@ -40,7 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // the gate owns the door: start clean regardless of the caller's environment.
     // (The increment-2 knobs — STREAMS/OVERLAP/DEVICES — deliberately pass through.)
     unsafe {
-        std::env::remove_var("MEMRA_PP_STAGES");
+        std::env::set_var("MEMRA_PP_STAGES", "1");
         std::env::remove_var("MEMRA_PP_SPLIT");
     }
     let knobs = format!(

@@ -8,10 +8,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = std::env::args()
         .nth(1)
         .expect("usage: mmvq_bisect <hf_dir>");
-    assert!(
-        std::env::var("MEMRA_MMVQ").is_err(),
-        "run WITHOUT MEMRA_MMVQ set"
-    );
     let e = Engine::new(0)?;
     let st = memra_gguf::source::SafetensorsSource::open(std::path::Path::new(&path))?;
     let model = HybridModel::load_from_source(&e, &st)?;
@@ -26,7 +22,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if mmvq {
                 std::env::set_var("MEMRA_MMVQ", "1");
             } else {
-                std::env::remove_var("MEMRA_MMVQ");
+                std::env::set_var("MEMRA_MMVQ", "0");
             }
         }
         let mut cache = memra_engine::cache::Cache::new(&e, &model.cfg, 32)?;

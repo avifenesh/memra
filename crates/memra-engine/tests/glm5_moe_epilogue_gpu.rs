@@ -1025,8 +1025,8 @@ fn run_arm_at(arm: Arm, mutation: FixtureMutation, placement: Placement) -> Run 
             // thing proving the two placements are different programs.
             Placement::Slab => {
                 std::env::set_var("MEMRA_MOE_CACHE", "0");
-                std::env::remove_var("MEMRA_MOE_RESIDENT");
-                std::env::remove_var("MEMRA_MOE_SLOTS");
+                std::env::set_var("MEMRA_MOE_RESIDENT", "1");
+                std::env::set_var("MEMRA_MOE_SLOTS", "0");
             }
         }
         match arm {

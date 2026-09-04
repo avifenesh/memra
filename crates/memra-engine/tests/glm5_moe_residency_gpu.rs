@@ -471,8 +471,8 @@ fn run_arm(regime: Regime, mutation: Mutation) -> Arm {
         match regime {
             Regime::FullyResident => {
                 std::env::set_var("MEMRA_MOE_CACHE", "0");
-                std::env::remove_var("MEMRA_MOE_RESIDENT");
-                std::env::remove_var("MEMRA_MOE_SLOTS");
+                std::env::set_var("MEMRA_MOE_RESIDENT", "1");
+                std::env::set_var("MEMRA_MOE_SLOTS", "0");
             }
             Regime::SlruResidency => {
                 std::env::set_var("MEMRA_MOE_CACHE", "1");

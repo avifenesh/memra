@@ -93,11 +93,7 @@ fn force_env() {
 fn set_door(on: bool) {
     // SAFETY: all tests in this binary hold `gpu_guard` while touching env or the GPU.
     unsafe {
-        if on {
-            std::env::set_var("MEMRA_KDA_FUSED_PROJ", "1");
-        } else {
-            std::env::remove_var("MEMRA_KDA_FUSED_PROJ");
-        }
+        std::env::set_var("MEMRA_KDA_FUSED_PROJ", if on { "1" } else { "0" });
     }
 }
 

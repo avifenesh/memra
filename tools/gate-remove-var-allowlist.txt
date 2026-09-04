@@ -1,0 +1,65 @@
+# Allowlist for check-no-remove-var-gates.sh (memra#136)
+# Format: <path>:<flag> # rationale
+#
+# Every entry here is an explicit exception where `remove_var` is used for
+# alias hygiene, testing absence of an optional file/path, or diagnostic tool cleanup,
+# rather than as an unpinned OFF arm of a door gate.
+
+# Alias hygiene / environment clearance before run
+crates/memra-engine/src/bin/glm5_hyper_batch_gate.rs:MEMRA_HTOD_DIET # alias hygiene: prevent leaked caller env from outvoting MEMRA_GLM5_HTOD_DIET
+crates/memra-engine/src/bin/glm5_spec_ppn_gate.rs:MEMRA_HTOD_DIET # alias hygiene
+crates/memra-engine/src/bin/glm5_hyper_ppn_gate.rs:MEMRA_HTOD_DIET # alias hygiene
+crates/memra-engine/src/bin/pp2_gate.rs:MEMRA_PP_SPLIT # clear outer split override
+
+# Reference arms / baseline resets in diagnostic binaries
+crates/memra-engine/src/bin/w4a4_gate.rs:MEMRA_MMQ # Arm::W4a8Reference baseline
+crates/memra-engine/src/bin/fa_hd128_check.rs:MEMRA_FA_FLOOR # baseline comparison
+crates/memra-engine/src/bin/fa_hd128_check.rs:MEMRA_PRIME_DEQW_DB # baseline comparison
+crates/memra-engine/src/bin/decode_batch_gate.rs:MEMRA_PRIME_PIPE # batch gate probe
+crates/memra-engine/src/bin/decode_batch_gate.rs:MEMRA_PP_HOST_BOUNCE # batch gate probe
+crates/memra-engine/src/bin/decode_batch_gate.rs:MEMRA_BATCH_PP # batch gate probe
+crates/memra-engine/src/bin/decode_batch_gate.rs:MEMRA_PP_ALLOW_UNSPLIT_BATCH # batch gate probe
+crates/memra-engine/src/bin/decode_batch_gate.rs:MEMRA_PP_OVERLAP # batch gate probe
+crates/memra-engine/src/bin/decode_batch_gate.rs:MEMRA_DUAL_PP # batch gate probe
+crates/memra-engine/src/bin/decode_batch_gate.rs:MEMRA_SPEC_PP # batch gate probe
+crates/memra-engine/src/bin/concat_prime_probe.rs:MEMRA_PRIME_CHUNK # concat prime probe harness
+crates/memra-engine/src/bin/concat_prime_probe.rs:MEMRA_PRIME_F32CHUNK0 # concat prime probe harness
+crates/memra-engine/src/bin/concat_prime_probe.rs:MEMRA_PRIME_PP # concat prime probe harness
+crates/memra-engine/src/bin/concat_prime_probe.rs:MEMRA_PRIME_PIPE # concat prime probe harness
+crates/memra-engine/src/bin/concat_prime_probe.rs:MEMRA_PRIME_CHUNK_SCHED # concat prime probe harness
+crates/memra-engine/src/bin/kernel_check.rs:MEMRA_GDN_MMA # hopper kernel check
+crates/memra-engine/src/bin/kernel_check.rs:MEMRA_GDN_WGMMA # hopper kernel check
+crates/memra-engine/src/bin/kernel_check.rs:MEMRA_NO_FA_VEC # FA vec check
+crates/memra-engine/src/bin/kernel_check.rs:MEMRA_FA_V3 # FA v3 check
+crates/memra-engine/src/bin/kernel_check.rs:MEMRA_FA_DEEP # deep FA check
+crates/memra-engine/src/bin/kernel_check.rs:MEMRA_FA_DEEP_MIN # deep FA min check
+crates/memra-engine/src/bin/kernel_check.rs:MEMRA_PRIME_DEQW_DB # prime deqw db check
+crates/memra-engine/src/bin/kernel_check.rs:MEMRA_MOE_SLOTS # kernel check slots restore
+
+# Test teardown / RAII cleanup of non-boolean / path-based knobs
+crates/memra-engine/tests/mla_tc_prefill_gpu.rs:MEMRA_MLA_TC_PREFILL # RAII Drop guard cleanup
+crates/memra-engine/tests/glm5_vision_gpu.rs:MEMRA_VISION_DEBUG # debug flag cleanup
+crates/memra-engine/tests/glm5_moe_grouped_prefill_gpu.rs:MEMRA_MOE_TRACE # trace budget cleanup
+crates/memra-engine/tests/glm5_moe_grouped_prefill_gpu.rs:MEMRA_MOE_WEIGHT_TRACE # trace budget cleanup
+crates/memra-engine/tests/glm5_tparallel_verify_gpu.rs:MEMRA_FRSPEC_TRIM # path artifact unset
+crates/memra-engine/tests/glm5_tparallel_verify_gpu.rs:MEMRA_GLM5_VERIFY_BATCH # None arm test
+crates/memra-engine/tests/glm5_spec_session_gpu.rs:MEMRA_FRSPEC_TRIM # untrimmed fixture load
+crates/memra-engine/tests/glm5_spec_session_gpu.rs:MEMRA_GLM5_VERIFY_WS # test teardown
+crates/memra-engine/tests/glm5_dflash_session_gpu.rs:MEMRA_GLM5_DFLASH # drafter dir teardown
+crates/memra-engine/tests/glm5_dflash_session_gpu.rs:MEMRA_FRSPEC_TRIM # untrimmed fixture load
+crates/memra-engine/tests/glm5_dflash_session_gpu.rs:MEMRA_GLM5_MTP # test route without MTP
+crates/memra-engine/tests/glm5_dflash_session_gpu.rs:MEMRA_GLM5_DFLASH_GATE_RED # test red gate
+crates/memra-engine/tests/glm5_dflash_session_gpu.rs:MEMRA_GLM5_SPEC_FULLCOVER # test teardown
+crates/memra-engine/tests/glm5_dflash_session_gpu.rs:MEMRA_GLM5_DRAFT_PRIME_V2 # test teardown
+crates/memra-engine/tests/glm5_dflash_session_gpu.rs:MEMRA_SPEC_PENALTY # test teardown
+crates/memra-engine/tests/glm5_dflash_session_gpu.rs:MEMRA_DFLASH2_SDPA_CLIP # test teardown
+
+# Non-literal helper / RAII Drop guard cleanup
+crates/memra-engine/tests/glm5_matvec_doors_gpu.rs:key # with_flag / without_flag helper teardown
+crates/memra-engine/tests/glm5_moe_loc_doors_gpu.rs:key # with_flag helper teardown
+crates/memra-engine/tests/glm5_moe_loc_doors_gpu.rs:k # EnvArm Drop guard teardown
+crates/memra-engine/tests/glm5_dedup_sched_gpu.rs:k # env restore helper
+crates/memra-engine/tests/glm5_dflash_session_gpu.rs:self.0 # EnvGuard Drop guard teardown
+crates/memra-engine/src/bin/decode_batch_gate.rs:self.key # Drop guard cleanup
+crates/memra-engine/src/bin/glm5_tp_gate.rs:k # rm_env helper teardown
+crates/memra-engine/src/bin/glm5_prime_v2_gate.rs:key # clear_env helper teardown
