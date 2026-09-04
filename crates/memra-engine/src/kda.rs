@@ -478,18 +478,34 @@ pub(crate) fn kda_core_gated(
     } else {
         e.uninit(t * qkv)?
     };
-    for (plane, (raw, out)) in [
-        (&q_raw, &mut q_conv),
-        (&k_raw, &mut k_conv),
-        (&v_raw, &mut v_conv),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        match arm {
-            ConvArm::Prefill => e.kda_conv_silu(raw, &la.conv, ring, out, qkv, t, kernel, plane)?,
-            ConvArm::Decode => {
-                e.kda_conv_silu_decode(raw, ring, &la.conv, out, qkv, kernel, plane)?
+    // MEMRA_KDA_CONV3 (lane/glm5-kda-conv3-20260904, default OFF): the decode arm's three
+    // per-plane launches as ONE (plane = blockIdx.y), bit-identical per channel; the prefill arm
+    // and the door-OFF decode keep the per-plane loop verbatim.
+    if arm == ConvArm::Decode && kda_conv3_on() && kernel <= 9 {
+        e.kda_conv_silu_decode3(
+            [&q_raw, &k_raw, &v_raw],
+            ring,
+            &la.conv,
+            [&mut q_conv, &mut k_conv, &mut v_conv],
+            qkv,
+            kernel,
+        )?;
+    } else {
+        for (plane, (raw, out)) in [
+            (&q_raw, &mut q_conv),
+            (&k_raw, &mut k_conv),
+            (&v_raw, &mut v_conv),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            match arm {
+                ConvArm::Prefill => {
+                    e.kda_conv_silu(raw, &la.conv, ring, out, qkv, t, kernel, plane)?
+                }
+                ConvArm::Decode => {
+                    e.kda_conv_silu_decode(raw, ring, &la.conv, out, qkv, kernel, plane)?
+                }
             }
         }
     }
@@ -834,6 +850,22 @@ pub fn kda_prime_cached(
 }
 
 /// One decode step through the cache's KDA state for layer `il`.
+/// `MEMRA_KDA_CONV3=1` (lane/glm5-kda-conv3-20260904, default OFF): the T=1 KDA conv+SiLU
+/// runs its three planes in one launch. Read PER CALL. Why and receipts: the kernel header in
+/// cu/kda.cu and docs/FLAGS.md.
+pub(crate) fn kda_conv3_on() -> bool {
+    std::env::var("MEMRA_KDA_CONV3").as_deref() == Ok("1")
+}
+
+/// Engagement counter for `MEMRA_KDA_CONV3`; gates take a delta.
+pub static KDA_CONV3_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// Snapshot of [`KDA_CONV3_DISPATCHES`].
+pub fn kda_conv3_dispatches() -> u64 {
+    KDA_CONV3_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 pub fn kda_decode_cached(
     e: &Engine,
     la: &KdaAttnLayer,
@@ -1140,6 +1172,55 @@ impl Engine {
     }
 
     /// T=1 fused assemble + conv + SiLU + ring roll for one plane (cu/kda.cu).
+    #[allow(clippy::too_many_arguments)]
+    /// The three-plane form of [`Engine::kda_conv_silu_decode`] (door `MEMRA_KDA_CONV3`,
+    /// lane/glm5-kda-conv3-20260904): one launch with `plane = blockIdx.y` in place of the three
+    /// per-plane launches; per channel the same body, so outputs and the ring are bit-identical
+    /// (gate `tests/kda_conv3_gpu.rs`). `kernel` (K) must be at most 9 (the `win[8]` window).
+    #[allow(clippy::too_many_arguments)]
+    pub fn kda_conv_silu_decode3(
+        &self,
+        x: [&CudaSlice<f32>; 3],
+        ring: &mut CudaSlice<f32>,
+        w: &CudaSlice<f32>,
+        y: [&mut CudaSlice<f32>; 3],
+        qkv: usize,
+        kernel: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if kernel == 0 || kernel > 9 {
+            return Err("kda_conv_silu_decode3: kernel width outside the 8-wide window".into());
+        }
+        if KDA_CONV3_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+            eprintln!(
+                "[kda-conv3] engaged: the three KDA conv+SiLU decode planes run as one launch \
+                 (MEMRA_KDA_CONV3=1)"
+            );
+        }
+        let f = self.func("memra_kda_conv_silu_decode3_f32");
+        let cfg = LaunchConfig {
+            grid_dim: (qkv.div_ceil(256) as u32, 3, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let (n, k) = (qkv as i32, kernel as i32);
+        let [x0, x1, x2] = x;
+        let [y0, y1, y2] = y;
+        let stream = self.gpu.stream();
+        let mut b = stream.launch_builder(&f);
+        b.arg(x0)
+            .arg(x1)
+            .arg(x2)
+            .arg(&mut *ring)
+            .arg(w)
+            .arg(&mut *y0)
+            .arg(&mut *y1)
+            .arg(&mut *y2)
+            .arg(&n)
+            .arg(&k);
+        unsafe { b.launch(cfg)? };
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn kda_conv_silu_decode(
         &self,
