@@ -1869,6 +1869,158 @@ extern "C" int memra_dsv4_topk_idx_m(const float* score, int s, int nb, int topk
     return 0;
 }
 
+// Hierarchical exact top-k for the 1M indexer. Each stage bitonic-sorts independent
+// 4096-key partitions and retains 512 keys. Repeating until <=4096 is lossless for a
+// global top-512: anything outside a partition's top-512 cannot enter the global
+// top-512. Keys carry the ORIGINAL index, so value-desc/index-asc ordering is identical
+// to dsv4_topk_idx_kernel across every merge level.
+constexpr int DSV4_TOPK_STREAM_CHUNK = 4096;
+constexpr int DSV4_TOPK_STREAM_KEEP = 512;
+
+extern "C" __global__ void dsv4_topk_stream_scores_kernel(
+        const float* __restrict__ score, int nb, unsigned long long* __restrict__ out,
+        int out_stride) {
+    extern __shared__ unsigned long long keys[];
+    int part = blockIdx.x;
+    int row = blockIdx.y;
+    int base = part * DSV4_TOPK_STREAM_CHUNK;
+    int tid = threadIdx.x;
+    const float* srow = score + (long)row * nb;
+    for (int i = tid; i < DSV4_TOPK_STREAM_CHUNK; i += blockDim.x) {
+        int j = base + i;
+        unsigned long long key = 0xFFFFFFFFFFFFFFFFull;
+        if (j < nb) {
+            unsigned b = __float_as_uint(srow[j]);
+            unsigned ord = b ^ ((b >> 31) ? 0xFFFFFFFFu : 0x80000000u);
+            key = (((unsigned long long)(~ord)) << 32) | (unsigned)j;
+        }
+        keys[i] = key;
+    }
+    __syncthreads();
+    for (int k = 2; k <= DSV4_TOPK_STREAM_CHUNK; k <<= 1) {
+        for (int j = k >> 1; j > 0; j >>= 1) {
+            for (int i = tid; i < DSV4_TOPK_STREAM_CHUNK; i += blockDim.x) {
+                int ixj = i ^ j;
+                if (ixj > i) {
+                    bool up = ((i & k) == 0);
+                    unsigned long long a = keys[i], b = keys[ixj];
+                    if ((a > b) == up) {
+                        keys[i] = b;
+                        keys[ixj] = a;
+                    }
+                }
+            }
+            __syncthreads();
+        }
+    }
+    unsigned long long* dst = out + (long)row * out_stride
+                                    + (long)part * DSV4_TOPK_STREAM_KEEP;
+    for (int i = tid; i < DSV4_TOPK_STREAM_KEEP; i += blockDim.x) dst[i] = keys[i];
+}
+
+extern "C" __global__ void dsv4_topk_stream_keys_kernel(
+        const unsigned long long* __restrict__ in, int nkeys, int in_stride,
+        unsigned long long* __restrict__ out, int out_stride) {
+    extern __shared__ unsigned long long keys[];
+    int part = blockIdx.x;
+    int row = blockIdx.y;
+    int base = part * DSV4_TOPK_STREAM_CHUNK;
+    int tid = threadIdx.x;
+    const unsigned long long* src = in + (long)row * in_stride;
+    for (int i = tid; i < DSV4_TOPK_STREAM_CHUNK; i += blockDim.x) {
+        int j = base + i;
+        keys[i] = (j < nkeys) ? src[j] : 0xFFFFFFFFFFFFFFFFull;
+    }
+    __syncthreads();
+    for (int k = 2; k <= DSV4_TOPK_STREAM_CHUNK; k <<= 1) {
+        for (int j = k >> 1; j > 0; j >>= 1) {
+            for (int i = tid; i < DSV4_TOPK_STREAM_CHUNK; i += blockDim.x) {
+                int ixj = i ^ j;
+                if (ixj > i) {
+                    bool up = ((i & k) == 0);
+                    unsigned long long a = keys[i], b = keys[ixj];
+                    if ((a > b) == up) {
+                        keys[i] = b;
+                        keys[ixj] = a;
+                    }
+                }
+            }
+            __syncthreads();
+        }
+    }
+    unsigned long long* dst = out + (long)row * out_stride
+                                    + (long)part * DSV4_TOPK_STREAM_KEEP;
+    for (int i = tid; i < DSV4_TOPK_STREAM_KEEP; i += blockDim.x) dst[i] = keys[i];
+}
+
+extern "C" __global__ void dsv4_topk_stream_final_kernel(
+        const unsigned long long* __restrict__ in, int nkeys, int in_stride,
+        int topk, int win, int* __restrict__ idx_out, int idx_stride, int npow2) {
+    extern __shared__ unsigned long long keys[];
+    int row = blockIdx.x;
+    int tid = threadIdx.x;
+    const unsigned long long* src = in + (long)row * in_stride;
+    for (int i = tid; i < npow2; i += blockDim.x)
+        keys[i] = (i < nkeys) ? src[i] : 0xFFFFFFFFFFFFFFFFull;
+    __syncthreads();
+    for (int k = 2; k <= npow2; k <<= 1) {
+        for (int j = k >> 1; j > 0; j >>= 1) {
+            for (int i = tid; i < npow2; i += blockDim.x) {
+                int ixj = i ^ j;
+                if (ixj > i) {
+                    bool up = ((i & k) == 0);
+                    unsigned long long a = keys[i], b = keys[ixj];
+                    if ((a > b) == up) {
+                        keys[i] = b;
+                        keys[ixj] = a;
+                    }
+                }
+            }
+            __syncthreads();
+        }
+    }
+    int* dst = idx_out + (long)row * idx_stride + win;
+    for (int i = tid; i < topk; i += blockDim.x)
+        dst[i] = (int)(keys[i] & 0xFFFFFFFFull) + win;
+}
+
+extern "C" int memra_dsv4_topk_idx_stream_m(
+        const float* score, int s, int nb, int topk, int win, int* idx_out,
+        int idx_stride, unsigned long long* work_a, unsigned long long* work_b,
+        int work_stride, void* stream_v) {
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    if (s <= 0 || nb <= 4096 || topk <= 0 || topk > DSV4_TOPK_STREAM_KEEP ||
+        idx_stride < win + topk) return 40008;
+    int parts = (nb + DSV4_TOPK_STREAM_CHUNK - 1) / DSV4_TOPK_STREAM_CHUNK;
+    int nkeys = parts * DSV4_TOPK_STREAM_KEEP;
+    if (work_stride < nkeys) return 40008;
+    constexpr size_t stage_smem = DSV4_TOPK_STREAM_CHUNK * sizeof(unsigned long long);
+    dsv4_topk_stream_scores_kernel<<<dim3((unsigned)parts, (unsigned)s), 512,
+                                        stage_smem, stream>>>(
+        score, nb, work_a, work_stride);
+    DSV4_ERR();
+    unsigned long long* cur = work_a;
+    unsigned long long* next = work_b;
+    while (nkeys > DSV4_TOPK_STREAM_CHUNK) {
+        parts = (nkeys + DSV4_TOPK_STREAM_CHUNK - 1) / DSV4_TOPK_STREAM_CHUNK;
+        dsv4_topk_stream_keys_kernel<<<dim3((unsigned)parts, (unsigned)s), 512,
+                                      stage_smem, stream>>>(
+            cur, nkeys, work_stride, next, work_stride);
+        DSV4_ERR();
+        nkeys = parts * DSV4_TOPK_STREAM_KEEP;
+        unsigned long long* tmp = cur;
+        cur = next;
+        next = tmp;
+    }
+    int npow2 = 1;
+    while (npow2 < nkeys) npow2 <<= 1;
+    dsv4_topk_stream_final_kernel<<<(unsigned)s, 512,
+                                    (size_t)npow2 * sizeof(unsigned long long), stream>>>(
+        cur, nkeys, work_stride, topk, win, idx_out, idx_stride, npow2);
+    DSV4_ERR();
+    return 0;
+}
+
 // ---- lane-8 sink attention, decode shape (s=1), split into three kernels so the
 // slot dots / per-head softmax / output accumulation each get real parallelism
 // (the monolithic kernel ran 64 blocks re-gathering every kv row per head: 214 µs

@@ -8722,6 +8722,9 @@ pub struct VerifyWs {
     qi: CudaSlice<f32>,
     wproj: CudaSlice<f32>,
     score: CudaSlice<f32>,
+    topk_a: CudaSlice<u64>,
+    topk_b: CudaSlice<u64>,
+    topk_stride: usize,
     idx: CudaSlice<i32>,
     idx_stride: usize,
     o: CudaSlice<f32>,
@@ -8904,6 +8907,7 @@ impl Dsv4Gpu {
         }
         assert!(min_index_ratio != usize::MAX, "no indexer layers?");
         let score_cap = self.max_seq / min_index_ratio + 1;
+        let topk_stride = score_cap.div_ceil(4096) * 512;
         let idx_tail = itopk.max(self.max_seq / 128 + 1);
         let idx_stride = win + idx_tail;
         let max_gemm_k = (o_groups * o_lora).max(hidden).max(q_lora).max(sh_inter);
@@ -8925,6 +8929,10 @@ impl Dsv4Gpu {
                 acc.set(acc.get() + (n * 4) as u64);
                 s.alloc_zeros::<i32>(n).map_err(e("vws i32"))
             };
+            let u = |n: usize| {
+                acc.set(acc.get() + (n * 8) as u64);
+                s.alloc_zeros::<u64>(n).map_err(e("vws u64"))
+            };
             let w = VerifyWs {
                 tmax,
                 h_a: f(tmax * hc * hidden)?,
@@ -8945,6 +8953,9 @@ impl Dsv4Gpu {
                 qi: f(tmax * iheads * ihd)?,
                 wproj: f(tmax * iheads)?,
                 score: f(tmax * score_cap)?,
+                topk_a: u(tmax * topk_stride)?,
+                topk_b: u(tmax * topk_stride)?,
+                topk_stride,
                 idx: i(tmax * idx_stride)?,
                 idx_stride,
                 o: f(tmax * heads * hd)?,
@@ -10013,8 +10024,7 @@ impl Dsv4Gpu {
                                     sp(&stream),
                                 ),
                             )?;
-                            ck(
-                                "topk_idx_m",
+                            let topk_rc = if nb <= 4096 {
                                 k::memra_dsv4_topk_idx_m(
                                     dpf!(vws.score, &stream),
                                     t as i32,
@@ -10026,8 +10036,23 @@ impl Dsv4Gpu {
                                     pos0 as i32,
                                     ratio as i32,
                                     sp(&stream),
-                                ),
-                            )?;
+                                )
+                            } else {
+                                k::memra_dsv4_topk_idx_stream_m(
+                                    dpf!(vws.score, &stream),
+                                    t as i32,
+                                    nb as i32,
+                                    ix.topk as i32,
+                                    win as i32,
+                                    vws.idx.device_ptr_mut(&stream).0 as *mut i32,
+                                    vws.idx_stride as i32,
+                                    vws.topk_a.device_ptr_mut(&stream).0 as *mut u64,
+                                    vws.topk_b.device_ptr_mut(&stream).0 as *mut u64,
+                                    vws.topk_stride as i32,
+                                    sp(&stream),
+                                )
+                            };
+                            ck("topk_idx_m", topk_rc)?;
                         }
                     }
                 }

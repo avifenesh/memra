@@ -376,6 +376,20 @@ unsafe extern "C" {
         ratio: i32,
         stream: *mut c_void,
     ) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_topk_idx_stream_m(
+        score: *const f32,
+        s: i32,
+        nb: i32,
+        topk: i32,
+        win: i32,
+        idx_out: *mut i32,
+        idx_stride: i32,
+        work_a: *mut u64,
+        work_b: *mut u64,
+        work_stride: i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_argmax(v: *const f32, n: i64, out: *mut i32, stream: *mut c_void) -> i32;
     /// iteration-5: `dst[0..cols) = src[idx[slot] * cols ..]`, the index read on the
     /// DEVICE so the DSpark markov chain needs no host round trip between steps.
