@@ -15837,6 +15837,57 @@ default_reasoning_effort = "always"
         assert!(validate_stream_prefill_config_values(Some(extended), Some(10_000)).is_ok());
     }
 
+    #[test]
+    fn streaming_prefill_config_is_wired_in_a_fresh_process() {
+        if std::env::var_os("PREFILL_CONFIG_TEST_CHILD").is_none() {
+            let result = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "tests::streaming_prefill_config_is_wired_in_a_fresh_process",
+                    "--nocapture",
+                ])
+                .env("PREFILL_CONFIG_TEST_CHILD", "1")
+                .env_remove("MEMRA_TIMEOUT_MS_MAX")
+                .env("MEMRA_STREAM_TTFT_MS_MAX", "300000")
+                .env("MEMRA_SSE_PREFILL_COMMIT_MS", "1")
+                .output()
+                .unwrap();
+            assert!(
+                result.status.success(),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            return;
+        }
+        validate_stream_prefill_config().unwrap();
+        assert_eq!(parse_timeout_ms(None, false).unwrap(), 90_000);
+        assert_eq!(parse_timeout_ms(None, true).unwrap(), 300_000);
+        assert!(parse_timeout_ms(Some(&json!(300_000)), false).is_err());
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let (tx, rx) = worker::event_channel();
+                tx.send(Event::PromptUsage {
+                    n_prompt: 1,
+                    n_cached: 0,
+                })
+                .unwrap();
+                let rx = tokio::time::timeout(
+                    std::time::Duration::from_secs(2),
+                    peek_first_token(rx, RequestDeadline::starting_now(300_000)),
+                )
+                .await
+                .expect("the configured production peek must commit before first token")
+                .unwrap();
+                drop(rx);
+                tokio::time::timeout(std::time::Duration::from_secs(1), tx.closed())
+                    .await
+                    .unwrap();
+            });
+    }
+
     #[tokio::test]
     async fn committed_prefill_sends_a_real_keepalive_before_any_generated_token() {
         let (tx, rx) = worker::event_channel();

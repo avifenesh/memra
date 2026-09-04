@@ -15,6 +15,11 @@ Admission still precedes this commit: the gate covers admitted prefill, not unbo
   cancellation after a client disconnect during silent prefill.
 - Clippy on all memra-server targets passed with warnings denied.
 - Flags census passed: 854 runtime reads, zero undocumented flags.
+- Fresh-process configuration test passed: streaming defaults to 300,000 ms when configured,
+  non-streaming stays at 90,000 ms, and the production peek commits before a generated token.
+- `tools/local-ci.sh` passed: kernel cells, graph lifetime/corruption detection, HTTP smoke,
+  64 concurrent streams, cache accounting, sampled cache/spec checks, 386 CPU engine tests,
+  and all three GPU engine tests. Missing optional model artifacts were reported as skips.
 - Manual `tests::prefill_proxy_fixture` through an isolated Cloudflare named tunnel:
   both arms delayed their first synthetic token by 150 seconds. The held-header arm
   returned 524 after 125.032717 seconds. The early-commit arm returned 200, headers at
