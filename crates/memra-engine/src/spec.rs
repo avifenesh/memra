@@ -7121,42 +7121,73 @@ impl HybridModel {
                     }
                     // FULL t-row attention pass (rope/append + fa + combine + o_proj in
                     // 3 launches/rank): same-session rows, slot = len-base+r, one len
-                    // advance by t. Host cache bookkeeping mirrors the per-column tail.
-                    if fa2_layer
-                        && let Some(mixed_t) =
-                            self.step35_verify_rope_fa_pass(e, il, cache, pos0, t, !pos_staged)?
-                    {
-                        pos_staged = true;
-                        {
+                    // advance by t. Ring rebase happens during append BEFORE the fused
+                    // kernel so device base_d and memory are already rebased for rows.
+                    // Host cache bookkeeping mirrors the per-column tail.
+                    let mut mixed_t_opt: Option<CudaSlice<f32>> = None;
+                    if fa2_layer {
+                        let crate::hybrid::Mixer::Full(fa) = &layer.mixer else {
+                            return Err("verify rope pass expects full attention".into());
+                        };
+                        let tp = fa
+                            .step_tp_qkv
+                            .as_ref()
+                            .ok_or("verify rope pass lost its TP state")?;
+                        let empty: [CudaSlice<f32>; 0] = [];
+                        let transaction = {
                             let tp_kv = cache.tp_kv[il]
                                 .as_mut()
                                 .expect("precheck verified the distributed cache");
-                            let transaction = tp_kv.begin_transaction()?;
-                            let crate::hybrid::Mixer::Full(fa) = &layer.mixer else {
-                                return Err("verify rope pass expects full attention".into());
-                            };
-                            let tp = fa
-                                .step_tp_qkv
-                                .as_ref()
-                                .ok_or("verify rope pass lost its TP state")?;
-                            let empty: [CudaSlice<f32>; 0] = [];
+                            let tx = tp_kv.begin_transaction()?;
                             tp.runtime.append_tp_kv_transaction_inner(
-                                tp_kv,
-                                transaction,
-                                &empty,
-                                &empty,
-                                t,
-                                true,
+                                tp_kv, tx, &empty, &empty, t, true,
                             )?;
-                            tp.runtime
-                                .commit_tp_kv_transaction_external(tp_kv, transaction, t)?;
-                            if let Some(local) = cache.kv[il].as_mut() {
-                                local.len = pos0 + t;
-                                if !crate::tp::len_mirror_lazy_on() {
-                                    e.set_i32_one(&mut local.len_d, local.len as i32)?;
+                            tx
+                        };
+                        match self.step35_verify_rope_fa_pass(e, il, cache, pos0, t, !pos_staged) {
+                            Ok(Some(mixed_t)) => {
+                                let tp_kv = cache.tp_kv[il]
+                                    .as_mut()
+                                    .expect("precheck verified the distributed cache");
+                                tp.runtime.commit_tp_kv_transaction_external(
+                                    tp_kv,
+                                    transaction,
+                                    t,
+                                )?;
+                                if let Some(local) = cache.kv[il].as_mut() {
+                                    local.len = pos0 + t;
+                                    if !crate::tp::len_mirror_lazy_on() {
+                                        e.set_i32_one(&mut local.len_d, local.len as i32)?;
+                                    }
+                                    if let (Some(ring), Some(tp_base)) =
+                                        (local.ring.as_mut(), tp_kv.ring_base())
+                                        && ring.base() != tp_base
+                                    {
+                                        ring.apply_rebase(tp_base);
+                                        if let Some(base_d) = local.base_d.as_mut() {
+                                            e.set_i32_one(base_d, tp_base as i32)?;
+                                        }
+                                    }
                                 }
+                                pos_staged = true;
+                                mixed_t_opt = Some(mixed_t);
+                            }
+                            Ok(None) => {
+                                let tp_kv = cache.tp_kv[il]
+                                    .as_mut()
+                                    .expect("precheck verified the distributed cache");
+                                tp.runtime.rollback_tp_kv_transaction(tp_kv, transaction)?;
+                            }
+                            Err(err) => {
+                                if let Some(tp_kv) = cache.tp_kv[il].as_mut() {
+                                    let _ =
+                                        tp.runtime.rollback_tp_kv_transaction(tp_kv, transaction);
+                                }
+                                return Err(err);
                             }
                         }
+                    }
+                    if let Some(mixed_t) = mixed_t_opt {
                         if prof {
                             e.stream().synchronize()?;
                             prof_ms[1] += seg.elapsed().as_secs_f64() * 1e3;
@@ -16788,6 +16819,73 @@ mod tp_verified_prefix_tests {
             .unwrap_err()
             .to_string();
         assert!(error.contains("changed shape"), "unexpected error: {error}");
+    }
+
+    #[test]
+    fn step37_dcw_rebase_at_5151_boundary() {
+        use crate::cache::KvRingAppend;
+        let mut cache = ResidentTpKvCache::new_swa(Vec::new(), 128, 128, 136, 96, 262_144, 512);
+        assert_eq!(cache.physical_capacity(), 5151);
+        cache.publish_hydration(5150, 0).unwrap();
+        assert_eq!(cache.ring_base(), Some(0));
+
+        // Before rebase, attempting to view rows past capacity fails with the exact bug error
+        let err = cache.physical_range(5150, 5153).unwrap_err();
+        assert_eq!(
+            err,
+            "SWA ring view [5150,5153) is outside resident [0,5151)"
+        );
+
+        let (write_row, would_rebase) = cache.peek_append_ring(3).unwrap();
+        assert!(would_rebase);
+        assert_eq!(write_row, 542);
+
+        let tx = cache.begin_transaction().unwrap();
+        let plan = cache.prepare_append(tx, 3).unwrap();
+        assert_eq!(plan.target(), 5153);
+        assert_eq!(plan.write_row(), 542);
+        assert_eq!(
+            plan.ring_append(),
+            Some(KvRingAppend::Rebase {
+                src_row: 4608,
+                keep_rows: 542,
+                new_base: 4608,
+                write_row: 542,
+            })
+        );
+        cache.publish_append_rebase(plan).unwrap();
+        cache.publish_append_plan(plan).unwrap();
+        assert_eq!(cache.ring_base(), Some(4608));
+
+        // After rebase, physical range is within bounds
+        let range = cache.physical_range(5150, 5153).unwrap();
+        assert_eq!(range, 542..545);
+
+        let target = cache.commit_target(tx, 3).unwrap();
+        cache.publish_finalize(tx, target).unwrap();
+        assert_eq!((cache.committed_len(), cache.staged_len()), (5153, 5153));
+    }
+
+    #[test]
+    fn step37_dcw_rebase_rollback_preserves_view_and_base() {
+        let mut cache = ResidentTpKvCache::new_swa(Vec::new(), 128, 128, 136, 96, 262_144, 512);
+        cache.publish_hydration(5150, 0).unwrap();
+
+        let tx = cache.begin_transaction().unwrap();
+        let plan = cache.prepare_append(tx, 3).unwrap();
+        cache.publish_append_rebase(plan).unwrap();
+        cache.publish_append_plan(plan).unwrap();
+        assert_eq!(cache.ring_base(), Some(4608));
+
+        // Rollback 0 rows accepted (pass declined)
+        let rollback = cache.commit_target(tx, 0).unwrap();
+        cache.publish_finalize(tx, rollback).unwrap();
+        assert_eq!((cache.committed_len(), cache.staged_len()), (5150, 5150));
+        assert_eq!(cache.ring_base(), Some(4608));
+
+        // View for base_len (5150) is still valid in resident [4608, 4608 + 5151)
+        let range = cache.physical_range(4608, 5150).unwrap();
+        assert_eq!(range, 0..542);
     }
 }
 
