@@ -607,6 +607,27 @@ fn dsv4_cache_cap_blocks(capacity: usize, ratio: usize) -> usize {
     capacity.checked_div(ratio).unwrap_or(0)
 }
 
+fn dsv4_split_for_tail_reserve(layer_bytes: &[u64], tail_reserve: u64) -> usize {
+    assert!(
+        layer_bytes.len() >= 2,
+        "dsv4 PP2 needs at least two trunk layers"
+    );
+    let total: u64 = layer_bytes.iter().sum();
+    let mut left = 0u64;
+    let mut best = (u64::MAX, 1usize);
+    for cut in 1..layer_bytes.len() {
+        left += layer_bytes[cut - 1];
+        let right = total - left + tail_reserve;
+        let peak = left.max(right);
+        // Equal estimated peaks choose the later cut: the tail stage owns DSpark and
+        // the head, so preserving extra dynamic-cache headroom there is preferable.
+        if peak < best.0 || (peak == best.0 && cut > best.1) {
+            best = (peak, cut);
+        }
+    }
+    best.1
+}
+
 /// One contiguous f32 range in a stage-owned pinned-host slab. DSV4 keeps its compact
 /// long-context state on the layer's owning GPU while a session is active; this is the
 /// lossless parked-session representation used to free that VRAM without expanding the
@@ -1620,16 +1641,26 @@ impl Dsv4Gpu {
                 _ => base,
             }
         };
-        let total: u64 = (0..n_trunk).map(layer_bytes).sum();
-        let mut acc = 0u64;
-        let mut split_at = n_trunk / 2;
-        for il in 0..n_trunk {
-            acc += layer_bytes(il);
-            if acc * 2 >= total {
-                split_at = il + 1;
-                break;
-            }
-        }
+        let trunk_bytes: Vec<u64> = (0..n_trunk).map(layer_bytes).collect();
+        // The bundled 0731 DSpark is resident on the tail stage. The old trunk-only
+        // cut balanced 22/20 layers and then added all three blocks to card 1, creating
+        // the measured ~7.3 GiB load skew that blocked an otherwise-fitting 1M cache.
+        // Reserve its config-derived block count before choosing the cut. One base-layer
+        // charge per block is conservative for the MXFP4 blocks and stable across mints;
+        // main_proj/markov auxiliaries fit inside that overestimate.
+        let dspark_tail_reserve = if std::env::var("MEMRA_DSV4_DRAFTER").as_deref() == Ok("dspark")
+            && !model.has("mtp.0.e_proj.weight")
+        {
+            let cfg = memra_gguf::dsv4_dspark::DsparkConfig::load(dir, &model);
+            cfg.n_blocks as u64 * 3_875_000_000u64
+        } else {
+            0
+        };
+        let split_at = dsv4_split_for_tail_reserve(&trunk_bytes, dspark_tail_reserve) as u32;
+        eprintln!(
+            "[load] placement: split_at={split_at} trunk_layers={n_trunk} dspark_tail_reserve={:.2} GiB",
+            dspark_tail_reserve as f64 / (1u64 << 30) as f64,
+        );
 
         let fc_yarn_host = precompute_freqs_cis(
             rd,
@@ -12073,7 +12104,7 @@ pub fn vt_slot_drafts(conf: &[f32], tau_logit: f32, floor: usize) -> usize {
 
 #[cfg(test)]
 mod capacity_planner_tests {
-    use super::dsv4_cache_cap_blocks;
+    use super::{dsv4_cache_cap_blocks, dsv4_split_for_tail_reserve};
 
     #[test]
     fn verify_transient_base_tracks_session_not_model_capacity() {
@@ -12091,6 +12122,13 @@ mod capacity_planner_tests {
             "session verify must not use 1M base"
         );
         assert_eq!(dsv4_cache_cap_blocks(short_capacity, 0), 0);
+    }
+
+    #[test]
+    fn pp_cut_accounts_for_a_tail_resident_drafter() {
+        let layers = vec![100u64; 42];
+        assert_eq!(dsv4_split_for_tail_reserve(&layers, 0), 21);
+        assert_eq!(dsv4_split_for_tail_reserve(&layers, 300), 23);
     }
 }
 
