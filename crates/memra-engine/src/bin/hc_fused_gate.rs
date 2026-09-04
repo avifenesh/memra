@@ -346,7 +346,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         // v3's three Sinkhorn arms, at the served 512-wide block, each against the unfused chain.
         let mut v3_bad = 0usize;
-        for sr in [0i32, 1, 2] {
+        for sr in [0i32, 1] {
             let out = run_fused_v3(sr, 512)?;
             let b = bit_diffs(&unfused_out, &out);
             v3_bad += b;
@@ -389,7 +389,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Wall time includes the dtoh every arm pays equally, so the DIFFERENCE between arms is
         // the kernel difference; the absolute figures are not a serving-shape claim.
         let mut v3_us: Vec<(i32, Vec<u64>)> = Vec::new();
-        for sr in [0i32, 1, 2] {
+        for sr in [0i32, 1] {
             let mut us = Vec::with_capacity(N_TIMED);
             for _ in 0..N_TIMED {
                 stream.synchronize()?;

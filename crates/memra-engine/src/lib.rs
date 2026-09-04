@@ -2796,26 +2796,10 @@ pub(crate) fn hyper_batch_solo_on() -> bool {
 /// which the same door family does carry. A tree reduction would have been fewer instructions
 /// and a different association; it is deliberately not used.
 pub(crate) fn hc_pre_sink_reg() -> bool {
-    hc_pre_sink_reg_level() > 0
-}
-
-/// `MEMRA_HC_PRE_SINK_REG` as a LEVEL: 0 off, 1 the warp-shuffle register Sinkhorn, 2 the
-/// all-register arm (every lane holds the whole 4x4 matrix; no shuffles, no ballot). Level 2
-/// degrades to 1 inside the launcher for any hc != 4.
-pub(crate) fn hc_pre_sink_reg_level() -> i32 {
-    hc_pre_sink_reg_level_from(
+    hc_pre_sink_reg_from(
         std::env::var("MEMRA_HC_PRE_SINK_REG").ok().as_deref(),
         env!("MEMRA_BUILT_CUDA_ARCH"),
     )
-}
-
-/// The pure parse behind [`hc_pre_sink_reg_level`]. `2` selects the all-register arm; every other
-/// value keeps [`hc_pre_sink_reg_from`]'s meaning exactly.
-pub fn hc_pre_sink_reg_level_from(v: Option<&str>, built_arch: &str) -> i32 {
-    match v.map(str::trim) {
-        Some("2") => 2,
-        other => i32::from(hc_pre_sink_reg_from(other, built_arch)),
-    }
 }
 
 /// The pure parse behind [`hc_pre_sink_reg`] (arch-keyed since 2026-09-04): `1` arms, `0`
