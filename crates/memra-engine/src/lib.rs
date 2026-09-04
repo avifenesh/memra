@@ -2834,6 +2834,67 @@ pub fn hc_pre_split_collapse() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_HC_PRE_SPLIT_COLLAPSE").as_deref() == Ok("1"))
 }
 
+/// `MEMRA_HC_PRE_ZQ8` (lane/hcpre-zq8-fusion-20260905): run each hc site's pre-chain AND the
+/// `rms_norm_zq8` that consumes its output as ONE launch (`dsv4_hc_pre_zq8_kernel`).
+///
+/// DEFAULT OFF pending its model-scale row (new-flags law). WHY IT SHOULD PAY: at decode both
+/// kernels are one block per position and both are the starved shape the ncu census names
+/// (~4 active warps per scheduler, 88% of cycles with nothing to issue); the norm reads exactly
+/// what the pre-chain wrote and nothing else reads it, so the second launch -- 79 per token at
+/// 6.7 us in the mint census -- is pure structure. EXACTNESS: stages 1-3 are the v3 body verbatim
+/// (generated, not retyped) and the norm is `rms_norm_zq8_f32_v2` with its own block width
+/// substituted for blockDim, so every partition, tree and epilogue is the same statement in the
+/// same order. Engages only where the walk already fuses the norm's quantize
+/// (`MEMRA_GLM5_Q8_FUSE` / `_ATTN`), because that is the pair it replaces.
+pub fn hc_pre_zq8_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_HC_PRE_ZQ8").as_deref() == Ok("1"))
+}
+
+/// `MEMRA_Q8_CENSUS=1` (lane/hcpre-zq8-fusion-20260905, diagnostics): attribute every
+/// `quantize_q8_1` launch to its Rust CALL SITE and print a histogram every 4096 calls.
+///
+/// WHY. The mint decode census counts 327 `quantize_q8_1` launches per token -- 2.0 us each,
+/// 0.65 ms, 5.9% of decode -- and 109 call sites in the tree. nsys names the kernel, not the
+/// caller, and 327 / 45 layers is 7.3 per layer with no obvious decomposition. The only way to
+/// pick which producer to fuse the quantize INTO (the `rms_norm_zq8` pattern) is to know which
+/// sites fire and how often; guessing has already cost this lane eight dead arms. `#[track_caller]`
+/// on `quantize_q8_1` gives the site for free; the wrappers that forward to it attribute to the
+/// wrapper's line, which still names the family. Zero cost when the env is unset beyond one
+/// OnceLock read per call.
+fn q8_census_record(site: &'static std::panic::Location<'static>, m: usize, in_f: usize) {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static ON: OnceLock<bool> = OnceLock::new();
+    if !*ON.get_or_init(|| std::env::var("MEMRA_Q8_CENSUS").as_deref() == Ok("1")) {
+        return;
+    }
+    // (calls so far, per-call-site count keyed by file/line/m/in_f).
+    type Hist = (u64, HashMap<(String, u32, usize, usize), u64>);
+    static HIST: OnceLock<Mutex<Hist>> = OnceLock::new();
+    let mut g = HIST
+        .get_or_init(|| Mutex::new((0, HashMap::new())))
+        .lock()
+        .unwrap();
+    g.0 += 1;
+    *g.1.entry((site.file().to_string(), site.line(), m, in_f))
+        .or_insert(0) += 1;
+    if g.0.is_multiple_of(4096) {
+        let mut rows: Vec<_> = g.1.iter().map(|(k, v)| (*v, k.clone())).collect();
+        rows.sort_by_key(|r| std::cmp::Reverse(r.0));
+        eprintln!(
+            "[q8-census] {} quantize_q8_1 calls so far; by call site:",
+            g.0
+        );
+        for (n, (file, line, m, in_f)) in rows {
+            eprintln!(
+                "[q8-census]   {n:>8}  {:5.1}%  {file}:{line}  m={m} in_f={in_f}",
+                100.0 * n as f64 / g.0 as f64
+            );
+        }
+    }
+}
+
 /// The build-arch default of `MEMRA_HC_PRE_BLOCK`: 512 on `100a`, 128 elsewhere.
 pub fn hc_pre_block_default(built_arch: &str) -> usize {
     if built_arch == "100a" { 512 } else { 128 }
@@ -10548,12 +10609,14 @@ impl Engine {
         Ok((q, d))
     }
 
+    #[track_caller]
     pub fn quantize_q8_1(
         &self,
         x: &CudaSlice<f32>,
         m: usize,
         in_f: usize,
     ) -> Result<(CudaSlice<i8>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        q8_census_record(std::panic::Location::caller(), m, in_f);
         let nblk = in_f / 32;
         let mut q = self.alloc_uninit::<i8>(m * in_f)?; // full-overwrite output: skip memset
         let mut d = self.alloc_uninit::<f32>(m * nblk)?; // full-overwrite output: skip memset

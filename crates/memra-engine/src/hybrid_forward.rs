@@ -2796,9 +2796,34 @@ impl HybridModel {
                 format!("layer {il} carries no hyper-connection weights under an hc plan")
             })?;
 
-            crate::hyper::pre_t1_ws(e, topology, &hyper.attn, x, ws, n_embd)?;
+            // MEMRA_HC_PRE_ZQ8: the pre-chain and the norm that consumes its `y` in ONE launch.
+            // Returns None without launching wherever its preconditions fail, so the two-launch
+            // program below runs unchanged in that case.
+            let attn_fused = if crate::hc_pre_zq8_on()
+                && crate::glm5_q8_fuse_attn_on()
+                && matches!(&layer.mixer, Mixer::Kda(la) if la.tp.is_none())
+            {
+                crate::hyper::pre_t1_ws_zq8(
+                    e,
+                    topology,
+                    &hyper.attn,
+                    x,
+                    ws,
+                    n_embd,
+                    layer.attn_norm.float_data(),
+                    crate::hyper::NormDst::H,
+                    eps,
+                )?
+            } else {
+                None
+            };
+            if attn_fused.is_none() {
+                crate::hyper::pre_t1_ws(e, topology, &hyper.attn, x, ws, n_embd)?;
+            }
             // MEMRA_GLM5_Q8_FUSE_ATTN: see the eager walk above; same fusion, workspace form.
-            let attn_q8 = if crate::glm5_q8_fuse_attn_on()
+            let attn_q8 = if let Some(pair) = attn_fused {
+                Some(pair)
+            } else if crate::glm5_q8_fuse_attn_on()
                 && matches!(&layer.mixer, Mixer::Kda(la) if la.tp.is_none())
             {
                 let pair = e.rms_norm_zq8_f32(
@@ -2846,10 +2871,29 @@ impl HybridModel {
             crate::hyper::post_t1_ws(e, topology, &mixed, x, ws, n_embd)?;
             std::mem::swap(x, &mut ws.xb);
 
-            crate::hyper::pre_t1_ws(e, topology, &hyper.mlp, x, ws, n_embd)?;
+            let mlp_fused = if crate::hc_pre_zq8_on() && crate::glm5_q8_fuse_on() {
+                crate::hyper::pre_t1_ws_zq8(
+                    e,
+                    topology,
+                    &hyper.mlp,
+                    x,
+                    ws,
+                    n_embd,
+                    layer.post_attn_norm.float_data(),
+                    crate::hyper::NormDst::Z,
+                    eps,
+                )?
+            } else {
+                None
+            };
+            if mlp_fused.is_none() {
+                crate::hyper::pre_t1_ws(e, topology, &hyper.mlp, x, ws, n_embd)?;
+            }
             // Door MEMRA_GLM5_Q8_FUSE — the workspace twin of the fusion above (same fused
             // kernel, same byte-identity argument, `ws.z` in place of a fresh allocation).
-            let zq8 = if crate::glm5_q8_fuse_on() {
+            let zq8 = if let Some(pair) = mlp_fused {
+                Some(pair)
+            } else if crate::glm5_q8_fuse_on() {
                 let pair = e.rms_norm_zq8_f32(
                     &ws.y,
                     layer.post_attn_norm.float_data(),
