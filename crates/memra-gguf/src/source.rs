@@ -237,7 +237,9 @@ pub struct TensorView<'a> {
 /// sibling via `find` (identical to the GGUF NVFP4 path).
 pub struct Nvfp4Native<'a> {
     pub wbytes: &'a [u8], // packed e2m1, [out_f, in_f/2] row-major, 2 codes/byte
-    pub wscale: &'a [u8], // UE4M3 per-16 scales, [out_f, in_f/16] row-major
+    // UE4M3 per-16 scales, ALWAYS linear [out_f, in_f/16] row-major: borrowed from the mmap for a
+    // linear checkpoint, owned for one that stores them swizzled (see `Nvfp4ScaleLayout`).
+    pub wscale: Cow<'a, [u8]>,
     pub out_f: usize,
     pub in_f: usize,
 }
@@ -1365,6 +1367,63 @@ fn open_repack_shard(dir: &Path, relative: &Path) -> std::io::Result<File> {
     Ok(file)
 }
 
+/// How a checkpoint stores its NVFP4 per-16 FP8 scale plane.
+///
+/// The scale plane is the ONE part of an NVFP4 checkpoint whose on-disk order is not implied by
+/// its declared shape. `tiyuvta/GLM-5.3-Flash-NVFP4-B200-hybrid` declares `weight_scale` as
+/// `[out, in/16]` — exactly the shape a linear plane has — while storing the bytes in the
+/// CUTLASS/vLLM `Swizzle32x4x4` tensor-core order. So the shape guard below CANNOT tell the two
+/// apart, and reading swizzled bytes as linear is silent corruption rather than a load failure:
+/// measured against the source BF16 (`zai-org/GLM-5.3-Flash-BF16@f12e0fe1`, layer 0
+/// `mlp.gate_proj` rows 0..128, 2026-09-04) a linear read of this mint gives relative error
+/// 0.570 / cosine 0.847 — wrong, but fluent — where the unswizzled read gives 0.094 / 0.9956,
+/// which is ordinary e2m1 quantization error. A model that loads and speaks is not evidence.
+///
+/// Therefore the layout is DECLARED, never guessed, and an unrecognised declaration is a hard
+/// load error rather than a fallback to `Linear`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Nvfp4ScaleLayout {
+    /// Row-major `[out_f, in_f/16]`, one FP8 byte per 16 input elements. Every checkpoint that
+    /// predates the B200 hybrid mint, and the default when no `LAYOUT.json` is present.
+    Linear,
+    /// CUTLASS / vLLM `swizzle_blockscale`: the linear plane padded to `out%128` and
+    /// `(in/16)%4`, viewed as `(N/128, 4, 32, K4, 4)` and permuted to `(N/128, K4, 32, 4, 4)`.
+    /// Undone once at load by `nvfp4_repack::unswizzle_blockscale`, after which every existing
+    /// NVFP4 kernel reads the checkpoint unchanged.
+    Swizzle32x4x4,
+}
+
+/// Read the checkpoint's declared NVFP4 scale layout from `LAYOUT.json` beside `config.json`.
+///
+/// Absent file or absent key => `Linear` (the historical behaviour, and correct for every
+/// checkpoint minted before 2026-09-04). A PRESENT but unrecognised `nvfp4_scale` is an error:
+/// a future layout must not be read as linear just because this build has not learned it yet.
+fn read_nvfp4_scale_layout(dir: &std::path::Path) -> std::io::Result<Nvfp4ScaleLayout> {
+    let Ok(text) = std::fs::read_to_string(dir.join("LAYOUT.json")) else {
+        return Ok(Nvfp4ScaleLayout::Linear);
+    };
+    let Some(rest) = text.split("\"nvfp4_scale\"").nth(1) else {
+        return Ok(Nvfp4ScaleLayout::Linear);
+    };
+    let value = rest
+        .split_once(':')
+        .and_then(|(_, v)| v.trim_start().strip_prefix('"'))
+        .and_then(|v| v.split('"').next())
+        .unwrap_or("")
+        .trim();
+    if value.starts_with("Swizzle32x4x4") {
+        Ok(Nvfp4ScaleLayout::Swizzle32x4x4)
+    } else if value.eq_ignore_ascii_case("linear") || value.is_empty() {
+        Ok(Nvfp4ScaleLayout::Linear)
+    } else {
+        Err(invalid_data(format!(
+            "LAYOUT.json declares nvfp4_scale {value:?}, which this build cannot read. \
+             Reading it as a linear plane would load and generate fluent but WRONG text \
+             (see Nvfp4ScaleLayout). Teach the loader this layout or re-mint linear."
+        )))
+    }
+}
+
 /// safetensors-backed source: an HF checkpoint (config.json + one/more .safetensors shards).
 /// `find` translates the requested ggml name into the HF name, looks it up, and reverses the
 /// shape into ggml `ne` order.
@@ -1375,6 +1434,7 @@ pub struct SafetensorsSource {
     modules_to_not_convert: Vec<String>,
     preserve_checkpoint_bf16: bool,
     quant_algo: Option<String>,
+    nvfp4_scale_layout: Nvfp4ScaleLayout,
 }
 
 impl SafetensorsSource {
@@ -1404,6 +1464,7 @@ impl SafetensorsSource {
             ))
         })?;
         let model = StModel::open(path)?;
+        let nvfp4_scale_layout = read_nvfp4_scale_layout(dir)?;
         Ok(Self {
             model,
             cfg,
@@ -1411,6 +1472,7 @@ impl SafetensorsSource {
             modules_to_not_convert: hf.modules_to_not_convert,
             preserve_checkpoint_bf16: hf.preserve_checkpoint_bf16,
             quant_algo: hf.quant_algo,
+            nvfp4_scale_layout,
         })
     }
 
@@ -1435,6 +1497,7 @@ impl SafetensorsSource {
             .as_ref()
             .is_some_and(|config| config.preserve_checkpoint_bf16);
         let quant_algo = hf.as_ref().and_then(|config| config.quant_algo.clone());
+        let nvfp4_scale_layout = read_nvfp4_scale_layout(&dir)?;
         Ok(Self {
             model,
             cfg,
@@ -1442,6 +1505,7 @@ impl SafetensorsSource {
             modules_to_not_convert,
             preserve_checkpoint_bf16,
             quant_algo,
+            nvfp4_scale_layout,
         })
     }
 
@@ -1744,6 +1808,44 @@ impl SafetensorsSource {
         ))
     }
 
+    /// Validate an on-disk NVFP4 scale plane against the declared layout and return it in the
+    /// LINEAR `[out_f, in_f/16]` form every memra NVFP4 reader consumes. Borrowed for a linear
+    /// checkpoint (zero copy, the historical path); owned for a swizzled one, where the
+    /// permutation is undone once here instead of in every kernel's inner loop.
+    fn nvfp4_scale_linear<'a>(
+        &self,
+        shape: &[u64],
+        sbytes: &'a [u8],
+        out_f: usize,
+        in_f: usize,
+    ) -> Option<Cow<'a, [u8]>> {
+        let k = in_f / 16;
+        match self.nvfp4_scale_layout {
+            Nvfp4ScaleLayout::Linear => {
+                if shape != [out_f as u64, k as u64] || sbytes.len() != out_f.checked_mul(k)? {
+                    return None;
+                }
+                Some(Cow::Borrowed(sbytes))
+            }
+            Nvfp4ScaleLayout::Swizzle32x4x4 => {
+                // The swizzled plane is padded to out%128 / k%4. A mint whose shapes are already
+                // multiples (every tensor in the B200 hybrid) declares the UNPADDED shape while
+                // storing swizzled bytes, so accept either spelling and key off the byte count.
+                let s_n = out_f.div_ceil(128) * 128;
+                let s_k = k.div_ceil(4) * 4;
+                let padded = s_n.checked_mul(s_k)?;
+                if sbytes.len() != padded
+                    || (shape != [out_f as u64, k as u64] && shape != [s_n as u64, s_k as u64])
+                {
+                    return None;
+                }
+                Some(Cow::Owned(crate::nvfp4_repack::unswizzle_blockscale(
+                    sbytes, out_f, in_f,
+                )))
+            }
+        }
+    }
+
     /// Detect an HF NVFP4 quantized Linear under ANY on-disk encoding and return everything the
     /// repack needs: `(out_f, in_f, packed_bytes, per16_fp8_scale_bytes, macro_scale)`. All encodings
     /// store the SAME e2m1 weights + per-16 FP8(e4m3) scales — only names + macro-scale differ:
@@ -1757,7 +1859,10 @@ impl SafetensorsSource {
     ///     `out_f`/`in_f` are the logical [out, in] dims (packed weight is [out, in/2] U8). `None` for a
     ///     plain (non-quantized) weight or missing siblings.
     #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-    fn nvfp4_quant(&self, hf_weight: &str) -> Option<(usize, usize, &[u8], &[u8], f32)> {
+    fn nvfp4_quant<'a>(
+        &'a self,
+        hf_weight: &str,
+    ) -> Option<(usize, usize, &'a [u8], Cow<'a, [u8]>, f32)> {
         // modelopt: the `.weight` itself is the U8 packed tensor with a `.weight_scale` sibling.
         if let Some((winfo, wbytes)) = self.lookup(hf_weight)
             && winfo.dtype == "U8"
@@ -1769,13 +1874,10 @@ impl SafetensorsSource {
             {
                 let out_f = winfo.shape[0] as usize; // HF row-major [out, in/2]
                 let in_f = (winfo.shape[1] as usize) * 2; // U8 packs 2 codes/byte
-                if !in_f.is_multiple_of(16)
-                    || wbytes.len() != out_f.checked_mul(in_f / 2)?
-                    || sinfo.shape != [out_f as u64, (in_f / 16) as u64]
-                    || sbytes.len() != out_f.checked_mul(in_f / 16)?
-                {
+                if !in_f.is_multiple_of(16) || wbytes.len() != out_f.checked_mul(in_f / 2)? {
                     return None;
                 }
+                let scale = self.nvfp4_scale_linear(&sinfo.shape, sbytes, out_f, in_f)?;
                 let (macro_info, macro_bytes) = self.lookup(&format!("{stem}.weight_scale_2"))?;
                 if macro_info.dtype != "F32"
                     || !(macro_info.shape.is_empty() || macro_info.shape == [1])
@@ -1787,7 +1889,7 @@ impl SafetensorsSource {
                 if !macro_s.is_finite() || macro_s <= 0.0 {
                     return None;
                 }
-                return Some((out_f, in_f, wbytes, sbytes, macro_s));
+                return Some((out_f, in_f, wbytes, scale, macro_s));
             }
         }
         // compressed-tensors (llm-compressor): `<name>.weight_packed` (U8) + `<name>.weight_scale`
@@ -1811,13 +1913,10 @@ impl SafetensorsSource {
         {
             let out_f = winfo.shape[0] as usize;
             let in_f = (winfo.shape[1] as usize) * 2;
-            if !in_f.is_multiple_of(16)
-                || wbytes.len() != out_f.checked_mul(in_f / 2)?
-                || sinfo.shape != [out_f as u64, (in_f / 16) as u64]
-                || sbytes.len() != out_f.checked_mul(in_f / 16)?
-            {
+            if !in_f.is_multiple_of(16) || wbytes.len() != out_f.checked_mul(in_f / 2)? {
                 return None;
             }
+            let scale = self.nvfp4_scale_linear(&sinfo.shape, sbytes, out_f, in_f)?;
             let (macro_info, macro_bytes) = self.lookup(&format!("{stem}.weight_global_scale"))?;
             if macro_info.dtype != "F32"
                 || !(macro_info.shape.is_empty() || macro_info.shape == [1])
@@ -1830,17 +1929,21 @@ impl SafetensorsSource {
                 return None;
             }
             let macro_s = 1.0 / global;
-            return Some((out_f, in_f, wbytes, sbytes, macro_s));
+            return Some((out_f, in_f, wbytes, scale, macro_s));
         }
         // Reza custom: `<name>.weight.nvfp4_packed` (U8) + `<name>.weight.nvfp4_scale_e4m3`. No macro.
         let (winfo, wbytes) = self.lookup(&format!("{hf_weight}.nvfp4_packed"))?;
         if winfo.dtype != "U8" || winfo.shape.len() != 2 {
             return None;
         }
-        let (_sinfo, sbytes) = self.lookup(&format!("{hf_weight}.nvfp4_scale_e4m3"))?;
+        let (sinfo, sbytes) = self.lookup(&format!("{hf_weight}.nvfp4_scale_e4m3"))?;
         let out_f = winfo.shape[0] as usize;
         let in_f = (winfo.shape[1] as usize) * 2;
-        Some((out_f, in_f, wbytes, sbytes, 1.0))
+        if !in_f.is_multiple_of(16) {
+            return None;
+        }
+        let scale = self.nvfp4_scale_linear(&sinfo.shape, sbytes, out_f, in_f)?;
+        Some((out_f, in_f, wbytes, scale, 1.0))
     }
 }
 
@@ -2343,7 +2446,7 @@ impl TensorSource for SafetensorsSource {
                 // is `<hf>.nvfp4_packed`, not `<hf>` itself), so no second lookup.
                 if let Some((out_f, in_f, wbytes, wscale, _macro)) = self.nvfp4_quant(&hf) {
                     let packed =
-                        crate::nvfp4_repack::repack_modelopt_to_gguf(wbytes, wscale, out_f, in_f);
+                        crate::nvfp4_repack::repack_modelopt_to_gguf(wbytes, &wscale, out_f, in_f);
                     return Some(TensorView {
                         bytes: Cow::Owned(packed),
                         ggml_type: GgmlType::NVFP4,
@@ -2464,7 +2567,7 @@ impl TensorSource for SafetensorsSource {
             HfTarget::Transform { hf, kind } => {
                 if let Some((out_f, in_f, wbytes, wscale, _macro)) = self.nvfp4_quant(&hf) {
                     let packed =
-                        crate::nvfp4_repack::repack_modelopt_to_gguf(wbytes, wscale, out_f, in_f);
+                        crate::nvfp4_repack::repack_modelopt_to_gguf(wbytes, &wscale, out_f, in_f);
                     if let Some((ne, bytes)) = kind.apply_nvfp4(&packed, out_f, in_f, &self.cfg) {
                         return Some(TensorView {
                             bytes: Cow::Owned(bytes),
@@ -2825,6 +2928,118 @@ mod tests {
         assert!(src.has("blk.0.attn_q.weight"));
         // unmapped ggml name (no SSM tensors in this dense model)
         assert!(src.find("blk.0.ssm_a").is_none());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A checkpoint that stores its NVFP4 scales swizzled must be READ swizzled, an undeclared
+    /// one must stay linear, and an unrecognised declaration must refuse to load.
+    ///
+    /// This gate exists because the failure it guards is invisible: the swizzled plane declares
+    /// the same `[out, in/16]` shape a linear plane declares, so every existing validity check
+    /// passes on the wrong reading and the model loads, serves, and speaks — measured on
+    /// `tiyuvta/GLM-5.3-Flash-NVFP4-B200-hybrid` against its BF16 source, a linear read of a
+    /// swizzled plane gives cosine 0.847 to the true weights. The RED ARM below (no LAYOUT.json,
+    /// same bytes) asserts the corrupted reading actually differs, so a future change that
+    /// silently unswizzles everything, or nothing, cannot leave this test green.
+    #[test]
+    fn nvfp4_scale_layout_is_declared_and_unrecognised_declarations_refuse_to_load() {
+        use crate::nvfp4_repack::{repack_modelopt_to_gguf, swizzle_blockscale};
+
+        let (out_f, in_f) = (256usize, 128usize);
+        let (wlen, slen) = (out_f * in_f / 2, out_f * in_f / 16);
+        // Distinct per (row, col) so ANY mis-permutation changes the output. All bytes are finite
+        // ue4m3 codes well inside the normal range.
+        let linear_scale: Vec<u8> = (0..slen)
+            .map(|i| 0x30u8 + ((i * 7 + i / 8) % 32) as u8)
+            .collect();
+        let swizzled = swizzle_blockscale(&linear_scale, out_f, in_f);
+        assert_eq!(swizzled.len(), slen, "no padding at these dims");
+        assert_ne!(swizzled, linear_scale, "the permutation must move bytes");
+        let weight: Vec<u8> = (0..wlen).map(|i| ((i * 31 + 5) % 251) as u8).collect();
+        let want = repack_modelopt_to_gguf(&weight, &linear_scale, out_f, in_f);
+
+        let dir = std::env::temp_dir().join(format!("memra_nvfp4_swz_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let header = format!(
+            r#"{{
+              "model.layers.1.self_attn.q_proj.weight":{{"dtype":"U8","shape":[{out_f},{}],"data_offsets":[0,{wlen}]}},
+              "model.layers.1.self_attn.q_proj.weight_scale":{{"dtype":"F8_E4M3","shape":[{out_f},{}],"data_offsets":[{wlen},{}]}},
+              "model.layers.1.self_attn.q_proj.weight_scale_2":{{"dtype":"F32","shape":[],"data_offsets":[{},{}]}}
+            }}"#,
+            in_f / 2,
+            in_f / 16,
+            wlen + slen,
+            wlen + slen,
+            wlen + slen + 4,
+        );
+        let mut file = Vec::new();
+        file.extend_from_slice(&(header.len() as u64).to_le_bytes());
+        file.extend_from_slice(header.as_bytes());
+        file.extend_from_slice(&weight);
+        file.extend_from_slice(&swizzled);
+        file.extend_from_slice(&1.0f32.to_le_bytes());
+        std::fs::write(dir.join("model.safetensors"), file).unwrap();
+        std::fs::write(
+            dir.join("config.json"),
+            r#"{
+              "model_type":"step3p5","num_hidden_layers":2,"hidden_size":128,
+              "intermediate_size":256,"num_attention_heads":1,"num_attention_groups":1,
+              "head_dim":128,"vocab_size":64,"max_position_embeddings":2048,
+              "moe_num_experts":2,"moe_top_k":1,"moe_intermediate_size":128,
+              "share_expert_dim":128,"moe_layers_enum":"1",
+              "moe_router_activation":"sigmoid",
+              "layer_types":["full_attention","sliding_attention"],
+              "rope_theta":[5000000,10000],"partial_rotary_factors":[0.5,1],
+              "sliding_window":512,
+              "attention_other_setting":{"num_attention_heads":1,"num_attention_groups":1},
+              "swiglu_limits":[0,0],"swiglu_limits_shared":[0,0]
+            }"#,
+        )
+        .unwrap();
+        let name = "blk.1.attn_q.weight";
+
+        // ARM 1 — declared swizzled: the loader must undo the permutation.
+        std::fs::write(
+            dir.join("LAYOUT.json"),
+            r#"{"nvfp4_scale":"Swizzle32x4x4 float8_e4m3fn padded N%128 K%4"}"#,
+        )
+        .unwrap();
+        let src = SafetensorsSource::open(&dir).unwrap();
+        assert_eq!(src.nvfp4_scale_layout, Nvfp4ScaleLayout::Swizzle32x4x4);
+        let got = src.find(name).expect("NVFP4 weight").bytes.into_owned();
+        drop(src);
+        assert_eq!(
+            got, want,
+            "declared-swizzled read must equal the linear truth"
+        );
+
+        // ARM 2 (RED) — same bytes, no declaration: read linear, and therefore WRONG. If this
+        // ever equals `want`, the unswizzle is a no-op and arm 1 proves nothing.
+        std::fs::remove_file(dir.join("LAYOUT.json")).unwrap();
+        let src = SafetensorsSource::open(&dir).unwrap();
+        assert_eq!(src.nvfp4_scale_layout, Nvfp4ScaleLayout::Linear);
+        let raw = src.find(name).expect("NVFP4 weight").bytes.into_owned();
+        drop(src);
+        assert_ne!(
+            raw, want,
+            "reading a swizzled plane as linear must differ — otherwise this gate is vacuous"
+        );
+
+        // ARM 3 — a layout this build does not know must FAIL the open, not fall back to linear.
+        std::fs::write(
+            dir.join("LAYOUT.json"),
+            r#"{"nvfp4_scale":"SomeFutureOrder"}"#,
+        )
+        .unwrap();
+        let err = match SafetensorsSource::open(&dir) {
+            Err(e) => e,
+            Ok(_) => panic!("an unrecognised nvfp4_scale layout must refuse to load"),
+        };
+        assert!(
+            err.to_string().contains("SomeFutureOrder"),
+            "the error must name the layout it could not read, got: {err}"
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }
