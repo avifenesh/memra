@@ -936,9 +936,6 @@ fn verify_snapshot_reuse_matches_fresh_clones_bitwise() {
                 );
             }
         }
-        // both caches advance identically (the round epilogue's job; here explicit)
-        ca.pos += 2;
-        cb.pos += 2;
     }
     assert!(
         pool.iter().any(|b| b.is_some()),
@@ -947,4 +944,97 @@ fn verify_snapshot_reuse_matches_fresh_clones_bitwise() {
     println!(
         "verify snapshot reuse: 3 rounds of t={t} bitwise (logits + rolled-back ssm state) vs fresh clones"
     );
+}
+
+/// `MEMRA_GLM5_VERIFY_GRAPH` arm 1: the verify walk's MLA layers through the live twins vs
+/// the rows-exact call, on two identically primed caches, three rounds with rollbacks in
+/// between: logits, latent lengths and rows bitwise; non-vacuity on the live-call counter.
+#[test]
+#[ignore = "needs a CUDA device — run under flock /tmp/memra-5090.lock"]
+fn verify_graph_live_arm_matches_rows_exact_bitwise() {
+    let _gpu = gpu_guard();
+    let h = Harness::new();
+    let ids = tokens(48, 0x5EED);
+    let (prompt, t) = (8usize, 3usize);
+    let e = &h.engine;
+    let prime = || {
+        let mut cache =
+            memra_engine::cache::Cache::new_planned(e, &h.model.cfg, &h.plan, 64).expect("cache");
+        h.model
+            .prime_cache(e, &ids[..prompt], &mut cache, 0)
+            .expect("prime");
+        cache
+    };
+    unsafe {
+        std::env::set_var("MEMRA_MLA_SEG_WS", "1");
+        std::env::set_var("MEMRA_GLM5_VERIFY_GRAPH", "0");
+    }
+    let (mut ca, mut cb) = (prime(), prime());
+    let c0 = memra_engine::GLM5_VERIFY_LIVE_MLA_CALLS.load(Ordering::Relaxed);
+    for round in 0..3 {
+        let rows = &ids[prompt + round * t..prompt + (round + 1) * t];
+        unsafe {
+            std::env::set_var("MEMRA_GLM5_VERIFY_GRAPH", "0");
+        }
+        let (la, _, ca_ck) = h
+            .model
+            .glm5_verify_rows(e, rows, &mut ca)
+            .expect("rows-exact arm");
+        unsafe {
+            std::env::set_var("MEMRA_GLM5_VERIFY_GRAPH", "1");
+        }
+        let (lb, _, cb_ck) = h
+            .model
+            .glm5_verify_rows(e, rows, &mut cb)
+            .expect("live arm");
+        unsafe {
+            std::env::set_var("MEMRA_GLM5_VERIFY_GRAPH", "0");
+        }
+        e.stream().synchronize().unwrap();
+        let (va, vb) = (e.dtoh(&la).unwrap(), e.dtoh(&lb).unwrap());
+        let d = va
+            .iter()
+            .zip(&vb)
+            .filter(|(a, b)| a.to_bits() != b.to_bits())
+            .count();
+        assert_eq!(d, 0, "round {round}: {d}/{} verify logits differ", va.len());
+        for il in 0..h.model.layers.len() {
+            if let (Some(pa), Some(pb)) = (ca.latent[il].as_ref(), cb.latent[il].as_ref()) {
+                assert_eq!(pa.len, pb.len, "round {round} layer {il}: latent len");
+                assert_eq!(
+                    pa.index_pools_ready, pb.index_pools_ready,
+                    "round {round} layer {il}: pools_ready"
+                );
+                assert_eq!(
+                    e.dtoh_i32(&pa.len_d).unwrap(),
+                    e.dtoh_i32(&pb.len_d).unwrap(),
+                    "round {round} layer {il}: len_d"
+                );
+                let n = pa.len * pa.width;
+                let (ra, rb) = (e.dtoh(&pa.rows).unwrap(), e.dtoh(&pb.rows).unwrap());
+                assert!(
+                    ra[..n]
+                        .iter()
+                        .zip(&rb[..n])
+                        .all(|(a, b)| a.to_bits() == b.to_bits()),
+                    "round {round} layer {il}: latent rows differ"
+                );
+            }
+        }
+        h.model
+            .glm5_verify_rollback(e, &mut ca, &ca_ck, 2)
+            .expect("rollback A");
+        h.model
+            .glm5_verify_rollback(e, &mut cb, &cb_ck, 2)
+            .expect("rollback B");
+    }
+    unsafe {
+        std::env::set_var("MEMRA_MLA_SEG_WS", "0");
+    }
+    let live = memra_engine::GLM5_VERIFY_LIVE_MLA_CALLS.load(Ordering::Relaxed) - c0;
+    assert!(
+        live >= 3,
+        "VACUOUS: {live} live MLA calls (expected one per MLA layer per round)"
+    );
+    println!("verify-graph arm 1: 3 rounds of t={t} bitwise vs rows-exact ({live} live MLA calls)");
 }

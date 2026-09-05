@@ -403,6 +403,20 @@ pub fn glm5_graph_mla_mid_on() -> bool {
 pub fn glm5_spec_dev_io_on() -> bool {
     std::env::var("MEMRA_GLM5_SPEC_DEV_IO").as_deref() == Ok("1")
 }
+
+/// `MEMRA_GLM5_VERIFY_GRAPH=1` (lane/glm5-kgraph-20260905, default OFF, decide-by 2026-09-19):
+/// the DFlash2 verify walk (t = K+1 rows) runs its MLA layers through the live twins
+/// (`mla_attn_cached_rows_live`: every position-derived scalar from the device position
+/// word, the host `len` / `index_pools_ready` advanced by the caller) instead of the
+/// rows-exact host-geometry call. Arm 1 of the per-K capture door: the same program with a
+/// fixed launch geometry, so the walk can be captured and replayed at any later position.
+/// Read per call.
+pub fn glm5_verify_graph_on() -> bool {
+    std::env::var("MEMRA_GLM5_VERIFY_GRAPH").as_deref() == Ok("1")
+}
+/// Verify-walk MLA layer calls that went through the live twins (`MEMRA_GLM5_VERIFY_GRAPH`).
+pub static GLM5_VERIFY_LIVE_MLA_CALLS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
 /// Pageable host-to-device copies the `MEMRA_GLM5_SPEC_DEV_IO` door replaced with launches.
 pub static SPEC_DEV_IO_AVOIDED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 

@@ -1059,8 +1059,45 @@ impl HybridModel {
                     }
                     Mixer::Mla(mla) => {
                         let t0 = vclock(trace_v);
-                        let out =
-                            self.mla_attn_cached_rows_exact(e, mla, &h, &pos.all, t, il, cache)?;
+                        // MEMRA_GLM5_VERIFY_GRAPH arm 1: the live twins (fixed launch
+                        // geometry, every position-derived scalar from `pos.all[0]`), the
+                        // host bookkeeping the rows-exact call does itself landing here.
+                        let live_ok = crate::glm5_verify_graph_on()
+                            && mla.index.is_some()
+                            && cache.latent[il].as_ref().is_some_and(|p| p.len == pos.pos0);
+                        if crate::glm5_verify_graph_on() && !live_ok {
+                            static SAID_NO: std::sync::Once = std::sync::Once::new();
+                            SAID_NO.call_once(|| {
+                                eprintln!(
+                                    "[glm5-verify-graph] MLA layer {il} stays on the rows-exact \
+                                     call: no indexer or latent len != pos0 (the live twins read \
+                                     the position word as the append slot)"
+                                )
+                            });
+                        }
+                        let out = if live_ok {
+                            static SAID: std::sync::Once = std::sync::Once::new();
+                            SAID.call_once(|| {
+                                eprintln!(
+                                    "[glm5-verify-graph] engaged: the verify walk's MLA layers \
+                                     run through the live twins (MEMRA_GLM5_VERIFY_GRAPH=1)"
+                                )
+                            });
+                            let out =
+                                self.mla_attn_cached_rows_live(e, mla, &h, &pos.all, t, il, cache)?;
+                            let plane = cache.latent[il]
+                                .as_mut()
+                                .ok_or("glm5 verify MLA layer has no latent plane")?;
+                            plane.len += t;
+                            if let Some(ix) = mla.index.as_ref() {
+                                plane.index_pools_ready = plane.len / ix.geom.pool;
+                            }
+                            crate::GLM5_VERIFY_LIVE_MLA_CALLS
+                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            out
+                        } else {
+                            self.mla_attn_cached_rows_exact(e, mla, &h, &pos.all, t, il, cache)?
+                        };
                         if let Some(t0) = t0 {
                             let _ = e.stream().synchronize();
                             use std::sync::atomic::Ordering;
