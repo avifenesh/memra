@@ -27,3 +27,20 @@ existing block-FP8 tensor-core prefill kernel regressed the frozen on/off A/B.
 Nsight Compute hardware counters remain unavailable on this provider
 (`ERR_NVGPUCTRPERM` on both cards), so the profile does not classify the top
 kernels as power-, bandwidth-, or compute-limited.
+
+## Two-card execution overlap
+
+An interval-union query over every row in `CUPTI_ACTIVITY_KIND_KERNEL` measured
+the actual PP2 schedule rather than inferring it from utilization samples:
+
+| device | kernel instances | union kernel-busy wall |
+| --- | ---: | ---: |
+| 0 | 951,777 | 33.632904 s |
+| 1 | 1,170,860 | 35.300691 s |
+
+The two devices' merged kernel intervals overlap by only 0.000000451 s across
+68.933595 s of union busy time, about 0.00000065%. The current layer-split PP2
+request is therefore effectively serial across the cards. This is direct
+evidence that peak single-request performance requires a topology which runs
+both GPUs on the same layer or otherwise pipelines independent work. It is not
+evidence for any power-limit claim.

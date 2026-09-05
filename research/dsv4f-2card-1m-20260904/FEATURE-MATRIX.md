@@ -242,12 +242,20 @@ critical path is limited by power or clocks.
   proposal-identical (`dspark-fused-moe-gate.md`); 1.171x proposal speedup but
   only 1.010x whole-loop, so it remains explicit/default-off rather than a
   selected serving claim
+- [x] exact expert-major prefill slot ordering priced and rejected
+  (`expert-slot-sort-reject-989feb991.md`): cache/logit bit identity passed,
+  but 160-token median was 1.768474 s reference versus 1.769360 s sorted;
+  product path fully reverted
 - [x] batched prefill indexer selection: scalar T<=8 preserved; wide transactions
   collapse per-position score/top-k/index launches and improve the 9,952-token
   TTFT 83.36 -> 75.65 seconds (9.25%)
 - [ ] long-prefill performance remains a blocker: the selected frozen row is only
   131.48 prompt tok/s, far below the public 4,339 prompt tok/s control
   (`chunk-prefill-sweep-20260905.jsonl`, `chunk32-long-nsys-6c604f9bf.md`)
+- [ ] two-card execution topology remains a blocker: the long trace measured
+  33.633/35.301 s kernel-busy per card but only 0.451 microseconds of overlap;
+  the current PP2 request is effectively serial and needs a same-layer TP/EP or
+  genuine cross-request pipeline schedule
 - [ ] chunked prefill at 256K, 512K and 1M without transient OOM
 - [ ] resumable multi-session scheduler and cross-session batch decode
 - [ ] c1/c2/c4/c8/c16 throughput, fairness and admission cells
