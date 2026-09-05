@@ -544,6 +544,20 @@ pub fn mla_seg_ws_dispatches() -> u64 {
     MLA_SEG_WS_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// A q8_1 activation pair (quants, per-32 scales).
+pub(crate) type Q8Pair = (CudaSlice<i8>, CudaSlice<f32>);
+
+/// One hc layer and its hyper-connection weights, as the segment walk borrows them.
+pub(crate) type WsLayerRef<'a> = (&'a crate::hybrid::HybridLayer, &'a crate::hyper::HyperLayer);
+
+/// A segment of the t=1 workspace walk (see `hyper_range_decode_ws_segments`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum WsSeg {
+    Layer(usize),
+    MlaPre(usize),
+    MlaFfn(usize),
+}
+
 pub(crate) struct MlaSegWs {
     pub q_nope: CudaSlice<f32>,
     pub q_pe: CudaSlice<f32>,
@@ -2788,142 +2802,288 @@ impl HybridModel {
         cache: &mut Cache,
         ws: &mut crate::hyper::HyperDecodeWs,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let segs: Vec<WsSeg> = (lo..hi).map(WsSeg::Layer).collect();
+        self.hyper_range_decode_ws_segments(e, topology, x, &segs, pos_d, pos, cache, ws, None)
+    }
+
+    /// One layer of the workspace walk, split into the halves a captured run can end or start
+    /// on (lane/mla-half-capture-20260905). `Layer(il)` is the whole layer, call-for-call what
+    /// `hyper_range_decode_ws_body` always ran. `MlaPre(il)` is an MLA layer's attention-site hc
+    /// pre + norm and its PRE segment (q/kv projections, norms, splits, rope) into the session's
+    /// segment workspace, nothing position-derived in its launch geometry; `MlaFfn(il)` is that
+    /// layer's second half: hc post of the attention output handed over in `mla_mixed`, then the
+    /// FFN half. Between the two the caller runs the eager middle (`hyper_mla_mid_post_ws`).
+    fn ws_layer(&self, il: usize) -> Result<WsLayerRef<'_>, Box<dyn std::error::Error>> {
+        let layer = &self.layers[il];
+        let hyper = layer.hyper.as_ref().ok_or_else(|| {
+            format!("layer {il} carries no hyper-connection weights under an hc plan")
+        })?;
+        Ok((layer, hyper))
+    }
+
+    /// Attention-site half of one hc layer at t=1: hc pre + the attention norm into `ws.h`
+    /// (and, on the fused paths, the q8 pair the KDA mixer consumes). Verbatim the head of the
+    /// body it was split from.
+    #[allow(clippy::too_many_arguments)]
+    fn ws_attn_pre(
+        &self,
+        e: &Engine,
+        topology: &crate::hyper::HyperTopology,
+        layer: &crate::hybrid::HybridLayer,
+        hyper: &crate::hyper::HyperLayer,
+        _il: usize,
+        x: &mut CudaSlice<f32>,
+        ws: &mut crate::hyper::HyperDecodeWs,
+        n_embd: usize,
+        eps: f32,
+    ) -> Result<Option<Q8Pair>, Box<dyn std::error::Error>> {
+        // MEMRA_HC_PRE_ZQ8: the pre-chain and the norm that consumes its `y` in ONE launch.
+        // Returns None without launching wherever its preconditions fail, so the two-launch
+        // program below runs unchanged in that case.
+        let attn_fused = if crate::hc_pre_zq8_on()
+            && crate::glm5_q8_fuse_attn_on()
+            && matches!(&layer.mixer, Mixer::Kda(la) if la.tp.is_none())
+        {
+            crate::hyper::pre_t1_ws_zq8(
+                e,
+                topology,
+                &hyper.attn,
+                x,
+                ws,
+                n_embd,
+                layer.attn_norm.float_data(),
+                crate::hyper::NormDst::H,
+                eps,
+            )?
+        } else {
+            None
+        };
+        if attn_fused.is_none() {
+            crate::hyper::pre_t1_ws(e, topology, &hyper.attn, x, ws, n_embd)?;
+        }
+        // MEMRA_GLM5_Q8_FUSE_ATTN: see the eager walk above; same fusion, workspace form.
+        let attn_q8 = if let Some(pair) = attn_fused {
+            Some(pair)
+        } else if crate::glm5_q8_fuse_attn_on()
+            && matches!(&layer.mixer, Mixer::Kda(la) if la.tp.is_none())
+        {
+            let pair = e.rms_norm_zq8_f32(
+                &ws.y,
+                layer.attn_norm.float_data(),
+                &mut ws.h,
+                n_embd,
+                1,
+                eps,
+            )?;
+            if crate::GLM5_Q8_FUSE_ATTN_DISPATCHES
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                == 0
+            {
+                eprintln!(
+                    "[glm5-q8-fuse-attn] engaged (rms_norm_zq8_f32 -> kda6, hyper_range_decode_ws_body)"
+                );
+            }
+            Some(pair)
+        } else {
+            e.rms_norm(
+                &ws.y,
+                layer.attn_norm.float_data(),
+                &mut ws.h,
+                n_embd,
+                1,
+                eps,
+            )?;
+            None
+        };
+        Ok(attn_q8)
+    }
+
+    /// The second half of one hc layer at t=1: hc post of the mixer output, then the FFN half
+    /// (hc pre, norm, routed + shared FFN, hc post). Verbatim the tail of the body it was split
+    /// from.
+    #[allow(clippy::too_many_arguments)]
+    fn ws_attn_post_ffn(
+        &self,
+        e: &Engine,
+        topology: &crate::hyper::HyperTopology,
+        layer: &crate::hybrid::HybridLayer,
+        hyper: &crate::hyper::HyperLayer,
+        il: usize,
+        mixed: &CudaSlice<f32>,
+        x: &mut CudaSlice<f32>,
+        ws: &mut crate::hyper::HyperDecodeWs,
+        n_embd: usize,
+        eps: f32,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        crate::hyper::post_t1_ws(e, topology, mixed, x, ws, n_embd)?;
+        std::mem::swap(x, &mut ws.xb);
+
+        let mlp_fused = if crate::hc_pre_zq8_on() && crate::glm5_q8_fuse_on() {
+            crate::hyper::pre_t1_ws_zq8(
+                e,
+                topology,
+                &hyper.mlp,
+                x,
+                ws,
+                n_embd,
+                layer.post_attn_norm.float_data(),
+                crate::hyper::NormDst::Z,
+                eps,
+            )?
+        } else {
+            None
+        };
+        if mlp_fused.is_none() {
+            crate::hyper::pre_t1_ws(e, topology, &hyper.mlp, x, ws, n_embd)?;
+        }
+        // Door MEMRA_GLM5_Q8_FUSE — the workspace twin of the fusion above (same fused
+        // kernel, same byte-identity argument, `ws.z` in place of a fresh allocation).
+        let zq8 = if let Some(pair) = mlp_fused {
+            Some(pair)
+        } else if crate::glm5_q8_fuse_on() {
+            let pair = e.rms_norm_zq8_f32(
+                &ws.y,
+                layer.post_attn_norm.float_data(),
+                &mut ws.z,
+                n_embd,
+                1,
+                eps,
+            )?;
+            if GLM5_Q8_FUSE_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+                eprintln!("[glm5-q8-fuse] engaged (rms_norm_zq8_f32, hyper_range_decode_ws_body)");
+            }
+            Some(pair)
+        } else {
+            e.rms_norm(
+                &ws.y,
+                layer.post_attn_norm.float_data(),
+                &mut ws.z,
+                n_embd,
+                1,
+                eps,
+            )?;
+            None
+        };
+        let ffn_out = self.hyper_ffn_branch(e, layer, &ws.z, 1, il, false, zq8.as_ref())?;
+        crate::hyper::post_t1_ws(e, topology, &ffn_out, x, ws, n_embd)?;
+        std::mem::swap(x, &mut ws.xb);
+        Ok(())
+    }
+
+    /// The workspace walk over an explicit segment plan. `mla_mixed` is the handoff buffer an
+    /// eager MLA middle wrote (`hyper_mla_mid_post_ws`); required by `MlaFfn`, ignored otherwise.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn hyper_range_decode_ws_segments(
+        &self,
+        e: &Engine,
+        topology: &crate::hyper::HyperTopology,
+        x: &mut CudaSlice<f32>,
+        segs: &[WsSeg],
+        pos_d: &CudaSlice<i32>,
+        pos: usize,
+        cache: &mut Cache,
+        ws: &mut crate::hyper::HyperDecodeWs,
+        mla_mixed: Option<&CudaSlice<f32>>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
-        for il in lo..hi {
-            let layer = &self.layers[il];
-            let hyper = layer.hyper.as_ref().ok_or_else(|| {
-                format!("layer {il} carries no hyper-connection weights under an hc plan")
-            })?;
-
-            // MEMRA_HC_PRE_ZQ8: the pre-chain and the norm that consumes its `y` in ONE launch.
-            // Returns None without launching wherever its preconditions fail, so the two-launch
-            // program below runs unchanged in that case.
-            let attn_fused = if crate::hc_pre_zq8_on()
-                && crate::glm5_q8_fuse_attn_on()
-                && matches!(&layer.mixer, Mixer::Kda(la) if la.tp.is_none())
-            {
-                crate::hyper::pre_t1_ws_zq8(
-                    e,
-                    topology,
-                    &hyper.attn,
-                    x,
-                    ws,
-                    n_embd,
-                    layer.attn_norm.float_data(),
-                    crate::hyper::NormDst::H,
-                    eps,
-                )?
-            } else {
-                None
-            };
-            if attn_fused.is_none() {
-                crate::hyper::pre_t1_ws(e, topology, &hyper.attn, x, ws, n_embd)?;
-            }
-            // MEMRA_GLM5_Q8_FUSE_ATTN: see the eager walk above; same fusion, workspace form.
-            let attn_q8 = if let Some(pair) = attn_fused {
-                Some(pair)
-            } else if crate::glm5_q8_fuse_attn_on()
-                && matches!(&layer.mixer, Mixer::Kda(la) if la.tp.is_none())
-            {
-                let pair = e.rms_norm_zq8_f32(
-                    &ws.y,
-                    layer.attn_norm.float_data(),
-                    &mut ws.h,
-                    n_embd,
-                    1,
-                    eps,
-                )?;
-                if crate::GLM5_Q8_FUSE_ATTN_DISPATCHES
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                    == 0
-                {
-                    eprintln!(
-                        "[glm5-q8-fuse-attn] engaged (rms_norm_zq8_f32 -> kda6, hyper_range_decode_ws_body)"
-                    );
+        for seg in segs {
+            match *seg {
+                WsSeg::Layer(il) => {
+                    let (layer, hyper) = self.ws_layer(il)?;
+                    let attn_q8 =
+                        self.ws_attn_pre(e, topology, layer, hyper, il, x, ws, n_embd, eps)?;
+                    let mixed = match &layer.mixer {
+                        Mixer::Full(fa) => {
+                            self.full_attn_decode(e, fa, &ws.h, pos_d, pos, cache, il)?
+                        }
+                        Mixer::Linear(la) => self.linear_attn_decode(e, la, &ws.h, cache, il)?,
+                        Mixer::Mla(mla) => {
+                            self.mla_attn_cached(e, mla, &ws.h, pos_d, 1, il, cache)?
+                        }
+                        Mixer::Kda(la) => crate::kda::kda_decode_cached_q8(
+                            e,
+                            la,
+                            &ws.h,
+                            attn_q8.as_ref().map(|(q, d)| (q, d)),
+                            eps,
+                            cache,
+                            il,
+                        )?,
+                    };
+                    self.ws_attn_post_ffn(
+                        e, topology, layer, hyper, il, &mixed, x, ws, n_embd, eps,
+                    )?;
                 }
-                Some(pair)
-            } else {
-                e.rms_norm(
-                    &ws.y,
-                    layer.attn_norm.float_data(),
-                    &mut ws.h,
-                    n_embd,
-                    1,
-                    eps,
-                )?;
-                None
-            };
-            let mixed = match &layer.mixer {
-                Mixer::Full(fa) => self.full_attn_decode(e, fa, &ws.h, pos_d, pos, cache, il)?,
-                Mixer::Linear(la) => self.linear_attn_decode(e, la, &ws.h, cache, il)?,
-                Mixer::Mla(mla) => self.mla_attn_cached(e, mla, &ws.h, pos_d, 1, il, cache)?,
-                Mixer::Kda(la) => crate::kda::kda_decode_cached_q8(
-                    e,
-                    la,
-                    &ws.h,
-                    attn_q8.as_ref().map(|(q, d)| (q, d)),
-                    eps,
-                    cache,
-                    il,
-                )?,
-            };
-            crate::hyper::post_t1_ws(e, topology, &mixed, x, ws, n_embd)?;
-            std::mem::swap(x, &mut ws.xb);
-
-            let mlp_fused = if crate::hc_pre_zq8_on() && crate::glm5_q8_fuse_on() {
-                crate::hyper::pre_t1_ws_zq8(
-                    e,
-                    topology,
-                    &hyper.mlp,
-                    x,
-                    ws,
-                    n_embd,
-                    layer.post_attn_norm.float_data(),
-                    crate::hyper::NormDst::Z,
-                    eps,
-                )?
-            } else {
-                None
-            };
-            if mlp_fused.is_none() {
-                crate::hyper::pre_t1_ws(e, topology, &hyper.mlp, x, ws, n_embd)?;
-            }
-            // Door MEMRA_GLM5_Q8_FUSE — the workspace twin of the fusion above (same fused
-            // kernel, same byte-identity argument, `ws.z` in place of a fresh allocation).
-            let zq8 = if let Some(pair) = mlp_fused {
-                Some(pair)
-            } else if crate::glm5_q8_fuse_on() {
-                let pair = e.rms_norm_zq8_f32(
-                    &ws.y,
-                    layer.post_attn_norm.float_data(),
-                    &mut ws.z,
-                    n_embd,
-                    1,
-                    eps,
-                )?;
-                if GLM5_Q8_FUSE_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
-                    eprintln!(
-                        "[glm5-q8-fuse] engaged (rms_norm_zq8_f32, hyper_range_decode_ws_body)"
-                    );
+                WsSeg::MlaPre(il) => {
+                    let (layer, hyper) = self.ws_layer(il)?;
+                    let Mixer::Mla(mla) = &layer.mixer else {
+                        return Err(format!("segment MlaPre({il}) on a non-MLA layer").into());
+                    };
+                    let _ = self.ws_attn_pre(e, topology, layer, hyper, il, x, ws, n_embd, eps)?;
+                    self.mla_seg_pre_into_ws(e, mla, &ws.h, pos_d, il)?;
                 }
-                Some(pair)
-            } else {
-                e.rms_norm(
-                    &ws.y,
-                    layer.post_attn_norm.float_data(),
-                    &mut ws.z,
-                    n_embd,
-                    1,
-                    eps,
-                )?;
-                None
-            };
-            let ffn_out = self.hyper_ffn_branch(e, layer, &ws.z, 1, il, false, zq8.as_ref())?;
-            crate::hyper::post_t1_ws(e, topology, &ffn_out, x, ws, n_embd)?;
-            std::mem::swap(x, &mut ws.xb);
+                WsSeg::MlaFfn(il) => {
+                    let (layer, hyper) = self.ws_layer(il)?;
+                    let mixed = mla_mixed.ok_or("segment MlaFfn needs the mla_mixed handoff")?;
+                    self.ws_attn_post_ffn(
+                        e, topology, layer, hyper, il, mixed, x, ws, n_embd, eps,
+                    )?;
+                }
+            }
         }
         Ok(())
+    }
+
+    /// PRE segment of an MLA layer into the session's segment workspace (`MEMRA_MLA_SEG_WS`),
+    /// the half a run graph can end on. Refuses by name when the seam is off.
+    fn mla_seg_pre_into_ws(
+        &self,
+        e: &Engine,
+        mla: &crate::hybrid::MlaAttnLayer,
+        h: &CudaSlice<f32>,
+        pos_d: &CudaSlice<i32>,
+        il: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if !Engine::mla_seg_ws_on() {
+            return Err(format!(
+                "layer {il}: an MLA PRE half needs MEMRA_MLA_SEG_WS=1 (the segment workspace is \
+                 what the eager middle reads back)"
+            )
+            .into());
+        }
+        let g = mla.geom;
+        let q_lora = mla.wq_b.in_features();
+        let mut ws = e.mla_seg_ws_take(g.n_head, g.d_nope, g.d_rope, g.kv_rank, q_lora)?;
+        let r = self.mla_seg_pre(e, mla, h, pos_d, 1, il, false, Some(&mut ws));
+        e.mla_seg_ws_put(ws);
+        r.map(|_| ())
+    }
+
+    /// The eager middle of a split MLA layer: MID (append, k-pool selection) + POST (attention,
+    /// decompress) + `wo`, reading the PRE segment a graph left in the segment workspace, and the
+    /// result copied into the handoff buffer `mixed_out` the next graph's `MlaFfn` reads.
+    pub(crate) fn hyper_mla_mid_post_ws(
+        &self,
+        e: &Engine,
+        il: usize,
+        h: &CudaSlice<f32>,
+        pos_d: &CudaSlice<i32>,
+        cache: &mut Cache,
+        mixed_out: &mut CudaSlice<f32>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let layer = &self.layers[il];
+        let Mixer::Mla(mla) = &layer.mixer else {
+            return Err(format!("hyper_mla_mid_post_ws on a non-MLA layer {il}").into());
+        };
+        e.mla_pre_done
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        let out = self.mla_attn_cached(e, mla, h, pos_d, 1, il, cache);
+        e.mla_pre_done
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        let out = out?;
+        let n = self.cfg.n_embd as usize;
+        e.copy_into(mixed_out, 0, &out, n)
     }
 
     /// One hc layer RANGE `[lo, hi)` of the BATCHED T=1 decode step: B independent sessions
@@ -8520,7 +8680,14 @@ impl HybridModel {
                          stable handoff buffers (MEMRA_MLA_SEG_WS=1)"
                     );
                 }
-                self.mla_seg_pre(e, mla, h, pos_d, t, il, rows_exact, Some(&mut ws))?;
+                // A captured run graph may already have written PRE into this workspace
+                // (`hyper_mla_mid_post_ws` sets the hint for exactly one call).
+                if !e
+                    .mla_pre_done
+                    .swap(false, std::sync::atomic::Ordering::Relaxed)
+                {
+                    self.mla_seg_pre(e, mla, h, pos_d, t, il, rows_exact, Some(&mut ws))?;
+                }
                 let gathered = self.mla_seg_mid(
                     e,
                     mla,

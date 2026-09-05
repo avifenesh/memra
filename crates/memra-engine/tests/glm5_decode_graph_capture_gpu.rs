@@ -474,3 +474,74 @@ fn graph_door_decode_matches_eager_bitwise() {
     );
     println!("re-capture arm: {steps} steps bit-identical across {recaptures} forced rebuilds");
 }
+
+/// `MEMRA_GLM5_GRAPH_MLA`: the fixture's layers 3 and 7 are MLA. With the door and the segment
+/// workspace seam on, each MLA layer is captured in halves around an eager middle, and the
+/// tape must equal the eager walk under the same seam. Non-vacuity: at least one MLA half was
+/// captured (`GLM5_DECODE_GRAPH_MLA_HALVES` advanced), the door captured and replayed.
+#[test]
+#[ignore = "needs a CUDA device — run under flock /tmp/memra-5090.lock"]
+fn graph_door_mla_halves_match_eager_bitwise() {
+    let _gpu = gpu_guard();
+    let h = Harness::new();
+    let ids = tokens(40, 0x5EED);
+    let (prompt, steps) = (8usize, 16usize);
+
+    unsafe {
+        std::env::set_var("MEMRA_HTOD_DIET", "1");
+        std::env::set_var("MEMRA_MLA_SEG_WS", "1");
+        std::env::set_var("MEMRA_GLM5_DECODE_GRAPH", "0");
+        std::env::set_var("MEMRA_GLM5_GRAPH_MLA", "0");
+    }
+    let (eager, _) = h.decode_bits(&ids, prompt, steps);
+
+    let cap0 = memra_engine::GLM5_DECODE_GRAPH_CAPTURES.load(Ordering::Relaxed);
+    let rep0 = memra_engine::GLM5_DECODE_GRAPH_REPLAYS.load(Ordering::Relaxed);
+    let halves0 = memra_engine::GLM5_DECODE_GRAPH_MLA_HALVES.load(Ordering::Relaxed);
+    unsafe {
+        std::env::set_var("MEMRA_GLM5_DECODE_GRAPH", "1");
+        std::env::set_var("MEMRA_GLM5_GRAPH_MLA", "1");
+    }
+    let (graphed, _) = h.decode_bits(&ids, prompt, steps);
+    unsafe {
+        std::env::set_var("MEMRA_GLM5_DECODE_GRAPH", "0");
+        std::env::set_var("MEMRA_GLM5_GRAPH_MLA", "0");
+        std::env::set_var("MEMRA_MLA_SEG_WS", "0");
+    }
+    let captures = memra_engine::GLM5_DECODE_GRAPH_CAPTURES.load(Ordering::Relaxed) - cap0;
+    let replays = memra_engine::GLM5_DECODE_GRAPH_REPLAYS.load(Ordering::Relaxed) - rep0;
+    let halves = memra_engine::GLM5_DECODE_GRAPH_MLA_HALVES.load(Ordering::Relaxed) - halves0;
+    println!("mla-halves door: captures={captures} replays={replays} mla_halves={halves}");
+    assert!(
+        captures > 0 && replays > 0,
+        "VACUOUS: the door never captured ({captures}) or never replayed ({replays})"
+    );
+    assert!(
+        halves > 0,
+        "VACUOUS: no MLA layer was captured in halves (the plan fell back to KDA-only runs); \
+         the fixture has MLA layers at 3 and 7"
+    );
+    let mut bad = 0usize;
+    for (step, (a, b)) in eager.iter().zip(&graphed).enumerate() {
+        let d = a.iter().zip(b).filter(|(x, y)| x != y).count();
+        if d > 0 {
+            if bad < 4 {
+                let i = a.iter().zip(b).position(|(x, y)| x != y).unwrap();
+                println!(
+                    "  step {step}: {d}/{} logits differ, first at {i}: eager {} graph {}",
+                    a.len(),
+                    f32::from_bits(a[i]),
+                    f32::from_bits(b[i])
+                );
+            }
+            bad += 1;
+        }
+    }
+    assert_eq!(
+        bad, 0,
+        "{bad}/{steps} decode steps diverge between the eager walk and the MLA-halves captured one"
+    );
+    println!(
+        "mla-halves door: {steps} steps bit-identical to eager ({replays} replays, {halves} halves)"
+    );
+}
