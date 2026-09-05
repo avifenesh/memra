@@ -9183,7 +9183,7 @@ impl HybridModel {
             );
         }
         let g = mla.geom;
-        if crate::mla_ffi::mla_gathered_live_arm(g.kv_rank).is_none() {
+        if crate::mla_ffi::mla_gathered_live_arm(1, g.kv_rank).is_none() {
             return Err(format!(
                 "layer {il}: the gathered-attention arm this process dispatches at t=1 has no \
                  live-width twin (the single-pass DSA arm or a MEMRA_B200_MLA_DECODE_ARM split)"
@@ -9266,8 +9266,10 @@ impl HybridModel {
                 &ws.q_an,
                 layer,
                 pos_d,
+                1,
                 max_ctx,
                 (ws.h_q8.as_ref(), ws.q_q8.as_ref()),
+                false,
                 il,
             )?;
             let (attn, wo_q8) = self.mla_seg_post_live(
@@ -9278,6 +9280,8 @@ impl HybridModel {
                 &idx,
                 &width_d,
                 &layer.rows,
+                1,
+                false,
                 il,
             )?;
             let y = Self::mla_wo(e, mla, &attn, wo_q8, 1)?;
@@ -9301,8 +9305,10 @@ impl HybridModel {
         q_resid: &CudaSlice<f32>,
         layer: &mut memra_kv::LatentKvLayer,
         pos_d: &CudaSlice<i32>,
+        t: usize,
         capacity_tokens: usize,
         pairs: (Option<&Q8Pair>, Option<&Q8Pair>),
+        rows_exact: bool,
         il: usize,
     ) -> Result<(CudaSlice<i32>, CudaSlice<i32>), Box<dyn std::error::Error>> {
         const INDEX_NORM_EPS: f32 = 1e-5;
@@ -9347,37 +9353,49 @@ impl HybridModel {
                 .into());
             }
         };
+        // A t-row call must not lap the tail ring: the rows owed to unbuilt pools are the
+        // partial pool before `slot` plus this call's rows (the eager drain loop's bound).
+        if ring > 0 && (slot % ig.pool) + t > ring {
+            return Err(format!(
+                "layer {il}: indexer tail ring of {ring} rows cannot hold {} live rows at slot \
+                 {slot} (t {t})",
+                (slot % ig.pool) + t
+            )
+            .into());
+        }
         let (h_q8, q_q8) = pairs;
-        let k_raw = mm_with_pair(e, &indexer.wk, h, 1, h_q8, false)?;
-        let mut k_norm = e.uninit(d)?;
+        let k_raw = mm_with_pair(e, &indexer.wk, h, t, h_q8, rows_exact)?;
+        let mut k_norm = e.uninit(t * d)?;
         e.layer_norm_bias(
             &k_raw,
             indexer.k_norm_w.float_data(),
             indexer.k_norm_b.float_data(),
             &mut k_norm,
             d,
-            1,
+            t,
             INDEX_NORM_EPS,
         )?;
-        let gate = mm_with_pair(e, &indexer.kpool_gate, h, 1, h_q8, false)?;
-        e.mla_index_append_live(plane, &k_norm, &gate, pos_d, d, d, ring)?;
+        let gate = mm_with_pair(e, &indexer.kpool_gate, h, t, h_q8, rows_exact)?;
+        e.mla_index_append_live(plane, &k_norm, &gate, pos_d, t, d, d, ring)?;
         e.mla_kpool_pool_keys_live(
             plane,
             indexer.kpool_ape.float_data(),
             pool_keys,
             pos_d,
+            t,
             ig.pool,
             d,
             ring,
         )?;
-        let q_index = mm_with_pair(e, &indexer.wq_b, q_resid, 1, q_q8, false)?;
-        let head_weights = mm_with_pair(e, &indexer.weights_proj, h, 1, h_q8, false)?;
-        let mut score = e.uninit(capacity_pools.max(1))?;
+        let q_index = mm_with_pair(e, &indexer.wq_b, q_resid, t, q_q8, rows_exact)?;
+        let head_weights = mm_with_pair(e, &indexer.weights_proj, h, t, h_q8, rows_exact)?;
+        let mut score = e.uninit((t * capacity_pools).max(1))?;
         e.mla_kpool_score_live(
             &q_index,
             pool_keys,
             &head_weights,
             &mut score,
+            t,
             ig.heads,
             d,
             pos_d,
@@ -9387,13 +9405,15 @@ impl HybridModel {
             (ig.heads as f32).powf(-0.5),
         )?;
         let width_cap = ig.index_width(capacity_pools);
-        let mut idx = e.uninit_i32(width_cap)?;
+        let mut idx = e.uninit_i32(t * width_cap)?;
         let mut width_d = e.uninit_i32(1)?;
         e.mla_kpool_select_live(
             &score,
             &mut idx,
             &mut width_d,
+            t,
             pos_d,
+            capacity_pools,
             ig.pool,
             ig.top_k / ig.pool,
             width_cap,
@@ -9414,23 +9434,26 @@ impl HybridModel {
         idx: &CudaSlice<i32>,
         width_d: &CudaSlice<i32>,
         latent: &CudaSlice<f32>,
+        t: usize,
+        rows_exact: bool,
         il: usize,
     ) -> Result<(CudaSlice<f32>, MlaWoQ8), Box<dyn std::error::Error>> {
         let g = mla.geom;
         let (nh, dr, r) = (g.n_head, g.d_rope, g.kv_rank);
-        let q_lat = self.mla_post_absorb(e, mla, q_nope, 1, il)?;
-        let mut o_lat = e.uninit(nh * r)?;
-        match crate::mla_ffi::mla_gathered_live_arm(r) {
+        let q_lat = self.mla_post_absorb(e, mla, q_nope, t, il)?;
+        let mut o_lat = e.uninit(t * nh * r)?;
+        let idx_stride = idx.len() / t;
+        match crate::mla_ffi::mla_gathered_live_arm(t, r) {
             Some(chunks) if chunks >= 2 => {
-                let cells = nh * chunks;
+                let cells = t * nh * chunks;
                 let mut parts = (e.uninit(cells)?, e.uninit(cells)?, e.uninit(cells * r)?);
                 e.mla_dsa_attn_warp_online_live(
-                    &q_lat, q_pe, latent, idx, &mut o_lat, &mut parts, nh, r, dr, width_d, chunks,
-                    g.scale,
+                    &q_lat, q_pe, latent, idx, &mut o_lat, &mut parts, nh, r, dr, t, width_d,
+                    idx_stride, chunks, g.scale,
                 )?;
             }
             Some(_) => e.mla_attn_gathered_live(
-                &q_lat, q_pe, latent, idx, &mut o_lat, nh, r, dr, width_d, g.scale,
+                &q_lat, q_pe, latent, idx, &mut o_lat, nh, r, dr, t, width_d, idx_stride, g.scale,
             )?,
             None => {
                 return Err(format!(
@@ -9440,7 +9463,85 @@ impl HybridModel {
                 .into());
             }
         }
-        self.mla_post_decompress(e, mla, &o_lat, 1, false, il)
+        self.mla_post_decompress(e, mla, &o_lat, t, rows_exact, il)
+    }
+
+    /// The verify walk's MLA layer call (`mla_attn_cached_rows_exact` at t = K+1 rows) as
+    /// FIXED-GEOMETRY launches: the PRE segment (rows-exact classes, its own buffers), then
+    /// the live middle at t rows (append, indexer, scorer, selector, gathered attention,
+    /// decompress) and the rows-exact `wo`. Every position-derived scalar comes from the
+    /// device word `pos_d` (row 0's position, rows consecutive), so a graph captured at one
+    /// position replays at any later one. Byte-for-byte the eager rows-exact program.
+    ///
+    /// Host bookkeeping (`len += t`, `index_pools_ready`) is the caller's after a replay; the
+    /// device mirror `len_d` is advanced in-graph.
+    #[allow(clippy::too_many_arguments)]
+    pub fn mla_attn_cached_rows_live(
+        &self,
+        e: &Engine,
+        mla: &crate::hybrid::MlaAttnLayer,
+        h: &CudaSlice<f32>,
+        pos_d: &CudaSlice<i32>,
+        t: usize,
+        il: usize,
+        cache: &mut Cache,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        if let Err(why) = self.mla_mid_live_ok(il) {
+            return Err(why.into());
+        }
+        if crate::mla_ffi::mla_gathered_live_arm(t, mla.geom.kv_rank).is_none() {
+            return Err(format!(
+                "layer {il}: the gathered-attention arm at t={t} has no live-width twin"
+            )
+            .into());
+        }
+        let max_ctx = cache.max_ctx;
+        let layer = cache.latent[il]
+            .as_mut()
+            .ok_or_else(|| format!("layer {il} is Mixer::Mla but the cache has no latent plane"))?;
+        let g = mla.geom;
+        let (dr, r) = (g.d_rope, g.kv_rank);
+        let slot = layer.len;
+        let capacity = layer.rows.len() / layer.width;
+        if slot + t > capacity {
+            return Err(format!(
+                "layer {il}: latent cache overflow — {slot} + {t} rows exceeds capacity {capacity}"
+            )
+            .into());
+        }
+        let indexer = mla.index.as_ref().expect("checked by mla_mid_live_ok");
+        let pre = self
+            .mla_seg_pre(e, mla, h, pos_d, t, il, true, None)?
+            .expect("the ws-free PRE segment always returns its own buffers");
+        e.mla_append_latent_live(&mut layer.rows, &pre.c_kv_n, &pre.k_pe, pos_d, t, r, dr)?;
+        let (idx, width_d) = self.mla_kpool_indices_live(
+            e,
+            indexer,
+            h,
+            &pre.q_an,
+            layer,
+            pos_d,
+            t,
+            max_ctx,
+            (pre.h_q8.as_ref(), pre.q_q8.as_ref()),
+            true,
+            il,
+        )?;
+        let (attn, _wo_q8) = self.mla_seg_post_live(
+            e,
+            mla,
+            &pre.q_nope,
+            &pre.q_pe,
+            &idx,
+            &width_d,
+            &layer.rows,
+            t,
+            true,
+            il,
+        )?;
+        let out = e.matmul_rows_exact(&mla.wo, &attn, t)?;
+        e.i32_copy_add(pos_d, &mut layer.len_d, t as i32)?;
+        Ok(out)
     }
 
     /// The MEMRA_MLA_TC_PREFILL chain: absorb and decompress as strided-batched bf16

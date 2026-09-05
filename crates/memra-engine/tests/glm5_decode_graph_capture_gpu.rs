@@ -700,3 +700,116 @@ fn moe_shexp_overlap_matches_serial_bitwise() {
         "moe shexp overlap: {steps} steps bit-identical eager and under the graph ({replays} replays)"
     );
 }
+
+/// The verify-walk MLA layer call at t = 3 rows, eager rows-exact vs the live twins
+/// (`mla_attn_cached_rows_live`): two caches primed identically, four rounds of three rows at
+/// consecutive positions (crossing pool boundaries at pool 4), outputs bitwise, latent rows and
+/// the resident pool keys bitwise, lengths equal. The K-graph lane's step-2 gate.
+#[test]
+#[ignore = "needs a CUDA device — run under flock /tmp/memra-5090.lock"]
+fn mla_rows_live_matches_rows_exact_bitwise() {
+    use memra_engine::hybrid::Mixer;
+    let _gpu = gpu_guard();
+    let h = Harness::new();
+    let ids = tokens(40, 0x5EED);
+    let (prompt, t, rounds) = (8usize, 3usize, 4usize);
+    unsafe {
+        std::env::set_var("MEMRA_MLA_SEG_WS", "1");
+    }
+    let e = &h.engine;
+    let prime = |_: usize| {
+        let mut cache =
+            memra_engine::cache::Cache::new_planned(e, &h.model.cfg, &h.plan, 64).expect("cache");
+        h.model
+            .prime_cache(e, &ids[..prompt], &mut cache, 0)
+            .expect("prime");
+        cache
+    };
+    let mut ca = prime(0);
+    let mut cb = prime(1);
+    let n_embd = h.model.cfg.n_embd as usize;
+    let il = (0..h.model.layers.len())
+        .find(|&i| matches!(h.model.layers[i].mixer, Mixer::Mla(_)))
+        .expect("the fixture carries an MLA layer");
+    let Mixer::Mla(mla) = &h.model.layers[il].mixer else {
+        unreachable!()
+    };
+    let pool = mla.index.as_ref().expect("fixture indexer").geom.pool;
+    let mut pos = ca.pos;
+    for round in 0..rounds {
+        let x: Vec<f32> = (0..t * n_embd)
+            .map(|i| ((i * 7919 + round * 104729) % 1000) as f32 / 500.0 - 1.0)
+            .collect();
+        let hin = e.htod(&x).unwrap();
+        let pos_all: Vec<i32> = (0..t).map(|r| (pos + r) as i32).collect();
+        let pos_d = e.htod_i32(&pos_all).unwrap();
+        let ya = h
+            .model
+            .mla_attn_cached_rows_exact(e, mla, &hin, &pos_d, t, il, &mut ca)
+            .expect("rows-exact");
+        let yb = h
+            .model
+            .mla_attn_cached_rows_live(e, mla, &hin, &pos_d, t, il, &mut cb)
+            .expect("rows-live");
+        e.stream().synchronize().unwrap();
+        // the live arm's host bookkeeping is the caller's (the door does it after a replay)
+        {
+            let lb = cb.latent[il].as_mut().unwrap();
+            lb.len += t;
+            lb.index_pools_ready = lb.len / pool;
+        }
+        let (va, vb) = (e.dtoh(&ya).unwrap(), e.dtoh(&yb).unwrap());
+        let d = va
+            .iter()
+            .zip(&vb)
+            .filter(|(a, b)| a.to_bits() != b.to_bits())
+            .count();
+        assert_eq!(
+            d,
+            0,
+            "round {round} (pos {pos}): {d}/{} output words differ",
+            va.len()
+        );
+        let (la, lb) = (
+            ca.latent[il].as_ref().unwrap(),
+            cb.latent[il].as_ref().unwrap(),
+        );
+        assert_eq!(la.len, lb.len, "round {round}: latent len");
+        assert_eq!(
+            la.index_pools_ready, lb.index_pools_ready,
+            "round {round}: pools_ready"
+        );
+        assert_eq!(
+            e.dtoh_i32(&la.len_d).unwrap(),
+            e.dtoh_i32(&lb.len_d).unwrap(),
+            "round {round}: len_d"
+        );
+        let n = la.len * la.width;
+        let (ra, rb) = (e.dtoh(&la.rows).unwrap(), e.dtoh(&lb.rows).unwrap());
+        assert!(
+            ra[..n]
+                .iter()
+                .zip(&rb[..n])
+                .all(|(a, b)| a.to_bits() == b.to_bits()),
+            "round {round}: latent rows differ"
+        );
+        if let (Some(ka), Some(kb)) = (la.index_pool_keys.as_ref(), lb.index_pool_keys.as_ref()) {
+            let m = la.index_pools_ready * mla.index.as_ref().unwrap().geom.head_dim;
+            let (pa, pb) = (e.dtoh(ka).unwrap(), e.dtoh(kb).unwrap());
+            assert!(
+                pa[..m]
+                    .iter()
+                    .zip(&pb[..m])
+                    .all(|(a, b)| a.to_bits() == b.to_bits()),
+                "round {round}: pool keys differ"
+            );
+        }
+        pos += t;
+    }
+    unsafe {
+        std::env::set_var("MEMRA_MLA_SEG_WS", "0");
+    }
+    println!(
+        "mla rows-live: {rounds} rounds of t={t} rows bit-identical to rows-exact (layer {il}, pool {pool}, positions {prompt}..{pos})"
+    );
+}
