@@ -647,6 +647,21 @@ fn trace_seg(
     );
 }
 
+/// One KDA layer's planes as the warm passes found them (see `glm5_run_snapshot`).
+struct Snap {
+    il: usize,
+    conv: CudaSlice<f32>,
+    ssm: CudaSlice<f32>,
+    alt: CudaSlice<f32>,
+    ssm_ptr: u64,
+}
+
+/// Everything a warm walk over [a, b) must put back (see `glm5_run_snapshot`).
+struct RunSnap {
+    snaps: Vec<Snap>,
+    mla_lens: Vec<(usize, usize)>,
+}
+
 impl HybridModel {
     /// Everything this door needs that is NOT a property of one layer. Returns the refusal
     /// reason so the once-note can name it instead of failing silently.
@@ -1237,6 +1252,47 @@ impl HybridModel {
                 ctx.run = ri;
                 ctx.a = a;
                 ctx.b = b;
+                // Warm the CAPTURED program itself, once, un-captured: the whole-layer eager warm
+                // above resolves the eager walk's kernels, but the capture body is the SEGMENT
+                // walk (`hyper_range_decode_ws_segments`), and a kernel whose first
+                // `cuModuleGetFunction` happens inside the capture region fails the capture with
+                // CUDA_ERROR_INVALID_VALUE (`Engine::func`'s contract; the 2026-09-05 box
+                // incident: 28 latched runs on a tree whose eager walk no longer shared every
+                // segment kernel). Outputs are discarded; the run's state and `x_io` go back.
+                {
+                    let snap = Self::glm5_run_snapshot(e, &*cache, a, b)?;
+                    let mut x_keep = e.uninit(width)?;
+                    e.copy_into(&mut x_keep, 0, &stage.x_io, width)?;
+                    for piece in &run.pieces {
+                        let PieceSpec::Graph(segs) = piece else {
+                            continue;
+                        };
+                        step(
+                            e,
+                            &ctx,
+                            "warm(segment walk, un-captured)",
+                            self.hyper_range_decode_ws_segments(
+                                e,
+                                topology,
+                                &mut stage.x_io,
+                                segs,
+                                &stage.pos_d,
+                                pos,
+                                cache,
+                                &mut stage.ws,
+                                Some(&stage.mixed),
+                            ),
+                        )?;
+                    }
+                    e.copy_into(&mut stage.x_io, 0, &x_keep, width)?;
+                    Self::glm5_run_restore(e, cache, &snap)?;
+                    step(
+                        e,
+                        &ctx,
+                        "synchronize(after segment warm)",
+                        e.stream().synchronize().map_err(Into::into),
+                    )?;
+                }
                 // Phase-major: every graph piece of the run at phase 0, then every one at phase
                 // 1, so the host-side KDA ping-pong the capture bodies perform advances the way
                 // one replayed token does (each layer swapped once per phase pass).
@@ -1355,6 +1411,65 @@ impl HybridModel {
     /// memra#131: run every capturable KDA range of the stage once, eagerly, on a copy of the
     /// input, with each range's recurrent state (and its ssm role) snapshotted and restored, so
     /// that every lazily built per-weight cache the walk touches exists BEFORE the capture opens.
+    /// The per-run state the warm passes overwrite and put back: every KDA layer's conv / ssm /
+    /// alt planes (plus the ssm pointer, so the ping-pong swap is undone) and every MLA layer's
+    /// latent length (host and device mirror). Taken before a warm walk, restored after it.
+    fn glm5_run_snapshot(e: &Engine, cache: &Cache, a: usize, b: usize) -> Res<RunSnap> {
+        use cudarc::driver::DevicePtr;
+        let mla_lens: Vec<(usize, usize)> = (a..b)
+            .filter_map(|il| cache.latent[il].as_ref().map(|l| (il, l.len)))
+            .collect();
+        let mut snaps: Vec<Snap> = Vec::with_capacity(b - a);
+        for il in a..b {
+            let Some(rl) = cache.recur[il].as_ref() else {
+                continue;
+            };
+            let ssm_ptr = {
+                let st = e.stream();
+                let (p, _g) = rl.ssm_state.device_ptr(&st);
+                p
+            };
+            let mut conv = e.uninit(rl.conv_state.len())?;
+            let mut ssm = e.uninit(rl.ssm_state.len())?;
+            let mut alt = e.uninit(rl.ssm_state_alt.len())?;
+            e.copy_into(&mut conv, 0, &rl.conv_state, rl.conv_state.len())?;
+            e.copy_into(&mut ssm, 0, &rl.ssm_state, rl.ssm_state.len())?;
+            e.copy_into(&mut alt, 0, &rl.ssm_state_alt, rl.ssm_state_alt.len())?;
+            snaps.push(Snap {
+                il,
+                conv,
+                ssm,
+                alt,
+                ssm_ptr,
+            });
+        }
+        Ok(RunSnap { snaps, mla_lens })
+    }
+
+    fn glm5_run_restore(e: &Engine, cache: &mut Cache, snap: &RunSnap) -> Res<()> {
+        use cudarc::driver::DevicePtr;
+        for sn in &snap.snaps {
+            let rl = cache.recur[sn.il].as_mut().expect("snapshotted above");
+            let p = {
+                let st = e.stream();
+                let (p, _g) = rl.ssm_state.device_ptr(&st);
+                p
+            };
+            if p != sn.ssm_ptr {
+                std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
+            }
+            e.copy_into(&mut rl.conv_state, 0, &sn.conv, sn.conv.len())?;
+            e.copy_into(&mut rl.ssm_state, 0, &sn.ssm, sn.ssm.len())?;
+            e.copy_into(&mut rl.ssm_state_alt, 0, &sn.alt, sn.alt.len())?;
+        }
+        for (il, len) in &snap.mla_lens {
+            let l = cache.latent[*il].as_mut().expect("snapshotted above");
+            l.len = *len;
+            e.i32_mirror_store(&mut l.len_d, *len as i32)?;
+        }
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn glm5_warm_runs_before_capture(
         &self,
@@ -1368,65 +1483,13 @@ impl HybridModel {
         pos: usize,
         cache: &mut Cache,
     ) -> Res<()> {
-        use cudarc::driver::DevicePtr;
         let runs = kda_runs(self, lo, hi);
         for (a, b) in runs {
-            struct Snap {
-                il: usize,
-                conv: CudaSlice<f32>,
-                ssm: CudaSlice<f32>,
-                alt: CudaSlice<f32>,
-                ssm_ptr: u64,
-            }
-            let mla_lens: Vec<(usize, usize)> = (a..b)
-                .filter_map(|il| cache.latent[il].as_ref().map(|l| (il, l.len)))
-                .collect();
-            let mut snaps: Vec<Snap> = Vec::with_capacity(b - a);
-            for il in a..b {
-                let Some(rl) = cache.recur[il].as_ref() else {
-                    continue;
-                };
-                let ssm_ptr = {
-                    let st = e.stream();
-                    let (p, _g) = rl.ssm_state.device_ptr(&st);
-                    p
-                };
-                let mut conv = e.uninit(rl.conv_state.len())?;
-                let mut ssm = e.uninit(rl.ssm_state.len())?;
-                let mut alt = e.uninit(rl.ssm_state_alt.len())?;
-                e.copy_into(&mut conv, 0, &rl.conv_state, rl.conv_state.len())?;
-                e.copy_into(&mut ssm, 0, &rl.ssm_state, rl.ssm_state.len())?;
-                e.copy_into(&mut alt, 0, &rl.ssm_state_alt, rl.ssm_state_alt.len())?;
-                snaps.push(Snap {
-                    il,
-                    conv,
-                    ssm,
-                    alt,
-                    ssm_ptr,
-                });
-            }
+            let snap = Self::glm5_run_snapshot(e, cache, a, b)?;
             let mut xc = e.uninit(width)?;
             e.copy_into(&mut xc, 0, x, width)?;
             let _ = self.hyper_range_decode_eager(e, topology, xc, a, b, pos_d, pos, cache)?;
-            for sn in &snaps {
-                let rl = cache.recur[sn.il].as_mut().expect("snapshotted above");
-                let p = {
-                    let st = e.stream();
-                    let (p, _g) = rl.ssm_state.device_ptr(&st);
-                    p
-                };
-                if p != sn.ssm_ptr {
-                    std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
-                }
-                e.copy_into(&mut rl.conv_state, 0, &sn.conv, sn.conv.len())?;
-                e.copy_into(&mut rl.ssm_state, 0, &sn.ssm, sn.ssm.len())?;
-                e.copy_into(&mut rl.ssm_state_alt, 0, &sn.alt, sn.alt.len())?;
-            }
-            for (il, len) in &mla_lens {
-                let l = cache.latent[*il].as_mut().expect("snapshotted above");
-                l.len = *len;
-                e.i32_mirror_store(&mut l.len_d, *len as i32)?;
-            }
+            Self::glm5_run_restore(e, cache, &snap)?;
             note(&format!(
                 "warmed run [{a}, {b}) before capture (one eager pass on a copy of the input, \
                  state restored): lazily built per-weight caches now exist"
