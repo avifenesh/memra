@@ -2865,8 +2865,17 @@ pub fn hc_pre_zq8_on() -> bool {
 fn q8_census_record(site: &'static std::panic::Location<'static>, m: usize, in_f: usize) {
     use std::collections::HashMap;
     use std::sync::{Mutex, OnceLock};
-    static ON: OnceLock<bool> = OnceLock::new();
-    if !*ON.get_or_init(|| std::env::var("MEMRA_Q8_CENSUS").as_deref() == Ok("1")) {
+    // MEMRA_Q8_CENSUS=1 prints every 256 calls; =<n> every n. Low on purpose: under the decode
+    // graph door the walk's Rust call sites run once per CAPTURE and are replayed from the graph
+    // afterwards, so a per-token count never accumulates -- the census counts call SITES and
+    // their multiplicity per capture, and a high threshold prints nothing (2026-09-05 box boot).
+    static EVERY: OnceLock<u64> = OnceLock::new();
+    let every = *EVERY.get_or_init(|| match std::env::var("MEMRA_Q8_CENSUS").ok().as_deref() {
+        None | Some("0") | Some("") => 0,
+        Some("1") => 256,
+        Some(v) => v.parse().unwrap_or(256),
+    });
+    if every == 0 {
         return;
     }
     // (calls so far, per-call-site count keyed by file/line/m/in_f).
@@ -2879,7 +2888,7 @@ fn q8_census_record(site: &'static std::panic::Location<'static>, m: usize, in_f
     g.0 += 1;
     *g.1.entry((site.file().to_string(), site.line(), m, in_f))
         .or_insert(0) += 1;
-    if g.0.is_multiple_of(4096) {
+    if g.0.is_multiple_of(every) {
         let mut rows: Vec<_> = g.1.iter().map(|(k, v)| (*v, k.clone())).collect();
         rows.sort_by_key(|r| std::cmp::Reverse(r.0));
         eprintln!(
@@ -10588,12 +10597,14 @@ impl Engine {
     /// share `z`; q/k/v and wqkv/gate/beta/alpha share `h`) — quantize_q8_1 was 13.5% of decode
     /// GPU time, ~half of it redundant re-quantization of the same row.
     /// quantize_q8_1 over a CudaView (a sliced z-row) — same kernel, offset-honoring arg.
+    #[track_caller]
     pub fn quantize_q8_1_view(
         &self,
         x: &cudarc::driver::CudaView<f32>,
         m: usize,
         in_f: usize,
     ) -> Result<(CudaSlice<i8>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        q8_census_record(std::panic::Location::caller(), m, in_f);
         let f = self.func("quantize_q8_1");
         let nblk = in_f / 32;
         let mut q = self.alloc_uninit::<i8>(m * in_f)?;
@@ -14976,6 +14987,7 @@ impl Engine {
     }
 
     /// Slot-fed quantize_q8_1 twin (alloc-free capture lane).
+    #[track_caller]
     pub fn quantize_q8_1_into(
         &self,
         x: &CudaSlice<f32>,
@@ -14984,6 +14996,7 @@ impl Engine {
         q: &mut CudaSlice<i8>,
         d: &mut CudaSlice<f32>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        q8_census_record(std::panic::Location::caller(), m, in_f);
         let nblk = in_f / 32;
         debug_assert!(q.len() >= m * in_f && d.len() >= m * nblk);
         let cfg = LaunchConfig::for_num_elems((m * in_f) as u32);
