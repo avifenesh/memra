@@ -518,29 +518,68 @@ fn pre_finish_into(
                 // width alone, `MEMRA_HC_PRE_SINK_REG=1` at block 128 dispatched v2 and the door
                 // was unreachable — the announce line said `kernel=hc_pre_fused_v2` and the arm
                 // read 55.86 against a 55.94 baseline, a measurement of nothing.
-                HcFusedPreArm::V2 if crate::hc_pre_block() != 128 || crate::hc_pre_sink_reg() => (
-                    "hc_pre_fused_v3",
-                    k::memra_dsv4_hc_pre_fused_v3(
-                        dpf!(x, &stream),
-                        dpf!(mixes, &stream),
-                        dpf!(site.scale, &stream),
-                        dpf!(site.base, &stream),
-                        dpm!(pre_gates, &stream),
-                        dpm!(post, &stream),
-                        dpm!(comb, &stream),
-                        dpm!(y, &stream),
-                        t as i32,
-                        streams as i32,
-                        hidden as i32,
-                        topology.sinkhorn_iterations as i32,
-                        eps,
-                        std::ptr::null_mut(),
-                        crate::hc_pre_block() as i32,
-                        crate::hc_pre_sink_reg() as i32,
-                        crate::hc_pre_split_collapse() as i32,
-                        sp(&stream),
-                    ),
-                ),
+                HcFusedPreArm::V2 if crate::hc_pre_block() != 128 || crate::hc_pre_sink_reg() => {
+                    // MEMRA_HC_PRE_V4: the register schedule first; 40025 (shape does not fit)
+                    // falls through to v3, any other non-zero rc is v4's error and is reported
+                    // as such rather than masked by a v3 retry.
+                    let v4 = if crate::hc_pre_v4_on() && !crate::hc_pre_split_collapse() {
+                        let rc = k::memra_dsv4_hc_pre_v4(
+                            dpf!(x, &stream),
+                            dpf!(mixes, &stream),
+                            dpf!(site.scale, &stream),
+                            dpf!(site.base, &stream),
+                            dpm!(pre_gates, &stream),
+                            dpm!(post, &stream),
+                            dpm!(comb, &stream),
+                            dpm!(y, &stream),
+                            t as i32,
+                            streams as i32,
+                            hidden as i32,
+                            topology.sinkhorn_iterations as i32,
+                            eps,
+                            std::ptr::null_mut(),
+                            crate::hc_pre_block() as i32,
+                            sp(&stream),
+                        );
+                        if rc == 40025 {
+                            None
+                        } else {
+                            if rc == 0 {
+                                HC_PRE_V4_DISPATCHES
+                                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            }
+                            Some(("hc_pre_v4", rc))
+                        }
+                    } else {
+                        None
+                    };
+                    match v4 {
+                        Some(done) => done,
+                        None => (
+                            "hc_pre_fused_v3",
+                            k::memra_dsv4_hc_pre_fused_v3(
+                                dpf!(x, &stream),
+                                dpf!(mixes, &stream),
+                                dpf!(site.scale, &stream),
+                                dpf!(site.base, &stream),
+                                dpm!(pre_gates, &stream),
+                                dpm!(post, &stream),
+                                dpm!(comb, &stream),
+                                dpm!(y, &stream),
+                                t as i32,
+                                streams as i32,
+                                hidden as i32,
+                                topology.sinkhorn_iterations as i32,
+                                eps,
+                                std::ptr::null_mut(),
+                                crate::hc_pre_block() as i32,
+                                crate::hc_pre_sink_reg() as i32,
+                                crate::hc_pre_split_collapse() as i32,
+                                sp(&stream),
+                            ),
+                        ),
+                    }
+                }
                 HcFusedPreArm::V2 => (
                     "hc_pre_fused_v2",
                     k::memra_dsv4_hc_pre_fused_v2(
@@ -577,14 +616,17 @@ fn pre_finish_into(
             HcFusedPreArm::Off => unreachable!("guarded by the enclosing if"),
         };
         if counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
-            let kern =
-                if fused_arm == HcFusedPreArm::V2 && (block != 128 || crate::hc_pre_sink_reg()) {
-                    "hc_pre_fused_v3"
-                } else if fused_arm == HcFusedPreArm::V2 {
-                    "hc_pre_fused_v2"
-                } else {
-                    "hc_pre_fused"
-                };
+            let kern = if fused_arm == HcFusedPreArm::V2
+                && HC_PRE_V4_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed) > 0
+            {
+                "hc_pre_v4"
+            } else if fused_arm == HcFusedPreArm::V2 && (block != 128 || crate::hc_pre_sink_reg()) {
+                "hc_pre_fused_v3"
+            } else if fused_arm == HcFusedPreArm::V2 {
+                "hc_pre_fused_v2"
+            } else {
+                "hc_pre_fused"
+            };
             eprintln!(
                 "[hc-fused-pre] engaged streams={streams} hidden={hidden} t={t} arm={tag} \
                  kernel={kern} block={block} sinkhorn={} (one launch replaces rowsq_scale + \
@@ -748,6 +790,10 @@ pub enum NormDst {
 }
 
 pub static HC_PRE_ZQ8_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// Sites served by the v4 register schedule (`MEMRA_HC_PRE_V4=1`).
+pub static HC_PRE_V4_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
 /// `pre_t1_ws` and the `rms_norm_zq8` that consumes its `y`, as ONE launch (door
