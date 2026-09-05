@@ -392,6 +392,20 @@ pub fn glm5_graph_mla_mid_on() -> bool {
     std::env::var("MEMRA_GLM5_GRAPH_MLA_MID").as_deref() == Ok("1")
 }
 
+/// `MEMRA_GLM5_SPEC_DEV_IO=1` (lane/glm5-kgraph-20260905, default OFF, decide-by 2026-09-19):
+/// the DFlash2 round moves NO bytes through pageable host-to-device copies. The verify rows'
+/// positions come from an iota launch, the row tokens and the drafter's block tokens are set
+/// by tiny launches and gathered from the device embedding table, the drafter's block
+/// positions likewise. A pageable `cuMemcpyHtoD` makes the host wait for the whole queued
+/// stream before the copy starts (CUDA's pageable-copy contract), so each one is a full GPU
+/// drain per round; the launches are stream-ordered and return at once. Same bytes, same
+/// program: bit-identical by construction. Read per call.
+pub fn glm5_spec_dev_io_on() -> bool {
+    std::env::var("MEMRA_GLM5_SPEC_DEV_IO").as_deref() == Ok("1")
+}
+/// Pageable host-to-device copies the `MEMRA_GLM5_SPEC_DEV_IO` door replaced with launches.
+pub static SPEC_DEV_IO_AVOIDED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 pub fn glm5_vrows_t1_dev_forced() -> bool {
     glm5_vrows_t1_dev_forced_from(
         std::env::var("MEMRA_GLM5_VROWS_T1_DEV").ok().as_deref(),
@@ -9283,6 +9297,35 @@ impl Engine {
     }
 
     /// pos rows from a device counter: dst[i] = ctr[0] + i (verify-stream rope positions).
+    /// `dst[0..n) = base + i` with NO host-to-device copy: the base lands through the async
+    /// `i32_set_k` launch and `i32_iota_from` walks from it (`MEMRA_GLM5_SPEC_DEV_IO`).
+    pub fn i32_iota_dev(
+        &self,
+        base: i32,
+        n: usize,
+    ) -> Result<CudaSlice<i32>, Box<dyn std::error::Error>> {
+        let mut ctr = self.alloc_uninit::<i32>(1)?;
+        self.i32_set_k(&mut ctr, base)?;
+        let mut dst = self.alloc_uninit::<i32>(n.max(1))?;
+        self.i32_iota_from(&ctr, &mut dst, n)?;
+        SPEC_DEV_IO_AVOIDED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Ok(dst)
+    }
+
+    /// A small device word vector set by launches instead of a pageable copy (the verify rows'
+    /// and the drafter block's token ids: K+1 and block_size words, `MEMRA_GLM5_SPEC_DEV_IO`).
+    pub fn u32_words_dev(
+        &self,
+        vals: &[u32],
+    ) -> Result<CudaSlice<u32>, Box<dyn std::error::Error>> {
+        let mut dst = self.alloc_uninit::<u32>(vals.len().max(1))?;
+        for (i, &v) in vals.iter().enumerate() {
+            self.u32_set_k(&mut dst, v, i)?;
+        }
+        SPEC_DEV_IO_AVOIDED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Ok(dst)
+    }
+
     pub fn i32_iota_from(
         &self,
         ctr: &CudaSlice<i32>,

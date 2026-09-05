@@ -2700,7 +2700,12 @@ impl DflashDraft {
         let b = c.block_size;
         assert_eq!(pos_block.len(), b);
         let ctx = kv.len;
-        let pos_blk = e.htod_i32(pos_block)?;
+        let contiguous = pos_block.windows(2).all(|w| w[1] == w[0] + 1);
+        let pos_blk = if crate::glm5_spec_dev_io_on() && contiguous && b > 0 {
+            e.i32_iota_dev(pos_block[0], b)?
+        } else {
+            e.htod_i32(pos_block)?
+        };
         let mut x = e.clone_dtod(noise_emb)?;
         for (li, l) in self.layers.iter().enumerate() {
             let mut xn = e.uninit(b * h)?;

@@ -747,8 +747,12 @@ struct Glm5VerifyPos {
 
 impl Glm5VerifyPos {
     fn new(e: &Engine, pos0: usize, t: usize) -> Res<Self> {
-        let v: Vec<i32> = (0..t as i32).map(|r| pos0 as i32 + r).collect();
-        let all = e.htod_i32(&v)?;
+        let all = if crate::glm5_spec_dev_io_on() {
+            e.i32_iota_dev(pos0 as i32, t)?
+        } else {
+            let v: Vec<i32> = (0..t as i32).map(|r| pos0 as i32 + r).collect();
+            e.htod_i32(&v)?
+        };
         let rows = if glm5_verify_batch_on() && t > 1 {
             Vec::new()
         } else {
@@ -857,7 +861,7 @@ impl HybridModel {
         }
 
         let pos = Glm5VerifyPos::new(e, pos0, t)?;
-        let embedded = e.htod(&self.embd.try_gather(n_embd, tokens)?)?;
+        let embedded = self.glm5_rows_embed(e, tokens, n_embd)?;
         let x = crate::hyper::expand(e, &topology, &embedded, t, n_embd)?;
         let x = self.glm5_verify_range(
             e,
@@ -1368,6 +1372,34 @@ impl HybridModel {
     /// for consumption from the caller's streams after this returns.
     #[allow(clippy::too_many_arguments)]
     // allow: the parameter list mirrors its decode twin's stage-walk contract
+    /// The verify rows' token embeddings: through the device embedding table from device
+    /// token words under `MEMRA_GLM5_SPEC_DEV_IO` (no pageable copy), the host gather +
+    /// upload otherwise. Same rows either way (the device gather is the decode path's).
+    pub(crate) fn glm5_rows_embed(
+        &self,
+        e: &Engine,
+        tokens: &[u32],
+        n_embd: usize,
+    ) -> Res<CudaSlice<f32>> {
+        if crate::glm5_spec_dev_io_on() {
+            static SAID: std::sync::Once = std::sync::Once::new();
+            SAID.call_once(|| {
+                eprintln!(
+                    "[glm5-spec-dev-io] engaged: verify rows, positions and the drafter block \
+                     reach the device through launches, not pageable copies \
+                     (MEMRA_GLM5_SPEC_DEV_IO=1)"
+                )
+            });
+            let embd_gpu = self
+                .embd_gpu
+                .get_or_init(|| e.upload_u8(&self.embd.raw).expect("embed table upload"));
+            let (qt, rb) = self.embd.qt_and_row_bytes(n_embd);
+            let tok_d = e.u32_words_dev(tokens)?;
+            return e.embed_gather_device_td(embd_gpu, &tok_d, tokens.len(), n_embd, qt, rb);
+        }
+        e.htod(&self.embd.try_gather(n_embd, tokens)?)
+    }
+
     fn glm5_verify_rows_ppn(
         &self,
         e: &Engine,
@@ -1389,7 +1421,7 @@ impl HybridModel {
         // ranges — the shape every hc ppN walk uses for this knob.
         if crate::pp::pp2_streams_off() {
             let pos = pos_on(e)?;
-            let embedded = e.htod(&self.embd.try_gather(n_embd, tokens)?)?;
+            let embedded = self.glm5_rows_embed(e, tokens, n_embd)?;
             let mut x = crate::hyper::expand(e, topology, &embedded, t, n_embd)?;
             x =
                 self.glm5_verify_range(e, topology, x, fence[0], fence[1], &pos, cache, &mut ckpt)?;
@@ -1428,7 +1460,7 @@ impl HybridModel {
             let _st0 = rt.enter(0);
             let e0 = rt.engine(0, e);
             let pos = pos_on(e0)?;
-            let embedded = e0.htod(&self.embd.try_gather(n_embd, tokens)?)?;
+            let embedded = self.glm5_rows_embed(e0, tokens, n_embd)?;
             let x = crate::hyper::expand(e0, topology, &embedded, t, n_embd)?;
             let x = self
                 .glm5_verify_range(e0, topology, x, fence[0], fence[1], &pos, cache, &mut ckpt)?;
@@ -3839,7 +3871,7 @@ impl HybridModel {
         let exact_scope = eh.exact_scope(true);
         let mut block: Vec<u32> = vec![c.mask_token_id; b];
         block[0] = anchor;
-        let noise = eh.htod(&self.embd.try_gather(n_embd, &block)?)?;
+        let noise = self.glm5_rows_embed(eh, &block, n_embd)?;
         let pos_block: Vec<i32> = ((start as i32)..(start + b) as i32).collect();
         let dh = draft.forward_round(eh, kv, &noise, &pos_block)?;
 

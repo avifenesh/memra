@@ -813,3 +813,67 @@ fn mla_rows_live_matches_rows_exact_bitwise() {
         "mla rows-live: {rounds} rounds of t={t} rows bit-identical to rows-exact (layer {il}, pool {pool}, positions {prompt}..{pos})"
     );
 }
+
+/// `MEMRA_GLM5_SPEC_DEV_IO`: the verify rows reach the device through launches instead of
+/// pageable copies. Same rows, same positions: logits bitwise against the copy arm, on two
+/// identically primed caches; non-vacuity on the avoided-copy counter.
+#[test]
+#[ignore = "needs a CUDA device — run under flock /tmp/memra-5090.lock"]
+fn spec_dev_io_verify_rows_match_bitwise() {
+    let _gpu = gpu_guard();
+    let h = Harness::new();
+    let ids = tokens(40, 0x5EED);
+    let (prompt, t) = (8usize, 4usize);
+    let e = &h.engine;
+    let prime = || {
+        let mut cache =
+            memra_engine::cache::Cache::new_planned(e, &h.model.cfg, &h.plan, 64).expect("cache");
+        h.model
+            .prime_cache(e, &ids[..prompt], &mut cache, 0)
+            .expect("prime");
+        cache
+    };
+    let rows = &ids[prompt..prompt + t];
+    unsafe {
+        std::env::set_var("MEMRA_GLM5_SPEC_DEV_IO", "0");
+    }
+    let mut ca = prime();
+    let (la, _, _) = h
+        .model
+        .glm5_verify_rows(e, rows, &mut ca)
+        .expect("verify rows (copy arm)");
+    let c0 = memra_engine::SPEC_DEV_IO_AVOIDED.load(Ordering::Relaxed);
+    unsafe {
+        std::env::set_var("MEMRA_GLM5_SPEC_DEV_IO", "1");
+    }
+    let mut cb = prime();
+    let (lb, _, _) = h
+        .model
+        .glm5_verify_rows(e, rows, &mut cb)
+        .expect("verify rows (launch arm)");
+    unsafe {
+        std::env::set_var("MEMRA_GLM5_SPEC_DEV_IO", "0");
+    }
+    e.stream().synchronize().unwrap();
+    let avoided = memra_engine::SPEC_DEV_IO_AVOIDED.load(Ordering::Relaxed) - c0;
+    assert!(
+        avoided >= 2,
+        "VACUOUS: the door replaced {avoided} copies (expected positions + rows)"
+    );
+    let (va, vb) = (e.dtoh(&la).unwrap(), e.dtoh(&lb).unwrap());
+    assert_eq!(va.len(), vb.len());
+    let d = va
+        .iter()
+        .zip(&vb)
+        .filter(|(a, b)| a.to_bits() != b.to_bits())
+        .count();
+    assert_eq!(
+        d,
+        0,
+        "{d}/{} verify logits differ between the copy and launch arms",
+        va.len()
+    );
+    println!(
+        "spec-dev-io: verify rows t={t} bitwise across arms ({avoided} pageable copies replaced)"
+    );
+}
