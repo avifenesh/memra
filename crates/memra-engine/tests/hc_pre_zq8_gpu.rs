@@ -19,6 +19,10 @@ const ITERS: i32 = 20;
 const EPS_HC: f32 = 1e-6;
 const EPS_NORM: f32 = 1e-5;
 
+/// Wide-dynamic-range inputs: a full-mantissa fraction times 2^k for k in -6..=6. The old
+/// narrow inputs ((s>>40)/2^24 - 0.5)*0.8 never exposed a fused-multiply-add vs mul+add
+/// difference in a sum of squares (2026-09-05: the served tape forked while this gate was
+/// green); with a spread of exponents the product rounding decides the sum's last bit often.
 fn vecf(n: usize, seed: u64) -> Vec<f32> {
     let mut s = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
     (0..n)
@@ -26,7 +30,9 @@ fn vecf(n: usize, seed: u64) -> Vec<f32> {
             s ^= s << 13;
             s ^= s >> 7;
             s ^= s << 17;
-            ((s >> 40) as f32 / (1u64 << 24) as f32 - 0.5) * 0.8
+            let frac = (s >> 40) as f32 / (1u64 << 24) as f32 - 0.5;
+            let k = ((s >> 8) % 13) as i32 - 6;
+            frac * (2.0f32).powi(k)
         })
         .collect()
 }

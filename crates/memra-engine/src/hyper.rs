@@ -821,6 +821,10 @@ pub static HC_PRE_ZQ8_DISPATCHES: std::sync::atomic::AtomicU64 =
 pub static HC_PRE_V4_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
+/// Sites served by v4z (`MEMRA_HC_PRE_V4Z=1` under `MEMRA_HC_PRE_ZQ8=1`).
+pub static HC_PRE_V4Z_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 fn hc_pre_zq8_selfcheck() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_HC_PRE_ZQ8").as_deref() == Ok("2"))
@@ -870,31 +874,57 @@ fn pre_t1_ws_zq8_selfcheck(
     unsafe {
         ck(
             "hc_pre_zq8 (selfcheck fused)",
-            k::memra_dsv4_hc_pre_zq8(
-                dpf!(x, &stream),
-                dpf!(&ws.mixes, &stream),
-                dpf!(site.scale, &stream),
-                dpf!(site.base, &stream),
-                dpm!(&mut s_pre, &stream),
-                dpm!(&mut s_post, &stream),
-                dpm!(&mut s_comb, &stream),
-                dpm!(&mut s_y, &stream),
-                1,
-                streams as i32,
-                hidden as i32,
-                topology.sinkhorn_iterations as i32,
-                topology.epsilon,
-                std::ptr::null_mut(),
-                block as i32,
-                crate::hc_pre_sink_reg() as i32,
-                dpf!(norm_w, &stream),
-                dpm!(&mut s_z, &stream),
-                s_q.device_ptr_mut(&stream).0 as *mut i8,
-                s_d.device_ptr_mut(&stream).0 as *mut f32,
-                rms_bd as i32,
-                eps_norm,
-                sp(&stream),
-            ),
+            if crate::hc_pre_v4z_on() {
+                k::memra_dsv4_hc_pre_v4z(
+                    dpf!(x, &stream),
+                    dpf!(&ws.mixes, &stream),
+                    dpf!(site.scale, &stream),
+                    dpf!(site.base, &stream),
+                    dpm!(&mut s_pre, &stream),
+                    dpm!(&mut s_post, &stream),
+                    dpm!(&mut s_comb, &stream),
+                    dpm!(&mut s_y, &stream),
+                    1,
+                    streams as i32,
+                    hidden as i32,
+                    topology.sinkhorn_iterations as i32,
+                    topology.epsilon,
+                    std::ptr::null_mut(),
+                    dpf!(norm_w, &stream),
+                    dpm!(&mut s_z, &stream),
+                    s_q.device_ptr_mut(&stream).0 as *mut i8,
+                    s_d.device_ptr_mut(&stream).0 as *mut f32,
+                    eps_norm,
+                    rms_bd as i32,
+                    sp(&stream),
+                )
+            } else {
+                k::memra_dsv4_hc_pre_zq8(
+                    dpf!(x, &stream),
+                    dpf!(&ws.mixes, &stream),
+                    dpf!(site.scale, &stream),
+                    dpf!(site.base, &stream),
+                    dpm!(&mut s_pre, &stream),
+                    dpm!(&mut s_post, &stream),
+                    dpm!(&mut s_comb, &stream),
+                    dpm!(&mut s_y, &stream),
+                    1,
+                    streams as i32,
+                    hidden as i32,
+                    topology.sinkhorn_iterations as i32,
+                    topology.epsilon,
+                    std::ptr::null_mut(),
+                    block as i32,
+                    crate::hc_pre_sink_reg() as i32,
+                    dpf!(norm_w, &stream),
+                    dpm!(&mut s_z, &stream),
+                    s_q.device_ptr_mut(&stream).0 as *mut i8,
+                    s_d.device_ptr_mut(&stream).0 as *mut f32,
+                    rms_bd as i32,
+                    eps_norm,
+                    sp(&stream),
+                )
+            },
         )?;
     }
     // the two-launch program into the workspace, exactly as the walk runs it
@@ -1048,34 +1078,69 @@ pub fn pre_t1_ws_zq8(
         NormDst::Z => z,
     };
     unsafe {
-        ck(
-            "hc_pre_zq8",
-            k::memra_dsv4_hc_pre_zq8(
-                dpf!(x, &stream),
-                dpf!(mixes, &stream),
-                dpf!(site.scale, &stream),
-                dpf!(site.base, &stream),
-                dpm!(pre, &stream),
-                dpm!(post, &stream),
-                dpm!(comb, &stream),
-                dpm!(y, &stream),
-                1,
-                streams as i32,
-                hidden as i32,
-                topology.sinkhorn_iterations as i32,
-                topology.epsilon,
-                std::ptr::null_mut(),
-                block as i32,
-                crate::hc_pre_sink_reg() as i32,
-                dpf!(norm_w, &stream),
-                dpm!(zdst, &stream),
-                q.device_ptr_mut(&stream).0 as *mut i8,
-                d.device_ptr_mut(&stream).0 as *mut f32,
-                rms_bd as i32,
-                eps_norm,
-                sp(&stream),
-            ),
-        )?;
+        ck("hc_pre_zq8", {
+            // MEMRA_HC_PRE_V4Z: the v4 schedule with the norm replayed in-block; 40025
+            // (shape) falls through to the zq8 kernel, any other rc is v4z's own.
+            let v4z = if crate::hc_pre_v4z_on() {
+                let rc = k::memra_dsv4_hc_pre_v4z(
+                    dpf!(x, &stream),
+                    dpf!(mixes, &stream),
+                    dpf!(site.scale, &stream),
+                    dpf!(site.base, &stream),
+                    dpm!(pre, &stream),
+                    dpm!(post, &stream),
+                    dpm!(comb, &stream),
+                    dpm!(y, &stream),
+                    1,
+                    streams as i32,
+                    hidden as i32,
+                    topology.sinkhorn_iterations as i32,
+                    topology.epsilon,
+                    std::ptr::null_mut(),
+                    dpf!(norm_w, &stream),
+                    dpm!(zdst, &stream),
+                    q.device_ptr_mut(&stream).0 as *mut i8,
+                    d.device_ptr_mut(&stream).0 as *mut f32,
+                    eps_norm,
+                    rms_bd as i32,
+                    sp(&stream),
+                );
+                if rc == 40025 { None } else { Some(rc) }
+            } else {
+                None
+            };
+            match v4z {
+                Some(rc) => {
+                    HC_PRE_V4Z_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    rc
+                }
+                None => k::memra_dsv4_hc_pre_zq8(
+                    dpf!(x, &stream),
+                    dpf!(mixes, &stream),
+                    dpf!(site.scale, &stream),
+                    dpf!(site.base, &stream),
+                    dpm!(pre, &stream),
+                    dpm!(post, &stream),
+                    dpm!(comb, &stream),
+                    dpm!(y, &stream),
+                    1,
+                    streams as i32,
+                    hidden as i32,
+                    topology.sinkhorn_iterations as i32,
+                    topology.epsilon,
+                    std::ptr::null_mut(),
+                    block as i32,
+                    crate::hc_pre_sink_reg() as i32,
+                    dpf!(norm_w, &stream),
+                    dpm!(zdst, &stream),
+                    q.device_ptr_mut(&stream).0 as *mut i8,
+                    d.device_ptr_mut(&stream).0 as *mut f32,
+                    rms_bd as i32,
+                    eps_norm,
+                    sp(&stream),
+                ),
+            }
+        })?;
     }
     if HC_PRE_ZQ8_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
         eprintln!(
