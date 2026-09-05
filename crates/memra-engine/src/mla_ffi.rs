@@ -619,6 +619,32 @@ unsafe extern "C" {
         split: i32,
         stream: *mut c_void,
     ) -> i32;
+    pub fn memra_mla_decompress_v_wp_zq8_f32(
+        o_lat: *const f32,
+        wv_b: *const f32,
+        out: *mut f32,
+        out_q: *mut i8,
+        out_d: *mut f32,
+        t_q: i32,
+        n_head: i32,
+        d_v: i32,
+        kv_rank: i32,
+        split: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_mla_decompress_v_wp_bf16_zq8(
+        o_lat: *const f32,
+        wv_b: *const u16,
+        out: *mut f32,
+        out_q: *mut i8,
+        out_d: *mut f32,
+        t_q: i32,
+        n_head: i32,
+        d_v: i32,
+        kv_rank: i32,
+        split: i32,
+        stream: *mut c_void,
+    ) -> i32;
     /// Decode-split twin of `memra_mla_absorb_q_f32` (MEMRA_MLA_DECODE_SPLIT): the same
     /// per-output serial dot, its output range split across `split` blocks — bit-identical
     /// by construction, gated in `tests/mla_decode_split_gpu.rs`.
@@ -1250,6 +1276,107 @@ impl Engine {
             )?;
         }
         Ok(true)
+    }
+
+    /// The coalesce-arm split the `_wp` decompress launch takes at this shape, when the fused
+    /// q8_1 epilogue can ride it: `MEMRA_MLA_COALESCE=1`, split > 1, and `d_v / split` a whole
+    /// number of q8 blocks (<= 256 wide). `None` means the plain kernels run unchanged.
+    fn mla_decompress_v_zq8_split(&self, t_q: usize, n_head: usize, d_v: usize) -> Option<i32> {
+        if !mla_coalesce_on() {
+            return None;
+        }
+        let split = mla_b200_split_for(MlaB200Kernel::DecompressV, t_q, d_v)
+            .or_else(|| mla_decode_split_for(t_q * n_head, d_v))
+            .unwrap_or(1);
+        if split <= 1 || !d_v.is_multiple_of(split as usize) {
+            return None;
+        }
+        let per = d_v / split as usize;
+        (per.is_multiple_of(32) && per <= 256).then_some(split)
+    }
+
+    /// [`Engine::mla_decompress_v`]'s coalesce arm emitting `wo`'s q8_1 pair beside `out`
+    /// (`memra_mla_decompress_v_wp_zq8_kernel`, MEMRA_MLA_WO_ZQ8): `out` bit-identical to the plain
+    /// launch, the pair bit-identical to `quantize_q8_1(out, t_q, n_head * d_v)`. `Ok(None)` when
+    /// the shape or the arm does not fit (the caller then runs the plain sequence).
+    #[allow(clippy::too_many_arguments)]
+    pub fn mla_decompress_v_zq8(
+        &self,
+        o_lat: &CudaSlice<f32>,
+        wv_b: &CudaSlice<f32>,
+        out: &mut CudaSlice<f32>,
+        t_q: usize,
+        n_head: usize,
+        d_v: usize,
+        kv_rank: usize,
+    ) -> Res<Option<(CudaSlice<i8>, CudaSlice<f32>)>> {
+        let Some(split) = self.mla_decompress_v_zq8_split(t_q, n_head, d_v) else {
+            return Ok(None);
+        };
+        let n = t_q * n_head * d_v;
+        let mut q = self.alloc_i8_uninit(n)?;
+        let mut d = self.uninit(n / 32)?;
+        let s = self.stream();
+        mla_coalesce_announce("decompress_v_zq8", t_q, n_head, split);
+        unsafe {
+            ck(
+                "decompress_v_wp_zq8",
+                memra_mla_decompress_v_wp_zq8_f32(
+                    o_lat.device_ptr(&s).0 as *const f32,
+                    wv_b.device_ptr(&s).0 as *const f32,
+                    out.device_ptr_mut(&s).0 as *mut f32,
+                    q.device_ptr_mut(&s).0 as *mut i8,
+                    d.device_ptr_mut(&s).0 as *mut f32,
+                    t_q as i32,
+                    n_head as i32,
+                    d_v as i32,
+                    kv_rank as i32,
+                    split,
+                    s.cu_stream() as *mut c_void,
+                ),
+            )?;
+        }
+        Ok(Some((q, d)))
+    }
+
+    /// BF16-plane twin of [`Engine::mla_decompress_v_zq8`] (the `MEMRA_MLA_ABSORB_BF16` arm).
+    #[allow(clippy::too_many_arguments)]
+    pub fn mla_decompress_v_bf16_zq8(
+        &self,
+        o_lat: &CudaSlice<f32>,
+        wv_b16: &CudaSlice<u16>,
+        out: &mut CudaSlice<f32>,
+        t_q: usize,
+        n_head: usize,
+        d_v: usize,
+        kv_rank: usize,
+    ) -> Res<Option<(CudaSlice<i8>, CudaSlice<f32>)>> {
+        let Some(split) = self.mla_decompress_v_zq8_split(t_q, n_head, d_v) else {
+            return Ok(None);
+        };
+        let n = t_q * n_head * d_v;
+        let mut q = self.alloc_i8_uninit(n)?;
+        let mut d = self.uninit(n / 32)?;
+        let s = self.stream();
+        unsafe {
+            ck(
+                "decompress_v_wp_bf16_zq8",
+                memra_mla_decompress_v_wp_bf16_zq8(
+                    o_lat.device_ptr(&s).0 as *const f32,
+                    wv_b16.device_ptr(&s).0 as *const u16,
+                    out.device_ptr_mut(&s).0 as *mut f32,
+                    q.device_ptr_mut(&s).0 as *mut i8,
+                    d.device_ptr_mut(&s).0 as *mut f32,
+                    t_q as i32,
+                    n_head as i32,
+                    d_v as i32,
+                    kv_rank as i32,
+                    split,
+                    s.cu_stream() as *mut c_void,
+                ),
+            )?;
+        }
+        Ok(Some((q, d)))
     }
 
     #[allow(clippy::too_many_arguments)]

@@ -354,6 +354,110 @@ extern "C" __global__ void memra_mla_decompress_v_wp_kernel(const float* __restr
     }
 }
 
+// ---------------------------------------------------------------- decompress_v + q8_1 epilogue
+// (lane/mla-wo-zq8-20260905) The `_wp` decompress kernels with `wo`'s q8_1 pair emitted beside the
+// f32 output. Each block owns `per = d_v / split` consecutive outputs of one (token, head) row; with
+// per % 32 == 0 those are whole q8 blocks of the token's [n_head * d_v] wo input (block index
+// (h*d_v + lo)/32 + b), so after the warps' dots land in shared memory one warp per q8 block runs
+// quantize_q8_1's arithmetic (cu/qmatvec.cu:589: per-32 amax via shfl_xor, d = amax/127, id = 1/d,
+// rint(v*id)) over the same f32 values the plain kernel writes. The dot itself is the `_wp` body
+// verbatim (same per-lane order, same warp sum), so `out` is bit-identical to the plain kernel and
+// the pair is bit-identical to quantize_q8_1 over it. Launchers refuse per % 32 != 0 / per > 256.
+template <typename WT>
+__device__ __forceinline__ float mla_wp_widen(WT v);
+template <> __device__ __forceinline__ float mla_wp_widen<float>(float v) { return v; }
+template <> __device__ __forceinline__ float mla_wp_widen<__nv_bfloat16>(__nv_bfloat16 v) { return __bfloat162float(v); }
+
+template <typename WT>
+__device__ __forceinline__ void memra_mla_decompress_v_wp_zq8_body(
+        const float* __restrict__ o_lat, const WT* __restrict__ wv_b, float* __restrict__ out,
+        signed char* __restrict__ out_q, float* __restrict__ out_d, int n_head, int d_v,
+        int kv_rank, int split) {
+    extern __shared__ float smem[];
+    __shared__ float so[256];
+    int blk = blockIdx.x / split;
+    int chunk = blockIdx.x % split;
+    int h = blk % n_head;
+    const float* ol = o_lat + (long)blk * kv_rank;
+    for (int l = threadIdx.x; l < kv_rank; l += blockDim.x) smem[l] = ol[l];
+    __syncthreads();
+    const WT* w = wv_b + (long)h * d_v * kv_rank;
+    int per = (d_v + split - 1) / split;
+    int lo = chunk * per;
+    int hi = lo + per < d_v ? lo + per : d_v;
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int nwarp = blockDim.x >> 5;
+    for (int j = lo + warp; j < hi; j += nwarp) {
+        const WT* row = w + (long)j * kv_rank;
+        float acc = 0.0f;
+        for (int l = lane; l < kv_rank; l += 32) acc += mla_wp_widen<WT>(row[l]) * smem[l];
+        acc = mla_warp_sum(acc);
+        if (lane == 0) { out[(long)blk * d_v + j] = acc; so[j - lo] = acc; }
+    }
+    __syncthreads();
+    int nq = (hi - lo) >> 5;   // whole q8 blocks in this block's range (launcher guarantees exact)
+    for (int b = warp; b < nq; b += nwarp) {
+        float v = so[b * 32 + lane];
+        float amax = fabsf(v);
+        #pragma unroll
+        for (int o = 16; o > 0; o >>= 1) amax = fmaxf(amax, __shfl_xor_sync(0xffffffffu, amax, o));
+        float d = amax / 127.0f;
+        float id = d > 0.0f ? 1.0f / d : 0.0f;
+        long e = (long)blk * d_v + lo + b * 32;
+        out_q[e + lane] = (signed char)__float2int_rn(v * id);
+        if (lane == 0) out_d[e >> 5] = d;
+    }
+}
+extern "C" __global__ void memra_mla_decompress_v_wp_zq8_kernel(
+        const float* __restrict__ o_lat, const float* __restrict__ wv_b, float* __restrict__ out,
+        signed char* __restrict__ out_q, float* __restrict__ out_d, int n_head, int d_v,
+        int kv_rank, int split) {
+    memra_mla_decompress_v_wp_zq8_body<float>(o_lat, wv_b, out, out_q, out_d, n_head, d_v, kv_rank, split);
+}
+extern "C" __global__ void memra_mla_decompress_v_wp_bf16_zq8_kernel(
+        const float* __restrict__ o_lat, const __nv_bfloat16* __restrict__ wv_b, float* __restrict__ out,
+        signed char* __restrict__ out_q, float* __restrict__ out_d, int n_head, int d_v,
+        int kv_rank, int split) {
+    memra_mla_decompress_v_wp_zq8_body<__nv_bfloat16>(o_lat, wv_b, out, out_q, out_d, n_head, d_v, kv_rank, split);
+}
+static inline int mla_wp_zq8_shape_ok(int d_v, int split) {
+    if (split < 1 || split > d_v) return 0;
+    if (d_v % split != 0) return 0;
+    int per = d_v / split;
+    return (per % 32 == 0 && per <= 256) ? 1 : 0;
+}
+extern "C" int memra_mla_decompress_v_wp_zq8_f32(const float* o_lat, const float* wv_b, float* out,
+                                                 signed char* out_q, float* out_d, int t_q,
+                                                 int n_head, int d_v, int kv_rank, int split,
+                                                 void* stream_v) {
+    if (!mla_wp_zq8_shape_ok(d_v, split)) return 40004;
+    if (kv_rank > MLA_MAX_RANK) return 40002;
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    long blocks = (long)t_q * n_head * split;
+    if (blocks == 0) return 0;
+    memra_mla_decompress_v_wp_zq8_kernel<<<(unsigned)blocks, MLA_THREADS, kv_rank * sizeof(float),
+                                           stream>>>(o_lat, wv_b, out, out_q, out_d, n_head, d_v,
+                                                     kv_rank, split);
+    MLA_ERR();
+    return 0;
+}
+extern "C" int memra_mla_decompress_v_wp_bf16_zq8(const float* o_lat, const unsigned short* wv_b,
+                                                  float* out, signed char* out_q, float* out_d,
+                                                  int t_q, int n_head, int d_v, int kv_rank,
+                                                  int split, void* stream_v) {
+    if (!mla_wp_zq8_shape_ok(d_v, split)) return 40004;
+    if (kv_rank > MLA_MAX_RANK) return 40002;
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    long blocks = (long)t_q * n_head * split;
+    if (blocks == 0) return 0;
+    memra_mla_decompress_v_wp_bf16_zq8_kernel<<<(unsigned)blocks, MLA_THREADS,
+                                                kv_rank * sizeof(float), stream>>>(
+        o_lat, (const __nv_bfloat16*)wv_b, out, out_q, out_d, n_head, d_v, kv_rank, split);
+    MLA_ERR();
+    return 0;
+}
+
 // ---------------------------------------------------------------- BF16 absorb planes
 // The `_wp` decode kernels with the weight plane read as BF16 and widened per element
 // (lane/mla-absorb-bf16-20260905). Same per-lane element order and the same f32 products and
