@@ -25587,6 +25587,15 @@ impl Engine {
         if m_tokens == 1 {
             return self.linear(x, w, 1, in_f, out_f);
         }
+        // MEMRA_F32_GEMV_KERNEL: the native row GEMV is per-row identical for every m (each
+        // (row, token) block is the same program), which IS the decode-exact contract, so the
+        // verify rows take ONE launch instead of m launches and 2m copies.
+        if crate::f32_gemv_kernel_on() {
+            let mut y = self.alloc_uninit::<f32>(m_tokens * out_f)?;
+            if self.gemv_f32_rows_into(x, w, &mut y, m_tokens, in_f, out_f)? {
+                return Ok(y);
+            }
+        }
         let xv = self.view(x, m_tokens * in_f);
         let mut y = self.alloc_uninit::<f32>(m_tokens * out_f)?;
         for t in 0..m_tokens {

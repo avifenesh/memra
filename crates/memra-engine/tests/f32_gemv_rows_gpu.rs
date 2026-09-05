@@ -111,6 +111,42 @@ fn gemv_f32_rows_matches_cublas_deterministic_and_m_identical() {
     let wd = e.htod(&w).unwrap();
     let mut y = e.uninit(17 * 8).unwrap();
     assert!(!e.gemv_f32_rows_into(&xd, &wd, &mut y, 17, 1024, 8).unwrap());
+    // decode-exact rows under the door: ONE m=4 launch bitwise == four m=1 launches (the
+    // verify-rows contract), and the counter moves by one for it
+    {
+        let (in_f, out_f) = (4096usize, 128usize);
+        let w = vecf(out_f * in_f, 51);
+        let x = vecf(4 * in_f, 52);
+        let xd = e.htod(&x).unwrap();
+        let wd = e.htod(&w).unwrap();
+        unsafe {
+            std::env::set_var("MEMRA_F32_GEMV_KERNEL", "1");
+        }
+        let c_before = memra_engine::F32_GEMV_KERNEL_DISPATCHES.load(Ordering::Relaxed);
+        let y4 = e.linear_decode_exact(&xd, &wd, 4, in_f, out_f).unwrap();
+        let c_after = memra_engine::F32_GEMV_KERNEL_DISPATCHES.load(Ordering::Relaxed);
+        e.stream().synchronize().unwrap();
+        let h4 = e.dtoh(&y4).unwrap();
+        assert_eq!(
+            c_after - c_before,
+            1,
+            "decode-exact rows took {} launches, not one",
+            c_after - c_before
+        );
+        for j in 0..4 {
+            let xj = e.htod(&x[j * in_f..(j + 1) * in_f]).unwrap();
+            let yj = e.linear(&xj, &wd, 1, in_f, out_f).unwrap();
+            e.stream().synchronize().unwrap();
+            assert_eq!(
+                bits(&h4[j * out_f..(j + 1) * out_f]),
+                bits(&e.dtoh(&yj).unwrap()),
+                "decode-exact row {j} is not the m=1 launch"
+            );
+        }
+        unsafe {
+            std::env::set_var("MEMRA_F32_GEMV_KERNEL", "0");
+        }
+    }
     // door non-vacuity through `linear`
     let c0 = memra_engine::F32_GEMV_KERNEL_DISPATCHES.load(Ordering::Relaxed);
     unsafe {
