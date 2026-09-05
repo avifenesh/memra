@@ -3437,12 +3437,6 @@ impl HybridModel {
                     ffn_down,
                     ffn_down_pqs,
                 } => {
-                    if ffn_down_pqs.is_some() {
-                        // memra#253: this path is not wired for the AWQ activation scale.
-                        // Refusing is the only honest option — ignoring it computes a
-                        // different function with no visible failure.
-                        return Err("AWQ pre_quant_scale is unwired on this execution path".into());
-                    }
                     // v1 covers the SiLU family; M3's swigluoai clamp rides a scaled epilogue
                     // (m=1 fused tier) — batched M3 lands with the batched-fusion pass.
                     assert!(
@@ -3469,6 +3463,17 @@ impl HybridModel {
                     let u = e.matmul_pre(ffn_up, &zq, &zd, &z, b_n)?;
                     let mut act = e.uninit(b_n * n_ff)?;
                     e.silu_mul(&g, &u, &mut act, b_n * n_ff)?;
+                    // AWQ (memra#253): the f32 activation exists here, so the
+                    // per-input-channel scale is applied BEFORE the q8 quantize — both the
+                    // quantized operand and the f32 fallback then carry it.
+                    if let Some(pqs) = ffn_down_pqs.as_ref() {
+                        e.apply_pre_quant_scale(
+                            &mut act,
+                            pqs.float_data(),
+                            ffn_down.in_features(),
+                            b_n,
+                        )?;
+                    }
                     let (aq, ad) = e.quantize_q8_1(&act, b_n, n_ff)?;
                     e.matmul_pre(ffn_down, &aq, &ad, &act, b_n)?
                 }
@@ -4147,12 +4152,6 @@ impl HybridModel {
                     ffn_down,
                     ffn_down_pqs,
                 } => {
-                    if ffn_down_pqs.is_some() {
-                        // memra#253: this path is not wired for the AWQ activation scale.
-                        // Refusing is the only honest option — ignoring it computes a
-                        // different function with no visible failure.
-                        return Err("AWQ pre_quant_scale is unwired on this execution path".into());
-                    }
                     // A dense step35 FFN's clamp is the SHEXP array (upstream's one
                     // build_ffn serves dense + shared expert, llama-graph.cpp:1751);
                     // ffn_act_lim dispatches clamped/plain per layer. Layers 0-2 (the
@@ -4174,6 +4173,17 @@ impl HybridModel {
                         &mut act,
                         b_n * n_ff,
                     )?;
+                    // AWQ (memra#253): the f32 activation exists here, so the
+                    // per-input-channel scale is applied BEFORE the q8 quantize — both the
+                    // quantized operand and the f32 fallback then carry it.
+                    if let Some(pqs) = ffn_down_pqs.as_ref() {
+                        e.apply_pre_quant_scale(
+                            &mut act,
+                            pqs.float_data(),
+                            ffn_down.in_features(),
+                            b_n,
+                        )?;
+                    }
                     let (aq, ad) = e.quantize_q8_1(&act, b_n, n_ff)?;
                     e.matmul_pre(ffn_down, &aq, &ad, &act, b_n)?
                 }
