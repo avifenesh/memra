@@ -54,9 +54,6 @@ unsafe impl Send for PrimeSlabs {}
 /// three-read-sites defect is the precedent for not inlining this thrice. Fusion law
 /// everywhere: per (tensor,row) the fused seg body is verbatim, so fused == singles
 /// bit-identically, and the shared (zq, zd) is the same quantize each single recomputes.
-/// `wo`'s q8_1 pair emitted by the decompress launch (MEMRA_MLA_WO_ZQ8), or `None`.
-pub(crate) type MlaWoQ8 = Option<(CudaSlice<i8>, CudaSlice<f32>)>;
-
 fn shexp_gate_up_t1(
     e: &Engine,
     gate_shexp: &crate::model::GpuTensor,
@@ -8661,27 +8658,13 @@ impl HybridModel {
     // allow: the parameter list mirrors the kernel/FFI/call contract (rows_exact is the
     // verify-batch matmul-class selector, lane/glm5-verify-batch); bundling into a struct
     // is a refactor, not a lint fix
-    /// The `wo` projection of the decode core: through `matmul_q8_fast` with the pair the
-    /// decompress launch emitted (MEMRA_MLA_WO_ZQ8), else the unchanged `matmul`.
+    /// The `wo` projection of the decode core.
     fn mla_wo(
         e: &Engine,
         mla: &crate::hybrid::MlaAttnLayer,
         attn: &CudaSlice<f32>,
-        wo_q8: MlaWoQ8,
         t: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        if let Some((aq, ad)) = wo_q8.as_ref()
-            && let Some(y) = e.matmul_q8_fast(&mla.wo, aq, ad, t)?
-        {
-            if crate::MLA_WO_ZQ8_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0
-            {
-                eprintln!(
-                    "[mla-wo-zq8] engaged: the MLA decompress launch emits wo's q8_1 pair; the \
-                     standalone quantize before wo is gone (MEMRA_MLA_WO_ZQ8=1)"
-                );
-            }
-            return Ok(y);
-        }
         e.matmul(&mla.wo, attn, t)
     }
 
@@ -8699,7 +8682,7 @@ impl HybridModel {
         slot: usize,
         rows_exact: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let (attn, wo_q8) = self.mla_attn_core_pre_wo(
+        let attn = self.mla_attn_core_pre_wo(
             e,
             mla,
             h,
@@ -8717,7 +8700,7 @@ impl HybridModel {
         if rows_exact {
             e.matmul_rows_exact(&mla.wo, &attn, t)
         } else {
-            Self::mla_wo(e, mla, &attn, wo_q8, t)
+            Self::mla_wo(e, mla, &attn, t)
         }
     }
 
@@ -8746,7 +8729,7 @@ impl HybridModel {
         index_plane: Option<IndexerPlanes<'_>>,
         slot: usize,
         rows_exact: bool,
-    ) -> Result<(CudaSlice<f32>, MlaWoQ8), Box<dyn std::error::Error>> {
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         // MEMRA_MLA_SEG_WS (lane/glm5-mla-capture-20260904, default OFF): run the PRE segment
         // into the session's stable buffers. Byte-identical (same kernels, same order, a
         // different destination address), and the seam the capture arc needs.
@@ -8754,7 +8737,7 @@ impl HybridModel {
             let g = mla.geom;
             let q_lora = mla.wq_b.in_features();
             let mut ws = e.mla_seg_ws_take(g.n_head, g.d_nope, g.d_rope, g.kv_rank, q_lora)?;
-            let out = (|| -> Result<(CudaSlice<f32>, MlaWoQ8), Box<dyn std::error::Error>> {
+            let out = (|| -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
                 if MLA_SEG_WS_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
                     eprintln!(
                         "[mla-seg-ws] engaged: the T=1 MLA PRE segment writes the session's \
@@ -9006,7 +8989,7 @@ impl HybridModel {
         il: usize,
         slot: usize,
         rows_exact: bool,
-    ) -> Result<(CudaSlice<f32>, MlaWoQ8), Box<dyn std::error::Error>> {
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let g = mla.geom;
         let (nh, dn, dr, dv, r) = (g.n_head, g.d_nope, g.d_rope, g.d_v, g.kv_rank);
         let t_kv = slot + t;
@@ -9064,7 +9047,7 @@ impl HybridModel {
                 e, wk_b, wv_b, q_nope, latent, idx, *slots, t, t_kv, nh, dn, dv, r, g.scale,
             )?
         {
-            return Ok((attn, None));
+            return Ok(attn);
         }
 
         let q_lat = self.mla_post_absorb(e, mla, q_nope, t, il)?;
@@ -9077,7 +9060,7 @@ impl HybridModel {
                 &q_lat, q_pe, latent, &mut o_lat, nh, r, dr, t, t_kv, g.scale,
             )?,
         }
-        self.mla_post_decompress(e, mla, &o_lat, t, rows_exact, il)
+        self.mla_post_decompress(e, mla, &o_lat, t, il)
     }
 
     /// The absorb step of the MLA POST segment: `q_lat = q_nope . wk_b` per head (BF16 plane
@@ -9119,47 +9102,33 @@ impl HybridModel {
         Ok(q_lat)
     }
 
-    /// The decompress step of the MLA POST segment: `attn = o_lat . wv_b` per head, emitting
-    /// `wo`'s q8_1 pair from the same launch under `MEMRA_MLA_WO_ZQ8` when `wo` can take it.
+    /// The decompress step of the MLA POST segment: `attn = o_lat . wv_b` per head (BF16 plane
+    /// under `MEMRA_MLA_ABSORB_BF16` when present, the f32 dispatch otherwise).
     fn mla_post_decompress(
         &self,
         e: &Engine,
         mla: &crate::hybrid::MlaAttnLayer,
         o_lat: &CudaSlice<f32>,
         t: usize,
-        rows_exact: bool,
         il: usize,
-    ) -> Result<(CudaSlice<f32>, MlaWoQ8), Box<dyn std::error::Error>> {
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let g = mla.geom;
         let (nh, dv, r) = (g.n_head, g.d_v, g.kv_rank);
         let wv_b = Self::mla_split_operand(&mla.wv_b, "attn_v_b", il);
         let mut attn = e.uninit(t * nh * dv)?;
-        // MEMRA_MLA_WO_ZQ8: the decompress launch emits wo's q8_1 pair when wo can take it.
-        let want_pair =
-            !rows_exact && t == 1 && crate::mla_wo_zq8_on() && e.mmvq_fast_eligible(&mla.wo, 1);
-        let mut wo_q8: MlaWoQ8 = None;
         let bf16_plane = if crate::mla_absorb_bf16_on() {
             mla.wv_b16.as_ref()
         } else {
             None
         };
-        if want_pair {
-            wo_q8 = match bf16_plane {
-                Some(w16) => e.mla_decompress_v_bf16_zq8(o_lat, w16, &mut attn, t, nh, dv, r)?,
-                None => e.mla_decompress_v_zq8(o_lat, wv_b, &mut attn, t, nh, dv, r)?,
-            };
+        let decompressed16 = match bf16_plane {
+            Some(w16) => e.mla_decompress_v_bf16(o_lat, w16, &mut attn, t, nh, dv, r)?,
+            None => false,
+        };
+        if !decompressed16 {
+            e.mla_decompress_v(o_lat, wv_b, &mut attn, t, nh, dv, r)?;
         }
-        if wo_q8.is_none() {
-            let decompressed16 = match bf16_plane {
-                Some(w16) => e.mla_decompress_v_bf16(o_lat, w16, &mut attn, t, nh, dv, r)?,
-                None => false,
-            };
-            if !decompressed16 {
-                e.mla_decompress_v(o_lat, wv_b, &mut attn, t, nh, dv, r)?;
-            }
-        }
-
-        Ok((attn, wo_q8))
+        Ok(attn)
     }
 
     /// Whether layer `il`'s MLA middle can be captured (`WsSeg::MlaMid`, door
@@ -9268,7 +9237,7 @@ impl HybridModel {
                 false,
                 il,
             )?;
-            let (attn, wo_q8) = self.mla_seg_post_live(
+            let attn = self.mla_seg_post_live(
                 e,
                 mla,
                 &ws.q_nope,
@@ -9277,10 +9246,9 @@ impl HybridModel {
                 &width_d,
                 &layer.rows,
                 1,
-                false,
                 il,
             )?;
-            let y = Self::mla_wo(e, mla, &attn, wo_q8, 1)?;
+            let y = Self::mla_wo(e, mla, &attn, 1)?;
             let n = self.cfg.n_embd as usize;
             e.copy_into(mixed_out, 0, &y, n)?;
             e.i32_copy_add(pos_d, &mut layer.len_d, 1)
@@ -9431,9 +9399,8 @@ impl HybridModel {
         width_d: &CudaSlice<i32>,
         latent: &CudaSlice<f32>,
         t: usize,
-        rows_exact: bool,
         il: usize,
-    ) -> Result<(CudaSlice<f32>, MlaWoQ8), Box<dyn std::error::Error>> {
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let g = mla.geom;
         let (nh, dr, r) = (g.n_head, g.d_rope, g.kv_rank);
         let q_lat = self.mla_post_absorb(e, mla, q_nope, t, il)?;
@@ -9459,7 +9426,7 @@ impl HybridModel {
                 .into());
             }
         }
-        self.mla_post_decompress(e, mla, &o_lat, t, rows_exact, il)
+        self.mla_post_decompress(e, mla, &o_lat, t, il)
     }
 
     /// The verify walk's MLA layer call (`mla_attn_cached_rows_exact` at t = K+1 rows) as
@@ -9523,7 +9490,7 @@ impl HybridModel {
             true,
             il,
         )?;
-        let (attn, _wo_q8) = self.mla_seg_post_live(
+        let attn = self.mla_seg_post_live(
             e,
             mla,
             &pre.q_nope,
@@ -9532,7 +9499,6 @@ impl HybridModel {
             &width_d,
             &layer.rows,
             t,
-            true,
             il,
         )?;
         let out = e.matmul_rows_exact(&mla.wo, &attn, t)?;
@@ -10039,14 +10005,14 @@ impl HybridModel {
                  must declare StatePlan::LatentKvCache for it"
             )
         })?;
-        let (attn, wo_q8) =
+        let attn =
             self.mla_attn_cached_pre_wo(e, mla, h, pos_d, t, il, layer, max_ctx, rows_exact)?;
         // Verify-batch wo seam: the rows arm keeps its decode-exact output projection —
         // the wo dispatch moved here with the TP split, its routing did not change.
         if rows_exact {
             e.matmul_rows_exact(&mla.wo, &attn, t)
         } else {
-            Self::mla_wo(e, mla, &attn, wo_q8, t)
+            Self::mla_wo(e, mla, &attn, t)
         }
     }
 
@@ -10066,7 +10032,7 @@ impl HybridModel {
         layer: &mut memra_kv::LatentKvLayer,
         max_ctx: usize,
         rows_exact: bool,
-    ) -> Result<(CudaSlice<f32>, MlaWoQ8), Box<dyn std::error::Error>> {
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let slot = layer.len;
         let width = layer.width;
         assert_eq!(
@@ -10206,27 +10172,21 @@ impl HybridModel {
         let mut attn: Vec<Option<CudaSlice<f32>>> = (0..ranks).map(|_| None).collect();
         for r in 1..ranks {
             let layer = &mut cache.glm5_tp_latent_peer[il].as_mut().unwrap()[r - 1];
-            attn[r] = Some(
-                self.mla_attn_cached_pre_wo(
-                    &rt.peers[r - 1],
-                    &tp.peers[r - 1],
-                    &h_peers[r - 1],
-                    &pos_peers[r - 1],
-                    t,
-                    il,
-                    layer,
-                    max_ctx,
-                    rows_exact,
-                )?
-                .0,
-            );
+            attn[r] = Some(self.mla_attn_cached_pre_wo(
+                &rt.peers[r - 1],
+                &tp.peers[r - 1],
+                &h_peers[r - 1],
+                &pos_peers[r - 1],
+                t,
+                il,
+                layer,
+                max_ctx,
+                rows_exact,
+            )?);
         }
         attn[0] = {
             let layer = cache.latent[il].as_mut().unwrap();
-            Some(
-                self.mla_attn_cached_pre_wo(e, mla, h, pos_d, t, il, layer, max_ctx, rows_exact)?
-                    .0,
-            )
+            Some(self.mla_attn_cached_pre_wo(e, mla, h, pos_d, t, il, layer, max_ctx, rows_exact)?)
         };
 
         // HOP 2 — gather the per-head parts into the FULL [t, full_heads*dv] layout on
