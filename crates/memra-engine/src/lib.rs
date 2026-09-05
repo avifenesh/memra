@@ -8074,9 +8074,21 @@ impl Engine {
         if ilp {
             MOE_VROWS_ILP_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
+        // MEMRA_MOE_DOWN_ILP2: two experts in flight per warp (bit-identical twins of `_ilp`).
+        let ilp2 = ilp && crate::moe_down_ilp2_on();
+        if ilp2 && MOE_DOWN_ILP2_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0
+        {
+            eprintln!(
+                "[moe-down-ilp2] engaged: verify-rows down/FMA walks two experts per warp \
+                 (8 groups in flight per lane, same per-expert order and slot chain; \
+                 MEMRA_MOE_DOWN_ILP2=1)"
+            );
+        }
         let (f, cfg) = if packed {
             (
-                self.func(if ilp {
+                self.func(if ilp2 {
+                    "moe_down8_fma_q8_rows_w4_ilp2"
+                } else if ilp {
                     "moe_down8_fma_q8_rows_w4_ilp"
                 } else {
                     "moe_down8_fma_q8_rows_w4"
@@ -8107,7 +8119,9 @@ impl Engine {
             )
         } else {
             (
-                self.func(if ilp {
+                self.func(if ilp2 {
+                    "moe_down8_fma_q8_rows_ilp2"
+                } else if ilp {
                     "moe_down8_fma_q8_rows_ilp"
                 } else {
                     "moe_down8_fma_q8_rows"
@@ -33756,6 +33770,22 @@ impl Engine {
 pub fn f32_gemv_kernel_on() -> bool {
     std::env::var("MEMRA_F32_GEMV_KERNEL").as_deref() == Ok("1")
 }
+
+/// `MEMRA_MOE_DOWN_ILP2=1` (lane/moe-down-ilp2-20260905, default OFF pending its model-scale row):
+/// the verify-rows MoE down/FMA launch takes the `_ilp2` twins (`moe_down8_fma_q8_rows_ilp2`,
+/// `_w4_ilp2`) that walk two experts at once (8 groups in flight per lane instead of 4, one
+/// warp reduction per expert as before) instead of the `_ilp` twins that walk them one at a time.
+/// Rides on top of `MEMRA_MOE_VROWS_ILP` (interleaved NVFP4 only; a non-ILP or non-NVFP4 launch
+/// keeps its kernel). BIT-IDENTICAL by construction: each expert keeps its own accumulator and
+/// g-order, its own `warp_reduce_sum`, and the slot-ordered `__fmaf_rn` chain is unchanged
+/// (gate `tests/moe_down_ilp2_gpu.rs`). Read per call.
+pub fn moe_down_ilp2_on() -> bool {
+    std::env::var("MEMRA_MOE_DOWN_ILP2").as_deref() == Ok("1")
+}
+
+/// Launches of the `_ilp2` down twins (gate non-vacuity, box engagement receipt).
+pub static MOE_DOWN_ILP2_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
 
 /// Launches `gemv_f32_rows` took under `MEMRA_F32_GEMV_KERNEL=1` (gate non-vacuity).
 pub static F32_GEMV_KERNEL_DISPATCHES: std::sync::atomic::AtomicU64 =
