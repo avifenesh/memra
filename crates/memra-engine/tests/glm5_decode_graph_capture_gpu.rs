@@ -608,7 +608,7 @@ fn moe_shexp_overlap_matches_serial_bitwise() {
     unsafe {
         std::env::set_var("MEMRA_GLM5_DECODE_GRAPH", "0");
         std::env::set_var("MEMRA_MOE_SHEXP_OVERLAP", "0");
-        std::env::remove_var("MEMRA_GLM5_VROWS_T1_DEV");
+        std::env::set_var("MEMRA_GLM5_VROWS_T1_DEV", "0");
     }
     assert!(
         replays > 0,
