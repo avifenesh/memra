@@ -1464,11 +1464,11 @@ pub struct Engine {
     /// Second COMPUTE stream (lane/moe-shexp-overlap-20260905): the MoE shared expert runs here
     /// under the ambient stream override while the routed rows run on the main stream; forked
     /// and joined with events at every use, never left with unjoined work (capture-safe).
-    pub side_stream: Arc<CudaStream>,
-    /// cuBLASLt handle bound to `side_stream`: an override push pairs the stream with the handle
-    /// that issues on it. Under the main-bound handle a dense GEMM inside the fork would leave the
-    /// side stream, unordered against its own producers (the fixture found it 2026-09-05).
-    pub side_blas: Arc<cudarc::cublaslt::CudaBlasLT>,
+    /// The side stream and its cuBLASLt handle, created on FIRST USE (the shared-expert overlap
+    /// door): an idle engine keeps ONE stream, so cudarc stays out of multi-stream mode and the
+    /// decode-graph capture sees exactly the streams it saw before the door existed. A handle
+    /// per stream is the contract (`TRAP:override-handle-must-follow-the-stream`).
+    pub side: std::sync::OnceLock<(Arc<CudaStream>, Arc<cudarc::cublaslt::CudaBlasLT>)>,
     /// Resident CUTLASS NVFP4 prefill scratch (workspace + a_packed + sfa_linear + sfa_sw + y + alpha),
     /// allocated ONCE and grown to the largest prefill GEMM shape, then reused per-call. Removes the
     /// 6 fresh allocations + alpha htod that `cutlass_fp4_gemm` did every prefill matmul (~200/prefill).
@@ -3177,7 +3177,6 @@ impl Engine {
             .ctx
             .load_module(Ptx::from_binary(SAMPLE_FATBIN.to_vec()))?;
         let copy_stream = gpu.ctx.new_stream()?;
-        let side_stream = gpu.ctx.new_stream()?;
         // DECODE EVENT-TRACKING ELISION — DEFAULT ON (2026-07-05; MEMRA_EVT=1 = escape hatch).
         // cudarc is in multi-stream mode (main stream +
         // copy_stream are both created streams), so with tracking on EVERY launch arg records a
@@ -3219,8 +3218,7 @@ impl Engine {
             w8_act: Mutex::new(std::collections::HashMap::new()),
             moe_cache_layout: Mutex::new(None),
             copy_stream,
-            side_blas: Arc::new(cudarc::cublaslt::CudaBlasLT::new(side_stream.clone())?),
-            side_stream,
+            side: std::sync::OnceLock::new(),
             capture_keep_on: std::sync::atomic::AtomicBool::new(false),
             verify_exact: std::sync::atomic::AtomicBool::new(false),
             capture_keep: Mutex::new(Vec::new()),
@@ -14555,6 +14553,20 @@ impl Engine {
             );
         }
         Ok(true)
+    }
+
+    /// The side stream and the cuBLASLt handle bound to it, created on first use.
+    pub fn side_pair(
+        &self,
+    ) -> Result<(Arc<CudaStream>, Arc<cudarc::cublaslt::CudaBlasLT>), Box<dyn std::error::Error>>
+    {
+        if let Some(p) = self.side.get() {
+            return Ok(p.clone());
+        }
+        let stream = self.gpu.ctx.new_stream()?;
+        let blas = Arc::new(cudarc::cublaslt::CudaBlasLT::new(stream.clone())?);
+        let _ = self.side.set((stream, blas));
+        Ok(self.side.get().expect("set above").clone())
     }
 
     /// The arm-explicit form of [`Engine::rms_norm_zq8_f32`]: `ilp` selects the

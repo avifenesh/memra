@@ -13848,17 +13848,17 @@ impl HybridModel {
         // =3: the fork program on the main stream itself (no override): isolates the program
         // from the stream placement when the gate disagrees.
         let main_probe = crate::moe_shexp_overlap_main_probe();
-        let side = if main_probe {
-            main.clone()
+        let (side, side_blas) = if main_probe {
+            (main.clone(), e.gpu.blas())
         } else {
-            e.side_stream.clone()
+            e.side_pair()?
         };
         let mut out = e.uninit(n_embd)?;
         let ev0 = main.record_event(None)?;
         side.wait(&ev0)?;
         let ev1 = {
             let _g = (!main_probe)
-                .then(|| memra_runtime::push_stream_override(side.clone(), e.side_blas.clone()));
+                .then(|| memra_runtime::push_stream_override(side.clone(), side_blas.clone()));
             let sa = {
                 let (sg_gate, sg_up) = shexp_gate_up_t1(e, gate_shexp, up_shexp, z, zq8)?;
                 let mut sa = e.uninit(n_ff_sh)?;
