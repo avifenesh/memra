@@ -11076,8 +11076,6 @@ impl Engine {
         out_kv: usize,
         out_g: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let __wq_ptr: u64 = self.addr_f32(wq);
-        let __wk_ptr: u64 = self.addr_f32(wk);
         if !in_f.is_multiple_of(4)
             || wq.len() != out_q * in_f
             || wk.len() != out_kv * in_f
@@ -11108,8 +11106,8 @@ impl Engine {
         let (inf, oq, okv, og) = (in_f as i32, out_q as i32, out_kv as i32, out_g as i32);
         let __s_b = self.gpu.stream();
         let mut b = __s_b.launch_builder(&f);
-        b.arg(&__wq_ptr)
-            .arg(&__wk_ptr)
+        b.arg(wq)
+            .arg(wk)
             .arg(wv)
             .arg(wg)
             .arg(x)
@@ -15444,8 +15442,8 @@ impl Engine {
             use cudarc::driver::{DevicePtr, DevicePtrMut};
             let s = &self.gpu.stream();
             let (pqkv, _g0) = qkv.device_ptr(s);
-            let (pwq, _g1) = wq.device_ptr(s);
-            let (pwk, _g2) = wk.device_ptr(s);
+            let pwq = __wq_ptr; // null when the family has no QK-norm
+            let pwk = __wk_ptr;
             let (pwv, _g3) = wv.device_ptr(s);
             let (pq, _g4) = q.device_ptr_mut(s);
             let (pk, _g5) = k.device_ptr_mut(s);
@@ -15704,8 +15702,8 @@ impl Engine {
             let (p0, _a0) = q0.device_ptr(s);
             let (p1, _a1) = k0.device_ptr(s);
             let (p2, _a2) = v0.device_ptr(s);
-            let (pwq, _a3) = wq.device_ptr(s);
-            let (pwk, _a4) = wk.device_ptr(s);
+            let pwq = __wq_ptr; // null when the family has no QK-norm
+            let pwk = __wk_ptr;
             let (pwv, _a5) = wv.device_ptr(s);
             let (pq, _a6) = q.device_ptr_mut(s);
             let (pk, _a7) = k.device_ptr_mut(s);
@@ -15894,8 +15892,8 @@ impl Engine {
             let (p0, _a0) = q0.device_ptr(s);
             let (p1, _a1) = k0.device_ptr(s);
             let (p2, _a2) = v0.device_ptr(s);
-            let (pwq, _a3) = wq.device_ptr(s);
-            let (pwk, _a4) = wk.device_ptr(s);
+            let pwq = __wq_ptr; // null when the family has no QK-norm
+            let pwk = __wk_ptr;
             let (pwv, _a5) = wv.device_ptr(s);
             let (pq, _a6) = q.device_ptr_mut(s);
             let (pk, _a7) = k.device_ptr_mut(s);
@@ -23786,8 +23784,6 @@ impl Engine {
         out_g: usize,
         t: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let __wq_ptr: u64 = self.addr_f32(wq);
-        let __wk_ptr: u64 = self.addr_f32(wk);
         if t == 0
             || t > 8
             || !in_f.is_multiple_of(8)
@@ -23820,8 +23816,8 @@ impl Engine {
         // qualify it (Hermes `64fa2b55baf0d887`).
         let f = self.func("matvec_bf16_qkvg_tcol");
         let mut b = __s_b.launch_builder(&f);
-        b.arg(&__wq_ptr)
-            .arg(&__wk_ptr)
+        b.arg(wq)
+            .arg(wk)
             .arg(wv)
             .arg(wg)
             .arg(x_t)
@@ -23857,8 +23853,6 @@ impl Engine {
         out_kv: usize,
         out_g: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let __wq_ptr: u64 = self.addr_f32(wq);
-        let __wk_ptr: u64 = self.addr_f32(wk);
         if !in_f.is_multiple_of(8)
             || wq.len() != out_q * in_f * 2
             || wk.len() != out_kv * in_f * 2
@@ -23884,8 +23878,8 @@ impl Engine {
         let (inf, oq, okv, og) = (in_f as i32, out_q as i32, out_kv as i32, out_g as i32);
         let __s_b = self.gpu.stream();
         let mut b = __s_b.launch_builder(&f);
-        b.arg(&__wq_ptr)
-            .arg(&__wk_ptr)
+        b.arg(wq)
+            .arg(wk)
             .arg(wv)
             .arg(wg)
             .arg(x)
@@ -24111,8 +24105,6 @@ impl Engine {
         out_q: usize,
         out_kv: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let __wq_ptr: u64 = self.addr_f32(wq);
-        let __wk_ptr: u64 = self.addr_f32(wk);
         const ROWS_PER_BLOCK: u32 = 4; // matches MEMRA_MMVQ_ROWS in qmatvec.cu
         let rows = out_q + 2 * out_kv;
         let nblk = in_f / 32;
@@ -24139,8 +24131,8 @@ impl Engine {
         let (ini, oq, okv) = (in_f as i32, out_q as i32, out_kv as i32);
         let __s_b = self.gpu.stream();
         let mut b = __s_b.launch_builder(&f);
-        b.arg(&__wq_ptr)
-            .arg(&__wk_ptr)
+        b.arg(wq)
+            .arg(wk)
             .arg(wv)
             .arg(aq)
             .arg(ad)
@@ -24460,8 +24452,6 @@ impl Engine {
         out_kv: usize,
         t: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let __wq_ptr: u64 = self.addr_f32(wq);
-        let __wk_ptr: u64 = self.addr_f32(wk);
         const ROWS_PER_BLOCK: u32 = 4;
         let rows = out_q + 2 * out_kv;
         let nblk = in_f / 32;
@@ -24493,8 +24483,8 @@ impl Engine {
             let ti = t as i32;
             let __s_b = self.gpu.stream();
             let mut b = __s_b.launch_builder(&f);
-            b.arg(&__wq_ptr)
-                .arg(&__wk_ptr)
+            b.arg(wq)
+                .arg(wk)
                 .arg(wv)
                 .arg(aq)
                 .arg(ad)
@@ -24518,8 +24508,8 @@ impl Engine {
         };
         let __s_b = self.gpu.stream();
         let mut b = __s_b.launch_builder(&f);
-        b.arg(&__wq_ptr)
-            .arg(&__wk_ptr)
+        b.arg(wq)
+            .arg(wk)
             .arg(wv)
             .arg(aq)
             .arg(ad)

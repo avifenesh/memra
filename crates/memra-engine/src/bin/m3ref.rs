@@ -26,7 +26,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &nh[..3]
     );
     let qn = match &model.layers[5].mixer {
-        memra_engine::hybrid::Mixer::Full(fa) => e.dtoh(fa.q_norm.float_data())?,
+        // MiniMax-M3 has QK-norm; a family without it (dense llama/mistral) simply has
+        // nothing to print here.
+        memra_engine::hybrid::Mixer::Full(fa) => match fa.q_norm_w() {
+            Some(w) => e.dtoh(w)?,
+            None => vec![],
+        },
         _ => vec![],
     };
     if !qn.is_empty() {
