@@ -1,0 +1,44 @@
+[load] placement: split_at=23 trunk_layers=43 dspark_tail_reserve=10.83 GiB
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] selected FP4 reduction: Block
+[load] indexer score: Scalar
+[load] prefill head: Last
+[load] prefill DSpark prime: Tail
+[load] sampled DSpark proposal: Greedy
+[load] prefill MoE: reference
+[load] dspark exit-head dots arm: f32x (rung-4c fork; drafts only, never the emitted stream)
+[load] dspark selected-expert dispatch: per-expert reference
+[load] dense arm: fp8 (iteration-5; fp8 = FP8-blk linears as-stored on the device decode/verify paths, bit-identical twins)
+[load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 592.0ms
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> dev0 done t=14s
+[load] layer 7 -> dev0 done t=29s
+[load] layer 11 -> dev0 done t=43s
+[load] layer 15 -> dev0 done t=58s
+[load] layer 19 -> dev0 done t=73s
+[load] layer 23 -> dev1 done t=87s
+[load] layer 27 -> dev1 done t=101s
+[load] layer 31 -> dev1 done t=116s
+[load] layer 35 -> dev1 done t=130s
+[load] layer 39 -> dev1 done t=145s
+[load] layer 42 -> dev1 done t=156s
+[load] drafter: DSpark (3 blocks, block_size 5, targets [40, 41, 42]) resident on stage 1
+EXACT count=160 seed=20260905 penalized=false arm=Greedy tokens=64 rounds=25 accepted=38 coupled_draws=0 decode_gate_s=2.729659
+EXACT count=160 seed=20260905 penalized=false arm=Coupled tokens=64 rounds=26 accepted=37 coupled_draws=130 decode_gate_s=4.746904
+EXACT count=160 seed=20260905 penalized=false arm=Greedy tokens=64 rounds=25 accepted=38 coupled_draws=0 decode_gate_s=2.693365
+EXACT count=160 seed=73 penalized=false arm=Greedy tokens=64 rounds=37 accepted=26 coupled_draws=0 decode_gate_s=3.556681
+EXACT count=160 seed=73 penalized=false arm=Coupled tokens=64 rounds=39 accepted=24 coupled_draws=195 decode_gate_s=6.614965
+EXACT count=160 seed=73 penalized=false arm=Greedy tokens=64 rounds=37 accepted=26 coupled_draws=0 decode_gate_s=3.552046
+EXACT count=160 seed=911 penalized=true arm=Greedy tokens=64 rounds=33 accepted=30 coupled_draws=0 decode_gate_s=3.334382
+EXACT count=160 seed=911 penalized=true arm=Coupled tokens=64 rounds=35 accepted=28 coupled_draws=175 decode_gate_s=6.164648
+EXACT count=160 seed=911 penalized=true arm=Greedy tokens=64 rounds=33 accepted=30 coupled_draws=0 decode_gate_s=3.350946
+EXACT count=1025 seed=20260905 penalized=false arm=Greedy tokens=64 rounds=22 accepted=41 coupled_draws=0 decode_gate_s=2.650216
+EXACT count=1025 seed=20260905 penalized=false arm=Coupled tokens=64 rounds=22 accepted=41 coupled_draws=110 decode_gate_s=4.284355
+EXACT count=1025 seed=20260905 penalized=false arm=Greedy tokens=64 rounds=22 accepted=41 coupled_draws=0 decode_gate_s=2.631123
+EXACT count=1025 seed=73 penalized=false arm=Greedy tokens=64 rounds=25 accepted=38 coupled_draws=0 decode_gate_s=2.850578
+EXACT count=1025 seed=73 penalized=false arm=Coupled tokens=64 rounds=25 accepted=38 coupled_draws=125 decode_gate_s=4.763902
+EXACT count=1025 seed=73 penalized=false arm=Greedy tokens=64 rounds=25 accepted=38 coupled_draws=0 decode_gate_s=2.843281
+EXACT count=1025 seed=911 penalized=true arm=Greedy tokens=64 rounds=31 accepted=32 coupled_draws=0 decode_gate_s=3.231165
+EXACT count=1025 seed=911 penalized=true arm=Coupled tokens=64 rounds=33 accepted=30 coupled_draws=165 decode_gate_s=5.847379
+EXACT count=1025 seed=911 penalized=true arm=Greedy tokens=64 rounds=31 accepted=32 coupled_draws=0 decode_gate_s=3.252276
+PASS sampled proposal coupling and persistent-state identity; performance qualification remains separate

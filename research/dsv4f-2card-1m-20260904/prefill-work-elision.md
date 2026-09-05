@@ -36,8 +36,21 @@ serving-performance claim. The canonical first-token head/prime is excluded
 from counters in both arms. 397 engine library tests, the work-counter control,
 and clippy including both gate binaries/server pass. The complete correctness
 `tools/local-ci.sh` run for base 4afb4624f also finished successfully before these
-new edits; it is not a new-feature or performance receipt. Target-card model
-gates and serving/cache/concurrency qualification remain pending.
+new edits; it is not a new-feature or performance receipt. The two new target
+model gates below pass; serving/cache/concurrency performance qualification
+remains pending.
+
+The first target run passed the canonical one-token comparisons, then the
+width-1 case stopped at sampled verification: `dsv4 transaction width 6 exceeds
+decode-state transient rows 1`. The harness incorrectly used prefill width as
+the capacity of a later DSpark transaction. Its corrected allocation and
+snapshot restoration reserve `max(width, verify_tmax)` without widening prefill.
+Release build, the CPU engagement test and the corrected complete target run
+pass. Receipt: `prefill-work-pro.log`, two RTX PRO 6000 Blackwell Max-Q
+Workstation cards, binary
+`942ec2489afbaaa9d6d18465602c0aca6fe27706f05ae51ca88210da18dea751`.
+All widths/suffixes and the public verifier contract passed. No model or
+hardware failure is inferred from the original instrument error.
 
 ## Current DSpark sampling observation
 
@@ -57,5 +70,12 @@ which may lower agreement but cannot bypass the target's penalties.
 `dsv4_coupled_proposal_gate` compares plain/greedy-proposal/coupled-proposal
 tokens, persistent trunk caches and DSpark rings across two prompt lengths,
 three seeds and a penalty case. It also reverses the arm and checks draw-count
-engagement. CPU key-alignment and deliberately shifted-key controls pass;
-target-card acceptance, CPU sampling cost and serving benefit remain unmeasured.
+engagement. CPU key-alignment and deliberately shifted-key controls pass.
+`coupled-proposal-pro.log` also passes the complete target-card identity gate
+(binary `7465139d4cbbb190bf15d46290a6042be1f47b7be305475a94cb19fea63d7cb0`).
+The six single-run characterizations show no acceptance improvement: two tie
+and four regress. Coupled decode gate wall is 4.28–6.61 seconds versus the
+2.63–3.56-second surrounding greedy-proposal arms. This is not a balanced N>=5
+serving trial, but gives no reason to promote the current host-sorting sampler.
+It remains default-OFF; a faster native proposal sampler and measured agreement
+benefit are required before another promotion attempt.

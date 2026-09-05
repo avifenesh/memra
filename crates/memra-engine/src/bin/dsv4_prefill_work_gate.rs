@@ -63,9 +63,12 @@ fn run(
 ) -> Vec<u8> {
     let count = prefix + suffix;
     let capacity = count + 64;
+    // The prefill chunk can be one row, but the sampled tail still verifies a
+    // full DSpark transaction. Preserve that space across snapshot/restore.
+    let transient_rows = width.max(gpu.verify_tmax());
     let before = gpu.prefill_head_stats();
     let mut state = gpu
-        .alloc_decode_state_for_transient(capacity, width)
+        .alloc_decode_state_for_transient(capacity, transient_rows)
         .expect("state");
     let mut draft = gpu.dspark_alloc_state().expect("draft");
     let timer = Instant::now();
@@ -85,7 +88,7 @@ fn run(
         drop(state);
         drop(draft);
         state = gpu
-            .restore_decode_state_for_transient(&host, capacity, width)
+            .restore_decode_state_for_transient(&host, capacity, transient_rows)
             .expect("restore trunk");
         draft = gpu
             .restore_dspark_state(&host_draft)

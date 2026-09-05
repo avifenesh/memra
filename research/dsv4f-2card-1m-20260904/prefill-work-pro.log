@@ -1,0 +1,91 @@
+SOURCE sha256=f6e175a6f2588953568746fec0cd43fcd046405f74b5c71ce071fe7f37238ded
+[load] placement: split_at=23 trunk_layers=43 dspark_tail_reserve=10.83 GiB
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] selected FP4 reduction: Block
+[load] indexer score: Scalar
+[load] prefill head: All
+[load] prefill DSpark prime: All
+[load] sampled DSpark proposal: Greedy
+[load] prefill MoE: reference
+[load] dspark exit-head dots arm: f32x (rung-4c fork; drafts only, never the emitted stream)
+[load] dspark selected-expert dispatch: per-expert reference
+[load] dense arm: fp8 (iteration-5; fp8 = FP8-blk linears as-stored on the device decode/verify paths, bit-identical twins)
+[load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 564.4ms
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> dev0 done t=28s
+[load] layer 7 -> dev0 done t=54s
+[load] layer 11 -> dev0 done t=84s
+[load] layer 15 -> dev0 done t=110s
+[load] layer 19 -> dev0 done t=138s
+[load] layer 23 -> dev1 done t=164s
+[load] layer 27 -> dev1 done t=192s
+[load] layer 31 -> dev1 done t=221s
+[load] layer 35 -> dev1 done t=253s
+[load] layer 39 -> dev1 done t=285s
+[load] layer 42 -> dev1 done t=310s
+[load] drafter: DSpark (3 blocks, block_size 5, targets [40, 41, 42]) resident on stage 1
+WORK prefix=1 suffix=0 width=32 head=All draft=All gate_wall_including_checks_s=5.340035 counters=Dsv4PrefillHeadStats { full_rows: 0, last_rows: 0, skipped_chunks: 0, draft_prime_rows: 0 }
+WORK prefix=1 suffix=0 width=32 head=Last draft=All gate_wall_including_checks_s=2.453616 counters=Dsv4PrefillHeadStats { full_rows: 0, last_rows: 0, skipped_chunks: 0, draft_prime_rows: 0 }
+EXACT prefix=1 suffix=0 width=32 head=Last draft=All
+WORK prefix=1 suffix=0 width=32 head=All draft=Tail gate_wall_including_checks_s=1.557061 counters=Dsv4PrefillHeadStats { full_rows: 0, last_rows: 0, skipped_chunks: 0, draft_prime_rows: 0 }
+EXACT prefix=1 suffix=0 width=32 head=All draft=Tail
+WORK prefix=1 suffix=0 width=32 head=Last draft=Tail gate_wall_including_checks_s=2.029898 counters=Dsv4PrefillHeadStats { full_rows: 0, last_rows: 0, skipped_chunks: 0, draft_prime_rows: 0 }
+EXACT prefix=1 suffix=0 width=32 head=Last draft=Tail
+WORK prefix=32 suffix=0 width=1 head=All draft=All gate_wall_including_checks_s=1.798244 counters=Dsv4PrefillHeadStats { full_rows: 31, last_rows: 0, skipped_chunks: 0, draft_prime_rows: 31 }
+WORK prefix=32 suffix=0 width=1 head=Last draft=All gate_wall_including_checks_s=2.539840 counters=Dsv4PrefillHeadStats { full_rows: 0, last_rows: 1, skipped_chunks: 30, draft_prime_rows: 31 }
+EXACT prefix=32 suffix=0 width=1 head=Last draft=All
+WORK prefix=32 suffix=0 width=1 head=All draft=Tail gate_wall_including_checks_s=2.622946 counters=Dsv4PrefillHeadStats { full_rows: 31, last_rows: 0, skipped_chunks: 0, draft_prime_rows: 31 }
+EXACT prefix=32 suffix=0 width=1 head=All draft=Tail
+WORK prefix=32 suffix=0 width=1 head=Last draft=Tail gate_wall_including_checks_s=3.557859 counters=Dsv4PrefillHeadStats { full_rows: 0, last_rows: 1, skipped_chunks: 30, draft_prime_rows: 31 }
+EXACT prefix=32 suffix=0 width=1 head=Last draft=Tail
+WORK prefix=160 suffix=0 width=32 head=All draft=All gate_wall_including_checks_s=3.059485 counters=Dsv4PrefillHeadStats { full_rows: 159, last_rows: 0, skipped_chunks: 0, draft_prime_rows: 159 }
+WORK prefix=160 suffix=0 width=32 head=Last draft=All gate_wall_including_checks_s=3.365798 counters=Dsv4PrefillHeadStats { full_rows: 0, last_rows: 1, skipped_chunks: 4, draft_prime_rows: 159 }
+EXACT prefix=160 suffix=0 width=32 head=Last draft=All
+WORK prefix=160 suffix=0 width=32 head=All draft=Tail gate_wall_including_checks_s=3.699104 counters=Dsv4PrefillHeadStats { full_rows: 159, last_rows: 0, skipped_chunks: 0, draft_prime_rows: 128 }
+EXACT prefix=160 suffix=0 width=32 head=All draft=Tail
+WORK prefix=160 suffix=0 width=32 head=Last draft=Tail gate_wall_including_checks_s=3.150479 counters=Dsv4PrefillHeadStats { full_rows: 0, last_rows: 1, skipped_chunks: 4, draft_prime_rows: 128 }
+EXACT prefix=160 suffix=0 width=32 head=Last draft=Tail
+WORK prefix=1025 suffix=0 width=64 head=All draft=All gate_wall_including_checks_s=11.363524 counters=Dsv4PrefillHeadStats { full_rows: 1024, last_rows: 0, skipped_chunks: 0, draft_prime_rows: 1024 }
+WORK prefix=1025 suffix=0 width=64 head=Last draft=All gate_wall_including_checks_s=13.502914 counters=Dsv4PrefillHeadStats { full_rows: 0, last_rows: 1, skipped_chunks: 15, draft_prime_rows: 1024 }
+EXACT prefix=1025 suffix=0 width=64 head=Last draft=All
+WORK prefix=1025 suffix=0 width=64 head=All draft=Tail gate_wall_including_checks_s=13.453175 counters=Dsv4PrefillHeadStats { full_rows: 1024, last_rows: 0, skipped_chunks: 0, draft_prime_rows: 128 }
+EXACT prefix=1025 suffix=0 width=64 head=All draft=Tail
+WORK prefix=1025 suffix=0 width=64 head=Last draft=Tail gate_wall_including_checks_s=13.284635 counters=Dsv4PrefillHeadStats { full_rows: 0, last_rows: 1, skipped_chunks: 15, draft_prime_rows: 128 }
+EXACT prefix=1025 suffix=0 width=64 head=Last draft=Tail
+WORK prefix=1025 suffix=0 width=512 head=All draft=All gate_wall_including_checks_s=14.031859 counters=Dsv4PrefillHeadStats { full_rows: 1024, last_rows: 0, skipped_chunks: 0, draft_prime_rows: 1024 }
+WORK prefix=1025 suffix=0 width=512 head=Last draft=All gate_wall_including_checks_s=13.865471 counters=Dsv4PrefillHeadStats { full_rows: 0, last_rows: 1, skipped_chunks: 1, draft_prime_rows: 1024 }
+EXACT prefix=1025 suffix=0 width=512 head=Last draft=All
+WORK prefix=1025 suffix=0 width=512 head=All draft=Tail gate_wall_including_checks_s=14.170268 counters=Dsv4PrefillHeadStats { full_rows: 1024, last_rows: 0, skipped_chunks: 0, draft_prime_rows: 128 }
+EXACT prefix=1025 suffix=0 width=512 head=All draft=Tail
+WORK prefix=1025 suffix=0 width=512 head=Last draft=Tail gate_wall_including_checks_s=13.701312 counters=Dsv4PrefillHeadStats { full_rows: 0, last_rows: 1, skipped_chunks: 1, draft_prime_rows: 128 }
+EXACT prefix=1025 suffix=0 width=512 head=Last draft=Tail
+WORK prefix=160 suffix=33 width=32 head=All draft=All gate_wall_including_checks_s=6.299050 counters=Dsv4PrefillHeadStats { full_rows: 192, last_rows: 0, skipped_chunks: 0, draft_prime_rows: 192 }
+WORK prefix=160 suffix=33 width=32 head=Last draft=All gate_wall_including_checks_s=5.257602 counters=Dsv4PrefillHeadStats { full_rows: 0, last_rows: 2, skipped_chunks: 5, draft_prime_rows: 192 }
+EXACT prefix=160 suffix=33 width=32 head=Last draft=All
+WORK prefix=160 suffix=33 width=32 head=All draft=Tail gate_wall_including_checks_s=3.807462 counters=Dsv4PrefillHeadStats { full_rows: 192, last_rows: 0, skipped_chunks: 0, draft_prime_rows: 161 }
+EXACT prefix=160 suffix=33 width=32 head=All draft=Tail
+WORK prefix=160 suffix=33 width=32 head=Last draft=Tail gate_wall_including_checks_s=4.660658 counters=Dsv4PrefillHeadStats { full_rows: 0, last_rows: 2, skipped_chunks: 5, draft_prime_rows: 161 }
+EXACT prefix=160 suffix=33 width=32 head=Last draft=Tail
+WORK prefix=160 suffix=128 width=32 head=All draft=All gate_wall_including_checks_s=4.596581 counters=Dsv4PrefillHeadStats { full_rows: 287, last_rows: 0, skipped_chunks: 0, draft_prime_rows: 287 }
+WORK prefix=160 suffix=128 width=32 head=Last draft=All gate_wall_including_checks_s=5.272470 counters=Dsv4PrefillHeadStats { full_rows: 0, last_rows: 2, skipped_chunks: 7, draft_prime_rows: 287 }
+EXACT prefix=160 suffix=128 width=32 head=Last draft=All
+WORK prefix=160 suffix=128 width=32 head=All draft=Tail gate_wall_including_checks_s=4.734243 counters=Dsv4PrefillHeadStats { full_rows: 287, last_rows: 0, skipped_chunks: 0, draft_prime_rows: 256 }
+EXACT prefix=160 suffix=128 width=32 head=All draft=Tail
+WORK prefix=160 suffix=128 width=32 head=Last draft=Tail gate_wall_including_checks_s=6.029654 counters=Dsv4PrefillHeadStats { full_rows: 0, last_rows: 2, skipped_chunks: 7, draft_prime_rows: 256 }
+EXACT prefix=160 suffix=128 width=32 head=Last draft=Tail
+WORK prefix=160 suffix=129 width=32 head=All draft=All gate_wall_including_checks_s=4.803779 counters=Dsv4PrefillHeadStats { full_rows: 288, last_rows: 0, skipped_chunks: 0, draft_prime_rows: 288 }
+WORK prefix=160 suffix=129 width=32 head=Last draft=All gate_wall_including_checks_s=5.895827 counters=Dsv4PrefillHeadStats { full_rows: 0, last_rows: 2, skipped_chunks: 8, draft_prime_rows: 288 }
+EXACT prefix=160 suffix=129 width=32 head=Last draft=All
+WORK prefix=160 suffix=129 width=32 head=All draft=Tail gate_wall_including_checks_s=4.913808 counters=Dsv4PrefillHeadStats { full_rows: 288, last_rows: 0, skipped_chunks: 0, draft_prime_rows: 256 }
+EXACT prefix=160 suffix=129 width=32 head=All draft=Tail
+WORK prefix=160 suffix=129 width=32 head=Last draft=Tail gate_wall_including_checks_s=5.092562 counters=Dsv4PrefillHeadStats { full_rows: 0, last_rows: 2, skipped_chunks: 8, draft_prime_rows: 256 }
+EXACT prefix=160 suffix=129 width=32 head=Last draft=Tail
+WORK prefix=1025 suffix=257 width=512 head=All draft=All gate_wall_including_checks_s=14.456984 counters=Dsv4PrefillHeadStats { full_rows: 1281, last_rows: 0, skipped_chunks: 0, draft_prime_rows: 1281 }
+WORK prefix=1025 suffix=257 width=512 head=Last draft=All gate_wall_including_checks_s=16.282812 counters=Dsv4PrefillHeadStats { full_rows: 0, last_rows: 2, skipped_chunks: 1, draft_prime_rows: 1281 }
+EXACT prefix=1025 suffix=257 width=512 head=Last draft=All
+WORK prefix=1025 suffix=257 width=512 head=All draft=Tail gate_wall_including_checks_s=16.616839 counters=Dsv4PrefillHeadStats { full_rows: 1281, last_rows: 0, skipped_chunks: 0, draft_prime_rows: 256 }
+EXACT prefix=1025 suffix=257 width=512 head=All draft=Tail
+WORK prefix=1025 suffix=257 width=512 head=Last draft=Tail gate_wall_including_checks_s=15.761327 counters=Dsv4PrefillHeadStats { full_rows: 0, last_rows: 2, skipped_chunks: 1, draft_prime_rows: 256 }
+EXACT prefix=1025 suffix=257 width=512 head=Last draft=Tail
+PASS public full-row and argmax contract under Last policy
+PASS prefill work elision: logits/cache/DSpark/sampled/engagement; performance promotion not claimed
