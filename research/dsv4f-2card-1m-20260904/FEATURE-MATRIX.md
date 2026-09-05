@@ -45,20 +45,23 @@ https://github.com/huggingface/transformers/blob/main/docs/source/en/model_doc/d
 
 ## Why 1M fits this pair
 
-Memra's existing exact cache census at `MEMRA_CTX=1048576` is approximately:
+The exact two-card capacity gate at `MEMRA_CTX=1048576` measured:
 
-| stage | compact cache allocation |
-| --- | ---: |
-| device 0 | 6.92 GiB |
-| device 1 | 7.55 GiB |
-| pair | 14.47 GiB |
+| stage | post-load allocation | compact cache | chunk-32 verify workspace | post-allocation total | remaining headroom |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| device 0 | 83.487 GiB | 7.044 GiB | 0.233 GiB | 90.769 / 94.970 GiB | 4.201 GiB |
+| device 1 | 83.581 GiB | 6.418 GiB | 0.232 GiB | 90.237 / 94.970 GiB | 4.733 GiB |
 
 That is the complete active semantic state in the current f32 implementation,
 including CSA/HCA stores, indexer stores, SWA rings and pending compressor state.
 It is not a conventional token-wise full-attention KV allocation. The configured
 1M model limit therefore binds before steady-state cache capacity on one active
-session. The remaining reachability risks are transient prefill workspace,
-indexer materialization and the second card's weight/drafter headroom.
+session. The DSpark-aware split reserves 10.83 GiB on the tail stage and moves
+the cut from layer 22 to 23. The full compact state, DSpark and chunk-32 transient
+workspace fit simultaneously. Exact hierarchical top-512 selection also passes
+against a host oracle at 250,003 candidates, the 4:1 compressed-index scale for
+one million tokens. See `capacity-1m-streamtopk-5a3820ec9.md`. This proves
+allocation and exact-selection reach, not completed 1M prefill throughput.
 
 Charging every request for a 1M-capacity cache would still destroy concurrency.
 This lane therefore adds per-session capacity planning: device cache capacity is
@@ -200,6 +203,10 @@ critical path is limited by power or clocks.
 - [x] exact mixed NVFP4/MXFP4 Safetensors ModelPlan
 - [x] device-path DSpark and position-keyed sampled driver
 - [x] capacity-planned device cache allocation
+- [x] exact 1M allocation reach with DSpark and chunk-32 workspace on the target
+  pair (`capacity-1m-streamtopk-5a3820ec9.md`; 4.201/4.733 GiB remains free)
+- [x] bounded exact hierarchical top-512 selection through 250,003 candidates,
+  including deliberate ties against the host ordering oracle
 - [x] live-state pinned-host snapshot/restore implementation
 - [x] strict PC-ISO token-prefix server wiring, default OFF
 - [x] engine gate: cold vs restore cache classes bit-for-bit, plain and DSpark
@@ -216,11 +223,25 @@ critical path is limited by power or clocks.
 - [x] fixed-seed sampled cache transparency: the original monolithic cold path
   diverged at turn 2 (`sampled-seeded-8turn-19e74601b.jsonl`); chunked prefill
   now gives identical outputs and DSpark telemetry over all eight warm/cold turns
+  (`adaptive-prime-cache-22c618b1b.md`; 418..691 restored tokens on turns 2..8)
 - [x] bounded device chunk prefill through width 64, with width 1 vs 64 exact
   cache/logit/DSpark equality and monolithic teacher forcing 15/16 agree plus
   one 0.290964-margin in-band near-tie, zero out-of-band
 - [x] fixed-seed sampled cache transparency on chunked prefill: eight warm/cold
   turns produce identical output hashes and identical DSpark telemetry
+- [x] adaptive short-prime isolation: prompts through the configured chunk width
+  retain the canonical monolithic path and are not parked; longer cacheable
+  prompts retain the transparency-gated chunked path
+- [x] grouped ModelOpt f16 prefill arm priced and rejected
+  (`grouped-modelopt-prefill-reject-850436a9c.md`): zero-copy split-plane mapping
+  was exact and frozen-source TTFT fell to 46.49 s, but teacher forcing was only
+  7/16 agreement and fixed-seed cache transparency failed because cold prefill
+  and warm exact-decode history inhabit different numerical classes; product
+  path fully reverted
+- [x] DSpark-only fused selected-expert dispatch is component-bit-exact and
+  proposal-identical (`dspark-fused-moe-gate.md`); 1.171x proposal speedup but
+  only 1.010x whole-loop, so it remains explicit/default-off rather than a
+  selected serving claim
 - [x] batched prefill indexer selection: scalar T<=8 preserved; wide transactions
   collapse per-position score/top-k/index launches and improve the 9,952-token
   TTFT 83.36 -> 75.65 seconds (9.25%)

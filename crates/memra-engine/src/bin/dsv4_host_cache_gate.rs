@@ -11,7 +11,7 @@
 //!
 //! Usage: dsv4-host-cache-gate <model-dir> <fixtures.json> [dev0,dev1]
 
-use memra_engine::dsv4_gpu::{DecodeState, DsparkState, Dsv4Gpu};
+use memra_engine::dsv4_gpu::{DecodeState, DsparkCaptureOut, DsparkState, Dsv4Gpu};
 use memra_gguf::dsv4_forward::{FixtureSpec, drift_coeff};
 use std::path::Path;
 
@@ -53,6 +53,21 @@ fn classes_equal(left: &[(String, Vec<f32>)], right: &[(String, Vec<f32>)]) -> b
             .iter()
             .zip(right)
             .all(|((ln, lv), (rn, rv))| ln == rn && bits_equal(lv, rv))
+}
+
+fn dspark_capture_equal(left: &DsparkCaptureOut, right: &DsparkCaptureOut) -> bool {
+    bits_equal(&left.main_hidden, &right.main_hidden)
+        && bits_equal(&left.main_x, &right.main_x)
+        && left.block_outs.len() == right.block_outs.len()
+        && left
+            .block_outs
+            .iter()
+            .zip(&right.block_outs)
+            .all(|(a, b)| bits_equal(a, b))
+        && bits_equal(&left.x_collapsed, &right.x_collapsed)
+        && bits_equal(&left.logits_pre, &right.logits_pre)
+        && bits_equal(&left.logits_post, &right.logits_post)
+        && bits_equal(&left.markov_embed, &right.markov_embed)
 }
 
 fn plain_warm(gpu: &Dsv4Gpu, prompt: &[u32], capacity: usize, warm: usize) -> (DecodeState, u32) {
@@ -120,12 +135,108 @@ fn main() {
     let continuation = 11usize;
     let small_capacity = prompt.len() + warm + continuation + 1;
     let grown_capacity = small_capacity + 97;
-    let gpu = Dsv4Gpu::load(model_dir, &devices, fixture.variant, grown_capacity)
+    let mut gpu = Dsv4Gpu::load(model_dir, &devices, fixture.variant, grown_capacity)
         .expect("load DSV4 GPU model");
     assert!(
         gpu.dspark.is_some(),
         "gate requires MEMRA_DSV4_DRAFTER=dspark"
     );
+
+    if std::env::var("MEMRA_DSV4_DSPARK_FUSED_MOE_GATE").as_deref() == Ok("1") {
+        let gate_capacity = prompt.len() + 24;
+        gpu.dspark_fused_moe = false;
+        let (state_a, mut ds_a, token_a) = dspark_warm(&gpu, prompt, gate_capacity, 7);
+        let pos_a = state_a.pos - 1;
+        let tap_a = ds_a.tap_head;
+        let prop_a = gpu
+            .dspark_forward_spec(&mut ds_a, token_a, tap_a, pos_a, true)
+            .expect("per-expert DSpark proposal");
+        gpu.dspark_fused_moe = true;
+        let (state_b, mut ds_b, token_b) = dspark_warm(&gpu, prompt, gate_capacity, 7);
+        assert_eq!(token_a, token_b, "fused arm changed the trunk warmup");
+        let pos_b = state_b.pos - 1;
+        let tap_b = ds_b.tap_head;
+        let prop_b = gpu
+            .dspark_forward_spec(&mut ds_b, token_b, tap_b, pos_b, true)
+            .expect("fused DSpark proposal");
+        assert_eq!(prop_a.out_ids, prop_b.out_ids, "fused DSpark ids differ");
+        assert!(
+            bits_equal(&prop_a.confidence, &prop_b.confidence),
+            "fused DSpark confidence differs"
+        );
+        assert!(
+            dspark_capture_equal(
+                prop_a.capture.as_ref().expect("reference capture"),
+                prop_b.capture.as_ref().expect("fused capture"),
+            ),
+            "fused DSpark component capture differs"
+        );
+
+        let reps = 10usize;
+        gpu.dspark_fused_moe = false;
+        let started = std::time::Instant::now();
+        for _ in 0..reps {
+            let _ = gpu
+                .dspark_forward_spec(&mut ds_a, token_a, tap_a, pos_a, false)
+                .expect("per-expert DSpark timing");
+        }
+        let reference_s = started.elapsed().as_secs_f64();
+        gpu.dspark_fused_moe = true;
+        let started = std::time::Instant::now();
+        for _ in 0..reps {
+            let _ = gpu
+                .dspark_forward_spec(&mut ds_b, token_b, tap_b, pos_b, false)
+                .expect("fused DSpark timing");
+        }
+        let fused_s = started.elapsed().as_secs_f64();
+        println!(
+            "[dsv4-dspark-fused-moe-gate] PASS component_bits=true ids=true confidence_bits=true \
+             reps={reps} reference_s={reference_s:.6} fused_s={fused_s:.6} speedup={:.3}x",
+            reference_s / fused_s
+        );
+
+        let n_new = 96usize;
+        let mut reference_wall = Vec::new();
+        let mut fused_wall = Vec::new();
+        let mut token_oracle = None;
+        for _ in 0..3 {
+            gpu.dspark_fused_moe = false;
+            let started = std::time::Instant::now();
+            let reference = gpu
+                .spec_greedy_batched(prompt, n_new)
+                .expect("reference whole-generation timing");
+            reference_wall.push(started.elapsed().as_secs_f64());
+            if let Some(expected) = &token_oracle {
+                assert_eq!(expected, &reference.tokens, "reference stream drifted");
+            } else {
+                token_oracle = Some(reference.tokens.clone());
+            }
+
+            gpu.dspark_fused_moe = true;
+            let started = std::time::Instant::now();
+            let fused = gpu
+                .spec_greedy_batched(prompt, n_new)
+                .expect("fused whole-generation timing");
+            fused_wall.push(started.elapsed().as_secs_f64());
+            assert_eq!(
+                token_oracle.as_ref().expect("token oracle"),
+                &fused.tokens,
+                "fused whole-generation token stream differs"
+            );
+        }
+        reference_wall.sort_by(f64::total_cmp);
+        fused_wall.sort_by(f64::total_cmp);
+        let reference_median = reference_wall[1];
+        let fused_median = fused_wall[1];
+        println!(
+            "[dsv4-dspark-fused-moe-e2e] PASS tokens={n_new} x3_interleaved \
+             reference_median_s={reference_median:.6} fused_median_s={fused_median:.6} \
+             reference_tps={:.4} fused_tps={:.4} speedup={:.3}x",
+            n_new as f64 / reference_median,
+            n_new as f64 / fused_median,
+            reference_median / fused_median,
+        );
+    }
 
     // Bounded-prefill transaction widths must not change the realized trunk or drafter
     // state. Width 64 crosses both the shipped speculative ceiling (6) and the largest

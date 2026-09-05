@@ -468,6 +468,9 @@ pub struct Dsv4Gpu {
     /// one. Affects WHICH tokens are drafted, never the emitted stream (verification
     /// always emits the trunk's own argmax — the greedy identity law).
     pub dspark_head_f32: bool,
+    /// DSpark-only fused selected-expert dispatch. Routing stays on the host
+    /// oracle; only the per-expert launch loop is collapsed.
+    pub dspark_fused_moe: bool,
     /// iteration-5 FP8 dense arm (`MEMRA_DSV4_DENSE_ARM`; DEFAULT fp8 on the device
     /// decode path since the 2026-08-20 ratification, bf16 selectable and the legacy
     /// default): the DEVICE decode/verify paths read the FP8-blk linears as-stored
@@ -1823,6 +1826,10 @@ impl Dsv4Gpu {
             std::env::var("MEMRA_DSV4_DENSE_ARM").ok().as_deref(),
             on_device,
         )?;
+        let dspark_fused_moe = resolve_dspark_fused_moe(
+            std::env::var("MEMRA_DSV4_DSPARK_FUSED_MOE").ok().as_deref(),
+            on_device,
+        )?;
 
         let mut me = Dsv4Gpu {
             model,
@@ -1843,6 +1850,7 @@ impl Dsv4Gpu {
             dots_f32,
             chains_f32,
             dspark_head_f32,
+            dspark_fused_moe,
             dense_fp8,
             dspark: None,
             boundary_ev: Vec::new(),
@@ -1865,6 +1873,14 @@ impl Dsv4Gpu {
             "[load] dspark exit-head dots arm: {} (rung-4c fork; drafts only, never the \
              emitted stream)",
             if me.dspark_head_f32 { "f32x" } else { "f64" }
+        );
+        eprintln!(
+            "[load] dspark selected-expert dispatch: {}",
+            if me.dspark_fused_moe {
+                "FUSED (host-oracle route, device indirect projections)"
+            } else {
+                "per-expert reference"
+            }
         );
         eprintln!(
             "[load] dense arm: {} (iteration-5; fp8 = FP8-blk linears as-stored on the \
@@ -3284,6 +3300,146 @@ impl Dsv4Gpu {
             ExpertKind::Nvfp4 => inter * hidden / 16,
             ExpertKind::Mxfp4 => inter * hidden / 32,
         };
+        if self.dspark_fused_moe
+            && self.expert_arm == ExpertArm::Native
+            && layer.expert_kind == ExpertKind::Mxfp4
+            && self.dspark.as_ref().is_some_and(|ds| s == ds.block_size)
+        {
+            // DSpark's three MTP blocks use the host-oracle score router above.
+            // Keep those exact selected ids/weights and collapse only the per-expert
+            // projection loop: one indirect launch per projection over all s*topk
+            // slots. Per-output accumulation and the ascending-expert combine order
+            // are the same as the reference loop.
+            let slots = s * topk;
+            let sel: Vec<i32> = indices.iter().map(|&x| x as i32).collect();
+            let mut order = vec![0i32; slots];
+            for p in 0..s {
+                let mut row: Vec<i32> = (0..topk as i32).collect();
+                row.sort_by_key(|&slot| indices[p * topk + slot as usize]);
+                order[p * topk..(p + 1) * topk].copy_from_slice(&row);
+            }
+            let sel_d = upload_i32(&stream, &sel)?;
+            let selw_d = upload_f32(&stream, &weights)?;
+            let order_d = upload_i32(&stream, &order)?;
+            let kq_x = hidden / 128;
+            let kq_h = inter / 128;
+            let mut xq = stream.alloc_zeros::<u8>(s * hidden).map_err(e("ds xq"))?;
+            let mut xs = stream.alloc_zeros::<f32>(s * kq_x).map_err(e("ds xs"))?;
+            let mut g1 = stream
+                .alloc_zeros::<f32>(slots * inter)
+                .map_err(e("ds g1"))?;
+            let mut g3 = stream
+                .alloc_zeros::<f32>(slots * inter)
+                .map_err(e("ds g3"))?;
+            let mut hbuf = stream
+                .alloc_zeros::<f32>(slots * inter)
+                .map_err(e("ds hbuf"))?;
+            let mut hq = stream
+                .alloc_zeros::<u8>(slots * inter)
+                .map_err(e("ds hq"))?;
+            let mut hs = stream
+                .alloc_zeros::<f32>(slots * kq_h)
+                .map_err(e("ds hs"))?;
+            let mut contrib = stream
+                .alloc_zeros::<f32>(slots * hidden)
+                .map_err(e("ds contrib"))?;
+            unsafe {
+                ck(
+                    "dspark fused act_quant x",
+                    k::memra_dsv4_act_quant_fp8(
+                        dpf!(x, &stream),
+                        xq.device_ptr_mut(&stream).0 as *mut c_void,
+                        dpm!(xs, &stream),
+                        s as i32,
+                        hidden as i32,
+                        sp(&stream),
+                    ),
+                )?;
+                for (proj, dst) in [(0i32, &mut g1), (2i32, &mut g3)] {
+                    ck(
+                        "dspark fused w1/w3",
+                        k::memra_dsv4_fp4_gemm_sel_g(
+                            dp!(xq, &stream),
+                            dpf!(xs, &stream),
+                            dp!(layer.experts_w, &stream),
+                            dp!(layer.experts_sc, &stream),
+                            dpf!(layer.experts_s2_dev, &stream),
+                            sel_d.device_ptr(&stream).0 as *const i32,
+                            proj,
+                            0,
+                            1,
+                            dpm!(*dst, &stream),
+                            slots as i32,
+                            inter as i32,
+                            hidden as i32,
+                            wbytes as i64,
+                            sbytes as i64,
+                            topk as i32,
+                            sp(&stream),
+                        ),
+                    )?;
+                }
+                ck(
+                    "dspark fused swiglu",
+                    k::memra_dsv4_swiglu(
+                        dpf!(g1, &stream),
+                        dpf!(g3, &stream),
+                        dpm!(hbuf, &stream),
+                        slots as i32,
+                        inter as i32,
+                        limit,
+                        dpf!(selw_d, &stream),
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "dspark fused act_quant h",
+                    k::memra_dsv4_act_quant_fp8(
+                        dpf!(hbuf, &stream),
+                        hq.device_ptr_mut(&stream).0 as *mut c_void,
+                        dpm!(hs, &stream),
+                        slots as i32,
+                        inter as i32,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "dspark fused w2",
+                    k::memra_dsv4_fp4_gemm_sel_g(
+                        dp!(hq, &stream),
+                        dpf!(hs, &stream),
+                        dp!(layer.experts_w, &stream),
+                        dp!(layer.experts_sc, &stream),
+                        dpf!(layer.experts_s2_dev, &stream),
+                        sel_d.device_ptr(&stream).0 as *const i32,
+                        1,
+                        1,
+                        1,
+                        dpm!(contrib, &stream),
+                        slots as i32,
+                        hidden as i32,
+                        inter as i32,
+                        wbytes as i64,
+                        sbytes as i64,
+                        0,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "dspark fused combine",
+                    k::memra_dsv4_combine_rows_m(
+                        dpf!(contrib, &stream),
+                        order_d.device_ptr(&stream).0 as *const i32,
+                        topk as i32,
+                        dpm!(y, &stream),
+                        hidden as i64,
+                        s as i32,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+            return self.moe_shared_and_finish(st, layer, &xb, s, y);
+        }
         let mut uniq: Vec<usize> = indices.clone();
         uniq.sort_unstable();
         uniq.dedup();
@@ -11865,6 +12021,19 @@ pub fn resolve_dense_arm(v: Option<&str>, on_device: bool) -> Result<bool, Strin
     }
 }
 
+pub fn resolve_dspark_fused_moe(v: Option<&str>, on_device: bool) -> Result<bool, String> {
+    match v {
+        None | Some("") | Some("0") => Ok(false),
+        Some("1") if on_device => Ok(true),
+        Some("1") => {
+            Err("MEMRA_DSV4_DSPARK_FUSED_MOE=1 requires MEMRA_DSV4_DECODE_PATH=device".to_string())
+        }
+        Some(other) => Err(format!(
+            "MEMRA_DSV4_DSPARK_FUSED_MOE '{other}' unknown (0 | 1)"
+        )),
+    }
+}
+
 /// ds4f rung 1 — per-round verify-window policy from the drafter's OWN confidence head
 /// (`MEMRA_DSV4_VT={off|slot}`, unset = off = the byte-identical round driver).
 ///
@@ -12195,7 +12364,7 @@ mod peer_probe_tests {
 
 #[cfg(test)]
 mod dense_arm_default_tests {
-    use super::resolve_dense_arm;
+    use super::{resolve_dense_arm, resolve_dspark_fused_moe};
 
     /// The owner-ratified flip (2026-08-20): unset env on the device decode path = fp8.
     /// Mutating the default back to bf16 fails this with the evidence named.
@@ -12222,6 +12391,16 @@ mod dense_arm_default_tests {
             resolve_dense_arm(Some("q8"), true).is_err(),
             "unknown values refuse"
         );
+    }
+
+    #[test]
+    fn dspark_fused_moe_is_strict_default_off_and_device_only() {
+        assert_eq!(resolve_dspark_fused_moe(None, true), Ok(false));
+        assert_eq!(resolve_dspark_fused_moe(Some(""), true), Ok(false));
+        assert_eq!(resolve_dspark_fused_moe(Some("0"), true), Ok(false));
+        assert_eq!(resolve_dspark_fused_moe(Some("1"), true), Ok(true));
+        assert!(resolve_dspark_fused_moe(Some("1"), false).is_err());
+        assert!(resolve_dspark_fused_moe(Some("yes"), true).is_err());
     }
 }
 
