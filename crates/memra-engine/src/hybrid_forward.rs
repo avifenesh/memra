@@ -538,6 +538,9 @@ impl PrimePpStageChannels {
 /// Engagement counter for `MEMRA_MLA_SEG_WS`; gates take a delta.
 pub static MLA_SEG_WS_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
+/// Decode sites served by the BF16 absorb planes (`MEMRA_MLA_ABSORB_BF16=1`).
+pub static MLA_ABSORB_BF16_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
 
 /// Snapshot of [`MLA_SEG_WS_DISPATCHES`].
 pub fn mla_seg_ws_dispatches() -> u64 {
@@ -9035,7 +9038,28 @@ impl HybridModel {
         }
 
         let mut q_lat = e.uninit(t * nh * r)?;
-        e.mla_absorb_q(q_nope, wk_b, &mut q_lat, t, nh, dn, r)?;
+        // MEMRA_MLA_ABSORB_BF16: the BF16 copy of the plane on the served `_wp` partition;
+        // falls through to the f32 dispatch when the door, the copy or the partition is absent.
+        let absorbed16 = if crate::mla_absorb_bf16_on()
+            && let Some(w16) = mla.wk_b16.as_ref()
+        {
+            let hit = e.mla_absorb_q_bf16(q_nope, w16, &mut q_lat, t, nh, dn, r)?;
+            if hit
+                && MLA_ABSORB_BF16_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    == 0
+            {
+                eprintln!(
+                    "[mla-absorb-bf16] engaged: wk_b / wv_b read as BF16 by the decode _wp \
+                     kernels (MEMRA_MLA_ABSORB_BF16=1; exact widening, half the plane bytes)"
+                );
+            }
+            hit
+        } else {
+            false
+        };
+        if !absorbed16 {
+            e.mla_absorb_q(q_nope, wk_b, &mut q_lat, t, nh, dn, r)?;
+        }
         let mut o_lat = e.uninit(t * nh * r)?;
         match &gathered {
             Some((idx, slots)) => e.mla_attn_gathered(
@@ -9046,7 +9070,16 @@ impl HybridModel {
             )?,
         }
         let mut attn = e.uninit(t * nh * dv)?;
-        e.mla_decompress_v(&o_lat, wv_b, &mut attn, t, nh, dv, r)?;
+        let decompressed16 = if crate::mla_absorb_bf16_on()
+            && let Some(w16) = mla.wv_b16.as_ref()
+        {
+            e.mla_decompress_v_bf16(&o_lat, w16, &mut attn, t, nh, dv, r)?
+        } else {
+            false
+        };
+        if !decompressed16 {
+            e.mla_decompress_v(&o_lat, wv_b, &mut attn, t, nh, dv, r)?;
+        }
 
         Ok(attn)
     }

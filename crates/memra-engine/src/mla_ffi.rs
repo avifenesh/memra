@@ -567,6 +567,30 @@ unsafe extern "C" {
     /// lane-partial sums combined by a shuffle tree instead of one serial ascending dot, so
     /// this is NOT bit-identical and NOT the split twins' contract.
     #[allow(clippy::too_many_arguments)]
+    /// BF16-plane twins of the `_wp` decode kernels (lane/mla-absorb-bf16-20260905): the weight
+    /// plane is `u16` BF16 bits, widened per element inside the kernel; same order, same math.
+    pub fn memra_mla_absorb_q_wp_bf16(
+        q_nope: *const f32,
+        wk_b: *const u16,
+        q_lat: *mut f32,
+        t_q: i32,
+        n_head: i32,
+        d_nope: i32,
+        kv_rank: i32,
+        split: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_mla_decompress_v_wp_bf16(
+        o_lat: *const f32,
+        wv_b: *const u16,
+        out: *mut f32,
+        t_q: i32,
+        n_head: i32,
+        d_v: i32,
+        kv_rank: i32,
+        split: i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_mla_absorb_q_wp_f32(
         q_nope: *const f32,
         wk_b: *const f32,
@@ -1140,6 +1164,92 @@ impl Engine {
             };
             ck("hc_pre_raw", rc)
         }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    /// The BF16-plane arm of [`Engine::mla_absorb_q`] for the served `_wp` partition (door
+    /// `MEMRA_MLA_ABSORB_BF16`): the same split the coalesce door chooses, on the BF16 copy of
+    /// `wk_b`. `Ok(false)` when that partition is not the one in force (the caller runs the f32
+    /// dispatch unchanged).
+    #[allow(clippy::too_many_arguments)]
+    pub fn mla_absorb_q_bf16(
+        &self,
+        q_nope: &CudaSlice<f32>,
+        wk_b16: &CudaSlice<u16>,
+        q_lat: &mut CudaSlice<f32>,
+        t_q: usize,
+        n_head: usize,
+        d_nope: usize,
+        kv_rank: usize,
+    ) -> Res<bool> {
+        if !mla_coalesce_on() {
+            return Ok(false);
+        }
+        let split = mla_b200_split_for(MlaB200Kernel::AbsorbQ, t_q, kv_rank)
+            .or_else(|| mla_decode_split_for(t_q * n_head, kv_rank))
+            .unwrap_or(1);
+        if split <= 1 {
+            return Ok(false);
+        }
+        let s = self.stream();
+        unsafe {
+            ck(
+                "absorb_q_wp_bf16",
+                memra_mla_absorb_q_wp_bf16(
+                    q_nope.device_ptr(&s).0 as *const f32,
+                    wk_b16.device_ptr(&s).0 as *const u16,
+                    q_lat.device_ptr_mut(&s).0 as *mut f32,
+                    t_q as i32,
+                    n_head as i32,
+                    d_nope as i32,
+                    kv_rank as i32,
+                    split,
+                    s.cu_stream() as *mut c_void,
+                ),
+            )?;
+        }
+        Ok(true)
+    }
+
+    /// The BF16-plane arm of [`Engine::mla_decompress_v`]; see [`Engine::mla_absorb_q_bf16`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn mla_decompress_v_bf16(
+        &self,
+        o_lat: &CudaSlice<f32>,
+        wv_b16: &CudaSlice<u16>,
+        out: &mut CudaSlice<f32>,
+        t_q: usize,
+        n_head: usize,
+        d_v: usize,
+        kv_rank: usize,
+    ) -> Res<bool> {
+        if !mla_coalesce_on() {
+            return Ok(false);
+        }
+        let split = mla_b200_split_for(MlaB200Kernel::DecompressV, t_q, d_v)
+            .or_else(|| mla_decode_split_for(t_q * n_head, d_v))
+            .unwrap_or(1);
+        if split <= 1 {
+            return Ok(false);
+        }
+        let s = self.stream();
+        unsafe {
+            ck(
+                "decompress_v_wp_bf16",
+                memra_mla_decompress_v_wp_bf16(
+                    o_lat.device_ptr(&s).0 as *const f32,
+                    wv_b16.device_ptr(&s).0 as *const u16,
+                    out.device_ptr_mut(&s).0 as *mut f32,
+                    t_q as i32,
+                    n_head as i32,
+                    d_v as i32,
+                    kv_rank as i32,
+                    split,
+                    s.cu_stream() as *mut c_void,
+                ),
+            )?;
+        }
+        Ok(true)
     }
 
     #[allow(clippy::too_many_arguments)]

@@ -2810,6 +2810,17 @@ pub fn hc_pre_v4z_on() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_HC_PRE_V4Z").as_deref() == Ok("1"))
 }
 
+/// `MEMRA_MLA_ABSORB_BF16=1` (lane/mla-absorb-bf16-20260905): the MLA absorb planes `wk_b` /
+/// `wv_b` are read as BF16 by the decode `_wp` kernels instead of the f32 copy the loader
+/// materializes (738 -> 369 MB per token on GLM-5.3-Flash). Exact where the source plane is
+/// BF16 (the B200 hybrid mint): the f32 copy is a widening, the kernel widens the same bits
+/// again, same products in the same order. The BF16 copy is built at load only if every
+/// element round-trips; otherwise the layer keeps the f32 path. Default OFF pending its row.
+pub fn mla_absorb_bf16_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_MLA_ABSORB_BF16").as_deref() == Ok("1"))
+}
+
 /// `MEMRA_HC_PRE_ZQ8` (lane/hcpre-zq8-fusion-20260905): run each hc site's pre-chain AND the
 /// `rms_norm_zq8` that consumes its output as ONE launch (`dsv4_hc_pre_zq8_kernel`).
 ///
@@ -12608,6 +12619,11 @@ impl Engine {
     }
     #[track_caller]
     pub fn htod_i32(&self, v: &[i32]) -> Result<CudaSlice<i32>, Box<dyn std::error::Error>> {
+        crate::alloc_trace_hit(v.len() * 4);
+        Ok(self.gpu.stream().clone_htod(v)?)
+    }
+
+    pub fn htod_u16(&self, v: &[u16]) -> Result<CudaSlice<u16>, Box<dyn std::error::Error>> {
         crate::alloc_trace_hit(v.len() * 4);
         Ok(self.gpu.stream().clone_htod(v)?)
     }
