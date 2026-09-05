@@ -539,6 +539,7 @@ impl PrimePpStageChannels {
 /// Engagement counter for `MEMRA_MLA_SEG_WS`; gates take a delta.
 pub static MLA_SEG_WS_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
+static MLA_MID_LIVE_DISPATCHES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 /// Decode sites served by the BF16 absorb planes (`MEMRA_MLA_ABSORB_BF16=1`).
 pub static MLA_ABSORB_BF16_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
@@ -563,6 +564,9 @@ pub(crate) type WsLayerRef<'a> = (&'a crate::hybrid::HybridLayer, &'a crate::hyp
 pub(crate) enum WsSeg {
     Layer(usize),
     MlaPre(usize),
+    /// The MLA middle (append, k-pool selection, attention, decompress, `wo`) as fixed-geometry
+    /// live twins reading the stage's `pos_d` (`MEMRA_GLM5_GRAPH_MLA_MID`); writes `mla_mixed`.
+    MlaMid(usize),
     MlaFfn(usize),
 }
 
@@ -3049,7 +3053,7 @@ impl HybridModel {
         pos: usize,
         cache: &mut Cache,
         ws: &mut crate::hyper::HyperDecodeWs,
-        mla_mixed: Option<&CudaSlice<f32>>,
+        mut mla_mixed: Option<&mut CudaSlice<f32>>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
@@ -3089,9 +3093,21 @@ impl HybridModel {
                     let _ = self.ws_attn_pre(e, topology, layer, hyper, il, x, ws, n_embd, eps)?;
                     self.mla_seg_pre_into_ws(e, mla, &ws.h, pos_d, il)?;
                 }
+                WsSeg::MlaMid(il) => {
+                    let (layer, _hyper) = self.ws_layer(il)?;
+                    let Mixer::Mla(mla) = &layer.mixer else {
+                        return Err(format!("segment MlaMid({il}) on a non-MLA layer").into());
+                    };
+                    let mixed = mla_mixed
+                        .as_deref_mut()
+                        .ok_or("segment MlaMid needs the mla_mixed handoff")?;
+                    self.mla_mid_post_live(e, mla, &ws.h, pos_d, il, cache, mixed)?;
+                }
                 WsSeg::MlaFfn(il) => {
                     let (layer, hyper) = self.ws_layer(il)?;
-                    let mixed = mla_mixed.ok_or("segment MlaFfn needs the mla_mixed handoff")?;
+                    let mixed = mla_mixed
+                        .as_deref()
+                        .ok_or("segment MlaFfn needs the mla_mixed handoff")?;
                     self.ws_attn_post_ffn(
                         e, topology, layer, hyper, il, mixed, x, ws, n_embd, eps,
                     )?;
@@ -9055,6 +9071,32 @@ impl HybridModel {
             return Ok((attn, None));
         }
 
+        let q_lat = self.mla_post_absorb(e, mla, q_nope, t, il)?;
+        let mut o_lat = e.uninit(t * nh * r)?;
+        match &gathered {
+            Some((idx, slots)) => e.mla_attn_gathered(
+                &q_lat, q_pe, latent, idx, &mut o_lat, nh, r, dr, t, *slots, g.scale,
+            )?,
+            None => e.mla_attn_absorbed(
+                &q_lat, q_pe, latent, &mut o_lat, nh, r, dr, t, t_kv, g.scale,
+            )?,
+        }
+        self.mla_post_decompress(e, mla, &o_lat, t, rows_exact, il)
+    }
+
+    /// The absorb step of the MLA POST segment: `q_lat = q_nope . wk_b` per head (BF16 plane
+    /// under `MEMRA_MLA_ABSORB_BF16` when present, the f32 dispatch otherwise).
+    fn mla_post_absorb(
+        &self,
+        e: &Engine,
+        mla: &crate::hybrid::MlaAttnLayer,
+        q_nope: &CudaSlice<f32>,
+        t: usize,
+        il: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let g = mla.geom;
+        let (nh, dn, r) = (g.n_head, g.d_nope, g.kv_rank);
+        let wk_b = Self::mla_split_operand(&mla.wk_b, "attn_k_b", il);
         let mut q_lat = e.uninit(t * nh * r)?;
         // MEMRA_MLA_ABSORB_BF16: the BF16 copy of the plane on the served `_wp` partition;
         // falls through to the f32 dispatch when the door, the copy or the partition is absent.
@@ -9078,15 +9120,23 @@ impl HybridModel {
         if !absorbed16 {
             e.mla_absorb_q(q_nope, wk_b, &mut q_lat, t, nh, dn, r)?;
         }
-        let mut o_lat = e.uninit(t * nh * r)?;
-        match &gathered {
-            Some((idx, slots)) => e.mla_attn_gathered(
-                &q_lat, q_pe, latent, idx, &mut o_lat, nh, r, dr, t, *slots, g.scale,
-            )?,
-            None => e.mla_attn_absorbed(
-                &q_lat, q_pe, latent, &mut o_lat, nh, r, dr, t, t_kv, g.scale,
-            )?,
-        }
+        Ok(q_lat)
+    }
+
+    /// The decompress step of the MLA POST segment: `attn = o_lat . wv_b` per head, emitting
+    /// `wo`'s q8_1 pair from the same launch under `MEMRA_MLA_WO_ZQ8` when `wo` can take it.
+    fn mla_post_decompress(
+        &self,
+        e: &Engine,
+        mla: &crate::hybrid::MlaAttnLayer,
+        o_lat: &CudaSlice<f32>,
+        t: usize,
+        rows_exact: bool,
+        il: usize,
+    ) -> Result<(CudaSlice<f32>, MlaWoQ8), Box<dyn std::error::Error>> {
+        let g = mla.geom;
+        let (nh, dv, r) = (g.n_head, g.d_v, g.kv_rank);
+        let wv_b = Self::mla_split_operand(&mla.wv_b, "attn_v_b", il);
         let mut attn = e.uninit(t * nh * dv)?;
         // MEMRA_MLA_WO_ZQ8: the decompress launch emits wo's q8_1 pair when wo can take it.
         let want_pair =
@@ -9099,21 +9149,298 @@ impl HybridModel {
         };
         if want_pair {
             wo_q8 = match bf16_plane {
-                Some(w16) => e.mla_decompress_v_bf16_zq8(&o_lat, w16, &mut attn, t, nh, dv, r)?,
-                None => e.mla_decompress_v_zq8(&o_lat, wv_b, &mut attn, t, nh, dv, r)?,
+                Some(w16) => e.mla_decompress_v_bf16_zq8(o_lat, w16, &mut attn, t, nh, dv, r)?,
+                None => e.mla_decompress_v_zq8(o_lat, wv_b, &mut attn, t, nh, dv, r)?,
             };
         }
         if wo_q8.is_none() {
             let decompressed16 = match bf16_plane {
-                Some(w16) => e.mla_decompress_v_bf16(&o_lat, w16, &mut attn, t, nh, dv, r)?,
+                Some(w16) => e.mla_decompress_v_bf16(o_lat, w16, &mut attn, t, nh, dv, r)?,
                 None => false,
             };
             if !decompressed16 {
-                e.mla_decompress_v(&o_lat, wv_b, &mut attn, t, nh, dv, r)?;
+                e.mla_decompress_v(o_lat, wv_b, &mut attn, t, nh, dv, r)?;
             }
         }
 
         Ok((attn, wo_q8))
+    }
+
+    /// Whether layer `il`'s MLA middle can be captured (`WsSeg::MlaMid`, door
+    /// `MEMRA_GLM5_GRAPH_MLA_MID`): every launch between the PRE half and the FFN half has a
+    /// fixed-geometry live twin under the arms this process dispatches at t = 1. `Err` names
+    /// the first refusal; the door then keeps the layer's eager middle.
+    pub(crate) fn mla_mid_live_ok(&self, il: usize) -> Result<(), String> {
+        let Mixer::Mla(mla) = &self.layers[il].mixer else {
+            return Err(format!("layer {il} is not an MLA layer"));
+        };
+        if mla.tp.is_some() {
+            return Err(format!("layer {il}: glm5-TP head shard"));
+        }
+        if !Engine::mla_seg_ws_on() {
+            return Err(
+                "MEMRA_MLA_SEG_WS is not set (the live middle reads the PRE workspace)".into(),
+            );
+        }
+        let g = mla.geom;
+        if crate::mla_ffi::mla_gathered_live_arm(g.kv_rank).is_none() {
+            return Err(format!(
+                "layer {il}: the gathered-attention arm this process dispatches at t=1 has no \
+                 live-width twin (the single-pass DSA arm or a MEMRA_B200_MLA_DECODE_ARM split)"
+            ));
+        }
+        let Some(ix) = mla.index.as_ref() else {
+            return Err(format!(
+                "layer {il}: dense absorbed arm (no k-pool indexer) is not wired for the live \
+                 middle"
+            ));
+        };
+        let ig = ix.geom;
+        if ig.heads == 0 || ig.heads > 1024 {
+            return Err(format!(
+                "layer {il}: indexer heads {} outside the scorer's bound",
+                ig.heads
+            ));
+        }
+        if ig.pool == 0 || ig.pool > 16 {
+            return Err(format!(
+                "layer {il}: indexer pool {} outside the selector's bound",
+                ig.pool
+            ));
+        }
+        Ok(())
+    }
+
+    /// The MLA middle as FIXED-GEOMETRY launches (segment `WsSeg::MlaMid`, t = 1): the latent
+    /// append, the indexer state append, the pool-key build, the DSA scorer, the selector, the
+    /// gathered attention and the device length mirror all read the stage's `pos_d` instead of
+    /// host scalars, so a captured graph replays correctly at every later position. Byte-for-byte
+    /// the eager middle's program at the token's own width: the selector lays its row out at the
+    /// capacity `index_width` and publishes the true width in a device word the attention twins
+    /// walk to, so their chunking and reduction order are the scalar launch's at that width.
+    ///
+    /// Host bookkeeping (`len`, `index_pools_ready`) is NOT advanced here: the door advances it
+    /// after each replay (`glm5_replay_run`); the eager middle advances its own in
+    /// `mla_attn_cached_pre_wo`. The device mirror `len_d` is advanced by the last launch.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn mla_mid_post_live(
+        &self,
+        e: &Engine,
+        mla: &crate::hybrid::MlaAttnLayer,
+        h: &CudaSlice<f32>,
+        pos_d: &CudaSlice<i32>,
+        il: usize,
+        cache: &mut Cache,
+        mixed_out: &mut CudaSlice<f32>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.mla_mid_live_ok(il)?;
+        let max_ctx = cache.max_ctx;
+        let layer = cache.latent[il]
+            .as_mut()
+            .ok_or_else(|| format!("layer {il} is Mixer::Mla but the cache has no latent plane"))?;
+        let g = mla.geom;
+        let (nh, dn, dr, r) = (g.n_head, g.d_nope, g.d_rope, g.kv_rank);
+        let q_lora = mla.wq_b.in_features();
+        let slot = layer.len;
+        let capacity = layer.rows.len() / layer.width;
+        if slot + 1 > capacity {
+            return Err(format!(
+                "layer {il}: latent cache overflow — {slot} + 1 rows exceeds capacity {capacity}"
+            )
+            .into());
+        }
+        let indexer = mla.index.as_ref().expect("checked by mla_mid_live_ok");
+        let ws = e.mla_seg_ws_take(nh, dn, dr, r, q_lora)?;
+        let out = (|| -> Result<(), Box<dyn std::error::Error>> {
+            if MLA_MID_LIVE_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+                eprintln!(
+                    "[mla-mid-live] engaged: the T=1 MLA middle runs as fixed-geometry live \
+                     twins of the eager launches (MEMRA_GLM5_GRAPH_MLA_MID=1)"
+                );
+            }
+            e.mla_append_latent_live(&mut layer.rows, &ws.c_kv_n, &ws.k_pe, pos_d, 1, r, dr)?;
+            let (idx, width_d) = self.mla_kpool_indices_live(
+                e,
+                indexer,
+                h,
+                &ws.q_an,
+                layer,
+                pos_d,
+                max_ctx,
+                (ws.h_q8.as_ref(), ws.q_q8.as_ref()),
+                il,
+            )?;
+            let (attn, wo_q8) = self.mla_seg_post_live(
+                e,
+                mla,
+                &ws.q_nope,
+                &ws.q_pe,
+                &idx,
+                &width_d,
+                &layer.rows,
+                il,
+            )?;
+            let y = Self::mla_wo(e, mla, &attn, wo_q8, 1)?;
+            let n = self.cfg.n_embd as usize;
+            e.copy_into(mixed_out, 0, &y, n)?;
+            e.i32_copy_add(pos_d, &mut layer.len_d, 1)
+        })();
+        e.mla_seg_ws_put(ws);
+        out
+    }
+
+    /// [`Self::mla_kpool_indices_ex`] at t = 1 with every position-derived scalar read from
+    /// `pos_d` on the device. Returns the capacity-width index row and the device word holding
+    /// the token's true `index_width`.
+    #[allow(clippy::too_many_arguments)]
+    fn mla_kpool_indices_live(
+        &self,
+        e: &Engine,
+        indexer: &crate::hybrid::MlaIndexer,
+        h: &CudaSlice<f32>,
+        q_resid: &CudaSlice<f32>,
+        layer: &mut memra_kv::LatentKvLayer,
+        pos_d: &CudaSlice<i32>,
+        capacity_tokens: usize,
+        pairs: (Option<&Q8Pair>, Option<&Q8Pair>),
+        il: usize,
+    ) -> Result<(CudaSlice<i32>, CudaSlice<i32>), Box<dyn std::error::Error>> {
+        const INDEX_NORM_EPS: f32 = 1e-5;
+        let ig = indexer.geom;
+        let d = ig.head_dim;
+        let slot = layer.len;
+        let ring_rows = layer.index_ring_rows.unwrap_or(0);
+        let ring = if ring_rows == 0 {
+            0
+        } else {
+            ring_rows / ig.pool * ig.pool
+        };
+        if ring_rows > 0 && ring == 0 {
+            return Err(format!(
+                "layer {il}: indexer tail ring of {ring_rows} rows cannot hold one pool of {}",
+                ig.pool
+            )
+            .into());
+        }
+        let capacity_pools = capacity_tokens / ig.pool;
+        let need = (capacity_pools * d).max(1);
+        if layer.index_pools_ready != slot / ig.pool {
+            return Err(format!(
+                "layer {il}: resident pool keys cover {} pools but the cache holds {} complete \
+                 pools at slot {slot}; the live middle needs the eager program to have built \
+                 every complete pool first",
+                layer.index_pools_ready,
+                slot / ig.pool
+            )
+            .into());
+        }
+        let plane = layer.index_rows.as_mut().ok_or_else(|| {
+            format!("layer {il}: DSA k-pool indexer without an indexer state plane")
+        })?;
+        let pool_keys = match layer.index_pool_keys.as_mut() {
+            Some(k) if k.len() >= need => k,
+            _ => {
+                return Err(format!(
+                    "layer {il}: the live middle needs the capacity-sized resident pool-key \
+                     plane ({need} floats); the eager token before capture allocates it"
+                )
+                .into());
+            }
+        };
+        let (h_q8, q_q8) = pairs;
+        let k_raw = mm_with_pair(e, &indexer.wk, h, 1, h_q8, false)?;
+        let mut k_norm = e.uninit(d)?;
+        e.layer_norm_bias(
+            &k_raw,
+            indexer.k_norm_w.float_data(),
+            indexer.k_norm_b.float_data(),
+            &mut k_norm,
+            d,
+            1,
+            INDEX_NORM_EPS,
+        )?;
+        let gate = mm_with_pair(e, &indexer.kpool_gate, h, 1, h_q8, false)?;
+        e.mla_index_append_live(plane, &k_norm, &gate, pos_d, d, d, ring)?;
+        e.mla_kpool_pool_keys_live(
+            plane,
+            indexer.kpool_ape.float_data(),
+            pool_keys,
+            pos_d,
+            ig.pool,
+            d,
+            ring,
+        )?;
+        let q_index = mm_with_pair(e, &indexer.wq_b, q_resid, 1, q_q8, false)?;
+        let head_weights = mm_with_pair(e, &indexer.weights_proj, h, 1, h_q8, false)?;
+        let mut score = e.uninit(capacity_pools.max(1))?;
+        e.mla_kpool_score_live(
+            &q_index,
+            pool_keys,
+            &head_weights,
+            &mut score,
+            ig.heads,
+            d,
+            pos_d,
+            capacity_pools,
+            ig.pool,
+            (d as f32).powf(-0.5),
+            (ig.heads as f32).powf(-0.5),
+        )?;
+        let width_cap = ig.index_width(capacity_pools);
+        let mut idx = e.uninit_i32(width_cap)?;
+        let mut width_d = e.uninit_i32(1)?;
+        e.mla_kpool_select_live(
+            &score,
+            &mut idx,
+            &mut width_d,
+            pos_d,
+            ig.pool,
+            ig.top_k / ig.pool,
+            width_cap,
+            ig.always_select_tail,
+        )?;
+        Ok((idx, width_d))
+    }
+
+    /// [`Self::mla_seg_post`] at t = 1 over the live-width index row: the attention arm this
+    /// process dispatches (warp-online chunks or the shipped gathered kernel) as its live twin.
+    #[allow(clippy::too_many_arguments)]
+    fn mla_seg_post_live(
+        &self,
+        e: &Engine,
+        mla: &crate::hybrid::MlaAttnLayer,
+        q_nope: &CudaSlice<f32>,
+        q_pe: &CudaSlice<f32>,
+        idx: &CudaSlice<i32>,
+        width_d: &CudaSlice<i32>,
+        latent: &CudaSlice<f32>,
+        il: usize,
+    ) -> Result<(CudaSlice<f32>, MlaWoQ8), Box<dyn std::error::Error>> {
+        let g = mla.geom;
+        let (nh, dr, r) = (g.n_head, g.d_rope, g.kv_rank);
+        let q_lat = self.mla_post_absorb(e, mla, q_nope, 1, il)?;
+        let mut o_lat = e.uninit(nh * r)?;
+        match crate::mla_ffi::mla_gathered_live_arm(r) {
+            Some(chunks) if chunks >= 2 => {
+                let cells = nh * chunks;
+                let mut parts = (e.uninit(cells)?, e.uninit(cells)?, e.uninit(cells * r)?);
+                e.mla_dsa_attn_warp_online_live(
+                    &q_lat, q_pe, latent, idx, &mut o_lat, &mut parts, nh, r, dr, width_d, chunks,
+                    g.scale,
+                )?;
+            }
+            Some(_) => e.mla_attn_gathered_live(
+                &q_lat, q_pe, latent, idx, &mut o_lat, nh, r, dr, width_d, g.scale,
+            )?,
+            None => {
+                return Err(format!(
+                    "layer {il}: the gathered-attention arm has no live twin (mla_mid_live_ok \
+                     admits only the warp-online and shipped gathered arms)"
+                )
+                .into());
+            }
+        }
+        self.mla_post_decompress(e, mla, &o_lat, 1, false, il)
     }
 
     /// The MEMRA_MLA_TC_PREFILL chain: absorb and decompress as strided-batched bf16
