@@ -33,9 +33,12 @@ original-index-ascending oracle, including deliberate score ties:
 | 16,397 | 3 | 512 | exact |
 | 250,003 | 3 | 512 | exact |
 
-`250,003` candidates covers the DSV4 4:1 compressed-index scale at one million
-tokens without materializing the entire candidate matrix on the device. The gate
-verdict was `PASS 1M compact state + DSpark + chunk32 workspace`.
+`250,003` candidates covers the DSV4 4:1 compressed-index scale at decimal one
+million tokens. Correction (2026-09-05): native 1,048,576 context requires
+262,144 candidates, which this receipt did not exercise. The source gate now
+adds 262,144 and 262,147 cases; execution is pending. The old gate verdict was
+`PASS 1M compact state + DSpark + chunk32 workspace`, an allocation verdict, not
+proof of selection at the exact maximum count.
 
 This proves allocation and exact-selection reachability. It does not claim a
 completed one-million-token prefill or a throughput result.

@@ -265,6 +265,12 @@ family is inventoried below (research/b200-sinkhorn-fusion-20260902); the remain
 | `dsv4_hc_post_kernel` (:1053) | mHC post: `out[t,k,:] = post[t,k]*f[t,:] + sum_j comb[t,j,k]*residual[t,j,:]`. `f` is the SITE'S OWN attention or FFN branch output — a separate multi-kernel program (QKV/RoPE/attention core, or MoE/FFN) runs between the pre-chain's collapse write and this kernel's read, which is why no launch fuses this kernel with the pre-chain (research/b200-sinkhorn-fusion-20260902/LANE.md) | always | dsv4_ffi.rs |
 | `dsv4_hc_head_pre_kernel` (:1453) / `dsv4_hc_head_pre_m_kernel` (:3026) | dsv4's `HcCollapse::GatedHead` trunk-exit gate (sigmoid-gated pre-only collapse), single-position / batched twins — distinct from glm5_next's `Mean` exit (`dsv4_hc_mean_kernel`) | `HcCollapse::GatedHead` plans only | dsv4_ffi.rs |
 
+Selected-expert FP4 projection (same TU, `-fmad=false`):
+
+| symbol | purpose | dispatch flag | FFI binding |
+|---|---|---|---|
+| `dsv4_fp4_gemm_sel_kernel<false/true>` | NVFP4 group-16/E4M3+F32 and MXFP4 group-32/E8M0 weights, FP8-code/F32-scale activations; 128 threads and four output columns per CTA. False retains the shared-memory halving tree. True stages four planes once and replays the identical 128-leaf addition tree in warp 0; no reassociation or quantization change. | `MEMRA_DSV4_FP4_REDUCE=block/warp`, default block; target-card speed and whole-model gates pending | `memra_dsv4_fp4_gemm_sel` / `_sel_g` in dsv4_ffi.rs; standalone gate `tools/dsv4-fp4-reduce-gate.cu` |
+
 ### MMQ static-lib TUs (prefill GEMM per weight format)
 
 | file | host entry symbols | qtype | arch guard | dispatch flag | FFI binding |

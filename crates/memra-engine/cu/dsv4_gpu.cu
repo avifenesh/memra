@@ -42,6 +42,8 @@
 #include <cuda_fp8.h>
 #include <cuda_runtime.h>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <map>
 #include <mutex>
 #include <tuple>
@@ -1598,7 +1600,8 @@ extern "C" int memra_dsv4_route(const float* raw, const float* bias, const int* 
 // unchanged, and each column runs the SAME 128-leaf halving tree (sequentially, one
 // per column). The activation vector is reused across the CPB columns and the
 // table init is amortized CPB-fold.
-extern "C" __global__ void dsv4_fp4_gemm_sel_kernel(
+template <bool WarpReduce>
+__global__ void dsv4_fp4_gemm_sel_kernel(
     const uint8_t* __restrict__ a, const float* __restrict__ as_,
     const uint8_t* __restrict__ w_base, const uint8_t* __restrict__ sc_base,
     const float* __restrict__ s2, const int* __restrict__ sel, int proj, int a_stride_rows,
@@ -1610,10 +1613,10 @@ extern "C" __global__ void dsv4_fp4_gemm_sel_kernel(
     int eid = sel[slot];
     int gs = (kind == 0) ? 16 : 32;
     int ngroups = kdim / gs;
-    extern __shared__ float shg[];
-    float* e4m3_tab = shg;
-    float2* pair_tab = (float2*)(shg + 256);
-    float* red = shg + 256 + 512;
+    extern __shared__ float selected_smem[];
+    float* e4m3_tab = selected_smem;
+    float2* pair_tab = (float2*)(selected_smem + 256);
+    float* red = selected_smem + 256 + 512;
     dsv4_fp4_tables(e4m3_tab, pair_tab);
     // iteration-3 batched verify: a_group > 0 means the slot set covers a_group slots per
     // ACTIVATION row (T positions x topk experts), so slot / a_group is the position whose
@@ -1645,18 +1648,53 @@ extern "C" __global__ void dsv4_fp4_gemm_sel_kernel(
         }
     }
     int tid = threadIdx.x;
-    for (int c = 0; c < CPB; c++) {
-        int col = col0 + c;
-        if (col >= n) break;
-        __syncthreads();  // red free from the previous column's tree
-        red[tid] = part[c];
+    if constexpr (WarpReduce) {
+        // The original tree first pairs t with t+64, then t with t+32,
+        // then halves the remaining 32 lanes. Reducing each warp first
+        // would reassociate the sum. Stage all four columns once, then
+        // reproduce those SAME seven additions in the first warp.
+#pragma unroll
+        for (int c = 0; c < CPB; ++c) red[c * 128 + tid] = part[c];
         __syncthreads();
-        for (int off = blockDim.x >> 1; off > 0; off >>= 1) {
-            if (tid < off) red[tid] += red[tid + off];
-            __syncthreads();
+        if (tid < 32) {
+#pragma unroll
+            for (int c = 0; c < CPB; ++c) {
+                float* r = red + c * 128;
+                float v = (r[tid] + r[tid + 64]) + (r[tid + 32] + r[tid + 96]);
+#pragma unroll
+                for (int off = 16; off > 0; off >>= 1) {
+                    const float other = __shfl_down_sync(0xffffffffu, v, off);
+                    if (tid < off) v += other;
+                }
+                if (tid == 0 && col0 + c < n) out[(long)slot * n + col0 + c] = v;
+            }
         }
-        if (tid == 0) out[(long)slot * n + col] = red[0];
+    } else {
+        for (int c = 0; c < CPB; c++) {
+            int col = col0 + c;
+            if (col >= n) break;
+            __syncthreads();  // red free from the previous column's tree
+            red[tid] = part[c];
+            __syncthreads();
+            for (int off = blockDim.x >> 1; off > 0; off >>= 1) {
+                if (tid < off) red[tid] += red[tid + off];
+                __syncthreads();
+            }
+            if (tid == 0) out[(long)slot * n + col] = red[0];
+        }
     }
+}
+
+// Default off while the exact RTX PRO 6000 serving/performance gates are pending.
+// Invalid values fail at the launcher, including when the first call is captured.
+static int dsv4_fp4_reduce_arm() {
+    static const int arm = [] {
+        const char* v = std::getenv("MEMRA_DSV4_FP4_REDUCE");
+        if (!v || !v[0] || std::strcmp(v, "block") == 0) return 0;
+        if (std::strcmp(v, "warp") == 0) return 1;
+        return -1;
+    }();
+    return arm;
 }
 
 extern "C" int memra_dsv4_fp4_gemm_sel(const void* a_codes, const float* a_scales,
@@ -1671,9 +1709,17 @@ extern "C" int memra_dsv4_fp4_gemm_sel(const void* a_codes, const float* a_scale
     dim3 grid((unsigned)((n + DSV4_FP4_SEL_CPB - 1) / DSV4_FP4_SEL_CPB),
               (unsigned)slots);
     int threads = 128;
-    dsv4_fp4_gemm_sel_kernel<<<grid, threads, DSV4_FP4_SMEM(threads), stream>>>(
-        (const uint8_t*)a_codes, a_scales, (const uint8_t*)w_base, (const uint8_t*)sc_base,
-        s2, sel, proj, a_stride_rows, kind, out, n, kdim, wstride, sstride, 0);
+    const int arm = dsv4_fp4_reduce_arm();
+    if (arm < 0) return 40021;
+    if (arm) {
+        dsv4_fp4_gemm_sel_kernel<true><<<grid, threads, DSV4_FP4_SMEM(threads * DSV4_FP4_SEL_CPB), stream>>>(
+            (const uint8_t*)a_codes, a_scales, (const uint8_t*)w_base, (const uint8_t*)sc_base,
+            s2, sel, proj, a_stride_rows, kind, out, n, kdim, wstride, sstride, 0);
+    } else {
+        dsv4_fp4_gemm_sel_kernel<false><<<grid, threads, DSV4_FP4_SMEM(threads), stream>>>(
+            (const uint8_t*)a_codes, a_scales, (const uint8_t*)w_base, (const uint8_t*)sc_base,
+            s2, sel, proj, a_stride_rows, kind, out, n, kdim, wstride, sstride, 0);
+    }
     DSV4_ERR();
     return 0;
 }
@@ -1695,9 +1741,17 @@ extern "C" int memra_dsv4_fp4_gemm_sel_g(const void* a_codes, const float* a_sca
     dim3 grid((unsigned)((n + DSV4_FP4_SEL_CPB - 1) / DSV4_FP4_SEL_CPB),
               (unsigned)slots);
     int threads = 128;
-    dsv4_fp4_gemm_sel_kernel<<<grid, threads, DSV4_FP4_SMEM(threads), stream>>>(
-        (const uint8_t*)a_codes, a_scales, (const uint8_t*)w_base, (const uint8_t*)sc_base,
-        s2, sel, proj, a_stride_rows, kind, out, n, kdim, wstride, sstride, a_group);
+    const int arm = dsv4_fp4_reduce_arm();
+    if (arm < 0) return 40021;
+    if (arm) {
+        dsv4_fp4_gemm_sel_kernel<true><<<grid, threads, DSV4_FP4_SMEM(threads * DSV4_FP4_SEL_CPB), stream>>>(
+            (const uint8_t*)a_codes, a_scales, (const uint8_t*)w_base, (const uint8_t*)sc_base,
+            s2, sel, proj, a_stride_rows, kind, out, n, kdim, wstride, sstride, a_group);
+    } else {
+        dsv4_fp4_gemm_sel_kernel<false><<<grid, threads, DSV4_FP4_SMEM(threads), stream>>>(
+            (const uint8_t*)a_codes, a_scales, (const uint8_t*)w_base, (const uint8_t*)sc_base,
+            s2, sel, proj, a_stride_rows, kind, out, n, kdim, wstride, sstride, a_group);
+    }
     DSV4_ERR();
     return 0;
 }

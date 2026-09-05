@@ -22,7 +22,9 @@ fn gate_stream_topk(gpu: &Dsv4Gpu) {
     let topk = 512usize;
     let win = 128usize;
     let idx_stride = win + topk;
-    for nb in [4_103usize, 16_397, 250_003] {
+    // CSA compresses by four: 1,048,576 native positions require 262,144
+    // candidates. Keep the decimal-million case and an over-boundary ragged case.
+    for nb in [4_103usize, 16_397, 250_003, 262_144, 262_147] {
         let scores: Vec<f32> = (0..s * nb)
             .map(|z| {
                 let row = z / nb;

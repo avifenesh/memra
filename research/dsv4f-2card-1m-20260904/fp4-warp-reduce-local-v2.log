@@ -1,0 +1,12 @@
+RUNTIME_SWITCH <unset>
+EXACT kind=0 n=7 k=256 rows=3 topk=2 compared=1134
+EXACT kind=0 n=2048 k=4096 rows=1 topk=6 compared=331776
+EXACT kind=0 n=4096 k=2048 rows=6 topk=6 compared=3981312
+EXACT kind=0 n=65 k=8192 rows=32 topk=6 compared=336960
+EXACT kind=0 n=129 k=128 rows=64 topk=6 compared=1337472
+EXACT kind=1 n=7 k=256 rows=3 topk=2 compared=1134
+EXACT kind=1 n=2048 k=4096 rows=1 topk=6 compared=331776
+EXACT kind=1 n=4096 k=2048 rows=6 topk=6 compared=3981312
+EXACT kind=1 n=65 k=8192 rows=32 topk=6 compared=336960
+EXACT kind=1 n=129 k=128 rows=64 topk=6 compared=1337472
+PASS selected FP4 reduction: 11977308 bit comparisons; host witnesses and tail canaries checked

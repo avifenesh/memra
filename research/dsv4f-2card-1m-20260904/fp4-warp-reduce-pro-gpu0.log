@@ -1,0 +1,112 @@
+RUNTIME_SWITCH warp
+EXACT kind=0 n=7 k=256 rows=3 topk=2 compared=1134
+TIMING kind=0 n=7 k=256 rows=3 topk=2 rep=0 warp=0 us=5.275
+TIMING kind=0 n=7 k=256 rows=3 topk=2 rep=0 warp=1 us=3.930
+TIMING kind=0 n=7 k=256 rows=3 topk=2 rep=1 warp=1 us=3.971
+TIMING kind=0 n=7 k=256 rows=3 topk=2 rep=1 warp=0 us=5.170
+TIMING kind=0 n=7 k=256 rows=3 topk=2 rep=2 warp=0 us=5.162
+TIMING kind=0 n=7 k=256 rows=3 topk=2 rep=2 warp=1 us=4.605
+TIMING kind=0 n=7 k=256 rows=3 topk=2 rep=3 warp=1 us=3.928
+TIMING kind=0 n=7 k=256 rows=3 topk=2 rep=3 warp=0 us=5.120
+TIMING kind=0 n=7 k=256 rows=3 topk=2 rep=4 warp=0 us=5.059
+TIMING kind=0 n=7 k=256 rows=3 topk=2 rep=4 warp=1 us=3.998
+EXACT kind=0 n=2048 k=4096 rows=1 topk=6 compared=331776
+TIMING kind=0 n=2048 k=4096 rows=1 topk=6 rep=0 warp=0 us=35.288
+TIMING kind=0 n=2048 k=4096 rows=1 topk=6 rep=0 warp=1 us=30.365
+TIMING kind=0 n=2048 k=4096 rows=1 topk=6 rep=1 warp=1 us=30.235
+TIMING kind=0 n=2048 k=4096 rows=1 topk=6 rep=1 warp=0 us=34.768
+TIMING kind=0 n=2048 k=4096 rows=1 topk=6 rep=2 warp=0 us=34.605
+TIMING kind=0 n=2048 k=4096 rows=1 topk=6 rep=2 warp=1 us=30.115
+TIMING kind=0 n=2048 k=4096 rows=1 topk=6 rep=3 warp=1 us=30.098
+TIMING kind=0 n=2048 k=4096 rows=1 topk=6 rep=3 warp=0 us=34.518
+TIMING kind=0 n=2048 k=4096 rows=1 topk=6 rep=4 warp=0 us=34.507
+TIMING kind=0 n=2048 k=4096 rows=1 topk=6 rep=4 warp=1 us=29.808
+EXACT kind=0 n=4096 k=2048 rows=6 topk=6 compared=3981312
+TIMING kind=0 n=4096 k=2048 rows=6 topk=6 rep=0 warp=0 us=206.146
+TIMING kind=0 n=4096 k=2048 rows=6 topk=6 rep=0 warp=1 us=158.574
+TIMING kind=0 n=4096 k=2048 rows=6 topk=6 rep=1 warp=1 us=158.014
+TIMING kind=0 n=4096 k=2048 rows=6 topk=6 rep=1 warp=0 us=203.510
+TIMING kind=0 n=4096 k=2048 rows=6 topk=6 rep=2 warp=0 us=202.464
+TIMING kind=0 n=4096 k=2048 rows=6 topk=6 rep=2 warp=1 us=156.306
+TIMING kind=0 n=4096 k=2048 rows=6 topk=6 rep=3 warp=1 us=156.109
+TIMING kind=0 n=4096 k=2048 rows=6 topk=6 rep=3 warp=0 us=202.182
+TIMING kind=0 n=4096 k=2048 rows=6 topk=6 rep=4 warp=0 us=202.379
+TIMING kind=0 n=4096 k=2048 rows=6 topk=6 rep=4 warp=1 us=156.266
+EXACT kind=0 n=65 k=8192 rows=32 topk=6 compared=336960
+TIMING kind=0 n=65 k=8192 rows=32 topk=6 rep=0 warp=0 us=62.509
+TIMING kind=0 n=65 k=8192 rows=32 topk=6 rep=0 warp=1 us=57.840
+TIMING kind=0 n=65 k=8192 rows=32 topk=6 rep=1 warp=1 us=58.109
+TIMING kind=0 n=65 k=8192 rows=32 topk=6 rep=1 warp=0 us=62.165
+TIMING kind=0 n=65 k=8192 rows=32 topk=6 rep=2 warp=0 us=62.376
+TIMING kind=0 n=65 k=8192 rows=32 topk=6 rep=2 warp=1 us=57.611
+TIMING kind=0 n=65 k=8192 rows=32 topk=6 rep=3 warp=1 us=57.606
+TIMING kind=0 n=65 k=8192 rows=32 topk=6 rep=3 warp=0 us=62.214
+TIMING kind=0 n=65 k=8192 rows=32 topk=6 rep=4 warp=0 us=61.856
+TIMING kind=0 n=65 k=8192 rows=32 topk=6 rep=4 warp=1 us=57.354
+EXACT kind=0 n=129 k=128 rows=64 topk=6 compared=1337472
+TIMING kind=0 n=129 k=128 rows=64 topk=6 rep=0 warp=0 us=41.467
+TIMING kind=0 n=129 k=128 rows=64 topk=6 rep=0 warp=1 us=26.557
+TIMING kind=0 n=129 k=128 rows=64 topk=6 rep=1 warp=1 us=26.734
+TIMING kind=0 n=129 k=128 rows=64 topk=6 rep=1 warp=0 us=41.024
+TIMING kind=0 n=129 k=128 rows=64 topk=6 rep=2 warp=0 us=40.787
+TIMING kind=0 n=129 k=128 rows=64 topk=6 rep=2 warp=1 us=26.736
+TIMING kind=0 n=129 k=128 rows=64 topk=6 rep=3 warp=1 us=26.482
+TIMING kind=0 n=129 k=128 rows=64 topk=6 rep=3 warp=0 us=40.970
+TIMING kind=0 n=129 k=128 rows=64 topk=6 rep=4 warp=0 us=41.019
+TIMING kind=0 n=129 k=128 rows=64 topk=6 rep=4 warp=1 us=26.480
+EXACT kind=1 n=7 k=256 rows=3 topk=2 compared=1134
+TIMING kind=1 n=7 k=256 rows=3 topk=2 rep=0 warp=0 us=5.702
+TIMING kind=1 n=7 k=256 rows=3 topk=2 rep=0 warp=1 us=4.494
+TIMING kind=1 n=7 k=256 rows=3 topk=2 rep=1 warp=1 us=4.466
+TIMING kind=1 n=7 k=256 rows=3 topk=2 rep=1 warp=0 us=5.539
+TIMING kind=1 n=7 k=256 rows=3 topk=2 rep=2 warp=0 us=5.539
+TIMING kind=1 n=7 k=256 rows=3 topk=2 rep=2 warp=1 us=4.466
+TIMING kind=1 n=7 k=256 rows=3 topk=2 rep=3 warp=1 us=4.405
+TIMING kind=1 n=7 k=256 rows=3 topk=2 rep=3 warp=0 us=5.643
+TIMING kind=1 n=7 k=256 rows=3 topk=2 rep=4 warp=0 us=5.643
+TIMING kind=1 n=7 k=256 rows=3 topk=2 rep=4 warp=1 us=4.520
+EXACT kind=1 n=2048 k=4096 rows=1 topk=6 compared=331776
+TIMING kind=1 n=2048 k=4096 rows=1 topk=6 rep=0 warp=0 us=35.426
+TIMING kind=1 n=2048 k=4096 rows=1 topk=6 rep=0 warp=1 us=30.712
+TIMING kind=1 n=2048 k=4096 rows=1 topk=6 rep=1 warp=1 us=30.779
+TIMING kind=1 n=2048 k=4096 rows=1 topk=6 rep=1 warp=0 us=34.973
+TIMING kind=1 n=2048 k=4096 rows=1 topk=6 rep=2 warp=0 us=34.979
+TIMING kind=1 n=2048 k=4096 rows=1 topk=6 rep=2 warp=1 us=30.523
+TIMING kind=1 n=2048 k=4096 rows=1 topk=6 rep=3 warp=1 us=30.474
+TIMING kind=1 n=2048 k=4096 rows=1 topk=6 rep=3 warp=0 us=35.014
+TIMING kind=1 n=2048 k=4096 rows=1 topk=6 rep=4 warp=0 us=34.619
+TIMING kind=1 n=2048 k=4096 rows=1 topk=6 rep=4 warp=1 us=30.318
+EXACT kind=1 n=4096 k=2048 rows=6 topk=6 compared=3981312
+TIMING kind=1 n=4096 k=2048 rows=6 topk=6 rep=0 warp=0 us=213.403
+TIMING kind=1 n=4096 k=2048 rows=6 topk=6 rep=0 warp=1 us=166.446
+TIMING kind=1 n=4096 k=2048 rows=6 topk=6 rep=1 warp=1 us=165.531
+TIMING kind=1 n=4096 k=2048 rows=6 topk=6 rep=1 warp=0 us=210.995
+TIMING kind=1 n=4096 k=2048 rows=6 topk=6 rep=2 warp=0 us=210.893
+TIMING kind=1 n=4096 k=2048 rows=6 topk=6 rep=2 warp=1 us=164.235
+TIMING kind=1 n=4096 k=2048 rows=6 topk=6 rep=3 warp=1 us=163.786
+TIMING kind=1 n=4096 k=2048 rows=6 topk=6 rep=3 warp=0 us=210.094
+TIMING kind=1 n=4096 k=2048 rows=6 topk=6 rep=4 warp=0 us=210.010
+TIMING kind=1 n=4096 k=2048 rows=6 topk=6 rep=4 warp=1 us=164.053
+EXACT kind=1 n=65 k=8192 rows=32 topk=6 compared=336960
+TIMING kind=1 n=65 k=8192 rows=32 topk=6 rep=0 warp=0 us=64.390
+TIMING kind=1 n=65 k=8192 rows=32 topk=6 rep=0 warp=1 us=59.466
+TIMING kind=1 n=65 k=8192 rows=32 topk=6 rep=1 warp=1 us=59.205
+TIMING kind=1 n=65 k=8192 rows=32 topk=6 rep=1 warp=0 us=64.155
+TIMING kind=1 n=65 k=8192 rows=32 topk=6 rep=2 warp=0 us=64.155
+TIMING kind=1 n=65 k=8192 rows=32 topk=6 rep=2 warp=1 us=59.248
+TIMING kind=1 n=65 k=8192 rows=32 topk=6 rep=3 warp=1 us=59.296
+TIMING kind=1 n=65 k=8192 rows=32 topk=6 rep=3 warp=0 us=64.264
+TIMING kind=1 n=65 k=8192 rows=32 topk=6 rep=4 warp=0 us=64.163
+TIMING kind=1 n=65 k=8192 rows=32 topk=6 rep=4 warp=1 us=59.197
+EXACT kind=1 n=129 k=128 rows=64 topk=6 compared=1337472
+TIMING kind=1 n=129 k=128 rows=64 topk=6 rep=0 warp=0 us=48.200
+TIMING kind=1 n=129 k=128 rows=64 topk=6 rep=0 warp=1 us=33.221
+TIMING kind=1 n=129 k=128 rows=64 topk=6 rep=1 warp=1 us=33.178
+TIMING kind=1 n=129 k=128 rows=64 topk=6 rep=1 warp=0 us=47.726
+TIMING kind=1 n=129 k=128 rows=64 topk=6 rep=2 warp=0 us=47.626
+TIMING kind=1 n=129 k=128 rows=64 topk=6 rep=2 warp=1 us=32.728
+TIMING kind=1 n=129 k=128 rows=64 topk=6 rep=3 warp=1 us=32.738
+TIMING kind=1 n=129 k=128 rows=64 topk=6 rep=3 warp=0 us=47.522
+TIMING kind=1 n=129 k=128 rows=64 topk=6 rep=4 warp=0 us=47.574
+TIMING kind=1 n=129 k=128 rows=64 topk=6 rep=4 warp=1 us=32.576
+PASS selected FP4 reduction: 11977308 bit comparisons; host witnesses and tail canaries checked

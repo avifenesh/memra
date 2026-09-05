@@ -1,5 +1,25 @@
 # Rejected grouped ModelOpt prefill arm
 
+## Correction: the whole-model experiment omitted the shared expert
+
+Source audit on 2026-09-05 found an early return at
+`f218cca95:crates/memra-engine/src/dsv4_gpu.rs:10737` into
+`moe_verify_f16g`, which computes routed experts only. The shared-expert chain
+starts at line 10844, after that return. Consequently the enabled arm did not
+compute the complete model. The historical timings, teacher-forcing drift and
+cache-transparency failures below remain recorded, but cannot isolate a numeric
+class effect or reject correctly implemented grouped prefill. Whole-model speed
+comparisons also include missing work and are invalid as optimization evidence.
+The independent split-plane mapping and shape-only microbenchmarks are separate
+observables and are not invalidated by this integration defect.
+
+The arm remains reverted. A new experiment must include the shared expert and
+re-run full-path parity and sampled cache twins before a conclusion. The broad
+native drift band in the old teacher-forcing gate is characterization only, not
+a calibrated quality or support-admission test.
+
+## Historical record (causal conclusions superseded by the audit above)
+
 Date: 2026-09-05 UTC
 
 Implementation commit: `f218cca95`  

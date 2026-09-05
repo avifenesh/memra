@@ -59,9 +59,11 @@ It is not a conventional token-wise full-attention KV allocation. The configured
 session. The DSpark-aware split reserves 10.83 GiB on the tail stage and moves
 the cut from layer 22 to 23. The full compact state, DSpark and chunk-32 transient
 workspace fit simultaneously. Exact hierarchical top-512 selection also passes
-against a host oracle at 250,003 candidates, the 4:1 compressed-index scale for
-one million tokens. See `capacity-1m-streamtopk-5a3820ec9.md`. This proves
-allocation and exact-selection reach, not completed 1M prefill throughput.
+against a host oracle at 250,003 candidates, enough for decimal one million
+tokens but short of the 262,144 candidates at the native 1,048,576-token limit.
+The gate now includes 262,144 and 262,147; those new cases still need target-card
+execution. See `capacity-1m-streamtopk-5a3820ec9.md`. This proves allocation and
+selection only through the measured count, not completed 1M prefill throughput.
 
 Charging every request for a 1M-capacity cache would still destroy concurrency.
 This lane therefore adds per-session capacity planning: device cache capacity is
@@ -232,12 +234,12 @@ critical path is limited by power or clocks.
 - [x] adaptive short-prime isolation: prompts through the configured chunk width
   retain the canonical monolithic path and are not parked; longer cacheable
   prompts retain the transparency-gated chunked path
-- [x] grouped ModelOpt f16 prefill arm priced and rejected
-  (`grouped-modelopt-prefill-reject-850436a9c.md`): zero-copy split-plane mapping
-  was exact and frozen-source TTFT fell to 46.49 s, but teacher forcing was only
-  7/16 agreement and fixed-seed cache transparency failed because cold prefill
-  and warm exact-decode history inhabit different numerical classes; product
-  path fully reverted
+- [ ] grouped ModelOpt f16 prefill needs a corrected whole-model experiment
+  (`grouped-modelopt-prefill-reject-850436a9c.md`): the old fast-path return
+  omitted the shared expert. Mapping exactness remains valid, but old TTFT and
+  model/cache divergence do not isolate grouped arithmetic. The defective arm
+  is fully reverted; no performance or quality conclusion transfers to a
+  corrected implementation
 - [x] DSpark-only fused selected-expert dispatch is component-bit-exact and
   proposal-identical (`dspark-fused-moe-gate.md`); 1.171x proposal speedup but
   only 1.010x whole-loop, so it remains explicit/default-off rather than a
