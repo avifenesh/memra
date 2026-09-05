@@ -705,6 +705,73 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
+        // ---- MEMRA_HC_PHASE_STAMPS: the same six stamps on v4 ----
+        if t == 1 && std::env::var("MEMRA_HC_PHASE_STAMPS").is_ok() {
+            let mixes_d = stream.clone_htod(&s.mixes)?;
+            let mut pre_d = stream.alloc_zeros::<f32>(t * HC)?;
+            let mut post_d = stream.alloc_zeros::<f32>(t * HC)?;
+            let mut comb_d = stream.alloc_zeros::<f32>(t * HC * HC)?;
+            let mut y_d = stream.alloc_zeros::<f32>(t * D)?;
+            let mut st_d = stream.alloc_zeros::<u64>(12)?;
+            let names = [
+                "P0 16 loads + sumsq",
+                "P1 barrier1 + warp0 tree/rsq/gates",
+                "P2 barrier 2",
+                "P3 warp0 softmax + sinkhorn",
+                "P4 combine (registers) + store",
+            ];
+            let mut ns: Vec<Vec<u64>> = vec![Vec::new(); 5];
+            let mut cy: Vec<Vec<u64>> = vec![Vec::new(); 5];
+            let mut tot_ns: Vec<u64> = Vec::new();
+            for _ in 0..60 {
+                unsafe {
+                    let rc = k::memra_dsv4_hc_pre_v4_stamped(
+                        x_d.device_ptr(&stream).0 as *const f32,
+                        mixes_d.device_ptr(&stream).0 as *const f32,
+                        scale_d.device_ptr(&stream).0 as *const f32,
+                        base_d.device_ptr(&stream).0 as *const f32,
+                        pre_d.device_ptr_mut(&stream).0 as *mut f32,
+                        post_d.device_ptr_mut(&stream).0 as *mut f32,
+                        comb_d.device_ptr_mut(&stream).0 as *mut f32,
+                        y_d.device_ptr_mut(&stream).0 as *mut f32,
+                        t as i32,
+                        HC as i32,
+                        D as i32,
+                        iters(),
+                        EPS,
+                        st_d.device_ptr_mut(&stream).0 as *mut u64,
+                        sp(&stream),
+                    );
+                    assert_eq!(rc, 0, "hc_pre_v4_stamped rc");
+                }
+                stream.synchronize()?;
+                let st = stream.clone_dtoh(&st_d)?;
+                for i in 0..5 {
+                    ns[i].push(st[i + 1].saturating_sub(st[i]));
+                    cy[i].push(st[7 + i].saturating_sub(st[6 + i]));
+                }
+                tot_ns.push(st[5].saturating_sub(st[0]));
+            }
+            let med = |v: &mut Vec<u64>| {
+                v.sort_unstable();
+                v[v.len() / 2]
+            };
+            let total = med(&mut tot_ns);
+            println!(
+                "[v4-phases] t=1 hc={HC} d={D} 1024x16 iters={} N=60: total {total} ns (thread-0 view)",
+                iters()
+            );
+            for i in 0..5 {
+                let n = med(&mut ns[i]);
+                let c = med(&mut cy[i]);
+                println!(
+                    "[v4-phases]   {:<36} {n:>6} ns  {c:>7} cyc  {:5.1}%",
+                    names[i],
+                    100.0 * n as f64 / total.max(1) as f64
+                );
+            }
+        }
+
         // ---- hc mixes GEMV: cuBLASLt (served) vs the native kernel, back-to-back x300 ----
         // The mixes projection (24 x 16384 f32) runs once per hc pre site, 90 per token; the
         // served path is cuBLASLt's dot+reduce pair. Kernel-only us per launch, same buffers.

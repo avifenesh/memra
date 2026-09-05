@@ -684,6 +684,25 @@ unsafe extern "C" {
     /// hc pre-chain v4 (lane/hc-pre-phases-20260905): v3's arithmetic in v3's order on a
     /// register schedule (one round of loads kept for the combine, two barriers, Sinkhorn
     /// overlapped with the combine). 40025 = shape does not fit (caller runs v3).
+    /// BENCH-ONLY phase-stamped twin of `memra_dsv4_hc_pre_v4` (12 u64 stamps: [0..6)
+    /// %globaltimer ns, [6..12) clock64). Only the gate binary calls it.
+    pub fn memra_dsv4_hc_pre_v4_stamped(
+        x: *const f32,
+        mixes: *const f32,
+        scale: *const f32,
+        base: *const f32,
+        pre: *mut f32,
+        post: *mut f32,
+        comb: *mut f32,
+        y: *mut f32,
+        s: i32,
+        hc: i32,
+        d: i32,
+        iters: i32,
+        eps: f32,
+        stamps: *mut u64,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_hc_pre_v4(
         x: *const f32,
         mixes: *const f32,

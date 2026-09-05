@@ -3987,6 +3987,13 @@ __device__ __forceinline__ void dsv4_hc_pre_v4_body(
     int t = threadIdx.x;
     const float* xr = x + (long)p * w;
 
+    // Prefetch the small vectors warp 0 needs after barrier 1 (mixes: rows <= 32 values, one
+    // per lane; scale[3]; base: the 2*hc + hc*hc gate entries, one per lane) so their L2 latency
+    // overlaps the x loads instead of following the barrier. Values only; arithmetic unchanged.
+    const float* mixes_p = mixes_all + (long)p * rows;
+    float mix_l = (t < rows) ? mixes_p[t] : 0.0f;
+    float base_l = (t < rows) ? base[t] : 0.0f;
+    float sc0 = scale[0], sc1 = scale[1], sc2 = scale[2];
     // one round of loads, kept for the combine (v3's per-thread order: t, t+B, t+2B, ...)
     float xv[ELEMS];
 #pragma unroll
@@ -4003,7 +4010,6 @@ __device__ __forceinline__ void dsv4_hc_pre_v4_body(
     float* pre = pre_all + (long)p * hc;
     float* post = post_all + (long)p * hc;
     float* combg = comb_all + (long)p * hc * hc;
-    const float* mixes = mixes_all + (long)p * rows;
     const unsigned MASK = 0xffffffffu;
     if (t < 32) {
         // v3's tree, levels off = BLOCK/2 .. 32, replayed in registers: lane t holds
@@ -4031,13 +4037,13 @@ __device__ __forceinline__ void dsv4_hc_pre_v4_body(
         }
         double tot = __shfl_sync(MASK, v, 0);
         float rsq = 1.0f / sqrtf((float)(tot / (double)w) + eps);
-        for (int i = t; i < rows; i += 32) smix[i] = mixes[i] * rsq;
+        if (t < rows) smix[t] = mix_l * rsq;
         __syncwarp();
         if (t < hc) {
-            float pv = dsv4_sigmoid(smix[t] * scale[0] + base[t]) + eps;
+            float pv = dsv4_sigmoid(smix[t] * sc0 + base_l) + eps;
             pre[t] = pv;
             spre[t] = pv;
-            post[t] = 2.0f * dsv4_sigmoid(smix[hc + t] * scale[1] + base[hc + t]);
+            post[t] = 2.0f * dsv4_sigmoid(smix[hc + t] * sc1 + base[hc + t]);
         }
     }
     __syncthreads();  // barrier 2: spre visible; warps 1.. run the combine, warp 0 iterates
@@ -4046,7 +4052,7 @@ __device__ __forceinline__ void dsv4_hc_pre_v4_body(
         int n2 = hc * hc;
         int r = (t < n2) ? t / hc : 0;
         int c = (t < n2) ? t - r * hc : 0;
-        float cv = (t < n2) ? (smix[2 * hc + t] * scale[2] + base[2 * hc + t]) : 0.0f;
+        float cv = (t < n2) ? (smix[2 * hc + t] * sc2 + base[2 * hc + t]) : 0.0f;
         __syncwarp();
 
         float mx = -INFINITY;
@@ -4101,6 +4107,172 @@ extern "C" __global__ void __launch_bounds__(1024, 1) dsv4_hc_pre_v4_e16_kernel(
         int iters, float eps, int* __restrict__ niters) {
     dsv4_hc_pre_v4_body<16, 4, 1024>(x, mixes_all, scale, base, pre_all, post_all, comb_all, y,
                                      w, rows, hc, d, iters, eps, niters);
+}
+
+template <int ELEMS, int HCN, int BLOCK>
+__device__ __forceinline__ void dsv4_hc_pre_v4_stamped_body(
+        const float* __restrict__ x, const float* __restrict__ mixes_all,
+        const float* __restrict__ scale, const float* __restrict__ base,
+        float* __restrict__ pre_all, float* __restrict__ post_all,
+        float* __restrict__ comb_all, float* __restrict__ y, int w, int rows, int hc, int d,
+        int iters, float eps, int* __restrict__ niters,
+        unsigned long long* __restrict__ stamps) {
+    // Every array index below is a compile-time constant (ELEMS, HCN, BLOCK are template
+    // parameters, loops fully unrolled): a runtime stride into `xv[]` or `vals[]` demotes the
+    // array to local memory and the kernel to 12.3 us against v3's 10.3 (B200, 2026-09-05).
+    constexpr int DPB = ELEMS / HCN;  // elements of one stream per thread
+    constexpr int NJ = BLOCK / 32;    // shared-tree values per warp-0 lane
+    int p = blockIdx.x;
+    int t = threadIdx.x;
+    const float* xr = x + (long)p * w;
+    DSV4_STAMP(0);
+
+    // Prefetch the small vectors warp 0 needs after barrier 1 (mixes: rows <= 32 values, one
+    // per lane; scale[3]; base: the 2*hc + hc*hc gate entries, one per lane) so their L2 latency
+    // overlaps the x loads instead of following the barrier. Values only; arithmetic unchanged.
+    const float* mixes_p = mixes_all + (long)p * rows;
+    float mix_l = (t < rows) ? mixes_p[t] : 0.0f;
+    float base_l = (t < rows) ? base[t] : 0.0f;
+    float sc0 = scale[0], sc1 = scale[1], sc2 = scale[2];
+    // one round of loads, kept for the combine (v3's per-thread order: t, t+B, t+2B, ...)
+    float xv[ELEMS];
+#pragma unroll
+    for (int k = 0; k < ELEMS; k++) xv[k] = xr[t + k * BLOCK];
+    double acc = 0.0;
+#pragma unroll
+    for (int k = 0; k < ELEMS; k++) acc += (double)xv[k] * (double)xv[k];
+
+    DSV4_STAMP(1);
+    __shared__ double shd[BLOCK];
+    __shared__ float smix[(2 + DSV4_HC_MAX) * DSV4_HC_MAX];
+    __shared__ float spre[DSV4_HC_MAX];
+    shd[t] = acc;
+    __syncthreads();  // barrier 1: shd complete
+    float* pre = pre_all + (long)p * hc;
+    float* post = post_all + (long)p * hc;
+    float* combg = comb_all + (long)p * hc * hc;
+    const unsigned MASK = 0xffffffffu;
+    if (t < 32) {
+        // v3's tree, levels off = BLOCK/2 .. 32, replayed in registers: lane t holds
+        // sh[t + 32 j]; at level off the partner of index t+32j is t+32j+off = t+32(j+off/32),
+        // held by the same lane, so vals[j] += vals[j + off/32] is the tree's own addition.
+        double vals[NJ];
+#pragma unroll
+        for (int j = 0; j < NJ; j++) vals[j] = shd[t + 32 * j];
+        // NJ = 2^LOG levels; a constant trip count so the unroll is total and every index static
+        constexpr int LOG = (NJ == 32) ? 5 : (NJ == 16) ? 4 : (NJ == 8) ? 3 : (NJ == 4) ? 2 : (NJ == 2) ? 1 : 0;
+#pragma unroll
+        for (int lvl = 0; lvl < LOG; lvl++) {
+            const int oj = NJ >> (lvl + 1);
+#pragma unroll
+            for (int j = 0; j < NJ / 2; j++) {
+                if (j < oj) vals[j] += vals[j + oj];
+            }
+        }
+        double v = vals[0];
+        // levels 16 .. 1: sh[tid] += sh[tid + off] for tid < off, as shuffles
+#pragma unroll
+        for (int off = 16; off > 0; off >>= 1) {
+            double o = __shfl_down_sync(MASK, v, off);
+            if (t < off) v += o;
+        }
+        double tot = __shfl_sync(MASK, v, 0);
+        float rsq = 1.0f / sqrtf((float)(tot / (double)w) + eps);
+        if (t < rows) smix[t] = mix_l * rsq;
+        __syncwarp();
+        if (t < hc) {
+            float pv = dsv4_sigmoid(smix[t] * sc0 + base_l) + eps;
+            pre[t] = pv;
+            spre[t] = pv;
+            post[t] = 2.0f * dsv4_sigmoid(smix[hc + t] * sc1 + base[hc + t]);
+        }
+    }
+    DSV4_STAMP(2);
+    __syncthreads();  // barrier 2: spre visible; warps 1.. run the combine, warp 0 iterates
+    DSV4_STAMP(3);
+
+    if (t < 32) {
+        int n2 = hc * hc;
+        int r = (t < n2) ? t / hc : 0;
+        int c = (t < n2) ? t - r * hc : 0;
+        float cv = (t < n2) ? (smix[2 * hc + t] * sc2 + base[2 * hc + t]) : 0.0f;
+        __syncwarp();
+
+        float mx = -INFINITY;
+        for (int k = 0; k < hc; k++) mx = fmaxf(mx, __shfl_sync(MASK, cv, r * hc + k));
+        float e = expf(cv - mx);
+        float sum = 0.0f;
+        for (int k = 0; k < hc; k++) sum += __shfl_sync(MASK, e, r * hc + k);
+        cv = e / sum + eps;
+
+        int done = 0;
+        for (int it = 0; it < iters; it++) {
+            float prev = cv;
+            if (it > 0) {
+                float rs = 0.0f;
+                for (int k = 0; k < hc; k++) rs += __shfl_sync(MASK, cv, r * hc + k);
+                cv = cv / (rs + eps);
+            }
+            float cs = 0.0f;
+            for (int j = 0; j < hc; j++) cs += __shfl_sync(MASK, cv, j * hc + c);
+            cv = cv / (cs + eps);
+            done = it + 1;
+            if (it > 0) {
+                unsigned ch = (t < n2 && __float_as_uint(prev) != __float_as_uint(cv)) ? 1u : 0u;
+                if (__any_sync(MASK, ch) == 0) break;
+            }
+        }
+        if (niters && t == 0) niters[p] = done;
+        if (t < n2) combg[t] = cv;
+    }
+
+    DSV4_STAMP(4);
+    // combine from registers: y[t + m B] = sum_c spre[c] * x[c d + t + m B], c ascending
+    {
+        float* yr = y + (long)p * d;
+        float sp[HCN];
+#pragma unroll
+        for (int c = 0; c < HCN; c++) sp[c] = spre[c];
+#pragma unroll
+        for (int m = 0; m < DPB; m++) {
+            float acc2 = 0.0f;
+#pragma unroll
+            for (int c = 0; c < HCN; c++) acc2 += sp[c] * xv[c * DPB + m];
+            yr[t + m * BLOCK] = acc2;
+        }
+    }
+    __syncthreads();
+    DSV4_STAMP(5);
+}
+
+extern "C" __global__ void __launch_bounds__(1024, 1) dsv4_hc_pre_v4_e16_stamped_kernel(
+        const float* __restrict__ x, const float* __restrict__ mixes_all,
+        const float* __restrict__ scale, const float* __restrict__ base,
+        float* __restrict__ pre_all, float* __restrict__ post_all,
+        float* __restrict__ comb_all, float* __restrict__ y, int w, int rows, int hc, int d,
+        int iters, float eps, int* __restrict__ niters, unsigned long long* __restrict__ stamps) {
+    dsv4_hc_pre_v4_stamped_body<16, 4, 1024>(x, mixes_all, scale, base, pre_all, post_all,
+                                             comb_all, y, w, rows, hc, d, iters, eps, niters,
+                                             stamps);
+}
+
+// BENCH-ONLY: the phase-stamped v4 (same stamps as the v3 twin: 0 entry, 1 after loads + sum of
+// squares, 2 after barrier 1 + warp 0's tree/rsq/gates (thread 0's view, before barrier 2), 3
+// after barrier 2, 4 after warp 0's Sinkhorn (before its own combine), 5 after the combine + a
+// trailing barrier).
+extern "C" int memra_dsv4_hc_pre_v4_stamped(const float* x, const float* mixes, const float* scale,
+                                            const float* base, float* pre, float* post,
+                                            float* comb, float* y, int s, int hc, int d, int iters,
+                                            float eps, unsigned long long* stamps,
+                                            void* stream_v) {
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    if (s < 1 || hc != 4 || d != 4096 || iters < 1) return 40025;
+    int w = hc * d;
+    int rows = (2 + hc) * hc;
+    dsv4_hc_pre_v4_e16_stamped_kernel<<<(unsigned)s, 1024u, 0, stream>>>(
+        x, mixes, scale, base, pre, post, comb, y, w, rows, hc, d, iters, eps, nullptr, stamps);
+    DSV4_ERR();
+    return 0;
 }
 
 // v4 launcher: returns 40025 when the shape does not fit the register schedule (caller falls
