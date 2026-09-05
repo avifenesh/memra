@@ -1959,12 +1959,12 @@ impl HybridModel {
             None => {
                 // AWQ (memra#253): o_proj carries its own per-input-channel scale.
                 let __wpqs = e.pre_quant_scaled(
-                    &activation,
+                    activation,
                     fa.wo_pqs.as_ref(),
                     fa.wo.in_features(),
                     tokens,
                 )?;
-                e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&activation), tokens)
+                e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(activation), tokens)
             }
         }
     }
