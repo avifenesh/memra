@@ -34,10 +34,14 @@ fn force_true_f32() {
     }
 }
 
+/// Arms ONE door name and UNSETS it after (never `=0`): door H is a two-name door under the
+/// flag-alias law, and a `=0` left on the alias makes the next arm's general-name `=1` a
+/// DISAGREEING pair that falls the door closed by design (rig 2026-09-05: the general-name
+/// arm below failed "not wired" while the door was refusing the pair this helper had built).
 fn with_flag<T>(key: &str, f: impl FnOnce() -> T) -> T {
     unsafe { std::env::set_var(key, "1") };
     let out = f();
-    unsafe { std::env::set_var(key, "0") };
+    unsafe { std::env::remove_var(key) };
     out
 }
 
@@ -50,7 +54,7 @@ struct EnvArm(Vec<String>);
 impl Drop for EnvArm {
     fn drop(&mut self) {
         for k in &self.0 {
-            unsafe { std::env::set_var(k, "0") };
+            unsafe { std::env::remove_var(k) };
         }
     }
 }

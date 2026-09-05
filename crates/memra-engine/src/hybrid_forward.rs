@@ -14279,19 +14279,14 @@ impl HybridModel {
             // on every MoE layer-call — 42 pageable HtoD per ship round (26.9% of the round's
             // 156). The resident ones buffer feeds the SAME `add_scaled_rows_f32` kernel the
             // same 1.0 values, so the arms are bit-identical.
-            if m.gate_inp_shexp.is_none() && crate::htod_diet_on() {
-                crate::HTOD_DIET_AVOIDED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                e.add_scaled_rows_ones(&sh, moe_out, n_embd, t)?;
-                return Ok(());
-            }
-            let g = match &m.gate_inp_shexp {
-                Some(gate_inp_shexp) => {
-                    e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?
-                }
-                None => e.htod(&vec![1.0f32; t])?,
-            };
             // moe_out[r, :] += sh[r, :] * g[r]   (per-token scalar gate; g=1 ungated)
-            e.add_scaled_rows(&sh, &g, moe_out, n_embd, t)?;
+            match &m.gate_inp_shexp {
+                Some(gate_inp_shexp) => {
+                    let g = e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?;
+                    e.add_scaled_rows(&sh, &g, moe_out, n_embd, t)?;
+                }
+                None => e.add_scaled_rows_ungated(&sh, moe_out, n_embd, t)?,
+            }
         }
         Ok(())
     }
@@ -15407,13 +15402,13 @@ impl HybridModel {
                 // m-INVARIANT form — see the sequential arm's note. This is the PAIRS arm,
                 // i.e. the one real prefill actually takes on a resident-expert MoE model,
                 // so the concat-prime isolation fix has to land here as well.
-                let g = match &m.gate_inp_shexp {
+                match &m.gate_inp_shexp {
                     Some(gate_inp_shexp) => {
-                        e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?
+                        let g = e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?;
+                        e.add_scaled_rows(&sh, &g, &mut moe_out, n_embd, t)?;
                     }
-                    None => e.htod(&vec![1.0f32; t])?,
-                };
-                e.add_scaled_rows(&sh, &g, &mut moe_out, n_embd, t)?;
+                    None => e.add_scaled_rows_ungated(&sh, &mut moe_out, n_embd, t)?,
+                }
             }
             return Ok(moe_out);
         }
@@ -15568,13 +15563,13 @@ impl HybridModel {
             // m-INVARIANT fused sigmoid-dot under router_prefill_exact (serve isolation,
             // lane/concat-prime-exact) — every shexp-gate arm shares the same form so a
             // dispatch choice cannot change bits.
-            let g = match &m.gate_inp_shexp {
+            match &m.gate_inp_shexp {
                 Some(gate_inp_shexp) => {
-                    e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?
+                    let g = e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?;
+                    e.add_scaled_rows(&sh, &g, &mut moe_out, n_embd, t)?;
                 }
-                None => e.htod(&vec![1.0f32; t])?,
-            };
-            e.add_scaled_rows(&sh, &g, &mut moe_out, n_embd, t)?;
+                None => e.add_scaled_rows_ungated(&sh, &mut moe_out, n_embd, t)?,
+            }
         }
         Ok(moe_out)
     }
@@ -15979,13 +15974,13 @@ impl HybridModel {
             // shexp gate: qwen35moe sigmoid-gates; M3 has no gate tensor -> weight 1.0.
             // Same fused sigmoid-dot as moe_ffn_sequential step 3 (byte-identity contract
             // between the two arms; prefill keeps the batched cuBLASLt linear).
-            let g = match &m.gate_inp_shexp {
+            match &m.gate_inp_shexp {
                 Some(gate_inp_shexp) => {
-                    e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?
+                    let g = e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?;
+                    e.add_scaled_rows(&sh, &g, &mut moe_out, n_embd, t)?;
                 }
-                None => e.htod(&vec![1.0f32; t])?,
-            };
-            e.add_scaled_rows(&sh, &g, &mut moe_out, n_embd, t)?;
+                None => e.add_scaled_rows_ungated(&sh, &mut moe_out, n_embd, t)?,
+            }
         }
 
         Ok(moe_out)
@@ -18149,13 +18144,14 @@ impl HybridModel {
                         )?
                     {
                         drop(guard);
-                        let gate = match &m.gate_inp_shexp {
+                        match &m.gate_inp_shexp {
                             Some(gate_inp_shexp) => {
-                                e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?
+                                let g =
+                                    e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?;
+                                e.add_scaled_rows(&sh, &g, moe_out, n_embd, t)?;
                             }
-                            None => e.htod(&vec![1.0f32; t])?,
-                        };
-                        e.add_scaled_rows(&sh, &gate, moe_out, n_embd, t)?;
+                            None => e.add_scaled_rows_ungated(&sh, moe_out, n_embd, t)?,
+                        }
                         return Ok(());
                     }
                 }
@@ -18297,7 +18293,10 @@ impl HybridModel {
                     e.add_scaled_rows(&sh, ones, moe_out, n_embd, t)?;
                     return Ok(());
                 }
-                None => e.htod(&vec![1.0f32; t])?,
+                None => {
+                    e.add_scaled_rows_ungated(&sh, moe_out, n_embd, t)?;
+                    return Ok(());
+                }
             };
             e.add_scaled_rows(&sh, &gate, moe_out, n_embd, t)?;
         }
@@ -19155,13 +19154,14 @@ impl HybridModel {
             let sh = e.matmul(down_shexp, &sa, mrows)?;
             // lockstep rows ARE decode tokens: fused sigmoid-dot per row so batched serving
             // decode matches the single-sequence decode chain bit-for-bit.
-            let g = match &m.gate_inp_shexp {
+            match &m.gate_inp_shexp {
                 Some(gate_inp_shexp) => {
-                    e.sigmoid_dot_rows(zbatch, gate_inp_shexp.float_data(), n_embd, mrows)?
+                    let g =
+                        e.sigmoid_dot_rows(zbatch, gate_inp_shexp.float_data(), n_embd, mrows)?;
+                    e.add_scaled_rows(&sh, &g, &mut moe_out, n_embd, mrows)?;
                 }
-                None => e.htod(&vec![1.0f32; mrows])?,
-            };
-            e.add_scaled_rows(&sh, &g, &mut moe_out, n_embd, mrows)?;
+                None => e.add_scaled_rows_ungated(&sh, &mut moe_out, n_embd, mrows)?,
+            }
         }
 
         Ok(moe_out)
