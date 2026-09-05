@@ -939,15 +939,8 @@ impl HybridModel {
             .collect::<Result<_, _>>()?;
         // clamp round 1 too (the leak above).
         let mut kc = k_cap;
-        // BURST (MEMRA_GEMMA_SPEC_BURST=M, default off): pre-issue M full rounds — draft-graph
-        // replay + verify-stream + device accept/seed/rollback/ring-commit — with ONE host
-        // sync per M rounds (the ring drain). The draft(N+1)-overlapping-verify(N) window this
-        // opens is the burst arc's whole prize (~14% of a round; launch tax alone is hidden
-        // at 96.7% busy). Requires the draft graphs (step c) and a regime-stable horizon.
-        let burst_m: usize = std::env::var("MEMRA_GEMMA_SPEC_BURST")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0);
+        // round-graph arm state (MEMRA_GEMMA_ROUND_GRAPH): stream buffers, the fill dummy, the
+        // kv-len pointer table and the verify scratch, allocated on first use.
         let mut burst_state: Option<(
             crate::round_stream::StreamBufs,
             CudaSlice<f32>,
@@ -967,25 +960,7 @@ impl HybridModel {
             .map(|g| g.shared_kv_layers)
             .unwrap_or(0);
         'outer: while out.len() < max_new {
-            // burst gate first (see the BURST ARM below): a burst round drafts at FULL depth
-            // (kr = k_cap — the captured chain replays a fixed K; adaptation is host logic).
-            let horizon = burst_m * (k_cap + 1);
-            let burst_ok = burst_m >= 1 && pmin == 0.0 && g4_shared == 0
-                && (cache.pos + horizon + k_cap + 4 < win_main || cache.pos > win_main)
-                // fa512 crossover: the whole horizon on one side (the stream verify's global
-                // arm picks per-row-dc vs rows by hint; straddling rounds stay eager).
-                && (cache.pos + horizon + k_cap + 4 < crate::fa512_min_tkv()
-                    || cache.pos + 1 >= crate::fa512_min_tkv())
-                && e.fa_rows_eligible(cache.pos, 256)
-                && cache.pos + horizon + k_cap + 2 <= cache.max_ctx
-                && out.len() + horizon <= max_new;
-            let mut kr = if burst_ok {
-                k_cap
-            } else if adapt {
-                kc
-            } else {
-                k_cap
-            };
+            let mut kr = if adapt { kc } else { k_cap };
             // power-of-2 rung bucket for the dc arms (shared by eager and captured replays);
             // MEMRA_GEMMA_DRAFT_DC=0 reverts to the host-len kvmod arm.
             let dc_bucket: Option<usize> = {
@@ -998,11 +973,7 @@ impl HybridModel {
                         .map(|kv| kv.len)
                         .max()
                         .unwrap_or(1);
-                    // burst rounds size the rung for the WHOLE horizon: the captured chain
-                    // replays M rounds between host looks, so the grid must cover the last
-                    // round's len too (a per-round rung undersizes past its pow2 boundary).
-                    let slack = if burst_ok { horizon } else { 0 };
-                    Some((ml + slack + k_cap + 2).next_power_of_two().max(512))
+                    Some((ml + k_cap + 2).next_power_of_two().max(512))
                 } else {
                     None
                 }
@@ -1089,7 +1060,6 @@ impl HybridModel {
             // drafter is cheap) but the accept walk depth follows the host policy exactly.
             let round_graph_on = std::env::var("MEMRA_GEMMA_ROUND_GRAPH").as_deref() == Ok("1");
             if round_graph_on
-                && burst_m == 0
                 && dc_bucket.is_some()
                 && pmin == 0.0
                 && g4_shared == 0
@@ -1299,155 +1269,6 @@ impl HybridModel {
                 kc = k_cap; // device brk owns the walk depth; host kc only seeds entry
                 // learn point 2 (round-graph drain): ring = accepted drafts + bonuses; only
                 // bonuses can be escapes, and the present-bitmap check skips the rest cheap.
-                trim_adapt_learn(e, d, &toks)?;
-                if ended {
-                    break 'outer;
-                }
-                continue 'outer;
-            }
-            // ---- BURST ARM ---- (gate computed at the loop top; needs dc arms too)
-            if burst_ok && dc_bucket.is_some() {
-                if burst_state.is_none() {
-                    let bufs = crate::round_stream::StreamBufs::new(e, k_cap, burst_m)?;
-                    let fill_dummy = e.zeros(n_embd)?; // spec_seed_gather j>=1 always: unread
-                    let ptrs =
-                        crate::round_stream::kv_len_ptr_table(e, &cache, Some(&bufs.pos_ctr))?;
-                    let scr = self.verify_stream_scratch(e, k_cap + 1)?;
-                    burst_state = Some((bufs, fill_dummy, ptrs, scr));
-                }
-                // the loop-top dc_bucket already carries the horizon slack on burst rounds,
-                // so the key below matches the rung the captured chain actually launches with.
-                #[allow(clippy::unnecessary_unwrap)]
-                // allow: the Some-guard sits in a multi-clause regime gate; if-let would reshape the arm structure
-                let key = (k_cap, dc_bucket.unwrap(), over_win);
-                if std::env::var("MEMRA_GEMMA_BURST_GRAPH").as_deref() == Ok("1")
-                    && !draft_graphs.contains_key(&key)
-                {
-                    let g = e.capture_graph_retained(|e| {
-                        run_chain(e, d, &mut batch_d, &mut p_d, &g_seed, &pos_slots, 0.0)
-                            .map(|_| ())
-                    })?;
-                    draft_graphs.insert(key, g);
-                }
-                // entry: `last` is the not-yet-emitted pending token (the ring only ever
-                // carries accepted drafts + bonuses; the entry pend is emitted host-side).
-                out.push(last);
-                if eos.contains(&last) {
-                    break 'outer;
-                }
-                if out.len() >= max_new {
-                    break 'outer;
-                }
-                let (bufs, fill_dummy, ptrs, scr) = burst_state.as_mut().unwrap();
-                let n_rows = cache.kv.len() + 1; // + the pos counter row
-                e.set_i32_one(&mut bufs.pos_ctr, cache.pos as i32)?;
-                e.u32_set_k(&mut bufs.ring_d, 0, 0)?;
-                e.u32_set_k(&mut bufs.pend_d, last, 0)?;
-                e.u32_set_k(&mut bufs.brk_d, k_cap as u32, 0)?; // k_used = K (no p-min cut)
-                e.u32_set_k(&mut bufs.brk_d, 1, 1)?; // base = 1 (pend always set)
-                e.copy_into(&mut g_seed, 0, &h, n_embd)?;
-                let pos0 = cache.pos;
-                for r in 0..burst_m {
-                    // every op below is ENQUEUED; nothing reads back until the drain.
-                    e.i32_copy_add(&bufs.pos_ctr, &mut bufs.pos_start_d, 0)?;
-                    e.u32_copy(&bufs.pend_d, &mut batch_d)?; // batch_d[0] <- pend
-                    for (j, slot) in pos_slots.iter_mut().take(k_cap).enumerate() {
-                        e.i32_copy_add(&bufs.pos_ctr, slot, j as i32)?;
-                    }
-                    // the chain enqueues ZERO-SYNC with device pos slots — the captured-graph
-                    // replay is measured EXPENSIVE (26B eager 379 -> 253 with replay), so the
-                    // burst runs the chain eagerly by default; MEMRA_GEMMA_BURST_GRAPH=1 keeps
-                    // the replay door for A/B.
-                    if std::env::var("MEMRA_GEMMA_BURST_GRAPH").as_deref() == Ok("1") {
-                        draft_graphs.get(&key).unwrap().0.launch()?;
-                    } else {
-                        // run_chain's body inlined: the closure holds &cache for the loop's
-                        // lifetime and collides with the verify's &mut cache borrow.
-                        let mut hc = e.uninit(n_embd)?;
-                        e.copy_into(&mut hc, 0, &g_seed, n_embd)?;
-                        #[allow(clippy::needless_range_loop)]
-                        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
-                        for j in 0..k_cap {
-                            let tv = batch_d.slice(j..j + 1);
-                            let (hn, h_next) = self.gemma4_draft_trunk_dev(
-                                e,
-                                d,
-                                &tv,
-                                &hc,
-                                &pos_slots[j],
-                                &cache,
-                                dc_bucket,
-                            )?;
-                            let ld = e.matmul(&d.head, &hn, 1)?;
-                            e.argmax_token_device_col(
-                                &ld,
-                                0,
-                                d.head.out_features(),
-                                &mut batch_d,
-                                j + 1,
-                            )?;
-                            if let Some(map) = &d.d2t_dev {
-                                e.u32_map_k(&mut batch_d, map, j + 1)?;
-                            }
-                            hc = h_next;
-                        }
-                    }
-                    // host UPPER bound on this round's base (full-accept growth): sizes the
-                    // stream verify's splits + window-arm gate; device len is the true bound.
-                    let hint = pos0 + (r + 1) * (k_cap + 1) + 2;
-                    let (vam_d, vh) = self.gemma4_verify_t_am_stream(
-                        e,
-                        &batch_d,
-                        k_cap + 1,
-                        &bufs.pos_ctr,
-                        hint,
-                        &mut cache,
-                        scr,
-                    )?;
-                    e.spec_accept_greedy_dc(
-                        &vam_d,
-                        &batch_d,
-                        &bufs.last_pred_d,
-                        &bufs.brk_d,
-                        &mut bufs.acc_d,
-                    )?;
-                    e.spec_seed_gather(&vh, fill_dummy, &bufs.acc_d, &mut g_seed, 1, n_embd)?;
-                    e.spec_rollback_stream(ptrs, &bufs.pos_start_d, &bufs.acc_d, 1, n_rows)?;
-                    e.spec_ring_commit(
-                        &batch_d,
-                        &bufs.acc_d,
-                        &bufs.brk_d,
-                        &mut bufs.ring_d,
-                        &mut bufs.pend_d,
-                    )?;
-                }
-                // drain: THE one sync per M rounds. Ring = [acc..., bonus] per round; the
-                // final element is the next pending token (eager pushes it next round).
-                let toks = bufs.drain_ring(e)?;
-                let posh = e.dtoh_i32(&bufs.pos_ctr)?[0] as usize;
-                drafted += burst_m * k_cap;
-                rounds += burst_m;
-                accepted += toks.len().saturating_sub(burst_m); // each round adds n_acc + 1
-                let mut ended = false;
-                for &tk in &toks[..toks.len() - 1] {
-                    out.push(tk);
-                    if eos.contains(&tk) || out.len() >= max_new {
-                        ended = true;
-                        break;
-                    }
-                }
-                last = *toks.last().unwrap();
-                // host mirrors re-sync (device counters are already correct from rollback).
-                cache.pos = posh;
-                for kvl in cache.kv.iter_mut().flatten() {
-                    kvl.len = posh;
-                }
-                // next seed hidden = g_seed (the final round's device gather).
-                let mut hrow = e.uninit(n_embd)?;
-                e.copy_into(&mut hrow, 0, &g_seed, n_embd)?;
-                h = hrow;
-                kc = k_cap;
-                // learn point 2 (burst drain): same contract as the round-graph drain.
                 trim_adapt_learn(e, d, &toks)?;
                 if ended {
                     break 'outer;

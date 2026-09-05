@@ -57,7 +57,7 @@
 //! v1-BYTES oracle, one arm per program, so each flag carries its own device-side bit receipt:
 //!
 //!   P1 `MEMRA_NVFP4_BANK_SM`   `_sel_v2`(v2 bytes)      vs `_sel`(v1 bytes)
-//!   P2 `MEMRA_NVFP4_SEL_GU`    `_sel_v2_gu`(v2 gate+up) vs TWO `_sel`(v1) sweeps
+//!   P2 (the fused gate+up sweep) was removed 2026-09-05 with its door
 //!   P3 `MEMRA_NVFP4_SEL_DOWN8` `_sel_v2_down8`(v2)      vs `_sel`(v1) + `axpy_rows_seq_md`
 //!
 //! Every oracle arm is pinned to v1 bytes and the v1 kernel, so no arm is a function of the
@@ -377,7 +377,6 @@ fn run_decode_cell(
         arms.push((v1, v2));
     }
     let (a1, a2) = (e.htod_bytes(&arms[0].0)?, e.htod_bytes(&arms[0].1)?);
-    let (b1, b2) = (e.htod_bytes(&arms[1].0)?, e.htod_bytes(&arms[1].1)?);
 
     // Selection: distinct experts, deterministic, and NOT the identity permutation 0..n_sel —
     // `sel[t]*expert_stride` addressing is exactly what a slot-major stride error would break,
@@ -481,72 +480,6 @@ fn run_decode_cell(
     let (h_v1, h_v2) = (e.dtoh(&y_v1)?, e.dtoh(&y_v2)?);
     report("P1_sel_v2_vs_sel", &h_v1, &h_v2);
 
-    // ── P2: the fused gate+up launch against TWO v1 sweeps ─────────────────────────────────
-    let mut og = e.uninit(n_sel * cell.out_f)?;
-    let mut ou = e.uninit(n_sel * cell.out_f)?;
-    e.qmatvec_nvfp4_sel_into(
-        &a1,
-        &sel_d,
-        &aq,
-        &ad,
-        &mut og,
-        n_sel,
-        cell.in_f,
-        cell.out_f,
-        row_bytes,
-        expert_bytes,
-        0,
-        0,
-        false,
-    )?;
-    e.qmatvec_nvfp4_sel_into(
-        &b1,
-        &sel_d,
-        &aq,
-        &ad,
-        &mut ou,
-        n_sel,
-        cell.in_f,
-        cell.out_f,
-        row_bytes,
-        expert_bytes,
-        0,
-        0,
-        false,
-    )?;
-    let mut fg = e.uninit(n_sel * cell.out_f)?;
-    let mut fu = e.uninit(n_sel * cell.out_f)?;
-    e.qmatvec_nvfp4_sel_gu_into(
-        &a2,
-        &b2,
-        &sel_d,
-        &aq,
-        &ad,
-        &mut fg,
-        &mut fu,
-        n_sel,
-        cell.in_f,
-        cell.out_f,
-        row_bytes,
-        expert_bytes,
-        true,
-    )?;
-    e.stream().synchronize()?;
-    let (hog, hou) = (e.dtoh(&og)?, e.dtoh(&ou)?);
-    let (hfg, hfu) = (e.dtoh(&fg)?, e.dtoh(&fu)?);
-    report("P2_gu_gate_half", &hog, &hfg);
-    report("P2_gu_up_half", &hou, &hfu);
-    // The fusion must not have written the same rows twice: gate and up ride different banks, so
-    // identical halves would mean one bank was read for both and BOTH comparisons above could
-    // still pass if the oracle sweeps had also collapsed. Assert the banks really differ.
-    if hog == hou {
-        return Err(format!(
-            "{}: the two oracle sweeps agree — the independent banks collapsed, P2 is vacuous",
-            cell.name
-        )
-        .into());
-    }
-
     // ── P3: the fused down+combine against sweep + axpy_rows_seq_md ────────────────────────
     // Only where the launcher's reduce-identity class holds (nsb <= 32 <=> in_f <= 1024).
     if (cell.in_f >> 5) <= 32 && n_sel <= 8 {
@@ -616,37 +549,6 @@ fn run_decode_cell(
         );
     }
 
-    // The launchers must REFUSE v1 bytes rather than read them as slot-major. A silent
-    // mis-read here is precisely the 2026-08-29 failure shape, so it is gated, not assumed.
-    let mut junk_g = e.uninit(n_sel * cell.out_f)?;
-    let mut junk_u = e.uninit(n_sel * cell.out_f)?;
-    if e.qmatvec_nvfp4_sel_gu_into(
-        &a1,
-        &b1,
-        &sel_d,
-        &aq,
-        &ad,
-        &mut junk_g,
-        &mut junk_u,
-        n_sel,
-        cell.in_f,
-        cell.out_f,
-        row_bytes,
-        expert_bytes,
-        false,
-    )
-    .is_ok()
-    {
-        return Err(format!(
-            "{}: gu launcher ACCEPTED slot_major=false — the layout guard is not a guard",
-            cell.name
-        )
-        .into());
-    }
-    println!(
-        "[decode {}] guard: gu launcher refuses non-slot-major banks",
-        cell.name
-    );
     Ok(ok)
 }
 
@@ -709,7 +611,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // DECODE SWEEP FAMILY — one arm per restored program (see the module doc). Independent of
     // the tile-form policy above, which only selects the PREFILL GEMM shape.
     println!(
-        "nvfp4-bank-oracle decode: P1 _sel_v2 | P2 _sel_v2_gu | P3 _sel_v2_down8, \
+        "nvfp4-bank-oracle decode: P1 _sel_v2 | P3 _sel_v2_down8 (P2, the fused gate+up sweep, removed 2026-09-05), \
          every oracle arm pinned to v1 bytes"
     );
     for (i, cell) in cells.iter().enumerate() {

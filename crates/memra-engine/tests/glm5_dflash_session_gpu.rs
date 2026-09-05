@@ -2334,17 +2334,6 @@ fn gpu_dflash_streamed_burst_slices_concat_to_the_unhooked_burst() {
     }
 }
 
-// ---------------------------------------------------------------------------------------------
-// Gate 15 — CHUNKED DRAFTER PRIME (lane/spec-route-depth-20260902, `MEMRA_GLM5_DRAFT_PRIME_V2`):
-// the drafter's ctx KV after a chunked prime (device-staged chunk sinks, pinned bounce, async
-// upload, per-chunk fc + k/v ingest at the chunk width) is BIT-IDENTICAL to the eager arm's
-// (whole-prompt host sink, round-1 ingest) when both see the prompt as ONE chunk, and the served
-// tape is byte-identical to plain decode on BOTH arms at every chunking. The multi-chunk arm
-// (a forced small `MEMRA_PRIME_CHUNK`) REPORTS the KV max-abs-diff and the acceptance delta
-// rather than asserting them: a GEMM whose per-row bits depend on M moves drafts only, never
-// output (verify arbitrates), and the box decides whether the delta is one it accepts.
-// ---------------------------------------------------------------------------------------------
-
 /// Sets one env var for the life of the value and removes it on drop (the `FullCoverArm`
 /// shape). Safe because every gate in this binary holds `gpu_guard()` while it runs.
 struct EnvArm(&'static str);
@@ -2366,138 +2355,6 @@ impl Drop for EnvArm {
 
 /// One gate-15 arm's outputs: (served tape, drafted, accepted, K planes, V planes).
 type Gate15Arm = (Vec<u32>, usize, usize, Vec<Vec<f32>>, Vec<Vec<f32>>);
-
-#[test]
-#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
-fn gpu_dflash_chunked_drafter_prime_kv_matches_eager_ingest() {
-    let _gpu = gpu_guard();
-    // Both arms here are HOST-TAP arms. The device-resident arm is default OFF (its flip is
-    // blocked on the arm-2 range-hook panic and the ring cross-stream race), so this `=0` is
-    // an explicit pin rather than an override; gate 16 owns host-vs-device.
-    let _host_taps = EnvArm::set("MEMRA_GLM5_DRAFT_TAPS_DEVICE", "0");
-    let h = Harness::new("g15");
-    let prompt = tokens(PROMPT, 0xA11CE);
-    let max_new = 20usize;
-    let k = 3usize;
-    let ctx = prompt.len() + max_new + k + 8;
-    let tape = plain_tape(&h, &prompt, max_new);
-    let cfg = &h
-        .model
-        .glm5_dflash
-        .as_ref()
-        .expect("drafter attached")
-        .draft
-        .cfg;
-    let row_floats = cfg.n_kv * cfg.head_dim;
-    // Both arms need the drafter KV filled before it is read: the eager arm ingests in
-    // round 1, so ONE burst of one round is driven on each session before the KV is read.
-    let kv_after_one_round = |sess: &mut Glm5SpecSession| -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
-        let (_burst, _d, _a) = h
-            .model
-            .glm5_spec_session_burst(&h.engine, sess, 1, k, &[])
-            .expect("one round");
-        assert!(
-            sess.draft_kv_len().expect("dflash session") >= prompt.len(),
-            "the drafter KV must cover the prompt after round 1"
-        );
-        sess.draft_kv_rows_host(&h.engine, prompt.len(), row_floats)
-            .expect("dflash session exports its KV rows")
-    };
-    // ---- arm A: one-chunk prompt (the default schedule), eager vs chunked: bit-identical ----
-    let (k_eager, v_eager) = {
-        // SAFETY: under gpu_guard.
-        unsafe { std::env::remove_var("MEMRA_GLM5_DRAFT_PRIME_V2") };
-        let mut sess = h
-            .model
-            .glm5_spec_session_new(&h.engine, &prompt, ctx, None)
-            .expect("eager session");
-        assert_eq!(
-            sess.draft_kv_len(),
-            Some(prompt.len()),
-            "the eager arm ingests the prompt AT CREATION by default (before the anchor is \
-             emitted; MEMRA_GLM5_DRAFT_PRIME_LAZY=1 restores the round-1 placement)"
-        );
-        kv_after_one_round(&mut sess)
-    };
-    let (k_v2, v_v2) = {
-        let _v2 = EnvArm::set("MEMRA_GLM5_DRAFT_PRIME_V2", "1");
-        let mut sess = h
-            .model
-            .glm5_spec_session_new(&h.engine, &prompt, ctx, None)
-            .expect("chunked-prime session");
-        assert_eq!(
-            sess.draft_kv_len(),
-            Some(prompt.len()),
-            "the chunked arm must have ingested the whole prompt at creation"
-        );
-        kv_after_one_round(&mut sess)
-    };
-    let bits = |planes: &[Vec<f32>]| -> Vec<Vec<u32>> {
-        planes
-            .iter()
-            .map(|p| p.iter().map(|f| f.to_bits()).collect())
-            .collect()
-    };
-    assert_eq!(
-        bits(&k_v2),
-        bits(&k_eager),
-        "one-chunk prompt: the chunked drafter prime's K planes must be bit-identical to \
-         the eager ingest's (same GEMM, same M, only the data movement changed)"
-    );
-    assert_eq!(
-        bits(&v_v2),
-        bits(&v_eager),
-        "one-chunk prompt: V planes must be bit-identical"
-    );
-    // ---- arm B: forced multi-chunk prime (MEMRA_PRIME_CHUNK=16 over a 24-token prompt): the
-    // trunk is chunked identically on both arms; the drafter ingest runs at t=16+8 on the
-    // chunked arm vs t=24 on the eager arm. Tape identity is the bar; the KV diff and the
-    // acceptance delta are REPORTED.
-    let _chunk = EnvArm::set("MEMRA_PRIME_CHUNK", "16");
-    let run = |v2: bool| -> Gate15Arm {
-        let arm = v2.then(|| EnvArm::set("MEMRA_GLM5_DRAFT_PRIME_V2", "1"));
-        let mut sess = h
-            .model
-            .glm5_spec_session_new(&h.engine, &prompt, ctx, None)
-            .expect("session");
-        drop(arm);
-        let (kk, vv) = kv_after_one_round(&mut sess);
-        let (mut out, mut d, mut a) = (Vec::new(), 0usize, 0usize);
-        while out.len() < max_new && !sess.finished() {
-            let (b, bd, ba) = h
-                .model
-                .glm5_spec_session_burst(&h.engine, &mut sess, 4, k, &[])
-                .expect("burst");
-            if b.is_empty() {
-                break;
-            }
-            out.extend(b);
-            d += bd;
-            a += ba;
-        }
-        (out, d, a, kk, vv)
-    };
-    let (out_e, d_e, a_e, k_e2, v_e2) = run(false);
-    let (out_v, d_v, a_v, k_v3, v_v3) = run(true);
-    assert_eq!(
-        &out_e[..max_new],
-        &tape[..],
-        "eager arm, chunked trunk: tape == plain"
-    );
-    assert_eq!(&out_v[..max_new], &tape[..], "chunked arm: tape == plain");
-    let maxdiff = |a: &[Vec<f32>], b: &[Vec<f32>]| -> f32 {
-        a.iter()
-            .zip(b)
-            .flat_map(|(x, y)| x.iter().zip(y).map(|(p, q)| (p - q).abs()))
-            .fold(0f32, f32::max)
-    };
-    let (kd, vd) = (maxdiff(&k_v3, &k_e2), maxdiff(&v_v3, &v_e2));
-    println!(
-        "gate 15 PASS: one-chunk KV bit-identical; multi-chunk (PRIME_CHUNK=16) tape == plain \
-         on both arms; KV max-abs-diff k={kd:e} v={vd:e}; acceptance eager {a_e}/{d_e} vs \
-         chunked {a_v}/{d_v}"
-    );
-}
 
 // ---------------------------------------------------------------------------------------------
 // Gate 16 — DEVICE-RESIDENT DRAFTER PRIME (lane/spec-route-depth-20260902,
@@ -2546,8 +2403,6 @@ fn gpu_dflash_device_resident_drafter_prime_kv_matches_eager_ingest() {
     // One session on the named arm: KV rows right after creation (both arms ingest the
     // whole prompt at creation), then the served tape over 4-token bursts.
     let run = |device: bool| -> Gate15Arm {
-        // SAFETY: under gpu_guard.
-        unsafe { std::env::remove_var("MEMRA_GLM5_DRAFT_PRIME_V2") };
         // Both arms are set explicitly: device taps are default OFF (the flip is blocked on
         // the arm-2 range-hook panic and the ring cross-stream race), `=1` arms them.
         let arm = EnvArm::set(

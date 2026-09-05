@@ -185,16 +185,6 @@ pub(crate) fn moe_direct_on() -> bool {
 /// are process-persistent, so the ranks read them directly). Bit-identical: same bytes, one
 /// fewer hop. Refused under the graph door, whose captured copies need the fixed staging
 /// addresses. Default OFF until receipted.
-/// MEMRA_FENCE_RANK1=1: the peer rank rings a doorbell in ROOT memory with a kernel store
-/// (`memra_ring_flag`) and the model engine waits it with a SAME-DEVICE stream memop, instead
-/// of waiting a cross-device event. Completes the half the memops receipt left open (peer
-/// memops are rejected; peer kernel stores are the direct-join mechanism). Ordering only —
-/// values are untouched. Requires MEMRA_FENCE_MEMOPS=1 (it owns the flag allocation).
-pub(crate) fn fence_rank1_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_FENCE_RANK1").as_deref() == Ok("1"))
-}
-
 /// MEMRA_SPEC_FA2=1 (the DSpark verify lesson): the T=2 verify walk defers each column's
 /// ATTENTION CORE — the dcw arm appends the column's K/V and stashes its post-rope q and
 /// gate rows, then ONE fa_decode_dcw2 per rank walks the KV stream once for both columns
@@ -414,19 +404,6 @@ pub(crate) fn bank_slot_major_on() -> bool {
 pub(crate) fn bank_slot_major_source() -> (bool, &'static str) {
     static ON: std::sync::OnceLock<(bool, &'static str)> = std::sync::OnceLock::new();
     *ON.get_or_init(|| door_default_on("MEMRA_NVFP4_BANK_SM"))
-}
-
-/// MEMRA_NVFP4_SEL_GU=1 (PROGRAM 2, default OFF): run the routed gate and up sweeps as ONE
-/// launch (`qmatvec_nvfp4_dp4a_sel_v2_gu`) instead of two — the two sweeps share sel/aq/ad and
-/// have identical geometry, so blocks `[0,out_f)` take the gate bank and `[out_f,2*out_f)` the
-/// up bank. Per-row bit-identical; halves the sweep launch count and doubles grid fill.
-/// Subordinate to PROGRAM 1 by construction: it reads slot-major rows, so the caller arms it
-/// only when both banks report `slot_major`. In the removed implementation this fusion had NO
-/// door of its own and auto-armed on the bank predicate, which is one third of why the bundle
-/// was unattributable.
-pub(crate) fn sel_gu_fused_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_NVFP4_SEL_GU").as_deref() == Ok("1"))
 }
 
 /// MEMRA_NVFP4_SEL_DOWN8 (PROGRAM 3, default ON since 2026-09-01; `=0` is the rollback seam): fuse the routed DOWN sweep with the
@@ -942,20 +919,6 @@ pub fn parallel_ep_device_router_enabled() -> Result<bool, String> {
             .ok()
             .as_deref(),
     )
-}
-
-fn parse_parallel_ep_graph(value: Option<&str>) -> Result<bool, String> {
-    match value {
-        None | Some("") | Some("0") => Ok(false),
-        Some("1") => Ok(true),
-        Some(value) => Err(format!(
-            "MEMRA_PARALLEL_EP_GRAPH={value:?} is invalid; expected 0 or 1"
-        )),
-    }
-}
-
-pub fn parallel_ep_graph_enabled() -> Result<bool, String> {
-    parse_parallel_ep_graph(std::env::var("MEMRA_PARALLEL_EP_GRAPH").ok().as_deref())
 }
 
 fn parse_parallel_ep_pair_down(value: Option<&str>) -> Result<bool, String> {
@@ -6696,7 +6659,6 @@ impl TpE4m3HostBounce {
             && ws.blocks_per_rank == 4
             && step_tp_qkv_fused_enabled().unwrap_or(false)
             && no_local_shadow_on()
-            && std::env::var("MEMRA_B4_X2").as_deref() != Ok("1")
             && o_m
                 .ranks
                 .iter()
@@ -10246,10 +10208,6 @@ struct Nvfp4EpDeviceWorkspace {
     slot_rows: crate::CudaSlice<f32>,
     slot_rows_raw: u64,
     route_weights: crate::CudaSlice<f32>,
-    graph_input: crate::CudaSlice<f32>,
-    graph_output: crate::CudaSlice<f32>,
-    graph_routes: Option<(u64, u64)>,
-    graphs: Vec<Option<RoutesGraph>>,
     ev_entry: CudaEvent,
     ev_entry_device: usize,
     ev_rank: Vec<CudaEvent>,
@@ -10269,7 +10227,6 @@ struct Nvfp4EpPhaseEvents {
 pub(crate) const NVFP4_EP_DEVICE_BATCH_CAP: usize = 128;
 pub(crate) const NVFP4_EP_DEVICE_ROUTER_BATCH_CAP: usize = 32;
 pub(crate) const NVFP4_EP_Q8_BATCH_CAP: usize = 32;
-const NVFP4_EP_GRAPH_BATCH_CAP: usize = 1;
 
 fn nvfp4_ep_active_input_values(
     input_values: usize,
@@ -11497,12 +11454,6 @@ impl TpE4m3HostBounce {
                 slot_rows,
                 slot_rows_raw,
                 route_weights: e.htod(&vec![0.0f32; capacity_pairs])?,
-                graph_input: e.uninit(NVFP4_EP_GRAPH_BATCH_CAP * experts.input_width)?,
-                graph_output: e.uninit(NVFP4_EP_GRAPH_BATCH_CAP * experts.input_width)?,
-                graph_routes: None,
-                graphs: std::iter::repeat_with(|| None)
-                    .take(NVFP4_EP_GRAPH_BATCH_CAP + 1)
-                    .collect(),
                 ev_entry: e.ctx().new_event(None)?,
                 ev_entry_device: e.ctx().ordinal(),
                 ev_rank,
@@ -11780,7 +11731,6 @@ impl TpE4m3HostBounce {
         static RANK_SPAN_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let timing = std::env::var("MEMRA_STEP_TP_TIMING").as_deref() == Ok("1");
         let started = timing.then(std::time::Instant::now);
-        let graph_enabled = parallel_ep_graph_enabled()?;
         let pair_down_enabled = parallel_ep_pair_down_enabled()?;
 
         let mut workspace_guard = experts
@@ -11881,12 +11831,6 @@ impl TpE4m3HostBounce {
                 slot_rows,
                 slot_rows_raw,
                 route_weights: e.htod(&vec![0.0f32; capacity_pairs])?,
-                graph_input: e.uninit(NVFP4_EP_GRAPH_BATCH_CAP * experts.input_width)?,
-                graph_output: e.uninit(NVFP4_EP_GRAPH_BATCH_CAP * experts.input_width)?,
-                graph_routes: None,
-                graphs: std::iter::repeat_with(|| None)
-                    .take(NVFP4_EP_GRAPH_BATCH_CAP + 1)
-                    .collect(),
                 ev_entry: e.ctx().new_event(None)?,
                 ev_entry_device: e.ctx().ordinal(),
                 ev_rank,
@@ -11914,11 +11858,6 @@ impl TpE4m3HostBounce {
         }
 
         if tokens <= NVFP4_EP_Q8_BATCH_CAP && parallel_ep_q8_act_enabled()? {
-            if graph_enabled {
-                return Err("MEMRA_PARALLEL_EP_GRAPH=1 is exact W4A16-only; disable \
-                     MEMRA_PARALLEL_EP_Q8_ACT or the graph door"
-                    .into());
-            }
             return self.run_routed_experts_nvfp4_w4a8_device_routed(
                 experts,
                 e,
@@ -11931,50 +11870,6 @@ impl TpE4m3HostBounce {
                 activation_limit,
                 pre_join,
             );
-        }
-
-        if graph_enabled && !timing && pre_join.is_none() && tokens <= NVFP4_EP_GRAPH_BATCH_CAP {
-            use cudarc::driver::DevicePtr;
-            let route_ptrs = {
-                let stream = e.stream();
-                let (sel_ptr, _sel_guard) = selected_dev.device_ptr(&stream);
-                let (weight_ptr, _weight_guard) = route_weights_dev.device_ptr(&stream);
-                (sel_ptr, weight_ptr)
-            };
-            if let Some(graph_exec) = workspace.graphs[tokens].as_ref().map(|graph| graph.exec) {
-                if workspace.graph_routes != Some(route_ptrs) {
-                    return Err(format!(
-                        "W4A16 EP graph route buffers moved: built={:?} current={route_ptrs:?}",
-                        workspace.graph_routes,
-                    )
-                    .into());
-                }
-                let _main = e.gpu.enter_main()?;
-                e.stream().memcpy_dtod(
-                    &input_dev.slice(0..active_input_values),
-                    &mut workspace.graph_input.slice_mut(0..active_input_values),
-                )?;
-                e.memset_zeros_view(
-                    &mut workspace
-                        .slot_rows
-                        .slice_mut(0..pairs * experts.input_width),
-                )?;
-                unsafe {
-                    let result = cudarc::driver::sys::cuGraphLaunch(
-                        graph_exec,
-                        e.stream().cu_stream() as cudarc::driver::sys::CUstream,
-                    );
-                    if result != cudarc::driver::sys::CUresult::CUDA_SUCCESS {
-                        return Err(format!("W4A16 EP graph launch: {result:?}").into());
-                    }
-                }
-                let mut output = e.uninit(active_input_values)?;
-                e.stream().memcpy_dtod(
-                    &workspace.graph_output.slice(0..active_input_values),
-                    &mut output.slice_mut(0..active_input_values),
-                )?;
-                return Ok(output);
-            }
         }
 
         {
@@ -12176,31 +12071,6 @@ impl TpE4m3HostBounce {
                     down_ns as f64 / calls as f64 / 1.0e3,
                 );
             }
-        }
-        if graph_enabled
-            && !timing
-            && pre_join.is_none()
-            && tokens <= NVFP4_EP_GRAPH_BATCH_CAP
-            && workspace.graphs[tokens].is_none()
-        {
-            e.stream().synchronize()?;
-            let graph = self.build_nvfp4_ep_routes_graph(
-                experts,
-                e,
-                workspace,
-                selected_dev,
-                route_weights_dev,
-                tokens,
-                experts_per_token,
-                activation_limit,
-            )?;
-            workspace.graphs[tokens] = Some(graph);
-            eprintln!(
-                "[parallel-ep-graph] captured devices={:?} tokens={tokens} \
-                 experts/token={experts_per_token} input=staged routes=fixed \
-                 device_arithmetic=unchanged performance_claim=false",
-                self.devices,
-            );
         }
         Ok(output)
     }
@@ -12535,187 +12405,6 @@ impl TpE4m3HostBounce {
             );
         }
         Ok(output)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn build_nvfp4_ep_routes_graph(
-        &self,
-        experts: &ResidentNvfp4ExpertParallel,
-        e: &Engine,
-        workspace: &mut Nvfp4EpDeviceWorkspace,
-        selected_dev: &crate::CudaSlice<i32>,
-        route_weights_dev: &crate::CudaSlice<f32>,
-        tokens: usize,
-        experts_per_token: usize,
-        activation_limit: Option<f32>,
-    ) -> Result<RoutesGraph, Box<dyn std::error::Error>> {
-        use cudarc::driver::DevicePtr;
-        use cudarc::driver::sys;
-
-        fn cu_try(result: sys::CUresult, context: &str) -> Result<(), Box<dyn std::error::Error>> {
-            if result == sys::CUresult::CUDA_SUCCESS {
-                Ok(())
-            } else {
-                Err(format!("{context}: {result:?}").into())
-            }
-        }
-
-        let world = self.ranks.len();
-        if world != experts.ranks.len() || !(2..=PRODUCT_MAX_CARDS).contains(&world) {
-            return Err(format!(
-                "W4A16 EP graph world {world} != expert ranks {}",
-                experts.ranks.len()
-            )
-            .into());
-        }
-        let width = experts.input_width;
-        if !(1..=NVFP4_EP_GRAPH_BATCH_CAP).contains(&tokens) {
-            return Err(format!(
-                "W4A16 EP graph tokens {tokens} outside 1..={NVFP4_EP_GRAPH_BATCH_CAP}"
-            )
-            .into());
-        }
-        let pairs = tokens
-            .checked_mul(experts_per_token)
-            .ok_or("W4A16 EP graph pair count overflow")?;
-        let input_values = tokens
-            .checked_mul(width)
-            .ok_or("W4A16 EP graph input size overflow")?;
-        let root_stream = e.stream();
-        let (input_ptr, _input_guard) = workspace.graph_input.device_ptr(&root_stream);
-        let (selected_ptr, _selected_guard) = selected_dev.device_ptr(&root_stream);
-        let (weights_ptr, _weights_guard) = route_weights_dev.device_ptr(&root_stream);
-        let route_ptrs = (selected_ptr, weights_ptr);
-
-        let mut children = Vec::with_capacity(world + 1);
-        for rank_index in 0..world {
-            let engine = &self.ranks[rank_index];
-            let rank = &experts.ranks[rank_index];
-            let owner_start = rank.expert_range.start;
-            let owner_end = rank.expert_range.end;
-            let _main = engine.gpu.enter_main()?;
-            let (child, _retained) = engine.capture_graph_retained(|_| {
-                engine.nvfp4_ep_stage_inputs_raw(
-                    input_ptr,
-                    selected_ptr,
-                    weights_ptr,
-                    &mut workspace.input_bf16[rank_index],
-                    &mut workspace.sel[rank_index],
-                    &mut workspace.route_w[rank_index],
-                    input_values,
-                    pairs,
-                    false,
-                )?;
-                engine.qmatvec_nvfp4_bf16_ep_dual_slots_into(
-                    &rank.gate,
-                    &rank.up,
-                    &workspace.sel[rank_index],
-                    &workspace.input_bf16[rank_index],
-                    &mut workspace.gate_out[rank_index],
-                    &mut workspace.up_out[rank_index],
-                    pairs,
-                    experts_per_token,
-                    width,
-                    experts.expert_width,
-                    owner_start,
-                    owner_end,
-                    experts.gate_row_bytes,
-                    rank.gate_expert_bytes,
-                )?;
-                engine.silu_mul_scaled_host_expf_bf16_ep_slots_into(
-                    &workspace.gate_out[rank_index],
-                    &workspace.up_out[rank_index],
-                    &rank.macros_gate,
-                    &rank.macros_up,
-                    &workspace.sel[rank_index],
-                    owner_start,
-                    owner_end,
-                    activation_limit,
-                    &mut workspace.activation_bf16[rank_index],
-                    experts.expert_width,
-                    pairs,
-                )?;
-                engine.qmatvec_nvfp4_bf16_ep_down_slots_raw(
-                    &rank.down,
-                    &workspace.sel[rank_index],
-                    &workspace.activation_bf16[rank_index],
-                    &rank.macros_down,
-                    workspace.slot_rows_raw,
-                    pairs,
-                    experts.expert_width,
-                    width,
-                    owner_start,
-                    owner_end,
-                    experts.down_row_bytes,
-                    rank.down_expert_bytes,
-                )?;
-                Ok(())
-            })?;
-            children.push(child);
-        }
-
-        {
-            let _main = e.gpu.enter_main()?;
-            let (child, _retained) = e.capture_graph_retained(|_| {
-                e.axpy_rows_seq_tokens_into(
-                    &workspace.slot_rows,
-                    route_weights_dev,
-                    &mut workspace.graph_output,
-                    width,
-                    experts_per_token,
-                    tokens,
-                )
-            })?;
-            children.push(child);
-        }
-
-        let mut parent: sys::CUgraph = std::ptr::null_mut();
-        unsafe {
-            cu_try(sys::cuGraphCreate(&mut parent, 0), "W4A16 EP cuGraphCreate")?;
-        }
-        let mut rank_nodes = Vec::with_capacity(world);
-        for (rank_index, child) in children.iter().take(world).enumerate() {
-            let mut node: sys::CUgraphNode = std::ptr::null_mut();
-            unsafe {
-                cu_try(
-                    sys::cuGraphAddChildGraphNode(
-                        &mut node,
-                        parent,
-                        std::ptr::null(),
-                        0,
-                        child.cu_graph(),
-                    ),
-                    &format!("W4A16 EP graph rank {rank_index}"),
-                )?;
-            }
-            rank_nodes.push(node);
-        }
-        let mut combine_node: sys::CUgraphNode = std::ptr::null_mut();
-        unsafe {
-            cu_try(
-                sys::cuGraphAddChildGraphNode(
-                    &mut combine_node,
-                    parent,
-                    rank_nodes.as_ptr(),
-                    rank_nodes.len(),
-                    children[world].cu_graph(),
-                ),
-                "W4A16 EP graph combine",
-            )?;
-        }
-        let mut exec: sys::CUgraphExec = std::ptr::null_mut();
-        unsafe {
-            cu_try(
-                sys::cuGraphInstantiateWithFlags(&mut exec, parent, 0),
-                "W4A16 EP graph instantiate",
-            )?;
-        }
-        workspace.graph_routes = Some(route_ptrs);
-        Ok(RoutesGraph {
-            exec,
-            parent,
-            _children: children,
-        })
     }
 
     /// Device-resident routed NVFP4 expert program (decode shape, t=1 rows). The geometry gift
@@ -13109,103 +12798,36 @@ impl TpE4m3HostBounce {
             let gate_bank = &experts.gate[rank_index];
             let up_bank = &experts.up[rank_index];
             let (aq, ad) = (&workspace.in_q[rank_index], &workspace.in_d[rank_index]);
-            // PROGRAM 2 (`MEMRA_NVFP4_SEL_GU`): the two sweeps share sel/aq/ad and, when the
-            // geometry matches exactly, one launch covers both — per-row bit-identical, double
-            // the grid fill. Armed by ITS OWN door, and additionally guarded on both banks
-            // reporting slot-major, because the fused kernel reads only that byte map. Its door
-            // is separate from PROGRAM 1's on purpose: in the removed implementation it armed
-            // silently on the bank predicate, so the bank layout and this fusion could never be
-            // priced apart (DIAGNOSIS.md, "the bisect could not name the mechanism").
-            let gu_fused = sel_gu_fused_on()
-                && gate_bank.slot_major
-                && up_bank.slot_major
-                && gate_bank.in_features == up_bank.in_features
-                && gate_bank.local_out == up_bank.local_out
-                && gate_bank.row_bytes == up_bank.row_bytes
-                && gate_bank.expert_bytes == up_bank.expert_bytes;
-            // ENGAGEMENT RECEIPT for PROGRAM 2, one line per DISTINCT decision combo. The
-            // removed implementation had this behind MEMRA_SWEEP_TRACE and its own comment said
-            // why it existed: "a silently-dead fusion reads as roofline physics without it".
-            // It is unconditional here, because a perf row whose fusion never armed is worse
-            // than no row -- it is a number that looks like evidence.
-            {
-                static SEEN_GU: std::sync::Mutex<Vec<(bool, bool, bool)>> =
-                    std::sync::Mutex::new(Vec::new());
-                let combo = (gu_fused, sel_gu_fused_on(), gate_bank.slot_major);
-                let mut seen = SEEN_GU.lock().unwrap();
-                if !seen.contains(&combo) {
-                    seen.push(combo);
-                    eprintln!(
-                        "[nvfp4-sweep] gu_fused={} door={} slot_major={} geometry_match={} \
-                         in_f={} out_f={} n_sel={n_sel}",
-                        gu_fused,
-                        sel_gu_fused_on(),
-                        gate_bank.slot_major,
-                        gate_bank.in_features == up_bank.in_features
-                            && gate_bank.local_out == up_bank.local_out
-                            && gate_bank.row_bytes == up_bank.row_bytes
-                            && gate_bank.expert_bytes == up_bank.expert_bytes,
-                        gate_bank.in_features,
-                        gate_bank.local_out
-                    );
-                }
-            }
-            if gu_fused {
-                let Nvfp4DeviceRoutesWorkspace {
-                    sel,
-                    gate_out,
-                    up_out,
-                    in_q,
-                    in_d,
-                    ..
-                } = &mut *workspace;
-                engine.qmatvec_nvfp4_sel_gu_into(
-                    &gate_bank.bank,
-                    &up_bank.bank,
-                    &sel[rank_index],
-                    &in_q[rank_index],
-                    &in_d[rank_index],
-                    &mut gate_out[rank_index],
-                    &mut up_out[rank_index],
-                    n_sel,
-                    gate_bank.in_features,
-                    gate_bank.local_out,
-                    gate_bank.row_bytes,
-                    gate_bank.expert_bytes,
-                    gate_bank.slot_major,
-                )?;
-            } else {
-                engine.qmatvec_nvfp4_sel_into(
-                    &gate_bank.bank,
-                    &workspace.sel[rank_index],
-                    aq,
-                    ad,
-                    &mut workspace.gate_out[rank_index],
-                    n_sel,
-                    gate_bank.in_features,
-                    gate_bank.local_out,
-                    gate_bank.row_bytes,
-                    gate_bank.expert_bytes,
-                    0,
-                    0,
-                    gate_bank.slot_major,
-                )?;
-                engine.qmatvec_nvfp4_sel_into(
-                    &up_bank.bank,
-                    &workspace.sel[rank_index],
-                    aq,
-                    ad,
-                    &mut workspace.up_out[rank_index],
-                    n_sel,
-                    up_bank.in_features,
-                    up_bank.local_out,
-                    up_bank.row_bytes,
-                    up_bank.expert_bytes,
-                    0,
-                    0,
-                    up_bank.slot_major,
-                )?;
-            }
+            engine.qmatvec_nvfp4_sel_into(
+                &gate_bank.bank,
+                &workspace.sel[rank_index],
+                aq,
+                ad,
+                &mut workspace.gate_out[rank_index],
+                n_sel,
+                gate_bank.in_features,
+                gate_bank.local_out,
+                gate_bank.row_bytes,
+                gate_bank.expert_bytes,
+                0,
+                0,
+                gate_bank.slot_major,
+            )?;
+            engine.qmatvec_nvfp4_sel_into(
+                &up_bank.bank,
+                &workspace.sel[rank_index],
+                aq,
+                ad,
+                &mut workspace.up_out[rank_index],
+                n_sel,
+                up_bank.in_features,
+                up_bank.local_out,
+                up_bank.row_bytes,
+                up_bank.expert_bytes,
+                0,
+                0,
+                up_bank.slot_major,
+            )?;
             // Fused macro-scaled SwiGLU that EMITS q8_1 directly — down consumes it with no
             // separate quantize launch. act[rank] IS down canonical shard `rank_index`'s
             // input-column window (the geometry gift; see the method doc).
@@ -14681,16 +14303,6 @@ impl TpE4m3HostBounce {
             workspace.fence_ticket = workspace.fence_ticket.wrapping_add(1).max(1);
             ticket = workspace.fence_ticket;
             let base = workspace.fence_flags_raw;
-            // rank1's fence: a peer stream MEMOP is rejected over PCIe P2P
-            // (CUDA_ERROR_INVALID_VALUE, receipted 2026-08-23), but a peer KERNEL STORE into
-            // root memory is legal — the direct join already relies on it. Under
-            // MEMRA_FENCE_RANK1 rank1 rings flag[0] that way and e waits it same-device,
-            // replacing the cross-device event wait below.
-            if fence_rank1_on() {
-                let peer = &self.ranks[1];
-                let _pmain = peer.gpu.enter_main()?;
-                peer.ring_flag_raw(base, ticket)?;
-            }
             {
                 let root = &self.ranks[0];
                 let _main = root.gpu.enter_main()?;
@@ -14733,23 +14345,8 @@ impl TpE4m3HostBounce {
                 if r != sys::CUresult::CUDA_SUCCESS {
                     return Err(format!("fence wait: {r:?}").into());
                 }
-                if fence_rank1_on() {
-                    // Same-device wait on the flag rank1 rang over P2P.
-                    let r = unsafe {
-                        sys::cuStreamWaitValue32_v2(
-                            e.stream().cu_stream() as sys::CUstream,
-                            base as sys::CUdeviceptr,
-                            ticket,
-                            sys::CUstreamWaitValue_flags::CU_STREAM_WAIT_VALUE_GEQ as u32,
-                        )
-                    };
-                    if r != sys::CUresult::CUDA_SUCCESS {
-                        return Err(format!("fence wait rank1: {r:?}").into());
-                    }
-                } else {
-                    for ev in workspace.ev_rank.iter().skip(1) {
-                        e.stream().wait(ev)?;
-                    }
+                for ev in workspace.ev_rank.iter().skip(1) {
+                    e.stream().wait(ev)?;
                 }
             } else {
                 {
@@ -16075,14 +15672,6 @@ mod tests {
         assert!(!parse_parallel_ep_device_router(Some("0")).unwrap());
         assert!(parse_parallel_ep_device_router(Some("1")).unwrap());
         assert!(parse_parallel_ep_device_router(Some("true")).is_err());
-    }
-
-    #[test]
-    fn automatic_ep_graph_flag_is_strict_and_defaults_off() {
-        assert!(!parse_parallel_ep_graph(None).unwrap());
-        assert!(!parse_parallel_ep_graph(Some("0")).unwrap());
-        assert!(parse_parallel_ep_graph(Some("1")).unwrap());
-        assert!(parse_parallel_ep_graph(Some("true")).is_err());
     }
 
     #[test]

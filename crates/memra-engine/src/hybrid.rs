@@ -2056,37 +2056,11 @@ fn build_dev_exps(
         return Ok(None);
     }
     use cudarc::driver::DevicePtr;
-    let gu_il = std::env::var("MEMRA_MOE_GU_IL").as_deref() == Ok("1")
-        && gate.out_f == up.out_f
-        && gate.in_f == up.in_f
-        && fp8_host.is_none();
     let n_expert = gate.n_expert;
-    let (g, u) = if gu_il {
-        // interleave gate/up rows: [ex][row o] = gate-row-o bytes ++ up-row-o bytes.
-        let (rbg, rbu) = (gate.row_bytes, up.row_bytes);
-        let n_rows = gate.out_f;
-        let gb = gate.bytes.as_bytes();
-        let ub = up.bytes.as_bytes();
-        let mut il = vec![0u8; n_expert * n_rows * (rbg + rbu)];
-        for ex in 0..n_expert {
-            for o in 0..n_rows {
-                let dst = (ex * n_rows + o) * (rbg + rbu);
-                let sg = ex * gate.expert_stride + o * rbg;
-                let su = ex * up.expert_stride + o * rbu;
-                il[dst..dst + rbg].copy_from_slice(&gb[sg..sg + rbg]);
-                il[dst + rbg..dst + rbg + rbu].copy_from_slice(&ub[su..su + rbu]);
-            }
-        }
-        let ild = e.htod_bytes_padded(&il, 8)?;
-        // `up` slot points into the same buffer via ptr math; keep a tiny placeholder alloc so
-        // the struct shape is unchanged (the table below carries the real pointers).
-        (ild, e.htod_bytes(&[0u8; 16])?)
-    } else {
-        (
-            e.htod_bytes_padded(gate.bytes.as_bytes(), 8)?,
-            e.htod_bytes_padded(up.bytes.as_bytes(), 8)?,
-        )
-    };
+    let (g, u) = (
+        e.htod_bytes_padded(gate.bytes.as_bytes(), 8)?,
+        e.htod_bytes_padded(up.bytes.as_bytes(), 8)?,
+    );
     // 144B tail slack (2026-07-31, g26 prefill lever): the ragged-k expert MMA walks
     // whole 256-val superblocks — the LAST row's final partial superblock overreads up
     // to 144B past the slab (harmless bytes: the act's zero-padded k-range multiplies
@@ -2096,7 +2070,6 @@ fn build_dev_exps(
     // per-row layout (QT_NVFP4_V2). Only whole NVFP4 slabs, only the plain (non-interleaved, non-FP8) provenance, and
     // only when the quant-plane rows stay 16B-aligned (in_f % 256 == 0 <=> nsb64 % 4 == 0).
     let rp_want = crate::moe_expert_rp_on()
-        && !gu_il
         && fp8_host.is_none()
         && gate.qtype == crate::QT_NVFP4
         && up.qtype == crate::QT_NVFP4
@@ -2112,7 +2085,7 @@ fn build_dev_exps(
         if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
             eprintln!(
                 "[moe-rp] MEMRA_MOE_EXPERT_RP=1 REFUSED for layer {il}: needs plain NVFP4 gate/up/down \
-                 slabs (qtypes {},{},{}), no MEMRA_MOE_GU_IL, no block-FP8 scales, in_f % 256 == 0 \
+                 slabs (qtypes {},{},{}), no block-FP8 scales, in_f % 256 == 0 \
                  (gate/up {}, down {}); this and any layer like it stay interleaved",
                 gate.qtype, up.qtype, down.qtype, gate.in_f, down.in_f
             );
@@ -2167,18 +2140,9 @@ fn build_dev_exps(
         (pg, pu, pd)
     };
     for ex in 0..n_expert {
-        if gu_il {
-            let stride = gate.out_f * (gate.row_bytes + up.row_bytes);
-            host[ex] = pg + (ex * stride) as u64;
-            host[n_expert + ex] = pg + (ex * stride + gate.row_bytes) as u64;
-        } else {
-            host[ex] = pg + (ex * gate.expert_stride) as u64;
-            host[n_expert + ex] = pu + (ex * up.expert_stride) as u64;
-        }
+        host[ex] = pg + (ex * gate.expert_stride) as u64;
+        host[n_expert + ex] = pu + (ex * up.expert_stride) as u64;
         host[2 * n_expert + ex] = pd + (ex * down.expert_stride) as u64;
-    }
-    if gu_il {
-        eprintln!("[moe] gate/up dev slab INTERLEAVED (MEMRA_MOE_GU_IL)");
     }
     let ptr_row = e.htod_u64(&host)?;
     Ok(Some(crate::hybrid::DevExps {
@@ -2186,7 +2150,6 @@ fn build_dev_exps(
         up: u,
         down: d,
         ptr_row,
-        gu_il,
         rp,
         dev: e.ctx().ordinal(),
         fp8_blk,
@@ -2828,12 +2791,6 @@ pub struct DevExps {
     /// (lane/pp-leverb) keys on this field; the per-stage prime walker makes every layer's
     /// slab local by construction.
     pub dev: usize,
-    /// WALL-GAP ARC (MEMRA_MOE_GU_IL=1): gate/up rows INTERLEAVED in one slab — row o of gate at
-    /// base + o*(rb_g+rb_u), up at +rb_g. Consumers on the dev path must use (rb_g+rb_u) as the
-    /// row stride for BOTH projections (see MoeWeights::dev_rb_gu). One contiguous 1760B stream
-    /// per (expert,row) instead of two scattered 880B streams — the measured 56%-of-wall fix
-    /// candidate. Kernels unchanged (stride is already a parameter everywhere).
-    pub gu_il: bool,
     /// The three slabs are slot-major per row (`QT_NVFP4_V2`; `MEMRA_MOE_EXPERT_RP`, memra#147):
     /// readers must be told so (`crate::rp_qt`) or refuse (`crate::moe_rp_refuse`).
     pub rp: bool,

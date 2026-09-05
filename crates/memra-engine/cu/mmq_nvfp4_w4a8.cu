@@ -703,100 +703,8 @@ static __device__ __forceinline__ void mul_mat_q_process_tile_nvfp4_w4a8_pipe(
         sum, ids_dst, dst, stride_col_dst, tile_x_max_i, tile_y_max_j, out_scale);
 }
 
-// ======================= mul_mat_q_process_tile PIPE2 (MEMRA_PP_PIPE=2, 2 CTA/SM) =======================
-// Occupancy variant of the pipe above for the mmq_y=64 2-CTA/SM mode: SINGLE y slot (no ring) so
-// smem fits two CTAs; the second resident CTA covers what the y-ring used to hide. Same dequant
-// bytes/math/order and the same vec_dot(y[2i], k00=0) -> vec_dot(y[2i+1], k00=32) sequence as both
-// other paths — bit-identical output per (token,row).
-//
-// Steady-state per k-iteration i (uniform positional waits; X_{i+1} always committed LAST so
-// wait<1> at the y[2i+1] point leaves only it in flight; 4 syncthreads = baseline):
-//   wait<0> -> X_i raw complete (it is the only pending group)    | sync (a)
-//   G1: cp.async Y[2i] -> ty (flies under the dequant ALU work)
-//   dequant xr -> tile_x (smem->smem)
-//   wait<0> -> Y[2i] complete                                     | sync (b)  [xr free]
-//   vec_dot(ty, k00=0)                                            | sync (c)  [ty free]
-//   G2: cp.async Y[2i+1] -> ty
-//   G3: cp.async X_{i+1} raw -> xr (empty group on last iter)
-//   wait<1> -> Y[2i+1] complete (G3 stays in flight)              | sync (d)
-//   vec_dot(ty, k00=32)
-template <int mmq_x, int mmq_y, bool need_check, bool is_rp>
-static __device__ __forceinline__ void mul_mat_q_process_tile_nvfp4_w4a8_pipe2(
-        const char * __restrict__ x, const char * __restrict__ x_sc, const int offset_x,
-        const int * __restrict__ y,
-        const int * __restrict__ ids_dst, float * __restrict__ dst,
-        const int stride_row_x, const int ncols_y, const int stride_col_dst,
-        const int tile_x_max_i, const int tile_y_max_j, const int kb0_start, const int kb0_stop,
-        const float out_scale) {
-    constexpr int warp_size = MMQ_WARP_SIZE;
-    constexpr int nwarps    = mmq_y / 16;
-    constexpr int qk        = QK_NVFP4;
-
-    extern __shared__ int data_mul_mat_q[];
-    constexpr int y_chunk_ints = GGML_PAD(mmq_x * MMQ_TILE_Y_K, nwarps * warp_size);
-    int  * tile_y = data_mul_mat_q + mmq_x;
-    int  * tile_x = tile_y + y_chunk_ints;
-    char * xr     = (char *) (tile_x + mmq_y * MMQ_MMA_TILE_X_K_NVFP4);
-
-    constexpr int ne_block        = 4 * QK8_1;                  // 128 values per block_q8_1_mmq
-    constexpr int blocks_per_iter = MMQ_ITER_K / qk;            // 4 NVFP4 blocks per iteration
-
-    float sum[mmq_x * mmq_y / (nwarps * warp_size)] = {0.0f};
-
-    constexpr int sz = sizeof(block_q8_1_mmq) / sizeof(int); // == MMQ_TILE_Y_K (36)
-
-    if (kb0_start >= kb0_stop) { return; }
-
-    // Prologue: X_0 raw only (y[0] is staged inside the first iteration, under the dequant).
-    if constexpr (is_rp) {
-        pipe_stage_x_rp<mmq_y, need_check>(xr, x, x_sc, offset_x + kb0_start, tile_x_max_i, stride_row_x);
-    } else {
-        pipe_stage_x_gguf<mmq_y, need_check>(xr, x, offset_x + kb0_start, tile_x_max_i, stride_row_x);
-    }
-    pipe_commit();
-
-    for (int kb0 = kb0_start; kb0 < kb0_stop; kb0 += blocks_per_iter) {
-        const int  kchunk   = kb0 * qk / ne_block;
-        const bool has_next = kb0 + blocks_per_iter < kb0_stop;
-
-        pipe_wait<0>();     // X_kb0 raw complete (only pending group)
-        __syncthreads();    // (a) publish X raw; prev iter's reads of tile_x/ty are done
-
-        pipe_stage_y<mmq_x, nwarps>(tile_y, y + ncols_y * (kchunk + 0) * sz);
-        pipe_commit();      // G1 = Y[2i], in flight under the dequant
-
-        dequant_tiles_nvfp4_w4a8<mmq_y, need_check, is_rp>(xr, tile_x, tile_x_max_i);
-
-        pipe_wait<0>();     // Y[2i] complete
-        __syncthreads();    // (b) publish dequant + Y[2i]; xr slot now free
-
-        vec_dot_nvfp4_w4a8_mma<mmq_x, mmq_y>(tile_x, tile_y, sum, 0);
-        __syncthreads();    // (c) ty free
-
-        pipe_stage_y<mmq_x, nwarps>(tile_y, y + ncols_y * (kchunk + 1) * sz);
-        pipe_commit();      // G2 = Y[2i+1]
-        if (has_next) {     // G3 = X_{i+1} raw — committed LAST so it may stay in flight
-            if constexpr (is_rp) {
-                pipe_stage_x_rp<mmq_y, need_check>(xr, x, x_sc, offset_x + kb0 + blocks_per_iter, tile_x_max_i, stride_row_x);
-            } else {
-                pipe_stage_x_gguf<mmq_y, need_check>(xr, x, offset_x + kb0 + blocks_per_iter, tile_x_max_i, stride_row_x);
-            }
-        }
-        pipe_commit();
-
-        pipe_wait<1>();     // Y[2i+1] complete (G3 = X_{i+1} stays in flight)
-        __syncthreads();    // (d) publish Y[2i+1]
-
-        vec_dot_nvfp4_w4a8_mma<mmq_x, mmq_y>(tile_x, tile_y, sum, MMQ_TILE_NE_K);
-    }
-    pipe_wait<0>();         // drain (final G3 is empty)
-
-    mmq_write_back_nvfp4_w4a8<mmq_x, mmq_y, need_check>(
-        sum, ids_dst, dst, stride_col_dst, tile_x_max_i, tile_y_max_j, out_scale);
-}
-
 // ======================= mul_mat_q (conventional xy-tiling, NVFP4 W4A8) =======================
-// pmode: 0 = plain tile loads, 1 = cp.async pipe (y ring + xr), 2 = 2-CTA slim pipe (single y slot).
+// pmode: 0 = plain tile loads, 1 = cp.async pipe (y ring + xr).
 template <int mmq_x, int mmq_y, int pmode, bool need_check, bool is_rp>
 __launch_bounds__(MMQ_WARP_SIZE * (mmq_y / 16), 1)
 static __global__ void mul_mat_q_nvfp4_w4a8(
@@ -829,11 +737,7 @@ static __global__ void mul_mat_q_nvfp4_w4a8(
 
     const int offset_x = it * mmq_y * stride_row_x;
 
-    if constexpr (pmode == 2) {
-        mul_mat_q_process_tile_nvfp4_w4a8_pipe2<mmq_x, mmq_y, need_check, is_rp>(
-            x, x_sc, offset_x, y + offset_y, ids_dst_shared, dst + offset_dst, stride_row_x, ncols_y,
-            stride_col_dst, tile_x_max_i, tile_y_max_j, 0, blocks_per_ne00, out_scale);
-    } else if constexpr (pmode == 1) {
+    if constexpr (pmode == 1) {
         mul_mat_q_process_tile_nvfp4_w4a8_pipe<mmq_x, mmq_y, need_check, is_rp>(
             x, x_sc, offset_x, y + offset_y, ids_dst_shared, dst + offset_dst, stride_row_x, ncols_y,
             stride_col_dst, tile_x_max_i, tile_y_max_j, 0, blocks_per_ne00, out_scale);
@@ -909,9 +813,6 @@ static size_t mmq_nvfp4_w4a8_nbytes_shared(int pmode, int mmq_x, int mmq_y) {
     const size_t nbs_x   = (size_t) mmq_y * MMQ_MMA_TILE_X_K_NVFP4 * sizeof(int);
     const size_t nbs_y   = (size_t) mmq_x * sizeof(block_q8_1_mmq);
     const size_t pad     = (size_t) (mmq_y / 16) * MMQ_WARP_SIZE * sizeof(int);
-    if (pmode == 2) { // ids | ty x1 | tile_x | raw x stage — 49664B at 128x64 (2 CTA/SM)
-        return nbs_ids + GGML_PAD(nbs_y, pad) + nbs_x + pipe_xr_bytes(mmq_y);
-    }
     if (pmode == 1) { // ids | ty ring x2 | tile_x | raw x stage — 98816B at 128x128
         return nbs_ids + 2 * GGML_PAD(nbs_y, pad) + nbs_x + pipe_xr_bytes(mmq_y);
     }
@@ -920,22 +821,17 @@ static size_t mmq_nvfp4_w4a8_nbytes_shared(int pmode, int mmq_x, int mmq_y) {
 
 // MEMRA_PP_PIPE: 1 (default) = cp.async pipeline, DEFAULT ON since 2026-07-09; bit-identical
 // (0/6.3M mismatches at T=512), measured pp1845 27B +4.7% / 9B +5.6% on the rig, 1.135x kernel.
-// 0 = plain tile loads. 2 (w4a8v2 experiment, default OFF) = 2-CTA/SM occupancy mode: mmq_y=64
-// slim pipe (single y slot), attacks the ncu-measured warp starvation (2 warps/scheduler, 48%
-// no-eligible, math_pipe_throttle-dominated) without duplicating dequant work. Bit-identical.
+// 0 = plain tile loads. The mode-2 2-CTA/SM occupancy experiment (w4a8v2, net flat) was removed
+// 2026-09-05 with the door sweep.
 static int mmq_w4a8_pipe_mode() {
     static const int mode = [] {
         const char * v = std::getenv("MEMRA_PP_PIPE");
         if (v == nullptr) { return 1; }
         if (v[0] == '0') { return 0; }
-        if (v[0] == '2') { return 2; }
         return 1;
     }();
     return mode;
 }
-
-// mode-2 row tile: 64 rows / 4 warps — the 2-CTA/SM geometry (48.5KB smem/CTA).
-#define MMQ_Y_P2 64
 
 // Run the NVFP4 W4A8 MMQ prefill GEMM. y[n_tokens, out_f] = act[n_tokens, in_f] @ W[out_f, in_f]^T.
 //   W_nvfp4_blocks : NVFP4 weight bytes. rp=0: GGUF block_nvfp4 36B blocks, in_f/64 per row.
@@ -973,7 +869,7 @@ int memra_mmq_nvfp4_w4a8(const void * W_nvfp4_blocks, const float * act_f32, flo
     const int ncols_y         = n_tokens;
 
     const int pmode = mmq_w4a8_pipe_mode();
-    const int mmq_y_run = pmode == 2 ? MMQ_Y_P2 : MMQ_Y;
+    const int mmq_y_run = MMQ_Y;
 
     const int nty = (out_f    + mmq_y_run - 1) / mmq_y_run;
     const int ntx = (n_tokens + MMQ_X - 1) / MMQ_X;
@@ -1004,9 +900,8 @@ int memra_mmq_nvfp4_w4a8(const void * W_nvfp4_blocks, const float * act_f32, flo
         }                                                                                                \
     } while (0)
 
-    if      (pmode == 2) { MEMRA_W4A8_LAUNCH4(MMQ_Y_P2, 2); }
-    else if (pmode == 1) { MEMRA_W4A8_LAUNCH4(MMQ_Y,    1); }
-    else                 { MEMRA_W4A8_LAUNCH4(MMQ_Y,    0); }
+    if (pmode == 1) { MEMRA_W4A8_LAUNCH4(MMQ_Y, 1); }
+    else            { MEMRA_W4A8_LAUNCH4(MMQ_Y, 0); }
     #undef MEMRA_W4A8_LAUNCH4
     #undef MEMRA_W4A8_LAUNCH
     cudaError_t e = cudaGetLastError();
@@ -1477,7 +1372,7 @@ int memra_mmq_nvfp4_f8f4(const void * W_nvfp4_blocks, const float * act_f32, flo
     const int ntx = (n_tokens + MMQ_X - 1) / MMQ_X;
     const dim3 grid((unsigned) nty, (unsigned) ntx, 1);
     const dim3 block(MMQ_WARP_SIZE, MMQ_Y / 16, 1);
-    // pipe rides the same MEMRA_PP_PIPE default-on switch as the int8 tile (mode 2 not ported).
+    // pipe rides the same MEMRA_PP_PIPE default-on switch as the int8 tile.
     const int pmode = mmq_w4a8_pipe_mode() >= 1 ? 1 : 0;
     const size_t y_chunk = (size_t) GGML_PAD(MMQ_X * MMQ_TILE_Y_K, (MMQ_Y / 16) * MMQ_WARP_SIZE) * sizeof(int);
     const size_t smem = (size_t) MMQ_X * sizeof(int)

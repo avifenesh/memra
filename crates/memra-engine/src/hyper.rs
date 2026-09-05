@@ -522,7 +522,7 @@ fn pre_finish_into(
                     // MEMRA_HC_PRE_V4: the register schedule first; 40025 (shape does not fit)
                     // falls through to v3, any other non-zero rc is v4's error and is reported
                     // as such rather than masked by a v3 retry.
-                    let v4 = if crate::hc_pre_v4_on() && !crate::hc_pre_split_collapse() {
+                    let v4 = if crate::hc_pre_v4_on() {
                         let rc = k::memra_dsv4_hc_pre_v4(
                             dpf!(x, &stream),
                             dpf!(mixes, &stream),
@@ -574,7 +574,6 @@ fn pre_finish_into(
                                 std::ptr::null_mut(),
                                 crate::hc_pre_block() as i32,
                                 crate::hc_pre_sink_reg() as i32,
-                                crate::hc_pre_split_collapse() as i32,
                                 sp(&stream),
                             ),
                         ),

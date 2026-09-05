@@ -243,8 +243,8 @@ pub struct SpecFirstTokenProf {
     pub draft_prime_feat_ms: f64,
     pub draft_prime_kv_ms: f64,
     /// Drafter prime geometry: rows ingested, chunks, and which arm ran
-    /// (`eager` = round-1 ingest in 256-row chunks from the host sink; `chunked` =
-    /// `MEMRA_GLM5_DRAFT_PRIME_V2`, ingest per prime chunk from device-staged taps).
+    /// (`eager` = round-1 ingest in 256-row chunks from the host sink; `device` = ingest
+    /// inside the prime at every range boundary).
     pub draft_prime_rows: usize,
     pub draft_prime_chunks: usize,
     pub draft_prime_arm: &'static str,

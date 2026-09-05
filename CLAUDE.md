@@ -96,6 +96,31 @@ the engine and server suites, `cargo fmt --all -- --check`, and `git diff --chec
 remote `main` SHA after push. Do not leave a completed worktree, branch, stash, or scratch bundle
 behind.
 
+## Door hygiene (owner, 2026-09-05)
+
+Owner order, 2026-09-05: "we stop leaving unneeded flags." A door (env flag, dispatch arm,
+kernel twin) exists to be decided, not kept.
+
+- Every default-OFF door lands with a `decide-by:` date in its `docs/FLAGS.md` row, 14 days
+  after landing unless the row says why it needs longer. "Pending its model-scale row" is a
+  date, not a state.
+- When the receipt is negative, flat, neutral, superseded, refuted, or no-go, the lane that
+  measured it deletes the door in the same PR: the env read, the dispatch branch, every kernel
+  reachable only through it, its tests and gate cells, its FLAGS.md and KERNELS.md rows. The
+  verdict and the receipt pointer move to the "Removed doors" ledger in FLAGS.md and to the
+  darklanes verdicts ledger. Git history is the archive; nothing stays "for a future lane".
+- A door whose decide-by date passes without a receipt is removed the same way. It comes back
+  only with the receipt that justifies it.
+- Winners lose their door too. Once a default has served for two weeks and its rollback seam
+  was never used, the seam is deleted and the arm is the naked default (the "Active
+  accelerator owners" rule above: winners become naked hardware-specific defaults, losing or
+  flat arms are deleted).
+- What stays: flags a launcher or gate sets, red arms and fault-injection doors of a check,
+  owner-designed product switches whose row says so, and explanatory diagnostics. A
+  diagnostic whose subject arm is gone goes with it.
+- Sweep record: the 2026-09-05 sweep (memra #212, `lane/door-sweep-20260905`) removed the
+  doors listed under "Removed doors, 2026-09-05" in `docs/FLAGS.md`.
+
 ## Active accelerator owners (owner call 2026-08-14)
 
 The active controller owns exactly two lanes in this task:

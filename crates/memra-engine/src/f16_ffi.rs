@@ -229,30 +229,7 @@ impl crate::Engine {
             _ => return Ok(None),
         };
         let (in_f, out_f) = (ne[0] as usize, ne[1] as usize);
-        // W8A8 PILOT act half (MEMRA_W8A8_SIM=2): per-TOKEN int8 fake-quant of the
-        // activation rows before the f16 GEMM — with the =1 weight half this models
-        // the full w8a8 numeric class through the unchanged lane. Slow host roundtrip,
-        // pilot only.
-        static SIM_ACT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let sim_act =
-            *SIM_ACT.get_or_init(|| std::env::var("MEMRA_W8A8_SIM").as_deref() == Ok("2"));
-        let mut y = if sim_act {
-            let mut hx = self.dtoh(x)?;
-            hx.truncate(m * in_f);
-            for row in hx.chunks_mut(in_f) {
-                let amax = row.iter().fold(0f32, |a, &v| a.max(v.abs()));
-                if amax > 0.0 {
-                    let d = amax / 127.0;
-                    for v in row.iter_mut() {
-                        *v = (*v / d).round().clamp(-127.0, 127.0) * d;
-                    }
-                }
-            }
-            let xq = self.htod(&hx)?;
-            self.qmatvec_gemm_f16_raw(w16, &xq, m, in_f, out_f)?
-        } else {
-            self.qmatvec_gemm_f16_raw(w16, x, m, in_f, out_f)?
-        };
+        let mut y = self.qmatvec_gemm_f16_raw(w16, x, m, in_f, out_f)?;
         if scale != 1.0 {
             self.scale_inplace(&mut y, scale, m * out_f)?;
         }
@@ -516,56 +493,11 @@ impl crate::Engine {
     /// f32 -> fp16 activation convert into a fresh buffer (matmul_group: ONE convert feeds
     /// every mirror-carrying weight in the group; the standalone per-GEMM converts were ~250
     /// launches/prime of gap-cluster fuel, nsys 2026-07-26).
-    #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
     pub fn f16_act(
         &self,
         x: &CudaSlice<f32>,
         nelem: usize,
-        in_f: usize,
     ) -> Result<CudaSlice<u8>, Box<dyn std::error::Error>> {
-        // W8A8 PILOT act half (MEMRA_W8A8_SIM=2): per-TOKEN int8 fake-quant of the
-        // activation rows before the fp16 convert — every pre-converted GEMM in the
-        // group inherits it. Slow host roundtrip, pilot only; default path unchanged.
-        static SIM_ACT2: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        if *SIM_ACT2.get_or_init(|| std::env::var("MEMRA_W8A8_SIM").as_deref() == Ok("2"))
-            && in_f > 0
-            && nelem % in_f == 0
-        {
-            static ONCE: std::sync::Once = std::sync::Once::new();
-            ONCE.call_once(|| {
-                eprintln!("[w8a8-sim] act per-token int8 fake-quant ACTIVE (f16_act)")
-            });
-            let mut hx = self.dtoh(x)?;
-            hx.truncate(nelem);
-            for row in hx.chunks_mut(in_f) {
-                let amax = row.iter().fold(0f32, |a, &v| a.max(v.abs()));
-                if amax > 0.0 {
-                    let d = amax / 127.0;
-                    for v in row.iter_mut() {
-                        *v = (*v / d).round().clamp(-127.0, 127.0) * d;
-                    }
-                }
-            }
-            let xq = self.htod(&hx)?;
-            let mut xh = self.alloc_u8_uninit(nelem * 2)?;
-            let rc = {
-                let stream = self.gpu.stream();
-                let (x_p, _gx) = xq.device_ptr(&stream);
-                let (h_p, _gh) = xh.device_ptr_mut(&stream);
-                unsafe {
-                    memra_f16_cvt(
-                        x_p as *const f32,
-                        h_p as *mut core::ffi::c_void,
-                        nelem,
-                        stream.cu_stream() as *mut core::ffi::c_void,
-                    )
-                }
-            };
-            if rc != 0 {
-                return Err(format!("memra_f16_cvt rc={rc}").into());
-            }
-            return Ok(xh);
-        }
         let mut xh = self.alloc_u8_uninit(nelem * 2)?;
         let rc = {
             let stream = self.gpu.stream();
@@ -876,7 +808,7 @@ impl crate::Engine {
             SPENT.fetch_sub(sz, Ordering::Relaxed);
             return Ok(());
         }
-        let mut mirror = if q6k {
+        let mirror = if q6k {
             self.build_q6k_f16_raw(bytes, in_f, out_f)?
         } else if q4k {
             self.build_q4k_f16_raw(bytes, in_f, out_f)?
@@ -887,92 +819,6 @@ impl crate::Engine {
         } else {
             self.build_q8_f16_raw(bytes, in_f, out_f)?
         };
-        // W8A8 ACCURACY PILOT (MEMRA_W8A8_SIM=1, 2026-07-31, round-41 arc): fake-quant
-        // the mirror per ROW to int8 (absmax) and round-trip back to f16 — the exact
-        // weight-precision class of the proposed w8a8 crossing (per-row scales replacing
-        // per-32-block), run through the UNCHANGED f16 GEMM lane. Slow host pass, sim
-        // only; the pilot compares greedy streams vs the default config to price the
-        // accuracy relaxation with receipts. Activations stay f16 in this step (the
-        // act-int8 half is additive and strictly smaller — per-token absmax on smooth
-        // activations).
-        static SIM: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        if *SIM.get_or_init(|| {
-            matches!(
-                std::env::var("MEMRA_W8A8_SIM").as_deref(),
-                Ok("1") | Ok("2")
-            )
-        }) {
-            fn f16_bits_to_f32(b: u16) -> f32 {
-                let (s, e, m) = (
-                    (b >> 15) as u32,
-                    ((b >> 10) & 0x1f) as u32,
-                    (b & 0x3ff) as u32,
-                );
-                let bits = if e == 0 {
-                    if m == 0 {
-                        s << 31
-                    } else {
-                        // subnormal: normalize
-                        let mut e2 = 127 - 15 + 1;
-                        let mut m2 = m;
-                        while m2 & 0x400 == 0 {
-                            m2 <<= 1;
-                            e2 -= 1;
-                        }
-                        (s << 31) | ((e2 as u32) << 23) | ((m2 & 0x3ff) << 13)
-                    }
-                } else if e == 0x1f {
-                    (s << 31) | (0xff << 23) | (m << 13)
-                } else {
-                    (s << 31) | ((e + 127 - 15) << 23) | (m << 13)
-                };
-                f32::from_bits(bits)
-            }
-            fn f32_to_f16_bits(v: f32) -> u16 {
-                let b = v.to_bits();
-                let (s, e, m) = ((b >> 31) as u16, ((b >> 23) & 0xff) as i32, b & 0x7fffff);
-                if e == 0xff {
-                    return (s << 15) | 0x7c00 | ((m >> 13) as u16 & 0x3ff);
-                }
-                let e2 = e - 127 + 15;
-                if e2 >= 0x1f {
-                    return (s << 15) | 0x7c00;
-                }
-                if e2 <= 0 {
-                    if e2 < -10 {
-                        return s << 15;
-                    }
-                    let m2 = (m | 0x800000) >> (1 - e2);
-                    // round-to-nearest-even on the shifted mantissa
-                    let r = (m2 >> 13) as u16 + ((m2 >> 12) & 1) as u16;
-                    return (s << 15) | r;
-                }
-                let mut r = ((e2 as u32) << 10) as u16 | (m >> 13) as u16;
-                if m & 0x1000 != 0 {
-                    r += 1;
-                }
-                (s << 15) | r
-            }
-            let host: Vec<u8> = self.dtoh_u8(&mirror)?;
-            let mut vals: Vec<f32> = host
-                .chunks_exact(2)
-                .map(|c| f16_bits_to_f32(u16::from_le_bytes([c[0], c[1]])))
-                .collect();
-            for row in vals.chunks_mut(in_f) {
-                let amax = row.iter().fold(0f32, |a, &v| a.max(v.abs()));
-                if amax > 0.0 {
-                    let d = amax / 127.0;
-                    for v in row.iter_mut() {
-                        *v = (*v / d).round().clamp(-127.0, 127.0) * d;
-                    }
-                }
-            }
-            let out: Vec<u8> = vals
-                .iter()
-                .flat_map(|&v| f32_to_f16_bits(v).to_le_bytes())
-                .collect();
-            mirror = self.htod_bytes(&out)?;
-        }
         *f16 = Some(mirror);
         Ok(())
     }
