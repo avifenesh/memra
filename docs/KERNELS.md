@@ -244,7 +244,7 @@ counter-based" (spec_sample.cu:1-5).
 | symbol (family) | purpose | dispatch flag |
 |---|---|---|
 | `gumbel_perturb_*`, `softmax_gather_*`, `residual_sample_*`, `filter_stats_f32`, `scatter_trim_logits_*`, `penalize_logits_*` (including heterogeneous sparse serving rows), `mask_logits_f32`, `memra_sctr_inc` | Gumbel-max sampling, top-k/p filtering, penalties, residual (rejection) sampler | sampling chain via MEMRA_TEMP/TOP_K/TOP_P/MIN_P/PENALTY_* plus batched serving `MEMRA_SERVE_DEVPENALTY` |
-| `spec_accept_greedy[_dc]`, `spec_seed_gather`, `spec_rollback_kv/stream`, `spec_fork_*`, `spec_assemble_verify`, `spec_ring_commit`, `spec_adapt_k`, `plain_tok_ring`, misc int copies | spec-decode accept/rollback/fork machinery | MEMRA_SPEC_* family (MEMRA_SPEC_DUAL_T lib.rs; MEMRA_SPEC_DFLASH FLAGS.md:25) |
+| `spec_accept_greedy_dc`, `spec_seed_gather`, `spec_rollback_stream`, `spec_assemble_verify`, `spec_ring_commit`, `spec_adapt_k`, `plain_tok_ring`, misc int copies | spec-decode accept/rollback/fork machinery | MEMRA_SPEC_* family (MEMRA_SPEC_DUAL_T lib.rs; MEMRA_SPEC_DFLASH FLAGS.md:25) |
 
 ### cu/dsv4_gpu.cu — mHC (hyper-connections) glue kernels, partial inventory (static-lib TU, not a fatbin; compiled `-fmad=false` for bit-parity with the CPU oracle — build.rs:505-510)
 

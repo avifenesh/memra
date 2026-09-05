@@ -24536,121 +24536,6 @@ impl HybridModel {
         tp.runtime.decode_v2_oproj_tcol(ws_index, e, &tp.o, t)
     }
 
-    /// MEMRA_SPEC_FA2 precheck: decide BEFORE arming the defer whether both verify
-    /// columns of layer `il` will take the dcw arm AND the T=2 launch is bit-safe —
-    /// stashing is unrecoverable (no per-column output exists), so every dynamic input
-    /// to the engine-side dcw decision is evaluated here, plus the equal-partition
-    /// guard fa_decode_dcw2's contract requires. Boundary rounds return false and the
-    /// walk runs the ordinary per-column program.
-    #[allow(dead_code)] // allow: banked MEMRA_SPEC_FA2 arm; kept as the named seam for the spec-FA2 join program
-    pub(crate) fn step35_spec_fa2_precheck(
-        &self,
-        cache: &Cache,
-        il: usize,
-        pos0: usize,
-    ) -> Result<bool, Box<dyn std::error::Error>> {
-        // MEMRA_SPEC_FA2_DEBUG=1: print the first failing clause once per clause id —
-        // a silently-vacuous door is indistinguishable from a slow one without this.
-        fn nope(clause: &str, il: usize, pos0: usize) -> bool {
-            static DBG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-            static SEEN: std::sync::Mutex<Vec<&'static str>> = std::sync::Mutex::new(Vec::new());
-            if *DBG.get_or_init(|| std::env::var("MEMRA_SPEC_FA2_DEBUG").as_deref() == Ok("1")) {
-                let mut seen = SEEN.lock().unwrap();
-                if !seen.contains(&clause) {
-                    // leak: bounded by the clause-id set
-                    seen.push(Box::leak(clause.to_string().into_boxed_str()));
-                    eprintln!("[spec-fa2] precheck FAIL clause={clause} il={il} pos0={pos0}");
-                }
-            }
-            false
-        }
-        // MEMRA_SPEC_FA2_LAYER=<il>: engage on ONE layer only (divergence bisection).
-        static ONLY: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
-        if let Some(only) =
-            ONLY.get_or_init(|| std::env::var("MEMRA_SPEC_FA2_LAYER").ok()?.parse().ok())
-            && *only != il
-        {
-            return Ok(false);
-        }
-        let crate::hybrid::Mixer::Full(fa) = &self.layers[il].mixer else {
-            return Ok(nope("mixer", il, pos0));
-        };
-        let Some(tp) = fa.step_tp_qkv.as_ref() else {
-            return Ok(nope("step_tp", il, pos0));
-        };
-        let Some(attention) = tp.attention.as_ref() else {
-            return Ok(nope("attention", il, pos0));
-        };
-        if !tp.runtime.native_p2p()
-            || crate::Engine::kv_fp8_on()
-            || !crate::tp::step_tp_dcw_enabled()?
-            || !crate::tp::step_tp_qkv_fused_enabled()?
-            || (attention.gate_shards.is_none() && attention.gate_shards_bf16.is_none())
-        {
-            return Ok(nope("runtime-doors", il, pos0));
-        }
-        let geometry = self.step35_geom(il);
-        let head_dim = geometry.head_dim_k as usize;
-        if head_dim > 256 || !head_dim.is_multiple_of(32) || !crate::fa_v3_on() {
-            return Ok(nope("fa-class", il, pos0));
-        }
-        let Some(distributed) = cache.tp_kv[il].as_ref() else {
-            return Ok(nope("tp-kv", il, pos0));
-        };
-        if distributed.staged_len() != pos0 {
-            return Ok(nope("staged-len", il, pos0));
-        }
-        // Both appends must land without a ring rebase (rebase columns take the
-        // host-row path, which cannot stash).
-        let (_, would_rebase) = distributed.peek_append_ring(2)?;
-        if would_rebase {
-            return Ok(nope("rebase", il, pos0));
-        }
-        let window = geometry.window.map(|w| w as usize);
-        // Capped SWA is REDUCTION-CLASS in the joined kernel (the two rows' windows
-        // shift by one key, so one shared tile grid cannot reproduce both rows'
-        // per-column FP grouping) — and drifted verify logits change accept decisions,
-        // breaking the spec==target contract. Engage only when BOTH rows' views start
-        // at 0 (global, or SWA still inside its window): bitwise per row under the
-        // partition guard below. At agentic ctx this keeps the global layers — ~3/4 of
-        // the per-key fa work — and leaves capped-SWA layers on the per-column program.
-        if let Some(w) = window
-            && pos0 + 2 > w
-        {
-            return Ok(nope("swa-capped", il, pos0));
-        }
-        // Row r's own per-column launch sees the POST-append view: T_r = pos0 + 1 + r
-        // (kernel T_kv = len_dev - lstart; the host bucket matches it — the one-partition
-        // law). Both dcw eligibility (t_kv_eff >= 96) and the vec floor key off T0.
-        let (t0, t1) = (pos0 + 1, pos0 + 2);
-        if t0 < 96 {
-            return Ok(nope("dcw-floor", il, pos0));
-        }
-        if std::env::var("MEMRA_NO_FA_VEC").is_ok() || t0 < crate::fa_vec_min_tkv() {
-            return Ok(nope("vec-floor", il, pos0));
-        }
-        // Equal-partition guard, on the KERNEL's derivation: split width (sp), effective
-        // count (ns = ceil(T/sp)) and stride (per = ceil(T/ns)) must all match between
-        // the two rows' own launches — the joined kernel derives one grid from T1 and
-        // row0 inherits it, so any difference shifts row0's split boundaries and changes
-        // the combine's merge rounding. Boundary rounds fall back per column.
-        let ranks = tp.runtime.devices().len();
-        let local_kv_heads = (geometry.n_head_kv as usize / ranks).max(1);
-        let sp0 = crate::fa_split_keys_pub(t0, local_kv_heads);
-        let sp1 = crate::fa_split_keys_pub(t1, local_kv_heads);
-        if sp0 != sp1 {
-            return Ok(nope("partition-sp", il, pos0));
-        }
-        let (ns0, ns1) = (t0.div_ceil(sp0), t1.div_ceil(sp1));
-        if ns0 != ns1 {
-            return Ok(nope("partition-ns", il, pos0));
-        }
-        if t0.div_ceil(ns0) != t1.div_ceil(ns1) {
-            return Ok(nope("partition-per", il, pos0));
-        }
-        Ok(true)
-    }
-
     /// T-ROW fa precheck (the rows kernel supersedes the dcw2 pair-join): every dynamic
     /// input of the engine-side dcw decision must hold for EVERY row — stashing is
     /// unrecoverable — plus the rows-launcher guards (big-rig ladder, no env split
@@ -25272,49 +25157,6 @@ impl HybridModel {
         )
     }
 
-    /// MEMRA_SPEC_FA2 join for the verify walk: both columns stashed; one shared-KV T=2
-    /// fa per rank + the weight-amortized o_proj join produce the [2, o_out] `mixed`
-    /// slab on `e`.
-    #[allow(dead_code)] // allow: banked MEMRA_SPEC_FA2 arm; kept as the named seam for the spec-FA2 join program
-    pub(crate) fn step35_verify_spec_fa2_join(
-        &self,
-        e: &Engine,
-        il: usize,
-        cache: &Cache,
-        pos0: usize,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let crate::hybrid::Mixer::Full(fa) = &self.layers[il].mixer else {
-            return Err("spec fa2 join expects full attention".into());
-        };
-        let tp = fa
-            .step_tp_qkv
-            .as_ref()
-            .ok_or("spec fa2 join lost its resident projections")?;
-        let geometry = self.step35_geom(il);
-        let heads = geometry.n_head as usize;
-        let head_dim = geometry.head_dim_k as usize;
-        let window = geometry.window.map(|w| w as usize);
-        // POST-append view of the second row (kernel T1 = len - lstart with len =
-        // pos0 + 2): sp/ns derive from it, and the precheck proved row0 shares them.
-        let bucket = window.map(|w| (pos0 + 2).min(w)).unwrap_or(pos0 + 2);
-        let distributed = cache.tp_kv[il]
-            .as_ref()
-            .ok_or("spec fa2 join lost its distributed KV cache")?;
-        let ws_index = tp
-            .runtime
-            .decode_v2_ensure(e, &tp.q, &tp.k, &tp.v, &tp.o, heads)?;
-        tp.runtime.decode_v2_spec_fa2_join(
-            ws_index,
-            e,
-            &tp.o,
-            distributed,
-            head_dim,
-            window.unwrap_or(0),
-            bucket,
-            geometry.attention_scale(),
-        )
-    }
-
     pub(crate) fn step35_tp_decode_attn_resident_v2(
         &self,
         e: &Engine,
@@ -25491,12 +25333,13 @@ impl HybridModel {
                 .unwrap_or(false);
 
         let tcol_col = crate::tp::take_verify_tcol();
-        // MEMRA_SPEC_FA2 defer: the verify walk armed this column for the shared-KV T=2
+        // MEMRA_SPEC_FA2 defer: the verify walk armed this column for the row-table
         // attention. On dcw tokens the per-rank pass still norms/ropes/APPENDS (cache
         // state must advance per column) but skips the fa+gate launch; post-rope q and
-        // gate rows are stashed instead, and ONE fa_decode_dcw2 per rank joins both
-        // columns after the second append. Non-dcw tokens ignore the defer (the fa runs
-        // normally and the walk consumes the real output — stash flag stays unset).
+        // gate rows are stashed instead, and ONE fa_decode_vec_q_v3_dcw_rows per rank
+        // attends every stashed row after the last append. Non-dcw tokens ignore the
+        // defer (the fa runs normally and the walk consumes the real output — stash flag
+        // stays unset).
         let fa2_col = crate::tp::take_spec_fa2_defer();
         tp.runtime.decode_v2_input_qkv(
             ws,

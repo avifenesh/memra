@@ -707,31 +707,11 @@ extern "C" __global__ void penalize_logits_rows_inc_f32(
     xr[id] = keskar_penalize_rn(xr[id], cnt, rep, freq, present);
 }
 
-// ROUND-STREAM stage (a) (2026-07-10, HANDOVER design): the greedy accept walk ON DEVICE —
-// verbatim replication of the host rule (walk j in 0..k_round, accept while t_pred(j) ==
-// draft[j]; t_pred(0) = last_pred when base==0; bonus = t_pred(n_acc)). Stage (a) value is
-// machinery, not speed (host still reads 8B back); stages (b)/(c) consume n_acc on-device.
-extern "C" __global__ void spec_accept_greedy(
-        const unsigned int* __restrict__ preds,   // [t_v] verify device argmaxes
-        const unsigned int* __restrict__ draft,   // [k_round] draft token ids
-        unsigned int last_pred, int base, int k_round,
-        unsigned int* __restrict__ out) {         // out[0] = n_acc, out[1] = bonus
-    if (threadIdx.x != 0 || blockIdx.x != 0) return;
-    int n_acc = 0;
-    for (int j = 0; j < k_round; j++) {
-        unsigned int tp = (j == 0 && base == 0) ? last_pred : preds[base + j - 1];
-        if (tp == draft[j]) n_acc++; else break;
-    }
-    unsigned int bonus = (n_acc == 0 && base == 0) ? last_pred : preds[base + n_acc - 1];
-    out[0] = (unsigned int)n_acc;
-    out[1] = bonus;
-}
-
 // ROUND-STREAM stage (b) piece 1: next-round seed gather ON DEVICE. Unifies the three commit
 // arms' seed rules (spec.rs §5): j = base + n_acc; j >= 1 -> seed = vx[col j-1] (partial) which
 // at full accept (j == t_v) is col t_v-1 — the same expression; j == 0 -> seed = fill_prev
 // (zero-round fold). Writes BOTH h_seed slots (h_seed_buf and fill_prev get the same value in
-// every arm). acc = the spec_accept_greedy output (out[0] = n_acc).
+// every arm). acc = the accept walk's output (out[0] = n_acc).
 extern "C" __global__ void spec_seed_gather(
         const float* __restrict__ vx,          // [t_v, n_embd] verify hiddens
         const float* __restrict__ fill_prev,   // [n_embd] carried predecessor hidden
@@ -742,65 +722,6 @@ extern "C" __global__ void spec_seed_gather(
     const float* src = (j >= 1) ? vx + (size_t)(j - 1) * n_embd : fill_prev;
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n_embd; i += gridDim.x * blockDim.x)
         h_seed[i] = src[i];
-}
-
-// ROUND-STREAM stage (b) piece 3a: per-layer KV-len rollback ON DEVICE. Unified rule for all
-// three non-replay commit arms: len[il] = saved[il] + j where j = base + n_acc (full accept
-// j == t_v rewrites the value the verify already left — harmless; partial truncates; zero-fold
-// restores the snapshot len). len_ptrs = device table of each full-attn layer's kvl.len_d;
-// saved = snapshot lens; layers without KV carry len_ptr == 0 and are skipped.
-extern "C" __global__ void spec_rollback_kv(
-        unsigned long long* __restrict__ len_ptrs,   // [n_layer] device ptrs to i32 len_d
-        const int* __restrict__ saved,               // [n_layer] snapshot lens
-        const unsigned int* __restrict__ acc,        // acc[0] = n_acc
-        int base, int n_layer) {
-    int il = blockIdx.x * blockDim.x + threadIdx.x;
-    if (il >= n_layer) return;
-    int* lp = (int*)len_ptrs[il];
-    if (lp == nullptr) return;
-    lp[0] = saved[il] + base + (int)acc[0];
-}
-
-// OPTIPIPE increment 1: decide whether an already-issued optimistic stage-0 window is the
-// serial successor. The controller is deliberately outside this kernel: the only device law is
-// that K=1 accepted and the target bonus equals the optimistic window's pending token.
-extern "C" __global__ void spec_fork_valid(
-        const unsigned int* __restrict__ acc,        // [n_acc, target bonus]
-        unsigned int optimistic_pending,
-        unsigned int* __restrict__ valid) {          // [1], 1 = keep fork
-    if (threadIdx.x != 0 || blockIdx.x != 0) return;
-    valid[0] = (acc[0] == 1u && acc[1] == optimistic_pending) ? 1u : 0u;
-}
-
-// OPTIPIPE increment 1: stage-local KV reconcile. On a hit the optimistic stage has already
-// advanced its own counters and they stay untouched. On a miss every owned full-attn counter
-// returns to the predecessor round's actually committed prefix. `len_ptrs` contains only this
-// stage's pointers; zero entries are linear-attn layers and are skipped.
-extern "C" __global__ void spec_fork_reconcile_kv(
-        unsigned long long* __restrict__ len_ptrs,   // [n_layer] stage-local len_d pointers
-        const int* __restrict__ saved,               // [n_layer] pre-fork lens
-        const unsigned int* __restrict__ acc,        // [n_acc, target bonus]
-        const unsigned int* __restrict__ valid,      // [1]
-        int base, int n_layer) {
-    if (valid[0] != 0u) return;
-    int il = blockIdx.x * blockDim.x + threadIdx.x;
-    if (il >= n_layer) return;
-    int* lp = (int*)len_ptrs[il];
-    if (lp != nullptr) lp[0] = saved[il] + base + (int)acc[0];
-}
-
-// OPTIPIPE increment 1: conditional recurrent-state restore. Snapshot and resident state live
-// on the same PP stage; one launch is used for conv and one for SSM per linear-attn layer.
-extern "C" __global__ void spec_fork_restore_f32(
-        const float* __restrict__ snapshot,
-        float* __restrict__ state,
-        const unsigned int* __restrict__ valid,
-        int n) {
-    if (valid[0] != 0u) return;
-    for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n;
-         i += gridDim.x * blockDim.x) {
-        state[i] = snapshot[i];
-    }
 }
 
 // ROUND-STREAM stage (c) piece 1: verify-token assembly ON DEVICE. verify_tok[0] = pending

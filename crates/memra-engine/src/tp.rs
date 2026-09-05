@@ -185,11 +185,11 @@ pub(crate) fn moe_direct_on() -> bool {
 /// are process-persistent, so the ranks read them directly). Bit-identical: same bytes, one
 /// fewer hop. Refused under the graph door, whose captured copies need the fixed staging
 /// addresses. Default OFF until receipted.
-/// MEMRA_SPEC_FA2=1 (the DSpark verify lesson): the T=2 verify walk defers each column's
+/// MEMRA_SPEC_FA2=1 (the DSpark verify lesson): the verify walk defers each column's
 /// ATTENTION CORE — the dcw arm appends the column's K/V and stashes its post-rope q and
-/// gate rows, then ONE fa_decode_dcw2 per rank walks the KV stream once for both columns
-/// (per-row causal bounds; bit-identical per row under the equal-partition guard), the
-/// per-row combine writes both gated rows, and the o_proj join runs on the TCOL slabs.
+/// gate rows, then ONE fa_decode_vec_q_v3_dcw_rows per rank attends every stashed row
+/// (each row runs its own t=1 dcw program, bit-identical per row), the per-row combine
+/// writes the gated rows, and the o_proj join runs on the TCOL slabs.
 /// ROW-TABLE RESTAGE (`MEMRA_ROWS_TAB_RESTAGE`, DEFAULT ON since this lane).
 ///
 /// ON: `decode_v2_rope_fa_rows` builds the 6-word-per-row pointer table from the caller's
@@ -6717,109 +6717,6 @@ impl TpE4m3HostBounce {
             }
         }
         Ok(())
-    }
-
-    /// MEMRA_SPEC_FA2 join: after BOTH verify columns stashed (their appends landed in
-    /// rank-stream order), run ONE fa_decode_dcw2 per rank over the shared KV stream —
-    /// two query rows, per-row causal bounds, per-row combine+gate — then land the two
-    /// gated rows in the o-tcol slabs and reuse the weight-amortized o_proj join.
-    /// Returns the [2, o_out] `mixed` slab on `e`. The caller's precheck enforced the
-    /// equal-partition guard (boundary rounds never arm the defer).
-    #[allow(clippy::too_many_arguments)]
-    #[allow(dead_code)] // allow: banked MEMRA_SPEC_FA2 arm; kept as the named seam its precheck twin documents
-    pub(crate) fn decode_v2_spec_fa2_join(
-        &self,
-        ws_index: usize,
-        e: &Engine,
-        o_m: &ResidentStepBf16RowParallel,
-        kv: &ResidentTpKvCache,
-        head_dim: usize,
-        window: usize,
-        bucket_max: usize,
-        scale: f32,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let ranks = self.ranks.len();
-        // Engagement receipt: a vacuous gate (precheck never passing) must be visible.
-        static ONCE: std::sync::Once = std::sync::Once::new();
-        ONCE.call_once(|| eprintln!("[spec-fa2] joined T=2 attention ENGAGED"));
-        {
-            let mut guard = self
-                .decode_v2
-                .lock()
-                .map_err(|_| "step TP decode v2 workspace lock is poisoned")?;
-            let ws = guard
-                .get_mut(ws_index)
-                .ok_or("step TP decode v2 workspace index out of range")?;
-            if ws.fa2_cap < 2 || ws.fa2_q.len() != ranks {
-                return Err("spec fa2 join without stashed columns".into());
-            }
-            let lq = ws.local_q_dim;
-            let local_heads = (ws.heads / ranks).max(1);
-            let local_kv_heads = (ws.local_kv_dim / head_dim).max(1);
-            let capacity = kv.physical_capacity();
-            let (k_tok_bytes, v_tok_bytes) = (kv.k_tok_bytes(), kv.v_tok_bytes());
-            // Arm the o-tcol slabs if the oproj door never ran this boot (same shapes).
-            if ws.tcol_ocap < 2 || ws.tcol_gated.len() != ranks {
-                ws.tcol_gated.clear();
-                ws.tcol_opart.clear();
-                for engine in &self.ranks {
-                    let _m = engine.gpu.enter_main()?;
-                    ws.tcol_gated.push(engine.uninit(32 * lq)?);
-                    ws.tcol_opart.push(engine.uninit(32 * ws.o_out)?);
-                }
-                let root = &self.ranks[0];
-                let _m = root.gpu.enter_main()?;
-                ws.tcol_opeer = Some(root.uninit(32 * ws.o_out)?);
-                ws.tcol_omix = Some(root.uninit(32 * ws.o_out)?);
-                ws.tcol_ocap = 32;
-            }
-            for rank in 0..ranks {
-                let engine = &self.ranks[rank];
-                let _main = engine.gpu.enter_main()?;
-                let rank_cache = kv
-                    .rank(rank)
-                    .ok_or("spec fa2 join lost its KV cache rank")?;
-                let k_ring = engine.view_u8_range(rank_cache.k(), 0, capacity * k_tok_bytes);
-                let v_ring = engine.view_u8_range(rank_cache.v(), 0, capacity * v_tok_bytes);
-                {
-                    let StepTpDecodeV2Ws {
-                        fa2_q,
-                        fa2_gate,
-                        fa2_gated,
-                        ..
-                    } = &mut *ws;
-                    engine.fa_decode_dcw2(
-                        &fa2_q[rank],
-                        &k_ring,
-                        &v_ring,
-                        &mut fa2_gated[rank],
-                        head_dim,
-                        local_heads,
-                        local_kv_heads,
-                        rank_cache.len_d(),
-                        rank_cache.base_d(),
-                        window,
-                        bucket_max,
-                        scale,
-                        k_tok_bytes,
-                        v_tok_bytes,
-                        &fa2_gate[rank],
-                    )?;
-                }
-                // Both gated rows are contiguous [2, lq] — exactly columns 0..2 of the
-                // o-tcol slab layout. One dtod, in rank-stream order behind the fa.
-                let StepTpDecodeV2Ws {
-                    fa2_gated,
-                    tcol_gated,
-                    ..
-                } = &mut *ws;
-                let mut dst = tcol_gated[rank].slice_mut(0..2 * lq);
-                engine
-                    .stream()
-                    .memcpy_dtod(&fa2_gated[rank].slice(0..2 * lq), &mut dst)?;
-            }
-        }
-        self.decode_v2_oproj_tcol(ws_index, e, o_m, 2)
     }
 
     /// FULL T-ROW ATTENTION PASS over per-row session tables (batched serving): reads
