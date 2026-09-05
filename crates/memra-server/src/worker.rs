@@ -3787,12 +3787,28 @@ fn prefix_recurrent_state_bytes(plan: &memra_gguf::model_plan::ModelPlan) -> usi
 /// entry cost ZERO bytes per token, 152.6 MB flat, and the derived "2 entries" budget would
 /// have held a fraction of one honest entry).
 fn prefix_latent_bytes_per_token(plan: &memra_gguf::model_plan::ModelPlan) -> usize {
+    prefix_latent_bytes_per_token_selected(
+        plan,
+        memra_engine::cache::latent_layout::nvfp4_enabled(),
+    )
+}
+
+fn prefix_latent_bytes_per_token_selected(
+    plan: &memra_gguf::model_plan::ModelPlan,
+    nvfp4: bool,
+) -> usize {
     use memra_gguf::model_plan::{AttentionPlan, MlaAttentionPlan, SparseIndexPlan, StatePlan};
     plan.layers
         .iter()
         .map(|layer| match layer.state {
             StatePlan::LatentKvCache { width, index_width } => {
-                let rows = (width as usize).saturating_mul(std::mem::size_of::<f32>());
+                let rows = memra_engine::cache::latent_layout::layout_for_selection(
+                    nvfp4,
+                    width as usize,
+                    index_width as usize,
+                )
+                .and_then(|layout| layout.allocation_bytes(1))
+                .unwrap_or((width as usize).saturating_mul(std::mem::size_of::<f32>()));
                 let keys = match &layer.attention {
                     AttentionPlan::Mla(MlaAttentionPlan::LatentKv {
                         sparse_index:
@@ -3824,6 +3840,38 @@ fn prefix_entry_geometry_bytes(
         .saturating_add(recurrent_bytes)
 }
 
+fn prefix_latent_fixed_bytes(plan: &memra_gguf::model_plan::ModelPlan) -> usize {
+    use memra_gguf::model_plan::{AttentionPlan, MlaAttentionPlan, SparseIndexPlan, StatePlan};
+    plan.layers
+        .iter()
+        .map(|layer| match (&layer.state, &layer.attention) {
+            (
+                StatePlan::LatentKvCache { width, index_width },
+                AttentionPlan::Mla(MlaAttentionPlan::LatentKv {
+                    sparse_index:
+                        SparseIndexPlan::Own {
+                            kpool: Some(kpool), ..
+                        },
+                    ..
+                }),
+            ) => {
+                let tail = (kpool.pool.saturating_sub(1) as usize)
+                    .saturating_mul(*index_width as usize)
+                    .saturating_mul(4);
+                let status = memra_engine::cache::latent_layout::selected_layout(
+                    *width as usize,
+                    *index_width as usize,
+                )
+                .ok()
+                .filter(|l| l.format == memra_engine::cache::latent_layout::LatentFormat::Nvfp4)
+                .map_or(0, |_| 4);
+                tail.saturating_add(status)
+            }
+            _ => 0,
+        })
+        .sum()
+}
+
 fn model_prefix_entry_bytes(model: &HybridModel, ctx: usize) -> usize {
     let cfg = &model.cfg;
     let n_trunk = model.plan.layers.len();
@@ -3834,8 +3882,20 @@ fn model_prefix_entry_bytes(model: &HybridModel, ctx: usize) -> usize {
     };
     prefix_entry_geometry_bytes(
         memra_engine::cache::cache_bytes_per_token_for_plan(cfg, &model.plan, 0, n_trunk)
+            // Active cache accounting already includes latent history. Replace
+            // that term with the snapshot layout; do not count it twice.
+            .saturating_sub(memra_engine::cache::latent_kv_bytes_per_token_for_plan(
+                cfg,
+                &model.plan,
+                0,
+                n_trunk,
+            ))
             .saturating_add(latent_bpt),
-        prefix_recurrent_state_bytes(&model.plan),
+        prefix_recurrent_state_bytes(&model.plan).saturating_add(if prefix_latent_planes_on() {
+            prefix_latent_fixed_bytes(&model.plan)
+        } else {
+            0
+        }),
         ctx,
     )
 }
@@ -24130,6 +24190,57 @@ mod tests {
                 "{name}",
             );
         }
+    }
+
+    #[test]
+    fn prefix_latent_budget_uses_encoded_row_layout_not_f32() {
+        use memra_gguf::config::{HfConfig, ModelConfig};
+        use memra_gguf::model_plan::*;
+        let cfg = ModelConfig::from_hf(&HfConfig::parse(
+            r#"{"model_type":"qwen3","num_hidden_layers":1,"hidden_size":64,"num_attention_heads":2,"num_key_value_heads":1,"head_dim":32,"intermediate_size":128,"vocab_size":16,"max_position_embeddings":128}"#,
+        ));
+        let mut plan = ModelPlan::compile(&cfg).unwrap();
+        // This fixture isolates snapshot geometry; it is not an executable model.
+        plan.layers[0].state = StatePlan::LatentKvCache {
+            width: 512,
+            index_width: 256,
+        };
+        plan.layers[0].attention = AttentionPlan::Mla(MlaAttentionPlan::LatentKv {
+            query_heads: 64,
+            q_lora_rank: 2048,
+            kv_lora_rank: 512,
+            qk_head_dim: 256,
+            rope_head_dim: 0,
+            value_head_dim: 256,
+            rope: RopePlan {
+                dimensions: 0,
+                base: 10000.,
+                factors: RopeFactors::None,
+            },
+            sparse_index: SparseIndexPlan::Own {
+                heads: 32,
+                head_dim: 128,
+                top_k: 2048,
+                kpool: Some(KpoolPlan {
+                    pool: 4,
+                    always_select_tail: true,
+                }),
+            },
+        });
+        assert_eq!(
+            super::prefix_latent_bytes_per_token_selected(&plan, false),
+            2048 + 128
+        );
+        assert_eq!(
+            super::prefix_latent_bytes_per_token_selected(&plan, true),
+            292 + 128
+        );
+        // A complete pool-aligned NVFP4 snapshot owns row payload+scales, pool keys,
+        // and one status word, not a second active-cache copy of its latent rows.
+        assert_eq!(
+            prefix_entry_geometry_bytes(292 + 128, 4, 128),
+            128 * 292 + 32 * 128 * 4 + 4
+        );
     }
 
     #[test]

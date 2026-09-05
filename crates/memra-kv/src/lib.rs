@@ -7,6 +7,9 @@
 //! fatbin router and every cache consumer). memra-engine re-exports this as `cache` so
 //! call sites are unchanged.
 
+pub mod latent_layout;
+pub mod latent_nvfp4;
+
 // ---------------- KV format policy (moved from memra-engine) ----------------
 
 /// Per-32-element block bytes of the trunk KV cache: q8_0 K (34 B) and q5_1 V (24 B), the one
@@ -413,6 +416,14 @@ impl KvRing {
 /// The 7 device ops the cache needs — nothing more. Implemented by the engine (and by
 /// any future backend); all ops are stream-ordered on the implementor's worker stream.
 pub trait KvDev {
+    fn copy_u8_range_into(
+        &self,
+        dst: &mut CudaSlice<u8>,
+        dst_off: usize,
+        src: &CudaSlice<u8>,
+        src_off: usize,
+        len: usize,
+    ) -> Result<(), Box<dyn std::error::Error>>;
     fn zeros(&self, n: usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>>;
     fn uninit(&self, n: usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>>;
     fn alloc_u8(&self, n: usize) -> Result<CudaSlice<u8>, Box<dyn std::error::Error>>;
@@ -505,6 +516,8 @@ impl KvLayer {
 pub struct LatentKvLayer {
     /// [max_ctx * width] f32, row-major by token.
     pub rows: CudaSlice<f32>,
+    /// Mutually exclusive with `rows`: compressed storage owns history when set.
+    pub nvfp4: Option<latent_nvfp4::DevicePlane>,
     pub width: usize,
     pub len: usize,
     /// Device mirror of `len`, kept in lock-step exactly like `KvLayer::len_d`.
@@ -602,6 +615,12 @@ pub struct LatentKvLayer {
 }
 
 impl LatentKvLayer {
+    pub fn capacity(&self) -> usize {
+        self.nvfp4.as_ref().map_or_else(
+            || self.rows.len().checked_div(self.width).unwrap_or(0),
+            |p| p.capacity(),
+        )
+    }
     /// Shorten the resident pool-key plane to what `len` still justifies. Call from any path that
     /// REDUCES `len`; pools at or above `len / pool` may have been built over rows the rewind is
     /// about to overwrite, so their keys are no longer final.
@@ -646,6 +665,7 @@ pub fn index_plane_physical_row(ring_rows: usize, pool: usize, abs: usize) -> us
 pub struct LatentPlaneSnapshot {
     /// Rows `[0..len)` of the latent plane, `len * width` f32.
     pub rows: CudaSlice<f32>,
+    pub nvfp4: Option<latent_nvfp4::DevicePlane>,
     pub width: usize,
     pub len: usize,
     /// `0` = the layer has no indexer state plane (and every `index_*` field below is empty).
@@ -668,6 +688,7 @@ impl LatentPlaneSnapshot {
         let tail = self.index_tail.as_ref().map_or(0, CudaSlice::len);
         let keys = self.index_pool_keys.as_ref().map_or(0, CudaSlice::len);
         (self.rows.len() + tail + keys) * std::mem::size_of::<f32>()
+            + self.nvfp4.as_ref().map_or(0, |p| p.allocated_bytes())
     }
 }
 
@@ -706,6 +727,28 @@ impl LatentTailCapture {
 }
 
 impl LatentKvLayer {
+    fn snapshot_rows(
+        &self,
+        e: &impl KvDev,
+        len: usize,
+    ) -> Result<(CudaSlice<f32>, Option<latent_nvfp4::DevicePlane>), Box<dyn std::error::Error>>
+    {
+        if self.width == 0 || len > self.capacity() {
+            return Err("latent snapshot exceeds capacity".into());
+        }
+        if let Some(plane) = &self.nvfp4 {
+            if !self.rows.is_empty() || plane.width() != self.width {
+                return Err("ambiguous latent plane format".into());
+            }
+            return Ok((e.uninit(0)?, Some(plane.snapshot(e, len)?)));
+        }
+        let count = len
+            .checked_mul(self.width)
+            .ok_or("latent snapshot size overflow")?;
+        let mut rows = e.uninit(count)?;
+        e.copy_range_into(&mut rows, 0, &self.rows, 0, count)?;
+        Ok((rows, None))
+    }
     /// Deep-copy this layer's latent-plane state OUT of a live session cache. Stream-ordered on
     /// the implementor's worker stream, like every other prefix-capture copy. Errors instead of
     /// capturing anything a restore could not make whole:
@@ -721,7 +764,7 @@ impl LatentKvLayer {
         if len == 0 {
             return Err("latent snapshot at len 0 (record the layer as absent instead)".into());
         }
-        if self.rows.len() < len * width {
+        if self.capacity() < len {
             return Err(format!(
                 "latent plane holds {} f32 but len {len} x width {width} requires {}",
                 self.rows.len(),
@@ -729,11 +772,11 @@ impl LatentKvLayer {
             )
             .into());
         }
-        let mut rows = e.uninit(len * width)?;
-        e.copy_range_into(&mut rows, 0, &self.rows, 0, len * width)?;
+        let (rows, nvfp4) = self.snapshot_rows(e, len)?;
         if self.index_width == 0 {
             return Ok(LatentPlaneSnapshot {
                 rows,
+                nvfp4,
                 width,
                 len,
                 index_width: 0,
@@ -816,6 +859,7 @@ impl LatentKvLayer {
         };
         Ok(LatentPlaneSnapshot {
             rows,
+            nvfp4,
             width,
             len,
             index_width: self.index_width,
@@ -938,7 +982,7 @@ impl LatentKvLayer {
             )
             .into());
         }
-        if self.rows.len() < len * width {
+        if self.capacity() < len {
             return Err(format!(
                 "latent boundary publish: live plane holds {} f32 but boundary {len} x width \
                  {width} requires {}",
@@ -947,8 +991,7 @@ impl LatentKvLayer {
             )
             .into());
         }
-        let mut rows = e.uninit(len * width)?;
-        e.copy_range_into(&mut rows, 0, &self.rows, 0, len * width)?;
+        let (rows, nvfp4) = self.snapshot_rows(e, len)?;
         if cap.index_width != self.index_width {
             return Err(format!(
                 "latent boundary publish: captured index_width {} != live {}",
@@ -959,6 +1002,7 @@ impl LatentKvLayer {
         if cap.index_width == 0 {
             return Ok(LatentPlaneSnapshot {
                 rows,
+                nvfp4,
                 width,
                 len,
                 index_width: 0,
@@ -1007,6 +1051,7 @@ impl LatentKvLayer {
         };
         Ok(LatentPlaneSnapshot {
             rows,
+            nvfp4,
             width,
             len,
             index_width: cap.index_width,
@@ -1037,7 +1082,15 @@ impl LatentKvLayer {
         if snap.len == 0 || snap.len > max_ctx {
             return Err(format!("snapshot len {} outside [1,{max_ctx}]", snap.len));
         }
-        if snap.rows.len() < snap.len * snap.width {
+        if self.nvfp4.is_some() != snap.nvfp4.is_some() {
+            return Err("latent snapshot format differs from destination".into());
+        }
+        if let Some(plane) = &snap.nvfp4 {
+            if !snap.rows.is_empty() || plane.width() != snap.width || plane.capacity() < snap.len {
+                return Err("invalid compressed latent snapshot geometry".into());
+            }
+        }
+        if snap.nvfp4.is_none() && snap.rows.len() < snap.len * snap.width {
             return Err(format!(
                 "snapshot rows plane holds {} f32 but len {} x width {} requires {} \
                  (truncated capture)",
@@ -1047,7 +1100,7 @@ impl LatentKvLayer {
                 snap.len * snap.width,
             ));
         }
-        if self.rows.len() < snap.len * self.width {
+        if self.capacity() < snap.len {
             return Err(format!(
                 "destination latent plane holds {} f32 but the restore requires {}",
                 self.rows.len(),
@@ -1153,7 +1206,13 @@ impl LatentKvLayer {
         max_ctx: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
         self.validate_restore(snap, max_ctx)?;
-        e.copy_range_into(&mut self.rows, 0, &snap.rows, 0, snap.len * snap.width)?;
+        match (&mut self.nvfp4, &snap.nvfp4) {
+            (Some(dst), Some(src)) => dst.copy_prefix_from(e, src, snap.len)?,
+            (None, None) => {
+                e.copy_range_into(&mut self.rows, 0, &snap.rows, 0, snap.len * snap.width)?
+            }
+            _ => return Err("latent snapshot format mismatch".into()),
+        }
         if snap.index_width > 0 {
             let pool = snap.index_pool;
             let d = snap.index_width / 2;
@@ -2283,7 +2342,11 @@ pub fn latent_kv_bytes_per_token_for_plan(
         .filter(|layer| (lo..hi).contains(&(layer.index as usize)))
         .map(|layer| match layer.state {
             StatePlan::LatentKvCache { width, index_width } => {
-                let latent = width as usize * std::mem::size_of::<f32>();
+                // Unsupported layouts retain the conservative f32 estimate; the
+                // allocator refuses them before any device allocation is published.
+                let latent = latent_layout::selected_layout(width as usize, index_width as usize)
+                    .and_then(|layout| layout.allocation_bytes(1))
+                    .unwrap_or(width as usize * std::mem::size_of::<f32>());
                 let index_width = index_width as usize;
                 let pool = cfg
                     .glm5
@@ -2549,6 +2612,27 @@ pub struct CacheSnapshot {
 }
 
 impl Cache {
+    /// Drain shared sticky status once per owning stage at a token/verify/prime
+    /// completion boundary, never inside the per-layer launch loop or capture.
+    pub fn check_latent_status(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let mut seen = std::collections::HashSet::new();
+        for layer in self
+            .latent
+            .iter()
+            .flatten()
+            .chain(self.glm5_tp_latent_peer.iter().flatten().flatten())
+        {
+            if let Some(plane) = &layer.nvfp4 {
+                if seen.insert(plane.error.identity()) {
+                    if let Err(err) = plane.error.check() {
+                        self.tainted = true;
+                        return Err(err);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
     pub fn ensure_usable(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
         if self.tainted {
             return Err(format!(
@@ -2670,6 +2754,8 @@ impl Cache {
         let mut kv = Vec::with_capacity(n);
         let mut recur = Vec::with_capacity(n);
         let mut latent = Vec::with_capacity(n);
+        let mut latent_status: std::collections::HashMap<usize, latent_nvfp4::DeviceStatus> =
+            std::collections::HashMap::new();
         let head_dim_k = cfg.head_dim_k as usize;
         let head_dim_v = cfg.head_dim_v as usize;
         for il in 0..cfg.n_layer {
@@ -2784,8 +2870,26 @@ impl Cache {
                         0 => None,
                         w => Some(e.zeros(index_ring.unwrap_or(max_ctx) * w)?),
                     };
+                    let layout = latent_layout::selected_layout(width, index_width)?;
+                    let nvfp4 = if layout.format == latent_layout::LatentFormat::Nvfp4 {
+                        let key = e as *const dyn KvDev as *const () as usize;
+                        let status = match latent_status.get(&key) {
+                            Some(status) => status.clone(),
+                            None => {
+                                let status = latent_nvfp4::DeviceStatus::new(e)?;
+                                latent_status.insert(key, status.clone());
+                                status
+                            }
+                        };
+                        Some(latent_nvfp4::DevicePlane::with_status(
+                            e, width, max_ctx, status,
+                        )?)
+                    } else {
+                        None
+                    };
                     latent.push(Some(LatentKvLayer {
-                        rows: e.zeros(max_ctx * width)?,
+                        rows: e.zeros(if nvfp4.is_some() { 0 } else { max_ctx * width })?,
+                        nvfp4,
                         width,
                         len: 0,
                         len_d: e.htod_i32(&[0])?,

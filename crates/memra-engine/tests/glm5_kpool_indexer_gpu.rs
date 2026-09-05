@@ -2103,6 +2103,7 @@ fn fresh_latent_layer(
 ) -> memra_engine::cache::LatentKvLayer {
     memra_engine::cache::LatentKvLayer {
         rows: e.zeros(max_ctx * LATENT_WIDTH).expect("latent rows plane"),
+        nvfp4: None,
         width: LATENT_WIDTH,
         len: 0,
         len_d: e.htod_i32(&[0]).expect("len_d"),
@@ -2408,6 +2409,7 @@ fn gpu_latent_plane_red_mutations_are_refused_or_detected() {
     // RED 1 — latent rows truncated one short: refused by name before any copy.
     let truncated = memra_engine::cache::LatentPlaneSnapshot {
         rows: e.zeros((SNAP_AT - 1) * LATENT_WIDTH).expect("short rows"),
+        nvfp4: None,
         width: snap.width,
         len: snap.len,
         index_width: snap.index_width,
@@ -2437,6 +2439,7 @@ fn gpu_latent_plane_red_mutations_are_refused_or_detected() {
     for forged_ready in [snap.index_pools_ready + 1, snap.index_pools_ready - 1] {
         let forged = memra_engine::cache::LatentPlaneSnapshot {
             rows: e.clone_dtod(&snap.rows).expect("rows copy"),
+            nvfp4: None,
             width: snap.width,
             len: snap.len,
             index_width: snap.index_width,

@@ -2188,6 +2188,9 @@ impl HybridModel {
             let l = cache.latent[il]
                 .as_mut()
                 .expect("MlaMid planned on a latent layer");
+            if let Some(plane) = &l.nvfp4 {
+                plane.error.invalidate()?;
+            }
             l.len += 1;
             if let Mixer::Mla(mla) = &self.layers[il].mixer
                 && let Some(ix) = mla.index.as_ref()

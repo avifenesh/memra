@@ -3804,6 +3804,7 @@ impl HybridModel {
         )?;
         let head = mtp.shared_head_head.as_ref().unwrap_or(&self.output);
         let logits = e.matmul(head, &final_h, 1)?;
+        cache.check_latent_status()?;
         Ok((logits, if spec_hpost() { final_h } else { h_nextn }))
     }
 

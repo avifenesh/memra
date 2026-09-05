@@ -6,6 +6,10 @@
 // node-for-node (header above); iterator reshapes are not bit-neutral by inspection.
 #![allow(clippy::needless_range_loop)]
 
+#[cfg(test)]
+#[path = "latent_tc_prefill_tests.rs"]
+mod latent_tc_prefill_tests;
+
 use crate::Engine;
 use crate::cache::Cache;
 use cudarc::driver::CudaSlice;
@@ -2080,6 +2084,13 @@ impl HybridModel {
         tokens: &[u32],
         last_only: bool,
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        if memra_kv::latent_layout::nvfp4_enabled() {
+            if !last_only {
+                return Err("NVFP4 latent stateless all-row forward is not wired; use cached teacher forcing".into());
+            }
+            let mut cache = crate::pp::new_cache(e, &self.cfg, tokens.len().saturating_add(8))?;
+            return Ok(self.prime_cache(e, tokens, &mut cache, 0)?.0);
+        }
         let topology = *self
             .hyper
             .as_ref()
@@ -4619,6 +4630,9 @@ impl HybridModel {
         // beats between sessions.
         let events_before = crate::progress::events();
         let out = self.prime_cache_overlaid_inner(e, tokens, cache, queued_after, overlay);
+        if out.is_ok() {
+            cache.check_latent_status()?;
+        }
         if out.is_ok() && crate::progress::events() == events_before {
             crate::progress::note_prime_rows(tokens.len());
         }
@@ -9060,8 +9074,8 @@ impl HybridModel {
             && !crate::portable_mma_gated()
             && !mla.tp_shard
             && mla_tc_prefill_enabled()
-            && let Some(attn) = self.mla_tc_prefill_chain(
-                e, wk_b, wv_b, q_nope, latent, idx, *slots, t, t_kv, nh, dn, dv, r, g.scale,
+            && let Some(attn) = Self::mla_tc_prefill_chain(
+                e, wk_b, wv_b, q_nope, latent, None, idx, *slots, t, t_kv, nh, dn, dv, r, g.scale,
             )?
         {
             return Ok((attn, None));
@@ -9179,7 +9193,12 @@ impl HybridModel {
             );
         }
         let g = mla.geom;
-        if crate::mla_ffi::mla_gathered_live_arm(1, g.kv_rank).is_none() {
+        if memra_kv::latent_layout::nvfp4_enabled() && (g.d_rope != 0 || g.kv_rank != 512) {
+            return Err("NVFP4 graph middle requires NoPE rank512".into());
+        }
+        if !memra_kv::latent_layout::nvfp4_enabled()
+            && crate::mla_ffi::mla_gathered_live_arm(1, g.kv_rank).is_none()
+        {
             return Err(format!(
                 "layer {il}: the gathered-attention arm this process dispatches at t=1 has no \
                  live-width twin (the single-pass DSA arm or a MEMRA_B200_MLA_DECODE_ARM split)"
@@ -9238,7 +9257,7 @@ impl HybridModel {
         let (nh, dn, dr, r) = (g.n_head, g.d_nope, g.d_rope, g.kv_rank);
         let q_lora = mla.wq_b.in_features();
         let slot = layer.len;
-        let capacity = layer.rows.len() / layer.width;
+        let capacity = layer.capacity();
         if slot + 1 > capacity {
             return Err(format!(
                 "layer {il}: latent cache overflow — {slot} + 1 rows exceeds capacity {capacity}"
@@ -9254,7 +9273,21 @@ impl HybridModel {
                      twins of the eager launches (MEMRA_GLM5_GRAPH_MLA_MID=1)"
                 );
             }
-            e.mla_append_latent_live(&mut layer.rows, &ws.c_kv_n, &ws.k_pe, pos_d, 1, r, dr)?;
+            match layer.nvfp4.as_mut() {
+                Some(plane) => {
+                    use crate::latent_nvfp4_ffi::Nvfp4LatentOps;
+                    plane.append_live(e, &ws.c_kv_n, pos_d)?;
+                }
+                None => e.mla_append_latent_live(
+                    &mut layer.rows,
+                    &ws.c_kv_n,
+                    &ws.k_pe,
+                    pos_d,
+                    1,
+                    r,
+                    dr,
+                )?,
+            }
             let (idx, width_d) = self.mla_kpool_indices_live(
                 e,
                 indexer,
@@ -9276,6 +9309,8 @@ impl HybridModel {
                 &idx,
                 &width_d,
                 &layer.rows,
+                layer.nvfp4.as_mut(),
+                pos_d,
                 1,
                 false,
                 il,
@@ -9430,6 +9465,8 @@ impl HybridModel {
         idx: &CudaSlice<i32>,
         width_d: &CudaSlice<i32>,
         latent: &CudaSlice<f32>,
+        compressed: Option<&mut memra_kv::latent_nvfp4::DevicePlane>,
+        pos_d: &CudaSlice<i32>,
         t: usize,
         rows_exact: bool,
         il: usize,
@@ -9437,6 +9474,11 @@ impl HybridModel {
         let g = mla.geom;
         let (nh, dr, r) = (g.n_head, g.d_rope, g.kv_rank);
         let q_lat = self.mla_post_absorb(e, mla, q_nope, t, il)?;
+        if let Some(plane) = compressed {
+            use crate::latent_nvfp4_ffi::Nvfp4LatentOps;
+            let out = plane.attend_live(e, &q_lat, idx, width_d, pos_d, nh, t, g.scale)?;
+            return self.mla_post_decompress(e, mla, &out, t, rows_exact, il);
+        }
         let mut o_lat = e.uninit(t * nh * r)?;
         let idx_stride = idx.len() / t;
         match crate::mla_ffi::mla_gathered_live_arm(t, r) {
@@ -9485,7 +9527,9 @@ impl HybridModel {
         if let Err(why) = self.mla_mid_live_ok(il) {
             return Err(why.into());
         }
-        if crate::mla_ffi::mla_gathered_live_arm(t, mla.geom.kv_rank).is_none() {
+        if !memra_kv::latent_layout::nvfp4_enabled()
+            && crate::mla_ffi::mla_gathered_live_arm(t, mla.geom.kv_rank).is_none()
+        {
             return Err(format!(
                 "layer {il}: the gathered-attention arm at t={t} has no live-width twin"
             )
@@ -9498,7 +9542,7 @@ impl HybridModel {
         let g = mla.geom;
         let (dr, r) = (g.d_rope, g.kv_rank);
         let slot = layer.len;
-        let capacity = layer.rows.len() / layer.width;
+        let capacity = layer.capacity();
         if slot + t > capacity {
             return Err(format!(
                 "layer {il}: latent cache overflow — {slot} + {t} rows exceeds capacity {capacity}"
@@ -9509,7 +9553,15 @@ impl HybridModel {
         let pre = self
             .mla_seg_pre(e, mla, h, pos_d, t, il, true, None)?
             .expect("the ws-free PRE segment always returns its own buffers");
-        e.mla_append_latent_live(&mut layer.rows, &pre.c_kv_n, &pre.k_pe, pos_d, t, r, dr)?;
+        match layer.nvfp4.as_mut() {
+            Some(plane) => {
+                use crate::latent_nvfp4_ffi::Nvfp4LatentOps;
+                plane.append_live(e, &pre.c_kv_n, pos_d)?;
+            }
+            None => {
+                e.mla_append_latent_live(&mut layer.rows, &pre.c_kv_n, &pre.k_pe, pos_d, t, r, dr)?
+            }
+        }
         let (idx, width_d) = self.mla_kpool_indices_live(
             e,
             indexer,
@@ -9531,6 +9583,8 @@ impl HybridModel {
             &idx,
             &width_d,
             &layer.rows,
+            layer.nvfp4.as_mut(),
+            pos_d,
             t,
             true,
             il,
@@ -9565,12 +9619,12 @@ impl HybridModel {
     /// mirror is a later diet, not correctness.
     #[allow(clippy::too_many_arguments)]
     fn mla_tc_prefill_chain(
-        &self,
         e: &Engine,
         wk_b: &CudaSlice<f32>,
         wv_b: &CudaSlice<f32>,
         q_nope: &CudaSlice<f32>,
         latent: &CudaSlice<f32>,
+        compressed: Option<&mut memra_kv::latent_nvfp4::DevicePlane>,
         idx: &CudaSlice<i32>,
         width: usize,
         t: usize,
@@ -9635,7 +9689,13 @@ impl HybridModel {
             return Ok(None);
         }
         // The latent window rows 0..t_kv (this call's rows were appended above), bf16.
-        let cache_bf = e.f32_to_bf16(latent, t_kv * r)?;
+        let cache_bf = match compressed {
+            Some(plane) => {
+                use crate::latent_nvfp4_ffi::Nvfp4LatentOps;
+                plane.bf16_history(e, t_kv)?
+            }
+            None => e.f32_to_bf16(latent, t_kv * r)?,
+        };
         let mut o_lat = e.uninit(t * nh * r)?;
         e.mla_attn_gathered_tc(
             &q_lat_bf, &cache_bf, idx, &mut o_lat, nh, r, t, width, scale,
@@ -10050,6 +10110,92 @@ impl HybridModel {
         }
     }
 
+    #[allow(clippy::too_many_arguments)] // same geometry as the existing MLA core
+    fn mla_attn_nvfp4_pre_wo(
+        &self,
+        e: &Engine,
+        mla: &crate::hybrid::MlaAttnLayer,
+        h: &CudaSlice<f32>,
+        pos_d: &CudaSlice<i32>,
+        t: usize,
+        il: usize,
+        empty_f32: &CudaSlice<f32>,
+        quant: &mut memra_kv::latent_nvfp4::DevicePlane,
+        index_plane: Option<IndexerPlanes<'_>>,
+        slot: usize,
+        rows_exact: bool,
+    ) -> Result<(CudaSlice<f32>, MlaWoQ8), Box<dyn std::error::Error>> {
+        use crate::latent_nvfp4_ffi::Nvfp4LatentOps;
+        let g = mla.geom;
+        if g.d_rope != 0 || g.kv_rank != 512 || !empty_f32.is_empty() {
+            return Err("NVFP4 latent path requires NoPE rank512 and no f32 history shadow".into());
+        }
+        let indexer = mla
+            .index
+            .as_ref()
+            .ok_or("NVFP4 latent requires DSA indexer")?;
+        let plane = index_plane.ok_or("NVFP4 latent requires DSA state plane")?;
+        let pre = self
+            .mla_seg_pre(e, mla, h, pos_d, t, il, rows_exact, None)?
+            .ok_or("NVFP4 latent PRE did not produce its operands")?;
+        quant.append(e, &pre.c_kv_n, slot)?;
+        let (idx, slots) = self.mla_kpool_select(
+            e,
+            indexer,
+            h,
+            &pre.q_an,
+            plane,
+            t,
+            slot,
+            il,
+            rows_exact,
+            (pre.h_q8.as_ref(), pre.q_q8.as_ref()),
+        )?;
+        let visible = slot
+            .checked_add(t)
+            .ok_or("latent visible length overflow")?;
+        let out = if t >= 16
+            && !rows_exact
+            && !crate::portable_mma_gated()
+            && !mla.tp_shard
+            && mla_tc_prefill_enabled()
+        {
+            let wk = Self::mla_split_operand(&mla.wk_b, "attn_k_b", il);
+            let wv = Self::mla_split_operand(&mla.wv_b, "attn_v_b", il);
+            Self::mla_tc_prefill_chain(
+                e,
+                wk,
+                wv,
+                &pre.q_nope,
+                empty_f32,
+                Some(quant),
+                &idx,
+                slots,
+                t,
+                visible,
+                g.n_head,
+                g.d_nope,
+                g.d_v,
+                g.kv_rank,
+                g.scale,
+            )?
+        } else {
+            None
+        };
+        let out = match out {
+            Some(attn) => (attn, None),
+            None => {
+                let query = self.mla_post_absorb(e, mla, &pre.q_nope, t, il)?;
+                let latent_out =
+                    quant.attend(e, &query, &idx, g.n_head, t, slots, visible, g.scale)?;
+                self.mla_post_decompress(e, mla, &latent_out, t, rows_exact, il)?
+            }
+        };
+        static SAID: std::sync::Once = std::sync::Once::new();
+        SAID.call_once(|| eprintln!("[latent-nvfp4] ENGAGED row-local E2M1/E4M3 cache; index/recurrent planes unchanged; no f32 history shadow"));
+        Ok(out)
+    }
+
     /// The stateful MLA call against ONE latent plane, up to (and excluding) the output
     /// projection. The plain path wraps it above (canonical plane + `wo`); the glm5 TP-2
     /// walk calls it once per rank (root shard on the canonical plane, peer shard on the
@@ -10074,7 +10220,7 @@ impl HybridModel {
             "layer {il}: cache latent width {width} != MlaGeom latent_dim {}",
             mla.geom.latent_dim
         );
-        let capacity = layer.rows.len() / width;
+        let capacity = layer.capacity();
         if slot + t > capacity {
             return Err(format!(
                 "layer {il}: latent cache overflow — {slot} + {t} rows exceeds capacity {capacity}"
@@ -10105,8 +10251,13 @@ impl HybridModel {
             state_ring_rows: index_ring_rows,
             capacity_tokens: max_ctx,
         });
-        let out =
-            self.mla_attn_core_pre_wo(e, mla, h, pos_d, t, il, &mut rows, planes, slot, rows_exact);
+        let out = match layer.nvfp4.as_mut() {
+            Some(quant) => self.mla_attn_nvfp4_pre_wo(
+                e, mla, h, pos_d, t, il, &rows, quant, planes, slot, rows_exact,
+            ),
+            None => self
+                .mla_attn_core_pre_wo(e, mla, h, pos_d, t, il, &mut rows, planes, slot, rows_exact),
+        };
         layer.rows = rows;
         layer.index_rows = index_rows;
         layer.index_pool_keys = pool_keys;

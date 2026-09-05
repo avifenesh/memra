@@ -747,7 +747,9 @@ impl HybridModel {
     ) -> Result<(Vec<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
         cache.ensure_usable("decode_step_h")?;
         if self.hyper.is_some() {
-            return self.decode_step_hyper(e, token, cache);
+            let out = self.decode_step_hyper(e, token, cache)?;
+            cache.check_latent_status()?;
+            return Ok(out);
         }
         if self.is_gemma4_e4b() {
             crate::pp::warn_unwired_once("gemma4-e4b eager decode");

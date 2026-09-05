@@ -28,6 +28,10 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 base64 = "0.22"
 
 [[bin]]
+name = "latent-cache-quality"
+path = "src/bin/latent_cache_quality.rs"
+
+[[bin]]
 name = "dsv4-gpu-gate"
 path = "src/bin/dsv4_gpu_gate.rs"
 

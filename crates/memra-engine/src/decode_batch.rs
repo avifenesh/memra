@@ -1247,7 +1247,17 @@ impl HybridModel {
                         .into(),
                 );
             }
-            return self.decode_step_batch_hyper(e, tokens, caches, samp, masks, lean);
+            let out = self.decode_step_batch_hyper(e, tokens, caches, samp, masks, lean)?;
+            let status = caches
+                .iter_mut()
+                .try_for_each(|cache| cache.check_latent_status());
+            if let Err(err) = status {
+                for cache in caches.iter_mut() {
+                    cache.mark_tainted();
+                }
+                return Err(err);
+            }
+            return Ok(out);
         }
         let _pp_walk =
             if crate::pp::pp_cuts(self.layers.len()).is_some() && !crate::pp::pp2_streams_off() {

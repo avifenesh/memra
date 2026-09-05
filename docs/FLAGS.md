@@ -1,5 +1,11 @@
 # Environment flags — the audited catalog
 
+## Active experiment: GLM latent NVFP4
+
+| Flag | Default | Contract |
+| --- | --- | --- |
+| `MEMRA_GLM53_NVFP4_LATENT` | OFF | `=1` selects row-local NVFP4 storage for 512-wide NoPE DSA latent history. Allocation, admission and prefix budgets count payload, per16 E4M3 scales and one f32 macro scale per row; snapshots retain the encoded format. Index/pool and recurrent planes stay unchanged. Decode reads packed rows directly; TC prefill uses a transient BF16 operand, never a persistent f32 shadow. Eager and live graph/verify MLA paths are wired; shared stage status is checked at completion boundaries and failed caches are tainted. Stateless all-row forward refuses; last-row forward uses the real cached path. Rollback: fresh process with flag absent/0, never reinterpretation of an existing snapshot. **Unqualified experiment**, no production/performance claim. decide-by: 2026-09-19. Gates: `crates/memra-engine/tests/latent_nvfp4_gpu.rs`, `crates/memra-kv/src/latent_nvfp4.rs`; final model-scale quality, rollback, reuse and best-vs-best receipts pending in issue244. Remove losing/neutral arm in this lane. |
+
 > **A new `MEMRA_*` read needs a row here IN THE SAME COMMIT.** `tools/hooks/pre-push` runs
 > `tools/check-flags.sh` on every push (+0.55 s) and refuses one that adds an uncovered name. That
 > arm landed 2026-08-23 after main went red three times in one day on this exact rule — the census

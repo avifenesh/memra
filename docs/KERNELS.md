@@ -1,5 +1,16 @@
 # Kernel inventory
 
+## Experimental NVFP4 latent history (issue244)
+
+Native `cu/latent_nvfp4.cu` supplies `memra_latent_nvfp4_append`,
+`memra_latent_nvfp4_gather`, and `memra_latent_nvfp4_to_bf16`. The shared
+gathered-attention reduction in `cu/mla_attn.cu` has an encoded read view exposed
+by `memra_mla_attn_gathered_nvfp4`. The storage selector is
+`MEMRA_GLM53_NVFP4_LATENT`, default OFF, decide-by: 2026-09-19. No indexer or
+recurrent-state quantization. GPU correctness tests compare native packed bytes,
+gathers and attention to CPU-decoded f32 operands; model-scale qualification and
+performance tuning remain pending. These entries are not support certificates.
+
 Derived from code (build.rs, cu/, FFI shims) 2026-09-02 **at commit 6a131edb** — line
 references resolve against that commit (`git show 6a131edb:<path>`), not necessarily HEAD.
 Every row comes from a grep or a read; UNKNOWN means not determinable from the code without

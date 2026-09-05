@@ -1857,9 +1857,11 @@ extern "C" int memra_mla_kpool_select_ref_f32(const float* score, int* idx, int 
 // with the contiguous `0..visible` cache walk replaced by the indexer's per-query index list
 // (-1 = empty slot). The list is shared across heads because the indexer mixes heads BEFORE
 // selecting — one selection per query, not per (query, head).
+#include "latent_nvfp4_read.cuh"
+template <typename CacheRead>
 __device__ __forceinline__ void memra_mla_attn_gathered_body(
     const float* __restrict__ q_lat, const float* __restrict__ q_pe,
-    const float* __restrict__ cache, const int* __restrict__ idx, float* __restrict__ o_lat,
+    CacheRead cache, const int* __restrict__ idx, float* __restrict__ o_lat,
     int n_head, int kv_rank, int d_rope, int n_slots, float scale, int idx_stride) {
     __shared__ float s_q[MLA_MAX_RANK];
     __shared__ float s_qp[MLA_MAX_ROPE];
@@ -1890,7 +1892,7 @@ __device__ __forceinline__ void memra_mla_attn_gathered_body(
         int t = (s < n_slots) ? row_idx[s] : -1;
         float part = 0.0f;
         if (t >= 0) {
-            const float* row = cache + (long)t * width;
+            auto row = cache + (long)t * width;
             for (int l = lane; l < kv_rank; l += 32) part += s_q[l] * row[l];
             for (int p = lane; p < d_rope; p += 32) part += s_qp[p] * row[kv_rank + p];
         }
@@ -1926,6 +1928,7 @@ __device__ __forceinline__ void memra_mla_attn_gathered_body(
         __syncthreads();
     }
 
+    if (!(dsum > 0.f) || !isfinite(dsum)) latent_empty_softmax(cache);
     float inv = 1.0f / dsum;
     for (int l = threadIdx.x; l < kv_rank; l += blockDim.x)
         o_lat[(long)blk * kv_rank + l] = s_acc[l] * inv;
@@ -1937,6 +1940,54 @@ extern "C" __global__ void memra_mla_attn_gathered_kernel(
     int n_head, int kv_rank, int d_rope, int n_slots, float scale) {
     memra_mla_attn_gathered_body(q_lat, q_pe, cache, idx, o_lat, n_head, kv_rank, d_rope, n_slots,
                                  scale, n_slots);
+}
+
+__global__ void memra_mla_attn_gathered_nvfp4_kernel(
+    const float* q_lat, const float* q_pe, LatentNvfp4Read cache,
+    const int* idx, float* out, int nh, int rank, int slots, float scale) {
+    memra_mla_attn_gathered_body(q_lat, q_pe, cache, idx, out, nh, rank, 0, slots, scale, slots);
+}
+
+extern "C" int memra_mla_attn_gathered_nvfp4(
+    const float* q_lat, const float* q_pe, const unsigned char* payload,
+    const unsigned char* scales, const float* macros, int* error,
+    const int* idx, float* out, int nh, int rank, int tq, int slots,
+    int visible, float scale, void* stream) {
+    if (rank <= 0 || rank > MLA_MAX_RANK || rank % 16 || nh <= 0 || tq < 0 ||
+        slots <= 0 || visible <= 0 || (long)tq * nh > INT32_MAX) return 40001;
+    if (!tq) return 0;
+    LatentNvfp4Read cache{payload, scales, macros, error, rank, visible, 0};
+    memra_mla_attn_gathered_nvfp4_kernel<<<tq * nh, MLA_THREADS, 0, (cudaStream_t)stream>>>(
+        q_lat, q_pe, cache, idx, out, nh, rank, slots, scale);
+    MLA_ERR();
+    return 0;
+}
+
+__global__ void memra_mla_attn_gathered_nvfp4_live_kernel(
+    const float* q_lat, LatentNvfp4Read cache, const int* idx, const int* width_d,
+    float* out, int nh, int rank, int stride, float scale) {
+    int slots = width_d[0];
+    if (slots <= 0 || slots > stride) {
+        if (threadIdx.x == 0) atomicExch(cache.error, 5);
+        for (int c = threadIdx.x; c < rank; c += blockDim.x) out[(long)blockIdx.x * rank + c] = 0.f;
+        return;
+    }
+    memra_mla_attn_gathered_body(q_lat, nullptr, cache, idx, out, nh, rank, 0, slots, scale, stride);
+}
+
+extern "C" int memra_mla_attn_gathered_nvfp4_live(
+    const float* q_lat, const unsigned char* payload, const unsigned char* scales,
+    const float* macros, int* error, const int* idx, const int* width_d,
+    const int* pos_d, float* out, int nh, int rank, int tq, int stride,
+    int capacity, float scale, void* stream) {
+    if (rank <= 0 || rank > MLA_MAX_RANK || rank % 16 || nh <= 0 || tq < 0 ||
+        stride <= 0 || capacity <= 0 || !width_d || !pos_d || (long)tq * nh > INT32_MAX) return 40001;
+    if (!tq) return 0;
+    LatentNvfp4Read cache{payload, scales, macros, error, rank, capacity, 0, pos_d, tq};
+    memra_mla_attn_gathered_nvfp4_live_kernel<<<tq * nh, MLA_THREADS, 0, (cudaStream_t)stream>>>(
+        q_lat, cache, idx, width_d, out, nh, rank, stride, scale);
+    MLA_ERR();
+    return 0;
 }
 
 // Live-width twin (t_q = 1): `n_slots` is the token's true index_width published by the live

@@ -899,6 +899,7 @@ impl HybridModel {
             &mut ckpt,
         )?;
         let (logits, collapsed) = self.glm5_verify_head(e, &topology, &x, t)?;
+        cache.check_latent_status()?;
         Ok((logits, collapsed, ckpt))
     }
 
@@ -1514,6 +1515,7 @@ impl HybridModel {
                 )?;
             }
             let (logits, collapsed) = self.glm5_verify_head(e, topology, &x, t)?;
+            cache.check_latent_status()?;
             return Ok((logits, collapsed, ckpt));
         }
 
@@ -1587,6 +1589,7 @@ impl HybridModel {
         // transients, this round's ckpt clones). The caller resumes and allocates for the
         // accept walk and the MTP re-seed, so it must be ordered behind ALL stages.
         self.glm5_publish_stages(e)?;
+        cache.check_latent_status()?;
         Ok((logits, collapsed, ckpt))
     }
 
@@ -2003,7 +2006,7 @@ impl HybridModel {
             let _ = self.mla_attn_cached(e, mla, &a_norm, &pos_d, tc, il, cache)?;
             done += tc;
         }
-        Ok(())
+        cache.check_latent_status()
     }
 
     /// Row `row` of a `[rows, n_embd]` device stack, copied into its own `[n_embd]` buffer

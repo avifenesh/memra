@@ -1255,6 +1255,14 @@ pub(crate) fn ensure_mla_peer_latent(
         };
         planes.push(LatentKvLayer {
             rows,
+            nvfp4: match &canonical.nvfp4 {
+                Some(p) => Some(memra_kv::latent_nvfp4::DevicePlane::new(
+                    dev,
+                    p.width(),
+                    p.capacity(),
+                )?),
+                None => None,
+            },
             width: canonical.width,
             index_width: canonical.index_width,
             len: 0,

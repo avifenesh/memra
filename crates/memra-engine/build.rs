@@ -488,6 +488,7 @@ fn main() {
             // bounds (the online-softmax tiling already reorders accumulation vs the CPU
             // oracle), so forbidding contraction would cost speed and buy nothing.
             "cu/mla_attn.cu",
+            "cu/latent_nvfp4.cu",
             // DeepSeek-V4-Flash trunk bring-up kernels + bf16 cuBLASLt GEMM (lane 4).
             // Portable CUDA C (no tensor-core intrinsics) — no arch stub needed. Compiled
             // with -fmad=false below: the kernels mirror the lane-3 CPU oracle's separate
@@ -497,6 +498,7 @@ fn main() {
         ] {
             println!("cargo:rerun-if-changed={mmq_src}");
             println!("cargo:rerun-if-changed=cu/mmq_common.cuh");
+            println!("cargo:rerun-if-changed=cu/latent_nvfp4_read.cuh");
             println!("cargo:rerun-if-changed=cu/mmq_mma_i8.cuh");
             println!("cargo:rerun-if-changed=cu/sm100_blockscale_layout.cuh");
             // fa3_prefill.cu includes the shared wgmma header (dedup 2026-08-21).

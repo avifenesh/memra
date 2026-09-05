@@ -90,6 +90,7 @@ pub mod glm5_tp;
 pub mod glm_spec;
 pub mod graph_update;
 pub mod kda;
+pub mod latent_nvfp4_ffi;
 /// MLA (multi-head latent attention) CPU f32 reference — GLM-5.2 bring-up lane increment 1.
 /// Naive vs absorbed decode forms + NORM/NEOX rope permutation, unit-tested; the permanent
 /// oracle for the MLA kernel family (`research/mla-bringup-20260801/DESIGN.md`). No CUDA deps.
@@ -33752,6 +33753,16 @@ mod target_dispatch_tests {
 /// The memra-kv device seam (Phase D): the cache's 7 ops delegate to the engine's
 /// inherent methods (inherent methods win name resolution, so no recursion).
 impl memra_kv::KvDev for Engine {
+    fn copy_u8_range_into(
+        &self,
+        dst: &mut CudaSlice<u8>,
+        dst_off: usize,
+        src: &CudaSlice<u8>,
+        src_off: usize,
+        len: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        Engine::copy_u8_range_into(self, dst, dst_off, src, src_off, len)
+    }
     fn zeros(&self, n: usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         Engine::zeros(self, n)
     }
