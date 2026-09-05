@@ -2596,6 +2596,28 @@ pub fn topk_shards_dispatches() -> u64 {
     TOPK_SHARDS_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// `MEMRA_TOPK_WARP=1` (lane/draft-topk-warp-20260905, default OFF, decide-by 2026-09-19):
+/// `topk_rows` runs the warp-merged exact twin pair (`topk_rows_wshard_k{8,16,32}_f32` +
+/// `topk_rows_wshard_merge_f32`: register lane lists at a compile-time k with an unrolled
+/// insertion, shuffle-argmax merges inside each block and across the shards) instead of the
+/// shipped arms, whose lane lists live in local memory and whose merges each run on ONE thread.
+/// Output-identical by construction (a discrete selection under (value desc, column asc); the
+/// top-k of a union is the top-k of its parts' top-k lists), gated by `glm5_matvec_doors_gpu`.
+/// Read per call; when set it takes precedence over `MEMRA_TOPK_SHARDS` at every column count
+/// for k in {8, 16, 32} (other k fall through to the shipped arms).
+fn topk_warp_on() -> bool {
+    std::env::var("MEMRA_TOPK_WARP").as_deref() == Ok("1")
+}
+
+/// Engagement counter for the warp-merged top-k door (`MEMRA_TOPK_WARP`).
+pub static TOPK_WARP_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// Snapshot of [`TOPK_WARP_DISPATCHES`] — gates take a before/after delta.
+pub fn topk_warp_dispatches() -> u64 {
+    TOPK_WARP_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// `MEMRA_ALLOC_TRACE=1` (gate-harness instrument, default OFF, never a serving flag): every
 /// Engine device allocation funnel (`alloc_uninit` and the zeroed / typed / host-upload
 /// wrappers) prints `[alloc-trace] <bytes> bytes from <file>:<line>` naming the CALLER
@@ -4759,6 +4781,19 @@ impl Engine {
     ) -> Result<(CudaSlice<f32>, CudaSlice<u32>), Box<dyn std::error::Error>> {
         assert!((1..=32).contains(&k), "topk_rows supports 1..=32, got {k}");
         assert!(k <= n_cols, "topk_rows: k {k} > n_cols {n_cols}");
+        // MEMRA_TOPK_WARP (default OFF): register lane lists at a compile-time k and warp
+        // shuffle merges under the same total order, sharded across blocks (doc at
+        // `topk_warp_on`). Output-identical by construction; gated by glm5_matvec_doors_gpu.
+        if topk_warp_on()
+            && let Some(out) = self.topk_rows_warp(logits, n_rows, n_cols, k)?
+        {
+            if TOPK_WARP_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+                eprintln!(
+                    "[topk-warp] engaged: rows={n_rows} cols={n_cols} k={k} (MEMRA_TOPK_WARP=1)"
+                );
+            }
+            return Ok(out);
+        }
         // MEMRA_TOPK_SHARDS (lane/glm5-matvec door K, default ON since 2026-08-31): the exact two-launch
         // shard split — n_rows*16 partial blocks + a per-row merge — instead of n_rows
         // blocks total (the DFlash2 selector: 15 blocks on the whole card, 7 GB/s). Top-k
@@ -4857,6 +4892,74 @@ impl Engine {
             b.launch(cfg2)?;
         }
         Ok((vals, idxs))
+    }
+
+    /// The warp-merged exact twin pair behind `MEMRA_TOPK_WARP` (see [`Self::topk_rows`]):
+    /// stage 1 shards each row across blocks whose lanes keep register lists at a compile-time
+    /// k (8, 16, 32) and merge by shuffle argmax; stage 2 merges the shard lists, one warp per
+    /// row. Output-identical to `topk_rows_f32` by construction; gated by
+    /// `glm5_matvec_doors_gpu`. Returns `None` for a k without an instantiation (the caller
+    /// falls through to the shipped arms).
+    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
+    fn topk_rows_warp(
+        &self,
+        logits: &CudaSlice<f32>,
+        n_rows: usize,
+        n_cols: usize,
+        k: usize,
+    ) -> Result<Option<(CudaSlice<f32>, CudaSlice<u32>)>, Box<dyn std::error::Error>> {
+        let name = match k {
+            8 => "topk_rows_wshard_k8_f32",
+            16 => "topk_rows_wshard_k16_f32",
+            32 => "topk_rows_wshard_k32_f32",
+            _ => return Ok(None),
+        };
+        let nth = 256usize;
+        let nwarps = nth / 32;
+        let n_shards = (n_cols / 4096).clamp(1, 32);
+        let mut pvals = self.uninit(n_rows * n_shards * k)?;
+        let mut pidxs = self.alloc_uninit::<u32>(n_rows * n_shards * k)?;
+        let f1 = self.func(name);
+        let cfg1 = LaunchConfig {
+            grid_dim: (n_rows as u32, n_shards as u32, 1),
+            block_dim: (nth as u32, 1, 1),
+            shared_mem_bytes: (nwarps * k * 8) as u32,
+        };
+        let (nr, nc, ki, ns) = (n_rows as i32, n_cols as i32, k as i32, n_shards as i32);
+        {
+            let __s_b = self.gpu.stream();
+            let mut b = __s_b.launch_builder(&f1);
+            b.arg(logits)
+                .arg(&nr)
+                .arg(&nc)
+                .arg(&ns)
+                .arg(&mut pvals)
+                .arg(&mut pidxs);
+            unsafe {
+                b.launch(cfg1)?;
+            }
+        }
+        let mut vals = self.uninit(n_rows * k)?;
+        let mut idxs = self.alloc_uninit::<u32>(n_rows * k)?;
+        let f2 = self.func("topk_rows_wshard_merge_f32");
+        let cfg2 = LaunchConfig {
+            grid_dim: (n_rows as u32, 1, 1),
+            block_dim: (32, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f2);
+        b.arg(&pvals)
+            .arg(&pidxs)
+            .arg(&nr)
+            .arg(&ns)
+            .arg(&ki)
+            .arg(&mut vals)
+            .arg(&mut idxs);
+        unsafe {
+            b.launch(cfg2)?;
+        }
+        Ok(Some((vals, idxs)))
     }
 
     /// logits[row_off .. row_off+n] += bias[0..n] (in place, one row).
