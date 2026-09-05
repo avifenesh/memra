@@ -20669,6 +20669,70 @@ impl Engine {
 
     /// True if `qtype` has a warp-per-row MMVQ decode kernel AND MEMRA_MMVQ is set. Only the 4
     /// daily-hot dtypes (Q8_0, Q4_K, Q6_K, NVFP4) — others keep the _dp4a matvec (oracle/fallback).
+    /// Would [`Engine::matmul`] take the t=1 mmvq fast path for `w` (quantize the activation
+    /// to q8_1, then `qmatvec_mmvq`)? The quantize-once-share seam asks this BEFORE quantizing a
+    /// row it means to share, so a weight on another path never costs a stray quantize.
+    /// Mirrors `matmul`'s predicate: m == 1, `MEMRA_FAST` not "0", a `GpuTensor::Quant` whose
+    /// qtype `mmvq_supports`, and not the F8-E4M3 block-128 arm (that one quantizes for its own
+    /// kernel first).
+    pub fn mmvq_fast_eligible(&self, w: &crate::model::GpuTensor, m: usize) -> bool {
+        use crate::model::GpuTensor;
+        if m != 1 || std::env::var("MEMRA_FAST").as_deref() == Ok("0") {
+            return false;
+        }
+        match w {
+            GpuTensor::Quant { qtype, .. } => {
+                *qtype != QT_F8_E4M3_BLK && self.mmvq_supports(*qtype)
+            }
+            _ => false,
+        }
+    }
+
+    /// The t=1 mmvq fast path of [`Engine::matmul`] on an activation already quantized to q8_1
+    /// (`aq`, `ad` from `quantize_q8_1` over the same row): the same kernel `matmul` would run,
+    /// minus its quantize. `Ok(None)` when `w` is not on that path (caller runs `matmul`).
+    pub fn matmul_q8_fast(
+        &self,
+        w: &crate::model::GpuTensor,
+        aq: &CudaSlice<i8>,
+        ad: &CudaSlice<f32>,
+        m: usize,
+    ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        use crate::model::GpuTensor;
+        if !self.mmvq_fast_eligible(w, m) {
+            return Ok(None);
+        }
+        let GpuTensor::Quant {
+            bytes,
+            qtype,
+            row_bytes,
+            rp,
+            rp4,
+            scale,
+            ..
+        } = w
+        else {
+            return Ok(None);
+        };
+        let (bytes, rp) = match rp4 {
+            Some(m4) => (m4, true),
+            None => (bytes, *rp),
+        };
+        let y = self.qmatvec_mmvq(
+            bytes,
+            aq,
+            ad,
+            m,
+            w.in_features(),
+            w.out_features(),
+            *qtype,
+            *row_bytes,
+            *scale,
+            rp,
+        )?;
+        Ok(Some(y))
+    }
+
     pub fn mmvq_supports(&self, qtype: i32) -> bool {
         // DEFAULT ON since 2026-07-08 (MEMRA_MMVQ=0 reverts to the _dp4a matvec class).
         // QT_F8_E4M3 is exempt from the MEMRA_MMVQ=0 escape: the e4m3 mmvq family is that dtype's

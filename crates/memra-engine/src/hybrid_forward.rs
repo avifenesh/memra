@@ -565,6 +565,10 @@ pub(crate) struct MlaSegWs {
     pub c_kv_n: CudaSlice<f32>,
     pub k_pe: CudaSlice<f32>,
     /// `(nh, dn, dr, r, q_lora)` this set was sized for; another geometry refuses by name.
+    /// q8_1 pairs of `h` and `q_an` from the last PRE (quantize-once-share); the MID's indexer
+    /// reads them, the next PRE overwrites them.
+    pub h_q8: Option<Q8Pair>,
+    pub q_q8: Option<Q8Pair>,
     pub sig: (usize, usize, usize, usize, usize),
 }
 
@@ -584,6 +588,8 @@ impl MlaSegWs {
             q_an: e.uninit(q_lora)?,
             c_kv_n: e.uninit(r)?,
             k_pe: e.uninit(dr.max(1))?,
+            h_q8: None,
+            q_q8: None,
             sig: (nh, dn, dr, r, q_lora),
         })
     }
@@ -595,6 +601,59 @@ pub(crate) struct MlaMidIn<'a> {
     pub q_an: &'a CudaSlice<f32>,
     pub c_kv_n: &'a CudaSlice<f32>,
     pub k_pe: &'a CudaSlice<f32>,
+    /// q8_1 pairs of `h` and `q_an` the PRE segment already quantized for its own projections
+    /// (quantize-once-share, 2026-09-05): the indexer's three projections on `h` and one on
+    /// `q_an` reuse them instead of re-quantizing the same rows.
+    pub h_q8: Option<&'a Q8Pair>,
+    pub q_q8: Option<&'a Q8Pair>,
+}
+
+/// `Engine::matmul` for a row several t=1 projections share: quantize it to q8_1 ONCE (lazily,
+/// and only when the weight is on the mmvq fast path), then run the fast path on the pair.
+/// The same quantize kernel over the same row and the same matvec kernel: the same bytes as
+/// `matmul` per call, one launch fewer per additional sharer. `rows_exact` keeps the exactness
+/// harness path untouched.
+fn mm_shared(
+    e: &Engine,
+    w: &crate::model::GpuTensor,
+    x: &CudaSlice<f32>,
+    m: usize,
+    pair: &mut Option<Q8Pair>,
+    rows_exact: bool,
+) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+    if rows_exact {
+        return e.matmul_rows_exact(w, x, m);
+    }
+    if e.mmvq_fast_eligible(w, m) {
+        if pair.is_none() {
+            *pair = Some(e.quantize_q8_1(x, m, w.in_features())?);
+        }
+        let (aq, ad) = pair.as_ref().expect("filled above");
+        if let Some(y) = e.matmul_q8_fast(w, aq, ad, m)? {
+            return Ok(y);
+        }
+    }
+    e.matmul(w, x, m)
+}
+
+/// Read-only twin of [`mm_shared`]: use a pair a producer left, never quantize.
+fn mm_with_pair(
+    e: &Engine,
+    w: &crate::model::GpuTensor,
+    x: &CudaSlice<f32>,
+    m: usize,
+    pair: Option<&Q8Pair>,
+    rows_exact: bool,
+) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+    if rows_exact {
+        return e.matmul_rows_exact(w, x, m);
+    }
+    if let Some((aq, ad)) = pair
+        && let Some(y) = e.matmul_q8_fast(w, aq, ad, m)?
+    {
+        return Ok(y);
+    }
+    e.matmul(w, x, m)
 }
 
 /// The MLA core's PRE segment outputs (lane/glm5-mla-segments-20260904): everything the
@@ -605,6 +664,8 @@ pub(crate) struct MlaPreOut {
     pub q_an: CudaSlice<f32>,
     pub c_kv_n: CudaSlice<f32>,
     pub k_pe: CudaSlice<f32>,
+    pub h_q8: Option<Q8Pair>,
+    pub q_q8: Option<Q8Pair>,
 }
 
 pub struct IndexerPlanes<'a> {
@@ -8696,6 +8757,8 @@ impl HybridModel {
                         q_an: &ws.q_an,
                         c_kv_n: &ws.c_kv_n,
                         k_pe: &ws.k_pe,
+                        h_q8: ws.h_q8.as_ref(),
+                        q_q8: ws.q_q8.as_ref(),
                     },
                     latent,
                     index_plane,
@@ -8722,6 +8785,8 @@ impl HybridModel {
                 q_an: &pre.q_an,
                 c_kv_n: &pre.c_kv_n,
                 k_pe: &pre.k_pe,
+                h_q8: pre.h_q8.as_ref(),
+                q_q8: pre.q_q8.as_ref(),
             },
             latent,
             index_plane,
@@ -8773,15 +8838,6 @@ impl HybridModel {
         // projection through the decode-exact classes so each of the t rows is
         // bit-identical to the t=1 decode program (matmul_rows_exact contract); false =
         // the unchanged dispatch for every other caller (prime keeps its classes).
-        let mm = |w: &crate::model::GpuTensor,
-                  x: &CudaSlice<f32>|
-         -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-            if rows_exact {
-                e.matmul_rows_exact(w, x, t)
-            } else {
-                e.matmul(w, x, t)
-            }
-        };
 
         // --- q path: wq_a -> q_a_norm -> wq_b -> per-head [nope | rope] ---
         let q_lora = mla.wq_b.in_features();
@@ -8799,7 +8855,9 @@ impl HybridModel {
                 )
                 .into());
             }
-            let q_a = mm(&mla.wq_a, h)?;
+            let mut h_q8: Option<Q8Pair> = None;
+            let mut q_q8: Option<Q8Pair> = None;
+            let q_a = mm_shared(e, &mla.wq_a, h, t, &mut h_q8, rows_exact)?;
             e.rms_norm(
                 &q_a,
                 mla.q_a_norm.float_data(),
@@ -8808,20 +8866,24 @@ impl HybridModel {
                 t,
                 eps,
             )?;
-            let q = mm(&mla.wq_b, &ws.q_an)?;
+            let q = mm_shared(e, &mla.wq_b, &ws.q_an, t, &mut q_q8, rows_exact)?;
             e.mla_split_latent(&q, &mut ws.q_nope, &mut ws.q_pe, t * nh, dn, dr)?;
             e.mla_rope_interleaved(&mut ws.q_pe, pos_d, t, nh, dr, base)?;
-            let kv = mm(&mla.wkv_a, h)?;
+            let kv = mm_shared(e, &mla.wkv_a, h, t, &mut h_q8, rows_exact)?;
+            ws.h_q8 = h_q8;
+            ws.q_q8 = q_q8;
             let mut c_kv = e.uninit(t * r)?;
             e.mla_split_latent(&kv, &mut c_kv, &mut ws.k_pe, t, r, dr)?;
             e.rms_norm(&c_kv, mla.kv_a_norm.float_data(), &mut ws.c_kv_n, r, t, eps)?;
             e.mla_rope_interleaved(&mut ws.k_pe, pos_d, t, 1, dr, base)?;
             return Ok(None);
         }
-        let q_a = mm(&mla.wq_a, h)?;
+        let mut h_q8: Option<Q8Pair> = None;
+        let mut q_q8: Option<Q8Pair> = None;
+        let q_a = mm_shared(e, &mla.wq_a, h, t, &mut h_q8, rows_exact)?;
         let mut q_an = e.uninit(t * q_lora)?;
         e.rms_norm(&q_a, mla.q_a_norm.float_data(), &mut q_an, q_lora, t, eps)?;
-        let q = mm(&mla.wq_b, &q_an)?;
+        let q = mm_shared(e, &mla.wq_b, &q_an, t, &mut q_q8, rows_exact)?;
         // Per head the row is [nope | rope] contiguous, so t*nh rows of width dn+dr split with
         // the same kernel the latent row uses — the two layouts are the same shape.
         let mut q_nope = e.uninit(t * nh * dn)?;
@@ -8832,7 +8894,7 @@ impl HybridModel {
         e.mla_rope_interleaved(&mut q_pe, pos_d, t, nh, dr, base)?;
 
         // --- kv path: wkv_a -> [c_kv (rms-normed) | k_pe (roped, NOT normed)] ---
-        let kv = mm(&mla.wkv_a, h)?;
+        let kv = mm_shared(e, &mla.wkv_a, h, t, &mut h_q8, rows_exact)?;
         let mut c_kv = e.uninit(t * r)?;
         let mut k_pe = e.uninit((t * dr).max(1))?;
         e.mla_split_latent(&kv, &mut c_kv, &mut k_pe, t, r, dr)?;
@@ -8849,6 +8911,8 @@ impl HybridModel {
             q_an,
             c_kv_n,
             k_pe,
+            h_q8,
+            q_q8,
         }))
     }
 
@@ -8873,10 +8937,11 @@ impl HybridModel {
         let (dr, r) = (g.d_rope, g.kv_rank);
         e.mla_append_latent(latent, planes.c_kv_n, planes.k_pe, slot, t, r, dr)?;
         let q_an = planes.q_an;
+        let pairs = (planes.h_q8, planes.q_q8);
         let gathered = match (&mla.index, index_plane) {
-            (Some(indexer), Some(plane)) => {
-                Some(self.mla_kpool_select(e, indexer, h, q_an, plane, t, slot, il, rows_exact)?)
-            }
+            (Some(indexer), Some(plane)) => Some(
+                self.mla_kpool_select(e, indexer, h, q_an, plane, t, slot, il, rows_exact, pairs)?,
+            ),
             (Some(_), None) => {
                 return Err(format!(
                     "layer {il} declares a DSA k-pool indexer but no indexer state plane was \
@@ -9133,12 +9198,12 @@ impl HybridModel {
         slot: usize,
         il: usize,
         rows_exact: bool,
+        pairs: (Option<&Q8Pair>, Option<&Q8Pair>),
     ) -> Result<(CudaSlice<i32>, usize), Box<dyn std::error::Error>> {
-        Self::mla_kpool_indices_ex(e, indexer, h, q_resid, plane, t, slot, rows_exact).map_err(
-            |source| -> Box<dyn std::error::Error> {
+        Self::mla_kpool_indices_ex(e, indexer, h, q_resid, plane, t, slot, rows_exact, pairs)
+            .map_err(|source| -> Box<dyn std::error::Error> {
                 format!("layer {il}: DSA k-pool selection failed: {source}").into()
-            },
-        )
+            })
     }
 
     /// DSA k-pool indexer: append this call's packed indexer state, then select the cache rows
@@ -9167,7 +9232,7 @@ impl HybridModel {
         t: usize,
         slot: usize,
     ) -> Result<(CudaSlice<i32>, usize), Box<dyn std::error::Error>> {
-        Self::mla_kpool_indices_ex(e, indexer, h, q_resid, plane, t, slot, false)
+        Self::mla_kpool_indices_ex(e, indexer, h, q_resid, plane, t, slot, false, (None, None))
     }
 
     /// [`Self::mla_kpool_indices`] with the verify-batch matmul-class selector
@@ -9184,16 +9249,19 @@ impl HybridModel {
         t: usize,
         slot: usize,
         rows_exact: bool,
+        pairs: (Option<&Q8Pair>, Option<&Q8Pair>),
     ) -> Result<(CudaSlice<i32>, usize), Box<dyn std::error::Error>> {
-        let mm = |w: &crate::model::GpuTensor,
-                  x: &CudaSlice<f32>|
-         -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-            if rows_exact {
-                e.matmul_rows_exact(w, x, t)
-            } else {
-                e.matmul(w, x, t)
-            }
-        };
+        // quantize-once-share: the PRE segment's q8 pairs of `h` and `q_resid` (= q_an) serve
+        // the indexer's projections on the same rows; absent a pair, `matmul` as before.
+        let (h_q8, q_q8) = pairs;
+        let mm_h =
+            |w: &crate::model::GpuTensor| -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+                mm_with_pair(e, w, h, t, h_q8, rows_exact)
+            };
+        let mm_q =
+            |w: &crate::model::GpuTensor| -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+                mm_with_pair(e, w, q_resid, t, q_q8, rows_exact)
+            };
         /// `nn.LayerNorm` default epsilon. The indexer's k_norm is a LayerNorm, so it does NOT
         /// take the model's `rms_norm_eps` (census: "eps 1e-5, NOT rms_norm_eps"); they coincide
         /// numerically on GLM-5.3-Flash and the constant keeps them from being coupled.
@@ -9248,7 +9316,7 @@ impl HybridModel {
 
         // 1. packed state rows [k | gate], appended at `slot` — the same [a|b] row shape the
         //    latent plane uses, so `mla_append_latent` packs it with no new kernel.
-        let k_raw = mm(&indexer.wk, h)?;
+        let k_raw = mm_h(&indexer.wk)?;
         let mut k_norm = e.uninit(t * d)?;
         e.layer_norm_bias(
             &k_raw,
@@ -9259,7 +9327,7 @@ impl HybridModel {
             t,
             INDEX_NORM_EPS,
         )?;
-        let gate = mm(&indexer.kpool_gate, h)?;
+        let gate = mm_h(&indexer.kpool_gate)?;
 
         // 2. pool keys over every COMPLETE pool in the cache — INCREMENTALLY. A pool's key is a
         //    function of its own `pool` state rows (append-only, never rewritten) and the constant
@@ -9339,8 +9407,8 @@ impl HybridModel {
         let pool_keys = &*pool_keys;
 
         // 3. score + head mix, 4. top-k -> raw rows + tail.
-        let q_index = mm(&indexer.wq_b, q_resid)?;
-        let head_weights = mm(&indexer.weights_proj, h)?;
+        let q_index = mm_q(&indexer.wq_b)?;
+        let head_weights = mm_h(&indexer.weights_proj)?;
         let mut score = e.uninit((t * n_pools).max(1))?;
         e.mla_kpool_score(
             &q_index,
