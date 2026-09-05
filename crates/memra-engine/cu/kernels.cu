@@ -890,6 +890,50 @@ extern "C" __global__ void __launch_bounds__(1024) hc_mixes_gemv_f32(
     }
 }
 
+// gemv_f32_rows (lane/f32-gemv-rows-20260905): y[j][r] = dot(w[r, :], x[j, :]) for an f32-RESIDENT
+// weight [out_f, in_f] and up to a handful of x rows (grid.y = m, the decode/verify tier). One block
+// per (row, token): each thread walks float4 chunks of the row at stride 4*B in ONE accumulator
+// (`__fmaf_rn`, no register array: a runtime-strided array would spill), then the same fixed
+// reduction tree as hc_mixes_gemv_f32 (shuffle-down 16..1, warp partials in smem, warp 0 tree).
+// Replaces cuBLASLt's `dot_kernel` + `reduce_1Block_kernel` pair (two launches, ~9 us of host
+// latency each on the eager MLA layers: the DSA indexer's wk / kpool_gate / weights_proj at t=1).
+// DETERMINISTIC run to run and IDENTICAL per row whatever m is (each (row, token) block is the
+// same program), so verify == decode bit-for-bit by construction; NOT bit-identical to cuBLAS
+// (its split is its own): numeric class, gated by tolerance + determinism + the m-identity
+// (`tests/f32_gemv_rows_gpu.rs`). Requires in_f % (4 * B) == 0 and 16-byte aligned rows.
+extern "C" __global__ void __launch_bounds__(256) gemv_f32_rows(
+        const float* __restrict__ x, const float* __restrict__ w, float* __restrict__ y,
+        int in_f, int out_f) {
+    const int r = blockIdx.x;
+    const int j = blockIdx.y;
+    if (r >= out_f) return;
+    const int t = threadIdx.x;
+    const int B = blockDim.x;
+    const float4* w4 = reinterpret_cast<const float4*>(w + (long)r * in_f);
+    const float4* x4 = reinterpret_cast<const float4*>(x + (long)j * in_f);
+    const int n4 = in_f >> 2;
+    float acc = 0.0f;
+    for (int i = t; i < n4; i += B) {
+        const float4 a = __ldg(w4 + i);
+        const float4 b = __ldg(x4 + i);
+        acc = __fmaf_rn(a.x, b.x, acc); acc = __fmaf_rn(a.y, b.y, acc);
+        acc = __fmaf_rn(a.z, b.z, acc); acc = __fmaf_rn(a.w, b.w, acc);
+    }
+#pragma unroll
+    for (int off = 16; off > 0; off >>= 1) acc += __shfl_down_sync(0xffffffffu, acc, off);
+    __shared__ float sw[32];
+    const int lane = t & 31, wid = t >> 5;
+    if (lane == 0) sw[wid] = acc;
+    __syncthreads();
+    if (wid == 0) {
+        const int nw = B >> 5;
+        float v = (lane < nw) ? sw[lane] : 0.0f;
+#pragma unroll
+        for (int off = 16; off > 0; off >>= 1) v += __shfl_down_sync(0xffffffffu, v, off);
+        if (lane == 0) y[(long)j * out_f + r] = v;
+    }
+}
+
 extern "C" __global__ void rms_norm_zq8_f32_v2(const float* __restrict__ x, const float* __restrict__ w,
                                                float* __restrict__ z,
                                                signed char* __restrict__ out_q, float* __restrict__ out_d,
