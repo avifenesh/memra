@@ -284,6 +284,22 @@ Corrected DSV4 grouped-prefill experiment:
 | `dsv4_fp8_gather_half_kernel` | Reorders the existing FP8-QAT codes and per-128 scales into a half matrix with a power-of-two row scale. Every value is round-tripped exactly; a row-status vector rejects nonrepresentable/NaN values before grouped GEMM. | `MEMRA_DSV4_PREFILL_MOE=grouped`, default OFF | `memra_dsv4_fp8_gather_half`; gate `tools/dsv4-fp8-half-mirror-gate.cu` covers duplicate row mapping, finite values, tails and underflow/NaN refusals. |
 | `moe_kq_sk{32,128,tail}v_kernel<QT_NVFP4_MODELOPT>` | Reads consecutive E2M1 codes and separate signed-E4M3/16 scales from six pointer planes, with FP32 macro weight scale applied after projection. No GGUF or duplicate weight bank. Grouped MMA changes reduction order; routed slot restoration, combine and the entire shared expert remain explicit common work. | `MEMRA_DSV4_PREFILL_MOE=grouped`, default OFF, mode-2 visitor/direct loader required | `memra_moe_kq_gemm_sk`; actual-model `dsv4_grouped_prefill_gate` verifies total=routed+shared and characterizes forced-path logits. No production qualification yet. |
 
+DSV4 prefill work-elision dispatch (no new CUDA arithmetic):
+
+| dispatch | purpose | flag | gate |
+|---|---|---|---|
+| `verify_batch_dev_output` -> existing `head_logits_dev` | Preserve every trunk layer and cache transaction, discard unused intermediate head work, and compute the final row with existing single-row head kernels. Public verification still returns all requested rows/argmaxes. | `MEMRA_DSV4_PREFILL_HEAD=all/last`, default all | `dsv4_prefill_work_gate`: full live cache, logits, sampled DSpark output, public API result shape and head-call counters. |
+| `dspark_continue_prefix_chunked` -> existing `dspark_commit_prefill_taps` | Prime only the suffix's final window using the same m=1 projections and absolute positions. No batching/numeric fork; preserve restored slots for short suffixes and always update the newest tap. | `MEMRA_DSV4_PREFILL_DRAFT=all/tail`, default all | Same gate, independently exercising both flags and their combination at 128-position boundaries and restored suffixes. |
+
+DSV4 sampled proposal coupling reuses the existing drafter kernels, the CPU
+position-keyed categorical sampler and the unchanged target sample-match walk.
+`MEMRA_DSV4_DSPARK_PROPOSAL=coupled` (default OFF) replaces the per-slot greedy
+selection only in sampled serving. It forces the host chain, counts every draft
+draw and profiles its readback/sampling wall separately. The public greedy
+proposal and verifier remain unchanged. `dsv4_coupled_proposal_gate` checks
+plain/spec tokens and persistent state, with and without target penalties;
+target-card performance qualification is pending.
+
 ### MMQ static-lib TUs (prefill GEMM per weight format)
 
 | file | host entry symbols | qtype | arch guard | dispatch flag | FFI binding |

@@ -1,0 +1,29 @@
+initialization=UNSAFE legacy control
+peer-copy-direction-probe: 2 device(s)
+  dev0 NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition
+  dev1 NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition
+pair dev0->dev1 push-peer       16384 B mismatches=0 PASS
+pair dev0->dev1 push-peer     1048576 B mismatches=1003264 FAIL
+pair dev0->dev1 push-peer    67108864 B mismatches=0 PASS
+pair dev0->dev1 pull-peer       16384 B mismatches=0 PASS
+pair dev0->dev1 pull-peer     1048576 B mismatches=0 PASS
+pair dev0->dev1 pull-peer    67108864 B mismatches=0 PASS
+pair dev0->dev1 push-dtod       16384 B mismatches=0 PASS
+pair dev0->dev1 push-dtod     1048576 B mismatches=0 PASS
+pair dev0->dev1 push-dtod    67108864 B mismatches=0 PASS
+pair dev0->dev1 pull-dtod       16384 B mismatches=0 PASS
+pair dev0->dev1 pull-dtod     1048576 B mismatches=0 PASS
+pair dev0->dev1 pull-dtod    67108864 B mismatches=0 PASS
+pair dev1->dev0 push-peer       16384 B mismatches=0 PASS
+pair dev1->dev0 push-peer     1048576 B mismatches=0 PASS
+pair dev1->dev0 push-peer    67108864 B mismatches=0 PASS
+pair dev1->dev0 pull-peer       16384 B mismatches=0 PASS
+pair dev1->dev0 pull-peer     1048576 B mismatches=0 PASS
+pair dev1->dev0 pull-peer    67108864 B mismatches=0 PASS
+pair dev1->dev0 push-dtod       16384 B mismatches=0 PASS
+pair dev1->dev0 push-dtod     1048576 B mismatches=0 PASS
+pair dev1->dev0 push-dtod    67108864 B mismatches=0 PASS
+pair dev1->dev0 pull-dtod       16384 B mismatches=0 PASS
+pair dev1->dev0 pull-dtod     1048576 B mismatches=0 PASS
+pair dev1->dev0 pull-dtod    67108864 B mismatches=0 PASS
+peer-copy-direction-probe FAIL: 1 mismatching cell(s)

@@ -487,6 +487,108 @@ fn resolve_prefill_moe(value: Option<&str>) -> Res<bool> {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Dsv4PrefillHead {
+    #[default]
+    All,
+    Last,
+}
+
+impl Dsv4PrefillHead {
+    pub fn resolve(value: Option<&str>) -> Res<Self> {
+        match value {
+            None | Some("") | Some("all") => Ok(Self::All),
+            Some("last") => Ok(Self::Last),
+            Some(other) => Err(format!(
+                "MEMRA_DSV4_PREFILL_HEAD '{other}' unknown (all | last)"
+            )),
+        }
+    }
+
+    fn output(self, final_chunk: bool) -> VerifyOutput {
+        match (self, final_chunk) {
+            (Self::All, false) => VerifyOutput::Argmax,
+            (Self::All, true) => VerifyOutput::Full,
+            (Self::Last, false) => VerifyOutput::None,
+            (Self::Last, true) => VerifyOutput::Last,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum VerifyOutput {
+    Full,
+    Argmax,
+    None,
+    Last,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Dsv4PrefillDraft {
+    #[default]
+    All,
+    Tail,
+}
+
+impl Dsv4PrefillDraft {
+    pub fn resolve(value: Option<&str>) -> Res<Self> {
+        match value {
+            None | Some("") | Some("all") => Ok(Self::All),
+            Some("tail") => Ok(Self::Tail),
+            Some(other) => Err(format!(
+                "MEMRA_DSV4_PREFILL_DRAFT '{other}' unknown (all | tail)"
+            )),
+        }
+    }
+
+    fn keep_from(self, suffix_len: usize, window: usize) -> usize {
+        match self {
+            Self::All => 0,
+            Self::Tail => suffix_len.saturating_sub(window),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Dsv4DraftProposal {
+    #[default]
+    Greedy,
+    Coupled,
+}
+
+impl Dsv4DraftProposal {
+    pub fn resolve(value: Option<&str>) -> Res<Self> {
+        match value {
+            None | Some("") | Some("greedy") => Ok(Self::Greedy),
+            Some("coupled") => Ok(Self::Coupled),
+            Some(other) => Err(format!(
+                "MEMRA_DSV4_DSPARK_PROPOSAL '{other}' unknown (greedy | coupled)"
+            )),
+        }
+    }
+}
+
+fn dspark_draft_position(tap_position: usize, slot: usize) -> usize {
+    // Input/head token is at tap_position+1. Draft slot 0 predicts the next one.
+    tap_position + slot + 2
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Dsv4PrefillHeadStats {
+    pub full_rows: u64,
+    pub last_rows: u64,
+    pub skipped_chunks: u64,
+    pub draft_prime_rows: u64,
+}
+
+#[derive(Default)]
+struct PrefillHeadCounters {
+    full_rows: std::sync::atomic::AtomicU64,
+    last_rows: std::sync::atomic::AtomicU64,
+    skipped_chunks: std::sync::atomic::AtomicU64,
+    draft_prime_rows: std::sync::atomic::AtomicU64,
+}
+
 pub struct Dsv4Gpu {
     pub model: Dsv4Model,
     pub stages: Vec<Stage>,
@@ -528,6 +630,11 @@ pub struct Dsv4Gpu {
     fp4_reduce: Dsv4Fp4Reduce,
     indexer_score: Dsv4IndexerScore,
     prefill_grouped: bool,
+    prefill_head: Dsv4PrefillHead,
+    prefill_draft: Dsv4PrefillDraft,
+    prefill_head_counts: PrefillHeadCounters,
+    draft_proposal: Dsv4DraftProposal,
+    coupled_draft_draws: std::sync::atomic::AtomicU64,
     /// iteration-5 FP8 dense arm (`MEMRA_DSV4_DENSE_ARM`; DEFAULT fp8 on the device
     /// decode path since the 2026-08-20 ratification, bf16 selectable and the legacy
     /// default): the DEVICE decode/verify paths read the FP8-blk linears as-stored
@@ -1259,6 +1366,87 @@ fn f32_to_bf16_exact(name: &str, v: &[f32]) -> Vec<u8> {
 }
 
 impl Dsv4Gpu {
+    pub fn coupled_draft_draws(&self) -> u64 {
+        self.coupled_draft_draws
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Exclusive measurement seam; greedy verification never consults this policy.
+    pub fn set_draft_proposal_for_gate(
+        &mut self,
+        arm: Dsv4DraftProposal,
+    ) -> Res<Dsv4DraftProposal> {
+        for stage in &self.stages {
+            stage
+                .gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind proposal gate"))?;
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .map_err(e("drain proposal gate"))?;
+        }
+        let previous = self.draft_proposal;
+        self.draft_proposal = arm;
+        Ok(previous)
+    }
+
+    pub fn prefill_head_stats(&self) -> Dsv4PrefillHeadStats {
+        use std::sync::atomic::Ordering::Relaxed;
+        Dsv4PrefillHeadStats {
+            full_rows: self.prefill_head_counts.full_rows.load(Relaxed),
+            last_rows: self.prefill_head_counts.last_rows.load(Relaxed),
+            skipped_chunks: self.prefill_head_counts.skipped_chunks.load(Relaxed),
+            draft_prime_rows: self.prefill_head_counts.draft_prime_rows.load(Relaxed),
+        }
+    }
+
+    /// Exclusive gate seam. No serving request can switch the model's head policy.
+    pub fn set_prefill_head_for_gate(&mut self, arm: Dsv4PrefillHead) -> Res<Dsv4PrefillHead> {
+        if !matches!(self.decode_path, DecodePath::Device { .. }) {
+            return Err("prefill head gate requires device decode".into());
+        }
+        for stage in &self.stages {
+            stage
+                .gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind prefill head gate"))?;
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .map_err(e("drain prefill head gate"))?;
+        }
+        let previous = self.prefill_head;
+        self.prefill_head = arm;
+        Ok(previous)
+    }
+
+    /// Exclusive gate seam for the chunked DSpark final-window prime.
+    pub fn set_prefill_draft_for_gate(&mut self, arm: Dsv4PrefillDraft) -> Res<Dsv4PrefillDraft> {
+        if !matches!(self.decode_path, DecodePath::Device { .. }) {
+            return Err("prefill draft gate requires device decode".into());
+        }
+        for stage in &self.stages {
+            stage
+                .gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind prefill draft gate"))?;
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .map_err(e("drain prefill draft gate"))?;
+        }
+        let previous = self.prefill_draft;
+        self.prefill_draft = arm;
+        Ok(previous)
+    }
+
     /// One-load experimental gate control. No request may mutate the model arm.
     pub fn set_prefill_grouped_for_gate(&mut self, enabled: bool) -> Res<bool> {
         if !matches!(self.decode_path, DecodePath::Device { host_math: false }) {
@@ -1806,6 +1994,24 @@ impl Dsv4Gpu {
             Err(err) => return Err(format!("MEMRA_DSV4_PREFILL_MOE: {err}")),
         };
         let prefill_grouped = resolve_prefill_moe(grouped_env.as_deref())?;
+        let head_env = match std::env::var("MEMRA_DSV4_PREFILL_HEAD") {
+            Ok(value) => Some(value),
+            Err(std::env::VarError::NotPresent) => None,
+            Err(err) => return Err(format!("MEMRA_DSV4_PREFILL_HEAD: {err}")),
+        };
+        let prefill_head = Dsv4PrefillHead::resolve(head_env.as_deref())?;
+        let draft_env = match std::env::var("MEMRA_DSV4_PREFILL_DRAFT") {
+            Ok(value) => Some(value),
+            Err(std::env::VarError::NotPresent) => None,
+            Err(err) => return Err(format!("MEMRA_DSV4_PREFILL_DRAFT: {err}")),
+        };
+        let prefill_draft = Dsv4PrefillDraft::resolve(draft_env.as_deref())?;
+        let proposal_env = match std::env::var("MEMRA_DSV4_DSPARK_PROPOSAL") {
+            Ok(value) => Some(value),
+            Err(std::env::VarError::NotPresent) => None,
+            Err(err) => return Err(format!("MEMRA_DSV4_DSPARK_PROPOSAL: {err}")),
+        };
+        let draft_proposal = Dsv4DraftProposal::resolve(proposal_env.as_deref())?;
         let indexer_env = match std::env::var("MEMRA_DSV4_INDEXER_SCORE") {
             Ok(value) => Some(value),
             Err(std::env::VarError::NotPresent) => None,
@@ -1940,6 +2146,15 @@ impl Dsv4Gpu {
         // as a process ABORT, which a serving watchdog restarts in a crash loop; the
         // unknown-enum arms already refuse at parse, so the combo checks live here too.
         let on_device = matches!(decode_path, DecodePath::Device { .. });
+        if prefill_head == Dsv4PrefillHead::Last && !on_device {
+            return Err("MEMRA_DSV4_PREFILL_HEAD=last requires device decode".into());
+        }
+        if prefill_draft == Dsv4PrefillDraft::Tail && !on_device {
+            return Err("MEMRA_DSV4_PREFILL_DRAFT=tail requires device decode".into());
+        }
+        if draft_proposal == Dsv4DraftProposal::Coupled && !on_device {
+            return Err("MEMRA_DSV4_DSPARK_PROPOSAL=coupled requires device decode".into());
+        }
         let (dots_f32, chains_f32) = match std::env::var("MEMRA_DSV4_DOTS_ARM").as_deref() {
             Err(_) | Ok("") => {
                 // ratified default, DEVICE-decode-scoped: legacy resolves f64.
@@ -2057,6 +2272,11 @@ impl Dsv4Gpu {
             fp4_reduce,
             indexer_score,
             prefill_grouped,
+            prefill_head,
+            prefill_draft,
+            prefill_head_counts: PrefillHeadCounters::default(),
+            draft_proposal,
+            coupled_draft_draws: std::sync::atomic::AtomicU64::new(0),
             dense_fp8,
             dspark: None,
             boundary_ev: Vec::new(),
@@ -2077,6 +2297,9 @@ impl Dsv4Gpu {
         );
         eprintln!("[load] selected FP4 reduction: {:?}", me.fp4_reduce);
         eprintln!("[load] indexer score: {:?}", me.indexer_score);
+        eprintln!("[load] prefill head: {:?}", me.prefill_head);
+        eprintln!("[load] prefill DSpark prime: {:?}", me.prefill_draft);
+        eprintln!("[load] sampled DSpark proposal: {:?}", me.draft_proposal);
         eprintln!(
             "[load] prefill MoE: {}",
             if me.prefill_grouped {
@@ -4161,11 +4384,17 @@ impl Dsv4Gpu {
         let mut last_logits = None;
         for (i, toks) in suffix.chunks(width).enumerate() {
             let final_chunk = (i + 1) * width >= suffix.len();
-            let (logits, _) = self.verify_batch_dev(toks, state, &mut vstate, None, final_chunk)?;
+            let output = self.prefill_head.output(final_chunk);
+            let (logits, _) =
+                self.verify_batch_dev_output(toks, state, &mut vstate, None, output)?;
             self.commit_verify_dev(state, &mut vstate, toks.len())?;
             if let Some(rows) = logits {
-                let vocab = rows.len() / toks.len();
-                last_logits = Some(rows[(toks.len() - 1) * vocab..].to_vec());
+                last_logits = Some(if output == VerifyOutput::Last {
+                    rows
+                } else {
+                    let vocab = rows.len() / toks.len();
+                    rows[(toks.len() - 1) * vocab..].to_vec()
+                });
             }
         }
         Ok(last_logits.expect("final chunk requested logits"))
@@ -8138,18 +8367,31 @@ impl Dsv4Gpu {
         let mut tap_row = stream
             .alloc_zeros::<f32>(n_t * hidden)
             .map_err(e("dsv4 chunk tap row"))?;
+        let keep_from = self
+            .prefill_draft
+            .keep_from(suffix.len(), self.model.cfg().sliding_window as usize);
         let mut last_logits = None;
         for (i, toks) in suffix.chunks(width).enumerate() {
             let pos0 = state.pos;
             let final_chunk = (i + 1) * width >= suffix.len();
+            let output = self.prefill_head.output(final_chunk);
+            let first_kept = keep_from.saturating_sub(i * width).min(toks.len());
+            let capture_taps = if first_kept < toks.len() {
+                Some(&mut taps)
+            } else {
+                None
+            };
             let (logits, _) =
-                self.verify_batch_dev(toks, state, &mut vstate, Some(&mut taps), final_chunk)?;
+                self.verify_batch_dev_output(toks, state, &mut vstate, capture_taps, output)?;
             self.commit_verify_dev(state, &mut vstate, toks.len())?;
             // The existing drafter prime projections use a general GEMM whose numeric
             // realization changes with m. Keep their canonical m=1 realization until a
             // separately exact-gated batched DSpark-prime twin lands; trunk chunking still
             // amortizes the 43-layer target path.
-            for j in 0..toks.len() {
+            // DSpark has SWA-only rings: older suffix rows are overwritten before
+            // this method returns. Short suffixes retain every row and preserve
+            // the still-live ring slots restored from the previous prefix.
+            for j in first_kept..toks.len() {
                 let tap_elems = n_t * hidden;
                 let src = taps.slice(j * tap_elems..(j + 1) * tap_elems);
                 let mut dst = tap_row.slice_mut(0..tap_elems);
@@ -8157,10 +8399,17 @@ impl Dsv4Gpu {
                     .memcpy_dtod(&src, &mut dst)
                     .map_err(e("dsv4 chunk tap row copy"))?;
                 self.dspark_commit_prefill_taps(dstate, &tap_row, 1, pos0 + j)?;
+                self.prefill_head_counts
+                    .draft_prime_rows
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
             if let Some(rows) = logits {
-                let vocab = rows.len() / toks.len();
-                last_logits = Some(rows[(toks.len() - 1) * vocab..].to_vec());
+                last_logits = Some(if output == VerifyOutput::Last {
+                    rows
+                } else {
+                    let vocab = rows.len() / toks.len();
+                    rows[(toks.len() - 1) * vocab..].to_vec()
+                });
             }
         }
         Ok(last_logits.expect("final DSpark chunk requested logits"))
@@ -8621,6 +8870,18 @@ impl Dsv4Gpu {
         pos: usize,
         capture: bool,
     ) -> Res<DsparkProposal> {
+        self.dspark_forward_spec_inner(state, input_token, tap_row, pos, capture, None)
+    }
+
+    fn dspark_forward_spec_inner(
+        &self,
+        state: &mut DsparkState,
+        input_token: u32,
+        tap_row: usize,
+        pos: usize,
+        capture: bool,
+        sample: Option<&Dsv4SampleCfg>,
+    ) -> Res<DsparkProposal> {
         let ds = self.dspark();
         let mc = &self.model.mc;
         let d = self.model.cfg();
@@ -8804,7 +9065,8 @@ impl Dsv4Gpu {
         } else {
             None
         };
-        // sequential markov chaining (M:866-871), greedy (temperature 0).
+        // Sequential Markov chaining. The public path remains greedy; sampled
+        // serving may explicitly use the request's coupled position-keyed draw.
         //
         // ITERATION-5 (F itemisation, rung 2): the chain is inherently sequential -- draft i+1's
         // markov row is indexed by draft i -- but the DEPENDENCY never needed a HOST round trip.
@@ -8816,7 +9078,10 @@ impl Dsv4Gpu {
         // accumulate into `conf_out[i]`, and ONE D2H at the end of the loop returns every id and
         // confidence together. Same kernels, same operands, same reduction order: the arm is
         // bit-identical BY CONSTRUCTION rather than by tolerance, because only transport moved.
-        let chain_device = dsv4_dspark_chain_device();
+        // The coupled experiment uses the existing host categorical sampler.
+        // Keep the next Markov gather on host until a separately gated GPU sampler
+        // preserves this exact position-keyed sampling program.
+        let chain_device = sample.is_none() && dsv4_dspark_chain_device();
         let markov_rowblk = dsv4_dspark_markov_rowblk();
         let mut w1_row = stream.alloc_zeros::<f32>(rank).map_err(e("w1r"))?;
         let mut bias = stream.alloc_zeros::<f32>(vocab).map_err(e("bias"))?;
@@ -8892,18 +9157,34 @@ impl Dsv4Gpu {
                         sp(&stream),
                     ),
                 )?;
-                ck(
-                    "argmax dspark",
-                    k::memra_dsv4_argmax(
-                        (logits.device_ptr(&stream).0 as usize + i * vocab * 4) as *const f32,
-                        vocab as i64,
-                        (am_dev.device_ptr_mut(&stream).0 as usize + (i + 1) * 4) as *mut i32,
-                        sp(&stream),
-                    ),
-                )?;
+                if sample.is_none() {
+                    ck(
+                        "argmax dspark",
+                        k::memra_dsv4_argmax(
+                            (logits.device_ptr(&stream).0 as usize + i * vocab * 4) as *const f32,
+                            vocab as i64,
+                            (am_dev.device_ptr_mut(&stream).0 as usize + (i + 1) * 4) as *mut i32,
+                            sp(&stream),
+                        ),
+                    )?;
+                }
             }
             drop(_p_aa);
-            if !chain_device {
+            if let Some(cfg) = sample {
+                let _p_draw = phase!("1i4.coupled_sample_D2H_SYNC", None);
+                let view = logits.slice(i * vocab..(i + 1) * vocab);
+                let mut row = vec![0f32; vocab];
+                stream
+                    .memcpy_dtoh(&view, &mut row)
+                    .map_err(e("coupled draft logits"))?;
+                stream
+                    .synchronize()
+                    .map_err(e("sync coupled draft logits"))?;
+                let token = dsv4_sample_row(&row, dspark_draft_position(pos, i), cfg)?;
+                out_ids.push(token);
+                self.coupled_draft_draws
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            } else if !chain_device {
                 let _p_d2h = phase!("1i4.markov_argmax_D2H_SYNC", None);
                 let mut am = [0i32; 1];
                 let view = am_dev.slice(i + 1..i + 2);
@@ -11571,6 +11852,29 @@ impl Dsv4Gpu {
         taps: Option<&mut CudaSlice<f32>>,
         want_logits: bool,
     ) -> Res<(Option<Vec<f32>>, Vec<u32>)> {
+        self.verify_batch_dev_output(
+            toks,
+            state,
+            vstate,
+            taps,
+            if want_logits {
+                VerifyOutput::Full
+            } else {
+                VerifyOutput::Argmax
+            },
+        )
+    }
+
+    /// The public verifier retains its full-logits/argmax contract. Only the
+    /// prefill caller may discard intermediate output or request its final row.
+    fn verify_batch_dev_output(
+        &self,
+        toks: &[u32],
+        state: &mut DecodeState,
+        vstate: &mut VerifyState,
+        taps: Option<&mut CudaSlice<f32>>,
+        output: VerifyOutput,
+    ) -> Res<(Option<Vec<f32>>, Vec<u32>)> {
         let DecodePath::Device { host_math } = self.decode_path else {
             return Err("verify_batch_dev requires MEMRA_DSV4_DECODE_PATH=device".into());
         };
@@ -11763,11 +12067,43 @@ impl Dsv4Gpu {
 
         let last = self.stages.len() - 1;
         assert_eq!(cur_stage, last, "device path expects the head stage last");
+        if matches!(output, VerifyOutput::None | VerifyOutput::Last) {
+            assert!(
+                vstate.ws[last].is_prefill,
+                "prefill output policy used for verification"
+            );
+            if output == VerifyOutput::None {
+                self.prefill_head_counts
+                    .skipped_chunks
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                vstate.open = Some((pos0, t));
+                return Ok((None, Vec::new()));
+            }
+            let stream = self.stages[last].gpu.stream();
+            let row_size = hc * hidden;
+            let final_h = vstate.ws[last].h_a.slice((t - 1) * row_size..t * row_size);
+            let step = &mut state.ws.as_mut().expect("device scratch")[last];
+            stream
+                .memcpy_dtod(&final_h, &mut step.h_a)
+                .map_err(e("prefill final head row"))?;
+            self.head_logits_dev(step, host_math)?;
+            let logits = dtoh_f32(&stream, &step.logits)?;
+            self.prefill_head_counts
+                .last_rows
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            vstate.open = Some((pos0, t));
+            return Ok((Some(logits), Vec::new()));
+        }
         self.head_logits_batch_dev(&mut vstate.ws[last], t, host_math)?;
+        if vstate.ws[last].is_prefill {
+            self.prefill_head_counts
+                .full_rows
+                .fetch_add(t as u64, std::sync::atomic::Ordering::Relaxed);
+        }
         let stream_last = self.stages[last].gpu.stream();
         let vws = &mut vstate.ws[last];
         let vocab = vws.logits.len() / vws.tmax;
-        let logits = if want_logits {
+        let logits = if output == VerifyOutput::Full {
             let mut v = vec![0f32; t * vocab];
             let view = vws.logits.slice(0..t * vocab);
             stream_last
@@ -12451,7 +12787,18 @@ impl Dsv4Gpu {
             }
             let round_t0 = std::time::Instant::now();
             let m0 = p0 + tokens.len();
-            let prop = self.dspark_forward_spec(dstate, t_tok, mh_row, m0 - 1, false)?;
+            let proposal_sample = match self.draft_proposal {
+                Dsv4DraftProposal::Greedy => None,
+                Dsv4DraftProposal::Coupled => Some(sample),
+            };
+            let prop = self.dspark_forward_spec_inner(
+                dstate,
+                t_tok,
+                mh_row,
+                m0 - 1,
+                false,
+                proposal_sample,
+            )?;
             let k_drafts = prop.out_ids.len() - 1;
             tokens.push(t_tok);
             if tokens.len() == n_new {
@@ -12783,12 +13130,13 @@ pub fn resolve_vt(
 /// consume IDENTICAL randomness at every position, and (because the batched verify's
 /// logits rows are bit-exact against the sequential step's — the it3 gate (c) proof)
 /// **sampled spec == sampled plain identity is structural, per seed**, exactly like
-/// greedy. The drafter keeps proposing greedily (its chain is a deterministic
-/// proposal policy); arbitration is sample-match against the target draw — the
-/// correct accept rule for a one-hot proposal (the q38 "cold sampled leader" shape).
+/// greedy. Arbitration always matches against the target's own position-keyed
+/// draw. The default draft is greedy; the opt-in coupled proposal uses the same
+/// draw key on its own row. Either proposal is only a hint: emitted tokens always
+/// follow the target draw on the accepted prefix, with no extra RNG advancement.
 ///
 /// Filter semantics (vendor-posture defaults live at the call sites: temperature 1.0,
-/// top_p 0.95, top_k off): logits/T -> softmax -> top-k by (value desc, index asc)
+/// top_p 1.0 for 0731, top_k off): logits/T -> softmax -> top-k by (value desc, index asc)
 /// -> smallest prefix of that order with cumulative mass >= top_p (always >= 1 token)
 /// -> renormalize -> inverse-CDF draw at u(seed, pos). temperature <= 0 REFUSES BY
 /// NAME (greedy is the greedy driver's job; a silent argmax fallback here would be
@@ -13009,6 +13357,110 @@ mod capacity_planner_tests {
         let layers = vec![100u64; 42];
         assert_eq!(dsv4_split_for_tail_reserve(&layers, 0), 21);
         assert_eq!(dsv4_split_for_tail_reserve(&layers, 300), 23);
+    }
+}
+
+#[cfg(test)]
+mod prefill_work_policy_tests {
+    use super::{Dsv4PrefillDraft, Dsv4PrefillHead, VerifyOutput};
+
+    #[test]
+    fn output_policy_is_explicit_and_defaults_to_legacy_work() {
+        for value in [None, Some(""), Some("all")] {
+            assert_eq!(Dsv4PrefillHead::resolve(value), Ok(Dsv4PrefillHead::All));
+            assert_eq!(Dsv4PrefillDraft::resolve(value), Ok(Dsv4PrefillDraft::All));
+        }
+        assert_eq!(Dsv4PrefillHead::All.output(false), VerifyOutput::Argmax);
+        assert_eq!(Dsv4PrefillHead::All.output(true), VerifyOutput::Full);
+        assert_eq!(Dsv4PrefillHead::Last.output(false), VerifyOutput::None);
+        assert_eq!(Dsv4PrefillHead::Last.output(true), VerifyOutput::Last);
+        assert_eq!(
+            Dsv4PrefillHead::resolve(Some("last")),
+            Ok(Dsv4PrefillHead::Last)
+        );
+        assert_eq!(
+            Dsv4PrefillDraft::resolve(Some("tail")),
+            Ok(Dsv4PrefillDraft::Tail)
+        );
+        for value in ["1", "LAST", " tail"] {
+            assert!(Dsv4PrefillHead::resolve(Some(value)).is_err());
+            assert!(Dsv4PrefillDraft::resolve(Some(value)).is_err());
+        }
+    }
+
+    #[test]
+    fn tail_prime_has_the_same_final_ring_as_every_suffix_row() {
+        let win = 128;
+        for pos0 in [1, 63, 127, 128, 129, 511, 1000] {
+            for len in [1, 31, 64, 127, 128, 129, 160, 512, 1024] {
+                let keep = Dsv4PrefillDraft::Tail.keep_from(len, win);
+                assert_eq!(len - keep, len.min(win));
+                assert_eq!(Dsv4PrefillDraft::All.keep_from(len, win), 0);
+                let mut reference: Vec<usize> = (0..win).map(|i| 10_000 + i).collect();
+                let mut tail = reference.clone();
+                for i in 0..len {
+                    reference[(pos0 + i) % win] = i;
+                }
+                for i in keep..len {
+                    tail[(pos0 + i) % win] = i;
+                }
+                assert_eq!(reference, tail, "pos0={pos0} suffix={len}");
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod coupled_proposal_tests {
+    use super::{Dsv4DraftProposal, Dsv4SampleCfg, dspark_draft_position, dsv4_sample_row};
+
+    #[test]
+    fn proposal_policy_is_explicit_and_default_greedy() {
+        for raw in [None, Some(""), Some("greedy")] {
+            assert_eq!(
+                Dsv4DraftProposal::resolve(raw),
+                Ok(Dsv4DraftProposal::Greedy)
+            );
+        }
+        assert_eq!(
+            Dsv4DraftProposal::resolve(Some("coupled")),
+            Ok(Dsv4DraftProposal::Coupled)
+        );
+        for raw in ["sample", "1", "COUPLED"] {
+            assert!(Dsv4DraftProposal::resolve(Some(raw)).is_err());
+        }
+    }
+
+    #[test]
+    fn identical_proposals_share_the_target_draw_key_not_the_input_position() {
+        let cfg = Dsv4SampleCfg {
+            temperature: 1.0,
+            top_p: 1.0,
+            top_k: 0,
+            seed: 20260905,
+        };
+        let logits = [0.2, 0.1, -0.3, 0.0];
+        let mut shifted_mismatches = 0;
+        for tap_position in 31..100 {
+            let head_position = tap_position + 1;
+            for slot in 0..5 {
+                let target_position = head_position + slot + 1;
+                let draft_position = dspark_draft_position(tap_position, slot);
+                assert_eq!(draft_position, target_position);
+                let target = dsv4_sample_row(&logits, target_position, &cfg).unwrap();
+                assert_eq!(
+                    target,
+                    dsv4_sample_row(&logits, draft_position, &cfg).unwrap()
+                );
+                shifted_mismatches += usize::from(
+                    target != dsv4_sample_row(&logits, draft_position - 1, &cfg).unwrap(),
+                );
+            }
+        }
+        assert!(
+            shifted_mismatches > 0,
+            "off-by-one control must fail agreement"
+        );
     }
 }
 
