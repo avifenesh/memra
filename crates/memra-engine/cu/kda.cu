@@ -274,3 +274,51 @@ extern "C" __global__ void memra_kda_gated_rmsnorm_f32(
         drow[i] = (crow[i] * scale * w[i]) * memra_kda_sigmoid(grow[i]);
     }
 }
+
+// ---- The same gated norm emitting its q8_1 quantization beside the f32 row (lane/kda-onorm-zq8-
+// 20260905): dst (f32, byte-identical to the kernel above: same reduction, same
+// `(c*scale*w)*sigmoid(g)` expression per element) plus `out_q` / `out_d` in `quantize_q8_1`'s
+// layout and arithmetic (per 32-block amax via shfl_xor, d = amax/127, id = 1/d, rint(v*id);
+// cu/qmatvec.cu:589), so the pair the `wo` MMVQ consumes is bit-identical to running
+// quantize_q8_1 over dst. One block per (t, h) row of head_dim: with ncols % 32 == 0 every
+// 32-lane warp round holds one contiguous q8 block, and because the token's wo input is the
+// heads' rows laid end to end, block (t*H+h, blk) IS token block (t, h*ncols/32 + blk) of the
+// [t, H*ncols] activation: the same bytes at the same offsets. Saves the standalone quantize
+// launch per KDA layer (34 per token on GLM-5.3-Flash). Requires ncols % 32 == 0.
+extern "C" __global__ void memra_kda_gated_rmsnorm_zq8_f32(
+        const float* __restrict__ core, const float* __restrict__ w,
+        const float* __restrict__ gate, float* __restrict__ dst,
+        signed char* __restrict__ out_q, float* __restrict__ out_d,
+        int ncols, float eps) {
+    int row = blockIdx.x, tid = threadIdx.x;
+    const float* crow = core + (size_t)row * ncols;
+    const float* grow = gate + (size_t)row * ncols;
+    float* drow = dst + (size_t)row * ncols;
+    signed char* qrow = out_q + (size_t)row * ncols;
+    float* dd = out_d + (size_t)row * (ncols >> 5);
+    float sum = 0.0f;
+    for (int i = tid; i < ncols; i += blockDim.x) { float v = crow[i]; sum += v * v; }
+    __shared__ float s[32];
+    for (int o = 16; o > 0; o >>= 1) sum += __shfl_down_sync(0xffffffff, sum, o);
+    if ((tid & 31) == 0) s[tid >> 5] = sum;
+    __syncthreads();
+    if (tid < 32) {
+        float v = (tid < (blockDim.x + 31) / 32) ? s[tid] : 0.0f;
+        for (int o = 16; o > 0; o >>= 1) v += __shfl_down_sync(0xffffffff, v, o);
+        if (tid == 0) s[0] = v;
+    }
+    __syncthreads();
+    float scale = rsqrtf(s[0] / ncols + eps);
+    int lane = tid & 31;
+    for (int i = tid; i < ncols; i += blockDim.x) {
+        float v = (crow[i] * scale * w[i]) * memra_kda_sigmoid(grow[i]);
+        drow[i] = v;
+        float amax = fabsf(v);
+        #pragma unroll
+        for (int o = 16; o > 0; o >>= 1) amax = fmaxf(amax, __shfl_xor_sync(0xffffffffu, amax, o));
+        float d = amax / 127.0f;
+        float id = d > 0.0f ? 1.0f / d : 0.0f;
+        qrow[i] = (signed char)__float2int_rn(v * id);
+        if (lane == 0) dd[i >> 5] = d;
+    }
+}

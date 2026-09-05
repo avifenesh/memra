@@ -968,6 +968,7 @@ fn kda_tp_core(
                 },
                 scan_clock.as_deref_mut().map(|_| &mut rank_scan_ns),
                 None,
+                None,
             )?;
             std::mem::swap(ssm_state, ssm_state_alt);
             out

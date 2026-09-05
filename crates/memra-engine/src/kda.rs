@@ -339,8 +339,23 @@ fn kda_core(
     // the core — the wo dispatch moved into this wrapper with the TP split, its routing
     // did not change.
     let rows_exact = matches!(stash, KdaStash::Rows(_));
+    // MEMRA_KDA_ONORM_ZQ8: ask the core for the o_norm output's q8_1 pair when `wo` can take it.
+    let want_pair = !rows_exact && kda_onorm_zq8_on() && e.mmvq_fast_eligible(&la.wo, t);
+    let mut onorm_q8: KdaOnormQ8 = None;
     let gated = kda_core_gated(
-        e, la, x, t, eps, ring, state_in, state_out, arm, stash, scan_clock, pre_q8,
+        e,
+        la,
+        x,
+        t,
+        eps,
+        ring,
+        state_in,
+        state_out,
+        arm,
+        stash,
+        scan_clock,
+        pre_q8,
+        if want_pair { Some(&mut onorm_q8) } else { None },
     )?;
     if rows_exact {
         let y = e.matmul_rows_exact(&la.wo, &gated, t);
@@ -348,6 +363,17 @@ fn kda_core(
         e.vws_recycle(gated);
         y
     } else {
+        if let Some((aq, ad)) = onorm_q8.as_ref()
+            && let Some(y) = e.matmul_q8_fast(&la.wo, aq, ad, t)?
+        {
+            if KDA_ONORM_ZQ8_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+                eprintln!(
+                    "[kda-onorm-zq8] engaged: the KDA o_norm launch emits wo's q8_1 pair; the \
+                     standalone quantize is gone (MEMRA_KDA_ONORM_ZQ8=1)"
+                );
+            }
+            return Ok(y);
+        }
         e.matmul(&la.wo, &gated, t)
     }
 }
@@ -375,6 +401,7 @@ pub(crate) fn kda_core_gated(
     stash: KdaStash<'_>,
     mut scan_clock: Option<&mut u64>,
     pre_q8: KdaPreQ8<'_>,
+    onorm_q8: Option<&mut KdaOnormQ8>,
 ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
     let heads = la.heads();
     let head_dim = la.head_dim();
@@ -636,15 +663,30 @@ pub(crate) fn kda_core_gated(
     } else {
         e.uninit(t * qkv)?
     };
-    e.kda_gated_rmsnorm(
-        &core,
-        la.o_norm.float_data(),
-        &gate,
-        &mut gated,
-        head_dim,
-        t * heads,
-        eps,
-    )?;
+    match onorm_q8 {
+        // MEMRA_KDA_ONORM_ZQ8: the fused norm+quantize twin hands `wo` its q8_1 pair.
+        Some(slot) if !rows_exact && head_dim.is_multiple_of(32) => {
+            let pair = e.kda_gated_rmsnorm_zq8(
+                &core,
+                la.o_norm.float_data(),
+                &gate,
+                &mut gated,
+                head_dim,
+                t * heads,
+                eps,
+            )?;
+            *slot = Some(pair);
+        }
+        _ => e.kda_gated_rmsnorm(
+            &core,
+            la.o_norm.float_data(),
+            &gate,
+            &mut gated,
+            head_dim,
+            t * heads,
+            eps,
+        )?,
+    }
     kda_trace(e, "gated_norm", t, &[("gate", &gate), ("gated", &gated)]);
     // Door W: gate_down's last reader was the g_b matmul; core's and gate's the
     // gated-rmsnorm above.
@@ -893,6 +935,24 @@ pub fn kda_conv3_dispatches() -> u64 {
 /// `None` for the launcher to quantize itself. Threaded from the walk to the fused
 /// six-projection launcher (`MEMRA_GLM5_Q8_FUSE_ATTN`, lane/glm5-attn-norm-zq8-20260904).
 pub type KdaPreQ8<'a> = Option<(&'a CudaSlice<i8>, &'a CudaSlice<f32>)>;
+
+/// `MEMRA_KDA_ONORM_ZQ8=1` (lane/kda-onorm-zq8-20260905, default OFF pending its model-scale row):
+/// the decode (t=1, non-rows) KDA core emits the o_norm output's q8_1 pair from the gated-norm
+/// launch itself (`memra_kda_gated_rmsnorm_zq8_f32`) and hands it to the `wo` MMVQ through
+/// `matmul_q8_fast`, dropping the standalone `quantize_q8_1` launch (34 per token on
+/// GLM-5.3-Flash, in-graph). BIT-IDENTICAL: same norm bytes, same q8_1 arithmetic as
+/// `quantize_q8_1` (gate `tests/kda_onorm_zq8_gpu.rs` + the decode-graph fixture arm). When `wo`
+/// is not MMVQ-fast-eligible the pair is dropped and `matmul` runs unchanged. Read per call.
+pub fn kda_onorm_zq8_on() -> bool {
+    std::env::var("MEMRA_KDA_ONORM_ZQ8").as_deref() == Ok("1")
+}
+
+/// Launches of the fused o_norm+quantize kernel whose pair the `wo` MMVQ consumed.
+pub static KDA_ONORM_ZQ8_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// The o_norm q8_1 pair handed from [`kda_core_gated`] to the `wo` projection.
+pub type KdaOnormQ8 = Option<(CudaSlice<i8>, CudaSlice<f32>)>;
 
 /// [`kda_decode_cached`] with the mixer input's q8_1 view already emitted by the caller's norm
 /// (`MEMRA_GLM5_Q8_FUSE_ATTN`): identical launches minus the fused launcher's own quantize.
@@ -1420,6 +1480,48 @@ impl Engine {
             .arg(&ep);
         unsafe { b.launch(cfg)? };
         Ok(())
+    }
+
+    /// [`Engine::kda_gated_rmsnorm`] emitting the q8_1 pair of `dst` beside it
+    /// (`memra_kda_gated_rmsnorm_zq8_f32`): `dst` byte-identical to the plain kernel, the pair
+    /// byte-identical to `quantize_q8_1(dst, t, heads*ncols)` (the `wo` MMVQ input). Returns
+    /// `(q [nrows*ncols], d [nrows*ncols/32])`, which viewed per token is exactly the
+    /// `[t, heads*ncols]` activation's q8_1 pair. Requires `ncols % 32 == 0`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn kda_gated_rmsnorm_zq8(
+        &self,
+        core: &CudaSlice<f32>,
+        w: &CudaSlice<f32>,
+        gate: &CudaSlice<f32>,
+        dst: &mut CudaSlice<f32>,
+        ncols: usize,
+        nrows: usize,
+        eps: f32,
+    ) -> Result<(CudaSlice<i8>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        if !ncols.is_multiple_of(32) {
+            return Err(format!("kda_gated_rmsnorm_zq8 needs ncols % 32 == 0, got {ncols}").into());
+        }
+        let mut q = self.alloc_i8_uninit(nrows * ncols)?;
+        let mut d = self.uninit(nrows * ncols / 32)?;
+        let f = self.func("memra_kda_gated_rmsnorm_zq8_f32");
+        let cfg = LaunchConfig {
+            grid_dim: (nrows as u32, 1, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let (nc, ep) = (ncols as i32, eps);
+        let stream = self.gpu.stream();
+        let mut b = stream.launch_builder(&f);
+        b.arg(core)
+            .arg(w)
+            .arg(gate)
+            .arg(&mut *dst)
+            .arg(&mut q)
+            .arg(&mut d)
+            .arg(&nc)
+            .arg(&ep);
+        unsafe { b.launch(cfg)? };
+        Ok((q, d))
     }
 
     /// The `MEMRA_KDA_FUSED_PROJ` door: run the KDA stage-1 six-projection group as ONE
