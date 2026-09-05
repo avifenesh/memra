@@ -832,8 +832,54 @@ fn should_probe_prefix_cache(
 /// convert never buys the carrier. A strict-prefix hit (entry shorter than the prompt) fails
 /// this on purpose: the multi-turn shape keeps its pre-lane behavior — `dspark_prefers_cold`
 /// suppresses the probe and the request cold-primes with zero restore cost.
+/// MEMRA_DSPARK_PARTIAL_RESTORE (default **0 = OFF by design**, lane/dspark-partial-restore
+/// 2026-09-05). Let a STRICT-PREFIX prefix-cache hit re-arm a dspark session: restore the
+/// carrier's trunk planes and draft tail at `entry_toks`, then prime only
+/// `prompt[entry_toks..]` through the SAME `step_dspark_spec` suffix path the reuse pool
+/// already uses for a resumed session.
+///
+/// WHY (darklanes measurement, 2026-09-05): with whole-entry cover required, qwen restores
+/// only on exact re-sends — 31 of 220 customer requests, 15.7% of prompt tokens, against
+/// glm's 66.3% on the same conversation shape. Every multi-turn continuation is a strict
+/// prefix and cold-primes: one box13 line reads `lcp=152665 cached=0`, a 152,665-token shared
+/// prefix re-prefilled from zero. Because the spec route needs `cached>=1024` on a long
+/// prompt, that miss also forces `K=0 source=eligibility-fallback` — no speculation at all on
+/// exactly the traffic that needs it.
+///
+/// WHY IT CAN WORK: the suffix does NOT ride `decode_step`. A pool resume already primes a
+/// suffix into a restored dspark session (`dspark_resume = Some((sess, fed, suffix))`), so the
+/// path is shipped and gated; this reuses it with a cache carrier instead of a pool entry.
+/// That is what separates it from `MEMRA_PREFIX_PARTIAL_RESTORE` (NO-GO, research/
+/// lcprestore-20260813), whose suffix went through T=1 `decode_step` and byte-diverged.
+///
+/// DEFAULT OFF until its own restored-vs-cold byte-identity gate is green on the serving
+/// binary, per the carve-out law: a route inheriting a restore path must re-gate its own
+/// identity — loading and running never proves support.
+fn dspark_partial_restore_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_DSPARK_PARTIAL_RESTORE").as_deref() == Ok("1"))
+}
+
 fn dspark_hit_is_restorable(entry_toks: usize, prompt_toks: usize, entry_has_tail: bool) -> bool {
-    entry_has_tail && entry_toks == prompt_toks
+    dspark_hit_is_restorable_with(
+        entry_toks,
+        prompt_toks,
+        entry_has_tail,
+        dspark_partial_restore_on(),
+    )
+}
+
+/// Pure form so both arms are unit-testable without the process-wide env latch.
+fn dspark_hit_is_restorable_with(
+    entry_toks: usize,
+    prompt_toks: usize,
+    entry_has_tail: bool,
+    partial_on: bool,
+) -> bool {
+    if !entry_has_tail || entry_toks == 0 || entry_toks > prompt_toks {
+        return false;
+    }
+    entry_toks == prompt_toks || partial_on
 }
 
 fn dspark_prefix_capture_requested(
@@ -18670,8 +18716,11 @@ fn admit(
     // WHOLE-ENTRY ONLY. The trunk is a GDN hybrid whose recurrent state cannot be rebuilt
     // mid-sequence, so a partial cover has no restorable trunk — the same full-prompt-only rule
     // the cold path states. `fed.len() == prompt.len()` is that check.
-    let mut dspark_prefix_restored: Option<(memra_engine::dflash::DsparkSpecSession, Vec<u32>)> =
-        None;
+    let mut dspark_prefix_restored: Option<(
+        memra_engine::dflash::DsparkSpecSession,
+        Vec<u32>,
+        Vec<u32>,
+    )> = None;
     // ONLY when the request WOULD HAVE COLD-PRIMED. The shipped shape guard already decides
     // who gets what: short-decode requests take the plain hit (proven byte-exact, ~1 s), and
     // only cold-preferring long decodes have a prime to save. The first gate run on the rented
@@ -18691,6 +18740,11 @@ fn admit(
         && let Some(carrier) = reused.take()
     {
         let full_cover = carrier.fed.len() == prompt.len();
+        // A strict-prefix carrier is usable only under the partial door; the suffix it leaves
+        // is primed by `step_dspark_spec`, the same way a pool resume's suffix is.
+        let partial_ok = dspark_partial_restore_on()
+            && carrier.fed.len() > 0
+            && carrier.fed.len() < prompt.len();
         let entry_tail_present = prefix_pin
             .as_ref()
             .and_then(|p| px.id_index(p))
@@ -18704,7 +18758,7 @@ fn admit(
             && ((sampler.is_greedy() && !greedy_penalized) || sampler.temperature() > 0.0)
             && memra_engine::plan_backend::gdn_dspark_compatible(&lm.model.plan)
             && serve_spec;
-        if full_cover && entry_tail_present && shape_ok {
+        if (full_cover || partial_ok) && entry_tail_present && shape_ok {
             let i = px
                 .id_index(prefix_pin.as_ref().expect("checked above"))
                 .expect("checked above");
@@ -18732,11 +18786,15 @@ fn admit(
                     ) {
                         Ok(sess) => {
                             eprintln!(
-                                "[prefix-cache] DSPARK restore: {} prompt tokens + draft tail                                  from cache — no cold prime (model {})",
+                                "[prefix-cache] DSPARK restore: {} of {} prompt tokens + draft \
+                                 tail from cache ({} suffix tokens to prime) (model {})",
                                 fed.len(),
+                                prompt.len(),
+                                prompt.len() - fed.len(),
                                 req.model,
                             );
-                            dspark_prefix_restored = Some((sess, fed));
+                            let suffix = prompt[fed.len()..].to_vec();
+                            dspark_prefix_restored = Some((sess, fed, suffix));
                         }
                         Err(why) => {
                             eprintln!(
@@ -20008,7 +20066,7 @@ fn admit(
     // sampler is borrowed by the decision code above it.
     let dspark_resume = match (dspark_resume, dspark_prefix_restored) {
         (Some(pool), None) => Some(pool),
-        (pool, Some((sess, fed))) => {
+        (pool, Some((sess, fed, suffix))) => {
             // Both should be impossible — the pool probe is gated on
             // `dspark_prefix_restored.is_none()` (review round 4) — but if a future edit
             // re-opens that seam, the RESTORED session wins: its carrier restore is already
@@ -20025,7 +20083,10 @@ fn admit(
             for &t in &fed {
                 sampler.accept(t);
             }
-            Some((sess, fed, Vec::new()))
+            // Whole-cover restores leave no suffix (the historical `Vec::new()`); a partial
+            // restore leaves `prompt[fed.len()..]`, primed by the same suffix path a pool
+            // resume uses.
+            Some((sess, fed, suffix))
         }
         (None, None) => None,
     };
@@ -23755,6 +23816,32 @@ pub fn spawn(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn dspark_partial_restore_door_admits_only_strict_prefixes_when_armed() {
+        use super::dspark_hit_is_restorable_with as r;
+        // whole cover: restorable in both arms, the shipped behaviour
+        assert!(r(100, 100, true, false));
+        assert!(r(100, 100, true, true));
+        // strict prefix: the multi-turn shape. Refused with the door shut, admitted with it open.
+        assert!(
+            !r(60, 100, true, false),
+            "door shut must keep the pre-lane refusal"
+        );
+        assert!(
+            r(60, 100, true, true),
+            "door open must admit a strict-prefix carrier"
+        );
+        // no tail: never restorable, the drafter cannot be re-armed from trunk planes alone
+        assert!(!r(100, 100, false, true));
+        assert!(!r(60, 100, false, true));
+        // degenerate lengths are refused in both arms
+        assert!(!r(0, 100, true, true));
+        assert!(
+            !r(120, 100, true, true),
+            "an entry longer than the prompt is not a prefix"
+        );
+    }
+
     #[test]
     fn driver_headroom_trim_releases_only_the_shortfall() {
         let mib = |n: usize| n << 20;
