@@ -140,5 +140,89 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         bytes / b / 1e3,
         100.0 * (b / a - 1.0)
     );
+    // ---- gate/up: two pairs per warp (memra PR: MEMRA_MOE_GATEUP_ILP2) at the served shape
+    let (gin, n_ff) = (4096usize, 2048usize);
+    let (grows, grb) = synth_rows(n_ff, gin, 0x8181);
+    let mut gsets = Vec::new();
+    let mut gkeep = Vec::new();
+    for c in 0..copies {
+        let mut ptrs = vec![0u64; 3 * n_pairs];
+        for j in 0..n_used {
+            for plane in 0..2 {
+                let mut d = grows.clone();
+                d[5] ^= (c * 16 + j * 2 + plane + 1) as u8;
+                let buf = e.htod_bytes(&d)?;
+                let p = {
+                    let (p, _g) = buf.device_ptr(&stream);
+                    p
+                };
+                ptrs[plane * n_pairs + j] = p;
+                gkeep.push(buf);
+            }
+        }
+        gsets.push(e.htod_u64(&ptrs)?);
+    }
+    let gscl: Vec<f32> = (0..3 * n_pairs).map(|pr| 0.5 + 0.01 * pr as f32).collect();
+    let gscl_d = e.htod(&gscl)?;
+    let x_d = e.htod(&vecf(t * gin, 91))?;
+    let (aq, ad) = e.quantize_q8_1(&x_d, t, gin)?;
+    unsafe {
+        std::env::set_var("MEMRA_MOE_VROWS_ORD", "0");
+    }
+    let glaunch = |ilp2: bool, set: usize| {
+        unsafe {
+            std::env::set_var("MEMRA_MOE_GATEUP_ILP2", if ilp2 { "1" } else { "0" });
+        }
+        e.moe_gate_up_preclamp8_q8_rows(
+            &gsets[set],
+            &gscl_d,
+            &aq,
+            &ad,
+            7.0,
+            gin,
+            n_ff,
+            n_used,
+            n_pairs,
+            QT_NVFP4,
+            QT_NVFP4,
+            grb,
+            grb,
+        )
+    };
+    let g0 = glaunch(false, 0)?;
+    let g1 = glaunch(true, 0)?;
+    e.stream().synchronize()?;
+    let (h0, h1) = (e.dtoh(&g0)?, e.dtoh(&g1)?);
+    let gmism = h0
+        .iter()
+        .zip(&h1)
+        .filter(|(a, b)| a.to_bits() != b.to_bits())
+        .count();
+    for _ in 0..10 {
+        let _ = glaunch(false, 0)?;
+        let _ = glaunch(true, 0)?;
+    }
+    e.stream().synchronize()?;
+    let mut t_g = Vec::new();
+    let mut t_g2 = Vec::new();
+    for i in 0..iters {
+        for (ilp2, acc) in [(false, &mut t_g), (true, &mut t_g2)] {
+            let t0 = Instant::now();
+            for r in 0..reps {
+                let _ = glaunch(ilp2, (i * reps + r) % copies)?;
+            }
+            e.stream().synchronize()?;
+            acc.push(t0.elapsed().as_secs_f64() * 1e6 / reps as f64);
+        }
+    }
+    let (a, b) = (median(&mut t_g), median(&mut t_g2));
+    let gbytes = (2 * n_used * n_ff * grb) as f64;
+    println!(
+        "[gateup-ilp2-timing] t=1 n_used=8 {gin}->{n_ff} rb={grb}x2 back-to-back x{reps} ({iters} rounds, {copies} slab sets): \
+         ilp {a:.2} us ({:.0} GB/s), ilp2 {b:.2} us ({:.0} GB/s) ({:+.1}%) bitwise_mismatch={gmism}",
+        gbytes / a / 1e3,
+        gbytes / b / 1e3,
+        100.0 * (b / a - 1.0)
+    );
     Ok(())
 }

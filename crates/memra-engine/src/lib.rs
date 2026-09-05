@@ -7953,6 +7953,17 @@ impl Engine {
                  hoisted ahead of their math (MEMRA_MOE_VROWS_ILP=1, packed={packed})"
             );
         }
+        // MEMRA_MOE_GATEUP_ILP2: two pairs per warp (bit-identical twins of `_ilp`).
+        let ilp2 = ilp && crate::moe_gateup_ilp2_on();
+        if ilp2
+            && MOE_GATEUP_ILP2_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0
+        {
+            eprintln!(
+                "[moe-gateup-ilp2] engaged: verify-rows gate/up gives a warp two pairs at one \
+                 row (16 groups in flight per lane, shared activation at t=1; same per-pair \
+                 order; MEMRA_MOE_GATEUP_ILP2=1)"
+            );
+        }
         let (f, cfg) = if packed {
             if MOE_VROWS_PACK_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
                 eprintln!(
@@ -7961,13 +7972,23 @@ impl Engine {
                 );
             }
             (
-                self.func(if ilp {
+                self.func(if ilp2 {
+                    "moe_gate_up_preclamp8_q8_rows_w4_ilp2"
+                } else if ilp {
                     "moe_gate_up_preclamp8_q8_rows_w4_ilp"
                 } else {
                     "moe_gate_up_preclamp8_q8_rows_w4"
                 }),
                 LaunchConfig {
-                    grid_dim: ((n_ff as u32).div_ceil(4), n_pairs as u32, 1),
+                    grid_dim: (
+                        (n_ff as u32).div_ceil(4),
+                        if ilp2 {
+                            (n_pairs as u32).div_ceil(2)
+                        } else {
+                            n_pairs as u32
+                        },
+                        1,
+                    ),
                     block_dim: (32, 4, 1),
                     shared_mem_bytes: 0,
                 },
@@ -7993,13 +8014,23 @@ impl Engine {
             )
         } else {
             (
-                self.func(if ilp {
+                self.func(if ilp2 {
+                    "moe_gate_up_preclamp8_q8_rows_ilp2"
+                } else if ilp {
                     "moe_gate_up_preclamp8_q8_rows_ilp"
                 } else {
                     "moe_gate_up_preclamp8_q8_rows"
                 }),
                 LaunchConfig {
-                    grid_dim: (n_ff as u32, n_pairs as u32, 1),
+                    grid_dim: (
+                        n_ff as u32,
+                        if ilp2 {
+                            (n_pairs as u32).div_ceil(2)
+                        } else {
+                            n_pairs as u32
+                        },
+                        1,
+                    ),
                     block_dim: (32, 1, 1),
                     shared_mem_bytes: 0,
                 },
@@ -33782,6 +33813,22 @@ pub fn f32_gemv_kernel_on() -> bool {
 pub fn moe_down_ilp2_on() -> bool {
     std::env::var("MEMRA_MOE_DOWN_ILP2").as_deref() == Ok("1")
 }
+
+/// `MEMRA_MOE_GATEUP_ILP2=1` (lane/moe-gateup-ilp2-20260905, default OFF pending its model-scale
+/// row): the verify-rows MoE gate/up launch takes the `_ilp2` twins
+/// (`moe_gate_up_preclamp8_q8_rows_ilp2`, `_w4_ilp2`) that give a warp TWO pairs at the same
+/// expert-FFN row (16 groups in flight per lane; at t=1 both experts share the token's activation
+/// loads) instead of one. Rides on `MEMRA_MOE_VROWS_ILP` (interleaved NVFP4 only) and yields to
+/// the `_ord` schedule (`MEMRA_MOE_VROWS_ORD`). BIT-IDENTICAL by construction: each pair keeps
+/// its own accumulators, g-order, reductions, SwiGLU and store (gate
+/// `tests/moe_gateup_ilp2_gpu.rs`). Read per call.
+pub fn moe_gateup_ilp2_on() -> bool {
+    std::env::var("MEMRA_MOE_GATEUP_ILP2").as_deref() == Ok("1")
+}
+
+/// Launches of the `_ilp2` gate/up twins (gate non-vacuity, box engagement receipt).
+pub static MOE_GATEUP_ILP2_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
 
 /// Launches of the `_ilp2` down twins (gate non-vacuity, box engagement receipt).
 pub static MOE_DOWN_ILP2_DISPATCHES: std::sync::atomic::AtomicU64 =
