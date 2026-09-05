@@ -5930,52 +5930,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         mcols,
                         true,
                     )?)?;
-                    let v = e.batched_variant(
-                        mm,
-                        in_f,
-                        out_f,
-                        memra_engine::QT_NVFP4,
-                        row_bytes,
-                        mcols,
-                        true,
+                    let v = e.batched_variant(mm, in_f, out_f, memra_engine::QT_NVFP4, mcols, true);
+                    let bad = bit_bad(&yref, &yrp);
+                    println!(
+                        "RP BATCHED {tname} m={mm} mcols={mcols} [{v}]: bit-bad={bad} {}",
+                        if bad == 0 {
+                            "OK"
+                        } else {
+                            fails += 1;
+                            "FAIL"
+                        }
                     );
-                    if v.starts_with("rpks") {
-                        let d = maxdiff(&yref, &yrp);
-                        let scale = yref.iter().map(|v| v.abs()).fold(0.0, f32::max).max(1e-3);
-                        let rel = d / scale;
-                        let y2 = e.dtoh(&e.qmatvec_batched_raw(
-                            &wrp,
-                            &xd,
-                            mm,
-                            in_f,
-                            out_f,
-                            memra_engine::QT_NVFP4,
-                            row_bytes,
-                            mcols,
-                            true,
-                        )?)?;
-                        let det = bit_bad(&yrp, &y2);
-                        println!(
-                            "RP BATCHED {tname} m={mm} mcols={mcols} [{v}]: rel={rel:.2e} det-bad={det} {}",
-                            if rel < 1e-6 && det == 0 {
-                                "OK"
-                            } else {
-                                fails += 1;
-                                "FAIL"
-                            }
-                        );
-                    } else {
-                        let bad = bit_bad(&yref, &yrp);
-                        println!(
-                            "RP BATCHED {tname} m={mm} mcols={mcols} [{v}]: bit-bad={bad} {}",
-                            if bad == 0 {
-                                "OK"
-                            } else {
-                                fails += 1;
-                                "FAIL"
-                            }
-                        );
-                    }
                 }
                 // dp4a rp twin (grid (out,m), 128-thread two-level reduce) vs original dp4a.
                 for mm in [1usize, 5] {

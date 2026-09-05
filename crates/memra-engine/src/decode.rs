@@ -1016,7 +1016,7 @@ impl HybridModel {
     /// keeps EAGER kernels and streams (full stream concurrency); the host submit runs
     /// ahead of the GPU, so the per-token host wall overlaps device work instead of
     /// serializing after it.
-    /// Contract mirrors step35_token_graph_chunk: consumes `token` (already emitted by
+    /// Contract: consumes `token` (already emitted by
     /// the caller) as launch 0's input and returns (hist[0..k], last token's logits).
     /// The caller emits hist[..k-1]. On a greedy chain, hist[k-1] == argmax(logits); on a
     /// sampled chain it is the device-drawn boundary id and MUST be fed directly instead

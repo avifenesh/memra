@@ -299,17 +299,6 @@ pub(crate) fn sel_mirror_on() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_SEL_MIRROR").as_deref() == Ok("1"))
 }
 
-/// MEMRA_STEP_NVFP4_EP2=1: whole-expert (expert-parallel) NVFP4 banks at 2 ranks — expert e
-/// lives ENTIRE on rank (e & 1) at bank slot (e >> 1), replacing the TP column/row shards
-/// (same total VRAM; both sets cannot coexist). Decode rides owner-guarded full-width
-/// sweeps with per-rank slot-ordered partial sums; the cross-rank join is unchanged.
-/// NUMERIC-CLASS door (the slot chain regroups per rank): run-gen argmax gate + battery +
-/// fresh tape, the DEV_ROUTES acceptance class.
-pub(crate) fn step_nvfp4_ep2_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_STEP_NVFP4_EP2").as_deref() == Ok("1"))
-}
-
 pub(crate) fn oproj_direct_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_OPROJ_DIRECT").as_deref() == Ok("1"))
@@ -9908,7 +9897,7 @@ pub struct ResidentNvfp4ColumnBankRank {
     row_bytes: usize,
     /// TRUE when these bytes are the slot-major permutation (`nvfp4_matrix_v2_permute`) and the
     /// `_v2` readers must be used; FALSE when they are block_nvfp4 v1. Recorded at BUILD from
-    /// `ep2 || bank_slot_major_on()` and never re-derived: the layout travels with the pointer,
+    /// `bank_slot_major_on()` and never re-derived: the layout travels with the pointer,
     /// so no reader can consult an env door that disagrees with the resident bytes. Feeding v1
     /// bytes to a `_v2` reader (or the reverse) is a garbage-output bug, and the 2026-08-29
     /// step37 incident was its neighbour — a piece of layout geometry a caller failed to supply.
@@ -10041,10 +10030,6 @@ pub struct ResidentNvfp4TensorParallel {
     /// The banks are resident and never move, so rebuilding + re-uploading 3*n_expert u64s per
     /// rank per LAYER was pure per-call host churn on the prime path.
     prime_tables: std::sync::Mutex<Vec<crate::CudaSlice<u64>>>,
-    /// MEMRA_STEP_NVFP4_EP2: the rank banks above hold WHOLE experts (owner = id & 1,
-    /// slot = id >> 1) at full width instead of TP shards. Consumers must branch on this;
-    /// shard-semantics paths refuse loudly.
-    pub(crate) ep2: bool,
 }
 
 /// Persistent per-call device buffers for the NVFP4 device routes program: one gate/up output,
@@ -10751,12 +10736,10 @@ impl TpE4m3HostBounce {
             .into());
         }
 
-        let ep2 = step_nvfp4_ep2_on() && tp == 2;
-        // LAYOUT DECISION, MADE ONCE PER BANK BUILD. EP2 whole-expert banks are ALWAYS
-        // slot-major (their `*_ep` kernels read that mapping unconditionally); TP shard banks
-        // are slot-major only under PROGRAM 1's door. Every reader below takes this from the
-        // bank it is reading, never from `bank_slot_major_on()` again.
-        let slot_major = ep2 || bank_slot_major_on();
+        // LAYOUT DECISION, MADE ONCE PER BANK BUILD. TP shard banks are slot-major under
+        // PROGRAM 1's door. Every reader below takes this from the bank it is reading, never
+        // from `bank_slot_major_on()` again.
+        let slot_major = bank_slot_major_on();
         // ENGAGEMENT RECEIPT, not a debug line. A pricing cell that proves only that the env var
         // is SET measures nothing: if the door fails to reach the code, the cell reports "the
         // program is worth 0%" when the truth is "the program never ran". That exact defect is
@@ -10775,11 +10758,7 @@ impl TpE4m3HostBounce {
             // an explicit recipe" from "rolled back by the seam" from "armed because EP2". A
             // default flip whose receipt cannot say which of those happened cannot prove the
             // DEFAULT was what got measured.
-            if ep2 {
-                "ep2-always"
-            } else {
-                bank_slot_major_source().1
-            },
+            bank_slot_major_source().1,
             gate.expert_count,
             gate.in_features,
             gate.out_features
@@ -10798,36 +10777,16 @@ impl TpE4m3HostBounce {
             // rank_index), stacked at slot id >> 1 — same total bytes as the shard bank.
             let mut gate_host: Vec<u8> = Vec::new();
             let mut up_host: Vec<u8> = Vec::new();
-            let mut owned = 0usize;
             for expert in 0..gate.expert_count {
-                if ep2 {
-                    if expert % 2 != rank_index {
-                        continue;
-                    }
-                    owned += 1;
-                    gate_host.extend_from_slice(&nvfp4_repack_bank_matrix(
-                        gate.expert(expert)?,
-                        slot_major,
-                    ));
-                    up_host.extend_from_slice(&nvfp4_repack_bank_matrix(
-                        up.expert(expert)?,
-                        slot_major,
-                    ));
-                } else {
-                    let gate_shard = nvfp4_column_shard(gate.expert(expert)?, tp, rank_index)?;
-                    gate_host.extend_from_slice(&nvfp4_repack_bank_matrix(gate_shard, slot_major));
-                    let up_shard = nvfp4_column_shard(up.expert(expert)?, tp, rank_index)?;
-                    up_host.extend_from_slice(&nvfp4_repack_bank_matrix(up_shard, slot_major));
-                }
+                let gate_shard = nvfp4_column_shard(gate.expert(expert)?, tp, rank_index)?;
+                gate_host.extend_from_slice(&nvfp4_repack_bank_matrix(gate_shard, slot_major));
+                let up_shard = nvfp4_column_shard(up.expert(expert)?, tp, rank_index)?;
+                up_host.extend_from_slice(&nvfp4_repack_bank_matrix(up_shard, slot_major));
             }
-            let bank_experts = if ep2 { owned } else { gate.expert_count };
+            let bank_experts = gate.expert_count;
             let gate_expert_bytes = gate_host.len() / bank_experts.max(1);
             let up_expert_bytes = up_host.len() / bank_experts.max(1);
-            let local_out = if ep2 {
-                gate.out_features
-            } else {
-                gate.out_features / tp
-            };
+            let local_out = gate.out_features / tp;
             gate_ranks.push(ResidentNvfp4ColumnBankRank {
                 bank: engine.htod_bytes(&gate_host)?,
                 expert_bytes: gate_expert_bytes,
@@ -10857,39 +10816,24 @@ impl TpE4m3HostBounce {
             let engine = &self.ranks[device_rank];
             let _main = engine.gpu.enter_main()?;
             let mut down_host: Vec<u8> = Vec::new();
-            let mut owned = 0usize;
             for expert in 0..down.expert_count {
                 let down_matrix = down.expert(expert)?;
-                if ep2 {
-                    // EP2: shard_index doubles as the owner rank; full-width down matrices
-                    // of the owned experts, stacked at slot id >> 1.
-                    if expert % 2 != device_rank {
-                        continue;
-                    }
-                    owned += 1;
-                    down_host.extend_from_slice(&nvfp4_repack_bank_matrix(down_matrix, slot_major));
-                } else {
-                    let (codes, scales, local_in) =
-                        nvfp4_row_shard(down_matrix, NVFP4_CANONICAL_ROW_SHARDS, shard_index)?;
-                    down_host.extend_from_slice(&nvfp4_repack_bank_matrix(
-                        Nvfp4BlockMatrix {
-                            codes: &codes,
-                            scales: &scales,
-                            macro_scale: down_matrix.macro_scale,
-                            out_features: down_matrix.out_features,
-                            in_features: local_in,
-                        },
-                        slot_major,
-                    ));
-                }
+                let (codes, scales, local_in) =
+                    nvfp4_row_shard(down_matrix, NVFP4_CANONICAL_ROW_SHARDS, shard_index)?;
+                down_host.extend_from_slice(&nvfp4_repack_bank_matrix(
+                    Nvfp4BlockMatrix {
+                        codes: &codes,
+                        scales: &scales,
+                        macro_scale: down_matrix.macro_scale,
+                        out_features: down_matrix.out_features,
+                        in_features: local_in,
+                    },
+                    slot_major,
+                ));
             }
-            let bank_experts = if ep2 { owned } else { down.expert_count };
+            let bank_experts = down.expert_count;
             let down_expert_bytes = down_host.len() / bank_experts.max(1);
-            let local_in = if ep2 {
-                down.in_features
-            } else {
-                down.in_features / NVFP4_CANONICAL_ROW_SHARDS
-            };
+            let local_in = down.in_features / NVFP4_CANONICAL_ROW_SHARDS;
             down_ranks.push(ResidentNvfp4RowBankRank {
                 bank: engine.htod_bytes(&down_host)?,
                 expert_bytes: down_expert_bytes,
@@ -10915,55 +10859,7 @@ impl TpE4m3HostBounce {
             expert_width: gate.out_features,
             device_workspace: std::sync::Mutex::new(None),
             prime_tables: std::sync::Mutex::new(Vec::new()),
-            ep2,
         })
-    }
-
-    /// EP2 host-canonical: the whole expert executes on its owning rank at full width
-    /// (owner = expert & 1, bank slot = expert >> 1). Per-row program == the column-bank
-    /// path's kernel, so gate/up are bit-equal to the TP layout.
-    fn run_full_bank_expert_nvfp4(
-        &self,
-        ranks: &[ResidentNvfp4ColumnBankRank],
-        macros: &[f32],
-        expert: usize,
-        input: &[f32],
-    ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
-        let owner = expert & 1;
-        let slot = expert >> 1;
-        let bank = ranks
-            .get(owner)
-            .ok_or("NVFP4 EP2 column bank missing owner rank")?;
-        let engine = &self.ranks[owner];
-        let _main = engine.gpu.enter_main()?;
-        let activations = engine.htod(input)?;
-        let output = bank.host_canonical_expert(engine, slot, &activations)?;
-        let mut out = engine.dtoh(&output)?;
-        apply_macro(&mut out, macros[expert]);
-        Ok(out)
-    }
-
-    /// EP2 host-canonical down: one full-width dot on the owner (NUMERIC-CLASS vs the
-    /// canonical 2-shard sum — the parenthesization this door declares).
-    fn run_full_down_expert_nvfp4(
-        &self,
-        shards: &[ResidentNvfp4RowBankRank],
-        macros: &[f32],
-        expert: usize,
-        input: &[f32],
-    ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
-        let owner = expert & 1;
-        let slot = expert >> 1;
-        let shard = shards
-            .get(owner)
-            .ok_or("NVFP4 EP2 down bank missing owner rank")?;
-        let engine = &self.ranks[owner];
-        let _main = engine.gpu.enter_main()?;
-        let activations = engine.htod(input)?;
-        let output = shard.host_canonical_expert(engine, slot, &activations)?;
-        let mut out = engine.dtoh(&output)?;
-        apply_macro(&mut out, macros[expert]);
-        Ok(out)
     }
 
     fn run_column_bank_expert_nvfp4(
@@ -12449,11 +12345,7 @@ impl TpE4m3HostBounce {
             )
             .into());
         }
-        let local_out = if experts.ep2 {
-            experts.expert_width
-        } else {
-            experts.expert_width / world
-        };
+        let local_out = experts.expert_width / world;
 
         // MEMRA_STEP_TP_TIMING=1: cumulative wall-clock of this program, printed every 430 calls
         // (~one 43-layer decode step's worth) so a bench run decomposes expert-program time vs
@@ -12546,11 +12438,6 @@ impl TpE4m3HostBounce {
         let workspace = workspace_guard
             .as_mut()
             .expect("NVFP4 device routes workspace initialized above");
-        // EP2 uses this call only as the workspace-arming warmup (the prejoin path drives
-        // decode); its host-routed sweep semantics do not apply to whole-expert banks.
-        if experts.ep2 {
-            return Ok(vec![0.0f32; experts.input_width]);
-        }
         if workspace.n_sel != n_sel {
             return Err(format!(
                 "NVFP4 device routes experts/token changed: workspace {} != call {n_sel}",
@@ -12689,102 +12576,6 @@ impl TpE4m3HostBounce {
         {
             let engine = &self.ranks[rank_index];
             let _main = engine.gpu.enter_main()?;
-            // EP2: whole-expert full-width sweep, owner-guarded; down+combine fused writes
-            // this rank's slot-ordered partial straight into its accumulator (the join is
-            // unchanged). Device-routed only — the host-routed arm and the graph door refuse
-            // at the caller.
-            if experts.ep2 {
-                if !device_routed {
-                    return Err("NVFP4 EP2 banks support the device-routed decode arm only".into());
-                }
-                let gate_bank = &experts.gate[rank_index];
-                let up_bank = &experts.up[rank_index];
-                if gate_bank.local_out != experts.expert_width
-                    || gate_bank.expert_bytes != up_bank.expert_bytes
-                {
-                    return Err("NVFP4 EP2 bank geometry drifted".into());
-                }
-                {
-                    let Nvfp4DeviceRoutesWorkspace {
-                        sel,
-                        gate_out,
-                        up_out,
-                        in_q,
-                        in_d,
-                        ..
-                    } = &mut *workspace;
-                    engine.qmatvec_nvfp4_sel_gu_ep_into(
-                        &gate_bank.bank,
-                        &up_bank.bank,
-                        &sel[rank_index],
-                        &in_q[rank_index],
-                        &in_d[rank_index],
-                        &mut gate_out[rank_index],
-                        &mut up_out[rank_index],
-                        n_sel,
-                        gate_bank.in_features,
-                        gate_bank.local_out,
-                        gate_bank.row_bytes,
-                        gate_bank.expert_bytes,
-                        rank_index,
-                    )?;
-                }
-                {
-                    let Nvfp4DeviceRoutesWorkspace {
-                        gate_out,
-                        up_out,
-                        sel,
-                        act_q,
-                        act_d,
-                        ..
-                    } = &mut *workspace;
-                    engine.silu_mul_scaled_q8_1_sel_ep_into(
-                        &gate_out[rank_index],
-                        &up_out[rank_index],
-                        &experts.macros_gate_dev[rank_index],
-                        &experts.macros_up_dev[rank_index],
-                        &sel[rank_index],
-                        activation_limit,
-                        &mut act_q[rank_index],
-                        &mut act_d[rank_index],
-                        local_out,
-                        n_sel,
-                        rank_index,
-                    )?;
-                }
-                let shard = &experts.down[rank_index];
-                if shard.device_rank != rank_index || shard.local_in != local_out {
-                    return Err("NVFP4 EP2 down bank placement drifted".into());
-                }
-                {
-                    let Nvfp4DeviceRoutesWorkspace {
-                        sel,
-                        act_q,
-                        act_d,
-                        route_w,
-                        accumulator,
-                        ..
-                    } = &mut *workspace;
-                    engine.qmatvec_nvfp4_sel_down8_ep_into(
-                        &shard.bank,
-                        &sel[rank_index],
-                        &act_q[rank_index],
-                        &act_d[rank_index],
-                        &route_w[rank_index],
-                        &experts.macros_down_dev[rank_index],
-                        &mut accumulator[rank_index],
-                        n_sel,
-                        shard.local_in,
-                        shard.out_features,
-                        shard.row_bytes,
-                        shard.expert_bytes,
-                        local_out,
-                        local_out / 32,
-                        rank_index,
-                    )?;
-                }
-                return Ok(());
-            }
             if !device_routed {
                 engine.htod_i32_into(&mut workspace.sel[rank_index], sel_i32)?;
                 // Folded combine weights (route_weight x down macro) — one 40-byte upload
@@ -13980,11 +13771,7 @@ impl TpE4m3HostBounce {
             )
             .into());
         }
-        let local_out = if experts.ep2 {
-            experts.expert_width
-        } else {
-            experts.expert_width / world
-        };
+        let local_out = experts.expert_width / world;
 
         static TIMING_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         static TIMING_CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -14035,13 +13822,6 @@ impl TpE4m3HostBounce {
         // call — instead of feeding cuGraphLaunch an exhausted card
         // (lane/graph-launch-guard-sweep-20260831).
         if step_tp_graph_enabled()? && step_tp_graph_headroom_ok(e) {
-            if experts.ep2 {
-                return Err(
-                    "MEMRA_STEP_TP_GRAPH=1 with MEMRA_STEP_NVFP4_EP2=1 has never been \
-                     co-gated; unset one"
-                        .into(),
-                );
-            }
             if workspace.dev_route_e.is_none() {
                 let _main = e.gpu.enter_main()?;
                 workspace.dev_route_e = Some((
@@ -14919,62 +14699,30 @@ impl TpE4m3HostBounce {
                     )
                     .into());
                 }
-                // EP2 banks hold the WHOLE expert on rank (expert & 1) at slot (expert >> 1);
-                // per-row dots are the same full-width program either way (a column shard
-                // splits ROWS, not the dot), so gate/up are bit-equal across layouts. Only
-                // down's parenthesization moves (full-width dot vs canonical 2-shard sum) —
-                // the numeric-class this door declares.
-                let gate = if experts.ep2 {
-                    self.run_full_bank_expert_nvfp4(
-                        &experts.gate,
-                        &experts.macros_gate,
-                        expert,
-                        input_row,
-                    )?
-                } else {
-                    self.run_column_bank_expert_nvfp4(
-                        &experts.gate,
-                        &experts.macros_gate,
-                        expert,
-                        input_row,
-                    )?
-                };
-                let up = if experts.ep2 {
-                    self.run_full_bank_expert_nvfp4(
-                        &experts.up,
-                        &experts.macros_up,
-                        expert,
-                        input_row,
-                    )?
-                } else {
-                    self.run_column_bank_expert_nvfp4(
-                        &experts.up,
-                        &experts.macros_up,
-                        expert,
-                        input_row,
-                    )?
-                };
+                let gate = self.run_column_bank_expert_nvfp4(
+                    &experts.gate,
+                    &experts.macros_gate,
+                    expert,
+                    input_row,
+                )?;
+                let up = self.run_column_bank_expert_nvfp4(
+                    &experts.up,
+                    &experts.macros_up,
+                    expert,
+                    input_row,
+                )?;
                 let activated: Vec<f32> = gate
                     .iter()
                     .zip(&up)
                     .map(|(&gate, &up)| step_expert_activation_host(gate, up, activation_limit))
                     .collect();
                 debug_assert_eq!(activated.len(), experts.expert_width);
-                let down = if experts.ep2 {
-                    self.run_full_down_expert_nvfp4(
-                        &experts.down,
-                        &experts.macros_down,
-                        expert,
-                        &activated,
-                    )?
-                } else {
-                    self.run_row_bank_expert_nvfp4(
-                        &experts.down,
-                        &experts.macros_down,
-                        expert,
-                        &activated,
-                    )?
-                };
+                let down = self.run_row_bank_expert_nvfp4(
+                    &experts.down,
+                    &experts.macros_down,
+                    expert,
+                    &activated,
+                )?;
                 let weight = route_weights[pair];
                 for (sum, value) in output
                     [token * experts.input_width..(token + 1) * experts.input_width]
@@ -15049,9 +14797,9 @@ mod bank_v2_layout_tests {
     /// against something: per row, slot g's 16 qs bytes land contiguously at `g*16`, and its
     /// two UE4M3 scale bytes at `nslots*16 + g*2`. Source layout is memra `block_nvfp4`:
     /// 36-byte superblocks of [4 scale bytes | 32 packed e2m1], two 32-value slots per
-    /// superblock. Since the 2026-08-29 door removal the permutation's ONLY consumer is the
-    /// EP2 whole-expert bank build (`nvfp4_repack_bank_matrix(_, true)`), whose `*_ep`
-    /// kernels and `qmatvec_nvfp4_fast_v2` oracle read this exact mapping.
+    /// superblock. The permutation's consumers are the slot-major TP shard banks
+    /// (`MEMRA_NVFP4_BANK_SM`, `nvfp4_repack_bank_matrix(_, true)`) and the
+    /// `qmatvec_nvfp4_fast_v2` oracle, which read this exact mapping.
     #[test]
     fn the_v2_bank_row_is_the_documented_slot_major_permutation() {
         // two rows, in_features 128 => 2 superblocks/row, 4 slots/row, 72 bytes/row.

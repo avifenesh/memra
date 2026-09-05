@@ -715,9 +715,6 @@ impl HybridModel {
                 ));
             }
         }
-        if crate::spill_pread::worker_enabled() && crate::spill_pread::copy_h2d_enabled() {
-            return Some("the NVMe worker H2D promotion reads the host selection".into());
-        }
         if e.ctx().is_event_tracking() {
             return Some(
                 "cudarc event tracking is on (MEMRA_EVT); capture refuses cross-stream waits"
