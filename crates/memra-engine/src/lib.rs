@@ -2637,6 +2637,25 @@ pub fn e4m3_batch_r2_dispatches() -> u64 {
     E4M3_BATCH_R2_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// `MEMRA_Q80_BATCH_R2=1` (lane/q80-batch-r2-20260905, default OFF, decide-by 2026-09-19): the
+/// batched Q8_0 matvec tier at mcols 2, 4, 8 (`qmatvec_q8_0_mmvq_b{2,4,8}` and their `_rp`
+/// split-plane twins: the MLA/DSA projections at t = K+1 in the verify walk) runs the `_r2`
+/// twins, two output rows per warp sharing one activation load per (column, k32 block). Same
+/// weight ints, same dp4a order, same accumulate, same reduction: bit-identical by construction;
+/// gated by `q80_batch_r2_gpu`. Read per call.
+fn q80_batch_r2_on() -> bool {
+    std::env::var("MEMRA_Q80_BATCH_R2").as_deref() == Ok("1")
+}
+
+/// Engagement counter for the Q8_0 two-rows-per-warp door (`MEMRA_Q80_BATCH_R2`).
+pub static Q80_BATCH_R2_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// Snapshot of [`Q80_BATCH_R2_DISPATCHES`] — gates take a before/after delta.
+pub fn q80_batch_r2_dispatches() -> u64 {
+    Q80_BATCH_R2_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// `MEMRA_ALLOC_TRACE=1` (gate-harness instrument, default OFF, never a serving flag): every
 /// Engine device allocation funnel (`alloc_uninit` and the zeroed / typed / host-upload
 /// wrappers) prints `[alloc-trace] <bytes> bytes from <file>:<line>` naming the CALLER
@@ -22598,6 +22617,24 @@ impl Engine {
                 );
             }
             "r2"
+        } else {
+            variant
+        };
+        // MEMRA_Q80_BATCH_R2 (default OFF): the two-rows-per-warp twins of the Q8_0 batched tier
+        // at mcols 2/4/8, base and rp layouts (doc at `q80_batch_r2_on`); rides the r2-class
+        // launch convention below. Bit-identical by construction; gated by q80_batch_r2_gpu.
+        let variant = if qtype == QT_Q8_0
+            && mcols <= 8
+            && matches!(variant, "base" | "rp")
+            && q80_batch_r2_on()
+        {
+            if Q80_BATCH_R2_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+                eprintln!(
+                    "[q80-batch-r2] engaged: Q8_0 batched matvec at two rows per warp \
+                     (MEMRA_Q80_BATCH_R2=1; first shape {in_f}->{out_f} m={m} rp={rp})"
+                );
+            }
+            if rp { "r2_rp" } else { "r2" }
         } else {
             variant
         };
