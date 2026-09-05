@@ -457,18 +457,18 @@ fn note(msg: &str) {
 /// and it has to come back with enough to name the failing driver call rather than a bare
 /// `DriverError(CUDA_ERROR_INVALID_VALUE)`.
 #[derive(Clone, Copy)]
-struct CapCtx {
-    dev: usize,
-    lo: usize,
-    hi: usize,
-    run: usize,
-    runs: usize,
-    a: usize,
-    b: usize,
-    phase: usize,
+pub(crate) struct CapCtx {
+    pub(crate) dev: usize,
+    pub(crate) lo: usize,
+    pub(crate) hi: usize,
+    pub(crate) run: usize,
+    pub(crate) runs: usize,
+    pub(crate) a: usize,
+    pub(crate) b: usize,
+    pub(crate) phase: usize,
     /// False for the pool's first build, true for every rebuild after an invalidation. This is
     /// THE axis that matters: the first build works on the box and the rebuild does not.
-    recapture: bool,
+    pub(crate) recapture: bool,
 }
 
 impl std::fmt::Display for CapCtx {
@@ -518,7 +518,7 @@ fn free_mb(e: &Engine) -> String {
 
 /// The error line every failable step in this module routes through. Printed BEFORE the error is
 /// returned, so a run that dies still says which call, where, and what the stream looked like.
-fn capture_error(e: &Engine, ctx: &CapCtx, call: &str, err: &dyn std::fmt::Display) {
+pub(crate) fn capture_error(e: &Engine, ctx: &CapCtx, call: &str, err: &dyn std::fmt::Display) {
     eprintln!(
         "[glm5-decode-graph] last launch site before the capture error: {}",
         crate::last_site_get()
@@ -533,7 +533,7 @@ fn capture_error(e: &Engine, ctx: &CapCtx, call: &str, err: &dyn std::fmt::Displ
 }
 
 /// Run one failable driver step with context: report before propagating.
-fn step<T>(
+pub(crate) fn step<T>(
     e: &Engine,
     ctx: &CapCtx,
     call: &str,
@@ -558,7 +558,7 @@ fn step<T>(
 /// capture that never ended) or INVALIDATED (a capture killed by an illegal in-region operation)
 /// makes `cuStreamBeginCapture` return `CUDA_ERROR_INVALID_VALUE`, and that is one of the very
 /// few callers that produce exactly this error.
-fn capture_one<F>(e: &Engine, ctx: &CapCtx, mut body: F) -> Res<CudaGraph>
+pub(crate) fn capture_one<F>(e: &Engine, ctx: &CapCtx, mut body: F) -> Res<CudaGraph>
 where
     F: FnMut(&Engine) -> Res<()>,
 {
@@ -623,6 +623,77 @@ where
     out
 }
 
+/// Node census of a captured graph: the receipt every verify-graph capture prints and the
+/// guard behind it. A memcpy node whose source (or destination) is HOST memory is a capture
+/// defect by construction: the graph re-reads that host address on every replay, and a
+/// pageable upload's source is a temporary the host freed before the first replay (the
+/// 2026-09-05 shared-expert ones vector: seven 12-byte host-sourced copies, every output word
+/// wrong at 1e21 while the eager walk and the graph were each deterministic against themselves).
+pub(crate) struct GraphCensus {
+    pub nodes: usize,
+    pub kernels: usize,
+    pub memcpys: usize,
+    /// Memcpy nodes with a HOST endpoint, and their byte counts.
+    pub host_memcpys: usize,
+    pub host_bytes: Vec<usize>,
+    pub mem_allocs: usize,
+    pub mem_frees: usize,
+}
+
+pub(crate) fn graph_census(graph: &CudaGraph) -> Res<GraphCensus> {
+    use cudarc::driver::sys as cu;
+    let g = graph.cu_graph();
+    let mut n: usize = 0;
+    let r = unsafe { cu::cuGraphGetNodes(g, std::ptr::null_mut(), &mut n) };
+    if r != cu::CUresult::CUDA_SUCCESS {
+        return Err(format!("cuGraphGetNodes(count): {r:?}").into());
+    }
+    let mut nodes: Vec<cu::CUgraphNode> = vec![std::ptr::null_mut(); n];
+    let r = unsafe { cu::cuGraphGetNodes(g, nodes.as_mut_ptr(), &mut n) };
+    if r != cu::CUresult::CUDA_SUCCESS {
+        return Err(format!("cuGraphGetNodes: {r:?}").into());
+    }
+    let mut c = GraphCensus {
+        nodes: n,
+        kernels: 0,
+        memcpys: 0,
+        host_memcpys: 0,
+        host_bytes: Vec::new(),
+        mem_allocs: 0,
+        mem_frees: 0,
+    };
+    for node in nodes.iter().take(n) {
+        let mut ty = std::mem::MaybeUninit::<cu::CUgraphNodeType>::uninit();
+        let r = unsafe { cu::cuGraphNodeGetType(*node, ty.as_mut_ptr()) };
+        if r != cu::CUresult::CUDA_SUCCESS {
+            return Err(format!("cuGraphNodeGetType: {r:?}").into());
+        }
+        match unsafe { ty.assume_init() } {
+            cu::CUgraphNodeType::CU_GRAPH_NODE_TYPE_KERNEL => c.kernels += 1,
+            cu::CUgraphNodeType::CU_GRAPH_NODE_TYPE_MEM_ALLOC => c.mem_allocs += 1,
+            cu::CUgraphNodeType::CU_GRAPH_NODE_TYPE_MEM_FREE => c.mem_frees += 1,
+            cu::CUgraphNodeType::CU_GRAPH_NODE_TYPE_MEMCPY => {
+                c.memcpys += 1;
+                let mut p = std::mem::MaybeUninit::<cu::CUDA_MEMCPY3D>::zeroed();
+                let r = unsafe { cu::cuGraphMemcpyNodeGetParams(*node, p.as_mut_ptr()) };
+                if r != cu::CUresult::CUDA_SUCCESS {
+                    return Err(format!("cuGraphMemcpyNodeGetParams: {r:?}").into());
+                }
+                let p = unsafe { p.assume_init() };
+                if p.srcMemoryType == cu::CUmemorytype::CU_MEMORYTYPE_HOST
+                    || p.dstMemoryType == cu::CUmemorytype::CU_MEMORYTYPE_HOST
+                {
+                    c.host_memcpys += 1;
+                    c.host_bytes
+                        .push(p.WidthInBytes * p.Height.max(1) * p.Depth.max(1));
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(c)
+}
+
 /// Checksum + liveness of a stream-state buffer, for the gate trace. `nz` is the point: an
 /// all-zero hidden and a wrong-but-live hidden look identical in a token stream and completely
 /// different here.
@@ -679,7 +750,7 @@ struct Snap {
 }
 
 /// Everything a warm walk over [a, b) must put back (see `glm5_run_snapshot`).
-struct RunSnap {
+pub(crate) struct RunSnap {
     snaps: Vec<Snap>,
     /// `(il, len, index_pools_ready)` per MLA latent layer of the run: the eager reference and
     /// the replay both append a row and may complete a pool; both must rewind together or the
@@ -1460,7 +1531,7 @@ impl HybridModel {
     /// The per-run state the warm passes overwrite and put back: every KDA layer's conv / ssm /
     /// alt planes (plus the ssm pointer, so the ping-pong swap is undone) and every MLA layer's
     /// latent length (host and device mirror). Taken before a warm walk, restored after it.
-    fn glm5_run_snapshot(e: &Engine, cache: &Cache, a: usize, b: usize) -> Res<RunSnap> {
+    pub(crate) fn glm5_run_snapshot(e: &Engine, cache: &Cache, a: usize, b: usize) -> Res<RunSnap> {
         use cudarc::driver::DevicePtr;
         let mla_lens: Vec<(usize, usize, usize)> = (a..b)
             .filter_map(|il| {
@@ -1496,7 +1567,7 @@ impl HybridModel {
         Ok(RunSnap { snaps, mla_lens })
     }
 
-    fn glm5_run_restore(e: &Engine, cache: &mut Cache, snap: &RunSnap) -> Res<()> {
+    pub(crate) fn glm5_run_restore(e: &Engine, cache: &mut Cache, snap: &RunSnap) -> Res<()> {
         use cudarc::driver::DevicePtr;
         for sn in &snap.snaps {
             let rl = cache.recur[sn.il].as_mut().expect("snapshotted above");

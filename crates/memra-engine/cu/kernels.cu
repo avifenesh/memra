@@ -2495,6 +2495,158 @@ extern "C" __global__ void topk_rows_shard_merge_f32(const float* __restrict__ p
     }
 }
 
+// ---- WARP-MERGED exact top-k twin pair (lane/draft-topk-warp-20260905, MEMRA_TOPK_WARP). ----
+// The standing kernel and the shard twin both keep each lane's sorted list in LOCAL memory
+// (runtime k, dynamic indexing) and finish with ONE thread walking every lane's list (nth x k
+// dependent shared-memory steps per block); the DFlash2 selector's top-k over the vocab costs
+// 870 us per round on the B200 pair that way (spectrace 2026-09-05), and a single-block warp
+// merge alone barely moved it on the rig (both phases are the cost). This pair changes the
+// PROGRAM, not the selection:
+//   * K is a template constant, so each lane's list lives in registers and an element is
+//     inserted by an unrolled rank-count + predicated shift (pos = entries ranking above it
+//     under the total order (value desc, column asc); the list is sorted, so pos is exactly
+//     where the standing while-loop lands it);
+//   * stage 1 (grid n_rows x n_shards, 256 threads): each lane inserts its shard columns,
+//     each warp merges its 32 lane lists by a shuffle argmax per output slot under the same
+//     total order, warp 0 merges the warp lists the same way and writes the shard's top-k;
+//   * stage 2 (one warp per row): lane s walks shard s's list, the same shuffle merge writes
+//     the row's top-k.
+// An exhausted head presents (-inf, SENTINEL) and loses to every real entry, a real -inf at
+// a lower column included, exactly as the serial walk's `continue` skips it. NaN never enters
+// a lane list (every comparison against NaN is false). The top-k of a union is the top-k of
+// the union of its parts' top-k lists under a total order, so the output is IDENTICAL to the
+// standing kernel's for any partition: no arithmetic, only the standing comparisons. Gated by
+// glm5_matvec_doors_gpu (bit-compare vs the standing kernel incl. planted ties, a planted-NaN
+// row, a row narrower than the block).
+template <int K>
+__device__ __forceinline__ void tkw_insert(float (&lv)[K], int (&li)[K], float v, int c) {
+    if (!(v > lv[K - 1] || (v == lv[K - 1] && c < li[K - 1]))) return;
+    int pos = 0;
+#pragma unroll
+    for (int j = 0; j < K; j++) pos += (lv[j] > v || (lv[j] == v && li[j] < c)) ? 1 : 0;
+#pragma unroll
+    for (int j = K - 1; j > 0; j--) {
+        if (j > pos) { lv[j] = lv[j - 1]; li[j] = li[j - 1]; }
+    }
+#pragma unroll
+    for (int j = 0; j < K; j++) {
+        if (j == pos) { lv[j] = v; li[j] = c; }
+    }
+}
+// One merge step: every lane presents (v, i); the butterfly all-reduce under the total order
+// leaves every lane holding the winner and its lane id.
+__device__ __forceinline__ void tkw_argmax(float& v, int& i, int& who) {
+#pragma unroll
+    for (int off = 16; off > 0; off >>= 1) {
+        float ov = __shfl_xor_sync(0xffffffffu, v, off);
+        int oi = __shfl_xor_sync(0xffffffffu, i, off);
+        int ow = __shfl_xor_sync(0xffffffffu, who, off);
+        if (ov > v || (ov == v && oi < i)) { v = ov; i = oi; who = ow; }
+    }
+}
+template <int K>
+__device__ void topk_rows_wshard_body(const float* __restrict__ L, int n_rows, int n_cols,
+                                      int n_shards, float* __restrict__ pvals,
+                                      unsigned int* __restrict__ pidxs) {
+    int row = blockIdx.x;
+    int sh = blockIdx.y;
+    if (row >= n_rows || sh >= n_shards) return;
+    int tid = threadIdx.x;
+    int nth = blockDim.x;
+    int lane = tid & 31;
+    int warp = tid >> 5;
+    int nwarps = nth >> 5;
+    int shard_w = (n_cols + n_shards - 1) / n_shards;
+    int c0 = sh * shard_w;
+    int c1 = min(c0 + shard_w, n_cols);
+    const float* base = L + (size_t)row * n_cols;
+    const float NEG_INF = __int_as_float(0xff800000);
+    const int SENTINEL = 0x7fffffff;
+    float lv[K];
+    int li[K];
+#pragma unroll
+    for (int j = 0; j < K; j++) { lv[j] = NEG_INF; li[j] = SENTINEL; }
+    for (int c = c0 + tid; c < c1; c += nth) tkw_insert<K>(lv, li, base[c], c);
+    extern __shared__ unsigned char tkw_smem[];
+    float* wv = (float*)tkw_smem;                         // [nwarps*K]
+    int* wi = (int*)(tkw_smem + (size_t)nwarps * K * 4);  // [nwarps*K]
+    int h = 0;
+    for (int out = 0; out < K; out++) {
+        float v = NEG_INF;
+        int i = SENTINEL;
+#pragma unroll
+        for (int j = 0; j < K; j++) {
+            if (j == h) { v = lv[j]; i = li[j]; }
+        }
+        int who = lane;
+        tkw_argmax(v, i, who);
+        if (who == lane && i != SENTINEL) h++;
+        if (lane == 0) { wv[warp * K + out] = v; wi[warp * K + out] = i; }
+    }
+    __syncthreads();
+    if (warp == 0) {
+        int h2 = 0;
+        float* ov = pvals + ((size_t)row * n_shards + sh) * K;
+        unsigned int* oi = pidxs + ((size_t)row * n_shards + sh) * K;
+        for (int out = 0; out < K; out++) {
+            bool live = (lane < nwarps) && (h2 < K);
+            float v = live ? wv[lane * K + h2] : NEG_INF;
+            int i = live ? wi[lane * K + h2] : SENTINEL;
+            int who = lane;
+            tkw_argmax(v, i, who);
+            if (who == lane && i != SENTINEL) h2++;
+            if (lane == 0) { ov[out] = v; oi[out] = (i == SENTINEL) ? 0xffffffffu : (unsigned int)i; }
+        }
+    }
+}
+extern "C" __global__ void topk_rows_wshard_k8_f32(const float* __restrict__ L, int n_rows, int n_cols,
+                                                   int n_shards, float* __restrict__ pvals,
+                                                   unsigned int* __restrict__ pidxs) {
+    topk_rows_wshard_body<8>(L, n_rows, n_cols, n_shards, pvals, pidxs);
+}
+extern "C" __global__ void topk_rows_wshard_k16_f32(const float* __restrict__ L, int n_rows, int n_cols,
+                                                    int n_shards, float* __restrict__ pvals,
+                                                    unsigned int* __restrict__ pidxs) {
+    topk_rows_wshard_body<16>(L, n_rows, n_cols, n_shards, pvals, pidxs);
+}
+extern "C" __global__ void topk_rows_wshard_k32_f32(const float* __restrict__ L, int n_rows, int n_cols,
+                                                    int n_shards, float* __restrict__ pvals,
+                                                    unsigned int* __restrict__ pidxs) {
+    topk_rows_wshard_body<32>(L, n_rows, n_cols, n_shards, pvals, pidxs);
+}
+// Stage 2: one warp per row merges the n_shards (<= 32) shard lists; 0xffffffff marks an
+// exhausted slot in the shard lists and the output alike.
+extern "C" __global__ void topk_rows_wshard_merge_f32(const float* __restrict__ pvals,
+                                                      const unsigned int* __restrict__ pidxs,
+                                                      int n_rows, int n_shards, int k,
+                                                      float* __restrict__ vals,
+                                                      unsigned int* __restrict__ idxs) {
+    int row = blockIdx.x;
+    if (row >= n_rows) return;
+    int lane = threadIdx.x & 31;
+    const float NEG_INF = __int_as_float(0xff800000);
+    const int SENTINEL = 0x7fffffff;
+    const float* pv = pvals + (size_t)row * n_shards * k;
+    const unsigned int* pi = pidxs + (size_t)row * n_shards * k;
+    int h = 0;
+    for (int out = 0; out < k; out++) {
+        bool live = (lane < n_shards) && (h < k);
+        float v = NEG_INF;
+        int i = SENTINEL;
+        if (live) {
+            unsigned int ii = pi[lane * k + h];
+            if (ii != 0xffffffffu) { v = pv[lane * k + h]; i = (int)ii; }
+        }
+        int who = lane;
+        tkw_argmax(v, i, who);
+        if (who == lane && i != SENTINEL) h++;
+        if (lane == 0) {
+            vals[(size_t)row * k + out] = v;
+            idxs[(size_t)row * k + out] = (i == SENTINEL) ? 0xffffffffu : (unsigned int)i;
+        }
+    }
+}
+
 // Lo-clipped twin of sdpa_naive_w_f32 (lane/dflash2-longctx, DFLASH2-EVAL §10.6(c)): the
 // windowed kernel sizes its dynamic shared memory T_kv*4 bytes and SCANS every ctx key,
 // so any windowed caller whose T_kv exceeds ~12k rows blows the 48KB default dynamic-smem

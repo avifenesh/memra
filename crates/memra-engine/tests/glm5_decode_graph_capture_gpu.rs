@@ -960,3 +960,136 @@ fn verify_graph_live_arm_matches_rows_exact_bitwise() {
     );
     println!("verify-graph arm 1: 3 rounds of t={t} bitwise vs rows-exact ({live} live MLA calls)");
 }
+
+/// `MEMRA_GLM5_VERIFY_GRAPH` arm 2: the session pool captures the verify walk on its second
+/// visit at this row count and replays it after; every round bitwise against the eager arm on
+/// an identically primed cache, with rollbacks between rounds. Non-vacuity on captures and
+/// replays; zero self-check failures.
+#[test]
+#[ignore = "needs a CUDA device — run under flock /tmp/memra-5090.lock"]
+fn verify_graph_replays_match_eager_bitwise() {
+    let _gpu = gpu_guard();
+    let h = Harness::new();
+    let ids = tokens(64, 0x5EED);
+    let (prompt, t, rounds) = (8usize, 3usize, 6usize);
+    let e = &h.engine;
+    let prime = || {
+        let mut cache =
+            memra_engine::cache::Cache::new_planned(e, &h.model.cfg, &h.plan, 64).expect("cache");
+        h.model
+            .prime_cache(e, &ids[..prompt], &mut cache, 0)
+            .expect("prime");
+        cache
+    };
+    unsafe {
+        std::env::set_var("MEMRA_MLA_SEG_WS", "1");
+        std::env::set_var("MEMRA_MOE_VROWS_DEV_TABLES", "1");
+        std::env::set_var("MEMRA_GLM5_VERIFY_GRAPH", "0");
+    }
+    let (mut ca, mut cb) = (prime(), prime());
+    let mut pool = memra_engine::glm_spec::VerifyGraphPool::default();
+    let mut snaps: Vec<Option<cudarc::driver::CudaSlice<f32>>> = Vec::new();
+    let cap0 = memra_engine::GLM5_VERIFY_GRAPH_CAPTURES.load(Ordering::Relaxed);
+    let rep0 = memra_engine::GLM5_VERIFY_GRAPH_REPLAYS.load(Ordering::Relaxed);
+    let sc0 = memra_engine::GLM5_VERIFY_GRAPH_SELFCHECK_FAILS.load(Ordering::Relaxed);
+    for round in 0..rounds {
+        let rows = &ids[prompt + round * 2..prompt + round * 2 + t];
+        unsafe {
+            std::env::set_var("MEMRA_GLM5_VERIFY_GRAPH", "0");
+        }
+        let (la, _, ca_ck) = h
+            .model
+            .glm5_verify_rows(e, rows, &mut ca)
+            .expect("eager arm");
+        unsafe {
+            std::env::set_var("MEMRA_GLM5_VERIFY_GRAPH", "1");
+        }
+        let (lb, _, mut cb_ck) = h
+            .model
+            .glm5_verify_rows_graphed(
+                e,
+                rows,
+                &mut cb,
+                std::mem::take(&mut snaps),
+                Some(&mut pool),
+            )
+            .expect("graphed arm");
+        e.stream().synchronize().unwrap();
+        let (va, vb) = (e.dtoh(&la).unwrap(), e.dtoh(&lb).unwrap());
+        let d = va
+            .iter()
+            .zip(&vb)
+            .filter(|(a, b)| a.to_bits() != b.to_bits())
+            .count();
+        assert_eq!(
+            d,
+            0,
+            "round {round}: {d}/{} verify logits differ (captures so far {})",
+            va.len(),
+            memra_engine::GLM5_VERIFY_GRAPH_CAPTURES.load(Ordering::Relaxed) - cap0
+        );
+        for il in 0..h.model.layers.len() {
+            if let (Some(pa), Some(pb)) = (ca.latent[il].as_ref(), cb.latent[il].as_ref()) {
+                assert_eq!(pa.len, pb.len, "round {round} layer {il}: latent len");
+                assert_eq!(
+                    pa.index_pools_ready, pb.index_pools_ready,
+                    "round {round} layer {il}: pools_ready"
+                );
+                assert_eq!(
+                    e.dtoh_i32(&pa.len_d).unwrap(),
+                    e.dtoh_i32(&pb.len_d).unwrap(),
+                    "round {round} layer {il}: len_d"
+                );
+            }
+        }
+        h.model
+            .glm5_verify_rollback(e, &mut ca, &ca_ck, 2)
+            .expect("rollback A");
+        h.model
+            .glm5_verify_rollback(e, &mut cb, &cb_ck, 2)
+            .expect("rollback B");
+        snaps = cb_ck.kda_ssm_snap_buffers();
+        pool.reclaim_rows(e, &mut cb_ck);
+        println!(
+            "  round {round}: pool after reclaim {:?}",
+            e.vws_pool_state()
+        );
+        e.stream().synchronize().unwrap();
+        for il in 0..h.model.layers.len() {
+            if let (Some(ra), Some(rb)) = (ca.recur[il].as_ref(), cb.recur[il].as_ref()) {
+                let (sa, sb) = (
+                    e.dtoh(&ra.ssm_state).unwrap(),
+                    e.dtoh(&rb.ssm_state).unwrap(),
+                );
+                assert!(
+                    sa.iter().zip(&sb).all(|(a, b)| a.to_bits() == b.to_bits()),
+                    "round {round} layer {il}: ssm state differs after rollback"
+                );
+            }
+        }
+    }
+    unsafe {
+        std::env::set_var("MEMRA_GLM5_VERIFY_GRAPH", "0");
+        std::env::set_var("MEMRA_MLA_SEG_WS", "0");
+        std::env::set_var("MEMRA_MOE_VROWS_DEV_TABLES", "0");
+    }
+    let captures = memra_engine::GLM5_VERIFY_GRAPH_CAPTURES.load(Ordering::Relaxed) - cap0;
+    let replays = memra_engine::GLM5_VERIFY_GRAPH_REPLAYS.load(Ordering::Relaxed) - rep0;
+    let scf = memra_engine::GLM5_VERIFY_GRAPH_SELFCHECK_FAILS.load(Ordering::Relaxed) - sc0;
+    println!(
+        "verify-graph arm 2: captures={captures} replays={replays} selfcheck_fails={scf} pool_replays={}",
+        pool.replays()
+    );
+    assert_eq!(scf, 0, "self-check failures");
+    assert!(
+        captures >= 1,
+        "VACUOUS: the pool never captured (refused? see the announce line)"
+    );
+    assert!(
+        replays >= rounds as u64 - 2,
+        "VACUOUS: {replays} replays for {rounds} rounds"
+    );
+    println!(
+        "verify-graph arm 2: {rounds} rounds of t={t} bitwise vs eager ({captures} captures, {replays} replays)"
+    );
+}
