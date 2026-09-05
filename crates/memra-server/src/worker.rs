@@ -5411,6 +5411,84 @@ fn pp_stage_admissions(
 /// the rollback seam).
 const STEP_OOM_MAX_RETRIES: u32 = 3;
 
+/// DRIVER headroom floor kept in front of every admitted request, in bytes
+/// (`MEMRA_ADMIT_DRIVER_HEADROOM_MB`, default 2048; `0` disables the rung).
+///
+/// WHY (2026-09-05, box13 / qwen3.8-27b, one 96 GB card). Admission counts the async
+/// pool's cached-but-unused blocks as free (`effective_free_bytes`), which is right for
+/// pool allocations: the next `cudaMallocAsync` is served from exactly those bytes. It is
+/// wrong for everything that allocates from the DRIVER, and a large prime does: cuBLAS
+/// workspaces, graph instantiation, and a block bigger than any cached fragment all ask
+/// the driver, which reported 10 MB free while the pool sat on 21 GB of cached blocks.
+/// `dspark prime failed: CUDA_ERROR_OUT_OF_MEMORY` on an admitted 132k-token request,
+/// the session parked and dropped, 9.5 GB of prefix cache evicted, the customer's client
+/// gave up. The reclaim ladder already trims to zero on a would-be REJECT; nothing kept
+/// headroom on an ADMIT. This rung does, releasing only the slice the driver is short.
+fn admit_driver_headroom_bytes() -> usize {
+    static B: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *B.get_or_init(|| {
+        std::env::var("MEMRA_ADMIT_DRIVER_HEADROOM_MB")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(2048)
+            .saturating_mul(1 << 20)
+    })
+}
+
+/// How far to trim the pool (the `keep` handed to `cuMemPoolTrimTo`) so the driver gets
+/// back to `floor` free bytes, or None when nothing should be trimmed: the driver already
+/// has the floor, or the pool holds nothing unused. Releases the minimum of the shortfall
+/// and the cached bytes; never below the pool's live (used) bytes.
+fn driver_headroom_trim_keep(
+    driver_free: usize,
+    pool_reserved: usize,
+    pool_used: usize,
+    floor: usize,
+) -> Option<usize> {
+    if floor == 0 || driver_free >= floor {
+        return None;
+    }
+    let cached = pool_reserved.saturating_sub(pool_used);
+    if cached == 0 {
+        return None;
+    }
+    let release = (floor - driver_free).min(cached);
+    Some(pool_reserved - release)
+}
+
+/// The driver-headroom rung: on every device this stack owns, if driver free is under the
+/// floor and the pool holds cached blocks, trim just enough. One receipt line per trim.
+fn ensure_driver_headroom(engine: &Engine, loaded: &HashMap<String, LoadedModel>, why: &str) {
+    let floor = admit_driver_headroom_bytes();
+    if floor == 0 {
+        return;
+    }
+    for_each_device_engine(engine, loaded, &mut |device, dev_engine| {
+        let Ok((driver_free, _)) = dev_engine.ctx().mem_get_info() else {
+            return;
+        };
+        let (reserved, used) = dev_engine.pool_reserved_used();
+        let Some(keep) = driver_headroom_trim_keep(driver_free, reserved, used, floor) else {
+            return;
+        };
+        let released = dev_engine.pool_trim_to(keep);
+        let after = dev_engine
+            .ctx()
+            .mem_get_info()
+            .map(|(f, _)| f)
+            .unwrap_or(driver_free);
+        eprintln!(
+            "[admit-trim] dev{device} driver free {}MB < floor {}MB with {}MB cached in the \
+             pool: trimmed {}MB (driver free now {}MB) before {why}",
+            driver_free >> 20,
+            floor >> 20,
+            reserved.saturating_sub(used) >> 20,
+            released >> 20,
+            after >> 20,
+        );
+    });
+}
+
 fn step_oom_retries() -> u32 {
     static R: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
     *R.get_or_init(|| {
@@ -13882,6 +13960,10 @@ pub fn run(
                     }
                 }
             }
+            // The request is admitted. Effective headroom (driver + pool-cached) said it
+            // fits; make sure the DRIVER itself has room for the prime's own allocations
+            // before any device work starts (see admit_driver_headroom_bytes).
+            ensure_driver_headroom(&engine, &loaded, "prime");
             let observe_model = &loaded[&model_key].model;
             let observe_n_trunk =
                 (observe_model.cfg.n_layer - observe_model.cfg.nextn_predict_layers) as usize;
@@ -23673,6 +23755,39 @@ pub fn spawn(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn driver_headroom_trim_releases_only_the_shortfall() {
+        let mib = |n: usize| n << 20;
+        // box13 2026-09-05: driver free 10 MB, pool reserved 95712 MB, used 74265 MB.
+        let keep = super::driver_headroom_trim_keep(mib(10), mib(95712), mib(74265), mib(2048))
+            .expect("a starved driver with cached pool bytes trims");
+        assert_eq!(
+            keep,
+            mib(95712) - (mib(2048) - mib(10)),
+            "release exactly the shortfall"
+        );
+        // driver already has the floor: nothing to do
+        assert_eq!(
+            super::driver_headroom_trim_keep(mib(4096), mib(9000), mib(1000), mib(2048)),
+            None
+        );
+        // nothing cached (reserved == used): trimming cannot help, do not pretend
+        assert_eq!(
+            super::driver_headroom_trim_keep(mib(10), mib(9000), mib(9000), mib(2048)),
+            None
+        );
+        // less cached than the shortfall: release all of it, never below used
+        assert_eq!(
+            super::driver_headroom_trim_keep(mib(10), mib(9000), mib(8500), mib(2048)),
+            Some(mib(8500))
+        );
+        // the rung is off
+        assert_eq!(
+            super::driver_headroom_trim_keep(mib(10), mib(9000), mib(1000), 0),
+            None
+        );
+    }
+
     #[test]
     fn engine_fault_bodies_never_carry_driver_text() {
         // memra#143: the exact text a customer got back on 2026-09-03.

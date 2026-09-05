@@ -3313,6 +3313,17 @@ impl Engine {
     /// blocks — live allocations are untouched; later allocs re-map once. Returns the
     /// bytes released (reserved delta), 0 if the pool cannot be queried.
     pub fn pool_trim_to_zero(&self) -> usize {
+        self.pool_trim_to(0)
+    }
+    /// Release cached (freed-but-retained) blocks of the default async mempool back to the
+    /// driver until at most `keep` bytes stay reserved (cuMemPoolTrimTo semantics: live
+    /// allocations are never touched, so `keep` below the used bytes releases everything
+    /// that is unused). The driver-headroom rung of admission uses this to hand back ONLY
+    /// the slice a starved driver needs instead of the whole cache (memra, 2026-09-05:
+    /// box13 primed a 132k-token dspark request at driver-free 10 MB with 21 GB cached in
+    /// the pool and OOMed on the driver side). Returns the bytes released, 0 if the pool
+    /// cannot be queried.
+    pub fn pool_trim_to(&self, keep: usize) -> usize {
         use cudarc::driver::sys;
         let (before, _) = self.pool_reserved_used();
         unsafe {
@@ -3322,7 +3333,7 @@ impl Engine {
             {
                 return 0;
             }
-            let _ = sys::cuMemPoolTrimTo(pool, 0);
+            let _ = sys::cuMemPoolTrimTo(pool, keep);
         }
         let (after, _) = self.pool_reserved_used();
         before.saturating_sub(after)
