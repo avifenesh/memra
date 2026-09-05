@@ -727,6 +727,22 @@ struct DsparkColdPrefixAdmission {
     /// (any overlap, with NO floor — a 5-token common prefix satisfied it while nothing
     /// consumable existed).
     hit_available: bool,
+    /// Whether that hit can feed the DSPARK CONVERSION rather than only the plain path
+    /// (`dspark_hit_is_restorable`: the entry carries a draft tail, and it covers the prompt
+    /// whole or - under `MEMRA_DSPARK_PARTIAL_RESTORE` - as a strict prefix).
+    ///
+    /// WHY IT DEFEATS THE SHAPE VETO (lane/dspark-boundary-capture, memra#248). The veto's
+    /// premise is a TRADE: taking the hit means going plain, so a cold prime is only worth its
+    /// discarded prefill when the decode is long enough to repay it. A restorable hit is not
+    /// that trade. The trunk planes AND the draft tail both come back, and only the suffix is
+    /// primed, so the request keeps the prefill saving and its speculation. Vetoing it costs
+    /// both: the 5090 cell measured `cache-preferred: prompt=13646 decode_budget=400
+    /// lcp=13440 - serving the hit and going plain` on every restorable turn, with the
+    /// drafter's own tail sitting in the entry, unused.
+    ///
+    /// Scoped to the partial door so a fully shut fleet is byte-identical: with every door
+    /// unset this is false everywhere and the veto keeps its shipped shape.
+    hit_restorable: bool,
 }
 
 /// How long the decode must be before a cold DFlash prime is worth discarding a cache hit,
@@ -779,8 +795,12 @@ fn dspark_prefers_cold_over_prefix(a: DsparkColdPrefixAdmission) -> bool {
         && !a.constrained
         && !a.vision
         && a.cold
-        // The shape veto applies ONLY when a hit is actually there to be served instead.
+        // The shape veto applies ONLY when a hit is actually there to be served instead,
+        // and only when taking that hit really does cost the speculation. A restorable hit
+        // does not: it re-arms the drafter from the entry's own tail and primes only the
+        // suffix, so there is no prefill to repay and nothing to trade away.
         && (!a.hit_available
+            || a.hit_restorable
             || dspark_cold_prime_repays_prefill(a.prompt_len, a.decode_budget))
         && dspark_load_admits(
             a.greedy,
@@ -18173,6 +18193,8 @@ fn admit(
         prompt_len: prompt.len(),
         decode_budget: budget,
         hit_available: consumable_hit.is_some(),
+        // Only under the partial door: a shut fleet keeps the veto's shipped shape exactly.
+        hit_restorable: dspark_restorable_hit && dspark_partial_restore_on(),
     };
     let dspark_prefers_cold = dspark_prefers_cold_over_prefix(cold_prefix_inputs);
     // The receipt names the veto ONLY when the veto is what flipped the route. Guarding it on
@@ -26685,6 +26707,88 @@ mod tests {
         ));
     }
 
+    /// A RESTORABLE hit defeats the shape veto (memra#248). The veto's premise is that
+    /// taking the hit costs the speculation; a restorable hit re-arms the drafter from the
+    /// entry's own tail and primes only the suffix, so there is nothing to trade.
+    #[test]
+    fn a_restorable_hit_defeats_the_shape_veto() {
+        // The exact shape the 5090 cell measured: a 13,646-token prompt, a 400-token budget,
+        // and a 13,440-token hit. Short decode, huge prefill - the veto's home ground.
+        let vetoed = super::DsparkColdPrefixAdmission {
+            route_ready: true,
+            prime_feasible: true,
+            greedy: true,
+            greedy_penalized: false,
+            sampled: false,
+            constrained: false,
+            vision: false,
+            cold: true,
+            gate_on: true,
+            pin: None,
+            projected_wave: 1,
+            low: 2,
+            n_active: 0,
+            has_live_non_demotable: false,
+            prompt_len: 13_646,
+            decode_budget: 400,
+            hit_available: true,
+            hit_restorable: false,
+        };
+        // RED ARM. Without the restorable bit this is exactly the shipped decline, and the
+        // log line it produces is "serving the hit and going plain".
+        assert!(
+            !super::dspark_prefers_cold_over_prefix(vetoed),
+            "a short decode against a big prefill must still lose the cold prime"
+        );
+        let restorable = super::DsparkColdPrefixAdmission {
+            hit_restorable: true,
+            ..vetoed
+        };
+        assert!(
+            super::dspark_prefers_cold_over_prefix(restorable),
+            "a restorable hit keeps the dspark route: the prefill is not discarded"
+        );
+        // And the probe still runs in both arms, so the restore has a carrier to consume.
+        for a in [vetoed, restorable] {
+            let prefers = super::dspark_prefers_cold_over_prefix(a);
+            assert!(super::should_probe_prefix_cache(
+                true,
+                false,
+                prefers,
+                a.hit_restorable
+            ));
+        }
+        // The relaxation is NOT a licence to speculate without a hit: every other refusal
+        // still holds, restorable or not.
+        for broken in [
+            super::DsparkColdPrefixAdmission {
+                vision: true,
+                ..restorable
+            },
+            super::DsparkColdPrefixAdmission {
+                constrained: true,
+                ..restorable
+            },
+            super::DsparkColdPrefixAdmission {
+                route_ready: false,
+                ..restorable
+            },
+            super::DsparkColdPrefixAdmission {
+                prime_feasible: false,
+                ..restorable
+            },
+            super::DsparkColdPrefixAdmission {
+                cold: false,
+                ..restorable
+            },
+        ] {
+            assert!(
+                !super::dspark_prefers_cold_over_prefix(broken),
+                "the restorable bit must not override a shape or route refusal"
+            );
+        }
+    }
+
     /// The shape guard must reach the real decision, not just exist as a helper.
     #[test]
     fn the_shape_guard_flips_the_route_and_re_enables_the_prefix_probe() {
@@ -26706,6 +26810,7 @@ mod tests {
             prompt_len: 30_312,
             decode_budget: 8_192,
             hit_available: true,
+            hit_restorable: false,
         };
         assert!(
             super::dspark_prefers_cold_over_prefix(long_decode),
@@ -26741,6 +26846,7 @@ mod tests {
         // and buy no hit in return — worse than either. Review finding.
         let no_hit = super::DsparkColdPrefixAdmission {
             hit_available: false,
+            hit_restorable: false,
             ..short_decode
         };
         assert!(
@@ -26898,6 +27004,7 @@ mod tests {
             prompt_len: 30_000,
             decode_budget: 8_192,
             hit_available: true,
+            hit_restorable: false,
         };
         let route = |a| {
             let prefers = super::dspark_prefers_cold_over_prefix(a);
@@ -26972,6 +27079,7 @@ mod tests {
             prompt_len: 30_000,
             decode_budget: 8_192,
             hit_available: true,
+            hit_restorable: false,
         };
         let prefers = super::dspark_prefers_cold_over_prefix;
 
