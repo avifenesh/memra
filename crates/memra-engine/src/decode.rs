@@ -2716,17 +2716,10 @@ impl HybridModel {
         };
 
         let mut qn = e.uninit(n_head * head_dim)?;
-        e.rms_norm(&q, fa.q_norm.float_data(), &mut qn, head_dim, n_head, eps)?;
+        e.rms_norm_opt(&q, fa.q_norm_w(), &mut qn, head_dim, n_head, eps)?;
         q = qn;
         let mut kn = e.uninit(n_head_kv * head_dim)?;
-        e.rms_norm(
-            &k,
-            fa.k_norm.float_data(),
-            &mut kn,
-            head_dim,
-            n_head_kv,
-            eps,
-        )?;
+        e.rms_norm_opt(&k, fa.k_norm_w(), &mut kn, head_dim, n_head_kv, eps)?;
         k = kn;
         let rope_dims = geometry.n_rot as usize;
         // rope pos from the resident device counter (no per-step host upload).
@@ -3575,17 +3568,10 @@ impl HybridModel {
 
         // QK-norm + RoPE at position `pos`
         let mut qn = e.uninit(n_head * head_dim)?;
-        e.rms_norm(&q, fa.q_norm.float_data(), &mut qn, head_dim, n_head, eps)?;
+        e.rms_norm_opt(&q, fa.q_norm_w(), &mut qn, head_dim, n_head, eps)?;
         q = qn;
         let mut kn = e.uninit(n_head_kv * head_dim)?;
-        e.rms_norm(
-            &k,
-            fa.k_norm.float_data(),
-            &mut kn,
-            head_dim,
-            n_head_kv,
-            eps,
-        )?;
+        e.rms_norm_opt(&k, fa.k_norm_w(), &mut kn, head_dim, n_head_kv, eps)?;
         k = kn;
         let rope_dims = geometry.n_rot as usize;
         e.rope_neox(

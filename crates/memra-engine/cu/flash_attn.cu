@@ -568,8 +568,12 @@ __device__ __forceinline__ void rms_norm_qkv_rope_append_body(
         if (tid == 0) s[0] = v2;
     }
     __syncthreads();
-    float scale = rsqrtf(s[0] / ncols + eps);
-    for (int i = tid; i < ncols; i += blockDim.x) dr[i] = xr[i] * scale * w[i];
+    // A family that has NO norm for this segment passes a NULL weight (dense llama/mistral
+    // has no per-head QK norm). Null means pass the row through untouched: an all-ones weight
+    // would NOT be the identity, because RMSNorm still rescales the vector.
+    const bool do_norm = (w != nullptr);
+    float scale = do_norm ? rsqrtf(s[0] / ncols + eps) : 1.0f;
+    for (int i = tid; i < ncols; i += blockDim.x) dr[i] = do_norm ? (xr[i] * scale * w[i]) : xr[i];
     __syncthreads();                        // normed row visible before the rope read
     if (seg != 2) {
         // rope_neox on the normed row (n_dims == ncols == head_dim; math verbatim).
@@ -4406,8 +4410,12 @@ extern "C" __global__ void attn_rms_vl(attnprevl_t v, const float* __restrict__ 
         if (tid == 0) s[0] = v2;
     }
     __syncthreads();
-    float scale = rsqrtf(s[0] / ncols + eps);
-    for (int i = tid; i < ncols; i += blockDim.x) dr[i] = xr[i] * scale * w[i];
+    // A family that has NO norm for this segment passes a NULL weight (dense llama/mistral
+    // has no per-head QK norm). Null means pass the row through untouched: an all-ones weight
+    // would NOT be the identity, because RMSNorm still rescales the vector.
+    const bool do_norm = (w != nullptr);
+    float scale = do_norm ? rsqrtf(s[0] / ncols + eps) : 1.0f;
+    for (int i = tid; i < ncols; i += blockDim.x) dr[i] = do_norm ? (xr[i] * scale * w[i]) : xr[i];
 }
 
 // fused q+k RoPE (grid.y picks). Position = pad_ + tok: pad_ carries the per-seq pos0

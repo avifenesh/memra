@@ -3213,24 +3213,10 @@ impl HybridModel {
 
                     // QK-norm over B*n_head rows, rope with per-row positions.
                     let mut qn = e.uninit(b_n * n_head * head_dim)?;
-                    e.rms_norm(
-                        &q,
-                        fa.q_norm.float_data(),
-                        &mut qn,
-                        head_dim,
-                        b_n * n_head,
-                        eps,
-                    )?;
+                    e.rms_norm_opt(&q, fa.q_norm_w(), &mut qn, head_dim, b_n * n_head, eps)?;
                     q = qn;
                     let mut kn = e.uninit(b_n * n_head_kv * head_dim)?;
-                    e.rms_norm(
-                        &k,
-                        fa.k_norm.float_data(),
-                        &mut kn,
-                        head_dim,
-                        b_n * n_head_kv,
-                        eps,
-                    )?;
+                    e.rms_norm_opt(&k, fa.k_norm_w(), &mut kn, head_dim, b_n * n_head_kv, eps)?;
                     k = kn;
                     e.rope_neox(
                         &mut q, pos_d, head_dim, rope_dims, n_head, b_n, rope_base, 1.0,
@@ -4029,9 +4015,9 @@ impl HybridModel {
 
                 // ---- q/k RMSNorm over head_dim rows + the per-layer PARTIAL rope ----
                 let mut q = e.uninit(b_n * q_dim)?;
-                e.rms_norm(&q0, fa.q_norm.float_data(), &mut q, hd, b_n * nh, eps)?;
+                e.rms_norm_opt(&q0, fa.q_norm_w(), &mut q, hd, b_n * nh, eps)?;
                 let mut k = e.uninit(b_n * kv_dim)?;
-                e.rms_norm(&k0, fa.k_norm.float_data(), &mut k, hd, b_n * nkv, eps)?;
+                e.rms_norm_opt(&k0, fa.k_norm_w(), &mut k, hd, b_n * nkv, eps)?;
                 let ff = if geometry.rope_factors {
                     self.step35_aux.as_ref().and_then(|a| a.rope_freqs(e))
                 } else {
@@ -4429,8 +4415,8 @@ impl HybridModel {
             &q0,
             &k0,
             &v0,
-            fa.q_norm.float_data(),
-            fa.k_norm.float_data(),
+            fa.q_norm_w(),
+            fa.k_norm_w(),
             ones,
             &mut q,
             &mut k,
