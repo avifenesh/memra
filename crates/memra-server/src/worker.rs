@@ -2919,21 +2919,6 @@ fn affinity_enabled() -> bool {
     })
 }
 
-/// STABLE-BOUNDARY SPEC TIER (lane/frspec-multiturn-cache, 2026-08-21), default ON. Ports the
-/// plain tier's 2026-08-09 stable pre-generation boundary law to the spec tier: the spec turn
-/// checkpoint and the restored-session republication both sat at PROMPT-END, whose tail is the
-/// template's live generation header (`<|im_start|>assistant\n<think>\n`) — rewritten by every
-/// re-rendering client, so spec affinity declined 100% of multi-turn agent traffic and the
-/// prefix-cache hit boundary froze at the first lcp-split entry forever (measured: cached 1.5%
-/// of tokens by turn 7 vs 98.6% on the plain arm; TTFT 10-13.6s by turn 8;
-/// research/multiturn-cache-20260821 finding B4). `MEMRA_SPEC_STABLE_BOUNDARY=0` restores the
-/// prompt-end posture byte-for-byte — the rollback seam and the toothed multi-turn gate's
-/// broken arm.
-fn spec_stable_boundary_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_SPEC_STABLE_BOUNDARY").as_deref() != Ok("0"))
-}
-
 /// MEMRA_PREFIX_STABLE_BOUNDARY (default **0 = OFF by design**, lane/bench-debts-20260901):
 /// arm the PLAIN prefix-cache boundary capture at the render-stable last-turn boundary
 /// (`plain_checkpoint_boundary`) on both the miss path and the shallow-hit path, so the
@@ -2947,7 +2932,7 @@ fn spec_stable_boundary_on() -> bool {
 /// demoted population is dominated by keys that can never match again: N56 cell: 425 of
 /// 432 device hits at exactly 64 tokens (the shared-system-prompt seed), 28 demotions
 /// against 1 promotion, every deep hit a grid-aligned boundary entry. The spec tier fixed
-/// this exact defect 2026-08-21 (`MEMRA_SPEC_STABLE_BOUNDARY`, frozen-boundary finding B4);
+/// this exact defect 2026-08-21 (the spec-tier stable boundary, frozen-boundary finding B4);
 /// this flag ports the same law to the plain capture side. OFF is byte-identical to today
 /// by construction (no call site changes an armed boundary). Default OFF because the arm is
 /// unmeasured on serving hardware: the GPU gate (organic-churn promote-rate cell, next
@@ -4428,11 +4413,6 @@ impl KvFlex {
         }
         px.total_bytes.saturating_sub(self.floor)
     }
-}
-
-fn prefix_dedup_enabled() -> bool {
-    static D: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *D.get_or_init(|| std::env::var("MEMRA_PREFIX_DEDUP").as_deref() != Ok("0"))
 }
 
 /// `MEMRA_PREFIX_LATENT=1` arms latent (MLA/DSA) plane capture + restore in prefix entries
@@ -14858,7 +14838,7 @@ pub fn run(
             // worker. Matching groups above fire immediately; unmatched misses wait at most
             // the same hold already budgeted for a lone fresh prime.
             let dedup_waiting: std::collections::HashSet<usize> =
-                if prefix_dedup_enabled() && !confidence_trace_enabled() && pb_hold_ms > 0 {
+                if !confidence_trace_enabled() && pb_hold_ms > 0 {
                     active
                         .iter()
                         .enumerate()
@@ -15296,7 +15276,7 @@ pub fn run(
                 let idxs: Vec<usize> = chunk.iter().map(|&(i, _)| i).collect();
                 let model_name = active[idxs[0]].model.clone();
                 let lm = &loaded[&model_name];
-                // DEVICE-SIDE SAMPLING metas (MEMRA_SERVE_DEVSAMPLE=0 reverts to host): rows
+                // DEVICE-SIDE SAMPLING metas: rows
                 // whose sampler is greedy-no-penalties (device argmax, bit-identical), pure
                 // temperature, filtered sampled, or qualified sampled-penalty sample on device
                 // inside the batched step; unsupported compositions keep the host path. The next
@@ -15343,7 +15323,7 @@ pub fn run(
                     // LEAN LOGITS (inc2 component 3): device-sampled rows skip the
                     // [n_vocab] D2H — their last_logits comes back EMPTY and the row is
                     // parked on-device (cache.last_logits_dev) for the retire-time pool
-                    // park below. MEMRA_SERVE_LEANLOGITS=0 restores the full D2H.
+                    // park below.
                     // SAFETY: mask_ptrs point at Session.mask_dev fields — disjoint from
                     // the caches taken above; nothing mutates them for this call's life.
                     let masks: Vec<Option<(&CudaSlice<u32>, usize)>> = mask_ptrs
@@ -15357,7 +15337,7 @@ pub fn run(
                             &mut caches,
                             &samp,
                             &masks,
-                            serve_leanlogits(),
+                            true,
                             mid,
                         ),
                         None => lm.model.decode_step_batch_sampled_lean_masked(
@@ -15366,7 +15346,7 @@ pub fn run(
                             &mut caches,
                             &samp,
                             &masks,
-                            serve_leanlogits(),
+                            true,
                         ),
                     }
                 };
@@ -18525,13 +18505,10 @@ fn admit(
                 // re-rendered turn can actually hit/rewind them (prompt-end entries carry the
                 // live generation header the client rewrites — the frozen-boundary defect,
                 // finding B4). Only a boundary AHEAD of the restored prefix is a legal feed
-                // stop; door OFF = None = legacy prompt-end republication byte-for-byte.
-                let republish_at = if spec_stable_boundary_on() {
+                // stop.
+                let republish_at =
                     plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t))
-                        .filter(|&b| b > fed_len)
-                } else {
-                    None
-                };
+                        .filter(|&b| b > fed_len);
                 match lm.model.spec_session_from_restored(
                     engine,
                     carrier_cache,
@@ -20434,8 +20411,7 @@ fn dedup_interactive_prefixes(
     ns_tokens: &mut HashMap<String, [u64; 2]>,
 ) -> std::collections::HashSet<usize> {
     let mut advanced = std::collections::HashSet::new();
-    if !prefix_dedup_enabled() || prefix_cap < PREFIX_CACHE_MIN_TOKENS || confidence_trace_enabled()
-    {
+    if prefix_cap < PREFIX_CACHE_MIN_TOKENS || confidence_trace_enabled() {
         return advanced;
     }
     let candidates: Vec<PrefixFanoutCandidate> = active
@@ -21128,31 +21104,12 @@ fn advance_token_emit(
     (true, ())
 }
 
-/// Group ready (session_idx, token) pairs into batched-step chunks: same model, <= 8 rows
-/// (the exactness-tier cap), input order preserved (caller sorted interactive first).
-/// Device-side batched-tick sampling (default ON — measured 1.36 ms/row host temp-sample at
-/// the 9B's 248k vocab, ~45% of the B=8 serving tick). MEMRA_SERVE_DEVSAMPLE=0 is the
-/// rollback/A-B seam: every row host-samples from last_logits as before.
-fn serve_devsample() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_SERVE_DEVSAMPLE").as_deref() != Ok("0"))
-}
-
 /// Penalty-aware extension of device sampling. `1` enables the path on hardware/model
 /// deployments that have passed their serving qualification. Unset stays off: PRO 6000
 /// evidence must not silently set a default for unmeasured hardware.
 fn serve_devpenalty() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_SERVE_DEVPENALTY").as_deref() == Ok("1"))
-}
-
-/// LEAN LOGITS (inc2 component 3, default ON): device-sampled rows skip the [n_vocab]
-/// logits D2H; the last row parks on-device per cache and is D2H'd once at retire (the
-/// reuse-pool consumer). MEMRA_SERVE_LEANLOGITS=0 is the rollback/A-B seam (full D2H,
-/// the exact pre-change tick).
-fn serve_leanlogits() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_SERVE_LEANLOGITS").as_deref() != Ok("0"))
 }
 
 /// MEMRA_CONSTRAIN_HOST=1 (rollback oracle): constrained rows keep the v1 host-side
@@ -21176,9 +21133,6 @@ fn constrain_host() -> bool {
 /// — a session-progress function, independent of batch composition (the isolation
 /// contract, gate3).
 fn devsample_meta(s: &Session) -> Option<DevSamp> {
-    if !serve_devsample() {
-        return None;
-    }
     let sm = &s.sampler;
     let penalized = sm.penalty_last_n() > 0
         && (sm.penalty_repeat() != 1.0 || sm.penalty_freq() != 0.0 || sm.penalty_present() != 0.0);
@@ -21804,7 +21758,7 @@ fn step_session(
             && (cold
                 && (s.affinity.is_some()
                     || plain_ckpt_nominatable(&suffix, &|t| lm.tok.token_is_control(t)))
-                || !cold && spec_stable_boundary_on())
+                || !cold)
         {
             plain_checkpoint_boundary(&suffix, &|t| lm.tok.token_is_control(t))
         } else {
@@ -21814,10 +21768,8 @@ fn step_session(
         // ported): the engine captures `turn_ckpt` at this stop instead of prompt-end, so the
         // next re-rendered turn's byte diff lands ON the checkpoint instead of diverging
         // inside the live generation header 2 tokens below it. Absolute position, `capture_at`
-        // convention. Door OFF = never armed = legacy prompt-end capture, byte-for-byte.
-        if spec_stable_boundary_on() {
-            spec.ckpt_at = boundary.map(|b| spec.committed.len() + b);
-        }
+        // convention.
+        spec.ckpt_at = boundary.map(|b| spec.committed.len() + b);
         let prime_split = boundary;
         // PREFIX-CACHE capture boundary (lane/spec-prefix-cache): a cold burst with an armed
         // mid-prompt capture boundary must actually SPLIT the prime there, or the capture
@@ -21825,7 +21777,7 @@ fn step_session(
         // split, the EARLIER boundary wins — both are legal prime stops, and the engine's
         // PRIME_MIN_T law vetoes sub-floor splits on its own. A seed boundary (== suffix
         // length) is not a split; the engine's post-prime seed capture handles it. (Under the
-        // stable-boundary door the affinity stop is re-armed via `ckpt_at` above, so taking
+        // stable boundary the affinity stop is re-armed via `ckpt_at` above, so taking
         // the min here no longer forfeits it — the engine stops at BOTH, exactly like the
         // plain prefill tick's snapshot_at/ckpt_at pair.)
         let prime_split = if cold {
@@ -28294,8 +28246,8 @@ mod tests {
         let impl_start = prod.find("impl KvFlex {").expect("impl KvFlex exists");
         let impl_end = impl_start
             + prod[impl_start..]
-                .find("\nfn prefix_dedup_enabled")
-                .expect("impl KvFlex ends before prefix_dedup_enabled");
+                .find("\nfn prefix_latent_planes_on")
+                .expect("impl KvFlex ends before prefix_latent_planes_on");
         let stores: Vec<usize> = prod
             .match_indices("KV_FLEX_GRANT.store(")
             .map(|(i, _)| i)
