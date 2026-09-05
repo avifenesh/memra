@@ -860,6 +860,35 @@ fn dspark_partial_restore_on() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_DSPARK_PARTIAL_RESTORE").as_deref() == Ok("1"))
 }
 
+/// MEMRA_DSPARK_BOUNDARY_CAPTURE (default **0 = OFF by design**, lane/dspark-boundary-capture
+/// 2026-09-06, memra#248). Cut the dspark prefix-cache entry at the prompt's RENDER-STABLE
+/// turn boundary (`plain_checkpoint_boundary`) instead of at prompt end: the cold prime stops
+/// there, snapshots the trunk, and then primes the rest of the prompt onto the same cache.
+///
+/// WHY. `MEMRA_DSPARK_PARTIAL_RESTORE` (memra#252) opened the restore door for strict-prefix
+/// hits, and the A/B on the rented 5090 proved it INERT — not because the door failed, but
+/// because no entry is ever a strict prefix. A prompt-end entry ends inside the template's
+/// live generation header, which the next turn re-renders, so it misses by a handful of
+/// tokens every single turn:
+///   insert probation (dspark-boundary): 13469 tokens
+///   prompt=13528 cached=0 lcp=13468
+/// Off by exactly one token, forever. Cutting at the stable boundary is what makes turn N's
+/// entry a true prefix of turn N+1 and gives #252 something to restore FROM.
+///
+/// COST when armed: the entry stops short of the live turn, so an EXACT re-send of the same
+/// prompt now restores at the boundary and re-primes the live turn (tens of tokens) instead
+/// of restoring whole. That is the trade the shape asks for — exact re-sends are 31 of 220
+/// customer requests, and every other request is a strict prefix that gets nothing today.
+///
+/// DEFAULT OFF until the restored-vs-cold byte-identity gate is green on the serving binary,
+/// per the carve-out law. The split itself is grid-aligned (`plain_checkpoint_boundary`
+/// returns a `grid_align_boundary` value, and the engine REFUSES an off-grid boundary), which
+/// is the measured precondition for a two-call prime to be bit-identical to a monolithic one.
+fn dspark_boundary_capture_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_DSPARK_BOUNDARY_CAPTURE").as_deref() == Ok("1"))
+}
+
 fn dspark_hit_is_restorable(entry_toks: usize, prompt_toks: usize, entry_has_tail: bool) -> bool {
     dspark_hit_is_restorable_with(
         entry_toks,
@@ -10923,6 +10952,12 @@ struct Session {
     /// Whether the lazy DFlash prime should retain one full-prompt trunk capture for the
     /// cross-request prefix cache. False preserves the prefix-cache-disabled byte path.
     dspark_capture_prefix: bool,
+    /// WHERE that capture is cut (lane/dspark-boundary-capture, memra#248). `None` = prompt
+    /// end, the shipped behaviour. `Some(b)` = the render-stable turn boundary, which stops
+    /// the prime at `b`, snapshots, and primes the rest onto the same cache — the cut that
+    /// makes the entry a true prefix of the session's NEXT turn. Set only under
+    /// `dspark_boundary_capture_on`.
+    dspark_capture_at: Option<usize>,
     /// GLM5 SPEC route (lane/glm5-spec-routing, 2026-08-30): the glm5_next twin of
     /// `gspec`/`dspark` — Some = this session decodes in `glm5_spec_session_burst` bursts
     /// via `step_glm5_spec` (MTP draft chain -> one t=K+1 verify walk -> accept ->
@@ -19833,6 +19868,19 @@ fn admit(
         dspark_exact_key_present,
         has_exact_preprime_dspark_owner,
     );
+    // The render-stable cut, computed from THIS prompt's own turn markers by the same
+    // helper the plain tier's stable boundary uses. `stable_boundary_arm` enforces the
+    // entry floor and `b < prompt.len()`; `plain_checkpoint_boundary` already grid-aligned
+    // it, which is what lets the engine split the prime without changing its numerics.
+    let dspark_capture_at = if dspark_capture_prefix && dspark_boundary_capture_on() {
+        stable_boundary_arm(
+            plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t)),
+            None,
+            prompt.len(),
+        )
+    } else {
+        None
+    };
     // ---- GLM5 SPEC ROUTE decision (lane/glm5-spec-routing, 2026-08-30) ----
     // Mutually exclusive with every other spec program BY MANIFEST: `mtp_spec_capable` is
     // false for glm5 plans (MTP_SPEC's table has no hc/KDA/MLA classes — pinned by
@@ -20264,6 +20312,7 @@ fn admit(
         // correct dispatch was byte-exact, including 414-prompt/64-budget.
         dspark_on: dspark_on || dspark_session_installed,
         dspark_capture_prefix,
+        dspark_capture_at,
         // The glm5 dispatch flag follows the dspark convention: derived from the decision
         // that shaped THIS literal, so the tick dispatch and the installed session cannot
         // disagree. The restore fold (lane/glm5-prefix-latent2) rides the carrier shape:
@@ -22579,7 +22628,13 @@ fn step_dspark_spec(
             &prompt,
             s.gspec_ctx,
             spec_sampling_for(&s.sampler),
-            s.dspark_capture_prefix,
+            // The two admission-time decisions ride one argument: whether to keep a capture,
+            // and where to cut it. `dspark_capture_at` is Some only under its own door.
+            match (s.dspark_capture_prefix, s.dspark_capture_at) {
+                (false, _) => memra_engine::dflash::DsparkCapture::Off,
+                (true, None) => memra_engine::dflash::DsparkCapture::PromptEnd,
+                (true, Some(b)) => memra_engine::dflash::DsparkCapture::Boundary(b),
+            },
         ) {
             Ok(sess) => sess,
             Err(err) => {
@@ -23328,7 +23383,7 @@ fn run_boot_calibration(
                         &prompt,
                         probe_ctx,
                         Some(sampling),
-                        false,
+                        memra_engine::dflash::DsparkCapture::Off,
                     )?;
                     let (_out, drafted, accepted) = lm.model.dspark_spec_session_burst(
                         engine,
@@ -30072,11 +30127,55 @@ mod tests {
                 "each armed site derives the boundary from plain_checkpoint_boundary"
             );
         }
-        // The miss arm goes through the pure deepest-wins rule (definition + one call).
+        // The miss arm goes through the pure deepest-wins rule, and so does the dspark
+        // boundary capture (definition + the plain miss arm + the dspark cut).
         assert_eq!(
             prod.matches("stable_boundary_arm(").count(),
+            3,
+            "definition + the plain miss-path arm + the dspark boundary capture"
+        );
+    }
+
+    /// The dspark boundary cut (memra#248) is a numerical change to the prime, so its wiring
+    /// is asserted, not assumed: one door, one derivation, and the value reaching the engine.
+    #[test]
+    fn dspark_boundary_capture_wiring() {
+        let src = include_str!("worker.rs");
+        let code: String = src
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
+
+        // The door is read in exactly one place besides its definition: the derivation.
+        assert_eq!(
+            prod.matches("dspark_boundary_capture_on()").count(),
             2,
-            "definition + the miss-path arm"
+            "definition + the one derivation site"
+        );
+        // The derivation is gated on BOTH the door and a requested capture, and it comes
+        // from the prompt's own turn markers.
+        let d = prod
+            .find("let dspark_capture_at =")
+            .expect("the derivation exists");
+        let window = &prod[d..(d + 500).min(prod.len())];
+        assert!(
+            window.contains("dspark_capture_prefix && dspark_boundary_capture_on()"),
+            "the cut must require a requested capture AND the door"
+        );
+        assert!(
+            window.contains("plain_checkpoint_boundary(&prompt"),
+            "the cut is the render-stable boundary of THIS prompt"
+        );
+        // And it reaches the engine: the serving prime call carries it.
+        let call = prod
+            .find("lm.model.dspark_spec_session_new(")
+            .expect("the serving prime call exists");
+        let args = &prod[call..(call + 400).min(prod.len())];
+        assert!(
+            args.contains("s.dspark_capture_at"),
+            "the serving prime must pass the session's cut, not a literal"
         );
     }
 

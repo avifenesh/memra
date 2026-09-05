@@ -2396,6 +2396,15 @@ pub struct DflashTapSink {
     /// Row offset for writers that walk the buffer in windows (the qwen chunked prime):
     /// tap rows land at [base..base+t_chunk). Whole-buffer writers leave it 0.
     pub base: usize,
+    /// ABSOLUTE position of sink row 0's WRITE TARGET (lane/dspark-boundary-capture,
+    /// 2026-09-06), the `HcTapSink::origin` twin. The chunked prime sets `base` from the
+    /// CALL-LOCAL chunk start, so a second `prime_cache` call over a suffix would overwrite
+    /// rows 0.. of a whole-prompt buffer. A boundary-split dspark prime keeps ONE tp-sized
+    /// buffer across both calls and sets `origin` to the split point before the second, so
+    /// the suffix's rows land where the monolithic prime put them and the drafter ingest
+    /// stays bit-identical to the unsplit path. Single-call sinks leave it 0 (byte-identical
+    /// indexing to before the field existed).
+    pub origin: usize,
 }
 
 /// See [`Cache::hc_taps`]. Armed per walk by the glm5 DFlash2 draft source; the hc trunk
