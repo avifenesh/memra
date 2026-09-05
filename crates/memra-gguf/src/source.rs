@@ -2438,6 +2438,22 @@ impl TensorSource for SafetensorsSource {
         // expects an F32 scalar. Map `<stem>.scale` -> modelopt `<hf>.weight_scale_2` OR
         // compressed-tensors `<hf>.weight_global_scale`. Returns None for non-quantized weights
         // (then the engine defaults the macro-scale to 1.0). Reza has no macro-scale at all.
+        // AWQ per-input-channel scale (memra#253). MUST be handled BEFORE the `.scale` stem
+        // stripper below, which would otherwise swallow `<stem>.pre_quant_scale` and try to
+        // resolve a weight called `<stem>.pre_quant.weight`.
+        if let Some(stem) = ggml_name.strip_suffix(".pre_quant_scale") {
+            let hf_weight = match resolve_ggml(&format!("{stem}.weight"), &self.cfg)? {
+                HfTarget::Plain(hf) | HfTarget::Transform { hf, .. } => hf,
+            };
+            let hf_stem = hf_weight.strip_suffix(".weight")?;
+            let (info, bytes) = self.lookup(&format!("{hf_stem}.pre_quant_scale"))?;
+            let n = info.shape.iter().product::<u64>();
+            return Some(TensorView {
+                bytes: Cow::Borrowed(bytes),
+                ggml_type: info.ggml_type().ok()?,
+                ne: vec![n],
+            });
+        }
         if let Some(stem) = ggml_name.strip_suffix(".scale") {
             let hf_weight = match resolve_ggml(&format!("{stem}.weight"), &self.cfg)? {
                 HfTarget::Plain(hf) | HfTarget::Transform { hf, .. } => hf,
@@ -4661,5 +4677,68 @@ mod expert_slab_populate_tests {
             64 << 30,
             EXPERT_SLAB_RAM_FLOOR_FRAC
         ));
+    }
+}
+
+#[cfg(test)]
+mod pre_quant_scale_lookup {
+    use super::*;
+
+    /// The AWQ scale must RESOLVE, not merely be tolerated by the census.
+    ///
+    /// This is the gate for the defect that shipped in the first cut of memra#253: the census
+    /// accepted `.pre_quant_scale` (so `memra model inspect` reported `binding=passed`) while
+    /// `find()` still routed the name into the `.scale` stem stripper, which looked for a
+    /// weight called `<stem>.pre_quant.weight`, found none, and returned None. The engine then
+    /// loaded no scale and served an AWQ artifact as if it were uncalibrated — the exact silent
+    /// wrong answer the feature exists to prevent. A census-level assertion cannot see that;
+    /// only a lookup can.
+    #[test]
+    fn pre_quant_scale_resolves_through_find() {
+        let dir = std::env::temp_dir().join(format!("memra_pqs_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let (out_f, in_f) = (2usize, 64usize);
+        let weight = vec![0u8; out_f * in_f * 2]; // BF16 [2,64]
+        let scale: Vec<u8> = (0..in_f)
+            .flat_map(|i| (1.0f32 + i as f32).to_le_bytes())
+            .collect(); // F32 [64], one entry per INPUT channel
+
+        let w_start = 0usize;
+        let s_start = weight.len();
+        let json = format!(
+            concat!(
+                "{{",
+                "\"model.layers.0.mlp.down_proj.weight\":{{\"dtype\":\"BF16\",\"shape\":[2,64],\"data_offsets\":[{},{}]}},",
+                "\"model.layers.0.mlp.down_proj.pre_quant_scale\":{{\"dtype\":\"F32\",\"shape\":[64],\"data_offsets\":[{},{}]}}",
+                "}}"
+            ),
+            w_start,
+            w_start + weight.len(),
+            s_start,
+            s_start + scale.len()
+        );
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&(json.len() as u64).to_le_bytes());
+        buf.extend_from_slice(json.as_bytes());
+        buf.extend_from_slice(&weight);
+        buf.extend_from_slice(&scale);
+        std::fs::write(dir.join("model.safetensors"), &buf).unwrap();
+        std::fs::write(
+            dir.join("config.json"),
+            r#"{"model_type":"qwen3","num_hidden_layers":1,"hidden_size":64,"num_attention_heads":2,"intermediate_size":128,"vocab_size":10,"max_position_embeddings":128,"num_key_value_heads":2,"head_dim":32}"#,
+        )
+        .unwrap();
+
+        let src = SafetensorsSource::open(&dir).unwrap();
+        let view = src
+            .find("blk.0.ffn_down.pre_quant_scale")
+            .expect("the engine's ggml name for the AWQ scale must resolve to the HF tensor");
+        assert_eq!(view.ne, vec![in_f as u64], "one entry per input channel");
+        assert_eq!(view.ggml_type, GgmlType::F32);
+
+        // And the weight itself still resolves — the new branch must not shadow it.
+        assert!(src.find("blk.0.ffn_down.weight").is_some());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

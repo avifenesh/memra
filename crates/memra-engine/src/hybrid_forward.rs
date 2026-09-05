@@ -6037,7 +6037,13 @@ impl HybridModel {
                     // silu_mul_f16out is PLAIN silu(gate)*up — a clamped layer (step35 dense
                     // blocks under a live swiglu_clamp_shexp) must take the ffn_act_lim arm.
                     let d_lim = self.cfg.clamp_shexp_at(il as u32);
-                    let act16 = if Self::f16out_on(e, t) && self.cfg.m3.is_none() && d_lim.is_none()
+                    // AWQ (memra#253): the f16out arm writes the down projection's input
+                    // straight to f16 from gate/up, so the f32 activation the per-input-channel
+                    // scale multiplies never exists. A calibrated artifact takes the f32 arm.
+                    let act16 = if Self::f16out_on(e, t)
+                        && self.cfg.m3.is_none()
+                        && d_lim.is_none()
+                        && ffn_down_pqs.is_none()
                     {
                         let mut a16 = e.alloc_u8_uninit(t * n_ff * 2)?;
                         e.silu_mul_f16out(sl_gate, sl_up, act, &mut a16, t * n_ff)?;
@@ -6056,21 +6062,21 @@ impl HybridModel {
                         )?;
                         None
                     };
+                    // Scale BEFORE the f16 conversion: `try_f16_gemm_pre_into` below consumes
+                    // `xh_act`, so a scale applied after it would be skipped entirely whenever an
+                    // f16 mirror exists for this weight (memra#253).
+                    if let Some(pqs) = ffn_down_pqs.as_ref() {
+                        e.apply_pre_quant_scale(act, pqs.float_data(), ffn_down.in_features(), t)?;
+                    }
                     // down GEMM into the ffn_out slab (f16 arm; fallback copies)
                     let xh_act = match act16 {
                         Some(x) => x,
                         None => e.f16_act(act, t * n_ff)?,
                     };
                     if !e.try_f16_gemm_pre_into(ffn_down, &xh_act, t, sl_fo)? {
-                        // AWQ (memra#253): scale the down projection's input by the artifact's
-                        // per-input-channel factor; None leaves the buffer untouched.
-                        let __pqs = e.pre_quant_scaled(
-                            &*act,
-                            ffn_down_pqs.as_ref(),
-                            ffn_down.in_features(),
-                            t,
-                        )?;
-                        let y = e.matmul(ffn_down, __pqs.as_ref().unwrap_or(&*act), t)?;
+                        // `act` already carries the AWQ scale (applied above), so both the f16
+                        // GEMM and this fallback see the same, scaled input.
+                        let y = e.matmul(ffn_down, &*act, t)?;
                         e.copy_into(sl_fo, 0, &y, t * n_embd)?;
                     }
                 }
@@ -20350,7 +20356,10 @@ impl HybridModel {
             let mut act = e.uninit(t * n_ff)?;
             // act quantize folds into the GELU epilogue (bit-identical q8_1 rounding);
             // ffn_down rides matmul_pre — one quantize launch fewer per layer.
-            let f0 = if e.uses_q8_1_fast(ffn_down) {
+            // AWQ (memra#253): the q8 GELU epilogue emits the down projection's input already
+            // quantized, so a per-input-channel scale cannot be applied there. A calibrated
+            // artifact takes the f32 arm below (which scales), instead of silently skipping it.
+            let f0 = if e.uses_q8_1_fast(ffn_down) && ffn_down_pqs.is_none() {
                 let upv = e.view(&up, t * n_ff);
                 let up_all = upv.slice(0..t * n_ff);
                 let (aq, ad) = e.gelu_tanh_mul_q8_1(&gate, &up_all, &mut act, n_ff, t)?;
@@ -21585,13 +21594,18 @@ impl HybridModel {
             ffn_gate,
             ffn_up,
             ffn_down,
-            // AWQ pre_quant_scale is an ACTIVATION-side factor (memra#253): a weight mirror
-            // re-encodes bytes and is unaffected by it, so this site intentionally ignores it.
-            ffn_down_pqs: _,
+            ffn_down_pqs,
         } = &layer.ffn
         else {
             return Err("slotted tail: dense ffn only".into());
         };
+        if ffn_down_pqs.is_some() {
+            // memra#253: this tail asserts the q8 fast path and feeds the down projection an
+            // already-quantized activation (gelu_tanh_mul_q8_1_into), so a per-input-channel
+            // scale cannot be applied here. Refuse — ignoring it computes a different function
+            // with no visible failure.
+            return Err("AWQ pre_quant_scale is unwired on the slotted gemma tail".into());
+        }
         let pnfold = Engine::g4_pnfold_on();
         if pnfold {
             // pn-fold entry (E4B glue, slot-fed): rms(o, post_attn) + residual + ffn_norm

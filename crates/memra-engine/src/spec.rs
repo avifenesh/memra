@@ -7631,8 +7631,14 @@ impl HybridModel {
                     ffn_down,
                     // memra#253: weight-mirror/inspection site — the AWQ scale is
                     // activation-side, so it plays no part here.
-                    ffn_down_pqs: _,
+                    ffn_down_pqs,
                 } => {
+                    if ffn_down_pqs.is_some() {
+                        // memra#253: the spec verify walk feeds the down projection a pre-quantized
+                        // activation; a per-input-channel scale cannot be applied here. Refuse rather
+                        // than compute a different function silently.
+                        return Err("AWQ pre_quant_scale is unwired on the spec verify path".into());
+                    }
                     let n_ff = ffn_gate.out_features();
                     if let Some((zq, zd)) = z_q8.as_ref() {
                         // FUSED CHAIN (fix 2): pre-quantized z feeds the projections; the SwiGLU

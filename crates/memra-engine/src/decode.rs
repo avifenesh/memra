@@ -283,15 +283,12 @@ impl HybridModel {
                 (Some((gate, gs)), Some((up, us))) => {
                     // RANK2 fold: if ffn_down is q8_1-fast, emit act PRE-QUANTIZED and skip the
                     // standalone quantize_q8_1 before ffn_down.
-                    if e.uses_q8_1_fast(ffn_down) {
-                        if ffn_down_pqs.is_some() {
-                            // This arm hands the down projection an already-int8 activation, so a
-                            // per-input-channel scale has nowhere to land. Refuse rather than
-                            // compute a different function (memra#253).
-                            return Err(
-                                "AWQ pre_quant_scale on the q8 decode fast path is unwired".into(),
-                            );
-                        }
+                    // AWQ (memra#253): the RANK2 arm emits the down projection's input ALREADY
+                    // quantized, so a per-input-channel scale has nowhere to land. `uses_q8_1_fast`
+                    // is true for essentially every quantized checkpoint, so REFUSING here would
+                    // abort every AWQ artifact; fall through to the f32 path below instead, which
+                    // materializes the activation the scale multiplies.
+                    if e.uses_q8_1_fast(ffn_down) && ffn_down_pqs.is_none() {
                         let (aq, ad) = e.silu_mul_scaled_q8_1(&gate, &up, gs, us, n_ff)?;
                         return e.matmul_pre(
                             ffn_down, &aq, &ad, /*x_fallback unused on fast path*/ &gate, 1,
