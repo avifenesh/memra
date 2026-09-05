@@ -11148,24 +11148,6 @@ fn worker_device(pp_devices: Option<&str>) -> Result<usize, String> {
     Ok(last)
 }
 
-/// Increment-2 research door. Absent means byte-for-byte pre-lane scheduling; present arms the
-/// engine's default-off controller globally for this fresh worker process. Admission inside the
-/// engine still refuses every unsupported shape before allocating fork state.
-fn optipipe_controller_threshold(raw: Option<&str>) -> Result<Option<f32>, String> {
-    let Some(raw) = raw else {
-        return Ok(None);
-    };
-    let threshold = raw
-        .parse::<f32>()
-        .map_err(|err| format!("MEMRA_OPTI_CONTROLLER_Q={raw:?} is not a float: {err}"))?;
-    if !threshold.is_finite() || !(0.0..=1.0).contains(&threshold) {
-        return Err(format!(
-            "MEMRA_OPTI_CONTROLLER_Q={raw:?} is outside the inclusive [0,1] range"
-        ));
-    }
-    Ok(Some(threshold))
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RuntimePeerProbeWorkerAction {
     Continue,
@@ -11582,19 +11564,6 @@ pub fn run(
         "[worker] Engine ready (device={device}, MEMRA_FAST={})",
         fast
     );
-    match optipipe_controller_threshold(std::env::var("MEMRA_OPTI_CONTROLLER_Q").ok().as_deref()) {
-        Ok(Some(threshold)) => {
-            memra_engine::spec::set_optipipe_controller_threshold(threshold);
-            eprintln!(
-                "[worker] OPTIPIPE increment-2 diagnostic controller armed q_threshold={threshold:.3}"
-            );
-        }
-        Ok(None) => {}
-        Err(err) => {
-            let _ = ready_tx.send(Err(err));
-            return;
-        }
-    }
     log_spec_gate_policy();
 
     let (constraint_result_tx, constraint_result_rx) =
@@ -14635,104 +14604,10 @@ pub fn run(
             if admit_yield_on {
                 spec_order.sort_by_key(|&i| !active[i].generated.is_empty());
             }
-            let mut spec_order = spec_order.into_iter().peekable();
             let mut dspark_phase_captures: Vec<(usize, memra_engine::spec::SpecBoundaryCapture)> =
                 Vec::new();
-            while let Some(i) = spec_order.next() {
+            for i in spec_order {
                 if finished.contains(&i) {
-                    continue;
-                }
-                let pair = spec_order.peek().copied().filter(|&j| {
-                    !finished.contains(&j)
-                        && spec_pipe_pairable(&engine, &loaded, &active[i], &active[j])
-                });
-                if let Some(j) = pair {
-                    let _ = spec_order.next();
-                    let generated_i = active[i].generated.len();
-                    let generated_j = active[j].generated.len();
-                    let lane_i = active[i].lane;
-                    let lane_j = active[j].lane;
-                    let rounds_i = active[i].spec_rounds;
-                    let rounds_j = active[j].spec_rounds;
-                    let pair_started = Instant::now();
-                    let step_result = if i < j {
-                        let (left, right) = active.split_at_mut(j);
-                        step_spec_pair(
-                            &engine,
-                            &loaded,
-                            &mut left[i],
-                            &mut right[0],
-                            &mut spec_metrics,
-                        )
-                    } else {
-                        let (left, right) = active.split_at_mut(i);
-                        step_spec_pair(
-                            &engine,
-                            &loaded,
-                            &mut right[0],
-                            &mut left[j],
-                            &mut spec_metrics,
-                        )
-                    };
-                    let pair_ms = pair_started.elapsed().as_secs_f32() * 1000.0;
-                    record_output_progress(
-                        generated_i,
-                        active[i].generated.len(),
-                        lane_i,
-                        pair_ms,
-                        &mut n_tokens_out,
-                        &mut lane_tokens,
-                        &mut step_stats,
-                        &mut last_interactive_decode,
-                    );
-                    record_output_progress(
-                        generated_j,
-                        active[j].generated.len(),
-                        lane_j,
-                        pair_ms,
-                        &mut n_tokens_out,
-                        &mut lane_tokens,
-                        &mut step_stats,
-                        &mut last_interactive_decode,
-                    );
-                    if tick_trace {
-                        spec_calls += 2;
-                        let end_ms = t_spec.unwrap().elapsed().as_secs_f32() * 1000.0;
-                        eprintln!(
-                            "[tick-spec-pipe] seq={}-{} slots={i},{j} gap_ms={:.3} wall_ms={pair_ms:.3} \
-                             generated={generated_i}->{},{}->{} rounds={},{}",
-                            spec_calls - 1,
-                            spec_calls,
-                            end_ms - pair_ms - spec_prev_end_ms,
-                            active[i].generated.len(),
-                            generated_j,
-                            active[j].generated.len(),
-                            active[i].spec_rounds.saturating_sub(rounds_i),
-                            active[j].spec_rounds.saturating_sub(rounds_j),
-                        );
-                        spec_prev_end_ms = end_ms;
-                    }
-                    match step_result {
-                        Ok((keep_i, keep_j)) => {
-                            if !keep_i {
-                                finished.push(i);
-                            }
-                            if !keep_j {
-                                finished.push(j);
-                            }
-                        }
-                        Err(err) => {
-                            let message = format!("step error: {err}");
-                            let _ = active[i]
-                                .tx
-                                .send(Event::Error(EngineError::engine(message.clone())));
-                            let _ = active[j]
-                                .tx
-                                .send(Event::Error(EngineError::engine(message)));
-                            finished.push(i);
-                            finished.push(j);
-                        }
-                    }
                     continue;
                 }
                 let generated_before = active[i].generated.len();
@@ -21647,196 +21522,6 @@ fn group_chunks(
         .collect()
 }
 
-fn spec_pipe_pairable(
-    engine: &Engine,
-    loaded: &HashMap<String, LoadedModel>,
-    a: &Session,
-    b: &Session,
-) -> bool {
-    if std::env::var("MEMRA_SPEC_PIPE").as_deref() != Ok("1")
-        || a.model != b.model
-        || a.spec_k == 0
-        || a.spec_k != b.spec_k
-        || a.spec.is_none()
-        || b.spec.is_none()
-        || !a.prefill_done
-        || !b.prefill_done
-        || !a.prefill_queue.is_empty()
-        || !b.prefill_queue.is_empty()
-        || a.generated.is_empty()
-        || b.generated.is_empty()
-        || !a.sampler.is_greedy()
-        || !b.sampler.is_greedy()
-        || a.constraint.is_some()
-        || b.constraint.is_some()
-        || a.generated.len() >= a.budget
-        || b.generated.len() >= b.budget
-    {
-        return false;
-    }
-    for sess in [a.spec.as_ref().unwrap(), b.spec.as_ref().unwrap()] {
-        if sess.committed_len() == 0 || (sess.next_pred.is_none() && !sess.has_pending()) {
-            return false;
-        }
-    }
-    loaded[&a.model].model.spec_pipe_available(engine)
-}
-
-#[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
-fn finish_pipelined_spec_burst(
-    lm: &LoadedModel,
-    s: &mut Session,
-    burst: Vec<u32>,
-    drafted: usize,
-    accepted: usize,
-    telem_before: memra_engine::spec::SpecTelemetry,
-    request_room: usize,
-    spec_metrics: &mut SpecMetricState,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    if let Some(trace) = s.ttft.as_ref() {
-        trace.mark_prime_end();
-        if !burst.is_empty() {
-            trace.mark_first_decode();
-        }
-    }
-    let spec = s.spec.as_ref().expect("paired spec session disappeared");
-    let telem_delta = spec.telemetry().delta_since(&telem_before);
-    spec_metrics.record(&s.model, telem_delta);
-    s.spec_rounds += telem_delta.rounds;
-    s.spec_drafted += drafted;
-    s.spec_accepted += accepted;
-    if drafted > 0 {
-        eprintln!(
-            "[spec-acc] ctx={} burst={}/{} cum={}/{}={:.3}",
-            s.fed.len(),
-            accepted,
-            drafted,
-            s.spec_accepted,
-            s.spec_drafted,
-            s.spec_accepted as f64 / s.spec_drafted.max(1) as f64
-        );
-    }
-
-    let tok_ref = &lm.tok;
-    let eos_ids = s.params.eos.clone();
-    let public_len = spec_visible_len(&burst, request_room, &eos_ids);
-    let public_burst = &burst[..public_len];
-    let mut decoded_visible = std::mem::take(&mut s.decoded_bytes);
-    let mut cursor = s.emitted_bytes;
-    let mut emit_remaining = request_room;
-    let mut eos_seen = false;
-    let tx = s.tx.clone();
-    let emitted = emit_spec_token_events(
-        public_burst,
-        &mut emit_remaining,
-        &mut decoded_visible,
-        &mut cursor,
-        &eos_ids,
-        &mut eos_seen,
-        |id| tok_ref.decode_bytes_special(&[id], true),
-        |event| tx.send(event).is_ok(),
-    );
-    if emitted.send_ok {
-        debug_assert_eq!(
-            emitted.sent, public_len,
-            "one token event per public spec token"
-        );
-    }
-    let mut stop: Option<StopReason> = None;
-    for &tok in public_burst {
-        s.sampler.accept(tok);
-        s.generated.push(tok);
-        s.fed.push(tok);
-        if eos_ids.contains(&tok) {
-            stop = Some(StopReason::Eos);
-            break;
-        }
-    }
-    s.tokens_emitted += emitted.sent;
-    s.emitted_bytes = cursor;
-    s.decoded_bytes = decoded_visible;
-    if !emitted.send_ok {
-        abort_log(s);
-        return Ok(false);
-    }
-    if stop.is_none() && contains_stop_string(&s.decoded_bytes, &s.stop_strings) {
-        stop = Some(StopReason::Callback);
-    }
-    if stop.is_none() && s.generated.len() >= s.budget {
-        stop = Some(StopReason::MaxNew);
-    }
-    let context_full = s
-        .spec
-        .as_ref()
-        .is_some_and(|spec| spec.committed.len() + s.spec_k + 3 >= spec.cache_max_ctx());
-    if stop.is_none() && context_full {
-        stop = Some(StopReason::ContextFull);
-    }
-    if let Some(reason) = stop {
-        finish(s, reason);
-        return Ok(false);
-    }
-    Ok(true)
-}
-
-fn step_spec_pair(
-    engine: &Engine,
-    loaded: &HashMap<String, LoadedModel>,
-    a: &mut Session,
-    b: &mut Session,
-    spec_metrics: &mut SpecMetricState,
-) -> Result<(bool, bool), Box<dyn std::error::Error>> {
-    debug_assert!(spec_pipe_pairable(engine, loaded, a, b));
-    let lm = &loaded[&a.model];
-    for s in [&mut *a, &mut *b] {
-        if let Some(trace) = s.ttft.as_ref() {
-            trace.mark_prime_start();
-        }
-    }
-    let burst_t: usize = std::env::var("MEMRA_SPEC_BURST")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(32);
-    let room_a = a.budget.saturating_sub(a.generated.len());
-    let room_b = b.budget.saturating_sub(b.generated.len());
-    let target_a = room_a.min(burst_t);
-    let target_b = room_b.min(burst_t);
-    let telem_a = a.spec.as_ref().unwrap().telemetry();
-    let telem_b = b.spec.as_ref().unwrap().telemetry();
-    let (burst_a, burst_b) = lm.model.generate_spec_session_pair(
-        engine,
-        a.spec.as_mut().unwrap(),
-        target_a,
-        a.spec_k,
-        b.spec.as_mut().unwrap(),
-        target_b,
-        b.spec_k,
-    )?;
-    let (out_a, drafted_a, accepted_a) = burst_a;
-    let (out_b, drafted_b, accepted_b) = burst_b;
-    let keep_a = finish_pipelined_spec_burst(
-        lm,
-        a,
-        out_a,
-        drafted_a,
-        accepted_a,
-        telem_a,
-        room_a,
-        spec_metrics,
-    )?;
-    let keep_b = finish_pipelined_spec_burst(
-        lm,
-        b,
-        out_b,
-        drafted_b,
-        accepted_b,
-        telem_b,
-        room_b,
-        spec_metrics,
-    )?;
-    Ok((keep_a, keep_b))
-}
-
 /// Run one legacy-scheduler chunk through the engine's eager device chain. This is deliberately
 /// narrower than the ordinary serving tick: no reusable prefix-cache tier
 /// (`MEMRA_SERVE_BATCH=0`), no grammar, and no penalties. Every eligible legacy session keeps
@@ -24080,6 +23765,7 @@ mod tests {
     use super::dead_prime_kill_switch_refusal;
     use super::plain_chat_render_path;
     use super::removed_bank_v2_doors_refusal;
+    use super::worker_device;
     use super::{
         ADMIT_PREDICT_MULTI_DEVICE_FATAL_MSG, EvaluatedAdmissionOutcome, LoadedModel,
         evaluate_decoupled_admission, evaluate_predictive_admission_verdict,
@@ -24137,7 +23823,6 @@ mod tests {
         resolve_spec_gate_thresholds, sampled_restore_load_admits, sampled_restore_watermark,
         spec_gate_defaults,
     };
-    use super::{optipipe_controller_threshold, worker_device};
     use crate::lanes::{Lane, StepStats};
     use memra_engine::Engine;
     use memra_engine::hybrid::HybridModel;
@@ -28137,21 +27822,6 @@ mod tests {
         assert!(err.contains("gpu0"), "{err}");
         let err = worker_device(Some("1,gpu0")).unwrap_err();
         assert!(err.contains("gpu0"), "{err}");
-    }
-
-    #[test]
-    fn optipipe_controller_door_is_absent_by_default_and_bounds_thresholds() {
-        assert_eq!(optipipe_controller_threshold(None), Ok(None));
-        assert_eq!(optipipe_controller_threshold(Some("0")), Ok(Some(0.0)));
-        assert_eq!(optipipe_controller_threshold(Some("0.7")), Ok(Some(0.7)));
-        assert_eq!(optipipe_controller_threshold(Some("1")), Ok(Some(1.0)));
-        for invalid in ["-0.01", "1.01", "NaN", "not-a-number"] {
-            let err = optipipe_controller_threshold(Some(invalid)).unwrap_err();
-            assert!(
-                err.contains("MEMRA_OPTI_CONTROLLER_Q"),
-                "unexpected error: {err}"
-            );
-        }
     }
 
     // ---- drafter attachment: the loud-failure semantics (lane/step-draft, 2026-08-07) ----

@@ -290,10 +290,6 @@ pub(crate) fn spec_stream_m() -> usize {
             .unwrap_or(4)
     })
 }
-pub(crate) fn spec_devacc() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_SPEC_DEVACC").as_deref() == Ok("1"))
-}
 /// Engine-bundle slice 2 (DSF-ROUNDCOST-20260820 §1.1 host/device round trips + §2 rows 2-3),
 /// DEFAULT ON (`MEMRA_DSPARK_DEFER_READBACK=0` reverts): the dspark round's draft-chain DtoH
 /// is DEFERRED past verify dispatch and merged with the verify-argmax readback into ONE host
@@ -1896,384 +1892,6 @@ pub fn sample_boundary_token(
     sample_boundary_token_dev(e, &d, n_vocab, sp, pen_hist, sctr, site)
 }
 
-struct SpecPipeTraceClock {
-    pair: usize,
-    started: std::time::Instant,
-}
-
-#[derive(Clone)]
-struct SpecPipeTraceCtx {
-    clock: std::sync::Arc<SpecPipeTraceClock>,
-    round: usize,
-    lane: usize,
-}
-
-struct SpecPipeTraceMarker {
-    trace: SpecPipeTraceCtx,
-    phase: &'static str,
-    edge: &'static str,
-    slot: Option<usize>,
-}
-
-unsafe extern "C" fn spec_pipe_trace_marker(raw: *mut std::ffi::c_void) {
-    let marker = unsafe { Box::from_raw(raw.cast::<SpecPipeTraceMarker>()) };
-    let lane = if marker.trace.lane == 0 { "A" } else { "B" };
-    let slot = marker
-        .slot
-        .map(|v| v.to_string())
-        .unwrap_or_else(|| "-".into());
-    let t_ms = marker.trace.clock.started.elapsed().as_secs_f64() * 1e3;
-    use std::io::Write as _;
-    let stderr = std::io::stderr();
-    let mut stderr = stderr.lock();
-    let _ = writeln!(
-        stderr,
-        "[spec-pipe-timeline] pair={} round={} lane={lane} phase={} edge={} \
-         slot={slot} t_ms={t_ms:.3}",
-        marker.trace.clock.pair, marker.trace.round, marker.phase, marker.edge,
-    );
-}
-
-fn enqueue_spec_pipe_trace_marker(
-    stream: &cudarc::driver::CudaStream,
-    trace: Option<&SpecPipeTraceCtx>,
-    phase: &'static str,
-    edge: &'static str,
-    slot: Option<usize>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let Some(trace) = trace else {
-        return Ok(());
-    };
-    let marker = Box::new(SpecPipeTraceMarker {
-        trace: trace.clone(),
-        phase,
-        edge,
-        slot,
-    });
-    let raw = Box::into_raw(marker);
-    let result = unsafe {
-        cudarc::driver::result::stream::launch_host_function(
-            stream.cu_stream(),
-            spec_pipe_trace_marker,
-            raw.cast(),
-        )
-    };
-    if let Err(err) = result {
-        unsafe {
-            drop(Box::from_raw(raw));
-        }
-        return Err(err.into());
-    }
-    Ok(())
-}
-
-#[derive(Default)]
-struct SpecPipeProgress {
-    setup_done: [bool; 2],
-    draft_done: [usize; 2],
-    stage0_done: [usize; 2],
-    verify_done: [usize; 2],
-    accept_done: [usize; 2],
-    finished: [bool; 2],
-    aborted: bool,
-}
-
-/// Host-side issue coordinator for the reduced two-session speculative pipeline. Each session
-/// keeps its existing call stack and round locals; this object only orders phase entry. The
-/// primary mutex spans whole draft/accept/tail issue regions so Engine's single-stream scratch
-/// cannot be interleaved by the two host threads.
-struct SpecPipeSync {
-    progress: std::sync::Mutex<SpecPipeProgress>,
-    changed: std::sync::Condvar,
-    primary: std::sync::Mutex<()>,
-    trace: Option<std::sync::Arc<SpecPipeTraceClock>>,
-}
-
-impl SpecPipeSync {
-    fn new() -> Self {
-        static TRACE_PAIR: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-        let trace = (std::env::var("MEMRA_SPEC_PIPE_TRACE").as_deref() == Ok("1")).then(|| {
-            std::sync::Arc::new(SpecPipeTraceClock {
-                pair: TRACE_PAIR.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1,
-                started: std::time::Instant::now(),
-            })
-        });
-        Self {
-            progress: std::sync::Mutex::new(SpecPipeProgress::default()),
-            changed: std::sync::Condvar::new(),
-            primary: std::sync::Mutex::new(()),
-            trace,
-        }
-    }
-}
-
-#[derive(Clone)]
-struct SpecPipeLane {
-    sync: std::sync::Arc<SpecPipeSync>,
-    lane: usize,
-    rt: &'static crate::pp::PpNRt,
-    walk_permit: crate::pp::PpWalkPermit,
-}
-
-struct SpecPipePrimaryGuard<'a> {
-    _primary: std::sync::MutexGuard<'a, ()>,
-    _walk: crate::pp::PpWalkBorrowGuard,
-}
-
-impl SpecPipeLane {
-    fn peer(&self) -> usize {
-        1 - self.lane
-    }
-
-    fn aborted() -> Box<dyn std::error::Error> {
-        "paired speculative peer aborted".into()
-    }
-
-    fn trace(&self, round: usize) -> Option<SpecPipeTraceCtx> {
-        self.sync.trace.as_ref().map(|clock| SpecPipeTraceCtx {
-            clock: clock.clone(),
-            round,
-            lane: self.lane,
-        })
-    }
-
-    fn setup_begin(&self) -> Result<crate::pp::PpWalkBorrowGuard, Box<dyn std::error::Error>> {
-        let mut p = self.sync.progress.lock().unwrap();
-        while !p.aborted && self.lane == 1 && !p.setup_done[0] && !p.finished[0] {
-            p = self.sync.changed.wait(p).unwrap();
-        }
-        if p.aborted {
-            Err(Self::aborted())
-        } else {
-            drop(p);
-            self.rt.borrow_walk(&self.walk_permit, "spec_pipe/setup")
-        }
-    }
-
-    fn setup_end(&self) {
-        let mut p = self.sync.progress.lock().unwrap();
-        p.setup_done[self.lane] = true;
-        self.sync.changed.notify_all();
-    }
-
-    fn draft_begin(
-        &self,
-        round: usize,
-    ) -> Result<SpecPipePrimaryGuard<'_>, Box<dyn std::error::Error>> {
-        let peer = self.peer();
-        let mut p = self.sync.progress.lock().unwrap();
-        loop {
-            if p.aborted {
-                return Err(Self::aborted());
-            }
-            let setup_ready =
-                (p.setup_done[0] || p.finished[0]) && (p.setup_done[1] || p.finished[1]);
-            let prior_ready = p.accept_done[self.lane] >= round
-                && (p.accept_done[peer] >= round || p.finished[peer]);
-            let turn_ready = if self.lane == 0 {
-                true
-            } else {
-                p.draft_done[0] > round || p.finished[0]
-            };
-            if setup_ready && prior_ready && turn_ready {
-                break;
-            }
-            p = self.sync.changed.wait(p).unwrap();
-        }
-        drop(p);
-        let primary = self.sync.primary.lock().unwrap();
-        let walk = self.rt.borrow_walk(&self.walk_permit, "spec_pipe/draft")?;
-        Ok(SpecPipePrimaryGuard {
-            _primary: primary,
-            _walk: walk,
-        })
-    }
-
-    fn draft_end(&self, round: usize) {
-        let mut p = self.sync.progress.lock().unwrap();
-        p.draft_done[self.lane] = round + 1;
-        self.sync.changed.notify_all();
-    }
-
-    /// Admit stage 0 and return whether this lane owns the interval's one reverse fence.
-    /// Lane B releases as soon as lane A has issued its boundary TX, not after A's full body.
-    fn stage0_begin(&self, round: usize) -> Result<bool, Box<dyn std::error::Error>> {
-        let peer = self.peer();
-        let mut p = self.sync.progress.lock().unwrap();
-        loop {
-            if p.aborted {
-                return Err(Self::aborted());
-            }
-            let ready = if self.lane == 0 {
-                p.draft_done[0] > round && (p.draft_done[1] > round || p.finished[1])
-            } else {
-                p.draft_done[1] > round && (p.stage0_done[0] > round || p.finished[0])
-            };
-            if ready {
-                return Ok(self.lane == 0 || p.finished[peer]);
-            }
-            p = self.sync.changed.wait(p).unwrap();
-        }
-    }
-
-    fn stage0_end(&self, round: usize) {
-        let mut p = self.sync.progress.lock().unwrap();
-        p.stage0_done[self.lane] = round + 1;
-        self.sync.changed.notify_all();
-    }
-
-    /// Stage 1 is single-owner per engine. A proceeds immediately after its own ticket; B waits
-    /// for A's full stage1/head issue so only A.S1 and B.S0 can overlap.
-    fn stage1_begin(&self, round: usize) -> Result<(), Box<dyn std::error::Error>> {
-        let mut p = self.sync.progress.lock().unwrap();
-        while !p.aborted
-            && !(p.stage0_done[self.lane] > round
-                && (self.lane == 0 || p.verify_done[0] > round || p.finished[0]))
-        {
-            p = self.sync.changed.wait(p).unwrap();
-        }
-        if p.aborted {
-            Err(Self::aborted())
-        } else {
-            Ok(())
-        }
-    }
-
-    fn verify_end(&self, round: usize) {
-        let mut p = self.sync.progress.lock().unwrap();
-        p.verify_done[self.lane] = round + 1;
-        self.sync.changed.notify_all();
-    }
-
-    fn accept_begin(
-        &self,
-        round: usize,
-    ) -> Result<SpecPipePrimaryGuard<'_>, Box<dyn std::error::Error>> {
-        let mut p = self.sync.progress.lock().unwrap();
-        loop {
-            if p.aborted {
-                return Err(Self::aborted());
-            }
-            let ready = if self.lane == 0 {
-                p.verify_done[0] > round && (p.verify_done[1] > round || p.finished[1])
-            } else {
-                p.verify_done[1] > round && (p.accept_done[0] > round || p.finished[0])
-            };
-            if ready {
-                break;
-            }
-            p = self.sync.changed.wait(p).unwrap();
-        }
-        drop(p);
-        let primary = self.sync.primary.lock().unwrap();
-        let walk = self.rt.borrow_walk(&self.walk_permit, "spec_pipe/accept")?;
-        Ok(SpecPipePrimaryGuard {
-            _primary: primary,
-            _walk: walk,
-        })
-    }
-
-    fn accept_end(&self, round: usize) {
-        let mut p = self.sync.progress.lock().unwrap();
-        p.accept_done[self.lane] = round + 1;
-        self.sync.changed.notify_all();
-    }
-
-    fn primary(&self) -> Result<SpecPipePrimaryGuard<'_>, Box<dyn std::error::Error>> {
-        let primary = self.sync.primary.lock().unwrap();
-        let walk = self.rt.borrow_walk(&self.walk_permit, "spec_pipe/tail")?;
-        Ok(SpecPipePrimaryGuard {
-            _primary: primary,
-            _walk: walk,
-        })
-    }
-
-    fn coordinated_walk(&self) -> Result<crate::pp::PpWalkBorrowGuard, Box<dyn std::error::Error>> {
-        self.rt
-            .borrow_walk(&self.walk_permit, "spec_pipe/coordinated_verify")
-    }
-
-    fn finish(&self, failed: bool) {
-        let mut p = self.sync.progress.lock().unwrap();
-        p.finished[self.lane] = true;
-        p.aborted |= failed;
-        self.sync.changed.notify_all();
-    }
-}
-
-struct SpecPipeFinish<'a> {
-    lane: &'a SpecPipeLane,
-    closed: bool,
-}
-
-impl<'a> SpecPipeFinish<'a> {
-    fn new(lane: &'a SpecPipeLane) -> Self {
-        Self {
-            lane,
-            closed: false,
-        }
-    }
-
-    fn close(&mut self, failed: bool) {
-        self.lane.finish(failed);
-        self.closed = true;
-    }
-}
-
-impl Drop for SpecPipeFinish<'_> {
-    fn drop(&mut self) {
-        if !self.closed {
-            self.lane.finish(true);
-        }
-    }
-}
-
-/// Scoped transfer of one exclusively-borrowed session to the second host issue thread.
-/// `CudaGraph` is not marked Send by cudarc because its raw driver handles carry no automatic
-/// trait. CUDA driver graph handles are context-scoped rather than OS-thread-affine; the caller
-/// binds that context before touching the session, joins before returning, and never aliases the
-/// pointer. Keep this exception local to the experimental pair call instead of marking the public
-/// session type Send.
-struct SpecPipeSessionPtr(*mut SpecSession);
-
-unsafe impl Send for SpecPipeSessionPtr {}
-
-impl SpecPipeSessionPtr {
-    unsafe fn get_mut(&mut self) -> &mut SpecSession {
-        unsafe { &mut *self.0 }
-    }
-}
-
-/// Per-session persistent draft-graph context: the captured CUDA graph(s) plus the device
-/// buffers whose POINTERS the capture bakes. Reuse legality: the greedy capture bakes only
-/// session-stable pointers (the session's own MtpScratch KV — allocated once, never realloc'd;
-/// the model's resident embedding; the process-wide OnceLock p_min) and the g_* buffers held
-/// HERE — so one capture serves the session's whole lifetime. The sampled capture additionally
-/// bakes (seed, temp) as capture-time constants and needs k q-slots — keyed by `s_key`, dropped
-/// and recaptured when a pool-resumed request changes them. `*_failed` memoizes a failed capture
-/// so the eager fallback doesn't pay a doomed capture attempt every burst.
-/// Capture identity of the parked SAMPLED draft graph (`DraftGraphCtx::graph_s`).
-///
-/// EXACTNESS, not perf (lane/graph-s-key-exactness-20260819; receipts
-/// `research/spec-cache-20260818/GRAPH-S-KEY.md`). Two classes of field live here, both
-/// load-bearing:
-///
-/// - **Baked constants.** `seed` and `temp` are capture-time constants INSIDE the graph and `k`
-///   sizes the q slots its replays write. A resumed request changing any of them must recapture.
-///   This is all the key used to carry.
-/// - **Regime fields.** `top_k`/`top_p`/`min_p`/`pen_on` are not baked, but they decide whether
-///   the captured graph is a legal draft chain AT ALL. The in-graph draw is one gumbel-max over
-///   the RAW softmax (`gumbel_perturb_ctr`, unfiltered by construction), while the verify builds
-///   the accept test's `q` from `filter_stats(q_slots, top_k, top_p, min_p)`. If those disagree
-///   the accept test evaluates a distribution the draft was never sampled from: a draft token
-///   below the filter threshold gathers `q = 0` (`softmax_gather_filtered_f32`,
-///   `cu/spec_sample.cu`) and `u * 0 < p` accepts it UNCONDITIONALLY.
-///
-/// Omitting the regime fields was reachable — not through the prefix-cache spec restore (that
-/// path is greedy-only, `memra-server` `spec_restore_convertible`), but through WHOLE-SESSION
-/// spec reuse: a parked `SpecSession` carries this `DraftGraphCtx`, and the pool-resume probe
-/// applies no sampler predicate at all. Turn 1 pure-temp parks a graph; turn 2 of the same
-/// conversation, same explicit seed and temperature, adds `top_p`/`top_k` and inherits it.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct SampledGraphKey {
     seed: u64,
@@ -2915,7 +2533,7 @@ pub(crate) struct FaLayerArgs<'a> {
 
 // SAFETY: `CudaGraph` is not marked Send by cudarc because its raw driver handles carry
 // no automatic trait; CUDA driver graph handles are context-scoped rather than
-// OS-thread-affine (the SpecPipeSessionPtr precedent above). The ctx lives in
+// OS-thread-affine. The ctx lives in
 // `HybridModel::dspark_vgraphs` behind a Mutex and every touch happens on the engine's
 // single decode-stream thread.
 unsafe impl Send for DsparkVerifyGraphs {}
@@ -3577,7 +3195,7 @@ impl VerifyCkpt {
 }
 
 /// The stage-0/TX half of one PP verify. The boundary slot is the ownership token: stage 1
-/// consumes exactly the slot selected by `tx()` / `tx_pipelined()`, never a slot inferred from
+/// consumes exactly the slot selected by `tx()`, never a slot inferred from
 /// a logical round number.
 struct VerifyBoundaryTicket {
     rt: &'static crate::pp::PpNRt,
@@ -3587,800 +3205,12 @@ struct VerifyBoundaryTicket {
     t: usize,
     payload: usize,
     n_st: usize,
-    pipelined: bool,
     pp_anatomy: bool,
     pp_started: std::time::Instant,
     reverse_ms: f64,
     stage0_ms: f64,
     tx_ms: f64,
-    trace: Option<SpecPipeTraceCtx>,
     _walk_owner: crate::pp::PpWalkLease,
-}
-
-/// Explicit OPTIPIPE diagnostic control. Forced modes are set only by `optipipe-gate`; the
-/// increment-2 controller can also be armed by the server's fresh-process research door.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum OptiForkGateMode {
-    Disabled,
-    Hit,
-    Miss,
-    Alternate,
-    Abort,
-    Controller,
-}
-
-static OPTI_FORK_GATE_MODE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
-static OPTI_CONTROLLER_THRESHOLD: std::sync::atomic::AtomicU32 =
-    std::sync::atomic::AtomicU32::new(0);
-static OPTI_FORK_ATTEMPTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-static OPTI_FORK_HITS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-static OPTI_FORK_MISSES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-static OPTI_FORK_ABORT_DRAINS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-static OPTI_FORK_REFUSALS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-static OPTI_GATE_CHECKS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-static OPTI_GATE_ADMITS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-static OPTI_GATE_REJECTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-static OPTI_RECONCILES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-static OPTI_WASTED_DRAFT_TOKENS: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-static OPTI_SHADOW_DRAFT_TOKENS: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-static OPTI_BREAKER_TRIPS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-impl OptiForkGateMode {
-    fn code(self) -> u8 {
-        match self {
-            Self::Disabled => 0,
-            Self::Hit => 1,
-            Self::Miss => 2,
-            Self::Alternate => 3,
-            Self::Abort => 4,
-            Self::Controller => 5,
-        }
-    }
-
-    fn configured() -> Self {
-        match OPTI_FORK_GATE_MODE.load(std::sync::atomic::Ordering::Relaxed) {
-            1 => Self::Hit,
-            2 => Self::Miss,
-            3 => Self::Alternate,
-            4 => Self::Abort,
-            5 => Self::Controller,
-            _ => Self::Disabled,
-        }
-    }
-
-    fn action(self, generation: u64) -> OptiForkAction {
-        match self {
-            Self::Hit => OptiForkAction::Hit,
-            Self::Miss => OptiForkAction::Miss,
-            Self::Alternate if generation & 1 == 0 => OptiForkAction::Hit,
-            Self::Alternate => OptiForkAction::Miss,
-            Self::Abort => OptiForkAction::Abort,
-            Self::Disabled | Self::Controller => {
-                unreachable!("non-forced mode cannot choose a forced fork action")
-            }
-        }
-    }
-
-    fn is_forced(self) -> bool {
-        matches!(self, Self::Hit | Self::Miss | Self::Alternate | Self::Abort)
-    }
-}
-
-/// Arm or disarm the forced harness. Serving uses only `set_optipipe_controller_threshold`.
-pub fn set_optipipe_gate_mode(mode: OptiForkGateMode) {
-    OPTI_FORK_GATE_MODE.store(mode.code(), std::sync::atomic::Ordering::Relaxed);
-}
-
-/// Arm the increment-2 diagnostic controller. The threshold applies to the uncalibrated
-/// two-token draft-probability product. Serving can call this only through its explicit
-/// fresh-process research door; the absent-door default remains byte-for-byte disabled.
-pub fn set_optipipe_controller_threshold(threshold: f32) {
-    assert!(threshold.is_finite() && (0.0..=1.0).contains(&threshold));
-    OPTI_CONTROLLER_THRESHOLD.store(threshold.to_bits(), std::sync::atomic::Ordering::Relaxed);
-    set_optipipe_gate_mode(OptiForkGateMode::Controller);
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct OptiForkGateStats {
-    pub attempts: u64,
-    pub hits: u64,
-    pub misses: u64,
-    pub abort_drains: u64,
-    pub refusals: u64,
-    pub gate_checks: u64,
-    pub gate_admits: u64,
-    pub gate_rejects: u64,
-    pub reconciles: u64,
-    pub wasted_draft_tokens: u64,
-    pub shadow_draft_tokens: u64,
-    pub breaker_trips: u64,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct OptiForkStateIdentity {
-    pub trunk_kv_bytes: usize,
-    pub recurrent_bytes: usize,
-    pub scratch_kv_bytes: usize,
-    pub hidden_bytes: usize,
-}
-
-pub fn reset_optipipe_gate_stats() {
-    for counter in [
-        &OPTI_FORK_ATTEMPTS,
-        &OPTI_FORK_HITS,
-        &OPTI_FORK_MISSES,
-        &OPTI_FORK_ABORT_DRAINS,
-        &OPTI_FORK_REFUSALS,
-        &OPTI_GATE_CHECKS,
-        &OPTI_GATE_ADMITS,
-        &OPTI_GATE_REJECTS,
-        &OPTI_RECONCILES,
-        &OPTI_WASTED_DRAFT_TOKENS,
-        &OPTI_SHADOW_DRAFT_TOKENS,
-        &OPTI_BREAKER_TRIPS,
-    ] {
-        counter.store(0, std::sync::atomic::Ordering::Relaxed);
-    }
-}
-
-pub fn optipipe_gate_stats() -> OptiForkGateStats {
-    let load = |v: &std::sync::atomic::AtomicU64| v.load(std::sync::atomic::Ordering::Relaxed);
-    OptiForkGateStats {
-        attempts: load(&OPTI_FORK_ATTEMPTS),
-        hits: load(&OPTI_FORK_HITS),
-        misses: load(&OPTI_FORK_MISSES),
-        abort_drains: load(&OPTI_FORK_ABORT_DRAINS),
-        refusals: load(&OPTI_FORK_REFUSALS),
-        gate_checks: load(&OPTI_GATE_CHECKS),
-        gate_admits: load(&OPTI_GATE_ADMITS),
-        gate_rejects: load(&OPTI_GATE_REJECTS),
-        reconciles: load(&OPTI_RECONCILES),
-        wasted_draft_tokens: load(&OPTI_WASTED_DRAFT_TOKENS),
-        shadow_draft_tokens: load(&OPTI_SHADOW_DRAFT_TOKENS),
-        breaker_trips: load(&OPTI_BREAKER_TRIPS),
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-struct OptiControllerPolicy {
-    threshold: f32,
-    consecutive_misses: u8,
-    breaker_tripped: bool,
-}
-
-impl OptiControllerPolicy {
-    fn configured() -> Self {
-        Self {
-            threshold: f32::from_bits(
-                OPTI_CONTROLLER_THRESHOLD.load(std::sync::atomic::Ordering::Relaxed),
-            ),
-            consecutive_misses: 0,
-            breaker_tripped: false,
-        }
-    }
-
-    fn admit(&self, q_proxy: f32) -> bool {
-        q_proxy.is_finite()
-            && (0.0..=1.0).contains(&q_proxy)
-            && (self.threshold == 0.0 || (!self.breaker_tripped && q_proxy >= self.threshold))
-    }
-
-    /// Returns true exactly when this resolution newly trips the three-miss breaker.
-    fn resolve(&mut self, hit: bool) -> bool {
-        // q*=0 is the lane's explicit unconditional measurement arm. Its purpose is to price
-        // every optimistic opportunity, so the safety breaker is measured separately and must
-        // not silently turn this arm into "three attempts then serial".
-        if self.threshold == 0.0 {
-            self.consecutive_misses = 0;
-            return false;
-        }
-        if hit {
-            self.consecutive_misses = 0;
-            return false;
-        }
-        self.consecutive_misses = self.consecutive_misses.saturating_add(1);
-        if !self.breaker_tripped && self.consecutive_misses >= 3 {
-            self.breaker_tripped = true;
-            return true;
-        }
-        false
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum OptiForkAction {
-    Hit,
-    Miss,
-    Abort,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct OptiForkGeneration {
-    id: u64,
-    slot: usize,
-}
-
-#[derive(Default)]
-struct OptiForkGenerationTracker {
-    next: u64,
-    live: [Option<u64>; 2],
-}
-
-impl OptiForkGenerationTracker {
-    fn reserve(&mut self) -> Result<OptiForkGeneration, Box<dyn std::error::Error>> {
-        let generation = OptiForkGeneration {
-            id: self.next,
-            slot: (self.next & 1) as usize,
-        };
-        if let Some(live) = self.live[generation.slot] {
-            return Err(format!(
-                "optipipe snapshot slot {} still owns generation {live}; refusing to overwrite it",
-                generation.slot,
-            )
-            .into());
-        }
-        self.next += 1;
-        self.live[generation.slot] = Some(generation.id);
-        Ok(generation)
-    }
-
-    fn retire(&mut self, generation: OptiForkGeneration) -> Result<(), Box<dyn std::error::Error>> {
-        match self.live[generation.slot] {
-            Some(id) if id == generation.id => {
-                self.live[generation.slot] = None;
-                Ok(())
-            }
-            other => Err(format!(
-                "optipipe generation teardown mismatch: ticket={} slot={} live={other:?}",
-                generation.id, generation.slot,
-            )
-            .into()),
-        }
-    }
-}
-
-struct OptiForkSeedGeneration {
-    h_seed: CudaSlice<f32>,
-    fill_prev: CudaSlice<f32>,
-    scratch_len: usize,
-}
-
-/// Allocate or refresh one full checkpoint through the engine that owns each PP stage. The
-/// generic cache helper accepts one device and therefore cannot copy GDN state split across
-/// devices. KV lengths and position stay host metadata; only recurrent buffers need stage-local
-/// device ownership.
-fn opti_snapshot_stage_owned(
-    e: &Engine,
-    cache: &Cache,
-    rt: &'static crate::pp::PpNRt,
-    fence: &[usize],
-) -> Result<crate::cache::CacheSnapshot, Box<dyn std::error::Error>> {
-    let n = cache.kv.len();
-    let mut snapshot = crate::cache::CacheSnapshot {
-        kv_len: vec![None; n],
-        tp_kv_len: vec![None; n],
-        conv: (0..n).map(|_| None).collect(),
-        ssm: (0..n).map(|_| None).collect(),
-        pos: cache.pos,
-    };
-    opti_snapshot_stage_owned_into(e, cache, rt, fence, &mut snapshot)?;
-    Ok(snapshot)
-}
-
-fn opti_snapshot_stage_owned_into(
-    e: &Engine,
-    cache: &Cache,
-    rt: &'static crate::pp::PpNRt,
-    fence: &[usize],
-    snapshot: &mut crate::cache::CacheSnapshot,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if fence.len() != rt.n_stages() + 1
-        || snapshot.kv_len.len() != cache.kv.len()
-        || snapshot.tp_kv_len.len() != cache.tp_kv.len()
-    {
-        return Err("optipipe stage-owned snapshot shape mismatch".into());
-    }
-    for stage in 0..rt.n_stages() {
-        opti_snapshot_one_stage_owned_into(e, cache, rt, fence, stage, snapshot)?;
-    }
-    snapshot.pos = cache.pos;
-    Ok(())
-}
-
-/// Refresh one PP stage of a checkpoint. Increment 2 uses this split form so stage 0's
-/// optimistic post-N state is captured before N+1 stage 0 is queued, while stage 1's matching
-/// post-N state is captured only after N stage 1 is enqueued. Calling the all-stage helper at
-/// either point would capture one side of the fork at the wrong generation.
-fn opti_snapshot_one_stage_owned_into(
-    e: &Engine,
-    cache: &Cache,
-    rt: &'static crate::pp::PpNRt,
-    fence: &[usize],
-    stage: usize,
-    snapshot: &mut crate::cache::CacheSnapshot,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if fence.len() != rt.n_stages() + 1
-        || snapshot.kv_len.len() != cache.kv.len()
-        || snapshot.tp_kv_len.len() != cache.tp_kv.len()
-        || stage >= rt.n_stages()
-    {
-        return Err("optipipe single-stage snapshot shape mismatch".into());
-    }
-    let _scope = rt.enter(stage);
-    let owner = rt.engine(stage, e);
-    for il in fence[stage]..fence[stage + 1] {
-        snapshot.kv_len[il] = cache.kv[il].as_ref().map(|kv| kv.len);
-        snapshot.tp_kv_len[il] = cache.tp_kv[il]
-            .as_ref()
-            .map(crate::tp::ResidentTpKvCache::committed_len);
-        match &cache.recur[il] {
-            Some(recur) => {
-                match snapshot.conv[il].as_mut() {
-                    Some(dst) => {
-                        owner.copy_into(dst, 0, &recur.conv_state, recur.conv_state.len())?
-                    }
-                    None => snapshot.conv[il] = Some(owner.clone_dtod(&recur.conv_state)?),
-                }
-                match snapshot.ssm[il].as_mut() {
-                    Some(dst) => {
-                        owner.copy_into(dst, 0, &recur.ssm_state, recur.ssm_state.len())?
-                    }
-                    None => snapshot.ssm[il] = Some(owner.clone_dtod(&recur.ssm_state)?),
-                }
-            }
-            None if snapshot.conv[il].is_some() || snapshot.ssm[il].is_some() => {
-                return Err(
-                    format!("optipipe stage-owned snapshot layer {il} changed shape").into(),
-                );
-            }
-            None => {}
-        }
-    }
-    snapshot.pos = cache.pos;
-    Ok(())
-}
-
-/// Increment-1 persistent fork state. Exactly two snapshot/seed slots alternate; a live ticket
-/// names its generation and keeps teardown fail-closed. Only stage 0 is allowed to mutate before
-/// resolve, so the reconcile tables and conditional restores are stage-local.
-struct OptiForkState {
-    mode: OptiForkGateMode,
-    controller: Option<OptiControllerPolicy>,
-    generations: OptiForkGenerationTracker,
-    active_snapshot_slot: usize,
-    alternate_snapshot: crate::cache::CacheSnapshot,
-    seeds: [OptiForkSeedGeneration; 2],
-    rt: &'static crate::pp::PpNRt,
-    fence: [usize; 3],
-    split: usize,
-    len_ptrs: CudaSlice<u64>,
-    saved_lens: CudaSlice<i32>,
-    forced_acc: CudaSlice<u32>,
-    valid: CudaSlice<u32>,
-    stage0_stream: std::sync::Arc<cudarc::driver::CudaStream>,
-    logical_payload_bytes: [usize; 2],
-}
-
-struct OptiForkTicket {
-    generation: OptiForkGeneration,
-    boundary: Option<VerifyBoundaryTicket>,
-    drain: std::sync::Arc<cudarc::driver::CudaStream>,
-    settled: bool,
-}
-
-struct OptiControllerTicket {
-    generation: OptiForkGeneration,
-    boundary: Option<VerifyBoundaryTicket>,
-    ckpt: Option<VerifyCkpt>,
-    verify_tokens: [u32; 2],
-    draft_prob: f32,
-    eager_seed: Option<CudaSlice<f32>>,
-    q_proxy: f32,
-    scratch_len: usize,
-    issued_at: std::time::Instant,
-    drain: std::sync::Arc<cudarc::driver::CudaStream>,
-    settled: bool,
-}
-
-struct OptiControllerPrepared {
-    verify_tokens: [u32; 2],
-    draft_prob: f32,
-    eager_seed: Option<CudaSlice<f32>>,
-    q_proxy: f32,
-    scratch_len: usize,
-}
-
-impl OptiControllerTicket {
-    fn take_boundary(&mut self) -> VerifyBoundaryTicket {
-        self.boundary
-            .take()
-            .expect("controller boundary ticket already consumed")
-    }
-
-    fn take_ckpt(&mut self) -> VerifyCkpt {
-        self.ckpt
-            .take()
-            .expect("controller verify checkpoint already consumed")
-    }
-
-    fn take_eager_seed(&mut self) -> Option<CudaSlice<f32>> {
-        self.eager_seed.take()
-    }
-
-    fn settle(&mut self) {
-        self.settled = true;
-    }
-}
-
-impl Drop for OptiControllerTicket {
-    fn drop(&mut self) {
-        if !self.settled {
-            let _ = self.drain.synchronize();
-            OPTI_FORK_ABORT_DRAINS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        }
-    }
-}
-
-impl OptiForkTicket {
-    fn take_boundary(&mut self) -> VerifyBoundaryTicket {
-        self.boundary
-            .take()
-            .expect("fork ticket boundary already consumed")
-    }
-
-    fn settle(&mut self) {
-        self.settled = true;
-    }
-}
-
-impl Drop for OptiForkTicket {
-    fn drop(&mut self) {
-        if !self.settled {
-            let _ = self.drain.synchronize();
-            OPTI_FORK_ABORT_DRAINS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        }
-    }
-}
-
-impl OptiForkState {
-    #[allow(clippy::too_many_arguments)]
-    fn new(
-        e: &Engine,
-        cache: &Cache,
-        mode: OptiForkGateMode,
-        alternate_snapshot: crate::cache::CacheSnapshot,
-        h_seed: &CudaSlice<f32>,
-        fill_prev: &CudaSlice<f32>,
-        rt: &'static crate::pp::PpNRt,
-        split: usize,
-        n_layer: usize,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let fence = [0, split, n_layer];
-        let mut logical_payload_bytes = [0usize; 2];
-        for stage in 0..2 {
-            for il in fence[stage]..fence[stage + 1] {
-                logical_payload_bytes[stage] += alternate_snapshot.conv[il]
-                    .as_ref()
-                    .map_or(0, |v| v.len() * std::mem::size_of::<f32>());
-                logical_payload_bytes[stage] += alternate_snapshot.ssm[il]
-                    .as_ref()
-                    .map_or(0, |v| v.len() * std::mem::size_of::<f32>());
-            }
-        }
-        let seeds = [
-            OptiForkSeedGeneration {
-                h_seed: e.clone_dtod(h_seed)?,
-                fill_prev: e.clone_dtod(fill_prev)?,
-                scratch_len: 0,
-            },
-            OptiForkSeedGeneration {
-                h_seed: e.clone_dtod(h_seed)?,
-                fill_prev: e.clone_dtod(fill_prev)?,
-                scratch_len: 0,
-            },
-        ];
-        let (len_ptrs, saved_lens, forced_acc, valid, stage0_stream) = {
-            let _stage = rt.enter(0);
-            let e0 = rt.engine(0, e);
-            (
-                crate::round_stream::kv_len_ptr_table_range(e0, cache, 0..split, None)?,
-                e0.htod_i32(&vec![0; split])?,
-                e0.alloc_u32_zeroed(2)?,
-                e0.alloc_u32_zeroed(1)?,
-                e0.stream(),
-            )
-        };
-        logical_payload_bytes[0] += seeds
-            .iter()
-            .map(|seed| (seed.h_seed.len() + seed.fill_prev.len()) * std::mem::size_of::<f32>())
-            .sum::<usize>();
-        logical_payload_bytes[0] += len_ptrs.len() * std::mem::size_of::<u64>()
-            + saved_lens.len() * std::mem::size_of::<i32>()
-            + forced_acc.len() * std::mem::size_of::<u32>()
-            + valid.len() * std::mem::size_of::<u32>();
-        Ok(Self {
-            mode,
-            controller: (mode == OptiForkGateMode::Controller)
-                .then(OptiControllerPolicy::configured),
-            generations: OptiForkGenerationTracker::default(),
-            active_snapshot_slot: 0,
-            alternate_snapshot,
-            seeds,
-            rt,
-            fence,
-            split,
-            len_ptrs,
-            saved_lens,
-            forced_acc,
-            valid,
-            stage0_stream,
-            logical_payload_bytes,
-        })
-    }
-
-    fn reserve(
-        &mut self,
-        current_snapshot: &mut crate::cache::CacheSnapshot,
-    ) -> Result<OptiForkGeneration, Box<dyn std::error::Error>> {
-        let generation = self.generations.reserve()?;
-        if generation.slot != self.active_snapshot_slot {
-            std::mem::swap(current_snapshot, &mut self.alternate_snapshot);
-            self.active_snapshot_slot = generation.slot;
-        }
-        Ok(generation)
-    }
-
-    fn capture_seed(
-        &mut self,
-        e: &Engine,
-        generation: OptiForkGeneration,
-        h_seed: &CudaSlice<f32>,
-        fill_prev: &CudaSlice<f32>,
-        scratch_len: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let seed = &mut self.seeds[generation.slot];
-        e.copy_into(&mut seed.h_seed, 0, h_seed, h_seed.len())?;
-        e.copy_into(&mut seed.fill_prev, 0, fill_prev, fill_prev.len())?;
-        seed.scratch_len = scratch_len;
-        Ok(())
-    }
-
-    fn ticket(
-        &self,
-        generation: OptiForkGeneration,
-        boundary: VerifyBoundaryTicket,
-    ) -> OptiForkTicket {
-        OptiForkTicket {
-            generation,
-            boundary: Some(boundary),
-            drain: self.stage0_stream.clone(),
-            settled: false,
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn controller_ticket(
-        &self,
-        generation: OptiForkGeneration,
-        boundary: VerifyBoundaryTicket,
-        ckpt: VerifyCkpt,
-        verify_tokens: [u32; 2],
-        draft_prob: f32,
-        eager_seed: Option<CudaSlice<f32>>,
-        q_proxy: f32,
-        scratch_len: usize,
-    ) -> OptiControllerTicket {
-        OptiControllerTicket {
-            generation,
-            boundary: Some(boundary),
-            ckpt: Some(ckpt),
-            verify_tokens,
-            draft_prob,
-            eager_seed,
-            q_proxy,
-            scratch_len,
-            issued_at: std::time::Instant::now(),
-            drain: self.stage0_stream.clone(),
-            settled: false,
-        }
-    }
-
-    fn reserve_successor(&mut self) -> Result<OptiForkGeneration, Box<dyn std::error::Error>> {
-        self.generations.reserve()
-    }
-
-    fn successor_snapshot_mut(&mut self) -> &mut crate::cache::CacheSnapshot {
-        &mut self.alternate_snapshot
-    }
-
-    fn promote_successor_snapshot(
-        &mut self,
-        current_snapshot: &mut crate::cache::CacheSnapshot,
-        generation: OptiForkGeneration,
-    ) {
-        std::mem::swap(current_snapshot, &mut self.alternate_snapshot);
-        self.active_snapshot_slot = generation.slot;
-    }
-
-    fn queue_actual_reconcile(
-        &mut self,
-        e: &Engine,
-        snapshot: &crate::cache::CacheSnapshot,
-        acc: &CudaSlice<u32>,
-        optimistic_pending: u32,
-        base: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let saved: Vec<i32> = (0..self.split)
-            .map(|il| snapshot.kv_len[il].map(|v| v as i32).unwrap_or(0))
-            .collect();
-        // Serving keeps the caller/accept walk on the head (stage-1) device. Record the accept
-        // decision point there and append a wait to stage 0 after its optimistic successor/TX;
-        // the validity/reconcile kernels must never peer-read acc before it is written. The
-        // increment-1 harness uses primary stage 0, where stream order already provides this.
-        if self.rt.engine(0, e).ctx().ordinal() != e.ctx().ordinal() {
-            self.rt.fence_stages_behind(&e.stream())?;
-        }
-        let _stage = self.rt.enter(0);
-        let e0 = self.rt.engine(0, e);
-        e0.htod_i32_into(&mut self.saved_lens, &saved)?;
-        e0.spec_fork_valid(acc, optimistic_pending, &mut self.valid)?;
-        e0.spec_fork_reconcile_kv(
-            &self.len_ptrs,
-            &self.saved_lens,
-            acc,
-            &self.valid,
-            base,
-            self.split,
-        )
-    }
-
-    fn finish_actual_reconcile(
-        &mut self,
-        e: &Engine,
-        cache: &mut Cache,
-        snapshot: &crate::cache::CacheSnapshot,
-        n_acc: usize,
-        base: usize,
-        hit: bool,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if hit {
-            return Ok(());
-        }
-        let len_delta = base + n_acc;
-        for il in 0..self.split {
-            if let (Some(kv), Some(saved)) = (cache.kv[il].as_mut(), snapshot.kv_len[il]) {
-                kv.len = saved + len_delta;
-            }
-        }
-        {
-            let _stage = self.rt.enter(1);
-            let e1 = self.rt.engine(1, e);
-            for il in self.split..self.fence[2] {
-                if let (Some(kv), Some(saved)) = (cache.kv[il].as_mut(), snapshot.kv_len[il]) {
-                    kv.len = saved + len_delta;
-                    e1.set_i32_one(&mut kv.len_d, kv.len as i32)?;
-                }
-            }
-        }
-        self.rt.publish_to(0, &e.stream())?;
-        Ok(())
-    }
-
-    fn cancel_controller_ticket(
-        &mut self,
-        e: &Engine,
-        cache: &mut Cache,
-        scratch: &mut MtpScratch,
-        snapshot: &crate::cache::CacheSnapshot,
-        ticket: &mut OptiControllerTicket,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        {
-            let _stage = self.rt.enter(0);
-            let e0 = self.rt.engine(0, e);
-            for il in 0..self.split {
-                if let (Some(kv), Some(saved)) = (cache.kv[il].as_mut(), snapshot.kv_len[il]) {
-                    kv.len = saved;
-                    e0.set_i32_one(&mut kv.len_d, saved as i32)?;
-                }
-            }
-        }
-        scratch.set_len(e, snapshot.pos)?;
-        ticket.settle();
-        self.generations.retire(ticket.generation)?;
-        OPTI_FORK_ABORT_DRAINS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        OPTI_WASTED_DRAFT_TOKENS.fetch_add(2, std::sync::atomic::Ordering::Relaxed);
-        eprintln!(
-            "[opti-controller] tail-drain generation={} slot={}",
-            ticket.generation.id, ticket.generation.slot,
-        );
-        Ok(())
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn reconcile(
-        &mut self,
-        e: &Engine,
-        cache: &mut Cache,
-        scratch: &mut MtpScratch,
-        snapshot: &crate::cache::CacheSnapshot,
-        h_seed: &mut CudaSlice<f32>,
-        fill_prev: &mut CudaSlice<f32>,
-        generation: OptiForkGeneration,
-        action: OptiForkAction,
-        optimistic_pending: u32,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        debug_assert!(action != OptiForkAction::Abort);
-        let miss_started = std::time::Instant::now();
-        let keep = action == OptiForkAction::Hit;
-        let saved: Vec<i32> = (0..self.split)
-            .map(|il| snapshot.kv_len[il].map(|v| v as i32).unwrap_or(0))
-            .collect();
-        let seed = &self.seeds[generation.slot];
-        {
-            let _stage = self.rt.enter(0);
-            let e0 = self.rt.engine(0, e);
-            e0.htod_i32_into(&mut self.saved_lens, &saved)?;
-            let forced = if keep {
-                [1u32, optimistic_pending]
-            } else {
-                [0u32, optimistic_pending]
-            };
-            e0.htod_u32_into(&mut self.forced_acc, &forced)?;
-            e0.spec_fork_valid(&self.forced_acc, optimistic_pending, &mut self.valid)?;
-            e0.spec_fork_reconcile_kv(
-                &self.len_ptrs,
-                &self.saved_lens,
-                &self.forced_acc,
-                &self.valid,
-                0,
-                self.split,
-            )?;
-            for il in 0..self.split {
-                if let Some(recur) = cache.recur[il].as_mut() {
-                    let conv = snapshot.conv[il]
-                        .as_ref()
-                        .ok_or("optipipe stage0 snapshot missing conv state")?;
-                    let ssm = snapshot.ssm[il]
-                        .as_ref()
-                        .ok_or("optipipe stage0 snapshot missing ssm state")?;
-                    e0.spec_fork_restore_f32(conv, &mut recur.conv_state, &self.valid)?;
-                    e0.spec_fork_restore_f32(ssm, &mut recur.ssm_state, &self.valid)?;
-                }
-            }
-            e0.spec_fork_restore_f32(&seed.h_seed, h_seed, &self.valid)?;
-            e0.spec_fork_restore_f32(&seed.fill_prev, fill_prev, &self.valid)?;
-        }
-
-        if keep {
-            OPTI_FORK_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            return Ok(());
-        }
-
-        for il in 0..self.split {
-            if let (Some(kv), Some(saved)) = (cache.kv[il].as_mut(), snapshot.kv_len[il]) {
-                kv.len = saved;
-            }
-        }
-        scratch.set_len(e, seed.scratch_len)?;
-        // Targeted E_restart: publish only stage 0's reconcile to the caller, then bound the
-        // forced diagnostic so the retained number is the actual miss cost, not enqueue time.
-        let caller = e.stream();
-        self.rt.publish_to(0, &caller)?;
-        caller.synchronize()?;
-        let miss_ms = miss_started.elapsed().as_secs_f64() * 1e3;
-        eprintln!(
-            "[opti-fork-reconcile] generation={} slot={} miss_ms={miss_ms:.3}",
-            generation.id, generation.slot,
-        );
-        OPTI_FORK_MISSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        Ok(())
-    }
-
-    fn retire(&mut self, generation: OptiForkGeneration) -> Result<(), Box<dyn std::error::Error>> {
-        self.generations.retire(generation)
-    }
 }
 
 /// MEMRA_SPEC_ROUND_PROF counters: whole-round wall, so the round can be weighed against the
@@ -4607,102 +3437,6 @@ impl HybridModel {
             scratch.push_plane(e, &self.cfg, &self.plan, head.geom.as_ref())?;
         }
         Ok(scratch)
-    }
-
-    fn opti_graph_draft_step(
-        &self,
-        e: &Engine,
-        mtp: &MtpHead,
-        dctx: &mut DraftGraphCtx,
-        scratch: &mut MtpScratch,
-        d_vocab: usize,
-    ) -> Result<(u32, f32), Box<dyn std::error::Error>> {
-        // dcw door: one replay appends one device-counter row; pre-arm ring headroom
-        // host-side before launching (no-op on flat planes).
-        if step35_draft_dcw_on() {
-            scratch.ensure_dcw_headroom(e, 2)?;
-        }
-        dctx.graph
-            .as_ref()
-            .ok_or("optipipe controller requires the greedy draft graph")?
-            .launch()?;
-        scratch.kv.len += 1;
-        let idx = e.dtoh_u32_one(&dctx.g_tok)?;
-        if (idx as usize) >= d_vocab {
-            return Err(
-                format!("optipipe draft argmax sentinel 0x{idx:08x} >= d_vocab {d_vocab}").into(),
-            );
-        }
-        let probability = e.dtoh(&dctx.g_p)?[0];
-        if !probability.is_finite() || !(0.0..=1.0).contains(&probability) {
-            return Err(format!("optipipe draft probability is invalid: {probability}").into());
-        }
-        let token = match &mtp.d2t {
-            Some(map) => map[idx as usize],
-            None => idx,
-        };
-        if token != idx {
-            e.set_u32_one(&mut dctx.g_tok, token)?;
-        }
-        Ok((token, probability))
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn opti_controller_draft_step(
-        &self,
-        e: &Engine,
-        mtp: &MtpHead,
-        dctx: &mut DraftGraphCtx,
-        scratch: &mut MtpScratch,
-        d_vocab: usize,
-        eager_state: &mut Option<(u32, CudaSlice<f32>)>,
-        eager_pos: usize,
-        embd_dev: Option<(&CudaSlice<u8>, i32, usize)>,
-        round_graph_ok: bool,
-    ) -> Result<(u32, f32), Box<dyn std::error::Error>> {
-        // GRAPH-LAUNCH HEADROOM GUARD (see GRAPH_LAUNCH_MIN_FREE): `round_graph_ok` is
-        // the round's headroom snapshot. Below the floor the main draft arm already ran
-        // eager (13651-class gate), which seeded `eager_state`, so the controller probe
-        // rides its eager twin below instead of replaying the draft graph into an
-        // exhausted card. The seed-unavailable Err beneath stays the recoverable
-        // fail-closed for the shapes that never seed it.
-        if dctx.graph.is_some() && round_graph_ok {
-            return self.opti_graph_draft_step(e, mtp, dctx, scratch, d_vocab);
-        }
-        let (input_token, input_seed) = eager_state
-            .take()
-            .ok_or("optipipe eager continuation seed is unavailable")?;
-        let (logits, next_seed) = self.mtp_head_forward_dev(
-            e,
-            mtp,
-            input_token,
-            &input_seed,
-            scratch,
-            eager_pos,
-            embd_dev,
-            None,
-        )?;
-        let token_d = e.argmax_token_device(&logits, d_vocab)?;
-        let idx = e.dtoh_u32_one(&token_d)?;
-        if (idx as usize) >= d_vocab {
-            return Err(format!(
-                "optipipe eager draft argmax sentinel 0x{idx:08x} >= d_vocab {d_vocab}"
-            )
-            .into());
-        }
-        let probability_d = e.prob_of_token_device(&logits, &token_d, d_vocab)?;
-        let probability = e.dtoh(&probability_d)?[0];
-        if !probability.is_finite() || !(0.0..=1.0).contains(&probability) {
-            return Err(
-                format!("optipipe eager draft probability is invalid: {probability}").into(),
-            );
-        }
-        let token = match &mtp.d2t {
-            Some(map) => map[idx as usize],
-            None => idx,
-        };
-        *eager_state = Some((token, next_seed));
-        Ok((token, probability))
     }
 
     /// NextN head forward for ONE draft token (§A ops 1-13, T=1).
@@ -6212,7 +4946,6 @@ impl HybridModel {
             None,
             None,
             None,
-            None,
         )
     }
 
@@ -6239,49 +4972,8 @@ impl HybridModel {
             ckpt.take(),
             None,
             None,
-            None,
             graphs,
         )
-    }
-
-    /// Increment-0 two-session PP seam: release the peer after this lane's stage-0 boundary TX.
-    /// The two independent sessions keep their own cache/checkpoint state; only issue order moves.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
-    fn decode_step_t_core_pipelined(
-        &self,
-        e: &Engine,
-        tokens: &[u32],
-        pos0: usize,
-        cache: &mut Cache,
-        embd_dev: Option<(&CudaSlice<u8>, i32, usize)>,
-        mut ckpt: Option<&mut VerifyCkpt>,
-        pipe: &SpecPipeLane,
-        round: usize,
-    ) -> Result<(CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
-        let fence = crate::pp::pp_cuts(self.layers.len())
-            .ok_or("two-session speculative pipeline requires a PP stage cut")?;
-        if crate::pp::pp2_streams_off() || !crate::pp::spec_pp_on() {
-            return Err("two-session speculative pipeline requires the PP verify split".into());
-        }
-        let interval_fence = pipe.stage0_begin(round)?;
-        let _walk = pipe.coordinated_walk()?;
-        let ticket = self.verify_stage0_issue(
-            e,
-            tokens,
-            pos0,
-            cache,
-            embd_dev,
-            ckpt.as_deref_mut(),
-            None,
-            &fence,
-            Some(interval_fence),
-            pipe.trace(round),
-        )?;
-        pipe.stage0_end(round);
-        pipe.stage1_begin(round)?;
-        let result = self.verify_stage1_finish(e, ticket, cache, ckpt, None, &fence, true)?;
-        pipe.verify_end(round);
-        Ok(result)
     }
 
     /// ROUND-STREAM stage (c) 4: `stream` = (device verify tokens [t], device pos counter) —
@@ -6302,7 +4994,6 @@ impl HybridModel {
         embd_dev: Option<(&CudaSlice<u8>, i32, usize)>,
         mut ckpt: Option<&mut VerifyCkpt>,
         stream: Option<(&CudaSlice<u32>, &CudaSlice<i32>)>,
-        pp_pipe: Option<bool>,
         vtok_dev: Option<&CudaSlice<u32>>,
         graphs: Option<&mut DsparkVerifyGraphs>,
     ) -> Result<(CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
@@ -6339,7 +5030,6 @@ impl HybridModel {
                 ckpt.take(),
                 stream,
                 &fence,
-                pp_pipe,
             );
         }
         crate::pp::refuse_unsplit_if_remote(
@@ -6542,7 +5232,6 @@ impl HybridModel {
         mut ckpt: Option<&mut VerifyCkpt>,
         stream: Option<(&CudaSlice<u32>, &CudaSlice<i32>)>,
         fence: &[usize],
-        pp_pipe: Option<bool>,
     ) -> Result<(CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
         let ticket = self.verify_stage0_issue(
             e,
@@ -6553,8 +5242,6 @@ impl HybridModel {
             ckpt.as_deref_mut(),
             stream,
             fence,
-            pp_pipe,
-            None,
         )?;
         self.verify_stage1_finish(e, ticket, cache, ckpt, stream, fence, true)
     }
@@ -6572,8 +5259,6 @@ impl HybridModel {
         ckpt: Option<&mut VerifyCkpt>,
         stream: Option<(&CudaSlice<u32>, &CudaSlice<i32>)>,
         fence: &[usize],
-        pp_pipe: Option<bool>,
-        trace: Option<SpecPipeTraceCtx>,
     ) -> Result<VerifyBoundaryTicket, Box<dyn std::error::Error>> {
         assert!(
             !self.is_gemma4_e4b() && !self.gemma_batch_program(),
@@ -6603,9 +5288,6 @@ impl HybridModel {
         let n_embd = self.cfg.n_embd as usize;
         let t = tokens.len();
         let payload = t * n_embd;
-        if pp_pipe.is_some() {
-            assert_eq!(n_st, 2, "spec pipeline requires exactly two PP stages");
-        }
         // One-shot lane diagnostic: force natural PP-2 boundaries to completion so the server
         // log can price stage 0, the peer hop, the RX copy, and stage 1 + head separately without
         // nsys. The ordinary path keeps every enqueue asynchronous. N>2 is deliberately excluded:
@@ -6627,15 +5309,7 @@ impl HybridModel {
         // the spec round seed; the full anatomy is on `PpNRt::fence_stages_behind`). Order every
         // stage stream behind the caller before enqueueing new stage work.
         let reverse_started = std::time::Instant::now();
-        if pp_pipe != Some(false) {
-            rt.fence_stages_behind(&caller_stream)?;
-        }
-        if pp_pipe == Some(true) {
-            // Both session verifies must alternate boundary slots even when the ordinary
-            // decode overlap experiment is off. Prewarm before A's stage 0 so B cannot grow
-            // slot 1 by synchronizing the RX stream while A's stage 1 is in flight.
-            rt.prepare_overlap_slots(0, payload)?;
-        }
+        rt.fence_stages_behind(&caller_stream)?;
         if pp_anatomy {
             // Drain the reverse-publication dependency before timing stage 0 itself. At c=1 this
             // prices any primary-stream rollback/refresh tail inherited from the prior round.
@@ -6666,7 +5340,6 @@ impl HybridModel {
         let slot = {
             let _st0 = rt.enter(0);
             let e0 = rt.engine(0, e);
-            enqueue_spec_pipe_trace_marker(&e0.stream(), trace.as_ref(), "S0", "start", None)?;
             let stage0_started = std::time::Instant::now();
             let pos_d = stage_pos(e0)?;
             let x = match (stream, embd_dev) {
@@ -6684,12 +5357,7 @@ impl HybridModel {
                 stage0_ms = stage0_started.elapsed().as_secs_f64() * 1e3;
             }
             let tx_started = std::time::Instant::now();
-            let slot = if pp_pipe.is_some() {
-                rt.tx_pipelined(0, &x, payload)?
-            } else {
-                rt.tx(0, &x, payload)?
-            };
-            enqueue_spec_pipe_trace_marker(&e0.stream(), trace.as_ref(), "S0", "end", Some(slot))?;
+            let slot = rt.tx(0, &x, payload)?;
             if pp_anatomy {
                 e0.stream().synchronize()?;
                 tx_ms = tx_started.elapsed().as_secs_f64() * 1e3;
@@ -6706,13 +5374,11 @@ impl HybridModel {
             t,
             payload,
             n_st,
-            pipelined: pp_pipe.is_some(),
             pp_anatomy,
             pp_started,
             reverse_ms,
             stage0_ms,
             tx_ms,
-            trace,
             _walk_owner: walk_owner,
         })
     }
@@ -6738,13 +5404,11 @@ impl HybridModel {
             t,
             payload,
             n_st,
-            pipelined,
             pp_anatomy,
             pp_started,
             reverse_ms,
             stage0_ms,
             tx_ms,
-            trace,
             _walk_owner,
         } = ticket;
         let n_embd = self.cfg.n_embd as usize;
@@ -6784,11 +5448,7 @@ impl HybridModel {
                 stream,
                 None,
             )?;
-            slot = if pipelined {
-                rt.tx_pipelined(s, &x, payload)?
-            } else {
-                rt.tx(s, &x, payload)?
-            };
+            slot = rt.tx(s, &x, payload)?;
         }
 
         // ---- LAST STAGE: RX + final range + output_norm + lm head ----
@@ -6801,7 +5461,6 @@ impl HybridModel {
             el.stream().synchronize()?;
             rx_ms = rx_started.elapsed().as_secs_f64() * 1e3;
         }
-        enqueue_spec_pipe_trace_marker(&el.stream(), trace.as_ref(), "S1", "start", Some(slot))?;
         let stage1_started = std::time::Instant::now();
         let x = self.verify_layers(
             el,
@@ -6827,7 +5486,6 @@ impl HybridModel {
             el.rms_norm_decode(&x, self.output_norm.float_data(), &mut hn, n_embd, t, eps)?;
             el.matmul_decode_exact(&self.output, &hn, t)?
         };
-        enqueue_spec_pipe_trace_marker(&el.stream(), trace.as_ref(), "S1", "end", Some(slot))?;
         if pp_anatomy {
             el.stream().synchronize()?;
             stage1_ms = stage1_started.elapsed().as_secs_f64() * 1e3;
@@ -7093,11 +5751,11 @@ impl HybridModel {
                 static FFN2: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
                 let ffn_batch = *FFN2.get_or_init(tcol_ffn_on);
                 let oproj_batch = crate::tp::tcol_oproj_on() || ffn_batch;
-                // MEMRA_SPEC_FA2=1 (T=2 only): eligible layers defer BOTH columns' fa —
+                // MEMRA_SPEC_FA2=1: eligible layers defer every verify column's fa —
                 // the per-column pass norms/ropes/appends and stashes q+gate, then one
-                // shared-KV fa_decode_dcw2 per rank + the o_proj join produce the
-                // [2, o_out] mixed slab. The precheck runs before arming (stashing is
-                // unrecoverable); ineligible/boundary layers run the ordinary program.
+                // fa_decode_vec_q_v3_dcw_rows per rank attends every stashed row and the
+                // o_proj join produces the mixed slab. Ineligible/boundary layers run the
+                // ordinary program.
                 let fa2 = crate::tp::spec_fa2_on() && t <= 32;
                 let mut mixed_row = e.uninit(n_embd)?;
                 let mut pos_staged = false;
@@ -7485,9 +6143,8 @@ impl HybridModel {
         pos0: usize,
         cache: &mut Cache,
     ) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
-        let (logits, _hn) = self.decode_step_t_core_stream(
-            e, tokens, pos0, cache, None, None, None, None, None, None,
-        )?;
+        let (logits, _hn) =
+            self.decode_step_t_core_stream(e, tokens, pos0, cache, None, None, None, None, None)?;
         let t = tokens.len();
         let v = self.output.out_features();
         let mut am_d = e.stream().alloc_zeros::<u32>(t)?;
@@ -7508,9 +6165,8 @@ impl HybridModel {
         pos0: usize,
         cache: &mut Cache,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let (logits, _hn) = self.decode_step_t_core_stream(
-            e, tokens, pos0, cache, None, None, None, None, None, None,
-        )?;
+        let (logits, _hn) =
+            self.decode_step_t_core_stream(e, tokens, pos0, cache, None, None, None, None, None)?;
         Ok(logits)
     }
 
@@ -7533,7 +6189,6 @@ impl HybridModel {
             cache,
             None,
             Some(&mut ck),
-            None,
             None,
             None,
             None,
@@ -7587,7 +6242,6 @@ impl HybridModel {
             Some(embd_dev),
             Some(&mut ck),
             None,
-            None,
             Some(vtok),
             graphs,
         )?;
@@ -7618,7 +6272,6 @@ impl HybridModel {
             None,
             None,
             None,
-            None,
         )?;
         Ok((logits, DsparkVerifyCkpt(ck)))
     }
@@ -7634,7 +6287,7 @@ impl HybridModel {
         ckpt: &DsparkVerifyCkpt,
         keep: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.commit_verified_prefix(e, cache, snap, &ckpt.0, keep, false, None)
+        self.commit_verified_prefix(e, cache, snap, &ckpt.0, keep)
     }
 
     /// Slice-3 commit twin: restore to `keep` accepted columns when the round's linear
@@ -9446,8 +8099,6 @@ impl HybridModel {
         snap: &crate::cache::CacheSnapshot,
         ckpt: &VerifyCkpt,
         j: usize,
-        kv_lens_done: bool,
-        dev_j: Option<(&CudaSlice<u32>, usize, usize)>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         // GDN geometry derives lazily inside recurrent-layer arms. Full-attention plans carry no
         // recurrent state and must never be forced through a synthetic SSM geometry.
@@ -9458,7 +8109,7 @@ impl HybridModel {
         // buffers and stream order are identical to the per-layer memcpy sequence; the
         // kernel-rebuild (gdn-stash) arm below is untouched. MEMRA_STATE_COPY_BATCH=0 reverts.
         let mut batched_cols = false;
-        if state_copy_batch_on() && dev_j.is_none() {
+        if state_copy_batch_on() {
             use cudarc::driver::DevicePtr;
             let s = &e.gpu.stream();
             let mut conv_pairs: Vec<(u64, u64)> = Vec::new();
@@ -9511,10 +8162,7 @@ impl HybridModel {
         for il in 0..self.layers.len() {
             if let (Some(kvl), Some(saved)) = (cache.kv[il].as_mut(), snap.kv_len[il]) {
                 kvl.len = saved + j;
-                // devacc 3a: spec_rollback_kv already wrote len_d on-device (same value).
-                if !kv_lens_done {
-                    e.set_i32_one(&mut kvl.len_d, kvl.len as i32)?;
-                }
+                e.set_i32_one(&mut kvl.len_d, kvl.len as i32)?;
             }
             if let Some(rl) = cache.recur[il].as_mut() {
                 let Mixer::Linear(linear) = &self.layers[il].mixer else {
@@ -9530,58 +8178,28 @@ impl HybridModel {
                 if let Some(st) = &ckpt.gdn[il] {
                     let ring_old = snap.conv[il].as_ref().expect("snapshot missing conv");
                     let state_in = snap.ssm[il].as_ref().expect("snapshot missing ssm");
-                    if let Some((acc, base, t_v)) = dev_j {
-                        // 3b: j read on-device (_dc twins, same bodies; full accept early-exits).
-                        e.ssm_conv_ring_rebuild_dc(
-                            &st.qkv_mixed,
-                            ring_old,
-                            &mut rl.conv_state,
-                            conv_dim,
-                            acc,
-                            base,
-                            t_v,
-                            d_conv,
-                        )?;
-                        let mut o = e.uninit(d_state * num_v * j.max(1))?;
-                        e.gdn_scan_s128_dc(
-                            &st.q_l2,
-                            &st.k_l2,
-                            &st.v_g,
-                            &st.g_log,
-                            &st.beta,
-                            state_in,
-                            &mut rl.ssm_state,
-                            &mut o,
-                            num_v,
-                            acc,
-                            base,
-                            t_v,
-                            scale,
-                        )?;
-                    } else {
-                        e.ssm_conv_ring_rebuild(
-                            &st.qkv_mixed,
-                            ring_old,
-                            &mut rl.conv_state,
-                            conv_dim,
-                            j,
-                            d_conv,
-                        )?;
-                        let mut o = e.uninit(d_state * num_v * j)?; // scan output, discarded
-                        e.gdn_scan_s128(
-                            &st.q_l2,
-                            &st.k_l2,
-                            &st.v_g,
-                            &st.g_log,
-                            &st.beta,
-                            state_in,
-                            &mut rl.ssm_state,
-                            &mut o,
-                            num_v,
-                            j,
-                            scale,
-                        )?;
-                    }
+                    e.ssm_conv_ring_rebuild(
+                        &st.qkv_mixed,
+                        ring_old,
+                        &mut rl.conv_state,
+                        conv_dim,
+                        j,
+                        d_conv,
+                    )?;
+                    let mut o = e.uninit(d_state * num_v * j)?; // scan output, discarded
+                    e.gdn_scan_s128(
+                        &st.q_l2,
+                        &st.k_l2,
+                        &st.v_g,
+                        &st.g_log,
+                        &st.beta,
+                        state_in,
+                        &mut rl.ssm_state,
+                        &mut o,
+                        num_v,
+                        j,
+                        scale,
+                    )?;
                 } else if let Some(cols) = &ckpt.cols[il] {
                     if !batched_cols {
                         let (c, s) = &cols[j - 1];
@@ -10859,175 +9477,6 @@ impl HybridModel {
         })
     }
 
-    /// Forced-gate exact state comparison. This intentionally reads the real live prefixes from
-    /// their owning PP devices: matching emitted ids alone would miss a stale `len_d`, recurrent
-    /// snapshot, or draft-KV row that only corrupts the following round.
-    pub fn optipipe_compare_session_state(
-        &self,
-        e: &Engine,
-        reference: &SpecSession,
-        candidate: &SpecSession,
-    ) -> Result<OptiForkStateIdentity, Box<dyn std::error::Error>> {
-        fn fail(what: &str) -> Box<dyn std::error::Error> {
-            format!("optipipe state mismatch: {what}").into()
-        }
-        fn same_f32(a: &[f32], b: &[f32]) -> bool {
-            a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.to_bits() == y.to_bits())
-        }
-        fn compare_layers(
-            es: &Engine,
-            range: std::ops::Range<usize>,
-            reference: &SpecSession,
-            candidate: &SpecSession,
-            report: &mut OptiForkStateIdentity,
-        ) -> Result<(), Box<dyn std::error::Error>> {
-            for il in range {
-                match (&reference.cache.kv[il], &candidate.cache.kv[il]) {
-                    (Some(a), Some(b)) => {
-                        if a.len != b.len {
-                            return Err(fail(&format!(
-                                "layer {il} host KV len {} != {}",
-                                a.len, b.len
-                            )));
-                        }
-                        let ad = es.dtoh_i32(&a.len_d)?;
-                        let bd = es.dtoh_i32(&b.len_d)?;
-                        if ad != bd || ad.first().copied() != Some(a.len as i32) {
-                            return Err(fail(&format!(
-                                "layer {il} device KV len {ad:?} != {bd:?} (host={})",
-                                a.len,
-                            )));
-                        }
-                        let kb = a.len * a.k_tok_bytes;
-                        let vb = a.len * a.v_tok_bytes;
-                        if kb > 0 {
-                            let ak = es.dtoh_u8_view(&a.k.slice(0..kb))?;
-                            let bk = es.dtoh_u8_view(&b.k.slice(0..kb))?;
-                            if ak != bk {
-                                let at = ak.iter().zip(&bk).position(|(x, y)| x != y).unwrap();
-                                return Err(fail(&format!(
-                                    "layer {il} K bytes at byte {at} row {} offset {}: {} != {}",
-                                    at / a.k_tok_bytes,
-                                    at % a.k_tok_bytes,
-                                    ak[at],
-                                    bk[at],
-                                )));
-                            }
-                        }
-                        if vb > 0 {
-                            let av = es.dtoh_u8_view(&a.v.slice(0..vb))?;
-                            let bv = es.dtoh_u8_view(&b.v.slice(0..vb))?;
-                            if av != bv {
-                                let at = av.iter().zip(&bv).position(|(x, y)| x != y).unwrap();
-                                return Err(fail(&format!(
-                                    "layer {il} V bytes at byte {at} row {} offset {}: {} != {}",
-                                    at / a.v_tok_bytes,
-                                    at % a.v_tok_bytes,
-                                    av[at],
-                                    bv[at],
-                                )));
-                            }
-                        }
-                        report.trunk_kv_bytes += kb + vb;
-                    }
-                    (None, None) => {}
-                    _ => return Err(fail(&format!("layer {il} KV presence"))),
-                }
-                match (&reference.cache.recur[il], &candidate.cache.recur[il]) {
-                    (Some(a), Some(b)) => {
-                        let ac = es.dtoh(&a.conv_state)?;
-                        let bc = es.dtoh(&b.conv_state)?;
-                        if !same_f32(&ac, &bc) {
-                            return Err(fail(&format!("layer {il} conv state")));
-                        }
-                        let as_ = es.dtoh(&a.ssm_state)?;
-                        let bs = es.dtoh(&b.ssm_state)?;
-                        if !same_f32(&as_, &bs) {
-                            return Err(fail(&format!("layer {il} SSM state")));
-                        }
-                        report.recurrent_bytes += (ac.len() + as_.len()) * 4;
-                    }
-                    (None, None) => {}
-                    _ => return Err(fail(&format!("layer {il} recurrent presence"))),
-                }
-            }
-            Ok(())
-        }
-
-        if reference.committed != candidate.committed {
-            return Err(fail("committed token ids"));
-        }
-        if reference.cache.pos != candidate.cache.pos
-            || reference.cache.max_ctx != candidate.cache.max_ctx
-        {
-            return Err(fail("cache pos/capacity"));
-        }
-        if reference.pending_tok != candidate.pending_tok
-            || reference.next_pred != candidate.next_pred
-            || reference.sctr != candidate.sctr
-            || reference.uctr != candidate.uctr
-        {
-            return Err(fail("pending/prediction/counter tail"));
-        }
-
-        let mut report = OptiForkStateIdentity::default();
-        if let Some(fence) = crate::pp::pp_cuts(self.layers.len()) {
-            let rt = crate::pp::PpNRt::get(e)?;
-            for stage in 0..rt.n_stages() {
-                let _scope = rt.enter(stage);
-                compare_layers(
-                    rt.engine(stage, e),
-                    fence[stage]..fence[stage + 1],
-                    reference,
-                    candidate,
-                    &mut report,
-                )?;
-            }
-        } else {
-            compare_layers(e, 0..self.layers.len(), reference, candidate, &mut report)?;
-        }
-
-        if reference.scratch.plane_count() != candidate.scratch.plane_count() {
-            return Err(fail("draft scratch plane count"));
-        }
-        for index in 0..reference.scratch.plane_count() {
-            let (a, _) = reference.scratch.plane(index);
-            let (b, _) = candidate.scratch.plane(index);
-            if a.len != b.len
-                || a.kv_dim_k != b.kv_dim_k
-                || a.kv_dim_v != b.kv_dim_v
-                || a.k_tok_bytes != b.k_tok_bytes
-                || a.v_tok_bytes != b.v_tok_bytes
-                || e.dtoh_i32(&a.len_d)? != e.dtoh_i32(&b.len_d)?
-            {
-                return Err(fail(&format!("draft scratch plane {index} length/layout")));
-            }
-            let kb = a.len * a.k_tok_bytes;
-            let vb = a.len * a.v_tok_bytes;
-            if kb > 0 && e.dtoh_u8_view(&a.k.slice(0..kb))? != e.dtoh_u8_view(&b.k.slice(0..kb))? {
-                return Err(fail(&format!("draft scratch plane {index} K bytes")));
-            }
-            if vb > 0 && e.dtoh_u8_view(&a.v.slice(0..vb))? != e.dtoh_u8_view(&b.v.slice(0..vb))? {
-                return Err(fail(&format!("draft scratch plane {index} V bytes")));
-            }
-            report.scratch_kv_bytes += kb + vb;
-        }
-
-        match (&reference.last_h, &candidate.last_h) {
-            (Some(a), Some(b)) => {
-                let ah = e.dtoh(a)?;
-                let bh = e.dtoh(b)?;
-                if !same_f32(&ah, &bh) {
-                    return Err(fail("last hidden/seed bytes"));
-                }
-                report.hidden_bytes = ah.len() * 4;
-            }
-            (None, None) => {}
-            _ => return Err(fail("last hidden/seed presence")),
-        }
-        Ok(report)
-    }
-
     /// SESSION-AFFINITY REWIND (lane/session-affinity, 2026-08-05): roll `sess` back to its
     /// retained prompt-end checkpoint, so a request whose prompt matches
     /// `committed[..rewind_pos()]` exactly can resume there and prime only its own delta.
@@ -11376,170 +9825,6 @@ impl HybridModel {
         self.uses_gemma_program()
     }
 
-    /// Reduced-matrix admission for increment 1. This deliberately does not change the PP-2
-    /// serving policy: the worker calls it only after `MEMRA_SPEC_PIPE=1` and an explicit spec
-    /// session already exist.
-    pub fn spec_pipe_available(&self, e: &Engine) -> bool {
-        if std::env::var("MEMRA_SPEC_PIPE").as_deref() != Ok("1")
-            || !spec_devacc()
-            || spec_replay_env_enabled()
-            || spec_stream()
-            || std::env::var("MEMRA_SPEC_ADAPT").as_deref() == Ok("1")
-            || std::env::var("MEMRA_SPEC_PMIN0").as_deref() == Ok("1")
-            || std::env::var("MEMRA_SPEC_PP_ANATOMY").as_deref() == Ok("1")
-            || std::env::var("MEMRA_SPEC_PMIN")
-                .ok()
-                .and_then(|v| v.parse::<f32>().ok())
-                .unwrap_or(0.0)
-                > 0.0
-            || self.is_gemma4_e4b()
-            || self.gemma_batch_program()
-            || self.mtp.is_none()
-            || !self.mtp_extra.is_empty()
-            // Both paired lanes would otherwise hold the model-global verify-graph mutex across
-            // setup and wait for each other. Independent graph pools are future work; the pair
-            // requires the explicit eager-verify arm today.
-            || crate::spec::spec_verify_graph_env()
-                .unwrap_or_else(|| self.vgraph_family_default())
-        {
-            return false;
-        }
-        let Some(cuts) = crate::pp::pp_cuts(self.layers.len()) else {
-            return false;
-        };
-        if cuts.len() != 3 || crate::pp::pp2_streams_off() || !crate::pp::spec_pp_on() {
-            return false;
-        }
-        crate::pp::PpNRt::get(e)
-            .map(|rt| rt.n_stages() == 2 && rt.cross_device())
-            .unwrap_or(false)
-    }
-
-    /// Two warm greedy continuation bursts over one PP-2 interval coordinator. The two existing
-    /// `generate_spec_inner2` call stacks own all per-session round locals; only phase issue order
-    /// changes. No callback is accepted in increment 1 — the worker publishes each completed burst.
-    #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-    pub fn generate_spec_session_pair(
-        &self,
-        e: &Engine,
-        sess_a: &mut SpecSession,
-        max_new_a: usize,
-        k_a: usize,
-        sess_b: &mut SpecSession,
-        max_new_b: usize,
-        k_b: usize,
-    ) -> Result<((Vec<u32>, usize, usize), (Vec<u32>, usize, usize)), Box<dyn std::error::Error>>
-    {
-        self.refuse_hyper("generate_spec_session_pair")?;
-        if !self.spec_pipe_available(e) {
-            return Err("two-session speculative pipeline is outside its reduced matrix".into());
-        }
-        let rt = crate::pp::PpNRt::get(e)?;
-        let pp_walk = rt.acquire_walk("generate_spec_session_pair")?;
-        let pp_permit = rt.walk_permit(&pp_walk, "generate_spec_session_pair")?;
-        if max_new_a == 0 || max_new_b == 0 || k_a == 0 || k_b == 0 {
-            return Err(
-                "two-session speculative pipeline requires non-empty positive-K bursts".into(),
-            );
-        }
-        for sess in [&*sess_a, &*sess_b] {
-            if sess.committed.is_empty()
-                || sess.last_h.is_none()
-                || (sess.next_pred.is_none() && sess.pending_tok.is_none())
-            {
-                return Err("two-session speculative pipeline requires warm continuations".into());
-            }
-        }
-
-        let graph_ok = std::env::var("MEMRA_SPEC_NOGRAPH").is_err()
-            && !spec_host_embd()
-            && self.mtp_graph_capturable()
-            && self.mtp_extra.is_empty()
-            && !crate::model::full_prec_enabled();
-        let graph_a = graph_ok && k_a + 2 < 96;
-        let graph_b = graph_ok && k_b + 2 < 96;
-        let was_tracking = e.ctx().is_event_tracking();
-        if (graph_a || graph_b) && was_tracking {
-            unsafe {
-                e.ctx().disable_event_tracking();
-            }
-        }
-
-        static LOGGED: std::sync::Once = std::sync::Once::new();
-        LOGGED.call_once(|| {
-            eprintln!("[spec-pipe] two-session PP-2 continuation pipeline engaged");
-        });
-        let sync = std::sync::Arc::new(SpecPipeSync::new());
-        let lane_a = SpecPipeLane {
-            sync: sync.clone(),
-            lane: 0,
-            rt,
-            walk_permit: pp_permit.clone(),
-        };
-        let lane_b = SpecPipeLane {
-            sync,
-            lane: 1,
-            rt,
-            walk_permit: pp_permit,
-        };
-        let mut sess_b_ptr = SpecPipeSessionPtr(sess_b as *mut SpecSession);
-        let (result_a, result_b) = std::thread::scope(|scope| {
-            let b = scope.spawn(move || {
-                let mut finish = SpecPipeFinish::new(&lane_b);
-                let sess_b = unsafe { sess_b_ptr.get_mut() };
-                let result = (|| -> Result<_, String> {
-                    e.ctx().bind_to_thread().map_err(|err| err.to_string())?;
-                    self.generate_spec_inner2(
-                        e,
-                        &[],
-                        max_new_b,
-                        k_b,
-                        graph_b,
-                        Some(sess_b),
-                        None,
-                        None,
-                        None,
-                        None,
-                        Some(&lane_b),
-                    )
-                    .map_err(|err| err.to_string())
-                })();
-                finish.close(result.is_err());
-                result
-            });
-            let mut finish = SpecPipeFinish::new(&lane_a);
-            let result_a = self.generate_spec_inner2(
-                e,
-                &[],
-                max_new_a,
-                k_a,
-                graph_a,
-                Some(sess_a),
-                None,
-                None,
-                None,
-                None,
-                Some(&lane_a),
-            );
-            finish.close(result_a.is_err());
-            let result_b = b
-                .join()
-                .map_err(|_| "paired speculative session B panicked".to_string())
-                .and_then(|r| r);
-            (result_a, result_b)
-        });
-
-        if (graph_a || graph_b) && was_tracking {
-            unsafe {
-                e.ctx().enable_event_tracking();
-            }
-        }
-        let result_a = result_a?;
-        let result_b = result_b.map_err(|err| -> Box<dyn std::error::Error> { err.into() })?;
-        Ok((result_a, result_b))
-    }
-
     /// One spec-decode turn on a live session. `suffix` = the NEW tokens only (turn N+1's user
     /// message rendered through the chat template continuation). Returns (new tokens emitted,
     /// drafted, accepted); session.committed grows by suffix + emitted.
@@ -11700,7 +9985,6 @@ impl HybridModel {
             constraint,
             on_commit,
             prime_split,
-            None,
         );
         if graph_draft && was_tracking {
             unsafe {
@@ -11752,9 +10036,8 @@ impl HybridModel {
             && k + 2 < 96
             && !crate::model::full_prec_enabled();
         if !graph_draft {
-            return self.generate_spec_inner2(
-                e, prompt, max_new, k, false, None, None, None, None, None, None,
-            );
+            return self
+                .generate_spec_inner2(e, prompt, max_new, k, false, None, None, None, None, None);
         }
         let was_tracking = e.ctx().is_event_tracking();
         if was_tracking {
@@ -11762,9 +10045,8 @@ impl HybridModel {
                 e.ctx().disable_event_tracking();
             }
         }
-        let r = self.generate_spec_inner2(
-            e, prompt, max_new, k, true, None, None, None, None, None, None,
-        );
+        let r =
+            self.generate_spec_inner2(e, prompt, max_new, k, true, None, None, None, None, None);
         if was_tracking {
             unsafe {
                 e.ctx().enable_event_tracking();
@@ -11787,13 +10069,8 @@ impl HybridModel {
         mut constraint: Option<&mut dyn SpecConstraint>,
         mut on_commit: Option<&mut dyn FnMut(&[u32]) -> bool>,
         prime_split: Option<usize>,
-        pipe: Option<&SpecPipeLane>,
     ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
         assert!(k >= 1, "k must be >= 1");
-        let pipe_setup_walk = match pipe {
-            Some(p) => Some(p.setup_begin()?),
-            None => None,
-        };
         // sse-cadence flush cursor: everything in out[..flushed] has been handed to on_commit.
         let mut flushed = 0usize;
         // admission yield (2026-08-06): on_commit's continue-verdict; false = end the burst
@@ -12600,7 +10877,6 @@ impl HybridModel {
         let mut preds_d = e.alloc_u32_zeroed(k + 2)?;
 
         let debug_spec = std::env::var("MEMRA_DEBUG_SPEC").is_ok();
-        let fork_mode = OptiForkGateMode::configured();
         // MEMRA_SPEC_STATS=1: per-slot accept histogram + draft-length histogram, printed once at
         // the end. Metric normalization vs the reference engine: BOTH engines count
         // accepted/drafted where the chain stopped at p-min and the sub-threshold token is
@@ -12937,7 +11213,7 @@ impl HybridModel {
                         g_p,
                         &mut *scratch,
                         0,
-                        p_min > 0.0 || fork_mode == OptiForkGateMode::Controller,
+                        p_min > 0.0,
                         true,
                         embd_gpu.expect("graph draft requires resident embedding"),
                         embd_qt,
@@ -13701,104 +11977,8 @@ impl HybridModel {
             .unwrap_or(7);
         let k_cap = k.min(cap_max).max(1);
         let mut kc = k_cap;
-        let mut opti_fork: Option<OptiForkState> = None;
-        let mut _opti_walk: Option<crate::pp::PpWalkLease> = None;
-        let mut _opti_walk_borrow: Option<crate::pp::PpWalkBorrowGuard> = None;
-        let mut fork_snapshot: Option<crate::cache::CacheSnapshot> = None;
-        if fork_mode != OptiForkGateMode::Disabled {
-            let fence = crate::pp::pp_cuts(self.layers.len());
-            let refusal = if !session_mode {
-                Some("not-session")
-            } else if k != 1 || adapt {
-                Some("requires-fixed-k1")
-            } else if sampled || constraint.is_some() || spec_replay {
-                Some("sampled-constrained-or-replay")
-            } else if pipe.is_some() {
-                Some("two-session-pipeline")
-            } else if !spec_devacc() {
-                Some("requires-device-accept")
-            } else if stream_active || crate::spec::spec_stream() {
-                Some("round-stream")
-            } else if !self.mtp_extra.is_empty() {
-                Some("multi-head-mtp")
-            } else if crate::cache::swa_ring_on() || cache.has_swa_ring() {
-                Some("swa-ring")
-            } else if crate::pp::pp_host_bounce_active() {
-                Some("host-bounce")
-            } else if fork_mode == OptiForkGateMode::Controller
-                && cache.recur.iter().any(Option::is_some)
-            {
-                Some("controller-requires-zero-recurrent-state")
-            } else if fence.as_ref().is_none_or(|f| f.len() != 3) {
-                Some("requires-pp2")
-            } else {
-                None
-            };
-            if let Some(reason) = refusal {
-                OPTI_FORK_REFUSALS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                eprintln!("[opti-fork] refused reason={reason}");
-            } else {
-                let fence = fence.expect("validated PP-2 fence");
-                let rt = crate::pp::PpNRt::get(e)?;
-                let primary_stage0 = rt.engine(0, e).ctx().ordinal() == e.ctx().ordinal();
-                let primary_stage1 = rt.engine(1, e).ctx().ordinal() == e.ctx().ordinal();
-                let primary_supported =
-                    primary_stage0 || (fork_mode == OptiForkGateMode::Controller && primary_stage1);
-                if !rt.cross_device() || !primary_supported {
-                    OPTI_FORK_REFUSALS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    eprintln!("[opti-fork] refused reason=requires-supported-primary-cross-device");
-                } else {
-                    // The optimistic controller can keep two boundary tickets in flight. Give
-                    // every nested verify an explicit borrow of one whole-walk generation; no
-                    // `pp_pipe` boolean is allowed to bypass ownership on its own.
-                    let walk = rt.acquire_walk("opti_fork_coordinator")?;
-                    let permit = rt.walk_permit(&walk, "opti_fork_coordinator")?;
-                    let borrow = rt.borrow_walk(&permit, "opti_fork_coordinator")?;
-                    // Both recurrent snapshots and both seed generations are allocated before
-                    // the first fork, each through its owning PP stage. Allocation failure
-                    // therefore happens before any optimistic state mutation can occur.
-                    let current_snapshot = opti_snapshot_stage_owned(e, cache, rt, &fence)?;
-                    let alternate_snapshot = opti_snapshot_stage_owned(e, cache, rt, &fence)?;
-                    let fork = OptiForkState::new(
-                        e,
-                        cache,
-                        fork_mode,
-                        alternate_snapshot,
-                        &h_seed_buf,
-                        &fill_prev,
-                        rt,
-                        fence[1],
-                        self.layers.len(),
-                    )?;
-                    eprintln!(
-                        "[opti-fork] armed mode={fork_mode:?} snapshots=2 seeds=2 split={} \
-                         payload_dev0={} payload_dev1={} q_threshold={:.3}",
-                        fence[1],
-                        fork.logical_payload_bytes[0],
-                        fork.logical_payload_bytes[1],
-                        fork.controller.map_or(0.0, |policy| policy.threshold),
-                    );
-                    fork_snapshot = Some(current_snapshot);
-                    opti_fork = Some(fork);
-                    _opti_walk = Some(walk);
-                    _opti_walk_borrow = Some(borrow);
-                }
-            }
-        }
-        // Persistent snapshot buffers are allocated once and refreshed in place. The fork arm
-        // uses stage-owned snapshots; refused/disabled arms retain the existing generic helper.
-        let mut snap = match fork_snapshot {
-            Some(snapshot) => snapshot,
-            None => cache.snapshot(e)?,
-        };
-        let mut carried_opti: Option<OptiControllerTicket> = None;
-        // ROUND-STREAM stage (b) 3a: device table of per-layer kvl.len_d pointers (stable — the
-        // cache never reallocates len_d; see cache.rs "stable pointer" note). 0 = no KV layer.
-        let kv_len_ptrs: Option<CudaSlice<u64>> = if spec_devacc() && !spec_replay {
-            Some(crate::round_stream::kv_len_ptr_table(e, cache, None)?)
-        } else {
-            None
-        };
+        // Persistent snapshot buffers are allocated once and refreshed in place.
+        let mut snap = cache.snapshot(e)?;
         // BONUS FOLD (2026-07-04): after a FULL accept the bonus token is NOT committed with a
         // separate T=1 trunk pass (a full weight read per round). It stays PENDING and rides as
         // column 0 of the NEXT round's verify batch. Under predecessor pairing the next chain
@@ -13890,10 +12070,6 @@ impl HybridModel {
             .and_then(|g| g.as_ref())
             .map(|g| g.t_capacity())
             .unwrap_or(0);
-        if let Some(p) = pipe {
-            p.setup_end();
-        }
-        drop(pipe_setup_walk);
         let mut graph_guard_noted = false;
         while keep_going && out.len() < max_new {
             // GRAPH-LAUNCH HEADROOM GUARD (see GRAPH_LAUNCH_MIN_FREE): below the floor,
@@ -13962,7 +12138,6 @@ impl HybridModel {
                         Some((&vtok_d, &pos_ctr)),
                         None,
                         None,
-                        None,
                     )?;
                     for j in 0..t_v_s {
                         e.argmax_token_device_col(&tl_d, j, n_vocab, &mut preds_d, j)?;
@@ -14024,34 +12199,8 @@ impl HybridModel {
                 keep_going = flush_commit(&mut on_commit, &out, &mut flushed);
                 continue;
             }
-            let pipe_draft = match pipe {
-                Some(p) => Some(p.draft_begin(round)?),
-                None => None,
-            };
             let pos = cache.pos; // #tokens committed (EXCLUDES a pending bonus)
-            let mut current_opti = carried_opti.take();
-            let mut fork_generation = if current_opti.is_none() && pending.is_some() {
-                match opti_fork.as_mut() {
-                    Some(fork) if fork.mode.is_forced() => Some(fork.reserve(&mut snap)?),
-                    None => None,
-                    Some(_) => None,
-                }
-            } else {
-                None
-            };
-            if current_opti.is_none() {
-                if let Some(fork) = opti_fork.as_ref() {
-                    opti_snapshot_stage_owned_into(e, cache, fork.rt, &fork.fence, &mut snap)?;
-                } else {
-                    cache.snapshot_into(e, &mut snap)?;
-                }
-            } else if snap.pos != pos {
-                return Err(format!(
-                    "optipipe carried snapshot pos {} != current pos {pos}",
-                    snap.pos
-                )
-                .into());
-            } // §C: snapshot BEFORE draft+verify (already retained for a carried successor)
+            cache.snapshot_into(e, &mut snap)?; // §C: snapshot BEFORE draft+verify
             ph_mark(&mut ph_rest, phase_on);
 
             // --- 1. DRAFT k tokens with the NextN head (autoregressive, T=1 each) ---
@@ -14064,23 +12213,7 @@ impl HybridModel {
             let k_this = if adapt { kc } else { k };
             let mut draft: Vec<u32> = Vec::with_capacity(k);
             let mut draft_idx: Vec<u32> = Vec::with_capacity(k); // trimmed-vocab ids (== draft when untrimmed)
-            let mut controller_draft_prob: Option<f32> = None;
-            let mut controller_eager_state: Option<(u32, CudaSlice<f32>)> = None;
-            if let Some(ticket) = current_opti.as_mut() {
-                let carried_pending = pending.ok_or("optipipe carried successor lost pending")?;
-                if ticket.verify_tokens[0] != carried_pending {
-                    return Err(format!(
-                        "optipipe carried pending mismatch: ticket={} live={carried_pending}",
-                        ticket.verify_tokens[0],
-                    )
-                    .into());
-                }
-                draft.push(ticket.verify_tokens[1]);
-                controller_draft_prob = Some(ticket.draft_prob);
-                controller_eager_state = ticket
-                    .take_eager_seed()
-                    .map(|seed| (ticket.verify_tokens[1], seed));
-            } else {
+            {
                 // Round-start draft-KV sync (BOTH paths). Persistent: truncate/align to the committed
                 // history — slots 0..P hold entries for the tokens before last_token@P (P = pos +
                 // base0 - 1); this single set_len IS the draft-side rollback (drops last round's
@@ -14203,9 +12336,6 @@ impl HybridModel {
                         } else {
                             None
                         };
-                        if j == 0 {
-                            controller_draft_prob = draft_p;
-                        }
                         if let Some(p) = draft_p.filter(|_| p_min > 0.0)
                             && p < p_min
                             && (j > 0 || (pmin0 && base0 == 1))
@@ -14411,18 +12541,11 @@ impl HybridModel {
                             Some(map) => map[idx as usize],
                             None => idx,
                         };
-                        let draft_p = if p_min > 0.0
-                            || opti_fork
-                                .as_ref()
-                                .is_some_and(|fork| fork.controller.is_some())
-                        {
+                        let draft_p = if p_min > 0.0 {
                             Some(e.dtoh(&dctx.g_p)?[0])
                         } else {
                             None
                         };
-                        if j == 0 {
-                            controller_draft_prob = draft_p;
-                        }
                         if let Some(p) = draft_p.filter(|_| p_min > 0.0)
                             && p < p_min
                             && (j > 0 || (pmin0 && base0 == 1))
@@ -14706,19 +12829,12 @@ impl HybridModel {
                         if sampled {
                             draft_idx.push(idx);
                         }
-                        let draft_p = if p_min > 0.0
-                            || opti_fork
-                                .as_ref()
-                                .is_some_and(|fork| fork.controller.is_some())
-                        {
+                        let draft_p = if p_min > 0.0 {
                             let p_d = e.prob_of_token_device(&dl_d, &tok_d, d_vocab)?;
                             Some(e.dtoh(&p_d)?[0])
                         } else {
                             None
                         };
-                        if j == 0 {
-                            controller_draft_prob = draft_p;
-                        }
                         if let Some(p) = draft_p.filter(|_| p_min > 0.0)
                             && p < p_min
                             && (j > 0 || (pmin0 && base0 == 1))
@@ -14745,20 +12861,9 @@ impl HybridModel {
                             break;
                         }
                     }
-                    if !chain_heads
-                        && opti_fork
-                            .as_ref()
-                            .is_some_and(|fork| fork.controller.is_some())
-                    {
-                        controller_eager_state = Some((e_tok, d_seed));
-                    }
                 }
             }
             let k_round = draft.len();
-            if let Some(p) = pipe {
-                p.draft_end(round);
-            }
-            drop(pipe_draft);
 
             ph_mark(&mut ph_draft, phase_on);
             // --- 2. VERIFY: one batched target forward. With a pending bonus, it rides as col 0
@@ -14775,300 +12880,12 @@ impl HybridModel {
             let base = if pending.is_some() { 1 } else { 0 };
             // ckpt (REPLAY-FREE partial accept): retain per-layer state-rebuild inputs alongside
             // the verify. Pure buffer keep-alives + dtod clones — kernel work is unchanged.
-            let mut ckpt = if let Some(ticket) = current_opti.as_mut() {
-                Some(ticket.take_ckpt())
-            } else if spec_replay {
+            let mut ckpt = if spec_replay {
                 None
             } else {
                 Some(VerifyCkpt::new(self.layers.len()))
             };
-            let controller_can_probe = base == 1
-                && k_round == 1
-                && out.len().saturating_add(2) < max_new
-                && controller_draft_prob.is_some()
-                && opti_fork
-                    .as_ref()
-                    .and_then(|fork| fork.controller.as_ref())
-                    .is_some_and(|policy| !policy.breaker_tripped);
-            let mut successor_attempt: Option<OptiControllerTicket> = None;
-            let mut rejected_probe: Option<(f32, u32)> = None;
-            let mut controller_prepared: Option<OptiControllerPrepared> = None;
-            if controller_can_probe {
-                // Prepare d2/q and, on admission, d3 before either current verify half is
-                // issued. N stage 0 can then be followed immediately by N+1 stage 0; once N's
-                // boundary fires, those dev0 launches overlap N stage 1 on dev1. Preparing on
-                // the primary stream after N stage 1 would serialize the supposed pipeline.
-                let eager_pos = scratch.kv.len + 1;
-                let (optimistic_pending, pending_probability) = self.opti_controller_draft_step(
-                    e,
-                    mtp,
-                    &mut dctx,
-                    &mut *scratch,
-                    d_vocab,
-                    &mut controller_eager_state,
-                    eager_pos,
-                    embd_dev,
-                    graph_round_ok,
-                )?;
-                let first_probability = controller_draft_prob
-                    .ok_or("optipipe controller probe lost first-token probability")?;
-                let q_proxy = first_probability * pending_probability;
-                OPTI_GATE_CHECKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                OPTI_SHADOW_DRAFT_TOKENS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                let admitted = opti_fork
-                    .as_ref()
-                    .and_then(|fork| fork.controller.as_ref())
-                    .ok_or("optipipe controller policy disappeared")?
-                    .admit(q_proxy);
-                if admitted {
-                    OPTI_GATE_ADMITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    let eager_pos = scratch.kv.len + 1;
-                    let (optimistic_draft, optimistic_draft_probability) = self
-                        .opti_controller_draft_step(
-                            e,
-                            mtp,
-                            &mut dctx,
-                            &mut *scratch,
-                            d_vocab,
-                            &mut controller_eager_state,
-                            eager_pos,
-                            embd_dev,
-                            graph_round_ok,
-                        )?;
-                    OPTI_SHADOW_DRAFT_TOKENS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    let eager_seed = controller_eager_state.take().map(|(token, seed)| {
-                        debug_assert_eq!(token, optimistic_draft);
-                        seed
-                    });
-                    controller_prepared = Some(OptiControllerPrepared {
-                        verify_tokens: [optimistic_pending, optimistic_draft],
-                        draft_prob: optimistic_draft_probability,
-                        eager_seed,
-                        q_proxy,
-                        scratch_len: scratch.kv.len,
-                    });
-                } else {
-                    OPTI_GATE_REJECTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    OPTI_WASTED_DRAFT_TOKENS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    rejected_probe = Some((q_proxy, optimistic_pending));
-                    eprintln!(
-                        "[opti-controller] reject q={q_proxy:.6} threshold={:.3}",
-                        opti_fork
-                            .as_ref()
-                            .and_then(|fork| fork.controller.as_ref())
-                            .expect("controller policy")
-                            .threshold,
-                    );
-                }
-            }
-            let fork_attempt = match fork_generation.take() {
-                Some(generation) if base == 1 && k_round == 1 => Some(generation),
-                Some(generation) => {
-                    opti_fork
-                        .as_mut()
-                        .expect("fork generation without fork state")
-                        .retire(generation)?;
-                    None
-                }
-                None => None,
-            };
-            let (tlogits_d, vx) = if let Some(p) = pipe {
-                self.decode_step_t_core_pipelined(
-                    e,
-                    &verify_tokens,
-                    pos,
-                    &mut *cache,
-                    embd_dev,
-                    ckpt.as_mut(),
-                    p,
-                    round,
-                )?
-            } else if controller_can_probe {
-                let fence = opti_fork
-                    .as_ref()
-                    .ok_or("optipipe controller probe lost fork state")?
-                    .fence;
-                let boundary = match current_opti.as_mut() {
-                    Some(ticket) => ticket.take_boundary(),
-                    None => self.verify_stage0_issue(
-                        e,
-                        &verify_tokens,
-                        pos,
-                        &mut *cache,
-                        embd_dev,
-                        ckpt.as_mut(),
-                        None,
-                        &fence,
-                        Some(true),
-                        None,
-                    )?,
-                };
-                if let Some(prepared) = controller_prepared.take() {
-                    let generation = {
-                        let fork = opti_fork
-                            .as_mut()
-                            .ok_or("optipipe controller admission lost fork state")?;
-                        let generation = fork.reserve_successor()?;
-                        let rt = fork.rt;
-                        let snapshot_fence = fork.fence;
-                        opti_snapshot_one_stage_owned_into(
-                            e,
-                            cache,
-                            rt,
-                            &snapshot_fence,
-                            0,
-                            fork.successor_snapshot_mut(),
-                        )?;
-                        generation
-                    };
-                    let mut successor_ckpt = VerifyCkpt::new(self.layers.len());
-                    let successor_boundary = self.verify_stage0_issue(
-                        e,
-                        &prepared.verify_tokens,
-                        pos + verify_tokens.len(),
-                        &mut *cache,
-                        embd_dev,
-                        Some(&mut successor_ckpt),
-                        None,
-                        &fence,
-                        Some(false),
-                        None,
-                    )?;
-                    OPTI_FORK_ATTEMPTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    let fork = opti_fork
-                        .as_ref()
-                        .ok_or("optipipe controller ticket lost fork state")?;
-                    successor_attempt = Some(fork.controller_ticket(
-                        generation,
-                        successor_boundary,
-                        successor_ckpt,
-                        prepared.verify_tokens,
-                        prepared.draft_prob,
-                        prepared.eager_seed,
-                        prepared.q_proxy,
-                        prepared.scratch_len,
-                    ));
-                    eprintln!(
-                        "[opti-controller] issue generation={} q={:.6} threshold={:.3} \
-                         verify={:?}",
-                        generation.id,
-                        prepared.q_proxy,
-                        fork.controller.expect("controller policy").threshold,
-                        prepared.verify_tokens,
-                    );
-                }
-                let result = self.verify_stage1_finish(
-                    e,
-                    boundary,
-                    &mut *cache,
-                    ckpt.as_mut(),
-                    None,
-                    &fence,
-                    successor_attempt.is_none(),
-                )?;
-                if let Some(ticket) = current_opti.as_mut() {
-                    ticket.settle();
-                }
-                if successor_attempt.is_some() {
-                    let fork = opti_fork
-                        .as_mut()
-                        .ok_or("optipipe successor snapshot lost fork state")?;
-                    let rt = fork.rt;
-                    let snapshot_fence = fork.fence;
-                    opti_snapshot_one_stage_owned_into(
-                        e,
-                        cache,
-                        rt,
-                        &snapshot_fence,
-                        1,
-                        fork.successor_snapshot_mut(),
-                    )?;
-                    // Publish N only after both independent successor-state queues are complete.
-                    fork.rt.publish_to(1, &e.stream())?;
-                }
-                result
-            } else if let Some(ticket) = current_opti.as_mut() {
-                let fork = opti_fork
-                    .as_mut()
-                    .ok_or("optipipe carried controller ticket lost fork state")?;
-                let boundary = ticket.take_boundary();
-                let result = self.verify_stage1_finish(
-                    e,
-                    boundary,
-                    &mut *cache,
-                    ckpt.as_mut(),
-                    None,
-                    &fork.fence,
-                    true,
-                )?;
-                ticket.settle();
-                result
-            } else if let Some(generation) = fork_attempt {
-                let fork = opti_fork
-                    .as_mut()
-                    .expect("fork generation without fork state");
-                fork.capture_seed(e, generation, &h_seed_buf, &fill_prev, scratch.kv.len)?;
-                let action = fork.mode.action(generation.id);
-                let boundary = self.verify_stage0_issue(
-                    e,
-                    &verify_tokens,
-                    pos,
-                    &mut *cache,
-                    embd_dev,
-                    ckpt.as_mut(),
-                    None,
-                    &fork.fence,
-                    Some(true),
-                    None,
-                )?;
-                OPTI_FORK_ATTEMPTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                let mut ticket = fork.ticket(generation, boundary);
-                if action == OptiForkAction::Abort {
-                    return Err(format!(
-                        "optipipe forced abort with generation {} stage0 in flight",
-                        generation.id,
-                    )
-                    .into());
-                }
-                fork.reconcile(
-                    e,
-                    &mut *cache,
-                    &mut *scratch,
-                    &snap,
-                    &mut h_seed_buf,
-                    &mut fill_prev,
-                    generation,
-                    action,
-                    verify_tokens[0],
-                )?;
-                let result = if action == OptiForkAction::Hit {
-                    let boundary = ticket.take_boundary();
-                    self.verify_stage1_finish(
-                        e,
-                        boundary,
-                        &mut *cache,
-                        ckpt.as_mut(),
-                        None,
-                        &fork.fence,
-                        true,
-                    )?
-                } else {
-                    // The optimistic boundary slot has no reader. Re-run the unchanged serial
-                    // verify only after E_restart published the restored stage-0 state.
-                    self.decode_step_t_core(
-                        e,
-                        &verify_tokens,
-                        pos,
-                        &mut *cache,
-                        embd_dev,
-                        ckpt.as_mut(),
-                    )?
-                };
-                ticket.settle();
-                debug_assert_eq!(ticket.generation, generation);
-                fork.retire(generation)?;
-                result
-            } else {
+            let (tlogits_d, vx) = {
                 // The serial verify every non-fork round takes — the MTP route's
                 // verify-graph door. The pool is None unless MEMRA_SPEC_VERIFY_GRAPH armed
                 // a pool above, and then the walk replays the captured trunk instead of
@@ -15096,10 +12913,6 @@ impl HybridModel {
                     ckpt.as_mut(),
                     vg_round,
                 )?
-            };
-            let pipe_accept = match pipe {
-                Some(p) => Some(p.accept_begin(round)?),
-                None => None,
             };
 
             if phase_sync {
@@ -15160,73 +12973,20 @@ impl HybridModel {
                     preds[base + j - 1]
                 }
             };
-            let mut devacc_seeded = false;
-            let mut devacc_acc: Option<CudaSlice<u32>> = None;
             let (n_acc, bonus) = if !sampled {
-                // ROUND-STREAM stage (a) (MEMRA_SPEC_DEVACC=1 opt-in): the walk runs ON DEVICE
-                // (spec_accept_greedy, verbatim rule) and the host reads back 8B (n_acc, bonus)
-                // instead of the [T] preds. Same sync count — machinery for stages (b)/(c),
-                // gated on token identity vs the host walk (the arms below are bit-equal rules).
-                if crate::spec::spec_devacc() && k_round > 0 && !spec_replay && constraint.is_none()
-                {
-                    let draft_d = e.htod_u32_v(&draft)?;
-                    let mut acc_out = e.alloc_u32_zeroed(2)?;
-                    e.spec_accept_greedy(
-                        &preds_d,
-                        &draft_d,
-                        last_pred,
-                        base,
-                        k_round,
-                        &mut acc_out,
-                    )?;
-                    devacc_acc = Some(acc_out.clone());
-                    // stage (b): next-round seed gathered ON DEVICE from acc_out before the host
-                    // ever reads n_acc (j=base+n_acc -> vx col j-1; j==0 -> fill_prev). The three
-                    // non-replay commit arms skip their host-offset seed copies (guarded below);
-                    // the legacy spec_replay arm keeps its own rx-based seeding (excluded here).
-                    // NOTE: fill_prev is NOT updated here — the commit arms' TRUE-HIDDEN
-                    // REFRESH reads the OLD fill_prev (predecessor of this round's verify batch);
-                    // the update lands after the arms (devacc_seeded guard below).
-                    e.spec_seed_gather(&vx, &fill_prev, &acc_out, &mut h_seed_buf, base, n_embd)?;
-                    // 3a: KV lens roll back on device (len = saved + base + n_acc, all arms'
-                    // unified rule; full accept rewrites the verify-left value). Host mirrors
-                    // update after the readback; commit_verified_prefix skips its len_d writes.
-                    if let Some(successor) = successor_attempt.as_ref() {
-                        opti_fork
-                            .as_mut()
-                            .ok_or("optipipe successor reconcile lost fork state")?
-                            .queue_actual_reconcile(
-                                e,
-                                &snap,
-                                &acc_out,
-                                successor.verify_tokens[0],
-                                base,
-                            )?;
-                    } else if let Some(ptrs) = &kv_len_ptrs {
-                        let saved: Vec<i32> = (0..self.layers.len())
-                            .map(|il| snap.kv_len[il].map(|v| v as i32).unwrap_or(0))
-                            .collect();
-                        let saved_d = e.htod_i32(&saved)?;
-                        e.spec_rollback_kv(ptrs, &saved_d, &acc_out, base, self.layers.len())?;
+                let mut n_acc = 0usize;
+                #[allow(clippy::needless_range_loop)]
+                // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
+                for j in 0..k_round {
+                    if t_pred(j) == draft[j] {
+                        n_acc += 1;
+                    } else {
+                        break;
                     }
-                    devacc_seeded = true;
-                    let ab = e.dtoh_u32(&acc_out)?;
-                    (ab[0] as usize, ab[1])
-                } else {
-                    let mut n_acc = 0usize;
-                    #[allow(clippy::needless_range_loop)]
-                    // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
-                    for j in 0..k_round {
-                        if t_pred(j) == draft[j] {
-                            n_acc += 1;
-                        } else {
-                            break;
-                        }
-                    }
-                    // bonus = target's own token at the first non-accepted slot. n_acc in 0..=k; t_pred
-                    // is defined for j in 0..=k (j==0 -> last_logits, j>=1 -> col j-1, last col = k-1).
-                    (n_acc, t_pred(n_acc))
                 }
+                // bonus = target's own token at the first non-accepted slot. n_acc in 0..=k; t_pred
+                // is defined for j in 0..=k (j==0 -> last_logits, j>=1 -> col j-1, last col = k-1).
+                (n_acc, t_pred(n_acc))
             } else {
                 // --- SAMPLED ACCEPT (rejection sampling): u_j < p_j(x_j)/q_j(x_j) walk ---
                 if col_buf.is_none() {
@@ -15603,53 +13363,6 @@ impl HybridModel {
                     (na, bo)
                 }
             };
-            let mut successor_valid = false;
-            if let Some((q_proxy, expected_d2)) = rejected_probe {
-                let v_n = n_acc == 1 && bonus == expected_d2;
-                eprintln!(
-                    "[opti-controller] shadow q={q_proxy:.6} admitted=false v_n={v_n} \
-                     expected_d2={expected_d2} n_acc={n_acc} bonus={bonus}",
-                );
-            }
-            if let Some(successor) = successor_attempt.as_ref() {
-                successor_valid = n_acc == 1 && bonus == successor.verify_tokens[0];
-                let generation = successor.generation;
-                let q_proxy = successor.q_proxy;
-                let expected_pending = successor.verify_tokens[0];
-                let resolution_ms = successor.issued_at.elapsed().as_secs_f64() * 1e3;
-                let fork = opti_fork
-                    .as_mut()
-                    .ok_or("optipipe successor resolution lost fork state")?;
-                fork.finish_actual_reconcile(e, &mut *cache, &snap, n_acc, base, successor_valid)?;
-                if successor_valid {
-                    OPTI_FORK_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                } else {
-                    OPTI_FORK_MISSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    OPTI_RECONCILES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    OPTI_WASTED_DRAFT_TOKENS.fetch_add(2, std::sync::atomic::Ordering::Relaxed);
-                }
-                let breaker_tripped = fork
-                    .controller
-                    .as_mut()
-                    .expect("controller policy")
-                    .resolve(successor_valid);
-                if breaker_tripped {
-                    OPTI_BREAKER_TRIPS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                }
-                eprintln!(
-                    "[opti-controller] resolve generation={} hit={} q={q_proxy:.6} \
-                     expected_pending={expected_pending} n_acc={n_acc} bonus={bonus} \
-                     resolution_ms={resolution_ms:.3} reconcile={} breaker={}",
-                    generation.id, successor_valid, !successor_valid, breaker_tripped,
-                );
-                if !successor_valid {
-                    let mut successor = successor_attempt
-                        .take()
-                        .expect("controller successor disappeared on miss");
-                    successor.settle();
-                    fork.retire(generation)?;
-                }
-            }
             total_drafted += k_round;
             total_accepted += n_acc;
             if let Some(t) = sess_telem {
@@ -15780,10 +13493,8 @@ impl HybridModel {
                 // reference's (id_last, h_prev) draft row; it appends the bonus's scratch
                 // entry itself. Seed = TRUE hidden of the bonus's predecessor (last verify
                 // col). Saves one MTP-block pass per round on top of the pairing fix.
-                if !devacc_seeded {
-                    e.copy_into(&mut h_seed_buf, 0, &vh_seed, n_embd)?;
-                    e.copy_into(&mut fill_prev, 0, &vh_seed, n_embd)?;
-                }
+                e.copy_into(&mut h_seed_buf, 0, &vh_seed, n_embd)?;
+                e.copy_into(&mut fill_prev, 0, &vh_seed, n_embd)?;
                 pending = Some(bonus);
                 if debug_spec {
                     eprintln!("  -> FULL ACCEPT (bonus pending, prev-h seed)");
@@ -15824,19 +13535,7 @@ impl HybridModel {
                         j,
                     )?;
                 } else {
-                    self.commit_verified_prefix(
-                        e,
-                        &mut *cache,
-                        &snap,
-                        ckpt.as_ref().unwrap(),
-                        j,
-                        devacc_seeded,
-                        if devacc_seeded {
-                            devacc_acc.as_ref().map(|a| (a, base, t_v))
-                        } else {
-                            None
-                        },
-                    )?;
+                    self.commit_verified_prefix(e, &mut *cache, &snap, ckpt.as_ref().unwrap(), j)?;
                 }
                 let mut seed = e.zeros(n_embd)?;
                 e.copy_view_into(
@@ -15874,10 +13573,8 @@ impl HybridModel {
                 }
                 // REFERENCE SEEDING (see the full-accept branch): seed = TRUE hidden of the
                 // bonus's predecessor (verify col j-1); no pseudo pass.
-                if !devacc_seeded {
-                    e.copy_into(&mut h_seed_buf, 0, &seed, n_embd)?;
-                    e.copy_into(&mut fill_prev, 0, &seed, n_embd)?;
-                }
+                e.copy_into(&mut h_seed_buf, 0, &seed, n_embd)?;
+                e.copy_into(&mut fill_prev, 0, &seed, n_embd)?;
                 pending = Some(bonus);
                 if debug_spec {
                     eprintln!("  -> PARTIAL(replay-free j={j}, bonus pending, prev-h seed)");
@@ -15976,38 +13673,6 @@ impl HybridModel {
                     eprintln!("  -> PARTIAL(replay={replay:?}), next_pred={last_pred}");
                 }
             }
-            if devacc_seeded {
-                // stage (b) epilogue: fill_prev takes the gathered seed AFTER the refresh fills
-                // consumed the old value (both slots carry the same value in every non-replay arm).
-                e.copy_into(&mut fill_prev, 0, &h_seed_buf, n_embd)?;
-            }
-            if successor_valid {
-                let optimistic_scratch_len = successor_attempt
-                    .as_ref()
-                    .expect("valid controller successor disappeared")
-                    .scratch_len;
-                // The normal current-round commit refreshed/truncated the logical scratch tail.
-                // Its optimistic successor row was already written physically, so restoring only
-                // the retained logical length makes that row live for the carried round.
-                scratch.set_len(e, optimistic_scratch_len)?;
-            }
-            if let Some(current) = current_opti.take() {
-                opti_fork
-                    .as_mut()
-                    .ok_or("optipipe current retirement lost fork state")?
-                    .retire(current.generation)?;
-            }
-            if successor_valid {
-                let successor = successor_attempt
-                    .take()
-                    .expect("valid controller successor disappeared before promotion");
-                let generation = successor.generation;
-                opti_fork
-                    .as_mut()
-                    .ok_or("optipipe successor promotion lost fork state")?
-                    .promote_successor_snapshot(&mut snap, generation);
-                carried_opti = Some(successor);
-            }
             if anatomy_on {
                 // Commit/rollback is normally asynchronous on the primary/head stream. Bound it
                 // only for this diagnostic so it does not disappear into the following draft's
@@ -16025,10 +13690,6 @@ impl HybridModel {
                 kc = (n_acc + 1).clamp(fl_now.min(k_cap), k_cap);
             }
             ph_mark(&mut ph_rest, phase_on);
-            if let Some(p) = pipe {
-                p.accept_end(round);
-            }
-            drop(pipe_accept);
             if let Some(t0) = round_t0 {
                 let ms = t0.elapsed().as_secs_f64() * 1e3;
                 ROUND_MS.fetch_add((ms * 1e3) as u64, std::sync::atomic::Ordering::Relaxed);
@@ -16045,12 +13706,6 @@ impl HybridModel {
             // sse-cadence: this round's accepted drafts + bonus are committed (out is
             // append-only past step 4) — flush at round cadence.
             keep_going = flush_commit(&mut on_commit, &out, &mut flushed);
-        }
-        if let Some(mut ticket) = carried_opti.take() {
-            opti_fork
-                .as_mut()
-                .ok_or("optipipe tail drain lost fork state")?
-                .cancel_controller_ticket(e, &mut *cache, &mut *scratch, &snap, &mut ticket)?;
         }
         // sse-cadence: nothing below appends to `out`; flush any remainder (defensive).
         // (verdict ignored — the burst is over either way; the session tail runs unchanged.)
@@ -16119,7 +13774,6 @@ impl HybridModel {
                 other * 1e3 / rounds_f,
             );
         }
-        let _pipe_tail = pipe.map(|p| p.primary()).transpose()?;
         // SESSION TAIL: leave the session in the exact invariant the next turn's suffix prime
         // expects — every row in `committed` has trunk KV/recur state AND an exact draft-KV row.
         // Park the draft-graph ctx back on the session (the serve-burst fixed-cost fix): the next
@@ -17036,89 +14690,6 @@ mod telem_tests {
         };
         let d = small.delta_since(&big);
         assert_eq!((d.rounds, d.drafted, d.accepted), (0, 0, 0));
-    }
-}
-
-#[cfg(test)]
-mod opti_fork_tests {
-    use super::{
-        OptiControllerPolicy, OptiForkAction, OptiForkGateMode, OptiForkGenerationTracker,
-    };
-
-    #[test]
-    fn controller_threshold_and_three_miss_breaker_are_exact() {
-        let mut policy = OptiControllerPolicy {
-            threshold: 0.7,
-            consecutive_misses: 0,
-            breaker_tripped: false,
-        };
-        assert!(!policy.admit(0.699_999));
-        assert!(policy.admit(0.7));
-        assert!(!policy.resolve(false));
-        assert!(!policy.resolve(false));
-        assert!(policy.resolve(false));
-        assert!(policy.breaker_tripped);
-        assert!(!policy.admit(1.0));
-        assert!(
-            !policy.resolve(true),
-            "a resolved hit cannot re-arm a tripped request"
-        );
-        assert!(policy.breaker_tripped);
-    }
-
-    #[test]
-    fn zero_threshold_is_the_true_unconditional_measurement_arm() {
-        let mut policy = OptiControllerPolicy {
-            threshold: 0.0,
-            consecutive_misses: 0,
-            breaker_tripped: false,
-        };
-        for _ in 0..16 {
-            assert!(policy.admit(0.0));
-            assert!(!policy.resolve(false));
-        }
-        for invalid in [f32::NAN, f32::INFINITY, -0.01, 1.01] {
-            assert!(
-                !policy.admit(invalid),
-                "invalid q proxy must fail closed: {invalid}"
-            );
-        }
-        assert!(!policy.breaker_tripped);
-        assert_eq!(policy.consecutive_misses, 0);
-    }
-
-    #[test]
-    fn alternating_mode_flips_by_generation_not_round_parity() {
-        assert_eq!(OptiForkGateMode::Alternate.action(0), OptiForkAction::Hit);
-        assert_eq!(OptiForkGateMode::Alternate.action(1), OptiForkAction::Miss);
-        assert_eq!(OptiForkGateMode::Alternate.action(8), OptiForkAction::Hit);
-        assert_eq!(OptiForkGateMode::Alternate.action(9), OptiForkAction::Miss);
-    }
-
-    #[test]
-    fn live_generation_cannot_be_overwritten() {
-        let mut tracker = OptiForkGenerationTracker::default();
-        let g0 = tracker.reserve().unwrap();
-        let g1 = tracker.reserve().unwrap();
-        let err = tracker.reserve().unwrap_err().to_string();
-        assert!(
-            err.contains("still owns generation 0"),
-            "unexpected error: {err}"
-        );
-        tracker.retire(g0).unwrap();
-        let g2 = tracker.reserve().unwrap();
-        assert_eq!((g2.id, g2.slot), (2, 0));
-        tracker.retire(g1).unwrap();
-        tracker.retire(g2).unwrap();
-    }
-
-    #[test]
-    fn teardown_rejects_a_stale_generation_tag() {
-        let mut tracker = OptiForkGenerationTracker::default();
-        let g0 = tracker.reserve().unwrap();
-        tracker.retire(g0).unwrap();
-        let err = tracker.retire(g0).unwrap_err().to_string();
-        assert!(err.contains("teardown mismatch"), "unexpected error: {err}");
     }
 }
 

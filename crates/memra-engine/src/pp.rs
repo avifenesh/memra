@@ -73,9 +73,6 @@
 //! (`MEMRA_PP_ALLOW_UNSPLIT_BATCH=1` = measurement override). "Unwired" for dc/graph/spec
 //! still means "runs unsplit, silently" — audit each before trusting it on a pair.
 
-use std::cell::RefCell;
-use std::marker::PhantomData;
-use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 
@@ -1578,35 +1575,12 @@ impl Drop for PpWalkState {
     }
 }
 
-/// Opaque lifetime token for one complete PP boundary walk. Clones are allowed only through an
-/// explicit coordinator permit or the same-thread deferred enqueue window; the active generation
-/// clears when the final clone is dropped.
+/// Opaque lifetime token for one complete PP boundary walk. Clones are allowed only through
+/// the same-thread deferred enqueue window; the active generation clears when the final clone
+/// is dropped.
 #[derive(Debug)]
 pub struct PpWalkLease {
     state: Arc<PpWalkState>,
-}
-
-/// Explicit authority for a coordinator whose two host lanes intentionally share one PP walk.
-#[derive(Clone, Debug)]
-pub(crate) struct PpWalkPermit {
-    state: Arc<PpWalkState>,
-}
-
-thread_local! {
-    static PP_WALK_BORROWS: RefCell<Vec<Arc<PpWalkState>>> = const { RefCell::new(Vec::new()) };
-}
-
-/// Thread-local borrowed authority. It is deliberately !Send so a caller must install the permit
-/// independently in each scoped coordinator lane.
-pub(crate) struct PpWalkBorrowGuard {
-    prior_len: usize,
-    _not_send: PhantomData<Rc<()>>,
-}
-
-impl Drop for PpWalkBorrowGuard {
-    fn drop(&mut self) {
-        PP_WALK_BORROWS.with(|borrows| borrows.borrow_mut().truncate(self.prior_len));
-    }
 }
 
 fn next_pp_walk_generation(next: &AtomicU64) -> u64 {
@@ -1640,18 +1614,6 @@ fn acquire_pp_walk(
             runtime_id,
             deferred_owner,
         }),
-    })
-}
-
-fn borrowed_pp_walk(runtime_id: usize) -> Option<PpWalkLease> {
-    PP_WALK_BORROWS.with(|borrows| {
-        borrows
-            .borrow()
-            .iter()
-            .rev()
-            .find(|state| state.runtime_id == runtime_id && state.is_active())
-            .cloned()
-            .map(|state| PpWalkLease { state })
     })
 }
 
@@ -2066,16 +2028,12 @@ impl PpNRt {
     }
 
     /// Acquire exclusive ownership of the PP boundary/event sequence for one complete model walk.
-    /// Fail fast rather than blocking. A nested call can join only when its thread has an explicit
-    /// coordinator borrow installed; merely running on the original thread is not authority.
+    /// Fail fast rather than blocking; merely running on the original thread is not authority.
     pub fn acquire_walk(
         &'static self,
         path: &str,
     ) -> Result<PpWalkLease, Box<dyn std::error::Error>> {
         let runtime_id = self as *const Self as usize;
-        if let Some(lease) = borrowed_pp_walk(runtime_id) {
-            return Ok(lease);
-        }
         acquire_pp_walk(&self.walk_active, &self.walk_next, runtime_id, None, path)
             .map_err(|error| -> Box<dyn std::error::Error> { error.into() })
     }
@@ -2111,47 +2069,6 @@ impl PpNRt {
         .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
         *weak = Arc::downgrade(&lease.state);
         Ok(lease)
-    }
-
-    /// Mint coordinator authority from an active owner lease. Passing this object is the only way
-    /// another host thread can make nested PP calls within that same generation.
-    pub(crate) fn walk_permit(
-        &'static self,
-        lease: &PpWalkLease,
-        path: &str,
-    ) -> Result<PpWalkPermit, Box<dyn std::error::Error>> {
-        let runtime_id = self as *const Self as usize;
-        validate_walk_state(&lease.state, runtime_id, path)
-            .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
-        if lease.state.deferred_owner.is_some() {
-            return Err(
-                format!("{path}: deferred PP windows cannot mint coordinator permits").into(),
-            );
-        }
-        Ok(PpWalkPermit {
-            state: lease.state.clone(),
-        })
-    }
-
-    /// Install a coordinator permit on the current host thread for the lifetime of the guard.
-    pub(crate) fn borrow_walk(
-        &'static self,
-        permit: &PpWalkPermit,
-        path: &str,
-    ) -> Result<PpWalkBorrowGuard, Box<dyn std::error::Error>> {
-        let runtime_id = self as *const Self as usize;
-        validate_walk_state(&permit.state, runtime_id, path)
-            .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
-        let prior_len = PP_WALK_BORROWS.with(|borrows| {
-            let mut borrows = borrows.borrow_mut();
-            let prior_len = borrows.len();
-            borrows.push(permit.state.clone());
-            prior_len
-        });
-        Ok(PpWalkBorrowGuard {
-            prior_len,
-            _not_send: PhantomData,
-        })
     }
 
     /// True iff any boundary crosses devices.
@@ -4248,25 +4165,6 @@ mod host_bounce_tests {
         assert!(acquire_pp_walk(&active, &next, 7, None, "third").is_err());
         drop(held_clone);
         assert!(acquire_pp_walk(&active, &next, 7, None, "fourth").is_ok());
-    }
-
-    #[test]
-    fn pp_walk_coordinator_borrow_is_explicit_and_thread_local() {
-        let active = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
-        let next = std::sync::atomic::AtomicU64::new(1);
-        let lease = acquire_pp_walk(&active, &next, 11, None, "owner").unwrap();
-        let state = lease.state.clone();
-        super::PP_WALK_BORROWS.with(|borrows| borrows.borrow_mut().push(state.clone()));
-        assert!(super::borrowed_pp_walk(11).is_some());
-        std::thread::spawn(move || {
-            assert!(super::borrowed_pp_walk(11).is_none());
-            drop(state);
-        })
-        .join()
-        .unwrap();
-        super::PP_WALK_BORROWS.with(|borrows| borrows.borrow_mut().clear());
-        drop(lease);
-        assert_eq!(active.load(std::sync::atomic::Ordering::Acquire), 0);
     }
 
     #[test]
