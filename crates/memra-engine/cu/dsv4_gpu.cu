@@ -1601,8 +1601,7 @@ extern "C" int memra_dsv4_route(const float* raw, const float* bias, const int* 
 extern "C" __global__ void dsv4_fp4_gemm_sel_kernel(
     const uint8_t* __restrict__ a, const float* __restrict__ as_,
     const uint8_t* __restrict__ w_base, const uint8_t* __restrict__ sc_base,
-    const float* __restrict__ s2, const int* __restrict__ sel,
-    const int* __restrict__ a_rows, int proj, int a_stride_rows,
+    const float* __restrict__ s2, const int* __restrict__ sel, int proj, int a_stride_rows,
     int kind, float* __restrict__ out, int n, int kdim, long wstride, long sstride,
     int a_group) {
     const int CPB = DSV4_FP4_SEL_CPB;
@@ -1621,9 +1620,7 @@ extern "C" __global__ void dsv4_fp4_gemm_sel_kernel(
     // activation this slot consumes. a_group == 0 keeps the pinned single-position
     // semantics EXACTLY (0 -> shared row 0, 1 -> per-slot row) — same expression, same
     // value, so the gated bytes of every existing call are unchanged.
-    long arow_i = a_rows ? (long)a_rows[slot]
-                         : ((a_group > 0) ? (long)(slot / a_group)
-                                          : (a_stride_rows ? (long)slot : 0L));
+    long arow_i = (a_group > 0) ? (long)(slot / a_group) : (a_stride_rows ? (long)slot : 0L);
     const uint8_t* arow = a + arow_i * kdim;
     const float* asrow = as_ + arow_i * (kdim / 128);
     const uint8_t* wb = w_base + ((long)eid * 3 + proj) * wstride;
@@ -1676,7 +1673,7 @@ extern "C" int memra_dsv4_fp4_gemm_sel(const void* a_codes, const float* a_scale
     int threads = 128;
     dsv4_fp4_gemm_sel_kernel<<<grid, threads, DSV4_FP4_SMEM(threads), stream>>>(
         (const uint8_t*)a_codes, a_scales, (const uint8_t*)w_base, (const uint8_t*)sc_base,
-        s2, sel, nullptr, proj, a_stride_rows, kind, out, n, kdim, wstride, sstride, 0);
+        s2, sel, proj, a_stride_rows, kind, out, n, kdim, wstride, sstride, 0);
     DSV4_ERR();
     return 0;
 }
@@ -1700,64 +1697,7 @@ extern "C" int memra_dsv4_fp4_gemm_sel_g(const void* a_codes, const float* a_sca
     int threads = 128;
     dsv4_fp4_gemm_sel_kernel<<<grid, threads, DSV4_FP4_SMEM(threads), stream>>>(
         (const uint8_t*)a_codes, a_scales, (const uint8_t*)w_base, (const uint8_t*)sc_base,
-        s2, sel, nullptr, proj, a_stride_rows, kind, out, n, kdim, wstride, sstride, a_group);
-    DSV4_ERR();
-    return 0;
-}
-
-// Stable expert-major slot order for prefill. One deterministic thread is enough
-// for the bounded T<=64, top-k<=32 surface and avoids introducing an atomic-order
-// fork. `orig[sorted_slot]` maps the result back to the canonical token-major slot.
-extern "C" __global__ void dsv4_sort_expert_slots_kernel(
-    const int* __restrict__ sel, const float* __restrict__ weight,
-    int* __restrict__ sorted_sel, float* __restrict__ sorted_weight,
-    int* __restrict__ a_rows, int* __restrict__ orig, int slots, int topk, int ne) {
-    if (blockIdx.x || threadIdx.x) return;
-    int counts[256] = {0};
-    int cursor[256];
-    for (int slot = 0; slot < slots; ++slot) counts[sel[slot]]++;
-    int off = 0;
-    for (int expert = 0; expert < ne; ++expert) {
-        cursor[expert] = off;
-        off += counts[expert];
-    }
-    for (int slot = 0; slot < slots; ++slot) {
-        int expert = sel[slot];
-        int dst = cursor[expert]++;
-        sorted_sel[dst] = expert;
-        sorted_weight[dst] = weight[slot];
-        a_rows[dst] = slot / topk;
-        orig[dst] = slot;
-    }
-}
-
-extern "C" int memra_dsv4_sort_expert_slots(
-    const int* sel, const float* weight, int* sorted_sel, float* sorted_weight,
-    int* a_rows, int* orig, int slots, int topk, int ne, void* stream_v) {
-    if (slots < 1 || slots > 4096 || topk < 1 || topk > 32 || ne < 1 || ne > 256)
-        return 40020;
-    cudaStream_t stream = (cudaStream_t)stream_v;
-    dsv4_sort_expert_slots_kernel<<<1, 1, 0, stream>>>(
-        sel, weight, sorted_sel, sorted_weight, a_rows, orig, slots, topk, ne);
-    DSV4_ERR();
-    return 0;
-}
-
-extern "C" int memra_dsv4_fp4_gemm_sel_rows(
-    const void* a_codes, const float* a_scales, const void* w_base,
-    const void* sc_base, const float* s2, const int* sel, const int* a_rows,
-    int proj, int kind, float* out, int slots, int n, int kdim,
-    long wstride, long sstride, void* stream_v) {
-    cudaStream_t stream = (cudaStream_t)stream_v;
-    if (kdim % 128 != 0 || (kind != 0 && kind != 1)) return 40005;
-    if (slots > 65535 || n > 2147483647 || !a_rows) return 40006;
-    dim3 grid((unsigned)((n + DSV4_FP4_SEL_CPB - 1) / DSV4_FP4_SEL_CPB),
-              (unsigned)slots);
-    int threads = 128;
-    dsv4_fp4_gemm_sel_kernel<<<grid, threads, DSV4_FP4_SMEM(threads), stream>>>(
-        (const uint8_t*)a_codes, a_scales, (const uint8_t*)w_base,
-        (const uint8_t*)sc_base, s2, sel, a_rows, proj, 0, kind, out, n, kdim,
-        wstride, sstride, 0);
+        s2, sel, proj, a_stride_rows, kind, out, n, kdim, wstride, sstride, a_group);
     DSV4_ERR();
     return 0;
 }

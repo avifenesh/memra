@@ -471,9 +471,6 @@ pub struct Dsv4Gpu {
     /// DSpark-only fused selected-expert dispatch. Routing stays on the host
     /// oracle; only the per-expert launch loop is collapsed.
     pub dspark_fused_moe: bool,
-    /// Prefill-only stable expert-major slot order for exact selected-expert
-    /// projections; results are scattered back before the canonical combine.
-    pub prefill_expert_sort: bool,
     /// iteration-5 FP8 dense arm (`MEMRA_DSV4_DENSE_ARM`; DEFAULT fp8 on the device
     /// decode path since the 2026-08-20 ratification, bf16 selectable and the legacy
     /// default): the DEVICE decode/verify paths read the FP8-blk linears as-stored
@@ -1833,12 +1830,6 @@ impl Dsv4Gpu {
             std::env::var("MEMRA_DSV4_DSPARK_FUSED_MOE").ok().as_deref(),
             on_device,
         )?;
-        let prefill_expert_sort = resolve_prefill_expert_sort(
-            std::env::var("MEMRA_DSV4_PREFILL_EXPERT_SORT")
-                .ok()
-                .as_deref(),
-            on_device,
-        )?;
 
         let mut me = Dsv4Gpu {
             model,
@@ -1860,7 +1851,6 @@ impl Dsv4Gpu {
             chains_f32,
             dspark_head_f32,
             dspark_fused_moe,
-            prefill_expert_sort,
             dense_fp8,
             dspark: None,
             boundary_ev: Vec::new(),
@@ -1890,14 +1880,6 @@ impl Dsv4Gpu {
                 "FUSED (host-oracle route, device indirect projections)"
             } else {
                 "per-expert reference"
-            }
-        );
-        eprintln!(
-            "[load] prefill expert slot order: {}",
-            if me.prefill_expert_sort {
-                "stable expert-major (exact scatter-back)"
-            } else {
-                "token-major"
             }
         );
         eprintln!(
@@ -8910,10 +8892,6 @@ pub struct VerifyWs {
     sel: CudaSlice<i32>,
     selw: CudaSlice<f32>,
     order: CudaSlice<i32>,
-    sorted_sel: CudaSlice<i32>,
-    sorted_selw: CudaSlice<f32>,
-    sorted_rows: CudaSlice<i32>,
-    sorted_orig: CudaSlice<i32>,
     xq: CudaSlice<u8>,
     xs: CudaSlice<f32>,
     g1: CudaSlice<f32>,
@@ -8922,7 +8900,6 @@ pub struct VerifyWs {
     hq: CudaSlice<u8>,
     hs: CudaSlice<f32>,
     contrib: CudaSlice<f32>,
-    contrib_perm: CudaSlice<f32>,
     y: CudaSlice<f32>,
     xb: CudaSlice<u8>,
     sg1: CudaSlice<f32>,
@@ -9146,10 +9123,6 @@ impl Dsv4Gpu {
                 sel: i(tmax * topk)?,
                 selw: f(tmax * topk)?,
                 order: i(tmax * topk)?,
-                sorted_sel: i(tmax * topk)?,
-                sorted_selw: f(tmax * topk)?,
-                sorted_rows: i(tmax * topk)?,
-                sorted_orig: i(tmax * topk)?,
                 xq: b(tmax * hidden)?,
                 xs: f(tmax * hidden / 128)?,
                 g1: f(tmax * topk * inter)?,
@@ -9158,7 +9131,6 @@ impl Dsv4Gpu {
                 hq: b(tmax * topk * inter)?,
                 hs: f(tmax * topk * inter / 128)?,
                 contrib: f(tmax * topk * hidden)?,
-                contrib_perm: f(tmax * topk * hidden)?,
                 y: f(tmax * hidden)?,
                 xb: b(tmax * hidden * 2)?,
                 sg1: f(tmax * sh_inter)?,
@@ -10585,37 +10557,6 @@ impl Dsv4Gpu {
             }
         }
 
-        let sort_experts = self.prefill_expert_sort && t >= 16;
-        if sort_experts {
-            unsafe {
-                ck(
-                    "stable expert slot sort",
-                    k::memra_dsv4_sort_expert_slots(
-                        vws.sel.device_ptr(&stream).0 as *const i32,
-                        vws.selw.device_ptr(&stream).0 as *const f32,
-                        vws.sorted_sel.device_ptr_mut(&stream).0 as *mut i32,
-                        vws.sorted_selw.device_ptr_mut(&stream).0 as *mut f32,
-                        vws.sorted_rows.device_ptr_mut(&stream).0 as *mut i32,
-                        vws.sorted_orig.device_ptr_mut(&stream).0 as *mut i32,
-                        slots as i32,
-                        topk as i32,
-                        ne as i32,
-                        sp(&stream),
-                    ),
-                )?;
-            }
-        }
-        let selected_ptr = if sort_experts {
-            vws.sorted_sel.device_ptr(&stream).0 as *const i32
-        } else {
-            vws.sel.device_ptr(&stream).0 as *const i32
-        };
-        let selected_weight_ptr = if sort_experts {
-            vws.sorted_selw.device_ptr(&stream).0 as *const f32
-        } else {
-            vws.selw.device_ptr(&stream).0 as *const f32
-        };
-
         unsafe {
             ck(
                 "act_quant_fp8 x batch",
@@ -10629,52 +10570,28 @@ impl Dsv4Gpu {
                 ),
             )?;
             for (proj, dst) in [(0i32, &mut vws.g1), (2i32, &mut vws.g3)] {
-                if sort_experts {
-                    ck(
-                        "fp4_gemm_sel_rows w1/w3",
-                        k::memra_dsv4_fp4_gemm_sel_rows(
-                            dp!(vws.xq, &stream),
-                            dpf!(vws.xs, &stream),
-                            dp!(layer.experts_w, &stream),
-                            dp!(layer.experts_sc, &stream),
-                            dpf!(layer.experts_s2_dev, &stream),
-                            selected_ptr,
-                            vws.sorted_rows.device_ptr(&stream).0 as *const i32,
-                            proj,
-                            kind,
-                            dpm!(*dst, &stream),
-                            slots as i32,
-                            inter as i32,
-                            hidden as i32,
-                            wstride,
-                            sstride,
-                            sp(&stream),
-                        ),
-                    )?;
-                } else {
-                    ck(
-                        "fp4_gemm_sel_g w1/w3",
-                        k::memra_dsv4_fp4_gemm_sel_g(
-                            dp!(vws.xq, &stream),
-                            dpf!(vws.xs, &stream),
-                            dp!(layer.experts_w, &stream),
-                            dp!(layer.experts_sc, &stream),
-                            dpf!(layer.experts_s2_dev, &stream),
-                            selected_ptr,
-                            proj,
-                            0,
-                            kind,
-                            dpm!(*dst, &stream),
-                            slots as i32,
-                            inter as i32,
-                            hidden as i32,
-                            wstride,
-                            sstride,
-                            topk as i32,
-                            sp(&stream),
-                        ),
-                    )?;
-                }
+                ck(
+                    "fp4_gemm_sel_g w1/w3",
+                    k::memra_dsv4_fp4_gemm_sel_g(
+                        dp!(vws.xq, &stream),
+                        dpf!(vws.xs, &stream),
+                        dp!(layer.experts_w, &stream),
+                        dp!(layer.experts_sc, &stream),
+                        dpf!(layer.experts_s2_dev, &stream),
+                        vws.sel.device_ptr(&stream).0 as *const i32,
+                        proj,
+                        0,
+                        kind,
+                        dpm!(*dst, &stream),
+                        slots as i32,
+                        inter as i32,
+                        hidden as i32,
+                        wstride,
+                        sstride,
+                        topk as i32,
+                        sp(&stream),
+                    ),
+                )?;
             }
             ck(
                 "swiglu batch",
@@ -10685,7 +10602,7 @@ impl Dsv4Gpu {
                     slots as i32,
                     inter as i32,
                     limit,
-                    selected_weight_ptr,
+                    vws.selw.device_ptr(&stream).0 as *const f32,
                     sp(&stream),
                 ),
             )?;
@@ -10708,7 +10625,7 @@ impl Dsv4Gpu {
                     dp!(layer.experts_w, &stream),
                     dp!(layer.experts_sc, &stream),
                     dpf!(layer.experts_s2_dev, &stream),
-                    selected_ptr,
+                    vws.sel.device_ptr(&stream).0 as *const i32,
                     1,
                     1,
                     kind,
@@ -10722,28 +10639,10 @@ impl Dsv4Gpu {
                     sp(&stream),
                 ),
             )?;
-            if sort_experts {
-                ck(
-                    "expert slot scatter-back",
-                    k::memra_dsv4_scatter_rows(
-                        dpf!(vws.contrib, &stream),
-                        dpm!(vws.contrib_perm, &stream),
-                        vws.sorted_orig.device_ptr(&stream).0 as *const i32,
-                        slots as i32,
-                        hidden as i32,
-                        sp(&stream),
-                    ),
-                )?;
-            }
-            let combine_contrib = if sort_experts {
-                dpf!(vws.contrib_perm, &stream)
-            } else {
-                dpf!(vws.contrib, &stream)
-            };
             ck(
                 "combine_rows_m",
                 k::memra_dsv4_combine_rows_m(
-                    combine_contrib,
+                    dpf!(vws.contrib, &stream),
                     vws.order.device_ptr(&stream).0 as *const i32,
                     topk as i32,
                     dpm!(vws.y, &stream),
@@ -12135,19 +12034,6 @@ pub fn resolve_dspark_fused_moe(v: Option<&str>, on_device: bool) -> Result<bool
     }
 }
 
-pub fn resolve_prefill_expert_sort(v: Option<&str>, on_device: bool) -> Result<bool, String> {
-    match v {
-        None | Some("") | Some("0") => Ok(false),
-        Some("1") if on_device => Ok(true),
-        Some("1") => Err(
-            "MEMRA_DSV4_PREFILL_EXPERT_SORT=1 requires MEMRA_DSV4_DECODE_PATH=device".to_string(),
-        ),
-        Some(other) => Err(format!(
-            "MEMRA_DSV4_PREFILL_EXPERT_SORT '{other}' unknown (0 | 1)"
-        )),
-    }
-}
-
 /// ds4f rung 1 — per-round verify-window policy from the drafter's OWN confidence head
 /// (`MEMRA_DSV4_VT={off|slot}`, unset = off = the byte-identical round driver).
 ///
@@ -12478,7 +12364,7 @@ mod peer_probe_tests {
 
 #[cfg(test)]
 mod dense_arm_default_tests {
-    use super::{resolve_dense_arm, resolve_dspark_fused_moe, resolve_prefill_expert_sort};
+    use super::{resolve_dense_arm, resolve_dspark_fused_moe};
 
     /// The owner-ratified flip (2026-08-20): unset env on the device decode path = fp8.
     /// Mutating the default back to bf16 fails this with the evidence named.
@@ -12515,15 +12401,6 @@ mod dense_arm_default_tests {
         assert_eq!(resolve_dspark_fused_moe(Some("1"), true), Ok(true));
         assert!(resolve_dspark_fused_moe(Some("1"), false).is_err());
         assert!(resolve_dspark_fused_moe(Some("yes"), true).is_err());
-    }
-
-    #[test]
-    fn prefill_expert_sort_is_strict_default_off_and_device_only() {
-        assert_eq!(resolve_prefill_expert_sort(None, true), Ok(false));
-        assert_eq!(resolve_prefill_expert_sort(Some("0"), true), Ok(false));
-        assert_eq!(resolve_prefill_expert_sort(Some("1"), true), Ok(true));
-        assert!(resolve_prefill_expert_sort(Some("1"), false).is_err());
-        assert!(resolve_prefill_expert_sort(Some("yes"), true).is_err());
     }
 }
 
