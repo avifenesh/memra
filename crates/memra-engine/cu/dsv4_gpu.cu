@@ -3970,7 +3970,7 @@ extern "C" int memra_dsv4_hc_pre_fused_v3_stamped(const float* x, const float* m
 // Two barriers per launch instead of twelve, one read of x instead of two, and the serial chain
 // hidden behind the combine. Bit-identical to v3 by construction: same per-thread FMA order,
 // same reduction association, same warp-0 program. Preconditions (launcher-checked, else v3):
-// hc == 4 and (block, elems) in {(512, 32), (1024, 16)}: the two instantiations; everything else 40025.
+// hc == 4, w == 16 * 1024 (d = 4096): the single e16@1024 instantiation; everything else 40025.
 template <int ELEMS, int HCN, int BLOCK>
 __device__ __forceinline__ void dsv4_hc_pre_v4_body(
         const float* __restrict__ x, const float* __restrict__ mixes_all,
@@ -4093,15 +4093,6 @@ __device__ __forceinline__ void dsv4_hc_pre_v4_body(
     }
 }
 
-extern "C" __global__ void __launch_bounds__(512, 1) dsv4_hc_pre_v4_e32_kernel(
-        const float* __restrict__ x, const float* __restrict__ mixes_all,
-        const float* __restrict__ scale, const float* __restrict__ base,
-        float* __restrict__ pre_all, float* __restrict__ post_all,
-        float* __restrict__ comb_all, float* __restrict__ y, int w, int rows, int hc, int d,
-        int iters, float eps, int* __restrict__ niters) {
-    dsv4_hc_pre_v4_body<32, 4, 512>(x, mixes_all, scale, base, pre_all, post_all, comb_all, y,
-                                    w, rows, hc, d, iters, eps, niters);
-}
 extern "C" __global__ void __launch_bounds__(1024, 1) dsv4_hc_pre_v4_e16_kernel(
         const float* __restrict__ x, const float* __restrict__ mixes_all,
         const float* __restrict__ scale, const float* __restrict__ base,
@@ -4124,18 +4115,15 @@ extern "C" int memra_dsv4_hc_pre_v4(const float* x, const float* mixes, const fl
     int w = hc * d;
     int rows = (2 + hc) * hc;
     if (rows > 32 || hc * hc > 32) return 40024;
-    if (hc != 4 || d % block != 0) return 40025;
-    int elems = w / block;
-    if (elems * block != w) return 40025;
-    if (elems == 32 && block == 512) {
-        dsv4_hc_pre_v4_e32_kernel<<<(unsigned)s, 512u, 0, stream>>>(
-            x, mixes, scale, base, pre, post, comb, y, w, rows, hc, d, iters, eps, niters);
-    } else if (elems == 16 && block == 1024) {
-        dsv4_hc_pre_v4_e16_kernel<<<(unsigned)s, 1024u, 0, stream>>>(
-            x, mixes, scale, base, pre, post, comb, y, w, rows, hc, d, iters, eps, niters);
-    } else {
-        return 40025;
-    }
+    // One instantiation: 1024 threads x 16 elements, whatever `block` the caller serves v3 at
+    // (v3 is bit-identical across widths, so is v4 to it). Measured on the B200 2026-09-05,
+    // back-to-back x300: v3 10.3 us at 512 and 1024; v4 e16@1024 8.34 us (-19%); a 32-elements
+    // @512 instantiation ran 12.6 us (+21%) with zero stack -- the 32-load round is the
+    // pathology, so it was removed rather than left as a trap.
+    (void)block;
+    if (hc != 4 || w != 16 * 1024 || d % 1024 != 0) return 40025;
+    dsv4_hc_pre_v4_e16_kernel<<<(unsigned)s, 1024u, 0, stream>>>(
+        x, mixes, scale, base, pre, post, comb, y, w, rows, hc, d, iters, eps, niters);
     DSV4_ERR();
     return 0;
 }

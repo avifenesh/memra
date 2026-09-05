@@ -1,6 +1,7 @@
 //! Gate for `MEMRA_HC_PRE_V4` (lane/hc-pre-phases-20260905): the v4 register schedule of the hc
 //! pre-chain is BIT-IDENTICAL to the served v3 kernel (sink_reg=1) on every output -- `pre`,
-//! `post`, `comb`, `y` -- at the served block (512) and at 1024, on real-shaped inputs (hc=4,
+//! `post`, `comb`, `y` -- against v3 at the served block (512) and at 1024 (v4 itself always
+//! runs 1024 threads x 16 elements), on real-shaped inputs (hc=4,
 //! d=4096, 20 Sinkhorn rounds). Red arm: v4 on perturbed `base` must differ from v3 on the
 //! original, so a "pass" cannot come from comparing two copies of nothing.
 use cudarc::driver::{DevicePtr, DevicePtrMut};
@@ -109,6 +110,8 @@ fn hc_pre_v4_is_bit_identical_to_v3() {
     let rows = (2 + HC) * HC;
     let x = vecf(HC * D, 11);
     let base = vecf(rows, 13);
+    // v4 always runs its 1024x16 schedule; v3 is served at 512 and is bit-identical across
+    // widths, so v4 must match v3 at BOTH widths.
     for block in [512i32, 1024] {
         let a = run(&e, false, block, &base, &x);
         let b = run(&e, true, block, &base, &x);

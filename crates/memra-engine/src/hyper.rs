@@ -796,6 +796,165 @@ pub static HC_PRE_ZQ8_DISPATCHES: std::sync::atomic::AtomicU64 =
 pub static HC_PRE_V4_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
+fn hc_pre_zq8_selfcheck() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_HC_PRE_ZQ8").as_deref() == Ok("2"))
+}
+
+static HC_PRE_ZQ8_CHECK_SITES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static HC_PRE_ZQ8_CHECK_BAD: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The self-check body of `pre_t1_ws_zq8` (`MEMRA_HC_PRE_ZQ8=2`): fused into scratch, then the
+/// two-launch program into the workspace (which is what the walk then consumes), then a host
+/// compare of pre/post/comb/y/z/q/d. Prints `[hc-pre-zq8-check]` lines: one per site with a
+/// mismatch (first eight differing words with both bit patterns), plus a running summary every
+/// 256 sites.
+#[allow(clippy::too_many_arguments)]
+fn pre_t1_ws_zq8_selfcheck(
+    e: &Engine,
+    topology: &HyperTopology,
+    site: &HyperSite,
+    x: &CudaSlice<f32>,
+    ws: &mut HyperDecodeWs,
+    hidden: usize,
+    norm_w: &CudaSlice<f32>,
+    dst: NormDst,
+    eps_norm: f32,
+) -> Res<()> {
+    let streams = topology.streams;
+    let rows = topology.rows();
+    let width = streams * hidden;
+    let block = crate::hc_pre_block();
+    let rms_bd = crate::rms_block() as usize;
+    let stream = e.stream();
+    {
+        let xr = x.slice(0..width);
+        let wv = site.fn_w.slice(0..site.fn_w.len());
+        let mut yr = ws.mixes.slice_mut(0..rows);
+        e.linear_t1_into(&xr, &wv, &mut yr, width, rows)
+            .map_err(|err| format!("hc pre_t1_ws_zq8 selfcheck mixes: {err}"))?;
+    }
+    // fused program into scratch
+    let mut s_pre = e.uninit(streams)?;
+    let mut s_post = e.uninit(streams)?;
+    let mut s_comb = e.uninit(streams * streams)?;
+    let mut s_y = e.uninit(hidden)?;
+    let mut s_z = e.uninit(hidden)?;
+    let mut s_q = e.uninit_i8(hidden)?;
+    let mut s_d = e.uninit(hidden / 32)?;
+    unsafe {
+        ck(
+            "hc_pre_zq8 (selfcheck fused)",
+            k::memra_dsv4_hc_pre_zq8(
+                dpf!(x, &stream),
+                dpf!(&ws.mixes, &stream),
+                dpf!(site.scale, &stream),
+                dpf!(site.base, &stream),
+                dpm!(&mut s_pre, &stream),
+                dpm!(&mut s_post, &stream),
+                dpm!(&mut s_comb, &stream),
+                dpm!(&mut s_y, &stream),
+                1,
+                streams as i32,
+                hidden as i32,
+                topology.sinkhorn_iterations as i32,
+                topology.epsilon,
+                std::ptr::null_mut(),
+                block as i32,
+                crate::hc_pre_sink_reg() as i32,
+                dpf!(norm_w, &stream),
+                dpm!(&mut s_z, &stream),
+                s_q.device_ptr_mut(&stream).0 as *mut i8,
+                s_d.device_ptr_mut(&stream).0 as *mut f32,
+                rms_bd as i32,
+                eps_norm,
+                sp(&stream),
+            ),
+        )?;
+    }
+    // the two-launch program into the workspace, exactly as the walk runs it
+    {
+        let ws2 = &mut *ws;
+        pre_finish_into(
+            e,
+            topology,
+            site,
+            x,
+            &mut ws2.mixes,
+            &mut ws2.pre,
+            &mut ws2.post,
+            &mut ws2.comb,
+            &mut ws2.y,
+            1,
+            hidden,
+        )?;
+    }
+    let (r_q, r_d) = {
+        let zdst: &mut CudaSlice<f32> = match dst {
+            NormDst::H => &mut ws.h,
+            NormDst::Z => &mut ws.z,
+        };
+        e.rms_norm_zq8_f32(&ws.y, norm_w, zdst, hidden, 1, eps_norm)?
+    };
+    stream.synchronize()?;
+    let ord = HC_PRE_ZQ8_CHECK_SITES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let f = |a: &[f32], b: &[f32], name: &str| -> Vec<String> {
+        a.iter()
+            .zip(b)
+            .enumerate()
+            .filter(|(_, (p, q))| p.to_bits() != q.to_bits())
+            .take(8)
+            .map(|(i, (p, q))| {
+                format!(
+                    "{name}[{i}] fused={:#010x} two={:#010x}",
+                    p.to_bits(),
+                    q.to_bits()
+                )
+            })
+            .collect()
+    };
+    let zref = match dst {
+        NormDst::H => e.dtoh(&ws.h)?,
+        NormDst::Z => e.dtoh(&ws.z)?,
+    };
+    let mut bad: Vec<String> = Vec::new();
+    bad.extend(f(&e.dtoh(&s_pre)?, &e.dtoh(&ws.pre)?[..streams], "pre"));
+    bad.extend(f(&e.dtoh(&s_post)?, &e.dtoh(&ws.post)?[..streams], "post"));
+    bad.extend(f(
+        &e.dtoh(&s_comb)?,
+        &e.dtoh(&ws.comb)?[..streams * streams],
+        "comb",
+    ));
+    bad.extend(f(&e.dtoh(&s_y)?, &e.dtoh(&ws.y)?[..hidden], "y"));
+    bad.extend(f(&e.dtoh(&s_z)?, &zref[..hidden], "z"));
+    bad.extend(f(&e.dtoh(&s_d)?, &e.dtoh(&r_d)?[..hidden / 32], "d"));
+    let (sq, rq) = (e.dtoh_i8(&s_q)?, e.dtoh_i8(&r_q)?);
+    let qbad: Vec<String> = sq
+        .iter()
+        .zip(rq.iter())
+        .enumerate()
+        .filter(|(_, (p, q))| p != q)
+        .take(8)
+        .map(|(i, (p, q))| format!("q[{i}] fused={p} two={q}"))
+        .collect();
+    bad.extend(qbad);
+    if !bad.is_empty() {
+        HC_PRE_ZQ8_CHECK_BAD.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        eprintln!(
+            "[hc-pre-zq8-check] site #{ord} dst={dst:?} MISMATCH: {}",
+            bad.join("; ")
+        );
+    }
+    if ord.is_multiple_of(256) {
+        eprintln!(
+            "[hc-pre-zq8-check] {} sites compared, {} with a mismatch",
+            ord + 1,
+            HC_PRE_ZQ8_CHECK_BAD.load(std::sync::atomic::Ordering::Relaxed)
+        );
+    }
+    Ok(())
+}
+
 /// `pre_t1_ws` and the `rms_norm_zq8` that consumes its `y`, as ONE launch (door
 /// `MEMRA_HC_PRE_ZQ8`, lane/hcpre-zq8-fusion-20260905). Returns the q8_1 pair the walk would
 /// otherwise get from `Engine::rms_norm_zq8_f32`, with `z` (the normed f32 row) written to
@@ -829,6 +988,15 @@ pub fn pre_t1_ws_zq8(
         || !hidden.is_multiple_of(32)
     {
         return Ok(None);
+    }
+    // MEMRA_HC_PRE_ZQ8=2 (self-check, 2026-09-05): the served tape forks between the fused and
+    // the two-launch program while the kernel gate is bitwise green on the served card. This arm
+    // runs the fused kernel into SCRATCH, then returns None so the walk runs the real two-launch
+    // program into the workspace, and compares all seven outputs on the host, printing the first
+    // differing words per site with the site ordinal. Diagnostic only: dtoh per site.
+    if hc_pre_zq8_selfcheck() {
+        return pre_t1_ws_zq8_selfcheck(e, topology, site, x, ws, hidden, norm_w, dst, eps_norm)
+            .map(|()| None);
     }
     let stream = e.stream();
     {
