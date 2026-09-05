@@ -238,7 +238,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &prompt,
                 prompt.len() + 128,
                 Some(cfg0p),
-                false,
+                memra_engine::dflash::DsparkCapture::Off,
             ),
             Err(err) if err.to_string().contains("penalized greedy is served on the plain path")
         );

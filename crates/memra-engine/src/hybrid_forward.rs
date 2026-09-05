@@ -4895,9 +4895,12 @@ impl HybridModel {
         let mut hiddens = e.uninit(t * n_embd)?;
         let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
         for &(start, end) in &ranges {
-            // chunked prime writes tap rows at the chunk's absolute offset
+            // chunked prime writes tap rows at the chunk's absolute offset. `origin` is the
+            // sink's own write base (0 for every single-call prime): a boundary-split dspark
+            // prime carries ONE whole-prompt buffer across two calls and sets it to the split
+            // point, so the suffix call's call-local `start` lands on the monolithic rows.
             if let Some(taps) = cache.dflash_taps.as_mut() {
-                taps.base = start;
+                taps.base = taps.origin + start;
             }
             let (l, hs, x) =
                 self.prime_chunk(e, &tokens[start..end], cache, seq_end, start, overlay)?;

@@ -2587,6 +2587,59 @@ pub struct DflashKv {
     floor: usize,
 }
 
+/// What the dspark cold prime should retain for the cross-request prefix cache, and WHERE it
+/// cuts (lane/dspark-boundary-capture, memra#248).
+///
+/// One argument instead of a `bool` plus an `Option`, because the two were never independent:
+/// a cut with no capture is meaningless, and the pair could express it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DsparkCapture {
+    /// No capture. The prefix-cache-disabled byte path: one `prime_cache` call, no snapshot.
+    Off,
+    /// Capture at prompt end. The shipped behaviour, and still the right cut for a prompt with
+    /// no render-stable boundary inside it.
+    PromptEnd,
+    /// Capture at this render-stable boundary: stop the prime there, snapshot, then prime the
+    /// rest of the prompt onto the same cache. MUST be on the prime grid (the split is
+    /// bit-identical to a monolithic prime only there) - the engine refuses it otherwise.
+    Boundary(usize),
+}
+
+/// Where a dspark cold prime STOPS to take its prefix-cache capture (lane/
+/// dspark-boundary-capture, memra#248). `Ok(None)` = the shipped monolithic prime with the
+/// capture at prompt end; `Ok(Some(b))` = split the prime at `b`, snapshot, then prime the
+/// rest onto the same cache.
+///
+/// REFUSES an off-grid boundary rather than honouring it. A two-call prime split at `L` is
+/// bit-identical to the monolithic prime when `L % gdn_chunk_size() == 0` and diverges from
+/// row `L` onward when it is not (measured, q38 trunk, research/multiturn-cache-20260821/
+/// LONGCTX-EXACTNESS-20260821.md: splits 8256/15200 exact, splits 607/8263/15227 diverge from
+/// row L). An off-grid split is therefore a SILENT numerical change, and the one thing a
+/// caller must never be able to do by accident.
+///
+/// A boundary at or past the prompt end, or at 0, is not a split at all and falls back to the
+/// prompt-end capture — the caller asked for something the prompt does not contain.
+pub(crate) fn dspark_boundary_split(
+    capture: DsparkCapture,
+    tp: usize,
+    grid: usize,
+) -> Result<Option<usize>, Box<dyn std::error::Error>> {
+    let DsparkCapture::Boundary(b) = capture else {
+        return Ok(None);
+    };
+    if b == 0 || b >= tp {
+        return Ok(None);
+    }
+    if grid == 0 || b % grid != 0 {
+        return Err(format!(
+            "dspark boundary capture at {b} is off the prime grid {grid} — an off-grid split \
+             changes the WY fold grid and diverges from row {b} on"
+        )
+        .into());
+    }
+    Ok(Some(b))
+}
+
 impl DflashKv {
     pub fn new(
         e: &Engine,
@@ -3054,6 +3107,7 @@ impl crate::hybrid::HybridModel {
             hidden: n_embd,
             t: tp,
             base: 0,
+            origin: 0,
         });
         let t_prime = std::time::Instant::now();
         let (logits, _h_seed, _hiddens) = self.prime_cache(e, prompt, &mut cache, 0)?;
@@ -3191,6 +3245,7 @@ impl crate::hybrid::HybridModel {
                 hidden: n_embd,
                 t: vt,
                 base: 0,
+                origin: 0,
             });
             let (vam, _vh) = self.gemma4_decode_step_t_am(e, vblock, start, &mut cache)?;
             let taps = cache.dflash_taps.take().unwrap();
@@ -3438,6 +3493,7 @@ impl crate::hybrid::HybridModel {
             hidden: n_embd,
             t: tp,
             base: 0,
+            origin: 0,
         });
         let t_prime = std::time::Instant::now();
         let (logits, _h_seed, _hiddens) = self.prime_cache(e, prompt, &mut cache, 0)?;
@@ -3771,6 +3827,7 @@ impl crate::hybrid::HybridModel {
                 hidden: n_embd,
                 t: vt,
                 base: 0,
+                origin: 0,
             });
             // The whole fallible verify window runs inside a closure so the Err path can
             // return the sink buffer to the ctx pool before propagating (v0.98 review
@@ -4444,7 +4501,7 @@ impl crate::hybrid::HybridModel {
         prompt: &[u32],
         ctx_cap: usize,
         sampling: Option<crate::spec::SpecSampling>,
-        capture_prefix: bool,
+        capture: DsparkCapture,
     ) -> Result<DsparkSpecSession, Box<dyn std::error::Error>> {
         use crate::cache::{Cache, DflashTapSink};
         assert!(
@@ -4492,14 +4549,67 @@ impl crate::hybrid::HybridModel {
         }
         let mut cache = Cache::new(e, &self.cfg, max_ctx)?;
         let tp = prompt.len();
+        // Filled by the boundary-split arm below, BEFORE the suffix prime runs.
+        let mut boundary_capture: Option<crate::spec::SpecBoundaryCapture> = None;
         cache.dflash_taps = Some(DflashTapSink {
             layer_ids: c.target_layer_ids.clone(),
             buf: e.uninit(tp * n_taps * n_embd)?,
             hidden: n_embd,
             t: tp,
             base: 0,
+            origin: 0,
         });
-        let (logits, _h_seed, _hiddens) = self.prime_cache(e, prompt, &mut cache, 0)?;
+        // BOUNDARY-SPLIT PRIME (lane/dspark-boundary-capture, memra#248). `capture_at =
+        // Some(b)` with `0 < b < tp` stops the trunk walk at `b`, so the capture below can
+        // snapshot a RENDER-STABLE prefix instead of the prompt end. The suffix then continues
+        // on the same cache, which `prime_cache` has supported since 7700e0b6 (positions carry
+        // the sequence base). `queued_after` is what keeps `seq_end` request-absolute across
+        // both calls — the first call declares the `tp - b` rows still to come, exactly as the
+        // chunk loop's own `seq_end` does, so every windowed arm sees the same request length
+        // it would have seen unsplit.
+        //
+        // BIT-IDENTITY comes from the grid, not from hope: a two-call prime split at `L` is
+        // bit-identical to the monolithic prime when `L % gdn_chunk_size() == 0` and diverges
+        // from row `L` onward when it is not (measured, q38 trunk, research/multiturn-cache-
+        // 20260821/LONGCTX-EXACTNESS-20260821.md). The caller's boundary comes from
+        // `plain_checkpoint_boundary`, which is already grid-aligned; this refuses anything
+        // else rather than trusting it, because an off-grid split is a SILENT numerical
+        // change, not an error.
+        let split = dspark_boundary_split(capture, tp, Engine::gdn_chunk_size())?;
+        let (logits, _h_seed, _hiddens) = match split {
+            None => self.prime_cache(e, prompt, &mut cache, 0)?,
+            Some(b) => {
+                let (lb, _hb, _xb) = self.prime_cache(e, &prompt[..b], &mut cache, tp - b)?;
+                // The boundary capture is taken HERE, on a cache holding exactly `b` rows and
+                // with `lb` the logits the next token would be drawn from — the two halves
+                // `dspark_spec_session_from_restored` demands of an entry. Nothing between
+                // this point and the suffix prime mutates the trunk.
+                boundary_capture = if let Ok(snap) = cache.snapshot(e) {
+                    Some(crate::spec::SpecBoundaryCapture {
+                        snap,
+                        pos: b,
+                        logits: lb,
+                        last_h: Vec::new(),
+                        latent_tails: Vec::new(),
+                    })
+                } else {
+                    None
+                };
+                // Sink rows for the suffix land at their ABSOLUTE positions: the chunked walk
+                // sets `base = origin + call-local start`, so the whole-prompt buffer fills
+                // exactly as the monolithic prime filled it and the drafter ingest below is
+                // unchanged.
+                if let Some(taps) = cache.dflash_taps.as_mut() {
+                    taps.origin = b;
+                    taps.base = b;
+                }
+                let out = self.prime_cache(e, &prompt[b..], &mut cache, 0)?;
+                if let Some(taps) = cache.dflash_taps.as_mut() {
+                    taps.origin = 0;
+                }
+                out
+            }
+        };
         // Boundary token: greedy argmax (byte contract) or the request's own filtered
         // draw through the session Philox stream (the frspec boundary composition) —
         // penalized over the prompt window when the request carries penalties.
@@ -4537,12 +4647,30 @@ impl crate::hybrid::HybridModel {
             }
         }
         e.stream().synchronize()?;
-        // FULL-PROMPT ONLY. Unlike MTP, DFlash cannot restore its draft plane from a trunk
-        // prefix, so there is no LCP/message-boundary split arm here. Mandatory draft-KV
-        // allocation + ingest has already succeeded; the optional snapshot can no longer turn
-        // a session that would have fit into a draft-allocation failure. Capture remains before
-        // any speculative burst mutates the recurrent state.
-        let prefix_capture = if capture_prefix {
+        // WHERE THE ENTRY IS CUT. Prompt-end is the shipped default and the only cut that
+        // existed before memra#248: the draft plane derives from trunk hidden FEATURES, so
+        // unlike MTP there is no way to rebuild it from a restored trunk prefix, and the
+        // entry had to cover the whole prompt for the drafter half to be restorable at all.
+        // The published draft TAIL is what lifted that (`export_tail(e, upto)` cuts the
+        // drafter at any `upto <= len`), leaving one real constraint: the TRUNK snapshot is
+        // taken at the cache's live fill, so an entry cut at `b` needs the walk to have
+        // STOPPED at `b`. That is the split above.
+        //
+        // WHY IT MATTERS (darklanes, box13, 2026-09-05): a prompt-end entry carries the
+        // template's live generation header, which the next turn re-renders, so turn N's
+        // entry misses turn N+1 by a handful of tokens FOREVER — measured as
+        // `insert probation (dspark-boundary): 13469 tokens` then `prompt=13528 cached=0
+        // lcp=13468`, off by exactly one token every turn, and a 152,665-token shared prefix
+        // re-primed from zero on the long shape. Cutting at the render-stable boundary is
+        // what makes the entry a TRUE PREFIX of the next turn, which is the whole
+        // precondition `MEMRA_DSPARK_PARTIAL_RESTORE` (memra#252) waits on.
+        //
+        // Mandatory draft-KV allocation + ingest has already succeeded, so the optional
+        // snapshot can no longer turn a session that would have fit into a draft-allocation
+        // failure. Both arms capture before any speculative burst mutates the recurrent state.
+        let prefix_capture = if boundary_capture.is_some() {
+            boundary_capture
+        } else if capture != DsparkCapture::Off {
             cache
                 .snapshot(e)
                 .ok()
@@ -4831,6 +4959,7 @@ impl crate::hybrid::HybridModel {
             hidden: n_embd,
             t: tp,
             base: 0,
+            origin: 0,
         });
         let (logits, _h_seed, _hiddens) = self.prime_cache(e, suffix, &mut sess.cache, 0)?;
         let sp_pen = sess.sampling.filter(|s| s.temp > 0.0 && s.pen_on());
@@ -5155,6 +5284,7 @@ impl crate::hybrid::HybridModel {
                 hidden: n_embd,
                 t: vt,
                 base: 0,
+                origin: 0,
             });
             // Composition guard (sampled admission × model-owned pool, this train's
             // cross-product): the slab flag is a per-round statement, but only the
@@ -6947,5 +7077,66 @@ mod dflash_tensor_contract_tests {
         assert!(validate_selector_top_k(129, 128).is_err());
         assert!(validate_layer_layout(&[true, true], 2).is_ok());
         assert!(validate_layer_layout(&[true], 2).is_err());
+    }
+}
+
+#[cfg(test)]
+mod dspark_boundary_capture_tests {
+    use super::{DsparkCapture, dspark_boundary_split};
+
+    const GRID: usize = 32;
+
+    fn split(at: Option<usize>, cap: bool, tp: usize) -> Result<Option<usize>, String> {
+        let c = match (cap, at) {
+            (false, _) => DsparkCapture::Off,
+            (true, None) => DsparkCapture::PromptEnd,
+            (true, Some(b)) => DsparkCapture::Boundary(b),
+        };
+        dspark_boundary_split(c, tp, GRID).map_err(|e| e.to_string())
+    }
+
+    #[test]
+    fn no_boundary_keeps_the_monolithic_prime() {
+        // The shipped path: capture requested, no boundary -> one prime, capture at prompt end.
+        assert_eq!(split(None, true, 1024), Ok(None));
+        // A boundary with capture OFF must never split: that is the prefix-cache-disabled
+        // byte path and it stays exactly one prime_cache call.
+        assert_eq!(split(Some(512), false, 1024), Ok(None));
+    }
+
+    #[test]
+    fn on_grid_boundary_inside_the_prompt_splits() {
+        assert_eq!(split(Some(512), true, 1024), Ok(Some(512)));
+        assert_eq!(split(Some(GRID), true, 1024), Ok(Some(GRID)));
+        assert_eq!(split(Some(1024 - GRID), true, 1024), Ok(Some(1024 - GRID)));
+    }
+
+    #[test]
+    fn degenerate_boundaries_fall_back_instead_of_failing() {
+        // 0 and >= tp are not splits of this prompt at all — the caller gets the prompt-end
+        // capture rather than an error, because neither is a numerical hazard.
+        assert_eq!(split(Some(0), true, 1024), Ok(None));
+        assert_eq!(split(Some(1024), true, 1024), Ok(None));
+        assert_eq!(split(Some(2048), true, 1024), Ok(None));
+    }
+
+    #[test]
+    fn off_grid_boundary_is_refused_not_honoured() {
+        // THE RED ARM. An off-grid split silently changes the WY fold grid and diverges from
+        // row L on (LONGCTX-EXACTNESS-20260821). It must fail loudly, never serve.
+        for b in [1usize, 31, 513, 607, 1000] {
+            let got = split(Some(b), true, 2048);
+            assert!(
+                got.is_err(),
+                "off-grid boundary {b} must be refused, got {got:?}"
+            );
+            let msg = got.unwrap_err();
+            assert!(
+                msg.contains("off the prime grid"),
+                "refusal must name the grid: {msg}"
+            );
+        }
+        // A zero grid is a broken engine constant, not a licence to split.
+        assert!(dspark_boundary_split(DsparkCapture::Boundary(512), 1024, 0).is_err());
     }
 }

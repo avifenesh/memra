@@ -727,6 +727,22 @@ struct DsparkColdPrefixAdmission {
     /// (any overlap, with NO floor — a 5-token common prefix satisfied it while nothing
     /// consumable existed).
     hit_available: bool,
+    /// Whether that hit can feed the DSPARK CONVERSION rather than only the plain path
+    /// (`dspark_hit_is_restorable`: the entry carries a draft tail, and it covers the prompt
+    /// whole or - under `MEMRA_DSPARK_PARTIAL_RESTORE` - as a strict prefix).
+    ///
+    /// WHY IT DEFEATS THE SHAPE VETO (lane/dspark-boundary-capture, memra#248). The veto's
+    /// premise is a TRADE: taking the hit means going plain, so a cold prime is only worth its
+    /// discarded prefill when the decode is long enough to repay it. A restorable hit is not
+    /// that trade. The trunk planes AND the draft tail both come back, and only the suffix is
+    /// primed, so the request keeps the prefill saving and its speculation. Vetoing it costs
+    /// both: the 5090 cell measured `cache-preferred: prompt=13646 decode_budget=400
+    /// lcp=13440 - serving the hit and going plain` on every restorable turn, with the
+    /// drafter's own tail sitting in the entry, unused.
+    ///
+    /// Scoped to the partial door so a fully shut fleet is byte-identical: with every door
+    /// unset this is false everywhere and the veto keeps its shipped shape.
+    hit_restorable: bool,
 }
 
 /// How long the decode must be before a cold DFlash prime is worth discarding a cache hit,
@@ -779,8 +795,12 @@ fn dspark_prefers_cold_over_prefix(a: DsparkColdPrefixAdmission) -> bool {
         && !a.constrained
         && !a.vision
         && a.cold
-        // The shape veto applies ONLY when a hit is actually there to be served instead.
+        // The shape veto applies ONLY when a hit is actually there to be served instead,
+        // and only when taking that hit really does cost the speculation. A restorable hit
+        // does not: it re-arms the drafter from the entry's own tail and primes only the
+        // suffix, so there is no prefill to repay and nothing to trade away.
         && (!a.hit_available
+            || a.hit_restorable
             || dspark_cold_prime_repays_prefill(a.prompt_len, a.decode_budget))
         && dspark_load_admits(
             a.greedy,
@@ -858,6 +878,35 @@ fn should_probe_prefix_cache(
 fn dspark_partial_restore_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_DSPARK_PARTIAL_RESTORE").as_deref() == Ok("1"))
+}
+
+/// MEMRA_DSPARK_BOUNDARY_CAPTURE (default **0 = OFF by design**, lane/dspark-boundary-capture
+/// 2026-09-06, memra#248). Cut the dspark prefix-cache entry at the prompt's RENDER-STABLE
+/// turn boundary (`plain_checkpoint_boundary`) instead of at prompt end: the cold prime stops
+/// there, snapshots the trunk, and then primes the rest of the prompt onto the same cache.
+///
+/// WHY. `MEMRA_DSPARK_PARTIAL_RESTORE` (memra#252) opened the restore door for strict-prefix
+/// hits, and the A/B on the rented 5090 proved it INERT — not because the door failed, but
+/// because no entry is ever a strict prefix. A prompt-end entry ends inside the template's
+/// live generation header, which the next turn re-renders, so it misses by a handful of
+/// tokens every single turn:
+///   insert probation (dspark-boundary): 13469 tokens
+///   prompt=13528 cached=0 lcp=13468
+/// Off by exactly one token, forever. Cutting at the stable boundary is what makes turn N's
+/// entry a true prefix of turn N+1 and gives #252 something to restore FROM.
+///
+/// COST when armed: the entry stops short of the live turn, so an EXACT re-send of the same
+/// prompt now restores at the boundary and re-primes the live turn (tens of tokens) instead
+/// of restoring whole. That is the trade the shape asks for — exact re-sends are 31 of 220
+/// customer requests, and every other request is a strict prefix that gets nothing today.
+///
+/// DEFAULT OFF until the restored-vs-cold byte-identity gate is green on the serving binary,
+/// per the carve-out law. The split itself is grid-aligned (`plain_checkpoint_boundary`
+/// returns a `grid_align_boundary` value, and the engine REFUSES an off-grid boundary), which
+/// is the measured precondition for a two-call prime to be bit-identical to a monolithic one.
+fn dspark_boundary_capture_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_DSPARK_BOUNDARY_CAPTURE").as_deref() == Ok("1"))
 }
 
 fn dspark_hit_is_restorable(entry_toks: usize, prompt_toks: usize, entry_has_tail: bool) -> bool {
@@ -10923,6 +10972,12 @@ struct Session {
     /// Whether the lazy DFlash prime should retain one full-prompt trunk capture for the
     /// cross-request prefix cache. False preserves the prefix-cache-disabled byte path.
     dspark_capture_prefix: bool,
+    /// WHERE that capture is cut (lane/dspark-boundary-capture, memra#248). `None` = prompt
+    /// end, the shipped behaviour. `Some(b)` = the render-stable turn boundary, which stops
+    /// the prime at `b`, snapshots, and primes the rest onto the same cache — the cut that
+    /// makes the entry a true prefix of the session's NEXT turn. Set only under
+    /// `dspark_boundary_capture_on`.
+    dspark_capture_at: Option<usize>,
     /// GLM5 SPEC route (lane/glm5-spec-routing, 2026-08-30): the glm5_next twin of
     /// `gspec`/`dspark` — Some = this session decodes in `glm5_spec_session_burst` bursts
     /// via `step_glm5_spec` (MTP draft chain -> one t=K+1 verify walk -> accept ->
@@ -18138,6 +18193,8 @@ fn admit(
         prompt_len: prompt.len(),
         decode_budget: budget,
         hit_available: consumable_hit.is_some(),
+        // Only under the partial door: a shut fleet keeps the veto's shipped shape exactly.
+        hit_restorable: dspark_restorable_hit && dspark_partial_restore_on(),
     };
     let dspark_prefers_cold = dspark_prefers_cold_over_prefix(cold_prefix_inputs);
     // The receipt names the veto ONLY when the veto is what flipped the route. Guarding it on
@@ -19833,6 +19890,19 @@ fn admit(
         dspark_exact_key_present,
         has_exact_preprime_dspark_owner,
     );
+    // The render-stable cut, computed from THIS prompt's own turn markers by the same
+    // helper the plain tier's stable boundary uses. `stable_boundary_arm` enforces the
+    // entry floor and `b < prompt.len()`; `plain_checkpoint_boundary` already grid-aligned
+    // it, which is what lets the engine split the prime without changing its numerics.
+    let dspark_capture_at = if dspark_capture_prefix && dspark_boundary_capture_on() {
+        stable_boundary_arm(
+            plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t)),
+            None,
+            prompt.len(),
+        )
+    } else {
+        None
+    };
     // ---- GLM5 SPEC ROUTE decision (lane/glm5-spec-routing, 2026-08-30) ----
     // Mutually exclusive with every other spec program BY MANIFEST: `mtp_spec_capable` is
     // false for glm5 plans (MTP_SPEC's table has no hc/KDA/MLA classes — pinned by
@@ -20264,6 +20334,7 @@ fn admit(
         // correct dispatch was byte-exact, including 414-prompt/64-budget.
         dspark_on: dspark_on || dspark_session_installed,
         dspark_capture_prefix,
+        dspark_capture_at,
         // The glm5 dispatch flag follows the dspark convention: derived from the decision
         // that shaped THIS literal, so the tick dispatch and the installed session cannot
         // disagree. The restore fold (lane/glm5-prefix-latent2) rides the carrier shape:
@@ -22579,7 +22650,13 @@ fn step_dspark_spec(
             &prompt,
             s.gspec_ctx,
             spec_sampling_for(&s.sampler),
-            s.dspark_capture_prefix,
+            // The two admission-time decisions ride one argument: whether to keep a capture,
+            // and where to cut it. `dspark_capture_at` is Some only under its own door.
+            match (s.dspark_capture_prefix, s.dspark_capture_at) {
+                (false, _) => memra_engine::dflash::DsparkCapture::Off,
+                (true, None) => memra_engine::dflash::DsparkCapture::PromptEnd,
+                (true, Some(b)) => memra_engine::dflash::DsparkCapture::Boundary(b),
+            },
         ) {
             Ok(sess) => sess,
             Err(err) => {
@@ -23328,7 +23405,7 @@ fn run_boot_calibration(
                         &prompt,
                         probe_ctx,
                         Some(sampling),
-                        false,
+                        memra_engine::dflash::DsparkCapture::Off,
                     )?;
                     let (_out, drafted, accepted) = lm.model.dspark_spec_session_burst(
                         engine,
@@ -26630,6 +26707,88 @@ mod tests {
         ));
     }
 
+    /// A RESTORABLE hit defeats the shape veto (memra#248). The veto's premise is that
+    /// taking the hit costs the speculation; a restorable hit re-arms the drafter from the
+    /// entry's own tail and primes only the suffix, so there is nothing to trade.
+    #[test]
+    fn a_restorable_hit_defeats_the_shape_veto() {
+        // The exact shape the 5090 cell measured: a 13,646-token prompt, a 400-token budget,
+        // and a 13,440-token hit. Short decode, huge prefill - the veto's home ground.
+        let vetoed = super::DsparkColdPrefixAdmission {
+            route_ready: true,
+            prime_feasible: true,
+            greedy: true,
+            greedy_penalized: false,
+            sampled: false,
+            constrained: false,
+            vision: false,
+            cold: true,
+            gate_on: true,
+            pin: None,
+            projected_wave: 1,
+            low: 2,
+            n_active: 0,
+            has_live_non_demotable: false,
+            prompt_len: 13_646,
+            decode_budget: 400,
+            hit_available: true,
+            hit_restorable: false,
+        };
+        // RED ARM. Without the restorable bit this is exactly the shipped decline, and the
+        // log line it produces is "serving the hit and going plain".
+        assert!(
+            !super::dspark_prefers_cold_over_prefix(vetoed),
+            "a short decode against a big prefill must still lose the cold prime"
+        );
+        let restorable = super::DsparkColdPrefixAdmission {
+            hit_restorable: true,
+            ..vetoed
+        };
+        assert!(
+            super::dspark_prefers_cold_over_prefix(restorable),
+            "a restorable hit keeps the dspark route: the prefill is not discarded"
+        );
+        // And the probe still runs in both arms, so the restore has a carrier to consume.
+        for a in [vetoed, restorable] {
+            let prefers = super::dspark_prefers_cold_over_prefix(a);
+            assert!(super::should_probe_prefix_cache(
+                true,
+                false,
+                prefers,
+                a.hit_restorable
+            ));
+        }
+        // The relaxation is NOT a licence to speculate without a hit: every other refusal
+        // still holds, restorable or not.
+        for broken in [
+            super::DsparkColdPrefixAdmission {
+                vision: true,
+                ..restorable
+            },
+            super::DsparkColdPrefixAdmission {
+                constrained: true,
+                ..restorable
+            },
+            super::DsparkColdPrefixAdmission {
+                route_ready: false,
+                ..restorable
+            },
+            super::DsparkColdPrefixAdmission {
+                prime_feasible: false,
+                ..restorable
+            },
+            super::DsparkColdPrefixAdmission {
+                cold: false,
+                ..restorable
+            },
+        ] {
+            assert!(
+                !super::dspark_prefers_cold_over_prefix(broken),
+                "the restorable bit must not override a shape or route refusal"
+            );
+        }
+    }
+
     /// The shape guard must reach the real decision, not just exist as a helper.
     #[test]
     fn the_shape_guard_flips_the_route_and_re_enables_the_prefix_probe() {
@@ -26651,6 +26810,7 @@ mod tests {
             prompt_len: 30_312,
             decode_budget: 8_192,
             hit_available: true,
+            hit_restorable: false,
         };
         assert!(
             super::dspark_prefers_cold_over_prefix(long_decode),
@@ -26686,6 +26846,7 @@ mod tests {
         // and buy no hit in return — worse than either. Review finding.
         let no_hit = super::DsparkColdPrefixAdmission {
             hit_available: false,
+            hit_restorable: false,
             ..short_decode
         };
         assert!(
@@ -26843,6 +27004,7 @@ mod tests {
             prompt_len: 30_000,
             decode_budget: 8_192,
             hit_available: true,
+            hit_restorable: false,
         };
         let route = |a| {
             let prefers = super::dspark_prefers_cold_over_prefix(a);
@@ -26917,6 +27079,7 @@ mod tests {
             prompt_len: 30_000,
             decode_budget: 8_192,
             hit_available: true,
+            hit_restorable: false,
         };
         let prefers = super::dspark_prefers_cold_over_prefix;
 
@@ -30072,11 +30235,55 @@ mod tests {
                 "each armed site derives the boundary from plain_checkpoint_boundary"
             );
         }
-        // The miss arm goes through the pure deepest-wins rule (definition + one call).
+        // The miss arm goes through the pure deepest-wins rule, and so does the dspark
+        // boundary capture (definition + the plain miss arm + the dspark cut).
         assert_eq!(
             prod.matches("stable_boundary_arm(").count(),
+            3,
+            "definition + the plain miss-path arm + the dspark boundary capture"
+        );
+    }
+
+    /// The dspark boundary cut (memra#248) is a numerical change to the prime, so its wiring
+    /// is asserted, not assumed: one door, one derivation, and the value reaching the engine.
+    #[test]
+    fn dspark_boundary_capture_wiring() {
+        let src = include_str!("worker.rs");
+        let code: String = src
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
+
+        // The door is read in exactly one place besides its definition: the derivation.
+        assert_eq!(
+            prod.matches("dspark_boundary_capture_on()").count(),
             2,
-            "definition + the miss-path arm"
+            "definition + the one derivation site"
+        );
+        // The derivation is gated on BOTH the door and a requested capture, and it comes
+        // from the prompt's own turn markers.
+        let d = prod
+            .find("let dspark_capture_at =")
+            .expect("the derivation exists");
+        let window = &prod[d..(d + 500).min(prod.len())];
+        assert!(
+            window.contains("dspark_capture_prefix && dspark_boundary_capture_on()"),
+            "the cut must require a requested capture AND the door"
+        );
+        assert!(
+            window.contains("plain_checkpoint_boundary(&prompt"),
+            "the cut is the render-stable boundary of THIS prompt"
+        );
+        // And it reaches the engine: the serving prime call carries it.
+        let call = prod
+            .find("lm.model.dspark_spec_session_new(")
+            .expect("the serving prime call exists");
+        let args = &prod[call..(call + 400).min(prod.len())];
+        assert!(
+            args.contains("s.dspark_capture_at"),
+            "the serving prime must pass the session's cut, not a literal"
         );
     }
 
