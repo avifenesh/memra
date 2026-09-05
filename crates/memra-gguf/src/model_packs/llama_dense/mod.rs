@@ -45,6 +45,18 @@ pub static PACK: ModelPack = ModelPack {
             && config.hy3.is_none()
             && config.step35.is_none()
             && config.geometry.is_none()
+            // A window or a non-identity rope scaling makes this a different attention/RoPE
+            // program than the one this pack compiles, and nothing downstream would notice:
+            // `attention_window` would answer None (full attention) and the canonical plan
+            // would compile `RopeFactors::None`. Mistral-7B-v0.1 (`sliding_window: 4096`) and
+            // Llama-3.1 (`rope_type: llama3`) are both llama-shaped and both belong to
+            // neither this pack nor any other today, so they must fail closed rather than
+            // load as something they are not.
+            && config.window_hint.is_none()
+            && config
+                .rope_scaling_hint
+                .as_deref()
+                .is_none_or(|kind| kind == "default")
     },
     plan_builder: canonical_plan,
     tensor_schema: canonical_tensor_schema,
@@ -177,5 +189,69 @@ mod tests {
         ));
         assert!(!PACK.matches_config(&qwen));
         assert_eq!(super::super::for_config(&qwen).unwrap().family, "qwen3");
+    }
+
+    /// Mistral-7B-v0.1 is `model_type: mistral` with `sliding_window: 4096`. Its attention is
+    /// a different program from the one this pack compiles, and the failure is silent: this
+    /// pack's plan answers `AttentionPlan::Full` and the window is never applied. Before this
+    /// pack existed, HF `mistral` was `Arch::Other` and the undeclared-gate check refused it;
+    /// the pack must keep that door shut rather than inherit the config on family shape.
+    #[test]
+    fn a_dense_mistral_with_a_sliding_window_is_refused() {
+        let windowed = ModelConfig::from_hf(&HfConfig::parse(
+            r#"{"model_type":"mistral","num_hidden_layers":2,"hidden_size":8,
+            "num_attention_heads":2,"num_key_value_heads":1,"head_dim":4,
+            "intermediate_size":16,"vocab_size":32,"max_position_embeddings":32,
+            "rms_norm_eps":0.00001,"rope_theta":1000000.0,"sliding_window":4096}"#,
+        ));
+        assert_eq!(windowed.arch, Arch::Llama);
+        assert_eq!(windowed.window_hint, Some(4096));
+        assert!(
+            !PACK.matches_config(&windowed),
+            "a windowed dense mistral must not load as the full-attention program"
+        );
+        assert!(super::super::for_config(&windowed).is_none());
+    }
+
+    /// Llama-3.1 is llama-shaped with `rope_scaling.rope_type: llama3`, a per-frequency
+    /// divisor program the canonical plan does not compile (it emits `RopeFactors::None`).
+    /// Same silent substitution, same refusal.
+    #[test]
+    fn a_llama3_rope_scaled_config_is_refused() {
+        let scaled = ModelConfig::from_hf(&HfConfig::parse(
+            r#"{"model_type":"llama","num_hidden_layers":2,"hidden_size":8,
+            "num_attention_heads":2,"num_key_value_heads":1,"head_dim":4,
+            "intermediate_size":16,"vocab_size":32,"max_position_embeddings":32,
+            "rms_norm_eps":0.00001,"rope_theta":500000.0,
+            "rope_scaling":{"rope_type":"llama3","factor":8.0,
+            "low_freq_factor":1.0,"high_freq_factor":4.0,
+            "original_max_position_embeddings":8192}}"#,
+        ));
+        assert_eq!(scaled.arch, Arch::Llama);
+        assert_eq!(scaled.rope_scaling_hint.as_deref(), Some("llama3"));
+        assert!(
+            !PACK.matches_config(&scaled),
+            "llama3 rope scaling must not compile as identity rope"
+        );
+        assert!(super::super::for_config(&scaled).is_none());
+    }
+
+    /// The happy path stays open: DictaLM has no window and no rope scaling.
+    #[test]
+    fn the_dictalm_config_still_matches() {
+        let dicta = ModelConfig::from_hf(&HfConfig::parse(
+            r#"{"model_type":"mistral","num_hidden_layers":40,"hidden_size":5120,
+            "num_attention_heads":32,"num_key_value_heads":8,"head_dim":128,
+            "intermediate_size":32768,"vocab_size":131072,
+            "max_position_embeddings":131072,"rms_norm_eps":0.00001,
+            "rope_theta":1000000.0,"sliding_window":null}"#,
+        ));
+        assert_eq!(dicta.window_hint, None);
+        assert_eq!(dicta.rope_scaling_hint, None);
+        assert!(PACK.matches_config(&dicta));
+        assert_eq!(
+            super::super::for_config(&dicta).unwrap().family,
+            "llama_dense"
+        );
     }
 }
