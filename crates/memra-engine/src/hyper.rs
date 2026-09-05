@@ -417,7 +417,7 @@ pub fn pre_exact(
         let xr = x.slice(r * width..(r + 1) * width);
         let wv = site.fn_w.slice(0..site.fn_w.len());
         let mut yr = mixes.slice_mut(r * rows..(r + 1) * rows);
-        e.linear_t1_into(&xr, &wv, &mut yr, width, rows)
+        hc_mixes_into(e, &xr, &wv, &mut yr, width, rows)
             .map_err(|err| format!("hc pre_exact row {r}: {err}"))?;
     }
     pre_finish(e, topology, site, x, mixes, t, hidden)
@@ -758,7 +758,7 @@ pub fn pre_t1_ws(
         let xr = x.slice(0..width);
         let wv = site.fn_w.slice(0..site.fn_w.len());
         let mut yr = ws.mixes.slice_mut(0..rows);
-        e.linear_t1_into(&xr, &wv, &mut yr, width, rows)
+        hc_mixes_into(e, &xr, &wv, &mut yr, width, rows)
             .map_err(|err| format!("hc pre_t1_ws mixes: {err}"))?;
     }
     let ws = &mut *ws;
@@ -787,6 +787,31 @@ pub fn pre_t1_ws(
 pub enum NormDst {
     H,
     Z,
+}
+
+pub static HC_MIXES_KERNEL_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// The hc mixes projection at t=1: the native kernel under `MEMRA_HC_MIXES_KERNEL=1` where the
+/// shape fits, cuBLASLt (`linear_t1_into`) otherwise and by default. One seam for every site.
+fn hc_mixes_into(
+    e: &Engine,
+    x: &cudarc::driver::CudaView<'_, f32>,
+    w: &cudarc::driver::CudaView<'_, f32>,
+    y: &mut cudarc::driver::CudaViewMut<'_, f32>,
+    in_f: usize,
+    out_f: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if Engine::hc_mixes_kernel_on() && e.hc_mixes_gemv_into(x, w, y, in_f, out_f)? {
+        if HC_MIXES_KERNEL_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+            eprintln!(
+                "[hc-mixes-kernel] engaged in_f={in_f} out_f={out_f} (native hc_mixes_gemv_f32 \
+                 in place of cuBLASLt dot+reduce; MEMRA_HC_MIXES_KERNEL=1, numeric class)"
+            );
+        }
+        return Ok(());
+    }
+    e.linear_t1_into(x, w, y, in_f, out_f)
 }
 
 pub static HC_PRE_ZQ8_DISPATCHES: std::sync::atomic::AtomicU64 =
@@ -1003,7 +1028,7 @@ pub fn pre_t1_ws_zq8(
         let xr = x.slice(0..width);
         let wv = site.fn_w.slice(0..site.fn_w.len());
         let mut yr = ws.mixes.slice_mut(0..rows);
-        e.linear_t1_into(&xr, &wv, &mut yr, width, rows)
+        hc_mixes_into(e, &xr, &wv, &mut yr, width, rows)
             .map_err(|err| format!("hc pre_t1_ws_zq8 mixes: {err}"))?;
     }
     let mut q = e.uninit_i8(hidden)?;

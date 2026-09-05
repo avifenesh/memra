@@ -705,6 +705,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
+        // ---- hc mixes GEMV: cuBLASLt (served) vs the native kernel, back-to-back x300 ----
+        // The mixes projection (24 x 16384 f32) runs once per hc pre site, 90 per token; the
+        // served path is cuBLASLt's dot+reduce pair. Kernel-only us per launch, same buffers.
+        if t == 1 {
+            const NB: usize = 300;
+            let rows = (2 + HC) * HC;
+            let eng = memra_engine::Engine::new(dev)?;
+            let xe = eng.htod(&s.x[..HC * D])?;
+            let we = eng.htod(&vecf(rows * HC * D, 0x31))?;
+            let mut ye = eng.uninit(rows)?;
+            let mut res: Vec<(&str, f64)> = Vec::new();
+            for round in 0..2 {
+                for arm in ["cublas", "native"] {
+                    let mut launch = || -> Res<()> {
+                        let xv = xe.slice(0..HC * D);
+                        let wv = we.slice(0..rows * HC * D);
+                        let mut yv = ye.slice_mut(0..rows);
+                        if arm == "cublas" {
+                            eng.linear_t1_into(&xv, &wv, &mut yv, HC * D, rows)?;
+                        } else {
+                            assert!(eng.hc_mixes_gemv_into(&xv, &wv, &mut yv, HC * D, rows)?);
+                        }
+                        Ok(())
+                    };
+                    for _ in 0..20 {
+                        launch()?;
+                    }
+                    eng.stream().synchronize()?;
+                    let t0 = std::time::Instant::now();
+                    for _ in 0..NB {
+                        launch()?;
+                    }
+                    eng.stream().synchronize()?;
+                    let us = t0.elapsed().as_secs_f64() * 1e6 / NB as f64;
+                    if round == 1 {
+                        res.push((arm, us));
+                    }
+                }
+            }
+            println!(
+                "[mixes-timing] t=1 rows={rows} in_f={} back-to-back x{NB}: cublas {:.2} us/launch, native {:.2} us/launch ({:+.1}%)",
+                HC * D,
+                res[0].1,
+                res[1].1,
+                100.0 * (res[1].1 / res[0].1 - 1.0)
+            );
+        }
+
         // ---- hc_post alone, N=5: census-context only, NOT fused with anything ----
         let f_h = vecf(t * D, 0xF00D ^ t as u64);
         let res_h = vecf(t * HC * D, 0xBEEF ^ t as u64);
