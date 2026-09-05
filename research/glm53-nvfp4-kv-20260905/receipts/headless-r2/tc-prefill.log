@@ -1,0 +1,7 @@
+
+running 1 test
+test hybrid_forward::latent_tc_prefill_tests::tensor_core_prefill_chain_uses_compressed_history_with_existing_prefix ... [mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=16, t_kv=35, nh=4, width=24); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 384 filtered out; finished in 0.37s
+

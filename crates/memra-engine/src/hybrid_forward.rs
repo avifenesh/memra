@@ -2088,7 +2088,8 @@ impl HybridModel {
             if !last_only {
                 return Err("NVFP4 latent stateless all-row forward is not wired; use cached teacher forcing".into());
             }
-            let mut cache = crate::pp::new_cache(e, &self.cfg, tokens.len().saturating_add(8))?;
+            let mut cache =
+                crate::pp::new_cache_for_model(e, self, tokens.len().saturating_add(8))?;
             return Ok(self.prime_cache(e, tokens, &mut cache, 0)?.0);
         }
         let topology = *self

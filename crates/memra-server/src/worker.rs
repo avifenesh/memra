@@ -2229,9 +2229,15 @@ fn park_compact_rows(
 /// DESIGN, so the probe admits them and the admit path grows the cache to `ctx_cap`
 /// through the checkpoint-restore extension before any suffix primes. Pure so both
 /// arms are unit-testable; with the flag OFF the predicate is byte-identical to the
-/// legacy comparison.
-fn plain_resume_cap_admits(entry_cap: usize, ctx_cap: usize, park_compact: bool) -> bool {
-    entry_cap >= ctx_cap || park_compact
+/// legacy comparison. Latent caches can reuse existing room but cannot use this
+/// length-only checkpoint to grow; the dedicated latent prefix path carries them.
+fn plain_resume_cap_admits(
+    entry_cap: usize,
+    ctx_cap: usize,
+    park_compact: bool,
+    has_latent: bool,
+) -> bool {
+    entry_cap >= ctx_cap || (park_compact && !has_latent)
 }
 
 /// Minimum parked prefix worth reusing (below this, cold prime is cheaper than bookkeeping).
@@ -2750,6 +2756,11 @@ fn compact_parked_plain_cache(
     model: &str,
 ) -> (Cache, usize) {
     let orig_cap = cache.max_ctx;
+    // The length/recurrent-only checkpoint cannot compact latent history.
+    // Decline before snapshot/allocation so this no-op cannot cause eviction.
+    if cache.latent.iter().any(Option::is_some) {
+        return (cache, orig_cap);
+    }
     let target = match park_compact_rows(
         cache.pos,
         fed_len,
@@ -2770,8 +2781,7 @@ fn compact_parked_plain_cache(
     let t0 = Instant::now();
     let compacted: Result<Cache, Box<dyn std::error::Error>> = (|| {
         let snap = cache.snapshot(engine)?;
-        let mut small =
-            memra_engine::pp::new_cache_planned(engine, &lm.model.cfg, &lm.model.plan, target)?;
+        let mut small = memra_engine::pp::new_cache_for_model(engine, &lm.model, target)?;
         memra_engine::pp::restore_cache_checkpoint(
             engine,
             &lm.model,
@@ -9390,6 +9400,47 @@ fn digest_f32_plane(hasher: &mut Sha256, values: &[f32]) {
     }
 }
 
+/// Hash resident bytes, not a decoded approximation. Keep the legacy f32
+/// digest unchanged; compressed rows carry an explicit format domain tag.
+fn digest_latent_rows(
+    engine: &Engine,
+    hasher: &mut Sha256,
+    rows: &cudarc::driver::CudaSlice<f32>,
+    quant: Option<&memra_engine::cache::latent_nvfp4::DevicePlane>,
+    width: usize,
+    len: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(q) = quant {
+        q.validate()?;
+        q.error.check()?;
+        if !rows.is_empty() || q.width() != width || len > q.capacity() {
+            return Err("latent digest format/extent mismatch".into());
+        }
+        let layout = memra_engine::cache::latent_layout::LatentLayout::new(
+            memra_engine::cache::latent_layout::LatentFormat::Nvfp4,
+            width,
+        )?;
+        hasher.update(b"memra-latent-nvfp4-row-v1");
+        for (plane, bytes) in [
+            (&q.payload, len * layout.payload_bytes),
+            (&q.scales, len * layout.block_scale_bytes),
+        ] {
+            digest_usize(hasher, bytes);
+            hasher.update(engine.dtoh_u8_view(&plane.slice(0..bytes))?);
+        }
+        digest_f32_plane(hasher, &engine.dtoh_view(&q.macros.slice(0..len))?);
+    } else {
+        let count = len
+            .checked_mul(width)
+            .ok_or("latent digest size overflow")?;
+        if count > rows.len() {
+            return Err("latent digest f32 rows truncated".into());
+        }
+        digest_f32_plane(hasher, &engine.dtoh_view(&rows.slice(0..count))?);
+    }
+    Ok(())
+}
+
 /// HIRADIX-EXACT-ISO diagnostic: hash the exact logical state represented by an entry at one
 /// boundary. Mid-entry recurrent state is intentionally inexpressible and returns an error.
 fn prefix_entry_state_digest(
@@ -9453,7 +9504,14 @@ fn prefix_entry_state_digest(
                 hasher.update([1]);
                 digest_usize(&mut hasher, snap.width);
                 digest_usize(&mut hasher, snap.len);
-                digest_f32_plane(&mut hasher, &engine.dtoh(&snap.rows)?);
+                digest_latent_rows(
+                    engine,
+                    &mut hasher,
+                    &snap.rows,
+                    snap.nvfp4.as_ref(),
+                    snap.width,
+                    snap.len,
+                )?;
                 digest_usize(&mut hasher, snap.index_width);
                 digest_usize(&mut hasher, snap.index_pool);
                 digest_usize(&mut hasher, snap.index_pools_ready);
@@ -9555,8 +9613,14 @@ fn prefix_cache_state_digest(
                 hasher.update([1]);
                 digest_usize(&mut hasher, layer.width);
                 digest_usize(&mut hasher, layer.len);
-                let rows = engine.dtoh_view(&layer.rows.slice(0..layer.len * layer.width))?;
-                digest_f32_plane(&mut hasher, &rows);
+                digest_latent_rows(
+                    engine,
+                    &mut hasher,
+                    &layer.rows,
+                    layer.nvfp4.as_ref(),
+                    layer.width,
+                    layer.len,
+                )?;
                 digest_usize(&mut hasher, layer.index_width);
                 digest_usize(&mut hasher, layer.index_pool);
                 digest_usize(&mut hasher, layer.index_pools_ready);
@@ -9711,8 +9775,14 @@ fn kv_prefix_digest(
                 }
                 hasher.update([1]);
                 digest_usize(&mut hasher, layer.width);
-                let rows = engine.dtoh_view(&layer.rows.slice(0..at * layer.width))?;
-                digest_f32_plane(&mut hasher, &rows);
+                digest_latent_rows(
+                    engine,
+                    &mut hasher,
+                    &layer.rows,
+                    layer.nvfp4.as_ref(),
+                    layer.width,
+                    at,
+                )?;
             }
             _ => hasher.update([0]),
         }
@@ -17700,7 +17770,12 @@ fn admit(
     if let (true, Some(pool)) = (reuse_on, reuse.get_mut(&pool_key))
         && let Some(idx) = pool.iter().rposition(|e| {
             e.fed.len() >= REUSE_MIN_PREFIX
-                && plain_resume_cap_admits(e.cap, ctx_cap, kv_park_compact_on())
+                && plain_resume_cap_admits(
+                    e.cap,
+                    ctx_cap,
+                    kv_park_compact_on(),
+                    e.cache.latent.iter().any(Option::is_some),
+                )
                 && prompt.len() >= e.fed.len()
                 && prompt.starts_with(&e.fed)
         })
@@ -17720,14 +17795,7 @@ fn admit(
         let grown: Result<(), Box<dyn std::error::Error>> = (|| {
             let snap = e.cache.snapshot(engine)?;
             let mut grown_cache = alloc_with_single_reclaim_retry(
-                || {
-                    memra_engine::pp::new_cache_planned(
-                        engine,
-                        &lm.model.cfg,
-                        &lm.model.plan,
-                        ctx_cap,
-                    )
-                },
+                || memra_engine::pp::new_cache_for_model(engine, &lm.model, ctx_cap),
                 |err| {
                     let evicted_prefix = px.evict_all();
                     if evicted_prefix > 0 {
@@ -17802,6 +17870,10 @@ fn admit(
             // read from this log. The reason is for the LAST candidate examined (pool depth 1-2).
             let mut why: String = "empty pool".into();
             let cand = pool.iter().enumerate().rev().find_map(|(i, e)| {
+                if e.cache.latent.iter().any(Option::is_some) {
+                    why = "length-only checkpoint cannot restore latent history".into();
+                    return None;
+                }
                 let Some(ckpt) = e.ckpt.as_ref() else {
                     why = "no checkpoint retained".into();
                     return None;
@@ -17861,14 +17933,7 @@ fn admit(
             // cold session allocation, then drop the parked entry and take the cold path.
             let restored: Result<(), Box<dyn std::error::Error>> = if target_cap > old_cap {
                 match alloc_with_single_reclaim_retry(
-                    || {
-                        memra_engine::pp::new_cache_planned(
-                            engine,
-                            &lm.model.cfg,
-                            &lm.model.plan,
-                            target_cap,
-                        )
-                    },
+                    || memra_engine::pp::new_cache_for_model(engine, &lm.model, target_cap),
                     |err| {
                         let evicted_prefix = px.evict_all();
                         if evicted_prefix > 0 {
@@ -18207,12 +18272,7 @@ fn admit(
                 // `pp::new_cache`, not `Cache::new` — stage-owned KV under an open ppN door
                 // (see the session-cache site below for the full reason). `prefix_restore`
                 // then copies plane-by-plane into whatever device each layer landed on.
-                match memra_engine::pp::new_cache_planned(
-                    engine,
-                    &lm.model.cfg,
-                    &lm.model.plan,
-                    ctx_cap,
-                ) {
+                match memra_engine::pp::new_cache_for_model(engine, &lm.model, ctx_cap) {
                     Ok(mut c) => match prefix_restore(engine, &mut c, e, &pool_key) {
                         // A prefix-cache restore is a transient carrier consumed straight into a
                         // fresh session below (never re-parked from here), so the plain-affinity
@@ -18350,12 +18410,7 @@ fn admit(
                     let restored = {
                         let e = &px.entries[&pool_key][i];
                         trace_prefix_entry_state(engine, e, lcp, "source", "immediate-partial");
-                        match memra_engine::pp::new_cache_planned(
-                            engine,
-                            &lm.model.cfg,
-                            &lm.model.plan,
-                            ctx_cap,
-                        ) {
+                        match memra_engine::pp::new_cache_for_model(engine, &lm.model, ctx_cap) {
                             Ok(mut c) => match prefix_restore_at(engine, &mut c, e, &pool_key, lcp)
                             {
                                 Ok(()) => {
@@ -20006,14 +20061,7 @@ fn admit(
             (Some(_), c) => c, // reuse hit carried a cache? keep it parked as-is (rare; None normally)
             (None, Some(c)) => Some(c),
             (None, None) => match alloc_with_single_reclaim_retry(
-                || {
-                    memra_engine::pp::new_cache_planned(
-                        engine,
-                        &lm.model.cfg,
-                        &lm.model.plan,
-                        ctx_cap,
-                    )
-                },
+                || memra_engine::pp::new_cache_for_model(engine, &lm.model, ctx_cap),
                 |err| {
                     // Headroom discipline: prefix entries always yield before a session errors.
                     // A quoted allocation OOM additionally reuses cap256k's global continuation-pool
@@ -28074,6 +28122,145 @@ mod tests {
         ("m".to_string(), ns.to_string())
     }
 
+    #[test]
+    #[ignore = "requires non-production CUDA, MEMRA_PREFIX_LATENT=1 and NVFP4_LATENT_TEST_CONFIG"]
+    fn planned_headless_prefix_roundtrips_across_capacities() {
+        use memra_engine::latent_nvfp4_ffi::Nvfp4LatentOps;
+        assert!(
+            super::prefix_latent_planes_on(),
+            "explicit prefix selection required"
+        );
+        let path = std::env::var("NVFP4_LATENT_TEST_CONFIG").unwrap();
+        let cfg =
+            memra_gguf::config::ModelConfig::from_config_json(std::path::Path::new(&path)).unwrap();
+        let plan = memra_gguf::model_plan::ModelPlan::compile(&cfg).unwrap();
+        assert!(
+            !plan.mtp_blocks.is_empty(),
+            "fixture must expose unloaded NextN slots"
+        );
+        let engine = memra_engine::Engine::new(0).unwrap();
+        let alloc = |cap| {
+            memra_engine::cache::Cache::new_planned_active(&engine, &cfg, &plan, cap, false)
+                .unwrap()
+        };
+        let mut source = alloc(8);
+        let at = 3;
+        for (il, plane) in source.latent.iter_mut().enumerate() {
+            if let Some(plane) = plane {
+                let row = engine
+                    .htod(&vec![il as f32 + 1.25; at * plane.width])
+                    .unwrap();
+                if let Some(q) = plane.nvfp4.as_mut() {
+                    q.append(&engine, &row, 0).unwrap();
+                } else {
+                    engine
+                        .copy_into(&mut plane.rows, 0, &row, row.len())
+                        .unwrap();
+                }
+                plane.len = at;
+                // This cache-only fixture supplies the same pool geometry as
+                // the GLM indexer; no model forward is implied by this test.
+                plane.index_pool = 4;
+                engine.set_i32_one(&mut plane.len_d, at as i32).unwrap();
+                if let Some(index) = plane.index_rows.as_mut() {
+                    let marker = engine
+                        .htod(&vec![il as f32 + 0.5; at * plane.index_width])
+                        .unwrap();
+                    engine.copy_into(index, 0, &marker, marker.len()).unwrap();
+                }
+            }
+        }
+        for r in source.recur.iter_mut().flatten() {
+            engine
+                .copy_into(&mut r.conv_state, 0, &engine.htod(&[1.5]).unwrap(), 1)
+                .unwrap();
+            engine
+                .copy_into(&mut r.ssm_state, 0, &engine.htod(&[2.5]).unwrap(), 1)
+                .unwrap();
+        }
+        source.pos = at;
+        source.check_latent_status().unwrap();
+        let pk = key("headless-prefix");
+        let entry = super::prefix_snapshot(&engine, &source, &pk, &[1, 2, 3], &[0.5]).unwrap();
+        let digest = super::prefix_entry_state_digest(&engine, &entry, at).unwrap();
+        assert_eq!(
+            digest,
+            super::prefix_cache_state_digest(&engine, &source, at).unwrap()
+        );
+        let kv_digest = super::kv_prefix_digest(&engine, &source, at).unwrap().0;
+        for capacity in [16, 4] {
+            let mut restored = alloc(capacity);
+            super::prefix_restore(&engine, &mut restored, &entry, &pk).unwrap();
+            assert_eq!(restored.pos, at);
+            assert_eq!(
+                digest,
+                super::prefix_cache_state_digest(&engine, &restored, at).unwrap()
+            );
+            assert_eq!(
+                kv_digest,
+                super::kv_prefix_digest(&engine, &restored, at).unwrap().0
+            );
+            for block in &plan.mtp_blocks {
+                let i = block.layer.index as usize;
+                assert!(
+                    restored.kv[i].is_none()
+                        && restored.recur[i].is_none()
+                        && restored.latent[i].is_none()
+                );
+            }
+            if let Some(q) = restored
+                .latent
+                .iter_mut()
+                .flatten()
+                .find_map(|p| p.nvfp4.as_mut())
+            {
+                // Red arm: a changed encoded row must affect BOTH diagnostics.
+                q.append(&engine, &engine.htod(&vec![-7.0; q.width()]).unwrap(), 0)
+                    .unwrap();
+                q.check(&engine).unwrap();
+                assert_ne!(
+                    digest,
+                    super::prefix_cache_state_digest(&engine, &restored, at).unwrap()
+                );
+                assert_ne!(
+                    kv_digest,
+                    super::kv_prefix_digest(&engine, &restored, at).unwrap().0
+                );
+            }
+        }
+        // Allocator controls: an admitted head keeps state; a checkpoint without
+        // NextN has no state to suppress. These do not claim model-load coverage.
+        let with_head =
+            memra_engine::cache::Cache::new_planned_active(&engine, &cfg, &plan, 4, true).unwrap();
+        for block in &plan.mtp_blocks {
+            let i = block.layer.index as usize;
+            assert!(
+                with_head.kv[i].is_some()
+                    || with_head.recur[i].is_some()
+                    || with_head.latent[i].is_some()
+            );
+        }
+        let mut no_nextn = cfg.clone();
+        no_nextn.n_layer -= no_nextn.nextn_predict_layers;
+        no_nextn.nextn_predict_layers = 0;
+        let no_nextn_plan = memra_gguf::model_plan::ModelPlan::compile(&no_nextn).unwrap();
+        let plain = memra_engine::cache::Cache::new_planned_active(
+            &engine,
+            &no_nextn,
+            &no_nextn_plan,
+            4,
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            plain.latent.iter().flatten().count(),
+            source.latent.iter().flatten().count()
+        );
+        println!(
+            "HEADLESS_PREFIX_ROUNDTRIP: grow/shrink, latent/index/recurrent digest, absent-MTP PASS"
+        );
+    }
+
     fn toks(n: usize) -> Vec<u32> {
         (0..n as u32).collect()
     }
@@ -30323,11 +30510,15 @@ mod tests {
     #[test]
     fn park_compact_probe_and_park_site_wiring_is_real() {
         // Legacy arm (flag off): the parked cache must fit the request's charged cap.
-        assert!(super::plain_resume_cap_admits(8192, 8192, false));
-        assert!(super::plain_resume_cap_admits(8193, 8192, false));
-        assert!(!super::plain_resume_cap_admits(8191, 8192, false));
+        assert!(super::plain_resume_cap_admits(8192, 8192, false, false));
+        assert!(super::plain_resume_cap_admits(8193, 8192, false, false));
+        assert!(!super::plain_resume_cap_admits(8191, 8192, false, false));
         // Compaction armed: a fed-length entry is admitted; the admit path grows it.
-        assert!(super::plain_resume_cap_admits(6000, 8192, true));
+        assert!(super::plain_resume_cap_admits(6000, 8192, true, false));
+        // Latent state cannot use this length-only grow; existing room still reuses.
+        assert!(!super::plain_resume_cap_admits(6000, 8192, true, true));
+        assert!(super::plain_resume_cap_admits(8192, 8192, true, true));
+        assert!(super::plain_resume_cap_admits(8192, 8192, false, true));
         let strip = |src: &str| -> String {
             src.lines()
                 .map(|l| l.split("//").next().unwrap_or(""))

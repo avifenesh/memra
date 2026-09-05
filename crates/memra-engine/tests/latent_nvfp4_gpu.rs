@@ -232,7 +232,7 @@ fn latent_snapshot_carries_compressed_rows_and_unmodified_index_tail() {
 
 #[test]
 #[ignore = "requires CUDA, MEMRA_GLM53_NVFP4_LATENT=1 and an explicit NVFP4_LATENT_TEST_CONFIG"]
-fn actual_model_plan_allocates_only_compressed_latent_history() {
+fn raw_checkpoint_plan_allocates_only_compressed_latent_history() {
     assert!(
         memra_kv::latent_layout::nvfp4_enabled(),
         "explicit NVFP4 selection required"
@@ -244,6 +244,29 @@ fn actual_model_plan_allocates_only_compressed_latent_history() {
     let e = Engine::new(0).expect("CUDA required");
     let capacity = 128;
     let mut cache = memra_kv::Cache::new_planned(&e, &cfg, &plan, capacity).unwrap();
+    let headless = memra_kv::Cache::new_planned_active(&e, &cfg, &plan, capacity, false).unwrap();
+    let trunk_latent = plan
+        .layers
+        .iter()
+        .filter(|l| {
+            matches!(
+                l.state,
+                memra_gguf::model_plan::StatePlan::LatentKvCache { .. }
+            )
+        })
+        .count();
+    assert_eq!(headless.latent.iter().flatten().count(), trunk_latent);
+    for block in &plan.mtp_blocks {
+        let index = block.layer.index as usize;
+        assert!(
+            headless.latent[index].is_none()
+                && headless.kv[index].is_none()
+                && headless.recur[index].is_none(),
+            "unloaded MTP must reserve no cache state"
+        );
+    }
+    println!("NVFP4_ALLOC_NO_MTP: trunk_latent_layers={trunk_latent} unloaded_head_planes=0");
+    drop(headless);
     let mut latent_count = 0;
     for layer in cache.latent.iter().flatten() {
         assert!(
@@ -268,15 +291,22 @@ fn actual_model_plan_allocates_only_compressed_latent_history() {
         1,
         "one shared status per owning stage, not per layer"
     );
-    let mtp_index = plan
-        .mtp_blocks
-        .last()
-        .expect("actual config must include native MTP")
-        .layer
+    // Raw checkpoint metadata includes NextN; this allocator-only gate is not
+    // evidence of the loaded serving recipe. Score only DFlash2/no-MTP serving.
+    let trunk_index = plan
+        .layers
+        .iter()
+        .find(|l| {
+            matches!(
+                l.state,
+                memra_gguf::model_plan::StatePlan::LatentKvCache { .. }
+            )
+        })
+        .unwrap()
         .index as usize;
-    cache.latent[mtp_index]
+    cache.latent[trunk_index]
         .as_mut()
-        .expect("MTP latent plane missing")
+        .expect("trunk latent plane missing")
         .nvfp4
         .as_mut()
         .unwrap()
@@ -285,7 +315,7 @@ fn actual_model_plan_allocates_only_compressed_latent_history() {
     assert!(cache.check_latent_status().is_err());
     assert!(cache.ensure_usable("after invalid append").is_err());
     println!(
-        "NVFP4_ALLOC_MODEL_PLAN: latent_layers={latent_count} capacity={capacity} resident_row_bytes=292 no_f32_shadow=true"
+        "NVFP4_ALLOC_RAW_CHECKPOINT_PLAN: latent_layers={latent_count} capacity={capacity} resident_row_bytes=292 no_f32_shadow=true"
     );
 }
 

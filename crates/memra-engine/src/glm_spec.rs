@@ -871,6 +871,11 @@ impl HybridModel {
                 if let Mixer::Mla(mla) = &self.layers[il].mixer
                     && let Some(plane) = cache.latent[il].as_mut()
                 {
+                    // Replay bypasses the host launch wrappers that normally
+                    // invalidate the cached shared-status result.
+                    if let Some(quant) = &plane.nvfp4 {
+                        quant.error.invalidate()?;
+                    }
                     plane.len += t;
                     if let Some(ix) = mla.index.as_ref() {
                         plane.index_pools_ready = plane.len / ix.geom.pool;
@@ -2665,9 +2670,9 @@ impl HybridModel {
         if let Some(pf) = prof.as_mut() {
             pf.free_mb_before = self.glm5_free_mb(e);
         }
-        // Stage-owned allocation under a split (each layer's planes on its stage's device,
-        // trailing MTP plane on the last stage); door shut = plain `Cache::new_planned`.
-        let mut cache = crate::pp::new_cache_planned(e, &self.cfg, &self.plan, ctx_cap)?;
+        // Stage-owned allocation follows loaded heads: DFlash2 without native
+        // MTP reserves trunk state only, including when checkpoint metadata has NextN.
+        let mut cache = crate::pp::new_cache_for_model(e, self, ctx_cap)?;
         if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
             pf.cache_alloc_ms = ck.lap(e, eh);
         }

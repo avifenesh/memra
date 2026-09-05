@@ -3402,7 +3402,7 @@ pub fn new_cache(
     cfg: &memra_gguf::config::ModelConfig,
     max_ctx: usize,
 ) -> Result<crate::cache::Cache, Box<dyn std::error::Error>> {
-    new_cache_inner(e, cfg, None, max_ctx)
+    new_cache_inner(e, cfg, None, max_ctx, true)
 }
 
 pub fn new_cache_planned(
@@ -3411,7 +3411,23 @@ pub fn new_cache_planned(
     plan: &memra_gguf::model_plan::ModelPlan,
     max_ctx: usize,
 ) -> Result<crate::cache::Cache, Box<dyn std::error::Error>> {
-    new_cache_inner(e, cfg, Some(plan), max_ctx)
+    new_cache_inner(e, cfg, Some(plan), max_ctx, true)
+}
+
+/// A serving cache follows the loaded model's head presence. DFlash2's trimmed
+/// target-head slab is not a native MTP block and requires no MTP state plane.
+pub fn new_cache_for_model(
+    e: &Engine,
+    model: &crate::hybrid::HybridModel,
+    max_ctx: usize,
+) -> Result<crate::cache::Cache, Box<dyn std::error::Error>> {
+    new_cache_inner(
+        e,
+        &model.cfg,
+        Some(&model.plan),
+        max_ctx,
+        model.mtp.is_some(),
+    )
 }
 
 fn new_cache_inner(
@@ -3419,8 +3435,12 @@ fn new_cache_inner(
     cfg: &memra_gguf::config::ModelConfig,
     plan: Option<&memra_gguf::model_plan::ModelPlan>,
     max_ctx: usize,
+    include_mtp: bool,
 ) -> Result<crate::cache::Cache, Box<dyn std::error::Error>> {
-    let n_trunk = (cfg.n_layer - cfg.nextn_predict_layers) as usize;
+    let n_trunk = cfg
+        .n_layer
+        .checked_sub(cfg.nextn_predict_layers)
+        .ok_or("MTP layer count exceeds total layer count")? as usize;
     if let Some(fence) = pp_cuts(n_trunk) {
         if pp2_devices_env().is_some() && !pp2_streams_off() {
             let rt = PpNRt::get(e)?;
@@ -3445,9 +3465,14 @@ fn new_cache_inner(
                 .map(|s| rt.engine(s, e) as &dyn memra_kv::KvDev)
                 .collect();
             let cache = match plan {
-                Some(plan) => {
-                    crate::cache::Cache::new_ppn_planned(&devs, &fence, cfg, plan, max_ctx)?
-                }
+                Some(plan) => crate::cache::Cache::new_ppn_planned_active(
+                    &devs,
+                    &fence,
+                    cfg,
+                    plan,
+                    max_ctx,
+                    include_mtp,
+                )?,
                 None => crate::cache::Cache::new_ppn(&devs, &fence, cfg, max_ctx)?,
             };
             sync_stages_after_load(e, n_trunk)?;
@@ -3462,7 +3487,9 @@ fn new_cache_inner(
             // can zero an already-appended KV row; intermittent, ~1-in-3 gate FAIL).
             // One context-sync per cache creation kills the class.
             let cache = match plan {
-                Some(plan) => crate::cache::Cache::new_planned(e, cfg, plan, max_ctx)?,
+                Some(plan) => {
+                    crate::cache::Cache::new_planned_active(e, cfg, plan, max_ctx, include_mtp)?
+                }
                 None => crate::cache::Cache::new(e, cfg, max_ctx)?,
             };
             sync_stages_after_load(e, n_trunk)?;
@@ -3470,7 +3497,7 @@ fn new_cache_inner(
         }
     }
     match plan {
-        Some(plan) => crate::cache::Cache::new_planned(e, cfg, plan, max_ctx),
+        Some(plan) => crate::cache::Cache::new_planned_active(e, cfg, plan, max_ctx, include_mtp),
         None => crate::cache::Cache::new(e, cfg, max_ctx),
     }
 }
@@ -3642,6 +3669,18 @@ pub(crate) fn tp_restore_plan(
     }
 }
 
+fn checkpoint_latent_restore_guard(
+    source_has_latent: bool,
+    target_has_latent: bool,
+) -> Result<(), &'static str> {
+    if source_has_latent || target_has_latent {
+        return Err(
+            "checkpoint restore cannot carry latent history; use dedicated latent prefix restore or re-prime",
+        );
+    }
+    Ok(())
+}
+
 /// Restore a cache checkpoint through each layer's owning engine.
 ///
 /// `source = None` is an in-place rewind: the target already owns the append-only KV bytes and
@@ -3660,6 +3699,12 @@ pub fn restore_cache_checkpoint(
     target: &mut crate::cache::Cache,
     snap: &crate::cache::CacheSnapshot,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Presence, not len: even a fresh destination needs history this checkpoint
+    // cannot supply. Refuse before any device read/copy or host-state mutation.
+    checkpoint_latent_restore_guard(
+        source.is_some_and(|cache| cache.latent.iter().any(Option::is_some)),
+        target.latent.iter().any(Option::is_some),
+    )?;
     target.ensure_usable("restore_cache_checkpoint target")?;
     if let Some(source) = source {
         source.ensure_usable("restore_cache_checkpoint source")?;
@@ -3901,6 +3946,17 @@ pub fn restore_cache_checkpoint(
 
 #[cfg(test)]
 mod host_bounce_tests {
+    #[test]
+    fn checkpoint_restore_refuses_either_latent_plane_before_copy() {
+        for (source, target) in [(false, false), (true, false), (false, true), (true, true)] {
+            assert_eq!(
+                super::checkpoint_latent_restore_guard(source, target).is_err(),
+                source || target,
+                "source={source}, target={target}; empty target planes still require latent history"
+            );
+        }
+    }
+
     use super::{
         BoundaryTransport, DUAL_PP_HOST_BOUNCE_REFUSAL, DUAL_PP_SINGLE_SLOT_REFUSAL,
         PEER_PROBE_FIXED_BYTES, PEER_PROBE_REQUIRED_REFUSAL, PEER_PROBE_TOKEN_WIDTHS,

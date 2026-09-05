@@ -2655,7 +2655,7 @@ impl Cache {
         cfg: &ModelConfig,
         max_ctx: usize,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        Self::new_inner(&|_| e, cfg, None, max_ctx)
+        Self::new_inner(&|_| e, cfg, None, max_ctx, true)
     }
 
     pub fn new_planned(
@@ -2664,7 +2664,18 @@ impl Cache {
         plan: &memra_gguf::model_plan::ModelPlan,
         max_ctx: usize,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        Self::new_inner(&|_| e, cfg, Some(plan), max_ctx)
+        Self::new_planned_active(e, cfg, plan, max_ctx, true)
+    }
+
+    /// `include_mtp` comes from the loaded model, not raw checkpoint metadata.
+    pub fn new_planned_active(
+        e: &impl KvDev,
+        cfg: &ModelConfig,
+        plan: &ModelPlan,
+        max_ctx: usize,
+        include_mtp: bool,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::new_inner(&|_| e, cfg, Some(plan), max_ctx, include_mtp)
     }
 
     /// M1-PP2 increment 2 (stage-owned KV): layers [0, split) allocate through `dev0`,
@@ -2683,6 +2694,7 @@ impl Cache {
             cfg,
             None,
             max_ctx,
+            true,
         )
     }
 
@@ -2709,7 +2721,7 @@ impl Cache {
             };
             devs[s.min(devs.len() - 1)]
         };
-        Self::new_inner(&pick, cfg, None, max_ctx)
+        Self::new_inner(&pick, cfg, None, max_ctx, true)
     }
 
     pub fn new_ppn_planned(
@@ -2718,6 +2730,17 @@ impl Cache {
         cfg: &ModelConfig,
         plan: &memra_gguf::model_plan::ModelPlan,
         max_ctx: usize,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::new_ppn_planned_active(devs, fence, cfg, plan, max_ctx, true)
+    }
+
+    pub fn new_ppn_planned_active(
+        devs: &[&dyn KvDev],
+        fence: &[usize],
+        cfg: &ModelConfig,
+        plan: &ModelPlan,
+        max_ctx: usize,
+        include_mtp: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         assert_eq!(
             devs.len() + 1,
@@ -2731,7 +2754,7 @@ impl Cache {
             };
             devs[stage.min(devs.len() - 1)]
         };
-        Self::new_inner(&pick, cfg, Some(plan), max_ctx)
+        Self::new_inner(&pick, cfg, Some(plan), max_ctx, include_mtp)
     }
 
     /// Shared allocation walk: `pick(il)` supplies the device that OWNS layer il's
@@ -2741,7 +2764,12 @@ impl Cache {
         cfg: &ModelConfig,
         plan: Option<&memra_gguf::model_plan::ModelPlan>,
         max_ctx: usize,
+        include_mtp: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        let n_trunk = cfg
+            .n_layer
+            .checked_sub(cfg.nextn_predict_layers)
+            .ok_or("MTP layer count exceeds total layer count")?;
         let fallback_plan = if plan.is_none() {
             Some(ModelPlan::compile(cfg)?)
         } else {
@@ -2759,6 +2787,12 @@ impl Cache {
         let head_dim_k = cfg.head_dim_k as usize;
         let head_dim_v = cfg.head_dim_v as usize;
         for il in 0..cfg.n_layer {
+            if !include_mtp && il >= n_trunk {
+                kv.push(None);
+                recur.push(None);
+                latent.push(None);
+                continue;
+            }
             // stage-owned allocation (pp2): the device that runs this layer allocates it.
             let e = pick(il as usize);
             let layer = plan
@@ -2847,8 +2881,9 @@ impl Cache {
                     latent.push(None);
                 }
                 StatePlan::LatentKvCache { width, index_width } => {
-                    // ONE f32 row per token for the whole layer (MQA): no per-head planes, no
-                    // V plane. `width` is the plan's own number, not re-derived here — the
+                    // ONE latent row per token for the whole layer (MQA), stored
+                    // as f32 or encoded NVFP4: no per-head or separate V plane.
+                    // `width` is the plan's own number, not re-derived here — the
                     // engine's MLA arm asserts it against the loaded `MlaGeom`.
                     let width = width as usize;
                     assert!(

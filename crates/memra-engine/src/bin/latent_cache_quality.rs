@@ -1,7 +1,7 @@
 //! Teacher-forced quality receipt for a pinned HF checkpoint and frozen raw texts.
 //! No generation, sampling, or performance score: compare per-token NLL between
 //! cache formats under identical token inputs. Raw prompts never become tuning labels.
-use memra_engine::{Engine, hybrid::HybridModel, pp::new_cache};
+use memra_engine::{Engine, hybrid::HybridModel, pp::new_cache_for_model};
 use memra_gguf::source::SafetensorsSource;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -30,6 +30,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let source = SafetensorsSource::open(dir)?;
     let e = Engine::new(0)?;
     let model = HybridModel::load_from_source_without_mtp(&e, &source)?;
+    if model.mtp.is_some() {
+        return Err("quality probe must not load native MTP".into());
+    }
     if model.hyper.is_none() {
         return Err("quality probe requires the GLM hyper-connection trunk".into());
     }
@@ -47,7 +50,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Err(format!("prompt {sha} is too short for {window} targets").into());
         }
         let prefix = tokens.len() - window;
-        let mut cache = new_cache(&e, &model.cfg, tokens.len() + 8)?;
+        let mut cache = new_cache_for_model(&e, &model, tokens.len() + 8)?;
+        for block in &model.plan.mtp_blocks {
+            let i = block.layer.index as usize;
+            if cache.latent[i].is_some() || cache.kv[i].is_some() || cache.recur[i].is_some() {
+                return Err(
+                    "quality probe allocated state for an unloaded native MTP block".into(),
+                );
+            }
+        }
         let latent = cache.latent.iter().flatten().count();
         let compressed = cache
             .latent

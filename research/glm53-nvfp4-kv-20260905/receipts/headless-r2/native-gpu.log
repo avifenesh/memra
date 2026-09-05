@@ -1,0 +1,13 @@
+
+running 6 tests
+test append_gather_matches_cpu_and_preserves_prefix ... ok
+test captured_live_append_and_attention_follow_device_positions ... ok
+test captured_multirow_verify_rewinds_and_overwrites_only_rejected_suffix ... ok
+test compressed_attention_matches_decode_then_f32_attention ... ok
+test latent_snapshot_carries_compressed_rows_and_unmodified_index_tail ... ok
+test raw_checkpoint_plan_allocates_only_compressed_latent_history ... NVFP4_ALLOC_NO_MTP: trunk_latent_layers=11 unloaded_head_planes=0
+NVFP4_ALLOC_RAW_CHECKPOINT_PLAN: latent_layers=12 capacity=128 resident_row_bytes=292 no_f32_shadow=true
+ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+
