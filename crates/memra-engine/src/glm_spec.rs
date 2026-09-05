@@ -721,6 +721,432 @@ pub struct Glm5VerifyCkpt {
     rows: usize,
 }
 
+/// One captured verify walk: a stage range at one row count, replayed at any later position
+/// (`MEMRA_GLM5_VERIFY_GRAPH` arm 2). The graph reads `x_io`, writes `x_out`, reads the
+/// positions from `pos_all` (refreshed per round by two launches outside the graph), appends
+/// into the session's latent planes, and writes its KDA rows stash into the workspace-pool
+/// buffers the capture drew; those stash structs live here between rounds and are lent to the
+/// round's checkpoint for the rollback.
+pub(crate) struct VerifyGraph {
+    lo: usize,
+    hi: usize,
+    t: usize,
+    x_io: CudaSlice<f32>,
+    x_out: CudaSlice<f32>,
+    pos_ctr: CudaSlice<i32>,
+    pos_all: CudaSlice<i32>,
+    graph: cudarc::driver::CudaGraph,
+    kda_rows: Vec<Option<crate::kda::KdaRowsStash>>,
+    /// Workspace buffers the body recycled: the graph's scratch, kept alive with it and never
+    /// re-issued.
+    /// Every workspace buffer the captured body recycled: graph-baked addresses, alive for
+    /// the graph's life and never re-issued to eager work. Declared AFTER `graph` so the
+    /// instantiated exec is destroyed before the buffers it references are freed.
+    #[allow(clippy::type_complexity)] // allow: mirrors the engine's capture keeper
+    _keeper: Vec<Box<dyn std::any::Any + Send>>,
+    replays: u64,
+}
+
+/// The session's captured verify walks and the warm-up bookkeeping in front of them.
+#[derive(Default)]
+pub struct VerifyGraphPool {
+    /// (lo, hi, t) ranges that ran one eager round on the live arm (the workspace pool and
+    /// the kernel cache warm); the next call captures.
+    warm: std::collections::HashSet<(usize, usize, usize)>,
+    graphs: Vec<VerifyGraph>,
+    /// A refused capture or a failed self-check latches the pool eager for the session.
+    latched: bool,
+    /// The captured walks' PRIVATE f16 conversion / cuBLASLt scratch, one per DEVICE (under a
+    /// PP split every stage engine captures on its own card; the decode graph keeps one per
+    /// stage the same way): the rows-exact GEMM classes bake its pointers into the graph, and
+    /// the engine's own scratch is grown and re-seated by eager GEMMs between replays. Swapped
+    /// in around the capture body and every replay launch, keyed by the engine's ordinal.
+    f16: std::collections::HashMap<usize, Option<crate::f16_ffi::F16Scratch>>,
+}
+
+impl VerifyGraphPool {
+    fn find(&mut self, lo: usize, hi: usize, t: usize) -> Option<usize> {
+        self.graphs
+            .iter()
+            .position(|g| g.lo == lo && g.hi == hi && g.t == t)
+    }
+
+    /// Lend the captured walk's KDA rows stashes to a round's checkpoint (the graph wrote
+    /// this round's rows into them).
+    fn lend_rows(&mut self, lo: usize, hi: usize, t: usize, ckpt: &mut Glm5VerifyCkpt) {
+        if let Some(i) = self.find(lo, hi, t) {
+            for (il, slot) in self.graphs[i].kda_rows.iter_mut().enumerate() {
+                if slot.is_some() {
+                    ckpt.kda_rows[il] = slot.take();
+                }
+            }
+        }
+    }
+
+    /// After the round's rollback: the captured ranges take their stashes back, and every
+    /// other stash goes into the verify workspace pool, so the next capture body's takes are
+    /// served by the pool (a stash allocated inside a capture would be graph-owned memory).
+    pub fn reclaim_rows(&mut self, e: &Engine, ckpt: &mut Glm5VerifyCkpt) {
+        for g in self.graphs.iter_mut() {
+            for il in g.lo..g.hi.min(ckpt.kda_rows.len()) {
+                if ckpt.kda_rows[il].is_some() {
+                    g.kda_rows[il] = ckpt.kda_rows[il].take();
+                }
+            }
+        }
+        for slot in ckpt.kda_rows.iter_mut() {
+            if let Some(st) = slot.take() {
+                e.vws_recycle(st.ring_snap);
+                for r in st.raws {
+                    e.vws_recycle(r);
+                }
+                e.vws_recycle(st.scan.q);
+                e.vws_recycle(st.scan.k);
+                e.vws_recycle(st.scan.v);
+                e.vws_recycle(st.scan.g);
+                e.vws_recycle(st.scan.beta);
+            }
+        }
+    }
+
+    /// A refused capture body drew stashes that may be graph-owned memory (a workspace miss
+    /// inside the body); they must not be freed as ordinary allocations. Forgotten (the
+    /// discarded graph's memory), once per session at most.
+    fn forget_body_rows(ckpt: &mut Glm5VerifyCkpt, lo: usize, hi: usize) {
+        for il in lo..hi.min(ckpt.kda_rows.len()) {
+            if let Some(st) = ckpt.kda_rows[il].take() {
+                std::mem::forget(st);
+            }
+        }
+    }
+
+    /// Replays served by the pool's graphs (a gate's non-vacuity receipt).
+    pub fn replays(&self) -> u64 {
+        self.graphs.iter().map(|g| g.replays).sum()
+    }
+}
+
+impl HybridModel {
+    /// [`Self::glm5_verify_range`] through the session's captured walk for this (range, t)
+    /// when one exists, capturing it on the second visit; the eager walk otherwise.
+    #[allow(clippy::too_many_arguments)]
+    fn glm5_verify_range_graphed(
+        &self,
+        e: &Engine,
+        topology: &crate::hyper::HyperTopology,
+        x: CudaSlice<f32>,
+        lo: usize,
+        hi: usize,
+        pos: &Glm5VerifyPos,
+        cache: &mut Cache,
+        ckpt: &mut Glm5VerifyCkpt,
+        pool: Option<&mut VerifyGraphPool>,
+    ) -> Res<CudaSlice<f32>> {
+        use std::sync::atomic::Ordering;
+        let Some(pool) = pool else {
+            return self.glm5_verify_range(e, topology, x, lo, hi, pos, cache, ckpt);
+        };
+        let t = pos.t;
+        let key = (lo, hi, t);
+        // the walk's activation: t rows of the hc stream width
+        let width = t * topology.streams * (self.cfg.n_embd as usize);
+        // ---- replay ----
+        if let Some(i) = pool.find(lo, hi, t) {
+            {
+                let g = &mut pool.graphs[i];
+                e.i32_set_k(&mut g.pos_ctr, pos.pos0 as i32)?;
+                e.i32_iota_from(&g.pos_ctr, &mut g.pos_all, t)?;
+                e.copy_into(&mut g.x_io, 0, &x, width)?;
+            }
+            let dev = e.ctx().ordinal();
+            let prev = e.f16_scratch_swap(pool.f16.get_mut(&dev).and_then(Option::take));
+            let launched = pool.graphs[i].graph.launch();
+            pool.f16.insert(dev, e.f16_scratch_swap(prev));
+            launched?;
+            let g = &mut pool.graphs[i];
+            let mut out = e.uninit(width)?;
+            e.copy_into(&mut out, 0, &g.x_out, width)?;
+            // the host bookkeeping the eager walk does inside the layer calls
+            for il in lo..hi {
+                if let Mixer::Mla(mla) = &self.layers[il].mixer
+                    && let Some(plane) = cache.latent[il].as_mut()
+                {
+                    plane.len += t;
+                    if let Some(ix) = mla.index.as_ref() {
+                        plane.index_pools_ready = plane.len / ix.geom.pool;
+                    }
+                }
+            }
+            // the KDA scan inside the graph wrote the alt plane; the eager walk's host-side
+            // ping-pong swap lands here (the decode graph's replay does the same)
+            for il in lo..hi {
+                if let Some(rl) = cache.recur[il].as_mut() {
+                    std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
+                }
+            }
+            g.replays += 1;
+            crate::GLM5_VERIFY_GRAPH_REPLAYS.fetch_add(1, Ordering::Relaxed);
+            pool.lend_rows(lo, hi, t, ckpt);
+            return Ok(out);
+        }
+        // ---- eager: the first visit warms, a latched pool stays eager ----
+        let refused = if pool.latched {
+            Some("latched".to_string())
+        } else if !crate::moe_vrows_dev_tables_on() {
+            Some("MEMRA_MOE_VROWS_DEV_TABLES is not set (the MoE rows would read their routes back on the host)".to_string())
+        } else if crate::spec_phase::spec_trace_level() >= 2 {
+            Some("MEMRA_SPEC_TRACE >= 2 synchronizes inside the walk".to_string())
+        } else if !pos.rows.is_empty() || t < 2 {
+            Some("per-row verify arm".to_string())
+        } else {
+            (lo..hi)
+                .find(|&il| {
+                    matches!(&self.layers[il].mixer, Mixer::Mla(_))
+                        && cache.latent[il].as_ref().is_none_or(|p| p.len != pos.pos0)
+                })
+                .map(|il| format!("MLA layer {il}: latent length is not the row block's position"))
+        };
+        if let Some(why) = refused {
+            if !pool.latched {
+                eprintln!(
+                    "[glm5-verify-graph] capture refused for [{lo}, {hi}) t={t}: {why}; the walk \
+                     stays eager"
+                );
+                pool.latched = true;
+            }
+            return self.glm5_verify_range(e, topology, x, lo, hi, pos, cache, ckpt);
+        }
+        if !pool.warm.contains(&key) {
+            // the warm visit: the eager walk on the live arm, its peak workspace demand per
+            // size measured for the pre-fill before the capture
+            pool.warm.insert(key);
+            e.vws_peak_reset();
+            return self.glm5_verify_range(e, topology, x, lo, hi, pos, cache, ckpt);
+        }
+        // ---- capture (second visit): snapshot, capture the walk into stage buffers, restore,
+        // self-check once against the eager walk, then replay this round ----
+        let snap = Self::glm5_run_snapshot(e, &*cache, lo, hi)?;
+        let ctx = crate::glm5_decode_graph::CapCtx {
+            dev: 0,
+            lo,
+            hi,
+            run: t,
+            runs: 0,
+            a: lo,
+            b: hi,
+            phase: 0,
+            recapture: false,
+        };
+        let mut x_io = e.uninit(width)?;
+        let mut x_out = e.uninit(width)?;
+        e.copy_into(&mut x_io, 0, &x, width)?;
+        let mut pos_ctr = e.alloc_i32_zeroed(1)?;
+        let mut pos_all = e.alloc_i32_zeroed(t)?;
+        e.i32_set_k(&mut pos_ctr, pos.pos0 as i32)?;
+        e.i32_iota_from(&pos_ctr, &mut pos_all, t)?;
+        let pos_g = Glm5VerifyPos {
+            pos0: pos.pos0,
+            t,
+            all: pos_all,
+            rows: Vec::new(),
+        };
+        // every size the warm walk drew, to its total takes, allocated here (outside the
+        // capture; the body retains what it recycles)
+        let prefilled = e.vws_prefill_to_peak()?;
+        let dev = e.ctx().ordinal();
+        if pool.f16.get(&dev).is_none_or(Option::is_none) {
+            let n_embd = self.cfg.n_embd as usize;
+            pool.f16.insert(
+                dev,
+                Some(crate::f16_ffi::F16Scratch::with_capacity(
+                    e,
+                    (16 << 20).max(t * n_embd * 64),
+                )?),
+            );
+        }
+        let prev_f16 = e.f16_scratch_swap(pool.f16.get_mut(&dev).and_then(Option::take));
+        crate::VERIFY_GRAPH_KEEP.lock().unwrap().clear();
+        let misses0 = crate::VERIFY_WS_MISSES.load(Ordering::Relaxed);
+        crate::VERIFY_WS_MISS_TRACE.store(true, Ordering::Relaxed);
+        let captured = {
+            let x_cell = std::cell::RefCell::new(&mut x_io);
+            let out_cell = std::cell::RefCell::new(&mut x_out);
+            let cache_cell = std::cell::RefCell::new(&mut *cache);
+            let ckpt_cell = std::cell::RefCell::new(&mut *ckpt);
+            crate::glm5_decode_graph::capture_one(e, &ctx, |e| {
+                let xin = e.clone_dtod(&x_cell.borrow())?;
+                let y = self.glm5_verify_range(
+                    e,
+                    topology,
+                    xin,
+                    lo,
+                    hi,
+                    &pos_g,
+                    &mut cache_cell.borrow_mut(),
+                    &mut ckpt_cell.borrow_mut(),
+                )?;
+                e.copy_into(&mut out_cell.borrow_mut(), 0, &y, width)
+            })
+        };
+        crate::VERIFY_WS_MISS_TRACE.store(false, Ordering::Relaxed);
+        pool.f16.insert(dev, e.f16_scratch_swap(prev_f16));
+        let keeper: Vec<Box<dyn std::any::Any + Send>> =
+            std::mem::take(&mut *crate::VERIFY_GRAPH_KEEP.lock().unwrap());
+        let misses = crate::VERIFY_WS_MISSES.load(Ordering::Relaxed) - misses0;
+        Self::glm5_run_restore(e, cache, &snap)?;
+        let census = match &captured {
+            Ok(g) => Some(crate::glm5_decode_graph::graph_census(g)?),
+            Err(_) => None,
+        };
+        let graph = match captured {
+            Ok(g) if misses == 0 && census.as_ref().is_some_and(|c| c.host_memcpys == 0) => g,
+            Ok(_) if misses == 0 => {
+                VerifyGraphPool::forget_body_rows(ckpt, lo, hi);
+                e.vws_forget_all();
+                for b in keeper {
+                    std::mem::forget(b);
+                }
+                let c = census.as_ref().expect("Ok arm");
+                eprintln!(
+                    "[glm5-verify-graph] capture of [{lo}, {hi}) t={t} refused: {} memcpy node(s) \
+                     with a HOST endpoint ({:?} bytes) inside the graph (a replay would re-read \
+                     host memory the walk has since freed); latched eager",
+                    c.host_memcpys, c.host_bytes
+                );
+                pool.latched = true;
+                return self.glm5_verify_range(e, topology, x, lo, hi, pos, cache, ckpt);
+            }
+            Ok(_) => {
+                VerifyGraphPool::forget_body_rows(ckpt, lo, hi);
+                e.vws_forget_all();
+                for b in keeper {
+                    std::mem::forget(b);
+                }
+                eprintln!(
+                    "[glm5-verify-graph] capture of [{lo}, {hi}) t={t} refused: {misses} \
+                     workspace misses inside the body (a stash would be graph-owned memory); \
+                     latched eager"
+                );
+                pool.latched = true;
+                return self.glm5_verify_range(e, topology, x, lo, hi, pos, cache, ckpt);
+            }
+            Err(err) => {
+                VerifyGraphPool::forget_body_rows(ckpt, lo, hi);
+                e.vws_forget_all();
+                for b in keeper {
+                    std::mem::forget(b);
+                }
+                eprintln!(
+                    "[glm5-verify-graph] capture of [{lo}, {hi}) t={t} failed: {err}; latched eager"
+                );
+                pool.latched = true;
+                return self.glm5_verify_range(e, topology, x, lo, hi, pos, cache, ckpt);
+            }
+        };
+        crate::GLM5_VERIFY_GRAPH_CAPTURES.fetch_add(1, Ordering::Relaxed);
+        // the stashes the capture drew live with the graph from here on
+        let mut kda_rows: Vec<Option<crate::kda::KdaRowsStash>> =
+            (0..self.layers.len()).map(|_| None).collect();
+        for (il, slot) in kda_rows.iter_mut().enumerate().take(hi).skip(lo) {
+            *slot = ckpt.kda_rows[il].take();
+        }
+        let mut g = VerifyGraph {
+            lo,
+            hi,
+            t,
+            x_io,
+            x_out,
+            pos_ctr,
+            pos_all: pos_g.all,
+            graph,
+            kda_rows,
+            _keeper: keeper,
+            replays: 0,
+        };
+        // ---- self-check: replay vs the eager walk from the same state ----
+        let x_ref = e.clone_dtod(&x)?;
+        let y_ref = self.glm5_verify_range(e, topology, x_ref, lo, hi, pos, cache, ckpt)?;
+        let lens_ref: Vec<usize> = cache
+            .latent
+            .iter()
+            .map(|p| p.as_ref().map_or(0, |p| p.len))
+            .collect();
+        Self::glm5_run_restore(e, cache, &snap)?;
+        e.i32_set_k(&mut g.pos_ctr, pos.pos0 as i32)?;
+        e.i32_iota_from(&g.pos_ctr, &mut g.pos_all, t)?;
+        e.copy_into(&mut g.x_io, 0, &x, width)?;
+        let prev = e.f16_scratch_swap(pool.f16.get_mut(&dev).and_then(Option::take));
+        let launched = g.graph.launch();
+        pool.f16.insert(dev, e.f16_scratch_swap(prev));
+        launched?;
+        e.stream().synchronize()?;
+        let (hr, hg) = (e.dtoh(&y_ref)?, e.dtoh(&g.x_out)?);
+        let bad = hr
+            .iter()
+            .zip(&hg)
+            .filter(|(a, b)| a.to_bits() != b.to_bits())
+            .count();
+        let mut len_bad = 0usize;
+        for (il, len_ref) in lens_ref.iter().enumerate().take(hi).skip(lo) {
+            if let Mixer::Mla(mla) = &self.layers[il].mixer
+                && let Some(plane) = cache.latent[il].as_mut()
+            {
+                plane.len += t;
+                if let Some(ix) = mla.index.as_ref() {
+                    plane.index_pools_ready = plane.len / ix.geom.pool;
+                }
+                if plane.len != *len_ref {
+                    len_bad += 1;
+                }
+            }
+        }
+        if bad > 0 || len_bad > 0 {
+            crate::GLM5_VERIFY_GRAPH_SELFCHECK_FAILS.fetch_add(1, Ordering::Relaxed);
+            eprintln!(
+                "[glm5-verify-graph] SELF-CHECK FAILED for [{lo}, {hi}) t={t}: {bad}/{} words and \
+                 {len_bad} latent lengths differ between the replay and the eager walk; latched \
+                 eager (the eager walk's result stands)",
+                hr.len()
+            );
+            pool.latched = true;
+            Self::glm5_run_restore(e, cache, &snap)?;
+            return self.glm5_verify_range(e, topology, x, lo, hi, pos, cache, ckpt);
+        }
+        {
+            let c = census.as_ref().expect("Ok arm");
+            eprintln!(
+                "[glm5-verify-graph] engaged: [{lo}, {hi}) t={t} captured: {} nodes ({} kernels, \
+                 {} copies, {} allocs, {} frees; workspace pre-filled by {prefilled} buffers), \
+                 self-check bitwise against the eager walk ({} words); replays from here",
+                c.nodes,
+                c.kernels,
+                c.memcpys,
+                c.mem_allocs,
+                c.mem_frees,
+                hr.len()
+            );
+        }
+        let mut out = e.uninit(width)?;
+        e.copy_into(&mut out, 0, &g.x_out, width)?;
+        for il in lo..hi {
+            if let Some(rl) = cache.recur[il].as_mut() {
+                std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
+            }
+        }
+        g.replays += 1;
+        crate::GLM5_VERIFY_GRAPH_REPLAYS.fetch_add(1, Ordering::Relaxed);
+        // this round's stashes are the graph's; the eager self-check's stashes sitting in the
+        // checkpoint slots are dropped by the swap
+        for il in lo..hi {
+            if g.kda_rows[il].is_some() {
+                ckpt.kda_rows[il] = g.kda_rows[il].take();
+            }
+        }
+        pool.graphs.push(g);
+        Ok(out)
+    }
+}
+
 impl Glm5VerifyCkpt {
     /// GATE RECEIPT (wiring anchor, not a serving surface): how many KDA layers filled
     /// the BATCHED rows stash vs the PER-ROW column stash — the flag A/B gate asserts
@@ -803,6 +1229,20 @@ impl HybridModel {
         cache: &mut Cache,
         snap_pool: Vec<Option<CudaSlice<f32>>>,
     ) -> Res<(CudaSlice<f32>, CudaSlice<f32>, Glm5VerifyCkpt)> {
+        self.glm5_verify_rows_graphed(e, tokens, cache, snap_pool, None)
+    }
+
+    /// [`Self::glm5_verify_rows_reusing`] with the session's captured-walk pool
+    /// (`MEMRA_GLM5_VERIFY_GRAPH` arm 2): each stage range replays its captured graph at
+    /// this row count when one exists.
+    pub fn glm5_verify_rows_graphed(
+        &self,
+        e: &Engine,
+        tokens: &[u32],
+        cache: &mut Cache,
+        snap_pool: Vec<Option<CudaSlice<f32>>>,
+        graphs: Option<&mut VerifyGraphPool>,
+    ) -> Res<(CudaSlice<f32>, CudaSlice<f32>, Glm5VerifyCkpt)> {
         let topology = *self
             .hyper
             .as_ref()
@@ -882,13 +1322,13 @@ impl HybridModel {
             if !self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::Pipeline) {
                 return Err("pipeline rewrite is not qualified for this ModelPlan".into());
             }
-            return self.glm5_verify_rows_ppn(e, tokens, cache, ckpt, &topology, &fence);
+            return self.glm5_verify_rows_ppn(e, tokens, cache, ckpt, &topology, &fence, graphs);
         }
 
         let pos = Glm5VerifyPos::new(e, pos0, t)?;
         let embedded = self.glm5_rows_embed(e, tokens, n_embd)?;
         let x = crate::hyper::expand(e, &topology, &embedded, t, n_embd)?;
-        let x = self.glm5_verify_range(
+        let x = self.glm5_verify_range_graphed(
             e,
             &topology,
             x,
@@ -897,6 +1337,7 @@ impl HybridModel {
             &pos,
             cache,
             &mut ckpt,
+            graphs,
         )?;
         let (logits, collapsed) = self.glm5_verify_head(e, &topology, &x, t)?;
         Ok((logits, collapsed, ckpt))
@@ -1474,6 +1915,7 @@ impl HybridModel {
         e.htod(&self.embd.try_gather(n_embd, tokens)?)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn glm5_verify_rows_ppn(
         &self,
         e: &Engine,
@@ -1482,6 +1924,7 @@ impl HybridModel {
         mut ckpt: Glm5VerifyCkpt,
         topology: &crate::hyper::HyperTopology,
         fence: &[usize],
+        mut graphs: Option<&mut VerifyGraphPool>,
     ) -> Res<(CudaSlice<f32>, CudaSlice<f32>, Glm5VerifyCkpt)> {
         let t = tokens.len();
         let n_embd = self.cfg.n_embd as usize;
@@ -1497,12 +1940,21 @@ impl HybridModel {
             let pos = pos_on(e)?;
             let embedded = self.glm5_rows_embed(e, tokens, n_embd)?;
             let mut x = crate::hyper::expand(e, topology, &embedded, t, n_embd)?;
-            x =
-                self.glm5_verify_range(e, topology, x, fence[0], fence[1], &pos, cache, &mut ckpt)?;
+            x = self.glm5_verify_range_graphed(
+                e,
+                topology,
+                x,
+                fence[0],
+                fence[1],
+                &pos,
+                cache,
+                &mut ckpt,
+                graphs.as_deref_mut(),
+            )?;
             for s in 1..fence.len() - 1 {
                 let boundary_tx = e.clone_dtod(&x)?;
                 let boundary_rx = e.clone_dtod(&boundary_tx)?;
-                x = self.glm5_verify_range(
+                x = self.glm5_verify_range_graphed(
                     e,
                     topology,
                     boundary_rx,
@@ -1511,6 +1963,7 @@ impl HybridModel {
                     &pos,
                     cache,
                     &mut ckpt,
+                    graphs.as_deref_mut(),
                 )?;
             }
             let (logits, collapsed) = self.glm5_verify_head(e, topology, &x, t)?;
@@ -1536,8 +1989,17 @@ impl HybridModel {
             let pos = pos_on(e0)?;
             let embedded = self.glm5_rows_embed(e0, tokens, n_embd)?;
             let x = crate::hyper::expand(e0, topology, &embedded, t, n_embd)?;
-            let x = self
-                .glm5_verify_range(e0, topology, x, fence[0], fence[1], &pos, cache, &mut ckpt)?;
+            let x = self.glm5_verify_range_graphed(
+                e0,
+                topology,
+                x,
+                fence[0],
+                fence[1],
+                &pos,
+                cache,
+                &mut ckpt,
+                graphs.as_deref_mut(),
+            )?;
             rt.tx(0, &x, payload)?
         };
 
@@ -1547,7 +2009,7 @@ impl HybridModel {
             let es = rt.engine(s, e);
             let pos = pos_on(es)?;
             let x = rt.rx(s - 1, slot, payload)?;
-            let x = self.glm5_verify_range(
+            let x = self.glm5_verify_range_graphed(
                 es,
                 topology,
                 x,
@@ -1556,6 +2018,7 @@ impl HybridModel {
                 &pos,
                 cache,
                 &mut ckpt,
+                graphs.as_deref_mut(),
             )?;
             slot = rt.tx(s, &x, payload)?;
         }
@@ -1565,7 +2028,7 @@ impl HybridModel {
         let el = rt.engine(n_st - 1, e);
         let pos = pos_on(el)?;
         let x = rt.rx(n_st - 2, slot, payload)?;
-        let x = self.glm5_verify_range(
+        let x = self.glm5_verify_range_graphed(
             el,
             topology,
             x,
@@ -1574,6 +2037,7 @@ impl HybridModel {
             &pos,
             cache,
             &mut ckpt,
+            graphs,
         )?;
         let (logits, collapsed) = self.glm5_verify_head(el, topology, &x, t)?;
         // el.stream() under the enter-guard IS the stage stream (memra_runtime ambient
@@ -2466,6 +2930,7 @@ impl HybridModel {
             sctr,
             uctr: 0,
             snap_pool: Vec::new(),
+            verify_graphs: VerifyGraphPool::default(),
             rounds: 0,
             rank_trimmed_rounds: 0,
             done: false,
@@ -3066,6 +3531,7 @@ impl HybridModel {
             sctr,
             uctr: 0,
             snap_pool: Vec::new(),
+            verify_graphs: VerifyGraphPool::default(),
             rounds: 0,
             rank_trimmed_rounds: 0,
             done: false,
@@ -3578,8 +4044,17 @@ impl HybridModel {
         rows.push(sess.anchor);
         rows.extend_from_slice(&drafts);
         let snap_pool = std::mem::take(&mut sess.snap_pool);
-        let (vlogits, collapsed, mut ckpt) =
-            self.glm5_verify_rows_reusing(e, &rows, &mut sess.cache, snap_pool)?;
+        let (vlogits, collapsed, mut ckpt) = if crate::glm5_verify_graph_on() {
+            self.glm5_verify_rows_graphed(
+                e,
+                &rows,
+                &mut sess.cache,
+                snap_pool,
+                Some(&mut sess.verify_graphs),
+            )?
+        } else {
+            self.glm5_verify_rows_reusing(e, &rows, &mut sess.cache, snap_pool)?
+        };
         bump!(verify);
         plap!(first_verify_ms);
 
@@ -3750,6 +4225,7 @@ impl HybridModel {
         } else {
             self.glm5_verify_rollback(e, &mut sess.cache, &ckpt, keep)?;
             sess.snap_pool = std::mem::take(&mut ckpt.kda_ssm_snap);
+            sess.verify_graphs.reclaim_rows(e, &mut ckpt);
         }
         bump!(roll);
         plap!(first_roll_ms);
@@ -4365,6 +4841,8 @@ pub struct Glm5SpecSession {
     /// pre-round clones re-filled in place instead of re-allocated: same bytes, stable
     /// addresses for a captured round).
     snap_pool: Vec<Option<CudaSlice<f32>>>,
+    /// Captured verify walks per (stage range, row count) (`MEMRA_GLM5_VERIFY_GRAPH` arm 2).
+    verify_graphs: VerifyGraphPool,
     /// Verify rounds completed over the session lifetime (the worker's per-burst
     /// rounds-delta receipt, the dspark `rounds` convention).
     pub rounds: usize,

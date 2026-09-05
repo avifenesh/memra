@@ -417,6 +417,30 @@ pub fn glm5_verify_graph_on() -> bool {
 /// Verify-walk MLA layer calls that went through the live twins (`MEMRA_GLM5_VERIFY_GRAPH`).
 pub static GLM5_VERIFY_LIVE_MLA_CALLS: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
+/// Verify walks captured per (stage range, row count) (`MEMRA_GLM5_VERIFY_GRAPH` arm 2).
+pub static GLM5_VERIFY_GRAPH_CAPTURES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+/// Verify walks replayed from a captured graph.
+pub static GLM5_VERIFY_GRAPH_REPLAYS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+/// Captured verify walks whose one-time self-check (replay vs eager) disagreed; the pool
+/// latches eager on the first.
+pub static GLM5_VERIFY_GRAPH_SELFCHECK_FAILS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+/// Verify-walk workspace requests the size-keyed pool could not serve (fresh allocations);
+/// a capture body that hits one is refused (its stash would be graph-owned memory).
+pub static VERIFY_WS_MISSES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// Set by the verify-graph door around a capture body: a workspace miss inside it is printed
+/// (the body will be refused; the print names the size and the launch before it), and
+/// buffers recycled inside the body are RETAINED (`VERIFY_GRAPH_KEEP`) instead of returned
+/// to the pool, so nothing the graph baked is ever re-issued to eager work.
+pub static VERIFY_WS_MISS_TRACE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+/// Workspace buffers recycled inside a verify-graph capture body (the graph's scratch); the
+/// door moves them into the captured walk's keeper after the capture.
+#[allow(clippy::type_complexity)] // allow: mirrors the engine's capture keeper
+pub static VERIFY_GRAPH_KEEP: std::sync::Mutex<Vec<Box<dyn std::any::Any + Send>>> =
+    std::sync::Mutex::new(Vec::new());
 /// Pageable host-to-device copies the `MEMRA_GLM5_SPEC_DEV_IO` door replaced with launches.
 pub static SPEC_DEV_IO_AVOIDED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
@@ -1622,6 +1646,18 @@ pub struct VerifyWs {
     i8_pool: std::collections::HashMap<usize, Vec<CudaSlice<i8>>>,
     u64_pool: std::collections::HashMap<usize, Vec<CudaSlice<u64>>>,
     held_bytes: usize,
+    /// f32 buffers drawn from the pool and not yet returned, per size (takes and misses
+    /// minus puts since the last reset), and the peak of that count: the verify-graph door
+    /// pre-fills the pool to the peak before a capture so the captured body never allocates.
+    f32_outstanding: std::collections::HashMap<usize, i64>,
+    f32_peak: std::collections::HashMap<usize, usize>,
+    /// Takes per size since the reset: the capture body retains instead of recycling, so the
+    /// pre-fill covers every take, not only the peak.
+    f32_takes: std::collections::HashMap<usize, usize>,
+    /// The i8 and u64 twins of `f32_takes` (q8 activation planes, MoE pointer tables): the
+    /// pre-fill covers them too, so a captured body allocates NOTHING.
+    i8_takes: std::collections::HashMap<usize, usize>,
+    u64_takes: std::collections::HashMap<usize, usize>,
 }
 
 /// Per-size-class retention cap: enough for every live shape class of one round plus the
@@ -1630,6 +1666,9 @@ const VWS_PER_CLASS_CAP: usize = 16;
 /// Total retention cap (bytes). The round's recurring buffers are t*8192-f32-class and MoE
 /// staging (<= ~1 MiB each); 256 MiB holds every class with an order of magnitude of slack.
 const VWS_HELD_BYTES_CAP: usize = 256 << 20;
+/// Under `MEMRA_GLM5_VERIFY_GRAPH`: every layer's stash of every row count stays pooled.
+const VWS_PER_CLASS_CAP_GRAPH: usize = 1024;
+const VWS_HELD_BYTES_CAP_GRAPH: usize = 2048 << 20;
 
 impl VerifyWs {
     fn take<T>(
@@ -1648,11 +1687,19 @@ impl VerifyWs {
     ) {
         let n = s.len();
         let bytes = n * std::mem::size_of::<T>();
-        if *held + bytes > VWS_HELD_BYTES_CAP {
+        // The verify-graph door keeps EVERY round's stashes in the pool (a captured body must
+        // never allocate): 34 KDA layers x 8 t-row buffers per class on the served model, so
+        // the caps that size a plain verify walk's recycling would starve it.
+        let (class_cap, bytes_cap) = if glm5_verify_graph_on() {
+            (VWS_PER_CLASS_CAP_GRAPH, VWS_HELD_BYTES_CAP_GRAPH)
+        } else {
+            (VWS_PER_CLASS_CAP, VWS_HELD_BYTES_CAP)
+        };
+        if *held + bytes > bytes_cap {
             return; // drop: falls to the ordinary async free
         }
         let v = pool.entry(n).or_default();
-        if v.len() >= VWS_PER_CLASS_CAP {
+        if v.len() >= class_cap {
             return;
         }
         v.push(s);
@@ -2868,6 +2915,9 @@ pub(crate) fn hc_pre_block() -> usize {
 }
 
 fn verify_ws_on() -> bool {
+    if glm5_verify_graph_on() {
+        return true;
+    }
     verify_ws_on_from(
         std::env::var("MEMRA_VERIFY_WS").ok().as_deref(),
         std::env::var("MEMRA_GLM5_VERIFY_WS").ok().as_deref(),
@@ -10240,6 +10290,30 @@ impl Engine {
         Ok(())
     }
 
+    /// The UNGATED shared-expert add, `dst[r, :] += src[r, :]` for `nrows` rows: the resident
+    /// ones buffer ([`Self::add_scaled_rows_ones`]) under door H (`MEMRA_HTOD_DIET`) or the
+    /// verify-graph door (`MEMRA_GLM5_VERIFY_GRAPH`), else the shipped per-call `vec![1.0; t]`
+    /// upload through the same kernel. The verify-graph door forces the resident arm because a
+    /// pageable upload inside a captured verify walk is recorded as a memcpy node reading the
+    /// HOST address of a temporary `Vec` that is freed before the first replay; the replay then
+    /// scales the shared expert by whatever the allocator left there (rig 2026-09-05: 1536/1536
+    /// output words wrong at 1e21, seven 12-byte host-sourced copy nodes in the graph census).
+    /// Same kernel, same 1.0 values on every arm: bit-identical by construction.
+    pub fn add_scaled_rows_ungated(
+        &self,
+        src: &CudaSlice<f32>,
+        dst: &mut CudaSlice<f32>,
+        ncols: usize,
+        nrows: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if htod_diet_on() || glm5_verify_graph_on() {
+            HTOD_DIET_AVOIDED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            return self.add_scaled_rows_ones(src, dst, ncols, nrows);
+        }
+        let g = self.htod(&vec![1.0f32; nrows])?;
+        self.add_scaled_rows(src, &g, dst, ncols, nrows)
+    }
+
     /// `add_scaled_rows` with an all-ones scale drawn from the resident ones buffer (door H,
     /// `MEMRA_HTOD_DIET`) — the UNGATED shared-expert add, without re-uploading the
     /// constant every MoE layer-call. Same kernel, same values: the buffer may be longer than
@@ -12745,6 +12819,14 @@ impl Engine {
         if verify_ws_on() {
             let mut ws = self.verify_ws.lock().unwrap();
             let ws = &mut *ws;
+            let o = ws.f32_outstanding.entry(n).or_insert(0);
+            *o += 1;
+            *ws.f32_takes.entry(n).or_insert(0) += 1;
+            let cur = (*o).max(0) as usize;
+            let pk = ws.f32_peak.entry(n).or_insert(0);
+            if cur > *pk {
+                *pk = cur;
+            }
             if let Some(s) = VerifyWs::take(&mut ws.f32_pool, &mut ws.held_bytes, n) {
                 if VERIFY_WS_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
                     eprintln!(
@@ -12754,8 +12836,49 @@ impl Engine {
                 }
                 return Ok(s);
             }
+            VERIFY_WS_MISSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if VERIFY_WS_MISS_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
+                let held: Vec<(usize, usize)> =
+                    ws.f32_pool.iter().map(|(k, v)| (*k, v.len())).collect();
+                eprintln!(
+                    "[glm5-verify-graph] workspace miss inside a capture body: n={n} pool={held:?} \
+                     after={}",
+                    crate::last_site_get()
+                );
+            }
         }
         self.alloc_uninit::<f32>(n)
+    }
+
+    /// The verify workspace pool's f32 classes as (size, count): a gate's receipt.
+    pub fn vws_pool_state(&self) -> Vec<(usize, usize)> {
+        let ws = self.verify_ws.lock().unwrap();
+        let mut v: Vec<(usize, usize)> = ws.f32_pool.iter().map(|(k, q)| (*k, q.len())).collect();
+        v.sort_unstable();
+        v
+    }
+
+    /// Leak every pooled verify-walk buffer (a refused capture body may have recycled
+    /// graph-owned temporaries into the pool; freeing those as ordinary allocations is a
+    /// driver error). Once per session at most, on the refusal path.
+    pub(crate) fn vws_forget_all(&self) {
+        let mut ws = self.verify_ws.lock().unwrap();
+        for (_, v) in ws.f32_pool.drain() {
+            for s in v {
+                std::mem::forget(s);
+            }
+        }
+        for (_, v) in ws.i8_pool.drain() {
+            for s in v {
+                std::mem::forget(s);
+            }
+        }
+        for (_, v) in ws.u64_pool.drain() {
+            for s in v {
+                std::mem::forget(s);
+            }
+        }
+        ws.held_bytes = 0;
     }
 
     /// Pool-or-alloc i8 scratch (q8_1 activation planes).
@@ -12766,9 +12889,17 @@ impl Engine {
         if verify_ws_on() {
             let mut ws = self.verify_ws.lock().unwrap();
             let ws = &mut *ws;
+            *ws.i8_takes.entry(n).or_insert(0) += 1;
             if let Some(s) = VerifyWs::take(&mut ws.i8_pool, &mut ws.held_bytes, n) {
                 VERIFY_WS_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 return Ok(s);
+            }
+            VERIFY_WS_MISSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if VERIFY_WS_MISS_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
+                eprintln!(
+                    "[glm5-verify-graph] i8 workspace miss inside a capture body: n={n} after={}",
+                    crate::last_site_get()
+                );
             }
         }
         self.alloc_uninit::<i8>(n)
@@ -12782,9 +12913,17 @@ impl Engine {
         if verify_ws_on() {
             let mut ws = self.verify_ws.lock().unwrap();
             let ws = &mut *ws;
+            *ws.u64_takes.entry(n).or_insert(0) += 1;
             if let Some(s) = VerifyWs::take(&mut ws.u64_pool, &mut ws.held_bytes, n) {
                 VERIFY_WS_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 return Ok(s);
+            }
+            VERIFY_WS_MISSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if VERIFY_WS_MISS_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
+                eprintln!(
+                    "[glm5-verify-graph] u64 workspace miss inside a capture body: n={n} after={}",
+                    crate::last_site_get()
+                );
             }
         }
         self.alloc_uninit::<u64>(n)
@@ -12806,17 +12945,105 @@ impl Engine {
             self.capture_keep.lock().unwrap().push(Box::new(s));
             return;
         }
+        if VERIFY_WS_MISS_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
+            VERIFY_GRAPH_KEEP.lock().unwrap().push(Box::new(s));
+            return;
+        }
         if verify_ws_on() {
             let mut ws = self.verify_ws.lock().unwrap();
             let ws = &mut *ws;
+            *ws.f32_outstanding.entry(s.len()).or_insert(0) -= 1;
             VerifyWs::put(&mut ws.f32_pool, &mut ws.held_bytes, s);
         }
+    }
+
+    /// Start measuring the verify walk's peak simultaneous f32 workspace demand per size
+    /// (the verify-graph door calls this before the warm round's eager walk).
+    pub(crate) fn vws_peak_reset(&self) {
+        let mut ws = self.verify_ws.lock().unwrap();
+        ws.f32_outstanding.clear();
+        ws.f32_peak.clear();
+        ws.f32_takes.clear();
+        ws.i8_takes.clear();
+        ws.u64_takes.clear();
+    }
+
+    /// Fill the pool so every size class holds at least the measured peak (buffers allocated
+    /// HERE, outside any capture): a captured body that draws up to that peak never allocates.
+    /// Returns the number of buffers added.
+    pub(crate) fn vws_prefill_to_peak(&self) -> Result<usize, Box<dyn std::error::Error>> {
+        let peaks: Vec<(usize, usize)> = {
+            let ws = self.verify_ws.lock().unwrap();
+            ws.f32_takes.iter().map(|(k, v)| (*k, *v)).collect()
+        };
+        let mut added = 0usize;
+        for (n, peak) in peaks {
+            loop {
+                let have = {
+                    let ws = self.verify_ws.lock().unwrap();
+                    ws.f32_pool.get(&n).map_or(0, |v| v.len())
+                };
+                if have >= peak {
+                    break;
+                }
+                let s = self.alloc_uninit::<f32>(n)?;
+                let mut ws = self.verify_ws.lock().unwrap();
+                let ws = &mut *ws;
+                VerifyWs::put(&mut ws.f32_pool, &mut ws.held_bytes, s);
+                added += 1;
+            }
+        }
+        let i8_takes: Vec<(usize, usize)> = {
+            let ws = self.verify_ws.lock().unwrap();
+            ws.i8_takes.iter().map(|(k, v)| (*k, *v)).collect()
+        };
+        for (n, takes) in i8_takes {
+            loop {
+                let have = {
+                    let ws = self.verify_ws.lock().unwrap();
+                    ws.i8_pool.get(&n).map_or(0, |v| v.len())
+                };
+                if have >= takes {
+                    break;
+                }
+                let s = self.alloc_uninit::<i8>(n)?;
+                let mut ws = self.verify_ws.lock().unwrap();
+                let ws = &mut *ws;
+                VerifyWs::put(&mut ws.i8_pool, &mut ws.held_bytes, s);
+                added += 1;
+            }
+        }
+        let u64_takes: Vec<(usize, usize)> = {
+            let ws = self.verify_ws.lock().unwrap();
+            ws.u64_takes.iter().map(|(k, v)| (*k, *v)).collect()
+        };
+        for (n, takes) in u64_takes {
+            loop {
+                let have = {
+                    let ws = self.verify_ws.lock().unwrap();
+                    ws.u64_pool.get(&n).map_or(0, |v| v.len())
+                };
+                if have >= takes {
+                    break;
+                }
+                let s = self.alloc_uninit::<u64>(n)?;
+                let mut ws = self.verify_ws.lock().unwrap();
+                let ws = &mut *ws;
+                VerifyWs::put(&mut ws.u64_pool, &mut ws.held_bytes, s);
+                added += 1;
+            }
+        }
+        Ok(added)
     }
 
     /// i8 twin of [`Self::vws_recycle`].
     pub(crate) fn vws_recycle_i8(&self, s: CudaSlice<i8>) {
         if glm5_graph_capture_open() {
             self.capture_keep.lock().unwrap().push(Box::new(s));
+            return;
+        }
+        if VERIFY_WS_MISS_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
+            VERIFY_GRAPH_KEEP.lock().unwrap().push(Box::new(s));
             return;
         }
         if verify_ws_on() {
@@ -12830,6 +13057,10 @@ impl Engine {
     pub(crate) fn vws_recycle_u64(&self, s: CudaSlice<u64>) {
         if glm5_graph_capture_open() {
             self.capture_keep.lock().unwrap().push(Box::new(s));
+            return;
+        }
+        if VERIFY_WS_MISS_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
+            VERIFY_GRAPH_KEEP.lock().unwrap().push(Box::new(s));
             return;
         }
         if verify_ws_on() {
