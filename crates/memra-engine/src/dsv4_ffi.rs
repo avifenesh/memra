@@ -703,6 +703,32 @@ unsafe extern "C" {
         stamps: *mut u64,
         stream: *mut c_void,
     ) -> i32;
+    /// hc pre-chain v4 with the norm folded in (lane/hc-pre-v4z-20260905): v4's outputs plus the
+    /// `rms_norm_zq8_f32_v2` replay of `y` (z, q8_1 pair) with every operation pinned to the
+    /// served kernel's compiled form. 40025 = shape does not fit (caller runs the two launches).
+    pub fn memra_dsv4_hc_pre_v4z(
+        x: *const f32,
+        mixes: *const f32,
+        scale: *const f32,
+        base: *const f32,
+        pre: *mut f32,
+        post: *mut f32,
+        comb: *mut f32,
+        y: *mut f32,
+        s: i32,
+        hc: i32,
+        d: i32,
+        iters: i32,
+        eps: f32,
+        niters: *mut i32,
+        norm_w: *const f32,
+        z: *mut f32,
+        out_q: *mut i8,
+        out_d: *mut f32,
+        eps_norm: f32,
+        nb: i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_hc_pre_v4(
         x: *const f32,
         mixes: *const f32,

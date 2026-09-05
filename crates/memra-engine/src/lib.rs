@@ -2864,6 +2864,16 @@ pub fn hc_pre_v4_on() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_HC_PRE_V4").as_deref() == Ok("1"))
 }
 
+/// `MEMRA_HC_PRE_V4Z=1` (lane/hc-pre-v4z-20260905): under `MEMRA_HC_PRE_ZQ8=1`, the fused
+/// hc-pre + norm launch is the v4 register schedule with `rms_norm_zq8_f32_v2` replayed inside
+/// the block (`dsv4_hc_pre_v4z_e16_kernel`), every norm operation pinned to the served kernel's
+/// compiled form. Refuses (falls back to the zq8 kernel) off the served shape. Default OFF
+/// pending its model-scale row.
+pub fn hc_pre_v4z_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_HC_PRE_V4Z").as_deref() == Ok("1"))
+}
+
 /// `MEMRA_HC_PRE_ZQ8` (lane/hcpre-zq8-fusion-20260905): run each hc site's pre-chain AND the
 /// `rms_norm_zq8` that consumes its output as ONE launch (`dsv4_hc_pre_zq8_kernel`).
 ///

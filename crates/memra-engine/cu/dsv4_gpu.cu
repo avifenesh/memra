@@ -4275,6 +4275,229 @@ extern "C" int memra_dsv4_hc_pre_v4_stamped(const float* x, const float* mixes, 
     return 0;
 }
 
+
+// ---------------------------------------------------------------- hc pre-chain v4z (v4 + norm)
+// v4 with the attention/FFN-input norm folded in: `rms_norm_zq8_f32_v2` replayed inside the same
+// block from the y row staged in shared memory, every operation pinned to the served kernel's
+// compiled form (see the body). Replaces two launches (v4 + rms_norm_zq8_f32_v2) per hc site
+// with one, and the norm's own launch latency (~6.7 us served) with ~1 us of in-block work.
+template <int ELEMS, int HCN, int BLOCK>
+__device__ __forceinline__ void dsv4_hc_pre_v4z_body(
+        const float* __restrict__ x, const float* __restrict__ mixes_all,
+        const float* __restrict__ scale, const float* __restrict__ base,
+        float* __restrict__ pre_all, float* __restrict__ post_all,
+        float* __restrict__ comb_all, float* __restrict__ y, int w, int rows, int hc, int d,
+        int iters, float eps, int* __restrict__ niters, const float* __restrict__ norm_w,
+        float* __restrict__ z, signed char* __restrict__ out_q, float* __restrict__ out_d,
+        float eps_norm, int nb) {
+    // Every array index below is a compile-time constant (ELEMS, HCN, BLOCK are template
+    // parameters, loops fully unrolled): a runtime stride into `xv[]` or `vals[]` demotes the
+    // array to local memory and the kernel to 12.3 us against v3's 10.3 (B200, 2026-09-05).
+    constexpr int DPB = ELEMS / HCN;  // elements of one stream per thread
+    constexpr int NJ = BLOCK / 32;    // shared-tree values per warp-0 lane
+    int p = blockIdx.x;
+    int t = threadIdx.x;
+    const float* xr = x + (long)p * w;
+
+    // Prefetch the small vectors warp 0 needs after barrier 1 (mixes: rows <= 32 values, one
+    // per lane; scale[3]; base: the 2*hc + hc*hc gate entries, one per lane) so their L2 latency
+    // overlaps the x loads instead of following the barrier. Values only; arithmetic unchanged.
+    const float* mixes_p = mixes_all + (long)p * rows;
+    float mix_l = (t < rows) ? mixes_p[t] : 0.0f;
+    float base_l = (t < rows) ? base[t] : 0.0f;
+    float sc0 = scale[0], sc1 = scale[1], sc2 = scale[2];
+    // one round of loads, kept for the combine (v3's per-thread order: t, t+B, t+2B, ...)
+    float xv[ELEMS];
+#pragma unroll
+    for (int k = 0; k < ELEMS; k++) xv[k] = xr[t + k * BLOCK];
+    double acc = 0.0;
+#pragma unroll
+    for (int k = 0; k < ELEMS; k++) acc += (double)xv[k] * (double)xv[k];
+
+    __shared__ double shd[BLOCK];
+    __shared__ float smix[(2 + DSV4_HC_MAX) * DSV4_HC_MAX];
+    __shared__ float spre[DSV4_HC_MAX];
+    shd[t] = acc;
+    __syncthreads();  // barrier 1: shd complete
+    float* pre = pre_all + (long)p * hc;
+    float* post = post_all + (long)p * hc;
+    float* combg = comb_all + (long)p * hc * hc;
+    const unsigned MASK = 0xffffffffu;
+    if (t < 32) {
+        // v3's tree, levels off = BLOCK/2 .. 32, replayed in registers: lane t holds
+        // sh[t + 32 j]; at level off the partner of index t+32j is t+32j+off = t+32(j+off/32),
+        // held by the same lane, so vals[j] += vals[j + off/32] is the tree's own addition.
+        double vals[NJ];
+#pragma unroll
+        for (int j = 0; j < NJ; j++) vals[j] = shd[t + 32 * j];
+        // NJ = 2^LOG levels; a constant trip count so the unroll is total and every index static
+        constexpr int LOG = (NJ == 32) ? 5 : (NJ == 16) ? 4 : (NJ == 8) ? 3 : (NJ == 4) ? 2 : (NJ == 2) ? 1 : 0;
+#pragma unroll
+        for (int lvl = 0; lvl < LOG; lvl++) {
+            const int oj = NJ >> (lvl + 1);
+#pragma unroll
+            for (int j = 0; j < NJ / 2; j++) {
+                if (j < oj) vals[j] += vals[j + oj];
+            }
+        }
+        double v = vals[0];
+        // levels 16 .. 1: sh[tid] += sh[tid + off] for tid < off, as shuffles
+#pragma unroll
+        for (int off = 16; off > 0; off >>= 1) {
+            double o = __shfl_down_sync(MASK, v, off);
+            if (t < off) v += o;
+        }
+        double tot = __shfl_sync(MASK, v, 0);
+        float rsq = 1.0f / sqrtf((float)(tot / (double)w) + eps);
+        if (t < rows) smix[t] = mix_l * rsq;
+        __syncwarp();
+        if (t < hc) {
+            float pv = dsv4_sigmoid(smix[t] * sc0 + base_l) + eps;
+            pre[t] = pv;
+            spre[t] = pv;
+            post[t] = 2.0f * dsv4_sigmoid(smix[hc + t] * sc1 + base[hc + t]);
+        }
+    }
+    __syncthreads();  // barrier 2: spre visible; warps 1.. run the combine, warp 0 iterates
+
+    if (t < 32) {
+        int n2 = hc * hc;
+        int r = (t < n2) ? t / hc : 0;
+        int c = (t < n2) ? t - r * hc : 0;
+        float cv = (t < n2) ? (smix[2 * hc + t] * sc2 + base[2 * hc + t]) : 0.0f;
+        __syncwarp();
+
+        float mx = -INFINITY;
+        for (int k = 0; k < hc; k++) mx = fmaxf(mx, __shfl_sync(MASK, cv, r * hc + k));
+        float e = expf(cv - mx);
+        float sum = 0.0f;
+        for (int k = 0; k < hc; k++) sum += __shfl_sync(MASK, e, r * hc + k);
+        cv = e / sum + eps;
+
+        int done = 0;
+        for (int it = 0; it < iters; it++) {
+            float prev = cv;
+            if (it > 0) {
+                float rs = 0.0f;
+                for (int k = 0; k < hc; k++) rs += __shfl_sync(MASK, cv, r * hc + k);
+                cv = cv / (rs + eps);
+            }
+            float cs = 0.0f;
+            for (int j = 0; j < hc; j++) cs += __shfl_sync(MASK, cv, j * hc + c);
+            cv = cv / (cs + eps);
+            done = it + 1;
+            if (it > 0) {
+                unsigned ch = (t < n2 && __float_as_uint(prev) != __float_as_uint(cv)) ? 1u : 0u;
+                if (__any_sync(MASK, ch) == 0) break;
+            }
+        }
+        if (niters && t == 0) niters[p] = done;
+        if (t < n2) combg[t] = cv;
+    }
+
+    // combine from registers: y[t + m B] = sum_c spre[c] * x[c d + t + m B], c ascending;
+    // y is written (the workspace keeps it) AND staged in shared memory for the norm below.
+    __shared__ float sy[HCN * 1024];  // d floats: the y row (d == DPB * BLOCK)
+    {
+        float* yr = y + (long)p * d;
+        float sp[HCN];
+#pragma unroll
+        for (int c = 0; c < HCN; c++) sp[c] = spre[c];
+#pragma unroll
+        for (int m = 0; m < DPB; m++) {
+            float acc2 = 0.0f;
+#pragma unroll
+            for (int c = 0; c < HCN; c++) acc2 += sp[c] * xv[c * DPB + m];
+            yr[t + m * BLOCK] = acc2;
+            sy[t + m * BLOCK] = acc2;
+        }
+    }
+    __syncthreads();  // barrier 3: the y row is complete in shared memory
+
+    // ---- rms_norm_zq8_f32_v2 REPLAYED at its served width (256 threads), with every
+    // operation PINNED to what kernels.cu compiles it to: the sum of squares is a fused
+    // multiply-add chain there (`sum += v*v` under contraction; SASS: FFMA R, v, v, sum), the
+    // rest is plain multiplies/divides. This TU is built -fmad=false, so the pins are what make
+    // the replay bit-identical rather than the text (2026-09-05: a verbatim copy forked the tape).
+    const int ncols = d;
+    const int nblk = ncols / 32;
+    __shared__ float s_red[32];
+    const int NB = nb;  // rms_block(): the width the served norm launches at (32..1024)
+    if (t < NB) {
+        float sum = 0.0f;
+        // v2's pass 1: per-thread order i = t, t+NB, t+2NB, ... into ONE accumulator
+        for (int i = t; i < ncols; i += NB) {
+            float v = sy[i];
+            sum = __fmaf_rn(v, v, sum);
+        }
+        for (int o = 16; o > 0; o >>= 1) sum = __fadd_rn(sum, __shfl_down_sync(0xffffffffu, sum, o));
+        if ((t & 31) == 0) s_red[t >> 5] = sum;
+    }
+    __syncthreads();  // barrier 4: warp partials (v2's first __syncthreads)
+    if (t < 32) {
+        float v = (t < (NB + 31) / 32) ? s_red[t] : 0.0f;
+        for (int o = 16; o > 0; o >>= 1) v = __fadd_rn(v, __shfl_down_sync(0xffffffffu, v, o));
+        if (t == 0) s_red[0] = v;
+    }
+    __syncthreads();  // barrier 5: the total (v2's second __syncthreads)
+    const float nscale = rsqrtf(__fadd_rn(__fdiv_rn(s_red[0], (float)ncols), eps_norm));
+    // v2's pass 2 over all 32 warps: block blk = warp, stride 32 (the per-block arithmetic does
+    // not depend on which warp emits it: the amax is a max over the block's 32 lanes).
+    {
+        float* zr = z + (long)p * ncols;
+        signed char* base_q = out_q + (long)p * ncols;
+        float* base_d = out_d + (long)p * nblk;
+        const int lane = t & 31;
+        for (int blk = t >> 5; blk < nblk; blk += BLOCK >> 5) {
+            const int i0 = blk * 32 + lane;
+            const float v = __fmul_rn(__fmul_rn(sy[i0], nscale), norm_w[i0]);
+            zr[i0] = v;
+            float amax = fabsf(v);
+#pragma unroll
+            for (int o = 16; o > 0; o >>= 1)
+                amax = fmaxf(amax, __shfl_xor_sync(0xffffffffu, amax, o));
+            const float dq = __fdiv_rn(amax, 127.0f);
+            const float id = dq > 0.0f ? __fdiv_rn(1.0f, dq) : 0.0f;
+            base_q[i0] = (signed char)__float2int_rn(__fmul_rn(v, id));
+            if (lane == 0) base_d[blk] = dq;
+        }
+    }
+}
+
+extern "C" __global__ void __launch_bounds__(1024, 1) dsv4_hc_pre_v4z_e16_kernel(
+        const float* __restrict__ x, const float* __restrict__ mixes_all,
+        const float* __restrict__ scale, const float* __restrict__ base,
+        float* __restrict__ pre_all, float* __restrict__ post_all,
+        float* __restrict__ comb_all, float* __restrict__ y, int w, int rows, int hc, int d,
+        int iters, float eps, int* __restrict__ niters, const float* __restrict__ norm_w,
+        float* __restrict__ z, signed char* __restrict__ out_q, float* __restrict__ out_d,
+        float eps_norm, int nb) {
+    dsv4_hc_pre_v4z_body<16, 4, 1024>(x, mixes_all, scale, base, pre_all, post_all, comb_all, y,
+                                      w, rows, hc, d, iters, eps, niters, norm_w, z, out_q,
+                                      out_d, eps_norm, nb);
+}
+
+// v4z launcher: hc == 4, d == 4096 (w == 16384) only; 40025 otherwise (caller falls back).
+extern "C" int memra_dsv4_hc_pre_v4z(const float* x, const float* mixes, const float* scale,
+                                     const float* base, float* pre, float* post, float* comb,
+                                     float* y, int s, int hc, int d, int iters, float eps,
+                                     int* niters, const float* norm_w, float* z,
+                                     signed char* out_q, float* out_d, float eps_norm, int nb,
+                                     void* stream_v) {
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    if (s < 1 || hc < 1 || hc > DSV4_HC_MAX || d < 1 || iters < 1) return 40021;
+    int w = hc * d;
+    int rows = (2 + hc) * hc;
+    if (rows > 32 || hc * hc > 32) return 40024;
+    if (hc != 4 || w != 16 * 1024 || d != 4096) return 40025;
+    if (nb < 32 || nb > 1024 || (nb & 31) != 0) return 40025;
+    dsv4_hc_pre_v4z_e16_kernel<<<(unsigned)s, 1024u, 0, stream>>>(
+        x, mixes, scale, base, pre, post, comb, y, w, rows, hc, d, iters, eps, niters, norm_w, z,
+        out_q, out_d, eps_norm, nb);
+    DSV4_ERR();
+    return 0;
+}
+
 // v4 launcher: returns 40025 when the shape does not fit the register schedule (caller falls
 // back to v3), so a refusal is visible, never silent.
 extern "C" int memra_dsv4_hc_pre_v4(const float* x, const float* mixes, const float* scale,
