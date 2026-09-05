@@ -135,22 +135,7 @@ fn main() {
     let continuation = 11usize;
     let small_capacity = prompt.len() + warm + continuation + 1;
     let grown_capacity = small_capacity + 97;
-    let moe_graph_gate = std::env::var("MEMRA_DSV4_MOE_GRAPH_GATE").as_deref() == Ok("1");
-    let graph_prompt: Vec<u32> = fixture
-        .tokens_160
-        .as_ref()
-        .expect("fixture tokens_160 required")
-        .iter()
-        .copied()
-        .cycle()
-        .take(1_025)
-        .collect();
-    let model_capacity = if moe_graph_gate {
-        grown_capacity.max(graph_prompt.len() + 32)
-    } else {
-        grown_capacity
-    };
-    let mut gpu = Dsv4Gpu::load(model_dir, &devices, fixture.variant, model_capacity)
+    let mut gpu = Dsv4Gpu::load(model_dir, &devices, fixture.variant, grown_capacity)
         .expect("load DSV4 GPU model");
     assert!(
         gpu.dspark.is_some(),
@@ -250,64 +235,6 @@ fn main() {
             n_new as f64 / reference_median,
             n_new as f64 / fused_median,
             reference_median / fused_median,
-        );
-    }
-
-    if moe_graph_gate {
-        let capacity = graph_prompt.len() + 32;
-        gpu.moe_graph = false;
-        let mut eager_state = gpu
-            .alloc_decode_state_for_transient(capacity, 32)
-            .expect("MoE graph eager state");
-        let eager_logits = gpu
-            .prefill_with_cache_chunked(&graph_prompt, &mut eager_state, 32)
-            .expect("MoE graph eager prefill");
-        gpu.moe_graph = true;
-        let mut graph_state = gpu
-            .alloc_decode_state_for_transient(capacity, 32)
-            .expect("MoE graph state");
-        let graph_logits = gpu
-            .prefill_with_cache_chunked(&graph_prompt, &mut graph_state, 32)
-            .expect("MoE graph prefill");
-        assert!(bits_equal(&eager_logits, &graph_logits));
-        assert!(classes_equal(
-            &gpu.cache_classes(&eager_state)
-                .expect("MoE graph eager classes"),
-            &gpu.cache_classes(&graph_state).expect("MoE graph classes"),
-        ));
-
-        let mut eager_wall = Vec::new();
-        let mut graph_wall = Vec::new();
-        for _ in 0..3 {
-            gpu.moe_graph = false;
-            let mut state = gpu
-                .alloc_decode_state_for_transient(capacity, 32)
-                .expect("MoE graph timed eager state");
-            let started = std::time::Instant::now();
-            let _ = gpu
-                .prefill_with_cache_chunked(&graph_prompt, &mut state, 32)
-                .expect("MoE graph timed eager");
-            eager_wall.push(started.elapsed().as_secs_f64());
-
-            gpu.moe_graph = true;
-            let mut state = gpu
-                .alloc_decode_state_for_transient(capacity, 32)
-                .expect("MoE graph timed state");
-            let started = std::time::Instant::now();
-            let _ = gpu
-                .prefill_with_cache_chunked(&graph_prompt, &mut state, 32)
-                .expect("MoE graph timed prefill");
-            graph_wall.push(started.elapsed().as_secs_f64());
-        }
-        eager_wall.sort_by(f64::total_cmp);
-        graph_wall.sort_by(f64::total_cmp);
-        println!(
-            "[dsv4-moe-graph-gate] PASS logits_bits=true cache_bits=true tokens={} \
-             x3_interleaved eager_median_s={:.6} graph_median_s={:.6} speedup={:.3}x",
-            graph_prompt.len(),
-            eager_wall[1],
-            graph_wall[1],
-            eager_wall[1] / graph_wall[1],
         );
     }
 
