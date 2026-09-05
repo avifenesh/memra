@@ -61,9 +61,10 @@ the cut from layer 22 to 23. The full compact state, DSpark and chunk-32 transie
 workspace fit simultaneously. Exact hierarchical top-512 selection also passes
 against a host oracle at 250,003 candidates, enough for decimal one million
 tokens but short of the 262,144 candidates at the native 1,048,576-token limit.
-The gate now includes 262,144 and 262,147; those new cases still need target-card
-execution. See `capacity-1m-streamtopk-5a3820ec9.md`. This proves allocation and
-selection only through the measured count, not completed 1M prefill throughput.
+The extended gate subsequently passed at 262,144 and 262,147 on the two-card
+RTX PRO 6000 Server Edition pair (`capacity-262147-pro.md`). This proves
+allocation and exact selection at the maximum count, not completed 1M prefill
+throughput. The original receipt remains `capacity-1m-streamtopk-5a3820ec9.md`.
 
 Charging every request for a 1M-capacity cache would still destroy concurrency.
 This lane therefore adds per-session capacity planning: device cache capacity is

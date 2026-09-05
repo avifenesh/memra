@@ -1,0 +1,26 @@
+[load] placement: split_at=23 trunk_layers=43 dspark_tail_reserve=10.83 GiB
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] dspark exit-head dots arm: f32x (rung-4c fork; drafts only, never the emitted stream)
+[load] dspark selected-expert dispatch: per-expert reference
+[load] dense arm: fp8 (iteration-5; fp8 = FP8-blk linears as-stored on the device decode/verify paths, bit-identical twins)
+[load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 599.6ms
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> dev0 done t=17s
+[load] layer 7 -> dev0 done t=35s
+[load] layer 11 -> dev0 done t=53s
+[load] layer 15 -> dev0 done t=70s
+[load] layer 19 -> dev0 done t=88s
+[load] layer 23 -> dev1 done t=106s
+[load] layer 27 -> dev1 done t=124s
+[load] layer 31 -> dev1 done t=142s
+[load] layer 35 -> dev1 done t=159s
+[load] layer 39 -> dev1 done t=177s
+[load] layer 42 -> dev1 done t=190s
+[load] drafter: DSpark (3 blocks, block_size 5, targets [40, 41, 42]) resident on stage 1
+[dsv4-capacity-gate] placement split_at=23 post_load=dev0:83.487/95.010GiB,dev1:83.580/95.010GiB post_alloc=dev0:90.768/95.010GiB,dev1:90.237/95.010GiB cache_gib=[7.044,6.418] verify_gib=[0.233,0.232]
+[dsv4-capacity-gate] stream-topk nb=4103 rows=3 topk=512 EXACT
+[dsv4-capacity-gate] stream-topk nb=16397 rows=3 topk=512 EXACT
+[dsv4-capacity-gate] stream-topk nb=250003 rows=3 topk=512 EXACT
+[dsv4-capacity-gate] stream-topk nb=262144 rows=3 topk=512 EXACT
+[dsv4-capacity-gate] stream-topk nb=262147 rows=3 topk=512 EXACT
+[dsv4-capacity-gate] PASS 1M compact state + DSpark + chunk32 workspace

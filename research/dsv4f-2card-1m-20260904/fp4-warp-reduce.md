@@ -113,3 +113,21 @@ passed. The built serving binary SHA256 is
 The new provider denied Nsight Compute counters with `ERR_NVGPUCTRPERM` on
 device 0. Its component timing/identity results remain valid, but no stall or
 power-cause classification was obtained from that attempt.
+
+### Committed-head delivery gate is held
+
+The first push was refused by the commit-time perf freshness check. Re-running
+the battery at `2436ce740` exposed a pre-existing `echo | grep -q` SIGPIPE race
+in the streamed-chat smoke assertion. Its captured error was `FAIL: chat stream`;
+the CPU reproducer returned 141 ten times for a valid large SSE body. Commit
+`afb8f7f4d` switched the same assertion to here-strings and added
+`tools/serve-smoke.sh --test-stream` (10 valid bodies and three negative cases).
+
+The subsequent full battery passed correctness, including the repaired serving
+smoke, but failed its perf stage after a foreign ColBERT rebuild occupied the
+local GPU. The log explicitly reports `DIRTY twice`, `window_clean=false`, and
+125.79 tok/s versus its historical 137.41 median. This is a contaminated sample,
+not an interpretable source regression. The script exited 1. Raw log:
+`local-ci-warp-reduce-final.log`; raw row retained in `research/tune-data/perf-ci.jsonl`.
+The clean, committed-head delivery gate remains required. No skip override or
+receipt timestamp change was used, and the new engine commits are not pushed.
