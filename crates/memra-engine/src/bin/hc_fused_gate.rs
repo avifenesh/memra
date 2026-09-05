@@ -340,7 +340,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // chain, because each is a synchronization/placement change over the same addends in
         // the same order -- never a numeric class. Gating all three here is what lets the
         // served arm be chosen on speed alone.
-        let run_fused_v3 = |sink_reg: i32, block: i32, split: i32| -> Res<Hc4> {
+        let run_fused_v3 = |sink_reg: i32, block: i32| -> Res<Hc4> {
             let mixes_d = stream.clone_htod(&s.mixes)?;
             let mut pre_d = stream.alloc_zeros::<f32>(t * HC)?;
             let mut post_d = stream.alloc_zeros::<f32>(t * HC)?;
@@ -364,7 +364,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     std::ptr::null_mut(),
                     block,
                     sink_reg,
-                    split,
                     sp(&stream),
                 );
                 assert_eq!(
@@ -403,18 +402,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // v3's three Sinkhorn arms, at the served 512-wide block, each against the unfused chain.
         let mut v3_bad = 0usize;
         for sr in [0i32, 1] {
-            for split in [0i32, 1] {
-                let out = run_fused_v3(sr, 512, split)?;
-                let b = bit_diffs(&unfused_out, &out);
-                v3_bad += b;
-                println!(
-                    "[correctness] t={t} hc={HC} d={D}: \
-                     v3(sink_reg={sr},block=512,split_collapse={split})-vs-unfused \
-                     bit-bad={b}/{tot} {}",
-                    if b == 0 { "PASS" } else { "FAIL" },
-                    tot = t * HC + t * HC + t * HC * HC + t * D,
-                );
-            }
+            let out = run_fused_v3(sr, 512)?;
+            let b = bit_diffs(&unfused_out, &out);
+            v3_bad += b;
+            println!(
+                "[correctness] t={t} hc={HC} d={D}: \
+                 v3(sink_reg={sr},block=512)-vs-unfused \
+                 bit-bad={b}/{tot} {}",
+                if b == 0 { "PASS" } else { "FAIL" },
+                tot = t * HC + t * HC + t * HC * HC + t * D,
+            );
         }
         if bad != 0 || bad_v2_vs_unfused != 0 || bad_v2_vs_v1 != 0 || v3_bad != 0 {
             fails += 1;
@@ -452,26 +449,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // how much of the kernel is the parallel work -- which is the number that decides whether
         // giving those stages a real GRID is worth building, and the one thing a single-width
         // measurement cannot tell you.
-        let mut v3_us: Vec<(i32, i32, i32, Vec<u64>)> = Vec::new();
+        let mut v3_us: Vec<(i32, i32, Vec<u64>)> = Vec::new();
         for sr in [0i32, 1] {
             for block in [128i32, 512] {
-                for split in [0i32, 1] {
-                    let mut us = Vec::with_capacity(N_TIMED);
-                    for _ in 0..N_TIMED {
-                        stream.synchronize()?;
-                        let t0 = std::time::Instant::now();
-                        let _ = run_fused_v3(sr, block, split)?;
-                        us.push(t0.elapsed().as_micros() as u64);
-                    }
-                    us.sort_unstable();
-                    println!(
-                        "[v3-timing] t={t} sink_reg={sr} block={block} split={split} \
-                         iters={} median={}us runs={us:?}",
-                        iters(),
-                        us[us.len() / 2]
-                    );
-                    v3_us.push((sr, block, split, us));
+                let mut us = Vec::with_capacity(N_TIMED);
+                for _ in 0..N_TIMED {
+                    stream.synchronize()?;
+                    let t0 = std::time::Instant::now();
+                    let _ = run_fused_v3(sr, block)?;
+                    us.push(t0.elapsed().as_micros() as u64);
                 }
+                us.sort_unstable();
+                println!(
+                    "[v3-timing] t={t} sink_reg={sr} block={block} \
+                     iters={} median={}us runs={us:?}",
+                    iters(),
+                    us[us.len() / 2]
+                );
+                v3_us.push((sr, block, us));
             }
         }
 
@@ -512,7 +507,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ))
         };
         for block in [512i32, 1024] {
-            let v3 = run_fused_v3(1, block, 0)?;
+            let v3 = run_fused_v3(1, block)?;
             let v4 = run_v4(block)?;
             let bad = bit_diffs(&v3, &v4);
             let total = v3.0.len() + v3.1.len() + v3.2.len() + v3.3.len();
@@ -529,7 +524,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             for _ in 0..N_TIMED {
                 stream.synchronize()?;
                 let t0 = std::time::Instant::now();
-                let _ = run_fused_v3(1, block, 0)?;
+                let _ = run_fused_v3(1, block)?;
                 a.push(t0.elapsed().as_micros() as u64);
                 stream.synchronize()?;
                 let t0 = std::time::Instant::now();
@@ -580,7 +575,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         std::ptr::null_mut(),
                                         block,
                                         1,
-                                        0,
                                         sp(&stream),
                                     )
                                 } else {

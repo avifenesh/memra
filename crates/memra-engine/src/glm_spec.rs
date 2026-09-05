@@ -229,22 +229,6 @@ pub fn glm5_verify_batch_on() -> bool {
     std::env::var("MEMRA_GLM5_VERIFY_BATCH").as_deref() != Ok("0")
 }
 
-/// `MEMRA_GLM5_DRAFT_PRIME_V2` (default OFF, lane/spec-route-depth-20260902): the DFlash2
-/// drafter's prompt prime rides the target's own chunk schedule. OFF (the pre-lane
-/// literal): the target prime fills a whole-prompt HOST tap sink (`[prompt, 5 x 4096]`
-/// f32, 21 GB at 256k) through synchronous pageable DtoHs, and round 1 re-uploads it in
-/// 256-row pageable HtoD chunks before the fc + k/v ingest. ON: each prime chunk
-/// (`hyper_prime_ranges`, 4096 rows) arms a DEVICE-staged chunk sink, and right after that
-/// chunk's trunk walk the drafter ingests it: slot DtoH into a pinned cacheable buffer,
-/// host interleave, ASYNC HtoD from pinned, fc + k/v ingest at the chunk width. The trunk
-/// program is byte-identical (the same per-range `prime_cache` calls with the same
-/// `queued_after`); the drafter's KV rows are the same GEMM class at a different M (rig
-/// gate 15 pins bit-identity at equal chunking and tape identity always). Read per session
-/// creation so a gate can flip it in-process. Rollback seam: unset.
-pub fn glm5_draft_prime_v2_on() -> bool {
-    std::env::var("MEMRA_GLM5_DRAFT_PRIME_V2").as_deref() == Ok("1")
-}
-
 /// `MEMRA_GLM5_DRAFT_TAPS_DEVICE` (DEFAULT OFF; `=1` arms it; lane/spec-route-depth-20260902):
 /// the DEVICE-RESIDENT drafter
 /// prime. Boot D on the 2x B200 pair (this arm) against boot C (host taps), TTFT s at
@@ -261,8 +245,8 @@ pub fn glm5_draft_prime_v2_on() -> bool {
 /// class), and appends to the drafter KV. No DtoH in the prime, no HtoD in the drafter
 /// prime; the eager arm's 7.5 s of pageable HtoD at 256k (boot B's split: h2d 7505.8 of
 /// 8870 ms) goes away outright, and its `tap_dtoh` with it. Read per session creation
-/// (a gate flips it in-process). The host-tap arms (`MEMRA_GLM5_DRAFT_PRIME_V2`,
-/// `MEMRA_GLM5_DRAFT_PRIME_LAZY`) are the default and are reachable whenever this is unset.
+/// (a gate flips it in-process). The host-tap arm (`MEMRA_GLM5_DRAFT_PRIME_LAZY`) is the
+/// default and is reachable whenever this is unset.
 ///
 /// DEFAULT OFF DELIBERATELY, and the flip is blocked on two named defects that a review of
 /// the ON default found. Both are properties of the device-staged ring, so neither can bite
@@ -321,19 +305,6 @@ pub fn glm5_draft_prime_lazy_on() -> bool {
 /// Drafter ctx KV bytes at `cap` rows (the `DflashKv::new` geometry), for the profile.
 fn dflash_kv_bytes(cfg: &crate::dflash::DflashCfg, cap: usize) -> usize {
     2 * cfg.n_layer * (cap + cfg.block_size) * cfg.n_kv * cfg.head_dim * std::mem::size_of::<f32>()
-}
-
-/// Pinned host buffer viewed as `n` f32s (page-aligned by construction).
-fn pinned_f32(buf: &crate::PinnedHostBuf, n: usize) -> &[f32] {
-    debug_assert!(n * std::mem::size_of::<f32>() <= buf.len());
-    // SAFETY: malloc_host allocations are page-aligned and the length is checked above.
-    unsafe { std::slice::from_raw_parts(buf.as_slice().as_ptr() as *const f32, n) }
-}
-
-fn pinned_f32_mut(buf: &mut crate::PinnedHostBuf, n: usize) -> &mut [f32] {
-    debug_assert!(n * std::mem::size_of::<f32>() <= buf.len());
-    // SAFETY: as above; exclusive borrow of the buffer.
-    unsafe { std::slice::from_raw_parts_mut(buf.as_mut_slice().as_mut_ptr() as *mut f32, n) }
 }
 
 /// `MEMRA_GLM5_SPEC_PREFIX` (default OFF, lane/glm5-prefix-latent2 2026-09-01): the glm5
@@ -2140,11 +2111,11 @@ impl HybridModel {
             Some(dr) => Some(glm5_dflash_tap_layers(&dr.draft, self.layers.len())?),
             None => None,
         };
-        // DRAFTER PRIME ARM (lane/spec-route-depth-20260902): the chunked arm primes the
-        // trunk per engine chunk and ingests each chunk's taps into the drafter KV right
-        // after that chunk's walk (`glm5_draft_prime_chunked`); the eager arm (the pre-lane
-        // literal) primes once over a whole-prompt host sink and leaves the ingest to
-        // round 1. `hidden_rows` is the row count of the returned `hiddens` stack (the whole
+        // DRAFTER PRIME ARM (lane/spec-route-depth-20260902): the device-resident arm ingests
+        // taps inside the prime at every range boundary; the eager arm (the pre-lane literal)
+        // primes once over a whole-prompt host sink and leaves the ingest to round 1. (The
+        // chunked host-tap arm, MEMRA_GLM5_DRAFT_PRIME_V2, was REJECTED on the pair and removed
+        // 2026-09-05.) `hidden_rows` is the row count of the returned `hiddens` stack (the whole
         // prompt on the eager arm, the LAST chunk on the chunked arm) — the boundary
         // capture indexes its last row through it.
         let mut v2_kv: Option<DflashKv> = None;
@@ -2213,26 +2184,6 @@ impl HybridModel {
                 }
                 v2_kv = Some(st.kv);
                 (l, h, plen)
-            }
-            (Some(dr), Some(taps)) if glm5_draft_prime_v2_on() => {
-                let mut kv = DflashKv::new(eh, &dr.draft.cfg, ctx_cap)?;
-                if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
-                    pf.draft_alloc_ms = ck.lap(e, eh);
-                    pf.draft_kv_mb = dflash_kv_bytes(&dr.draft.cfg, ctx_cap) as f64 / 1e6;
-                }
-                let out = self.glm5_draft_prime_chunked(
-                    e,
-                    eh,
-                    &dr.draft,
-                    prompt,
-                    &mut cache,
-                    &mut kv,
-                    taps,
-                    prof.as_mut(),
-                    pclk.as_mut(),
-                )?;
-                v2_kv = Some(kv);
-                out
             }
             _ => {
                 if let Some(taps) = tap_layers.as_ref() {
@@ -2611,121 +2562,6 @@ impl HybridModel {
             }
             _ => Ok(e),
         }
-    }
-
-    /// CHUNKED DRAFTER PRIME (lane/spec-route-depth-20260902, `MEMRA_GLM5_DRAFT_PRIME_V2`):
-    /// prime the trunk over the engine's own chunk schedule and ingest each chunk's tap
-    /// rows into the drafter KV right after that chunk's walk. Returns the LAST chunk's
-    /// (boundary logits, hidden stack, stack rows).
-    ///
-    /// TRUNK PROGRAM, unchanged: `prime_cache` over `[start, end)` with
-    /// `queued_after = plen - end` is exactly the call the whole-prompt entry makes per
-    /// range (`prime_cache_hyper`'s loop: `queued_after + (t - end)`, `seq_end` invariant),
-    /// so the trunk cache after the loop is byte-identical to the eager arm's — the
-    /// restored-suffix gates (11/12) already pin "continue == cold" for this call shape.
-    ///
-    /// DATA MOVEMENT, the whole point: per chunk, five device slot buffers (one per tap
-    /// layer, on the writing stage's device) are read back into ONE pinned cacheable slot
-    /// buffer (sync, `dtoh_f32_into_pinned`), CPU-interleaved into the pinned
-    /// `[t, n_taps * hidden]` rows buffer (the fc input layout), uploaded ASYNC from pinned
-    /// (`htod_f32_from_pinned_async`), then `ctx_features` + `ingest_ctx` at the chunk
-    /// width. The host transient is two chunk-sized pinned buffers (335 MB + 67 MB at 4096
-    /// rows) instead of the eager arm's `[prompt, 5 x hidden]` pageable Vec; the eager
-    /// arm's 21 GB of pageable DtoH + 21 GB of pageable HtoD at 256k become pinned DMA.
-    /// The ingest kernels are stream-ordered behind the upload; the chunk ends with one
-    /// stream drain so the rows buffer can be refilled (the upload helper's contract).
-    #[allow(clippy::too_many_arguments)]
-    // allow: the parameter list is the prime contract (engines, drafter, prompt, cache,
-    // KV, taps) plus the two profile instruments; bundling would hide which is which
-    fn glm5_draft_prime_chunked(
-        &self,
-        e: &Engine,
-        eh: &Engine,
-        draft: &DflashDraft,
-        prompt: &[u32],
-        cache: &mut Cache,
-        kv: &mut DflashKv,
-        taps: &[usize],
-        mut prof: Option<&mut SpecFirstTokenProf>,
-        mut pclk: Option<&mut ProfClock>,
-    ) -> Res<(Vec<f32>, CudaSlice<f32>, usize)> {
-        let plen = prompt.len();
-        let n_embd = self.cfg.n_embd as usize;
-        let n_taps = taps.len();
-        let ranges = crate::hybrid_forward::hyper_prime_ranges(
-            plen,
-            self.layers.len(),
-            self.gdn_prime_grid_on(),
-        );
-        let t_max = ranges.iter().map(|&(a, b)| b - a).max().unwrap_or(0);
-        let f32b = std::mem::size_of::<f32>();
-        let mut slot_buf = crate::PinnedHostBuf::new(t_max * n_embd * f32b)?;
-        let mut rows_buf = crate::PinnedHostBuf::new(t_max * n_taps * n_embd * f32b)?;
-        let (mut prime_ms, mut h2d_ms, mut feat_ms, mut kv_ms) = (0f64, 0f64, 0f64, 0f64);
-        let mut last: Option<(Vec<f32>, CudaSlice<f32>, usize)> = None;
-        for &(start, end) in &ranges {
-            let t = end - start;
-            cache.hc_taps = Some(HcTapSink::new_device_staged_at(
-                taps.to_vec(),
-                n_embd,
-                t,
-                start,
-            ));
-            let (l, _seed, h) = self.prime_cache(e, &prompt[start..end], cache, plen - end)?;
-            if let Some(ck) = pclk.as_deref_mut() {
-                prime_ms += ck.lap(e, eh);
-            }
-            let mut sink = cache
-                .hc_taps
-                .take()
-                .ok_or("chunked drafter prime: chunk tap sink vanished")?;
-            // ---- drain: device slots -> pinned slot -> interleaved pinned rows ----
-            for (slot, &il) in taps.iter().enumerate() {
-                let buf = sink.dev[slot].take().ok_or_else(|| {
-                    format!(
-                        "chunked drafter prime: tap slot {slot} (layer {il}) was never \
-                         written by the prime walk over rows {start}..{end}"
-                    )
-                })?;
-                let es = self.glm5_tap_slot_engine(e, il)?;
-                es.dtoh_f32_into_pinned(&buf, &mut slot_buf, t * n_embd)?;
-                let src = pinned_f32(&slot_buf, t * n_embd);
-                let dst = pinned_f32_mut(&mut rows_buf, t * n_taps * n_embd);
-                for r in 0..t {
-                    let d0 = (r * n_taps + slot) * n_embd;
-                    dst[d0..d0 + n_embd].copy_from_slice(&src[r * n_embd..(r + 1) * n_embd]);
-                }
-            }
-            let feats_in = eh.htod_f32_from_pinned_async(&rows_buf, t * n_taps * n_embd)?;
-            if let Some(ck) = pclk.as_deref_mut() {
-                h2d_ms += ck.lap(e, eh);
-            }
-            let feats = draft.ctx_features(eh, &feats_in, t)?;
-            if let Some(ck) = pclk.as_deref_mut() {
-                feat_ms += ck.lap(e, eh);
-            }
-            let pos: Vec<i32> = ((kv.len as i32)..(kv.len + t) as i32).collect();
-            draft.ingest_ctx(eh, kv, &feats, &pos, t)?;
-            // The rows buffer is refilled by the next chunk: drain the stream first (the
-            // async-upload contract). Also bounds the kv bucket.
-            eh.stream().synchronize()?;
-            if let Some(ck) = pclk.as_deref_mut() {
-                kv_ms += ck.lap(e, eh);
-            }
-            last = Some((l, h, t));
-        }
-        debug_assert_eq!(kv.len, plen, "chunked drafter prime must cover the prompt");
-        if let Some(pf) = prof.as_mut() {
-            pf.prime_ms = prime_ms;
-            pf.draft_prime_ms = h2d_ms + feat_ms + kv_ms;
-            pf.draft_prime_h2d_ms = h2d_ms;
-            pf.draft_prime_feat_ms = feat_ms;
-            pf.draft_prime_kv_ms = kv_ms;
-            pf.draft_prime_rows = plen;
-            pf.draft_prime_chunks = ranges.len();
-            pf.draft_prime_arm = "chunked";
-        }
-        last.ok_or_else(|| "chunked drafter prime: empty prime schedule".into())
     }
 
     /// Boundary capture for the DEFERRED prefix publication (lane/glm5-prefix-latent2,

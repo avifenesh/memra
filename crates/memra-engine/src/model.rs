@@ -875,41 +875,9 @@ impl GpuTensor {
                 });
             }
         }
-        let mut v = src
+        let v = src
             .find(name)
             .unwrap_or_else(|| panic!("missing tensor {name}"));
-        // MEMRA_KQ_NVFP4=1 (opt-in, 2026-07-08): re-encode Q4_K/Q5_K 2D matmul weights to NVFP4 at
-        // load. The k-quant mmvq family runs at 61-70% of the bandwidth wall on this rig (measured
-        // BOTH engines — the kernels share ancestry) while the in-house NVFP4 path runs at 96%.
-        // The daily GGUF's quant mix was chosen for llama's kernels, not ours: Q4_K -> NVFP4 is
-        // 4-bit -> 4-bit at +26pp kernel efficiency; Q5_K -> NVFP4 also drops bytes (0.69 -> 0.56
-        // B/w) at a small real re-quant cost (5 -> 4 bit; gates + acceptance arbitrate). Q6_K/Q8_0
-        // excluded (6/8-bit -> 4-bit is a real quality cliff — the lm_head stays untouched).
-        // MEMRA_KQ_NVFP4 (opt-in SPEED-OVER-QUALITY mode, measured 2026-07-08 on the 9B):
-        // =2 (Q4_K+Q5_K -> NVFP4): +3.9% plain decode (129.5 -> 134.5, the Q5 bytes win),
-        //    acceptance tax ~3pts on hard content (p2 74.0 -> 70.7, p3 66.9 -> 64.9).
-        // =1 (Q4_K only): NO perf gain AND still ~3pts tax — Q4_K is ASYMMETRIC (6-bit
-        //    scale+min per 32); NVFP4 is symmetric e2m1: dropping the zero-point is real
-        //    error even 4-bit -> 4-bit. The "same bpw = same class" assumption is FALSE
-        //    across asymmetric/symmetric formats. Kept only for the record.
-        let kq = std::env::var("MEMRA_KQ_NVFP4")
-            .ok()
-            .and_then(|x| x.parse::<u8>().ok())
-            .unwrap_or(0);
-        if (kq >= 1 && v.ggml_type == GgmlType::Q4_K || kq >= 2 && v.ggml_type == GgmlType::Q5_K)
-            && v.ne.len() == 2
-            && v.ne[0].is_multiple_of(64)
-            && !name.starts_with("output")
-        {
-            let n: u64 = v.ne.iter().product();
-            let f32v = dequant::dequantize(v.ggml_type, &v.bytes, n as usize);
-            let packed = memra_gguf::nvfp4_repack::f32_to_nvfp4(&f32v);
-            v = memra_gguf::source::TensorView {
-                bytes: std::borrow::Cow::Owned(packed),
-                ggml_type: GgmlType::NVFP4,
-                ne: v.ne.clone(),
-            };
-        }
         let qtype = match v.ggml_type {
             GgmlType::Q8_0 => Some(QT_Q8_0),
             GgmlType::Q4_K => Some(QT_Q4_K),

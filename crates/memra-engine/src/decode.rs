@@ -794,31 +794,8 @@ impl HybridModel {
             None
         };
 
-        // MEMRA_DEV_EMBED=1 (RECEIPTED NEGATIVE, default OFF): device embed gather from
-        // the resident table replaces the host row expand + 16KB pageable H2D with a 4B
-        // id write + one gather launch. Bit-identical rows (2G-IDENTITY-MATCH), but
-        // interleaved x3 measured FLAT (56.03 vs 56.06) — the host expand fully overlaps
-        // GPU work — and the resident table costs ~2.1GB VRAM. Kept as an opt-in seam
-        // (a future device-chained loop wants it; do not re-flip without a new receipt).
-        static DEV_EMBED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let dev_embed =
-            *DEV_EMBED.get_or_init(|| std::env::var("MEMRA_DEV_EMBED").as_deref() == Ok("1"));
         // embed the single token -> [1, n_embd]
-        let mut x = match (dev_embed, self.embd_gpu_try(e)) {
-            (true, Some(embd_gpu)) => {
-                static TOK_D: std::sync::Mutex<Option<(usize, CudaSlice<u32>)>> =
-                    std::sync::Mutex::new(None);
-                let mut guard = TOK_D.lock().map_err(|_| "dev-embed lock is poisoned")?;
-                if guard.as_ref().is_none_or(|(d, _)| *d != e.ctx().ordinal()) {
-                    *guard = Some((e.ctx().ordinal(), e.stream().clone_htod(&[0u32])?));
-                }
-                let (_, tok_d) = guard.as_mut().expect("armed above");
-                e.set_u32_one(tok_d, token)?;
-                let (embd_qt, embd_rb) = self.embd.qt_and_row_bytes(n_embd);
-                e.embed_gather_device(embd_gpu, tok_d, n_embd, embd_qt, embd_rb)?
-            }
-            _ => e.htod(&self.embd.try_gather(n_embd, &[token])?)?,
-        };
+        let mut x = e.htod(&self.embd.try_gather(n_embd, &[token])?)?;
 
         // CROSS-LAYER ADD+NORM FUSION (launch-arc 2026-07-07): layer il's post-FFN residual add
         // (x2 = x1 + ffn_out) and layer il+1's attn_norm+quantize are consecutive row-wise ops —
@@ -1679,134 +1656,76 @@ impl HybridModel {
             // m=2 6.17 base vs 5.85 grouped; m=3 6.31 grouped; m=4 5.66 vs 5.34).
             _ => m >= 3,
         };
-        // M4a (MEMRA_LOCKSTEP_BATCH_ATTN=1): EXPERIMENTAL DOOR, measured flat — default off.
-        // Full-attention layers run their WEIGHT-BOUND work (q/k/v and output projections) once
-        // at m instead of m times, KV-bound work stays per stream. Bit-identity PASS, but e2e
-        // flat at m=2 (4.72/4.72) and -2% at m=3 (5.24 vs 5.35), 2026-07-25: full-attn is the
-        // minority layer type here (GDN dominates), so the m-band weight-read saving covers few
-        // layers and is cancelled by the norm->q8_1 fusion this path gives up on exactly those
-        // layers, plus its gather/scatter copies. The primitive itself
-        // (`full_attn_decode_batched`) stays as the m-band building block for a serve loop,
-        // where batching happens across requests at higher m and no fused alternative exists.
-        let batch_attn = matches!(
-            std::env::var("MEMRA_LOCKSTEP_BATCH_ATTN").as_deref(),
-            Ok("1")
-        ) && m >= 2;
-        let pos_cat = e.htod_i32(
-            &caches
-                .iter()
-                .take(m)
-                .map(|c| c.pos as i32)
-                .collect::<Vec<_>>(),
-        )?;
         let n_embd_total = n_embd * m;
-        let mut xcat = e.uninit(n_embd_total)?;
         for (il, layer) in self.layers.iter().enumerate() {
             let anorm = layer.attn_norm.float_data();
             let fuse = std::env::var("MEMRA_NO_FUSE_NORMQ").is_err()
                 && self.mixer_in_q8_1_fast(e, &layer.mixer);
             let mut mixed_rows: Vec<Option<CudaSlice<f32>>> = (0..m).map(|_| None).collect();
-            if batch_attn && matches!(layer.mixer, Mixer::Full(_)) {
-                // Unfused residual+norm into the contiguous m-band buffer. Bit-identical to the
-                // fused arm by construction (add_rms_norm_q8_1 == add, rms_norm, quantize_q8_1);
-                // the batched mixer quantizes all m rows in one call.
-                for s in 0..m {
-                    if let Some((x1, f1)) = pending[s].take() {
+            for s in 0..m {
+                let pos = caches[s].pos;
+                let taken = pending[s].take();
+                let mixed = match (taken, fuse) {
+                    (Some((x1, f1)), true) => {
                         let mut x2 = e.uninit(n_embd)?;
-                        e.add(&x1, &f1, &mut x2, n_embd)?;
+                        let (hq, hd) =
+                            e.add_rms_norm_q8_1(&x1, &f1, anorm, &mut x2, n_embd, 1, eps)?;
                         x[s] = x2;
-                    }
-                    let mut hn = e.uninit(n_embd)?;
-                    e.rms_norm(&x[s], anorm, &mut hn, n_embd, 1, eps)?;
-                    e.copy_into(&mut xcat, s * n_embd, &hn, n_embd)?;
-                }
-                let Mixer::Full(fa) = &layer.mixer else {
-                    unreachable!()
-                };
-                let out_cat =
-                    self.full_attn_decode_batched(e, fa, &xcat, m, &pos_cat, caches, il)?;
-                for s in 0..m {
-                    let mut mixed = e.uninit(n_embd)?;
-                    e.copy_view_into(
-                        &mut mixed,
-                        0,
-                        &out_cat.slice(s * n_embd..(s + 1) * n_embd),
-                        n_embd,
-                    )?;
-                    if grouped && matches!(&layer.ffn, crate::hybrid::Ffn::Moe(_)) {
-                        mixed_rows[s] = Some(mixed);
-                    } else {
-                        let (x1, ffn_out) =
-                            self.residual_norm_ffn(e, layer, &x[s], &mixed, n_embd, il, eps)?;
-                        pending[s] = Some((x1, ffn_out));
-                    }
-                }
-            } else {
-                for s in 0..m {
-                    let pos = caches[s].pos;
-                    let taken = pending[s].take();
-                    let mixed = match (taken, fuse) {
-                        (Some((x1, f1)), true) => {
-                            let mut x2 = e.uninit(n_embd)?;
-                            let (hq, hd) =
-                                e.add_rms_norm_q8_1(&x1, &f1, anorm, &mut x2, n_embd, 1, eps)?;
-                            x[s] = x2;
-                            let h0 = e.zeros(0)?;
-                            match &layer.mixer {
-                                Mixer::Full(fa) => self.full_attn_decode_pre(
-                                    e,
-                                    fa,
-                                    &h0,
-                                    Some((&hq, &hd)),
-                                    &pos_d[s],
-                                    pos,
-                                    &mut caches[s],
-                                    il,
-                                )?,
-                                Mixer::Linear(la) => self.linear_attn_decode_pre(
-                                    e,
-                                    la,
-                                    &h0,
-                                    &hq,
-                                    &hd,
-                                    &mut caches[s],
-                                    il,
-                                    false,
-                                )?,
-                                Mixer::Mla(_) => {
-                                    crate::hybrid::mla_path_unimplemented("lockstep decode")
-                                }
-                                Mixer::Kda(_) => {
-                                    crate::hybrid::kda_path_unimplemented("lockstep decode")
-                                }
-                            }
-                        }
-                        (taken, _) => {
-                            if let Some((x1, f1)) = taken {
-                                let mut x2 = e.uninit(n_embd)?;
-                                e.add(&x1, &f1, &mut x2, n_embd)?;
-                                x[s] = x2;
-                            }
-                            self.attn_in_norm_mixer(
+                        let h0 = e.zeros(0)?;
+                        match &layer.mixer {
+                            Mixer::Full(fa) => self.full_attn_decode_pre(
                                 e,
-                                layer,
-                                &x[s],
+                                fa,
+                                &h0,
+                                Some((&hq, &hd)),
                                 &pos_d[s],
                                 pos,
                                 &mut caches[s],
                                 il,
-                                n_embd,
-                                eps,
-                            )?
+                            )?,
+                            Mixer::Linear(la) => self.linear_attn_decode_pre(
+                                e,
+                                la,
+                                &h0,
+                                &hq,
+                                &hd,
+                                &mut caches[s],
+                                il,
+                                false,
+                            )?,
+                            Mixer::Mla(_) => {
+                                crate::hybrid::mla_path_unimplemented("lockstep decode")
+                            }
+                            Mixer::Kda(_) => {
+                                crate::hybrid::kda_path_unimplemented("lockstep decode")
+                            }
                         }
-                    };
-                    if grouped && matches!(&layer.ffn, crate::hybrid::Ffn::Moe(_)) {
-                        mixed_rows[s] = Some(mixed);
-                    } else {
-                        let (x1, ffn_out) =
-                            self.residual_norm_ffn(e, layer, &x[s], &mixed, n_embd, il, eps)?;
-                        pending[s] = Some((x1, ffn_out));
                     }
+                    (taken, _) => {
+                        if let Some((x1, f1)) = taken {
+                            let mut x2 = e.uninit(n_embd)?;
+                            e.add(&x1, &f1, &mut x2, n_embd)?;
+                            x[s] = x2;
+                        }
+                        self.attn_in_norm_mixer(
+                            e,
+                            layer,
+                            &x[s],
+                            &pos_d[s],
+                            pos,
+                            &mut caches[s],
+                            il,
+                            n_embd,
+                            eps,
+                        )?
+                    }
+                };
+                if grouped && matches!(&layer.ffn, crate::hybrid::Ffn::Moe(_)) {
+                    mixed_rows[s] = Some(mixed);
+                } else {
+                    let (x1, ffn_out) =
+                        self.residual_norm_ffn(e, layer, &x[s], &mixed, n_embd, il, eps)?;
+                    pending[s] = Some((x1, ffn_out));
                 }
             }
             if grouped && let crate::hybrid::Ffn::Moe(moe_weights) = &layer.ffn {
@@ -2965,23 +2884,6 @@ impl HybridModel {
                 e.set_i32_one(&mut kvl.len_d, kvl.len as i32)?;
             }
             let e4b = self.is_gemma4_e4b();
-            // 26B/31B WHOLE-TOKEN GRAPH SERVING door (MEMRA_GEMMA_GRAPH=1): measured FLAT on
-            // the 26B (jsonl 2026-07-12) but the 31B carries ~4% launch-gap share (HANDOVER
-            // graph-arc note) and was never measured — the plain-short 1.00x cell probe.
-            if !e4b && std::env::var("MEMRA_GEMMA_GRAPH").as_deref() == Ok("1") {
-                let first = argmax(&last_logits) as u32;
-                let (toks, _reason) = self.gemma4_generate_graph(
-                    e,
-                    cache.pos,
-                    first,
-                    &mut cache,
-                    max_new,
-                    &[],
-                    |_| true,
-                )?;
-                out.extend(toks);
-                return Ok(out);
-            }
             let mut token_d = e.stream().clone_htod(&[argmax(&last_logits) as u32])?;
             let mut pos_d = e.htod_i32(&[cache.pos as i32])?;
             // E4B GRAPH-EXEC-UPDATE SERVING: one capture at bucket=win, per-token fa
@@ -3330,31 +3232,6 @@ impl HybridModel {
                     stop_reason: reason,
                 });
             }
-            // 12B/31B WHOLE-TOKEN GRAPH door (MEMRA_GEMMA_GRAPH=1), mirrored from `generate`:
-            // run-gen/serving measure THIS path, and the `generate` door never covered it —
-            // the 2026-07-22 graph A/B read flat because the env engaged nothing here.
-            if !e4b && std::env::var("MEMRA_GEMMA_GRAPH").as_deref() == Ok("1") {
-                let (out_cell, sampler_cell) = (&mut out, &mut *sampler);
-                let eos = params.eos.clone();
-                let (toks, greason) = self.gemma4_generate_graph(
-                    e,
-                    cache.pos,
-                    first,
-                    &mut cache,
-                    budget,
-                    &eos,
-                    |tok| {
-                        sampler_cell.accept(tok);
-                        out_cell.push(tok);
-                        on_token(tok)
-                    },
-                )?;
-                let _ = toks;
-                return Ok(GenOutput {
-                    tokens: out,
-                    stop_reason: greason,
-                });
-            }
             let mut next = first;
             for _ in 0..budget {
                 sampler.accept(next);
@@ -3648,17 +3525,6 @@ impl HybridModel {
         let eps = cfg.rms_eps;
         let scale = geometry.attention_scale();
 
-        // LATENCY-HIDING (MEMRA_KV_PREFETCH=1): warm this layer's KV stream into L2 while the
-        // q/k/v projections run ahead of the fa (fa is latency-bound; its lines land warm).
-        // Value-free scheduling — no numeric config change.
-        static KV_PF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        if *KV_PF.get_or_init(|| std::env::var("MEMRA_KV_PREFETCH").as_deref() == Ok("1")) {
-            let kvl = cache.kv[il].as_ref().unwrap();
-            let t_kv = kvl.len + 1;
-            e.prefetch_l2(&kvl.k, t_kv * kvl.k_tok_bytes)?;
-            e.prefetch_l2(&kvl.v, t_kv * kvl.v_tok_bytes)?;
-        }
-
         // wq|wk|wv all take the same input `h` (in_f = n_embd) — quantize q8_1 ONCE, feed all three.
         // Q8 TRUNK-FUSION: on Q8_0 trunks (35B) the three fold into ONE fused3 launch (same MMVQ
         // body per (tensor,row) — bit-identical; see full_attn_decode_dc_inner). MEMRA_Q8_DUAL=0 off.
@@ -3801,181 +3667,6 @@ impl HybridModel {
             None => attn,
         };
         e.matmul(&fa.wo, &attn_g, 1)
-    }
-
-    /// BATCHED full-attention decode over `m` independent streams (one token each).
-    ///
-    /// Generic m-band primitive, not lockstep-specific: any caller holding `m` streams at the
-    /// same layer (multi-stream decode, a continuous-batching serve loop) can use it. The split
-    /// follows what the hardware cares about — WEIGHT-BOUND work runs once at `m` because all
-    /// streams share the same projection weights (one weight read serves `m` tokens instead of
-    /// `m` reads), while KV-BOUND work stays per stream because each stream owns its own cache.
-    ///
-    /// Bit-identity with the per-stream path holds by construction: `quantize_q8_1` and
-    /// `rms_norm` are per-row, `rope_neox` takes a per-token position vector, the fused3/matmul
-    /// m-band kernels are the same ones spec verify is gated on, and attention itself is
-    /// untouched per stream.
-    ///
-    /// `xcat` is `[m, n_embd]` normed activations; `pos_cat` is the `m` rope positions;
-    /// returns `[m, n_embd]` attention outputs.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn full_attn_decode_batched(
-        &self,
-        e: &Engine,
-        fa: &FullAttnLayer,
-        xcat: &CudaSlice<f32>,
-        m: usize,
-        pos_cat: &CudaSlice<i32>,
-        caches: &mut [Cache],
-        il: usize,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        if self.uses_sliding_gated_moe_program() {
-            return Err(
-                "step35 has no batched (m-stream) decode mixer — per-layer n_head, \
-                        partial rope and the SWA offset view need a step35 twin"
-                    .into(),
-            );
-        }
-        let cfg = &self.cfg;
-        let geometry = cfg.full_attention_geometry_at(il as u32);
-        let n_head = geometry.n_head as usize;
-        let n_head_kv = geometry.n_head_kv as usize;
-        let head_dim = geometry.head_dim_k as usize;
-        let n_embd = cfg.n_embd as usize;
-        let eps = cfg.rms_eps;
-        let scale = geometry.attention_scale();
-        let q_row = n_head * head_dim;
-        let kv_row = n_head_kv * head_dim;
-
-        // --- weight-bound: one quantize + one q/k/v projection for all m streams ---
-        let (hq, hd) = e.quantize_q8_1(xcat, m, n_embd)?;
-        let use_q8 =
-            e.uses_q8_1_fast(&fa.wq) && e.uses_q8_1_fast(&fa.wk) && e.uses_q8_1_fast(&fa.wv);
-        let (qf, mut k, v) = if use_q8 {
-            match e.matmul_q8_fused3_t(&fa.wq, &fa.wk, &fa.wv, &hq, &hd, m)? {
-                Some(trio) => trio,
-                None => (
-                    e.matmul_pre(&fa.wq, &hq, &hd, xcat, m)?,
-                    e.matmul_pre(&fa.wk, &hq, &hd, xcat, m)?,
-                    e.matmul_pre(&fa.wv, &hq, &hd, xcat, m)?,
-                ),
-            }
-        } else {
-            (
-                e.matmul(&fa.wq, xcat, m)?,
-                e.matmul(&fa.wk, xcat, m)?,
-                e.matmul(&fa.wv, xcat, m)?,
-            )
-        };
-
-        // --- elementwise: batched by treating the m streams as extra rows/tokens ---
-        let gated = geometry.attention_gate == memra_gguf::config::AttentionGateKind::FusedQ;
-        let (mut q, gate) = if gated {
-            let mut q = e.uninit(m * q_row)?;
-            let mut gate = e.uninit(m * q_row)?;
-            e.q_gate_split(&qf, &mut q, &mut gate, head_dim, n_head, m)?;
-            (q, Some(gate))
-        } else {
-            (qf, None)
-        };
-        let mut qn = e.uninit(m * q_row)?;
-        e.rms_norm(
-            &q,
-            fa.q_norm.float_data(),
-            &mut qn,
-            head_dim,
-            n_head * m,
-            eps,
-        )?;
-        q = qn;
-        let mut kn = e.uninit(m * kv_row)?;
-        e.rms_norm(
-            &k,
-            fa.k_norm.float_data(),
-            &mut kn,
-            head_dim,
-            n_head_kv * m,
-            eps,
-        )?;
-        k = kn;
-        let rope_dims = geometry.n_rot as usize;
-        e.rope_neox(
-            &mut q,
-            pos_cat,
-            head_dim,
-            rope_dims,
-            n_head,
-            m,
-            geometry.rope_base,
-            1.0,
-        )?;
-        e.rope_neox(
-            &mut k,
-            pos_cat,
-            head_dim,
-            rope_dims,
-            n_head_kv,
-            m,
-            geometry.rope_base,
-            1.0,
-        )?;
-
-        // --- KV-bound: each stream appends to and attends over its own cache ---
-        let mut attn_cat = e.uninit(m * q_row)?;
-        let mut q_s = e.uninit(q_row)?;
-        let mut k_s = e.uninit(kv_row)?;
-        let mut v_s = e.uninit(kv_row)?;
-        for (s, cache) in caches.iter_mut().enumerate().take(m) {
-            e.copy_view_into(&mut k_s, 0, &k.slice(s * kv_row..(s + 1) * kv_row), kv_row)?;
-            e.copy_view_into(&mut v_s, 0, &v.slice(s * kv_row..(s + 1) * kv_row), kv_row)?;
-            e.copy_view_into(&mut q_s, 0, &q.slice(s * q_row..(s + 1) * q_row), q_row)?;
-            let kvl = cache.kv[il].as_mut().unwrap();
-            e.append_kv_quantized(
-                &k_s,
-                &v_s,
-                &mut kvl.k,
-                &mut kvl.v,
-                kvl.len,
-                kvl.kv_dim_k,
-                kvl.kv_dim_v,
-                kvl.k_tok_bytes,
-                kvl.v_tok_bytes,
-                crate::Engine::kv_fp8_on(),
-            )?;
-            kvl.len += 1;
-            let t_kv = kvl.len;
-            let k_view = e.view_u8(&kvl.k, t_kv * kvl.k_tok_bytes);
-            let v_view = e.view_u8(&kvl.v, t_kv * kvl.v_tok_bytes);
-            let mut attn = e.uninit(q_row)?;
-            e.fa_decode_kvmod(
-                &q_s,
-                &k_view,
-                &v_view,
-                &mut attn,
-                head_dim,
-                n_head,
-                n_head_kv,
-                t_kv,
-                scale,
-                kvl.k_tok_bytes,
-                kvl.v_tok_bytes,
-                crate::Engine::kv_fp8_on(),
-            )?;
-            e.copy_into(&mut attn_cat, s * q_row, &attn, q_row)?;
-        }
-
-        // --- weight-bound again: gate epilogue + one output projection for all m streams ---
-        let attn_g = match &gate {
-            Some(gate) => {
-                let mut gsig = e.uninit(m * q_row)?;
-                e.sigmoid(gate, &mut gsig, m * q_row)?;
-                let mut ag = e.uninit(m * q_row)?;
-                e.mul(&attn_cat, &gsig, &mut ag, m * q_row)?;
-                ag
-            }
-            None => attn_cat,
-        };
-        e.matmul(&fa.wo, &attn_g, m)
     }
 
     /// Linear-attention decode: conv with ring-buffer state, GDN scan carrying SSM state.

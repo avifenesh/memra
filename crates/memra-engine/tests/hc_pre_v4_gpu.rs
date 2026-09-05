@@ -78,7 +78,6 @@ fn run(e: &Engine, v4: bool, block: i32, base: &[f32], x: &[f32]) -> Out {
                 std::ptr::null_mut(),
                 block,
                 1,
-                0,
                 sp(&stream),
             )
         }

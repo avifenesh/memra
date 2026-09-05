@@ -659,8 +659,7 @@ unsafe extern "C" {
     /// any width, and stage 2 is warp-0-only either way), which is the NAMED NUMERIC CLASS
     /// `hc_pre_rowsq_blockwide`. Refuses a `block` that is not a power of two in [32, 1024].
     #[allow(clippy::too_many_arguments)]
-    /// BENCH-ONLY phase-stamped twin of `memra_dsv4_hc_pre_fused_v3` (no split_collapse, no
-    /// niters): `stamps` is 12 u64 on the device, [0..6) %globaltimer ns and [6..12) clock64 at
+    /// BENCH-ONLY phase-stamped twin of `memra_dsv4_hc_pre_fused_v3` (no niters): `stamps` is 12 u64 on the device, [0..6) %globaltimer ns and [6..12) clock64 at
     /// the six phase boundaries named in the kernel's header. Only the gate binary calls it.
     pub fn memra_dsv4_hc_pre_fused_v3_stamped(
         x: *const f32,
@@ -772,7 +771,6 @@ unsafe extern "C" {
         // not used. Falls back to the shared path when `hc*hc > 32` (the matrix must fit one
         // warp), checked in the launcher rather than assumed.
         sink_reg: i32,
-        split_collapse: i32,
         stream: *mut c_void,
     ) -> i32;
     #[allow(clippy::too_many_arguments)]

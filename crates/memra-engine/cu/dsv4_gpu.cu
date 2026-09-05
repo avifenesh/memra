@@ -3437,8 +3437,7 @@ extern "C" __global__ void dsv4_hc_pre_fused_v3_kernel(
         const float* __restrict__ scale, const float* __restrict__ base,
         float* __restrict__ pre_all, float* __restrict__ post_all,
         float* __restrict__ comb_all, float* __restrict__ y, int w, int rows, int hc, int d,
-        int iters, float eps, int* __restrict__ niters, int sink_reg,
-        int split_collapse) {
+        int iters, float eps, int* __restrict__ niters, int sink_reg) {
     int p = blockIdx.x;
     int t = threadIdx.x;
     int B = blockDim.x;
@@ -3642,7 +3641,7 @@ extern "C" __global__ void dsv4_hc_pre_fused_v3_kernel(
     // blocks moves no arithmetic, and `spre` holds the exact bits already written to `pre`.
     // Stage 1's reduction cannot leave — repartitioning it changes the summation order, and so
     // the bits.
-    if (!split_collapse) {
+    {
         float* yr = y + (long)p * d;
         for (int i = t; i < d; i += B) {
             float acc2 = 0.0f;
@@ -3656,7 +3655,7 @@ extern "C" int memra_dsv4_hc_pre_fused_v3(const float* x, const float* mixes,
                                           const float* scale, const float* base, float* pre,
                                           float* post, float* comb, float* y, int s, int hc,
                                           int d, int iters, float eps, int* niters, int block,
-                                          int sink_reg, int split_collapse, void* stream_v) {
+                                          int sink_reg, void* stream_v) {
     cudaStream_t stream = (cudaStream_t)stream_v;
     if (s < 1 || hc < 1 || hc > DSV4_HC_MAX || d < 1 || iters < 1) return 40021;
     // Power of two, at least one warp for the stage-2 invariant, at most the shared array.
@@ -3675,12 +3674,8 @@ extern "C" int memra_dsv4_hc_pre_fused_v3(const float* x, const float* mixes,
     // the shared path instead of reading a lane that does not exist.
     int sr = (sink_reg && hc * hc <= 32) ? 1 : 0;
     dsv4_hc_pre_fused_v3_kernel<<<(unsigned)s, (unsigned)block, 0, stream>>>(
-        x, mixes, scale, base, pre, post, comb, y, w, rows, hc, d, iters, eps, niters, sr,
-        split_collapse);
+        x, mixes, scale, base, pre, post, comb, y, w, rows, hc, d, iters, eps, niters, sr);
     DSV4_ERR();
-    // The split collapse reads `pre` back from global — the exact bits the kernel above just
-    // wrote — and runs stage 3 over a real grid instead of the single block s = 1 forces.
-    if (split_collapse) return memra_dsv4_hc_collapse(x, pre, y, s, hc, d, stream_v);
     return 0;
 }
 
@@ -3688,8 +3683,7 @@ extern "C" int memra_dsv4_hc_pre_fused_v3(const float* x, const float* mixes,
 // ---------------------------------------------------------------- BENCH-ONLY: phase-stamped v3
 // `dsv4_hc_pre_fused_v3_kernel` with %globaltimer (ns) and clock64 (SM cycles) stamps written by
 // thread 0 at every phase boundary (lane/hcpre-zq8-fusion-20260905, "measure the phase before
-// designing the kernel"). Body is the v3 text with the stamps inserted and split_collapse
-// dropped; NOT a serving kernel and never launched by the engine -- the gate binary's
+// designing the kernel"). Body is the v3 text with the stamps inserted; NOT a serving kernel and never launched by the engine -- the gate binary's
 // MEMRA_HC_PHASE_STAMPS arm is its only caller. stamps[0..6) = globaltimer, stamps[6..12) =
 // clock64, both at: 0 entry, 1 after the sum-of-squares loop, 2 after the block reduce + rsq,
 // 3 after warp 0's gates/softmax/Sinkhorn (before the block barrier), 4 after that barrier,
@@ -4566,7 +4560,6 @@ extern "C" __global__ void dsv4_hc_pre_zq8_kernel(
         const float* __restrict__ norm_w, float* __restrict__ z_all,
         signed char* __restrict__ out_q, float* __restrict__ out_d, int rms_bd,
         float eps_norm) {
-    const int split_collapse = 0;
     int p = blockIdx.x;
     int t = threadIdx.x;
     int B = blockDim.x;
@@ -4770,7 +4763,7 @@ extern "C" __global__ void dsv4_hc_pre_zq8_kernel(
     // blocks moves no arithmetic, and `spre` holds the exact bits already written to `pre`.
     // Stage 1's reduction cannot leave — repartitioning it changes the summation order, and so
     // the bits.
-    if (!split_collapse) {
+    {
         float* yr = y + (long)p * d;
         for (int i = t; i < d; i += B) {
             float acc2 = 0.0f;

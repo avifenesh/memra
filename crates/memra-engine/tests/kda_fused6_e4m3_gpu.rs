@@ -139,12 +139,11 @@ fn e4m3_fused_six_is_bit_identical_to_six_separate_launches() {
             .any(|(a, b)| a.to_bits() != b.to_bits()),
         "range 2 produced the same output from a different weight plane: pointers are not per-range"
     );
-    // MEMRA_E4M3_ROW_ILP ARM. The ILP walk changes only WHEN loads issue: four blocks in flight
-    // per lane, folded into `acc` in the same ascending order. It never touches a row's own
-    // arithmetic, so it must match the serial walk BIT for bit, which also makes it match the six
-    // separate per-tensor launches above. (The wider-block and staged-activation arms this loop
-    // once carried were measured and removed; see the verdict in qmatvec.cu.)
-    for arm in [1u32] {
+    // THE SIX-GROUP ARM (arm 0, the only one left): it must match the six separate per-tensor
+    // launches above BIT for bit. (The ILP, wider-block and staged-activation twins this loop
+    // once carried were measured neutral or worse and removed 2026-09-05; the verdicts live in
+    // qmatvec.cu and the darklanes ledger.)
+    for arm in [0u32] {
         let got = e
             .qmatvec_e4m3_fused6_raw(w6, &x, in_f, dims, in_f, ws, arm)
             .unwrap_or_else(|err| panic!("fused six arm {arm}: {err}"));

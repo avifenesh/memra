@@ -2514,35 +2514,12 @@ impl TensorSource for SafetensorsSource {
                     // ignore list). MEMRA_FULL_PREC=1 bypasses this to surface raw BF16 (the engine
                     // keeps them FloatBf16-resident for the MTP-heal protocol).
                     let full_prec = std::env::var("MEMRA_FULL_PREC").as_deref() == Ok("1");
-                    // SMALL MATMUL-CLASS WEIGHTS THE 1M THRESHOLD MISSES (lane/indexer-q8,
-                    // 2026-09-05). The threshold exists to keep norm-class tensors on the exact
-                    // f32 path, but glm5's DSA indexer has three 2-D MATMUL weights under it --
-                    // `indexer.attn_k` and `indexer.kpool_gate` [4096, 128] and `indexer.proj`
-                    // [4096, 32] -- and the loader's own tripwire flags all three by name every
-                    // boot: a Float matmul weight rides cuBLAS f32 GEMV pairs. Those pairs are
-                    // `dot_kernel` + `reduce_1Block_kernel`, 123 launches EACH per token and 5.8%
-                    // of decode in the mint census, for tensors that move almost no bytes.
-                    // This is the fix the tripwire's own message prescribes ("If matmul-class:
-                    // Q8_0-encode at load"), name-gated so it cannot widen to another family.
-                    //
-                    // DOOR, DEFAULT OFF, and not merely out of caution: the indexer feeds a
-                    // DISCONTINUOUS top-k selection (`index_topk` 2048 keys), which is exactly why
-                    // `is_float_router` keeps the MoE router exact. Q8_0 is a finer grid than the
-                    // BF16 source, so the WEIGHTS lose nothing -- but a score that moves by an ulp
-                    // at the selection boundary changes WHICH keys are attended, and no tok/s
-                    // number answers that. Measurable and off; a default flip needs a
-                    // selection-stability gate.
-                    let indexer_matmul = std::env::var("MEMRA_GLM5_INDEXER_Q8").as_deref()
-                        == Ok("1")
-                        && (ggml_name.ends_with(".indexer.attn_k.weight")
-                            || ggml_name.ends_with(".indexer.kpool_gate.weight")
-                            || ggml_name.ends_with(".indexer.proj.weight"));
                     if !full_prec
                         && !is_float_router
                         && !self.preserves_source_dtype(&hf)
                         && info.dtype == "BF16"
                         && info.shape.len() == 2
-                        && (info.shape.iter().product::<u64>() >= 1_000_000 || indexer_matmul)
+                        && info.shape.iter().product::<u64>() >= 1_000_000
                     {
                         let ne = info.ne();
                         if (bytes.len() / 2) % 32 == 0 {
@@ -2591,23 +2568,6 @@ impl TensorSource for SafetensorsSource {
                                     bytes.len()
                                 );
                                 let data = f8_deq_f32(bytes, out_f, in_f, &scales);
-                                // MEMRA_NV_W4=1: F8 attention weights -> NVFP4 (0.56 B/w vs Q8_0's
-                                // 1.06) — decode is bandwidth-bound and these layers are 35-40% of
-                                // per-token kernel time (nsys 2026-07-07). Real e4m3->e2m1 re-quant;
-                                // same 4-bit class the daily GGUF runs on these layers. Opt-in until
-                                // the acceptance/text battery proves the class locally.
-                                if std::env::var("MEMRA_NV_W4")
-                                    .map(|v| v == "1")
-                                    .unwrap_or(false)
-                                    && ne[0] % 64 == 0
-                                {
-                                    let out = crate::nvfp4_repack::f32_to_nvfp4(&data);
-                                    return Some(TensorView {
-                                        bytes: Cow::Owned(out),
-                                        ggml_type: GgmlType::NVFP4,
-                                        ne,
-                                    });
-                                }
                                 let out = crate::nvfp4_repack::f32_to_q8_0(&data);
                                 return Some(TensorView {
                                     bytes: Cow::Owned(out),
@@ -2692,21 +2652,6 @@ impl TensorSource for SafetensorsSource {
                         .chunks_exact(4)
                         .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
                         .collect();
-                    // MEMRA_NV_W4: same F8->NVFP4 re-quant as the Plain arm (see there for the
-                    // bandwidth math and class argument) — post-reorder, so the V-permutation is
-                    // already baked into the f32 surface.
-                    if std::env::var("MEMRA_NV_W4")
-                        .map(|v| v == "1")
-                        .unwrap_or(false)
-                        && ne[0] % 64 == 0
-                    {
-                        let out = crate::nvfp4_repack::f32_to_nvfp4(&f32s);
-                        return Some(TensorView {
-                            bytes: Cow::Owned(out),
-                            ggml_type: GgmlType::NVFP4,
-                            ne,
-                        });
-                    }
                     let out = crate::nvfp4_repack::f32_to_q8_0(&f32s);
                     return Some(TensorView {
                         bytes: Cow::Owned(out),

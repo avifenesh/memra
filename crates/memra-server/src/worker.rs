@@ -136,8 +136,8 @@ fn dead_prime_kill_switch_refusal(
 /// why the restore splits them: `MEMRA_NVFP4_BANK_SM`, `MEMRA_NVFP4_SEL_GU`,
 /// `MEMRA_NVFP4_SEL_DOWN8`, each strict `0`/`1`, each admitted and priced on its own. Two of the
 /// three (`BANK_SM` + `SEL_DOWN8`) flipped to default ON on 2026-09-01 as ONE COUPLED decision
-/// with a deploy-grade battery attached; `SEL_GU` stays default OFF because it earns nothing
-/// measurable. A recipe that still says `MEMRA_NVFP4_BANK_V2=1` is asking for the bundle, by a name
+/// with a deploy-grade battery attached; `SEL_GU` earned nothing measurable and was removed
+/// 2026-09-05 (door sweep). A recipe that still says `MEMRA_NVFP4_BANK_V2=1` is asking for the bundle, by a name
 /// no code reads; honouring it silently as "just the layout" would serve a different program than
 /// the recipe was written against — the exact failure shape the incident documented, fluent wrong
 /// answers with every counter green. So the boot still fails loudly, for every model family, and
@@ -162,12 +162,12 @@ fn removed_bank_v2_doors_refusal(
              grouped GEMM, fixed 2026-09-01 -- and the programs are back under THREE separate \
              strict 0/1 doors: MEMRA_NVFP4_BANK_SM (slot-major TP expert banks + the _sel_v2 \
              readers) and MEMRA_NVFP4_SEL_DOWN8 (fused down+combine) are DEFAULT ON since \
-             2026-09-01, and MEMRA_NVFP4_SEL_GU (fused gate+up sweep) is DEFAULT OFF. One old \
-             name armed all three at once, which is why this boot refuses instead of guessing \
-             which one you meant. NOTE FOR THE FIX: two thirds of what this recipe asked for is \
-             now the DEFAULT, so the remediation is usually to DELETE these two vars rather than \
-             translate them; add MEMRA_NVFP4_SEL_GU=1 only if the recipe really wanted the gate+up \
-             fusion, and use MEMRA_NVFP4_BANK_SM=0 to roll back to the pre-2026-09-01 program. \
+             2026-09-01; the third, the fused gate+up sweep (MEMRA_NVFP4_SEL_GU), measured \
+             nothing and was REMOVED 2026-09-05 (it stays DEFAULT OFF in the sense that it no \
+             longer exists). One old name armed all three at once, which is why this boot \
+             refuses instead of guessing which one you meant. NOTE FOR THE FIX: what this recipe \
+             asked for is now the DEFAULT, so the remediation is to DELETE these two vars rather \
+             than translate them; use MEMRA_NVFP4_BANK_SM=0 to roll back to the pre-2026-09-01 program. \
              Receipts and per-program pricing: research/step37-bankv3-20260901."
         ));
     }
@@ -26414,11 +26414,7 @@ mod tests {
         // recipe has no path forward and the obvious guess ("it's just the layout") silently
         // arms one third of what the recipe asked for.
         let msg = removed_bank_v2_doors_refusal(Some("1"), None).unwrap();
-        for successor in [
-            "MEMRA_NVFP4_BANK_SM",
-            "MEMRA_NVFP4_SEL_GU",
-            "MEMRA_NVFP4_SEL_DOWN8",
-        ] {
+        for successor in ["MEMRA_NVFP4_BANK_SM", "MEMRA_NVFP4_SEL_DOWN8"] {
             assert!(msg.contains(successor), "missing {successor} in: {msg}");
         }
         assert!(msg.contains("step37-bankv3-20260901"), "{msg}");
@@ -26435,8 +26431,8 @@ mod tests {
         assert!(removed_bank_v2_doors_refusal(None, None).is_none());
     }
 
-    /// The three restored doors are read by the ENGINE (tp.rs `bank_slot_major_on` /
-    /// `sel_gu_fused_on` / `sel_down8_on`), so the server must not carry a boot guard against
+    /// The restored doors are read by the ENGINE (tp.rs `bank_slot_major_on` /
+    /// `sel_down8_on`), so the server must not carry a boot guard against
     /// them. This pins that: `MEMRA_NVFP4_SEL_DOWN8` is a NEW name and the legacy guard reads
     /// only the exact legacy names, so an env carrying the new names boots.
     #[test]

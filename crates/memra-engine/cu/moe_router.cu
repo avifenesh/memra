@@ -480,22 +480,6 @@ extern "C" __global__ void silu_mul_scaled_host_expf_q8_ep_slots(
 // warp-0 merge over the <=nwarps*8 candidates. Selection is EXACT (key DESC, id ASC ties);
 // score/weight/normalization arithmetic is byte-for-byte the round-robin kernel's, so the
 // outputs are identical — a latency twin, not a numeric door.
-// PEER DOORBELL RING (MEMRA_FENCE_RANK1=1). The TP joins wait on a CROSS-DEVICE event: rank1
-// records, e (dev0) waits. nsys puts 26 waits/token >20us on dev0 totalling ~1.15 ms/token of
-// idle while rank1's work is already smaller than dev0's — it is event latency, not work. The
-// memops receipt (2026-08-23) established the legal directions: a peer stream MEMOP is rejected
-// over PCIe P2P, but a peer KERNEL STORE into root memory is exactly what the direct join
-// already relies on. So rank1 rings a flag in ROOT memory with this kernel and e waits it with
-// a SAME-DEVICE cuStreamWaitValue32 (GEQ). Ordering only — no value changes anywhere.
-// __threadfence_system before the store; PCIe posted writes from one device land in order, so
-// rank1's accumulator/partial stores are visible before the flag write arrives.
-extern "C" __global__ void memra_ring_flag(unsigned long long p, unsigned int v) {
-    if (threadIdx.x == 0) {
-        __threadfence_system();
-        *reinterpret_cast<volatile unsigned int*>(p) = v;
-    }
-}
-
 // SELECTION MIRROR (MEMRA_SEL_MIRROR=1): sel (n int32) + route weights (n f32) copied in ONE
 // launch. It replaces two 32-BYTE cuMemcpyAsync D2D copies per rank per MoE layer — nsys on the
 // turn8-context decode measured 167 such copies per token at 3.79us each (0.63 ms/token of

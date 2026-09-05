@@ -5850,7 +5850,7 @@ impl HybridModel {
                     let pre_n = pre.len() / t;
                     let xh_pre = match pre16 {
                         Some(x) => x,
-                        None => e.f16_act(&pre, t * pre_n, pre_n)?,
+                        None => e.f16_act(&pre, t * pre_n)?,
                     };
                     if !e.try_f16_gemm_pre_into(w_out, &xh_pre, t, mslab)? {
                         let y = e.matmul(w_out, &pre, t)?;
@@ -5966,7 +5966,7 @@ impl HybridModel {
                     // down GEMM into the ffn_out slab (f16 arm; fallback copies)
                     let xh_act = match act16 {
                         Some(x) => x,
-                        None => e.f16_act(act, t * n_ff, n_ff)?,
+                        None => e.f16_act(act, t * n_ff)?,
                     };
                     if !e.try_f16_gemm_pre_into(ffn_down, &xh_act, t, sl_fo)? {
                         let y = e.matmul(ffn_down, &*act, t)?;
@@ -11173,12 +11173,11 @@ impl HybridModel {
         };
         eprintln!(
             "[glm5-vrows-t1] arm={arm} dev={} il={il} t={t} n_used={n_used} n_pairs={} \
-             n_expert={n_expert} limit={:?} gu_il={:?} rp={:?} qtypes=({},{},{}) row_bytes=({},{},{}) \
+             n_expert={n_expert} limit={:?} rp={:?} qtypes=({},{},{}) row_bytes=({},{},{}) \
              strides=({},{},{}) macros={} sel={sel:?} w={w:?} mac_g={:?} mac_u={:?} mac_d={:?}",
             e.ctx().ordinal(),
             t * n_used,
             cfg.clamp_exp_at(il as u32),
-            m.dev_exps.as_ref().map(|d| d.gu_il),
             m.dev_exps.as_ref().map(|d| d.rp),
             m.gate_exps.qtype,
             m.up_exps.qtype,
@@ -11219,7 +11218,7 @@ impl HybridModel {
         let slab_local = m
             .dev_exps
             .as_ref()
-            .is_some_and(|d| !d.gu_il && moe_slab_enabled() && d.dev == e.ctx().ordinal());
+            .is_some_and(|d| moe_slab_enabled() && d.dev == e.ctx().ordinal());
         slab_local
             && m.has_uniform_expert_layout()
             && moe_q8_enabled_for_model(cfg, m)
@@ -11660,7 +11659,7 @@ impl HybridModel {
         let slab_local = m
             .dev_exps
             .as_ref()
-            .filter(|d| !d.gu_il && moe_slab_enabled() && d.dev == e.ctx().ordinal());
+            .filter(|d| moe_slab_enabled() && d.dev == e.ctx().ordinal());
         let slab_bases = slab_local.map(|d| {
             use cudarc::driver::DevicePtr;
             let s = e.stream();
@@ -14487,12 +14486,7 @@ impl HybridModel {
             Self::moe_ffn_grouped_add_shared(e, m, z, t, cfg, il, &mut moe_out)?;
             return Ok(moe_out);
         }
-        let (gate_row_bytes, up_row_bytes) = if dev.gu_il {
-            let combined = m.gate_exps.row_bytes + m.up_exps.row_bytes;
-            (combined, combined)
-        } else {
-            (m.gate_exps.row_bytes, m.up_exps.row_bytes)
-        };
+        let (gate_row_bytes, up_row_bytes) = (m.gate_exps.row_bytes, m.up_exps.row_bytes);
         let (zq, zd) = match (t, zq8) {
             (1, Some((q, d))) => (q.clone(), d.clone()),
             _ => e.quantize_q8_1(z, t, n_embd)?,
@@ -14607,9 +14601,8 @@ impl HybridModel {
 
         if std::env::var("MEMRA_SIG_ROUTER_DISPATCH_TRACE").as_deref() == Ok("1") {
             eprintln!(
-                "[sigrouter-dev] layer={il} tokens={t} experts={n_expert} used={n_used} clamp={} gu_il={}",
+                "[sigrouter-dev] layer={il} tokens={t} experts={n_expert} used={n_used} clamp={}",
                 cfg.clamp_exp_at(il as u32).is_some(),
-                dev.gu_il,
             );
         }
         Self::moe_ffn_grouped_add_shared(e, m, z, t, cfg, il, &mut moe_out)?;
@@ -14669,13 +14662,7 @@ impl HybridModel {
             "moe_ffn_pairs has no per-layer clamp: fused epilogues are plain SiLU"
         );
         let dev = m.dev_exps.as_ref().unwrap();
-        // WALL-GAP ARC: interleaved gate/up slab strides (see moe_ffn_dev).
-        let (rbg_d, rbu_d) = if dev.gu_il {
-            let sxx = m.gate_exps.row_bytes + m.up_exps.row_bytes;
-            (sxx, sxx)
-        } else {
-            (m.gate_exps.row_bytes, m.up_exps.row_bytes)
-        };
+        let (rbg_d, rbu_d) = (m.gate_exps.row_bytes, m.up_exps.row_bytes);
 
         let (sel_all, w_all) = Self::moe_route(e, logits, t, n_expert, n_used)?;
         let n_pairs = t * n_used;
@@ -15164,14 +15151,7 @@ impl HybridModel {
         // RESIDENT-EXPERTS arm: the pointer row comes from the load-time slab (no cache, no
         // lock). Same kernels/loop as the SLRU arm below — only the row's provenance differs.
         if let Some(dev) = m.dev_exps.as_ref() {
-            // WALL-GAP ARC: interleaved gate/up slab (MEMRA_MOE_GU_IL) -> both projections use
-            // the combined stride; up's base is offset in the ptr table. Down unchanged.
-            let (rbg_d, rbu_d) = if dev.gu_il {
-                let sxx = m.gate_exps.row_bytes + m.up_exps.row_bytes;
-                (sxx, sxx)
-            } else {
-                (m.gate_exps.row_bytes, m.up_exps.row_bytes)
-            };
+            let (rbg_d, rbu_d) = (m.gate_exps.row_bytes, m.up_exps.row_bytes);
             let q8 = moe_q8_enabled_for_model(cfg, m);
             // SMALL-M ROWS ARM (MEMRA_SPEC_M2, lane/spec-m2): batch the verify token loop —
             // ONE batched z-quantize + ONE gate_up rows launch + ONE act quantize + ONE down
@@ -15214,19 +15194,8 @@ impl HybridModel {
             // twins until a cached form passes gate2 + the =2 byte-compare at t=8. The
             // increment-1 qualification hole: =2 ran across run-spec (solo verify shapes),
             // never decode-batch-gate at B=8 on the MoE model itself.
-            // MEMRA_MOE_CSR_NVFP4=1 (lane/orndecode, DIAGNOSTIC PROBE ONLY): re-admits NVFP4
-            // to the CSR arm and widens it to the exact-16 decode widths, so gate2 B=12/16 +
-            // the =2 byte-compare can re-adjudicate the cached form at the widths where the
-            // serial dev loop hurts most (B=16 tick: 1280 launches/step). The v0.100.1
-            // de-admission verdict above stands until those gates are GREEN on the MoE
-            // artifact; this door must never default on.
-            let csr_nvfp4_probe = std::env::var("MEMRA_MOE_CSR_NVFP4").as_deref() == Ok("1");
-            let csr_qt = |qt: i32| {
-                qt == crate::QT_IQ4_XS
-                    || qt == crate::QT_IQ3_S
-                    || (csr_nvfp4_probe && qt == crate::QT_NVFP4)
-            };
-            let csr_t_max = if csr_nvfp4_probe { MOE_DEV_MAX_T } else { 10 };
+            let csr_qt = |qt: i32| qt == crate::QT_IQ4_XS || qt == crate::QT_IQ3_S;
+            let csr_t_max = 10;
             let csr_uniform = m.gate_exps.qtype == m.up_exps.qtype;
             let csr_arm = rows_arm
                 && csr_mode > 0
@@ -16430,13 +16399,7 @@ impl HybridModel {
             .map(|p| w_all[p] * m.down_exps.macro_scale(sel_all[p] as usize))
             .collect();
 
-        // Interleaved gate/up slab strides (see moe_ffn_pairs / moe_ffn_dev).
-        let (rbg_d, rbu_d) = if dev.gu_il {
-            let sxx = m.gate_exps.row_bytes + m.up_exps.row_bytes;
-            (sxx, sxx)
-        } else {
-            (m.gate_exps.row_bytes, m.up_exps.row_bytes)
-        };
+        let (rbg_d, rbu_d) = (m.gate_exps.row_bytes, m.up_exps.row_bytes);
 
         let exi = e.htod_i32(&ex_ids)?;
         let exo = e.htod_i32(&ex_off)?;
@@ -16909,7 +16872,6 @@ impl HybridModel {
         sel_all: &[u32],
         w_all: &[f32],
         table: &CudaSlice<u64>,
-        gu_il: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         crate::moe_rp_refuse(
             m.dev_exps.as_ref().is_some_and(|d| d.rp),
@@ -16939,12 +16901,7 @@ impl HybridModel {
             let sel: Vec<i32> = sel_all.iter().map(|&expert| expert as i32).collect();
             let sel_d = e.htod_i32(&sel)?;
             let w_d = e.htod(w_all)?;
-            let (gate_row_bytes, up_row_bytes) = if gu_il {
-                let combined = m.gate_exps.row_bytes + m.up_exps.row_bytes;
-                (combined, combined)
-            } else {
-                (m.gate_exps.row_bytes, m.up_exps.row_bytes)
-            };
+            let (gate_row_bytes, up_row_bytes) = (m.gate_exps.row_bytes, m.up_exps.row_bytes);
             let (zq, zd) = e.quantize_q8_1(z, t, n_embd)?;
             let act = e.moe_gate_up_silu8_dev_q8_rows(
                 table,
@@ -17036,12 +16993,7 @@ impl HybridModel {
             )
         };
 
-        let (gate_row_bytes, up_row_bytes) = if gu_il {
-            let combined = m.gate_exps.row_bytes + m.up_exps.row_bytes;
-            (combined, combined)
-        } else {
-            (m.gate_exps.row_bytes, m.up_exps.row_bytes)
-        };
+        let (gate_row_bytes, up_row_bytes) = (m.gate_exps.row_bytes, m.up_exps.row_bytes);
         let (zq, zd) = e.quantize_q8_1(z, t, n_embd)?;
         let gate = matvec(
             0,
@@ -18031,7 +17983,6 @@ impl HybridModel {
                 &sel_all,
                 &w_all,
                 &dev.ptr_row,
-                dev.gu_il,
             )?;
             Self::moe_ffn_grouped_add_shared(e, m, z, t, cfg, il, &mut moe_out)?;
             return Ok(moe_out);
@@ -18078,7 +18029,7 @@ impl HybridModel {
         let slab_local = m
             .dev_exps
             .as_ref()
-            .filter(|dev| !dev.gu_il && moe_slab_enabled() && dev.dev == e.ctx().ordinal());
+            .filter(|dev| moe_slab_enabled() && dev.dev == e.ctx().ordinal());
         let use_cache =
             slab_local.is_none() && Engine::moe_cache_enabled() && !e.moe_cache_frozen();
         // The sequential no-cache/frozen staging oracle is f32. Use q8 only where sequential
@@ -19305,7 +19256,7 @@ impl HybridModel {
         // dev slabs — verify rides the EXACT decode kernel chain per token (dispatch-parity
         // law; the qwen "verify must be kernel-dispatch-identical to decode" lesson).
         if t < PRIME_MIN_T
-            && m.dev_exps.as_ref().is_some_and(|d| !d.gu_il)
+            && m.dev_exps.as_ref().is_some()
             && expert_dp4a_supported(m.gate_exps.qtype)
             && expert_dp4a_supported(m.up_exps.qtype)
             && expert_dp4a_supported(m.down_exps.qtype)
@@ -19418,7 +19369,7 @@ impl HybridModel {
         // projection covers ALL (token,expert) pairs (the qwen pairs recipe, _em dot = expert_dot_g
         // which has the Q4_0 body; GELU pairs epilogue; R3 scale folded into pair_w).
         if t >= PRIME_MIN_T
-            && m.dev_exps.as_ref().is_some_and(|d| !d.gu_il)
+            && m.dev_exps.as_ref().is_some()
             && expert_dp4a_supported(m.gate_exps.qtype)
             && expert_dp4a_supported(m.up_exps.qtype)
             && expert_dp4a_supported(m.down_exps.qtype)
@@ -19683,7 +19634,7 @@ impl HybridModel {
         // Resident dev slabs (fits-VRAM regime): read each expert straight from the device slab
         // at ex*stride — zero H2D, SAME qmatvec_view kernel/bytes as the staged path. Staging is
         // the spill fallback.
-        let dev = m.dev_exps.as_ref().filter(|d| !d.gu_il);
+        let dev = m.dev_exps.as_ref();
         let (mut sg, mut su, mut sd) = if dev.is_some() {
             (None, None, None)
         } else {
@@ -20045,7 +19996,7 @@ impl HybridModel {
         let mut router_in = e.uninit(t * n_embd)?;
         let fast_moe = match &layer.ffn {
             crate::hybrid::Ffn::Moe(m) => {
-                m.dev_exps.as_ref().is_some_and(|d| !d.gu_il)
+                m.dev_exps.as_ref().is_some()
                     && expert_dp4a_supported(m.gate_exps.qtype)
                     && expert_dp4a_supported(m.up_exps.qtype)
                     && expert_dp4a_supported(m.down_exps.qtype)

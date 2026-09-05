@@ -82,7 +82,6 @@ fn fused_hc_pre_zq8_is_bit_identical_to_v3_then_rms_norm_zq8() {
             std::ptr::null_mut(),
             block,
             1,
-            0,
             sp(&stream),
         );
         assert_eq!(rc, 0, "v3 rc");
