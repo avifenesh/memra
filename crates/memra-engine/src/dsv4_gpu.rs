@@ -494,6 +494,39 @@ pub struct ForwardOut {
     pub h_last: CudaSlice<f32>,
 }
 
+#[derive(Debug, Clone)]
+pub struct Dsv4ExpertParallelProbe {
+    pub layer: u32,
+    pub selected_experts: Vec<i32>,
+    pub outputs_compared: usize,
+    pub baseline_median_s: f64,
+    pub parallel_median_s: f64,
+    pub speedup: f64,
+}
+
+#[derive(Debug, Clone)]
+pub struct Dsv4ExpertTensorParallelProbe {
+    pub layer: u32,
+    pub selected_experts: Vec<i32>,
+    pub outputs_compared: usize,
+    pub max_abs_drift: f32,
+    pub max_rel_drift: f32,
+    pub baseline_median_s: f64,
+    pub parallel_median_s: f64,
+    pub speedup: f64,
+}
+
+struct ExpertProbeWs {
+    xq: CudaSlice<u8>,
+    xs: CudaSlice<f32>,
+    g1: CudaSlice<f32>,
+    g3: CudaSlice<f32>,
+    hbuf: CudaSlice<f32>,
+    hq: CudaSlice<u8>,
+    hs: CudaSlice<f32>,
+    contrib: CudaSlice<f32>,
+}
+
 /// Lane-6 decode cache for ONE trunk layer, on the layer's owning stage. Layout mirrors
 /// the reference (model.py:473-474, :491): `kvc` = [win + cap_blocks, hd] f32 with the
 /// 128-slot window ring at rows [0, win) (slot = pos % win, M:530) and compressed block
@@ -811,6 +844,13 @@ fn dtoh_f32(stream: &std::sync::Arc<CudaStream>, d: &CudaSlice<f32>) -> Res<Vec<
     stream.memcpy_dtoh(d, &mut v[..]).map_err(e("dtoh"))?;
     stream.synchronize().map_err(e("sync dtoh"))?;
     Ok(v)
+}
+
+fn bits_equal_probe(a: &[f32], b: &[f32]) -> bool {
+    a.len() == b.len()
+        && a.iter()
+            .zip(b)
+            .all(|(left, right)| left.to_bits() == right.to_bits())
 }
 
 // -------------------------------------------------- lane 8: peer byte-integrity probe
@@ -2171,6 +2211,745 @@ impl Dsv4Gpu {
             out.push((st.dev, free as u64, total as u64, st.loaded_bytes));
         }
         Ok(out)
+    }
+
+    fn alloc_expert_probe_ws(
+        st: &Stage,
+        slots: usize,
+        hidden: usize,
+        inter: usize,
+    ) -> Res<ExpertProbeWs> {
+        let stream = st.gpu.stream();
+        Ok(ExpertProbeWs {
+            xq: stream.alloc_zeros::<u8>(hidden).map_err(e("ep probe xq"))?,
+            xs: stream
+                .alloc_zeros::<f32>(hidden / 128)
+                .map_err(e("ep probe xs"))?,
+            g1: stream
+                .alloc_zeros::<f32>(slots * inter)
+                .map_err(e("ep probe g1"))?,
+            g3: stream
+                .alloc_zeros::<f32>(slots * inter)
+                .map_err(e("ep probe g3"))?,
+            hbuf: stream
+                .alloc_zeros::<f32>(slots * inter)
+                .map_err(e("ep probe h"))?,
+            hq: stream
+                .alloc_zeros::<u8>(slots * inter)
+                .map_err(e("ep probe hq"))?,
+            hs: stream
+                .alloc_zeros::<f32>(slots * inter / 128)
+                .map_err(e("ep probe hs"))?,
+            contrib: stream
+                .alloc_zeros::<f32>(slots * hidden)
+                .map_err(e("ep probe contrib"))?,
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn expert_probe_chain(
+        st: &Stage,
+        x: &CudaSlice<f32>,
+        experts_w: &CudaSlice<u8>,
+        experts_sc: &CudaSlice<u8>,
+        experts_s2: &CudaSlice<f32>,
+        selected: &CudaSlice<i32>,
+        weights: &CudaSlice<f32>,
+        slots: usize,
+        hidden: usize,
+        inter: usize,
+        ws: &mut ExpertProbeWs,
+    ) -> Res<()> {
+        let stream = st.gpu.stream();
+        let wstride = (inter * hidden / 2) as i64;
+        let sstride = (inter * hidden / 16) as i64;
+        unsafe {
+            ck(
+                "ep probe act_quant x",
+                k::memra_dsv4_act_quant_fp8(
+                    dpf!(x, &stream),
+                    ws.xq.device_ptr_mut(&stream).0 as *mut c_void,
+                    dpm!(ws.xs, &stream),
+                    1,
+                    hidden as i32,
+                    sp(&stream),
+                ),
+            )?;
+            for (proj, dst) in [(0i32, &mut ws.g1), (2i32, &mut ws.g3)] {
+                ck(
+                    "ep probe w1/w3",
+                    k::memra_dsv4_fp4_gemm_sel(
+                        dp!(ws.xq, &stream),
+                        dpf!(ws.xs, &stream),
+                        dp!(experts_w, &stream),
+                        dp!(experts_sc, &stream),
+                        dpf!(experts_s2, &stream),
+                        selected.device_ptr(&stream).0 as *const i32,
+                        proj,
+                        0,
+                        0,
+                        dpm!(*dst, &stream),
+                        slots as i32,
+                        inter as i32,
+                        hidden as i32,
+                        wstride,
+                        sstride,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+            ck(
+                "ep probe swiglu",
+                k::memra_dsv4_swiglu(
+                    dpf!(ws.g1, &stream),
+                    dpf!(ws.g3, &stream),
+                    dpm!(ws.hbuf, &stream),
+                    slots as i32,
+                    inter as i32,
+                    10.0,
+                    weights.device_ptr(&stream).0 as *const f32,
+                    sp(&stream),
+                ),
+            )?;
+            ck(
+                "ep probe act_quant h",
+                k::memra_dsv4_act_quant_fp8(
+                    dpf!(ws.hbuf, &stream),
+                    ws.hq.device_ptr_mut(&stream).0 as *mut c_void,
+                    dpm!(ws.hs, &stream),
+                    slots as i32,
+                    inter as i32,
+                    sp(&stream),
+                ),
+            )?;
+            ck(
+                "ep probe w2",
+                k::memra_dsv4_fp4_gemm_sel(
+                    dp!(ws.hq, &stream),
+                    dpf!(ws.hs, &stream),
+                    dp!(experts_w, &stream),
+                    dp!(experts_sc, &stream),
+                    dpf!(experts_s2, &stream),
+                    selected.device_ptr(&stream).0 as *const i32,
+                    1,
+                    1,
+                    0,
+                    dpm!(ws.contrib, &stream),
+                    slots as i32,
+                    hidden as i32,
+                    inter as i32,
+                    wstride,
+                    sstride,
+                    sp(&stream),
+                ),
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Compute-only feasibility cell for same-layer expert parallelism. Three
+    /// selected experts stay on the layer owner and three are copied once into a
+    /// compact bank on the other card. Both cards then execute the exact selected
+    /// FP4 chain concurrently. Setup copies are excluded; the serving design must
+    /// separately price its small activation/result peer transfers.
+    pub fn expert_parallel_probe(&self, il: u32, reps: usize) -> Res<Dsv4ExpertParallelProbe> {
+        if reps == 0 || self.stages.len() != 2 {
+            return Err("dsv4 expert-parallel probe requires two stages and reps > 0".into());
+        }
+        let owner_i = *self
+            .layer_stage
+            .get(il as usize)
+            .ok_or_else(|| format!("dsv4 expert-parallel probe layer {il} is not trunk"))?;
+        let peer_i = 1 - owner_i;
+        let owner = &self.stages[owner_i];
+        let peer = &self.stages[peer_i];
+        let layer = owner
+            .layers
+            .iter()
+            .find(|layer| layer.il == il)
+            .ok_or_else(|| format!("dsv4 expert-parallel probe missing layer {il}"))?;
+        if layer.expert_kind != ExpertKind::Nvfp4 {
+            return Err("dsv4 expert-parallel probe requires trunk NVFP4 experts".into());
+        }
+        let mc = &self.model.mc;
+        let moe = mc.moe.as_ref().expect("moe");
+        let hidden = mc.n_embd as usize;
+        let inter = moe.expert_ff_length as usize;
+        let ne = moe.expert_count as usize;
+        if ne < 6 {
+            return Err("dsv4 expert-parallel probe requires at least six experts".into());
+        }
+        let selected = vec![
+            0i32,
+            1,
+            2,
+            (ne / 2) as i32,
+            (ne / 2 + 1) as i32,
+            (ne / 2 + 2) as i32,
+        ];
+        let route_weights = vec![0.19f32, 0.17, 0.16, 0.15, 0.14, 0.13];
+        let wbytes = inter * hidden / 2;
+        let sbytes = inter * hidden / 16;
+
+        owner
+            .gpu
+            .ctx
+            .bind_to_thread()
+            .map_err(e("bind ep probe owner"))?;
+        let owner_stream = owner.gpu.stream();
+        let mut peer_w_host = vec![0u8; 3 * 3 * wbytes];
+        let mut peer_sc_host = vec![0u8; 3 * 3 * sbytes];
+        for (local, &global) in selected[3..].iter().enumerate() {
+            let global = global as usize;
+            let wsrc = layer
+                .experts_w
+                .slice(global * 3 * wbytes..(global + 1) * 3 * wbytes);
+            owner_stream
+                .memcpy_dtoh(
+                    &wsrc,
+                    &mut peer_w_host[local * 3 * wbytes..(local + 1) * 3 * wbytes],
+                )
+                .map_err(e("ep probe weight dtoh"))?;
+            let ssrc = layer
+                .experts_sc
+                .slice(global * 3 * sbytes..(global + 1) * 3 * sbytes);
+            owner_stream
+                .memcpy_dtoh(
+                    &ssrc,
+                    &mut peer_sc_host[local * 3 * sbytes..(local + 1) * 3 * sbytes],
+                )
+                .map_err(e("ep probe scale dtoh"))?;
+        }
+        owner_stream
+            .synchronize()
+            .map_err(e("ep probe setup dtoh sync"))?;
+
+        peer.gpu
+            .ctx
+            .bind_to_thread()
+            .map_err(e("bind ep probe peer"))?;
+        let peer_stream = peer.gpu.stream();
+        let peer_w = upload_u8(&peer_stream, &peer_w_host)?;
+        let peer_sc = upload_u8(&peer_stream, &peer_sc_host)?;
+        let peer_s2_host: Vec<f32> = selected[3..]
+            .iter()
+            .flat_map(|&global| {
+                let global = global as usize;
+                layer.experts_s2[global * 3..(global + 1) * 3]
+                    .iter()
+                    .copied()
+            })
+            .collect();
+        let peer_s2 = upload_f32(&peer_stream, &peer_s2_host)?;
+        let peer_sel = upload_i32(&peer_stream, &[0, 1, 2])?;
+        let peer_weights = upload_f32(&peer_stream, &route_weights[3..])?;
+        let x_host: Vec<f32> = (0..hidden)
+            .map(|i| (((i * 37 + 11) % 257) as f32 - 128.0) / 64.0)
+            .collect();
+        let mut x_peer = upload_f32(&peer_stream, &x_host)?;
+        let mut peer_ws = Self::alloc_expert_probe_ws(peer, 3, hidden, inter)?;
+
+        owner
+            .gpu
+            .ctx
+            .bind_to_thread()
+            .map_err(e("rebind ep probe owner"))?;
+        let x_owner = upload_f32(&owner_stream, &x_host)?;
+        let x_owner_raw = x_owner.device_ptr(&owner_stream).0;
+        let x_peer_raw = x_peer.device_ptr_mut(&peer_stream).0;
+        let baseline_sel = upload_i32(&owner_stream, &selected)?;
+        let baseline_weights = upload_f32(&owner_stream, &route_weights)?;
+        let owner_sel = upload_i32(&owner_stream, &selected[..3])?;
+        let owner_weights = upload_f32(&owner_stream, &route_weights[..3])?;
+        let mut baseline_ws = Self::alloc_expert_probe_ws(owner, 6, hidden, inter)?;
+        let mut owner_ws = Self::alloc_expert_probe_ws(owner, 3, hidden, inter)?;
+        let mut peer_return = owner_stream
+            .alloc_zeros::<f32>(3 * hidden)
+            .map_err(e("ep probe peer return"))?;
+        let peer_return_raw = peer_return.device_ptr_mut(&owner_stream).0;
+
+        let run_baseline = |ws: &mut ExpertProbeWs| -> Res<()> {
+            owner
+                .gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind ep baseline"))?;
+            Self::expert_probe_chain(
+                owner,
+                &x_owner,
+                &layer.experts_w,
+                &layer.experts_sc,
+                &layer.experts_s2_dev,
+                &baseline_sel,
+                &baseline_weights,
+                6,
+                hidden,
+                inter,
+                ws,
+            )
+        };
+        let run_owner = |ws: &mut ExpertProbeWs| -> Res<()> {
+            owner.gpu.ctx.bind_to_thread().map_err(e("bind ep owner"))?;
+            Self::expert_probe_chain(
+                owner,
+                &x_owner,
+                &layer.experts_w,
+                &layer.experts_sc,
+                &layer.experts_s2_dev,
+                &owner_sel,
+                &owner_weights,
+                3,
+                hidden,
+                inter,
+                ws,
+            )
+        };
+        let run_peer = |ws: &mut ExpertProbeWs| -> Res<()> {
+            peer.gpu.ctx.bind_to_thread().map_err(e("bind ep peer"))?;
+            Self::expert_probe_chain(
+                peer,
+                &x_peer,
+                &peer_w,
+                &peer_sc,
+                &peer_s2,
+                &peer_sel,
+                &peer_weights,
+                3,
+                hidden,
+                inter,
+                ws,
+            )
+        };
+        let run_parallel = |owner_ws: &mut ExpertProbeWs, peer_ws: &mut ExpertProbeWs| -> Res<()> {
+            // Fan out the 16 KiB activation on the peer stream so owner
+            // compute is independent. Peer compute follows that copy, then
+            // returns its three 4,096-wide contribution rows (48 KiB).
+            peer.gpu.ctx.bind_to_thread().map_err(e("bind ep fanout"))?;
+            unsafe {
+                cudarc::driver::result::memcpy_peer_async(
+                    peer.gpu.ctx.cu_ctx(),
+                    x_peer_raw,
+                    owner.gpu.ctx.cu_ctx(),
+                    x_owner_raw,
+                    hidden * std::mem::size_of::<f32>(),
+                    peer_stream.cu_stream(),
+                )
+                .map_err(e("ep activation peer copy"))?;
+            }
+            run_owner(owner_ws)?;
+            run_peer(peer_ws)?;
+            let (src, _gs) = peer_ws.contrib.device_ptr(&peer_stream);
+            unsafe {
+                cudarc::driver::result::memcpy_peer_async(
+                    owner.gpu.ctx.cu_ctx(),
+                    peer_return_raw,
+                    peer.gpu.ctx.cu_ctx(),
+                    src,
+                    3 * hidden * std::mem::size_of::<f32>(),
+                    peer_stream.cu_stream(),
+                )
+                .map_err(e("ep contribution peer return"))?;
+            }
+            owner
+                .gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind ep owner sync"))?;
+            owner_stream.synchronize().map_err(e("ep owner sync"))?;
+            peer.gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind ep peer sync"))?;
+            peer_stream.synchronize().map_err(e("ep peer sync"))?;
+            Ok(())
+        };
+
+        run_baseline(&mut baseline_ws)?;
+        owner_stream
+            .synchronize()
+            .map_err(e("ep baseline warm sync"))?;
+        run_parallel(&mut owner_ws, &mut peer_ws)?;
+
+        owner
+            .gpu
+            .ctx
+            .bind_to_thread()
+            .map_err(e("bind ep owner readback"))?;
+        let baseline = dtoh_f32(&owner_stream, &baseline_ws.contrib)?;
+        let owner_out = dtoh_f32(&owner_stream, &owner_ws.contrib)?;
+        let peer_out = dtoh_f32(&owner_stream, &peer_return)?;
+        let outputs_compared = 6 * hidden;
+        if !bits_equal_probe(&baseline[..3 * hidden], &owner_out)
+            || !bits_equal_probe(&baseline[3 * hidden..], &peer_out)
+        {
+            return Err("dsv4 expert-parallel probe contribution bits differ".into());
+        }
+
+        let mut baseline_wall = Vec::with_capacity(reps);
+        let mut parallel_wall = Vec::with_capacity(reps);
+        for _ in 0..reps {
+            let started = std::time::Instant::now();
+            run_baseline(&mut baseline_ws)?;
+            owner_stream.synchronize().map_err(e("ep baseline sync"))?;
+            baseline_wall.push(started.elapsed().as_secs_f64());
+
+            let started = std::time::Instant::now();
+            run_parallel(&mut owner_ws, &mut peer_ws)?;
+            parallel_wall.push(started.elapsed().as_secs_f64());
+        }
+        baseline_wall.sort_by(f64::total_cmp);
+        parallel_wall.sort_by(f64::total_cmp);
+        let mid = reps / 2;
+        let baseline_median_s = baseline_wall[mid];
+        let parallel_median_s = parallel_wall[mid];
+        Ok(Dsv4ExpertParallelProbe {
+            layer: il,
+            selected_experts: selected,
+            outputs_compared,
+            baseline_median_s,
+            parallel_median_s,
+            speedup: baseline_median_s / parallel_median_s,
+        })
+    }
+
+    /// Compute/P2P feasibility cell for balanced TP2 expert execution. Every
+    /// selected expert is split 1024+1024 in its intermediate dimension:
+    /// w1/w3 output rows and w2 input columns. The w2 partials join on the
+    /// owner. This changes the reduction tree, so drift is reported.
+    pub fn expert_tensor_parallel_probe(
+        &self,
+        il: u32,
+        reps: usize,
+    ) -> Res<Dsv4ExpertTensorParallelProbe> {
+        if reps == 0 || self.stages.len() != 2 {
+            return Err("dsv4 expert-TP probe requires two stages and reps > 0".into());
+        }
+        let owner_i = *self
+            .layer_stage
+            .get(il as usize)
+            .ok_or_else(|| format!("dsv4 expert-TP probe layer {il} is not trunk"))?;
+        let peer_i = 1 - owner_i;
+        let owner = &self.stages[owner_i];
+        let peer = &self.stages[peer_i];
+        let layer = owner
+            .layers
+            .iter()
+            .find(|layer| layer.il == il)
+            .ok_or_else(|| format!("dsv4 expert-TP probe missing layer {il}"))?;
+        if layer.expert_kind != ExpertKind::Nvfp4 {
+            return Err("dsv4 expert-TP probe requires trunk NVFP4 experts".into());
+        }
+        let mc = &self.model.mc;
+        let moe = mc.moe.as_ref().expect("moe");
+        let hidden = mc.n_embd as usize;
+        let inter = moe.expert_ff_length as usize;
+        let ne = moe.expert_count as usize;
+        if !inter.is_multiple_of(2) || ne < 6 {
+            return Err("dsv4 expert-TP probe requires even intermediate and six experts".into());
+        }
+        let local_inter = inter / 2;
+        let selected = vec![
+            0i32,
+            1,
+            2,
+            (ne / 2) as i32,
+            (ne / 2 + 1) as i32,
+            (ne / 2 + 2) as i32,
+        ];
+        let route_weights = vec![0.19f32, 0.17, 0.16, 0.15, 0.14, 0.13];
+        let wbytes = inter * hidden / 2;
+        let sbytes = inter * hidden / 16;
+        let local_wbytes = local_inter * hidden / 2;
+        let local_sbytes = local_inter * hidden / 16;
+
+        owner
+            .gpu
+            .ctx
+            .bind_to_thread()
+            .map_err(e("bind expert-TP owner"))?;
+        let owner_stream = owner.gpu.stream();
+        let mut full_w = vec![0u8; 6 * 3 * wbytes];
+        let mut full_sc = vec![0u8; 6 * 3 * sbytes];
+        for (local, &global) in selected.iter().enumerate() {
+            let global = global as usize;
+            let wsrc = layer
+                .experts_w
+                .slice(global * 3 * wbytes..(global + 1) * 3 * wbytes);
+            owner_stream
+                .memcpy_dtoh(
+                    &wsrc,
+                    &mut full_w[local * 3 * wbytes..(local + 1) * 3 * wbytes],
+                )
+                .map_err(e("expert-TP weight dtoh"))?;
+            let ssrc = layer
+                .experts_sc
+                .slice(global * 3 * sbytes..(global + 1) * 3 * sbytes);
+            owner_stream
+                .memcpy_dtoh(
+                    &ssrc,
+                    &mut full_sc[local * 3 * sbytes..(local + 1) * 3 * sbytes],
+                )
+                .map_err(e("expert-TP scale dtoh"))?;
+        }
+        owner_stream
+            .synchronize()
+            .map_err(e("expert-TP setup dtoh sync"))?;
+
+        let pack_rank = |rank: usize| -> (Vec<u8>, Vec<u8>) {
+            let mut w = vec![0u8; 6 * 3 * local_wbytes];
+            let mut sc = vec![0u8; 6 * 3 * local_sbytes];
+            for expert in 0..6 {
+                for proj in 0..3 {
+                    let src_w0 = (expert * 3 + proj) * wbytes;
+                    let src_s0 = (expert * 3 + proj) * sbytes;
+                    let dst_w0 = (expert * 3 + proj) * local_wbytes;
+                    let dst_s0 = (expert * 3 + proj) * local_sbytes;
+                    if proj != 1 {
+                        w[dst_w0..dst_w0 + local_wbytes].copy_from_slice(
+                            &full_w
+                                [src_w0 + rank * local_wbytes..src_w0 + (rank + 1) * local_wbytes],
+                        );
+                        sc[dst_s0..dst_s0 + local_sbytes].copy_from_slice(
+                            &full_sc
+                                [src_s0 + rank * local_sbytes..src_s0 + (rank + 1) * local_sbytes],
+                        );
+                    } else {
+                        let full_w_row = inter / 2;
+                        let local_w_row = local_inter / 2;
+                        let full_s_row = inter / 16;
+                        let local_s_row = local_inter / 16;
+                        for row in 0..hidden {
+                            let sw = src_w0 + row * full_w_row + rank * local_w_row;
+                            let dw = dst_w0 + row * local_w_row;
+                            w[dw..dw + local_w_row].copy_from_slice(&full_w[sw..sw + local_w_row]);
+                            let ss = src_s0 + row * full_s_row + rank * local_s_row;
+                            let ds = dst_s0 + row * local_s_row;
+                            sc[ds..ds + local_s_row]
+                                .copy_from_slice(&full_sc[ss..ss + local_s_row]);
+                        }
+                    }
+                }
+            }
+            (w, sc)
+        };
+        let (rank0_w_host, rank0_sc_host) = pack_rank(0);
+        let (rank1_w_host, rank1_sc_host) = pack_rank(1);
+        let local_s2_host: Vec<f32> = selected
+            .iter()
+            .flat_map(|&global| {
+                let global = global as usize;
+                layer.experts_s2[global * 3..(global + 1) * 3]
+                    .iter()
+                    .copied()
+            })
+            .collect();
+        let local_sel_host = [0i32, 1, 2, 3, 4, 5];
+        let x_host: Vec<f32> = (0..hidden)
+            .map(|i| (((i * 37 + 11) % 257) as f32 - 128.0) / 64.0)
+            .collect();
+
+        let rank0_w = upload_u8(&owner_stream, &rank0_w_host)?;
+        let rank0_sc = upload_u8(&owner_stream, &rank0_sc_host)?;
+        let rank0_s2 = upload_f32(&owner_stream, &local_s2_host)?;
+        let rank0_sel = upload_i32(&owner_stream, &local_sel_host)?;
+        let rank0_weights = upload_f32(&owner_stream, &route_weights)?;
+        let x_owner = upload_f32(&owner_stream, &x_host)?;
+        let x_owner_raw = x_owner.device_ptr(&owner_stream).0;
+        let baseline_sel = upload_i32(&owner_stream, &selected)?;
+        let baseline_weights = upload_f32(&owner_stream, &route_weights)?;
+        let mut baseline_ws = Self::alloc_expert_probe_ws(owner, 6, hidden, inter)?;
+        let mut rank0_ws = Self::alloc_expert_probe_ws(owner, 6, hidden, local_inter)?;
+        let mut rank1_return = owner_stream
+            .alloc_zeros::<f32>(6 * hidden)
+            .map_err(e("expert-TP rank1 return"))?;
+        let rank1_return_raw = rank1_return.device_ptr_mut(&owner_stream).0;
+
+        peer.gpu
+            .ctx
+            .bind_to_thread()
+            .map_err(e("bind expert-TP peer"))?;
+        let peer_stream = peer.gpu.stream();
+        let rank1_w = upload_u8(&peer_stream, &rank1_w_host)?;
+        let rank1_sc = upload_u8(&peer_stream, &rank1_sc_host)?;
+        let rank1_s2 = upload_f32(&peer_stream, &local_s2_host)?;
+        let rank1_sel = upload_i32(&peer_stream, &local_sel_host)?;
+        let rank1_weights = upload_f32(&peer_stream, &route_weights)?;
+        let mut x_peer = upload_f32(&peer_stream, &x_host)?;
+        let x_peer_raw = x_peer.device_ptr_mut(&peer_stream).0;
+        let mut rank1_ws = Self::alloc_expert_probe_ws(peer, 6, hidden, local_inter)?;
+        let join_event = peer
+            .gpu
+            .ctx
+            .new_event(None)
+            .map_err(e("expert-TP join event"))?;
+
+        let run_baseline = |ws: &mut ExpertProbeWs| -> Res<()> {
+            owner
+                .gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind expert-TP baseline"))?;
+            Self::expert_probe_chain(
+                owner,
+                &x_owner,
+                &layer.experts_w,
+                &layer.experts_sc,
+                &layer.experts_s2_dev,
+                &baseline_sel,
+                &baseline_weights,
+                6,
+                hidden,
+                inter,
+                ws,
+            )
+        };
+        let run_rank0 = |ws: &mut ExpertProbeWs| -> Res<()> {
+            owner
+                .gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind expert-TP rank0"))?;
+            Self::expert_probe_chain(
+                owner,
+                &x_owner,
+                &rank0_w,
+                &rank0_sc,
+                &rank0_s2,
+                &rank0_sel,
+                &rank0_weights,
+                6,
+                hidden,
+                local_inter,
+                ws,
+            )
+        };
+        let run_rank1 = |ws: &mut ExpertProbeWs| -> Res<()> {
+            peer.gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind expert-TP rank1"))?;
+            Self::expert_probe_chain(
+                peer,
+                &x_peer,
+                &rank1_w,
+                &rank1_sc,
+                &rank1_s2,
+                &rank1_sel,
+                &rank1_weights,
+                6,
+                hidden,
+                local_inter,
+                ws,
+            )
+        };
+        let run_parallel =
+            |rank0_ws: &mut ExpertProbeWs, rank1_ws: &mut ExpertProbeWs| -> Res<()> {
+                peer.gpu
+                    .ctx
+                    .bind_to_thread()
+                    .map_err(e("bind expert-TP fanout"))?;
+                unsafe {
+                    cudarc::driver::result::memcpy_peer_async(
+                        peer.gpu.ctx.cu_ctx(),
+                        x_peer_raw,
+                        owner.gpu.ctx.cu_ctx(),
+                        x_owner_raw,
+                        hidden * std::mem::size_of::<f32>(),
+                        peer_stream.cu_stream(),
+                    )
+                    .map_err(e("expert-TP activation fanout"))?;
+                }
+                run_rank0(rank0_ws)?;
+                run_rank1(rank1_ws)?;
+                let src = rank1_ws.contrib.device_ptr(&peer_stream).0;
+                unsafe {
+                    cudarc::driver::result::memcpy_peer_async(
+                        owner.gpu.ctx.cu_ctx(),
+                        rank1_return_raw,
+                        peer.gpu.ctx.cu_ctx(),
+                        src,
+                        6 * hidden * std::mem::size_of::<f32>(),
+                        peer_stream.cu_stream(),
+                    )
+                    .map_err(e("expert-TP contribution return"))?;
+                }
+                join_event
+                    .record(&peer_stream)
+                    .map_err(e("expert-TP join record"))?;
+                owner
+                    .gpu
+                    .ctx
+                    .bind_to_thread()
+                    .map_err(e("bind expert-TP join"))?;
+                owner_stream
+                    .wait(&join_event)
+                    .map_err(e("expert-TP join wait"))?;
+                unsafe {
+                    ck(
+                        "expert-TP partial add",
+                        k::memra_dsv4_add_inplace(
+                            dpm!(rank0_ws.contrib, &owner_stream),
+                            dpf!(rank1_return, &owner_stream),
+                            (6 * hidden) as i64,
+                            sp(&owner_stream),
+                        ),
+                    )?;
+                }
+                owner_stream
+                    .synchronize()
+                    .map_err(e("expert-TP owner sync"))?;
+                Ok(())
+            };
+
+        run_baseline(&mut baseline_ws)?;
+        owner_stream
+            .synchronize()
+            .map_err(e("expert-TP baseline warm sync"))?;
+        run_parallel(&mut rank0_ws, &mut rank1_ws)?;
+        owner
+            .gpu
+            .ctx
+            .bind_to_thread()
+            .map_err(e("bind expert-TP readback"))?;
+        let baseline = dtoh_f32(&owner_stream, &baseline_ws.contrib)?;
+        let parallel = dtoh_f32(&owner_stream, &rank0_ws.contrib)?;
+        let mut max_abs_drift = 0.0f32;
+        let mut max_ref = 0.0f32;
+        for (&a, &b) in baseline.iter().zip(&parallel) {
+            max_abs_drift = max_abs_drift.max((a - b).abs());
+            max_ref = max_ref.max(a.abs());
+        }
+        let max_rel_drift = max_abs_drift / max_ref.max(1e-30);
+
+        let mut baseline_wall = Vec::with_capacity(reps);
+        let mut parallel_wall = Vec::with_capacity(reps);
+        for _ in 0..reps {
+            let started = std::time::Instant::now();
+            run_baseline(&mut baseline_ws)?;
+            owner_stream
+                .synchronize()
+                .map_err(e("expert-TP baseline sync"))?;
+            baseline_wall.push(started.elapsed().as_secs_f64());
+
+            let started = std::time::Instant::now();
+            run_parallel(&mut rank0_ws, &mut rank1_ws)?;
+            parallel_wall.push(started.elapsed().as_secs_f64());
+        }
+        baseline_wall.sort_by(f64::total_cmp);
+        parallel_wall.sort_by(f64::total_cmp);
+        let mid = reps / 2;
+        let baseline_median_s = baseline_wall[mid];
+        let parallel_median_s = parallel_wall[mid];
+        Ok(Dsv4ExpertTensorParallelProbe {
+            layer: il,
+            selected_experts: selected,
+            outputs_compared: 6 * hidden,
+            max_abs_drift,
+            max_rel_drift,
+            baseline_median_s,
+            parallel_median_s,
+            speedup: baseline_median_s / parallel_median_s,
+        })
     }
 
     // ---------------------------------------------------------------- forward pieces
