@@ -1697,31 +1697,46 @@ static int dsv4_fp4_reduce_arm() {
     return arm;
 }
 
+// The native Rust model passes its own arm, allowing an isolated one-load gate
+// to alternate arms without changing the process environment or global state.
+extern "C" int memra_dsv4_fp4_gemm_sel_g_arm(const void* a_codes, const float* a_scales,
+                                           const void* w_base, const void* sc_base,
+                                           const float* s2, const int* sel, int proj,
+                                           int a_stride_rows, int kind, float* out, int slots,
+                                           int n, int kdim, long wstride, long sstride,
+                                           int a_group, int reduce_arm, void* stream_v) {
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    if (kdim % 128 != 0 || (kind != 0 && kind != 1)) return 40005;
+    if (slots > 65535 || n > 2147483647) return 40006;
+    if (a_group < 0) return 40006;
+    if (reduce_arm != 0 && reduce_arm != 1) return 40021;
+    dim3 grid((unsigned)((n + DSV4_FP4_SEL_CPB - 1) / DSV4_FP4_SEL_CPB),
+              (unsigned)slots);
+    int threads = 128;
+    if (reduce_arm) {
+        dsv4_fp4_gemm_sel_kernel<true><<<grid, threads, DSV4_FP4_SMEM(threads * DSV4_FP4_SEL_CPB), stream>>>(
+            (const uint8_t*)a_codes, a_scales, (const uint8_t*)w_base, (const uint8_t*)sc_base,
+            s2, sel, proj, a_stride_rows, kind, out, n, kdim, wstride, sstride, a_group);
+    } else {
+        dsv4_fp4_gemm_sel_kernel<false><<<grid, threads, DSV4_FP4_SMEM(threads), stream>>>(
+            (const uint8_t*)a_codes, a_scales, (const uint8_t*)w_base, (const uint8_t*)sc_base,
+            s2, sel, proj, a_stride_rows, kind, out, n, kdim, wstride, sstride, a_group);
+    }
+    DSV4_ERR();
+    return 0;
+}
+
+// Preserve the original C interfaces and their process-env behavior for existing
+// callers. Both share the explicit launcher, so launch geometry cannot drift.
 extern "C" int memra_dsv4_fp4_gemm_sel(const void* a_codes, const float* a_scales,
                                        const void* w_base, const void* sc_base,
                                        const float* s2, const int* sel, int proj,
                                        int a_stride_rows, int kind, float* out, int slots,
                                        int n, int kdim, long wstride, long sstride,
                                        void* stream_v) {
-    cudaStream_t stream = (cudaStream_t)stream_v;
-    if (kdim % 128 != 0 || (kind != 0 && kind != 1)) return 40005;
-    if (slots > 65535 || n > 2147483647) return 40006;
-    dim3 grid((unsigned)((n + DSV4_FP4_SEL_CPB - 1) / DSV4_FP4_SEL_CPB),
-              (unsigned)slots);
-    int threads = 128;
-    const int arm = dsv4_fp4_reduce_arm();
-    if (arm < 0) return 40021;
-    if (arm) {
-        dsv4_fp4_gemm_sel_kernel<true><<<grid, threads, DSV4_FP4_SMEM(threads * DSV4_FP4_SEL_CPB), stream>>>(
-            (const uint8_t*)a_codes, a_scales, (const uint8_t*)w_base, (const uint8_t*)sc_base,
-            s2, sel, proj, a_stride_rows, kind, out, n, kdim, wstride, sstride, 0);
-    } else {
-        dsv4_fp4_gemm_sel_kernel<false><<<grid, threads, DSV4_FP4_SMEM(threads), stream>>>(
-            (const uint8_t*)a_codes, a_scales, (const uint8_t*)w_base, (const uint8_t*)sc_base,
-            s2, sel, proj, a_stride_rows, kind, out, n, kdim, wstride, sstride, 0);
-    }
-    DSV4_ERR();
-    return 0;
+    return memra_dsv4_fp4_gemm_sel_g_arm(a_codes, a_scales, w_base, sc_base,
+        s2, sel, proj, a_stride_rows, kind, out, slots, n, kdim, wstride, sstride,
+        0, dsv4_fp4_reduce_arm(), stream_v);
 }
 
 // Batched-verify twin: `a_group` slots share one activation row (T positions x topk).
@@ -1734,26 +1749,9 @@ extern "C" int memra_dsv4_fp4_gemm_sel_g(const void* a_codes, const float* a_sca
                                          int a_stride_rows, int kind, float* out, int slots,
                                          int n, int kdim, long wstride, long sstride,
                                          int a_group, void* stream_v) {
-    cudaStream_t stream = (cudaStream_t)stream_v;
-    if (kdim % 128 != 0 || (kind != 0 && kind != 1)) return 40005;
-    if (slots > 65535 || n > 2147483647) return 40006;
-    if (a_group < 0) return 40006;
-    dim3 grid((unsigned)((n + DSV4_FP4_SEL_CPB - 1) / DSV4_FP4_SEL_CPB),
-              (unsigned)slots);
-    int threads = 128;
-    const int arm = dsv4_fp4_reduce_arm();
-    if (arm < 0) return 40021;
-    if (arm) {
-        dsv4_fp4_gemm_sel_kernel<true><<<grid, threads, DSV4_FP4_SMEM(threads * DSV4_FP4_SEL_CPB), stream>>>(
-            (const uint8_t*)a_codes, a_scales, (const uint8_t*)w_base, (const uint8_t*)sc_base,
-            s2, sel, proj, a_stride_rows, kind, out, n, kdim, wstride, sstride, a_group);
-    } else {
-        dsv4_fp4_gemm_sel_kernel<false><<<grid, threads, DSV4_FP4_SMEM(threads), stream>>>(
-            (const uint8_t*)a_codes, a_scales, (const uint8_t*)w_base, (const uint8_t*)sc_base,
-            s2, sel, proj, a_stride_rows, kind, out, n, kdim, wstride, sstride, a_group);
-    }
-    DSV4_ERR();
-    return 0;
+    return memra_dsv4_fp4_gemm_sel_g_arm(a_codes, a_scales, w_base, sc_base,
+        s2, sel, proj, a_stride_rows, kind, out, slots, n, kdim, wstride, sstride,
+        a_group, dsv4_fp4_reduce_arm(), stream_v);
 }
 
 // Routed-expert combine: y[i] = sum over slots in ascending-expert-id order (acc starts

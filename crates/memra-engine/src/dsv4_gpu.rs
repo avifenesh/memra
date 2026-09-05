@@ -434,6 +434,27 @@ pub struct DsparkCaptureOut {
     pub markov_embed: Vec<f32>,
 }
 
+/// An exact reduction rewrite, encoded explicitly in the CUDA launch parameters.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[repr(i32)]
+pub enum Dsv4Fp4Reduce {
+    #[default]
+    Block = 0,
+    Warp = 1,
+}
+
+impl Dsv4Fp4Reduce {
+    pub fn resolve(value: Option<&str>) -> Res<Self> {
+        match value {
+            None | Some("") | Some("block") => Ok(Self::Block),
+            Some("warp") => Ok(Self::Warp),
+            Some(other) => Err(format!(
+                "MEMRA_DSV4_FP4_REDUCE '{other}' unknown (block | warp)"
+            )),
+        }
+    }
+}
+
 pub struct Dsv4Gpu {
     pub model: Dsv4Model,
     pub stages: Vec<Stage>,
@@ -471,6 +492,8 @@ pub struct Dsv4Gpu {
     /// DSpark-only fused selected-expert dispatch. Routing stays on the host
     /// oracle; only the per-expert launch loop is collapsed.
     pub dspark_fused_moe: bool,
+    /// Chosen per model, never a process-global mutable test switch.
+    fp4_reduce: Dsv4Fp4Reduce,
     /// iteration-5 FP8 dense arm (`MEMRA_DSV4_DENSE_ARM`; DEFAULT fp8 on the device
     /// decode path since the 2026-08-20 ratification, bf16 selectable and the legacy
     /// default): the DEVICE decode/verify paths read the FP8-blk linears as-stored
@@ -1182,6 +1205,31 @@ fn f32_to_bf16_exact(name: &str, v: &[f32]) -> Vec<u8> {
 }
 
 impl Dsv4Gpu {
+    /// Isolated gate control, not a serving request option. Requires exclusive
+    /// model access and drains both stage streams before changing the next launch.
+    /// DSV4 currently owns no captured graph; future graph support must invalidate
+    /// or re-capture its executables here before this seam may be used with it.
+    pub fn set_fp4_reduce_for_gate(&mut self, arm: Dsv4Fp4Reduce) -> Res<Dsv4Fp4Reduce> {
+        if !matches!(self.decode_path, DecodePath::Device { .. }) {
+            return Err("FP4 reduction gate requires the native device path".to_string());
+        }
+        for stage in &self.stages {
+            stage
+                .gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind FP4 gate stage"))?;
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .map_err(e("drain FP4 gate stage"))?;
+        }
+        let previous = self.fp4_reduce;
+        self.fp4_reduce = arm;
+        Ok(previous)
+    }
+
     /// Upload a tensor as bf16: BF16-stored tensors ride raw bytes; FP8-blk tensors are
     /// host-dequantized (lane-1 decoder) and cast with the exactness refusal.
     fn tensor_bf16(&mut self, stage: usize, name: &str) -> Res<CudaSlice<u8>> {
@@ -1628,6 +1676,12 @@ impl Dsv4Gpu {
         max_seq: usize,
     ) -> Res<Self> {
         assert_eq!(devices.len(), 2, "lane 4 placement is a 2-card layer split");
+        let fp4_reduce_env = match std::env::var("MEMRA_DSV4_FP4_REDUCE") {
+            Ok(value) => Some(value),
+            Err(std::env::VarError::NotPresent) => None,
+            Err(err) => return Err(format!("MEMRA_DSV4_FP4_REDUCE: {err}")),
+        };
+        let fp4_reduce = Dsv4Fp4Reduce::resolve(fp4_reduce_env.as_deref())?;
         let model = Dsv4Model::open(dir)?;
         let d = model.cfg().clone();
         let mc = model.mc.clone();
@@ -1851,6 +1905,7 @@ impl Dsv4Gpu {
             chains_f32,
             dspark_head_f32,
             dspark_fused_moe,
+            fp4_reduce,
             dense_fp8,
             dspark: None,
             boundary_ev: Vec::new(),
@@ -1869,6 +1924,7 @@ impl Dsv4Gpu {
                 "f64"
             }
         );
+        eprintln!("[load] selected FP4 reduction: {:?}", me.fp4_reduce);
         eprintln!(
             "[load] dspark exit-head dots arm: {} (rung-4c fork; drafts only, never the \
              emitted stream)",
@@ -3358,7 +3414,7 @@ impl Dsv4Gpu {
                 for (proj, dst) in [(0i32, &mut g1), (2i32, &mut g3)] {
                     ck(
                         "dspark fused w1/w3",
-                        k::memra_dsv4_fp4_gemm_sel_g(
+                        k::memra_dsv4_fp4_gemm_sel_g_arm(
                             dp!(xq, &stream),
                             dpf!(xs, &stream),
                             dp!(layer.experts_w, &stream),
@@ -3375,6 +3431,7 @@ impl Dsv4Gpu {
                             wbytes as i64,
                             sbytes as i64,
                             topk as i32,
+                            self.fp4_reduce as i32,
                             sp(&stream),
                         ),
                     )?;
@@ -3405,7 +3462,7 @@ impl Dsv4Gpu {
                 )?;
                 ck(
                     "dspark fused w2",
-                    k::memra_dsv4_fp4_gemm_sel_g(
+                    k::memra_dsv4_fp4_gemm_sel_g_arm(
                         dp!(hq, &stream),
                         dpf!(hs, &stream),
                         dp!(layer.experts_w, &stream),
@@ -3422,6 +3479,7 @@ impl Dsv4Gpu {
                         wbytes as i64,
                         sbytes as i64,
                         0,
+                        self.fp4_reduce as i32,
                         sp(&stream),
                     ),
                 )?;
@@ -6721,7 +6779,7 @@ impl Dsv4Gpu {
             for (proj, dst) in [(0i32, &mut ws.g1), (2i32, &mut ws.g3)] {
                 ck(
                     "fp4_gemm_sel w1/w3",
-                    k::memra_dsv4_fp4_gemm_sel(
+                    k::memra_dsv4_fp4_gemm_sel_g_arm(
                         dp!(ws.xq, &stream),
                         dpf!(ws.xs, &stream),
                         dp!(layer.experts_w, &stream),
@@ -6737,6 +6795,8 @@ impl Dsv4Gpu {
                         hidden as i32,
                         wstride,
                         sstride,
+                        0,
+                        self.fp4_reduce as i32,
                         sp(&stream),
                     ),
                 )?;
@@ -6767,7 +6827,7 @@ impl Dsv4Gpu {
             )?;
             ck(
                 "fp4_gemm_sel w2",
-                k::memra_dsv4_fp4_gemm_sel(
+                k::memra_dsv4_fp4_gemm_sel_g_arm(
                     dp!(ws.hq, &stream),
                     dpf!(ws.hs, &stream),
                     dp!(layer.experts_w, &stream),
@@ -6783,6 +6843,8 @@ impl Dsv4Gpu {
                     inter as i32,
                     wstride,
                     sstride,
+                    0,
+                    self.fp4_reduce as i32,
                     sp(&stream),
                 ),
             )?;
@@ -10572,7 +10634,7 @@ impl Dsv4Gpu {
             for (proj, dst) in [(0i32, &mut vws.g1), (2i32, &mut vws.g3)] {
                 ck(
                     "fp4_gemm_sel_g w1/w3",
-                    k::memra_dsv4_fp4_gemm_sel_g(
+                    k::memra_dsv4_fp4_gemm_sel_g_arm(
                         dp!(vws.xq, &stream),
                         dpf!(vws.xs, &stream),
                         dp!(layer.experts_w, &stream),
@@ -10589,6 +10651,7 @@ impl Dsv4Gpu {
                         wstride,
                         sstride,
                         topk as i32,
+                        self.fp4_reduce as i32,
                         sp(&stream),
                     ),
                 )?;
@@ -10619,7 +10682,7 @@ impl Dsv4Gpu {
             )?;
             ck(
                 "fp4_gemm_sel_g w2",
-                k::memra_dsv4_fp4_gemm_sel_g(
+                k::memra_dsv4_fp4_gemm_sel_g_arm(
                     dp!(vws.hq, &stream),
                     dpf!(vws.hs, &stream),
                     dp!(layer.experts_w, &stream),
@@ -10636,6 +10699,7 @@ impl Dsv4Gpu {
                     wstride,
                     sstride,
                     0,
+                    self.fp4_reduce as i32,
                     sp(&stream),
                 ),
             )?;
@@ -12364,7 +12428,25 @@ mod peer_probe_tests {
 
 #[cfg(test)]
 mod dense_arm_default_tests {
-    use super::{resolve_dense_arm, resolve_dspark_fused_moe};
+    use super::{Dsv4Fp4Reduce, resolve_dense_arm, resolve_dspark_fused_moe};
+
+    #[test]
+    fn fp4_reduction_resolution_is_literal_and_default_off() {
+        for value in [None, Some(""), Some("block")] {
+            assert_eq!(Dsv4Fp4Reduce::resolve(value), Ok(Dsv4Fp4Reduce::Block));
+        }
+        assert_eq!(Dsv4Fp4Reduce::default(), Dsv4Fp4Reduce::Block);
+        assert_eq!(
+            Dsv4Fp4Reduce::resolve(Some("warp")),
+            Ok(Dsv4Fp4Reduce::Warp)
+        );
+        for value in ["1", "yes", "warp ", "WARP", " block"] {
+            assert!(Dsv4Fp4Reduce::resolve(Some(value)).is_err());
+        }
+        // The explicit CUDA ABI has only these two legal arm values.
+        assert_eq!(Dsv4Fp4Reduce::Block as i32, 0);
+        assert_eq!(Dsv4Fp4Reduce::Warp as i32, 1);
+    }
 
     /// The owner-ratified flip (2026-08-20): unset env on the device decode path = fp8.
     /// Mutating the default back to bf16 fails this with the evidence named.

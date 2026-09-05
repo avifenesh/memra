@@ -756,6 +756,27 @@ unsafe extern "C" {
         a_group: i32,
         stream: *mut c_void,
     ) -> i32;
+    /// Explicit per-model reduction: 0 = original block tree, 1 = exact warp tree.
+    pub fn memra_dsv4_fp4_gemm_sel_g_arm(
+        a_codes: *const c_void,
+        a_scales: *const f32,
+        w_base: *const c_void,
+        sc_base: *const c_void,
+        s2: *const f32,
+        sel: *const i32,
+        proj: i32,
+        a_stride_rows: i32,
+        kind: i32,
+        out: *mut f32,
+        slots: i32,
+        n: i32,
+        kdim: i32,
+        wstride: i64,
+        sstride: i64,
+        a_group: i32,
+        reduce_arm: i32,
+        stream: *mut c_void,
+    ) -> i32;
     #[allow(clippy::too_many_arguments)]
     pub fn memra_dsv4_combine_rows_m(
         contrib: *const f32,

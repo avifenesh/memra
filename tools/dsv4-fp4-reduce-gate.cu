@@ -69,7 +69,7 @@ static float mirror(const std::vector<uint8_t>& a, const std::vector<float>& as,
 }
 
 struct Cell { int kind, n, k, rows, topk; };
-static size_t run(Cell c, bool teeth, bool nan_teeth, bool perf) {
+static size_t run(Cell c, bool teeth, bool nan_teeth, bool dispatch_teeth, bool perf) {
     constexpr int experts = 7;
     const int slots = c.rows * c.topk;
     const size_t wstride = size_t(c.n) * c.k / 2;
@@ -110,10 +110,47 @@ static size_t run(Cell c, bool teeth, bool nan_teeth, bool perf) {
             check(cudaMemcpy(witness.data(), ref.p, witness.size() * 4, cudaMemcpyDeviceToHost));
             // Also exercise the public launchers, not only direct instantiations.
             // Run this process separately with block/warp/unset to test the door.
-            for (int arm : {0, 1, 2}) {
+            for (int arm : {0, 1, 2, 3, 4}) {
                 check(cudaMemset(out.p, 0xa5, candidate.size() * 4));
                 const dim3 grid((c.n + 3) / 4, slots);
-                if (arm == 2) {
+                if (arm >= 3) {
+                    // Equal outputs alone cannot prove an exact rewrite engaged.
+                    // Capture the actual launcher and inspect its selected kernel.
+                    const bool capture = c.n == 7 && proj == 0 && mode == 0;
+                    cudaStream_t probe = nullptr;
+                    if (capture) {
+                        check(cudaStreamCreate(&probe));
+                        check(cudaStreamBeginCapture(probe, cudaStreamCaptureModeThreadLocal));
+                    }
+                    kernel_check(memra_dsv4_fp4_gemm_sel_g_arm(ad.p, asd.p, wd.p, sd.p,
+                        md.p, ids.p, proj, astride, c.kind, out.p, slots,
+                        c.n, c.k, wstride, sstride, agroup, arm - 3, probe));
+                    if (capture) {
+                        cudaGraph_t graph;
+                        check(cudaStreamEndCapture(probe, &graph));
+                        size_t count = 0;
+                        check(cudaGraphGetNodes(graph, nullptr, &count));
+                        if (count != 1) throw std::runtime_error("expected one explicit kernel node");
+                        cudaGraphNode_t node;
+                        check(cudaGraphGetNodes(graph, &node, &count));
+                        cudaKernelNodeParams params{};
+                        check(cudaGraphKernelNodeGetParams(node, &params));
+                        void* expected = arm == 3 ? (void*)dsv4_fp4_gemm_sel_kernel<false>
+                                                  : (void*)dsv4_fp4_gemm_sel_kernel<true>;
+                        if (dispatch_teeth) expected = nullptr;
+                        if (params.func != expected || params.blockDim.x != 128 ||
+                            params.gridDim.x != grid.x || params.gridDim.y != grid.y ||
+                            params.sharedMemBytes != DSV4_FP4_SMEM(arm == 3 ? 128 : 512))
+                            throw std::runtime_error("explicit dispatch engagement mismatch");
+                        cudaGraphExec_t executable;
+                        check(cudaGraphInstantiate(&executable, graph, 0));
+                        check(cudaGraphLaunch(executable, probe));
+                        check(cudaStreamSynchronize(probe));
+                        check(cudaGraphExecDestroy(executable));
+                        check(cudaGraphDestroy(graph));
+                        check(cudaStreamDestroy(probe));
+                    }
+                } else if (arm == 2) {
                     if (agroup) {
                         kernel_check(memra_dsv4_fp4_gemm_sel_g(ad.p, asd.p, wd.p, sd.p,
                             md.p, ids.p, proj, astride, c.kind, out.p, slots,
@@ -190,30 +227,35 @@ int main(int argc, char** argv) {
     try {
         const bool teeth = argc > 1 && std::strcmp(argv[1], "--teeth") == 0;
         const bool nan_teeth = argc > 1 && std::strcmp(argv[1], "--nan-teeth") == 0;
+        const bool dispatch_teeth = argc > 1 && std::strcmp(argv[1], "--dispatch-teeth") == 0;
         const bool perf = argc > 1 && std::strcmp(argv[1], "--perf") == 0;
         const bool quick = argc > 1 && std::strcmp(argv[1], "--quick") == 0;
         if (argc > 1 && std::strcmp(argv[1], "--invalid-switch") == 0) {
             if (memra_dsv4_fp4_gemm_sel(nullptr, nullptr, nullptr, nullptr, nullptr,
                     nullptr, 0, 0, 0, nullptr, 1, 4, 128, 256, 32, nullptr) != 40021 ||
                 memra_dsv4_fp4_gemm_sel_g(nullptr, nullptr, nullptr, nullptr, nullptr,
-                    nullptr, 0, 0, 0, nullptr, 1, 4, 128, 256, 32, 1, nullptr) != 40021)
+                    nullptr, 0, 0, 0, nullptr, 1, 4, 128, 256, 32, 1, nullptr) != 40021 ||
+                memra_dsv4_fp4_gemm_sel_g_arm(nullptr, nullptr, nullptr, nullptr, nullptr,
+                    nullptr, 0, 0, 0, nullptr, 1, 4, 128, 256, 32, 1, -1, nullptr) != 40021 ||
+                memra_dsv4_fp4_gemm_sel_g_arm(nullptr, nullptr, nullptr, nullptr, nullptr,
+                    nullptr, 0, 0, 0, nullptr, 1, 4, 128, 256, 32, 1, 2, nullptr) != 40021)
                 throw std::runtime_error("invalid switch did not fail closed");
-            std::puts("PASS invalid switch rejected by both launchers");
+            std::puts("PASS invalid switch rejected by legacy and explicit launchers");
             return 0;
         }
-        if (argc > 1 && !teeth && !nan_teeth && !perf && !quick)
+        if (argc > 1 && !teeth && !nan_teeth && !dispatch_teeth && !perf && !quick)
             throw std::runtime_error("unknown argument");
         std::printf("RUNTIME_SWITCH %s\n", std::getenv("MEMRA_DSV4_FP4_REDUCE")
             ? std::getenv("MEMRA_DSV4_FP4_REDUCE") : "<unset>");
         size_t compared = 0;
         for (int kind : {0, 1}) {
             if (quick) {
-                compared += run(Cell{kind,7,8192,3,2},teeth,nan_teeth,false);
+                compared += run(Cell{kind,7,8192,3,2},teeth,nan_teeth,dispatch_teeth,false);
                 continue;
             }
             for (Cell c : {Cell{kind,7,256,3,2}, Cell{kind,2048,4096,1,6},
                            Cell{kind,4096,2048,6,6}, Cell{kind,65,8192,32,6},
-                           Cell{kind,129,128,64,6}}) compared += run(c,teeth,nan_teeth,perf);
+                           Cell{kind,129,128,64,6}}) compared += run(c,teeth,nan_teeth,dispatch_teeth,perf);
         }
         std::printf("PASS selected FP4 reduction: %zu bit comparisons; host witnesses and tail canaries checked\n", compared);
         return 0;

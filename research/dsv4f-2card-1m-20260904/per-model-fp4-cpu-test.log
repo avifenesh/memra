@@ -1,0 +1,10 @@
+   Compiling memra-engine v0.125.0 (/home/avifenesh/projects/wt-dsv4f-2card-1m-20260904/crates/memra-engine)
+warning: memra-engine@0.125.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.125.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 3m 30s
+     Running unittests src/lib.rs (target/release/deps/memra_engine-02262e34946a54eb)
+
+running 1 test
+test dsv4_gpu::dense_arm_default_tests::fp4_reduction_resolution_is_literal_and_default_off ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 392 filtered out; finished in 0.00s

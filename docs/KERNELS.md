@@ -269,7 +269,7 @@ Selected-expert FP4 projection (same TU, `-fmad=false`):
 
 | symbol | purpose | dispatch flag | FFI binding |
 |---|---|---|---|
-| `dsv4_fp4_gemm_sel_kernel<false/true>` | NVFP4 group-16/E4M3+F32 and MXFP4 group-32/E8M0 weights, FP8-code/F32-scale activations; 128 threads and four output columns per CTA. False retains the shared-memory halving tree. True stages four planes once and replays the identical 128-leaf addition tree in warp 0; no reassociation or quantization change. | `MEMRA_DSV4_FP4_REDUCE=block/warp`, default block; target-card speed and whole-model gates pending | `memra_dsv4_fp4_gemm_sel` / `_sel_g` in dsv4_ffi.rs; standalone gate `tools/dsv4-fp4-reduce-gate.cu` |
+| `dsv4_fp4_gemm_sel_kernel<false/true>` | NVFP4 group-16/E4M3+F32 and MXFP4 group-32/E8M0 weights, FP8-code/F32-scale activations; 128 threads and four output columns per CTA. False retains the shared-memory halving tree. True stages four planes once and replays the identical 128-leaf addition tree in warp 0; no reassociation or quantization change. | `MEMRA_DSV4_FP4_REDUCE=block/warp`, default block; per-model arm passed at each launch, whole-model gates pending | `memra_dsv4_fp4_gemm_sel_g_arm` (explicit 0/1 mode; a_group=0 also covers single-position decode); legacy `_sel` / `_sel_g` delegate to it. FFI: dsv4_ffi.rs. Gate `tools/dsv4-fp4-reduce-gate.cu` inspects captured kernel pointers/geometry to prove arm engagement; `dsv4_fp4_reduce_gate` covers one-load native-model arms. |
 
 ### MMQ static-lib TUs (prefill GEMM per weight format)
 
