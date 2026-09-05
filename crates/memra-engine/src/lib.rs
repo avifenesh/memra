@@ -1525,7 +1525,7 @@ pub struct Engine {
     /// door): an idle engine keeps ONE stream, so cudarc stays out of multi-stream mode and the
     /// decode-graph capture sees exactly the streams it saw before the door existed. A handle
     /// per stream is the contract (`TRAP:override-handle-must-follow-the-stream`).
-    pub side: std::sync::OnceLock<(Arc<CudaStream>, Arc<cudarc::cublaslt::CudaBlasLT>)>,
+
     /// Resident CUTLASS NVFP4 prefill scratch (workspace + a_packed + sfa_linear + sfa_sw + y + alpha),
     /// allocated ONCE and grown to the largest prefill GEMM shape, then reused per-call. Removes the
     /// 6 fresh allocations + alpha htod that `cutlass_fp4_gemm` did every prefill matmul (~200/prefill).
@@ -2760,38 +2760,6 @@ pub fn mla_absorb_bf16_on() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_MLA_ABSORB_BF16").as_deref() == Ok("1"))
 }
 
-/// `MEMRA_MOE_SHEXP_OVERLAP=1` (lane/moe-shexp-overlap-20260905): in the t=1 verify-rows MoE
-/// walk the SHARED expert (gate/up fused, SwiGLU, down) runs on `Engine::side_stream` while the
-/// routed experts' rows run on the main stream; the two are forked and joined with events and
-/// the shared output is added with the same `add_scaled_rows_ones` as before. Same kernels,
-/// same operands, same add: bit-identical; ~17 us per MoE layer hidden behind ~60 us of
-/// routed work. Read per call (the gates flip it in-process). Default OFF pending its row.
-pub fn moe_shexp_overlap_on() -> bool {
-    matches!(
-        std::env::var("MEMRA_MOE_SHEXP_OVERLAP").as_deref(),
-        Ok("1") | Ok("2") | Ok("3")
-    )
-}
-
-/// `MEMRA_MOE_SHEXP_OVERLAP=3`: diagnostic arm, the fork's program on the MAIN stream with no
-/// override and no side stream (still computed before the routed rows). Separates "the side
-/// stream / override changes the program" from "computing it earlier changes its inputs".
-pub fn moe_shexp_overlap_main_probe() -> bool {
-    std::env::var("MEMRA_MOE_SHEXP_OVERLAP").as_deref() == Ok("3")
-}
-
-/// `MEMRA_MOE_SHEXP_OVERLAP=2`: diagnostic arm, the shared expert still runs on the side stream
-/// but the main stream joins it BEFORE the routed rows (no concurrency). Separates "the side
-/// stream program differs" from "the two run concurrently and race" when the identity gate
-/// fails.
-pub fn moe_shexp_overlap_serial_probe() -> bool {
-    std::env::var("MEMRA_MOE_SHEXP_OVERLAP").as_deref() == Ok("2")
-}
-
-/// MoE layers whose shared expert ran on the side stream (`MEMRA_MOE_SHEXP_OVERLAP=1`).
-pub static MOE_SHEXP_OVERLAP_DISPATCHES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
 /// `MEMRA_HC_PRE_ZQ8` (lane/hcpre-zq8-fusion-20260905): run each hc site's pre-chain AND the
 /// `rms_norm_zq8` that consumes its output as ONE launch (`dsv4_hc_pre_zq8_kernel`).
 ///
@@ -3275,7 +3243,6 @@ impl Engine {
             w8_act: Mutex::new(std::collections::HashMap::new()),
             moe_cache_layout: Mutex::new(None),
             copy_stream,
-            side: std::sync::OnceLock::new(),
             capture_keep_on: std::sync::atomic::AtomicBool::new(false),
             verify_exact: std::sync::atomic::AtomicBool::new(false),
             capture_keep: Mutex::new(Vec::new()),
@@ -14696,20 +14663,6 @@ impl Engine {
             );
         }
         Ok(true)
-    }
-
-    /// The side stream and the cuBLASLt handle bound to it, created on first use.
-    pub fn side_pair(
-        &self,
-    ) -> Result<(Arc<CudaStream>, Arc<cudarc::cublaslt::CudaBlasLT>), Box<dyn std::error::Error>>
-    {
-        if let Some(p) = self.side.get() {
-            return Ok(p.clone());
-        }
-        let stream = self.gpu.ctx.new_stream()?;
-        let blas = Arc::new(cudarc::cublaslt::CudaBlasLT::new(stream.clone())?);
-        let _ = self.side.set((stream, blas));
-        Ok(self.side.get().expect("set above").clone())
     }
 
     /// The arm-explicit form of [`Engine::rms_norm_zq8_f32`]: `ilp` selects the
