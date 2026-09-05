@@ -647,6 +647,18 @@ fn main() {
             .status()
             .expect("spawn ar (mmq)");
         assert!(status.success(), "ar failed for {}", lib.display());
+        // The archive is BUNDLED into the rlib, and a .cu-only edit changes no rustc input: with
+        // RUSTC_WRAPPER=sccache (the rig default) the cached rlib came back carrying the previous
+        // archive while every timestamp under target/ looked fresh (2026-09-06: three rig timing
+        // rounds and one gate ran a kernel two edits old). Hashing the archive into a rustc env
+        // makes the kernel bytes a rustc input, so any kernel change forces a real compile.
+        {
+            use std::hash::Hasher;
+            let bytes = std::fs::read(&lib).expect("read libmemra_mmq.a for the archive hash");
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            h.write(&bytes);
+            println!("cargo:rustc-env=MEMRA_MMQ_ARCHIVE_HASH={:016x}", h.finish());
+        }
         // rustc-link-lib (NOT rustc-link-arg): link-arg applies only to THIS package's own
         // binaries, so downstream crates (memra-server) failed to link the MMQ symbols. link-lib
         // metadata propagates through the dependency graph; +whole-archive keeps the CUDART

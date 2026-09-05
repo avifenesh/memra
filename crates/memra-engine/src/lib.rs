@@ -626,6 +626,11 @@ mod spill_pread;
 // self-contained — the old baked OUT_DIR *paths* pointed at the builder's temp dir and
 // broke every machine that wasn't the build machine. Same bytes, same module image;
 // the runtime MEMRA_GEMM_FATBIN tune-seam override below is preserved.
+/// Content hash of the bundled host-launcher kernel archive (`libmemra_mmq.a`), set by build.rs.
+/// Its only job is to be a rustc input: without it a `.cu`-only edit left every rustc input
+/// unchanged and `RUSTC_WRAPPER=sccache` returned the cached rlib with the OLD kernels
+/// (2026-09-06, selector v2 lane). Printed by the engine build line so a receipt names the bytes.
+pub const MMQ_ARCHIVE_HASH: &str = env!("MEMRA_MMQ_ARCHIVE_HASH");
 const FATBIN: &[u8] = include_bytes!(env!("MEMRA_ENGINE_FATBIN"));
 const HYBRID_FATBIN: &[u8] = include_bytes!(env!("MEMRA_HYBRID_FATBIN"));
 /// kda.cu: the glm5_next Kimi Delta Attention mixer (per-channel-decay delta rule).
