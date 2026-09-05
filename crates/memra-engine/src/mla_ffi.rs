@@ -377,6 +377,33 @@ pub fn mla_dsa_attn_arm_effective(t_q: usize) -> i32 {
 /// non-zero rc (a real cudaError included) still goes through `ck` and surfaces.
 /// Engagement counter for the k-pool SELECT door (`MEMRA_B200_DSA_SELECT`), announced once per
 /// boot: the receipt a B200 A/B has to show.
+/// The gathered-attention arm `Engine::mla_attn_gathered` dispatches at t_q = 1 for this
+/// process, as the live-width twin the captured MLA middle can launch: `Some(chunks >= 2)` for
+/// the warp-online arm (`memra_mla_dsa_attn_split_live_f32`), `Some(0)` for the shipped
+/// gathered kernel (`memra_mla_attn_gathered_live_f32`), `None` when the dispatch would take
+/// the single-pass DSA arm or a `MEMRA_B200_MLA_DECODE_ARM` split (no live twin: the middle
+/// stays eager). Mirrors the predicates of `mla_attn_gathered` in the same order.
+pub(crate) fn mla_gathered_live_arm(kv_rank: usize) -> Option<usize> {
+    let t_q = 1usize;
+    let dsa_level = mla_dsa_decode_level();
+    let dsa_arm = if dsa_level >= 1 && t_q <= MLA_DSA_ARM_T_MAX {
+        let a = mla_dsa_attn_arm_effective(t_q);
+        if a >= 2 && dsa_level < 2 { 0 } else { a }
+    } else {
+        0
+    };
+    if dsa_arm >= 2 {
+        return Some(dsa_arm as usize);
+    }
+    if dsa_arm == 1 {
+        return None;
+    }
+    if mla_b200_split_for(MlaB200Kernel::AttnGathered, t_q, kv_rank).is_some() {
+        return None;
+    }
+    Some(0)
+}
+
 pub static MLA_DSA_SELECT_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
@@ -769,6 +796,21 @@ unsafe extern "C" {
     /// Exact multi-CTA k-pool selection (`MEMRA_B200_DSA_SELECT`): same threshold key, same
     /// membership test, same emit order, byte-identical `idx`.
     #[allow(clippy::too_many_arguments)]
+    pub fn memra_mla_kpool_score_ref_live_f32(
+        q: *const f32,
+        pool_keys: *const f32,
+        hw: *const f32,
+        score: *mut f32,
+        t_q: i32,
+        heads: i32,
+        d: i32,
+        pos_d: *const i32,
+        n_pools_cap: i32,
+        pool: i32,
+        qk_scale: f32,
+        head_scale: f32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_mla_kpool_score_dsa_live_f32(
         q: *const f32,
         pool_keys: *const f32,
@@ -777,10 +819,9 @@ unsafe extern "C" {
         t_q: i32,
         heads: i32,
         d: i32,
-        n_pools_d: *const i32,
+        pos_d: *const i32,
         n_pools_cap: i32,
         pool: i32,
-        first_pos: i32,
         qk_scale: f32,
         head_scale: f32,
         stream: *mut c_void,
@@ -788,13 +829,66 @@ unsafe extern "C" {
     pub fn memra_mla_kpool_select_live_f32(
         score: *const f32,
         idx: *mut i32,
+        width_d: *mut i32,
         t_q: i32,
-        n_pools_d: *const i32,
+        pos_d: *const i32,
         pool: i32,
-        select_k: i32,
-        width: i32,
-        first_pos: i32,
+        select_k_cap: i32,
+        width_cap: i32,
         always_tail: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_mla_attn_gathered_live_f32(
+        q_lat: *const f32,
+        q_pe: *const f32,
+        cache: *const f32,
+        idx: *const i32,
+        o_lat: *mut f32,
+        n_head: i32,
+        kv_rank: i32,
+        d_rope: i32,
+        t_q: i32,
+        n_slots_d: *const i32,
+        scale: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_mla_dsa_attn_split_live_f32(
+        q_lat: *const f32,
+        q_pe: *const f32,
+        cache: *const f32,
+        idx: *const i32,
+        o_lat: *mut f32,
+        part_m: *mut f32,
+        part_d: *mut f32,
+        part_acc: *mut f32,
+        n_head: i32,
+        kv_rank: i32,
+        d_rope: i32,
+        t_q: i32,
+        n_slots_d: *const i32,
+        chunks: i32,
+        scale: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_mla_index_append_ring_live_f32(
+        plane: *mut f32,
+        a: *const f32,
+        b: *const f32,
+        pos_d: *const i32,
+        t: i32,
+        wa: i32,
+        wb: i32,
+        rows: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_mla_kpool_pool_keys_live_f32(
+        state: *const f32,
+        ape: *const f32,
+        pool_keys: *mut f32,
+        pos_d: *const i32,
+        pool: i32,
+        d: i32,
+        state_rows: i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_mla_kpool_select_dsa_f32(
@@ -1987,6 +2081,63 @@ impl Engine {
     /// score row, so the row stride does not depend on the count). Bit-identical to
     /// `memra_mla_kpool_score_dsa_f32` at the same count (`tests/mla_kpool_live_gpu.rs`).
     #[allow(clippy::too_many_arguments)]
+    /// The live k-pool scorer the captured middle launches: the head-blocked live twin when the
+    /// geometry has an instantiation (heads 16/32/64, d % 32), the reference live twin
+    /// otherwise. Both are bit-identical to every scalar scorer arm on `[0, n_pools)`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn mla_kpool_score_live(
+        &self,
+        q: &CudaSlice<f32>,
+        pool_keys: &CudaSlice<f32>,
+        head_weights: &CudaSlice<f32>,
+        score: &mut CudaSlice<f32>,
+        heads: usize,
+        d: usize,
+        pos_d: &CudaSlice<i32>,
+        n_pools_cap: usize,
+        pool: usize,
+        qk_scale: f32,
+        head_scale: f32,
+    ) -> Res<()> {
+        if matches!(heads, 16 | 32 | 64) && d.is_multiple_of(32) {
+            return self.mla_kpool_score_dsa_live(
+                q,
+                pool_keys,
+                head_weights,
+                score,
+                heads,
+                d,
+                pos_d,
+                n_pools_cap,
+                pool,
+                qk_scale,
+                head_scale,
+            );
+        }
+        let s = self.stream();
+        unsafe {
+            ck(
+                "kpool_score_ref_live",
+                memra_mla_kpool_score_ref_live_f32(
+                    q.device_ptr(&s).0 as *const f32,
+                    pool_keys.device_ptr(&s).0 as *const f32,
+                    head_weights.device_ptr(&s).0 as *const f32,
+                    score.device_ptr_mut(&s).0 as *mut f32,
+                    1,
+                    heads as i32,
+                    d as i32,
+                    pos_d.device_ptr(&s).0 as *const i32,
+                    n_pools_cap as i32,
+                    pool as i32,
+                    qk_scale,
+                    head_scale,
+                    s.cu_stream() as *mut c_void,
+                ),
+            )
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
     pub fn mla_kpool_score_dsa_live(
         &self,
         q: &CudaSlice<f32>,
@@ -1995,10 +2146,9 @@ impl Engine {
         score: &mut CudaSlice<f32>,
         heads: usize,
         d: usize,
-        n_pools_d: &CudaSlice<i32>,
+        pos_d: &CudaSlice<i32>,
         n_pools_cap: usize,
         pool: usize,
-        first_pos: usize,
         qk_scale: f32,
         head_scale: f32,
     ) -> Res<()> {
@@ -2014,10 +2164,9 @@ impl Engine {
                     1,
                     heads as i32,
                     d as i32,
-                    n_pools_d.device_ptr(&s).0 as *const i32,
+                    pos_d.device_ptr(&s).0 as *const i32,
                     n_pools_cap as i32,
                     pool as i32,
-                    first_pos as i32,
                     qk_scale,
                     head_scale,
                     s.cu_stream() as *mut c_void,
@@ -2026,19 +2175,21 @@ impl Engine {
         }
     }
 
-    /// Live-count twin of the single-CTA selector: `n_pools` from the device word, grid t_q.
-    /// Bit-identical to `memra_mla_kpool_select_f32` at the same count.
+    /// Live twin of the single-CTA selector at t_q = 1: `first_pos`, `n_pools` and `select_k`
+    /// derived from the door's device position word; the idx row is laid out at `width_cap`
+    /// (the capacity `index_width`), sentinel-filled past the token's own `index_width`.
+    /// Bit-identical to `memra_mla_kpool_select_f32` on the first `index_width(n_pools)` entries;
+    /// the gathered attention masks the rest.
     #[allow(clippy::too_many_arguments)]
     pub fn mla_kpool_select_live(
         &self,
         score: &CudaSlice<f32>,
         idx: &mut CudaSlice<i32>,
-        t_q: usize,
-        n_pools_d: &CudaSlice<i32>,
+        width_d: &mut CudaSlice<i32>,
+        pos_d: &CudaSlice<i32>,
         pool: usize,
-        select_k: usize,
-        width: usize,
-        first_pos: usize,
+        select_k_cap: usize,
+        width_cap: usize,
         always_tail: bool,
     ) -> Res<()> {
         let s = self.stream();
@@ -2048,13 +2199,203 @@ impl Engine {
                 memra_mla_kpool_select_live_f32(
                     score.device_ptr(&s).0 as *const f32,
                     idx.device_ptr_mut(&s).0 as *mut i32,
-                    t_q as i32,
-                    n_pools_d.device_ptr(&s).0 as *const i32,
+                    width_d.device_ptr_mut(&s).0 as *mut i32,
+                    1,
+                    pos_d.device_ptr(&s).0 as *const i32,
                     pool as i32,
-                    select_k as i32,
-                    width as i32,
-                    first_pos as i32,
+                    select_k_cap as i32,
+                    width_cap as i32,
                     always_tail as i32,
+                    s.cu_stream() as *mut c_void,
+                ),
+            )
+        }
+    }
+
+    /// Live twin of the indexer state append at t = 1: the row lands at `pos_d[0]`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn mla_index_append_live(
+        &self,
+        plane: &mut CudaSlice<f32>,
+        a: &CudaSlice<f32>,
+        b: &CudaSlice<f32>,
+        pos_d: &CudaSlice<i32>,
+        wa: usize,
+        wb: usize,
+        rows: usize,
+    ) -> Res<()> {
+        let s = self.stream();
+        unsafe {
+            ck(
+                "index_append_ring_live",
+                memra_mla_index_append_ring_live_f32(
+                    plane.device_ptr_mut(&s).0 as *mut f32,
+                    a.device_ptr(&s).0 as *const f32,
+                    b.device_ptr(&s).0 as *const f32,
+                    pos_d.device_ptr(&s).0 as *const i32,
+                    1,
+                    wa as i32,
+                    wb as i32,
+                    rows as i32,
+                    s.cu_stream() as *mut c_void,
+                ),
+            )
+        }
+    }
+
+    /// Live twin of the incremental pool-key build at t = 1: builds the one pool the token at
+    /// `pos_d[0]` completes (none when `(pos + 1) % pool != 0`); the host keeps `pools_ready`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn mla_kpool_pool_keys_live(
+        &self,
+        state: &CudaSlice<f32>,
+        ape: &CudaSlice<f32>,
+        pool_keys: &mut CudaSlice<f32>,
+        pos_d: &CudaSlice<i32>,
+        pool: usize,
+        d: usize,
+        state_rows: usize,
+    ) -> Res<()> {
+        let s = self.stream();
+        unsafe {
+            ck(
+                "kpool_pool_keys_live",
+                memra_mla_kpool_pool_keys_live_f32(
+                    state.device_ptr(&s).0 as *const f32,
+                    ape.device_ptr(&s).0 as *const f32,
+                    pool_keys.device_ptr_mut(&s).0 as *mut f32,
+                    pos_d.device_ptr(&s).0 as *const i32,
+                    pool as i32,
+                    d as i32,
+                    state_rows as i32,
+                    s.cu_stream() as *mut c_void,
+                ),
+            )
+        }
+    }
+
+    /// Live-width twin of the shipped gathered kernel (t_q = 1): `n_slots_d` is the live
+    /// selector's published width. Bit-identical to `memra_mla_attn_gathered_f32` at that width.
+    #[allow(clippy::too_many_arguments)]
+    pub fn mla_attn_gathered_live(
+        &self,
+        q_lat: &CudaSlice<f32>,
+        q_pe: &CudaSlice<f32>,
+        cache: &CudaSlice<f32>,
+        idx: &CudaSlice<i32>,
+        o_lat: &mut CudaSlice<f32>,
+        n_head: usize,
+        kv_rank: usize,
+        d_rope: usize,
+        n_slots_d: &CudaSlice<i32>,
+        scale: f32,
+    ) -> Res<()> {
+        let s = self.stream();
+        unsafe {
+            ck(
+                "attn_gathered_live",
+                memra_mla_attn_gathered_live_f32(
+                    q_lat.device_ptr(&s).0 as *const f32,
+                    q_pe.device_ptr(&s).0 as *const f32,
+                    cache.device_ptr(&s).0 as *const f32,
+                    idx.device_ptr(&s).0 as *const i32,
+                    o_lat.device_ptr_mut(&s).0 as *mut f32,
+                    n_head as i32,
+                    kv_rank as i32,
+                    d_rope as i32,
+                    1,
+                    n_slots_d.device_ptr(&s).0 as *const i32,
+                    scale,
+                    s.cu_stream() as *mut c_void,
+                ),
+            )
+        }
+    }
+
+    /// The warp-online DSA decode arm (`MEMRA_B200_DSA_DECODE=2`, class `dsa-warp-online-f32`)
+    /// launched directly at an explicit chunk count over caller-owned partial buffers
+    /// (`parts` = (m, d, acc) sized `n_head * chunks` and `n_head * chunks * kv_rank`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn mla_dsa_attn_warp_online(
+        &self,
+        q_lat: &CudaSlice<f32>,
+        q_pe: &CudaSlice<f32>,
+        cache: &CudaSlice<f32>,
+        idx: &CudaSlice<i32>,
+        o_lat: &mut CudaSlice<f32>,
+        parts: &mut (CudaSlice<f32>, CudaSlice<f32>, CudaSlice<f32>),
+        n_head: usize,
+        kv_rank: usize,
+        d_rope: usize,
+        n_slots: usize,
+        chunks: usize,
+        scale: f32,
+    ) -> Res<()> {
+        let s = self.stream();
+        unsafe {
+            ck(
+                "dsa_attn_warp_online",
+                memra_mla_dsa_attn_split_f32(
+                    q_lat.device_ptr(&s).0 as *const f32,
+                    q_pe.device_ptr(&s).0 as *const f32,
+                    cache.device_ptr(&s).0 as *const f32,
+                    idx.device_ptr(&s).0 as *const i32,
+                    o_lat.device_ptr_mut(&s).0 as *mut f32,
+                    parts.0.device_ptr_mut(&s).0 as *mut f32,
+                    parts.1.device_ptr_mut(&s).0 as *mut f32,
+                    parts.2.device_ptr_mut(&s).0 as *mut f32,
+                    n_head as i32,
+                    kv_rank as i32,
+                    d_rope as i32,
+                    1,
+                    n_slots as i32,
+                    chunks as i32,
+                    scale,
+                    s.cu_stream() as *mut c_void,
+                ),
+            )
+        }
+    }
+
+    /// Live-width twin of [`Self::mla_dsa_attn_warp_online`]: the chunk span is derived on the
+    /// device from `n_slots_d` (the live selector's width), so the partition and the
+    /// ascending-chunk combine are the scalar launch's at that width. Fixed geometry.
+    #[allow(clippy::too_many_arguments)]
+    pub fn mla_dsa_attn_warp_online_live(
+        &self,
+        q_lat: &CudaSlice<f32>,
+        q_pe: &CudaSlice<f32>,
+        cache: &CudaSlice<f32>,
+        idx: &CudaSlice<i32>,
+        o_lat: &mut CudaSlice<f32>,
+        parts: &mut (CudaSlice<f32>, CudaSlice<f32>, CudaSlice<f32>),
+        n_head: usize,
+        kv_rank: usize,
+        d_rope: usize,
+        n_slots_d: &CudaSlice<i32>,
+        chunks: usize,
+        scale: f32,
+    ) -> Res<()> {
+        let s = self.stream();
+        unsafe {
+            ck(
+                "dsa_attn_warp_online_live",
+                memra_mla_dsa_attn_split_live_f32(
+                    q_lat.device_ptr(&s).0 as *const f32,
+                    q_pe.device_ptr(&s).0 as *const f32,
+                    cache.device_ptr(&s).0 as *const f32,
+                    idx.device_ptr(&s).0 as *const i32,
+                    o_lat.device_ptr_mut(&s).0 as *mut f32,
+                    parts.0.device_ptr_mut(&s).0 as *mut f32,
+                    parts.1.device_ptr_mut(&s).0 as *mut f32,
+                    parts.2.device_ptr_mut(&s).0 as *mut f32,
+                    n_head as i32,
+                    kv_rank as i32,
+                    d_rope as i32,
+                    1,
+                    n_slots_d.device_ptr(&s).0 as *const i32,
+                    chunks as i32,
+                    scale,
                     s.cu_stream() as *mut c_void,
                 ),
             )

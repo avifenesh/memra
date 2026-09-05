@@ -383,6 +383,15 @@ pub fn glm5_graph_mla_on() -> bool {
     std::env::var("MEMRA_GLM5_GRAPH_MLA").as_deref() == Ok("1")
 }
 
+/// `MEMRA_GLM5_GRAPH_MLA_MID=1` (lane/mla-mid-capture-20260905, default OFF, decide-by
+/// 2026-09-19): with the halves door on, the MLA middle is captured too, as fixed-geometry live
+/// twins of the eager launches reading the stage's `pos_d` (`WsSeg::MlaMid`), so a whole MLA
+/// layer sits inside one graph piece. Layers whose middle has no live twin under the process's
+/// arms keep the eager middle (announced once). Read per call.
+pub fn glm5_graph_mla_mid_on() -> bool {
+    std::env::var("MEMRA_GLM5_GRAPH_MLA_MID").as_deref() == Ok("1")
+}
+
 pub fn glm5_vrows_t1_dev_forced() -> bool {
     glm5_vrows_t1_dev_forced_from(
         std::env::var("MEMRA_GLM5_VROWS_T1_DEV").ok().as_deref(),
@@ -490,6 +499,10 @@ pub static GLM5_DECODE_GRAPH_LAYERS: std::sync::atomic::AtomicU64 =
 /// MLA layers captured in halves (an eager middle between two graph pieces) by
 /// `MEMRA_GLM5_GRAPH_MLA`, summed over captures.
 pub static GLM5_DECODE_GRAPH_MLA_HALVES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+/// MLA layers whose middle was captured as live twins (`MEMRA_GLM5_GRAPH_MLA_MID`), summed
+/// over every captured stage.
+pub static GLM5_DECODE_GRAPH_MLA_MIDS: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 /// Stages torn down and rebuilt by the armed re-capture path (`MEMRA_GLM5_GRAPH_RECAPTURE`).
 pub static GLM5_DECODE_GRAPH_RECAPTURES: std::sync::atomic::AtomicU64 =
