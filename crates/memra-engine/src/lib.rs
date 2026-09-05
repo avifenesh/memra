@@ -2618,6 +2618,25 @@ pub fn topk_warp_dispatches() -> u64 {
     TOPK_WARP_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// `MEMRA_E4M3_BATCH_R2=1` (lane/e4m3-batch-r2-20260905, default OFF, decide-by 2026-09-19):
+/// the batched F8-E4M3 matvec tier at mcols 2, 4, 8 (`qmatvec_e4m3_mmvq_b{2,4,8}`, the verify
+/// walk's KDA six at t = K+1) runs the `_r2` twins, two output rows per warp sharing one
+/// activation load and one int8 -> f32 conversion per (column, k). Same weight decode, same
+/// per-row fmaf chain, same reduction: bit-identical by construction; gated by
+/// `e4m3_batch_r2_gpu`. Read per call.
+fn e4m3_batch_r2_on() -> bool {
+    std::env::var("MEMRA_E4M3_BATCH_R2").as_deref() == Ok("1")
+}
+
+/// Engagement counter for the e4m3 two-rows-per-warp door (`MEMRA_E4M3_BATCH_R2`).
+pub static E4M3_BATCH_R2_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// Snapshot of [`E4M3_BATCH_R2_DISPATCHES`] — gates take a before/after delta.
+pub fn e4m3_batch_r2_dispatches() -> u64 {
+    E4M3_BATCH_R2_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// `MEMRA_ALLOC_TRACE=1` (gate-harness instrument, default OFF, never a serving flag): every
 /// Engine device allocation funnel (`alloc_uninit` and the zeroed / typed / host-upload
 /// wrappers) prints `[alloc-trace] <bytes> bytes from <file>:<line>` naming the CALLER
@@ -22562,6 +22581,26 @@ impl Engine {
             }
             return Ok(y);
         }
+        // MEMRA_E4M3_BATCH_R2 (default OFF): the two-rows-per-warp twins of the e4m3 batched
+        // tier at mcols 2/4/8 (doc at `e4m3_batch_r2_on`); rides the r2-class launch
+        // convention below (rows_per_block doubled). Bit-identical by construction; gated by
+        // e4m3_batch_r2_gpu. Base layout only (the e4m3 family has no rp / perf variants).
+        let variant = if qtype == QT_F8_E4M3
+            && !rp
+            && variant == "base"
+            && mcols <= 8
+            && e4m3_batch_r2_on()
+        {
+            if E4M3_BATCH_R2_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+                eprintln!(
+                    "[e4m3-batch-r2] engaged: e4m3 batched matvec at two rows per warp \
+                     (MEMRA_E4M3_BATCH_R2=1; first shape {in_f}->{out_f} m={m})"
+                );
+            }
+            "r2"
+        } else {
+            variant
+        };
         let (name, rows_per_block): (std::borrow::Cow<'static, str>, u32) = match variant {
             "base" => (base_name.into(), ROWS_PER_BLOCK),
             "pf" => (format!("{base_name}_pf").into(), ROWS_PER_BLOCK),
