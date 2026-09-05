@@ -1508,6 +1508,14 @@ pub struct Engine {
     capture_keep: Mutex<Vec<Box<dyn std::any::Any + Send>>>,
     /// EDGE-1 §C.2: dedicated H2D copy stream for async prefetch (event-synced to the compute stream).
     pub copy_stream: Arc<CudaStream>,
+    /// Second COMPUTE stream (lane/moe-shexp-overlap-20260905): the MoE shared expert runs here
+    /// under the ambient stream override while the routed rows run on the main stream; forked
+    /// and joined with events at every use, never left with unjoined work (capture-safe).
+    pub side_stream: Arc<CudaStream>,
+    /// cuBLASLt handle bound to `side_stream`: an override push pairs the stream with the handle
+    /// that issues on it. Under the main-bound handle a dense GEMM inside the fork would leave the
+    /// side stream, unordered against its own producers (the fixture found it 2026-09-05).
+    pub side_blas: Arc<cudarc::cublaslt::CudaBlasLT>,
     /// Resident CUTLASS NVFP4 prefill scratch (workspace + a_packed + sfa_linear + sfa_sw + y + alpha),
     /// allocated ONCE and grown to the largest prefill GEMM shape, then reused per-call. Removes the
     /// 6 fresh allocations + alpha htod that `cutlass_fp4_gemm` did every prefill matmul (~200/prefill).
@@ -2821,6 +2829,38 @@ pub fn mla_absorb_bf16_on() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_MLA_ABSORB_BF16").as_deref() == Ok("1"))
 }
 
+/// `MEMRA_MOE_SHEXP_OVERLAP=1` (lane/moe-shexp-overlap-20260905): in the t=1 verify-rows MoE
+/// walk the SHARED expert (gate/up fused, SwiGLU, down) runs on `Engine::side_stream` while the
+/// routed experts' rows run on the main stream; the two are forked and joined with events and
+/// the shared output is added with the same `add_scaled_rows_ones` as before. Same kernels,
+/// same operands, same add: bit-identical; ~17 us per MoE layer hidden behind ~60 us of
+/// routed work. Read per call (the gates flip it in-process). Default OFF pending its row.
+pub fn moe_shexp_overlap_on() -> bool {
+    matches!(
+        std::env::var("MEMRA_MOE_SHEXP_OVERLAP").as_deref(),
+        Ok("1") | Ok("2") | Ok("3")
+    )
+}
+
+/// `MEMRA_MOE_SHEXP_OVERLAP=3`: diagnostic arm, the fork's program on the MAIN stream with no
+/// override and no side stream (still computed before the routed rows). Separates "the side
+/// stream / override changes the program" from "computing it earlier changes its inputs".
+pub fn moe_shexp_overlap_main_probe() -> bool {
+    std::env::var("MEMRA_MOE_SHEXP_OVERLAP").as_deref() == Ok("3")
+}
+
+/// `MEMRA_MOE_SHEXP_OVERLAP=2`: diagnostic arm, the shared expert still runs on the side stream
+/// but the main stream joins it BEFORE the routed rows (no concurrency). Separates "the side
+/// stream program differs" from "the two run concurrently and race" when the identity gate
+/// fails.
+pub fn moe_shexp_overlap_serial_probe() -> bool {
+    std::env::var("MEMRA_MOE_SHEXP_OVERLAP").as_deref() == Ok("2")
+}
+
+/// MoE layers whose shared expert ran on the side stream (`MEMRA_MOE_SHEXP_OVERLAP=1`).
+pub static MOE_SHEXP_OVERLAP_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 /// `MEMRA_HC_PRE_ZQ8` (lane/hcpre-zq8-fusion-20260905): run each hc site's pre-chain AND the
 /// `rms_norm_zq8` that consumes its output as ONE launch (`dsv4_hc_pre_zq8_kernel`).
 ///
@@ -3263,6 +3303,7 @@ impl Engine {
             .ctx
             .load_module(Ptx::from_binary(SAMPLE_FATBIN.to_vec()))?;
         let copy_stream = gpu.ctx.new_stream()?;
+        let side_stream = gpu.ctx.new_stream()?;
         // DECODE EVENT-TRACKING ELISION — DEFAULT ON (2026-07-05; MEMRA_EVT=1 = escape hatch).
         // cudarc is in multi-stream mode (main stream +
         // copy_stream are both created streams), so with tracking on EVERY launch arg records a
@@ -3304,6 +3345,8 @@ impl Engine {
             w8_act: Mutex::new(std::collections::HashMap::new()),
             moe_cache_layout: Mutex::new(None),
             copy_stream,
+            side_blas: Arc::new(cudarc::cublaslt::CudaBlasLT::new(side_stream.clone())?),
+            side_stream,
             capture_keep_on: std::sync::atomic::AtomicBool::new(false),
             verify_exact: std::sync::atomic::AtomicBool::new(false),
             capture_keep: Mutex::new(Vec::new()),
@@ -13369,6 +13412,40 @@ impl Engine {
         SCRATCH_ALLOC_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         crate::alloc_trace_hit(n * std::mem::size_of::<T>());
         let mut s = unsafe { self.gpu.stream().alloc::<T>(n)? };
+        // MEMRA_ALLOC_SITES=1 (diagnostic, 2026-09-05): log an allocation whose block was last
+        // handed out on a DIFFERENT stream (cross-stream pool reuse) with both call sites.
+        {
+            static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+            if *ON.get_or_init(|| std::env::var("MEMRA_ALLOC_SITES").as_deref() == Ok("1")) {
+                use cudarc::driver::DevicePtr;
+                type Sites = std::collections::HashMap<u64, (&'static str, u32, usize, usize)>;
+                static MAP: std::sync::OnceLock<std::sync::Mutex<Sites>> =
+                    std::sync::OnceLock::new();
+                static LINES: std::sync::atomic::AtomicUsize =
+                    std::sync::atomic::AtomicUsize::new(0);
+                let stream = self.gpu.stream();
+                let (ptr, _g) = s.device_ptr(&stream);
+                let sh = stream.cu_stream() as usize;
+                let loc = std::panic::Location::caller();
+                let mut m = MAP.get_or_init(Default::default).lock().unwrap();
+                if let Some((pf, pl, ps, pb)) = m.get(&ptr)
+                    && *ps != sh
+                    && LINES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 24
+                {
+                    eprintln!(
+                        "[alloc-sites] XSTREAM reuse ptr={ptr:#x} now {}:{} {} B on stream {sh:#x} \
+                         <- last {pf}:{pl} {pb} B on stream {ps:#x}",
+                        loc.file(),
+                        loc.line(),
+                        n * std::mem::size_of::<T>()
+                    );
+                }
+                m.insert(
+                    ptr,
+                    (loc.file(), loc.line(), sh, n * std::mem::size_of::<T>()),
+                );
+            }
+        }
         // MEMRA_DEBUG_ZERO_ALLOCS=1 (task #14 defect hunt): memset EVERY engine allocation —
         // the global uninit-read discriminator (the prime-fn-scoped zeroing experiment could
         // not cover engine-internal buffers). Debug-only: massive launch overhead.

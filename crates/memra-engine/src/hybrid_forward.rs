@@ -547,6 +547,10 @@ pub fn mla_seg_ws_dispatches() -> u64 {
     MLA_SEG_WS_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// A shared expert in flight on the side stream: its main-allocated output and the side
+/// stream's completion event (see `moe_shexp_fork`).
+pub(crate) type ShexpPending = (CudaSlice<f32>, cudarc::driver::CudaEvent);
+
 /// A q8_1 activation pair (quants, per-32 scales).
 pub(crate) type Q8Pair = (CudaSlice<i8>, CudaSlice<f32>);
 
@@ -12236,6 +12240,19 @@ impl HybridModel {
                 Some((si, sw)) => VrowsSel::Dev(si, sw),
                 None => VrowsSel::Host(&sel_all, &w_all),
             };
+            // MEMRA_MOE_SHEXP_OVERLAP: the shared expert on the side stream while the routed
+            // rows run here; joined before the same add. None = the serial program below.
+            let shexp_pending = if crate::moe_shexp_overlap_on() && t == 1 {
+                let p = Self::moe_shexp_fork(e, m, z, zq8, cfg, lim_shexp)?;
+                if crate::moe_shexp_overlap_serial_probe()
+                    && let Some((_, ev)) = p.as_ref()
+                {
+                    e.stream().wait(ev)?;
+                }
+                p
+            } else {
+                None
+            };
             Self::moe_vrows_pairs_q8(
                 e,
                 m,
@@ -12261,7 +12278,25 @@ impl HybridModel {
                     &e.dtoh(&moe_out)?,
                 );
             }
-            Self::moe_shexp_add(e, m, z, zq8, t, cfg, lim_shexp, &mut moe_out)?;
+            match shexp_pending {
+                Some((sh, ev)) => {
+                    e.stream().wait(&ev)?;
+                    e.add_scaled_rows_ones(&sh, &mut moe_out, n_embd, t)?;
+                    if crate::MOE_SHEXP_OVERLAP_DISPATCHES
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                        == 0
+                    {
+                        eprintln!(
+                            "[moe-shexp-overlap] engaged: the shared expert runs on the side \
+                             stream under the routed rows (MEMRA_MOE_SHEXP_OVERLAP=1)"
+                        );
+                    }
+                    // `sh` was allocated on the main stream before the fork: its drop here is a
+                    // main-stream-ordered free after the add above.
+                    drop(sh);
+                }
+                None => Self::moe_shexp_add(e, m, z, zq8, t, cfg, lim_shexp, &mut moe_out)?,
+            }
             return Ok(moe_out);
         }
 
@@ -13775,6 +13810,77 @@ impl HybridModel {
     /// gate — the shared expert adds directly. (Extracted verbatim from the sequential body
     /// so the glm5 EP-2 walk adds the ROOT-owned shared expert through the identical
     /// program.)
+    #[allow(clippy::too_many_arguments)]
+    /// The shared expert of `moe_shexp_add`'s plain-add shape (t=1, no `gate_inp_shexp`, the
+    /// pageable-constant diet on) launched on `Engine::side_stream` under the ambient stream
+    /// override, returning the output buffer (allocated on the MAIN stream so its later drop is
+    /// main-ordered) and the side stream's completion event. `None` = not that shape; the caller
+    /// runs `moe_shexp_add` serially. Fork: main records, side waits. Join: the caller waits the
+    /// returned event on main before the add. Every temporary lives and dies on the side stream.
+    /// Fork the shared expert onto `Engine::side_stream` (MEMRA_MOE_SHEXP_OVERLAP): gate/up
+    /// fused, activation, down and a copy into a MAIN-allocated output, all issued on the side
+    /// stream under a stream override whose cuBLASLt handle is bound to that same stream.
+    /// Returns the output plus the event the caller joins on before adding it.
+    ///
+    /// Capture contract: the side stream joins the capture at `ev0` and must leave NO work behind
+    /// the join event (`cuStreamEndCapture` fails UNJOINED otherwise), so every side temporary is
+    /// dropped before `ev1` is recorded and nothing touches the side stream after it.
+    ///
+    /// Ordering contract (cudarc event tracking is off): main -> ev0 -> side -> ev1 -> main is a
+    /// total order; the output buffer is allocated and freed on main; side temporaries live and
+    /// die on the side stream; a dense GEMM under the override must ride `side_blas` (the
+    /// main-bound handle would issue it on main, unordered against side producers: the fixture's
+    /// f32 shared expert diverged 16/16 steps until the handle followed the stream, 2026-09-05).
+    fn moe_shexp_fork(
+        e: &Engine,
+        m: &MoeWeights,
+        z: &CudaSlice<f32>,
+        zq8: Option<&(CudaSlice<i8>, CudaSlice<f32>)>,
+        cfg: &ModelConfig,
+        lim_shexp: Option<memra_gguf::config::SwigluClamp>,
+    ) -> Result<Option<ShexpPending>, Box<dyn std::error::Error>> {
+        let (Some(gate_shexp), Some(up_shexp), Some(down_shexp)) =
+            (&m.gate_shexp, &m.up_shexp, &m.down_shexp)
+        else {
+            return Ok(None);
+        };
+        if m.gate_inp_shexp.is_some() || !crate::htod_diet_on() {
+            return Ok(None);
+        }
+        let n_embd = cfg.n_embd as usize;
+        let n_ff_sh = gate_shexp.out_features();
+        let main = e.stream();
+        // =3: the fork program on the main stream itself (no override): isolates the program
+        // from the stream placement when the gate disagrees.
+        let main_probe = crate::moe_shexp_overlap_main_probe();
+        let side = if main_probe {
+            main.clone()
+        } else {
+            e.side_stream.clone()
+        };
+        let mut out = e.uninit(n_embd)?;
+        let ev0 = main.record_event(None)?;
+        side.wait(&ev0)?;
+        let ev1 = {
+            let _g = (!main_probe)
+                .then(|| memra_runtime::push_stream_override(side.clone(), e.side_blas.clone()));
+            let sa = {
+                let (sg_gate, sg_up) = shexp_gate_up_t1(e, gate_shexp, up_shexp, z, zq8)?;
+                let mut sa = e.uninit(n_ff_sh)?;
+                Self::ffn_act_lim(
+                    e, cfg, &sg_gate, &sg_up, 1.0, 1.0, lim_shexp, &mut sa, n_ff_sh,
+                )?;
+                sa
+            };
+            let sh = e.matmul(down_shexp, &sa, 1)?;
+            drop(sa);
+            e.copy_into(&mut out, 0, &sh, n_embd)?;
+            drop(sh);
+            side.record_event(None)?
+        };
+        Ok(Some((out, ev1)))
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn moe_shexp_add(
         e: &Engine,
