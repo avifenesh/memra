@@ -877,3 +877,74 @@ fn spec_dev_io_verify_rows_match_bitwise() {
         "spec-dev-io: verify rows t={t} bitwise across arms ({avoided} pageable copies replaced)"
     );
 }
+
+/// The verify checkpoint's pre-round ssm snapshots carried across rounds
+/// (`glm5_verify_rows_reusing`): the second round's in-place copies into the first round's
+/// buffers give the same logits and the same rollback as fresh clones.
+#[test]
+#[ignore = "needs a CUDA device — run under flock /tmp/memra-5090.lock"]
+fn verify_snapshot_reuse_matches_fresh_clones_bitwise() {
+    let _gpu = gpu_guard();
+    let h = Harness::new();
+    let ids = tokens(48, 0x5EED);
+    let (prompt, t) = (8usize, 3usize);
+    let e = &h.engine;
+    let prime = || {
+        let mut cache =
+            memra_engine::cache::Cache::new_planned(e, &h.model.cfg, &h.plan, 64).expect("cache");
+        h.model
+            .prime_cache(e, &ids[..prompt], &mut cache, 0)
+            .expect("prime");
+        cache
+    };
+    // arm A: fresh clones every round; arm B: the buffers carried from round to round
+    let (mut ca, mut cb) = (prime(), prime());
+    let mut pool: Vec<Option<cudarc::driver::CudaSlice<f32>>> = Vec::new();
+    for round in 0..3 {
+        let rows = &ids[prompt + round * t..prompt + (round + 1) * t];
+        let (la, _, ca_ck) = h.model.glm5_verify_rows(e, rows, &mut ca).expect("fresh");
+        let (lb, _, mut cb_ck) = h
+            .model
+            .glm5_verify_rows_reusing(e, rows, &mut cb, std::mem::take(&mut pool))
+            .expect("reusing");
+        e.stream().synchronize().unwrap();
+        let (va, vb) = (e.dtoh(&la).unwrap(), e.dtoh(&lb).unwrap());
+        let d = va
+            .iter()
+            .zip(&vb)
+            .filter(|(a, b)| a.to_bits() != b.to_bits())
+            .count();
+        assert_eq!(d, 0, "round {round}: {d}/{} verify logits differ", va.len());
+        // roll both back to keep = 2 of 3 rows, then compare the recurrent state
+        h.model
+            .glm5_verify_rollback(e, &mut ca, &ca_ck, 2)
+            .expect("rollback A");
+        h.model
+            .glm5_verify_rollback(e, &mut cb, &cb_ck, 2)
+            .expect("rollback B");
+        pool = std::mem::take(&mut cb_ck.kda_ssm_snap_buffers());
+        e.stream().synchronize().unwrap();
+        for il in 0..h.model.layers.len() {
+            if let (Some(ra), Some(rb)) = (ca.recur[il].as_ref(), cb.recur[il].as_ref()) {
+                let (sa, sb) = (
+                    e.dtoh(&ra.ssm_state).unwrap(),
+                    e.dtoh(&rb.ssm_state).unwrap(),
+                );
+                assert!(
+                    sa.iter().zip(&sb).all(|(a, b)| a.to_bits() == b.to_bits()),
+                    "round {round} layer {il}: ssm state differs after rollback"
+                );
+            }
+        }
+        // both caches advance identically (the round epilogue's job; here explicit)
+        ca.pos += 2;
+        cb.pos += 2;
+    }
+    assert!(
+        pool.iter().any(|b| b.is_some()),
+        "VACUOUS: no snapshot buffer was carried"
+    );
+    println!(
+        "verify snapshot reuse: 3 rounds of t={t} bitwise (logits + rolled-back ssm state) vs fresh clones"
+    );
+}

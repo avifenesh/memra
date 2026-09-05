@@ -764,6 +764,13 @@ impl Glm5VerifyPos {
     }
 }
 
+impl Glm5VerifyCkpt {
+    /// Hands the per-layer ssm snapshot buffers back (to seed the next round's checkpoint).
+    pub fn kda_ssm_snap_buffers(&mut self) -> Vec<Option<CudaSlice<f32>>> {
+        std::mem::take(&mut self.kda_ssm_snap)
+    }
+}
+
 impl HybridModel {
     /// THE T-PARALLEL VERIFY WALK: score `tokens` (row 0 = the last committed token, rows
     /// 1..t = the K drafted tokens) in ONE forward over the hc trunk at positions
@@ -782,6 +789,19 @@ impl HybridModel {
         e: &Engine,
         tokens: &[u32],
         cache: &mut Cache,
+    ) -> Res<(CudaSlice<f32>, CudaSlice<f32>, Glm5VerifyCkpt)> {
+        self.glm5_verify_rows_reusing(e, tokens, cache, Vec::new())
+    }
+
+    /// [`Self::glm5_verify_rows`] seeded with the previous round's per-layer ssm snapshot
+    /// buffers: the pre-round clone becomes an in-place device copy into the same buffer
+    /// (same bytes; the checkpoint hands the buffers back through `kda_ssm_snap`).
+    pub fn glm5_verify_rows_reusing(
+        &self,
+        e: &Engine,
+        tokens: &[u32],
+        cache: &mut Cache,
+        snap_pool: Vec<Option<CudaSlice<f32>>>,
     ) -> Res<(CudaSlice<f32>, CudaSlice<f32>, Glm5VerifyCkpt)> {
         let topology = *self
             .hyper
@@ -842,7 +862,12 @@ impl HybridModel {
                 .map(|plane| plane.as_ref().map(|plane| plane.len))
                 .collect(),
             kda_conv_cols: (0..self.layers.len()).map(|_| None).collect(),
-            kda_ssm_snap: (0..self.layers.len()).map(|_| None).collect(),
+            kda_ssm_snap: {
+                let mut v = snap_pool;
+                v.resize_with(self.layers.len(), || None);
+                v.truncate(self.layers.len());
+                v
+            },
             kda_scan_stash: (0..self.layers.len()).map(|_| None).collect(),
             kda_rows: (0..self.layers.len()).map(|_| None).collect(),
             kda_tp: (0..self.layers.len()).map(|_| None).collect(),
@@ -1002,7 +1027,13 @@ impl HybridModel {
                             let rl = cache.recur[il]
                                 .as_ref()
                                 .ok_or("glm5 verify KDA layer has no recurrent state")?;
-                            ckpt.kda_ssm_snap[il] = Some(e.clone_dtod(&rl.ssm_state)?);
+                            ckpt.kda_ssm_snap[il] = Some(match ckpt.kda_ssm_snap[il].take() {
+                                Some(mut b) if b.len() == rl.ssm_state.len() => {
+                                    e.dtod_copy_into(&rl.ssm_state, &mut b, 0)?;
+                                    b
+                                }
+                                _ => e.clone_dtod(&rl.ssm_state)?,
+                            });
                         }
                         let t0 = vclock(trace_v);
                         let mut scan_ns = 0u64;
@@ -1107,7 +1138,13 @@ impl HybridModel {
                                 let rl = cache.recur[il]
                                     .as_ref()
                                     .ok_or("glm5 verify KDA layer has no recurrent state")?;
-                                ckpt.kda_ssm_snap[il] = Some(e.clone_dtod(&rl.ssm_state)?);
+                                ckpt.kda_ssm_snap[il] = Some(match ckpt.kda_ssm_snap[il].take() {
+                                    Some(mut b) if b.len() == rl.ssm_state.len() => {
+                                        e.dtod_copy_into(&rl.ssm_state, &mut b, 0)?;
+                                        b
+                                    }
+                                    _ => e.clone_dtod(&rl.ssm_state)?,
+                                });
                             }
                             if r + 1 < t {
                                 // Steal the row's scan inputs for the replay stash (zero
@@ -2391,6 +2428,7 @@ impl HybridModel {
             pen_hist,
             sctr,
             uctr: 0,
+            snap_pool: Vec::new(),
             rounds: 0,
             rank_trimmed_rounds: 0,
             done: false,
@@ -2990,6 +3028,7 @@ impl HybridModel {
             pen_hist,
             sctr,
             uctr: 0,
+            snap_pool: Vec::new(),
             rounds: 0,
             rank_trimmed_rounds: 0,
             done: false,
@@ -3501,7 +3540,9 @@ impl HybridModel {
         let mut rows: Vec<u32> = Vec::with_capacity(drafts.len() + 1);
         rows.push(sess.anchor);
         rows.extend_from_slice(&drafts);
-        let (vlogits, collapsed, ckpt) = self.glm5_verify_rows(e, &rows, &mut sess.cache)?;
+        let snap_pool = std::mem::take(&mut sess.snap_pool);
+        let (vlogits, collapsed, mut ckpt) =
+            self.glm5_verify_rows_reusing(e, &rows, &mut sess.cache, snap_pool)?;
         bump!(verify);
         plap!(first_verify_ms);
 
@@ -3671,6 +3712,7 @@ impl HybridModel {
             sess.cache.pos = ckpt.pos + keep;
         } else {
             self.glm5_verify_rollback(e, &mut sess.cache, &ckpt, keep)?;
+            sess.snap_pool = std::mem::take(&mut ckpt.kda_ssm_snap);
         }
         bump!(roll);
         plap!(first_roll_ms);
@@ -4282,6 +4324,10 @@ pub struct Glm5SpecSession {
     /// uniforms (`spec::host_u01`, tag 0xFFFF_FFFE).
     sctr: u32,
     uctr: u32,
+    /// Per-layer KDA ssm snapshot buffers carried across rounds (the verify checkpoint's
+    /// pre-round clones re-filled in place instead of re-allocated: same bytes, stable
+    /// addresses for a captured round).
+    snap_pool: Vec<Option<CudaSlice<f32>>>,
     /// Verify rounds completed over the session lifetime (the worker's per-burst
     /// rounds-delta receipt, the dspark `rounds` convention).
     pub rounds: usize,
