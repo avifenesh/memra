@@ -58,6 +58,8 @@ Moving decode/spec into the padded grouped f16 path would sacrifice the model's
 selected exact and low-latency decode route. The arm was therefore rejected and
 fully reverted. It earns no serving, cache, correctness or performance claim.
 
+Durable extracted gate lines are in `remote-gate-lines-20260905.log`.
+
 Hardware metadata: two RTX PRO 6000 Blackwell Workstation cards, provider
 setting 500 W/card. No Nsight Compute counters were available and no power,
 clock, bandwidth or compute-limit attribution is made.

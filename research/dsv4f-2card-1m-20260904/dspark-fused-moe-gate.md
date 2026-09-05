@@ -36,5 +36,4 @@ remains explicit and default off because the end-to-end delta is below a
 promotion threshold. Its value is reducing DSpark expert-dispatch allocation
 and launch topology ahead of graph/workspace work, not a current speed claim.
 
-Remote raw log: `/root/dsv4-dspark-fused-moe-e2e-gate.log` on dev instance
-48400600.
+Durable extracted gate lines are in `remote-gate-lines-20260905.log`.

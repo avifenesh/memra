@@ -46,10 +46,7 @@ requests, but its full-fleet value must include real-route ownership balance,
 resident-memory placement and end-to-end scheduling. The probe code was removed
 after banking the result.
 
-Raw logs on dev instance 48400600:
-
-- `/root/dsv4-ep2-expert-p2p-probe.log`
-- `/root/dsv4-expert-tp-probe.log`
+Durable extracted gate lines are in `remote-gate-lines-20260905.log`.
 
 The provider setting was 500 W/card. No power, clock, bandwidth or compute-limit
 attribution is made.

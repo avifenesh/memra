@@ -24,6 +24,6 @@ available repeated-expert locality at the proven transaction width, while the
 sort and scatter-back pay it back. The arm was fully reverted and earns no
 performance claim.
 
-Raw log: `/root/dsv4-prefill-expert-sort-gate.log` on dev instance 48400600.
+Durable extracted gate lines are in `remote-gate-lines-20260905.log`.
 The provider setting was 500 W/card; no power, clock, bandwidth or compute
 attribution is made.

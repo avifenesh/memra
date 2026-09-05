@@ -26,6 +26,6 @@ saved submissions. A viable graph boundary must cover most or all of a layer or
 round and deal explicitly with position/cache scalar updates. The arm was fully
 reverted.
 
-Raw log: `/root/dsv4-moe-graph-gate.log` on dev instance 48400600. The provider
+Durable extracted gate lines are in `remote-gate-lines-20260905.log`. The provider
 setting was 500 W/card; no power, clock, bandwidth or compute-limit attribution
 is made.
