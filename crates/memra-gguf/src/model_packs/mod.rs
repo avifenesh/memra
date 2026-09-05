@@ -15,6 +15,7 @@ pub mod gemma4_moe;
 pub mod glm5_next;
 pub mod glm_dsa;
 pub mod hy3;
+pub mod llama_dense;
 pub mod qwen3;
 pub mod qwen35;
 pub mod qwen35_moe;
@@ -132,6 +133,8 @@ pub const PACKS: &[&ModelPack] = &[
     &qwen4_exp::PACK,
     &step35::PACK,
     &hy3::PACK,
+    // Last: the plainest dense stack, so a family with its own pack is always matched first.
+    &llama_dense::PACK,
 ];
 
 /// Explicit artifact-storage profiles used by `model inspect`. They never participate in

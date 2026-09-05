@@ -100,7 +100,9 @@ impl Arch {
             // is `glm5_next`, text_config's is `glm5_next_text` — same text architecture.
             "glm5_next" | "glm5_next_text" => "glm5-next",
             "gemma4" | "gemma4_text" => "gemma4",
-            "llama" => "llama",
+            // Mistral dense (MistralForCausalLM) is the llama execution program: RMSNorm,
+            // GQA full attention, rope over the whole head, SwiGLU, no QK-norm, no biases.
+            "llama" | "mistral" => "llama",
             other => other,
         };
         Arch::parse(ggml)
