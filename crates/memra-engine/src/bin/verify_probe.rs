@@ -193,6 +193,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ffn_gate,
                 ffn_up,
                 ffn_down,
+                ffn_down_pqs: _,
             } = &model.layers[il].ffn
             {
                 let n_ff = ffn_gate.out_features();
@@ -328,6 +329,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ffn_gate,
                     ffn_up,
                     ffn_down,
+                    ffn_down_pqs: _,
                 } => vec![
                     ("fg", e.uses_q8_1_fast(ffn_gate)),
                     ("fu", e.uses_q8_1_fast(ffn_up)),

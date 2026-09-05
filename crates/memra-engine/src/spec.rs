@@ -3577,7 +3577,14 @@ impl HybridModel {
                 ffn_gate,
                 ffn_up,
                 ffn_down,
+                ffn_down_pqs,
             } => {
+                if ffn_down_pqs.is_some() {
+                    // memra#253: this path is not wired for the AWQ activation scale.
+                    // Refusing is the only honest option — ignoring it computes a
+                    // different function with no visible failure.
+                    return Err("AWQ pre_quant_scale is unwired on this execution path".into());
+                }
                 let n_ff = ffn_gate.out_features();
                 let (gate, up) = if e.uses_q8_1_fast(ffn_gate) && e.uses_q8_1_fast(ffn_up) {
                     let (zq, zd) = e.quantize_q8_1(&z, 1, di)?;
@@ -4659,7 +4666,14 @@ impl HybridModel {
                 ffn_gate,
                 ffn_up,
                 ffn_down,
+                ffn_down_pqs,
             } => {
+                if ffn_down_pqs.is_some() {
+                    // memra#253: this path is not wired for the AWQ activation scale.
+                    // Refusing is the only honest option — ignoring it computes a
+                    // different function with no visible failure.
+                    return Err("AWQ pre_quant_scale is unwired on this execution path".into());
+                }
                 let n_ff = ffn_gate.out_features();
                 let (gate, up) = if e.uses_q8_1_fast(ffn_gate) && e.uses_q8_1_fast(ffn_up) {
                     let (zq, zd) = e.quantize_q8_1(&z, 1, di)?;
@@ -7022,6 +7036,9 @@ impl HybridModel {
                 ffn_gate,
                 ffn_up,
                 ffn_down,
+                // memra#253: weight-mirror/inspection site — the AWQ scale is
+                // activation-side, so it plays no part here.
+                ffn_down_pqs: _,
             } => {
                 assert!(
                     self.cfg.m3.is_none(),
@@ -7282,6 +7299,9 @@ impl HybridModel {
                 ffn_gate,
                 ffn_up,
                 ffn_down,
+                // memra#253: weight-mirror/inspection site — the AWQ scale is
+                // activation-side, so it plays no part here.
+                ffn_down_pqs: _,
             } => {
                 assert!(
                     self.cfg.m3.is_none(),
@@ -7609,6 +7629,9 @@ impl HybridModel {
                     ffn_gate,
                     ffn_up,
                     ffn_down,
+                    // memra#253: weight-mirror/inspection site — the AWQ scale is
+                    // activation-side, so it plays no part here.
+                    ffn_down_pqs: _,
                 } => {
                     let n_ff = ffn_gate.out_features();
                     if let Some((zq, zd)) = z_q8.as_ref() {
@@ -8260,6 +8283,9 @@ impl HybridModel {
                     ffn_gate,
                     ffn_up,
                     ffn_down,
+                    // memra#253: weight-mirror/inspection site — the AWQ scale is
+                    // activation-side, so it plays no part here.
+                    ffn_down_pqs: _,
                 } => {
                     let n_ff = ffn_gate.out_features();
                     let gate = e.matmul_decode_exact(ffn_gate, &z, t)?;

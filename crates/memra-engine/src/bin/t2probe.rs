@@ -68,6 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ffn_gate,
                     ffn_up,
                     ffn_down,
+                    ffn_down_pqs: _,
                 } => {
                     let n_ff = ffn_gate.out_features();
                     let gate = e.matmul(ffn_gate, &z, t)?;

@@ -1062,6 +1062,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         ffn_gate,
                         ffn_up,
                         ffn_down,
+                        ffn_down_pqs: _,
                     } => {
                         probe(&format!("l{i}.ffn.gate"), ffn_gate)?;
                         probe(&format!("l{i}.ffn.up"), ffn_up)?;

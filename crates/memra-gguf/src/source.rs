@@ -408,6 +408,12 @@ fn is_quant_auxiliary(name: &str, headers: &BTreeMap<String, StInfo>) -> bool {
         ".weight_global_scale",
         ".input_scale",
         ".scale",
+        // AWQ's per-input-channel scale. The exporter emits it whenever the weight cannot
+        // absorb an input-axis scale itself: an NVFP4 weight folds it into the per-block
+        // `weight_scale`, a PER-CHANNEL FP8 weight cannot (its scale runs along the other
+        // axis), so the runtime is handed `s` and is expected to feed the layer `x * s`
+        // against a stored `W / s`.
+        ".pre_quant_scale",
     ]
     .into_iter()
     .any(|suffix| {

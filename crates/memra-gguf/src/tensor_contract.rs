@@ -78,6 +78,10 @@ pub enum TensorId {
 pub enum QuantAuxTensor {
     WeightScale,
     InputScale,
+    /// AWQ per-input-channel scale, `[in_features]`. The stored weight is `W / s`; the layer
+    /// must multiply its INPUT by `s` before the matmul, or it computes a different function.
+    /// HF-dialect only — no GGUF spelling writes this.
+    PreQuantScale,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -826,8 +830,21 @@ impl ContractBuilder {
         for (kind, suffix) in [
             (QuantAuxTensor::WeightScale, ".scale"),
             (QuantAuxTensor::InputScale, ".input_scale"),
+            // AWQ (ModelOpt export): HF-dialect only, and OPTIONAL — an artifact that was
+            // not calibrated carries none. When present the engine MUST apply it; the
+            // loader refuses rather than ignoring one (memra#253).
+            (QuantAuxTensor::PreQuantScale, ".pre_quant_scale"),
         ] {
-            let names: Vec<_> = if self.dialect == CheckpointDialect::Gguf {
+            let gguf_only = !matches!(kind, QuantAuxTensor::PreQuantScale);
+            let names: Vec<_> = if self.dialect == CheckpointDialect::Gguf && gguf_only {
+                weight_names
+                    .iter()
+                    .filter_map(|name| {
+                        name.strip_suffix(".weight")
+                            .map(|stem| format!("{stem}{suffix}"))
+                    })
+                    .collect()
+            } else if self.dialect == CheckpointDialect::HfSafetensors && !gguf_only {
                 weight_names
                     .iter()
                     .filter_map(|name| {
@@ -2996,5 +3013,92 @@ mod glm5_dump {
             }
         }
         std::fs::write("/tmp/glm53-contract-names.tsv", out).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod pre_quant_scale_tests {
+    use super::*;
+
+    /// The identity the whole feature rests on: AWQ stores `W / s` and feeds the layer `x * s`,
+    /// and scaling input channel j is the same as scaling weight column j. If this ever stops
+    /// holding, applying the scale on the activation is no longer equivalent to the exporter's
+    /// intent, and every AWQ artifact is being computed wrong.
+    #[test]
+    fn scaling_the_input_equals_scaling_the_weight_columns() {
+        let (out_f, in_f) = (3usize, 4usize);
+        let w: Vec<f32> = (0..out_f * in_f).map(|i| (i as f32) * 0.37 - 1.1).collect();
+        let x: Vec<f32> = (0..in_f).map(|i| (i as f32) * 0.53 + 0.2).collect();
+        let s: Vec<f32> = vec![0.5, 2.0, 1.25, 0.8];
+
+        // AWQ's stored form: W / s along the INPUT axis, with the runtime feeding x * s.
+        let mut awq = vec![0f32; out_f];
+        for o in 0..out_f {
+            for i in 0..in_f {
+                awq[o] += (w[o * in_f + i] / s[i]) * (x[i] * s[i]);
+            }
+        }
+        // The uncalibrated reference.
+        let mut plain = vec![0f32; out_f];
+        for o in 0..out_f {
+            for i in 0..in_f {
+                plain[o] += w[o * in_f + i] * x[i];
+            }
+        }
+        for (a, b) in awq.iter().zip(&plain) {
+            assert!((a - b).abs() < 1e-4, "{a} vs {b}");
+        }
+    }
+
+    /// The HF dialect declares the scale; the GGUF dialect has no spelling for it and must not
+    /// invent one. A GGUF-side name here would make the census demand a tensor no GGUF carries.
+    #[test]
+    fn pre_quant_scale_is_declared_on_the_hf_dialect_only() {
+        use crate::config::HfConfig;
+        // A family main already carries — this PR is independent of the llama_dense pack.
+        let cfg = crate::config::ModelConfig::from_hf(&HfConfig::parse(
+            r#"{"model_type":"qwen3","num_hidden_layers":1,"hidden_size":64,
+            "num_attention_heads":2,"num_key_value_heads":1,"head_dim":32,
+            "intermediate_size":128,"vocab_size":32,"max_position_embeddings":128,
+            "rms_norm_eps":0.000001}"#,
+        ));
+        let pack = crate::model_packs::for_config(&cfg).expect("qwen3 dense pack");
+        let plan = pack.compile_plan(&cfg).unwrap();
+        let opts = ContractOptions {
+            output_head: OutputHead::Separate,
+        };
+        let hf = TensorContract::for_plan(&plan, CheckpointDialect::HfSafetensors, opts).unwrap();
+        let gguf = TensorContract::for_plan(&plan, CheckpointDialect::Gguf, opts).unwrap();
+
+        let named = |c: &TensorContract| -> usize {
+            c.requirements
+                .iter()
+                .filter(|r| {
+                    matches!(
+                        r.id,
+                        TensorId::QuantAux {
+                            kind: QuantAuxTensor::PreQuantScale,
+                            ..
+                        }
+                    ) && !r.names.is_empty()
+                })
+                .count()
+        };
+        assert!(named(&hf) > 0, "the HF dialect must name pre_quant_scale");
+        assert_eq!(named(&gguf), 0, "no GGUF spelling writes pre_quant_scale");
+        // and it is never required: an uncalibrated checkpoint carries none.
+        assert!(
+            hf.requirements
+                .iter()
+                .filter(|r| matches!(
+                    r.id,
+                    TensorId::QuantAux {
+                        kind: QuantAuxTensor::PreQuantScale,
+                        ..
+                    }
+                ))
+                .all(|r| !r.required),
+            "pre_quant_scale must stay optional"
+        );
     }
 }

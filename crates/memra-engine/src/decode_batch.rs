@@ -734,6 +734,9 @@ impl HybridModel {
                     ffn_gate,
                     ffn_up,
                     ffn_down,
+                    // memra#253: weight-mirror/inspection site — the AWQ scale is
+                    // activation-side, so it plays no part here.
+                    ffn_down_pqs: _,
                 } => {
                     chk!(ffn_gate, format!("L{li}.ffn_gate"))
                         && chk!(ffn_up, format!("L{li}.ffn_up"))
@@ -3432,7 +3435,14 @@ impl HybridModel {
                     ffn_gate,
                     ffn_up,
                     ffn_down,
+                    ffn_down_pqs,
                 } => {
+                    if ffn_down_pqs.is_some() {
+                        // memra#253: this path is not wired for the AWQ activation scale.
+                        // Refusing is the only honest option — ignoring it computes a
+                        // different function with no visible failure.
+                        return Err("AWQ pre_quant_scale is unwired on this execution path".into());
+                    }
                     // v1 covers the SiLU family; M3's swigluoai clamp rides a scaled epilogue
                     // (m=1 fused tier) — batched M3 lands with the batched-fusion pass.
                     assert!(
@@ -4135,7 +4145,14 @@ impl HybridModel {
                     ffn_gate,
                     ffn_up,
                     ffn_down,
+                    ffn_down_pqs,
                 } => {
+                    if ffn_down_pqs.is_some() {
+                        // memra#253: this path is not wired for the AWQ activation scale.
+                        // Refusing is the only honest option — ignoring it computes a
+                        // different function with no visible failure.
+                        return Err("AWQ pre_quant_scale is unwired on this execution path".into());
+                    }
                     // A dense step35 FFN's clamp is the SHEXP array (upstream's one
                     // build_ffn serves dense + shared expert, llama-graph.cpp:1751);
                     // ffn_act_lim dispatches clamped/plain per layer. Layers 0-2 (the

@@ -477,6 +477,8 @@ pub(crate) fn load_ffn(
             ffn_gate: GpuTensor::load_from_source(e, src, &p("ffn_gate.weight"))?,
             ffn_up: GpuTensor::load_from_source(e, src, &p("ffn_up.weight"))?,
             ffn_down: GpuTensor::load_from_source(e, src, &p("ffn_down.weight"))?,
+            // AWQ artifacts only (memra#253); absent everywhere else.
+            ffn_down_pqs: GpuTensor::load_opt_from_source(e, src, &p("ffn_down.pre_quant_scale"))?,
         }
     } else if let MlpPlan::Moe(moe) = mlp {
         let n_expert = moe.expert_count as usize;
@@ -656,6 +658,7 @@ pub(crate) fn load_ffn(
             ffn_gate: load_t(e, src, &p("ffn_gate.weight"))?,
             ffn_up: load_t(e, src, &p("ffn_up.weight"))?,
             ffn_down: load_t(e, src, &p("ffn_down.weight"))?,
+            ffn_down_pqs: load_opt(e, src, &p("ffn_down.pre_quant_scale"))?,
         }
     })
 }
@@ -2919,6 +2922,11 @@ pub enum Ffn {
         ffn_gate: GpuTensor,
         ffn_up: GpuTensor,
         ffn_down: GpuTensor,
+        /// AWQ per-input-channel scale for `ffn_down` (memra#253). `Some` only for an
+        /// AWQ-calibrated checkpoint; the input must be multiplied by it before the down
+        /// projection. Adding this field is deliberate: it makes every destructuring site
+        /// fail to compile until it decides what to do, so no path can skip the scale.
+        ffn_down_pqs: Option<GpuTensor>,
     },
     Moe(MoeWeights),
 }
@@ -3973,6 +3981,9 @@ impl HybridModel {
                     ffn_gate,
                     ffn_up,
                     ffn_down,
+                    // AWQ pre_quant_scale is an ACTIVATION-side factor (memra#253): a weight mirror
+                    // re-encodes bytes and is unaffected by it, so this site intentionally ignores it.
+                    ffn_down_pqs: _,
                 } => {
                     devs.insert(ffn_gate.ordinal());
                     devs.insert(ffn_up.ordinal());
@@ -5697,6 +5708,9 @@ impl HybridModel {
                                 ffn_gate,
                                 ffn_up,
                                 ffn_down,
+                                // AWQ pre_quant_scale is an ACTIVATION-side factor (memra#253): a weight mirror
+                                // re-encodes bytes and is unaffected by it, so this site intentionally ignores it.
+                                ffn_down_pqs: _,
                             } = &layer.ffn
                             {
                                 for w in [ffn_gate, ffn_up, ffn_down] {
@@ -5760,6 +5774,9 @@ impl HybridModel {
                             ffn_gate,
                             ffn_up,
                             ffn_down,
+                            // AWQ pre_quant_scale is an ACTIVATION-side factor (memra#253): a weight mirror
+                            // re-encodes bytes and is unaffected by it, so this site intentionally ignores it.
+                            ffn_down_pqs: _,
                         } = &layer.ffn
                         {
                             for w in [ffn_gate, ffn_up, ffn_down] {
@@ -5843,6 +5860,9 @@ impl HybridModel {
                         ffn_gate,
                         ffn_up,
                         ffn_down,
+                        // AWQ pre_quant_scale is an ACTIVATION-side factor (memra#253): a weight mirror
+                        // re-encodes bytes and is unaffected by it, so this site intentionally ignores it.
+                        ffn_down_pqs: _,
                     } = &mut layer.ffn
                     {
                         for w in [ffn_gate, ffn_up, ffn_down] {
@@ -5912,6 +5932,9 @@ impl HybridModel {
                                 ffn_gate,
                                 ffn_up,
                                 ffn_down,
+                                // AWQ pre_quant_scale is an ACTIVATION-side factor (memra#253): a weight mirror
+                                // re-encodes bytes and is unaffected by it, so this site intentionally ignores it.
+                                ffn_down_pqs: _,
                             } = &mut layer.ffn
                             {
                                 for w in [ffn_gate, ffn_up, ffn_down] {
@@ -5982,6 +6005,9 @@ impl HybridModel {
                         ffn_gate,
                         ffn_up,
                         ffn_down,
+                        // AWQ pre_quant_scale is an ACTIVATION-side factor (memra#253): a weight mirror
+                        // re-encodes bytes and is unaffected by it, so this site intentionally ignores it.
+                        ffn_down_pqs: _,
                     } = &mut layer.ffn
                     {
                         for w in [ffn_gate, ffn_up, ffn_down] {
@@ -6080,6 +6106,9 @@ impl HybridModel {
                             ffn_gate,
                             ffn_up,
                             ffn_down,
+                            // AWQ pre_quant_scale is an ACTIVATION-side factor (memra#253): a weight mirror
+                            // re-encodes bytes and is unaffected by it, so this site intentionally ignores it.
+                            ffn_down_pqs: _,
                         } = &layer.ffn
                         {
                             for w in [ffn_gate, ffn_up, ffn_down] {
@@ -6152,6 +6181,9 @@ impl HybridModel {
                         ffn_gate,
                         ffn_up,
                         ffn_down,
+                        // AWQ pre_quant_scale is an ACTIVATION-side factor (memra#253): a weight mirror
+                        // re-encodes bytes and is unaffected by it, so this site intentionally ignores it.
+                        ffn_down_pqs: _,
                     } = &mut layer.ffn
                     {
                         for w in [ffn_gate, ffn_up, ffn_down] {
