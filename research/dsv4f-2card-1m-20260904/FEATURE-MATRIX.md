@@ -256,6 +256,11 @@ critical path is limited by power or clocks.
   33.633/35.301 s kernel-busy per card but only 0.451 microseconds of overlap;
   the current PP2 request is effectively serial and needs a same-layer TP/EP or
   genuine cross-request pipeline schedule
+- [x] same-layer topology feasibility priced
+  (`two-card-expert-topology-probe-b194bcf57.md`): expert-ID EP preserves all
+  contribution bits and gives 1.28-1.37x integrated selected-expert speed;
+  balanced intermediate TP drifts only 1.2e-7 absolute but is flat at 1.007x,
+  so do not build the current-kernel loader around that split
 - [ ] chunked prefill at 256K, 512K and 1M without transient OOM
 - [ ] resumable multi-session scheduler and cross-session batch decode
 - [ ] c1/c2/c4/c8/c16 throughput, fairness and admission cells
