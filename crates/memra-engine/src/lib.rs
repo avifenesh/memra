@@ -14562,6 +14562,60 @@ impl Engine {
         Ok(true)
     }
 
+    /// Native f32 row GEMV `y[j][r] = dot(w[r, :], x[j, :])` for `m` tokens (`gemv_f32_rows`,
+    /// grid (out_f, m), block 256). Returns `Ok(false)` without launching when the shape does not
+    /// fit: `in_f % 1024 != 0`, `in_f == 0`, `out_f == 0 || out_f > 65535`, `m == 0 || m > 16`.
+    /// Deterministic and per-row identical for every m (verify == decode by construction);
+    /// numeric class against cuBLASLt (`MEMRA_F32_GEMV_KERNEL`).
+    pub fn gemv_f32_rows_into<I, O>(
+        &self,
+        x: &I,
+        w: &I,
+        y: &mut O,
+        m: usize,
+        in_f: usize,
+        out_f: usize,
+    ) -> Result<bool, Box<dyn std::error::Error>>
+    where
+        I: cudarc::driver::DevicePtr<f32>,
+        O: cudarc::driver::DevicePtrMut<f32>,
+    {
+        const BLOCK: usize = 256;
+        if in_f == 0
+            || !in_f.is_multiple_of(4 * BLOCK)
+            || out_f == 0
+            || out_f > 65535
+            || m == 0
+            || m > 16
+        {
+            return Ok(false);
+        }
+        let f = self.func("gemv_f32_rows");
+        let cfg = LaunchConfig {
+            grid_dim: (out_f as u32, m as u32, 1),
+            block_dim: (BLOCK as u32, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let (inf, outf) = (in_f as i32, out_f as i32);
+        let stream = self.gpu.stream();
+        // raw pointers: the generic DevicePtr bounds (views, slices) are not launch args
+        let (px, _gx) = x.device_ptr(&stream);
+        let (pw, _gw) = w.device_ptr(&stream);
+        let (py, _gy) = y.device_ptr_mut(&stream);
+        let mut b = stream.launch_builder(&f);
+        b.arg(&px).arg(&pw).arg(&py).arg(&inf).arg(&outf);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        if F32_GEMV_KERNEL_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+            eprintln!(
+                "[f32-gemv-kernel] engaged: f32 linear at m<=16 rides gemv_f32_rows instead of \
+                 cuBLASLt (MEMRA_F32_GEMV_KERNEL=1; first shape {in_f}->{out_f} m={m})"
+            );
+        }
+        Ok(true)
+    }
+
     /// The arm-explicit form of [`Engine::rms_norm_zq8_f32`]: `ilp` selects the
     /// `rms_norm_zq8_f32_v2` twin (MEMRA_NORM_ILP and MEMRA_NORM_ILP_ZQ8, both default ON; four loads in flight per round
     /// in both passes, bit-identical by construction, see its header in cu/kernels.cu) over the
@@ -25571,6 +25625,9 @@ impl Engine {
         I: cudarc::driver::DevicePtr<f32>,
         O: cudarc::driver::DevicePtrMut<f32>,
     {
+        if crate::f32_gemv_kernel_on() && self.gemv_f32_rows_into(x, w, c, m_tokens, in_f, out_f)? {
+            return Ok(());
+        }
         use cudarc::cublaslt::{Matmul, MatmulConfig};
         let cfg = MatmulConfig {
             transa: true,
@@ -33687,6 +33744,22 @@ impl Engine {
         self.htod(&host[start..start + len])
     }
 }
+
+/// `MEMRA_F32_GEMV_KERNEL=1` (lane/f32-gemv-rows-20260905, default OFF pending its model-scale
+/// row): the f32-resident `linear` at the decode/verify tier (m <= 16) takes the native
+/// `gemv_f32_rows` kernel (one block per (row, token), fixed reduction tree) instead of cuBLASLt,
+/// whose m=1 path is a `dot_kernel` + `reduce_1Block_kernel` PAIR: two launches and ~9 us of host
+/// latency each, 33 pairs per token on the eager MLA layers (the DSA indexer's `wk`,
+/// `kpool_gate`, `weights_proj`). NUMERIC CLASS (cuBLAS's split is its own): tolerance +
+/// determinism + m-identity gate `tests/f32_gemv_rows_gpu.rs`. Shapes that do not fit
+/// (`in_f % 1024 != 0`, `out_f > 65535`, `m > 16`) keep cuBLASLt. Read per call.
+pub fn f32_gemv_kernel_on() -> bool {
+    std::env::var("MEMRA_F32_GEMV_KERNEL").as_deref() == Ok("1")
+}
+
+/// Launches `gemv_f32_rows` took under `MEMRA_F32_GEMV_KERNEL=1` (gate non-vacuity).
+pub static F32_GEMV_KERNEL_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
 
 #[cfg(test)]
 mod target_dispatch_tests {
