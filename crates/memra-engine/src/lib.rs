@@ -371,6 +371,18 @@ pub fn glm5_graph_recapture_on() -> bool {
     std::env::var("MEMRA_GLM5_GRAPH_RECAPTURE").as_deref() == Ok("1")
 }
 
+/// `MEMRA_GLM5_GRAPH_MLA=1` (lane/mla-half-capture-20260905): the decode graph door captures
+/// MLA/DSA layers in HALVES. The attention-site hc pre + norm + the PRE segment (projections,
+/// norms, splits, rope: no position-derived launch geometry) close a run's graph piece, an
+/// eager middle (append, k-pool selection, attention, decompress, `wo`) runs on the stage's
+/// workspace, and the layer's second half (hc post + FFN) opens the next graph piece of the
+/// same run. Needs `MEMRA_MLA_SEG_WS=1` (the PRE outputs live in the session's segment
+/// workspace); without it the plan is the KDA-only plan. Read per call. Default OFF pending
+/// its model-scale row.
+pub fn glm5_graph_mla_on() -> bool {
+    std::env::var("MEMRA_GLM5_GRAPH_MLA").as_deref() == Ok("1")
+}
+
 pub fn glm5_vrows_t1_dev_forced() -> bool {
     glm5_vrows_t1_dev_forced_from(
         std::env::var("MEMRA_GLM5_VROWS_T1_DEV").ok().as_deref(),
@@ -474,6 +486,10 @@ pub static GLM5_DECODE_GRAPH_REPLAYS: std::sync::atomic::AtomicU64 =
 pub static GLM5_DECODE_GRAPH_CAPTURES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 pub static GLM5_DECODE_GRAPH_LAYERS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+/// MLA layers captured in halves (an eager middle between two graph pieces) by
+/// `MEMRA_GLM5_GRAPH_MLA`, summed over captures.
+pub static GLM5_DECODE_GRAPH_MLA_HALVES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 /// Stages torn down and rebuilt by the armed re-capture path (`MEMRA_GLM5_GRAPH_RECAPTURE`).
 pub static GLM5_DECODE_GRAPH_RECAPTURES: std::sync::atomic::AtomicU64 =
@@ -1588,6 +1604,9 @@ pub struct Engine {
     /// Per-session MLA PRE/POST handoff buffers (`MEMRA_MLA_SEG_WS`,
     /// lane/glm5-mla-capture-20260904); see [`crate::hybrid_forward::MlaSegWs`].
     mla_seg_ws: Mutex<Option<crate::hybrid_forward::MlaSegWs>>,
+    /// Set for exactly one `mla_attn_cached` call by `hyper_mla_mid_post_ws`: the PRE segment
+    /// is already in the segment workspace (a captured run graph wrote it), skip it.
+    pub(crate) mla_pre_done: std::sync::atomic::AtomicBool,
     /// Verify-walk allocation workspace (MEMRA_VERIFY_WS — glm5-alias
     /// MEMRA_GLM5_VERIFY_WS honored, OFF-wins; lane/glm5-matvec door W, generalized
     /// lane/glm5-extract-general — the pool is family-agnostic by content): the
@@ -3328,6 +3347,7 @@ impl Engine {
             router_stage: Mutex::new(None),
             hyper_decode_ws: Mutex::new(None),
             mla_seg_ws: Mutex::new(None),
+            mla_pre_done: std::sync::atomic::AtomicBool::new(false),
             verify_ws: Mutex::new(VerifyWs::default()),
             vrows_macro_dev: Mutex::new(std::collections::HashMap::new()),
             shexp_ones: Mutex::new(None),

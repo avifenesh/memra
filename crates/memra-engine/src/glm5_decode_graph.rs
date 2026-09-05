@@ -75,6 +75,7 @@
 
 use crate::Engine;
 use crate::hybrid::{HybridModel, Mixer};
+use crate::hybrid_forward::WsSeg;
 use cudarc::driver::{CudaGraph, CudaSlice};
 use memra_kv::Cache;
 use std::sync::atomic::Ordering;
@@ -87,12 +88,39 @@ type Res<T> = Result<T, Box<dyn std::error::Error>>;
 /// destroys the instantiated execs) must be declared BEFORE `_keeper` (which frees the buffers
 /// those execs baked). Freeing first and destroying second is a use-after-free inside the driver.
 /// The same reasoning orders `StageGraphs`: `runs` before `x_io`/`ws`/`f16`.
+/// One piece of a captured run: a graph over a segment plan (two ping-pong phases), or the
+/// eager middle of a split MLA layer (`hyper_mla_mid_post_ws`: append, k-pool selection,
+/// attention, decompress, `wo`) that runs between two graph pieces on the stage's own workspace
+/// (lane/mla-half-capture-20260905, door `MEMRA_GLM5_GRAPH_MLA`).
+enum RunPiece {
+    Graph {
+        graphs: [CudaGraph; 2],
+        #[allow(dead_code)]
+        segs: Vec<WsSeg>,
+    },
+    Middle(usize),
+}
+
+/// The plan of one run before capture: the same pieces, as segment lists.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum PieceSpec {
+    Graph(Vec<WsSeg>),
+    Middle(usize),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct RunSpec {
+    lo: usize,
+    hi: usize,
+    pieces: Vec<PieceSpec>,
+}
+
 struct RunGraph {
     lo: usize,
     hi: usize,
     /// `[phase 0, phase 1]` — phase p was captured with `recur[il].ssm_state` naming the buffer
     /// the eager walk would read at a step of that parity.
-    graphs: [CudaGraph; 2],
+    pieces: Vec<RunPiece>,
     /// WHICH PING-PONG PHASE THIS RUN'S NEXT REPLAY MUST USE — per RUN, not per stage, and that
     /// distinction is the whole defect box takes 1 through 12 chased.
     ///
@@ -155,6 +183,15 @@ struct StageGraphs {
     x_out: CudaSlice<f32>,
     /// Private hc-glue workspace, resident during capture and never returned to the engine pool.
     ws: crate::hyper::HyperDecodeWs,
+    /// Handoff of a split MLA layer's attention output: the eager middle writes it, the next
+    /// graph piece's `MlaFfn` reads it (baked address).
+    mixed: CudaSlice<f32>,
+    /// The position the captured graphs read (rope inside an MLA PRE half). KDA runs are
+    /// position-independent and ignore it; refreshed per token before the first replay.
+    pos_d: CudaSlice<i32>,
+    /// Two one-element placeholders swapped into `ws.h` / `mixed` while the eager middle
+    /// borrows them out of the pool (no per-token allocation).
+    spare: [CudaSlice<f32>; 2],
     /// Private f16 GEMM scratch, swapped resident around capture AND around every replay: the
     /// graphs bake its cvt/Lt pointers, and an eager GEMM between replays would cross-contaminate
     /// them (the `PrimeGraph` precedent).
@@ -183,6 +220,9 @@ struct StageBufs {
     x_io: CudaSlice<f32>,
     x_out: CudaSlice<f32>,
     ws: crate::hyper::HyperDecodeWs,
+    mixed: CudaSlice<f32>,
+    pos_d: CudaSlice<i32>,
+    spare: [CudaSlice<f32>; 2],
     f16: Option<crate::f16_ffi::F16Scratch>,
 }
 
@@ -225,12 +265,77 @@ fn capturable_runs(
 
 /// Maximal contiguous runs of KDA-mixer layers inside `[lo, hi)`. A TP-sharded KDA layer is not
 /// on this path at all, so it breaks a run rather than joining one.
+/// The run plan of a stage. Without `MEMRA_GLM5_GRAPH_MLA` (or without the segment
+/// workspace seam it needs) this is exactly `capturable_runs` over the KDA layers, one graph
+/// piece per run. With it, an MLA layer no longer breaks a run: its attention-site hc pre +
+/// norm + PRE segment closes the current graph piece, an eager middle follows, and the layer's
+/// second half (hc post of the handed-over attention output + the FFN half) opens the next
+/// graph piece of the SAME run, so the run's span [lo, hi) covers the MLA layer whole and the
+/// door's signature, self-check and phase bookkeeping stay per run.
+fn plan_runs(m: &HybridModel, lo: usize, hi: usize) -> Vec<RunSpec> {
+    let halves = crate::glm5_graph_mla_on() && Engine::mla_seg_ws_on();
+    if !halves {
+        return capturable_runs(
+            lo,
+            hi,
+            |il| matches!(&m.layers[il].mixer, Mixer::Kda(la) if la.tp.is_none()),
+        )
+        .into_iter()
+        .map(|(a, b)| RunSpec {
+            lo: a,
+            hi: b,
+            pieces: vec![PieceSpec::Graph((a..b).map(WsSeg::Layer).collect())],
+        })
+        .collect();
+    }
+    let mut runs: Vec<RunSpec> = Vec::new();
+    let mut start: Option<usize> = None;
+    let mut pieces: Vec<PieceSpec> = Vec::new();
+    let mut segs: Vec<WsSeg> = Vec::new();
+    fn close(
+        end: usize,
+        start: &mut Option<usize>,
+        pieces: &mut Vec<PieceSpec>,
+        segs: &mut Vec<WsSeg>,
+        runs: &mut Vec<RunSpec>,
+    ) {
+        if !segs.is_empty() {
+            pieces.push(PieceSpec::Graph(std::mem::take(segs)));
+        }
+        if let Some(a) = start.take()
+            && !pieces.is_empty()
+        {
+            runs.push(RunSpec {
+                lo: a,
+                hi: end,
+                pieces: std::mem::take(pieces),
+            });
+        }
+        pieces.clear();
+    }
+    for il in lo..hi {
+        let kda = matches!(&m.layers[il].mixer, Mixer::Kda(la) if la.tp.is_none());
+        let mla = halves && matches!(&m.layers[il].mixer, Mixer::Mla(mla) if mla.tp.is_none());
+        if kda {
+            start.get_or_insert(il);
+            segs.push(WsSeg::Layer(il));
+        } else if mla {
+            start.get_or_insert(il);
+            segs.push(WsSeg::MlaPre(il));
+            pieces.push(PieceSpec::Graph(std::mem::take(&mut segs)));
+            pieces.push(PieceSpec::Middle(il));
+            segs.push(WsSeg::MlaFfn(il));
+        } else {
+            close(il, &mut start, &mut pieces, &mut segs, &mut runs);
+        }
+    }
+    close(hi, &mut start, &mut pieces, &mut segs, &mut runs);
+    runs
+}
+
+/// The layer spans of the stage's runs (what the replay loop walks between eager gaps).
 fn kda_runs(m: &HybridModel, lo: usize, hi: usize) -> Vec<(usize, usize)> {
-    capturable_runs(
-        lo,
-        hi,
-        |il| matches!(&m.layers[il].mixer, Mixer::Kda(la) if la.tp.is_none()),
-    )
+    plan_runs(m, lo, hi).iter().map(|r| (r.lo, r.hi)).collect()
 }
 
 /// One captured layer's state-buffer identity.
@@ -852,6 +957,9 @@ impl HybridModel {
                     x_io,
                     x_out,
                     ws,
+                    mixed,
+                    pos_d,
+                    spare,
                     f16,
                     ..
                 } = stale;
@@ -859,6 +967,9 @@ impl HybridModel {
                     x_io,
                     x_out,
                     ws,
+                    mixed,
+                    pos_d,
+                    spare,
                     f16,
                 });
                 drop(runs);
@@ -909,6 +1020,18 @@ impl HybridModel {
             return self.hyper_range_decode_eager(e, topology, x, lo, hi, pos_d, pos, cache);
         }
 
+        // The captured graphs read the stage's own `pos_d` (rope inside an MLA PRE half);
+        // refresh it for this token before the first replay. KDA-only runs ignore it.
+        {
+            let pool = self.glm5_graph_pool(cache);
+            if let Some(st) = pool
+                .stages
+                .iter_mut()
+                .find(|s| s.dev == dev && s.lo == lo && s.hi == hi)
+            {
+                e.i32_mirror_store(&mut st.pos_d, pos as i32)?;
+            }
+        }
         let runs: Vec<(usize, usize)> = kda_runs(self, lo, hi);
         let mut cursor = lo;
         for (a, b) in runs {
@@ -937,7 +1060,7 @@ impl HybridModel {
                     return Ok(x);
                 }
             } else {
-                x = self.glm5_replay_run(e, dev, lo, hi, a, b, x, width, cache)?;
+                x = self.glm5_replay_run(e, dev, lo, hi, a, b, x, width, pos_d, cache)?;
             }
             trace_seg(e, dev, lo, hi, a, b, "graph-run", pos, &x);
             cursor = b;
@@ -995,7 +1118,7 @@ impl HybridModel {
         reuse: Option<StageBufs>,
     ) -> Res<()> {
         let n_embd = self.cfg.n_embd as usize;
-        let runs = kda_runs(self, lo, hi);
+        let runs = plan_runs(self, lo, hi);
         let recapture = reuse.is_some();
         // BUFFER REUSE ON RE-CAPTURE, and this is a correctness argument, not a saving. On a
         // rebuild the ONLY thing that has to change is the graphs; `x_io`, the private hc
@@ -1016,8 +1139,8 @@ impl HybridModel {
             phase: 0,
             recapture,
         };
-        let (x_io, x_out, ws, f16) = match reuse {
-            Some(b) => (b.x_io, b.x_out, b.ws, b.f16),
+        let (x_io, x_out, ws, mixed, pos_d_buf, spare, f16) = match reuse {
+            Some(b) => (b.x_io, b.x_out, b.ws, b.mixed, b.pos_d, b.spare, b.f16),
             None => (
                 step(e, &alloc_ctx, "alloc(x_io)", e.zeros(width))?,
                 step(e, &alloc_ctx, "alloc(x_out)", e.zeros(width))?,
@@ -1027,6 +1150,18 @@ impl HybridModel {
                     "alloc(HyperDecodeWs)",
                     crate::hyper::HyperDecodeWs::new(e, topology, n_embd),
                 )?,
+                step(e, &alloc_ctx, "alloc(mixed)", e.zeros(n_embd))?,
+                step(
+                    e,
+                    &alloc_ctx,
+                    "htod_i32(pos_d)",
+                    e.htod_i32(&[pos as i32]).map(Some),
+                )?
+                .expect("htod returned a buffer"),
+                [
+                    step(e, &alloc_ctx, "alloc(spare)", e.zeros(1))?,
+                    step(e, &alloc_ctx, "alloc(spare)", e.zeros(1))?,
+                ],
                 None,
             ),
         };
@@ -1054,11 +1189,14 @@ impl HybridModel {
             x_io,
             x_out,
             ws,
+            mixed,
+            pos_d: pos_d_buf,
+            spare,
             f16: None,
             next_pos: pos,
             state_sig: runs
                 .iter()
-                .flat_map(|(a, b)| *a..*b)
+                .flat_map(|r| r.lo..r.hi)
                 .filter_map(|il| recur_sig(e, cache, il))
                 .collect(),
             launched_since_sync: false,
@@ -1069,8 +1207,8 @@ impl HybridModel {
         if crate::glm5_sel_ledger::armed()
             && let Some(moe) = self.cfg.moe.as_ref()
         {
-            for (a, b) in &runs {
-                for il in *a..*b {
+            for r in &runs {
+                for il in r.lo..r.hi {
                     crate::glm5_sel_ledger::prearm(e, il as u16, moe.expert_used_count as usize)?;
                 }
             }
@@ -1091,61 +1229,78 @@ impl HybridModel {
                 phase: 0,
                 recapture,
             };
-            let pos_d = step(
+            step(
                 e,
                 &ctx,
-                "htod_i32(pos_d)",
-                e.htod_i32(&[pos as i32]).map(Some),
-            )?
-            .expect("htod returned a buffer");
-            for (ri, (a, b)) in runs.iter().enumerate() {
-                let (a, b) = (*a, *b);
+                "i32_mirror_store(pos_d)",
+                e.i32_mirror_store(&mut stage.pos_d, pos as i32),
+            )?;
+            for (ri, run) in runs.iter().enumerate() {
+                let (a, b) = (run.lo, run.hi);
                 ctx.run = ri;
                 ctx.a = a;
                 ctx.b = b;
-                let mut phase_graphs: Vec<CudaGraph> = Vec::with_capacity(2);
+                // Phase-major: every graph piece of the run at phase 0, then every one at phase
+                // 1, so the host-side KDA ping-pong the capture bodies perform advances the way
+                // one replayed token does (each layer swapped once per phase pass).
+                let mut per_piece: Vec<Vec<CudaGraph>> = Vec::new();
                 for phase in 0..2 {
                     ctx.phase = phase;
-                    let x_cell = std::cell::RefCell::new(&mut stage.x_io);
-                    let out_cell = std::cell::RefCell::new(&mut stage.x_out);
-                    let ws_cell = std::cell::RefCell::new(&mut stage.ws);
-                    let cache_cell = std::cell::RefCell::new(&mut *cache);
-                    let g = capture_one(e, &ctx, |e| {
-                        self.hyper_range_decode_ws_body(
-                            e,
-                            topology,
-                            &mut x_cell.borrow_mut(),
-                            a,
-                            b,
-                            &pos_d,
-                            pos,
-                            &mut cache_cell.borrow_mut(),
-                            &mut ws_cell.borrow_mut(),
-                        )?;
-                        // THE REPLAY CONTRACT, recorded rather than argued. The walk ping-pongs
-                        // the stream state between `x_io` and `ws.xb`, so which physical buffer
-                        // holds the answer at the end is a parity property of the layer count and
-                        // the site count — and box run 4 produced zero logits at every step, which
-                        // is what "the eager remainder read the buffer the graph did not write"
-                        // looks like. One memcpy node into a THIRD buffer removes the question:
-                        // `x_out` holds this run's output on every replay, whatever the parity.
-                        let live = x_cell.borrow();
-                        e.copy_into(&mut out_cell.borrow_mut(), 0, &live, width)
-                    })?;
-                    phase_graphs.push(g);
+                    let mut gi = 0usize;
+                    for piece in &run.pieces {
+                        let PieceSpec::Graph(segs) = piece else {
+                            continue;
+                        };
+                        let x_cell = std::cell::RefCell::new(&mut stage.x_io);
+                        let out_cell = std::cell::RefCell::new(&mut stage.x_out);
+                        let ws_cell = std::cell::RefCell::new(&mut stage.ws);
+                        let cache_cell = std::cell::RefCell::new(&mut *cache);
+                        let mixed_ref: &CudaSlice<f32> = &stage.mixed;
+                        let pos_d_ref: &CudaSlice<i32> = &stage.pos_d;
+                        let g = capture_one(e, &ctx, |e| {
+                            self.hyper_range_decode_ws_segments(
+                                e,
+                                topology,
+                                &mut x_cell.borrow_mut(),
+                                segs,
+                                pos_d_ref,
+                                pos,
+                                &mut cache_cell.borrow_mut(),
+                                &mut ws_cell.borrow_mut(),
+                                Some(mixed_ref),
+                            )?;
+                            let live = x_cell.borrow();
+                            e.copy_into(&mut out_cell.borrow_mut(), 0, &live, width)
+                        })?;
+                        if phase == 0 {
+                            per_piece.push(vec![g]);
+                        } else {
+                            per_piece[gi].push(g);
+                        }
+                        gi += 1;
+                    }
                 }
-                let mut it = phase_graphs.into_iter();
-                let g0 = it.next().expect("phase 0 captured");
-                let g1 = it.next().expect("phase 1 captured");
-                // Everything the two captured bodies took from the verify workspace, held for the
-                // life of the graphs that baked it (see `Engine::glm5_graph_keep`).
+                let mut it = per_piece.into_iter();
+                let mut pieces: Vec<RunPiece> = Vec::with_capacity(run.pieces.len());
+                for piece in &run.pieces {
+                    match piece {
+                        PieceSpec::Graph(segs) => {
+                            let mut v = it.next().expect("captured both phases");
+                            let g0 = v.remove(0);
+                            let g1 = v.remove(0);
+                            pieces.push(RunPiece::Graph {
+                                graphs: [g0, g1],
+                                segs: segs.clone(),
+                            });
+                        }
+                        PieceSpec::Middle(il) => pieces.push(RunPiece::Middle(*il)),
+                    }
+                }
                 let keeper = std::mem::take(&mut *e.glm5_graph_keep().lock().unwrap());
                 stage.runs.push(RunGraph {
                     lo: a,
                     hi: b,
-                    graphs: [g0, g1],
-                    // Capture's two passes leave the host ping-pong fields exactly where they
-                    // started, so every run's first replay is phase 0.
+                    pieces,
                     phase: 0,
                     checked: 0,
                     _keeper: keeper,
@@ -1160,12 +1315,28 @@ impl HybridModel {
         crate::GLM5_DECODE_GRAPH_CAPTURES.fetch_add(1, Ordering::Relaxed);
         // Not `note`: a rebuild must print EVERY time, or a box log cannot tell one capture from
         // six. Only the first-build line is deduplicated.
+        let halves: usize = stage
+            .runs
+            .iter()
+            .map(|r| {
+                r.pieces
+                    .iter()
+                    .filter(|p| matches!(p, RunPiece::Middle(_)))
+                    .count()
+            })
+            .sum();
+        crate::GLM5_DECODE_GRAPH_MLA_HALVES.fetch_add(halves as u64, Ordering::Relaxed);
         let line = format!(
-            "engaged dev={dev} stage=[{lo}, {hi}) runs={} captured_layers={} recapture={recapture} \
-             free={} (2 ping-pong phases each; MLA/DSA layers stay eager)",
+            "engaged dev={dev} stage=[{lo}, {hi}) runs={} captured_layers={} mla_halves={halves} \
+             recapture={recapture} free={} (2 ping-pong phases each; {})",
             stage.runs.len(),
             stage.runs.iter().map(|r| r.hi - r.lo).sum::<usize>(),
             free_mb(e),
+            if halves > 0 {
+                "MLA layers captured in halves around an eager middle, MEMRA_GLM5_GRAPH_MLA=1"
+            } else {
+                "MLA/DSA layers stay eager"
+            },
         );
         if recapture {
             eprintln!("[glm5-decode-graph] {line}");
@@ -1210,11 +1381,14 @@ impl HybridModel {
                 alt: CudaSlice<f32>,
                 ssm_ptr: u64,
             }
+            let mla_lens: Vec<(usize, usize)> = (a..b)
+                .filter_map(|il| cache.latent[il].as_ref().map(|l| (il, l.len)))
+                .collect();
             let mut snaps: Vec<Snap> = Vec::with_capacity(b - a);
             for il in a..b {
-                let rl = cache.recur[il]
-                    .as_ref()
-                    .ok_or_else(|| format!("warm: layer {il} carries no recurrent state"))?;
+                let Some(rl) = cache.recur[il].as_ref() else {
+                    continue;
+                };
                 let ssm_ptr = {
                     let st = e.stream();
                     let (p, _g) = rl.ssm_state.device_ptr(&st);
@@ -1250,6 +1424,11 @@ impl HybridModel {
                 e.copy_into(&mut rl.conv_state, 0, &sn.conv, sn.conv.len())?;
                 e.copy_into(&mut rl.ssm_state, 0, &sn.ssm, sn.ssm.len())?;
                 e.copy_into(&mut rl.ssm_state_alt, 0, &sn.alt, sn.alt.len())?;
+            }
+            for (il, len) in &mla_lens {
+                let l = cache.latent[*il].as_mut().expect("snapshotted above");
+                l.len = *len;
+                e.i32_mirror_store(&mut l.len_d, *len as i32)?;
             }
             note(&format!(
                 "warmed run [{a}, {b}) before capture (one eager pass on a copy of the input, \
@@ -1295,10 +1474,16 @@ impl HybridModel {
             p
         }
         let mut snaps: Vec<Snap> = Vec::with_capacity(b - a);
+        // MLA layers inside a split run: the eager reference appends to their latent cache;
+        // `len` and its device mirror are put back so the replay's append lands on the same
+        // slot (the row and the index ring position derive from `len`).
+        let mla_lens: Vec<(usize, usize)> = (a..b)
+            .filter_map(|il| cache.latent[il].as_ref().map(|l| (il, l.len)))
+            .collect();
         for il in a..b {
-            let rl = cache.recur[il]
-                .as_ref()
-                .ok_or_else(|| format!("self-check: layer {il} carries no recurrent state"))?;
+            let Some(rl) = cache.recur[il].as_ref() else {
+                continue;
+            };
             let ssm_ptr = ptr_of(e, &rl.ssm_state);
             let mut conv = e.uninit(rl.conv_state.len())?;
             let mut ssm = e.uninit(rl.ssm_state.len())?;
@@ -1314,19 +1499,23 @@ impl HybridModel {
                 ssm_ptr,
             });
         }
-        fn restore(e: &Engine, cache: &mut Cache, snaps: &[Snap]) -> Res<()> {
+        let restore = |e: &Engine, cache: &mut Cache, snaps: &[Snap]| -> Res<()> {
             for sn in snaps {
                 let rl = cache.recur[sn.il].as_mut().expect("snapshotted above");
                 if ptr_of(e, &rl.ssm_state) != sn.ssm_ptr {
-                    // the eager walk's host ping-pong moved the role; move it back first
                     std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
                 }
                 e.copy_into(&mut rl.conv_state, 0, &sn.conv, sn.conv.len())?;
                 e.copy_into(&mut rl.ssm_state, 0, &sn.ssm, sn.ssm.len())?;
                 e.copy_into(&mut rl.ssm_state_alt, 0, &sn.alt, sn.alt.len())?;
             }
+            for (il, len) in &mla_lens {
+                let l = cache.latent[*il].as_mut().expect("snapshotted above");
+                l.len = *len;
+                e.i32_mirror_store(&mut l.len_d, *len as i32)?;
+            }
             Ok(())
-        }
+        };
         // memra#131 cell 5: BEFORE anything runs, count non-finite elements in the recurrent
         // state this run will read and in the stage's pool buffers (the captured bodies' private
         // workspace and the x_io/x_out cells). Cell 4 showed a FINITE input whose eager reference
@@ -1397,7 +1586,9 @@ impl HybridModel {
         }
         let mut post: Vec<Post> = Vec::with_capacity(b - a);
         for il in a..b {
-            let rl = cache.recur[il].as_ref().expect("snapshotted above");
+            let Some(rl) = cache.recur[il].as_ref() else {
+                continue;
+            };
             post.push(Post {
                 il,
                 conv: e.dtoh(&rl.conv_state)?,
@@ -1470,7 +1661,7 @@ impl HybridModel {
                 .unwrap_or((1, 0))
         };
         // The real step.
-        let x_rep = self.glm5_replay_run(e, dev, lo, hi, a, b, x, width, cache)?;
+        let x_rep = self.glm5_replay_run(e, dev, lo, hi, a, b, x, width, pos_d, cache)?;
         let h_rep = e.dtoh(&x_rep)?;
         // A NaN replay compared to a NaN eager walk is bit-identical, so an output-and-state
         // compare on poisoned data is a vacuous PASS. Box trace 2026-09-03 (memra#131): every
@@ -1704,6 +1895,7 @@ impl HybridModel {
     /// Replay one captured run: stream state in, launch, stream state out, mirror the host-side
     /// ping-pong the eager step would have done, advance the phase.
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     fn glm5_replay_run(
         &self,
         e: &Engine,
@@ -1714,8 +1906,15 @@ impl HybridModel {
         b: usize,
         x: CudaSlice<f32>,
         width: usize,
+        pos_d: &CudaSlice<i32>,
         cache: &mut Cache,
     ) -> Res<CudaSlice<f32>> {
+        fn ri_of(st: &StageGraphs, a: usize, b: usize) -> usize {
+            st.runs
+                .iter()
+                .position(|r| r.lo == a && r.hi == b)
+                .expect("run index resolved before the pieces loop")
+        }
         let phase;
         {
             let pool = self.glm5_graph_pool(cache);
@@ -1747,14 +1946,104 @@ impl HybridModel {
                 "memcpy_dtod(x -> x_io)",
                 e.copy_into(&mut st.x_io, 0, &x, width),
             )?;
-            let prev = e.f16_scratch_swap(st.f16.take());
-            let launched = st.runs[ri].graphs[phase].launch();
-            st.f16 = e.f16_scratch_swap(prev);
-            // Set BEFORE propagating: a launch that errored may still have been submitted, and
-            // the re-capture path has to assume the exec is live when it decides to destroy it.
             st.launched_since_sync = true;
-            step(e, &ctx, "cuGraphLaunch", launched.map_err(Into::into))?;
-            // THIS RUN's parity advances, and only this run's. See `RunGraph::phase`.
+        }
+        // Pieces in order: graph pieces replay; an MLA middle runs eager on the stage's own
+        // workspace (`ws.h` and `mixed` are lent out of the pool for the call and put back).
+        let n_pieces = {
+            let pool = self.glm5_graph_pool(cache);
+            let st = pool
+                .stages
+                .iter()
+                .find(|s| s.dev == dev && s.lo == lo && s.hi == hi)
+                .expect("checked above");
+            st.runs[ri_of(st, a, b)].pieces.len()
+        };
+        for pi in 0..n_pieces {
+            let middle = {
+                let pool = self.glm5_graph_pool(cache);
+                let st = pool
+                    .stages
+                    .iter_mut()
+                    .find(|s| s.dev == dev && s.lo == lo && s.hi == hi)
+                    .expect("checked above");
+                let ri = ri_of(st, a, b);
+                let ctx = CapCtx {
+                    dev,
+                    lo,
+                    hi,
+                    run: ri,
+                    runs: st.runs.len(),
+                    a,
+                    b,
+                    phase,
+                    recapture: false,
+                };
+                match &st.runs[ri].pieces[pi] {
+                    RunPiece::Graph { graphs, .. } => {
+                        let prev = e.f16_scratch_swap(st.f16.take());
+                        let launched = graphs[phase].launch();
+                        st.f16 = e.f16_scratch_swap(prev);
+                        step(e, &ctx, "cuGraphLaunch", launched.map_err(Into::into))?;
+                        None
+                    }
+                    RunPiece::Middle(il) => {
+                        let il = *il;
+                        let (s0, s1) = {
+                            let [s0, s1] = &mut st.spare;
+                            (
+                                std::mem::replace(s0, e.zeros(1)?),
+                                std::mem::replace(s1, e.zeros(1)?),
+                            )
+                        };
+                        let h = std::mem::replace(&mut st.ws.h, s0);
+                        let mixed = std::mem::replace(&mut st.mixed, s1);
+                        Some((il, h, mixed))
+                    }
+                }
+            };
+            if let Some((il, h, mut mixed)) = middle {
+                let prev = {
+                    let pool = self.glm5_graph_pool(cache);
+                    let st = pool
+                        .stages
+                        .iter_mut()
+                        .find(|s| s.dev == dev && s.lo == lo && s.hi == hi)
+                        .expect("checked above");
+                    e.f16_scratch_swap(st.f16.take())
+                };
+                let r = self.hyper_mla_mid_post_ws(e, il, &h, pos_d, cache, &mut mixed);
+                let pool = self.glm5_graph_pool(cache);
+                let st = pool
+                    .stages
+                    .iter_mut()
+                    .find(|s| s.dev == dev && s.lo == lo && s.hi == hi)
+                    .expect("checked above");
+                st.f16 = e.f16_scratch_swap(prev);
+                st.spare[0] = std::mem::replace(&mut st.ws.h, h);
+                st.spare[1] = std::mem::replace(&mut st.mixed, mixed);
+                let ctx = CapCtx {
+                    dev,
+                    lo,
+                    hi,
+                    run: ri_of(st, a, b),
+                    runs: st.runs.len(),
+                    a,
+                    b,
+                    phase,
+                    recapture: false,
+                };
+                step(e, &ctx, "mla_middle", r)?;
+            }
+        }
+        {
+            let pool = self.glm5_graph_pool(cache);
+            let st = pool
+                .stages
+                .iter_mut()
+                .find(|s| s.dev == dev && s.lo == lo && s.hi == hi)
+                .expect("checked above");
+            let ri = ri_of(st, a, b);
             st.runs[ri].phase ^= 1;
         }
         // The eager walk swaps `ssm_state`/`ssm_state_alt` once per KDA layer per step
