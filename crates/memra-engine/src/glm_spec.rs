@@ -890,6 +890,14 @@ impl HybridModel {
                 }
             }
             g.replays += 1;
+            if g.replays == 2 {
+                // First cached reuse after the capture/self-check visit. A live
+                // MLA-twin dispatch alone must not count as graph replay proof.
+                eprintln!(
+                    "[glm5-verify-graph] replayed: [{lo}, {hi}) t={t} replays={}",
+                    g.replays
+                );
+            }
             crate::GLM5_VERIFY_GRAPH_REPLAYS.fetch_add(1, Ordering::Relaxed);
             pool.lend_rows(lo, hi, t, ckpt);
             return Ok(out);

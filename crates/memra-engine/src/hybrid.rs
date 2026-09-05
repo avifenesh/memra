@@ -6175,6 +6175,17 @@ impl HybridModel {
         // no consumer can ever read a half-built tensor (the 2026-08-02 split5 ref=0.0
         // head-mirror find). No-op with the door shut.
         crate::pp::sync_stages_after_load(e, n_trunk)?;
+        // Load identity is also needed by plain correctness oracles, where the
+        // speculative route is disabled but the same drafter/trim remain loaded.
+        if let Some(drafter) = model.glm5_dflash.as_ref() {
+            eprintln!(
+                "[glm5-load] dflash2={} native_mtp={} trim_rows={} trim_src={}",
+                drafter.sha8,
+                model.mtp.is_some(),
+                model.glm5_dflash_trim().map_or(0, |(_, ranks)| ranks.len()),
+                model.frspec_src_sha16.as_deref().unwrap_or("none"),
+            );
+        }
         Ok(model)
     }
 
