@@ -14607,7 +14607,12 @@ impl Engine {
         unsafe {
             b.launch(cfg)?;
         }
-        F32_GEMV_KERNEL_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if F32_GEMV_KERNEL_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+            eprintln!(
+                "[f32-gemv-kernel] engaged: f32 linear at m<=16 rides gemv_f32_rows instead of \
+                 cuBLASLt (MEMRA_F32_GEMV_KERNEL=1; first shape {in_f}->{out_f} m={m})"
+            );
+        }
         Ok(true)
     }
 
