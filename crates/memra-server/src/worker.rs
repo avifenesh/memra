@@ -954,18 +954,6 @@ fn tick_trace_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("MEMRA_TICK_TRACE").as_deref() == Ok("1"))
 }
 
-fn graph_session_env_on(value: Option<&str>) -> bool {
-    value == Some("1")
-}
-
-fn graph_session_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        let value = std::env::var("MEMRA_SERVE_GS").ok();
-        graph_session_env_on(value.as_deref())
-    })
-}
-
 /// A model loaded resident on the worker thread: weights + its own tokenizer + config snapshot.
 pub(crate) struct LoadedModel {
     pub(crate) model: HybridModel,
@@ -10784,13 +10772,6 @@ struct Session {
     /// allocation on this path (kept to avoid restructuring admit; ~small VRAM overhead until
     /// a follow-up drops it). committed == every token whose state the spec caches hold.
     spec: Option<memra_engine::spec::SpecSession>,
-    /// SINGLE-SESSION CUDA-GRAPH serving (2026-07-26, +34% measured at B=1): a greedy
-    /// interactive session admitted ALONE rides GraphSession replay (one step/tick, 4B
-    /// D2H). Degrades to the batched-eager path the moment a second session admits —
-    /// legal because dc==eager is bit-identical, so the graph cache continues seamlessly.
-    graph: Option<memra_engine::decode::GraphSession>,
-    /// The token produced by the last graph step (next INPUT; emitted on the next tick).
-    graph_pending: Option<u32>,
     /// STEP-OOM PARK (lane/admit-oom): how many times this session has been parked back to
     /// the queue after a step-time CUDA OOM. Bounded by STEP_OOM_MAX_RETRIES before the
     /// honest error — a session that cannot make progress must not retry forever.
@@ -14257,255 +14238,6 @@ pub fn run(
                 }
             }
         } else {
-            // (a0) SINGLE-SESSION GRAPH PATH (MEMRA_SERVE_GS=1 opts in). A graph session is
-            // eager-program bit-identical, but it must degrade when concurrency arrives. That
-            // solo->batched program transition changed real greedy tokens and selected early EOS,
-            // so the load-stable default keeps every width on the generic batched body.
-            let gs_on = graph_session_enabled();
-            if gs_on && active.len() > 1 {
-                #[allow(clippy::needless_range_loop)]
-                // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
-                for i in 0..active.len() {
-                    if finished.contains(&i) || active[i].graph.is_none() {
-                        continue;
-                    }
-                    let s = &mut active[i];
-                    let g = s.graph.take().unwrap();
-                    s.cache = Some(g.cache);
-                    if let Some(pend) = s.graph_pending.take() {
-                        let generated_before = s.generated.len();
-                        let lane = s.lane;
-                        let (cont, _) = advance_token_emit(&loaded, s, pend);
-                        let emitted = record_output_tokens(
-                            generated_before,
-                            s.generated.len(),
-                            lane,
-                            &mut n_tokens_out,
-                            &mut lane_tokens,
-                        );
-                        if emitted > 0 && lane == crate::lanes::Lane::Interactive {
-                            last_interactive_decode = Instant::now();
-                        }
-                        if !cont {
-                            finished.push(i);
-                        } else {
-                            let lm = &loaded[&s.model];
-                            match lm
-                                .model
-                                .decode_step(&engine, pend, s.cache.as_mut().unwrap())
-                            {
-                                Ok(l) => {
-                                    s.last_logits = l;
-                                    s.fed.push(pend);
-                                }
-                                Err(err) => {
-                                    let _ = s.tx.send(Event::Error(EngineError::engine(format!(
-                                        "degrade: {err}"
-                                    ))));
-                                    finished.push(i);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            if gs_on && active.len() == 1 && !finished.contains(&0) {
-                let s = &mut active[0];
-                // Promote only generations long enough to amortize the one-time
-                // capture+snapshot (~340ms measured = ~330-token break-even at the
-                // 1.03ms/tok graph saving). Short requests stay eager-batched.
-                let gs_min: usize = std::env::var("MEMRA_GS_MIN")
-                    .ok()
-                    .and_then(|v| v.parse().ok())
-                    .unwrap_or(384);
-                // POST-PREFILL promotion (round 35): the old cold promotion re-primed the
-                // prompt TOKEN-WISE inside graph_session_new — a live ~3x end-to-end LOSS
-                // for solo long prompts (measured 871-tok/400-gen: 6.4s vs ~2.2s eager).
-                // The graph session captures OVER an already-primed cache
-                // (graph_session_from_cache). TTFT pays only the one-time capture (~340ms),
-                // amortized by the gs_min budget gate.
-                // REACHABILITY (corrected 2026-08-13, hermes a5f9431efe0a30a2 confirming an
-                // orchestrator read): this door admits RESTORED-HIT and POOL-RESUME sessions
-                // ONLY — never a cold chunked-prefill one. The `generated.is_empty()` term
-                // below is tested at tick top, but phase (c) sweeps every prefill_done
-                // session into the batched decode set and emits token 1 in the SAME tick
-                // that cold prefill completes. So a cold session never STARTS a tick with
-                // prefill_done && generated.is_empty(); only sessions admitted already
-                // prefill-complete do. Earlier text here claimed cold promotion worked and
-                // was wrong. Left as-is deliberately: FLAGS.md records this door as a net
-                // loss post-B1FAST, so there is no case for widening it. Anything that does
-                // widen it needs a program-crossing guard (see §Correctness discipline) —
-                // promoting mid-request is the early-EOS corruption class.
-                // CONSTRAINED sessions promote too (constrained-full, 2026-08-03): the
-                // captured step bans the packed grammar mask on device before its argmax
-                // (stable mask pointer, contents re-uploaded per step). Host-oracle and
-                // fallback-sampler constrained sessions stay eager.
-                // SAMPLED sessions do NOT graph-promote (`is_greedy()` below) — a separate,
-                // untaken lever. It costs nothing today: this promotion only fires for
-                // `s.spec.is_none()` solo sessions, and on an MTP model every sampled
-                // session already rides the (faster) sampled spec burst path instead. It
-                // would only matter for sampled sessions on a NON-MTP model; capturing the
-                // seeded gumbel draw needs the in-graph RNG-counter bump the spec draft
-                // chain already has (spec.rs sctr_inc), so it is wiring, not new math.
-                let constr_graph_ok =
-                    s.constraint.is_none() || (!constrain_host() && devsample_meta(s).is_some());
-                // EAGER-ONLY models never graph-promote (lane/gemma4-serve-gaps): the
-                // step-wise capture body (decode_step_dc_cap_masked) walks the GENERIC
-                // qwen-class layer stack — over gemma4 weights that is silently wrong
-                // logits (the round-45 g12 argmax-INIT class), not an error.
-                // step35 never graph-promotes either (lane/step35-batched-decode): the
-                // capture walks full_attn_decode_dc_inner, which REFUSES step35 by design
-                // (the SWA offset KV view is inexpressible in the len_d-derived dc kernels,
-                // plus per-layer n_head capture) — and a capture-time refusal lands on the
-                // degrade-with-cache-consumed path, which kills the request. So a solo
-                // greedy step35 session with budget >= gs_min died with "graph promote
-                // failed" instead of decoding eagerly. Named exclusion; the dc gap itself
-                // stays a named refusal in decode.rs.
-                if s.graph.is_none()
-                    && s.spec.is_none()
-                    && graph_sampler_eligible(&s.sampler)
-                    && memra_engine::plan_backend::DECODE_GRAPH
-                        .trunk_capabilities(&loaded[&s.model].model.plan)
-                        .cuda_graph
-                        .supported
-                    && loaded[&s.model].model.rewrite_allowed(
-                        memra_gguf::execution_manifest::RewriteSurface::DecodeGraph,
-                    )
-                    && constr_graph_ok
-                    && s.lane == crate::lanes::Lane::Interactive
-                    && s.budget >= gs_min
-                    && s.prefill_done
-                    && s.generated.is_empty()
-                    && s.cache.is_some()
-                    && !s.last_logits.is_empty()
-                {
-                    let lm = &loaded[&s.model];
-                    // first generated token: MASKED argmax for constrained sessions (the
-                    // grammar's initial state), plain argmax otherwise.
-                    let (first, mask0) = match s.constraint.as_mut() {
-                        Some(c) => match c.compute_mask() {
-                            Ok(m) => {
-                                let mut row = s.last_logits.clone();
-                                crate::constrained::apply_mask(&m, &mut row);
-                                (memra_engine::forward::argmax(&row) as u32, Some(m))
-                            }
-                            Err(err) => {
-                                let _ = s.tx.send(Event::Error(EngineError::engine(format!(
-                                    "constraint mask: {err}"
-                                ))));
-                                finished.push(0);
-                                (0, None)
-                            }
-                        },
-                        None => (memra_engine::forward::argmax(&s.last_logits) as u32, None),
-                    };
-                    if !finished.contains(&0) {
-                        let cache = s.cache.take().unwrap();
-                        match lm.model.graph_session_from_cache_masked(
-                            &engine,
-                            cache,
-                            first,
-                            s.budget + 2,
-                            mask0.as_ref().map(|m| m.as_slice()),
-                        ) {
-                            Ok((g, first)) => {
-                                s.graph = Some(g);
-                                s.graph_pending = Some(first);
-                            }
-                            Err(err) => {
-                                // capture failed with the cache consumed — degrade the session
-                                // via the graph-less error path (rare: capture-time errors only).
-                                let _ = s.tx.send(Event::Error(EngineError::engine(format!(
-                                    "graph promote failed: {err}"
-                                ))));
-                                finished.push(0);
-                            }
-                        }
-                    }
-                }
-                // step the (possibly just-promoted) graph session: one token per tick
-                let s = &mut active[0];
-                if let Some(pend) = s.graph_pending.take() {
-                    let t_g = Instant::now();
-                    let generated_before = s.generated.len();
-                    let lane = s.lane;
-                    let (cont, _) = advance_token_emit(&loaded, s, pend);
-                    let emitted = record_output_tokens(
-                        generated_before,
-                        s.generated.len(),
-                        lane,
-                        &mut n_tokens_out,
-                        &mut lane_tokens,
-                    );
-                    if emitted > 0 && lane == crate::lanes::Lane::Interactive {
-                        last_interactive_decode = Instant::now();
-                    }
-                    if !cont {
-                        finished.push(0);
-                    } else {
-                        s.fed.push(pend);
-                        // CONSTRAINED: fresh post-consume mask into the graph's stable
-                        // buffer before the replay (the KV-pointer update pattern).
-                        let mut mask_err = None;
-                        if let Some(c) = s.constraint.as_mut() {
-                            match c.compute_mask() {
-                                Ok(m) => {
-                                    if let Err(err) =
-                                        s.graph.as_mut().unwrap().upload_mask(&engine, m.as_slice())
-                                    {
-                                        mask_err = Some(err.to_string());
-                                    }
-                                }
-                                Err(err) => mask_err = Some(err),
-                            }
-                        }
-                        if let Some(err) = mask_err {
-                            let _ = s.tx.send(Event::Error(EngineError::engine(format!(
-                                "constraint mask: {err}"
-                            ))));
-                            finished.push(0);
-                        } else {
-                            let lm = &loaded[&s.model];
-                            // Q2 (audit 2026-08-05): step() errors for REAL causes (recapture
-                            // OOM at a kernel-class boundary, fa exec-update failure) besides
-                            // budget exhaustion — those must surface as errors, never as a
-                            // clean MaxNew. Budget exhaustion (the one benign cause, checked
-                            // here against the same bound step() uses) keeps the honest MaxNew.
-                            let at_budget = s
-                                .graph
-                                .as_ref()
-                                .is_some_and(|g| g.cache.pos + 1 >= g.bucket_max);
-                            let g = s.graph.as_mut().unwrap();
-                            match g.step(&engine, &lm.model) {
-                                Ok(next) => {
-                                    s.graph_pending = Some(next);
-                                }
-                                Err(err) if at_budget => {
-                                    eprintln!(
-                                        "[worker] graph session capture budget reached \
-                                           (model {}): {err}",
-                                        s.model
-                                    );
-                                    finish(s, StopReason::MaxNew);
-                                    finished.push(0);
-                                }
-                                Err(err) => {
-                                    eprintln!(
-                                        "[worker] graph session step FAILED \
-                                           (model {}): {err}",
-                                        s.model
-                                    );
-                                    let _ = s.tx.send(Event::Error(EngineError::engine(format!(
-                                        "graph step failed: {err}"
-                                    ))));
-                                    finished.push(0);
-                                }
-                            }
-                            step_stats.record(t_g.elapsed().as_secs_f32() * 1000.0);
-                        }
-                    }
-                }
-            }
             // (a-) SPEC DEMOTION (lane/spec-gate, task #89, 2026-08-07). The admit gate above
             // keeps NEW arrivals off the serial spec queue, but sessions admitted while the box
             // was quiet keep bursting after load arrives — and each one holds a whole burst of
@@ -15329,7 +15061,7 @@ pub fn run(
                             && loaded[&s.model].model.rewrite_allowed(
                                 memra_gguf::execution_manifest::RewriteSurface::CarriedPrime,
                             );
-                        if s.spec.is_none() && !s.prefill_done && s.graph.is_none()
+                        if s.spec.is_none() && !s.prefill_done
                             // vision sessions prime alone (mixed-embedding overlay; the
                             // concat prime has no overlay seam); capture sessions too —
                             // the emptying chunk's hidden stack is read per-session
@@ -15871,7 +15603,6 @@ pub fn run(
                     // stop inside the prompt; concat can't stop).
                     if s.spec.is_some()
                         || s.prefill_done
-                        || s.graph.is_some()
                         || s.vision.is_some()
                         // capture sessions prime alone: the emptying chunk's hidden stack
                         // is read per-session (lane/embed-serve)
@@ -20524,8 +20255,6 @@ fn admit(
         cache,
         sampler,
         spec,
-        graph: None,
-        graph_pending: None,
         oom_retries: req_oom_retries,
         vision_memory,
         replay,
@@ -20809,7 +20538,6 @@ fn prefix_fanout_eligible(s: &Session, eager_only: &std::collections::HashSet<St
         && s.vision.is_none()
         && s.capture.is_none()
         && s.spec.is_none()
-        && s.graph.is_none()
         && !s.prefill_done
         && s.lane == crate::lanes::Lane::Interactive
         && s.fed.is_empty()
@@ -21658,16 +21386,6 @@ fn legacy_async_chain_width(
 /// would make `decode_step_chain` interpret the request as greedy instead of declining it.
 fn async_chain_devsample(meta: Option<DevSamp>) -> Option<DevSamp> {
     meta.filter(|sample| sample.penalty.is_none())
-}
-
-/// GraphSession's captured sampler is raw greedy. Penalties change logits before argmax and
-/// therefore stay on the ordinary batched epilogue until a penalty-aware graph is qualified.
-fn graph_sampler_eligible(sm: &Sampler) -> bool {
-    sm.is_greedy()
-        && (sm.penalty_last_n() == 0
-            || (sm.penalty_repeat() == 1.0
-                && sm.penalty_freq() == 0.0
-                && sm.penalty_present() == 0.0))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -24395,10 +24113,10 @@ mod tests {
     use super::{DraftVerdict, draft_verdict, draft_verdict_message};
     use super::{
         Event, async_chain_devsample, cached_hit_needs_first_token, carried_prime_batch_eligible,
-        emit_spec_token_events, graph_sampler_eligible, graph_session_env_on,
-        interactive_prefill_budget, interactive_prime_batch_take, legacy_async_chain_width,
-        prefill_tick_take, record_output_progress, record_output_tokens, routed_moe_prefix_split,
-        solo_widen_fresh, spec_visible_len, summarize_confidence, utf8_delta,
+        emit_spec_token_events, interactive_prefill_budget, interactive_prime_batch_take,
+        legacy_async_chain_width, prefill_tick_take, record_output_progress, record_output_tokens,
+        routed_moe_prefix_split, solo_widen_fresh, spec_visible_len, summarize_confidence,
+        utf8_delta,
     };
     use super::{HashMap, METER_TENANT_CAP, meter_account, meter_cached_credit};
     use super::{KV_FLEX_GRANT, KvFlex, kv_flex_effective_budget, prefix_cache_budget_bytes};
@@ -24626,28 +24344,6 @@ mod tests {
             &tool_turn,
             false
         ));
-    }
-
-    #[test]
-    fn graph_session_requires_explicit_opt_in() {
-        assert!(!graph_session_env_on(None));
-        assert!(!graph_session_env_on(Some("0")));
-        assert!(!graph_session_env_on(Some("true")));
-        assert!(graph_session_env_on(Some("1")));
-    }
-
-    #[test]
-    fn graph_session_refuses_penalties_its_capture_does_not_apply() {
-        assert!(graph_sampler_eligible(&Sampler::new(
-            SamplerConfig::default()
-        )));
-        let penalized = Sampler::new(SamplerConfig {
-            temperature: 0.0,
-            penalty_last_n: usize::MAX,
-            penalty_present: 1.5,
-            ..Default::default()
-        });
-        assert!(!graph_sampler_eligible(&penalized));
     }
 
     #[test]

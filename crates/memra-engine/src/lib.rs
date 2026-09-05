@@ -11218,178 +11218,6 @@ impl Engine {
         Ok(())
     }
 
-    /// EP2 owner-guarded gate+up sweep: full-width rows, pairs whose expert this rank
-    /// does not own exit immediately. Per-pair dot == the _sel_v2 gu body.
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_nvfp4_sel_gu_ep_into(
-        &self,
-        gate_bank: &CudaSlice<u8>,
-        up_bank: &CudaSlice<u8>,
-        sel: &CudaSlice<i32>,
-        aq: &CudaSlice<i8>,
-        ad: &CudaSlice<f32>,
-        yg: &mut CudaSlice<f32>,
-        yu: &mut CudaSlice<f32>,
-        n_sel: usize,
-        in_f: usize,
-        out_f: usize,
-        row_bytes: usize,
-        expert_stride: usize,
-        owner: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        assert!(
-            in_f.is_multiple_of(64),
-            "NVFP4 dp4a requires in_f % 64 == 0"
-        );
-        if yg.len() < n_sel * out_f || yu.len() < n_sel * out_f || sel.len() < n_sel {
-            return Err("NVFP4 gu ep geometry".into());
-        }
-        let f = self.func("qmatvec_nvfp4_dp4a_sel_v2_gu_ep");
-        let cfg = LaunchConfig {
-            grid_dim: ((2 * out_f) as u32, n_sel as u32, 1),
-            block_dim: (128, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, ns, own) = (in_f as i32, out_f as i32, n_sel as i32, owner as i32);
-        let (rb, es) = (row_bytes as i64, expert_stride as i64);
-        let (ars, adrs) = (0i64, 0i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(gate_bank)
-            .arg(up_bank)
-            .arg(sel)
-            .arg(aq)
-            .arg(ad)
-            .arg(yg)
-            .arg(yu)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&ns)
-            .arg(&rb)
-            .arg(&es)
-            .arg(&ars)
-            .arg(&adrs)
-            .arg(&own);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// EP2 owner-guarded SwiGLU (q8_1 emission), clamped or plain by `limit`.
-    #[allow(clippy::too_many_arguments)]
-    pub fn silu_mul_scaled_q8_1_sel_ep_into(
-        &self,
-        gate: &CudaSlice<f32>,
-        up: &CudaSlice<f32>,
-        gmac: &CudaSlice<f32>,
-        umac: &CudaSlice<f32>,
-        sel: &CudaSlice<i32>,
-        limit: Option<f32>,
-        out_q: &mut CudaSlice<i8>,
-        out_d: &mut CudaSlice<f32>,
-        n_per: usize,
-        n_sel: usize,
-        owner: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if !n_per.is_multiple_of(32)
-            || out_q.len() < n_sel * n_per
-            || out_d.len() < n_sel * n_per / 32
-        {
-            return Err("NVFP4 silu ep geometry".into());
-        }
-        let f = self.func("silu_mul_scaled_q8_1_sel_ep");
-        let warps = n_sel * n_per / 32;
-        let cfg = LaunchConfig {
-            grid_dim: ((warps as u32).div_ceil(4), 1, 1),
-            block_dim: (128, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (np, ns, own) = (n_per as i32, n_sel as i32, owner as i32);
-        let (lim, has) = match limit {
-            Some(l) => (l, 1i32),
-            None => (0.0f32, 0i32),
-        };
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(gate)
-            .arg(up)
-            .arg(gmac)
-            .arg(umac)
-            .arg(sel)
-            .arg(&lim)
-            .arg(&has)
-            .arg(out_q)
-            .arg(out_d)
-            .arg(&np)
-            .arg(&ns)
-            .arg(&own);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// EP2 owner-guarded down + owned-slot combine in one launch (block `(32, n_sel)`).
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_nvfp4_sel_down8_ep_into(
-        &self,
-        bank: &CudaSlice<u8>,
-        sel: &CudaSlice<i32>,
-        aq: &CudaSlice<i8>,
-        ad: &CudaSlice<f32>,
-        route_w: &CudaSlice<f32>,
-        md: &CudaSlice<f32>,
-        dst: &mut CudaSlice<f32>,
-        n_sel: usize,
-        in_f: usize,
-        out_f: usize,
-        row_bytes: usize,
-        expert_stride: usize,
-        act_row_stride: usize,
-        ad_row_stride: usize,
-        owner: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if !in_f.is_multiple_of(64)
-            || n_sel == 0
-            || n_sel > 8
-            || (in_f >> 5) > 64
-            || dst.len() < out_f
-        {
-            return Err("NVFP4 down8 ep geometry".into());
-        }
-        let f = self.func("qmatvec_nvfp4_dp4a_sel_v2_down8_ep");
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, 1, 1),
-            block_dim: (32, n_sel as u32, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, ns, own) = (in_f as i32, out_f as i32, n_sel as i32, owner as i32);
-        let (rb, es) = (row_bytes as i64, expert_stride as i64);
-        let (ars, adrs) = (act_row_stride as i64, ad_row_stride as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(bank)
-            .arg(sel)
-            .arg(aq)
-            .arg(ad)
-            .arg(route_w)
-            .arg(md)
-            .arg(dst)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&ns)
-            .arg(&rb)
-            .arg(&es)
-            .arg(&ars)
-            .arg(&adrs)
-            .arg(&own);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
     /// Selected-experts batched twin of `qmatvec_nvfp4_fast_prequant_into`: one launch covers
     /// every selected expert, weights indexed `sel[t] * expert_stride` into a contiguous
     /// per-rank bank, activations advancing `act_row_stride`/`ad_row_stride` elements per
@@ -22055,7 +21883,6 @@ impl Engine {
     ///          -8..-19%) where the 2-col body starves weight MLP hardest; pf measured negative.
     /// b4: r2 when waves(out_f) <= 1 (and grid fills >=half the SMs) or >= 2, else pf.
     /// b2: in_f>=6144 -> r2, else base.
-    /// MEMRA_MMVQ_BV=base|pf|r2|pfr2 forces one variant everywhere (A/B + rollback seam).
     /// All variants BIT-IDENTICAL per (token,row): same dp4a order, scales, adg factor, reduce —
     /// only load issue time and the row->warp mapping change (kernel-check gates all of them).
     /// `rp` = the weight buffer is the A6 SPLIT-PLANE repacked layout (NVFP4 only): the same
@@ -22085,7 +21912,6 @@ impl Engine {
         in_f: usize,
         out_f: usize,
         qtype: i32,
-        row_bytes: usize,
         mcols: usize,
         rp: bool,
     ) -> &'static str {
@@ -22096,49 +21922,13 @@ impl Engine {
         if qtype == QT_Q8_0 {
             return if rp { "rp" } else { "base" };
         }
-        static BV: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
-        let bv = *BV.get_or_init(|| match std::env::var("MEMRA_MMVQ_BV").as_deref() {
-            Ok("base") => "base",
-            Ok("pf") => "pf",
-            Ok("r2") => "r2",
-            Ok("r2w8") => "r2w8",
-            Ok("pfr2") => "pfr2",
-            Ok("ca") => "ca",
-            Ok("car2") => "car2",
-            // rp* = SPLIT-PLANE REPACKED layout kernels (A6 prototype): W must already be the
-            // repacked buffer (msweep MSWEEP_RP harness) — never valid on GGUF-layout weights.
-            Ok("rp") => "rp",
-            Ok("rpr2") => "rpr2",
-            Ok("rpr2w8") => "rpr2w8",
-            // rpca* = cp.async software-pipelined split-plane (2026-07-05): hides the _rp
-            // long_scoreboard load stall. rp-layout only; b4/b2 (no b8 twin).
-            Ok("rpca") => "rpca",
-            Ok("rpcar2") => "rpcar2",
-            // 2026-07-06 m-small latency arc: rpsc = rpr2 + per-warp smem scale prestage (kills
-            // the scale-plane global dependency, zero reg growth); rpms/rpmsc = m-split x2
-            // across warp pairs (2x blocks of rpr2, column halves per warp, BIT-identical to
-            // _rp); rpks/rpksc = k-split x2 (fastest microbench cells but k-reduce-order-shifted:
-            // run-spec self-consistency FAILED on the 27B daily driver — verify logits must be
-            // bit-identical to the decode path — measurement corpus ONLY, never auto).
-            Ok("rpsc") => "rpsc",
-            Ok("rpms") => "rpms",
-            Ok("rpmsc") => "rpmsc",
-            Ok("rpks") => "rpks",
-            Ok("rpksc") => "rpksc",
-            _ => "auto",
-        });
-        // cp.async ring variants need 16B-aligned rows (in_f%256==0 -> (in_f/64)*36 % 16 == 0)
-        // and whole 32-group warp iterations (nsb%32==0 <=> in_f%1024==0). All 27B/9B trunk
-        // shapes qualify; anything else falls back to the register variants.
-        let ca_ok = qtype == QT_NVFP4 && row_bytes.is_multiple_of(16) && in_f.is_multiple_of(1024);
         // rpsc: smem scale plane fits (nsb64 <= 272) + int4-aligned staging (nsb64 % 4 == 0).
-        // rpks/rpksc: half-plane staging alignment needs nsb64 % 8 == 0 (in_f % 512 == 0).
-        // MEMRA_KS=0 removes the 2026-07-06 rpsc/rpks/rpksc entries from AUTO (rollback seam;
-        // forced MEMRA_MMVQ_BV values still work).
+        // MEMRA_KS=0 removes the 2026-07-06 rpsc entry from AUTO (rollback seam). The forced
+        // MEMRA_MMVQ_BV / MEMRA_KQ_BV measurement seams were removed 2026-09-05 (door sweep):
+        // auto was concluded optimal on 2026-07-06 and no gate pinned a forced value.
         static KS_ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         let ks_on = *KS_ON.get_or_init(|| std::env::var("MEMRA_KS").as_deref() != Ok("0"));
         let sc_ok = ks_on && qtype == QT_NVFP4 && in_f.is_multiple_of(256) && (in_f / 64 <= 272);
-        let ks_ok = ks_on && qtype == QT_NVFP4 && in_f.is_multiple_of(512) && (in_f / 64 <= 272);
         static SMS: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
         let sms = *SMS.get_or_init(|| {
             use cudarc::driver::sys::CUdevice_attribute_enum as A;
@@ -22167,15 +21957,6 @@ impl Engine {
         //   b2 same table with 8-row blocks: q4_K r2 when filled (-3..-22% all measured shapes),
         //     q5_K/q6_K r2 at waves >= 2 (27B lm_head -2.9%; 9B q6_K flat, harmless).
         let kq_r2 = matches!(qtype, QT_Q4_K | QT_Q5_K | QT_Q6_K);
-        // MEMRA_KQ_BV=base|r2|r2w8 forces the k-quant variant WITHOUT touching the NVFP4 dispatch
-        // (MEMRA_MMVQ_BV is global — an interleaved k-quant-only e2e A/B needs this narrower seam).
-        static KQBV: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
-        let kq_bv = *KQBV.get_or_init(|| match std::env::var("MEMRA_KQ_BV").as_deref() {
-            Ok("base") => "base",
-            Ok("r2") => "r2",
-            Ok("r2w8") => "r2w8",
-            _ => "auto",
-        });
         let variant: &'static str = if qtype == QT_Q4_0 {
             // Q4_0 r2 (gemma verify trunk, 2026-07-10): shared activation loads + the
             // row-independent ones-sum computed once per (col,group) for 2 rows. Same
@@ -22205,84 +21986,17 @@ impl Engine {
         } else if kq_r2 {
             // k-quant r2w8 only exists at b4 (b2_r2 already 8-resident; b8 has no w8 twin) ->
             // mcols != 4 forced r2w8 falls to unbounded r2.
-            if kq_bv != "auto" {
-                if kq_bv == "r2w8" && mcols != 4 {
-                    "r2"
-                } else {
-                    kq_bv
-                }
-            } else if bv != "auto" {
-                match bv {
-                    "r2" | "pfr2" | "rpr2" | "car2" => "r2",
-                    "r2w8" | "rpr2w8" => {
-                        if mcols != 4 {
-                            "r2"
-                        } else {
-                            "r2w8"
-                        }
-                    }
-                    _ => "base", // base/pf/ca/rp forced -> base (no such k-quant kernels)
-                }
+            #[allow(clippy::manual_div_ceil)]
+            // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
+            let blocks = (out_f + 7) / 8;
+            let waves = blocks as f64 / (7 * sms as usize) as f64;
+            let filled = blocks >= 4 * sms as usize;
+            let use_r2 = if qtype == QT_Q4_K {
+                filled
             } else {
-                #[allow(clippy::manual_div_ceil)]
-                // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
-                let blocks = (out_f + 7) / 8;
-                let waves = blocks as f64 / (7 * sms as usize) as f64;
-                let filled = blocks >= 4 * sms as usize;
-                let use_r2 = if qtype == QT_Q4_K {
-                    filled
-                } else {
-                    waves >= 2.0
-                };
-                if use_r2 { "r2" } else { "base" }
-            }
-        } else if bv != "auto" {
-            // r2w8 only exists for b4/b8 (the b2_r2 kernel is already 8-blocks-resident at 60 regs).
-            // ca/car2 need the alignment gate AND have no b8 twins; pfr2 has no b8 twin either —
-            // unsupported (shape, mcols) combos fall back to pf/r2.
-            // On rp buffers, forced legacy names map to their rp twins (layout law).
-            let v = if bv == "r2w8" && mcols == 2 {
-                "r2"
-            } else if bv == "ca" && (!ca_ok || mcols == 8) {
-                "pf"
-            } else if bv == "car2" && (!ca_ok || mcols == 8) {
-                "r2"
-            } else if bv == "pfr2" && mcols == 8 {
-                "r2"
-            } else if (bv == "rpr2w8" || bv == "rpr2") && mcols == 2 {
-                "rpr2"
-            }
-            // rpca* has no b8 twin (falls to rpr2w8/rpr2); needs the ca alignment gate.
-            else if (bv == "rpca" || bv == "rpcar2") && (!ca_ok || mcols == 8) {
-                if mcols == 8 { "rpr2w8" } else { "rpr2" }
-            } else if bv == "rpcar2" && mcols == 2 {
-                "rpca"
-            }
-            // rpsc/rpmsc/rpks* gate on smem-fit + alignment; fall to rpr2 outside it
-            // (rpms has no smem and no alignment need — always valid on rp buffers).
-            else if (bv == "rpsc" || bv == "rpmsc") && !sc_ok {
-                "rpr2"
-            } else if (bv == "rpks" || bv == "rpksc") && !ks_ok {
-                "rpr2"
-            } else {
-                bv
+                waves >= 2.0
             };
-            if rp {
-                match v {
-                    "base" | "pf" | "ca" | "rp" => "rp",
-                    "r2" | "pfr2" | "car2" | "rpr2" => "rpr2",
-                    "r2w8" | "rpr2w8" => {
-                        if mcols == 2 {
-                            "rpr2"
-                        } else {
-                            "rpr2w8"
-                        }
-                    }
-                    other => other, // rpca/rpcar2/rpsc/rpks/rpksc pass through (already rp-layout)
-                }
-            } else {
-                v
-            }
+            if use_r2 { "r2" } else { "base" }
         } else if mcols == 8 {
             // b8 AUTO (2026-07-06 m-small latency arc, rtx6000 DRAM-cold rp msweep m=5/6/8 all five
             // 27B shapes): rpsc — the rpr2w8 schedule with the warp's scale rows prestaged to
@@ -22382,7 +22096,7 @@ impl Engine {
         };
         let variant = match forced {
             Some(v) if !rp || v.contains("rp") => v,
-            _ => self.batched_variant(m, in_f, out_f, qtype, row_bytes, mcols, rp),
+            _ => self.batched_variant(m, in_f, out_f, qtype, mcols, rp),
         };
         let base_name = Self::batched_kernel_name(qtype, mcols).ok_or_else(|| {
             format!("qmatvec_mmvq_batched: no kernel for qtype {qtype} mcols {mcols}")
@@ -22440,18 +22154,9 @@ impl Engine {
         let (name, rows_per_block): (std::borrow::Cow<'static, str>, u32) = match variant {
             "base" => (base_name.into(), ROWS_PER_BLOCK),
             "pf" => (format!("{base_name}_pf").into(), ROWS_PER_BLOCK),
-            "ca" => (format!("{base_name}_ca").into(), ROWS_PER_BLOCK),
             "rp" => (format!("{base_name}_rp").into(), ROWS_PER_BLOCK),
-            "rpca" => (format!("{base_name}_rpca").into(), ROWS_PER_BLOCK), // 1 row/warp cp.async
-            // split families: 2 warp-pairs x 2 rows = 4 rows/block (the k-range or column set
-            // splits across the pair's two warps; grid.x doubles vs rpr2 at the same regs).
-            "rpks" => (format!("{base_name}_rpks").into(), ROWS_PER_BLOCK),
-            "rpksc" => (format!("{base_name}_rpksc").into(), ROWS_PER_BLOCK),
-            "rpms" => (format!("{base_name}_rpms").into(), ROWS_PER_BLOCK),
-            "rpmsc" => (format!("{base_name}_rpmsc").into(), ROWS_PER_BLOCK),
-            "r2ms_rp" => (format!("{base_name}_r2ms_rp").into(), ROWS_PER_BLOCK),
-            "r2sm_rp" => (format!("{base_name}_r2sm_rp").into(), ROWS_PER_BLOCK * 2),
-            "r2la_rp" => (format!("{base_name}_r2la_rp").into(), ROWS_PER_BLOCK * 2),
+            // The forced-only families (ca/rpca cp.async rings, rpks/rpksc k-split, rpms/rpmsc
+            // m-split, the q4_0 ms/sm/la twins) were removed 2026-09-05 with their force seams.
             v => (format!("{base_name}_{v}").into(), ROWS_PER_BLOCK * 2), // r2-class: 2 rows/warp
         };
         debug_assert!(

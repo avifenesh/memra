@@ -683,26 +683,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if out.len() >= n_new {
                     break;
                 }
-                // MEMRA_STEP_TP_GRAPH_LOOP=K (step37 F-lite): chunked graph replay — up to K
-                // greedy tokens per host sync, chained through the in-graph tail argmax.
-                // hist[k-1] == argmax(returned logits), so the loop re-derives it above.
-                // Falls back to the per-token path whenever the chunk is ineligible.
-                let graph_loop_k: usize = std::env::var("MEMRA_STEP_TP_GRAPH_LOOP")
-                    .ok()
-                    .and_then(|v| v.parse().ok())
-                    .unwrap_or(0);
                 let mut chunked = None;
-                if graph_loop_k >= 2 && forced_tokens.is_none() {
-                    let want = n_new - out.len();
-                    if want >= 2 {
-                        chunked = model.step35_token_graph_chunk(
-                            &e,
-                            next,
-                            graph_loop_k.min(want + 1),
-                            &mut gcache,
-                        )?;
-                    }
-                }
                 // MEMRA_ASYNC_CHAIN=K: eager async-ahead device-chained decode — same
                 // contract as the graph chunk, but eager kernels/streams throughout.
                 let chain_k: usize = std::env::var("MEMRA_ASYNC_CHAIN")

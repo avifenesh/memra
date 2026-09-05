@@ -339,7 +339,6 @@ struct PendingBlock {
 #[derive(Clone, Copy)]
 struct WorkerRead {
     ticket: ReadTicket,
-    len: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -426,36 +425,6 @@ fn stage_pread_on_compute_stream(
     e.stream().memcpy_htod(&source, &mut dst)?;
     ready.record(&e.stream())?;
     Ok(ready)
-}
-
-fn stage_pread_prefetch_on_copy_stream(
-    e: &Engine,
-    host_bytes: &[u8],
-    slot: &mut CudaSlice<u8>,
-) -> Result<Arc<CudaEvent>, (Box<dyn std::error::Error>, bool)> {
-    let ready = match e.ctx().new_event(None) {
-        Ok(ready) => Arc::new(ready),
-        Err(err) => return Err((err.into(), true)),
-    };
-    let source = ExactPinnedPrefix(host_bytes);
-    let mut dst = slot.slice_mut(0..host_bytes.len());
-    let submitted = e
-        .copy_stream
-        .memcpy_htod(&source, &mut dst)
-        .and_then(|()| ready.record(&e.copy_stream));
-    match submitted {
-        Ok(()) => Ok(ready),
-        Err(err) => match e.copy_stream.synchronize() {
-            Ok(()) => Err((err.into(), true)),
-            Err(sync_err) => Err((
-                std::io::Error::other(format!(
-                "pread copy-stream H2D setup failed ({err}); stream drain also failed ({sync_err})"
-            ))
-                .into(),
-                false,
-            )),
-        },
-    }
 }
 
 /// Allocate the same fraction of every exact block-size class under one byte budget. This avoids
@@ -1007,90 +976,6 @@ impl MoeSlotCache {
         self.last_forward_t = t;
     }
 
-    /// Turn already-submitted disk reads into copy-stream GPU admissions at a host-routing
-    /// boundary. The caller must invoke this only after the router's DtoH synchronization has
-    /// completed all earlier-layer compute, and `keep` must contain every block selected in the
-    /// current layer. A reserved victim is therefore neither in use nor about to be used, so its
-    /// H2D can start immediately while the CPU workers finish later reads. Consumers still insert
-    /// an explicit compute-stream wait through the ordinary `pending` dispatch path.
-    pub(crate) fn promote_worker_reads_at_safe_boundary(
-        &mut self,
-        order: &[BlockId],
-        keep: &[BlockId],
-        e: &Engine,
-    ) -> Result<usize, Box<dyn std::error::Error>> {
-        if !crate::spill_pread::copy_h2d_enabled() {
-            return Ok(0);
-        }
-        let mut promoted = 0usize;
-        for &id in order {
-            if self.table.contains_key(&id) || self.pending.contains_key(&id) {
-                if let Some(read) = self.worker_reads.remove(&id)
-                    && let Some(pool) = self.pread.as_mut()
-                {
-                    let _ = pool.cancel_worker(read.ticket);
-                }
-                continue;
-            }
-            let Some(read) = self.worker_reads.get(&id).copied() else {
-                continue;
-            };
-            let Some(slot) = self.reserve_prefetch_slot(read.len, keep) else {
-                continue;
-            };
-            self.worker_reads.remove(&id);
-
-            let index = match self.pread.as_mut().unwrap().wait_worker(read.ticket) {
-                Ok(index) => index,
-                Err(err) => {
-                    let _ = self.pread.as_mut().unwrap().cancel_worker(read.ticket);
-                    self.release_reserved_slot(slot);
-                    self.note_pread_fallback(err.as_ref());
-                    continue;
-                }
-            };
-            let ready = {
-                let bytes = match self.pread.as_ref().unwrap().bytes(index, read.len) {
-                    Ok(bytes) => bytes,
-                    Err(err) => {
-                        self.pread.as_mut().unwrap().abort_read(index);
-                        self.release_reserved_slot(slot);
-                        self.note_pread_fallback(err.as_ref());
-                        continue;
-                    }
-                };
-                stage_pread_prefetch_on_copy_stream(e, bytes, &mut self.slots[slot])
-            };
-            let ready = match ready {
-                Ok(ready) => ready,
-                Err((err, reusable)) => {
-                    if reusable {
-                        self.pread.as_mut().unwrap().abort_read(index);
-                        self.release_reserved_slot(slot);
-                        self.note_pread_fallback(err.as_ref());
-                        continue;
-                    }
-                    self.pread.as_mut().unwrap().mark_unknown_h2d(index);
-                    self.copy_stream_unknown = true;
-                    return Err(err);
-                }
-            };
-            self.pread.as_mut().unwrap().mark_h2d(index, ready.clone());
-            self.occupant[slot] = Some(id);
-            self.pending.insert(
-                id,
-                PendingBlock {
-                    slot,
-                    ready,
-                    keepalive: None,
-                },
-            );
-            self.staged_bytes += read.len as u64;
-            promoted += 1;
-        }
-        Ok(promoted)
-    }
-
     fn dispatch_disk(
         &mut self,
         id: BlockId,
@@ -1384,7 +1269,7 @@ impl MoeSlotCache {
                         len,
                     ) {
                         Ok(Some(ticket)) => {
-                            self.worker_reads.insert(id, WorkerRead { ticket, len });
+                            self.worker_reads.insert(id, WorkerRead { ticket });
                             Ok(true)
                         }
                         Ok(None) => Ok(false),

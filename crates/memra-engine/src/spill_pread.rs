@@ -81,11 +81,6 @@ pub(crate) fn worker_enabled() -> bool {
     configured_mode().is_worker()
 }
 
-pub(crate) fn copy_h2d_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| std::env::var("MEMRA_SPILL_COPY_H2D").as_deref() == Ok("1"))
-}
-
 fn parse_depth(value: Option<&str>) -> Result<usize, &'static str> {
     let depth = value
         .unwrap_or("2")
@@ -469,11 +464,7 @@ impl PreadPool {
                        overlap is degraded; continuing with projection concurrency and mmap fallback"
             );
         }
-        let h2d_stream = if copy_h2d_enabled() {
-            "copy-stream H2D"
-        } else {
-            "compute-stream H2D"
-        };
+        let h2d_stream = "compute-stream H2D";
         eprintln!(
             "[spill-pread] enabled: depth={depth} buffer_bytes={capacity} total_pinned_bytes={} \
              ({description}, caller-thread {h2d_stream}, mmap error fallback)",
@@ -482,11 +473,7 @@ impl PreadPool {
         Ok(Self {
             buffers,
             capacity,
-            stream: if copy_h2d_enabled() {
-                e.copy_stream.clone()
-            } else {
-                e.stream().clone()
-            },
+            stream: e.stream().clone(),
             stats: PreadStats::default(),
             mode,
             workers,

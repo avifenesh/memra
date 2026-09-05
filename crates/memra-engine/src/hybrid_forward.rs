@@ -11778,8 +11778,6 @@ impl HybridModel {
         // lifts that exclusion, so the conjunct has to exist before the arm is chosen.
         let worker_disk_prefetch =
             cache_dispatch && crate::spill_pread::worker_enabled() && !cpu_hybrid;
-        let promote_worker_h2d =
-            t == 1 && worker_disk_prefetch && crate::spill_pread::copy_h2d_enabled();
         // DOOR `MEMRA_GLM5_DECODE_GRAPH` (lane/b200-glm5-graph-20260902, default ON since
         // 2026-09-04): the T=1
         // DECODE twin of door D. On the glm5_next serving shape the per-MoE-layer selection is
@@ -11832,7 +11830,6 @@ impl HybridModel {
             // capture refuses by name when this is set — a host readback cannot live inside a
             // capture region — which is the point: it isolates one enabler at a time.
             && !crate::glm5_graph_host_moe()
-            && !promote_worker_h2d
             && sigmoid_router_enabled()
             && cfg.sigmoid_router().is_some()
             && !observe_routes
@@ -12013,40 +12010,6 @@ impl HybridModel {
         Self::trace_moe_routes(il, t, &sel_all, &w_all)?;
         Self::trace_moe_input(e, il, t, n_embd, z)?;
 
-        // Worker reads ordinarily overlap NVMe with the current expert but leave their H2D copies
-        // demand-serialized on the compute stream. Hy3 decode already has a safe owner-thread
-        // boundary here: sigmoid routing read `logits` back to the host, which synchronized all
-        // earlier-layer compute. Submit the complete selected set first, then reserve only victims
-        // outside that set and queue its H2D copies on the copy stream. Dispatch inserts an event
-        // wait for each pending block, so later copies can overlap the earlier expert kernels while
-        // the selected weights and numerical kernels remain unchanged. Restrict this experiment to
-        // T=1; batched forwards can have token-local consumers still in flight between selections.
-        // The CPU backend reads mmap-backed model bytes directly. Positioned-read worker buffers
-        // are CUDA write-combined staging allocations and are intentionally not CPU-compute inputs;
-        // do not spend NVMe bandwidth filling them for a layer whose misses go to CPU.
-        if promote_worker_h2d {
-            let mut selected_blocks = Vec::with_capacity(n_used * 3);
-            for &ex in sel_all.iter().take(n_used) {
-                let ex = ex as u16;
-                selected_blocks.extend([
-                    BlockId::new(il, PROJ_GATE, ex),
-                    BlockId::new(il, PROJ_UP, ex),
-                    BlockId::new(il, PROJ_DOWN, ex),
-                ]);
-            }
-            for &ex in sel_all.iter().take(n_used) {
-                Self::moe_prefetch_disk_expert(e, il, ex as usize, m, max_block, &selected_blocks)?;
-            }
-            e.with_moe_cache(max_block, |cache, eng| {
-                cache.promote_worker_reads_at_safe_boundary(
-                    &selected_blocks,
-                    &selected_blocks,
-                    eng,
-                )?;
-                Ok(())
-            })?;
-        }
-
         // MEMRA_MOE_STATS: per-layer routing stats for the A2 (expert-grouped prefill) baseline —
         // per-token expert-id entropy, active-expert coverage, tokens-per-expert group sizes.
         if t > 1 && std::env::var("MEMRA_MOE_STATS").is_ok() {
@@ -12213,7 +12176,7 @@ impl HybridModel {
                 "[glm5-vrows-t1-deny] dev={} il={il} capture_open={} t1_dev={vrows_t1_dev} \
                  forced={} slab_bases={} moe_q8={moe_q8} uniform={uniform_experts} \
                  n_used={n_used} sigmoid_cfg={} pre_clamp={} cpu_hybrid={cpu_hybrid} \
-                 promote_worker_h2d={promote_worker_h2d} observe_routes={observe_routes} \
+                 observe_routes={observe_routes} \
                  sig_router_env={} — the T=1 device-table MoE arm stood down and this layer \
                  takes the host-readback path. Benign with capture_open=false (an eager gap \
                  layer); with capture_open=true it is the wrong-answer class the router guard \
@@ -28014,40 +27977,6 @@ impl HybridModel {
                 fo.write_all(&v.to_le_bytes())?;
             }
         }
-        // MEMRA_STEP_TP_GRAPH_DEBUG=1: per-token device-counter dump (drift hunts). One dtoh
-        // per rank per token; diagnostics only.
-        if std::env::var("MEMRA_STEP_TP_GRAPH_DEBUG").as_deref() == Ok("1") {
-            for il in [0usize, 1, 44] {
-                let tp_kv = cache.tp_kv[il].as_ref().expect("eligibility checked above");
-                let host_len = tp_kv.staged_len();
-                let fa = match &self.layers[il].mixer {
-                    Mixer::Full(fa) => fa,
-                    _ => continue,
-                };
-                let tp = fa
-                    .step_tp_qkv
-                    .as_ref()
-                    .ok_or("step35 token graph lost its TP state")?;
-                for rank in 0..tp.runtime.devices().len() {
-                    let engine = tp
-                        .runtime
-                        .rank_engine(rank)
-                        .ok_or("step35 token graph lost a rank engine")?;
-                    let rank_cache = tp_kv.rank(rank).ok_or("debug rank cache missing")?;
-                    let _main = engine.gpu.enter_main()?;
-                    engine.stream().synchronize()?;
-                    let len_d = engine.dtoh_i32_one(rank_cache.len_d())?;
-                    let base_d = match rank_cache.base_d() {
-                        Some(b) => engine.dtoh_i32_one(b)?,
-                        None => -1,
-                    };
-                    eprintln!(
-                        "[graph-debug] pos={pos} il={il} rank={rank} host_len={host_len} \
-                         len_d={len_d} base_d={base_d}"
-                    );
-                }
-            }
-        }
         Ok(Some((logits, h_seed)))
     }
 
@@ -28291,158 +28220,6 @@ impl HybridModel {
         let ws = guard.as_ref().ok_or("head split logits not armed")?;
         let _main = e.gpu.enter_main()?;
         e.dtoh(&ws.logits_e)
-    }
-
-    /// Chunk-loop replay (F-lite, MEMRA_STEP_TP_GRAPH_LOOP): run up to `k_target` greedy
-    /// tokens as back-to-back graph launches chained through the in-graph tail argmax —
-    /// ONE host sync, ONE history readback, and ONE bulk KV transaction per layer per
-    /// chunk. Returns None when ineligible (caller falls back to the per-token path).
-    /// The chunk consumes `token` (already emitted by the caller) as launch 0's input and
-    /// returns the ids the chain argmax'd (hist[0..k]) plus the LAST launch's logits row —
-    /// hist[k-1] is exactly argmax(logits), so the caller emits hist[..k-1] and lets its
-    /// own loop re-derive hist[k-1] from the returned row.
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-    pub fn step35_token_graph_chunk(
-        &self,
-        e: &Engine,
-        token: u32,
-        k_target: usize,
-        cache: &mut Cache,
-    ) -> Result<Option<(Vec<u32>, Vec<f32>)>, Box<dyn std::error::Error>> {
-        if !self.uses_sliding_gated_moe_program()
-            || !crate::tp::step_tp_graph_enabled()?
-            || !crate::tp::step_tp_dcw_enabled()?
-            || !crate::tp::step_tp_qkv_fused_enabled()?
-            || !crate::tp::step_tp_dev_router_enabled()?
-            || !crate::tp::step_nvfp4_dev_routes_enabled()?
-        {
-            return Ok(None);
-        }
-        // GRAPH-LAUNCH HEADROOM GUARD: same guard, same eager twin as
-        // `step35_token_graph_step` (the chunk is that step replayed k times).
-        if !crate::spec::graph_launch_headroom_ok(e) {
-            static NOTED: std::sync::Once = std::sync::Once::new();
-            NOTED.call_once(|| crate::spec::graph_replay_suspended_note("step-tp-token"));
-            return Ok(None);
-        }
-        let n_layers = self.layers.len();
-        let pos = cache.pos;
-        let staged_next = pos + 1;
-        if staged_next < 96 {
-            return Ok(None);
-        }
-        // Bucket for the FIRST token; the chunk must not cross the bucket boundary (the
-        // exec's n_splits ladder must match eager per depth).
-        let (fa_vec, n_splits) = e.fa_geom_eager(staged_next, 128, 8, false);
-        if !fa_vec {
-            return Ok(None);
-        }
-        let sp = crate::fa_split_keys(staged_next, 8);
-        let bucket_max = (n_splits * sp).max(staged_next);
-        let to_boundary = bucket_max.saturating_sub(staged_next) + 1;
-        let mut k = k_target.min(to_boundary).min(16);
-        if k < 2 {
-            return Ok(None);
-        }
-        // Every layer must contiguous-append all k rows (no rebase inside the chunk).
-        for il in 0..n_layers {
-            let Some(tp_kv) = cache.tp_kv[il].as_ref() else {
-                return Ok(None);
-            };
-            while k >= 2 && tp_kv.peek_append_ring(k)?.1 {
-                k -= 1;
-            }
-            if k < 2 {
-                return Ok(None);
-            }
-        }
-
-        let mut state_guard = self
-            .step35_token_graph
-            .lock()
-            .map_err(|_| "step35 token graph lock is poisoned")?;
-        let Some(state) = state_guard.as_mut() else {
-            return Ok(None); // per-token path arms the state + stages first
-        };
-        if state.graphs.is_empty() {
-            return Ok(None);
-        }
-        {
-            let (b, g) = state.graphs.first_mut().expect("checked above");
-            if *b != bucket_max {
-                g.retarget_bucket(bucket_max)?;
-                *b = bucket_max;
-            }
-        }
-        let graph = state.graphs.first().map(|(_, g)| g).expect("checked above");
-
-        // Rank-stream fence (eager stragglers; see the per-token path).
-        {
-            let fa0 = match &self.layers[0].mixer {
-                Mixer::Full(fa) => fa,
-                _ => return Err("step35 token graph expects full-attention layers".into()),
-            };
-            let tp0 = fa0
-                .step_tp_qkv
-                .as_ref()
-                .ok_or("step35 token graph lost its TP state")?;
-            for rank in 0..tp0.runtime.devices().len() {
-                let engine = tp0
-                    .runtime
-                    .rank_engine(rank)
-                    .ok_or("step35 token graph lost a rank engine")?;
-                let _main = engine.gpu.enter_main()?;
-                engine.stream().synchronize()?;
-            }
-        }
-
-        // Seed the chain and fire k launches back-to-back: launch i embeds the token the
-        // PREVIOUS launch's tail argmax wrote (launch 0 embeds the host-seeded `token`).
-        {
-            let _main = e.gpu.enter_main()?;
-            e.set_u32_one(&mut state.token_d, token)?;
-            e.set_i32_one(&mut state.pos_d, pos as i32)?;
-            e.set_i32_one(&mut state.hist_idx, 0)?;
-        }
-        for _ in 0..k {
-            graph.launch(e)?;
-        }
-        // Bulk host bookkeeping overlaps the replays: one k-row txn per layer.
-        for il in 0..n_layers {
-            let tp_kv = cache.tp_kv[il].as_mut().expect("eligibility checked above");
-            let transaction = tp_kv.begin_transaction()?;
-            let fa = match &self.layers[il].mixer {
-                Mixer::Full(fa) => fa,
-                _ => return Err("step35 token graph expects full-attention layers".into()),
-            };
-            let tp = fa
-                .step_tp_qkv
-                .as_ref()
-                .ok_or("step35 token graph lost its TP state")?;
-            let empty: [CudaSlice<f32>; 0] = [];
-            tp.runtime.append_tp_kv_transaction_inner(
-                tp_kv,
-                transaction,
-                &empty,
-                &empty,
-                k,
-                true,
-            )?;
-            tp.runtime
-                .commit_tp_kv_transaction_external(tp_kv, transaction, k)?;
-            if let Some(local) = cache.kv[il].as_mut() {
-                local.len = pos + k;
-                let _main = e.gpu.enter_main()?;
-                e.set_i32_one(&mut local.len_d, (pos + k) as i32)?;
-            }
-        }
-        cache.pos = pos + k;
-        let (hist, logits) = {
-            let _main = e.gpu.enter_main()?;
-            e.stream().synchronize()?;
-            (e.dtoh_u32(&state.token_hist)?, e.dtoh(&state.logits_stage)?)
-        };
-        Ok(Some((hist[..k].to_vec(), logits)))
     }
 }
 
