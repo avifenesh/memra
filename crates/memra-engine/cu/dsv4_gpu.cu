@@ -2649,6 +2649,75 @@ extern "C" int memra_dsv4_indexer_score_f32acc_pos_m(
     return 0;
 }
 
+// Head/candidate-blocked indexer, derived from Memra's MLA head-blocked scorer.
+// Unlike MLA, DSV4's witness is compiled -fmad=false: each dot term must round
+// the multiply BEFORE the add. Preserve ascending x and h; no reassociation.
+// One thread owns one candidate and all 64 heads. Query slabs are shared across
+// 128 candidates; contiguous key reads stage a bank-conflict-free transpose.
+extern "C" __global__ __launch_bounds__(128) void dsv4_indexer_score_tiled_kernel(
+    const float* __restrict__ q, const float* __restrict__ ckv,
+    const float* __restrict__ w, float wscale, float* __restrict__ score,
+    int nb, int ratio, int lim0, int pos0) {
+    constexpr int H = 64, HD = 128, TPB = 128, KC = 16, KP = TPB + 1;
+    const int tid = threadIdx.x, t = blockIdx.y;
+    const int j0 = blockIdx.x * TPB, j = j0 + tid;
+    const int lim = pos0 >= 0 ? (pos0 + t + 1) / ratio
+                             : (lim0 >= 0 ? lim0 : (t + 1) / ratio);
+    if (j0 >= lim) {
+        if (j < nb) score[(long)t * nb + j] = -INFINITY;
+        return;
+    }
+    __shared__ __align__(16) float qs[KC * H];
+    __shared__ float ks[KC * KP];
+    float dots[H];
+#pragma unroll
+    for (int h = 0; h < H; ++h) dots[h] = 0.0f;
+    for (int x0 = 0; x0 < HD; x0 += KC) {
+        __syncthreads();
+        for (int e = tid; e < KC * H; e += TPB) {
+            int x = e / H, h = e % H;
+            qs[e] = q[((long)t * H + h) * HD + x0 + x];
+        }
+        for (int e = tid; e < TPB * KC; e += TPB) {
+            int local = e / KC, x = e % KC;
+            ks[x * KP + local] = j0 + local < nb
+                ? ckv[(long)(j0 + local) * HD + x0 + x] : 0.0f;
+        }
+        __syncthreads();
+#pragma unroll 4
+        for (int x = 0; x < KC; ++x) {
+            const float key = ks[x * KP + tid];
+#pragma unroll
+            for (int h = 0; h < H; h += 4) {
+                const float4 query = *(const float4*)(qs + x * H + h);
+                dots[h] = __fadd_rn(dots[h], __fmul_rn(query.x, key));
+                dots[h + 1] = __fadd_rn(dots[h + 1], __fmul_rn(query.y, key));
+                dots[h + 2] = __fadd_rn(dots[h + 2], __fmul_rn(query.z, key));
+                dots[h + 3] = __fadd_rn(dots[h + 3], __fmul_rn(query.w, key));
+            }
+        }
+    }
+    float acc = 0.0f;
+#pragma unroll
+    for (int h = 0; h < H; ++h) {
+        float ws = __fmul_rn(w[(long)t * H + h], wscale);
+        acc = __fadd_rn(acc, __fmul_rn(fmaxf(dots[h], 0.0f), ws));
+    }
+    if (j < nb) score[(long)t * nb + j] = j < lim ? acc : -INFINITY;
+}
+
+extern "C" int memra_dsv4_indexer_score_tiled(
+    const float* q, const float* ckv, const float* w, float wscale, float* score,
+    int s, int heads, int hd, int nb, int ratio, int lim0, int pos0, void* stream_v) {
+    if (s <= 0 || s > 64 || heads != 64 || hd != 128 || nb <= 0 ||
+        nb > 262147 || ratio <= 0 || pos0 < -1 || pos0 > 1048576 ||
+        lim0 < -1 || lim0 > nb) return 40009;
+    dsv4_indexer_score_tiled_kernel<<<dim3((nb + 127) / 128, s), 128, 0,
+        (cudaStream_t)stream_v>>>(q, ckv, w, wscale, score, nb, ratio, lim0, pos0);
+    DSV4_ERR();
+    return 0;
+}
+
 // twins of the sink dec trio. den rides a FLOAT view of the caller's f64 workspace
 // (written by K2, read by K3 within one call — format internal to this entry point).
 extern "C" __global__ void dsv4_sink_scores_f32acc_kernel(const float* __restrict__ q,

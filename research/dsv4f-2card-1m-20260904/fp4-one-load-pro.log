@@ -1,0 +1,41 @@
+[load] placement: split_at=23 trunk_layers=43 dspark_tail_reserve=10.83 GiB
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] selected FP4 reduction: Block
+[load] dspark exit-head dots arm: f32x (rung-4c fork; drafts only, never the emitted stream)
+[load] dspark selected-expert dispatch: per-expert reference
+[load] dense arm: fp8 (iteration-5; fp8 = FP8-blk linears as-stored on the device decode/verify paths, bit-identical twins)
+[load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 330.3ms
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> dev0 done t=12s
+[load] layer 7 -> dev0 done t=23s
+[load] layer 11 -> dev0 done t=35s
+[load] layer 15 -> dev0 done t=47s
+[load] layer 19 -> dev0 done t=59s
+[load] layer 23 -> dev1 done t=70s
+[load] layer 27 -> dev1 done t=80s
+[load] layer 31 -> dev1 done t=90s
+[load] layer 35 -> dev1 done t=100s
+[load] layer 39 -> dev1 done t=110s
+[load] layer 42 -> dev1 done t=117s
+[load] drafter: DSpark (3 blocks, block_size 5, targets [40, 41, 42]) resident on stage 1
+CHECK plain prompt=32 width=1 block/warp/block
+EXACT plain prompt=32 width=1 block/warp/block
+CHECK plain prompt=32 width=32 block/warp/block
+EXACT plain prompt=32 width=32 block/warp/block
+CHECK plain prompt=32 width=64 block/warp/block
+EXACT plain prompt=32 width=64 block/warp/block
+CHECK DSpark prompt=32 fused=false block/warp
+EXACT DSpark prompt=32 fused=false tokens/rounds/confidence/cache
+CHECK DSpark prompt=32 fused=true block/warp
+EXACT DSpark prompt=32 fused=true tokens/rounds/confidence/cache
+CHECK plain prompt=160 width=1 block/warp/block
+EXACT plain prompt=160 width=1 block/warp/block
+CHECK plain prompt=160 width=32 block/warp/block
+EXACT plain prompt=160 width=32 block/warp/block
+CHECK plain prompt=160 width=64 block/warp/block
+EXACT plain prompt=160 width=64 block/warp/block
+CHECK DSpark prompt=160 fused=false block/warp
+EXACT DSpark prompt=160 fused=false tokens/rounds/confidence/cache
+CHECK DSpark prompt=160 fused=true block/warp
+EXACT DSpark prompt=160 fused=true tokens/rounds/confidence/cache
+PASS FP4 rewrite one-load exactness; serving/performance not claimed

@@ -271,6 +271,12 @@ Selected-expert FP4 projection (same TU, `-fmad=false`):
 |---|---|---|---|
 | `dsv4_fp4_gemm_sel_kernel<false/true>` | NVFP4 group-16/E4M3+F32 and MXFP4 group-32/E8M0 weights, FP8-code/F32-scale activations; 128 threads and four output columns per CTA. False retains the shared-memory halving tree. True stages four planes once and replays the identical 128-leaf addition tree in warp 0; no reassociation or quantization change. | `MEMRA_DSV4_FP4_REDUCE=block/warp`, default block; per-model arm passed at each launch, whole-model gates pending | `memra_dsv4_fp4_gemm_sel_g_arm` (explicit 0/1 mode; a_group=0 also covers single-position decode); legacy `_sel` / `_sel_g` delegate to it. FFI: dsv4_ffi.rs. Gate `tools/dsv4-fp4-reduce-gate.cu` inspects captured kernel pointers/geometry to prove arm engagement; `dsv4_fp4_reduce_gate` covers one-load native-model arms. |
 
+DSV4 indexer candidate (same TU, separate multiply/add rounding):
+
+| symbol | purpose | dispatch flag | FFI binding |
+|---|---|---|---|
+| `dsv4_indexer_score_tiled_kernel` | 64-head, width-128 scorer; one thread owns a candidate and all heads, 128 candidates reuse 16-element query/key slabs. Ascending dimension and head sums use explicit separate round-to-nearest multiply/add, unlike the FMA-based MLA scorer. Absolute-position and fixed-limit masks share the same launch. | `MEMRA_DSV4_INDEXER_SCORE=scalar/tiled`, default scalar. Tiled is unqualified and opt-in; device f32x only. | `memra_dsv4_indexer_score_tiled`; `tools/dsv4-indexer-tiled-gate.cu` anchors to scalar CUDA and CPU witnesses, masks, write guards and a corruption control. Target-card and whole-model gates pending. |
+
 ### MMQ static-lib TUs (prefill GEMM per weight format)
 
 | file | host entry symbols | qtype | arch guard | dispatch flag | FFI binding |

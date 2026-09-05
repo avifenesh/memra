@@ -485,6 +485,22 @@ unsafe extern "C" {
         stream: *mut c_void,
     ) -> i32;
     #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_indexer_score_tiled(
+        q: *const f32,
+        ckv: *const f32,
+        w: *const f32,
+        wscale: f32,
+        score: *mut f32,
+        s: i32,
+        heads: i32,
+        hd: i32,
+        nb: i32,
+        ratio: i32,
+        lim0: i32,
+        pos0: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    #[allow(clippy::too_many_arguments)]
     pub fn memra_dsv4_indexer_score_f32acc_pos_m(
         q: *const f32,
         ckv: *const f32,

@@ -1,0 +1,20 @@
+warning: memra-engine@0.125.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.125.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.125.0 (/home/avifenesh/projects/wt-dsv4f-2card-1m-20260904/crates/memra-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 11.86s
+     Running unittests src/lib.rs (target/debug/deps/memra_server-f8307d14261b511a)
+
+running 5 tests
+test dsv4_serve::prefill_chunk_flag_tests::prompts_at_or_below_one_chunk_stay_monolithic ... ok
+test dsv4_serve::prefill_chunk_flag_tests::default_is_off_and_values_are_strictly_bounded ... ok
+test dsv4_serve::unicode_window_tests::dsml_close_is_inclusive_and_straddle_safe ... ok
+test dsv4_serve::unicode_window_tests::multibyte_scan_window_never_panics_and_cuts_correctly ... ok
+test dsv4_serve::unicode_window_tests::parked_token_boundary_accepts_pending_tail_and_refuses_state_ahead ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 597 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/memra_server-c21281b58b8f53f0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

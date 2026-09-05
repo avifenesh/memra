@@ -974,7 +974,7 @@ fn serve_one(
             )
         }
         .map_err(EngineError::engine)?;
-        spec_usage = Some(SpecUsage {
+        let usage = SpecUsage {
             rounds: run.rounds.len() as u64,
             drafted: run
                 .rounds
@@ -982,7 +982,12 @@ fn serve_one(
                 .map(|r| r.t_batch.saturating_sub(1) as u64)
                 .sum(),
             accepted: run.rounds.iter().map(|r| r.accepts as u64).sum(),
-        });
+        };
+        eprintln!(
+            "[dspark-acc] request_id={:?} model={:?} sampled={} rounds={} drafted={} accepted={}",
+            req.request_id, req.model, !greedy, usage.rounds, usage.drafted, usage.accepted
+        );
+        spec_usage = Some(usage);
         state_to_park = state;
         dstate_to_park = Some(dstate);
     } else {

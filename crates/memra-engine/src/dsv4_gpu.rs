@@ -455,6 +455,25 @@ impl Dsv4Fp4Reduce {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Dsv4IndexerScore {
+    #[default]
+    Scalar,
+    Tiled,
+}
+
+impl Dsv4IndexerScore {
+    pub fn resolve(value: Option<&str>) -> Res<Self> {
+        match value {
+            None | Some("") | Some("scalar") => Ok(Self::Scalar),
+            Some("tiled") => Ok(Self::Tiled),
+            Some(other) => Err(format!(
+                "MEMRA_DSV4_INDEXER_SCORE '{other}' unknown (scalar | tiled)"
+            )),
+        }
+    }
+}
+
 pub struct Dsv4Gpu {
     pub model: Dsv4Model,
     pub stages: Vec<Stage>,
@@ -494,6 +513,7 @@ pub struct Dsv4Gpu {
     pub dspark_fused_moe: bool,
     /// Chosen per model, never a process-global mutable test switch.
     fp4_reduce: Dsv4Fp4Reduce,
+    indexer_score: Dsv4IndexerScore,
     /// iteration-5 FP8 dense arm (`MEMRA_DSV4_DENSE_ARM`; DEFAULT fp8 on the device
     /// decode path since the 2026-08-20 ratification, bf16 selectable and the legacy
     /// default): the DEVICE decode/verify paths read the FP8-blk linears as-stored
@@ -562,12 +582,15 @@ pub struct StepWs {
     pub qi: CudaSlice<f32>,  // [iheads*ihd]
     pub wproj: CudaSlice<f32>, // [iheads]
     pub score: CudaSlice<f32>, // [max_seq/ratio_min]
-    pub idx: CudaSlice<i32>, // [win + max(topk, max_seq/128)]
-    pub o: CudaSlice<f32>,   // [heads*hd]
-    pub o_b: CudaSlice<u8>,  // [heads*hd*2] (bf16 cvt of o, once — grouped wo reads slices)
-    pub og: CudaSlice<f32>,  // [o_groups*o_lora]
+    pub topk_a: CudaSlice<u64>, // bounded hierarchical-selector scratch
+    pub topk_b: CudaSlice<u64>,
+    pub topk_stride: usize,
+    pub idx: CudaSlice<i32>,      // [win + max(topk, max_seq/128)]
+    pub o: CudaSlice<f32>,        // [heads*hd]
+    pub o_b: CudaSlice<u8>,       // [heads*hd*2] (bf16 cvt of o, once — grouped wo reads slices)
+    pub og: CudaSlice<f32>,       // [o_groups*o_lora]
     pub attn_out: CudaSlice<f32>, // [hidden]
-    pub gemm_xb: CudaSlice<u8>, // [max_gemm_k*2] per-call cvt scratch
+    pub gemm_xb: CudaSlice<u8>,   // [max_gemm_k*2] per-call cvt scratch
     // MoE
     pub raw: CudaSlice<f32>,     // [ne]
     pub sel: CudaSlice<i32>,     // [topk]
@@ -1205,6 +1228,33 @@ fn f32_to_bf16_exact(name: &str, v: &[f32]) -> Vec<u8> {
 }
 
 impl Dsv4Gpu {
+    /// Exclusive one-load gate seam. Persistent graph support must include this
+    /// arm in its executable key before it can reuse graphs across this setter.
+    pub fn set_indexer_score_for_gate(&mut self, arm: Dsv4IndexerScore) -> Res<Dsv4IndexerScore> {
+        if !matches!(self.decode_path, DecodePath::Device { host_math: false }) || !self.chains_f32
+        {
+            return Err("indexer gate requires device f32x path".into());
+        }
+        if self.model.cfg().index_n_heads != 64 || self.model.cfg().index_head_dim != 128 {
+            return Err("tiled indexer requires 64 heads of width 128".into());
+        }
+        for stage in &self.stages {
+            stage
+                .gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind indexer gate stage"))?;
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .map_err(e("drain indexer gate stage"))?;
+        }
+        let previous = self.indexer_score;
+        self.indexer_score = arm;
+        Ok(previous)
+    }
+
     /// Isolated gate control, not a serving request option. Requires exclusive
     /// model access and drains both stage streams before changing the next launch.
     /// DSV4 currently owns no captured graph; future graph support must invalidate
@@ -1682,6 +1732,12 @@ impl Dsv4Gpu {
             Err(err) => return Err(format!("MEMRA_DSV4_FP4_REDUCE: {err}")),
         };
         let fp4_reduce = Dsv4Fp4Reduce::resolve(fp4_reduce_env.as_deref())?;
+        let indexer_env = match std::env::var("MEMRA_DSV4_INDEXER_SCORE") {
+            Ok(value) => Some(value),
+            Err(std::env::VarError::NotPresent) => None,
+            Err(err) => return Err(format!("MEMRA_DSV4_INDEXER_SCORE: {err}")),
+        };
+        let indexer_score = Dsv4IndexerScore::resolve(indexer_env.as_deref())?;
         let model = Dsv4Model::open(dir)?;
         let d = model.cfg().clone();
         let mc = model.mc.clone();
@@ -1835,6 +1891,17 @@ impl Dsv4Gpu {
             }
         };
 
+        if indexer_score == Dsv4IndexerScore::Tiled
+            && (!matches!(decode_path, DecodePath::Device { host_math: false })
+                || !chains_f32
+                || d.index_n_heads != 64
+                || d.index_head_dim != 128)
+        {
+            return Err(
+                "MEMRA_DSV4_INDEXER_SCORE=tiled requires device f32x and indexer 64x128".into(),
+            );
+        }
+
         // Iteration-3 rung 4c, MEASURED FORK (nsys, drafted rounds [4,12)): the DRAFTER's
         // shared-trunk-head projection runs `dsv4_dots_f32` — the f64 kernel — over
         // block_size rows, and it measured **16.3 ms of a 78 ms drafted round (21%)**, one
@@ -1906,6 +1973,7 @@ impl Dsv4Gpu {
             dspark_head_f32,
             dspark_fused_moe,
             fp4_reduce,
+            indexer_score,
             dense_fp8,
             dspark: None,
             boundary_ev: Vec::new(),
@@ -1925,6 +1993,7 @@ impl Dsv4Gpu {
             }
         );
         eprintln!("[load] selected FP4 reduction: {:?}", me.fp4_reduce);
+        eprintln!("[load] indexer score: {:?}", me.indexer_score);
         eprintln!(
             "[load] dspark exit-head dots arm: {} (rung-4c fork; drafts only, never the \
              emitted stream)",
@@ -4787,6 +4856,7 @@ impl Dsv4Gpu {
         }
         assert!(min_index_ratio != usize::MAX, "no indexer layers?");
         let score_cap = self.max_seq / min_index_ratio + 1;
+        let topk_stride = score_cap.div_ceil(4096) * 512;
         let idx_tail = itopk.max(self.max_seq / 128 + 1);
         // the largest bf16 cvt any device-path gemm() performs (activation side, m=1):
         // wo_b consumes o_groups*o_lora, the o cvt covers heads*hd separately.
@@ -4798,6 +4868,7 @@ impl Dsv4Gpu {
             let f = |n: usize| s.alloc_zeros::<f32>(n).map_err(e("ws f32"));
             let b = |n: usize| s.alloc_zeros::<u8>(n).map_err(e("ws u8"));
             let i = |n: usize| s.alloc_zeros::<i32>(n).map_err(e("ws i32"));
+            let u = |n: usize| s.alloc_zeros::<u64>(n).map_err(e("ws u64"));
             out.push(StepWs {
                 h_a: f(hc * hidden)?,
                 h_b: f(hc * hidden)?,
@@ -4817,6 +4888,9 @@ impl Dsv4Gpu {
                 qi: f(iheads * ihd)?,
                 wproj: f(iheads)?,
                 score: f(score_cap)?,
+                topk_a: u(topk_stride)?,
+                topk_b: u(topk_stride)?,
+                topk_stride,
                 idx: i(win + idx_tail)?,
                 o: f(heads * hd)?,
                 o_b: b(heads * hd * 2)?,
@@ -5748,7 +5822,11 @@ impl Dsv4Gpu {
         sv: *mut c_void,
     ) -> i32 {
         unsafe {
-            if self.chains_f32 {
+            if self.indexer_score == Dsv4IndexerScore::Tiled {
+                k::memra_dsv4_indexer_score_tiled(
+                    q, ckv, w, wscale, score, s, heads, hd, nb, ratio, lim0, -1, sv,
+                )
+            } else if self.chains_f32 {
                 k::memra_dsv4_indexer_score_f32acc(
                     q, ckv, w, wscale, score, s, heads, hd, nb, ratio, lim0, sv,
                 )
@@ -6422,11 +6500,27 @@ impl Dsv4Gpu {
                         let mut dst = ws.idx.slice_mut(win..win + kk);
                         stream.memcpy_htod(&cidx, &mut dst).map_err(e("htod idx"))?;
                     } else {
+                        let idx_stride = ws.idx.len();
                         unsafe {
-                            let idx_tail =
-                                (ws.idx.device_ptr_mut(&stream).0 as usize + win * 4) as *mut i32;
-                            ck(
-                                "topk_idx dev",
+                            let rc = if nb > 4096 {
+                                // The legacy bitonic selector refuses nb>4096.
+                                // Decode needs the same exact long selector as prefill.
+                                k::memra_dsv4_topk_idx_stream_m(
+                                    dpf!(ws.score, &stream),
+                                    1,
+                                    nb as i32,
+                                    kk as i32,
+                                    win as i32,
+                                    ws.idx.device_ptr_mut(&stream).0 as *mut i32,
+                                    idx_stride as i32,
+                                    ws.topk_a.device_ptr_mut(&stream).0 as *mut u64,
+                                    ws.topk_b.device_ptr_mut(&stream).0 as *mut u64,
+                                    ws.topk_stride as i32,
+                                    sp(&stream),
+                                )
+                            } else {
+                                let idx_tail = (ws.idx.device_ptr_mut(&stream).0 as usize + win * 4)
+                                    as *mut i32;
                                 k::memra_dsv4_topk_idx(
                                     dpf!(ws.score, &stream),
                                     nb as i32,
@@ -6434,8 +6528,9 @@ impl Dsv4Gpu {
                                     win as i32,
                                     idx_tail,
                                     sp(&stream),
-                                ),
-                            )?;
+                                )
+                            };
+                            ck("topk_idx dev", rc)?;
                         }
                     }
                     slots = win + kk;
@@ -10176,6 +10271,32 @@ impl Dsv4Gpu {
                             )?;
                         }
                         let kk = kks[i];
+                        if !host_math && nb > 4096 {
+                            // Keep the small-context witness unchanged. Large-history
+                            // verification must not copy and sort all scores on the CPU.
+                            // Each row has its own nb; scratch is safely reused on this
+                            // single stream before the following row overwrites score.
+                            unsafe {
+                                ck(
+                                    "topk_idx_stream narrow verify",
+                                    k::memra_dsv4_topk_idx_stream_m(
+                                        dpf!(vws.score, &stream),
+                                        1,
+                                        nb as i32,
+                                        kk as i32,
+                                        win as i32,
+                                        (vws.idx.device_ptr_mut(&stream).0 as usize + idx_off * 4)
+                                            as *mut i32,
+                                        vws.idx_stride as i32,
+                                        vws.topk_a.device_ptr_mut(&stream).0 as *mut u64,
+                                        vws.topk_b.device_ptr_mut(&stream).0 as *mut u64,
+                                        vws.topk_stride as i32,
+                                        sp(&stream),
+                                    ),
+                                )?;
+                            }
+                            continue;
+                        }
                         let score_h = {
                             let view = vws.score.slice(0..nb);
                             let mut v = vec![0f32; nb];
@@ -10225,8 +10346,23 @@ impl Dsv4Gpu {
                         let wscale =
                             ((ix.hd as f64).powf(-0.5) * (ix.heads as f64).powf(-0.5)) as f32;
                         unsafe {
-                            ck(
-                                "indexer_score_pos_m",
+                            let score_rc = if self.indexer_score == Dsv4IndexerScore::Tiled {
+                                k::memra_dsv4_indexer_score_tiled(
+                                    dpf!(vws.qi, &stream),
+                                    dpf!(ikvc.as_ref().expect("ikvc"), &stream),
+                                    dpf!(vws.wproj, &stream),
+                                    wscale,
+                                    dpm!(vws.score, &stream),
+                                    t as i32,
+                                    ix.heads as i32,
+                                    ix.hd as i32,
+                                    nb as i32,
+                                    ratio as i32,
+                                    -1,
+                                    pos0 as i32,
+                                    sp(&stream),
+                                )
+                            } else {
                                 k::memra_dsv4_indexer_score_f32acc_pos_m(
                                     dpf!(vws.qi, &stream),
                                     dpf!(ikvc.as_ref().expect("ikvc"), &stream),
@@ -10240,8 +10376,9 @@ impl Dsv4Gpu {
                                     ratio as i32,
                                     pos0 as i32,
                                     sp(&stream),
-                                ),
-                            )?;
+                                )
+                            };
+                            ck("indexer_score_pos_m", score_rc)?;
                             let topk_rc = if nb <= 4096 {
                                 k::memra_dsv4_topk_idx_m(
                                     dpf!(vws.score, &stream),
@@ -12428,7 +12565,21 @@ mod peer_probe_tests {
 
 #[cfg(test)]
 mod dense_arm_default_tests {
-    use super::{Dsv4Fp4Reduce, resolve_dense_arm, resolve_dspark_fused_moe};
+    use super::{Dsv4Fp4Reduce, Dsv4IndexerScore, resolve_dense_arm, resolve_dspark_fused_moe};
+
+    #[test]
+    fn tiled_indexer_is_literal_and_default_off() {
+        for raw in [None, Some(""), Some("scalar")] {
+            assert_eq!(Dsv4IndexerScore::resolve(raw), Ok(Dsv4IndexerScore::Scalar));
+        }
+        assert_eq!(
+            Dsv4IndexerScore::resolve(Some("tiled")),
+            Ok(Dsv4IndexerScore::Tiled)
+        );
+        for raw in ["1", "TILED", " tiled", "fused"] {
+            assert!(Dsv4IndexerScore::resolve(Some(raw)).is_err());
+        }
+    }
 
     #[test]
     fn fp4_reduction_resolution_is_literal_and_default_off() {

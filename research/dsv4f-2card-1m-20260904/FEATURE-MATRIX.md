@@ -269,6 +269,19 @@ critical path is limited by power or clocks.
   1,025-token median regressed 7.296527 -> 7.330332 s; full layer/round graph
   coverage is required rather than fourteen-kernel segment graphs
 - [ ] chunked prefill at 256K, 512K and 1M without transient OOM
+- [x] real 16,416-token source prompt crosses the former 4096-candidate plain
+  decode selector limit: 16 fixed-seed sampled tokens match DSpark, five rounds.
+  The fix uses the existing exact hierarchical selector for long plain decode
+  and removes narrow verification's long-context host sort. A 256K real-source
+  engine run is in progress; neither is a 1M HTTP serving qualification.
+- [ ] active C4 host offload and compact FP4 indexer residency. The current host
+  tier parks/restores whole inactive sessions; it does not move the active
+  request's C4 working set between host and device. This remains a concurrency
+  implementation task, not evidence against two-card feasibility.
+- [ ] ordered tiled indexer candidate: 2,045,982 local bit comparisons, CPU
+  witnesses, corruption control and synchronization checking passed. Actual
+  launcher capture proves tiled-kernel engagement. Target-card component timing,
+  one-load model parity and sampled serving remain pending (`indexer-tiled.md`).
 - [ ] resumable multi-session scheduler and cross-session batch decode
 - [ ] c1/c2/c4/c8/c16 throughput, fairness and admission cells
 - [ ] plain vs DSpark K/VT sweep; DFlash2 only if its artifact contract passes
