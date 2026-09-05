@@ -18743,7 +18743,7 @@ fn admit(
         // A strict-prefix carrier is usable only under the partial door; the suffix it leaves
         // is primed by `step_dspark_spec`, the same way a pool resume's suffix is.
         let partial_ok = dspark_partial_restore_on()
-            && carrier.fed.len() > 0
+            && !carrier.fed.is_empty()
             && carrier.fed.len() < prompt.len();
         let entry_tail_present = prefix_pin
             .as_ref()
