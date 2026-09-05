@@ -3485,6 +3485,14 @@ impl Engine {
         if let Some(f) = self.fn_cache.lock().unwrap().get(name) {
             return f.clone();
         }
+        // A miss while a capture is open is the failure the comment above describes: name it
+        // (cuModuleGetFunction inside the capture region is what returns INVALID_VALUE).
+        if self
+            .capture_keep_on
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            eprintln!("[func] CAPTURE-TIME kernel lookup (not warmed): {name}");
+        }
         let f = self
             .module
             .load_function(name)
