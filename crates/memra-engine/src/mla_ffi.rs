@@ -977,6 +977,7 @@ type Res<T> = Result<T, Box<dyn std::error::Error>>;
 /// Turn a launcher's status band into a named error. Every MLA launch goes through this —
 /// a silently-ignored non-zero status is how a contract violation becomes garbage activations.
 fn ck(what: &str, rc: i32) -> Res<()> {
+    crate::last_site_set(what);
     if rc == 0 {
         return Ok(());
     }
