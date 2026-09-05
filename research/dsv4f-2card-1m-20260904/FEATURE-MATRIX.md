@@ -261,6 +261,10 @@ critical path is limited by power or clocks.
   contribution bits and gives 1.28-1.37x integrated selected-expert speed;
   balanced intermediate TP drifts only 1.2e-7 absolute but is flat at 1.007x,
   so do not build the current-kernel loader around that split
+- [x] exact per-layer MoE CUDA graph priced and rejected
+  (`moe-graph-reject-e8bf83af3.md`): logits/cache bits passed, but a
+  1,025-token median regressed 7.296527 -> 7.330332 s; full layer/round graph
+  coverage is required rather than fourteen-kernel segment graphs
 - [ ] chunked prefill at 256K, 512K and 1M without transient OOM
 - [ ] resumable multi-session scheduler and cross-session batch decode
 - [ ] c1/c2/c4/c8/c16 throughput, fairness and admission cells
