@@ -3298,7 +3298,16 @@ impl HybridModel {
                         }
                         None => attn,
                     };
-                    let o = e.matmul(&fa.wo, &attn_g, b_n)?;
+                    let o = {
+                        // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+                        let __wpqs = e.pre_quant_scaled(
+                            &attn_g,
+                            fa.wo_pqs.as_ref(),
+                            fa.wo.in_features(),
+                            b_n,
+                        )?;
+                        e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn_g), b_n)
+                    }?;
                     ph_mark(e, 5, ph_last)?;
                     o
                 }
@@ -4136,7 +4145,12 @@ impl HybridModel {
                 // ---- head-wise gate (one sigmoid per (token, head), pre-wo) + o-proj at m=B ----
                 let mut ag = e.uninit(b_n * q_dim)?;
                 e.attn_head_gate(&attn, &gt, &mut ag, None, hd, nh, b_n)?;
-                e.matmul(&fa.wo, &ag, b_n)?
+                {
+                    // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+                    let __wpqs =
+                        e.pre_quant_scaled(&ag, fa.wo_pqs.as_ref(), fa.wo.in_features(), b_n)?;
+                    e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&ag), b_n)
+                }?
             };
             ph_mark(e, 5, ph_last)?;
 
@@ -4484,7 +4498,11 @@ impl HybridModel {
                 swa && crate::Engine::wkv_on(),
             )?;
         }
-        e.matmul(&fa.wo, &attn, b_n)
+        {
+            // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+            let __wpqs = e.pre_quant_scaled(&attn, fa.wo_pqs.as_ref(), fa.wo.in_features(), b_n)?;
+            e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn), b_n)
+        }
     }
 
     /// Standalone MoESD target forward. This entrypoint is not used by serving: it widens the

@@ -1956,7 +1956,16 @@ impl HybridModel {
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         match self.full_attn_tp_o(e, fa, activation, tokens)? {
             Some(output) => Ok(output),
-            None => e.matmul(&fa.wo, activation, tokens),
+            None => {
+                // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+                let __wpqs = e.pre_quant_scaled(
+                    &activation,
+                    fa.wo_pqs.as_ref(),
+                    fa.wo.in_features(),
+                    tokens,
+                )?;
+                e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&activation), tokens)
+            }
         }
     }
 
@@ -6730,7 +6739,12 @@ impl HybridModel {
                 e.copy_into(&mut ag_cat, offs[s] * nh * hd, &ag, ts[s] * nh * hd)?;
             }
             mark(e, 1, &mut pt, &mut ph);
-            let mixed = e.matmul(&fa.wo, &ag_cat, total)?;
+            let mixed = {
+                // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+                let __wpqs =
+                    e.pre_quant_scaled(&ag_cat, fa.wo_pqs.as_ref(), fa.wo.in_features(), total)?;
+                e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&ag_cat), total)
+            }?;
 
             let mut x1 = e.uninit(total * n_embd)?;
             let mut z = e.uninit(total * n_embd)?;
@@ -7491,7 +7505,16 @@ impl HybridModel {
                                 )?;
                             }
                             if !done {
-                                let m = e.matmul(&fa.wo, &attn_g, ts[s])?;
+                                let m = {
+                                    // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+                                    let __wpqs = e.pre_quant_scaled(
+                                        &attn_g,
+                                        fa.wo_pqs.as_ref(),
+                                        fa.wo.in_features(),
+                                        ts[s],
+                                    )?;
+                                    e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn_g), ts[s])
+                                }?;
                                 e.copy_into(&mut mixed, offs[s] * n_embd, &m, ts[s] * n_embd)?;
                             }
                         }
@@ -7519,7 +7542,16 @@ impl HybridModel {
                                 )?;
                             }
                             if !done {
-                                let m = e.matmul(&fa.wo, &attn_g, ts[s])?;
+                                let m = {
+                                    // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+                                    let __wpqs = e.pre_quant_scaled(
+                                        &attn_g,
+                                        fa.wo_pqs.as_ref(),
+                                        fa.wo.in_features(),
+                                        ts[s],
+                                    )?;
+                                    e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn_g), ts[s])
+                                }?;
                                 e.copy_into(&mut mixed, offs[s] * n_embd, &m, ts[s] * n_embd)?;
                             }
                         }
@@ -7738,7 +7770,11 @@ impl HybridModel {
         {
             return Ok(y);
         }
-        e.matmul(&fa.wo, &attn_g, t)
+        {
+            // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+            let __wpqs = e.pre_quant_scaled(&attn_g, fa.wo_pqs.as_ref(), fa.wo.in_features(), t)?;
+            e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn_g), t)
+        }
     }
 
     #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
@@ -19480,7 +19516,11 @@ impl HybridModel {
         } else {
             e.sdpa_naive(&q, &k, &v, &mut attn, hd, nh, nkv, t, t, scale, true)?;
         }
-        e.matmul(&fa.wo, &attn, t)
+        {
+            // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+            let __wpqs = e.pre_quant_scaled(&attn, fa.wo_pqs.as_ref(), fa.wo.in_features(), t)?;
+            e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn), t)
+        }
     }
 
     /// Back-compat wrapper (pure prefill, no cache).
@@ -21024,7 +21064,12 @@ impl HybridModel {
                 false,
                 None,
             )?;
-            return e.matmul(&fa.wo, &attn, 1);
+            return {
+                // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+                let __wpqs =
+                    e.pre_quant_scaled(&attn, fa.wo_pqs.as_ref(), fa.wo.in_features(), 1)?;
+                e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn), 1)
+            };
         }
         // windowed regime: SAME rows_w kernel as verify with t=1 (parity law — see verify_attn).
         if swa
@@ -21053,7 +21098,12 @@ impl HybridModel {
                 kvl.v_tok_bytes,
                 None,
             )?;
-            return e.matmul(&fa.wo, &attn, 1);
+            return {
+                // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+                let __wpqs =
+                    e.pre_quant_scaled(&attn, fa.wo_pqs.as_ref(), fa.wo.in_features(), 1)?;
+                e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn), 1)
+            };
         }
         let (off_tok, t_kv) = if swa && kvl.len > win {
             (kvl.len - win, win)
@@ -21084,7 +21134,11 @@ impl HybridModel {
             kvl.v_tok_bytes,
             swa && crate::Engine::wkv_on(),
         )?;
-        e.matmul(&fa.wo, &attn, 1)
+        {
+            // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+            let __wpqs = e.pre_quant_scaled(&attn, fa.wo_pqs.as_ref(), fa.wo.in_features(), 1)?;
+            e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn), 1)
+        }
     }
 
     /// gemma4 DEVICE-COUNTER decode step (graph arc): token id + rope pos + KV lengths live in
@@ -22057,7 +22111,11 @@ impl HybridModel {
             self.g4_matvec_m1_into(e, &fa.wo, &aq8, &ad8, &mut y)?;
             return Ok(y);
         }
-        e.matmul(&fa.wo, &attn, 1)
+        {
+            // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+            let __wpqs = e.pre_quant_scaled(&attn, fa.wo_pqs.as_ref(), fa.wo.in_features(), 1)?;
+            e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn), 1)
+        }
     }
 
     /// gemma4 GRAPH-REPLAY greedy loop: per (swa-key, global-key) fa bucket, capture ONE full
@@ -22772,7 +22830,11 @@ impl HybridModel {
                 swa && crate::Engine::wkv_on(),
             )?;
         }
-        e.matmul(&fa.wo, &attn, t)
+        {
+            // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+            let __wpqs = e.pre_quant_scaled(&attn, fa.wo_pqs.as_ref(), fa.wo.in_features(), t)?;
+            e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn), t)
+        }
     }
 
     #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
@@ -22946,7 +23008,12 @@ impl HybridModel {
                     swa && crate::Engine::wkv_on(),
                 )?;
             }
-            return e.matmul(&fa.wo, &attn, t);
+            return {
+                // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+                let __wpqs =
+                    e.pre_quant_scaled(&attn, fa.wo_pqs.as_ref(), fa.wo.in_features(), t)?;
+                e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn), t)
+            };
         }
         // WINDOWED rows twin (deep ctx, every row fully windowed): one launch, ABSOLUTE-index
         // per-row geometry over the prefix view. PARITY LAW (2026-07-10 root-cause): textually
@@ -22980,7 +23047,12 @@ impl HybridModel {
                 kvl.v_tok_bytes,
                 None,
             )?;
-            return e.matmul(&fa.wo, &attn, t);
+            return {
+                // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+                let __wpqs =
+                    e.pre_quant_scaled(&attn, fa.wo_pqs.as_ref(), fa.wo.in_features(), t)?;
+                e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn), t)
+            };
         }
         for i in 0..t {
             let avail = base_len + i + 1;
@@ -23076,7 +23148,11 @@ impl HybridModel {
             }
             e.copy_into(&mut attn, i * nh * hd, &a_one, nh * hd)?;
         }
-        e.matmul(&fa.wo, &attn, t)
+        {
+            // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+            let __wpqs = e.pre_quant_scaled(&attn, fa.wo_pqs.as_ref(), fa.wo.in_features(), t)?;
+            e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn), t)
+        }
     }
 
     /// gemma4 T=1 decode step: R8 layer graph over the cache; returns (softcapped logits host,
@@ -26605,15 +26681,30 @@ impl HybridModel {
             if let Some((kf, vf)) = &kv_f32 {
                 if hd == 256 && t <= win {
                     e.fa_prefill(&q, kf, vf, &mut attn, hd, nh, nkv, t, t, scale, true)?;
-                    return e.matmul(&fa.wo, &attn, t);
+                    return {
+                        // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+                        let __wpqs =
+                            e.pre_quant_scaled(&attn, fa.wo_pqs.as_ref(), fa.wo.in_features(), t)?;
+                        e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn), t)
+                    };
                 }
                 if hd == 256 && swa && t > win {
                     e.fa_prefill_w(&q, kf, vf, &mut attn, hd, nh, nkv, t, t, scale, true, win)?;
-                    return e.matmul(&fa.wo, &attn, t);
+                    return {
+                        // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+                        let __wpqs =
+                            e.pre_quant_scaled(&attn, fa.wo_pqs.as_ref(), fa.wo.in_features(), t)?;
+                        e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn), t)
+                    };
                 }
                 if hd == 512 && !swa {
                     e.fa_prefill_hd512(&q, kf, vf, &mut attn, hd, nh, nkv, t, t, scale, true)?;
-                    return e.matmul(&fa.wo, &attn, t);
+                    return {
+                        // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+                        let __wpqs =
+                            e.pre_quant_scaled(&attn, fa.wo_pqs.as_ref(), fa.wo.in_features(), t)?;
+                        e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn), t)
+                    };
                 }
             } else if share.is_some() {
                 let g = (!swa && crate::Engine::gkv_on()) || (swa && crate::Engine::wkv_on());
@@ -26637,7 +26728,12 @@ impl HybridModel {
                         kvl.v_tok_bytes,
                         g,
                     )?;
-                    return e.matmul(&fa.wo, &attn, t);
+                    return {
+                        // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+                        let __wpqs =
+                            e.pre_quant_scaled(&attn, fa.wo_pqs.as_ref(), fa.wo.in_features(), t)?;
+                        e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn), t)
+                    };
                 }
                 // remaining shared classes (swa above the window; hd512 globals): dequant
                 // the target's t rows ONCE to f32, then the same f32 twins as own-KV.
@@ -26661,7 +26757,12 @@ impl HybridModel {
                 } else {
                     e.fa_prefill_w(&q, &kf, &vf, &mut attn, hd, nh, nkv, t, t, scale, true, win)?;
                 }
-                return e.matmul(&fa.wo, &attn, t);
+                return {
+                    // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+                    let __wpqs =
+                        e.pre_quant_scaled(&attn, fa.wo_pqs.as_ref(), fa.wo.in_features(), t)?;
+                    e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn), t)
+                };
             }
         }
         if let Some(bucket) = dc_bucket {
@@ -26731,7 +26832,12 @@ impl HybridModel {
                 kvl.v_tok_bytes,
                 g,
             )?;
-            return e.matmul(&fa.wo, &attn, t);
+            return {
+                // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+                let __wpqs =
+                    e.pre_quant_scaled(&attn, fa.wo_pqs.as_ref(), fa.wo.in_features(), t)?;
+                e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn), t)
+            };
         }
         for i in 0..t {
             let avail = base_len + i + 1;
@@ -26774,7 +26880,11 @@ impl HybridModel {
             )?;
             e.copy_into(&mut attn, i * nh * hd, &a_one, nh * hd)?;
         }
-        e.matmul(&fa.wo, &attn, t)
+        {
+            // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+            let __wpqs = e.pre_quant_scaled(&attn, fa.wo_pqs.as_ref(), fa.wo.in_features(), t)?;
+            e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn), t)
+        }
     }
 
     /// E4B trunk: embed -> prologue -> layers (attn + dense ffn via the 31B tail_core + the

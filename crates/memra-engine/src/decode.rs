@@ -2829,7 +2829,12 @@ impl HybridModel {
         };
         match self.full_attn_tp_o(e, fa, &attn_g, 1)? {
             Some(output) => Ok(output),
-            None => Ok(e.matmul(&fa.wo, &attn_g, 1)?),
+            None => Ok({
+                // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+                let __wpqs =
+                    e.pre_quant_scaled(&attn_g, fa.wo_pqs.as_ref(), fa.wo.in_features(), 1)?;
+                e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn_g), 1)
+            }?),
         }
     }
 
@@ -3651,7 +3656,11 @@ impl HybridModel {
             }
             None => attn,
         };
-        e.matmul(&fa.wo, &attn_g, 1)
+        {
+            // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+            let __wpqs = e.pre_quant_scaled(&attn_g, fa.wo_pqs.as_ref(), fa.wo.in_features(), 1)?;
+            e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn_g), 1)
+        }
     }
 
     /// Linear-attention decode: conv with ring-buffer state, GDN scan carrying SSM state.
