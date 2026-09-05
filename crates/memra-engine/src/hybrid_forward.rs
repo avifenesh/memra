@@ -12010,6 +12010,7 @@ impl HybridModel {
                 e,
                 m,
                 z,
+                zq8,
                 sel,
                 il,
                 bases,
@@ -15816,6 +15817,7 @@ impl HybridModel {
         e: &Engine,
         m: &MoeWeights,
         z: &CudaSlice<f32>,
+        zq8: Option<&(CudaSlice<i8>, CudaSlice<f32>)>,
         sel: VrowsSel<'_>,
         il: u16,
         (pg, pu, pd): (u64, u64, u64),
@@ -15943,11 +15945,26 @@ impl HybridModel {
         }
         // Token rows quantized in one launch; per-row q8_1 bytes are position-independent
         // (the batched-MMVQ class), bit-gated against the per-token quantize_q8_1_view.
-        let (mut zq, mut zd) = (
-            e.vws_uninit_i8(t * n_embd)?,
-            e.vws_uninit(t * (n_embd / 32))?,
-        );
-        e.quantize_q8_1_into(z, t, n_embd, &mut zq, &mut zd)?;
+        // The fused FFN-input norm (MEMRA_GLM5_Q8_FUSE) already produced z's q8_1 pair; at t=1
+        // it is the same bytes `quantize_q8_1_into(z)` would write (same input row, same
+        // kernel family, same per-32 amax/scale), so reuse it and skip the launch. The census
+        // of 2026-09-05 counted this re-quantize at 41 per token (one per MoE layer).
+        let owned: Option<(CudaSlice<i8>, CudaSlice<f32>)> = match zq8 {
+            Some(_) if t == 1 => None,
+            _ => {
+                let (mut zq, mut zd) = (
+                    e.vws_uninit_i8(t * n_embd)?,
+                    e.vws_uninit(t * (n_embd / 32))?,
+                );
+                e.quantize_q8_1_into(z, t, n_embd, &mut zq, &mut zd)?;
+                Some((zq, zd))
+            }
+        };
+        let (zq, zd): (&CudaSlice<i8>, &CudaSlice<f32>) = match (&owned, zq8) {
+            (Some((q, d)), _) => (q, d),
+            (None, Some((q, d))) => (q, d),
+            (None, None) => unreachable!("owned or provided"),
+        };
         // LABEL FROM THE PROVENANCE, not from the call site. `moe_vrows_pairs_q8` is also the
         // spec-verify walk's launcher with HOST-built tables, so a hard-coded "device" here would
         // be a lie on that path — and a mislabelled arm is exactly the class of mistake that cost
@@ -15956,12 +15973,12 @@ impl HybridModel {
             VrowsSel::Dev(..) => "device",
             VrowsSel::Host(..) => "vrows-host",
         };
-        Self::trace_moe_act(e, vrows_arm, il, t, z, &zq, &zd);
+        Self::trace_moe_act(e, vrows_arm, il, t, z, zq, zd);
         let act = e.moe_gate_up_preclamp8_q8_rows(
             &ptrs_d,
             &scl_d,
-            &zq,
-            &zd,
+            zq,
+            zd,
             limit,
             n_embd,
             n_ff_exp,
@@ -15996,8 +16013,10 @@ impl HybridModel {
         // this engine's stream, the same guarantee the async free relies on).
         e.vws_recycle_u64(ptrs_d);
         e.vws_recycle(scl_d);
-        e.vws_recycle_i8(zq);
-        e.vws_recycle(zd);
+        if let Some((zq, zd)) = owned {
+            e.vws_recycle_i8(zq);
+            e.vws_recycle(zd);
+        }
         e.vws_recycle(act);
         e.vws_recycle_i8(aq2);
         e.vws_recycle(ad2);
