@@ -769,6 +769,34 @@ unsafe extern "C" {
     /// Exact multi-CTA k-pool selection (`MEMRA_B200_DSA_SELECT`): same threshold key, same
     /// membership test, same emit order, byte-identical `idx`.
     #[allow(clippy::too_many_arguments)]
+    pub fn memra_mla_kpool_score_dsa_live_f32(
+        q: *const f32,
+        pool_keys: *const f32,
+        hw: *const f32,
+        score: *mut f32,
+        t_q: i32,
+        heads: i32,
+        d: i32,
+        n_pools_d: *const i32,
+        n_pools_cap: i32,
+        pool: i32,
+        first_pos: i32,
+        qk_scale: f32,
+        head_scale: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_mla_kpool_select_live_f32(
+        score: *const f32,
+        idx: *mut i32,
+        t_q: i32,
+        n_pools_d: *const i32,
+        pool: i32,
+        select_k: i32,
+        width: i32,
+        first_pos: i32,
+        always_tail: i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_mla_kpool_select_dsa_f32(
         score: *const f32,
         idx: *mut i32,
@@ -1952,6 +1980,86 @@ impl Engine {
     /// Radix select on the 64-bit order key `(desc32(score) << 32) | pool_index`, whose ascending
     /// order IS the oracle's "score descending, pool index ascending" — see the ORDER contract
     /// block in `cu/mla_attn.cu`. `O(8 * n_pools / threads)` per query, independent of `select_k`.
+    #[allow(clippy::too_many_arguments)]
+    /// Live-count twin of the DSA decode scorer (`MEMRA_B200_DSA_DECODE` level >= 1): `n_pools`
+    /// read from the door's device word, launch grid from `n_pools_cap`, t_q must be 1 (one
+    /// score row, so the row stride does not depend on the count). Bit-identical to
+    /// `memra_mla_kpool_score_dsa_f32` at the same count (`tests/mla_kpool_live_gpu.rs`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn mla_kpool_score_dsa_live(
+        &self,
+        q: &CudaSlice<f32>,
+        pool_keys: &CudaSlice<f32>,
+        head_weights: &CudaSlice<f32>,
+        score: &mut CudaSlice<f32>,
+        heads: usize,
+        d: usize,
+        n_pools_d: &CudaSlice<i32>,
+        n_pools_cap: usize,
+        pool: usize,
+        first_pos: usize,
+        qk_scale: f32,
+        head_scale: f32,
+    ) -> Res<()> {
+        let s = self.stream();
+        unsafe {
+            ck(
+                "kpool_score_dsa_live",
+                memra_mla_kpool_score_dsa_live_f32(
+                    q.device_ptr(&s).0 as *const f32,
+                    pool_keys.device_ptr(&s).0 as *const f32,
+                    head_weights.device_ptr(&s).0 as *const f32,
+                    score.device_ptr_mut(&s).0 as *mut f32,
+                    1,
+                    heads as i32,
+                    d as i32,
+                    n_pools_d.device_ptr(&s).0 as *const i32,
+                    n_pools_cap as i32,
+                    pool as i32,
+                    first_pos as i32,
+                    qk_scale,
+                    head_scale,
+                    s.cu_stream() as *mut c_void,
+                ),
+            )
+        }
+    }
+
+    /// Live-count twin of the single-CTA selector: `n_pools` from the device word, grid t_q.
+    /// Bit-identical to `memra_mla_kpool_select_f32` at the same count.
+    #[allow(clippy::too_many_arguments)]
+    pub fn mla_kpool_select_live(
+        &self,
+        score: &CudaSlice<f32>,
+        idx: &mut CudaSlice<i32>,
+        t_q: usize,
+        n_pools_d: &CudaSlice<i32>,
+        pool: usize,
+        select_k: usize,
+        width: usize,
+        first_pos: usize,
+        always_tail: bool,
+    ) -> Res<()> {
+        let s = self.stream();
+        unsafe {
+            ck(
+                "kpool_select_live",
+                memra_mla_kpool_select_live_f32(
+                    score.device_ptr(&s).0 as *const f32,
+                    idx.device_ptr_mut(&s).0 as *mut i32,
+                    t_q as i32,
+                    n_pools_d.device_ptr(&s).0 as *const i32,
+                    pool as i32,
+                    select_k as i32,
+                    width as i32,
+                    first_pos as i32,
+                    always_tail as i32,
+                    s.cu_stream() as *mut c_void,
+                ),
+            )
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn mla_kpool_select(
         &self,
