@@ -345,9 +345,9 @@ fn layer_weights(
     let hidden = plan.hidden_size as usize;
     let index = layer.index;
     let mut weights = ReferenceWeights::new();
-    let mut put = |weights: &mut ReferenceWeights,
-                   tensor: LayerTensor,
-                   shape: Vec<usize>|
+    let put = |weights: &mut ReferenceWeights,
+               tensor: LayerTensor,
+               shape: Vec<usize>|
      -> Result<(), Fail> {
         let id = TensorId::Layer { index, tensor };
         let value = loader.load(&id, shape)?;
