@@ -392,6 +392,34 @@ pub fn glm5_graph_mla_mid_on() -> bool {
     std::env::var("MEMRA_GLM5_GRAPH_MLA_MID").as_deref() == Ok("1")
 }
 
+/// `MEMRA_GLM5_SPEC_DEV_IO=1` (lane/glm5-kgraph-20260905, default OFF, decide-by 2026-09-19):
+/// the DFlash2 round moves NO bytes through pageable host-to-device copies. The verify rows'
+/// positions come from an iota launch, the row tokens and the drafter's block tokens are set
+/// by tiny launches and gathered from the device embedding table, the drafter's block
+/// positions likewise. A pageable `cuMemcpyHtoD` makes the host wait for the whole queued
+/// stream before the copy starts (CUDA's pageable-copy contract), so each one is a full GPU
+/// drain per round; the launches are stream-ordered and return at once. Same bytes, same
+/// program: bit-identical by construction. Read per call.
+pub fn glm5_spec_dev_io_on() -> bool {
+    std::env::var("MEMRA_GLM5_SPEC_DEV_IO").as_deref() == Ok("1")
+}
+
+/// `MEMRA_GLM5_VERIFY_GRAPH=1` (lane/glm5-kgraph-20260905, default OFF, decide-by 2026-09-19):
+/// the DFlash2 verify walk (t = K+1 rows) runs its MLA layers through the live twins
+/// (`mla_attn_cached_rows_live`: every position-derived scalar from the device position
+/// word, the host `len` / `index_pools_ready` advanced by the caller) instead of the
+/// rows-exact host-geometry call. Arm 1 of the per-K capture door: the same program with a
+/// fixed launch geometry, so the walk can be captured and replayed at any later position.
+/// Read per call.
+pub fn glm5_verify_graph_on() -> bool {
+    std::env::var("MEMRA_GLM5_VERIFY_GRAPH").as_deref() == Ok("1")
+}
+/// Verify-walk MLA layer calls that went through the live twins (`MEMRA_GLM5_VERIFY_GRAPH`).
+pub static GLM5_VERIFY_LIVE_MLA_CALLS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+/// Pageable host-to-device copies the `MEMRA_GLM5_SPEC_DEV_IO` door replaced with launches.
+pub static SPEC_DEV_IO_AVOIDED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 pub fn glm5_vrows_t1_dev_forced() -> bool {
     glm5_vrows_t1_dev_forced_from(
         std::env::var("MEMRA_GLM5_VROWS_T1_DEV").ok().as_deref(),
@@ -9283,6 +9311,64 @@ impl Engine {
     }
 
     /// pos rows from a device counter: dst[i] = ctr[0] + i (verify-stream rope positions).
+    /// `dst[0..n) = base + i` with NO host-to-device copy: the base lands through the async
+    /// `i32_set_k` launch and `i32_iota_from` walks from it (`MEMRA_GLM5_SPEC_DEV_IO`).
+    pub fn i32_iota_dev(
+        &self,
+        base: i32,
+        n: usize,
+    ) -> Result<CudaSlice<i32>, Box<dyn std::error::Error>> {
+        let mut ctr = self.alloc_uninit::<i32>(1)?;
+        self.i32_set_k(&mut ctr, base)?;
+        let mut dst = self.alloc_uninit::<i32>(n.max(1))?;
+        self.i32_iota_from(&ctr, &mut dst, n)?;
+        SPEC_DEV_IO_AVOIDED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Ok(dst)
+    }
+
+    /// A small device f32 vector set by launches instead of a pageable copy (the sampled
+    /// accept's per-draft filter thresholds, `MEMRA_GLM5_SPEC_DEV_IO`): the bit pattern travels
+    /// as a u32 kernel argument and lands verbatim through a reinterpreting device copy.
+    pub fn f32_words_dev(
+        &self,
+        vals: &[f32],
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let mut bits = self.alloc_uninit::<u32>(vals.len().max(1))?;
+        for (i, &v) in vals.iter().enumerate() {
+            self.u32_set_k(&mut bits, v.to_bits(), i)?;
+        }
+        SPEC_DEV_IO_AVOIDED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let mut out = self.alloc_uninit::<f32>(vals.len().max(1))?;
+        {
+            let st = self.gpu.stream();
+            let (src, _g1) = bits.device_ptr(&st);
+            let (dst, _g2) = out.device_ptr_mut(&st);
+            unsafe {
+                cudarc::driver::result::memcpy_dtod_async(
+                    dst,
+                    src,
+                    vals.len().max(1) * 4,
+                    st.cu_stream(),
+                )?;
+            }
+        }
+        Ok(out)
+    }
+
+    /// A small device word vector set by launches instead of a pageable copy (the verify rows'
+    /// and the drafter block's token ids: K+1 and block_size words, `MEMRA_GLM5_SPEC_DEV_IO`).
+    pub fn u32_words_dev(
+        &self,
+        vals: &[u32],
+    ) -> Result<CudaSlice<u32>, Box<dyn std::error::Error>> {
+        let mut dst = self.alloc_uninit::<u32>(vals.len().max(1))?;
+        for (i, &v) in vals.iter().enumerate() {
+            self.u32_set_k(&mut dst, v, i)?;
+        }
+        SPEC_DEV_IO_AVOIDED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Ok(dst)
+    }
+
     pub fn i32_iota_from(
         &self,
         ctr: &CudaSlice<i32>,
@@ -13101,6 +13187,9 @@ impl Engine {
     }
 
     #[track_caller]
+    pub fn alloc_i32_zeroed(&self, n: usize) -> Result<CudaSlice<i32>, Box<dyn std::error::Error>> {
+        Ok(self.gpu.stream().alloc_zeros::<i32>(n.max(1))?)
+    }
     pub fn alloc_u32_zeroed(&self, n: usize) -> Result<CudaSlice<u32>, Box<dyn std::error::Error>> {
         crate::alloc_trace_hit(n * 4);
         let s = self.gpu.stream().alloc_zeros::<u32>(n)?;

@@ -747,8 +747,12 @@ struct Glm5VerifyPos {
 
 impl Glm5VerifyPos {
     fn new(e: &Engine, pos0: usize, t: usize) -> Res<Self> {
-        let v: Vec<i32> = (0..t as i32).map(|r| pos0 as i32 + r).collect();
-        let all = e.htod_i32(&v)?;
+        let all = if crate::glm5_spec_dev_io_on() {
+            e.i32_iota_dev(pos0 as i32, t)?
+        } else {
+            let v: Vec<i32> = (0..t as i32).map(|r| pos0 as i32 + r).collect();
+            e.htod_i32(&v)?
+        };
         let rows = if glm5_verify_batch_on() && t > 1 {
             Vec::new()
         } else {
@@ -757,6 +761,13 @@ impl Glm5VerifyPos {
                 .collect::<Result<_, _>>()?
         };
         Ok(Self { pos0, t, all, rows })
+    }
+}
+
+impl Glm5VerifyCkpt {
+    /// Hands the per-layer ssm snapshot buffers back (to seed the next round's checkpoint).
+    pub fn kda_ssm_snap_buffers(&mut self) -> Vec<Option<CudaSlice<f32>>> {
+        std::mem::take(&mut self.kda_ssm_snap)
     }
 }
 
@@ -778,6 +789,19 @@ impl HybridModel {
         e: &Engine,
         tokens: &[u32],
         cache: &mut Cache,
+    ) -> Res<(CudaSlice<f32>, CudaSlice<f32>, Glm5VerifyCkpt)> {
+        self.glm5_verify_rows_reusing(e, tokens, cache, Vec::new())
+    }
+
+    /// [`Self::glm5_verify_rows`] seeded with the previous round's per-layer ssm snapshot
+    /// buffers: the pre-round clone becomes an in-place device copy into the same buffer
+    /// (same bytes; the checkpoint hands the buffers back through `kda_ssm_snap`).
+    pub fn glm5_verify_rows_reusing(
+        &self,
+        e: &Engine,
+        tokens: &[u32],
+        cache: &mut Cache,
+        snap_pool: Vec<Option<CudaSlice<f32>>>,
     ) -> Res<(CudaSlice<f32>, CudaSlice<f32>, Glm5VerifyCkpt)> {
         let topology = *self
             .hyper
@@ -838,7 +862,12 @@ impl HybridModel {
                 .map(|plane| plane.as_ref().map(|plane| plane.len))
                 .collect(),
             kda_conv_cols: (0..self.layers.len()).map(|_| None).collect(),
-            kda_ssm_snap: (0..self.layers.len()).map(|_| None).collect(),
+            kda_ssm_snap: {
+                let mut v = snap_pool;
+                v.resize_with(self.layers.len(), || None);
+                v.truncate(self.layers.len());
+                v
+            },
             kda_scan_stash: (0..self.layers.len()).map(|_| None).collect(),
             kda_rows: (0..self.layers.len()).map(|_| None).collect(),
             kda_tp: (0..self.layers.len()).map(|_| None).collect(),
@@ -857,7 +886,7 @@ impl HybridModel {
         }
 
         let pos = Glm5VerifyPos::new(e, pos0, t)?;
-        let embedded = e.htod(&self.embd.try_gather(n_embd, tokens)?)?;
+        let embedded = self.glm5_rows_embed(e, tokens, n_embd)?;
         let x = crate::hyper::expand(e, &topology, &embedded, t, n_embd)?;
         let x = self.glm5_verify_range(
             e,
@@ -998,7 +1027,13 @@ impl HybridModel {
                             let rl = cache.recur[il]
                                 .as_ref()
                                 .ok_or("glm5 verify KDA layer has no recurrent state")?;
-                            ckpt.kda_ssm_snap[il] = Some(e.clone_dtod(&rl.ssm_state)?);
+                            ckpt.kda_ssm_snap[il] = Some(match ckpt.kda_ssm_snap[il].take() {
+                                Some(mut b) if b.len() == rl.ssm_state.len() => {
+                                    e.dtod_copy_into(&rl.ssm_state, &mut b, 0)?;
+                                    b
+                                }
+                                _ => e.clone_dtod(&rl.ssm_state)?,
+                            });
                         }
                         let t0 = vclock(trace_v);
                         let mut scan_ns = 0u64;
@@ -1024,8 +1059,45 @@ impl HybridModel {
                     }
                     Mixer::Mla(mla) => {
                         let t0 = vclock(trace_v);
-                        let out =
-                            self.mla_attn_cached_rows_exact(e, mla, &h, &pos.all, t, il, cache)?;
+                        // MEMRA_GLM5_VERIFY_GRAPH arm 1: the live twins (fixed launch
+                        // geometry, every position-derived scalar from `pos.all[0]`), the
+                        // host bookkeeping the rows-exact call does itself landing here.
+                        let live_ok = crate::glm5_verify_graph_on()
+                            && mla.index.is_some()
+                            && cache.latent[il].as_ref().is_some_and(|p| p.len == pos.pos0);
+                        if crate::glm5_verify_graph_on() && !live_ok {
+                            static SAID_NO: std::sync::Once = std::sync::Once::new();
+                            SAID_NO.call_once(|| {
+                                eprintln!(
+                                    "[glm5-verify-graph] MLA layer {il} stays on the rows-exact \
+                                     call: no indexer or latent len != pos0 (the live twins read \
+                                     the position word as the append slot)"
+                                )
+                            });
+                        }
+                        let out = if live_ok {
+                            static SAID: std::sync::Once = std::sync::Once::new();
+                            SAID.call_once(|| {
+                                eprintln!(
+                                    "[glm5-verify-graph] engaged: the verify walk's MLA layers \
+                                     run through the live twins (MEMRA_GLM5_VERIFY_GRAPH=1)"
+                                )
+                            });
+                            let out =
+                                self.mla_attn_cached_rows_live(e, mla, &h, &pos.all, t, il, cache)?;
+                            let plane = cache.latent[il]
+                                .as_mut()
+                                .ok_or("glm5 verify MLA layer has no latent plane")?;
+                            plane.len += t;
+                            if let Some(ix) = mla.index.as_ref() {
+                                plane.index_pools_ready = plane.len / ix.geom.pool;
+                            }
+                            crate::GLM5_VERIFY_LIVE_MLA_CALLS
+                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            out
+                        } else {
+                            self.mla_attn_cached_rows_exact(e, mla, &h, &pos.all, t, il, cache)?
+                        };
                         if let Some(t0) = t0 {
                             let _ = e.stream().synchronize();
                             use std::sync::atomic::Ordering;
@@ -1103,7 +1175,13 @@ impl HybridModel {
                                 let rl = cache.recur[il]
                                     .as_ref()
                                     .ok_or("glm5 verify KDA layer has no recurrent state")?;
-                                ckpt.kda_ssm_snap[il] = Some(e.clone_dtod(&rl.ssm_state)?);
+                                ckpt.kda_ssm_snap[il] = Some(match ckpt.kda_ssm_snap[il].take() {
+                                    Some(mut b) if b.len() == rl.ssm_state.len() => {
+                                        e.dtod_copy_into(&rl.ssm_state, &mut b, 0)?;
+                                        b
+                                    }
+                                    _ => e.clone_dtod(&rl.ssm_state)?,
+                                });
                             }
                             if r + 1 < t {
                                 // Steal the row's scan inputs for the replay stash (zero
@@ -1368,6 +1446,34 @@ impl HybridModel {
     /// for consumption from the caller's streams after this returns.
     #[allow(clippy::too_many_arguments)]
     // allow: the parameter list mirrors its decode twin's stage-walk contract
+    /// The verify rows' token embeddings: through the device embedding table from device
+    /// token words under `MEMRA_GLM5_SPEC_DEV_IO` (no pageable copy), the host gather +
+    /// upload otherwise. Same rows either way (the device gather is the decode path's).
+    pub(crate) fn glm5_rows_embed(
+        &self,
+        e: &Engine,
+        tokens: &[u32],
+        n_embd: usize,
+    ) -> Res<CudaSlice<f32>> {
+        if crate::glm5_spec_dev_io_on() {
+            static SAID: std::sync::Once = std::sync::Once::new();
+            SAID.call_once(|| {
+                eprintln!(
+                    "[glm5-spec-dev-io] engaged: verify rows, positions and the drafter block \
+                     reach the device through launches, not pageable copies \
+                     (MEMRA_GLM5_SPEC_DEV_IO=1)"
+                )
+            });
+            let embd_gpu = self
+                .embd_gpu
+                .get_or_init(|| e.upload_u8(&self.embd.raw).expect("embed table upload"));
+            let (qt, rb) = self.embd.qt_and_row_bytes(n_embd);
+            let tok_d = e.u32_words_dev(tokens)?;
+            return e.embed_gather_device_td(embd_gpu, &tok_d, tokens.len(), n_embd, qt, rb);
+        }
+        e.htod(&self.embd.try_gather(n_embd, tokens)?)
+    }
+
     fn glm5_verify_rows_ppn(
         &self,
         e: &Engine,
@@ -1389,7 +1495,7 @@ impl HybridModel {
         // ranges — the shape every hc ppN walk uses for this knob.
         if crate::pp::pp2_streams_off() {
             let pos = pos_on(e)?;
-            let embedded = e.htod(&self.embd.try_gather(n_embd, tokens)?)?;
+            let embedded = self.glm5_rows_embed(e, tokens, n_embd)?;
             let mut x = crate::hyper::expand(e, topology, &embedded, t, n_embd)?;
             x =
                 self.glm5_verify_range(e, topology, x, fence[0], fence[1], &pos, cache, &mut ckpt)?;
@@ -1428,7 +1534,7 @@ impl HybridModel {
             let _st0 = rt.enter(0);
             let e0 = rt.engine(0, e);
             let pos = pos_on(e0)?;
-            let embedded = e0.htod(&self.embd.try_gather(n_embd, tokens)?)?;
+            let embedded = self.glm5_rows_embed(e0, tokens, n_embd)?;
             let x = crate::hyper::expand(e0, topology, &embedded, t, n_embd)?;
             let x = self
                 .glm5_verify_range(e0, topology, x, fence[0], fence[1], &pos, cache, &mut ckpt)?;
@@ -2359,6 +2465,7 @@ impl HybridModel {
             pen_hist,
             sctr,
             uctr: 0,
+            snap_pool: Vec::new(),
             rounds: 0,
             rank_trimmed_rounds: 0,
             done: false,
@@ -2958,6 +3065,7 @@ impl HybridModel {
             pen_hist,
             sctr,
             uctr: 0,
+            snap_pool: Vec::new(),
             rounds: 0,
             rank_trimmed_rounds: 0,
             done: false,
@@ -3353,10 +3461,12 @@ impl HybridModel {
                 let mut draft_logits: Vec<CudaSlice<f32>> = Vec::new(); // sampled route only
                 let mut draft_stats: Vec<(f32, f32, f32)> = Vec::new(); // (mx, th, z), sampled only
                 for ki in 0..k {
+                    let tok_dev: Option<CudaSlice<u32>>;
                     let (idx, sampled_stats) = match sp {
                         Some(sp) => {
-                            let (idx, stats) =
+                            let (idx, stats, td) =
                                 glm5_sampled_draft(eh, &d_logits, d_vocab, sp, &mut sess.sctr)?;
+                            tok_dev = Some(td);
                             (idx, Some(stats))
                         }
                         None => {
@@ -3376,6 +3486,7 @@ impl HybridModel {
                                     sess.rounds
                                 ),
                             )?;
+                            tok_dev = Some(td);
                             (idx, None)
                         }
                     };
@@ -3386,7 +3497,12 @@ impl HybridModel {
                     // forward is paid; a discarded sampled draw's Philox advance stands
                     // (spec.rs eager parity: "counts the p-min-discarded token too").
                     if p_min > 0.0 {
-                        let tok_d = eh.htod_u32_v(&[idx])?;
+                        // MEMRA_GLM5_SPEC_DEV_IO: the probability reads the token from the
+                        // device word the draw produced; no upload of the host copy.
+                        let tok_d = match tok_dev {
+                            Some(td) if crate::glm5_spec_dev_io_on() => td,
+                            _ => eh.htod_u32_v(&[idx])?,
+                        };
                         let p_d = eh.prob_of_token_device(&d_logits, &tok_d, d_vocab)?;
                         let p = eh.dtoh(&p_d)?[0];
                         if p < p_min && (ki > 0 || pmin0) {
@@ -3461,7 +3577,9 @@ impl HybridModel {
         let mut rows: Vec<u32> = Vec::with_capacity(drafts.len() + 1);
         rows.push(sess.anchor);
         rows.extend_from_slice(&drafts);
-        let (vlogits, collapsed, ckpt) = self.glm5_verify_rows(e, &rows, &mut sess.cache)?;
+        let snap_pool = std::mem::take(&mut sess.snap_pool);
+        let (vlogits, collapsed, mut ckpt) =
+            self.glm5_verify_rows_reusing(e, &rows, &mut sess.cache, snap_pool)?;
         bump!(verify);
         plap!(first_verify_ms);
 
@@ -3631,6 +3749,7 @@ impl HybridModel {
             sess.cache.pos = ckpt.pos + keep;
         } else {
             self.glm5_verify_rollback(e, &mut sess.cache, &ckpt, keep)?;
+            sess.snap_pool = std::mem::take(&mut ckpt.kda_ssm_snap);
         }
         bump!(roll);
         plap!(first_roll_ms);
@@ -3839,7 +3958,7 @@ impl HybridModel {
         let exact_scope = eh.exact_scope(true);
         let mut block: Vec<u32> = vec![c.mask_token_id; b];
         block[0] = anchor;
-        let noise = eh.htod(&self.embd.try_gather(n_embd, &block)?)?;
+        let noise = self.glm5_rows_embed(eh, &block, n_embd)?;
         let pos_block: Vec<i32> = ((start as i32)..(start + b) as i32).collect();
         let dh = draft.forward_round(eh, kv, &noise, &pos_block)?;
 
@@ -3948,44 +4067,92 @@ impl HybridModel {
         let d_vocab = d2t.map(|m| m.len()).unwrap_or(n_vocab);
         // FILTERED p_j: one batched stats pass over verify rows 0..k-1 (row j is the target
         // distribution at draft j's slot), then one batched gather of the drafted tokens.
-        let rows_i: Vec<i32> = (0..k as i32).collect();
-        let rows_d = e.htod_i32(&rows_i)?;
+        let dev_io = crate::glm5_spec_dev_io_on();
+        let rows_d = if dev_io {
+            e.i32_iota_dev(0, k)?
+        } else {
+            let rows_i: Vec<i32> = (0..k as i32).collect();
+            e.htod_i32(&rows_i)?
+        };
         let (mut th_d, mut z_d, mut mx_d) = (e.zeros(k)?, e.zeros(k)?, e.zeros(k)?);
         e.filter_stats(
             vlogits, n_vocab, &rows_d, &mut th_d, &mut z_d, &mut mx_d, n_vocab, k, sp.temp,
             sp.top_k, sp.top_p, sp.min_p,
         )?;
-        let ids_d = e.htod_u32_v(drafts)?;
+        let ids_d = if dev_io {
+            e.u32_words_dev(drafts)?
+        } else {
+            e.htod_u32_v(drafts)?
+        };
         let mut pj_d = e.zeros(k)?;
         e.softmax_gather_filtered(
             vlogits, n_vocab, &ids_d, &rows_d, &th_d, &z_d, &mut pj_d, n_vocab, k, sp.temp,
         )?;
-        let pj = e.dtoh(&pj_d)?;
-        let (thv, zv, mxv) = (e.dtoh(&th_d)?, e.dtoh(&z_d)?, e.dtoh(&mx_d)?);
+        // MEMRA_GLM5_SPEC_DEV_IO: the drafter-side gather for every draft in ONE launch over
+        // the drafts' logits laid out as k contiguous rows, its statistics set by launches;
+        // one readback of the k q values instead of four uploads and a readback per accepted
+        // draft. Per pair the kernel's row program is the per-draft launch's.
+        let (pj, qall) = if dev_io {
+            let mut dl_all = e.uninit(k * d_vocab)?;
+            for (j, dl) in draft_logits.iter().enumerate().take(k) {
+                e.copy_into(&mut dl_all, j * d_vocab, dl, d_vocab)?;
+            }
+            let qth: Vec<f32> = draft_stats.iter().take(k).map(|s| s.1).collect();
+            let qz: Vec<f32> = draft_stats.iter().take(k).map(|s| s.2).collect();
+            let thq = e.f32_words_dev(&qth)?;
+            let zq = e.f32_words_dev(&qz)?;
+            let idq = e.u32_words_dev(&draft_idx[..k])?;
+            let mut q_d = e.zeros(k)?;
+            e.softmax_gather_filtered(
+                &dl_all, d_vocab, &idq, &rows_d, &thq, &zq, &mut q_d, d_vocab, k, sp.temp,
+            )?;
+            let mut packed = e.zeros(2 * k)?;
+            e.copy_into(&mut packed, 0, &pj_d, k)?;
+            e.copy_into(&mut packed, k, &q_d, k)?;
+            let h = e.dtoh(&packed)?;
+            (h[..k].to_vec(), Some(h[k..].to_vec()))
+        } else {
+            (e.dtoh(&pj_d)?, None)
+        };
+        let (thv, zv, mxv) = if dev_io {
+            let mut packed = e.zeros(3 * k)?;
+            e.copy_into(&mut packed, 0, &th_d, k)?;
+            e.copy_into(&mut packed, k, &z_d, k)?;
+            e.copy_into(&mut packed, 2 * k, &mx_d, k)?;
+            let h = e.dtoh(&packed)?;
+            (h[..k].to_vec(), h[k..2 * k].to_vec(), h[2 * k..].to_vec())
+        } else {
+            (e.dtoh(&th_d)?, e.dtoh(&z_d)?, e.dtoh(&mx_d)?)
+        };
 
         // The walk: FILTERED q_j from the retained draft logits (rank id for trimmed heads),
         // host Philox accept test per slot.
         let mut j = 0usize;
         while j < k {
-            let (_qmx, qth, qz) = draft_stats[j];
-            let idsd = e.htod_u32_v(&[draft_idx[j]])?;
-            let rows0 = e.htod_i32(&[0])?;
-            let thd = e.htod(&[qth])?;
-            let zd = e.htod(&[qz])?;
-            let mut outd = e.zeros(1)?;
-            e.softmax_gather_filtered(
-                &draft_logits[j],
-                d_vocab,
-                &idsd,
-                &rows0,
-                &thd,
-                &zd,
-                &mut outd,
-                d_vocab,
-                1,
-                sp.temp,
-            )?;
-            let qj = e.dtoh(&outd)?[0];
+            let qj = match &qall {
+                Some(q) => q[j],
+                None => {
+                    let (_qmx, qth, qz) = draft_stats[j];
+                    let idsd = e.htod_u32_v(&[draft_idx[j]])?;
+                    let rows0 = e.htod_i32(&[0])?;
+                    let thd = e.htod(&[qth])?;
+                    let zd = e.htod(&[qz])?;
+                    let mut outd = e.zeros(1)?;
+                    e.softmax_gather_filtered(
+                        &draft_logits[j],
+                        d_vocab,
+                        &idsd,
+                        &rows0,
+                        &thd,
+                        &zd,
+                        &mut outd,
+                        d_vocab,
+                        1,
+                        sp.temp,
+                    )?;
+                    e.dtoh(&outd)?[0]
+                }
+            };
             let u = crate::spec::host_u01(sp.seed, sess.uctr);
             sess.uctr = sess.uctr.wrapping_add(1);
             if (u as f64) * (qj as f64) < pj[j] as f64 {
@@ -4017,9 +4184,18 @@ impl HybridModel {
             let mut sample_tok = e.alloc_u32_zeroed(1)?;
             match d2t {
                 Some(map) => {
-                    let map_d = e.htod_u32_v(map)?;
+                    // MEMRA_GLM5_SPEC_DEV_IO: the trim map is a per-process device resident
+                    // (uploaded once), not a per-round pageable upload of d_vocab words.
+                    let map_own;
+                    let map_d: &CudaSlice<u32> = if crate::glm5_spec_dev_io_on() {
+                        self.d2t_gpu
+                            .get_or_init(|| e.htod_u32_v(map).expect("d2t map upload"))
+                    } else {
+                        map_own = e.htod_u32_v(map)?;
+                        &map_own
+                    };
                     let mut q_full = e.zeros(n_vocab)?;
-                    e.scatter_trim_logits(&draft_logits[j], &map_d, &mut q_full, d_vocab, n_vocab)?;
+                    e.scatter_trim_logits(&draft_logits[j], map_d, &mut q_full, d_vocab, n_vocab)?;
                     e.residual_sample_filtered(
                         &col,
                         Some(&q_full),
@@ -4101,27 +4277,48 @@ impl HybridModel {
 /// stats `(row_max, threshold_e, renorm_mass)`, which the accept walk's q gather and the
 /// rejection residual both reuse (the q side must be the distribution the draft was actually
 /// drawn from, or rejection sampling is not exact for the filtered target).
+/// A sampled draft: the drawn rank id, its filter statistics `(mx, th, z)`, and the drawn
+/// token's device word (kept for the p-min probability under `MEMRA_GLM5_SPEC_DEV_IO`).
+type SampledDraw = (u32, (f32, f32, f32), CudaSlice<u32>);
+
 fn glm5_sampled_draft(
     e: &Engine,
     dl: &CudaSlice<f32>,
     d_vocab: usize,
     sp: &SpecSampling,
     sctr: &mut u32,
-) -> Res<(u32, (f32, f32, f32))> {
-    let rows0 = e.htod_i32(&[0])?;
+) -> Res<SampledDraw> {
+    let dev_io = crate::glm5_spec_dev_io_on();
+    // MEMRA_GLM5_SPEC_DEV_IO: the row index is a zeroed device word (a memset, stream-ordered),
+    // and the three filter statistics come back in ONE readback after three device copies
+    // instead of three synchronizing readbacks.
+    let rows0 = if dev_io {
+        e.alloc_i32_zeroed(1)?
+    } else {
+        e.htod_i32(&[0])?
+    };
     let (mut th_d, mut z_d, mut mx_d) = (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
     e.filter_stats(
         dl, d_vocab, &rows0, &mut th_d, &mut z_d, &mut mx_d, d_vocab, 1, sp.temp, sp.top_k,
         sp.top_p, sp.min_p,
     )?;
-    let (th, z, mx) = (e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0], e.dtoh(&mx_d)?[0]);
+    let (th, z, mx) = if dev_io {
+        let mut packed = e.zeros(3)?;
+        e.copy_into(&mut packed, 0, &th_d, 1)?;
+        e.copy_into(&mut packed, 1, &z_d, 1)?;
+        e.copy_into(&mut packed, 2, &mx_d, 1)?;
+        let h = e.dtoh(&packed)?;
+        (h[0], h[1], h[2])
+    } else {
+        (e.dtoh(&th_d)?[0], e.dtoh(&z_d)?[0], e.dtoh(&mx_d)?[0])
+    };
     let mut pb = e.zeros(d_vocab)?;
     e.gumbel_perturb_filtered(dl, &mut pb, d_vocab, sp.seed, *sctr, sp.temp, mx, th)?;
     *sctr = sctr.wrapping_add(1);
     let td = e.argmax_token_device(&pb, d_vocab)?;
     let idx =
         crate::spec::guard_vocab_token(e.dtoh_u32_one(&td)?, d_vocab, "glm5 sampled draft draw")?;
-    Ok((idx, (mx, th, z)))
+    Ok((idx, (mx, th, z), td))
 }
 
 /// glm5_next SERVED speculative session (lane/glm5-spec-routing, 2026-08-30): the state one
@@ -4164,6 +4361,10 @@ pub struct Glm5SpecSession {
     /// uniforms (`spec::host_u01`, tag 0xFFFF_FFFE).
     sctr: u32,
     uctr: u32,
+    /// Per-layer KDA ssm snapshot buffers carried across rounds (the verify checkpoint's
+    /// pre-round clones re-filled in place instead of re-allocated: same bytes, stable
+    /// addresses for a captured round).
+    snap_pool: Vec<Option<CudaSlice<f32>>>,
     /// Verify rounds completed over the session lifetime (the worker's per-burst
     /// rounds-delta receipt, the dspark `rounds` convention).
     pub rounds: usize,

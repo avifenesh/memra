@@ -3817,6 +3817,8 @@ pub struct HybridModel {
     /// Lazily-uploaded DEVICE copy of the raw embed table (spec/graph hot loops gather rows
     /// on-device instead of host-dequant + htod). ~0.5GB; uploaded once on first use.
     pub embd_gpu: std::sync::OnceLock<cudarc::driver::CudaSlice<u8>>,
+    /// device copy of the drafter's d2t trim map (uploaded once; `MEMRA_GLM5_SPEC_DEV_IO`).
+    pub d2t_gpu: std::sync::OnceLock<cudarc::driver::CudaSlice<u32>>,
     pub gemma4_aux: Option<GemmaAux>,
     /// Sliding-gated-MoE tuned-program auxiliaries, selected from canonical operations.
     pub step35_aux: Option<Step35Aux>,
@@ -6148,6 +6150,7 @@ impl HybridModel {
             dflash_trim,
             frspec_src_sha16,
             embd_gpu: std::sync::OnceLock::new(),
+            d2t_gpu: std::sync::OnceLock::new(),
             gemma4_aux,
             step35_aux,
             prime_slabs: std::sync::Mutex::new(std::collections::HashMap::new()),

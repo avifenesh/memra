@@ -813,3 +813,228 @@ fn mla_rows_live_matches_rows_exact_bitwise() {
         "mla rows-live: {rounds} rounds of t={t} rows bit-identical to rows-exact (layer {il}, pool {pool}, positions {prompt}..{pos})"
     );
 }
+
+/// `MEMRA_GLM5_SPEC_DEV_IO`: the verify rows reach the device through launches instead of
+/// pageable copies. Same rows, same positions: logits bitwise against the copy arm, on two
+/// identically primed caches; non-vacuity on the avoided-copy counter.
+#[test]
+#[ignore = "needs a CUDA device — run under flock /tmp/memra-5090.lock"]
+fn spec_dev_io_verify_rows_match_bitwise() {
+    let _gpu = gpu_guard();
+    let h = Harness::new();
+    let ids = tokens(40, 0x5EED);
+    let (prompt, t) = (8usize, 4usize);
+    let e = &h.engine;
+    let prime = || {
+        let mut cache =
+            memra_engine::cache::Cache::new_planned(e, &h.model.cfg, &h.plan, 64).expect("cache");
+        h.model
+            .prime_cache(e, &ids[..prompt], &mut cache, 0)
+            .expect("prime");
+        cache
+    };
+    let rows = &ids[prompt..prompt + t];
+    unsafe {
+        std::env::set_var("MEMRA_GLM5_SPEC_DEV_IO", "0");
+    }
+    let mut ca = prime();
+    let (la, _, _) = h
+        .model
+        .glm5_verify_rows(e, rows, &mut ca)
+        .expect("verify rows (copy arm)");
+    let c0 = memra_engine::SPEC_DEV_IO_AVOIDED.load(Ordering::Relaxed);
+    unsafe {
+        std::env::set_var("MEMRA_GLM5_SPEC_DEV_IO", "1");
+    }
+    let mut cb = prime();
+    let (lb, _, _) = h
+        .model
+        .glm5_verify_rows(e, rows, &mut cb)
+        .expect("verify rows (launch arm)");
+    unsafe {
+        std::env::set_var("MEMRA_GLM5_SPEC_DEV_IO", "0");
+    }
+    e.stream().synchronize().unwrap();
+    let avoided = memra_engine::SPEC_DEV_IO_AVOIDED.load(Ordering::Relaxed) - c0;
+    assert!(
+        avoided >= 2,
+        "VACUOUS: the door replaced {avoided} copies (expected positions + rows)"
+    );
+    let (va, vb) = (e.dtoh(&la).unwrap(), e.dtoh(&lb).unwrap());
+    assert_eq!(va.len(), vb.len());
+    let d = va
+        .iter()
+        .zip(&vb)
+        .filter(|(a, b)| a.to_bits() != b.to_bits())
+        .count();
+    assert_eq!(
+        d,
+        0,
+        "{d}/{} verify logits differ between the copy and launch arms",
+        va.len()
+    );
+    println!(
+        "spec-dev-io: verify rows t={t} bitwise across arms ({avoided} pageable copies replaced)"
+    );
+}
+
+/// The verify checkpoint's pre-round ssm snapshots carried across rounds
+/// (`glm5_verify_rows_reusing`): the second round's in-place copies into the first round's
+/// buffers give the same logits and the same rollback as fresh clones.
+#[test]
+#[ignore = "needs a CUDA device — run under flock /tmp/memra-5090.lock"]
+fn verify_snapshot_reuse_matches_fresh_clones_bitwise() {
+    let _gpu = gpu_guard();
+    let h = Harness::new();
+    let ids = tokens(48, 0x5EED);
+    let (prompt, t) = (8usize, 3usize);
+    let e = &h.engine;
+    let prime = || {
+        let mut cache =
+            memra_engine::cache::Cache::new_planned(e, &h.model.cfg, &h.plan, 64).expect("cache");
+        h.model
+            .prime_cache(e, &ids[..prompt], &mut cache, 0)
+            .expect("prime");
+        cache
+    };
+    // arm A: fresh clones every round; arm B: the buffers carried from round to round
+    let (mut ca, mut cb) = (prime(), prime());
+    let mut pool: Vec<Option<cudarc::driver::CudaSlice<f32>>> = Vec::new();
+    for round in 0..3 {
+        let rows = &ids[prompt + round * t..prompt + (round + 1) * t];
+        let (la, _, ca_ck) = h.model.glm5_verify_rows(e, rows, &mut ca).expect("fresh");
+        let (lb, _, mut cb_ck) = h
+            .model
+            .glm5_verify_rows_reusing(e, rows, &mut cb, std::mem::take(&mut pool))
+            .expect("reusing");
+        e.stream().synchronize().unwrap();
+        let (va, vb) = (e.dtoh(&la).unwrap(), e.dtoh(&lb).unwrap());
+        let d = va
+            .iter()
+            .zip(&vb)
+            .filter(|(a, b)| a.to_bits() != b.to_bits())
+            .count();
+        assert_eq!(d, 0, "round {round}: {d}/{} verify logits differ", va.len());
+        // roll both back to keep = 2 of 3 rows, then compare the recurrent state
+        h.model
+            .glm5_verify_rollback(e, &mut ca, &ca_ck, 2)
+            .expect("rollback A");
+        h.model
+            .glm5_verify_rollback(e, &mut cb, &cb_ck, 2)
+            .expect("rollback B");
+        pool = std::mem::take(&mut cb_ck.kda_ssm_snap_buffers());
+        e.stream().synchronize().unwrap();
+        for il in 0..h.model.layers.len() {
+            if let (Some(ra), Some(rb)) = (ca.recur[il].as_ref(), cb.recur[il].as_ref()) {
+                let (sa, sb) = (
+                    e.dtoh(&ra.ssm_state).unwrap(),
+                    e.dtoh(&rb.ssm_state).unwrap(),
+                );
+                assert!(
+                    sa.iter().zip(&sb).all(|(a, b)| a.to_bits() == b.to_bits()),
+                    "round {round} layer {il}: ssm state differs after rollback"
+                );
+            }
+        }
+    }
+    assert!(
+        pool.iter().any(|b| b.is_some()),
+        "VACUOUS: no snapshot buffer was carried"
+    );
+    println!(
+        "verify snapshot reuse: 3 rounds of t={t} bitwise (logits + rolled-back ssm state) vs fresh clones"
+    );
+}
+
+/// `MEMRA_GLM5_VERIFY_GRAPH` arm 1: the verify walk's MLA layers through the live twins vs
+/// the rows-exact call, on two identically primed caches, three rounds with rollbacks in
+/// between: logits, latent lengths and rows bitwise; non-vacuity on the live-call counter.
+#[test]
+#[ignore = "needs a CUDA device — run under flock /tmp/memra-5090.lock"]
+fn verify_graph_live_arm_matches_rows_exact_bitwise() {
+    let _gpu = gpu_guard();
+    let h = Harness::new();
+    let ids = tokens(48, 0x5EED);
+    let (prompt, t) = (8usize, 3usize);
+    let e = &h.engine;
+    let prime = || {
+        let mut cache =
+            memra_engine::cache::Cache::new_planned(e, &h.model.cfg, &h.plan, 64).expect("cache");
+        h.model
+            .prime_cache(e, &ids[..prompt], &mut cache, 0)
+            .expect("prime");
+        cache
+    };
+    unsafe {
+        std::env::set_var("MEMRA_MLA_SEG_WS", "1");
+        std::env::set_var("MEMRA_GLM5_VERIFY_GRAPH", "0");
+    }
+    let (mut ca, mut cb) = (prime(), prime());
+    let c0 = memra_engine::GLM5_VERIFY_LIVE_MLA_CALLS.load(Ordering::Relaxed);
+    for round in 0..3 {
+        let rows = &ids[prompt + round * t..prompt + (round + 1) * t];
+        unsafe {
+            std::env::set_var("MEMRA_GLM5_VERIFY_GRAPH", "0");
+        }
+        let (la, _, ca_ck) = h
+            .model
+            .glm5_verify_rows(e, rows, &mut ca)
+            .expect("rows-exact arm");
+        unsafe {
+            std::env::set_var("MEMRA_GLM5_VERIFY_GRAPH", "1");
+        }
+        let (lb, _, cb_ck) = h
+            .model
+            .glm5_verify_rows(e, rows, &mut cb)
+            .expect("live arm");
+        unsafe {
+            std::env::set_var("MEMRA_GLM5_VERIFY_GRAPH", "0");
+        }
+        e.stream().synchronize().unwrap();
+        let (va, vb) = (e.dtoh(&la).unwrap(), e.dtoh(&lb).unwrap());
+        let d = va
+            .iter()
+            .zip(&vb)
+            .filter(|(a, b)| a.to_bits() != b.to_bits())
+            .count();
+        assert_eq!(d, 0, "round {round}: {d}/{} verify logits differ", va.len());
+        for il in 0..h.model.layers.len() {
+            if let (Some(pa), Some(pb)) = (ca.latent[il].as_ref(), cb.latent[il].as_ref()) {
+                assert_eq!(pa.len, pb.len, "round {round} layer {il}: latent len");
+                assert_eq!(
+                    pa.index_pools_ready, pb.index_pools_ready,
+                    "round {round} layer {il}: pools_ready"
+                );
+                assert_eq!(
+                    e.dtoh_i32(&pa.len_d).unwrap(),
+                    e.dtoh_i32(&pb.len_d).unwrap(),
+                    "round {round} layer {il}: len_d"
+                );
+                let n = pa.len * pa.width;
+                let (ra, rb) = (e.dtoh(&pa.rows).unwrap(), e.dtoh(&pb.rows).unwrap());
+                assert!(
+                    ra[..n]
+                        .iter()
+                        .zip(&rb[..n])
+                        .all(|(a, b)| a.to_bits() == b.to_bits()),
+                    "round {round} layer {il}: latent rows differ"
+                );
+            }
+        }
+        h.model
+            .glm5_verify_rollback(e, &mut ca, &ca_ck, 2)
+            .expect("rollback A");
+        h.model
+            .glm5_verify_rollback(e, &mut cb, &cb_ck, 2)
+            .expect("rollback B");
+    }
+    unsafe {
+        std::env::set_var("MEMRA_MLA_SEG_WS", "0");
+    }
+    let live = memra_engine::GLM5_VERIFY_LIVE_MLA_CALLS.load(Ordering::Relaxed) - c0;
+    assert!(
+        live >= 3,
+        "VACUOUS: {live} live MLA calls (expected one per MLA layer per round)"
+    );
+    println!("verify-graph arm 1: 3 rounds of t={t} bitwise vs rows-exact ({live} live MLA calls)");
+}

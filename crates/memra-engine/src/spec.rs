@@ -3476,7 +3476,11 @@ impl HybridModel {
         // attn / ffn); the n_embd interface (embed, norms in, carrier out, head in) is unchanged.
         let di = mtp.geom.as_ref().map(|g| g.d_inner).unwrap_or(n_embd);
         let eps = cfg.rms_eps;
-        let pos_d = e.htod_i32(&[mtp_pos as i32])?;
+        let pos_d = if crate::glm5_spec_dev_io_on() {
+            e.i32_iota_dev(mtp_pos as i32, 1)?
+        } else {
+            e.htod_i32(&[mtp_pos as i32])?
+        };
 
         // op A: a resident table transfers one 4B token id. The exact host-row capacity path
         // expands this one row on CPU and transfers n_embd f32 values instead.
@@ -3745,12 +3749,16 @@ impl HybridModel {
         let cfg = &self.cfg;
         let n_embd = cfg.n_embd as usize;
         let eps = cfg.rms_eps;
-        let pos_d = e.htod_i32(&[mtp_pos as i32])?;
+        let pos_d = if crate::glm5_spec_dev_io_on() {
+            e.i32_iota_dev(mtp_pos as i32, 1)?
+        } else {
+            e.htod_i32(&[mtp_pos as i32])?
+        };
 
         // Same op chain as `mtp_head_forward_dev_at` (ops 1-12), same kernels — only the
         // attention arm differs: `mla_attn_cached` on the plan's own MTP plane instead of
         // `mtp_full_attn_dc` on the MtpScratch.
-        let e_emb = e.htod(&self.embd.try_gather(n_embd, &[e_tok])?)?;
+        let e_emb = self.glm5_rows_embed(e, &[e_tok], n_embd)?;
         let mut e_norm = e.zeros(n_embd)?;
         e.rms_norm(&e_emb, mtp.enorm.float_data(), &mut e_norm, n_embd, 1, eps)?;
         let mut h_norm = e.zeros(n_embd)?;
