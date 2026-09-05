@@ -22,123 +22,6 @@
 //! usage: moe-sk-repro [reps]
 use memra_engine::Engine;
 
-fn gate_modelopt_split_layout(e: &Engine) -> Result<(), Box<dyn std::error::Error>> {
-    use cudarc::driver::DevicePtr;
-
-    let (n_expert, rows, k, pairs) = (2usize, 64usize, 128usize, 128usize);
-    let mut mo_q = vec![0u8; n_expert * rows * (k / 2)];
-    let mut mo_s = vec![0u8; n_expert * rows * (k / 16)];
-    let mut gg = vec![0u8; n_expert * rows * (k / 64 * 36)];
-    for ex in 0..n_expert {
-        for row in 0..rows {
-            let q0 = (ex * rows + row) * (k / 2);
-            let s0 = (ex * rows + row) * (k / 16);
-            let g0 = (ex * rows + row) * (k / 64 * 36);
-            for sb in 0..k / 16 {
-                let sc = 8 + ((ex * 17 + row * 3 + sb * 5) % 80) as u8;
-                mo_s[s0 + sb] = sc;
-                let gb = g0 + (sb / 4) * 36;
-                gg[gb + sb % 4] = sc;
-                for j in 0..16 {
-                    let code = ((ex * 11 + row * 7 + sb * 3 + j * 5) % 16) as u8;
-                    let kidx = sb * 16 + j;
-                    let mb = q0 + kidx / 2;
-                    if j & 1 == 0 {
-                        mo_q[mb] = (mo_q[mb] & 0xf0) | code;
-                    } else {
-                        mo_q[mb] = (mo_q[mb] & 0x0f) | (code << 4);
-                    }
-                    let qb = gb + 4 + (sb % 4) * 8 + (j & 7);
-                    if j < 8 {
-                        gg[qb] = (gg[qb] & 0xf0) | code;
-                    } else {
-                        gg[qb] = (gg[qb] & 0x0f) | (code << 4);
-                    }
-                }
-            }
-        }
-    }
-    let mo_q_d = e.htod_bytes(&mo_q)?;
-    let mo_s_d = e.htod_bytes(&mo_s)?;
-    let gg_d = e.htod_bytes(&gg)?;
-    let stream = e.stream();
-    let (mqp, _g0) = mo_q_d.device_ptr(&stream);
-    let (msp, _g1) = mo_s_d.device_ptr(&stream);
-    let (ggp, _g2) = gg_d.device_ptr(&stream);
-    let mut mo_tab = vec![0u64; 6 * n_expert];
-    let mut gg_tab = vec![0u64; 3 * n_expert];
-    for ex in 0..n_expert {
-        let mq = mqp + (ex * rows * (k / 2)) as u64;
-        let ms = msp + (ex * rows * (k / 16)) as u64;
-        let gp = ggp + (ex * rows * (k / 64 * 36)) as u64;
-        for proj in 0..3 {
-            mo_tab[(2 * proj) * n_expert + ex] = mq;
-            mo_tab[(2 * proj + 1) * n_expert + ex] = ms;
-            gg_tab[proj * n_expert + ex] = gp;
-        }
-    }
-    let mo_tab_d = e.htod_u64(&mo_tab)?;
-    let gg_tab_d = e.htod_u64(&gg_tab)?;
-    let ex_ids = e.htod_i32(&[0, 1])?;
-    let ex_off_h = [0i32, 64, 128];
-    let ex_off = e.htod_i32(&ex_off_h)?;
-    let x: Vec<f32> = (0..pairs * k)
-        .map(|i| (((i * 37 + 11) % 257) as f32 - 128.0) / 64.0)
-        .collect();
-    let x_d = e.htod(&x)?;
-    let (x16, xs) = e.moe_f16g_act(&x_d, None, k, pairs)?;
-    let mo = e.moe_f16_grouped(
-        &mo_tab_d,
-        0,
-        n_expert,
-        &ex_ids,
-        &ex_off_h,
-        &ex_off,
-        &x16,
-        &xs,
-        k,
-        rows,
-        n_expert,
-        pairs,
-        memra_engine::QT_NVFP4_MODELOPT,
-        k / 2,
-    )?;
-    let gg = e.moe_f16_grouped(
-        &gg_tab_d,
-        0,
-        n_expert,
-        &ex_ids,
-        &ex_off_h,
-        &ex_off,
-        &x16,
-        &xs,
-        k,
-        rows,
-        n_expert,
-        pairs,
-        memra_engine::QT_NVFP4,
-        k / 64 * 36,
-    )?;
-    let (a, b) = (e.dtoh(&mo)?, e.dtoh(&gg)?);
-    let mismatches = a
-        .iter()
-        .zip(&b)
-        .filter(|(x, y)| x.to_bits() != y.to_bits())
-        .count();
-    if mismatches != 0 {
-        return Err(format!(
-            "ModelOpt split-layout twin mismatches={mismatches}/{}",
-            a.len()
-        )
-        .into());
-    }
-    println!(
-        "modelopt-split-layout gate: BIT-EXACT vs interleaved NVFP4, {} outputs",
-        a.len()
-    );
-    Ok(())
-}
-
 /// Deterministic production-shaped routing: mean m_e ~ n_pairs/n_expert with a long tail, so
 /// n_active and max_m land near the [moe-sk-form] receipt (n_active=284, max_m=934) instead of
 /// the degenerate single-hot-expert shape. Pure function of the pair index — no RNG, so every
@@ -160,66 +43,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|v| v.parse().ok())
         .unwrap_or(5);
     let e = Engine::new(0)?;
-    let dsv4_shape = std::env::var("MEMRA_DSV4_MOE_SHAPE").as_deref() == Ok("1");
-    let n_expert = if dsv4_shape { 256usize } else { 288usize };
-    let n_used = if dsv4_shape { 6usize } else { 8usize };
+    let n_expert = 288usize;
+    let n_used = 8usize;
     let hidden = 4096usize;
-    let local_ff = if dsv4_shape { 2_048usize } else { 640usize };
-    if dsv4_shape {
-        gate_modelopt_split_layout(&e)?;
-    }
+    let local_ff = 640usize; // per-rank half of moe_intermediate_size 1280 under TP2
 
     // One synthetic bank per projection shape. NVFP4 stores 64 values per 36-byte block.
     let mk_bank = |in_f: usize, out_f: usize| -> Result<_, Box<dyn std::error::Error>> {
-        let row_bytes = if dsv4_shape { in_f / 2 } else { in_f / 64 * 36 };
+        let row_bytes = in_f / 64 * 36;
         let bank = e.alloc_u8(n_expert * out_f * row_bytes)?;
-        let scales = e.alloc_u8(if dsv4_shape {
-            n_expert * out_f * (in_f / 16)
-        } else {
-            1
-        })?;
-        let mut tab = vec![0u64; if dsv4_shape { 6 } else { 3 } * n_expert];
+        let mut tab = vec![0u64; 3 * n_expert];
         {
             use cudarc::driver::DevicePtr;
             let stream = e.stream();
             let (p, _g) = bank.device_ptr(&stream);
-            let (ps, _gs) = scales.device_ptr(&stream);
             for ex in 0..n_expert {
                 let a = p + (ex * out_f * row_bytes) as u64;
-                if dsv4_shape {
-                    let s = ps + (ex * out_f * (in_f / 16)) as u64;
-                    for proj in 0..3 {
-                        tab[(2 * proj) * n_expert + ex] = a;
-                        tab[(2 * proj + 1) * n_expert + ex] = s;
-                    }
-                } else {
-                    tab[ex] = a;
-                    tab[n_expert + ex] = a;
-                    tab[2 * n_expert + ex] = a;
-                }
+                tab[ex] = a;
+                tab[n_expert + ex] = a;
+                tab[2 * n_expert + ex] = a;
             }
         }
-        Ok((bank, scales, e.htod_u64(&tab)?, row_bytes))
+        Ok((bank, e.htod_u64(&tab)?, row_bytes))
     };
     // gate and up share a shape; down transposes it.
-    let (_bg, _sg, tab_gu, rb_gu) = mk_bank(hidden, local_ff)?;
-    let (_bd, _sd, tab_d, rb_d) = mk_bank(local_ff, hidden)?;
-    let qtype = if dsv4_shape {
-        memra_engine::QT_NVFP4_MODELOPT
-    } else {
-        memra_engine::QT_NVFP4
-    };
+    let (_bg, tab_gu, rb_gu) = mk_bank(hidden, local_ff)?;
+    let (_bd, tab_d, rb_d) = mk_bank(local_ff, hidden)?;
 
     println!(
-        "shape: family={} hidden={hidden} local_ff={local_ff} n_expert={n_expert} top_k={n_used} reps={reps}",
-        if dsv4_shape { "dsv4" } else { "step37-tp2" }
+        "shape: hidden={hidden} local_ff={local_ff} n_expert={n_expert} top_k={n_used} reps={reps}"
     );
-    let widths: &[usize] = if dsv4_shape {
-        &[32, 128, 512, 1024, 2048, 4096]
-    } else {
-        &[512, 2048, 4096]
-    };
-    for &t in widths {
+    for &t in &[512usize, 2048, 4096] {
         let n_pairs = t * n_used;
         let sel: Vec<i32> = (0..n_pairs).map(|p| route(p, n_expert)).collect();
         let mut buckets: Vec<Vec<i32>> = vec![Vec::new(); n_expert];
@@ -266,8 +120,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ] {
             let call = || {
                 e.moe_f16_grouped(
-                    tab, 0, n_expert, &exi_d, &ex_off, &exoff_d, act, sc, in_f, out_f, n_active,
-                    n_pairs, qtype, rb,
+                    tab,
+                    0,
+                    n_expert,
+                    &exi_d,
+                    &ex_off,
+                    &exoff_d,
+                    act,
+                    sc,
+                    in_f,
+                    out_f,
+                    n_active,
+                    n_pairs,
+                    memra_engine::QT_NVFP4,
+                    rb,
                 )
             };
             let r = call();

@@ -34,7 +34,6 @@
 #define QT_Q3_K   4
 #define QT_NVFP4  7
 #define QT_NVFP4_V2 107  // slot-major v2 bank permutation of QT_NVFP4 (tp.rs nvfp4_matrix_v2_permute)
-#define QT_NVFP4_MODELOPT 108  // DSV4: consecutive packed codes + separate linear E4M3/16 plane
 
 __device__ __forceinline__ float g_half_to_float(uint16_t h){ return __half2float(*reinterpret_cast<const __half*>(&h)); }
 __constant__ signed char g_kvalues_iq4nl[16] = {-127,-104,-83,-65,-49,-35,-22,-10,1,13,25,38,53,69,89,113};
@@ -49,20 +48,6 @@ __device__ __forceinline__ float g_ue4m3_to_float(uint8_t x){
     float man = (float)(x & 0x7);
     float raw = (exp == 0) ? man * exp2f(-9.0f) : (1.0f + man / 8.0f) * exp2f((float)(exp - 7));
     return raw * 0.5f;
-}
-
-// ModelOpt stores the micro-scale in signed E4M3FN. DSV4 scale tensors are
-// non-negative in the pinned checkpoint, but decoding the sign bit here keeps
-// the byte contract complete instead of silently treating it as exponent data.
-// Return value*0.5 to pair with the doubled E2M1 codebook above.
-__device__ __forceinline__ float g_e4m3fn_to_float(uint8_t x){
-    unsigned mag = x & 0x7Fu;
-    if(mag == 0x7Fu) return 0.0f;
-    unsigned exp = mag >> 3, man = mag & 7u;
-    float v = exp ? __uint_as_float(((exp + 120u) << 23) | (man << 20))
-                  : (float)man * 0x1p-9f;
-    if(x & 0x80u) v = -v;
-    return v * 0.5f;
 }
 
 // iq3s codebook — verbatim copy of iq3s_grid_const (cu/mmq_iq_experts.cu, itself verbatim from
@@ -992,8 +977,7 @@ moe_f16g_sktail_kernel(
 // inputs (and, in the workspace lane, as 1.6e20 garbage) rather than as a fault.
 #define KQ_CB_WORDS(QT) \
     ((QT) == QT_IQ3_S ? 512                                                   \
-     : (((QT) == QT_IQ4_XS || (QT) == QT_NVFP4 || (QT) == QT_NVFP4_V2         \
-          || (QT) == QT_NVFP4_MODELOPT) ? 16 : 1))
+     : (((QT) == QT_IQ4_XS || (QT) == QT_NVFP4 || (QT) == QT_NVFP4_V2) ? 16 : 1))
 template<int QT>
 __device__ __forceinline__ void kq_stage_codebook(uint32_t* s_cb){
     const int tid = threadIdx.y * 32 + threadIdx.x;
@@ -1002,7 +986,7 @@ __device__ __forceinline__ void kq_stage_codebook(uint32_t* s_cb){
         for(int i = tid; i < 512; i += nthr) s_cb[i] = g_iq3s_grid[i];
     } else if(QT == QT_IQ4_XS){
         if(tid < 16) s_cb[tid] = __float_as_uint((float)g_kvalues_iq4nl[tid]);
-    } else if(QT == QT_NVFP4 || QT == QT_NVFP4_V2 || QT == QT_NVFP4_MODELOPT){
+    } else if(QT == QT_NVFP4 || QT == QT_NVFP4_V2){
         // same pre-converted-float trick as IQ4_XS: the workspace kernel's
         // `(float)g_kvalues_mxfp4[code]` — small ints are f32-exact.
         if(tid < 16) s_cb[tid] = __float_as_uint((float)g_kvalues_mxfp4[tid]);
@@ -1026,8 +1010,7 @@ struct KqRaw {
 // a margin-sensitive logits corruption for v2 (research/step37-bankv3-20260901/DIAGNOSIS.md).
 // Keep it undefaulted: a defaultable geometry field that only one layout consumes is the hole.
 template<int QT>
-__device__ __forceinline__ KqRaw kq_fetch(const uint8_t* __restrict__ wrow,
-                                          const uint8_t* __restrict__ scrow, int k0v,
+__device__ __forceinline__ KqRaw kq_fetch(const uint8_t* __restrict__ wrow, int k0v,
                                           const uint32_t* __restrict__ s_cb, int in_f){
     // k0v = 16-aligned value offset within the row (absolute k of the window start)
     constexpr int SBB = (QT == QT_Q4_K) ? 144 : (QT == QT_Q6_K) ? 210
@@ -1035,18 +1018,6 @@ __device__ __forceinline__ KqRaw kq_fetch(const uint8_t* __restrict__ wrow,
     const uint8_t* b = wrow + (size_t)(k0v >> 8) * SBB;
     const int l0 = k0v & 255;
     KqRaw r;
-    if(QT == QT_NVFP4_MODELOPT){
-        // ModelOpt split planes: consecutive elements share one packed byte;
-        // scrow has one signed-E4M3 byte per 16 K values. The scale_2 macro
-        // remains an epilogue row scale owned by the DSV4 caller.
-        r.f1 = g_e4m3fn_to_float(scrow[k0v >> 4]);
-        r.f2 = 0.0f;
-        r.sel = 0;
-        const uint8_t* qsp = wrow + (k0v >> 1);
-        r.q[0] = *(const uint32_t*)qsp;
-        r.q[1] = *(const uint32_t*)(qsp + 4);
-        return r;
-    }
     if(QT == QT_NVFP4_V2){
         // v2 slot-major bank (tp.rs nvfp4_matrix_v2_permute): slot g's 16 qs bytes at g*16,
         // its two UE4M3 scale bytes in the tail at n_slots*16 + g*2. Same values, same DAG as
@@ -1152,11 +1123,7 @@ __device__ __forceinline__ void kq_store(const KqRaw& r, __half* __restrict__ ds
                                          const uint32_t* __restrict__ s_cb){
     #pragma unroll
     for(int j = 0; j < 16; j++){
-        if(QT == QT_NVFP4_MODELOPT){
-            int byte = (r.q[(j >> 1) >> 2] >> (8 * ((j >> 1) & 3))) & 0xff;
-            int code = (j & 1) ? (byte >> 4) : (byte & 0xF);
-            dst[j] = __float2half(r.f1 * __uint_as_float(s_cb[code]));
-        } else if(QT == QT_NVFP4 || QT == QT_NVFP4_V2){
+        if(QT == QT_NVFP4 || QT == QT_NVFP4_V2){
             // bytes qs[0..7] live in q[0..1]; j<8 lo nibble, j>=8 hi nibble (workspace order).
             // v2 fills q[] with the same 8 bytes from its slot-major offset, so the store DAG
             // is shared verbatim — the layouts differ only in where kq_fetch read them.
@@ -1219,20 +1186,15 @@ moe_kq_sk32v_kernel(
         const int n0 = (local % ntx) * SK_BN;
 
         const __half* Ag = A + (size_t)lo * in_f;
-        const int eid = ex_ids[g];
-        const int qplane = (QT == QT_NVFP4_MODELOPT) ? 2 * proj : proj;
-        const uint8_t* Wq = (const uint8_t*)table[(size_t)qplane*n_expert + eid];
-        const uint8_t* Wsc = (QT == QT_NVFP4_MODELOPT)
-            ? (const uint8_t*)table[(size_t)(qplane + 1)*n_expert + eid] : nullptr;
+        const uint8_t* Wq = (const uint8_t*)table[(size_t)proj*n_expert + ex_ids[g]];
         const int am = min(m0 + ar, m_e - 1);
         const __half* aga = Ag + (size_t)am * in_f + ac;
         const int bn = min(n0 + brow, out_f - 1);
         const uint8_t* wrow = Wq + (size_t)bn * row_bytes;
-        const uint8_t* scrow = Wsc ? Wsc + (size_t)bn * (in_f / 16) : nullptr;
 
         sk_cp16(&As[0][ar][ac], aga);
         asm volatile("cp.async.commit_group;");
-        KqRaw braw = kq_fetch<QT>(wrow, scrow, bc0, s_cb, in_f);   // kb=0 window
+        KqRaw braw = kq_fetch<QT>(wrow, bc0, s_cb, in_f);   // kb=0 window
 
         float acc[4][4] = {};
         for(int kb = 0; kb < nkb; kb++){
@@ -1246,7 +1208,7 @@ moe_kq_sk32v_kernel(
             // __syncthreads fences the Bs overwrite), then issue kb+1's raw fetch so those
             // global reads fly behind this kb's mma.
             kq_store<QT>(braw, &Bs[brow][bc0], s_cb);
-            if(kb + 1 < nkb) braw = kq_fetch<QT>(wrow, scrow, (kb + 1) * SK_BK + bc0, s_cb, in_f);
+            if(kb + 1 < nkb) braw = kq_fetch<QT>(wrow, (kb + 1) * SK_BK + bc0, s_cb, in_f);
             if(kb + 1 < nkb) asm volatile("cp.async.wait_group 1;");
             else             asm volatile("cp.async.wait_group 0;");
             __syncthreads();
@@ -1325,14 +1287,9 @@ moe_kq_sk128v_kernel(
         const int n0 = (local % ntx) * SK128_BN;
 
         const __half* Ag = A + (size_t)lo * in_f;
-        const int eid = ex_ids[g];
-        const int qplane = (QT == QT_NVFP4_MODELOPT) ? 2 * proj : proj;
-        const uint8_t* Wq = (const uint8_t*)table[(size_t)qplane*n_expert + eid];
-        const uint8_t* Wsc = (QT == QT_NVFP4_MODELOPT)
-            ? (const uint8_t*)table[(size_t)(qplane + 1)*n_expert + eid] : nullptr;
+        const uint8_t* Wq = (const uint8_t*)table[(size_t)proj*n_expert + ex_ids[g]];
         const int bn = min(n0 + brow, out_f - 1);
         const uint8_t* wrow = Wq + (size_t)bn * row_bytes;
-        const uint8_t* scrow = Wsc ? Wsc + (size_t)bn * (in_f / 16) : nullptr;
 
         const __half* agp[4]; int asr[4], asc[4];
         #pragma unroll
@@ -1351,12 +1308,12 @@ moe_kq_sk128v_kernel(
 
         KQ128_LOAD_A(0, 0);
         if(nkb > 1) KQ128_LOAD_A(1, SK128_BK);
-        KqRaw braw = kq_fetch<QT>(wrow, scrow, bc0, s_cb, in_f);   // kb=0 window
+        KqRaw braw = kq_fetch<QT>(wrow, bc0, s_cb, in_f);   // kb=0 window
         // BDB: fill B[0] up front and pull kb=1's raw window, so the loop body always stores
         // into the buffer the NEXT iteration reads while the mma consumes this one.
         if(BDB){
             kq_store<QT>(braw, Bsm + brow*SK128_STRIDE + bc0, s_cb);
-            if(nkb > 1) braw = kq_fetch<QT>(wrow, scrow, SK128_BK + bc0, s_cb, in_f);
+            if(nkb > 1) braw = kq_fetch<QT>(wrow, SK128_BK + bc0, s_cb, in_f);
         }
 
         float acc[2][4][4] = {};
@@ -1368,7 +1325,7 @@ moe_kq_sk128v_kernel(
             // kb's trailing __syncthreads fences), then issue kb+1's raw fetch so those
             // global reads fly behind this kb's mma.
             kq_store<QT>(braw, Bsm + brow*SK128_STRIDE + bc0, s_cb);
-            if(kb + 1 < nkb) braw = kq_fetch<QT>(wrow, scrow, (kb + 1) * SK128_BK + bc0, s_cb, in_f);
+            if(kb + 1 < nkb) braw = kq_fetch<QT>(wrow, (kb + 1) * SK128_BK + bc0, s_cb, in_f);
             if(kb + 2 < nkb)      asm volatile("cp.async.wait_group 2;");
             else if(kb + 1 < nkb) asm volatile("cp.async.wait_group 1;");
             else                  asm volatile("cp.async.wait_group 0;");
@@ -1396,7 +1353,7 @@ moe_kq_sk128v_kernel(
                 kq_store<QT>(braw, Bsm + ((kb + 1) & 1) * SK128_B_ELEMS
                                        + brow*SK128_STRIDE + bc0, s_cb);
                 if(kb + 2 < nkb)
-                    braw = kq_fetch<QT>(wrow, scrow, (kb + 2) * SK128_BK + bc0, s_cb, in_f);
+                    braw = kq_fetch<QT>(wrow, (kb + 2) * SK128_BK + bc0, s_cb, in_f);
             }
             }
             const __half* Ab = Asm + cur * SK128_A_ELEMS;
@@ -1486,14 +1443,9 @@ moe_kq_sktail_kernel(
         const int n0 = (local % ntx) * SK_BN;
 
         const __half* Ag = A + (size_t)lo * in_f;
-        const int eid = ex_ids[g];
-        const int qplane = (QT == QT_NVFP4_MODELOPT) ? 2 * proj : proj;
-        const uint8_t* Wq = (const uint8_t*)table[(size_t)qplane*n_expert + eid];
-        const uint8_t* Wsc = (QT == QT_NVFP4_MODELOPT)
-            ? (const uint8_t*)table[(size_t)(qplane + 1)*n_expert + eid] : nullptr;
+        const uint8_t* Wq = (const uint8_t*)table[(size_t)proj*n_expert + ex_ids[g]];
         const int bn = min(n0 + brow, out_f - 1);
         const uint8_t* wrow = Wq + (size_t)bn * row_bytes;
-        const uint8_t* scrow = Wsc ? Wsc + (size_t)bn * (in_f / 16) : nullptr;
 
         const __half* agp[2]; int asr[2], asc[2];
         #pragma unroll
@@ -1511,8 +1463,8 @@ moe_kq_sktail_kernel(
 
         KQT_LOAD_A(0, 0);
         if(nkb > 1) KQT_LOAD_A(1, SKT_BK);
-        KqRaw braw0 = kq_fetch<QT>(wrow, scrow, bc0, s_cb, in_f);        // kb=0 windows
-        KqRaw braw1 = kq_fetch<QT>(wrow, scrow, bc0 + 16, s_cb, in_f);
+        KqRaw braw0 = kq_fetch<QT>(wrow, bc0, s_cb, in_f);        // kb=0 windows
+        KqRaw braw1 = kq_fetch<QT>(wrow, bc0 + 16, s_cb, in_f);
 
         float acc[4][4] = {};
         for(int kb = 0; kb < nkb; kb++){
@@ -1524,8 +1476,8 @@ moe_kq_sktail_kernel(
             kq_store<QT>(braw0, &Bs[brow][bc0], s_cb);
             kq_store<QT>(braw1, &Bs[brow][bc0 + 16], s_cb);
             if(kb + 1 < nkb){
-                braw0 = kq_fetch<QT>(wrow, scrow, (kb + 1) * SKT_BK + bc0, s_cb, in_f);
-                braw1 = kq_fetch<QT>(wrow, scrow, (kb + 1) * SKT_BK + bc0 + 16, s_cb, in_f);
+                braw0 = kq_fetch<QT>(wrow, (kb + 1) * SKT_BK + bc0, s_cb, in_f);
+                braw1 = kq_fetch<QT>(wrow, (kb + 1) * SKT_BK + bc0 + 16, s_cb, in_f);
             }
             if(kb + 2 < nkb)      asm volatile("cp.async.wait_group 2;");
             else if(kb + 1 < nkb) asm volatile("cp.async.wait_group 1;");
@@ -1842,10 +1794,9 @@ int memra_moe_kq_gemm_sk(const unsigned long long* table, int proj, int n_expert
         int tail, long row_bytes, void* stream){
     // whole superblocks per k walk: 256-value superblocks for the kq/IQ classes,
     // 64-value blocks for NVFP4 (its 16-value window is one UE4M3 sub-block).
-    if(in_f % ((qtype == QT_NVFP4 || qtype == QT_NVFP4_V2
-                || qtype == QT_NVFP4_MODELOPT) ? 64 : 256)) return 2;
+    if(in_f % ((qtype == QT_NVFP4 || qtype == QT_NVFP4_V2) ? 64 : 256)) return 2;
     if(qtype != QT_Q4_K && qtype != QT_Q6_K && qtype != QT_IQ4_XS && qtype != QT_IQ3_S
-       && qtype != QT_NVFP4 && qtype != QT_NVFP4_V2 && qtype != QT_NVFP4_MODELOPT)
+       && qtype != QT_NVFP4 && qtype != QT_NVFP4_V2)
         return 2;
     if(n_active > SK_MAX_G || ex_off_host == nullptr) return 2;
     if(n_active <= 0 || max_m <= 0) return 0;
@@ -1857,10 +1808,6 @@ int memra_moe_kq_gemm_sk(const unsigned long long* table, int proj, int n_expert
                 tail, row_bytes, st);
         case QT_NVFP4_V2:
             return moe_kq_gemm_sk_launch<QT_NVFP4_V2>(table, proj, n_expert, ex_ids, act_f16, y,
-                row_scale, ex_off_dev, ex_off_host, n_active, max_m, in_f, out_f, cross,
-                tail, row_bytes, st);
-        case QT_NVFP4_MODELOPT:
-            return moe_kq_gemm_sk_launch<QT_NVFP4_MODELOPT>(table, proj, n_expert, ex_ids, act_f16, y,
                 row_scale, ex_off_dev, ex_off_host, n_active, max_m, in_f, out_f, cross,
                 tail, row_bytes, st);
         case QT_Q4_K:

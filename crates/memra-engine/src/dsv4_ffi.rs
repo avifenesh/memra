@@ -53,13 +53,6 @@ unsafe extern "C" {
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_add_inplace(y: *mut f32, x: *const f32, n: i64, stream: *mut c_void) -> i32;
-    pub fn memra_dsv4_scale_rows(
-        y: *mut f32,
-        scale: *const f32,
-        rows: i32,
-        cols: i32,
-        stream: *mut c_void,
-    ) -> i32;
     pub fn memra_dsv4_take_cols(
         src: *const f32,
         dst: *mut f32,

@@ -36,7 +36,6 @@ use memra_gguf::dsv4_forward::{
 
 use crate::dsv4_ffi as k;
 use crate::dsv4_ffi::ck;
-use crate::mmq_ffi::{memra_bind_device, memra_moe_f16g_gather_act, memra_moe_kq_gemm_sk};
 
 type Res<T> = Result<T, String>;
 
@@ -310,10 +309,6 @@ pub struct LayerDev {
     /// asserts per token at route time; the device route kernel cannot).
     pub tid2eid_dev: Option<CudaSlice<i32>>,
     pub experts_s2_dev: CudaSlice<f32>,
-    /// Six pointer planes for the wide-prefill grouped kernel: for each of
-    /// w1/w2/w3, packed ModelOpt codes then the separate linear E4M3 scales.
-    /// None for the bundled MXFP4 DSpark blocks.
-    pub experts_modelopt_table: Option<CudaSlice<u64>>,
     // MoE
     pub gate_w: CudaSlice<f32>, // f32 island [ne, hidden]
     pub gate_bias: Option<Vec<f32>>,
@@ -482,9 +477,6 @@ pub struct Dsv4Gpu {
     /// staged residency (same bytes, staged H2D per prefill pass); the legacy path is a
     /// boot refusal and the drafter's cuBLASLt linears keep resident bf16 (no twins).
     pub dense_fp8: bool,
-    /// 512-configured prefill f16-mirror grouped routed-MoE arm. Every prefill
-    /// remainder shares the class; decode/spec retain the exact scalar program.
-    pub prefill_f16g: bool,
     /// lane 8: cross-stage boundary events (peer transport), one per boundary,
     /// created in the TX stage's context (cuEventRecord requires event ctx == stream ctx).
     boundary_ev: Vec<cudarc::driver::CudaEvent>,
@@ -609,16 +601,7 @@ pub struct DecodeState {
 /// Number of persistent compressed rows admitted for one session. Decode allocation
 /// and batched verification must share this exact planner because the latter places its
 /// transient rows immediately after this store.
-pub const DSV4_BATCH_WIDTH_MAX: usize = 512;
-pub const DSV4_EXACT_BATCH_WIDTH_MAX: usize = 64;
-
-fn dsv4_prefill_tx_width(prefill_f16g: bool, configured: usize, remaining: usize) -> usize {
-    if prefill_f16g && configured >= 512 && remaining >= 512 {
-        512
-    } else {
-        remaining.min(configured.min(DSV4_EXACT_BATCH_WIDTH_MAX))
-    }
-}
+pub const DSV4_BATCH_WIDTH_MAX: usize = 64;
 
 fn dsv4_cache_cap_blocks(capacity: usize, ratio: usize) -> usize {
     capacity.checked_div(ratio).unwrap_or(0)
@@ -817,12 +800,6 @@ fn upload_i32(stream: &std::sync::Arc<CudaStream>, v: &[i32]) -> Res<CudaSlice<i
 fn upload_u8(stream: &std::sync::Arc<CudaStream>, v: &[u8]) -> Res<CudaSlice<u8>> {
     let mut d = stream.alloc_zeros::<u8>(v.len()).map_err(e("alloc u8"))?;
     stream.memcpy_htod(v, &mut d).map_err(e("htod u8"))?;
-    Ok(d)
-}
-
-fn upload_u64(stream: &std::sync::Arc<CudaStream>, v: &[u64]) -> Res<CudaSlice<u64>> {
-    let mut d = stream.alloc_zeros::<u64>(v.len()).map_err(e("alloc u64"))?;
-    stream.memcpy_htod(v, &mut d).map_err(e("htod u64"))?;
     Ok(d)
 }
 
@@ -1581,20 +1558,6 @@ impl Dsv4Gpu {
             None => None,
         };
         let experts_s2_dev = upload_f32(&stream, &experts_s2)?;
-        let experts_modelopt_table = if expert_kind == ExpertKind::Nvfp4 {
-            let (wp, _wg) = experts_w.device_ptr(&stream);
-            let (sptr, _sg) = experts_sc.device_ptr(&stream);
-            let mut ptrs = vec![0u64; 6 * ne];
-            for ex in 0..ne {
-                for pi in 0..3 {
-                    ptrs[(2 * pi) * ne + ex] = wp + ((ex * 3 + pi) * wbytes) as u64;
-                    ptrs[(2 * pi + 1) * ne + ex] = sptr + ((ex * 3 + pi) * sbytes) as u64;
-                }
-            }
-            Some(upload_u64(&stream, &ptrs)?)
-        } else {
-            None
-        };
 
         let (wq_a, wq_a_fp8) = self.tensor_dense(stage, &format!("{p}.attn.wq_a"), fp8_ok)?;
         let (wq_b, wq_b_fp8) = self.tensor_dense(stage, &format!("{p}.attn.wq_b"), fp8_ok)?;
@@ -1619,7 +1582,6 @@ impl Dsv4Gpu {
             gate_bias_dev,
             tid2eid_dev,
             experts_s2_dev,
-            experts_modelopt_table,
             wq_a,
             wq_b,
             wkv,
@@ -1861,10 +1823,6 @@ impl Dsv4Gpu {
             std::env::var("MEMRA_DSV4_DENSE_ARM").ok().as_deref(),
             on_device,
         )?;
-        let prefill_f16g = resolve_prefill_f16g(
-            std::env::var("MEMRA_DSV4_PREFILL_F16G").ok().as_deref(),
-            on_device,
-        )?;
 
         let mut me = Dsv4Gpu {
             model,
@@ -1886,7 +1844,6 @@ impl Dsv4Gpu {
             chains_f32,
             dspark_head_f32,
             dense_fp8,
-            prefill_f16g,
             dspark: None,
             boundary_ev: Vec::new(),
             hc_head_base: Vec::new(),
@@ -1914,11 +1871,6 @@ impl Dsv4Gpu {
              device decode/verify paths, bit-identical twins)",
             if me.dense_fp8 { "fp8" } else { "bf16" }
         );
-        eprintln!(
-            "[load] 512-configured prefill routed MoE: {} (f16-mirror, ModelOpt split-plane, \
-             one class across full chunks, remainders and restored suffixes)",
-            if me.prefill_f16g { "ARMED" } else { "off" }
-        );
         if matches!(me.decode_path, DecodePath::Device { .. }) && me.expert_arm != ExpertArm::Native
         {
             // the indirect fused dispatch is an fp4-slab program — the bf16-dequant arm
@@ -1927,17 +1879,6 @@ impl Dsv4Gpu {
             // env-parse above for the same reason.
             return Err(
                 "MEMRA_DSV4_DECODE_PATH=device requires MEMRA_DSV4_EXPERT_ARM=native".to_string(),
-            );
-        }
-        if me.prefill_f16g
-            && (crate::moe_f16g_mode() < 2
-                || crate::moe_f16g_sk_params().0 < 0
-                || !crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT))
-        {
-            return Err(
-                "MEMRA_DSV4_PREFILL_F16G=1 requires MEMRA_MOE_F16G=2, the visitor form, \
-                 and the direct quant loader"
-                    .to_string(),
             );
         }
 
@@ -3841,25 +3782,17 @@ impl Dsv4Gpu {
                 state.capacity
             ));
         }
-        // Reserve the configured transaction class even for a short suffix. A
-        // 512-configured grouped-prefill session must keep the same numerical
-        // realization for its final remainder and for later restored suffixes;
-        // sizing this to the suffix would silently fall back to the exact class.
-        let width = chunk;
+        let width = chunk.min(suffix.len());
         let mut vstate = self.alloc_prefill_state_for(state.capacity, width)?;
         let mut last_logits = None;
-        let mut offset = 0usize;
-        while offset < suffix.len() {
-            let take = dsv4_prefill_tx_width(self.prefill_f16g, chunk, suffix.len() - offset);
-            let toks = &suffix[offset..offset + take];
-            let final_chunk = offset + take == suffix.len();
+        for (i, toks) in suffix.chunks(width).enumerate() {
+            let final_chunk = (i + 1) * width >= suffix.len();
             let (logits, _) = self.verify_batch_dev(toks, state, &mut vstate, None, final_chunk)?;
             self.commit_verify_dev(state, &mut vstate, toks.len())?;
             if let Some(rows) = logits {
                 let vocab = rows.len() / toks.len();
                 last_logits = Some(rows[(toks.len() - 1) * vocab..].to_vec());
             }
-            offset += take;
         }
         Ok(last_logits.expect("final chunk requested logits"))
     }
@@ -7789,7 +7722,7 @@ impl Dsv4Gpu {
                 state.capacity
             ));
         }
-        let width = chunk;
+        let width = chunk.min(suffix.len());
         let mut vstate = self.alloc_prefill_state_for(state.capacity, width)?;
         let last = self.stages.len() - 1;
         let stream = self.stages[last].gpu.stream();
@@ -7802,12 +7735,9 @@ impl Dsv4Gpu {
             .alloc_zeros::<f32>(n_t * hidden)
             .map_err(e("dsv4 chunk tap row"))?;
         let mut last_logits = None;
-        let mut offset = 0usize;
-        while offset < suffix.len() {
-            let take = dsv4_prefill_tx_width(self.prefill_f16g, chunk, suffix.len() - offset);
-            let toks = &suffix[offset..offset + take];
+        for (i, toks) in suffix.chunks(width).enumerate() {
             let pos0 = state.pos;
-            let final_chunk = offset + take == suffix.len();
+            let final_chunk = (i + 1) * width >= suffix.len();
             let (logits, _) =
                 self.verify_batch_dev(toks, state, &mut vstate, Some(&mut taps), final_chunk)?;
             self.commit_verify_dev(state, &mut vstate, toks.len())?;
@@ -7828,7 +7758,6 @@ impl Dsv4Gpu {
                 let vocab = rows.len() / toks.len();
                 last_logits = Some(rows[(toks.len() - 1) * vocab..].to_vec());
             }
-            offset += take;
         }
         Ok(last_logits.expect("final DSpark chunk requested logits"))
     }
@@ -10368,267 +10297,6 @@ impl Dsv4Gpu {
         Ok(())
     }
 
-    /// Wide-prefill routed MoE. Routing remains the DSV4 device kernel; one bounded
-    /// readback builds an expert-major CSR for the existing single-kernel grouped
-    /// tensor-core path. The grouped kernel reads ModelOpt's packed-code and E4M3
-    /// scale planes directly, so no converted or duplicate resident expert bank exists.
-    /// This is an f16-mirror numerical class and is gated separately from the exact
-    /// FP8-activation path used by decode/spec. Remainders deliberately stay in this
-    /// class when their prefill state was allocated for 512 rows.
-    #[allow(clippy::too_many_arguments)]
-    fn moe_verify_f16g(
-        &self,
-        st: &Stage,
-        layer: &LayerDev,
-        vws: &mut VerifyWs,
-        t: usize,
-        hidden: usize,
-        ne: usize,
-        topk: usize,
-        inter: usize,
-        limit: f32,
-    ) -> Res<()> {
-        if crate::moe_f16g_mode() < 2 || crate::moe_f16g_sk_params().0 < 0 {
-            return Err(
-                "DSV4 wide-prefill grouped MoE requires MEMRA_MOE_F16G=2 with the visitor form"
-                    .to_string(),
-            );
-        }
-        if !crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT) {
-            return Err(
-                "DSV4 wide-prefill grouped MoE requires the direct quant loader \
-                 (MEMRA_F16G_DIRECT must not be 0)"
-                    .to_string(),
-            );
-        }
-        let table = layer.experts_modelopt_table.as_ref().ok_or_else(|| {
-            "DSV4 wide-prefill grouped MoE requires ModelOpt NVFP4 experts".to_string()
-        })?;
-        let stream = st.gpu.stream();
-        let slots = t * topk;
-
-        let mut sel_h = vec![0i32; slots];
-        let mut selw_h = vec![0f32; slots];
-        stream
-            .memcpy_dtoh(&vws.sel.slice(0..slots), &mut sel_h)
-            .map_err(e("dtoh grouped selections"))?;
-        stream
-            .memcpy_dtoh(&vws.selw.slice(0..slots), &mut selw_h)
-            .map_err(e("dtoh grouped route weights"))?;
-        stream.synchronize().map_err(e("sync grouped routing"))?;
-
-        let mut buckets: Vec<Vec<i32>> = vec![Vec::new(); ne];
-        for (pair, &expert) in sel_h.iter().enumerate() {
-            let expert =
-                usize::try_from(expert).map_err(|_| format!("negative DSV4 expert id {expert}"))?;
-            if expert >= ne {
-                return Err(format!("DSV4 expert id {expert} outside 0..{ne}"));
-            }
-            buckets[expert].push(pair as i32);
-        }
-        let mut ex_ids = Vec::new();
-        let mut ex_off = vec![0i32];
-        let mut ex_pairs = Vec::with_capacity(slots);
-        for (expert, pairs) in buckets.iter().enumerate() {
-            if pairs.is_empty() {
-                continue;
-            }
-            ex_ids.push(expert as i32);
-            ex_pairs.extend_from_slice(pairs);
-            ex_off.push(ex_pairs.len() as i32);
-        }
-        let n_active = ex_ids.len();
-        let max_m = ex_off.windows(2).map(|w| w[1] - w[0]).max().unwrap_or(0);
-        let csr_tok: Vec<i32> = ex_pairs.iter().map(|&p| p / topk as i32).collect();
-        let pair_w: Vec<f32> = ex_pairs.iter().map(|&p| selw_h[p as usize]).collect();
-        let macro_for = |proj: usize| -> Vec<f32> {
-            ex_pairs
-                .iter()
-                .map(|&p| layer.experts_s2[sel_h[p as usize] as usize * 3 + proj])
-                .collect()
-        };
-        let (macro_w1, macro_w2, macro_w3) = (macro_for(0), macro_for(1), macro_for(2));
-        let ex_ids_d = upload_i32(&stream, &ex_ids)?;
-        let ex_off_d = upload_i32(&stream, &ex_off)?;
-        let ex_pairs_d = upload_i32(&stream, &ex_pairs)?;
-        let csr_tok_d = upload_i32(&stream, &csr_tok)?;
-        let pair_w_d = upload_f32(&stream, &pair_w)?;
-        let macro_w1_d = upload_f32(&stream, &macro_w1)?;
-        let macro_w2_d = upload_f32(&stream, &macro_w2)?;
-        let macro_w3_d = upload_f32(&stream, &macro_w3)?;
-
-        let rc = unsafe { memra_bind_device(st.dev as i32) };
-        if rc != 0 {
-            return Err(format!(
-                "DSV4 grouped prefill cudaSetDevice({}) rc={rc}",
-                st.dev
-            ));
-        }
-        let mut act16 = stream
-            .alloc_zeros::<u8>(slots * hidden * 2)
-            .map_err(e("grouped x f16"))?;
-        let mut act_scale = stream
-            .alloc_zeros::<f32>(slots)
-            .map_err(e("grouped x scale"))?;
-        unsafe {
-            ck(
-                "grouped gather x",
-                memra_moe_f16g_gather_act(
-                    dpf!(vws.xf, &stream),
-                    csr_tok_d.device_ptr(&stream).0 as *const i32,
-                    act16.device_ptr_mut(&stream).0 as *mut c_void,
-                    dpm!(act_scale, &stream),
-                    hidden as i32,
-                    slots as i32,
-                    sp(&stream),
-                ),
-            )?;
-        }
-        let (shape_sel, cross) = crate::moe_f16g_sk_params();
-        let launch = |proj: i32,
-                      input: &CudaSlice<u8>,
-                      input_scale: &CudaSlice<f32>,
-                      in_f: usize,
-                      out_f: usize,
-                      out: &mut CudaSlice<f32>|
-         -> Res<()> {
-            let rc = unsafe {
-                memra_moe_kq_gemm_sk(
-                    table.device_ptr(&stream).0 as *const u64,
-                    proj,
-                    ne as i32,
-                    ex_ids_d.device_ptr(&stream).0 as *const i32,
-                    input.device_ptr(&stream).0 as *const c_void,
-                    out.device_ptr_mut(&stream).0 as *mut f32,
-                    input_scale.device_ptr(&stream).0 as *const f32,
-                    ex_off_d.device_ptr(&stream).0 as *const i32,
-                    ex_off.as_ptr(),
-                    n_active as i32,
-                    max_m,
-                    in_f as i32,
-                    out_f as i32,
-                    crate::QT_NVFP4_MODELOPT,
-                    cross,
-                    crate::moe_f16g_tail_on() as i32,
-                    (in_f / 2) as i64,
-                    sp(&stream),
-                )
-            };
-            if rc == 0 {
-                Ok(())
-            } else {
-                Err(format!("DSV4 grouped projection {proj} failed rc={rc}"))
-            }
-        };
-        launch(0, &act16, &act_scale, hidden, inter, &mut vws.g1)?;
-        launch(2, &act16, &act_scale, hidden, inter, &mut vws.g3)?;
-        unsafe {
-            ck(
-                "grouped scale w1",
-                k::memra_dsv4_scale_rows(
-                    dpm!(vws.g1, &stream),
-                    dpf!(macro_w1_d, &stream),
-                    slots as i32,
-                    inter as i32,
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "grouped scale w3",
-                k::memra_dsv4_scale_rows(
-                    dpm!(vws.g3, &stream),
-                    dpf!(macro_w3_d, &stream),
-                    slots as i32,
-                    inter as i32,
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "grouped swiglu",
-                k::memra_dsv4_swiglu(
-                    dpf!(vws.g1, &stream),
-                    dpf!(vws.g3, &stream),
-                    dpm!(vws.hbuf, &stream),
-                    slots as i32,
-                    inter as i32,
-                    limit,
-                    dpf!(pair_w_d, &stream),
-                    sp(&stream),
-                ),
-            )?;
-        }
-        let mut h16 = stream
-            .alloc_zeros::<u8>(slots * inter * 2)
-            .map_err(e("grouped h f16"))?;
-        let mut h_scale = stream
-            .alloc_zeros::<f32>(slots)
-            .map_err(e("grouped h scale"))?;
-        unsafe {
-            ck(
-                "grouped gather h",
-                memra_moe_f16g_gather_act(
-                    dpf!(vws.hbuf, &stream),
-                    std::ptr::null(),
-                    h16.device_ptr_mut(&stream).0 as *mut c_void,
-                    dpm!(h_scale, &stream),
-                    inter as i32,
-                    slots as i32,
-                    sp(&stream),
-                ),
-            )?;
-        }
-        launch(1, &h16, &h_scale, inter, hidden, &mut vws.contrib)?;
-        unsafe {
-            ck(
-                "grouped scale w2",
-                k::memra_dsv4_scale_rows(
-                    dpm!(vws.contrib, &stream),
-                    dpf!(macro_w2_d, &stream),
-                    slots as i32,
-                    hidden as i32,
-                    sp(&stream),
-                ),
-            )?;
-        }
-        let mut slot_contrib = stream
-            .alloc_zeros::<f32>(slots * hidden)
-            .map_err(e("grouped slot contrib"))?;
-        unsafe {
-            ck(
-                "grouped csr permute",
-                k::memra_dsv4_scatter_rows(
-                    dpf!(vws.contrib, &stream),
-                    dpm!(slot_contrib, &stream),
-                    ex_pairs_d.device_ptr(&stream).0 as *const i32,
-                    slots as i32,
-                    hidden as i32,
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "grouped combine",
-                k::memra_dsv4_combine_rows_m(
-                    dpf!(slot_contrib, &stream),
-                    vws.order.device_ptr(&stream).0 as *const i32,
-                    topk as i32,
-                    dpm!(vws.y, &stream),
-                    hidden as i64,
-                    t as i32,
-                    sp(&stream),
-                ),
-            )?;
-        }
-        static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-        if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
-            eprintln!(
-                "[dsv4-prefill-f16g] ENGAGED: t={t} pairs={slots} active_experts={n_active} \
-                 max_rows_per_expert={max_m} split-plane ModelOpt NVFP4"
-            );
-        }
-        let _ = shape_sel;
-        Ok(())
-    }
-
     /// MoE for T rows: per-position routing (the hash layers need the per-position TOKEN,
     /// which is why a round carries a token array), then ONE launch per projection over
     /// the whole T x topk slot set — routed-expert weight traffic scales with T (each
@@ -10731,10 +10399,6 @@ impl Dsv4Gpu {
                     ),
                 )?;
             }
-        }
-
-        if self.prefill_f16g && vws.tmax >= 512 && layer.expert_kind == ExpertKind::Nvfp4 {
-            return self.moe_verify_f16g(st, layer, vws, t, hidden, ne, topk, inter, limit);
         }
 
         unsafe {
@@ -12201,17 +11865,6 @@ pub fn resolve_dense_arm(v: Option<&str>, on_device: bool) -> Result<bool, Strin
     }
 }
 
-pub fn resolve_prefill_f16g(v: Option<&str>, on_device: bool) -> Result<bool, String> {
-    match v {
-        None | Some("") | Some("0") => Ok(false),
-        Some("1") if on_device => Ok(true),
-        Some("1") => {
-            Err("MEMRA_DSV4_PREFILL_F16G=1 requires MEMRA_DSV4_DECODE_PATH=device".to_string())
-        }
-        Some(other) => Err(format!("MEMRA_DSV4_PREFILL_F16G '{other}' unknown (0 | 1)")),
-    }
-}
-
 /// ds4f rung 1 — per-round verify-window policy from the drafter's OWN confidence head
 /// (`MEMRA_DSV4_VT={off|slot}`, unset = off = the byte-identical round driver).
 ///
@@ -12542,7 +12195,7 @@ mod peer_probe_tests {
 
 #[cfg(test)]
 mod dense_arm_default_tests {
-    use super::{dsv4_prefill_tx_width, resolve_dense_arm, resolve_prefill_f16g};
+    use super::resolve_dense_arm;
 
     /// The owner-ratified flip (2026-08-20): unset env on the device decode path = fp8.
     /// Mutating the default back to bf16 fails this with the evidence named.
@@ -12569,26 +12222,6 @@ mod dense_arm_default_tests {
             resolve_dense_arm(Some("q8"), true).is_err(),
             "unknown values refuse"
         );
-    }
-
-    #[test]
-    fn wide_prefill_grouped_is_strict_default_off_and_device_only() {
-        assert_eq!(resolve_prefill_f16g(None, true), Ok(false));
-        assert_eq!(resolve_prefill_f16g(Some(""), true), Ok(false));
-        assert_eq!(resolve_prefill_f16g(Some("0"), true), Ok(false));
-        assert_eq!(resolve_prefill_f16g(Some("1"), true), Ok(true));
-        assert!(resolve_prefill_f16g(Some("1"), false).is_err());
-        assert!(resolve_prefill_f16g(Some("yes"), true).is_err());
-    }
-
-    #[test]
-    fn only_full_wide_transactions_cross_the_exact_width_ceiling() {
-        assert_eq!(dsv4_prefill_tx_width(false, 512, 512), 64);
-        assert_eq!(dsv4_prefill_tx_width(false, 512, 386), 64);
-        assert_eq!(dsv4_prefill_tx_width(true, 512, 512), 512);
-        assert_eq!(dsv4_prefill_tx_width(true, 512, 511), 64);
-        assert_eq!(dsv4_prefill_tx_width(true, 32, 100), 32);
-        assert_eq!(dsv4_prefill_tx_width(true, 16, 7), 7);
     }
 }
 

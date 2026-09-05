@@ -82,10 +82,7 @@ fn resolve_prefill_chunk(raw: Option<&str>, max_seq: usize) -> Result<usize, Str
 }
 
 fn use_chunked_prefill(chunk: usize, prompt_tokens: usize) -> bool {
-    // The adaptive exception is a numerical-regime rule, not a transaction-size
-    // rule. Only the exact-kernel width (32) stays monolithic; widening the
-    // throughput chunk must not silently disable parking for 33..N-token prompts.
-    chunk > 0 && prompt_tokens > chunk.min(32)
+    chunk > 0 && prompt_tokens > chunk
 }
 
 struct ParkedEntry {
@@ -1138,22 +1135,19 @@ mod prefill_chunk_flag_tests {
     fn default_is_off_and_values_are_strictly_bounded() {
         assert_eq!(resolve_prefill_chunk(None, 1_048_576), Ok(0));
         assert_eq!(resolve_prefill_chunk(Some("0"), 1_048_576), Ok(0));
-        assert_eq!(resolve_prefill_chunk(Some("512"), 1_048_576), Ok(512));
+        assert_eq!(resolve_prefill_chunk(Some("64"), 1_048_576), Ok(64));
         assert!(resolve_prefill_chunk(Some("-1"), 1_048_576).is_err());
         assert!(resolve_prefill_chunk(Some("banana"), 1_048_576).is_err());
         assert!(resolve_prefill_chunk(Some("65"), 64).is_err());
-        assert!(resolve_prefill_chunk(Some("513"), 1_048_576).is_err());
+        assert!(resolve_prefill_chunk(Some("65"), 1_048_576).is_err());
     }
 
     #[test]
-    fn only_exact_short_primes_stay_monolithic_when_chunks_widen() {
+    fn prompts_at_or_below_one_chunk_stay_monolithic() {
         assert!(!use_chunked_prefill(0, 10_000));
         assert!(!use_chunked_prefill(32, 1));
         assert!(!use_chunked_prefill(32, 32));
         assert!(use_chunked_prefill(32, 33));
-        assert!(!use_chunked_prefill(512, 32));
-        assert!(use_chunked_prefill(512, 33));
-        assert!(use_chunked_prefill(512, 511));
     }
 }
 

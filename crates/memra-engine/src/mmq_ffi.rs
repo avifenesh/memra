@@ -737,7 +737,7 @@ mod grouped_fp8_tests {
 }
 
 unsafe extern "C" {
-    pub fn memra_bind_device(dev: i32) -> i32;
+    fn memra_bind_device(dev: i32) -> i32;
     /// Bytes needed for the block_fp4_mmq activation scratch for (in_f, n_tokens).
     pub fn memra_mmq_nvfp4_act_bytes(in_f: i32, n_tokens: i32) -> usize;
     /// Run the NVFP4 W4A4 MMQ prefill GEMM. y[n_tokens, out_f] = act[n_tokens, in_f] @ W[out_f, in_f]^T.
@@ -2415,18 +2415,10 @@ impl Engine {
                 // v2 slot-major banks read through the same direct lane (kq_fetch's v2 branch),
                 // which is what keeps the grouped prime off the 1.5 GB/projection dequant
                 // workspace it otherwise falls back to.
-                || qtype == crate::QT_NVFP4_V2
-                || qtype == crate::QT_NVFP4_MODELOPT)
+                || qtype == crate::QT_NVFP4_V2)
             // NVFP4 walks 64-value blocks (its 16-value window is one UE4M3 sub-block);
             // the kq/IQ classes walk 256-value superblocks. Mirrors the C-side guard.
-            && in_f % (if qtype == crate::QT_NVFP4
-                || qtype == crate::QT_NVFP4_V2
-                || qtype == crate::QT_NVFP4_MODELOPT
-            {
-                64
-            } else {
-                256
-            }) == 0
+            && in_f % (if qtype == crate::QT_NVFP4 || qtype == crate::QT_NVFP4_V2 { 64 } else { 256 }) == 0
             && n_active <= 512
             && n_active > 0
         {
