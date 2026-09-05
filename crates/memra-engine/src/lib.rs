@@ -2888,7 +2888,15 @@ pub fn hc_pre_v4z_on() -> bool {
 /// (`MEMRA_GLM5_Q8_FUSE` / `_ATTN`), because that is the pair it replaces.
 pub fn hc_pre_zq8_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_HC_PRE_ZQ8").as_deref() == Ok("1"))
+    // `=1` engages the door; `=2` is the self-check arm (fused into scratch, the two-launch
+    // program into the workspace, host compare) and must enter the door to run at all: the
+    // 2026-09-05 check boot compared zero sites because this read accepted only "1".
+    *ON.get_or_init(|| {
+        matches!(
+            std::env::var("MEMRA_HC_PRE_ZQ8").as_deref(),
+            Ok("1") | Ok("2")
+        )
+    })
 }
 
 /// `MEMRA_Q8_CENSUS=1` (lane/hcpre-zq8-fusion-20260905, diagnostics): attribute every
