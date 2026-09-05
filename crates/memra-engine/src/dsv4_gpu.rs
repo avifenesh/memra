@@ -28,7 +28,8 @@ use std::ops::Range;
 use std::os::raw::c_void;
 use std::path::Path;
 
-use cudarc::driver::{CudaSlice, CudaStream, DevicePtr, DevicePtrMut};
+use cudarc::driver::sys::{CUgraphInstantiate_flags, CUstreamCaptureMode};
+use cudarc::driver::{CudaGraph, CudaSlice, CudaStream, DevicePtr, DevicePtrMut};
 use memra_gguf::dsv4_forward::{
     ActQuantVariant, Dsv4Model, FreqsCis, compress_topk_idxs, hc_split_sinkhorn,
     precompute_freqs_cis, window_topk_idxs,
@@ -471,6 +472,9 @@ pub struct Dsv4Gpu {
     /// DSpark-only fused selected-expert dispatch. Routing stays on the host
     /// oracle; only the per-expert launch loop is collapsed.
     pub dspark_fused_moe: bool,
+    /// Per-session exact CUDA graphs for the position-independent verify/prefill
+    /// MoE body. Routing stays eager and updates stable workspace buffers.
+    pub moe_graph: bool,
     /// iteration-5 FP8 dense arm (`MEMRA_DSV4_DENSE_ARM`; DEFAULT fp8 on the device
     /// decode path since the 2026-08-20 ratification, bf16 selectable and the legacy
     /// default): the DEVICE decode/verify paths read the FP8-blk linears as-stored
@@ -1830,6 +1834,10 @@ impl Dsv4Gpu {
             std::env::var("MEMRA_DSV4_DSPARK_FUSED_MOE").ok().as_deref(),
             on_device,
         )?;
+        let moe_graph = resolve_moe_graph(
+            std::env::var("MEMRA_DSV4_MOE_GRAPH").ok().as_deref(),
+            on_device,
+        )?;
 
         let mut me = Dsv4Gpu {
             model,
@@ -1851,6 +1859,7 @@ impl Dsv4Gpu {
             chains_f32,
             dspark_head_f32,
             dspark_fused_moe,
+            moe_graph,
             dense_fp8,
             dspark: None,
             boundary_ev: Vec::new(),
@@ -1881,6 +1890,10 @@ impl Dsv4Gpu {
             } else {
                 "per-expert reference"
             }
+        );
+        eprintln!(
+            "[load] verify/prefill MoE graph: {}",
+            if me.moe_graph { "ARMED" } else { "off" }
         );
         eprintln!(
             "[load] dense arm: {} (iteration-5; fp8 = FP8-blk linears as-stored on the \
@@ -8858,6 +8871,13 @@ impl Dsv4Gpu {
 /// Per-stage batched-verify workspace: the lane-8 arena widened to `tmax` rows. Held
 /// separately from [`StepWs`] so the gated single-position path's allocations, launches
 /// and bytes are literally untouched by this rung.
+struct Dsv4MoeGraph(CudaGraph);
+
+// Graph handles are context-bound and every VerifyState is owned by the single
+// serialized DSV4 worker while live. Moving the state to that worker is safe;
+// graph capture/replay never occurs concurrently or on a foreign context.
+unsafe impl Send for Dsv4MoeGraph {}
+
 pub struct VerifyWs {
     pub tmax: usize,
     h_a: CudaSlice<f32>,
@@ -8926,6 +8946,7 @@ pub struct VerifyWs {
     slot_rows: CudaSlice<i32>,
     /// hc-mean staging for the DSpark tap (one target at a time, then `place_cols`)
     tap_tmp: CudaSlice<f32>,
+    moe_graphs: BTreeMap<(u32, usize), Dsv4MoeGraph>,
 }
 
 /// One compressor's verify-round checkpoint on device — the CPU oracle's `CompCkpt`,
@@ -9156,6 +9177,7 @@ impl Dsv4Gpu {
                 bounce: f(tmax * hd)?,
                 slot_rows: i(tmax)?,
                 tap_tmp: f(tmax * hidden)?,
+                moe_graphs: BTreeMap::new(),
             };
             bytes[st.dev] += acc.get();
             ws.push(w);
@@ -10557,193 +10579,248 @@ impl Dsv4Gpu {
             }
         }
 
-        unsafe {
-            ck(
-                "act_quant_fp8 x batch",
-                k::memra_dsv4_act_quant_fp8(
-                    dpf!(vws.xf, &stream),
-                    vws.xq.device_ptr_mut(&stream).0 as *mut c_void,
-                    dpm!(vws.xs, &stream),
-                    t as i32,
-                    hidden as i32,
-                    sp(&stream),
-                ),
-            )?;
-            for (proj, dst) in [(0i32, &mut vws.g1), (2i32, &mut vws.g3)] {
+        let graph_key = (layer.il, t);
+        if self.moe_graph
+            && let Some(graph) = vws.moe_graphs.remove(&graph_key)
+        {
+            graph.0.launch().map_err(e("launch dsv4 MoE graph"))?;
+            vws.moe_graphs.insert(graph_key, graph);
+            return Ok(());
+        }
+        let capturing = self.moe_graph;
+        let was_tracking = st.gpu.ctx.is_event_tracking();
+        if capturing {
+            stream
+                .synchronize()
+                .map_err(e("sync before dsv4 MoE graph capture"))?;
+            if was_tracking {
+                unsafe { st.gpu.ctx.disable_event_tracking() };
+            }
+            if let Err(err) =
+                stream.begin_capture(CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED)
+            {
+                if was_tracking {
+                    unsafe { st.gpu.ctx.enable_event_tracking() };
+                }
+                return Err(format!("begin dsv4 MoE graph capture: {err}"));
+            }
+        }
+        let body_res: Res<()> = (|| {
+            unsafe {
                 ck(
-                    "fp4_gemm_sel_g w1/w3",
+                    "act_quant_fp8 x batch",
+                    k::memra_dsv4_act_quant_fp8(
+                        dpf!(vws.xf, &stream),
+                        vws.xq.device_ptr_mut(&stream).0 as *mut c_void,
+                        dpm!(vws.xs, &stream),
+                        t as i32,
+                        hidden as i32,
+                        sp(&stream),
+                    ),
+                )?;
+                for (proj, dst) in [(0i32, &mut vws.g1), (2i32, &mut vws.g3)] {
+                    ck(
+                        "fp4_gemm_sel_g w1/w3",
+                        k::memra_dsv4_fp4_gemm_sel_g(
+                            dp!(vws.xq, &stream),
+                            dpf!(vws.xs, &stream),
+                            dp!(layer.experts_w, &stream),
+                            dp!(layer.experts_sc, &stream),
+                            dpf!(layer.experts_s2_dev, &stream),
+                            vws.sel.device_ptr(&stream).0 as *const i32,
+                            proj,
+                            0,
+                            kind,
+                            dpm!(*dst, &stream),
+                            slots as i32,
+                            inter as i32,
+                            hidden as i32,
+                            wstride,
+                            sstride,
+                            topk as i32,
+                            sp(&stream),
+                        ),
+                    )?;
+                }
+                ck(
+                    "swiglu batch",
+                    k::memra_dsv4_swiglu(
+                        dpf!(vws.g1, &stream),
+                        dpf!(vws.g3, &stream),
+                        dpm!(vws.hbuf, &stream),
+                        slots as i32,
+                        inter as i32,
+                        limit,
+                        vws.selw.device_ptr(&stream).0 as *const f32,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "act_quant_fp8 h batch",
+                    k::memra_dsv4_act_quant_fp8(
+                        dpf!(vws.hbuf, &stream),
+                        vws.hq.device_ptr_mut(&stream).0 as *mut c_void,
+                        dpm!(vws.hs, &stream),
+                        slots as i32,
+                        inter as i32,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "fp4_gemm_sel_g w2",
                     k::memra_dsv4_fp4_gemm_sel_g(
-                        dp!(vws.xq, &stream),
-                        dpf!(vws.xs, &stream),
+                        dp!(vws.hq, &stream),
+                        dpf!(vws.hs, &stream),
                         dp!(layer.experts_w, &stream),
                         dp!(layer.experts_sc, &stream),
                         dpf!(layer.experts_s2_dev, &stream),
                         vws.sel.device_ptr(&stream).0 as *const i32,
-                        proj,
-                        0,
+                        1,
+                        1,
                         kind,
-                        dpm!(*dst, &stream),
+                        dpm!(vws.contrib, &stream),
                         slots as i32,
-                        inter as i32,
                         hidden as i32,
+                        inter as i32,
                         wstride,
                         sstride,
+                        0,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "combine_rows_m",
+                    k::memra_dsv4_combine_rows_m(
+                        dpf!(vws.contrib, &stream),
+                        vws.order.device_ptr(&stream).0 as *const i32,
                         topk as i32,
+                        dpm!(vws.y, &stream),
+                        hidden as i64,
+                        t as i32,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "cvt xb batch",
+                    k::memra_dsv4_cvt_bf16(
+                        dpf!(vws.xf, &stream),
+                        vws.xb.device_ptr_mut(&stream).0 as *mut c_void,
+                        (t * hidden) as i64,
                         sp(&stream),
                     ),
                 )?;
             }
-            ck(
-                "swiglu batch",
-                k::memra_dsv4_swiglu(
-                    dpf!(vws.g1, &stream),
-                    dpf!(vws.g3, &stream),
-                    dpm!(vws.hbuf, &stream),
-                    slots as i32,
-                    inter as i32,
-                    limit,
-                    vws.selw.device_ptr(&stream).0 as *const f32,
-                    sp(&stream),
+            let sh_inter = vws.sg1.len() / vws.tmax;
+            Self::gemv_m_dev(
+                st,
+                dwsel(
+                    self.dense_fp8,
+                    &stream,
+                    &layer.shared_w[0],
+                    &layer.shared_fp8[0],
                 ),
+                vws.xb.device_ptr(&stream).0 as *const c_void,
+                vws.sg1.device_ptr_mut(&stream).0 as *mut f32,
+                t,
+                sh_inter,
+                hidden,
+                0,
+                0,
             )?;
-            ck(
-                "act_quant_fp8 h batch",
-                k::memra_dsv4_act_quant_fp8(
-                    dpf!(vws.hbuf, &stream),
-                    vws.hq.device_ptr_mut(&stream).0 as *mut c_void,
-                    dpm!(vws.hs, &stream),
-                    slots as i32,
-                    inter as i32,
-                    sp(&stream),
+            Self::gemv_m_dev(
+                st,
+                dwsel(
+                    self.dense_fp8,
+                    &stream,
+                    &layer.shared_w[2],
+                    &layer.shared_fp8[2],
                 ),
+                vws.xb.device_ptr(&stream).0 as *const c_void,
+                vws.sg3.device_ptr_mut(&stream).0 as *mut f32,
+                t,
+                sh_inter,
+                hidden,
+                0,
+                0,
             )?;
-            ck(
-                "fp4_gemm_sel_g w2",
-                k::memra_dsv4_fp4_gemm_sel_g(
-                    dp!(vws.hq, &stream),
-                    dpf!(vws.hs, &stream),
-                    dp!(layer.experts_w, &stream),
-                    dp!(layer.experts_sc, &stream),
-                    dpf!(layer.experts_s2_dev, &stream),
-                    vws.sel.device_ptr(&stream).0 as *const i32,
-                    1,
-                    1,
-                    kind,
-                    dpm!(vws.contrib, &stream),
-                    slots as i32,
-                    hidden as i32,
-                    inter as i32,
-                    wstride,
-                    sstride,
-                    0,
-                    sp(&stream),
+            unsafe {
+                ck(
+                    "swiglu sh batch",
+                    k::memra_dsv4_swiglu(
+                        dpf!(vws.sg1, &stream),
+                        dpf!(vws.sg3, &stream),
+                        dpm!(vws.shbuf, &stream),
+                        t as i32,
+                        sh_inter as i32,
+                        limit,
+                        std::ptr::null(),
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "cvt sh batch",
+                    k::memra_dsv4_cvt_bf16(
+                        dpf!(vws.shbuf, &stream),
+                        vws.shb16.device_ptr_mut(&stream).0 as *mut c_void,
+                        (t * sh_inter) as i64,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+            Self::gemv_m_dev(
+                st,
+                dwsel(
+                    self.dense_fp8,
+                    &stream,
+                    &layer.shared_w[1],
+                    &layer.shared_fp8[1],
                 ),
+                vws.shb16.device_ptr(&stream).0 as *const c_void,
+                vws.sh_out.device_ptr_mut(&stream).0 as *mut f32,
+                t,
+                hidden,
+                sh_inter,
+                0,
+                0,
             )?;
-            ck(
-                "combine_rows_m",
-                k::memra_dsv4_combine_rows_m(
-                    dpf!(vws.contrib, &stream),
-                    vws.order.device_ptr(&stream).0 as *const i32,
-                    topk as i32,
-                    dpm!(vws.y, &stream),
-                    hidden as i64,
-                    t as i32,
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "cvt xb batch",
-                k::memra_dsv4_cvt_bf16(
-                    dpf!(vws.xf, &stream),
-                    vws.xb.device_ptr_mut(&stream).0 as *mut c_void,
-                    (t * hidden) as i64,
-                    sp(&stream),
-                ),
-            )?;
-        }
-        let sh_inter = vws.sg1.len() / vws.tmax;
-        Self::gemv_m_dev(
-            st,
-            dwsel(
-                self.dense_fp8,
-                &stream,
-                &layer.shared_w[0],
-                &layer.shared_fp8[0],
-            ),
-            vws.xb.device_ptr(&stream).0 as *const c_void,
-            vws.sg1.device_ptr_mut(&stream).0 as *mut f32,
-            t,
-            sh_inter,
-            hidden,
-            0,
-            0,
-        )?;
-        Self::gemv_m_dev(
-            st,
-            dwsel(
-                self.dense_fp8,
-                &stream,
-                &layer.shared_w[2],
-                &layer.shared_fp8[2],
-            ),
-            vws.xb.device_ptr(&stream).0 as *const c_void,
-            vws.sg3.device_ptr_mut(&stream).0 as *mut f32,
-            t,
-            sh_inter,
-            hidden,
-            0,
-            0,
-        )?;
-        unsafe {
-            ck(
-                "swiglu sh batch",
-                k::memra_dsv4_swiglu(
-                    dpf!(vws.sg1, &stream),
-                    dpf!(vws.sg3, &stream),
-                    dpm!(vws.shbuf, &stream),
-                    t as i32,
-                    sh_inter as i32,
-                    limit,
-                    std::ptr::null(),
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "cvt sh batch",
-                k::memra_dsv4_cvt_bf16(
-                    dpf!(vws.shbuf, &stream),
-                    vws.shb16.device_ptr_mut(&stream).0 as *mut c_void,
-                    (t * sh_inter) as i64,
-                    sp(&stream),
-                ),
-            )?;
-        }
-        Self::gemv_m_dev(
-            st,
-            dwsel(
-                self.dense_fp8,
-                &stream,
-                &layer.shared_w[1],
-                &layer.shared_fp8[1],
-            ),
-            vws.shb16.device_ptr(&stream).0 as *const c_void,
-            vws.sh_out.device_ptr_mut(&stream).0 as *mut f32,
-            t,
-            hidden,
-            sh_inter,
-            0,
-            0,
-        )?;
-        unsafe {
-            ck(
-                "add shared batch",
-                k::memra_dsv4_add_inplace(
-                    dpm!(vws.y, &stream),
-                    dpf!(vws.sh_out, &stream),
-                    (t * hidden) as i64,
-                    sp(&stream),
-                ),
-            )?;
+            unsafe {
+                ck(
+                    "add shared batch",
+                    k::memra_dsv4_add_inplace(
+                        dpm!(vws.y, &stream),
+                        dpf!(vws.sh_out, &stream),
+                        (t * hidden) as i64,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+            Ok(())
+        })();
+        if capturing {
+            let ended = stream.end_capture(
+                CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH,
+            );
+            if was_tracking {
+                unsafe { st.gpu.ctx.enable_event_tracking() };
+            }
+            body_res?;
+            let graph = ended
+                .map_err(e("end dsv4 MoE graph capture"))?
+                .ok_or_else(|| "dsv4 MoE capture produced no graph".to_string())?;
+            graph.upload().map_err(e("upload dsv4 MoE graph"))?;
+            graph
+                .launch()
+                .map_err(e("launch captured dsv4 MoE graph"))?;
+            vws.moe_graphs.insert(graph_key, Dsv4MoeGraph(graph));
+            static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                eprintln!(
+                    "[dsv4-moe-graph] ENGAGED: per-session layer/width graphs, first layer={} t={}",
+                    layer.il, t
+                );
+            }
+        } else {
+            body_res?;
         }
         Ok(())
     }
@@ -12034,6 +12111,17 @@ pub fn resolve_dspark_fused_moe(v: Option<&str>, on_device: bool) -> Result<bool
     }
 }
 
+pub fn resolve_moe_graph(v: Option<&str>, on_device: bool) -> Result<bool, String> {
+    match v {
+        None | Some("") | Some("0") => Ok(false),
+        Some("1") if on_device => Ok(true),
+        Some("1") => {
+            Err("MEMRA_DSV4_MOE_GRAPH=1 requires MEMRA_DSV4_DECODE_PATH=device".to_string())
+        }
+        Some(other) => Err(format!("MEMRA_DSV4_MOE_GRAPH '{other}' unknown (0 | 1)")),
+    }
+}
+
 /// ds4f rung 1 — per-round verify-window policy from the drafter's OWN confidence head
 /// (`MEMRA_DSV4_VT={off|slot}`, unset = off = the byte-identical round driver).
 ///
@@ -12364,7 +12452,7 @@ mod peer_probe_tests {
 
 #[cfg(test)]
 mod dense_arm_default_tests {
-    use super::{resolve_dense_arm, resolve_dspark_fused_moe};
+    use super::{resolve_dense_arm, resolve_dspark_fused_moe, resolve_moe_graph};
 
     /// The owner-ratified flip (2026-08-20): unset env on the device decode path = fp8.
     /// Mutating the default back to bf16 fails this with the evidence named.
@@ -12401,6 +12489,15 @@ mod dense_arm_default_tests {
         assert_eq!(resolve_dspark_fused_moe(Some("1"), true), Ok(true));
         assert!(resolve_dspark_fused_moe(Some("1"), false).is_err());
         assert!(resolve_dspark_fused_moe(Some("yes"), true).is_err());
+    }
+
+    #[test]
+    fn moe_graph_is_strict_default_off_and_device_only() {
+        assert_eq!(resolve_moe_graph(None, true), Ok(false));
+        assert_eq!(resolve_moe_graph(Some("0"), true), Ok(false));
+        assert_eq!(resolve_moe_graph(Some("1"), true), Ok(true));
+        assert!(resolve_moe_graph(Some("1"), false).is_err());
+        assert!(resolve_moe_graph(Some("yes"), true).is_err());
     }
 }
 
