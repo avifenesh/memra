@@ -36,6 +36,7 @@ use memra_gguf::dsv4_forward::{
 
 use crate::dsv4_ffi as k;
 use crate::dsv4_ffi::ck;
+use crate::mmq_ffi::{memra_bind_device, memra_moe_kq_gemm_sk};
 
 type Res<T> = Result<T, String>;
 
@@ -309,6 +310,8 @@ pub struct LayerDev {
     /// asserts per token at route time; the device route kernel cannot).
     pub tid2eid_dev: Option<CudaSlice<i32>>,
     pub experts_s2_dev: CudaSlice<f32>,
+    /// Six pointer planes, code/scale for w1/w2/w3. No repacking or duplicate bank.
+    experts_modelopt_table: Option<CudaSlice<u64>>,
     // MoE
     pub gate_w: CudaSlice<f32>, // f32 island [ne, hidden]
     pub gate_bias: Option<Vec<f32>>,
@@ -474,6 +477,16 @@ impl Dsv4IndexerScore {
     }
 }
 
+fn resolve_prefill_moe(value: Option<&str>) -> Res<bool> {
+    match value {
+        None | Some("") | Some("reference") => Ok(false),
+        Some("grouped") => Ok(true),
+        Some(other) => Err(format!(
+            "MEMRA_DSV4_PREFILL_MOE '{other}' unknown (reference | grouped)"
+        )),
+    }
+}
+
 pub struct Dsv4Gpu {
     pub model: Dsv4Model,
     pub stages: Vec<Stage>,
@@ -514,6 +527,7 @@ pub struct Dsv4Gpu {
     /// Chosen per model, never a process-global mutable test switch.
     fp4_reduce: Dsv4Fp4Reduce,
     indexer_score: Dsv4IndexerScore,
+    prefill_grouped: bool,
     /// iteration-5 FP8 dense arm (`MEMRA_DSV4_DENSE_ARM`; DEFAULT fp8 on the device
     /// decode path since the 2026-08-20 ratification, bf16 selectable and the legacy
     /// default): the DEVICE decode/verify paths read the FP8-blk linears as-stored
@@ -650,7 +664,18 @@ pub struct DecodeState {
 /// Number of persistent compressed rows admitted for one session. Decode allocation
 /// and batched verification must share this exact planner because the latter places its
 /// transient rows immediately after this store.
-pub const DSV4_BATCH_WIDTH_MAX: usize = 64;
+/// Engine bring-up ceiling. The serving surface separately retains its qualified limit.
+pub const DSV4_BATCH_WIDTH_MAX: usize = 512;
+pub const DSV4_SERVING_BATCH_WIDTH_MAX: usize = 64;
+
+fn ring_commit_plan(pos0: usize, n_commit: usize, win: usize) -> (usize, Vec<i32>) {
+    assert!(win > 0);
+    let start = n_commit.saturating_sub(win);
+    let slots = (start..n_commit)
+        .map(|row| ((pos0 + row) % win) as i32)
+        .collect();
+    (start, slots)
+}
 
 fn dsv4_cache_cap_blocks(capacity: usize, ratio: usize) -> usize {
     capacity.checked_div(ratio).unwrap_or(0)
@@ -843,6 +868,12 @@ fn upload_f32(stream: &std::sync::Arc<CudaStream>, v: &[f32]) -> Res<CudaSlice<f
 fn upload_i32(stream: &std::sync::Arc<CudaStream>, v: &[i32]) -> Res<CudaSlice<i32>> {
     let mut d = stream.alloc_zeros::<i32>(v.len()).map_err(e("alloc i32"))?;
     stream.memcpy_htod(v, &mut d).map_err(e("htod i32"))?;
+    Ok(d)
+}
+
+fn upload_u64(stream: &std::sync::Arc<CudaStream>, v: &[u64]) -> Res<CudaSlice<u64>> {
+    let mut d = stream.alloc_zeros::<u64>(v.len()).map_err(e("alloc u64"))?;
+    stream.memcpy_htod(v, &mut d).map_err(e("htod u64"))?;
     Ok(d)
 }
 
@@ -1228,6 +1259,28 @@ fn f32_to_bf16_exact(name: &str, v: &[f32]) -> Vec<u8> {
 }
 
 impl Dsv4Gpu {
+    /// One-load experimental gate control. No request may mutate the model arm.
+    pub fn set_prefill_grouped_for_gate(&mut self, enabled: bool) -> Res<bool> {
+        if !matches!(self.decode_path, DecodePath::Device { host_math: false }) {
+            return Err("grouped prefill gate requires the device path".into());
+        }
+        for stage in &self.stages {
+            stage
+                .gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind grouped gate stage"))?;
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .map_err(e("drain grouped gate stage"))?;
+        }
+        let previous = self.prefill_grouped;
+        self.prefill_grouped = enabled;
+        Ok(previous)
+    }
+
     /// Exclusive one-load gate seam. Persistent graph support must include this
     /// arm in its executable key before it can reuse graphs across this setter.
     pub fn set_indexer_score_for_gate(&mut self, arm: Dsv4IndexerScore) -> Res<Dsv4IndexerScore> {
@@ -1659,6 +1712,20 @@ impl Dsv4Gpu {
             None => None,
         };
         let experts_s2_dev = upload_f32(&stream, &experts_s2)?;
+        let experts_modelopt_table = if expert_kind == ExpertKind::Nvfp4 {
+            let (wp, _wg) = experts_w.device_ptr(&stream);
+            let (sptr, _sg) = experts_sc.device_ptr(&stream);
+            let mut pointers = vec![0u64; 6 * ne];
+            for ex in 0..ne {
+                for pi in 0..3 {
+                    pointers[2 * pi * ne + ex] = wp + ((ex * 3 + pi) * wbytes) as u64;
+                    pointers[(2 * pi + 1) * ne + ex] = sptr + ((ex * 3 + pi) * sbytes) as u64;
+                }
+            }
+            Some(upload_u64(&stream, &pointers)?)
+        } else {
+            None
+        };
 
         let (wq_a, wq_a_fp8) = self.tensor_dense(stage, &format!("{p}.attn.wq_a"), fp8_ok)?;
         let (wq_b, wq_b_fp8) = self.tensor_dense(stage, &format!("{p}.attn.wq_b"), fp8_ok)?;
@@ -1683,6 +1750,7 @@ impl Dsv4Gpu {
             gate_bias_dev,
             tid2eid_dev,
             experts_s2_dev,
+            experts_modelopt_table,
             wq_a,
             wq_b,
             wkv,
@@ -1732,6 +1800,12 @@ impl Dsv4Gpu {
             Err(err) => return Err(format!("MEMRA_DSV4_FP4_REDUCE: {err}")),
         };
         let fp4_reduce = Dsv4Fp4Reduce::resolve(fp4_reduce_env.as_deref())?;
+        let grouped_env = match std::env::var("MEMRA_DSV4_PREFILL_MOE") {
+            Ok(value) => Some(value),
+            Err(std::env::VarError::NotPresent) => None,
+            Err(err) => return Err(format!("MEMRA_DSV4_PREFILL_MOE: {err}")),
+        };
+        let prefill_grouped = resolve_prefill_moe(grouped_env.as_deref())?;
         let indexer_env = match std::env::var("MEMRA_DSV4_INDEXER_SCORE") {
             Ok(value) => Some(value),
             Err(std::env::VarError::NotPresent) => None,
@@ -1901,6 +1975,14 @@ impl Dsv4Gpu {
                 "MEMRA_DSV4_INDEXER_SCORE=tiled requires device f32x and indexer 64x128".into(),
             );
         }
+        if prefill_grouped
+            && (!matches!(decode_path, DecodePath::Device { host_math: false })
+                || crate::moe_f16g_mode() < 2
+                || crate::moe_f16g_sk_params().0 < 0
+                || !crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT))
+        {
+            return Err("MEMRA_DSV4_PREFILL_MOE=grouped requires device decode, MEMRA_MOE_F16G=2, visitor form and direct quant loader".into());
+        }
 
         // Iteration-3 rung 4c, MEASURED FORK (nsys, drafted rounds [4,12)): the DRAFTER's
         // shared-trunk-head projection runs `dsv4_dots_f32` — the f64 kernel — over
@@ -1974,6 +2056,7 @@ impl Dsv4Gpu {
             dspark_fused_moe,
             fp4_reduce,
             indexer_score,
+            prefill_grouped,
             dense_fp8,
             dspark: None,
             boundary_ev: Vec::new(),
@@ -1994,6 +2077,14 @@ impl Dsv4Gpu {
         );
         eprintln!("[load] selected FP4 reduction: {:?}", me.fp4_reduce);
         eprintln!("[load] indexer score: {:?}", me.indexer_score);
+        eprintln!(
+            "[load] prefill MoE: {}",
+            if me.prefill_grouped {
+                "grouped FP8-QAT half mirror (experimental)"
+            } else {
+                "reference"
+            }
+        );
         eprintln!(
             "[load] dspark exit-head dots arm: {} (rung-4c fork; drafts only, never the \
              emitted stream)",
@@ -9017,6 +9108,8 @@ impl Dsv4Gpu {
 /// and bytes are literally untouched by this rung.
 pub struct VerifyWs {
     pub tmax: usize,
+    /// Phase identity, not inferred from row count. Spec verification never sets it.
+    is_prefill: bool,
     h_a: CudaSlice<f32>,
     h_b: CudaSlice<f32>,
     h_rx: CudaSlice<f32>,
@@ -9157,7 +9250,11 @@ impl Dsv4Gpu {
                 "dsv4 prefill chunk width {width} outside 1..={DSV4_BATCH_WIDTH_MAX}"
             ));
         }
-        self.alloc_batched_state_for(capacity, width)
+        let mut state = self.alloc_batched_state_for(capacity, width)?;
+        for workspace in &mut state.ws {
+            workspace.is_prefill = true;
+        }
+        Ok(state)
     }
 
     fn alloc_batched_state_for(&self, capacity: usize, tmax: usize) -> Res<VerifyState> {
@@ -9248,6 +9345,7 @@ impl Dsv4Gpu {
             };
             let w = VerifyWs {
                 tmax,
+                is_prefill: false,
                 h_a: f(tmax * hc * hidden)?,
                 h_b: f(tmax * hc * hidden)?,
                 h_rx: f(tmax * hc * hidden)?,
@@ -10652,6 +10750,351 @@ impl Dsv4Gpu {
         Ok(())
     }
 
+    /// Numeric composition gate on actual checkpoint weights; no serving caller.
+    pub fn moe_components_for_gate(
+        &self,
+        il: usize,
+        tokens: &[u32],
+        input: &[f32],
+    ) -> Res<Vec<(String, Vec<f32>)>> {
+        let t = tokens.len();
+        let hidden = self.model.mc.n_embd as usize;
+        let topk = self.model.mc.moe.as_ref().expect("moe").expert_used_count as usize;
+        if t == 0 || t > DSV4_BATCH_WIDTH_MAX || input.len() != t * hidden {
+            return Err("invalid MoE gate shape".into());
+        }
+        let stage = *self.layer_stage.get(il).ok_or("invalid MoE gate layer")?;
+        let st = &self.stages[stage];
+        let layer = st
+            .layers
+            .iter()
+            .find(|layer| layer.il as usize == il)
+            .ok_or("missing gate layer")?;
+        let mut state = self.alloc_prefill_state_for(t + 1, t)?;
+        st.gpu.ctx.bind_to_thread().map_err(e("bind MoE gate"))?;
+        let stream = st.gpu.stream();
+        let ws = &mut state.ws[stage];
+        stream
+            .memcpy_htod(input, &mut ws.xf)
+            .map_err(e("MoE gate input"))?;
+        let ids: Vec<i32> = tokens.iter().map(|&id| id as i32).collect();
+        stream
+            .memcpy_htod(&ids, &mut ws.tok)
+            .map_err(e("MoE gate tokens"))?;
+        self.moe_verify_dev(st, layer, ws, t, tokens, false)?;
+        let contributions = dtoh_f32(&stream, &ws.contrib)?;
+        let shared = dtoh_f32(&stream, &ws.sh_out)?;
+        let total = dtoh_f32(&stream, &ws.y)?;
+        let mut order = vec![0i32; t * topk];
+        stream
+            .memcpy_dtoh(&ws.order, &mut order)
+            .map_err(e("MoE gate order"))?;
+        stream.synchronize().map_err(e("MoE gate synchronize"))?;
+        let mut routed = vec![0f32; t * hidden];
+        for row in 0..t {
+            for col in 0..hidden {
+                for slot in 0..topk {
+                    let index = usize::try_from(order[row * topk + slot])
+                        .map_err(|_| "negative gate slot")?;
+                    if index >= topk {
+                        return Err("invalid gate slot".into());
+                    }
+                    routed[row * hidden + col] +=
+                        contributions[(row * topk + index) * hidden + col];
+                }
+            }
+        }
+        Ok(vec![
+            ("routed".into(), routed),
+            ("shared".into(), shared),
+            ("total".into(), total),
+        ])
+    }
+
+    /// Exact transport only. Nonrepresentable half mirrors fail before GEMM.
+    fn gather_fp8_half(
+        &self,
+        st: &Stage,
+        codes: &CudaSlice<u8>,
+        scales: &CudaSlice<f32>,
+        row_ids: Option<&CudaSlice<i32>>,
+        rows: usize,
+        cols: usize,
+    ) -> Res<(CudaSlice<u8>, CudaSlice<f32>)> {
+        let stream = st.gpu.stream();
+        let mut half = stream
+            .alloc_zeros::<u8>(rows * cols * 2)
+            .map_err(e("FP8 half mirror"))?;
+        let mut row_scale = stream
+            .alloc_zeros::<f32>(rows)
+            .map_err(e("FP8 mirror scales"))?;
+        let mut status = stream
+            .alloc_zeros::<i32>(rows)
+            .map_err(e("FP8 mirror status"))?;
+        unsafe {
+            ck(
+                "FP8 half gather",
+                k::memra_dsv4_fp8_gather_half(
+                    codes.device_ptr(&stream).0 as *const c_void,
+                    scales.device_ptr(&stream).0 as *const f32,
+                    row_ids
+                        .map(|ids| ids.device_ptr(&stream).0 as *const i32)
+                        .unwrap_or(std::ptr::null()),
+                    half.device_ptr_mut(&stream).0 as *mut c_void,
+                    row_scale.device_ptr_mut(&stream).0 as *mut f32,
+                    status.device_ptr_mut(&stream).0 as *mut i32,
+                    rows as i32,
+                    cols as i32,
+                    sp(&stream),
+                ),
+            )?;
+        }
+        let mut check = vec![0i32; rows];
+        stream
+            .memcpy_dtoh(&status, &mut check)
+            .map_err(e("FP8 mirror check"))?;
+        stream.synchronize().map_err(e("sync FP8 mirror check"))?;
+        if let Some(row) = check.iter().position(|&value| value != 0) {
+            return Err(format!(
+                "FP8-QAT half mirror is not lossless at gathered row {row}, cols={cols}"
+            ));
+        }
+        Ok((half, row_scale))
+    }
+
+    /// Routed contribution only. The caller ALWAYS combines original slot order
+    /// and adds the complete shared expert after either routed realization.
+    #[allow(clippy::too_many_arguments)]
+    fn moe_verify_grouped(
+        &self,
+        st: &Stage,
+        layer: &LayerDev,
+        vws: &mut VerifyWs,
+        t: usize,
+        hidden: usize,
+        ne: usize,
+        topk: usize,
+        inter: usize,
+        limit: f32,
+    ) -> Res<()> {
+        if crate::moe_f16g_mode() < 2 || crate::moe_f16g_sk_params().0 < 0 {
+            return Err(
+                "DSV4 wide-prefill grouped MoE requires MEMRA_MOE_F16G=2 with the visitor form"
+                    .to_string(),
+            );
+        }
+        if !crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT) {
+            return Err(
+                "DSV4 wide-prefill grouped MoE requires the direct quant loader \
+                 (MEMRA_F16G_DIRECT must not be 0)"
+                    .to_string(),
+            );
+        }
+        let table = layer.experts_modelopt_table.as_ref().ok_or_else(|| {
+            "DSV4 wide-prefill grouped MoE requires ModelOpt NVFP4 experts".to_string()
+        })?;
+        let stream = st.gpu.stream();
+        let slots = t * topk;
+
+        let mut sel_h = vec![0i32; slots];
+        let mut selw_h = vec![0f32; slots];
+        stream
+            .memcpy_dtoh(&vws.sel.slice(0..slots), &mut sel_h)
+            .map_err(e("dtoh grouped selections"))?;
+        stream
+            .memcpy_dtoh(&vws.selw.slice(0..slots), &mut selw_h)
+            .map_err(e("dtoh grouped route weights"))?;
+        stream.synchronize().map_err(e("sync grouped routing"))?;
+
+        let mut buckets: Vec<Vec<i32>> = vec![Vec::new(); ne];
+        for (pair, &expert) in sel_h.iter().enumerate() {
+            let expert =
+                usize::try_from(expert).map_err(|_| format!("negative DSV4 expert id {expert}"))?;
+            if expert >= ne {
+                return Err(format!("DSV4 expert id {expert} outside 0..{ne}"));
+            }
+            buckets[expert].push(pair as i32);
+        }
+        let mut ex_ids = Vec::new();
+        let mut ex_off = vec![0i32];
+        let mut ex_pairs = Vec::with_capacity(slots);
+        for (expert, pairs) in buckets.iter().enumerate() {
+            if pairs.is_empty() {
+                continue;
+            }
+            ex_ids.push(expert as i32);
+            ex_pairs.extend_from_slice(pairs);
+            ex_off.push(ex_pairs.len() as i32);
+        }
+        let n_active = ex_ids.len();
+        let max_m = ex_off.windows(2).map(|w| w[1] - w[0]).max().unwrap_or(0);
+        let csr_tok: Vec<i32> = ex_pairs.iter().map(|&p| p / topk as i32).collect();
+        let pair_w: Vec<f32> = ex_pairs.iter().map(|&p| selw_h[p as usize]).collect();
+        let macro_for = |proj: usize| -> Vec<f32> {
+            ex_pairs
+                .iter()
+                .map(|&p| layer.experts_s2[sel_h[p as usize] as usize * 3 + proj])
+                .collect()
+        };
+        let (macro_w1, macro_w2, macro_w3) = (macro_for(0), macro_for(1), macro_for(2));
+        let ex_ids_d = upload_i32(&stream, &ex_ids)?;
+        let ex_off_d = upload_i32(&stream, &ex_off)?;
+        let ex_pairs_d = upload_i32(&stream, &ex_pairs)?;
+        let csr_tok_d = upload_i32(&stream, &csr_tok)?;
+        let pair_w_d = upload_f32(&stream, &pair_w)?;
+        let macro_w1_d = upload_f32(&stream, &macro_w1)?;
+        let macro_w2_d = upload_f32(&stream, &macro_w2)?;
+        let macro_w3_d = upload_f32(&stream, &macro_w3)?;
+
+        let rc = unsafe { memra_bind_device(st.dev as i32) };
+        if rc != 0 {
+            return Err(format!(
+                "DSV4 grouped prefill cudaSetDevice({}) rc={rc}",
+                st.dev
+            ));
+        }
+        unsafe {
+            ck(
+                "grouped FP8-QAT x",
+                k::memra_dsv4_act_quant_fp8(
+                    dpf!(vws.xf, &stream),
+                    vws.xq.device_ptr_mut(&stream).0 as *mut c_void,
+                    dpm!(vws.xs, &stream),
+                    t as i32,
+                    hidden as i32,
+                    sp(&stream),
+                ),
+            )?;
+        }
+        let (act16, act_scale) =
+            self.gather_fp8_half(st, &vws.xq, &vws.xs, Some(&csr_tok_d), slots, hidden)?;
+        let (shape_sel, cross) = crate::moe_f16g_sk_params();
+        let launch = |proj: i32,
+                      input: &CudaSlice<u8>,
+                      input_scale: &CudaSlice<f32>,
+                      in_f: usize,
+                      out_f: usize,
+                      out: &mut CudaSlice<f32>|
+         -> Res<()> {
+            let rc = unsafe {
+                memra_moe_kq_gemm_sk(
+                    table.device_ptr(&stream).0 as *const u64,
+                    proj,
+                    ne as i32,
+                    ex_ids_d.device_ptr(&stream).0 as *const i32,
+                    input.device_ptr(&stream).0 as *const c_void,
+                    out.device_ptr_mut(&stream).0 as *mut f32,
+                    input_scale.device_ptr(&stream).0 as *const f32,
+                    ex_off_d.device_ptr(&stream).0 as *const i32,
+                    ex_off.as_ptr(),
+                    n_active as i32,
+                    max_m,
+                    in_f as i32,
+                    out_f as i32,
+                    crate::QT_NVFP4_MODELOPT,
+                    cross,
+                    crate::moe_f16g_tail_on() as i32,
+                    (in_f / 2) as i64,
+                    sp(&stream),
+                )
+            };
+            if rc == 0 {
+                Ok(())
+            } else {
+                Err(format!("DSV4 grouped projection {proj} failed rc={rc}"))
+            }
+        };
+        launch(0, &act16, &act_scale, hidden, inter, &mut vws.g1)?;
+        launch(2, &act16, &act_scale, hidden, inter, &mut vws.g3)?;
+        unsafe {
+            ck(
+                "grouped scale w1",
+                k::memra_dsv4_scale_rows(
+                    dpm!(vws.g1, &stream),
+                    dpf!(macro_w1_d, &stream),
+                    slots as i32,
+                    inter as i32,
+                    sp(&stream),
+                ),
+            )?;
+            ck(
+                "grouped scale w3",
+                k::memra_dsv4_scale_rows(
+                    dpm!(vws.g3, &stream),
+                    dpf!(macro_w3_d, &stream),
+                    slots as i32,
+                    inter as i32,
+                    sp(&stream),
+                ),
+            )?;
+            ck(
+                "grouped swiglu",
+                k::memra_dsv4_swiglu(
+                    dpf!(vws.g1, &stream),
+                    dpf!(vws.g3, &stream),
+                    dpm!(vws.hbuf, &stream),
+                    slots as i32,
+                    inter as i32,
+                    limit,
+                    dpf!(pair_w_d, &stream),
+                    sp(&stream),
+                ),
+            )?;
+        }
+        unsafe {
+            ck(
+                "grouped FP8-QAT h",
+                k::memra_dsv4_act_quant_fp8(
+                    dpf!(vws.hbuf, &stream),
+                    vws.hq.device_ptr_mut(&stream).0 as *mut c_void,
+                    dpm!(vws.hs, &stream),
+                    slots as i32,
+                    inter as i32,
+                    sp(&stream),
+                ),
+            )?;
+        }
+        let (h16, h_scale) = self.gather_fp8_half(st, &vws.hq, &vws.hs, None, slots, inter)?;
+        let mut grouped_contrib = stream
+            .alloc_zeros::<f32>(slots * hidden)
+            .map_err(e("grouped CSR contribution"))?;
+        launch(1, &h16, &h_scale, inter, hidden, &mut grouped_contrib)?;
+        unsafe {
+            ck(
+                "grouped scale w2",
+                k::memra_dsv4_scale_rows(
+                    dpm!(grouped_contrib, &stream),
+                    dpf!(macro_w2_d, &stream),
+                    slots as i32,
+                    hidden as i32,
+                    sp(&stream),
+                ),
+            )?;
+        }
+        unsafe {
+            ck(
+                "grouped csr permute",
+                k::memra_dsv4_scatter_rows(
+                    dpf!(grouped_contrib, &stream),
+                    dpm!(vws.contrib, &stream),
+                    ex_pairs_d.device_ptr(&stream).0 as *const i32,
+                    slots as i32,
+                    hidden as i32,
+                    sp(&stream),
+                ),
+            )?;
+        }
+        static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            eprintln!(
+                "[dsv4-prefill-f16g] ENGAGED: t={t} pairs={slots} active_experts={n_active} \
+                 max_rows_per_expert={max_m} FP8-QAT-mirrored half, split-plane ModelOpt NVFP4"
+            );
+        }
+        let _ = shape_sel;
+        Ok(())
+    }
+
     /// MoE for T rows: per-position routing (the hash layers need the per-position TOKEN,
     /// which is why a round carries a token array), then ONE launch per projection over
     /// the whole T x topk slot set — routed-expert weight traffic scales with T (each
@@ -10756,90 +11199,98 @@ impl Dsv4Gpu {
             }
         }
 
-        unsafe {
-            ck(
-                "act_quant_fp8 x batch",
-                k::memra_dsv4_act_quant_fp8(
-                    dpf!(vws.xf, &stream),
-                    vws.xq.device_ptr_mut(&stream).0 as *mut c_void,
-                    dpm!(vws.xs, &stream),
-                    t as i32,
-                    hidden as i32,
-                    sp(&stream),
-                ),
-            )?;
-            for (proj, dst) in [(0i32, &mut vws.g1), (2i32, &mut vws.g3)] {
+        if self.prefill_grouped && vws.is_prefill && layer.expert_kind == ExpertKind::Nvfp4 {
+            self.moe_verify_grouped(st, layer, vws, t, hidden, ne, topk, inter, limit)?;
+        } else {
+            unsafe {
                 ck(
-                    "fp4_gemm_sel_g w1/w3",
+                    "act_quant_fp8 x batch",
+                    k::memra_dsv4_act_quant_fp8(
+                        dpf!(vws.xf, &stream),
+                        vws.xq.device_ptr_mut(&stream).0 as *mut c_void,
+                        dpm!(vws.xs, &stream),
+                        t as i32,
+                        hidden as i32,
+                        sp(&stream),
+                    ),
+                )?;
+                for (proj, dst) in [(0i32, &mut vws.g1), (2i32, &mut vws.g3)] {
+                    ck(
+                        "fp4_gemm_sel_g w1/w3",
+                        k::memra_dsv4_fp4_gemm_sel_g_arm(
+                            dp!(vws.xq, &stream),
+                            dpf!(vws.xs, &stream),
+                            dp!(layer.experts_w, &stream),
+                            dp!(layer.experts_sc, &stream),
+                            dpf!(layer.experts_s2_dev, &stream),
+                            vws.sel.device_ptr(&stream).0 as *const i32,
+                            proj,
+                            0,
+                            kind,
+                            dpm!(*dst, &stream),
+                            slots as i32,
+                            inter as i32,
+                            hidden as i32,
+                            wstride,
+                            sstride,
+                            topk as i32,
+                            self.fp4_reduce as i32,
+                            sp(&stream),
+                        ),
+                    )?;
+                }
+                ck(
+                    "swiglu batch",
+                    k::memra_dsv4_swiglu(
+                        dpf!(vws.g1, &stream),
+                        dpf!(vws.g3, &stream),
+                        dpm!(vws.hbuf, &stream),
+                        slots as i32,
+                        inter as i32,
+                        limit,
+                        vws.selw.device_ptr(&stream).0 as *const f32,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "act_quant_fp8 h batch",
+                    k::memra_dsv4_act_quant_fp8(
+                        dpf!(vws.hbuf, &stream),
+                        vws.hq.device_ptr_mut(&stream).0 as *mut c_void,
+                        dpm!(vws.hs, &stream),
+                        slots as i32,
+                        inter as i32,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "fp4_gemm_sel_g w2",
                     k::memra_dsv4_fp4_gemm_sel_g_arm(
-                        dp!(vws.xq, &stream),
-                        dpf!(vws.xs, &stream),
+                        dp!(vws.hq, &stream),
+                        dpf!(vws.hs, &stream),
                         dp!(layer.experts_w, &stream),
                         dp!(layer.experts_sc, &stream),
                         dpf!(layer.experts_s2_dev, &stream),
                         vws.sel.device_ptr(&stream).0 as *const i32,
-                        proj,
-                        0,
+                        1,
+                        1,
                         kind,
-                        dpm!(*dst, &stream),
+                        dpm!(vws.contrib, &stream),
                         slots as i32,
-                        inter as i32,
                         hidden as i32,
+                        inter as i32,
                         wstride,
                         sstride,
-                        topk as i32,
+                        0,
                         self.fp4_reduce as i32,
                         sp(&stream),
                     ),
                 )?;
             }
-            ck(
-                "swiglu batch",
-                k::memra_dsv4_swiglu(
-                    dpf!(vws.g1, &stream),
-                    dpf!(vws.g3, &stream),
-                    dpm!(vws.hbuf, &stream),
-                    slots as i32,
-                    inter as i32,
-                    limit,
-                    vws.selw.device_ptr(&stream).0 as *const f32,
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "act_quant_fp8 h batch",
-                k::memra_dsv4_act_quant_fp8(
-                    dpf!(vws.hbuf, &stream),
-                    vws.hq.device_ptr_mut(&stream).0 as *mut c_void,
-                    dpm!(vws.hs, &stream),
-                    slots as i32,
-                    inter as i32,
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "fp4_gemm_sel_g w2",
-                k::memra_dsv4_fp4_gemm_sel_g_arm(
-                    dp!(vws.hq, &stream),
-                    dpf!(vws.hs, &stream),
-                    dp!(layer.experts_w, &stream),
-                    dp!(layer.experts_sc, &stream),
-                    dpf!(layer.experts_s2_dev, &stream),
-                    vws.sel.device_ptr(&stream).0 as *const i32,
-                    1,
-                    1,
-                    kind,
-                    dpm!(vws.contrib, &stream),
-                    slots as i32,
-                    hidden as i32,
-                    inter as i32,
-                    wstride,
-                    sstride,
-                    0,
-                    self.fp4_reduce as i32,
-                    sp(&stream),
-                ),
-            )?;
+        }
+        // Both routed arms produce slot-aligned contributions. The combine and
+        // entire shared expert are mandatory common work, never an early return.
+        unsafe {
             ck(
                 "combine_rows_m",
                 k::memra_dsv4_combine_rows_m(
@@ -11388,7 +11839,8 @@ impl Dsv4Gpu {
         let hd = d.head_dim as usize;
         let win = d.sliding_window as usize;
         let n_trunk = (mc.n_layer - mc.nextn_predict_layers) as usize;
-        let slot_rows: Vec<i32> = (0..n_commit).map(|j| ((pos0 + j) % win) as i32).collect();
+        let (ring_start, slot_rows) = ring_commit_plan(pos0, n_commit, win);
+        let ring_keep = slot_rows.len();
         for il in 0..n_trunk {
             let stage = self.layer_stage[il];
             let st = &self.stages[stage];
@@ -11398,19 +11850,19 @@ impl Dsv4Gpu {
             let vws = &mut vstate.ws[stage];
             let cache = &mut state.caches[il];
             let trans_base = lck.trans_base;
-            // ring commit: bounce out the transient rows (same allocation as the ring),
-            // then scatter to slot (pos0+j) % win in one launch
+            // Only the newest window survives. Scattering every committed row
+            // when n_commit>win races multiple writers to the same ring slot.
             {
                 let src = cache
                     .kvc
-                    .slice(trans_base * hd..(trans_base + n_commit) * hd);
-                let mut dst = vws.bounce.slice_mut(0..n_commit * hd);
+                    .slice((trans_base + ring_start) * hd..(trans_base + n_commit) * hd);
+                let mut dst = vws.bounce.slice_mut(0..ring_keep * hd);
                 stream
                     .memcpy_dtod(&src, &mut dst)
                     .map_err(e("commit bounce"))?;
             }
             {
-                let mut dst = vws.slot_rows.slice_mut(0..n_commit);
+                let mut dst = vws.slot_rows.slice_mut(0..ring_keep);
                 stream
                     .memcpy_htod(&slot_rows, &mut dst)
                     .map_err(e("htod slot rows"))?;
@@ -11422,7 +11874,7 @@ impl Dsv4Gpu {
                         dpf!(vws.bounce, &stream),
                         dpm!(cache.kvc, &stream),
                         vws.slot_rows.device_ptr(&stream).0 as *const i32,
-                        n_commit as i32,
+                        ring_keep as i32,
                         hd as i32,
                         sp(&stream),
                     ),
@@ -12499,7 +12951,40 @@ pub fn vt_slot_drafts(conf: &[f32], tau_logit: f32, floor: usize) -> usize {
 
 #[cfg(test)]
 mod capacity_planner_tests {
-    use super::{dsv4_cache_cap_blocks, dsv4_split_for_tail_reserve};
+    use super::{dsv4_cache_cap_blocks, dsv4_split_for_tail_reserve, ring_commit_plan};
+
+    #[test]
+    fn wide_ring_commits_are_unique_and_equal_sequential_writes() {
+        let win = 128;
+        for pos0 in 0..2 * win {
+            for count in [1, 6, 64, 127, 128, 129, 256, 511, 512] {
+                let (start, slots) = ring_commit_plan(pos0, count, win);
+                assert_eq!(slots.len(), count.min(win));
+                assert_eq!(
+                    slots
+                        .iter()
+                        .collect::<std::collections::BTreeSet<_>>()
+                        .len(),
+                    slots.len()
+                );
+                let mut sequential = vec![usize::MAX; win];
+                for row in 0..count {
+                    sequential[(pos0 + row) % win] = row;
+                }
+                let mut gathered = vec![usize::MAX; win];
+                for (offset, &slot) in slots.iter().enumerate() {
+                    gathered[slot as usize] = start + offset;
+                }
+                assert_eq!(gathered, sequential, "pos0={pos0} count={count}");
+            }
+        }
+        let old: Vec<_> = (0..512).map(|row| row % win).collect();
+        assert_ne!(
+            old.iter().collect::<std::collections::BTreeSet<_>>().len(),
+            old.len(),
+            "old plan must expose duplicate writes"
+        );
+    }
 
     #[test]
     fn verify_transient_base_tracks_session_not_model_capacity() {
@@ -12565,7 +13050,21 @@ mod peer_probe_tests {
 
 #[cfg(test)]
 mod dense_arm_default_tests {
-    use super::{Dsv4Fp4Reduce, Dsv4IndexerScore, resolve_dense_arm, resolve_dspark_fused_moe};
+    use super::{
+        Dsv4Fp4Reduce, Dsv4IndexerScore, resolve_dense_arm, resolve_dspark_fused_moe,
+        resolve_prefill_moe,
+    };
+
+    #[test]
+    fn grouped_prefill_requires_literal_opt_in() {
+        for raw in [None, Some(""), Some("reference")] {
+            assert_eq!(resolve_prefill_moe(raw), Ok(false));
+        }
+        assert_eq!(resolve_prefill_moe(Some("grouped")), Ok(true));
+        for raw in ["1", "GROUPED", " grouped", "f16"] {
+            assert!(resolve_prefill_moe(Some(raw)).is_err());
+        }
+    }
 
     #[test]
     fn tiled_indexer_is_literal_and_default_off() {

@@ -40,9 +40,34 @@ passed. Five selected DSV4 serving tests pass. Release model-gate and server
 builds pass. Final clippy including the server passes
 (`indexer-tiled-final-clippy.log`). These are not full delivery or performance gates.
 
-RTX PRO 6000 component timing, one-load full-model scalar/tiled identity,
-sampled serving and the long-context prompt ladder remain required. The separate
-scalar 256K run was launched before this candidate and cannot qualify its speed.
+## RTX PRO 6000 results
+
+Both cards pass 2,045,982 comparisons. Five interleaved component repeats give
+the following medians in microseconds (`indexer-tiled-pro-0.log` / `-1.log`):
+
+| candidates | GPU0 scalar / tiled | GPU1 scalar / tiled |
+|---|---:|---:|
+| 129 | 8.006 / 27.130 | 7.974 / 26.771 |
+| 4096 | 85.504 / 27.642 | 85.350 / 27.578 |
+| 65536 | 1298.874 / 53.690 | 1297.056 / 53.978 |
+| 262147 | 4918.381 / 171.347 | 4920.403 / 171.347 |
+
+Thus the candidate is a short-history loss, about 24x faster at 65536 candidates
+and about 29x at 262147 for this scorer at s=1. These are warm component timings,
+not whole-model throughput or prefill measurements. Do not force it for short
+histories or infer a wider-query dispatch knee without measuring those rows.
+
+The one-load scalar/tiled full-model gate passes plain widths 1/32/64 and both
+DSpark fused-MoE arms (`indexer-one-load-pro.log`). Eight short sampled warm/cold
+cache twins also pass on the forced-tiled server. The chat fairness diagnostic
+reached c9 before a container restart; it is not a complete c1-c16 result.
+
+The scalar 262144-token run was deliberately stopped after 69 minutes without
+finishing prefill. That is an incomplete capacity result and a failed TTFT
+budget, not an engine crash. A fresh exact-tiled 262144-token engine run is now
+active using gate SHA256
+`333db6c13b5d7f18e965ccd7e55b40bba4ae630f014f1a882f68161d86328eb4`.
+Actual 256K/512K/1M HTTP and performance qualification remain open.
 
 Current primary reference: SGLang's V4 serving article separates active C4 host
 offload, C128/SWA residency, fused metadata and long-context scoring/selection:

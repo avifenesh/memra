@@ -1132,6 +1132,65 @@ extern "C" int memra_dsv4_act_quant_fp8(const float* x, void* codes, float* scal
     return 0;
 }
 
+// Lossless FP8-QAT -> half transport for grouped tensor-core prefill. The scale
+// is a power of two, NOT the generic gather's arbitrary row amax. Every element
+// is round-tripped; the caller refuses any row that cannot be represented.
+extern "C" __global__ void dsv4_fp8_gather_half_kernel(
+    const uint8_t* __restrict__ codes, const float* __restrict__ scales,
+    const int* __restrict__ row_ids, __half* __restrict__ out,
+    float* __restrict__ row_scale, int* __restrict__ row_status, int cols) {
+    const int row = blockIdx.x, src = row_ids ? row_ids[row] : row;
+    const int groups = cols / 128;
+    __shared__ float red[256];
+    __shared__ int bad;
+    if (threadIdx.x == 0) bad = 0;
+    float local = 0.0f;
+    for (int g = threadIdx.x; g < groups; g += blockDim.x)
+        local = fmaxf(local, scales[(long)src * groups + g]);
+    float max_scale = dsv4_block_max(local, red);
+    // 448*128 = 57344, below half's finite limit; smaller groups retain 22
+    // exponent bits of room before a nonzero value may underflow.
+    float rs = ldexpf(max_scale, -7);
+    if (!(rs > 0.0f) || !isfinite(rs)) atomicOr(&bad, 1);
+    for (int x = threadIdx.x; x < cols; x += blockDim.x) {
+        uint8_t code = codes[(long)src * cols + x];
+        float v = dsv4_e4m3(code) * scales[(long)src * groups + x / 128];
+        __half h = __float2half_rn(v / rs);
+        float back = __half2float(h) * rs;
+        if ((code & 127) == 127 || !isfinite(v) || __float_as_uint(back) != __float_as_uint(v))
+            atomicOr(&bad, 1);
+        out[(long)row * cols + x] = h;
+    }
+    __syncthreads();
+    if (threadIdx.x == 0) { row_scale[row] = rs; row_status[row] = bad; }
+}
+
+extern "C" int memra_dsv4_fp8_gather_half(
+    const void* codes, const float* scales, const int* row_ids, void* out,
+    float* row_scale, int* row_status, int rows, int cols, void* stream_v) {
+    if (rows < 1 || cols < 128 || cols % 128 != 0) return 40004;
+    dsv4_fp8_gather_half_kernel<<<rows, 256, 0, (cudaStream_t)stream_v>>>(
+        (const uint8_t*)codes, scales, row_ids, (__half*)out, row_scale, row_status, cols);
+    DSV4_ERR();
+    return 0;
+}
+
+extern "C" __global__ void dsv4_scale_rows_kernel(float* y, const float* scale,
+                                                 int rows, int cols) {
+    long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < (long)rows * cols) y[i] *= scale[i / cols];
+}
+
+extern "C" int memra_dsv4_scale_rows(float* y, const float* scale, int rows, int cols,
+                                     void* stream_v) {
+    if (rows < 1 || cols < 1) return 40004;
+    long n = (long)rows * cols;
+    dsv4_scale_rows_kernel<<<(unsigned)((n + 255) / 256), 256, 0, (cudaStream_t)stream_v>>>(
+        y, scale, rows, cols);
+    DSV4_ERR();
+    return 0;
+}
+
 // Native quantized expert GEMM: out[g, n] f32 = A_fp8[g, K] @ W_fp4[n, K]^T, the
 // kernel.py fp4_gemm arithmetic (K:441-536) on the artifact's as-stored slabs:
 //   kind 0 (NVFP4 trunk): per-16 groups, group scale = e4m3(sc[j]) * scale_2

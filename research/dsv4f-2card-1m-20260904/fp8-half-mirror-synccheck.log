@@ -1,0 +1,9 @@
+========= COMPUTE-SANITIZER
+PASS cols=128 underflow=0 nan=0 rows=5
+PASS cols=256 underflow=0 nan=0 rows=5
+PASS cols=2048 underflow=0 nan=0 rows=5
+PASS cols=4096 underflow=0 nan=0 rows=5
+PASS cols=4096 underflow=1 nan=0 rows=5
+PASS cols=4096 underflow=0 nan=1 rows=5
+PASS exact FP8 half mirrors and nonrepresentable/NaN refusals
+========= ERROR SUMMARY: 0 errors

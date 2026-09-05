@@ -235,12 +235,13 @@ critical path is limited by power or clocks.
 - [x] adaptive short-prime isolation: prompts through the configured chunk width
   retain the canonical monolithic path and are not parked; longer cacheable
   prompts retain the transparency-gated chunked path
-- [ ] grouped ModelOpt f16 prefill needs a corrected whole-model experiment
+- [x] grouped ModelOpt f16 prefill received a corrected whole-model experiment
   (`grouped-modelopt-prefill-reject-850436a9c.md`): the old fast-path return
   omitted the shared expert. Mapping exactness remains valid, but old TTFT and
-  model/cache divergence do not isolate grouped arithmetic. The defective arm
-  is fully reverted; no performance or quality conclusion transfers to a
-  corrected implementation
+  model/cache divergence do not isolate grouped arithmetic. The replacement
+  preserves FP8-QAT values and the complete shared expert; composition passes,
+  but it still moves 1/16 sampled choices and remains default-off. The remaining
+  class-consistency/quality work is documented in `grouped-corrected.md`.
 - [x] DSpark-only fused selected-expert dispatch is component-bit-exact and
   proposal-identical (`dspark-fused-moe-gate.md`); 1.171x proposal speedup but
   only 1.010x whole-loop, so it remains explicit/default-off rather than a
@@ -269,6 +270,9 @@ critical path is limited by power or clocks.
   1,025-token median regressed 7.296527 -> 7.330332 s; full layer/round graph
   coverage is required rather than fourteen-kernel segment graphs
 - [ ] chunked prefill at 256K, 512K and 1M without transient OOM
+- [x] wide ring-commit collision repaired; a real 1025-token prompt passes
+  width-32/128/512 identity within each math class, including DSpark state and
+  sampled output. Serving ceiling remains 64 until wider serving gates pass.
 - [x] real 16,416-token source prompt crosses the former 4096-candidate plain
   decode selector limit: 16 fixed-seed sampled tokens match DSpark, five rounds.
   The fix uses the existing exact hierarchical selector for long plain decode
@@ -278,10 +282,11 @@ critical path is limited by power or clocks.
   tier parks/restores whole inactive sessions; it does not move the active
   request's C4 working set between host and device. This remains a concurrency
   implementation task, not evidence against two-card feasibility.
-- [ ] ordered tiled indexer candidate: 2,045,982 local bit comparisons, CPU
-  witnesses, corruption control and synchronization checking passed. Actual
-  launcher capture proves tiled-kernel engagement. Target-card component timing,
-  one-load model parity and sampled serving remain pending (`indexer-tiled.md`).
+- [x] ordered tiled indexer component and one-load model parity: 2,045,982
+  comparisons pass on both RTX PRO cards; about 24-29x scorer speedup at long
+  histories, about 3x loss at tiny histories. Full-model and short sampled cache
+  twins pass. Long-context serving and the complete c1-c16 battery remain open
+  (`indexer-tiled.md`); default remains scalar.
 - [ ] resumable multi-session scheduler and cross-session batch decode
 - [ ] c1/c2/c4/c8/c16 throughput, fairness and admission cells
 - [ ] plain vs DSpark K/VT sweep; DFlash2 only if its artifact contract passes
