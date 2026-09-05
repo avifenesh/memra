@@ -135,6 +135,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             dec_at.push(l);
         }
     }
+    // Only the CPU logits are needed below. NVFP4 forward_last allocates its
+    // own prime cache; do not retain a second full cache during that comparison.
+    drop(cache);
 
     // --- config B: the batched prefill path (the gate's "prefill" side), one forward per
     //     truncation length so we get the SAME positions under the other config. This is the
