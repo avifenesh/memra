@@ -536,6 +536,16 @@ unsafe extern "C" {
         d_rope: i32,
         stream: *mut c_void,
     ) -> i32;
+    pub fn memra_mla_append_latent_live_f32(
+        cache: *mut f32,
+        c_kv: *const f32,
+        k_pe: *const f32,
+        pos_d: *const i32,
+        t: i32,
+        kv_rank: i32,
+        d_rope: i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_mla_absorb_q_f32(
         q_nope: *const f32,
         wk_b: *const f32,
@@ -683,6 +693,19 @@ unsafe extern "C" {
         d_rope: i32,
         t_q: i32,
         t_kv: i32,
+        scale: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_mla_attn_absorbed_live_f32(
+        q_lat: *const f32,
+        q_pe: *const f32,
+        cache: *const f32,
+        o_lat: *mut f32,
+        n_head: i32,
+        kv_rank: i32,
+        d_rope: i32,
+        t_q: i32,
+        pos_d: *const i32,
         scale: f32,
         stream: *mut c_void,
     ) -> i32;
@@ -1630,6 +1653,76 @@ impl Engine {
                     t_q as i32,
                     t_kv as i32,
                     scale,
+                    s.cu_stream() as *mut c_void,
+                ),
+            )
+        }
+    }
+
+    /// Live-length twin of [`Engine::mla_attn_absorbed`]: `t_kv = pos_d[0] + t_q` read on the
+    /// device (the decode-graph door's position word), fixed launch geometry, bit-identical to the
+    /// scalar launch at the same length (`tests/mla_live_len_gpu.rs`). The caller owns the
+    /// `t_q <= t_kv` invariant the scalar launcher checks on the host.
+    #[allow(clippy::too_many_arguments)]
+    pub fn mla_attn_absorbed_live(
+        &self,
+        q_lat: &CudaSlice<f32>,
+        q_pe: &CudaSlice<f32>,
+        cache: &CudaSlice<f32>,
+        o_lat: &mut CudaSlice<f32>,
+        n_head: usize,
+        kv_rank: usize,
+        d_rope: usize,
+        t_q: usize,
+        pos_d: &CudaSlice<i32>,
+        scale: f32,
+    ) -> Res<()> {
+        let s = self.stream();
+        unsafe {
+            ck(
+                "attn_absorbed_live",
+                memra_mla_attn_absorbed_live_f32(
+                    q_lat.device_ptr(&s).0 as *const f32,
+                    q_pe.device_ptr(&s).0 as *const f32,
+                    cache.device_ptr(&s).0 as *const f32,
+                    o_lat.device_ptr_mut(&s).0 as *mut f32,
+                    n_head as i32,
+                    kv_rank as i32,
+                    d_rope as i32,
+                    t_q as i32,
+                    pos_d.device_ptr(&s).0 as *const i32,
+                    scale,
+                    s.cu_stream() as *mut c_void,
+                ),
+            )
+        }
+    }
+
+    /// Live-slot twin of [`Engine::mla_append_latent`]: the row offset is `pos_d[0]` on the
+    /// device. Bit-identical to the scalar launch at `slot == pos_d[0]`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn mla_append_latent_live(
+        &self,
+        cache: &mut CudaSlice<f32>,
+        c_kv: &CudaSlice<f32>,
+        k_pe: &CudaSlice<f32>,
+        pos_d: &CudaSlice<i32>,
+        t: usize,
+        kv_rank: usize,
+        d_rope: usize,
+    ) -> Res<()> {
+        let s = self.stream();
+        unsafe {
+            ck(
+                "append_latent_live",
+                memra_mla_append_latent_live_f32(
+                    cache.device_ptr_mut(&s).0 as *mut f32,
+                    c_kv.device_ptr(&s).0 as *const f32,
+                    k_pe.device_ptr(&s).0 as *const f32,
+                    pos_d.device_ptr(&s).0 as *const i32,
+                    t as i32,
+                    kv_rank as i32,
+                    d_rope as i32,
                     s.cu_stream() as *mut c_void,
                 ),
             )
