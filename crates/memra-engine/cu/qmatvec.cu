@@ -3800,6 +3800,114 @@ __device__ __forceinline__ void e4m3_mmvq_batched(
     e4m3_mmvq_batched_row<MCOLS>(W, aq, ad, y, in_f, out_f, m, row_bytes,
                                  blockIdx.x * MEMRA_MMVQ_ROWS + (int)threadIdx.y);
 }
+// ----- F8-E4M3 batched, TWO ROWS PER WARP (lane/e4m3-batch-r2-20260905, MEMRA_E4M3_BATCH_R2). -----
+// e4m3_mmvq_batched_row reads the weight bytes once per column batch, but every row-warp
+// re-reads the WHOLE activation block set (m x 32 B per k32 block, from L1) and re-converts
+// it int8 -> f32 per (row, column, k): at t=4 that is 128 B of activation per 32 B of weights
+// for each of the out_f rows, and four I2F per weight decode. The KDA six at t=4 cost 3.5x
+// their t=1 launch on the B200 pair (spectrace 2026-09-05: 103 vs 29 us per layer) with the
+// weights read once. A pre-converted f32 activation plane was tried first and LOST on the rig
+// instrument (4x the activation bytes per row-warp: m=4 157 us vs 38 us), which is what named
+// the activation re-read as the cost. This twin gives each warp TWO consecutive output rows:
+// the activation block is loaded and converted ONCE per (column, k) and applied to both rows'
+// decoded weights, so activation bytes and I2F per row halve while the weight stream is
+// unchanged. Per (row, column) the fmaf chain is e4m3_mmvq_batched_row's VERBATIM (same wf[]
+// decode, same activation values, same j order, same `ad` scale, same warp_reduce_sum) ->
+// BIT-IDENTICAL. rows_per_block doubles (the launcher's r2-class convention). Gated by
+// e4m3_batch_r2_gpu (both arms through the real launcher, m = 2..8 at the KDA six shapes, an
+// odd out_f tail, a perturbed-activation red arm). -----
+template<int MCOLS>
+__device__ __forceinline__ void e4m3_mmvq_batched_r2(
+        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
+        const float* __restrict__ ad, float* __restrict__ y,
+        int in_f, int out_f, int m, long row_bytes) {
+    int o0 = (blockIdx.x * MEMRA_MMVQ_ROWS + (int)threadIdx.y) * 2;
+    if (o0 >= out_f) return;
+    const bool two = (o0 + 1 < out_f);
+    int lane = threadIdx.x;
+    int nblk = in_f / 32;
+    const unsigned char* wrow0 = W + (long)o0 * row_bytes;
+    const unsigned char* wrow1 = two ? (wrow0 + row_bytes) : wrow0;
+    float acc0[MCOLS], acc1[MCOLS];
+    #pragma unroll
+    for (int c = 0; c < MCOLS; c++) { acc0[c] = 0.0f; acc1[c] = 0.0f; }
+    for (int blk = lane; blk < nblk; blk += 32) {
+        const uint4* w16a = (const uint4*)(wrow0 + blk * 32);
+        const uint4* w16b = (const uint4*)(wrow1 + blk * 32);
+        uint4 a01 = w16a[0], a23 = w16a[1], b01 = w16b[0], b23 = w16b[1];
+        unsigned wua[8] = { a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w };
+        unsigned wub[8] = { b01.x, b01.y, b01.z, b01.w, b23.x, b23.y, b23.z, b23.w };
+        float wf0[32], wf1[32];
+        #pragma unroll
+        for (int k = 0; k < 8; k++) {
+            float2 lo0 = e4m3x2_to_f32x2((unsigned short)(wua[k] & 0xFFFF));
+            float2 hi0 = e4m3x2_to_f32x2((unsigned short)(wua[k] >> 16));
+            wf0[k * 4 + 0] = lo0.x; wf0[k * 4 + 1] = lo0.y;
+            wf0[k * 4 + 2] = hi0.x; wf0[k * 4 + 3] = hi0.y;
+            float2 lo1 = e4m3x2_to_f32x2((unsigned short)(wub[k] & 0xFFFF));
+            float2 hi1 = e4m3x2_to_f32x2((unsigned short)(wub[k] >> 16));
+            wf1[k * 4 + 0] = lo1.x; wf1[k * 4 + 1] = lo1.y;
+            wf1[k * 4 + 2] = hi1.x; wf1[k * 4 + 3] = hi1.y;
+        }
+        #pragma unroll
+        for (int c = 0; c < MCOLS; c++) {
+            if (c >= m) break;
+            const signed char* arow = aq + (size_t)c * in_f;
+            const int4* aq16 = (const int4*)(arow + blk * 32);
+            int4 q01 = aq16[0], q23 = aq16[1];
+            int au[8] = { q01.x, q01.y, q01.z, q01.w, q23.x, q23.y, q23.z, q23.w };
+            float bs0 = 0.0f, bs1 = 0.0f;
+            #pragma unroll
+            for (int k = 0; k < 8; k++) {
+                int a = au[k];
+                float x0 = (float)(signed char)(a & 0xff);
+                float x1 = (float)(signed char)((a >> 8) & 0xff);
+                float x2 = (float)(signed char)((a >> 16) & 0xff);
+                float x3 = (float)(a >> 24);
+                bs0 = fmaf(wf0[k * 4 + 0], x0, bs0);
+                bs0 = fmaf(wf0[k * 4 + 1], x1, bs0);
+                bs0 = fmaf(wf0[k * 4 + 2], x2, bs0);
+                bs0 = fmaf(wf0[k * 4 + 3], x3, bs0);
+                bs1 = fmaf(wf1[k * 4 + 0], x0, bs1);
+                bs1 = fmaf(wf1[k * 4 + 1], x1, bs1);
+                bs1 = fmaf(wf1[k * 4 + 2], x2, bs1);
+                bs1 = fmaf(wf1[k * 4 + 3], x3, bs1);
+            }
+            float d = ad[(size_t)c * nblk + blk];
+            acc0[c] = fmaf(d, bs0, acc0[c]);
+            acc1[c] = fmaf(d, bs1, acc1[c]);
+        }
+    }
+    #pragma unroll
+    for (int c = 0; c < MCOLS; c++) {
+        if (c >= m) break;
+        float r0 = warp_reduce_sum(acc0[c]);
+        float r1 = warp_reduce_sum(acc1[c]);
+        if (lane == 0) {
+            y[(size_t)c * out_f + o0] = r0;
+            if (two) y[(size_t)c * out_f + o0 + 1] = r1;
+        }
+    }
+}
+extern "C" __global__ void qmatvec_e4m3_mmvq_b2_r2(
+        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
+        const float* __restrict__ ad, float* __restrict__ y,
+        int in_f, int out_f, int m, long row_bytes) {
+    e4m3_mmvq_batched_r2<2>(W, aq, ad, y, in_f, out_f, m, row_bytes);
+}
+extern "C" __global__ void qmatvec_e4m3_mmvq_b4_r2(
+        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
+        const float* __restrict__ ad, float* __restrict__ y,
+        int in_f, int out_f, int m, long row_bytes) {
+    e4m3_mmvq_batched_r2<4>(W, aq, ad, y, in_f, out_f, m, row_bytes);
+}
+extern "C" __global__ void qmatvec_e4m3_mmvq_b8_r2(
+        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
+        const float* __restrict__ ad, float* __restrict__ y,
+        int in_f, int out_f, int m, long row_bytes) {
+    e4m3_mmvq_batched_r2<8>(W, aq, ad, y, in_f, out_f, m, row_bytes);
+}
+
 // ----- FUSED F8-E4M3 m=1 matvec SIX-GROUP (lane/glm5-b200-mint-consume, 2026-09-04).
 //
 // The GLM-5.3-Flash B200 hybrid mint stores ALL SIX KDA projections (q, k, v, f_a, g_a, b) as
