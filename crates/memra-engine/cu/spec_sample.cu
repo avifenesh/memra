@@ -455,7 +455,7 @@ extern "C" __global__ void penalize_logits_f32(
 // sums differ in rounding from the single-block kernel; a razor-tie bisection branch can
 // select the adjacent representable threshold. Same accepted class as the device-sampling
 // contract (distribution-equal, seed-deterministic; sample-check arbitrates) and fully
-// deterministic for a fixed grid. MEMRA_FILTER_COOP=0 = rollback to the single-block form.
+// deterministic for a fixed grid. Devices with sm_count < 16 keep the single-block form.
 // ws layout per row: [SPLITS] cnt | [SPLITS] mass | max | denom  (strides below).
 #define FS_SPLITS 16
 namespace cg = cooperative_groups;

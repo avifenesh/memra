@@ -290,39 +290,6 @@ pub(crate) fn spec_stream_m() -> usize {
             .unwrap_or(4)
     })
 }
-/// Engine-bundle slice 2 (DSF-ROUNDCOST-20260820 §1.1 host/device round trips + §2 rows 2-3),
-/// DEFAULT ON (`MEMRA_DSPARK_DEFER_READBACK=0` reverts): the dspark round's draft-chain DtoH
-/// is DEFERRED past verify dispatch and merged with the verify-argmax readback into ONE host
-/// sync (2 blocking DtoH/round -> 1). Verify embeds DEVICE tokens (`chain_d`) through the
-/// resident embed table — `embed_gather_u32_t`, bit-identical rows to the host gather by its
-/// own pinned contract. The host therefore dispatches snap + the whole verify while the DRAFT
-/// is still executing, instead of blocking ~1.7 ms on the chain and letting the device drain.
-/// Ladder arm only: the confidence policies size vt from a pre-verify head readback (their
-/// chain readback merges into that same sync instead). Exactness unchanged BY CONSTRUCTION —
-/// same tokens, same kernels, same order; E2E + accept-bank gates arbitrate.
-pub(crate) fn dspark_defer_readback_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| {
-        std::env::var("MEMRA_DSPARK_DEFER_READBACK")
-            .map(|v| v != "0")
-            .unwrap_or(true)
-    })
-}
-/// Engine-bundle slice 1 (DSF-ROUNDCOST-20260820 §1.1, lane/dspark-engine-bundle-20260820),
-/// DEFAULT ON (`MEMRA_STATE_COPY_BATCH=0` reverts): batch the dspark round's GDN state
-/// snapshot and partial-accept restore into single `copy_batch_uniform_f32` launches
-/// instead of ~2 memcpy dispatches (+2 alloc_zeros on the snap side) per linear layer per
-/// round — measured 0.67 ms/round snap + 0.25 ms/round commit of pure dispatch on the q38
-/// route. Launch-structure only: bytes, buffers and stream order are unchanged, so
-/// acceptance and streams stay bit-identical (E2E-gated on the B1 packs).
-pub(crate) fn state_copy_batch_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| {
-        std::env::var("MEMRA_STATE_COPY_BATCH")
-            .map(|v| v != "0")
-            .unwrap_or(true)
-    })
-}
 /// Engine-bundle slice 3 + fa-execupdate slice 4c (DSF-ROUNDCOST-20260820 §5 rank 1),
 /// DEFAULT OFF — `MEMRA_DSPARK_VERIFY_GRAPH=1` opts in: per-(segment, vt) CUDA graphs
 /// for the LINEAR-layer runs, plus the full-verify single graph per (vt, rung) when a
@@ -2516,8 +2483,6 @@ pub(crate) struct FaLayerArgs<'a> {
     /// arm builds/uses them (graph mode refuses that arm).
     pub pos_rows: &'a mut Option<Vec<CudaSlice<i32>>>,
     pub pos0: usize,
-    pub seqs_append: bool,
-    pub batch_fa_on: bool,
     /// Some((kv pointer table, offset-in-u64s, rung_end)) = captured-graph mode.
     pub graph_cap: Option<(&'a CudaSlice<u64>, usize, usize)>,
     /// ROUND-STREAM (lane/draftcost-moe, v0.100 train merge): Some((token stream, device
@@ -2719,7 +2684,6 @@ impl DsparkVerifyGraphs {
         lo: usize,
         hi: usize,
         t: usize,
-        seqs_arms_on: bool,
     ) -> Option<usize> {
         if std::env::var("MEMRA_DSPARK_FULLG_DEBUG").as_deref() == Ok("1") {
             static ONCE: std::sync::Once = std::sync::Once::new();
@@ -2730,14 +2694,13 @@ impl DsparkVerifyGraphs {
                 .map(|k| k.len);
             ONCE.call_once(|| {
                 eprintln!(
-                    "[fullg-debug] walk_uniform={} covered={} seqs_arms_on={} fa_rows_on={} t={} lo={} hi={} lin={} fa={} t_cap={} len0={:?}",
-                    self.walk_uniform, self.covered, seqs_arms_on, dspark_fa_rows_on(), t, lo, hi,
+                    "[fullg-debug] walk_uniform={} covered={} fa_rows_on={} t={} lo={} hi={} lin={} fa={} t_cap={} len0={:?}",
+                    self.walk_uniform, self.covered, dspark_fa_rows_on(), t, lo, hi,
                     self.lin.len(), self.fa.len(), self.t_cap, len0
                 );
             });
         }
         if !self.walk_uniform
-            || !seqs_arms_on
             || !dspark_fa_rows_on()
             || t < 2
             || lo != 0
@@ -2880,8 +2843,6 @@ impl DsparkVerifyGraphs {
                                     pos_d,
                                     pos_rows: &mut no_rows,
                                     pos0,
-                                    seqs_append: true,
-                                    batch_fa_on: true,
                                     graph_cap: Some((fa_table, kf * 2 * t_cap, rung)),
                                     stream: None,
                                     ckpt: None,
@@ -5015,8 +4976,7 @@ impl HybridModel {
             if vtok_dev.is_some() {
                 return Err(
                     "device-token dspark verify (slice-2 deferred readback) has no PP \
-                         stage-split arm; set MEMRA_DSPARK_DEFER_READBACK=0 or run the dspark \
-                         route on one device"
+                         stage-split arm; run the dspark route on one device"
                         .into(),
                 );
             }
@@ -6293,7 +6253,7 @@ impl HybridModel {
     /// column stash lives in the graphs ctx's persistent slabs (`DsparkVerifyGraphs`) —
     /// the cols arm's exact semantics (KV lens + pos from the snapshot, GDN conv/ssm
     /// from the stash of column keep-1), slab-addressed and batched into two copy
-    /// launches. `MEMRA_STATE_COPY_BATCH=0` falls back to per-layer view copies.
+    /// launches.
     pub(crate) fn dspark_commit_prefix_slab(
         &self,
         e: &Engine,
@@ -6328,36 +6288,15 @@ impl HybridModel {
         }
         let n = conv_src.len();
         if n > 0 {
-            if state_copy_batch_on() {
-                let mut tt = vec![0u64; 2 * n];
-                tt[..n].copy_from_slice(&conv_src);
-                tt[n..].copy_from_slice(&conv_dst);
-                let ct = e.htod_u64(&tt)?;
-                tt[..n].copy_from_slice(&ssm_src);
-                tt[n..].copy_from_slice(&ssm_dst);
-                let st = e.htod_u64(&tt)?;
-                e.copy_batch_uniform_f32(&ct, n, ctx.conv_words)?;
-                e.copy_batch_uniform_f32(&st, n, ctx.ssm_words)?;
-            } else {
-                let (cw, sw) = (ctx.conv_words, ctx.ssm_words);
-                let row = keep - 1;
-                for il in 0..self.layers.len() {
-                    let Some(rl) = cache.recur[il].as_mut() else {
-                        continue;
-                    };
-                    let k = ctx.lin_pos[&il];
-                    {
-                        let sv = e.view(&ctx.stash_conv[k], (row + 1) * cw);
-                        let win = sv.slice(row * cw..(row + 1) * cw);
-                        e.copy_view_into(&mut rl.conv_state, 0, &win, cw)?;
-                    }
-                    {
-                        let sv = e.view(&ctx.stash_ssm[k], (row + 1) * sw);
-                        let win = sv.slice(row * sw..(row + 1) * sw);
-                        e.copy_view_into(&mut rl.ssm_state, 0, &win, sw)?;
-                    }
-                }
-            }
+            let mut tt = vec![0u64; 2 * n];
+            tt[..n].copy_from_slice(&conv_src);
+            tt[n..].copy_from_slice(&conv_dst);
+            let ct = e.htod_u64(&tt)?;
+            tt[..n].copy_from_slice(&ssm_src);
+            tt[n..].copy_from_slice(&ssm_dst);
+            let st = e.htod_u64(&tt)?;
+            e.copy_batch_uniform_f32(&ct, n, ctx.conv_words)?;
+            e.copy_batch_uniform_f32(&st, n, ctx.ssm_words)?;
         }
         cache.pos = snap.pos + keep;
         Ok(())
@@ -6525,9 +6464,6 @@ impl HybridModel {
         stream: Option<(&CudaSlice<u32>, &CudaSlice<i32>)>,
         mut graphs: Option<&mut DsparkVerifyGraphs>,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let seqs_append = std::env::var("MEMRA_BATCH_APPEND").as_deref() != Ok("0");
-        let batch_fa_on = std::env::var("MEMRA_BATCH_FA").as_deref() != Ok("0");
-
         // Merge guard (v0.98 train, re-affirmed on the v0.100 train over slice 4c): the
         // ROUND-STREAM arm (lane/draftcost-moe, device position counter) and the dspark
         // verify graphs (engine-bundle slice 3 / trunk slice 4c) have no common caller —
@@ -6572,7 +6508,7 @@ impl HybridModel {
         if let Some(g) = graphs.as_deref_mut() {
             g.refresh_tables(e, cache)?;
             g.round_slab = false;
-            if let Some(rung) = g.full_rung(self, cache, lo, hi, t, seqs_append && batch_fa_on) {
+            if let Some(rung) = g.full_rung(self, cache, lo, hi, t) {
                 // Pool ceiling (dspark_vg_cap): an existing key always replays; a NEW
                 // full capture past the ceiling falls through to the segment/eager arms.
                 if g.full.contains_key(&(t, rung, hi)) || g.can_capture() {
@@ -6654,8 +6590,6 @@ impl HybridModel {
                     pos_d: &pos_d,
                     pos_rows: &mut pos_rows,
                     pos0,
-                    seqs_append,
-                    batch_fa_on,
                     graph_cap: None,
                     stream,
                     ckpt: ckpt.as_deref_mut(),
@@ -6750,8 +6684,6 @@ impl HybridModel {
             pos_d,
             pos_rows,
             pos0,
-            seqs_append,
-            batch_fa_on,
             graph_cap,
             stream,
             ckpt,
@@ -6911,8 +6843,6 @@ impl HybridModel {
                 let t_kv_first = len0 + 1;
                 let t_kv_last = len0 + t;
                 let rows_batched = t >= 2
-                    && seqs_append
-                    && batch_fa_on
                     && dspark_fa_rows_on()
                     // the z-batched twins read stacked rows at the CACHE's kv dims;
                     // the projection stack is [T, n_head_kv*head_dim] — they must be
@@ -7030,39 +6960,23 @@ impl HybridModel {
                         e.dtod_copy_view(&v.slice(r * kv_dim..(r + 1) * kv_dim), &mut v_row)?;
                         let pos_row = &pos_rows[r];
                         let kvl = cache.kv[il].as_mut().unwrap();
-                        if seqs_append {
-                            e.append_kv_quantized_seqs(
-                                &k_row,
-                                &v_row,
-                                &kv_tbl.slice(kv_off..kv_off + 2),
-                                pos_row,
-                                1,
-                                kdk,
-                                kdv,
-                                ktb,
-                                vtb,
-                            )?;
-                            kvl.len += 1;
-                        } else {
-                            e.append_kv_quantized_view(
-                                &k_row.slice(0..kv_dim),
-                                &v_row.slice(0..kv_dim),
-                                &mut kvl.k,
-                                &mut kvl.v,
-                                kvl.len,
-                                kvl.kv_dim_k,
-                                kvl.kv_dim_v,
-                                kvl.k_tok_bytes,
-                                kvl.v_tok_bytes,
-                                false,
-                            )?;
-                            kvl.len += 1;
-                        }
+                        e.append_kv_quantized_seqs(
+                            &k_row,
+                            &v_row,
+                            &kv_tbl.slice(kv_off..kv_off + 2),
+                            pos_row,
+                            1,
+                            kdk,
+                            kdv,
+                            ktb,
+                            vtb,
+                        )?;
+                        kvl.len += 1;
                         let t_kv = kvl.len;
                         let mut q_row = e.uninit(q_dim)?;
                         e.dtod_copy_view(&q.slice(r * q_dim..(r + 1) * q_dim), &mut q_row)?;
                         let mut a_row = e.uninit(q_dim)?;
-                        if batch_fa_on && crate::fa_seqs_eligible(t_kv, head_dim_global) {
+                        if crate::fa_seqs_eligible(t_kv, head_dim_global) {
                             let sp0_r = crate::fa_split_keys(t_kv, cfg.n_head_kv as usize);
                             e.fa_decode_batch_seqs_v4(
                                 &q_row,
@@ -8095,9 +8009,9 @@ impl HybridModel {
         // route). When every cols-arm layer shares uniform state sizes (single ssm cfg —
         // always true today), batch them into two `copy_batch_uniform_f32` launches. Bytes,
         // buffers and stream order are identical to the per-layer memcpy sequence; the
-        // kernel-rebuild (gdn-stash) arm below is untouched. MEMRA_STATE_COPY_BATCH=0 reverts.
+        // kernel-rebuild (gdn-stash) arm below is untouched.
         let mut batched_cols = false;
-        if state_copy_batch_on() {
+        {
             use cudarc::driver::DevicePtr;
             let s = &e.gpu.stream();
             let mut conv_pairs: Vec<(u64, u64)> = Vec::new();

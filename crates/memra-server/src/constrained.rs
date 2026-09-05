@@ -811,7 +811,7 @@ impl SessionConstraint {
 /// constrained decode). EOS is never consumed (the plain path's EOS-before-consume ordering):
 /// a finished grammar collapses its mask to EOS-only, so post-EOS drafts truncate naturally.
 ///
-/// DRAFT-SIDE MASKING (lane/draft-mask, 2026-08-04, default ON — MEMRA_DRAFT_MASK=0 reverts):
+/// DRAFT-SIDE MASKING (lane/draft-mask, 2026-08-04):
 /// `draft_begin` clones the matcher into `spec` and each draft position's mask is computed on
 /// that CLONE, advanced by the PROPOSED token. The real matcher is untouched until `consume`
 /// (an emitted token), so verify-side truncation remains the correctness backstop and the
@@ -823,7 +823,6 @@ pub struct SpecGrammar<'a> {
     cur: Option<SimpleVob>,
     /// speculative (draft-chain) matcher: a clone of `c`'s state at chain start.
     spec: Option<Matcher>,
-    on: bool,
 }
 
 /// MEMRA_POSTTHINK_CEILING=<tokens>: forced-close guard for post-think constrained
@@ -850,16 +849,6 @@ pub fn postthink_ceiling() -> u64 {
     })
 }
 
-/// MEMRA_DRAFT_MASK=0 turns draft-side grammar masking off (the rollback seam / A-B arm).
-pub fn draft_mask_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| {
-        std::env::var("MEMRA_DRAFT_MASK")
-            .map(|v| v != "0")
-            .unwrap_or(true)
-    })
-}
-
 impl<'a> SpecGrammar<'a> {
     pub fn new(c: &'a mut SessionConstraint, eos: u32) -> Self {
         Self {
@@ -867,7 +856,6 @@ impl<'a> SpecGrammar<'a> {
             eos,
             cur: None,
             spec: None,
-            on: draft_mask_on(),
         }
     }
     fn cur_mask(&mut self) -> Result<&SimpleVob, String> {
@@ -905,22 +893,15 @@ impl memra_engine::spec::SpecConstraint for SpecGrammar<'_> {
     }
 
     fn draft_mask_enabled(&self) -> bool {
-        self.on
+        true
     }
 
     fn draft_begin(&mut self) -> Result<(), String> {
-        if !self.on {
-            self.spec = None;
-            return Ok(());
-        }
         self.spec = Some(self.c.clone_matcher());
         Ok(())
     }
 
     fn draft_mask_words(&mut self) -> Result<Option<Vec<u32>>, String> {
-        if !self.on {
-            return Ok(None);
-        }
         // position 0 of the chain shares the committed state's mask — reuse the cached one
         // (`cur`) instead of recomputing on the clone; identical set, zero mask cost.
         let Some(spec) = self.spec.as_mut() else {
@@ -934,9 +915,6 @@ impl memra_engine::spec::SpecConstraint for SpecGrammar<'_> {
     }
 
     fn draft_advance(&mut self, tok: u32) -> Result<bool, String> {
-        if !self.on {
-            return Ok(false);
-        }
         let Some(spec) = self.spec.as_mut() else {
             return Ok(false);
         };
@@ -1295,7 +1273,6 @@ mod tests {
         assert!(sc.error().is_none());
         let eos = env.tok_trie().eos_token();
         let mut g = SpecGrammar::new(&mut sc, eos);
-        assert!(g.on, "draft masking must default ON");
 
         // chain start: clone. Position 0 of this grammar can only take '{' (or whitespace).
         g.draft_begin().unwrap();

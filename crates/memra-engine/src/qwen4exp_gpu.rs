@@ -3046,26 +3046,16 @@ pub fn apply_env_seams() {
     }
 }
 
-/// Per-piece kill switches for the hcmicro bundle (bisect instrumentation: set
-/// MEMRA_Q4E_MICRO_{NORM,INJ,SHEXP}=0 to fall a single piece back while the seam stays
-/// on). Read once per process.
-fn micro_env_on(name: &'static str, cell: &'static std::sync::OnceLock<bool>) -> bool {
-    *cell.get_or_init(|| std::env::var(name).as_deref() != Ok("0"))
-}
-
 fn micro_norm_on() -> bool {
-    static C: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    hc_micro_on() && micro_env_on("MEMRA_Q4E_MICRO_NORM", &C)
+    hc_micro_on()
 }
 
 fn micro_inj_on() -> bool {
-    static C: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    hc_micro_on() && micro_env_on("MEMRA_Q4E_MICRO_INJ", &C)
+    hc_micro_on()
 }
 
 fn micro_shexp_on() -> bool {
-    static C: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    hc_micro_on() && micro_env_on("MEMRA_Q4E_MICRO_SHEXP", &C)
+    hc_micro_on()
 }
 
 /// Run `f` as a named profile section (sync–time–sync when profiling is on).

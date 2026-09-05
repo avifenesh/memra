@@ -30,9 +30,6 @@ crates/memra-engine/src/bin/concat_prime_probe.rs:MEMRA_PRIME_CHUNK_SCHED # conc
 crates/memra-engine/src/bin/kernel_check.rs:MEMRA_GDN_MMA # hopper kernel check
 crates/memra-engine/src/bin/kernel_check.rs:MEMRA_GDN_WGMMA # hopper kernel check
 crates/memra-engine/src/bin/kernel_check.rs:MEMRA_NO_FA_VEC # FA vec check
-crates/memra-engine/src/bin/kernel_check.rs:MEMRA_FA_V3 # FA v3 check
-crates/memra-engine/src/bin/kernel_check.rs:MEMRA_FA_DEEP # deep FA check
-crates/memra-engine/src/bin/kernel_check.rs:MEMRA_FA_DEEP_MIN # deep FA min check
 crates/memra-engine/src/bin/kernel_check.rs:MEMRA_PRIME_DEQW_DB # prime deqw db check
 crates/memra-engine/src/bin/kernel_check.rs:MEMRA_MOE_SLOTS # kernel check slots restore
 
@@ -51,7 +48,6 @@ crates/memra-engine/tests/glm5_dflash_session_gpu.rs:MEMRA_GLM5_MTP # test route
 crates/memra-engine/tests/glm5_dflash_session_gpu.rs:MEMRA_GLM5_DFLASH_GATE_RED # test red gate
 crates/memra-engine/tests/glm5_dflash_session_gpu.rs:MEMRA_GLM5_SPEC_FULLCOVER # test teardown
 crates/memra-engine/tests/glm5_dflash_session_gpu.rs:MEMRA_SPEC_PENALTY # test teardown
-crates/memra-engine/tests/glm5_dflash_session_gpu.rs:MEMRA_DFLASH2_SDPA_CLIP # test teardown
 
 # Non-literal helper / RAII Drop guard cleanup
 crates/memra-engine/tests/glm5_matvec_doors_gpu.rs:key # with_flag / without_flag helper teardown

@@ -2513,8 +2513,7 @@ fn gpu_dflash_device_resident_drafter_prime_kv_matches_eager_ingest() {
 // 20. WARM, cold drafter: a restored session whose drafter re-arms EMPTY at the restored
 //     boundary (`DflashKv::new_cold_at`, no tail on the entry) serves the plain tape byte
 //     for byte and actually drafts; a tail exported from it is floor-bearing and imports
-//     with the floor; the re-restored continuation is byte-identical to plain decode again;
-//     and under `MEMRA_DFLASH2_SDPA_CLIP=0` the cold drafter refuses by name.
+//     with the floor; the re-restored continuation is byte-identical to plain decode again.
 //
 // Rig law (exactness only, never timing):
 //   NVIDIA_TF32_OVERRIDE=0 flock /tmp/memra-5090.lock \
@@ -2822,24 +2821,6 @@ fn gpu_penalized_sampled_twin_is_deterministic_split_invariant_and_engaged() {
     );
 }
 
-/// Sets `MEMRA_DFLASH2_SDPA_CLIP=0` (the clip rollback seam) for the life of the value.
-struct ClipOff;
-
-impl ClipOff {
-    fn arm() -> Self {
-        // SAFETY: the caller holds gpu_guard().
-        unsafe { std::env::set_var("MEMRA_DFLASH2_SDPA_CLIP", "0") };
-        Self
-    }
-}
-
-impl Drop for ClipOff {
-    fn drop(&mut self) {
-        // SAFETY: as above.
-        unsafe { std::env::remove_var("MEMRA_DFLASH2_SDPA_CLIP") };
-    }
-}
-
 #[test]
 #[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
 fn gpu_cold_drafter_restore_bytes_match_plain_decode_and_republishes_a_floor_tail() {
@@ -2855,17 +2836,6 @@ fn gpu_cold_drafter_restore_bytes_match_plain_decode_and_republishes_a_floor_tai
 
     // The byte reference: plain decode over the whole prompt, long enough for two legs.
     let tape_plain = plain_tape(&h, &prompt, max_new);
-
-    // RED: the cold drafter needs the clipped round attention (the legacy full-scan kernel
-    // has no context-floor arm and would score the empty rows).
-    {
-        let _clip_off = ClipOff::arm();
-        assert!(
-            memra_engine::dflash::DflashKv::new_cold_at(&h.engine, &dr.draft.cfg, ctx, split)
-                .is_err(),
-            "RED: a cold drafter must refuse under MEMRA_DFLASH2_SDPA_CLIP=0"
-        );
-    }
 
     // LEG 1: the restored trunk at the prefix boundary + a COLD drafter (no tail anywhere).
     let (boundary_cache, boundary_logits) = h.fresh_primed(prefix, ctx);

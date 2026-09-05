@@ -2056,28 +2056,6 @@ typedef struct {
 } gdnprep_t;
 typedef struct { gdnprep_t s[8]; } gdnprepvl_t;
 
-extern "C" __global__ void ssm_conv1d_tm_state_vl(gdnprepvl_t v, const float* __restrict__ w,
-                                                  int conv_dim, int d_conv) {
-    const gdnprep_t sq = v.s[blockIdx.z];
-    int c = blockIdx.x * blockDim.x + threadIdx.x;
-    int t = blockIdx.y;
-    if (c >= conv_dim || t >= sq.T) return;
-    int pad = d_conv - 1;
-    const float* wc = w + (size_t)c * d_conv;
-    const float* st = sq.conv_state + (size_t)c * pad;
-    float acc = 0.0f;
-    #pragma unroll
-    for (int j = 0; j < 8; j++) {
-        if (j < d_conv) {
-            int tt = t - pad + j;
-            float xv = (tt >= 0) ? sq.qkv[(size_t)tt * conv_dim + c]
-                                 : st[pad + tt];
-            acc += xv * wc[j];
-        }
-    }
-    sq.conv_out[(size_t)c * sq.T + t] = silu(acc);
-}
-
 extern "C" __global__ void ssm_conv1d_gdn_state_vl(gdnprepvl_t vv, const float* __restrict__ w,
         int conv_dim, int d_conv, int d_state, int num_v, int num_k, int key_dim, int hk) {
     const gdnprep_t sq = vv.s[blockIdx.z];
@@ -2122,25 +2100,6 @@ extern "C" __global__ void ssm_conv_ring_update_vl(gdnprepvl_t v, int conv_dim, 
     int j = idx % pad;
     int tt = sq.T - pad + j;
     sq.conv_state[(size_t)c * pad + j] = sq.qkv[(size_t)tt * conv_dim + c];
-}
-
-extern "C" __global__ void qkv_to_gdn_repack_vl(gdnprepvl_t v, int d_state, int num_v,
-                                                int num_k, int key_dim) {
-    const gdnprep_t sq = v.s[blockIdx.z];
-    long idx = (long)blockIdx.x * blockDim.x + threadIdx.x;
-    long total = (long)sq.T * num_v * d_state;
-    if (idx >= total) return;
-    int i  = idx % d_state;
-    int vh = (idx / d_state) % num_v;
-    int tt = idx / ((long)d_state * num_v);
-    int head_k = d_state;
-    int kh = vh % num_k;
-    long qc = (long)kh * head_k + i;
-    long kc = (long)key_dim + (long)kh * head_k + i;
-    long vc = (long)2 * key_dim + (long)vh * d_state + i;
-    sq.q_g[idx] = sq.conv_out[qc * sq.T + tt];
-    sq.k_g[idx] = sq.conv_out[kc * sq.T + tt];
-    sq.v_g[idx] = sq.conv_out[vc * sq.T + tt];
 }
 
 // fused q+k l2 (grid.y: 0 = q, 1 = k) — the reduction body IS l2_norm_f32's (block 256).

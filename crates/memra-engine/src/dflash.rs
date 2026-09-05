@@ -1111,19 +1111,6 @@ pub(crate) fn dspark_accept_sampled(
     Ok((m, next))
 }
 
-/// Clip door for the DFlash2 windowed round attention (lane/dflash2-longctx, §10.6(c)).
-/// Default ON: the lo-clipped kernel — byte-identical output (kernel_check
-/// `sdpa_naive_w_lo`), O(window) key scan, and no T_kv*4-byte shared-mem launch bound, so
-/// the route survives past ~12k ctx (GATES-SMOKE-20260821 B2: DriverError(
-/// CUDA_ERROR_INVALID_VALUE) at ctx 16,571/30,157, last success 9,510).
-/// MEMRA_DFLASH2_SDPA_CLIP=0 = the legacy full-scan kernel byte-for-byte — the rollback
-/// seam and the long-ctx gate's crash-reproduction arm.
-fn dflash2_sdpa_clip_on() -> bool {
-    std::env::var("MEMRA_DFLASH2_SDPA_CLIP")
-        .map(|v| v != "0")
-        .unwrap_or(true)
-}
-
 /// The DFlash2 round attention over the non-causal symmetric window: one seam for both the
 /// first-light (`forward_block`) and cached (`forward_round`) arms, dispatching the clipped
 /// kernel unless the rollback door is thrown.
@@ -1133,9 +1120,8 @@ fn dflash2_sdpa_clip_on() -> bool {
 /// (`DflashKv::new_cold_at`) or a short-tail import owns rows only from `floor` up; the
 /// clipped kernel raises its window floor to it and the drafter attends a shorter context,
 /// exactly the program a shorter prompt runs. The legacy full-scan kernel has no floor arm
-/// (it would score the zero rows below the floor at e^0 each and dilute the real context),
-/// so a binding floor under `MEMRA_DFLASH2_SDPA_CLIP=0` refuses by name instead of drafting
-/// silently worse — the cold-drafter constructors refuse the same combination up front.
+/// (it would have scored the zero rows below the floor at e^0 each and diluted the real
+/// context), which is why the clipped kernel is the only round attention.
 #[allow(clippy::too_many_arguments)]
 fn d2_windowed_attn(
     e: &Engine,
@@ -1152,46 +1138,21 @@ fn d2_windowed_attn(
     c: &DflashCfg,
     floor: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if dflash2_sdpa_clip_on() {
-        e.sdpa_naive_w_lo(
-            q,
-            k,
-            v,
-            attn,
-            hd,
-            nh,
-            nkv,
-            t,
-            t_kv,
-            scale,
-            false,
-            c.sliding_window,
-            floor,
-        )
-    } else {
-        if floor > 0 {
-            return Err(
-                "DFlash2 round attention: the drafter KV carries a context floor (cold-drafter \
-                 or short-tail import) and MEMRA_DFLASH2_SDPA_CLIP=0 selects the full-scan \
-                 kernel, which has no floor arm; unset the clip rollback or serve plain"
-                    .into(),
-            );
-        }
-        e.sdpa_naive_w(
-            q,
-            k,
-            v,
-            attn,
-            hd,
-            nh,
-            nkv,
-            t,
-            t_kv,
-            scale,
-            false,
-            c.sliding_window,
-        )
-    }
+    e.sdpa_naive_w_lo(
+        q,
+        k,
+        v,
+        attn,
+        hd,
+        nh,
+        nkv,
+        t,
+        t_kv,
+        scale,
+        false,
+        c.sliding_window,
+        floor,
+    )
 }
 
 fn bf16_to_f32(bytes: &[u8]) -> Vec<f32> {
@@ -2279,7 +2240,6 @@ impl DflashDraft {
         // confidence window sizes identically at T>0.
         mut conf_emb: Option<&mut CudaSlice<f32>>,
     ) -> Result<(Vec<u32>, DsparkDraftSample), Box<dyn std::error::Error>> {
-        let markov_on = std::env::var("MEMRA_DFLASH_MARKOV").as_deref() != Ok("0");
         let mut chain_d = e.stream().alloc_zeros::<u32>(nd + 1)?;
         e.set_u32_one(&mut chain_d, anchor)?;
         let mut th_all = e.zeros(nd)?;
@@ -2287,7 +2247,7 @@ impl DflashDraft {
         let mut mx_all = e.zeros(nd)?;
         let mut pb = e.zeros(n_vocab)?;
         for k in 0..nd {
-            if let (Some(mk), true) = (&self.markov, markov_on) {
+            if let Some(mk) = &self.markov {
                 let mut f = e.uninit(mk.rank)?;
                 e.gather_row_bf16(&mk.w1_bf16, &chain_d, k, &mut f, mk.rank)?;
                 if let Some(ce) = conf_emb.as_deref_mut() {
@@ -2665,23 +2625,12 @@ impl DflashKv {
     /// The `window_rows` below the floor are zero-filled so a later `export_tail` (which
     /// starts at the floor anyway) can never publish uninitialised bytes even under a
     /// future geometry mistake — finite zeros are the same belt `from_tail` wears.
-    ///
-    /// REFUSES under `MEMRA_DFLASH2_SDPA_CLIP=0`: the legacy full-scan kernel has no floor
-    /// arm (`d2_windowed_attn`), and a cold drafter that scored 2048 zero rows at e^0 each
-    /// would draft silently worse; the caller serves the plain hit by name instead.
     pub fn new_cold_at(
         e: &Engine,
         cfg: &DflashCfg,
         cap: usize,
         pos: usize,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        if !dflash2_sdpa_clip_on() {
-            return Err(
-                "cold drafter needs the clipped round attention (MEMRA_DFLASH2_SDPA_CLIP=0 \
-                        selects the full-scan kernel, which has no context-floor arm)"
-                    .into(),
-            );
-        }
         if pos > cap {
             return Err(
                 format!("cold drafter position {pos} exceeds the session cap {cap}").into(),
@@ -3202,14 +3151,13 @@ impl crate::hybrid::HybridModel {
                 e.copy_view_into(&mut rows, 0, &tail, (b - 1) * n_embd)?;
             }
             let mut dl = e.matmul(&self.output, &rows, b - 1)?;
-            // SEMI-AR MARKOV CHAIN (DSpark head, when present + MEMRA_DFLASH_MARKOV!=0):
+            // SEMI-AR MARKOV CHAIN (DSpark head, when present):
             // left-to-right, logits_k += W2(W1[prev realized token]) — the whole chain
             // stays on-device (chain_d[0] = the pending token; argmax k writes
             // chain_d[k+1], the k+1 bias gathers from it). Greedy mirror of the patch's
             // _markov_semiar_sample_block.
-            let markov_on = std::env::var("MEMRA_DFLASH_MARKOV").as_deref() != Ok("0");
             let mut chain_d = e.stream().alloc_zeros::<u32>(b)?;
-            if let (Some(mk), true) = (&draft.markov, markov_on) {
+            if let Some(mk) = &draft.markov {
                 e.set_u32_one(&mut chain_d, last)?;
                 for k in 0..(b - 1) {
                     let mut f = e.uninit(mk.rank)?;
@@ -3310,7 +3258,6 @@ impl crate::hybrid::HybridModel {
 // conv handles are rolled in place and never move) + TWO `copy_batch_uniform_f32`
 // launches. Bytes, buffers and stream order are identical to `Cache::snapshot`; only the
 // dispatch count changes, so acceptance and streams stay bit-identical (E2E-gated).
-// `MEMRA_STATE_COPY_BATCH=0` reverts to the legacy per-layer snapshot.
 
 pub(crate) struct DsparkSnapBatch {
     pub(crate) snap: crate::cache::CacheSnapshot,
@@ -3560,14 +3507,13 @@ impl crate::hybrid::HybridModel {
         let mut attempted = 0usize;
         let mut accepted = 0usize;
         // Engine-bundle slice 1: persistent batched snapshot (None until round 1; stays
-        // None — legacy per-layer snapshot — under MEMRA_STATE_COPY_BATCH=0 or when the
-        // batcher declines the cache shape).
+        // None — legacy per-layer snapshot — when the batcher declines the cache shape).
         let mut snapb: Option<DsparkSnapBatch> = None;
-        let mut snapb_off = !crate::spec::state_copy_batch_on();
+        let mut snapb_off = false;
         // Engine-bundle slice 2: deferred chain readback needs the resident embed table
         // (verify then embeds chain_d directly). Ladder/stash arms only — the confidence
         // policies size vt from a pre-verify head readback and keep the legacy order.
-        let defer_rb = crate::spec::dspark_defer_readback_on() && !vt_policy.is_confidence();
+        let defer_rb = !vt_policy.is_confidence();
         let (embd_qt, embd_rb) = self.embd.qt_and_row_bytes(n_embd);
         let embd_gpu = if !defer_rb || crate::spec::spec_host_embd() {
             None
@@ -3696,9 +3642,8 @@ impl crate::hybrid::HybridModel {
                 cand.push(last);
                 cand.extend_from_slice(&path);
             } else {
-                let markov_on = std::env::var("MEMRA_DFLASH_MARKOV").as_deref() != Ok("0");
                 let mut chain_d = e.stream().alloc_zeros::<u32>(nd + 1)?;
-                if let (Some(mk), true) = (&draft.markov, markov_on) {
+                if let Some(mk) = &draft.markov {
                     e.set_u32_one(&mut chain_d, last)?;
                     for k in 0..nd {
                         let mut f = e.uninit(mk.rank)?;
@@ -4348,8 +4293,8 @@ impl DflashKv {
     /// addresses positions exactly as a cold-primed session would.
     ///
     /// Rows below `tail.base` are ZEROED, not left uninitialised. The clipped SDPA never reads
-    /// below the block's window floor, but the legacy full-scan kernel
-    /// (`MEMRA_DFLASH2_SDPA_CLIP=0`, the rollback seam) scans EVERY row into the score and the
+    /// below the block's window floor, but the legacy full-scan kernel (removed 2026-09-05)
+    /// scanned EVERY row into the score and the
     /// output, relying on masked rows contributing exactly zero — an identity that holds only
     /// for finite data (`0.0 * NaN = NaN`, and an uninit K row can produce a NaN score that
     /// poisons the softmax sum). Zeros keep that identity on both kernel arms, so a clip
@@ -4363,9 +4308,8 @@ impl DflashKv {
     /// FLOOR-BEARING TAILS (lane/spec-exclusions-20260902): a tail whose exporter had a
     /// context floor covers only `[floor, len)` and the import inherits `floor = tail.base`
     /// (the first row it actually owns), so the round attention never reads the zero rows
-    /// below it. That needs the clipped kernel (`d2_windowed_attn`), so a floor-bearing tail
-    /// under `MEMRA_DFLASH2_SDPA_CLIP=0` refuses here by name. Full tails keep `floor = 0`
-    /// and the pre-lane program exactly.
+    /// below it (the clipped kernel, `d2_windowed_attn`). Full tails keep `floor = 0` and the
+    /// pre-lane program exactly.
     pub fn from_tail(e: &Engine, cfg: &DflashCfg, cap: usize, tail: &DflashKvTail) -> Option<Self> {
         let mut kv = Self::new(e, cfg, cap).ok()?;
         if let Err(why) = tail_geometry_ok(
@@ -4386,14 +4330,6 @@ impl DflashKv {
         // A short tail (rows below the window because the exporter never owned them) makes
         // this KV floor-bearing; a full tail from a floored exporter does not need the floor
         // (every readable row is present) and keeps the pre-lane program.
-        let short = tail.rows < kv.window_rows.min(tail.len);
-        if short && !dflash2_sdpa_clip_on() {
-            eprintln!(
-                "[dspark] tail import refused: floor-bearing tail needs the clipped round \
-                 attention (MEMRA_DFLASH2_SDPA_CLIP=0 has no context-floor arm)"
-            );
-            return None;
-        }
         let rowsz = kv.row_bytes / std::mem::size_of::<f32>();
         for li in 0..kv.k.len() {
             let (src_k, src_v) = &tail.layers[li];
@@ -4423,7 +4359,9 @@ impl DflashKv {
             .ok()?;
         }
         kv.len = tail.len;
-        if short {
+        // A short tail (rows below the window because the exporter never owned them) makes
+        // this KV floor-bearing; the clipped round attention raises its window floor to it.
+        if tail.rows < kv.window_rows.min(tail.len) {
             kv.floor = tail.base;
         }
         Some(kv)
@@ -4633,7 +4571,7 @@ impl crate::hybrid::HybridModel {
             max_ctx,
             done: false,
             snapb: None,
-            snapb_off: !crate::spec::state_copy_batch_on(),
+            snapb_off: false,
             sampling,
             sctr: sctr0,
             uctr: 0,
@@ -4816,7 +4754,7 @@ impl crate::hybrid::HybridModel {
             max_ctx,
             done: false,
             snapb: None,
-            snapb_off: !crate::spec::state_copy_batch_on(),
+            snapb_off: false,
             sampling,
             sctr: sctr0,
             uctr: 0,
@@ -4976,7 +4914,7 @@ impl crate::hybrid::HybridModel {
         let mut accepted_n = 0usize;
         // Engine-bundle slice 2 — identical to the bin arm: deferred chain readback under
         // the stash arm with a resident embed table (ladder policy only).
-        let defer_rb = crate::spec::dspark_defer_readback_on() && !vt_policy.is_confidence();
+        let defer_rb = !vt_policy.is_confidence();
         let (embd_qt, embd_rb) = self.embd.qt_and_row_bytes(n_embd);
         let embd_gpu = if !defer_rb || crate::spec::spec_host_embd() {
             None
@@ -5115,9 +5053,8 @@ impl crate::hybrid::HybridModel {
                 cand.push(sess.last);
                 cand.extend_from_slice(&path);
             } else {
-                let markov_on = std::env::var("MEMRA_DFLASH_MARKOV").as_deref() != Ok("0");
                 let mut chain_d = e.stream().alloc_zeros::<u32>(nd + 1)?;
-                if let (Some(mk), true) = (&draft.markov, markov_on) {
+                if let Some(mk) = &draft.markov {
                     e.set_u32_one(&mut chain_d, sess.last)?;
                     for k in 0..nd {
                         let mut f = e.uninit(mk.rank)?;

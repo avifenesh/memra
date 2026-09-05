@@ -184,11 +184,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     unsafe {
         std::env::set_var("MEMRA_GDN_MMA", "0");
     }
-    // Same rationale for the l2 prefill v2 config (round 27): its primed state shifts
-    // the same near-tie logits at step 1. Gate tests DECODE; prime stays pinned f32-class.
-    unsafe {
-        std::env::set_var("MEMRA_L2_V2", "0");
-    }
     unsafe {
         std::env::set_var("MEMRA_FA3", "0");
     }

@@ -2,12 +2,10 @@
 //! (n_head=16, n_head_kv=2, head_dim=256, q8_0 K / q5_1 V) on synthetic KV, per-depth.
 //! Deep synthetic cache (t_kv_max=12288) for the depth-law matrix.
 //!
-//! Sweep configs via env, ONE config per process (fa_decode reads the flags per call but
-//! SMEM_TKV/SPLIT are process OnceLocks):
-//!   MEMRA_FA_V2={0,1}  MEMRA_FA_SMEM_TKV=...  MEMRA_FA_SPLIT=...
-//! Prints per-t_kv: us/call, implied unique-KV GB/s, and an FNV-1a output hash.
-//! NOTE: the hash is expected to DIFFER between MEMRA_FA_V2=0 and =1 (v2 is its own numeric
-//! config — tile-level softmax regrouping); it must be IDENTICAL across runs of the SAME config.
+//! Sweep configs via env, ONE config per process (SMEM_TKV/SPLIT are process OnceLocks):
+//!   MEMRA_FA_SMEM_TKV=...  MEMRA_FA_SPLIT=...
+//! Prints per-t_kv: us/call, implied unique-KV GB/s, and an FNV-1a output hash, which must
+//! be IDENTICAL across runs of the SAME config.
 use memra_engine::Engine;
 
 fn fnv1a(bytes: &[u8]) -> u64 {
@@ -92,12 +90,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
     let qd = e.htod(&qh)?;
 
-    let v2 = std::env::var("MEMRA_FA_V2").unwrap_or_default();
-    let v3 = std::env::var("MEMRA_FA_V3").unwrap_or_default();
     let smem = std::env::var("MEMRA_FA_SMEM_TKV").unwrap_or_else(|_| "1024".into());
     let split = std::env::var("MEMRA_FA_SPLIT").unwrap_or_else(|_| "default".into());
     println!(
-        "# config v2={v2} v3={v3} smem_tkv={smem} split={split}  shape nh={n_head} nkv={n_head_kv} hd={head_dim}"
+        "# config smem_tkv={smem} split={split}  shape nh={n_head} nkv={n_head_kv} hd={head_dim}"
     );
 
     const REPS: usize = 200;

@@ -342,7 +342,6 @@ pub(crate) struct BatchLayerCtx {
     t_kv_max: usize,
     /// The single `fa_split_keys` rung every row shares (the rows-twins straddle law).
     sp0: usize,
-    seqs_append: bool,
     seqs_fa: bool,
     lo: usize,
     hi: usize,
@@ -3088,22 +3087,14 @@ impl HybridModel {
         //   must share ONE fa_split_keys rung (the rows-twins' straddle law) — a rung
         //   crossing inside the batch keeps the per-seq loop for that step, so each
         //   sequence always executes the exact program its isolated run would.
-        // MEMRA_BATCH_APPEND=0 / MEMRA_BATCH_FA=0 are the rollback/A-B seams.
         //
         // The picks are t_kv-driven, and t_kv is layer-INVARIANT within a step, so every
         // stage of a pp split independently computes the SAME arms from the same `caches`
         // — a stage cannot silently take a different program than its unsplit self.
         let t_kvs: Vec<usize> = caches.iter().map(|c| c.pos + 1).collect();
         let t_kv_max = *t_kvs.iter().max().unwrap();
-        let seqs_append = {
-            static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-            *ON.get_or_init(|| std::env::var("MEMRA_BATCH_APPEND").as_deref() != Ok("0"))
-        };
         let sp0 = crate::fa_split_keys(t_kvs[0], cfg.n_head_kv as usize);
-        let seqs_fa = {
-            static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-            *ON.get_or_init(|| std::env::var("MEMRA_BATCH_FA").as_deref() != Ok("0"))
-        } && t_kvs.iter().all(|&t| crate::fa_seqs_eligible(t, head_dim))
+        let seqs_fa = t_kvs.iter().all(|&t| crate::fa_seqs_eligible(t, head_dim))
             && t_kvs
                 .iter()
                 .all(|&t| crate::fa_split_keys(t, cfg.n_head_kv as usize) == sp0);
@@ -3115,7 +3106,6 @@ impl HybridModel {
             t_kvs,
             t_kv_max,
             sp0,
-            seqs_append,
             seqs_fa,
             lo,
             hi,
@@ -3158,8 +3148,7 @@ impl HybridModel {
         let eps = cfg.rms_eps;
         let (lin_base, attn_base) = (&ctx.lin_base, &ctx.attn_base);
         let ptr_table = &ctx.ptr_table;
-        let (seqs_append, seqs_fa, sp0, t_kv_max) =
-            (ctx.seqs_append, ctx.seqs_fa, ctx.sp0, ctx.t_kv_max);
+        let (seqs_fa, sp0, t_kv_max) = (ctx.seqs_fa, ctx.sp0, ctx.t_kv_max);
         debug_assert_eq!(
             ctx.t_kvs.len(),
             b_n,
@@ -3249,44 +3238,20 @@ impl HybridModel {
                     // arm / a split rung crosses inside the batch). Caches are disjoint per
                     // sequence, so the phase split leaves every row's math untouched.
                     let q_dim = n_head * head_dim;
-                    let kv_dim = n_head_kv * head_dim;
                     let mut attn = e.uninit(b_n * q_dim)?;
                     // ---- phase A: KV append (all B rows) ----
-                    if seqs_append {
-                        let (kdk, kdv, ktb, vtb) = {
-                            let kvl = caches[0].kv[il].as_ref().unwrap();
-                            (kvl.kv_dim_k, kvl.kv_dim_v, kvl.k_tok_bytes, kvl.v_tok_bytes)
-                        };
-                        let base = attn_base[il].expect("full layer missing from pointer table");
-                        let table = ptr_table.as_ref().expect("pointer table missing");
-                        let kv_view = table.slice(base..base + 2 * b_n);
-                        e.append_kv_quantized_seqs(
-                            &k, &v, &kv_view, pos_d, b_n, kdk, kdv, ktb, vtb,
-                        )?;
-                        for cache in caches.iter_mut() {
-                            let kvl = cache.kv[il].as_mut().unwrap();
-                            debug_assert_eq!(kvl.len, cache.pos, "kv len / pos out of lockstep");
-                            kvl.len += 1;
-                        }
-                    } else {
-                        for (bi, cache) in caches.iter_mut().enumerate() {
-                            let kvl = cache.kv[il].as_mut().unwrap();
-                            let k_row = k.slice(bi * kv_dim..(bi + 1) * kv_dim);
-                            let v_row = v.slice(bi * kv_dim..(bi + 1) * kv_dim);
-                            e.append_kv_quantized_view(
-                                &k_row,
-                                &v_row,
-                                &mut kvl.k,
-                                &mut kvl.v,
-                                kvl.len,
-                                kvl.kv_dim_k,
-                                kvl.kv_dim_v,
-                                kvl.k_tok_bytes,
-                                kvl.v_tok_bytes,
-                                false,
-                            )?;
-                            kvl.len += 1;
-                        }
+                    let (kdk, kdv, ktb, vtb) = {
+                        let kvl = caches[0].kv[il].as_ref().unwrap();
+                        (kvl.kv_dim_k, kvl.kv_dim_v, kvl.k_tok_bytes, kvl.v_tok_bytes)
+                    };
+                    let base = attn_base[il].expect("full layer missing from pointer table");
+                    let table = ptr_table.as_ref().expect("pointer table missing");
+                    let kv_view = table.slice(base..base + 2 * b_n);
+                    e.append_kv_quantized_seqs(&k, &v, &kv_view, pos_d, b_n, kdk, kdv, ktb, vtb)?;
+                    for cache in caches.iter_mut() {
+                        let kvl = cache.kv[il].as_mut().unwrap();
+                        debug_assert_eq!(kvl.len, cache.pos, "kv len / pos out of lockstep");
+                        kvl.len += 1;
                     }
                     ph_mark(e, 2, ph_last)?;
                     // ---- phase B: attention (all B sequences) ----

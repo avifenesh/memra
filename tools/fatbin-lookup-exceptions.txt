@@ -52,9 +52,7 @@
 89 gdn_l2_v2_vl              # vl8 chain, unreachable: use_vl -> gdn_mma_enabled -> !portable
 89 gdn_l2_vl                 # vl8 chain, unreachable: use_vl -> gdn_mma_enabled -> !portable
 89 gdn_mirror_vl             # vl8 chain, unreachable: use_vl -> gdn_mma_enabled -> !portable
-89 qkv_to_gdn_repack_vl      # vl8 chain, unreachable: use_vl -> gdn_mma_enabled -> !portable
 89 ssm_conv1d_gdn_state_vl   # vl8 chain, unreachable: use_vl -> gdn_mma_enabled -> !portable
-89 ssm_conv1d_tm_state_vl    # vl8 chain, unreachable: use_vl -> gdn_mma_enabled -> !portable
 89 ssm_conv_ring_update_vl   # vl8 chain, unreachable: use_vl -> gdn_mma_enabled -> !portable
 89 gdn_chunk_state_mma       # src/lib.rs:24861 under gdn_mma (:24797) = !portable_mma_gated()
 89 gdn_chunk_output_mma      # src/lib.rs:24889 under gdn_mma (:24797) = !portable_mma_gated()

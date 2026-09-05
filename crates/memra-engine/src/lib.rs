@@ -117,7 +117,7 @@ pub use memra_sampling as sampler;
 
 /// In-house MoE router GEMV on the spec-verify small-t path (DEFAULT ON since 2026-07-10:
 /// battery green on 35B p2/p3 K=1..8, acceptance bit-identical, +2-4% spec e2e — replaces
-/// ~240 per-column cuBLAS gemv launches/round). MEMRA_ROUTER_KERNEL=0 is the rollback seam.
+/// ~240 per-column cuBLAS gemv launches/round).
 /// MoE grouped f16 GEMM door (experimental until gated), f16-mirror numeric class:
 /// per-layer expert dequant to f16 + one grouped f16 GEMM over the CSR groups.
 ///   MEMRA_MOE_F16G=1  cublasGemmGroupedBatchedEx (round 46 arc 2). The grouped API issues
@@ -505,31 +505,6 @@ pub(crate) static GLM5_GRAPH_CAPTURE_OPEN: std::sync::atomic::AtomicBool =
 
 pub(crate) fn glm5_graph_capture_open() -> bool {
     GLM5_GRAPH_CAPTURE_OPEN.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// PREFILL router m-invariance (lane/concat-prime-exact, 2026-08-02). The batched cuBLASLt
-/// router GEMM changes a row's logits when OTHER rows join the call (probed: first change at
-/// m=65 on the Ornith-35B router, 3.9e-3 — while the MMQ/f16 trunk GEMMs are bit-identical
-/// across m). Feeding a top-k discontinuity, that made a served request's expert selection a
-/// function of its CO-ARRIVALS under cross-request prime batching. The in-house router GEMV
-/// is m-invariant, so prefill uses it too and routing depends on a session's own tokens only.
-/// DEFAULT ON: it is the serving isolation contract, and it is the same kernel decode and spec
-/// verify already use (dispatch parity, one router kernel for every t).
-/// MEMRA_ROUTER_PREFILL_EXACT=0 reverts to the batched GEMM.
-pub fn router_prefill_exact_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_ROUTER_PREFILL_EXACT").as_deref() != Ok("0"))
-}
-
-pub fn router_kernel_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| {
-        let on = std::env::var("MEMRA_ROUTER_KERNEL").as_deref() != Ok("0");
-        if !on {
-            eprintln!("[memra] router kernel OFF (rollback: per-column cuBLAS gemv)");
-        }
-        on
-    })
 }
 
 /// FAST-ROUTER batch twin (lane/fast-router, 2026-08-02). The concat-prime exactness fix
@@ -1635,33 +1610,6 @@ impl VerifyWs {
 /// what this counts. Relaxed atomic: one increment per allocation, noise-level.
 pub static SCRATCH_ALLOC_CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// FAVENDOR lane env gate (2026-07-08): MEMRA_FA_V2=1 dispatches the llama-fattn-vec-mechanism
-/// decode kernels (fa_decode_vec_q_v2 / fa_decode_vec_q_rows_v2 / fa_decode_vec_q_v2_dc):
-/// tile-batched online softmax (one alpha rescale per 32-key tile instead of per key) + wide-load
-/// block dequant in the staging phase. NOTE rev2: llama's register streaming (no smem) was ALSO
-/// tried and measured 2x WORSE at depth in our gqa-warps frame — the smem KV-tile broadcast stays
-/// (see the kernel comment). NEW NUMERIC CONFIG (tile-level softmax regrouping changes FP order vs
-/// the per-key twins) — own argmax baseline; eager decode, the spec-verify rows path AND the
-/// graph _dc path switch TOGETHER (the spec-exactness law). Default OFF. Read per call (not
-/// OnceLock) so the gate battery can A/B within one process, matching the MEMRA_NO_FA_VEC pattern.
-fn fa_v2_on() -> bool {
-    // DEFAULT ON since 2026-07-08 (MEMRA_FA_V2=0 reverts): tile-batched online softmax, e2e
-    // measured across every model x depth — 35B 168.7->173.4 (d512) / 153.1->158.5 (d6257),
-    // 9B 131.2->132.7 / 108.4->124.5 (+15% — the engine-wide depth-slope fix), 27B 47.2->47.7 /
-    // 42.2->44.9. One-time numeric-config change; kernel-check + argmax + spec self-consistency
-    // + graph bit-identity green on all three models.
-    std::env::var("MEMRA_FA_V2")
-        .map(|v| v != "0")
-        .unwrap_or(true)
-}
-
-/// FA v3 gate (default ON since 2026-07-09; MEMRA_FA_V3=0 reverts to v2 — research/fa/fa_v3_design.md):
-/// HYBRID decode twins (fa_decode_vec_q_v3 / _rows_v3 / _v3_dc): llama's int8-dp4a K.Q with
-/// register-quantized Q (no K dequant, no K smem) + OUR CTA-shared staged bf16 V tile + OUR
-/// split partition/combine. NEW NUMERIC CONFIG (int8 Q quantization changes the K.Q accumulation
-/// vs the bf16-roundtrip FMA chain) — own argmax baseline; eager decode, the spec-verify rows
-/// path AND the graph _dc path switch TOGETHER (the spec-exactness law). Read per call so the
-/// gate battery can A/B within one process (the MEMRA_FA_V2 pattern).
 /// `MEMRA_FA_PART_ZERO=1`: zero every freshly grown fa partial bank. DEFAULT OFF,
 /// diagnostic only. See `fa_part_alloc` for what it discriminates and why it is not a fix.
 pub(crate) fn fa_part_zero_on() -> bool {
@@ -1669,28 +1617,8 @@ pub(crate) fn fa_part_zero_on() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_FA_PART_ZERO").as_deref() == Ok("1"))
 }
 
-pub(crate) fn fa_v3_on() -> bool {
-    // DEFAULT ON since 2026-07-09 (MEMRA_FA_V3=0 reverts to v2): dp4a-K hybrid FA decode —
-    // fa kernel -21-23% at depth (micro), 35B spec p3 +5% (190->200, the last spec cell),
-    // d6257 +1.7%. Own numeric config; full battery green on 35B+9B incl graph bit-identity.
-    std::env::var("MEMRA_FA_V3")
-        .map(|v| v != "0")
-        .unwrap_or(true)
-}
-
-/// The v3 dp4a K path reads RAW q8_0 bytes (34B blocks) and stages q5_1 V verbatim — it is only
-/// correct on the DEFAULT KV formats — and needs dpl % 4 == 0 consecutive quants per lane
-/// (head_dim % 128 == 0; both daily models are hd256). All three dispatch sites share this
-/// predicate so the twins can never diverge.
-fn fa_v4_mode() -> &'static str {
-    static M: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    M.get_or_init(|| std::env::var("MEMRA_FA_V4").unwrap_or_default())
-}
-fn fa_v4_on() -> bool {
-    fa_v4_mode() != "0"
-} // DEFAULT ON 2026-07-10 (MEMRA_FA_V4=0 rollback)
 /// t_kv-conditional v4 pick (gemma depth lesson 2026-07-10: v4's key-per-lane pipeline starves
-/// at the 1024-window with short splits — MEMRA_FA_V4=0 measured depth plain 158.0 vs 156.7).
+/// at the 1024-window with short splits — the v3 arm measured depth plain 158.0 vs 156.7).
 /// Threshold MEMRA_FA_V4_MAX (default usize::MAX = unchanged behavior; gemma sets 1024 at load
 /// via FA_V4_MAX_DEFAULT). Applied at EVERY dispatch site (eager, rows, rows_w, dc) so verify
 /// stays kernel-family-identical to decode at the same t_kv.
@@ -1711,55 +1639,28 @@ fn fa_v4_at(t_kv: usize) -> bool {
             .and_then(|v| v.parse().ok())
             .unwrap_or_else(|| FA_V4_MAX_DEFAULT.load(std::sync::atomic::Ordering::Relaxed))
     });
-    fa_v4_on() && t_kv < mx
+    t_kv < mx
 }
-/// FA-DEEP gate (2026-08-02, lane fa-decode-deep): deep-ctx v4 twins
-/// (fa_decode_vec_q_v4_deep / _deep_dc) — the depth-decode lane's priced fix. Unlike
-/// v2/v3/v4 this is NOT a numeric config: the deep twins run the v4 program VERBATIM
-/// (same split partition, same softmax/accumulation order, same partials/combine) and only
-/// move the smem physical layout (bank de-conflict row pads) + the load schedule (next-tile
-/// L2 prefetch) — kernel-check pins bitdiff==0 vs the v4 twins across depths, so eager /
-/// rows-verify / graph / seqs stay mutually bit-identical wherever the threshold falls.
-/// Engages at t_kv >= MEMRA_FA_DEEP_MIN. The swept floor is 0 = ALWAYS ON where v4 ran
-/// (fa-deep-bench fine grid 96..6144, 2026-08-02: deep flat-or-better at EVERY depth,
-/// 1.01-1.26x, no losing cell — so there is no engagement boundary and no new
-/// capture-recapture edge; the env stays as a sweep/diagnostic seam only).
-/// MEMRA_FA_DEEP=0 is the rollback seam. Read per call so the battery + bench can A/B
-/// within one process (the v2/v3 pattern).
-pub const FA_DEEP_MIN_DEFAULT: usize = 0;
-fn fa_deep_at(t_kv: usize) -> bool {
-    if std::env::var("MEMRA_FA_DEEP").as_deref() == Ok("0") {
-        return false;
-    }
-    let min = std::env::var("MEMRA_FA_DEEP_MIN")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(FA_DEEP_MIN_DEFAULT);
-    t_kv >= min
-}
-/// Public twin (kernel-check builds the deep-vs-v4 bit pin; bench sweeps the floor).
-pub fn fa_deep_at_pub(t_kv: usize) -> bool {
-    fa_deep_at(t_kv)
-}
-
+// The deep v4 twins (fa_decode_vec_q_v4_deep / _deep_dc, lane fa-decode-deep 2026-08-02) run
+// the v4 program verbatim with a de-conflicted smem layout and L2 prefetch; they are the only
+// default-module v4 pick (the kf8vf8 module keeps the plain v4 body).
+/// The v3 dp4a-K decode class (the served twin since 2026-07-09): raw q8_0 K bytes, dpl % 4 == 0
+/// consecutive quants per lane, so head_dim % 128 == 0.
 fn fa_v3_active(head_dim: usize) -> bool {
-    // v3's dp4a-K walk reads raw q8_0 K bytes (the trunk cache's one format).
-    fa_v3_on() && head_dim.is_multiple_of(128)
+    head_dim.is_multiple_of(128)
 }
 
 /// BATCHED-TICK increment 2 (2026-08-01): true iff a row at this t_kv would take the v4
 /// eager arm in `fa_decode_kvmod`'s dispatch — the exact precondition for the z-batched
 /// `fa_decode_vec_q_seqs_v4` twin to reproduce its per-seq program bit-identically.
 /// Mirrors the kvmod predicates: vec on + above the vec floor + hd256 + inside the v4
-/// window + the PRODUCTION v4 body (the noB3/stage phase probes are wrong-output).
-/// Callers must ALSO group rows on one
+/// window. Callers must ALSO group rows on one
 /// `fa_split_keys` rung (the rows-twins' straddle law) before batching.
 pub fn fa_seqs_eligible(t_kv: usize, head_dim: usize) -> bool {
     std::env::var("MEMRA_NO_FA_VEC").is_err()
         && t_kv >= fa_vec_min_tkv()
         && head_dim == 256
         && fa_v4_at(t_kv)
-        && !matches!(fa_v4_mode(), "noB3" | "stage")
 }
 /// Public twin of the crate-private split ladder (kernel-check builds the seqs-vs-loop pin).
 pub fn fa_split_keys_pub(t_kv: usize, n_head_kv: usize) -> usize {
@@ -3664,7 +3565,6 @@ impl Engine {
         // per B=8 serve tick (5.9% of the tick, box4 nsys receipt). filter_stats_coop_f32
         // splits each row across 16 blocks with grid-synced bisection totals — same algorithm,
         // slice-partial f32 sums (accepted device-sampling class; sample-check arbitrates).
-        // MEMRA_FILTER_COOP=0 is the rollback seam to the single-block form.
         //
         // DETERMINISTIC KEYING (hermes finding, fixed 2026-08-23): the old admission
         // `16*nrow <= sm_count` fell back to the single-block program PER CALL when a tick
@@ -3676,12 +3576,8 @@ impl Engine {
         // arithmetic uses only its own 16 slices + its own ws region, so the per-row bits
         // are independent of batch width by construction — the kernel-check
         // FILTER-COOP-CHUNK cell pins exactly that. The single-block program remains only
-        // behind the deployment-keyed seams: MEMRA_FILTER_COOP=0, or a device with
-        // sm_count < 16 (fixed per device class, never per call).
-        static COOP_ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let coop_on =
-            *COOP_ON.get_or_init(|| std::env::var("MEMRA_FILTER_COOP").as_deref() != Ok("0"));
-        if coop_on && self.sm_count() >= 16 {
+        // for a device with sm_count < 16 (fixed per device class, never per call).
+        if self.sm_count() >= 16 {
             let cap = self.sm_count() as usize / 16;
             let mut done = 0usize;
             while done < nrow {
@@ -3753,8 +3649,8 @@ impl Engine {
         Ok(())
     }
 
-    /// The single-block-per-row `filter_stats` program (the pre-coop form; the
-    /// MEMRA_FILTER_COOP=0 rollback and the occupancy fallback). Gate-callable twin of
+    /// The single-block-per-row `filter_stats` program (the pre-coop form; the sm_count < 16
+    /// device-class arm). Gate-callable twin of
     /// `filter_stats_coop_program`.
     #[allow(clippy::too_many_arguments)]
     pub fn filter_stats_plain_program(
@@ -4918,7 +4814,7 @@ impl Engine {
         Ok(())
     }
 
-    /// MoE router GEMV (MEMRA_ROUTER_KERNEL): deterministic warp-per-(expert,token) f32 dot.
+    /// MoE router GEMV: deterministic warp-per-(expert,token) f32 dot.
     /// Different FP order than the cuBLAS path it replaces — battery-gated numeric config.
     pub fn router_gemv(
         &self,
@@ -15865,10 +15761,10 @@ impl Engine {
     }
 
     /// L2 norm per row (head_dim), no weight.
-    /// PREFILL l2 dispatch (round 27): the warp-per-row float4 v2 when the numeric-config
-    /// seam allows (MEMRA_L2_V2, default ON, d_state==128 only); else the strided kernel.
+    /// PREFILL l2 dispatch (round 27): the warp-per-row float4 v2 at d_state == 128 (the
+    /// served class since the round); every other width takes the strided kernel.
     pub fn l2_v2_on(ncols: usize) -> bool {
-        ncols == 128 && std::env::var("MEMRA_L2_V2").as_deref() != Ok("0")
+        ncols == 128
     }
 
     pub fn l2_norm_pp(
@@ -17788,8 +17684,7 @@ impl Engine {
         }
         if m > 1 {
             let in_f = w0.in_features();
-            if std::env::var("MEMRA_NVFP4_FUSED3B").as_deref() == Ok("0")
-                || !self.batched_supports(QT_NVFP4)
+            if !self.batched_supports(QT_NVFP4)
                 || std::env::var("MEMRA_NO_BATCHED").is_ok()
                 || (m > 4 && !Self::b8_enabled())
                 || !in_f.is_multiple_of(512)
@@ -20348,7 +20243,7 @@ impl Engine {
     ///
     /// NUMERICALLY IT IS THE FLOOR, EXACTLY: `fp8_blk_dequant_q8_0` is the merged ARM B' kernel,
     /// gate-proven BYTE-IDENTICAL to the host dequant+re-encode (kernel-check `fp8-blk-gpu`). So the
-    /// slab these bytes form is bit-for-bit the slab the `MEMRA_ST_E4M3_BLK=0` arm makes resident,
+    /// slab these bytes form is bit-for-bit the slab the `MEMRA_ST_E4M3=0` arm makes resident,
     /// and every prefill kernel downstream sees identical input — prefill logits under this lane are
     /// bit-identical to prefill logits under the floor, which is what makes the decode A/B a clean
     /// single-variable comparison instead of a two-variable one.
@@ -28419,12 +28314,7 @@ impl Engine {
         let fa512_min = fa512_min_tkv();
         // FA-DEEP pick (bit-identical twins, see fa_deep_at): default module only — the
         // g-module keeps the v4 pick (its class is not the depth-decay class).
-        let deep = fa_vec
-            && head_dim == 256
-            && fa_v4_at(t_kv)
-            && !g
-            && fa_deep_at(t_kv)
-            && !matches!(fa_v4_mode(), "noB3" | "stage");
+        let deep = fa_vec && head_dim == 256 && fa_v4_at(t_kv) && !g;
         let (f, cfg) = if fa_vec && head_dim == 512 && t_kv >= fa512_min {
             // gemma4 globals (hd 512): the DPL16 register twin (fa_decode_vec_q body with a
             // 16-slot accumulator ceiling). Scalar fallback measured 82.5us/layer at 1736 ctx.
@@ -28440,34 +28330,14 @@ impl Engine {
             )
         } else if fa_vec && head_dim <= 256 {
             let gqa = (n_head / n_head_kv).max(1) as u32;
-            // DEEP-CTX smem twin (2026-07-05): the register-dequant path's GQA reuse rides L2,
-            // which holds to ~8k ctx but dies at 40k (layer KV ~37MB) — the 4 GQA warps then
-            // re-read every KV byte from DRAM (4x traffic). Above MEMRA_FA_SMEM_TKV (default
-            // 1024 — the 2026-07-05 crossover re-sweep on real prompts: p3 spec 73.8->79.2 at
-            // 2048, flat down to 512, p2 +5%, p1/9B unchanged; the ARC-A probe's synthetic
-            // 2.1x smem-at-all-depths pointed here; 0=never) dispatch the smem-broadcast twin:
-            // dequant each tile ONCE per block.
-            // Bit-identical per (token,split): same bf16 round-trip, same accumulation order,
-            // same partial layout -> same combine. Short/mid ctx keeps the register path (it won
-            // there by 12x — latency, not bandwidth, rules small KV).
-            static SMEM_TKV: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-            let smem_tkv = *SMEM_TKV.get_or_init(|| {
-                std::env::var("MEMRA_FA_SMEM_TKV")
-                    .ok()
-                    .and_then(|v| v.parse().ok())
-                    .unwrap_or_else(|| {
-                        FA_SMEM_TKV_DEFAULT.load(std::sync::atomic::Ordering::Relaxed)
-                    })
-            });
             if fa_v4_at(t_kv) && head_dim == 256 {
                 // FA v4 lane (2026-07-10): key-per-lane score phase, zero shuffles per key.
                 // NEW NUMERIC CONFIG (chunk-serial per-key dot) — battery-arbitrated.
                 // g (fp8-windowed): the v4 staging is format-aware (2026-07-12) — kf8vf8 module.
-                let v4name = match fa_v4_mode() {
-                    "noB3" => "fa_decode_vec_q_v4_noB3", // phase probe (WRONG OUTPUT)
-                    "stage" => "fa_decode_vec_q_v4_stage", // phase probe (WRONG OUTPUT)
-                    _ if deep => "fa_decode_vec_q_v4_deep",
-                    _ => "fa_decode_vec_q_v4",
+                let v4name = if deep {
+                    "fa_decode_vec_q_v4_deep"
+                } else {
+                    "fa_decode_vec_q_v4"
                 };
                 let fv = if g {
                     self.func_g(v4name)
@@ -28508,10 +28378,10 @@ impl Engine {
                         shared_mem_bytes: shmem,
                     },
                 )
-            } else if fa_v2_on() {
-                // FAVENDOR lane: llama fattn-vec tile-batched softmax + wide-load staging on
-                // OUR smem KV broadcast. Replaces BOTH per-key twins when on; same grid/block/
-                // partials; same 32KB sK+sV tile as the smem twin.
+            } else {
+                // FAVENDOR lane (2026-07-08): llama fattn-vec tile-batched softmax + wide-load
+                // staging on OUR smem KV broadcast; same 32KB sK+sV tile as the smem twin it
+                // replaced.
                 let fv = if g {
                     self.func_g("fa_decode_vec_q_v2")
                 } else {
@@ -28524,46 +28394,6 @@ impl Engine {
                         grid_dim: (n_head_kv as u32, n_splits as u32, 1),
                         block_dim: (32, gqa, 1),
                         shared_mem_bytes: shmem,
-                    },
-                )
-            } else if smem_tkv > 0 && t_kv >= smem_tkv && !g && !(head_dim == 512 && Self::gkv_on())
-            {
-                // (fp8 exclusions: the smem twin's V-stage is q5_1-hardcoded — neither the wkv
-                // windowed layers (g) nor the gkv globals (hd512) may be forced onto it via
-                // MEMRA_FA_SMEM_TKV; they fall through to the format-clean register/scalar arms.)
-                let fv = if g {
-                    self.func_g("fa_decode_vec_q_smem")
-                } else {
-                    self.func("fa_decode_vec_q_smem")
-                };
-                let shmem = (2 * 32 * head_dim * 2) as u32; // sK+sV bf16 [FA_DEC_TILE=32][hd]
-                use cudarc::driver::sys::CUfunction_attribute_enum as A;
-                fv.set_attribute(
-                    A::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
-                    shmem as i32,
-                )?;
-                (
-                    fv,
-                    LaunchConfig {
-                        grid_dim: (n_head_kv as u32, n_splits as u32, 1),
-                        block_dim: (32, gqa, 1),
-                        shared_mem_bytes: shmem,
-                    },
-                )
-            } else {
-                // REGISTER-DEQUANT kernel (2026-07-03): per-warp direct q8_0/q5_1 register
-                // dequant, zero dynamic shared memory.
-                let fv = if g {
-                    self.func_g("fa_decode_vec_q")
-                } else {
-                    self.func("fa_decode_vec_q")
-                };
-                (
-                    fv,
-                    LaunchConfig {
-                        grid_dim: (n_head_kv as u32, n_splits as u32, 1),
-                        block_dim: (32, gqa, 1),
-                        shared_mem_bytes: 0,
                     },
                 )
             }
@@ -28928,17 +28758,8 @@ impl Engine {
         // Deep-ctx smem twin for the VERIFY rows (2026-07-05): same threshold + rationale as
         // fa_decode's dispatch — at 40k the register path's GQA L2-reuse premise is dead and the
         // verify multiplies the 4x DRAM re-read by T rows. Bit-identical per (row,token,split).
-        static SMEM_TKV_R: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-        let smem_tkv = *SMEM_TKV_R.get_or_init(|| {
-            std::env::var("MEMRA_FA_SMEM_TKV")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or_else(|| FA_SMEM_TKV_DEFAULT.load(std::sync::atomic::Ordering::Relaxed))
-        });
         let v4 = fa_v4_at(base_len + t) && head_dim == 256;
         let v3 = fa_v3_active(head_dim);
-        let smem_rows =
-            head_dim <= 256 && !v3 && !fa_v2_on() && smem_tkv > 0 && t_kv_max >= smem_tkv;
         // kv_shared twin RETIRED (2026-07-11 depth run-gen gate): the wv:=wk premise fails
         // POST-cache — cached K is k-normed+roped, cached V is not; the twin fed roped keys
         // in as values. Verify/decode/stream gates were blind (both sides shared the wrong
@@ -28978,12 +28799,8 @@ impl Engine {
             "fa_decode_vec_q_rows_v4"
         } else if v3 {
             "fa_decode_vec_q_rows_v3"
-        } else if fa_v2_on() {
-            "fa_decode_vec_q_rows_v2"
-        } else if smem_rows {
-            "fa_decode_vec_q_rows_smem"
         } else {
-            "fa_decode_vec_q_rows"
+            "fa_decode_vec_q_rows_v2"
         };
         let f = if head_dim == 512 {
             self.fa_func(fname, head_dim)
@@ -28992,14 +28809,10 @@ impl Engine {
             // choice as decode's kvmod dispatch (parity law: excluding v4 here paired
             // g-module rows against decode's g-module v4 — different programs, short-VG
             // maxdiff 2.0 / spec stream 0/128, 2026-07-12). rows_v4 is format-aware
-            // since fda9790; only the smem twin stays excluded (V-stage q5_1-only).
+            // since fda9790.
             // hd128 (qwen fp8-KV) lands on the base/register rows via fname — the
             // dq macros are format-aware.
-            self.func_g(if smem_rows {
-                "fa_decode_vec_q_rows"
-            } else {
-                fname
-            })
+            self.func_g(fname)
         } else {
             self.func(fname)
         };
@@ -29014,8 +28827,8 @@ impl Engine {
                 sh as i32,
             )?;
             sh
-        } else if v4 || v3 || smem_rows || fa_v2_on() {
-            // v4: fa_v4_smem (11.5KB) + sV; v3 stages sV only; v2/smem twins stage sK+sV.
+        } else {
+            // v4: fa_v4_smem (11.5KB) + sV; v3 stages sV only; the v2 twin stages sK+sV.
             let sh = (if v4 {
                 11520 + 32 * head_dim * if g { 1 } else { 2 }
             } else if v3 {
@@ -29029,8 +28842,6 @@ impl Engine {
                 sh as i32,
             )?;
             sh
-        } else {
-            0
         };
         // Per-GROUP launches (single group in the common case — identical to the pre-fix
         // single launch there): each group gets its own partials (the rows kernel indexes
@@ -30109,12 +29920,7 @@ impl Engine {
         let fa_vec = fa_vec && head_dim <= 512 && head_dim.is_multiple_of(32);
         // FA-DEEP pick keyed on bucket_max (the fa_v4_at precedent) — bit-identical twins,
         // so a threshold falling between t_kv and bucket_max cannot diverge eager-vs-graph.
-        let deep = fa_vec
-            && head_dim == 256
-            && fa_v4_at(bucket_max)
-            && !g
-            && fa_deep_at(bucket_max)
-            && !matches!(fa_v4_mode(), "noB3" | "stage");
+        let deep = fa_vec && head_dim == 256 && fa_v4_at(bucket_max) && !g;
         let (f, cfg) = if fa_vec
             && head_dim == 512
             && bucket_max >= {
@@ -30189,8 +29995,8 @@ impl Engine {
                 },
             )
         } else if fa_vec && fa_v3_active(head_dim) {
-            // FA v3 lane _dc twin: the captured graph must run the SAME walk body as eager
-            // under MEMRA_FA_V3=1 (eager, rows-verify and graph switch together).
+            // FA v3 lane _dc twin: the captured graph runs the SAME walk body as eager
+            // (eager, rows-verify and graph share one numeric config).
             let gqa = (n_head / n_head_kv).max(1) as u32;
             let fv = if g {
                 self.func_g("fa_decode_vec_q_v3_dc")
@@ -30206,10 +30012,9 @@ impl Engine {
                     shared_mem_bytes: shmem,
                 },
             )
-        } else if fa_vec && fa_v2_on() {
-            // FAVENDOR lane: v2 _dc twin — the captured graph must run the SAME walk body as
-            // eager under MEMRA_FA_V2=1 or graph_decode_gate's bit-identity breaks (the flag is
-            // a numeric config; eager, rows-verify and graph all switch together).
+        } else if fa_vec {
+            // FAVENDOR lane: v2 _dc twin — the captured graph runs the SAME walk body as eager
+            // (eager, rows-verify and graph share one numeric config).
             let gqa = (n_head / n_head_kv).max(1) as u32;
             let fv = if g {
                 self.func_g("fa_decode_vec_q_v2_dc")
@@ -30223,22 +30028,6 @@ impl Engine {
                     grid_dim: (n_head_kv as u32, n_splits as u32, 1),
                     block_dim: (32, gqa, 1),
                     shared_mem_bytes: shmem,
-                },
-            )
-        } else if fa_vec {
-            let gqa = (n_head / n_head_kv).max(1) as u32;
-            // REGISTER-DEQUANT twin: zero dynamic smem (see fa_decode above).
-            let fv = if g {
-                self.func_g("fa_decode_vec_q_dc")
-            } else {
-                self.func("fa_decode_vec_q_dc")
-            };
-            (
-                fv,
-                LaunchConfig {
-                    grid_dim: (n_head_kv as u32, n_splits as u32, 1),
-                    block_dim: (32, gqa, 1),
-                    shared_mem_bytes: 0,
                 },
             )
         } else {
@@ -30539,7 +30328,6 @@ impl Engine {
         if std::env::var("MEMRA_NO_FA_VEC").is_ok()
             || head_dim > 256
             || !head_dim.is_multiple_of(32)
-            || !fa_v3_on()
         {
             return Err("fa_decode_dcw_rows supports the default v3-vec class only".into());
         }
@@ -30655,8 +30443,8 @@ impl Engine {
         fused_gate: Option<&CudaSlice<f32>>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let fa_vec = std::env::var("MEMRA_NO_FA_VEC").is_err() && bucket_max >= fa_vec_min_tkv();
-        if !fa_vec || head_dim > 256 || !head_dim.is_multiple_of(32) || !fa_v3_on() {
-            return Err("fa_decode_dcw supports the default v3-vec class only                         (bucket >= vec floor, head_dim <= 256, MEMRA_FA_V3 on);                         keep eager outside it"
+        if !fa_vec || head_dim > 256 || !head_dim.is_multiple_of(32) {
+            return Err("fa_decode_dcw supports the v3-vec class only (bucket >= vec floor, head_dim <= 256, head_dim % 32 == 0)"
                 .into());
         }
         let sp = fa_split_keys(bucket_max, n_head_kv);
@@ -30668,19 +30456,11 @@ impl Engine {
         let mut part_guard = self.fa_part_pool.lock().unwrap();
         Self::fa_part_pool_grow(self, &mut part_guard, o_len, ml_len)?;
         let pg = part_guard.as_mut().unwrap();
-        // MEMRA_FA_DCW_MEMSET=0: skip the partial-pool zeroing — every (head, split) in
-        // [0, nsp) writes its partial before the combine reads it (per = ceil(len/nsp), so
-        // split s starts at s*per < len for all s < nsp), making the zeros dead stores.
-        // Door-gated pending the identity battery; =0 saves 3 memset launches/rank/layer.
-        static MEMSET_ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        // Token-graph capture ALWAYS keeps the memsets: the retarget path (increment C)
-        // finds the attention children BY their three-memset signature and updates the
-        // memset widths per bucket — capturing without them silently kills retargeting
-        // (battery-v8 token drift, 2026-08-21).
-        let memset_on = *MEMSET_ON
-            .get_or_init(|| std::env::var("MEMRA_FA_DCW_MEMSET").as_deref() != Ok("0"))
-            || crate::tp::token_graph_building();
-        if memset_on {
+        // The three partial-pool memsets stay: token-graph retargeting (increment C) finds the
+        // attention children BY their three-memset signature and updates the memset widths per
+        // bucket — capturing without them silently kills retargeting (battery-v8 token drift,
+        // 2026-08-21).
+        {
             self.gpu
                 .stream()
                 .memset_zeros(&mut pg.0.slice_mut(0..o_len))?;
@@ -31336,80 +31116,6 @@ impl Engine {
     /// qkv-view twin (task #16): batched prime reads the concat GEMM output directly.
     #[allow(clippy::too_many_arguments)]
     // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
-    #[allow(clippy::manual_div_ceil)] // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
-    pub fn ssm_conv1d_tm_state_pad_v(
-        &self,
-        qkv_tm: &cudarc::driver::CudaView<f32>,
-        conv_state: &mut CudaSlice<f32>,
-        w: &CudaSlice<f32>,
-        y: &mut CudaSlice<f32>,
-        conv_dim: usize,
-        t: usize,
-        d_conv: usize,
-        pad_len: Option<&CudaSlice<i32>>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        assert!(t >= 1, "ssm_conv1d_tm_state requires T >= 1");
-        // clone BEFORE the window kernel is issued is not required (stream-ordered: the dtod and
-        // the window kernel both read the pre-roll ring; the roll launches after both) — but
-        // cloning first keeps the ordering trivially correct under any future stream split.
-        let ring_old = if t < d_conv - 1 {
-            Some(self.clone_dtod(conv_state)?)
-        } else {
-            None
-        };
-        {
-            let f = self.func("ssm_conv1d_tm_state_f32");
-            let cfg = LaunchConfig {
-                grid_dim: (((conv_dim + 255) / 256) as u32, t as u32, 1),
-                block_dim: (256, 1, 1),
-                shared_mem_bytes: 0,
-            };
-            let (cd, ti, dc) = (conv_dim as i32, t as i32, d_conv as i32);
-            let __s_b = self.gpu.stream();
-            let mut b = __s_b.launch_builder(&f);
-            b.arg(qkv_tm)
-                .arg(&*conv_state)
-                .arg(w)
-                .arg(y)
-                .arg(&cd)
-                .arg(&ti)
-                .arg(&dc);
-            unsafe {
-                b.launch(cfg)?;
-            }
-        }
-        match (ring_old, pad_len) {
-            (None, Some(len_d)) => {
-                let f = self.func("ssm_conv_ring_update_dev_f32");
-                let n = conv_dim * (d_conv - 1);
-                let cfg = LaunchConfig::for_num_elems(n as u32);
-                let (cd, dc) = (conv_dim as i32, d_conv as i32);
-                let __s_b = self.gpu.stream();
-                let mut b = __s_b.launch_builder(&f);
-                b.arg(qkv_tm).arg(conv_state).arg(len_d).arg(&cd).arg(&dc);
-                unsafe {
-                    b.launch(cfg)?;
-                }
-            }
-            (None, None) => {
-                let f = self.func("ssm_conv_ring_update_f32");
-                let n = conv_dim * (d_conv - 1);
-                let cfg = LaunchConfig::for_num_elems(n as u32);
-                let (cd, ti, dc) = (conv_dim as i32, t as i32, d_conv as i32);
-                let __s_b = self.gpu.stream();
-                let mut b = __s_b.launch_builder(&f);
-                b.arg(qkv_tm).arg(conv_state).arg(&cd).arg(&ti).arg(&dc);
-                unsafe {
-                    b.launch(cfg)?;
-                }
-            }
-            (Some(_), _) => unreachable!(
-                "ssm_conv1d_tm_state_pad_v: T < d_conv-1 has no view path (PRIME_MIN_T gates it)"
-            ),
-        }
-        Ok(())
-    }
-
     /// PREFIX conv-ring rebuild (spec REPLAY-FREE partial accept): overwrite the resident ring
     /// with the state a T=1 chain holds after only the FIRST `tc` columns of `qkv_tm` — the last
     /// `pad` entries of [ring_old | cols 0..tc-1]. PURE COPIES (the ring stores raw inputs; no
@@ -32126,13 +31832,6 @@ impl Engine {
         Ok((gcum, p, u, w))
     }
 
-    /// task #21 de-broadcast seam: q/k stored at num_k distinct GQA heads instead of
-    /// the num_v broadcast. MEMRA_GDN_DB=0 reverts. Only the chunked prefill path
-    /// consumes the compact layout (hk plumbed; hk == H reproduces broadcast exactly).
-    pub fn gdn_db_on() -> bool {
-        std::env::var("MEMRA_GDN_DB").as_deref() != Ok("0")
-    }
-
     /// Whether the K4/K5 mma pair serves at chunk size `c` (mirrors gdn_scan_chunked's
     /// seam read — env re-read per call ON PURPOSE, kernel-check pins both configs).
     /// DEFAULT ON for sm_120a builds too (lane/moeprime-nvfp4-direct, 2026-08-21): the pair
@@ -32436,12 +32135,7 @@ impl Engine {
         let v = GdnPrepVl8(packed);
         let max_t = seqs.iter().map(|s| s.t).max().unwrap() as u32;
         let (cdi, dci) = (conv_dim as i32, d_conv as i32);
-        let conv_fuse = std::env::var("MEMRA_CONV_FUSE").as_deref() != Ok("0");
-        assert!(
-            conv_fuse || hk == num_v,
-            "de-broadcast requires the fused conv"
-        );
-        if conv_fuse {
+        {
             let f = self.func("ssm_conv1d_gdn_state_vl");
             let cfg = LaunchConfig {
                 grid_dim: ((conv_dim as u32).div_ceil(256), max_t, b as u32),
@@ -32469,19 +32163,6 @@ impl Engine {
             unsafe {
                 lb.launch(cfg)?;
             }
-        } else {
-            let f = self.func("ssm_conv1d_tm_state_vl");
-            let cfg = LaunchConfig {
-                grid_dim: ((conv_dim as u32).div_ceil(256), max_t, b as u32),
-                block_dim: (256, 1, 1),
-                shared_mem_bytes: 0,
-            };
-            let __s_lb = self.gpu.stream();
-            let mut lb = __s_lb.launch_builder(&f);
-            lb.arg(&v).arg(conv_w).arg(&cdi).arg(&dci);
-            unsafe {
-                lb.launch(cfg)?;
-            }
         }
         {
             let f = self.func("ssm_conv_ring_update_vl");
@@ -32494,22 +32175,6 @@ impl Engine {
             let __s_lb = self.gpu.stream();
             let mut lb = __s_lb.launch_builder(&f);
             lb.arg(&v).arg(&cdi).arg(&dci);
-            unsafe {
-                lb.launch(cfg)?;
-            }
-        }
-        if !conv_fuse {
-            let f = self.func("qkv_to_gdn_repack_vl");
-            let n = max_t * (num_v * d_state) as u32;
-            let cfg = LaunchConfig {
-                grid_dim: (n.div_ceil(256), 1, b as u32),
-                block_dim: (256, 1, 1),
-                shared_mem_bytes: 0,
-            };
-            let (dsi, nvi, nki, kdi) = (d_state as i32, num_v as i32, num_k as i32, key_dim as i32);
-            let __s_lb = self.gpu.stream();
-            let mut lb = __s_lb.launch_builder(&f);
-            lb.arg(&v).arg(&dsi).arg(&nvi).arg(&nki).arg(&kdi);
             unsafe {
                 lb.launch(cfg)?;
             }
