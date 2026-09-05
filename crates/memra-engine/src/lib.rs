@@ -9312,6 +9312,35 @@ impl Engine {
         Ok(dst)
     }
 
+    /// A small device f32 vector set by launches instead of a pageable copy (the sampled
+    /// accept's per-draft filter thresholds, `MEMRA_GLM5_SPEC_DEV_IO`): the bit pattern travels
+    /// as a u32 kernel argument and lands verbatim through a reinterpreting device copy.
+    pub fn f32_words_dev(
+        &self,
+        vals: &[f32],
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let mut bits = self.alloc_uninit::<u32>(vals.len().max(1))?;
+        for (i, &v) in vals.iter().enumerate() {
+            self.u32_set_k(&mut bits, v.to_bits(), i)?;
+        }
+        SPEC_DEV_IO_AVOIDED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let mut out = self.alloc_uninit::<f32>(vals.len().max(1))?;
+        {
+            let st = self.gpu.stream();
+            let (src, _g1) = bits.device_ptr(&st);
+            let (dst, _g2) = out.device_ptr_mut(&st);
+            unsafe {
+                cudarc::driver::result::memcpy_dtod_async(
+                    dst,
+                    src,
+                    vals.len().max(1) * 4,
+                    st.cu_stream(),
+                )?;
+            }
+        }
+        Ok(out)
+    }
+
     /// A small device word vector set by launches instead of a pageable copy (the verify rows'
     /// and the drafter block's token ids: K+1 and block_size words, `MEMRA_GLM5_SPEC_DEV_IO`).
     pub fn u32_words_dev(
@@ -13144,6 +13173,9 @@ impl Engine {
     }
 
     #[track_caller]
+    pub fn alloc_i32_zeroed(&self, n: usize) -> Result<CudaSlice<i32>, Box<dyn std::error::Error>> {
+        Ok(self.gpu.stream().alloc_zeros::<i32>(n.max(1))?)
+    }
     pub fn alloc_u32_zeroed(&self, n: usize) -> Result<CudaSlice<u32>, Box<dyn std::error::Error>> {
         crate::alloc_trace_hit(n * 4);
         let s = self.gpu.stream().alloc_zeros::<u32>(n)?;
