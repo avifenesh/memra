@@ -2749,7 +2749,7 @@ impl TpE4m3HostBounce {
                 kv_dim_v,
                 k_tok_bytes,
                 v_tok_bytes,
-                Engine::kv_fp8_on(),
+                false,
             )?;
         }
         if !external_rank_appends {

@@ -242,22 +242,18 @@ static __device__ __forceinline__ float warp_reduce_sum(float v) {
 }
 
 // ===================================================================== //
-//  KV FORMAT SELECTION (kvbytes lane, 2026-07-08)                        //
-//  Compile-time cache-format variants — build.rs compiles this file     //
-//  once per (K,V) format pair into separate fatbins; lib.rs picks the   //
-//  fatbin at Engine::new from env MEMRA_KV_K / MEMRA_KV_V. Default (no    //
-//  -D flags) = the validated q8_0-K / q5_1-V daily config, and every    //
-//  baseline code path below is the pre-refactor instruction sequence   //
-//  verbatim (bit-identity pinned by the gate battery).                  //
-//    -DMEMRA_KV_KFMT: 0 = q8_0 (34 B/32elem, default) | 1 = fp8-e4m3     //
-//                        raw cast, NO block scale (32 B/32elem)         //
-//    -DMEMRA_KV_VFMT: 0 = q5_1 (24 B/32elem, default) | 1 = q4_0         //
-//                        (18 B/32elem) | 2 = fp8-e4m3 raw (32 B)        //
-//  A non-default format is a NEW NUMERIC CONFIG: own argmax baseline,   //
-//  gate battery must pass WITHIN it (exactness law binds per config).   //
-//  Kernel entry names keep the historical q8_0_q5_1 suffix in ALL      //
-//  variants — the format is a property of the loaded fatbin, not the   //
-//  name (naming: no silent format switch; the env flag is the switch). //
+//  KV FORMAT SELECTION (kvbytes lane, 2026-07-08; trimmed 2026-09-05)  //
+//  build.rs compiles this file twice: the default fatbin (no -D flags)  //
+//  = the validated q8_0-K / q5_1-V trunk config, and the kf8vf8 fatbin //
+//  (-DMEMRA_KV_KFMT=1 -DMEMRA_KV_VFMT=2, raw e4m3 K and V, 32 B/32elem, //
+//  NO block scale) that gemma's GKV/WKV e4m3 layers load alongside it.  //
+//  The env-selected trunk variants (fp8 K, q4_0 / fp8 V via MEMRA_KV_K //
+//  / MEMRA_KV_V) were removed in the 2026-09-05 door sweep; VFMT == 1  //
+//  (q4_0) no longer exists. Every baseline code path below is the      //
+//  pre-refactor instruction sequence verbatim (bit-identity pinned by  //
+//  the gate battery). Kernel entry names keep the historical           //
+//  q8_0_q5_1 suffix in BOTH variants — the format is a property of the //
+//  loaded fatbin, not the name.                                        //
 // ===================================================================== //
 #ifndef MEMRA_KV_KFMT
 #define MEMRA_KV_KFMT 0
@@ -275,19 +271,6 @@ static __device__ __forceinline__ float dq_fp8_elem(
     return (float)((const __nv_fp8_e4m3*)(P + (size_t)t * tok_bytes))[eidx];
 }
 
-// q4_0 dequant of one element (symmetric, ggml layout: f16 d + 16 nibble bytes,
-// elem j<16 = low nibble of byte j, elem j+16 = high nibble; x = d*(q-8)).
-static __device__ __forceinline__ float dq_q4_0_elem(
-        const uint8_t* __restrict__ V, long t, long v_tok_bytes, int eidx)
-{
-    const uint8_t* blk = V + (size_t)t * v_tok_bytes + (size_t)(eidx >> 5) * 18;
-    const half d = *(const half*)blk;
-    const uint8_t* qs = blk + 2;
-    const int j = eidx & 31;
-    const int q = (j < 16) ? (qs[j] & 0x0F) : (qs[j - 16] >> 4);
-    return __half2float(d) * (float)(q - 8);
-}
-
 #if MEMRA_KV_KFMT == 1
 #define K_BLK_B 32
 #define DQ_K_ELEM dq_fp8_elem
@@ -295,10 +278,7 @@ static __device__ __forceinline__ float dq_q4_0_elem(
 #define K_BLK_B 34
 #define DQ_K_ELEM dq_q8_0_elem
 #endif
-#if MEMRA_KV_VFMT == 1
-#define V_BLK_B 18
-#define DQ_V_ELEM dq_q4_0_elem
-#elif MEMRA_KV_VFMT == 2
+#if MEMRA_KV_VFMT == 2
 #define V_BLK_B 32
 #define DQ_V_ELEM dq_fp8_elem
 #else
@@ -322,12 +302,7 @@ static __device__ __forceinline__ float dq_K_lane(const uint8_t* __restrict__ bl
 }
 static __device__ __forceinline__ float dq_V_lane(const uint8_t* __restrict__ blk, int lane)
 {
-#if MEMRA_KV_VFMT == 1
-    const float d = __half2float(*(const half*)blk);
-    const uint8_t* qs = blk + 2;
-    const int lo = (lane < 16) ? (qs[lane] & 0x0F) : (qs[lane - 16] >> 4);
-    return d * (float)(lo - 8);
-#elif MEMRA_KV_VFMT == 2
+#if MEMRA_KV_VFMT == 2
     return (float)((const __nv_fp8_e4m3*)blk)[lane];
 #else
     const float d = __half2float(*(const half*)blk);
@@ -360,21 +335,7 @@ static __device__ __forceinline__ void quant_K_block(float x, int lane, uint8_t*
 }
 static __device__ __forceinline__ void quant_V_block(float x, int lane, uint8_t* __restrict__ blk)
 {
-#if MEMRA_KV_VFMT == 1
-    // q4_0 (ggml quantize_row_q4_0 semantics): d = signed-max/-8, q = trunc(x*id + 8.5)
-    // clamped to 15. |max| tie resolves to the LOWEST lane (= ggml's first-index scan).
-    float amax = warp_amax(x);
-    unsigned mm = __ballot_sync(0xffffffffu, fabsf(x) == amax);
-    float mx = __shfl_sync(0xffffffffu, x, __ffs(mm) - 1);
-    float d = mx / -8.0f;
-    float id = (d != 0.0f) ? 1.0f / d : 0.0f;
-    int q4 = min(15, (int)(x * id + 8.5f));
-    if (lane == 0) *(half*)blk = __float2half(d);
-    uint8_t* qs = blk + 2;
-    int nib = q4 & 0x0F;
-    int partner_nib = __shfl_sync(0xffffffffu, nib, lane + 16) & 0x0F;
-    if (lane < 16) qs[lane] = (uint8_t)(nib | (partner_nib << 4));
-#elif MEMRA_KV_VFMT == 2
+#if MEMRA_KV_VFMT == 2
     ((__nv_fp8_e4m3*)blk)[lane] = __nv_fp8_e4m3(x);
 #else
     float mn = warp_min(x);
@@ -7693,19 +7654,6 @@ extern "C" __global__ void fa_decode_vec_q_v4(
                 const int e2 = sub * 8 + e0;
                 out[e2] = blk[e2];   // raw e4m3 byte; cvt at use (bit-identical, half smem)
             }
-            #elif MEMRA_KV_VFMT == 1
-            // q4_0 V: f16 d + nibbles (V_BLK_B = 18; x = d*(q-8)).
-            const uint8_t* blk = V + (size_t)(t0 + j) * v_tok_bytes
-                                   + (size_t)(kblk0 + blk_i) * V_BLK_B;
-            const float d40 = __half2float(*(const half*)blk);
-            const uint8_t* qs4 = blk + 2;
-            __nv_bfloat16* out = sV + (size_t)j * head_dim + (blk_i << 5);
-            #pragma unroll
-            for (int e0 = 0; e0 < 8; ++e0) {
-                const int e2 = sub * 8 + e0;
-                const int q40 = (e2 < 16) ? (qs4[e2] & 0x0F) : (qs4[e2 - 16] >> 4);
-                out[e2] = __float2bfloat16(d40 * (float)(q40 - 8));
-            }
             #else
             const uint8_t* blk = V + (size_t)(t0 + j) * v_tok_bytes
                                    + (size_t)(kblk0 + blk_i) * 24;
@@ -7867,19 +7815,6 @@ extern "C" __global__ void fa_decode_vec_q_v4_dc(
             for (int e0 = 0; e0 < 8; ++e0) {
                 const int e2 = sub * 8 + e0;
                 out[e2] = blk[e2];   // raw e4m3 byte; cvt at use (bit-identical, half smem)
-            }
-            #elif MEMRA_KV_VFMT == 1
-            // q4_0 V: f16 d + nibbles (V_BLK_B = 18; x = d*(q-8)).
-            const uint8_t* blk = V + (size_t)(t0 + j) * v_tok_bytes
-                                   + (size_t)(kblk0 + blk_i) * V_BLK_B;
-            const float d40 = __half2float(*(const half*)blk);
-            const uint8_t* qs4 = blk + 2;
-            __nv_bfloat16* out = sV + (size_t)j * head_dim + (blk_i << 5);
-            #pragma unroll
-            for (int e0 = 0; e0 < 8; ++e0) {
-                const int e2 = sub * 8 + e0;
-                const int q40 = (e2 < 16) ? (qs4[e2] & 0x0F) : (qs4[e2 - 16] >> 4);
-                out[e2] = __float2bfloat16(d40 * (float)(q40 - 8));
             }
             #else
             const uint8_t* blk = V + (size_t)(t0 + j) * v_tok_bytes
@@ -8146,18 +8081,6 @@ static __device__ __forceinline__ void fa_v4_deep_walk(
             for (int e0 = 0; e0 < 8; ++e0) {
                 const int e2 = sub * 8 + e0;
                 out[e2] = blk[e2];   // raw e4m3 byte; cvt at use (bit-identical, half smem)
-            }
-            #elif MEMRA_KV_VFMT == 1
-            const uint8_t* blk = V + (size_t)(t0 + j) * v_tok_bytes
-                                   + (size_t)(kblk0 + blk_i) * V_BLK_B;
-            const float d40 = __half2float(*(const half*)blk);
-            const uint8_t* qs4 = blk + 2;
-            __nv_bfloat16* out = sV + (size_t)j * head_dim + (blk_i << 5);
-            #pragma unroll
-            for (int e0 = 0; e0 < 8; ++e0) {
-                const int e2 = sub * 8 + e0;
-                const int q40 = (e2 < 16) ? (qs4[e2] & 0x0F) : (qs4[e2 - 16] >> 4);
-                out[e2] = __float2bfloat16(d40 * (float)(q40 - 8));
             }
             #else
             // q5_1 dequant: v4 recipe verbatim per element, but the 8 bf16 collect in
@@ -8430,19 +8353,6 @@ extern "C" __global__ void fa_decode_vec_q_seqs_v4(
                 const int e2 = sub * 8 + e0;
                 out[e2] = blk[e2];   // raw e4m3 byte; cvt at use (bit-identical, half smem)
             }
-            #elif MEMRA_KV_VFMT == 1
-            // q4_0 V: f16 d + nibbles (V_BLK_B = 18; x = d*(q-8)).
-            const uint8_t* blk = V + (size_t)(t0 + j) * v_tok_bytes
-                                   + (size_t)(kblk0 + blk_i) * V_BLK_B;
-            const float d40 = __half2float(*(const half*)blk);
-            const uint8_t* qs4 = blk + 2;
-            __nv_bfloat16* out = sV + (size_t)j * head_dim + (blk_i << 5);
-            #pragma unroll
-            for (int e0 = 0; e0 < 8; ++e0) {
-                const int e2 = sub * 8 + e0;
-                const int q40 = (e2 < 16) ? (qs4[e2] & 0x0F) : (qs4[e2 - 16] >> 4);
-                out[e2] = __float2bfloat16(d40 * (float)(q40 - 8));
-            }
             #else
             const uint8_t* blk = V + (size_t)(t0 + j) * v_tok_bytes
                                    + (size_t)(kblk0 + blk_i) * 24;
@@ -8635,19 +8545,6 @@ extern "C" __global__ void fa_decode_vec_q_v4_noB3(
                 const int e2 = sub * 8 + e0;
                 out[e2] = blk[e2];   // raw e4m3 byte; cvt at use (bit-identical, half smem)
             }
-            #elif MEMRA_KV_VFMT == 1
-            // q4_0 V: f16 d + nibbles (V_BLK_B = 18; x = d*(q-8)).
-            const uint8_t* blk = V + (size_t)(t0 + j) * v_tok_bytes
-                                   + (size_t)(kblk0 + blk_i) * V_BLK_B;
-            const float d40 = __half2float(*(const half*)blk);
-            const uint8_t* qs4 = blk + 2;
-            __nv_bfloat16* out = sV + (size_t)j * head_dim + (blk_i << 5);
-            #pragma unroll
-            for (int e0 = 0; e0 < 8; ++e0) {
-                const int e2 = sub * 8 + e0;
-                const int q40 = (e2 < 16) ? (qs4[e2] & 0x0F) : (qs4[e2 - 16] >> 4);
-                out[e2] = __float2bfloat16(d40 * (float)(q40 - 8));
-            }
             #else
             const uint8_t* blk = V + (size_t)(t0 + j) * v_tok_bytes
                                    + (size_t)(kblk0 + blk_i) * 24;
@@ -8775,19 +8672,6 @@ extern "C" __global__ void fa_decode_vec_q_v4_stage(
                 const int e2 = sub * 8 + e0;
                 out[e2] = blk[e2];   // raw e4m3 byte; cvt at use (bit-identical, half smem)
             }
-            #elif MEMRA_KV_VFMT == 1
-            // q4_0 V: f16 d + nibbles (V_BLK_B = 18; x = d*(q-8)).
-            const uint8_t* blk = V + (size_t)(t0 + j) * v_tok_bytes
-                                   + (size_t)(kblk0 + blk_i) * V_BLK_B;
-            const float d40 = __half2float(*(const half*)blk);
-            const uint8_t* qs4 = blk + 2;
-            __nv_bfloat16* out = sV + (size_t)j * head_dim + (blk_i << 5);
-            #pragma unroll
-            for (int e0 = 0; e0 < 8; ++e0) {
-                const int e2 = sub * 8 + e0;
-                const int q40 = (e2 < 16) ? (qs4[e2] & 0x0F) : (qs4[e2 - 16] >> 4);
-                out[e2] = __float2bfloat16(d40 * (float)(q40 - 8));
-            }
             #else
             const uint8_t* blk = V + (size_t)(t0 + j) * v_tok_bytes
                                    + (size_t)(kblk0 + blk_i) * 24;
@@ -8892,19 +8776,6 @@ extern "C" __global__ void fa_decode_vec_q_rows_v4(
             for (int e0 = 0; e0 < 8; ++e0) {
                 const int e2 = sub * 8 + e0;
                 out[e2] = blk[e2];   // raw e4m3 byte; cvt at use (bit-identical, half smem)
-            }
-            #elif MEMRA_KV_VFMT == 1
-            // q4_0 V: f16 d + nibbles (V_BLK_B = 18; x = d*(q-8)).
-            const uint8_t* blk = V + (size_t)(t0 + j) * v_tok_bytes
-                                   + (size_t)(kblk0 + blk_i) * V_BLK_B;
-            const float d40 = __half2float(*(const half*)blk);
-            const uint8_t* qs4 = blk + 2;
-            __nv_bfloat16* out = sV + (size_t)j * head_dim + (blk_i << 5);
-            #pragma unroll
-            for (int e0 = 0; e0 < 8; ++e0) {
-                const int e2 = sub * 8 + e0;
-                const int q40 = (e2 < 16) ? (qs4[e2] & 0x0F) : (qs4[e2 - 16] >> 4);
-                out[e2] = __float2bfloat16(d40 * (float)(q40 - 8));
             }
             #else
             const uint8_t* blk = V + (size_t)(t0 + j) * v_tok_bytes
@@ -9071,19 +8942,6 @@ extern "C" __global__ void fa_decode_vec_q_rows_v4_dc(
                 const int e2 = sub * 8 + e0;
                 out[e2] = blk[e2];   // raw e4m3 byte; cvt at use (bit-identical, half smem)
             }
-            #elif MEMRA_KV_VFMT == 1
-            // q4_0 V: f16 d + nibbles (V_BLK_B = 18; x = d*(q-8)).
-            const uint8_t* blk = V + (size_t)(t0 + j) * v_tok_bytes
-                                   + (size_t)(kblk0 + blk_i) * V_BLK_B;
-            const float d40 = __half2float(*(const half*)blk);
-            const uint8_t* qs4 = blk + 2;
-            __nv_bfloat16* out = sV + (size_t)j * head_dim + (blk_i << 5);
-            #pragma unroll
-            for (int e0 = 0; e0 < 8; ++e0) {
-                const int e2 = sub * 8 + e0;
-                const int q40 = (e2 < 16) ? (qs4[e2] & 0x0F) : (qs4[e2 - 16] >> 4);
-                out[e2] = __float2bfloat16(d40 * (float)(q40 - 8));
-            }
             #else
             const uint8_t* blk = V + (size_t)(t0 + j) * v_tok_bytes
                                    + (size_t)(kblk0 + blk_i) * 24;
@@ -9249,19 +9107,6 @@ extern "C" __global__ void fa_decode_vec_q_rows_v4_w(
                 const int e2 = sub * 8 + e0;
                 out[e2] = blk[e2];   // raw e4m3 byte; cvt at use (bit-identical, half smem)
             }
-            #elif MEMRA_KV_VFMT == 1
-            // q4_0 V: f16 d + nibbles (V_BLK_B = 18; x = d*(q-8)).
-            const uint8_t* blk = V + (size_t)(t0 + j) * v_tok_bytes
-                                   + (size_t)(kblk0 + blk_i) * V_BLK_B;
-            const float d40 = __half2float(*(const half*)blk);
-            const uint8_t* qs4 = blk + 2;
-            __nv_bfloat16* out = sV + (size_t)j * head_dim + (blk_i << 5);
-            #pragma unroll
-            for (int e0 = 0; e0 < 8; ++e0) {
-                const int e2 = sub * 8 + e0;
-                const int q40 = (e2 < 16) ? (qs4[e2] & 0x0F) : (qs4[e2 - 16] >> 4);
-                out[e2] = __float2bfloat16(d40 * (float)(q40 - 8));
-            }
             #else
             const uint8_t* blk = V + (size_t)(t0 + j) * v_tok_bytes
                                    + (size_t)(kblk0 + blk_i) * 24;
@@ -9426,19 +9271,6 @@ extern "C" __global__ void fa_decode_vec_q_rows_v4_w_sp(
             for (int e0 = 0; e0 < 8; ++e0) {
                 const int e2 = sub * 8 + e0;
                 out[e2] = blk[e2];   // raw e4m3 byte; cvt at use (bit-identical, half smem)
-            }
-            #elif MEMRA_KV_VFMT == 1
-            // q4_0 V: f16 d + nibbles (V_BLK_B = 18; x = d*(q-8)).
-            const uint8_t* blk = V + (size_t)(t0 + j) * v_tok_bytes
-                                   + (size_t)(kblk0 + blk_i) * V_BLK_B;
-            const float d40 = __half2float(*(const half*)blk);
-            const uint8_t* qs4 = blk + 2;
-            __nv_bfloat16* out = sV + (size_t)j * head_dim + (blk_i << 5);
-            #pragma unroll
-            for (int e0 = 0; e0 < 8; ++e0) {
-                const int e2 = sub * 8 + e0;
-                const int q40 = (e2 < 16) ? (qs4[e2] & 0x0F) : (qs4[e2 - 16] >> 4);
-                out[e2] = __float2bfloat16(d40 * (float)(q40 - 8));
             }
             #else
             const uint8_t* blk = V + (size_t)(t0 + j) * v_tok_bytes
@@ -10209,18 +10041,6 @@ extern "C" __global__ void fa_decode_vec_q_rows_v4_512_tb(
         for (int e0 = 0; e0 < 8; ++e0) {
             const int e2 = sub * 8 + e0;
             out[e2] = blk[e2];
-        }
-        #elif MEMRA_KV_VFMT == 1
-        const uint8_t* blk = V + (size_t)(t_lo + j) * v_tok_bytes
-                               + (size_t)(kblk0 + blk_i) * V_BLK_B;
-        const float d40 = __half2float(*(const half*)blk);
-        const uint8_t* qs4 = blk + 2;
-        __nv_bfloat16* out = sV + (size_t)j * head_dim + (blk_i << 5);
-        #pragma unroll
-        for (int e0 = 0; e0 < 8; ++e0) {
-            const int e2 = sub * 8 + e0;
-            const int q40 = (e2 < 16) ? (qs4[e2] & 0x0F) : (qs4[e2 - 16] >> 4);
-            out[e2] = __float2bfloat16(d40 * (float)(q40 - 8));
         }
         #else
         const uint8_t* blk = V + (size_t)(t_lo + j) * v_tok_bytes

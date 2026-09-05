@@ -3098,7 +3098,7 @@ impl HybridModel {
         let seqs_append = {
             static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
             *ON.get_or_init(|| std::env::var("MEMRA_BATCH_APPEND").as_deref() != Ok("0"))
-        } && !Engine::kv_fp8_on();
+        };
         let sp0 = crate::fa_split_keys(t_kvs[0], cfg.n_head_kv as usize);
         let seqs_fa = {
             static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -3283,7 +3283,7 @@ impl HybridModel {
                                 kvl.kv_dim_v,
                                 kvl.k_tok_bytes,
                                 kvl.v_tok_bytes,
-                                Engine::kv_fp8_on(),
+                                false,
                             )?;
                             kvl.len += 1;
                         }
@@ -3326,7 +3326,7 @@ impl HybridModel {
                                 scale,
                                 kvl.k_tok_bytes,
                                 kvl.v_tok_bytes,
-                                Engine::kv_fp8_on(),
+                                false,
                             )?;
                             ph_mark(e, 4, ph_last)?;
                         }
@@ -4074,7 +4074,7 @@ impl HybridModel {
                         kvl.kv_dim_v,
                         kvl.k_tok_bytes,
                         kvl.v_tok_bytes,
-                        Engine::kv_fp8_on(),
+                        false,
                     )?;
                     kvl.len = next_len;
                     ph_mark(e, 2, ph_last)?;
@@ -4101,7 +4101,7 @@ impl HybridModel {
                         scale,
                         kvl.k_tok_bytes,
                         kvl.v_tok_bytes,
-                        Engine::kv_fp8_on(),
+                        false,
                     )?;
                     ph_mark(e, 4, ph_last)?;
                 } else {
@@ -4127,7 +4127,7 @@ impl HybridModel {
                             kvl.kv_dim_v,
                             kvl.k_tok_bytes,
                             kvl.v_tok_bytes,
-                            Engine::kv_fp8_on(),
+                            false,
                         )?;
                         kvl.len = next_len;
                         ph_mark(e, 2, ph_last)?;
@@ -4161,7 +4161,7 @@ impl HybridModel {
                             scale,
                             kvl.k_tok_bytes,
                             kvl.v_tok_bytes,
-                            Engine::kv_fp8_on(),
+                            false,
                         )?;
                         ph_mark(e, 4, ph_last)?;
                     }

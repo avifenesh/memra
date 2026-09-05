@@ -205,10 +205,6 @@ fn main() {
             "qmatvec_gemm",
             "moe_router",
             "spec_sample",
-            "flash_attn_vq4",
-            "flash_attn_vf8",
-            "flash_attn_kf8",
-            "flash_attn_kf8vq4",
             "flash_attn_kf8vf8",
         ] {
             std::fs::write(out.join(format!("{stem}.fatbin")), []).unwrap();
@@ -222,10 +218,6 @@ fn main() {
             ("MEMRA_GEMM_FATBIN", "qmatvec_gemm"),
             ("MEMRA_ROUTER_FATBIN", "moe_router"),
             ("MEMRA_SAMPLE_FATBIN", "spec_sample"),
-            ("MEMRA_FLASH_FATBIN_VQ4", "flash_attn_vq4"),
-            ("MEMRA_FLASH_FATBIN_VF8", "flash_attn_vf8"),
-            ("MEMRA_FLASH_FATBIN_KF8", "flash_attn_kf8"),
-            ("MEMRA_FLASH_FATBIN_KF8VQ4", "flash_attn_kf8vq4"),
             ("MEMRA_FLASH_FATBIN_KF8VF8", "flash_attn_kf8vf8"),
         ] {
             println!(
@@ -324,18 +316,12 @@ fn main() {
         println!("cargo:rustc-env={env}={}", fatbin.display());
     }
 
-    // ---- KV-format fatbin variants of flash_attn.cu (kvbytes lane, 2026-07-08) ----
-    // Same kernels/entry names, compile-time K/V cache format via -D. Engine::new picks the
-    // fatbin at runtime from env MEMRA_KV_K / MEMRA_KV_V (lib.rs flash_fatbin_bytes); the default
-    // (no env) loads the plain flash_attn.fatbin built above — bit-identical daily config.
-    for (suffix, kfmt, vfmt) in [
-        ("VQ4", 0, 1),
-        ("VF8", 0, 2),
-        ("KF8", 1, 0),
-        ("KF8VQ4", 1, 1),
-        ("KF8VF8", 1, 2),
-    ] {
-        let fatbin = out.join(format!("flash_attn_{}.fatbin", suffix.to_lowercase()));
+    // ---- The e4m3 KV fatbin variant of flash_attn.cu (kvbytes lane, 2026-07-08) ----
+    // Same kernels/entry names, compile-time K/V cache format via -D: kf8vf8 is the module
+    // gemma's GKV/WKV e4m3 layers load alongside the default (lib.rs `func_g`). The env-selected
+    // trunk variants (VQ4, VF8, KF8, KF8VQ4) were removed 2026-09-05 (door sweep).
+    {
+        let fatbin = out.join("flash_attn_kf8vf8.fatbin");
         let mut args = vec![
             "-gencode".to_string(),
             gencode.clone(),
@@ -349,8 +335,8 @@ fn main() {
             args.push("-DMEMRA_HOPPER_MMA=1".to_string());
         }
         args.extend([
-            format!("-DMEMRA_KV_KFMT={kfmt}"),
-            format!("-DMEMRA_KV_VFMT={vfmt}"),
+            "-DMEMRA_KV_KFMT=1".to_string(),
+            "-DMEMRA_KV_VFMT=2".to_string(),
             "-o".to_string(),
             fatbin.to_string_lossy().into_owned(),
             "cu/flash_attn.cu".to_string(),
@@ -358,13 +344,13 @@ fn main() {
         let status = Command::new(&nvcc)
             .args(args)
             .status()
-            .expect("spawn nvcc (flash_attn kv-format variant)");
+            .expect("spawn nvcc (flash_attn kf8vf8 variant)");
         assert!(
             status.success(),
-            "nvcc fatbin build failed for flash_attn kv variant {suffix}"
+            "nvcc fatbin build failed for the flash_attn kf8vf8 variant"
         );
         println!(
-            "cargo:rustc-env=MEMRA_FLASH_FATBIN_{suffix}={}",
+            "cargo:rustc-env=MEMRA_FLASH_FATBIN_KF8VF8={}",
             fatbin.display()
         );
     }

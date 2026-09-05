@@ -61,12 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|k| k.len + 1)
             .next()
             .unwrap_or(0);
-        let key = e.fa_bucket_key(
-            t_kv,
-            head_dim,
-            m.cfg.n_head_kv as usize,
-            crate::Engine::kv_fp8_on(),
-        );
+        let key = e.fa_bucket_key(t_kv, head_dim, m.cfg.n_head_kv as usize, false);
         if !buckets_seen.contains(&key) {
             buckets_seen.push(key);
         }

@@ -670,35 +670,16 @@ const fn legacy_quant_gemm_allowed(portable_cuda: bool, hopper_mma: bool, no_gem
     (!portable_cuda || hopper_mma) && !no_gemm
 }
 
-// ---- KV-cache format selection (kvbytes lane, 2026-07-08; default OFF = daily config) ----
-// `MEMRA_KV_K` = q8_0 (default, 34 B/32elem) | fp8 (raw e4m3, 32 B — the -6% K-bytes arm)
-// `MEMRA_KV_V` = q5_1 (default, 24 B/32elem) | q4_0 (18 B, -25% V bytes) | fp8 (32 B, +33%)
-// A non-default format is a NEW NUMERIC CONFIG: its own run-gen argmax baseline is legal,
-// but the gate battery (kernel-check, run-spec self-consistency) must pass WITHIN it and
-// the choice is explicit env, never silent. flash_attn.cu is compiled once per format pair
-// (build.rs); the kernels keep their names — Engine::new just loads the matching fatbin.
-const FLASH_FATBIN_VQ4: &[u8] = include_bytes!(env!("MEMRA_FLASH_FATBIN_VQ4"));
-const FLASH_FATBIN_VF8: &[u8] = include_bytes!(env!("MEMRA_FLASH_FATBIN_VF8"));
-const FLASH_FATBIN_KF8: &[u8] = include_bytes!(env!("MEMRA_FLASH_FATBIN_KF8"));
-const FLASH_FATBIN_KF8VQ4: &[u8] = include_bytes!(env!("MEMRA_FLASH_FATBIN_KF8VQ4"));
+// The kf8vf8 flash fatbin: flash_attn.cu compiled with e4m3 K and V (`-DMEMRA_KV_KFMT=1
+// -DMEMRA_KV_VFMT=2`) for gemma's global/windowed e4m3 layers (`MEMRA_GEMMA_GKV` /
+// `MEMRA_GEMMA_WKV`, loaded alongside the default module by `func_g`). The env-selected trunk
+// formats (`MEMRA_KV_K` / `MEMRA_KV_V`) and their four other variants were removed 2026-09-05
+// (door sweep): the trunk cache is q8_0 K / q5_1 V.
 const FLASH_FATBIN_KF8VF8: &[u8] = include_bytes!(env!("MEMRA_FLASH_FATBIN_KF8VF8"));
 
-/// KV format policy moved to the shared `memra-kv` crate (Phase D); re-exported so the
-/// fatbin router below and every existing `crate::kv_blk_bytes()` call site is unchanged.
-pub use memra_kv::{kv_blk_bytes, kv_cache_formats};
-
-/// The flash_attn fatbin matching the selected KV formats.
-fn flash_fatbin_bytes() -> &'static [u8] {
-    match kv_cache_formats() {
-        ("q8_0", "q5_1") => FLASH_FATBIN,
-        ("q8_0", "q4_0") => FLASH_FATBIN_VQ4,
-        ("q8_0", "fp8") => FLASH_FATBIN_VF8,
-        ("fp8", "q5_1") => FLASH_FATBIN_KF8,
-        ("fp8", "q4_0") => FLASH_FATBIN_KF8VQ4,
-        ("fp8", "fp8") => FLASH_FATBIN_KF8VF8,
-        other => unreachable!("kv_cache_formats returned {other:?}"),
-    }
-}
+/// KV block geometry lives in the shared `memra-kv` crate (Phase D); re-exported so every
+/// existing `crate::kv_blk_bytes()` call site is unchanged.
+pub use memra_kv::kv_blk_bytes;
 
 /// TUNE SEAM (tools/sweep): kernel1 (Q8_0/Q4_K/Q5_K) launch-tile override,
 /// `MEMRA_GEMM_K1_LAUNCH="BM,BN,NWARP"`. MUST match the `-D K1_BM/K1_BN/NWARP` the swept
@@ -841,9 +822,6 @@ pub static FA_SP_GEMMA: std::sync::atomic::AtomicBool = std::sync::atomic::Atomi
 /// selector made identical boots choose different fold orders; `MEMRA_MMQ_SK_FORM` is the
 /// explicit numerical-form seam. mmq_ffi reads this before the env.
 pub static MMQ_SK_FORCE: std::sync::atomic::AtomicI8 = std::sync::atomic::AtomicI8::new(-1);
-/// Per-model FP8-KV door — lives in memra-kv next to the format policy it drives
-/// (re-export keeps `crate::KV_FP8_FORCE` setters in model.rs/hybrid.rs working).
-pub use memra_kv::KV_FP8_FORCE;
 /// bf16 matvec family block size (MEMRA_MMV_BLOCK, default 128, clamped to [64, 256] and a
 /// multiple of 32 — the f32acc twin's shared reduce caps at 256). NUMERIC-CLASS knob: the
 /// per-thread stride and reduction order change with the block, same acceptance class as
@@ -1757,20 +1735,16 @@ pub fn fa_deep_at_pub(t_kv: usize) -> bool {
 }
 
 fn fa_v3_active(head_dim: usize) -> bool {
-    // v3's dp4a-K walk reads raw q8_0 K bytes — no e4m3 arm; the fp8-KV arm (MEMRA_KV_FP8)
-    // must fall back like any non-default KV format (the rows_dc stream path asserts on it).
-    fa_v3_on()
-        && head_dim.is_multiple_of(128)
-        && kv_cache_formats() == ("q8_0", "q5_1")
-        && !Engine::kv_fp8_on()
+    // v3's dp4a-K walk reads raw q8_0 K bytes (the trunk cache's one format).
+    fa_v3_on() && head_dim.is_multiple_of(128)
 }
 
 /// BATCHED-TICK increment 2 (2026-08-01): true iff a row at this t_kv would take the v4
 /// eager arm in `fa_decode_kvmod`'s dispatch — the exact precondition for the z-batched
 /// `fa_decode_vec_q_seqs_v4` twin to reproduce its per-seq program bit-identically.
 /// Mirrors the kvmod predicates: vec on + above the vec floor + hd256 + inside the v4
-/// window + the PRODUCTION v4 body (the noB3/stage phase probes are wrong-output) + the
-/// default flash module (no fp8-KV g-module). Callers must ALSO group rows on one
+/// window + the PRODUCTION v4 body (the noB3/stage phase probes are wrong-output).
+/// Callers must ALSO group rows on one
 /// `fa_split_keys` rung (the rows-twins' straddle law) before batching.
 pub fn fa_seqs_eligible(t_kv: usize, head_dim: usize) -> bool {
     std::env::var("MEMRA_NO_FA_VEC").is_err()
@@ -1778,7 +1752,6 @@ pub fn fa_seqs_eligible(t_kv: usize, head_dim: usize) -> bool {
         && head_dim == 256
         && fa_v4_at(t_kv)
         && !matches!(fa_v4_mode(), "noB3" | "stage")
-        && !Engine::kv_fp8_on()
 }
 /// Public twin of the crate-private split ladder (kernel-check builds the seqs-vs-loop pin).
 pub fn fa_split_keys_pub(t_kv: usize, n_head_kv: usize) -> usize {
@@ -3252,7 +3225,7 @@ impl Engine {
             .load_module(Ptx::from_binary(QMATVEC_FATBIN.to_vec()))?;
         let flash = gpu
             .ctx
-            .load_module(Ptx::from_binary(flash_fatbin_bytes().to_vec()))?;
+            .load_module(Ptx::from_binary(FLASH_FATBIN.to_vec()))?;
         let gemm = gpu
             .ctx
             .load_module(Ptx::from_binary(gemm_fatbin_bytes().into_owned()))?;
@@ -3517,15 +3490,6 @@ impl Engine {
     /// ON for both — no acceptance cost measured.
     pub fn wkv_on() -> bool {
         memra_kv::wkv_on()
-    }
-
-    /// QWEN FP8-KV switch (MEMRA_KV_FP8 explicit; else the per-model KV_FP8_FORCE door set
-    /// at model load; else OFF). Non-gemma full-attn layers hold e4m3 K/V via the kf8vf8
-    /// module. Per-model verdict 2026-07-12: 9B +0.7-4% scaling with depth, 27B flat,
-    /// 35B −2% (fp8 format-gates its v3 dp4a lane) — so the 9B class defaults ON
-    /// (adopted 2026-07-28 with the deferred acceptance battery), others stay OFF.
-    pub fn kv_fp8_on() -> bool {
-        memra_kv::kv_fp8_on()
     }
 
     /// fa kernel routed by head_dim: hd512 (gemma globals) resolves from the kf8vf8 module

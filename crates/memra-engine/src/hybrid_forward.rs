@@ -160,7 +160,6 @@ fn step_tp_prefill_shape(
     ranks: usize,
     native_p2p: bool,
     has_rank_local_attention: bool,
-    fp8_kv: bool,
 ) -> bool {
     // TP2 admitted 2026-08-25 behind the same off-by-default door. The prefill body is
     // rank-count-generic (every geometry check divides by `ranks`); only this shape ever
@@ -174,7 +173,6 @@ fn step_tp_prefill_shape(
         && matches!(ranks, 2 | 4)
         && native_p2p
         && has_rank_local_attention
-        && !fp8_kv
 }
 
 fn empty_cache_layers<T>(n: usize) -> Vec<Option<T>> {
@@ -7810,7 +7808,7 @@ impl HybridModel {
                 kvl.kv_dim_v,
                 kvl.k_tok_bytes,
                 kvl.v_tok_bytes,
-                crate::Engine::kv_fp8_on(),
+                false,
             )?;
             kvl.len += t;
             let new_len = kvl.len as i32;
@@ -7921,7 +7919,7 @@ impl HybridModel {
                 true,
                 kvl.k_tok_bytes,
                 kvl.v_tok_bytes,
-                crate::Engine::kv_fp8_on(),
+                false,
             )?;
         } else {
             e.fa_prefill_view(
@@ -7938,7 +7936,7 @@ impl HybridModel {
                 true,
                 kvl.k_tok_bytes,
                 kvl.v_tok_bytes,
-                crate::Engine::kv_fp8_on(),
+                false,
             )?;
         }
         Ok(())
@@ -23118,7 +23116,7 @@ impl HybridModel {
                         kvl.kv_dim_v,
                         kvl.k_tok_bytes,
                         kvl.v_tok_bytes,
-                        crate::Engine::kv_fp8_on(),
+                        false,
                     )?;
                     kvl.len += t;
                     let new_len = kvl.len as i32;
@@ -23258,7 +23256,7 @@ impl HybridModel {
                         true,
                         kvl.k_tok_bytes,
                         kvl.v_tok_bytes,
-                        crate::Engine::kv_fp8_on(),
+                        false,
                     )?;
                 }
             }
@@ -23487,20 +23485,11 @@ impl HybridModel {
             .as_ref()
             .ok_or("Step TP prefill lost its resident attention auxiliaries")?;
         let ranks = tp.runtime.devices().len();
-        if !step_tp_prefill_shape(
-            true,
-            tokens,
-            ranks,
-            tp.runtime.native_p2p(),
-            true,
-            crate::Engine::kv_fp8_on(),
-        ) {
+        if !step_tp_prefill_shape(true, tokens, ranks, tp.runtime.native_p2p(), true) {
             return Err(format!(
                 "rank-local Step prefill requires tokens>={PRIME_MIN_T}, TP2/TP4 native P2P, \
-                 rank-local attention, and q8_0/q5_1 KV; got tokens={tokens} ranks={ranks} \
-                 native_p2p={} fp8_kv={}",
+                 and rank-local attention; got tokens={tokens} ranks={ranks} native_p2p={}",
                 tp.runtime.native_p2p(),
-                crate::Engine::kv_fp8_on(),
             )
             .into());
         }
@@ -24073,9 +24062,6 @@ impl HybridModel {
         if !tp.runtime.native_p2p() {
             return Err("rank-local Step attention requires native P2P".into());
         }
-        if crate::Engine::kv_fp8_on() {
-            return Err("rank-local Step attention has not qualified the FP8 KV cache".into());
-        }
 
         let geometry = self.step35_geom(il);
         let window = geometry.window.map(|window| window as usize);
@@ -24557,7 +24543,6 @@ impl HybridModel {
             return Ok(false);
         };
         if !tp.runtime.native_p2p()
-            || crate::Engine::kv_fp8_on()
             || !crate::tp::step_tp_dcw_enabled()?
             || !crate::tp::step_tp_qkv_fused_enabled()?
             || (attention.gate_shards.is_none() && attention.gate_shards_bf16.is_none())
@@ -24714,7 +24699,6 @@ impl HybridModel {
             return Ok(false);
         };
         if !tp.runtime.native_p2p()
-            || crate::Engine::kv_fp8_on()
             || !crate::tp::step_tp_dcw_enabled()?
             || !crate::tp::step_tp_qkv_fused_enabled()?
             || (attention.gate_shards.is_none() && attention.gate_shards_bf16.is_none())
@@ -25176,9 +25160,6 @@ impl HybridModel {
             .ok_or("Step TP decode lost its resident attention auxiliaries")?;
         if !tp.runtime.native_p2p() {
             return Err("rank-local Step attention requires native P2P".into());
-        }
-        if crate::Engine::kv_fp8_on() {
-            return Err("rank-local Step attention has not qualified the FP8 KV cache".into());
         }
 
         let geometry = self.cfg.full_attention_geometry_at(il as u32);
@@ -25960,7 +25941,7 @@ impl HybridModel {
             kvl.kv_dim_v,
             kvl.k_tok_bytes,
             kvl.v_tok_bytes,
-            crate::Engine::kv_fp8_on(),
+            false,
         )?;
         kvl.len = next_len;
         let physical = kvl.physical_rows(off, off + t_kv)?;
@@ -25987,7 +25968,7 @@ impl HybridModel {
             scale,
             kvl.k_tok_bytes,
             kvl.v_tok_bytes,
-            crate::Engine::kv_fp8_on(),
+            false,
         )?;
 
         let mut ag = e.uninit(nh * hd)?;
@@ -27245,79 +27226,15 @@ mod prime_chunk_schedule_tests {
 
     #[test]
     fn step_tp_prefill_requires_a_qualified_even_rank_shape() {
-        assert!(step_tp_prefill_shape(
-            true,
-            PRIME_MIN_T,
-            4,
-            true,
-            true,
-            false,
-        ));
-        assert!(!step_tp_prefill_shape(
-            false,
-            PRIME_MIN_T,
-            4,
-            true,
-            true,
-            false,
-        ));
-        assert!(!step_tp_prefill_shape(
-            true,
-            PRIME_MIN_T - 1,
-            4,
-            true,
-            true,
-            false,
-        ));
+        assert!(step_tp_prefill_shape(true, PRIME_MIN_T, 4, true, true,));
+        assert!(!step_tp_prefill_shape(false, PRIME_MIN_T, 4, true, true,));
+        assert!(!step_tp_prefill_shape(true, PRIME_MIN_T - 1, 4, true, true,));
         // TP2 admits (2026-08-25); odd/1-card placements still refuse.
-        assert!(step_tp_prefill_shape(
-            true,
-            PRIME_MIN_T,
-            2,
-            true,
-            true,
-            false
-        ));
-        assert!(!step_tp_prefill_shape(
-            true,
-            PRIME_MIN_T,
-            1,
-            true,
-            true,
-            false
-        ));
-        assert!(!step_tp_prefill_shape(
-            true,
-            PRIME_MIN_T,
-            3,
-            true,
-            true,
-            false
-        ));
-        assert!(!step_tp_prefill_shape(
-            true,
-            PRIME_MIN_T,
-            4,
-            false,
-            true,
-            false,
-        ));
-        assert!(!step_tp_prefill_shape(
-            true,
-            PRIME_MIN_T,
-            4,
-            true,
-            false,
-            false,
-        ));
-        assert!(!step_tp_prefill_shape(
-            true,
-            PRIME_MIN_T,
-            4,
-            true,
-            true,
-            true,
-        ));
+        assert!(step_tp_prefill_shape(true, PRIME_MIN_T, 2, true, true,));
+        assert!(!step_tp_prefill_shape(true, PRIME_MIN_T, 1, true, true,));
+        assert!(!step_tp_prefill_shape(true, PRIME_MIN_T, 3, true, true,));
+        assert!(!step_tp_prefill_shape(true, PRIME_MIN_T, 4, false, true,));
+        assert!(!step_tp_prefill_shape(true, PRIME_MIN_T, 4, true, false,));
     }
 
     #[test]
