@@ -846,6 +846,126 @@ fn gpu_topk_shards_match_standing_kernel_exactly() {
     println!("door K RED bites: row-4 indices moved under a one-column rotation");
 }
 
+/// Door `MEMRA_TOPK_WARP`: the warp-merged exact twin vs the STANDING kernel (both other
+/// doors pinned off), values bitwise and indices equal on the planted-tie fixture of door K
+/// plus a planted-NaN row and a row narrower than the block; engagement counted; the
+/// rotated-row red arm bites through the door.
+#[test]
+#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
+fn gpu_topk_warp_matches_standing_kernel_exactly() {
+    let _gpu = gpu_guard();
+    force_true_f32();
+    let e = Engine::new(0).expect("CUDA engine on device 0");
+    let (n_rows, n_cols, k) = (15usize, 20_000usize, 16usize);
+    let mut l = varied(n_rows * n_cols, 0x70D0, 2.0);
+    l[900] = 9.5;
+    l[17_311] = 9.5;
+    for j in 0..(k + 4) {
+        l[n_cols + (j * 997 + 13)] = 7.25;
+    }
+    for c in 0..n_cols {
+        l[2 * n_cols + c] = 1.0;
+    }
+    for c in 0..n_cols {
+        l[3 * n_cols + c] = f32::NEG_INFINITY;
+    }
+    for j in 0..(k - 1) {
+        l[3 * n_cols + j * 1000 + 500] = 0.5 + j as f32;
+    }
+    // row 5: NaN planted on what would otherwise be maxima; NaN never enters a list.
+    for j in 0..8 {
+        l[5 * n_cols + j * 2311 + 7] = f32::NAN;
+    }
+    l[5 * n_cols + 4000] = 11.0;
+    let l_d = e.htod(&l).expect("logits upload");
+
+    let (v_off, i_off) = without_flag("MEMRA_TOPK_SHARDS", || {
+        e.topk_rows(&l_d, n_rows, n_cols, k).expect("standing topk")
+    });
+    let d0 = memra_engine::topk_warp_dispatches();
+    let (v_on, i_on) = without_flag("MEMRA_TOPK_SHARDS", || {
+        with_flag("MEMRA_TOPK_WARP", || {
+            e.topk_rows(&l_d, n_rows, n_cols, k).expect("warp topk")
+        })
+    });
+    assert!(
+        memra_engine::topk_warp_dispatches() > d0,
+        "the warp door did not engage"
+    );
+    let vals_off = e.dtoh(&v_off).expect("v off");
+    let vals_on = e.dtoh(&v_on).expect("v on");
+    let idx_off = e.dtoh_u32(&i_off).expect("i off");
+    let idx_on = e.dtoh_u32(&i_on).expect("i on");
+    let vdiffs = bit_diffs(&vals_on, &vals_off);
+    assert_eq!(vdiffs, 0, "warp top-k values diverged in {vdiffs} slots");
+    assert_eq!(idx_on, idx_off, "warp top-k indices diverged");
+    assert_eq!(idx_off[0], 900, "row-0 tie must resolve to the lower index");
+    assert_eq!(&idx_off[2 * k..2 * k + 4], &[0, 1, 2, 3]);
+    assert_eq!(
+        idx_off[k], 13,
+        "row-1 scattered ties must start at the lowest index"
+    );
+    assert_eq!(
+        idx_off[3 * k + k - 1],
+        0,
+        "the sparse -inf row's 16th slot is the -inf tie at column 0"
+    );
+    assert_eq!(
+        idx_off[5 * k],
+        4000,
+        "row-5: the NaN-planted maxima must not be selected"
+    );
+    assert!(
+        vals_off[5 * k..6 * k].iter().all(|v| !v.is_nan()),
+        "row-5 selected a NaN"
+    );
+    println!("door TOPK_WARP PASS: {n_rows} rows x {k} slots value+index identical");
+
+    // A row narrower than the block: most lanes hold empty lists, and k > lanes-with-data.
+    let narrow_cols = 100usize;
+    let narrow = e.htod(&l[..n_rows * narrow_cols]).expect("narrow logits");
+    let (nv_off, ni_off) = without_flag("MEMRA_TOPK_SHARDS", || {
+        e.topk_rows(&narrow, n_rows, narrow_cols, k)
+            .expect("narrow standing")
+    });
+    let (nv_on, ni_on) = without_flag("MEMRA_TOPK_SHARDS", || {
+        with_flag("MEMRA_TOPK_WARP", || {
+            e.topk_rows(&narrow, n_rows, narrow_cols, k)
+                .expect("narrow warp")
+        })
+    });
+    assert_eq!(
+        bit_diffs(
+            &e.dtoh(&nv_on).expect("nv on"),
+            &e.dtoh(&nv_off).expect("nv off")
+        ),
+        0,
+        "narrow-row values diverged"
+    );
+    assert_eq!(
+        e.dtoh_u32(&ni_on).expect("ni on"),
+        e.dtoh_u32(&ni_off).expect("ni off"),
+        "narrow-row indices diverged"
+    );
+
+    // RED ARM: rotating row 4 by one column must move its indices through the door.
+    let mut l_rot = l.clone();
+    l_rot[4 * n_cols..5 * n_cols].rotate_right(1);
+    let lr_d = e.htod(&l_rot).expect("rotated upload");
+    let (_, i_rot) = without_flag("MEMRA_TOPK_SHARDS", || {
+        with_flag("MEMRA_TOPK_WARP", || {
+            e.topk_rows(&lr_d, n_rows, n_cols, k).expect("rotated topk")
+        })
+    });
+    let idx_rot = e.dtoh_u32(&i_rot).expect("i rot");
+    assert_ne!(
+        &idx_rot[4 * k..5 * k],
+        &idx_off[4 * k..5 * k],
+        "rotated-row red arm left row-4 indices unchanged — the gate is vacuous"
+    );
+    println!("door TOPK_WARP RED bites: row-4 indices moved under a one-column rotation");
+}
+
 /// Door I (`MEMRA_MOE_VROWS_ILP`): the `_ilp` twins (loads of four, then two, groups per lane
 /// hoisted ahead of their math) vs the shipped pair, BITWISE, at the served nsb classes — gate/up
 /// at in_f 4096 (nsb 128: one four-deep round per lane) and down at in_f = n_ff 2048 (nsb 64: one
