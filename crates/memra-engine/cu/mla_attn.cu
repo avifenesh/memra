@@ -166,6 +166,38 @@ extern "C" __global__ void memra_mla_append_latent_kernel(float* __restrict__ ca
     cache[(long)(slot + row) * width + col] = v;
 }
 
+// Live-slot twin (lane/mla-live-len-20260905): the row offset comes from the decode-graph door's
+// device position word (`pos_d[0]`, the same word the KDA runs read) instead of a launch scalar,
+// so the append can sit inside a captured graph and replay at the next slot. Same element
+// mapping, same store: bit-identical to the scalar kernel at slot == pos_d[0].
+extern "C" __global__ void memra_mla_append_latent_live_kernel(float* __restrict__ cache,
+                                                               const float* __restrict__ c_kv,
+                                                               const float* __restrict__ k_pe,
+                                                               const int* __restrict__ pos_d,
+                                                               int t, int kv_rank, int d_rope) {
+    int slot = pos_d[0];
+    int width = kv_rank + d_rope;
+    long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= (long)t * width) return;
+    int row = (int)(i / width), col = (int)(i % width);
+    float v = (col < kv_rank) ? c_kv[(long)row * kv_rank + col]
+                              : k_pe[(long)row * d_rope + (col - kv_rank)];
+    cache[(long)(slot + row) * width + col] = v;
+}
+extern "C" int memra_mla_append_latent_live_f32(float* cache, const float* c_kv, const float* k_pe,
+                                                const int* pos_d, int t, int kv_rank, int d_rope,
+                                                void* stream_v) {
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    long tot = (long)t * (kv_rank + d_rope);
+    if (tot == 0) return 0;
+    int threads = 256;
+    long blocks = (tot + threads - 1) / threads;
+    memra_mla_append_latent_live_kernel<<<(unsigned)blocks, threads, 0, stream>>>(
+        cache, c_kv, k_pe, pos_d, t, kv_rank, d_rope);
+    MLA_ERR();
+    return 0;
+}
+
 extern "C" int memra_mla_append_latent_f32(float* cache, const float* c_kv, const float* k_pe,
                                            int slot, int t, int kv_rank, int d_rope,
                                            void* stream_v) {
@@ -674,7 +706,10 @@ extern "C" int memra_mla_decompress_v_split_f32(const float* o_lat, const float*
 // The accumulation ORDER differs from the CPU oracle's (tiled + rescaled vs a single left-to-right
 // pass), so parity is a maxdiff bound, never bit-identity. That is the documented bar for this
 // kernel family (DESIGN.md increment 4: "per-layer maxdiff vs mla.rs").
-extern "C" __global__ void memra_mla_attn_absorbed_kernel(
+// Body of the absorbed decode core, shared by the scalar-t_kv entry below and the live-length
+// twin (lane/mla-live-len-20260905) that reads t_kv from the door's device position word. One
+// body, two entries: the live entry is bit-identical to the scalar one at t_kv == pos_d[0] + t_q.
+__device__ __forceinline__ void memra_mla_attn_absorbed_body(
     const float* __restrict__ q_lat, const float* __restrict__ q_pe,
     const float* __restrict__ cache, float* __restrict__ o_lat, int n_head, int kv_rank,
     int d_rope, int t_q, int t_kv, float scale) {
@@ -742,6 +777,19 @@ extern "C" __global__ void memra_mla_attn_absorbed_kernel(
     for (int l = threadIdx.x; l < kv_rank; l += blockDim.x)
         o_lat[(long)blk * kv_rank + l] = s_acc[l] * inv;
 }
+extern "C" __global__ void memra_mla_attn_absorbed_kernel(
+    const float* __restrict__ q_lat, const float* __restrict__ q_pe,
+    const float* __restrict__ cache, float* __restrict__ o_lat, int n_head, int kv_rank,
+    int d_rope, int t_q, int t_kv, float scale) {
+    memra_mla_attn_absorbed_body(q_lat, q_pe, cache, o_lat, n_head, kv_rank, d_rope, t_q, t_kv, scale);
+}
+extern "C" __global__ void memra_mla_attn_absorbed_live_kernel(
+    const float* __restrict__ q_lat, const float* __restrict__ q_pe,
+    const float* __restrict__ cache, float* __restrict__ o_lat, int n_head, int kv_rank,
+    int d_rope, int t_q, const int* __restrict__ pos_d, float scale) {
+    int t_kv = pos_d[0] + t_q;
+    memra_mla_attn_absorbed_body(q_lat, q_pe, cache, o_lat, n_head, kv_rank, d_rope, t_q, t_kv, scale);
+}
 
 extern "C" int memra_mla_attn_absorbed_f32(const float* q_lat, const float* q_pe,
                                            const float* cache, float* o_lat, int n_head,
@@ -755,6 +803,23 @@ extern "C" int memra_mla_attn_absorbed_f32(const float* q_lat, const float* q_pe
     if (blocks == 0) return 0;
     memra_mla_attn_absorbed_kernel<<<(unsigned)blocks, MLA_THREADS, 0, stream>>>(
         q_lat, q_pe, cache, o_lat, n_head, kv_rank, d_rope, t_q, t_kv, scale);
+    MLA_ERR();
+    return 0;
+}
+// Live-length twin: t_kv = pos_d[0] + t_q on the device, so the launch geometry (t_q * n_head
+// blocks) is fixed and the kernel can sit inside a captured graph. The host cannot check
+// t_q <= t_kv here; the door owns that invariant (pos_d is the slot the queries append at).
+extern "C" int memra_mla_attn_absorbed_live_f32(const float* q_lat, const float* q_pe,
+                                                const float* cache, float* o_lat, int n_head,
+                                                int kv_rank, int d_rope, int t_q,
+                                                const int* pos_d, float scale, void* stream_v) {
+    if (kv_rank > MLA_MAX_RANK) return 40002;
+    if (d_rope > MLA_MAX_ROPE) return 40003;
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    long blocks = (long)t_q * n_head;
+    if (blocks == 0) return 0;
+    memra_mla_attn_absorbed_live_kernel<<<(unsigned)blocks, MLA_THREADS, 0, stream>>>(
+        q_lat, q_pe, cache, o_lat, n_head, kv_rank, d_rope, t_q, pos_d, scale);
     MLA_ERR();
     return 0;
 }
