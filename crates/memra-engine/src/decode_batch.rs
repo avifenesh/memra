@@ -734,8 +734,8 @@ impl HybridModel {
                     ffn_gate,
                     ffn_up,
                     ffn_down,
-                    // memra#253: weight-mirror/inspection site — the AWQ scale is
-                    // activation-side, so it plays no part here.
+                    // memra#253: this site inspects or moves weights and runs no GEMM on an
+                    // activation, so the AWQ activation-side scale plays no part in it.
                     ffn_down_pqs: _,
                 } => {
                     chk!(ffn_gate, format!("L{li}.ffn_gate"))

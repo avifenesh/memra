@@ -193,6 +193,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ffn_gate,
                 ffn_up,
                 ffn_down,
+                // memra#253: this site inspects or moves weights and runs no GEMM on an
+                // activation, so the AWQ activation-side scale plays no part in it.
                 ffn_down_pqs: _,
             } = &model.layers[il].ffn
             {
@@ -329,6 +331,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ffn_gate,
                     ffn_up,
                     ffn_down,
+                    // memra#253: this site inspects or moves weights and runs no GEMM on an
+                    // activation, so the AWQ activation-side scale plays no part in it.
                     ffn_down_pqs: _,
                 } => vec![
                     ("fg", e.uses_q8_1_fast(ffn_gate)),

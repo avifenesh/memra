@@ -862,6 +862,12 @@ impl ContractBuilder {
                 },
                 names,
                 match_mode: TensorMatch::OneOf,
+                // An auxiliary never reaches `bind` as a census ROW: the census folds it into
+                // its owning weight's auxiliary list (see `census_from_safetensors_headers`),
+                // so this shape is never compared against anything. It is not an assertion
+                // that the auxiliary is a scalar — `weight_scale` is per-row and
+                // `pre_quant_scale` is `[in_features]`. Making these requirements bind for
+                // real would need a per-kind shape, which is its own change.
                 shape: vec![1],
                 owner,
                 transform: TensorTransform::Identity,

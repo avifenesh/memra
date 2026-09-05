@@ -6779,9 +6779,7 @@ impl HybridModel {
                     ffn_gate,
                     ffn_up,
                     ffn_down,
-                    // AWQ pre_quant_scale is an ACTIVATION-side factor (memra#253): a weight mirror
-                    // re-encodes bytes and is unaffected by it, so this site intentionally ignores it.
-                    ffn_down_pqs: _,
+                    ffn_down_pqs,
                 } => {
                     let n_ff = ffn_gate.out_features();
                     let mut g2 = if f16fuse {
@@ -6796,9 +6794,24 @@ impl HybridModel {
                     if Self::f16out_on(e, total) && cfg.m3.is_none() && d_lim.is_none() {
                         let mut a16 = e.alloc_u8_uninit(total * n_ff * 2)?;
                         e.silu_mul_f16out(&gate, &up, &mut act, &mut a16, total * n_ff)?;
-                        match e.try_f16_gemm_pre(ffn_down, &a16, total)? {
+                        // AWQ (memra#253): the f16 epilogue emits the down projection's input
+                        // already converted, so a per-input-channel scale cannot be applied
+                        // there. A calibrated artifact takes the f32 arm below, which scales.
+                        match if ffn_down_pqs.is_none() {
+                            e.try_f16_gemm_pre(ffn_down, &a16, total)?
+                        } else {
+                            None
+                        } {
                             Some(y) => y,
-                            None => e.matmul(ffn_down, &act, total)?,
+                            None => {
+                                let __pqs = e.pre_quant_scaled(
+                                    &act,
+                                    ffn_down_pqs.as_ref(),
+                                    ffn_down.in_features(),
+                                    total,
+                                )?;
+                                e.matmul(ffn_down, __pqs.as_ref().unwrap_or(&act), total)?
+                            }
                         }
                     } else {
                         Self::ffn_act_lim(
@@ -6812,7 +6825,15 @@ impl HybridModel {
                             &mut act,
                             total * n_ff,
                         )?;
-                        e.matmul(ffn_down, &act, total)?
+                        // AWQ (memra#253): scale the down projection's input when the
+                        // artifact was calibrated; None leaves the buffer untouched.
+                        let __pqs = e.pre_quant_scaled(
+                            &act,
+                            ffn_down_pqs.as_ref(),
+                            ffn_down.in_features(),
+                            total,
+                        )?;
+                        e.matmul(ffn_down, __pqs.as_ref().unwrap_or(&act), total)?
                     }
                 }
                 crate::hybrid::Ffn::Moe(m) => self.moe_ffn_il(e, m, &z, total, il as u16)?,
@@ -7606,9 +7627,7 @@ impl HybridModel {
                     ffn_gate,
                     ffn_up,
                     ffn_down,
-                    // AWQ pre_quant_scale is an ACTIVATION-side factor (memra#253): a weight mirror
-                    // re-encodes bytes and is unaffected by it, so this site intentionally ignores it.
-                    ffn_down_pqs: _,
+                    ffn_down_pqs,
                 } => {
                     let n_ff = ffn_gate.out_features();
                     let mut g2 = e.matmul_group_xh(&[ffn_gate, ffn_up], &z, &zx16, total)?;
@@ -7622,9 +7641,24 @@ impl HybridModel {
                     if Self::f16out_on(e, total) && self.cfg.m3.is_none() && d_lim.is_none() {
                         let mut a16 = e.alloc_u8_uninit(total * n_ff * 2)?;
                         e.silu_mul_f16out(&gate, &up, &mut act, &mut a16, total * n_ff)?;
-                        match e.try_f16_gemm_pre(ffn_down, &a16, total)? {
+                        // AWQ (memra#253): the f16 epilogue emits the down projection's input
+                        // already converted, so a per-input-channel scale cannot be applied
+                        // there. A calibrated artifact takes the f32 arm below, which scales.
+                        match if ffn_down_pqs.is_none() {
+                            e.try_f16_gemm_pre(ffn_down, &a16, total)?
+                        } else {
+                            None
+                        } {
                             Some(y) => y,
-                            None => e.matmul(ffn_down, &act, total)?,
+                            None => {
+                                let __pqs = e.pre_quant_scaled(
+                                    &act,
+                                    ffn_down_pqs.as_ref(),
+                                    ffn_down.in_features(),
+                                    total,
+                                )?;
+                                e.matmul(ffn_down, __pqs.as_ref().unwrap_or(&act), total)?
+                            }
                         }
                     } else {
                         Self::ffn_act_lim(
@@ -7638,7 +7672,15 @@ impl HybridModel {
                             &mut act,
                             total * n_ff,
                         )?;
-                        e.matmul(ffn_down, &act, total)?
+                        // AWQ (memra#253): scale the down projection's input when the
+                        // artifact was calibrated; None leaves the buffer untouched.
+                        let __pqs = e.pre_quant_scaled(
+                            &act,
+                            ffn_down_pqs.as_ref(),
+                            ffn_down.in_features(),
+                            total,
+                        )?;
+                        e.matmul(ffn_down, __pqs.as_ref().unwrap_or(&act), total)?
                     }
                 }
                 crate::hybrid::Ffn::Moe(m) => {
@@ -7765,7 +7807,10 @@ impl HybridModel {
         il: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let (attn_g, ag16) = self.full_attn_prime_core_inner(e, fa, g3, pos_d, t, cache, il)?;
+        // AWQ (memra#253): the f16 epilogue feeds the GEMM a half activation the
+        // scale was never applied to; an artifact carrying one takes the general path.
         if let Some(xh) = &ag16
+            && fa.wo_pqs.is_none()
             && let Some(y) = e.try_f16_gemm_pre(&fa.wo, xh, t)?
         {
             return Ok(y);
@@ -26796,7 +26841,10 @@ impl HybridModel {
             }
             // wave 5b: the combine emits the wo input q8 pair directly — the standalone
             // quantize launch + the f32 attn round-trip fold away (t=1 fast path only).
-            if e.uses_q8_1_fast(&fa.wo) {
+            // AWQ (memra#253): the q8 epilogue hands the GEMM its own quantized
+            // activation, so o_proj's per-input-channel scale has nowhere to land. An
+            // artifact that carries one takes the general path instead.
+            if e.uses_q8_1_fast(&fa.wo) && fa.wo_pqs.is_none() {
                 let mut oq = e.alloc_i8_uninit(nh * hd)?;
                 let mut od = e.zeros(nh * hd / 32)?;
                 e.fa_decode_dc_q8(
@@ -28724,12 +28772,20 @@ impl HybridModel {
                     ffn_gate,
                     ffn_up,
                     ffn_down,
-                    // AWQ pre_quant_scale is an ACTIVATION-side factor (memra#253): a weight mirror
-                    // re-encodes bytes and is unaffected by it, so this site intentionally ignores it.
-                    ffn_down_pqs: _,
+                    ffn_down_pqs,
                 } => {
                     let n_ff = ffn_gate.out_features();
                     let lim = self.cfg.clamp_shexp_at(il as u32);
+                    // AWQ (memra#253): this graph runs the down projection as a raw bf16
+                    // matvec with no seam to scale its input. The bf16-resident check below
+                    // already excludes every artifact that carries a scale, but say so
+                    // rather than leaving the exclusion implicit.
+                    if ffn_down_pqs.is_some() {
+                        return Err(
+                            "step35 token graph dense FFN cannot apply ffn_down.pre_quant_scale"
+                                .into(),
+                        );
+                    }
                     // Alloc-free inline of ffn_swiglu_decode's bf16 tail: dual gate/up matvec is
                     // bit-identical per row to the two matmul-dispatched matvec_bf16 launches.
                     // A clamped dense layer would take eager's q8_1 branch instead -- refuse.

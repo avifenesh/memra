@@ -3980,8 +3980,8 @@ impl HybridModel {
                     ffn_gate,
                     ffn_up,
                     ffn_down,
-                    // AWQ pre_quant_scale is an ACTIVATION-side factor (memra#253): a weight mirror
-                    // re-encodes bytes and is unaffected by it, so this site intentionally ignores it.
+                    // memra#253: this site inspects or moves weights and runs no GEMM on an
+                    // activation, so the AWQ activation-side scale plays no part in it.
                     ffn_down_pqs: _,
                 } => {
                     devs.insert(ffn_gate.ordinal());
@@ -5708,8 +5708,8 @@ impl HybridModel {
                                 ffn_gate,
                                 ffn_up,
                                 ffn_down,
-                                // AWQ pre_quant_scale is an ACTIVATION-side factor (memra#253): a weight mirror
-                                // re-encodes bytes and is unaffected by it, so this site intentionally ignores it.
+                                // memra#253: this site inspects or moves weights and runs no GEMM on an
+                                // activation, so the AWQ activation-side scale plays no part in it.
                                 ffn_down_pqs: _,
                             } = &layer.ffn
                             {
@@ -5774,8 +5774,8 @@ impl HybridModel {
                             ffn_gate,
                             ffn_up,
                             ffn_down,
-                            // AWQ pre_quant_scale is an ACTIVATION-side factor (memra#253): a weight mirror
-                            // re-encodes bytes and is unaffected by it, so this site intentionally ignores it.
+                            // memra#253: this site inspects or moves weights and runs no GEMM on an
+                            // activation, so the AWQ activation-side scale plays no part in it.
                             ffn_down_pqs: _,
                         } = &layer.ffn
                         {
@@ -5860,8 +5860,8 @@ impl HybridModel {
                         ffn_gate,
                         ffn_up,
                         ffn_down,
-                        // AWQ pre_quant_scale is an ACTIVATION-side factor (memra#253): a weight mirror
-                        // re-encodes bytes and is unaffected by it, so this site intentionally ignores it.
+                        // memra#253: this site inspects or moves weights and runs no GEMM on an
+                        // activation, so the AWQ activation-side scale plays no part in it.
                         ffn_down_pqs: _,
                     } = &mut layer.ffn
                     {
@@ -5932,8 +5932,8 @@ impl HybridModel {
                                 ffn_gate,
                                 ffn_up,
                                 ffn_down,
-                                // AWQ pre_quant_scale is an ACTIVATION-side factor (memra#253): a weight mirror
-                                // re-encodes bytes and is unaffected by it, so this site intentionally ignores it.
+                                // memra#253: this site inspects or moves weights and runs no GEMM on an
+                                // activation, so the AWQ activation-side scale plays no part in it.
                                 ffn_down_pqs: _,
                             } = &mut layer.ffn
                             {
@@ -6005,8 +6005,8 @@ impl HybridModel {
                         ffn_gate,
                         ffn_up,
                         ffn_down,
-                        // AWQ pre_quant_scale is an ACTIVATION-side factor (memra#253): a weight mirror
-                        // re-encodes bytes and is unaffected by it, so this site intentionally ignores it.
+                        // memra#253: this site inspects or moves weights and runs no GEMM on an
+                        // activation, so the AWQ activation-side scale plays no part in it.
                         ffn_down_pqs: _,
                     } = &mut layer.ffn
                     {
@@ -6106,8 +6106,8 @@ impl HybridModel {
                             ffn_gate,
                             ffn_up,
                             ffn_down,
-                            // AWQ pre_quant_scale is an ACTIVATION-side factor (memra#253): a weight mirror
-                            // re-encodes bytes and is unaffected by it, so this site intentionally ignores it.
+                            // memra#253: this site inspects or moves weights and runs no GEMM on an
+                            // activation, so the AWQ activation-side scale plays no part in it.
                             ffn_down_pqs: _,
                         } = &layer.ffn
                         {
@@ -6181,8 +6181,8 @@ impl HybridModel {
                         ffn_gate,
                         ffn_up,
                         ffn_down,
-                        // AWQ pre_quant_scale is an ACTIVATION-side factor (memra#253): a weight mirror
-                        // re-encodes bytes and is unaffected by it, so this site intentionally ignores it.
+                        // memra#253: this site inspects or moves weights and runs no GEMM on an
+                        // activation, so the AWQ activation-side scale plays no part in it.
                         ffn_down_pqs: _,
                     } = &mut layer.ffn
                     {

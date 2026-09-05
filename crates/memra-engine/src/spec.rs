@@ -6626,6 +6626,7 @@ impl HybridModel {
         ffn_gate: &crate::model::GpuTensor,
         ffn_up: &crate::model::GpuTensor,
         ffn_down: &crate::model::GpuTensor,
+        ffn_down_pqs: Option<&crate::model::GpuTensor>,
         zn: &CudaSlice<f32>,
         t: usize,
         n_embd: usize,
@@ -6636,12 +6637,17 @@ impl HybridModel {
             && let Some(((g, gs), (u, us))) =
                 e.matmul_decode_exact_dual_pre(ffn_gate, ffn_up, &zq, &zd, t)?
         {
-            if e.uses_q8_1_fast(ffn_down) {
+            // AWQ (memra#253): the fused silu epilogue emits the down projection's input
+            // already quantized, so the per-input-channel scale has nowhere to land. A
+            // calibrated artifact takes the f32 arm below, which scales before quantizing.
+            if e.uses_q8_1_fast(ffn_down) && ffn_down_pqs.is_none() {
                 let (aq, ad) = e.silu_mul_scaled_q8_1(&g, &u, gs, us, t * n_ff)?;
                 return e.matmul_decode_exact_pre(ffn_down, &aq, &ad, t);
             }
             let mut act = e.uninit(t * n_ff)?;
             e.silu_mul_scaled(&g, &u, gs, us, &mut act, t * n_ff)?;
+            let __pqs = e.pre_quant_scaled(&act, ffn_down_pqs, ffn_down.in_features(), t)?;
+            let act = __pqs.unwrap_or(act);
             let (aq, ad) = e.quantize_q8_1(&act, t, n_ff)?;
             return e.matmul_pre(ffn_down, &aq, &ad, &act, t);
         }
@@ -6650,6 +6656,8 @@ impl HybridModel {
         let u = e.matmul_pre(ffn_up, &zq, &zd, zn, t)?;
         let mut act = e.uninit(t * n_ff)?;
         e.silu_mul(&g, &u, &mut act, t * n_ff)?;
+        let __pqs = e.pre_quant_scaled(&act, ffn_down_pqs, ffn_down.in_features(), t)?;
+        let act = __pqs.unwrap_or(act);
         let (aq, ad) = e.quantize_q8_1(&act, t, n_ff)?;
         e.matmul_pre(ffn_down, &aq, &ad, &act, t)
     }
@@ -7036,15 +7044,22 @@ impl HybridModel {
                 ffn_gate,
                 ffn_up,
                 ffn_down,
-                // memra#253: weight-mirror/inspection site — the AWQ scale is
-                // activation-side, so it plays no part here.
-                ffn_down_pqs: _,
+                ffn_down_pqs,
             } => {
                 assert!(
                     self.cfg.m3.is_none(),
                     "qwen35 t-parallel verify: M3 swigluoai FFN not yet batched"
                 );
-                self.qwen35_tparallel_dense_ffn(e, ffn_gate, ffn_up, ffn_down, &zn, t, n_embd)?
+                self.qwen35_tparallel_dense_ffn(
+                    e,
+                    ffn_gate,
+                    ffn_up,
+                    ffn_down,
+                    ffn_down_pqs.as_ref(),
+                    &zn,
+                    t,
+                    n_embd,
+                )?
             }
             crate::hybrid::Ffn::Moe(m) => self.moe_ffn_il_zq8(e, m, &zn, None, t, il as u16)?,
         };
@@ -7299,15 +7314,22 @@ impl HybridModel {
                 ffn_gate,
                 ffn_up,
                 ffn_down,
-                // memra#253: weight-mirror/inspection site — the AWQ scale is
-                // activation-side, so it plays no part here.
-                ffn_down_pqs: _,
+                ffn_down_pqs,
             } => {
                 assert!(
                     self.cfg.m3.is_none(),
                     "qwen35 t-parallel verify: M3 swigluoai FFN not yet batched"
                 );
-                self.qwen35_tparallel_dense_ffn(e, ffn_gate, ffn_up, ffn_down, &zn, t, n_embd)?
+                self.qwen35_tparallel_dense_ffn(
+                    e,
+                    ffn_gate,
+                    ffn_up,
+                    ffn_down,
+                    ffn_down_pqs.as_ref(),
+                    &zn,
+                    t,
+                    n_embd,
+                )?
             }
             crate::hybrid::Ffn::Moe(m) => self.moe_ffn_il_zq8(e, m, &zn, None, t, il as u16)?,
         };
@@ -8289,9 +8311,7 @@ impl HybridModel {
                     ffn_gate,
                     ffn_up,
                     ffn_down,
-                    // memra#253: weight-mirror/inspection site — the AWQ scale is
-                    // activation-side, so it plays no part here.
-                    ffn_down_pqs: _,
+                    ffn_down_pqs,
                 } => {
                     let n_ff = ffn_gate.out_features();
                     let gate = e.matmul_decode_exact(ffn_gate, &z, t)?;
@@ -8309,7 +8329,11 @@ impl HybridModel {
                         &mut act,
                         t * n_ff,
                     )?;
-                    e.matmul_decode_exact(ffn_down, &act, t)?
+                    // AWQ (memra#253): scale the down projection's input when the artifact
+                    // was calibrated; None leaves the buffer untouched.
+                    let __pqs =
+                        e.pre_quant_scaled(&act, ffn_down_pqs.as_ref(), ffn_down.in_features(), t)?;
+                    e.matmul_decode_exact(ffn_down, __pqs.as_ref().unwrap_or(&act), t)?
                 }
                 crate::hybrid::Ffn::Moe(m) => self.moe_ffn_il(e, m, &z, t, il as u16)?,
             };

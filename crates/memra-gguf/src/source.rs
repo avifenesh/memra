@@ -506,6 +506,10 @@ pub fn census_from_safetensors_headers(
                     format!("{stem}.weight_global_scale"),
                     format!("{stem}.input_scale"),
                     format!("{stem}.scale"),
+                    // AWQ (memra#253): the per-input-channel scale is an auxiliary of the
+                    // weight it belongs to. Left out, its bytes vanish from the census and
+                    // nothing downstream can see that the artifact carries one.
+                    format!("{stem}.pre_quant_scale"),
                 ]
                 .into_iter()
                 .filter(|name| headers.contains_key(name))
@@ -4740,5 +4744,64 @@ mod pre_quant_scale_lookup {
         // And the weight itself still resolves — the new branch must not shadow it.
         assert!(src.find("blk.0.ffn_down.weight").is_some());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod pre_quant_scale_census_tests {
+    use super::*;
+
+    /// AWQ (memra#253): an artifact's `pre_quant_scale` must reach the census as an auxiliary
+    /// of the weight it belongs to. It is skipped as a row like every other auxiliary; if it
+    /// is ALSO left off the owner's auxiliary list, its bytes vanish from the byte total and
+    /// nothing downstream can tell a calibrated artifact from an uncalibrated one.
+    #[test]
+    fn pre_quant_scale_is_an_auxiliary_of_its_weight_in_the_census() {
+        let headers = BTreeMap::from([
+            (
+                "model.layers.0.mlp.down_proj.weight".to_string(),
+                StInfo {
+                    dtype: "F8_E4M3".to_string(),
+                    shape: vec![2, 4],
+                    data_offsets: [0, 8],
+                },
+            ),
+            (
+                "model.layers.0.mlp.down_proj.weight_scale".to_string(),
+                StInfo {
+                    dtype: "F32".to_string(),
+                    shape: vec![2, 1],
+                    data_offsets: [8, 16],
+                },
+            ),
+            (
+                "model.layers.0.mlp.down_proj.pre_quant_scale".to_string(),
+                StInfo {
+                    dtype: "F32".to_string(),
+                    shape: vec![4],
+                    data_offsets: [16, 32],
+                },
+            ),
+        ]);
+        let census = census_from_safetensors_headers(&headers).unwrap();
+
+        // one row: the weight. The scale and the pre_quant_scale ride on it.
+        assert_eq!(census.tensors.len(), 1);
+        let weight = &census.tensors[0].entry;
+        assert_eq!(weight.name, "model.layers.0.mlp.down_proj.weight");
+
+        let StorageLayout::Quantized(layout) = &weight.storage else {
+            panic!("FP8 weight must be quantized");
+        };
+        assert!(
+            layout
+                .auxiliaries
+                .iter()
+                .any(|name| name.ends_with(".pre_quant_scale")),
+            "pre_quant_scale must be listed as an auxiliary of its weight, got {:?}",
+            layout.auxiliaries
+        );
+        // 8 (weight) + 8 (weight_scale) + 16 (pre_quant_scale)
+        assert_eq!(weight.physical_bytes, 32);
     }
 }
