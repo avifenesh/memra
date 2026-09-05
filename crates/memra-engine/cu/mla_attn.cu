@@ -1661,6 +1661,229 @@ __device__ __forceinline__ void memra_mla_kpool_select_body(const float* __restr
     }
     for (int j = filled + tid; j < width; j += MLA_THREADS) out[j] = -1;
 }
+// ---- v2 body (lane/kpool-select-v2-20260906, MEMRA_KPOOL_SELECT_V2): the same radix select, the
+// same 64-bit order key, the same rank arithmetic, the same contiguous-range membership and
+// ascending emit, with the three serial spots of the body above made parallel:
+//   1. the per-pass histogram takes ONE shared-memory atomic per distinct bin per warp
+//      (`__match_any_sync` groups the lanes on their bin, the leader adds the popcount) instead
+//      of one atomic per pool; scores of one query share their top bytes, so the body above
+//      serializes all 256 threads on one bin for the first passes;
+//   2. the 256-bin rank walk is a warp scan (8 bins per lane, prefix by shuffle) that lands on
+//      the first bin whose cumulative count reaches the rank, the serial walk's bin;
+//   3. the emit prefix over the 256 per-thread counts is a block scan.
+// Integer counts added in any order give the same histogram; the crossing bin and the running
+// count before it are the same function of that histogram; the exclusive prefix is the same
+// function of the counts: the threshold key and the emitted list are IDENTICAL to the body
+// above by construction (gate `tests/mla_kpool_select_v2_gpu.rs`, bitwise vs v1 up to 65k pools
+// with planted ties, -inf and NaN pools, both twins). Trace 2026-09-05 at 245k tokens: the v1
+// single-CTA launch cost 174 us at 61,323 pools, 15% of the token.
+__device__ __forceinline__ int memra_kpool_warp_scan_incl(int v, int lane) {
+#pragma unroll
+    for (int off = 1; off < 32; off <<= 1) {
+        int n = __shfl_up_sync(0xffffffffu, v, off);
+        if (lane >= off) v += n;
+    }
+    return v;
+}
+__device__ __forceinline__ void memra_mla_kpool_select_body_v2(const float* __restrict__ score,
+                                                               int* __restrict__ idx, int n_pools,
+                                                               int pool, int select_k, int width,
+                                                               int first_pos, int always_tail,
+                                                               int score_stride, int idx_stride) {
+    __shared__ unsigned sh_hist[256];
+    __shared__ int sh_wsum[MLA_THREADS / 32];
+    __shared__ unsigned long long sh_prefix;
+    __shared__ int sh_k;
+    __shared__ int sh_live;
+    __shared__ int sh_unique;
+    __shared__ unsigned long long sh_found;
+    __shared__ int sh_total;
+
+    int t = blockIdx.x;
+    const float* row = score + (long)t * score_stride;
+    int* out = idx + (long)t * idx_stride;
+    int tid = threadIdx.x;
+    int lane = tid & 31;
+    int warp = tid >> 5;
+
+    if (tid == 0) {
+        sh_prefix = 0ull;
+        sh_k = select_k;
+        sh_live = (select_k > 0 && n_pools > 0) ? 1 : 0;
+        sh_unique = 0;
+    }
+    __syncthreads();
+
+    for (int b = 7; b >= 0 && sh_live && !sh_unique; --b) {
+        sh_hist[tid] = 0u;
+        unsigned long long pre = sh_prefix;
+        int shift = 8 * b;
+        unsigned long long mask = (b == 7) ? 0ull : (~0ull << (shift + 8));
+        __syncthreads();
+        for (int p = tid; p < n_pools; p += MLA_THREADS) {
+            float s = row[p];
+            if (!isfinite(s)) continue;
+            unsigned long long key = memra_kpool_key(s, p);
+            if ((key & mask) != pre) continue;
+            atomicAdd(&sh_hist[(unsigned)((key >> shift) & 0xffull)], 1u);
+        }
+        __syncthreads();
+        if (warp == 0) {
+            // every lane reads the rank before any lane can write it back below
+            int k = sh_k;
+            __syncwarp();
+            // lane l owns bins [8l, 8l + 8): local sum, then the warp prefix
+            unsigned c8[8];
+            int lsum = 0;
+#pragma unroll
+            for (int j = 0; j < 8; ++j) {
+                c8[j] = sh_hist[lane * 8 + j];
+                lsum += (int)c8[j];
+            }
+            int incl = memra_kpool_warp_scan_incl(lsum, lane);
+            int before = incl - lsum;
+            int n_fin = __shfl_sync(0xffffffffu, incl, 31);
+            if (b == 7) {
+                if (n_fin == 0) {
+                    if (lane == 0) sh_live = 0;
+                } else if (k > n_fin) {
+                    k = n_fin;
+                }
+            }
+            if (n_fin > 0 || b != 7) {
+                // the first bin (ascending) whose cumulative count reaches k lies in exactly
+                // one lane's range: before < k <= incl
+                if (before < k && k <= incl) {
+                    int run = before;
+                    int bin = -1;
+                    unsigned chosen = 0u;
+#pragma unroll
+                    for (int j = 0; j < 8; ++j) {
+                        unsigned c = c8[j];
+                        if (bin < 0 && c != 0u) {
+                            if (run + (int)c >= k) {
+                                bin = lane * 8 + j;
+                                chosen = c;
+                            } else {
+                                run += (int)c;
+                            }
+                        }
+                    }
+                    sh_k = k - run;
+                    sh_prefix = pre | ((unsigned long long)(unsigned)bin << shift);
+                    sh_unique = (chosen == 1u && b > 0) ? 1 : 0;
+                }
+            }
+        }
+        __syncthreads();
+        if (sh_live && sh_unique) {
+            unsigned long long pre2 = sh_prefix;
+            unsigned long long mask2 = ~0ull << shift;
+            for (int p = tid; p < n_pools; p += MLA_THREADS) {
+                float s = row[p];
+                if (!isfinite(s)) continue;
+                unsigned long long key = memra_kpool_key(s, p);
+                if ((key & mask2) == pre2) sh_found = key;
+            }
+            __syncthreads();
+            if (tid == 0) sh_prefix = sh_found;
+            __syncthreads();
+        }
+    }
+
+    unsigned long long thr = sh_prefix;
+    int live = sh_live;
+
+    // Emit in pool-index order without a global atomic: warp w owns the contiguous range
+    // [w*span, (w+1)*span); each iteration its lanes take four coalesced 128 B lines (four
+    // loads in flight per lane, then the ballots). A per-thread contiguous chunk cost 3x the
+    // global sectors; one coalesced load per iteration serialized 480 L2 round trips per warp
+    // (ncu 2026-09-06: long-scoreboard 7.5 vs 5.9 per issue, 468 vs 362 us). Ballot + popc
+    // ranks a lane inside its line, the running count ranks lines, sh_wsum ranks warps.
+    int span = (n_pools + (MLA_THREADS / 32) - 1) / (MLA_THREADS / 32);
+    int wlo = warp * span;
+    int whi = wlo + span;
+    if (wlo > n_pools) wlo = n_pools;
+    if (whi > n_pools) whi = n_pools;
+    unsigned lanemask_lt = (1u << lane) - 1u;
+    int wcount = 0;
+    for (int base = wlo; base < whi; base += 128) {
+        float sv[4];
+#pragma unroll
+        for (int j = 0; j < 4; ++j) {
+            int p = base + j * 32 + lane;
+            sv[j] = (p < whi) ? row[p] : 0.0f;
+        }
+#pragma unroll
+        for (int j = 0; j < 4; ++j) {
+            int p = base + j * 32 + lane;
+            bool sel = (p < whi) && live && isfinite(sv[j]) && memra_kpool_key(sv[j], p) <= thr;
+            wcount += __popc(__ballot_sync(0xffffffffu, sel));
+        }
+    }
+    if (lane == 0) sh_wsum[warp] = wcount;
+    __syncthreads();
+    int run = 0;
+    int total = 0;
+#pragma unroll
+    for (int w = 0; w < MLA_THREADS / 32; ++w) {
+        int c = sh_wsum[w];
+        run += (w < warp) ? c : 0;
+        total += c;
+    }
+    if (tid == 0) sh_total = total;
+    for (int base = wlo; base < whi; base += 128) {
+        float sv[4];
+#pragma unroll
+        for (int j = 0; j < 4; ++j) {
+            int p = base + j * 32 + lane;
+            sv[j] = (p < whi) ? row[p] : 0.0f;
+        }
+#pragma unroll
+        for (int j = 0; j < 4; ++j) {
+            int p = base + j * 32 + lane;
+            bool sel = (p < whi) && live && isfinite(sv[j]) && memra_kpool_key(sv[j], p) <= thr;
+            unsigned m = __ballot_sync(0xffffffffu, sel);
+            if (sel) {
+                int slot = run + __popc(m & lanemask_lt);
+                for (int q = 0; q < pool; ++q) out[slot * pool + q] = p * pool + q;
+            }
+            run += __popc(m);
+        }
+    }
+    __syncthreads();
+
+    int filled = sh_total * pool;
+    if (always_tail) {
+        int visible = first_pos + t + 1;
+        int tail = visible % pool;
+        for (int j = tid; j < tail; j += MLA_THREADS) out[filled + j] = visible - tail + j;
+        filled += tail;
+    }
+    for (int j = filled + tid; j < width; j += MLA_THREADS) out[j] = -1;
+}
+extern "C" __global__ void memra_mla_kpool_select_v2_kernel(const float* __restrict__ score,
+                                                            int* __restrict__ idx, int n_pools,
+                                                            int pool, int select_k, int width,
+                                                            int first_pos, int always_tail) {
+    memra_mla_kpool_select_body_v2(score, idx, n_pools, pool, select_k, width, first_pos,
+                                   always_tail, n_pools, width);
+}
+extern "C" __global__ void memra_mla_kpool_select_live_v2_kernel(const float* __restrict__ score,
+                                                                 int* __restrict__ idx,
+                                                                 int* __restrict__ width_d,
+                                                                 const int* __restrict__ pos_d,
+                                                                 int t_q, int n_pools_cap, int pool,
+                                                                 int select_k_cap, int width_cap,
+                                                                 int always_tail) {
+    int first_pos = pos_d[0];
+    int n_pools = (first_pos + t_q) / pool;
+    int select_k = select_k_cap < n_pools ? select_k_cap : n_pools;
+    if (blockIdx.x == 0 && threadIdx.x == 0)
+        width_d[0] = select_k * pool + (always_tail ? pool - 1 : 0);
+    memra_mla_kpool_select_body_v2(score, idx, n_pools, pool, select_k, width_cap, first_pos,
+                                   always_tail, n_pools_cap, width_cap);
+}
 extern "C" __global__ void memra_mla_kpool_select_kernel(const float* __restrict__ score,
                                                          int* __restrict__ idx, int n_pools,
                                                          int pool, int select_k, int width,
@@ -1714,6 +1937,35 @@ extern "C" int memra_mla_kpool_select_f32(const float* score, int* idx, int t_q,
     if (t_q == 0) return 0;
     memra_mla_kpool_select_kernel<<<(unsigned)t_q, MLA_THREADS, 0, stream>>>(
         score, idx, n_pools, pool, select_k, width, first_pos, always_tail);
+    MLA_ERR();
+    return 0;
+}
+
+// v2 entries (MEMRA_KPOOL_SELECT_V2): the same audits, the v2 body.
+extern "C" int memra_mla_kpool_select_v2_f32(const float* score, int* idx, int t_q, int n_pools,
+                                             int pool, int select_k, int width, int first_pos,
+                                             int always_tail, void* stream_v) {
+    int bad = memra_mla_kpool_select_check(pool, select_k, width, always_tail);
+    if (bad) return bad;
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    if (t_q == 0) return 0;
+    memra_mla_kpool_select_v2_kernel<<<(unsigned)t_q, MLA_THREADS, 0, stream>>>(
+        score, idx, n_pools, pool, select_k, width, first_pos, always_tail);
+    MLA_ERR();
+    return 0;
+}
+extern "C" int memra_mla_kpool_select_live_v2_f32(const float* score, int* idx, int* width_d,
+                                                  int t_q, const int* pos_d, int n_pools_cap,
+                                                  int pool, int select_k_cap, int width_cap,
+                                                  int always_tail, void* stream_v) {
+    int bad = memra_mla_kpool_select_check(pool, select_k_cap, width_cap, always_tail);
+    if (bad) return bad;
+    if (t_q <= 0) return 40030;
+    if (n_pools_cap <= 0) return 40010;
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    memra_mla_kpool_select_live_v2_kernel<<<(unsigned)t_q, MLA_THREADS, 0, stream>>>(
+        score, idx, width_d, pos_d, t_q, n_pools_cap, pool, select_k_cap, width_cap,
+        always_tail);
     MLA_ERR();
     return 0;
 }

@@ -424,6 +424,35 @@ pub static MLA_DSA_SELECT_DISPATCHES: std::sync::atomic::AtomicU64 =
 /// key and runs the same `key(p) <= thr` test, so this is a launch-geometry change with an exact
 /// answer. `dsa-select-gate` asserts the `idx` plane byte-identical to the shipped kernel and
 /// carries a RED ARM that must fail first.
+/// `MEMRA_KPOOL_SELECT_V2=1` (lane/kpool-select-v2-20260906, default OFF, decide-by 2026-09-20):
+/// the single-CTA k-pool selector and its live twin run the v2 body (warp-aggregated histogram
+/// atomics, warp-scan rank walk and emit prefix; the same key, ranks and emit order). Output
+/// bit-identical by construction; gate `tests/mla_kpool_select_v2_gpu.rs`. Read per call. Below
+/// the multi-CTA door's floor this is the selector every long-context decode step runs (trace
+/// 2026-09-05 at 245k tokens: 174 us per launch at 61,323 pools, 15% of the token).
+pub(crate) fn mla_kpool_select_v2_on() -> bool {
+    std::env::var("MEMRA_KPOOL_SELECT_V2").as_deref() == Ok("1")
+}
+
+/// Engagement counter for `MEMRA_KPOOL_SELECT_V2` (both twins).
+pub static KPOOL_SELECT_V2_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// Snapshot of [`KPOOL_SELECT_V2_DISPATCHES`] — gates take a before/after delta.
+pub fn kpool_select_v2_dispatches() -> u64 {
+    KPOOL_SELECT_V2_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn kpool_select_v2_announce(twin: &str, t_q: usize, n_pools: usize) {
+    if KPOOL_SELECT_V2_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+        eprintln!(
+            "[kpool-select-v2] engaged {twin} t_q={t_q} n_pools={n_pools}: warp-aggregated \
+             histogram + warp scans in the single-CTA selector (MEMRA_KPOOL_SELECT_V2=1; \
+             bit-identical index lists)"
+        );
+    }
+}
+
 fn mla_dsa_select_on() -> bool {
     cfg!(memra_sm100_tcgen05)
         && mla_dsa_select_on_from(std::env::var("MEMRA_B200_DSA_SELECT").ok().as_deref())
@@ -797,6 +826,31 @@ unsafe extern "C" {
         pool: i32,
         qk_scale: f32,
         head_scale: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_mla_kpool_select_v2_f32(
+        score: *const f32,
+        idx: *mut i32,
+        t_q: i32,
+        n_pools: i32,
+        pool: i32,
+        select_k: i32,
+        width: i32,
+        first_pos: i32,
+        always_tail: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_mla_kpool_select_live_v2_f32(
+        score: *const f32,
+        idx: *mut i32,
+        width_d: *mut i32,
+        t_q: i32,
+        pos_d: *const i32,
+        n_pools_cap: i32,
+        pool: i32,
+        select_k_cap: i32,
+        width_cap: i32,
+        always_tail: i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_mla_kpool_select_live_f32(
@@ -2074,6 +2128,27 @@ impl Engine {
         always_tail: bool,
     ) -> Res<()> {
         let s = self.stream();
+        if mla_kpool_select_v2_on() {
+            kpool_select_v2_announce("live", t_q, n_pools_cap);
+            return unsafe {
+                ck(
+                    "kpool_select_live_v2",
+                    memra_mla_kpool_select_live_v2_f32(
+                        score.device_ptr(&s).0 as *const f32,
+                        idx.device_ptr_mut(&s).0 as *mut i32,
+                        width_d.device_ptr_mut(&s).0 as *mut i32,
+                        t_q as i32,
+                        pos_d.device_ptr(&s).0 as *const i32,
+                        n_pools_cap as i32,
+                        pool as i32,
+                        select_k_cap as i32,
+                        width_cap as i32,
+                        always_tail as i32,
+                        s.cu_stream() as *mut c_void,
+                    ),
+                )
+            };
+        }
         unsafe {
             ck(
                 "kpool_select_live",
@@ -2323,6 +2398,26 @@ impl Engine {
                         score.device_ptr(&s).0 as *const f32,
                         idx.device_ptr_mut(&s).0 as *mut i32,
                         ws.device_ptr_mut(&s).0 as *mut i32,
+                        t_q as i32,
+                        n_pools as i32,
+                        pool as i32,
+                        select_k as i32,
+                        width as i32,
+                        first_pos as i32,
+                        i32::from(always_tail),
+                        s.cu_stream() as *mut c_void,
+                    ),
+                )
+            };
+        }
+        if mla_kpool_select_v2_on() {
+            kpool_select_v2_announce("scalar", t_q, n_pools);
+            return unsafe {
+                ck(
+                    "kpool_select_v2",
+                    memra_mla_kpool_select_v2_f32(
+                        score.device_ptr(&s).0 as *const f32,
+                        idx.device_ptr_mut(&s).0 as *mut i32,
                         t_q as i32,
                         n_pools as i32,
                         pool as i32,
