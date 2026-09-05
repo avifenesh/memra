@@ -823,6 +823,62 @@ extern "C" __global__ void qmatvec_q8_0_mmvq(
     if (lane == 0) y[(size_t)t * out_f + o] = acc;
 }
 
+// ----- Q8_0 warp-per-row MMVQ over an f32 activation NARROWER than 256 (lane/kda-narrow-q8-
+// 20260905): the KDA low-rank f_b / g_b projections take a 128-wide input (f_a / g_a output), and
+// the standalone quantize_q8_1 launch that precedes them is four warps of work behind a launch
+// and an in-graph gap (68 per token on GLM-5.3-Flash). Each warp quantizes its token's row
+// itself into shared memory with quantize_q8_1's arithmetic (cu/qmatvec.cu:589: per-32-block
+// amax via shfl_xor, d = amax/127, id = 1/d, rint(v*id)), then runs the qmatvec_q8_0_mmvq body
+// VERBATIM over those bytes (same lane<->block mapping, same dp4a order, same warp_reduce_sum),
+// so every output is bit-identical to quantize_q8_1 then qmatvec_q8_0_mmvq. Static smem holds
+// in_f <= 256 (8 blocks) per warp x MEMRA_MMVQ_ROWS warps. Requires in_f % 32 == 0.
+extern "C" __global__ void qmatvec_q8_0_mmvq_f32in_narrow(
+        const unsigned char* __restrict__ W, const float* __restrict__ x,
+        float* __restrict__ y, int in_f, int out_f, int m, long row_bytes) {
+    __shared__ signed char sq[MEMRA_MMVQ_ROWS][256];
+    __shared__ float sd[MEMRA_MMVQ_ROWS][8];
+    int wid = threadIdx.y;
+    int o = blockIdx.x * MEMRA_MMVQ_ROWS + wid;   // this warp's output row
+    int t = blockIdx.y;
+    int lane = threadIdx.x;
+    int nblk = in_f / 32;
+    if (t >= m) return;
+    // quantize the token row (every warp of the block, its own copy; a warp whose row is out of
+    // range still participates so no early return splits the warp before the shuffles)
+    const float* xrow = x + (size_t)t * in_f;
+    for (int blk = 0; blk < nblk; blk++) {
+        float v = xrow[blk * 32 + lane];
+        float amax = fabsf(v);
+        #pragma unroll
+        for (int off = 16; off > 0; off >>= 1) amax = fmaxf(amax, __shfl_xor_sync(0xffffffffu, amax, off));
+        float d = amax / 127.0f;
+        float id = d > 0.0f ? 1.0f / d : 0.0f;
+        sq[wid][blk * 32 + lane] = (signed char)__float2int_rn(v * id);
+        if (lane == 0) sd[wid][blk] = d;
+    }
+    __syncwarp();
+    if (o >= out_f) return;
+    const unsigned char* wrow = W + (long)o * row_bytes;
+    const signed char* arow = sq[wid];
+    const float* adrow = sd[wid];
+    float acc = 0.0f;
+    for (int blk = lane; blk < nblk; blk += 32) {
+        const unsigned char* wb = wrow + blk * 34;
+        float dw = half_to_float(*(const unsigned short*)wb);
+        const unsigned char* wq = wb + 2;
+        const int4* aq16 = (const int4*)(arow + blk * 32);
+        int4 a01 = aq16[0], a23 = aq16[1];
+        int aq4[8] = { a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w };
+        int sumi = 0;
+        #pragma unroll
+        for (int k = 0; k < 8; k++)
+            sumi = dp4a(get_int_b2(wq + k * 4), aq4[k], sumi);
+        acc += dw * adrow[blk] * (float)sumi;
+    }
+    acc = warp_reduce_sum(acc);
+    if (lane == 0) y[(size_t)t * out_f + o] = acc;
+}
+
 // ----- Q8_0 m=1 single-row body shared by the FUSED multi-tensor launches below. LIFTED VERBATIM
 // from qmatvec_q8_0_mmvq with t pinned to 0 (decode m==1): same block walk, same dp4a order, same
 // warp_reduce_sum, same write -> per (tensor,row) output bits identical to a separate m=1 launch. -----

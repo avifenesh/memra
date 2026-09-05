@@ -20472,6 +20472,80 @@ impl Engine {
         Ok(Some(y))
     }
 
+    /// Q8_0 MMVQ over an f32 activation narrower than 256, quantized inside the kernel
+    /// (`qmatvec_q8_0_mmvq_f32in_narrow`): bit-identical to `quantize_q8_1` then
+    /// `qmatvec_q8_0_mmvq`. `Ok(None)` without a launch when the shape or tensor does not fit:
+    /// not a plain-layout Q8_0 (`rp`, `rp4`, `scale != 1`), `in_f % 32 != 0`, `in_f > 256`,
+    /// `m > 16`, or `mmvq_fast_eligible` refuses.
+    pub fn matmul_q8_narrow_f32in(
+        &self,
+        w: &crate::model::GpuTensor,
+        x: &CudaSlice<f32>,
+        m: usize,
+    ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        use crate::model::GpuTensor;
+        let GpuTensor::Quant {
+            bytes,
+            qtype,
+            row_bytes,
+            rp,
+            rp4,
+            scale,
+            ..
+        } = w
+        else {
+            return Ok(None);
+        };
+        if *qtype != QT_Q8_0
+            || *rp
+            || rp4.is_some()
+            || *scale != 1.0
+            || !self.mmvq_fast_eligible(w, m)
+        {
+            return Ok(None);
+        }
+        self.q8_narrow_f32in_raw(bytes, x, m, w.in_features(), w.out_features(), *row_bytes)
+    }
+
+    /// Raw launcher behind [`Engine::matmul_q8_narrow_f32in`] (plain-layout Q8_0 bytes). Shape
+    /// refusal returns `Ok(None)`.
+    pub fn q8_narrow_f32in_raw(
+        &self,
+        w: &CudaSlice<u8>,
+        x: &CudaSlice<f32>,
+        m: usize,
+        in_f: usize,
+        out_f: usize,
+        row_bytes: usize,
+    ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        const ROWS_PER_BLOCK: u32 = 4; // MEMRA_MMVQ_ROWS
+        if in_f == 0 || !in_f.is_multiple_of(32) || in_f > 256 || m == 0 || m > 16 || out_f == 0 {
+            return Ok(None);
+        }
+        debug_assert_eq!(row_bytes, in_f / 32 * 34);
+        let mut y = self.alloc_uninit::<f32>(m * out_f)?;
+        let f = self.func("qmatvec_q8_0_mmvq_f32in_narrow");
+        let cfg = LaunchConfig {
+            grid_dim: ((out_f as u32).div_ceil(ROWS_PER_BLOCK), m as u32, 1),
+            block_dim: (32, ROWS_PER_BLOCK, 1),
+            shared_mem_bytes: 0,
+        };
+        let (inf, outf, mi, rb) = (in_f as i32, out_f as i32, m as i32, row_bytes as i64);
+        let stream = self.gpu.stream();
+        let mut b = stream.launch_builder(&f);
+        b.arg(w)
+            .arg(x)
+            .arg(&mut y)
+            .arg(&inf)
+            .arg(&outf)
+            .arg(&mi)
+            .arg(&rb);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(Some(y))
+    }
+
     pub fn mmvq_supports(&self, qtype: i32) -> bool {
         // DEFAULT ON since 2026-07-08 (MEMRA_MMVQ=0 reverts to the _dp4a matvec class).
         // QT_F8_E4M3 is exempt from the MEMRA_MMVQ=0 escape: the e4m3 mmvq family is that dtype's

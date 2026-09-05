@@ -147,7 +147,7 @@ DeltaNet scan; all f32" (hybrid.cu:1-3).
 | `gdn_chunk_state_mma[_vl]`, `gdn_chunk_output_mma[_vl]`, `gdn_p_bf16_masked` | fused wgmma K4+K5 chunk kernels | bf16 mirrors, f32 acc | sm_90a-only wgmma via wgmma_common.cuh:9 (include at hybrid.cu:2202) | MEMRA_GDN_WGMMA (hybrid.cu:2195 "env+cfg gated") | fatbin/by-name |
 | glue (~17: sigmoid, gated_rmsnorm incl. f16out/q8_1, transpose, repeat_heads, axpy, scatter/gather/reduce slots, f32_to_bf16_bulk, q_gate_split, qkv_to_gdn_repack) | hybrid-path glue | f32 | — | UNKNOWN | fatbin/by-name |
 
-### cu/qmatvec.cu — 348 symbols (fatbin `MEMRA_QMATVEC_FATBIN`; lane/moe-gateup-ilp2-20260905 +2: `moe_gate_up_preclamp8_q8_rows_ilp2`, `_w4_ilp2`; lane/moe-down-ilp2-20260905 +2: `moe_down8_fma_q8_rows_ilp2`, `moe_down8_fma_q8_rows_w4_ilp2`)
+### cu/qmatvec.cu — 349 symbols (fatbin `MEMRA_QMATVEC_FATBIN`; lane/kda-narrow-q8-20260905 +1: `qmatvec_q8_0_mmvq_f32in_narrow`; lane/moe-gateup-ilp2-20260905 +2: `moe_gate_up_preclamp8_q8_rows_ilp2`, `_w4_ilp2`; lane/moe-down-ilp2-20260905 +2: `moe_down8_fma_q8_rows_ilp2`, `moe_down8_fma_q8_rows_w4_ilp2`)
 
 Count basis, stated because BOTH merge parents moved it and neither number survives the union:
 344 is a MEASURED `grep -c 'extern "C" __global__'` on this file at commit bbbef06b17 —
