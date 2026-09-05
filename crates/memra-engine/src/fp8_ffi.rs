@@ -76,19 +76,10 @@ pub fn st_e4m3_enabled() -> bool {
 }
 
 /// Native residency for the BLOCK-128 e4m3 scale class (`QT_F8_E4M3_BLK`, lane/fp8-blk128-decode
-/// 2026-08-05) — the Qwen-official FP8 class that `st_e4m3_enabled`'s arm deliberately excludes.
-///
-/// SHARES the `MEMRA_ST_E4M3=0` rollback seam rather than adding a second knob, per flags doctrine:
-/// both arms are the same mechanism (checkpoint-native e4m3 residency + in-kernel dequant) applied
-/// to the two scale classes, and one seam that turns ALL native e4m3 residency back into the Q8_0
-/// slab is the behaviour a rollback wants. `MEMRA_ST_E4M3_BLK=0` additionally disables JUST this
-/// class — the narrow seam that isolates the block arm while leaving the (already shipped,
-/// already receipted) per-tensor arm on its default, which is what an A/B of this lane needs.
+/// 2026-08-05): the same mechanism as the per-tensor class, behind the same `MEMRA_ST_E4M3=0`
+/// rollback seam.
 pub fn st_e4m3_blk_enabled() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| {
-        st_e4m3_enabled() && std::env::var("MEMRA_ST_E4M3_BLK").as_deref() != Ok("0")
-    })
+    st_e4m3_enabled()
 }
 
 /// A block-128 tensor that PASSED every shape precondition for native residency but carried e4m3
@@ -267,7 +258,7 @@ pub fn fp8_mmq_enabled() -> bool {
 /// the instrument can see zero where zero is: argmax UNCHANGED and the top-10 order identical to the
 /// floor's, rms_rel 2.5e-2 on an rms-2.7155 logit vector, and teacher-forced NLL on the prompt's own
 /// continuation LOWER than the floor's (2.764722 vs 2.787267) on a tape neither arm produced.
-/// `MEMRA_ST_E4M3_BLK=0` / `MEMRA_ST_E4M3=0` also disable this route, by removing the native operand
+/// `MEMRA_ST_E4M3=0` also disables this route, by removing the native operand
 /// it consumes — this seam exists for the narrower question (keep native decode residency, revert
 /// only the prefill route).
 fn fp8_blk_mmq_native_policy(value: Option<&str>, sm100_dry_build: bool) -> bool {

@@ -971,47 +971,13 @@ pub(crate) fn parallel_ep_q8_scope() -> Result<Option<ParallelEpQ8Scope>, String
     parse_parallel_ep_q8_scope(std::env::var("MEMRA_PARALLEL_EP_Q8_SCOPE").ok().as_deref())
 }
 
-fn parse_parallel_ep_q8_gu_paired(value: Option<&str>) -> Result<Option<bool>, String> {
-    match value {
-        None | Some("") => Ok(None),
-        Some("0") => Ok(Some(false)),
-        Some("1") => Ok(Some(true)),
-        Some(value) => Err(format!(
-            "MEMRA_PARALLEL_EP_Q8_GU_PAIRED={value:?} is invalid; expected 0 or 1"
-        )),
-    }
-}
-
-fn resolve_parallel_ep_q8_gu_paired(
-    value: Option<&str>,
-    q8_active: bool,
-    scope: Option<ParallelEpQ8Scope>,
-) -> Result<bool, String> {
-    let configured = parse_parallel_ep_q8_gu_paired(value)?;
-    if configured == Some(true) && !q8_active {
-        return Err("MEMRA_PARALLEL_EP_Q8_GU_PAIRED=1 requires MEMRA_PARALLEL_EP_Q8_ACT=1".into());
-    }
-    if configured == Some(true) && scope == Some(ParallelEpQ8Scope::Down) {
-        return Err(
-            "MEMRA_PARALLEL_EP_Q8_GU_PAIRED=1 requires Q8 gate/up arithmetic; \
-             MEMRA_PARALLEL_EP_Q8_SCOPE=down keeps gate/up BF16"
-                .into(),
-        );
-    }
-    Ok(q8_active && scope != Some(ParallelEpQ8Scope::Down) && configured.unwrap_or(true))
-}
-
+/// The paired-CTA Q8 gate/up program: one CTA computes the same output row for gate and up and
+/// shares the q8_1 activation loads. Always on where Q8 gate/up arithmetic runs.
 pub(crate) fn parallel_ep_q8_gu_paired_enabled(
     q8_active: bool,
     scope: Option<ParallelEpQ8Scope>,
-) -> Result<bool, String> {
-    resolve_parallel_ep_q8_gu_paired(
-        std::env::var("MEMRA_PARALLEL_EP_Q8_GU_PAIRED")
-            .ok()
-            .as_deref(),
-        q8_active,
-        scope,
-    )
+) -> bool {
+    q8_active && scope != Some(ParallelEpQ8Scope::Down)
 }
 
 fn parse_step_layer_specs(
@@ -11900,7 +11866,7 @@ impl TpE4m3HostBounce {
             .checked_mul(experts.input_width)
             .ok_or("W4A8 device-routed EP input size overflow")?;
         let scope = parallel_ep_q8_scope()?.unwrap_or(ParallelEpQ8Scope::All);
-        let gate_up_paired = parallel_ep_q8_gu_paired_enabled(true, Some(scope))?;
+        let gate_up_paired = parallel_ep_q8_gu_paired_enabled(true, Some(scope));
 
         {
             let _main = e.gpu.enter_main()?;
@@ -15351,38 +15317,6 @@ mod tests {
             Some(ParallelEpQ8Scope::Down)
         );
         assert!(parse_parallel_ep_q8_scope(Some("input")).is_err());
-    }
-
-    #[test]
-    fn automatic_ep_q8_gate_up_paired_is_parent_scoped_and_strict() {
-        assert_eq!(parse_parallel_ep_q8_gu_paired(None).unwrap(), None);
-        assert_eq!(parse_parallel_ep_q8_gu_paired(Some("")).unwrap(), None);
-        assert_eq!(
-            parse_parallel_ep_q8_gu_paired(Some("0")).unwrap(),
-            Some(false)
-        );
-        assert_eq!(
-            parse_parallel_ep_q8_gu_paired(Some("1")).unwrap(),
-            Some(true)
-        );
-        assert!(parse_parallel_ep_q8_gu_paired(Some("paired")).is_err());
-        assert!(parse_parallel_ep_q8_gu_paired(Some("true")).is_err());
-
-        assert!(!resolve_parallel_ep_q8_gu_paired(None, false, None).unwrap());
-        assert!(resolve_parallel_ep_q8_gu_paired(None, true, None).unwrap());
-        assert!(
-            resolve_parallel_ep_q8_gu_paired(None, true, Some(ParallelEpQ8Scope::GateUp)).unwrap()
-        );
-        assert!(
-            !resolve_parallel_ep_q8_gu_paired(None, true, Some(ParallelEpQ8Scope::Down)).unwrap()
-        );
-        assert!(!resolve_parallel_ep_q8_gu_paired(Some("0"), false, None).unwrap());
-        assert!(!resolve_parallel_ep_q8_gu_paired(Some("0"), true, None).unwrap());
-        assert!(resolve_parallel_ep_q8_gu_paired(Some("1"), false, None).is_err());
-        assert!(
-            resolve_parallel_ep_q8_gu_paired(Some("1"), true, Some(ParallelEpQ8Scope::Down))
-                .is_err()
-        );
     }
 
     #[test]

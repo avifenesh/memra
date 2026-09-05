@@ -1084,7 +1084,7 @@ extern "C" __global__ void l2_norm_f32(const float* __restrict__ x, float* __res
 // l2_norm PREFILL v2 (round 27): warp-per-row float4 — d_state=128 cols = exactly one
 // float4 per lane, warp-shuffle reduce, float4 store. The 256-block strided kernel ran
 // at 918GB/s (half the threads idle on 128-col rows). NUMERIC CONFIG (explicit+gated,
-// MEMRA_L2_V2, the GDN-chunked/mma precedent): the reduction tree order differs from
+// the GDN-chunked/mma precedent): the reduction tree order differs from
 // l2_norm_f32 — arbitration = greedy-stream/argmax battery, not bit-identity. The same
 // values feed K2/K4 either way at ~1e-7 relative. PREFILL-ONLY: decode keeps
 // l2_norm_decode (decode==verify law untouched).
@@ -2561,7 +2561,7 @@ extern "C" __global__ void sdpa_naive_island_f32(const float* __restrict__ Q, co
     }
 }
 
-// MoE router GEMV (MEMRA_ROUTER_KERNEL=1): logits[t][e] = dot(W[e], x[t]) — replaces ~200
+// MoE router GEMV: logits[t][e] = dot(W[e], x[t]) — replaces ~200
 // cuBLASLt dispatches/round (4% of the 35B spec round loop, 2026-07-10 MEMRA_PROFILE_SPEC=2).
 // One warp per (expert, token); fixed-stride f32 accumulation + standard warp reduce —
 // DETERMINISTIC but a DIFFERENT FP order than cuBLAS: new numeric config, the router feeds

@@ -1458,10 +1458,7 @@ pub fn prime_chunk_ranges(t: usize, n_layers: usize, gdn_grid: bool) -> Vec<(usi
     } else {
         dynamic_prime_chunk_ranges(t, chunk, &fixed)
     };
-    // MEMRA_PRIME_GRID_ALIGN=0 is the shared rollback seam of the grid law (same env the
-    // worker's serve-boundary alignment honors, read per call so gates can flip it
-    // in-process): the legacy off-grid auto schedule — the toothed cell's broken arm.
-    if gdn_grid && std::env::var("MEMRA_PRIME_GRID_ALIGN").as_deref() != Ok("0") {
+    if gdn_grid {
         align_prime_ranges_to_gdn(&ranges, t, Engine::gdn_chunk_size())
     } else {
         ranges
@@ -1544,7 +1541,7 @@ pub fn hyper_prime_ranges(t: usize, n_layers: usize, gdn_grid: bool) -> Vec<(usi
 /// acquire a fold grid on one path and not the other.
 fn hyper_prime_ranges_natural(t: usize, gdn_grid: bool) -> Vec<(usize, usize)> {
     let ranges = fixed_prime_chunk_ranges(t, crate::cache::PRIME_CHUNK_MAX_TOKENS);
-    let ranges = if gdn_grid && std::env::var("MEMRA_PRIME_GRID_ALIGN").as_deref() != Ok("0") {
+    let ranges = if gdn_grid {
         align_prime_ranges_to_gdn(&ranges, t, Engine::gdn_chunk_size())
     } else {
         ranges
@@ -5475,8 +5472,7 @@ impl HybridModel {
     /// num_k == num_v/2 (the engine-side hint mirrors this exact formula); everything
     /// else (s128 verify tier, chunked-off, mma-off) keeps the broadcast layout.
     fn gdn_hk(e: &Engine, t: usize, num_v: usize, num_k: usize) -> usize {
-        if Engine::gdn_db_on()
-            && Engine::gdn_chunked_enabled()
+        if Engine::gdn_chunked_enabled()
             && t >= 16
             && e.gdn_mma_enabled(Engine::gdn_chunk_size())
             && num_k * 2 == num_v
@@ -8089,50 +8085,30 @@ impl HybridModel {
         );
 
         // conv with CARRIED ring state + ring roll (state read + final-window write-back).
-        // task #18 conv-fuse (default ON): conv + SiLU + repack in one pass — the 67MB
-        // conv_out intermediate and its transposed re-read disappear (values bit-identical).
-        // MEMRA_CONV_FUSE=0 reverts to the two-kernel chain.
+        // task #18 conv-fuse: conv + SiLU + repack in one pass — the 67MB conv_out
+        // intermediate and its transposed re-read disappear (values bit-identical).
         let rl = cache.recur[il].as_mut().unwrap();
         let hk = Self::gdn_hk(e, t, num_v, num_k);
-        let conv_fuse = std::env::var("MEMRA_CONV_FUSE").as_deref() != Ok("0");
-        let hk = if conv_fuse { hk } else { num_v }; // de-broadcast rides the fused conv
         let mut q_g = e.uninit(d_state * hk * t)?;
         let mut k_g = e.uninit(d_state * hk * t)?;
         let mut v_g = e.uninit(d_state * num_v * t)?;
-        if conv_fuse {
-            e.ssm_conv1d_gdn_state_pad(
-                qkv_mixed,
-                &mut rl.conv_state,
-                la.ssm_conv1d.float_data(),
-                &mut q_g,
-                &mut k_g,
-                &mut v_g,
-                conv_dim,
-                t,
-                d_conv,
-                d_state,
-                num_v,
-                num_k,
-                key_dim,
-                hk,
-                pad_len,
-            )?;
-        } else {
-            let mut conv_out = e.uninit(conv_dim * t)?; // [conv_dim, T] channel-major, SiLU
-            e.ssm_conv1d_tm_state_pad_v(
-                qkv_mixed,
-                &mut rl.conv_state,
-                la.ssm_conv1d.float_data(),
-                &mut conv_out,
-                conv_dim,
-                t,
-                d_conv,
-                pad_len,
-            )?;
-            e.qkv_to_gdn_repack(
-                &conv_out, &mut q_g, &mut k_g, &mut v_g, d_state, num_v, num_k, key_dim, t,
-            )?;
-        }
+        e.ssm_conv1d_gdn_state_pad(
+            qkv_mixed,
+            &mut rl.conv_state,
+            la.ssm_conv1d.float_data(),
+            &mut q_g,
+            &mut k_g,
+            &mut v_g,
+            conv_dim,
+            t,
+            d_conv,
+            d_state,
+            num_v,
+            num_k,
+            key_dim,
+            hk,
+            pad_len,
+        )?;
         let mut q_l2 = e.uninit(d_state * hk * t)?;
         // mirror-fold (round 35): q's bf16 twin (wgmma K45/K2 A-operand) in-epilogue too.
         // Emitted only where a consumer exists (the wgmma config) — on other arches the
@@ -8184,7 +8160,7 @@ impl HybridModel {
     /// task #18: batched GDN mixer core — per-seq prep + K1-K3, then ONE varlen K4 and
     /// ONE varlen K5 launch for all B sequences (full-machine occupancy vs B underfilled
     /// per-seq trains). Per-block math identical to the per-seq path (bit-gateable);
-    /// MEMRA_GDN_VL=0 or a non-mma/non-C32 config falls back to the per-seq loop.
+    /// A non-mma/non-C32 config falls back to the per-seq loop.
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     fn linear_attn_prime_core_batch(
@@ -8216,8 +8192,7 @@ impl HybridModel {
             && (2..=8).contains(&b)
             && Engine::gdn_chunked_enabled()
             && ts.iter().all(|&t| t >= 16)
-            && e.gdn_mma_enabled(c)
-            && std::env::var("MEMRA_GDN_VL").as_deref() != Ok("0");
+            && e.gdn_mma_enabled(c);
         if !use_vl {
             return (0..b)
                 .map(|s| {
@@ -10546,12 +10521,8 @@ impl HybridModel {
                 let shexp_d1 = *SHEXP_D1
                     .get_or_init(|| std::env::var("MEMRA_SHEXP_DEV1").as_deref() == Ok("1"))
                     && tp.runtime.rank_engine(1).is_some();
-                // MOE TAIL FUSION M1 (MEMRA_TAIL_ADD3=0 reverts): pre-arm the
-                // overlap ws + ones row and hand their RAW pointers to the routed
-                // run — the join add folds the shexp apply into one launch.
-                static TAIL3: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-                let tail3 =
-                    *TAIL3.get_or_init(|| std::env::var("MEMRA_TAIL_ADD3").as_deref() != Ok("0"));
+                // MOE TAIL FUSION M1: pre-arm the overlap ws + ones row and hand their RAW
+                // pointers to the routed run — the join add folds the shexp apply into one launch.
                 let mut ov_issued = false;
                 let mut d1_issued = false;
                 let mut tail_folded = false;
@@ -10577,11 +10548,7 @@ impl HybridModel {
                     // pointers stable, no lock held across the routed call). The
                     // sh CONTENT is written by the prejoin-issued kernels earlier
                     // on e's stream — stream order covers the fused add.
-                    let post_add = if tail3 {
-                        Self::shexp_overlap_tail_ptrs(e, m, cfg, n_embd)?
-                    } else {
-                        None
-                    };
+                    let post_add = Self::shexp_overlap_tail_ptrs(e, m, cfg, n_embd)?;
                     let used_post = post_add.is_some();
                     let out = tp
                         .runtime
@@ -10656,10 +10623,6 @@ impl HybridModel {
             let automatic_ep_device_router = crate::tp::parallel_ep_device_router_enabled()?;
             let automatic_ep_q8_act = crate::tp::parallel_ep_q8_act_enabled()?;
             let automatic_ep_q8_scope = crate::tp::parallel_ep_q8_scope()?;
-            crate::tp::parallel_ep_q8_gu_paired_enabled(
-                automatic_ep_q8_act,
-                automatic_ep_q8_scope,
-            )?;
             let automatic_ep_q8_active =
                 automatic_ep_q8_act && t <= crate::tp::NVFP4_EP_Q8_BATCH_CAP;
             if automatic_ep_q8_scope.is_some() && !automatic_ep_q8_act {
@@ -11397,30 +11360,16 @@ impl HybridModel {
         t: usize,
         cfg: &ModelConfig,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        if t < PRIME_MIN_T {
-            // Decode and speculative verify use one fixed per-row reduction program.
-            if crate::router_kernel_on() {
-                e.router_gemv(
-                    m.gate_inp.float_data(),
-                    z,
-                    cfg.n_embd as usize,
-                    m.gate_exps.n_expert,
-                    t,
-                )
-            } else {
-                e.matmul_decode_exact(&m.gate_inp, z, t)
-            }
-        } else if crate::router_prefill_exact_on() && crate::router_kernel_on() {
-            e.router_gemv(
-                m.gate_inp.float_data(),
-                z,
-                cfg.n_embd as usize,
-                m.gate_exps.n_expert,
-                t,
-            )
-        } else {
-            e.matmul(&m.gate_inp, z, t)
-        }
+        // Decode, speculative verify and prefill use one fixed per-row reduction program: the
+        // in-house router GEMV is m-invariant, so a session's routing depends on its own
+        // tokens only (the cuBLASLt forms were m-dependent: lane/concat-prime-exact).
+        e.router_gemv(
+            m.gate_inp.float_data(),
+            z,
+            cfg.n_embd as usize,
+            m.gate_exps.n_expert,
+            t,
+        )
     }
 
     /// Append the host-visible router selection for one layer/forward when calibration tracing is
@@ -13941,7 +13890,7 @@ impl HybridModel {
             // BIT-IDENTICAL — allw-shexpgate-o35b.log). The gate multiplies the shared
             // expert's contribution into every token's residual, so under cross-request
             // concat prefill a session's hidden state depended on its co-arrivals' token
-            // count. MEMRA_ROUTER_PREFILL_EXACT=0 reverts to the batched cuBLASLt linear.
+            // count.
             // DOOR H (`MEMRA_GLM5_HTOD_DIET`): glm5 has no `ffn_gate_inp_shexp`, so this is the
             // LIVE arm on the serving artifact and it re-uploaded a constant `vec![1.0f32; t]`
             // on every MoE layer-call — 42 pageable HtoD per ship round (26.9% of the round's
@@ -13954,14 +13903,7 @@ impl HybridModel {
             }
             let g = match &m.gate_inp_shexp {
                 Some(gate_inp_shexp) => {
-                    if t < PRIME_MIN_T || crate::router_prefill_exact_on() {
-                        e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?
-                    } else {
-                        let gs = e.linear(z, gate_inp_shexp.float_data(), t, n_embd, 1)?;
-                        let mut g = e.uninit(t)?; // sigmoid fully overwrites
-                        e.sigmoid(&gs, &mut g, t)?;
-                        g
-                    }
+                    e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?
                 }
                 None => e.htod(&vec![1.0f32; t])?,
             };
@@ -15083,14 +15025,8 @@ impl HybridModel {
                 // i.e. the one real prefill actually takes on a resident-expert MoE model,
                 // so the concat-prime isolation fix has to land here as well.
                 let g = match &m.gate_inp_shexp {
-                    Some(gate_inp_shexp) if crate::router_prefill_exact_on() => {
-                        e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?
-                    }
                     Some(gate_inp_shexp) => {
-                        let gs = e.linear(z, gate_inp_shexp.float_data(), t, n_embd, 1)?;
-                        let mut g = e.uninit(t)?;
-                        e.sigmoid(&gs, &mut g, t)?;
-                        g
+                        e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?
                     }
                     None => e.htod(&vec![1.0f32; t])?,
                 };
@@ -15250,14 +15186,8 @@ impl HybridModel {
             // lane/concat-prime-exact) — every shexp-gate arm shares the same form so a
             // dispatch choice cannot change bits.
             let g = match &m.gate_inp_shexp {
-                Some(gate_inp_shexp) if crate::router_prefill_exact_on() => {
-                    e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?
-                }
                 Some(gate_inp_shexp) => {
-                    let gs = e.linear(z, gate_inp_shexp.float_data(), t, n_embd, 1)?;
-                    let mut g = e.uninit(t)?;
-                    e.sigmoid(&gs, &mut g, t)?;
-                    g
+                    e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?
                 }
                 None => e.htod(&vec![1.0f32; t])?,
             };
@@ -15345,13 +15275,8 @@ impl HybridModel {
             // deduping the 38-40% duplicated weight-stream+decode the overlap probe measured
             // (gate_up 55.0 -> 39.7us/launch; +1.3-2.1% spec e2e p2, +0.6-1.7% p3, all K).
             // Bit-identical to the _rows twins (explicit-intrinsic accumulate — the ULP/fmad
-            // lesson; =2 byte-compare verified zero diffs). down stays on _rows (CSR down
+            // lesson; the byte-compare arm verified zero diffs). down stays on _rows (CSR down
             // measured 23.5 -> 37.5us: 16-group rows can't amortize the serial pair loop).
-            // MEMRA_MOE_CSR=0 rollback; =2 runs BOTH paths and byte-compares (debug).
-            let csr_mode = std::env::var("MEMRA_MOE_CSR")
-                .ok()
-                .and_then(|v| v.parse::<i32>().ok())
-                .unwrap_or(1);
             // NVFP4 admission REVERTED 2026-08-21 (lane/samplat, decode-batch-gate2 find):
             // the csr_nvfp4 kernel drifts last-ULP vs the rows program (11041/32768 ACT
             // elements at t=8) and the drift is BATCH-COMPOSITION-DEPENDENT — gate2 (B=8 vs
@@ -15366,17 +15291,12 @@ impl HybridModel {
             let csr_t_max = 10;
             let csr_uniform = m.gate_exps.qtype == m.up_exps.qtype;
             let csr_arm = rows_arm
-                && csr_mode > 0
                 && t <= csr_t_max
                 && csr_uniform
                 && csr_qt(m.gate_exps.qtype)
                 && csr_qt(m.up_exps.qtype)
                 && csr_qt(m.down_exps.qtype);
             if csr_arm {
-                if csr_mode == 2 {
-                    static ENGAGED: std::sync::Once = std::sync::Once::new();
-                    ENGAGED.call_once(|| eprintln!("[memra] moe CSR byte-compare mode ON (t={t})"));
-                }
                 let n_pairs = t * n_used;
                 let (zq, zd) = e.quantize_q8_1(z, t, n_embd)?;
                 let act = e.moe_gate_up_silu8_dev_q8_csr(
@@ -15413,76 +15333,6 @@ impl HybridModel {
                     m.down_exps.qtype,
                     m.down_exps.row_bytes,
                 )?;
-                if csr_mode == 2 {
-                    // DEBUG BYTE-COMPARE: run the _rows twins on the same inputs, diff bits.
-                    let act_r = e.moe_gate_up_silu8_dev_q8_rows(
-                        &dev.ptr_row,
-                        &sel_d,
-                        &zq,
-                        &zd,
-                        t,
-                        n_embd,
-                        n_ff_exp,
-                        n_used,
-                        n_expert,
-                        m.gate_exps.qtype,
-                        m.up_exps.qtype,
-                        rbg_d,
-                        rbu_d,
-                        &m.dev_macros,
-                    )?;
-                    let mut out_r = e.uninit(t * n_embd)?;
-                    let (aq2r, ad2r) = e.quantize_q8_1(&act_r, n_pairs, n_ff_exp)?;
-                    e.moe_down8_fma_dev_q8_rows(
-                        &dev.ptr_row,
-                        &sel_d,
-                        &w_d,
-                        &aq2r,
-                        &ad2r,
-                        &mut out_r,
-                        t,
-                        n_ff_exp,
-                        n_embd,
-                        n_used,
-                        n_expert,
-                        m.down_exps.qtype,
-                        m.down_exps.row_bytes,
-                    )?;
-                    let (a1, a2) = (e.dtoh(&act)?, e.dtoh(&act_r)?);
-                    let (o1, o2) = (e.dtoh(&moe_out)?, e.dtoh(&out_r)?);
-                    let ba = a1
-                        .iter()
-                        .zip(&a2)
-                        .filter(|(x, y)| x.to_bits() != y.to_bits())
-                        .count();
-                    let bo = o1
-                        .iter()
-                        .zip(&o2)
-                        .filter(|(x, y)| x.to_bits() != y.to_bits())
-                        .count();
-                    if ba + bo > 0 {
-                        eprintln!(
-                            "[csr-check] il={il} t={t} ACT diffs={ba}/{} OUT diffs={bo}/{}",
-                            a1.len(),
-                            o1.len()
-                        );
-                        // First 4 differing ACT elements: (pair, o, csr, rows) + that pair's expert
-                        let sel_h = e.dtoh_i32(&sel_d)?;
-                        let mut shown = 0;
-                        for (i, (x, y)) in a1.iter().zip(&a2).enumerate() {
-                            if x.to_bits() != y.to_bits() && shown < 4 {
-                                let (p, o) = (i / n_ff_exp, i % n_ff_exp);
-                                let ex = sel_h[p];
-                                let npx = sel_h.iter().filter(|&&v| v == ex).count();
-                                eprintln!(
-                                    "  ACT p={p} ex={ex} np={npx} o={o} csr={x:e} rows={y:e}"
-                                );
-                                shown += 1;
-                            }
-                        }
-                        std::process::exit(3);
-                    }
-                }
             } else if rows_arm {
                 // TEMP PROBE (MEMRA_MOE_OVERLAP=1): cross-token expert-activation overlap at
                 // verify — sizes the CSR dedup win (unique experts vs t*n_used pairs).
@@ -15748,16 +15598,7 @@ impl HybridModel {
             // between the two arms; prefill keeps the batched cuBLASLt linear).
             let g = match &m.gate_inp_shexp {
                 Some(gate_inp_shexp) => {
-                    // router_prefill_exact_on(): the fused sigmoid-dot is m-INVARIANT and
-                    // serves EVERY t (serve isolation, lane/concat-prime-exact).
-                    if t < PRIME_MIN_T || crate::router_prefill_exact_on() {
-                        e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?
-                    } else {
-                        let gs = e.linear(z, gate_inp_shexp.float_data(), t, n_embd, 1)?;
-                        let mut g = e.uninit(t)?;
-                        e.sigmoid(&gs, &mut g, t)?;
-                        g
-                    }
+                    e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?
                 }
                 None => e.htod(&vec![1.0f32; t])?,
             };
@@ -17966,17 +17807,13 @@ impl HybridModel {
                         }
                         sh
                     } else {
-                        // FUSION #2e (gate-less shexp only, MEMRA_FUSE_DOWN_ADDSCALE=0 reverts):
+                        // FUSION #2e (gate-less shexp only):
                         // down matvec + scaled accumulate straight into moe_out in ONE launch —
                         // exact f32acc per-row program + the exact add_scaled_rows expression
                         // (dst[r] += y_r * 1.0). Replaces down + ownership alloc + 16KB copy +
                         // add_scaled (3 launches + alloc -> 1 launch); bit-identical because the
                         // accumulate consumes the same f32 the split path stored and reloaded.
-                        static FUSE_DA: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-                        let fuse_da = *FUSE_DA.get_or_init(|| {
-                            std::env::var("MEMRA_FUSE_DOWN_ADDSCALE").as_deref() != Ok("0")
-                        });
-                        if fuse_da && m.gate_inp_shexp.is_none() {
+                        if m.gate_inp_shexp.is_none() {
                             static ONES1: std::sync::Mutex<Option<(usize, CudaSlice<f32>)>> =
                                 std::sync::Mutex::new(None);
                             let mut og = ONES1.lock().map_err(|_| "shexp ones lock is poisoned")?;
@@ -18054,14 +17891,7 @@ impl HybridModel {
             };
             let gate = match &m.gate_inp_shexp {
                 Some(gate_inp_shexp) => {
-                    if t < PRIME_MIN_T || crate::router_prefill_exact_on() {
-                        e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?
-                    } else {
-                        let raw = e.linear(z, gate_inp_shexp.float_data(), t, n_embd, 1)?;
-                        let mut gate = e.uninit(t)?;
-                        e.sigmoid(&raw, &mut gate, t)?;
-                        gate
-                    }
+                    e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?
                 }
                 // t=1 hot path: the per-layer htod of a ones row is a PAGEABLE H2D that
                 // synchronizes the stream — measured as the biggest per-layer host gap
@@ -19290,11 +19120,7 @@ impl HybridModel {
         // router stays the two-launch pair: THREE fuse variants measured worse (serial-dot
         // -50%, 1024-thread warp-parallel -12% on topk sync overhead — jsonl 2026-07-11);
         // the pair's 12us is kernel time, not launch gaps.
-        let logits = if crate::router_kernel_on() {
-            e.router_gemv(m.gate_inp.float_data(), router_in, n_embd, n_expert, t)?
-        } else {
-            e.matmul(&m.gate_inp, router_in, t)?
-        };
+        let logits = e.router_gemv(m.gate_inp.float_data(), router_in, n_embd, n_expert, t)?;
         let dev = m.dev_exps.as_ref().unwrap();
         let (sel_d, w_d) =
             e.moe_router_topk_scaled(&logits, t, n_expert, n_used, &bits.per_expert_scale_d)?;
@@ -19413,7 +19239,7 @@ impl HybridModel {
         // Router: the in-house GEMV for ALL small t (decode AND verify ride the same per-column
         // kernel — the cuBLASLt n-dependence flipped top-k at verify t on the 27B, d994271);
         // batched matmul only at real prefill.
-        let logits = if t < PRIME_MIN_T && crate::router_kernel_on() {
+        let logits = if t < PRIME_MIN_T {
             e.router_gemv(m.gate_inp.float_data(), router_in, n_embd, n_expert, t)?
         } else {
             e.matmul(&m.gate_inp, router_in, t)?
@@ -23290,43 +23116,23 @@ impl HybridModel {
                     // NEW NUMERIC CLASS vs the floor (bf16-MMA online softmax vs f32 serial),
                     // selected on `seq_end` like every arm here, so the class is uniform for
                     // the whole request at every MEMRA_PRIME_CHUNK — chunkinv holds by the
-                    // same construction as the chunkfix. MEMRA_STEP35_SWA_FA=0 = rollback to
-                    // the f32 floor (the previous numeric config, kept as the A/B seam).
-                    if std::env::var("MEMRA_STEP35_SWA_FA").as_deref() == Ok("0") {
-                        e.sdpa_naive_w_quantized_view(
-                            &q,
-                            &k_view,
-                            &v_view,
-                            &mut attn,
-                            hd,
-                            nh,
-                            nkv,
-                            t,
-                            t_kv,
-                            scale,
-                            true,
-                            win,
-                            kvl.k_tok_bytes,
-                            kvl.v_tok_bytes,
-                        )?;
-                    } else {
-                        e.fa_prefill_view_ws_w_hd128(
-                            &q,
-                            &k_view,
-                            &v_view,
-                            &mut attn,
-                            hd,
-                            nh,
-                            nkv,
-                            t,
-                            t_kv,
-                            scale,
-                            true,
-                            win,
-                            kvl.k_tok_bytes,
-                            kvl.v_tok_bytes,
-                        )?;
-                    }
+                    // same construction as the chunkfix.
+                    e.fa_prefill_view_ws_w_hd128(
+                        &q,
+                        &k_view,
+                        &v_view,
+                        &mut attn,
+                        hd,
+                        nh,
+                        nkv,
+                        t,
+                        t_kv,
+                        scale,
+                        true,
+                        win,
+                        kvl.k_tok_bytes,
+                        kvl.v_tok_bytes,
+                    )?;
                 } else if std::env::var("MEMRA_NOFA").is_ok() {
                     e.sdpa_naive_quantized_view(
                         &q,
@@ -23826,41 +23632,22 @@ impl HybridModel {
                 let mut attention_out = engine.uninit(tokens * local_heads * head_dim)?;
                 if swa_naive {
                     let window = window.expect("SWA predicate requires a window");
-                    if std::env::var("MEMRA_STEP35_SWA_FA").as_deref() == Ok("0") {
-                        engine.sdpa_naive_w_quantized_view(
-                            &q[rank],
-                            &k_view,
-                            &v_view,
-                            &mut attention_out,
-                            head_dim,
-                            local_heads,
-                            local_kv_heads,
-                            tokens,
-                            t_kv,
-                            geometry.attention_scale(),
-                            true,
-                            window,
-                            distributed.k_tok_bytes(),
-                            distributed.v_tok_bytes(),
-                        )?;
-                    } else {
-                        engine.fa_prefill_view_ws_w_hd128(
-                            &q[rank],
-                            &k_view,
-                            &v_view,
-                            &mut attention_out,
-                            head_dim,
-                            local_heads,
-                            local_kv_heads,
-                            tokens,
-                            t_kv,
-                            geometry.attention_scale(),
-                            true,
-                            window,
-                            distributed.k_tok_bytes(),
-                            distributed.v_tok_bytes(),
-                        )?;
-                    }
+                    engine.fa_prefill_view_ws_w_hd128(
+                        &q[rank],
+                        &k_view,
+                        &v_view,
+                        &mut attention_out,
+                        head_dim,
+                        local_heads,
+                        local_kv_heads,
+                        tokens,
+                        t_kv,
+                        geometry.attention_scale(),
+                        true,
+                        window,
+                        distributed.k_tok_bytes(),
+                        distributed.v_tok_bytes(),
+                    )?;
                 } else if std::env::var("MEMRA_NOFA").is_ok() {
                     engine.sdpa_naive_quantized_view(
                         &q[rank],
@@ -24657,7 +24444,7 @@ impl HybridModel {
         }
         let geometry = self.step35_geom(il);
         let head_dim = geometry.head_dim_k as usize;
-        if head_dim > 256 || !head_dim.is_multiple_of(32) || !crate::fa_v3_on() {
+        if head_dim > 256 || !head_dim.is_multiple_of(32) {
             return Ok(false);
         }
         if crate::fa_sm_count() < 128
@@ -24813,7 +24600,7 @@ impl HybridModel {
         }
         let geometry = self.step35_geom(il);
         let head_dim = geometry.head_dim_k as usize;
-        if head_dim > 256 || !head_dim.is_multiple_of(32) || !crate::fa_v3_on() {
+        if head_dim > 256 || !head_dim.is_multiple_of(32) {
             return Ok(false);
         }
         if crate::fa_sm_count() < 128
@@ -28107,11 +27894,6 @@ impl HybridModel {
         let eps = self.cfg.rms_eps;
         let n_layers = self.layers.len();
         let started = std::time::Instant::now();
-        if !crate::router_kernel_on() {
-            return Err(
-                "step35 token graph requires the router kernel (MEMRA_ROUTER_KERNEL=0)".into(),
-            );
-        }
         if !Engine::bf16_mmv_on() || !n_embd.is_multiple_of(8) {
             return Err("step35 token graph requires MEMRA_BF16_MMV bf16-resident matvecs".into());
         }

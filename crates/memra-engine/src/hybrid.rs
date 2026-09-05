@@ -6182,12 +6182,8 @@ impl HybridModel {
     /// first prefill (observed: research/specpool-20260804/server-ladder-miss.log).
     /// The server calls this after each ladder landing so the biggest lazy
     /// transient surfaces as a catchable Err (shrink further / fall back) instead
-    /// of a panic. No-op when the host-gather door (MEMRA_EMBED_DEV=0) is open or
-    /// the table is already resident.
+    /// of a panic. No-op when the table is already resident.
     pub fn ensure_embed_resident(&self, e: &Engine) -> Result<(), Box<dyn std::error::Error>> {
-        if std::env::var("MEMRA_EMBED_DEV").as_deref() == Ok("0") {
-            return Ok(());
-        }
         if self.embd_gpu.get().is_none() {
             let buf = e.upload_u8(&self.embd.raw)?;
             let _ = self.embd_gpu.set(buf); // racing set = already resident; fine
@@ -6204,18 +6200,13 @@ impl HybridModel {
         // DEVICE embed gather (round 30; the gemma4 machinery adopted for every model):
         // resident quantized table + gather kernel — replaces the CPU row gather + 31MB
         // pageable HtoD (2.2ms at T=2048, the lane's largest host stall). Same d*q
-        // dequant math as the CPU gather; the greedy-stream A/B arbitrates.
-        // MEMRA_EMBED_DEV=0 reverts.
-        if std::env::var("MEMRA_EMBED_DEV").as_deref() != Ok("0") {
-            let tbl = self
-                .embd_gpu
-                .get_or_init(|| e.upload_u8(&self.embd.raw).expect("embed table upload"));
-            let tok_d = e.htod_u32_v(tokens)?;
-            let (qt, rb) = self.embd.qt_and_row_bytes(n_embd);
-            return e.embed_gather_device_td(tbl, &tok_d, tokens.len(), n_embd, qt, rb);
-        }
-        let x = self.embd.try_gather(n_embd, tokens)?;
-        e.htod(&x)
+        // dequant math as the CPU gather; the greedy-stream A/B arbitrated it.
+        let tbl = self
+            .embd_gpu
+            .get_or_init(|| e.upload_u8(&self.embd.raw).expect("embed table upload"));
+        let tok_d = e.htod_u32_v(tokens)?;
+        let (qt, rb) = self.embd.qt_and_row_bytes(n_embd);
+        e.embed_gather_device_td(tbl, &tok_d, tokens.len(), n_embd, qt, rb)
     }
 }
 

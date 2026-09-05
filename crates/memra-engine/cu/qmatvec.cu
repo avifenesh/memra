@@ -7939,7 +7939,7 @@ extern "C" __global__ void moe_gate_up_gelu8_dev_q8_csr(
 // materializes the helper's return value (mul, then add) — last-ULP drift on 11041/32768
 // ACT elements at t=8, which decode-batch-gate2 caught as a batch-composition dependence.
 // Keeping the helper-call shape (`acc += nvfp4_dot_cached(..)`) reproduces the rows
-// codegen; MEMRA_MOE_CSR=2 byte-compares to enforce it.
+// codegen (the byte-compare arm that enforced it verified zero diffs).
 __device__ __forceinline__ float nvfp4_dot_cached(const int* __restrict__ wv,
                                                   const float* __restrict__ sf,
                                                   const signed char* __restrict__ aqb,
@@ -7962,7 +7962,7 @@ __device__ __forceinline__ float nvfp4_dot_cached(const int* __restrict__ wv,
 // NVFP4 CSR owner-scan twin (lane/moebatch-q35moe, 2026-08-21): same dedup skeleton as
 // _csr_iq4, weight decode cached per (expert, o, group) and reused across the expert's
 // (token, slot) pairs. Per-pair arithmetic = nvfp4_dot_cached (expert_dot_nvfp4_g's exact
-// body over the cached decode); MEMRA_MOE_CSR=2 byte-compares to enforce bit-identity.
+// body over the cached decode); bit-identity verified by the byte-compare arm.
 extern "C" __global__ void moe_gate_up_silu8_dev_q8_csr_nvfp4(
         const unsigned long long* __restrict__ table, const int* __restrict__ sel,
         const signed char* __restrict__ aq, const float* __restrict__ ad,

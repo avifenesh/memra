@@ -3250,13 +3250,8 @@ fn plain_checkpoint_boundary(prompt: &[u32], is_control: &dyn Fn(u32) -> bool) -
 ///
 /// Attention-only models are split-invariant already (same cells, GDN-off arm), so rounding
 /// is a no-op contract there beyond the <=31-token capture shift — applied uniformly to keep
-/// one law. `MEMRA_PRIME_GRID_ALIGN=0` is the rollback seam (legacy byte-for-byte boundary
-/// choice — the toothed gate's broken arm). Read per call, never cached (probes flip it
-/// in-process between arms).
+/// one law.
 fn grid_align_boundary(b: usize) -> usize {
-    if std::env::var("MEMRA_PRIME_GRID_ALIGN").as_deref() == Ok("0") {
-        return b;
-    }
     let c = memra_engine::Engine::gdn_chunk_size();
     b / c * c
 }
@@ -3284,9 +3279,6 @@ fn grid_align_boundary(b: usize) -> usize {
 /// the caller's own bound rejects the boundary, which is then the W1 note's "drop it" outcome.
 fn grid_align_boundary_within(b: usize, prompt_len: usize) -> usize {
     let mut aligned = grid_align_boundary(b);
-    if std::env::var("MEMRA_PRIME_GRID_ALIGN").as_deref() == Ok("0") {
-        return aligned;
-    }
     let c = memra_engine::Engine::gdn_chunk_size();
     let floor = memra_engine::hybrid_forward::PRIME_MIN_T;
     while aligned >= c && prompt_len.saturating_sub(aligned) < floor {

@@ -839,15 +839,12 @@ impl HybridModel {
             // `if let (Some(p), true) = (pending.take(), fuse)` DROPS the taken pair when
             // fuse is false (pattern fails post-take) and silently loses the residual add.
             let taken = pending.take();
-            // FUSION #2f (bf16-mixer decode, MEMRA_FUSE_ADD_NORM=0 reverts): off the q8_1
-            // fast path the residual add and this layer's attn_norm ran as two launches;
-            // add_rms_norm does both (kernel_check identity: add_rms_norm == add then
-            // rms_norm; same rms_block()), then the mixer takes the pre-normed h directly.
-            static FUSE_AN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-            let fuse_add_norm =
-                *FUSE_AN.get_or_init(|| std::env::var("MEMRA_FUSE_ADD_NORM").as_deref() != Ok("0"));
+            // FUSION #2f (bf16-mixer decode): off the q8_1 fast path the residual add and this
+            // layer's attn_norm ride one add_rms_norm launch (kernel_check identity:
+            // add_rms_norm == add then rms_norm; same rms_block()), then the mixer takes the
+            // pre-normed h directly.
             let mixed = match (taken, fuse) {
-                (Some((x1, f1)), false) if fuse_add_norm => {
+                (Some((x1, f1)), false) => {
                     let mut x2 = e.uninit(n_embd)?;
                     let mut h = e.uninit(n_embd)?;
                     e.add_rms_norm(&x1, &f1, anorm, &mut x2, &mut h, n_embd, 1, eps)?;
@@ -889,12 +886,7 @@ impl HybridModel {
                         }
                     }
                 }
-                (taken, _) => {
-                    if let Some((x1, f1)) = taken {
-                        let mut x2 = e.uninit(n_embd)?;
-                        e.add(&x1, &f1, &mut x2, n_embd)?;
-                        x = x2;
-                    }
+                (None, _) => {
                     self.attn_in_norm_mixer(e, layer, &x, &pos_d, pos, cache, il, n_embd, eps)?
                 }
             };
@@ -1261,13 +1253,10 @@ impl HybridModel {
             // take() FIRST, branch on fuse after (see decode_step_h: a tuple pattern drops
             // the taken pair when fuse is false and silently loses the residual add).
             let taken = pending.take();
-            // FUSION #2f (same door as decode_step_h): off the q8_1 fast path, fuse the
-            // residual add with this layer's attn_norm via add_rms_norm.
-            static FUSE_AN_LE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-            let fuse_add_norm = *FUSE_AN_LE
-                .get_or_init(|| std::env::var("MEMRA_FUSE_ADD_NORM").as_deref() != Ok("0"));
+            // FUSION #2f (as decode_step_h): off the q8_1 fast path, the residual add and this
+            // layer's attn_norm ride one add_rms_norm launch.
             let mixed = match (taken, fuse) {
-                (Some((x1, f1)), false) if fuse_add_norm => {
+                (Some((x1, f1)), false) => {
                     let mut x2 = e.uninit(n_embd)?;
                     let mut h = e.uninit(n_embd)?;
                     e.add_rms_norm(&x1, &f1, anorm, &mut x2, &mut h, n_embd, 1, eps)?;
@@ -1306,12 +1295,7 @@ impl HybridModel {
                         }
                     }
                 }
-                (taken, _) => {
-                    if let Some((x1, f1)) = taken {
-                        let mut x2 = e.uninit(n_embd)?;
-                        e.add(&x1, &f1, &mut x2, n_embd)?;
-                        x = x2;
-                    }
+                (None, _) => {
                     self.attn_in_norm_mixer(e, layer, &x, pos_d, pos, cache, il, n_embd, eps)?
                 }
             };
