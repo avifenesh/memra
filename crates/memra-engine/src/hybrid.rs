@@ -2280,7 +2280,12 @@ pub struct MlaAttnLayer {
     pub wk_b: GpuTensor, // attn_k_b.weight      [nope, Lkv, N] 3D — TRANSPOSED nope slice of
     //   kv_b (conversion split): the per-head absorb GEMM operand
     pub wv_b: GpuTensor, // attn_v_b.weight      [Lkv, V, N] 3D — the post-softmax decompress
-    pub wo: GpuTensor,   // attn_output.weight   [N*V -> H]
+    /// BF16 copies of `wk_b` / `wv_b` (door `MEMRA_MLA_ABSORB_BF16`), built at load ONLY when
+    /// every f32 element of the resident plane is an exact widening of a BF16 value (the B200
+    /// hybrid mint ships `kv_b_proj` in BF16); `None` otherwise, and the f32 path stays.
+    pub wk_b16: Option<CudaSlice<u16>>,
+    pub wv_b16: Option<CudaSlice<u16>>,
+    pub wo: GpuTensor, // attn_output.weight   [N*V -> H]
     pub geom: MlaGeom,
     /// `Some` exactly when the layer's plan declares `SparseIndexPlan::Own { kpool: Some(..) }`.
     /// `None` means the layer attends DENSELY — correct only for a plan that asked for dense.
@@ -2415,6 +2420,26 @@ impl MlaAttnLayer {
             "wo in != n_head * v_head_dim"
         );
         let index = Self::load_indexer(e, src, il, sparse_index, *q_lora_rank)?;
+        // BF16 copies of the absorb planes (door MEMRA_MLA_ABSORB_BF16): exact or absent.
+        let bf16_copy = |w: &GpuTensor,
+                         name: &str|
+         -> Result<Option<CudaSlice<u16>>, Box<dyn std::error::Error>> {
+            let GpuTensor::Float { data, .. } = w else {
+                return Ok(None);
+            };
+            let host = e.dtoh(data)?;
+            if host.iter().any(|v| v.to_bits() & 0xFFFF != 0) {
+                eprintln!(
+                    "[mla-absorb-bf16] {name}: resident plane is not an exact BF16 widening; the \
+                     f32 path stays for this layer"
+                );
+                return Ok(None);
+            }
+            let bits: Vec<u16> = host.iter().map(|v| (v.to_bits() >> 16) as u16).collect();
+            Ok(Some(e.htod_u16(&bits)?))
+        };
+        let wk_b16 = bf16_copy(&wk_b, "attn_k_b")?;
+        let wv_b16 = bf16_copy(&wv_b, "attn_v_b")?;
         Ok(MlaAttnLayer {
             wq_a,
             q_a_norm: load_t(e, src, &p("attn_q_a_norm.weight"))?,
@@ -2423,6 +2448,8 @@ impl MlaAttnLayer {
             kv_a_norm: load_t(e, src, &p("attn_kv_a_norm.weight"))?,
             wk_b,
             wv_b,
+            wk_b16,
+            wv_b16,
             wo,
             geom,
             index,

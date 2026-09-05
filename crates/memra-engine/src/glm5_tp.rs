@@ -1194,6 +1194,8 @@ pub(crate) fn shard_mla_layer(
             // 3D per-head slabs: the head axis is outermost.
             wk_b: shard_rows(e, dst, &la.wk_b, r * hl..(r + 1) * hl)?,
             wv_b: shard_rows(e, dst, &la.wv_b, r * hl..(r + 1) * hl)?,
+            wk_b16: None,
+            wv_b16: None,
             // COLUMN-parallel wo: rank r owns OUT rows over the full N*V input.
             wo: shard_rows(e, dst, &la.wo, wr * hh..(wr + 1) * hh)?,
             geom: shard_geom,
