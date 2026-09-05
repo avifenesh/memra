@@ -1246,8 +1246,6 @@ pub(crate) fn q8t_wonce_on() -> bool {
     step37_door(&ENV, "MEMRA_Q8T_WONCE")
 }
 
-/// MEMRA_TOPK_FAST=1: barrier-lean sigmoid top-k twin (warp-local top-k + one merge).
-/// Selection and weight arithmetic identical to the round-robin kernel — a latency twin.
 /// MEMRA_SIG_EXPF_DEV=1: device-libm expf sigmoid router (numeric-class door — the
 /// host-glibc transcription is FP64-rate-bound on consumer Blackwell). New tape + battery.
 pub(crate) fn sig_expf_dev_on() -> bool {
@@ -1255,44 +1253,25 @@ pub(crate) fn sig_expf_dev_on() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_SIG_EXPF_DEV").as_deref() == Ok("1"))
 }
 
-pub(crate) fn topk_fast_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_TOPK_FAST").as_deref() == Ok("1"))
-}
-
-/// Select the sigmoid-router kernel without ever sending a shape wider than the fast
-/// kernels' fixed eight-pick scratch. The generic and dexp kernels support the full host
-/// contract; both `_fast` twins index `[warp][8]` storage and would write out of bounds for
-/// `n_used > 8` (Hermes `0d220d8c9a3eb634`).
-fn sigmoid_topk_kernel(sig_expf: bool, fast: bool, n_used: usize) -> &'static str {
-    match (sig_expf, fast && n_used <= 8) {
-        (true, true) => "moe_router_sigmoid_topk_f32_dexp_fast",
-        (true, false) => "moe_router_sigmoid_topk_f32_dexp",
-        (false, true) => "moe_router_sigmoid_topk_f32_fast",
-        (false, false) => "moe_router_sigmoid_topk_f32",
+/// Select the sigmoid-router kernel: the device-libm `expf` twin under `MEMRA_SIG_EXPF_DEV`,
+/// else the shipped host-transcribed sigmoid. (The barrier-lean `_fast` twins and their door
+/// `MEMRA_TOPK_FAST` were removed 2026-09-06 on a neutral model-scale row.)
+fn sigmoid_topk_kernel(sig_expf: bool) -> &'static str {
+    if sig_expf {
+        "moe_router_sigmoid_topk_f32_dexp"
+    } else {
+        "moe_router_sigmoid_topk_f32"
     }
 }
 
 #[cfg(test)]
 mod sigmoid_topk_dispatch_tests {
     #[test]
-    fn fast_kernel_refuses_wide_topk_and_composes_with_dexp() {
+    fn dexp_selects_its_twin() {
         use super::sigmoid_topk_kernel;
-
+        assert_eq!(sigmoid_topk_kernel(false), "moe_router_sigmoid_topk_f32");
         assert_eq!(
-            sigmoid_topk_kernel(false, true, 8),
-            "moe_router_sigmoid_topk_f32_fast"
-        );
-        assert_eq!(
-            sigmoid_topk_kernel(true, true, 8),
-            "moe_router_sigmoid_topk_f32_dexp_fast"
-        );
-        assert_eq!(
-            sigmoid_topk_kernel(false, true, 9),
-            "moe_router_sigmoid_topk_f32"
-        );
-        assert_eq!(
-            sigmoid_topk_kernel(true, true, 9),
+            sigmoid_topk_kernel(true),
             "moe_router_sigmoid_topk_f32_dexp"
         );
     }
@@ -7226,11 +7205,7 @@ impl Engine {
                 logits.len(), correction_bias.len(), active.len(), t * n_expert, n_expert,
             ).into());
         }
-        let f = self.func(crate::sigmoid_topk_kernel(
-            crate::sig_expf_dev_on(),
-            crate::topk_fast_on(),
-            n_used,
-        ));
+        let f = self.func(crate::sigmoid_topk_kernel(crate::sig_expf_dev_on()));
         let mut sel_idx = self.alloc_uninit::<i32>(t * n_used)?;
         let mut sel_w = self.alloc_uninit::<f32>(t * n_used)?;
         let threads = n_expert.div_ceil(32) * 32;
@@ -7440,11 +7415,7 @@ impl Engine {
         {
             return Err("sigmoid router _into geometry mismatch".into());
         }
-        let f = self.func(crate::sigmoid_topk_kernel(
-            crate::sig_expf_dev_on(),
-            crate::topk_fast_on(),
-            n_used,
-        ));
+        let f = self.func(crate::sigmoid_topk_kernel(crate::sig_expf_dev_on()));
         let threads = n_expert.div_ceil(32) * 32;
         let cfg = LaunchConfig {
             grid_dim: (t as u32, 1, 1),
