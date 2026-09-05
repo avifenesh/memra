@@ -475,6 +475,236 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
+        // ---- v4: bit identity against v3 (served config) and interleaved timing ----
+        let run_v4 = |block: i32| -> Res<Hc4> {
+            let mixes_d = stream.clone_htod(&s.mixes)?;
+            let mut pre_d = stream.alloc_zeros::<f32>(t * HC)?;
+            let mut post_d = stream.alloc_zeros::<f32>(t * HC)?;
+            let mut comb_d = stream.alloc_zeros::<f32>(t * HC * HC)?;
+            let mut y_d = stream.alloc_zeros::<f32>(t * D)?;
+            unsafe {
+                let rc = k::memra_dsv4_hc_pre_v4(
+                    x_d.device_ptr(&stream).0 as *const f32,
+                    mixes_d.device_ptr(&stream).0 as *const f32,
+                    scale_d.device_ptr(&stream).0 as *const f32,
+                    base_d.device_ptr(&stream).0 as *const f32,
+                    pre_d.device_ptr_mut(&stream).0 as *mut f32,
+                    post_d.device_ptr_mut(&stream).0 as *mut f32,
+                    comb_d.device_ptr_mut(&stream).0 as *mut f32,
+                    y_d.device_ptr_mut(&stream).0 as *mut f32,
+                    t as i32,
+                    HC as i32,
+                    D as i32,
+                    iters(),
+                    EPS,
+                    std::ptr::null_mut(),
+                    block,
+                    sp(&stream),
+                );
+                assert_eq!(rc, 0, "hc_pre_v4 rc (block={block})");
+            }
+            stream.synchronize()?;
+            Ok((
+                stream.clone_dtoh(&pre_d)?,
+                stream.clone_dtoh(&post_d)?,
+                stream.clone_dtoh(&comb_d)?,
+                stream.clone_dtoh(&y_d)?,
+            ))
+        };
+        for block in [512i32, 1024] {
+            let v3 = run_fused_v3(1, block, 0)?;
+            let v4 = run_v4(block)?;
+            let bad = bit_diffs(&v3, &v4);
+            let total = v3.0.len() + v3.1.len() + v3.2.len() + v3.3.len();
+            println!(
+                "[correctness] t={t} hc={HC} d={D}: v4(block={block})-vs-v3(sink_reg=1,block={block}) bit-bad={bad}/{total} {}",
+                if bad == 0 { "PASS" } else { "FAIL" }
+            );
+            if bad != 0 {
+                fails += 1;
+            }
+            // interleaved timing, N_TIMED rounds of (v3, v4)
+            let mut a = Vec::with_capacity(N_TIMED);
+            let mut b = Vec::with_capacity(N_TIMED);
+            for _ in 0..N_TIMED {
+                stream.synchronize()?;
+                let t0 = std::time::Instant::now();
+                let _ = run_fused_v3(1, block, 0)?;
+                a.push(t0.elapsed().as_micros() as u64);
+                stream.synchronize()?;
+                let t0 = std::time::Instant::now();
+                let _ = run_v4(block)?;
+                b.push(t0.elapsed().as_micros() as u64);
+            }
+            a.sort_unstable();
+            b.sort_unstable();
+            println!(
+                "[v4-timing] t={t} block={block} iters={} v3 median={}us v4 median={}us runs v3={a:?} v4={b:?}",
+                iters(),
+                a[a.len() / 2],
+                b[b.len() / 2]
+            );
+        }
+
+        // ---- kernel-only timing: 300 back-to-back launches per arm, one sync, us per launch ----
+        // The wall arms above pay alloc + htod + dtoh per call (~50 us on a 5090) and cannot see a
+        // 5 us kernel difference; this one can. Outputs are overwritten in place.
+        if t == 1 {
+            let mixes_d = stream.clone_htod(&s.mixes)?;
+            let mut pre_d = stream.alloc_zeros::<f32>(t * HC)?;
+            let mut post_d = stream.alloc_zeros::<f32>(t * HC)?;
+            let mut comb_d = stream.alloc_zeros::<f32>(t * HC * HC)?;
+            let mut y_d = stream.alloc_zeros::<f32>(t * D)?;
+            const NB: usize = 300;
+            for block in [512i32, 1024] {
+                let mut res: Vec<(&str, f64)> = Vec::new();
+                for round in 0..2 {
+                    for arm in ["v3", "v4"] {
+                        let mut launch = |i: usize| -> Res<()> {
+                            unsafe {
+                                let rc = if arm == "v3" {
+                                    k::memra_dsv4_hc_pre_fused_v3(
+                                        x_d.device_ptr(&stream).0 as *const f32,
+                                        mixes_d.device_ptr(&stream).0 as *const f32,
+                                        scale_d.device_ptr(&stream).0 as *const f32,
+                                        base_d.device_ptr(&stream).0 as *const f32,
+                                        pre_d.device_ptr_mut(&stream).0 as *mut f32,
+                                        post_d.device_ptr_mut(&stream).0 as *mut f32,
+                                        comb_d.device_ptr_mut(&stream).0 as *mut f32,
+                                        y_d.device_ptr_mut(&stream).0 as *mut f32,
+                                        t as i32,
+                                        HC as i32,
+                                        D as i32,
+                                        iters(),
+                                        EPS,
+                                        std::ptr::null_mut(),
+                                        block,
+                                        1,
+                                        0,
+                                        sp(&stream),
+                                    )
+                                } else {
+                                    k::memra_dsv4_hc_pre_v4(
+                                        x_d.device_ptr(&stream).0 as *const f32,
+                                        mixes_d.device_ptr(&stream).0 as *const f32,
+                                        scale_d.device_ptr(&stream).0 as *const f32,
+                                        base_d.device_ptr(&stream).0 as *const f32,
+                                        pre_d.device_ptr_mut(&stream).0 as *mut f32,
+                                        post_d.device_ptr_mut(&stream).0 as *mut f32,
+                                        comb_d.device_ptr_mut(&stream).0 as *mut f32,
+                                        y_d.device_ptr_mut(&stream).0 as *mut f32,
+                                        t as i32,
+                                        HC as i32,
+                                        D as i32,
+                                        iters(),
+                                        EPS,
+                                        std::ptr::null_mut(),
+                                        block,
+                                        sp(&stream),
+                                    )
+                                };
+                                assert_eq!(rc, 0, "{arm} rc at launch {i}");
+                            }
+                            Ok(())
+                        };
+                        for i in 0..20 {
+                            launch(i)?;
+                        }
+                        stream.synchronize()?;
+                        let t0 = std::time::Instant::now();
+                        for i in 0..NB {
+                            launch(i)?;
+                        }
+                        stream.synchronize()?;
+                        let us = t0.elapsed().as_secs_f64() * 1e6 / NB as f64;
+                        if round == 1 {
+                            res.push((arm, us));
+                        }
+                    }
+                }
+                println!(
+                    "[kernel-timing] t=1 block={block} iters={} back-to-back x{NB}: v3 {:.2} us/launch, v4 {:.2} us/launch ({:+.1}%)",
+                    iters(),
+                    res[0].1,
+                    res[1].1,
+                    100.0 * (res[1].1 / res[0].1 - 1.0)
+                );
+            }
+        }
+
+        // ---- MEMRA_HC_PHASE_STAMPS: where v3's time goes, phase by phase, on THIS card ----
+        // The stamped twin (bench-only kernel) writes %globaltimer + clock64 at six boundaries;
+        // medians over N launches at the served config (sink_reg=1, block=512). This is the
+        // number the rig's ncu cannot give: FP64 is 1/64 rate on the 5090 and near full rate on
+        // the B200, so the stall split there does not transfer; the phase ns here do.
+        if t == 1 && std::env::var("MEMRA_HC_PHASE_STAMPS").is_ok() {
+            let mixes_d = stream.clone_htod(&s.mixes)?;
+            let mut pre_d = stream.alloc_zeros::<f32>(t * HC)?;
+            let mut post_d = stream.alloc_zeros::<f32>(t * HC)?;
+            let mut comb_d = stream.alloc_zeros::<f32>(t * HC * HC)?;
+            let mut y_d = stream.alloc_zeros::<f32>(t * D)?;
+            let mut st_d = stream.alloc_zeros::<u64>(12)?;
+            let names = [
+                "P0 sumsq loads+dfma",
+                "P1 block_sum(10 barriers)+rsq",
+                "P2 warp0 gates+softmax+sinkhorn",
+                "P3 block barrier",
+                "P4 combine (x again)+store",
+            ];
+            let mut ns: Vec<Vec<u64>> = vec![Vec::new(); 5];
+            let mut cy: Vec<Vec<u64>> = vec![Vec::new(); 5];
+            let mut tot_ns: Vec<u64> = Vec::new();
+            for _ in 0..60 {
+                unsafe {
+                    let rc = k::memra_dsv4_hc_pre_fused_v3_stamped(
+                        x_d.device_ptr(&stream).0 as *const f32,
+                        mixes_d.device_ptr(&stream).0 as *const f32,
+                        scale_d.device_ptr(&stream).0 as *const f32,
+                        base_d.device_ptr(&stream).0 as *const f32,
+                        pre_d.device_ptr_mut(&stream).0 as *mut f32,
+                        post_d.device_ptr_mut(&stream).0 as *mut f32,
+                        comb_d.device_ptr_mut(&stream).0 as *mut f32,
+                        y_d.device_ptr_mut(&stream).0 as *mut f32,
+                        t as i32,
+                        HC as i32,
+                        D as i32,
+                        iters(),
+                        EPS,
+                        512,
+                        1,
+                        st_d.device_ptr_mut(&stream).0 as *mut u64,
+                        sp(&stream),
+                    );
+                    assert_eq!(rc, 0, "hc_pre_fused_v3_stamped rc");
+                }
+                stream.synchronize()?;
+                let st = stream.clone_dtoh(&st_d)?;
+                for i in 0..5 {
+                    ns[i].push(st[i + 1].saturating_sub(st[i]));
+                    cy[i].push(st[7 + i].saturating_sub(st[6 + i]));
+                }
+                tot_ns.push(st[5].saturating_sub(st[0]));
+            }
+            let med = |v: &mut Vec<u64>| {
+                v.sort_unstable();
+                v[v.len() / 2]
+            };
+            let total = med(&mut tot_ns);
+            println!(
+                "[v3-phases] t=1 hc={HC} d={D} sink_reg=1 block=512 iters={} N=60: total {total} ns (thread-0 view)",
+                iters()
+            );
+            for i in 0..5 {
+                let n = med(&mut ns[i]);
+                let c = med(&mut cy[i]);
+                println!(
+                    "[v3-phases]   {:<34} {n:>6} ns  {c:>7} cyc  {:5.1}%",
+                    names[i],
+                    100.0 * n as f64 / total.max(1) as f64
+                );
+            }
+        }
+
         // ---- hc_post alone, N=5: census-context only, NOT fused with anything ----
         let f_h = vecf(t * D, 0xF00D ^ t as u64);
         let res_h = vecf(t * HC * D, 0xBEEF ^ t as u64);

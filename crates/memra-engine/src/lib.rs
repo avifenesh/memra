@@ -2834,6 +2834,17 @@ pub fn hc_pre_split_collapse() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_HC_PRE_SPLIT_COLLAPSE").as_deref() == Ok("1"))
 }
 
+/// `MEMRA_HC_PRE_V4=1` (lane/hc-pre-phases-20260905): run the hc pre-chain on the v4 register
+/// schedule (`dsv4_hc_pre_v4_*_kernel`: x loaded once and kept, two barriers, warp 0's Sinkhorn
+/// overlapped with the other warps' combine) instead of `_v3`. Same arithmetic in the same
+/// order, bit-identical by construction (gate `tests/hc_pre_v4_gpu.rs`); the launcher refuses
+/// shapes the register schedule does not fit (40025) and the caller then runs v3 unchanged.
+/// Default OFF until its model-scale row (new-flags law).
+pub fn hc_pre_v4_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_HC_PRE_V4").as_deref() == Ok("1"))
+}
+
 /// `MEMRA_HC_PRE_ZQ8` (lane/hcpre-zq8-fusion-20260905): run each hc site's pre-chain AND the
 /// `rms_norm_zq8` that consumes its output as ONE launch (`dsv4_hc_pre_zq8_kernel`).
 ///

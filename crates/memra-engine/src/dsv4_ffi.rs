@@ -659,6 +659,49 @@ unsafe extern "C" {
     /// any width, and stage 2 is warp-0-only either way), which is the NAMED NUMERIC CLASS
     /// `hc_pre_rowsq_blockwide`. Refuses a `block` that is not a power of two in [32, 1024].
     #[allow(clippy::too_many_arguments)]
+    /// BENCH-ONLY phase-stamped twin of `memra_dsv4_hc_pre_fused_v3` (no split_collapse, no
+    /// niters): `stamps` is 12 u64 on the device, [0..6) %globaltimer ns and [6..12) clock64 at
+    /// the six phase boundaries named in the kernel's header. Only the gate binary calls it.
+    pub fn memra_dsv4_hc_pre_fused_v3_stamped(
+        x: *const f32,
+        mixes: *const f32,
+        scale: *const f32,
+        base: *const f32,
+        pre: *mut f32,
+        post: *mut f32,
+        comb: *mut f32,
+        y: *mut f32,
+        s: i32,
+        hc: i32,
+        d: i32,
+        iters: i32,
+        eps: f32,
+        block: i32,
+        sink_reg: i32,
+        stamps: *mut u64,
+        stream: *mut c_void,
+    ) -> i32;
+    /// hc pre-chain v4 (lane/hc-pre-phases-20260905): v3's arithmetic in v3's order on a
+    /// register schedule (one round of loads kept for the combine, two barriers, Sinkhorn
+    /// overlapped with the combine). 40025 = shape does not fit (caller runs v3).
+    pub fn memra_dsv4_hc_pre_v4(
+        x: *const f32,
+        mixes: *const f32,
+        scale: *const f32,
+        base: *const f32,
+        pre: *mut f32,
+        post: *mut f32,
+        comb: *mut f32,
+        y: *mut f32,
+        s: i32,
+        hc: i32,
+        d: i32,
+        iters: i32,
+        eps: f32,
+        niters: *mut i32,
+        block: i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_hc_pre_fused_v3(
         x: *const f32,
         mixes: *const f32,
