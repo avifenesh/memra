@@ -5009,7 +5009,64 @@ impl crate::hybrid::HybridModel {
         request_room: usize,
         eos: &[u32],
     ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
+        self.dspark_spec_session_burst_inner(e, draft, sess, burst_target, request_room, eos, None)
+    }
+
+    /// [`dspark_spec_session_burst`] with the ROUND-CADENCE commit hook — the dspark twin of
+    /// `glm5_spec_session_burst_streamed` (lane/dspark-first-token-eager, memra#249 lever 22b).
+    ///
+    /// WHY IT EXISTS. This route emitted at BURST cadence, and its own call site said so:
+    /// "per-burst cadence v1; the qwen round-cadence on_commit is a later increment". Under
+    /// burst cadence the first `Event::Token` of a request waits for the WHOLE first burst
+    /// (`MEMRA_SPEC_BURST`, default 32 tokens) even though the prime's own boundary token was
+    /// known before the burst started, and every round after it sat on committed tokens until
+    /// the burst returned.
+    ///
+    /// `on_commit` receives every newly committed token exactly once, in order, as the round
+    /// that committed it ends — the anchor and that round's accepted drafts together on round
+    /// one, each later round's accepted drafts plus bonus after it. Slices are disjoint and
+    /// concatenate to the returned vector.
+    ///
+    /// NUMERIC CLASS: none. The round loop never reads the hook, the tokens handed to it are
+    /// the same `out` vector in the same order, and the hook fires only after the round's
+    /// fallible work (commit/rollback and the draft ingest) has already succeeded. Only event
+    /// timing moves.
+    #[allow(clippy::too_many_arguments)] // allow: the burst's own arity plus the commit hook
+    pub fn dspark_spec_session_burst_streamed(
+        &self,
+        e: &Engine,
+        draft: &DflashDraft,
+        sess: &mut DsparkSpecSession,
+        burst_target: usize,
+        request_room: usize,
+        eos: &[u32],
+        on_commit: crate::glm_spec::CommitHook<'_>,
+    ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
+        self.dspark_spec_session_burst_inner(
+            e,
+            draft,
+            sess,
+            burst_target,
+            request_room,
+            eos,
+            Some(on_commit),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)] // allow: the burst's own arity plus one optional hook
+    fn dspark_spec_session_burst_inner(
+        &self,
+        e: &Engine,
+        draft: &DflashDraft,
+        sess: &mut DsparkSpecSession,
+        burst_target: usize,
+        request_room: usize,
+        eos: &[u32],
+        mut on_commit: Option<crate::glm_spec::CommitHook<'_>>,
+    ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
         use crate::cache::DflashTapSink;
+        // sse-cadence flush cursor: everything in out[..flushed] has been handed to on_commit.
+        let mut flushed = 0usize;
         let n_embd = self.cfg.n_embd as usize;
         let c = &draft.cfg;
         let b = c.block_size;
@@ -5521,6 +5578,14 @@ impl crate::hybrid::HybridModel {
                 draft.ingest_ctx(e, &mut sess.dkv, &f, &pos_k, keep)?;
                 sess.ctx_len += keep;
             }
+            // ROUND CADENCE (memra#249 lever 22b). Every fallible step of this round has
+            // now succeeded — the trunk commit/rollback and the draft-KV ingest both ran —
+            // so the round's tokens are final and can be published before the burst ends.
+            // Placed before the `done` break so a terminal round flushes too.
+            if let Some(cb) = on_commit.as_mut() {
+                cb(&out[flushed..]);
+                flushed = out.len();
+            }
             if sess.done {
                 // EOS or the public budget landed this round: cache, draft KV and ctx_len are
                 // all clamped to the public stream (park shape); `next` is beyond the terminal
@@ -5537,6 +5602,10 @@ impl crate::hybrid::HybridModel {
                 sess.vt = (m + 2).clamp(3, vt_cap);
             }
         }
+        debug_assert!(
+            on_commit.is_none() || flushed == out.len(),
+            "every committed token must have been handed to on_commit"
+        );
         Ok((out, drafted, accepted_n))
     }
 }

@@ -22681,16 +22681,77 @@ fn step_dspark_spec(
         .and_then(|v| v.parse().ok())
         .unwrap_or(32);
     let burst_target = request_room.min(burst_t);
+    // FIRST-TOKEN EAGER, dspark twin (lane/dspark-first-token-eager, memra#249 lever 22b,
+    // the same `MEMRA_SPEC_FIRST_TOKEN_EAGER` door the glm5 route reads). This route emitted
+    // at BURST cadence and said so in its own comment: the first `Event::Token` of a request
+    // waited for the whole first burst (`MEMRA_SPEC_BURST`, default 32 tokens at this route's
+    // per-token decode cost) even though the prime's boundary token was known before the burst
+    // began. ON: the engine hands over every committed slice as its round ends and the worker
+    // emits it immediately. NUMERIC CLASS: none — the ids and their order are the same `burst`
+    // vector on both arms, only event timing moves; the post-burst bookkeeping below is shared.
+    let eager_first_token = spec_first_token_eager_on();
+    let eos_ids = s.params.eos.clone();
+    let mut decoded_visible = std::mem::take(&mut s.decoded_bytes);
+    let mut cursor = s.emitted_bytes;
+    let mut emit_remaining = request_room;
+    let mut eos_seen = false;
+    let mut send_ok = true;
+    let mut token_events = 0usize;
+    let tok_ref = &lm.tok;
+    let flush_tx = s.tx.clone();
+    let ttft_trace = s.ttft.clone();
+    let mut flush_cb = |slice: &[u32]| {
+        if eos_seen || emit_remaining == 0 || slice.is_empty() || !send_ok {
+            // post-EOS / budget exhausted / nothing new / client gone: the tail stays
+            // committed in the session; accounting happens post-burst.
+            return;
+        }
+        if let Some(trace) = ttft_trace.as_ref() {
+            trace.mark_first_decode();
+        }
+        let emitted = emit_spec_token_events(
+            slice,
+            &mut emit_remaining,
+            &mut decoded_visible,
+            &mut cursor,
+            &eos_ids,
+            &mut eos_seen,
+            |id| tok_ref.decode_bytes_special(&[id], true),
+            |event| flush_tx.send(event).is_ok(),
+        );
+        token_events += emitted.sent;
+        // STREAMED MARKER (the glm5 twin's PR #93 review finding): the step-OOM park guard
+        // reads `tokens_emitted` as "already reached the client", so advance it HERE, at the
+        // send, and an OOM in a later round of this burst takes the honest error instead of
+        // replaying tokens the client already has.
+        s.tokens_emitted += emitted.sent;
+        send_ok = emitted.send_ok;
+    };
     let sess = s.dspark.as_mut().unwrap();
     let rounds_before = sess.rounds;
-    let (burst, dr, ac) = lm.model.dspark_spec_session_burst(
-        engine,
-        d,
-        sess,
-        burst_target,
-        request_room,
-        &s.params.eos,
-    )?;
+    let (burst, dr, ac) = if eager_first_token {
+        lm.model.dspark_spec_session_burst_streamed(
+            engine,
+            d,
+            sess,
+            burst_target,
+            request_room,
+            &s.params.eos,
+            &mut flush_cb,
+        )?
+    } else {
+        lm.model.dspark_spec_session_burst(
+            engine,
+            d,
+            sess,
+            burst_target,
+            request_room,
+            &s.params.eos,
+        )?
+    };
+    #[allow(clippy::drop_non_drop)]
+    // allow: ends flush_cb's captures of the emit state before it is read below
+    drop(flush_cb);
     let rounds_delta = s.dspark.as_ref().unwrap().rounds - rounds_before;
     s.spec_rounds += rounds_delta as u64;
     s.spec_drafted += dr;
@@ -22711,24 +22772,27 @@ fn step_dspark_spec(
     {
         trace.mark_first_decode();
     }
-    let eos_ids = s.params.eos.clone();
     let public_len = spec_visible_len(&burst, request_room, &eos_ids);
     let public_burst = &burst[..public_len];
-    let mut decoded_visible = std::mem::take(&mut s.decoded_bytes);
-    let mut cursor = s.emitted_bytes;
-    let mut emit_remaining = request_room;
-    let mut eos_seen = false;
-    let tok_ref = &lm.tok;
-    let emitted = emit_spec_token_events(
-        public_burst,
-        &mut emit_remaining,
-        &mut decoded_visible,
-        &mut cursor,
-        &eos_ids,
-        &mut eos_seen,
-        |id| tok_ref.decode_bytes_special(&[id], true),
-        |event| s.tx.send(event).is_ok(),
-    );
+    let emitted = if eager_first_token {
+        // Every public id already went out at round cadence; the shared stopping rule
+        // (budget, first EOS inclusive) makes the flushed count equal `public_len`.
+        SpecEmitResult {
+            sent: token_events,
+            send_ok,
+        }
+    } else {
+        emit_spec_token_events(
+            public_burst,
+            &mut emit_remaining,
+            &mut decoded_visible,
+            &mut cursor,
+            &eos_ids,
+            &mut eos_seen,
+            |id| tok_ref.decode_bytes_special(&[id], true),
+            |event| s.tx.send(event).is_ok(),
+        )
+    };
     let mut stop: Option<StopReason> = None;
     for &tok in public_burst {
         s.sampler.accept(tok);
@@ -22739,7 +22803,10 @@ fn step_dspark_spec(
             break;
         }
     }
-    s.tokens_emitted += emitted.sent;
+    if !eager_first_token {
+        // The eager arm already advanced it inside the flush hook (the streamed marker).
+        s.tokens_emitted += emitted.sent;
+    }
     s.emitted_bytes = cursor;
     s.decoded_bytes = decoded_visible;
     if !emitted.send_ok {
@@ -28032,6 +28099,43 @@ mod tests {
             "both the round-cadence hook and the burst-cadence arm must emit through \
              emit_spec_token_events"
         );
+        // 5c. The DSPARK twin of the same door (memra#249 lever 22b). The qwen route was
+        //     the one that INVENTED sse cadence and was the last to get it back; assert the
+        //     wiring so it cannot silently revert to burst cadence again.
+        let dstep = code
+            .split("fn step_dspark_spec(")
+            .nth(1)
+            .expect("step_dspark_spec exists");
+        let dstep_body = &dstep[..dstep.find("\nfn ").unwrap_or(dstep.len())];
+        assert!(
+            dstep_body.contains("let eager_first_token = spec_first_token_eager_on();"),
+            "the eager door must be read per burst inside step_dspark_spec"
+        );
+        assert!(
+            dstep_body.contains("lm.model.dspark_spec_session_burst_streamed("),
+            "the dspark eager arm must drive the streamed burst twin"
+        );
+        assert!(
+            dstep_body.contains("lm.model.dspark_spec_session_burst("),
+            "the door-off arm must keep the burst-cadence literal"
+        );
+        assert!(
+            dstep_body.matches("emit_spec_token_events(").count() >= 2,
+            "both the dspark round-cadence hook and its burst-cadence arm must emit \
+             through emit_spec_token_events"
+        );
+        assert!(
+            dstep_body.contains("s.tokens_emitted += emitted.sent;")
+                && dstep_body
+                    .find("s.tokens_emitted += emitted.sent;")
+                    .unwrap()
+                    < dstep_body
+                        .find("lm.model.dspark_spec_session_burst_streamed(")
+                        .unwrap(),
+            "the streamed marker must advance tokens_emitted AT THE SEND, before the burst \
+             call, so a later-round failure cannot replay tokens the client already has"
+        );
+
         // 6. The capability predicate carries the flag, the manifest, the sealed-bundle
         //    surface and the ppN refusal — each an invocation, not a comment.
         let cap = code
