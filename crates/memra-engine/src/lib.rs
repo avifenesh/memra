@@ -1446,6 +1446,11 @@ pub const QT_NVFP4: i32 = 7;
 /// Slot-major v2 bank permutation of `QT_NVFP4` (see tp.rs `nvfp4_matrix_v2_permute`) — only the
 /// grouped-prefill dequant consumes this tag; every direct/dp4a lane must keep refusing it.
 pub const QT_NVFP4_V2: i32 = 107;
+/// DeepSeek-V4 ModelOpt NVFP4 split planes. Each projection/expert table entry is
+/// a pair: packed consecutive E2M1 codes followed by the linear E4M3 per-16 scale
+/// plane. The DSV4 loader keeps the checkpoint bytes in this layout, so the grouped
+/// prefill kernel can read them without a second resident weight copy.
+pub const QT_NVFP4_MODELOPT: i32 = 108;
 /// Checkpoint-native FP8-E4M3 (MEMRA_ST_E4M3, lane e4m3dec): raw safetensors e4m3 weight bytes
 /// [out_f, in_f] row-major (row_bytes == in_f), per-tensor f32 weight_scale in GpuTensor `scale`
 /// (fused at the mmvq write / post-matmul scale_inplace). Decode = qmatvec_e4m3_mmvq (+ _b2/_b4/_b8

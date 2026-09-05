@@ -120,12 +120,91 @@ fn main() {
     let continuation = 11usize;
     let small_capacity = prompt.len() + warm + continuation + 1;
     let grown_capacity = small_capacity + 97;
-    let gpu = Dsv4Gpu::load(model_dir, &devices, fixture.variant, grown_capacity)
+    let run_f16g_gate = std::env::var("MEMRA_DSV4_F16G_GATE").as_deref() == Ok("1");
+    let f16g_prompt: Vec<u32> = fixture
+        .tokens_160
+        .as_ref()
+        .expect("fixture tokens_160 required")
+        .iter()
+        .copied()
+        .cycle()
+        .take(1_025)
+        .collect();
+    let model_capacity = if run_f16g_gate {
+        grown_capacity.max(f16g_prompt.len() + 32)
+    } else {
+        grown_capacity
+    };
+    let mut gpu = Dsv4Gpu::load(model_dir, &devices, fixture.variant, model_capacity)
         .expect("load DSV4 GPU model");
     assert!(
         gpu.dspark.is_some(),
         "gate requires MEMRA_DSV4_DRAFTER=dspark"
     );
+
+    if run_f16g_gate {
+        let cap = f16g_prompt.len() + 32;
+        gpu.prefill_f16g = false;
+        let mut exact_state = gpu
+            .alloc_decode_state_for_transient(cap, 512)
+            .expect("f16g exact state");
+        let mut exact_row = gpu
+            .prefill_with_cache_chunked(&f16g_prompt, &mut exact_state, 512)
+            .expect("f16g exact prefill");
+        gpu.prefill_f16g = true;
+        let mut grouped_state = gpu
+            .alloc_decode_state_for_transient(cap, 512)
+            .expect("f16g grouped state");
+        let mut grouped_row = gpu
+            .prefill_with_cache_chunked(&f16g_prompt, &mut grouped_state, 512)
+            .expect("f16g grouped prefill");
+        let mut agree = 0usize;
+        let mut in_band = 0usize;
+        let mut out_of_band = 0usize;
+        let mut stream_maxabs = 0.0f32;
+        for step in 0..16 {
+            stream_maxabs = stream_maxabs.max(max_abs(&exact_row, &grouped_row));
+            let exact_token = argmax(&exact_row);
+            let grouped_token = argmax(&grouped_row);
+            if exact_token == grouped_token {
+                agree += 1;
+            } else {
+                let margin =
+                    (exact_row[exact_token as usize] - exact_row[grouped_token as usize]) as f64;
+                let band = native_gpu_pair_band(exact_row[exact_token as usize]);
+                if margin <= band {
+                    in_band += 1;
+                } else {
+                    out_of_band += 1;
+                }
+                println!(
+                    "[dsv4-prefill-f16g-gate] disagreement step={step} exact={exact_token} \
+                     grouped={grouped_token} margin={margin:.6} band={band:.6} class={}",
+                    if margin <= band {
+                        "IN-BAND"
+                    } else {
+                        "OUT-OF-BAND"
+                    }
+                );
+            }
+            if step + 1 < 16 {
+                exact_row = gpu
+                    .decode_step(exact_token, &mut exact_state)
+                    .expect("f16g exact teacher force");
+                grouped_row = gpu
+                    .decode_step(exact_token, &mut grouped_state)
+                    .expect("f16g grouped teacher force");
+            }
+        }
+        println!(
+            "[dsv4-prefill-f16g-gate] teacher_forced16={agree}_agree,{in_band}_in_band,\
+             {out_of_band}_out_of_band stream_maxabs={stream_maxabs:.8}"
+        );
+        assert_eq!(
+            out_of_band, 0,
+            "wide-prefill grouped MoE has out-of-band teacher-forced disagreements"
+        );
+    }
 
     // Bounded-prefill transaction widths must not change the realized trunk or drafter
     // state. Width 64 crosses both the shipped speculative ceiling (6) and the largest

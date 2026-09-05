@@ -291,6 +291,25 @@ extern "C" int memra_dsv4_add_inplace(float* y, const float* x, long n, void* st
     return 0;
 }
 
+extern "C" __global__ void dsv4_scale_rows_kernel(float* __restrict__ y,
+                                                   const float* __restrict__ scale,
+                                                   int rows, int cols) {
+    long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    long n = (long)rows * cols;
+    if (i < n) y[i] *= scale[i / cols];
+}
+
+extern "C" int memra_dsv4_scale_rows(float* y, const float* scale, int rows, int cols,
+                                      void* stream_v) {
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    long n = (long)rows * cols;
+    int threads = 256;
+    dsv4_scale_rows_kernel<<<(unsigned)((n + threads - 1) / threads), threads, 0, stream>>>(
+        y, scale, rows, cols);
+    DSV4_ERR();
+    return 0;
+}
+
 // copy a column window: dst[t, 0..n) = src[t, col_off .. col_off+n) (stride = src row width)
 extern "C" __global__ void dsv4_take_cols_kernel(const float* __restrict__ src,
                                                  float* __restrict__ dst, int s, int n,
