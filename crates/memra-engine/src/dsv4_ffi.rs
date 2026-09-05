@@ -757,6 +757,38 @@ unsafe extern "C" {
         stream: *mut c_void,
     ) -> i32;
     #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_sort_expert_slots(
+        selected: *const i32,
+        weights: *const f32,
+        sorted_selected: *mut i32,
+        sorted_weights: *mut f32,
+        activation_rows: *mut i32,
+        original_slots: *mut i32,
+        slots: i32,
+        topk: i32,
+        experts: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_fp4_gemm_sel_rows(
+        a_codes: *const c_void,
+        a_scales: *const f32,
+        w_base: *const c_void,
+        sc_base: *const c_void,
+        s2: *const f32,
+        selected: *const i32,
+        activation_rows: *const i32,
+        projection: i32,
+        kind: i32,
+        out: *mut f32,
+        slots: i32,
+        n: i32,
+        kdim: i32,
+        wstride: i64,
+        sstride: i64,
+        stream: *mut c_void,
+    ) -> i32;
+    #[allow(clippy::too_many_arguments)]
     pub fn memra_dsv4_combine_rows_m(
         contrib: *const f32,
         order: *const i32,
