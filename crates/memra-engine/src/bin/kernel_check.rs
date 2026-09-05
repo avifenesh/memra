@@ -6454,12 +6454,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // for q5_1 above) -> scale the gate by the measured ratio. Packing correctness is
         // pinned exactly by the round-trip gate; quality arbitration for non-default formats
         // = run-spec acceptance within the config (the kvbytes-lane protocol).
-        let kvq_tol: f32 = 6e-2
-            * match memra_engine::kv_cache_formats().1 {
-                "q4_0" => 5.0,
-                "fp8" => 2.5,
-                _ => 1.0,
-            };
+        let kvq_tol: f32 = 6e-2;
         for tkv in [64usize, 128, 257] {
             let q: Vec<f32> = (0..hd * nh).map(|i| pr(i + 1) * 0.2).collect();
             let k: Vec<f32> = (0..hd * nhkv * tkv).map(|i| pr(i + 7) * 0.2).collect();
@@ -6565,7 +6560,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             //     of the vec path; measured ~2-4e-3 extra on this synthetic. Slack 1e-2 over
             //     scalar, still far under the q5_1 6e-2 noise floor. Only meaningful when the
             //     v3 gate can actually engage (default KV formats + hd%128==0 + vec range).
-            if memra_engine::kv_cache_formats() == ("q8_0", "q5_1") && hd % 128 == 0 {
+            if hd % 128 == 0 {
                 unsafe {
                     std::env::set_var("MEMRA_FA_V3", "1");
                 }
@@ -6775,7 +6770,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // --- Same rows-vs-loop BYTE identity WITHIN the v3 config (MEMRA_FA_V3=1): the
             //     rows_v3 twin calls the SAME fa_dec_v3_walk as eager v3 -> bitdiff must be 0
             //     (the spec-exactness contract, per numeric config). ---
-            if memra_engine::kv_cache_formats() == ("q8_0", "q5_1") && hd % 128 == 0 {
+            if hd % 128 == 0 {
                 unsafe {
                     std::env::set_var("MEMRA_FA_V3", "1");
                 }
@@ -7701,7 +7696,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // (esp. the q5_1 qh ballot) from attention. Includes a 5th-bit-boundary block (15<->16, 31).
     {
         use memra_gguf::dequant::fp16_to_f32;
-        let (kfmt, vfmt) = memra_engine::kv_cache_formats();
         let (kbb, vbb) = memra_engine::kv_blk_bytes();
         let nblk = 4usize; // 4 blocks -> 128 elements
         let kv_dim_k = nblk * 32;
@@ -7736,48 +7730,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let kbytes = e.dtoh_u8(&kc)?;
         let vbytes = e.dtoh_u8(&vc)?;
         let f16_to_f32 = |b: &[u8]| -> f32 { fp16_to_f32(u16::from_le_bytes([b[0], b[1]])) };
-        // CPU e4m3 decode (raw-fp8 arms): sign / 4-bit exp (bias 7) / 3-bit mantissa, subnormals.
-        let e4m3 = |b: u8| -> f32 {
-            let s = if b & 0x80 != 0 { -1.0f32 } else { 1.0 };
-            let ex = ((b >> 3) & 0x0F) as i32;
-            let mn = (b & 0x07) as f32;
-            if ex == 0 {
-                s * mn * (2f32).powi(-9)
-            }
-            // subnormal: 2^-6 * m/8
-            else if ex == 15 && mn == 7.0 {
-                f32::NAN
-            }
-            // e4m3 NaN encoding
-            else {
-                s * (1.0 + mn / 8.0) * (2f32).powi(ex - 7)
-            }
-        };
         // ---- K round-trip (format-exact CPU dequant) ----
         let mut k_deq = vec![0f32; kv_dim_k];
         for blk in 0..nblk {
             let base = blk * kbb;
-            match kfmt {
-                "fp8" => {
-                    for j in 0..32 {
-                        k_deq[blk * 32 + j] = e4m3(kbytes[base + j]);
-                    }
-                }
-                _ => {
-                    let d = f16_to_f32(&kbytes[base..base + 2]);
-                    for j in 0..32 {
-                        k_deq[blk * 32 + j] = d * (kbytes[base + 2 + j] as i8) as f32;
-                    }
-                }
+            let d = f16_to_f32(&kbytes[base..base + 2]);
+            for j in 0..32 {
+                k_deq[blk * 32 + j] = d * (kbytes[base + 2 + j] as i8) as f32;
             }
         }
         let kerr = maxdiff(&kin, &k_deq);
-        // q8_0 abs err <= d/2 (rel 5e-3 vs amax, validated); raw e4m3 rel err <= 2^-4 -> gate 7e-2.
+        // q8_0 abs err <= d/2 (rel 5e-3 vs amax, validated).
         let kamax = kin.iter().map(|v| v.abs()).fold(0.0, f32::max).max(1e-6);
         let krel = kerr / kamax;
-        let ktol = if kfmt == "fp8" { 7e-2 } else { 5e-3 };
+        let ktol = 5e-3;
         println!(
-            "kvq {kfmt} K round-trip: rel={krel:.2e} {}",
+            "kvq q8_0 K round-trip: rel={krel:.2e} {}",
             if krel < ktol {
                 "OK"
             } else {
@@ -7789,53 +7757,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut v_deq = vec![0f32; kv_dim_v];
         for blk in 0..nblk {
             let base = blk * vbb;
-            match vfmt {
-                "fp8" => {
-                    for j in 0..32 {
-                        v_deq[blk * 32 + j] = e4m3(vbytes[base + j]);
-                    }
-                }
-                "q4_0" => {
-                    let d = f16_to_f32(&vbytes[base..base + 2]);
-                    let qs = &vbytes[base + 2..base + 18];
-                    for j in 0..32 {
-                        let q = if j < 16 {
-                            (qs[j] & 0x0F) as i32
-                        } else {
-                            (qs[j - 16] >> 4) as i32
-                        };
-                        v_deq[blk * 32 + j] = d * (q - 8) as f32;
-                    }
-                }
-                _ => {
-                    let d = f16_to_f32(&vbytes[base..base + 2]);
-                    let m = f16_to_f32(&vbytes[base + 2..base + 4]);
-                    let qh = u32::from_le_bytes([
-                        vbytes[base + 4],
-                        vbytes[base + 5],
-                        vbytes[base + 6],
-                        vbytes[base + 7],
-                    ]);
-                    let qs = &vbytes[base + 8..base + 24];
-                    for j in 0..32 {
-                        let lo = if j < 16 {
-                            (qs[j] & 0x0F) as i32
-                        } else {
-                            (qs[j - 16] >> 4) as i32
-                        };
-                        let hi = (((qh >> j) & 1) << 4) as i32;
-                        v_deq[blk * 32 + j] = d * (lo | hi) as f32 + m;
-                    }
-                }
+            let d = f16_to_f32(&vbytes[base..base + 2]);
+            let m = f16_to_f32(&vbytes[base + 2..base + 4]);
+            let qh = u32::from_le_bytes([
+                vbytes[base + 4],
+                vbytes[base + 5],
+                vbytes[base + 6],
+                vbytes[base + 7],
+            ]);
+            let qs = &vbytes[base + 8..base + 24];
+            for j in 0..32 {
+                let lo = if j < 16 {
+                    (qs[j] & 0x0F) as i32
+                } else {
+                    (qs[j - 16] >> 4) as i32
+                };
+                let hi = (((qh >> j) & 1) << 4) as i32;
+                v_deq[blk * 32 + j] = d * (lo | hi) as f32 + m;
             }
         }
         let verr = maxdiff(&vin, &v_deq);
         let vamax = vin.iter().map(|v| v.abs()).fold(0.0, f32::max).max(1e-6);
         let vrel = verr / vamax;
-        // q5_1 3e-2 (validated); q4_0 half-step = amax/16 -> 7e-2; raw e4m3 -> 7e-2.
-        let vtol = if vfmt == "q5_1" { 3e-2 } else { 7e-2 };
+        // q5_1 3e-2 (validated).
+        let vtol = 3e-2;
         println!(
-            "kvq {vfmt} V round-trip: rel={vrel:.2e} {}",
+            "kvq q5_1 V round-trip: rel={vrel:.2e} {}",
             if vrel < vtol {
                 "OK"
             } else {
@@ -7843,8 +7790,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "FAIL"
             }
         );
-        // explicit 5th-bit-boundary check on V block 1 (q5 sweeps 0..31) — q5_1 layout only.
-        if vfmt == "q5_1" {
+        // explicit 5th-bit-boundary check on V block 1 (q5 sweeps 0..31).
+        {
             let bnd_err = (0..32)
                 .map(|j| (vin[32 + j] - v_deq[32 + j]).abs())
                 .fold(0.0, f32::max);

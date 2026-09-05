@@ -7,6 +7,7 @@
 //! only for an exact TP1 oracle. The gate projection and small metadata remain host-staged.
 
 use cudarc::driver::CudaSlice;
+use memra_engine::Engine;
 use memra_engine::model::GpuTensor;
 use memra_engine::parallel::{
     HardwareTarget, ModelParallelContract, TopologyRequest, validate_step_fp8_checkpoint,
@@ -15,7 +16,6 @@ use memra_engine::tp::{
     Bf16Matrix, ResidentBf16ColumnParallel, ResidentStepBf16RowParallel, ResidentTpKvCache,
     TpE4m3HostBounce, TpKvTransaction, step_tp_f32_mirror_enabled,
 };
-use memra_engine::{Engine, kv_cache_formats};
 use memra_gguf::GgmlType;
 use memra_gguf::config::LayerGeometry;
 use memra_gguf::source::{SafetensorsSource, TensorSource};
@@ -615,14 +615,6 @@ fn run_cached_attention_sequence(
         .into());
     }
     let hidden = input.activations.len() / input.tokens;
-    let (k_format, v_format) = kv_cache_formats();
-    if (k_format, v_format) != ("q8_0", "q5_1") || Engine::kv_fp8_on() {
-        return Err(format!(
-            "cache gate requires q8_0/q5_1 without FP8 cache, got {k_format}/{v_format} fp8={}",
-            Engine::kv_fp8_on()
-        )
-        .into());
-    }
     let cache_capacity = if swa {
         let window = input
             .geometry

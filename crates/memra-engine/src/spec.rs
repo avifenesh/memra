@@ -2260,10 +2260,9 @@ impl MtpScratch {
         cap: usize,
         geom: Option<&crate::hybrid::DraftGeom>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        // env-selected KV formats (default 34/24). The fp8-KV arm (MEMRA_KV_FP8) deliberately
-        // does NOT reach the draft scratch: fp8 drafts drifted acceptance 69-88% -> 46%
-        // (2026-07-12 A/B); the scratch is tiny, so it keeps baseline q8_0/q5_1 numerics
-        // while the TRUNK cache carries the fp8 depth win. Scratch append/fa pass g=false.
+        // Trunk KV block bytes (34/24, q8_0/q5_1). The scratch keeps the baseline numerics and
+        // its append/fa pass g=false (the e4m3 arms drifted draft acceptance 69-88% -> 46% in the
+        // 2026-07-12 A/B, and the trunk fp8 door itself was removed 2026-09-05).
         let primary = Self::alloc_plane(e, cfg, plan, cap, geom)?;
         Ok(MtpScratch {
             kv: primary.kv,
@@ -6526,8 +6525,7 @@ impl HybridModel {
         stream: Option<(&CudaSlice<u32>, &CudaSlice<i32>)>,
         mut graphs: Option<&mut DsparkVerifyGraphs>,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let seqs_append =
-            std::env::var("MEMRA_BATCH_APPEND").as_deref() != Ok("0") && !Engine::kv_fp8_on();
+        let seqs_append = std::env::var("MEMRA_BATCH_APPEND").as_deref() != Ok("0");
         let batch_fa_on = std::env::var("MEMRA_BATCH_FA").as_deref() != Ok("0");
 
         // Merge guard (v0.98 train, re-affirmed on the v0.100 train over slice 4c): the
@@ -6963,17 +6961,7 @@ impl HybridModel {
                     // stays a stale lower bound; the burst drain reconciles it.
                     let kvl = cache.kv[il].as_mut().unwrap();
                     e.append_kv_quantized_rows_dc(
-                        &k,
-                        &v,
-                        &mut kvl.k,
-                        &mut kvl.v,
-                        ctr,
-                        t,
-                        kdk,
-                        kdv,
-                        ktb,
-                        vtb,
-                        Engine::kv_fp8_on(),
+                        &k, &v, &mut kvl.k, &mut kvl.v, ctr, t, kdk, kdv, ktb, vtb, false,
                     )?;
                     let upper = (kvl.len + t + 64).min(cache.max_ctx);
                     let k_view = e.view_u8(&kvl.k, upper * ktb);
@@ -7066,7 +7054,7 @@ impl HybridModel {
                                 kvl.kv_dim_v,
                                 kvl.k_tok_bytes,
                                 kvl.v_tok_bytes,
-                                Engine::kv_fp8_on(),
+                                false,
                             )?;
                             kvl.len += 1;
                         }
@@ -7107,7 +7095,7 @@ impl HybridModel {
                                 scale,
                                 kvl.k_tok_bytes,
                                 kvl.v_tok_bytes,
-                                Engine::kv_fp8_on(),
+                                false,
                             )?;
                         }
                         e.dtod_copy_into(&a_row, &mut attn, r * q_dim)?;
@@ -8680,17 +8668,7 @@ impl HybridModel {
             // math on a (block, token) grid, documented byte-identical); host len is a stale
             // LOWER BOUND under pre-issue (drain reconciles it).
             e.append_kv_quantized_rows_dc(
-                &k,
-                &v,
-                &mut kvl.k,
-                &mut kvl.v,
-                ctr,
-                t,
-                kv_dim_k,
-                kv_dim_v,
-                ktb,
-                vtb,
-                crate::Engine::kv_fp8_on(),
+                &k, &v, &mut kvl.k, &mut kvl.v, ctr, t, kv_dim_k, kv_dim_v, ktb, vtb, false,
             )?;
         } else {
             for i in 0..t {
@@ -8706,7 +8684,7 @@ impl HybridModel {
                     kv_dim_v,
                     ktb,
                     vtb,
-                    crate::Engine::kv_fp8_on(),
+                    false,
                 )?;
             }
             kvl.len += t;
@@ -8767,39 +8745,15 @@ impl HybridModel {
             let k_view = e.view_u8(&kvl.k, t_kv * ktb);
             let v_view = e.view_u8(&kvl.v, t_kv * vtb);
             e.fa_decode_kvmod(
-                &q,
-                &k_view,
-                &v_view,
-                &mut attn,
-                head_dim,
-                n_head,
-                n_head_kv,
-                t_kv,
-                scale,
-                ktb,
-                vtb,
-                crate::Engine::kv_fp8_on(),
+                &q, &k_view, &v_view, &mut attn, head_dim, n_head, n_head_kv, t_kv, scale, ktb,
+                vtb, false,
             )?;
         } else if e.fa_rows_eligible(base_len, head_dim) {
             let k_view = e.view_u8(&kvl.k, (base_len + t) * ktb);
             let v_view = e.view_u8(&kvl.v, (base_len + t) * vtb);
             e.fa_decode_rows(
-                &q,
-                &k_view,
-                &v_view,
-                &mut attn,
-                head_dim,
-                n_head,
-                n_head_kv,
-                base_len,
-                t,
-                scale,
-                ktb,
-                vtb,
-                None,
-                false,
-                crate::Engine::kv_fp8_on(),
-                None,
+                &q, &k_view, &v_view, &mut attn, head_dim, n_head, n_head_kv, base_len, t, scale,
+                ktb, vtb, None, false, false, None,
             )?;
         } else {
             for r in 0..t {
@@ -8823,7 +8777,7 @@ impl HybridModel {
                     scale,
                     ktb,
                     vtb,
-                    crate::Engine::kv_fp8_on(),
+                    false,
                 )?;
                 e.copy_into(
                     &mut attn,

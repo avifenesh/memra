@@ -2357,9 +2357,8 @@ impl HybridModel {
     pub(crate) fn fa_class_of(&self, e: &Engine, t_kv: usize) -> (bool, bool, bool, usize) {
         let head_dim = self.cfg.head_dim_k as usize;
         let nkv = self.cfg.n_head_kv as usize;
-        let g_fp8 = Engine::kv_fp8_on();
         (
-            e.fa_geom_eager(t_kv, head_dim, nkv, g_fp8).0,
+            e.fa_geom_eager(t_kv, head_dim, nkv, false).0,
             crate::fa_v4_at_pub(t_kv),
             head_dim == 512 && t_kv >= crate::fa512_min_tkv(),
             crate::fa_split_keys_pub(t_kv, nkv),
@@ -2763,7 +2762,7 @@ impl HybridModel {
             kvl.kv_dim_v,
             kvl.k_tok_bytes,
             kvl.v_tok_bytes,
-            crate::Engine::kv_fp8_on(),
+            false,
         )?;
         // (2) advance the device counter: kvl.len_d now holds new len == t_kv.
         e.inc_seqlen(&mut kvl.len_d)?;
@@ -2800,19 +2799,8 @@ impl HybridModel {
         }
         // (3) fa_decode reads t_kv from kvl.len_d; bucket_max yields the eager n_splits -> bit-identical.
         e.fa_decode_dc(
-            &q,
-            &k_view,
-            &v_view,
-            &mut attn,
-            head_dim,
-            n_head,
-            n_head_kv,
-            &kvl.len_d,
-            bucket_max,
-            scale,
-            ktb,
-            vtb,
-            crate::Engine::kv_fp8_on(),
+            &q, &k_view, &v_view, &mut attn, head_dim, n_head, n_head_kv, &kvl.len_d, bucket_max,
+            scale, ktb, vtb, false,
         )?;
 
         let attn_g = match &gate {
@@ -3622,7 +3610,7 @@ impl HybridModel {
             kvl.kv_dim_v,
             kvl.k_tok_bytes,
             kvl.v_tok_bytes,
-            crate::Engine::kv_fp8_on(),
+            false,
         )?;
         kvl.len += 1;
         let t_kv = kvl.len;
@@ -3640,18 +3628,8 @@ impl HybridModel {
             );
         }
         e.fa_decode_kvmod(
-            &q,
-            &k_view,
-            &v_view,
-            &mut attn,
-            head_dim,
-            n_head,
-            n_head_kv,
-            t_kv,
-            scale,
-            ktb,
-            vtb,
-            crate::Engine::kv_fp8_on(),
+            &q, &k_view, &v_view, &mut attn, head_dim, n_head, n_head_kv, t_kv, scale, ktb, vtb,
+            false,
         )?;
         let _ = pos;
 

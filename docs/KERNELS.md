@@ -40,9 +40,9 @@ Two artifact kinds (build.rs:251-257, 337-458, 583-642):
 
 - **Fatbin modules** — loaded at runtime via `ctx.load_module`, kernels bound **by name
   string** (src/lib.rs:1130-1148): `kernels.cu`, `hybrid.cu`, `qmatvec.cu`,
-  `flash_attn.cu`, `qmatvec_gemm.cu`, `moe_router.cu`, `spec_sample.cu`. flash_attn gets
-  KV-format fatbin variants selected by `MEMRA_KV_K`/`MEMRA_KV_V` (build.rs:291-332,
-  src/lib.rs:301-302).
+  `flash_attn.cu`, `qmatvec_gemm.cu`, `moe_router.cu`, `spec_sample.cu`. flash_attn also
+  gets the kf8vf8 e4m3 KV fatbin gemma's GKV/WKV layers load alongside the default
+  (build.rs, `func_g` in src/lib.rs).
 - **Static lib `libmemra_mmq.a`** — host launchers bound via Rust `extern "C"`:
   `mmq_fp4.cu`, `mmq_q45k.cu`, `mmq_nvfp4_w4a8.cu`, `mmq_iq_experts.cu`, `mmq_q8_0.cu`,
   `mmq_q4_0.cu`, `fp8_prefill.cu`, `f16_prefill.cu`, `mmq_nvfp4_f8f4.cu`,

@@ -7,44 +7,14 @@
 //! fatbin router and every cache consumer). memra-engine re-exports this as `cache` so
 //! call sites are unchanged.
 
-// ---------------- KV format policy (env-selected; moved from memra-engine) ----------------
+// ---------------- KV format policy (moved from memra-engine) ----------------
 
-/// Env-selected KV cache formats (MEMRA_KV_K / MEMRA_KV_V). The engine's flash-fatbin router
-/// and the cache sizing below MUST agree — both read this one function.
-pub fn kv_cache_formats() -> (&'static str, &'static str) {
-    static F: std::sync::OnceLock<(&'static str, &'static str)> = std::sync::OnceLock::new();
-    *F.get_or_init(|| {
-        let k = match std::env::var("MEMRA_KV_K").as_deref() {
-            Ok("fp8") => "fp8",
-            Ok("q8_0") | Ok("") | Err(_) => "q8_0",
-            Ok(o) => panic!("MEMRA_KV_K={o} unsupported (q8_0 | fp8)"),
-        };
-        let v = match std::env::var("MEMRA_KV_V").as_deref() {
-            Ok("q4_0") => "q4_0",
-            Ok("fp8") => "fp8",
-            Ok("q5_1") | Ok("") | Err(_) => "q5_1",
-            Ok(o) => panic!("MEMRA_KV_V={o} unsupported (q5_1 | q4_0 | fp8)"),
-        };
-        if (k, v) != ("q8_0", "q5_1") {
-            eprintln!("[memra] KV cache format: K={k} V={v} (non-default — new numeric config)");
-        }
-        (k, v)
-    })
-}
-
-/// Per-32-element block bytes for the selected (K, V) formats.
+/// Per-32-element block bytes of the trunk KV cache: q8_0 K (34 B) and q5_1 V (24 B), the one
+/// validated config. The env-selected format arms (`MEMRA_KV_K` / `MEMRA_KV_V`: fp8 K, q4_0 / fp8
+/// V) were removed 2026-09-05 (door sweep); gemma's e4m3 layers size themselves in
+/// `full_attention_kv_layout` below.
 pub fn kv_blk_bytes() -> (usize, usize) {
-    let (k, v) = kv_cache_formats();
-    let kb = match k {
-        "fp8" => 32,
-        _ => 34,
-    };
-    let vb = match v {
-        "q4_0" => 18,
-        "fp8" => 32,
-        _ => 24,
-    };
-    (kb, vb)
+    (34, 24)
 }
 
 /// Exact allocation geometry for one rank of a tensor-parallel KV sidecar.
@@ -136,24 +106,6 @@ pub fn wkv_on() -> bool {
             .map(|v| v != "0")
             .unwrap_or_else(|_| std::env::var("MEMRA_DRAFT").is_err())
     })
-}
-
-/// Per-model FP8-KV door (-1 = unset → env/default off; 0 = off; 1 = on). Set at qwen
-/// model load: the 2026-07-12 arc closed per-model — 9B +0.7-4% scaling with depth,
-/// 27B flat (weight-bound), 35B −2% (fp8 format-gates its v3 dp4a lane off). Explicit
-/// MEMRA_KV_FP8 wins. 9B adoption attempt REVERTED by measurement 2026-07-29 (−1% at 12k
-/// on the then-current build) — loaders currently store 0.
-pub static KV_FP8_FORCE: std::sync::atomic::AtomicI8 = std::sync::atomic::AtomicI8::new(-1);
-
-/// QWEN FP8-KV switch (MEMRA_KV_FP8 explicit; else the per-model KV_FP8_FORCE door set
-/// at model load; else OFF). Non-gemma full-attn layers hold e4m3 K/V via the kf8vf8
-/// module.
-pub fn kv_fp8_on() -> bool {
-    static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
-    if let Some(v) = *ENV.get_or_init(|| std::env::var("MEMRA_KV_FP8").ok().map(|v| v == "1")) {
-        return v;
-    }
-    matches!(KV_FP8_FORCE.load(std::sync::atomic::Ordering::Relaxed), 1)
 }
 
 /// Step35 SWA ring. Default OFF unless the loader arms the step37 serving default (owner flip
@@ -2235,8 +2187,7 @@ fn full_attention_kv_layout(
     let (kbb, vbb) = kv_blk_bytes();
     let g4_global_fp8 = gkv_on() && class == FullAttentionClass::GemmaGlobal;
     let g4_windowed_fp8 = wkv_on() && class == FullAttentionClass::GemmaWindowed;
-    let qwen_fp8 = kv_fp8_on() && class == FullAttentionClass::Ordinary;
-    let (kbb_l, vbb_l) = if g4_global_fp8 || g4_windowed_fp8 || qwen_fp8 {
+    let (kbb_l, vbb_l) = if g4_global_fp8 || g4_windowed_fp8 {
         (32, 32)
     } else {
         (kbb, vbb)

@@ -5202,8 +5202,8 @@ extern "C" __global__ void qmatvec_nvfp4_modelopt_sel_gu_silu_g_f32(
 // Owner default K=q8_0 / V=q5_1 — asymmetric because K feeds the score dots + rope
 // (symmetric 8-bit keeps dot precision) while V errors average under the attention
 // weighting (affine 5-bit suffices). Formats are HARDCODED here (not the flash fatbin's
-// MEMRA_KV_K/V macro matrix): the qwen4_exp KV default is a per-family owner decision
-// and must not follow the env-selected fatbin variant. The quantize warp programs are
+// KFMT/VFMT macro matrix): the qwen4_exp KV default is a per-family owner decision. The
+// quantize warp programs are
 // flash_attn.cu's validated baseline appenders VERBATIM (quant_K_block / quant_V_block
 // #else arms), so the cache byte layout matches that lane's oracle history; layout
 // reference also cross-checked against llama.cpp mainline's quantized QSA-KV path
