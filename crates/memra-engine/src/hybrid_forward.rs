@@ -8863,8 +8863,18 @@ impl HybridModel {
                 )
                 .into());
             }
-            let mut h_q8: Option<Q8Pair> = None;
-            let mut q_q8: Option<Q8Pair> = None;
+            // The shared q8 pairs are SESSION-STABLE buffers like the rest of the workspace:
+            // re-quantized in place each token, allocated only once (the first eager token).
+            // A fresh pair per token replaced the previous one on assignment below, and a
+            // cudaFreeAsync of memory allocated OUTSIDE a capture region is illegal inside it:
+            // CUDA_ERROR_INVALID_VALUE at the free that follows the wo/q_b MMVQ, every stage
+            // run latched eager (2026-09-05 pair incident; the fixture's f32 MLA weights never
+            // build the pair, which is why the rig gate stayed green).
+            let mut h_q8: Option<Q8Pair> = ws.h_q8.take();
+            if let Some((aq, ad)) = h_q8.as_mut() {
+                e.quantize_q8_1_into(h, t, mla.wq_a.in_features(), aq, ad)?;
+            }
+            let mut q_q8: Option<Q8Pair> = ws.q_q8.take();
             let q_a = mm_shared(e, &mla.wq_a, h, t, &mut h_q8, rows_exact)?;
             e.rms_norm(
                 &q_a,
@@ -8874,6 +8884,9 @@ impl HybridModel {
                 t,
                 eps,
             )?;
+            if let Some((aq, ad)) = q_q8.as_mut() {
+                e.quantize_q8_1_into(&ws.q_an, t, q_lora, aq, ad)?;
+            }
             let q = mm_shared(e, &mla.wq_b, &ws.q_an, t, &mut q_q8, rows_exact)?;
             e.mla_split_latent(&q, &mut ws.q_nope, &mut ws.q_pe, t * nh, dn, dr)?;
             e.mla_rope_interleaved(&mut ws.q_pe, pos_d, t, nh, dr, base)?;

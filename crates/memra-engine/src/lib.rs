@@ -507,6 +507,22 @@ pub(crate) fn glm5_graph_capture_open() -> bool {
     GLM5_GRAPH_CAPTURE_OPEN.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// The last kernel name (`Engine::func`) or FFI launch label (`ck`) issued on this process: a
+/// capture-body failure reports it, since a cudarc `DriverError` carries no site. Diagnostic;
+/// one uncontended lock per launch.
+static LAST_SITE: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+pub(crate) fn last_site_set(name: &str) {
+    if let Ok(mut g) = LAST_SITE.lock() {
+        g.clear();
+        g.push_str(name);
+    }
+}
+
+pub(crate) fn last_site_get() -> String {
+    LAST_SITE.lock().map(|g| g.clone()).unwrap_or_default()
+}
+
 /// FAST-ROUTER batch twin (lane/fast-router, 2026-08-02). The concat-prime exactness fix
 /// (router_prefill_exact_on) routes prefill through router_gemv — m-invariant, but a
 /// per-(expert,token) GEMV program with zero operand reuse, so q35 board-2048 prefill paid
@@ -3480,6 +3496,7 @@ impl Engine {
     }
 
     fn func(&self, name: &str) -> CudaFunction {
+        crate::last_site_set(name);
         // Resolution cache: cuModuleGetFunction fails inside a CUDA-graph capture region,
         // so capture-time lookups MUST be host-memory hits (warmups populate the cache).
         if let Some(f) = self.fn_cache.lock().unwrap().get(name) {
@@ -6032,6 +6049,7 @@ impl Engine {
         src: &CudaSlice<f32>,
         len: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        crate::last_site_set("copy_into");
         let mut view = dst.slice_mut(off..off + len);
         self.gpu
             .stream()
@@ -6487,6 +6505,7 @@ impl Engine {
         src: &cudarc::driver::CudaView<f32>,
         len: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        crate::last_site_set("copy_view_into");
         let mut view = dst.slice_mut(off..off + len);
         self.gpu
             .stream()
@@ -6530,6 +6549,7 @@ impl Engine {
         src: &cudarc::driver::CudaView<f32>,
         dst: &mut CudaSlice<f32>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        crate::last_site_set("dtod_copy_view");
         self.gpu.stream().memcpy_dtod(src, dst)?;
         Ok(())
     }
@@ -10195,6 +10215,7 @@ impl Engine {
         dst: &mut CudaSlice<i32>,
         v: i32,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        crate::last_site_set("i32_mirror_store");
         if crate::htod_diet_on() {
             HTOD_DIET_AVOIDED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             return self.i32_set_k(dst, v);
@@ -12267,6 +12288,7 @@ impl Engine {
 
     #[track_caller]
     pub fn htod(&self, v: &[f32]) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        crate::last_site_set("htod");
         crate::alloc_trace_hit(v.len() * 4);
         Ok(self.gpu.stream().clone_htod(v)?)
     }

@@ -877,6 +877,7 @@ unsafe extern "C" {
 
 /// rc -> Err with the kernel name (refuse loudly, house style).
 pub fn ck(name: &str, rc: i32) -> Result<(), String> {
+    crate::last_site_set(name);
     if rc == 0 {
         Ok(())
     } else {

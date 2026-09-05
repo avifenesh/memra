@@ -502,6 +502,10 @@ fn free_mb(e: &Engine) -> String {
 /// returned, so a run that dies still says which call, where, and what the stream looked like.
 fn capture_error(e: &Engine, ctx: &CapCtx, call: &str, err: &dyn std::fmt::Display) {
     eprintln!(
+        "[glm5-decode-graph] last launch site before the capture error: {}",
+        crate::last_site_get()
+    );
+    eprintln!(
         "[glm5-decode-graph] capture-error: call={call} {ctx} stream_capture={} free={} \
          ledger={} err={err}",
         capture_status(e),
