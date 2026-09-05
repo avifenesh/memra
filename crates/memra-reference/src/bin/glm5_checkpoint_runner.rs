@@ -101,8 +101,24 @@ fn self_test() -> Result<(), Fail> {
         Ok(per_layer.remove(&layer.index).unwrap_or_default())
     })?;
 
-    if expected != actual {
-        return Err("streamed trunk output differs from execute() (struct compare)".into());
+    // Compare on what the streamed path claims to produce. `layer_hidden` is the one
+    // deliberate difference: `execute()` retains every layer's residual and the streamed path
+    // documents that it cannot (retaining them would defeat the memory bound it exists for),
+    // so a whole-struct `!=` can never be green here. Assert that difference explicitly
+    // instead of comparing through it.
+    if !actual.layer_hidden.is_empty() {
+        return Err("streamed trunk retained layer_hidden; it is bounded by design".into());
+    }
+    if expected.layer_hidden.len() != plan.layers.len() {
+        return Err("execute() no longer retains one residual per layer".into());
+    }
+    if (expected.tokens, expected.vocab) != (actual.tokens, actual.vocab)
+        || expected.state != actual.state
+        || expected.mtp != actual.mtp
+        || expected.draft != actual.draft
+        || expected.logits.len() != actual.logits.len()
+    {
+        return Err("streamed trunk output differs from execute() outside layer_hidden".into());
     }
     for (index, (reference, streamed)) in expected.logits.iter().zip(&actual.logits).enumerate() {
         if reference.to_bits() != streamed.to_bits() {
@@ -679,4 +695,15 @@ fn glm5_layer_weights(
     }
 
     Ok(weights)
+}
+
+#[cfg(test)]
+mod tests {
+    /// The self-test had no caller, which is how it bit-rotted: `ReferenceOutput` grew
+    /// `layer_hidden`, the streamed path deliberately leaves it empty, and the whole-struct
+    /// compare went red with nothing running it. `cargo test` is the caller now.
+    #[test]
+    fn streamed_trunk_self_test_passes() {
+        super::self_test().expect("streamed trunk must match execute() bit-for-bit");
+    }
 }

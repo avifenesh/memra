@@ -18,11 +18,7 @@ pub static PACK: ModelPack = ModelPack {
         TokenizerSource::GgufMetadata,
     ],
     template: TemplateContract::ArtifactRequired,
-    // Loader lane until the family's own gates run on a real checkpoint: the plan and the
-    // tensor contract compile, which is not the same claim as native execution being right.
-    // This flips to NativeReference (with a parity gate beside it) on the DictaLM-3.0-24B
-    // NVFP4 checkpoint-parity receipt, not before — LAW:no-generic-support.
-    support: None,
+    support: Some(NativeSupport::NativeReference),
     gates: &[
         Gate::Config,
         Gate::TokenizerTemplate,
@@ -32,7 +28,11 @@ pub static PACK: ModelPack = ModelPack {
         Gate::RewriteParity,
         Gate::Serve,
     ],
-    checkpoint_parity: None,
+    checkpoint_parity: Some(CheckpointParityGate {
+        max_abs: 0.005,
+        max_rel: 0.005,
+        require_argmax: true,
+    }),
     matches_config: |config| {
         matches!(config.arch, Arch::Llama)
             && !config.moe.as_ref().is_some_and(|moe| moe.expert_count > 0)
