@@ -34025,22 +34025,6 @@ pub fn f32_gemv_kernel_on() -> bool {
     std::env::var("MEMRA_F32_GEMV_KERNEL").as_deref() == Ok("1")
 }
 
-/// `MEMRA_MLA_WO_ZQ8=1` (lane/mla-wo-zq8-20260905, default OFF pending its model-scale row): on the
-/// decode MLA core (t=1, not the verify-rows arm) the coalesce-arm decompress_v launch emits `wo`'s
-/// q8_1 pair beside the f32 attention output (`memra_mla_decompress_v_wp_zq8_kernel`, and the BF16
-/// plane twin under `MEMRA_MLA_ABSORB_BF16`), and the `wo` projection takes it through
-/// `matmul_q8_fast`: the standalone `quantize_q8_1` before `wo` is gone (11 per token on
-/// GLM-5.3-Flash, in the eager MLA middle where each launch costs ~9 us of host latency).
-/// BIT-IDENTICAL (gate `tests/mla_wo_zq8_gpu.rs`). Shapes the epilogue cannot own (`d_v / split`
-/// not a whole number of q8 blocks, or no coalesce arm) keep the plain sequence. Read per call.
-pub fn mla_wo_zq8_on() -> bool {
-    std::env::var("MEMRA_MLA_WO_ZQ8").as_deref() == Ok("1")
-}
-
-/// Launches whose fused pair the `wo` MMVQ consumed (gate non-vacuity, box engagement receipt).
-pub static MLA_WO_ZQ8_DISPATCHES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
 /// `MEMRA_MOE_GATEUP_ILP2=1` (lane/moe-gateup-ilp2-20260905, default OFF pending its model-scale
 /// row): the verify-rows MoE gate/up launch takes the `_ilp2` twins
 /// (`moe_gate_up_preclamp8_q8_rows_ilp2`, `_w4_ilp2`) that give a warp TWO pairs at the same
