@@ -14948,6 +14948,46 @@ impl Engine {
         self.rms_norm_zq8_f32_arm(x, w, z, ncols, nrows, eps, Self::norm_ilp_zq8_on())
     }
 
+    /// `MEMRA_HC_MIXES_KERNEL=1` (lane/hc-mixes-gemv-20260905): the hyper-connection mixes
+    /// projection at t=1 through the native `hc_mixes_gemv_f32` kernel instead of cuBLASLt.
+    /// NUMERIC CLASS (a different, fixed summation order), deterministic run to run. Default OFF
+    /// pending its model-scale row.
+    pub fn hc_mixes_kernel_on() -> bool {
+        static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ON.get_or_init(|| std::env::var("MEMRA_HC_MIXES_KERNEL").as_deref() == Ok("1"))
+    }
+
+    /// Native t=1 GEMV `y[r] = sum_k w[r*in_f + k] x[k]`, r < out_f, one block per row. Returns
+    /// Ok(false) without launching when the shape does not fit (in_f must be 16 * 1024), so the
+    /// caller runs the cuBLASLt path unchanged.
+    pub fn hc_mixes_gemv_into(
+        &self,
+        x: &cudarc::driver::CudaView<'_, f32>,
+        w: &cudarc::driver::CudaView<'_, f32>,
+        y: &mut cudarc::driver::CudaViewMut<'_, f32>,
+        in_f: usize,
+        out_f: usize,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        const BLOCK: usize = 1024;
+        if in_f != 16 * BLOCK || out_f == 0 || out_f > 65535 {
+            return Ok(false);
+        }
+        let f = self.func("hc_mixes_gemv_f32");
+        let cfg = LaunchConfig {
+            grid_dim: (out_f as u32, 1, 1),
+            block_dim: (BLOCK as u32, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let (inf, outf) = (in_f as i32, out_f as i32);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(x).arg(w).arg(&mut *y).arg(&inf).arg(&outf);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(true)
+    }
+
     /// The arm-explicit form of [`Engine::rms_norm_zq8_f32`]: `ilp` selects the
     /// `rms_norm_zq8_f32_v2` twin (MEMRA_NORM_ILP and MEMRA_NORM_ILP_ZQ8, both default ON; four loads in flight per round
     /// in both passes, bit-identical by construction, see its header in cu/kernels.cu) over the

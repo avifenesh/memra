@@ -842,6 +842,54 @@ __device__ __forceinline__ void rms_zq8_emit_block(float v, int i, int blk, int 
     base_q[i] = (signed char)__float2int_rn(v * id);
     if (lane == 0) base_d[blk] = d;
 }
+// ---------------------------------------------------------------- hc mixes GEMV (native)
+// y[r] = sum_k W[r*in_f + k] * x[k] for r < out_f: the hyper-connection "mixes" projection at
+// t=1 (out_f = (2+hc)*hc = 24, in_f = hc*hidden = 16384 on GLM-5.3-Flash). Served through
+// cuBLASLt as `dot_kernel` + `reduce_1Block_kernel`, 3.3 + 1.8 us plus ~9 us of host latency
+// where the walk is eager (the 90 pre sites per token + their MLA-layer gaps, trace
+// 2026-09-05). One block per output row, 1024 threads x 16 contiguous elements (4 float4
+// loads of W and of x per thread), pinned `__fmaf_rn` accumulation in a fixed per-thread order,
+// then a fixed reduction tree (warp shuffle-down 16..1, shared across warps, warp 0 tree).
+// DETERMINISTIC run to run; NOT bit-identical to cuBLAS (its order is its own): numeric class,
+// gated by tolerance + determinism (`tests/hc_mixes_gemv_gpu.rs`). Requires in_f == 16 * B.
+extern "C" __global__ void __launch_bounds__(1024) hc_mixes_gemv_f32(
+        const float* __restrict__ x, const float* __restrict__ w, float* __restrict__ y,
+        int in_f, int out_f) {
+    const int r = blockIdx.x;
+    if (r >= out_f) return;
+    const int t = threadIdx.x;
+    const int B = blockDim.x;
+    const float* wr = w + (long)r * in_f;
+    const int base = t * 16;
+    const float4* w4 = reinterpret_cast<const float4*>(wr + base);
+    const float4* x4 = reinterpret_cast<const float4*>(x + base);
+    float4 a0 = w4[0], a1 = w4[1], a2 = w4[2], a3 = w4[3];
+    float4 b0 = x4[0], b1 = x4[1], b2 = x4[2], b3 = x4[3];
+    float acc = 0.0f;
+    acc = __fmaf_rn(a0.x, b0.x, acc); acc = __fmaf_rn(a0.y, b0.y, acc);
+    acc = __fmaf_rn(a0.z, b0.z, acc); acc = __fmaf_rn(a0.w, b0.w, acc);
+    acc = __fmaf_rn(a1.x, b1.x, acc); acc = __fmaf_rn(a1.y, b1.y, acc);
+    acc = __fmaf_rn(a1.z, b1.z, acc); acc = __fmaf_rn(a1.w, b1.w, acc);
+    acc = __fmaf_rn(a2.x, b2.x, acc); acc = __fmaf_rn(a2.y, b2.y, acc);
+    acc = __fmaf_rn(a2.z, b2.z, acc); acc = __fmaf_rn(a2.w, b2.w, acc);
+    acc = __fmaf_rn(a3.x, b3.x, acc); acc = __fmaf_rn(a3.y, b3.y, acc);
+    acc = __fmaf_rn(a3.z, b3.z, acc); acc = __fmaf_rn(a3.w, b3.w, acc);
+    // fixed tree: shuffle-down 16..1 (lane l adds lane l+off), then warp partials in smem
+#pragma unroll
+    for (int off = 16; off > 0; off >>= 1) acc += __shfl_down_sync(0xffffffffu, acc, off);
+    __shared__ float sw[32];
+    const int lane = t & 31, wid = t >> 5;
+    if (lane == 0) sw[wid] = acc;
+    __syncthreads();
+    if (wid == 0) {
+        const int nw = B >> 5;
+        float v = (lane < nw) ? sw[lane] : 0.0f;
+#pragma unroll
+        for (int off = 16; off > 0; off >>= 1) v += __shfl_down_sync(0xffffffffu, v, off);
+        if (lane == 0) y[r] = v;
+    }
+}
+
 extern "C" __global__ void rms_norm_zq8_f32_v2(const float* __restrict__ x, const float* __restrict__ w,
                                                float* __restrict__ z,
                                                signed char* __restrict__ out_q, float* __restrict__ out_d,
