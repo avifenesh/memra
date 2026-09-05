@@ -7,6 +7,20 @@
 use std::os::raw::c_void;
 
 unsafe extern "C" {
+    pub fn memra_dsv4_c4_gather(
+        device: *const f32,
+        host: *const f32,
+        indices: *const i32,
+        out: *mut f32,
+        out_indices: *mut i32,
+        nq: i32,
+        slots: i32,
+        stride: i32,
+        live_rows: i32,
+        logical_transient: i32,
+        transient_rows: i32,
+        stream: *mut c_void,
+    ) -> i32;
     // iteration-5 F-itemisation instrument (see dsv4_gpu.rs Dsv4Phase).
     pub fn memra_dsv4_nvtx_push(name: *const std::os::raw::c_char) -> i32;
     pub fn memra_dsv4_nvtx_pop() -> i32;

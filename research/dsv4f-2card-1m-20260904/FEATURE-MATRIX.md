@@ -87,12 +87,13 @@ pinned host LRU, keyed by (model thread, PC-ISO namespace, exact token prefix)
 fresh capacity-planned device state + fresh scratch
 ```
 
-The host tier does **not** stream selected KV rows over PCIe for every decode
-token. An active 1M state already fits and per-token host service would spend
-PCIe bandwidth in the latency-critical loop. Host RAM is cheap here because the
-compact state moves only at a conversation pause/resume boundary and remains
-compressed; dead capacity tails, verify transients and step workspaces never
-cross PCIe.
+The previously gated parked tier above does not stream KV per decode token. The
+2026-09-05 active-C4 experiment now adds a separate explicit transition:
+compressed C4 history resides on the host and a native gather fetches selected
+rows; C128, SWA and indexer keys stay on device. It is implemented and component
+gated locally, not target-model or production qualified. See
+`active-c4-host.md`. Both storage policies preserve compressed values exactly;
+the active policy must additionally price per-step PCIe and host capacity.
 
 DSpark state is not reconstructed approximately. A parked speculative session
 also carries its three persistent 128-token rings and newest trunk tap. Transient
@@ -278,9 +279,9 @@ critical path is limited by power or clocks.
   The fix uses the existing exact hierarchical selector for long plain decode
   and removes narrow verification's long-context host sort. A 256K real-source
   engine run is in progress; neither is a 1M HTTP serving qualification.
-- [ ] active C4 host offload and compact FP4 indexer residency. The current host
-  tier parks/restores whole inactive sessions; it does not move the active
-  request's C4 working set between host and device. This remains a concurrency
+- [ ] active C4 host offload qualification and compact FP4 indexer residency.
+  Active C4 is implemented behind an explicit API with a local component PASS
+  (`active-c4-host.md`); the target-model gate is queued. This remains a concurrency
   implementation task, not evidence against two-card feasibility.
 - [x] ordered tiled indexer component and one-load model parity: 2,045,982
   comparisons pass on both RTX PRO cards; about 24-29x scorer speedup at long

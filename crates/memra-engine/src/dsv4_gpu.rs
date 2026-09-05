@@ -34,6 +34,7 @@ use memra_gguf::dsv4_forward::{
     precompute_freqs_cis, window_topk_idxs,
 };
 
+use crate::dsv4_c4::{C4Gather, C4HostStore};
 use crate::dsv4_ffi as k;
 use crate::dsv4_ffi::ck;
 use crate::mmq_ffi::{memra_bind_device, memra_moe_kq_gemm_sk};
@@ -668,6 +669,8 @@ pub struct ForwardOut {
 /// with no predecessor reproduces the reference j==0 masking bit-exactly.
 pub struct LayerCache {
     pub kvc: CudaSlice<f32>,
+    // Some: kvc contains only SWA + transient rows; compressed C4 lives on host.
+    c4_host: Option<C4HostStore>,
     pub n_blocks: usize,
     pub pend_kv: Option<CudaSlice<f32>>,
     pub pend_score: Option<CudaSlice<f32>>,
@@ -685,6 +688,7 @@ pub struct LayerCache {
 /// consumers (sink_attn via idx pads, combine via order, top-k via exact nb) read
 /// exactly the regions written this step, so no per-step zeroing exists at all.
 pub struct StepWs {
+    c4_gather: Option<C4Gather>,
     pub h_a: CudaSlice<f32>, // [hc*hidden] layer io (in h_a -> h2 in h_b -> h3 in h_a)
     pub h_b: CudaSlice<f32>, // [hc*hidden]
     pub h_rx: CudaSlice<f32>, // [hc*hidden] boundary RX slot (peer TX writes here)
@@ -761,11 +765,28 @@ pub struct DecodeState {
     pub capacity: usize,
     /// allocated cache bytes per device index (gate (e): measured vs design math)
     pub cache_bytes: Vec<u64>,
+    /// Active C4 pinned-host capacity per stage, separate from device cache bytes.
+    pub host_cache_bytes: Vec<u64>,
     /// Rows reserved after each layer's persistent compressed store for a batched
     /// speculative or chunked-prefill transaction.
     transient_rows: usize,
     /// lane 8: per-stage step workspace (Some iff the load-time decode path is Device)
     pub ws: Option<Vec<StepWs>>,
+}
+
+impl DecodeState {
+    /// Additional device scratch for active C4 gather, separate from semantic
+    /// cache capacity. Batched scratch is already charged in `VerifyState::bytes`.
+    pub fn c4_device_scratch_bytes(&self) -> Vec<u64> {
+        self.ws.as_ref().map_or_else(
+            || vec![0; self.cache_bytes.len()],
+            |work| {
+                work.iter()
+                    .map(|w| w.c4_gather.as_ref().map_or(0, C4Gather::bytes))
+                    .collect()
+            },
+        )
+    }
 }
 
 /// Number of persistent compressed rows admitted for one session. Decode allocation
@@ -4407,6 +4428,15 @@ impl Dsv4Gpu {
         early_exit_after: Option<u32>,
         mut state: Option<&mut DecodeState>,
     ) -> Res<Option<ForwardOut>> {
+        if state
+            .as_ref()
+            .is_some_and(|s| s.caches.iter().any(|c| c.c4_host.is_some()))
+        {
+            return Err(
+                "active C4 requires device decode or chunked continuation, not monolithic prefill"
+                    .into(),
+            );
+        }
         let mc = &self.model.mc;
         let d = self.model.cfg();
         let s = ids.len();
@@ -4873,6 +4903,7 @@ impl Dsv4Gpu {
             cache_bytes[stage_i] += bytes;
             caches.push(LayerCache {
                 kvc,
+                c4_host: None,
                 n_blocks: 0,
                 pend_kv,
                 pend_score,
@@ -4895,9 +4926,83 @@ impl Dsv4Gpu {
             pos: 0,
             capacity,
             cache_bytes,
+            host_cache_bytes: vec![0; self.stages.len()],
             transient_rows,
             ws,
         })
+    }
+
+    /// Experimental active-C4 residency transition between closed transactions.
+    /// Prefill first uses the unchanged program; subsequent device decode/verify and
+    /// suffix prefill gather selected C4 rows from a pinned host store. C128, SWA,
+    /// compressor state and indexer keys remain on device. Not enabled by serving.
+    /// Returns device cache bytes released per stage (gather scratch is separate).
+    pub fn offload_c4_decode_state(
+        &self,
+        state: &mut DecodeState,
+        verify: &VerifyState,
+    ) -> Res<Vec<u64>> {
+        if !matches!(self.decode_path, DecodePath::Device { .. })
+            || state.pos == 0
+            || verify.open.is_some()
+            || verify.capacity != state.capacity
+            || state.caches.len() != self.layer_stage.len()
+        {
+            return Err(
+                "active C4 transition requires primed device state and a closed matching verifier"
+                    .into(),
+            );
+        }
+        let d = self.model.cfg();
+        let win = d.sliding_window as usize;
+        let hd = d.head_dim as usize;
+        if win != 128 || hd != 512 {
+            return Err("active C4 requires SWA128/HD512".into());
+        }
+        let mut released = vec![0u64; self.stages.len()];
+        for (il, cache) in state.caches.iter_mut().enumerate() {
+            let stage = self.layer_stage[il];
+            let st = &self.stages[stage];
+            let layer = st
+                .layers
+                .iter()
+                .find(|l| l.il as usize == il)
+                .expect("layer owner");
+            if layer.ratio != 4 || layer.idx.is_none() || cache.c4_host.is_some() {
+                continue;
+            }
+            if cache.n_blocks != state.pos / 4 {
+                return Err("active C4 transition found uncommitted rows".into());
+            }
+            let rows = dsv4_cache_cap_blocks(state.capacity, 4);
+            let stream = st.gpu.stream();
+            st.gpu.ctx.bind_to_thread().map_err(e("bind C4 offload"))?;
+            let mut host = C4HostStore::new(stream.clone(), rows)?;
+            host.write(0, cache.kvc.slice(win * hd..(win + cache.n_blocks) * hd))?;
+            let mut compact = stream
+                .alloc_zeros::<f32>((win + state.transient_rows) * hd)
+                .map_err(e("C4 window/transient alloc"))?;
+            stream
+                .memcpy_dtod(
+                    &cache.kvc.slice(..win * hd),
+                    &mut compact.slice_mut(..win * hd),
+                )
+                .map_err(e("C4 preserve SWA"))?;
+            stream.synchronize().map_err(e("C4 offload publish"))?;
+            let freed = (cache.kvc.len() - compact.len()) as u64 * 4;
+            state.host_cache_bytes[stage] += host.bytes() as u64;
+            cache.kvc = compact;
+            cache.c4_host = Some(host);
+            state.cache_bytes[stage] -= freed;
+            released[stage] += freed;
+        }
+        for st in &self.stages {
+            st.gpu
+                .stream()
+                .synchronize()
+                .map_err(e("C4 retire device store"))?;
+        }
+        Ok(released)
     }
 
     /// Move the LIVE compact state of a parked DSV4 session into pinned host RAM.
@@ -4936,7 +5041,9 @@ impl Dsv4Gpu {
             let kvc_elems = (win + cache.n_blocks)
                 .checked_mul(hd)
                 .ok_or_else(|| format!("layer {il} kvc live-size overflow"))?;
-            if kvc_elems > cache.kvc.len() {
+            let logical_kvc_len =
+                cache.kvc.len() + cache.c4_host.as_ref().map_or(0, |h| h.rows * hd);
+            if kvc_elems > logical_kvc_len {
                 return Err(format!(
                     "layer {il} live kvc rows exceed allocation: {kvc_elems} > {}",
                     cache.kvc.len()
@@ -4999,7 +5106,18 @@ impl Dsv4Gpu {
             let stream = st.gpu.stream();
             let cache = &state.caches[il];
             let slab = &mut stages[stage];
-            dsv4_dtoh_span(&stream, &cache.kvc, slab, &meta.kvc)?;
+            if let Some(host) = &cache.c4_host {
+                // Canonical snapshot stays [SWA, live compressed rows], independent
+                // of active residency. Restore can use either residency later.
+                let compressed = host.read(cache.n_blocks)?;
+                let all = dsv4_pinned_f32_mut(slab, meta.kvc.range.clone());
+                all[win * hd..].copy_from_slice(&compressed);
+                stream
+                    .memcpy_dtoh(&cache.kvc.slice(..win * hd), &mut all[..win * hd])
+                    .map_err(e("C4 snapshot window"))?;
+            } else {
+                dsv4_dtoh_span(&stream, &cache.kvc, slab, &meta.kvc)?;
+            }
             for (src, span) in [
                 (cache.pend_kv.as_ref(), meta.pend_kv.as_ref()),
                 (cache.pend_score.as_ref(), meta.pend_score.as_ref()),
@@ -5190,6 +5308,7 @@ impl Dsv4Gpu {
             let i = |n: usize| s.alloc_zeros::<i32>(n).map_err(e("ws i32"));
             let u = |n: usize| s.alloc_zeros::<u64>(n).map_err(e("ws u64"));
             out.push(StepWs {
+                c4_gather: None,
                 h_a: f(hc * hidden)?,
                 h_b: f(hc * hidden)?,
                 h_rx: f(hc * hidden)?,
@@ -5456,6 +5575,7 @@ impl Dsv4Gpu {
         let clamp_only = (self.variant == ActQuantVariant::ClampOnly) as i32;
         let LayerCache {
             kvc,
+            c4_host: _,
             n_blocks,
             pend_kv,
             pend_score,
@@ -6308,6 +6428,7 @@ impl Dsv4Gpu {
         store: &mut CudaSlice<f32>,
         row0: usize,
         blocks: &mut usize,
+        host_store: Option<&mut C4HostStore>,
     ) -> Res<()> {
         let stream = st.gpu.stream();
         let (ratio, d, latent) = (cmp.ratio, cmp.d, cmp.latent);
@@ -6402,10 +6523,14 @@ impl Dsv4Gpu {
         }
         {
             let src = emit.slice(row_off..row_off + d);
-            let mut dst = store.slice_mut((row0 + j) * d..(row0 + j + 1) * d);
-            stream
-                .memcpy_dtod(&src, &mut dst)
-                .map_err(e("emit store"))?;
+            if let Some(host) = host_store {
+                host.write(j, src)?;
+            } else {
+                let mut dst = store.slice_mut((row0 + j) * d..(row0 + j + 1) * d);
+                stream
+                    .memcpy_dtod(&src, &mut dst)
+                    .map_err(e("emit store"))?;
+            }
         }
         if cmp.overlap {
             {
@@ -6472,6 +6597,7 @@ impl Dsv4Gpu {
         let clamp_only = (self.variant == ActQuantVariant::ClampOnly) as i32;
         let LayerCache {
             kvc,
+            c4_host,
             n_blocks,
             pend_kv,
             pend_score,
@@ -6738,6 +6864,7 @@ impl Dsv4Gpu {
                         ikvc.as_mut().expect("ikvc"),
                         0,
                         i_blocks,
+                        None,
                     )?;
                 }
                 let nb = *i_blocks;
@@ -6902,6 +7029,7 @@ impl Dsv4Gpu {
                     kvc,
                     win,
                     n_blocks,
+                    c4_host.as_mut(),
                 )?;
             }
             debug_assert_eq!(*n_blocks, (pos + 1) / layer.ratio, "attn block count");
@@ -6924,14 +7052,31 @@ impl Dsv4Gpu {
 
         // sparse sink attention (lane-8 three-kernel split, bit-exact — see the .cu
         // notes) + query-position de-rotation
+        let (attention_kv, attention_indices) = if let Some(host) = c4_host.as_ref() {
+            host.gather(
+                kvc,
+                &ws.idx,
+                &mut ws.c4_gather,
+                1,
+                slots,
+                slots,
+                *n_blocks,
+                win + host.rows,
+            )?
+        } else {
+            (
+                dpf!(kvc, &stream),
+                ws.idx.device_ptr(&stream).0 as *const i32,
+            )
+        };
         let scale = (hd as f64).powf(-0.5) as f32;
         unsafe {
             ck(
                 "sink_attn_dec dev",
                 self.sink_attn_dec_arm(
                     dpf!(ws.q, &stream),
-                    dpf!(kvc, &stream),
-                    ws.idx.device_ptr(&stream).0 as *const i32,
+                    attention_kv,
+                    attention_indices,
                     dpf!(layer.sink, &stream),
                     dpm!(ws.sink_scores, &stream),
                     dpm!(ws.sink_evals, &stream),
@@ -9388,6 +9533,7 @@ impl Dsv4Gpu {
 /// separately from [`StepWs`] so the gated single-position path's allocations, launches
 /// and bytes are literally untouched by this rung.
 pub struct VerifyWs {
+    c4_gather: Option<C4Gather>,
     pub tmax: usize,
     /// Phase identity, not inferred from row count. Spec verification never sets it.
     is_prefill: bool,
@@ -9625,6 +9771,7 @@ impl Dsv4Gpu {
                 s.alloc_zeros::<u64>(n).map_err(e("vws u64"))
             };
             let w = VerifyWs {
+                c4_gather: None,
                 tmax,
                 is_prefill: false,
                 h_a: f(tmax * hc * hidden)?,
@@ -10040,6 +10187,7 @@ impl Dsv4Gpu {
         store: &mut CudaSlice<f32>,
         row0: usize,
         blocks: &mut usize,
+        mut host_store: Option<&mut C4HostStore>,
     ) -> Res<()> {
         let stream = st.gpu.stream();
         let (ratio, d, latent) = (cmp.ratio, cmp.d, cmp.latent);
@@ -10162,10 +10310,14 @@ impl Dsv4Gpu {
             }
             {
                 let src = emit.slice(row_off..row_off + d);
-                let mut dst = store.slice_mut((row0 + j) * d..(row0 + j + 1) * d);
-                stream
-                    .memcpy_dtod(&src, &mut dst)
-                    .map_err(e("emit store b"))?;
+                if let Some(host) = host_store.as_deref_mut() {
+                    host.write(j, src)?;
+                } else {
+                    let mut dst = store.slice_mut((row0 + j) * d..(row0 + j + 1) * d);
+                    stream
+                        .memcpy_dtod(&src, &mut dst)
+                        .map_err(e("emit store b"))?;
+                }
             }
             if cmp.overlap {
                 {
@@ -10315,6 +10467,7 @@ impl Dsv4Gpu {
         let trans_base = lck.trans_base;
         let LayerCache {
             kvc,
+            c4_host,
             n_blocks,
             pend_kv,
             pend_score,
@@ -10486,7 +10639,8 @@ impl Dsv4Gpu {
         }
         {
             let src = vws.kv.slice(0..t * hd);
-            let mut dst = kvc.slice_mut(trans_base * hd..(trans_base + t) * hd);
+            let physical_trans = if c4_host.is_some() { win } else { trans_base };
+            let mut dst = kvc.slice_mut(physical_trans * hd..(physical_trans + t) * hd);
             stream
                 .memcpy_dtod(&src, &mut dst)
                 .map_err(e("transient ring write"))?;
@@ -10591,6 +10745,7 @@ impl Dsv4Gpu {
                         ikvc.as_mut().expect("ikvc"),
                         0,
                         i_blocks,
+                        None,
                     )?;
                 }
                 debug_assert_eq!(*i_blocks, nbs[t - 1], "indexer block count (batch)");
@@ -10837,6 +10992,7 @@ impl Dsv4Gpu {
                     kvc,
                     win,
                     n_blocks,
+                    c4_host.as_mut(),
                 )?;
             }
             debug_assert_eq!(*n_blocks, nbs[t - 1], "attn block count (batch)");
@@ -10862,6 +11018,23 @@ impl Dsv4Gpu {
 
         // sparse sink attention, T queries in one launch (uniform `slots`, -1 pads —
         // bit-inert by the pinned pad contract) + per-position de-rotation
+        let (attention_kv, attention_indices) = if let Some(host) = c4_host.as_ref() {
+            host.gather(
+                kvc,
+                &vws.idx,
+                &mut vws.c4_gather,
+                t,
+                slots,
+                vws.idx_stride,
+                *n_blocks,
+                trans_base,
+            )?
+        } else {
+            (
+                dpf!(kvc, &stream),
+                vws.idx.device_ptr(&stream).0 as *const i32,
+            )
+        };
         let scale = (hd as f64).powf(-0.5) as f32;
         unsafe {
             if self.chains_f32 {
@@ -10869,8 +11042,8 @@ impl Dsv4Gpu {
                     "sink_attn_dec_mq_f32acc",
                     k::memra_dsv4_sink_attn_dec_mq_f32acc(
                         dpf!(vws.q, &stream),
-                        dpf!(kvc, &stream),
-                        vws.idx.device_ptr(&stream).0 as *const i32,
+                        attention_kv,
+                        attention_indices,
                         dpf!(layer.sink, &stream),
                         dpm!(vws.sink_scores, &stream),
                         dpm!(vws.sink_evals, &stream),
@@ -10890,8 +11063,8 @@ impl Dsv4Gpu {
                     "sink_attn_dec_mq",
                     k::memra_dsv4_sink_attn_dec_mq(
                         dpf!(vws.q, &stream),
-                        dpf!(kvc, &stream),
-                        vws.idx.device_ptr(&stream).0 as *const i32,
+                        attention_kv,
+                        attention_indices,
                         dpf!(layer.sink, &stream),
                         dpm!(vws.sink_scores, &stream),
                         dpm!(vws.sink_evals, &stream),
@@ -11919,6 +12092,15 @@ impl Dsv4Gpu {
             st.gpu.ctx.bind_to_thread().map_err(e("bind ctx round"))?;
             let stream = st.gpu.stream();
             let vws = &mut vstate.ws[si];
+            if state
+                .caches
+                .iter()
+                .enumerate()
+                .any(|(il, cache)| self.layer_stage[il] == si && cache.c4_host.is_some())
+            {
+                vstate.bytes[si] +=
+                    C4Gather::ensure(&mut vws.c4_gather, &stream, vstate.tmax, vws.idx_stride)?;
+            }
             let mut dst = vws.tok.slice_mut(0..t);
             stream
                 .memcpy_htod(&tok_i32, &mut dst)
@@ -12185,7 +12367,11 @@ impl Dsv4Gpu {
             let lck = &mut vstate.layers[il];
             let vws = &mut vstate.ws[stage];
             let cache = &mut state.caches[il];
-            let trans_base = lck.trans_base;
+            let trans_base = if cache.c4_host.is_some() {
+                win
+            } else {
+                lck.trans_base
+            };
             // Only the newest window survives. Scattering every committed row
             // when n_commit>win races multiple writers to the same ring slot.
             {
@@ -12942,7 +13128,11 @@ impl Dsv4Gpu {
             if let Some(cmp) = &layer.cmp {
                 out.push((
                     format!("l{il}.cmp_store"),
-                    read(cache.kvc.slice(win * hd..(win + cache.n_blocks) * cmp.d))?,
+                    if let Some(host) = &cache.c4_host {
+                        host.read(cache.n_blocks)?
+                    } else {
+                        read(cache.kvc.slice(win * hd..(win + cache.n_blocks) * cmp.d))?
+                    },
                 ));
                 out.push((
                     format!("l{il}.cmp_pend_kv"),

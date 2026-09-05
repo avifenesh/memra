@@ -277,6 +277,15 @@ DSV4 indexer candidate (same TU, separate multiply/add rounding):
 |---|---|---|---|
 | `dsv4_indexer_score_tiled_kernel` | 64-head, width-128 scorer; one thread owns a candidate and all heads, 128 candidates reuse 16-element query/key slabs. Ascending dimension and head sums use explicit separate round-to-nearest multiply/add, unlike the FMA-based MLA scorer. Absolute-position and fixed-limit masks share the same launch. | `MEMRA_DSV4_INDEXER_SCORE=scalar/tiled`, default scalar. Tiled is unqualified and opt-in; device f32x only. | `memra_dsv4_indexer_score_tiled`; `tools/dsv4-indexer-tiled-gate.cu` anchors to scalar CUDA and CPU witnesses, masks, write guards and a corruption control. Target-card component and one-load full-model parity pass; long-context serving remains unqualified. |
 
+Active-C4 residency experiment: `dsv4_c4_gather_kernel` /
+`memra_dsv4_c4_gather` copies selected logical rows from pinned host C4 or device
+SWA/transient storage into one bounded per-stage attention buffer. It preserves
+index order, pads and all f32 bits, with no quantization or arithmetic rewrite.
+Only the explicit `Dsv4Gpu::offload_c4_decode_state` API enables it; no environment
+flag or serving default selects it. Model/snapshot/rollback and target-card
+performance qualification are pending. The host-store owner drains its stream
+before CPU reads or deallocation. C128 and indexer keys remain device-resident.
+
 Corrected DSV4 grouped-prefill experiment:
 
 | symbol | purpose | dispatch flag | FFI binding |

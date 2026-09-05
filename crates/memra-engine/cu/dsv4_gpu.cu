@@ -41,6 +41,7 @@
 #include <cuda_bf16.h>
 #include <cuda_fp8.h>
 #include <cuda_runtime.h>
+#include <cassert>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -4523,6 +4524,43 @@ extern "C" __global__ void dsv4_sink_out_mq_kernel(const float* __restrict__ kv,
         __syncthreads();
     }
     if (x < hd && h < heads) o[(long)h * hd + x] = (float)(acc / den[h]);
+}
+
+// C4-only residency rewrite. The indexer's logical row order is preserved exactly;
+// only its addresses change. One row is fetched once and reused by all query heads.
+// Host reads are volatile so rollback/re-emission cannot reuse stale cached bytes.
+__global__ void dsv4_c4_gather_kernel(
+    const float* device, const float* host, const int* indices,
+    float* out, int* out_indices, int slots, int stride, int live_rows,
+    int logical_transient, int transient_rows) {
+    const int slot = blockIdx.x, q = blockIdx.y, lane = threadIdx.x;
+    const int index = indices[q * stride + slot];
+    const float* source = nullptr;
+    if (index >= 0 && index < 128) source = device + (long)index * 512;
+    else if (index >= 128 && index < 128 + live_rows)
+        source = host + (long)(index - 128) * 512;
+    else if (index >= logical_transient && index < logical_transient + transient_rows)
+        source = device + (long)(128 + index - logical_transient) * 512;
+    else assert(index == -1); // invalid positive indices must not silently become pads
+    const int row = q * slots + slot;
+    if (lane == 0) out_indices[q * stride + slot] = index == -1 ? -1 : row;
+    auto dst = reinterpret_cast<unsigned*>(out + (long)row * 512);
+    auto src = reinterpret_cast<const volatile unsigned*>(source);
+    for (int x = lane; x < 512; x += blockDim.x) dst[x] = source ? src[x] : 0;
+}
+
+extern "C" int memra_dsv4_c4_gather(
+    const float* device, const float* host, const int* indices,
+    float* out, int* out_indices, int nq, int slots, int stride, int live_rows,
+    int logical_transient, int transient_rows, void* stream_v) {
+    if (!device || !host || !indices || !out || !out_indices || nq < 1 || nq > 512
+        || slots < 1 || slots > 640 || stride < slots || live_rows < 0
+        || logical_transient < 128 + live_rows || transient_rows < 0) return 40010;
+    dsv4_c4_gather_kernel<<<dim3(slots, nq), 128, 0, (cudaStream_t)stream_v>>>(
+        device, host, indices, out, out_indices, slots, stride, live_rows,
+        logical_transient, transient_rows);
+    DSV4_ERR();
+    return 0;
 }
 
 extern "C" int memra_dsv4_sink_attn_dec_mq(const float* q, const float* kv, const int* idxs,
