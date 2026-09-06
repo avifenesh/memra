@@ -2846,6 +2846,10 @@ impl DflashKv {
                     e.copy_range_into(&mut self.k[li], 0, &tk, 0, kept * rowsz)?;
                     e.copy_range_into(&mut self.v[li], 0, &tv, 0, kept * rowsz)?;
                 }
+                log::debug!(
+                    "dflash kv ring: compact keep_from={keep_from} kept={kept} phys_rows={}",
+                    self.phys_rows
+                );
                 self.base = keep_from;
                 Ok(())
             }
@@ -2865,6 +2869,10 @@ impl DflashKv {
                     self.k[li] = nk;
                     self.v[li] = nv;
                 }
+                log::debug!(
+                    "dflash kv ring: grow keep_from={keep_from} kept={kept} phys_rows={phys_rows} (was {})",
+                    self.phys_rows
+                );
                 self.base = keep_from;
                 self.phys_rows = phys_rows;
                 Ok(())
