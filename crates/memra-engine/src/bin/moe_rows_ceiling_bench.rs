@@ -281,8 +281,51 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             mism(&h_s, &h_lm4)
         );
     }
+    // f16 class (lane/moe-rows-f16-20260906): hardware e2m1 -> f16x2 on an f16 lane-major
+    // activation; timing only here, the numeric receipt is tests/moe_rows_f16_gpu.rs.
+    let acth = e.f32_to_f16_lane_major(&x_d, t, gin)?;
+    let f16_v2 = |set: usize, acc32: bool| {
+        e.moe_gate_up_preclamp8_f16_rows(
+            &sets_v2[set],
+            &scl_d,
+            &acth,
+            7.0,
+            gin,
+            n_ff,
+            n_used,
+            n_pairs,
+            QT_NVFP4_V2,
+            QT_NVFP4_V2,
+            grb2,
+            grb2,
+            acc32,
+        )
+    };
+    let acth2 = e.f32_to_f16_lane_major(&x2_d, n_pairs, n_ff)?;
+    let f16_down =
+        |set: usize, acc32: bool| -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+            let mut y = e.zeros(t * gin)?;
+            e.moe_down8_fma_f16_rows(
+                &down_sets[set],
+                &scl_d,
+                &acth2,
+                &mut y,
+                n_ff,
+                gin,
+                n_used,
+                n_pairs,
+                QT_NVFP4_V2,
+                drb2,
+                acc32,
+            )?;
+            Ok(y)
+        };
     // warm
     for _ in 0..10 {
+        let _ = f16_v2(0, false)?;
+        let _ = f16_v2(0, true)?;
+        let _ = f16_down(0, false)?;
+        let _ = f16_down(0, true)?;
         let _ = served(0)?;
         let _ = probe("loadonly", 0)?;
         let _ = probe("mathonly", 0)?;
@@ -305,8 +348,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut t_ds = Vec::new();
     let mut t_dlm = Vec::new();
     let mut t_dlm4 = Vec::new();
+    let mut t_f16 = Vec::new();
+    let mut t_f16a = Vec::new();
+    let mut t_df16 = Vec::new();
+    let mut t_df16a = Vec::new();
     for i in 0..iters {
-        for arm in 0..10 {
+        for arm in 0..14 {
             let t0 = Instant::now();
             for r in 0..reps {
                 let set = (i * reps + r) % copies;
@@ -338,8 +385,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     8 => {
                         let _ = lm_down(set, false)?;
                     }
-                    _ => {
+                    9 => {
                         let _ = lm_down(set, true)?;
+                    }
+                    10 => {
+                        let _ = f16_v2(set, false)?;
+                    }
+                    11 => {
+                        let _ = f16_v2(set, true)?;
+                    }
+                    12 => {
+                        let _ = f16_down(set, false)?;
+                    }
+                    _ => {
+                        let _ = f16_down(set, true)?;
                     }
                 }
             }
@@ -355,7 +414,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 6 => t_lm4.push(us),
                 7 => t_ds.push(us),
                 8 => t_dlm.push(us),
-                _ => t_dlm4.push(us),
+                9 => t_dlm4.push(us),
+                10 => t_f16.push(us),
+                11 => t_f16a.push(us),
+                12 => t_df16.push(us),
+                _ => t_df16a.push(us),
             }
         }
     }
@@ -392,6 +455,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         sv / lm,
         bytes2 / lm4 / 1e3,
         sv / lm4
+    );
+    let (f16, f16a, df16, df16a) = (
+        median(&mut t_f16),
+        median(&mut t_f16a),
+        median(&mut t_df16),
+        median(&mut t_df16a),
+    );
+    println!(
+        "[rows-f16] gate/up V2: served _ilp {sv:.2} us | f16 {f16:.2} us ({:.0} GB/s, {:.3}x) | f16 acc32 {f16a:.2} us ({:.3}x) || down: served {ds:.2} us | f16 {df16:.2} us ({:.0} GB/s, {:.3}x) | f16 acc32 {df16a:.2} us ({:.3}x)",
+        bytes2 / f16 / 1e3,
+        sv / f16,
+        sv / f16a,
+        dbytes / df16 / 1e3,
+        ds / df16,
+        ds / df16a
     );
     println!(
         "[rows-lanemajor] down V2 {n_ff}->{gin}: served _ilp {ds:.2} us ({:.0} GB/s) | lane-major {dlm:.2} us ({:.0} GB/s, {:.3}x) | lane-major w4 {dlm4:.2} us ({:.0} GB/s, {:.3}x)",

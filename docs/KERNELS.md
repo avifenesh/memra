@@ -242,6 +242,7 @@ Header: "fused MoE router… bit-identical to host path" (moe_router.cu:1-4).
 |---|---|---|
 | `moe_router_topk_f32` | softmax + stable top-k + renorm | MEMRA_ROUTER_KERNEL=0 rollback (lib.rs:58, 211) |
 | `moe_router_sigmoid_topk_f32` | sigmoid-scored top-k | MEMRA_ROUTER_V2 (lib.rs:465, 2100) |
+| `moe_gate_up_preclamp8_f16_rows` / `_acc32`, `moe_down8_fma_f16_rows` / `_acc32`, `memra_f32_to_f16_lane_major` | f16 CLASS of the rows pair: cvt.rn.f16x2.e2m1x2 + hfma2 on an f16 lane-major activation (sm_100a/sm_120a) | MEMRA_MOE_ROWS_F16 (default OFF, not dispatched; gate `tests/moe_rows_f16_gpu.rs`) |
 | `memra_router_fused_f32` / `_dexp` | router GEMV + last-block sigmoid top-k, one launch | MEMRA_ROUTER_FUSED (default OFF; gate `tests/router_fused_gpu.rs`) |
 | `moe_router_topk_scaled_f32` | scaled top-k | MEMRA_ROUTER_KERNEL / _PREFILL_EXACT (lib.rs:202-205) |
 | `nvfp4_ep_stage_inputs`, `moe_sel_w_mirror` | one-launch peer-read input BF16 staging and grid-capable route-id/weight mirroring for automatic EP | MEMRA_PARALLEL_EP_DEVICE_ROUTER; MEMRA_PARALLEL_EP_Q8_ACT |

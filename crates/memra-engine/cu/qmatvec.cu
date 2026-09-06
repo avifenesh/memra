@@ -7150,6 +7150,262 @@ extern "C" __global__ void memra_q8_to_lane_major(const int* __restrict__ aq, in
 }
 
 
+// =====================================================================================
+// F16 CLASS of the verify-rows MoE pair (lane/moe-rows-f16-20260906): hardware e2m1 -> f16x2
+// =====================================================================================
+//
+// WHY. The rowbw2 bisect on the B200 pair (2026-09-06) priced the served kernel: 14.5 us of
+// weight stream and 12 us of arithmetic on top, 8 of them the PRMT nibble-to-int8 expansion the
+// dp4a class needs. sm_100a/sm_120a convert two e2m1 nibbles to two halves in ONE instruction
+// (`cvt.rn.f16x2.e2m1x2`), and `hfma2` against an f16x2 activation replaces the expansion plus
+// the dp4a: 17.0 us at the served launch size against 26.9 for the served dot, 6.27 TB/s
+// steady state against 3.3. This is a NUMERIC CLASS CHANGE, not a re-addressing: products are
+// f16, the sixteen products of a scale group accumulate in f16x2 (ACC32=false) or f32
+// (ACC32=true), groups accumulate in f32 through the ue4m3 scale, and the activation is f16
+// (no q8_1 quantize at all). It lands as a door (MEMRA_MOE_ROWS_F16, default OFF) with its
+// error against an f64 reference measured beside the served W4A8 arm's (gate
+// `moe_rows_f16_gpu`), never as a bitwise claim.
+//
+// LAYOUT. Slot-major (V2) rows as 16 B words + 2 B scale words, like the `_lm` twins. The
+// activation is f16 LANE-MAJOR per row: half2 word w (0..15) of group g at half2 index
+// w*nsb + g, written by `memra_f32_to_f16_lane_major`. Arch-gated: the cvt exists on
+// sm_100a/sm_120a; a portable build gets a trapping stub and the launcher refuses by name.
+
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
+#define MEMRA_HAS_E2M1_CVT 1
+#else
+#define MEMRA_HAS_E2M1_CVT 0
+#endif
+
+// bit-exact ue4m3 -> f32 (the served helper's values: 2^(e-8)*(1+m/8), subnormal m*2^-10,
+// 0 and 0x7F -> 0) without ldexpf's branches.
+__device__ __forceinline__ float ue4m3_bits_d(unsigned char x) {
+    int e = (x >> 3) & 0xF;
+    int m = x & 7;
+    float n = __uint_as_float(((unsigned)(e + 119) << 23) | ((unsigned)m << 20));
+    float sub = (float)m * 0.0009765625f;
+    float v = e ? n : sub;
+    return (x == 0 || x == 0x7F) ? 0.0f : v;
+}
+// The TRUE ue4m3 value 2^(e-7)*(1+m/8) (subnormal m*2^-9): the served path folds a x0.5 into
+// the scale because its int8 codebook is 2x the e2m1 grid; the cvt yields the real grid.
+__device__ __forceinline__ float ue4m3_true_d(unsigned char x) {
+    int e = (x >> 3) & 0xF;
+    int m = x & 7;
+    float n = __uint_as_float(((unsigned)(e + 120) << 23) | ((unsigned)m << 20));
+    float sub = (float)m * 0.001953125f;
+    float v = e ? n : sub;
+    return (x == 0 || x == 0x7F) ? 0.0f : v;
+}
+#if MEMRA_HAS_E2M1_CVT
+__device__ __forceinline__ void e2m1x8_to_half2x4(unsigned w, half2 (&o)[4]) {
+    unsigned r0, r1, r2, r3;
+    asm("{\n\t.reg .b8 b0, b1, b2, b3;\n\tmov.b32 {b0, b1, b2, b3}, %4;\n\t"
+        "cvt.rn.f16x2.e2m1x2 %0, b0;\n\tcvt.rn.f16x2.e2m1x2 %1, b1;\n\t"
+        "cvt.rn.f16x2.e2m1x2 %2, b2;\n\tcvt.rn.f16x2.e2m1x2 %3, b3;\n\t}"
+        : "=r"(r0), "=r"(r1), "=r"(r2), "=r"(r3) : "r"(w));
+    o[0] = *reinterpret_cast<half2*>(&r0);
+    o[1] = *reinterpret_cast<half2*>(&r1);
+    o[2] = *reinterpret_cast<half2*>(&r2);
+    o[3] = *reinterpret_cast<half2*>(&r3);
+}
+// one 16-element scale group: quant words (lo, hi) = 8 e2m1x2 pairs, activation a8[0..7] half2
+template <bool ACC32>
+__device__ __forceinline__ float rows_f16_group16(unsigned lo, unsigned hi, const half2* a8,
+                                                  float sc, float acc) {
+    half2 x[4];
+    if (ACC32) {
+        float s = 0.0f;
+        e2m1x8_to_half2x4(lo, x);
+#pragma unroll
+        for (int i = 0; i < 4; i++) {
+            float2 p = __half22float2(__hmul2(x[i], a8[i]));
+            s = __fadd_rn(s, __fadd_rn(p.x, p.y));
+        }
+        e2m1x8_to_half2x4(hi, x);
+#pragma unroll
+        for (int i = 0; i < 4; i++) {
+            float2 p = __half22float2(__hmul2(x[i], a8[4 + i]));
+            s = __fadd_rn(s, __fadd_rn(p.x, p.y));
+        }
+        return __fmaf_rn(sc, s, acc);
+    } else {
+        half2 s = __float2half2_rn(0.0f);
+        e2m1x8_to_half2x4(lo, x);
+#pragma unroll
+        for (int i = 0; i < 4; i++) s = __hfma2(x[i], a8[i], s);
+        e2m1x8_to_half2x4(hi, x);
+#pragma unroll
+        for (int i = 0; i < 4; i++) s = __hfma2(x[i], a8[4 + i], s);
+        return __fmaf_rn(sc, __low2float(s) + __high2float(s), acc);
+    }
+}
+// one 32-element slot group of one plane: q = the 16 B word, sc = the two scale bytes
+template <bool ACC32>
+__device__ __forceinline__ float rows_f16_slot(uint4 q, unsigned short sc, const half2* a16, float acc) {
+    acc = rows_f16_group16<ACC32>(q.x, q.y, a16, ue4m3_true_d((unsigned char)(sc & 0xFF)), acc);
+    acc = rows_f16_group16<ACC32>(q.z, q.w, a16 + 8, ue4m3_true_d((unsigned char)(sc >> 8)), acc);
+    return acc;
+}
+#endif
+
+#define MEMRA_F16LM_LOAD_ACT(dst, arow, nsb, g) \
+    _Pragma("unroll") for (int w_ = 0; w_ < 16; w_++) dst[w_] = arow[(size_t)w_ * (nsb) + (g)];
+
+template <bool ACC32>
+__device__ __forceinline__ void moe_gate_up_rows_f16_warp(
+        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
+        const half2* __restrict__ acth, float limit, float* __restrict__ act, int in_f, int n_ff,
+        int n_used, int n_pairs, long rb_g, long rb_u, int o, int pr, int lane) {
+#if MEMRA_HAS_E2M1_CVT
+    const int nsb = in_f >> 5;
+    const int tok = pr / n_used;
+    const unsigned char* grow = (const unsigned char*)ptrs[pr] + (long)o * rb_g;
+    const unsigned char* urow = (const unsigned char*)ptrs[n_pairs + pr] + (long)o * rb_u;
+    const unsigned short* gsc = (const unsigned short*)(grow + (size_t)nsb * 16);
+    const unsigned short* usc = (const unsigned short*)(urow + (size_t)nsb * 16);
+    const half2* arow = acth + (size_t)tok * nsb * 16;
+    float accg = 0.0f, accu = 0.0f;
+    // FOUR GROUPS IN FLIGHT per lane, every load issued before any math (the served `_ilp`
+    // pattern): the one-group loop measured FLAT against the served kernel on the pair
+    // (32.86 vs 33.16 us, rowsf16 2026-09-06) while the probe with hoisted loads ran 17 us.
+    int g = lane;
+    for (; g + 96 < nsb; g += 128) {
+        uint4 gq[4], uq[4];
+        unsigned short gs[4], us[4];
+        half2 a[4][16];
+#pragma unroll
+        for (int k = 0; k < 4; k++) {
+            const int gg = g + 32 * k;
+            gq[k] = *(const uint4*)(grow + (size_t)gg * 16);
+            uq[k] = *(const uint4*)(urow + (size_t)gg * 16);
+            gs[k] = gsc[gg];
+            us[k] = usc[gg];
+            MEMRA_F16LM_LOAD_ACT(a[k], arow, nsb, gg);
+        }
+#pragma unroll
+        for (int k = 0; k < 4; k++) {
+            accg = rows_f16_slot<ACC32>(gq[k], gs[k], a[k], accg);
+            accu = rows_f16_slot<ACC32>(uq[k], us[k], a[k], accu);
+        }
+    }
+    for (; g < nsb; g += 32) {
+        uint4 gq = *(const uint4*)(grow + (size_t)g * 16);
+        uint4 uq = *(const uint4*)(urow + (size_t)g * 16);
+        unsigned short gs = gsc[g], us = usc[g];
+        half2 a[16];
+        MEMRA_F16LM_LOAD_ACT(a, arow, nsb, g);
+        accg = rows_f16_slot<ACC32>(gq, gs, a, accg);
+        accu = rows_f16_slot<ACC32>(uq, us, a, accu);
+    }
+    accg = warp_reduce_sum(accg);
+    accu = warp_reduce_sum(accu);
+    if (lane == 0) {
+        float u = fmaxf(fminf(accu * scl[n_pairs + pr], limit), -limit);
+        float x = fminf(accg * scl[pr], limit);
+        act[(size_t)pr * n_ff + o] = (x / (1.0f + expf(-x))) * u;
+    }
+#else
+    __trap();
+#endif
+}
+extern "C" __global__ void moe_gate_up_preclamp8_f16_rows(
+        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
+        const half2* __restrict__ acth, float limit, float* __restrict__ act, int in_f, int n_ff,
+        int n_used, int n_pairs, long rb_g, long rb_u) {
+    int o = blockIdx.x, pr = blockIdx.y;
+    if (o >= n_ff || pr >= n_pairs) return;
+    moe_gate_up_rows_f16_warp<false>(ptrs, scl, acth, limit, act, in_f, n_ff, n_used, n_pairs, rb_g,
+                                     rb_u, o, pr, threadIdx.x);
+}
+extern "C" __global__ void moe_gate_up_preclamp8_f16_rows_acc32(
+        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
+        const half2* __restrict__ acth, float limit, float* __restrict__ act, int in_f, int n_ff,
+        int n_used, int n_pairs, long rb_g, long rb_u) {
+    int o = blockIdx.x, pr = blockIdx.y;
+    if (o >= n_ff || pr >= n_pairs) return;
+    moe_gate_up_rows_f16_warp<true>(ptrs, scl, acth, limit, act, in_f, n_ff, n_used, n_pairs, rb_g,
+                                    rb_u, o, pr, threadIdx.x);
+}
+template <bool ACC32>
+__device__ __forceinline__ void moe_down_rows_f16_warp(
+        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
+        const half2* __restrict__ acth2, float* __restrict__ dst, int in_f, int out_f, int n_used,
+        int n_pairs, long rb, int o, int tok, int lane) {
+#if MEMRA_HAS_E2M1_CVT
+    const int nsb = in_f >> 5;
+    float chain = 0.0f;
+    for (int j = 0; j < n_used; j++) {
+        int pr = tok * n_used + j;
+        const unsigned char* wrow = (const unsigned char*)ptrs[2 * n_pairs + pr] + (long)o * rb;
+        const unsigned short* wsc = (const unsigned short*)(wrow + (size_t)nsb * 16);
+        const half2* arow = acth2 + (size_t)pr * nsb * 16;
+        float acc = 0.0f;
+        int g = lane;
+        for (; g + 32 < nsb; g += 64) {  // down rows are nsb = 64 at the served shape: two deep
+            uint4 q0 = *(const uint4*)(wrow + (size_t)g * 16);
+            uint4 q1 = *(const uint4*)(wrow + (size_t)(g + 32) * 16);
+            unsigned short s0 = wsc[g], s1 = wsc[g + 32];
+            half2 a0[16], a1[16];
+            MEMRA_F16LM_LOAD_ACT(a0, arow, nsb, g);
+            MEMRA_F16LM_LOAD_ACT(a1, arow, nsb, g + 32);
+            acc = rows_f16_slot<ACC32>(q0, s0, a0, acc);
+            acc = rows_f16_slot<ACC32>(q1, s1, a1, acc);
+        }
+        for (; g < nsb; g += 32) {
+            uint4 q = *(const uint4*)(wrow + (size_t)g * 16);
+            unsigned short sc = wsc[g];
+            half2 a[16];
+            MEMRA_F16LM_LOAD_ACT(a, arow, nsb, g);
+            acc = rows_f16_slot<ACC32>(q, sc, a, acc);
+        }
+        acc = warp_reduce_sum(acc);
+        if (lane == 0) chain = __fmaf_rn(scl[2 * n_pairs + pr], acc, chain);
+    }
+    if (lane == 0) dst[(size_t)tok * out_f + o] = chain;
+#else
+    __trap();
+#endif
+}
+extern "C" __global__ void moe_down8_fma_f16_rows(
+        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
+        const half2* __restrict__ acth2, float* __restrict__ dst, int in_f, int out_f, int n_used,
+        int n_pairs, long rb) {
+    int o = blockIdx.x, tok = blockIdx.y;
+    if (o >= out_f) return;
+    moe_down_rows_f16_warp<false>(ptrs, scl, acth2, dst, in_f, out_f, n_used, n_pairs, rb, o, tok,
+                                  threadIdx.x);
+}
+extern "C" __global__ void moe_down8_fma_f16_rows_acc32(
+        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
+        const half2* __restrict__ acth2, float* __restrict__ dst, int in_f, int out_f, int n_used,
+        int n_pairs, long rb) {
+    int o = blockIdx.x, tok = blockIdx.y;
+    if (o >= out_f) return;
+    moe_down_rows_f16_warp<true>(ptrs, scl, acth2, dst, in_f, out_f, n_used, n_pairs, rb, o, tok,
+                                 threadIdx.x);
+}
+// f32 rows -> f16 lane-major rows: element pair (2k, 2k+1) of group g of row r lands at half2
+// index r*nsb*16 + k_in_group*nsb + g (k_in_group = (e % 32) / 2). One thread per half2.
+extern "C" __global__ void memra_f32_to_f16_lane_major(const float* __restrict__ x,
+                                                       half2* __restrict__ out, int rows, int nsb) {
+    long i = (long)blockIdx.x * blockDim.x + threadIdx.x;  // half2 index in row-major order
+    long per_row = (long)nsb * 16;
+    if (i >= (long)rows * per_row) return;
+    long r = i / per_row;
+    int k = (int)(i - r * per_row);  // half2 index within the row: g*16 + w
+    int g = k >> 4, w = k & 15;
+    // THE PAIRING FOLLOWS THE SLAB'S NIBBLE ORDER (llama.cpp / expert_dot_nvfp4_core_regs): in a
+    // 16-element scale group packed as 8 bytes, byte i carries element i in its LOW nibble and
+    // element i+8 in its HIGH nibble, and cvt.e2m1x2 yields (low, high). So half2 w of group g
+    // is (e[sb*16 + i], e[sb*16 + i + 8]) with sb = w / 8 (which 16-element half of the 32
+    // group) and i = w % 8; the kernel's hfma2 then pairs byte i's two halves with it.
+    int sb = w >> 3, ii = w & 7;
+    const float* src = x + r * (long)nsb * 32 + (long)g * 32 + (long)sb * 16 + ii;
+    out[r * per_row + (long)w * nsb + g] = __floats2half2_rn(src[0], src[8]);
+}
+
+
 // ---- DEDUP-SCHEDULE twins of the verify-rows MoE pair (lane/glm5-dedup, 2026-08-31) ----
 //
 // WHY: the struct-battery instrument measured **21.96% cumulative repeat fraction** across the
