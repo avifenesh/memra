@@ -116,6 +116,8 @@ jobs:
         run: tools/test_gate_integrity_r2.sh
       - name: Argmax-margin input and verdict controls
         run: python3 tools/test_argmax_margin_gate.py
+      - name: Sampled continuation instrument gate controls
+        run: python3 tools/test_sampled_instrument_gate.py
       - name: Push-range fixture (round 1)
         run: tools/test_push_range.sh
       - name: Gate-template teeth fixture (round 3)

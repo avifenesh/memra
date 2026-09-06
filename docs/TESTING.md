@@ -762,3 +762,31 @@ Timings, the deliberate-break catch demonstrations (diffs, consoles, per-probe r
 and the depth-determinism sweeps: [`research/fast-gate-20260802/`](../research/fast-gate-20260802/).
 The serve-path mode-switch exactness harness and its verdicts:
 [`research/spec-gate-20260806/`](../research/spec-gate-20260806/) (`RESULTS.md` §2, `exactness.py`).
+# Sampled evidence for argmax-instrument source publication
+
+For a branch whose only changed crate file is
+`crates/memra-engine/src/bin/argmax_margin_probe.rs`, the push hook supports
+`MEMRA_HARDWARE_GATE=sampled-instrument`. This is not a serving-runtime
+performance exemption: any other changed crate file is refused by this mode.
+It checks the committed and working probe bytes against an ancestor's tested
+source SHA, a pinned twelve-row numerical table (unchanged one-flip budget),
+and eight real vendor-default sampled continuation turns. The separate sampled
+runtime identity is retained and is not mislabelled as the probe's source.
+
+Supply an external receipt with `MEMRA_SAMPLED_RECEIPT` and its explicit
+`MEMRA_SAMPLED_RECEIPT_SHA256`. The schema and CPU refusal fixtures are in
+`tools/check_sampled_instrument_gate.py` and `tools/test_sampled_instrument_gate.py`.
+The runtime source/binary must match the pinned input manifest and boot log;
+every response fingerprint must match that captured runtime. Each turn must
+bind its request and generated text, continue the exact prior
+assistant history, show speculation and prefix reuse, and have valid timing,
+no errors and no loops. Sampling overrides (including temperature zero),
+missing turns, changed probe code, runtime changes and tampered evidence fail.
+Raw workloads remain outside this public repository. No performance ledger
+mtime is rewritten and no skip variable is accepted for this route. Existing
+flag, release and public-boundary push checks still run.
+
+This route establishes publication evidence for the test instrument only;
+it makes no comparative speed, checkpoint-family or deployment claim. Greedy
+remains solely a numerical correctness instrument. Runtime performance changes
+need their own measured serving-shaped regression evidence.
