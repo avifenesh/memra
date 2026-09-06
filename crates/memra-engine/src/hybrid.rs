@@ -2959,6 +2959,11 @@ pub struct HybridLayer {
     /// serial residual, and the two states are never mixed: `HybridModel::hyper` decides which
     /// residual program a forward path runs, and the loader refuses a trunk that disagrees.
     pub hyper: Option<crate::hyper::HyperLayer>,
+    /// The SYMMETRIC TP walk's per-peer copies of this layer's glue: the two norms and the two
+    /// hyper-connection sites (lane/tp-symmetric-20260906). `tp_glue[i]` lives on peer rank
+    /// `i + 1`. Empty on a plain load and on the root-orchestrated TP walk, which fans the root's
+    /// activations out to peers every layer instead of letting each rank run its own glue.
+    pub tp_glue: Vec<crate::glm5_tp::Glm5TpGlue>,
 }
 
 /// Gemma-4 per-layer extras (R8 wiring, HANDOVER "R8 VERIFIED WIRING"): the parallel shared
@@ -4711,6 +4716,7 @@ impl HybridModel {
                     )?),
                     None => None,
                 },
+                tp_glue: Vec::new(),
             });
             // glm5 TP-2 arming: shard the just-loaded layer in place. Transient VRAM is one
             // layer's full weights (the shards replace them before the next layer loads).
@@ -4733,6 +4739,17 @@ impl HybridModel {
                         .into());
                     }
                 };
+                if crate::glm5_tp::glm5_tp_symmetric_on()
+                    && let Some(hyper) = layer.hyper.as_ref()
+                {
+                    layer.tp_glue = crate::glm5_tp::replicate_layer_glue(
+                        e,
+                        &tp_plan.rt,
+                        &layer.attn_norm,
+                        &layer.post_attn_norm,
+                        hyper,
+                    )?;
+                }
                 if let Ffn::Moe(m) = &mut layer.ffn {
                     // The measured placement row for this layer, when MEMRA_EP_MAP (or
                     // its glm5 alias) armed one (validated at preflight: exact layer cover, so a

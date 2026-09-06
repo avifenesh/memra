@@ -1761,6 +1761,97 @@ pub(crate) fn arm_moe_ep(
 }
 
 // ------------------------------------------------------------------------------------------
+// Symmetric walk glue (lane/tp-symmetric-20260906)
+// ------------------------------------------------------------------------------------------
+
+/// A peer rank's copy of one layer's GLUE: the two norms and the two hyper-connection sites.
+///
+/// WHY. The TP walk today is root-orchestrated: root runs the hc chain and the norms, fans the
+/// activation out to every peer, the peers run their shard, root gathers. That is three
+/// pure-movement crossings per layer on top of the two reductions, and at 20-26 us a crossing on
+/// this pair it is the join count, not the transport, that keeps TP-2 3x behind PP-2. A SYMMETRIC
+/// walk lets every rank hold the residual stream and run the glue itself, so a layer costs two
+/// one-shot reductions and nothing else. The price is this struct: ~1.4 GB of replicated glue
+/// across the trunk (hc sites are 1.5 MB each, norms are 16 KB), which is nothing against the
+/// 94 GB of expert shards a rank already holds.
+///
+/// Built by [`replicate_layer_glue`] at TP arm time, one per peer, stored on
+/// `HybridLayer::tp_glue`. A byte-exact copy: every tensor goes through the same host bounce
+/// `shard_rows` uses, over its full range.
+pub struct Glm5TpGlue {
+    pub attn_norm: GpuTensor,
+    pub post_attn_norm: GpuTensor,
+    pub hyper: crate::hyper::HyperLayer,
+}
+
+/// Copy a whole tensor onto `dst`, byte for byte. `shard_rows` over the full outer range is
+/// exactly that copy, and reusing it means the glue takes the same refusals the shards take
+/// (mirror planes refuse by name rather than being silently dropped).
+fn replicate_tensor(
+    src_engine: &Engine,
+    dst: &Engine,
+    t: &GpuTensor,
+) -> Result<GpuTensor, Box<dyn std::error::Error>> {
+    let outer = match t {
+        GpuTensor::Float { ne, .. }
+        | GpuTensor::FloatBf16 { ne, .. }
+        | GpuTensor::Quant { ne, .. } => outer_rows(ne).0,
+    };
+    shard_rows(src_engine, dst, t, 0..outer)
+}
+
+fn replicate_f32(
+    src_engine: &Engine,
+    dst: &Engine,
+    x: &CudaSlice<f32>,
+) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+    let host = src_engine.dtoh(x)?;
+    dst.htod(&host)
+}
+
+fn replicate_site(
+    src_engine: &Engine,
+    dst: &Engine,
+    s: &crate::hyper::HyperSite,
+) -> Result<crate::hyper::HyperSite, Box<dyn std::error::Error>> {
+    Ok(crate::hyper::HyperSite {
+        fn_w: replicate_f32(src_engine, dst, &s.fn_w)?,
+        base: replicate_f32(src_engine, dst, &s.base)?,
+        scale: replicate_f32(src_engine, dst, &s.scale)?,
+    })
+}
+
+/// Build every peer's copy of one layer's glue. Load-time only.
+pub(crate) fn replicate_layer_glue(
+    e: &Engine,
+    rt: &Arc<Glm5TpRt>,
+    attn_norm: &GpuTensor,
+    post_attn_norm: &GpuTensor,
+    hyper: &crate::hyper::HyperLayer,
+) -> Result<Vec<Glm5TpGlue>, Box<dyn std::error::Error>> {
+    let mut out = Vec::with_capacity(rt.peers.len());
+    for peer in &rt.peers {
+        out.push(Glm5TpGlue {
+            attn_norm: replicate_tensor(e, peer, attn_norm)?,
+            post_attn_norm: replicate_tensor(e, peer, post_attn_norm)?,
+            hyper: crate::hyper::HyperLayer {
+                attn: replicate_site(e, peer, &hyper.attn)?,
+                mlp: replicate_site(e, peer, &hyper.mlp)?,
+            },
+        });
+    }
+    Ok(out)
+}
+
+/// `MEMRA_GLM5_TP_SYMMETRIC=1` (lane/tp-symmetric-20260906, default OFF, decide-by 2026-09-20):
+/// replicate every TP layer's glue to the peers at arm time so a symmetric walk can run it there.
+/// This flag arms the LOADER half only; the walk half lands behind the same name once its gate
+/// is green, and until then the replicated glue is resident and unread.
+pub fn glm5_tp_symmetric_on() -> bool {
+    std::env::var("MEMRA_GLM5_TP_SYMMETRIC").as_deref() == Ok("1")
+}
+
+// ------------------------------------------------------------------------------------------
 // Expert TENSOR-parallelism (lane/tp-expert-split-20260906)
 // ------------------------------------------------------------------------------------------
 
