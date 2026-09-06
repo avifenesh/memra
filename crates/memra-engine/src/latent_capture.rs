@@ -307,6 +307,7 @@ pub(crate) fn capture(
 
 struct Inputs {
     shape: Shape,
+    device: usize,
     scale: f32,
     q: Vec<f32>,
     wk: Vec<f32>,
@@ -361,7 +362,7 @@ fn read(path: &Path) -> Res<Inputs> {
     if !scale.is_finite() || scale <= 0. || fields.get("ordinal") != Some(&"11") {
         return Err("invalid capture selection/scale".into());
     }
-    let _: usize = fields
+    let device: usize = fields
         .get("device")
         .ok_or("missing captured device")?
         .parse()?;
@@ -402,6 +403,7 @@ fn read(path: &Path) -> Res<Inputs> {
     s.indices(&idx)?;
     Ok(Inputs {
         shape: s,
+        device,
         scale,
         q,
         wk,
@@ -441,6 +443,13 @@ pub fn check(input: &Path, result: &Path, device: usize) -> Res<()> {
         return Err("unset capture knob for checker".into());
     }
     let data = read(input)?;
+    if device != data.device {
+        return Err(format!(
+            "checker device {device} differs from captured ordinal {}",
+            data.device
+        )
+        .into());
+    }
     let dir = Directory::open(result, true)?;
     dir.text("input-manifest.txt", &data.manifest)?;
     let s = data.shape;
@@ -552,16 +561,50 @@ pub fn check(input: &Path, result: &Path, device: usize) -> Res<()> {
     passed &= compare("native_vs_CPU_dequant_TC", &cpu_tc, &native_tc, &mut report)?;
     drop(cpu_tc);
     drop(native_tc);
-    // Identical f32 absorbed queries and indices through the shared scalar reduction body.
-    let mut q_lat = e.uninit(s.t * s.heads * s.rank)?;
-    e.mla_absorb_q(&q, &wk, &mut q_lat, s.t, s.heads, s.dn, s.rank)?;
+    // TC replay above retains the full shape. Scalar readers compare at most
+    // three original query/index rows, sharing one absorbed-query operand.
+    let mut query_ids = vec![0, s.t / 2, s.t - 1];
+    query_ids.dedup();
+    let direct_t = query_ids.len();
+    report.push_str(&format!(
+        "direct_original_t {}\ndirect_query_ids {:?}\n",
+        s.t, query_ids
+    ));
+    let q_width = s.heads * s.dn;
+    let mut queries = Vec::with_capacity(direct_t * q_width);
+    let mut indices = Vec::with_capacity(direct_t * s.slots);
+    for &i in &query_ids {
+        queries.extend_from_slice(&data.q[i * q_width..(i + 1) * q_width]);
+        indices.extend_from_slice(&data.idx[i * s.slots..(i + 1) * s.slots]);
+    }
+    let direct_q = e.htod(&queries)?;
+    let direct_idx = e.htod_i32(&indices)?;
+    let mut q_lat = e.uninit(direct_t * s.heads * s.rank)?;
+    e.mla_absorb_q(&direct_q, &wk, &mut q_lat, direct_t, s.heads, s.dn, s.rank)?;
     let native = quant.attend(
-        &e, &q_lat, &idx, s.heads, s.t, s.slots, s.visible, data.scale,
+        &e,
+        &q_lat,
+        &direct_idx,
+        s.heads,
+        direct_t,
+        s.slots,
+        s.visible,
+        data.scale,
     )?;
     quant.check(&e)?;
-    let mut cpu = e.uninit(s.t * s.heads * s.rank)?;
+    let mut cpu = e.uninit(direct_t * s.heads * s.rank)?;
     e.mla_attn_gathered(
-        &q_lat, &empty, &deq, &idx, &mut cpu, s.heads, s.rank, 0, s.t, s.slots, data.scale,
+        &q_lat,
+        &empty,
+        &deq,
+        &direct_idx,
+        &mut cpu,
+        s.heads,
+        s.rank,
+        0,
+        direct_t,
+        s.slots,
+        data.scale,
     )?;
     passed &= compare(
         "native_direct_vs_CPU_dequant_reader",
@@ -583,6 +626,140 @@ pub fn check(input: &Path, result: &Path, device: usize) -> Res<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    struct Scratch(PathBuf);
+    impl Scratch {
+        fn new() -> Self {
+            use std::os::unix::fs::DirBuilderExt;
+            static NEXT: AtomicUsize = AtomicUsize::new(0);
+            let base = std::env::temp_dir().canonicalize().unwrap();
+            loop {
+                let path = base.join(format!(
+                    "latent-capture-cpu-{}-{}",
+                    std::process::id(),
+                    NEXT.fetch_add(1, Ordering::Relaxed)
+                ));
+                match std::fs::DirBuilder::new().mode(0o700).create(&path) {
+                    Ok(()) => return Self(path),
+                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                    Err(e) => panic!("scratch directory: {e}"),
+                }
+            }
+        }
+    }
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+
+    #[test]
+    fn private_exclusive_directory_and_members() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = Scratch::new();
+        let path = root.0.join("capture");
+        let dir = Directory::open(&path, true).unwrap();
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        dir.text("receipt", "original").unwrap();
+        assert_eq!(
+            std::fs::metadata(path.join("receipt"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+        assert!(Directory::open(&path, true).is_err());
+        assert!(dir.text("receipt", "replacement").is_err());
+        assert_eq!(
+            std::fs::read_to_string(path.join("receipt")).unwrap(),
+            "original"
+        );
+        for name in ["", ".", "..", "../escape", "nested/file"] {
+            assert!(dir.file(name, true).is_err());
+        }
+        assert!(Directory::open(Path::new("relative"), true).is_err());
+        assert!(Directory::open(Path::new("/"), true).is_err());
+        assert!(Directory::open(&root.0.join("missing/leaf"), true).is_err());
+        assert!(Directory::open(&path.join("../escape"), true).is_err());
+    }
+
+    #[test]
+    fn rejects_symlink_parents_leaves_and_members() {
+        use std::os::unix::fs::symlink;
+        let root = Scratch::new();
+        let real = root.0.join("real");
+        let dir = Directory::open(&real, true).unwrap();
+        dir.text("data", "original").unwrap();
+        let alias = root.0.join("alias");
+        symlink(&real, &alias).unwrap();
+        assert!(Directory::open(&alias, false).is_err());
+        assert!(Directory::open(&alias.join("new"), true).is_err());
+        symlink(real.join("data"), real.join("link")).unwrap();
+        assert!(dir.file("link", false).is_err());
+        assert!(dir.file("link", true).is_err());
+        symlink(real.join("missing"), real.join("dangling")).unwrap();
+        assert!(dir.file("dangling", false).is_err());
+        assert!(dir.file("dangling", true).is_err());
+        std::fs::create_dir(real.join("subdir")).unwrap();
+        assert!(dir.file("subdir", false).is_err());
+    }
+
+    #[test]
+    fn words_require_exact_count_size_and_hash() {
+        let root = Scratch::new();
+        let dir = Directory::open(&root.0.join("capture"), true).unwrap();
+        let words = [0, 1, u32::MAX, 1f32.to_bits()];
+        let desc = dir.words("plane", words.into_iter(), words.len()).unwrap();
+        let hash = desc.split_whitespace().last().unwrap();
+        assert_eq!(dir.read_words("plane", words.len(), hash).unwrap(), words);
+        assert!(dir.read_words("plane", words.len() - 1, hash).is_err());
+        assert!(
+            dir.read_words("plane", words.len(), &"0".repeat(64))
+                .is_err()
+        );
+        assert!(dir.read_words("plane", usize::MAX, hash).is_err());
+        assert!(dir.words("partial", [0].into_iter(), 2).is_err());
+        assert!(dir.file("manifest.txt", false).is_err());
+    }
+
+    #[test]
+    fn rejects_manifest_identity_before_any_plane_read() {
+        let root = Scratch::new();
+        for (i, (device, binary)) in [
+            ("bad", "a".repeat(64)),
+            ("0", "bad".into()),
+            ("0", "g".repeat(64)),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let path = root.0.join(format!("capture-{i}"));
+            let dir = Directory::open(&path, true).unwrap();
+            let mut text = format!(
+                "latent-capture-v1\nshape 2 {MIN_VISIBLE} 64 192 128 512 2\nscale_bits {}\nordinal 11\ndevice {device}\nbinary_sha256 {binary}\n",
+                1f32.to_bits()
+            );
+            for name in NAMES {
+                text.push_str(&format!("{name} 0 {}\n", "0".repeat(64)));
+            }
+            dir.text("manifest.txt", &text).unwrap();
+            let error = read(&path).err().expect("bad identity must fail");
+            assert!(!error.to_string().contains("plane descriptor"), "{error}");
+        }
+    }
+
+    #[test]
+    fn comparison_requires_finite_operands_and_preserves_signed_zero() {
+        let mut report = String::new();
+        assert!(compare("same", &[1.], &[1.], &mut report).unwrap());
+        assert!(!compare("zero", &[0.], &[-0.], &mut report).unwrap());
+        assert!(compare("nan", &[f32::NAN], &[0.], &mut report).is_err());
+        assert!(compare("size", &[1.], &[], &mut report).is_err());
+    }
+
     #[test]
     fn bounds_and_causality() {
         let s = Shape {
