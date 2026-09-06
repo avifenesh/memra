@@ -68,13 +68,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ffn_gate,
                     ffn_up,
                     ffn_down,
+                    ffn_down_pqs,
                 } => {
                     let n_ff = ffn_gate.out_features();
                     let gate = e.matmul(ffn_gate, &z, t)?;
                     let up = e.matmul(ffn_up, &z, t)?;
                     let mut act = e.zeros(t * n_ff)?;
                     HybridModel::ffn_act(&e, cfg, &gate, &up, &mut act, t * n_ff)?;
-                    e.matmul(ffn_down, &act, t)?
+                    // AWQ (memra#253): a probe that reproduces the layer must reproduce its
+                    // arithmetic, scale included, or it measures a different program.
+                    let __pqs =
+                        e.pre_quant_scaled(&act, ffn_down_pqs.as_ref(), ffn_down.in_features(), t)?;
+                    e.matmul(ffn_down, __pqs.as_ref().unwrap_or(&act), t)?
                 }
                 Ffn::Moe(m) => model.moe_ffn_il(&e, m, &z, t, il as u16)?,
             };

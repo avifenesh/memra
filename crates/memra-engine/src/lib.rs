@@ -10548,6 +10548,70 @@ impl Engine {
 
     /// y[r, :] *= s[r] in place (per-CSR-row macro scale for the grouped prime's gate/up —
     /// silu is nonlinear, so per-expert NVFP4 macros must land before it).
+    /// The layer input an AWQ-calibrated projection must see: `Some(x * s)` when the weight
+    /// carries a `pre_quant_scale`, `None` when it does not (and then the caller uses `x`
+    /// unchanged, byte-for-byte the pre-AWQ path). Callers pair it with:
+    ///
+    /// ```ignore
+    /// let scaled = e.pre_quant_scaled(&x, pqs.as_ref(), in_f, m)?;
+    /// let xin = scaled.as_ref().unwrap_or(&x);
+    /// ```
+    pub fn pre_quant_scaled(
+        &self,
+        x: &CudaSlice<f32>,
+        pqs: Option<&crate::model::GpuTensor>,
+        in_f: usize,
+        m: usize,
+    ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        let Some(pqs) = pqs else {
+            return Ok(None);
+        };
+        let s = pqs.float_data();
+        if s.len() < in_f {
+            return Err(format!(
+                "pre_quant_scale has {} entries for a projection with {in_f} input features",
+                s.len()
+            )
+            .into());
+        }
+        let n = in_f * m;
+        let mut scaled = self.uninit(n)?;
+        self.gpu
+            .stream()
+            .memcpy_dtod(&x.slice(0..n), &mut scaled.slice_mut(0..n))?;
+        self.apply_pre_quant_scale(&mut scaled, s, in_f, m)?;
+        Ok(Some(scaled))
+    }
+
+    /// Apply an AWQ `pre_quant_scale` to a layer input: `x[:, c] *= s[c]` (memra#253).
+    ///
+    /// AWQ picks a per-INPUT-CHANNEL scale `s`, stores `W / s`, and requires the runtime to
+    /// feed the layer `x * s` — the product is unchanged, but the quantization error moves off
+    /// the channels that carry the signal. Skipping this call does not fail: it computes a
+    /// DIFFERENT function, quietly, so every path that loads a pre_quant_scale must apply it.
+    pub fn apply_pre_quant_scale(
+        &self,
+        x: &mut CudaSlice<f32>,
+        s: &CudaSlice<f32>,
+        ncols: usize,
+        nrows: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        debug_assert!(
+            s.len() >= ncols,
+            "pre_quant_scale shorter than the input row"
+        );
+        let f = self.func("scale_cols_f32");
+        let cfg = LaunchConfig::for_num_elems((ncols * nrows) as u32);
+        let (nc, nr) = (ncols as i32, nrows as i32);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(&mut *x).arg(s).arg(&nc).arg(&nr);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(())
+    }
+
     pub fn scale_rows(
         &self,
         y: &mut CudaSlice<f32>,

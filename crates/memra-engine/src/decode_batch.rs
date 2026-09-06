@@ -734,6 +734,9 @@ impl HybridModel {
                     ffn_gate,
                     ffn_up,
                     ffn_down,
+                    // memra#253: this site inspects or moves weights and runs no GEMM on an
+                    // activation, so the AWQ activation-side scale plays no part in it.
+                    ffn_down_pqs: _,
                 } => {
                     chk!(ffn_gate, format!("L{li}.ffn_gate"))
                         && chk!(ffn_up, format!("L{li}.ffn_up"))
@@ -3295,7 +3298,16 @@ impl HybridModel {
                         }
                         None => attn,
                     };
-                    let o = e.matmul(&fa.wo, &attn_g, b_n)?;
+                    let o = {
+                        // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+                        let __wpqs = e.pre_quant_scaled(
+                            &attn_g,
+                            fa.wo_pqs.as_ref(),
+                            fa.wo.in_features(),
+                            b_n,
+                        )?;
+                        e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn_g), b_n)
+                    }?;
                     ph_mark(e, 5, ph_last)?;
                     o
                 }
@@ -3432,6 +3444,7 @@ impl HybridModel {
                     ffn_gate,
                     ffn_up,
                     ffn_down,
+                    ffn_down_pqs,
                 } => {
                     // v1 covers the SiLU family; M3's swigluoai clamp rides a scaled epilogue
                     // (m=1 fused tier) — batched M3 lands with the batched-fusion pass.
@@ -3459,6 +3472,17 @@ impl HybridModel {
                     let u = e.matmul_pre(ffn_up, &zq, &zd, &z, b_n)?;
                     let mut act = e.uninit(b_n * n_ff)?;
                     e.silu_mul(&g, &u, &mut act, b_n * n_ff)?;
+                    // AWQ (memra#253): the f32 activation exists here, so the
+                    // per-input-channel scale is applied BEFORE the q8 quantize — both the
+                    // quantized operand and the f32 fallback then carry it.
+                    if let Some(pqs) = ffn_down_pqs.as_ref() {
+                        e.apply_pre_quant_scale(
+                            &mut act,
+                            pqs.float_data(),
+                            ffn_down.in_features(),
+                            b_n,
+                        )?;
+                    }
                     let (aq, ad) = e.quantize_q8_1(&act, b_n, n_ff)?;
                     e.matmul_pre(ffn_down, &aq, &ad, &act, b_n)?
                 }
@@ -4121,7 +4145,12 @@ impl HybridModel {
                 // ---- head-wise gate (one sigmoid per (token, head), pre-wo) + o-proj at m=B ----
                 let mut ag = e.uninit(b_n * q_dim)?;
                 e.attn_head_gate(&attn, &gt, &mut ag, None, hd, nh, b_n)?;
-                e.matmul(&fa.wo, &ag, b_n)?
+                {
+                    // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+                    let __wpqs =
+                        e.pre_quant_scaled(&ag, fa.wo_pqs.as_ref(), fa.wo.in_features(), b_n)?;
+                    e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&ag), b_n)
+                }?
             };
             ph_mark(e, 5, ph_last)?;
 
@@ -4135,6 +4164,7 @@ impl HybridModel {
                     ffn_gate,
                     ffn_up,
                     ffn_down,
+                    ffn_down_pqs,
                 } => {
                     // A dense step35 FFN's clamp is the SHEXP array (upstream's one
                     // build_ffn serves dense + shared expert, llama-graph.cpp:1751);
@@ -4157,6 +4187,17 @@ impl HybridModel {
                         &mut act,
                         b_n * n_ff,
                     )?;
+                    // AWQ (memra#253): the f32 activation exists here, so the
+                    // per-input-channel scale is applied BEFORE the q8 quantize — both the
+                    // quantized operand and the f32 fallback then carry it.
+                    if let Some(pqs) = ffn_down_pqs.as_ref() {
+                        e.apply_pre_quant_scale(
+                            &mut act,
+                            pqs.float_data(),
+                            ffn_down.in_features(),
+                            b_n,
+                        )?;
+                    }
                     let (aq, ad) = e.quantize_q8_1(&act, b_n, n_ff)?;
                     e.matmul_pre(ffn_down, &aq, &ad, &act, b_n)?
                 }
@@ -4457,7 +4498,11 @@ impl HybridModel {
                 swa && crate::Engine::wkv_on(),
             )?;
         }
-        e.matmul(&fa.wo, &attn, b_n)
+        {
+            // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+            let __wpqs = e.pre_quant_scaled(&attn, fa.wo_pqs.as_ref(), fa.wo.in_features(), b_n)?;
+            e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn), b_n)
+        }
     }
 
     /// Standalone MoESD target forward. This entrypoint is not used by serving: it widens the

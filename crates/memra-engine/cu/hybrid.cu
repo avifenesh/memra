@@ -2619,6 +2619,22 @@ gdn_k2_wgmma_vl(gdnvl_t v, gdnwvl_t wq, int H, int C, int hk) {
 
 // ======== STEP TP2 GEMM PRIME (2026-08-27, TTFT lane) ========
 
+// scale_cols_f32: y[:, c] *= s[c] in place — the AWQ pre_quant_scale application (memra#253).
+// AWQ stores `W / s` and expects the layer to be fed `x * s`, where s runs along the INPUT
+// channel axis. That is this kernel: a per-COLUMN scale, not scale_rows_f32's per-row scalar.
+// Grid: for_num_elems(nrows*ncols).
+extern "C" __global__ void scale_cols_f32(
+    float* __restrict__ y,        // [nrows, ncols]
+    const float* __restrict__ s,  // [ncols]
+    int ncols, int nrows)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = nrows * ncols;
+    if (i < total) {
+        y[i] *= s[i % ncols];
+    }
+}
+
 // scale_rows_f32: y[r, :] *= s[r] in place. The grouped-prefill gate/up outputs need their
 // per-expert NVFP4 macro-scale applied BEFORE silu (silu is nonlinear, so the macro cannot fold
 // into a later stage); s is a per-CSR-row scalar vector built host-side from the selections.

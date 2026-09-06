@@ -193,8 +193,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ffn_gate,
                 ffn_up,
                 ffn_down,
+                ffn_down_pqs,
             } = &model.layers[il].ffn
             {
+                // AWQ (memra#253): the fused arm feeds ffn_down an activation the silu epilogue
+                // already quantized, so there is no seam to apply a per-input-channel scale on
+                // that side. Comparing a scaled decode-exact chain against an unscaled fused one
+                // would report a divergence this probe did not measure, so say so and skip.
+                if ffn_down_pqs.is_some() {
+                    println!(
+                        "  layer {il}: ffn_down carries pre_quant_scale, no seam in the fused arm — skipping"
+                    );
+                    continue;
+                }
                 let n_ff = ffn_gate.out_features();
                 let pnorm = model.layers[il].post_attn_norm.float_data();
                 // eager fused chain
@@ -328,6 +339,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ffn_gate,
                     ffn_up,
                     ffn_down,
+                    // memra#253: this site inspects or moves weights and runs no GEMM on an
+                    // activation, so the AWQ activation-side scale plays no part in it.
+                    ffn_down_pqs: _,
                 } => vec![
                     ("fg", e.uses_q8_1_fast(ffn_gate)),
                     ("fu", e.uses_q8_1_fast(ffn_up)),

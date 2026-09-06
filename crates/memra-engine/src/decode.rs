@@ -247,6 +247,8 @@ impl HybridModel {
         ffn_gate: &crate::model::GpuTensor,
         ffn_up: &crate::model::GpuTensor,
         ffn_down: &crate::model::GpuTensor,
+        // AWQ per-input-channel scale for `ffn_down` (memra#253); None outside AWQ artifacts.
+        ffn_down_pqs: Option<&crate::model::GpuTensor>,
         z: &CudaSlice<f32>,
         n_embd: usize,
         n_ff: usize,
@@ -262,7 +264,10 @@ impl HybridModel {
             let up = e.matmul_pre(ffn_up, &zq, &zd, z, 1)?;
             let mut act = e.uninit(n_ff)?;
             Self::ffn_act_lim(e, &self.cfg, &gate, &up, 1.0, 1.0, lim, &mut act, n_ff)?;
-            return e.matmul(ffn_down, &act, 1);
+            // AWQ (memra#253): the down projection's input carries the
+            // per-input-channel scale when the artifact was calibrated.
+            let __pqs = e.pre_quant_scaled(&act, ffn_down_pqs, ffn_down.in_features(), 1)?;
+            return e.matmul(ffn_down, __pqs.as_ref().unwrap_or(&act), 1);
         }
         if e.uses_q8_1_fast(ffn_gate) && e.uses_q8_1_fast(ffn_up) {
             let (zq, zd) = e.quantize_q8_1(z, 1, n_embd)?;
@@ -278,7 +283,12 @@ impl HybridModel {
                 (Some((gate, gs)), Some((up, us))) => {
                     // RANK2 fold: if ffn_down is q8_1-fast, emit act PRE-QUANTIZED and skip the
                     // standalone quantize_q8_1 before ffn_down.
-                    if e.uses_q8_1_fast(ffn_down) {
+                    // AWQ (memra#253): the RANK2 arm emits the down projection's input ALREADY
+                    // quantized, so a per-input-channel scale has nowhere to land. `uses_q8_1_fast`
+                    // is true for essentially every quantized checkpoint, so REFUSING here would
+                    // abort every AWQ artifact; fall through to the f32 path below instead, which
+                    // materializes the activation the scale multiplies.
+                    if e.uses_q8_1_fast(ffn_down) && ffn_down_pqs.is_none() {
                         let (aq, ad) = e.silu_mul_scaled_q8_1(&gate, &up, gs, us, n_ff)?;
                         return e.matmul_pre(
                             ffn_down, &aq, &ad, /*x_fallback unused on fast path*/ &gate, 1,
@@ -286,7 +296,11 @@ impl HybridModel {
                     }
                     let mut act = e.uninit(n_ff)?;
                     e.silu_mul_scaled(&gate, &up, gs, us, &mut act, n_ff)?;
-                    return e.matmul(ffn_down, &act, 1);
+                    // AWQ (memra#253): the down projection's input carries the
+                    // per-input-channel scale when the artifact was calibrated.
+                    let __pqs =
+                        e.pre_quant_scaled(&act, ffn_down_pqs, ffn_down.in_features(), 1)?;
+                    return e.matmul(ffn_down, __pqs.as_ref().unwrap_or(&act), 1);
                 }
                 _ => {
                     // one (or both) not on the separable-scale fast path: scaled matmul + plain silu_mul.
@@ -294,7 +308,11 @@ impl HybridModel {
                     let up = e.matmul_pre(ffn_up, &zq, &zd, z, 1)?;
                     let mut act = e.uninit(n_ff)?;
                     Self::ffn_act(e, &self.cfg, &gate, &up, &mut act, n_ff)?;
-                    return e.matmul(ffn_down, &act, 1);
+                    // AWQ (memra#253): the down projection's input carries the
+                    // per-input-channel scale when the artifact was calibrated.
+                    let __pqs =
+                        e.pre_quant_scaled(&act, ffn_down_pqs, ffn_down.in_features(), 1)?;
+                    return e.matmul(ffn_down, __pqs.as_ref().unwrap_or(&act), 1);
                 }
             }
         }
@@ -302,7 +320,10 @@ impl HybridModel {
         let up = e.matmul(ffn_up, z, 1)?;
         let mut act = e.uninit(n_ff)?;
         Self::ffn_act(e, &self.cfg, &gate, &up, &mut act, n_ff)?;
-        e.matmul(ffn_down, &act, 1)
+        // AWQ (memra#253): the down projection's input carries the
+        // per-input-channel scale when the artifact was calibrated.
+        let __pqs = e.pre_quant_scaled(&act, ffn_down_pqs, ffn_down.in_features(), 1)?;
+        e.matmul(ffn_down, __pqs.as_ref().unwrap_or(&act), 1)
     }
 
     /// Like `ffn_swiglu_decode` but the input is ALREADY q8_1-quantized `(zq, zd)` — used by the
@@ -548,6 +569,7 @@ impl HybridModel {
                 ffn_gate,
                 ffn_up,
                 ffn_down,
+                ffn_down_pqs,
             } => {
                 let n_ff = ffn_gate.out_features();
                 // cfg.m3: the fused-pre chain's silu_mul_scaled* epilogues are plain SiLU —
@@ -560,7 +582,13 @@ impl HybridModel {
                     && self.cfg.m3.is_none()
                     && lim.is_none()
                     && e.uses_q8_1_fast(ffn_gate)
-                    && e.uses_q8_1_fast(ffn_up);
+                    && e.uses_q8_1_fast(ffn_up)
+                    // AWQ (memra#253): the fused epilogue writes the down projection's input
+                    // straight to int8, leaving nowhere to apply a per-input-channel scale.
+                    // A calibrated artifact takes the unfused route, which materializes the
+                    // f32 activation the scale multiplies. Costs speed on AWQ artifacts only;
+                    // every other checkpoint keeps the fused path byte-for-byte.
+                    && ffn_down_pqs.is_none();
                 if fuse {
                     // M2 safety: this q8 arm predates the deferred join and is never taken
                     // in the step37 config — refuse loudly rather than read unwritten mixed.
@@ -582,8 +610,17 @@ impl HybridModel {
                     } else {
                         e.add_rms_norm(x, mixed, pnorm, &mut x1, &mut z, n_embd, 1, eps)?;
                     }
-                    let ffn_out = self
-                        .ffn_swiglu_decode(e, ffn_gate, ffn_up, ffn_down, &z, n_embd, n_ff, lim)?;
+                    let ffn_out = self.ffn_swiglu_decode(
+                        e,
+                        ffn_gate,
+                        ffn_up,
+                        ffn_down,
+                        ffn_down_pqs.as_ref(),
+                        &z,
+                        n_embd,
+                        n_ff,
+                        lim,
+                    )?;
                     Ok((x1, ffn_out))
                 }
             }
@@ -2792,7 +2829,12 @@ impl HybridModel {
         };
         match self.full_attn_tp_o(e, fa, &attn_g, 1)? {
             Some(output) => Ok(output),
-            None => Ok(e.matmul(&fa.wo, &attn_g, 1)?),
+            None => Ok({
+                // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+                let __wpqs =
+                    e.pre_quant_scaled(&attn_g, fa.wo_pqs.as_ref(), fa.wo.in_features(), 1)?;
+                e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn_g), 1)
+            }?),
         }
     }
 
@@ -3614,7 +3656,11 @@ impl HybridModel {
             }
             None => attn,
         };
-        e.matmul(&fa.wo, &attn_g, 1)
+        {
+            // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+            let __wpqs = e.pre_quant_scaled(&attn_g, fa.wo_pqs.as_ref(), fa.wo.in_features(), 1)?;
+            e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn_g), 1)
+        }
     }
 
     /// Linear-attention decode: conv with ring-buffer state, GDN scan carrying SSM state.

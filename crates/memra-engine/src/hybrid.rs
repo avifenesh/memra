@@ -394,13 +394,8 @@ fn load_mixer_kind(
                     None => load_t(e, src, &p("attn_k.weight"))?,
                 },
                 wo: load_t(e, src, &p("attn_output.weight"))?,
-                // Per-head QK RMSNorm is a FAMILY property, not a universal one: the plan's
-                // `qk_norm` presence is the contract (qwen3.5/gemma4/step35 Required, dense
-                // llama/mistral Absent). Loading it unconditionally made every dense
-                // llama checkpoint die at `missing tensor blk.0.attn_q_norm.weight`, and
-                // substituting an all-ones weight would NOT be a no-op — RMSNorm still
-                // normalizes the vector — so absent has to stay absent all the way into the
-                // forward.
+                // AWQ artifacts only (memra#253); absent everywhere else.
+                wo_pqs: load_opt(e, src, &p("attn_output.pre_quant_scale"))?,
                 q_norm: match full.qk_norm {
                     TensorPresence::Absent => None,
                     TensorPresence::Optional => load_opt(e, src, &p("attn_q_norm.weight"))?,
@@ -477,6 +472,8 @@ pub(crate) fn load_ffn(
             ffn_gate: GpuTensor::load_from_source(e, src, &p("ffn_gate.weight"))?,
             ffn_up: GpuTensor::load_from_source(e, src, &p("ffn_up.weight"))?,
             ffn_down: GpuTensor::load_from_source(e, src, &p("ffn_down.weight"))?,
+            // AWQ artifacts only (memra#253); absent everywhere else.
+            ffn_down_pqs: GpuTensor::load_opt_from_source(e, src, &p("ffn_down.pre_quant_scale"))?,
         }
     } else if let MlpPlan::Moe(moe) = mlp {
         let n_expert = moe.expert_count as usize;
@@ -656,6 +653,7 @@ pub(crate) fn load_ffn(
             ffn_gate: load_t(e, src, &p("ffn_gate.weight"))?,
             ffn_up: load_t(e, src, &p("ffn_up.weight"))?,
             ffn_down: load_t(e, src, &p("ffn_down.weight"))?,
+            ffn_down_pqs: load_opt(e, src, &p("ffn_down.pre_quant_scale"))?,
         }
     })
 }
@@ -2188,6 +2186,10 @@ pub struct FullAttnLayer {
     pub wk: GpuTensor,
     pub wv: GpuTensor,
     pub wo: GpuTensor,
+    /// AWQ per-input-channel scale for `wo` (o_proj), `None` outside AWQ artifacts (memra#253).
+    /// o_proj's input is the attention output, which no preceding weight can absorb a scale
+    /// into, so AWQ ships it explicitly and the forward must apply it.
+    pub wo_pqs: Option<GpuTensor>,
     /// Per-head QK RMSNorm weights, `None` for families whose plan says
     /// `TensorPresence::Absent` (dense llama/mistral). Every forward path must branch on
     /// this rather than assume it: an all-ones RMSNorm is not the identity.
@@ -2919,6 +2921,11 @@ pub enum Ffn {
         ffn_gate: GpuTensor,
         ffn_up: GpuTensor,
         ffn_down: GpuTensor,
+        /// AWQ per-input-channel scale for `ffn_down` (memra#253). `Some` only for an
+        /// AWQ-calibrated checkpoint; the input must be multiplied by it before the down
+        /// projection. Adding this field is deliberate: it makes every destructuring site
+        /// fail to compile until it decides what to do, so no path can skip the scale.
+        ffn_down_pqs: Option<GpuTensor>,
     },
     Moe(MoeWeights),
 }
@@ -3973,6 +3980,9 @@ impl HybridModel {
                     ffn_gate,
                     ffn_up,
                     ffn_down,
+                    // memra#253: this site inspects or moves weights and runs no GEMM on an
+                    // activation, so the AWQ activation-side scale plays no part in it.
+                    ffn_down_pqs: _,
                 } => {
                     devs.insert(ffn_gate.ordinal());
                     devs.insert(ffn_up.ordinal());
@@ -4581,6 +4591,7 @@ impl HybridModel {
                             wk: load_t(e, src, &tp("attn_k.weight"))?,
                             wv: load_t(e, src, &tp("attn_v.weight"))?,
                             wo: load_t(e, src, &p("attn_output.weight"))?,
+                            wo_pqs: load_opt(e, src, &p("attn_output.pre_quant_scale"))?,
                             // gemma4 shared-KV layers: the family always ships QK-norm, so
                             // these stay required — the Option is for families that have none.
                             q_norm: Some(load_t(e, src, &p("attn_q_norm.weight"))?),
@@ -5697,6 +5708,9 @@ impl HybridModel {
                                 ffn_gate,
                                 ffn_up,
                                 ffn_down,
+                                // memra#253: this site inspects or moves weights and runs no GEMM on an
+                                // activation, so the AWQ activation-side scale plays no part in it.
+                                ffn_down_pqs: _,
                             } = &layer.ffn
                             {
                                 for w in [ffn_gate, ffn_up, ffn_down] {
@@ -5760,6 +5774,9 @@ impl HybridModel {
                             ffn_gate,
                             ffn_up,
                             ffn_down,
+                            // memra#253: this site inspects or moves weights and runs no GEMM on an
+                            // activation, so the AWQ activation-side scale plays no part in it.
+                            ffn_down_pqs: _,
                         } = &layer.ffn
                         {
                             for w in [ffn_gate, ffn_up, ffn_down] {
@@ -5843,6 +5860,9 @@ impl HybridModel {
                         ffn_gate,
                         ffn_up,
                         ffn_down,
+                        // memra#253: this site inspects or moves weights and runs no GEMM on an
+                        // activation, so the AWQ activation-side scale plays no part in it.
+                        ffn_down_pqs: _,
                     } = &mut layer.ffn
                     {
                         for w in [ffn_gate, ffn_up, ffn_down] {
@@ -5912,6 +5932,9 @@ impl HybridModel {
                                 ffn_gate,
                                 ffn_up,
                                 ffn_down,
+                                // memra#253: this site inspects or moves weights and runs no GEMM on an
+                                // activation, so the AWQ activation-side scale plays no part in it.
+                                ffn_down_pqs: _,
                             } = &mut layer.ffn
                             {
                                 for w in [ffn_gate, ffn_up, ffn_down] {
@@ -5982,6 +6005,9 @@ impl HybridModel {
                         ffn_gate,
                         ffn_up,
                         ffn_down,
+                        // memra#253: this site inspects or moves weights and runs no GEMM on an
+                        // activation, so the AWQ activation-side scale plays no part in it.
+                        ffn_down_pqs: _,
                     } = &mut layer.ffn
                     {
                         for w in [ffn_gate, ffn_up, ffn_down] {
@@ -6080,6 +6106,9 @@ impl HybridModel {
                             ffn_gate,
                             ffn_up,
                             ffn_down,
+                            // memra#253: this site inspects or moves weights and runs no GEMM on an
+                            // activation, so the AWQ activation-side scale plays no part in it.
+                            ffn_down_pqs: _,
                         } = &layer.ffn
                         {
                             for w in [ffn_gate, ffn_up, ffn_down] {
@@ -6152,6 +6181,9 @@ impl HybridModel {
                         ffn_gate,
                         ffn_up,
                         ffn_down,
+                        // memra#253: this site inspects or moves weights and runs no GEMM on an
+                        // activation, so the AWQ activation-side scale plays no part in it.
+                        ffn_down_pqs: _,
                     } = &mut layer.ffn
                     {
                         for w in [ffn_gate, ffn_up, ffn_down] {

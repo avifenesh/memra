@@ -121,13 +121,18 @@ impl Model {
                     ffn_gate,
                     ffn_up,
                     ffn_down,
+                    ffn_down_pqs,
                 } => {
                     let n_ff = ffn_gate.out_features();
                     let gate = e.matmul(ffn_gate, &z, t)?;
                     let up = e.matmul(ffn_up, &z, t)?;
                     let mut act = e.zeros(t * n_ff)?;
                     crate::hybrid::HybridModel::ffn_act(e, cfg, &gate, &up, &mut act, t * n_ff)?;
-                    e.matmul(ffn_down, &act, t)?
+                    // AWQ (memra#253): the down projection's input must carry the per-input-channel
+                    // scale when the artifact was calibrated; None leaves the buffer untouched.
+                    let __pqs =
+                        e.pre_quant_scaled(&act, ffn_down_pqs.as_ref(), ffn_down.in_features(), t)?;
+                    e.matmul(ffn_down, __pqs.as_ref().unwrap_or(&act), t)?
                 }
                 crate::hybrid::Ffn::Moe(m) => {
                     crate::hybrid::HybridModel::moe_ffn(e, m, &z, t, cfg, il as u16, max_block)?
