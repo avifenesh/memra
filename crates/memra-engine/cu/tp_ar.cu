@@ -114,3 +114,112 @@ extern "C" int memra_tp_ar_push_2d(const float* src, float* peer_stage, long row
     TP_AR_ERR();
     return 0;
 }
+
+// ---------------------------------------------------------------- one-shot all-reduce
+//
+// SHAPE TAKEN FROM vLLM's `csrc/custom_all_reduce.cuh` (`cross_device_reduce_1stage` plus the
+// `barrier_at_start` / `barrier_at_end` pair in `custom_collective_common.cuh`), because the
+// push-then-fold pipeline above is the wrong shape and its cost says so: 4 kernel launches and 8
+// cross-context CUDA event operations per reduce, which measured 20-26 us for 16 KB on a pair
+// whose fabric is 956 GB/s. That is host overhead, not bandwidth.
+//
+// The right shape is ONE KERNEL PER RANK AND NO EVENTS AT ALL. Each rank's kernel synchronises
+// through flags written into the peer's memory, reads BOTH ranks' input buffers directly (peer
+// access makes the peer pointer dereferenceable from this context), and computes the whole sum
+// locally. No staging buffer, no copy, and nothing for the host to do per reduce beyond the two
+// launches.
+//
+// BITWISE IDENTICAL ACROSS RANKS BY CONSTRUCTION, and vLLM's comment names the reason: the
+// operand order is indexed by GLOBAL RANK and is therefore the same on every rank, so both
+// compute the same expression rather than mirror images of it.
+//
+// TWO COUNTER SETS, and the reason is subtle enough to copy verbatim rather than rediscover: a
+// peer block can reach the SECOND barrier while this block is still spinning on the FIRST, and
+// with one counter it would write counter+1 into the value this block is waiting on. `start` and
+// `end` alternate so that cannot happen.
+//
+// The spin is BOUNDED here where vLLM's is not. A device-side barrier can hang the card if the
+// peer launch never arrives, and a bounded wait turns a wiring bug into a readable refusal
+// instead of a wedged GPU. The ranks are on different devices (ArLink refuses a same-device
+// pairing), so no legitimate peer can be starved by this kernel's own occupancy.
+#define MEMRA_AR_MAX_BLOCKS 72
+#define MEMRA_AR_RANKS 2
+
+struct MemraArSignal {
+    alignas(128) unsigned start[MEMRA_AR_MAX_BLOCKS][MEMRA_AR_RANKS];
+    alignas(128) unsigned end[MEMRA_AR_MAX_BLOCKS][MEMRA_AR_RANKS];
+    alignas(128) unsigned seq[MEMRA_AR_MAX_BLOCKS];
+};
+
+extern "C" int memra_tp_ar_signal_bytes(void) { return (int)sizeof(MemraArSignal); }
+
+__device__ __forceinline__ void memra_ar_st_release(unsigned* addr, unsigned v) {
+    asm volatile("st.release.sys.global.u32 [%1], %0;" ::"r"(v), "l"(addr));
+}
+
+__device__ __forceinline__ unsigned memra_ar_ld_acquire(const unsigned* addr) {
+    unsigned v;
+    asm volatile("ld.acquire.sys.global.u32 %0, [%1];" : "=r"(v) : "l"(addr));
+    return v;
+}
+
+// Returns 0 on success, 1 if the bounded wait expired.
+__device__ __forceinline__ int memra_ar_barrier(unsigned (*peer_ctr)[MEMRA_AR_RANKS],
+                                                unsigned (*self_ctr)[MEMRA_AR_RANKS], unsigned flag,
+                                                int rank, long long spin_limit) {
+    __shared__ int expired;
+    if (threadIdx.x == 0) expired = 0;
+    __syncthreads();
+    if (threadIdx.x < MEMRA_AR_RANKS) {
+        memra_ar_st_release(&peer_ctr[blockIdx.x][rank], flag);
+        long long t0 = clock64();
+        while (memra_ar_ld_acquire(&self_ctr[blockIdx.x][threadIdx.x]) != flag) {
+            if (clock64() - t0 > spin_limit) {
+                expired = 1;
+                break;
+            }
+        }
+    }
+    __syncthreads();
+    return expired;
+}
+
+// `in_rank0` and `in_rank1` are the two ranks' input buffers in GLOBAL RANK ORDER, one of which is
+// local and one of which is the peer's. `out` may alias this rank's input: each thread reads both
+// operands at index i before writing index i, and no other thread touches that index.
+__global__ void __launch_bounds__(512, 1) memra_tp_ar_1stage_kernel(
+        const float* __restrict__ in_rank0, const float* __restrict__ in_rank1,
+        float* __restrict__ out, MemraArSignal* self_sg, MemraArSignal* peer_sg, int rank, long n,
+        int* __restrict__ err, long long spin_limit) {
+    unsigned flag = self_sg->seq[blockIdx.x] + 1;
+    if (memra_ar_barrier(peer_sg->start, self_sg->start, flag, rank, spin_limit)) {
+        if (threadIdx.x == 0) {
+            *(volatile int*)err = 40043;
+            self_sg->seq[blockIdx.x] = flag;
+        }
+        return;
+    }
+    for (long i = (long)blockIdx.x * blockDim.x + threadIdx.x; i < n;
+         i += (long)gridDim.x * blockDim.x) {
+        out[i] = in_rank0[i] + in_rank1[i];
+    }
+    if (memra_ar_barrier(peer_sg->end, self_sg->end, flag, rank, spin_limit)) {
+        if (threadIdx.x == 0) *(volatile int*)err = 40044;
+    }
+    if (threadIdx.x == 0) self_sg->seq[blockIdx.x] = flag;
+}
+
+extern "C" int memra_tp_ar_1stage(const float* in_rank0, const float* in_rank1, float* out,
+                                  void* self_sg, void* peer_sg, int rank, long n, int* err,
+                                  long long spin_limit, int blocks, void* stream_v) {
+    if (n <= 0) return 40041;
+    if (spin_limit <= 0) return 40042;
+    if (rank < 0 || rank >= MEMRA_AR_RANKS) return 40045;
+    if (blocks < 1 || blocks > MEMRA_AR_MAX_BLOCKS) return 40046;
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    memra_tp_ar_1stage_kernel<<<(unsigned)blocks, 512u, 0, stream>>>(
+        in_rank0, in_rank1, out, (MemraArSignal*)self_sg, (MemraArSignal*)peer_sg, rank, n, err,
+        spin_limit);
+    TP_AR_ERR();
+    return 0;
+}
