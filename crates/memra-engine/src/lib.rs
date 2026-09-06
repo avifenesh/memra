@@ -8055,6 +8055,66 @@ impl Engine {
     /// epilogue's verbatim, bit-gated per row vs the sequential chain.
     #[allow(clippy::too_many_arguments)]
     // allow: the parameter list mirrors the kernel/FFI/call contract
+    /// BENCH-ONLY ceiling probe for the verify-rows MoE gate/up kernel
+    /// (lane/moe-rows-ceiling-20260906; no door, no serving dispatch, removed when the lane
+    /// closes). `arm` picks `"loadonly"` (the served loads, the arithmetic deleted) or
+    /// `"mathonly"` (one group loaded, the served arithmetic repeated). Together with the
+    /// served kernel they say whether the 19%-of-peak wall is the access pattern or the
+    /// instruction stream; ncu cannot answer it inside the vast container. The outputs are
+    /// meaningless numbers by construction: this measures rate, never values.
+    #[allow(clippy::too_many_arguments)]
+    pub fn moe_gate_up_rows_ceiling_probe(
+        &self,
+        arm: &str,
+        ptrs: &CudaSlice<u64>,
+        scl: &CudaSlice<f32>,
+        aq: &CudaSlice<i8>,
+        ad: &CudaSlice<f32>,
+        limit: f32,
+        in_f: usize,
+        n_ff: usize,
+        n_used: usize,
+        n_pairs: usize,
+        rb_g: usize,
+        rb_u: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let name = match arm {
+            "loadonly" => "moe_gate_up_preclamp8_q8_rows_loadonly",
+            "mathonly" => "moe_gate_up_preclamp8_q8_rows_mathonly",
+            other => return Err(format!("ceiling probe arm {other:?}").into()),
+        };
+        let f = self.func(name);
+        let cfg = LaunchConfig {
+            grid_dim: (n_ff as u32, n_pairs as u32, 1),
+            block_dim: (32, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let mut act = self.uninit(n_pairs * n_ff)?;
+        let (inf, nff, nu, np) = (in_f as i32, n_ff as i32, n_used as i32, n_pairs as i32);
+        let (qg, qu) = (QT_NVFP4, QT_NVFP4);
+        let (rbg, rbu) = (rb_g as i64, rb_u as i64);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(ptrs)
+            .arg(scl)
+            .arg(aq)
+            .arg(ad)
+            .arg(&limit)
+            .arg(&mut act)
+            .arg(&inf)
+            .arg(&nff)
+            .arg(&nu)
+            .arg(&np)
+            .arg(&qg)
+            .arg(&qu)
+            .arg(&rbg)
+            .arg(&rbu);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(act)
+    }
+
     pub fn moe_gate_up_preclamp8_q8_rows(
         &self,
         ptrs: &CudaSlice<u64>,
