@@ -105,6 +105,17 @@ pub enum TpTransport {
     HostCanonical,
     /// Consumer-issued device peer copy per hop, ordered by a publication event.
     PeerPull,
+    /// PRODUCER-issued device peer store per hop, ordered by a publication event.
+    ///
+    /// The difference from `peer-pull` is direction, and it is the whole point. A pull is a
+    /// consumer-side read, so the reading rank cannot start until the producing rank has
+    /// finished: at ~90 joins per token that keeps the two cards single-file, which is why
+    /// peer-pull measured WORSE than the host bounce rather than better. A push is issued on
+    /// the producer's own stream, so each rank hands its bytes over and carries on, and the
+    /// consumer's stream is ordered after by the same publication event. Movement only: every
+    /// hop this transport serves is a fan-out, a gather or a concat, so the arm is
+    /// byte-identical to `host-canonical` by construction, exactly as `peer-pull` is.
+    DevicePush,
 }
 
 impl TpTransport {
@@ -113,6 +124,7 @@ impl TpTransport {
         match self {
             Self::HostCanonical => "host-canonical",
             Self::PeerPull => "peer-pull",
+            Self::DevicePush => "device-push",
         }
     }
 }
@@ -137,10 +149,12 @@ pub fn parse_transport(flag: &str, value: Option<&str>) -> Result<TpTransport, S
     match value {
         None | Some("") | Some("0") | Some("host-canonical") => Ok(TpTransport::HostCanonical),
         Some("1") | Some("peer-pull") => Ok(TpTransport::PeerPull),
+        Some("2") | Some("device-push") => Ok(TpTransport::DevicePush),
         Some(other) => Err(format!(
             "{flag}={other:?} is not a known transport \
              (host-canonical | 0 = the v1 host-staged arm, the default; peer-pull | 1 = the \
-             consumer-issued device peer copy arm)"
+             consumer-issued device peer copy arm; device-push | 2 = the producer-issued \
+             device peer store arm)"
         )),
     }
 }
@@ -228,6 +242,9 @@ pub static TP_HOST_SYNCS: AtomicU64 = AtomicU64::new(0);
 /// Consumer-issued cross-rank device copies. Pinned 0 on the host-canonical arm.
 pub static TP_PEER_PULLS: AtomicU64 = AtomicU64::new(0);
 
+/// Producer-issued cross-rank device stores. Pinned 0 on both other arms.
+pub static TP_DEVICE_PUSHES: AtomicU64 = AtomicU64::new(0);
+
 /// Publication events recorded/awaited to order a cross-rank copy. Pinned 0 on the
 /// host-canonical arm (whose ordering is the host sync itself).
 pub static TP_PUB_EVENTS: AtomicU64 = AtomicU64::new(0);
@@ -253,6 +270,7 @@ snapshot_fns! {
     tp_host_legs => TP_HOST_LEGS,
     tp_host_syncs => TP_HOST_SYNCS,
     tp_peer_pulls => TP_PEER_PULLS,
+    tp_device_pushes => TP_DEVICE_PUSHES,
     tp_pub_events => TP_PUB_EVENTS,
     tp_local_copies => TP_LOCAL_COPIES,
     tp_xfer_bytes => TP_XFER_BYTES,
@@ -262,11 +280,12 @@ snapshot_fns! {
 pub fn transport_census_line(tag: &str, transport: TpTransport) -> String {
     format!(
         "[{tag}] census transport={} host_legs={} host_syncs={} peer_pulls={} \
-         pub_events={} local_copies={} xfer_bytes={}",
+         device_pushes={} pub_events={} local_copies={} xfer_bytes={}",
         transport.name(),
         tp_host_legs(),
         tp_host_syncs(),
         tp_peer_pulls(),
+        tp_device_pushes(),
         tp_pub_events(),
         tp_local_copies(),
         tp_xfer_bytes(),
@@ -283,6 +302,11 @@ fn charge_host_leg(bytes: usize, sync: bool) {
 
 fn charge_peer_pull(bytes: usize) {
     TP_PEER_PULLS.fetch_add(1, Ordering::Relaxed);
+    TP_XFER_BYTES.fetch_add(bytes as u64, Ordering::Relaxed);
+}
+
+fn charge_device_push(bytes: usize) {
+    TP_DEVICE_PUSHES.fetch_add(1, Ordering::Relaxed);
     TP_XFER_BYTES.fetch_add(bytes as u64, Ordering::Relaxed);
 }
 
@@ -414,6 +438,112 @@ impl<'a> Hop<'a> {
         Ok(())
     }
 
+    /// PRODUCER-side strided store: `from`'s stream writes `rows x row_len` floats from `src`
+    /// into `to`'s `dst`, at the given element strides and offsets. The destination address is
+    /// resolved under the CONSUMER'S OWN context before the producer's context is entered:
+    /// reading a peer's `device_ptr` while another context is current resolved to the wrong
+    /// address once and cost a debugging round (`tp_ar`'s note carries the receipt).
+    ///
+    /// Ordering is the caller's job: `publish(from, to)` after the push, before `to` reads.
+    #[allow(clippy::too_many_arguments)] // allow: (producer, src, src_off, src_stride) x (consumer, dst, dst_off, dst_stride) x (rows, row_len) IS the shape of a strided cross-rank store, and a struct would hide which side owns which pointer
+    fn push_2d(
+        &self,
+        from: usize,
+        src: &CudaSlice<f32>,
+        src_off: usize,
+        src_stride: usize,
+        to: usize,
+        dst: &mut CudaSlice<f32>,
+        dst_off: usize,
+        dst_stride: usize,
+        rows: usize,
+        row_len: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use cudarc::driver::{DevicePtr, DevicePtrMut};
+        if rows == 0 || row_len == 0 {
+            return Err("glm5-tp push: zero geometry".into());
+        }
+        if src_off + (rows - 1) * src_stride + row_len > src.len() {
+            return Err("glm5-tp push: source range escapes the buffer".into());
+        }
+        if dst_off + (rows - 1) * dst_stride + row_len > dst.len() {
+            return Err("glm5-tp push: destination range escapes the buffer".into());
+        }
+        let dst_ptr = {
+            let cons = self.engine(to);
+            let _main = cons.gpu.enter_main()?;
+            let s = cons.stream();
+            dst.device_ptr_mut(&s).0 as *mut f32
+        };
+        let prod = self.engine(from);
+        let _main = prod.gpu.enter_main()?;
+        let s = prod.stream();
+        let src_ptr = src.device_ptr(&s).0 as *const f32;
+        // SAFETY: peer access is granted between the ranks, both ranges are bounds-checked
+        // above against their own buffers, and the destination address was resolved under its
+        // owning context.
+        let rc = unsafe {
+            crate::tp_ar::memra_tp_ar_push_2d(
+                src_ptr.add(src_off),
+                dst_ptr.add(dst_off),
+                rows as i64,
+                row_len as i64,
+                src_stride as i64,
+                dst_stride as i64,
+                s.cu_stream() as *mut std::os::raw::c_void,
+            )
+        };
+        if rc != 0 {
+            return Err(format!("memra_tp_ar_push_2d rc {rc}").into());
+        }
+        charge_device_push(rows * row_len * std::mem::size_of::<f32>());
+        Ok(())
+    }
+
+    /// The i32 twin of [`Self::push_2d`], contiguous. A 4-byte word copy carries bits through
+    /// unchanged, so routing it through the f32 kernel is exact movement, not a conversion.
+    fn push_2d_i32(
+        &self,
+        from: usize,
+        src: &CudaSlice<i32>,
+        to: usize,
+        dst: &mut CudaSlice<i32>,
+        n: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use cudarc::driver::{DevicePtr, DevicePtrMut};
+        if n == 0 || n > src.len() || n > dst.len() {
+            return Err("glm5-tp push (i32): range escapes a buffer".into());
+        }
+        let dst_ptr = {
+            let cons = self.engine(to);
+            let _main = cons.gpu.enter_main()?;
+            let s = cons.stream();
+            dst.device_ptr_mut(&s).0 as *mut f32
+        };
+        let prod = self.engine(from);
+        let _main = prod.gpu.enter_main()?;
+        let s = prod.stream();
+        let src_ptr = src.device_ptr(&s).0 as *const f32;
+        // SAFETY: as `push_2d`, with both ranges bounds-checked above; the cast reinterprets
+        // 4-byte words and the kernel only copies them.
+        let rc = unsafe {
+            crate::tp_ar::memra_tp_ar_push_2d(
+                src_ptr,
+                dst_ptr,
+                1,
+                n as i64,
+                n as i64,
+                n as i64,
+                s.cu_stream() as *mut std::os::raw::c_void,
+            )
+        };
+        if rc != 0 {
+            return Err(format!("memra_tp_ar_push_2d (i32) rc {rc}").into());
+        }
+        charge_device_push(n * std::mem::size_of::<i32>());
+        Ok(())
+    }
+
     /// The one cross-rank primitive: `consumer`'s stream copies `n` f32 from the producer's
     /// `src[src_off..]` into its own `dst[dst_off..]`. A PEER READ by construction — the
     /// copy is enqueued on the reading side.
@@ -504,6 +634,16 @@ pub fn fanout_f32(
                 out.push(buf);
             }
         }
+        TpTransport::DevicePush => {
+            for to in 1..hop.ranks() {
+                let mut buf = hop.engine(to).uninit(n)?;
+                hop.push_2d(ROOT, src, 0, n, to, &mut buf, 0, n, 1, n)?;
+                // Order AFTER the store: the event is recorded on root's stream once the push is
+                // enqueued there, and the consumer waits on it.
+                hop.publish(ROOT, to)?;
+                out.push(buf);
+            }
+        }
     }
     Ok(out)
 }
@@ -530,6 +670,12 @@ pub fn fanout_f32_to(
             let mut buf = hop.engine(to).uninit(n)?;
             hop.publish(ROOT, to)?;
             hop.pull_f32(ROOT, src, 0, to, &mut buf, 0, n)?;
+            Ok(buf)
+        }
+        TpTransport::DevicePush => {
+            let mut buf = hop.engine(to).uninit(n)?;
+            hop.push_2d(ROOT, src, 0, n, to, &mut buf, 0, n, 1, n)?;
+            hop.publish(ROOT, to)?;
             Ok(buf)
         }
     }
@@ -567,6 +713,14 @@ pub fn fanout_i32(
                 // under load.
                 hop.release(ROOT, to)?;
                 charge_peer_pull(bytes);
+                out.push(buf);
+            }
+        }
+        TpTransport::DevicePush => {
+            for to in 1..hop.ranks() {
+                let mut buf = hop.engine(to).uninit_i32(n)?;
+                hop.push_2d_i32(ROOT, src, to, &mut buf, n)?;
+                hop.publish(ROOT, to)?;
                 out.push(buf);
             }
         }
@@ -633,6 +787,37 @@ pub fn gather_parts(
             for r in 0..ranks {
                 out.push(hop.engine(r).htod(&full_host)?);
                 charge_host_leg(t * full * std::mem::size_of::<f32>(), false);
+            }
+            Ok(out)
+        }
+        TpTransport::DevicePush => {
+            // Every producer writes its own column band into EVERY rank's full matrix, its own
+            // included (a same-rank push is a local strided copy on that rank's own stream), and
+            // then publishes once so each consumer's stream is ordered after it. Same bytes and
+            // same token-major layout as the other two arms; the difference is that a rank hands
+            // its band over and carries on instead of waiting to be read.
+            let mut out = Vec::with_capacity(ranks);
+            for r in 0..ranks {
+                out.push(hop.engine(r).uninit(t * full)?);
+            }
+            for sfrom in 0..ranks {
+                for (d, dst) in out.iter_mut().enumerate() {
+                    hop.push_2d(
+                        sfrom,
+                        parts[sfrom],
+                        0,
+                        part,
+                        d,
+                        dst,
+                        sfrom * part,
+                        full,
+                        t,
+                        part,
+                    )?;
+                    if sfrom != d {
+                        hop.publish(sfrom, d)?;
+                    }
+                }
             }
             Ok(out)
         }
@@ -752,6 +937,27 @@ pub fn concat_parts_on_root(
             charge_host_leg(t * full * std::mem::size_of::<f32>(), false);
             Ok(out)
         }
+        TpTransport::DevicePush => {
+            let mut out = hop.engine(ROOT).uninit(t * full)?;
+            for sfrom in 0..ranks {
+                hop.push_2d(
+                    sfrom,
+                    parts[sfrom],
+                    0,
+                    part,
+                    ROOT,
+                    &mut out,
+                    sfrom * part,
+                    full,
+                    t,
+                    part,
+                )?;
+                if sfrom != ROOT {
+                    hop.publish(sfrom, ROOT)?;
+                }
+            }
+            Ok(out)
+        }
         TpTransport::PeerPull => {
             let mut out = hop.engine(ROOT).uninit(t * full)?;
             for s in 1..ranks {
@@ -853,6 +1059,10 @@ pub fn return_block_to_root(
             hop.publish(from, ROOT)?;
             hop.pull_f32(from, blk, 0, ROOT, dst, dst_off, n)
         }
+        TpTransport::DevicePush => {
+            hop.push_2d(from, blk, 0, n, ROOT, dst, dst_off, n, 1, n)?;
+            hop.publish(from, ROOT)
+        }
     }
 }
 
@@ -876,6 +1086,12 @@ pub fn return_row_to_root(
             let mut out = hop.engine(ROOT).uninit(n)?;
             hop.publish(from, ROOT)?;
             hop.pull_f32(from, y, 0, ROOT, &mut out, 0, n)?;
+            Ok(out)
+        }
+        TpTransport::DevicePush => {
+            let mut out = hop.engine(ROOT).uninit(n)?;
+            hop.push_2d(from, y, 0, n, ROOT, &mut out, 0, n, 1, n)?;
+            hop.publish(from, ROOT)?;
             Ok(out)
         }
     }
@@ -910,8 +1126,14 @@ static TRANSPORT_MARKED: AtomicBool = AtomicBool::new(false);
 /// hosts the driver stages SM-issued peer access through system memory by default (§2.3b)
 /// and "`nvidia-smi topo -p2p r` returns OK while `cudaMemcpy` looks healthy, so neither
 /// detects it". Only a `simpleP2P`-class kernel peer read does; that lives in the lane's
-/// `peer-read-probe.cu` and is a HEALTH.sh item, not a serving-path dependency — this
-/// transport never dereferences a peer pointer from a kernel.
+/// `peer-read-probe.cu` and is a HEALTH.sh item, not a serving-path dependency for the
+/// host-canonical and peer-pull arms, which never dereference a peer pointer from a kernel.
+///
+/// `device-push` DOES, so that warning is live for it: its ladder below runs the PUSH primitive
+/// rather than the pull, because proving a pull says nothing about an SM-issued store. On the
+/// served pair the link is NV18 (eighteen NVLink links, 53.125 GB/s each), where SM peer access
+/// is native; on a direct-attach host the ladder is what catches the staged path, and it catches
+/// it as a byte mismatch rather than as a quiet slowdown.
 pub fn arm_transport(
     transport: TpTransport,
     armed_flag: &str,
@@ -944,7 +1166,11 @@ pub fn arm_transport(
         for (i, a) in engines.iter().enumerate() {
             for (j, b) in engines.iter().enumerate() {
                 if i != j {
-                    crate::tp::grant_peer_access(a, b, &format!("{armed_flag}=peer-pull"))?;
+                    crate::tp::grant_peer_access(
+                        a,
+                        b,
+                        &format!("{armed_flag}={}", transport.name()),
+                    )?;
                 }
             }
         }
@@ -967,6 +1193,7 @@ pub fn arm_transport(
     // is its PASS line.
     let census_before = (
         TP_PEER_PULLS.load(Ordering::Relaxed),
+        TP_DEVICE_PUSHES.load(Ordering::Relaxed),
         TP_PUB_EVENTS.load(Ordering::Relaxed),
         TP_XFER_BYTES.load(Ordering::Relaxed),
         TP_HOST_LEGS.load(Ordering::Relaxed),
@@ -996,8 +1223,24 @@ pub fn arm_transport(
                 let poison: Vec<f32> = expected.iter().map(|v| -*v - 1.0).collect();
                 let src = hop.engine(producer).htod(&expected)?;
                 let mut dst = hop.engine(consumer).htod(&poison)?;
-                hop.publish(producer, consumer)?;
-                hop.pull_f32(producer, &src, 0, consumer, &mut dst, 0, words)?;
+                // Each arm validates ITS OWN primitive. A pull ladder says nothing about a push:
+                // the doc above records that on direct-attach hosts the driver stages SM-issued
+                // peer access through system memory while `topo -p2p r` and `cudaMemcpy` both
+                // look healthy, and `device-push` is the first transport here that dereferences
+                // a peer pointer FROM A KERNEL. Proving the wrong primitive would be exactly the
+                // silent pass that warning describes.
+                match transport {
+                    TpTransport::DevicePush => {
+                        hop.push_2d(
+                            producer, &src, 0, words, consumer, &mut dst, 0, words, 1, words,
+                        )?;
+                        hop.publish(producer, consumer)?;
+                    }
+                    _ => {
+                        hop.publish(producer, consumer)?;
+                        hop.pull_f32(producer, &src, 0, consumer, &mut dst, 0, words)?;
+                    }
+                }
                 let actual = hop.engine(consumer).dtoh(&dst)?;
                 let mismatches = actual
                     .iter()
@@ -1006,10 +1249,11 @@ pub fn arm_transport(
                     .count();
                 if mismatches != 0 {
                     return Err(format!(
-                        "{armed_flag}=peer-pull byte-integrity ladder FAILED: \
+                        "{armed_flag}={} byte-integrity ladder FAILED: \
                          rank{producer}->rank{consumer} at {} bytes, {mismatches}/{words} \
                          words differ (refused before any layer was sharded; roll back \
                          with: {})",
+                        transport.name(),
                         words * std::mem::size_of::<f32>(),
                         rollback_advice(),
                     )
@@ -1023,16 +1267,25 @@ pub fn arm_transport(
         let now = counter.load(Ordering::Relaxed);
         counter.fetch_sub(now.saturating_sub(before), Ordering::Relaxed);
     };
-    restore(&TP_PEER_PULLS, census_before.0);
-    restore(&TP_PUB_EVENTS, census_before.1);
-    restore(&TP_XFER_BYTES, census_before.2);
-    restore(&TP_HOST_LEGS, census_before.3);
-    restore(&TP_HOST_SYNCS, census_before.4);
-    restore(&TP_LOCAL_COPIES, census_before.5);
+    // Paired with the snapshot by NAME, not by tuple position: adding `TP_DEVICE_PUSHES` to the
+    // snapshot shifted every index by one and the compiler could not see it (they are all u64),
+    // so each delta would have been restored onto the wrong counter.
+    for (counter, before) in [
+        (&TP_PEER_PULLS, census_before.0),
+        (&TP_DEVICE_PUSHES, census_before.1),
+        (&TP_PUB_EVENTS, census_before.2),
+        (&TP_XFER_BYTES, census_before.3),
+        (&TP_HOST_LEGS, census_before.4),
+        (&TP_HOST_SYNCS, census_before.5),
+        (&TP_LOCAL_COPIES, census_before.6),
+    ] {
+        restore(counter, before);
+    }
     eprintln!(
-        "[{tag}] peer-pull byte-integrity ladder PASS: directions={} \
+        "[{tag}] {} byte-integrity ladder PASS: directions={} \
          byte_ladder={:?} mismatches=0 same_device_gate={same_device_gate} \
          census_excluded=arm-time-ladder-traffic",
+        transport.name(),
         ranks * (ranks - 1),
         PULL_PROBE_WORDS
             .iter()
@@ -1077,10 +1330,27 @@ mod tests {
                 TpTransport::PeerPull
             );
         }
+        for on in [Some("2"), Some("device-push")] {
+            assert_eq!(
+                parse_transport(TRANSPORT_ENV, on).unwrap(),
+                TpTransport::DevicePush
+            );
+        }
         // Every other spelling refuses BY NAME rather than silently picking an arm — a
         // typo'd transport must never serve the other one. Asserted under BOTH names, so a
         // banked script setting the alias reads its own name back.
-        for bad in ["peer_pull", "peerpull", "p2p", "native", "2", "on", "true"] {
+        for bad in [
+            "peer_pull",
+            "peerpull",
+            "p2p",
+            "native",
+            "device_push",
+            "devicepush",
+            "push",
+            "3",
+            "on",
+            "true",
+        ] {
             for flag in [TRANSPORT_ENV, TRANSPORT_ENV_GLM5] {
                 let err =
                     parse_transport(flag, Some(bad)).expect_err("unknown transport must refuse");
@@ -1088,6 +1358,7 @@ mod tests {
                 assert!(err.contains(bad), "{err}");
                 assert!(err.contains("host-canonical"), "{err}");
                 assert!(err.contains("peer-pull"), "{err}");
+                assert!(err.contains("device-push"), "{err}");
             }
         }
     }

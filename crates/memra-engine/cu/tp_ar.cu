@@ -86,3 +86,31 @@ extern "C" int memra_tp_ar_fold(float* dst, const float* stage, long n, void* st
     TP_AR_ERR();
     return 0;
 }
+
+// Strided push: `rows` rows of `row_len` floats, `src_stride` apart in the source and
+// `dst_stride` apart in the peer. This is the shape the TP gather actually needs: the full
+// attention matrix is TOKEN-MAJOR, so rank r's part lands at `tok * full + r * part` for every
+// token, not as one contiguous run. At t=1 it degenerates to the contiguous push.
+__global__ void memra_tp_ar_push_2d_kernel(const float* __restrict__ src, float* __restrict__ peer,
+                                           long rows, long row_len, long src_stride,
+                                           long dst_stride) {
+    long stride = (long)gridDim.x * blockDim.x;
+    for (long r = blockIdx.y; r < rows; r += gridDim.y) {
+        const float* s = src + r * src_stride;
+        float* d = peer + r * dst_stride;
+        for (long j = (long)blockIdx.x * blockDim.x + threadIdx.x; j < row_len; j += stride)
+            d[j] = s[j];
+    }
+}
+
+extern "C" int memra_tp_ar_push_2d(const float* src, float* peer_stage, long rows, long row_len,
+                                   long src_stride, long dst_stride, void* stream_v) {
+    if (rows <= 0 || row_len <= 0) return 40041;
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    unsigned gy = (unsigned)(rows > 65535 ? 65535 : rows);
+    dim3 grid((unsigned)memra_tp_ar_blocks(row_len), gy);
+    memra_tp_ar_push_2d_kernel<<<grid, 256, 0, stream>>>(src, peer_stage, rows, row_len, src_stride,
+                                                          dst_stride);
+    TP_AR_ERR();
+    return 0;
+}

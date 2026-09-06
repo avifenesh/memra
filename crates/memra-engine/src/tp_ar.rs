@@ -30,6 +30,18 @@ unsafe extern "C" {
         n: i64,
         stream: *mut c_void,
     ) -> i32;
+    /// Strided push: `rows` rows of `row_len` floats at the given strides. The TP gather's full
+    /// matrix is token-major, so a rank's part lands at `tok * full + r * part` per token rather
+    /// than as one run; at t=1 this degenerates to the contiguous push.
+    pub fn memra_tp_ar_push_2d(
+        src: *const f32,
+        peer_stage: *mut f32,
+        rows: i64,
+        row_len: i64,
+        src_stride: i64,
+        dst_stride: i64,
+        stream: *mut c_void,
+    ) -> i32;
     /// `dst += stage`, `n` f32. Enqueued on the caller's stream, which must already be ordered
     /// after the peer's push.
     pub fn memra_tp_ar_fold(dst: *mut f32, stage: *const f32, n: i64, stream: *mut c_void) -> i32;
@@ -45,9 +57,12 @@ unsafe extern "C" {
 /// Found the hard way 2026-09-06: the gate read only rank 0 after a repeat call, and the next
 /// size in the sweep came back with rank 1's staging garbage in it.
 pub struct ArLink {
+    /// Allocated on first `all_reduce` and grown as needed. The movement hops (`broadcast`,
+    /// `all_gather`) push straight into the caller's buffers and never touch it, which is why the
+    /// link does not need a size at construction: the TP walk's hops are all movement.
     stage: Vec<CudaSlice<f32>>,
     pushed: Vec<CudaEvent>,
-    n: usize,
+    staged: usize,
 }
 
 impl ArLink {
@@ -62,7 +77,7 @@ impl ArLink {
     /// so that store is undefined there. It read correctly at some sizes and returned the local
     /// partial at others (2026-09-06), which is exactly what an undefined address does. The
     /// constructor refuses two engines on one ordinal rather than let a gate pass on an accident.
-    pub fn new(engines: &[&Engine], n: usize) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(engines: &[&Engine]) -> Result<Self, Box<dyn std::error::Error>> {
         if engines.len() != 2 {
             return Err("tp all-reduce: this arm is two ranks".into());
         }
@@ -74,21 +89,44 @@ impl ArLink {
             )
             .into());
         }
-        if n == 0 {
-            return Err("tp all-reduce needs a non-zero element count".into());
-        }
-        let mut stage = Vec::with_capacity(2);
         let mut pushed = Vec::with_capacity(2);
         for e in engines {
             let _main = e.gpu.enter_main()?;
-            stage.push(e.zeros(n)?);
             pushed.push(e.ctx().new_event(None)?);
         }
-        Ok(Self { stage, pushed, n })
+        Ok(Self {
+            stage: Vec::new(),
+            pushed,
+            staged: 0,
+        })
+    }
+
+    /// Make sure the staging buffers hold `n` floats. Growing DRAINS both ranks first: the old
+    /// buffers go back to the stream-ordered allocator, and a fold still in flight would then be
+    /// writing into whatever the allocator hands out next (the hazard in this type's own note).
+    fn ensure_stage(
+        &mut self,
+        engines: &[&Engine],
+        n: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if self.staged >= n && !self.stage.is_empty() {
+            return Ok(());
+        }
+        for e in engines {
+            let _main = e.gpu.enter_main()?;
+            e.stream().synchronize()?;
+        }
+        self.stage.clear();
+        for e in engines {
+            let _main = e.gpu.enter_main()?;
+            self.stage.push(e.zeros(n)?);
+        }
+        self.staged = n;
+        Ok(())
     }
 
     pub fn ranks(&self) -> usize {
-        self.stage.len()
+        self.pushed.len()
     }
 
     /// Broadcast rank `from`'s `src` to every other rank's `dst`. Pure movement, so the result is
@@ -104,9 +142,6 @@ impl ArLink {
     ) -> Result<(), Box<dyn std::error::Error>> {
         if engines.len() != 2 || from > 1 {
             return Err("tp broadcast: this arm is two ranks".into());
-        }
-        if n > self.n {
-            return Err(format!("tp broadcast: {n} exceeds the link's {} elements", self.n).into());
         }
         let to = 1 - from;
         let dst_ptr = {
@@ -212,10 +247,15 @@ impl ArLink {
         &mut self,
         engines: &[&Engine],
         x: &mut [&mut CudaSlice<f32>],
+        n: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if engines.len() != 2 || x.len() != 2 {
             return Err("tp all-reduce: this arm is two ranks".into());
         }
+        if n == 0 {
+            return Err("tp all-reduce needs a non-zero element count".into());
+        }
+        self.ensure_stage(engines, n)?;
         // Resolve every staging address under ITS OWN rank's context BEFORE any push enters a
         // context of its own. Reading a peer's `device_ptr` while another context is current
         // resolved to the wrong address for the second link allocated in a process: the gate saw
@@ -239,9 +279,8 @@ impl ArLink {
             // SAFETY: peer access is granted between the two devices, so the peer's staging
             // pointer is dereferenceable from this context, and it holds `n` floats. `src` is
             // rank `from`'s own buffer of at least `n`.
-            let rc = unsafe {
-                memra_tp_ar_push(src, stage_ptr, self.n as i64, s.cu_stream() as *mut c_void)
-            };
+            let rc =
+                unsafe { memra_tp_ar_push(src, stage_ptr, n as i64, s.cu_stream() as *mut c_void) };
             if rc != 0 {
                 return Err(format!("memra_tp_ar_push rc {rc}").into());
             }
@@ -256,9 +295,8 @@ impl ArLink {
             let stage = self.stage[r].device_ptr(&s).0 as *const f32;
             // SAFETY: both pointers are rank `r`'s own allocations of at least `n` floats, and
             // the stream is ordered after the peer's push by the wait above.
-            let rc = unsafe {
-                memra_tp_ar_fold(dst, stage, self.n as i64, s.cu_stream() as *mut c_void)
-            };
+            let rc =
+                unsafe { memra_tp_ar_fold(dst, stage, n as i64, s.cu_stream() as *mut c_void) };
             if rc != 0 {
                 return Err(format!("memra_tp_ar_fold rc {rc}").into());
             }

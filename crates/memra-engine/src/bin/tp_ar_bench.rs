@@ -58,10 +58,10 @@ fn main() -> Res<()> {
         let want: Vec<f32> = ha.iter().zip(&hb).map(|(x, y)| x + y).collect();
 
         // correctness, once per size, before anything is timed
-        let mut link = ArLink::new(&engines, n)?;
+        let mut link = ArLink::new(&engines)?;
         let mut xa = ea.htod(&ha)?;
         let mut xb = eb.htod(&hb)?;
-        link.all_reduce(&engines, &mut [&mut xa, &mut xb])?;
+        link.all_reduce(&engines, &mut [&mut xa, &mut xb], n)?;
         let ga = ea.dtoh_view(&xa.slice(0..n))?;
         let gb = eb.dtoh_view(&xb.slice(0..n))?;
         let bad = (0..n)
@@ -79,7 +79,7 @@ fn main() -> Res<()> {
             eb.stream().synchronize()?;
             let t0 = Instant::now();
             for _ in 0..reps {
-                link.all_reduce(&engines, &mut [&mut xa, &mut xb])?;
+                link.all_reduce(&engines, &mut [&mut xa, &mut xb], n)?;
             }
             ea.stream().synchronize()?;
             eb.stream().synchronize()?;

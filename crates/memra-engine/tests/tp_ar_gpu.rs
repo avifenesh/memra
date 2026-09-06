@@ -47,10 +47,11 @@ fn all_reduce_matches_the_host_sum_bitwise() {
         let ha = vecf(n, 11 + n as u64);
         let hb = vecf(n, 77 + n as u64);
         let want: Vec<f32> = ha.iter().zip(&hb).map(|(x, y)| x + y).collect();
-        let mut link = ArLink::new(&engines, n).unwrap();
+        let mut link = ArLink::new(&engines).unwrap();
         let mut xa = ea.htod(&ha).unwrap();
         let mut xb = eb.htod(&hb).unwrap();
-        link.all_reduce(&engines, &mut [&mut xa, &mut xb]).unwrap();
+        link.all_reduce(&engines, &mut [&mut xa, &mut xb], n)
+            .unwrap();
         let ga = ea.dtoh_view(&xa.slice(0..n)).unwrap();
         let gb = eb.dtoh_view(&xb.slice(0..n)).unwrap();
         for i in 0..n {
@@ -59,7 +60,8 @@ fn all_reduce_matches_the_host_sum_bitwise() {
         }
         // Repeating on the same link must keep working: the staging buffers are reused and the
         // events are re-recorded, so a stale-event or stale-stage bug shows up on the second call.
-        link.all_reduce(&engines, &mut [&mut xa, &mut xb]).unwrap();
+        link.all_reduce(&engines, &mut [&mut xa, &mut xb], n)
+            .unwrap();
         // Both ranks now hold the sum, so a second reduce doubles it.
         let ga2 = ea.dtoh_view(&xa.slice(0..n)).unwrap();
         for i in 0..n {
@@ -83,7 +85,7 @@ fn all_reduce_without_the_peer_push_diverges() {
     let n = 4096usize;
     let ha = vecf(n, 5);
     let hb = vecf(n, 6);
-    let link = ArLink::new(&engines, n).unwrap();
+    let link = ArLink::new(&engines).unwrap();
     let xa = ea.htod(&ha).unwrap();
     // The fold alone, with nothing pushed: the staging buffer is zeros, so rank 0 keeps its own
     // partial instead of the sum. If this matched, the passing test above would prove nothing.
@@ -118,7 +120,7 @@ fn broadcast_and_all_gather_move_bytes_exactly() {
     };
     let engines = [&ea, &eb];
     for &span in &[1usize, 1024, 16384] {
-        let mut link = ArLink::new(&engines, 2 * span).unwrap();
+        let mut link = ArLink::new(&engines).unwrap();
 
         // broadcast: rank 0's buffer lands on rank 1 byte for byte
         let hsrc = vecf(span, 31 + span as u64);

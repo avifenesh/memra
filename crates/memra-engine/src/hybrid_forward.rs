@@ -13532,10 +13532,14 @@ impl HybridModel {
                 z,
                 t * n_embd,
             )?),
-            TpXport::PeerPull => None,
+            TpXport::PeerPull | TpXport::DevicePush => None,
         };
+        //   device-push — same ONE block per peer rank as peer-pull, issued on the producer's
+        //     stream instead of the consumer's so the ranks stop taking turns.
         let z_peer_bulks = match hop.transport {
-            TpXport::PeerPull => Some(crate::tp_transport::fanout_f32(&hop, z, t * n_embd)?),
+            TpXport::PeerPull | TpXport::DevicePush => {
+                Some(crate::tp_transport::fanout_f32(&hop, z, t * n_embd)?)
+            }
             TpXport::HostCanonical => None,
         };
         for tok in 0..t {
