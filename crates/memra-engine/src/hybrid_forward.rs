@@ -9428,6 +9428,19 @@ impl HybridModel {
             (ig.heads as f32).powf(-0.5),
         )?;
         let width_cap = ig.index_width(capacity_pools);
+        // The cap handed to the live selector must be the SAME clamped `select_k` the width was
+        // built from. `index_width` uses `select_k(capacity_pools)` = `(top_k / pool).min(pools)`,
+        // and the launcher audits `width_cap >= select_k_cap * pool + pool - 1`, so passing the
+        // UNCLAMPED `top_k / pool` makes the two disagree exactly when `capacity_tokens < top_k`:
+        // the launcher then returns 40014, capture fails, and the door latches the WHOLE stage
+        // eager. Measured on the served 2x B200 pair 2026-09-06 (doorscreen `mid` arm): a session
+        // at ctx=386 against `index_topk` 2048 took the mid door from the composed posture's
+        // 86.90 tok/s to 79.33, a 8.71% LOSS that was the lost decode graph, not the middle.
+        // Behaviour-preserving: the kernel takes `select_k = min(select_k_cap, n_pools)` and
+        // `n_pools <= capacity_pools` always (`first_pos + t_q <= capacity_tokens`), so
+        // `min(min(top_k/pool, cap), n_pools)` is `min(top_k/pool, n_pools)`, the scalar
+        // launch's `select_k(n_pools)`, for every reachable call.
+        let select_k_cap = ig.live_select_k_cap(capacity_pools);
         let mut idx = e.uninit_i32(t * width_cap)?;
         let mut width_d = e.uninit_i32(1)?;
         e.mla_kpool_select_live(
@@ -9438,7 +9451,7 @@ impl HybridModel {
             pos_d,
             capacity_pools,
             ig.pool,
-            ig.top_k / ig.pool,
+            select_k_cap,
             width_cap,
             ig.always_select_tail,
         )?;
