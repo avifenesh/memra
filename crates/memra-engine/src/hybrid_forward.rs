@@ -2977,6 +2977,7 @@ impl HybridModel {
         &self,
         e: &Engine,
         peer: &Engine,
+        rt: &crate::glm5_tp::Glm5TpRt,
         topology: &crate::hyper::HyperTopology,
         il: usize,
         x: &mut CudaSlice<f32>,
@@ -3093,8 +3094,16 @@ impl HybridModel {
                     il as u16,
                 )?
             }
-            _ => {
-                return Err(format!("layer {il}: the symmetric walk covers MoE FFNs only").into());
+            crate::hybrid::Ffn::Dense { .. } => {
+                // The leading dense layer(s) (first_k_dense_replace): root runs the dense FFN it
+                // holds, the peer receives the result over the fabric. One extra crossing on one
+                // layer of 46; dense layers stay outside graph runs.
+                let out = self.hyper_ffn_branch(e, layer, &ws.z, 1, il, false, zq8.as_ref())?;
+                let hop = rt.hop(e);
+                let out_peer = crate::tp_transport::fanout_f32(&hop, &out, n_embd)?
+                    .pop()
+                    .ok_or("symmetric walk: dense FFN fan-out returned no peer copy")?;
+                vec![out, out_peer]
             }
         };
         crate::hyper::post_t1_ws(e, topology, &ffn_out[0], x, ws, n_embd)?;
@@ -3176,6 +3185,7 @@ impl HybridModel {
                 self.sym_layer_step(
                     e,
                     peer,
+                    rt,
                     topology,
                     il,
                     x,
