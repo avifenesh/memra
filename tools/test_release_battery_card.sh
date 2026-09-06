@@ -15,9 +15,31 @@ command -v nvidia-smi >/dev/null || { echo "SKIP: no nvidia-smi (the refusal is 
 TOTAL=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits -i 0 | head -1)
 [ -n "$TOTAL" ] || fail "could not read card total"
 
-# 1. PURE ARM: the arithmetic, with no card involved.
-need=$(CARD_HEADROOM_MIB=1024; sz=$( { stat -c %s "$0"; } ); echo $(( sz / 1048576 + 1024 )))
-[ "$need" -ge 1024 ] || fail "model_need_mib arithmetic lost the headroom"
+# 1. PURE ARM: the sizing, with no card involved.
+#
+# THE ARM THAT WAS MISSING. The first version of this gate sized with `stat -c %s`, which on
+# a SYMLINK returns the link's own 58 bytes, so a 15GB roster model came out needing 1024MiB
+# and the gate could never refuse for it. Nothing in the suite noticed; the receipt did,
+# because it prints the number. So the arm is now: a symlink to a large file must size as the
+# TARGET, and an unsizeable path must refuse rather than produce a small number.
+TD=$(mktemp -d); trap 'rm -rf "$TD"' EXIT
+head -c 3000000 /dev/zero > "$TD/big.bin"          # ~2.8 MiB, enough to separate from a link
+ln -s "$TD/big.bin" "$TD/link.bin"
+size_via_gate() { # mirrors model_need_mib's sizing exactly
+  sz=$(stat -Lc %s "$1" 2>/dev/null || echo 0)
+  [ "${sz:-0}" -gt 0 ] || { echo 999999999; return; }
+  echo $(( sz / 1048576 + 1024 ))
+}
+direct=$(size_via_gate "$TD/big.bin")
+linked=$(size_via_gate "$TD/link.bin")
+[ "$direct" = "$linked" ] || fail "a symlinked model must size as its target (direct=$direct link=$linked)"
+[ "$linked" -gt 1024 ] || fail "the symlink sized as the LINK, not the target — the gate would disable itself"
+missing=$(size_via_gate "$TD/does-not-exist")
+[ "$missing" = "999999999" ] || fail "an unsizeable path must refuse, not produce a small need (got $missing)"
+
+# The shipped function must agree with the mirror above, so this arm cannot drift from it.
+grep -q 'stat -Lc %s' "$ROOT/tools/release-battery.sh" \
+  || fail "release-battery.sh must size with stat -Lc (follow symlinks)
 
 # 2. RED ARM: hold most of the card, then require the refusal.
 #

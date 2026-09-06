@@ -70,11 +70,30 @@ await_card() {
 }
 
 # Bytes the model file occupies, in MiB, plus the headroom a run needs on top of the weights
-# (KV, workspace, the draft plane). Measured shape, not a guess: ornith is 20 GB of weights
-# and needs ~21 GB free to seat its MoE MTP head resident on a 24 GB card.
+# (KV, workspace, the draft plane).
+#
+# THE HEADROOM IS MEASURED, 2026-09-06. Sampling `memory.used` every 2s through a full
+# ornith run-spec on an otherwise idle rig card: PEAK 20539 MiB with a 526 MiB baseline, i.e.
+# ~20013 MiB for the run itself against a 19252 MiB file — about 760 MiB of overhead. 1536
+# covers that with slack for fragmentation.
+#
+# WHY SLACK MATTERS MORE THAN THE MEAN HERE. That cell runs within ~600 MiB of a 24 GB card,
+# so it is inherently marginal on this rig and its outcome FLIPS in a narrow band: observed
+# PASS at 20562 MiB free, FAIL at 20682, PASS at 23937, FAIL at 17292. A release must not
+# rest on which side of that band the card happens to land, so the gate is deliberately
+# tuned to REFUSE inside it rather than let a coin-flip run decide. A refusal costs a re-run;
+# a lucky pass ships an unverified tag.
 model_need_mib() {
-  sz=$(stat -c %s "$1" 2>/dev/null || echo 0)
-  echo $(( sz / 1048576 + ${CARD_HEADROOM_MIB:-1024} ))
+  # -L FOLLOWS THE SYMLINK, and that is the whole point of this line. Without it the size read
+  # is the LINK's own 58 bytes, so the roster's qwen row — a symlink into the models tree —
+  # sized as 1024MiB for a 15GB model and the gate could never refuse for it. It shipped that
+  # way in memra#265 and nothing in the suite noticed; the RECEIPT noticed, because it prints
+  # the number and `need=1024MiB` sat next to `need=20276MiB` for a model of similar size.
+  # An unsizeable path returns an impossible need rather than a small one: a gate that cannot
+  # measure must refuse, never wave through.
+  sz=$(stat -Lc %s "$1" 2>/dev/null || echo 0)
+  [ "${sz:-0}" -gt 0 ] || { echo "release-battery: cannot size $1 — refusing to guess a card need" >&2; echo 999999999; return; }
+  echo $(( sz / 1048576 + ${CARD_HEADROOM_MIB:-1536} ))
 }
 
 FAILED=0; MISSING_OWN=0; OWN_ROWS=0; LINES=""
