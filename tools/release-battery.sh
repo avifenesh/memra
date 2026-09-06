@@ -73,7 +73,15 @@ await_card() {
 # (KV, workspace, the draft plane). Measured shape, not a guess: ornith is 20 GB of weights
 # and needs ~21 GB free to seat its MoE MTP head resident on a 24 GB card.
 model_need_mib() {
-  sz=$(stat -c %s "$1" 2>/dev/null || echo 0)
+  # -L FOLLOWS THE SYMLINK, and that is the whole point of this line. Without it the size read
+  # is the LINK's own 58 bytes, so the roster's qwen row — a symlink into the models tree —
+  # sized as 1024MiB for a 15GB model and the gate could never refuse for it. It shipped that
+  # way in memra#265 and nothing in the suite noticed; the RECEIPT noticed, because it prints
+  # the number and `need=1024MiB` sat next to `need=20276MiB` for a model of similar size.
+  # An unsizeable path returns an impossible need rather than a small one: a gate that cannot
+  # measure must refuse, never wave through.
+  sz=$(stat -Lc %s "$1" 2>/dev/null || echo 0)
+  [ "${sz:-0}" -gt 0 ] || { echo "release-battery: cannot size $1 — refusing to guess a card need" >&2; echo 999999999; return; }
   echo $(( sz / 1048576 + ${CARD_HEADROOM_MIB:-1024} ))
 }
 
