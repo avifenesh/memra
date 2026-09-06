@@ -3092,12 +3092,16 @@ impl HybridModel {
                         let xs = m.glm5_tp_split.as_ref().ok_or_else(|| {
                             format!("layer {il}: the symmetric walk needs the expert split armed")
                         })?;
+                        let peer_router = glue.router.as_ref().ok_or_else(|| {
+                            format!("layer {il}: the peer glue carries no router for its MoE")
+                        })?;
                         Self::moe_ffn_glm5_tp_split_sym(
                             e,
                             m,
                             xs,
                             &[&ws.z, &ws_peer.z],
                             zq8.as_ref(),
+                            peer_router,
                             1,
                             &self.cfg,
                             il as u16,
@@ -14076,6 +14080,193 @@ impl HybridModel {
         Ok(moe_out)
     }
 
+    /// Whether the device-routed vrows half may serve this layer: the SAME predicate the served
+    /// walk gates its own vrows chain on, so the split never runs a kernel family the plain walk
+    /// would not. Anything else takes the per-slot fallback below.
+    fn moe_split_vrows_eligible(cfg: &ModelConfig, m: &MoeWeights) -> bool {
+        let n_used = cfg
+            .moe
+            .as_ref()
+            .map(|x| x.expert_used_count as usize)
+            .unwrap_or(0);
+        moe_q8_enabled_for_model(cfg, m) && n_used <= 8 && cfg.sigmoid_router().is_some()
+    }
+
+    /// One rank's half of the expert-split MoE by the PER-SLOT program, for layouts the vrows
+    /// chain does not take (the rig fixture's Q8_0/F32 experts among them). Host-routed: the
+    /// caller ran the router on root and shares `sel`/`w`. Slower by construction (3 launches per
+    /// slot from host) and kept only as the fallback that keeps every layout correct.
+    #[allow(clippy::too_many_arguments)]
+    fn moe_split_rank_half_slots(
+        dev: &Engine,
+        m: &MoeWeights,
+        xs: &crate::glm5_tp::Glm5TpSplitExps,
+        rank: usize,
+        zr: &CudaSlice<f32>,
+        (sel_all, w_all): (&[u32], &[f32]),
+        t: usize,
+        cfg: &ModelConfig,
+        il: u16,
+        out: &mut CudaSlice<f32>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let moe = cfg
+            .moe
+            .as_ref()
+            .ok_or("glm5 TP expert split requires MoE model metadata")?;
+        let n_embd = cfg.n_embd as usize;
+        let n_used = moe.expert_used_count as usize;
+        let lim_exp = cfg.clamp_exp_at(il as u32);
+        let half = xs.half_ff;
+        let slab = &xs.slabs[rank];
+        for tok in 0..t {
+            let sel = &sel_all[tok * n_used..(tok + 1) * n_used];
+            let w = &w_all[tok * n_used..(tok + 1) * n_used];
+            let zt = zr.slice(tok * n_embd..(tok + 1) * n_embd);
+            for (j, &ex) in sel.iter().enumerate() {
+                let ex = ex as usize;
+                let gate = dev.qmatvec_view(
+                    &slab.gate,
+                    ex * xs.gate_stride..(ex + 1) * xs.gate_stride,
+                    &zt,
+                    1,
+                    m.gate_exps.in_f,
+                    half,
+                    m.gate_exps.qtype,
+                    m.gate_exps.row_bytes,
+                )?;
+                let up = dev.qmatvec_view(
+                    &slab.up,
+                    ex * xs.up_stride..(ex + 1) * xs.up_stride,
+                    &zt,
+                    1,
+                    m.up_exps.in_f,
+                    half,
+                    m.up_exps.qtype,
+                    m.up_exps.row_bytes,
+                )?;
+                let mut act = dev.uninit(half)?; // the activation fully overwrites
+                Self::ffn_act_lim(
+                    dev,
+                    cfg,
+                    &gate,
+                    &up,
+                    m.gate_exps.macro_scale(ex),
+                    m.up_exps.macro_scale(ex),
+                    lim_exp,
+                    &mut act,
+                    half,
+                )?;
+                let actv = act.slice(0..half);
+                // Half the K range, full output width: this rank's PARTIAL SUM of the row.
+                let y = dev.qmatvec_view(
+                    &slab.down,
+                    ex * xs.down_stride..(ex + 1) * xs.down_stride,
+                    &actv,
+                    1,
+                    half,
+                    n_embd,
+                    m.down_exps.qtype,
+                    xs.down_row_bytes,
+                )?;
+                let mut dst = out.slice_mut(tok * n_embd..(tok + 1) * n_embd);
+                dev.axpy_into(&y, w[j] * m.down_exps.macro_scale(ex), &mut dst, n_embd)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// One rank's half of the expert-split MoE, DEVICE-ROUTED: the sigmoid top-k runs on this
+    /// rank from `router` (root's own planes, or the peer's replicated copy), `sel`/`w` stay on
+    /// device, and the served vrows chain runs all `n_used` slots in three launches over this
+    /// rank's half-width slab. No host readback, no per-slot launches.
+    ///
+    /// WHY THIS REPLACED THE PER-SLOT WALK. The first cut of the split ran `n_used` x 3
+    /// `qmatvec_view` launches per rank per layer, each driven from a HOST `sel` that
+    /// `moe_route_sigmoid_cfg` read back with a stream drain. That is 24 host-issued launches and
+    /// one full drain per MoE layer, 42 layers per token, on a path whose whole purpose is to keep
+    /// the two cards streaming. The served plain walk never does either: its router stays on
+    /// device and its rows kernels take the pair table. This is that program, on the shard.
+    #[allow(clippy::too_many_arguments)]
+    fn moe_split_rank_half(
+        dev: &Engine,
+        m: &MoeWeights,
+        xs: &crate::glm5_tp::Glm5TpSplitExps,
+        rank: usize,
+        router: (&CudaSlice<f32>, &CudaSlice<f32>, &CudaSlice<u8>),
+        z: &CudaSlice<f32>,
+        zq8: Option<&(CudaSlice<i8>, CudaSlice<f32>)>,
+        t: usize,
+        cfg: &ModelConfig,
+        il: u16,
+        out: &mut CudaSlice<f32>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use cudarc::driver::DevicePtr;
+        let moe = cfg
+            .moe
+            .as_ref()
+            .ok_or("glm5 TP expert split requires MoE model metadata")?;
+        let n_embd = cfg.n_embd as usize;
+        let n_expert = moe.expert_count as usize;
+        let n_used = moe.expert_used_count as usize;
+        let (sf, route_norm) = cfg
+            .sigmoid_router()
+            .ok_or("glm5 TP expert split requires the sigmoid router")?;
+        let (gate_w, bias, active) = router;
+        let logits = dev.router_gemv(gate_w, z, n_embd, n_expert, t)?;
+        let (sel_d, selw_d) = dev.moe_router_sigmoid_topk(
+            &logits,
+            t,
+            n_expert,
+            n_used,
+            m.active_count(),
+            bias,
+            active,
+            sf,
+            route_norm,
+        )?;
+        let slab = &xs.slabs[rank];
+        let (pg, pu, pd) = {
+            let st = dev.stream();
+            (
+                slab.gate.device_ptr(&st).0,
+                slab.up.device_ptr(&st).0,
+                slab.down.device_ptr(&st).0,
+            )
+        };
+        // The vrows chain is the PRE-clamped kernel family, exactly as the served path gates it:
+        // a layer without a `Pre` clamp is a different kernel, so refuse by name rather than
+        // substitute a limit and run the wrong program quietly.
+        let Some(memra_gguf::config::SwigluClamp::Pre(lim)) = cfg.clamp_exp_at(il as u32) else {
+            return Err(format!(
+                "glm5 TP expert split: layer {il} has no pre-clamp limit; the split rides the \
+                 preclamp8 rows chain and takes no other clamp"
+            )
+            .into());
+        };
+        Self::moe_vrows_pairs_q8_geom(
+            dev,
+            m,
+            z,
+            zq8,
+            VrowsSel::Dev(&sel_d, &selw_d),
+            il,
+            (pg, pu, pd),
+            (xs.gate_stride, xs.up_stride, xs.down_stride),
+            (
+                m.gate_exps.row_bytes,
+                m.up_exps.row_bytes,
+                xs.down_row_bytes,
+            ),
+            false,
+            t,
+            n_embd,
+            xs.half_ff,
+            n_used,
+            lim,
+            out,
+        )
+    }
+
     /// The glm5 TP walk with every expert SPLIT across the ranks
     /// (`MEMRA_GLM5_TP_EXPERT_SPLIT`, lane/tp-expert-split-20260906).
     ///
@@ -14111,124 +14302,121 @@ impl HybridModel {
         cfg: &ModelConfig,
         il: u16,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let moe = cfg
-            .moe
-            .as_ref()
-            .ok_or("glm5 TP expert split requires MoE model metadata")?;
         let n_embd = cfg.n_embd as usize;
-        let n_expert = moe.expert_count as usize;
-        let n_used = moe.expert_used_count as usize;
-        let sig = cfg
-            .sigmoid_router()
-            .ok_or("glm5 TP expert split requires the sigmoid router")?;
-        let lim_exp = cfg.clamp_exp_at(il as u32);
         let lim_shexp = cfg.clamp_shexp_at(il as u32);
         let rt = &xs.rt;
         let ranks = xs.ranks();
-        let half = xs.half_ff;
-
-        // Root router, unchanged program: selection is bit-identical to every other arm.
-        let logits = Self::moe_router_logits(e, m, z, t, cfg)?;
-        let (sel_all, w_all) =
-            Self::moe_route_sigmoid_cfg(e, &logits, t, n_expert, n_used, m, sig)?;
-        crate::moesd::record_host_routes(il, n_expert, n_used, &sel_all)?;
-        Self::trace_moe_routes(il, t, &sel_all, &w_all)?;
-
-        let hop = rt.hop(e);
-        // Every rank needs the whole activation block: unlike the EP walk there is no rank that
-        // routes no work, because every rank owns part of every expert.
-        let z_peers = crate::tp_transport::fanout_f32(&hop, z, t * n_embd)?;
-
-        let mut outs: Vec<CudaSlice<f32>> = Vec::with_capacity(ranks);
-        for r in 0..ranks {
-            let dev = crate::glm5_tp::rank_engine(e, rt, r);
-            let slab = &xs.slabs[r];
-            let zr = if r == 0 { z } else { &z_peers[r - 1] };
-            let mut out = dev.zeros(t * n_embd)?;
-            for tok in 0..t {
-                let sel = &sel_all[tok * n_used..(tok + 1) * n_used];
-                let w = &w_all[tok * n_used..(tok + 1) * n_used];
-                let zt = zr.slice(tok * n_embd..(tok + 1) * n_embd);
-                for (j, &ex) in sel.iter().enumerate() {
-                    let ex = ex as usize;
-                    let gate = dev.qmatvec_view(
-                        &slab.gate,
-                        ex * xs.gate_stride..(ex + 1) * xs.gate_stride,
-                        &zt,
-                        1,
-                        m.gate_exps.in_f,
-                        half,
-                        m.gate_exps.qtype,
-                        m.gate_exps.row_bytes,
-                    )?;
-                    let up = dev.qmatvec_view(
-                        &slab.up,
-                        ex * xs.up_stride..(ex + 1) * xs.up_stride,
-                        &zt,
-                        1,
-                        m.up_exps.in_f,
-                        half,
-                        m.up_exps.qtype,
-                        m.up_exps.row_bytes,
-                    )?;
-                    let mut act = dev.uninit(half)?; // the activation fully overwrites
-                    Self::ffn_act_lim(
-                        dev,
-                        cfg,
-                        &gate,
-                        &up,
-                        m.gate_exps.macro_scale(ex),
-                        m.up_exps.macro_scale(ex),
-                        lim_exp,
-                        &mut act,
-                        half,
-                    )?;
-                    let actv = act.slice(0..half);
-                    // Half the K range, full output width: this rank's PARTIAL SUM of the row.
-                    let y = dev.qmatvec_view(
-                        &slab.down,
-                        ex * xs.down_stride..(ex + 1) * xs.down_stride,
-                        &actv,
-                        1,
-                        half,
-                        n_embd,
-                        m.down_exps.qtype,
-                        xs.down_row_bytes,
-                    )?;
-                    let mut dst = out.slice_mut(tok * n_embd..(tok + 1) * n_embd);
-                    dev.axpy_into(&y, w[j] * m.down_exps.macro_scale(ex), &mut dst, n_embd)?;
-                }
-            }
-            outs.push(out);
+        if ranks != 2 {
+            return Err("moe_ffn_glm5_tp_split: this arm is two ranks".into());
         }
-
-        // One reduction for the whole layer. Root keeps its own chain and folds each peer's.
-        // MEMRA_TP_AR_1STAGE: as in the MLA half, this is a collective and gets the one-shot.
-        let mut moe_out = outs.remove(0);
-        // As in the MLA half: ask the door before taking the peer's output out of `outs`, and put
-        // it back if the one-shot declines, or the fallback below iterates an empty list and the
-        // peer's whole contribution vanishes.
-        let reduced = if outs.len() == 1 && rt.ar_1stage_available() {
-            let mut peer_out = outs.remove(0);
-            let done = rt.ar_1stage(e, &mut [&mut moe_out, &mut peer_out], t * n_embd)?;
-            if !done {
-                outs.insert(0, peer_out);
-            }
-            done
+        let hop = rt.hop(e);
+        // The peer gets the FFN input (one push) and routes from ROOT's planes pushed alongside
+        // once per process would be cleaner; in the root-orchestrated walk the peer has no glue,
+        // so the router planes ride the same hop as z. Cheap: 4.7 MB once per layer per token is
+        // well under the join it sits next to, and the symmetric walk removes it entirely.
+        let z_peer = crate::tp_transport::fanout_f32(&hop, z, t * n_embd)?
+            .pop()
+            .ok_or("split: fan-out returned no peer copy")?;
+        let gate_peer = crate::tp_transport::fanout_f32(
+            &hop,
+            m.gate_inp.float_data(),
+            m.gate_inp.float_data().len(),
+        )?
+        .pop()
+        .ok_or("split: router fan-out returned no peer copy")?;
+        let bias_peer =
+            crate::tp_transport::fanout_f32(&hop, &m.exp_probs_b_dev, m.exp_probs_b_dev.len())?
+                .pop()
+                .ok_or("split: bias fan-out returned no peer copy")?;
+        let active_peer = {
+            let host = e.dtoh_u8(&m.active_experts_dev)?;
+            rt.peers[0].htod_bytes(&host)?
+        };
+        let peer = &rt.peers[0];
+        let mut out0 = e.zeros(t * n_embd)?;
+        let mut out1 = peer.zeros(t * n_embd)?;
+        if Self::moe_split_vrows_eligible(cfg, m) {
+            Self::moe_split_rank_half(
+                e,
+                m,
+                xs,
+                0,
+                (
+                    m.gate_inp.float_data(),
+                    &m.exp_probs_b_dev,
+                    &m.active_experts_dev,
+                ),
+                z,
+                zq8,
+                t,
+                cfg,
+                il,
+                &mut out0,
+            )?;
+            Self::moe_split_rank_half(
+                peer,
+                m,
+                xs,
+                1,
+                (&gate_peer, &bias_peer, &active_peer),
+                &z_peer,
+                None,
+                t,
+                cfg,
+                il,
+                &mut out1,
+            )?;
+        } else {
+            let moe = cfg
+                .moe
+                .as_ref()
+                .ok_or("glm5 TP expert split requires MoE model metadata")?;
+            let (n_expert, n_used) = (moe.expert_count as usize, moe.expert_used_count as usize);
+            let sig = cfg
+                .sigmoid_router()
+                .ok_or("glm5 TP expert split requires the sigmoid router")?;
+            let logits = Self::moe_router_logits(e, m, z, t, cfg)?;
+            let (sel_all, w_all) =
+                Self::moe_route_sigmoid_cfg(e, &logits, t, n_expert, n_used, m, sig)?;
+            crate::moesd::record_host_routes(il, n_expert, n_used, &sel_all)?;
+            Self::trace_moe_routes(il, t, &sel_all, &w_all)?;
+            Self::moe_split_rank_half_slots(
+                e,
+                m,
+                xs,
+                0,
+                z,
+                (&sel_all, &w_all),
+                t,
+                cfg,
+                il,
+                &mut out0,
+            )?;
+            Self::moe_split_rank_half_slots(
+                peer,
+                m,
+                xs,
+                1,
+                &z_peer,
+                (&sel_all, &w_all),
+                t,
+                cfg,
+                il,
+                &mut out1,
+            )?;
+        }
+        Self::moe_shexp_add(e, m, z, zq8, t, cfg, lim_shexp, &mut out0)?;
+        let reduced = if rt.ar_1stage_available() {
+            rt.ar_1stage(e, &mut [&mut out0, &mut out1], t * n_embd)?
         } else {
             false
         };
         if !reduced {
-            for (r, peer_out) in outs.iter().enumerate() {
-                let landed =
-                    crate::tp_transport::return_row_to_root(&hop, r + 1, peer_out, t * n_embd)?;
-                let mut dst = moe_out.slice_mut(0..t * n_embd);
-                e.axpy_into(&landed, 1.0, &mut dst, t * n_embd)?;
-            }
+            let landed = crate::tp_transport::return_row_to_root(&hop, 1, &out1, t * n_embd)?;
+            let mut dst = out0.slice_mut(0..t * n_embd);
+            e.axpy_into(&landed, 1.0, &mut dst, t * n_embd)?;
         }
-
-        Self::moe_shexp_add(e, m, z, zq8, t, cfg, lim_shexp, &mut moe_out)?;
-        Ok(moe_out)
+        Ok(out0)
     }
 
     /// The SYMMETRIC expert-split MoE (lane/tp-symmetric-20260906): every rank already holds the
@@ -14244,112 +14432,108 @@ impl HybridModel {
         xs: &crate::glm5_tp::Glm5TpSplitExps,
         z_by_rank: &[&CudaSlice<f32>],
         zq8: Option<&(CudaSlice<i8>, CudaSlice<f32>)>,
+        peer_router: &crate::glm5_tp::Glm5TpPeerRouter,
         t: usize,
         cfg: &ModelConfig,
         il: u16,
     ) -> Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>> {
-        let moe = cfg
-            .moe
-            .as_ref()
-            .ok_or("glm5 TP symmetric MoE requires MoE model metadata")?;
         let n_embd = cfg.n_embd as usize;
-        let n_expert = moe.expert_count as usize;
-        let n_used = moe.expert_used_count as usize;
-        let sig = cfg
-            .sigmoid_router()
-            .ok_or("glm5 TP symmetric MoE requires the sigmoid router")?;
-        let lim_exp = cfg.clamp_exp_at(il as u32);
         let lim_shexp = cfg.clamp_shexp_at(il as u32);
         let rt = &xs.rt;
-        let ranks = xs.ranks();
-        if ranks != 2 || z_by_rank.len() != 2 {
+        if xs.ranks() != 2 || z_by_rank.len() != 2 {
             return Err("moe_ffn_glm5_tp_split_sym: this arm is two ranks".into());
         }
         if !rt.ar_1stage_available() {
             return Err("moe_ffn_glm5_tp_split_sym: needs a real two-device group".into());
         }
-        let half = xs.half_ff;
-        let z = z_by_rank[0];
-
-        let logits = Self::moe_router_logits(e, m, z, t, cfg)?;
-        let (sel_all, w_all) =
-            Self::moe_route_sigmoid_cfg(e, &logits, t, n_expert, n_used, m, sig)?;
-        crate::moesd::record_host_routes(il, n_expert, n_used, &sel_all)?;
-        Self::trace_moe_routes(il, t, &sel_all, &w_all)?;
-
-        let mut outs: Vec<CudaSlice<f32>> = Vec::with_capacity(ranks);
-        for r in 0..ranks {
-            let dev = crate::glm5_tp::rank_engine(e, rt, r);
-            let slab = &xs.slabs[r];
-            let zr = z_by_rank[r];
-            let mut out = dev.zeros(t * n_embd)?;
-            for tok in 0..t {
-                let sel = &sel_all[tok * n_used..(tok + 1) * n_used];
-                let w = &w_all[tok * n_used..(tok + 1) * n_used];
-                let zt = zr.slice(tok * n_embd..(tok + 1) * n_embd);
-                for (j, &ex) in sel.iter().enumerate() {
-                    let ex = ex as usize;
-                    let gate = dev.qmatvec_view(
-                        &slab.gate,
-                        ex * xs.gate_stride..(ex + 1) * xs.gate_stride,
-                        &zt,
-                        1,
-                        m.gate_exps.in_f,
-                        half,
-                        m.gate_exps.qtype,
-                        m.gate_exps.row_bytes,
-                    )?;
-                    let up = dev.qmatvec_view(
-                        &slab.up,
-                        ex * xs.up_stride..(ex + 1) * xs.up_stride,
-                        &zt,
-                        1,
-                        m.up_exps.in_f,
-                        half,
-                        m.up_exps.qtype,
-                        m.up_exps.row_bytes,
-                    )?;
-                    let mut act = dev.uninit(half)?;
-                    Self::ffn_act_lim(
-                        dev,
-                        cfg,
-                        &gate,
-                        &up,
-                        m.gate_exps.macro_scale(ex),
-                        m.up_exps.macro_scale(ex),
-                        lim_exp,
-                        &mut act,
-                        half,
-                    )?;
-                    let actv = act.slice(0..half);
-                    let y = dev.qmatvec_view(
-                        &slab.down,
-                        ex * xs.down_stride..(ex + 1) * xs.down_stride,
-                        &actv,
-                        1,
-                        half,
-                        n_embd,
-                        m.down_exps.qtype,
-                        xs.down_row_bytes,
-                    )?;
-                    let mut dst = out.slice_mut(tok * n_embd..(tok + 1) * n_embd);
-                    dev.axpy_into(&y, w[j] * m.down_exps.macro_scale(ex), &mut dst, n_embd)?;
-                }
-            }
-            outs.push(out);
+        let peer = &rt.peers[0];
+        let mut out0 = e.zeros(t * n_embd)?;
+        let mut out1 = peer.zeros(t * n_embd)?;
+        if Self::moe_split_vrows_eligible(cfg, m) {
+            Self::moe_split_rank_half(
+                e,
+                m,
+                xs,
+                0,
+                (
+                    m.gate_inp.float_data(),
+                    &m.exp_probs_b_dev,
+                    &m.active_experts_dev,
+                ),
+                z_by_rank[0],
+                zq8,
+                t,
+                cfg,
+                il,
+                &mut out0,
+            )?;
+            Self::moe_split_rank_half(
+                peer,
+                m,
+                xs,
+                1,
+                (
+                    peer_router.gate_inp.float_data(),
+                    &peer_router.exp_probs_b_dev,
+                    &peer_router.active_experts_dev,
+                ),
+                z_by_rank[1],
+                None,
+                t,
+                cfg,
+                il,
+                &mut out1,
+            )?;
+        } else {
+            let moe = cfg
+                .moe
+                .as_ref()
+                .ok_or("glm5 TP expert split requires MoE model metadata")?;
+            let (n_expert, n_used) = (moe.expert_count as usize, moe.expert_used_count as usize);
+            let sig = cfg
+                .sigmoid_router()
+                .ok_or("glm5 TP expert split requires the sigmoid router")?;
+            let logits = Self::moe_router_logits(e, m, z_by_rank[0], t, cfg)?;
+            let (sel_all, w_all) =
+                Self::moe_route_sigmoid_cfg(e, &logits, t, n_expert, n_used, m, sig)?;
+            crate::moesd::record_host_routes(il, n_expert, n_used, &sel_all)?;
+            Self::trace_moe_routes(il, t, &sel_all, &w_all)?;
+            Self::moe_split_rank_half_slots(
+                e,
+                m,
+                xs,
+                0,
+                z_by_rank[0],
+                (&sel_all, &w_all),
+                t,
+                cfg,
+                il,
+                &mut out0,
+            )?;
+            Self::moe_split_rank_half_slots(
+                peer,
+                m,
+                xs,
+                1,
+                z_by_rank[1],
+                (&sel_all, &w_all),
+                t,
+                cfg,
+                il,
+                &mut out1,
+            )?;
         }
         // Shared expert on root, folded into root's partial BEFORE the reduce, so the sum carries
         // it to both ranks without replicating the shared-expert weights.
-        Self::moe_shexp_add(e, m, z, zq8, t, cfg, lim_shexp, &mut outs[0])?;
-        let (a, b) = outs.split_at_mut(1);
-        let reduced = rt.ar_1stage(e, &mut [&mut a[0], &mut b[0]], t * n_embd)?;
+        Self::moe_shexp_add(e, m, z_by_rank[0], zq8, t, cfg, lim_shexp, &mut out0)?;
+        let reduced = rt.ar_1stage(e, &mut [&mut out0, &mut out1], t * n_embd)?;
         if !reduced {
             return Err(
                 "moe_ffn_glm5_tp_split_sym: the one-shot declined after availability said yes"
                     .into(),
             );
         }
-        Ok(outs)
+        Ok(vec![out0, out1])
     }
 
     /// The DIETED glm5 EP walk (`MEMRA_GLM5_EP_DIET`, lane/glm5-ep-diet): the v1 walk's
@@ -17080,14 +17264,8 @@ impl HybridModel {
         Ok(())
     }
 
-    /// The verify-rows batched routed-expert program (lane/glm5-vrest): one layer-call's
-    /// WHOLE t x n_used pair union through the fused-epilogue kernels' rows twins —
-    /// one gate/up+preclamp launch, one pair-major activation quantize, one down+FMA
-    /// launch — with pointers computed from the resident slab base + ex*stride (the
-    /// sequential slab arm's exact arithmetic) and the macro folds landing exactly where
-    /// `ffn_act_lim` / `axpy_into` land them. `moe_out` rows are FULLY overwritten.
+    /// The served entry: the resident slab's own strides.
     #[allow(clippy::too_many_arguments)]
-    // allow: the parameter list mirrors its dispatch-arm caller's contract
     fn moe_vrows_pairs_q8(
         e: &Engine,
         m: &MoeWeights,
@@ -17096,6 +17274,65 @@ impl HybridModel {
         sel: VrowsSel<'_>,
         il: u16,
         (pg, pu, pd): (u64, u64, u64),
+        rp: bool,
+        t: usize,
+        n_embd: usize,
+        n_ff_exp: usize,
+        n_used: usize,
+        limit: f32,
+        moe_out: &mut CudaSlice<f32>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        Self::moe_vrows_pairs_q8_geom(
+            e,
+            m,
+            z,
+            zq8,
+            sel,
+            il,
+            (pg, pu, pd),
+            (
+                m.gate_exps.expert_stride,
+                m.up_exps.expert_stride,
+                m.down_exps.expert_stride,
+            ),
+            (
+                m.gate_exps.row_bytes,
+                m.up_exps.row_bytes,
+                m.down_exps.row_bytes,
+            ),
+            rp,
+            t,
+            n_embd,
+            n_ff_exp,
+            n_used,
+            limit,
+            moe_out,
+        )
+    }
+
+    /// The verify-rows batched routed-expert program (lane/glm5-vrest): one layer-call's
+    /// WHOLE t x n_used pair union through the fused-epilogue kernels' rows twins —
+    /// one gate/up+preclamp launch, one pair-major activation quantize, one down+FMA
+    /// launch — with pointers computed from the resident slab base + ex*stride (the
+    /// sequential slab arm's exact arithmetic) and the macro folds landing exactly where
+    /// `ffn_act_lim` / `axpy_into` land them. `moe_out` rows are FULLY overwritten.
+    #[allow(clippy::too_many_arguments)]
+    // allow: the parameter list mirrors its dispatch-arm caller's contract
+    fn moe_vrows_pairs_q8_geom(
+        e: &Engine,
+        m: &MoeWeights,
+        z: &CudaSlice<f32>,
+        zq8: Option<&(CudaSlice<i8>, CudaSlice<f32>)>,
+        sel: VrowsSel<'_>,
+        il: u16,
+        (pg, pu, pd): (u64, u64, u64),
+        // Expert strides of the slab behind (pg, pu, pd). The served resident slab's are
+        // `m.*_exps.expert_stride`; a TP expert-split shard's are its own half-width strides.
+        (sg, su, sd): (usize, usize, usize),
+        // Row bytes of the slab behind (pg, pu, pd): the resident slab's are `m.*_exps.row_bytes`;
+        // a column-split `down` shard's is HALF of it, and passing the full width here read
+        // past every row of the shard (the gate caught it as 2.65e2 with the tape broken).
+        (rb_g, rb_u, rb_d): (usize, usize, usize),
         rp: bool,
         t: usize,
         n_embd: usize,
@@ -17134,9 +17371,9 @@ impl HybridModel {
                 let mut scl = vec![0f32; 3 * n_pairs];
                 for (p, (&ex, &w)) in sel_all.iter().zip(w_all).enumerate() {
                     let ex = ex as usize;
-                    ptrs[p] = pg + (ex * m.gate_exps.expert_stride) as u64;
-                    ptrs[n_pairs + p] = pu + (ex * m.up_exps.expert_stride) as u64;
-                    ptrs[2 * n_pairs + p] = pd + (ex * m.down_exps.expert_stride) as u64;
+                    ptrs[p] = pg + (ex * sg) as u64;
+                    ptrs[n_pairs + p] = pu + (ex * su) as u64;
+                    ptrs[2 * n_pairs + p] = pd + (ex * sd) as u64;
                     scl[p] = m.gate_exps.macro_scale(ex);
                     scl[n_pairs + p] = m.up_exps.macro_scale(ex);
                     // down-proj macro folds into the accumulate weight (1.0 for non-macro
@@ -17191,11 +17428,7 @@ impl HybridModel {
                     il,
                     macros,
                     (pg, pu, pd),
-                    (
-                        m.gate_exps.expert_stride,
-                        m.up_exps.expert_stride,
-                        m.down_exps.expert_stride,
-                    ),
+                    (sg, su, sd),
                     n_pairs,
                     &mut ptrs_d,
                     &mut scl_d,
@@ -17261,8 +17494,8 @@ impl HybridModel {
             n_pairs,
             crate::rp_qt(rp, m.gate_exps.qtype),
             crate::rp_qt(rp, m.up_exps.qtype),
-            m.gate_exps.row_bytes,
-            m.up_exps.row_bytes,
+            rb_g,
+            rb_u,
         )?;
         // Pair-major activation quantize: [n_pairs, n_ff] rows in one launch.
         let (mut aq2, mut ad2) = (
@@ -17281,7 +17514,7 @@ impl HybridModel {
             n_used,
             n_pairs,
             crate::rp_qt(rp, m.down_exps.qtype),
-            m.down_exps.row_bytes,
+            rb_d,
         )?;
         Self::trace_moe_out(e, vrows_arm, il, moe_out);
         // Everything above is dead after the down launch (stream-ordered reuse is safe on
