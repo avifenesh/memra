@@ -28101,8 +28101,11 @@ mod tests {
              (lane/spec-route-depth-20260902)"
         );
         assert!(
-            live_pre_tests.contains("glm5_clamp_spec_k(decision.k)"),
-            "the chosen K must pass the knee clamp"
+            live_pre_tests.contains("glm5_spec_k_cold_short(decision.k, decision.reason)")
+                && live_pre_tests.contains("glm5_clamp_spec_k(deepened)"),
+            "the chosen K must take the glm5 cold-short depth and THEN pass the knee clamp, in \
+             that order: deepening after the clamp could hand the verify walk a K+1 above the \
+             decode-exact knee"
         );
         // 3b. THE ROUTE LINE CARRIES A REASON (memra#74). The receipt an operator reads must
         //     never again say `route=plain` with nothing but `cold=0 restored=0` to explain
