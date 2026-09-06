@@ -444,7 +444,15 @@ impl<'a> Hop<'a> {
     /// reading a peer's `device_ptr` while another context is current resolved to the wrong
     /// address once and cost a debugging round (`tp_ar`'s note carries the receipt).
     ///
-    /// Ordering is the caller's job: `publish(from, to)` after the push, before `to` reads.
+    /// TWO EDGES, and the second one is not optional. `publish(from, to)` AFTER the push is the
+    /// read-after-write half the caller owes. This function itself takes the write-after-write
+    /// half, `release(from, to)`, BEFORE the store: the destination lives on the consumer and the
+    /// consumer's stream may still be writing it, whether that is an explicit fill or simply the
+    /// stream-ordered allocation that handed the memory out. Measured on two real devices
+    /// 2026-09-06 and only there: a broadcast was byte-exact at 4 B and 4 KiB and lost part of its
+    /// payload at 64 KiB, because the consumer's own upload was still in flight when the push
+    /// landed and then overwrote it. The pull arm has always taken this edge (after its read); a
+    /// push needs it before its write.
     #[allow(clippy::too_many_arguments)] // allow: (producer, src, src_off, src_stride) x (consumer, dst, dst_off, dst_stride) x (rows, row_len) IS the shape of a strided cross-rank store, and a struct would hide which side owns which pointer
     fn push_2d(
         &self,
@@ -475,6 +483,9 @@ impl<'a> Hop<'a> {
             let s = cons.stream();
             dst.device_ptr_mut(&s).0 as *mut f32
         };
+        // Write-after-write: the producer's store must follow whatever the consumer already has
+        // enqueued against this buffer.
+        self.release(from, to)?;
         let prod = self.engine(from);
         let _main = prod.gpu.enter_main()?;
         let s = prod.stream();
@@ -520,6 +531,7 @@ impl<'a> Hop<'a> {
             let s = cons.stream();
             dst.device_ptr_mut(&s).0 as *mut f32
         };
+        self.release(from, to)?;
         let prod = self.engine(from);
         let _main = prod.gpu.enter_main()?;
         let s = prod.stream();
