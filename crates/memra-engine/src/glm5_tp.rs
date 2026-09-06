@@ -1905,6 +1905,19 @@ pub struct Glm5TpGlue {
     pub attn_norm: GpuTensor,
     pub post_attn_norm: GpuTensor,
     pub hyper: crate::hyper::HyperLayer,
+    /// The MoE router on the peer, so it can select experts REDUNDANTLY from its own copy of the
+    /// FFN input instead of receiving the selection from root: the same kernel on the same input
+    /// picks the same experts, and it costs zero crossings where a push of `sel`/`w` would cost
+    /// two per layer. `None` on a dense-FFN layer.
+    pub router: Option<Glm5TpPeerRouter>,
+}
+
+/// The peer's router operands: the gate projection and the two per-expert planes the sigmoid
+/// top-k reads (`e_score_correction_bias`, the active-expert mask).
+pub struct Glm5TpPeerRouter {
+    pub gate_inp: GpuTensor,
+    pub exp_probs_b_dev: CudaSlice<f32>,
+    pub active_experts_dev: CudaSlice<u8>,
 }
 
 /// Copy a whole tensor onto `dst`, byte for byte. `shard_rows` over the full outer range is
@@ -1951,9 +1964,21 @@ pub(crate) fn replicate_layer_glue(
     attn_norm: &GpuTensor,
     post_attn_norm: &GpuTensor,
     hyper: &crate::hyper::HyperLayer,
+    moe: Option<&crate::hybrid::MoeWeights>,
 ) -> Result<Vec<Glm5TpGlue>, Box<dyn std::error::Error>> {
     let mut out = Vec::with_capacity(rt.peers.len());
     for peer in &rt.peers {
+        let router = match moe {
+            Some(m) => Some(Glm5TpPeerRouter {
+                gate_inp: replicate_tensor(e, peer, &m.gate_inp)?,
+                exp_probs_b_dev: replicate_f32(e, peer, &m.exp_probs_b_dev)?,
+                active_experts_dev: {
+                    let host = e.dtoh_u8(&m.active_experts_dev)?;
+                    peer.htod_bytes(&host)?
+                },
+            }),
+            None => None,
+        };
         out.push(Glm5TpGlue {
             attn_norm: replicate_tensor(e, peer, attn_norm)?,
             post_attn_norm: replicate_tensor(e, peer, post_attn_norm)?,
@@ -1961,6 +1986,7 @@ pub(crate) fn replicate_layer_glue(
                 attn: replicate_site(e, peer, &hyper.attn)?,
                 mlp: replicate_site(e, peer, &hyper.mlp)?,
             },
+            router,
         });
     }
     Ok(out)
