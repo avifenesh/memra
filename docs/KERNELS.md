@@ -2,14 +2,25 @@
 
 ## Experimental NVFP4 latent history (issue244)
 
+Runtime storage now uses explicit `Rht512V1` coordinates. Native
+`memra_latent_rht512_f32` transforms absorbed queries and inverses weighted
+outputs; `memra_latent_rht512_bf16` rotates the existing TC query buffer in place.
+Append fuses the forward transform into vector-local shared memory before the
+MSE codec. Signs/order/normalizer match the fixed CPU reference, and invalid or
+overflowing transforms poison the shared status rather than publish valid state.
+The physical packed reader is unchanged; its wrappers pair the basis changes.
+TC never inverses the entire history. Direct-query workspace is included in
+admission even when TC is enabled, to cover a runtime decline. Basis-aware copy,
+snapshot and TP-replica guards prevent mixed-coordinate reuse.
+
 Append now evaluates the existing row encoding and adaptive M4/M6 block scales
 under row normalizations448 and256, retaining the lowest computed reconstruction
 SSE with legacy-first ties. Its FP64 accumulation order matches the CPU codec.
-No reader, persistent layout or storage budget changes. CUDA parity and append
-cost must be remeasured for this encoder revision; earlier encoder receipts do
+The bit layout and persistent row storage budget remain unchanged. Rotated CUDA
+parity and append cost must be measured for this revision; earlier receipts do
 not qualify it. Tests include16/512/4096/4112/8208-wide reduction boundaries and
 captured live overwrite. This remains an unqualified experiment behind the
-existing default-OFF flag; it is not a new format or weight recipe.
+existing default-OFF flag; the coordinate transform is not a new weight recipe.
 
 Native `cu/latent_nvfp4.cu` supplies `memra_latent_nvfp4_append`,
 `memra_latent_nvfp4_gather`, and `memra_latent_nvfp4_to_bf16`. The shared

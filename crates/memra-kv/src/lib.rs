@@ -1085,6 +1085,13 @@ impl LatentKvLayer {
         if self.nvfp4.is_some() != snap.nvfp4.is_some() {
             return Err("latent snapshot format differs from destination".into());
         }
+        if let (Some(dst), Some(src)) = (&self.nvfp4, &snap.nvfp4) {
+            dst.basis()
+                .validate_copy(src.basis())
+                .map_err(str::to_owned)?;
+            dst.validate().map_err(str::to_owned)?;
+            src.validate().map_err(str::to_owned)?;
+        }
         if let Some(plane) = &snap.nvfp4 {
             if !snap.rows.is_empty() || plane.width() != snap.width || plane.capacity() < snap.len {
                 return Err("invalid compressed latent snapshot geometry".into());
@@ -2778,6 +2785,25 @@ impl Cache {
         let plan = plan
             .or(fallback_plan.as_ref())
             .expect("cache allocation requires a ModelPlan");
+        let rotated_nvfp4 = latent_layout::nvfp4_enabled();
+        // Refuse unsupported latent programs before allocating ANY layer's device state.
+        for layer in plan
+            .layers
+            .iter()
+            .chain(plan.mtp_blocks.iter().map(|b| &b.layer))
+        {
+            if !include_mtp && layer.index >= n_trunk {
+                continue;
+            }
+            if let StatePlan::LatentKvCache { width, index_width } = layer.state {
+                latent_layout::LatentLayout::for_attention(
+                    rotated_nvfp4,
+                    &layer.attention,
+                    width as usize,
+                    index_width as usize,
+                )?;
+            }
+        }
         let n = cfg.n_layer as usize;
         let mut kv = Vec::with_capacity(n);
         let mut recur = Vec::with_capacity(n);
@@ -2905,7 +2931,12 @@ impl Cache {
                         0 => None,
                         w => Some(e.zeros(index_ring.unwrap_or(max_ctx) * w)?),
                     };
-                    let layout = latent_layout::selected_layout(width, index_width)?;
+                    let layout = latent_layout::LatentLayout::for_attention(
+                        rotated_nvfp4,
+                        &layer.attention,
+                        width,
+                        index_width,
+                    )?;
                     let nvfp4 = if layout.format == latent_layout::LatentFormat::Nvfp4 {
                         let key = e as *const dyn KvDev as *const () as usize;
                         let status = match latent_status.get(&key) {
@@ -2916,8 +2947,12 @@ impl Cache {
                                 status
                             }
                         };
-                        Some(latent_nvfp4::DevicePlane::with_status(
-                            e, width, max_ctx, status,
+                        Some(latent_nvfp4::DevicePlane::with_status_basis(
+                            e,
+                            width,
+                            max_ctx,
+                            status,
+                            layout.basis,
                         )?)
                     } else {
                         None

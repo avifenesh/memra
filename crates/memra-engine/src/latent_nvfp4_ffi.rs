@@ -1,10 +1,54 @@
 //! Native compressed latent storage primitives. No environment-selected dispatch.
 use crate::Engine;
 use cudarc::driver::{CudaSlice, DevicePtr, DevicePtrMut};
+use memra_kv::latent_layout::LatentBasis;
 pub use memra_kv::latent_nvfp4::DevicePlane as Nvfp4LatentStorage;
 use std::ffi::c_void;
 
 type Res<T> = Result<T, Box<dyn std::error::Error>>;
+
+fn basis_code(plane: &Nvfp4LatentStorage) -> Res<i32> {
+    plane.validate()?;
+    plane.basis().validate(plane.width())?;
+    Ok(match plane.basis() {
+        LatentBasis::Identity => 0,
+        LatentBasis::Rht512V1 => 1,
+    })
+}
+
+/// A bounded absorbed-query operand, not a decoded history shadow.
+fn rotated_query(
+    plane: &Nvfp4LatentStorage,
+    e: &Engine,
+    query: &CudaSlice<f32>,
+) -> Res<Option<CudaSlice<f32>>> {
+    if basis_code(plane)? == 0 {
+        return Ok(None);
+    }
+    if !query.len().is_multiple_of(512) {
+        return Err("RHT query is not whole rank512 vectors".into());
+    }
+    let vectors = i32::try_from(query.len() / 512)?;
+    let mut out = e.uninit(query.len())?;
+    if vectors != 0 {
+        let s = e.stream();
+        let mut status = plane.error.write_buffer()?;
+        let rc = unsafe {
+            memra_latent_rht512_f32(
+                query.device_ptr(&s).0 as *const f32,
+                out.device_ptr_mut(&s).0 as *mut f32,
+                status.buffer.device_ptr_mut(&s).0 as *mut i32,
+                vectors,
+                0,
+                s.cu_stream() as *mut c_void,
+            )
+        };
+        if rc != 0 {
+            return Err(format!("NVFP4 RHT query launch failed: {rc}").into());
+        }
+    }
+    Ok(Some(out))
+}
 
 unsafe extern "C" {
     fn memra_latent_nvfp4_append_live(
@@ -17,6 +61,7 @@ unsafe extern "C" {
         count: i32,
         width: i32,
         capacity: i32,
+        basis: i32,
         stream: *mut c_void,
     ) -> i32;
     fn memra_mla_attn_gathered_nvfp4_live(
@@ -74,6 +119,21 @@ unsafe extern "C" {
         count: i32,
         width: i32,
         capacity: i32,
+        basis: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    fn memra_latent_rht512_f32(
+        input: *const f32,
+        output: *mut f32,
+        error: *mut i32,
+        vectors: i32,
+        inverse: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    fn memra_latent_rht512_bf16(
+        values: *mut u16,
+        error: *mut i32,
+        vectors: i32,
         stream: *mut c_void,
     ) -> i32;
     fn memra_latent_nvfp4_gather(
@@ -91,6 +151,11 @@ unsafe extern "C" {
 }
 
 pub trait Nvfp4LatentOps {
+    /// Change the existing BF16 absorbed-query buffer to the plane's basis.
+    /// Identity planes are no-ops; RHT uses only vector-local F32 workspace.
+    fn rotate_query_bf16(&mut self, e: &Engine, query: &mut CudaSlice<u8>) -> Res<()>;
+    /// Return the weighted latent output to the model basis before Wv.
+    fn inverse_output(&mut self, e: &Engine, output: &mut CudaSlice<f32>) -> Res<()>;
     fn append_live(&mut self, e: &Engine, rows: &CudaSlice<f32>, pos: &CudaSlice<i32>) -> Res<()>;
     #[allow(clippy::too_many_arguments)] // mirrors native live attention geometry
     fn attend_live(
@@ -104,6 +169,7 @@ pub trait Nvfp4LatentOps {
         queries: usize,
         scale: f32,
     ) -> Res<CudaSlice<f32>>;
+    /// Decode physical stored coordinates, retaining the plane's basis.
     fn bf16_history(&mut self, e: &Engine, visible: usize) -> Res<CudaSlice<u8>>;
     #[allow(clippy::too_many_arguments)] // mirrors native attention geometry
     fn attend(
@@ -128,8 +194,66 @@ pub trait Nvfp4LatentOps {
 }
 
 impl Nvfp4LatentOps for Nvfp4LatentStorage {
+    fn rotate_query_bf16(&mut self, e: &Engine, query: &mut CudaSlice<u8>) -> Res<()> {
+        if basis_code(self)? == 0 {
+            return Ok(());
+        }
+        if !query.len().is_multiple_of(512 * 2) {
+            return Err("RHT BF16 query is not whole rank512 vectors".into());
+        }
+        let vectors = i32::try_from(query.len() / (512 * 2))?;
+        if vectors == 0 {
+            return Ok(());
+        }
+        let s = e.stream();
+        let mut status = self.error.write_buffer()?;
+        let rc = unsafe {
+            memra_latent_rht512_bf16(
+                query.device_ptr_mut(&s).0 as *mut u16,
+                status.buffer.device_ptr_mut(&s).0 as *mut i32,
+                vectors,
+                s.cu_stream() as *mut c_void,
+            )
+        };
+        if rc != 0 {
+            return Err(format!("NVFP4 RHT BF16 query launch failed: {rc}").into());
+        }
+        Ok(())
+    }
+
+    fn inverse_output(&mut self, e: &Engine, output: &mut CudaSlice<f32>) -> Res<()> {
+        if basis_code(self)? == 0 {
+            return Ok(());
+        }
+        if !output.len().is_multiple_of(512) {
+            return Err("RHT output is not whole rank512 vectors".into());
+        }
+        let vectors = i32::try_from(output.len() / 512)?;
+        if vectors == 0 {
+            return Ok(());
+        }
+        let s = e.stream();
+        let mut status = self.error.write_buffer()?;
+        let rc = unsafe {
+            let (pointer, _output_use) = output.device_ptr_mut(&s);
+            let pointer = pointer as *mut f32;
+            memra_latent_rht512_f32(
+                pointer as *const f32,
+                pointer,
+                status.buffer.device_ptr_mut(&s).0 as *mut i32,
+                vectors,
+                1,
+                s.cu_stream() as *mut c_void,
+            )
+        };
+        if rc != 0 {
+            return Err(format!("NVFP4 RHT inverse output launch failed: {rc}").into());
+        }
+        Ok(())
+    }
+
     fn append_live(&mut self, e: &Engine, rows: &CudaSlice<f32>, pos: &CudaSlice<i32>) -> Res<()> {
-        self.validate()?;
+        let basis = basis_code(self)?;
         let (width, capacity) = (self.width(), self.capacity());
         if pos.is_empty() || !rows.len().is_multiple_of(width) || rows.len() / width > capacity {
             return Err("invalid live NVFP4 append geometry".into());
@@ -148,6 +272,7 @@ impl Nvfp4LatentOps for Nvfp4LatentStorage {
                 count,
                 width as i32,
                 capacity as i32,
+                basis,
                 s.cu_stream() as *mut c_void,
             )
         };
@@ -189,6 +314,8 @@ impl Nvfp4LatentOps for Nvfp4LatentStorage {
             i32::try_from(queries)?,
             i32::try_from(positions.len() / queries)?,
         );
+        let rotated = rotated_query(self, e, query)?;
+        let query = rotated.as_ref().unwrap_or(query);
         let mut out = e.uninit(elems)?;
         let s = e.stream();
         let mut status = self.error.write_buffer()?;
@@ -212,9 +339,11 @@ impl Nvfp4LatentOps for Nvfp4LatentStorage {
                 s.cu_stream() as *mut c_void,
             )
         };
+        drop(status);
         if rc != 0 {
             return Err(format!("live NVFP4 attention launch failed: {rc}").into());
         }
+        self.inverse_output(e, &mut out)?;
         Ok(out)
     }
     fn bf16_history(&mut self, e: &Engine, visible: usize) -> Res<CudaSlice<u8>> {
@@ -284,6 +413,8 @@ impl Nvfp4LatentOps for Nvfp4LatentStorage {
             i32::try_from(slots)?,
             i32::try_from(visible)?,
         );
+        let rotated = rotated_query(self, e, query)?;
+        let query = rotated.as_ref().unwrap_or(query);
         let mut out = e.uninit(expected)?;
         let s = e.stream();
         let mut status = self.error.write_buffer()?;
@@ -306,13 +437,15 @@ impl Nvfp4LatentOps for Nvfp4LatentStorage {
                 s.cu_stream() as *mut c_void,
             )
         };
+        drop(status);
         if rc != 0 {
             return Err(format!("NVFP4 latent attention launch failed: {rc}").into());
         }
+        self.inverse_output(e, &mut out)?;
         Ok(out)
     }
     fn append(&mut self, e: &Engine, rows: &CudaSlice<f32>, slot: usize) -> Res<()> {
-        self.validate()?;
+        let basis = basis_code(self)?;
         if !rows.len().is_multiple_of(self.width()) {
             return Err("partial latent input row".into());
         }
@@ -334,6 +467,7 @@ impl Nvfp4LatentOps for Nvfp4LatentStorage {
                 i32::try_from(count)?,
                 width,
                 capacity,
+                basis,
                 s.cu_stream() as *mut c_void,
             )
         };

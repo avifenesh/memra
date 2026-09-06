@@ -1232,6 +1232,17 @@ pub(crate) fn shard_mla_layer(
     Ok(root)
 }
 
+fn validate_peer_latent_basis(
+    canonical: Option<memra_kv::latent_layout::LatentBasis>,
+    peer: Option<memra_kv::latent_layout::LatentBasis>,
+) -> Result<(), &'static str> {
+    match (canonical, peer) {
+        (None, None) => Ok(()),
+        (Some(canonical), Some(peer)) => canonical.validate_copy(peer),
+        _ => Err("GLM5 TP peer latent format differs from canonical plane"),
+    }
+}
+
 /// Ensure the PEER ranks' replicated latent planes for layer `il` exist, geometry-cloned
 /// from the canonical (root) plane. The canonical plane IS the root replica — the root path
 /// is unchanged. `cache_slot` holds one plane per peer rank (`[i]` = rank `i + 1`).
@@ -1240,7 +1251,33 @@ pub(crate) fn ensure_mla_peer_latent(
     canonical: &LatentKvLayer,
     cache_slot: &mut Option<Vec<LatentKvLayer>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if cache_slot.is_some() {
+    if let Some(plane) = &canonical.nvfp4 {
+        plane.validate()?;
+        if !canonical.rows.is_empty() || plane.width() != canonical.width {
+            return Err("invalid canonical compressed latent geometry".into());
+        }
+    }
+    if let Some(peers) = cache_slot.as_ref() {
+        if peers.len() != rt.peers.len() {
+            return Err("GLM5 TP latent peer count changed".into());
+        }
+        // Validate every replica before returning it to the execution walk. Do not
+        // repair/reinterpret an existing peer or allocate over incompatible state.
+        for peer in peers {
+            validate_peer_latent_basis(
+                canonical.nvfp4.as_ref().map(|p| p.basis()),
+                peer.nvfp4.as_ref().map(|p| p.basis()),
+            )?;
+            if peer.width != canonical.width {
+                return Err("GLM5 TP latent peer width differs from canonical plane".into());
+            }
+            if let Some(plane) = &peer.nvfp4 {
+                plane.validate()?;
+                if !peer.rows.is_empty() || plane.width() != peer.width {
+                    return Err("invalid peer compressed latent geometry".into());
+                }
+            }
+        }
         return Ok(());
     }
     let mut planes = Vec::with_capacity(rt.peers.len());
@@ -1256,10 +1293,11 @@ pub(crate) fn ensure_mla_peer_latent(
         planes.push(LatentKvLayer {
             rows,
             nvfp4: match &canonical.nvfp4 {
-                Some(p) => Some(memra_kv::latent_nvfp4::DevicePlane::new(
+                Some(p) => Some(memra_kv::latent_nvfp4::DevicePlane::new_with_basis(
                     dev,
                     p.width(),
                     p.capacity(),
+                    p.basis(),
                 )?),
                 None => None,
             },
@@ -1571,6 +1609,25 @@ pub(crate) fn arm_moe_ep(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn peer_latent_format_and_basis_must_match_before_reuse() {
+        use memra_kv::latent_layout::LatentBasis;
+        let formats = [
+            None,
+            Some(LatentBasis::Identity),
+            Some(LatentBasis::Rht512V1),
+        ];
+        for canonical in formats {
+            for peer in formats {
+                assert_eq!(
+                    super::validate_peer_latent_basis(canonical, peer).is_ok(),
+                    canonical == peer,
+                    "canonical={canonical:?}, peer={peer:?}",
+                );
+            }
+        }
+    }
+
     use super::*;
 
     #[test]

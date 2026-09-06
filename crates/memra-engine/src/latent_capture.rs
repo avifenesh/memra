@@ -2,6 +2,10 @@
 //! Captures fixed indices so codec/reader differences cannot be confused with routing changes.
 use crate::{Engine, hybrid::HybridModel, latent_nvfp4_ffi::Nvfp4LatentOps};
 use cudarc::driver::CudaSlice;
+use memra_kv::latent_layout::{
+    LatentBasis, RHT512_NORMALIZER_BITS, RHT512_SEED, RHT512_SIGN_MASK, rht512_forward,
+    rht512_inverse,
+};
 use memra_kv::latent_nvfp4::{DevicePlane, PackedRow};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -437,6 +441,126 @@ fn compare(name: &str, a: &[f32], b: &[f32], report: &mut String) -> Res<bool> {
     Ok(bad == 0)
 }
 
+/// Independent CPU basis reference. Scratch is one 512-value vector, never an
+/// inverse-rotated full history plane. Query/output callers already own `values`.
+fn cpu_rht_rows(values: &mut [f32], inverse: bool) -> Res<()> {
+    if values.len() > MAX_ELEMENTS || !values.len().is_multiple_of(512) {
+        return Err("CPU RHT reference requires bounded whole rank512 rows".into());
+    }
+    finite(values)?;
+    for row in values.chunks_exact_mut(512) {
+        let transformed = if inverse {
+            rht512_inverse(row)?
+        } else {
+            rht512_forward(row)?
+        };
+        row.copy_from_slice(&transformed);
+    }
+    Ok(())
+}
+
+fn cpu_bf16_rne(value: f32) -> Res<u16> {
+    if !value.is_finite() {
+        return Err("nonfinite CPU BF16 conversion input".into());
+    }
+    let bits = value.to_bits();
+    let rounded = (bits.wrapping_add(0x7fff + ((bits >> 16) & 1)) >> 16) as u16;
+    if !f32::from_bits((rounded as u32) << 16).is_finite() {
+        return Err("CPU BF16 conversion overflow".into());
+    }
+    Ok(rounded)
+}
+
+/// TC absorption ALREADY rounded q_lat to BF16. Read that actual operand, then
+/// CPU RHT and a second BF16 rounding; never rotate pre-absorption F32 queries.
+fn cpu_rht_bf16_rows(bytes: &mut [u8]) -> Res<()> {
+    if bytes.len() / 2 > MAX_ELEMENTS || !bytes.len().is_multiple_of(1024) {
+        return Err("CPU BF16 RHT reference requires bounded whole rank512 rows".into());
+    }
+    for row in bytes.chunks_exact_mut(1024) {
+        let values: Vec<f32> = row
+            .chunks_exact(2)
+            .map(|b| f32::from_bits((u16::from_le_bytes([b[0], b[1]]) as u32) << 16))
+            .collect();
+        let rotated = rht512_forward(&values)?;
+        for (dst, value) in row.chunks_exact_mut(2).zip(rotated) {
+            dst.copy_from_slice(&cpu_bf16_rne(value)?.to_le_bytes());
+        }
+    }
+    Ok(())
+}
+
+/// Same TC primitives and layouts as the production chain, but BOTH basis
+/// transforms are CPU references. `physical_history` is CPU-RHT + CPU-codec
+/// decoded history, not a CUDA RHT result or an unrotated cache shortcut.
+#[allow(clippy::too_many_arguments)]
+fn cpu_rht_tc(
+    e: &Engine,
+    wk: &CudaSlice<f32>,
+    wv: &CudaSlice<f32>,
+    q: &CudaSlice<f32>,
+    physical_history: &CudaSlice<f32>,
+    idx: &CudaSlice<i32>,
+    s: Shape,
+    scale: f32,
+) -> Res<Vec<f32>> {
+    s.counts()?;
+    let (t, nh, r, dn, dv) = (s.t, s.heads, s.rank, s.dn, s.dv);
+    let wk_bf = e.f32_to_bf16(wk, nh * r * dn)?;
+    let wv_bf = e.f32_to_bf16(wv, nh * dv * r)?;
+    let qn_bf = e.f32_to_bf16(q, t * nh * dn)?;
+    let mut q_lat_bf = e.alloc_u8_uninit(t * nh * r * 2)?;
+    if !e.mla_bf16_gemm_sb_bf16out(
+        &wk_bf,
+        &qn_bf,
+        &mut q_lat_bf,
+        t,
+        r,
+        dn,
+        nh * dn,
+        dn,
+        nh * r,
+        r,
+        nh,
+    )? {
+        return Err("CPU-RHT TC reference absorb declined captured geometry".into());
+    }
+    {
+        let mut bytes = e.dtoh_u8(&q_lat_bf)?;
+        cpu_rht_bf16_rows(&mut bytes)?;
+        e.htod_u8_into(&mut q_lat_bf, 0, &bytes)?;
+    }
+    let cache_bf = e.f32_to_bf16(physical_history, s.visible * r)?;
+    let mut o_lat = e.uninit(t * nh * r)?;
+    e.mla_attn_gathered_tc(
+        &q_lat_bf, &cache_bf, idx, &mut o_lat, nh, r, t, s.slots, scale,
+    )?;
+    {
+        let mut values = e.dtoh(&o_lat)?;
+        cpu_rht_rows(&mut values, true)?;
+        e.stream().memcpy_htod(&values, &mut o_lat)?;
+    }
+    // Inverse is in F32 BEFORE this BF16 rounding and Wv GEMM.
+    let o_bf = e.f32_to_bf16(&o_lat, t * nh * r)?;
+    let mut attn = e.uninit(t * nh * dv)?;
+    if !e.mla_bf16_gemm_sb_f32out(
+        &wv_bf,
+        &o_bf,
+        &mut attn,
+        t,
+        dv,
+        r,
+        nh * r,
+        r,
+        nh * dv,
+        dv,
+        nh,
+    )? {
+        return Err("CPU-RHT TC reference decompress declined captured geometry".into());
+    }
+    e.dtoh(&attn)
+}
+
 /// Standalone diagnostic entry point. Validation happens before creating a CUDA engine.
 pub fn check(input: &Path, result: &Path, device: usize) -> Res<()> {
     if std::env::var_os("MEMRA_LATENT_CAPTURE_DIR").is_some() {
@@ -459,7 +583,10 @@ pub fn check(input: &Path, result: &Path, device: usize) -> Res<()> {
     let q = e.htod(&data.q)?;
     let idx = e.htod_i32(&data.idx)?;
     let original = e.htod(&data.latent)?;
-    let mut quant = DevicePlane::new(&e, s.rank, s.visible)?;
+    let mut quant = DevicePlane::new_with_basis(&e, s.rank, s.visible, LatentBasis::Rht512V1)?;
+    if quant.basis() != LatentBasis::Rht512V1 {
+        return Err("captured checker requires the Rht512V1 variant".into());
+    }
     // Append in bounded chunks including the true prefill start boundary and final row.
     let start = s.visible - s.t;
     let mut pos = 0;
@@ -483,7 +610,8 @@ pub fn check(input: &Path, result: &Path, device: usize) -> Res<()> {
     let mut decoded = Vec::with_capacity(data.latent.len());
     let mut codec_bad = 0usize;
     for (row, values) in data.latent.chunks_exact(s.rank).enumerate() {
-        let cpu = PackedRow::encode(values)?;
+        let physical = rht512_forward(values)?;
+        let cpu = PackedRow::encode(&physical)?;
         if packed[row * 256..(row + 1) * 256] != cpu.payload
             || scales[row * 32..(row + 1) * 32] != cpu.block_scales
             || macros[row].to_bits() != cpu.macro_scale.to_bits()
@@ -493,10 +621,18 @@ pub fn check(input: &Path, result: &Path, device: usize) -> Res<()> {
         decoded.extend(cpu.decode()?);
     }
     let mut report = format!(
-        "latent-capture-check-v1\nchecker_binary_sha256 {}\ndevice {}\ncodec_mismatched_rows {codec_bad}\n",
+        "latent-capture-check-rht512-v1\nchecker_binary_sha256 {}\ndevice {}\ncodec_mismatched_rows {codec_bad}\n",
         executable_hash()?,
         device
     );
+    let mask_bytes: Vec<u8> = RHT512_SIGN_MASK
+        .iter()
+        .flat_map(|v| v.to_le_bytes())
+        .collect();
+    report.push_str(&format!(
+        "basis Rht512V1\nrht_seed {RHT512_SEED:016x}\nrht_normalizer_bits {RHT512_NORMALIZER_BITS:08x}\nrht_sign_mask_sha256 {:x}\nhistory_reference CPU_RHT_then_PackedRow_MSE_physical\nTC_reference CPU_RHT_of_BF16_absorb_then_BF16_and_CPU_inverse_before_Wv\n",
+        Sha256::digest(&mask_bytes),
+    ));
     let mut passed = codec_bad == 0;
     let deq = e.htod(&decoded)?;
     // Gather selected indices in small batches: never allocate t*slots*rank history.
@@ -552,13 +688,23 @@ pub fn check(input: &Path, result: &Path, device: usize) -> Res<()> {
     };
     let golden = tc(&original, None)?;
     passed &= compare("original_replay", &data.original, &golden, &mut report)?;
-    let cpu_tc = tc(&deq, None)?;
-    compare("quantization_effect_same_TC", &golden, &cpu_tc, &mut report)?; // difference expected, not a gate
+    let cpu_tc = cpu_rht_tc(&e, &wk, &wv, &q, &deq, &idx, s, data.scale)?;
+    compare(
+        "RHT_quantization_effect_same_TC",
+        &golden,
+        &cpu_tc,
+        &mut report,
+    )?; // difference expected, not a gate
     drop(golden);
     let empty = e.uninit(0)?;
     let native_tc = tc(&empty, Some(&mut quant))?;
     quant.check(&e)?;
-    passed &= compare("native_vs_CPU_dequant_TC", &cpu_tc, &native_tc, &mut report)?;
+    passed &= compare(
+        "native_vs_CPU_RHT_physical_TC",
+        &cpu_tc,
+        &native_tc,
+        &mut report,
+    )?;
     drop(cpu_tc);
     drop(native_tc);
     // TC replay above retains the full shape. Scalar readers compare at most
@@ -592,9 +738,12 @@ pub fn check(input: &Path, result: &Path, device: usize) -> Res<()> {
         data.scale,
     )?;
     quant.check(&e)?;
+    let mut rotated_query = e.dtoh(&q_lat)?;
+    cpu_rht_rows(&mut rotated_query, false)?;
+    let rotated_query = e.htod(&rotated_query)?;
     let mut cpu = e.uninit(direct_t * s.heads * s.rank)?;
     e.mla_attn_gathered(
-        &q_lat,
+        &rotated_query,
         &empty,
         &deq,
         &direct_idx,
@@ -606,9 +755,11 @@ pub fn check(input: &Path, result: &Path, device: usize) -> Res<()> {
         s.slots,
         data.scale,
     )?;
+    let mut cpu_original_basis = e.dtoh(&cpu)?;
+    cpu_rht_rows(&mut cpu_original_basis, true)?;
     passed &= compare(
-        "native_direct_vs_CPU_dequant_reader",
-        &e.dtoh(&cpu)?,
+        "native_direct_vs_CPU_RHT_physical_reader",
+        &cpu_original_basis,
         &e.dtoh(&native)?,
         &mut report,
     )?;
@@ -626,6 +777,89 @@ pub fn check(input: &Path, result: &Path, device: usize) -> Res<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cpu_rht_rows_preserve_vector_boundaries_and_inverse_direction() {
+        let input: Vec<f32> = (0..1024)
+            .map(|i| ((i * 37 % 113) as f32 - 56.) / 32.)
+            .collect();
+        let mut rotated = input.clone();
+        cpu_rht_rows(&mut rotated, false).unwrap();
+        for (original, actual) in input.chunks_exact(512).zip(rotated.chunks_exact(512)) {
+            let expected = rht512_forward(original).unwrap();
+            assert!(
+                expected
+                    .iter()
+                    .zip(actual)
+                    .all(|(a, b)| a.to_bits() == b.to_bits())
+            );
+        }
+        let expected_inverse: Vec<f32> = rotated
+            .chunks_exact(512)
+            .flat_map(|row| rht512_inverse(row).unwrap())
+            .collect();
+        let mut wrong_direction = rotated.clone();
+        cpu_rht_rows(&mut wrong_direction, false).unwrap();
+        cpu_rht_rows(&mut rotated, true).unwrap();
+        assert!(
+            rotated
+                .iter()
+                .zip(&expected_inverse)
+                .all(|(a, b)| a.to_bits() == b.to_bits())
+        );
+        assert!(
+            rotated
+                .iter()
+                .zip(&wrong_direction)
+                .any(|(a, b)| a.to_bits() != b.to_bits())
+        );
+        assert!(cpu_rht_rows(&mut [0.; 513], false).is_err());
+        let mut nonfinite = [0.; 512];
+        nonfinite[511] = f32::NAN;
+        assert!(cpu_rht_rows(&mut nonfinite, true).is_err());
+    }
+
+    #[test]
+    fn cpu_bf16_reference_rounds_even_and_preserves_zero_sign() {
+        for (input, expected) in [
+            (0x00000000, 0x0000),
+            (0x80000000, 0x8000),
+            (0x3f808000, 0x3f80),
+            (0x3f818000, 0x3f82),
+            (0xbf808000, 0xbf80),
+            (0xbf818000, 0xbf82),
+        ] {
+            assert_eq!(cpu_bf16_rne(f32::from_bits(input)).unwrap(), expected);
+        }
+        assert!(cpu_bf16_rne(f32::NAN).is_err());
+        assert!(cpu_bf16_rne(f32::MAX).is_err());
+    }
+
+    #[test]
+    fn cpu_tc_query_reference_rotates_actual_bf16_vectors() {
+        let words: Vec<u16> = (0..1024).map(|i| 0x3e80 + (i % 256) as u16).collect();
+        let mut bytes: Vec<u8> = words.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let expected: Vec<u8> = words
+            .chunks_exact(512)
+            .flat_map(|row| {
+                let floats: Vec<f32> = row
+                    .iter()
+                    .map(|v| f32::from_bits((*v as u32) << 16))
+                    .collect();
+                rht512_forward(&floats)
+                    .unwrap()
+                    .into_iter()
+                    .flat_map(|v| cpu_bf16_rne(v).unwrap().to_le_bytes())
+            })
+            .collect();
+        cpu_rht_bf16_rows(&mut bytes).unwrap();
+        assert_eq!(bytes, expected);
+        assert!(cpu_rht_bf16_rows(&mut [0; 1023]).is_err());
+        let mut nonfinite = [0; 1024];
+        nonfinite[..2].copy_from_slice(&0x7f80u16.to_le_bytes());
+        assert!(cpu_rht_bf16_rows(&mut nonfinite).is_err());
+    }
+
     struct Scratch(PathBuf);
     impl Scratch {
         fn new() -> Self {

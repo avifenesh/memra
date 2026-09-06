@@ -5,6 +5,109 @@
 #include <float.h>
 #include <stdint.h>
 
+// Rht512V1 sign/normalization definitions are shared semantically with the
+// CPU reference in memra-kv. Butterfly arithmetic is explicitly RN F32.
+// SplitMix64 FINALIZER(seed+column), no state increment. Bit i selects -1.
+// Seed 0x243f6a8885a308d3; changing any bit requires a different LatentBasis.
+__device__ __constant__ uint64_t latent_rht512_sign_mask[8] = {
+    0x4e087330ad225fffULL, 0xb94fae7082589876ULL,
+    0x61fcfa90a1809bbaULL, 0x8fc61edbac51fd4eULL,
+    0x6e8f21bb0378f0a8ULL, 0xd6090fefe872ed9bULL,
+    0x5d0def85c580fadfULL, 0x4947d7c4be8581cbULL,
+};
+__device__ __forceinline__ bool latent_rht512_negative(unsigned column) {
+    return (latent_rht512_sign_mask[column / 64] >> (column % 64)) & 1ULL;
+}
+__device__ __forceinline__ float latent_rht512_normalizer() {
+    return __int_as_float(0x3d3504f3);
+}
+
+// Exactly 256 threads, one disjoint butterfly pair per thread per stage.
+// The caller loads all 512 values before entry; no global/history writes here.
+__device__ bool latent_rht512(float* row, int* invalid, bool inverse) {
+    int tid = threadIdx.x;
+    int bad = 0;
+    for (int i = tid; i < 512; i += 256) {
+        bad |= !isfinite(row[i]);
+        if (!inverse && latent_rht512_negative(i)) row[i] = -row[i];
+    }
+    __syncthreads();
+    for (int stride = 1; stride < 512; stride *= 2) {
+        int left = (tid / stride) * (2 * stride) + tid % stride;
+        int right = left + stride;
+        float a = row[left], b = row[right];
+        float lo = __fadd_rn(a, b), hi = __fsub_rn(a, b);
+        bad |= !isfinite(lo) || !isfinite(hi);
+        row[left] = lo;
+        row[right] = hi;
+        __syncthreads();
+    }
+    for (int i = tid; i < 512; i += 256) {
+        float value = __fmul_rn(row[i], latent_rht512_normalizer());
+        if (inverse && latent_rht512_negative(i)) value = -value;
+        bad |= !isfinite(value);
+        row[i] = value;
+    }
+    invalid[tid] = bad;
+    __syncthreads();
+    for (int offset = 128; offset; offset >>= 1) {
+        if (tid < offset) invalid[tid] |= invalid[tid + offset];
+        __syncthreads();
+    }
+    bool valid = invalid[0] == 0;
+    __syncthreads(); // every thread consumes the verdict before scratch reuse
+    return valid;
+}
+
+template <typename Scalar>
+__global__ void latent_rht512_kernel(
+    const Scalar* input, Scalar* output, int* error, bool inverse) {
+    __shared__ float row[512];
+    __shared__ int invalid[256];
+    int tid = threadIdx.x;
+    int64_t base = (int64_t)blockIdx.x * 512;
+    row[tid] = float(input[base + tid]);
+    row[tid + 256] = float(input[base + tid + 256]);
+    __syncthreads();
+    bool valid = latent_rht512(row, invalid, inverse);
+    // This conversion is the only BF16 rounding after the F32 butterfly.
+    Scalar a = Scalar(row[tid]), b = Scalar(row[tid + 256]);
+    invalid[tid] = !valid || !isfinite(float(a)) || !isfinite(float(b));
+    __syncthreads();
+    for (int offset = 128; offset; offset >>= 1) {
+        if (tid < offset) invalid[tid] |= invalid[tid + offset];
+        __syncthreads();
+    }
+    if (invalid[0]) {
+        if (tid == 0) atomicExch(error, 7);
+        // An invalid query/output is poisoned and initialized, never garbage
+        // consumed by a subsequent captured launch. Persistent append is separate.
+        a = Scalar(0.f);
+        b = Scalar(0.f);
+    }
+    output[base + tid] = a;
+    output[base + tid + 256] = b;
+}
+
+extern "C" int memra_latent_rht512_f32(
+    const float* input, float* output, int* error, int vectors, int inverse, void* stream) {
+    if (!input || !output || !error || vectors < 0 || (inverse != 0 && inverse != 1)) return 40001;
+    if (!vectors) return 0;
+    latent_rht512_kernel<<<vectors, 256, 0, (cudaStream_t)stream>>>(input, output, error, inverse != 0);
+    cudaError_t rc = cudaGetLastError();
+    return rc == cudaSuccess ? 0 : 10000 + int(rc);
+}
+
+extern "C" int memra_latent_rht512_bf16(
+    unsigned short* values, int* error, int vectors, void* stream) {
+    if (!values || !error || vectors < 0) return 40001;
+    if (!vectors) return 0;
+    auto* typed = reinterpret_cast<__nv_bfloat16*>(values);
+    latent_rht512_kernel<<<vectors, 256, 0, (cudaStream_t)stream>>>(typed, typed, error, false);
+    cudaError_t rc = cudaGetLastError();
+    return rc == cudaSuccess ? 0 : 10000 + int(rc);
+}
+
 __device__ __forceinline__ float latent_fp4_value(unsigned code) {
     const float grid[8] = {0.f, .5f, 1.f, 1.5f, 2.f, 3.f, 4.f, 6.f};
     return (code & 8) ? -grid[code & 7] : grid[code & 7];
@@ -60,12 +163,13 @@ __device__ __forceinline__ LatentEncodedBlock latent_encode_block(
 // appends and speculative overwrites cannot alter an already committed prefix.
 __global__ void latent_nvfp4_append_kernel(
     unsigned char* payload, unsigned char* scales, float* macros,
-    const float* rows, int* error, int slot, int width, int capacity, const int* slot_d) {
+    const float* rows, int* error, int slot, int width, int capacity, const int* slot_d, int basis) {
     __shared__ float peaks[256];
     __shared__ int invalid[256];
     __shared__ float macro[2];
     __shared__ double totals[3][256];
     __shared__ int selected;
+    __shared__ float rotated[512];
     int row = blockIdx.x, tid = threadIdx.x;
     if (slot_d) slot = slot_d[0];
     if (slot < 0 || slot > capacity || row >= capacity - slot) {
@@ -73,6 +177,16 @@ __global__ void latent_nvfp4_append_kernel(
         return;
     }
     const float* input = rows + (int64_t)row * width;
+    if (basis == 1) {
+        rotated[tid] = input[tid];
+        rotated[tid + 256] = input[tid + 256];
+        __syncthreads();
+        if (!latent_rht512(rotated, invalid, false)) {
+            if (tid == 0) atomicExch(error, 7);
+            return; // nonfinite input/overflow cannot mutate stored history
+        }
+        input = rotated;
+    }
     float peak = 0.f;
     int bad = 0;
     for (int col = tid; col < width; col += blockDim.x) {
@@ -170,12 +284,13 @@ __global__ void latent_nvfp4_gather_kernel(
 extern "C" int memra_latent_nvfp4_append(
     unsigned char* payload, unsigned char* scales, float* macros,
     const float* rows, int* error, int slot, int count, int width,
-    int capacity, void* stream) {
+    int capacity, int basis, void* stream) {
     if (slot < 0 || count < 0 || width <= 0 || width % 16 || capacity < 0 ||
-        slot > capacity || count > capacity - slot) return 40001;
+        slot > capacity || count > capacity - slot || basis < 0 || basis > 1 ||
+        (basis == 1 && width != 512)) return 40001;
     if (!count) return 0;
     latent_nvfp4_append_kernel<<<count, 256, 0, (cudaStream_t)stream>>>(
-        payload, scales, macros, rows, error, slot, width, capacity, nullptr);
+        payload, scales, macros, rows, error, slot, width, capacity, nullptr, basis);
     cudaError_t rc = cudaGetLastError();
     return rc == cudaSuccess ? 0 : 10000 + int(rc);
 }
@@ -183,11 +298,12 @@ extern "C" int memra_latent_nvfp4_append(
 extern "C" int memra_latent_nvfp4_append_live(
     unsigned char* payload, unsigned char* scales, float* macros,
     const float* rows, int* error, const int* slot_d, int count,
-    int width, int capacity, void* stream) {
-    if (!slot_d || count < 0 || width <= 0 || width % 16 || capacity < 0 || count > capacity) return 40001;
+    int width, int capacity, int basis, void* stream) {
+    if (!slot_d || count < 0 || width <= 0 || width % 16 || capacity < 0 || count > capacity ||
+        basis < 0 || basis > 1 || (basis == 1 && width != 512)) return 40001;
     if (!count) return 0;
     latent_nvfp4_append_kernel<<<count, 256, 0, (cudaStream_t)stream>>>(
-        payload, scales, macros, rows, error, 0, width, capacity, slot_d);
+        payload, scales, macros, rows, error, 0, width, capacity, slot_d, basis);
     cudaError_t rc = cudaGetLastError();
     return rc == cudaSuccess ? 0 : 10000 + int(rc);
 }

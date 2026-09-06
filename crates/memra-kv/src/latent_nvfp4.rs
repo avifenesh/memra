@@ -1,5 +1,6 @@
 //! CPU reference for the experimental row-scaled latent NVFP4 codec.
 //! This is not a weight-mint recipe and does not enable a serving path.
+pub use crate::latent_layout::LatentBasis;
 use crate::latent_layout::{LatentFormat, LatentLayout};
 use memra_gguf::nvfp4_repack::{f32_to_fp8_e4m3, fp8_e4m3_to_f32};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -66,6 +67,7 @@ pub struct DevicePlane {
     pub error: DeviceStatus,
     width: usize,
     capacity: usize,
+    basis: LatentBasis,
 }
 
 impl DevicePlane {
@@ -74,7 +76,16 @@ impl DevicePlane {
         width: usize,
         capacity: usize,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        Self::with_status(e, width, capacity, DeviceStatus::new(e)?)
+        Self::new_with_basis(e, width, capacity, LatentBasis::Identity)
+    }
+    pub fn new_with_basis(
+        e: &dyn crate::KvDev,
+        width: usize,
+        capacity: usize,
+        basis: LatentBasis,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        basis.validate(width)?;
+        Self::with_status_basis(e, width, capacity, DeviceStatus::new(e)?, basis)
     }
     pub fn with_status(
         e: &dyn crate::KvDev,
@@ -82,7 +93,16 @@ impl DevicePlane {
         capacity: usize,
         error: DeviceStatus,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let layout = LatentLayout::new(LatentFormat::Nvfp4, width)?;
+        Self::with_status_basis(e, width, capacity, error, LatentBasis::Identity)
+    }
+    pub fn with_status_basis(
+        e: &dyn crate::KvDev,
+        width: usize,
+        capacity: usize,
+        error: DeviceStatus,
+        basis: LatentBasis,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let layout = LatentLayout::new_with_basis(LatentFormat::Nvfp4, width, basis)?;
         i32::try_from(width)?;
         i32::try_from(capacity)?;
         layout.allocation_bytes(capacity)?;
@@ -94,11 +114,15 @@ impl DevicePlane {
             error,
             width,
             capacity,
+            basis,
         })
     }
 
     pub fn width(&self) -> usize {
         self.width
+    }
+    pub fn basis(&self) -> LatentBasis {
+        self.basis
     }
     pub fn capacity(&self) -> usize {
         self.capacity
@@ -108,7 +132,7 @@ impl DevicePlane {
     }
 
     pub fn validate(&self) -> Result<(), &'static str> {
-        let layout = LatentLayout::new(LatentFormat::Nvfp4, self.width)?;
+        let layout = LatentLayout::new_with_basis(LatentFormat::Nvfp4, self.width, self.basis)?;
         layout.allocation_bytes(self.capacity)?;
         if self.payload.len() != layout.payload_bytes * self.capacity
             || self.scales.len() != layout.block_scale_bytes * self.capacity
@@ -125,6 +149,7 @@ impl DevicePlane {
         source: &Self,
         rows: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.basis.validate_copy(source.basis)?;
         self.validate()?;
         source.validate()?;
         if self.width != source.width || rows > self.capacity || rows > source.capacity {
@@ -159,7 +184,8 @@ impl DevicePlane {
         if rows > self.capacity {
             return Err("NVFP4 latent snapshot exceeds capacity".into());
         }
-        let mut snapshot = Self::new(e, self.width, rows)?;
+        self.validate()?;
+        let mut snapshot = Self::new_with_basis(e, self.width, rows, self.basis)?;
         snapshot.copy_prefix_from(e, self, rows)?;
         Ok(snapshot)
     }

@@ -1643,7 +1643,9 @@ pub struct HyperPrimeWorkspaceShape {
     /// `[t, streams, hidden]` stream state + ppN boundary slots, the pre/norm transients, the
     /// grouped-MoE staging (CSR activations + three f32 partial planes + f16 mirrors + scatter
     /// planes), the MLA query/attention planes, the k-pool idx plane, and the prime-tail
-    /// hidden/norm pair. Multiplied by [`hyper_prime_call_rows`] this bounds the workspace of
+    /// hidden/norm pair. Rotated NVFP4 also reserves the separate direct-attention
+    /// rotated query, even when TC is enabled (TC may decline). Multiplied by
+    /// [`hyper_prime_call_rows`] this bounds the workspace of
     /// the CHUNKED prime; on the monolithic rollback (`MEMRA_PRIME_CHUNK=0`) the call rows are
     /// the whole prompt up to `PRIME_CHUNK_LAUNCH_CAP` (65,535 launch-legal max; admission
     /// re-derives `hyper_prime_call_rows` so the arithmetic stays consistent either way) and
@@ -1663,6 +1665,26 @@ pub struct HyperPrimeWorkspaceShape {
     pub n_layers: usize,
     /// The model's own GDN grid-alignment input to the schedule.
     pub gdn_grid: bool,
+}
+
+fn rht_query_workspace_row_bytes(
+    layout: Result<memra_kv::latent_layout::LatentLayout, &'static str>,
+    heads: usize,
+) -> usize {
+    use memra_kv::latent_layout::{LatentBasis, LatentFormat};
+    match layout {
+        Ok(layout)
+            if layout.format == LatentFormat::Nvfp4 && layout.basis == LatentBasis::Rht512V1 =>
+        {
+            heads
+                .saturating_mul(layout.width)
+                .saturating_mul(size_of::<f32>())
+        }
+        Ok(_) => 0,
+        // An unsupported selected attention layout must not erase the charge.
+        // The allocator refuses it; admission remains conservative beforehand.
+        Err(_) => usize::MAX,
+    }
 }
 
 impl HyperPrimeWorkspaceShape {
@@ -2415,6 +2437,35 @@ impl HybridModel {
                 kpool_score_pool = glm5.index_kpool as usize;
             }
         }
+        // rotated_query() owns another [call_rows, heads, rank] f32 operand
+        // alongside the absorbed query/output. TC rotates in place, but can
+        // decline at runtime; reserve the direct fallback maximum regardless.
+        // Mirror the production allocator's attention/basis selection. MLA
+        // layers execute sequentially, so use their maximum, not their sum.
+        use memra_gguf::model_plan::{AttentionPlan, MlaAttentionPlan, StatePlan};
+        let nvfp4 = memra_kv::latent_layout::nvfp4_enabled();
+        let rotated_query_bytes = self
+            .plan
+            .layers
+            .iter()
+            .filter_map(|layer| match (&layer.attention, &layer.state) {
+                (
+                    AttentionPlan::Mla(MlaAttentionPlan::LatentKv { query_heads, .. }),
+                    StatePlan::LatentKvCache { width, index_width },
+                ) => Some(rht_query_workspace_row_bytes(
+                    memra_kv::latent_layout::LatentLayout::for_attention(
+                        nvfp4,
+                        &layer.attention,
+                        *width as usize,
+                        *index_width as usize,
+                    ),
+                    *query_heads as usize,
+                )),
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0);
+        chunk_token_bytes = chunk_token_bytes.saturating_add(rotated_query_bytes);
         Some(HyperPrimeWorkspaceShape {
             chunk_token_bytes,
             prompt_bytes_per_token: h * f32b,
@@ -9625,7 +9676,7 @@ impl HybridModel {
         wv_b: &CudaSlice<f32>,
         q_nope: &CudaSlice<f32>,
         latent: &CudaSlice<f32>,
-        compressed: Option<&mut memra_kv::latent_nvfp4::DevicePlane>,
+        mut compressed: Option<&mut memra_kv::latent_nvfp4::DevicePlane>,
         idx: &CudaSlice<i32>,
         width: usize,
         t: usize,
@@ -9690,8 +9741,14 @@ impl HybridModel {
             declined("absorb", t, r, dn, nh);
             return Ok(None);
         }
-        // The latent window rows 0..t_kv (this call's rows were appended above), bf16.
-        let cache_bf = match compressed {
+        // Keep the existing BF16 absorption rounding. Only its rank512 output
+        // changes basis, in place with vector-local F32 butterfly workspace.
+        if let Some(plane) = compressed.as_deref_mut() {
+            use crate::latent_nvfp4_ffi::Nvfp4LatentOps;
+            plane.rotate_query_bf16(e, &mut q_lat_bf)?;
+        }
+        // Physical stored basis: never inverse-rotate the full latent history.
+        let cache_bf = match compressed.as_deref_mut() {
             Some(plane) => {
                 use crate::latent_nvfp4_ffi::Nvfp4LatentOps;
                 plane.bf16_history(e, t_kv)?
@@ -9702,6 +9759,10 @@ impl HybridModel {
         e.mla_attn_gathered_tc(
             &q_lat_bf, &cache_bf, idx, &mut o_lat, nh, r, t, width, scale,
         )?;
+        if let Some(plane) = compressed {
+            use crate::latent_nvfp4_ffi::Nvfp4LatentOps;
+            plane.inverse_output(e, &mut o_lat)?;
+        }
         // decompress: per head h, attn[:,h,:] [t, dv] = o_lat[:,h,:] [t, r] @ W_uv[h] [dv, r]^T.
         // wv_b is (h, j, l), contiguous in l == the reduction axis: per head [n=dv, k=r].
         let o_bf = e.f32_to_bf16(&o_lat, t * nh * r)?;
@@ -10214,7 +10275,7 @@ impl HybridModel {
             }
         };
         static SAID: std::sync::Once = std::sync::Once::new();
-        SAID.call_once(|| eprintln!("[latent-nvfp4] ENGAGED row-local E2M1/E4M3 cache; index/recurrent planes unchanged; no f32 history shadow"));
+        SAID.call_once(|| eprintln!("[latent-nvfp4] ENGAGED basis={:?} row-local E2M1/E4M3 cache; index/recurrent planes unchanged; no f32 history shadow", quant.basis()));
         Ok(out)
     }
 
@@ -27283,6 +27344,7 @@ mod prime_chunk_schedule_tests {
         recv_prime_pp_signal, restore_prime_cache_layers, step_grouped_decode_shape,
         step_grouped_prefill_shape, step_tp_prefill_shape, validate_step_prime_batch_modes,
     };
+    use super::{HyperPrimeWorkspaceShape, hyper_prime_call_rows, rht_query_workspace_row_bytes};
 
     fn sizes(ranges: &[(usize, usize)]) -> Vec<usize> {
         ranges.iter().map(|(start, end)| end - start).collect()
@@ -27329,6 +27391,56 @@ mod prime_chunk_schedule_tests {
             shape.admission_bytes_with_call_rows(100, 4096),
             100 * (shape.call_row_bytes + shape.prompt_row_bytes)
         );
+    }
+
+    #[test]
+    fn rotated_query_workspace_covers_direct_fallback_without_charging_identity() {
+        use memra_kv::latent_layout::{LatentBasis, LatentFormat, LatentLayout};
+        let rht = LatentLayout::new_with_basis(LatentFormat::Nvfp4, 512, LatentBasis::Rht512V1);
+        let bytes = rht_query_workspace_row_bytes(rht, 64);
+        assert_eq!(bytes, 64 * 512 * size_of::<f32>());
+        assert_eq!(bytes * 4096, 512 * 1024 * 1024);
+        assert_eq!(rht_query_workspace_row_bytes(rht, 32), bytes / 2);
+        assert_eq!(
+            rht_query_workspace_row_bytes(LatentLayout::new(LatentFormat::F32, 512), 64),
+            0
+        );
+        assert_eq!(
+            rht_query_workspace_row_bytes(LatentLayout::new(LatentFormat::Nvfp4, 512), 64),
+            0
+        );
+        assert_eq!(
+            rht_query_workspace_row_bytes(Err("unsupported selected layout"), 64),
+            usize::MAX
+        );
+        assert_eq!(rht_query_workspace_row_bytes(rht, usize::MAX), usize::MAX);
+    }
+
+    #[test]
+    fn rotated_query_workspace_is_prime_call_scaled_not_history_scaled() {
+        use memra_kv::latent_layout::{LatentBasis, LatentFormat, LatentLayout};
+        let extra = rht_query_workspace_row_bytes(
+            LatentLayout::new_with_basis(LatentFormat::Nvfp4, 512, LatentBasis::Rht512V1),
+            64,
+        );
+        let original = HyperPrimeWorkspaceShape {
+            chunk_token_bytes: 900_000,
+            prompt_bytes_per_token: 16_384,
+            kpool_score_pool: 4,
+            n_layers: 46,
+            gdn_grid: false,
+        };
+        let rotated = HyperPrimeWorkspaceShape {
+            chunk_token_bytes: original.chunk_token_bytes + extra,
+            ..original
+        };
+        for prompt_rows in [32, 4096, 218_000] {
+            let rows = hyper_prime_call_rows(prompt_rows, original.n_layers, original.gdn_grid);
+            assert_eq!(
+                rotated.admission_bytes(prompt_rows) - original.admission_bytes(prompt_rows),
+                rows * extra
+            );
+        }
     }
 
     #[test]

@@ -2,7 +2,461 @@ use memra_engine::{
     Engine,
     latent_nvfp4_ffi::{Nvfp4LatentOps, Nvfp4LatentStorage},
 };
+use memra_kv::latent_layout::{LatentBasis, RHT512_SIGN_MASK, rht512_forward, rht512_inverse};
 use memra_kv::latent_nvfp4::PackedRow;
+
+fn rht_rows(values: &[f32], inverse: bool) -> Vec<f32> {
+    assert!(values.len().is_multiple_of(512));
+    values
+        .chunks_exact(512)
+        .flat_map(|row| {
+            if inverse {
+                rht512_inverse(row).unwrap()
+            } else {
+                rht512_forward(row).unwrap()
+            }
+        })
+        .collect()
+}
+
+fn rht_fixture(n: usize, salt: usize) -> Vec<f32> {
+    (0..n)
+        .map(|i| ((i * 73 + salt) % 509) as f32 / 127.0 - 2.0)
+        .collect()
+}
+
+fn bits(values: &[f32]) -> Vec<u32> {
+    values.iter().map(|v| v.to_bits()).collect()
+}
+
+fn encoded_physical(values: &[f32]) -> Vec<PackedRow> {
+    values
+        .chunks_exact(512)
+        .map(|row| PackedRow::encode(&rht512_forward(row).unwrap()).unwrap())
+        .collect()
+}
+
+fn plane_bytes(e: &Engine, plane: &Nvfp4LatentStorage) -> (Vec<u8>, Vec<u8>, Vec<u32>) {
+    (
+        e.stream().clone_dtoh(&plane.payload).unwrap(),
+        e.stream().clone_dtoh(&plane.scales).unwrap(),
+        bits(&e.dtoh(&plane.macros).unwrap()),
+    )
+}
+
+fn assert_encoded_prefix(e: &Engine, plane: &Nvfp4LatentStorage, expected: &[PackedRow]) {
+    let (payload, scales, macros) = plane_bytes(e, plane);
+    assert_eq!(
+        &payload[..expected.len() * 256],
+        expected
+            .iter()
+            .flat_map(|r| r.payload.iter().copied())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        &scales[..expected.len() * 32],
+        expected
+            .iter()
+            .flat_map(|r| r.block_scales.iter().copied())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        &macros[..expected.len()],
+        expected
+            .iter()
+            .map(|r| r.macro_scale.to_bits())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn rht_dense_f64_attention_invariance_has_wrong_basis_red_controls() {
+    // Dense matrix reference, independent of the production butterfly loop.
+    let transform = |x: &[f64], inverse: bool| -> Vec<f64> {
+        (0..512usize)
+            .map(|j| {
+                x.iter()
+                    .enumerate()
+                    .map(|(i, x)| {
+                        let column = if inverse { j } else { i };
+                        let negative = ((RHT512_SIGN_MASK[column / 64] >> (column % 64)) & 1 != 0)
+                            ^ ((i & j).count_ones() % 2 != 0);
+                        x * if negative { -1.0 } else { 1.0 }
+                    })
+                    .sum::<f64>()
+                    / 512f64.sqrt()
+            })
+            .collect()
+    };
+    let attention = |q: &[f64], rows: &[Vec<f64>]| -> Vec<f64> {
+        let logits: Vec<f64> = rows
+            .iter()
+            .map(|r| q.iter().zip(r).map(|(q, k)| q * k).sum::<f64>() * 0.0625)
+            .collect();
+        let max = logits.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let weights: Vec<f64> = logits.iter().map(|x| (x - max).exp()).collect();
+        let sum: f64 = weights.iter().sum();
+        (0..512)
+            .map(|i| rows.iter().zip(&weights).map(|(r, w)| r[i] * w / sum).sum())
+            .collect()
+    };
+    let q: Vec<f64> = rht_fixture(512, 31).into_iter().map(f64::from).collect();
+    let rows: Vec<Vec<f64>> = (0..3)
+        .map(|i| {
+            rht_fixture(512, i * 53 + 11)
+                .into_iter()
+                .map(f64::from)
+                .collect()
+        })
+        .collect();
+    let rotated: Vec<_> = rows.iter().map(|r| transform(r, false)).collect();
+    let reference = attention(&q, &rows);
+    let physical = attention(&transform(&q, false), &rotated);
+    let correct = transform(&physical, true);
+    assert!(
+        reference
+            .iter()
+            .zip(&correct)
+            .all(|(a, b)| (a - b).abs() < 1e-10)
+    );
+    let wrong_inverse = transform(&physical, false);
+    let missing_query = transform(&attention(&q, &rotated), true);
+    for wrong in [wrong_inverse, missing_query] {
+        assert!(
+            reference
+                .iter()
+                .zip(wrong)
+                .any(|(a, b)| (a - b).abs() > 0.01)
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires an admitted non-production CUDA device and canonical GPU lock"]
+fn rht_f32_and_bf16_transforms_match_fixed_cpu_rounding() {
+    use cudarc::driver::{DevicePtr, DevicePtrMut};
+    use std::ffi::c_void;
+    unsafe extern "C" {
+        fn memra_latent_rht512_f32(
+            input: *const f32,
+            output: *mut f32,
+            error: *mut i32,
+            vectors: i32,
+            inverse: i32,
+            stream: *mut c_void,
+        ) -> i32;
+    }
+    let e = Engine::new(0).expect("CUDA required");
+    let mut vectors = vec![
+        vec![0.; 512],
+        vec![-0.; 512],
+        vec![f32::from_bits(1); 512],
+        vec![-f32::from_bits(1); 512],
+        rht_fixture(512, 17),
+    ];
+    for col in [0, 37, 511] {
+        let mut row = vec![0.; 512];
+        row[col] = 1.;
+        vectors.push(row);
+    }
+    let input: Vec<f32> = vectors.into_iter().flatten().collect();
+    let device_input = e.htod(&input).unwrap();
+    for inverse in [false, true] {
+        let mut output = e.uninit(input.len()).unwrap();
+        let mut status = e.htod_i32(&[0]).unwrap();
+        let stream = e.stream();
+        let (src, _src_use) = device_input.device_ptr(&stream);
+        let (dst, _dst_use) = output.device_ptr_mut(&stream);
+        let (err, _err_use) = status.device_ptr_mut(&stream);
+        let code = unsafe {
+            memra_latent_rht512_f32(
+                src as *const f32,
+                dst as *mut f32,
+                err as *mut i32,
+                (input.len() / 512) as i32,
+                i32::from(inverse),
+                stream.cu_stream() as *mut c_void,
+            )
+        };
+        assert_eq!(code, 0);
+        drop((_src_use, _dst_use, _err_use));
+        assert_eq!(e.dtoh_i32(&status).unwrap(), [0]);
+        assert_eq!(
+            bits(&e.dtoh(&output).unwrap()),
+            bits(&rht_rows(&input, inverse))
+        );
+    }
+    let mut plane = Nvfp4LatentStorage::new_with_basis(&e, 512, 1, LatentBasis::Rht512V1).unwrap();
+    let mut inverse = e.htod(&input).unwrap();
+    plane.inverse_output(&e, &mut inverse).unwrap();
+    plane.check(&e).unwrap();
+    assert_eq!(
+        bits(&e.dtoh(&inverse).unwrap()),
+        bits(&rht_rows(&input, true))
+    );
+    let bf16 = |x: f32| -> u16 {
+        let b = x.to_bits();
+        ((b.wrapping_add(0x7fff + ((b >> 16) & 1))) >> 16) as u16
+    };
+    let rounded: Vec<f32> = input
+        .iter()
+        .map(|x| f32::from_bits((bf16(*x) as u32) << 16))
+        .collect();
+    let bytes: Vec<u8> = rounded
+        .iter()
+        .flat_map(|x| bf16(*x).to_le_bytes())
+        .collect();
+    let mut query = e.upload_u8(&bytes).unwrap();
+    plane.rotate_query_bf16(&e, &mut query).unwrap();
+    plane.check(&e).unwrap();
+    let expected: Vec<u8> = rht_rows(&rounded, false)
+        .iter()
+        .flat_map(|x| bf16(*x).to_le_bytes())
+        .collect();
+    assert_eq!(e.stream().clone_dtoh(&query).unwrap(), expected);
+}
+
+#[test]
+#[ignore = "requires an admitted non-production CUDA device and canonical GPU lock"]
+fn rht_physical_storage_and_attention_match_cpu_basis_oracle() {
+    let e = Engine::new(0).expect("CUDA required");
+    let (rows, heads, queries, slots) = (19, 3, 2, 11);
+    let input = rht_fixture(rows * 512, 19);
+    let expected = encoded_physical(&input);
+    let decoded: Vec<f32> = expected.iter().flat_map(|r| r.decode().unwrap()).collect();
+    let mut plane =
+        Nvfp4LatentStorage::new_with_basis(&e, 512, rows, LatentBasis::Rht512V1).unwrap();
+    plane.append(&e, &e.htod(&input).unwrap(), 0).unwrap();
+    plane.check(&e).unwrap();
+    assert_encoded_prefix(&e, &plane, &expected);
+    let ids = e.htod_i32(&(0..rows as i32).collect::<Vec<_>>()).unwrap();
+    let gathered = plane.gather(&e, &ids, rows).unwrap();
+    plane.check(&e).unwrap();
+    assert_eq!(bits(&e.dtoh(&gathered).unwrap()), bits(&decoded));
+    let history_bf = plane.bf16_history(&e, rows).unwrap();
+    let want_bf = e
+        .f32_to_bf16(&e.htod(&decoded).unwrap(), decoded.len())
+        .unwrap();
+    assert_eq!(
+        e.stream().clone_dtoh(&history_bf).unwrap(),
+        e.stream().clone_dtoh(&want_bf).unwrap()
+    );
+    let query = rht_fixture(queries * heads * 512, 59);
+    let selections: Vec<i32> = (0..queries * slots)
+        .map(|i| {
+            if i % 7 == 0 {
+                -1
+            } else {
+                (i * 3 % rows) as i32
+            }
+        })
+        .collect();
+    let idx = e.htod_i32(&selections).unwrap();
+    let actual = plane
+        .attend(
+            &e,
+            &e.htod(&query).unwrap(),
+            &idx,
+            heads,
+            queries,
+            slots,
+            rows,
+            0.0625,
+        )
+        .unwrap();
+    plane.check(&e).unwrap();
+    let mut physical = e.uninit(query.len()).unwrap();
+    e.mla_attn_gathered(
+        &e.htod(&rht_rows(&query, false)).unwrap(),
+        &e.uninit(1).unwrap(),
+        &e.htod(&decoded).unwrap(),
+        &idx,
+        &mut physical,
+        heads,
+        512,
+        0,
+        queries,
+        slots,
+        0.0625,
+    )
+    .unwrap();
+    let physical_host = e.dtoh(&physical).unwrap();
+    let reference = rht_rows(&physical_host, true);
+    assert!(reference.iter().all(|x| x.is_finite()));
+    assert_eq!(bits(&e.dtoh(&actual).unwrap()), bits(&reference));
+    assert!(
+        reference
+            .iter()
+            .zip(rht_rows(&physical_host, false))
+            .any(|(a, b)| (*a - b).abs() > 1e-3)
+    );
+    // Omitting query rotation is a distinct bad arm, not just the wrong inverse.
+    e.mla_attn_gathered(
+        &e.htod(&query).unwrap(),
+        &e.uninit(1).unwrap(),
+        &e.htod(&decoded).unwrap(),
+        &idx,
+        &mut physical,
+        heads,
+        512,
+        0,
+        queries,
+        slots,
+        0.0625,
+    )
+    .unwrap();
+    let wrong = rht_rows(&e.dtoh(&physical).unwrap(), true);
+    assert!(
+        reference
+            .iter()
+            .zip(wrong)
+            .any(|(a, b)| (*a - b).abs() > 1e-3)
+    );
+}
+
+#[test]
+#[ignore = "requires an admitted non-production CUDA device and canonical GPU lock"]
+fn rht_captured_multirow_overwrite_preserves_committed_physical_prefix() {
+    let e = Engine::new(0).expect("CUDA required");
+    let (t, heads, capacity, slots) = (3, 2, 12, 8);
+    let mut history = rht_fixture(4 * 512, 11);
+    let mut plane =
+        Nvfp4LatentStorage::new_with_basis(&e, 512, capacity, LatentBasis::Rht512V1).unwrap();
+    plane.append(&e, &e.htod(&history).unwrap(), 0).unwrap();
+    let mut input = e.htod(&rht_fixture(t * 512, 31)).unwrap();
+    let query_host = rht_fixture(t * heads * 512, 43);
+    let query = e.htod(&query_host).unwrap();
+    let indices = |base: usize| {
+        (0..t)
+            .flat_map(|i| (0..slots).map(move |s| if s <= base + i { s as i32 } else { -1 }))
+            .collect::<Vec<_>>()
+    };
+    let mut idx = e.htod_i32(&indices(4)).unwrap();
+    let width = e.htod_i32(&[slots as i32]).unwrap();
+    let mut pos = e.htod_i32(&[4]).unwrap();
+    let mut output = e.zeros(query_host.len()).unwrap();
+    let graph = e
+        .capture_graph(|e| {
+            plane.append_live(e, &input, &pos)?;
+            let actual = plane.attend_live(e, &query, &idx, &width, &pos, heads, t, 0.0625)?;
+            e.copy_into(&mut output, 0, &actual, query_host.len())
+        })
+        .unwrap();
+    let mut committed = None;
+    for (base, salt) in [(4, 31), (5, 197)] {
+        let proposal = rht_fixture(t * 512, salt);
+        e.copy_into(&mut input, 0, &e.htod(&proposal).unwrap(), proposal.len())
+            .unwrap();
+        e.stream().memcpy_htod(&indices(base), &mut idx).unwrap();
+        e.set_i32_one(&mut pos, base as i32).unwrap();
+        plane.error.invalidate().unwrap();
+        graph.launch().unwrap();
+        plane.check(&e).unwrap();
+        history.truncate(base * 512);
+        history.extend_from_slice(&proposal);
+        let encoded = encoded_physical(&history);
+        assert_encoded_prefix(&e, &plane, &encoded);
+        let decoded: Vec<_> = encoded.iter().flat_map(|r| r.decode().unwrap()).collect();
+        let mut physical = e.uninit(query_host.len()).unwrap();
+        e.mla_attn_gathered(
+            &e.htod(&rht_rows(&query_host, false)).unwrap(),
+            &e.uninit(1).unwrap(),
+            &e.htod(&decoded).unwrap(),
+            &idx,
+            &mut physical,
+            heads,
+            512,
+            0,
+            t,
+            slots,
+            0.0625,
+        )
+        .unwrap();
+        assert_eq!(
+            bits(&e.dtoh(&output).unwrap()),
+            bits(&rht_rows(&e.dtoh(&physical).unwrap(), true))
+        );
+        let (b, s, m) = plane_bytes(&e, &plane);
+        let prefix = (b[..5 * 256].to_vec(), s[..5 * 32].to_vec(), m[..5].to_vec());
+        if let Some(ref previous) = committed {
+            assert_eq!(&prefix, previous);
+        } else {
+            committed = Some(prefix);
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires an admitted non-production CUDA device and canonical GPU lock"]
+fn rht_wrong_basis_snapshot_and_copy_refuse_without_destination_changes() {
+    let e = Engine::new(0).expect("CUDA required");
+    for (src_basis, dst_basis) in [
+        (LatentBasis::Rht512V1, LatentBasis::Identity),
+        (LatentBasis::Identity, LatentBasis::Rht512V1),
+    ] {
+        let make = |basis| memra_kv::LatentKvLayer {
+            rows: e.uninit(0).unwrap(),
+            nvfp4: Some(Nvfp4LatentStorage::new_with_basis(&e, 512, 4, basis).unwrap()),
+            width: 512,
+            len: 0,
+            len_d: e.htod_i32(&[0]).unwrap(),
+            index_rows: Some(e.htod(&vec![77.; 4 * 8]).unwrap()),
+            index_width: 8,
+            index_ring_rows: None,
+            index_pool_keys: None,
+            index_pools_ready: 0,
+            index_pool: 4,
+        };
+        let mut source = make(src_basis);
+        source
+            .nvfp4
+            .as_mut()
+            .unwrap()
+            .append(&e, &e.htod(&rht_fixture(4 * 512, 71)).unwrap(), 0)
+            .unwrap();
+        source.len = 2;
+        let snapshot = source.snapshot_plane(&e).unwrap();
+        assert_eq!(snapshot.nvfp4.as_ref().unwrap().basis(), src_basis);
+        let mut compatible = make(src_basis);
+        compatible.restore_plane(&e, &snapshot, 4).unwrap();
+        let (copied_bytes, copied_scales, copied_macros) =
+            plane_bytes(&e, compatible.nvfp4.as_ref().unwrap());
+        let (source_bytes, source_scales, source_macros) =
+            plane_bytes(&e, source.nvfp4.as_ref().unwrap());
+        assert_eq!(&copied_bytes[..2 * 256], &source_bytes[..2 * 256]);
+        assert_eq!(&copied_scales[..2 * 32], &source_scales[..2 * 32]);
+        assert_eq!(&copied_macros[..2], &source_macros[..2]);
+        assert_eq!(compatible.len, 2);
+        assert_eq!(e.dtoh_i32(&compatible.len_d).unwrap(), [2]);
+        let mut dest = make(dst_basis);
+        dest.nvfp4
+            .as_mut()
+            .unwrap()
+            .append(&e, &e.htod(&rht_fixture(4 * 512, 193)).unwrap(), 0)
+            .unwrap();
+        let before = plane_bytes(&e, dest.nvfp4.as_ref().unwrap());
+        let before_index = e.dtoh(dest.index_rows.as_ref().unwrap()).unwrap();
+        assert!(
+            dest.nvfp4
+                .as_mut()
+                .unwrap()
+                .copy_prefix_from(&e, snapshot.nvfp4.as_ref().unwrap(), 2)
+                .is_err()
+        );
+        assert_eq!(plane_bytes(&e, dest.nvfp4.as_ref().unwrap()), before);
+        assert!(dest.restore_plane(&e, &snapshot, 4).is_err());
+        assert_eq!(plane_bytes(&e, dest.nvfp4.as_ref().unwrap()), before);
+        assert_eq!(
+            e.dtoh(dest.index_rows.as_ref().unwrap()).unwrap(),
+            before_index
+        );
+        assert_eq!(dest.len, 0);
+        assert_eq!(e.dtoh_i32(&dest.len_d).unwrap(), [0]);
+        assert!(dest.index_pool_keys.is_none());
+        assert_eq!(dest.index_pools_ready, 0);
+        dest.nvfp4.as_ref().unwrap().check(&e).unwrap();
+    }
+}
 
 #[test]
 #[ignore = "requires an admitted non-production CUDA device and canonical GPU lock"]
@@ -389,6 +843,7 @@ fn raw_checkpoint_plan_allocates_only_compressed_latent_history() {
             "f32 history shadow must not be allocated"
         );
         let plane = layer.nvfp4.as_ref().expect("compressed plane missing");
+        assert_eq!(plane.basis(), LatentBasis::Rht512V1);
         assert_eq!(plane.allocated_bytes(), capacity * 292 + 4);
         assert_eq!(layer.capacity(), capacity);
         plane.check(&e).unwrap();

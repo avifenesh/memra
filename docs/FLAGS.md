@@ -2,15 +2,32 @@
 
 ## Active experiment: GLM latent NVFP4
 
+The current runtime arm (`=1`) uses fixed `Rht512V1` signed Hadamard512 coordinates
+for declared NoPE/rank512 DSA k-pool attention; `=0` remains f32/Identity. This
+replaces the failed unrotated runtime program, not a new selectable door. The
+Identity NVFP4 constructor remains an internal codec primitive. Basis metadata
+travels with planes, deep snapshots and TP replicas; mismatches refuse before
+reuse/copy. The mask, normalization bits and butterfly order are frozen in
+`memra-kv/src/latent_layout.rs`; changing them requires a new basis identity.
+Queries use signs then Hadamard; weighted output uses Hadamard then signs.
+TC prefill rotates the existing BF16 absorbed-query buffer in place and inverses
+the f32 attention output before BF16 conversion/value GEMM. Physical history
+stays rotated. Direct attention's extra query buffer is charged in admission,
+including TC-decline fallback. Storage stays292 bytes/rank512 row; no persistent
+f32 history and no index/recurrent quantization. Actual dispatch reports
+`[latent-nvfp4] ENGAGED basis=Rht512V1`.
+
 The experimental encoder now selects among the legacy `amax/2688` row macro,
 per-block M4/M6 choices under that macro, and M4/M6 choices under `amax/1536`.
 Selection minimizes computed reconstruction SSE after E4M3/E2M1 rounding and
 the unchanged reader's f32 multiplies; legacy bytes win ties. CPU and CUDA use
 the same explicit FP64 reduction order. Payload/scales/macros and reader layouts
 are unchanged, with no persistent full-precision history. This is not a weight
-remint. CPU synthetic error/finite/boundary tests pass; CUDA byte parity, append
-cost, model NLL and serving remain required. The prior model-scale screen failed
-at218K, so lower row SSE is not quality clearance or a default-ON decision.
+remint. These scale choices now operate on rotated rows. CPU transform/codec and
+integration checks pass; rotated CUDA parity, append cost, model NLL and serving
+remain required. Both prior unrotated screens failed at218K, so lower row SSE
+is not quality clearance or a default-ON decision. The existing decide-by date
+is unchanged.
 
 ### Captured-operand diagnostic (not a serving or performance mode)
 
@@ -57,9 +74,11 @@ recalibration, or automatic hardware allocation. Failures preserve the directory
 `result.txt` records completed comparisons and a failing comparison exits nonzero.
 Callers own the existing GPU lock and run capture/replay serially on non-production
 hardware. Rollback: unset the knob and use the original binary; captures never
-alter a bank. Receipts are pending main-task execution; a CPU geometry/causality
-test is included but not run in this handoff. Filesystem refusal was inspected
-statically; compilation and GPU replay are explicitly pending the main task.
+alter a bank. The current checker explicitly allocates `Rht512V1` and compares
+against CPU-rotated/quantized history, CPU rotation of the actual BF16 absorbed
+query, and CPU inverse output before the value GEMM. It preserves original f32
+replay as a reproduction control. CPU tests and compilation pass; rotated GPU
+replay remains pending. Earlier unrotated replay receipts do not qualify it.
 
 | Flag | Default | Contract |
 | --- | --- | --- |
