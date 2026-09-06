@@ -14208,22 +14208,61 @@ impl HybridModel {
             } else {
                 (e.matmul(gate_shexp, z, t)?, e.matmul(up_shexp, z, t)?) // [T, 512] each
             };
-            let mut sa = e.uninit(t * n_ff_sh)?; // activation fully overwrites
-            Self::ffn_act_lim(
-                e,
-                cfg,
-                &sg_gate,
-                &sg_up,
-                1.0,
-                1.0,
-                lim_shexp,
-                &mut sa,
-                t * n_ff_sh,
-            )?;
-            let sh = if verify_t {
-                e.matmul_decode_exact(down_shexp, &sa, t)?
+            // Door MEMRA_SHEXP_SWIGLU_ZQ8 (lane/launch-collapse-20260906, default OFF): at t == 1
+            // the pre-clamped SwiGLU emits the q8_1 pair the down MMVQ reads, so the f32
+            // activation and its standalone quantize_q8_1 launch fold away (42 per token,
+            // in-graph). Byte-identical (the kernel is the two-launch chain verbatim). Any
+            // ineligible shape takes the chain below unchanged.
+            let fused_sh = if t == 1
+                && crate::shexp_swiglu_zq8_on()
+                && cfg.m3.is_none()
+                && n_ff_sh.is_multiple_of(32)
+                && e.mmvq_fast_eligible(down_shexp, 1)
+            {
+                match lim_shexp {
+                    Some(SwigluClamp::Pre(limit)) => {
+                        let (aq, ad) = e.swiglu_preclamped_mul_scaled_q8_1(
+                            &sg_gate, &sg_up, 1.0, 1.0, limit, n_ff_sh,
+                        )?;
+                        let sh = e.matmul_q8_fast(down_shexp, &aq, &ad, 1)?;
+                        if sh.is_some()
+                            && crate::SHEXP_SWIGLU_ZQ8_DISPATCHES
+                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                                == 0
+                        {
+                            eprintln!(
+                                "[shexp-swiglu-zq8] engaged (swiglu_preclamped_mul_scaled_q8_1 -> \
+                                 down MMVQ, n_ff_sh={n_ff_sh})"
+                            );
+                        }
+                        sh
+                    }
+                    _ => None,
+                }
             } else {
-                e.matmul(down_shexp, &sa, t)?
+                None
+            };
+            let sh = match fused_sh {
+                Some(sh) => sh,
+                None => {
+                    let mut sa = e.uninit(t * n_ff_sh)?; // activation fully overwrites
+                    Self::ffn_act_lim(
+                        e,
+                        cfg,
+                        &sg_gate,
+                        &sg_up,
+                        1.0,
+                        1.0,
+                        lim_shexp,
+                        &mut sa,
+                        t * n_ff_sh,
+                    )?;
+                    if verify_t {
+                        e.matmul_decode_exact(down_shexp, &sa, t)?
+                    } else {
+                        e.matmul(down_shexp, &sa, t)?
+                    }
+                }
             }; // [T, n_embd]
 
             // shexp gate: qwen35moe sigmoid-gates via ffn_gate_inp_shexp (1-D ne=[n_embd] ->

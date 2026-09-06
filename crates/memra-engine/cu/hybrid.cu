@@ -1070,6 +1070,34 @@ extern "C" __global__ void swiglu_preclamped_mul_scaled_f32(const float* __restr
     }
 }
 
+// swiglu_preclamped_mul_scaled_f32 followed by quantize_q8_1 in ONE launch (door
+// MEMRA_SHEXP_SWIGLU_ZQ8, lane/launch-collapse-20260906): the shared-expert activation at decode
+// is consumed only by the down MMVQ, which reads the q8_1 pair, so the f32 row never needs to
+// exist. One warp per 32-block: each lane computes its element with the character-identical
+// expression, the warp amax/scale/round chain is quantize_q8_1's verbatim (qmatvec.cu), so the
+// (out_q, out_d) bytes equal swiglu_preclamped_mul_scaled_f32 -> quantize_q8_1 for every input.
+// Host requires n % 32 == 0 (the served shexp width is 2048; anything else keeps the two-launch
+// chain). Gate: tests/swiglu_zq8_gpu.rs.
+extern "C" __global__ void swiglu_preclamped_mul_scaled_q8_1_f32(const float* __restrict__ gate,
+                                                                 const float* __restrict__ up,
+                                                                 float gs, float us, float limit,
+                                                                 signed char* __restrict__ out_q,
+                                                                 float* __restrict__ out_d, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int lane = threadIdx.x & 31;
+    if (i >= n) return;                       // n % 32 == 0: whole warps only
+    float u = fmaxf(fminf(up[i] * us, limit), -limit);
+    float x = fminf(gate[i] * gs, limit);
+    float v = (x / (1.0f + expf(-x))) * u;
+    float amax = fabsf(v);
+    #pragma unroll
+    for (int o = 16; o > 0; o >>= 1) amax = fmaxf(amax, __shfl_xor_sync(0xffffffffu, amax, o));
+    float d = amax / 127.0f;
+    float id = d > 0.0f ? 1.0f / d : 0.0f;
+    out_q[i] = (signed char)__float2int_rn(v * id);
+    if (lane == 0) out_d[i >> 5] = d;
+}
+
 // softplus(x + bias_broadcast) then * a_broadcast -> g_log. x:[H,T], bias/a:[H]. out:[H,T].
 // alpha layout [H,T] (alpha[t*H+h]); dt_bias/a [H].
 extern "C" __global__ void gdn_glog_f32(const float* alpha, const float* dt_bias, const float* a,

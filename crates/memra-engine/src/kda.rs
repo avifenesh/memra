@@ -559,8 +559,17 @@ pub(crate) fn kda_core_gated(
     } else {
         e.uninit(t * qkv)?
     };
-    e.l2_norm(&q_conv, &mut q_l2, head_dim, t * heads, KDA_L2_EPS)?;
-    e.l2_norm(&k_conv, &mut k_l2, head_dim, t * heads, KDA_L2_EPS)?;
+    // One launch for both norms (l2_norm2_f32; lane/launch-collapse-20260906): same per-row
+    // body and block shape as the two l2_norm launches it replaces, byte-identical rows.
+    e.l2_norm_pair(
+        &q_conv,
+        &mut q_l2,
+        &k_conv,
+        &mut k_l2,
+        head_dim,
+        t * heads,
+        KDA_L2_EPS,
+    )?;
     kda_trace(
         e,
         "conv+l2",
@@ -591,22 +600,25 @@ pub(crate) fn kda_core_gated(
     } else {
         e.uninit(t * qkv)?
     };
-    e.kda_gate(
-        &forget,
-        la.dt_bias.float_data(),
-        la.a_log.float_data(),
-        &mut g_log,
-        qkv,
-        t,
-        head_dim,
-        la.plan.gate_lower_bound,
-    )?;
     let mut beta = if rows_exact {
         e.vws_uninit(t * heads)?
     } else {
         e.uninit(t * heads)?
     };
-    e.sigmoid(&beta_raw, &mut beta, t * heads)?;
+    // Forget gate and beta sigmoid in one launch (memra_kda_gate_beta_f32;
+    // lane/launch-collapse-20260906): both bodies verbatim on their own tensors.
+    e.kda_gate_beta(
+        &forget,
+        la.dt_bias.float_data(),
+        la.a_log.float_data(),
+        &mut g_log,
+        &beta_raw,
+        &mut beta,
+        qkv,
+        t,
+        head_dim,
+        la.plan.gate_lower_bound,
+    )?;
     kda_trace(e, "gates", t, &[("forget", &forget), ("beta", &beta)]);
     // Door W: forget_down's last reader was the f_b matmul, forget's the gate kernel,
     // beta_raw's the sigmoid.
@@ -1442,6 +1454,66 @@ impl Engine {
     }
 
     /// The per-channel-decay delta-rule scan (cu/kda.cu). One warp per output column.
+    /// [`Engine::kda_gate`] and `sigmoid(beta_raw)` in one launch (`memra_kda_gate_beta_f32`):
+    /// the forget-gate body and sigmoid_f32's expression verbatim on their own tensors, same grid
+    /// as `kda_gate`; both outputs byte-identical to the two launches. Gate
+    /// `tests/kda_small_folds_gpu.rs`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn kda_gate_beta(
+        &self,
+        forget: &CudaSlice<f32>,
+        dt_bias: &CudaSlice<f32>,
+        a_log: &CudaSlice<f32>,
+        g: &mut CudaSlice<f32>,
+        beta_raw: &CudaSlice<f32>,
+        beta: &mut CudaSlice<f32>,
+        qkv: usize,
+        t: usize,
+        head_dim: usize,
+        lower_bound: f32,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let heads = qkv / head_dim;
+        if heads * head_dim != qkv
+            || heads > qkv
+            || beta_raw.len() < t * heads
+            || beta.len() < t * heads
+        {
+            return Err(format!(
+                "kda_gate_beta: qkv={qkv} head_dim={head_dim} beta rows {}",
+                beta_raw.len()
+            )
+            .into());
+        }
+        let f = self.func("memra_kda_gate_beta_f32");
+        let cfg = LaunchConfig {
+            grid_dim: (qkv.div_ceil(256) as u32, t as u32, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let (n, tt, hd, hh, lb) = (
+            qkv as i32,
+            t as i32,
+            head_dim as i32,
+            heads as i32,
+            lower_bound,
+        );
+        let stream = self.gpu.stream();
+        let mut b = stream.launch_builder(&f);
+        b.arg(forget)
+            .arg(dt_bias)
+            .arg(a_log)
+            .arg(&mut *g)
+            .arg(beta_raw)
+            .arg(&mut *beta)
+            .arg(&n)
+            .arg(&tt)
+            .arg(&hd)
+            .arg(&hh)
+            .arg(&lb);
+        unsafe { b.launch(cfg)? };
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn kda_scan(
         &self,
@@ -1704,9 +1776,20 @@ impl Engine {
                 bytes(&la.b_proj),
             ];
             // ONE activation quantize for all six ranges — the six-launch path pays this per
-            // projection. `pre_q8` is the W8 posture's pre-quantized pair and does not apply to
-            // this operand class, so the arm always quantizes here.
-            let (aq, ad) = self.quantize_q8_1(x, 1, in_f)?;
+            // projection. When the walk already quantized `x` (`MEMRA_GLM5_Q8_FUSE_ATTN`:
+            // rms_norm_zq8_f32's pair IS quantize_q8_1(x) byte for byte), consume that pair; the
+            // e4m3 arm reads the same q8_1 activation as the W8 arm, so nothing changes but the
+            // launch count (34 per token on GLM-5.3-Flash, in-graph). Gate:
+            // tests/kda_fused6_e4m3_gpu.rs `pre_q8` arm (same bytes, and a red arm proving the
+            // pair is what gets read).
+            let owned;
+            let (aq, ad): (&CudaSlice<i8>, &CudaSlice<f32>) = match pre_q8 {
+                Some((q, d)) => (q, d),
+                None => {
+                    owned = self.quantize_q8_1(x, 1, in_f)?;
+                    (&owned.0, &owned.1)
+                }
+            };
             let mut outs = [
                 self.uninit(dims[0])?,
                 self.uninit(dims[1])?,
@@ -1715,7 +1798,7 @@ impl Engine {
                 self.uninit(dims[4])?,
                 self.uninit(dims[5])?,
             ];
-            self.e4m3_fused6_into(w, &aq, &ad, in_f, dims, in_f, ws, &mut outs)?;
+            self.e4m3_fused6_into(w, aq, ad, in_f, dims, in_f, ws, &mut outs)?;
             if KDA_FUSED6_E4M3_DISPATCHES.fetch_add(1, Ordering::Relaxed) == 0 {
                 eprintln!(
                     "[kda-fused6] engaged arm=e4m3 in_f={in_f} out={dims:?} t={t} (one launch \
