@@ -2,6 +2,16 @@
 
 ## Active experiment: GLM latent NVFP4
 
+The experimental encoder now selects among the legacy `amax/2688` row macro,
+per-block M4/M6 choices under that macro, and M4/M6 choices under `amax/1536`.
+Selection minimizes computed reconstruction SSE after E4M3/E2M1 rounding and
+the unchanged reader's f32 multiplies; legacy bytes win ties. CPU and CUDA use
+the same explicit FP64 reduction order. Payload/scales/macros and reader layouts
+are unchanged, with no persistent full-precision history. This is not a weight
+remint. CPU synthetic error/finite/boundary tests pass; CUDA byte parity, append
+cost, model NLL and serving remain required. The prior model-scale screen failed
+at218K, so lower row SSE is not quality clearance or a default-ON decision.
+
 ### Captured-operand diagnostic (not a serving or performance mode)
 
 `MEMRA_LATENT_CAPTURE_DIR` is **unset/OFF by default**. A nonempty absolute path

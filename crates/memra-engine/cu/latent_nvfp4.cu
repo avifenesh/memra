@@ -27,6 +27,35 @@ __device__ __forceinline__ float latent_scale_value(unsigned char code) {
     return float(value);
 }
 
+struct LatentEncodedBlock {
+    unsigned char payload[8];
+    unsigned char scale;
+    double sse;
+};
+
+// Actual rounded storage and consumer arithmetic, not ideal unrounded scales.
+// Explicit round-to-nearest operations prevent contraction changing a winner.
+__device__ __forceinline__ LatentEncodedBlock latent_encode_block(
+    const float* input, float macro, double multiplier) {
+    float peak = 0.f;
+    for (int j = 0; j < 16; ++j) peak = fmaxf(peak, fabsf(input[j]));
+    float ideal = __double2float_rn(__ddiv_rn(
+        __dmul_rn(double(peak), multiplier), __dmul_rn(6.0, double(macro))));
+    LatentEncodedBlock block = {};
+    block.scale = __nv_cvt_float_to_fp8(ideal, __NV_SATFINITE, __NV_E4M3);
+    float scale = latent_scale_value(block.scale);
+    double divisor = __dmul_rn(double(scale), double(macro));
+    for (int j = 0; j < 16; ++j) {
+        unsigned code = divisor == 0.0 ? 0 : latent_fp4_code(
+            __double2float_rn(__ddiv_rn(double(input[j]), divisor)));
+        block.payload[j / 2] |= code << ((j % 2) * 4);
+        float value = __fmul_rn(__fmul_rn(latent_fp4_value(code), scale), macro);
+        double difference = __dsub_rn(double(value), double(input[j]));
+        block.sse = __dadd_rn(block.sse, __dmul_rn(difference, difference));
+    }
+    return block;
+}
+
 // One block per appended token. The macro scale belongs to that token, so later
 // appends and speculative overwrites cannot alter an already committed prefix.
 __global__ void latent_nvfp4_append_kernel(
@@ -34,7 +63,9 @@ __global__ void latent_nvfp4_append_kernel(
     const float* rows, int* error, int slot, int width, int capacity, const int* slot_d) {
     __shared__ float peaks[256];
     __shared__ int invalid[256];
-    __shared__ float macro;
+    __shared__ float macro[2];
+    __shared__ double totals[3][256];
+    __shared__ int selected;
     int row = blockIdx.x, tid = threadIdx.x;
     if (slot_d) slot = slot_d[0];
     if (slot < 0 || slot > capacity || row >= capacity - slot) {
@@ -60,23 +91,55 @@ __global__ void latent_nvfp4_append_kernel(
     }
     if (invalid[0]) { if (tid == 0) atomicExch(error, 1); return; }
     if (tid == 0) {
-        macro = peaks[0] == 0.f ? 1.f : fmaxf(float(double(peaks[0]) / 2688.0), __int_as_float(1));
-        macros[slot + row] = macro;
+        macro[0] = peaks[0] == 0.f ? 1.f : fmaxf(
+            __double2float_rn(__ddiv_rn(double(peaks[0]), 2688.0)), __int_as_float(1));
+        macro[1] = peaks[0] == 0.f ? 1.f : fmaxf(
+            __double2float_rn(__ddiv_rn(double(peaks[0]), 1536.0)), __int_as_float(1));
     }
     __syncthreads();
+    double legacy = 0.0, adaptive448 = 0.0, adaptive256 = 0.0;
     for (int block = tid; block < width / 16; block += blockDim.x) {
-        float local_peak = 0.f;
-        for (int j = 0; j < 16; ++j) local_peak = fmaxf(local_peak, fabsf(input[block * 16 + j]));
-        float ideal = float(double(local_peak) / (6.0 * double(macro)));
-        unsigned char scale = __nv_cvt_float_to_fp8(ideal, __NV_SATFINITE, __NV_E4M3);
-        scales[(int64_t)(slot + row) * (width / 16) + block] = scale;
-        double divisor = double(latent_scale_value(scale)) * double(macro);
-        for (int pair = 0; pair < 8; ++pair) {
-            int col = block * 16 + pair * 2;
-            unsigned lo = divisor == 0.0 ? 0 : latent_fp4_code(float(double(input[col]) / divisor));
-            unsigned hi = divisor == 0.0 ? 0 : latent_fp4_code(float(double(input[col + 1]) / divisor));
-            payload[(int64_t)(slot + row) * (width / 2) + block * 8 + pair] = lo | (hi << 4);
+        const float* xs = input + block * 16;
+        LatentEncodedBlock a = latent_encode_block(xs, macro[0], 1.0);
+        LatentEncodedBlock b = latent_encode_block(xs, macro[0], 1.5);
+        legacy = __dadd_rn(legacy, a.sse);
+        adaptive448 = __dadd_rn(adaptive448, b.sse < a.sse ? b.sse : a.sse);
+        LatentEncodedBlock c = latent_encode_block(xs, macro[1], 1.0);
+        LatentEncodedBlock d = latent_encode_block(xs, macro[1], 1.5);
+        adaptive256 = __dadd_rn(adaptive256, d.sse < c.sse ? d.sse : c.sse);
+    }
+    totals[0][tid] = legacy;
+    totals[1][tid] = adaptive448;
+    totals[2][tid] = adaptive256;
+    __syncthreads();
+    // Same block-stride and reduction tree as the CPU reference, for every width.
+    for (int offset = 128; offset; offset >>= 1) {
+        if (tid < offset) {
+            for (int arm = 0; arm < 3; ++arm)
+                totals[arm][tid] = __dadd_rn(totals[arm][tid], totals[arm][tid + offset]);
         }
+        __syncthreads();
+    }
+    if (tid == 0) {
+        selected = 0;
+        for (int arm = 1; arm < 3; ++arm)
+            if (totals[arm][0] < totals[selected][0]) selected = arm;
+        if (!isfinite(totals[selected][0])) atomicExch(error, 4);
+        else macros[slot + row] = macro[selected == 2 ? 1 : 0];
+    }
+    __syncthreads();
+    if (!isfinite(totals[selected][0])) return;
+    float chosen_macro = macro[selected == 2 ? 1 : 0];
+    for (int block = tid; block < width / 16; block += blockDim.x) {
+        const float* xs = input + block * 16;
+        LatentEncodedBlock encoded = latent_encode_block(xs, chosen_macro, 1.0);
+        if (selected != 0) {
+            LatentEncodedBlock m4 = latent_encode_block(xs, chosen_macro, 1.5);
+            if (m4.sse < encoded.sse) encoded = m4;
+        }
+        scales[(int64_t)(slot + row) * (width / 16) + block] = encoded.scale;
+        for (int pair = 0; pair < 8; ++pair)
+            payload[(int64_t)(slot + row) * (width / 2) + block * 8 + pair] = encoded.payload[pair];
     }
 }
 

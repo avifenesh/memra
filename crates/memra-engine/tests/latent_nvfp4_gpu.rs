@@ -4,19 +4,134 @@ use memra_engine::{
 };
 use memra_kv::latent_nvfp4::PackedRow;
 
+#[test]
+#[ignore = "requires an admitted non-production CUDA device and canonical GPU lock"]
+fn mse_encoder_synthetic_extremes_and_live_append_match_cpu() {
+    let e = Engine::new(0).expect("CUDA required");
+    let width = 512;
+    let counterexample: Vec<f32> = (0..width)
+        .map(|i| if i % 16 == 0 { 1. } else { 0.75 })
+        .collect();
+    let mut rows = vec![
+        counterexample.clone(),
+        counterexample.iter().map(|x| -*x).collect(),
+        vec![0.; width],
+        vec![-0.; width],
+        vec![1.; width],
+        vec![f32::MAX; width],
+        vec![-f32::MAX; width],
+        vec![f32::from_bits(1); width],
+        vec![-f32::from_bits(1); width],
+        (0..width).map(|i| f32::from_bits((i + 1) as u32)).collect(),
+        (0..width)
+            .map(|i| if i % 16 == 0 { 1. } else { 0. })
+            .collect(),
+    ];
+    let mut state = 7u32;
+    for amplitude in [f32::MIN_POSITIVE, 1e-20, 1., 1e20, f32::MAX] {
+        rows.push(
+            (0..width)
+                .map(|i| {
+                    state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+                    if i == 0 {
+                        amplitude
+                    } else {
+                        let magnitude = ((state >> 8) as f32 / 16777216.) * amplitude;
+                        if state & 1 == 0 {
+                            magnitude
+                        } else {
+                            -magnitude
+                        }
+                    }
+                })
+                .collect(),
+        );
+    }
+    let count = rows.len();
+    let input: Vec<f32> = rows.iter().flatten().copied().collect();
+    let expected: Vec<_> = rows
+        .iter()
+        .map(|row| PackedRow::encode(row).unwrap())
+        .collect();
+    assert_eq!(expected[0].decode().unwrap(), counterexample);
+    let device_input = e.htod(&input).unwrap();
+    let mut batch = Nvfp4LatentStorage::new(&e, width, count).unwrap();
+    batch.append(&e, &device_input, 0).unwrap();
+    let mut live = Nvfp4LatentStorage::new(&e, width, count).unwrap();
+    let slot = e.htod_i32(&[0]).unwrap();
+    live.append_live(&e, &device_input, &slot).unwrap();
+    let mut sequential = Nvfp4LatentStorage::new(&e, width, count).unwrap();
+    for (i, row) in rows.iter().enumerate() {
+        sequential.append(&e, &e.htod(row).unwrap(), i).unwrap();
+    }
+    let ids = e.htod_i32(&(0..count as i32).collect::<Vec<_>>()).unwrap();
+    for plane in [&mut batch, &mut live, &mut sequential] {
+        plane.check(&e).unwrap();
+        assert_eq!(
+            e.stream().clone_dtoh(&plane.payload).unwrap(),
+            expected
+                .iter()
+                .flat_map(|r| r.payload.iter().copied())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            e.stream().clone_dtoh(&plane.scales).unwrap(),
+            expected
+                .iter()
+                .flat_map(|r| r.block_scales.iter().copied())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            e.dtoh(&plane.macros)
+                .unwrap()
+                .iter()
+                .map(|v| v.to_bits())
+                .collect::<Vec<_>>(),
+            expected
+                .iter()
+                .map(|r| r.macro_scale.to_bits())
+                .collect::<Vec<_>>()
+        );
+        let decoded = plane.gather(&e, &ids, count).unwrap();
+        plane.check(&e).unwrap();
+        assert_eq!(
+            e.dtoh(&decoded)
+                .unwrap()
+                .iter()
+                .map(|v| v.to_bits())
+                .collect::<Vec<_>>(),
+            expected
+                .iter()
+                .flat_map(|r| r.decode().unwrap())
+                .map(f32::to_bits)
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
 // Explicitly ignored without invocation: absence of CUDA must never look like a pass.
 #[test]
 #[ignore = "requires an admitted non-production CUDA device and canonical GPU lock"]
 fn append_gather_matches_cpu_and_preserves_prefix() {
     let e = Engine::new(0).expect("CUDA required");
-    let width = 512;
+    // 4096/4112 straddle one 16-value block per CUDA lane; 8208 reaches
+    // the third block on lane zero. Keep the same prefix/error checks at each width.
+    for width in [16, 512, 4096, 4112, 8208] {
+        append_gather_width(&e, width);
+    }
+}
+
+fn append_gather_width(e: &Engine, width: usize) {
     let input: Vec<f32> = (0..width * 3)
         .map(|i| ((i * 37 % 1021) as f32 - 510.0) / 73.0)
         .collect();
-    let mut storage = Nvfp4LatentStorage::new(&e, width, 8).unwrap();
-    assert_eq!(storage.allocated_bytes(), 8 * 292 + 4);
-    storage.append(&e, &e.htod(&input).unwrap(), 0).unwrap();
-    storage.check(&e).unwrap();
+    let mut storage = Nvfp4LatentStorage::new(e, width, 8).unwrap();
+    assert_eq!(
+        storage.allocated_bytes(),
+        8 * (width / 2 + width / 16 + 4) + 4
+    );
+    storage.append(e, &e.htod(&input).unwrap(), 0).unwrap();
+    storage.check(e).unwrap();
     let encoded: Vec<_> = input
         .chunks_exact(width)
         .map(|r| PackedRow::encode(r).unwrap())
@@ -48,8 +163,8 @@ fn append_gather_matches_cpu_and_preserves_prefix() {
             .collect::<Vec<_>>()
     );
     let selections = e.htod_i32(&[2, 0, -1, 1]).unwrap();
-    let got = storage.gather(&e, &selections, 3).unwrap();
-    storage.check(&e).unwrap();
+    let got = storage.gather(e, &selections, 3).unwrap();
+    storage.check(e).unwrap();
     let got = e.dtoh(&got).unwrap();
     for (i, row) in [Some(2), Some(0), None, Some(1)].into_iter().enumerate() {
         let expected = row
@@ -69,13 +184,13 @@ fn append_gather_matches_cpu_and_preserves_prefix() {
         );
     }
     let old_payload = e.stream().clone_dtoh(&storage.payload).unwrap();
-    let snapshot = storage.snapshot(&e, 2).unwrap();
-    let mut restored = Nvfp4LatentStorage::new(&e, width, 8).unwrap();
-    restored.copy_prefix_from(&e, &snapshot, 2).unwrap();
+    let snapshot = storage.snapshot(e, 2).unwrap();
+    let mut restored = Nvfp4LatentStorage::new(e, width, 8).unwrap();
+    restored.copy_prefix_from(e, &snapshot, 2).unwrap();
     let restored_values = restored
-        .gather(&e, &e.htod_i32(&[0, 1]).unwrap(), 2)
+        .gather(e, &e.htod_i32(&[0, 1]).unwrap(), 2)
         .unwrap();
-    restored.check(&e).unwrap();
+    restored.check(e).unwrap();
     assert_eq!(
         e.dtoh(&restored_values).unwrap(),
         [
@@ -85,17 +200,17 @@ fn append_gather_matches_cpu_and_preserves_prefix() {
         .concat()
     );
     storage
-        .append(&e, &e.htod(&vec![1000.; width]).unwrap(), 2)
+        .append(e, &e.htod(&vec![1000.; width]).unwrap(), 2)
         .unwrap();
-    storage.check(&e).unwrap();
+    storage.check(e).unwrap();
     let new_payload = e.stream().clone_dtoh(&storage.payload).unwrap();
     assert_eq!(&old_payload[..width], &new_payload[..width]);
-    assert!(storage.append(&e, &e.htod(&input).unwrap(), 7).is_err());
-    let bad = storage.gather(&e, &e.htod_i32(&[3]).unwrap(), 3).unwrap();
-    assert!(storage.check(&e).is_err());
+    assert!(storage.append(e, &e.htod(&input).unwrap(), 7).is_err());
+    let bad = storage.gather(e, &e.htod_i32(&[3]).unwrap(), 3).unwrap();
+    assert!(storage.check(e).is_err());
     assert!(e.dtoh(&bad).unwrap().iter().all(|v| *v == 0.));
     assert!(
-        storage.snapshot(&e, 2).is_err(),
+        storage.snapshot(e, 2).is_err(),
         "poisoned plane must not publish a clean snapshot"
     );
 }
@@ -394,7 +509,16 @@ fn captured_multirow_verify_rewinds_and_overwrites_only_rejected_suffix() {
     let (r, heads, t, slots, capacity) = (512, 2, 3, 8, 16);
     let make = |n: usize, salt: usize| {
         (0..n)
-            .map(|i| ((i * 53 + salt) % 991) as f32 / 113.0 - 4.0)
+            .map(|i| {
+                if salt == 31 {
+                    // The overwrite must exercise the newly admitted M=4 peak blocks,
+                    // including a changed row macro and both signs under graph replay.
+                    let amplitude = if (i / r) % 2 == 0 { -2. } else { 0.5 };
+                    amplitude * if i % 16 == 0 { 1. } else { 0.75 }
+                } else {
+                    ((i * 53 + salt) % 991) as f32 / 113.0 - 4.0
+                }
+            })
             .collect::<Vec<_>>()
     };
     let mut history = make(4 * r, 11);
@@ -429,9 +553,22 @@ fn captured_multirow_verify_rewinds_and_overwrites_only_rejected_suffix() {
         plane.check(&e).unwrap();
         history.truncate(base * r);
         history.extend_from_slice(&proposal);
-        let decoded: Vec<_> = history
+        let encoded: Vec<_> = history
             .chunks_exact(r)
-            .flat_map(|row| PackedRow::encode(row).unwrap().decode().unwrap())
+            .map(|row| PackedRow::encode(row).unwrap())
+            .collect();
+        if salt == 31 {
+            for row in &encoded[base..] {
+                assert!(
+                    row.block_scales
+                        .iter()
+                        .all(|s| { memra_gguf::nvfp4_repack::fp8_e4m3_to_f32(*s) == 384. })
+                );
+            }
+        }
+        let decoded: Vec<_> = encoded
+            .iter()
+            .flat_map(|row| row.decode().unwrap())
             .collect();
         let mut expected = e.uninit(t * heads * r).unwrap();
         e.mla_attn_gathered(
@@ -468,6 +605,27 @@ fn captured_multirow_verify_rewinds_and_overwrites_only_rejected_suffix() {
             .iter()
             .map(|x| x.to_bits())
             .collect::<Vec<_>>();
+        assert_eq!(
+            &bytes[..history.len() / 2],
+            encoded
+                .iter()
+                .flat_map(|row| row.payload.iter().copied())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            &scales[..history.len() / 16],
+            encoded
+                .iter()
+                .flat_map(|row| row.block_scales.iter().copied())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            &macros[..encoded.len()],
+            encoded
+                .iter()
+                .map(|row| row.macro_scale.to_bits())
+                .collect::<Vec<_>>()
+        );
         if let Some((b, s, m)) = &preserved {
             assert_eq!(&bytes[..5 * r / 2], b);
             assert_eq!(&scales[..5 * r / 16], s);

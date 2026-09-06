@@ -2,6 +2,15 @@
 
 ## Experimental NVFP4 latent history (issue244)
 
+Append now evaluates the existing row encoding and adaptive M4/M6 block scales
+under row normalizations448 and256, retaining the lowest computed reconstruction
+SSE with legacy-first ties. Its FP64 accumulation order matches the CPU codec.
+No reader, persistent layout or storage budget changes. CUDA parity and append
+cost must be remeasured for this encoder revision; earlier encoder receipts do
+not qualify it. Tests include16/512/4096/4112/8208-wide reduction boundaries and
+captured live overwrite. This remains an unqualified experiment behind the
+existing default-OFF flag; it is not a new format or weight recipe.
+
 Native `cu/latent_nvfp4.cu` supplies `memra_latent_nvfp4_append`,
 `memra_latent_nvfp4_gather`, and `memra_latent_nvfp4_to_bf16`. The shared
 gathered-attention reduction in `cu/mla_attn.cu` has an encoded read view exposed

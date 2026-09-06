@@ -185,6 +185,40 @@ pub struct PackedRow {
     pub macro_scale: f32,
 }
 
+struct EncodedBlock {
+    payload: [u8; 8],
+    scale: u8,
+    sse: f64,
+}
+
+fn encode_block(xs: &[f32], macro_scale: f32, multiplier: f64) -> EncodedBlock {
+    let peak = xs.iter().fold(0f32, |a, x| a.max(x.abs()));
+    let ideal = ((peak as f64 * multiplier) / (6.0 * macro_scale as f64)) as f32;
+    let scale = f32_to_fp8_e4m3(ideal);
+    let scale_value = fp8_e4m3_to_f32(scale);
+    let divisor = scale_value as f64 * macro_scale as f64;
+    let mut block = EncodedBlock {
+        payload: [0; 8],
+        scale,
+        sse: 0.,
+    };
+    for (i, &x) in xs.iter().enumerate() {
+        let code = if divisor == 0. {
+            0
+        } else {
+            encode_fp4((x as f64 / divisor) as f32)
+        };
+        block.payload[i / 2] |= code << ((i % 2) * 4);
+        let value = E2M1[(code & 7) as usize] * if code & 8 == 0 { 1. } else { -1. };
+        // Same two f32 multiplies as the unchanged CUDA gather/direct readers.
+        let reconstructed = (value * scale_value) * macro_scale;
+        let difference = reconstructed as f64 - x as f64;
+        let squared = difference * difference;
+        block.sse += squared;
+    }
+    block
+}
+
 impl PackedRow {
     pub fn encode(values: &[f32]) -> Result<Self, &'static str> {
         let layout = LatentLayout::new(LatentFormat::Nvfp4, values.len())?;
@@ -199,28 +233,59 @@ impl PackedRow {
         } else {
             ((amax as f64 / (6.0 * 448.0)) as f32).max(f32::from_bits(1))
         };
+        let (mut row, mut best_sse) = Self::candidate(values, macro_scale, false, layout);
+        let alternative_macro = if amax == 0. {
+            1.
+        } else {
+            ((amax as f64 / 1536.) as f32).max(f32::from_bits(1))
+        };
+        // Legacy comes first, then MSE with its macro, then MSE with M=4 headroom.
+        // Strict comparison preserves the exact old bytes whenever the row scores tie.
+        for candidate_macro in [macro_scale, alternative_macro] {
+            let (candidate, sse) = Self::candidate(values, candidate_macro, true, layout);
+            if sse < best_sse {
+                row = candidate;
+                best_sse = sse;
+            }
+        }
+        if !best_sse.is_finite() {
+            return Err("latent reconstruction overflow");
+        }
+        Ok(row)
+    }
+
+    fn candidate(
+        values: &[f32],
+        macro_scale: f32,
+        adaptive: bool,
+        layout: LatentLayout,
+    ) -> (Self, f64) {
         let mut row = Self {
             payload: vec![0; layout.payload_bytes],
             block_scales: vec![0; layout.block_scale_bytes],
             macro_scale,
         };
+        // Mirror CUDA's 256-thread block-stride accumulation and reduction exactly.
+        // f64 products/additions are separate (not fused) on both implementations.
+        let mut totals = [0f64; 256];
         for (block, xs) in values.chunks_exact(16).enumerate() {
-            let peak = xs.iter().fold(0f32, |a, x| a.max(x.abs()));
-            let scale = f32_to_fp8_e4m3((peak as f64 / (6.0 * macro_scale as f64)) as f32);
-            row.block_scales[block] = scale;
-            let divisor = fp8_e4m3_to_f32(scale) as f64 * macro_scale as f64;
-            for (pair, xy) in xs.chunks_exact(2).enumerate() {
-                let quant = |v: f32| {
-                    if divisor == 0.0 {
-                        0
-                    } else {
-                        encode_fp4((v as f64 / divisor) as f32)
-                    }
-                };
-                row.payload[block * 8 + pair] = quant(xy[0]) | (quant(xy[1]) << 4);
+            let mut encoded = encode_block(xs, macro_scale, 1.);
+            if adaptive {
+                let m4 = encode_block(xs, macro_scale, 1.5);
+                if m4.sse < encoded.sse {
+                    encoded = m4;
+                }
+            }
+            totals[block % 256] += encoded.sse;
+            row.block_scales[block] = encoded.scale;
+            row.payload[block * 8..(block + 1) * 8].copy_from_slice(&encoded.payload);
+        }
+        for offset in [128, 64, 32, 16, 8, 4, 2, 1] {
+            for i in 0..offset {
+                totals[i] += totals[i + offset];
             }
         }
-        Ok(row)
+        (row, totals[0])
     }
 
     pub fn decode(&self) -> Result<Vec<f32>, &'static str> {
@@ -257,6 +322,135 @@ impl PackedRow {
 mod tests {
     use super::*;
 
+    // Frozen pre-selection encoder, independent of the candidate-selection code.
+    fn legacy(values: &[f32]) -> PackedRow {
+        let peak = values.iter().fold(0f32, |a, x| a.max(x.abs()));
+        let macro_scale = if peak == 0. {
+            1.
+        } else {
+            ((peak as f64 / 2688.) as f32).max(f32::from_bits(1))
+        };
+        let mut row = PackedRow {
+            payload: Vec::new(),
+            block_scales: Vec::new(),
+            macro_scale,
+        };
+        for block in values.chunks_exact(16) {
+            let peak = block.iter().fold(0f32, |a, x| a.max(x.abs()));
+            let scale = f32_to_fp8_e4m3((peak as f64 / (6. * macro_scale as f64)) as f32);
+            row.block_scales.push(scale);
+            let divisor = fp8_e4m3_to_f32(scale) as f64 * macro_scale as f64;
+            for pair in block.chunks_exact(2) {
+                let code = |x: f32| {
+                    if divisor == 0. {
+                        0
+                    } else {
+                        encode_fp4((x as f64 / divisor) as f32)
+                    }
+                };
+                row.payload.push(code(pair[0]) | (code(pair[1]) << 4));
+            }
+        }
+        row
+    }
+
+    fn sse(input: &[f32], row: &PackedRow) -> f64 {
+        input
+            .iter()
+            .zip(row.decode().unwrap())
+            .map(|(x, y)| {
+                let d = *x as f64 - y as f64;
+                d * d
+            })
+            .sum()
+    }
+
+    #[test]
+    fn mse_peak_block_gets_m4_headroom() {
+        let input: Vec<f32> = (0..512)
+            .map(|i| if i % 16 == 0 { 1. } else { 0.75 })
+            .collect();
+        let old = legacy(&input);
+        assert!(sse(&input, &old) > 3.);
+        let row = PackedRow::encode(&input).unwrap();
+        assert_eq!(row.macro_scale.to_bits(), (1f32 / 1536.).to_bits());
+        assert!(row.block_scales.iter().all(|s| fp8_e4m3_to_f32(*s) == 384.));
+        assert_eq!(sse(&input, &row), 0.);
+    }
+
+    #[test]
+    fn mse_ties_keep_existing_bytes() {
+        for input in [
+            vec![0.; 512],
+            vec![-0.; 512],
+            vec![1.; 512],
+            (0..512)
+                .map(|i| if i % 16 == 0 { 1. } else { 0. })
+                .collect(),
+        ] {
+            let old = legacy(&input);
+            let row = PackedRow::encode(&input).unwrap();
+            assert_eq!(row.payload, old.payload);
+            assert_eq!(row.block_scales, old.block_scales);
+            assert_eq!(row.macro_scale.to_bits(), old.macro_scale.to_bits());
+        }
+    }
+
+    #[test]
+    fn mse_never_worsens_synthetic_rows_including_extremes() {
+        let mut state = 7u32;
+        for amplitude in [
+            f32::from_bits(1),
+            f32::MIN_POSITIVE,
+            1e-20,
+            1.,
+            1e20,
+            f32::MAX,
+        ] {
+            for _ in 0..16 {
+                let input: Vec<f32> = (0..512)
+                    .map(|i| {
+                        state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+                        if i == 0 {
+                            amplitude
+                        } else {
+                            let magnitude = ((state >> 8) as f32 / 16777216.) * amplitude;
+                            if state & 1 == 0 {
+                                magnitude
+                            } else {
+                                -magnitude
+                            }
+                        }
+                    })
+                    .collect();
+                let old = legacy(&input);
+                let row = PackedRow::encode(&input).unwrap();
+                assert!(
+                    sse(&input, &row) <= sse(&input, &old),
+                    "amplitude {amplitude}"
+                );
+                let again = PackedRow::encode(&input).unwrap();
+                assert_eq!(row.payload, again.payload);
+                assert_eq!(row.block_scales, again.block_scales);
+                assert_eq!(row.macro_scale.to_bits(), again.macro_scale.to_bits());
+            }
+        }
+    }
+
+    #[test]
+    fn mse_block_stride_reduction_keeps_legacy_candidate() {
+        // More than 256 blocks exercises the per-lane strided accumulation,
+        // rather than only the one-block-per-active-thread rank512 shape.
+        let input: Vec<f32> = (0..16 * 513)
+            .map(|i| ((i * 37 % 1021) as f32 - 510.) / 73.)
+            .collect();
+        let old = legacy(&input);
+        let row = PackedRow::encode(&input).unwrap();
+        assert!(sse(&input, &row) <= sse(&input, &old));
+        assert_eq!(row.payload.len(), old.payload.len());
+        assert_eq!(row.block_scales.len(), old.block_scales.len());
+    }
+
     #[test]
     fn fp4_grid_and_even_ties() {
         for (i, &v) in E2M1.iter().enumerate() {
@@ -290,8 +484,14 @@ mod tests {
         let mut input = vec![6.0; 16];
         input.extend([-0.5; 16]);
         let row = PackedRow::encode(&input).unwrap();
-        assert_eq!(row.block_scales[0], 0x7e);
+        assert!(row.macro_scale.is_finite() && row.macro_scale > 0.);
+        assert_eq!(row.block_scales.len(), input.len() / 16);
+        assert!(row.block_scales.iter().all(|s| {
+            *s <= 0x7e && fp8_e4m3_to_f32(*s).is_finite() && fp8_e4m3_to_f32(*s) > 0.
+        }));
+        assert!(sse(&input, &row) <= sse(&input, &legacy(&input)));
         for (x, y) in input.iter().zip(row.decode().unwrap()) {
+            assert!(y.is_finite());
             assert!((x - y).abs() < 0.04);
         }
     }
