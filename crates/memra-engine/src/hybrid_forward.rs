@@ -2737,6 +2737,23 @@ impl HybridModel {
         if hyper_decode_ws_on() {
             return self.hyper_range_decode_ws(e, topology, x, lo, hi, pos_d, pos, cache);
         }
+        // THE SYMMETRIC TP WALK LIVES INSIDE THE WORKSPACE FORM, and the TP walk refuses
+        // MEMRA_HC_DECODE_WS by name, so until 2026-09-07 the symmetric door was unreachable from
+        // every probe and served walk: tpwalk2's "tp2sym" arm (38.94 tok/s) measured the
+        // root-orchestrated walk with the door's LOAD-time effects (row-parallel wo) and never
+        // printed the engaged line. The door now routes itself into the workspace form exactly
+        // when its walk will engage (symmetric + split + a real two-device one-shot); every
+        // other TP posture keeps the eager allocating walk below, which is the one the
+        // workspace body has no TP mixer branches for.
+        if crate::glm5_tp::glm5_tp_symmetric_on()
+            && crate::glm5_tp::glm5_tp_expert_split_on()
+            && self
+                .glm5_tp_rt_for(lo, hi)
+                .map(|rt| rt.ar_1stage_available())
+                .unwrap_or(false)
+        {
+            return self.hyper_range_decode_ws(e, topology, x, lo, hi, pos_d, pos, cache);
+        }
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         for il in lo..hi {
