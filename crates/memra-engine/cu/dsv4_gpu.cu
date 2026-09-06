@@ -4093,6 +4093,96 @@ __device__ __forceinline__ void dsv4_hc_pre_v4_body(
     }
 }
 
+// ---- hc pre with the rms-norm + q8 epilogue FOLDED IN (lane/hc-pre-norm-fuse-20260906) ----
+//
+// WHY. The decode census puts 39% of the token in kernels that move almost no bytes, and ncu on
+// this very kernel says why they cannot be fixed from the inside: 4 active warps, 0.15 eligible,
+// 88.4% of cycles with nothing to issue. At grid 1 the kernel cannot fill a 148-SM part, and seven
+// arms rearranging its interior proved that the expensive way. The lever is to DELETE the
+// neighbouring launch, not to speed it up: `rms_norm_zq8_f32` runs immediately after this kernel
+// on the vector this kernel just wrote, costs ~3.9 us x ~79 launches per token, and is pure
+// elementwise work plus one block-wide reduction that this kernel is already shaped to do.
+//
+// BIT-IDENTICAL BY CONSTRUCTION, and the reason is an exact index coincidence rather than a
+// tolerance. `rms_norm_zq8_f32`'s pass 1 is `for (i = tid; i < ncols; i += blockDim.x)`, so at
+// BLOCK 1024 and d 4096 thread `tid` sums elements tid, tid+1024, tid+2048, tid+3072 IN THAT
+// ORDER. The combine tail below already holds exactly those four values in registers in exactly
+// that order (`yr[t + m * BLOCK]`, m ascending). Its pass 2 walks `blk = tid>>5; blk += 32`, which
+// for element `blk*32 + lane` visits the SAME four elements per thread in the same order. So the
+// fused epilogue reuses the register values, replays the same shuffle-then-shared reduction tree,
+// and evaluates the same `(y * scale) * w` and the same per-32 amax/127 round. Nothing moves.
+//
+// GEOMETRY IS A HARD PRECONDITION, not a fallback: the coincidence holds only when
+// `d == BLOCK * DPB` and the norm runs over the same `d`. The launcher refuses anything else
+// rather than silently producing a different reduction order.
+template <int ELEMS, int HCN, int BLOCK>
+__device__ __forceinline__ void dsv4_hc_pre_v4_norm_zq8_body(
+        const float* __restrict__ x, const float* __restrict__ mixes_all,
+        const float* __restrict__ scale, const float* __restrict__ base,
+        float* __restrict__ pre_all, float* __restrict__ post_all,
+        float* __restrict__ comb_all, float* __restrict__ y, int w, int rows, int hc, int d,
+        int iters, float eps, int* __restrict__ niters,
+        const float* __restrict__ nw, float* __restrict__ z, signed char* __restrict__ out_q,
+        float* __restrict__ out_d, float norm_eps) {
+    dsv4_hc_pre_v4_body<ELEMS, HCN, BLOCK>(x, mixes_all, scale, base, pre_all, post_all, comb_all,
+                                           y, w, rows, hc, d, iters, eps, niters);
+    // The combine tail wrote `y` from registers that are now dead; re-read them from `y`, which is
+    // the same block that just wrote them, so this is an L1 hit and not a second trip to memory.
+    constexpr int DPB = ELEMS / HCN;
+    __syncthreads();
+    int p = blockIdx.x;
+    int t = threadIdx.x;
+    const float* yr = y + (long)p * d;
+    float* zr = z + (long)p * d;
+    float vals[DPB];
+    float sum = 0.0f;
+#pragma unroll
+    for (int m = 0; m < DPB; m++) {
+        vals[m] = yr[t + m * BLOCK];
+        sum += vals[m] * vals[m];
+    }
+    __shared__ float sred[32];
+    for (int o = 16; o > 0; o >>= 1) sum += __shfl_down_sync(0xffffffff, sum, o);
+    if ((t & 31) == 0) sred[t >> 5] = sum;
+    __syncthreads();
+    if (t < 32) {
+        float v = (t < (BLOCK + 31) / 32) ? sred[t] : 0.0f;
+        for (int o = 16; o > 0; o >>= 1) v += __shfl_down_sync(0xffffffff, v, o);
+        if (t == 0) sred[0] = v;
+    }
+    __syncthreads();
+    float nscale = rsqrtf(sred[0] / d + norm_eps);
+    signed char* base_q = out_q + (long)p * d;
+    float* base_d = out_d + (long)p * (d / 32);
+    int lane = t & 31;
+#pragma unroll
+    for (int m = 0; m < DPB; m++) {
+        int i = t + m * BLOCK;
+        float v = (vals[m] * nscale) * nw[i];
+        zr[i] = v;
+        float amax = fabsf(v);
+#pragma unroll
+        for (int o = 16; o > 0; o >>= 1) amax = fmaxf(amax, __shfl_xor_sync(0xffffffffu, amax, o));
+        float dq = amax / 127.0f;
+        float id = dq > 0.0f ? 1.0f / dq : 0.0f;
+        base_q[i] = (signed char)__float2int_rn(v * id);
+        if (lane == 0) base_d[i >> 5] = dq;
+    }
+}
+
+extern "C" __global__ void __launch_bounds__(1024, 1) dsv4_hc_pre_v4_e16_norm_zq8_kernel(
+        const float* __restrict__ x, const float* __restrict__ mixes_all,
+        const float* __restrict__ scale, const float* __restrict__ base,
+        float* __restrict__ pre_all, float* __restrict__ post_all,
+        float* __restrict__ comb_all, float* __restrict__ y, int w, int rows, int hc, int d,
+        int iters, float eps, int* __restrict__ niters,
+        const float* __restrict__ nw, float* __restrict__ z, signed char* __restrict__ out_q,
+        float* __restrict__ out_d, float norm_eps) {
+    dsv4_hc_pre_v4_norm_zq8_body<16, 4, 1024>(x, mixes_all, scale, base, pre_all, post_all,
+                                              comb_all, y, w, rows, hc, d, iters, eps, niters,
+                                              nw, z, out_q, out_d, norm_eps);
+}
+
 extern "C" __global__ void __launch_bounds__(1024, 1) dsv4_hc_pre_v4_e16_kernel(
         const float* __restrict__ x, const float* __restrict__ mixes_all,
         const float* __restrict__ scale, const float* __restrict__ base,
@@ -4272,6 +4362,33 @@ extern "C" int memra_dsv4_hc_pre_v4_stamped(const float* x, const float* mixes, 
 
 // v4 launcher: returns 40025 when the shape does not fit the register schedule (caller falls
 // back to v3), so a refusal is visible, never silent.
+extern "C" int memra_dsv4_hc_pre_v4_norm_zq8(const float* x, const float* mixes,
+                                            const float* scale, const float* base, float* pre,
+                                            float* post, float* comb, float* y, int s, int hc,
+                                            int d, int iters, float eps, int* niters, int block,
+                                            const float* nw, float* z, signed char* out_q,
+                                            float* out_d, float norm_eps, void* stream_v) {
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    if (s < 1 || hc < 1 || hc > DSV4_HC_MAX || d < 1 || iters < 1) return 40021;
+    if (block < 32 || block > DSV4_HC_PRE_V3_MAXBLOCK || (block & (block - 1)) != 0) return 40023;
+    int w = hc * d;
+    int rows = (2 + hc) * hc;
+    if (rows > 32 || hc * hc > 32) return 40024;
+    (void)block;
+    if (hc != 4 || w != 16 * 1024 || d % 1024 != 0) return 40025;
+    // The bit-identity argument rests on thread `tid` owning elements tid, tid+1024, tid+2048,
+    // tid+3072 and nothing else, which holds only at d == BLOCK * DPB == 1024 * 4. Any other
+    // width would give the fused reduction a different order from `rms_norm_zq8_f32` and quietly
+    // change bits, so it refuses rather than falling back.
+    if (d != 4096) return 40026;
+    if (d % 32 != 0) return 40026;
+    dsv4_hc_pre_v4_e16_norm_zq8_kernel<<<(unsigned)s, 1024u, 0, stream>>>(
+        x, mixes, scale, base, pre, post, comb, y, w, rows, hc, d, iters, eps, niters,
+        nw, z, out_q, out_d, norm_eps);
+    DSV4_ERR();
+    return 0;
+}
+
 extern "C" int memra_dsv4_hc_pre_v4(const float* x, const float* mixes, const float* scale,
                                     const float* base, float* pre, float* post, float* comb,
                                     float* y, int s, int hc, int d, int iters, float eps,
