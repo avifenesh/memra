@@ -57,6 +57,13 @@ unsafe extern "C" {
 /// Found the hard way 2026-09-06: the gate read only rank 0 after a repeat call, and the next
 /// size in the sweep came back with rank 1's staging garbage in it.
 pub struct ArLink {
+    /// Recorded on a rank's OWN stream so a PRODUCER can order its push after everything that rank
+    /// has already enqueued against the destination. Without it a push races the consumer's own
+    /// writes to the same buffer: its zero-fill, or simply the stream-ordered allocation that
+    /// handed the memory out. Measured on two real devices 2026-09-06, and only there: broadcast
+    /// was byte-exact at 4 B and 4 KiB and lost part of the payload at 64 KiB, where the consumer's
+    /// upload was still in flight when the push landed and then overwrote it.
+    ready: Vec<CudaEvent>,
     /// Allocated on first `all_reduce` and grown as needed. The movement hops (`broadcast`,
     /// `all_gather`) push straight into the caller's buffers and never touch it, which is why the
     /// link does not need a size at construction: the TP walk's hops are all movement.
@@ -90,13 +97,16 @@ impl ArLink {
             .into());
         }
         let mut pushed = Vec::with_capacity(2);
+        let mut ready = Vec::with_capacity(2);
         for e in engines {
             let _main = e.gpu.enter_main()?;
             pushed.push(e.ctx().new_event(None)?);
+            ready.push(e.ctx().new_event(None)?);
         }
         Ok(Self {
             stage: Vec::new(),
             pushed,
+            ready,
             staged: 0,
         })
     }
@@ -129,6 +139,26 @@ impl ArLink {
         self.pushed.len()
     }
 
+    /// Order `producer`'s stream after everything `consumer` has already enqueued, so a push into
+    /// `consumer`'s buffer cannot land on top of the consumer's own pending writes to it. The
+    /// write-after-write half of the contract; `pushed` is the read-after-write half.
+    fn wait_for_consumer(
+        &self,
+        engines: &[&Engine],
+        producer: usize,
+        consumer: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        {
+            let c = engines[consumer];
+            let _main = c.gpu.enter_main()?;
+            self.ready[consumer].record(&c.stream())?;
+        }
+        let p = engines[producer];
+        let _main = p.gpu.enter_main()?;
+        p.stream().wait(&self.ready[consumer])?;
+        Ok(())
+    }
+
     /// Broadcast rank `from`'s `src` to every other rank's `dst`. Pure movement, so the result is
     /// byte-identical to the host-bounce fan-out it replaces: the same bytes arrive, they just do
     /// not cross the PCIe boundary or drain a stream on the way.
@@ -144,6 +174,7 @@ impl ArLink {
             return Err("tp broadcast: this arm is two ranks".into());
         }
         let to = 1 - from;
+        self.wait_for_consumer(engines, from, to)?;
         let dst_ptr = {
             let e = engines[to];
             let _main = e.gpu.enter_main()?;
@@ -199,6 +230,7 @@ impl ArLink {
             v
         };
         for (from, to) in [(0usize, 1usize), (1, 0)] {
+            self.wait_for_consumer(engines, from, to)?;
             let e = engines[from];
             let _main = e.gpu.enter_main()?;
             let s = e.stream();
@@ -271,6 +303,10 @@ impl ArLink {
             v
         };
         for (from, to) in [(0usize, 1usize), (1, 0)] {
+            // The peer's staging buffer was READ by its fold last round, so the push owes the same
+            // edge here: without it a new round's push can overwrite bytes the previous round's
+            // fold has not finished consuming.
+            self.wait_for_consumer(engines, from, to)?;
             let e = engines[from];
             let _main = e.gpu.enter_main()?;
             let s = e.stream();
