@@ -8,7 +8,7 @@
 //! the loads real DRAM traffic. Prints per-launch us and the implied GB/s for each arm.
 //!
 //! Usage: `moe-rows-ceiling-bench [iters=7] [reps=100] [copies=4]`.
-use cudarc::driver::DevicePtr;
+use cudarc::driver::{CudaSlice, DevicePtr};
 use memra_engine::{Engine, QT_NVFP4, QT_NVFP4_V2};
 use std::time::Instant;
 
@@ -165,6 +165,122 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             grb2,
         )
     };
+    // lane-major arms (lane/moe-rows-lanemajor-20260906): the served activation permuted once,
+    // the V2 rows read as 16 B words. Bit-identity against the served interleaved kernel is
+    // asserted on set 0 before any timing.
+    let aq_lm = e.q8_to_lane_major(&aq, t, gin)?;
+    let lm_v2 = |set: usize, pack: bool| {
+        e.moe_gate_up_preclamp8_q8_rows_lm(
+            &sets_v2[set],
+            &scl_d,
+            &aq_lm,
+            &ad,
+            7.0,
+            gin,
+            n_ff,
+            n_used,
+            n_pairs,
+            QT_NVFP4_V2,
+            QT_NVFP4_V2,
+            grb2,
+            grb2,
+            pack,
+        )
+    };
+    {
+        let h_s = e.dtoh(&served(0)?)?;
+        let h_v2 = e.dtoh(&served_v2(0)?)?;
+        let h_lm = e.dtoh(&lm_v2(0, false)?)?;
+        let h_lm4 = e.dtoh(&lm_v2(0, true)?)?;
+        let mism = |a: &[f32], b: &[f32]| {
+            a.iter()
+                .zip(b)
+                .filter(|(x, y)| x.to_bits() != y.to_bits())
+                .count()
+        };
+        println!(
+            "[rows-ceiling] gate/up bit-identity vs served interleaved: V2 served mism={} | lane-major mism={} | lane-major w4 mism={}",
+            mism(&h_s, &h_v2),
+            mism(&h_s, &h_lm),
+            mism(&h_s, &h_lm4)
+        );
+    }
+    // down: one slot-major plane of gin rows over n_ff inputs (V2 row = n_ff/32 * 18 bytes), the
+    // per-pair activation quantized from a synthetic swiglu output, served `_ilp` vs `_lm`.
+    let (drows, _drb) = synth_rows(gin, n_ff, 0x4242);
+    let drb2 = (n_ff / 32) * 18;
+    let mut down_sets = Vec::new();
+    let mut keep_d = Vec::new();
+    for c in 0..copies {
+        let mut ptrs = vec![0u64; 3 * n_pairs];
+        for j in 0..n_used {
+            let mut d = drows.clone();
+            d[7] ^= (c * 16 + j + 3) as u8;
+            let v1 = e.htod_bytes(&d)?;
+            let buf = e.nvfp4_expert_split_repack(&v1, 1, gin, n_ff / 64)?;
+            let p = {
+                let (p, _g) = buf.device_ptr(&stream);
+                p
+            };
+            ptrs[2 * n_pairs + j] = p;
+            keep_d.push(buf);
+        }
+        down_sets.push(e.htod_u64(&ptrs)?);
+    }
+    let x2_d = e.htod(&vecf(n_pairs * n_ff, 1234))?;
+    let (aq2, ad2) = e.quantize_q8_1(&x2_d, n_pairs, n_ff)?;
+    let aq2_lm = e.q8_to_lane_major(&aq2, n_pairs, n_ff)?;
+    let served_down = |set: usize| -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let mut y = e.zeros(t * gin)?;
+        e.moe_down8_fma_q8_rows(
+            &down_sets[set],
+            &scl_d,
+            &aq2,
+            &ad2,
+            &mut y,
+            n_ff,
+            gin,
+            n_used,
+            n_pairs,
+            QT_NVFP4_V2,
+            drb2,
+        )?;
+        Ok(y)
+    };
+    let lm_down = |set: usize, pack: bool| -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let mut y = e.zeros(t * gin)?;
+        e.moe_down8_fma_q8_rows_lm(
+            &down_sets[set],
+            &scl_d,
+            &aq2_lm,
+            &ad2,
+            &mut y,
+            n_ff,
+            gin,
+            n_used,
+            n_pairs,
+            QT_NVFP4_V2,
+            drb2,
+            pack,
+        )?;
+        Ok(y)
+    };
+    {
+        let h_s = e.dtoh(&served_down(0)?)?;
+        let h_lm = e.dtoh(&lm_down(0, false)?)?;
+        let h_lm4 = e.dtoh(&lm_down(0, true)?)?;
+        let mism = |a: &[f32], b: &[f32]| {
+            a.iter()
+                .zip(b)
+                .filter(|(x, y)| x.to_bits() != y.to_bits())
+                .count()
+        };
+        println!(
+            "[rows-ceiling] down bit-identity vs served V2 _ilp: lane-major mism={} | lane-major w4 mism={}",
+            mism(&h_s, &h_lm),
+            mism(&h_s, &h_lm4)
+        );
+    }
     // warm
     for _ in 0..10 {
         let _ = served(0)?;
@@ -172,6 +288,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _ = probe("mathonly", 0)?;
         let _ = served_v2(0)?;
         let _ = probe_v2("loadonly_v2", 0)?;
+        let _ = lm_v2(0, false)?;
+        let _ = lm_v2(0, true)?;
+        let _ = served_down(0)?;
+        let _ = lm_down(0, false)?;
+        let _ = lm_down(0, true)?;
     }
     e.stream().synchronize()?;
     let mut t_s = Vec::new();
@@ -179,8 +300,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut t_m = Vec::new();
     let mut t_sv = Vec::new();
     let mut t_lv = Vec::new();
+    let mut t_lm = Vec::new();
+    let mut t_lm4 = Vec::new();
+    let mut t_ds = Vec::new();
+    let mut t_dlm = Vec::new();
+    let mut t_dlm4 = Vec::new();
     for i in 0..iters {
-        for arm in 0..5 {
+        for arm in 0..10 {
             let t0 = Instant::now();
             for r in 0..reps {
                 let set = (i * reps + r) % copies;
@@ -197,8 +323,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     3 => {
                         let _ = served_v2(set)?;
                     }
-                    _ => {
+                    4 => {
                         let _ = probe_v2("loadonly_v2", set)?;
+                    }
+                    5 => {
+                        let _ = lm_v2(set, false)?;
+                    }
+                    6 => {
+                        let _ = lm_v2(set, true)?;
+                    }
+                    7 => {
+                        let _ = served_down(set)?;
+                    }
+                    8 => {
+                        let _ = lm_down(set, false)?;
+                    }
+                    _ => {
+                        let _ = lm_down(set, true)?;
                     }
                 }
             }
@@ -209,7 +350,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 1 => t_l.push(us),
                 2 => t_m.push(us),
                 3 => t_sv.push(us),
-                _ => t_lv.push(us),
+                4 => t_lv.push(us),
+                5 => t_lm.push(us),
+                6 => t_lm4.push(us),
+                7 => t_ds.push(us),
+                8 => t_dlm.push(us),
+                _ => t_dlm4.push(us),
             }
         }
     }
@@ -235,6 +381,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "[rows-ceiling] reading: loadonly close to served => the ACCESS PATTERN is the wall; \
          mathonly close to served => the PRMT/dp4a INSTRUCTION STREAM is."
+    );
+    let (lm, lm4) = (median(&mut t_lm), median(&mut t_lm4));
+    let (ds, dlm, dlm4) = (median(&mut t_ds), median(&mut t_dlm), median(&mut t_dlm4));
+    let dbytes = (n_used * gin * drb2) as f64;
+    println!(
+        "[rows-lanemajor] gate/up V2: served _ilp {sv:.2} us ({:.0} GB/s) | lane-major {lm:.2} us ({:.0} GB/s, {:.3}x) | lane-major w4 {lm4:.2} us ({:.0} GB/s, {:.3}x)",
+        bytes2 / sv / 1e3,
+        bytes2 / lm / 1e3,
+        sv / lm,
+        bytes2 / lm4 / 1e3,
+        sv / lm4
+    );
+    println!(
+        "[rows-lanemajor] down V2 {n_ff}->{gin}: served _ilp {ds:.2} us ({:.0} GB/s) | lane-major {dlm:.2} us ({:.0} GB/s, {:.3}x) | lane-major w4 {dlm4:.2} us ({:.0} GB/s, {:.3}x)",
+        dbytes / ds / 1e3,
+        dbytes / dlm / 1e3,
+        ds / dlm,
+        dbytes / dlm4 / 1e3,
+        ds / dlm4
     );
     Ok(())
 }
