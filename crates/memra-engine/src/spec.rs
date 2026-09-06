@@ -3936,9 +3936,9 @@ impl HybridModel {
         };
 
         let mut q = e.uninit(nh * hd)?;
-        e.rms_norm(&q0, fa.q_norm.float_data(), &mut q, hd, nh, eps)?;
+        e.rms_norm_opt(&q0, fa.q_norm_w(), &mut q, hd, nh, eps)?;
         let mut k = e.uninit(nkv * hd)?;
-        e.rms_norm(&k0, fa.k_norm.float_data(), &mut k, hd, nkv, eps)?;
+        e.rms_norm_opt(&k0, fa.k_norm_w(), &mut k, hd, nkv, eps)?;
         // `rope_freqs.weight` (llama3 factors) applies to the FULL-attn layers ONLY; SWA passes
         // null (llama-hparams / step35.cpp). Block 45 is SWA, so `ff` is None there — but read
         // the resolved flag, not the constant, so an all-full sibling stays correct.
@@ -4146,9 +4146,9 @@ impl HybridModel {
         };
 
         let mut q = e.zeros(nh * hd)?;
-        e.rms_norm(&q0, fa.q_norm.float_data(), &mut q, hd, nh, eps)?;
+        e.rms_norm_opt(&q0, fa.q_norm_w(), &mut q, hd, nh, eps)?;
         let mut k = e.zeros(nkv * hd)?;
-        e.rms_norm(&k0, fa.k_norm.float_data(), &mut k, hd, nkv, eps)?;
+        e.rms_norm_opt(&k0, fa.k_norm_w(), &mut k, hd, nkv, eps)?;
         // rope_freqs (llama3 factors) apply to the FULL-attn layers ONLY; SWA passes null
         // (the eager twin's rule, resolved from the flag, not the constant).
         let ff = if g.swa {
@@ -4283,17 +4283,10 @@ impl HybridModel {
         };
 
         let mut qn = e.zeros(n_head * head_dim)?;
-        e.rms_norm(&q, fa.q_norm.float_data(), &mut qn, head_dim, n_head, eps)?;
+        e.rms_norm_opt(&q, fa.q_norm_w(), &mut qn, head_dim, n_head, eps)?;
         q = qn;
         let mut kn = e.zeros(n_head_kv * head_dim)?;
-        e.rms_norm(
-            &k,
-            fa.k_norm.float_data(),
-            &mut kn,
-            head_dim,
-            n_head_kv,
-            eps,
-        )?;
+        e.rms_norm_opt(&k, fa.k_norm_w(), &mut kn, head_dim, n_head_kv, eps)?;
         k = kn;
         let rope_dims = geometry.n_rot as usize;
         e.rope_neox(
@@ -4439,14 +4432,7 @@ impl HybridModel {
         let mut k = e.matmul(&fa.wk, &a_norm, t)?;
         let v = e.matmul(&fa.wv, &a_norm, t)?;
         let mut kn = e.zeros(t * n_head_kv * head_dim)?;
-        e.rms_norm(
-            &k,
-            fa.k_norm.float_data(),
-            &mut kn,
-            head_dim,
-            n_head_kv * t,
-            eps,
-        )?;
+        e.rms_norm_opt(&k, fa.k_norm_w(), &mut kn, head_dim, n_head_kv * t, eps)?;
         k = kn;
         // step35: rotary width AND base are per-layer, and the MTP block's values come from the
         // resolved `Step35MtpGeom` — NOT from `cfg.rope_dim_count`/`cfg.rope_freq_base`, which
@@ -6775,24 +6761,10 @@ impl HybridModel {
                     (qf, None)
                 };
                 let mut qn = e.uninit(t * n_head * head_dim)?;
-                e.rms_norm(
-                    &q,
-                    fa.q_norm.float_data(),
-                    &mut qn,
-                    head_dim,
-                    t * n_head,
-                    eps,
-                )?;
+                e.rms_norm_opt(&q, fa.q_norm_w(), &mut qn, head_dim, t * n_head, eps)?;
                 q = qn;
                 let mut kn = e.uninit(t * n_head_kv * head_dim)?;
-                e.rms_norm(
-                    &k,
-                    fa.k_norm.float_data(),
-                    &mut kn,
-                    head_dim,
-                    t * n_head_kv,
-                    eps,
-                )?;
+                e.rms_norm_opt(&k, fa.k_norm_w(), &mut kn, head_dim, t * n_head_kv, eps)?;
                 k = kn;
                 e.rope_neox(
                     &mut q, pos_d, head_dim, rope_dims, n_head, t, rope_base, 1.0,
@@ -8539,24 +8511,10 @@ impl HybridModel {
         };
 
         let mut qn = vbuf(e, t * n_head * head_dim)?; // fully written by rms_norm
-        e.rms_norm(
-            &q,
-            fa.q_norm.float_data(),
-            &mut qn,
-            head_dim,
-            n_head * t,
-            eps,
-        )?;
+        e.rms_norm_opt(&q, fa.q_norm_w(), &mut qn, head_dim, n_head * t, eps)?;
         q = qn;
         let mut kn = vbuf(e, t * n_head_kv * head_dim)?; // fully written by rms_norm
-        e.rms_norm(
-            &k,
-            fa.k_norm.float_data(),
-            &mut kn,
-            head_dim,
-            n_head_kv * t,
-            eps,
-        )?;
+        e.rms_norm_opt(&k, fa.k_norm_w(), &mut kn, head_dim, n_head_kv * t, eps)?;
         k = kn;
         let rope_dims = geometry.n_rot as usize;
         e.rope_neox(

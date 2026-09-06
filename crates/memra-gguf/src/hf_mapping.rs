@@ -1377,6 +1377,99 @@ mod tests {
     /// (`glm5_next_kda_names_match_the_contract`) filtered to `blk.0.kda*`/`blk.0.hc_*` and built
     /// a DENSE-MLP plan, so it was blind to the router bias twice over — an allowlist is exactly
     /// how a missing row stays missing (LAW: exception lists need expiry). The two structural
+    /// The dense llama/mistral twin of the completeness pin below (DictaLM-3.0-24B,
+    /// memra#216). The tensor contract and the engine's ggml->HF map are two independent
+    /// spellings of the same checkpoint, and a missing map row does not fail: the name
+    /// resolves to `None`, reads as an ABSENT tensor, and several load sites treat absent as
+    /// a legal shape. So every tensor the GGUF-dialect contract declares for a real dense
+    /// llama plan must resolve through `resolve_ggml` onto a name the HF dialect declares for
+    /// the SAME `TensorId`. CPU-only, no checkpoint, no GPU.
+    #[test]
+    fn llama_dense_every_contract_tensor_resolves_through_the_engine_map() {
+        use crate::config::HfConfig;
+        use crate::tensor_contract::{
+            CheckpointDialect, ContractOptions, OutputHead, TensorContract, TensorId,
+        };
+
+        // DictaLM-3.0-24B's own shape, two layers deep: untied lm_head (the checkpoint has
+        // `tie_word_embeddings: false`), GQA 32/8, head_dim 128, SwiGLU.
+        let cfg = ModelConfig::from_hf(&HfConfig::parse(
+            r#"{"model_type":"mistral","num_hidden_layers":2,"hidden_size":5120,
+            "num_attention_heads":32,"num_key_value_heads":8,"head_dim":128,
+            "intermediate_size":32768,"vocab_size":131072,"max_position_embeddings":65280,
+            "rms_norm_eps":0.00001,"rope_theta":1000000.0,"tie_word_embeddings":false}"#,
+        ));
+        let pack = crate::model_packs::for_config(&cfg).expect("llama_dense pack matches");
+        assert_eq!(pack.family, "llama_dense");
+        let plan = pack.compile_plan(&cfg).expect("plan compiles");
+        let opts = ContractOptions {
+            output_head: OutputHead::Separate,
+        };
+        let gguf =
+            TensorContract::for_plan(&plan, CheckpointDialect::Gguf, opts).expect("gguf contract");
+        let hf = TensorContract::for_plan(&plan, CheckpointDialect::HfSafetensors, opts)
+            .expect("hf contract");
+
+        // Non-vacuity: `resolve_ggml` can answer None. It maps by ggml NAME rather than by
+        // plan (a llama cfg still resolves `attn_q_norm`, a tensor this family does not have),
+        // so what the loop below actually proves is that every name the contract declares has
+        // a row — which is exactly the surface that goes missing silently.
+        assert!(
+            resolve_ggml("blk.0.no_such_tensor.weight", &cfg).is_none(),
+            "resolve_ggml must be able to answer None, or the loop below proves nothing"
+        );
+
+        let mut checked = 0usize;
+        for requirement in &gguf.requirements {
+            // Quant-scale sidecars are a dialect-specific surface: ggml names them, HF carries
+            // them inside the checkpoint's own quant metadata.
+            if matches!(requirement.id, TensorId::QuantAux { .. }) {
+                continue;
+            }
+            let ggml = requirement
+                .names
+                .first()
+                .unwrap_or_else(|| {
+                    panic!("GGUF contract requirement {:?} has no name", requirement.id)
+                })
+                .clone();
+            let want = hf
+                .requirements
+                .iter()
+                .find(|h| h.id == requirement.id)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "HF contract declares no {:?} (GGUF names it {ggml})",
+                        requirement.id
+                    )
+                });
+            let got = match resolve_ggml(&ggml, &cfg) {
+                Some(HfTarget::Plain(hf)) | Some(HfTarget::Transform { hf, .. }) => hf,
+                None => panic!(
+                    "no llama_dense ggml->HF mapping for {ggml} ({:?}). The engine's loader \
+                     resolves names through resolve_ggml; an unmapped name reads as an ABSENT \
+                     tensor. The HF contract declares this tensor as {:?}",
+                    requirement.id, want.names
+                ),
+            };
+            assert!(
+                want.names.contains(&got),
+                "{ggml} ({:?}) resolves to {got}, which is not one of the HF contract's names \
+                 {:?} for the same tensor",
+                requirement.id,
+                want.names
+            );
+            checked += 1;
+        }
+
+        assert_eq!(
+            checked, 21,
+            "the fixture's compiled contract changed size. Raise this number when the plan \
+             grows a tensor; NEVER lower it to make a red pin green — a shrinking count is the \
+             surface this gate exists to cover going unwatched"
+        );
+    }
+
     /// exceptions below are asserted as facts about the contract, not skipped.
     #[test]
     fn glm5_next_every_contract_tensor_resolves_through_the_engine_map() {

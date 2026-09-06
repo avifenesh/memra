@@ -13922,8 +13922,8 @@ impl Engine {
         q: &CudaSlice<f32>,
         k: &CudaSlice<f32>,
         v: &CudaSlice<f32>,
-        wq: &CudaSlice<f32>,
-        wk: &CudaSlice<f32>,
+        wq: Option<&CudaSlice<f32>>,
+        wk: Option<&CudaSlice<f32>>,
         wv: &CudaSlice<f32>,
         dq: &mut CudaSlice<f32>,
         dk: &mut CudaSlice<f32>,
@@ -13935,6 +13935,10 @@ impl Engine {
         eps: f32,
         vf16: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // 0 = this family has no such norm; every kernel here reads a null
+        // weight as "pass the row through" (an all-ones weight would not be).
+        let __wq_ptr: u64 = wq.map(|t| self.addr_f32(t)).unwrap_or(0);
+        let __wk_ptr: u64 = wk.map(|t| self.addr_f32(t)).unwrap_or(0);
         assert!(ncols.is_multiple_of(4) && rq + 2 * rk >= 64);
         let f = self.func("rms_norm_qkv_w4b_f32");
         let rows = (rq + 2 * rk) as u32;
@@ -13950,8 +13954,8 @@ impl Engine {
         b.arg(q)
             .arg(k)
             .arg(v)
-            .arg(wq)
-            .arg(wk)
+            .arg(&__wq_ptr)
+            .arg(&__wk_ptr)
             .arg(wv)
             .arg(dq)
             .arg(dk)
@@ -13975,8 +13979,8 @@ impl Engine {
         q: &CudaSlice<f32>,
         k: &CudaSlice<f32>,
         v: &CudaSlice<f32>,
-        wq: &CudaSlice<f32>,
-        wk: &CudaSlice<f32>,
+        wq: Option<&CudaSlice<f32>>,
+        wk: Option<&CudaSlice<f32>>,
         wv: &CudaSlice<f32>,
         dq: &mut CudaSlice<f32>,
         dk: &mut CudaSlice<f32>,
@@ -13986,6 +13990,10 @@ impl Engine {
         rk: usize,
         eps: f32,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // 0 = this family has no such norm; every kernel here reads a null
+        // weight as "pass the row through" (an all-ones weight would not be).
+        let __wq_ptr: u64 = wq.map(|t| self.addr_f32(t)).unwrap_or(0);
+        let __wk_ptr: u64 = wk.map(|t| self.addr_f32(t)).unwrap_or(0);
         // Warp-per-row float4 twin (default; MEMRA_QKVNORM_W=0 reverts): the block-per-row form
         // spends 767us/launch on 17k+ 2KB rows at prefill depth (launch/reduce latency-bound,
         // ~92GB/s). Own numeric config (reduce order differs) — battery-gated.
@@ -14011,8 +14019,8 @@ impl Engine {
             b.arg(q)
                 .arg(k)
                 .arg(v)
-                .arg(wq)
-                .arg(wk)
+                .arg(&__wq_ptr)
+                .arg(&__wk_ptr)
                 .arg(wv)
                 .arg(dq)
                 .arg(dk)
@@ -14040,8 +14048,8 @@ impl Engine {
         b.arg(q)
             .arg(k)
             .arg(v)
-            .arg(wq)
-            .arg(wk)
+            .arg(&__wq_ptr)
+            .arg(&__wk_ptr)
             .arg(wv)
             .arg(dq)
             .arg(dk)
@@ -14703,6 +14711,30 @@ impl Engine {
             lb.launch(cfg)?;
         }
         Ok(())
+    }
+
+    /// RMS-norm when the family HAS this norm, a pass-through copy when it does not.
+    ///
+    /// Per-head QK normalization is a family property: qwen3.5, gemma4 and step35 carry it,
+    /// a dense llama/mistral stack does not. `None` therefore has to mean "leave the row
+    /// alone" — substituting an all-ones weight would still rescale the vector by
+    /// `rsqrt(mean(x^2)+eps)` and quietly change every attention score.
+    pub fn rms_norm_opt(
+        &self,
+        x: &CudaSlice<f32>,
+        w: Option<&CudaSlice<f32>>,
+        dst: &mut CudaSlice<f32>,
+        ncols: usize,
+        nrows: usize,
+        eps: f32,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        match w {
+            Some(w) => self.rms_norm(x, w, dst, ncols, nrows, eps),
+            None => {
+                self.dtod_copy_into(x, dst, 0)?;
+                Ok(())
+            }
+        }
     }
 
     pub fn rms_norm(
@@ -15569,8 +15601,8 @@ impl Engine {
     pub fn rms_norm_qkv_rope_cat(
         &self,
         qkv: &CudaSlice<f32>,
-        wq: &CudaSlice<f32>,
-        wk: &CudaSlice<f32>,
+        wq: Option<&CudaSlice<f32>>,
+        wk: Option<&CudaSlice<f32>>,
         wv: &CudaSlice<f32>,
         q: &mut CudaSlice<f32>,
         k: &mut CudaSlice<f32>,
@@ -15587,6 +15619,10 @@ impl Engine {
         ff: Option<&CudaSlice<f32>>,
         eps: f32,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // 0 = this family has no such norm; every kernel here reads a null
+        // weight as "pass the row through" (an all-ones weight would not be).
+        let __wq_ptr: u64 = wq.map(|t| self.addr_f32(t)).unwrap_or(0);
+        let __wk_ptr: u64 = wk.map(|t| self.addr_f32(t)).unwrap_or(0);
         Self::full_width_rope_only("rms_norm_qkv_rope_cat", n_rot, head_dim)?;
         let rows = rq + rk + rk;
         let theta_scale = base.powf(-2.0 / head_dim as f32);
@@ -15601,8 +15637,8 @@ impl Engine {
             use cudarc::driver::{DevicePtr, DevicePtrMut};
             let s = &self.gpu.stream();
             let (pqkv, _g0) = qkv.device_ptr(s);
-            let (pwq, _g1) = wq.device_ptr(s);
-            let (pwk, _g2) = wk.device_ptr(s);
+            let pwq = __wq_ptr; // null when the family has no QK-norm
+            let pwk = __wk_ptr;
             let (pwv, _g3) = wv.device_ptr(s);
             let (pq, _g4) = q.device_ptr_mut(s);
             let (pk, _g5) = k.device_ptr_mut(s);
@@ -15655,8 +15691,8 @@ impl Engine {
         match ff {
             Some(t) => {
                 b.arg(qkv)
-                    .arg(wq)
-                    .arg(wk)
+                    .arg(&__wq_ptr)
+                    .arg(&__wk_ptr)
                     .arg(wv)
                     .arg(&mut *q)
                     .arg(&mut *k)
@@ -15678,8 +15714,8 @@ impl Engine {
             None => {
                 let null: u64 = 0;
                 b.arg(qkv)
-                    .arg(wq)
-                    .arg(wk)
+                    .arg(&__wq_ptr)
+                    .arg(&__wk_ptr)
                     .arg(wv)
                     .arg(&mut *q)
                     .arg(&mut *k)
@@ -15711,8 +15747,8 @@ impl Engine {
         q0: &CudaSlice<f32>,
         k0: &CudaSlice<f32>,
         v0: &CudaSlice<f32>,
-        wq: &CudaSlice<f32>,
-        wk: &CudaSlice<f32>,
+        wq: Option<&CudaSlice<f32>>,
+        wk: Option<&CudaSlice<f32>>,
         wv: &CudaSlice<f32>,
         q: &mut CudaSlice<f32>,
         k: &mut CudaSlice<f32>,
@@ -15729,6 +15765,10 @@ impl Engine {
         ff: Option<&CudaSlice<f32>>,
         eps: f32,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // 0 = this family has no such norm; every kernel here reads a null
+        // weight as "pass the row through" (an all-ones weight would not be).
+        let __wq_ptr: u64 = wq.map(|t| self.addr_f32(t)).unwrap_or(0);
+        let __wk_ptr: u64 = wk.map(|t| self.addr_f32(t)).unwrap_or(0);
         Self::full_width_rope_only("rms_norm_qkv_rope", n_rot, head_dim)?;
         let f = self.func("rms_norm_qkv_rope_f32");
         let rows = rq + rk + rk; // q rows + k rows + v rows (rk == rv)
@@ -15752,8 +15792,8 @@ impl Engine {
                 b.arg(q0)
                     .arg(k0)
                     .arg(v0)
-                    .arg(wq)
-                    .arg(wk)
+                    .arg(&__wq_ptr)
+                    .arg(&__wk_ptr)
                     .arg(wv)
                     .arg(&mut *q)
                     .arg(&mut *k)
@@ -15777,8 +15817,8 @@ impl Engine {
                 b.arg(q0)
                     .arg(k0)
                     .arg(v0)
-                    .arg(wq)
-                    .arg(wk)
+                    .arg(&__wq_ptr)
+                    .arg(&__wk_ptr)
                     .arg(wv)
                     .arg(&mut *q)
                     .arg(&mut *k)
@@ -15812,8 +15852,8 @@ impl Engine {
         q0: &CudaSlice<f32>,
         k0: &CudaSlice<f32>,
         v0: &CudaSlice<f32>,
-        wq: &CudaSlice<f32>,
-        wk: &CudaSlice<f32>,
+        wq: Option<&CudaSlice<f32>>,
+        wk: Option<&CudaSlice<f32>>,
         wv: &CudaSlice<f32>,
         q: &mut CudaSlice<f32>,
         k: &mut CudaSlice<f32>,
@@ -15836,6 +15876,10 @@ impl Engine {
         v_tok_bytes: usize,
         g: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // 0 = this family has no such norm; every kernel here reads a null
+        // weight as "pass the row through" (an all-ones weight would not be).
+        let __wq_ptr: u64 = wq.map(|t| self.addr_f32(t)).unwrap_or(0);
+        let __wk_ptr: u64 = wk.map(|t| self.addr_f32(t)).unwrap_or(0);
         Self::full_width_rope_only("rms_norm_qkv_rope_append_dc", n_rot, head_dim)?;
         let rows = rq + rk + rk;
         let theta_scale = base.powf(-2.0 / head_dim as f32);
@@ -15853,8 +15897,8 @@ impl Engine {
             let (p0, _a0) = q0.device_ptr(s);
             let (p1, _a1) = k0.device_ptr(s);
             let (p2, _a2) = v0.device_ptr(s);
-            let (pwq, _a3) = wq.device_ptr(s);
-            let (pwk, _a4) = wk.device_ptr(s);
+            let pwq = __wq_ptr; // null when the family has no QK-norm
+            let pwk = __wk_ptr;
             let (pwv, _a5) = wv.device_ptr(s);
             let (pq, _a6) = q.device_ptr_mut(s);
             let (pk, _a7) = k.device_ptr_mut(s);
@@ -15925,8 +15969,8 @@ impl Engine {
                 b.arg(q0)
                     .arg(k0)
                     .arg(v0)
-                    .arg(wq)
-                    .arg(wk)
+                    .arg(&__wq_ptr)
+                    .arg(&__wk_ptr)
                     .arg(wv)
                     .arg(&mut *q)
                     .arg(&mut *k)
@@ -15955,8 +15999,8 @@ impl Engine {
                 b.arg(q0)
                     .arg(k0)
                     .arg(v0)
-                    .arg(wq)
-                    .arg(wk)
+                    .arg(&__wq_ptr)
+                    .arg(&__wk_ptr)
                     .arg(wv)
                     .arg(&mut *q)
                     .arg(&mut *k)
@@ -15997,8 +16041,8 @@ impl Engine {
         q0: &CudaSlice<f32>,
         k0: &CudaSlice<f32>,
         v0: &CudaSlice<f32>,
-        wq: &CudaSlice<f32>,
-        wk: &CudaSlice<f32>,
+        wq: Option<&CudaSlice<f32>>,
+        wk: Option<&CudaSlice<f32>>,
         wv: &CudaSlice<f32>,
         q: &mut CudaSlice<f32>,
         k: &mut CudaSlice<f32>,
@@ -16021,6 +16065,10 @@ impl Engine {
         v_tok_bytes: usize,
         g: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // 0 = this family has no such norm; every kernel here reads a null
+        // weight as "pass the row through" (an all-ones weight would not be).
+        let __wq_ptr: u64 = wq.map(|t| self.addr_f32(t)).unwrap_or(0);
+        let __wk_ptr: u64 = wk.map(|t| self.addr_f32(t)).unwrap_or(0);
         Self::full_width_rope_only("rms_norm_qkv_rope_append", n_rot, head_dim)?;
         let rows = rq + rk + rk;
         let theta_scale = base.powf(-2.0 / head_dim as f32);
@@ -16039,8 +16087,8 @@ impl Engine {
             let (p0, _a0) = q0.device_ptr(s);
             let (p1, _a1) = k0.device_ptr(s);
             let (p2, _a2) = v0.device_ptr(s);
-            let (pwq, _a3) = wq.device_ptr(s);
-            let (pwk, _a4) = wk.device_ptr(s);
+            let pwq = __wq_ptr; // null when the family has no QK-norm
+            let pwk = __wk_ptr;
             let (pwv, _a5) = wv.device_ptr(s);
             let (pq, _a6) = q.device_ptr_mut(s);
             let (pk, _a7) = k.device_ptr_mut(s);
@@ -16109,8 +16157,8 @@ impl Engine {
         b.arg(q0)
             .arg(k0)
             .arg(v0)
-            .arg(wq)
-            .arg(wk)
+            .arg(&__wq_ptr)
+            .arg(&__wk_ptr)
             .arg(wv)
             .arg(&mut *q)
             .arg(&mut *k)
@@ -28050,8 +28098,8 @@ impl Engine {
     pub fn attn_pre_vl8(
         &self,
         seqs: &[AttnPreVl],
-        wq: &CudaSlice<f32>,
-        wk: &CudaSlice<f32>,
+        wq: Option<&CudaSlice<f32>>,
+        wk: Option<&CudaSlice<f32>>,
         head_dim: usize,
         rope_dims: usize,
         n_head: usize,
@@ -28064,6 +28112,10 @@ impl Engine {
         k_tok_bytes: usize,
         v_tok_bytes: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // 0 = this family has no such norm; every kernel here reads a null
+        // weight as "pass the row through" (an all-ones weight would not be).
+        let __wq_ptr: u64 = wq.map(|t| self.addr_f32(t)).unwrap_or(0);
+        let __wk_ptr: u64 = wk.map(|t| self.addr_f32(t)).unwrap_or(0);
         let b = seqs.len();
         assert!((1..=8).contains(&b));
         let mut packed = [AttnPreVl::default(); 8];
@@ -28096,8 +28148,8 @@ impl Engine {
             let __s_lb = self.gpu.stream();
             let mut lb = __s_lb.launch_builder(&f);
             lb.arg(&v)
-                .arg(wq)
-                .arg(wk)
+                .arg(&__wq_ptr)
+                .arg(&__wk_ptr)
                 .arg(&hd)
                 .arg(&nh)
                 .arg(&nhkv)

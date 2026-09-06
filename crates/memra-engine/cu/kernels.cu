@@ -217,8 +217,12 @@ extern "C" __global__ void rms_norm_f32(const float* __restrict__ x, const float
         if (tid == 0) s[0] = v;
     }
     __syncthreads();
-    float scale = rsqrtf(s[0] / ncols + eps);
-    for (int i = tid; i < ncols; i += blockDim.x) dr[i] = xr[i] * scale * w[i];
+    // A family that has NO norm for this segment passes a NULL weight (dense llama/mistral
+    // has no per-head QK norm). Null means pass the row through untouched: an all-ones weight
+    // would NOT be the identity, because RMSNorm still rescales the vector.
+    const bool do_norm = (w != nullptr);
+    float scale = do_norm ? rsqrtf(s[0] / ncols + eps) : 1.0f;
+    for (int i = tid; i < ncols; i += blockDim.x) dr[i] = do_norm ? (xr[i] * scale * w[i]) : xr[i];
 }
 
 // rms_norm + fused fp16 twin emission (task #14 launch diet, 2026-07-26): on the prefill
@@ -1274,8 +1278,12 @@ extern "C" __global__ void rms_norm_qkv_f32(const float* __restrict__ q, const f
         if (tid == 0) s[0] = v2;
     }
     __syncthreads();
-    float scale = rsqrtf(s[0] / ncols + eps);
-    for (int i = tid; i < ncols; i += blockDim.x) dr[i] = xr[i] * scale * w[i];
+    // A family that has NO norm for this segment passes a NULL weight (dense llama/mistral
+    // has no per-head QK norm). Null means pass the row through untouched: an all-ones weight
+    // would NOT be the identity, because RMSNorm still rescales the vector.
+    const bool do_norm = (w != nullptr);
+    float scale = do_norm ? rsqrtf(s[0] / ncols + eps) : 1.0f;
+    for (int i = tid; i < ncols; i += blockDim.x) dr[i] = do_norm ? (xr[i] * scale * w[i]) : xr[i];
 }
 
 // ---- warp-per-row twin of rms_norm_qkv_f32 (prefill T>=16): the block-per-row form runs
@@ -1305,11 +1313,15 @@ extern "C" __global__ void rms_norm_qkv_w4_f32(const float* __restrict__ q, cons
         sum += xv.x * xv.x + xv.y * xv.y + xv.z * xv.z + xv.w * xv.w;
     }
     for (int o = 16; o > 0; o >>= 1) sum += __shfl_xor_sync(0xffffffff, sum, o);
-    const float scale = rsqrtf(sum / ncols + eps);
+    // Null weight = this family has no norm for this segment (dense llama/mistral has no
+    // per-head QK norm): pass the row through. An all-ones weight is NOT the identity.
+    const bool do_norm = (w != nullptr);
+    const float scale = do_norm ? rsqrtf(sum / ncols + eps) : 1.0f;
     const float4* w4 = (const float4*)w;
     float4* d4 = (float4*)dr;
     for (int i = lane; i < nc4; i += 32) {
-        float4 xv = x4[i]; float4 wv4 = w4[i];
+        float4 xv = x4[i];
+        float4 wv4 = do_norm ? w4[i] : make_float4(1.0f, 1.0f, 1.0f, 1.0f);
         float4 ov;
         ov.x = xv.x * scale * wv4.x; ov.y = xv.y * scale * wv4.y;
         ov.z = xv.z * scale * wv4.z; ov.w = xv.w * scale * wv4.w;
@@ -1341,13 +1353,17 @@ extern "C" __global__ void rms_norm_qkv_w4b_f32(const float* __restrict__ q, con
         sum += xv.x * xv.x + xv.y * xv.y + xv.z * xv.z + xv.w * xv.w;
     }
     for (int o = 16; o > 0; o >>= 1) sum += __shfl_xor_sync(0xffffffff, sum, o);
-    const float scale = rsqrtf(sum / ncols + eps);
+    // Null weight = this family has no norm for this segment (dense llama/mistral has no
+    // per-head QK norm): pass the row through. An all-ones weight is NOT the identity.
+    const bool do_norm = (w != nullptr);
+    const float scale = do_norm ? rsqrtf(sum / ncols + eps) : 1.0f;
     const float4* w4 = (const float4*)w;
     float4* d4 = (float4*)dr;
     // v rows also emit bf16 (the FA V operand; q/k get theirs post-rope).
     __nv_bfloat16* db = (row >= rq + rk) ? dvb + (size_t)(row - rq - rk) * ncols : nullptr;
     for (int i = lane; i < nc4; i += 32) {
-        float4 xv = x4[i]; float4 wv4 = w4[i];
+        float4 xv = x4[i];
+        float4 wv4 = do_norm ? w4[i] : make_float4(1.0f, 1.0f, 1.0f, 1.0f);
         float4 ov;
         ov.x = xv.x * scale * wv4.x; ov.y = xv.y * scale * wv4.y;
         ov.z = xv.z * scale * wv4.z; ov.w = xv.w * scale * wv4.w;
@@ -1399,8 +1415,12 @@ extern "C" __global__ void rms_norm_qkv_rope_cat_f32(
         if (tid == 0) s[0] = v2;
     }
     __syncthreads();
-    float scale = rsqrtf(s[0] / ncols + eps);
-    for (int i = tid; i < ncols; i += blockDim.x) dr[i] = xr[i] * scale * w[i];
+    // A family that has NO norm for this segment passes a NULL weight (dense llama/mistral
+    // has no per-head QK norm). Null means pass the row through untouched: an all-ones weight
+    // would NOT be the identity, because RMSNorm still rescales the vector.
+    const bool do_norm = (w != nullptr);
+    float scale = do_norm ? rsqrtf(s[0] / ncols + eps) : 1.0f;
+    for (int i = tid; i < ncols; i += blockDim.x) dr[i] = do_norm ? (xr[i] * scale * w[i]) : xr[i];
     if (seg == 2) return;
     __syncthreads();
     int half = ncols / 2;
@@ -1444,8 +1464,12 @@ extern "C" __global__ void rms_norm_qkv_rope_f32(
         if (tid == 0) s[0] = v2;
     }
     __syncthreads();
-    float scale = rsqrtf(s[0] / ncols + eps);
-    for (int i = tid; i < ncols; i += blockDim.x) dr[i] = xr[i] * scale * w[i];
+    // A family that has NO norm for this segment passes a NULL weight (dense llama/mistral
+    // has no per-head QK norm). Null means pass the row through untouched: an all-ones weight
+    // would NOT be the identity, because RMSNorm still rescales the vector.
+    const bool do_norm = (w != nullptr);
+    float scale = do_norm ? rsqrtf(s[0] / ncols + eps) : 1.0f;
+    for (int i = tid; i < ncols; i += blockDim.x) dr[i] = do_norm ? (xr[i] * scale * w[i]) : xr[i];
     if (seg == 2) return;                   // V: norm only, never roped
     __syncthreads();                        // normed row visible before the rope read
     // rope_neox on the normed row (n_dims == ncols == head_dim here; math verbatim).
@@ -1485,8 +1509,12 @@ extern "C" __global__ void rms_norm2x_f32(const float* __restrict__ a, const flo
         if (tid == 0) s[0] = v2;
     }
     __syncthreads();
-    float scale = rsqrtf(s[0] / ncols + eps);
-    for (int i = tid; i < ncols; i += blockDim.x) dr[i] = xr[i] * scale * w[i];
+    // A family that has NO norm for this segment passes a NULL weight (dense llama/mistral
+    // has no per-head QK norm). Null means pass the row through untouched: an all-ones weight
+    // would NOT be the identity, because RMSNorm still rescales the vector.
+    const bool do_norm = (w != nullptr);
+    float scale = do_norm ? rsqrtf(s[0] / ncols + eps) : 1.0f;
+    for (int i = tid; i < ncols; i += blockDim.x) dr[i] = do_norm ? (xr[i] * scale * w[i]) : xr[i];
 }
 
 // ---- gemma4: dst = (a + b) * c — the layer-tail residual add + layer_output_scale in one

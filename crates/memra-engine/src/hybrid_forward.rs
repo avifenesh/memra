@@ -7325,8 +7325,8 @@ impl HybridModel {
                             .collect();
                         e.attn_pre_vl8(
                             &pargs,
-                            fa.q_norm.float_data(),
-                            fa.k_norm.float_data(),
+                            fa.q_norm_w(),
+                            fa.k_norm_w(),
                             head_dim,
                             geometry.n_rot as usize,
                             n_head,
@@ -7766,24 +7766,10 @@ impl HybridModel {
         };
 
         let mut qn = e.uninit(t * n_head * head_dim)?;
-        e.rms_norm(
-            &q,
-            fa.q_norm.float_data(),
-            &mut qn,
-            head_dim,
-            n_head * t,
-            eps,
-        )?;
+        e.rms_norm_opt(&q, fa.q_norm_w(), &mut qn, head_dim, n_head * t, eps)?;
         q = qn;
         let mut kn = e.uninit(t * n_head_kv * head_dim)?;
-        e.rms_norm(
-            &k,
-            fa.k_norm.float_data(),
-            &mut kn,
-            head_dim,
-            n_head_kv * t,
-            eps,
-        )?;
+        e.rms_norm_opt(&k, fa.k_norm_w(), &mut kn, head_dim, n_head_kv * t, eps)?;
         k = kn;
         let rope_dims = geometry.n_rot as usize;
         e.rope_neox(
@@ -8553,24 +8539,10 @@ impl HybridModel {
 
         // QK-norm (per head_dim row), then partial RoPE.
         let mut qn = e.uninit(t * n_head * head_dim)?;
-        e.rms_norm(
-            &q,
-            fa.q_norm.float_data(),
-            &mut qn,
-            head_dim,
-            n_head * t,
-            eps,
-        )?;
+        e.rms_norm_opt(&q, fa.q_norm_w(), &mut qn, head_dim, n_head * t, eps)?;
         q = qn;
         let mut kn = e.uninit(t * n_head_kv * head_dim)?;
-        e.rms_norm(
-            &k,
-            fa.k_norm.float_data(),
-            &mut kn,
-            head_dim,
-            n_head_kv * t,
-            eps,
-        )?;
+        e.rms_norm_opt(&k, fa.k_norm_w(), &mut kn, head_dim, n_head_kv * t, eps)?;
         k = kn;
         let rope_dims = geometry.n_rot as usize;
         e.rope_neox(
@@ -19357,8 +19329,8 @@ impl HybridModel {
                 &q0,
                 &k0,
                 &v0,
-                fa.q_norm.float_data(),
-                fa.k_norm.float_data(),
+                fa.q_norm_w(),
+                fa.k_norm_w(),
                 ones,
                 &mut q,
                 &mut k,
@@ -19375,8 +19347,8 @@ impl HybridModel {
                 &q0,
                 &k0,
                 &v0,
-                fa.q_norm.float_data(),
-                fa.k_norm.float_data(),
+                fa.q_norm_w(),
+                fa.k_norm_w(),
                 ones,
                 &mut q,
                 &mut k,
@@ -20908,8 +20880,8 @@ impl HybridModel {
                 &q0,
                 &k0,
                 &v0,
-                fa.q_norm.float_data(),
-                fa.k_norm.float_data(),
+                fa.q_norm_w(),
+                fa.k_norm_w(),
                 ones,
                 &mut q,
                 &mut k,
@@ -20937,8 +20909,8 @@ impl HybridModel {
                 &q0,
                 &k0,
                 &v0,
-                fa.q_norm.float_data(),
-                fa.k_norm.float_data(),
+                fa.q_norm_w(),
+                fa.k_norm_w(),
                 ones,
                 &mut q,
                 &mut k,
@@ -21418,8 +21390,8 @@ impl HybridModel {
                 &sl.q0,
                 &sl.k0,
                 &sl.v0,
-                fa.q_norm.float_data(),
-                fa.k_norm.float_data(),
+                fa.q_norm_w(),
+                fa.k_norm_w(),
                 ones,
                 &mut sl.q,
                 &mut sl.k,
@@ -21447,8 +21419,8 @@ impl HybridModel {
                 &sl.q0,
                 &sl.k0,
                 &sl.v0,
-                fa.q_norm.float_data(),
-                fa.k_norm.float_data(),
+                fa.q_norm_w(),
+                fa.k_norm_w(),
                 ones,
                 &mut sl.q,
                 &mut sl.k,
@@ -21786,8 +21758,8 @@ impl HybridModel {
                 &q0,
                 &k0,
                 &v0,
-                fa.q_norm.float_data(),
-                fa.k_norm.float_data(),
+                fa.q_norm_w(),
+                fa.k_norm_w(),
                 ones,
                 &mut q,
                 &mut k,
@@ -21815,8 +21787,8 @@ impl HybridModel {
                 &q0,
                 &k0,
                 &v0,
-                fa.q_norm.float_data(),
-                fa.k_norm.float_data(),
+                fa.q_norm_w(),
+                fa.k_norm_w(),
                 ones,
                 &mut q,
                 &mut k,
@@ -22600,8 +22572,8 @@ impl HybridModel {
             &q0,
             &k0,
             &v0,
-            fa.q_norm.float_data(),
-            fa.k_norm.float_data(),
+            fa.q_norm_w(),
+            fa.k_norm_w(),
             ones,
             &mut q,
             &mut k,
@@ -22828,8 +22800,8 @@ impl HybridModel {
             &q0,
             &k0,
             &v0,
-            fa.q_norm.float_data(),
-            fa.k_norm.float_data(),
+            fa.q_norm_w(),
+            fa.k_norm_w(),
             ones,
             &mut q,
             &mut k,
@@ -23383,9 +23355,9 @@ impl HybridModel {
         // per-layer PARTIAL NEOX rope: n_rot = 64 on full layers (dims 64..127 pass through
         // unrotated), 128 on SWA. rope_freqs (llama3-style per-dim factors) on FULL only.
         let mut q = e.uninit(t * nh * hd)?;
-        e.rms_norm(&q0, fa.q_norm.float_data(), &mut q, hd, nh * t, eps)?;
+        e.rms_norm_opt(&q0, fa.q_norm_w(), &mut q, hd, nh * t, eps)?;
         let mut k = e.uninit(t * nkv * hd)?;
-        e.rms_norm(&k0, fa.k_norm.float_data(), &mut k, hd, nkv * t, eps)?;
+        e.rms_norm_opt(&k0, fa.k_norm_w(), &mut k, hd, nkv * t, eps)?;
         let ff = if geometry.rope_factors {
             self.step35_aux.as_ref().and_then(|a| a.rope_freqs(e))
         } else {
@@ -26176,9 +26148,9 @@ impl HybridModel {
         };
 
         let mut q = e.uninit(nh * hd)?;
-        e.rms_norm(&q0, fa.q_norm.float_data(), &mut q, hd, nh, eps)?;
+        e.rms_norm_opt(&q0, fa.q_norm_w(), &mut q, hd, nh, eps)?;
         let mut k = e.uninit(nkv * hd)?;
-        e.rms_norm(&k0, fa.k_norm.float_data(), &mut k, hd, nkv, eps)?;
+        e.rms_norm_opt(&k0, fa.k_norm_w(), &mut k, hd, nkv, eps)?;
         let ff = if swa {
             None
         } else {
@@ -26416,8 +26388,8 @@ impl HybridModel {
                 &q0,
                 &q0,
                 &q0,
-                fa.q_norm.float_data(),
-                fa.q_norm.float_data(),
+                fa.q_norm_w(),
+                fa.q_norm_w(),
                 ones,
                 &mut q,
                 &mut kdummy,
@@ -26449,8 +26421,8 @@ impl HybridModel {
                 let qkv0 = e.matmul_pre(cat.unwrap(), hq, hdq, h, 1)?;
                 e.rms_norm_qkv_rope_cat(
                     &qkv0,
-                    fa.q_norm.float_data(),
-                    fa.k_norm.float_data(),
+                    fa.q_norm_w(),
+                    fa.k_norm_w(),
                     ones,
                     &mut q,
                     &mut k,
@@ -26493,8 +26465,8 @@ impl HybridModel {
                     &q0,
                     &k0,
                     &v0,
-                    fa.q_norm.float_data(),
-                    fa.k_norm.float_data(),
+                    fa.q_norm_w(),
+                    fa.k_norm_w(),
                     ones,
                     &mut q,
                     &mut k,

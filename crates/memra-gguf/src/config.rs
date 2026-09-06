@@ -100,7 +100,9 @@ impl Arch {
             // is `glm5_next`, text_config's is `glm5_next_text` — same text architecture.
             "glm5_next" | "glm5_next_text" => "glm5-next",
             "gemma4" | "gemma4_text" => "gemma4",
-            "llama" => "llama",
+            // Mistral dense (MistralForCausalLM) is the llama execution program: RMSNorm,
+            // GQA full attention, rope over the whole head, SwiGLU, no QK-norm, no biases.
+            "llama" | "mistral" => "llama",
             other => other,
         };
         Arch::parse(ggml)
@@ -1148,6 +1150,17 @@ pub struct ModelConfig {
     // multi-token-predict / NextN
     pub nextn_predict_layers: u32,
     pub n_layer_total: u32, // includes appended MTP layers
+    /// The source's sliding-window key, carried VERBATIM for families whose plan does not
+    /// consume it. Every family that serves a window parses it into its own sub-config
+    /// (gemma4/step35/dsv4); a config that carries one and lands in a pack with no window
+    /// support is a DIFFERENT attention program wearing the same shape (Mistral-7B-v0.1 is
+    /// `mistral` with `sliding_window: 4096`). Packs refuse it here instead of silently
+    /// compiling full attention (#216).
+    pub window_hint: Option<u32>,
+    /// The source's `rope_scaling.rope_type`, carried for the same reason: `llama3` scaling
+    /// is a different RoPE program and the canonical plan compiles `RopeFactors::None`.
+    /// `None` and `"default"` both mean identity.
+    pub rope_scaling_hint: Option<String>,
 }
 
 /// qwen4_exp YaRN parse (scope: this family only — see `ModelConfig::rope_yarn`).
@@ -1546,6 +1559,10 @@ impl ModelConfig {
 
         ModelConfig {
             arch,
+            window_hint: u("attention.sliding_window"),
+            // GGUF spells llama3 rope scaling as per-frequency factors, not a type string;
+            // `rope_factors` carries them and the packs that read them declare it.
+            rope_scaling_hint: None,
             name: g
                 .metadata
                 .get("general.name")
@@ -2275,6 +2292,8 @@ impl ModelConfig {
 
         ModelConfig {
             arch,
+            window_hint: c.sliding_window,
+            rope_scaling_hint: c.rope_scaling_type.clone(),
             name: c.name.clone().unwrap_or_default(),
             // GGUF `block_count` INCLUDES the MTP/NextN block(s) (hybrid.rs n_trunk = n_layer -
             // nextn); HF `num_hidden_layers` EXCLUDES them. Add nextn so both sources agree.

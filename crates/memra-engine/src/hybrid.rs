@@ -6,7 +6,7 @@ use crate::Engine;
 use crate::model::{EmbedHost, GpuTensor, HostExps};
 use cudarc::driver::CudaSlice;
 use memra_gguf::config::{ModelConfig, SwigluClamp};
-use memra_gguf::model_plan::{AttentionPlan, MlpPlan};
+use memra_gguf::model_plan::{AttentionPlan, MlpPlan, TensorPresence};
 use memra_gguf::source::{GgufSource, TensorSource};
 use memra_gguf::{GgmlType, GgufFile};
 use std::collections::HashMap;
@@ -394,8 +394,23 @@ fn load_mixer_kind(
                     None => load_t(e, src, &p("attn_k.weight"))?,
                 },
                 wo: load_t(e, src, &p("attn_output.weight"))?,
-                q_norm: load_t(e, src, &p("attn_q_norm.weight"))?,
-                k_norm: load_t(e, src, &p("attn_k_norm.weight"))?,
+                // Per-head QK RMSNorm is a FAMILY property, not a universal one: the plan's
+                // `qk_norm` presence is the contract (qwen3.5/gemma4/step35 Required, dense
+                // llama/mistral Absent). Loading it unconditionally made every dense
+                // llama checkpoint die at `missing tensor blk.0.attn_q_norm.weight`, and
+                // substituting an all-ones weight would NOT be a no-op — RMSNorm still
+                // normalizes the vector — so absent has to stay absent all the way into the
+                // forward.
+                q_norm: match full.qk_norm {
+                    TensorPresence::Absent => None,
+                    TensorPresence::Optional => load_opt(e, src, &p("attn_q_norm.weight"))?,
+                    TensorPresence::Required => Some(load_t(e, src, &p("attn_q_norm.weight"))?),
+                },
+                k_norm: match full.qk_norm {
+                    TensorPresence::Absent => None,
+                    TensorPresence::Optional => load_opt(e, src, &p("attn_k_norm.weight"))?,
+                    TensorPresence::Required => Some(load_t(e, src, &p("attn_k_norm.weight"))?),
+                },
                 // step35: REQUIRED when the arch says so — a missing gate would silently drop the
                 // per-head sigmoid and produce plausible-but-wrong logits, so this is load_t not
                 // load_opt. Step-3.7-Flash ships it on all 45 blocks (width = that layer's n_head).
@@ -2156,13 +2171,28 @@ fn build_dev_exps(
     }))
 }
 
+impl FullAttnLayer {
+    /// The per-head QK-norm weights for the norm kernels, or `None` when the family has none.
+    /// Every fused kernel that takes these reads a null weight as "pass the row through", so a
+    /// family without QK-norm keeps the SAME fused path rather than falling back to a slower one.
+    pub fn q_norm_w(&self) -> Option<&cudarc::driver::CudaSlice<f32>> {
+        self.q_norm.as_ref().map(|t| t.float_data())
+    }
+    pub fn k_norm_w(&self) -> Option<&cudarc::driver::CudaSlice<f32>> {
+        self.k_norm.as_ref().map(|t| t.float_data())
+    }
+}
+
 pub struct FullAttnLayer {
     pub wq: GpuTensor,
     pub wk: GpuTensor,
     pub wv: GpuTensor,
     pub wo: GpuTensor,
-    pub q_norm: GpuTensor,
-    pub k_norm: GpuTensor,
+    /// Per-head QK RMSNorm weights, `None` for families whose plan says
+    /// `TensorPresence::Absent` (dense llama/mistral). Every forward path must branch on
+    /// this rather than assume it: an all-ones RMSNorm is not the identity.
+    pub q_norm: Option<GpuTensor>,
+    pub k_norm: Option<GpuTensor>,
     /// step35-class SEPARATE head-wise attention gate: `blk.N.attn_gate.weight [n_embd, n_head_l]`
     /// where `n_head_l` is this layer's query-head count (64 full / 96 SWA on Step-3.7-Flash, so
     /// the width VARIES per layer). Produces one pre-sigmoid scalar per head from the
@@ -4551,8 +4581,10 @@ impl HybridModel {
                             wk: load_t(e, src, &tp("attn_k.weight"))?,
                             wv: load_t(e, src, &tp("attn_v.weight"))?,
                             wo: load_t(e, src, &p("attn_output.weight"))?,
-                            q_norm: load_t(e, src, &p("attn_q_norm.weight"))?,
-                            k_norm: load_t(e, src, &tp("attn_k_norm.weight"))?,
+                            // gemma4 shared-KV layers: the family always ships QK-norm, so
+                            // these stay required — the Option is for families that have none.
+                            q_norm: Some(load_t(e, src, &p("attn_q_norm.weight"))?),
+                            k_norm: Some(load_t(e, src, &tp("attn_k_norm.weight"))?),
                             attn_gate: None, // gemma4 has no separate head-wise gate
                             step_tp_qkv: None,
                         })

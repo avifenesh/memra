@@ -723,7 +723,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut dk = e.zeros(rk * hd)?;
         let mut dv = e.zeros(rk * hd)?;
         e.rms_norm_qkv(
-            &qd, &kd, &vd, &wqd, &wkd, &wvd, &mut dq, &mut dk, &mut dv, hd, rq, rk, eps,
+            &qd,
+            &kd,
+            &vd,
+            Some(&wqd),
+            Some(&wkd),
+            &wvd,
+            &mut dq,
+            &mut dk,
+            &mut dv,
+            hd,
+            rq,
+            rk,
+            eps,
         )?;
         let d = maxdiff(&cq, &e.dtoh(&dq)?)
             .max(maxdiff(&ck, &e.dtoh(&dk)?))
@@ -731,6 +743,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!(
             "rms_norm_qkv_w4 (prefill rows) maxdiff={d:.2e} {}",
             if d < 1e-4 {
+                "OK"
+            } else {
+                fails += 1;
+                "FAIL"
+            }
+        );
+
+        // Null-weight arm (dense llama/mistral has no per-head QK-norm): a null weight must
+        // pass the row through UNTOUCHED. The red arm is the same call with the weights
+        // present, one line above — if the kernel ignored the null and normalized anyway,
+        // this compares the input against a normalized row and fails.
+        let mut nq = e.zeros(rq * hd)?;
+        let mut nk = e.zeros(rk * hd)?;
+        let mut nv = e.zeros(rk * hd)?;
+        e.rms_norm_qkv(
+            &qd, &kd, &vd, None, None, &wvd, &mut nq, &mut nk, &mut nv, hd, rq, rk, eps,
+        )?;
+        let dn = maxdiff(&q, &e.dtoh(&nq)?).max(maxdiff(&k, &e.dtoh(&nk)?));
+        // and the pass-through must NOT equal the normalized answer, or the arm is vacuous
+        let separated = maxdiff(&cq, &e.dtoh(&nq)?) > 1e-3;
+        println!(
+            "rms_norm_qkv null-weight passthrough maxdiff={dn:.2e} separated={separated} {}",
+            if dn == 0.0 && separated {
                 "OK"
             } else {
                 fails += 1;

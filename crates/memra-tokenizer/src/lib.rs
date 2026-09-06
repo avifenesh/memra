@@ -1531,6 +1531,31 @@ mod pretokenizer_tests {
         );
     }
 
+    /// DictaLM-3.0 (Mistral tekken vocab, 131072) carries NO `pretokenize_regex` in its
+    /// tokenizer_config, so its `tokenizer.json` `pre_tokenizer` is the only identifier — and
+    /// that object, pinned here verbatim from dicta-il/DictaLM-3.0-24B-Thinking's own
+    /// tokenizer.json, is `Sequence[Split(Regex), ByteLevel(use_regex=false)]` whose regex is
+    /// BYTE-IDENTICAL to `GLM4_PRETOKENIZE_REGEX`. So the family needs no new splitter: it
+    /// resolves onto the already-ported `glm4` state machine. If a future edit to either
+    /// constant breaks that identity, this test says so instead of the model silently
+    /// tokenizing through qwen35's mark-folding classes.
+    #[test]
+    fn dictalm_tekken_pre_tokenizer_is_the_glm4_split() {
+        const DICTALM_PRE_TOKENIZER: &str = r#"{"type": "Sequence", "pretokenizers": [{"type": "Split", "pattern": {"Regex": "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+"}, "behavior": "Isolated", "invert": false}, {"type": "ByteLevel", "add_prefix_space": false, "trim_offsets": true, "use_regex": false}]}"#;
+        let pt = json::parse(DICTALM_PRE_TOKENIZER).expect("pinned pre_tokenizer parses");
+        let mut regexes = Vec::new();
+        collect_split_regexes(&pt, &mut regexes);
+        assert_eq!(
+            regexes.as_slice(),
+            &[GLM4_PRETOKENIZE_REGEX.to_string()],
+            "the tekken Split regex must stay byte-identical to the glm4 constant"
+        );
+        assert_eq!(pre_from_split_regexes(&regexes), Some("glm4"));
+        assert_eq!(PreSplit::resolve("glm4", false), Ok(PreSplit::Glm4));
+        // and it is a byte-level vocab, not SPM
+        assert!(pre_tokenizer_is_byte_level(&pt));
+    }
+
     /// `collect_split_regexes` walks a Sequence in order and ignores non-Split steps and
     /// `{"String": …}` patterns (gemma's `Split{String:" "}` is not a regex).
     #[test]
