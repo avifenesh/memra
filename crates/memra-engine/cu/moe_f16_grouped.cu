@@ -1187,6 +1187,69 @@ __device__ __forceinline__ void kq_store(const KqRaw& r, __half* __restrict__ ds
     }
 }
 
+// Small-M direct selected-row form (research-only, MEMRA_F16G_SK_SMALL=1).  The
+// matrix DSV4 decode shape has one row per routed expert after CSR compaction
+// (m_e=1), but the visitor below is a 32-row MMA tile.  That makes every
+// `moe_kq_sktail_kernel<108>` CTA compute 31 padded rows and then discard them.
+// This form follows the proven selected-modelopt reader shape: one warp owns one
+// output row and walks the 16-value NVFP4 microblocks.  It retains the DSV4
+// transport contract (FP8-QAT activation -> normalized f16 + row scale) and
+// rounds every dequantized weight to f16 before the f32 FMA.  The reduction and
+// per-element order are intentionally a NEW accumulation class, not a claim of
+// bit identity with the m16n8k16 visitor.  The exact gate must therefore check
+// logits/output identity separately; the current shipped visitor remains the
+// default and is the rollback arm.
+template<int QT>
+static __global__ void __launch_bounds__(32)
+moe_kq_sk1_kernel(
+        const unsigned long long* __restrict__ table, int proj, int n_expert,
+        const int* __restrict__ ex_ids, long row_bytes,
+        const __half* __restrict__ A,
+        float* __restrict__ Y, const float* __restrict__ row_scale,
+        const int* __restrict__ ex_off, int n_active,
+        int in_f, int out_f, int total_rows){
+    if(QT != QT_NVFP4_MODELOPT) return;
+    const int lane = threadIdx.x;
+    for(int t = blockIdx.x; t < total_rows; t += gridDim.x){
+        const int g = t / out_f;
+        const int o = t - g * out_f;
+        if(g >= n_active) return;
+        const int lo = ex_off[g];
+        const int m_e = ex_off[g + 1] - lo;
+        if(m_e != 1) continue;
+
+        const int eid = ex_ids[g];
+        const int qplane = 2 * proj;
+        const uint8_t* Wq = (const uint8_t*)table[(size_t)qplane * n_expert + eid];
+        const uint8_t* Wsc = (const uint8_t*)table[(size_t)(qplane + 1) * n_expert + eid];
+        const uint8_t* qrow = Wq + (size_t)o * row_bytes;
+        const uint8_t* srow = Wsc + (size_t)o * (in_f / 16);
+        const __half* xrow = A + (size_t)lo * in_f;
+        const int groups = in_f / 16;
+        float acc = 0.0f;
+        for(int g16 = lane; g16 < groups; g16 += 32){
+            const float scale = g_e4m3fn_to_float(srow[g16]);
+            const uint8_t* cb = qrow + (size_t)g16 * 8;
+            const int base = g16 * 16;
+            #pragma unroll
+            for(int b = 0; b < 8; b++){
+                const uint8_t byte = cb[b];
+                const int c0 = byte & 0xF;
+                const int c1 = byte >> 4;
+                const __half w0 = __float2half(scale * (float)g_kvalues_mxfp4[c0]);
+                const __half w1 = __float2half(scale * (float)g_kvalues_mxfp4[c1]);
+                acc = __fmaf_rn(__half2float(w0), __half2float(xrow[base + 2 * b]), acc);
+                acc = __fmaf_rn(__half2float(w1), __half2float(xrow[base + 2 * b + 1]), acc);
+            }
+        }
+        #pragma unroll
+        for(int off = 16; off > 0; off >>= 1)
+            acc += __shfl_down_sync(0xffffffff, acc, off);
+        if(lane == 0)
+            Y[(size_t)lo * out_f + o] = acc * row_scale[lo];
+    }
+}
+
 template<int QT>
 static __global__ void __launch_bounds__(128)
 moe_kq_sk32v_kernel(
@@ -1203,6 +1266,7 @@ moe_kq_sk32v_kernel(
     const int ntx = (out_f + SK_BN - 1) / SK_BN;
     kq_stage_codebook<QT>(s_cb);
     sk_tile_prefix(s_pre, ex_off, n_active, ntx, SK_BM, mlo, mhi);
+    if (total_tiles < 0) total_tiles = s_pre[n_active];
 
     const int lane = threadIdx.x, warp = threadIdx.y;
     const int tid  = warp * 32 + lane;
@@ -1310,6 +1374,7 @@ moe_kq_sk128v_kernel(
     const int ntx = (out_f + SK128_BN - 1) / SK128_BN;
     kq_stage_codebook<QT>(s_cb);
     sk_tile_prefix(s_pre, ex_off, n_active, ntx, SK128_BM, mlo, mhi);
+    if (total_tiles < 0) total_tiles = s_pre[n_active];
 
     const int lane = threadIdx.x, warp = threadIdx.y;
     const int tid  = warp * 32 + lane;                        // 0..255
@@ -1471,6 +1536,7 @@ moe_kq_sktail_kernel(
     const int ntx = (out_f + SK_BN - 1) / SK_BN;
     kq_stage_codebook<QT>(s_cb);
     sk_tile_prefix(s_pre, ex_off, n_active, ntx, SK_BM, mlo, mhi);
+    if (total_tiles < 0) total_tiles = s_pre[n_active];
 
     const int lane = threadIdx.x, warp = threadIdx.y;
     const int tid  = warp * 32 + lane;                        // 0..127
@@ -1608,6 +1674,15 @@ static int moe_kq_gemm_sk_launch(const unsigned long long* table, int proj, int 
         const char* e = getenv("MEMRA_F16G_BDB");
         bdb = (e && e[0] == '1') ? 1 : 0;
     }
+    // Small-M DSV4 candidate: only the ModelOpt split-plane class is admitted,
+    // and only when explicitly armed for a bounded A/B.  The regular visitor
+    // remains the default for every qtype and every m_e shape.
+    static int small = -1;
+    if(small < 0){
+        const char* e = getenv("MEMRA_F16G_SK_SMALL");
+        small = (e && e[0] == '1') ? 1 : 0;
+    }
+    const bool small_one = small != 0 && QT == QT_NVFP4_MODELOPT;
     // Both instantiations get the smem opt-in: cudaFuncSetAttribute is per-FUNCTION and
     // per-context, and the two template arms are different functions (the rc=1001 lesson).
     if(occ128_d[cur_dev] == -2){
@@ -1645,12 +1720,96 @@ static int moe_kq_gemm_sk_launch(const unsigned long long* table, int proj, int 
         }
     }
     const int ntx = (out_f + SK_BN - 1) / SK_BN;
+    if (ex_off_host == nullptr) {
+        // Device-route matrix mode deliberately keeps the CSR offsets on-device.
+        // The regular visitors can derive their flat tile count from the device
+        // prefix (`total_tiles < 0`).  The small-M arm uses the same device CSR
+        // directly, so arming it does not introduce a host count readback.
+        if(small_one){
+            static int small_sms_d[SK_MAX_DEV] = {0};
+            static int small_occ_d[SK_MAX_DEV] = {0};
+            if(small_sms_d[cur_dev] == 0){
+                small_sms_d[cur_dev] = sms;
+                if(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+                       &small_occ_d[cur_dev], moe_kq_sk1_kernel<QT>, 32, 0) != cudaSuccess
+                   || small_occ_d[cur_dev] < 1)
+                    small_occ_d[cur_dev] = 1;
+                fprintf(stderr,
+                        "[moe-sk-small] device-prefix dev=%d qt=%d in_f=%d out_f=%d "
+                        "n_active=%d grid_rows=%d occ=%d class=fp4-sk-small-f32acc\n",
+                        cur_dev, QT, in_f, out_f, n_active, n_active * out_f,
+                        small_occ_d[cur_dev]);
+            }
+            const long total_rows = (long)n_active * out_f;
+            const long cap = (long)small_sms_d[cur_dev] * small_occ_d[cur_dev];
+            const int grid = (int)(total_rows < cap ? total_rows : cap);
+            if(grid > 0)
+                moe_kq_sk1_kernel<QT><<<grid, 32, 0, st>>>(
+                    table, proj, n_expert, ex_ids, row_bytes, (const __half*)act_f16, y,
+                    row_scale, ex_off_dev, n_active, in_f, out_f, (int)total_rows);
+        }
+        if (xcross < 0x7fffffff) {
+            const int resident = sms * occ128;
+            const int grid = resident;
+            const int large_mlo = xcross > 1 ? xcross : (small_one ? 2 : 1);
+            if (bdb)
+                moe_kq_sk128v_kernel<QT, true><<<grid, dim3(32,8,1), KQ128_SMEM_BYTES, st>>>(
+                    table, proj, n_expert, ex_ids, row_bytes, (const __half*)act_f16, y,
+                    row_scale, ex_off_dev, n_active, in_f, out_f,
+                    large_mlo, 0x7fffffff, -1);
+            else
+                moe_kq_sk128v_kernel<QT, false><<<grid, dim3(32,8,1), KQ128_SMEM_BYTES, st>>>(
+                    table, proj, n_expert, ex_ids, row_bytes, (const __half*)act_f16, y,
+                    row_scale, ex_off_dev, n_active, in_f, out_f,
+                    large_mlo, 0x7fffffff, -1);
+        }
+        if (xcross > 1) {
+            const int deep = tail != 0 && occt >= 1 && in_f % SKT_BK == 0;
+            const int resident = sms * (deep ? occt : occ32);
+            const int grid = resident;
+            if (deep)
+                moe_kq_sktail_kernel<QT><<<grid, dim3(32,4,1), 0, st>>>(
+                    table, proj, n_expert, ex_ids, row_bytes, (const __half*)act_f16, y,
+                    row_scale, ex_off_dev, n_active, in_f, out_f,
+                    small_one ? 2 : 1, xcross, -1);
+            else
+                moe_kq_sk32v_kernel<QT><<<grid, dim3(32,4,1), 0, st>>>(
+                    table, proj, n_expert, ex_ids, row_bytes, (const __half*)act_f16, y,
+                    row_scale, ex_off_dev, n_active, in_f, out_f,
+                    small_one ? 2 : 1, xcross, -1);
+        }
+        cudaError_t err = cudaGetLastError();
+        return err ? 1000 + (int)err : 0;
+    }
     long t32 = 0, t128 = 0;
     for(int g = 0; g < n_active; g++){
         const int m_e = ex_off_host[g+1] - ex_off_host[g];
         if(m_e <= 0) continue;
+        if(small_one && m_e == 1) continue;
         if(m_e >= xcross) t128 += (long)((m_e + SK128_BM - 1)/SK128_BM) * ntx;
         else              t32  += (long)((m_e + SK_BM - 1)/SK_BM) * ntx;
+    }
+    if(small_one){
+        static int small_sms_d[SK_MAX_DEV] = {0};
+        static int small_occ_d[SK_MAX_DEV] = {0};
+        if(small_sms_d[cur_dev] == 0){
+            small_sms_d[cur_dev] = sms;
+            if(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+                   &small_occ_d[cur_dev], moe_kq_sk1_kernel<QT>, 32, 0) != cudaSuccess
+               || small_occ_d[cur_dev] < 1)
+                small_occ_d[cur_dev] = 1;
+            fprintf(stderr,
+                    "[moe-sk-small] enabled dev=%d qt=%d in_f=%d out_f=%d n_active=%d "
+                    "grid_rows=%d occ=%d class=fp4-sk-small-f32acc\n",
+                    cur_dev, QT, in_f, out_f, n_active, n_active * out_f, small_occ_d[cur_dev]);
+        }
+        const long total_rows = (long)n_active * out_f;
+        const long cap = (long)small_sms_d[cur_dev] * small_occ_d[cur_dev];
+        const int grid = (int)(total_rows < cap ? total_rows : cap);
+        if(grid > 0)
+            moe_kq_sk1_kernel<QT><<<grid, 32, 0, st>>>(
+                table, proj, n_expert, ex_ids, row_bytes, (const __half*)act_f16, y,
+                row_scale, ex_off_dev, n_active, in_f, out_f, (int)total_rows);
     }
     if(t128 > 0){
         const long cap = (long)sms * occ128;
@@ -1673,11 +1832,11 @@ static int moe_kq_gemm_sk_launch(const unsigned long long* table, int proj, int 
         if(deep)
             moe_kq_sktail_kernel<QT><<<grid, dim3(32,4,1), 0, st>>>(
                 table, proj, n_expert, ex_ids, row_bytes, (const __half*)act_f16, y, row_scale,
-                ex_off_dev, n_active, in_f, out_f, 1, xcross, (int)t32);
+                ex_off_dev, n_active, in_f, out_f, small_one ? 2 : 1, xcross, (int)t32);
         else
             moe_kq_sk32v_kernel<QT><<<grid, dim3(32,4,1), 0, st>>>(
                 table, proj, n_expert, ex_ids, row_bytes, (const __half*)act_f16, y, row_scale,
-                ex_off_dev, n_active, in_f, out_f, 1, xcross, (int)t32);
+                ex_off_dev, n_active, in_f, out_f, small_one ? 2 : 1, xcross, (int)t32);
     }
     cudaError_t e=cudaGetLastError();
     if(e) fprintf(stderr, "[moe-sk-err] kq_sk err=%d(%s) n_active=%d max_m=%d in_f=%d out_f=%d\n",
@@ -1847,7 +2006,9 @@ int memra_moe_kq_gemm_sk(const unsigned long long* table, int proj, int n_expert
     if(qtype != QT_Q4_K && qtype != QT_Q6_K && qtype != QT_IQ4_XS && qtype != QT_IQ3_S
        && qtype != QT_NVFP4 && qtype != QT_NVFP4_V2 && qtype != QT_NVFP4_MODELOPT)
         return 2;
-    if(n_active > SK_MAX_G || ex_off_host == nullptr) return 2;
+    // Device-owned CSR is admitted only for the DSV4 ModelOpt split-plane
+    // class. Generic direct visitors retain the host-offset ABI.
+    if(n_active > SK_MAX_G || (ex_off_host == nullptr && qtype != QT_NVFP4_MODELOPT)) return 2;
     if(n_active <= 0 || max_m <= 0) return 0;
     cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
     switch(qtype){
