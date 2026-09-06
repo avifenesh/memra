@@ -1056,6 +1056,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     rm_env("MEMRA_GLM5_TP_EXPERT_SPLIT");
 
+    // ================= Y. SYMMETRIC walk door on the same-device gate =================
+    // The symmetric walk needs a kernel peer store (the one-shot all-reduce), which two contexts
+    // on ONE device cannot do, so on this rig the door must DECLINE LOUDLY and take the
+    // root-orchestrated walk, and the loader half (the replicated glue) must not disturb it.
+    // That is what this arm proves: with all three doors set, decode is the same named class
+    // as arm S and the tape matches. The symmetric walk's own numeric row is a two-device gate
+    // and runs on the pair.
+    eprintln!("[phase] arm Y: symmetric door on the same-device gate (loud decline + glue inert)");
+    set_env("MEMRA_GLM5_TP_EXPERT_SPLIT", "1");
+    set_env("MEMRA_GLM5_TP_SYMMETRIC", "1");
+    set_env("MEMRA_TP_AR_1STAGE", "1");
+    run_tp_arm(
+        &cx2,
+        "Y tp-symmetric-declines-on-one-card",
+        "all@0,1",
+        None,
+        None,
+        false,
+        Some(PRIME_BAND),
+        &mut verdicts,
+    )?;
+    rm_env("MEMRA_TP_AR_1STAGE");
+    rm_env("MEMRA_GLM5_TP_SYMMETRIC");
+    rm_env("MEMRA_GLM5_TP_EXPERT_SPLIT");
+
+    rm_env("MEMRA_GLM5_TP_EXPERT_SPLIT");
+
     // ================= E/F. poison + co-refusal on a live TP model =================
     eprintln!("[phase] arm E/F: plain-path poison + spec co-refusal");
     set_env("MEMRA_GLM5_TP", "all@0,1");

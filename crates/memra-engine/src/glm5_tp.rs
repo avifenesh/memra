@@ -978,7 +978,18 @@ pub(crate) fn shard_kda_layer(
             // COLUMN-parallel wo: rank r owns OUT rows [r*hh, (r+1)*hh) over the FULL qkv
             // input — consumed by the join over the gathered gated tensor, never by
             // kda_core_gated itself.
-            wo: shard_rows(e, dst, &la.wo, wr * hh..(wr + 1) * hh)?,
+            // COLUMN-parallel wo (default): out rows over the FULL gathered qkv, so the walk
+            // must all-gather every rank's channels before the multiply and concat the out-row
+            // bands after it. Under the SYMMETRIC door wo is sharded by input columns matching
+            // this rank's own channels instead, so it multiplies only what it just computed and
+            // produces a full-width partial sum: the gather and the concat both disappear and ONE
+            // reduction replaces them. Named class, same reason as the MLA and expert splits: the
+            // K reduction runs two ways instead of one pass.
+            wo: if glm5_tp_symmetric_on() {
+                shard_cols(e, dst, &la.wo, wr * ql..(wr + 1) * ql)?
+            } else {
+                shard_rows(e, dst, &la.wo, wr * hh..(wr + 1) * hh)?
+            },
             conv: conv_rank(dst, r)?,
             a_log: shard_rows(e, dst, &la.a_log, r * hl..(r + 1) * hl)?,
             dt_bias: shard_rows(e, dst, &la.dt_bias, r * ql..(r + 1) * ql)?,
@@ -1163,6 +1174,46 @@ fn kda_tp_core(
         .iter()
         .map(|g| g.as_ref().expect("filled above"))
         .collect();
+
+    // ROW-PARALLEL wo (`MEMRA_GLM5_TP_SYMMETRIC` K-sliced it at load): each rank multiplies only
+    // its own channels and produces a FULL-WIDTH partial sum, so the all-gather and the concat
+    // both go and one reduction replaces them. This branch is what makes the root-orchestrated
+    // walk CORRECT whenever the symmetric walk declines (the same-device gate, any single-card
+    // pairing): the first cut K-sliced the weight and left this tail column-parallel, and the
+    // gate read it as max_rel 1.1e2 with the tape broken.
+    if glm5_tp_symmetric_on() {
+        let mut partials = Vec::with_capacity(ranks);
+        for r in 0..ranks {
+            let dev = if r == 0 { e } else { &rt.peers[r - 1] };
+            let la = if r == 0 { la_root } else { &tp.peers[r - 1] };
+            partials.push(if rows_exact {
+                dev.matmul_rows_exact(&la.wo, gated_refs[r], t)?
+            } else {
+                dev.matmul(&la.wo, gated_refs[r], t)?
+            });
+        }
+        let mut y = partials.remove(0);
+        let reduced = if partials.len() == 1 && rt.ar_1stage_available() {
+            let mut peer_y = partials.remove(0);
+            let done = rt.ar_1stage(e, &mut [&mut y, &mut peer_y], t * n_embd)?;
+            if !done {
+                partials.insert(0, peer_y);
+            }
+            done
+        } else {
+            false
+        };
+        if !reduced {
+            for (r, peer_y) in partials.iter().enumerate() {
+                let landed =
+                    crate::tp_transport::return_row_to_root(&hop, r + 1, peer_y, t * n_embd)?;
+                let mut dst = y.slice_mut(0..t * n_embd);
+                e.axpy_into(&landed, 1.0, &mut dst, t * n_embd)?;
+            }
+        }
+        return Ok(y);
+    }
+
     let fulls = crate::tp_transport::gather_parts(&hop, &gated_refs, t, ql)?;
 
     // Per-rank column wo slices: each output element is one full-K dot by the SAME kernel
@@ -1186,6 +1237,78 @@ fn kda_tp_core(
 }
 
 /// The KDA TP walk for one prime/decode call — [`kda_tp_core`] with no verify capture.
+/// The SYMMETRIC KDA mixer (lane/tp-symmetric-20260906): every rank already holds its own copy of
+/// the layer input, so there is no fan-out; each rank runs its heads over its own `x`, multiplies
+/// by its ROW-PARALLEL `wo` (its own channels, full output width), and the two partial sums meet
+/// in ONE one-shot all-reduce that leaves the mixer output on BOTH ranks. Two crossings per layer
+/// become zero here and one reduction, against the root-orchestrated path's fan-out, all-gather
+/// and concat.
+///
+/// Requires the symmetric door (so `wo` was K-sliced at load) and a real two-device group (the
+/// one-shot needs a kernel peer store). Named class: not byte-identical to the unsharded walk.
+#[allow(clippy::too_many_arguments)] // mirrors the kda entry contract shape
+pub(crate) fn kda_tp_cached_sym(
+    e: &Engine,
+    la_root: &KdaAttnLayer,
+    x_by_rank: &[&CudaSlice<f32>],
+    t: usize,
+    eps: f32,
+    cache: &mut Cache,
+    il: usize,
+    arm: ConvArm,
+) -> Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+    let tp = la_root
+        .tp
+        .as_ref()
+        .ok_or("kda_tp_cached_sym called on an unsharded layer")?;
+    let rt = &tp.rt;
+    let ranks = rt.ranks();
+    if ranks != 2 || x_by_rank.len() != 2 {
+        return Err("kda_tp_cached_sym: this arm is two ranks".into());
+    }
+    if !glm5_tp_symmetric_on() || !rt.ar_1stage_available() {
+        return Err(
+            "kda_tp_cached_sym: needs MEMRA_GLM5_TP_SYMMETRIC and a real two-device group".into(),
+        );
+    }
+    let n_embd = tp.n_embd;
+    let states = ensure_kda_tp_state(e, rt, la_root, cache, il)?;
+    let mut partials: Vec<CudaSlice<f32>> = Vec::with_capacity(ranks);
+    for r in 0..ranks {
+        let dev = if r == 0 { e } else { &rt.peers[r - 1] };
+        let la = if r == 0 { la_root } else { &tp.peers[r - 1] };
+        let RecurLayer {
+            conv_state,
+            ssm_state,
+            ssm_state_alt,
+        } = &mut states[r];
+        let gated = crate::kda::kda_core_gated(
+            dev,
+            la,
+            x_by_rank[r],
+            t,
+            eps,
+            conv_state,
+            ssm_state,
+            ssm_state_alt,
+            arm,
+            crate::kda::KdaStash::None,
+            None,
+            None,
+            None,
+        )?;
+        std::mem::swap(ssm_state, ssm_state_alt);
+        // Row-parallel wo: this rank's channels in, the FULL hidden width out, as a partial sum.
+        partials.push(dev.matmul(&la.wo, &gated, t)?);
+    }
+    let (a, b) = partials.split_at_mut(1);
+    let reduced = rt.ar_1stage(e, &mut [&mut a[0], &mut b[0]], t * n_embd)?;
+    if !reduced {
+        return Err("kda_tp_cached_sym: the one-shot declined after availability said yes".into());
+    }
+    Ok(partials)
+}
+
 #[allow(clippy::too_many_arguments)] // mirrors the kda entry contract shape
 pub(crate) fn kda_tp_cached(
     e: &Engine,
