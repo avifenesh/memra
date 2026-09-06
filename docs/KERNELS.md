@@ -256,6 +256,19 @@ counter-based" (spec_sample.cu:1-5).
 | `gumbel_perturb_*`, `softmax_gather_*`, `residual_sample_*`, `filter_stats_f32`, `scatter_trim_logits_*`, `penalize_logits_*` (including heterogeneous sparse serving rows), `mask_logits_f32`, `memra_sctr_inc` | Gumbel-max sampling, top-k/p filtering, penalties, residual (rejection) sampler | sampling chain via MEMRA_TEMP/TOP_K/TOP_P/MIN_P/PENALTY_* plus batched serving `MEMRA_SERVE_DEVPENALTY` |
 | `spec_accept_greedy_dc`, `spec_seed_gather`, `spec_rollback_stream`, `spec_assemble_verify`, `spec_ring_commit`, `spec_adapt_k`, `plain_tok_ring`, misc int copies | spec-decode accept/rollback/fork machinery | MEMRA_SPEC_* family (MEMRA_SPEC_DUAL_T lib.rs; MEMRA_SPEC_DFLASH FLAGS.md:25) |
 
+ROOFLINE PROBES (lane/b200-roofline-recalibrate, 2026-09-06, BENCH-ONLY, no serving path
+reaches them): `memra_bw_read` (`memra_bw_read_scalar_kernel<ILP>` / `memra_bw_read_v4_kernel<ILP>`)
+and `memra_bw_read_slabs` (`memra_bw_read_slabs_kernel`). Read-only streamers whose accumulator
+escapes through a comparison that cannot hold, so the loads stay live with no write in the timed
+loop. They exist because the pair's quoted 4062 GB/s "measured wall" was taken with
+`dsv4_hc_collapse_kernel` standing in as a streamer (`MEMRA_HC_BW_PROBE`): one thread per output
+element, no grid-stride reuse, four SCALAR 32-bit loads per thread, so four times the load
+instructions a 128-bit access issues for the same bytes. The `mode=0` arm reproduces that access
+shape so the recalibration is anchored to the number it replaces; `mode=1` is the same bytes
+through `float4`; the slab launcher reads N disjoint slabs at caller-given offsets, defaulting to
+a whole token's expert read (45 x 9 x 14 MiB = 5.5 GiB, sized past B200's 126 MB L2 on purpose).
+Driver: `bw-roofline` (`src/bin/bw_roofline.rs`), no flag, no default.
+
 ### cu/dsv4_gpu.cu — mHC (hyper-connections) glue kernels, partial inventory (static-lib TU, not a fatbin; compiled `-fmad=false` for bit-parity with the CPU oracle — build.rs:505-510)
 
 This ~3,700-line file (`memra_dsv4_*` FFI namespace) carries the dsv4/glm5_next dense +

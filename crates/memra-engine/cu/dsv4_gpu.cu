@@ -4792,3 +4792,118 @@ extern "C" int memra_dsv4_dots_f32_rowblk(const float *x, const void *w, int w_i
     DSV4_ERR();
     return 0;
 }
+
+// ---------------------------------------------------------------- roofline probes
+//
+// WHY THESE EXIST (lane/b200-roofline-recalibrate, 2026-09-06). The pair's "measured
+// achievable bandwidth", 4062 GB/s, on which every percent-of-wall claim in the glm5 B200
+// lane now rests, was taken with `dsv4_hc_collapse_kernel` standing in as a streamer
+// (`MEMRA_HC_BW_PROBE`). That kernel was written to collapse hc planes, not to saturate
+// HBM: one thread per output element with no grid-stride reuse, and four SCALAR 32-bit
+// loads per thread. A warp's 32 lanes x 4 B is one 128 B transaction per instruction, so
+// the bytes are perfectly coalesced but the kernel needs FOUR TIMES the load instructions
+// that a 128-bit access issues for the same bytes. A number taken that way is a floor on
+// what the part delivers, not a wall, and 4062 GB/s is 51% of B200's nominal 8 TB/s on a
+// confirmed full-power 1000 W part at 3996 MHz memory, which is low for a streamer.
+//
+// Three arms, so the difference between them is the answer rather than an opinion:
+//   * `mode=0` reproduces the old probe's ACCESS SHAPE (scalar 32-bit loads, ILP from the
+//     unroll) at the same sizes, so the recalibration is anchored to the number it replaces.
+//   * `mode=1` is the same bytes through 128-bit `float4` loads.
+//   * the slab launcher reads N disjoint slabs at caller-given offsets instead of one
+//     contiguous run. That is the MoE expert access: a token touches 9 of 288 experts per
+//     layer, each a ~14 MB slab scattered through an ~80 GB pool, and whether that pattern
+//     can reach the contiguous rate is exactly the question the `MEMRA_MOE_EXPERT_RP` and
+//     remint levers are being sized against.
+//
+// Bench-only: nothing on a serving path calls these. The accumulator is spilled through a
+// comparison that cannot hold, so the loads stay live without a write in the timed loop.
+template <int ILP>
+__global__ void memra_bw_read_scalar_kernel(const float *__restrict__ x, long n,
+                                            float *__restrict__ sink) {
+    long stride = (long)gridDim.x * blockDim.x;
+    long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    float acc = 0.0f;
+    for (long b = i; b < n; b += stride * ILP) {
+        float v[ILP];
+#pragma unroll
+        for (int j = 0; j < ILP; j++) {
+            long o = b + (long)j * stride;
+            v[j] = (o < n) ? x[o] : 0.0f;
+        }
+#pragma unroll
+        for (int j = 0; j < ILP; j++) acc += v[j];
+    }
+    if (acc == 1.2345e-30f) sink[0] = acc;
+}
+
+template <int ILP>
+__global__ void memra_bw_read_v4_kernel(const float4 *__restrict__ x, long n4,
+                                        float *__restrict__ sink) {
+    long stride = (long)gridDim.x * blockDim.x;
+    long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    float acc = 0.0f;
+    for (long b = i; b < n4; b += stride * ILP) {
+        float4 v[ILP];
+#pragma unroll
+        for (int j = 0; j < ILP; j++) {
+            long o = b + (long)j * stride;
+            v[j] = (o < n4) ? x[o] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+        }
+#pragma unroll
+        for (int j = 0; j < ILP; j++) acc += v[j].x + v[j].y + v[j].z + v[j].w;
+    }
+    if (acc == 1.2345e-30f) sink[0] = acc;
+}
+
+// One slab per blockIdx.y; the x-grid strides within the slab. 128-bit loads throughout, so
+// the only difference from `mode=1` is WHERE the bytes are, which is the whole point.
+__global__ void memra_bw_read_slabs_kernel(const float4 *__restrict__ x,
+                                           const long *__restrict__ off4, long slab_n4,
+                                           float *__restrict__ sink) {
+    const float4 *s = x + off4[blockIdx.y];
+    long stride = (long)gridDim.x * blockDim.x;
+    float acc = 0.0f;
+    for (long i = (long)blockIdx.x * blockDim.x + threadIdx.x; i < slab_n4; i += stride) {
+        float4 v = s[i];
+        acc += v.x + v.y + v.z + v.w;
+    }
+    if (acc == 1.2345e-30f) sink[0] = acc;
+}
+
+extern "C" int memra_bw_read(const float *x, long n_floats, float *sink, int mode, int ilp,
+                             int blocks, int threads, void *stream_v) {
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    dim3 grid((unsigned)blocks), block((unsigned)threads);
+    if (mode == 0) {
+        switch (ilp) {
+        case 1: memra_bw_read_scalar_kernel<1><<<grid, block, 0, stream>>>(x, n_floats, sink); break;
+        case 2: memra_bw_read_scalar_kernel<2><<<grid, block, 0, stream>>>(x, n_floats, sink); break;
+        case 4: memra_bw_read_scalar_kernel<4><<<grid, block, 0, stream>>>(x, n_floats, sink); break;
+        case 8: memra_bw_read_scalar_kernel<8><<<grid, block, 0, stream>>>(x, n_floats, sink); break;
+        default: return 2;
+        }
+    } else {
+        const float4 *x4 = (const float4 *)x;
+        long n4 = n_floats / 4;
+        switch (ilp) {
+        case 1: memra_bw_read_v4_kernel<1><<<grid, block, 0, stream>>>(x4, n4, sink); break;
+        case 2: memra_bw_read_v4_kernel<2><<<grid, block, 0, stream>>>(x4, n4, sink); break;
+        case 4: memra_bw_read_v4_kernel<4><<<grid, block, 0, stream>>>(x4, n4, sink); break;
+        case 8: memra_bw_read_v4_kernel<8><<<grid, block, 0, stream>>>(x4, n4, sink); break;
+        default: return 2;
+        }
+    }
+    DSV4_ERR();
+    return 0;
+}
+
+extern "C" int memra_bw_read_slabs(const float *x, const long *off4, int nslabs, long slab_floats,
+                                   float *sink, int blocks, int threads, void *stream_v) {
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    dim3 grid((unsigned)blocks, (unsigned)nslabs), block((unsigned)threads);
+    memra_bw_read_slabs_kernel<<<grid, block, 0, stream>>>((const float4 *)x, off4,
+                                                           slab_floats / 4, sink);
+    DSV4_ERR();
+    return 0;
+}
