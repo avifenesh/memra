@@ -617,37 +617,6 @@ unsafe extern "C" {
         niters: *mut i32,
         stream: *mut c_void,
     ) -> i32;
-    /// `dsv4_hc_pre_fused_v3` with `rms_norm_zq8_f32_v2` appended in the same block
-    /// (lane/hcpre-zq8-fusion-20260905): stages 1-3 verbatim, then the norm's two passes over the
-    /// `y` just written, with the norm's own block width `rms_bd` (must be whole warps and <=
-    /// `block`) and its own epsilon `eps_norm`. Emits `z` (the normed f32 row) and the q8_1 pair
-    /// `(out_q, out_d)`. Bit-identical to running the two kernels in sequence.
-    #[allow(clippy::too_many_arguments)]
-    pub fn memra_dsv4_hc_pre_zq8(
-        x: *const f32,
-        mixes: *const f32,
-        scale: *const f32,
-        base: *const f32,
-        pre: *mut f32,
-        post: *mut f32,
-        comb: *mut f32,
-        y: *mut f32,
-        s: i32,
-        hc: i32,
-        d: i32,
-        iters: i32,
-        eps: f32,
-        niters: *mut i32,
-        block: i32,
-        sink_reg: i32,
-        norm_w: *const f32,
-        z: *mut f32,
-        out_q: *mut i8,
-        out_d: *mut f32,
-        rms_bd: i32,
-        eps_norm: f32,
-        stream: *mut c_void,
-    ) -> i32;
     /// `memra_dsv4_hc_pre_fused_v2` with the block size as a parameter (door
     /// `MEMRA_HC_PRE_BLOCK`, lane/b200-hcpre-wide-20260903). v2 hardcodes `<<<s, 128>>>`,
     /// one block per row, so at t=1 decode the whole call is ONE block of 128 threads on a
@@ -700,32 +669,6 @@ unsafe extern "C" {
         iters: i32,
         eps: f32,
         stamps: *mut u64,
-        stream: *mut c_void,
-    ) -> i32;
-    /// hc pre-chain v4 with the norm folded in (lane/hc-pre-v4z-20260905): v4's outputs plus the
-    /// `rms_norm_zq8_f32_v2` replay of `y` (z, q8_1 pair) with every operation pinned to the
-    /// served kernel's compiled form. 40025 = shape does not fit (caller runs the two launches).
-    pub fn memra_dsv4_hc_pre_v4z(
-        x: *const f32,
-        mixes: *const f32,
-        scale: *const f32,
-        base: *const f32,
-        pre: *mut f32,
-        post: *mut f32,
-        comb: *mut f32,
-        y: *mut f32,
-        s: i32,
-        hc: i32,
-        d: i32,
-        iters: i32,
-        eps: f32,
-        niters: *mut i32,
-        norm_w: *const f32,
-        z: *mut f32,
-        out_q: *mut i8,
-        out_d: *mut f32,
-        eps_norm: f32,
-        nb: i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_hc_pre_v4(
