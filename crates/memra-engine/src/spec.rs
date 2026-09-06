@@ -4045,7 +4045,9 @@ impl HybridModel {
 
         let mut ag = e.uninit(nh * hd)?;
         e.attn_head_gate(&attn, &gt, &mut ag, None, hd, nh, 1)?;
-        e.matmul(&fa.wo, &ag, 1)
+        // AWQ (memra#253): o_proj's per-input-channel scale.
+        let __wpqs = e.pre_quant_scaled(&ag, fa.wo_pqs.as_ref(), fa.wo.in_features(), 1)?;
+        e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&ag), 1)
     }
 
     /// The dcw draft arm's kernel-class precondition, mirrored from `fa_decode_dcw`'s own
@@ -4227,7 +4229,9 @@ impl HybridModel {
 
         let mut ag = e.zeros(nh * hd)?;
         e.attn_head_gate(&attn, &gt, &mut ag, None, hd, nh, 1)?;
-        e.matmul(&fa.wo, &ag, 1)
+        // AWQ (memra#253): o_proj's per-input-channel scale.
+        let __wpqs = e.pre_quant_scaled(&ag, fa.wo_pqs.as_ref(), fa.wo.in_features(), 1)?;
+        e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&ag), 1)
     }
 
     /// MTP-block full attention, T=1, on the scratch KV (BOTH draft paths — eager and graph):
@@ -4353,7 +4357,9 @@ impl HybridModel {
             }
             None => attn,
         };
-        e.matmul(&fa.wo, &attn_g, 1)
+        // AWQ (memra#253): o_proj's per-input-channel scale.
+        let __wpqs = e.pre_quant_scaled(&attn_g, fa.wo_pqs.as_ref(), fa.wo.in_features(), 1)?;
+        e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn_g), 1)
     }
 
     /// PERSISTENT-DRAFT-KV fill (the reference engine's "mtp_update" analogue): compute the MTP
@@ -7030,7 +7036,10 @@ impl HybridModel {
                     }
                     None => attn,
                 };
-                e.matmul(&fa.wo, &attn_g, t)?
+                // AWQ (memra#253): o_proj's per-input-channel scale.
+                let __wpqs =
+                    e.pre_quant_scaled(&attn_g, fa.wo_pqs.as_ref(), fa.wo.in_features(), t)?;
+                e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn_g), t)?
             }
         };
 
@@ -8738,7 +8747,14 @@ impl HybridModel {
         // (128-thread, different FP sum order than MMVQ). Force MMVQ for bit-identity with decode.
         match self.full_attn_tp_o(e, fa, &attn_g, t)? {
             Some(output) => Ok(output),
-            None => Ok(e.matmul_decode_exact(&fa.wo, &attn_g, t)?),
+            None => {
+                // AWQ (memra#253): the TP arm scales inside `full_attn_tp_o`; this branch is
+                // the single-GPU path and has to scale for itself. Verify reproduces decode's
+                // math, so an unscaled projection here is a divergence, not a shortcut.
+                let __wpqs =
+                    e.pre_quant_scaled(&attn_g, fa.wo_pqs.as_ref(), fa.wo.in_features(), t)?;
+                Ok(e.matmul_decode_exact(&fa.wo, __wpqs.as_ref().unwrap_or(&attn_g), t)?)
+            }
         }
     }
 
