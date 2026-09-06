@@ -216,6 +216,32 @@ unsafe extern "C" {
         eps: f32,
         stream: *mut c_void,
     ) -> i32;
+    /// Roofline probe: read `n_floats` from `x` and discard, `mode` 0 = scalar 32-bit loads
+    /// (the shape the old `MEMRA_HC_BW_PROBE` number was taken with), 1 = 128-bit `float4`.
+    /// Bench-only (`bw_roofline`); nothing on a serving path calls it.
+    pub fn memra_bw_read(
+        x: *const f32,
+        n_floats: i64,
+        sink: *mut f32,
+        mode: i32,
+        ilp: i32,
+        blocks: i32,
+        threads: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Roofline probe, scattered form: `nslabs` disjoint slabs of `slab_floats` each, at the
+    /// float4 offsets in `off4`. Models the MoE expert read (9 of 288 slabs per layer out of a
+    /// pool far larger than any cache) against the contiguous rate.
+    pub fn memra_bw_read_slabs(
+        x: *const f32,
+        off4: *const i64,
+        nslabs: i32,
+        slab_floats: i64,
+        sink: *mut f32,
+        blocks: i32,
+        threads: i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_hc_collapse(
         x: *const f32,
         pre: *const f32,
