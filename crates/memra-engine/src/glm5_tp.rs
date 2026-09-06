@@ -1592,6 +1592,12 @@ pub(crate) fn arm_moe_ep(
     // work, so the two arms are exclusive rather than composable.
     if glm5_tp_expert_split_on() {
         let n_embd = m.gate_inp.in_features();
+        // Drop the root-resident full slab FIRST. The half-expert shards supersede it exactly as
+        // the EP slices do at the bottom of this function, and holding both does not fit: the pair
+        // OOM'd on the served mint with the resident set at 187.54 GB of a 189.63 GB free budget
+        // and the shards needing ~94 GB on top. This early return used to skip that line, which is
+        // the whole bug.
+        m.dev_exps = None;
         m.glm5_tp_split = Some(shard_moe_layer_split(e, rt, m, n_embd)?);
         return Ok(());
     }
