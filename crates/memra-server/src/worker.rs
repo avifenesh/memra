@@ -14781,6 +14781,10 @@ pub fn run(
                     )
                 });
                 let was_dspark_step = active[i].dspark_on;
+                // Live session count for this tick's dspark burst (memra#249 levers 8 + 25).
+                // Taken BEFORE the `&mut active[i]` borrow, and it counts the sessions that
+                // will actually contend for this step — `finished` are already retired.
+                let n_live = active.len().saturating_sub(finished.len()).max(1);
                 // MEMRA_STEP_OOM_FAULT (diagnostic door, battery-20260831 tenancy-gates
                 // T2): forge a quoted CUDA OOM instead of running this step, LOUD and
                 // named. The step itself is SKIPPED (no device work on a card the gate is
@@ -14798,7 +14802,7 @@ pub fn run(
                     );
                     Err(STEP_OOM_FAULT_MSG.into())
                 } else if was_dspark_step {
-                    step_dspark_spec(&engine, &loaded, &mut dspark_drafts, &mut active[i])
+                    step_dspark_spec(&engine, &loaded, &mut dspark_drafts, n_live, &mut active[i])
                 } else if active[i].glm5_on {
                     step_glm5_spec(&engine, &loaded, &mut active[i])
                 } else if active[i].gspec_k > 0 {
@@ -22630,6 +22634,11 @@ fn step_dspark_spec(
     engine: &Engine,
     loaded: &HashMap<String, LoadedModel>,
     dspark_drafts: &mut std::collections::HashMap<String, memra_engine::dflash::DflashDraft>,
+    // Live session count at the top of this tick (lane/dspark-k-by-batch, memra#249 levers
+    // 8 + 25). The SCHEDULER owns this number — the engine has no view of the active set —
+    // and it is read only under `MEMRA_DSPARK_K_BY_BATCH`; with the door shut the burst
+    // ignores it and the path is byte-identical.
+    n_live: usize,
     s: &mut Session,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let lm = &loaded[&s.model];
@@ -22783,6 +22792,7 @@ fn step_dspark_spec(
         send_ok = emitted.send_ok;
     };
     let sess = s.dspark.as_mut().unwrap();
+    sess.active_sessions = n_live;
     let rounds_before = sess.rounds;
     let (burst, dr, ac) = if eager_first_token {
         lm.model.dspark_spec_session_burst_streamed(
@@ -28072,7 +28082,7 @@ mod tests {
         //    the gemma arm and the plain fallback (a glm5 session reaching either is the
         //    empty-context garbage class).
         let dispatch = code
-            .find("step_dspark_spec(&engine, &loaded, &mut dspark_drafts, &mut active[i])")
+            .find("step_dspark_spec(&engine, &loaded, &mut dspark_drafts, n_live, &mut active[i])")
             .expect("the spec dispatch exists");
         let window = &code[dispatch..dispatch + 700];
         let glm5_arm = window

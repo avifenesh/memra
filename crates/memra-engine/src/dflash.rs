@@ -4226,6 +4226,45 @@ pub struct DsparkSpecSession {
     /// across bursts so a burst boundary never resets the stream the client asked us to
     /// penalize. Empty (and never touched) when the request carries no penalties.
     pen_hist: Vec<u32>,
+    /// LIVE CONCURRENCY at the start of this burst, set by the worker each tick
+    /// (lane/dspark-k-by-batch, memra#249 levers 8 + 25). `0` = unknown/unset, which is what
+    /// every non-serving caller leaves and what makes the door a no-op for them. Read only
+    /// under `MEMRA_DSPARK_K_BY_BATCH`; the scheduler owns the number, the engine owns what
+    /// to do with it.
+    pub active_sessions: usize,
+}
+
+/// VERIFY WIDTH BY LIVE BATCH (lane/dspark-k-by-batch, memra#249 levers 8 "K-by-batch" and
+/// 25 "DSpark-paper L at c>1", which are one knob: how many draft rows a round should carry
+/// when the box is serving more than one session).
+///
+/// THE ARGUMENT. A dspark round verifies `vt` rows in ONE walk. At concurrency 1 that walk is
+/// nearly free against the decode it replaces, so a wide window is pure win. At concurrency c
+/// the GPU is shared: the same walk now costs every other session its share of the step, while
+/// the accept rate per row is unchanged, so the marginal row stops paying long before it does
+/// at c=1. Both the K-by-batch and the DSpark-paper-L items describe that same shrink.
+///
+/// THE RULE. `vt_cap / c`, floored at `MIN` so a round always carries the anchor plus real
+/// drafts. Integer ceil-division, so c=1 returns `vt_cap` EXACTLY — the door cannot perturb
+/// the single-session path even when armed, which is what keeps the low-load fleet
+/// byte-identical while the cell measures c > 1.
+///
+/// DEFAULT OFF. The shrink schedule is a claim about our accept curve and our verify cost, and
+/// neither has been measured under concurrency on this route; the cell that does it is c ∈
+/// {1,2,4,8} against this same binary with the door shut.
+pub(crate) fn dspark_vt_for_active(vt_cap: usize, active: usize, on: bool) -> usize {
+    const MIN: usize = 3;
+    if !on || active <= 1 {
+        return vt_cap;
+    }
+    vt_cap.div_ceil(active).max(MIN).min(vt_cap)
+}
+
+/// `MEMRA_DSPARK_K_BY_BATCH` (default **0 = OFF by design**). Arms [`dspark_vt_for_active`].
+/// Read per burst, the `MEMRA_SPEC_BURST` convention, so a gate can flip it between bursts in
+/// one process.
+pub(crate) fn dspark_k_by_batch_on() -> bool {
+    std::env::var("MEMRA_DSPARK_K_BY_BATCH").as_deref() == Ok("1")
 }
 
 fn dspark_commit_limit(
@@ -4753,6 +4792,7 @@ impl crate::hybrid::HybridModel {
             sctr: sctr0,
             uctr: 0,
             pen_hist,
+            active_sessions: 0,
         })
     }
 
@@ -4936,6 +4976,7 @@ impl crate::hybrid::HybridModel {
             sctr: sctr0,
             uctr: 0,
             pen_hist,
+            active_sessions: 0,
         })
     }
 
@@ -5164,6 +5205,10 @@ impl crate::hybrid::HybridModel {
             .and_then(|v| v.parse().ok())
             .unwrap_or(nd + 1)
             .clamp(2, nd + 1);
+        // K-BY-BATCH (memra#249 levers 8 + 25): narrow the round's verify window when the box
+        // is serving more than one session. `active_sessions == 0` (every non-serving caller)
+        // and c == 1 both return `vt_cap` unchanged, so this is inert off the serving path.
+        let vt_cap = dspark_vt_for_active(vt_cap, sess.active_sessions, dspark_k_by_batch_on());
         let adapt = std::env::var("MEMRA_DFLASH_ADAPT").as_deref() != Ok("0");
         // Verify-window policy (H4, DSPARK-POSTMORTEM-20260820.md) — identical to the
         // bin arm: default = confidence-slot tau=.5 on a head-carrying checkpoint
@@ -7355,5 +7400,68 @@ mod dspark_boundary_capture_tests {
         assert!(
             super::dspark_resume_split(DsparkCapture::Boundary(14_592), 13_440, 2_048, 0).is_err()
         );
+    }
+}
+
+#[cfg(test)]
+mod dspark_k_by_batch_tests {
+    use super::dspark_vt_for_active as vt;
+
+    #[test]
+    fn door_shut_is_the_identity_at_every_concurrency() {
+        // THE ROLLBACK CONTRACT. With the door shut the rule must not move a single round's
+        // width, whatever the scheduler reports.
+        for c in [0usize, 1, 2, 3, 4, 8, 64] {
+            for cap in [2usize, 3, 5, 8, 17] {
+                assert_eq!(
+                    vt(cap, c, false),
+                    cap,
+                    "door shut must not touch vt (c={c})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn one_session_is_the_identity_even_armed() {
+        // The low-load fleet is the shipped shape: armed or not, c<=1 must be byte-identical,
+        // which is what lets the door be measured on a busy box without disturbing a quiet one.
+        for cap in [2usize, 3, 5, 8, 17] {
+            assert_eq!(vt(cap, 0, true), cap, "unknown concurrency is not a shrink");
+            assert_eq!(vt(cap, 1, true), cap, "c=1 must be exactly vt_cap");
+        }
+    }
+
+    #[test]
+    fn width_shrinks_with_concurrency_and_never_below_the_floor() {
+        // 17 rows at c=1, halved at 2, quartered at 4 — ceil division, so a round never
+        // silently loses its last draft to rounding.
+        assert_eq!(vt(17, 2, true), 9);
+        assert_eq!(vt(17, 4, true), 5);
+        assert_eq!(vt(17, 8, true), 3);
+        // The floor holds however crowded the box gets: anchor plus real drafts, always.
+        for c in [8usize, 16, 64, 1024] {
+            assert!(vt(17, c, true) >= 3, "c={c} fell through the floor");
+        }
+        // Monotone non-increasing in c: more contention never widens the window.
+        let mut prev = vt(17, 1, true);
+        for c in 2..=32 {
+            let now = vt(17, c, true);
+            assert!(now <= prev, "width grew from c={} to c={c}", c - 1);
+            prev = now;
+        }
+    }
+
+    #[test]
+    fn the_shrink_never_exceeds_the_cap_it_was_given() {
+        // A cap already at or below the floor must not be INFLATED by the floor clamp — that
+        // would widen a round the operator deliberately narrowed with MEMRA_DFLASH_VERIFY_T.
+        assert_eq!(vt(2, 8, true), 2);
+        assert_eq!(vt(3, 8, true), 3);
+        for cap in [2usize, 3] {
+            for c in [2usize, 4, 8, 64] {
+                assert!(vt(cap, c, true) <= cap, "cap {cap} inflated at c={c}");
+            }
+        }
     }
 }
