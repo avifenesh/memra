@@ -2909,16 +2909,6 @@ mod b200_posture_default_tests {
     }
 }
 
-/// `MEMRA_HC_PRE_V4Z=1` (lane/hc-pre-v4z-20260905): under `MEMRA_HC_PRE_ZQ8=1`, the fused
-/// hc-pre + norm launch is the v4 register schedule with `rms_norm_zq8_f32_v2` replayed inside
-/// the block (`dsv4_hc_pre_v4z_e16_kernel`), every norm operation pinned to the served kernel's
-/// compiled form. Refuses (falls back to the zq8 kernel) off the served shape. Default OFF
-/// pending its model-scale row.
-pub fn hc_pre_v4z_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_HC_PRE_V4Z").as_deref() == Ok("1"))
-}
-
 /// `MEMRA_MLA_ABSORB_BF16=1` (lane/mla-absorb-bf16-20260905): the MLA absorb planes `wk_b` /
 /// `wv_b` are read as BF16 by the decode `_wp` kernels instead of the f32 copy the loader
 /// materializes (738 -> 369 MB per token on GLM-5.3-Flash). Exact where the source plane is
@@ -2928,31 +2918,6 @@ pub fn hc_pre_v4z_on() -> bool {
 pub fn mla_absorb_bf16_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_MLA_ABSORB_BF16").as_deref() == Ok("1"))
-}
-
-/// `MEMRA_HC_PRE_ZQ8` (lane/hcpre-zq8-fusion-20260905): run each hc site's pre-chain AND the
-/// `rms_norm_zq8` that consumes its output as ONE launch (`dsv4_hc_pre_zq8_kernel`).
-///
-/// DEFAULT OFF pending its model-scale row (new-flags law). WHY IT SHOULD PAY: at decode both
-/// kernels are one block per position and both are the starved shape the ncu census names
-/// (~4 active warps per scheduler, 88% of cycles with nothing to issue); the norm reads exactly
-/// what the pre-chain wrote and nothing else reads it, so the second launch -- 79 per token at
-/// 6.7 us in the mint census -- is pure structure. EXACTNESS: stages 1-3 are the v3 body verbatim
-/// (generated, not retyped) and the norm is `rms_norm_zq8_f32_v2` with its own block width
-/// substituted for blockDim, so every partition, tree and epilogue is the same statement in the
-/// same order. Engages only where the walk already fuses the norm's quantize
-/// (`MEMRA_GLM5_Q8_FUSE` / `_ATTN`), because that is the pair it replaces.
-pub fn hc_pre_zq8_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    // `=1` engages the door; `=2` is the self-check arm (fused into scratch, the two-launch
-    // program into the workspace, host compare) and must enter the door to run at all: the
-    // 2026-09-05 check boot compared zero sites because this read accepted only "1".
-    *ON.get_or_init(|| {
-        matches!(
-            std::env::var("MEMRA_HC_PRE_ZQ8").as_deref(),
-            Ok("1") | Ok("2")
-        )
-    })
 }
 
 /// `MEMRA_Q8_CENSUS=1` (lane/hcpre-zq8-fusion-20260905, diagnostics): attribute every
