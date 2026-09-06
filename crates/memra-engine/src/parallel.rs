@@ -1620,6 +1620,10 @@ mod tests {
             .collect();
         ModelConfig {
             arch: Arch::Step35,
+            // step35 parses its own window into `step35.sliding_window`; the hints are for
+            // packs whose plan does not consume one (see ModelConfig::window_hint).
+            window_hint: None,
+            rope_scaling_hint: None,
             name: "Step-3.7-Flash-FP8".to_string(),
             n_layer: total_layers,
             n_embd: 4096,
