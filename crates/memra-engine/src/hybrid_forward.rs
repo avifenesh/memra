@@ -10261,14 +10261,43 @@ impl HybridModel {
             Some(self.mla_attn_cached_pre_wo(e, mla, h, pos_d, t, il, layer, max_ctx, rows_exact)?)
         };
 
-        // HOP 2 — gather the per-head parts into the FULL [t, full_heads*dv] layout on
-        // every rank. `full_heads * dv == ranks * (hl * dv)` by the shard map.
         let part = hl * dv;
         debug_assert_eq!(full_heads * dv, ranks * part);
         let attn_refs: Vec<&CudaSlice<f32>> = attn
             .iter()
             .map(|a| a.as_ref().expect("filled above"))
             .collect();
+
+        // ROW-PARALLEL `wo` (`MEMRA_GLM5_TP_EXPERT_SPLIT`): each rank owns the input COLUMNS
+        // matching its own heads, so it multiplies only what it just computed and produces a
+        // FULL-WIDTH partial sum. HOP 2's all-gather and HOP 3's concat both disappear and ONE
+        // reduction replaces them: three pure-movement hops per layer become one, and the biggest
+        // of the three (the [t, full_heads*dv] gather, four times the hidden width) is the one
+        // that goes. Not byte-identical, for the same reason the expert `down` split is not: the
+        // K reduction runs two ways instead of one pass. Named class.
+        if crate::glm5_tp::glm5_tp_expert_split_on() {
+            let mut partials = Vec::with_capacity(ranks);
+            for (r, a) in attn_refs.iter().enumerate() {
+                let dev = crate::glm5_tp::rank_engine(e, rt, r);
+                let wo = if r == 0 { &mla.wo } else { &tp.peers[r - 1].wo };
+                partials.push(if rows_exact {
+                    dev.matmul_rows_exact(wo, a, t)?
+                } else {
+                    dev.matmul(wo, a, t)?
+                });
+            }
+            let mut y = partials.remove(0);
+            for (r, peer_y) in partials.iter().enumerate() {
+                let landed =
+                    crate::tp_transport::return_row_to_root(&hop, r + 1, peer_y, t * n_embd)?;
+                let mut dst = y.slice_mut(0..t * n_embd);
+                e.axpy_into(&landed, 1.0, &mut dst, t * n_embd)?;
+            }
+            return Ok(y);
+        }
+
+        // HOP 2 — gather the per-head parts into the FULL [t, full_heads*dv] layout on
+        // every rank. `full_heads * dv == ranks * (hl * dv)` by the shard map.
         let fulls = crate::tp_transport::gather_parts(&hop, &attn_refs, t, part)?;
 
         // Column-parallel wo slices + output concat (pure movement). The verify walk's

@@ -604,6 +604,118 @@ fn outer_rows(ne: &[u64]) -> (usize, usize) {
     (outer, inner.max(1))
 }
 
+/// K-SLICE of a 2D projection: keep input columns `cols` of every out row. The row-parallel
+/// counterpart of [`shard_rows`], and the shape a TP `wo` needs.
+///
+/// WHY IT IS NOT `shard_rows` WITH THE AXES SWAPPED: the shardable axis there is the OUTERMOST,
+/// which is one contiguous byte range per expert. A column slice is a sub-range of EVERY row, so
+/// the result is a gather of `out_f` ranges, and on a quantized tensor the range boundary has to
+/// land on a quantization block or the slice cuts one in half. `tp_expert_split` carries the same
+/// guard and the red arm that proves a byte-divisibility test is not enough.
+fn shard_cols(
+    src_engine: &Engine,
+    dst: &Engine,
+    t: &GpuTensor,
+    cols: Range<usize>,
+) -> Result<GpuTensor, Box<dyn std::error::Error>> {
+    let take = cols.end - cols.start;
+    match t {
+        GpuTensor::Float { data, ne } => {
+            let (outer, inner) = outer_rows(ne);
+            if cols.end > inner {
+                return Err(format!("shard cols {cols:?} exceed inner axis {inner}").into());
+            }
+            let host = src_engine.dtoh(data)?;
+            let mut out = Vec::with_capacity(outer * take);
+            for r in 0..outer {
+                out.extend_from_slice(&host[r * inner + cols.start..r * inner + cols.end]);
+            }
+            let mut ne2 = ne.clone();
+            ne2[0] = take as u64;
+            Ok(GpuTensor::Float {
+                data: dst.htod(&out)?,
+                ne: ne2,
+            })
+        }
+        GpuTensor::FloatBf16 { data, ne } => {
+            let (outer, inner) = outer_rows(ne);
+            if cols.end > inner {
+                return Err(format!("shard cols {cols:?} exceed inner axis {inner}").into());
+            }
+            let host = src_engine.dtoh_u8(data)?;
+            let mut out = Vec::with_capacity(outer * take * 2);
+            for r in 0..outer {
+                let base = r * inner * 2;
+                out.extend_from_slice(&host[base + cols.start * 2..base + cols.end * 2]);
+            }
+            let mut ne2 = ne.clone();
+            ne2[0] = take as u64;
+            Ok(GpuTensor::FloatBf16 {
+                data: dst.htod_bytes(&out)?,
+                ne: ne2,
+            })
+        }
+        GpuTensor::Quant {
+            bytes,
+            qtype,
+            row_bytes,
+            ne,
+            scale,
+            rp,
+            fp8,
+            rp4,
+            blk,
+            f16,
+            #[cfg(memra_cutlass)]
+                cutlass: _,
+        } => {
+            if *rp || fp8.is_some() || rp4.is_some() || blk.is_some() || f16.is_some() {
+                return Err("glm5-tp shard cols: a mirror layout is unwired for K slices".into());
+            }
+            if ne.len() != 2 {
+                return Err("glm5-tp shard cols: quantized K slices are 2D-only".into());
+            }
+            let (outer, inner) = outer_rows(ne);
+            if cols.end > inner {
+                return Err(format!("shard cols {cols:?} exceed inner axis {inner}").into());
+            }
+            // Block alignment, counted in BLOCKS: `row_bytes = in_f / block * type_size` is
+            // linear in `in_f`, so a byte-offset test passes a boundary that cuts a block.
+            if (cols.start * row_bytes) % inner != 0 || (take * row_bytes) % inner != 0 {
+                return Err(format!(
+                    "glm5-tp shard cols: {cols:?} of {inner} does not land on a block boundary \
+                     (row_bytes {row_bytes})"
+                )
+                .into());
+            }
+            let off = cols.start * row_bytes / inner;
+            let keep = take * row_bytes / inner;
+            let host = src_engine.dtoh_u8(bytes)?;
+            let mut out = Vec::with_capacity(outer * keep);
+            for r in 0..outer {
+                let base = r * row_bytes + off;
+                out.extend_from_slice(&host[base..base + keep]);
+            }
+            let mut ne2 = ne.clone();
+            ne2[0] = take as u64;
+            Ok(GpuTensor::Quant {
+                bytes: dst.htod_bytes(&out)?,
+                qtype: *qtype,
+                row_bytes: keep,
+                ne: ne2,
+                scale: *scale,
+                rp: false,
+                fp8: None,
+                rp4: None,
+                blk: None,
+                f16: None,
+                #[cfg(memra_cutlass)]
+                cutlass: None,
+            })
+        }
+    }
+}
+
 /// Copy `rows` of `t`'s outermost axis onto `dst` (host bounce; load-time only). Mirror
 /// planes (`rp`/`rp4`/`f16`/`fp8`/`blk`) REFUSE by name: v1 shards carry the raw layout —
 /// a pure byte-permutation difference, bit-identical by the mirrors' own contracts.
@@ -1197,8 +1309,20 @@ pub(crate) fn shard_mla_layer(
             wv_b: shard_rows(e, dst, &la.wv_b, r * hl..(r + 1) * hl)?,
             wk_b16: None,
             wv_b16: None,
-            // COLUMN-parallel wo: rank r owns OUT rows over the full N*V input.
-            wo: shard_rows(e, dst, &la.wo, wr * hh..(wr + 1) * hh)?,
+            // COLUMN-parallel wo (default): rank r owns OUT rows over the FULL gathered N*V
+            // input, so the walk must all-gather every rank's heads before this multiply and
+            // concat the out-row bands after it. Three pure-movement hops per layer.
+            //
+            // ROW-parallel wo (`MEMRA_GLM5_TP_EXPERT_SPLIT`): rank r instead owns the input
+            // COLUMNS matching its OWN heads, so it multiplies only what it already computed and
+            // produces a FULL-WIDTH partial sum. The all-gather and the concat both disappear and
+            // one reduction replaces them. Not byte-identical, for the same reason the expert
+            // `down` split is not: the K reduction is split two ways instead of run in one pass.
+            wo: if glm5_tp_expert_split_on() {
+                shard_cols(e, dst, &la.wo, wr * hl * g.d_v..(wr + 1) * hl * g.d_v)?
+            } else {
+                shard_rows(e, dst, &la.wo, wr * hh..(wr + 1) * hh)?
+            },
             geom: shard_geom,
             index: match &la.index {
                 Some(ix) => Some(replicate_indexer(dst, ix)?),
