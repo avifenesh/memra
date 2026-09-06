@@ -4070,18 +4070,11 @@ extern "C" __global__ void qmatvec_e4m3_mmvq_fused6(
 // ACTIVATION: f16 lane-major with NATURAL pairs: half2 word w (0..15) of block b holds elements
 // (b*32 + 2w, b*32 + 2w + 1) at half2 index w*nblk + b (`memra_f32_to_f16_lane_major_nat`);
 // e4m3 bytes are K-inner so byte pair (2w, 2w+1) converts to exactly that half2.
+// one 32-block: the f16 products of its 32 elements folded to one f32 (f16x2 chain, or f32 per
+// product under ACC32); the caller adds it to the row accumulator in block order.
 template <bool ACC32>
-__device__ __forceinline__ float e4m3_row_dot_f16(const unsigned char* __restrict__ wrow,
-                                                  const half2* __restrict__ arow, int nblk,
-                                                  int lane) {
-    float acc = 0.0f;
-    for (int blk = lane; blk < nblk; blk += 32) {
-        const uint4* w16 = (const uint4*)(wrow + (long)blk * 32);
-        uint4 w01 = w16[0], w23 = w16[1];
-        unsigned wu[8] = {w01.x, w01.y, w01.z, w01.w, w23.x, w23.y, w23.z, w23.w};
-        half2 a[16];
-#pragma unroll
-        for (int w = 0; w < 16; w++) a[w] = arow[(size_t)w * nblk + blk];
+__device__ __forceinline__ float e4m3_block_f16(const unsigned (&wu)[8], const half2 (&a)[16]) {
+    {
         if (ACC32) {
             float bs = 0.0f;
 #pragma unroll
@@ -4090,7 +4083,7 @@ __device__ __forceinline__ float e4m3_row_dot_f16(const unsigned char* __restric
                 float2 p1 = __half22float2(__hmul2(e4m3x2_to_half2((unsigned short)(wu[k] >> 16)), a[2 * k + 1]));
                 bs = __fadd_rn(bs, __fadd_rn(__fadd_rn(p0.x, p0.y), __fadd_rn(p1.x, p1.y)));
             }
-            acc = __fadd_rn(acc, bs);
+            return bs;
         } else {
             half2 s = __float2half2_rn(0.0f);
 #pragma unroll
@@ -4098,8 +4091,45 @@ __device__ __forceinline__ float e4m3_row_dot_f16(const unsigned char* __restric
                 s = __hfma2(e4m3x2_to_half2((unsigned short)(wu[k] & 0xFFFF)), a[2 * k], s);
                 s = __hfma2(e4m3x2_to_half2((unsigned short)(wu[k] >> 16)), a[2 * k + 1], s);
             }
-            acc = __fadd_rn(acc, __low2float(s) + __high2float(s));
+            return __low2float(s) + __high2float(s);
         }
+    }
+}
+template <bool ACC32>
+__device__ __forceinline__ float e4m3_row_dot_f16(const unsigned char* __restrict__ wrow,
+                                                  const half2* __restrict__ arow, int nblk,
+                                                  int lane) {
+    float acc = 0.0f;
+    // FOUR BLOCKS IN FLIGHT per lane, loads issued before any math (the served _ilp pattern;
+    // the rows pair's one-group loop measured flat on the pair, rowsf16 2026-09-06).
+    int blk = lane;
+    for (; blk + 96 < nblk; blk += 128) {
+        uint4 w01v[4], w23v[4];
+        half2 av[4][16];
+#pragma unroll
+        for (int k = 0; k < 4; k++) {
+            const int b = blk + 32 * k;
+            const uint4* w16 = (const uint4*)(wrow + (long)b * 32);
+            w01v[k] = w16[0];
+            w23v[k] = w16[1];
+#pragma unroll
+            for (int w = 0; w < 16; w++) av[k][w] = arow[(size_t)w * nblk + b];
+        }
+#pragma unroll
+        for (int k = 0; k < 4; k++) {
+            unsigned wu[8] = {w01v[k].x, w01v[k].y, w01v[k].z, w01v[k].w,
+                              w23v[k].x, w23v[k].y, w23v[k].z, w23v[k].w};
+            acc = __fadd_rn(acc, e4m3_block_f16<ACC32>(wu, av[k]));
+        }
+    }
+    for (; blk < nblk; blk += 32) {
+        const uint4* w16 = (const uint4*)(wrow + (long)blk * 32);
+        uint4 w01 = w16[0], w23 = w16[1];
+        unsigned wu[8] = {w01.x, w01.y, w01.z, w01.w, w23.x, w23.y, w23.z, w23.w};
+        half2 a[16];
+#pragma unroll
+        for (int w = 0; w < 16; w++) a[w] = arow[(size_t)w * nblk + blk];
+        acc = __fadd_rn(acc, e4m3_block_f16<ACC32>(wu, a));
     }
     return acc;
 }
