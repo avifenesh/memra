@@ -14089,7 +14089,32 @@ impl HybridModel {
             .as_ref()
             .map(|x| x.expert_used_count as usize)
             .unwrap_or(0);
-        moe_q8_enabled_for_model(cfg, m) && n_used <= 8 && cfg.sigmoid_router().is_some()
+        let q8 = moe_q8_enabled_for_model(cfg, m);
+        let sig = cfg.sigmoid_router().is_some();
+        let ok = q8 && n_used <= 8 && sig;
+        if !ok {
+            // LOUD, once: the per-slot fallback is 24 host-issued launches of the correctness-gate
+            // kernel per layer per rank. tptrace 2026-09-06 read the split arm at 82% of its
+            // device time in `qmatvec_f32` because this predicate declined on the served mint
+            // and nothing said so; every term is named here so the next decline is diagnosable
+            // from the boot log alone.
+            static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                eprintln!(
+                    "[glm5-tp-split] vrows DECLINED, per-slot fallback: moe_q8={q8} \
+                     (uniform={} q8_env={} gate_qt={} up_qt={} down_qt={} nvfp4_q8={} \
+                     hy3_w4a16={}) n_used={n_used} (<=8) sigmoid_router={sig}",
+                    m.has_uniform_expert_layout(),
+                    moe_q8_enabled(),
+                    m.gate_exps.qtype,
+                    m.up_exps.qtype,
+                    m.down_exps.qtype,
+                    q8_expert_supported_for_model(cfg, m.gate_exps.qtype),
+                    cfg.hy3.as_ref().is_some_and(|h| h.weight_only_nvfp4),
+                );
+            }
+        }
+        ok
     }
 
     /// One rank's half of the expert-split MoE by the PER-SLOT program, for layouts the vrows
