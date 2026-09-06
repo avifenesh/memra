@@ -278,6 +278,7 @@ impl<'a> PrimeCacheStages<'a> {
                     // Per-stage split caches start with no captured graphs: a run graph bakes the
                     // state pointers of the cache it was captured against, and this one is new.
                     glm5_decode_graph: None,
+                    glm5_tp_sym_graph: None,
                 })
             })
             .collect();
@@ -2948,6 +2949,145 @@ impl HybridModel {
     /// Kept call-for-call with the root walk on the root rank so the named-class gate compares
     /// the same program: pre -> norm -> mixer -> post -> pre -> norm -> ffn -> post.
     #[allow(clippy::too_many_arguments)]
+    /// ONE layer of the symmetric walk, both ranks (lane/glm5-tp-sym-graph-20260907 pulled it
+    /// out of the loop so the graph door can record it): attention-site glue on both ranks, the
+    /// sharded mixer meeting in a one-shot all-reduce, FFN-site glue, the split MoE meeting in a
+    /// one-shot all-reduce. Two residual swaps per rank per layer (`x`/`ws.xb`), so any run of
+    /// whole layers leaves the residual in the buffer it entered in: what makes a captured run
+    /// replayable against fixed buffers.
+    #[allow(clippy::too_many_arguments)] // allow: the layer step's inputs ARE both ranks' operand sets
+    pub(crate) fn sym_layer_step(
+        &self,
+        e: &Engine,
+        peer: &Engine,
+        topology: &crate::hyper::HyperTopology,
+        il: usize,
+        x: &mut CudaSlice<f32>,
+        x_peer: &mut CudaSlice<f32>,
+        ws: &mut crate::hyper::HyperDecodeWs,
+        ws_peer: &mut crate::hyper::HyperDecodeWs,
+        pos_d: &CudaSlice<i32>,
+        pos_peer: &CudaSlice<i32>,
+        cache: &mut Cache,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let n_embd = self.cfg.n_embd as usize;
+        let eps = self.cfg.rms_eps;
+        let (layer, hyper) = self.ws_layer(il)?;
+        let glue = layer
+            .tp_glue
+            .first()
+            .ok_or_else(|| format!("layer {il}: no symmetric glue for the peer"))?;
+
+        // ---- attention-site glue, both ranks ----
+        let _attn_q8 = self.ws_attn_pre(e, topology, layer, hyper, il, x, ws, n_embd, eps)?;
+        crate::hyper::pre_t1_ws(peer, topology, &glue.hyper.attn, x_peer, ws_peer, n_embd)?;
+        peer.rms_norm(
+            &ws_peer.y,
+            glue.attn_norm.float_data(),
+            &mut ws_peer.h,
+            n_embd,
+            1,
+            eps,
+        )?;
+
+        // ---- mixer: both inputs in, both outputs out ----
+        let mixed = match &layer.mixer {
+            Mixer::Kda(la) => crate::glm5_tp::kda_tp_cached_sym(
+                e,
+                la,
+                &[&ws.h, &ws_peer.h],
+                1,
+                eps,
+                cache,
+                il,
+                crate::kda::ConvArm::Decode,
+            )?,
+            Mixer::Mla(mla) => self.mla_tp_attn_cached_sym(
+                e,
+                mla,
+                &[&ws.h, &ws_peer.h],
+                &[pos_d, pos_peer],
+                1,
+                il,
+                cache,
+            )?,
+            _ => {
+                return Err(format!(
+                    "layer {il}: the symmetric walk covers KDA and MLA mixers only"
+                )
+                .into());
+            }
+        };
+        crate::hyper::post_t1_ws(e, topology, &mixed[0], x, ws, n_embd)?;
+        std::mem::swap(x, &mut ws.xb);
+        crate::hyper::post_t1_ws(peer, topology, &mixed[1], x_peer, ws_peer, n_embd)?;
+        std::mem::swap(x_peer, &mut ws_peer.xb);
+
+        // ---- FFN-site glue, both ranks ----
+        crate::hyper::pre_t1_ws(e, topology, &hyper.mlp, x, ws, n_embd)?;
+        let zq8 = if crate::glm5_q8_fuse_on() {
+            Some(e.rms_norm_zq8_f32(
+                &ws.y,
+                layer.post_attn_norm.float_data(),
+                &mut ws.z,
+                n_embd,
+                1,
+                eps,
+            )?)
+        } else {
+            e.rms_norm(
+                &ws.y,
+                layer.post_attn_norm.float_data(),
+                &mut ws.z,
+                n_embd,
+                1,
+                eps,
+            )?;
+            None
+        };
+        crate::hyper::pre_t1_ws(peer, topology, &glue.hyper.mlp, x_peer, ws_peer, n_embd)?;
+        peer.rms_norm(
+            &ws_peer.y,
+            glue.post_attn_norm.float_data(),
+            &mut ws_peer.z,
+            n_embd,
+            1,
+            eps,
+        )?;
+
+        // ---- MoE: both inputs in, both outputs out ----
+        let ffn_out = match &layer.ffn {
+            crate::hybrid::Ffn::Moe(m) => {
+                let xs = m.glm5_tp_split.as_ref().ok_or_else(|| {
+                    format!("layer {il}: the symmetric walk needs the expert split armed")
+                })?;
+                let peer_router = glue.router.as_ref().ok_or_else(|| {
+                    format!("layer {il}: the peer glue carries no router for its MoE")
+                })?;
+                Self::moe_ffn_glm5_tp_split_sym(
+                    e,
+                    m,
+                    xs,
+                    &[&ws.z, &ws_peer.z],
+                    zq8.as_ref(),
+                    peer_router,
+                    1,
+                    &self.cfg,
+                    il as u16,
+                )?
+            }
+            _ => {
+                return Err(format!("layer {il}: the symmetric walk covers MoE FFNs only").into());
+            }
+        };
+        crate::hyper::post_t1_ws(e, topology, &ffn_out[0], x, ws, n_embd)?;
+        std::mem::swap(x, &mut ws.xb);
+        crate::hyper::post_t1_ws(peer, topology, &ffn_out[1], x_peer, ws_peer, n_embd)?;
+        std::mem::swap(x_peer, &mut ws_peer.xb);
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn hyper_range_decode_ws_sym(
         &self,
         e: &Engine,
@@ -2963,7 +3103,6 @@ impl HybridModel {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let _ = pos;
         let n_embd = self.cfg.n_embd as usize;
-        let eps = self.cfg.rms_eps;
         let peer = rt
             .peers
             .first()
@@ -2986,144 +3125,50 @@ impl HybridModel {
                  copy; mixer and MoE meet in one-shot all-reduces (two crossings per layer)"
             );
         }
+        if crate::glm5_tp_sym_graph::on() {
+            let r = crate::glm5_tp_sym_graph::walk_graphed(
+                self,
+                e,
+                peer,
+                rt,
+                topology,
+                x,
+                &mut x_peer,
+                ws,
+                &mut ws_peer,
+                pos_d,
+                &pos_peer,
+                lo,
+                hi,
+                cache,
+            );
+            match r {
+                Ok(true) => {
+                    peer.hyper_ws_put(ws_peer);
+                    return Ok(());
+                }
+                Ok(false) => {} // declined loudly inside; the eager loop below runs this token
+                Err(err) => {
+                    peer.hyper_ws_put(ws_peer);
+                    return Err(err);
+                }
+            }
+        }
         let result = (|| -> Result<(), Box<dyn std::error::Error>> {
             for il in lo..hi {
-                let (layer, hyper) = self.ws_layer(il)?;
-                let glue = layer
-                    .tp_glue
-                    .first()
-                    .ok_or_else(|| format!("layer {il}: no symmetric glue for the peer"))?;
-
-                // ---- attention-site glue, both ranks ----
-                let _attn_q8 =
-                    self.ws_attn_pre(e, topology, layer, hyper, il, x, ws, n_embd, eps)?;
-                crate::hyper::pre_t1_ws(
+                self.sym_layer_step(
+                    e,
                     peer,
                     topology,
-                    &glue.hyper.attn,
-                    &x_peer,
+                    il,
+                    x,
+                    &mut x_peer,
+                    ws,
                     &mut ws_peer,
-                    n_embd,
+                    pos_d,
+                    &pos_peer,
+                    cache,
                 )?;
-                peer.rms_norm(
-                    &ws_peer.y,
-                    glue.attn_norm.float_data(),
-                    &mut ws_peer.h,
-                    n_embd,
-                    1,
-                    eps,
-                )?;
-
-                // ---- mixer: both inputs in, both outputs out ----
-                let mixed = match &layer.mixer {
-                    Mixer::Kda(la) => crate::glm5_tp::kda_tp_cached_sym(
-                        e,
-                        la,
-                        &[&ws.h, &ws_peer.h],
-                        1,
-                        eps,
-                        cache,
-                        il,
-                        crate::kda::ConvArm::Decode,
-                    )?,
-                    Mixer::Mla(mla) => self.mla_tp_attn_cached_sym(
-                        e,
-                        mla,
-                        &[&ws.h, &ws_peer.h],
-                        &[pos_d, &pos_peer],
-                        1,
-                        il,
-                        cache,
-                    )?,
-                    _ => {
-                        return Err(format!(
-                            "layer {il}: the symmetric walk covers KDA and MLA mixers only"
-                        )
-                        .into());
-                    }
-                };
-                crate::hyper::post_t1_ws(e, topology, &mixed[0], x, ws, n_embd)?;
-                std::mem::swap(x, &mut ws.xb);
-                crate::hyper::post_t1_ws(peer, topology, &mixed[1], &x_peer, &mut ws_peer, n_embd)?;
-                std::mem::swap(&mut x_peer, &mut ws_peer.xb);
-
-                // ---- FFN-site glue, both ranks ----
-                crate::hyper::pre_t1_ws(e, topology, &hyper.mlp, x, ws, n_embd)?;
-                let zq8 = if crate::glm5_q8_fuse_on() {
-                    Some(e.rms_norm_zq8_f32(
-                        &ws.y,
-                        layer.post_attn_norm.float_data(),
-                        &mut ws.z,
-                        n_embd,
-                        1,
-                        eps,
-                    )?)
-                } else {
-                    e.rms_norm(
-                        &ws.y,
-                        layer.post_attn_norm.float_data(),
-                        &mut ws.z,
-                        n_embd,
-                        1,
-                        eps,
-                    )?;
-                    None
-                };
-                crate::hyper::pre_t1_ws(
-                    peer,
-                    topology,
-                    &glue.hyper.mlp,
-                    &x_peer,
-                    &mut ws_peer,
-                    n_embd,
-                )?;
-                peer.rms_norm(
-                    &ws_peer.y,
-                    glue.post_attn_norm.float_data(),
-                    &mut ws_peer.z,
-                    n_embd,
-                    1,
-                    eps,
-                )?;
-
-                // ---- MoE: both inputs in, both outputs out ----
-                let ffn_out = match &layer.ffn {
-                    crate::hybrid::Ffn::Moe(m) => {
-                        let xs = m.glm5_tp_split.as_ref().ok_or_else(|| {
-                            format!("layer {il}: the symmetric walk needs the expert split armed")
-                        })?;
-                        let peer_router = glue.router.as_ref().ok_or_else(|| {
-                            format!("layer {il}: the peer glue carries no router for its MoE")
-                        })?;
-                        Self::moe_ffn_glm5_tp_split_sym(
-                            e,
-                            m,
-                            xs,
-                            &[&ws.z, &ws_peer.z],
-                            zq8.as_ref(),
-                            peer_router,
-                            1,
-                            &self.cfg,
-                            il as u16,
-                        )?
-                    }
-                    _ => {
-                        return Err(
-                            format!("layer {il}: the symmetric walk covers MoE FFNs only").into(),
-                        );
-                    }
-                };
-                crate::hyper::post_t1_ws(e, topology, &ffn_out[0], x, ws, n_embd)?;
-                std::mem::swap(x, &mut ws.xb);
-                crate::hyper::post_t1_ws(
-                    peer,
-                    topology,
-                    &ffn_out[1],
-                    &x_peer,
-                    &mut ws_peer,
-                    n_embd,
-                )?;
-                std::mem::swap(&mut x_peer, &mut ws_peer.xb);
             }
             Ok(())
         })();
