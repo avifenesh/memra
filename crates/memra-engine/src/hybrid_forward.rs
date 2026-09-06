@@ -1924,6 +1924,12 @@ impl HybridModel {
         let Some(tp) = fa.step_tp_qkv.as_ref() else {
             return Ok(None);
         };
+        // AWQ (memra#253): the tensor-parallel O projection consumes the attention output
+        // directly, so the scale has to land HERE. The caller's non-TP branch scales too, but
+        // it is only reached when this function returns None, so the two never double-apply.
+        let __wpqs =
+            e.pre_quant_scaled(activation, fa.wo_pqs.as_ref(), fa.wo.in_features(), tokens)?;
+        let activation = __wpqs.as_ref().unwrap_or(activation);
         // DEVICE-RESIDENT NATIVE PATH — the O-projection half of the same finding: no DtoH
         // of the attention output, no host O staging, root-resident reduction consumed in
         // place (byte-identical shared core: `step_bf16_row_native_reduce_from_root`).
@@ -21670,6 +21676,13 @@ impl HybridModel {
             e.quantize_q8_1_into(aq, 1, nh * hd, &mut sl.zq, &mut sl.zd)?;
         }
         {
+            // AWQ (memra#253): the slotted arm carries its activation as a q8 pair in the slot,
+            // so there is no f32 buffer to scale before the projection.
+            if fa.wo_pqs.is_some() {
+                return Err(
+                    "gemma4 slotted dc attention cannot apply o_proj.pre_quant_scale".into(),
+                );
+            }
             let zq = unsafe { &*(&sl.zq as *const CudaSlice<i8>) };
             let zd = unsafe { &*(&sl.zd as *const CudaSlice<f32>) };
             self.g4_matvec_m1_into(e, &fa.wo, zq, zd, &mut sl.o)?;
@@ -22152,6 +22165,15 @@ impl HybridModel {
         // combine-q8 emit (wave-5b m=1 port): the rows arms produced the wo activation pair
         // in-combine — ride the slotted arm's exact matvec route (parity by construction).
         if let Some((aq8, ad8)) = fa_q8 {
+            // AWQ (memra#253): the rows kernels emit this activation already quantized, so
+            // o_proj's per-input-channel scale has no seam here, and the f32 arm below cannot
+            // be substituted because `attn` is not the buffer these kernels wrote. Refuse
+            // rather than run the projection against an unscaled activation.
+            if fa.wo_pqs.is_some() {
+                return Err(
+                    "gemma4 decode rows fast path cannot apply o_proj.pre_quant_scale".into(),
+                );
+            }
             let mut y = e.uninit(fa.wo.out_features())?;
             self.g4_matvec_m1_into(e, &fa.wo, &aq8, &ad8, &mut y)?;
             return Ok(y);
