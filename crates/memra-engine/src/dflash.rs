@@ -2619,6 +2619,48 @@ pub enum DsparkCapture {
 ///
 /// A boundary at or past the prompt end, or at 0, is not a split at all and falls back to the
 /// prompt-end capture — the caller asked for something the prompt does not contain.
+/// Where a RESUME prime (a restored session priming its suffix) splits so the new turn's
+/// render-stable boundary can be captured as a fresh cache entry (memra#257).
+///
+/// `capture` carries the ABSOLUTE boundary of the whole new prompt (the worker's
+/// `plain_checkpoint_boundary`); `pos0` is the restored trunk length; `tp` the suffix length.
+/// Returns the split as a SUFFIX-LOCAL offset, or `None` when nothing is worth capturing:
+///   * not a `Boundary` request (PromptEnd never captures on resume — a cut inside the
+///     rendered generation header is the #248 bug, and the restored entry already exists);
+///   * the boundary is not strictly inside the suffix (`pos0 < b < pos0 + tp`): at or before
+///     `pos0` the entry restored FROM already covers it, at `tp` it is the header cut;
+///   * either half would be shorter than `PRIME_MIN_T` — `prime_cache` has no tokenwise
+///     tap-filling twin, so a sub-minimum half would leave draft taps unfilled.
+/// Errors, like `dspark_boundary_split`, only on an off-grid boundary: the two-call prime is
+/// bit-identical to the monolithic one iff the split row is a multiple of the GDN chunk, and
+/// an off-grid split is a silent numerical change, never a fallback.
+pub(crate) fn dspark_resume_split(
+    capture: DsparkCapture,
+    pos0: usize,
+    tp: usize,
+    grid: usize,
+) -> Result<Option<usize>, Box<dyn std::error::Error>> {
+    let DsparkCapture::Boundary(b) = capture else {
+        return Ok(None);
+    };
+    if b <= pos0 || b >= pos0 + tp {
+        return Ok(None);
+    }
+    let l = b - pos0;
+    let min = crate::hybrid_forward::PRIME_MIN_T;
+    if l < min || tp - l < min {
+        return Ok(None);
+    }
+    if grid == 0 || b % grid != 0 {
+        return Err(format!(
+            "dspark resume capture at {b} is off the prime grid {grid} — an off-grid split \
+             changes the WY fold grid and diverges from row {b} on"
+        )
+        .into());
+    }
+    Ok(Some(l))
+}
+
 pub(crate) fn dspark_boundary_split(
     capture: DsparkCapture,
     tp: usize,
@@ -4901,6 +4943,7 @@ impl crate::hybrid::HybridModel {
         draft: &DflashDraft,
         sess: &mut DsparkSpecSession,
         suffix: &[u32],
+        capture: DsparkCapture,
     ) -> Result<(), Box<dyn std::error::Error>> {
         use crate::cache::DflashTapSink;
         let n_embd = self.cfg.n_embd as usize;
@@ -4961,7 +5004,43 @@ impl crate::hybrid::HybridModel {
             base: 0,
             origin: 0,
         });
-        let (logits, _h_seed, _hiddens) = self.prime_cache(e, suffix, &mut sess.cache, 0)?;
+        // memra#257: a restored session used to publish nothing, so the entry stayed frozen at
+        // turn 1's cut and every later turn restored from it with a suffix that grew by one
+        // whole turn each time (13,440 -> 206 -> 311 suffix tokens on the three-turn cell; on
+        // the 105k-168k agent-loop shape that is the re-prefill #248 exists to remove). The
+        // suffix prime is split at the NEW prompt's render-stable boundary, exactly as the
+        // cold prime splits, and the capture lands in `sess.prefix_capture` for the worker's
+        // ordinary publish path (which refuses a key the cache already holds). The taps sink
+        // is one whole-suffix buffer on both arms; `origin`/`base` move it to the second
+        // half's rows for the second call and come back before the ingest loop, which reads
+        // the buffer as a whole. Off-grid boundaries are an error, never a fallback.
+        let split = dspark_resume_split(capture, pos0, tp, Engine::gdn_chunk_size())?;
+        let (logits, _h_seed, _hiddens) = match split {
+            None => self.prime_cache(e, suffix, &mut sess.cache, 0)?,
+            Some(l) => {
+                let (lb, _hb, _xb) = self.prime_cache(e, &suffix[..l], &mut sess.cache, tp - l)?;
+                sess.prefix_capture = match sess.cache.snapshot(e) {
+                    Ok(snap) => Some(crate::spec::SpecBoundaryCapture {
+                        snap,
+                        pos: pos0 + l,
+                        logits: lb,
+                        last_h: Vec::new(),
+                        latent_tails: Vec::new(),
+                    }),
+                    Err(_) => None,
+                };
+                if let Some(taps) = sess.cache.dflash_taps.as_mut() {
+                    taps.origin = l;
+                    taps.base = l;
+                }
+                let out = self.prime_cache(e, &suffix[l..], &mut sess.cache, 0)?;
+                if let Some(taps) = sess.cache.dflash_taps.as_mut() {
+                    taps.origin = 0;
+                    taps.base = 0;
+                }
+                out
+            }
+        };
         let sp_pen = sess.sampling.filter(|s| s.temp > 0.0 && s.pen_on());
         if let Some(sp) = sp_pen.as_ref() {
             sess.pen_hist = crate::spec::pen_window_seed(&sess.pen_hist, suffix, sp.penalty_last_n);
@@ -7207,5 +7286,63 @@ mod dspark_boundary_capture_tests {
         }
         // A zero grid is a broken engine constant, not a licence to split.
         assert!(dspark_boundary_split(DsparkCapture::Boundary(512), 1024, 0).is_err());
+    }
+
+    #[test]
+    fn dspark_resume_split_captures_only_a_grid_boundary_strictly_inside_the_suffix() {
+        use crate::hybrid_forward::PRIME_MIN_T;
+        let grid = 64;
+        // restored trunk of 13,440 rows, a 2,048-token suffix, new-prompt boundary at 14,592
+        assert_eq!(
+            dspark_resume_split(DsparkCapture::Boundary(14_592), 13_440, 2_048, grid).unwrap(),
+            Some(1_152)
+        );
+        // PromptEnd and Off never capture on resume
+        assert_eq!(
+            dspark_resume_split(DsparkCapture::PromptEnd, 13_440, 2_048, grid).unwrap(),
+            None
+        );
+        assert_eq!(
+            dspark_resume_split(DsparkCapture::Off, 13_440, 2_048, grid).unwrap(),
+            None
+        );
+        // at or before the restored trunk: the entry restored from already covers it
+        assert_eq!(
+            dspark_resume_split(DsparkCapture::Boundary(13_440), 13_440, 2_048, grid).unwrap(),
+            None
+        );
+        assert_eq!(
+            dspark_resume_split(DsparkCapture::Boundary(13_376), 13_440, 2_048, grid).unwrap(),
+            None
+        );
+        // at the suffix end: that is the header cut, the #248 bug
+        assert_eq!(
+            dspark_resume_split(DsparkCapture::Boundary(15_488), 13_440, 2_048, grid).unwrap(),
+            None
+        );
+        // a half shorter than PRIME_MIN_T leaves draft taps unfilled: skip, do not split
+        assert_eq!(
+            dspark_resume_split(
+                DsparkCapture::Boundary(13_440 + PRIME_MIN_T - 1 + 0),
+                13_440,
+                2_048,
+                grid
+            )
+            .unwrap(),
+            None
+        );
+        assert_eq!(
+            dspark_resume_split(
+                DsparkCapture::Boundary(15_488 - (PRIME_MIN_T - 1)),
+                13_440,
+                2_048,
+                grid
+            )
+            .unwrap(),
+            None
+        );
+        // off-grid inside the suffix is an ERROR, never a silent unsplit prime
+        assert!(dspark_resume_split(DsparkCapture::Boundary(14_600), 13_440, 2_048, grid).is_err());
+        assert!(dspark_resume_split(DsparkCapture::Boundary(14_592), 13_440, 2_048, 0).is_err());
     }
 }

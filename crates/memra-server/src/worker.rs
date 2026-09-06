@@ -22659,9 +22659,17 @@ fn step_dspark_spec(
         #[allow(clippy::unnecessary_unwrap)]
         // allow: the Some-guard sits in a multi-clause regime gate; if-let would reshape the arm structure
         let sess = s.dspark.as_mut().unwrap();
-        if let Err(err) = lm
-            .model
-            .dspark_spec_session_resume(engine, d, sess, &suffix)
+        // memra#257: the resume carries the SAME cut the cold prime would take for this prompt
+        // (`s.dspark_capture_at`, the render-stable boundary of the whole new prompt), so a
+        // restored session publishes a fresh entry at the new turn's boundary instead of
+        // leaving the cache frozen at turn 1's. PromptEnd is deliberately not offered here.
+        let resume_capture = match (s.dspark_capture_prefix, s.dspark_capture_at) {
+            (true, Some(b)) => memra_engine::dflash::DsparkCapture::Boundary(b),
+            _ => memra_engine::dflash::DsparkCapture::Off,
+        };
+        if let Err(err) =
+            lm.model
+                .dspark_spec_session_resume(engine, d, sess, &suffix, resume_capture)
         {
             // Fail the request loudly rather than silently switching numeric programs
             // mid-request — the same law as the cold prime below. The parked state is
@@ -30477,6 +30485,20 @@ mod tests {
         assert!(
             args.contains("s.dspark_capture_at"),
             "the serving prime must pass the session's cut, not a literal"
+        );
+        // memra#257: the RESUME prime carries the same cut, so a restored session can publish
+        // the new turn's boundary instead of freezing the entry at turn 1's.
+        let rcall = prod
+            .find(".dspark_spec_session_resume(engine, d, sess, &suffix, resume_capture)")
+            .expect("the serving resume call passes a capture");
+        let rwin = &prod[rcall.saturating_sub(600)..rcall];
+        assert!(
+            rwin.contains("(true, Some(b)) => memra_engine::dflash::DsparkCapture::Boundary(b)"),
+            "the resume cut must be the session's boundary, and only a boundary"
+        );
+        assert!(
+            rwin.contains("_ => memra_engine::dflash::DsparkCapture::Off"),
+            "PromptEnd never captures on resume (that cut is the #248 bug)"
         );
     }
 
