@@ -281,7 +281,7 @@ nothing occupying the device while it waits. EXISTS BECAUSE the TP-2 join costs 
 today: `tp_transport`'s default `host-canonical` bounces every hop through host and
 `Engine::dtoh` drains the stream, so each of the ~90 joins per token waits for that layer's
 compute twice, which is the whole reason TP-2 measured 3.1x slower than the pipeline split it
-would replace. Consumers: `tp_ar::ArLink` (driver `tp-ar-bench`). Gate:
+would replace. Consumers: `tp_ar::ArLink`, whose `all_reduce`, `broadcast` and `all_gather` are the same push under different offsets (driver `tp-ar-bench`). The movement pair matters more than the reduce for the walk as it stands: the glm5 TP MLA layer moves its bytes in three PURE-MOVEMENT hops (fan out `h` and the positions, all-gather the head parts, concat the column-parallel `wo` parts onto root), which is why the current arm is byte-identical to the unsharded walk by construction, so swapping only the transport keeps that property exactly. Gate:
 `tests/tp_ar_gpu.rs` (bitwise against the host sum at n 1 / 4 / 1024 / 4096 / 16384 / 65536, a
 repeat-call case, and a red arm where a fold with no peer push must not reproduce the sum).
 REQUIRES TWO DEVICES and skips otherwise: unlike every other TP arm, whose bytes go through host

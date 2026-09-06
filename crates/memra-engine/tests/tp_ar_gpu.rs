@@ -104,3 +104,70 @@ fn all_reduce_without_the_peer_push_diverges() {
     );
     drop(link);
 }
+
+/// Broadcast and all-gather are PURE MOVEMENT, which is the property the TP walk's byte-identity
+/// rests on: the glm5 MLA layer's three hops move bytes and nothing else, so a transport swap
+/// must reproduce them exactly, not approximately. Both are checked bitwise, and the all-gather
+/// is checked on BOTH ranks because each rank fills its own slot locally and its peer's slot
+/// over the link, and only reading both proves the two directions do not collide.
+#[test]
+fn broadcast_and_all_gather_move_bytes_exactly() {
+    let Some((ea, eb)) = pair() else {
+        eprintln!("needs two CUDA devices; skipping");
+        return;
+    };
+    let engines = [&ea, &eb];
+    for &span in &[1usize, 1024, 16384] {
+        let mut link = ArLink::new(&engines, 2 * span).unwrap();
+
+        // broadcast: rank 0's buffer lands on rank 1 byte for byte
+        let hsrc = vecf(span, 31 + span as u64);
+        let src = ea.htod(&hsrc).unwrap();
+        let mut dst = eb.htod(&vec![0.0f32; span]).unwrap();
+        link.broadcast(&engines, 0, &src, &mut dst, span).unwrap();
+        let got = eb.dtoh_view(&dst.slice(0..span)).unwrap();
+        for i in 0..span {
+            assert_eq!(
+                got[i].to_bits(),
+                hsrc[i].to_bits(),
+                "broadcast span={span} i={i}"
+            );
+        }
+
+        // all-gather: rank order concatenation, identical on both ranks
+        let pa = vecf(span, 41 + span as u64);
+        let pb = vecf(span, 42 + span as u64);
+        let da = ea.htod(&pa).unwrap();
+        let db = eb.htod(&pb).unwrap();
+        let mut fa = ea.htod(&vec![0.0f32; 2 * span]).unwrap();
+        let mut fb = eb.htod(&vec![0.0f32; 2 * span]).unwrap();
+        link.all_gather(&engines, &[&da, &db], &mut [&mut fa, &mut fb], span)
+            .unwrap();
+        let ga = ea.dtoh_view(&fa.slice(0..2 * span)).unwrap();
+        let gb = eb.dtoh_view(&fb.slice(0..2 * span)).unwrap();
+        for i in 0..span {
+            assert_eq!(
+                ga[i].to_bits(),
+                pa[i].to_bits(),
+                "gather rank0 slot0 span={span} i={i}"
+            );
+            assert_eq!(
+                ga[span + i].to_bits(),
+                pb[i].to_bits(),
+                "gather rank0 slot1 span={span} i={i}"
+            );
+            assert_eq!(
+                gb[i].to_bits(),
+                pa[i].to_bits(),
+                "gather rank1 slot0 span={span} i={i}"
+            );
+            assert_eq!(
+                gb[span + i].to_bits(),
+                pb[i].to_bits(),
+                "gather rank1 slot1 span={span} i={i}"
+            );
+        }
+        ea.stream().synchronize().unwrap();
+        eb.stream().synchronize().unwrap();
+    }
+}
