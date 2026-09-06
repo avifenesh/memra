@@ -242,6 +242,36 @@ unsafe extern "C" {
         threads: i32,
         stream: *mut c_void,
     ) -> i32;
+    /// `memra_dsv4_hc_pre_v4` with `rms_norm_zq8_f32`'s epilogue folded in, deleting that launch
+    /// (~3.9 us x ~79 per token). Bit-identical by an index coincidence spelled out at the kernel:
+    /// at BLOCK 1024 and d 4096 both passes of the norm own exactly the four elements the combine
+    /// tail already holds, in the same order, so the reduction tree and every expression replay
+    /// unchanged. Refuses any other width rather than reordering the reduction quietly.
+    #[allow(clippy::too_many_arguments)]
+    // allow: it is the hc-pre signature plus the norm epilogue's operands; splitting it would hide which buffer belongs to which half
+    pub fn memra_dsv4_hc_pre_v4_norm_zq8(
+        x: *const f32,
+        mixes: *const f32,
+        scale: *const f32,
+        base: *const f32,
+        pre: *mut f32,
+        post: *mut f32,
+        comb: *mut f32,
+        y: *mut f32,
+        s: i32,
+        hc: i32,
+        d: i32,
+        iters: i32,
+        eps: f32,
+        niters: *mut i32,
+        block: i32,
+        nw: *const f32,
+        z: *mut f32,
+        out_q: *mut i8,
+        out_d: *mut f32,
+        norm_eps: f32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_hc_collapse(
         x: *const f32,
         pre: *const f32,

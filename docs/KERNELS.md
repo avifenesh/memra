@@ -269,6 +269,19 @@ through `float4`; the slab launcher reads N disjoint slabs at caller-given offse
 a whole token's expert read (45 x 9 x 14 MiB = 5.5 GiB, sized past B200's 126 MB L2 on purpose).
 Driver: `bw-roofline` (`src/bin/bw_roofline.rs`), no flag, no default.
 
+`memra_dsv4_hc_pre_v4_norm_zq8` (`dsv4_hc_pre_v4_norm_zq8_body` + `dsv4_hc_pre_v4_e16_norm_zq8_kernel`,
+cu/dsv4_gpu.cu, lane/hc-pre-norm-fuse-20260906, `MEMRA_HC_PRE_NORM_FUSE`): `memra_dsv4_hc_pre_v4`
+with `rms_norm_zq8_f32`'s epilogue folded in, deleting that launch (~3.9 us x ~79 per token). The
+first instance of the fusion doctrine the decode census points at: 39% of the token sits in kernels
+that move almost no bytes, ncu says hc-pre cannot be fixed from the inside (4 active warps, 0.15
+eligible, 88.4% of cycles with nothing to issue, grid 1 on a 148-SM part), so the lever is deleting
+the neighbouring launch rather than speeding it up. BIT-IDENTICAL on an index coincidence: at BLOCK
+1024 and d 4096 both passes of `rms_norm_zq8_f32` own exactly the four elements the hc-pre combine
+tail already holds in registers, in the same order, so the reduction tree and every expression
+replay unchanged; the launcher returns 40026 at any other width rather than reordering quietly.
+Gate: `tests/hc_pre_norm_fuse_gpu.rs` (bitwise on z, q8 codes, q8 scales and y against the two-launch
+pair, plus a red arm on the norm weight).
+
 ### cu/tp_ar.cu — TP decode all-reduce (static-lib TU, default flags)
 
 `memra_tp_ar_push` (`memra_tp_ar_push_kernel`) and `memra_tp_ar_fold` (`memra_tp_ar_fold_kernel`),

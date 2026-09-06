@@ -2837,6 +2837,29 @@ pub fn hc_pre_sink_reg_from(v: Option<&str>, built_arch: &str) -> bool {
     }
 }
 
+/// `MEMRA_HC_PRE_NORM_FUSE=1` (lane/hc-pre-norm-fuse-20260906, default OFF, decide-by 2026-09-20):
+/// fold `rms_norm_zq8_f32`'s epilogue into the hc-pre launch, deleting the separate norm launch
+/// that runs next on the vector hc-pre just wrote (~3.9 us x ~79 launches per token).
+///
+/// WHY THIS SHAPE. The decode census puts 39% of the token in kernels that move almost no bytes,
+/// and ncu on hc-pre says they cannot be fixed from the inside: 4 active warps, 0.15 eligible,
+/// 88.4% of cycles with nothing to issue. At grid 1 the kernel cannot fill a 148-SM part, and
+/// seven arms rearranging its interior proved that the expensive way. The lever is to DELETE the
+/// neighbouring launch, not to speed it up.
+///
+/// BIT-IDENTICAL, on an index coincidence rather than a tolerance, so it carries hard
+/// preconditions instead of a fallback: `hidden == 4096` and `MEMRA_RMS_BLOCK == 1024`, because at
+/// any other block size the unfused reduction walks a different per-thread element set. Rides on
+/// `MEMRA_HC_PRE_V4`. Gate: `tests/hc_pre_norm_fuse_gpu.rs` (bitwise on z, the q8 codes, the q8
+/// scales and y, plus a red arm on the norm weight). Counter `HC_PRE_NORM_FUSE_DISPATCHES`.
+pub fn hc_pre_norm_fuse_on() -> bool {
+    std::env::var("MEMRA_HC_PRE_NORM_FUSE").as_deref() == Ok("1")
+}
+
+/// Launches of the fused hc-pre + norm epilogue (gate non-vacuity, box engagement receipt).
+pub static HC_PRE_NORM_FUSE_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 /// `MEMRA_HC_PRE_V4=1` (lane/hc-pre-phases-20260905): run the hc pre-chain on the v4 register
 /// schedule (`dsv4_hc_pre_v4_*_kernel`: x loaded once and kept, two barriers, warp 0's Sinkhorn
 /// overlapped with the other warps' combine) instead of `_v3`. Same arithmetic in the same

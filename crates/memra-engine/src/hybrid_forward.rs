@@ -2920,11 +2920,28 @@ impl HybridModel {
         n_embd: usize,
         eps: f32,
     ) -> Result<Option<Q8Pair>, Box<dyn std::error::Error>> {
-        crate::hyper::pre_t1_ws(e, topology, &hyper.attn, x, ws, n_embd)?;
-        // MEMRA_GLM5_Q8_FUSE_ATTN: see the eager walk above; same fusion, workspace form.
-        let attn_q8 = if crate::glm5_q8_fuse_attn_on()
-            && matches!(&layer.mixer, Mixer::Kda(la) if la.tp.is_none())
-        {
+        // MEMRA_HC_PRE_NORM_FUSE: when the norm below is the q8 one AND the shape fits, it rides
+        // INSIDE the hc-pre launch and its own launch disappears. `Some` means it already ran.
+        let want_q8 = crate::glm5_q8_fuse_attn_on()
+            && matches!(&layer.mixer, Mixer::Kda(la) if la.tp.is_none());
+        let fused_pair = crate::hyper::pre_t1_ws_norm(
+            e,
+            topology,
+            &hyper.attn,
+            x,
+            ws,
+            n_embd,
+            want_q8.then(|| (layer.attn_norm.float_data(), eps)),
+        )?;
+        let attn_q8 = if let Some(pair) = fused_pair {
+            if crate::HC_PRE_NORM_FUSE_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed) == 1 {
+                eprintln!(
+                    "[hc-pre-norm-fuse] engaged (rms_norm_zq8_f32 folded into hc_pre_v4, \
+                     hyper_range_decode_ws_body)"
+                );
+            }
+            Some(pair)
+        } else if want_q8 {
             let pair = e.rms_norm_zq8_f32(
                 &ws.y,
                 layer.attn_norm.float_data(),
