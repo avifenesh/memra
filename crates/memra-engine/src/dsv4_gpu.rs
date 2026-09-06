@@ -35,11 +35,41 @@ use memra_gguf::dsv4_forward::{
 };
 
 use crate::dsv4_c4::{C4Gather, C4HostStore};
+use crate::dsv4_ep::{EpCompute, EpLayer, EpScratch};
 use crate::dsv4_ffi as k;
 use crate::dsv4_ffi::ck;
-use crate::mmq_ffi::{memra_bind_device, memra_moe_kq_gemm_sk};
+pub use crate::dsv4_graph::Dsv4LayerCapture;
 
 type Res<T> = Result<T, String>;
+
+/// Copyable report for the gate-only one-layer CUDA graph probe.  The retained
+/// graph itself stays private to the verifier; callers only need the node and
+/// kernel census to decide whether the captured shape is worth a replay arm.
+#[derive(Clone, Debug)]
+pub struct Dsv4GraphProbeCensus {
+    pub layer: usize,
+    pub nodes: BTreeMap<String, usize>,
+    pub kernels: Vec<String>,
+}
+
+/// Gate-only component report for the first compressor/indexer scalar seam.
+/// This deliberately reports the redirect builder alone; the surrounding
+/// compressor state machine, score/top-k metadata, C4 gather, EP, and commit
+/// are not represented as graph-safe by this type.
+#[derive(Clone, Debug)]
+pub struct Dsv4IndexerScalarProbe {
+    pub layer: usize,
+    pub ratio: usize,
+    pub window: usize,
+    pub cap: usize,
+    pub first_pos: usize,
+    pub replay_pos: usize,
+    pub census: Dsv4GraphProbeCensus,
+    pub eager_capture: Vec<i32>,
+    pub graph_capture: Vec<i32>,
+    pub eager_replay: Vec<i32>,
+    pub graph_replay: Vec<i32>,
+}
 
 fn e<E: std::fmt::Display>(what: &str) -> impl FnOnce(E) -> String + '_ {
     move |err| format!("{what}: {err}")
@@ -278,6 +308,7 @@ pub enum DecodePath {
 }
 
 pub struct LayerDev {
+    ep: Option<EpLayer>,
     pub il: u32,
     pub ratio: usize,
     pub expert_kind: ExpertKind,
@@ -330,6 +361,37 @@ pub struct LayerDev {
     pub wo_a_fp8: Option<Fp8Dense>,
     pub wo_b_fp8: Option<Fp8Dense>,
     pub shared_fp8: [Option<Fp8Dense>; 3],
+}
+
+impl LayerDev {
+    // Canonical monolithic prime retains its numerical program, including its
+    // per-expert launch/scatter order. Peer-resident expert bytes are addressed
+    // directly here; steady device decode/verify uses the parallel dispatch.
+    fn expert_ptrs(
+        &self,
+        expert: usize,
+        projection: usize,
+        wbytes: usize,
+        sbytes: usize,
+        stream: &CudaStream,
+    ) -> Res<(*const c_void, *const c_void)> {
+        if projection >= 3 || expert >= self.experts_s2.len() / 3 {
+            return Err("expert pointer outside global tensor contract".into());
+        }
+        let (weights, scales, local) = match &self.ep {
+            Some(ep) if (ep.peer_first..ep.peer_first + ep.count).contains(&expert) => {
+                (&ep.peer_w, &ep.peer_sc, expert - ep.peer_first)
+            }
+            Some(ep) => (&self.experts_w, &self.experts_sc, expert - ep.local_first),
+            None => (&self.experts_w, &self.experts_sc, expert),
+        };
+        Ok((
+            (weights.device_ptr(stream).0 + ((local * 3 + projection) * wbytes) as u64)
+                as *const c_void,
+            (scales.device_ptr(stream).0 + ((local * 3 + projection) * sbytes) as u64)
+                as *const c_void,
+        ))
+    }
 }
 
 /// Fixture-array capture (GPU twin of the oracle's BlockCapture, gathered host-side).
@@ -401,6 +463,7 @@ pub struct DsparkDev {
 /// propose, never read as ring). Rings advance ONLY for committed positions
 /// (`dspark_write_rings`) — the §3.1 drafter rule.
 pub struct DsparkState {
+    matrix_moe: bool,
     pub rings: Vec<CudaSlice<f32>>,
     /// tap rows [t_max, n_targets*hidden] on the last stage: the hc-mean concat of
     /// layers 40/41/42, written by the decode step (and consumed by write_rings /
@@ -438,27 +501,6 @@ pub struct DsparkCaptureOut {
     pub markov_embed: Vec<f32>,
 }
 
-/// An exact reduction rewrite, encoded explicitly in the CUDA launch parameters.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[repr(i32)]
-pub enum Dsv4Fp4Reduce {
-    #[default]
-    Block = 0,
-    Warp = 1,
-}
-
-impl Dsv4Fp4Reduce {
-    pub fn resolve(value: Option<&str>) -> Res<Self> {
-        match value {
-            None | Some("") | Some("block") => Ok(Self::Block),
-            Some("warp") => Ok(Self::Warp),
-            Some(other) => Err(format!(
-                "MEMRA_DSV4_FP4_REDUCE '{other}' unknown (block | warp)"
-            )),
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Dsv4IndexerScore {
     #[default]
@@ -474,6 +516,43 @@ impl Dsv4IndexerScore {
             Some(other) => Err(format!(
                 "MEMRA_DSV4_INDEXER_SCORE '{other}' unknown (scalar | tiled)"
             )),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Dsv4SinkScore {
+    #[default]
+    Scalar,
+    Tiled,
+}
+
+impl Dsv4SinkScore {
+    pub fn resolve(value: Option<&str>) -> Res<Self> {
+        match value {
+            None | Some("") | Some("scalar") => Ok(Self::Scalar),
+            Some("tiled") => Ok(Self::Tiled),
+            Some(other) => Err(format!(
+                "MEMRA_DSV4_SINK_SCORE '{other}' unknown (scalar | tiled)"
+            )),
+        }
+    }
+}
+
+#[cfg(test)]
+mod sink_score_tests {
+    use super::Dsv4SinkScore;
+    #[test]
+    fn sink_score_default_is_scalar_and_unknown_values_refuse() {
+        for raw in [None, Some(""), Some("scalar")] {
+            assert_eq!(Dsv4SinkScore::resolve(raw), Ok(Dsv4SinkScore::Scalar));
+        }
+        assert_eq!(
+            Dsv4SinkScore::resolve(Some("tiled")),
+            Ok(Dsv4SinkScore::Tiled)
+        );
+        for raw in ["TILED", "1", "auto", "tiled "] {
+            assert!(Dsv4SinkScore::resolve(Some(raw)).is_err());
         }
     }
 }
@@ -575,6 +654,25 @@ fn dspark_draft_position(tap_position: usize, slot: usize) -> usize {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Dsv4VerifyTopk {
+    #[default]
+    Legacy,
+    Device,
+}
+
+impl Dsv4VerifyTopk {
+    pub fn resolve(value: Option<&str>) -> Res<Self> {
+        match value {
+            None | Some("") | Some("legacy") => Ok(Self::Legacy),
+            Some("device") => Ok(Self::Device),
+            Some(other) => Err(format!(
+                "MEMRA_DSV4_VERIFY_TOPK '{other}' unknown (legacy | device)"
+            )),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Dsv4PrefillHeadStats {
     pub full_rows: u64,
     pub last_rows: u64,
@@ -591,6 +689,9 @@ struct PrefillHeadCounters {
 }
 
 pub struct Dsv4Gpu {
+    ep_enabled: bool,
+    ep_serial_control: bool,
+    ep_calls: std::sync::atomic::AtomicU64,
     pub model: Dsv4Model,
     pub stages: Vec<Stage>,
     pub layer_stage: Vec<usize>, // trunk layer -> stage idx
@@ -628,9 +729,17 @@ pub struct Dsv4Gpu {
     /// oracle; only the per-expert launch loop is collapsed.
     pub dspark_fused_moe: bool,
     /// Chosen per model, never a process-global mutable test switch.
-    fp4_reduce: Dsv4Fp4Reduce,
     indexer_score: Dsv4IndexerScore,
+    sink_score: Dsv4SinkScore,
+    sink_tiled_calls: std::sync::atomic::AtomicU64,
+    verify_topk: Dsv4VerifyTopk,
+    device_verify_topk_calls: std::sync::atomic::AtomicU64,
     prefill_grouped: bool,
+    matrix_moe: bool,
+    grouped_route_device: bool,
+    grouped_device_route_calls: std::sync::atomic::AtomicU64,
+    grouped_fresh_storage_control: bool,
+    grouped_fresh_storage_calls: std::sync::atomic::AtomicU64,
     prefill_head: Dsv4PrefillHead,
     prefill_draft: Dsv4PrefillDraft,
     prefill_head_counts: PrefillHeadCounters,
@@ -688,6 +797,7 @@ pub struct LayerCache {
 /// consumers (sink_attn via idx pads, combine via order, top-k via exact nb) read
 /// exactly the regions written this step, so no per-step zeroing exists at all.
 pub struct StepWs {
+    ep: Option<EpScratch>,
     c4_gather: Option<C4Gather>,
     pub h_a: CudaSlice<f32>, // [hc*hidden] layer io (in h_a -> h2 in h_b -> h3 in h_a)
     pub h_b: CudaSlice<f32>, // [hc*hidden]
@@ -757,6 +867,10 @@ pub struct StepWs {
 /// Whole-trunk decode state: one [`LayerCache`] per trunk layer + the stream position.
 /// `pos` = tokens consumed so far (the next decode_step processes position `pos`).
 pub struct DecodeState {
+    matrix_moe: bool,
+    /// A persistent one-row instance of the same executor used by matrix
+    /// prefill and verification. Never crosses into the scalar expert program.
+    matrix_step: Option<Box<MatrixStep>>,
     pub caches: Vec<LayerCache>,
     pub pos: usize,
     /// Token capacity of this session's cache allocation. This is independently planned
@@ -775,6 +889,33 @@ pub struct DecodeState {
 }
 
 impl DecodeState {
+    pub fn matrix_device_scratch_bytes(&self) -> Vec<u64> {
+        let mut bytes = self.matrix_step.as_ref().map_or_else(
+            || vec![0; self.cache_bytes.len()],
+            |step| step.verify.bytes.clone(),
+        );
+        if let Some(step) = &self.matrix_step
+            && let Some(taps) = &step.taps
+        {
+            bytes[step.tap_device] += (taps.len() * 4) as u64;
+        }
+        bytes
+    }
+    /// Extra routed-EP scratch on each physical stage, including the opposite
+    /// stage's dispatch workspace. Verifier scratch is in `VerifyState::bytes`.
+    pub fn ep_device_scratch_bytes(&self) -> Vec<u64> {
+        let mut bytes = vec![0; self.cache_bytes.len()];
+        if let Some(work) = &self.ws {
+            for (owner, ws) in work.iter().enumerate() {
+                if let Some(ep) = &ws.ep {
+                    bytes[owner] += ep.owner_bytes;
+                    bytes[1 - owner] += ep.peer_bytes;
+                }
+            }
+        }
+        bytes
+    }
+
     /// Additional device scratch for active C4 gather, separate from semantic
     /// cache capacity. Batched scratch is already charged in `VerifyState::bytes`.
     pub fn c4_device_scratch_bytes(&self) -> Vec<u64> {
@@ -860,6 +1001,7 @@ struct Dsv4HostLayer {
 /// The type is intentionally opaque: only [`Dsv4Gpu::snapshot_decode_state`] and
 /// [`Dsv4Gpu::restore_decode_state`] may interpret its layout.
 pub struct Dsv4HostDecodeState {
+    matrix_moe: bool,
     stages: Vec<crate::PinnedHostBuf>,
     layers: Vec<Dsv4HostLayer>,
     pos: usize,
@@ -884,6 +1026,7 @@ impl Dsv4HostDecodeState {
 /// not copied. This is kept separate from [`Dsv4HostDecodeState`] so plain deployments pay
 /// neither the allocation nor the metadata.
 pub struct Dsv4HostDsparkState {
+    matrix_moe: bool,
     slab: crate::PinnedHostBuf,
     rings: Vec<Range<usize>>,
     tap: Range<usize>,
@@ -996,12 +1139,6 @@ fn upload_f32(stream: &std::sync::Arc<CudaStream>, v: &[f32]) -> Res<CudaSlice<f
 fn upload_i32(stream: &std::sync::Arc<CudaStream>, v: &[i32]) -> Res<CudaSlice<i32>> {
     let mut d = stream.alloc_zeros::<i32>(v.len()).map_err(e("alloc i32"))?;
     stream.memcpy_htod(v, &mut d).map_err(e("htod i32"))?;
-    Ok(d)
-}
-
-fn upload_u64(stream: &std::sync::Arc<CudaStream>, v: &[u64]) -> Res<CudaSlice<u64>> {
-    let mut d = stream.alloc_zeros::<u64>(v.len()).map_err(e("alloc u64"))?;
-    stream.memcpy_htod(v, &mut d).map_err(e("htod u64"))?;
     Ok(d)
 }
 
@@ -1387,6 +1524,29 @@ fn f32_to_bf16_exact(name: &str, v: &[f32]) -> Vec<u8> {
 }
 
 impl Dsv4Gpu {
+    pub fn device_verify_topk_calls(&self) -> u64 {
+        self.device_verify_topk_calls
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Exclusive gate seam, not a request option. Graph executables must key this
+    /// policy when full-layer graph capture is added.
+    pub fn set_verify_topk_for_gate(&mut self, arm: Dsv4VerifyTopk) -> Res<Dsv4VerifyTopk> {
+        if !matches!(self.decode_path, DecodePath::Device { host_math: false }) {
+            return Err("device verify top-k requires device math".into());
+        }
+        for stage in &self.stages {
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .map_err(e("drain verify top-k gate"))?;
+        }
+        let previous = self.verify_topk;
+        self.verify_topk = arm;
+        Ok(previous)
+    }
+
     pub fn coupled_draft_draws(&self) -> u64 {
         self.coupled_draft_draws
             .load(std::sync::atomic::Ordering::Relaxed)
@@ -1470,6 +1630,14 @@ impl Dsv4Gpu {
 
     /// One-load experimental gate control. No request may mutate the model arm.
     pub fn set_prefill_grouped_for_gate(&mut self, enabled: bool) -> Res<bool> {
+        if enabled && self.matrix_moe {
+            return Err(
+                "prefill-only grouped probe cannot overlay the matrix request program".into(),
+            );
+        }
+        if enabled && self.ep_enabled {
+            return Err("grouped-prefill EP is not qualified".into());
+        }
         if !matches!(self.decode_path, DecodePath::Device { host_math: false }) {
             return Err("grouped prefill gate requires the device path".into());
         }
@@ -1487,6 +1655,200 @@ impl Dsv4Gpu {
         }
         let previous = self.prefill_grouped;
         self.prefill_grouped = enabled;
+        Ok(previous)
+    }
+
+    /// Exclusive routing-only comparison inside the same grouped arithmetic class.
+    pub fn set_grouped_route_device_for_gate(&mut self, enabled: bool) -> Res<bool> {
+        let grouped = self.prefill_grouped;
+        self.set_prefill_grouped_for_gate(grouped)?;
+        let previous = self.grouped_route_device;
+        self.grouped_route_device = enabled;
+        Ok(previous)
+    }
+
+    pub fn grouped_device_route_calls(&self) -> u64 {
+        self.grouped_device_route_calls
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Gate-only control for the grouped device-route status/live-count readback.
+    /// The device prefix/scatter remains authoritative; disabling this arm only
+    /// removes its host D2H checks and stream synchronize.
+    pub fn set_grouped_route_validation_for_gate(&self, enabled: bool) -> bool {
+        for stage in &self.stages {
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .expect("drain grouped route validation gate");
+        }
+        crate::dsv4_grouped::set_route_validation_for_gate(enabled)
+    }
+
+    pub fn grouped_route_validation_for_gate(&self) -> bool {
+        crate::dsv4_grouped::route_validation_enabled()
+    }
+
+    /// Gate-only control for the grouped FP8-to-half mirror status readback.
+    /// The device mirror kernel still writes status; disabling validation only
+    /// removes the per-projection D2H/synchronize used by the correctness arm.
+    pub fn set_grouped_mirror_validation_for_gate(&self, enabled: bool) -> bool {
+        for stage in &self.stages {
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .expect("drain grouped mirror validation gate");
+        }
+        crate::dsv4_grouped::set_mirror_validation_for_gate(enabled)
+    }
+
+    pub fn grouped_mirror_validation_for_gate(&self) -> bool {
+        crate::dsv4_grouped::mirror_validation_enabled()
+    }
+
+    /// Gate-only control for DSV4 matrix gate/up + SwiGLU fusion.  Drain every
+    /// stage before changing the process-local override so no in-flight grouped
+    /// call observes a policy transition.  This is deliberately not exposed as
+    /// a request or serving option.
+    pub fn set_grouped_gu_fuse_for_gate(&self, enabled: bool) -> bool {
+        for stage in &self.stages {
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .expect("drain grouped GU-fusion gate");
+        }
+        crate::set_moe_f16g_gu_fuse_for_gate(enabled)
+    }
+
+    pub fn grouped_gu_fuse_for_gate(&self) -> bool {
+        crate::moe_f16g_gu_fuse_on()
+    }
+
+    pub fn clear_grouped_gu_fuse_for_gate(&self) {
+        for stage in &self.stages {
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .expect("drain grouped GU-fusion reset");
+        }
+        crate::clear_moe_f16g_gu_fuse_for_gate();
+    }
+
+    /// Gate-only control for the DSV4 tensor-core m_e=1 tail candidate. Drain
+    /// every stage before changing the process-local override; this is not a
+    /// serving/request option and never selects the removed scalar visitor.
+    pub fn set_grouped_m1_tc_for_gate(&self, enabled: bool) -> bool {
+        for stage in &self.stages {
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .expect("drain grouped m1-tc gate");
+        }
+        crate::set_moe_f16g_m1_tc_for_gate(enabled)
+    }
+
+    pub fn grouped_m1_tc_for_gate(&self) -> bool {
+        crate::moe_f16g_m1_tc_on()
+    }
+
+    pub fn clear_grouped_m1_tc_for_gate(&self) {
+        for stage in &self.stages {
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .expect("drain grouped m1-tc reset");
+        }
+        crate::clear_moe_f16g_m1_tc_for_gate();
+    }
+
+    /// Gate-only active-C4 profile control. Host publication may be elided only
+    /// when the state was restored with a complete recent-row sidecar; the
+    /// sidecar then remains the authoritative GPU image for newly emitted rows
+    /// while older rows retain the canonical host image. This is never a serving
+    /// or snapshot policy.
+    pub fn set_c4_host_copy_elision_for_gate(&self, enabled: bool) -> bool {
+        for stage in &self.stages {
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .expect("drain C4 host-copy elision gate");
+        }
+        crate::dsv4_c4::set_host_copy_elision_for_gate(enabled)
+    }
+
+    pub fn c4_host_copy_elision_for_gate(&self) -> bool {
+        crate::dsv4_c4::host_copy_elision_enabled()
+    }
+
+    pub fn matrix_moe_enabled(&self) -> bool {
+        self.matrix_moe
+    }
+
+    /// Exclusive storage-only control. Fresh zeroed buffers are the comparison
+    /// arm for persistent-buffer correctness, never a serving environment flag.
+    pub fn set_grouped_fresh_storage_for_gate(&mut self, enabled: bool) -> Res<bool> {
+        for stage in &self.stages {
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .map_err(e("grouped storage control drain"))?;
+        }
+        let previous = self.grouped_fresh_storage_control;
+        self.grouped_fresh_storage_control = enabled;
+        Ok(previous)
+    }
+
+    pub fn grouped_fresh_storage_calls(&self) -> u64 {
+        self.grouped_fresh_storage_calls
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn validate_matrix_program(&self) -> Res<()> {
+        if self.matrix_moe
+            && (self.prefill_grouped
+                || (self.ep_enabled
+                    && (!self.grouped_route_device || self.grouped_fresh_storage_control))
+                || self.variant != ActQuantVariant::RefFp8Round
+                || !matches!(self.decode_path, DecodePath::Device { host_math: false })
+                || self.expert_arm != ExpertArm::Native
+                || crate::moe_f16g_mode() < 2
+                || crate::moe_f16g_sk_params().0 < 0
+                || !crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT)
+                || self.stages.iter().flat_map(|s| &s.layers).any(|l| {
+                    l.expert_kind != ExpertKind::Nvfp4
+                        || l.experts_modelopt_table.is_none()
+                        || (self.ep_enabled
+                            && l.ep.as_ref().is_none_or(|ep| ep.peer_table.is_none()))
+                }))
+        {
+            return Err("matrix request program requires native NVFP4 trunk, device math, grouped visitor/direct loader, complete expert tables, no prefill-only probe, and device routing/reused storage for EP".into());
+        }
+        Ok(())
+    }
+
+    /// Exclusive gate seam. Already-created trunk/draft states retain their
+    /// program tags and refuse reuse after an incompatible switch.
+    pub fn set_matrix_moe_for_gate(&mut self, enabled: bool) -> Res<bool> {
+        let previous = self.matrix_moe;
+        self.matrix_moe = enabled;
+        if let Err(err) = self.validate_matrix_program() {
+            self.matrix_moe = previous;
+            return Err(err);
+        }
+        for stage in &self.stages {
+            if let Err(err) = stage.gpu.stream().synchronize() {
+                self.matrix_moe = previous;
+                return Err(format!("matrix program switch drain: {err}"));
+            }
+        }
         Ok(previous)
     }
 
@@ -1517,29 +1879,48 @@ impl Dsv4Gpu {
         Ok(previous)
     }
 
-    /// Isolated gate control, not a serving request option. Requires exclusive
-    /// model access and drains both stage streams before changing the next launch.
-    /// DSV4 currently owns no captured graph; future graph support must invalidate
-    /// or re-capture its executables here before this seam may be used with it.
-    pub fn set_fp4_reduce_for_gate(&mut self, arm: Dsv4Fp4Reduce) -> Res<Dsv4Fp4Reduce> {
-        if !matches!(self.decode_path, DecodePath::Device { .. }) {
-            return Err("FP4 reduction gate requires the native device path".to_string());
+    /// Exclusive gate seam; persistent graph users must key/rebuild on this arm.
+    /// Dynamic shared-memory attributes are configured before any capture.
+    pub fn set_sink_score_for_gate(&mut self, arm: Dsv4SinkScore) -> Res<Dsv4SinkScore> {
+        if arm == Dsv4SinkScore::Tiled
+            && (!matches!(self.decode_path, DecodePath::Device { host_math: false })
+                || !self.chains_f32
+                || self.model.mc.n_head != 64
+                || self.model.cfg().head_dim != 512)
+        {
+            return Err(
+                "tiled sink scores require native device f32x and 64 heads of width 512".into(),
+            );
         }
         for stage in &self.stages {
             stage
                 .gpu
                 .ctx
                 .bind_to_thread()
-                .map_err(e("bind FP4 gate stage"))?;
+                .map_err(e("bind sink-score gate"))?;
             stage
                 .gpu
                 .stream()
                 .synchronize()
-                .map_err(e("drain FP4 gate stage"))?;
+                .map_err(e("drain sink-score gate"))?;
+            if arm == Dsv4SinkScore::Tiled {
+                crate::dsv4_grouped::bind_matrix(&stage.gpu)?;
+                unsafe {
+                    ck(
+                        "initialize tiled sink shared memory",
+                        k::memra_dsv4_sink_scores_tiled_init(),
+                    )?;
+                }
+            }
         }
-        let previous = self.fp4_reduce;
-        self.fp4_reduce = arm;
+        let previous = self.sink_score;
+        self.sink_score = arm;
         Ok(previous)
+    }
+
+    pub fn sink_tiled_calls(&self) -> u64 {
+        self.sink_tiled_calls
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Upload a tensor as bf16: BF16-stored tensors ride raw bytes; FP8-blk tensors are
@@ -1922,19 +2303,20 @@ impl Dsv4Gpu {
         };
         let experts_s2_dev = upload_f32(&stream, &experts_s2)?;
         let experts_modelopt_table = if expert_kind == ExpertKind::Nvfp4 {
-            let (wp, _wg) = experts_w.device_ptr(&stream);
-            let (sptr, _sg) = experts_sc.device_ptr(&stream);
-            let mut pointers = vec![0u64; 6 * ne];
-            for ex in 0..ne {
-                for pi in 0..3 {
-                    pointers[2 * pi * ne + ex] = wp + ((ex * 3 + pi) * wbytes) as u64;
-                    pointers[(2 * pi + 1) * ne + ex] = sptr + ((ex * 3 + pi) * sbytes) as u64;
-                }
-            }
-            Some(upload_u64(&stream, &pointers)?)
+            Some(crate::dsv4_grouped::modelopt_table(
+                &stream,
+                &experts_w,
+                &experts_sc,
+                ne,
+                hidden,
+                inter,
+            )?)
         } else {
             None
         };
+        self.stages[stage].loaded_bytes += experts_modelopt_table
+            .as_ref()
+            .map_or(0, |table| (table.len() * 8) as u64);
 
         let (wq_a, wq_a_fp8) = self.tensor_dense(stage, &format!("{p}.attn.wq_a"), fp8_ok)?;
         let (wq_b, wq_b_fp8) = self.tensor_dense(stage, &format!("{p}.attn.wq_b"), fp8_ok)?;
@@ -1949,6 +2331,7 @@ impl Dsv4Gpu {
             self.tensor_dense(stage, &format!("{p}.ffn.shared_experts.w3"), fp8_ok)?;
 
         Ok(LayerDev {
+            ep: None,
             il,
             ratio,
             expert_kind,
@@ -2003,18 +2386,32 @@ impl Dsv4Gpu {
         max_seq: usize,
     ) -> Res<Self> {
         assert_eq!(devices.len(), 2, "lane 4 placement is a 2-card layer split");
-        let fp4_reduce_env = match std::env::var("MEMRA_DSV4_FP4_REDUCE") {
-            Ok(value) => Some(value),
-            Err(std::env::VarError::NotPresent) => None,
-            Err(err) => return Err(format!("MEMRA_DSV4_FP4_REDUCE: {err}")),
-        };
-        let fp4_reduce = Dsv4Fp4Reduce::resolve(fp4_reduce_env.as_deref())?;
+        let sampler_order = dsv4_sampler_order()?;
+        eprintln!("[load] sampled candidate order: {sampler_order:?}");
         let grouped_env = match std::env::var("MEMRA_DSV4_PREFILL_MOE") {
             Ok(value) => Some(value),
             Err(std::env::VarError::NotPresent) => None,
             Err(err) => return Err(format!("MEMRA_DSV4_PREFILL_MOE: {err}")),
         };
         let prefill_grouped = resolve_prefill_moe(grouped_env.as_deref())?;
+        let program_env = match std::env::var("MEMRA_DSV4_MOE_PROGRAM") {
+            Ok(value) => Some(value),
+            Err(std::env::VarError::NotPresent) => None,
+            Err(err) => return Err(format!("MEMRA_DSV4_MOE_PROGRAM: {err}")),
+        };
+        let matrix_moe = crate::dsv4_grouped::resolve_program(program_env.as_deref())?;
+        if matrix_moe && prefill_grouped {
+            return Err(
+                "matrix request program and prefill-only grouped probe are mutually exclusive"
+                    .into(),
+            );
+        }
+        let route_env = match std::env::var("MEMRA_DSV4_GROUPED_ROUTE") {
+            Ok(value) => Some(value),
+            Err(std::env::VarError::NotPresent) => None,
+            Err(err) => return Err(format!("MEMRA_DSV4_GROUPED_ROUTE: {err}")),
+        };
+        let grouped_route_device = crate::dsv4_grouped::resolve(route_env.as_deref())?;
         let head_env = match std::env::var("MEMRA_DSV4_PREFILL_HEAD") {
             Ok(value) => Some(value),
             Err(std::env::VarError::NotPresent) => None,
@@ -2039,6 +2436,28 @@ impl Dsv4Gpu {
             Err(err) => return Err(format!("MEMRA_DSV4_INDEXER_SCORE: {err}")),
         };
         let indexer_score = Dsv4IndexerScore::resolve(indexer_env.as_deref())?;
+        let sink_score_env = match std::env::var("MEMRA_DSV4_SINK_SCORE") {
+            Ok(value) => Some(value),
+            Err(std::env::VarError::NotPresent) => None,
+            Err(err) => return Err(format!("MEMRA_DSV4_SINK_SCORE: {err}")),
+        };
+        let sink_score = Dsv4SinkScore::resolve(sink_score_env.as_deref())?;
+        let topk_env = match std::env::var("MEMRA_DSV4_VERIFY_TOPK") {
+            Ok(value) => Some(value),
+            Err(std::env::VarError::NotPresent) => None,
+            Err(err) => return Err(format!("MEMRA_DSV4_VERIFY_TOPK: {err}")),
+        };
+        let verify_topk = Dsv4VerifyTopk::resolve(topk_env.as_deref())?;
+        let ep_env = match std::env::var("MEMRA_DSV4_EP") {
+            Ok(value) => Some(value),
+            Err(std::env::VarError::NotPresent) => None,
+            Err(err) => return Err(format!("MEMRA_DSV4_EP: {err}")),
+        };
+        let ep_requested = match ep_env.as_deref() {
+            None | Some("") | Some("off") => false,
+            Some("pair") => true,
+            Some(other) => return Err(format!("MEMRA_DSV4_EP '{other}' unknown (off | pair)")),
+        };
         let model = Dsv4Model::open(dir)?;
         let d = model.cfg().clone();
         let mc = model.mc.clone();
@@ -2149,6 +2568,11 @@ impl Dsv4Gpu {
                 ));
             }
         };
+        if verify_topk == Dsv4VerifyTopk::Device
+            && !matches!(decode_path, DecodePath::Device { host_math: false })
+        {
+            return Err("MEMRA_DSV4_VERIFY_TOPK=device requires device math".into());
+        }
         // lane 9: island-dots arm seam (owner-gated fork; f64 = the oracle-truth arm).
         // 0731 re-gate extension rung: `f32x` = the f32 dots arm PLUS f32-accumulation
         // twins for the remaining device-path f64 chains (owner-authorized fork).
@@ -2211,6 +2635,16 @@ impl Dsv4Gpu {
                 "MEMRA_DSV4_INDEXER_SCORE=tiled requires device f32x and indexer 64x128".into(),
             );
         }
+        if sink_score == Dsv4SinkScore::Tiled
+            && (!matches!(decode_path, DecodePath::Device { host_math: false })
+                || !chains_f32
+                || mc.n_head != 64
+                || d.head_dim != 512)
+        {
+            return Err(
+                "MEMRA_DSV4_SINK_SCORE=tiled requires device f32x and attention 64x512".into(),
+            );
+        }
         if prefill_grouped
             && (!matches!(decode_path, DecodePath::Device { host_math: false })
                 || crate::moe_f16g_mode() < 2
@@ -2271,6 +2705,9 @@ impl Dsv4Gpu {
         )?;
 
         let mut me = Dsv4Gpu {
+            ep_enabled: false,
+            ep_serial_control: false,
+            ep_calls: std::sync::atomic::AtomicU64::new(0),
             model,
             stages,
             layer_stage: (0..n_trunk).map(|il| usize::from(il >= split_at)).collect(),
@@ -2290,9 +2727,17 @@ impl Dsv4Gpu {
             chains_f32,
             dspark_head_f32,
             dspark_fused_moe,
-            fp4_reduce,
             indexer_score,
+            sink_score: Dsv4SinkScore::Scalar,
+            sink_tiled_calls: std::sync::atomic::AtomicU64::new(0),
+            verify_topk,
+            device_verify_topk_calls: std::sync::atomic::AtomicU64::new(0),
             prefill_grouped,
+            matrix_moe,
+            grouped_route_device,
+            grouped_device_route_calls: std::sync::atomic::AtomicU64::new(0),
+            grouped_fresh_storage_control: false,
+            grouped_fresh_storage_calls: std::sync::atomic::AtomicU64::new(0),
             prefill_head,
             prefill_draft,
             prefill_head_counts: PrefillHeadCounters::default(),
@@ -2316,7 +2761,6 @@ impl Dsv4Gpu {
                 "f64"
             }
         );
-        eprintln!("[load] selected FP4 reduction: {:?}", me.fp4_reduce);
         eprintln!("[load] indexer score: {:?}", me.indexer_score);
         eprintln!("[load] prefill head: {:?}", me.prefill_head);
         eprintln!("[load] prefill DSpark prime: {:?}", me.prefill_draft);
@@ -2619,7 +3063,205 @@ impl Dsv4Gpu {
         for st in &me.stages {
             st.gpu.stream().synchronize().map_err(e("load sync"))?;
         }
+        me.validate_matrix_program()?;
+        if me.matrix_moe {
+            eprintln!(
+                "[load] matrix request program: one-row/batched native executor, experimental"
+            );
+        }
+        if sink_score == Dsv4SinkScore::Tiled {
+            me.set_sink_score_for_gate(sink_score)?;
+        }
+        eprintln!("[load] sink score: {:?}", me.sink_score);
+        if ep_requested {
+            me.enable_ep_pair_for_gate()?;
+        }
+        me.validate_matrix_program()?;
         Ok(me)
+    }
+
+    /// Load-time residency transition and one-load gate seam. Existing decode
+    /// states/graphs must be discarded before calling. The normal EP entry is
+    /// MEMRA_DSV4_EP=pair, resolved once by the loader.
+    pub fn enable_ep_pair_for_gate(&mut self) -> Res<()> {
+        if self.ep_enabled {
+            return Ok(());
+        }
+        if self.stages.len() != 2
+            || self.boundary_ev.len() != 1
+            || !self.dense_fp8
+            || self.prefill_grouped
+            || (self.matrix_moe
+                && (!self.grouped_route_device || self.grouped_fresh_storage_control))
+            || self.expert_arm != ExpertArm::Native
+            || !matches!(self.decode_path, DecodePath::Device { host_math: false })
+        {
+            return Err("EP pair requires two peer-qualified native device stages, FP8 dense, and reference math or device-routed matrix math with reused storage".into());
+        }
+        let moe = self.model.mc.moe.as_ref().expect("moe");
+        let ne = moe.expert_count as usize;
+        if ne == 0 || !ne.is_multiple_of(2) {
+            return Err("EP pair requires an even expert count".into());
+        }
+        let count = ne / 2;
+        let hidden = self.model.mc.n_embd as usize;
+        let inter = moe.expert_ff_length as usize;
+        let ws = 3 * inter * hidden / 2;
+        let ss = 3 * inter * hidden / 16;
+        if self
+            .stages
+            .iter()
+            .flat_map(|s| &s.layers)
+            .any(|l| l.expert_kind != ExpertKind::Nvfp4)
+        {
+            return Err("EP pair trunk requires the pinned native NVFP4 bank".into());
+        }
+        // Alternate old layer owners so transient sharding never moves every
+        // stage-0 half to an already full stage 1 before releasing its halves.
+        let max_layers = self.stages.iter().map(|s| s.layers.len()).max().unwrap();
+        for index in 0..max_layers {
+            for owner_index in 0..2 {
+                let (a, b) = self.stages.split_at_mut(1);
+                let (owner, peer) = if owner_index == 0 {
+                    (&mut a[0], &mut b[0])
+                } else {
+                    (&mut b[0], &mut a[0])
+                };
+                let Some(layer) = owner.layers.get_mut(index) else {
+                    continue;
+                };
+                let first = owner_index * count;
+                let peer_first = (1 - owner_index) * count;
+                let (local_w, peer_w) = crate::dsv4_ep::split_slab(
+                    &owner.gpu,
+                    &peer.gpu,
+                    &layer.experts_w,
+                    first,
+                    peer_first,
+                    count,
+                    ws,
+                )?;
+                let (local_sc, peer_sc) = crate::dsv4_ep::split_slab(
+                    &owner.gpu,
+                    &peer.gpu,
+                    &layer.experts_sc,
+                    first,
+                    peer_first,
+                    count,
+                    ss,
+                )?;
+                let peer_s2 = upload_f32(&peer.gpu.stream(), &layer.experts_s2)?;
+                peer.gpu
+                    .stream()
+                    .synchronize()
+                    .map_err(e("EP macro scales ready"))?;
+                let old_table_bytes = layer
+                    .experts_modelopt_table
+                    .as_ref()
+                    .map_or(0, |t| (t.len() * 8) as u64);
+                let local_table = if self.matrix_moe {
+                    Some(crate::dsv4_grouped::modelopt_table(
+                        &owner.gpu.stream(),
+                        &local_w,
+                        &local_sc,
+                        count,
+                        hidden,
+                        inter,
+                    )?)
+                } else {
+                    None
+                };
+                let peer_table = if self.matrix_moe {
+                    Some(crate::dsv4_grouped::modelopt_table(
+                        &peer.gpu.stream(),
+                        &peer_w,
+                        &peer_sc,
+                        count,
+                        hidden,
+                        inter,
+                    )?)
+                } else {
+                    None
+                };
+                let local_table_bytes = local_table.as_ref().map_or(0, |t| (t.len() * 8) as u64);
+                let peer_table_bytes = peer_table.as_ref().map_or(0, |t| (t.len() * 8) as u64);
+                layer.experts_w = local_w;
+                layer.experts_sc = local_sc;
+                layer.experts_modelopt_table = local_table;
+                layer.ep = Some(EpLayer {
+                    peer_stage: 1 - owner_index,
+                    local_first: first,
+                    count,
+                    peer_first,
+                    peer_w,
+                    peer_sc,
+                    peer_s2,
+                    peer_table,
+                });
+                let moved = (count * (ws + ss)) as u64;
+                owner.loaded_bytes =
+                    owner.loaded_bytes - moved - old_table_bytes + local_table_bytes;
+                peer.loaded_bytes += moved + (ne * 3 * 4) as u64 + peer_table_bytes;
+                owner
+                    .gpu
+                    .stream()
+                    .synchronize()
+                    .map_err(e("retire full EP bank"))?;
+                eprintln!(
+                    "[EP load] layer={} ids={first}..{} local, {peer_first}..{} peer; all shard bytes verified",
+                    layer.il,
+                    first + count,
+                    peer_first + count
+                );
+            }
+        }
+        for st in &self.stages {
+            st.gpu.ctx.bind_to_thread().map_err(e("bind EP finalize"))?;
+            st.gpu.stream().synchronize().map_err(e("EP finalize"))?;
+            unsafe {
+                let mut pool = std::ptr::null_mut();
+                let rc = cudarc::driver::sys::cuDeviceGetDefaultMemPool(
+                    &mut pool,
+                    st.gpu.ctx.cu_device(),
+                );
+                if rc != cudarc::driver::sys::CUresult::CUDA_SUCCESS {
+                    return Err(format!("EP get pool: {rc:?}"));
+                }
+                let rc = cudarc::driver::sys::cuMemPoolTrimTo(pool, 0);
+                if rc != cudarc::driver::sys::CUresult::CUDA_SUCCESS {
+                    return Err(format!("EP retire unused full-bank pages: {rc:?}"));
+                }
+            }
+        }
+        self.ep_enabled = true;
+        eprintln!(
+            "[load] EP pair enabled for trunk routed experts; attention/shared experts and DSpark keep their layer owners"
+        );
+        Ok(())
+    }
+
+    pub fn ep_calls(&self) -> u64 {
+        self.ep_calls.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Gate-only real-route load snapshot for the whole-expert EP experiment.
+    /// Counters are enabled only with `MEMRA_DSV4_EP_ROUTE_STATS=1`.
+    pub fn ep_route_stats(&self) -> crate::dsv4_ep::EpRouteStats {
+        crate::dsv4_ep::route_stats_snapshot()
+    }
+
+    pub fn set_ep_serial_control_for_gate(&mut self, serial: bool) -> Res<()> {
+        if !self.ep_enabled {
+            return Err("EP serial control requires sharded residency".into());
+        }
+        for st in &self.stages {
+            st.gpu
+                .stream()
+                .synchronize()
+                .map_err(e("EP schedule gate drain"))?;
+        }
+        self.ep_serial_control = serial;
+        Ok(())
     }
 
     /// (free, total, resident-by-loader) bytes per device — the placement table source.
@@ -3835,7 +4477,7 @@ impl Dsv4Gpu {
                             wbytes as i64,
                             sbytes as i64,
                             topk as i32,
-                            self.fp4_reduce as i32,
+                            0,
                             sp(&stream),
                         ),
                     )?;
@@ -3883,7 +4525,7 @@ impl Dsv4Gpu {
                         wbytes as i64,
                         sbytes as i64,
                         0,
-                        self.fp4_reduce as i32,
+                        0,
                         sp(&stream),
                     ),
                 )?;
@@ -3976,17 +4618,14 @@ impl Dsv4Gpu {
                     )?;
                     // w1 (out inter), w3 (out inter) from x codes; w2 (out hidden) from h codes
                     for (pi, dst) in [(0usize, &mut g1), (2usize, &mut g3)] {
-                        let woff = (ex * 3 + pi) * wbytes;
-                        let soff = (ex * 3 + pi) * sbytes;
+                        let (wp, scp) = layer.expert_ptrs(ex, pi, wbytes, sbytes, &stream)?;
                         ck(
                             "fp4_gemm w1/w3",
                             k::memra_dsv4_fp4_gemm(
                                 dp!(xgq, &stream),
                                 dpf!(xgs, &stream),
-                                (layer.experts_w.device_ptr(&stream).0 as usize + woff)
-                                    as *const c_void,
-                                (layer.experts_sc.device_ptr(&stream).0 as usize + soff)
-                                    as *const c_void,
+                                wp,
+                                scp,
                                 layer.experts_s2[ex * 3 + pi],
                                 kind,
                                 dpm!(*dst, &stream),
@@ -4021,17 +4660,14 @@ impl Dsv4Gpu {
                             sp(&stream),
                         ),
                     )?;
-                    let woff2 = (ex * 3 + 1) * wbytes;
-                    let soff2 = (ex * 3 + 1) * sbytes;
+                    let (wp2, scp2) = layer.expert_ptrs(ex, 1, wbytes, sbytes, &stream)?;
                     ck(
                         "fp4_gemm w2",
                         k::memra_dsv4_fp4_gemm(
                             dp!(hq, &stream),
                             dpf!(hs, &stream),
-                            (layer.experts_w.device_ptr(&stream).0 as usize + woff2)
-                                as *const c_void,
-                            (layer.experts_sc.device_ptr(&stream).0 as usize + soff2)
-                                as *const c_void,
+                            wp2,
+                            scp2,
                             layer.experts_s2[ex * 3 + 1],
                             kind,
                             dpm!(contrib, &stream),
@@ -4092,12 +4728,7 @@ impl Dsv4Gpu {
                     .iter()
                     .enumerate()
                 {
-                    let woff = (ex * 3 + pi) * wbytes;
-                    let soff = (ex * 3 + pi) * sbytes;
-                    let wp =
-                        (layer.experts_w.device_ptr(&stream).0 as usize + woff) as *const c_void;
-                    let scp =
-                        (layer.experts_sc.device_ptr(&stream).0 as usize + soff) as *const c_void;
+                    let (wp, scp) = layer.expert_ptrs(ex, pi, wbytes, sbytes, &stream)?;
                     let dst = st.deq[pi].device_ptr(&stream).0 as *mut c_void;
                     match layer.expert_kind {
                         ExpertKind::Nvfp4 => ck(
@@ -4325,6 +4956,7 @@ impl Dsv4Gpu {
     /// Lane 6: prefill the prompt with the lane-4 path while POPULATING the decode
     /// caches, so decode_step can continue incrementally from ids.len().
     pub fn prefill_with_cache(&self, ids: &[u32], state: &mut DecodeState) -> Res<ForwardOut> {
+        crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
         assert_eq!(state.pos, 0, "prefill_with_cache needs a fresh DecodeState");
         assert!(!ids.is_empty(), "empty prompt");
         if ids.len() > state.capacity {
@@ -4368,9 +5000,13 @@ impl Dsv4Gpu {
                 state.capacity
             ));
         }
-        let first = self.prefill_with_cache(&ids[..1], state)?;
+        let first = if self.matrix_moe {
+            self.decode_step(ids[0], state)?
+        } else {
+            self.prefill_with_cache(&ids[..1], state)?.logits
+        };
         if ids.len() == 1 {
-            return Ok(first.logits);
+            return Ok(first);
         }
         self.continue_prefix_chunked(&ids[1..], state, chunk)
     }
@@ -4428,6 +5064,9 @@ impl Dsv4Gpu {
         early_exit_after: Option<u32>,
         mut state: Option<&mut DecodeState>,
     ) -> Res<Option<ForwardOut>> {
+        if self.matrix_moe {
+            return Err("matrix request program requires chunked prefill; monolithic reference API is not interchangeable".into());
+        }
         if state
             .as_ref()
             .is_some_and(|s| s.caches.iter().any(|c| c.c4_host.is_some()))
@@ -4828,19 +5467,114 @@ impl Dsv4Gpu {
         capacity: usize,
         transient_rows: usize,
     ) -> Res<DecodeState> {
-        if capacity == 0 || capacity > self.max_seq {
+        self.alloc_decode_state_inner(capacity, transient_rows, false, 0)
+    }
+
+    /// Fresh matrix-program state with C4 history allocated directly in pinned
+    /// host RAM. No full-capacity C4 GPU allocation or initial offload is made.
+    pub fn alloc_decode_state_host_c4(
+        &self,
+        capacity: usize,
+        transient_rows: usize,
+    ) -> Res<DecodeState> {
+        self.alloc_decode_state_host_c4_recent(capacity, transient_rows, 0)
+    }
+
+    /// Explicit, experimental recent-row GPU sidecar for authoritative host C4.
+    /// Existing APIs use zero rows. Requested cache rows are bounded at 8192 and
+    /// clipped to each layer's capacity. Canonical snapshots do not include this
+    /// derived cache; all additional GPU bytes are charged to state.cache_bytes.
+    pub fn alloc_decode_state_host_c4_recent(
+        &self,
+        capacity: usize,
+        transient_rows: usize,
+        recent_rows: usize,
+    ) -> Res<DecodeState> {
+        if !self.matrix_moe {
+            return Err("fresh host-C4 prime requires the phase-consistent matrix program".into());
+        }
+        self.alloc_decode_state_inner(capacity, transient_rows, true, recent_rows)
+    }
+
+    pub fn c4_recent_gpu_bytes(&self, state: &DecodeState) -> Res<Vec<u64>> {
+        if state.caches.len() != self.layer_stage.len() {
+            return Err("C4 recent state layout mismatch".into());
+        }
+        let mut bytes = vec![0; self.stages.len()];
+        for (il, cache) in state.caches.iter().enumerate() {
+            if let Some(host) = &cache.c4_host {
+                bytes[self.layer_stage[il]] += host.device_bytes();
+            }
+        }
+        Ok(bytes)
+    }
+
+    /// Cache-aware gather submissions, not a hit-rate or graph-replay counter.
+    pub fn c4_recent_gather_calls(&self) -> u64 {
+        crate::dsv4_c4::recent_gather_calls()
+    }
+
+    /// Pinned active-history reservation needed for this session capacity.
+    /// This is distinct from parked-prefix snapshot storage and excludes GPU
+    /// SWA/indexer/C128/transient allocations, which retain their own accounting.
+    pub fn c4_host_bytes_for_capacity(&self, capacity: usize) -> Res<Vec<u64>> {
+        if capacity == 0
+            || capacity > self.max_seq
+            || self.model.cfg().sliding_window != 128
+            || self.model.cfg().head_dim != 512
+        {
+            return Err("C4 host reservation capacity outside model limit".into());
+        }
+        let mut bytes = vec![0u64; self.stages.len()];
+        for (stage, st) in self.stages.iter().enumerate() {
+            for layer in &st.layers {
+                if layer.ratio == 4 && layer.idx.is_some() {
+                    let n = dsv4_cache_cap_blocks(capacity, 4)
+                        .checked_mul(512 * 4)
+                        .ok_or("C4 host reservation overflow")? as u64;
+                    bytes[stage] = bytes[stage]
+                        .checked_add(n)
+                        .ok_or("C4 host reservation overflow")?;
+                }
+            }
+        }
+        Ok(bytes)
+    }
+
+    fn alloc_decode_state_inner(
+        &self,
+        capacity: usize,
+        transient_rows: usize,
+        host_c4: bool,
+        recent_rows: usize,
+    ) -> Res<DecodeState> {
+        if recent_rows > 8192 || (!host_c4 && recent_rows != 0) {
+            return Err("recent C4 rows require host C4 and a bound of 0..8192".into());
+        }
+        let transient_rows = transient_rows.max(usize::from(self.matrix_moe));
+        if capacity == 0 || capacity > self.max_seq || transient_rows > DSV4_BATCH_WIDTH_MAX {
             return Err(format!(
-                "dsv4 decode capacity {capacity} outside 1..={} model limit",
-                self.max_seq
+                "dsv4 decode capacity {capacity} or transient width {transient_rows} outside model/transaction limits {} / {DSV4_BATCH_WIDTH_MAX}",
+                self.max_seq,
             ));
         }
         let d = self.model.cfg();
         let mc = &self.model.mc;
         let win = d.sliding_window as usize;
         let hd = d.head_dim as usize;
+        if host_c4
+            && (!matches!(self.decode_path, DecodePath::Device { host_math: false })
+                || win != 128
+                || hd != 512)
+        {
+            return Err(
+                "direct host-C4 allocation requires native device math and SWA128/HD512".into(),
+            );
+        }
         let n_trunk = mc.n_layer - mc.nextn_predict_layers;
         let mut caches = Vec::with_capacity(n_trunk as usize);
         let mut cache_bytes = vec![0u64; self.stages.len()];
+        let mut host_cache_bytes = vec![0u64; self.stages.len()];
         // iteration 3, rung 4: reserve T_max TRANSIENT window-kv rows per layer at
         // kvc rows [win + cap_blocks, win + cap_blocks + T_max) — where a batched verify
         // round's kv lands so the persistent ring stays read-only until commit (§3.1).
@@ -4859,8 +5593,16 @@ impl Dsv4Gpu {
             let layer = &st.layers[lidx];
             let ratio = layer.ratio;
             let cap_blocks = dsv4_cache_cap_blocks(capacity, ratio);
-            let kvc_rows = win + cap_blocks + trans_rows;
-            let mut bytes = (kvc_rows * hd * 4) as u64;
+            let c4_host = if host_c4 && ratio == 4 && layer.idx.is_some() && cap_blocks > 0 {
+                let store = C4HostStore::with_recent(stream.clone(), cap_blocks, recent_rows)?;
+                host_cache_bytes[stage_i] += store.bytes() as u64;
+                Some(store)
+            } else {
+                None
+            };
+            let kvc_rows = win + if c4_host.is_some() { 0 } else { cap_blocks } + trans_rows;
+            let mut bytes =
+                (kvc_rows * hd * 4) as u64 + c4_host.as_ref().map_or(0, C4HostStore::device_bytes);
             let kvc = stream
                 .alloc_zeros::<f32>(kvc_rows * hd)
                 .map_err(e("kvc alloc"))?;
@@ -4903,7 +5645,7 @@ impl Dsv4Gpu {
             cache_bytes[stage_i] += bytes;
             caches.push(LayerCache {
                 kvc,
-                c4_host: None,
+                c4_host,
                 n_blocks: 0,
                 pend_kv,
                 pend_score,
@@ -4913,8 +5655,33 @@ impl Dsv4Gpu {
                 ipend_score,
             });
         }
-        let ws = if matches!(self.decode_path, DecodePath::Device { .. }) {
+        let ws = if matches!(self.decode_path, DecodePath::Device { .. }) && !self.matrix_moe {
             Some(self.alloc_step_ws()?)
+        } else {
+            None
+        };
+        let matrix_step = if self.matrix_moe {
+            let verify = self.alloc_batched_state_for(capacity, 1)?;
+            let tap_elems = self
+                .dspark
+                .as_ref()
+                .map_or(0, |d| d.targets.len() * self.model.mc.n_embd as usize);
+            let stream = self.stages.last().expect("matrix head stage").gpu.stream();
+            let taps = if tap_elems > 0 {
+                Some(
+                    stream
+                        .alloc_zeros::<f32>(tap_elems)
+                        .map_err(e("matrix step taps"))?,
+                )
+            } else {
+                None
+            };
+            Some(Box::new(MatrixStep {
+                verify,
+                taps,
+                tap_device: self.stages.last().expect("matrix head stage").dev,
+                failed: false,
+            }))
         } else {
             None
         };
@@ -4922,11 +5689,13 @@ impl Dsv4Gpu {
             st.gpu.stream().synchronize().map_err(e("cache sync"))?;
         }
         Ok(DecodeState {
+            matrix_moe: self.matrix_moe,
+            matrix_step,
             caches,
             pos: 0,
             capacity,
             cache_bytes,
-            host_cache_bytes: vec![0; self.stages.len()],
+            host_cache_bytes,
             transient_rows,
             ws,
         })
@@ -5013,6 +5782,15 @@ impl Dsv4Gpu {
     /// append-only compressed rows through each high-water mark, and the compressor/indexer
     /// pending state. Copy commands are queued per stage and synchronized once per stage.
     pub fn snapshot_decode_state(&self, state: &DecodeState) -> Res<Dsv4HostDecodeState> {
+        crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
+        if crate::dsv4_c4::host_copy_elision_enabled() {
+            return Err(
+                "C4 host-copy elision is a gate-only decode arm and cannot snapshot state".into(),
+            );
+        }
+        if state.matrix_step.as_ref().is_some_and(|step| step.failed) {
+            return Err("cannot snapshot a failed matrix transaction".into());
+        }
         if state.pos == 0 {
             return Err("cannot snapshot an unprimed dsv4 decode state".into());
         }
@@ -5109,9 +5887,8 @@ impl Dsv4Gpu {
             if let Some(host) = &cache.c4_host {
                 // Canonical snapshot stays [SWA, live compressed rows], independent
                 // of active residency. Restore can use either residency later.
-                let compressed = host.read(cache.n_blocks)?;
                 let all = dsv4_pinned_f32_mut(slab, meta.kvc.range.clone());
-                all[win * hd..].copy_from_slice(&compressed);
+                host.copy_to_host(&mut all[win * hd..])?;
                 stream
                     .memcpy_dtoh(&cache.kvc.slice(..win * hd), &mut all[..win * hd])
                     .map_err(e("C4 snapshot window"))?;
@@ -5143,6 +5920,7 @@ impl Dsv4Gpu {
                 .map_err(e("dsv4 snapshot sync"))?;
         }
         Ok(Dsv4HostDecodeState {
+            matrix_moe: state.matrix_moe,
             stages,
             layers,
             pos: state.pos,
@@ -5177,7 +5955,43 @@ impl Dsv4Gpu {
         capacity: usize,
         transient_rows: usize,
     ) -> Res<DecodeState> {
-        if capacity < host.pos || capacity > self.max_seq {
+        self.restore_decode_state_inner(host, capacity, transient_rows, false, 0)
+    }
+
+    /// Restore a primed canonical snapshot without materializing C4 history on
+    /// the GPU. SWA/indexer/C128 and scratch retain their device allocation.
+    pub fn restore_decode_state_host_c4(
+        &self,
+        host: &Dsv4HostDecodeState,
+        capacity: usize,
+        transient_rows: usize,
+    ) -> Res<DecodeState> {
+        self.restore_decode_state_inner(host, capacity, transient_rows, true, 0)
+    }
+
+    /// Restore the same canonical host snapshot with an explicit recent-row GPU
+    /// cache. Host history is unchanged; the sidecar is reset and seeded from the
+    /// snapshot's latest live rows, never copied from another state's cache.
+    pub fn restore_decode_state_host_c4_recent(
+        &self,
+        host: &Dsv4HostDecodeState,
+        capacity: usize,
+        transient_rows: usize,
+        recent_rows: usize,
+    ) -> Res<DecodeState> {
+        self.restore_decode_state_inner(host, capacity, transient_rows, true, recent_rows)
+    }
+
+    fn restore_decode_state_inner(
+        &self,
+        host: &Dsv4HostDecodeState,
+        capacity: usize,
+        transient_rows: usize,
+        host_c4: bool,
+        recent_rows: usize,
+    ) -> Res<DecodeState> {
+        crate::dsv4_grouped::ensure_program(self.matrix_moe, host.matrix_moe)?;
+        if host.pos == 0 || capacity < host.pos || capacity > self.max_seq {
             return Err(format!(
                 "dsv4 restore capacity {capacity} outside parked pos {}..={} model limit",
                 host.pos, self.max_seq
@@ -5192,7 +6006,10 @@ impl Dsv4Gpu {
                 self.layer_stage.len()
             ));
         }
-        let mut state = self.alloc_decode_state_for_transient(capacity, transient_rows)?;
+        let mut state =
+            self.alloc_decode_state_inner(capacity, transient_rows, host_c4, recent_rows)?;
+        let win = self.model.cfg().sliding_window as usize;
+        let hd = self.model.cfg().head_dim as usize;
         for (il, meta) in host.layers.iter().enumerate() {
             let stage = self.layer_stage[il];
             if meta.kvc.stage != stage {
@@ -5209,7 +6026,23 @@ impl Dsv4Gpu {
             let stream = st.gpu.stream();
             let slab = &host.stages[stage];
             let cache = &mut state.caches[il];
-            dsv4_htod_span(&stream, slab, &meta.kvc, &mut cache.kvc)?;
+            if let Some(active) = cache.c4_host.as_mut() {
+                let expected = (win + meta.n_blocks)
+                    .checked_mul(hd)
+                    .ok_or("C4 restore size overflow")?;
+                if meta.kvc.range.len() != expected || meta.n_blocks > active.rows {
+                    return Err("C4 canonical snapshot length/capacity mismatch".into());
+                }
+                let values = dsv4_pinned_f32(slab, meta.kvc.range.clone());
+                active.copy_from_host(&values[win * hd..])?;
+                let window = Dsv4HostSpan {
+                    stage,
+                    range: meta.kvc.range.start..meta.kvc.range.start + win * hd,
+                };
+                dsv4_htod_span(&stream, slab, &window, &mut cache.kvc)?;
+            } else {
+                dsv4_htod_span(&stream, slab, &meta.kvc, &mut cache.kvc)?;
+            }
             for (dst, span) in [
                 (cache.pend_kv.as_mut(), meta.pend_kv.as_ref()),
                 (cache.pend_score.as_mut(), meta.pend_score.as_ref()),
@@ -5300,7 +6133,7 @@ impl Dsv4Gpu {
         // wo_b consumes o_groups*o_lora, the o cvt covers heads*hd separately.
         let max_gemm_k = (o_groups * o_lora).max(hidden).max(q_lora).max(sh_inter);
         let mut out = Vec::with_capacity(self.stages.len());
-        for st in &self.stages {
+        for (stage_index, st) in self.stages.iter().enumerate() {
             st.gpu.ctx.bind_to_thread().map_err(e("bind ctx ws"))?;
             let s = st.gpu.stream();
             let f = |n: usize| s.alloc_zeros::<f32>(n).map_err(e("ws f32"));
@@ -5308,6 +6141,19 @@ impl Dsv4Gpu {
             let i = |n: usize| s.alloc_zeros::<i32>(n).map_err(e("ws i32"));
             let u = |n: usize| s.alloc_zeros::<u64>(n).map_err(e("ws u64"));
             out.push(StepWs {
+                ep: if self.ep_enabled {
+                    Some(EpScratch::new(
+                        &st.gpu,
+                        &self.stages[1 - stage_index].gpu,
+                        1,
+                        topk,
+                        hidden,
+                        inter,
+                        None,
+                    )?)
+                } else {
+                    None
+                },
                 c4_gather: None,
                 h_a: f(hc * hidden)?,
                 h_b: f(hc * hidden)?,
@@ -6299,21 +7145,46 @@ impl Dsv4Gpu {
     ) -> i32 {
         unsafe {
             if self.chains_f32 {
-                k::memra_dsv4_sink_attn_dec_f32acc(
-                    q,
-                    kv,
-                    idxs,
-                    sink,
-                    scores,
-                    evals,
-                    den as *mut f32,
-                    o,
-                    heads,
-                    hd,
-                    slots,
-                    scale,
-                    sv,
-                )
+                if self.sink_score == Dsv4SinkScore::Tiled {
+                    let rc = k::memra_dsv4_sink_attn_dec_mq_f32acc_tiled(
+                        q,
+                        kv,
+                        idxs,
+                        sink,
+                        scores,
+                        evals,
+                        den as *mut f32,
+                        o,
+                        1,
+                        heads,
+                        hd,
+                        slots,
+                        slots,
+                        scale,
+                        sv,
+                    );
+                    if rc == 0 {
+                        self.sink_tiled_calls
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    rc
+                } else {
+                    k::memra_dsv4_sink_attn_dec_f32acc(
+                        q,
+                        kv,
+                        idxs,
+                        sink,
+                        scores,
+                        evals,
+                        den as *mut f32,
+                        o,
+                        heads,
+                        hd,
+                        slots,
+                        scale,
+                        sv,
+                    )
+                }
             } else {
                 k::memra_dsv4_sink_attn_dec(
                     q, kv, idxs, sink, scores, evals, den, o, heads, hd, slots, scale, sv,
@@ -7336,78 +8207,111 @@ impl Dsv4Gpu {
                     sp(&stream),
                 ),
             )?;
-            for (proj, dst) in [(0i32, &mut ws.g1), (2i32, &mut ws.g3)] {
+            if let Some(ep) = &layer.ep {
+                crate::dsv4_ep::execute(
+                    &st.gpu,
+                    &self.stages[ep.peer_stage].gpu,
+                    ep,
+                    &layer.experts_w,
+                    &layer.experts_sc,
+                    &layer.experts_s2_dev,
+                    &mut EpCompute {
+                        xq: &ws.xq,
+                        xs: &ws.xs,
+                        ids: &ws.sel,
+                        weights: &ws.selw,
+                        g1: &mut ws.g1,
+                        g3: &mut ws.g3,
+                        h: &mut ws.hbuf,
+                        hq: &mut ws.hq,
+                        hs: &mut ws.hs,
+                        contribution: &mut ws.contrib,
+                    },
+                    ws.ep.as_mut().ok_or("EP decode workspace missing")?,
+                    1,
+                    topk,
+                    hidden,
+                    inter,
+                    limit,
+                    0,
+                    self.ep_serial_control,
+                )?;
+                self.ep_calls
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            } else {
+                for (proj, dst) in [(0i32, &mut ws.g1), (2i32, &mut ws.g3)] {
+                    ck(
+                        "fp4_gemm_sel w1/w3",
+                        k::memra_dsv4_fp4_gemm_sel_g_arm(
+                            dp!(ws.xq, &stream),
+                            dpf!(ws.xs, &stream),
+                            dp!(layer.experts_w, &stream),
+                            dp!(layer.experts_sc, &stream),
+                            dpf!(layer.experts_s2_dev, &stream),
+                            ws.sel.device_ptr(&stream).0 as *const i32,
+                            proj,
+                            0,
+                            kind,
+                            dpm!(*dst, &stream),
+                            topk as i32,
+                            inter as i32,
+                            hidden as i32,
+                            wstride,
+                            sstride,
+                            0,
+                            0,
+                            sp(&stream),
+                        ),
+                    )?;
+                }
                 ck(
-                    "fp4_gemm_sel w1/w3",
+                    "swiglu dev",
+                    k::memra_dsv4_swiglu(
+                        dpf!(ws.g1, &stream),
+                        dpf!(ws.g3, &stream),
+                        dpm!(ws.hbuf, &stream),
+                        topk as i32,
+                        inter as i32,
+                        limit,
+                        ws.selw.device_ptr(&stream).0 as *const f32,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "act_quant_fp8 h dev",
+                    k::memra_dsv4_act_quant_fp8(
+                        dpf!(ws.hbuf, &stream),
+                        ws.hq.device_ptr_mut(&stream).0 as *mut c_void,
+                        dpm!(ws.hs, &stream),
+                        topk as i32,
+                        inter as i32,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "fp4_gemm_sel w2",
                     k::memra_dsv4_fp4_gemm_sel_g_arm(
-                        dp!(ws.xq, &stream),
-                        dpf!(ws.xs, &stream),
+                        dp!(ws.hq, &stream),
+                        dpf!(ws.hs, &stream),
                         dp!(layer.experts_w, &stream),
                         dp!(layer.experts_sc, &stream),
                         dpf!(layer.experts_s2_dev, &stream),
                         ws.sel.device_ptr(&stream).0 as *const i32,
-                        proj,
-                        0,
+                        1,
+                        1,
                         kind,
-                        dpm!(*dst, &stream),
+                        dpm!(ws.contrib, &stream),
                         topk as i32,
-                        inter as i32,
                         hidden as i32,
+                        inter as i32,
                         wstride,
                         sstride,
                         0,
-                        self.fp4_reduce as i32,
+                        0,
                         sp(&stream),
                     ),
                 )?;
             }
-            ck(
-                "swiglu dev",
-                k::memra_dsv4_swiglu(
-                    dpf!(ws.g1, &stream),
-                    dpf!(ws.g3, &stream),
-                    dpm!(ws.hbuf, &stream),
-                    topk as i32,
-                    inter as i32,
-                    limit,
-                    ws.selw.device_ptr(&stream).0 as *const f32,
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "act_quant_fp8 h dev",
-                k::memra_dsv4_act_quant_fp8(
-                    dpf!(ws.hbuf, &stream),
-                    ws.hq.device_ptr_mut(&stream).0 as *mut c_void,
-                    dpm!(ws.hs, &stream),
-                    topk as i32,
-                    inter as i32,
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "fp4_gemm_sel w2",
-                k::memra_dsv4_fp4_gemm_sel_g_arm(
-                    dp!(ws.hq, &stream),
-                    dpf!(ws.hs, &stream),
-                    dp!(layer.experts_w, &stream),
-                    dp!(layer.experts_sc, &stream),
-                    dpf!(layer.experts_s2_dev, &stream),
-                    ws.sel.device_ptr(&stream).0 as *const i32,
-                    1,
-                    1,
-                    kind,
-                    dpm!(ws.contrib, &stream),
-                    topk as i32,
-                    hidden as i32,
-                    inter as i32,
-                    wstride,
-                    sstride,
-                    0,
-                    self.fp4_reduce as i32,
-                    sp(&stream),
-                ),
-            )?;
             ck(
                 "combine dev",
                 k::memra_dsv4_combine_rows(
@@ -7636,6 +8540,63 @@ impl Dsv4Gpu {
     /// One device-path decode step. `want_logits` = dtoh the full row (the gates'
     /// contract); otherwise the greedy token comes back through the device argmax
     /// (4-byte D2H). Exactly one boundary peer copy per crossed stage boundary.
+    fn decode_matrix_step(
+        &self,
+        tok: u32,
+        state: &mut DecodeState,
+        want_logits: bool,
+        taps: Option<(&mut CudaSlice<f32>, usize)>,
+    ) -> Res<(Option<Vec<f32>>, u32)> {
+        let mut work = state
+            .matrix_step
+            .take()
+            .ok_or("matrix one-row workspace missing")?;
+        let result = (|| {
+            if work.failed || work.verify.open.is_some() {
+                return Err("matrix one-row workspace has an unfinished transaction".into());
+            }
+            if let Some((dst, base)) = &taps {
+                let src = work.taps.as_ref().ok_or("matrix tap workspace missing")?;
+                if base
+                    .checked_add(src.len())
+                    .is_none_or(|end| end > dst.len())
+                {
+                    return Err("matrix tap destination outside allocation".into());
+                }
+            }
+            let output = if want_logits {
+                VerifyOutput::Full
+            } else {
+                VerifyOutput::Argmax
+            };
+            let (logits, argmax) = self.verify_batch_dev_output(
+                &[tok],
+                state,
+                &mut work.verify,
+                if taps.is_some() {
+                    work.taps.as_mut()
+                } else {
+                    None
+                },
+                output,
+            )?;
+            self.commit_verify_dev(state, &mut work.verify, 1)?;
+            if let Some((dst, base)) = taps {
+                let stream = self.stages.last().expect("matrix head stage").gpu.stream();
+                let src = work.taps.as_ref().expect("validated tap workspace");
+                stream
+                    .memcpy_dtod(src, &mut dst.slice_mut(base..base + src.len()))
+                    .map_err(e("matrix step tap copy"))?;
+            }
+            Ok((logits, argmax[0]))
+        })();
+        if result.is_err() {
+            work.failed = true;
+        }
+        state.matrix_step = Some(work);
+        result
+    }
+
     fn decode_step_fast(
         &self,
         tok: u32,
@@ -7659,6 +8620,10 @@ impl Dsv4Gpu {
         host_math: bool,
         mut taps: Option<(&mut CudaSlice<f32>, usize)>,
     ) -> Res<(Option<Vec<f32>>, u32)> {
+        crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
+        if self.matrix_moe {
+            return self.decode_matrix_step(tok, state, want_logits, taps);
+        }
         let mc = &self.model.mc;
         let d = self.model.cfg();
         let pos = state.pos;
@@ -7863,6 +8828,7 @@ impl Dsv4Gpu {
         state: &mut DecodeState,
         mut dump: Option<&mut Vec<(String, Vec<f32>)>>,
     ) -> Res<Vec<f32>> {
+        crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
         if let DecodePath::Device { host_math } = self.decode_path {
             assert!(
                 dump.is_none(),
@@ -8066,6 +9032,7 @@ impl Dsv4Gpu {
             .alloc_zeros::<f32>((ds.block_size + 1) * ds.targets.len() * hidden)
             .map_err(e("dspark taps"))?;
         Ok(DsparkState {
+            matrix_moe: self.matrix_moe,
             rings,
             taps,
             tap_head: 0,
@@ -8077,6 +9044,7 @@ impl Dsv4Gpu {
     /// dropping them would make a restored turn draft from zeros while the trunk remained
     /// correct, a silent performance fork.
     pub fn snapshot_dspark_state(&self, state: &DsparkState) -> Res<Dsv4HostDsparkState> {
+        crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
         let ds = self.dspark();
         if state.rings.len() != ds.blocks.len() || state.tap_head > ds.block_size {
             return Err("dsv4 dspark state layout/cursor mismatch".into());
@@ -8127,6 +9095,7 @@ impl Dsv4Gpu {
             .synchronize()
             .map_err(e("dsv4 dspark snapshot sync"))?;
         Ok(Dsv4HostDsparkState {
+            matrix_moe: state.matrix_moe,
             slab,
             rings,
             tap,
@@ -8138,6 +9107,7 @@ impl Dsv4Gpu {
     /// Restore a parked DSpark image. The newest tap is normalized to row zero; all other
     /// tap rows and the draft tail are scratch and stay freshly zeroed.
     pub fn restore_dspark_state(&self, host: &Dsv4HostDsparkState) -> Res<DsparkState> {
+        crate::dsv4_grouped::ensure_program(self.matrix_moe, host.matrix_moe)?;
         let ds = self.dspark();
         if host.block_size != ds.block_size || host.rings.len() != ds.blocks.len() {
             return Err("dsv4 dspark host state/runtime layout mismatch".into());
@@ -8316,6 +9286,7 @@ impl Dsv4Gpu {
         main_hidden: &CudaSlice<f32>,
         s: usize,
     ) -> Res<()> {
+        crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
         let d = self.model.cfg();
         let hd = d.head_dim as usize;
         let win = d.sliding_window as usize;
@@ -8468,9 +9439,19 @@ impl Dsv4Gpu {
                 state.capacity
             ));
         }
-        let first = self.dspark_prefill_prime(&ids[..1], state, dstate)?;
+        if state.pos != 0 {
+            return Err("DSpark chunked prefill needs a fresh state".into());
+        }
+        crate::dsv4_grouped::ensure_program(self.matrix_moe, dstate.matrix_moe)?;
+        let first = if self.matrix_moe {
+            let logits = self.decode_step_tap(ids[0], state, dstate, 0)?;
+            self.dspark_write_rings(dstate, 0, 0)?;
+            logits
+        } else {
+            self.dspark_prefill_prime(&ids[..1], state, dstate)?.logits
+        };
         if ids.len() == 1 {
-            return Ok(first.logits);
+            return Ok(first);
         }
         self.dspark_continue_prefix_chunked(&ids[1..], state, dstate, chunk)
     }
@@ -8483,6 +9464,7 @@ impl Dsv4Gpu {
         dstate: &mut DsparkState,
         chunk: usize,
     ) -> Res<Vec<f32>> {
+        crate::dsv4_grouped::ensure_program(self.matrix_moe, dstate.matrix_moe)?;
         if suffix.is_empty() {
             return Err("dsv4 DSpark chunked continuation needs a non-empty suffix".into());
         }
@@ -8515,6 +9497,10 @@ impl Dsv4Gpu {
         let keep_from = self
             .prefill_draft
             .keep_from(suffix.len(), self.model.cfg().sliding_window as usize);
+        // Gate-only observability seam. It is deliberately opt-in and emits no output on
+        // serving paths; when enabled it reports completed teacher-forced chunks without
+        // changing chunk boundaries, arithmetic, synchronization, or state updates.
+        let progress = std::env::var_os("MEMRA_DSV4_PREFILL_PROGRESS").is_some();
         let mut last_logits = None;
         for (i, toks) in suffix.chunks(width).enumerate() {
             let pos0 = state.pos;
@@ -8556,6 +9542,16 @@ impl Dsv4Gpu {
                     rows[(toks.len() - 1) * vocab..].to_vec()
                 });
             }
+            if progress {
+                let completed = ((i + 1) * width).min(suffix.len());
+                println!(
+                    "PREFILL_PROGRESS completed_suffix={} total_suffix={} absolute_pos={} chunk={}",
+                    completed,
+                    suffix.len(),
+                    state.pos,
+                    width
+                );
+            }
         }
         Ok(last_logits.expect("final DSpark chunk requested logits"))
     }
@@ -8569,6 +9565,7 @@ impl Dsv4Gpu {
         s: usize,
         pos0: usize,
     ) -> Res<()> {
+        crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
         let d = self.model.cfg();
         let hd = d.head_dim as usize;
         let win = d.sliding_window as usize;
@@ -8609,6 +9606,7 @@ impl Dsv4Gpu {
         tap_row: usize,
         pos: usize,
     ) -> Res<()> {
+        crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
         let d = self.model.cfg();
         let hd = d.head_dim as usize;
         let win = d.sliding_window as usize;
@@ -9027,6 +10025,7 @@ impl Dsv4Gpu {
         capture: bool,
         sample: Option<&Dsv4SampleCfg>,
     ) -> Res<DsparkProposal> {
+        crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
         let ds = self.dspark();
         let mc = &self.model.mc;
         let d = self.model.cfg();
@@ -9459,6 +10458,7 @@ impl Dsv4Gpu {
         dspark_state: &mut DsparkState,
         tap_row: usize,
     ) -> Res<Vec<f32>> {
+        crate::dsv4_grouped::ensure_program(self.matrix_moe, dspark_state.matrix_moe)?;
         let DecodePath::Device { host_math } = self.decode_path else {
             return Err("decode_step_tap requires MEMRA_DSV4_DECODE_PATH=device".into());
         };
@@ -9482,6 +10482,7 @@ impl Dsv4Gpu {
         dspark_state: &mut DsparkState,
         tap_row: usize,
     ) -> Res<u32> {
+        crate::dsv4_grouped::ensure_program(self.matrix_moe, dspark_state.matrix_moe)?;
         let DecodePath::Device { host_math } = self.decode_path else {
             return Err("decode_step_greedy_tap requires MEMRA_DSV4_DECODE_PATH=device".into());
         };
@@ -9533,6 +10534,8 @@ impl Dsv4Gpu {
 /// separately from [`StepWs`] so the gated single-position path's allocations, launches
 /// and bytes are literally untouched by this rung.
 pub struct VerifyWs {
+    ep: Option<EpScratch>,
+    grouped_work: Option<crate::dsv4_grouped::GroupedWork>,
     c4_gather: Option<C4Gather>,
     pub tmax: usize,
     /// Phase identity, not inferred from row count. Spec verification never sets it.
@@ -9595,6 +10598,14 @@ pub struct VerifyWs {
     logits: CudaSlice<f32>,
     tok: CudaSlice<i32>,
     pos_dev: CudaSlice<i32>,
+    /// Stable page-locked sources for the per-round token/position uploads.
+    /// CUDA graph memcpy nodes retain the host pointer, so a temporary Vec is
+    /// not a valid replay source even when the first capture launch succeeds.
+    tok_host: crate::PinnedHostBuf,
+    pos_host: crate::PinnedHostBuf,
+    /// Gate-only scalar-pointer arm. It is set only for a selected window-only
+    /// layer capture; normal serving keeps the original ABI and launch sequence.
+    graph_scalars: bool,
     argmax: CudaSlice<i32>,
     /// ring-commit staging: transient rows copied out, then scattered to ring slots
     /// (source and destination live in the same `kvc` allocation, so the bounce is a
@@ -9603,6 +10614,33 @@ pub struct VerifyWs {
     slot_rows: CudaSlice<i32>,
     /// hc-mean staging for the DSpark tap (one target at a time, then `place_cols`)
     tap_tmp: CudaSlice<f32>,
+}
+
+fn write_pinned_i32(buf: &mut crate::PinnedHostBuf, values: &[i32]) -> Res<()> {
+    let bytes = values
+        .len()
+        .checked_mul(std::mem::size_of::<i32>())
+        .ok_or("pinned scalar byte overflow")?;
+    if bytes > buf.len() {
+        return Err("pinned scalar source exceeds workspace".into());
+    }
+    // PinnedHostBuf is allocated by cudaHostAlloc and is suitably aligned for
+    // i32. The owner keeps it alive across every graph replay.
+    unsafe {
+        std::slice::from_raw_parts_mut(buf.as_mut_slice().as_mut_ptr().cast::<i32>(), values.len())
+    }
+    .copy_from_slice(values);
+    Ok(())
+}
+
+fn pinned_i32(buf: &crate::PinnedHostBuf, len: usize) -> Res<&[i32]> {
+    let bytes = len
+        .checked_mul(std::mem::size_of::<i32>())
+        .ok_or("pinned scalar byte overflow")?;
+    if bytes > buf.len() {
+        return Err("pinned scalar source exceeds workspace".into());
+    }
+    Ok(unsafe { std::slice::from_raw_parts(buf.as_slice().as_ptr().cast::<i32>(), len) })
 }
 
 /// One compressor's verify-round checkpoint on device — the CPU oracle's `CompCkpt`,
@@ -9631,6 +10669,35 @@ struct LayerCkptDev {
 
 /// Whole-round verify state: the per-stage arenas + the per-layer §3.1 checkpoints.
 pub struct VerifyState {
+    matrix_moe: bool,
+    capture_probe_next_round: bool,
+    /// `None` means the legacy whole-layer capture census (every trunk layer).
+    /// `Some` is a sorted, same-stage contiguous run for the replayable gate
+    /// arms.  Keeping the selection explicit is important: a graph spanning a
+    /// PP boundary would otherwise capture only one stream and leave the
+    /// peer/event dependency outside the executable topology.
+    capture_layers: Option<Vec<usize>>,
+    replay_layer_next_round: bool,
+    /// Gate-only head graph state. The head consumes the last trunk `h_a` and
+    /// has no cache/router/commit dependency; all trunk layers remain eager.
+    capture_head_probe_next_round: bool,
+    replay_head_next_round: bool,
+    head_capture: Option<Dsv4LayerCapture>,
+    /// Gate-only stage-0 input graph. It captures embed+repeat_hc, whose only
+    /// live input is the refreshed device token row; all trunk work remains
+    /// eager after this prefix.
+    capture_stage0_embed_probe_next_round: bool,
+    replay_stage0_embed_next_round: bool,
+    stage0_embed_capture: Option<Dsv4LayerCapture>,
+    /// Per-layer stateless prefix graphs. These intentionally coexist with
+    /// EP/C4 because the fragment ends before any cache/router side effect.
+    capture_stateless_prefix_next_round: bool,
+    replay_stateless_prefix_next_round: bool,
+    stateless_prefix_captures: Vec<Option<Dsv4LayerCapture>>,
+    stateless_prefix_capture_count: u64,
+    stateless_prefix_replay_count: u64,
+    /// Diagnostic captures only, not persistent replay executables.
+    pub layer_captures: Vec<Dsv4LayerCapture>,
     ws: Vec<VerifyWs>,
     layers: Vec<LayerCkptDev>,
     pub tmax: usize,
@@ -9644,11 +10711,812 @@ pub struct VerifyState {
     pub bytes: Vec<u64>,
 }
 
+struct MatrixStep {
+    verify: VerifyState,
+    taps: Option<CudaSlice<f32>>,
+    tap_device: usize,
+    failed: bool,
+}
+
 impl Dsv4Gpu {
     /// Verify-round depth ceiling: block_size + 1 with the drafter loaded, else 0 (and
     /// then no transient rows are reserved anywhere — today's exact allocation).
     pub fn verify_tmax(&self) -> usize {
         self.dspark.as_ref().map(|d| d.block_size + 1).unwrap_or(0)
+    }
+
+    /// Capture and execute each complete trunk layer of the next verify round
+    /// once, for an exactness/capture census. This is not a serving graph flag.
+    pub fn arm_layer_capture_probe(&self, verify: &mut VerifyState) -> Res<()> {
+        if self.matrix_moe {
+            return Err(
+                "matrix MoE still has host validation; full-layer capture is not yet qualified"
+                    .into(),
+            );
+        }
+        if self.ep_enabled {
+            return Err(
+                "EP needs a multi-device graph contract; single-stage capture refuses it".into(),
+            );
+        }
+        if self.stages.iter().any(|st| st.gpu.ctx.is_event_tracking()) {
+            return Err(
+                "layer capture probe requires event tracking disabled before model/state allocation".into(),
+            );
+        }
+        if verify.open.is_some()
+            || verify.tmax > 8
+            || verify.tmax == 0
+            || self.verify_topk != Dsv4VerifyTopk::Device
+            || !self.dense_fp8
+            || !matches!(self.decode_path, DecodePath::Device { host_math: false })
+            || self.expert_arm != ExpertArm::Native
+            || verify.ws.iter().any(|w| w.is_prefill)
+        {
+            return Err("layer capture probe requires a closed narrow native device verifier with FP8 dense and device top-k".into());
+        }
+        verify.layer_captures.clear();
+        verify.capture_layers = None;
+        verify.replay_layer_next_round = false;
+        verify.capture_probe_next_round = true;
+        Ok(())
+    }
+
+    /// Gate-only first replayable matrix graph probe. It deliberately narrows the
+    /// shape to one ratio-0 layer: that removes compressor/indexer host scalars and
+    /// isolates graph retention plus the stable token/position sources. EP, C4 and
+    /// validation readbacks are outside this probe and remain refused here.
+    pub fn arm_one_layer_graph_probe(&self, verify: &mut VerifyState, layer: usize) -> Res<()> {
+        self.arm_graph_probe_layers(verify, &[layer], false)
+    }
+
+    /// Gate-only multi-layer graph probe.  This is deliberately the smallest
+    /// replayable round shape beyond the single-layer probe: a sorted,
+    /// contiguous run of window-only layers on one CUDA stream.  It exercises
+    /// live token/position pointers across more than one layer while leaving
+    /// compressor/indexer state, host-C4 copies, EP, and PP boundary events
+    /// outside the executable.  Those paths must not be silently captured as
+    /// if a single-stream graph owned their dependencies.
+    pub fn arm_multi_layer_graph_probe(
+        &self,
+        verify: &mut VerifyState,
+        layers: &[usize],
+    ) -> Res<()> {
+        self.arm_graph_probe_layers(verify, layers, true)
+    }
+
+    fn arm_graph_probe_layers(
+        &self,
+        verify: &mut VerifyState,
+        layers: &[usize],
+        require_multi: bool,
+    ) -> Res<()> {
+        if self.ep_enabled {
+            return Err("graph probe requires EP disabled".into());
+        }
+        if self.matrix_moe
+            && (crate::dsv4_grouped::route_validation_enabled()
+                || crate::dsv4_grouped::mirror_validation_enabled())
+        {
+            return Err(
+                "one-layer matrix graph probe requires route and FP8-mirror validation disabled"
+                    .into(),
+            );
+        }
+        if self.stages.iter().any(|st| st.gpu.ctx.is_event_tracking()) {
+            return Err(
+                "one-layer graph probe requires event tracking disabled before allocation".into(),
+            );
+        }
+        if (require_multi && layers.len() < 2) || (!require_multi && layers.len() != 1) {
+            return Err(if require_multi {
+                "multi-layer graph probe requires at least two layers".into()
+            } else {
+                "one-layer graph probe requires exactly one layer".into()
+            });
+        }
+        let n_trunk = (self.model.mc.n_layer - self.model.mc.nextn_predict_layers) as usize;
+        if layers.iter().any(|&layer| layer >= n_trunk) {
+            return Err(format!(
+                "graph probe layer outside trunk {n_trunk}: {layers:?}"
+            ));
+        }
+        let mut selected = layers.to_vec();
+        selected.sort_unstable();
+        if selected.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err(format!("graph probe layers contain duplicates: {layers:?}"));
+        }
+        if require_multi && selected.windows(2).any(|pair| pair[1] != pair[0] + 1) {
+            return Err(format!(
+                "multi-layer graph probe requires a contiguous run: {selected:?}"
+            ));
+        }
+        let stage = self.layer_stage[selected[0]];
+        if selected
+            .iter()
+            .any(|&layer| self.layer_stage[layer] != stage)
+        {
+            return Err(format!(
+                "multi-layer graph probe cannot cross PP stage boundary: {selected:?}"
+            ));
+        }
+        for &layer in &selected {
+            let layer_dev = self.stages[stage]
+                .layers
+                .iter()
+                .find(|candidate| candidate.il == layer as u32)
+                .ok_or_else(|| format!("graph probe missing layer {layer}"))?;
+            if layer_dev.ratio != 0 || layer_dev.idx.is_some() {
+                return Err(format!(
+                    "graph probe layer {layer} is not window-only (ratio={}, indexer={})",
+                    layer_dev.ratio,
+                    layer_dev.idx.is_some()
+                ));
+            }
+        }
+        if verify.open.is_some() || verify.ws.iter().any(|w| w.is_prefill) {
+            return Err("graph probe requires a closed decode verifier".into());
+        }
+        if verify.tmax == 0
+            || self.verify_topk != Dsv4VerifyTopk::Device
+            || !self.dense_fp8
+            || !matches!(self.decode_path, DecodePath::Device { host_math: false })
+            || self.expert_arm != ExpertArm::Native
+        {
+            return Err("graph probe requires t=1 native device top-k/FP8 decode".into());
+        }
+        verify.layer_captures.clear();
+        verify.capture_layers = Some(selected);
+        verify.replay_layer_next_round = false;
+        for workspace in &mut verify.ws {
+            workspace.graph_scalars = true;
+        }
+        verify.capture_probe_next_round = true;
+        Ok(())
+    }
+
+    /// Arm the second half of the one-layer probe. The caller must run one eager
+    /// capture arm first; the retained graph is then replayed on the next token.
+    pub fn replay_one_layer_graph_probe(&self, verify: &mut VerifyState) -> Res<()> {
+        let layers = verify
+            .capture_layers
+            .as_ref()
+            .ok_or("one-layer graph replay has no selected layer")?;
+        if layers.len() != 1 {
+            return Err("one-layer graph replay has a multi-layer selection".into());
+        }
+        if !verify
+            .layer_captures
+            .iter()
+            .any(|capture| capture.layer == layers[0])
+        {
+            return Err("one-layer graph replay needs a completed capture".into());
+        }
+        verify.capture_probe_next_round = false;
+        verify.replay_layer_next_round = true;
+        Ok(())
+    }
+
+    /// Arm replay of a previously captured contiguous multi-layer run.  The
+    /// graph handles remain owned by `VerifyState`; this method only changes
+    /// the next-round mode and never exposes raw CUDA graph state.
+    pub fn replay_multi_layer_graph_probe(&self, verify: &mut VerifyState) -> Res<()> {
+        let layers = verify
+            .capture_layers
+            .as_ref()
+            .ok_or("multi-layer graph replay has no selected layers")?;
+        if layers.len() < 2 {
+            return Err("multi-layer graph replay has a single-layer selection".into());
+        }
+        if layers.iter().any(|layer| {
+            !verify
+                .layer_captures
+                .iter()
+                .any(|capture| capture.layer == *layer)
+        }) {
+            return Err("multi-layer graph replay needs every selected layer captured".into());
+        }
+        verify.capture_probe_next_round = false;
+        verify.replay_layer_next_round = true;
+        Ok(())
+    }
+
+    /// Gate-only head graph probe. The entire trunk, including every
+    /// compressor/indexer/C4/EP/PP dependency, remains eager; only the final
+    /// pointer-stable device head is captured. This is the smallest graph
+    /// segment that can remove a launch chain from plain decode without
+    /// claiming ownership of cache or route metadata.
+    pub fn arm_head_graph_probe(&self, verify: &mut VerifyState) -> Res<()> {
+        if self.ep_enabled {
+            return Err("head graph probe requires EP disabled".into());
+        }
+        if self.matrix_moe
+            && (crate::dsv4_grouped::route_validation_enabled()
+                || crate::dsv4_grouped::mirror_validation_enabled())
+        {
+            return Err(
+                "head graph probe requires route and FP8-mirror validation disabled".into(),
+            );
+        }
+        if self.stages.iter().any(|st| st.gpu.ctx.is_event_tracking()) {
+            return Err(
+                "head graph probe requires event tracking disabled before allocation".into(),
+            );
+        }
+        if verify.open.is_some() || verify.ws.iter().any(|w| w.is_prefill) {
+            return Err("head graph probe requires a closed decode verifier".into());
+        }
+        if verify.tmax == 0
+            || self.verify_topk != Dsv4VerifyTopk::Device
+            || !self.dense_fp8
+            || !matches!(self.decode_path, DecodePath::Device { host_math: false })
+            || self.expert_arm != ExpertArm::Native
+        {
+            return Err("head graph probe requires t=1 native device top-k/FP8 decode".into());
+        }
+        verify.head_capture = None;
+        verify.capture_head_probe_next_round = true;
+        verify.replay_head_next_round = false;
+        Ok(())
+    }
+
+    /// Arm replay of the retained device-head graph on the next plain step.
+    pub fn replay_head_graph_probe(&self, verify: &mut VerifyState) -> Res<()> {
+        if verify.head_capture.is_none() {
+            return Err("head graph replay needs a completed capture".into());
+        }
+        verify.capture_head_probe_next_round = false;
+        verify.replay_head_next_round = true;
+        Ok(())
+    }
+
+    /// Gate-only stage-0 local graph probe. Embed plus `repeat_hc` has a
+    /// persistent token-device pointer and no KV/router/PP dependency, so it
+    /// is the smallest stage-local launch-collapse candidate. The stage-0
+    /// trunk and the PP boundary remain eager.
+    pub fn arm_stage0_embed_graph_probe(&self, verify: &mut VerifyState) -> Res<()> {
+        if self.ep_enabled {
+            return Err("stage-0 embed graph probe requires EP disabled".into());
+        }
+        if self.matrix_moe
+            && (crate::dsv4_grouped::route_validation_enabled()
+                || crate::dsv4_grouped::mirror_validation_enabled())
+        {
+            return Err(
+                "stage-0 embed graph probe requires route and FP8-mirror validation disabled"
+                    .into(),
+            );
+        }
+        if self.stages.iter().any(|st| st.gpu.ctx.is_event_tracking()) {
+            return Err(
+                "stage-0 embed graph probe requires event tracking disabled before allocation"
+                    .into(),
+            );
+        }
+        if verify.open.is_some() || verify.ws.iter().any(|w| w.is_prefill) {
+            return Err("stage-0 embed graph probe requires a closed decode verifier".into());
+        }
+        if verify.tmax == 0
+            || self.verify_topk != Dsv4VerifyTopk::Device
+            || !self.dense_fp8
+            || !matches!(self.decode_path, DecodePath::Device { host_math: false })
+            || self.expert_arm != ExpertArm::Native
+        {
+            return Err(
+                "stage-0 embed graph probe requires t=1 native device top-k/FP8 decode".into(),
+            );
+        }
+        verify.stage0_embed_capture = None;
+        verify.capture_stage0_embed_probe_next_round = true;
+        verify.replay_stage0_embed_next_round = false;
+        Ok(())
+    }
+
+    /// Arm replay of the retained stage-0 embed graph.
+    pub fn replay_stage0_embed_graph_probe(&self, verify: &mut VerifyState) -> Res<()> {
+        if verify.stage0_embed_capture.is_none() {
+            return Err("stage-0 embed graph replay needs a completed capture".into());
+        }
+        verify.capture_stage0_embed_probe_next_round = false;
+        verify.replay_stage0_embed_next_round = true;
+        Ok(())
+    }
+
+    /// Arm per-layer stateless attention-prefix graphs for a plain t=1 matrix
+    /// decode. The fragment ends after Q/KV norm, RoPE and QAT, before the
+    /// transient write, compressor/indexer, C4 gather, routing, PP boundary or
+    /// commit. EP and active C4 are therefore allowed here; their stateful
+    /// consumers remain eager.
+    pub fn arm_stateless_prefix_graph_probe(&self, verify: &mut VerifyState) -> Res<()> {
+        if !self.matrix_moe {
+            return Err("stateless prefix graph probe requires matrix decode".into());
+        }
+        if self.stages.iter().any(|st| st.gpu.ctx.is_event_tracking()) {
+            return Err(
+                "stateless prefix graph probe requires event tracking disabled before allocation"
+                    .into(),
+            );
+        }
+        if verify.open.is_some() || verify.ws.iter().any(|w| w.is_prefill) {
+            return Err("stateless prefix graph probe requires a closed decode verifier".into());
+        }
+        if verify.tmax != 1
+            || self.verify_topk != Dsv4VerifyTopk::Device
+            || !self.dense_fp8
+            || !matches!(self.decode_path, DecodePath::Device { host_math: false })
+            || self.expert_arm != ExpertArm::Native
+        {
+            return Err(
+                "stateless prefix graph probe requires t=1 native device top-k/FP8 decode".into(),
+            );
+        }
+        if verify.capture_probe_next_round
+            || verify.replay_layer_next_round
+            || verify.capture_head_probe_next_round
+            || verify.replay_head_next_round
+            || verify.capture_stage0_embed_probe_next_round
+            || verify.replay_stage0_embed_next_round
+        {
+            return Err("stateless prefix graph probe cannot nest another graph probe".into());
+        }
+        verify
+            .stateless_prefix_captures
+            .iter_mut()
+            .for_each(|capture| *capture = None);
+        verify.stateless_prefix_capture_count = 0;
+        verify.stateless_prefix_replay_count = 0;
+        verify.capture_stateless_prefix_next_round = true;
+        verify.replay_stateless_prefix_next_round = false;
+        Ok(())
+    }
+
+    /// Arm replay after the first plain round captured every trunk prefix.
+    pub fn replay_stateless_prefix_graph_probe(&self, verify: &mut VerifyState) -> Res<()> {
+        if verify
+            .stateless_prefix_captures
+            .iter()
+            .any(|capture| capture.is_none())
+        {
+            return Err("stateless prefix replay needs every trunk prefix captured".into());
+        }
+        verify.capture_stateless_prefix_next_round = false;
+        verify.replay_stateless_prefix_next_round = true;
+        Ok(())
+    }
+
+    /// Matrix decode convenience wrapper for the gate binary.  The one-row
+    /// matrix executor owns its `VerifyState` inside `DecodeState`, so a gate
+    /// cannot safely reach the retained graph through the standalone verifier
+    /// API.  Keep that ownership explicit here rather than exposing the
+    /// transaction internals to serving callers.
+    pub fn arm_one_layer_graph_probe_for_state(
+        &self,
+        state: &mut DecodeState,
+        layer: usize,
+    ) -> Res<()> {
+        let step = state
+            .matrix_step
+            .as_mut()
+            .ok_or("one-layer graph probe requires matrix decode state")?;
+        self.arm_one_layer_graph_probe(&mut step.verify, layer)
+    }
+
+    /// Arm replay of the graph retained by [`Self::arm_one_layer_graph_probe_for_state`].
+    pub fn replay_one_layer_graph_probe_for_state(&self, state: &mut DecodeState) -> Res<()> {
+        let step = state
+            .matrix_step
+            .as_mut()
+            .ok_or("one-layer graph replay requires matrix decode state")?;
+        self.replay_one_layer_graph_probe(&mut step.verify)
+    }
+
+    /// Arm a same-stage contiguous multi-layer graph probe on a matrix decode
+    /// state.  This is intentionally unavailable to the normal serving API;
+    /// callers must opt into the explicit gate binary's mode.
+    pub fn arm_multi_layer_graph_probe_for_state(
+        &self,
+        state: &mut DecodeState,
+        layers: &[usize],
+    ) -> Res<()> {
+        let step = state
+            .matrix_step
+            .as_mut()
+            .ok_or("multi-layer graph probe requires matrix decode state")?;
+        self.arm_multi_layer_graph_probe(&mut step.verify, layers)
+    }
+
+    /// Arm replay of the graph run retained by
+    /// [`Self::arm_multi_layer_graph_probe_for_state`].
+    pub fn replay_multi_layer_graph_probe_for_state(&self, state: &mut DecodeState) -> Res<()> {
+        let step = state
+            .matrix_step
+            .as_mut()
+            .ok_or("multi-layer graph replay requires matrix decode state")?;
+        self.replay_multi_layer_graph_probe(&mut step.verify)
+    }
+
+    /// Arm the gate-only pointer-stable device head graph on a matrix state.
+    pub fn arm_head_graph_probe_for_state(&self, state: &mut DecodeState) -> Res<()> {
+        let step = state
+            .matrix_step
+            .as_mut()
+            .ok_or("head graph probe requires matrix decode state")?;
+        self.arm_head_graph_probe(&mut step.verify)
+    }
+
+    /// Arm replay of the retained device-head graph on a matrix state.
+    pub fn replay_head_graph_probe_for_state(&self, state: &mut DecodeState) -> Res<()> {
+        let step = state
+            .matrix_step
+            .as_mut()
+            .ok_or("head graph replay requires matrix decode state")?;
+        self.replay_head_graph_probe(&mut step.verify)
+    }
+
+    /// Arm the stage-0 local embed graph on a matrix state.
+    pub fn arm_stage0_embed_graph_probe_for_state(&self, state: &mut DecodeState) -> Res<()> {
+        let step = state
+            .matrix_step
+            .as_mut()
+            .ok_or("stage-0 embed graph probe requires matrix decode state")?;
+        self.arm_stage0_embed_graph_probe(&mut step.verify)
+    }
+
+    /// Arm replay of the retained stage-0 local embed graph on a matrix state.
+    pub fn replay_stage0_embed_graph_probe_for_state(&self, state: &mut DecodeState) -> Res<()> {
+        let step = state
+            .matrix_step
+            .as_mut()
+            .ok_or("stage-0 embed graph replay requires matrix decode state")?;
+        self.replay_stage0_embed_graph_probe(&mut step.verify)
+    }
+
+    /// Arm the per-layer stateless prefix graph probe on a matrix state.
+    pub fn arm_stateless_prefix_graph_probe_for_state(&self, state: &mut DecodeState) -> Res<()> {
+        let step = state
+            .matrix_step
+            .as_mut()
+            .ok_or("stateless prefix graph probe requires matrix decode state")?;
+        self.arm_stateless_prefix_graph_probe(&mut step.verify)
+    }
+
+    /// Arm replay of all retained stateless prefix graphs on a matrix state.
+    pub fn replay_stateless_prefix_graph_probe_for_state(
+        &self,
+        state: &mut DecodeState,
+    ) -> Res<()> {
+        let step = state
+            .matrix_step
+            .as_mut()
+            .ok_or("stateless prefix graph replay requires matrix decode state")?;
+        self.replay_stateless_prefix_graph_probe(&mut step.verify)
+    }
+
+    /// Return the immutable census of the graph captured in a matrix decode
+    /// state.  This intentionally omits the executable handle and is therefore
+    /// safe for a diagnostic gate to serialize.
+    pub fn one_layer_graph_probe_census(
+        &self,
+        state: &DecodeState,
+    ) -> Res<Vec<Dsv4GraphProbeCensus>> {
+        let step = state
+            .matrix_step
+            .as_ref()
+            .ok_or("one-layer graph census requires matrix decode state")?;
+        Ok(step
+            .verify
+            .layer_captures
+            .iter()
+            .map(|capture| Dsv4GraphProbeCensus {
+                layer: capture.layer,
+                nodes: capture.nodes.clone(),
+                kernels: capture.kernels.clone(),
+            })
+            .collect())
+    }
+
+    /// Return the immutable census of the gate-only retained device-head graph.
+    pub fn head_graph_probe_census(&self, state: &DecodeState) -> Res<Dsv4GraphProbeCensus> {
+        let step = state
+            .matrix_step
+            .as_ref()
+            .ok_or("head graph census requires matrix decode state")?;
+        let capture = step
+            .verify
+            .head_capture
+            .as_ref()
+            .ok_or("head graph census needs a completed capture")?;
+        Ok(Dsv4GraphProbeCensus {
+            layer: self.model.mc.n_layer as usize - self.model.mc.nextn_predict_layers as usize,
+            nodes: capture.nodes.clone(),
+            kernels: capture.kernels.clone(),
+        })
+    }
+
+    /// Return the immutable census of the stage-0 local embed graph.
+    pub fn stage0_embed_graph_probe_census(
+        &self,
+        state: &DecodeState,
+    ) -> Res<Dsv4GraphProbeCensus> {
+        let step = state
+            .matrix_step
+            .as_ref()
+            .ok_or("stage-0 embed graph census requires matrix decode state")?;
+        let capture = step
+            .verify
+            .stage0_embed_capture
+            .as_ref()
+            .ok_or("stage-0 embed graph census needs a completed capture")?;
+        let n_trunk = (self.model.mc.n_layer - self.model.mc.nextn_predict_layers) as usize;
+        Ok(Dsv4GraphProbeCensus {
+            layer: n_trunk + 1,
+            nodes: capture.nodes.clone(),
+            kernels: capture.kernels.clone(),
+        })
+    }
+
+    /// Return the per-layer stateless prefix graph census and capture/replay
+    /// counters for the gate's exactness/speed receipt.
+    pub fn stateless_prefix_graph_probe_census_for_state(
+        &self,
+        state: &DecodeState,
+    ) -> Res<(Vec<Dsv4GraphProbeCensus>, u64, u64)> {
+        let step = state
+            .matrix_step
+            .as_ref()
+            .ok_or("stateless prefix census requires matrix decode state")?;
+        let census = step
+            .verify
+            .stateless_prefix_captures
+            .iter()
+            .enumerate()
+            .map(|(layer, capture)| {
+                let capture = capture
+                    .as_ref()
+                    .ok_or_else(|| format!("missing stateless prefix capture for layer {layer}"))?;
+                Ok(Dsv4GraphProbeCensus {
+                    layer,
+                    nodes: capture.nodes.clone(),
+                    kernels: capture.kernels.clone(),
+                })
+            })
+            .collect::<Res<Vec<_>>>()?;
+        Ok((
+            census,
+            step.verify.stateless_prefix_capture_count,
+            step.verify.stateless_prefix_replay_count,
+        ))
+    }
+
+    /// Gate-only component probe for the fine indexer's redirect metadata.
+    ///
+    /// This is intentionally smaller than a ratio/compressor layer capture:
+    /// the redirect kernel is pure over `pos_dev`, `nb_dev`, and its fixed
+    /// shape scalars, so the two live values can be refreshed before replay.
+    /// The compressor state machine, indexer score/top-k, C4 gather, EP, and
+    /// commit are not entered here and remain refused for full-layer graphs.
+    pub fn probe_indexer_redirect_scalar_for_gate(
+        &self,
+        layer: usize,
+        first_pos: usize,
+        replay_pos: usize,
+    ) -> Res<Dsv4IndexerScalarProbe> {
+        if self.ep_enabled {
+            return Err("indexer scalar probe requires EP disabled".into());
+        }
+        if self.stages.iter().any(|st| st.gpu.ctx.is_event_tracking()) {
+            return Err(
+                "indexer scalar probe requires event tracking disabled before allocation".into(),
+            );
+        }
+        let n_trunk = (self.model.mc.n_layer - self.model.mc.nextn_predict_layers) as usize;
+        if layer >= n_trunk {
+            return Err(format!(
+                "indexer scalar probe layer {layer} outside trunk {n_trunk}"
+            ));
+        }
+        let stage_i = self.layer_stage[layer];
+        let stage = &self.stages[stage_i];
+        let layer_dev = stage
+            .layers
+            .iter()
+            .find(|candidate| candidate.il == layer as u32)
+            .ok_or_else(|| format!("indexer scalar probe missing layer {layer}"))?;
+        let ratio = layer_dev.ratio;
+        let ix = layer_dev
+            .idx
+            .as_ref()
+            .ok_or_else(|| format!("indexer scalar probe layer {layer} has no indexer"))?;
+        if ratio == 0 {
+            return Err("indexer scalar probe requires a compressed ratio layer".into());
+        }
+        let win = self.model.cfg().sliding_window as usize;
+        let cap = win
+            .checked_add(ix.topk)
+            .ok_or("indexer scalar probe shape overflow")?;
+        let trans_base = win
+            .checked_add(dsv4_cache_cap_blocks(self.max_seq, ratio))
+            .ok_or("indexer scalar probe transient base overflow")?;
+        if first_pos >= self.max_seq || replay_pos >= self.max_seq {
+            return Err(format!(
+                "indexer scalar probe positions {first_pos}/{replay_pos} exceed model limit {}",
+                self.max_seq
+            ));
+        }
+        if first_pos == replay_pos {
+            return Err("indexer scalar probe needs distinct live positions".into());
+        }
+        let stream = stage.gpu.stream();
+        stage
+            .gpu
+            .ctx
+            .bind_to_thread()
+            .map_err(e("bind indexer scalar probe"))?;
+        let mut eager_capture = stream
+            .alloc_zeros::<i32>(cap)
+            .map_err(e("indexer scalar eager capture"))?;
+        let mut graph_capture = stream
+            .alloc_zeros::<i32>(cap)
+            .map_err(e("indexer scalar graph capture"))?;
+        let mut eager_replay = stream
+            .alloc_zeros::<i32>(cap)
+            .map_err(e("indexer scalar eager replay"))?;
+        let graph_replay = stream
+            .alloc_zeros::<i32>(cap)
+            .map_err(e("indexer scalar graph replay"))?;
+        let mut pos_dev = stream
+            .alloc_zeros::<i32>(1)
+            .map_err(e("indexer scalar pos"))?;
+        let mut nb_dev = stream
+            .alloc_zeros::<i32>(1)
+            .map_err(e("indexer scalar blocks"))?;
+        let nb_for = |pos: usize| -> Res<i32> {
+            i32::try_from((pos + 1) / ratio)
+                .map_err(|_| "indexer scalar block count exceeds i32".into())
+        };
+        let upload_scalars =
+            |pos: usize, pos_dev: &mut CudaSlice<i32>, nb_dev: &mut CudaSlice<i32>| -> Res<()> {
+                let pos_i =
+                    i32::try_from(pos).map_err(|_| "indexer scalar position exceeds i32")?;
+                let nb_i = nb_for(pos)?;
+                stream
+                    .memcpy_htod(&[pos_i], pos_dev)
+                    .map_err(e("indexer scalar pos upload"))?;
+                stream
+                    .memcpy_htod(&[nb_i], nb_dev)
+                    .map_err(e("indexer scalar block upload"))?;
+                Ok(())
+            };
+        let launch_eager = |dst: &mut CudaSlice<i32>, pos: usize| -> Res<()> {
+            let pos_i = i32::try_from(pos).map_err(|_| "indexer scalar position exceeds i32")?;
+            let nb_i = nb_for(pos)?;
+            unsafe {
+                ck(
+                    "indexer scalar eager redirect",
+                    k::memra_dsv4_build_idx_redirect(
+                        dst.device_ptr_mut(&stream).0 as *mut i32,
+                        pos_i,
+                        win as i32,
+                        nb_i,
+                        cap as i32,
+                        pos_i,
+                        trans_base as i32,
+                        stream.cu_stream().cast(),
+                    ),
+                )?;
+            }
+            Ok(())
+        };
+        let readback = |src: &CudaSlice<i32>| -> Res<Vec<i32>> {
+            let mut host = vec![0i32; cap];
+            stream
+                .memcpy_dtoh(src, &mut host)
+                .map_err(e("indexer scalar readback"))?;
+            stream
+                .synchronize()
+                .map_err(e("indexer scalar readback sync"))?;
+            Ok(host)
+        };
+
+        upload_scalars(first_pos, &mut pos_dev, &mut nb_dev)?;
+        launch_eager(&mut eager_capture, first_pos)?;
+        let captured = crate::dsv4_graph::capture_layer(stream.clone(), layer, || {
+            unsafe {
+                ck(
+                    "indexer scalar graph redirect",
+                    k::memra_dsv4_build_idx_redirect_fine_pos(
+                        graph_capture.device_ptr_mut(&stream).0 as *mut i32,
+                        pos_dev.device_ptr(&stream).0 as *const i32,
+                        nb_dev.device_ptr(&stream).0 as *const i32,
+                        win as i32,
+                        cap as i32,
+                        trans_base as i32,
+                        stream.cu_stream().cast(),
+                    ),
+                )?;
+            }
+            Ok(())
+        })?;
+        let eager_capture = readback(&eager_capture)?;
+        let graph_capture = readback(&graph_capture)?;
+        upload_scalars(replay_pos, &mut pos_dev, &mut nb_dev)?;
+        launch_eager(&mut eager_replay, replay_pos)?;
+        captured.replay()?;
+        stream
+            .synchronize()
+            .map_err(e("indexer scalar graph replay sync"))?;
+        let eager_replay = readback(&eager_replay)?;
+        let graph_replay = readback(&graph_replay)?;
+        Ok(Dsv4IndexerScalarProbe {
+            layer,
+            ratio,
+            window: win,
+            cap,
+            first_pos,
+            replay_pos,
+            census: Dsv4GraphProbeCensus {
+                layer,
+                nodes: captured.nodes,
+                kernels: captured.kernels,
+            },
+            eager_capture,
+            graph_capture,
+            eager_replay,
+            graph_replay,
+        })
+    }
+
+    /// Snapshot the compacted matrix route buffers after a one-row decode.  The
+    /// route arrays are the device visitor's actual admitted order, not the
+    /// host router's pre-sort selection.  A graph gate can hash this small
+    /// snapshot on two states to prove route identity without making the
+    /// production state layout public.
+    #[allow(clippy::type_complexity)]
+    pub fn grouped_route_identity_for_state(
+        &self,
+        state: &DecodeState,
+    ) -> Res<Vec<(usize, Vec<i32>, Vec<i32>, Vec<f32>)>> {
+        let step = state
+            .matrix_step
+            .as_ref()
+            .ok_or("matrix route identity requires matrix decode state")?;
+        let mut out = Vec::new();
+        for (stage_i, vws) in step.verify.ws.iter().enumerate() {
+            let Some(work) = &vws.grouped_work else {
+                continue;
+            };
+            let live = work.routes.live_slots;
+            if live > work.routes.pairs.len()
+                || live > work.routes.tokens.len()
+                || live > work.routes.weights.len()
+            {
+                return Err(format!(
+                    "matrix route identity live prefix {live} exceeds stage {stage_i} route buffers"
+                ));
+            }
+            let stage = &self.stages[stage_i];
+            stage
+                .gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind route identity"))?;
+            let stream = stage.gpu.stream();
+            let mut pairs = vec![0i32; live];
+            let mut tokens = vec![0i32; live];
+            let mut weights = vec![0f32; live];
+            stream
+                .memcpy_dtoh(&work.routes.pairs.slice(..live), &mut pairs)
+                .map_err(e("route identity pairs"))?;
+            stream
+                .memcpy_dtoh(&work.routes.tokens.slice(..live), &mut tokens)
+                .map_err(e("route identity tokens"))?;
+            stream
+                .memcpy_dtoh(&work.routes.weights.slice(..live), &mut weights)
+                .map_err(e("route identity weights"))?;
+            stream.synchronize().map_err(e("route identity sync"))?;
+            out.push((stage_i, pairs, tokens, weights));
+        }
+        Ok(out)
     }
 
     /// Allocate the model-limit batched-verify state (arenas + §3.1 checkpoints).
@@ -9750,7 +11618,7 @@ impl Dsv4Gpu {
         let max_gemm_k = (o_groups * o_lora).max(hidden).max(q_lora).max(sh_inter);
         let mut bytes = vec![0u64; self.stages.len()];
         let mut ws = Vec::with_capacity(self.stages.len());
-        for st in &self.stages {
+        for (stage_index, st) in self.stages.iter().enumerate() {
             st.gpu.ctx.bind_to_thread().map_err(e("bind ctx vws"))?;
             let s = st.gpu.stream();
             let acc = std::cell::Cell::new(0u64);
@@ -9771,6 +11639,41 @@ impl Dsv4Gpu {
                 s.alloc_zeros::<u64>(n).map_err(e("vws u64"))
             };
             let w = VerifyWs {
+                grouped_work: if self.matrix_moe && self.ep_enabled {
+                    Some(crate::dsv4_grouped::GroupedWork::new_partition(
+                        &s,
+                        ne,
+                        stage_index * (ne / 2),
+                        ne / 2,
+                        tmax * topk,
+                        hidden,
+                        inter,
+                    )?)
+                } else if self.prefill_grouped || self.matrix_moe {
+                    Some(crate::dsv4_grouped::GroupedWork::new(
+                        &s,
+                        ne,
+                        tmax * topk,
+                        hidden,
+                        inter,
+                    )?)
+                } else {
+                    None
+                },
+                ep: if self.ep_enabled {
+                    Some(EpScratch::new(
+                        &st.gpu,
+                        &self.stages[1 - stage_index].gpu,
+                        tmax,
+                        topk,
+                        hidden,
+                        inter,
+                        self.matrix_moe
+                            .then_some((ne, (1 - stage_index) * (ne / 2), ne / 2)),
+                    )?)
+                } else {
+                    None
+                },
                 c4_gather: None,
                 tmax,
                 is_prefill: false,
@@ -9835,12 +11738,24 @@ impl Dsv4Gpu {
                 logits: f(tmax * vocab)?,
                 tok: i(tmax)?,
                 pos_dev: i(tmax)?,
+                tok_host: crate::PinnedHostBuf::new(tmax * std::mem::size_of::<i32>())
+                    .map_err(e("vws token host scalar"))?,
+                pos_host: crate::PinnedHostBuf::new(tmax * std::mem::size_of::<i32>())
+                    .map_err(e("vws position host scalar"))?,
+                graph_scalars: false,
                 argmax: i(tmax)?,
                 bounce: f(tmax * hd)?,
                 slot_rows: i(tmax)?,
                 tap_tmp: f(tmax * hidden)?,
             };
             bytes[st.dev] += acc.get();
+            if let Some(work) = &w.grouped_work {
+                bytes[st.dev] += work.bytes;
+            }
+            if let Some(ep) = &w.ep {
+                bytes[stage_index] += ep.owner_bytes;
+                bytes[1 - stage_index] += ep.peer_bytes;
+            }
             ws.push(w);
         }
         // per-layer §3.1 checkpoints, each on the layer's own device
@@ -9904,6 +11819,22 @@ impl Dsv4Gpu {
             st.gpu.stream().synchronize().map_err(e("vws sync"))?;
         }
         Ok(VerifyState {
+            matrix_moe: self.matrix_moe,
+            capture_probe_next_round: false,
+            capture_layers: None,
+            replay_layer_next_round: false,
+            capture_head_probe_next_round: false,
+            replay_head_next_round: false,
+            head_capture: None,
+            capture_stage0_embed_probe_next_round: false,
+            replay_stage0_embed_next_round: false,
+            stage0_embed_capture: None,
+            capture_stateless_prefix_next_round: false,
+            replay_stateless_prefix_next_round: false,
+            stateless_prefix_captures: (0..n_trunk).map(|_| None).collect(),
+            stateless_prefix_capture_count: 0,
+            stateless_prefix_replay_count: 0,
+            layer_captures: Vec::new(),
             ws,
             layers,
             tmax,
@@ -10423,6 +12354,13 @@ impl Dsv4Gpu {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BlockPhase {
+    All,
+    Prefix,
+    Tail,
+}
+
 impl Dsv4Gpu {
     /// One trunk block, BATCHED T-position verify (§3.1). Positions pos0..pos0+t-1,
     /// tokens `toks`. Input h is vws.h_a (or vws.h_rx right after a stage boundary);
@@ -10442,6 +12380,8 @@ impl Dsv4Gpu {
         t: usize,
         toks: &[u32],
         host_math: bool,
+        allow_gu_fuse: bool,
+        phase: BlockPhase,
     ) -> Res<()> {
         let d = self.model.cfg();
         let mc = &self.model.mc;
@@ -10477,165 +12417,170 @@ impl Dsv4Gpu {
             ipend_score,
         } = cache;
 
-        // ---- attention sub-block
         let h_in_ptr: *const f32 = if input_rx {
             vws.h_rx.device_ptr(&stream).0 as *const f32
         } else {
             vws.h_a.device_ptr(&stream).0 as *const f32
         };
-        self.hc_pre_batch_dev(
-            st,
-            h_in_ptr,
-            &layer.hc_attn_fn,
-            &layer.hc_attn_base,
-            &layer.hc_attn_scale,
-            &layer.hc_attn_base_dev,
-            &layer.hc_attn_scale_dev,
-            vws,
-            t,
-            hc,
-            hidden,
-            iters,
-            hc_eps,
-            host_math,
-        )?;
-        unsafe {
-            ck(
-                "rmsnorm attn batch",
-                self.rmsnorm_arm(
-                    dpf!(vws.y_hc, &stream),
-                    dpf!(layer.attn_norm, &stream),
-                    dpm!(vws.x, &stream),
-                    t as i32,
-                    hidden as i32,
-                    eps,
-                    sp(&stream),
-                ),
+        if phase != BlockPhase::Tail {
+            // ---- attention sub-block
+            self.hc_pre_batch_dev(
+                st,
+                h_in_ptr,
+                &layer.hc_attn_fn,
+                &layer.hc_attn_base,
+                &layer.hc_attn_scale,
+                &layer.hc_attn_base_dev,
+                &layer.hc_attn_scale_dev,
+                vws,
+                t,
+                hc,
+                hidden,
+                iters,
+                hc_eps,
+                host_math,
             )?;
-        }
+            unsafe {
+                ck(
+                    "rmsnorm attn batch",
+                    self.rmsnorm_arm(
+                        dpf!(vws.y_hc, &stream),
+                        dpf!(layer.attn_norm, &stream),
+                        dpm!(vws.x, &stream),
+                        t as i32,
+                        hidden as i32,
+                        eps,
+                        sp(&stream),
+                    ),
+                )?;
+            }
 
-        // q path (weights read once for all t rows)
-        Self::gemm_m_dev(
-            st,
-            vws.x.device_ptr(&stream).0 as *const f32,
-            &mut vws.gemm_xb,
-            dwsel(self.dense_fp8, &stream, &layer.wq_a, &layer.wq_a_fp8),
-            t,
-            q_lora,
-            hidden,
-            vws.qr.device_ptr_mut(&stream).0 as *mut f32,
-        )?;
-        unsafe {
-            ck(
-                "rmsnorm q batch",
-                self.rmsnorm_arm(
-                    dpf!(vws.qr, &stream),
-                    dpf!(layer.q_norm, &stream),
-                    dpm!(vws.qr, &stream),
-                    t as i32,
-                    q_lora as i32,
-                    eps,
-                    sp(&stream),
-                ),
+            // q path (weights read once for all t rows)
+            Self::gemm_m_dev(
+                st,
+                vws.x.device_ptr(&stream).0 as *const f32,
+                &mut vws.gemm_xb,
+                dwsel(self.dense_fp8, &stream, &layer.wq_a, &layer.wq_a_fp8),
+                t,
+                q_lora,
+                hidden,
+                vws.qr.device_ptr_mut(&stream).0 as *mut f32,
             )?;
-            ck(
-                "cvt qr batch",
-                k::memra_dsv4_cvt_bf16(
-                    dpf!(vws.qr, &stream),
-                    vws.qr_b.device_ptr_mut(&stream).0 as *mut c_void,
-                    (t * q_lora) as i64,
-                    sp(&stream),
-                ),
+            unsafe {
+                ck(
+                    "rmsnorm q batch",
+                    self.rmsnorm_arm(
+                        dpf!(vws.qr, &stream),
+                        dpf!(layer.q_norm, &stream),
+                        dpm!(vws.qr, &stream),
+                        t as i32,
+                        q_lora as i32,
+                        eps,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "cvt qr batch",
+                    k::memra_dsv4_cvt_bf16(
+                        dpf!(vws.qr, &stream),
+                        vws.qr_b.device_ptr_mut(&stream).0 as *mut c_void,
+                        (t * q_lora) as i64,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+            Self::gemv_m_dev(
+                st,
+                dwsel(self.dense_fp8, &stream, &layer.wq_b, &layer.wq_b_fp8),
+                vws.qr_b.device_ptr(&stream).0 as *const c_void,
+                vws.q.device_ptr_mut(&stream).0 as *mut f32,
+                t,
+                heads * hd,
+                q_lora,
+                0,
+                0,
             )?;
-        }
-        Self::gemv_m_dev(
-            st,
-            dwsel(self.dense_fp8, &stream, &layer.wq_b, &layer.wq_b_fp8),
-            vws.qr_b.device_ptr(&stream).0 as *const c_void,
-            vws.q.device_ptr_mut(&stream).0 as *mut f32,
-            t,
-            heads * hd,
-            q_lora,
-            0,
-            0,
-        )?;
-        unsafe {
-            ck(
-                "headrms batch",
-                self.headrms_arm(
-                    dpm!(vws.q, &stream),
-                    (t * heads) as i32,
-                    hd as i32,
-                    eps,
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "rope q batch",
-                k::memra_dsv4_rope(
-                    dpm!(vws.q, &stream),
-                    t as i32,
-                    heads as i32,
-                    hd as i32,
-                    rd as i32,
-                    fc_dev,
-                    vws.pos_dev.device_ptr(&stream).0 as *const i32,
-                    0,
-                    sp(&stream),
-                ),
-            )?;
-        }
+            unsafe {
+                ck(
+                    "headrms batch",
+                    self.headrms_arm(
+                        dpm!(vws.q, &stream),
+                        (t * heads) as i32,
+                        hd as i32,
+                        eps,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "rope q batch",
+                    k::memra_dsv4_rope(
+                        dpm!(vws.q, &stream),
+                        t as i32,
+                        heads as i32,
+                        hd as i32,
+                        rd as i32,
+                        fc_dev,
+                        vws.pos_dev.device_ptr(&stream).0 as *const i32,
+                        0,
+                        sp(&stream),
+                    ),
+                )?;
+            }
 
-        // shared K==V latent rows + window QAT, then the TRANSIENT ring write
-        Self::gemm_m_dev(
-            st,
-            vws.x.device_ptr(&stream).0 as *const f32,
-            &mut vws.gemm_xb,
-            dwsel(self.dense_fp8, &stream, &layer.wkv, &layer.wkv_fp8),
-            t,
-            hd,
-            hidden,
-            vws.kv.device_ptr_mut(&stream).0 as *mut f32,
-        )?;
-        unsafe {
-            ck(
-                "rmsnorm kv batch",
-                self.rmsnorm_arm(
-                    dpf!(vws.kv, &stream),
-                    dpf!(layer.kv_norm, &stream),
-                    dpm!(vws.kv, &stream),
-                    t as i32,
-                    hd as i32,
-                    eps,
-                    sp(&stream),
-                ),
+            // shared K==V latent rows + window QAT, then the TRANSIENT ring write
+            Self::gemm_m_dev(
+                st,
+                vws.x.device_ptr(&stream).0 as *const f32,
+                &mut vws.gemm_xb,
+                dwsel(self.dense_fp8, &stream, &layer.wkv, &layer.wkv_fp8),
+                t,
+                hd,
+                hidden,
+                vws.kv.device_ptr_mut(&stream).0 as *mut f32,
             )?;
-            ck(
-                "rope kv batch",
-                k::memra_dsv4_rope(
-                    dpm!(vws.kv, &stream),
-                    t as i32,
-                    1,
-                    hd as i32,
-                    rd as i32,
-                    fc_dev,
-                    vws.pos_dev.device_ptr(&stream).0 as *const i32,
-                    0,
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "act_quant kv batch",
-                k::memra_dsv4_act_quant(
-                    dpm!(vws.kv, &stream),
-                    t as i32,
-                    hd as i64,
-                    (hd - rd) as i32,
-                    64,
-                    clamp_only,
-                    sp(&stream),
-                ),
-            )?;
+            unsafe {
+                ck(
+                    "rmsnorm kv batch",
+                    self.rmsnorm_arm(
+                        dpf!(vws.kv, &stream),
+                        dpf!(layer.kv_norm, &stream),
+                        dpm!(vws.kv, &stream),
+                        t as i32,
+                        hd as i32,
+                        eps,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "rope kv batch",
+                    k::memra_dsv4_rope(
+                        dpm!(vws.kv, &stream),
+                        t as i32,
+                        1,
+                        hd as i32,
+                        rd as i32,
+                        fc_dev,
+                        vws.pos_dev.device_ptr(&stream).0 as *const i32,
+                        0,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "act_quant kv batch",
+                    k::memra_dsv4_act_quant(
+                        dpm!(vws.kv, &stream),
+                        t as i32,
+                        hd as i64,
+                        (hd - rd) as i32,
+                        64,
+                        clamp_only,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+        }
+        if phase == BlockPhase::Prefix {
+            return Ok(());
         }
         {
             let src = vws.kv.slice(0..t * hd);
@@ -10831,6 +12776,26 @@ impl Dsv4Gpu {
                             }
                             continue;
                         }
+                        if !host_math && self.verify_topk == Dsv4VerifyTopk::Device {
+                            unsafe {
+                                ck(
+                                    "numeric top-k narrow verify",
+                                    k::memra_dsv4_topk_idx_numeric(
+                                        dpf!(vws.score, &stream),
+                                        nb as i32,
+                                        kk as i32,
+                                        win as i32,
+                                        (vws.idx.device_ptr_mut(&stream).0 as usize
+                                            + (idx_off + win) * 4)
+                                            as *mut i32,
+                                        sp(&stream),
+                                    ),
+                                )?;
+                            }
+                            self.device_verify_topk_calls
+                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            continue;
+                        }
                         let score_h = {
                             let view = vws.score.slice(0..nb);
                             let mut v = vec![0f32; nb];
@@ -11000,18 +12965,29 @@ impl Dsv4Gpu {
             unsafe {
                 ck(
                     "build_idx_redirect_m window-only",
-                    k::memra_dsv4_build_idx_redirect_m(
-                        vws.idx.device_ptr_mut(&stream).0 as *mut i32,
-                        pos0 as i32,
-                        t as i32,
-                        win as i32,
-                        0,
-                        win as i32,
-                        vws.idx_stride as i32,
-                        trans_base as i32,
-                        0,
-                        sp(&stream),
-                    ),
+                    if vws.graph_scalars && t == 1 {
+                        k::memra_dsv4_build_idx_redirect_window_pos(
+                            vws.idx.device_ptr_mut(&stream).0 as *mut i32,
+                            vws.pos_dev.device_ptr(&stream).0 as *const i32,
+                            win as i32,
+                            win as i32,
+                            trans_base as i32,
+                            sp(&stream),
+                        )
+                    } else {
+                        k::memra_dsv4_build_idx_redirect_m(
+                            vws.idx.device_ptr_mut(&stream).0 as *mut i32,
+                            pos0 as i32,
+                            t as i32,
+                            win as i32,
+                            0,
+                            win as i32,
+                            vws.idx_stride as i32,
+                            trans_base as i32,
+                            0,
+                            sp(&stream),
+                        )
+                    },
                 )?;
             }
         }
@@ -11038,9 +13014,14 @@ impl Dsv4Gpu {
         let scale = (hd as f64).powf(-0.5) as f32;
         unsafe {
             if self.chains_f32 {
+                let launch = if self.sink_score == Dsv4SinkScore::Tiled {
+                    k::memra_dsv4_sink_attn_dec_mq_f32acc_tiled
+                } else {
+                    k::memra_dsv4_sink_attn_dec_mq_f32acc
+                };
                 ck(
                     "sink_attn_dec_mq_f32acc",
-                    k::memra_dsv4_sink_attn_dec_mq_f32acc(
+                    launch(
                         dpf!(vws.q, &stream),
                         attention_kv,
                         attention_indices,
@@ -11058,6 +13039,10 @@ impl Dsv4Gpu {
                         sp(&stream),
                     ),
                 )?;
+                if self.sink_score == Dsv4SinkScore::Tiled {
+                    self.sink_tiled_calls
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
             } else {
                 ck(
                     "sink_attn_dec_mq",
@@ -11184,7 +13169,7 @@ impl Dsv4Gpu {
                 ),
             )?;
         }
-        self.moe_verify_dev(st, layer, vws, t, toks, host_math)?;
+        self.moe_verify_dev(st, layer, vws, t, toks, host_math, allow_gu_fuse)?;
         unsafe {
             ck(
                 "hc_post ffn batch",
@@ -11235,7 +13220,7 @@ impl Dsv4Gpu {
         stream
             .memcpy_htod(&ids, &mut ws.tok)
             .map_err(e("MoE gate tokens"))?;
-        self.moe_verify_dev(st, layer, ws, t, tokens, false)?;
+        self.moe_verify_dev(st, layer, ws, t, tokens, false, false)?;
         let contributions = dtoh_f32(&stream, &ws.contrib)?;
         let shared = dtoh_f32(&stream, &ws.sh_out)?;
         let total = dtoh_f32(&stream, &ws.y)?;
@@ -11265,57 +13250,6 @@ impl Dsv4Gpu {
         ])
     }
 
-    /// Exact transport only. Nonrepresentable half mirrors fail before GEMM.
-    fn gather_fp8_half(
-        &self,
-        st: &Stage,
-        codes: &CudaSlice<u8>,
-        scales: &CudaSlice<f32>,
-        row_ids: Option<&CudaSlice<i32>>,
-        rows: usize,
-        cols: usize,
-    ) -> Res<(CudaSlice<u8>, CudaSlice<f32>)> {
-        let stream = st.gpu.stream();
-        let mut half = stream
-            .alloc_zeros::<u8>(rows * cols * 2)
-            .map_err(e("FP8 half mirror"))?;
-        let mut row_scale = stream
-            .alloc_zeros::<f32>(rows)
-            .map_err(e("FP8 mirror scales"))?;
-        let mut status = stream
-            .alloc_zeros::<i32>(rows)
-            .map_err(e("FP8 mirror status"))?;
-        unsafe {
-            ck(
-                "FP8 half gather",
-                k::memra_dsv4_fp8_gather_half(
-                    codes.device_ptr(&stream).0 as *const c_void,
-                    scales.device_ptr(&stream).0 as *const f32,
-                    row_ids
-                        .map(|ids| ids.device_ptr(&stream).0 as *const i32)
-                        .unwrap_or(std::ptr::null()),
-                    half.device_ptr_mut(&stream).0 as *mut c_void,
-                    row_scale.device_ptr_mut(&stream).0 as *mut f32,
-                    status.device_ptr_mut(&stream).0 as *mut i32,
-                    rows as i32,
-                    cols as i32,
-                    sp(&stream),
-                ),
-            )?;
-        }
-        let mut check = vec![0i32; rows];
-        stream
-            .memcpy_dtoh(&status, &mut check)
-            .map_err(e("FP8 mirror check"))?;
-        stream.synchronize().map_err(e("sync FP8 mirror check"))?;
-        if let Some(row) = check.iter().position(|&value| value != 0) {
-            return Err(format!(
-                "FP8-QAT half mirror is not lossless at gathered row {row}, cols={cols}"
-            ));
-        }
-        Ok((half, row_scale))
-    }
-
     /// Routed contribution only. The caller ALWAYS combines original slot order
     /// and adds the complete shared expert after either routed realization.
     #[allow(clippy::too_many_arguments)]
@@ -11330,83 +13264,20 @@ impl Dsv4Gpu {
         topk: usize,
         inter: usize,
         limit: f32,
+        allow_gu_fuse: bool,
     ) -> Res<()> {
-        if crate::moe_f16g_mode() < 2 || crate::moe_f16g_sk_params().0 < 0 {
-            return Err(
-                "DSV4 wide-prefill grouped MoE requires MEMRA_MOE_F16G=2 with the visitor form"
-                    .to_string(),
-            );
+        if crate::moe_f16g_mode() < 2
+            || crate::moe_f16g_sk_params().0 < 0
+            || !crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT)
+        {
+            return Err("DSV4 grouped MoE requires the direct native matrix visitor".into());
         }
-        if !crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT) {
-            return Err(
-                "DSV4 wide-prefill grouped MoE requires the direct quant loader \
-                 (MEMRA_F16G_DIRECT must not be 0)"
-                    .to_string(),
-            );
-        }
-        let table = layer.experts_modelopt_table.as_ref().ok_or_else(|| {
-            "DSV4 wide-prefill grouped MoE requires ModelOpt NVFP4 experts".to_string()
-        })?;
+        let table = layer
+            .experts_modelopt_table
+            .as_ref()
+            .ok_or("matrix expert table missing")?;
         let stream = st.gpu.stream();
         let slots = t * topk;
-
-        let mut sel_h = vec![0i32; slots];
-        let mut selw_h = vec![0f32; slots];
-        stream
-            .memcpy_dtoh(&vws.sel.slice(0..slots), &mut sel_h)
-            .map_err(e("dtoh grouped selections"))?;
-        stream
-            .memcpy_dtoh(&vws.selw.slice(0..slots), &mut selw_h)
-            .map_err(e("dtoh grouped route weights"))?;
-        stream.synchronize().map_err(e("sync grouped routing"))?;
-
-        let mut buckets: Vec<Vec<i32>> = vec![Vec::new(); ne];
-        for (pair, &expert) in sel_h.iter().enumerate() {
-            let expert =
-                usize::try_from(expert).map_err(|_| format!("negative DSV4 expert id {expert}"))?;
-            if expert >= ne {
-                return Err(format!("DSV4 expert id {expert} outside 0..{ne}"));
-            }
-            buckets[expert].push(pair as i32);
-        }
-        let mut ex_ids = Vec::new();
-        let mut ex_off = vec![0i32];
-        let mut ex_pairs = Vec::with_capacity(slots);
-        for (expert, pairs) in buckets.iter().enumerate() {
-            if pairs.is_empty() {
-                continue;
-            }
-            ex_ids.push(expert as i32);
-            ex_pairs.extend_from_slice(pairs);
-            ex_off.push(ex_pairs.len() as i32);
-        }
-        let n_active = ex_ids.len();
-        let max_m = ex_off.windows(2).map(|w| w[1] - w[0]).max().unwrap_or(0);
-        let csr_tok: Vec<i32> = ex_pairs.iter().map(|&p| p / topk as i32).collect();
-        let pair_w: Vec<f32> = ex_pairs.iter().map(|&p| selw_h[p as usize]).collect();
-        let macro_for = |proj: usize| -> Vec<f32> {
-            ex_pairs
-                .iter()
-                .map(|&p| layer.experts_s2[sel_h[p as usize] as usize * 3 + proj])
-                .collect()
-        };
-        let (macro_w1, macro_w2, macro_w3) = (macro_for(0), macro_for(1), macro_for(2));
-        let ex_ids_d = upload_i32(&stream, &ex_ids)?;
-        let ex_off_d = upload_i32(&stream, &ex_off)?;
-        let ex_pairs_d = upload_i32(&stream, &ex_pairs)?;
-        let csr_tok_d = upload_i32(&stream, &csr_tok)?;
-        let pair_w_d = upload_f32(&stream, &pair_w)?;
-        let macro_w1_d = upload_f32(&stream, &macro_w1)?;
-        let macro_w2_d = upload_f32(&stream, &macro_w2)?;
-        let macro_w3_d = upload_f32(&stream, &macro_w3)?;
-
-        let rc = unsafe { memra_bind_device(st.dev as i32) };
-        if rc != 0 {
-            return Err(format!(
-                "DSV4 grouped prefill cudaSetDevice({}) rc={rc}",
-                st.dev
-            ));
-        }
         unsafe {
             ck(
                 "grouped FP8-QAT x",
@@ -11420,132 +13291,56 @@ impl Dsv4Gpu {
                 ),
             )?;
         }
-        let (act16, act_scale) =
-            self.gather_fp8_half(st, &vws.xq, &vws.xs, Some(&csr_tok_d), slots, hidden)?;
-        let (shape_sel, cross) = crate::moe_f16g_sk_params();
-        let launch = |proj: i32,
-                      input: &CudaSlice<u8>,
-                      input_scale: &CudaSlice<f32>,
-                      in_f: usize,
-                      out_f: usize,
-                      out: &mut CudaSlice<f32>|
-         -> Res<()> {
-            let rc = unsafe {
-                memra_moe_kq_gemm_sk(
-                    table.device_ptr(&stream).0 as *const u64,
-                    proj,
-                    ne as i32,
-                    ex_ids_d.device_ptr(&stream).0 as *const i32,
-                    input.device_ptr(&stream).0 as *const c_void,
-                    out.device_ptr_mut(&stream).0 as *mut f32,
-                    input_scale.device_ptr(&stream).0 as *const f32,
-                    ex_off_d.device_ptr(&stream).0 as *const i32,
-                    ex_off.as_ptr(),
-                    n_active as i32,
-                    max_m,
-                    in_f as i32,
-                    out_f as i32,
-                    crate::QT_NVFP4_MODELOPT,
-                    cross,
-                    crate::moe_f16g_tail_on() as i32,
-                    (in_f / 2) as i64,
-                    sp(&stream),
-                )
-            };
-            if rc == 0 {
-                Ok(())
-            } else {
-                Err(format!("DSV4 grouped projection {proj} failed rc={rc}"))
-            }
+        let mut fresh = if self.grouped_fresh_storage_control {
+            let work = crate::dsv4_grouped::GroupedWork::new(&stream, ne, slots, hidden, inter)?;
+            self.grouped_fresh_storage_calls
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Some(work)
+        } else {
+            None
         };
-        launch(0, &act16, &act_scale, hidden, inter, &mut vws.g1)?;
-        launch(2, &act16, &act_scale, hidden, inter, &mut vws.g3)?;
-        unsafe {
-            ck(
-                "grouped scale w1",
-                k::memra_dsv4_scale_rows(
-                    dpm!(vws.g1, &stream),
-                    dpf!(macro_w1_d, &stream),
-                    slots as i32,
-                    inter as i32,
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "grouped scale w3",
-                k::memra_dsv4_scale_rows(
-                    dpm!(vws.g3, &stream),
-                    dpf!(macro_w3_d, &stream),
-                    slots as i32,
-                    inter as i32,
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "grouped swiglu",
-                k::memra_dsv4_swiglu(
-                    dpf!(vws.g1, &stream),
-                    dpf!(vws.g3, &stream),
-                    dpm!(vws.hbuf, &stream),
-                    slots as i32,
-                    inter as i32,
-                    limit,
-                    dpf!(pair_w_d, &stream),
-                    sp(&stream),
-                ),
-            )?;
+        let work = fresh
+            .as_mut()
+            .or(vws.grouped_work.as_mut())
+            .ok_or("grouped workspace missing")?;
+        let mut compute = EpCompute {
+            xq: &vws.xq,
+            xs: &vws.xs,
+            ids: &vws.sel,
+            weights: &vws.selw,
+            g1: &mut vws.g1,
+            g3: &mut vws.g3,
+            h: &mut vws.hbuf,
+            hq: &mut vws.hq,
+            hs: &mut vws.hs,
+            contribution: &mut vws.contrib,
+        };
+        let used_device = work.prepare(
+            &st.gpu,
+            &compute,
+            &layer.experts_s2_dev,
+            &layer.experts_s2,
+            t,
+            topk,
+            self.grouped_route_device,
+        )?;
+        work.set_gu_fuse_for_plain(allow_gu_fuse);
+        if work.routes.live_slots != slots {
+            return Err("full-bank grouped routing lost a selected slot".into());
         }
-        unsafe {
-            ck(
-                "grouped FP8-QAT h",
-                k::memra_dsv4_act_quant_fp8(
-                    dpf!(vws.hbuf, &stream),
-                    vws.hq.device_ptr_mut(&stream).0 as *mut c_void,
-                    dpm!(vws.hs, &stream),
-                    slots as i32,
-                    inter as i32,
-                    sp(&stream),
-                ),
-            )?;
+        if used_device {
+            self.grouped_device_route_calls
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
-        let (h16, h_scale) = self.gather_fp8_half(st, &vws.hq, &vws.hs, None, slots, inter)?;
-        let mut grouped_contrib = stream
-            .alloc_zeros::<f32>(slots * hidden)
-            .map_err(e("grouped CSR contribution"))?;
-        launch(1, &h16, &h_scale, inter, hidden, &mut grouped_contrib)?;
-        unsafe {
-            ck(
-                "grouped scale w2",
-                k::memra_dsv4_scale_rows(
-                    dpm!(grouped_contrib, &stream),
-                    dpf!(macro_w2_d, &stream),
-                    slots as i32,
-                    hidden as i32,
-                    sp(&stream),
-                ),
-            )?;
-        }
-        unsafe {
-            ck(
-                "grouped csr permute",
-                k::memra_dsv4_scatter_rows(
-                    dpf!(grouped_contrib, &stream),
-                    dpm!(vws.contrib, &stream),
-                    ex_pairs_d.device_ptr(&stream).0 as *const i32,
-                    slots as i32,
-                    hidden as i32,
-                    sp(&stream),
-                ),
-            )?;
-        }
+        work.gate_up(&st.gpu, table, &mut compute, limit)?;
+        work.down(&st.gpu, table, &mut compute)?;
         static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
         if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            let max_m = work.routes.max_m;
             eprintln!(
-                "[dsv4-prefill-f16g] ENGAGED: t={t} pairs={slots} active_experts={n_active} \
-                 max_rows_per_expert={max_m} FP8-QAT-mirrored half, split-plane ModelOpt NVFP4"
+                "[dsv4-prefill-f16g] ENGAGED: t={t} pairs={slots} expert_groups={ne} max_rows_bound={max_m} device_routes={used_device} FP8-QAT-mirrored half, split-plane ModelOpt NVFP4"
             );
         }
-        let _ = shape_sel;
         Ok(())
     }
 
@@ -11553,6 +13348,7 @@ impl Dsv4Gpu {
     /// which is why a round carries a token array), then ONE launch per projection over
     /// the whole T x topk slot set — routed-expert weight traffic scales with T (each
     /// position's experts are its own) while the shared expert and the gate amortize.
+    #[allow(clippy::too_many_arguments)]
     fn moe_verify_dev(
         &self,
         st: &Stage,
@@ -11561,6 +13357,7 @@ impl Dsv4Gpu {
         t: usize,
         toks: &[u32],
         host_math: bool,
+        allow_gu_fuse: bool,
     ) -> Res<()> {
         let mc = &self.model.mc;
         let d = self.model.cfg();
@@ -11653,8 +13450,97 @@ impl Dsv4Gpu {
             }
         }
 
-        if self.prefill_grouped && vws.is_prefill && layer.expert_kind == ExpertKind::Nvfp4 {
-            self.moe_verify_grouped(st, layer, vws, t, hidden, ne, topk, inter, limit)?;
+        if let Some(ep) = &layer.ep {
+            unsafe {
+                ck(
+                    "EP activation quantization",
+                    k::memra_dsv4_act_quant_fp8(
+                        dpf!(vws.xf, &stream),
+                        vws.xq.device_ptr_mut(&stream).0 as *mut c_void,
+                        dpm!(vws.xs, &stream),
+                        t as i32,
+                        hidden as i32,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+            let mut compute = EpCompute {
+                xq: &vws.xq,
+                xs: &vws.xs,
+                ids: &vws.sel,
+                weights: &vws.selw,
+                g1: &mut vws.g1,
+                g3: &mut vws.g3,
+                h: &mut vws.hbuf,
+                hq: &mut vws.hq,
+                hs: &mut vws.hs,
+                contribution: &mut vws.contrib,
+            };
+            let remote = vws.ep.as_mut().ok_or("EP verify workspace missing")?;
+            if self.matrix_moe {
+                if !self.grouped_route_device || self.grouped_fresh_storage_control {
+                    return Err("EP matrix requires device routing and reused storage".into());
+                }
+                let calls = crate::dsv4_ep::execute_matrix(
+                    &st.gpu,
+                    &self.stages[ep.peer_stage].gpu,
+                    ep,
+                    layer
+                        .experts_modelopt_table
+                        .as_ref()
+                        .ok_or("EP matrix local table missing")?,
+                    &layer.experts_s2_dev,
+                    &layer.experts_s2,
+                    &mut compute,
+                    vws.grouped_work
+                        .as_mut()
+                        .ok_or("EP matrix local workspace missing")?,
+                    remote,
+                    t,
+                    topk,
+                    hidden,
+                    limit,
+                    allow_gu_fuse,
+                    self.ep_serial_control,
+                )?;
+                self.grouped_device_route_calls
+                    .fetch_add(calls, std::sync::atomic::Ordering::Relaxed);
+            } else {
+                crate::dsv4_ep::execute(
+                    &st.gpu,
+                    &self.stages[ep.peer_stage].gpu,
+                    ep,
+                    &layer.experts_w,
+                    &layer.experts_sc,
+                    &layer.experts_s2_dev,
+                    &mut compute,
+                    remote,
+                    t,
+                    topk,
+                    hidden,
+                    inter,
+                    limit,
+                    0,
+                    self.ep_serial_control,
+                )?;
+            }
+            self.ep_calls
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        } else if (self.matrix_moe || (self.prefill_grouped && vws.is_prefill))
+            && layer.expert_kind == ExpertKind::Nvfp4
+        {
+            self.moe_verify_grouped(
+                st,
+                layer,
+                vws,
+                t,
+                hidden,
+                ne,
+                topk,
+                inter,
+                limit,
+                allow_gu_fuse,
+            )?;
         } else {
             unsafe {
                 ck(
@@ -11688,7 +13574,7 @@ impl Dsv4Gpu {
                             wstride,
                             sstride,
                             topk as i32,
-                            self.fp4_reduce as i32,
+                            0,
                             sp(&stream),
                         ),
                     )?;
@@ -11736,7 +13622,7 @@ impl Dsv4Gpu {
                         wstride,
                         sstride,
                         0,
-                        self.fp4_reduce as i32,
+                        0,
                         sp(&stream),
                     ),
                 )?;
@@ -12048,6 +13934,8 @@ impl Dsv4Gpu {
         taps: Option<&mut CudaSlice<f32>>,
         output: VerifyOutput,
     ) -> Res<(Option<Vec<f32>>, Vec<u32>)> {
+        crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
+        crate::dsv4_grouped::ensure_program(self.matrix_moe, vstate.matrix_moe)?;
         let DecodePath::Device { host_math } = self.decode_path else {
             return Err("verify_batch_dev requires MEMRA_DSV4_DECODE_PATH=device".into());
         };
@@ -12073,7 +13961,10 @@ impl Dsv4Gpu {
             ));
         }
         let pos0 = state.pos;
-        assert!(pos0 > 0, "batched verify needs prefill_with_cache first");
+        assert!(
+            pos0 > 0 || self.matrix_moe,
+            "batched verify needs prefill_with_cache first"
+        );
         assert!(
             pos0 + t <= state.capacity,
             "round [{pos0}, {}) exceeds session capacity {}",
@@ -12101,52 +13992,90 @@ impl Dsv4Gpu {
                 vstate.bytes[si] +=
                     C4Gather::ensure(&mut vws.c4_gather, &stream, vstate.tmax, vws.idx_stride)?;
             }
+            write_pinned_i32(&mut vws.tok_host, &tok_i32)?;
+            write_pinned_i32(&mut vws.pos_host, &pos_i32)?;
+            let tok_host = pinned_i32(&vws.tok_host, t)?;
+            let pos_host = pinned_i32(&vws.pos_host, t)?;
             let mut dst = vws.tok.slice_mut(0..t);
             stream
-                .memcpy_htod(&tok_i32, &mut dst)
+                .memcpy_htod(tok_host, &mut dst)
                 .map_err(e("htod tok round"))?;
             let mut dst = vws.pos_dev.slice_mut(0..t);
             stream
-                .memcpy_htod(&pos_i32, &mut dst)
+                .memcpy_htod(pos_host, &mut dst)
                 .map_err(e("htod pos round"))?;
         }
 
-        // stage 0: tokens -> embed rows -> hc state
+        // stage 0: tokens -> embed rows -> hc state. This is a stage-local
+        // graph candidate: the token device pointer is refreshed above and no
+        // cache/router/PP state is touched by these two kernels.
+        let capture_stage0 = vstate.capture_stage0_embed_probe_next_round;
+        let replay_stage0 = vstate.replay_stage0_embed_next_round;
+        vstate.capture_stage0_embed_probe_next_round = false;
+        vstate.replay_stage0_embed_next_round = false;
         {
             let st0 = &self.stages[0];
             st0.gpu.ctx.bind_to_thread().map_err(e("bind ctx0 round"))?;
             let stream0 = st0.gpu.stream();
             let vws0 = &mut vstate.ws[0];
-            unsafe {
-                ck(
-                    "embed_rows batch",
-                    k::memra_dsv4_embed_rows(
-                        st0.embed
-                            .as_ref()
-                            .expect("embed on stage 0")
-                            .device_ptr(&stream0)
-                            .0 as *const c_void,
-                        vws0.tok.device_ptr(&stream0).0 as *const i32,
-                        dpm!(vws0.emb, &stream0),
-                        t as i32,
-                        hidden as i32,
-                        sp(&stream0),
-                    ),
-                )?;
-                ck(
-                    "repeat_hc batch",
-                    k::memra_dsv4_repeat_hc(
-                        dpf!(vws0.emb, &stream0),
-                        dpm!(vws0.h_a, &stream0),
-                        t as i32,
-                        hc as i32,
-                        hidden as i32,
-                        sp(&stream0),
-                    ),
-                )?;
+            let mut body = || {
+                unsafe {
+                    ck(
+                        "embed_rows batch",
+                        k::memra_dsv4_embed_rows(
+                            st0.embed
+                                .as_ref()
+                                .expect("embed on stage 0")
+                                .device_ptr(&stream0)
+                                .0 as *const c_void,
+                            vws0.tok.device_ptr(&stream0).0 as *const i32,
+                            dpm!(vws0.emb, &stream0),
+                            t as i32,
+                            hidden as i32,
+                            sp(&stream0),
+                        ),
+                    )?;
+                    ck(
+                        "repeat_hc batch",
+                        k::memra_dsv4_repeat_hc(
+                            dpf!(vws0.emb, &stream0),
+                            dpm!(vws0.h_a, &stream0),
+                            t as i32,
+                            hc as i32,
+                            hidden as i32,
+                            sp(&stream0),
+                        ),
+                    )?;
+                }
+                Ok(())
+            };
+            if capture_stage0 {
+                let n_trunk = (mc.n_layer - mc.nextn_predict_layers) as usize;
+                let captured =
+                    crate::dsv4_graph::capture_layer(stream0.clone(), n_trunk + 1, body)?;
+                vstate.stage0_embed_capture = Some(captured);
+            } else if replay_stage0 {
+                vstate
+                    .stage0_embed_capture
+                    .as_ref()
+                    .ok_or("missing retained stage-0 embed graph")?
+                    .replay()?;
+            } else {
+                body()?;
             }
         }
 
+        let capture_stateless = vstate.capture_stateless_prefix_next_round;
+        let replay_stateless = vstate.replay_stateless_prefix_next_round;
+        if (capture_stateless || replay_stateless)
+            && (t != 1 || taps.is_some() || vstate.ws.iter().any(|w| w.is_prefill))
+        {
+            return Err(
+                "stateless prefix graph probe requires plain t=1 with no taps/prefill".into(),
+            );
+        }
+        vstate.capture_stateless_prefix_next_round = false;
+        vstate.replay_stateless_prefix_next_round = false;
         let targets = self.dspark.as_ref().map(|ds| ds.targets.clone());
         let n_t = targets.as_ref().map(|x| x.len()).unwrap_or(0);
         let mut taps = taps;
@@ -12200,18 +14129,72 @@ impl Dsv4Gpu {
                 .iter()
                 .position(|l| l.il == il as u32)
                 .unwrap_or_else(|| panic!("layer {il} not on stage {stage}"));
-            self.block_verify_dev(
-                st,
-                &st.layers[lidx],
-                &mut state.caches[il],
-                &mut vstate.layers[il],
-                &mut vstate.ws[stage],
-                input_rx,
-                pos0,
-                t,
-                toks,
-                host_math,
-            )?;
+            let selected_for_graph = vstate
+                .capture_layers
+                .as_ref()
+                .is_none_or(|targets| targets.binary_search(&il).is_ok());
+            let capture_this_layer = vstate.capture_probe_next_round && selected_for_graph;
+            let replay_this_layer = vstate.replay_layer_next_round && selected_for_graph;
+            let capture_stateless_layer = capture_stateless;
+            let replay_stateless_layer = replay_stateless;
+            if (capture_this_layer || replay_this_layer) && state.caches[il].c4_host.is_some() {
+                return Err(format!(
+                    "one-layer graph probe layer {il} requires C4 host residency disabled"
+                ));
+            }
+            // GU fusion is plain decode only: spec has tmax > 1, and DSpark
+            // tap/prefill calls carry a tap destination or mark the workspace
+            // as prefill. Keep those programs on the shipped sequence.
+            let allow_gu_fuse = self.matrix_moe
+                && t == 1
+                && vstate.tmax == 1
+                && !vstate.ws[stage].is_prefill
+                && taps.is_none();
+            let mut body = |phase| {
+                self.block_verify_dev(
+                    st,
+                    &st.layers[lidx],
+                    &mut state.caches[il],
+                    &mut vstate.layers[il],
+                    &mut vstate.ws[stage],
+                    input_rx,
+                    pos0,
+                    t,
+                    toks,
+                    host_math,
+                    allow_gu_fuse,
+                    phase,
+                )
+            };
+            if capture_stateless_layer {
+                let captured = crate::dsv4_graph::capture_layer(st.gpu.stream(), il, || {
+                    body(BlockPhase::Prefix)
+                })?;
+                vstate.stateless_prefix_captures[il] = Some(captured);
+                vstate.stateless_prefix_capture_count += 1;
+                body(BlockPhase::Tail)?;
+            } else if replay_stateless_layer {
+                vstate.stateless_prefix_captures[il]
+                    .as_ref()
+                    .ok_or_else(|| format!("missing stateless prefix graph for layer {il}"))?
+                    .replay()?;
+                vstate.stateless_prefix_replay_count += 1;
+                body(BlockPhase::Tail)?;
+            } else if capture_this_layer {
+                let captured = crate::dsv4_graph::capture_layer(st.gpu.stream(), il, || {
+                    body(BlockPhase::All)
+                })?;
+                vstate.layer_captures.push(captured);
+            } else if replay_this_layer {
+                let capture = vstate
+                    .layer_captures
+                    .iter()
+                    .find(|capture| capture.layer == il)
+                    .ok_or_else(|| format!("missing retained graph for layer {il}"))?;
+                capture.replay()?;
+            } else {
+                body(BlockPhase::All)?;
+            }
             input_rx = false;
             // DSpark trunk tap for all T rows (capture only)
             if let (Some(tp), Some(tg)) = (taps.as_mut(), targets.as_ref())
@@ -12247,9 +14230,20 @@ impl Dsv4Gpu {
             }
         }
 
+        vstate.capture_probe_next_round = false;
+        vstate.replay_layer_next_round = false;
+        let capture_head = vstate.capture_head_probe_next_round;
+        let replay_head = vstate.replay_head_next_round;
+        vstate.capture_head_probe_next_round = false;
+        vstate.replay_head_next_round = false;
         let last = self.stages.len() - 1;
         assert_eq!(cur_stage, last, "device path expects the head stage last");
         if matches!(output, VerifyOutput::None | VerifyOutput::Last) {
+            if capture_head || replay_head {
+                return Err(
+                    "head graph probe requires the plain decode full/argmax output shape".into(),
+                );
+            }
             assert!(
                 vstate.ws[last].is_prefill,
                 "prefill output policy used for verification"
@@ -12264,25 +14258,57 @@ impl Dsv4Gpu {
             let stream = self.stages[last].gpu.stream();
             let row_size = hc * hidden;
             let final_h = vstate.ws[last].h_a.slice((t - 1) * row_size..t * row_size);
-            let step = &mut state.ws.as_mut().expect("device scratch")[last];
-            stream
-                .memcpy_dtod(&final_h, &mut step.h_a)
-                .map_err(e("prefill final head row"))?;
-            self.head_logits_dev(step, host_math)?;
-            let logits = dtoh_f32(&stream, &step.logits)?;
+            let logits = if self.matrix_moe {
+                let matrix = state
+                    .matrix_step
+                    .as_mut()
+                    .ok_or("matrix head workspace missing")?;
+                if matrix.failed || matrix.verify.open.is_some() {
+                    return Err("matrix head workspace is not reusable".into());
+                }
+                let head = &mut matrix.verify.ws[last];
+                stream
+                    .memcpy_dtod(&final_h, &mut head.h_a)
+                    .map_err(e("matrix final head row"))?;
+                self.head_logits_batch_dev(head, 1, host_math)?;
+                dtoh_f32(&stream, &head.logits)?
+            } else {
+                let step = &mut state.ws.as_mut().expect("device scratch")[last];
+                stream
+                    .memcpy_dtod(&final_h, &mut step.h_a)
+                    .map_err(e("prefill final head row"))?;
+                self.head_logits_dev(step, host_math)?;
+                dtoh_f32(&stream, &step.logits)?
+            };
             self.prefill_head_counts
                 .last_rows
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             vstate.open = Some((pos0, t));
             return Ok((Some(logits), Vec::new()));
         }
-        self.head_logits_batch_dev(&mut vstate.ws[last], t, host_math)?;
+        let stream_last = self.stages[last].gpu.stream();
+        if capture_head {
+            let captured = {
+                let vws = &mut vstate.ws[last];
+                crate::dsv4_graph::capture_layer(stream_last.clone(), n_trunk, || {
+                    self.head_logits_batch_dev(vws, t, host_math)
+                })?
+            };
+            vstate.head_capture = Some(captured);
+        } else if replay_head {
+            vstate
+                .head_capture
+                .as_ref()
+                .ok_or("missing retained head graph")?
+                .replay()?;
+        } else {
+            self.head_logits_batch_dev(&mut vstate.ws[last], t, host_math)?;
+        }
         if vstate.ws[last].is_prefill {
             self.prefill_head_counts
                 .full_rows
                 .fetch_add(t as u64, std::sync::atomic::Ordering::Relaxed);
         }
-        let stream_last = self.stages[last].gpu.stream();
         let vws = &mut vstate.ws[last];
         let vocab = vws.logits.len() / vws.tmax;
         let logits = if output == VerifyOutput::Full {
@@ -12344,6 +14370,8 @@ impl Dsv4Gpu {
         vstate: &mut VerifyState,
         n_commit: usize,
     ) -> Res<()> {
+        crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
+        crate::dsv4_grouped::ensure_program(self.matrix_moe, vstate.matrix_moe)?;
         let (pos0, t) = vstate
             .open
             .take()
@@ -13353,9 +15381,116 @@ pub fn dsv4_pos_uniform(seed: u64, pos: usize) -> f64 {
     (h >> 11) as f64 / (1u64 << 53) as f64
 }
 
+/// Candidate ordering changes storage/work only; probability arithmetic stays in
+/// the original descending-logit, ascending-token-ID order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Dsv4SamplerOrder {
+    Comparison,
+    Radix,
+}
+
+impl Dsv4SamplerOrder {
+    pub fn resolve(raw: Option<&str>) -> Res<Self> {
+        match raw {
+            None | Some("comparison") => Ok(Self::Comparison),
+            Some("radix") => Ok(Self::Radix),
+            Some(raw) => Err(format!(
+                "MEMRA_DSV4_SAMPLE_SORT {raw:?}: expected comparison or radix"
+            )),
+        }
+    }
+}
+
+thread_local! {
+    static SAMPLER_ORDER_GATE: std::cell::Cell<Option<Dsv4SamplerOrder>> = const { std::cell::Cell::new(None) };
+}
+
+/// Per-thread instrument override for exclusive, one-load A/B gates. Passing None
+/// restores the immutable process configuration. Not a serving-policy interface.
+pub fn set_dsv4_sampler_order_for_gate(order: Option<Dsv4SamplerOrder>) {
+    SAMPLER_ORDER_GATE.with(|current| current.set(order));
+}
+
+pub fn dsv4_sampler_order() -> Res<Dsv4SamplerOrder> {
+    static ORDER: std::sync::OnceLock<Res<Dsv4SamplerOrder>> = std::sync::OnceLock::new();
+    let configured = ORDER
+        .get_or_init(|| {
+            let raw = match std::env::var("MEMRA_DSV4_SAMPLE_SORT") {
+                Ok(value) => Some(value),
+                Err(std::env::VarError::NotPresent) => None,
+                Err(err) => return Err(format!("MEMRA_DSV4_SAMPLE_SORT: {err}")),
+            };
+            Dsv4SamplerOrder::resolve(raw.as_deref())
+        })
+        .as_ref()
+        .map_err(Clone::clone)?;
+    Ok(SAMPLER_ORDER_GATE
+        .with(|current| current.get())
+        .unwrap_or(*configured))
+}
+
+/// Exact sorted candidate IDs. Four stable byte passes preserve ID ties. Zero
+/// keys are normalized because partial_cmp equates +0 and -0. NaN rows retain
+/// the original comparator behavior rather than inventing a new total order.
+pub fn dsv4_candidate_order(logits: &[f32], mode: Dsv4SamplerOrder) -> Vec<u32> {
+    let mut idx: Vec<u32> = (0..logits.len() as u32).collect();
+    if mode == Dsv4SamplerOrder::Comparison || logits.iter().any(|v| v.is_nan()) {
+        idx.sort_by(|&a, &b| {
+            logits[b as usize]
+                .partial_cmp(&logits[a as usize])
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(a.cmp(&b))
+        });
+        return idx;
+    }
+    let keys: Vec<u32> = logits
+        .iter()
+        .map(|&value| {
+            let bits = if value == 0.0 { 0 } else { value.to_bits() };
+            let ascending = if bits & 0x8000_0000 == 0 {
+                bits ^ 0x8000_0000
+            } else {
+                !bits
+            };
+            !ascending
+        })
+        .collect();
+    let mut scratch = vec![0u32; idx.len()];
+    for shift in [0, 8, 16, 24] {
+        let mut offsets = [0usize; 256];
+        for &id in &idx {
+            offsets[((keys[id as usize] >> shift) & 255) as usize] += 1;
+        }
+        let mut total = 0;
+        for offset in &mut offsets {
+            let n = *offset;
+            *offset = total;
+            total += n;
+        }
+        for &id in &idx {
+            let bucket = ((keys[id as usize] >> shift) & 255) as usize;
+            scratch[offsets[bucket]] = id;
+            offsets[bucket] += 1;
+        }
+        std::mem::swap(&mut idx, &mut scratch);
+    }
+    idx
+}
+
 /// One sampled token from a full-vocab logits row at absolute position `pos`.
+pub fn dsv4_sample_row(logits: &[f32], pos: usize, cfg: &Dsv4SampleCfg) -> Res<u32> {
+    dsv4_sample_row_ordered(logits, pos, cfg, dsv4_sampler_order()?)
+}
+
+/// Explicit candidate-order arm, sharing every probability/draw operation with
+/// production. Used by the independent full-order and sampled-token gate.
 #[allow(clippy::neg_cmp_op_on_partial_ord)] // allow: NaN must take this branch; !(a > b) is not a <= b under IEEE comparisons
-pub fn dsv4_sample_row(logits: &[f32], pos: usize, cfg: &Dsv4SampleCfg) -> Result<u32, String> {
+pub fn dsv4_sample_row_ordered(
+    logits: &[f32],
+    pos: usize,
+    cfg: &Dsv4SampleCfg,
+    order: Dsv4SamplerOrder,
+) -> Res<u32> {
     if !(cfg.temperature > 0.0) {
         return Err(format!(
             "dsv4 sampled path: temperature {} refused (need > 0; greedy is served by \
@@ -13375,13 +15510,7 @@ pub fn dsv4_sample_row(logits: &[f32], pos: usize, cfg: &Dsv4SampleCfg) -> Resul
     } else {
         cfg.top_k
     };
-    let mut idx: Vec<u32> = (0..logits.len() as u32).collect();
-    idx.sort_by(|&a, &b| {
-        let (va, vb) = (logits[a as usize], logits[b as usize]);
-        vb.partial_cmp(&va)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then(a.cmp(&b))
-    });
+    let mut idx = dsv4_candidate_order(logits, order);
     idx.truncate(k);
     // softmax over the kept set in kept order (f64 accumulation, max-shifted)
     let m = logits[idx[0] as usize] as f64;
@@ -13691,10 +15820,123 @@ mod peer_probe_tests {
 }
 
 #[cfg(test)]
+mod verify_topk_tests {
+    use super::*;
+
+    #[test]
+    fn verify_topk_is_literal_and_default_off() {
+        for value in [None, Some(""), Some("legacy")] {
+            assert_eq!(Dsv4VerifyTopk::resolve(value), Ok(Dsv4VerifyTopk::Legacy));
+        }
+        assert_eq!(
+            Dsv4VerifyTopk::resolve(Some("device")),
+            Ok(Dsv4VerifyTopk::Device)
+        );
+        for value in ["1", "DEVICE", "device ", "cpu"] {
+            assert!(Dsv4VerifyTopk::resolve(Some(value)).is_err());
+        }
+    }
+
+    #[test]
+    #[ignore = "requires an exclusively locked non-serving CUDA device"]
+    fn cuda_numeric_topk_matches_host_ties_and_preserves_guards() {
+        let ctx = cudarc::driver::CudaContext::new(0).expect("context");
+        let stream = ctx.new_stream().expect("stream");
+        for nb in [
+            1usize, 2, 31, 32, 33, 127, 128, 129, 511, 512, 513, 2047, 2048, 4095, 4096,
+        ] {
+            for shape in 0..3 {
+                let score: Vec<f32> = (0..nb)
+                    .map(|i| match shape {
+                        0 => ((i * 73 + 11) % 991) as f32 / 71.0 - 5.0,
+                        1 => {
+                            if i % 2 == 0 {
+                                -0.0
+                            } else {
+                                0.0
+                            }
+                        }
+                        _ => match i % 7 {
+                            0 => f32::NEG_INFINITY,
+                            1 => f32::INFINITY,
+                            2 => -0.0,
+                            3 => 0.0,
+                            _ => 2.0,
+                        },
+                    })
+                    .collect();
+                let mut order: Vec<usize> = (0..nb).collect();
+                order.sort_by(|&a, &b| score[b].partial_cmp(&score[a]).unwrap().then(a.cmp(&b)));
+                let kk = nb.min(512);
+                let input = stream.clone_htod(&score).expect("scores");
+                let mut out = stream
+                    .clone_htod(&vec![-73i32; 128 + kk + 17])
+                    .expect("indices");
+                unsafe {
+                    ck(
+                        "numeric top-k test",
+                        k::memra_dsv4_topk_idx_numeric(
+                            dpf!(input, &stream),
+                            nb as i32,
+                            kk as i32,
+                            128,
+                            (out.device_ptr_mut(&stream).0 as usize + 128 * 4) as *mut i32,
+                            sp(&stream),
+                        ),
+                    )
+                    .expect("launch");
+                }
+                let actual = stream.clone_dtoh(&out).expect("output");
+                let expected: Vec<i32> = order[..kk].iter().map(|i| *i as i32 + 128).collect();
+                assert_eq!(
+                    &actual[128..128 + kk],
+                    expected.as_slice(),
+                    "nb={nb} shape={shape}"
+                );
+                assert!(
+                    actual[..128]
+                        .iter()
+                        .chain(&actual[128 + kk..])
+                        .all(|i| *i == -73)
+                );
+                let unchanged = stream.clone_dtoh(&input).expect("input after selector");
+                assert!(
+                    unchanged
+                        .iter()
+                        .zip(&score)
+                        .all(|(a, b)| a.to_bits() == b.to_bits())
+                );
+            }
+        }
+        // Mutation control: the existing raw-bit comparator distinguishes the two
+        // zero signs, unlike the host comparator. Keep that old arm unchanged.
+        let zeros = stream.clone_htod(&[-0.0f32, 0.0]).expect("zeros");
+        let mut old = stream.alloc_zeros::<i32>(2).expect("old out");
+        unsafe {
+            ck(
+                "old comparator control",
+                k::memra_dsv4_topk_idx(
+                    dpf!(zeros, &stream),
+                    2,
+                    2,
+                    128,
+                    old.device_ptr_mut(&stream).0 as *mut i32,
+                    sp(&stream),
+                ),
+            )
+            .expect("old launch");
+        }
+        assert_eq!(stream.clone_dtoh(&old).expect("old read"), [129, 128]);
+        println!(
+            "PASS numeric top-k: 45 host-oracle cells, signed-zero control, duplicate/infinite scores, power-of-two boundaries, input/output guards"
+        );
+    }
+}
+
+#[cfg(test)]
 mod dense_arm_default_tests {
     use super::{
-        Dsv4Fp4Reduce, Dsv4IndexerScore, resolve_dense_arm, resolve_dspark_fused_moe,
-        resolve_prefill_moe,
+        Dsv4IndexerScore, resolve_dense_arm, resolve_dspark_fused_moe, resolve_prefill_moe,
     };
 
     #[test]
@@ -13720,24 +15962,6 @@ mod dense_arm_default_tests {
         for raw in ["1", "TILED", " tiled", "fused"] {
             assert!(Dsv4IndexerScore::resolve(Some(raw)).is_err());
         }
-    }
-
-    #[test]
-    fn fp4_reduction_resolution_is_literal_and_default_off() {
-        for value in [None, Some(""), Some("block")] {
-            assert_eq!(Dsv4Fp4Reduce::resolve(value), Ok(Dsv4Fp4Reduce::Block));
-        }
-        assert_eq!(Dsv4Fp4Reduce::default(), Dsv4Fp4Reduce::Block);
-        assert_eq!(
-            Dsv4Fp4Reduce::resolve(Some("warp")),
-            Ok(Dsv4Fp4Reduce::Warp)
-        );
-        for value in ["1", "yes", "warp ", "WARP", " block"] {
-            assert!(Dsv4Fp4Reduce::resolve(Some(value)).is_err());
-        }
-        // The explicit CUDA ABI has only these two legal arm values.
-        assert_eq!(Dsv4Fp4Reduce::Block as i32, 0);
-        assert_eq!(Dsv4Fp4Reduce::Warp as i32, 1);
     }
 
     /// The owner-ratified flip (2026-08-20): unset env on the device decode path = fp8.
@@ -13943,7 +16167,109 @@ mod penalty_cross_pin_tests {
 
 #[cfg(test)]
 mod sampled_path_tests {
-    use super::{Dsv4SampleCfg, dsv4_pos_uniform, dsv4_sample_row};
+    use super::{
+        Dsv4SampleCfg, Dsv4SamplerOrder, dsv4_candidate_order, dsv4_pos_uniform, dsv4_sample_row,
+        dsv4_sample_row_ordered,
+    };
+
+    #[test]
+    fn sampler_order_is_opt_in_and_names_are_strict() {
+        assert_eq!(
+            Dsv4SamplerOrder::resolve(None).unwrap(),
+            Dsv4SamplerOrder::Comparison
+        );
+        assert_eq!(
+            Dsv4SamplerOrder::resolve(Some("radix")).unwrap(),
+            Dsv4SamplerOrder::Radix
+        );
+        for invalid in ["", "0", "fast", "RADIX"] {
+            assert!(Dsv4SamplerOrder::resolve(Some(invalid)).is_err());
+        }
+    }
+
+    #[test]
+    fn sampler_gate_override_is_thread_local_and_reversible() {
+        let base = super::dsv4_sampler_order().unwrap();
+        let other = match base {
+            Dsv4SamplerOrder::Comparison => Dsv4SamplerOrder::Radix,
+            Dsv4SamplerOrder::Radix => Dsv4SamplerOrder::Comparison,
+        };
+        super::set_dsv4_sampler_order_for_gate(Some(other));
+        assert_eq!(super::dsv4_sampler_order().unwrap(), other);
+        assert_eq!(
+            std::thread::spawn(super::dsv4_sampler_order)
+                .join()
+                .unwrap()
+                .unwrap(),
+            base
+        );
+        super::set_dsv4_sampler_order_for_gate(None);
+        assert_eq!(super::dsv4_sampler_order().unwrap(), base);
+    }
+
+    #[test]
+    fn malformed_sampler_order_refuses_before_artifact_or_cuda() {
+        const CHILD: &str = "DSV4_SAMPLER_REFUSAL_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            let err = match super::Dsv4Gpu::load(
+                std::path::Path::new("sampler-refusal-must-not-open"),
+                &[0, 1],
+                super::ActQuantVariant::RefFp8Round,
+                32,
+            ) {
+                Err(err) => err,
+                Ok(_) => panic!("invalid sampler configuration loaded"),
+            };
+            assert!(err.contains("MEMRA_DSV4_SAMPLE_SORT"), "{err}");
+            return;
+        }
+        let mut invalid = vec![std::ffi::OsString::from("unknown-order")];
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStringExt;
+            invalid.push(std::ffi::OsString::from_vec(vec![0xff]));
+        }
+        for value in invalid {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "dsv4_gpu::sampled_path_tests::malformed_sampler_order_refuses_before_artifact_or_cuda", "--nocapture"])
+                .env(CHILD, "1").env("MEMRA_DSV4_SAMPLE_SORT", value).output().unwrap();
+            assert!(
+                output.status.success(),
+                "child failed: {} {}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+
+    #[test]
+    fn radix_preserves_signed_zero_ties_and_sampled_draws() {
+        let row = [0.0, -0.0, 5.0, -1.0, 5.0, f32::NEG_INFINITY, 0.0];
+        assert_eq!(
+            dsv4_candidate_order(&row, Dsv4SamplerOrder::Radix),
+            [2, 4, 0, 1, 6, 3, 5]
+        );
+        for temperature in [0.2, 1.0, 2.0] {
+            for top_p in [0.1, 0.95, 1.0] {
+                for top_k in [0, 1, 3, 8] {
+                    let cfg = Dsv4SampleCfg {
+                        temperature,
+                        top_p,
+                        top_k,
+                        seed: 20260906,
+                    };
+                    for pos in 0..32 {
+                        assert_eq!(
+                            dsv4_sample_row_ordered(&row, pos, &cfg, Dsv4SamplerOrder::Comparison)
+                                .unwrap(),
+                            dsv4_sample_row_ordered(&row, pos, &cfg, Dsv4SamplerOrder::Radix)
+                                .unwrap()
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     fn cfg(seed: u64) -> Dsv4SampleCfg {
         Dsv4SampleCfg {

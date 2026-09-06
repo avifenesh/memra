@@ -102,7 +102,7 @@ long-context HTTP, sampled quality and target SLO gates remain open.
   tiles. The newly gated 128/512 regime permits pricing 32-row tiles and one
   two-dimensional grid without changing each row's accumulation tree; existing
   serving widths must retain their qualified dispatch until tested.
-- Indexer Q and compressed K each undergo per-128 FP4 quantization with one
-  power-of-two scale per vector. A compact integer-dot path may preserve the
-  exact dot while reducing arithmetic/storage. It needs a bounded-exponent
-  proof, actual-QAT-data gates and cache-contract work; it is not implemented.
+- Correction after the 2026-09-05 source sweep: indexer Q and compressed K
+  undergo per-32 FP4 quantization, four scales per 128-element vector. The FFI's
+  128 argument is total length, not group size. A packed scorer must retain all
+  four scales; the earlier single-scale integer-dot premise was incorrect.

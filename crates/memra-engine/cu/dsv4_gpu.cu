@@ -1142,6 +1142,15 @@ extern "C" __global__ void dsv4_fp8_gather_half_kernel(
     float* __restrict__ row_scale, int* __restrict__ row_status, int cols) {
     const int row = blockIdx.x, src = row_ids ? row_ids[row] : row;
     const int groups = cols / 128;
+    if (src < 0) {
+        for (int x = threadIdx.x; x < cols; x += blockDim.x)
+            out[(long)row * cols + x] = __float2half(0.0f);
+        if (threadIdx.x == 0) {
+            row_scale[row] = 0.0f;
+            row_status[row] = 0;
+        }
+        return;
+    }
     __shared__ float red[256];
     __shared__ int bad;
     if (threadIdx.x == 0) bad = 0;
@@ -1188,6 +1197,144 @@ extern "C" int memra_dsv4_scale_rows(float* y, const float* scale, int rows, int
     long n = (long)rows * cols;
     dsv4_scale_rows_kernel<<<(unsigned)((n + 255) / 256), 256, 0, (cudaStream_t)stream_v>>>(
         y, scale, rows, cols);
+    DSV4_ERR();
+    return 0;
+}
+
+// Stable expert-major routing metadata, with original slot order inside each
+// expert. No atomically assigned destination order and no host sorting. Counts
+// and offsets have fixed expert cardinality, including empty expert groups.
+template<bool Partition = false>
+static __global__ void dsv4_grouped_count_kernel(const int* selected, int* counts,
+                                                int slots, int* pairs, int* tokens,
+                                                float* route_weights, float* macro1,
+                                                float* macro2, float* macro3,
+                                                int first = 0) {
+    const int expert = int(blockIdx.x) + (Partition ? first : 0), lane = threadIdx.x;
+    int count = 0;
+    for (int base = 0; base < slots; base += 32) {
+        int p = base + lane;
+        unsigned mask = __ballot_sync(0xffffffffu, p < slots && selected[p] == expert);
+        count += __popc(mask);
+    }
+    if (lane == 0) {
+        counts[blockIdx.x] = count;
+        if (blockIdx.x == 0) {
+            for (int p = 0; p < slots; ++p) {
+                pairs[p] = -1;
+                tokens[p] = -1;
+                route_weights[p] = 0.0f;
+                macro1[p] = 0.0f;
+                macro2[p] = 0.0f;
+                macro3[p] = 0.0f;
+            }
+        }
+    }
+}
+
+static __global__ void dsv4_grouped_prefix_kernel(const int* counts, int* offsets,
+    int* expert_ids, int* status, int experts, int slots) {
+    if (threadIdx.x != 0) return;
+    int sum = 0;
+    offsets[0] = 0;
+    for (int e = 0; e < experts; ++e) {
+        expert_ids[e] = e;
+        sum += counts[e];
+        offsets[e + 1] = sum;
+    }
+    // Every valid input slot contributes exactly once. Invalid ids are never
+    // dereferenced and are rejected before the caller uses this metadata.
+    status[0] = sum == slots ? 0 : 1;
+}
+
+template<bool Partition = false>
+static __global__ void dsv4_grouped_scatter_kernel(const int* selected,
+    const float* weights, const float* scale2, const int* offsets,
+    int* pairs, int* tokens, float* route_weights, float* macro1,
+    float* macro2, float* macro3, int slots, int topk, int first = 0) {
+    const int expert = int(blockIdx.x) + (Partition ? first : 0), lane = threadIdx.x;
+    int next = offsets[blockIdx.x];
+    for (int base = 0; base < slots; base += 32) {
+        int p = base + lane;
+        bool hit = p < slots && selected[p] == expert;
+        unsigned mask = __ballot_sync(0xffffffffu, hit);
+        if (hit) {
+            unsigned lower = (1u << lane) - 1u;
+            int dst = next + __popc(mask & lower);
+            pairs[dst] = p;
+            tokens[dst] = p / topk;
+            route_weights[dst] = weights[p];
+            macro1[dst] = scale2[expert * 3];
+            macro2[dst] = scale2[expert * 3 + 1];
+            macro3[dst] = scale2[expert * 3 + 2];
+        }
+        next += __popc(mask);
+    }
+}
+
+extern "C" int memra_dsv4_grouped_routes(const int* selected, const float* weights,
+    const float* scale2, int* counts, int* offsets, int* expert_ids, int* pairs,
+    int* tokens, float* route_weights, float* macro1, float* macro2, float* macro3,
+    int* status, int slots, int experts, int topk, void* stream_v) {
+    if (slots < 1 || experts < 1 || experts > 512 || topk < 1 || topk > experts
+        || slots % topk != 0) return 40004;
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    dsv4_grouped_count_kernel<false><<<experts, 32, 0, stream>>>(
+        selected, counts, slots, pairs, tokens, route_weights, macro1, macro2, macro3);
+    DSV4_ERR();
+    dsv4_grouped_prefix_kernel<<<1, 32, 0, stream>>>(counts, offsets, expert_ids,
+                                                   status, experts, slots);
+    DSV4_ERR();
+    dsv4_grouped_scatter_kernel<false><<<experts, 32, 0, stream>>>(selected, weights, scale2,
+        offsets, pairs, tokens, route_weights, macro1, macro2, macro3, slots, topk);
+    DSV4_ERR();
+    return 0;
+}
+
+// Partition-local group ids address a local pointer table; source selections and
+// macro scales retain GLOBAL expert ids. Unowned slots are omitted, not rerouted.
+// offsets[expert_count] is the device live-row count, including the empty-rank case.
+// Only that prefix of the slot arrays is written. Consumers must not use its tail.
+static __global__ void dsv4_grouped_partition_prefix_kernel(const int* selected,
+    const int* counts, int* offsets, int* expert_ids, int* status,
+    int slots, int global_experts, int expert_count) {
+    if (threadIdx.x != 0) return;
+    int sum = 0;
+    offsets[0] = 0;
+    for (int e = 0; e < expert_count; ++e) {
+        expert_ids[e] = e;
+        sum += counts[e];
+        offsets[e + 1] = sum;
+    }
+    int bad = 0;
+    for (int p = 0; p < slots; ++p) {
+        if (selected[p] < 0 || selected[p] >= global_experts) bad = 1;
+    }
+    status[0] = bad;
+}
+
+extern "C" int memra_dsv4_grouped_routes_partition(const int* selected,
+    const float* weights, const float* scale2, int* counts, int* offsets,
+    int* expert_ids, int* pairs, int* tokens, float* route_weights,
+    float* macro1, float* macro2, float* macro3, int* status, int slots,
+    int global_experts, int first, int expert_count, int topk, void* stream_v) {
+    if (slots < 1 || global_experts < 1 || global_experts > 512 || first < 0
+        || first >= global_experts || expert_count < 1
+        || expert_count > global_experts - first || topk < 1
+        || topk > global_experts || slots % topk != 0 || slots / topk > 512
+        || !selected || !weights || !scale2 || !counts || !offsets || !expert_ids
+        || !pairs || !tokens || !route_weights || !macro1 || !macro2 || !macro3
+        || !status) return 40004;
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    dsv4_grouped_count_kernel<true><<<expert_count, 32, 0, stream>>>(
+        selected, counts, slots, pairs, tokens, route_weights, macro1, macro2, macro3, first);
+    DSV4_ERR();
+    dsv4_grouped_partition_prefix_kernel<<<1, 32, 0, stream>>>(
+        selected, counts, offsets, expert_ids, status, slots, global_experts, expert_count);
+    DSV4_ERR();
+    dsv4_grouped_scatter_kernel<true><<<expert_count, 32, 0, stream>>>(
+        selected, weights, scale2, offsets, pairs, tokens, route_weights,
+        macro1, macro2, macro3, slots, topk, first);
     DSV4_ERR();
     return 0;
 }
@@ -1660,17 +1807,28 @@ extern "C" int memra_dsv4_route(const float* raw, const float* bias, const int* 
 // unchanged, and each column runs the SAME 128-leaf halving tree (sequentially, one
 // per column). The activation vector is reused across the CPB columns and the
 // table init is amortized CPB-fold.
-template <bool WarpReduce>
+template <bool WarpReduce, bool Partitioned = false>
 __global__ void dsv4_fp4_gemm_sel_kernel(
     const uint8_t* __restrict__ a, const float* __restrict__ as_,
     const uint8_t* __restrict__ w_base, const uint8_t* __restrict__ sc_base,
     const float* __restrict__ s2, const int* __restrict__ sel, int proj, int a_stride_rows,
     int kind, float* __restrict__ out, int n, int kdim, long wstride, long sstride,
-    int a_group) {
+    int a_group, int expert_first, int expert_count) {
     const int CPB = DSV4_FP4_SEL_CPB;
     int col0 = blockIdx.x * CPB;   // first output feature of this block
     int slot = blockIdx.y;         // active-expert slot
-    int eid = sel[slot];
+    const int global_eid = sel[slot];
+    int eid = global_eid;
+    if constexpr (Partitioned) {
+        if (eid < expert_first || eid >= expert_first + expert_count) {
+            if (threadIdx.x == 0) {
+                for (int c = 0; c < CPB && col0 + c < n; ++c)
+                    out[(long)slot * n + col0 + c] = 0.0f;
+            }
+            return;
+        }
+        eid -= expert_first;
+    }
     int gs = (kind == 0) ? 16 : 32;
     int ngroups = kdim / gs;
     extern __shared__ float selected_smem[];
@@ -1688,7 +1846,7 @@ __global__ void dsv4_fp4_gemm_sel_kernel(
     const float* asrow = as_ + arow_i * (kdim / 128);
     const uint8_t* wb = w_base + ((long)eid * 3 + proj) * wstride;
     const uint8_t* sb = sc_base + ((long)eid * 3 + proj) * sstride;
-    float scale2 = (kind == 0) ? s2[eid * 3 + proj] : 0.0f;
+    float scale2 = (kind == 0) ? s2[global_eid * 3 + proj] : 0.0f;
     float part[CPB] = {0.0f, 0.0f, 0.0f, 0.0f};
     for (int j = threadIdx.x; j < ngroups; j += blockDim.x) {
         int k0 = j * gs;
@@ -1745,18 +1903,6 @@ __global__ void dsv4_fp4_gemm_sel_kernel(
     }
 }
 
-// Default off while the exact RTX PRO 6000 serving/performance gates are pending.
-// Invalid values fail at the launcher, including when the first call is captured.
-static int dsv4_fp4_reduce_arm() {
-    static const int arm = [] {
-        const char* v = std::getenv("MEMRA_DSV4_FP4_REDUCE");
-        if (!v || !v[0] || std::strcmp(v, "block") == 0) return 0;
-        if (std::strcmp(v, "warp") == 0) return 1;
-        return -1;
-    }();
-    return arm;
-}
-
 // The native Rust model passes its own arm, allowing an isolated one-load gate
 // to alternate arms without changing the process environment or global state.
 extern "C" int memra_dsv4_fp4_gemm_sel_g_arm(const void* a_codes, const float* a_scales,
@@ -1776,12 +1922,57 @@ extern "C" int memra_dsv4_fp4_gemm_sel_g_arm(const void* a_codes, const float* a
     if (reduce_arm) {
         dsv4_fp4_gemm_sel_kernel<true><<<grid, threads, DSV4_FP4_SMEM(threads * DSV4_FP4_SEL_CPB), stream>>>(
             (const uint8_t*)a_codes, a_scales, (const uint8_t*)w_base, (const uint8_t*)sc_base,
-            s2, sel, proj, a_stride_rows, kind, out, n, kdim, wstride, sstride, a_group);
+            s2, sel, proj, a_stride_rows, kind, out, n, kdim, wstride, sstride, a_group, 0, 0);
     } else {
         dsv4_fp4_gemm_sel_kernel<false><<<grid, threads, DSV4_FP4_SMEM(threads), stream>>>(
             (const uint8_t*)a_codes, a_scales, (const uint8_t*)w_base, (const uint8_t*)sc_base,
-            s2, sel, proj, a_stride_rows, kind, out, n, kdim, wstride, sstride, a_group);
+            s2, sel, proj, a_stride_rows, kind, out, n, kdim, wstride, sstride, a_group, 0, 0);
     }
+    DSV4_ERR();
+    return 0;
+}
+
+// Whole-expert residency partition. Global router ids and scale metadata remain
+// unchanged; only the code/scale slab index is local. Unowned slots do no GEMV
+// work and produce inert scratch, overwritten by the peer's original-slot output.
+extern "C" int memra_dsv4_fp4_gemm_sel_ep(
+    const void* a, const float* as_, const void* w, const void* sc,
+    const float* s2, const int* sel, int proj, int per_slot, int kind,
+    float* out, int slots, int n, int kdim, long wstride, long sstride,
+    int a_group, int reduce_arm, int first, int count, void* stream_v) {
+    if (!a || !as_ || !w || !sc || !s2 || !sel || !out || slots < 1 || slots > 65535
+        || n < 1 || kdim < 1 || kdim % 128 || proj < 0 || proj > 2
+        || kind != 0 || a_group < 0 || first < 0 || count < 1
+        || reduce_arm < 0 || reduce_arm > 1) return 40022;
+    const dim3 grid((n + DSV4_FP4_SEL_CPB - 1) / DSV4_FP4_SEL_CPB, slots);
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    if (reduce_arm) {
+        dsv4_fp4_gemm_sel_kernel<true, true><<<grid, 128, DSV4_FP4_SMEM(128 * DSV4_FP4_SEL_CPB), stream>>>(
+            (const uint8_t*)a, as_, (const uint8_t*)w, (const uint8_t*)sc, s2, sel,
+            proj, per_slot, kind, out, n, kdim, wstride, sstride, a_group, first, count);
+    } else {
+        dsv4_fp4_gemm_sel_kernel<false, true><<<grid, 128, DSV4_FP4_SMEM(128), stream>>>(
+            (const uint8_t*)a, as_, (const uint8_t*)w, (const uint8_t*)sc, s2, sel,
+            proj, per_slot, kind, out, n, kdim, wstride, sstride, a_group, first, count);
+    }
+    DSV4_ERR();
+    return 0;
+}
+
+__global__ void dsv4_ep_merge_slots_kernel(float* local, const float* peer,
+    const int* ids, int width, int first, int count) {
+    const int slot = blockIdx.x;
+    if (ids[slot] < first || ids[slot] >= first + count) return;
+    const long row = (long)slot * width;
+    auto dst = reinterpret_cast<unsigned*>(local + row);
+    auto src = reinterpret_cast<const unsigned*>(peer + row);
+    for (int x = threadIdx.x; x < width; x += blockDim.x) dst[x] = src[x];
+}
+
+extern "C" int memra_dsv4_ep_merge_slots(float* local, const float* peer,
+    const int* ids, int slots, int width, int first, int count, void* stream_v) {
+    if (!local || !peer || !ids || slots < 1 || width < 1 || first < 0 || count < 1) return 40022;
+    dsv4_ep_merge_slots_kernel<<<slots, 256, 0, (cudaStream_t)stream_v>>>(local, peer, ids, width, first, count);
     DSV4_ERR();
     return 0;
 }
@@ -1796,7 +1987,7 @@ extern "C" int memra_dsv4_fp4_gemm_sel(const void* a_codes, const float* a_scale
                                        void* stream_v) {
     return memra_dsv4_fp4_gemm_sel_g_arm(a_codes, a_scales, w_base, sc_base,
         s2, sel, proj, a_stride_rows, kind, out, slots, n, kdim, wstride, sstride,
-        0, dsv4_fp4_reduce_arm(), stream_v);
+        0, 0, stream_v);
 }
 
 // Batched-verify twin: `a_group` slots share one activation row (T positions x topk).
@@ -1811,7 +2002,7 @@ extern "C" int memra_dsv4_fp4_gemm_sel_g(const void* a_codes, const float* a_sca
                                          int a_group, void* stream_v) {
     return memra_dsv4_fp4_gemm_sel_g_arm(a_codes, a_scales, w_base, sc_base,
         s2, sel, proj, a_stride_rows, kind, out, slots, n, kdim, wstride, sstride,
-        a_group, dsv4_fp4_reduce_arm(), stream_v);
+        a_group, 0, stream_v);
 }
 
 // Routed-expert combine: y[i] = sum over slots in ascending-expert-id order (acc starts
@@ -1875,15 +2066,17 @@ extern "C" int memra_dsv4_build_idx(int* idx, int pos, int win, int nb, int cap,
 // order are bit-identical to the host path). Pads (0xFFFF...) sort last. Writes
 // idx_out[t] = index_t + win for t < kk. Capacity contract: nb <= 4096 (s <= ~16k at
 // ratio 4); the long-context indexer rewrite is a different lane.
-extern "C" __global__ void dsv4_topk_idx_kernel(const float* __restrict__ score, int nb,
-                                                int kk, int win, int* __restrict__ idx_out,
-                                                int npow2) {
-    extern __shared__ unsigned long long keys[];
+template<bool NumericZero>
+__device__ __forceinline__ void dsv4_topk_idx_body(const float* score, int nb,
+    int kk, int win, int* idx_out, int npow2, unsigned long long* keys) {
     int tid = threadIdx.x;
     for (int i = tid; i < npow2; i += blockDim.x) {
         unsigned long long key = 0xFFFFFFFFFFFFFFFFull;
         if (i < nb) {
             unsigned b = __float_as_uint(score[i]);
+            // Rust partial_cmp treats -0 and +0 as equal, then breaks ties by
+            // original index. Preserve the old raw-bit arm for existing callers.
+            if constexpr (NumericZero) if ((b & 0x7FFFFFFFu) == 0) b = 0;
             unsigned ord = b ^ ((b >> 31) ? 0xFFFFFFFFu : 0x80000000u);
             key = (((unsigned long long)(~ord)) << 32) | (unsigned)i;
         }
@@ -1908,6 +2101,29 @@ extern "C" __global__ void dsv4_topk_idx_kernel(const float* __restrict__ score,
     }
     for (int t = tid; t < kk; t += blockDim.x)
         idx_out[t] = (int)(keys[t] & 0xFFFFFFFFull) + win;
+}
+
+extern "C" __global__ void dsv4_topk_idx_kernel(const float* score, int nb,
+    int kk, int win, int* idx_out, int npow2) {
+    extern __shared__ unsigned long long keys[];
+    dsv4_topk_idx_body<false>(score, nb, kk, win, idx_out, npow2, keys);
+}
+
+extern "C" __global__ void dsv4_topk_idx_numeric_kernel(const float* score, int nb,
+    int kk, int win, int* idx_out, int npow2) {
+    extern __shared__ unsigned long long keys[];
+    dsv4_topk_idx_body<true>(score, nb, kk, win, idx_out, npow2, keys);
+}
+
+extern "C" int memra_dsv4_topk_idx_numeric(const float* score, int nb, int kk, int win,
+    int* idx_out, void* stream_v) {
+    if (!score || !idx_out || nb <= 0 || nb > 4096 || kk < 0 || kk > nb) return 40008;
+    int npow2 = 1;
+    while (npow2 < nb) npow2 <<= 1;
+    dsv4_topk_idx_numeric_kernel<<<1, 512, (size_t)npow2 * sizeof(unsigned long long),
+        (cudaStream_t)stream_v>>>(score, nb, kk, win, idx_out, npow2);
+    DSV4_ERR();
+    return 0;
 }
 
 extern "C" int memra_dsv4_topk_idx(const float* score, int nb, int kk, int win, int* idx_out,
@@ -2769,7 +2985,9 @@ extern "C" __global__ __launch_bounds__(128) void dsv4_indexer_score_tiled_kerne
 extern "C" int memra_dsv4_indexer_score_tiled(
     const float* q, const float* ckv, const float* w, float wscale, float* score,
     int s, int heads, int hd, int nb, int ratio, int lim0, int pos0, void* stream_v) {
-    if (s <= 0 || s > 64 || heads != 64 || hd != 128 || nb <= 0 ||
+    // Each grid.y row is independent and uses the same fixed per-CTA storage.
+    // Match the engine's qualified bring-up width ceiling; no arithmetic changes.
+    if (s <= 0 || s > 512 || heads != 64 || hd != 128 || nb <= 0 ||
         nb > 262147 || ratio <= 0 || pos0 < -1 || pos0 > 1048576 ||
         lim0 < -1 || lim0 > nb) return 40009;
     dsv4_indexer_score_tiled_kernel<<<dim3((nb + 127) / 128, s), 128, 0,
@@ -2982,6 +3200,90 @@ extern "C" int memra_dsv4_build_idx_redirect(int* idx, int pos, int win, int nb,
     int blocks = (cap + threads - 1) / threads;
     dsv4_build_idx_redirect_kernel<<<blocks, threads, 0, stream>>>(idx, pos, win, nb, cap,
                                                                    pos0, trans_base);
+    DSV4_ERR();
+    return 0;
+}
+
+// Graph-safe window-only twin. The query position is read from the persistent
+// device scalar already used by the rope kernels, so replay does not bake the
+// host `pos0`/`pos` launch arguments into the graph. Ratio/compressor layers
+// intentionally keep their original host-scalar path until their state machine
+// gets the same treatment.
+extern "C" __global__ void dsv4_build_idx_redirect_window_pos_kernel(
+        int* __restrict__ idx, const int* __restrict__ pos_dev, int win, int cap,
+        int trans_base) {
+    int k = blockIdx.x * blockDim.x + threadIdx.x;
+    if (k >= cap) return;
+    const int pos = pos_dev[0];
+    int v;
+    if (pos >= win - 1) {
+        int sp = pos % win;
+        int head = win - 1 - sp;
+        v = (k < head) ? (sp + 1 + k) : (k - head);
+    } else {
+        v = (k <= pos) ? k : -1;
+    }
+    if (v >= 0) {
+        int q = pos - ((pos % win - v + win) % win);
+        if (q >= pos) v = trans_base + (q - pos);
+    }
+    idx[k] = v;
+}
+
+extern "C" int memra_dsv4_build_idx_redirect_window_pos(
+        int* idx, const int* pos_dev, int win, int cap, int trans_base, void* stream_v) {
+    if (!idx || !pos_dev || win <= 0 || cap < win || trans_base < win) return 40020;
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    int threads = 128;
+    int blocks = (cap + threads - 1) / threads;
+    dsv4_build_idx_redirect_window_pos_kernel<<<blocks, threads, 0, stream>>>(
+        idx, pos_dev, win, cap, trans_base);
+    DSV4_ERR();
+    return 0;
+}
+
+// Gate-only scalar twin for the fine indexer redirect.  The position and the
+// completed-compressed-block count are both read from persistent device
+// scalars, so a retained component graph cannot bake either value from the
+// capture round.  This intentionally stops at index-array construction: the
+// compressor state machine, score/top-k metadata, C4 gather and commit remain
+// outside this executable until they receive the same treatment.
+extern "C" __global__ void dsv4_build_idx_redirect_fine_pos_kernel(
+        int* __restrict__ idx, const int* __restrict__ pos_dev,
+        const int* __restrict__ nb_dev, int win, int cap, int trans_base) {
+    int k = blockIdx.x * blockDim.x + threadIdx.x;
+    if (k >= cap) return;
+    const int pos = pos_dev[0];
+    const int nb = nb_dev[0];
+    int v;
+    if (k < win) {
+        if (pos >= win - 1) {
+            int sp = pos % win;
+            int head = win - 1 - sp;
+            v = (k < head) ? (sp + 1 + k) : (k - head);
+        } else {
+            v = (k <= pos) ? k : -1;
+        }
+        if (v >= 0) {
+            int q = pos - ((pos % win - v + win) % win);
+            if (q >= pos) v = trans_base + (q - pos);
+        }
+    } else {
+        int c = k - win;
+        v = (nb >= 0 && c < nb) ? (win + c) : -1;
+    }
+    idx[k] = v;
+}
+
+extern "C" int memra_dsv4_build_idx_redirect_fine_pos(
+        int* idx, const int* pos_dev, const int* nb_dev,
+        int win, int cap, int trans_base, void* stream_v) {
+    if (!idx || !pos_dev || !nb_dev || win <= 0 || cap < win || trans_base < win) return 40020;
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    int threads = 128;
+    int blocks = (cap + threads - 1) / threads;
+    dsv4_build_idx_redirect_fine_pos_kernel<<<blocks, threads, 0, stream>>>(
+        idx, pos_dev, nb_dev, win, cap, trans_base);
     DSV4_ERR();
     return 0;
 }
@@ -4563,6 +4865,72 @@ extern "C" int memra_dsv4_c4_gather(
     return 0;
 }
 
+// Exact, bounded recent-row sidecar. Absolute tags distinguish a live row from a
+// slot overwritten by a later (possibly rejected) speculative emission.
+__global__ void dsv4_c4_recent_write_kernel(
+    const float* source, float* recent, int* tags, int first_row, int rows, int cache_rows) {
+    const int i = max(0, rows-cache_rows) + (int)blockIdx.x;
+    const int absolute = first_row+i;
+    const int slot = absolute % cache_rows;
+    if (i < rows) {
+        auto src = reinterpret_cast<const volatile unsigned*>(source + (long)i*512);
+        auto dst = reinterpret_cast<unsigned*>(recent + (long)slot*512);
+        for (int d=threadIdx.x; d<512; d+=blockDim.x) dst[d]=src[d];
+    }
+    if (threadIdx.x==0) tags[slot] = i < rows ? absolute : -1;
+}
+
+extern "C" int memra_dsv4_c4_recent_write(
+    const float* source, float* recent, int* tags, int first_row, int rows,
+    int cache_rows, int reset, void* stream_v) {
+    if (!source || !recent || !tags || first_row<0 || rows<0 || cache_rows<1 || cache_rows>8192
+        || first_row>0x7fffffff-rows-cache_rows || (reset!=0 && reset!=1)) return 40010;
+    const int blocks = reset ? cache_rows : min(rows,cache_rows);
+    if (!blocks) return 0;
+    dsv4_c4_recent_write_kernel<<<blocks,128,0,(cudaStream_t)stream_v>>>(
+        source,recent,tags,first_row,rows,cache_rows);
+    DSV4_ERR();
+    return 0;
+}
+
+__global__ void dsv4_c4_gather_recent_kernel(
+    const float* device, const float* host, const int* indices,
+    float* out, int* out_indices, int slots, int stride, int live_rows,
+    int logical_transient, int transient_rows,
+    const float* recent, const int* tags, int cache_rows) {
+    const int slot=blockIdx.x, q=blockIdx.y, lane=threadIdx.x;
+    const int index=indices[q*stride+slot];
+    const float* source=nullptr;
+    if(index>=0 && index<128) source=device+(long)index*512;
+    else if(index>=128 && index<128+live_rows) {
+        const int absolute=index-128, cached=absolute%cache_rows;
+        source=tags[cached]==absolute ? recent+(long)cached*512 : host+(long)absolute*512;
+    } else if(index>=logical_transient && index<logical_transient+transient_rows)
+        source=device+(long)(128+index-logical_transient)*512;
+    else assert(index==-1);
+    const int row=q*slots+slot;
+    if(lane==0) out_indices[q*stride+slot]=index==-1 ? -1 : row;
+    auto dst=reinterpret_cast<unsigned*>(out+(long)row*512);
+    auto src=reinterpret_cast<const volatile unsigned*>(source);
+    for(int d=lane;d<512;d+=blockDim.x) dst[d]=source ? src[d] : 0;
+}
+
+extern "C" int memra_dsv4_c4_gather_recent(
+    const float* device, const float* host, const int* indices,
+    float* out, int* out_indices, int nq, int slots, int stride, int live_rows,
+    int logical_transient, int transient_rows,
+    const float* recent, const int* tags, int cache_rows, void* stream_v) {
+    if(!device || !host || !indices || !out || !out_indices || !recent || !tags
+       || nq<1 || nq>512 || slots<1 || slots>640 || stride<slots || live_rows<0
+       || live_rows>0x7fffffff-128 || logical_transient<128+live_rows || transient_rows<0
+       || logical_transient>0x7fffffff-transient_rows || cache_rows<1 || cache_rows>8192) return 40010;
+    dsv4_c4_gather_recent_kernel<<<dim3(slots,nq),128,0,(cudaStream_t)stream_v>>>(
+        device,host,indices,out,out_indices,slots,stride,live_rows,logical_transient,transient_rows,
+        recent,tags,cache_rows);
+    DSV4_ERR();
+    return 0;
+}
+
 extern "C" int memra_dsv4_sink_attn_dec_mq(const float* q, const float* kv, const int* idxs,
                                            const float* sink, float* scores, float* evals,
                                            double* den, float* o, int nq, int heads, int hd,
@@ -4585,6 +4953,81 @@ extern "C" int memra_dsv4_sink_attn_dec_mq(const float* q, const float* kv, cons
 }
 
 // ---- sink attention, decode shape, batched queries, f32-accumulation arm (f32x).
+// Tile only storage/reuse, not the ordered head-dimension accumulation. The extra
+// shared-memory column prevents transposed stores from aliasing one bank.
+static constexpr int DSV4_SCORE_HT = 8;
+static constexpr int DSV4_SCORE_KT = 32;
+static constexpr int DSV4_SCORE_HD = 512;
+static constexpr int DSV4_SCORE_SMEM =
+    (DSV4_SCORE_HT * DSV4_SCORE_HD + DSV4_SCORE_HD * (DSV4_SCORE_KT + 1)) * sizeof(float)
+    + DSV4_SCORE_KT * sizeof(int);
+
+static __global__ void dsv4_sink_scores_tiled_f32acc_kernel(const float* __restrict__ q,
+    const float* __restrict__ kv, const int* __restrict__ idxs,
+    float* __restrict__ scores, int slots, int idx_stride, float scale) {
+    const int tid = threadIdx.x;
+    const int h0 = blockIdx.y * DSV4_SCORE_HT;
+    const int k0 = blockIdx.x * DSV4_SCORE_KT;
+    const int p = blockIdx.z;
+    extern __shared__ float tile[];
+    float* qs = tile;
+    float* ks = qs + DSV4_SCORE_HT * DSV4_SCORE_HD;
+    int* selected = reinterpret_cast<int*>(ks + DSV4_SCORE_HD * (DSV4_SCORE_KT + 1));
+    if (tid < DSV4_SCORE_KT)
+        selected[tid] = k0 + tid < slots ? idxs[(long)p * idx_stride + k0 + tid] : -1;
+    for (int i = tid; i < DSV4_SCORE_HT * DSV4_SCORE_HD; i += 256)
+        qs[i] = q[((long)p * 64 + h0) * DSV4_SCORE_HD + i];
+    __syncthreads();
+    for (int i = tid; i < DSV4_SCORE_KT * DSV4_SCORE_HD; i += 256) {
+        int key = i / DSV4_SCORE_HD;
+        int d = i % DSV4_SCORE_HD;
+        int ix = selected[key];
+        ks[d * (DSV4_SCORE_KT + 1) + key] = ix < 0 ? 0.0f : kv[(long)ix * DSV4_SCORE_HD + d];
+    }
+    __syncthreads();
+    int h = tid / DSV4_SCORE_KT;
+    int key = tid % DSV4_SCORE_KT;
+    int slot = k0 + key;
+    if (slot < slots) {
+        float score = -INFINITY;
+        if (selected[key] >= 0) {
+            float acc = 0.0f;
+            #pragma unroll 1
+            for (int d = 0; d < DSV4_SCORE_HD; ++d)
+                acc += qs[h * DSV4_SCORE_HD + d] * ks[d * (DSV4_SCORE_KT + 1) + key];
+            score = acc * scale;
+        }
+        scores[((long)p * 64 + h0 + h) * slots + slot] = score;
+    }
+}
+
+// Call explicitly before graph capture. No lazy attribute mutation in the launch.
+extern "C" int memra_dsv4_sink_scores_tiled_init() {
+    int dev = 0, available = 0;
+    cudaError_t rc = cudaGetDevice(&dev);
+    if (rc != cudaSuccess) return 10000 + (int)rc;
+    rc = cudaDeviceGetAttribute(&available, cudaDevAttrMaxSharedMemoryPerBlockOptin, dev);
+    if (rc != cudaSuccess) return 10000 + (int)rc;
+    if (available < DSV4_SCORE_SMEM) return 40009;
+    rc = cudaFuncSetAttribute(dsv4_sink_scores_tiled_f32acc_kernel,
+        cudaFuncAttributeMaxDynamicSharedMemorySize, DSV4_SCORE_SMEM);
+    if (rc != cudaSuccess) return 10000 + (int)rc;
+    return 0;
+}
+
+extern "C" int memra_dsv4_sink_scores_tiled_f32acc(const float* q, const float* kv,
+    const int* idxs, float* scores, int nq, int heads, int hd, int slots,
+    int idx_stride, float scale, void* stream_v) {
+    if (!q || !kv || !idxs || !scores || nq < 1 || nq > 512 || heads != 64
+        || hd != DSV4_SCORE_HD || slots < 1 || idx_stride < slots) return 40010;
+    dim3 grid((unsigned)(slots / DSV4_SCORE_KT + (slots % DSV4_SCORE_KT != 0)),
+        64 / DSV4_SCORE_HT, (unsigned)nq);
+    dsv4_sink_scores_tiled_f32acc_kernel<<<grid, 256, DSV4_SCORE_SMEM, (cudaStream_t)stream_v>>>(
+        q, kv, idxs, scores, slots, idx_stride, scale);
+    DSV4_ERR();
+    return 0;
+}
+
 extern "C" __global__ void dsv4_sink_scores_mq_f32acc_kernel(const float* __restrict__ q_all,
                                                              const float* __restrict__ kv,
                                                              const int* __restrict__ idxs_all,
@@ -4705,6 +5148,24 @@ extern "C" int memra_dsv4_sink_attn_dec_mq_f32acc(const float* q, const float* k
     return 0;
 }
 
+extern "C" int memra_dsv4_sink_attn_dec_mq_f32acc_tiled(const float* q, const float* kv,
+    const int* idxs, const float* sink, float* scores, float* evals, float* den,
+    float* o, int nq, int heads, int hd, int slots, int idx_stride, float scale,
+    void* stream_v) {
+    if (!sink || !evals || !den || !o) return 40010;
+    int rc = memra_dsv4_sink_scores_tiled_f32acc(q, kv, idxs, scores, nq, heads, hd,
+        slots, idx_stride, scale, stream_v);
+    if (rc != 0) return rc;
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    dim3 g2((unsigned)heads, (unsigned)nq);
+    dsv4_sink_soft_mq_f32acc_kernel<<<g2, 128, 0, stream>>>(scores, sink, evals, den, heads, slots);
+    DSV4_ERR();
+    dim3 g3((unsigned)((hd + 7) / 8), (unsigned)((heads + 7) / 8), (unsigned)nq);
+    dsv4_sink_out_mq_f32acc_kernel<<<g3, 64, 0, stream>>>(kv, idxs, evals, den, o, heads, hd, slots, idx_stride);
+    DSV4_ERR();
+    return 0;
+}
+
 // ---- row scatter: dst[dst_rows[i], :] = src[i, :] for i in [0, n) (verify-round commit
 // of the transient window-kv rows into their ring slots; one launch, no host loop, and
 // the source rows are disjoint from the destinations by the ring-hazard construction).
@@ -4715,6 +5176,7 @@ extern "C" __global__ void dsv4_scatter_rows_kernel(const float* __restrict__ sr
     long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= (long)n * d) return;
     int r = (int)(i / d);
+    if (dst_rows[r] < 0) return;
     int c = (int)(i % d);
     dst[(long)dst_rows[r] * d + c] = src[(long)r * d + c];
 }

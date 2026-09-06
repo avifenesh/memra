@@ -122,13 +122,22 @@ int main(int argc, char** argv) {
             compared += cell(1, nb, -1, nb, false, teeth, perf);
             compared += cell(5, nb, std::min(1048576, std::max(0, nb * 4 - 7)), -1, false, false, false);
         }
-        for (int s : {1, 5, 8, 32, 64}) {
+        for (int s : {1, 5, 8, 32, 64, 128, 256, 512}) {
             compared += cell(s, 129, 0, -1, false, false, false);
             compared += cell(s, 129, -1, 127, true, false, false);
+        }
+        for (int s : {128, 256, 512}) {
+            compared += cell(s, 257, 1, -1, false, false, false);
+            compared += cell(s, 4097, 16370, -1, false, false, false);
         }
         // Invalid shapes must be rejected before dereferencing the null buffers.
         if (memra_dsv4_indexer_score_tiled(nullptr, nullptr, nullptr, 1, nullptr,
             1, 32, 128, 10, 4, 10, -1, nullptr) != 40009) throw std::runtime_error("shape refusal absent");
+        for (int rows : {0, -1, 513}) {
+            if (memra_dsv4_indexer_score_tiled(nullptr, nullptr, nullptr, 1, nullptr,
+                rows, 64, 128, 10, 4, 10, -1, nullptr) != 40009)
+                throw std::runtime_error("row bound refusal absent");
+        }
         printf("PASS comparisons=%zu\n", compared);
     } catch (const std::exception& e) { fprintf(stderr, "FAIL %s\n", e.what()); return 1; }
 }

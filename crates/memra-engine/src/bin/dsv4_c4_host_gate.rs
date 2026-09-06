@@ -1,5 +1,5 @@
 //! Active C4 residency: compare to all-device state under identical numeric policy.
-use memra_engine::dsv4_gpu::{Dsv4Gpu, Dsv4SampleCfg, Dsv4Vt, dsv4_sample_row};
+use memra_engine::dsv4_gpu::{Dsv4Gpu, Dsv4SampleCfg, Dsv4VerifyTopk, Dsv4Vt, dsv4_sample_row};
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -20,17 +20,17 @@ fn digest(classes: Vec<(String, Vec<f32>)>) -> Vec<u8> {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    assert_eq!(
-        args.len(),
-        3,
-        "usage: dsv4_c4_host_gate <model-dir> <source.txt>"
+    assert!(
+        args.len() == 3 || (args.len() == 4 && args[3] == "capture"),
+        "usage: dsv4_c4_host_gate <model-dir> <source.txt> [capture]"
     );
+    let capture_mode = args.len() == 4;
     let dir = Path::new(&args[1]);
     let source = std::fs::read_to_string(&args[2]).expect("source");
     let tokenizer = Tokenizer::from_hf_dir(dir).expect("tokenizer");
     let tokens = tokenizer.encode(&format!("Review this inference code:\n{source}"), true);
     assert!(tokens.len() > 5000);
-    let gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 8192).expect("load");
+    let mut gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 8192).expect("load");
     let cfg = Dsv4SampleCfg {
         temperature: 1.0,
         top_p: 1.0,
@@ -53,7 +53,25 @@ fn main() {
         drop(draft);
         for suffix in [0, 33, 129] {
             let mut reference = None;
-            for offload in [false, true, false] {
+            let arms = if capture_mode {
+                vec![
+                    (false, Dsv4VerifyTopk::Device, false),
+                    (false, Dsv4VerifyTopk::Device, true),
+                    (true, Dsv4VerifyTopk::Device, false),
+                    (true, Dsv4VerifyTopk::Device, true),
+                ]
+            } else {
+                vec![
+                    (false, Dsv4VerifyTopk::Legacy, false),
+                    (true, Dsv4VerifyTopk::Legacy, false),
+                    (false, Dsv4VerifyTopk::Device, false),
+                    (true, Dsv4VerifyTopk::Device, false),
+                    (false, Dsv4VerifyTopk::Legacy, false),
+                ]
+            };
+            for (offload, topk, capture) in arms {
+                gpu.set_verify_topk_for_gate(topk).expect("top-k arm");
+                let topk_before = gpu.device_verify_topk_calls();
                 let mut state = gpu
                     .restore_decode_state_for_transient(&snapshot, capacity, 32)
                     .expect("restore");
@@ -130,6 +148,10 @@ fn main() {
                         hash.update(v.to_bits().to_le_bytes());
                     }
                 }
+                if capture {
+                    gpu.arm_layer_capture_probe(&mut verify)
+                        .expect("arm layer capture");
+                }
                 let run = gpu
                     .spec_sampled_batched_pen_restored(
                         &prompt,
@@ -147,6 +169,31 @@ fn main() {
                     .expect("host spec");
                 assert_eq!(run.tokens.len(), 32);
                 assert!(!run.rounds.is_empty());
+                assert_eq!(
+                    verify.layer_captures.len(),
+                    if capture { state.caches.len() } else { 0 }
+                );
+                for layer in &verify.layer_captures {
+                    for family in ["hc_sinkhorn", "sink_scores_mq", "fp4_gemm_sel"] {
+                        assert!(
+                            layer.kernels.iter().any(|name| name.contains(family)),
+                            "layer {} missing full-layer family {family}",
+                            layer.layer
+                        );
+                    }
+                    println!(
+                        "CAPTURE layer={} kernels={} nodes={:?} hc/attention/routed-moe=present",
+                        layer.layer,
+                        layer.kernels.len(),
+                        layer.nodes
+                    );
+                }
+                let device_topk_calls = gpu.device_verify_topk_calls() - topk_before;
+                assert_eq!(
+                    device_topk_calls > 0,
+                    topk == Dsv4VerifyTopk::Device,
+                    "device top-k engagement"
+                );
                 for token in run.tokens {
                     hash.update(token.to_le_bytes());
                 }
@@ -175,13 +222,18 @@ fn main() {
                     reference = Some(result);
                 }
                 println!(
-                    "EXACT active C4 count={count} suffix={suffix} host={offload} sampled=41 rounds={}",
+                    "EXACT active C4 count={count} suffix={suffix} host={offload} topk={topk:?} capture={capture} device_topk_calls={device_topk_calls} sampled=41 rounds={}",
                     run.rounds.len()
                 );
             }
         }
     }
     println!(
-        "PASS active C4 device/host/device logits, sampled tokens, rollback, suffix and snapshot identity; serving and performance remain unqualified"
+        "PASS active C4 and device top-k: device/host/device logits, sampled tokens, rollback, suffix, snapshot and engagement identity; serving and performance remain unqualified"
     );
+    if capture_mode {
+        println!(
+            "PASS full-layer one-shot capture and sampled state identity; persistent live-scalar replay remains unimplemented"
+        );
+    }
 }

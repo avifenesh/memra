@@ -1160,6 +1160,8 @@ unsafe extern "C" {
     // construction (kernel-check "f16g-kq-direct"). qtype: QT_Q4_K | QT_Q6_K | QT_IQ4_XS |
     // QT_IQ3_S; rc=2 = not admitted here (caller keeps the dequant-workspace path).
     // tail: as memra_moe_f16g_gemm_sk.
+    // ModelOpt-only device-metadata arm: null ex_off_host uses fixed persistent
+    // grids and device-computed tile counts. Other quant types require host offsets.
     pub fn memra_moe_kq_gemm_sk(
         table: *const u64,
         proj: i32,
@@ -1177,6 +1179,66 @@ unsafe extern "C" {
         qtype: i32,
         cross: i32,
         tail: i32,
+        row_bytes: i64,
+        stream: *mut core::ffi::c_void,
+    ) -> i32;
+    // Compile-only DSV4 m_e=1 tensor-core tail candidate. It is intentionally
+    // not wired into the grouped caller until a separate exactness/perf gate
+    // proves the valid-row chain against memra_moe_kq_gemm_sk.
+    pub fn memra_moe_kq_gemm_sk_m1(
+        table: *const u64,
+        n_expert: i32,
+        ex_ids: *const i32,
+        act_f16: *const core::ffi::c_void,
+        y_f32: *mut f32,
+        row_scale: *const f32,
+        ex_off_dev: *const i32,
+        n_active: i32,
+        in_f: i32,
+        out_f: i32,
+        row_bytes: i64,
+        stream: *mut core::ffi::c_void,
+    ) -> i32;
+    // DSV4 matrix plain-decode gate/up + weighted SwiGLU fusion.  Narrow
+    // ModelOpt-only arm: one-row CSR groups, same f16-MMA numeric class as the
+    // two projection visitors, with FP8 intermediate quantization/down/scatter
+    // left to the common path. Default OFF in the DSV4 caller.
+    pub fn memra_moe_kq_gemm_sk_gu(
+        table: *const u64,
+        n_expert: i32,
+        ex_ids: *const i32,
+        act_f16: *const core::ffi::c_void,
+        h_f32: *mut f32,
+        row_scale: *const f32,
+        macro_g: *const f32,
+        macro_u: *const f32,
+        route_w: *const f32,
+        ex_off_dev: *const i32,
+        n_active: i32,
+        in_f: i32,
+        out_f: i32,
+        limit: f32,
+        row_bytes: i64,
+        stream: *mut core::ffi::c_void,
+    ) -> i32;
+    // Gate-only GU m_e=1 tensor-core work-elision twin. It retains the valid-row
+    // MMA chain and epilogue while skipping invalid-row A/MMA work; no serving
+    // caller selects it.
+    pub fn memra_moe_kq_gemm_sk_gu_m1(
+        table: *const u64,
+        n_expert: i32,
+        ex_ids: *const i32,
+        act_f16: *const core::ffi::c_void,
+        h_f32: *mut f32,
+        row_scale: *const f32,
+        macro_g: *const f32,
+        macro_u: *const f32,
+        route_w: *const f32,
+        ex_off_dev: *const i32,
+        n_active: i32,
+        in_f: i32,
+        out_f: i32,
+        limit: f32,
         row_bytes: i64,
         stream: *mut core::ffi::c_void,
     ) -> i32;

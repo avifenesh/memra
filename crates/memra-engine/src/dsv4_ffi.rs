@@ -7,6 +7,104 @@
 use std::os::raw::c_void;
 
 unsafe extern "C" {
+    pub fn memra_dsv4_sink_scores_tiled_init() -> i32;
+    pub fn memra_dsv4_sink_attn_dec_mq_f32acc_tiled(
+        q: *const f32,
+        kv: *const f32,
+        idxs: *const i32,
+        sink: *const f32,
+        scores: *mut f32,
+        evals: *mut f32,
+        den: *mut f32,
+        o: *mut f32,
+        nq: i32,
+        heads: i32,
+        hd: i32,
+        slots: i32,
+        idx_stride: i32,
+        scale: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_grouped_routes_partition(
+        selected: *const i32,
+        weights: *const f32,
+        scale2: *const f32,
+        counts: *mut i32,
+        offsets: *mut i32,
+        expert_ids: *mut i32,
+        pairs: *mut i32,
+        tokens: *mut i32,
+        route_weights: *mut f32,
+        macro1: *mut f32,
+        macro2: *mut f32,
+        macro3: *mut f32,
+        status: *mut i32,
+        slots: i32,
+        global_experts: i32,
+        first: i32,
+        expert_count: i32,
+        topk: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_grouped_routes(
+        selected: *const i32,
+        weights: *const f32,
+        scale2: *const f32,
+        counts: *mut i32,
+        offsets: *mut i32,
+        expert_ids: *mut i32,
+        pairs: *mut i32,
+        tokens: *mut i32,
+        route_weights: *mut f32,
+        macro1: *mut f32,
+        macro2: *mut f32,
+        macro3: *mut f32,
+        status: *mut i32,
+        slots: i32,
+        experts: i32,
+        topk: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_fp4_gemm_sel_ep(
+        a: *const c_void,
+        a_scales: *const f32,
+        weights: *const c_void,
+        scales: *const c_void,
+        scale2: *const f32,
+        selected: *const i32,
+        projection: i32,
+        per_slot: i32,
+        kind: i32,
+        out: *mut f32,
+        slots: i32,
+        n: i32,
+        k: i32,
+        weight_stride: i64,
+        scale_stride: i64,
+        a_group: i32,
+        reduction: i32,
+        expert_first: i32,
+        expert_count: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_ep_merge_slots(
+        local: *mut f32,
+        peer: *const f32,
+        selected: *const i32,
+        slots: i32,
+        width: i32,
+        peer_first: i32,
+        peer_count: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_topk_idx_numeric(
+        score: *const f32,
+        nb: i32,
+        kk: i32,
+        win: i32,
+        idx_out: *mut i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_c4_gather(
         device: *const f32,
         host: *const f32,
@@ -19,6 +117,33 @@ unsafe extern "C" {
         live_rows: i32,
         logical_transient: i32,
         transient_rows: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_c4_recent_write(
+        source: *const f32,
+        recent: *mut f32,
+        tags: *mut i32,
+        first_row: i32,
+        rows: i32,
+        cache_rows: i32,
+        reset: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_c4_gather_recent(
+        device: *const f32,
+        host: *const f32,
+        indices: *const i32,
+        out: *mut f32,
+        out_indices: *mut i32,
+        nq: i32,
+        slots: i32,
+        stride: i32,
+        live_rows: i32,
+        logical_transient: i32,
+        transient_rows: i32,
+        recent: *const f32,
+        tags: *const i32,
+        cache_rows: i32,
         stream: *mut c_void,
     ) -> i32;
     // iteration-5 F-itemisation instrument (see dsv4_gpu.rs Dsv4Phase).
@@ -605,6 +730,29 @@ unsafe extern "C" {
         stride: i32,
         trans_base: i32,
         fine: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Window-only redirect builder reading the absolute query position from a
+    /// stable device scalar. This is the graph-safe twin for the first one-layer
+    /// probe; ratio/compressor layers retain the original host-scalar ABI.
+    pub fn memra_dsv4_build_idx_redirect_window_pos(
+        idx: *mut i32,
+        pos_dev: *const i32,
+        win: i32,
+        cap: i32,
+        trans_base: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Fine-indexer redirect component twin for the gate-only scalar probe.
+    /// Both `pos_dev` and `nb_dev` are persistent device scalars; the full
+    /// compressor/indexer layer still retains the host-state-machine refusal.
+    pub fn memra_dsv4_build_idx_redirect_fine_pos(
+        idx: *mut i32,
+        pos_dev: *const i32,
+        nb_dev: *const i32,
+        win: i32,
+        cap: i32,
+        trans_base: i32,
         stream: *mut c_void,
     ) -> i32;
 

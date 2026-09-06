@@ -11,7 +11,24 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     assert!(
         args.len() >= 3,
-        "usage: dsv4_long_decode_gate <model-dir> <real-source.txt> [prompt-tokens]"
+        "usage: dsv4_long_decode_gate <model-dir> <real-source.txt> [prompt-tokens] [profile-prefill|host-c4] [chunk-rows]"
+    );
+    assert!(
+        args.len() <= 6
+            && args
+                .get(4)
+                .is_none_or(|a| a == "profile-prefill" || a == "host-c4"),
+        "unknown gate option"
+    );
+    let host_c4 = args.get(4).is_some_and(|a| a == "host-c4");
+    let chunk: usize = args
+        .get(5)
+        .map(|s| s.parse().expect("chunk rows"))
+        .unwrap_or(32);
+    assert!((1..=512).contains(&chunk), "chunk must be 1..512");
+    assert!(
+        host_c4 || chunk == 32,
+        "legacy/profile protocol stays width 32"
     );
     for (name, required) in [
         ("MEMRA_DSV4_DECODE_PATH", "device"),
@@ -57,15 +74,64 @@ fn main() {
     let capacity = count + 32;
     let gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, capacity)
         .expect("load 0731 model");
-    let mut state = gpu
-        .alloc_decode_state_for_transient(capacity, 32)
-        .expect("state");
+    let mut state = if host_c4 {
+        gpu.alloc_decode_state_host_c4(capacity, chunk)
+    } else {
+        gpu.alloc_decode_state_for_transient(capacity, chunk)
+    }
+    .expect("state");
+    if host_c4 {
+        assert_eq!(
+            state.host_cache_bytes,
+            gpu.c4_host_bytes_for_capacity(capacity)
+                .expect("host forecast")
+        );
+        assert!(state.host_cache_bytes.iter().sum::<u64>() > 0);
+    }
+    println!(
+        "ALLOCATION capacity={capacity} chunk={chunk} active_c4={host_c4} gpu_cache_bytes={:?} host_cache_bytes={:?}",
+        state.cache_bytes, state.host_cache_bytes
+    );
     let mut draft = gpu.dspark_alloc_state().expect("draft state");
-    println!("CHECK real-source prefill tokens={count} chunk=32");
+    println!("CHECK real-source prefill tokens={count} chunk={chunk} active_c4={host_c4}");
     let prefill_start = Instant::now();
-    let logits = gpu
-        .dspark_prefill_prime_chunked(&prompt, &mut state, &mut draft, 32)
-        .expect("prefill");
+    let logits = if args.get(4).is_some_and(|arg| arg == "profile-prefill") {
+        let begin = 16_384;
+        let end = begin + 256;
+        assert!(count > end, "profile needs a complete middle prefill span");
+        gpu.dspark_prefill_prime_chunked(&prompt[..begin], &mut state, &mut draft, 32)
+            .expect("pre-profile prefix");
+        for stage in &gpu.stages {
+            stage.gpu.stream().synchronize().expect("pre-profile drain");
+        }
+        gpu.stages[0]
+            .gpu
+            .ctx
+            .bind_to_thread()
+            .expect("profile context");
+        cudarc::driver::safe::profiler_start().expect("profile start");
+        gpu.dspark_continue_prefix_chunked(&prompt[begin..end], &mut state, &mut draft, 32)
+            .expect("profile span");
+        for stage in &gpu.stages {
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .expect("profile completion drain");
+        }
+        gpu.stages[0]
+            .gpu
+            .ctx
+            .bind_to_thread()
+            .expect("profile stop context");
+        cudarc::driver::safe::profiler_stop().expect("profile stop");
+        println!("PROFILE_COMPLETE prefill_positions={begin}..{end} both_stages_drained=true");
+        gpu.dspark_continue_prefix_chunked(&prompt[end..], &mut state, &mut draft, 32)
+            .expect("post-profile suffix")
+    } else {
+        gpu.dspark_prefill_prime_chunked(&prompt, &mut state, &mut draft, chunk)
+            .expect("prefill")
+    };
     let prefill_s = prefill_start.elapsed().as_secs_f64();
     println!(
         "PREFILL tokens={count} seconds={prefill_s:.6} tokens_per_second={:.3}",
@@ -79,6 +145,13 @@ fn main() {
     let host_draft = gpu.snapshot_dspark_state(&draft).expect("snapshot draft");
     drop(state);
     drop(draft);
+    let restore = || {
+        if host_c4 {
+            gpu.restore_decode_state_host_c4(&host, capacity, chunk)
+        } else {
+            gpu.restore_decode_state_for_transient(&host, capacity, chunk)
+        }
+    };
     let cfg = Dsv4SampleCfg {
         temperature: 1.0,
         top_p: 1.0,
@@ -88,9 +161,7 @@ fn main() {
     println!("CHECK plain decode beyond 4096 compressed candidates");
     let plain_start = Instant::now();
     let plain = {
-        let mut state = gpu
-            .restore_decode_state_for_transient(&host, capacity, 32)
-            .expect("restore plain");
+        let mut state = restore().expect("restore plain");
         let mut row = logits.clone();
         let mut tokens = Vec::new();
         for i in 0..16 {
@@ -111,9 +182,7 @@ fn main() {
     );
     println!("CHECK narrow DSpark verify beyond 4096 compressed candidates");
     let spec_start = Instant::now();
-    let mut state = gpu
-        .restore_decode_state_for_transient(&host, capacity, 32)
-        .expect("restore spec");
+    let mut state = restore().expect("restore spec");
     let mut draft = gpu
         .restore_dspark_state(&host_draft)
         .expect("restore draft");
@@ -140,7 +209,7 @@ fn main() {
     assert_eq!(plain, run.tokens, "sampled plain/spec output mismatch");
     assert!(!run.rounds.is_empty(), "DSpark did not engage");
     println!(
-        "PASS real prompt={count} sampled_tokens=16 plain/spec identical rounds={}",
+        "PASS real prompt={count} sampled_tokens=16 plain/spec identical rounds={} chunk={chunk} active_c4={host_c4}",
         run.rounds.len()
     );
 }

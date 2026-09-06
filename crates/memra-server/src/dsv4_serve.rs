@@ -26,6 +26,9 @@
 //!   - parked-prefix reuse is opt-in through `MEMRA_DSV4_KV_HOST_MB`: live compact state
 //!     moves to pinned host RAM and restores on a strict, PC-ISO exact-token prefix;
 //!     active-device scheduling is still FIFO in this slice;
+//!   - `MEMRA_DSV4_C4_HOST_MB` independently budgets active C4 history. This
+//!     experimental matrix-only path allocates host history directly, including
+//!     fresh position zero and restored prefixes; it never stages full GPU C4;
 //!   - no response_format/grammar (refused by name);
 //!   - streaming granularity is the spec ROUND (or every plain token) — the commit
 //!     callback seam on the gated drivers, `None` = byte-identical bench behavior.
@@ -58,7 +61,92 @@ pub struct Dsv4Model {
     pub spec: bool,
     pub eos: u32,
     pub host_cache_bytes: usize,
+    pub c4_host_bytes: usize,
     pub prefill_chunk: usize,
+}
+
+fn resolve_c4_host_bytes(raw: Option<&str>) -> Result<usize, String> {
+    let mb = match raw {
+        None => 0,
+        Some(raw) => raw
+            .trim()
+            .parse::<usize>()
+            .map_err(|_| format!("MEMRA_DSV4_C4_HOST_MB {raw:?} is not a non-negative integer"))?,
+    };
+    mb.checked_mul(1024 * 1024)
+        .ok_or_else(|| "MEMRA_DSV4_C4_HOST_MB byte count overflow".to_string())
+}
+
+/// This dedicated worker runs exactly one active request. The budget covers that
+/// request's full-capacity C4 history, not the separate parked-prefix pool or its
+/// snapshot workspace. A future concurrent scheduler must reserve the SUM of its
+/// active requests before reusing this allocation path.
+fn admit_c4_host_bytes(budget: usize, per_stage: &[u64]) -> Result<usize, String> {
+    if budget == 0 {
+        return Ok(0);
+    }
+    let needed = per_stage.iter().try_fold(0usize, |sum, &bytes| {
+        let bytes = usize::try_from(bytes).map_err(|_| "active C4 byte count overflow")?;
+        sum.checked_add(bytes)
+            .ok_or("active C4 byte count overflow")
+    })?;
+    if needed > budget {
+        return Err(format!(
+            "active C4 history needs {needed} bytes, exceeding MEMRA_DSV4_C4_HOST_MB \
+             budget {budget} bytes; no device-history fallback"
+        ));
+    }
+    Ok(needed)
+}
+
+impl Dsv4Model {
+    fn planned_c4_host_bytes(&self, capacity: usize) -> Result<usize, String> {
+        if self.c4_host_bytes == 0 {
+            return Ok(0);
+        }
+        admit_c4_host_bytes(
+            self.c4_host_bytes,
+            &self.gpu.c4_host_bytes_for_capacity(capacity)?,
+        )
+    }
+
+    fn request_state(
+        &self,
+        capacity: usize,
+        host: Option<&Dsv4HostDecodeState>,
+    ) -> Result<DecodeState, String> {
+        let planned = self.planned_c4_host_bytes(capacity)?;
+        let transient = self.prefill_chunk.max(self.gpu.verify_tmax());
+        let state = match (self.c4_host_bytes > 0, host) {
+            (true, Some(host)) => self
+                .gpu
+                .restore_decode_state_host_c4(host, capacity, transient)?,
+            (true, None) => self.gpu.alloc_decode_state_host_c4(capacity, transient)?,
+            (false, Some(host)) => self
+                .gpu
+                .restore_decode_state_for_transient(host, capacity, transient)?,
+            (false, None) => self
+                .gpu
+                .alloc_decode_state_for_transient(capacity, transient)?,
+        };
+        if self.c4_host_bytes > 0 {
+            let actual = admit_c4_host_bytes(self.c4_host_bytes, &state.host_cache_bytes)?;
+            if actual != planned {
+                return Err(format!(
+                    "active C4 allocation {actual} bytes differs from reserved {planned} bytes"
+                ));
+            }
+            eprintln!(
+                "[dsv4-c4-host] capacity={capacity} restored={} bytes={actual} budget={} \
+                 per_stage={:?} device_cache={:?} direct=true",
+                host.is_some(),
+                self.c4_host_bytes,
+                state.host_cache_bytes,
+                state.cache_bytes,
+            );
+        }
+        Ok(state)
+    }
 }
 
 fn resolve_prefill_chunk(raw: Option<&str>, max_seq: usize) -> Result<usize, String> {
@@ -271,12 +359,37 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
         std::env::var("MEMRA_DSV4_PREFILL_CHUNK").ok().as_deref(),
         max_seq,
     )?;
+    let c4_host_raw = match std::env::var("MEMRA_DSV4_C4_HOST_MB") {
+        Ok(value) => Some(value),
+        Err(std::env::VarError::NotPresent) => None,
+        Err(std::env::VarError::NotUnicode(_)) => {
+            return Err("MEMRA_DSV4_C4_HOST_MB is not Unicode".into());
+        }
+    };
+    let c4_host_bytes = resolve_c4_host_bytes(c4_host_raw.as_deref())?;
+    if c4_host_bytes > 0 && prefill_chunk == 0 {
+        return Err("MEMRA_DSV4_C4_HOST_MB requires nonzero MEMRA_DSV4_PREFILL_CHUNK".into());
+    }
     let gpu = Dsv4Gpu::load(dir, &devices, variant, max_seq)?;
+    if gpu.matrix_moe_enabled() && prefill_chunk == 0 {
+        return Err("experimental matrix program requires nonzero MEMRA_DSV4_PREFILL_CHUNK".into());
+    }
+    if c4_host_bytes > 0 {
+        if !gpu.matrix_moe_enabled() {
+            return Err(
+                "MEMRA_DSV4_C4_HOST_MB fresh-state path requires the matrix program".into(),
+            );
+        }
+        // Validate the structural host-C4 contract at boot without allocating a
+        // max-context state. Per-request capacity is budgeted before consuming a hit.
+        let _ = gpu.c4_host_bytes_for_capacity(max_seq)?;
+    }
     let spec = gpu.dspark.is_some();
     let eos = tok.eos_id();
     eprintln!(
         "[dsv4-serve] {name}: loaded on devices {devices:?}, contract {variant:?}, \
-         max_seq {max_seq}, drafter {}, parked-host-cache {}, chunked-prefill {}",
+         max_seq {max_seq}, drafter {}, parked-host-cache {}, chunked-prefill {}, \
+         active-C4-host-budget {c4_host_bytes} bytes (0=OFF; separate from parked cache)",
         if spec {
             "RESIDENT (spec route armed)"
         } else {
@@ -300,6 +413,7 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
         spec,
         eos,
         host_cache_bytes,
+        c4_host_bytes,
         prefill_chunk,
     })
 }
@@ -645,10 +759,7 @@ fn try_restore_prefix(
     let bytes = entry.bytes;
     let t0 = Instant::now();
     let restored = (|| -> Result<RestoredPrefix, String> {
-        let transient_rows = m.prefill_chunk.max(m.gpu.verify_tmax());
-        let mut state =
-            m.gpu
-                .restore_decode_state_for_transient(&entry.trunk, capacity, transient_rows)?;
+        let mut state = m.request_state(capacity, Some(&entry.trunk))?;
         let suffix = &prompt[n_cached..];
         if need_dspark {
             let host_dstate = entry
@@ -834,13 +945,19 @@ fn serve_one(
     }
     let use_spec = m.spec && !(greedy && penalties_set);
     let session_capacity = prompt.len() + budget;
-    // A prompt no wider than one configured chunk gets the faster canonical
+    // Refuse before consuming a parked prefix or starting any state allocation.
+    // This is a single-active-request reservation, not concurrency admission.
+    m.planned_c4_host_bytes(session_capacity)
+        .map_err(EngineError::overloaded)?;
+    // In the reference program, a prompt no wider than one configured chunk gets the canonical
     // monolithic prime. It is deliberately not parked: a later, longer cold prompt
     // uses the chunked numeric regime, so retaining this state would make cache use
     // choose a different realization. Once prompts exceed the chunk, cold and restored
-    // paths are both chunked and cache-transparent.
-    let short_monolithic =
-        m.prefill_chunk > 0 && !use_chunked_prefill(m.prefill_chunk, prompt.len());
+    // paths are both chunked and cache-transparent. The experimental matrix program
+    // instead uses its one batched executor at every width, including position zero.
+    let short_monolithic = !m.gpu.matrix_moe_enabled()
+        && m.prefill_chunk > 0
+        && !use_chunked_prefill(m.prefill_chunk, prompt.len());
     let mut restored = try_restore_prefix(m, host_cache, req, &prompt, session_capacity, use_spec);
     let n_cached = restored.as_ref().map_or(0, |hit| hit.n_cached);
     let _ = req.tx.send(Event::PromptUsage {
@@ -878,10 +995,8 @@ fn serve_one(
                 Some(hit.logits),
             )
         } else {
-            let transient_rows = m.prefill_chunk.max(m.gpu.verify_tmax());
             let mut state = m
-                .gpu
-                .alloc_decode_state_for_transient(session_capacity, transient_rows)
+                .request_state(session_capacity, None)
                 .map_err(EngineError::engine)?;
             let mut dstate = m.gpu.dspark_alloc_state().map_err(EngineError::engine)?;
             let initial_logits = if m.prefill_chunk > 0 && !short_monolithic {
@@ -995,10 +1110,8 @@ fn serve_one(
         let (mut state, pre_logits) = if let Some(hit) = restored.take() {
             (hit.state, hit.logits)
         } else {
-            let transient_rows = m.prefill_chunk.max(m.gpu.verify_tmax());
             let mut state = m
-                .gpu
-                .alloc_decode_state_for_transient(session_capacity, transient_rows)
+                .request_state(session_capacity, None)
                 .map_err(EngineError::engine)?;
             let logits = if m.prefill_chunk > 0 && !short_monolithic {
                 m.gpu
@@ -1130,6 +1243,36 @@ fn argmax(v: &[f32]) -> u32 {
         }
     }
     best as u32
+}
+
+#[cfg(test)]
+mod c4_host_budget_tests {
+    use super::{admit_c4_host_bytes, resolve_c4_host_bytes};
+
+    #[test]
+    fn budget_is_opt_in_and_strictly_parsed() {
+        assert_eq!(resolve_c4_host_bytes(None), Ok(0));
+        assert_eq!(resolve_c4_host_bytes(Some("0")), Ok(0));
+        assert_eq!(resolve_c4_host_bytes(Some(" 16 ")), Ok(16 * 1024 * 1024));
+        for raw in ["", "-1", "nan", "1.5"] {
+            assert!(resolve_c4_host_bytes(Some(raw)).is_err(), "{raw:?}");
+        }
+        assert!(resolve_c4_host_bytes(Some(&usize::MAX.to_string())).is_err());
+    }
+
+    #[test]
+    fn budget_sums_both_stages_and_refuses_before_allocation() {
+        assert_eq!(admit_c4_host_bytes(100, &[60, 40]), Ok(100));
+        assert_eq!(admit_c4_host_bytes(101, &[60, 40]), Ok(100));
+        assert_eq!(admit_c4_host_bytes(100, &[0, 0]), Ok(0));
+        assert!(
+            admit_c4_host_bytes(99, &[60, 40])
+                .unwrap_err()
+                .contains("no device-history fallback")
+        );
+        assert!(admit_c4_host_bytes(usize::MAX, &[u64::MAX, 1]).is_err());
+        assert_eq!(admit_c4_host_bytes(0, &[u64::MAX, 1]), Ok(0));
+    }
 }
 
 #[cfg(test)]

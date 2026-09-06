@@ -113,6 +113,8 @@ fn main() {
     let mut gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 4096).expect("load");
     for grouped in [false, true] {
         gpu.set_prefill_grouped_for_gate(grouped).expect("arm");
+        gpu.set_grouped_route_device_for_gate(false)
+            .expect("host routes");
         println!("CHECK grouped={grouped} widths=32/128/512");
         let reference = run(&gpu, &prompt, 32);
         for width in [128, 512] {
@@ -122,6 +124,25 @@ fn main() {
                 "width={width} grouped={grouped}"
             );
             println!("EXACT grouped={grouped} width={width} logits/live-cache/DSpark/sampled");
+        }
+        if grouped {
+            for device_routes in [true, false] {
+                gpu.set_grouped_route_device_for_gate(device_routes)
+                    .expect("routing arm");
+                for width in [32, 128, 512] {
+                    let before = gpu.grouped_device_route_calls();
+                    assert_eq!(
+                        reference,
+                        run(&gpu, &prompt, width),
+                        "grouped route device={device_routes} width={width}"
+                    );
+                    let calls = gpu.grouped_device_route_calls() - before;
+                    assert_eq!(calls > 0, device_routes, "routing arm engagement");
+                    println!(
+                        "EXACT grouped=true device_routes={device_routes} device_calls={calls} width={width} logits/live-cache/DSpark/sampled"
+                    );
+                }
+            }
         }
     }
     println!("PASS wide transaction identity; 1M and serving qualification remain separate");

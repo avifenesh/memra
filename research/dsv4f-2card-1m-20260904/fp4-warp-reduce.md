@@ -131,3 +131,19 @@ not an interpretable source regression. The script exited 1. Raw log:
 `local-ci-warp-reduce-final.log`; raw row retained in `research/tune-data/perf-ci.jsonl`.
 The clean, committed-head delivery gate remains required. No skip override or
 receipt timestamp change was used, and the new engine commits are not pushed.
+
+## Final full-model decision, 2026-09-06
+
+The exact pinned DSV4 plain sampled A/B completed on two RTX PRO 6000 cards
+with native EP, matrix request program, active host C4, tiled indexer/sink and
+radix sampling. Four decode repetitions per arm produced:
+
+| context | block | warp | sampled stream |
+| ---: | ---: | ---: | --- |
+| 256 | 25.7563 | 25.8554 | identical |
+| 8192 | 22.5690 | 22.2025 | identical |
+
+The warp door is flat/no-go at full-model scale and was removed, along with its
+environment read, per-model gate seam and dedicated gate source. The block
+reduction is now the only DSV4 path. Raw receipt SHA256:
+`75a0c8b1d9e1823d91056c8f3a69ae7cc8d8ac606794d81d260bf26e0a66415b`.

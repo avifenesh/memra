@@ -1,5 +1,19 @@
 # Ordered tiled indexer candidate
 
+## 2026-09-05 wide-prefill integration correction
+
+The full-model routing gate exposed a stale tiled-launcher bound: width 128
+returned rc=40009 because the wrapper rejected s>64. The kernel uses independent
+grid-y rows and fixed per-CTA storage. The wrapper now matches the engine's
+512-row bring-up ceiling; arithmetic is unchanged. The extended component gate
+passes 6178334 exact scalar comparisons on the local GPU and each RTX PRO 6000,
+including widths 128/256/512, masks, tail guards and refusal at 513.
+Raw local receipt: `indexer-wide-5090.log`; component SHA256:
+`0f20a76ff65fc5f285ebdf2863e64798c89277d5a834a74d7273cd9ab0a3717d`.
+Full-model composition with the matrix request program remains a separate gate.
+
+## Original implementation and receipts
+
 2026-09-05. Default remains `MEMRA_DSV4_INDEXER_SCORE=scalar`.
 The candidate is a Memra-native adaptation of the internal MLA head-blocked
 scorer, not an external engine or kernel dependency. DSV4 uses separate rounded

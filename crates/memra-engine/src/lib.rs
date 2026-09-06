@@ -6,7 +6,10 @@ use cudarc::driver::{
     DeviceSlice, LaunchConfig, PushKernelArg,
 };
 use cudarc::nvrtc::Ptx;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicI8, Ordering},
+};
 
 const GDN_K2_DYNAMIC_SHARED_BYTES: u32 = 67_072;
 
@@ -232,6 +235,89 @@ pub fn moe_f16g_direct_on(qtype: i32) -> bool {
 pub fn moe_f16g_tail_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_F16G_TAIL").as_deref() != Ok("0"))
+}
+
+/// DSV4 matrix plain-decode gate/up + weighted SwiGLU fusion.  This preserves
+/// the grouped visitor's f16-MMA numeric program and leaves intermediate FP8
+/// quantization/down/scatter unchanged; it is a target-specific gate-only arm
+/// until the component and full-model receipts land.
+static MOE_F16G_GU_FUSE_OVERRIDE: AtomicI8 = AtomicI8::new(-1);
+
+pub fn moe_f16g_gu_fuse_on() -> bool {
+    let override_value = MOE_F16G_GU_FUSE_OVERRIDE.load(Ordering::Acquire);
+    if override_value >= 0 {
+        return override_value != 0;
+    }
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_F16G_GU_FUSE").as_deref() == Ok("1"))
+}
+
+/// Gate-only runtime override for the DSV4 GU fusion arm.  The process-level
+/// environment remains the default policy; this seam exists so one loaded model
+/// can run an identity-checked ABBA comparison without unloading/reinitializing
+/// CUDA state.  `enabled` is intentionally not a serving/request option.
+pub fn set_moe_f16g_gu_fuse_for_gate(enabled: bool) -> bool {
+    let previous = moe_f16g_gu_fuse_on();
+    MOE_F16G_GU_FUSE_OVERRIDE.store(enabled as i8, Ordering::Release);
+    previous
+}
+
+/// Remove the gate-only override and return to the process environment policy.
+pub fn clear_moe_f16g_gu_fuse_for_gate() {
+    MOE_F16G_GU_FUSE_OVERRIDE.store(-1, Ordering::Release);
+}
+
+/// DSV4 matrix plain-only tensor-core m_e=1 tail candidate. The active
+/// grouped path remains the shipped tail until this gate proves full-model
+/// identity and a target rate win. The scalar m=1 visitor is not involved.
+static MOE_F16G_M1_TC_OVERRIDE: AtomicI8 = AtomicI8::new(-1);
+
+pub fn moe_f16g_m1_tc_on() -> bool {
+    let override_value = MOE_F16G_M1_TC_OVERRIDE.load(Ordering::Acquire);
+    if override_value >= 0 {
+        return override_value != 0;
+    }
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_F16G_M1_TC").as_deref() == Ok("1"))
+}
+
+pub fn set_moe_f16g_m1_tc_for_gate(enabled: bool) -> bool {
+    let previous = moe_f16g_m1_tc_on();
+    MOE_F16G_M1_TC_OVERRIDE.store(enabled as i8, Ordering::Release);
+    previous
+}
+
+pub fn clear_moe_f16g_m1_tc_for_gate() {
+    MOE_F16G_M1_TC_OVERRIDE.store(-1, Ordering::Release);
+}
+
+/// DSV4 matrix plain-only GU tensor-core m_e=1 work-elision candidate. This
+/// is deliberately a process-local gate override with no environment arm: the
+/// shipped GU path remains the rollback until the valid-row identity gate and
+/// target rate cell pass.
+static MOE_F16G_GU_M1_TC_OVERRIDE: AtomicI8 = AtomicI8::new(0);
+
+pub fn moe_f16g_gu_m1_tc_on() -> bool {
+    MOE_F16G_GU_M1_TC_OVERRIDE.load(Ordering::Acquire) != 0
+}
+
+pub fn set_moe_f16g_gu_m1_tc_for_gate(enabled: bool) -> bool {
+    let previous = moe_f16g_gu_m1_tc_on();
+    MOE_F16G_GU_M1_TC_OVERRIDE.store(enabled as i8, Ordering::Release);
+    previous
+}
+
+pub fn clear_moe_f16g_gu_m1_tc_for_gate() {
+    MOE_F16G_GU_M1_TC_OVERRIDE.store(0, Ordering::Release);
+}
+
+/// Engagement receipt for the actual direct GU-M1 CUDA launcher, incremented
+/// only after that launcher returns success.
+pub static MOE_F16G_GU_M1_TC_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+pub fn moe_f16g_gu_m1_tc_dispatches() -> u64 {
+    MOE_F16G_GU_M1_TC_DISPATCHES.load(Ordering::Relaxed)
 }
 
 /// Per-model door for the gemma-MoE (gelu) grouped path: round 49's Hopper default
@@ -539,8 +625,11 @@ mod cpu_experts;
 #[cfg(memra_cutlass)]
 pub mod cutlass_ffi;
 mod dsv4_c4;
+mod dsv4_ep;
 pub mod dsv4_ffi;
 pub mod dsv4_gpu;
+mod dsv4_graph;
+mod dsv4_grouped;
 pub mod f16_ffi;
 pub mod fp8_ffi;
 pub mod mmq_ffi;

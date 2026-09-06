@@ -1203,6 +1203,7 @@ moe_kq_sk32v_kernel(
     const int ntx = (out_f + SK_BN - 1) / SK_BN;
     kq_stage_codebook<QT>(s_cb);
     sk_tile_prefix(s_pre, ex_off, n_active, ntx, SK_BM, mlo, mhi);
+    if (total_tiles < 0) total_tiles = s_pre[n_active];
 
     const int lane = threadIdx.x, warp = threadIdx.y;
     const int tid  = warp * 32 + lane;
@@ -1310,6 +1311,7 @@ moe_kq_sk128v_kernel(
     const int ntx = (out_f + SK128_BN - 1) / SK128_BN;
     kq_stage_codebook<QT>(s_cb);
     sk_tile_prefix(s_pre, ex_off, n_active, ntx, SK128_BM, mlo, mhi);
+    if (total_tiles < 0) total_tiles = s_pre[n_active];
 
     const int lane = threadIdx.x, warp = threadIdx.y;
     const int tid  = warp * 32 + lane;                        // 0..255
@@ -1455,7 +1457,12 @@ moe_kq_sk128v_kernel(
 // both software-pipelined one kb ahead behind the mma. Total smem 25092 B static.
 // Bit-identical to every other form by construction (same kq_*_val f16 values into the
 // same ascending mma k-chain).
-template<int QT>
+// M1=true is a compile-only DSV4 candidate for one-row CSR groups: it keeps
+// the same B tile and valid-row (warps 0/2) m16n8k16 chain, but does not issue
+// the duplicate invalid-row MMA work from warps 1/3 or load their unused A
+// stage. It is deliberately a separate launcher seam, not the rejected scalar
+// m=1 visitor; the valid row's accumulation and epilogue remain unchanged.
+template<int QT, bool M1 = false>
 static __global__ void __launch_bounds__(128)
 moe_kq_sktail_kernel(
         const unsigned long long* __restrict__ table, int proj, int n_expert,
@@ -1471,6 +1478,7 @@ moe_kq_sktail_kernel(
     const int ntx = (out_f + SK_BN - 1) / SK_BN;
     kq_stage_codebook<QT>(s_cb);
     sk_tile_prefix(s_pre, ex_off, n_active, ntx, SK_BM, mlo, mhi);
+    if (total_tiles < 0) total_tiles = s_pre[n_active];
 
     const int lane = threadIdx.x, warp = threadIdx.y;
     const int tid  = warp * 32 + lane;                        // 0..127
@@ -1505,7 +1513,8 @@ moe_kq_sktail_kernel(
         }
         #define KQT_LOAD_A(st, k0) do { \
             _Pragma("unroll") \
-            for(int i = 0; i < 2; i++) sk_cp16(&As[st][asr[i]][asc[i]], agp[i] + (k0)); \
+            for(int i = 0; i < 2; i++) if(!M1 || i == 0) \
+                sk_cp16(&As[st][asr[i]][asc[i]], agp[i] + (k0)); \
             asm volatile("cp.async.commit_group;"); \
         } while(0)
 
@@ -1531,16 +1540,18 @@ moe_kq_sktail_kernel(
             else if(kb + 1 < nkb) asm volatile("cp.async.wait_group 1;");
             else                  asm volatile("cp.async.wait_group 0;");
             __syncthreads();
-            #pragma unroll
-            for(int kk = 0; kk < 4; kk++){
-                unsigned a[4], b0[4], b1[4];
-                sk_ldm16x16(a,  &As[cur][wm][kk*16],  SKT_STRIDE);
-                sk_ldm16x16(b0, &Bs[wn][kk*16],       SKT_STRIDE);
-                sk_ldm16x16(b1, &Bs[wn + 16][kk*16],  SKT_STRIDE);
-                sk_mma(acc[0], a, b0[0], b0[2]);
-                sk_mma(acc[1], a, b0[1], b0[3]);
-                sk_mma(acc[2], a, b1[0], b1[2]);
-                sk_mma(acc[3], a, b1[1], b1[3]);
+            if(!M1 || ((warp & 1) == 0)) {
+                #pragma unroll
+                for(int kk = 0; kk < 4; kk++){
+                    unsigned a[4], b0[4], b1[4];
+                    sk_ldm16x16(a,  &As[cur][wm][kk*16],  SKT_STRIDE);
+                    sk_ldm16x16(b0, &Bs[wn][kk*16],       SKT_STRIDE);
+                    sk_ldm16x16(b1, &Bs[wn + 16][kk*16],  SKT_STRIDE);
+                    sk_mma(acc[0], a, b0[0], b0[2]);
+                    sk_mma(acc[1], a, b0[1], b0[3]);
+                    sk_mma(acc[2], a, b1[0], b1[2]);
+                    sk_mma(acc[3], a, b1[1], b1[3]);
+                }
             }
             __syncthreads();
         }
@@ -1561,6 +1572,176 @@ moe_kq_sktail_kernel(
             if(r0 + 8 < m_e){
                 if(c     < out_f) y0[(size_t)8 * out_f + c]     = acc[nb][2] * s1;
                 if(c + 1 < out_f) y0[(size_t)8 * out_f + c + 1] = acc[nb][3] * s1;
+            }
+        }
+    }
+}
+
+// DSV4 matrix plain-decode gate-only fusion (MEMRA_F16G_GU_FUSE=1).  The
+// one-token matrix route has m_e=1 on every non-empty local expert group.  Keep
+// the shipped ModelOpt FP8-QAT -> normalized-f16 -> f32-MMA numeric program,
+// but compute gate and up from the same A tile and apply the existing macro,
+// clamp, SiLU and route-weight epilogue directly into H.  Down, intermediate
+// FP8 quantization and original-slot scatter remain the common path.
+//
+// This is deliberately a narrow m_e=1 visitor.  It uses the same kq_fetch /
+// kq_store and ascending sk_mma chain as moe_kq_sktail_kernel, so the two
+// projection accumulators are separately bit-comparable before the epilogue.
+// QT is fixed to QT_NVFP4_MODELOPT by the C entry point.
+__device__ __forceinline__ float kq_gu_sigmoid(float x){
+    return 1.0f / (1.0f + expf(-x));
+}
+
+template<int QT, bool M1 = false>
+static __global__ void __launch_bounds__(128)
+moe_kq_sktail_gu_kernel(
+        const unsigned long long* __restrict__ table, int n_expert,
+        const int* __restrict__ ex_ids, long row_bytes,
+        const __half* __restrict__ A,
+        float* __restrict__ H, const float* __restrict__ row_scale,
+        const float* __restrict__ macro_g, const float* __restrict__ macro_u,
+        const float* __restrict__ route_w,
+        const int* __restrict__ ex_off, int n_active,
+        int in_f, int out_f, int total_tiles, float limit){
+    if(QT != QT_NVFP4_MODELOPT) return;
+    __shared__ int s_pre[SK_MAX_G + 1];
+    __shared__ __align__(16) __half As[SKT_STAGES][SK_BM][SKT_STRIDE];
+    __shared__ __align__(16) __half Bs[SK_BN][SKT_STRIDE];
+    __shared__ uint32_t s_cb[KQ_CB_WORDS(QT)];
+    const int ntx = (out_f + SK_BN - 1) / SK_BN;
+    kq_stage_codebook<QT>(s_cb);
+    // m_e=1 only.  Empty and larger groups are left for the rollback visitor.
+    sk_tile_prefix(s_pre, ex_off, n_active, ntx, SK_BM, 1, 2);
+    if(total_tiles < 0) total_tiles = s_pre[n_active];
+
+    const int lane = threadIdx.x, warp = threadIdx.y;
+    const int tid  = warp * 32 + lane;
+    const int nkb  = in_f / SKT_BK;
+    const int wm = (warp & 1) * 16, wn = (warp >> 1) * 32;
+    const int brow = tid >> 1, bc0 = (tid & 1) * 32;
+
+    for(int t = blockIdx.x; t < total_tiles; t += gridDim.x){
+        const int g  = sk_tile_group(s_pre, n_active, t);
+        const int lo = ex_off[g], m_e = ex_off[g+1] - lo;
+        if(m_e != 1) continue;
+        const int local = t - s_pre[g];
+        const int m0 = (local / ntx) * SK_BM;
+        const int n0 = (local % ntx) * SK_BN;
+        const __half* Ag = A + (size_t)lo * in_f;
+        const int eid = ex_ids[g];
+        const uint8_t* Wg = (const uint8_t*)table[(size_t)0 * n_expert + eid];
+        const uint8_t* Sg = (const uint8_t*)table[(size_t)1 * n_expert + eid];
+        const uint8_t* Wu = (const uint8_t*)table[(size_t)4 * n_expert + eid];
+        const uint8_t* Su = (const uint8_t*)table[(size_t)5 * n_expert + eid];
+        const int bn = min(n0 + brow, out_f - 1);
+        const uint8_t* gwrow = Wg + (size_t)bn * row_bytes;
+        const uint8_t* gsrow = Sg + (size_t)bn * (in_f / 16);
+        const uint8_t* uwrow = Wu + (size_t)bn * row_bytes;
+        const uint8_t* usrow = Su + (size_t)bn * (in_f / 16);
+
+        const __half* agp[2]; int asr[2], asc[2];
+        #pragma unroll
+        for(int i = 0; i < 2; i++){
+            const int c = tid + i * 128;
+            asr[i] = c >> 3; asc[i] = (c & 7) * 8;
+            const int am = min(m0 + asr[i], m_e - 1);
+            agp[i] = Ag + (size_t)am * in_f + asc[i];
+        }
+        #define KQGU_LOAD_A(st, k0) do { \
+            _Pragma("unroll") \
+            for(int i = 0; i < 2; i++) if(!M1 || i == 0) \
+                sk_cp16(&As[st][asr[i]][asc[i]], agp[i] + (k0)); \
+            asm volatile("cp.async.commit_group;"); \
+        } while(0)
+
+        KQGU_LOAD_A(0, 0);
+        if(nkb > 1) KQGU_LOAD_A(1, SKT_BK);
+        KqRaw gb0 = kq_fetch<QT>(gwrow, gsrow, bc0, s_cb, in_f);
+        KqRaw gb1 = kq_fetch<QT>(gwrow, gsrow, bc0 + 16, s_cb, in_f);
+        KqRaw ub0 = kq_fetch<QT>(uwrow, usrow, bc0, s_cb, in_f);
+        KqRaw ub1 = kq_fetch<QT>(uwrow, usrow, bc0 + 16, s_cb, in_f);
+        float ag[4][4] = {}, au[4][4] = {};
+        for(int kb = 0; kb < nkb; kb++){
+            const int cur = kb % SKT_STAGES;
+            if(kb + 2 < nkb) KQGU_LOAD_A((kb + 2) % SKT_STAGES, (kb + 2) * SKT_BK);
+
+            // Gate B tile and its next fetch.  The A tile is shared by both
+            // projections; this is the only new fusion relative to the tail.
+            kq_store<QT>(gb0, &Bs[brow][bc0], s_cb);
+            kq_store<QT>(gb1, &Bs[brow][bc0 + 16], s_cb);
+            if(kb + 1 < nkb){
+                gb0 = kq_fetch<QT>(gwrow, gsrow, (kb + 1) * SKT_BK + bc0, s_cb, in_f);
+                gb1 = kq_fetch<QT>(gwrow, gsrow, (kb + 1) * SKT_BK + bc0 + 16, s_cb, in_f);
+            }
+            if(kb + 2 < nkb)      asm volatile("cp.async.wait_group 2;");
+            else if(kb + 1 < nkb) asm volatile("cp.async.wait_group 1;");
+            else                  asm volatile("cp.async.wait_group 0;");
+            __syncthreads();
+            if(!M1 || ((warp & 1) == 0)) {
+                #pragma unroll
+                for(int kk = 0; kk < 4; kk++){
+                    unsigned a[4], b0[4], b1[4];
+                    sk_ldm16x16(a,  &As[cur][wm][kk*16],  SKT_STRIDE);
+                    sk_ldm16x16(b0, &Bs[wn][kk*16],       SKT_STRIDE);
+                    sk_ldm16x16(b1, &Bs[wn + 16][kk*16],  SKT_STRIDE);
+                    sk_mma(ag[0], a, b0[0], b0[2]);
+                    sk_mma(ag[1], a, b0[1], b0[3]);
+                    sk_mma(ag[2], a, b1[0], b1[2]);
+                    sk_mma(ag[3], a, b1[1], b1[3]);
+                }
+            }
+            __syncthreads();
+
+            // Up uses the same B tile and A tile after gate has consumed it.
+            kq_store<QT>(ub0, &Bs[brow][bc0], s_cb);
+            kq_store<QT>(ub1, &Bs[brow][bc0 + 16], s_cb);
+            if(kb + 1 < nkb){
+                ub0 = kq_fetch<QT>(uwrow, usrow, (kb + 1) * SKT_BK + bc0, s_cb, in_f);
+                ub1 = kq_fetch<QT>(uwrow, usrow, (kb + 1) * SKT_BK + bc0 + 16, s_cb, in_f);
+            }
+            __syncthreads();
+            if(!M1 || ((warp & 1) == 0)) {
+                #pragma unroll
+                for(int kk = 0; kk < 4; kk++){
+                    unsigned a[4], b0[4], b1[4];
+                    sk_ldm16x16(a,  &As[cur][wm][kk*16],  SKT_STRIDE);
+                    sk_ldm16x16(b0, &Bs[wn][kk*16],       SKT_STRIDE);
+                    sk_ldm16x16(b1, &Bs[wn + 16][kk*16],  SKT_STRIDE);
+                    sk_mma(au[0], a, b0[0], b0[2]);
+                    sk_mma(au[1], a, b0[1], b0[3]);
+                    sk_mma(au[2], a, b1[0], b1[2]);
+                    sk_mma(au[3], a, b1[1], b1[3]);
+                }
+            }
+            __syncthreads();
+        }
+        #undef KQGU_LOAD_A
+
+        const int r0 = m0 + wm + lane / 4;
+        const int cb = n0 + wn + (lane % 4) * 2;
+        const int pair = lo + r0;
+        const float rs = (r0 < m_e) ? row_scale[pair] : 0.0f;
+        const float mg = (r0 < m_e) ? macro_g[pair] : 0.0f;
+        const float mu = (r0 < m_e) ? macro_u[pair] : 0.0f;
+        const float rw = (r0 < m_e) ? route_w[pair] : 0.0f;
+        float* hrow = H + (size_t)pair * out_f;
+        #pragma unroll
+        for(int nb = 0; nb < 4; nb++){
+            const int c = cb + nb * 8;
+            if(r0 < m_e){
+                #define KQGU_STORE(col, ga, ua) do { \
+                    if((col) < out_f){ \
+                        float g = __fmul_rn(__fmul_rn((ga), rs), mg); \
+                        float u = __fmul_rn(__fmul_rn((ua), rs), mu); \
+                        u = fminf(fmaxf(u, -limit), limit); \
+                        g = fminf(g, limit); \
+                        float hv = __fmul_rn(__fmul_rn(g, kq_gu_sigmoid(g)), u); \
+                        hrow[(col)] = __fmul_rn(hv, rw); \
+                    } \
+                } while(0)
+                KQGU_STORE(c,     ag[nb][0], au[nb][0]);
+                KQGU_STORE(c + 1, ag[nb][1], au[nb][1]);
+                #undef KQGU_STORE
             }
         }
     }
@@ -1646,6 +1827,41 @@ static int moe_kq_gemm_sk_launch(const unsigned long long* table, int proj, int 
     }
     const int ntx = (out_f + SK_BN - 1) / SK_BN;
     long t32 = 0, t128 = 0;
+    if (ex_off_host == nullptr) {
+        // The device prefix defines the exact work count. Fixed persistent grids
+        // permit replay with changed routing without reading counts on the CPU.
+        if (xcross < 0x7fffffff) {
+            const int resident = sms * occ128;
+            const int grid = resident;
+            if (bdb)
+                moe_kq_sk128v_kernel<QT, true><<<grid, dim3(32,8,1), KQ128_SMEM_BYTES, st>>>(
+                    table, proj, n_expert, ex_ids, row_bytes, (const __half*)act_f16, y,
+                    row_scale, ex_off_dev, n_active, in_f, out_f, xcross,
+                    0x7fffffff, -1);
+            else
+                moe_kq_sk128v_kernel<QT, false><<<grid, dim3(32,8,1), KQ128_SMEM_BYTES, st>>>(
+                    table, proj, n_expert, ex_ids, row_bytes, (const __half*)act_f16, y,
+                    row_scale, ex_off_dev, n_active, in_f, out_f, xcross,
+                    0x7fffffff, -1);
+        }
+        if (xcross > 1) {
+            const int deep = tail != 0 && occt >= 1 && in_f % SKT_BK == 0;
+            const int resident = sms * (deep ? occt : occ32);
+            const int grid = resident;
+            if (deep)
+                moe_kq_sktail_kernel<QT><<<grid, dim3(32,4,1), 0, st>>>(
+                    table, proj, n_expert, ex_ids, row_bytes, (const __half*)act_f16, y,
+                    row_scale, ex_off_dev, n_active, in_f, out_f, 1,
+                    xcross, -1);
+            else
+                moe_kq_sk32v_kernel<QT><<<grid, dim3(32,4,1), 0, st>>>(
+                    table, proj, n_expert, ex_ids, row_bytes, (const __half*)act_f16, y,
+                    row_scale, ex_off_dev, n_active, in_f, out_f, 1,
+                    xcross, -1);
+        }
+        cudaError_t err = cudaGetLastError();
+        return err ? 1000 + (int)err : 0;
+    }
     for(int g = 0; g < n_active; g++){
         const int m_e = ex_off_host[g+1] - ex_off_host[g];
         if(m_e <= 0) continue;
@@ -1658,11 +1874,13 @@ static int moe_kq_gemm_sk_launch(const unsigned long long* table, int proj, int 
         if(bdb)
             moe_kq_sk128v_kernel<QT, true><<<grid, dim3(32,8,1), KQ128_SMEM_BYTES, st>>>(
                 table, proj, n_expert, ex_ids, row_bytes, (const __half*)act_f16, y, row_scale,
-                ex_off_dev, n_active, in_f, out_f, xcross, 0x7fffffff, (int)t128);
+                ex_off_dev, n_active, in_f, out_f, xcross,
+                0x7fffffff, (int)t128);
         else
             moe_kq_sk128v_kernel<QT, false><<<grid, dim3(32,8,1), KQ128_SMEM_BYTES, st>>>(
                 table, proj, n_expert, ex_ids, row_bytes, (const __half*)act_f16, y, row_scale,
-                ex_off_dev, n_active, in_f, out_f, xcross, 0x7fffffff, (int)t128);
+                ex_off_dev, n_active, in_f, out_f, xcross,
+                0x7fffffff, (int)t128);
     }
     if(t32 > 0){
         // Deep tail (lane/sk-tail-form) when admitted; in_f % 256 == 0 here so the
@@ -1673,11 +1891,13 @@ static int moe_kq_gemm_sk_launch(const unsigned long long* table, int proj, int 
         if(deep)
             moe_kq_sktail_kernel<QT><<<grid, dim3(32,4,1), 0, st>>>(
                 table, proj, n_expert, ex_ids, row_bytes, (const __half*)act_f16, y, row_scale,
-                ex_off_dev, n_active, in_f, out_f, 1, xcross, (int)t32);
+                ex_off_dev, n_active, in_f, out_f, 1,
+                xcross, (int)t32);
         else
             moe_kq_sk32v_kernel<QT><<<grid, dim3(32,4,1), 0, st>>>(
                 table, proj, n_expert, ex_ids, row_bytes, (const __half*)act_f16, y, row_scale,
-                ex_off_dev, n_active, in_f, out_f, 1, xcross, (int)t32);
+                ex_off_dev, n_active, in_f, out_f, 1,
+                xcross, (int)t32);
     }
     cudaError_t e=cudaGetLastError();
     if(e) fprintf(stderr, "[moe-sk-err] kq_sk err=%d(%s) n_active=%d max_m=%d in_f=%d out_f=%d\n",
@@ -1847,7 +2067,9 @@ int memra_moe_kq_gemm_sk(const unsigned long long* table, int proj, int n_expert
     if(qtype != QT_Q4_K && qtype != QT_Q6_K && qtype != QT_IQ4_XS && qtype != QT_IQ3_S
        && qtype != QT_NVFP4 && qtype != QT_NVFP4_V2 && qtype != QT_NVFP4_MODELOPT)
         return 2;
-    if(n_active > SK_MAX_G || ex_off_host == nullptr) return 2;
+    // Device-owned metadata is initially admitted only for the DSV4 split-plane
+    // ModelOpt path; every existing generic caller keeps its host-count ABI.
+    if(n_active > SK_MAX_G || (ex_off_host == nullptr && qtype != QT_NVFP4_MODELOPT)) return 2;
     if(n_active <= 0 || max_m <= 0) return 0;
     cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
     switch(qtype){
@@ -1880,6 +2102,100 @@ int memra_moe_kq_gemm_sk(const unsigned long long* table, int proj, int n_expert
                 row_scale, ex_off_dev, ex_off_host, n_active, max_m, in_f, out_f, cross,
                 tail, row_bytes, st);
     }
+}
+
+// Compile-only DSV4 candidate: tensor-core m_e=1 tail.  This is NOT the
+// rejected scalar m=1 visitor and does not change the active dispatch.  It
+// retains the same f16 operands, ModelOpt NVFP4 kq_fetch/kq_store program and
+// valid-row m16n8k16 chain as the shipped tail, while skipping the two warps
+// whose 16-row output tiles are provably outside an m_e=1 group.  The ordinary
+// FP8 mirror and scatter remain in the caller for the exactness comparison.
+int memra_moe_kq_gemm_sk_m1(
+        const unsigned long long* table, int n_expert, const int* ex_ids,
+        const void* act_f16, float* y, const float* row_scale,
+        const int* ex_off_dev, int n_active, int in_f, int out_f,
+        long row_bytes, void* stream){
+    if(!table || !ex_ids || !act_f16 || !y || !row_scale || !ex_off_dev
+       || n_expert <= 0 || n_active <= 0 || n_active > SK_MAX_G
+       || in_f <= 0 || out_f <= 0 || in_f % SKT_BK || out_f % SK_BN
+       || row_bytes != in_f / 2)
+        return 40004;
+    int dev = 0, sms = 1, occ = 1;
+    cudaGetDevice(&dev);
+    if(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, dev) != cudaSuccess
+       || sms < 1) sms = 1;
+    if(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+           &occ, moe_kq_sktail_kernel<QT_NVFP4_MODELOPT, true>, 128, 0) != cudaSuccess
+       || occ < 1) occ = 1;
+    const int grid = sms * occ;
+    cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
+    moe_kq_sktail_kernel<QT_NVFP4_MODELOPT, true><<<grid, dim3(32,4,1), 0, st>>>(
+        table, 1, n_expert, ex_ids, row_bytes, (const __half*)act_f16, y,
+        row_scale, ex_off_dev, n_active, in_f, out_f, 1, 2, -1);
+    cudaError_t e = cudaGetLastError();
+    return e ? 1000 + (int)e : 0;
+}
+
+// Gate/up + weighted SwiGLU fused matrix decode arm.  The caller admits this
+// only for one-row transactions, so every non-empty CSR group has m_e=1 and
+// the device prefix is sufficient; no host route-count readback is needed.
+// Down projection, intermediate FP8 quantization and scatter remain separate.
+int memra_moe_kq_gemm_sk_gu(
+        const unsigned long long* table, int n_expert, const int* ex_ids,
+        const void* act_f16, float* h, const float* row_scale,
+        const float* macro_g, const float* macro_u, const float* route_w,
+        const int* ex_off_dev, int n_active, int in_f, int out_f,
+        float limit, long row_bytes, void* stream){
+    if(!table || !ex_ids || !act_f16 || !h || !row_scale || !macro_g || !macro_u
+       || !route_w || !ex_off_dev || n_expert <= 0 || n_active <= 0
+       || n_active > SK_MAX_G || in_f <= 0 || out_f <= 0 || in_f % SKT_BK
+       || out_f % SK_BN || row_bytes != in_f / 2)
+        return 40004;
+    int dev = 0, sms = 1, occ = 1;
+    cudaGetDevice(&dev);
+    if(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, dev) != cudaSuccess
+       || sms < 1) sms = 1;
+    if(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+           &occ, moe_kq_sktail_gu_kernel<QT_NVFP4_MODELOPT>, 128, 0) != cudaSuccess
+       || occ < 1) occ = 1;
+    const int grid = sms * occ;
+    cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
+    moe_kq_sktail_gu_kernel<QT_NVFP4_MODELOPT><<<grid, dim3(32,4,1), 0, st>>>(
+        table, n_expert, ex_ids, row_bytes, (const __half*)act_f16, h, row_scale,
+        macro_g, macro_u, route_w, ex_off_dev, n_active, in_f, out_f, -1, limit);
+    cudaError_t e = cudaGetLastError();
+    return e ? 1000 + (int)e : 0;
+}
+
+// GU m_e=1 tensor-core work-elision twin. The valid-row gate/up MMA chain and
+// epilogue are unchanged; only the duplicate invalid-row A loads and MMA work
+// are skipped. This is a gate-only launch selected by the Rust process-local
+// override, never by an environment or serving path.
+int memra_moe_kq_gemm_sk_gu_m1(
+        const unsigned long long* table, int n_expert, const int* ex_ids,
+        const void* act_f16, float* h, const float* row_scale,
+        const float* macro_g, const float* macro_u, const float* route_w,
+        const int* ex_off_dev, int n_active, int in_f, int out_f,
+        float limit, long row_bytes, void* stream){
+    if(!table || !ex_ids || !act_f16 || !h || !row_scale || !macro_g || !macro_u
+       || !route_w || !ex_off_dev || n_expert <= 0 || n_active <= 0
+       || n_active > SK_MAX_G || in_f <= 0 || out_f <= 0 || in_f % SKT_BK
+       || out_f % SK_BN || row_bytes != in_f / 2)
+        return 40004;
+    int dev = 0, sms = 1, occ = 1;
+    cudaGetDevice(&dev);
+    if(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, dev) != cudaSuccess
+       || sms < 1) sms = 1;
+    if(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+           &occ, moe_kq_sktail_gu_kernel<QT_NVFP4_MODELOPT, true>, 128, 0) != cudaSuccess
+       || occ < 1) occ = 1;
+    const int grid = sms * occ;
+    cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
+    moe_kq_sktail_gu_kernel<QT_NVFP4_MODELOPT, true><<<grid, dim3(32,4,1), 0, st>>>(
+        table, n_expert, ex_ids, row_bytes, (const __half*)act_f16, h, row_scale,
+        macro_g, macro_u, route_w, ex_off_dev, n_active, in_f, out_f, -1, limit);
+    cudaError_t e = cudaGetLastError();
+    return e ? 1000 + (int)e : 0;
 }
 
 int memra_moe_f16g_gather_act(const float* x, const int* pair_tok_or_null, void* act_f16,
