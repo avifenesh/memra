@@ -21070,6 +21070,148 @@ impl Engine {
     /// launches all six ranges. The gate drives mutations through here so a mutated program is
     /// the exact one the KDA door serves.
     #[allow(clippy::too_many_arguments)]
+    /// f32 rows to the f16 lane-major layout with NATURAL pairs (half2 word `w` of block `b` =
+    /// elements (b*32+2w, b*32+2w+1) at `w*nblk + b`), the layout the f16-class KDA six reads
+    /// (lane/kda6-f16-20260906). `rows * in_f / 2` half2 words, carried as u32.
+    pub fn f32_to_f16_lane_major_nat(
+        &self,
+        x: &CudaSlice<f32>,
+        rows: usize,
+        in_f: usize,
+    ) -> Result<CudaSlice<u32>, Box<dyn std::error::Error>> {
+        if !in_f.is_multiple_of(32) || x.len() < rows * in_f {
+            return Err(format!(
+                "f32_to_f16_lane_major_nat: in_f {in_f} must be a multiple of 32 and x holds {} < {}",
+                x.len(),
+                rows * in_f
+            )
+            .into());
+        }
+        let f = self.func("memra_f32_to_f16_lane_major_nat");
+        let words = rows * in_f / 2;
+        let mut out = self.alloc_uninit::<u32>(words)?;
+        let cfg = LaunchConfig {
+            grid_dim: ((words as u32).div_ceil(256), 1, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let (r, nblk) = (rows as i32, (in_f / 32) as i32);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(x).arg(&mut out).arg(&r).arg(&nblk);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(out)
+    }
+
+    /// The f16-CLASS KDA six (`qmatvec_e4m3_mmvq_fused6_f16`, `_acc32` under `acc32`): the
+    /// served fused6's block partition with the e4m3 -> half2 hardware conversion and hfma2
+    /// against `acth` from `f32_to_f16_lane_major_nat`. A named numeric class gated against an
+    /// f64 reference (`tests/kda6_f16_gpu.rs`), not dispatched by the served walk.
+    #[allow(clippy::too_many_arguments)]
+    pub fn e4m3_fused6_f16_into(
+        &self,
+        w: [&CudaSlice<u8>; 6],
+        acth: &CudaSlice<u32>,
+        in_f: usize,
+        dims: [usize; 6],
+        row_bytes: usize,
+        ws: [f32; 6],
+        outs: &mut [CudaSlice<f32>; 6],
+        acc32: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        const ROWS_PER_BLOCK: u32 = 4;
+        if !in_f.is_multiple_of(32) || acth.len() < in_f / 2 {
+            return Err(format!(
+                "kda6 f16: in_f {in_f} % 32, acth holds {} half2 words",
+                acth.len()
+            )
+            .into());
+        }
+        let blocks: u32 = dims
+            .iter()
+            .map(|&o| (o as u32).div_ceil(ROWS_PER_BLOCK))
+            .sum();
+        let f = self.func(if acc32 {
+            "qmatvec_e4m3_mmvq_fused6_f16_acc32"
+        } else {
+            "qmatvec_e4m3_mmvq_fused6_f16"
+        });
+        let cfg = LaunchConfig {
+            grid_dim: (blocks, 1, 1),
+            block_dim: (32, ROWS_PER_BLOCK, 1),
+            shared_mem_bytes: 0,
+        };
+        let inf = in_f as i32;
+        let o: [i32; 6] = std::array::from_fn(|i| dims[i] as i32);
+        let rbl = row_bytes as i64;
+        let (o0, o1) = outs.split_at_mut(1);
+        let (o1, o2) = o1.split_at_mut(1);
+        let (o2, o3) = o2.split_at_mut(1);
+        let (o3, o4) = o3.split_at_mut(1);
+        let (o4, o5) = o4.split_at_mut(1);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(w[0])
+            .arg(w[1])
+            .arg(w[2])
+            .arg(w[3])
+            .arg(w[4])
+            .arg(w[5])
+            .arg(acth)
+            .arg(&mut o0[0])
+            .arg(&mut o1[0])
+            .arg(&mut o2[0])
+            .arg(&mut o3[0])
+            .arg(&mut o4[0])
+            .arg(&mut o5[0])
+            .arg(&inf)
+            .arg(&o[0])
+            .arg(&o[1])
+            .arg(&o[2])
+            .arg(&o[3])
+            .arg(&o[4])
+            .arg(&o[5])
+            .arg(&rbl)
+            .arg(&ws[0])
+            .arg(&ws[1])
+            .arg(&ws[2])
+            .arg(&ws[3])
+            .arg(&ws[4])
+            .arg(&ws[5]);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(())
+    }
+
+    /// Bench/gate entry: the f16-class six from an f32 activation (converts, then launches).
+    #[allow(clippy::too_many_arguments)]
+    pub fn qmatvec_e4m3_fused6_f16_raw(
+        &self,
+        w: [&CudaSlice<u8>; 6],
+        x: &CudaSlice<f32>,
+        in_f: usize,
+        dims: [usize; 6],
+        row_bytes: usize,
+        ws: [f32; 6],
+        acc32: bool,
+    ) -> Result<[CudaSlice<f32>; 6], Box<dyn std::error::Error>> {
+        let acth = self.f32_to_f16_lane_major_nat(x, 1, in_f)?;
+        let mut outs = [
+            self.alloc_uninit::<f32>(dims[0])?,
+            self.alloc_uninit::<f32>(dims[1])?,
+            self.alloc_uninit::<f32>(dims[2])?,
+            self.alloc_uninit::<f32>(dims[3])?,
+            self.alloc_uninit::<f32>(dims[4])?,
+            self.alloc_uninit::<f32>(dims[5])?,
+        ];
+        self.e4m3_fused6_f16_into(w, &acth, in_f, dims, row_bytes, ws, &mut outs, acc32)?;
+        Ok(outs)
+    }
+
+    #[allow(clippy::too_many_arguments)]
     pub fn qmatvec_e4m3_fused6_raw(
         &self,
         w: [&CudaSlice<u8>; 6],

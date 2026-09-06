@@ -501,6 +501,10 @@ __device__ __forceinline__ float2 e4m3x2_to_f32x2(unsigned short w2) {
     return __half22float2(*reinterpret_cast<__half2*>(&hr));
 }
 // Single-byte e4m3 -> f32 (Stage-A deq + scalar tails). Same exact chain as the x2 form.
+__device__ __forceinline__ half2 e4m3x2_to_half2(unsigned short w2) {
+    __half2_raw hr = __nv_cvt_fp8x2_to_halfraw2((__nv_fp8x2_storage_t)w2, __NV_E4M3);
+    return *reinterpret_cast<half2*>(&hr);
+}
 __device__ __forceinline__ float e4m3_to_f32_d(unsigned char b) {
     __nv_fp8_e4m3 v; v.__x = (__nv_fp8_storage_t)b;
     return (float)v;
@@ -4047,6 +4051,128 @@ extern "C" __global__ void qmatvec_e4m3_mmvq_fused6(
         long row_bytes, float ws0, float ws1, float ws2, float ws3, float ws4, float ws5) {
     e4m3_fused6_body<1>(W0, W1, W2, W3, W4, W5, aq, ad, y0, y1, y2, y3, y4, y5, in_f, out0,
                         out1, out2, out3, out4, out5, row_bytes, ws0, ws1, ws2, ws3, ws4, ws5);
+}
+
+// =====================================================================================
+// F16 CLASS of the KDA six (lane/kda6-f16-20260906): e4m3 -> half2 in hardware, hfma2
+// =====================================================================================
+//
+// WHY. The served e4m3 block dot converts every weight pair to f32 and every int8 activation
+// to f32 before a 32-fma chain: ~150 instructions per 32 elements per lane, and the fused six
+// (34 of 45 layers) is 30 us for 25.5 MB, 11% of the pair's wall (tracec1 2026-09-06). The
+// e4m3x2 -> half2 conversion is ONE instruction on sm_89+ and `hfma2` takes the activation as
+// f16x2 directly: ~34 instructions per block. Same class change as the rows pair's f16 door
+// (MEMRA_MOE_ROWS_F16): f16 products, f16x2 accumulation across a 32-block, f32 across blocks
+// (`_acc32` accumulates every product in f32), the per-tensor scale at the write as before,
+// NO q8_1 quantize of the activation. Gated against an f64 reference beside the served arm
+// (`tests/kda6_f16_gpu.rs`); never a bitwise claim.
+//
+// ACTIVATION: f16 lane-major with NATURAL pairs: half2 word w (0..15) of block b holds elements
+// (b*32 + 2w, b*32 + 2w + 1) at half2 index w*nblk + b (`memra_f32_to_f16_lane_major_nat`);
+// e4m3 bytes are K-inner so byte pair (2w, 2w+1) converts to exactly that half2.
+template <bool ACC32>
+__device__ __forceinline__ float e4m3_row_dot_f16(const unsigned char* __restrict__ wrow,
+                                                  const half2* __restrict__ arow, int nblk,
+                                                  int lane) {
+    float acc = 0.0f;
+    for (int blk = lane; blk < nblk; blk += 32) {
+        const uint4* w16 = (const uint4*)(wrow + (long)blk * 32);
+        uint4 w01 = w16[0], w23 = w16[1];
+        unsigned wu[8] = {w01.x, w01.y, w01.z, w01.w, w23.x, w23.y, w23.z, w23.w};
+        half2 a[16];
+#pragma unroll
+        for (int w = 0; w < 16; w++) a[w] = arow[(size_t)w * nblk + blk];
+        if (ACC32) {
+            float bs = 0.0f;
+#pragma unroll
+            for (int k = 0; k < 8; k++) {
+                float2 p0 = __half22float2(__hmul2(e4m3x2_to_half2((unsigned short)(wu[k] & 0xFFFF)), a[2 * k]));
+                float2 p1 = __half22float2(__hmul2(e4m3x2_to_half2((unsigned short)(wu[k] >> 16)), a[2 * k + 1]));
+                bs = __fadd_rn(bs, __fadd_rn(__fadd_rn(p0.x, p0.y), __fadd_rn(p1.x, p1.y)));
+            }
+            acc = __fadd_rn(acc, bs);
+        } else {
+            half2 s = __float2half2_rn(0.0f);
+#pragma unroll
+            for (int k = 0; k < 8; k++) {
+                s = __hfma2(e4m3x2_to_half2((unsigned short)(wu[k] & 0xFFFF)), a[2 * k], s);
+                s = __hfma2(e4m3x2_to_half2((unsigned short)(wu[k] >> 16)), a[2 * k + 1], s);
+            }
+            acc = __fadd_rn(acc, __low2float(s) + __high2float(s));
+        }
+    }
+    return acc;
+}
+template <bool ACC32>
+__device__ __forceinline__ void e4m3_fused6_f16_body(
+        const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
+        const unsigned char* __restrict__ W2, const unsigned char* __restrict__ W3,
+        const unsigned char* __restrict__ W4, const unsigned char* __restrict__ W5,
+        const half2* __restrict__ acth, float* __restrict__ y0, float* __restrict__ y1,
+        float* __restrict__ y2, float* __restrict__ y3, float* __restrict__ y4,
+        float* __restrict__ y5, int in_f, int out0, int out1, int out2, int out3, int out4,
+        int out5, long row_bytes, float ws0, float ws1, float ws2, float ws3, float ws4,
+        float ws5) {
+    const unsigned char* const Ws[6] = {W0, W1, W2, W3, W4, W5};
+    float* const ys[6] = {y0, y1, y2, y3, y4, y5};
+    const int outs[6] = {out0, out1, out2, out3, out4, out5};
+    const float wss[6] = {ws0, ws1, ws2, ws3, ws4, ws5};
+    const int nblk = in_f / 32;
+    int b = blockIdx.x;
+#pragma unroll
+    for (int i = 0; i < 6; ++i) {
+        const int nb = (outs[i] + MEMRA_MMVQ_ROWS - 1) / MEMRA_MMVQ_ROWS;
+        if (b < nb) {
+            int o = b * MEMRA_MMVQ_ROWS + (int)threadIdx.y;
+            if (o >= outs[i]) return;
+            float acc = e4m3_row_dot_f16<ACC32>(Ws[i] + (long)o * row_bytes, acth, nblk,
+                                                (int)threadIdx.x);
+            acc = warp_reduce_sum(acc);
+            if (threadIdx.x == 0) ys[i][o] = acc * wss[i];
+            return;
+        }
+        b -= nb;
+    }
+}
+extern "C" __global__ void qmatvec_e4m3_mmvq_fused6_f16(
+        const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
+        const unsigned char* __restrict__ W2, const unsigned char* __restrict__ W3,
+        const unsigned char* __restrict__ W4, const unsigned char* __restrict__ W5,
+        const half2* __restrict__ acth, float* __restrict__ y0, float* __restrict__ y1,
+        float* __restrict__ y2, float* __restrict__ y3, float* __restrict__ y4,
+        float* __restrict__ y5, int in_f, int out0, int out1, int out2, int out3, int out4,
+        int out5, long row_bytes, float ws0, float ws1, float ws2, float ws3, float ws4,
+        float ws5) {
+    e4m3_fused6_f16_body<false>(W0, W1, W2, W3, W4, W5, acth, y0, y1, y2, y3, y4, y5, in_f, out0,
+                                out1, out2, out3, out4, out5, row_bytes, ws0, ws1, ws2, ws3, ws4,
+                                ws5);
+}
+extern "C" __global__ void qmatvec_e4m3_mmvq_fused6_f16_acc32(
+        const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
+        const unsigned char* __restrict__ W2, const unsigned char* __restrict__ W3,
+        const unsigned char* __restrict__ W4, const unsigned char* __restrict__ W5,
+        const half2* __restrict__ acth, float* __restrict__ y0, float* __restrict__ y1,
+        float* __restrict__ y2, float* __restrict__ y3, float* __restrict__ y4,
+        float* __restrict__ y5, int in_f, int out0, int out1, int out2, int out3, int out4,
+        int out5, long row_bytes, float ws0, float ws1, float ws2, float ws3, float ws4,
+        float ws5) {
+    e4m3_fused6_f16_body<true>(W0, W1, W2, W3, W4, W5, acth, y0, y1, y2, y3, y4, y5, in_f, out0,
+                               out1, out2, out3, out4, out5, row_bytes, ws0, ws1, ws2, ws3, ws4,
+                               ws5);
+}
+// f32 row(s) -> f16 lane-major with NATURAL pairs: half2 word w of block b = elements
+// (b*32 + 2w, b*32 + 2w + 1), at half2 index r*nblk*16 + w*nblk + b. One thread per half2.
+extern "C" __global__ void memra_f32_to_f16_lane_major_nat(const float* __restrict__ x,
+                                                           half2* __restrict__ out, int rows,
+                                                           int nblk) {
+    long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    long per_row = (long)nblk * 16;
+    if (i >= (long)rows * per_row) return;
+    long r = i / per_row;
+    int k = (int)(i - r * per_row);  // b*16 + w
+    int b = k >> 4, w = k & 15;
+    const float* src = x + r * (long)nblk * 32 + (long)b * 32 + (long)w * 2;
+    out[r * per_row + (long)w * nblk + b] = __floats2half2_rn(src[0], src[1]);
 }
 
 extern "C" __global__ void qmatvec_e4m3_mmvq_b2(

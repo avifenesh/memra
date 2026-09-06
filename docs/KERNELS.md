@@ -242,6 +242,7 @@ Header: "fused MoE router… bit-identical to host path" (moe_router.cu:1-4).
 |---|---|---|
 | `moe_router_topk_f32` | softmax + stable top-k + renorm | MEMRA_ROUTER_KERNEL=0 rollback (lib.rs:58, 211) |
 | `moe_router_sigmoid_topk_f32` | sigmoid-scored top-k | MEMRA_ROUTER_V2 (lib.rs:465, 2100) |
+| `qmatvec_e4m3_mmvq_fused6_f16` / `_acc32`, `memra_f32_to_f16_lane_major_nat` | f16 CLASS of the KDA six: cvt.f16x2.e4m3x2 + hfma2 on an f16 lane-major activation (natural pairs) | MEMRA_KDA6_F16 (default OFF, not dispatched; gate `tests/kda6_f16_gpu.rs`, bench `kda6_f16_bench`) |
 | `memra_router_fused_f32` / `_dexp` | router GEMV + last-block sigmoid top-k, one launch | MEMRA_ROUTER_FUSED (default OFF; gate `tests/router_fused_gpu.rs`) |
 | `moe_router_topk_scaled_f32` | scaled top-k | MEMRA_ROUTER_KERNEL / _PREFILL_EXACT (lib.rs:202-205) |
 | `nvfp4_ep_stage_inputs`, `moe_sel_w_mirror` | one-launch peer-read input BF16 staging and grid-capable route-id/weight mirroring for automatic EP | MEMRA_PARALLEL_EP_DEVICE_ROUTER; MEMRA_PARALLEL_EP_Q8_ACT |
