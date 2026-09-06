@@ -71,8 +71,30 @@ fn main() -> Res<()> {
             .count();
         assert_eq!(bad, 0, "all-reduce differs from the host sum at n={n}");
 
-        // timed: the one-shot, and the host-bounce shape it replaces, interleaved
+        // correctness of the one-shot arm at this size, before it is timed
+        let mut ya = ea.htod(&ha)?;
+        let mut yb = eb.htod(&hb)?;
+        link.all_reduce_1stage(&engines, &mut [&mut ya, &mut yb], n)?;
+        let oa = ea.dtoh_view(&ya.slice(0..n))?;
+        let ob = eb.dtoh_view(&yb.slice(0..n))?;
+        let bad1 = (0..n)
+            .filter(|&i| {
+                oa[i].to_bits() != want[i].to_bits() || ob[i].to_bits() != want[i].to_bits()
+            })
+            .count();
+        assert_eq!(
+            bad1, 0,
+            "one-shot all-reduce differs from the host sum at n={n}"
+        );
+        assert_eq!(
+            link.barrier_errors(&engines)?,
+            vec![0, 0],
+            "barrier refused at n={n}"
+        );
+
+        // timed: the pipeline, the one-shot, and the host-bounce shape they replace, interleaved
         let mut t_ar = f64::MAX;
+        let mut t_one = f64::MAX;
         let mut t_host = f64::MAX;
         for _ in 0..5 {
             ea.stream().synchronize()?;
@@ -86,6 +108,19 @@ fn main() -> Res<()> {
             let us = t0.elapsed().as_secs_f64() * 1e6 / reps as f64;
             if us < t_ar {
                 t_ar = us;
+            }
+
+            ea.stream().synchronize()?;
+            eb.stream().synchronize()?;
+            let t2 = Instant::now();
+            for _ in 0..reps {
+                link.all_reduce_1stage(&engines, &mut [&mut ya, &mut yb], n)?;
+            }
+            ea.stream().synchronize()?;
+            eb.stream().synchronize()?;
+            let us = t2.elapsed().as_secs_f64() * 1e6 / reps as f64;
+            if us < t_one {
+                t_one = us;
             }
 
             let t1 = Instant::now();
@@ -104,9 +139,11 @@ fn main() -> Res<()> {
             }
         }
         println!(
-            "[tp-ar] n={n:6} ({:5.1} KiB)  one-shot {t_ar:8.2} us   host-bounce {t_host:8.2} us   {:6.1}x",
+            "[tp-ar] n={n:6} ({:5.1} KiB)  1stage {t_one:7.2} us   push-fold {t_ar:7.2} us   \
+             host-bounce {t_host:8.2} us   1stage is {:.1}x the pipeline, {:.1}x the bounce",
             (n * 4) as f64 / 1024.0,
-            t_host / t_ar.max(1e-9)
+            t_ar / t_one.max(1e-9),
+            t_host / t_one.max(1e-9)
         );
     }
     Ok(())

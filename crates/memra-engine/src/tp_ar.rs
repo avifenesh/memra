@@ -42,6 +42,26 @@ unsafe extern "C" {
         dst_stride: i64,
         stream: *mut c_void,
     ) -> i32;
+    /// Size of one rank's barrier signal block, so the host allocates what the kernel expects.
+    pub fn memra_tp_ar_signal_bytes() -> i32;
+    /// ONE-SHOT all-reduce: one launch per rank, no CUDA events. Reads BOTH ranks' inputs in
+    /// GLOBAL RANK ORDER (so every rank computes the same expression, not a mirror image) and
+    /// writes the full sum. `out` may alias this rank's input.
+    #[allow(clippy::too_many_arguments)]
+    // allow: two operands in rank order, two signal blocks, this rank's index, the length, the refusal word and the launch shape ARE the call
+    pub fn memra_tp_ar_1stage(
+        in_rank0: *const f32,
+        in_rank1: *const f32,
+        out: *mut f32,
+        self_sg: *mut c_void,
+        peer_sg: *mut c_void,
+        rank: i32,
+        n: i64,
+        err: *mut i32,
+        spin_limit: i64,
+        blocks: i32,
+        stream: *mut c_void,
+    ) -> i32;
     /// `dst += stage`, `n` f32. Enqueued on the caller's stream, which must already be ordered
     /// after the peer's push.
     pub fn memra_tp_ar_fold(dst: *mut f32, stage: *const f32, n: i64, stream: *mut c_void) -> i32;
@@ -56,7 +76,21 @@ unsafe extern "C" {
 /// pending fold is still writing into it. Every rank must be drained before the link goes away.
 /// Found the hard way 2026-09-06: the gate read only rank 0 after a repeat call, and the next
 /// size in the sweep came back with rank 1's staging garbage in it.
+/// Ticks the one-shot arm's device-side barrier tolerates before refusing. B200 runs its SM clock
+/// near 2 GHz, so 2e9 is about a second: long enough that no legitimate peer misses it, short
+/// enough that a wiring bug is a readable refusal within a second instead of a wedged card.
+/// vLLM's equivalent barrier is unbounded; a bound is cheap here and a hung card is not.
+pub const AR_SPIN_LIMIT: i64 = 2_000_000_000;
+
+/// Blocks the one-shot arm launches per rank. Bounded by the kernel's per-block counter arrays,
+/// and both ranks MUST agree on it: the barrier pairs block `i` with the peer's block `i`.
+pub const AR_BLOCKS: i32 = 72;
+
 pub struct ArLink {
+    /// Per-rank barrier signal block for the one-shot arm, peer-visible and zeroed once.
+    sig: Vec<CudaSlice<u8>>,
+    /// Per-rank refusal word for the one-shot arm's bounded wait.
+    err: Vec<CudaSlice<i32>>,
     /// Recorded on a rank's OWN stream so a PRODUCER can order its push after everything that rank
     /// has already enqueued against the destination. Without it a push races the consumer's own
     /// writes to the same buffer: its zero-fill, or simply the stream-ordered allocation that
@@ -98,15 +132,23 @@ impl ArLink {
         }
         let mut pushed = Vec::with_capacity(2);
         let mut ready = Vec::with_capacity(2);
+        let mut sig = Vec::with_capacity(2);
+        let mut err = Vec::with_capacity(2);
+        // SAFETY: reads a compile-time constant out of the kernel TU.
+        let sig_bytes = unsafe { memra_tp_ar_signal_bytes() } as usize;
         for e in engines {
             let _main = e.gpu.enter_main()?;
             pushed.push(e.ctx().new_event(None)?);
             ready.push(e.ctx().new_event(None)?);
+            sig.push(e.htod_bytes(&vec![0u8; sig_bytes])?);
+            err.push(e.htod_i32(&[0i32])?);
         }
         Ok(Self {
             stage: Vec::new(),
             pushed,
             ready,
+            sig,
+            err,
             staged: 0,
         })
     }
@@ -267,6 +309,91 @@ impl ArLink {
             e.stream().wait(&self.pushed[peer])?;
         }
         Ok(())
+    }
+
+    /// ONE-SHOT all-reduce: one kernel per rank, no CUDA events, no staging.
+    ///
+    /// This is the shape vLLM's `cross_device_reduce_1stage` uses, and the reason to prefer it
+    /// over [`Self::all_reduce`] is the cost of the alternative rather than taste. The push-then-
+    /// fold pipeline needs 4 kernel launches and 8 cross-context CUDA event operations per reduce,
+    /// which measured 20-26 us for 16 KB on a pair whose fabric moves 956 GB/s: host overhead, not
+    /// bandwidth. Here each rank's kernel synchronises through flags in the peer's memory, reads
+    /// BOTH inputs directly, and computes the whole sum, so the host does two launches and nothing
+    /// else.
+    ///
+    /// Operands are indexed by GLOBAL RANK, so every rank evaluates the same expression and the
+    /// result is bitwise identical across ranks by construction rather than by luck.
+    ///
+    /// The kernels spin on each other, so BOTH must be enqueued before either can finish; they are
+    /// launched back to back below and the ranks are on different devices, so neither can starve
+    /// the other. The wait is bounded and writes a refusal word rather than hanging the card.
+    pub fn all_reduce_1stage(
+        &mut self,
+        engines: &[&Engine],
+        x: &mut [&mut CudaSlice<f32>],
+        n: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if engines.len() != 2 || x.len() != 2 {
+            return Err("tp all-reduce: this arm is two ranks".into());
+        }
+        if n == 0 {
+            return Err("tp all-reduce needs a non-zero element count".into());
+        }
+        // Resolve every address under ITS OWN rank's context before any launch enters a context of
+        // its own; reading a peer's `device_ptr` under the wrong context resolved wrongly once.
+        let mut inp = [std::ptr::null::<f32>(); 2];
+        let mut sig = [std::ptr::null_mut::<std::ffi::c_void>(); 2];
+        let mut errp = [std::ptr::null_mut::<i32>(); 2];
+        for r in 0..2 {
+            let e = engines[r];
+            let _main = e.gpu.enter_main()?;
+            let s = e.stream();
+            inp[r] = x[r].device_ptr(&s).0 as *const f32;
+            sig[r] = self.sig[r].device_ptr(&s).0 as *mut std::ffi::c_void;
+            errp[r] = self.err[r].device_ptr(&s).0 as *mut i32;
+        }
+        let blocks = AR_BLOCKS.min(n.div_ceil(512).max(1) as i32);
+        for r in 0..2 {
+            let e = engines[r];
+            let _main = e.gpu.enter_main()?;
+            let st = e.stream();
+            // SAFETY: peer access is granted both ways, so the peer's input and signal pointers
+            // are dereferenceable from this context; every buffer is sized above.
+            let rc = unsafe {
+                memra_tp_ar_1stage(
+                    inp[0],
+                    inp[1],
+                    inp[r] as *mut f32,
+                    sig[r],
+                    sig[1 - r],
+                    r as i32,
+                    n as i64,
+                    errp[r],
+                    AR_SPIN_LIMIT,
+                    blocks,
+                    st.cu_stream() as *mut c_void,
+                )
+            };
+            if rc != 0 {
+                return Err(format!("memra_tp_ar_1stage rc {rc} on rank {r}").into());
+            }
+        }
+        Ok(())
+    }
+
+    /// Per-rank refusal words from the one-shot arm's bounded wait: 0 is clean, 40043 is the entry
+    /// barrier expiring and 40044 the exit barrier. Costs a drain, so it belongs in gates and
+    /// after a failure, never on the walk.
+    pub fn barrier_errors(
+        &self,
+        engines: &[&Engine],
+    ) -> Result<Vec<i32>, Box<dyn std::error::Error>> {
+        let mut out = Vec::with_capacity(2);
+        for (r, e) in engines.iter().enumerate() {
+            let _main = e.gpu.enter_main()?;
+            out.push(e.dtoh_i32(&self.err[r])?[0]);
+        }
+        Ok(out)
     }
 
     /// One all-reduce over `x[r]`, `x[r]` living on `engines[r]`. Every rank ends holding the

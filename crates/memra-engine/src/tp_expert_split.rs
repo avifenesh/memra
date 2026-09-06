@@ -115,10 +115,12 @@ pub fn split_rows(
     let half = h.out_f / ranks;
     let src = h.bytes.as_bytes();
     let stride = half * h.row_bytes;
-    let mut bytes = Vec::with_capacity(h.n_expert * stride);
+    // One contiguous run per expert, so this half is cheap either way; sized up front to match
+    // the column split's shape.
+    let mut bytes = vec![0u8; h.n_expert * stride];
     for ex in 0..h.n_expert {
         let base = ex * h.expert_stride + rank * stride;
-        bytes.extend_from_slice(&src[base..base + stride]);
+        bytes[ex * stride..(ex + 1) * stride].copy_from_slice(&src[base..base + stride]);
     }
     Ok(ExpertShard {
         bytes,
@@ -181,12 +183,20 @@ pub fn split_cols(
     let keep = half * h.row_bytes / h.in_f;
     let src = h.bytes.as_bytes();
     let stride = h.out_f * keep;
-    let mut bytes = Vec::with_capacity(h.n_expert * stride);
+    // One allocation and a flat write, not `n_expert * out_f` pushes into a growing Vec. The
+    // column split is the expensive half of this sharder: for the served MoE it is 288 experts x
+    // 4096 rows per layer, and the first cut ran a per-row `extend_from_slice` into a Vec that
+    // rechecked its capacity every time, which measured about TEN MINUTES of single-threaded host
+    // time per boot on the pair with the GPUs idle throughout. `copy_from_slice` into a
+    // pre-sized buffer is the same bytes with the bookkeeping removed.
+    let mut bytes = vec![0u8; h.n_expert * stride];
     for ex in 0..h.n_expert {
         let ebase = ex * h.expert_stride;
+        let dbase = ex * stride;
         for row in 0..h.out_f {
-            let base = ebase + row * h.row_bytes + rank * keep;
-            bytes.extend_from_slice(&src[base..base + keep]);
+            let sb = ebase + row * h.row_bytes + rank * keep;
+            let db = dbase + row * keep;
+            bytes[db..db + keep].copy_from_slice(&src[sb..sb + keep]);
         }
     }
     Ok(ExpertShard {

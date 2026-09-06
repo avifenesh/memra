@@ -173,3 +173,52 @@ fn broadcast_and_all_gather_move_bytes_exactly() {
         eb.stream().synchronize().unwrap();
     }
 }
+
+/// The one-shot arm, which is the shape that matters: one kernel per rank, no CUDA events. Same
+/// bitwise bar as the pipeline arm, plus the barrier's refusal word, plus repeat calls (the
+/// alternating start/end counters are exactly what a second call exercises, and getting them wrong
+/// shows up as a hang or a stale flag rather than a wrong number).
+#[test]
+fn one_shot_all_reduce_matches_the_host_sum_bitwise() {
+    let Some((ea, eb)) = pair() else {
+        eprintln!("needs two CUDA devices; skipping");
+        return;
+    };
+    let engines = [&ea, &eb];
+    for &n in &[1usize, 1024, 4096, 16384, 65536] {
+        let ha = vecf(n, 11 + n as u64);
+        let hb = vecf(n, 77 + n as u64);
+        let want: Vec<f32> = ha.iter().zip(&hb).map(|(x, y)| x + y).collect();
+        let mut link = ArLink::new(&engines).unwrap();
+        let mut xa = ea.htod(&ha).unwrap();
+        let mut xb = eb.htod(&hb).unwrap();
+        for round in 0..3 {
+            link.all_reduce_1stage(&engines, &mut [&mut xa, &mut xb], n)
+                .unwrap();
+            let ga = ea.dtoh_view(&xa.slice(0..n)).unwrap();
+            let gb = eb.dtoh_view(&xb.slice(0..n)).unwrap();
+            // Round r doubles the previous sum, so the expected value is want * 2^r.
+            let scale = (1u32 << round) as f32;
+            for i in 0..n {
+                let w = want[i] * scale;
+                assert_eq!(
+                    ga[i].to_bits(),
+                    w.to_bits(),
+                    "rank 0 n={n} round={round} i={i}"
+                );
+                assert_eq!(
+                    gb[i].to_bits(),
+                    w.to_bits(),
+                    "rank 1 n={n} round={round} i={i}"
+                );
+            }
+        }
+        assert_eq!(
+            link.barrier_errors(&engines).unwrap(),
+            vec![0, 0],
+            "a barrier refused at n={n}"
+        );
+        ea.stream().synchronize().unwrap();
+        eb.stream().synchronize().unwrap();
+    }
+}

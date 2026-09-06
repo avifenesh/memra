@@ -10303,12 +10303,32 @@ impl HybridModel {
                     dev.matmul(wo, a, t)?
                 });
             }
+            // MEMRA_TP_AR_1STAGE: this is a COLLECTIVE, not a hop. Done as a push plus a fold it
+            // costs 4 launches and 8 cross-context event operations; the one-shot is two launches
+            // and no events. It leaves the sum on both ranks, which is a superset of what this
+            // site needs and is what a symmetric walk will want next.
             let mut y = partials.remove(0);
-            for (r, peer_y) in partials.iter().enumerate() {
-                let landed =
-                    crate::tp_transport::return_row_to_root(&hop, r + 1, peer_y, t * n_embd)?;
-                let mut dst = y.slice_mut(0..t * n_embd);
-                e.axpy_into(&landed, 1.0, &mut dst, t * n_embd)?;
+            // The door is asked BEFORE the peer's partial is taken out of `partials`. Taking it
+            // first and putting it back on decline drops the peer's contribution entirely
+            // whenever the one-shot declines, which is exactly what the same-device gate does:
+            // the gate caught that as max_rel 2.9e2 with the tape broken.
+            let reduced = if partials.len() == 1 && rt.ar_1stage_available() {
+                let mut peer_y = partials.remove(0);
+                let done = rt.ar_1stage(e, &mut [&mut y, &mut peer_y], t * n_embd)?;
+                if !done {
+                    partials.insert(0, peer_y);
+                }
+                done
+            } else {
+                false
+            };
+            if !reduced {
+                for (r, peer_y) in partials.iter().enumerate() {
+                    let landed =
+                        crate::tp_transport::return_row_to_root(&hop, r + 1, peer_y, t * n_embd)?;
+                    let mut dst = y.slice_mut(0..t * n_embd);
+                    e.axpy_into(&landed, 1.0, &mut dst, t * n_embd)?;
+                }
             }
             return Ok(y);
         }
@@ -13854,12 +13874,28 @@ impl HybridModel {
         }
 
         // One reduction for the whole layer. Root keeps its own chain and folds each peer's.
+        // MEMRA_TP_AR_1STAGE: as in the MLA half, this is a collective and gets the one-shot.
         let mut moe_out = outs.remove(0);
-        for (r, peer_out) in outs.iter().enumerate() {
-            let landed =
-                crate::tp_transport::return_row_to_root(&hop, r + 1, peer_out, t * n_embd)?;
-            let mut dst = moe_out.slice_mut(0..t * n_embd);
-            e.axpy_into(&landed, 1.0, &mut dst, t * n_embd)?;
+        // As in the MLA half: ask the door before taking the peer's output out of `outs`, and put
+        // it back if the one-shot declines, or the fallback below iterates an empty list and the
+        // peer's whole contribution vanishes.
+        let reduced = if outs.len() == 1 && rt.ar_1stage_available() {
+            let mut peer_out = outs.remove(0);
+            let done = rt.ar_1stage(e, &mut [&mut moe_out, &mut peer_out], t * n_embd)?;
+            if !done {
+                outs.insert(0, peer_out);
+            }
+            done
+        } else {
+            false
+        };
+        if !reduced {
+            for (r, peer_out) in outs.iter().enumerate() {
+                let landed =
+                    crate::tp_transport::return_row_to_root(&hop, r + 1, peer_out, t * n_embd)?;
+                let mut dst = moe_out.slice_mut(0..t * n_embd);
+                e.axpy_into(&landed, 1.0, &mut dst, t * n_embd)?;
+            }
         }
 
         Self::moe_shexp_add(e, m, z, zq8, t, cfg, lim_shexp, &mut moe_out)?;

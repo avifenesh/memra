@@ -181,6 +181,10 @@ pub struct Glm5TpRt {
     /// The peer-pull ordering primitives — `Some` only on the peer-pull arm, and only after
     /// its byte-integrity ladder passed.
     link: Option<crate::tp_transport::PeerPullLink>,
+    /// The one-shot all-reduce's per-rank state (`MEMRA_TP_AR_1STAGE`), built on first use.
+    /// Behind a mutex because the runtime is shared through an `Arc` and the walk takes it by
+    /// `&self`; the lock is uncontended at batch 1 and costs nothing against a 20 us collective.
+    ar: std::sync::Mutex<Option<crate::tp_ar::ArLink>>,
 }
 
 impl Glm5TpRt {
@@ -207,6 +211,7 @@ impl Glm5TpRt {
             same_device_gate: false,
             transport: crate::tp_transport::TpTransport::HostCanonical,
             link: None,
+            ar: std::sync::Mutex::new(None),
         })
     }
 
@@ -230,7 +235,48 @@ impl Glm5TpRt {
             same_device_gate: true,
             transport: crate::tp_transport::TpTransport::HostCanonical,
             link: None,
+            ar: std::sync::Mutex::new(None),
         })
+    }
+
+    /// One-shot all-reduce over `x[r]`, `x[r]` living on rank `r`'s engine, when
+    /// `MEMRA_TP_AR_1STAGE` is armed and the runtime is a real two-device group. Returns `false`
+    /// when it declined, in which case the caller's own return-to-root still owes the work.
+    ///
+    /// WHY THIS EXISTS SEPARATELY from the transport arms: those move bytes hop by hop, and the
+    /// walk's two REDUCE sites are not hops, they are collectives. Doing them as a push plus a
+    /// fold costs 4 launches and 8 cross-context event operations, which measured 20-26 us for
+    /// 16 KB on a 956 GB/s fabric. The one-shot is two launches and no events.
+    /// Whether [`Self::ar_1stage`] can serve this runtime at all: the door, a real two-device
+    /// group, and not the same-device gate. Split out so a caller can ask BEFORE it rearranges the
+    /// buffers it would hand over, which is the shape that stops a decline from silently dropping
+    /// a rank's contribution.
+    pub fn ar_1stage_available(&self) -> bool {
+        tp_ar_1stage_on() && self.ranks() == 2 && !self.same_device_gate
+    }
+
+    pub fn ar_1stage(
+        &self,
+        root: &Engine,
+        x: &mut [&mut CudaSlice<f32>],
+        n: usize,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        if !self.ar_1stage_available() {
+            return Ok(false);
+        }
+        let engines: Vec<&Engine> = std::iter::once(root).chain(self.peers.iter()).collect();
+        let mut guard = self
+            .ar
+            .lock()
+            .map_err(|_| "glm5-tp one-shot all-reduce: the link mutex is poisoned")?;
+        if guard.is_none() {
+            *guard = Some(crate::tp_ar::ArLink::new(&engines)?);
+        }
+        guard
+            .as_mut()
+            .expect("built above")
+            .all_reduce_1stage(&engines, x, n)?;
+        Ok(true)
     }
 
     /// Rank count of this runtime (root + peers).
@@ -1345,9 +1391,18 @@ pub(crate) fn shard_mla_layer(
         peers.push(rank_shard(&rt.peers[r - 1], r)?);
     }
     if !MLA_MARKED.swap(true, Ordering::Relaxed) {
+        // The `wo=` field must name the shard this load ACTUALLY took, not the one this arm used
+        // to take. Since lane/tp-expert-split-20260906 the same door that splits the experts also
+        // turns `wo` row-parallel, and a hardcoded "column-over-gather" here reported the wrong
+        // one on every split boot. A receipt line is only worth what its arguments say.
+        let wo_shape = if glm5_tp_expert_split_on() {
+            "row-parallel-partial-sums"
+        } else {
+            "column-over-gather"
+        };
         eprintln!(
             "[glm5-tp-mla] head shard armed: ranks={ranks} heads_per_rank={hl} kv_rank={} \
-             latent=replicated indexer=replicated wo=column-over-gather transport={} \
+             latent=replicated indexer=replicated wo={wo_shape} transport={} \
              performance_claim=false",
             g.kv_rank,
             rt.transport.name(),
@@ -1537,6 +1592,12 @@ pub(crate) fn arm_moe_ep(
     // work, so the two arms are exclusive rather than composable.
     if glm5_tp_expert_split_on() {
         let n_embd = m.gate_inp.in_features();
+        // Drop the root-resident full slab FIRST. The half-expert shards supersede it exactly as
+        // the EP slices do at the bottom of this function, and holding both does not fit: the pair
+        // OOM'd on the served mint with the resident set at 187.54 GB of a 189.63 GB free budget
+        // and the shards needing ~94 GB on top. This early return used to skip that line, which is
+        // the whole bug.
+        m.dev_exps = None;
         m.glm5_tp_split = Some(shard_moe_layer_split(e, rt, m, n_embd)?);
         return Ok(());
     }
@@ -1736,6 +1797,20 @@ impl Glm5TpSplitExps {
     pub fn ranks(&self) -> usize {
         self.slabs.len()
     }
+}
+
+/// `MEMRA_TP_AR_1STAGE=1` (lane/tp-ar-1stage-20260906, default OFF, decide-by 2026-09-20): the
+/// walk's two REDUCE sites take the one-shot all-reduce (`memra_tp_ar_1stage`) instead of a
+/// return-to-root hop.
+///
+/// WHY. A reduce done as a push plus a fold costs 4 kernel launches and 8 cross-context CUDA event
+/// operations, which measured 20-26 us for 16 KB on a pair whose fabric moves 956 GB/s: host
+/// overhead, not bandwidth. vLLM's `cross_device_reduce_1stage` is ONE kernel per rank and NO
+/// events, synchronising through flags in the peer's memory and reading both inputs directly. This
+/// is that shape. Requires a real two-device group; it declines on the same-device gate, where a
+/// kernel peer store is undefined.
+pub fn tp_ar_1stage_on() -> bool {
+    std::env::var("MEMRA_TP_AR_1STAGE").as_deref() == Ok("1")
 }
 
 /// `MEMRA_GLM5_TP_EXPERT_SPLIT=1` (lane/tp-expert-split-20260906, default OFF, decide-by
