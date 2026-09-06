@@ -14,8 +14,8 @@
 //! Arms:
 //!   * `scalar` reproduces the old probe's ACCESS SHAPE at the same sizes, so the new number
 //!     is anchored to the one it replaces rather than floating free.
-//!   * `v4` is the same bytes through 128-bit loads.
-//!   Both sweep ILP and grid so neither arm loses on a tuning choice the other got right.
+//!   * `v4` is the same bytes through 128-bit loads. Both contiguous arms sweep ILP and grid,
+//!     so neither loses on a tuning choice the other got right.
 //!   * `slabs` reads N disjoint slabs instead of one contiguous run. That is the MoE expert
 //!     read: a token touches 9 of 288 experts per layer, each a ~14 MB slab scattered
 //!     through a pool far larger than any cache. The default slab set is a WHOLE TOKEN's
