@@ -8115,6 +8115,7 @@ impl Engine {
         Ok(act)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn moe_gate_up_preclamp8_q8_rows(
         &self,
         ptrs: &CudaSlice<u64>,
