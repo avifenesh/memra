@@ -1276,6 +1276,20 @@ pub(crate) fn sig_expf_dev_on() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_SIG_EXPF_DEV").as_deref() == Ok("1"))
 }
 
+/// `MEMRA_ROUTER_FUSED=1` (lane/router-fused-20260906, default OFF, decide-by 2026-09-20): the MoE
+/// router chain as ONE launch, the GEMV with the sigmoid top-k run by the last block to finish.
+/// The census prices the chain at 0.47 ms per token in three launches, and the 6.8 us top-k is a
+/// one-block latency-bound kernel whose device time is fixed cost; deleting its launch is the
+/// lever. Consumed by the TP expert split's device-routed half first; the served t=1 vrows path
+/// is the follow-up. Bit-identical selection (gate `tests/router_fused_gpu.rs`).
+pub fn router_fused_on() -> bool {
+    std::env::var("MEMRA_ROUTER_FUSED").as_deref() == Ok("1")
+}
+
+/// Fused-router launches (gate non-vacuity, box engagement receipt).
+pub static ROUTER_FUSED_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 /// Select the sigmoid-router kernel: the device-libm `expf` twin under `MEMRA_SIG_EXPF_DEV`,
 /// else the shipped host-transcribed sigmoid. (The barrier-lean `_fast` twins and their door
 /// `MEMRA_TOPK_FAST` were removed 2026-09-06 on a neutral model-scale row.)
@@ -7304,6 +7318,87 @@ impl Engine {
             b.launch(cfg)?;
         }
         Ok((sel_idx, sel_w))
+    }
+
+    /// The router chain in ONE launch (`MEMRA_ROUTER_FUSED`, lane/router-fused-20260906): the
+    /// `router_gemv_f32_w8` GEMV with `moe_router_sigmoid_topk_f32`'s sigmoid and top-k run by the
+    /// block that finishes last. Returns `(logits, sel_idx, sel_w)`; the logits are the GEMV's
+    /// exact floats and the selection is bitwise the two-launch pair's (gate
+    /// `tests/router_fused_gpu.rs`). Two launches become one and the 6.8 us top-k kernel's fixed
+    /// cost goes with it. Refuses shapes the epilogue's two-candidates-per-thread layout cannot
+    /// hold (`n_expert > 512`).
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)] // allow: the router's operands plus its shape and the two top-k knobs ARE the call; the triple is the chain's three outputs
+    pub fn router_sigmoid_topk_fused(
+        &self,
+        w: &CudaSlice<f32>,
+        x: &CudaSlice<f32>,
+        t: usize,
+        n_embd: usize,
+        n_expert: usize,
+        n_used: usize,
+        active_count: usize,
+        correction_bias: &CudaSlice<f32>,
+        active: &CudaSlice<u8>,
+        scaling_factor: f32,
+        route_norm: bool,
+    ) -> Result<(CudaSlice<f32>, CudaSlice<i32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        crate::sigrouter_contract::validate_active_count(n_used, active_count)?;
+        if n_expert == 0 || n_expert > 512 || n_used == 0 || n_used > 32 || n_used > n_expert {
+            return Err(format!(
+                "fused router shape unsupported: n_expert={n_expert} (<=512), n_used={n_used} (<=32)",
+            )
+            .into());
+        }
+        if w.len() < n_expert * n_embd
+            || x.len() < t * n_embd
+            || correction_bias.len() != n_expert
+            || active.len() != n_expert
+        {
+            return Err("fused router buffer mismatch".into());
+        }
+        let f = self.func(if crate::sig_expf_dev_on() {
+            "memra_router_fused_f32_dexp"
+        } else {
+            "memra_router_fused_f32"
+        });
+        let mut logits = self.alloc_uninit::<f32>(t * n_expert)?;
+        let mut sel_idx = self.alloc_uninit::<i32>(t * n_used)?;
+        let mut sel_w = self.alloc_uninit::<f32>(t * n_used)?;
+        // The arrival counter: one zeroed word per launch. A memset node, not a launch.
+        let mut ctr = self.zeros(1)?;
+        let cfg = LaunchConfig {
+            grid_dim: (n_expert as u32, t as u32, 1),
+            block_dim: (32, 8, 1),
+            shared_mem_bytes: 0,
+        };
+        let (ne_, nx, nu, tt, rn) = (
+            n_embd as i32,
+            n_expert as i32,
+            n_used as i32,
+            t as i32,
+            i32::from(route_norm),
+        );
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(w)
+            .arg(x)
+            .arg(&mut logits)
+            .arg(correction_bias)
+            .arg(active)
+            .arg(&mut sel_idx)
+            .arg(&mut sel_w)
+            .arg(&mut ctr)
+            .arg(&ne_)
+            .arg(&nx)
+            .arg(&nu)
+            .arg(&tt)
+            .arg(&scaling_factor)
+            .arg(&rn);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        ROUTER_FUSED_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Ok((logits, sel_idx, sel_w))
     }
 
     /// `moe_router_sigmoid_topk` writing into caller-owned buffers (alloc-free: child graphs

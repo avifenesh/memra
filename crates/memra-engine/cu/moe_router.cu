@@ -720,3 +720,166 @@ extern "C" __global__ void moe_router_topk_scaled_f32(
         }
     }
 }
+
+// ---------------------------------------------------------------- fused router (lane/router-fused-20260906)
+//
+// WHY. The decode census puts the router chain at 0.47 ms per token in three back-to-back
+// launches: `router_gemv_f32_w8` (42 x 4.3 us), `moe_router_sigmoid_topk_f32` (42 x 6.8 us for a
+// 288-wide sigmoid and an 8-deep top-k, which is eight sequential block-wide argmax passes with
+// two barriers each), then the pair-table build. The top-k kernel is the waste: one block, latency
+// bound, and its device time is fixed cost no matter how little it computes. This folds it into
+// the GEMV as a LAST-BLOCK EPILOGUE, so the chain is one launch: the GEMV blocks compute their
+// logits exactly as before, and the block that finishes last runs the sigmoid and the top-k over
+// the logits its siblings wrote.
+//
+// BIT-IDENTICAL SELECTION BY CONSTRUCTION. The GEMV body is `router_gemv_f32_w8` VERBATIM (same
+// 8-warp stride, same shuffle tree, same ordered warp-partial sum), so every logit is the same
+// float. The epilogue keeps `moe_router_sigmoid_topk_f32`'s expressions and its tie-break
+// (`ov > bv || (ov == bv && oi < bi)`), and the only structural change is that a thread may hold
+// TWO candidates (expert `tid` and `tid + blockDim`) because the GEMV block is 256 threads and
+// there are 288 experts: it argmaxes its own pair first with the same comparison, which cannot
+// change a lowest-index-wins argmax, then the block does what the original did.
+//
+// THE COUNTER. `ctr` is one device word the launcher zeroes (a memset node, cheaper than a launch);
+// each block bumps it after a `__threadfence()` so the last arriver sees every sibling's logit.
+
+template <bool DEXP>
+__device__ __forceinline__ float memra_router_sigmoid(float lg) {
+    if (DEXP) return 1.0f / (1.0f + expf(-lg));
+    float exp_neg = sigmoid_host_expf(-lg);
+    return 1.0f / (1.0f + exp_neg);
+}
+
+template <bool DEXP>
+__device__ __forceinline__ void memra_router_fused_kernel(
+        const float* __restrict__ w, const float* __restrict__ x, float* __restrict__ logits,
+        const float* __restrict__ correction_bias, const unsigned char* __restrict__ active,
+        int* __restrict__ sel_idx, float* __restrict__ sel_w, unsigned* __restrict__ ctr,
+        int n_embd, int n_experts, int n_used, int t, float scaling_factor, int route_norm) {
+    // ---- stage 1: router_gemv_f32_w8, verbatim ----
+    const int e = blockIdx.x;
+    const int tok = blockIdx.y;
+    __shared__ float ps[8];
+    __shared__ bool s_last;
+    if (e < n_experts && tok < t) {
+        const float* wr = w + (size_t)e * n_embd;
+        const float* xr = x + (size_t)tok * n_embd;
+        float s = 0.0f;
+        for (int i = threadIdx.x + threadIdx.y * 32; i < n_embd; i += 256) s += wr[i] * xr[i];
+#pragma unroll
+        for (int off = 16; off > 0; off >>= 1) s += __shfl_down_sync(0xFFFFFFFF, s, off);
+        if (threadIdx.x == 0) ps[threadIdx.y] = s;
+        __syncthreads();
+        if (threadIdx.y == 0 && threadIdx.x == 0) {
+            float acc = 0.0f;
+#pragma unroll
+            for (int wi = 0; wi < 8; ++wi) acc += ps[wi];
+            logits[(size_t)tok * n_experts + e] = acc;
+        }
+    }
+    // ---- arrival: the last block to finish owns the epilogue ----
+    __threadfence();
+    __syncthreads();
+    if (threadIdx.x == 0 && threadIdx.y == 0) {
+        unsigned total = (unsigned)n_experts * (unsigned)t;
+        unsigned old = atomicAdd(ctr, 1u);
+        s_last = (old == total - 1u);
+    }
+    __syncthreads();
+    if (!s_last) return;
+    __threadfence();
+
+    // ---- stage 2: sigmoid + top-k per token row, moe_router_sigmoid_topk_f32's program ----
+    const int tid = threadIdx.x + threadIdx.y * 32;  // 0..255
+    const int lane = tid & 31;
+    const int warp = tid >> 5;
+    const int nwarps = 8;
+    const unsigned FULL = 0xffffffffu;
+    __shared__ float s_val[32];
+    __shared__ int s_idx[32];
+    __shared__ int s_pick_idx;
+    __shared__ float s_pick_w[32];
+    __shared__ float s_score[1024];
+    for (int row = 0; row < t; ++row) {
+        const float* lg = logits + (size_t)row * n_experts;
+        // Each thread owns experts tid and tid + 256 (a 288-expert layout puts 32 in the second
+        // slot). Scores are computed exactly as the standalone kernel computes them.
+        float work0 = -FLT_MAX, work1 = -FLT_MAX;
+        for (int k = 0; k < 2; ++k) {
+            int ex = tid + k * 256;
+            const bool live = ex < n_experts && active[ex] != 0;
+            float lgv = live ? lg[ex] : 0.0f;
+            const float score = live ? memra_router_sigmoid<DEXP>(lgv) : 0.0f;
+            if (ex < 1024) s_score[ex] = score;
+            float wk = live ? score + correction_bias[ex] : -FLT_MAX;
+            if (k == 0) work0 = wk; else work1 = wk;
+        }
+        __syncthreads();
+        for (int j = 0; j < n_used; ++j) {
+            // own pair first: same comparison, lowest index wins on a tie
+            float bv = work0;
+            int bi = tid;
+            {
+                const float ov = work1;
+                const int oi = tid + 256;
+                if (ov > bv || (ov == bv && oi < bi)) { bv = ov; bi = oi; }
+            }
+            for (int o = 16; o > 0; o >>= 1) {
+                const float ov = __shfl_down_sync(FULL, bv, o);
+                const int oi = __shfl_down_sync(FULL, bi, o);
+                if (ov > bv || (ov == bv && oi < bi)) { bv = ov; bi = oi; }
+            }
+            if (lane == 0) { s_val[warp] = bv; s_idx[warp] = bi; }
+            __syncthreads();
+            if (warp == 0) {
+                float v = lane < nwarps ? s_val[lane] : -FLT_MAX;
+                int i = lane < nwarps ? s_idx[lane] : 0x7fffffff;
+                for (int o = 16; o > 0; o >>= 1) {
+                    const float ov = __shfl_down_sync(FULL, v, o);
+                    const int oi = __shfl_down_sync(FULL, i, o);
+                    if (ov > v || (ov == v && oi < i)) { v = ov; i = oi; }
+                }
+                if (lane == 0) { s_pick_idx = i; }
+            }
+            __syncthreads();
+            const int pick_idx = s_pick_idx;
+            if (tid == 0) {
+                sel_idx[(size_t)row * n_used + j] = pick_idx;
+                s_pick_w[j] = s_score[pick_idx];
+                sel_w[(size_t)row * n_used + j] = s_score[pick_idx];
+            }
+            if (tid == pick_idx) work0 = -FLT_MAX;
+            if (tid + 256 == pick_idx) work1 = -FLT_MAX;
+            __syncthreads();
+        }
+        if (tid == 0) {
+            float sum = 0.0f;
+            for (int j = 0; j < n_used; ++j) sum += s_pick_w[j];
+            if (route_norm) {
+                const float den = fmaxf(sum, 1e-20f);
+                for (int j = 0; j < n_used; ++j)
+                    sel_w[(size_t)row * n_used + j] = s_pick_w[j] / den * scaling_factor;
+            } else {
+                for (int j = 0; j < n_used; ++j)
+                    sel_w[(size_t)row * n_used + j] = s_pick_w[j] * scaling_factor;
+            }
+        }
+        __syncthreads();
+    }
+}
+
+extern "C" __global__ void __launch_bounds__(256) memra_router_fused_f32(
+        const float* w, const float* x, float* logits, const float* correction_bias,
+        const unsigned char* active, int* sel_idx, float* sel_w, unsigned* ctr, int n_embd,
+        int n_experts, int n_used, int t, float scaling_factor, int route_norm) {
+    memra_router_fused_kernel<false>(w, x, logits, correction_bias, active, sel_idx, sel_w, ctr,
+                                     n_embd, n_experts, n_used, t, scaling_factor, route_norm);
+}
+
+extern "C" __global__ void __launch_bounds__(256) memra_router_fused_f32_dexp(
+        const float* w, const float* x, float* logits, const float* correction_bias,
+        const unsigned char* active, int* sel_idx, float* sel_w, unsigned* ctr, int n_embd,
+        int n_experts, int n_used, int t, float scaling_factor, int route_norm) {
+    memra_router_fused_kernel<true>(w, x, logits, correction_bias, active, sel_idx, sel_w, ctr,
+                                    n_embd, n_experts, n_used, t, scaling_factor, route_norm);
+}
