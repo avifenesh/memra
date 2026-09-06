@@ -7294,35 +7294,39 @@ mod dspark_boundary_capture_tests {
         let grid = 64;
         // restored trunk of 13,440 rows, a 2,048-token suffix, new-prompt boundary at 14,592
         assert_eq!(
-            dspark_resume_split(DsparkCapture::Boundary(14_592), 13_440, 2_048, grid).unwrap(),
+            super::dspark_resume_split(DsparkCapture::Boundary(14_592), 13_440, 2_048, grid)
+                .unwrap(),
             Some(1_152)
         );
         // PromptEnd and Off never capture on resume
         assert_eq!(
-            dspark_resume_split(DsparkCapture::PromptEnd, 13_440, 2_048, grid).unwrap(),
+            super::dspark_resume_split(DsparkCapture::PromptEnd, 13_440, 2_048, grid).unwrap(),
             None
         );
         assert_eq!(
-            dspark_resume_split(DsparkCapture::Off, 13_440, 2_048, grid).unwrap(),
+            super::dspark_resume_split(DsparkCapture::Off, 13_440, 2_048, grid).unwrap(),
             None
         );
         // at or before the restored trunk: the entry restored from already covers it
         assert_eq!(
-            dspark_resume_split(DsparkCapture::Boundary(13_440), 13_440, 2_048, grid).unwrap(),
+            super::dspark_resume_split(DsparkCapture::Boundary(13_440), 13_440, 2_048, grid)
+                .unwrap(),
             None
         );
         assert_eq!(
-            dspark_resume_split(DsparkCapture::Boundary(13_376), 13_440, 2_048, grid).unwrap(),
+            super::dspark_resume_split(DsparkCapture::Boundary(13_376), 13_440, 2_048, grid)
+                .unwrap(),
             None
         );
         // at the suffix end: that is the header cut, the #248 bug
         assert_eq!(
-            dspark_resume_split(DsparkCapture::Boundary(15_488), 13_440, 2_048, grid).unwrap(),
+            super::dspark_resume_split(DsparkCapture::Boundary(15_488), 13_440, 2_048, grid)
+                .unwrap(),
             None
         );
         // a half shorter than PRIME_MIN_T leaves draft taps unfilled: skip, do not split
         assert_eq!(
-            dspark_resume_split(
+            super::dspark_resume_split(
                 DsparkCapture::Boundary(13_440 + PRIME_MIN_T - 1 + 0),
                 13_440,
                 2_048,
@@ -7332,7 +7336,7 @@ mod dspark_boundary_capture_tests {
             None
         );
         assert_eq!(
-            dspark_resume_split(
+            super::dspark_resume_split(
                 DsparkCapture::Boundary(15_488 - (PRIME_MIN_T - 1)),
                 13_440,
                 2_048,
@@ -7342,7 +7346,12 @@ mod dspark_boundary_capture_tests {
             None
         );
         // off-grid inside the suffix is an ERROR, never a silent unsplit prime
-        assert!(dspark_resume_split(DsparkCapture::Boundary(14_600), 13_440, 2_048, grid).is_err());
-        assert!(dspark_resume_split(DsparkCapture::Boundary(14_592), 13_440, 2_048, 0).is_err());
+        assert!(
+            super::dspark_resume_split(DsparkCapture::Boundary(14_600), 13_440, 2_048, grid)
+                .is_err()
+        );
+        assert!(
+            super::dspark_resume_split(DsparkCapture::Boundary(14_592), 13_440, 2_048, 0).is_err()
+        );
     }
 }
