@@ -979,6 +979,16 @@ pub(crate) fn b200_gemv_v2_level() -> u8 {
     })
 }
 
+/// `MEMRA_Q8_LM=1` (lane/q8-lane-major-20260907, default OFF, decide-by 2026-09-21): the t=1 W8
+/// matvec reads a LANE-MAJOR twin of the q8 mirror through `qmatvec_q8_0_mmvq_lm_v2`, one line per
+/// load instruction on both the weight and the staged-activation streams; bitwise `rp_v2`. Only
+/// the t=1 `q8_rp_v2` arm under `MEMRA_B200_GEMV_V2=1` reads it; the rp mirror stays for every
+/// other consumer. A second slab per W8 tensor (the trunk's q8 mirrors, ~tens of MB each).
+pub fn q8_lm_on() -> bool {
+    std::env::var("MEMRA_Q8_LM").as_deref() == Ok("1")
+}
+pub static Q8_LM_DISPATCHES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 pub(crate) fn b200_gemv_v2_on() -> bool {
     b200_gemv_v2_level() >= 1
 }
@@ -1535,6 +1545,9 @@ pub struct Engine {
     /// SECOND CONSUMER (2026-09-02): `MEMRA_GLM5_W8` reuses this SAME cache for the glm5_next
     /// KDA/MLA decode trunk — independent door, same building block, same key shape.
     w8_mirrors: Mutex<std::collections::HashMap<(u64, u32, u32), CudaSlice<u8>>>,
+    /// `MEMRA_Q8_LM=1`: the lane-major twin of each W8 mirror (lane/q8-lane-major-20260907), a
+    /// second slab per tensor because the rp layout stays the one every other W8 consumer reads.
+    w8_mirrors_lm: Mutex<std::collections::HashMap<(u64, u32, u32), CudaSlice<u8>>>,
     /// Per-`in_f` q8_1 activation scratch for those mirrors (allocating per call would cost
     /// more than the door saves).
     #[allow(clippy::type_complexity)]
@@ -3417,6 +3430,7 @@ impl Engine {
             sample,
             moe_cache: Mutex::new(None),
             w8_mirrors: Mutex::new(std::collections::HashMap::new()),
+            w8_mirrors_lm: Mutex::new(std::collections::HashMap::new()),
             w8_act: Mutex::new(std::collections::HashMap::new()),
             moe_cache_layout: Mutex::new(None),
             copy_stream,
@@ -24960,6 +24974,13 @@ impl Engine {
                 let mut interleaved = self.alloc_u8_uninit(out_f * Self::q8_0_row_bytes(in_f))?;
                 self.encode_q8_0_from_bf16(data, &mut interleaved, in_f, out_f)?;
                 let planar = self.build_q8_rp4_raw(&interleaved, in_f, out_f)?;
+                if q8_lm_on() {
+                    let lm = self.build_q8_lm_raw(&interleaved, in_f, out_f)?;
+                    self.w8_mirrors_lm
+                        .lock()
+                        .map_err(|_| "w8 lane-major mirror map is poisoned")?
+                        .insert(key, lm);
+                }
                 mirrors.insert(key, planar);
             }
         }
@@ -25136,6 +25157,22 @@ impl Engine {
                     "[b200-gemv-v2] engaged arm=q8_rp_v2 t=1 in_f={in_f} out_f={out_f} \
                      (W8 posture; MEMRA_B200_GEMV_V2=1)"
                 );
+            }
+            if q8_lm_on() {
+                let lms = self
+                    .w8_mirrors_lm
+                    .lock()
+                    .map_err(|_| "w8 lane-major mirror map is poisoned")?;
+                if let Some(lm) = lms.get(&key) {
+                    if Q8_LM_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+                        eprintln!(
+                            "[q8-lm] engaged: the t=1 W8 matvec reads the lane-major mirror \
+                             (MEMRA_Q8_LM=1; one line per load instruction on both streams)"
+                        );
+                    }
+                    self.qmatvec_q8_0_lm_v2_raw(lm, aq, ad, y, in_f, out_f, 1)?;
+                    return Ok(Some(()));
+                }
             }
             self.qmatvec_q8_0_rp_v2_raw(mirror, aq, ad, y, in_f, out_f, 1)?;
             return Ok(Some(()));
