@@ -73,6 +73,7 @@ struct ReadyPrompt<'a> {
 }
 
 impl ReadyPrompt<'_> {
+    #[allow(clippy::too_many_arguments)]
     fn measure(
         &self,
         spec: bool,
@@ -455,6 +456,9 @@ fn main() {
                 Dsv4Vt::Off
             }
         };
+        // Keep every mode that changes `select(tuned)` in this branch. Omitting
+        // one silently falls into the default six-row schedule and produces
+        // an incomplete receipt with no tuned arm (the best-ab failure mode).
         if sampler_ab
             || vt_ab
             || mirror_ab
