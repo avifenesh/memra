@@ -37,6 +37,46 @@ done
 [ -x "$HERE/argmax-margin-gate.sh" ] || { echo "release-battery: tools/argmax-margin-gate.sh missing" >&2; exit 1; }
 [ -r "$ROSTER" ] || { echo "release-battery: roster not readable: $ROSTER" >&2; exit 1; }
 
+
+# ---- CARD ISOLATION (memra#264) ------------------------------------------------------
+# This gate's verdict used to depend on a variable it never recorded: how much of the card
+# was free. On 2026-09-06 it passed at 02:18 on an empty card and FAILED at 03:0x with the
+# SAME BINARY, because an unrelated job had taken 3.3 GB of 24 and the 20 GB roster model no
+# longer seated its draft head resident. That sent a releaser bisecting source that had not
+# moved. Then the re-run failed again with no other tenant at all: the battery's OWN previous
+# cell was still handing memory back when the next one started.
+#
+# A gate whose answer depends on an unrecorded variable lies in both directions, and it lied
+# in the reassuring one first. So: record the free memory, WAIT for the card between cells,
+# and REFUSE rather than run when it cannot seat the model. A cell that cannot run must not
+# be allowed to produce either verdict — the same rule this file already applies to a skip.
+#
+# Deliberately NOT done: killing or waiting out other tenants. The rig's card is shared with
+# owner-run work and a release gate has no business evicting it; it says so and stops.
+gpu_free_mib() { nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits -i 0 2>/dev/null | head -1; }
+gpu_tenants() { nvidia-smi --query-compute-apps=pid,used_memory,process_name --format=csv,noheader 2>/dev/null; }
+
+# await_card <need_mib> <what> — wait up to CARD_WAIT_S for free memory to reach need.
+# Returns 0 when it does, 1 when it does not (the caller REFUSES; it never proceeds anyway).
+CARD_WAIT_S=${CARD_WAIT_S:-180}
+await_card() {
+  need=$1; what=$2; waited=0
+  while :; do
+    free=$(gpu_free_mib); [ -z "$free" ] && return 0      # no nvidia-smi: do not invent a gate
+    [ "$free" -ge "$need" ] && { CARD_FREE=$free; return 0; }
+    [ "$waited" -ge "$CARD_WAIT_S" ] && { CARD_FREE=$free; return 1; }
+    sleep 5; waited=$((waited + 5))
+  done
+}
+
+# Bytes the model file occupies, in MiB, plus the headroom a run needs on top of the weights
+# (KV, workspace, the draft plane). Measured shape, not a guess: ornith is 20 GB of weights
+# and needs ~21 GB free to seat its MoE MTP head resident on a 24 GB card.
+model_need_mib() {
+  sz=$(stat -c %s "$1" 2>/dev/null || echo 0)
+  echo $(( sz / 1048576 + ${CARD_HEADROOM_MIB:-1024} ))
+}
+
 FAILED=0; MISSING_OWN=0; OWN_ROWS=0; LINES=""
 note() { LINES="${LINES}$1"$'\n'; printf '%s\n' "$1"; }
 
@@ -109,6 +149,14 @@ while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
   # on a position whose prefill top-2 margin was 0.0256 against a config spread of 0.5540 —
   # i.e. it was about to file a defect against our own model that the repo already documents
   # as not-a-defect. The calibrated gate returns flips=0 bad=0 PASS on the same model.
+  NEED=$(model_need_mib "$path")
+  if ! await_card "$NEED" "$id argmax-margin"; then
+    note "$id  argmax-margin  REFUSED   card cannot seat the model (free ${CARD_FREE}MiB, need ${NEED}MiB after ${CARD_WAIT_S}s)"
+    gpu_tenants | sed 's/^/    on the card: /'
+    FAILED=1
+    continue
+  fi
+  note "$id  card  free=${CARD_FREE:-?}MiB need=${NEED}MiB"
   if OUT=$("$HERE/argmax-margin-gate.sh" "$path" 2>&1) && printf '%s' "$OUT" | grep -q "^  PASS:"; then
     note "$id  argmax-margin  PASS  $(printf '%s' "$OUT" | grep -m1 -o 'SUMMARY flips=[0-9]* bad=[0-9]*')"
   else
@@ -118,6 +166,17 @@ while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
       note "$id  argmax-margin  FAIL  $(printf '%s' "$OUT" | tail -1)"
     fi
     FAILED=1
+  fi
+  # The SAME refusal for run-spec. Until memra#264 only argmax-margin had one, and that
+  # asymmetry is what made a starved card read as an engine defect: argmax-margin said
+  # "SKIP (GPU out of memory — not an exactness signal)" and stopped, while run-spec ran
+  # anyway and died with CUDA_ERROR_STREAM_CAPTURE_UNSUPPORTED, which reads like a bug in
+  # the engine rather than a bug in the conditions (memra#263).
+  if ! await_card "$NEED" "$id run-spec"; then
+    note "$id  run-spec  REFUSED   card cannot seat the model (free ${CARD_FREE}MiB, need ${NEED}MiB after ${CARD_WAIT_S}s)"
+    gpu_tenants | sed 's/^/    on the card: /'
+    FAILED=1
+    continue
   fi
   if OUT=$("$BIN/run-spec" "$path" 2>&1) && printf '%s' "$OUT" | grep -q "SELF-CONSISTENCY PASS"; then
     note "$id  run-spec  PASS      K=1..8 self-consistency, identical to plain target"

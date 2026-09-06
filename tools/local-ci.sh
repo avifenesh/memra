@@ -248,6 +248,17 @@ if ! tools/test_local_ci_lock.sh; then
     exit 1
 fi
 
+# CARD-ISOLATION self-test for the release gate (memra#264). local-ci already waits out a
+# co-resident GPU process (MEMRA_CI_DIRTY_WAIT); release-battery.sh did not, and on
+# 2026-09-06 it passed on an empty card and failed with the SAME BINARY on a shared one,
+# which cost a bisect of source that had never moved. This arm holds the card and requires
+# the battery to REFUSE rather than produce either verdict. Same law as the lock self-test:
+# a gate outside the battery rots silently.
+if ! tools/test_release_battery_card.sh; then
+    echo "local-ci: release-battery card-isolation self-test FAILED — the release gate can be starved into a wrong verdict"
+    exit 1
+fi
+
 # ---- whole-run GPU lock: everything below this line may touch the GPU ----
 # The prelude above (build, unit suite, flags census, wiring gate, lock self-test) is
 # CPU-only by construction, so it runs OUTSIDE the lock and overlaps another lane's GPU
