@@ -9393,7 +9393,9 @@ fn run_resident_bank_expert_block_device(
 /// and must either stay inside one island or go through host memory. The per-host island map is
 /// fleet data and lives in the private deployment repo, never here; the engine's job is to
 /// refuse by name rather than to know which host it is on.
-pub(crate) fn grant_peer_access(
+/// Made `pub` for `tp_ar`'s bench and gate, which must arm the same peer access the walk uses
+/// rather than a second path that could differ from it.
+pub fn grant_peer_access(
     accessor: &Engine,
     owner: &Engine,
     label: &str,

@@ -269,6 +269,30 @@ through `float4`; the slab launcher reads N disjoint slabs at caller-given offse
 a whole token's expert read (45 x 9 x 14 MiB = 5.5 GiB, sized past B200's 126 MB L2 on purpose).
 Driver: `bw-roofline` (`src/bin/bw_roofline.rs`), no flag, no default.
 
+### cu/tp_ar.cu — TP decode all-reduce (static-lib TU, default flags)
+
+`memra_tp_ar_push` (`memra_tp_ar_push_kernel`) and `memra_tp_ar_fold` (`memra_tp_ar_fold_kernel`),
+`float4` grid-stride throughout. The two-rank decode join: each rank pushes its partial straight
+into the peer's staging buffer over NVLink (peer access from `tp::grant_peer_access`, so the peer
+pointer is dereferenceable from a kernel in this context) and each rank folds the buffer its peer
+wrote. Ordering is one cross-stream event per direction, the contract
+`tp_transport::PeerPullLink::publish` already uses; no host boundary, no `synchronize`, and
+nothing occupying the device while it waits. EXISTS BECAUSE the TP-2 join costs about 500 us
+today: `tp_transport`'s default `host-canonical` bounces every hop through host and
+`Engine::dtoh` drains the stream, so each of the ~90 joins per token waits for that layer's
+compute twice, which is the whole reason TP-2 measured 3.1x slower than the pipeline split it
+would replace. Consumers: `tp_ar::ArLink` (driver `tp-ar-bench`). Gate:
+`tests/tp_ar_gpu.rs` (bitwise against the host sum at n 1 / 4 / 1024 / 4096 / 16384 / 65536, a
+repeat-call case, and a red arm where a fold with no peer push must not reproduce the sum).
+REQUIRES TWO DEVICES and skips otherwise: unlike every other TP arm, whose bytes go through host
+or `cudaMemcpyPeer`, this one dereferences the peer's pointer inside a kernel, and two contexts on
+one card share no address space and cannot grant each other peer access
+(`cudaDeviceCanAccessPeer(d, d)` is false). On the rig that read correctly at some sizes and
+returned the local partial at others, so `ArLink::new` refuses two engines on one ordinal rather
+than let a gate pass on an accident. The sweep reaches 256 KiB deliberately: the first cut spun on
+a peer-armed flag, which starves the peer wherever they share a device, and was bitwise-correct
+below that size and wrong at it.
+
 ### cu/dsv4_gpu.cu — mHC (hyper-connections) glue kernels, partial inventory (static-lib TU, not a fatbin; compiled `-fmad=false` for bit-parity with the CPU oracle — build.rs:505-510)
 
 This ~3,700-line file (`memra_dsv4_*` FFI namespace) carries the dsv4/glm5_next dense +

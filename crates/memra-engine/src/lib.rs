@@ -112,6 +112,7 @@ pub mod spec;
 /// beyond the stream drains at phase boundaries.
 pub mod spec_phase;
 pub mod tp;
+pub mod tp_ar;
 pub mod tp_transport;
 pub use memra_sampling as sampler;
 
