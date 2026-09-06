@@ -7329,7 +7329,7 @@ mod dspark_boundary_capture_tests {
         // a half shorter than PRIME_MIN_T leaves draft taps unfilled: skip, do not split
         assert_eq!(
             super::dspark_resume_split(
-                DsparkCapture::Boundary(13_440 + PRIME_MIN_T - 1 + 0),
+                DsparkCapture::Boundary(13_440 + PRIME_MIN_T - 1),
                 13_440,
                 2_048,
                 grid
