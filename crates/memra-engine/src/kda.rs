@@ -1704,9 +1704,20 @@ impl Engine {
                 bytes(&la.b_proj),
             ];
             // ONE activation quantize for all six ranges — the six-launch path pays this per
-            // projection. `pre_q8` is the W8 posture's pre-quantized pair and does not apply to
-            // this operand class, so the arm always quantizes here.
-            let (aq, ad) = self.quantize_q8_1(x, 1, in_f)?;
+            // projection. When the walk already quantized `x` (`MEMRA_GLM5_Q8_FUSE_ATTN`:
+            // rms_norm_zq8_f32's pair IS quantize_q8_1(x) byte for byte), consume that pair; the
+            // e4m3 arm reads the same q8_1 activation as the W8 arm, so nothing changes but the
+            // launch count (34 per token on GLM-5.3-Flash, in-graph). Gate:
+            // tests/kda_fused6_e4m3_gpu.rs `pre_q8` arm (same bytes, and a red arm proving the
+            // pair is what gets read).
+            let owned;
+            let (aq, ad): (&CudaSlice<i8>, &CudaSlice<f32>) = match pre_q8 {
+                Some((q, d)) => (q, d),
+                None => {
+                    owned = self.quantize_q8_1(x, 1, in_f)?;
+                    (&owned.0, &owned.1)
+                }
+            };
             let mut outs = [
                 self.uninit(dims[0])?,
                 self.uninit(dims[1])?,
@@ -1715,7 +1726,7 @@ impl Engine {
                 self.uninit(dims[4])?,
                 self.uninit(dims[5])?,
             ];
-            self.e4m3_fused6_into(w, &aq, &ad, in_f, dims, in_f, ws, &mut outs)?;
+            self.e4m3_fused6_into(w, aq, ad, in_f, dims, in_f, ws, &mut outs)?;
             if KDA_FUSED6_E4M3_DISPATCHES.fetch_add(1, Ordering::Relaxed) == 0 {
                 eprintln!(
                     "[kda-fused6] engaged arm=e4m3 in_f={in_f} out={dims:?} t={t} (one launch \

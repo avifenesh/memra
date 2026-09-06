@@ -263,6 +263,19 @@ pub fn glm5_q8_fuse_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_GLM5_Q8_FUSE").as_deref() == Ok("1"))
 }
+/// `MEMRA_SHEXP_SWIGLU_ZQ8=1` (lane/launch-collapse-20260906, default OFF, decide-by 2026-09-20):
+/// at decode (t = 1) the shared expert's pre-clamped SwiGLU emits its q8_1 pair directly
+/// (`swiglu_preclamped_mul_scaled_q8_1_f32`) and the down projection rides `matmul_q8_fast`,
+/// dropping the standalone `quantize_q8_1` launch (42 per token on GLM-5.3-Flash, in-graph).
+/// BIT-IDENTICAL (gate `tests/swiglu_zq8_gpu.rs`). Falls back to the two-launch chain when the
+/// down tensor is not MMVQ-fast-eligible or the width is not a multiple of 32. Read per call.
+pub fn shexp_swiglu_zq8_on() -> bool {
+    std::env::var("MEMRA_SHEXP_SWIGLU_ZQ8").as_deref() == Ok("1")
+}
+
+/// Engagement counter for `MEMRA_SHEXP_SWIGLU_ZQ8` (fused launches whose pair the down MMVQ read).
+pub static SHEXP_SWIGLU_ZQ8_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
 
 /// `MEMRA_GLM5_Q8_FUSE_ATTN=1` (lane/glm5-attn-norm-zq8-20260904, default OFF): the
 /// ATTENTION-input norm of a plain KDA layer in the glm5_next T=1 walk runs `rms_norm_zq8_f32`
@@ -33605,6 +33618,50 @@ impl Engine {
             b.launch(cfg)?;
         }
         Ok(())
+    }
+
+    /// `swiglu_preclamped_mul_scaled` and `quantize_q8_1` in one launch: returns the q8_1 pair
+    /// of `silu(min(gate*gs, limit)) * clamp(up*us, ±limit)` without materializing the f32 row.
+    /// Byte-identical to the two-launch chain (kernel header in hybrid.cu; gate
+    /// `tests/swiglu_zq8_gpu.rs`). Refuses `n % 32 != 0` (the kernel quantizes whole warps).
+    pub fn swiglu_preclamped_mul_scaled_q8_1(
+        &self,
+        gate: &CudaSlice<f32>,
+        up: &CudaSlice<f32>,
+        gs: f32,
+        us: f32,
+        limit: f32,
+        n: usize,
+    ) -> Result<(CudaSlice<i8>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        if !n.is_multiple_of(32) || n == 0 {
+            return Err(format!(
+                "swiglu_preclamped_mul_scaled_q8_1: n={n} is not a multiple of 32"
+            )
+            .into());
+        }
+        debug_assert!(
+            limit > 1e-6,
+            "swiglu_preclamped needs a live limit; use silu_mul_scaled"
+        );
+        let mut q: CudaSlice<i8> = self.uninit_i8(n)?;
+        let mut d: CudaSlice<f32> = self.uninit(n / 32)?;
+        let f = self.func("swiglu_preclamped_mul_scaled_q8_1_f32");
+        let cfg = LaunchConfig::for_num_elems(n as u32);
+        let ni = n as i32;
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(gate)
+            .arg(up)
+            .arg(&gs)
+            .arg(&us)
+            .arg(&limit)
+            .arg(&mut q)
+            .arg(&mut d)
+            .arg(&ni);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok((q, d))
     }
 
     /// gated RMSNorm: dst = RMSNorm(o, w[ncols]) * silu(z), per row of ncols. nrows blocks.

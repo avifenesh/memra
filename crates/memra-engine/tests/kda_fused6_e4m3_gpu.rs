@@ -110,6 +110,60 @@ fn e4m3_fused_six_is_bit_identical_to_six_separate_launches() {
         }
     }
 
+    // PRE-QUANTIZED PAIR ARM (lane/launch-collapse-20260906): the walk hands the six-group
+    // launcher the norm's q8_1 pair (`MEMRA_GLM5_Q8_FUSE_ATTN`) instead of quantizing `x` again,
+    // through `e4m3_fused6_into`. That entry must read the pair it is given: fed the same pair
+    // the reference used it must match the six launches bit for bit, and fed a pair from a
+    // DIFFERENT activation it must move (otherwise it quantizes `x` on its own and the fold is
+    // not a fold).
+    {
+        let w6b = [&dev[0], &dev[1], &dev[2], &dev[3], &dev[4], &dev[5]];
+        let mut outs = [
+            e.uninit(dims[0]).unwrap(),
+            e.uninit(dims[1]).unwrap(),
+            e.uninit(dims[2]).unwrap(),
+            e.uninit(dims[3]).unwrap(),
+            e.uninit(dims[4]).unwrap(),
+            e.uninit(dims[5]).unwrap(),
+        ];
+        e.e4m3_fused6_into(w6b, &aq, &ad, in_f, dims, in_f, ws, &mut outs)
+            .expect("fused six from the pre-quantized pair");
+        for (i, &o) in dims.iter().enumerate() {
+            let g = e.dtoh(&outs[i]).expect("dtoh");
+            assert_eq!(g.len(), o);
+            for (r, (a, b)) in g.iter().zip(want[i].iter()).enumerate() {
+                assert_eq!(
+                    a.to_bits(),
+                    b.to_bits(),
+                    "pre-quantized pair arm range {i} row {r}: {a} != separate {b}"
+                );
+            }
+        }
+        let mut x2h = activation(in_f);
+        for v in x2h.iter_mut().step_by(3) {
+            *v = -*v * 1.5;
+        }
+        let x2 = e.htod(&x2h).expect("second activation");
+        let (aq2, ad2) = e.quantize_q8_1(&x2, 1, in_f).expect("q8_1 of x2");
+        let mut outs2 = [
+            e.uninit(dims[0]).unwrap(),
+            e.uninit(dims[1]).unwrap(),
+            e.uninit(dims[2]).unwrap(),
+            e.uninit(dims[3]).unwrap(),
+            e.uninit(dims[4]).unwrap(),
+            e.uninit(dims[5]).unwrap(),
+        ];
+        e.e4m3_fused6_into(w6b, &aq2, &ad2, in_f, dims, in_f, ws, &mut outs2)
+            .expect("fused six from a different pair");
+        let g0 = e.dtoh(&outs2[0]).expect("dtoh");
+        assert!(
+            g0.iter()
+                .zip(want[0].iter())
+                .any(|(a, b)| a.to_bits() != b.to_bits()),
+            "a different pre-quantized pair left range 0 unchanged: the entry is not reading the pair"
+        );
+    }
+
     // RED ARM 1 — a per-range weight scale must actually reach its own range. Swapping two
     // scales has to change the output; if it does not, the kernel is ignoring `ws` and the
     // green arm above proved nothing about scale routing.
