@@ -14631,14 +14631,18 @@ impl HybridModel {
         // Shared expert on root, folded into root's partial BEFORE the reduce, so the sum carries
         // it to both ranks without replicating the shared-expert weights.
         Self::moe_shexp_add(e, m, z_by_rank[0], zq8, t, cfg, lim_shexp, &mut out0)?;
-        let reduced = rt.ar_1stage(e, &mut [&mut out0, &mut out1], t * n_embd)?;
+        // Out of place: the partials are the inputs, two fresh buffers the outputs (no staging copy).
+        let mut red0 = e.zeros(t * n_embd)?;
+        let mut red1 = peer.zeros(t * n_embd)?;
+        let reduced =
+            rt.ar_1stage_into(e, &[&out0, &out1], &mut [&mut red0, &mut red1], t * n_embd)?;
         if !reduced {
             return Err(
                 "moe_ffn_glm5_tp_split_sym: the one-shot declined after availability said yes"
                     .into(),
             );
         }
-        Ok(vec![out0, out1])
+        Ok(vec![red0, red1])
     }
 
     /// The DIETED glm5 EP walk (`MEMRA_GLM5_EP_DIET`, lane/glm5-ep-diet): the v1 walk's
