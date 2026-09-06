@@ -68,7 +68,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ("MEMRA_MOE_VROWS_ILP", "1"),
         ("MEMRA_MOE_VROWS_ORD", "0"),
         ("MEMRA_MOE_VROWS_DEDUP_ORDER", "0"),
-        ("MEMRA_MOE_GATEUP_ILP2", "0"),
         ("MEMRA_MOE_VROWS_PACK", "0"),
     ] {
         setenv(k, v);
