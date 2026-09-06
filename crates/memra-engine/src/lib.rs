@@ -8143,6 +8143,190 @@ impl Engine {
         Ok(act)
     }
 
+    /// Served q8_1 activation rows (group-major, 8 words per 32-element group) to the LANE-MAJOR
+    /// layout the `_lm` rows twins read: word `w` of group `g` at int index `w*nsb + g` within
+    /// each row (lane/moe-rows-lanemajor-20260906). `rows` rows of `in_f` elements; a pure
+    /// permutation of words, so the bytes are the same bytes.
+    pub fn q8_to_lane_major(
+        &self,
+        aq: &CudaSlice<i8>,
+        rows: usize,
+        in_f: usize,
+    ) -> Result<CudaSlice<i8>, Box<dyn std::error::Error>> {
+        if !in_f.is_multiple_of(32) || aq.len() < rows * in_f {
+            return Err(format!(
+                "q8_to_lane_major: in_f {in_f} must be a multiple of 32 and aq holds {} < {}",
+                aq.len(),
+                rows * in_f
+            )
+            .into());
+        }
+        let f = self.func("memra_q8_to_lane_major");
+        let mut out = self.alloc_uninit::<i8>(rows * in_f)?;
+        let words = rows * in_f / 4;
+        let cfg = LaunchConfig {
+            grid_dim: ((words as u32).div_ceil(256), 1, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let (r, nsb) = (rows as i32, (in_f / 32) as i32);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(aq).arg(&mut out).arg(&r).arg(&nsb);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(out)
+    }
+
+    /// The lane-major gate/up rows twin (`moe_gate_up_preclamp8_q8_rows_lm`, `_w4` under
+    /// `pack`): slot-major (V2) experts ONLY, 16 B row alignment required, activation in the
+    /// `q8_to_lane_major` layout. Bit-identical to `_ilp` on the same bytes. Refuses by name.
+    #[allow(clippy::too_many_arguments)]
+    pub fn moe_gate_up_preclamp8_q8_rows_lm(
+        &self,
+        ptrs: &CudaSlice<u64>,
+        scl: &CudaSlice<f32>,
+        aq_lm: &CudaSlice<i8>,
+        ad: &CudaSlice<f32>,
+        limit: f32,
+        in_f: usize,
+        n_ff: usize,
+        n_used: usize,
+        n_pairs: usize,
+        qt_g: i32,
+        qt_u: i32,
+        rb_g: usize,
+        rb_u: usize,
+        pack: bool,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        if qt_g != QT_NVFP4_V2 || qt_u != QT_NVFP4_V2 {
+            return Err(format!(
+                "moe rows lane-major: slot-major (QT_NVFP4_V2) experts only, got gate qt {qt_g} up qt {qt_u}"
+            )
+            .into());
+        }
+        if !rb_g.is_multiple_of(16) || !rb_u.is_multiple_of(16) || !in_f.is_multiple_of(32) {
+            return Err(format!(
+                "moe rows lane-major: 16 B rows required (rb_g {rb_g} rb_u {rb_u}), in_f {in_f} % 32"
+            )
+            .into());
+        }
+        debug_assert!(ptrs.len() >= 3 * n_pairs);
+        debug_assert_eq!(scl.len(), 3 * n_pairs);
+        let (f, cfg) = if pack {
+            (
+                self.func("moe_gate_up_preclamp8_q8_rows_lm_w4"),
+                LaunchConfig {
+                    grid_dim: ((n_ff as u32).div_ceil(4), n_pairs as u32, 1),
+                    block_dim: (32, 4, 1),
+                    shared_mem_bytes: 0,
+                },
+            )
+        } else {
+            (
+                self.func("moe_gate_up_preclamp8_q8_rows_lm"),
+                LaunchConfig {
+                    grid_dim: (n_ff as u32, n_pairs as u32, 1),
+                    block_dim: (32, 1, 1),
+                    shared_mem_bytes: 0,
+                },
+            )
+        };
+        let mut act = self.uninit(n_pairs * n_ff)?;
+        let (inf, nff, nu, np) = (in_f as i32, n_ff as i32, n_used as i32, n_pairs as i32);
+        let (rbg, rbu) = (rb_g as i64, rb_u as i64);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(ptrs)
+            .arg(scl)
+            .arg(aq_lm)
+            .arg(ad)
+            .arg(&limit)
+            .arg(&mut act)
+            .arg(&inf)
+            .arg(&nff)
+            .arg(&nu)
+            .arg(&np)
+            .arg(&rbg)
+            .arg(&rbu);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(act)
+    }
+
+    /// The lane-major down rows twin (`moe_down8_fma_q8_rows_lm`, `_w4` under `pack`): same
+    /// contract as `moe_down8_fma_q8_rows`, slot-major experts only, `aq2_lm` per pair in the
+    /// `q8_to_lane_major` layout over `in_f`. Bit-identical to `_ilp`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn moe_down8_fma_q8_rows_lm(
+        &self,
+        ptrs: &CudaSlice<u64>,
+        scl: &CudaSlice<f32>,
+        aq2_lm: &CudaSlice<i8>,
+        ad2: &CudaSlice<f32>,
+        dst: &mut CudaSlice<f32>,
+        in_f: usize,
+        out_f: usize,
+        n_used: usize,
+        n_pairs: usize,
+        qt: i32,
+        rb: usize,
+        pack: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if qt != QT_NVFP4_V2 {
+            return Err(
+                format!("moe rows lane-major down: slot-major experts only, got qt {qt}").into(),
+            );
+        }
+        if !rb.is_multiple_of(16) || !in_f.is_multiple_of(32) || !n_pairs.is_multiple_of(n_used) {
+            return Err(format!(
+                "moe rows lane-major down: 16 B rows required (rb {rb}), in_f {in_f} % 32, pairs {n_pairs} % {n_used}"
+            )
+            .into());
+        }
+        let t = n_pairs / n_used;
+        debug_assert!(dst.len() >= t * out_f);
+        let (f, cfg) = if pack {
+            (
+                self.func("moe_down8_fma_q8_rows_lm_w4"),
+                LaunchConfig {
+                    grid_dim: ((out_f as u32).div_ceil(4), t as u32, 1),
+                    block_dim: (32, 4, 1),
+                    shared_mem_bytes: 0,
+                },
+            )
+        } else {
+            (
+                self.func("moe_down8_fma_q8_rows_lm"),
+                LaunchConfig {
+                    grid_dim: (out_f as u32, t as u32, 1),
+                    block_dim: (32, 1, 1),
+                    shared_mem_bytes: 0,
+                },
+            )
+        };
+        let (inf, outf, nu, np) = (in_f as i32, out_f as i32, n_used as i32, n_pairs as i32);
+        let rbl = rb as i64;
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(ptrs)
+            .arg(scl)
+            .arg(aq2_lm)
+            .arg(ad2)
+            .arg(dst)
+            .arg(&inf)
+            .arg(&outf)
+            .arg(&nu)
+            .arg(&np)
+            .arg(&rbl);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn moe_gate_up_preclamp8_q8_rows(
         &self,

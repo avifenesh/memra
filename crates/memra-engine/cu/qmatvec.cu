@@ -6918,6 +6918,238 @@ extern "C" __global__ void moe_down8_fma_q8_rows_w4_ilp(
 }
 
 
+// =====================================================================================
+// LANE-MAJOR ACTIVATION twins of the verify-rows MoE pair (lane/moe-rows-lanemajor-20260906)
+// =====================================================================================
+//
+// WHY. The rows pair is L1-WAVEFRONT bound, not DRAM bound. rowbw probe on the B200 (2026-09-06,
+// same bytes as the served gate/up launch, 8 pairs x 2048 rows x 2304 B x 2 planes):
+//
+//   pure two-plane row stream, 16 B loads, 8 groups in flight per lane .... 14.5 us  5.2 TB/s
+//   + the served ACTIVATION pattern (lane g reads its group's 8 words at
+//     arow + g*32: one 4 B load instruction spans 8 cache lines) ............ 22.3 us  3.4 TB/s
+//   + lane-major activation (word w of group g at act[w*nsb + g]) ........... 14.5 us  5.2 TB/s
+//   served kernel (4 B weight loads, byte scale loads, the same activation) . 32-34 us 2.2 TB/s
+//   8x layer, steady state: two-plane stream 7.15 TB/s = the roofline probe's wall.
+//
+// Every activation word the served body loads costs 8 L1 wavefronts because the 32 lanes are
+// 32 B apart; 32 such loads per row pair against 32 for the weights, and the weight words are
+// 4 B loads that cost 4 wavefronts each. Nothing about this is the memory system: with the same
+// bytes laid out so that one load instruction is one 128 B line, the pattern streams at the wall.
+//
+// WHAT CHANGES, AND WHAT DOES NOT. The activation is stored LANE-MAJOR per token row: for a row
+// of nsb groups, word w (0..7) of group g lives at int index w*nsb + g (`memra_q8_to_lane_major`
+// permutes the served q8_1 layout; the producers grow their own lane-major arms next). The
+// weights are read as one 16 B load per group (slot-major V2 rows are 16 B aligned by
+// construction: 2304 B per row) and the two scale bytes as one 2 B load. The ARITHMETIC IS THE
+// SERVED BODY: `expert_dot_nvfp4_core_regs` over the same four quant words, the same two scale
+// bytes, the same eight activation words in the same order, the same per-lane group order
+// (g, g+32, g+64, g+96), the same `warp_reduce_sum`, the same epilogue. Re-addressing where a
+// word is read from moves no bits, so the twins are BIT-IDENTICAL to `_ilp` (gate
+// `moe_rows_lanemajor_gpu`, rig, every output word compared).
+//
+// V2 (slot-major) ONLY: the interleaved layout's 16 quant bytes of a group sit at a 36 B stride
+// and cannot be read as one aligned 16 B word. The launcher refuses any other qtype by name.
+
+// One group's dot from registers already loaded, the served body's operand order.
+__device__ __forceinline__ float nvfp4_lm_dot(uint4 q, unsigned short sc, const int* a, float d8) {
+    return expert_dot_nvfp4_core_regs((int)q.x, (int)q.y, (int)q.z, (int)q.w,
+                                      (unsigned char)(sc & 0xFF), (unsigned char)(sc >> 8), a, d8);
+}
+#define MEMRA_LM_LOAD_ACT(dst, arow, nsb, g)                                                   \
+    _Pragma("unroll") for (int w_ = 0; w_ < 8; w_++) dst[w_] = arow[(size_t)w_ * (nsb) + (g)];
+
+__device__ __forceinline__ void moe_gate_up_rows_lm_warp(
+        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
+        const int* __restrict__ aq_lm, const float* __restrict__ ad, float limit,
+        float* __restrict__ act, int in_f, int n_ff, int n_used, int n_pairs, long rb_g,
+        long rb_u, int o, int pr, int lane) {
+    const int nsb = in_f >> 5;
+    const int tok = pr / n_used;
+    const unsigned char* grow = (const unsigned char*)ptrs[pr] + (long)o * rb_g;
+    const unsigned char* urow = (const unsigned char*)ptrs[n_pairs + pr] + (long)o * rb_u;
+    const unsigned short* gsc = (const unsigned short*)(grow + (size_t)nsb * 16);
+    const unsigned short* usc = (const unsigned short*)(urow + (size_t)nsb * 16);
+    const int* arow = aq_lm + (size_t)tok * nsb * 8;
+    const float* adrow = ad + (size_t)tok * nsb;
+    float accg = 0.0f, accu = 0.0f;
+    int g = lane;
+    for (; g + 96 < nsb; g += 128) {
+        uint4 gq0 = *(const uint4*)(grow + (size_t)g * 16);
+        uint4 gq1 = *(const uint4*)(grow + (size_t)(g + 32) * 16);
+        uint4 gq2 = *(const uint4*)(grow + (size_t)(g + 64) * 16);
+        uint4 gq3 = *(const uint4*)(grow + (size_t)(g + 96) * 16);
+        uint4 uq0 = *(const uint4*)(urow + (size_t)g * 16);
+        uint4 uq1 = *(const uint4*)(urow + (size_t)(g + 32) * 16);
+        uint4 uq2 = *(const uint4*)(urow + (size_t)(g + 64) * 16);
+        uint4 uq3 = *(const uint4*)(urow + (size_t)(g + 96) * 16);
+        unsigned short gs0 = gsc[g], gs1 = gsc[g + 32], gs2 = gsc[g + 64], gs3 = gsc[g + 96];
+        unsigned short us0 = usc[g], us1 = usc[g + 32], us2 = usc[g + 64], us3 = usc[g + 96];
+        int a0[8], a1[8], a2[8], a3[8];
+        MEMRA_LM_LOAD_ACT(a0, arow, nsb, g);
+        MEMRA_LM_LOAD_ACT(a1, arow, nsb, g + 32);
+        MEMRA_LM_LOAD_ACT(a2, arow, nsb, g + 64);
+        MEMRA_LM_LOAD_ACT(a3, arow, nsb, g + 96);
+        float d80 = adrow[g], d81 = adrow[g + 32], d82 = adrow[g + 64], d83 = adrow[g + 96];
+        accg += nvfp4_lm_dot(gq0, gs0, a0, d80);
+        accu += nvfp4_lm_dot(uq0, us0, a0, d80);
+        accg += nvfp4_lm_dot(gq1, gs1, a1, d81);
+        accu += nvfp4_lm_dot(uq1, us1, a1, d81);
+        accg += nvfp4_lm_dot(gq2, gs2, a2, d82);
+        accu += nvfp4_lm_dot(uq2, us2, a2, d82);
+        accg += nvfp4_lm_dot(gq3, gs3, a3, d83);
+        accu += nvfp4_lm_dot(uq3, us3, a3, d83);
+    }
+    for (; g + 32 < nsb; g += 64) {
+        uint4 gq0 = *(const uint4*)(grow + (size_t)g * 16);
+        uint4 gq1 = *(const uint4*)(grow + (size_t)(g + 32) * 16);
+        uint4 uq0 = *(const uint4*)(urow + (size_t)g * 16);
+        uint4 uq1 = *(const uint4*)(urow + (size_t)(g + 32) * 16);
+        unsigned short gs0 = gsc[g], gs1 = gsc[g + 32], us0 = usc[g], us1 = usc[g + 32];
+        int a0[8], a1[8];
+        MEMRA_LM_LOAD_ACT(a0, arow, nsb, g);
+        MEMRA_LM_LOAD_ACT(a1, arow, nsb, g + 32);
+        float d80 = adrow[g], d81 = adrow[g + 32];
+        accg += nvfp4_lm_dot(gq0, gs0, a0, d80);
+        accu += nvfp4_lm_dot(uq0, us0, a0, d80);
+        accg += nvfp4_lm_dot(gq1, gs1, a1, d81);
+        accu += nvfp4_lm_dot(uq1, us1, a1, d81);
+    }
+    for (; g < nsb; g += 32) {
+        uint4 gq0 = *(const uint4*)(grow + (size_t)g * 16);
+        uint4 uq0 = *(const uint4*)(urow + (size_t)g * 16);
+        unsigned short gs0 = gsc[g], us0 = usc[g];
+        int a0[8];
+        MEMRA_LM_LOAD_ACT(a0, arow, nsb, g);
+        float d80 = adrow[g];
+        accg += nvfp4_lm_dot(gq0, gs0, a0, d80);
+        accu += nvfp4_lm_dot(uq0, us0, a0, d80);
+    }
+    accg = warp_reduce_sum(accg);
+    accu = warp_reduce_sum(accu);
+    if (lane == 0) {
+        float u = fmaxf(fminf(accu * scl[n_pairs + pr], limit), -limit);
+        float x = fminf(accg * scl[pr], limit);
+        act[(size_t)pr * n_ff + o] = (x / (1.0f + expf(-x))) * u;
+    }
+}
+extern "C" __global__ void moe_gate_up_preclamp8_q8_rows_lm(
+        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
+        const int* __restrict__ aq_lm, const float* __restrict__ ad, float limit,
+        float* __restrict__ act, int in_f, int n_ff, int n_used, int n_pairs, long rb_g,
+        long rb_u) {
+    int o = blockIdx.x;
+    int pr = blockIdx.y;
+    if (o >= n_ff || pr >= n_pairs) return;
+    moe_gate_up_rows_lm_warp(ptrs, scl, aq_lm, ad, limit, act, in_f, n_ff, n_used, n_pairs, rb_g,
+                             rb_u, o, pr, threadIdx.x);
+}
+extern "C" __global__ void moe_gate_up_preclamp8_q8_rows_lm_w4(
+        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
+        const int* __restrict__ aq_lm, const float* __restrict__ ad, float limit,
+        float* __restrict__ act, int in_f, int n_ff, int n_used, int n_pairs, long rb_g,
+        long rb_u) {
+    int o = blockIdx.x * 4 + threadIdx.y;
+    int pr = blockIdx.y;
+    if (o >= n_ff || pr >= n_pairs) return;
+    moe_gate_up_rows_lm_warp(ptrs, scl, aq_lm, ad, limit, act, in_f, n_ff, n_used, n_pairs, rb_g,
+                             rb_u, o, pr, threadIdx.x);
+}
+// down: one (token, out-row) per warp, the slot-ordered __fmaf_rn chain verbatim; per pair the
+// activation row is that pair's swiglu output, lane-major over its nsb = in_f/32 groups.
+__device__ __forceinline__ float moe_down_lm_row(const unsigned char* __restrict__ wrow,
+                                                 const int* __restrict__ arow,
+                                                 const float* __restrict__ adrow, int nsb,
+                                                 int lane) {
+    const unsigned short* wsc = (const unsigned short*)(wrow + (size_t)nsb * 16);
+    float acc = 0.0f;
+    int g = lane;
+    for (; g + 96 < nsb; g += 128) {
+        uint4 w0 = *(const uint4*)(wrow + (size_t)g * 16);
+        uint4 w1 = *(const uint4*)(wrow + (size_t)(g + 32) * 16);
+        uint4 w2 = *(const uint4*)(wrow + (size_t)(g + 64) * 16);
+        uint4 w3 = *(const uint4*)(wrow + (size_t)(g + 96) * 16);
+        unsigned short s0 = wsc[g], s1 = wsc[g + 32], s2 = wsc[g + 64], s3 = wsc[g + 96];
+        int a0[8], a1[8], a2[8], a3[8];
+        MEMRA_LM_LOAD_ACT(a0, arow, nsb, g);
+        MEMRA_LM_LOAD_ACT(a1, arow, nsb, g + 32);
+        MEMRA_LM_LOAD_ACT(a2, arow, nsb, g + 64);
+        MEMRA_LM_LOAD_ACT(a3, arow, nsb, g + 96);
+        acc += nvfp4_lm_dot(w0, s0, a0, adrow[g]);
+        acc += nvfp4_lm_dot(w1, s1, a1, adrow[g + 32]);
+        acc += nvfp4_lm_dot(w2, s2, a2, adrow[g + 64]);
+        acc += nvfp4_lm_dot(w3, s3, a3, adrow[g + 96]);
+    }
+    for (; g + 32 < nsb; g += 64) {
+        uint4 w0 = *(const uint4*)(wrow + (size_t)g * 16);
+        uint4 w1 = *(const uint4*)(wrow + (size_t)(g + 32) * 16);
+        unsigned short s0 = wsc[g], s1 = wsc[g + 32];
+        int a0[8], a1[8];
+        MEMRA_LM_LOAD_ACT(a0, arow, nsb, g);
+        MEMRA_LM_LOAD_ACT(a1, arow, nsb, g + 32);
+        acc += nvfp4_lm_dot(w0, s0, a0, adrow[g]);
+        acc += nvfp4_lm_dot(w1, s1, a1, adrow[g + 32]);
+    }
+    for (; g < nsb; g += 32) {
+        uint4 w0 = *(const uint4*)(wrow + (size_t)g * 16);
+        unsigned short s0 = wsc[g];
+        int a0[8];
+        MEMRA_LM_LOAD_ACT(a0, arow, nsb, g);
+        acc += nvfp4_lm_dot(w0, s0, a0, adrow[g]);
+    }
+    return acc;
+}
+__device__ __forceinline__ void moe_down_rows_lm_warp(
+        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
+        const int* __restrict__ aq2_lm, const float* __restrict__ ad2, float* __restrict__ dst,
+        int in_f, int out_f, int n_used, int n_pairs, long rb, int o, int tok, int lane) {
+    const int nsb = in_f >> 5;
+    float chain = 0.0f;
+    for (int j = 0; j < n_used; j++) {
+        int pr = tok * n_used + j;
+        const unsigned char* wrow = (const unsigned char*)ptrs[2 * n_pairs + pr] + (long)o * rb;
+        const int* arow = aq2_lm + (size_t)pr * nsb * 8;
+        const float* adrow = ad2 + (size_t)pr * nsb;
+        float acc = moe_down_lm_row(wrow, arow, adrow, nsb, lane);
+        acc = warp_reduce_sum(acc);
+        if (lane == 0) chain = __fmaf_rn(scl[2 * n_pairs + pr], acc, chain);
+    }
+    if (lane == 0) dst[(size_t)tok * out_f + o] = chain;
+}
+extern "C" __global__ void moe_down8_fma_q8_rows_lm(
+        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
+        const int* __restrict__ aq2_lm, const float* __restrict__ ad2, float* __restrict__ dst,
+        int in_f, int out_f, int n_used, int n_pairs, long rb) {
+    int o = blockIdx.x;
+    int tok = blockIdx.y;
+    if (o >= out_f) return;
+    moe_down_rows_lm_warp(ptrs, scl, aq2_lm, ad2, dst, in_f, out_f, n_used, n_pairs, rb, o, tok,
+                          threadIdx.x);
+}
+extern "C" __global__ void moe_down8_fma_q8_rows_lm_w4(
+        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
+        const int* __restrict__ aq2_lm, const float* __restrict__ ad2, float* __restrict__ dst,
+        int in_f, int out_f, int n_used, int n_pairs, long rb) {
+    int o = blockIdx.x * 4 + threadIdx.y;
+    int tok = blockIdx.y;
+    if (o >= out_f) return;
+    moe_down_rows_lm_warp(ptrs, scl, aq2_lm, ad2, dst, in_f, out_f, n_used, n_pairs, rb, o, tok,
+                          threadIdx.x);
+}
+// The permutation, one thread per word: served q8_1 row (group-major, 8 words per group) to
+// lane-major (word w of group g at w*nsb + g). `rows` activation rows of `nsb` groups each.
+extern "C" __global__ void memra_q8_to_lane_major(const int* __restrict__ aq, int* __restrict__ aq_lm,
+                                                  int rows, int nsb) {
+    long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    long per_row = (long)nsb * 8;
+    if (i >= (long)rows * per_row) return;
+    long r = i / per_row;
+    int k = (int)(i - r * per_row);  // served index within the row: g*8 + w
+    int g = k >> 3, w = k & 7;
+    aq_lm[r * per_row + (long)w * nsb + g] = aq[i];
+}
+
+
 // ---- DEDUP-SCHEDULE twins of the verify-rows MoE pair (lane/glm5-dedup, 2026-08-31) ----
 //
 // WHY: the struct-battery instrument measured **21.96% cumulative repeat fraction** across the
