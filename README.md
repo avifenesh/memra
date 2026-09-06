@@ -5,15 +5,15 @@
 [![release](https://img.shields.io/github/v/release/avifenesh/memra)](https://github.com/avifenesh/memra/releases/latest)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-tiyuvta-0A66C2?logo=linkedin)](https://www.linkedin.com/company/tiyuvta-ai)
 
-Rust + CUDA inference engine tuned separately for RTX PRO 6000 Blackwell and RTX 5090, with
-OpenAI-compatible serving and model-specific correctness gates.
+Rust + CUDA LLM inference engine for Blackwell (Tuned specifically on RTX PRO 6000, RTX 5090, B200): OpenAI-compatible (+converse and ant) serving, per-model X hardware exactness gates. NVFP4/mixed (fp8 hybrid, 4o6, etc - correctness, performance, hardware specific adapted) main quant support.
 
 [Install](docs/INSTALLATION.md) · [Models](docs/MODELS.md) ·
 [Serving](docs/SERVING.md) · [Performance](docs/PERFORMANCE.md) ·
 [Hosted API](https://inference.tiyuvta.ai/model?c=github-memra-readme)
 
-> **Want to try Memra without operating a GPU?**
-> [Open the hosted instance →](https://inference.tiyuvta.ai/model?c=github-memra-readme).
+> **Want to try Memra without operating a GPU? Or want us to put memra tuned on your GPU?**
+> [Open the hosted instance →](https://inference.tiyuvta.ai/model?c=gh-mem-red-infe).
+> [Our services ->](https://tiyuvta.ai/services?c=gh-mem-red-serv)
 > Its live model catalog, access path, prices, and terms are documented there.
 
 ## Quick start
