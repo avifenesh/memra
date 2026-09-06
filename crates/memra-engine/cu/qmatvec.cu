@@ -7266,7 +7266,30 @@ __device__ __forceinline__ void moe_gate_up_rows_f16_warp(
     const unsigned short* usc = (const unsigned short*)(urow + (size_t)nsb * 16);
     const half2* arow = acth + (size_t)tok * nsb * 16;
     float accg = 0.0f, accu = 0.0f;
-    for (int g = lane; g < nsb; g += 32) {
+    // FOUR GROUPS IN FLIGHT per lane, every load issued before any math (the served `_ilp`
+    // pattern): the one-group loop measured FLAT against the served kernel on the pair
+    // (32.86 vs 33.16 us, rowsf16 2026-09-06) while the probe with hoisted loads ran 17 us.
+    int g = lane;
+    for (; g + 96 < nsb; g += 128) {
+        uint4 gq[4], uq[4];
+        unsigned short gs[4], us[4];
+        half2 a[4][16];
+#pragma unroll
+        for (int k = 0; k < 4; k++) {
+            const int gg = g + 32 * k;
+            gq[k] = *(const uint4*)(grow + (size_t)gg * 16);
+            uq[k] = *(const uint4*)(urow + (size_t)gg * 16);
+            gs[k] = gsc[gg];
+            us[k] = usc[gg];
+            MEMRA_F16LM_LOAD_ACT(a[k], arow, nsb, gg);
+        }
+#pragma unroll
+        for (int k = 0; k < 4; k++) {
+            accg = rows_f16_slot<ACC32>(gq[k], gs[k], a[k], accg);
+            accu = rows_f16_slot<ACC32>(uq[k], us[k], a[k], accu);
+        }
+    }
+    for (; g < nsb; g += 32) {
         uint4 gq = *(const uint4*)(grow + (size_t)g * 16);
         uint4 uq = *(const uint4*)(urow + (size_t)g * 16);
         unsigned short gs = gsc[g], us = usc[g];
@@ -7318,7 +7341,18 @@ __device__ __forceinline__ void moe_down_rows_f16_warp(
         const unsigned short* wsc = (const unsigned short*)(wrow + (size_t)nsb * 16);
         const half2* arow = acth2 + (size_t)pr * nsb * 16;
         float acc = 0.0f;
-        for (int g = lane; g < nsb; g += 32) {
+        int g = lane;
+        for (; g + 32 < nsb; g += 64) {  // down rows are nsb = 64 at the served shape: two deep
+            uint4 q0 = *(const uint4*)(wrow + (size_t)g * 16);
+            uint4 q1 = *(const uint4*)(wrow + (size_t)(g + 32) * 16);
+            unsigned short s0 = wsc[g], s1 = wsc[g + 32];
+            half2 a0[16], a1[16];
+            MEMRA_F16LM_LOAD_ACT(a0, arow, nsb, g);
+            MEMRA_F16LM_LOAD_ACT(a1, arow, nsb, g + 32);
+            acc = rows_f16_slot<ACC32>(q0, s0, a0, acc);
+            acc = rows_f16_slot<ACC32>(q1, s1, a1, acc);
+        }
+        for (; g < nsb; g += 32) {
             uint4 q = *(const uint4*)(wrow + (size_t)g * 16);
             unsigned short sc = wsc[g];
             half2 a[16];
