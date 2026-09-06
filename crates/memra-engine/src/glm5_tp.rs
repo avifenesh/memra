@@ -143,7 +143,11 @@ pub enum GateRed {
 
 pub fn gate_red() -> Result<Option<GateRed>, String> {
     match std::env::var("MEMRA_GLM5_TP_GATE_RED").ok().as_deref() {
-        None | Some("") => Ok(None),
+        // "0" is OFF, and it has to be: `glm5-tp-gate`'s own `rm_env` writes "0" rather than
+        // unsetting, so before this arm existed the gate errored out on its FIRST TP arm with
+        // `MEMRA_GLM5_TP_GATE_RED="0" is not a known red arm` and could never run one. "0" is
+        // also the canonical rollback spelling for every other door in this engine.
+        None | Some("") | Some("0") => Ok(None),
         Some("swap-wo") => Ok(Some(GateRed::SwapWo)),
         Some("swap-ep-gateup") => Ok(Some(GateRed::SwapEpGateUp)),
         Some("skip-peer-combine") => Ok(Some(GateRed::SkipPeerCombine)),
