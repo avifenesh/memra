@@ -1017,6 +1017,80 @@ fn pre_t1_ws_zq8_selfcheck(
 /// unchanged: the fused pre arm must be V2 (the v3 kernel is what this body was generated
 /// from), the norm's block must fit inside the pre-chain's, and the site must be within the
 /// v3 kernel's warp-0 invariant.
+/// The fused pre+norm launcher's admission, as a pure function so the truth table is a unit
+/// test. `rms_bd > block` is the v1 zq8 kernel's constraint only; v4z (1024 threads, any rms
+/// block to 1024 at the served shape) is admitted regardless of `block`. See the call site.
+pub fn pre_t1_ws_zq8_admits(
+    arm_v2: bool,
+    v4z_on: bool,
+    streams: usize,
+    rows: usize,
+    hidden: usize,
+    rms_bd: usize,
+    block: usize,
+) -> bool {
+    let v4z_fits = v4z_on
+        && streams == 4
+        && hidden == 4096
+        && (32..=1024).contains(&rms_bd)
+        && rms_bd.is_multiple_of(32);
+    arm_v2
+        && streams <= 8
+        && rows <= 32
+        && (rms_bd <= block || v4z_fits)
+        && rms_bd.is_multiple_of(32)
+        && hidden.is_multiple_of(32)
+}
+
+#[cfg(test)]
+mod pre_zq8_admission_tests {
+    use super::pre_t1_ws_zq8_admits as admits;
+    // The served GLM-5.3-Flash shape: 4 streams, 16 rows, hidden 4096, hc_pre block 512.
+    #[test]
+    fn headline5_case_rms_1024_is_admitted_only_with_v4z() {
+        assert!(
+            !admits(true, false, 4, 16, 4096, 1024, 512),
+            "v1 zq8 cannot replay a 1024 norm on 512 threads"
+        );
+        assert!(
+            admits(true, true, 4, 16, 4096, 1024, 512),
+            "v4z runs 1024 threads: admitted"
+        );
+        assert!(admits(true, true, 4, 16, 4096, 512, 512));
+        assert!(admits(true, false, 4, 16, 4096, 512, 512));
+        assert!(admits(true, false, 4, 16, 4096, 256, 512));
+    }
+    #[test]
+    fn v4z_does_not_lift_the_guard_off_its_shape() {
+        assert!(
+            !admits(true, true, 8, 16, 4096, 1024, 512),
+            "8 streams is not v4z's shape"
+        );
+        assert!(
+            !admits(true, true, 4, 16, 2048, 1024, 512),
+            "hidden 2048 is not v4z's shape"
+        );
+        assert!(
+            !admits(true, true, 4, 16, 4096, 2048, 512),
+            "rms block above 1024"
+        );
+        assert!(
+            !admits(true, true, 4, 16, 4096, 1000, 512),
+            "rms block not a multiple of 32"
+        );
+    }
+    #[test]
+    fn the_other_refusals_still_hold() {
+        assert!(
+            !admits(false, true, 4, 16, 4096, 1024, 512),
+            "only the v2 fused arm"
+        );
+        assert!(!admits(true, true, 9, 16, 4096, 512, 512));
+        assert!(!admits(true, true, 4, 33, 4096, 512, 512));
+        assert!(!admits(true, true, 4, 16, 4100, 512, 512));
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn pre_t1_ws_zq8(
     e: &Engine,
@@ -1034,13 +1108,22 @@ pub fn pre_t1_ws_zq8(
     let width = streams * hidden;
     let block = crate::hc_pre_block();
     let rms_bd = crate::rms_block() as usize;
-    if hc_fused_pre_arm() != HcFusedPreArm::V2
-        || streams > 8
-        || rows > 32
-        || rms_bd > block
-        || !rms_bd.is_multiple_of(32)
-        || !hidden.is_multiple_of(32)
-    {
+    // `rms_bd > block` is the v1 zq8 kernel's constraint (it replays the norm on `block`
+    // threads). The v4z kernel always runs 1024 threads and takes any rms block up to 1024
+    // (dsv4_gpu.cu: nb 32..=1024, multiple of 32), so under MEMRA_HC_PRE_V4Z=1 at the shape it
+    // serves the guard must not apply: headline5 (2026-09-06) ran every "V4Z" boot with
+    // MEMRA_RMS_BLOCK=1024 against the served block 512, this guard returned None on every
+    // site, the walk fell back to the two-launch program with hc_pre_fused_v3, and three arms
+    // measured nothing (receipts: kernel=hc_pre_fused_v3, no [hc-pre-zq8] engaged line).
+    if !pre_t1_ws_zq8_admits(
+        hc_fused_pre_arm() == HcFusedPreArm::V2,
+        crate::hc_pre_v4z_on(),
+        streams,
+        rows,
+        hidden,
+        rms_bd,
+        block,
+    ) {
         return Ok(None);
     }
     // MEMRA_HC_PRE_ZQ8=2 (self-check, 2026-09-05): the served tape forks between the fused and
