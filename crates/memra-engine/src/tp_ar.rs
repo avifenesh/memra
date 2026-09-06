@@ -399,6 +399,75 @@ impl ArLink {
         Ok(())
     }
 
+    /// The one-shot all-reduce OUT OF PLACE: rank r reads both `inputs` (its own and the peer's,
+    /// over the fabric) and writes `outs[r]`, which must not alias either input. No staging copy:
+    /// the in-place form has to copy each operand aside first because the peer may still be
+    /// reading a buffer this rank is about to overwrite, and that is two host-issued memcpys per
+    /// reduce (~90 reduces per token on the symmetric walk). With a separate output nothing is
+    /// overwritten while it is read; the exit barrier still keeps the NEXT reduce's inputs from
+    /// being written while the peer reads these (both ranks' blocks pass it only after their
+    /// reads). Same kernel, same operand order (global rank 0 + rank 1), so bitwise the in-place
+    /// form (`tests/tp_ar_gpu.rs`).
+    pub fn all_reduce_1stage_into(
+        &mut self,
+        engines: &[&Engine],
+        inputs: &[&CudaSlice<f32>],
+        outs: &mut [&mut CudaSlice<f32>],
+        n: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if engines.len() != 2 || inputs.len() != 2 || outs.len() != 2 {
+            return Err("tp all-reduce (into): this arm is two ranks".into());
+        }
+        if n == 0 {
+            return Err("tp all-reduce needs a non-zero element count".into());
+        }
+        if inputs.iter().any(|b| b.len() < n) || outs.iter().any(|b| b.len() < n) {
+            return Err(format!("tp all-reduce (into): every buffer must hold {n} floats").into());
+        }
+        let mut inp = [std::ptr::null::<f32>(); 2];
+        let mut outp = [std::ptr::null_mut::<f32>(); 2];
+        let mut sig = [std::ptr::null_mut::<std::ffi::c_void>(); 2];
+        let mut errp = [std::ptr::null_mut::<i32>(); 2];
+        for r in 0..2 {
+            let e = engines[r];
+            let _main = e.gpu.enter_main()?;
+            let s = e.stream();
+            inp[r] = inputs[r].device_ptr(&s).0 as *const f32;
+            outp[r] = outs[r].device_ptr(&s).0 as *mut f32;
+            sig[r] = self.sig[r].device_ptr(&s).0 as *mut std::ffi::c_void;
+            errp[r] = self.err[r].device_ptr(&s).0 as *mut i32;
+            if std::ptr::eq(inp[r], outp[r]) {
+                return Err("tp all-reduce (into): the output aliases an input".into());
+            }
+        }
+        let blocks = AR_BLOCKS.min(n.div_ceil(512).max(1) as i32);
+        for r in 0..2 {
+            let e = engines[r];
+            let _main = e.gpu.enter_main()?;
+            let st = e.stream();
+            // SAFETY: peer access is granted both ways; every buffer is sized and checked above.
+            let rc = unsafe {
+                memra_tp_ar_1stage(
+                    inp[0],
+                    inp[1],
+                    outp[r],
+                    sig[r],
+                    sig[1 - r],
+                    r as i32,
+                    n as i64,
+                    errp[r],
+                    AR_SPIN_LIMIT,
+                    blocks,
+                    st.cu_stream() as *mut c_void,
+                )
+            };
+            if rc != 0 {
+                return Err(format!("memra_tp_ar_1stage rc {rc} on rank {r}").into());
+            }
+        }
+        Ok(())
+    }
+
     /// Per-rank refusal words from the one-shot arm's bounded wait: 0 is clean, 40043 is the entry
     /// barrier expiring and 40044 the exit barrier. Costs a drain, so it belongs in gates and
     /// after a failure, never on the walk.

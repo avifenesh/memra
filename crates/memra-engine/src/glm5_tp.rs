@@ -293,6 +293,33 @@ impl Glm5TpRt {
         Ok(true)
     }
 
+    /// The out-of-place one-shot (`ArLink::all_reduce_1stage_into`): no staging copies. Same
+    /// availability contract as `ar_1stage`; Ok(false) when the one-shot cannot serve.
+    pub fn ar_1stage_into(
+        &self,
+        root: &Engine,
+        inputs: &[&CudaSlice<f32>],
+        outs: &mut [&mut CudaSlice<f32>],
+        n: usize,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        if !self.ar_1stage_available() {
+            return Ok(false);
+        }
+        let engines: Vec<&Engine> = std::iter::once(root).chain(self.peers.iter()).collect();
+        let mut guard = self
+            .ar
+            .lock()
+            .map_err(|_| "glm5-tp one-shot all-reduce: the link mutex is poisoned")?;
+        if guard.is_none() {
+            *guard = Some(crate::tp_ar::ArLink::new(&engines)?);
+        }
+        guard
+            .as_mut()
+            .expect("built above")
+            .all_reduce_1stage_into(&engines, inputs, outs, n)?;
+        Ok(true)
+    }
+
     /// Rank count of this runtime (root + peers).
     pub fn ranks(&self) -> usize {
         self.peers.len() + 1
@@ -1315,12 +1342,20 @@ pub(crate) fn kda_tp_cached_sym(
         // Row-parallel wo: this rank's channels in, the FULL hidden width out, as a partial sum.
         partials.push(dev.matmul(&la.wo, &gated, t)?);
     }
-    let (a, b) = partials.split_at_mut(1);
-    let reduced = rt.ar_1stage(e, &mut [&mut a[0], &mut b[0]], t * n_embd)?;
+    // Out of place: the partials are the inputs, two fresh buffers the outputs (no staging copy).
+    let peer = &rt.peers[0];
+    let mut red0 = e.zeros(t * n_embd)?;
+    let mut red1 = peer.zeros(t * n_embd)?;
+    let reduced = rt.ar_1stage_into(
+        e,
+        &[&partials[0], &partials[1]],
+        &mut [&mut red0, &mut red1],
+        t * n_embd,
+    )?;
     if !reduced {
         return Err("kda_tp_cached_sym: the one-shot declined after availability said yes".into());
     }
-    Ok(partials)
+    Ok(vec![red0, red1])
 }
 
 #[allow(clippy::too_many_arguments)] // mirrors the kda entry contract shape
