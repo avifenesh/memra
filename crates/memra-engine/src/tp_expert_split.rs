@@ -174,9 +174,8 @@ pub fn split_cols(
         )
         .into());
     }
-    debug_assert_eq!(
-        (half * h.row_bytes) % h.in_f,
-        0,
+    debug_assert!(
+        (half * h.row_bytes).is_multiple_of(h.in_f),
         "a block-aligned half must also divide the row bytes"
     );
     let keep = half * h.row_bytes / h.in_f;

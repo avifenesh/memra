@@ -685,7 +685,9 @@ fn shard_cols(
             }
             // Block alignment, counted in BLOCKS: `row_bytes = in_f / block * type_size` is
             // linear in `in_f`, so a byte-offset test passes a boundary that cuts a block.
-            if (cols.start * row_bytes) % inner != 0 || (take * row_bytes) % inner != 0 {
+            if !(cols.start * row_bytes).is_multiple_of(inner)
+                || !(take * row_bytes).is_multiple_of(inner)
+            {
                 return Err(format!(
                     "glm5-tp shard cols: {cols:?} of {inner} does not land on a block boundary \
                      (row_bytes {row_bytes})"
@@ -1697,6 +1699,126 @@ pub(crate) fn arm_moe_ep(
     Ok(())
 }
 
+// ------------------------------------------------------------------------------------------
+// Expert TENSOR-parallelism (lane/tp-expert-split-20260906)
+// ------------------------------------------------------------------------------------------
+
+/// Every rank holds HALF OF EVERY EXPERT, instead of all of half the experts.
+///
+/// WHY, and it is a sizing fact rather than a preference: with whole-expert ownership a top-8
+/// token splits Binomial(8, 0.5) across two ranks and a memory-bound decode step is paced by the
+/// BUSIER rank, so `E[max] = 5.094` and expert parallelism buys a 1.571x expert-half speedup
+/// where the TP sizing assumed 2x. The even 4/4 split happens on 27.3% of tokens; 28.9% land 6-2
+/// or worse. Splitting inside each expert removes the variance rather than averaging it: whatever
+/// the router picks, each rank streams exactly half of every routed expert.
+/// (`tp_expert_split::ep_busier_rank_experts` carries that arithmetic as a test.)
+///
+/// SLAB SHAPE. `gate` and `up` are ROW-split (out rows `[r*half, (r+1)*half)` of every expert),
+/// `down` is COLUMN-split (input columns of the same range), so a slot's program on rank `r` is
+/// the unsharded program at half the intermediate width, producing a FULL-WIDTH partial sum.
+/// There is no owner map: every rank runs every routed slot.
+pub struct Glm5TpSplitExps {
+    pub rt: Arc<Glm5TpRt>,
+    /// `slabs[r]` is rank r's half of ALL experts (`[0]` = root's, on the model's engine).
+    pub slabs: Vec<EpRankSlab>,
+    /// The per-rank intermediate width: `n_ff_exp / ranks`.
+    pub half_ff: usize,
+    /// Per-rank `gate`/`up` expert stride in bytes (row-split: `half_ff * row_bytes`).
+    pub gate_stride: usize,
+    pub up_stride: usize,
+    /// Per-rank `down` expert stride in bytes (column-split: `n_embd * (row_bytes / ranks)`).
+    pub down_stride: usize,
+    /// Per-rank `down` row width in bytes after the column split.
+    pub down_row_bytes: usize,
+}
+
+impl Glm5TpSplitExps {
+    pub fn ranks(&self) -> usize {
+        self.slabs.len()
+    }
+}
+
+/// `MEMRA_GLM5_TP_EXPERT_SPLIT=1` (lane/tp-expert-split-20260906, default OFF, decide-by
+/// 2026-09-20): shard every expert across the TP ranks instead of assigning whole experts.
+///
+/// NOT byte-identical, and the split is where: `gate`/`up` are row splits, so every output
+/// element stays one full-K dot over the same bytes and that half is bit-identical, as is the
+/// SwiGLU after it. `down` is a column split, so each rank produces a partial sum over half the
+/// K range and the ranks' partials are added, which is a 2-way split of a reduction the
+/// unsharded walk does in one pass. Named class, gated as one.
+pub fn glm5_tp_expert_split_on() -> bool {
+    std::env::var("MEMRA_GLM5_TP_EXPERT_SPLIT").as_deref() == Ok("1")
+}
+
+static SPLIT_MARKED: AtomicBool = AtomicBool::new(false);
+
+/// Build the per-rank half-expert slabs. Load-time only: one host staging pass per rank per
+/// projection, then one upload each.
+pub(crate) fn shard_moe_layer_split(
+    e: &Engine,
+    rt: &Arc<Glm5TpRt>,
+    m: &crate::hybrid::MoeWeights,
+    n_embd: usize,
+) -> Result<Glm5TpSplitExps, Box<dyn std::error::Error>> {
+    use crate::tp_expert_split::{split_cols, split_rows};
+    let ranks = rt.ranks();
+    let mut slabs = Vec::with_capacity(ranks);
+    let (mut gate_stride, mut up_stride, mut down_stride, mut down_row_bytes, mut half_ff) =
+        (0usize, 0usize, 0usize, 0usize, 0usize);
+    for r in 0..ranks {
+        let dev = rank_engine(e, rt, r);
+        let g = split_rows(&m.gate_exps, ranks, r)?;
+        let u = split_rows(&m.up_exps, ranks, r)?;
+        let d = split_cols(&m.down_exps, ranks, r)?;
+        if g.out_f != u.out_f || g.out_f != d.in_f {
+            return Err(format!(
+                "glm5-tp expert split: rank {r} halves disagree (gate out {} up out {} down in {})",
+                g.out_f, u.out_f, d.in_f
+            )
+            .into());
+        }
+        if d.out_f != n_embd {
+            return Err(format!(
+                "glm5-tp expert split: down out {} is not the hidden width {n_embd}",
+                d.out_f
+            )
+            .into());
+        }
+        half_ff = g.out_f;
+        gate_stride = g.expert_stride;
+        up_stride = u.expert_stride;
+        down_stride = d.expert_stride;
+        down_row_bytes = d.row_bytes;
+        // The same tail-slack pads the whole-expert slabs take: the ragged-k grouped GEMM may
+        // overread past the LAST row, and the slack only prevents the OOB fault.
+        slabs.push(EpRankSlab {
+            gate: dev.htod_bytes_padded(&g.bytes, 8)?,
+            up: dev.htod_bytes_padded(&u.bytes, 8)?,
+            down: dev.htod_bytes_padded(&d.bytes, 144)?,
+            n_experts: m.gate_exps.n_expert,
+        });
+    }
+    if !SPLIT_MARKED.swap(true, Ordering::Relaxed) {
+        eprintln!(
+            "[glm5-tp-split] expert TENSOR-parallel armed: every rank holds half of ALL {} \
+             experts, half_ff={half_ff} (whole-expert ownership pays the busier rank: \
+             E[max]=5.094 of 8, a 1.571x expert half where the split is a deterministic 2x) \
+             transport={} performance_claim=false",
+            m.gate_exps.n_expert,
+            rt.transport.name(),
+        );
+    }
+    Ok(Glm5TpSplitExps {
+        rt: rt.clone(),
+        slabs,
+        half_ff,
+        gate_stride,
+        up_stride,
+        down_stride,
+        down_row_bytes,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1819,124 +1941,4 @@ mod tests {
         refuse_glm5_tp_door_composition(|f| f == "MEMRA_GLM5_VERIFY_BATCH")
             .expect("verify-batch is refused via the spec co-refusal, not here");
     }
-}
-
-// ------------------------------------------------------------------------------------------
-// Expert TENSOR-parallelism (lane/tp-expert-split-20260906)
-// ------------------------------------------------------------------------------------------
-
-/// Every rank holds HALF OF EVERY EXPERT, instead of all of half the experts.
-///
-/// WHY, and it is a sizing fact rather than a preference: with whole-expert ownership a top-8
-/// token splits Binomial(8, 0.5) across two ranks and a memory-bound decode step is paced by the
-/// BUSIER rank, so `E[max] = 5.094` and expert parallelism buys a 1.571x expert-half speedup
-/// where the TP sizing assumed 2x. The even 4/4 split happens on 27.3% of tokens; 28.9% land 6-2
-/// or worse. Splitting inside each expert removes the variance rather than averaging it: whatever
-/// the router picks, each rank streams exactly half of every routed expert.
-/// (`tp_expert_split::ep_busier_rank_experts` carries that arithmetic as a test.)
-///
-/// SLAB SHAPE. `gate` and `up` are ROW-split (out rows `[r*half, (r+1)*half)` of every expert),
-/// `down` is COLUMN-split (input columns of the same range), so a slot's program on rank `r` is
-/// the unsharded program at half the intermediate width, producing a FULL-WIDTH partial sum.
-/// There is no owner map: every rank runs every routed slot.
-pub struct Glm5TpSplitExps {
-    pub rt: Arc<Glm5TpRt>,
-    /// `slabs[r]` is rank r's half of ALL experts (`[0]` = root's, on the model's engine).
-    pub slabs: Vec<EpRankSlab>,
-    /// The per-rank intermediate width: `n_ff_exp / ranks`.
-    pub half_ff: usize,
-    /// Per-rank `gate`/`up` expert stride in bytes (row-split: `half_ff * row_bytes`).
-    pub gate_stride: usize,
-    pub up_stride: usize,
-    /// Per-rank `down` expert stride in bytes (column-split: `n_embd * (row_bytes / ranks)`).
-    pub down_stride: usize,
-    /// Per-rank `down` row width in bytes after the column split.
-    pub down_row_bytes: usize,
-}
-
-impl Glm5TpSplitExps {
-    pub fn ranks(&self) -> usize {
-        self.slabs.len()
-    }
-}
-
-/// `MEMRA_GLM5_TP_EXPERT_SPLIT=1` (lane/tp-expert-split-20260906, default OFF, decide-by
-/// 2026-09-20): shard every expert across the TP ranks instead of assigning whole experts.
-///
-/// NOT byte-identical, and the split is where: `gate`/`up` are row splits, so every output
-/// element stays one full-K dot over the same bytes and that half is bit-identical, as is the
-/// SwiGLU after it. `down` is a column split, so each rank produces a partial sum over half the
-/// K range and the ranks' partials are added, which is a 2-way split of a reduction the
-/// unsharded walk does in one pass. Named class, gated as one.
-pub fn glm5_tp_expert_split_on() -> bool {
-    std::env::var("MEMRA_GLM5_TP_EXPERT_SPLIT").as_deref() == Ok("1")
-}
-
-static SPLIT_MARKED: AtomicBool = AtomicBool::new(false);
-
-/// Build the per-rank half-expert slabs. Load-time only: one host staging pass per rank per
-/// projection, then one upload each.
-pub(crate) fn shard_moe_layer_split(
-    e: &Engine,
-    rt: &Arc<Glm5TpRt>,
-    m: &crate::hybrid::MoeWeights,
-    n_embd: usize,
-) -> Result<Glm5TpSplitExps, Box<dyn std::error::Error>> {
-    use crate::tp_expert_split::{split_cols, split_rows};
-    let ranks = rt.ranks();
-    let mut slabs = Vec::with_capacity(ranks);
-    let (mut gate_stride, mut up_stride, mut down_stride, mut down_row_bytes, mut half_ff) =
-        (0usize, 0usize, 0usize, 0usize, 0usize);
-    for r in 0..ranks {
-        let dev = rank_engine(e, rt, r);
-        let g = split_rows(&m.gate_exps, ranks, r)?;
-        let u = split_rows(&m.up_exps, ranks, r)?;
-        let d = split_cols(&m.down_exps, ranks, r)?;
-        if g.out_f != u.out_f || g.out_f != d.in_f {
-            return Err(format!(
-                "glm5-tp expert split: rank {r} halves disagree (gate out {} up out {} down in {})",
-                g.out_f, u.out_f, d.in_f
-            )
-            .into());
-        }
-        if d.out_f != n_embd {
-            return Err(format!(
-                "glm5-tp expert split: down out {} is not the hidden width {n_embd}",
-                d.out_f
-            )
-            .into());
-        }
-        half_ff = g.out_f;
-        gate_stride = g.expert_stride;
-        up_stride = u.expert_stride;
-        down_stride = d.expert_stride;
-        down_row_bytes = d.row_bytes;
-        // The same tail-slack pads the whole-expert slabs take: the ragged-k grouped GEMM may
-        // overread past the LAST row, and the slack only prevents the OOB fault.
-        slabs.push(EpRankSlab {
-            gate: dev.htod_bytes_padded(&g.bytes, 8)?,
-            up: dev.htod_bytes_padded(&u.bytes, 8)?,
-            down: dev.htod_bytes_padded(&d.bytes, 144)?,
-            n_experts: m.gate_exps.n_expert,
-        });
-    }
-    if !SPLIT_MARKED.swap(true, Ordering::Relaxed) {
-        eprintln!(
-            "[glm5-tp-split] expert TENSOR-parallel armed: every rank holds half of ALL {} \
-             experts, half_ff={half_ff} (whole-expert ownership pays the busier rank: \
-             E[max]=5.094 of 8, a 1.571x expert half where the split is a deterministic 2x) \
-             transport={} performance_claim=false",
-            m.gate_exps.n_expert,
-            rt.transport.name(),
-        );
-    }
-    Ok(Glm5TpSplitExps {
-        rt: rt.clone(),
-        slabs,
-        half_ff,
-        gate_stride,
-        up_stride,
-        down_stride,
-        down_row_bytes,
-    })
 }
