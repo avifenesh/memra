@@ -1391,9 +1391,18 @@ pub(crate) fn shard_mla_layer(
         peers.push(rank_shard(&rt.peers[r - 1], r)?);
     }
     if !MLA_MARKED.swap(true, Ordering::Relaxed) {
+        // The `wo=` field must name the shard this load ACTUALLY took, not the one this arm used
+        // to take. Since lane/tp-expert-split-20260906 the same door that splits the experts also
+        // turns `wo` row-parallel, and a hardcoded "column-over-gather" here reported the wrong
+        // one on every split boot. A receipt line is only worth what its arguments say.
+        let wo_shape = if glm5_tp_expert_split_on() {
+            "row-parallel-partial-sums"
+        } else {
+            "column-over-gather"
+        };
         eprintln!(
             "[glm5-tp-mla] head shard armed: ranks={ranks} heads_per_rank={hl} kv_rank={} \
-             latent=replicated indexer=replicated wo=column-over-gather transport={} \
+             latent=replicated indexer=replicated wo={wo_shape} transport={} \
              performance_claim=false",
             g.kv_rank,
             rt.transport.name(),
