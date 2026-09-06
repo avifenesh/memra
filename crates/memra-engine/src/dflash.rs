@@ -2577,6 +2577,20 @@ pub struct DflashKv {
     window_rows: usize,
     /// `n_kv * head_dim * size_of::<f32>()` — the row unit for tail copies.
     row_bytes: usize,
+    /// LIVE RING (memra#249 lever 13, `MEMRA_DFLASH_KV_RING`): the logical row held at
+    /// PHYSICAL row 0. Every reader and writer addresses `logical - base`. The drafter's
+    /// windowed attention never reads below `len + 1 - sliding_window` (`sdpa_naive_w_lo`'s
+    /// `kv_lo`), so rows older than the trailing window are dead weight: a 45k-token request
+    /// held 1.8 GB of draft KV for 84 MB of use, charged to admission at 1,856 B/token. With the
+    /// ring the buffer is `phys_rows` long and `ensure_room` compacts the trailing window to
+    /// the front (one D2D copy per layer every ~window rows). Door OFF: `base` is always 0,
+    /// `phys_rows == cap + block`, nothing compacts, and every path is the pre-lane program.
+    base: usize,
+    /// Physical rows allocated per layer (`cap + block` with the door off).
+    phys_rows: usize,
+    /// Lowest logical row that must stay resident: a pending prefix capture's `pos - window`,
+    /// so the worker's later `export_tail(pos)` still finds its rows. `None` = no pin.
+    pin: Option<usize>,
     /// CONTEXT FLOOR (lane/spec-exclusions-20260902): the first ctx row that EXISTS. `0` on
     /// every cold-primed KV and every full-tail import (the pre-lane shape). A COLD-DRAFTER
     /// KV (`new_cold_at`) or a short-tail import (`from_tail` of a tail whose exporter had
@@ -2684,6 +2698,66 @@ pub(crate) fn dspark_boundary_split(
     Ok(Some(b))
 }
 
+/// The draft KV keeps only its trailing window resident (memra#249 lever 13). Default ON
+/// since 2026-09-07 on the 5090 lane receipt (memra#301: byte-identical to the cold oracle
+/// over three boots of the four-turn restore chain and over a 22.9k-prompt / 2,600-token
+/// greedy decode with 13 compactions on the request path; a 30k-prompt session holds 166 MB
+/// instead of 1.2 GB). `MEMRA_DFLASH_KV_RING=0` is the rollback seam: the pre-lane program
+/// exactly (base 0, `phys_rows == cap + block`, nothing compacts).
+pub(crate) fn dflash_kv_ring_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_DFLASH_KV_RING").as_deref() != Ok("0"))
+}
+
+/// What `ensure_room` does before `add` rows land at logical `len`, given the ring geometry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RingPlan {
+    /// The rows fit: write at `len - base`.
+    Fits,
+    /// Move logical rows `[keep_from, len)` to physical row 0, then `base = keep_from`.
+    Compact { keep_from: usize },
+    /// Even the rows that must stay do not fit with `add`: reallocate `phys_rows` rows,
+    /// carrying logical `[keep_from, len)` to the front.
+    Grow { keep_from: usize, phys_rows: usize },
+}
+
+/// Pure ring arithmetic, tested on its own. `keep_from` never drops below `base` (those rows
+/// are already gone), never below `len - window_rows` (the drafter still reads them), and
+/// never below `pin` (a pending capture will export them). Numerics are untouched by
+/// construction: the attention kernel's window bound excludes every row below
+/// `len + 1 - sliding_window`, and `window_rows = sliding_window + block` keeps at least
+/// that many, so the physical window is a superset of what any query can read.
+pub(crate) fn ring_plan(
+    len: usize,
+    base: usize,
+    phys_rows: usize,
+    window_rows: usize,
+    add: usize,
+    pin: Option<usize>,
+) -> RingPlan {
+    debug_assert!(len >= base, "ring: len {len} below base {base}");
+    let used = len - base;
+    if used + add <= phys_rows {
+        return RingPlan::Fits;
+    }
+    let mut keep_from = len.saturating_sub(window_rows);
+    if let Some(pin) = pin {
+        keep_from = keep_from.min(pin);
+    }
+    let keep_from = keep_from.max(base);
+    let kept = len - keep_from;
+    if kept + add <= phys_rows && keep_from > base {
+        RingPlan::Compact { keep_from }
+    } else {
+        // Reallocate with a full window of slack past the rows that must stay, so the next
+        // compaction is a window away rather than immediate.
+        RingPlan::Grow {
+            keep_from,
+            phys_rows: kept + add + window_rows,
+        }
+    }
+}
+
 impl DflashKv {
     pub fn new(
         e: &Engine,
@@ -2691,37 +2765,125 @@ impl DflashKv {
         cap: usize,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let rowsz = cfg.n_kv * cfg.head_dim;
+        let window_rows = cfg.sliding_window.saturating_add(cfg.block_size);
+        // Ring: two windows plus a block, so a compaction lands once per window of decode,
+        // never on consecutive rounds. Never more than the door-off size for a short cap.
+        let phys_rows = if dflash_kv_ring_on() {
+            (2 * window_rows + cfg.block_size).min(cap + cfg.block_size)
+        } else {
+            cap + cfg.block_size
+        };
         let mut k = Vec::with_capacity(cfg.n_layer);
         let mut v = Vec::with_capacity(cfg.n_layer);
         for _ in 0..cfg.n_layer {
-            k.push(e.uninit((cap + cfg.block_size) * rowsz)?);
-            v.push(e.uninit((cap + cfg.block_size) * rowsz)?);
+            k.push(e.uninit(phys_rows * rowsz)?);
+            v.push(e.uninit(phys_rows * rowsz)?);
         }
         Ok(Self {
             k,
             v,
             len: 0,
             cap,
-            window_rows: cfg.sliding_window.saturating_add(cfg.block_size),
+            window_rows,
             row_bytes: rowsz * std::mem::size_of::<f32>(),
+            base: 0,
+            phys_rows,
+            pin: None,
             floor: 0,
         })
     }
 
-    /// A COLD DRAFTER at a restored trunk boundary (lane/spec-exclusions-20260902, the
-    /// `MEMRA_SPEC_WARM=1` arm): a fresh KV whose logical length is already `pos` (the
-    /// restored prefix the trunk cache holds) but which owns NO ctx rows below it —
-    /// `floor == len == pos`. The restored prefix's tap features do not exist (the trunk
-    /// planes hold K/V latents, not the tapped residual rows), and re-running the trunk to
-    /// recover them is the prime the restore exists to skip; so instead the drafter starts
-    /// with an empty context at the right absolute position and fills it from the suffix
-    /// prime's taps and every committed round from there, exactly as a cold session over a
-    /// shorter prompt would. Row addressing (rope positions, `kv.len == cache.pos` at every
-    /// round boundary) is identical to a tail import; only the attention floor differs.
-    ///
-    /// The `window_rows` below the floor are zero-filled so a later `export_tail` (which
-    /// starts at the floor anyway) can never publish uninitialised bytes even under a
-    /// future geometry mistake — finite zeros are the same belt `from_tail` wears.
+    /// Physical row of a logical row. Debug-asserts the row is resident.
+    #[inline]
+    pub(crate) fn phys(&self, logical: usize) -> usize {
+        debug_assert!(
+            logical >= self.base,
+            "draft kv: logical row {logical} below the ring base {}",
+            self.base
+        );
+        logical - self.base
+    }
+
+    /// The floor the attention kernel sees: rows below `base` are not resident, so the
+    /// physical floor is `max(floor, base) - base`.
+    #[inline]
+    pub(crate) fn phys_floor(&self) -> usize {
+        self.floor.max(self.base) - self.base
+    }
+
+    /// A pending prefix capture at logical `pos` needs `[pos - window_rows, pos)` to survive
+    /// compaction until the worker exports the tail; `None` releases it.
+    pub(crate) fn set_pin(&mut self, pos: Option<usize>) {
+        self.pin = pos.map(|p| p.saturating_sub(self.window_rows));
+    }
+
+    /// Make room for `add` rows at logical `len` (memra#249 lever 13). Door off: a no-op,
+    /// because `phys_rows == cap + block` and `ingest_ctx` already refuses past `cap`.
+    pub(crate) fn ensure_room(
+        &mut self,
+        e: &Engine,
+        add: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if !dflash_kv_ring_on() {
+            return Ok(());
+        }
+        let rowsz = self.row_bytes / std::mem::size_of::<f32>();
+        match ring_plan(
+            self.len,
+            self.base,
+            self.phys_rows,
+            self.window_rows,
+            add,
+            self.pin,
+        ) {
+            RingPlan::Fits => Ok(()),
+            RingPlan::Compact { keep_from } => {
+                let kept = self.len - keep_from;
+                let src = (keep_from - self.base) * rowsz;
+                // Overlapping D2D moves are not defined for the copy helper: bounce through a
+                // scratch buffer per layer (84 MB per K/V at the q38 geometry, ~1 ms).
+                for li in 0..self.k.len() {
+                    let mut tk = e.uninit(kept * rowsz)?;
+                    let mut tv = e.uninit(kept * rowsz)?;
+                    e.copy_range_into(&mut tk, 0, &self.k[li], src, kept * rowsz)?;
+                    e.copy_range_into(&mut tv, 0, &self.v[li], src, kept * rowsz)?;
+                    e.copy_range_into(&mut self.k[li], 0, &tk, 0, kept * rowsz)?;
+                    e.copy_range_into(&mut self.v[li], 0, &tv, 0, kept * rowsz)?;
+                }
+                eprintln!(
+                    "[dflash-kv-ring] compact keep_from={keep_from} kept={kept} phys_rows={}",
+                    self.phys_rows
+                );
+                self.base = keep_from;
+                Ok(())
+            }
+            RingPlan::Grow {
+                keep_from,
+                phys_rows,
+            } => {
+                let kept = self.len - keep_from;
+                let src = (keep_from - self.base) * rowsz;
+                for li in 0..self.k.len() {
+                    let mut nk = e.uninit(phys_rows * rowsz)?;
+                    let mut nv = e.uninit(phys_rows * rowsz)?;
+                    if kept > 0 {
+                        e.copy_range_into(&mut nk, 0, &self.k[li], src, kept * rowsz)?;
+                        e.copy_range_into(&mut nv, 0, &self.v[li], src, kept * rowsz)?;
+                    }
+                    self.k[li] = nk;
+                    self.v[li] = nv;
+                }
+                eprintln!(
+                    "[dflash-kv-ring] grow keep_from={keep_from} kept={kept} phys_rows={phys_rows} (was {})",
+                    self.phys_rows
+                );
+                self.base = keep_from;
+                self.phys_rows = phys_rows;
+                Ok(())
+            }
+        }
+    }
+
     pub fn new_cold_at(
         e: &Engine,
         cfg: &DflashCfg,
@@ -2736,10 +2898,16 @@ impl DflashKv {
         let mut kv = Self::new(e, cfg, cap)?;
         let rowsz = kv.row_bytes / std::mem::size_of::<f32>();
         let zero_from = pos.saturating_sub(kv.window_rows);
+        if dflash_kv_ring_on() {
+            // The ring holds logical rows from `zero_from`; the whole physical window below
+            // `pos` is the zero-filled region.
+            kv.base = zero_from;
+        }
         if zero_from < pos {
+            let (z0, z1) = (kv.phys(zero_from), kv.phys(pos));
             for li in 0..kv.k.len() {
-                e.memset_zeros_view(&mut kv.k[li].slice_mut(zero_from * rowsz..pos * rowsz))?;
-                e.memset_zeros_view(&mut kv.v[li].slice_mut(zero_from * rowsz..pos * rowsz))?;
+                e.memset_zeros_view(&mut kv.k[li].slice_mut(z0 * rowsz..z1 * rowsz))?;
+                e.memset_zeros_view(&mut kv.v[li].slice_mut(z0 * rowsz..z1 * rowsz))?;
             }
         }
         kv.len = pos;
@@ -2768,6 +2936,8 @@ impl DflashDraft {
         let c = &self.cfg;
         let (h, nkv, hd) = (c.hidden, c.n_kv, c.head_dim);
         assert!(kv.len + t <= kv.cap, "draft kv overflow");
+        kv.ensure_room(e, t)?;
+        let at = kv.phys(kv.len) * nkv * hd;
         let pos_d = e.htod_i32(pos_new)?;
         for (li, l) in self.layers.iter().enumerate() {
             let k0 = self.mm(e, &l.wk, feats, t, h, nkv * hd)?;
@@ -2775,8 +2945,8 @@ impl DflashDraft {
             let mut kn = e.uninit(t * nkv * hd)?;
             e.rms_norm(&k0, &l.k_norm, &mut kn, hd, t * nkv, c.eps)?;
             self.rope_rows(e, &mut kn, &pos_d, nkv, t)?;
-            e.copy_into(&mut kv.k[li], kv.len * nkv * hd, &kn, t * nkv * hd)?;
-            e.copy_into(&mut kv.v[li], kv.len * nkv * hd, &v0, t * nkv * hd)?;
+            e.copy_into(&mut kv.k[li], at, &kn, t * nkv * hd)?;
+            e.copy_into(&mut kv.v[li], at, &v0, t * nkv * hd)?;
         }
         kv.len += t;
         Ok(())
@@ -2797,6 +2967,11 @@ impl DflashDraft {
         let b = c.block_size;
         assert_eq!(pos_block.len(), b);
         let ctx = kv.len;
+        // Ring: the block's transient rows land past the resident window; make room first,
+        // then address everything physically. `ctx` stays logical for the rope positions.
+        kv.ensure_room(e, b)?;
+        let ctx_phys = kv.phys(ctx);
+        let floor_phys = kv.phys_floor();
         let contiguous = pos_block.windows(2).all(|w| w[1] == w[0] + 1);
         let pos_blk = if crate::glm5_spec_dev_io_on() && contiguous && b > 0 {
             e.i32_iota_dev(pos_block[0], b)?
@@ -2823,8 +2998,8 @@ impl DflashDraft {
             e.rms_norm(&k0b, &l.k_norm, &mut kb, hd, b * nkv, c.eps)?;
             self.rope_rows(e, &mut q, &pos_blk, nh, b)?;
             self.rope_rows(e, &mut kb, &pos_blk, nkv, b)?;
-            e.copy_into(&mut kv.k[li], ctx * nkv * hd, &kb, b * nkv * hd)?;
-            e.copy_into(&mut kv.v[li], ctx * nkv * hd, &v0b, b * nkv * hd)?;
+            e.copy_into(&mut kv.k[li], ctx_phys * nkv * hd, &kb, b * nkv * hd)?;
+            e.copy_into(&mut kv.v[li], ctx_phys * nkv * hd, &v0b, b * nkv * hd)?;
             let mut attn = e.uninit(b * nh * hd)?;
             let scale = 1.0f32 / (hd as f32).sqrt();
             if self.dflash2.is_some() && c.layer_sliding[li] {
@@ -2843,10 +3018,10 @@ impl DflashDraft {
                     nh,
                     nkv,
                     b,
-                    ctx + b,
+                    ctx_phys + b,
                     scale,
                     c,
-                    kv.floor,
+                    floor_phys,
                 )?;
             } else if std::env::var("MEMRA_DFLASH_FA").is_ok() {
                 e.fa_prefill(
@@ -2858,7 +3033,7 @@ impl DflashDraft {
                     nh,
                     nkv,
                     b,
-                    ctx + b,
+                    ctx_phys + b,
                     scale,
                     false,
                 )?;
@@ -2872,7 +3047,7 @@ impl DflashDraft {
                     nh,
                     nkv,
                     b,
-                    ctx + b,
+                    ctx_phys + b,
                     scale,
                     false,
                 )?;
@@ -4370,14 +4545,27 @@ impl DflashKv {
             return None;
         }
         let base = upto - rows;
+        if base < self.base {
+            // Ring: those rows were compacted away. Only reachable if a capture was not pinned
+            // before the compaction that would have needed it — loud, because a silent None
+            // here reads downstream as "restore declined" with no cause.
+            eprintln!(
+                "[dspark] export_tail({upto}): rows [{base}, {}) are below the ring base {} — \
+                 the capture was not pinned; declining the tail",
+                base + rows,
+                self.base
+            );
+            return None;
+        }
+        let src = self.phys(base) * rowsz;
         let mut layers = Vec::with_capacity(self.k.len());
         for li in 0..self.k.len() {
             let (Ok(mut k), Ok(mut v)) = (e.uninit(rows * rowsz), e.uninit(rows * rowsz)) else {
                 return None;
             };
-            if e.copy_range_into(&mut k, 0, &self.k[li], base * rowsz, rows * rowsz)
+            if e.copy_range_into(&mut k, 0, &self.k[li], src, rows * rowsz)
                 .is_err()
-                || e.copy_range_into(&mut v, 0, &self.v[li], base * rowsz, rows * rowsz)
+                || e.copy_range_into(&mut v, 0, &self.v[li], src, rows * rowsz)
                     .is_err()
             {
                 return None;
@@ -4437,32 +4625,24 @@ impl DflashKv {
         // this KV floor-bearing; a full tail from a floored exporter does not need the floor
         // (every readable row is present) and keeps the pre-lane program.
         let rowsz = kv.row_bytes / std::mem::size_of::<f32>();
+        if dflash_kv_ring_on() {
+            // The imported tail IS the resident window: logical `tail.base` at physical 0.
+            // Nothing below it is zero-filled because nothing below it exists.
+            kv.base = tail.base;
+        }
+        let dst = kv.phys(tail.base) * rowsz;
         for li in 0..kv.k.len() {
             let (src_k, src_v) = &tail.layers[li];
-            if tail.base > 0 {
-                // Finite zeros below the tail: the legacy full-scan kernel reads these rows
-                // (see the doc above); NaN in either K or V poisons the row's contribution.
-                e.memset_zeros_view(&mut kv.k[li].slice_mut(0..tail.base * rowsz))
-                    .ok()?;
-                e.memset_zeros_view(&mut kv.v[li].slice_mut(0..tail.base * rowsz))
-                    .ok()?;
+            if dst > 0 {
+                // Finite zeros below the tail: the legacy full-scan kernel reads them (see the
+                // doc above); NaN in either K or V poisons the row's contribution.
+                e.memset_zeros_view(&mut kv.k[li].slice_mut(0..dst)).ok()?;
+                e.memset_zeros_view(&mut kv.v[li].slice_mut(0..dst)).ok()?;
             }
-            e.copy_range_into(
-                &mut kv.k[li],
-                tail.base * rowsz,
-                src_k,
-                0,
-                tail.rows * rowsz,
-            )
-            .ok()?;
-            e.copy_range_into(
-                &mut kv.v[li],
-                tail.base * rowsz,
-                src_v,
-                0,
-                tail.rows * rowsz,
-            )
-            .ok()?;
+            e.copy_range_into(&mut kv.k[li], dst, src_k, 0, tail.rows * rowsz)
+                .ok()?;
+            e.copy_range_into(&mut kv.v[li], dst, src_v, 0, tail.rows * rowsz)
+                .ok()?;
         }
         kv.len = tail.len;
         // A short tail (rows below the window because the exporter never owned them) makes
@@ -4504,7 +4684,21 @@ impl DsparkSpecSession {
     /// Drain the prompt-end prefix capture exactly once. Publication is worker-owned so it can
     /// apply namespace isolation, dedupe and the shared byte budget at the scheduler boundary.
     pub fn take_prefix_capture(&mut self) -> Option<crate::spec::SpecBoundaryCapture> {
+        // The ring pin outlives the capture until the worker has exported the tail (the
+        // export happens in the same publish, right after this take); `release_capture_pin`
+        // lets the ring compact past those rows again.
         take_dspark_prefix_capture(&mut self.prefix_capture)
+    }
+
+    /// Called by the worker once the published tail is exported (or the publish was refused).
+    pub fn release_capture_pin(&mut self) {
+        self.dkv.set_pin(None);
+    }
+
+    /// Ring bookkeeping for a capture at `pos`: keep `[pos - window, pos)` resident.
+    fn pin_capture(&mut self) {
+        let pos = self.prefix_capture.as_ref().map(|c| c.pos);
+        self.dkv.set_pin(pos);
     }
     /// DEMOTION HANDOFF (lane/dspark-spec-gate-demote, 2026-08-24): consume this session and
     /// hand its trunk cache + next-token prediction to the plain batched-decode path — the
@@ -4737,7 +4931,7 @@ impl crate::hybrid::HybridModel {
             .and_then(|v| v.parse().ok())
             .unwrap_or(nd + 1)
             .clamp(2, nd + 1);
-        Ok(DsparkSpecSession {
+        let mut sess = DsparkSpecSession {
             cache,
             prefix_capture,
             dkv,
@@ -4753,7 +4947,9 @@ impl crate::hybrid::HybridModel {
             sctr: sctr0,
             uctr: 0,
             pen_hist,
-        })
+        };
+        sess.pin_capture();
+        Ok(sess)
     }
 
     /// One scheduler burst: dspark rounds until >= `burst_target` tokens are committed,
@@ -5031,6 +5227,7 @@ impl crate::hybrid::HybridModel {
                     }),
                     Err(_) => None,
                 };
+                sess.pin_capture();
                 if let Some(taps) = sess.cache.dflash_taps.as_mut() {
                     taps.origin = l;
                     taps.base = l;
@@ -7080,6 +7277,85 @@ mod dspark_vt_tests {
         };
         let want_plain = -0.25 + 0.5 * 1.0 - 1.0 * 2.0 + 2.0 * 3.0;
         assert_eq!(ch_plain.raw_score(&hidden, None), want_plain);
+    }
+}
+
+#[cfg(test)]
+mod dflash_kv_ring_tests {
+    use super::{RingPlan, ring_plan};
+
+    // q38-dflash2 geometry: window 2048 + block 16 = 2064 rows; ring buffer 2*2064 + 16 = 4144.
+    const W: usize = 2064;
+    const P: usize = 4144;
+
+    #[test]
+    fn fits_until_the_physical_buffer_is_full() {
+        assert_eq!(ring_plan(0, 0, P, W, 16, None), RingPlan::Fits);
+        assert_eq!(ring_plan(P - 16, 0, P, W, 16, None), RingPlan::Fits);
+        assert_ne!(ring_plan(P - 15, 0, P, W, 16, None), RingPlan::Fits);
+    }
+
+    #[test]
+    fn compaction_keeps_exactly_the_trailing_window() {
+        // 4130 rows resident from base 0, a block arrives: keep [4130-2064, 4130).
+        assert_eq!(
+            ring_plan(4130, 0, P, W, 16, None),
+            RingPlan::Compact {
+                keep_from: 4130 - W
+            }
+        );
+        // After that compaction the next one is a full window away.
+        let base = 4130 - W;
+        assert_eq!(ring_plan(4130 + 16, base, P, W, 16, None), RingPlan::Fits);
+        assert_eq!(
+            ring_plan(base + P - 16, base, P, W, 16, None),
+            RingPlan::Fits
+        );
+    }
+
+    #[test]
+    fn a_pinned_capture_extends_what_is_kept() {
+        // Capture at 3000 pinned to keep [3000-2064=936, ..): compaction at len 4130 keeps
+        // from 936, which fits (4130-936+16 = 3210 <= 4144).
+        assert_eq!(
+            ring_plan(4130, 0, P, W, 16, Some(936)),
+            RingPlan::Compact { keep_from: 936 }
+        );
+        // A pin far behind still fits after compaction (4130-10+16 = 4136 <= 4144): compact.
+        assert_eq!(
+            ring_plan(4130, 0, P, W, 16, Some(10)),
+            RingPlan::Compact { keep_from: 10 }
+        );
+        // A pin at the very first row leaves nothing to drop: grow instead of losing rows.
+        assert_eq!(
+            ring_plan(4130, 0, P, W, 16, Some(0)),
+            RingPlan::Grow {
+                keep_from: 0,
+                phys_rows: 4130 + 16 + W
+            }
+        );
+    }
+
+    #[test]
+    fn keep_from_never_drops_below_base() {
+        // base already at 3000: a pin at 10 cannot resurrect rows; keep from base and grow.
+        assert_eq!(
+            ring_plan(3000 + P - 8, 3000, P, W, 16, Some(10)),
+            RingPlan::Grow {
+                keep_from: 3000,
+                phys_rows: (P - 8) + 16 + W
+            }
+        );
+    }
+
+    #[test]
+    fn door_off_geometry_never_compacts() {
+        // Door off: phys_rows == cap + block, and ingest refuses past cap first, so any
+        // add that fits the cap fits the buffer.
+        let cap = 65_536;
+        for len in [0usize, 1, W, 10_000, cap - 16] {
+            assert_eq!(ring_plan(len, 0, cap + 16, W, 16, None), RingPlan::Fits);
+        }
     }
 }
 

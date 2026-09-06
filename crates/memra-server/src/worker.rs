@@ -11141,6 +11141,21 @@ fn publish_dspark_prefix_capture(
     engine: &Engine,
     px: &mut PrefixCache,
     hpx: &mut HostPrefixCache,
+    s: &mut Session,
+    cap: memra_engine::spec::SpecBoundaryCapture,
+) {
+    publish_dspark_prefix_capture_inner(engine, px, hpx, s, cap);
+    // The capture is consumed on every path above (published, refused, or trunk-only), so
+    // the draft-KV ring may compact past the capture's rows again (memra#249 lever 13).
+    if let Some(dspark) = s.dspark.as_mut() {
+        dspark.release_capture_pin();
+    }
+}
+
+fn publish_dspark_prefix_capture_inner(
+    engine: &Engine,
+    px: &mut PrefixCache,
+    hpx: &mut HostPrefixCache,
     s: &Session,
     cap: memra_engine::spec::SpecBoundaryCapture,
 ) {
@@ -15780,7 +15795,7 @@ pub fn run(
             // have all yielded. Finished rows still exist in the active set; retirement is next,
             // and the next admission pass cannot run until the following tick.
             for (i, cap) in dspark_phase_captures {
-                publish_dspark_prefix_capture(&engine, &mut px, &mut hpx, &active[i], cap);
+                publish_dspark_prefix_capture(&engine, &mut px, &mut hpx, &mut active[i], cap);
             }
         }
         // retire finished sessions (reverse order so indices stay valid). Long-enough sessions
