@@ -2625,12 +2625,14 @@ pub enum DsparkCapture {
 /// `capture` carries the ABSOLUTE boundary of the whole new prompt (the worker's
 /// `plain_checkpoint_boundary`); `pos0` is the restored trunk length; `tp` the suffix length.
 /// Returns the split as a SUFFIX-LOCAL offset, or `None` when nothing is worth capturing:
-///   * not a `Boundary` request (PromptEnd never captures on resume — a cut inside the
-///     rendered generation header is the #248 bug, and the restored entry already exists);
-///   * the boundary is not strictly inside the suffix (`pos0 < b < pos0 + tp`): at or before
-///     `pos0` the entry restored FROM already covers it, at `tp` it is the header cut;
-///   * either half would be shorter than `PRIME_MIN_T` — `prime_cache` has no tokenwise
-///     tap-filling twin, so a sub-minimum half would leave draft taps unfilled.
+///
+/// * not a `Boundary` request (PromptEnd never captures on resume — a cut inside the
+///   rendered generation header is the #248 bug, and the restored entry already exists);
+/// * the boundary is not strictly inside the suffix (`pos0 < b < pos0 + tp`): at or before
+///   `pos0` the entry restored FROM already covers it, at `tp` it is the header cut;
+/// * either half would be shorter than `PRIME_MIN_T` — `prime_cache` has no tokenwise
+///   tap-filling twin, so a sub-minimum half would leave draft taps unfilled.
+///
 /// Errors, like `dspark_boundary_split`, only on an off-grid boundary: the two-call prime is
 /// bit-identical to the monolithic one iff the split row is a multiple of the GDN chunk, and
 /// an off-grid split is a silent numerical change, never a fallback.
