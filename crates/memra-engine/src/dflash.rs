@@ -7280,10 +7280,7 @@ mod dflash_kv_ring_tests {
     fn fits_until_the_physical_buffer_is_full() {
         assert_eq!(ring_plan(0, 0, P, W, 16, None), RingPlan::Fits);
         assert_eq!(ring_plan(P - 16, 0, P, W, 16, None), RingPlan::Fits);
-        assert_eq!(
-            ring_plan(P - 15, 0, P, W, 16, None) == RingPlan::Fits,
-            false
-        );
+        assert_ne!(ring_plan(P - 15, 0, P, W, 16, None), RingPlan::Fits);
     }
 
     #[test]
@@ -7312,12 +7309,17 @@ mod dflash_kv_ring_tests {
             ring_plan(4130, 0, P, W, 16, Some(936)),
             RingPlan::Compact { keep_from: 936 }
         );
-        // A pin far behind that no longer fits grows the buffer instead of dropping rows.
+        // A pin far behind still fits after compaction (4130-10+16 = 4136 <= 4144): compact.
         assert_eq!(
             ring_plan(4130, 0, P, W, 16, Some(10)),
+            RingPlan::Compact { keep_from: 10 }
+        );
+        // A pin at the very first row leaves nothing to drop: grow instead of losing rows.
+        assert_eq!(
+            ring_plan(4130, 0, P, W, 16, Some(0)),
             RingPlan::Grow {
-                keep_from: 10,
-                phys_rows: (4130 - 10) + 16 + W
+                keep_from: 0,
+                phys_rows: 4130 + 16 + W
             }
         );
     }
