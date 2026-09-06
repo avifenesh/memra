@@ -86,7 +86,9 @@ fn plan_runs(m: &HybridModel, lo: usize, hi: usize) -> Vec<(usize, usize)> {
     let mut out = Vec::new();
     let mut a = None;
     for il in lo..=hi {
-        let kda = il < hi && matches!(&m.layers[il].mixer, Mixer::Kda(la) if la.tp.is_some());
+        let kda = il < hi
+            && matches!(&m.layers[il].mixer, Mixer::Kda(la) if la.tp.is_some())
+            && matches!(&m.layers[il].ffn, crate::hybrid::Ffn::Moe(_));
         match (kda, a) {
             (true, None) => a = Some(il),
             (false, Some(s)) => {
@@ -269,7 +271,7 @@ pub(crate) fn walk_graphed(
     // for the token and put it back on every path.
     let mut st = take_state(m, e, peer, topology, cache, lo, hi)?;
     let r = walk_token(
-        m, e, peer, topology, x, x_peer, pos_d, pos_peer, lo, hi, cache, dev, &runs, &mut st,
+        m, e, peer, rt, topology, x, x_peer, pos_d, pos_peer, lo, hi, cache, dev, &runs, &mut st,
     );
     cache.glm5_tp_sym_graph = Some(st);
     r
@@ -280,6 +282,7 @@ fn walk_token(
     m: &HybridModel,
     e: &Engine,
     peer: &Engine,
+    rt: &crate::glm5_tp::Glm5TpRt,
     topology: &HyperTopology,
     x: &mut CudaSlice<f32>,
     x_peer: &mut CudaSlice<f32>,
@@ -342,6 +345,7 @@ fn walk_token(
                         m.sym_layer_step(
                             e,
                             peer,
+                            rt,
                             topology,
                             il,
                             x_io,
@@ -412,6 +416,7 @@ fn walk_token(
             m.sym_layer_step(
                 e,
                 peer,
+                rt,
                 topology,
                 il,
                 x_io,
