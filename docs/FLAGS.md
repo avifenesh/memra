@@ -2,6 +2,55 @@
 
 ## Active experiment: GLM latent NVFP4
 
+### Captured-operand diagnostic (not a serving or performance mode)
+
+`MEMRA_LATENT_CAPTURE_DIR` is **unset/OFF by default**. A nonempty absolute path
+selects an exclusive new private output directory. Existing paths, symlinks in
+any path component, parent traversal, missing parents, and invalid shapes fail
+closed. The hook counts only successful **f32-history** TC-prefill invocations
+with `visible >= 217744`, capturing the **11th eligible invocation once per
+process**. This is an invocation ordinal, not a claimed layer ID. With the frozen
+218K teacher-forcing input it targets the last eligible MLA layer of the final
+prefill chunk. Run one F32 probe with the knob; do not run a second model arm just
+to obtain compressed operands. The existing running package is not changed.
+
+Captured files are little-endian exact `q_nope`, `wk_b`, `wv_b`, visible f32 latent
+history, selected indices, and actual TC output, plus shape, attention scale bits,
+device ordinal, executable SHA256, and per-file hashes/counts in `manifest.txt`.
+The manifest is the completion marker; an incomplete directory is not a capture.
+No request text, model weights outside these projection operands, or credentials
+are copied. Nevertheless these are private model/workload-derived operands: use a
+private scratch path and never publish the capture into the public repository.
+
+Bounds: rank512, at most262144 visible rows,4096 query rows,128 heads,256-wide
+head dimensions,16384 indices/query, and at most1.5GiB of persisted planes total.
+All values must be finite; each query requires a nonempty, causal index selection
+with only `-1` padding. Readback is one plane at a time, never unused capacity.
+Budget at least8GiB free host RAM and8GiB free device memory for standalone replay
+at the allowed upper bound; this is a conservative planning reserve, not measured
+peak memory. The real target shape is smaller. Capture synchronizes and transfers
+operands; **no timing or serving claim may use this run**. Default OFF does only
+the cached flag check and no readback, allocation, or extra GPU launch.
+
+`latent_capture_check <absolute-capture-dir> <absolute-new-result-dir> [device=0]`
+is a standalone Cargo-autodiscovered binary. It validates hashes, finite values,
+counts, and causality before creating an engine. Unset the capture knob for replay.
+It loads only captured operands, never the190GB model. It compares CPU `PackedRow`
+encode/decode against native append planes and bounded selected-row gather,
+native BF16 conversion against CPU-dequantized history converted by the same
+converter, and native direct attention against the f32 reader with identical
+absorbed queries/indices. TC replay compares original captured output, original
+history versus CPU-quantized history (descriptive quantization effect), and native
+compressed versus CPU-dequantized history through the same private TC chain
+(bit-identity required). No MSE tuning, NLL/quality claim, runtime fallback,
+recalibration, or automatic hardware allocation. Failures preserve the directory;
+`result.txt` records completed comparisons and a failing comparison exits nonzero.
+Callers own the existing GPU lock and run capture/replay serially on non-production
+hardware. Rollback: unset the knob and use the original binary; captures never
+alter a bank. Receipts are pending main-task execution; a CPU geometry/causality
+test is included but not run in this handoff. Filesystem refusal was inspected
+statically; compilation and GPU replay are explicitly pending the main task.
+
 | Flag | Default | Contract |
 | --- | --- | --- |
 | `MEMRA_GLM53_NVFP4_LATENT` | OFF | `=1` selects row-local NVFP4 storage for 512-wide NoPE DSA latent history. Allocation, admission and prefix budgets count payload, per16 E4M3 scales and one f32 macro scale per row; snapshots retain the encoded format. Index/pool and recurrent planes stay unchanged. Decode reads packed rows directly; TC prefill uses a transient BF16 operand, never a persistent f32 shadow. Eager and live graph/verify MLA paths are wired; shared stage status is checked at completion boundaries and failed caches are tainted. Stateless all-row forward refuses; last-row forward uses the real cached path. Rollback: fresh process with flag absent/0, never reinterpretation of an existing snapshot. **Unqualified experiment**, no production/performance claim. decide-by: 2026-09-19. Gates: `crates/memra-engine/tests/latent_nvfp4_gpu.rs`, `crates/memra-kv/src/latent_nvfp4.rs`; final model-scale quality, rollback, reuse and best-vs-best receipts pending in issue244. Remove losing/neutral arm in this lane. |

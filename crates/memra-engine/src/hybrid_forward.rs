@@ -9619,7 +9619,7 @@ impl HybridModel {
     /// bf16 converts (wk_b/wv_b, 8.4M elems each) run per call, ~50 us class; a resident
     /// mirror is a later diet, not correctness.
     #[allow(clippy::too_many_arguments)]
-    fn mla_tc_prefill_chain(
+    pub(crate) fn mla_tc_prefill_chain(
         e: &Engine,
         wk_b: &CudaSlice<f32>,
         wv_b: &CudaSlice<f32>,
@@ -9636,6 +9636,7 @@ impl HybridModel {
         r: usize,
         scale: f32,
     ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        let capture_f32 = compressed.is_none();
         // Once-per-shape decline announce (the bf16_tc_gemm pattern): a door that quietly
         // stops engaging reads exactly like a door that never helped.
         fn declined(stage: &str, m: usize, n: usize, k: usize, batch: usize) {
@@ -9732,6 +9733,26 @@ impl HybridModel {
                 );
             });
         }
+        crate::latent_capture::capture(
+            e,
+            capture_f32,
+            wk_b,
+            wv_b,
+            q_nope,
+            latent,
+            idx,
+            &attn,
+            crate::latent_capture::Shape {
+                t,
+                visible: t_kv,
+                heads: nh,
+                dn,
+                dv,
+                rank: r,
+                slots: width,
+            },
+            scale,
+        )?;
         Ok(Some(attn))
     }
 

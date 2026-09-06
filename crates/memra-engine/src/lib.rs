@@ -90,6 +90,7 @@ pub mod glm5_tp;
 pub mod glm_spec;
 pub mod graph_update;
 pub mod kda;
+pub mod latent_capture;
 pub mod latent_nvfp4_ffi;
 /// MLA (multi-head latent attention) CPU f32 reference — GLM-5.2 bring-up lane increment 1.
 /// Naive vs absorbed decode forms + NORM/NEOX rope permutation, unit-tested; the permanent
