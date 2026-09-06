@@ -6745,6 +6745,113 @@ extern "C" __global__ void moe_gate_up_preclamp8_q8_rows_ilp(
     moe_gate_up_rows_ilp_warp(ptrs, scl, aq, ad, limit, act, in_f, n_ff, n_used, n_pairs, qt_g,
                               qt_u, rb_g, rb_u, o, pr, threadIdx.x);
 }
+// MEMRA_MOE_ROWS_SHACT: the 4-warp verify-rows gate/up block with the ACTIVATION staged in
+// shared memory once per block (lane/moe-rows-ceiling-20260906).
+//
+// WHY. The ceiling probe says this kernel is access-pattern bound: deleting every arithmetic
+// instruction buys 19%, deleting the memory traffic buys 4-5x (rig 2026-09-06). And the loads
+// are not all weights. Every block that shares a pair reads the SAME activation row -- 4096 q8_1
+// bytes plus nsb scale floats -- and there are n_ff / 4 = 512 such blocks per pair, so the
+// activation is fetched 512 times where once would do, and it is 8 of the ~20 global loads a
+// lane issues per group (a0[0..7] against the two planes' 12). L2 absorbs the bytes; the LSU
+// issue slots and the L1 tags it does not.
+//
+// WHAT. One `__syncthreads()`-separated prologue copies the row into shared (each of the 128
+// threads takes every 128th 16-byte chunk, then the scales), and the per-warp body reads the
+// activation from shared while the weights keep streaming from global exactly as before.
+//
+// EXACTNESS. Every operand, every group index and every accumulation is what
+// `moe_gate_up_rows_ilp_warp` does; only the address space of the activation changes, and a
+// q8_1 byte read through shared is the same byte. Bit-identical by construction (gate:
+// glm5_matvec_doors_gpu, the shact arm).
+__device__ __forceinline__ void moe_gate_up_nvfp4_rows_ilp_body_sh(
+        const unsigned char* __restrict__ grow, const unsigned char* __restrict__ urow,
+        const signed char* __restrict__ arow, const float* __restrict__ adrow, int nsb, int lane,
+        float& accg, float& accu) {
+    int g = lane;
+    for (; g + 96 < nsb; g += 128) {
+        nvfp4_grp_regs g0 = nvfp4_load_g<false>(grow, g, nsb);
+        nvfp4_grp_regs g1 = nvfp4_load_g<false>(grow, g + 32, nsb);
+        nvfp4_grp_regs g2 = nvfp4_load_g<false>(grow, g + 64, nsb);
+        nvfp4_grp_regs g3 = nvfp4_load_g<false>(grow, g + 96, nsb);
+        nvfp4_grp_regs u0 = nvfp4_load_g<false>(urow, g, nsb);
+        nvfp4_grp_regs u1 = nvfp4_load_g<false>(urow, g + 32, nsb);
+        nvfp4_grp_regs u2 = nvfp4_load_g<false>(urow, g + 64, nsb);
+        nvfp4_grp_regs u3 = nvfp4_load_g<false>(urow, g + 96, nsb);
+        const int* a0 = (const int*)(arow + (size_t)g * 32);
+        const int* a1 = (const int*)(arow + (size_t)(g + 32) * 32);
+        const int* a2 = (const int*)(arow + (size_t)(g + 64) * 32);
+        const int* a3 = (const int*)(arow + (size_t)(g + 96) * 32);
+        float d80 = adrow[g], d81 = adrow[g + 32], d82 = adrow[g + 64], d83 = adrow[g + 96];
+        accg += nvfp4_regs_dot(g0, a0, d80);
+        accu += nvfp4_regs_dot(u0, a0, d80);
+        accg += nvfp4_regs_dot(g1, a1, d81);
+        accu += nvfp4_regs_dot(u1, a1, d81);
+        accg += nvfp4_regs_dot(g2, a2, d82);
+        accu += nvfp4_regs_dot(u2, a2, d82);
+        accg += nvfp4_regs_dot(g3, a3, d83);
+        accu += nvfp4_regs_dot(u3, a3, d83);
+    }
+    for (; g + 32 < nsb; g += 64) {
+        nvfp4_grp_regs g0 = nvfp4_load_g<false>(grow, g, nsb);
+        nvfp4_grp_regs g1 = nvfp4_load_g<false>(grow, g + 32, nsb);
+        nvfp4_grp_regs u0 = nvfp4_load_g<false>(urow, g, nsb);
+        nvfp4_grp_regs u1 = nvfp4_load_g<false>(urow, g + 32, nsb);
+        const int* a0 = (const int*)(arow + (size_t)g * 32);
+        const int* a1 = (const int*)(arow + (size_t)(g + 32) * 32);
+        float d80 = adrow[g], d81 = adrow[g + 32];
+        accg += nvfp4_regs_dot(g0, a0, d80);
+        accu += nvfp4_regs_dot(u0, a0, d80);
+        accg += nvfp4_regs_dot(g1, a1, d81);
+        accu += nvfp4_regs_dot(u1, a1, d81);
+    }
+    for (; g < nsb; g += 32) {
+        const signed char* aqb = arow + (size_t)g * 32;
+        float d8 = adrow[g];
+        accg += nvfp4_tail_dot<false>(grow, g, nsb, aqb, d8);
+        accu += nvfp4_tail_dot<false>(urow, g, nsb, aqb, d8);
+    }
+}
+extern "C" __global__ void moe_gate_up_preclamp8_q8_rows_w4_shact(
+        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
+        const signed char* __restrict__ aq, const float* __restrict__ ad, float limit,
+        float* __restrict__ act, int in_f, int n_ff, int n_used, int n_pairs,
+        int qt_g, int qt_u, long rb_g, long rb_u) {
+    extern __shared__ unsigned char sh_raw[];
+    int nsb = in_f >> 5;
+    int pr = blockIdx.y;
+    if (pr >= n_pairs) return;
+    int tok = pr / n_used;
+    signed char* sh_a = (signed char*)sh_raw;                       // in_f bytes, 16 B aligned
+    float* sh_d = (float*)(sh_raw + (size_t)in_f);                  // nsb floats
+    {
+        const int4* src = (const int4*)(aq + (size_t)tok * in_f);
+        int4* dst = (int4*)sh_a;
+        int n16 = in_f >> 4;
+        int t = threadIdx.y * 32 + threadIdx.x;
+        for (int i = t; i < n16; i += blockDim.x * blockDim.y) dst[i] = src[i];
+        const float* sd = ad + (size_t)tok * nsb;
+        for (int i = t; i < nsb; i += blockDim.x * blockDim.y) sh_d[i] = sd[i];
+    }
+    __syncthreads();
+    int o = blockIdx.x * MEMRA_MMVQ_ROWS + threadIdx.y;
+    if (o >= n_ff) return;
+    const unsigned char* grow = (const unsigned char*)ptrs[pr] + (long)o * rb_g;
+    const unsigned char* urow = (const unsigned char*)ptrs[n_pairs + pr] + (long)o * rb_u;
+    float accg = 0.0f, accu = 0.0f;
+    if (qt_g == QT_NVFP4 && qt_u == QT_NVFP4) {
+        moe_gate_up_nvfp4_rows_ilp_body_sh(grow, urow, sh_a, sh_d, nsb, threadIdx.x, accg, accu);
+    } else {
+        accg = accu = __int_as_float(0x7fc00000);  // wiring error: poison, never a silent zero
+    }
+    accg = warp_reduce_sum(accg);
+    accu = warp_reduce_sum(accu);
+    if (threadIdx.x == 0) {
+        float u = fmaxf(fminf(accu * scl[n_pairs + pr], limit), -limit);
+        float x = fminf(accg * scl[pr], limit);
+        act[(size_t)pr * n_ff + o] = (x / (1.0f + expf(-x))) * u;
+    }
+}
 extern "C" __global__ void moe_gate_up_preclamp8_q8_rows_w4_ilp(
         const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
         const signed char* __restrict__ aq, const float* __restrict__ ad, float limit,

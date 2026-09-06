@@ -98,6 +98,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let x_d = e.htod(&vecf(t * gin, 91))?;
     let (aq, ad) = e.quantize_q8_1(&x_d, t, gin)?;
 
+    let shact = |set: usize| {
+        setenv("MEMRA_MOE_ROWS_SHACT", "1");
+        let r = e.moe_gate_up_preclamp8_q8_rows(
+            &sets[set], &scl_d, &aq, &ad, 7.0, gin, n_ff, n_used, n_pairs, QT_NVFP4, QT_NVFP4, grb,
+            grb,
+        );
+        setenv("MEMRA_MOE_ROWS_SHACT", "0");
+        r
+    };
     let served = |set: usize| {
         e.moe_gate_up_preclamp8_q8_rows(
             &sets[set], &scl_d, &aq, &ad, 7.0, gin, n_ff, n_used, n_pairs, QT_NVFP4, QT_NVFP4, grb,
@@ -109,18 +118,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             arm, &sets[set], &scl_d, &aq, &ad, 7.0, gin, n_ff, n_used, n_pairs, grb, grb,
         )
     };
+    // bitwise check of the shact arm against the served kernel before any timing
+    let hs = e.dtoh(&served(0)?)?;
+    let hh = e.dtoh(&shact(0)?)?;
+    let mism = hs
+        .iter()
+        .zip(&hh)
+        .filter(|(a, b)| a.to_bits() != b.to_bits())
+        .count();
     // warm
     for _ in 0..10 {
         let _ = served(0)?;
         let _ = probe("loadonly", 0)?;
         let _ = probe("mathonly", 0)?;
+        let _ = shact(0)?;
     }
     e.stream().synchronize()?;
     let mut t_s = Vec::new();
     let mut t_l = Vec::new();
     let mut t_m = Vec::new();
+    let mut t_h = Vec::new();
     for i in 0..iters {
-        for arm in 0..3 {
+        for arm in 0..4 {
             let t0 = Instant::now();
             for r in 0..reps {
                 let set = (i * reps + r) % copies;
@@ -131,8 +150,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     1 => {
                         let _ = probe("loadonly", set)?;
                     }
-                    _ => {
+                    2 => {
                         let _ = probe("mathonly", set)?;
+                    }
+                    _ => {
+                        let _ = shact(set)?;
                     }
                 }
             }
@@ -141,21 +163,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             match arm {
                 0 => t_s.push(us),
                 1 => t_l.push(us),
-                _ => t_m.push(us),
+                2 => t_m.push(us),
+                _ => t_h.push(us),
             }
         }
     }
-    let (s, l, m) = (median(&mut t_s), median(&mut t_l), median(&mut t_m));
+    let (s, l, m, h) = (
+        median(&mut t_s),
+        median(&mut t_l),
+        median(&mut t_m),
+        median(&mut t_h),
+    );
     // weights only: both planes, n_used experts, one row each per output column
     let bytes = (2 * n_used * n_ff * grb) as f64;
     println!(
         "[rows-ceiling] t=1 n_used=8 {gin}->{n_ff} rb={grb}x2 ({iters} rounds x {reps}, {copies} slab sets): \
          served {s:.2} us ({:.0} GB/s) | loadonly {l:.2} us ({:.0} GB/s, {:.2}x served) | \
-         mathonly {m:.2} us ({:.2}x served)",
+         mathonly {m:.2} us ({:.2}x served) | shact {h:.2} us ({:.0} GB/s, {:+.1}% vs served) mismatch={mism}",
         bytes / s / 1e3,
         bytes / l / 1e3,
         s / l,
-        s / m
+        s / m,
+        bytes / h / 1e3,
+        100.0 * (h / s - 1.0)
     );
     println!(
         "[rows-ceiling] reading: loadonly close to served => the ACCESS PATTERN is the wall; \
