@@ -1,0 +1,11 @@
+warning: memra-engine@0.126.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.126.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+     Running unittests src/bin/argmax_margin_probe.rs (target/debug/deps/argmax_margin_probe-cf3e543ff7f4e485)
+
+running 2 tests
+test tests::unsupported_sharded_prefill_is_rejected ... ok
+test tests::table_round_trips_f32_margins ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

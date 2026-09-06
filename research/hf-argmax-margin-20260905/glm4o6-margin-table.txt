@@ -1,0 +1,23 @@
+Measurement-table excerpt. Full numeric rows retained; unrelated loader logging omitted.
+Model: tiyuvta/GLM-5.3-Flash-NVFP4-4o6@b07bf78ff924a86df8361d4074150e0083f81778
+Engine/gate source: b9749ae4e9b21ea771cd07a0a6f65a47a4a0a088
+Hardware shape: RTX PRO 6000 Blackwell, three-card pipeline; Rust 1.97.1, CUDA 13.0.
+Scope: same-prompt prefill versus serial decode, 12 tail positions. No throughput claim.
+
+pos      prefill_top1  margin_p     decode_top1  margin_d     delta@ids      agree
+1909     25559         8.134066582e0    25559        8.578453064e0    2.940816879e-1   yes
+1910     63            2.473871231e0    63           2.603996277e0    1.422748566e-1   yes
+1911     320           1.312519073e0    320          1.114910126e0    1.408538818e-1   yes
+1912     79638         1.133586884e0    79638        9.756031036e-1   1.547985077e-1   yes
+1913     41185         8.914692879e0    41185        9.004240036e0    2.668905258e-1   yes
+1914     701           3.570575714e-1   701          1.625823975e-1   1.230659485e-1   yes
+1915     701           1.040996552e0    701          9.511203766e-1   1.108512878e-1   yes
+1916     11392         7.673149109e-1   11392        8.263263702e-1   1.168766022e-1   yes
+1917     264           1.348552704e0    264          1.347135544e0    2.192153931e-1   yes
+1918     8663          2.763214111e-1   8663         3.319492340e-1   2.234210968e-1   yes
+1919     43927         1.763301849e0    43927        1.429502487e0    2.697429657e-1   yes
+1920     334           3.634366989e-1   62           7.951354980e-2   4.043416977e-1   NO <-- FLIP
+agreement across sampled positions: 11/12 (1 flip(s))
+flip@1920: margin 0.0795 vs config spread 0.4043 -> margin-EXPLAINED (near-tie coin)
+flip budget: 1 flip(s) vs budget 1 (calibration row: default (1/12-window))
+VERDICT-INPUT: NEAR-TIE class — every flip sits at a margin the config spread covers, within the model's calibrated budget (documented cross-config drift, not a numeric defect)
