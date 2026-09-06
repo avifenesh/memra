@@ -113,6 +113,7 @@ pub mod spec;
 pub mod spec_phase;
 pub mod tp;
 pub mod tp_ar;
+pub mod tp_expert_split;
 pub mod tp_transport;
 pub use memra_sampling as sampler;
 
