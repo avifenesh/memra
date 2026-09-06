@@ -792,6 +792,13 @@ fn hyper_decode_ws_on() -> bool {
 
 /// Engagement counter for the workspace walk — the receipt the gate and any box A/B arm
 /// must show (engagement lines are receipts, never inferred).
+/// Symmetric TP walk engagements (`MEMRA_GLM5_TP_SYMMETRIC`; gate non-vacuity, box receipt).
+pub static GLM5_TP_SYM_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+/// Set once the symmetric walk has announced its decline, so the root walk is taken quietly
+/// afterwards but never silently the first time.
+pub static GLM5_TP_SYM_DECLINED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 pub static HC_DECODE_WS_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
@@ -2885,8 +2892,239 @@ impl HybridModel {
         cache: &mut Cache,
         ws: &mut crate::hyper::HyperDecodeWs,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // MEMRA_GLM5_TP_SYMMETRIC: every rank runs the layer glue itself and the three sharded
+        // ops meet in one-shot all-reduces, two crossings per layer instead of five. Declines
+        // LOUDLY (once) rather than silently when the one-shot cannot serve, which is the
+        // same-device gate and any single-card pairing.
+        if crate::glm5_tp::glm5_tp_symmetric_on()
+            && let Some(rt) = self.glm5_tp_rt_for(lo, hi)
+        {
+            if rt.ar_1stage_available() && crate::glm5_tp::glm5_tp_expert_split_on() {
+                return self
+                    .hyper_range_decode_ws_sym(e, topology, &rt, x, lo, hi, pos_d, pos, cache, ws);
+            }
+            if !GLM5_TP_SYM_DECLINED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                eprintln!(
+                    "[glm5-tp-sym] declined: needs MEMRA_GLM5_TP_EXPERT_SPLIT=1 and a real \
+                     two-device group (the one-shot is a kernel peer store); taking the \
+                     root-orchestrated walk"
+                );
+            }
+        }
         let segs: Vec<WsSeg> = (lo..hi).map(WsSeg::Layer).collect();
         self.hyper_range_decode_ws_segments(e, topology, x, &segs, pos_d, pos, cache, ws, None)
+    }
+
+    /// The TP runtime the layers in `lo..hi` were sharded with, if every one of them carries
+    /// symmetric glue; `None` means the range is plain or only partly armed, and the symmetric
+    /// walk must not be attempted over it.
+    fn glm5_tp_rt_for(
+        &self,
+        lo: usize,
+        hi: usize,
+    ) -> Option<std::sync::Arc<crate::glm5_tp::Glm5TpRt>> {
+        let mut rt: Option<std::sync::Arc<crate::glm5_tp::Glm5TpRt>> = None;
+        for il in lo..hi {
+            let layer = self.layers.get(il)?;
+            if layer.tp_glue.is_empty() {
+                return None;
+            }
+            let this = match &layer.mixer {
+                Mixer::Kda(la) => la.tp.as_ref().map(|t| t.rt.clone()),
+                Mixer::Mla(mla) => mla.tp.as_ref().map(|t| t.rt.clone()),
+                _ => None,
+            }?;
+            rt.get_or_insert(this);
+        }
+        rt
+    }
+
+    /// The SYMMETRIC workspace walk (lane/tp-symmetric-20260906). Both ranks hold the residual
+    /// stream; each runs the hc glue and the norms from its own copy; the three sharded ops take
+    /// both ranks' inputs and leave their output on both through a one-shot all-reduce. Per
+    /// layer: two crossings, both reductions. Per TOKEN: one fan-out of the entry residual and
+    /// one of the positions, which is what replaces the per-layer fan-outs.
+    ///
+    /// Kept call-for-call with the root walk on the root rank so the named-class gate compares
+    /// the same program: pre -> norm -> mixer -> post -> pre -> norm -> ffn -> post.
+    #[allow(clippy::too_many_arguments)]
+    fn hyper_range_decode_ws_sym(
+        &self,
+        e: &Engine,
+        topology: &crate::hyper::HyperTopology,
+        rt: &std::sync::Arc<crate::glm5_tp::Glm5TpRt>,
+        x: &mut CudaSlice<f32>,
+        lo: usize,
+        hi: usize,
+        pos_d: &CudaSlice<i32>,
+        pos: usize,
+        cache: &mut Cache,
+        ws: &mut crate::hyper::HyperDecodeWs,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let _ = pos;
+        let n_embd = self.cfg.n_embd as usize;
+        let eps = self.cfg.rms_eps;
+        let peer = rt
+            .peers
+            .first()
+            .ok_or("symmetric walk: the runtime has no peer rank")?;
+        // Per-token setup: the peer's residual, positions and workspace.
+        let hop = rt.hop(e);
+        let mut x_peer = crate::tp_transport::fanout_f32(&hop, x, x.len())?
+            .pop()
+            .ok_or("symmetric walk: fan-out returned no peer copy")?;
+        let pos_peer = crate::tp_transport::fanout_i32(&hop, pos_d, pos_d.len())?
+            .pop()
+            .ok_or("symmetric walk: position fan-out returned no peer copy")?;
+        let mut ws_peer = match peer.hyper_ws_take() {
+            Some(w) if w.matches(topology, n_embd) => w,
+            _ => crate::hyper::HyperDecodeWs::new(peer, topology, n_embd)?,
+        };
+        if GLM5_TP_SYM_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+            eprintln!(
+                "[glm5-tp-sym] engaged: both ranks run the hc glue and the norms from their own \
+                 copy; mixer and MoE meet in one-shot all-reduces (two crossings per layer)"
+            );
+        }
+        let result = (|| -> Result<(), Box<dyn std::error::Error>> {
+            for il in lo..hi {
+                let (layer, hyper) = self.ws_layer(il)?;
+                let glue = layer
+                    .tp_glue
+                    .first()
+                    .ok_or_else(|| format!("layer {il}: no symmetric glue for the peer"))?;
+
+                // ---- attention-site glue, both ranks ----
+                let _attn_q8 =
+                    self.ws_attn_pre(e, topology, layer, hyper, il, x, ws, n_embd, eps)?;
+                crate::hyper::pre_t1_ws(
+                    peer,
+                    topology,
+                    &glue.hyper.attn,
+                    &x_peer,
+                    &mut ws_peer,
+                    n_embd,
+                )?;
+                peer.rms_norm(
+                    &ws_peer.y,
+                    glue.attn_norm.float_data(),
+                    &mut ws_peer.h,
+                    n_embd,
+                    1,
+                    eps,
+                )?;
+
+                // ---- mixer: both inputs in, both outputs out ----
+                let mixed = match &layer.mixer {
+                    Mixer::Kda(la) => crate::glm5_tp::kda_tp_cached_sym(
+                        e,
+                        la,
+                        &[&ws.h, &ws_peer.h],
+                        1,
+                        eps,
+                        cache,
+                        il,
+                        crate::kda::ConvArm::Decode,
+                    )?,
+                    Mixer::Mla(mla) => self.mla_tp_attn_cached_sym(
+                        e,
+                        mla,
+                        &[&ws.h, &ws_peer.h],
+                        &[pos_d, &pos_peer],
+                        1,
+                        il,
+                        cache,
+                    )?,
+                    _ => {
+                        return Err(format!(
+                            "layer {il}: the symmetric walk covers KDA and MLA mixers only"
+                        )
+                        .into());
+                    }
+                };
+                crate::hyper::post_t1_ws(e, topology, &mixed[0], x, ws, n_embd)?;
+                std::mem::swap(x, &mut ws.xb);
+                crate::hyper::post_t1_ws(peer, topology, &mixed[1], &x_peer, &mut ws_peer, n_embd)?;
+                std::mem::swap(&mut x_peer, &mut ws_peer.xb);
+
+                // ---- FFN-site glue, both ranks ----
+                crate::hyper::pre_t1_ws(e, topology, &hyper.mlp, x, ws, n_embd)?;
+                let zq8 = if crate::glm5_q8_fuse_on() {
+                    Some(e.rms_norm_zq8_f32(
+                        &ws.y,
+                        layer.post_attn_norm.float_data(),
+                        &mut ws.z,
+                        n_embd,
+                        1,
+                        eps,
+                    )?)
+                } else {
+                    e.rms_norm(
+                        &ws.y,
+                        layer.post_attn_norm.float_data(),
+                        &mut ws.z,
+                        n_embd,
+                        1,
+                        eps,
+                    )?;
+                    None
+                };
+                crate::hyper::pre_t1_ws(
+                    peer,
+                    topology,
+                    &glue.hyper.mlp,
+                    &x_peer,
+                    &mut ws_peer,
+                    n_embd,
+                )?;
+                peer.rms_norm(
+                    &ws_peer.y,
+                    glue.post_attn_norm.float_data(),
+                    &mut ws_peer.z,
+                    n_embd,
+                    1,
+                    eps,
+                )?;
+
+                // ---- MoE: both inputs in, both outputs out ----
+                let ffn_out = match &layer.ffn {
+                    crate::hybrid::Ffn::Moe(m) => {
+                        let xs = m.glm5_tp_split.as_ref().ok_or_else(|| {
+                            format!("layer {il}: the symmetric walk needs the expert split armed")
+                        })?;
+                        Self::moe_ffn_glm5_tp_split_sym(
+                            e,
+                            m,
+                            xs,
+                            &[&ws.z, &ws_peer.z],
+                            zq8.as_ref(),
+                            1,
+                            &self.cfg,
+                            il as u16,
+                        )?
+                    }
+                    _ => {
+                        return Err(
+                            format!("layer {il}: the symmetric walk covers MoE FFNs only").into(),
+                        );
+                    }
+                };
+                crate::hyper::post_t1_ws(e, topology, &ffn_out[0], x, ws, n_embd)?;
+                std::mem::swap(x, &mut ws.xb);
+                crate::hyper::post_t1_ws(
+                    peer,
+                    topology,
+                    &ffn_out[1],
+                    &x_peer,
+                    &mut ws_peer,
+                    n_embd,
+                )?;
+                std::mem::swap(&mut x_peer, &mut ws_peer.xb);
+            }
+            Ok(())
+        })();
+        peer.hyper_ws_put(ws_peer);
+        result
     }
 
     /// One layer of the workspace walk, split into the halves a captured run can end or start
@@ -10207,6 +10445,97 @@ impl HybridModel {
     /// its OWN latent replica; the attention parts are gathered through the armed transport
     /// and each rank's COLUMN-parallel `wo` slice computes its slice of the output with the
     /// plain matvec kernel — no cross-rank arithmetic anywhere.
+    /// The SYMMETRIC MLA mixer (lane/tp-symmetric-20260906): every rank already holds the layer
+    /// input and the positions, so there is no fan-out; each rank runs its head shard over its own
+    /// `h`, multiplies by its ROW-PARALLEL `wo`, and the two partial sums meet in ONE one-shot
+    /// all-reduce that leaves the mixer output on BOTH ranks. Requires the expert-split door (so
+    /// `wo` was K-sliced at load), the symmetric door, and a real two-device group.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn mla_tp_attn_cached_sym(
+        &self,
+        e: &Engine,
+        mla: &crate::hybrid::MlaAttnLayer,
+        h_by_rank: &[&CudaSlice<f32>],
+        pos_by_rank: &[&CudaSlice<i32>],
+        t: usize,
+        il: usize,
+        cache: &mut Cache,
+    ) -> Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        let tp = mla
+            .tp
+            .as_ref()
+            .ok_or("mla_tp_attn_cached_sym called on an unsharded layer")?;
+        let rt = &tp.rt;
+        let ranks = rt.ranks();
+        if ranks != 2 || h_by_rank.len() != 2 || pos_by_rank.len() != 2 {
+            return Err("mla_tp_attn_cached_sym: this arm is two ranks".into());
+        }
+        if !crate::glm5_tp::glm5_tp_expert_split_on()
+            || !crate::glm5_tp::glm5_tp_symmetric_on()
+            || !rt.ar_1stage_available()
+        {
+            return Err(
+                "mla_tp_attn_cached_sym: needs the expert-split and symmetric doors and a \
+                        real two-device group"
+                    .into(),
+            );
+        }
+        let n_embd = tp.n_embd;
+        let max_ctx = cache.max_ctx;
+        {
+            let canonical = cache.latent[il].as_ref().ok_or_else(|| {
+                format!("layer {il}: glm5 TP MLA walk found no canonical latent plane")
+            })?;
+            crate::glm5_tp::ensure_mla_peer_latent(
+                rt,
+                canonical,
+                &mut cache.glm5_tp_latent_peer[il],
+            )?;
+        }
+        let mut partials: Vec<CudaSlice<f32>> = Vec::with_capacity(ranks);
+        // Root first here (its plane is the canonical one); order cannot change bytes since the
+        // ranks touch disjoint planes and the reduce is order-fixed by global rank.
+        {
+            let layer = cache.latent[il].as_mut().unwrap();
+            let a = self.mla_attn_cached_pre_wo(
+                e,
+                mla,
+                h_by_rank[0],
+                pos_by_rank[0],
+                t,
+                il,
+                layer,
+                max_ctx,
+                false,
+            )?;
+            partials.push(e.matmul(&mla.wo, &a, t)?);
+        }
+        for r in 1..ranks {
+            let layer = &mut cache.glm5_tp_latent_peer[il].as_mut().unwrap()[r - 1];
+            let dev = &rt.peers[r - 1];
+            let a = self.mla_attn_cached_pre_wo(
+                dev,
+                &tp.peers[r - 1],
+                h_by_rank[r],
+                pos_by_rank[r],
+                t,
+                il,
+                layer,
+                max_ctx,
+                false,
+            )?;
+            partials.push(dev.matmul(&tp.peers[r - 1].wo, &a, t)?);
+        }
+        let (a, b) = partials.split_at_mut(1);
+        let reduced = rt.ar_1stage(e, &mut [&mut a[0], &mut b[0]], t * n_embd)?;
+        if !reduced {
+            return Err(
+                "mla_tp_attn_cached_sym: the one-shot declined after availability said yes".into(),
+            );
+        }
+        Ok(partials)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn mla_tp_attn_cached(
         &self,
@@ -13900,6 +14229,127 @@ impl HybridModel {
 
         Self::moe_shexp_add(e, m, z, zq8, t, cfg, lim_shexp, &mut moe_out)?;
         Ok(moe_out)
+    }
+
+    /// The SYMMETRIC expert-split MoE (lane/tp-symmetric-20260906): every rank already holds the
+    /// FFN input, so there is no fan-out. The router still runs on root and its host-side
+    /// selection is shared (the peers consume the same `sel`/`w`, so selection stays bit-identical
+    /// to every other arm), each rank runs every routed slot at half width into its own
+    /// accumulator, root folds the shared expert into ITS partial before the reduce so the sum
+    /// carries it to both ranks, and ONE one-shot all-reduce leaves the layer output on both.
+    #[allow(clippy::too_many_arguments)]
+    fn moe_ffn_glm5_tp_split_sym(
+        e: &Engine,
+        m: &MoeWeights,
+        xs: &crate::glm5_tp::Glm5TpSplitExps,
+        z_by_rank: &[&CudaSlice<f32>],
+        zq8: Option<&(CudaSlice<i8>, CudaSlice<f32>)>,
+        t: usize,
+        cfg: &ModelConfig,
+        il: u16,
+    ) -> Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        let moe = cfg
+            .moe
+            .as_ref()
+            .ok_or("glm5 TP symmetric MoE requires MoE model metadata")?;
+        let n_embd = cfg.n_embd as usize;
+        let n_expert = moe.expert_count as usize;
+        let n_used = moe.expert_used_count as usize;
+        let sig = cfg
+            .sigmoid_router()
+            .ok_or("glm5 TP symmetric MoE requires the sigmoid router")?;
+        let lim_exp = cfg.clamp_exp_at(il as u32);
+        let lim_shexp = cfg.clamp_shexp_at(il as u32);
+        let rt = &xs.rt;
+        let ranks = xs.ranks();
+        if ranks != 2 || z_by_rank.len() != 2 {
+            return Err("moe_ffn_glm5_tp_split_sym: this arm is two ranks".into());
+        }
+        if !rt.ar_1stage_available() {
+            return Err("moe_ffn_glm5_tp_split_sym: needs a real two-device group".into());
+        }
+        let half = xs.half_ff;
+        let z = z_by_rank[0];
+
+        let logits = Self::moe_router_logits(e, m, z, t, cfg)?;
+        let (sel_all, w_all) =
+            Self::moe_route_sigmoid_cfg(e, &logits, t, n_expert, n_used, m, sig)?;
+        crate::moesd::record_host_routes(il, n_expert, n_used, &sel_all)?;
+        Self::trace_moe_routes(il, t, &sel_all, &w_all)?;
+
+        let mut outs: Vec<CudaSlice<f32>> = Vec::with_capacity(ranks);
+        for r in 0..ranks {
+            let dev = crate::glm5_tp::rank_engine(e, rt, r);
+            let slab = &xs.slabs[r];
+            let zr = z_by_rank[r];
+            let mut out = dev.zeros(t * n_embd)?;
+            for tok in 0..t {
+                let sel = &sel_all[tok * n_used..(tok + 1) * n_used];
+                let w = &w_all[tok * n_used..(tok + 1) * n_used];
+                let zt = zr.slice(tok * n_embd..(tok + 1) * n_embd);
+                for (j, &ex) in sel.iter().enumerate() {
+                    let ex = ex as usize;
+                    let gate = dev.qmatvec_view(
+                        &slab.gate,
+                        ex * xs.gate_stride..(ex + 1) * xs.gate_stride,
+                        &zt,
+                        1,
+                        m.gate_exps.in_f,
+                        half,
+                        m.gate_exps.qtype,
+                        m.gate_exps.row_bytes,
+                    )?;
+                    let up = dev.qmatvec_view(
+                        &slab.up,
+                        ex * xs.up_stride..(ex + 1) * xs.up_stride,
+                        &zt,
+                        1,
+                        m.up_exps.in_f,
+                        half,
+                        m.up_exps.qtype,
+                        m.up_exps.row_bytes,
+                    )?;
+                    let mut act = dev.uninit(half)?;
+                    Self::ffn_act_lim(
+                        dev,
+                        cfg,
+                        &gate,
+                        &up,
+                        m.gate_exps.macro_scale(ex),
+                        m.up_exps.macro_scale(ex),
+                        lim_exp,
+                        &mut act,
+                        half,
+                    )?;
+                    let actv = act.slice(0..half);
+                    let y = dev.qmatvec_view(
+                        &slab.down,
+                        ex * xs.down_stride..(ex + 1) * xs.down_stride,
+                        &actv,
+                        1,
+                        half,
+                        n_embd,
+                        m.down_exps.qtype,
+                        xs.down_row_bytes,
+                    )?;
+                    let mut dst = out.slice_mut(tok * n_embd..(tok + 1) * n_embd);
+                    dev.axpy_into(&y, w[j] * m.down_exps.macro_scale(ex), &mut dst, n_embd)?;
+                }
+            }
+            outs.push(out);
+        }
+        // Shared expert on root, folded into root's partial BEFORE the reduce, so the sum carries
+        // it to both ranks without replicating the shared-expert weights.
+        Self::moe_shexp_add(e, m, z, zq8, t, cfg, lim_shexp, &mut outs[0])?;
+        let (a, b) = outs.split_at_mut(1);
+        let reduced = rt.ar_1stage(e, &mut [&mut a[0], &mut b[0]], t * n_embd)?;
+        if !reduced {
+            return Err(
+                "moe_ffn_glm5_tp_split_sym: the one-shot declined after availability said yes"
+                    .into(),
+            );
+        }
+        Ok(outs)
     }
 
     /// The DIETED glm5 EP walk (`MEMRA_GLM5_EP_DIET`, lane/glm5-ep-diet): the v1 walk's
