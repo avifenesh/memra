@@ -14489,6 +14489,119 @@ extern "C" __global__ __launch_bounds__(256) void qmatvec_q8_0_mmvq_rp_v2_ilp(
 // t columns — so the activation is NOT staged here (t*in_f would be 32 KB at t=8); the levers
 // are the 8-warp packing and the block walk unrolled by two. BIT-IDENTICAL per (row, column):
 // same `acc[c] += dw * ad[c*nblk + blk] * (float)sumi` in the same blk order.
+// =====================================================================================
+// LANE-MAJOR q8_0 twin of the W8-posture decode matvec (lane/q8-lane-major-20260907)
+// =====================================================================================
+//
+// WHY. The rp_v2 walk hands lane l the blocks l, l+32, ...: its two 16 B weight loads per block
+// put the 32 lanes 32 B apart (each LDG.128 spans 8 lines, 8 L1 wavefronts for 512 B of
+// payload against the 4 a contiguous load costs) and its activation reads from shared memory
+// with the same 32 B lane stride are 8-way bank conflicts (8 wavefronts per LDS.128). At
+// 4096 x 8192 that is ~32 wavefronts per block per lane, and the served number on the pair is
+// 7.6 us for 33.5 MB, ~25% of the wall, 157 launches per token (LAW:count-wavefronts-per-load-
+// instruction-before-bytes). Re-addressing both streams so one instruction is one line
+// (weights: 16 B word h of block b at (h*nblk + b)*16 in the row's qs plane; staged activation:
+// 4 B word w of block b at w*nblk + b) moves NO bits: the dp4a chain runs the same words in
+// the same order and the fma chain folds the same blocks in the same order, so `_lm` is
+// bitwise `rp_v2` (gate `tests/q8_lm_gpu.rs`). The slab is built once at load from the same
+// 34 B blocks `q8_0_split_rp_build` reads (`q8_0_split_lm_build`).
+extern "C" __global__ void q8_0_split_lm_build(
+        const unsigned char* __restrict__ src, unsigned char* __restrict__ dst,
+        int out_f, int nblk) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;  // one thread per block: i = o*nblk + b
+    if (i >= out_f * nblk) return;
+    const int o = i / nblk, b = i - o * nblk;
+    const unsigned char* blkp = src + (size_t)i * 34;
+    long qplane = (long)out_f * nblk * 32;
+    unsigned char* row = dst + (size_t)o * nblk * 32;
+    // word h (16 B) of block b at (h*nblk + b)*16
+    for (int h = 0; h < 2; h++) {
+        unsigned char* q = row + ((size_t)h * nblk + b) * 16;
+#pragma unroll
+        for (int k = 0; k < 16; k++) q[k] = blkp[2 + h * 16 + k];
+    }
+    dst[qplane + (size_t)i * 2 + 0] = blkp[0];
+    dst[qplane + (size_t)i * 2 + 1] = blkp[1];
+}
+// lane-major staging: 4 B word w of block b at w*nblk + b (ints), scales as in rp_v2
+__device__ __forceinline__ void q8_0_stage_act_lm(
+        const signed char* __restrict__ arow, const float* __restrict__ adrow, int* saq_lm,
+        float* sad, int in_f, int nblk) {
+    const int tid = (int)threadIdx.y * (int)blockDim.x + (int)threadIdx.x;
+    const int nthr = (int)blockDim.x * (int)blockDim.y;
+    const int* s = reinterpret_cast<const int*>(arow);
+    for (int i = tid; i < in_f / 4; i += nthr) {
+        int b = i >> 3, w = i & 7;  // served index: b*8 + w
+        saq_lm[w * nblk + b] = __ldg(s + i);
+    }
+    for (int i = tid; i < nblk; i += nthr) sad[i] = __ldg(adrow + i);
+    __syncthreads();
+}
+__device__ __forceinline__ void q8_0_mmvq_row1_lm_v2(
+        const unsigned char* __restrict__ W, int out_f, int o, int nblk,
+        const int* saq_lm, const float* sad, float* __restrict__ y) {
+    if (o >= out_f) return;
+    const int lane = (int)threadIdx.x;
+    const unsigned char* wq = W + ((size_t)o * nblk) * 32;
+    const unsigned short* wd = (const unsigned short*)(W + (size_t)out_f * nblk * 32) + (size_t)o * nblk;
+    float acc = 0.0f;
+    int blk = lane;
+    for (; blk + 32 < nblk; blk += 64) {
+        const int nb2 = blk + 32;
+        int4 wa0 = __ldcs((const int4*)(wq + (size_t)blk * 16));
+        int4 wa1 = __ldcs((const int4*)(wq + ((size_t)nblk + blk) * 16));
+        int4 wb0 = __ldcs((const int4*)(wq + (size_t)nb2 * 16));
+        int4 wb1 = __ldcs((const int4*)(wq + ((size_t)nblk + nb2) * 16));
+        float dwa = half_to_float(wd[blk]);
+        float dwb = half_to_float(wd[nb2]);
+        int aqa[8], aqb[8];
+#pragma unroll
+        for (int w = 0; w < 8; w++) {
+            aqa[w] = saq_lm[w * nblk + blk];
+            aqb[w] = saq_lm[w * nblk + nb2];
+        }
+        int wia[8] = { wa0.x, wa0.y, wa0.z, wa0.w, wa1.x, wa1.y, wa1.z, wa1.w };
+        int wib[8] = { wb0.x, wb0.y, wb0.z, wb0.w, wb1.x, wb1.y, wb1.z, wb1.w };
+        int sa = 0, sb = 0;
+#pragma unroll
+        for (int k = 0; k < 8; k++) sa = dp4a(wia[k], aqa[k], sa);
+#pragma unroll
+        for (int k = 0; k < 8; k++) sb = dp4a(wib[k], aqb[k], sb);
+        acc += dwa * sad[blk] * (float)sa;
+        acc += dwb * sad[nb2] * (float)sb;
+    }
+    for (; blk < nblk; blk += 32) {
+        int4 w01 = __ldcs((const int4*)(wq + (size_t)blk * 16));
+        int4 w23 = __ldcs((const int4*)(wq + ((size_t)nblk + blk) * 16));
+        int wi[8] = { w01.x, w01.y, w01.z, w01.w, w23.x, w23.y, w23.z, w23.w };
+        float dw = half_to_float(wd[blk]);
+        int aq4[8];
+#pragma unroll
+        for (int w = 0; w < 8; w++) aq4[w] = saq_lm[w * nblk + blk];
+        int sumi = 0;
+#pragma unroll
+        for (int k = 0; k < 8; k++) sumi = dp4a(wi[k], aq4[k], sumi);
+        acc += dw * sad[blk] * (float)sumi;
+    }
+    acc = warp_reduce_sum(acc);
+    if (lane == 0) y[o] = acc;
+}
+extern "C" __global__ __launch_bounds__(256) void qmatvec_q8_0_mmvq_lm_v2(
+        const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
+        const float* __restrict__ ad, float* __restrict__ y,
+        int in_f, int out_f, int m, long row_bytes) {
+    (void)row_bytes;
+    const int t = blockIdx.y;
+    if (t >= m) return;
+    const int nblk = in_f / 32;
+    extern __shared__ float gemv_v2_red[];
+    int* saq_lm = reinterpret_cast<int*>(gemv_v2_red);
+    float* sad = reinterpret_cast<float*>(saq_lm + in_f / 4);
+    q8_0_stage_act_lm(aq + (size_t)t * in_f, ad + (size_t)t * nblk, saq_lm, sad, in_f, nblk);
+    const int o = blockIdx.x * MEMRA_Q8_V2_ROWS + (int)threadIdx.y;
+    q8_0_mmvq_row1_lm_v2(W, out_f, o, nblk, saq_lm, sad, y + (size_t)t * out_f);
+}
+
 extern "C" __global__ __launch_bounds__(256) void qmatvec_q8_0_rows_tw_v2(
         const unsigned char* __restrict__ W,
         const signed char* __restrict__ aq, const float* __restrict__ ad,

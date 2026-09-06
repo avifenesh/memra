@@ -1270,7 +1270,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )?;
             let mut y_v2 = e.zeros(out_f)?;
             e.qmatvec_q8_0_rp_v2_raw(&mirrors[0], &aq, &ad, &mut y_v2, in_f, out_f, 1)?;
+            // lane-major twin (lane/q8-lane-major-20260907): its own slab from the same blocks
+            let lm_slabs: Vec<CudaSlice<u8>> = (0..copies)
+                .map(|_| -> Result<CudaSlice<u8>, Box<dyn std::error::Error>> {
+                    let src = e.htod_bytes(&h_bf)?;
+                    let mut inter = e.alloc_u8_uninit(out_f * row_bytes)?;
+                    e.encode_q8_0_from_bf16(&src, &mut inter, in_f, out_f)?;
+                    e.build_q8_lm_raw(&inter, in_f, out_f)
+                })
+                .collect::<Result<_, _>>()?;
+            let mut y_lm = e.zeros(out_f)?;
+            e.qmatvec_q8_0_lm_v2_raw(&lm_slabs[0], &aq, &ad, &mut y_lm, in_f, out_f, 1)?;
             e.stream().synchronize()?;
+            let (mism_lm, maxd_lm) = compare(&e.dtoh(&y_v2)?, &e.dtoh(&y_lm)?);
+            let mut t_lm = Vec::with_capacity(iters);
+            for i in 0..iters {
+                let c = i % copies;
+                let mut y = e.zeros(out_f)?;
+                let t0 = Instant::now();
+                e.qmatvec_q8_0_lm_v2_raw(&lm_slabs[c], &aq, &ad, &mut y, in_f, out_f, 1)?;
+                e.stream().synchronize()?;
+                t_lm.push(t0.elapsed().as_secs_f64() * 1e6);
+            }
+            let lm_us = median(&mut t_lm);
+            println!(
+                "  qmatvec_q8_0_mmvq_lm_v2 (lane-major) {label} lm={lm_us:8.2}us ({:7.1} GB/s)  vs rp_v2 mism={mism_lm} maxd={maxd_lm:e}",
+                bytes / lm_us / 1e3
+            );
             let h_ship = e.dtoh(&y_ship)?;
             let (mism, maxd) = compare(&h_ship, &e.dtoh(&y_v2)?);
             let mut t_ship = Vec::with_capacity(iters);

@@ -9523,6 +9523,77 @@ impl Engine {
     /// scales ++ d — same total bytes) so every quant fetch is an aligned 16B ldcs. Raw
     /// bytes stay resident (prefill GEMM/dequant/Stage-A read GGUF layout); the mmvq/batched
     /// decode arms prefer the mirror via `rp4`. Bit-identical outputs.
+    /// The LANE-MAJOR q8_0 slab (lane/q8-lane-major-20260907): the same 34 B blocks
+    /// `build_q8_rp4_raw` reads, laid out so `qmatvec_q8_0_mmvq_lm_v2`'s loads are one line per
+    /// instruction (16 B word h of block b at (h*nblk + b)*16 in the row's qs plane; scales as rp).
+    pub fn build_q8_lm_raw(
+        &self,
+        bytes: &CudaSlice<u8>,
+        in_f: usize,
+        out_f: usize,
+    ) -> Result<CudaSlice<u8>, Box<dyn std::error::Error>> {
+        assert!(in_f.is_multiple_of(32));
+        let nblk = in_f / 32;
+        let mut dst = self.alloc_uninit::<u8>(out_f * nblk * 34)?;
+        let f = self.func("q8_0_split_lm_build");
+        let cfg = LaunchConfig {
+            grid_dim: (((out_f * nblk) as u32).div_ceil(256), 1, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let (of, nb) = (out_f as i32, nblk as i32);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(bytes).arg(&mut dst).arg(&of).arg(&nb);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(dst)
+    }
+
+    /// Bench/gate entry for the lane-major q8_0 twin: same grid, block and smem budget as
+    /// `qmatvec_q8_0_rp_v2_raw`, reading a `build_q8_lm_raw` slab. Bitwise `rp_v2`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn qmatvec_q8_0_lm_v2_raw(
+        &self,
+        w_lm: &CudaSlice<u8>,
+        aq: &CudaSlice<i8>,
+        ad: &CudaSlice<f32>,
+        y: &mut CudaSlice<f32>,
+        in_f: usize,
+        out_f: usize,
+        t: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if t == 0 || !in_f.is_multiple_of(32) || y.len() < t * out_f {
+            return Err("qmatvec_q8_0_lm_v2 geometry".into());
+        }
+        let smem = Self::q8_v2_smem_bytes(in_f);
+        if smem > 48 * 1024 {
+            return Err("qmatvec_q8_0_lm_v2 smem over the 48 KB default cap".into());
+        }
+        let f = self.func("qmatvec_q8_0_mmvq_lm_v2");
+        let cfg = LaunchConfig {
+            grid_dim: ((out_f as u32).div_ceil(Q8_V2_ROWS), t as u32, 1),
+            block_dim: (32, Q8_V2_ROWS, 1),
+            shared_mem_bytes: smem as u32,
+        };
+        let (ini, outi, mi, rb) = (in_f as i32, out_f as i32, t as i32, 0i64);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(w_lm)
+            .arg(aq)
+            .arg(ad)
+            .arg(y)
+            .arg(&ini)
+            .arg(&outi)
+            .arg(&mi)
+            .arg(&rb);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(())
+    }
+
     pub fn build_q4k_rp4(
         &self,
         t: &mut crate::model::GpuTensor,
