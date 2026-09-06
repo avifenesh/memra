@@ -5429,6 +5429,13 @@ impl HybridModel {
             // kernel symbols (decode t=1), so lane choice is freely tunable; v4 measured the
             // depth winner. Seams: MEMRA_FA_V4_MAX / MEMRA_FA_SMEM_TKV / MEMRA_GEMMA_ROWS_W.
         }
+        // GLM-5.3-Flash on sm_100a builds: rms_norm block 1024 (B200 posture flip 2026-09-06;
+        // +2.59% alone and inside every all4 receipt, darklanes
+        // research/glm5-b200-mint-20260904/LANE.md). `MEMRA_RMS_BLOCK=<n>` still overrides;
+        // other archs keep the per-model default above.
+        if cfg.arch.is_glm5_next() && env!("MEMRA_BUILT_CUDA_ARCH") == "100a" {
+            crate::RMS_BLOCK_DEFAULT.store(1024, std::sync::atomic::Ordering::Relaxed);
+        }
         // gemma4: the dc serving loop + spec draft gather read the device embed table every
         // step — upload it AT LOAD (OnceLock init) so first-use cost never lands in a timed span.
         let force_embd_gpu = gemma_program;

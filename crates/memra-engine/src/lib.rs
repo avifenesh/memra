@@ -393,7 +393,10 @@ pub fn glm5_graph_recapture_on() -> bool {
 /// workspace); without it the plan is the KDA-only plan. Read per call. Default OFF pending
 /// its model-scale row.
 pub fn glm5_graph_mla_on() -> bool {
-    std::env::var("MEMRA_GLM5_GRAPH_MLA").as_deref() == Ok("1")
+    b200_posture_door_from(
+        std::env::var("MEMRA_GLM5_GRAPH_MLA").ok().as_deref(),
+        env!("MEMRA_BUILT_CUDA_ARCH"),
+    )
 }
 
 /// `MEMRA_GLM5_GRAPH_MLA_MID=1` (lane/mla-mid-capture-20260905, default OFF, decide-by
@@ -2840,7 +2843,70 @@ pub fn hc_pre_sink_reg_from(v: Option<&str>, built_arch: &str) -> bool {
 /// Default OFF until its model-scale row (new-flags law).
 pub fn hc_pre_v4_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_HC_PRE_V4").as_deref() == Ok("1"))
+    *ON.get_or_init(|| {
+        hc_pre_v4_on_from(
+            std::env::var("MEMRA_HC_PRE_V4").ok().as_deref(),
+            env!("MEMRA_BUILT_CUDA_ARCH"),
+        )
+    })
+}
+
+/// The pure parse behind [`hc_pre_v4_on`] (B200 posture flip 2026-09-06): `1` arms, `0`
+/// disarms, unset follows the BUILD ARCH (ON for `100a`, OFF elsewhere). Receipts: headline4
+/// (four doors additive), headline5 all4 84.53 vs base 78.49 x3, headline6 x3 (darklanes
+/// research/glm5-b200-mint-20260904/LANE.md), tape 223d73a5a78e59a9 on every boot.
+pub fn hc_pre_v4_on_from(v: Option<&str>, built_arch: &str) -> bool {
+    match v.map(str::trim) {
+        Some("1") => true,
+        Some("0") => false,
+        _ => built_arch == "100a",
+    }
+}
+
+/// The B200 composed-posture doors' shared default (2026-09-06): `MEMRA_HC_MIXES_KERNEL`,
+/// `MEMRA_MLA_SEG_WS`, `MEMRA_GLM5_GRAPH_MLA`, `MEMRA_F32_GEMV_KERNEL`, `MEMRA_KDA_ONORM_ZQ8`
+/// (and `MEMRA_HC_PRE_V4` through its own parse above). `1` arms, `0` disarms, unset follows the
+/// BUILD ARCH: ON for `100a`, OFF for every other build (the per-hardware arm selection law:
+/// every receipt is from the 2x B200 pair, none from sm_120a). Receipts, all three interleaved
+/// boots per arm with the tape intact (darklanes research/glm5-b200-mint-20260904/LANE.md):
+/// headline5 all4 (RMS 1024 + V4 + mixes + halves) 84.53 vs base 78.49; gemvab gemv +2.2%,
+/// onorm +1.1%; headline6 all4 + gemv + onorm 86.48 vs all4 84.91. `=0` is each door's rollback
+/// seam.
+pub fn b200_posture_door_from(v: Option<&str>, built_arch: &str) -> bool {
+    match v.map(str::trim) {
+        Some("1") => true,
+        Some("0") => false,
+        _ => built_arch == "100a",
+    }
+}
+
+#[cfg(test)]
+mod b200_posture_default_tests {
+    use super::{b200_posture_door_from as door, hc_pre_v4_on_from as v4};
+    #[test]
+    fn unset_follows_the_build_arch() {
+        assert!(door(None, "100a"));
+        assert!(!door(None, "120a"));
+        assert!(!door(None, "90a"));
+        assert!(v4(None, "100a"));
+        assert!(!v4(None, "120a"));
+    }
+    #[test]
+    fn explicit_values_win_on_every_arch() {
+        for arch in ["100a", "120a", "90a", "89"] {
+            assert!(door(Some("1"), arch));
+            assert!(!door(Some("0"), arch));
+            assert!(door(Some(" 1 "), arch));
+            assert!(v4(Some("1"), arch));
+            assert!(!v4(Some("0"), arch));
+        }
+    }
+    #[test]
+    fn other_spellings_fall_back_to_the_arch_default() {
+        assert!(door(Some("yes"), "100a"));
+        assert!(!door(Some("yes"), "120a"));
+        assert!(door(Some(""), "100a"));
+    }
 }
 
 /// `MEMRA_HC_PRE_V4Z=1` (lane/hc-pre-v4z-20260905): under `MEMRA_HC_PRE_ZQ8=1`, the fused
@@ -12917,7 +12983,10 @@ impl Engine {
     /// capture arc can hand a captured PRE graph's outputs to a captured POST graph. Read PER
     /// CALL. Byte-identical by construction (same kernels, same order, different address).
     pub(crate) fn mla_seg_ws_on() -> bool {
-        std::env::var("MEMRA_MLA_SEG_WS").as_deref() == Ok("1")
+        crate::b200_posture_door_from(
+            std::env::var("MEMRA_MLA_SEG_WS").ok().as_deref(),
+            env!("MEMRA_BUILT_CUDA_ARCH"),
+        )
     }
 
     // ---- Verify-walk workspace (MEMRA_VERIFY_WS, door W — see VerifyWs). ----
@@ -14924,7 +14993,12 @@ impl Engine {
     /// pending its model-scale row.
     pub fn hc_mixes_kernel_on() -> bool {
         static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        *ON.get_or_init(|| std::env::var("MEMRA_HC_MIXES_KERNEL").as_deref() == Ok("1"))
+        *ON.get_or_init(|| {
+            crate::b200_posture_door_from(
+                std::env::var("MEMRA_HC_MIXES_KERNEL").ok().as_deref(),
+                env!("MEMRA_BUILT_CUDA_ARCH"),
+            )
+        })
     }
 
     /// Native t=1 GEMV `y[r] = sum_k w[r*in_f + k] x[k]`, r < out_f, one block per row. Returns
@@ -34114,7 +34188,10 @@ impl Engine {
 /// determinism + m-identity gate `tests/f32_gemv_rows_gpu.rs`. Shapes that do not fit
 /// (`in_f % 1024 != 0`, `out_f > 65535`, `m > 16`) keep cuBLASLt. Read per call.
 pub fn f32_gemv_kernel_on() -> bool {
-    std::env::var("MEMRA_F32_GEMV_KERNEL").as_deref() == Ok("1")
+    b200_posture_door_from(
+        std::env::var("MEMRA_F32_GEMV_KERNEL").ok().as_deref(),
+        env!("MEMRA_BUILT_CUDA_ARCH"),
+    )
 }
 
 /// `MEMRA_MOE_GATEUP_ILP2=1` (lane/moe-gateup-ilp2-20260905, default OFF pending its model-scale

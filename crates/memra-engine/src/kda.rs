@@ -956,7 +956,10 @@ pub type KdaPreQ8<'a> = Option<(&'a CudaSlice<i8>, &'a CudaSlice<f32>)>;
 /// `quantize_q8_1` (gate `tests/kda_onorm_zq8_gpu.rs` + the decode-graph fixture arm). When `wo`
 /// is not MMVQ-fast-eligible the pair is dropped and `matmul` runs unchanged. Read per call.
 pub fn kda_onorm_zq8_on() -> bool {
-    std::env::var("MEMRA_KDA_ONORM_ZQ8").as_deref() == Ok("1")
+    crate::b200_posture_door_from(
+        std::env::var("MEMRA_KDA_ONORM_ZQ8").ok().as_deref(),
+        env!("MEMRA_BUILT_CUDA_ARCH"),
+    )
 }
 
 /// Launches of the fused o_norm+quantize kernel whose pair the `wo` MMVQ consumed.
