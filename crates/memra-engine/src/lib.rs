@@ -16285,6 +16285,36 @@ impl Engine {
     /// l2_norm at blockDim=256 produces a different shfl-tree reduction of the 128-element
     /// squared-sum (pairwise tree vs serial-4-then-warp-tree), causing ULP differences that
     /// propagate through gdn_scan and flip argmax on marginal logits.
+    /// [`Engine::l2_norm`] on two tensors in one launch (`l2_norm2_f32`): the same per-row body
+    /// at the same block shape, so each output row is byte-identical to the two-launch form.
+    /// Gate `tests/kda_small_folds_gpu.rs`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn l2_norm_pair(
+        &self,
+        x0: &CudaSlice<f32>,
+        dst0: &mut CudaSlice<f32>,
+        x1: &CudaSlice<f32>,
+        dst1: &mut CudaSlice<f32>,
+        ncols: usize,
+        nrows: usize,
+        eps: f32,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let f = self.func("l2_norm2_f32");
+        let cfg = LaunchConfig {
+            grid_dim: (nrows as u32, 2, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let (nc, e) = (ncols as i32, eps);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(x0).arg(dst0).arg(x1).arg(dst1).arg(&nc).arg(&e);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(())
+    }
+
     pub fn l2_norm_decode(
         &self,
         x: &CudaSlice<f32>,

@@ -175,6 +175,32 @@ extern "C" __global__ void memra_kda_gate_f32(
     g[(size_t)t * qkv + c] = lower_bound * memra_kda_sigmoid(rate * raw);
 }
 
+// memra_kda_gate_f32 and sigmoid_f32(beta_raw) in ONE launch (lane/launch-collapse-20260906):
+// the two gates read different tensors and were two launches per layer (34 pairs per token on
+// GLM-5.3-Flash, in-graph). Threads c < qkv run the forget-gate body above verbatim; threads
+// c < heads (heads = qkv / head_dim <= qkv) also run sigmoid_f32's expression verbatim on
+// beta_raw[t, c]. Same grid as memra_kda_gate_f32. Gate: tests/kda_small_folds_gpu.rs.
+extern "C" __global__ void memra_kda_gate_beta_f32(
+        const float* __restrict__ f,         // [T, qkv] f_b(f_a(x))
+        const float* __restrict__ dt_bias,   // [qkv]
+        const float* __restrict__ a_log,     // [H]
+        float* __restrict__ g,               // [T, qkv] raw log-gate
+        const float* __restrict__ beta_raw,  // [T, H]
+        float* __restrict__ beta,            // [T, H] sigmoid(beta_raw)
+        int qkv, int T, int head_dim, int heads, float lower_bound) {
+    int c = blockIdx.x * blockDim.x + threadIdx.x;
+    int t = blockIdx.y;
+    if (t >= T) return;
+    if (c < heads) {
+        float x = beta_raw[(size_t)t * heads + c];
+        beta[(size_t)t * heads + c] = 1.0f / (1.0f + expf(-x));
+    }
+    if (c >= qkv) return;
+    float raw = f[(size_t)t * qkv + c] + dt_bias[c];
+    float rate = expf(a_log[c / head_dim]);
+    g[(size_t)t * qkv + c] = lower_bound * memra_kda_sigmoid(rate * raw);
+}
+
 // ---- The delta-rule recurrence with PER-CHANNEL decay. ----
 // Per token, per head, in exactly memra-reference kimi_delta_net's order:
 //   S[i][col] *= exp(g[i])                    (decay first, per key index)

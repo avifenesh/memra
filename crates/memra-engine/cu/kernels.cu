@@ -1125,6 +1125,34 @@ extern "C" __global__ void l2_norm_f32(const float* __restrict__ x, float* __res
     for (int i = tid; i < ncols; i += blockDim.x) dr[i] = xr[i] * scale;
 }
 
+// l2_norm_f32 for TWO tensors in one launch (lane/launch-collapse-20260906): the KDA core's q and
+// k L2 norms are the same kernel on two contiguous buffers, launched back to back (34 launch
+// pairs per token on GLM-5.3-Flash, in-graph). blockIdx.y picks the pair; the per-row body below
+// is l2_norm_f32's character for character at the same blockDim, so every row's bytes are the
+// ones the two launches produced. Gate: tests/kda_small_folds_gpu.rs.
+extern "C" __global__ void l2_norm2_f32(const float* __restrict__ x0, float* __restrict__ dst0,
+                                        const float* __restrict__ x1, float* __restrict__ dst1,
+                                        int ncols, float eps) {
+    const float* x = blockIdx.y ? x1 : x0;
+    float* dst = blockIdx.y ? dst1 : dst0;
+    int row = blockIdx.x; int tid = threadIdx.x;
+    const float* xr = x + (size_t)row * ncols; float* dr = dst + (size_t)row * ncols;
+    float sum = 0.0f;
+    for (int i = tid; i < ncols; i += blockDim.x) { float v = xr[i]; sum += v * v; }
+    __shared__ float s[32];
+    for (int o = 16; o > 0; o >>= 1) sum += __shfl_down_sync(0xffffffff, sum, o);
+    if ((tid & 31) == 0) s[tid >> 5] = sum;
+    __syncthreads();
+    if (tid < 32) {
+        float v = (tid < (blockDim.x + 31) / 32) ? s[tid] : 0.0f;
+        for (int o = 16; o > 0; o >>= 1) v += __shfl_down_sync(0xffffffff, v, o);
+        if (tid == 0) s[0] = v;
+    }
+    __syncthreads();
+    float scale = rsqrtf(s[0] + eps);
+    for (int i = tid; i < ncols; i += blockDim.x) dr[i] = xr[i] * scale;
+}
+
 // l2_norm PREFILL v2 (round 27): warp-per-row float4 — d_state=128 cols = exactly one
 // float4 per lane, warp-shuffle reduce, float4 store. The 256-block strided kernel ran
 // at 918GB/s (half the threads idle on 128-col rows). NUMERIC CONFIG (explicit+gated,
