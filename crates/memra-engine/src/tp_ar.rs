@@ -156,7 +156,7 @@ impl ArLink {
     /// Make sure the staging buffers hold `n` floats. Growing DRAINS both ranks first: the old
     /// buffers go back to the stream-ordered allocator, and a fold still in flight would then be
     /// writing into whatever the allocator hands out next (the hazard in this type's own note).
-    fn ensure_stage(
+    pub(crate) fn ensure_stage(
         &mut self,
         engines: &[&Engine],
         n: usize,

@@ -84,6 +84,7 @@ pub mod gemma_spec;
 pub mod glm5_decode_graph;
 pub mod glm5_sel_ledger;
 pub mod glm5_tp;
+pub mod glm5_tp_sym_graph;
 /// glm5_next T-parallel speculative verify: the rows-walk verify, per-step KDA state-column
 /// rollback, latent/kpool truncation, and the MEMRA_GLM5_SPEC-gated draft->verify->rollback
 /// loop over the native MTP head (lane/glm5-tparallel-verify).

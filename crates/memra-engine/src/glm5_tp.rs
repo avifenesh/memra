@@ -255,6 +255,20 @@ impl Glm5TpRt {
         tp_ar_1stage_on() && self.ranks() == 2 && !self.same_device_gate
     }
 
+    /// Size the one-shot's stage buffers for `n` floats BEFORE a graph capture records a walk
+    /// (an allocation that outlives a capture makes instantiate refuse). No-op when sized.
+    pub fn ar_prepare(&self, root: &Engine, n: usize) -> Result<(), Box<dyn std::error::Error>> {
+        if !self.ar_1stage_available() {
+            return Ok(());
+        }
+        let engines: Vec<&Engine> = std::iter::once(root).chain(self.peers.iter()).collect();
+        let mut guard = self.ar.lock().map_err(|_| "tp ar link poisoned")?;
+        match guard.as_mut() {
+            Some(link) => link.ensure_stage(&engines, n),
+            None => Ok(()),
+        }
+    }
+
     pub fn ar_1stage(
         &self,
         root: &Engine,
