@@ -8081,6 +8081,9 @@ impl Engine {
         let name = match arm {
             "loadonly" => "moe_gate_up_preclamp8_q8_rows_loadonly",
             "mathonly" => "moe_gate_up_preclamp8_q8_rows_mathonly",
+            // slot-major (QT_NVFP4_V2) twins: same bodies, contiguous scale bytes
+            "loadonly_v2" => "moe_gate_up_preclamp8_q8_rows_loadonly_v2",
+            "mathonly_v2" => "moe_gate_up_preclamp8_q8_rows_mathonly_v2",
             other => return Err(format!("ceiling probe arm {other:?}").into()),
         };
         let f = self.func(name);

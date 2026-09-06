@@ -6602,6 +6602,11 @@ __device__ __forceinline__ void moe_gate_up_rows_ilp_warp(
         act[(size_t)pr * n_ff + o] = (x / (1.0f + expf(-x))) * u;
     }
 }
+// The V2 (slot-major) twins of the two probes above answer one question the interleaved
+// layout cannot: the interleaved block puts a group's two UE4M3 scale bytes inside a 36-byte
+// block, so a warp's 32 lanes fetch 32 sectors to read 32 scale bytes, while the slot-major
+// layout keeps them contiguous at nsb*16 + g*2 (2 sectors). Same bodies, same ILP, only the
+// loader template argument differs.
 // ---- Bench-only ceiling probes for the verify-rows MoE gate/up kernel ----------------------
 // (lane/moe-rows-ceiling-20260906; instrument, no door, no dispatch, removed when the lane
 // closes.) The served kernel reaches ~19% of the pair's HBM peak (32.2 us for 50 MB) and ncu is
@@ -6679,6 +6684,79 @@ __device__ __forceinline__ void moe_gate_up_rows_loadonly_warp(
         act[(size_t)pr * n_ff + o] = (x / (1.0f + expf(-x))) * u;
     }
 }
+__device__ __forceinline__ void moe_gate_up_rows_loadonly_v2_warp(
+        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
+        const signed char* __restrict__ aq, const float* __restrict__ ad, float limit,
+        float* __restrict__ act, int in_f, int n_ff, int n_used, int n_pairs, long rb_g,
+        long rb_u, int o, int pr, int lane) {
+    int nsb = in_f >> 5;
+    int tok = pr / n_used;
+    const unsigned char* grow = (const unsigned char*)ptrs[pr] + (long)o * rb_g;
+    const unsigned char* urow = (const unsigned char*)ptrs[n_pairs + pr] + (long)o * rb_u;
+    const signed char* arow = aq + (size_t)tok * in_f;
+    const float* adrow = ad + (size_t)tok * nsb;
+    // the served _ilp loop structure verbatim (four groups of each plane hoisted ahead of the
+    // math) so this is a true ceiling for the access pattern, not a latency-bound lower bound;
+    // only the table lookup and the dp4a chain are gone.
+    int accg = 0, accu = 0;
+    int g = lane;
+    for (; g + 96 < nsb; g += 128) {
+        nvfp4_grp_regs g0 = nvfp4_load_g<true>(grow, g, nsb);
+        nvfp4_grp_regs g1 = nvfp4_load_g<true>(grow, g + 32, nsb);
+        nvfp4_grp_regs g2 = nvfp4_load_g<true>(grow, g + 64, nsb);
+        nvfp4_grp_regs g3 = nvfp4_load_g<true>(grow, g + 96, nsb);
+        nvfp4_grp_regs u0 = nvfp4_load_g<true>(urow, g, nsb);
+        nvfp4_grp_regs u1 = nvfp4_load_g<true>(urow, g + 32, nsb);
+        nvfp4_grp_regs u2 = nvfp4_load_g<true>(urow, g + 64, nsb);
+        nvfp4_grp_regs u3 = nvfp4_load_g<true>(urow, g + 96, nsb);
+        const int* a0 = (const int*)(arow + (size_t)g * 32);
+        const int* a1 = (const int*)(arow + (size_t)(g + 32) * 32);
+        const int* a2 = (const int*)(arow + (size_t)(g + 64) * 32);
+        const int* a3 = (const int*)(arow + (size_t)(g + 96) * 32);
+        float d80 = adrow[g], d81 = adrow[g + 32], d82 = adrow[g + 64], d83 = adrow[g + 96];
+        accg += g0.q0 + g0.q1 + g0.q2 + g0.q3 + g1.q0 + g1.q1 + g1.q2 + g1.q3 + g2.q0 + g2.q1
+                + g2.q2 + g2.q3 + g3.q0 + g3.q1 + g3.q2 + g3.q3 + (int)g0.d0 + (int)g1.d0
+                + (int)g2.d0 + (int)g3.d0;
+        accu += u0.q0 + u0.q1 + u0.q2 + u0.q3 + u1.q0 + u1.q1 + u1.q2 + u1.q3 + u2.q0 + u2.q1
+                + u2.q2 + u2.q3 + u3.q0 + u3.q1 + u3.q2 + u3.q3 + (int)u0.d0 + (int)u1.d0
+                + (int)u2.d0 + (int)u3.d0;
+        accg += a0[0] + a0[1] + a0[2] + a0[3] + a0[4] + a0[5] + a0[6] + a0[7];
+        accg += a1[0] + a1[1] + a1[2] + a1[3] + a1[4] + a1[5] + a1[6] + a1[7];
+        accu += a2[0] + a2[1] + a2[2] + a2[3] + a2[4] + a2[5] + a2[6] + a2[7];
+        accu += a3[0] + a3[1] + a3[2] + a3[3] + a3[4] + a3[5] + a3[6] + a3[7];
+        accg += __float_as_int(d80) + __float_as_int(d81);
+        accu += __float_as_int(d82) + __float_as_int(d83);
+    }
+    for (; g < nsb; g += 32) {
+        nvfp4_grp_regs gw = nvfp4_load_g<true>(grow, g, nsb);
+        nvfp4_grp_regs uw = nvfp4_load_g<true>(urow, g, nsb);
+        const int* a = (const int*)(arow + (size_t)g * 32);
+        int asum = a[0] + a[1] + a[2] + a[3] + a[4] + a[5] + a[6] + a[7];
+        accg += gw.q0 + gw.q1 + gw.q2 + gw.q3 + (int)gw.d0 + (int)gw.d1 + asum;
+        accu += uw.q0 + uw.q1 + uw.q2 + uw.q3 + (int)uw.d0 + (int)uw.d1
+                + __float_as_int(adrow[g]);
+    }
+    float fg = warp_reduce_sum((float)accg);
+    float fu = warp_reduce_sum((float)accu);
+    if (lane == 0) {
+        float u = fmaxf(fminf(fu * scl[n_pairs + pr], limit), -limit);
+        float x = fminf(fg * scl[pr], limit);
+        act[(size_t)pr * n_ff + o] = (x / (1.0f + expf(-x))) * u;
+    }
+}
+extern "C" __global__ void moe_gate_up_preclamp8_q8_rows_loadonly_v2(
+        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
+        const signed char* __restrict__ aq, const float* __restrict__ ad, float limit,
+        float* __restrict__ act, int in_f, int n_ff, int n_used, int n_pairs,
+        int qt_g, int qt_u, long rb_g, long rb_u) {
+    (void)qt_g;
+    (void)qt_u;
+    int o = blockIdx.x;
+    int pr = blockIdx.y;
+    if (o >= n_ff || pr >= n_pairs) return;
+    moe_gate_up_rows_loadonly_v2_warp(ptrs, scl, aq, ad, limit, act, in_f, n_ff, n_used, n_pairs,
+                                   rb_g, rb_u, o, pr, threadIdx.x);
+}
 extern "C" __global__ void moe_gate_up_preclamp8_q8_rows_loadonly(
         const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
         const signed char* __restrict__ aq, const float* __restrict__ ad, float limit,
@@ -6720,6 +6798,48 @@ __device__ __forceinline__ void moe_gate_up_rows_mathonly_warp(
         float x = fminf(accg * scl[pr], limit);
         act[(size_t)pr * n_ff + o] = (x / (1.0f + expf(-x))) * u;
     }
+}
+__device__ __forceinline__ void moe_gate_up_rows_mathonly_v2_warp(
+        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
+        const signed char* __restrict__ aq, const float* __restrict__ ad, float limit,
+        float* __restrict__ act, int in_f, int n_ff, int n_used, int n_pairs, long rb_g,
+        long rb_u, int o, int pr, int lane) {
+    int nsb = in_f >> 5;
+    int tok = pr / n_used;
+    const unsigned char* grow = (const unsigned char*)ptrs[pr] + (long)o * rb_g;
+    const unsigned char* urow = (const unsigned char*)ptrs[n_pairs + pr] + (long)o * rb_u;
+    const signed char* arow = aq + (size_t)tok * in_f;
+    const float* adrow = ad + (size_t)tok * nsb;
+    // one group's operands, then the served arithmetic nsb/32 times on the registers
+    nvfp4_grp_regs gw = nvfp4_load_g<true>(grow, lane, nsb);
+    nvfp4_grp_regs uw = nvfp4_load_g<true>(urow, lane, nsb);
+    const int* a = (const int*)(arow + (size_t)lane * 32);
+    float d8 = adrow[lane];
+    float accg = 0.0f, accu = 0.0f;
+    for (int g = lane; g < nsb; g += 32) {
+        accg += nvfp4_regs_dot(gw, a, d8);
+        accu += nvfp4_regs_dot(uw, a, d8);
+    }
+    accg = warp_reduce_sum(accg);
+    accu = warp_reduce_sum(accu);
+    if (lane == 0) {
+        float u = fmaxf(fminf(accu * scl[n_pairs + pr], limit), -limit);
+        float x = fminf(accg * scl[pr], limit);
+        act[(size_t)pr * n_ff + o] = (x / (1.0f + expf(-x))) * u;
+    }
+}
+extern "C" __global__ void moe_gate_up_preclamp8_q8_rows_mathonly_v2(
+        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
+        const signed char* __restrict__ aq, const float* __restrict__ ad, float limit,
+        float* __restrict__ act, int in_f, int n_ff, int n_used, int n_pairs,
+        int qt_g, int qt_u, long rb_g, long rb_u) {
+    (void)qt_g;
+    (void)qt_u;
+    int o = blockIdx.x;
+    int pr = blockIdx.y;
+    if (o >= n_ff || pr >= n_pairs) return;
+    moe_gate_up_rows_mathonly_v2_warp(ptrs, scl, aq, ad, limit, act, in_f, n_ff, n_used, n_pairs,
+                                   rb_g, rb_u, o, pr, threadIdx.x);
 }
 extern "C" __global__ void moe_gate_up_preclamp8_q8_rows_mathonly(
         const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
