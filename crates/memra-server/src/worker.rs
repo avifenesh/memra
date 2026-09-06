@@ -17105,6 +17105,40 @@ fn glm5_clamp_spec_k(k: usize) -> usize {
     k.min(memra_engine::hybrid::HybridModel::hyper_batch_cap() - 1)
 }
 
+/// The glm5 route's COLD-SHORT draft depth (lane/glm5-spec-depth-20260906).
+///
+/// The shared policy table answers `SPEC_K_COLD_SHORT` = 3 for a prompt under 1024 tokens, a
+/// value set on a different drafter class. GLM-5.3-Flash's DFlash2 drafter accepts 0.934 to
+/// 0.949 of drafted tokens on this shape (`usage.spec` over three boots), so a round at K=3
+/// collects about 3.5 of the ~16 tokens that acceptance makes available, and the measured ladder
+/// on the 2x B200 pair keeps paying until it turns:
+///
+/// | K | 3 | 4 | 5 | 6 | 7 | 8 |
+/// |---|---|---|---|---|---|---|
+/// | tok/s | 110.23 | 116.69 | 118.59 | **125.78** | 123.50 | 121.02 |
+///
+/// (darklanes `research/glm5-b200-mint-20260904/LANE.md`, kswp and kswp2, the all4w posture,
+/// two interleaved boots per arm, tape 223d73a5a78e59a9 on every boot: spec is lossless under
+/// greedy verification and the depth does not move it.) The peak is 6 and it is +14.1% over the
+/// table's 3, so the glm5 route takes 6 where the shared table says cold-short.
+///
+/// SCOPE. Only the cold-short branch, only this route. The cached-long branch (K=2, or 5 with a
+/// rank-trimmed head) is a different shape with its own receipts and is untouched; so is every
+/// other model's use of the shared table. The operator pin `MEMRA_SPEC_K` still overrides, and
+/// is the rollback seam. The verify knee still clamps afterwards.
+const GLM5_SPEC_K_COLD_SHORT: usize = 6;
+
+/// Print-once latch for the depth line above.
+static GLM5_SPEC_K_DEEPENED: std::sync::Once = std::sync::Once::new();
+
+fn glm5_spec_k_cold_short(k: usize, reason: SpecKReason) -> usize {
+    if matches!(reason, SpecKReason::ColdShort) {
+        GLM5_SPEC_K_COLD_SHORT
+    } else {
+        k
+    }
+}
+
 fn model_forces_spec_replay(plan: &memra_gguf::model_plan::ModelPlan) -> bool {
     use memra_gguf::model_plan::OperationKind;
 
@@ -19922,12 +19956,25 @@ fn admit(
             0,
             spec_trim_head(lm),
         );
-        let clamped = glm5_clamp_spec_k(decision.k);
-        if clamped != decision.k {
+        // The glm5 route's own cold-short depth (see the const): the shared table's 3 was set
+        // on a different drafter class and this one's measured peak is 6.
+        let deepened = glm5_spec_k_cold_short(decision.k, decision.reason);
+        if deepened != decision.k {
+            GLM5_SPEC_K_DEEPENED.call_once(|| {
+                eprintln!(
+                    "[glm5-spec] K={} ({}) -> {deepened}: the glm5 cold-short depth (DFlash2 \
+                     accepts 0.93-0.95 per token; the measured ladder peaks at 6, +14.1% over \
+                     the shared table's 3). MEMRA_SPEC_K overrides.",
+                    decision.k,
+                    decision.reason.as_str(),
+                );
+            });
+        }
+        let clamped = glm5_clamp_spec_k(deepened);
+        if clamped != deepened {
             eprintln!(
-                "[glm5-spec] K={} ({}) clamped to {clamped}: verify rows K+1 must stay \
+                "[glm5-spec] K={deepened} ({}) clamped to {clamped}: verify rows K+1 must stay \
                  inside the decode-exact knee (hyper_batch_cap 15)",
-                decision.k,
                 decision.reason.as_str(),
             );
         }
@@ -27936,6 +27983,45 @@ mod tests {
 
     /// The K+1 <= 15 hard bound (the shexp decode-exact knee at t=16): only an operator
     /// pin can reach the clamp; every automatic policy depth passes through untouched.
+    #[test]
+    fn glm5_cold_short_depth_is_the_measured_peak_and_scoped_to_that_branch() {
+        use super::{
+            GLM5_SPEC_K_COLD_SHORT, SPEC_K_CACHED_LONG, SPEC_K_CACHED_LONG_TRIM, SPEC_K_COLD_LONG,
+            SPEC_K_COLD_SHORT, SpecKReason, glm5_spec_k_cold_short,
+        };
+        // the ladder's peak, and it must actually differ from the shared table or the
+        // change is a no-op dressed as a decision
+        assert_eq!(GLM5_SPEC_K_COLD_SHORT, 6);
+        assert_ne!(GLM5_SPEC_K_COLD_SHORT, SPEC_K_COLD_SHORT);
+        assert_eq!(
+            glm5_spec_k_cold_short(SPEC_K_COLD_SHORT, SpecKReason::ColdShort),
+            6,
+            "a cold-short request takes the glm5 depth"
+        );
+        // every other branch keeps the shared table's answer, including an operator pin
+        for (k, reason) in [
+            (SPEC_K_COLD_LONG, SpecKReason::ColdLong),
+            (SPEC_K_CACHED_LONG, SpecKReason::CachedLong),
+            (SPEC_K_CACHED_LONG_TRIM, SpecKReason::CachedLong),
+            (0, SpecKReason::Placement),
+            (0, SpecKReason::Concurrency),
+            (11, SpecKReason::OperatorPin),
+            (4, SpecKReason::Replay),
+        ] {
+            assert_eq!(
+                glm5_spec_k_cold_short(k, reason),
+                k,
+                "{reason:?} must keep its own depth"
+            );
+        }
+        // and the verify knee still bounds it
+        assert_eq!(
+            super::glm5_clamp_spec_k(GLM5_SPEC_K_COLD_SHORT),
+            GLM5_SPEC_K_COLD_SHORT,
+            "the glm5 cold-short depth sits inside the decode-exact knee"
+        );
+    }
+
     #[test]
     fn glm5_spec_k_clamp_holds_the_verify_knee() {
         use super::glm5_clamp_spec_k;
