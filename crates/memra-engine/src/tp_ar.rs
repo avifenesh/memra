@@ -339,16 +339,34 @@ impl ArLink {
         if n == 0 {
             return Err("tp all-reduce needs a non-zero element count".into());
         }
+        // THE INPUTS ARE STAGED, NEVER READ IN PLACE. Both ranks read both operands and each
+        // writes its own `x[r]`; reading `x` directly races the peer's write of the same buffer
+        // (rank 1 was still reading rank 0's operand while rank 0 overwrote it with the sum), which
+        // the pair gate read as a wrong number at n=1 (tpar2 2026-09-06, tp_ar_gpu.rs one-shot,
+        // rank 0 round 0). vLLM's `cross_device_reduce_1stage` reads registered copies for the
+        // same reason. Each rank copies `x[r]` into its own stage on its own stream first, so the
+        // kernel's operands are immutable for the whole exchange; the exit barrier then keeps the
+        // NEXT round's copy from landing while the peer still reads this one.
+        self.ensure_stage(engines, n)?;
+        for r in 0..2 {
+            let e = engines[r];
+            let _main = e.gpu.enter_main()?;
+            let src = x[r].slice(0..n);
+            let mut dst = self.stage[r].slice_mut(0..n);
+            e.stream().memcpy_dtod(&src, &mut dst)?;
+        }
         // Resolve every address under ITS OWN rank's context before any launch enters a context of
         // its own; reading a peer's `device_ptr` under the wrong context resolved wrongly once.
         let mut inp = [std::ptr::null::<f32>(); 2];
+        let mut outp = [std::ptr::null_mut::<f32>(); 2];
         let mut sig = [std::ptr::null_mut::<std::ffi::c_void>(); 2];
         let mut errp = [std::ptr::null_mut::<i32>(); 2];
         for r in 0..2 {
             let e = engines[r];
             let _main = e.gpu.enter_main()?;
             let s = e.stream();
-            inp[r] = x[r].device_ptr(&s).0 as *const f32;
+            inp[r] = self.stage[r].device_ptr(&s).0 as *const f32;
+            outp[r] = x[r].device_ptr(&s).0 as *mut f32;
             sig[r] = self.sig[r].device_ptr(&s).0 as *mut std::ffi::c_void;
             errp[r] = self.err[r].device_ptr(&s).0 as *mut i32;
         }
@@ -357,13 +375,13 @@ impl ArLink {
             let e = engines[r];
             let _main = e.gpu.enter_main()?;
             let st = e.stream();
-            // SAFETY: peer access is granted both ways, so the peer's input and signal pointers
-            // are dereferenceable from this context; every buffer is sized above.
+            // SAFETY: peer access is granted both ways, so the peer's staged operand and signal
+            // pointers are dereferenceable from this context; every buffer is sized above.
             let rc = unsafe {
                 memra_tp_ar_1stage(
                     inp[0],
                     inp[1],
-                    inp[r] as *mut f32,
+                    outp[r],
                     sig[r],
                     sig[1 - r],
                     r as i32,
