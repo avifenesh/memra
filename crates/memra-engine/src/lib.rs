@@ -2175,6 +2175,29 @@ pub fn moe_vrows_ilp_on_from(v: Option<&str>, built_arch: &str) -> bool {
 pub static MOE_VROWS_ILP_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
+/// `MEMRA_MOE_ROWS_SHACT=1` (lane/moe-rows-ceiling-20260906, default OFF, decide-by 2026-09-20):
+/// the verify-rows MoE gate/up launch takes `moe_gate_up_preclamp8_q8_rows_w4_shact`, a 4-warp
+/// block that stages the ACTIVATION row into shared memory once and then runs the served `_ilp`
+/// body against it. WHY: the ceiling probe (`moe-rows-ceiling-bench`) shows this kernel is
+/// access-pattern bound (arithmetic deleted buys 1.19x, memory deleted 4-5x), and the activation
+/// is not weight traffic: every block of a pair reads the same 4096 q8_1 bytes plus `nsb` scale
+/// floats, `n_ff / 4` times per pair, and those are 8 of the ~20 global loads a lane issues per
+/// group. BIT-IDENTICAL by construction: same operands, same group order, same accumulation,
+/// only the activation's address space changes. Requires interleaved NVFP4 on both planes; rides
+/// on `MEMRA_MOE_VROWS_ILP` and yields to the pack, order, tmaj and ILP2 doors. Read per call.
+pub fn moe_rows_shact_on() -> bool {
+    std::env::var("MEMRA_MOE_ROWS_SHACT").as_deref() == Ok("1")
+}
+
+/// Engagement counter for `MEMRA_MOE_ROWS_SHACT`.
+pub static MOE_ROWS_SHACT_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// Snapshot of [`MOE_ROWS_SHACT_DISPATCHES`]: gates take a before/after delta.
+pub fn moe_rows_shact_dispatches() -> u64 {
+    MOE_ROWS_SHACT_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Snapshot of [`MOE_VROWS_ILP_DISPATCHES`] — gates take a before/after delta.
 pub fn moe_vrows_ilp_dispatches() -> u64 {
     MOE_VROWS_ILP_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
@@ -8055,6 +8078,67 @@ impl Engine {
     /// epilogue's verbatim, bit-gated per row vs the sequential chain.
     #[allow(clippy::too_many_arguments)]
     // allow: the parameter list mirrors the kernel/FFI/call contract
+    /// BENCH-ONLY ceiling probe for the verify-rows MoE gate/up kernel
+    /// (lane/moe-rows-ceiling-20260906; no door, no serving dispatch, removed when the lane
+    /// closes). `arm` picks `"loadonly"` (the served loads, the arithmetic deleted) or
+    /// `"mathonly"` (one group loaded, the served arithmetic repeated). Together with the
+    /// served kernel they say whether the 19%-of-peak wall is the access pattern or the
+    /// instruction stream; ncu cannot answer it inside the vast container. The outputs are
+    /// meaningless numbers by construction: this measures rate, never values.
+    #[allow(clippy::too_many_arguments)]
+    pub fn moe_gate_up_rows_ceiling_probe(
+        &self,
+        arm: &str,
+        ptrs: &CudaSlice<u64>,
+        scl: &CudaSlice<f32>,
+        aq: &CudaSlice<i8>,
+        ad: &CudaSlice<f32>,
+        limit: f32,
+        in_f: usize,
+        n_ff: usize,
+        n_used: usize,
+        n_pairs: usize,
+        rb_g: usize,
+        rb_u: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let name = match arm {
+            "loadonly" => "moe_gate_up_preclamp8_q8_rows_loadonly",
+            "mathonly" => "moe_gate_up_preclamp8_q8_rows_mathonly",
+            other => return Err(format!("ceiling probe arm {other:?}").into()),
+        };
+        let f = self.func(name);
+        let cfg = LaunchConfig {
+            grid_dim: (n_ff as u32, n_pairs as u32, 1),
+            block_dim: (32, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let mut act = self.uninit(n_pairs * n_ff)?;
+        let (inf, nff, nu, np) = (in_f as i32, n_ff as i32, n_used as i32, n_pairs as i32);
+        let (qg, qu) = (QT_NVFP4, QT_NVFP4);
+        let (rbg, rbu) = (rb_g as i64, rb_u as i64);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(ptrs)
+            .arg(scl)
+            .arg(aq)
+            .arg(ad)
+            .arg(&limit)
+            .arg(&mut act)
+            .arg(&inf)
+            .arg(&nff)
+            .arg(&nu)
+            .arg(&np)
+            .arg(&qg)
+            .arg(&qu)
+            .arg(&rbg)
+            .arg(&rbu);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(act)
+    }
+
+    #[allow(clippy::too_many_arguments)]
     pub fn moe_gate_up_preclamp8_q8_rows(
         &self,
         ptrs: &CudaSlice<u64>,
@@ -8107,6 +8191,21 @@ impl Engine {
         }
         // MEMRA_MOE_GATEUP_ILP2: two pairs per warp (bit-identical twins of `_ilp`).
         let ilp2 = ilp && crate::moe_gateup_ilp2_on();
+        let shact = ilp
+            && !ilp2
+            && !packed
+            && !ordered
+            && crate::moe_rows_shact_on()
+            && qt_g == QT_NVFP4
+            && qt_u == QT_NVFP4;
+        if shact
+            && MOE_ROWS_SHACT_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0
+        {
+            eprintln!(
+                "[moe-rows-shact] engaged: 4-warp verify-rows gate/up block with the activation \
+                 staged in shared once per block (same operands and order; MEMRA_MOE_ROWS_SHACT=1)"
+            );
+        }
         if ilp2
             && MOE_GATEUP_ILP2_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0
         {
@@ -8116,7 +8215,17 @@ impl Engine {
                  order; MEMRA_MOE_GATEUP_ILP2=1)"
             );
         }
-        let (f, cfg) = if packed {
+        let (f, cfg) = if shact {
+            (
+                self.func("moe_gate_up_preclamp8_q8_rows_w4_shact"),
+                LaunchConfig {
+                    grid_dim: ((n_ff as u32).div_ceil(4), n_pairs as u32, 1),
+                    block_dim: (32, 4, 1),
+                    // the activation row (i8, in_f) then its per-32 scales (f32, in_f / 32)
+                    shared_mem_bytes: (in_f + (in_f / 32) * 4) as u32,
+                },
+            )
+        } else if packed {
             if MOE_VROWS_PACK_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
                 eprintln!(
                     "[moe-vrows-pack] engaged: 4-warp blocks on the verify-rows MoE pair \
