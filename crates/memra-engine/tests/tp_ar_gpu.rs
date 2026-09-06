@@ -195,6 +195,13 @@ fn one_shot_all_reduce_matches_the_host_sum_bitwise() {
         for round in 0..3 {
             link.all_reduce_1stage(&engines, &mut [&mut xa, &mut xb], n)
                 .unwrap();
+            // The barrier words FIRST: an expired barrier returns with `x` untouched, and read
+            // as numbers that is "rank 0 got its own operand back", not "the barrier expired".
+            assert_eq!(
+                link.barrier_errors(&engines).unwrap(),
+                [0, 0],
+                "one-shot barrier expired at n={n} round={round} (40043 entry, 40044 exit)"
+            );
             let ga = ea.dtoh_view(&xa.slice(0..n)).unwrap();
             let gb = eb.dtoh_view(&xb.slice(0..n)).unwrap();
             // Round r doubles the previous sum, so the expected value is want * 2^r.

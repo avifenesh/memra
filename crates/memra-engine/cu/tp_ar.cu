@@ -171,6 +171,12 @@ __device__ __forceinline__ int memra_ar_barrier(unsigned (*peer_ctr)[MEMRA_AR_RA
     if (threadIdx.x == 0) expired = 0;
     __syncthreads();
     if (threadIdx.x < MEMRA_AR_RANKS) {
+        // Every rank's slot in EVERY rank's array, this one's included: the wait below spins on
+        // self_ctr[b][t] for t in 0..RANKS, and slot `rank` of the local array has no other
+        // writer. Without this store the barrier can only expire (tpar2 2026-09-06 on the pair:
+        // the one-shot returned on 40043 with x untouched, which the gate read as "rank 0 got
+        // its own operand back", the same bits staged or in place).
+        if (threadIdx.x == 0) memra_ar_st_release(&self_ctr[blockIdx.x][rank], flag);
         memra_ar_st_release(&peer_ctr[blockIdx.x][rank], flag);
         long long t0 = clock64();
         while (memra_ar_ld_acquire(&self_ctr[blockIdx.x][threadIdx.x]) != flag) {
