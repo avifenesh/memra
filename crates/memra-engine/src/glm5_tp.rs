@@ -143,7 +143,11 @@ pub enum GateRed {
 
 pub fn gate_red() -> Result<Option<GateRed>, String> {
     match std::env::var("MEMRA_GLM5_TP_GATE_RED").ok().as_deref() {
-        None | Some("") => Ok(None),
+        // "0" is OFF, and it has to be: `glm5-tp-gate`'s own `rm_env` writes "0" rather than
+        // unsetting, so before this arm existed the gate errored out on its FIRST TP arm with
+        // `MEMRA_GLM5_TP_GATE_RED="0" is not a known red arm` and could never run one. "0" is
+        // also the canonical rollback spelling for every other door in this engine.
+        None | Some("") | Some("0") => Ok(None),
         Some("swap-wo") => Ok(Some(GateRed::SwapWo)),
         Some("swap-ep-gateup") => Ok(Some(GateRed::SwapEpGateUp)),
         Some("skip-peer-combine") => Ok(Some(GateRed::SkipPeerCombine)),
@@ -602,6 +606,120 @@ fn outer_rows(ne: &[u64]) -> (usize, usize) {
     let outer = *ne.last().expect("tensor has at least one axis") as usize;
     let inner: usize = ne[..ne.len() - 1].iter().map(|&d| d as usize).product();
     (outer, inner.max(1))
+}
+
+/// K-SLICE of a 2D projection: keep input columns `cols` of every out row. The row-parallel
+/// counterpart of [`shard_rows`], and the shape a TP `wo` needs.
+///
+/// WHY IT IS NOT `shard_rows` WITH THE AXES SWAPPED: the shardable axis there is the OUTERMOST,
+/// which is one contiguous byte range per expert. A column slice is a sub-range of EVERY row, so
+/// the result is a gather of `out_f` ranges, and on a quantized tensor the range boundary has to
+/// land on a quantization block or the slice cuts one in half. `tp_expert_split` carries the same
+/// guard and the red arm that proves a byte-divisibility test is not enough.
+fn shard_cols(
+    src_engine: &Engine,
+    dst: &Engine,
+    t: &GpuTensor,
+    cols: Range<usize>,
+) -> Result<GpuTensor, Box<dyn std::error::Error>> {
+    let take = cols.end - cols.start;
+    match t {
+        GpuTensor::Float { data, ne } => {
+            let (outer, inner) = outer_rows(ne);
+            if cols.end > inner {
+                return Err(format!("shard cols {cols:?} exceed inner axis {inner}").into());
+            }
+            let host = src_engine.dtoh(data)?;
+            let mut out = Vec::with_capacity(outer * take);
+            for r in 0..outer {
+                out.extend_from_slice(&host[r * inner + cols.start..r * inner + cols.end]);
+            }
+            let mut ne2 = ne.clone();
+            ne2[0] = take as u64;
+            Ok(GpuTensor::Float {
+                data: dst.htod(&out)?,
+                ne: ne2,
+            })
+        }
+        GpuTensor::FloatBf16 { data, ne } => {
+            let (outer, inner) = outer_rows(ne);
+            if cols.end > inner {
+                return Err(format!("shard cols {cols:?} exceed inner axis {inner}").into());
+            }
+            let host = src_engine.dtoh_u8(data)?;
+            let mut out = Vec::with_capacity(outer * take * 2);
+            for r in 0..outer {
+                let base = r * inner * 2;
+                out.extend_from_slice(&host[base + cols.start * 2..base + cols.end * 2]);
+            }
+            let mut ne2 = ne.clone();
+            ne2[0] = take as u64;
+            Ok(GpuTensor::FloatBf16 {
+                data: dst.htod_bytes(&out)?,
+                ne: ne2,
+            })
+        }
+        GpuTensor::Quant {
+            bytes,
+            qtype,
+            row_bytes,
+            ne,
+            scale,
+            rp,
+            fp8,
+            rp4,
+            blk,
+            f16,
+            #[cfg(memra_cutlass)]
+                cutlass: _,
+        } => {
+            if *rp || fp8.is_some() || rp4.is_some() || blk.is_some() || f16.is_some() {
+                return Err("glm5-tp shard cols: a mirror layout is unwired for K slices".into());
+            }
+            if ne.len() != 2 {
+                return Err("glm5-tp shard cols: quantized K slices are 2D-only".into());
+            }
+            let (outer, inner) = outer_rows(ne);
+            if cols.end > inner {
+                return Err(format!("shard cols {cols:?} exceed inner axis {inner}").into());
+            }
+            // Block alignment, counted in BLOCKS: `row_bytes = in_f / block * type_size` is
+            // linear in `in_f`, so a byte-offset test passes a boundary that cuts a block.
+            if !(cols.start * row_bytes).is_multiple_of(inner)
+                || !(take * row_bytes).is_multiple_of(inner)
+            {
+                return Err(format!(
+                    "glm5-tp shard cols: {cols:?} of {inner} does not land on a block boundary \
+                     (row_bytes {row_bytes})"
+                )
+                .into());
+            }
+            let off = cols.start * row_bytes / inner;
+            let keep = take * row_bytes / inner;
+            let host = src_engine.dtoh_u8(bytes)?;
+            let mut out = Vec::with_capacity(outer * keep);
+            for r in 0..outer {
+                let base = r * row_bytes + off;
+                out.extend_from_slice(&host[base..base + keep]);
+            }
+            let mut ne2 = ne.clone();
+            ne2[0] = take as u64;
+            Ok(GpuTensor::Quant {
+                bytes: dst.htod_bytes(&out)?,
+                qtype: *qtype,
+                row_bytes: keep,
+                ne: ne2,
+                scale: *scale,
+                rp: false,
+                fp8: None,
+                rp4: None,
+                blk: None,
+                f16: None,
+                #[cfg(memra_cutlass)]
+                cutlass: None,
+            })
+        }
+    }
 }
 
 /// Copy `rows` of `t`'s outermost axis onto `dst` (host bounce; load-time only). Mirror
@@ -1197,8 +1315,20 @@ pub(crate) fn shard_mla_layer(
             wv_b: shard_rows(e, dst, &la.wv_b, r * hl..(r + 1) * hl)?,
             wk_b16: None,
             wv_b16: None,
-            // COLUMN-parallel wo: rank r owns OUT rows over the full N*V input.
-            wo: shard_rows(e, dst, &la.wo, wr * hh..(wr + 1) * hh)?,
+            // COLUMN-parallel wo (default): rank r owns OUT rows over the FULL gathered N*V
+            // input, so the walk must all-gather every rank's heads before this multiply and
+            // concat the out-row bands after it. Three pure-movement hops per layer.
+            //
+            // ROW-parallel wo (`MEMRA_GLM5_TP_EXPERT_SPLIT`): rank r instead owns the input
+            // COLUMNS matching its OWN heads, so it multiplies only what it already computed and
+            // produces a FULL-WIDTH partial sum. The all-gather and the concat both disappear and
+            // one reduction replaces them. Not byte-identical, for the same reason the expert
+            // `down` split is not: the K reduction is split two ways instead of run in one pass.
+            wo: if glm5_tp_expert_split_on() {
+                shard_cols(e, dst, &la.wo, wr * hl * g.d_v..(wr + 1) * hl * g.d_v)?
+            } else {
+                shard_rows(e, dst, &la.wo, wr * hh..(wr + 1) * hh)?
+            },
             geom: shard_geom,
             index: match &la.index {
                 Some(ix) => Some(replicate_indexer(dst, ix)?),
@@ -1399,8 +1529,16 @@ pub(crate) fn arm_moe_ep(
     m: &mut crate::hybrid::MoeWeights,
     placement: Option<&[u8]>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if m.glm5_ep.is_some() {
-        return Err("arm_moe_ep: layer is already EP-armed".into());
+    if m.glm5_ep.is_some() || m.glm5_tp_split.is_some() {
+        return Err("arm_moe_ep: layer is already expert-armed".into());
+    }
+    // Expert TENSOR-parallelism replaces whole-expert ownership outright: with every rank holding
+    // half of every expert there is no owner map, no placement row and no rank that routes no
+    // work, so the two arms are exclusive rather than composable.
+    if glm5_tp_expert_split_on() {
+        let n_embd = m.gate_inp.in_features();
+        m.glm5_tp_split = Some(shard_moe_layer_split(e, rt, m, n_embd)?);
+        return Ok(());
     }
     let ranks = rt.ranks();
     let n_expert = m.gate_exps.n_expert;
@@ -1559,6 +1697,126 @@ pub(crate) fn arm_moe_ep(
         ptr_rows,
     });
     Ok(())
+}
+
+// ------------------------------------------------------------------------------------------
+// Expert TENSOR-parallelism (lane/tp-expert-split-20260906)
+// ------------------------------------------------------------------------------------------
+
+/// Every rank holds HALF OF EVERY EXPERT, instead of all of half the experts.
+///
+/// WHY, and it is a sizing fact rather than a preference: with whole-expert ownership a top-8
+/// token splits Binomial(8, 0.5) across two ranks and a memory-bound decode step is paced by the
+/// BUSIER rank, so `E[max] = 5.094` and expert parallelism buys a 1.571x expert-half speedup
+/// where the TP sizing assumed 2x. The even 4/4 split happens on 27.3% of tokens; 28.9% land 6-2
+/// or worse. Splitting inside each expert removes the variance rather than averaging it: whatever
+/// the router picks, each rank streams exactly half of every routed expert.
+/// (`tp_expert_split::ep_busier_rank_experts` carries that arithmetic as a test.)
+///
+/// SLAB SHAPE. `gate` and `up` are ROW-split (out rows `[r*half, (r+1)*half)` of every expert),
+/// `down` is COLUMN-split (input columns of the same range), so a slot's program on rank `r` is
+/// the unsharded program at half the intermediate width, producing a FULL-WIDTH partial sum.
+/// There is no owner map: every rank runs every routed slot.
+pub struct Glm5TpSplitExps {
+    pub rt: Arc<Glm5TpRt>,
+    /// `slabs[r]` is rank r's half of ALL experts (`[0]` = root's, on the model's engine).
+    pub slabs: Vec<EpRankSlab>,
+    /// The per-rank intermediate width: `n_ff_exp / ranks`.
+    pub half_ff: usize,
+    /// Per-rank `gate`/`up` expert stride in bytes (row-split: `half_ff * row_bytes`).
+    pub gate_stride: usize,
+    pub up_stride: usize,
+    /// Per-rank `down` expert stride in bytes (column-split: `n_embd * (row_bytes / ranks)`).
+    pub down_stride: usize,
+    /// Per-rank `down` row width in bytes after the column split.
+    pub down_row_bytes: usize,
+}
+
+impl Glm5TpSplitExps {
+    pub fn ranks(&self) -> usize {
+        self.slabs.len()
+    }
+}
+
+/// `MEMRA_GLM5_TP_EXPERT_SPLIT=1` (lane/tp-expert-split-20260906, default OFF, decide-by
+/// 2026-09-20): shard every expert across the TP ranks instead of assigning whole experts.
+///
+/// NOT byte-identical, and the split is where: `gate`/`up` are row splits, so every output
+/// element stays one full-K dot over the same bytes and that half is bit-identical, as is the
+/// SwiGLU after it. `down` is a column split, so each rank produces a partial sum over half the
+/// K range and the ranks' partials are added, which is a 2-way split of a reduction the
+/// unsharded walk does in one pass. Named class, gated as one.
+pub fn glm5_tp_expert_split_on() -> bool {
+    std::env::var("MEMRA_GLM5_TP_EXPERT_SPLIT").as_deref() == Ok("1")
+}
+
+static SPLIT_MARKED: AtomicBool = AtomicBool::new(false);
+
+/// Build the per-rank half-expert slabs. Load-time only: one host staging pass per rank per
+/// projection, then one upload each.
+pub(crate) fn shard_moe_layer_split(
+    e: &Engine,
+    rt: &Arc<Glm5TpRt>,
+    m: &crate::hybrid::MoeWeights,
+    n_embd: usize,
+) -> Result<Glm5TpSplitExps, Box<dyn std::error::Error>> {
+    use crate::tp_expert_split::{split_cols, split_rows};
+    let ranks = rt.ranks();
+    let mut slabs = Vec::with_capacity(ranks);
+    let (mut gate_stride, mut up_stride, mut down_stride, mut down_row_bytes, mut half_ff) =
+        (0usize, 0usize, 0usize, 0usize, 0usize);
+    for r in 0..ranks {
+        let dev = rank_engine(e, rt, r);
+        let g = split_rows(&m.gate_exps, ranks, r)?;
+        let u = split_rows(&m.up_exps, ranks, r)?;
+        let d = split_cols(&m.down_exps, ranks, r)?;
+        if g.out_f != u.out_f || g.out_f != d.in_f {
+            return Err(format!(
+                "glm5-tp expert split: rank {r} halves disagree (gate out {} up out {} down in {})",
+                g.out_f, u.out_f, d.in_f
+            )
+            .into());
+        }
+        if d.out_f != n_embd {
+            return Err(format!(
+                "glm5-tp expert split: down out {} is not the hidden width {n_embd}",
+                d.out_f
+            )
+            .into());
+        }
+        half_ff = g.out_f;
+        gate_stride = g.expert_stride;
+        up_stride = u.expert_stride;
+        down_stride = d.expert_stride;
+        down_row_bytes = d.row_bytes;
+        // The same tail-slack pads the whole-expert slabs take: the ragged-k grouped GEMM may
+        // overread past the LAST row, and the slack only prevents the OOB fault.
+        slabs.push(EpRankSlab {
+            gate: dev.htod_bytes_padded(&g.bytes, 8)?,
+            up: dev.htod_bytes_padded(&u.bytes, 8)?,
+            down: dev.htod_bytes_padded(&d.bytes, 144)?,
+            n_experts: m.gate_exps.n_expert,
+        });
+    }
+    if !SPLIT_MARKED.swap(true, Ordering::Relaxed) {
+        eprintln!(
+            "[glm5-tp-split] expert TENSOR-parallel armed: every rank holds half of ALL {} \
+             experts, half_ff={half_ff} (whole-expert ownership pays the busier rank: \
+             E[max]=5.094 of 8, a 1.571x expert half where the split is a deterministic 2x) \
+             transport={} performance_claim=false",
+            m.gate_exps.n_expert,
+            rt.transport.name(),
+        );
+    }
+    Ok(Glm5TpSplitExps {
+        rt: rt.clone(),
+        slabs,
+        half_ff,
+        gate_stride,
+        up_stride,
+        down_stride,
+        down_row_bytes,
+    })
 }
 
 #[cfg(test)]

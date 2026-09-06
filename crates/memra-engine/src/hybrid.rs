@@ -641,6 +641,7 @@ pub(crate) fn load_ffn(
             step_ep,
             step_tp,
             glm5_ep: None,
+            glm5_tp_split: None,
             dev_macros,
             has_macros,
             w4a16_bf16_activations: matches!(
@@ -2730,6 +2731,11 @@ pub struct MoeWeights {
     /// forward takes the EP dispatch/combine walk and every other arm is unreachable for
     /// this layer. `None` everywhere else (zero change).
     pub glm5_ep: Option<crate::glm5_tp::Glm5EpExps>,
+    /// Expert TENSOR-parallel slabs (`MEMRA_GLM5_TP_EXPERT_SPLIT`, lane/tp-expert-split-20260906):
+    /// every rank holds half of EVERY expert instead of all of half the experts, so routing luck
+    /// cannot leave one card with 6 of the token's 8. Mutually exclusive with `glm5_ep`, which is
+    /// the whole-expert arm; the loader arms exactly one.
+    pub glm5_tp_split: Option<crate::glm5_tp::Glm5TpSplitExps>,
     /// Per-expert post-matmul macro-scales on DEVICE: [3*n_expert] f32 in (gate, up, down)
     /// order — all 1.0 unless the checkpoint carries compressed-tensors NVFP4 global scales
     /// (unsloth qwen3.6 class). The _dev gate_up epilogues multiply unconditionally (x*1.0f

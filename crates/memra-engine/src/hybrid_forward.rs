@@ -10261,14 +10261,43 @@ impl HybridModel {
             Some(self.mla_attn_cached_pre_wo(e, mla, h, pos_d, t, il, layer, max_ctx, rows_exact)?)
         };
 
-        // HOP 2 — gather the per-head parts into the FULL [t, full_heads*dv] layout on
-        // every rank. `full_heads * dv == ranks * (hl * dv)` by the shard map.
         let part = hl * dv;
         debug_assert_eq!(full_heads * dv, ranks * part);
         let attn_refs: Vec<&CudaSlice<f32>> = attn
             .iter()
             .map(|a| a.as_ref().expect("filled above"))
             .collect();
+
+        // ROW-PARALLEL `wo` (`MEMRA_GLM5_TP_EXPERT_SPLIT`): each rank owns the input COLUMNS
+        // matching its own heads, so it multiplies only what it just computed and produces a
+        // FULL-WIDTH partial sum. HOP 2's all-gather and HOP 3's concat both disappear and ONE
+        // reduction replaces them: three pure-movement hops per layer become one, and the biggest
+        // of the three (the [t, full_heads*dv] gather, four times the hidden width) is the one
+        // that goes. Not byte-identical, for the same reason the expert `down` split is not: the
+        // K reduction runs two ways instead of one pass. Named class.
+        if crate::glm5_tp::glm5_tp_expert_split_on() {
+            let mut partials = Vec::with_capacity(ranks);
+            for (r, a) in attn_refs.iter().enumerate() {
+                let dev = crate::glm5_tp::rank_engine(e, rt, r);
+                let wo = if r == 0 { &mla.wo } else { &tp.peers[r - 1].wo };
+                partials.push(if rows_exact {
+                    dev.matmul_rows_exact(wo, a, t)?
+                } else {
+                    dev.matmul(wo, a, t)?
+                });
+            }
+            let mut y = partials.remove(0);
+            for (r, peer_y) in partials.iter().enumerate() {
+                let landed =
+                    crate::tp_transport::return_row_to_root(&hop, r + 1, peer_y, t * n_embd)?;
+                let mut dst = y.slice_mut(0..t * n_embd);
+                e.axpy_into(&landed, 1.0, &mut dst, t * n_embd)?;
+            }
+            return Ok(y);
+        }
+
+        // HOP 2 — gather the per-head parts into the FULL [t, full_heads*dv] layout on
+        // every rank. `full_heads * dv == ranks * (hl * dv)` by the shard map.
         let fulls = crate::tp_transport::gather_parts(&hop, &attn_refs, t, part)?;
 
         // Column-parallel wo slices + output concat (pure movement). The verify walk's
@@ -10580,6 +10609,12 @@ impl HybridModel {
                 }
                 Ok(())
             })?;
+        }
+        if let Some(xs) = &m.glm5_tp_split {
+            // Expert TENSOR-parallel walk (MEMRA_GLM5_TP_EXPERT_SPLIT): every rank runs every
+            // routed slot at half the intermediate width, so routing luck cannot pace the layer
+            // on one card. Exclusive with the whole-expert arm below by construction.
+            return Self::moe_ffn_glm5_tp_split(e, m, xs, z, zq8, t, cfg, il);
         }
         if let Some(ep) = &m.glm5_ep {
             // glm5 TP-2 EP walk (MEMRA_GLM5_TP): whole-expert halves, root router, slot-ordered
@@ -13669,6 +13704,145 @@ impl HybridModel {
                     n_embd,
                 )?;
             }
+        }
+
+        Self::moe_shexp_add(e, m, z, zq8, t, cfg, lim_shexp, &mut moe_out)?;
+        Ok(moe_out)
+    }
+
+    /// The glm5 TP walk with every expert SPLIT across the ranks
+    /// (`MEMRA_GLM5_TP_EXPERT_SPLIT`, lane/tp-expert-split-20260906).
+    ///
+    /// The routing is the unchanged root-side program, so selection stays bit-identical to every
+    /// other arm. The difference is what each rank then holds: half of EVERY expert rather than
+    /// all of half the experts, so every rank runs every routed slot at half the intermediate
+    /// width and produces a FULL-WIDTH partial sum. Each rank accumulates its own slot-ordered
+    /// `axpy` chain into its own output, and the ranks' outputs are summed ONCE per layer.
+    ///
+    /// WHY, in one number: with whole-expert ownership a top-8 token splits Binomial(8, 0.5) and
+    /// a memory-bound step is paced by the BUSIER rank, so `E[max] = 5.094` and the expert half
+    /// speeds up 1.571x, not 2x. Splitting inside the expert makes it a deterministic 2x whatever
+    /// the router picks.
+    ///
+    /// ONE REDUCTION PER LAYER, not per slot, and that is the load-bearing structural choice.
+    /// Returning each slot's partial as it is produced would be 8 crossings per layer against the
+    /// EP walk's ~4; accumulating locally first makes it one, which is what the reduce is for.
+    ///
+    /// NUMERIC CLASS, not byte identity. `gate`/`up` are row splits, so each output element stays
+    /// one full-K dot over the same bytes, and the SwiGLU after them is elementwise on each rank's
+    /// own rows: both bit-identical. `down` is a column split, so a rank's row is a partial sum
+    /// over half the K range and the ranks' partials are added, which is a 2-way split of a
+    /// reduction the unsharded walk does in one pass. The per-rank chains are also each shorter
+    /// than the single chain they replace. Gated on argmax plus a maxdiff band, never on bits.
+    #[allow(clippy::too_many_arguments)]
+    fn moe_ffn_glm5_tp_split(
+        e: &Engine,
+        m: &MoeWeights,
+        xs: &crate::glm5_tp::Glm5TpSplitExps,
+        z: &CudaSlice<f32>,
+        zq8: Option<&(CudaSlice<i8>, CudaSlice<f32>)>,
+        t: usize,
+        cfg: &ModelConfig,
+        il: u16,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let moe = cfg
+            .moe
+            .as_ref()
+            .ok_or("glm5 TP expert split requires MoE model metadata")?;
+        let n_embd = cfg.n_embd as usize;
+        let n_expert = moe.expert_count as usize;
+        let n_used = moe.expert_used_count as usize;
+        let sig = cfg
+            .sigmoid_router()
+            .ok_or("glm5 TP expert split requires the sigmoid router")?;
+        let lim_exp = cfg.clamp_exp_at(il as u32);
+        let lim_shexp = cfg.clamp_shexp_at(il as u32);
+        let rt = &xs.rt;
+        let ranks = xs.ranks();
+        let half = xs.half_ff;
+
+        // Root router, unchanged program: selection is bit-identical to every other arm.
+        let logits = Self::moe_router_logits(e, m, z, t, cfg)?;
+        let (sel_all, w_all) =
+            Self::moe_route_sigmoid_cfg(e, &logits, t, n_expert, n_used, m, sig)?;
+        crate::moesd::record_host_routes(il, n_expert, n_used, &sel_all)?;
+        Self::trace_moe_routes(il, t, &sel_all, &w_all)?;
+
+        let hop = rt.hop(e);
+        // Every rank needs the whole activation block: unlike the EP walk there is no rank that
+        // routes no work, because every rank owns part of every expert.
+        let z_peers = crate::tp_transport::fanout_f32(&hop, z, t * n_embd)?;
+
+        let mut outs: Vec<CudaSlice<f32>> = Vec::with_capacity(ranks);
+        for r in 0..ranks {
+            let dev = crate::glm5_tp::rank_engine(e, rt, r);
+            let slab = &xs.slabs[r];
+            let zr = if r == 0 { z } else { &z_peers[r - 1] };
+            let mut out = dev.zeros(t * n_embd)?;
+            for tok in 0..t {
+                let sel = &sel_all[tok * n_used..(tok + 1) * n_used];
+                let w = &w_all[tok * n_used..(tok + 1) * n_used];
+                let zt = zr.slice(tok * n_embd..(tok + 1) * n_embd);
+                for (j, &ex) in sel.iter().enumerate() {
+                    let ex = ex as usize;
+                    let gate = dev.qmatvec_view(
+                        &slab.gate,
+                        ex * xs.gate_stride..(ex + 1) * xs.gate_stride,
+                        &zt,
+                        1,
+                        m.gate_exps.in_f,
+                        half,
+                        m.gate_exps.qtype,
+                        m.gate_exps.row_bytes,
+                    )?;
+                    let up = dev.qmatvec_view(
+                        &slab.up,
+                        ex * xs.up_stride..(ex + 1) * xs.up_stride,
+                        &zt,
+                        1,
+                        m.up_exps.in_f,
+                        half,
+                        m.up_exps.qtype,
+                        m.up_exps.row_bytes,
+                    )?;
+                    let mut act = dev.uninit(half)?; // the activation fully overwrites
+                    Self::ffn_act_lim(
+                        dev,
+                        cfg,
+                        &gate,
+                        &up,
+                        m.gate_exps.macro_scale(ex),
+                        m.up_exps.macro_scale(ex),
+                        lim_exp,
+                        &mut act,
+                        half,
+                    )?;
+                    let actv = act.slice(0..half);
+                    // Half the K range, full output width: this rank's PARTIAL SUM of the row.
+                    let y = dev.qmatvec_view(
+                        &slab.down,
+                        ex * xs.down_stride..(ex + 1) * xs.down_stride,
+                        &actv,
+                        1,
+                        half,
+                        n_embd,
+                        m.down_exps.qtype,
+                        xs.down_row_bytes,
+                    )?;
+                    let mut dst = out.slice_mut(tok * n_embd..(tok + 1) * n_embd);
+                    dev.axpy_into(&y, w[j] * m.down_exps.macro_scale(ex), &mut dst, n_embd)?;
+                }
+            }
+            outs.push(out);
+        }
+
+        // One reduction for the whole layer. Root keeps its own chain and folds each peer's.
+        let mut moe_out = outs.remove(0);
+        for (r, peer_out) in outs.iter().enumerate() {
+            let landed =
+                crate::tp_transport::return_row_to_root(&hop, r + 1, peer_out, t * n_embd)?;
+            let mut dst = moe_out.slice_mut(0..t * n_embd);
+            e.axpy_into(&landed, 1.0, &mut dst, t * n_embd)?;
         }
 
         Self::moe_shexp_add(e, m, z, zq8, t, cfg, lim_shexp, &mut moe_out)?;

@@ -34,6 +34,15 @@
 //!      repetition discipline).
 //!   C. TP-KDA-ONLY — the KDA layers alone (mixed-owner layout; MLA layers stay plain).
 //!   D. TP-MLA-ONLY — the MLA layers alone.
+//!   S. EXPERT TENSOR-PARALLEL — `MEMRA_GLM5_TP_EXPERT_SPLIT`: every rank holds half of EVERY
+//!      expert and `wo` turns row-parallel with it. NOT byte-identical and does not claim to be:
+//!      `down` is a column split and `wo` is row-parallel, so the K reduction runs two ways
+//!      instead of one pass. Bar = the named class: the 2e-5 chunked-prime band on the logits AND
+//!      tape identity AND self-consistency; measured 3.512e-5 decode / 5.570e-5 prime with the
+//!      tape identical, against a red at 1.718e2 with the tape broken. Its red is `swap-wo`, which bites harder here than on
+//!      the column-parallel arm (a swapped rank multiplies its heads by the OTHER rank's input
+//!      columns, so every element is wrong rather than misplaced). The arm also asserts it armed
+//!      SPLIT layers and zero whole-expert ones, since the two are exclusive by construction.
 //!   E. STATELESS-POISON — `forward` on the TP model must REFUSE by name (the plain-path
 //!      choke points hold).
 //!   F. SPEC-CO-REFUSAL — `glm5_spec_session_new` on the TP model must refuse by name.
@@ -388,12 +397,19 @@ const RED_FLOOR: f32 = 1e-3;
 fn set_env(k: &str, v: &str) {
     unsafe { std::env::set_var(k, v) };
 }
+/// UNSET, not "0", and that distinction is what kept this gate from ever running an arm.
+/// Writing "0" is fine for a boolean door but wrong for a VALUED one: `MEMRA_GLM5_EP_MAP` is a
+/// path, so "0" made the loader look for a file called `0` and refuse the load by name, and
+/// `MEMRA_GLM5_TP_GATE_RED` is a named arm, so "0" was rejected as an unknown red. Before this,
+/// arm B died at its first load with `MEMRA_GLM5_TP_GATE_RED="0" is not a known red arm`, and
+/// arm C died at the next with `MEMRA_GLM5_EP_MAP=0: cannot read the map file`. Unset is what
+/// "the operator did not set this" actually means, and every door here reads it as OFF.
+/// `MEMRA_PP_STAGES` keeps its explicit off value because its OFF is 1, not absent.
 fn rm_env(k: &str) {
-    let off_val = match k {
-        "MEMRA_PP_STAGES" => "1",
-        _ => "0",
-    };
-    unsafe { std::env::set_var(k, off_val) };
+    match k {
+        "MEMRA_PP_STAGES" => unsafe { std::env::set_var(k, "1") },
+        _ => unsafe { std::env::remove_var(k) },
+    }
 }
 
 struct Verdict {
@@ -593,6 +609,12 @@ struct ArmCx<'a> {
 
 /// A TP arm loader + walk + compare, reused by every green/red arm at every rank count.
 /// `ep_map` arms MEMRA_GLM5_EP_MAP for the load (the measured-placement door).
+/// `decode_band` selects the DECODE bar. `None` is the byte-identity bar every column-parallel
+/// arm takes, because those arms only move bytes. `Some(band)` is the named-class bar the expert
+/// split takes: its `down` is a COLUMN split and its `wo` is row-parallel, so the K reduction runs
+/// two ways instead of one pass and the logits legally differ by ulps. That arm still owes tape
+/// identity and self-consistency; loosening the bar is not the same as dropping it.
+#[allow(clippy::too_many_arguments)] // allow: (arm identity) x (door spec) x (red) x (map) x (bar) x (expectation) IS the arm's shape, and a struct would hide which knob a failing arm was run under
 fn run_tp_arm(
     cx: &ArmCx<'_>,
     name: &str,
@@ -600,10 +622,14 @@ fn run_tp_arm(
     red: Option<&str>,
     ep_map: Option<&str>,
     expect_diverge: bool,
+    decode_band: Option<f32>,
     verdicts: &mut Vec<Verdict>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (e, p) = (cx.e, cx.p);
-    eprintln!("[phase] arm {name}: MEMRA_GLM5_TP={spec} red={red:?} ep_map={ep_map:?}");
+    eprintln!(
+        "[phase] arm {name}: MEMRA_GLM5_TP={spec} red={red:?} ep_map={ep_map:?} \
+         decode_band={decode_band:?}"
+    );
     set_env("MEMRA_GLM5_TP", spec);
     match red {
         Some(r) => set_env("MEMRA_GLM5_TP_GATE_RED", r),
@@ -623,17 +649,36 @@ fn run_tp_arm(
     // Non-vacuity: the spec'd layers really carry shards/EP arms.
     let mut sharded = 0usize;
     let mut ep_armed = 0usize;
+    let mut split_armed = 0usize;
     for layer in &m_tp.layers {
         match &layer.mixer {
             memra_engine::hybrid::Mixer::Kda(la) if la.tp.is_some() => sharded += 1,
             memra_engine::hybrid::Mixer::Mla(la) if la.tp.is_some() => sharded += 1,
             _ => {}
         }
-        if let memra_engine::hybrid::Ffn::Moe(m) = &layer.ffn
-            && m.glm5_ep.is_some()
-        {
-            ep_armed += 1;
+        if let memra_engine::hybrid::Ffn::Moe(m) = &layer.ffn {
+            if m.glm5_ep.is_some() {
+                ep_armed += 1;
+            }
+            if m.glm5_tp_split.is_some() {
+                split_armed += 1;
+            }
         }
+    }
+    // The split arm and the whole-expert arm are exclusive by construction, and the gate asserts
+    // it rather than trusting it: an arm that armed NEITHER would sail through the bars below
+    // with a plain MoE and prove nothing about either.
+    if decode_band.is_some() {
+        assert!(
+            split_armed > 0 && ep_armed == 0,
+            "[{name}] expert-split arm armed {split_armed} split / {ep_armed} whole-expert \
+             MoE layers — vacuous or double-armed"
+        );
+    } else {
+        assert_eq!(
+            split_armed, 0,
+            "[{name}] a byte-identity arm must not carry expert-split layers"
+        );
     }
     let expect_layers = if spec.starts_with("all@") {
         LAYERS
@@ -644,7 +689,7 @@ fn run_tp_arm(
         sharded, expect_layers,
         "[{name}] {sharded} sharded mixers != {expect_layers} spec'd layers — vacuous arm"
     );
-    println!("[{name}] sharded mixers={sharded} ep_armed={ep_armed}");
+    println!("[{name}] sharded mixers={sharded} ep_armed={ep_armed} split_armed={split_armed}");
     let peer_slots_before = memra_engine::glm5_tp::glm5_ep_peer_slot_dispatches();
 
     // ---- DECODE regime (P=1): byte identity, two repetitions ----
@@ -680,8 +725,20 @@ fn run_tp_arm(
             ),
         )
     } else {
-        match dec_diff {
-            None if dec_tape_ok => (
+        match (dec_diff, decode_band) {
+            // Named class: the bar is the band plus the tape, and the tape is the half that
+            // actually protects the product, so it is required and not merely reported.
+            (_, Some(band)) => {
+                let ok = dec_rel <= band && dec_tape_ok;
+                (
+                    ok,
+                    format!(
+                        "DECODE named class: max_rel={dec_rel:.3e} vs band {band:.1e} \
+                         tape_match={dec_tape_ok}"
+                    ),
+                )
+            }
+            (None, None) if dec_tape_ok => (
                 true,
                 format!(
                     "DECODE BYTE-IDENTICAL to plain: {} t=1 steps x {} logits + tape",
@@ -689,11 +746,11 @@ fn run_tp_arm(
                     cx.ref_dec_logits[0].len()
                 ),
             ),
-            None => (
+            (None, None) => (
                 false,
                 "logits identical but tape differs (harness bug)".into(),
             ),
-            Some((st, i)) => {
+            (Some((st, i)), None) => {
                 let (a, b) = (cx.ref_dec_logits[st][i], dec1[st][i]);
                 (
                     false,
@@ -914,6 +971,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,
         None,
         false,
+        None,
         &mut verdicts,
     )?;
     run_tp_arm(
@@ -923,6 +981,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,
         None,
         false,
+        None,
         &mut verdicts,
     )?;
     run_tp_arm(
@@ -932,6 +991,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,
         None,
         false,
+        None,
         &mut verdicts,
     )?;
     run_tp_arm(
@@ -941,6 +1001,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,
         None,
         false,
+        None,
         &mut verdicts,
     )?;
     run_tp_arm(
@@ -950,8 +1011,50 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,
         None,
         false,
+        None,
         &mut verdicts,
     )?;
+
+    // ================= S. expert TENSOR-parallel (MEMRA_GLM5_TP_EXPERT_SPLIT) =================
+    // Every rank holds half of EVERY expert instead of all of half the experts, and `wo` turns
+    // row-parallel with it. NOT a byte-identity arm and it must not pretend to be: `down` is a
+    // column split and `wo` is row-parallel, so the K reduction runs two ways instead of one pass.
+    // The bar is the named class: a band on the logits AND tape identity AND the self-consistency
+    // the byte arms take. BAND = `PRIME_BAND`, and the reason is that this is the SAME class the
+    // prime regime already carries, not a new one: at t=1 the column-parallel arms are
+    // byte-identical because nothing splits a reduction, while this arm splits the K reduction at
+    // t=1 as well, so the t>=2 near-tie class simply becomes present at t=1. Calibrated on this
+    // gate's own measurements exactly like `PRIME_BAND` was: measured worst on the fixture is
+    // 3.512e-5 at decode and 5.570e-5 at prime, both with the tape IDENTICAL and both repetitions
+    // bit-identical; the red below lands at 1.718e2 with the tape broken, SIX orders above the
+    // band, which is what proves the band distinguishes rather than absorbs.
+    //
+    // Its RED is R1's `swap-wo`, which bites this arm harder than the column-parallel one: under
+    // row-parallel `wo` a swapped rank multiplies its heads by the OTHER rank's input columns, so
+    // every output element is wrong rather than merely misplaced.
+    eprintln!("[phase] arm S: expert tensor-parallel");
+    set_env("MEMRA_GLM5_TP_EXPERT_SPLIT", "1");
+    run_tp_arm(
+        &cx2,
+        "S tp-expert-split",
+        "all@0,1",
+        None,
+        None,
+        false,
+        Some(PRIME_BAND),
+        &mut verdicts,
+    )?;
+    run_tp_arm(
+        &cx2,
+        "S-R1 tp-expert-split swap-wo",
+        "all@0,1",
+        Some("swap-wo"),
+        None,
+        true,
+        Some(PRIME_BAND),
+        &mut verdicts,
+    )?;
+    rm_env("MEMRA_GLM5_TP_EXPERT_SPLIT");
 
     // ================= E/F. poison + co-refusal on a live TP model =================
     eprintln!("[phase] arm E/F: plain-path poison + spec co-refusal");
@@ -1070,6 +1173,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,
         Some(&skew_map),
         false,
+        None,
         &mut verdicts,
     )?;
 
@@ -1203,6 +1307,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("swap-wo"),
         None,
         true,
+        None,
         &mut verdicts,
     )?;
     run_tp_arm(
@@ -1212,6 +1317,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("swap-ep-gateup"),
         None,
         true,
+        None,
         &mut verdicts,
     )?;
     run_tp_arm(
@@ -1221,6 +1327,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("skip-peer-combine"),
         None,
         true,
+        None,
         &mut verdicts,
     )?;
     // R4: the corrupted-map red rides the SKEWED map (rank 0 owns three experts there, so
@@ -1232,6 +1339,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("corrupt-ep-map"),
         Some(&skew_map),
         true,
+        None,
         &mut verdicts,
     )?;
 
@@ -1391,6 +1499,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             None,
             None,
             false,
+            None,
             &mut verdicts,
         )?;
         let (dd, db, dr) = (
@@ -1421,6 +1530,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             None,
             None,
             false,
+            None,
             &mut verdicts,
         )?;
         let gd = gtp::glm5_ep_diet_dispatches() - g0;
@@ -1445,6 +1555,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             None,
             None,
             false,
+            None,
             &mut verdicts,
         )?;
         let xd = gtp::glm5_ep_diet_dispatches() - x0;
@@ -1501,6 +1612,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             None,
             Some(&skew_map),
             false,
+            None,
             &mut verdicts,
         )?;
 
@@ -1514,6 +1626,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some("swap-ep-gateup"),
             None,
             true,
+            None,
             &mut verdicts,
         )?;
         run_tp_arm(
@@ -1523,6 +1636,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some("skip-peer-combine"),
             None,
             true,
+            None,
             &mut verdicts,
         )?;
         set_env("MEMRA_GLM5_EP_DIET", "0");
@@ -1575,6 +1689,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             None,
             None,
             false,
+            None,
             &mut verdicts,
         )?;
         let x1_legs = gtx::tp_host_legs() - off_legs;
@@ -1602,6 +1717,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             None,
             None,
             false,
+            None,
             &mut verdicts,
         )?;
         set_env("MEMRA_GLM5_EP_DIET", "0");
@@ -1617,6 +1733,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some("skip-peer-combine"),
             None,
             true,
+            None,
             &mut verdicts,
         )?;
 
@@ -1711,6 +1828,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 None,
                 None,
                 false,
+                None,
                 &mut verdicts,
             )?;
             let gd = gtx::tp_peer_pulls() - g0;
@@ -1938,7 +2056,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         // Q-B: the whole trunk at four ranks, host-canonical, diet OFF — v1's bars.
-        run_tp_arm(&cx4, "Q-B tp4-all", spec4, None, None, false, &mut verdicts)?;
+        run_tp_arm(
+            &cx4,
+            "Q-B tp4-all",
+            spec4,
+            None,
+            None,
+            false,
+            None,
+            &mut verdicts,
+        )?;
 
         // Q-BD: the EP dispatch diet at four ranks (multi-rank tail packing + per-rank bulk
         // returns are NEW code in the widening — this arm is their identity gate).
@@ -1950,6 +2077,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             None,
             None,
             false,
+            None,
             &mut verdicts,
         )?;
         set_env("MEMRA_GLM5_EP_DIET", "0");
@@ -1964,6 +2092,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             None,
             None,
             false,
+            None,
             &mut verdicts,
         )?;
         set_env("MEMRA_GLM5_EP_DIET", "1");
@@ -1974,6 +2103,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             None,
             None,
             false,
+            None,
             &mut verdicts,
         )?;
         set_env("MEMRA_GLM5_EP_DIET", "0");
@@ -2072,6 +2202,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             None,
             Some(&skew4),
             false,
+            None,
             &mut verdicts,
         )?;
 
@@ -2084,6 +2215,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some("swap-wo"),
             None,
             true,
+            None,
             &mut verdicts,
         )?;
         run_tp_arm(
@@ -2093,6 +2225,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some("swap-ep-gateup"),
             None,
             true,
+            None,
             &mut verdicts,
         )?;
         run_tp_arm(
@@ -2102,6 +2235,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some("skip-peer-combine"),
             None,
             true,
+            None,
             &mut verdicts,
         )?;
         run_tp_arm(
@@ -2111,6 +2245,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some("corrupt-ep-map"),
             Some(&skew4),
             true,
+            None,
             &mut verdicts,
         )?;
 
