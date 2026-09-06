@@ -9,7 +9,7 @@
 //!
 //! Usage: `moe-rows-ceiling-bench [iters=7] [reps=100] [copies=4]`.
 use cudarc::driver::DevicePtr;
-use memra_engine::{Engine, QT_NVFP4};
+use memra_engine::{Engine, QT_NVFP4, QT_NVFP4_V2};
 use std::time::Instant;
 
 struct Lcg(u32);
@@ -93,6 +93,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         sets.push(e.htod_u64(&ptrs)?);
     }
+    // the same rows repacked slot-major, so the V2 arms read identical VALUES with the
+    // contiguous scale stream (that is the whole point of the comparison)
+    let mut sets_v2 = Vec::new();
+    let mut keep_v2 = Vec::new();
+    for c in 0..copies {
+        let mut ptrs = vec![0u64; 3 * n_pairs];
+        for j in 0..n_used {
+            for plane in 0..2 {
+                let mut d = grows.clone();
+                d[5] ^= (c * 16 + j * 2 + plane + 1) as u8;
+                let v1 = e.htod_bytes(&d)?;
+                let buf = e.nvfp4_expert_split_repack(&v1, 1, n_ff, gin / 64)?;
+                let p = {
+                    let (p, _g) = buf.device_ptr(&stream);
+                    p
+                };
+                ptrs[plane * n_pairs + j] = p;
+                keep_v2.push(buf);
+            }
+        }
+        sets_v2.push(e.htod_u64(&ptrs)?);
+    }
     let scl: Vec<f32> = (0..3 * n_pairs).map(|pr| 0.5 + 0.01 * pr as f32).collect();
     let scl_d = e.htod(&scl)?;
     let x_d = e.htod(&vecf(t * gin, 91))?;
@@ -109,18 +131,57 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             arm, &sets[set], &scl_d, &aq, &ad, 7.0, gin, n_ff, n_used, n_pairs, grb, grb,
         )
     };
+    // the V2 row is 18 bytes per group (16 quant + 2 scale) against the interleaved 36 per two
+    let grb2 = (gin / 32) * 18;
+    let probe_v2 = |arm: &str, set: usize| {
+        e.moe_gate_up_rows_ceiling_probe(
+            arm,
+            &sets_v2[set],
+            &scl_d,
+            &aq,
+            &ad,
+            7.0,
+            gin,
+            n_ff,
+            n_used,
+            n_pairs,
+            grb2,
+            grb2,
+        )
+    };
+    let served_v2 = |set: usize| {
+        e.moe_gate_up_preclamp8_q8_rows(
+            &sets_v2[set],
+            &scl_d,
+            &aq,
+            &ad,
+            7.0,
+            gin,
+            n_ff,
+            n_used,
+            n_pairs,
+            QT_NVFP4_V2,
+            QT_NVFP4_V2,
+            grb2,
+            grb2,
+        )
+    };
     // warm
     for _ in 0..10 {
         let _ = served(0)?;
         let _ = probe("loadonly", 0)?;
         let _ = probe("mathonly", 0)?;
+        let _ = served_v2(0)?;
+        let _ = probe_v2("loadonly_v2", 0)?;
     }
     e.stream().synchronize()?;
     let mut t_s = Vec::new();
     let mut t_l = Vec::new();
     let mut t_m = Vec::new();
+    let mut t_sv = Vec::new();
+    let mut t_lv = Vec::new();
     for i in 0..iters {
-        for arm in 0..3 {
+        for arm in 0..5 {
             let t0 = Instant::now();
             for r in 0..reps {
                 let set = (i * reps + r) % copies;
@@ -131,8 +192,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     1 => {
                         let _ = probe("loadonly", set)?;
                     }
-                    _ => {
+                    2 => {
                         let _ = probe("mathonly", set)?;
+                    }
+                    3 => {
+                        let _ = served_v2(set)?;
+                    }
+                    _ => {
+                        let _ = probe_v2("loadonly_v2", set)?;
                     }
                 }
             }
@@ -141,21 +208,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             match arm {
                 0 => t_s.push(us),
                 1 => t_l.push(us),
-                _ => t_m.push(us),
+                2 => t_m.push(us),
+                3 => t_sv.push(us),
+                _ => t_lv.push(us),
             }
         }
     }
     let (s, l, m) = (median(&mut t_s), median(&mut t_l), median(&mut t_m));
+    let (sv, lv) = (median(&mut t_sv), median(&mut t_lv));
     // weights only: both planes, n_used experts, one row each per output column
     let bytes = (2 * n_used * n_ff * grb) as f64;
+    let bytes2 = (2 * n_used * n_ff * grb2) as f64;
     println!(
         "[rows-ceiling] t=1 n_used=8 {gin}->{n_ff} rb={grb}x2 ({iters} rounds x {reps}, {copies} slab sets): \
          served {s:.2} us ({:.0} GB/s) | loadonly {l:.2} us ({:.0} GB/s, {:.2}x served) | \
-         mathonly {m:.2} us ({:.2}x served)",
+         mathonly {m:.2} us ({:.2}x served) | V2 served {sv:.2} us ({:.0} GB/s, {:+.1}%) | \
+         V2 loadonly {lv:.2} us ({:.0} GB/s, {:+.1}% vs V1 loadonly)",
         bytes / s / 1e3,
         bytes / l / 1e3,
         s / l,
-        s / m
+        s / m,
+        bytes2 / sv / 1e3,
+        100.0 * (sv / s - 1.0),
+        bytes2 / lv / 1e3,
+        100.0 * (lv / l - 1.0)
     );
     println!(
         "[rows-ceiling] reading: loadonly close to served => the ACCESS PATTERN is the wall; \
