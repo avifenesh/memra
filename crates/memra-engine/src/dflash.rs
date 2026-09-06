@@ -2698,11 +2698,15 @@ pub(crate) fn dspark_boundary_split(
     Ok(Some(b))
 }
 
-/// `MEMRA_DFLASH_KV_RING=1`: the draft KV keeps only its trailing window resident
-/// (memra#249 lever 13). Default OFF: unmeasured features never default ON.
+/// The draft KV keeps only its trailing window resident (memra#249 lever 13). Default ON
+/// since 2026-09-07 on the 5090 lane receipt (memra#301: byte-identical to the cold oracle
+/// over three boots of the four-turn restore chain and over a 22.9k-prompt / 2,600-token
+/// greedy decode with 13 compactions on the request path; a 30k-prompt session holds 166 MB
+/// instead of 1.2 GB). `MEMRA_DFLASH_KV_RING=0` is the rollback seam: the pre-lane program
+/// exactly (base 0, `phys_rows == cap + block`, nothing compacts).
 pub(crate) fn dflash_kv_ring_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_DFLASH_KV_RING").as_deref() == Ok("1"))
+    *ON.get_or_init(|| std::env::var("MEMRA_DFLASH_KV_RING").as_deref() != Ok("0"))
 }
 
 /// What `ensure_room` does before `add` rows land at logical `len`, given the ring geometry.
