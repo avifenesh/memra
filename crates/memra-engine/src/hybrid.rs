@@ -2273,6 +2273,18 @@ impl MlaIndexerGeom {
         (self.top_k / self.pool).min(n_pools)
     }
 
+    /// The `select_k_cap` a FIXED-GEOMETRY live launch must pass for a plane of `n_pools`
+    /// capacity. It is `select_k(n_pools)`, the same clamped value [`Self::index_width`] sizes
+    /// the row from, and that identity is the point: `memra_mla_kpool_select_live_f32` audits
+    /// `width_cap >= select_k_cap * pool + pool - 1` and returns 40014 otherwise. Passing the
+    /// UNCLAMPED `top_k / pool` instead makes the audit disagree with the width exactly when
+    /// `capacity_tokens < top_k` (2026-09-06: a ctx=386 session against `top_k` 2048 failed
+    /// capture and latched the whole stage eager, -8.71% on the served pair). Named so the
+    /// invariant has one home and `live_select_k_cap_matches_index_width` can pin it.
+    pub fn live_select_k_cap(&self, n_pools: usize) -> usize {
+        self.select_k(n_pools)
+    }
+
     /// Width of one query's index list: the expanded pool budget plus the maximum tail.
     pub fn index_width(&self, n_pools: usize) -> usize {
         self.select_k(n_pools) * self.pool
@@ -6682,6 +6694,63 @@ mod draft_head_tests {
         assert_eq!(
             frspec_trim_own_head_name(40),
             "blk.40.nextn.shared_head_head.weight"
+        );
+    }
+}
+
+#[cfg(test)]
+mod mla_indexer_geom_tests {
+    use super::MlaIndexerGeom;
+
+    /// The live selector's audit is `width_cap >= select_k_cap * pool + pool - 1`, so the cap a
+    /// live launch passes must be the one `index_width` sized the row from. Swept across
+    /// capacities either side of the pool budget, including the served glm5 shape that broke
+    /// (top_k 2048, pool 4, a ctx=386 session = 96 capacity pools).
+    #[test]
+    fn live_select_k_cap_matches_index_width() {
+        let g = MlaIndexerGeom {
+            heads: 32,
+            head_dim: 128,
+            top_k: 2048,
+            pool: 4,
+            always_select_tail: true,
+        };
+        for pools in [1usize, 96, 511, 512, 513, 4096, 262_144] {
+            let width = g.index_width(pools);
+            let cap = g.live_select_k_cap(pools);
+            assert!(
+                width >= cap * g.pool + g.pool - 1,
+                "live audit fails at {pools} pools: width {width} < cap {cap} * pool {} + {}",
+                g.pool,
+                g.pool - 1
+            );
+        }
+    }
+
+    /// RED ARM: the value the call site used to pass. Below the pool budget the unclamped
+    /// `top_k / pool` is strictly larger than the width can support, which is the 40014 the
+    /// served boot hit; above it the two agree, which is why every gate and every long session
+    /// passed and this reached the pair.
+    #[test]
+    fn unclamped_cap_is_what_the_audit_rejects() {
+        let g = MlaIndexerGeom {
+            heads: 32,
+            head_dim: 128,
+            top_k: 2048,
+            pool: 4,
+            always_select_tail: true,
+        };
+        let unclamped = g.top_k / g.pool;
+        let short = 96; // ctx 386 / pool 4, the boot that failed
+        assert!(
+            g.index_width(short) < unclamped * g.pool + g.pool - 1,
+            "the short-capacity case must be the one the audit rejects"
+        );
+        let long = 262_144;
+        assert_eq!(
+            g.live_select_k_cap(long),
+            unclamped,
+            "at capacity the clamped and unclamped caps agree, which is why this hid"
         );
     }
 }
