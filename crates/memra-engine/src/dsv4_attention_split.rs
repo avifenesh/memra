@@ -41,6 +41,10 @@ impl Partition {
             Self::Rows { len, .. } | Self::Columns { len, .. } => len,
         }
     }
+
+    pub const fn is_empty(self) -> bool {
+        self.len() == 0
+    }
 }
 
 /// Metadata and host-owned packed payload for one logical rank.
@@ -245,8 +249,9 @@ impl DeviceFp8Plane {
         })
     }
 
-    /// Device-to-device row/column pack from a full source plane.  This is asynchronous and
-    /// ordered on `gpu.stream()`; the source and destination owners must outlive that stream.
+    /// Device-to-device row/column pack from a full source plane. This is asynchronous on
+    /// `gpu.stream()`. Both sources must be allocated on that same stream, so their ordered
+    /// frees remain after these copies even when CUDA event tracking is disabled.
     pub fn from_device(
         gpu: &Gpu,
         rank: usize,
@@ -267,6 +272,11 @@ impl DeviceFp8Plane {
             .bind_to_thread()
             .map_err(|e| format!("FP8 pack bind: {e}"))?;
         let stream = gpu.stream();
+        if !std::sync::Arc::ptr_eq(source_codes.stream(), &stream)
+            || !std::sync::Arc::ptr_eq(source_scales.stream(), &stream)
+        {
+            return Err("FP8 pack sources must belong to the copy allocation stream".into());
+        }
         let (rows, cols) = match partition {
             Partition::Rows { len, .. } => (len, full_cols),
             Partition::Columns { len, .. } => (full_rows, len),
@@ -351,7 +361,7 @@ impl DeviceFp8Plane {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // The two pitched regions and copy extent are the CUDA ABI.
 fn copy_2d_device<T>(
     stream: &std::sync::Arc<cudarc::driver::CudaStream>,
     src: &CudaSlice<T>,
@@ -413,6 +423,8 @@ fn copy_2d_device<T>(
         WidthInBytes: width * elem_bytes,
         Height: height,
     };
+    // SAFETY: checked element extents remain inside both allocations. The pointer guards
+    // span enqueue, and callers use each allocation's own stream for ordered use/free.
     unsafe { sys::cuMemcpy2DAsync_v2(&copy, stream.cu_stream()).result() }
         .map_err(|e| format!("FP8 pack 2D copy: {e}"))
 }
@@ -506,6 +518,7 @@ mod tests {
             .collect()
     }
 
+    #[allow(clippy::too_many_arguments)] // Independent full-plane oracle keeps source geometry explicit.
     fn dot_full_range(
         codes: &[u8],
         scales: &[f32],
@@ -518,21 +531,22 @@ mod tests {
     ) -> f32 {
         assert_eq!(input.len(), len);
         let mut acc = 0.0f32;
-        for local_col in 0..len {
+        for (local_col, &value) in input.iter().enumerate() {
             let col = col_start + local_col;
             let code = codes[row * full_cols + col];
             let scale = scales[(row / FP8_BLOCK) * scale_cols + col / FP8_BLOCK];
-            acc += memra_gguf::nvfp4_repack::fp8_e4m3_to_f32(code) * scale * input[local_col];
+            acc += memra_gguf::nvfp4_repack::fp8_e4m3_to_f32(code) * scale * value;
         }
         acc
     }
 
     fn dot_packed_row(packed: &PackedFp8Host, row: usize, input: &[f32]) -> f32 {
+        assert_eq!(input.len(), packed.cols);
         let mut acc = 0.0f32;
-        for col in 0..packed.cols {
+        for (col, &value) in input.iter().enumerate() {
             let code = packed.codes[row * packed.cols + col];
             let scale = packed.scales[(row / FP8_BLOCK) * packed.scale_cols + col / FP8_BLOCK];
-            acc += memra_gguf::nvfp4_repack::fp8_e4m3_to_f32(code) * scale * input[col];
+            acc += memra_gguf::nvfp4_repack::fp8_e4m3_to_f32(code) * scale * value;
         }
         acc
     }
@@ -793,6 +807,34 @@ mod tests {
         let gpu = Gpu::new(0).expect("gpu");
         unsafe { gpu.ctx.disable_event_tracking() };
         let stream = gpu.stream();
+        let other_stream = gpu.ctx.new_stream().expect("foreign allocation stream");
+        let local_codes = stream.alloc_zeros::<u8>(FP8_BLOCK * FP8_BLOCK).unwrap();
+        let local_scales = stream.alloc_zeros::<f32>(1).unwrap();
+        let foreign_codes = other_stream
+            .alloc_zeros::<u8>(FP8_BLOCK * FP8_BLOCK)
+            .unwrap();
+        let foreign_scales = other_stream.alloc_zeros::<f32>(1).unwrap();
+        for (source_codes, source_scales) in [
+            (&foreign_codes, &local_scales),
+            (&local_codes, &foreign_scales),
+        ] {
+            let error = DeviceFp8Plane::from_device(
+                &gpu,
+                0,
+                FP8_BLOCK,
+                FP8_BLOCK,
+                Partition::Rows {
+                    start: 0,
+                    len: FP8_BLOCK,
+                },
+                source_codes,
+                source_scales,
+            )
+            .err()
+            .expect("foreign allocation stream must be refused");
+            assert!(error.contains("copy allocation stream"), "{error}");
+        }
+        other_stream.synchronize().unwrap();
         for (rows, cols, kind) in [
             (32768usize, 1024usize, 0usize),
             (8192usize, 4096usize, 0usize),
