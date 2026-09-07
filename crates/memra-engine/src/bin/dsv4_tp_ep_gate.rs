@@ -51,7 +51,7 @@ fn drain(gpu: &Dsv4Gpu) {
 }
 
 fn run_once(gpu: &Dsv4Gpu, tokens: &[u32], source_sha256: &str) -> Receipt {
-    assert!(tokens.len() >= CONTINUATION_TOKENS + 1);
+    assert!(tokens.len() > CONTINUATION_TOKENS);
     let trunk_layers = gpu.topology().layers as u64;
     let rank_layer_before = gpu.tp_ep_rank_layer_calls();
     let ar_before = gpu.tp_ep_ar_dispatches();
@@ -185,8 +185,8 @@ fn verify_refusal_boundary(gpu: &Dsv4Gpu, tokens: &[u32]) {
                 .expect("inject sticky refusal");
             let error = gpu
                 .decode_step(tokens[prime_tokens], &mut state)
-                .err()
-                .expect("sticky device refusal must reject token");
+                .map(|_| ())
+                .expect_err("sticky device refusal must reject token");
             assert!(error.contains("one-shot reduction refused"), "{error}");
             assert!(error.contains(&code.to_string()), "{error}");
             assert_eq!(
@@ -205,8 +205,8 @@ fn verify_refusal_boundary(gpu: &Dsv4Gpu, tokens: &[u32]) {
             let calls = gpu.tp_ep_rank_layer_calls();
             let retry = gpu
                 .decode_step(tokens[prime_tokens], &mut state)
-                .err()
-                .expect("failed request must remain unusable");
+                .map(|_| ())
+                .expect_err("failed request must remain unusable");
             assert!(retry.contains("unfinished transaction"), "{retry}");
             assert_eq!(
                 gpu.tp_ep_rank_layer_calls(),
@@ -268,7 +268,7 @@ fn main() {
         true,
     );
     assert!(
-        prompt.len() >= CONTINUATION_TOKENS + 1,
+        prompt.len() > CONTINUATION_TOKENS,
         "source must provide enough real tokens"
     );
 
@@ -276,7 +276,7 @@ fn main() {
     println!(
         "PROTOCOL {{\"plain_only\":true,\"topology\":\"tp_ep_all_layers\",\"numeric_class\":\"{TP_EP_RANK_ORDER_NUMERIC_CLASS}\",\"prime_tokens\":1,\"continuation_tokens\":{CONTINUATION_TOKENS},\"source_sha256\":\"{source_sha256}\",\"dspark\":false}}"
     );
-    let mut gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 256)
+    let gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 256)
         .expect("plain-only TP/EP load");
     assert!(gpu.topology().is_tp_ep(), "no silent PP fallback");
     assert!(
