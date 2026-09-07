@@ -51,6 +51,7 @@
 
 #include <cuda_runtime.h>
 #include <cuda_bf16.h>
+#include <cuda_fp16.h>
 #include <cstdint>
 #include <cfloat>
 #include <cmath>
@@ -1337,7 +1338,7 @@ extern "C" int memra_mla_kpool_score_f32(const float* q, const float* pool_keys,
 // with f32 accumulation and keeps the epilogue (`relu(dot * qk_scale) * (hw * head_scale)`,
 // summed over heads, causal -inf) in f32.
 //
-// TWO PRECISIONS, one kernel template:
+// THREE PRECISIONS, one kernel template (`SPLIT`, `F16`):
 //   * `precision 1` (bf16): q and the keys rounded to bf16, one MMA per product. Relative
 //     error ~1.4e-3 on the scores (harness, random data), top-512 membership 99.8-99.9%. On the
 //     pair it moved one greedy token at 36/64 after a 32k prompt (tpwalk18b), which is a flip.
@@ -1345,7 +1346,13 @@ extern "C" int memra_mla_kpool_score_f32(const float* q, const float* pool_keys,
 //     the product taken as `hi*hi + hi*lo + lo*hi` (three MMAs; the dropped `lo*lo` is 2^-16
 //     relative). f32-class error at three times the tensor-core work, still several times
 //     the f32 FFMA kernel's speed.
-// Neither is bit-identical to the reference scorer (the MMA's contraction order is the
+//   * `precision 3` (f16): q and the keys rounded to fp16 (11-bit mantissa, 4x finer than
+//     bf16), one MMA per product on `mma.sync...f32.f16.f16.f32`. Operands are CLAMPED to
+//     +-65504 on conversion (fp16's range); the indexer's q_index and the k_norm'd pool keys
+//     are O(1) values, so a magnitude past that is a broken checkpoint, not a serving shape,
+//     and clamping keeps the scores finite where a saturate-to-inf would poison the selector.
+//     Below 6.1e-5 fp16 is subnormal and loses bits; same argument, same shape.
+// None is bit-identical to the reference scorer (the MMA's contraction order is the
 // unit's own). Admitted like `MEMRA_MLA_TC_PREFILL`: served-prompt ids against the f32 arm.
 //
 // SHAPE. One CTA owns a tile of `MLA_SCORE_TC_BP` pools (its B operand: loaded ONCE from the
@@ -1371,6 +1378,20 @@ extern "C" int memra_mla_kpool_score_f32(const float* q, const float* pool_keys,
 __device__ __forceinline__ unsigned mla_tc_pack2(float lo, float hi) {
     __nv_bfloat162 v = __floats2bfloat162_rn(lo, hi);
     return *reinterpret_cast<unsigned*>(&v);
+}
+#define MLA_TC_F16_MAX 65504.0f
+__device__ __forceinline__ float mla_tc_f16_clamp(float x) {
+    return fminf(fmaxf(x, -MLA_TC_F16_MAX), MLA_TC_F16_MAX);
+}
+__device__ __forceinline__ unsigned mla_tc_pack2_f16(float lo, float hi) {
+    __half2 v = __floats2half2_rn(mla_tc_f16_clamp(lo), mla_tc_f16_clamp(hi));
+    return *reinterpret_cast<unsigned*>(&v);
+}
+// The operand's packer and MMA, selected by the kernel's `F16` parameter.
+template <bool F16>
+__device__ __forceinline__ unsigned mla_tc_pack2_t(float lo, float hi) {
+    if constexpr (F16) return mla_tc_pack2_f16(lo, hi);
+    else return mla_tc_pack2(lo, hi);
 }
 __device__ __forceinline__ float mla_tc_bf16_residual(float x) {
     return x - __bfloat162float(__float2bfloat16(x));
@@ -1403,14 +1424,39 @@ __device__ __forceinline__ void mla_tc_mma_bf16(float* c, const unsigned* a, uns
         : "+f"(c[0]), "+f"(c[1]), "+f"(c[2]), "+f"(c[3])
         : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b0), "r"(b1));
 }
+__device__ __forceinline__ void mla_tc_mma_f16(float* c, const unsigned* a, unsigned b0,
+                                               unsigned b1) {
+    asm volatile(
+        "mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 "
+        "{%0, %1, %2, %3}, {%4, %5, %6, %7}, {%8, %9}, {%0, %1, %2, %3};\n"
+        : "+f"(c[0]), "+f"(c[1]), "+f"(c[2]), "+f"(c[3])
+        : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b0), "r"(b1));
+}
+template <bool F16>
+__device__ __forceinline__ void mla_tc_mma_t(float* c, const unsigned* a, unsigned b0,
+                                             unsigned b1) {
+    if constexpr (F16) mla_tc_mma_f16(c, a, b0, b1);
+    else mla_tc_mma_bf16(c, a, b0, b1);
+}
 
 // q [n] f32 -> hi [n] bf16 (+ lo [n] bf16 when `lo` is non-null): the A operand's planes.
+// `f16` != 0 writes ONE fp16 plane (clamped to +-65504) into `hi` instead; `lo` must be null.
 __global__ void memra_mla_q_split_bf16_kernel(const float* __restrict__ q,
                                               unsigned short* __restrict__ hi,
-                                              unsigned short* __restrict__ lo, long n) {
+                                              unsigned short* __restrict__ lo, long n,
+                                              int f16) {
     long i = ((long)blockIdx.x * blockDim.x + threadIdx.x) * 4;
     if (i >= n) return;
     float4 v = *reinterpret_cast<const float4*>(q + i);
+    if (f16) {
+        ushort4 o;
+        o.x = __half_as_ushort(__float2half_rn(mla_tc_f16_clamp(v.x)));
+        o.y = __half_as_ushort(__float2half_rn(mla_tc_f16_clamp(v.y)));
+        o.z = __half_as_ushort(__float2half_rn(mla_tc_f16_clamp(v.z)));
+        o.w = __half_as_ushort(__float2half_rn(mla_tc_f16_clamp(v.w)));
+        *reinterpret_cast<ushort4*>(hi + i) = o;
+        return;
+    }
     __nv_bfloat16 h0 = __float2bfloat16(v.x), h1 = __float2bfloat16(v.y),
                   h2 = __float2bfloat16(v.z), h3 = __float2bfloat16(v.w);
     ushort4 o;
@@ -1432,7 +1478,8 @@ __global__ void memra_mla_q_split_bf16_kernel(const float* __restrict__ q,
 // SPLIT=false: NT=8 n-tiles (64 pools) per warp, 2 pool groups x 4 query pairs, BT=8.
 // SPLIT=true:  NT=4 n-tiles (32 pools) per warp, 4 pool groups x 2 query pairs, BT=4, and the
 //              smem stage holds two planes (hi, lo) of the query rows.
-template <bool SPLIT>
+// F16: the operand type (fp16 instead of bf16) for the packer and the MMA; never with SPLIT.
+template <bool SPLIT, bool F16>
 __global__ void __launch_bounds__(MLA_SCORE_TC_THREADS, 1) memra_mla_kpool_score_tc_kernel(
     const unsigned short* __restrict__ q_hi, const unsigned short* __restrict__ q_lo,
     const float* __restrict__ pool_keys, const float* __restrict__ hw, float* __restrict__ score,
@@ -1447,6 +1494,7 @@ __global__ void __launch_bounds__(MLA_SCORE_TC_THREADS, 1) memra_mla_kpool_score
     constexpr int KS = D / 16;             // k-steps
     constexpr int RS = D + MLA_SCORE_TC_PAD; // smem row stride, bf16 elements
     constexpr int CHUNKS_PER_ROW = D * 2 / 16;
+    static_assert(!(SPLIT && F16), "the hi/lo split is a bf16 program");
 
     const int tid = (int)threadIdx.x;
     const int lane = tid & 31;
@@ -1480,8 +1528,8 @@ __global__ void __launch_bounds__(MLA_SCORE_TC_THREADS, 1) memra_mla_kpool_score
             float2 lo = ok ? *reinterpret_cast<const float2*>(krow + k0) : make_float2(0.f, 0.f);
             float2 hi =
                 ok ? *reinterpret_cast<const float2*>(krow + k0 + 8) : make_float2(0.f, 0.f);
-            bh[nt][ks][0] = mla_tc_pack2(lo.x, lo.y);
-            bh[nt][ks][1] = mla_tc_pack2(hi.x, hi.y);
+            bh[nt][ks][0] = mla_tc_pack2_t<F16>(lo.x, lo.y);
+            bh[nt][ks][1] = mla_tc_pack2_t<F16>(hi.x, hi.y);
             if constexpr (SPLIT) {
                 bl[nt][ks][0] =
                     mla_tc_pack2(mla_tc_bf16_residual(lo.x), mla_tc_bf16_residual(lo.y));
@@ -1580,7 +1628,7 @@ __global__ void __launch_bounds__(MLA_SCORE_TC_THREADS, 1) memra_mla_kpool_score
                         } else {
 #pragma unroll
                             for (int nt = 0; nt < NT; ++nt)
-                                mla_tc_mma_bf16(acc[nt], ah, bh[nt][ks][0], bh[nt][ks][1]);
+                                mla_tc_mma_t<F16>(acc[nt], ah, bh[nt][ks][0], bh[nt][ks][1]);
                         }
                     }
                     // epilogue: c[0],c[1] = row lane/4, cols 2*(lane%4)+{0,1}; c[2],c[3] = row +8
@@ -1631,7 +1679,8 @@ __global__ void __launch_bounds__(MLA_SCORE_TC_THREADS, 1) memra_mla_kpool_score
     }
 }
 
-/// `scratch` holds `precision` planes of `t_q * heads * d` bf16 (2 or 4 bytes per element).
+/// `scratch` holds the precision's planes of `t_q * heads * d` 16-bit operands: one plane for
+/// precisions 1 (bf16) and 3 (fp16), two (hi, lo) for precision 2.
 extern "C" int memra_mla_kpool_score_tc_f32(const float* q, unsigned short* scratch,
                                             const float* pool_keys, const float* hw,
                                             float* score, int t_q, int heads, int d,
@@ -1642,9 +1691,10 @@ extern "C" int memra_mla_kpool_score_tc_f32(const float* q, unsigned short* scra
     if (heads <= 0 || heads % 16 != 0 || heads > 1024) return 40031;
     if (d != MLA_SCORE_TC_D) return 40032;
     if (t_q < 8) return 40033;
-    if (precision != 1 && precision != 2) return 40037;
+    if (precision != 1 && precision != 2 && precision != 3) return 40037;
     if (n_pools <= 0) return 0;
     const bool split = precision == 2;
+    const bool f16 = precision == 3;
     const int bt = split ? 4 : 8;
     const size_t smem = 2ull * (split ? 2 : 1) * (size_t)bt * (size_t)heads *
                         (MLA_SCORE_TC_D + MLA_SCORE_TC_PAD) * sizeof(unsigned short);
@@ -1654,37 +1704,51 @@ extern "C" int memra_mla_kpool_score_tc_f32(const float* q, unsigned short* scra
     // glm5 TP walk drives two ranks on two cards from one process. A process-wide once-flag
     // here let rank 1 launch 139 KB of dynamic smem against the 48 KB default and fail with
     // cudaErrorInvalidValue on its first MLA layer (tpwalk18, 2026-09-07). Keyed on the device.
-    static bool attr_set[2][64] = {{false}}; // benign race: idempotent per device
+    static bool attr_set[4][64] = {{false}}; // benign race: idempotent per device, per precision
     int dev = 0;
     if (cudaGetDevice(&dev) != cudaSuccess || dev < 0 || dev >= 64) return 40035;
-    if (!attr_set[split][dev]) {
-        cudaError_t e = split ? cudaFuncSetAttribute(memra_mla_kpool_score_tc_kernel<true>,
-                                                     cudaFuncAttributeMaxDynamicSharedMemorySize,
-                                                     MLA_SCORE_TC_SMEM)
-                              : cudaFuncSetAttribute(memra_mla_kpool_score_tc_kernel<false>,
-                                                     cudaFuncAttributeMaxDynamicSharedMemorySize,
-                                                     MLA_SCORE_TC_SMEM);
+    if (!attr_set[precision][dev]) {
+        cudaError_t e;
+        if (split)
+            e = cudaFuncSetAttribute(memra_mla_kpool_score_tc_kernel<true, false>,
+                                     cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                     MLA_SCORE_TC_SMEM);
+        else if (f16)
+            e = cudaFuncSetAttribute(memra_mla_kpool_score_tc_kernel<false, true>,
+                                     cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                     MLA_SCORE_TC_SMEM);
+        else
+            e = cudaFuncSetAttribute(memra_mla_kpool_score_tc_kernel<false, false>,
+                                     cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                     MLA_SCORE_TC_SMEM);
         if (e != cudaSuccess) {
             (void)cudaGetLastError();
             return 40036;
         }
-        attr_set[split][dev] = true;
+        attr_set[precision][dev] = true;
     }
     const long n = (long)t_q * heads * d;
     unsigned short* q_hi = scratch;
     unsigned short* q_lo = split ? scratch + n : nullptr;
-    memra_mla_q_split_bf16_kernel<<<(unsigned)((n / 4 + 255) / 256), 256, 0, stream>>>(q, q_hi, q_lo,
-                                                                                        n);
+    memra_mla_q_split_bf16_kernel<<<(unsigned)((n / 4 + 255) / 256), 256, 0, stream>>>(
+        q, q_hi, q_lo, n, f16 ? 1 : 0);
     dim3 grid((unsigned)((n_pools + MLA_SCORE_TC_BP - 1) / MLA_SCORE_TC_BP),
               (unsigned)((t_q + MLA_SCORE_TC_QSPLIT - 1) / MLA_SCORE_TC_QSPLIT));
     if (split) {
-        memra_mla_kpool_score_tc_kernel<true><<<grid, MLA_SCORE_TC_THREADS, smem, stream>>>(
-            q_hi, q_lo, pool_keys, hw, score, t_q, heads, n_pools, pool, first_pos, qk_scale,
-            head_scale);
+        memra_mla_kpool_score_tc_kernel<true, false>
+            <<<grid, MLA_SCORE_TC_THREADS, smem, stream>>>(q_hi, q_lo, pool_keys, hw, score, t_q,
+                                                           heads, n_pools, pool, first_pos,
+                                                           qk_scale, head_scale);
+    } else if (f16) {
+        memra_mla_kpool_score_tc_kernel<false, true>
+            <<<grid, MLA_SCORE_TC_THREADS, smem, stream>>>(q_hi, q_hi, pool_keys, hw, score, t_q,
+                                                           heads, n_pools, pool, first_pos,
+                                                           qk_scale, head_scale);
     } else {
-        memra_mla_kpool_score_tc_kernel<false><<<grid, MLA_SCORE_TC_THREADS, smem, stream>>>(
-            q_hi, q_hi, pool_keys, hw, score, t_q, heads, n_pools, pool, first_pos, qk_scale,
-            head_scale);
+        memra_mla_kpool_score_tc_kernel<false, false>
+            <<<grid, MLA_SCORE_TC_THREADS, smem, stream>>>(q_hi, q_hi, pool_keys, hw, score, t_q,
+                                                           heads, n_pools, pool, first_pos,
+                                                           qk_scale, head_scale);
     }
     MLA_ERR();
     return 0;
