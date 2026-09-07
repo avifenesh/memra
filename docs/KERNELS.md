@@ -366,6 +366,17 @@ GU/down boundary did not remove the dominant cost. Record:
 `research/dsv4f-2card-1m-20260904/expert-half2-20260907.md`.
 No graph serving default is enabled.
 
+Graph-B attention-tail capture (`dsv4_graph::capture_segment`) is a new
+gate-only diagnostic, not a new arithmetic kernel: it retains the existing
+post-C4 sink-attention, output projection, mHC post, FFN mHC pre and FFN norm
+launches for plain device t=1 matrix decode at an explicit >=8K context guard.
+`Dsv4Gpu::set_graph_b_for_state` is default OFF. The runtime census is keyed by actual layer/stage/slots and
+all captured pointer/math arms; it reports retained variants and kernel names,
+counts the first capture launch, and derives graph-side grouped-wo_a replay
+nodes from the captured kernel census. Eager C4 gather, cache/index updates, EP,
+PP, MoE and commit remain outside the graph. Full-model identity, sanitizer,
+all-43-layer coverage and target-rate qualification are pending.
+
 Corrected DSV4 grouped-prefill experiment:
 
 `MEMRA_DSV4_MOE_PROGRAM=matrix` is the separate default-OFF whole-request

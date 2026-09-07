@@ -1,7 +1,137 @@
-//! Full-layer capture instrument. Replay is gate-only and requires the caller to
-//! own the stable workspace/scalar sources captured by the graph.
+//! CUDA graph capture primitives. Full-layer capture remains diagnostic; the
+//! retained Graph-B segment is gate-only and requires the caller to own the
+//! stable workspace/scalar sources captured by the graph.
 use cudarc::driver::{CudaGraph, CudaStream, sys};
 use std::{collections::BTreeMap, sync::Arc};
+
+/// The only persistent graph segment currently owned by the DSV4 verifier.
+/// The executable is deliberately narrower than a layer: cache/index/C4/EP/PP
+/// work stays eager and the segment begins after the eager C4 gather.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum Dsv4GraphSegment {
+    GraphB,
+}
+
+/// Runtime identity of a captured Graph-B body.
+///
+/// Dynamic scalar *contents* (position and block counts) are intentionally not
+/// part of this key: they are read from the stable device scalar buffers during
+/// replay.  Every pointer that the captured body dereferences is part of the
+/// identity, as are the realized slot/shape and math arms.  A changed pointer
+/// therefore cannot accidentally replay an executable that still targets the
+/// old workspace.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct Dsv4GraphKey {
+    pub(crate) segment: Dsv4GraphSegment,
+    pub(crate) layer: usize,
+    pub(crate) stage: usize,
+    pub(crate) tokens: usize,
+    pub(crate) attention_topk: usize,
+    pub(crate) slots: usize,
+    pub(crate) idx_stride: usize,
+    pub(crate) ratio: usize,
+    pub(crate) arm: u32,
+    pub(crate) input_h: usize,
+    pub(crate) pos_dev: usize,
+    pub(crate) q: usize,
+    pub(crate) attention_kv: usize,
+    pub(crate) attention_indices: usize,
+    pub(crate) sink: usize,
+    pub(crate) sink_scores: usize,
+    pub(crate) sink_evals: usize,
+    pub(crate) sink_den: usize,
+    pub(crate) o: usize,
+    pub(crate) o_b: usize,
+    pub(crate) og: usize,
+    pub(crate) attn_out: usize,
+    pub(crate) h_b: usize,
+    pub(crate) post: usize,
+    pub(crate) comb: usize,
+    pub(crate) gemm_xb: usize,
+    pub(crate) y_hc: usize,
+    pub(crate) xf: usize,
+    pub(crate) ffn_norm: usize,
+    pub(crate) hc_ffn_fn: usize,
+    pub(crate) hc_ffn_base_dev: usize,
+    pub(crate) hc_ffn_scale_dev: usize,
+    pub(crate) fc: usize,
+    pub(crate) layer_weights: usize,
+}
+
+impl Dsv4GraphKey {
+    pub(crate) fn graph_b_valid(&self) -> bool {
+        self.segment == Dsv4GraphSegment::GraphB
+            && self.tokens == 1
+            && self.slots > 0
+            && self.idx_stride >= self.slots
+            && self.input_h != 0
+            && self.pos_dev != 0
+            && self.attention_kv != 0
+            && self.attention_indices != 0
+            && self.q != 0
+            && self.o != 0
+            && self.h_b != 0
+            && self.post != 0
+            && self.comb != 0
+            && self.gemm_xb != 0
+            && self.xf != 0
+            && self.ffn_norm != 0
+            && self.hc_ffn_fn != 0
+            && self.hc_ffn_base_dev != 0
+            && self.hc_ffn_scale_dev != 0
+            && self.fc != 0
+            && self.layer_weights != 0
+    }
+
+    pub(crate) fn pointer_identity_changed(&self, other: &Self) -> bool {
+        self.input_h != other.input_h
+            || self.pos_dev != other.pos_dev
+            || self.q != other.q
+            || self.attention_kv != other.attention_kv
+            || self.attention_indices != other.attention_indices
+            || self.sink != other.sink
+            || self.sink_scores != other.sink_scores
+            || self.sink_evals != other.sink_evals
+            || self.sink_den != other.sink_den
+            || self.o != other.o
+            || self.o_b != other.o_b
+            || self.og != other.og
+            || self.attn_out != other.attn_out
+            || self.h_b != other.h_b
+            || self.post != other.post
+            || self.comb != other.comb
+            || self.gemm_xb != other.gemm_xb
+            || self.y_hc != other.y_hc
+            || self.xf != other.xf
+            || self.ffn_norm != other.ffn_norm
+            || self.hc_ffn_fn != other.hc_ffn_fn
+            || self.hc_ffn_base_dev != other.hc_ffn_base_dev
+            || self.hc_ffn_scale_dev != other.hc_ffn_scale_dev
+            || self.fc != other.fc
+            || self.layer_weights != other.layer_weights
+    }
+}
+
+/// Capture metadata used by the Graph-B gate.  Keeping this separate from the
+/// executable handle makes the stats API serializable without exposing CUDA
+/// graph internals.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Dsv4GraphStats {
+    pub(crate) captures: u64,
+    pub(crate) replays: u64,
+    pub(crate) invalidations: u64,
+    pub(crate) nodes: u64,
+    pub(crate) kernels: u64,
+    pub(crate) wo_a_replay_nodes: u64,
+}
+
+pub(crate) fn graph_b_wo_a_kernel_nodes(capture: &Dsv4LayerCapture) -> usize {
+    capture
+        .kernels
+        .iter()
+        .filter(|name| name.contains("gemv_fp8_grouped_m1"))
+        .count()
+}
 
 pub struct Dsv4LayerCapture {
     pub layer: usize,
@@ -107,10 +237,97 @@ pub(crate) fn capture_layer(
     })
 }
 
+/// Capture one persistent segment and execute its first step once.
+///
+/// This wrapper is intentionally separate from the older diagnostic
+/// `capture_layer` name so callers cannot accidentally treat a partial Graph-B
+/// capture as a complete model layer.  The body is submitted exactly once by
+/// capture and the resulting graph is launched exactly once before returning;
+/// subsequent calls must use [`Dsv4LayerCapture::replay`] and must not resubmit
+/// the body closure.
+pub(crate) fn capture_segment(
+    stream: Arc<CudaStream>,
+    segment: Dsv4GraphSegment,
+    key: Dsv4GraphKey,
+    body: impl FnOnce() -> Result<(), String>,
+) -> Result<(Dsv4GraphKey, Dsv4LayerCapture), String> {
+    if segment != key.segment {
+        return Err("graph segment/key mismatch".into());
+    }
+    if segment == Dsv4GraphSegment::GraphB && !key.graph_b_valid() {
+        return Err("invalid Graph-B shape or pointer identity".into());
+    }
+    let capture = capture_layer(stream, key.layer, body)?;
+    Ok((key, capture))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use cudarc::driver::{CudaContext, DevicePtr, DevicePtrMut};
+
+    fn graph_b_key(slots: usize, input_h: usize) -> Dsv4GraphKey {
+        Dsv4GraphKey {
+            segment: Dsv4GraphSegment::GraphB,
+            layer: 3,
+            stage: 1,
+            tokens: 1,
+            attention_topk: 512,
+            slots,
+            idx_stride: 640,
+            ratio: 128,
+            arm: 0x17,
+            input_h,
+            pos_dev: 0x2000,
+            q: 0x3000,
+            attention_kv: 0x4000,
+            attention_indices: 0x5000,
+            sink: 0x6000,
+            sink_scores: 0x7000,
+            sink_evals: 0x8000,
+            sink_den: 0x9000,
+            o: 0xa000,
+            o_b: 0xb000,
+            og: 0xc000,
+            attn_out: 0xd000,
+            h_b: 0xe000,
+            post: 0xe100,
+            comb: 0xe200,
+            gemm_xb: 0xe300,
+            y_hc: 0xf000,
+            xf: 0x10000,
+            ffn_norm: 0x11000,
+            hc_ffn_fn: 0x11100,
+            hc_ffn_base_dev: 0x11200,
+            hc_ffn_scale_dev: 0x11300,
+            fc: 0x12000,
+            layer_weights: 0x13000,
+        }
+    }
+
+    #[test]
+    fn graph_b_key_requires_real_shape_and_pointers() {
+        let key = graph_b_key(512, 0x1000);
+        assert!(key.graph_b_valid());
+        assert_ne!(key, graph_b_key(513, 0x1000));
+        assert_ne!(key, graph_b_key(512, 0x1001));
+        let mut invalid = key;
+        invalid.idx_stride = 511;
+        assert!(!invalid.graph_b_valid());
+        invalid = key;
+        invalid.tokens = 2;
+        assert!(!invalid.graph_b_valid());
+    }
+
+    #[test]
+    fn graph_b_key_leaves_live_scalar_contents_out_of_identity() {
+        // Position and block-count contents are device-side scalar updates. They
+        // are not represented in Dsv4GraphKey, so a later decode step can replay
+        // the same pointer topology without a false cache miss.
+        let first = graph_b_key(512, 0x1000);
+        let later = graph_b_key(512, 0x1000);
+        assert_eq!(first, later);
+    }
 
     #[test]
     #[ignore = "requires an exclusively locked non-serving CUDA device"]
