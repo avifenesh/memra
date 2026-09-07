@@ -388,6 +388,21 @@ pub fn mla_dsa_attn_arm_effective(t_q: usize) -> i32 {
 /// Geometry refusals from the DSA launchers: the door has nothing for this shape, so the
 /// caller falls through to the shipped kernel instead of failing the request. Every other
 /// non-zero rc (a real cudaError included) still goes through `ck` and surfaces.
+/// `MEMRA_DSA_SCORE_RP` (default 2, the shipped shape; `=1` is the only other spelling): pools
+/// per thread of the sm_100a decode scorer. Bit-identical either way (each dot's accumulation
+/// order is per thread and unchanged); RP=1 doubles the working grid for mid-context pools
+/// (tptrace9 2026-09-07: 57 us for 32k pools with 128 working blocks). Latched once per process.
+pub(crate) fn dsa_score_rp() -> i32 {
+    static RP: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
+    *RP.get_or_init(|| {
+        if std::env::var("MEMRA_DSA_SCORE_RP").as_deref() == Ok("1") {
+            1
+        } else {
+            2
+        }
+    })
+}
+
 /// Engagement counter for the k-pool SELECT door (`MEMRA_B200_DSA_SELECT`), announced once per
 /// boot: the receipt a B200 A/B has to show.
 /// The gathered-attention arm `Engine::mla_attn_gathered` dispatches at t_q = 1 for this
@@ -846,6 +861,7 @@ unsafe extern "C" {
         pool: i32,
         qk_scale: f32,
         head_scale: f32,
+        rp: i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_mla_kpool_select_v2_f32(
@@ -1077,6 +1093,7 @@ unsafe extern "C" {
         first_pos: i32,
         qk_scale: f32,
         head_scale: f32,
+        rp: i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_mla_attn_gathered_split_f32(
@@ -1943,6 +1960,7 @@ impl Engine {
                     first_pos as i32,
                     qk_scale,
                     head_scale,
+                    dsa_score_rp(),
                     s.cu_stream() as *mut c_void,
                 )
             };
@@ -2122,6 +2140,7 @@ impl Engine {
                     pool as i32,
                     qk_scale,
                     head_scale,
+                    dsa_score_rp(),
                     s.cu_stream() as *mut c_void,
                 ),
             )
