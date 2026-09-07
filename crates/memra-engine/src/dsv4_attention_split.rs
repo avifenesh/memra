@@ -20,6 +20,92 @@ type Res<T> = Result<T, String>;
 
 pub const FP8_BLOCK: usize = 128;
 
+/// Existing-GEMV exact component shapes for the first rank-local attention slice.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExistingGemvPlane {
+    Qb,
+    WoA,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExistingGemvHalfPlan {
+    pub plane: ExistingGemvPlane,
+    pub rank: usize,
+    pub full_rows: usize,
+    pub full_cols: usize,
+    pub partition: Partition,
+}
+
+impl ExistingGemvHalfPlan {
+    pub const fn q_b(rank: usize) -> Self {
+        Self {
+            plane: ExistingGemvPlane::Qb,
+            rank,
+            full_rows: 32768,
+            full_cols: 1024,
+            partition: Partition::Rows {
+                start: rank * 16384,
+                len: 16384,
+            },
+        }
+    }
+
+    pub const fn wo_a(rank: usize) -> Self {
+        Self {
+            plane: ExistingGemvPlane::WoA,
+            rank,
+            full_rows: 8192,
+            full_cols: 4096,
+            partition: Partition::Rows {
+                start: rank * 4096,
+                len: 4096,
+            },
+        }
+    }
+}
+
+/// Separate numeric class for the eventual wo_b input-column partial reduction.
+pub const WO_B_PARTIAL_SUM_NUMERIC_CLASS: &str = "dsv4_attention_wo_b_input_split_f32_rank_reduce";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WoBPartialSumPlan {
+    pub rank: usize,
+    pub full_rows: usize,
+    pub full_cols: usize,
+    pub partition: Partition,
+}
+
+impl WoBPartialSumPlan {
+    pub const fn rank(rank: usize) -> Self {
+        Self {
+            rank,
+            full_rows: 4096,
+            full_cols: 8192,
+            partition: Partition::Columns {
+                start: rank * 4096,
+                len: 4096,
+            },
+        }
+    }
+}
+
+/// Deterministic rank-order FP32 oracle for the named wo_b class. It does not claim equality with
+/// the full-width 8192-column GEMV and introduces no tolerance.
+pub fn wo_b_rank_order_sum_f32(rank0: &[f32], rank1: &[f32], out: &mut [f32]) -> Res<()> {
+    if rank0.len() != 4096 || rank1.len() != 4096 || out.len() != 4096 {
+        return Err(format!(
+            "{WO_B_PARTIAL_SUM_NUMERIC_CLASS} requires 4096-element planes: rank0={} rank1={} out={}",
+            rank0.len(),
+            rank1.len(),
+            out.len()
+        ));
+    }
+    for ((dst, &a), &b) in out.iter_mut().zip(rank0).zip(rank1) {
+        *dst = a + b;
+    }
+    Ok(())
+}
+
 /// Logical location of a rank-local dense plane in the full checkpoint tensor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Partition {
@@ -800,6 +886,72 @@ mod tests {
             PackedFp8Host::rows_from_full(0, 128, 128, 0, 128, &codes[..127], &scales).is_err()
         );
         assert!(PackedFp8Host::columns_from_full(0, 128, 128, 0, 128, &codes, &[1.0; 2]).is_err());
+    }
+
+    #[test]
+    fn existing_gemv_half_plans_are_exact_qb_woa_components() {
+        assert_eq!(
+            ExistingGemvHalfPlan::q_b(0).partition,
+            Partition::Rows {
+                start: 0,
+                len: 16384
+            }
+        );
+        assert_eq!(
+            ExistingGemvHalfPlan::q_b(1).partition,
+            Partition::Rows {
+                start: 16384,
+                len: 16384
+            }
+        );
+        assert_eq!(ExistingGemvHalfPlan::q_b(0).full_rows, 32768);
+        assert_eq!(ExistingGemvHalfPlan::q_b(0).full_cols, 1024);
+        assert_eq!(
+            ExistingGemvHalfPlan::wo_a(0).partition,
+            Partition::Rows {
+                start: 0,
+                len: 4096
+            }
+        );
+        assert_eq!(
+            ExistingGemvHalfPlan::wo_a(1).partition,
+            Partition::Rows {
+                start: 4096,
+                len: 4096
+            }
+        );
+        assert_eq!(ExistingGemvHalfPlan::wo_a(0).full_rows, 8192);
+        assert_eq!(ExistingGemvHalfPlan::wo_a(0).full_cols, 4096);
+    }
+
+    #[test]
+    fn wob_partial_sum_is_named_and_rank_ordered_without_tolerance() {
+        assert_eq!(
+            WO_B_PARTIAL_SUM_NUMERIC_CLASS,
+            "dsv4_attention_wo_b_input_split_f32_rank_reduce"
+        );
+        assert_eq!(
+            WoBPartialSumPlan::rank(0).partition,
+            Partition::Columns {
+                start: 0,
+                len: 4096
+            }
+        );
+        assert_eq!(
+            WoBPartialSumPlan::rank(1).partition,
+            Partition::Columns {
+                start: 4096,
+                len: 4096
+            }
+        );
+        let rank0: Vec<f32> = (0..4096).map(|i| i as f32 * 0.25 - 7.0).collect();
+        let rank1: Vec<f32> = (0..4096).map(|i| (i as f32 + 3.0) * -0.125).collect();
+        let mut out = vec![0.0f32; 4096];
+        wo_b_rank_order_sum_f32(&rank0, &rank1, &mut out).unwrap();
+        for i in 0..4096 {
+            assert_eq!(out[i].to_bits(), (rank0[i] + rank1[i]).to_bits());
+        }
+        assert!(wo_b_rank_order_sum_f32(&rank0[..1], &rank1, &mut out).is_err());
     }
 
     fn bf16_input(n: usize, seed: u64) -> Vec<u16> {
