@@ -986,26 +986,28 @@ mod tests {
         gpu.ctx.bind_to_thread().unwrap();
         let rc_bind = unsafe { crate::mmq_ffi::memra_bind_device(gpu.ctx.ordinal() as i32) };
         assert_eq!(rc_bind, 0, "{label}: runtime device bind");
-        let (w, _w_guard) = plane.codes.device_ptr(&stream);
-        let (sc, _sc_guard) = plane.scales.device_ptr(&stream);
-        let (x, _x_guard) = input_dev.device_ptr(&stream);
-        let (y, _y_guard) = output.device_ptr_mut(&stream);
-        let rc = unsafe {
-            crate::dsv4_ffi::memra_dsv4_gemv_fp8_m(
-                w as *const c_void,
-                sc as *const f32,
-                plane.scale_cols as i32,
-                x as *const c_void,
-                (y as *mut f32).add(guard),
-                1,
-                n as i32,
-                k as i32,
-                0,
-                0,
-                stream.cu_stream().cast(),
-            )
-        };
-        crate::dsv4_ffi::ck(label, rc).unwrap();
+        {
+            let (w, _w_guard) = plane.codes.device_ptr(&stream);
+            let (sc, _sc_guard) = plane.scales.device_ptr(&stream);
+            let (x, _x_guard) = input_dev.device_ptr(&stream);
+            let (y, _y_guard) = output.device_ptr_mut(&stream);
+            let rc = unsafe {
+                crate::dsv4_ffi::memra_dsv4_gemv_fp8_m(
+                    w as *const c_void,
+                    sc as *const f32,
+                    plane.scale_cols as i32,
+                    x as *const c_void,
+                    (y as *mut f32).add(guard),
+                    1,
+                    n as i32,
+                    k as i32,
+                    0,
+                    0,
+                    stream.cu_stream().cast(),
+                )
+            };
+            crate::dsv4_ffi::ck(label, rc).unwrap();
+        }
         stream.synchronize().unwrap();
         let got = stream.clone_dtoh(&output).unwrap();
         assert!(
