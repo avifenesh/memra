@@ -1,5 +1,5 @@
-//! CPU-only sampler phase attribution and exact radix-order prototype.
-//! Production still uses comparison sorting. No CUDA context is created here.
+//! CPU-only sampler phase attribution and exact radix-order gate.
+//! Production defaults to radix; comparison is the oracle. No CUDA context is created here.
 use memra_engine::dsv4_gpu::{
     Dsv4SampleCfg, Dsv4SamplerOrder, dsv4_candidate_order, dsv4_pos_uniform, dsv4_sample_row,
     dsv4_sample_row_ordered,
@@ -173,7 +173,7 @@ fn main() {
         }
     }
     println!(
-        "PASS full candidate order elements={compared} and 1536 sampled comparisons; production sorting unchanged"
+        "PASS full candidate order elements={compared} and 1536 sampled comparisons; comparison/radix identity"
     );
 }
 
