@@ -15,15 +15,13 @@
 //! dedicated f32/f64 kernels or on the host. bf16 enters ONLY at the activation inputs
 //! of the non-island GEMMs (cuBLASLt bf16, f32 accumulate).
 //!
-//! Multi-GPU: PP layer split plus the matrix expert-ID EP pair.  PP boundaries and EP
-//! contribution/commit work stay outside the retained graph segment; they retain their
-//! explicit peer/event ordering.  Graph-B is a gate-only attention-tail segment inside a
-//! plain device t=1 verifier, with eager C4 gather, routing, EP, PP, and commit around it.
+//! Multi-GPU: PP layer split plus the matrix expert-ID EP pair. PP boundaries and EP
+//! contribution/commit work retain explicit peer/event ordering.
 //!
-//! This module still is not a general serving path: the graph arm is explicit and
-//! default-off, and all decode/graph claims require the corresponding pinned gate receipt.
+//! This module is not a general serving path: all decode and performance claims
+//! require the corresponding pinned gate receipt.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::ops::Range;
 use std::os::raw::c_void;
 use std::path::Path;
@@ -40,9 +38,6 @@ use crate::dsv4_ep::{EpCompute, EpLayer, EpScratch};
 use crate::dsv4_ffi as k;
 use crate::dsv4_ffi::ck;
 pub use crate::dsv4_graph::Dsv4LayerCapture;
-use crate::dsv4_graph::{
-    Dsv4GraphKey, Dsv4GraphSegment, Dsv4GraphStats, graph_b_wo_a_kernel_nodes,
-};
 
 type Res<T> = Result<T, String>;
 
@@ -71,33 +66,6 @@ pub struct Dsv4GraphProbeCensus {
     pub layer: usize,
     pub nodes: BTreeMap<String, usize>,
     pub kernels: Vec<String>,
-}
-
-/// One retained Graph-B executable variant and its actual CUDA census.
-#[derive(Clone, Debug)]
-pub struct Dsv4GraphBVariantStats {
-    pub layer: usize,
-    pub stage: usize,
-    pub attention_topk: usize,
-    pub slots: usize,
-    pub arm: u32,
-    pub nodes: BTreeMap<String, usize>,
-    pub kernels: Vec<String>,
-}
-
-/// Gate-only Graph-B accounting. Counts are incremented at the actual CUDA
-/// capture/replay call sites, not by a CPU-side prediction of what a round
-/// would have done. `wo_a_replay_nodes` is derived from the retained kernel
-/// census on successful graph launches; it never reuses the eager FFI counter.
-#[derive(Clone, Debug, Default)]
-pub struct Dsv4GraphBStats {
-    pub captures: u64,
-    pub replays: u64,
-    pub invalidations: u64,
-    pub nodes: u64,
-    pub kernels: u64,
-    pub wo_a_replay_nodes: u64,
-    pub variants: Vec<Dsv4GraphBVariantStats>,
 }
 
 /// Gate-only component report for the first compressor/indexer scalar seam.
@@ -10773,22 +10741,6 @@ struct LayerCkptDev {
     trans_base: usize,
 }
 
-/// Persistent Graph-B state.  This field is declared before `VerifyState::ws`
-/// so Rust drops the executable graphs before their captured workspace buffers.
-/// The map may contain a small bounded set of slot variants for a layer; a
-/// pointer replacement invalidates the old layer variants before the new graph
-/// is installed.
-#[derive(Default)]
-struct GraphBState {
-    armed: bool,
-    captures: HashMap<Dsv4GraphKey, Dsv4LayerCapture>,
-    last_by_layer: HashMap<usize, Dsv4GraphKey>,
-    stats: Dsv4GraphStats,
-}
-
-const GRAPH_B_MAX_VARIANTS_PER_LAYER: usize = 8;
-const GRAPH_B_MIN_CONTEXT: usize = 8192;
-
 /// Whole-round verify state: the per-stage arenas + the per-layer §3.1 checkpoints.
 pub struct VerifyState {
     matrix_moe: bool,
@@ -10813,9 +10765,6 @@ pub struct VerifyState {
     stage0_embed_capture: Option<Dsv4LayerCapture>,
     /// Diagnostic captures only, not persistent replay executables.
     pub layer_captures: Vec<Dsv4LayerCapture>,
-    /// Persistent Graph-B executables.  This is intentionally before `ws` so
-    /// graph destruction precedes workspace/C4Gather destruction.
-    graph_b: GraphBState,
     ws: Vec<VerifyWs>,
     layers: Vec<LayerCkptDev>,
     pub tmax: usize,
@@ -10837,125 +10786,6 @@ struct MatrixStep {
 }
 
 impl Dsv4Gpu {
-    /// Enable or disable the retained Graph-B attention-tail segment for an
-    /// explicit gate state.  This is intentionally a setter rather than an env
-    /// or serving default: callers must opt in and must record the returned
-    /// capture/replay/invalidation census.
-    pub fn set_graph_b_for_state(&self, state: &mut DecodeState, enabled: bool) -> Res<()> {
-        let step = state
-            .matrix_step
-            .as_mut()
-            .ok_or("Graph-B requires matrix decode state")?;
-        if enabled {
-            self.set_graph_b(&mut step.verify, true)
-        } else {
-            self.set_graph_b(&mut step.verify, false)
-        }
-    }
-
-    /// Disable Graph-B and synchronously release its executable graphs before
-    /// any verifier workspace can be resized or dropped.
-    pub fn clear_graph_b_for_state(&self, state: &mut DecodeState) -> Res<()> {
-        let step = state
-            .matrix_step
-            .as_mut()
-            .ok_or("Graph-B clear requires matrix decode state")?;
-        self.set_graph_b(&mut step.verify, false)
-    }
-
-    /// Snapshot the counters and per-retained-variant census produced by actual
-    /// CUDA graph operations.
-    pub fn graph_b_stats_for_state(&self, state: &DecodeState) -> Res<Dsv4GraphBStats> {
-        let step = state
-            .matrix_step
-            .as_ref()
-            .ok_or("Graph-B stats require matrix decode state")?;
-        Ok(Self::graph_b_stats(&step.verify.graph_b))
-    }
-
-    fn graph_b_stats(graph_b: &GraphBState) -> Dsv4GraphBStats {
-        let mut variants: Vec<_> = graph_b
-            .captures
-            .iter()
-            .map(|(key, capture)| Dsv4GraphBVariantStats {
-                layer: key.layer,
-                stage: key.stage,
-                attention_topk: key.attention_topk,
-                slots: key.slots,
-                arm: key.arm,
-                nodes: capture.nodes.clone(),
-                kernels: capture.kernels.clone(),
-            })
-            .collect();
-        variants.sort_by_key(|variant| {
-            (
-                variant.stage,
-                variant.layer,
-                variant.slots,
-                variant.attention_topk,
-                variant.arm,
-            )
-        });
-        Dsv4GraphBStats {
-            captures: graph_b.stats.captures,
-            replays: graph_b.stats.replays,
-            invalidations: graph_b.stats.invalidations,
-            nodes: graph_b.stats.nodes,
-            kernels: graph_b.stats.kernels,
-            wo_a_replay_nodes: graph_b.stats.wo_a_replay_nodes,
-            variants,
-        }
-    }
-
-    fn set_graph_b(&self, verify: &mut VerifyState, enabled: bool) -> Res<()> {
-        if !enabled {
-            // A graph may still be in flight when the gate flips it off.  Drain
-            // every stage before dropping the executable map; this also makes a
-            // subsequent workspace/C4Gather replacement safe.
-            for st in &self.stages {
-                st.gpu.stream().synchronize().map_err(e("Graph-B clear"))?;
-            }
-            verify.graph_b.armed = false;
-            verify.graph_b.captures.clear();
-            verify.graph_b.last_by_layer.clear();
-            return Ok(());
-        }
-        if !self.matrix_moe {
-            return Err("Graph-B requires matrix MoE".into());
-        }
-        if self.stages.iter().any(|st| st.gpu.ctx.is_event_tracking()) {
-            return Err(
-                "Graph-B requires event tracking disabled before workspace allocation".into(),
-            );
-        }
-        if verify.open.is_some() || verify.ws.iter().any(|w| w.is_prefill) {
-            return Err("Graph-B requires a closed plain decode verifier".into());
-        }
-        if verify.capacity < GRAPH_B_MIN_CONTEXT {
-            return Err(format!(
-                "Graph-B requires a verifier capacity of at least {GRAPH_B_MIN_CONTEXT} tokens"
-            ));
-        }
-        if verify.tmax != 1
-            || self.verify_topk != Dsv4VerifyTopk::Device
-            || !self.dense_fp8
-            || !matches!(self.decode_path, DecodePath::Device { host_math: false })
-            || self.expert_arm != ExpertArm::Native
-        {
-            return Err(
-                "Graph-B requires plain t=1 native device top-k/FP8 decode and native experts"
-                    .into(),
-            );
-        }
-        // EP, C4, PP, and commit are deliberately allowed here: they remain
-        // outside the captured body and keep their existing stream/event paths.
-        verify.graph_b.armed = true;
-        verify.graph_b.captures.clear();
-        verify.graph_b.last_by_layer.clear();
-        verify.graph_b.stats = Dsv4GraphStats::default();
-        Ok(())
-    }
-
     /// Verify-round depth ceiling: block_size + 1 with the drafter loaded, else 0 (and
     /// then no transient rows are reserved anywhere — today's exact allocation).
     pub fn verify_tmax(&self) -> usize {
@@ -11955,7 +11785,6 @@ impl Dsv4Gpu {
             replay_stage0_embed_next_round: false,
             stage0_embed_capture: None,
             layer_captures: Vec::new(),
-            graph_b: GraphBState::default(),
             ws,
             layers,
             tmax,
@@ -12541,7 +12370,6 @@ impl Dsv4Gpu {
         toks: &[u32],
         host_math: bool,
         allow_gu_fuse: bool,
-        graph_b: Option<&mut GraphBState>,
     ) -> Res<()> {
         let d = self.model.cfg();
         let mc = &self.model.mc;
@@ -13174,9 +13002,8 @@ impl Dsv4Gpu {
             }
         }
 
-        // Eager C4 gather is the Graph-B boundary.  The returned workspace
-        // pointers are included in the key, and C4Gather::ensure was reserved
-        // for the full verifier width before this layer loop began.
+        // sparse sink attention, T queries in one launch (uniform `slots`, -1 pads —
+        // bit-inert by the pinned pad contract) + per-position de-rotation
         let (attention_kv, attention_indices) = if let Some(host) = c4_host.as_ref() {
             host.gather(
                 kvc,
@@ -13194,353 +13021,180 @@ impl Dsv4Gpu {
                 vws.idx.device_ptr(&stream).0 as *const i32,
             )
         };
-        let graph_b_key = if graph_b.is_some() {
-            let attention_topk = layer.idx.as_ref().map_or(0, |idx| idx.topk);
-            let mut arm = 0u32;
-            arm |= self.chains_f32 as u32;
-            arm |= ((self.sink_score == Dsv4SinkScore::Tiled) as u32) << 1;
-            arm |= ((self.indexer_score == Dsv4IndexerScore::Tiled) as u32) << 2;
-            arm |= (self.dense_fp8 as u32) << 3;
-            arm |= ((clamp_only != 0) as u32) << 4;
-            arm |= ((vws.is_prefill) as u32) << 5;
-            arm |= (c4_host.is_some() as u32) << 6;
-            let grouped_wo_a_policy = DSV4_DENSE_WO_A_GROUPED.load(Ordering::Acquire)
-                && self.dense_fp8
-                && layer.wo_a_fp8.is_some();
-            arm |= (grouped_wo_a_policy as u32) << 7;
-            let ptr = |p: u64| p as usize;
-            Dsv4GraphKey {
-                segment: Dsv4GraphSegment::GraphB,
-                layer: layer.il as usize,
-                stage: st.dev,
-                tokens: t,
-                attention_topk,
-                slots,
-                idx_stride: vws.idx_stride,
-                ratio: layer.ratio,
-                arm,
-                input_h: ptr(h_in_ptr as u64),
-                pos_dev: ptr(vws.pos_dev.device_ptr(&stream).0),
-                q: ptr(vws.q.device_ptr(&stream).0),
-                attention_kv: ptr(attention_kv as u64),
-                attention_indices: ptr(attention_indices as u64),
-                sink: ptr(layer.sink.device_ptr(&stream).0),
-                sink_scores: ptr(vws.sink_scores.device_ptr(&stream).0),
-                sink_evals: ptr(vws.sink_evals.device_ptr(&stream).0),
-                sink_den: ptr(vws.sink_den.device_ptr(&stream).0),
-                o: ptr(vws.o.device_ptr(&stream).0),
-                o_b: ptr(vws.o_b.device_ptr(&stream).0),
-                og: ptr(vws.og.device_ptr(&stream).0),
-                attn_out: ptr(vws.attn_out.device_ptr(&stream).0),
-                h_b: ptr(vws.h_b.device_ptr(&stream).0),
-                post: ptr(vws.post.device_ptr(&stream).0),
-                comb: ptr(vws.comb.device_ptr(&stream).0),
-                gemm_xb: ptr(vws.gemm_xb.device_ptr(&stream).0),
-                y_hc: ptr(vws.y_hc.device_ptr(&stream).0),
-                xf: ptr(vws.xf.device_ptr(&stream).0),
-                ffn_norm: ptr(layer.ffn_norm.device_ptr(&stream).0),
-                hc_ffn_fn: ptr(layer.hc_ffn_fn.device_ptr(&stream).0),
-                hc_ffn_base_dev: ptr(layer.hc_ffn_base_dev.device_ptr(&stream).0),
-                hc_ffn_scale_dev: ptr(layer.hc_ffn_scale_dev.device_ptr(&stream).0),
-                fc: ptr(fc_dev as u64),
-                // `sink` is a layer-unique resident weight pointer and is a
-                // compact identity witness for all layer weights in this body.
-                layer_weights: ptr(layer.sink.device_ptr(&stream).0),
+        let scale = (hd as f64).powf(-0.5) as f32;
+        unsafe {
+            if self.chains_f32 {
+                let launch = if self.sink_score == Dsv4SinkScore::Tiled {
+                    k::memra_dsv4_sink_attn_dec_mq_f32acc_tiled
+                } else {
+                    k::memra_dsv4_sink_attn_dec_mq_f32acc
+                };
+                ck(
+                    "sink_attn_dec_mq_f32acc",
+                    launch(
+                        dpf!(vws.q, &stream),
+                        attention_kv,
+                        attention_indices,
+                        dpf!(layer.sink, &stream),
+                        dpm!(vws.sink_scores, &stream),
+                        dpm!(vws.sink_evals, &stream),
+                        vws.sink_den.device_ptr_mut(&stream).0 as *mut f32,
+                        dpm!(vws.o, &stream),
+                        t as i32,
+                        heads as i32,
+                        hd as i32,
+                        slots as i32,
+                        vws.idx_stride as i32,
+                        scale,
+                        sp(&stream),
+                    ),
+                )?;
+                if self.sink_score == Dsv4SinkScore::Tiled {
+                    self.sink_tiled_calls
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+            } else {
+                ck(
+                    "sink_attn_dec_mq",
+                    k::memra_dsv4_sink_attn_dec_mq(
+                        dpf!(vws.q, &stream),
+                        attention_kv,
+                        attention_indices,
+                        dpf!(layer.sink, &stream),
+                        dpm!(vws.sink_scores, &stream),
+                        dpm!(vws.sink_evals, &stream),
+                        vws.sink_den.device_ptr_mut(&stream).0 as *mut f64,
+                        dpm!(vws.o, &stream),
+                        t as i32,
+                        heads as i32,
+                        hd as i32,
+                        slots as i32,
+                        vws.idx_stride as i32,
+                        scale,
+                        sp(&stream),
+                    ),
+                )?;
             }
+            ck(
+                "rope o inv batch",
+                k::memra_dsv4_rope(
+                    dpm!(vws.o, &stream),
+                    t as i32,
+                    heads as i32,
+                    hd as i32,
+                    rd as i32,
+                    fc_dev,
+                    vws.pos_dev.device_ptr(&stream).0 as *const i32,
+                    1,
+                    sp(&stream),
+                ),
+            )?;
+        }
+
+        // grouped output projection: cvt o once, then per-group strided batched GEMVs
+        let gw = heads / o_groups * hd;
+        unsafe {
+            ck(
+                "cvt o batch",
+                k::memra_dsv4_cvt_bf16(
+                    dpf!(vws.o, &stream),
+                    vws.o_b.device_ptr_mut(&stream).0 as *mut c_void,
+                    (t * heads * hd) as i64,
+                    sp(&stream),
+                ),
+            )?;
+        }
+        let wo_a_dw = dwsel(self.dense_fp8, &stream, &layer.wo_a, &layer.wo_a_fp8);
+        let grouped_wo_a = if t == 1 && !vws.is_prefill {
+            Self::gemv_wo_a_grouped_fp8_m1_dev(
+                st,
+                wo_a_dw,
+                vws.o_b.device_ptr(&stream).0 as *const c_void,
+                vws.og.device_ptr_mut(&stream).0 as *mut f32,
+                o_groups,
+                o_lora,
+                gw,
+                gw,
+                o_lora,
+            )?
         } else {
-            Dsv4GraphKey {
-                segment: Dsv4GraphSegment::GraphB,
-                layer: 0,
-                stage: 0,
-                tokens: 0,
-                attention_topk: 0,
-                slots: 0,
-                idx_stride: 0,
-                ratio: 0,
-                arm: 0,
-                input_h: 0,
-                pos_dev: 0,
-                q: 0,
-                attention_kv: 0,
-                attention_indices: 0,
-                sink: 0,
-                sink_scores: 0,
-                sink_evals: 0,
-                sink_den: 0,
-                o: 0,
-                o_b: 0,
-                og: 0,
-                attn_out: 0,
-                h_b: 0,
-                post: 0,
-                comb: 0,
-                gemm_xb: 0,
-                y_hc: 0,
-                xf: 0,
-                ffn_norm: 0,
-                hc_ffn_fn: 0,
-                hc_ffn_base_dev: 0,
-                hc_ffn_scale_dev: 0,
-                fc: 0,
-                layer_weights: 0,
-            }
+            false
         };
-        if let Some(graph_b_state) = graph_b.as_ref() {
-            if !graph_b_state.armed || t != 1 {
-                return Err("Graph-B caller requires armed plain t=1 verifier".into());
-            }
-            if !graph_b_key.graph_b_valid() {
-                return Err(format!(
-                    "Graph-B shape/pointer key invalid for layer {}",
-                    layer.il
-                ));
+        if !grouped_wo_a {
+            for g in 0..o_groups {
+                Self::gemv_m_dev(
+                    st,
+                    wo_a_dw.offset_rows(g * o_lora, gw),
+                    (vws.o_b.device_ptr(&stream).0 as usize + g * gw * 2) as *const c_void,
+                    (vws.og.device_ptr_mut(&stream).0 as usize + g * o_lora * 4) as *mut f32,
+                    t,
+                    o_lora,
+                    gw,
+                    heads * hd,
+                    o_groups * o_lora,
+                )?;
             }
         }
-        let scale = (hd as f64).powf(-0.5) as f32;
-        // Keep the entire post-gather attention tail in one closure.  On a
-        // replay hit this closure is never called, which is the critical
-        // distinction from a CPU-side counter or a re-submitted eager body.
-        {
-            let mut graph_b_body = || -> Res<()> {
-                // sparse sink attention, T queries in one launch (uniform
-                // `slots`, -1 pads) + per-position de-rotation
-                unsafe {
-                    if self.chains_f32 {
-                        let launch = if self.sink_score == Dsv4SinkScore::Tiled {
-                            k::memra_dsv4_sink_attn_dec_mq_f32acc_tiled
-                        } else {
-                            k::memra_dsv4_sink_attn_dec_mq_f32acc
-                        };
-                        ck(
-                            "sink_attn_dec_mq_f32acc",
-                            launch(
-                                dpf!(vws.q, &stream),
-                                attention_kv,
-                                attention_indices,
-                                dpf!(layer.sink, &stream),
-                                dpm!(vws.sink_scores, &stream),
-                                dpm!(vws.sink_evals, &stream),
-                                vws.sink_den.device_ptr_mut(&stream).0 as *mut f32,
-                                dpm!(vws.o, &stream),
-                                t as i32,
-                                heads as i32,
-                                hd as i32,
-                                slots as i32,
-                                vws.idx_stride as i32,
-                                scale,
-                                sp(&stream),
-                            ),
-                        )?;
-                        if self.sink_score == Dsv4SinkScore::Tiled {
-                            self.sink_tiled_calls
-                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        }
-                    } else {
-                        ck(
-                            "sink_attn_dec_mq",
-                            k::memra_dsv4_sink_attn_dec_mq(
-                                dpf!(vws.q, &stream),
-                                attention_kv,
-                                attention_indices,
-                                dpf!(layer.sink, &stream),
-                                dpm!(vws.sink_scores, &stream),
-                                dpm!(vws.sink_evals, &stream),
-                                vws.sink_den.device_ptr_mut(&stream).0 as *mut f64,
-                                dpm!(vws.o, &stream),
-                                t as i32,
-                                heads as i32,
-                                hd as i32,
-                                slots as i32,
-                                vws.idx_stride as i32,
-                                scale,
-                                sp(&stream),
-                            ),
-                        )?;
-                    }
-                    ck(
-                        "rope o inv batch",
-                        k::memra_dsv4_rope(
-                            dpm!(vws.o, &stream),
-                            t as i32,
-                            heads as i32,
-                            hd as i32,
-                            rd as i32,
-                            fc_dev,
-                            vws.pos_dev.device_ptr(&stream).0 as *const i32,
-                            1,
-                            sp(&stream),
-                        ),
-                    )?;
-                }
+        Self::gemm_m_dev(
+            st,
+            vws.og.device_ptr(&stream).0 as *const f32,
+            &mut vws.gemm_xb,
+            dwsel(self.dense_fp8, &stream, &layer.wo_b, &layer.wo_b_fp8),
+            t,
+            hidden,
+            o_groups * o_lora,
+            vws.attn_out.device_ptr_mut(&stream).0 as *mut f32,
+        )?;
 
-                // grouped output projection: cvt o once, then per-group
-                // strided batched GEMVs
-                let gw = heads / o_groups * hd;
-                unsafe {
-                    ck(
-                        "cvt o batch",
-                        k::memra_dsv4_cvt_bf16(
-                            dpf!(vws.o, &stream),
-                            vws.o_b.device_ptr_mut(&stream).0 as *mut c_void,
-                            (t * heads * hd) as i64,
-                            sp(&stream),
-                        ),
-                    )?;
-                }
-                let wo_a_dw = dwsel(self.dense_fp8, &stream, &layer.wo_a, &layer.wo_a_fp8);
-                let grouped_wo_a = if t == 1 && !vws.is_prefill {
-                    Self::gemv_wo_a_grouped_fp8_m1_dev(
-                        st,
-                        wo_a_dw,
-                        vws.o_b.device_ptr(&stream).0 as *const c_void,
-                        vws.og.device_ptr_mut(&stream).0 as *mut f32,
-                        o_groups,
-                        o_lora,
-                        gw,
-                        gw,
-                        o_lora,
-                    )?
-                } else {
-                    false
-                };
-                if !grouped_wo_a {
-                    for g in 0..o_groups {
-                        Self::gemv_m_dev(
-                            st,
-                            wo_a_dw.offset_rows(g * o_lora, gw),
-                            (vws.o_b.device_ptr(&stream).0 as usize + g * gw * 2) as *const c_void,
-                            (vws.og.device_ptr_mut(&stream).0 as usize + g * o_lora * 4)
-                                as *mut f32,
-                            t,
-                            o_lora,
-                            gw,
-                            heads * hd,
-                            o_groups * o_lora,
-                        )?;
-                    }
-                }
-                Self::gemm_m_dev(
-                    st,
-                    vws.og.device_ptr(&stream).0 as *const f32,
-                    &mut vws.gemm_xb,
-                    dwsel(self.dense_fp8, &stream, &layer.wo_b, &layer.wo_b_fp8),
-                    t,
-                    hidden,
-                    o_groups * o_lora,
-                    vws.attn_out.device_ptr_mut(&stream).0 as *mut f32,
-                )?;
+        // hc_post (attention) -> vws.h_b
+        unsafe {
+            ck(
+                "hc_post attn batch",
+                k::memra_dsv4_hc_post(
+                    dpf!(vws.attn_out, &stream),
+                    h_in_ptr,
+                    dpf!(vws.post, &stream),
+                    dpf!(vws.comb, &stream),
+                    dpm!(vws.h_b, &stream),
+                    t as i32,
+                    hc as i32,
+                    hidden as i32,
+                    sp(&stream),
+                ),
+            )?;
+        }
 
-                // hc_post (attention) -> vws.h_b
-                unsafe {
-                    ck(
-                        "hc_post attn batch",
-                        k::memra_dsv4_hc_post(
-                            dpf!(vws.attn_out, &stream),
-                            h_in_ptr,
-                            dpf!(vws.post, &stream),
-                            dpf!(vws.comb, &stream),
-                            dpm!(vws.h_b, &stream),
-                            t as i32,
-                            hc as i32,
-                            hidden as i32,
-                            sp(&stream),
-                        ),
-                    )?;
-                }
-
-                // ---- ffn sub-block (input vws.h_b, output vws.xf)
-                let h_b_ptr = vws.h_b.device_ptr(&stream).0 as *const f32;
-                self.hc_pre_batch_dev(
-                    st,
-                    h_b_ptr,
-                    &layer.hc_ffn_fn,
-                    &layer.hc_ffn_base,
-                    &layer.hc_ffn_scale,
-                    &layer.hc_ffn_base_dev,
-                    &layer.hc_ffn_scale_dev,
-                    vws,
-                    t,
-                    hc,
-                    hidden,
-                    iters,
-                    hc_eps,
-                    host_math,
-                )?;
-                unsafe {
-                    ck(
-                        "rmsnorm ffn batch",
-                        self.rmsnorm_arm(
-                            dpf!(vws.y_hc, &stream),
-                            dpf!(layer.ffn_norm, &stream),
-                            dpm!(vws.xf, &stream),
-                            t as i32,
-                            hidden as i32,
-                            eps,
-                            sp(&stream),
-                        ),
-                    )?;
-                }
-                Ok(())
-            };
-
-            if let Some(graph_b) = graph_b {
-                let layer_id = layer.il as usize;
-                let previous = graph_b.last_by_layer.get(&layer_id).copied();
-                if graph_b.captures.contains_key(&graph_b_key) {
-                    let wo_a_nodes = {
-                        let capture = graph_b
-                            .captures
-                            .get(&graph_b_key)
-                            .expect("Graph-B key checked");
-                        capture.replay()?;
-                        graph_b_wo_a_kernel_nodes(capture) as u64
-                    };
-                    graph_b.stats.replays = graph_b.stats.replays.saturating_add(1);
-                    graph_b.stats.wo_a_replay_nodes =
-                        graph_b.stats.wo_a_replay_nodes.saturating_add(wo_a_nodes);
-                } else {
-                    if let Some(previous) = previous {
-                        graph_b.stats.invalidations = graph_b.stats.invalidations.saturating_add(1);
-                        if previous.pointer_identity_changed(&graph_b_key) {
-                            graph_b
-                                .captures
-                                .retain(|key, _| key.layer != graph_b_key.layer);
-                        }
-                    }
-                    let variants = graph_b
-                        .captures
-                        .keys()
-                        .filter(|key| key.layer == layer_id)
-                        .count();
-                    if variants >= GRAPH_B_MAX_VARIANTS_PER_LAYER {
-                        return Err(format!(
-                            "Graph-B layer {layer_id} exceeded {GRAPH_B_MAX_VARIANTS_PER_LAYER} shape variants"
-                        ));
-                    }
-                    let (key, capture) = crate::dsv4_graph::capture_segment(
-                        st.gpu.stream(),
-                        Dsv4GraphSegment::GraphB,
-                        graph_b_key,
-                        graph_b_body,
-                    )?;
-                    graph_b.stats.captures = graph_b.stats.captures.saturating_add(1);
-                    graph_b.stats.nodes = graph_b.stats.nodes.saturating_add(
-                        capture
-                            .nodes
-                            .values()
-                            .map(|count| *count as u64)
-                            .sum::<u64>(),
-                    );
-                    graph_b.stats.kernels = graph_b
-                        .stats
-                        .kernels
-                        .saturating_add(capture.kernels.len() as u64);
-                    graph_b.captures.insert(key, capture);
-                }
-                graph_b.last_by_layer.insert(layer_id, graph_b_key);
-            } else {
-                graph_b_body()?;
-            }
+        // ---- ffn sub-block (input vws.h_b, output vws.h_a)
+        let h_b_ptr = vws.h_b.device_ptr(&stream).0 as *const f32;
+        self.hc_pre_batch_dev(
+            st,
+            h_b_ptr,
+            &layer.hc_ffn_fn,
+            &layer.hc_ffn_base,
+            &layer.hc_ffn_scale,
+            &layer.hc_ffn_base_dev,
+            &layer.hc_ffn_scale_dev,
+            vws,
+            t,
+            hc,
+            hidden,
+            iters,
+            hc_eps,
+            host_math,
+        )?;
+        unsafe {
+            ck(
+                "rmsnorm ffn batch",
+                self.rmsnorm_arm(
+                    dpf!(vws.y_hc, &stream),
+                    dpf!(layer.ffn_norm, &stream),
+                    dpm!(vws.xf, &stream),
+                    t as i32,
+                    hidden as i32,
+                    eps,
+                    sp(&stream),
+                ),
+            )?;
         }
         self.moe_verify_dev(st, layer, vws, t, toks, host_math, allow_gu_fuse)?;
         unsafe {
@@ -14320,11 +13974,6 @@ impl Dsv4Gpu {
             "round depth {t} > tmax {}",
             vstate.tmax
         );
-        if vstate.graph_b.armed && t != 1 {
-            return Err(
-                "Graph-B is a plain t=1 gate and refuses batched/speculative rounds".into(),
-            );
-        }
         assert!(vstate.open.is_none(), "verify_batch_dev with an open round");
         if vstate.capacity != state.capacity {
             return Err(format!(
@@ -14339,11 +13988,6 @@ impl Dsv4Gpu {
             ));
         }
         let pos0 = state.pos;
-        if vstate.graph_b.armed && pos0 < GRAPH_B_MIN_CONTEXT {
-            return Err(format!(
-                "Graph-B refuses context position {pos0}; minimum is {GRAPH_B_MIN_CONTEXT}"
-            ));
-        }
         assert!(
             pos0 > 0 || self.matrix_moe,
             "batched verify needs prefill_with_cache first"
@@ -14520,14 +14164,6 @@ impl Dsv4Gpu {
                 && vstate.tmax == 1
                 && !vstate.ws[stage].is_prefill
                 && taps.is_none();
-            if vstate.graph_b.armed && (capture_this_layer || replay_this_layer) {
-                return Err("Graph-B cannot overlap a diagnostic layer graph probe".into());
-            }
-            let mut graph_b = if vstate.graph_b.armed {
-                Some(&mut vstate.graph_b)
-            } else {
-                None
-            };
             let mut body = || {
                 self.block_verify_dev(
                     st,
@@ -14541,7 +14177,6 @@ impl Dsv4Gpu {
                     toks,
                     host_math,
                     allow_gu_fuse,
-                    graph_b.as_deref_mut(),
                 )
             };
             if capture_this_layer {

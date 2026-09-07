@@ -1,14 +1,9 @@
 //! Plain-only, sampled ABBA over a frozen prompt snapshot. No speculative timing rows.
-use memra_engine::dsv4_gpu::{
-    Dsv4Gpu, Dsv4GraphBStats, Dsv4GraphBVariantStats, Dsv4HostDecodeState, Dsv4SampleCfg,
-    dsv4_sample_row,
-};
+use memra_engine::dsv4_gpu::{Dsv4Gpu, Dsv4HostDecodeState, Dsv4SampleCfg, dsv4_sample_row};
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
 use std::{
-    collections::{BTreeMap, BTreeSet},
-    fmt::Write as _,
     path::Path,
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
@@ -22,9 +17,7 @@ enum Change {
     Half2,
     WoA,
     IndexTopk,
-    GraphB,
 }
-
 impl Change {
     fn name(self) -> &'static str {
         match self {
@@ -32,24 +25,19 @@ impl Change {
             Self::Half2 => "half2",
             Self::WoA => "wo-a",
             Self::IndexTopk => "index-topk",
-            Self::GraphB => "graph-b",
         }
     }
     fn gu_m1(self, tuned: bool) -> bool {
         tuned && matches!(self, Self::GuM1)
     }
     fn half2(self, tuned: bool) -> bool {
-        matches!(self, Self::WoA | Self::IndexTopk | Self::GraphB)
-            || (tuned && matches!(self, Self::Half2))
+        matches!(self, Self::WoA | Self::IndexTopk) || (tuned && matches!(self, Self::Half2))
     }
     fn wo_a(self, tuned: bool) -> bool {
-        matches!(self, Self::IndexTopk | Self::GraphB) || (tuned && matches!(self, Self::WoA))
+        matches!(self, Self::IndexTopk) || (tuned && matches!(self, Self::WoA))
     }
     fn index_topk(self, tuned: bool) -> bool {
-        matches!(self, Self::GraphB) || (tuned && matches!(self, Self::IndexTopk))
-    }
-    fn graph_b(self, tuned: bool, prompt: usize) -> bool {
-        tuned && prompt == 8192 && matches!(self, Self::GraphB)
+        tuned && matches!(self, Self::IndexTopk)
     }
 }
 
@@ -84,121 +72,6 @@ fn looped(tokens: &[u32]) -> bool {
     })
 }
 
-fn json_quote(value: &str) -> String {
-    let mut out = String::with_capacity(value.len() + 2);
-    out.push('"');
-    for ch in value.chars() {
-        match ch {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if c.is_control() => {
-                let _ = write!(out, "\\u{:04x}", c as u32);
-            }
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
-}
-
-fn graph_b_nodes_json(nodes: &BTreeMap<String, usize>) -> String {
-    nodes
-        .iter()
-        .map(|(name, count)| format!("{}:{}", json_quote(name), count))
-        .collect::<Vec<_>>()
-        .join(",")
-}
-
-fn graph_b_kernels_json(kernels: &[String]) -> String {
-    kernels
-        .iter()
-        .map(|name| json_quote(name))
-        .collect::<Vec<_>>()
-        .join(",")
-}
-
-fn graph_b_variants_json(stats: &Dsv4GraphBStats) -> String {
-    stats
-        .variants
-        .iter()
-        .map(|variant| {
-            format!(
-                "{{\"layer\":{},\"stage\":{},\"attention_topk\":{},\"slots\":{},\"arm\":{},\"nodes\":{{{}}},\"kernels\":[{}]}}",
-                variant.layer,
-                variant.stage,
-                variant.attention_topk,
-                variant.slots,
-                variant.arm,
-                graph_b_nodes_json(&variant.nodes),
-                graph_b_kernels_json(&variant.kernels),
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(",")
-}
-
-#[derive(Default)]
-struct GraphBCoverage {
-    layers: BTreeSet<usize>,
-    variants_per_layer: BTreeMap<usize, usize>,
-    attention_variants: usize,
-    output_variants: usize,
-    hc_variants: usize,
-}
-
-fn graph_b_kernel_coverage(variant: &Dsv4GraphBVariantStats) -> (bool, bool, bool) {
-    // CUDA's C++ template encodings are case-sensitive (ILi1ELb1E). Preserve
-    // the actual driver names rather than lowercasing their mangled suffixes.
-    let names: Vec<&str> = variant.kernels.iter().map(String::as_str).collect();
-    let has = |needle: &str| names.iter().any(|name| name.contains(needle));
-    // These are the actual Graph-B device symbols, not wrapper/body labels:
-    // sink score/soft/out + rope; grouped wo_a + wo_b GEMM + bf16 conversion;
-    // hc_post followed by the batch HC pre-chain's real kernels.
-    let attention = has("sink_scores_tiled_f32acc")
-        && has("sink_soft_mq_f32acc")
-        && has("sink_out_mq_f32acc")
-        && has("rope");
-    let grouped_wo_a = names.iter().any(|name| {
-        name.contains("dsv4_gemv_fp8_m_kernel")
-            && (name.contains("ILi1ELb1E")
-                || name.contains("<1, true>")
-                || name.contains("<1,true>"))
-    });
-    let regular_wo_b = names.iter().any(|name| {
-        name.contains("dsv4_gemv_fp8_m_kernel")
-            && (name.contains("ILi1ELb0E")
-                || name.contains("<1, false>")
-                || name.contains("<1,false>"))
-    });
-    let output = grouped_wo_a && regular_wo_b && has("cvt_bf16");
-    let hc = has("hc_post")
-        && has("hc_sinkhorn_m")
-        && has("hc_collapse")
-        && has("rowsq_scale")
-        && (has("dots_f32_mrow") || has("dots_f32acc_mrow"))
-        && has("rmsnorm");
-    (attention, output, hc)
-}
-
-fn graph_b_coverage(stats: &Dsv4GraphBStats) -> GraphBCoverage {
-    let mut coverage = GraphBCoverage::default();
-    for variant in &stats.variants {
-        coverage.layers.insert(variant.layer);
-        *coverage
-            .variants_per_layer
-            .entry(variant.layer)
-            .or_insert(0) += 1;
-        let (attention, output, hc) = graph_b_kernel_coverage(variant);
-        coverage.attention_variants += attention as usize;
-        coverage.output_variants += output as usize;
-        coverage.hc_variants += hc as usize;
-    }
-    coverage
-}
-
 struct Ready<'a> {
     gpu: &'a Dsv4Gpu,
     tokenizer: &'a Tokenizer,
@@ -222,7 +95,6 @@ impl Ready<'_> {
         let half2 = change.half2(tuned);
         let wo_a_grouped = change.wo_a(tuned);
         let index_topk_radix = change.index_topk(tuned);
-        let graph_b_enabled = change.graph_b(tuned, self.prompt_len);
         self.gpu.clear_dense_wo_a_grouped_for_gate();
         self.gpu.clear_index_topk_radix_for_gate();
         memra_engine::set_moe_f16g_gu_m1_tc_for_gate(gu_m1);
@@ -234,11 +106,6 @@ impl Ready<'_> {
             .expect("same host C4 snapshot restore");
         self.gpu.set_dense_wo_a_grouped_for_gate(wo_a_grouped);
         self.gpu.set_index_topk_radix_for_gate(index_topk_radix);
-        if graph_b_enabled {
-            self.gpu
-                .set_graph_b_for_state(&mut state, true)
-                .expect("arm Graph-B state");
-        }
         let mut row = self.logits.to_vec();
         let mut tokens = Vec::with_capacity(OUTPUT);
         let mut commits = Vec::with_capacity(OUTPUT);
@@ -293,30 +160,6 @@ impl Ready<'_> {
         let trunk_layers =
             (self.gpu.model.mc.n_layer - self.gpu.model.mc.nextn_predict_layers) as u64;
         let steps = tokens.len().saturating_sub(1) as u64;
-        let graph_b_stats = self
-            .gpu
-            .graph_b_stats_for_state(&state)
-            .expect("Graph-B stats");
-        let graph_b_coverage = graph_b_coverage(&graph_b_stats);
-        if graph_b_enabled {
-            // Keep the real census even if a later coverage/identity assertion fails.
-            // This runs after the wall timer, never inside the performance interval.
-            println!(
-                "GRAPH_B_CENSUS {{\"prompt\":{},\"ordinal\":{},\"captures\":{},\"replays\":{},\"variants\":[{}]}}",
-                self.prompt_len,
-                ordinal,
-                graph_b_stats.captures,
-                graph_b_stats.replays,
-                graph_b_variants_json(&graph_b_stats)
-            );
-        }
-        let graph_b_variant_bound = trunk_layers as usize * 8;
-        let graph_b_max_variants_per_layer = graph_b_coverage
-            .variants_per_layer
-            .values()
-            .copied()
-            .max()
-            .unwrap_or(0);
         assert_eq!(ep_calls, steps * trunk_layers, "whole trunk EP engagement");
         let wo_a_calls = self.gpu.dense_wo_a_grouped_dispatches() - wo_a_before;
         let index_topk_calls = self.gpu.index_topk_radix_dispatches() - index_topk_before;
@@ -332,74 +175,11 @@ impl Ready<'_> {
             },
             "actual top-k selector launches; the short-context control is inert by design"
         );
-        if graph_b_enabled {
-            assert_eq!(
-                graph_b_stats.captures + graph_b_stats.replays,
-                ep_calls,
-                "Graph-B captures plus replays cover every trunk layer step"
-            );
-            assert_eq!(
-                wo_a_calls + graph_b_stats.wo_a_replay_nodes,
-                ep_calls,
-                "legacy wo_a FFI plus actual graph replay nodes cover every trunk layer step"
-            );
-            assert_eq!(
-                graph_b_stats.wo_a_replay_nodes,
-                ep_calls - wo_a_calls,
-                "Graph-B replay wo_a nodes are not a fabricated FFI counter"
-            );
-            assert_eq!(
-                wo_a_calls, graph_b_stats.captures,
-                "the legacy wo_a FFI count is capture-only; replay does not resubmit the body"
-            );
-            assert_eq!(
-                graph_b_coverage.layers.len(),
-                trunk_layers as usize,
-                "Graph-B retained all trunk layers"
-            );
-            assert_eq!(
-                graph_b_coverage.attention_variants,
-                graph_b_stats.variants.len(),
-                "every retained Graph-B variant contains attention and rope kernels"
-            );
-            assert_eq!(
-                graph_b_coverage.output_variants,
-                graph_b_stats.variants.len(),
-                "every retained Graph-B variant contains output projection kernels"
-            );
-            assert_eq!(
-                graph_b_coverage.hc_variants,
-                graph_b_stats.variants.len(),
-                "every retained Graph-B variant contains attention/FFN HC and norm kernels"
-            );
-            assert!(
-                graph_b_stats.variants.len() <= graph_b_variant_bound
-                    && graph_b_max_variants_per_layer <= 8,
-                "Graph-B variant census exceeded the per-layer bound"
-            );
-        } else {
-            assert_eq!(
-                graph_b_stats.captures, 0,
-                "Graph-B captures must be zero when inert"
-            );
-            assert_eq!(
-                graph_b_stats.replays, 0,
-                "Graph-B replays must be zero when inert"
-            );
-            assert_eq!(
-                graph_b_stats.wo_a_replay_nodes, 0,
-                "Graph-B replay nodes must be zero when inert"
-            );
-            assert!(
-                graph_b_stats.variants.is_empty(),
-                "inert Graph-B has no variants"
-            );
-            assert_eq!(
-                wo_a_calls,
-                if wo_a_grouped { ep_calls } else { 0 },
-                "one grouped wo_a submission per trunk layer"
-            );
-        }
+        assert_eq!(
+            wo_a_calls,
+            if wo_a_grouped { ep_calls } else { 0 },
+            "one grouped wo_a submission per trunk layer"
+        );
         assert_eq!(
             gu_m1_calls,
             if gu_m1 { ep_calls * 2 } else { 0 },
@@ -443,26 +223,9 @@ impl Ready<'_> {
         let token_sha256 = token_hash(&tokens);
         let text_sha256 = format!("{:x}", Sha256::digest(text.as_bytes()));
         let state_pos = state.pos;
-        let graph_b_variants = graph_b_variants_json(&graph_b_stats);
-        let graph_b_captures = graph_b_stats.captures;
-        let graph_b_replays = graph_b_stats.replays;
-        let graph_b_invalidations = graph_b_stats.invalidations;
-        let graph_b_nodes = graph_b_stats.nodes;
-        let graph_b_kernels = graph_b_stats.kernels;
-        let graph_b_wo_a_replay_nodes = graph_b_stats.wo_a_replay_nodes;
-        let graph_b_variant_count = graph_b_stats.variants.len();
-        let graph_b_covered_layers = graph_b_coverage.layers.len();
-        let graph_b_attention_coverage = graph_b_coverage.attention_variants;
-        let graph_b_output_coverage = graph_b_coverage.output_variants;
-        let graph_b_hc_coverage = graph_b_coverage.hc_variants;
-        let graph_b_no_cpu_eager_body_under_replay =
-            graph_b_enabled && wo_a_calls == graph_b_stats.captures;
         println!(
-            "MEASURE {{\"mode\":\"{mode}\",\"arm\":\"plain\",\"prompt\":{prompt},\"tuned\":{tuned},\"warmup\":{warmup},\"ordinal\":{ordinal},\"eligible\":{eligible},\"looped\":{excluded_loop},\"eos\":{eos},\"output_tokens\":{output_tokens},\"decode_wall_ns\":{wall_ns},\"first_step_ns\":{first_step_ns},\"capture_included_in_wall\":{graph_b_enabled},\"start_unix_ms\":{start_ms},\"ep_calls\":{ep_calls},\"gu_fuse\":true,\"down_m1_tc\":true,\"route_validate\":false,\"mirror_validate\":false,\"gu_m1\":{gu_m1},\"gu_m1_calls\":{gu_m1_calls},\"wo_a_grouped\":{wo_a_grouped},\"wo_a_calls\":{wo_a_calls},\"index_topk_radix\":{index_topk_radix},\"index_topk_calls\":{index_topk_calls},\"half2\":{half2},\"gu_half2_calls\":{gu_half2_calls},\"down_half2_calls\":{down_half2_calls},\"prefix_graph\":false,\"expert_graph\":false,\"graph_captures\":{graph_b_captures},\"graph_replays\":{graph_b_replays},\"graph_kernel_nodes\":{graph_b_kernels},\"graph_fallbacks\":0,\"c4_recent_rows\":0,\"c4_host_copy_elide\":false,\"graph_b_enabled\":{graph_b_enabled},\"graph_b_captures\":{graph_b_captures},\"graph_b_replays\":{graph_b_replays},\"graph_b_invalidations\":{graph_b_invalidations},\"graph_b_nodes\":{graph_b_nodes},\"graph_b_kernels\":{graph_b_kernels},\"graph_b_wo_a_replay_nodes\":{graph_b_wo_a_replay_nodes},\"graph_b_no_cpu_eager_body_under_replay\":{graph_b_no_cpu_eager_body_under_replay},\"graph_b_variant_count\":{graph_b_variant_count},\"graph_b_covered_layers\":{graph_b_covered_layers},\"graph_b_attention_coverage\":{graph_b_attention_coverage},\"graph_b_output_coverage\":{graph_b_output_coverage},\"graph_b_hc_coverage\":{graph_b_hc_coverage},\"graph_b_hc_variant_count\":{graph_b_hc_coverage},\"graph_b_max_variants_per_layer\":{graph_b_max_variants_per_layer},\"graph_b_variant_bound\":{graph_b_variant_bound},\"graph_b_variants\":[{graph_b_variants}],\"token_sha256\":\"{token_sha256}\",\"logits_sha256\":\"{logits_hash}\",\"cache_sha256\":\"{cache_hash}\",\"text_sha256\":\"{text_sha256}\",\"commit_ns\":{commits:?},\"tokens\":{tokens:?},\"state_pos\":{state_pos}}}"
+            "MEASURE {{\"mode\":\"{mode}\",\"arm\":\"plain\",\"prompt\":{prompt},\"tuned\":{tuned},\"warmup\":{warmup},\"ordinal\":{ordinal},\"eligible\":{eligible},\"looped\":{excluded_loop},\"eos\":{eos},\"output_tokens\":{output_tokens},\"decode_wall_ns\":{wall_ns},\"first_step_ns\":{first_step_ns},\"capture_included_in_wall\":false,\"start_unix_ms\":{start_ms},\"ep_calls\":{ep_calls},\"gu_fuse\":true,\"down_m1_tc\":true,\"route_validate\":false,\"mirror_validate\":false,\"gu_m1\":{gu_m1},\"gu_m1_calls\":{gu_m1_calls},\"wo_a_grouped\":{wo_a_grouped},\"wo_a_calls\":{wo_a_calls},\"index_topk_radix\":{index_topk_radix},\"index_topk_calls\":{index_topk_calls},\"half2\":{half2},\"gu_half2_calls\":{gu_half2_calls},\"down_half2_calls\":{down_half2_calls},\"prefix_graph\":false,\"expert_graph\":false,\"graph_captures\":0,\"graph_replays\":0,\"graph_kernel_nodes\":0,\"graph_fallbacks\":0,\"c4_recent_rows\":0,\"c4_host_copy_elide\":false,\"token_sha256\":\"{token_sha256}\",\"logits_sha256\":\"{logits_hash}\",\"cache_sha256\":\"{cache_hash}\",\"text_sha256\":\"{text_sha256}\",\"commit_ns\":{commits:?},\"tokens\":{tokens:?},\"state_pos\":{state_pos}}}"
         );
-        self.gpu
-            .clear_graph_b_for_state(&mut state)
-            .expect("clear Graph-B state");
         Identity {
             tokens,
             logits: logits_hash,
@@ -477,14 +240,13 @@ fn main() {
     assert_eq!(
         args.len(),
         4,
-        "usage: dsv4_plain_perf_gate <model-dir> <source.txt> gu-m1|half2|wo-a|index-topk|graph-b|all"
+        "usage: dsv4_plain_perf_gate <model-dir> <source.txt> gu-m1|half2|wo-a|index-topk|all"
     );
     let modes = match args[3].as_str() {
         "gu-m1" => vec![Change::GuM1],
         "half2" => vec![Change::Half2],
         "wo-a" => vec![Change::WoA],
         "index-topk" => vec![Change::IndexTopk],
-        "graph-b" => vec![Change::GraphB],
         "all" => vec![Change::IndexTopk],
         _ => panic!("unknown plain gate mode"),
     };
@@ -599,60 +361,4 @@ fn main() {
         }
     }
     println!("PASS plain-only sampled performance gate");
-}
-
-#[cfg(test)]
-mod coverage_tests {
-    use super::*;
-
-    fn real_symbol_variant() -> Dsv4GraphBVariantStats {
-        Dsv4GraphBVariantStats {
-            layer: 2,
-            stage: 0,
-            attention_topk: 512,
-            slots: 1024,
-            arm: 0,
-            nodes: BTreeMap::new(),
-            kernels: [
-                "dsv4_sink_scores_tiled_f32acc_kernel",
-                "dsv4_sink_soft_mq_f32acc_kernel",
-                "dsv4_sink_out_mq_f32acc_kernel",
-                "dsv4_rope_kernel",
-                "_Z22dsv4_gemv_fp8_m_kernelILi1ELb1EEv",
-                "_Z22dsv4_gemv_fp8_m_kernelILi1ELb0EEv",
-                "dsv4_cvt_bf16_kernel",
-                "dsv4_hc_post_kernel",
-                "dsv4_hc_sinkhorn_m_kernel",
-                "dsv4_hc_collapse_kernel",
-                "dsv4_rowsq_scale_f32acc_kernel",
-                "_Z29dsv4_dots_f32acc_mrow_kernelILi1EEv",
-                "dsv4_rmsnorm_f32acc_kernel",
-            ]
-            .into_iter()
-            .map(str::to_owned)
-            .collect(),
-        }
-    }
-
-    #[test]
-    fn raw_cuda_template_case_is_preserved_by_coverage() {
-        assert_eq!(
-            graph_b_kernel_coverage(&real_symbol_variant()),
-            (true, true, true)
-        );
-    }
-
-    #[test]
-    fn wrapper_name_cannot_replace_grouped_device_kernel() {
-        let mut variant = real_symbol_variant();
-        variant.kernels[4] = "memra_dsv4_gemv_fp8_grouped_m1".into();
-        assert!(!graph_b_kernel_coverage(&variant).1);
-    }
-
-    #[test]
-    fn wrong_batch_template_cannot_prove_plain_output_coverage() {
-        let mut variant = real_symbol_variant();
-        variant.kernels[4] = "_Z22dsv4_gemv_fp8_m_kernelILi2ELb1EEv".into();
-        assert!(!graph_b_kernel_coverage(&variant).1);
-    }
 }

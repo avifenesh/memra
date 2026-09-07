@@ -1305,7 +1305,6 @@ run the same gates directly.
 | `MEMRA_DSV4_GATE_REPEATS` | `3` (measurement binary only) | Repeat count for legacy `dsv4_decode_rate_gate` paired ABBA modes; `1` is a two-row-per-arm smoke and `3` yields six rows per arm. The independent `dsv4_plain_perf_gate` fixes three repeats in code and measures only plain decode with kernel/graph engagement plus output/logit/KV identity. This value does not select a serving program. |
 | `set_moe_f16g_gu_half2_for_gate` / `set_moe_f16g_down_m1_half2_for_gate` (process API only) | **OFF**, decide-by: 2026-09-21 | Measurement-only ModelOpt packed half2 stores in GU and M1-down. OFF preserves the scalar dequant loader; clearing the overrides is the rollback. No environment or serving switch. The plain `half2` cell checks both actual enqueue counts, tokens, final logits and committed KV. Finite conversion, paired memcheck full-chain, and full-model exactness pass. Three ABBA cycles measure +0.646% at 256 and +1.014% at 8192, a small gain retained for controlled composition, not a serving flip. Record: `research/dsv4f-2card-1m-20260904/expert-half2-20260907.md`. The standalone conversion micro is not engine performance evidence. |
 | `Dsv4Gpu::set_dense_wo_a_grouped_for_gate` (process API only) | **OFF**, decide-by: 2026-09-21 | FP8 plain t=1 wo_a groups use one launch rather than eight, sharing the original per-output accumulation and 128-leaf reduction. BF16, prefill and t>1 retain the loop; clearing after draining is rollback. No environment/serving switch. Paired memcheck component and 28-row sampled token/logit/KV gates pass. At fixed half2 ON, +1.897% at 256 and +1.491% at 8192 prompt tokens; actual grouped submissions equal 43 per step only in the candidate. Small controlled win, not a serving flip. Record: `research/dsv4f-2card-1m-20260904/wo-a-20260907.md`. |
-| `Dsv4Gpu::set_graph_b_for_state` (process API only) | **OFF**, decide-by: 2026-09-21 | Gate-only Graph-B retains the post-C4 sink-attention through FFN-normalization body for plain device t=1 matrix decode at an explicit >=8K context guard. Eager C4 gather, cache/index state, EP, PP handoff, MoE, and commit remain outside the graph. The key includes realized slots, attention top-k, layer/stage, stable scalar/workspace pointers, and math arms; stats report every retained variant's stage/layer/slots and kernel census. Capture's first launch is charged; replays never resubmit the body. No environment or serving switch; full-model identity, sanitizer, coverage, and target-rate receipt pending. |
 
 ### Serving (memra-server)
 
@@ -1424,6 +1423,14 @@ prefix arm regressed 0.31% at 256 and 1.03% at 8192 prompt tokens. Excluding
 capture time did not reverse the sign. This is not a verdict on whole-round
 or rank-local expert graphs. Record:
 `research/dsv4f-2card-1m-20260904/plain-fronts-20260907.md`.
+
+DSV4 Graph-B attention-tail capture and its process APIs were removed on
+2026-09-07 after the 28-row full ABBA comparison. Token, final-logit, and KV
+identity were exact; at 8192 tokens OFF was 28.5345899 tok/s versus ON
+28.4162414 tok/s (-0.41475%), with post-capture delta -0.35762%. The 256-token
+control was inert (32.20293 versus 32.18989 tok/s). This is a measured losing
+performance door, not a correctness failure. Record:
+`research/dsv4f-2card-1m-20260904/graph-b-verdict-20260907.md`.
 
 `MEMRA_SPEC_DSPARK` (lived hours, 2026-07-30): DSpark-class marginal-rate verify window
 (arXiv 2607.05147) — S_{j+1}·T(j) > E[tok](j)·t_draft with profiled t_draft/t_verify EMAs.
