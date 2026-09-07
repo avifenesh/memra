@@ -1934,10 +1934,13 @@ template<int Projections>
 static __global__ void moe_m1_splitk_reduce_kernel(
         const float* partial, float* out, const float* row_scale,
         const float* macro_g, const float* macro_u, const float* route_w,
-        int slots, int out_f, float limit){
+        int slots, int out_f, float limit, const int* ex_off, int n_active){
     const int c = blockIdx.x * blockDim.x + threadIdx.x;
     if(c >= slots * out_f) return;
     const int row = c / out_f, col = c % out_f;
+    // With route readback disabled, slots is only a launch upper bound.
+    // The device CSR endpoint owns the true count; never consume tail scratch.
+    if(row >= ex_off[n_active]){ out[c] = 0.0f; return; }
     float v[Projections] = {};
     #pragma unroll
     for(int p = 0; p < Projections; ++p){
@@ -2506,7 +2509,8 @@ int memra_moe_kq_gemm_sk_m1_half2(
 }
 
 // Scratch has slots * out_f * 16 * (gu ? 2 : 1) floats. The Rust caller
-// admits only unique top-k M=1 routes; slots is the compact live-slot count.
+// admits only unique top-k M=1 routes; slots is an upper bound when route
+// readback is disabled. Both kernels use the device CSR prefix as authority.
 int memra_moe_m1_splitk(
         const unsigned long long* table, int n_expert, const int* ex_ids,
         const void* act_f16, float* out, const float* row_scale,
@@ -2533,9 +2537,9 @@ int memra_moe_m1_splitk(
     cudaError_t e = cudaGetLastError();
     if(e) return 1000 + (int)e;
     if(gu) moe_m1_splitk_reduce_kernel<2><<<(slots*out_f+255)/256,256,0,st>>>(
-        partial,out,row_scale,macro_g,macro_u,route_w,slots,out_f,limit);
+        partial,out,row_scale,macro_g,macro_u,route_w,slots,out_f,limit,ex_off,n_active);
     else moe_m1_splitk_reduce_kernel<1><<<(slots*out_f+255)/256,256,0,st>>>(
-        partial,out,row_scale,macro_g,macro_u,route_w,slots,out_f,limit);
+        partial,out,row_scale,macro_g,macro_u,route_w,slots,out_f,limit,ex_off,n_active);
     e = cudaGetLastError();
     return e ? 1000 + (int)e : 0;
 }
@@ -2551,6 +2555,14 @@ int memra_moe_m1_splitk_component(
         const int* ex_off, int n_active, int in_f, int out_f,
         float limit, int slots, int gu, float* ignored_partial, void* stream){
     cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
+    int observed=0;
+    cudaError_t observed_error = cudaMemcpyAsync(&observed,ex_off+n_active,sizeof(int),cudaMemcpyDeviceToHost,st);
+    if(observed_error) return 1000 + int(observed_error);
+    observed_error = cudaStreamSynchronize(st);
+    if(observed_error) return 1000 + int(observed_error);
+    if(observed < 0 || observed > slots) return 40005;
+    if(observed == 0) return 40010; // no vacuous component success
+    slots = observed;
     const size_t n = size_t(slots) * out_f, scratch_n = n * 16 * (gu ? 2 : 1);
     struct Buffers {
         float *a=nullptr, *b=nullptr, *p=nullptr;
@@ -2562,15 +2574,22 @@ int memra_moe_m1_splitk_component(
     SK_CHECK(cudaMalloc(&b.a,(n+128)*4));
     SK_CHECK(cudaMalloc(&b.b,(n+128)*4));
     SK_CHECK(cudaMalloc(&b.p,(scratch_n+128)*4));
-    SK_CHECK(cudaMemsetAsync(b.a,0x7f,(n+128)*4,st));
-    SK_CHECK(cudaMemsetAsync(b.b,0x7f,(n+128)*4,st));
-    SK_CHECK(cudaMemsetAsync(b.p,0x7f,(scratch_n+128)*4,st));
+    SK_CHECK(cudaMemsetAsync(b.a,0xff,(n+128)*4,st));
+    SK_CHECK(cudaMemsetAsync(b.b,0xff,(n+128)*4,st));
+    SK_CHECK(cudaMemsetAsync(b.p,0xff,(scratch_n+128)*4,st));
     SK_CHECK(cudaEventCreate(&b.begin)); SK_CHECK(cudaEventCreate(&b.end));
     std::vector<int> offsets(n_active+1), ids(n_active);
     SK_CHECK(cudaMemcpyAsync(offsets.data(),ex_off,offsets.size()*4,cudaMemcpyDeviceToHost,st));
     SK_CHECK(cudaMemcpyAsync(ids.data(),ex_ids,ids.size()*4,cudaMemcpyDeviceToHost,st));
     SK_CHECK(cudaStreamSynchronize(st));
     int device=0; SK_CHECK(cudaGetDevice(&device));
+    cudaFuncAttributes attr; int occ=0, sms=0, l2=0;
+    const void* kernel = gu ? (const void*)moe_m1_splitk_partial_kernel<2> : (const void*)moe_m1_splitk_partial_kernel<1>;
+    SK_CHECK(cudaFuncGetAttributes(&attr,kernel));
+    SK_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&occ,kernel,128,0));
+    SK_CHECK(cudaDeviceGetAttribute(&sms,cudaDevAttrMultiProcessorCount,device));
+    SK_CHECK(cudaDeviceGetAttribute(&l2,cudaDevAttrL2CacheSize,device));
+    printf("SPLITK_RESOURCES device=%d gu=%d sms=%d blocks_per_sm=%d registers=%d shared_bytes=%zu local_bytes=%zu l2_bytes=%d regime=warm_matched_planes\n",device,gu,sms,occ,attr.numRegs,attr.sharedSizeBytes,attr.localSizeBytes,l2);
     int live=0;
     for(int g=0;g<n_active;++g){
         if(offsets[g+1]-offsets[g] < 0 || offsets[g+1]-offsets[g] > 1) return 40005;
@@ -2626,7 +2645,7 @@ int memra_moe_m1_splitk_component(
         SK_CHECK(cudaMemcpyAsync(guard,base,256,cudaMemcpyDeviceToHost,st));
         SK_CHECK(cudaMemcpyAsync(guard+64,base+64+len,256,cudaMemcpyDeviceToHost,st));
         SK_CHECK(cudaStreamSynchronize(st));
-        for(uint32_t v:guard) if(v!=0x7f7f7f7f) return 40008;
+        for(uint32_t v:guard) if(v!=0xffffffff) return 40008;
     }
     printf("SPLITK_COMPONENT device=%d gu=%d slots=%d blocks=%d max_abs=%.9g max_rel=%.9g peak=%.9g oracle_us=%.6f candidate_us=%.6f speedup=%.6f numeric_ok=%d finite=1 deterministic=1 canaries=1 launches_per_arm=20 numeric_class=moe_m1_splitk_f32_fixed_order\n",
         device,gu,slots,slots*(out_f/64)*16,max_abs,max_rel,peak,totals[0]*50,totals[1]*50,totals[0]/totals[1],numeric_ok);

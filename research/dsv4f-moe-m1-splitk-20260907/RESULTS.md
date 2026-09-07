@@ -6,7 +6,11 @@ The existing CSR prefix sums `ceil(m_e/32) * ceil(out_f/64)` for eligible
 nonempty groups. For three M=1 experts, GU has 96 tiles and down has 192.
 The profiled 564-block launch therefore has 468 and 372 idle blocks respectively.
 All four warps load weights; only warps 0 and 2 execute valid-row MMA in M1.
-Half2 changes stores, not the tile count. GU reads 25,165,824 packed-weight bytes
+Half2 changes stores, not the tile count. With route validation disabled,
+Rust `live_slots` is six on each rank, an upper bound rather than the observed
+local count. The device CSR endpoint remains authoritative. Candidate launch
+bounds are 3,072/6,144 blocks, with 1,536/3,072 useful blocks for three local
+experts; the reduction explicitly zeros the inactive slot tail. GU reads 25,165,824 packed-weight bytes
 plus 3,145,728 scale bytes. Down reads 12,582,912 plus 1,572,864 scale bytes.
 At 99/40 us those are 286/354 GB/s including scales, before cache effects.
 
