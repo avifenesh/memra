@@ -9255,8 +9255,32 @@ impl Dsv4Gpu {
                 )?;
                 drop(ar_outputs);
             }
-            work.verify.open = Some((state.pos, 1));
-            self.commit_verify_dev(state, &mut work.verify, 1)?;
+            let pos0 = state.pos;
+            self.commit_verify_dev_plane(
+                &mut state.caches,
+                &mut work.verify.layers,
+                &mut work.verify.ws,
+                Some(0),
+                pos0,
+                1,
+                1,
+            )?;
+            let rank1_layers = work
+                .verify
+                .tp_ep_layers
+                .as_mut()
+                .ok_or("TP/EP rank-1 checkpoints missing")?;
+            self.commit_verify_dev_plane(
+                &mut rank1_caches,
+                rank1_layers,
+                &mut work.verify.ws,
+                Some(1),
+                pos0,
+                1,
+                1,
+            )?;
+            drop(rank1_layers);
+            state.pos = pos0 + 1;
             let head_ws = &mut work.verify.ws[1];
             self.head_logits_batch_dev(head_ws, 1, false)?;
             let stream = self.stages[1].gpu.stream();
@@ -15293,9 +15317,6 @@ impl Dsv4Gpu {
         vstate: &mut VerifyState,
         n_commit: usize,
     ) -> Res<()> {
-        if self.topology.is_tp_ep() {
-            return self.commit_tp_ep_verify_dev(state, vstate, n_commit);
-        }
         crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
         crate::dsv4_grouped::ensure_program(self.matrix_moe, vstate.matrix_moe)?;
         let (pos0, t) = vstate
@@ -15445,164 +15466,6 @@ impl Dsv4Gpu {
                 .stream()
                 .synchronize()
                 .map_err(e("commit sync"))?;
-        }
-        Ok(())
-    }
-
-    /// Commit both replicated TP/EP cache planes.  The ordinary commit path
-    /// owns only `state.caches`; routing TP/EP through it would leave rank 1's
-    /// transient compressor/indexer rows stale and make the next token read an
-    /// old state.  This helper keeps the same ring/scatter and compressor
-    /// rollback order for each rank, then advances the shared position once.
-    fn commit_tp_ep_verify_dev(
-        &self,
-        state: &mut DecodeState,
-        vstate: &mut VerifyState,
-        n_commit: usize,
-    ) -> Res<()> {
-        crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
-        crate::dsv4_grouped::ensure_program(self.matrix_moe, vstate.matrix_moe)?;
-        let (pos0, t) = vstate
-            .open
-            .take()
-            .ok_or_else(|| "TP/EP commit without an open round".to_string())?;
-        assert!(
-            n_commit >= 1 && n_commit <= t,
-            "TP/EP commit {n_commit} outside round width {t}"
-        );
-        let d = self.model.cfg();
-        let hd = d.head_dim as usize;
-        let win = d.sliding_window as usize;
-        let (ring_start, slot_rows) = ring_commit_plan(pos0, n_commit, win);
-        let ring_keep = slot_rows.len();
-        let mut rank1_caches = state
-            .tp_ep_caches
-            .as_mut()
-            .ok_or("TP/EP rank-1 caches missing")?;
-        let mut rank1_layers = vstate
-            .tp_ep_layers
-            .as_mut()
-            .ok_or("TP/EP rank-1 checkpoints missing")?;
-        let (rank0_ws, rank1_ws) = vstate.ws.split_at_mut(1);
-        let rank0_ws = &mut rank0_ws[0];
-        let rank1_ws = &mut rank1_ws[0];
-        for il in 0..self.topology.layers {
-            let il = il as usize;
-            self.commit_tp_ep_rank_layer(
-                0,
-                pos0,
-                t,
-                n_commit,
-                ring_start,
-                ring_keep,
-                &slot_rows,
-                &mut state.caches[il],
-                &mut vstate.layers[il],
-                rank0_ws,
-            )?;
-            self.commit_tp_ep_rank_layer(
-                1,
-                pos0,
-                t,
-                n_commit,
-                ring_start,
-                ring_keep,
-                &slot_rows,
-                &mut rank1_caches[il],
-                &mut rank1_layers[il],
-                rank1_ws,
-            )?;
-        }
-        for stage in &self.stages {
-            stage
-                .gpu
-                .ctx
-                .bind_to_thread()
-                .map_err(e("TP/EP commit sync context"))?;
-            stage
-                .gpu
-                .stream()
-                .synchronize()
-                .map_err(e("TP/EP commit sync"))?;
-        }
-        state.pos = pos0 + n_commit;
-        Ok(())
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn commit_tp_ep_rank_layer(
-        &self,
-        rank: usize,
-        pos0: usize,
-        t: usize,
-        n_commit: usize,
-        ring_start: usize,
-        ring_keep: usize,
-        slot_rows: &[i32],
-        cache: &mut LayerCache,
-        lck: &mut LayerCkptDev,
-        vws: &mut VerifyWs,
-    ) -> Res<()> {
-        let st = &self.stages[rank];
-        st.gpu
-            .ctx
-            .bind_to_thread()
-            .map_err(e("TP/EP commit context"))?;
-        let stream = st.gpu.stream();
-        let hd = self.model.cfg().head_dim as usize;
-        let win = self.model.cfg().sliding_window as usize;
-        let trans_base = if cache.c4_host.is_some() {
-            win
-        } else {
-            lck.trans_base
-        };
-        let src = cache
-            .kvc
-            .slice((trans_base + ring_start) * hd..(trans_base + n_commit) * hd);
-        stream
-            .memcpy_dtod(&src, &mut vws.bounce.slice_mut(0..ring_keep * hd))
-            .map_err(e("TP/EP commit bounce"))?;
-        stream
-            .memcpy_htod(slot_rows, &mut vws.slot_rows.slice_mut(0..ring_keep))
-            .map_err(e("TP/EP commit slot rows"))?;
-        unsafe {
-            ck(
-                "TP/EP scatter rows commit",
-                k::memra_dsv4_scatter_rows(
-                    dpf!(vws.bounce, &stream),
-                    dpm!(cache.kvc, &stream),
-                    vws.slot_rows.device_ptr(&stream).0 as *const i32,
-                    ring_keep as i32,
-                    hd as i32,
-                    sp(&stream),
-                ),
-            )?;
-        }
-        if let Some(ckd) = &lck.cmp {
-            self.cmp_rollback_replay_dev(
-                st,
-                ckd,
-                n_commit,
-                t,
-                pos0,
-                &mut vws.cmp_shift,
-                cache.pend_kv.as_mut().expect("TP/EP pend kv"),
-                cache.pend_score.as_mut().expect("TP/EP pend score"),
-                &mut cache.n_blocks,
-            )?;
-        }
-        if let Some(ckd) = &lck.idx {
-            self.cmp_rollback_replay_dev(
-                st,
-                ckd,
-                n_commit,
-                t,
-                pos0,
-                &mut vws.cmp_shift,
-                cache.ipend_kv.as_mut().expect("TP/EP index pend kv"),
-                cache.ipend_score.as_mut().expect("TP/EP index pend score"),
-                &mut cache.i_blocks,
-            )?;
         }
         Ok(())
     }
