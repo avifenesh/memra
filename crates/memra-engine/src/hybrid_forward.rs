@@ -9691,39 +9691,18 @@ impl HybridModel {
         // to the flag being off.
         // A chain returning Ok(None) is a cuBLASLt shape DECLINE (announced once per shape);
         // the let-chain then simply does not match and the f32 kernels below serve the call.
-        // glm5 TP composition guard (lane/glm5-composition): the TC prefill chain's gate
-        // ran on the FULL-head geometry only; a head shard (any rank) declines it by name
-        // and falls through to the f32 kernels below — behavior identical to the flag
-        // being off for that layer, announced once. The composed door re-gates on the box
-        // (real-artifact kv_rank 512 shapes; the rig fixtures are kv_rank 16 and never
-        // reach this chain).
-        // The announce shares the chain's OWN conjuncts (gathered + !portable_mma_gated),
-        // so it can never blame TP for a decline the missing DSA gather or the MMA gate
-        // caused (#82 review).
-        if mla.tp_shard
-            && gathered.is_some()
-            && dr == 0
-            && r == 512
-            && t >= 16
-            && !crate::portable_mma_gated()
-            && mla_tc_prefill_enabled()
-        {
-            static TP_TC_DECLINE: std::sync::Once = std::sync::Once::new();
-            TP_TC_DECLINE.call_once(|| {
-                eprintln!(
-                    "[mla-tc-prefill] DECLINED on glm5-TP head shards: the door's gate ran \
-                     on full-head geometry; shards ride the f32 prefill kernels until the \
-                     TP composition gate lands (pin MEMRA_MLA_TC_PREFILL=0 to silence)"
-                );
-            });
-        }
+        // glm5 TP head shards ride this chain too (2026-09-07, lane/glm5-tp-split-grouped-prime):
+        // the chain is geometry-parametrized (nh/dn/dv/r from the layer's own geom, 32 heads
+        // on a shard) and its class is the served unsharded walk's. tptrace7 on the 2x B200
+        // pair: with shards on the f32 kernels, `memra_mla_attn_gathered_split_kernel` was 88 x
+        // 244 ms = 21.5 s of a 31.8 s 32k prime per rank while PP-2 primed the same prompt in
+        // 7.4 s. Receipt: the prime with the door on vs off on the shards, ids equal.
         if let Some((idx, slots)) = &gathered
             && dr == 0
             && r == 512
             && t >= 16
             && !rows_exact // verify-batch stays on the decode-exact classes (t <= 15 anyway)
             && !crate::portable_mma_gated()
-            && !mla.tp_shard
             && mla_tc_prefill_enabled()
             && let Some(attn) = self.mla_tc_prefill_chain(
                 e, wk_b, wv_b, q_nope, latent, idx, *slots, t, t_kv, nh, dn, dv, r, g.scale,
