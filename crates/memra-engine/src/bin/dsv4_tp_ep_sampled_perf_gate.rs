@@ -352,6 +352,10 @@ fn main() {
 
     Dsv4Gpu::set_tp_ep_topology_for_gate(true);
     println!(
+        "NUMERIC_CLASS {}",
+        memra_engine::dsv4_gpu::TP_EP_RANK_ORDER_NUMERIC_CLASS
+    );
+    println!(
         "PROTOCOL {{\"plain_only\":true,\"sampled\":true,\"topology\":\"tp_ep_all_layers\",\"prompt_tokens\":{PROMPT_TOKENS},\"output_tokens\":{OUTPUT_TOKENS},\"repeats\":{REPEATS},\"temperature\":1.0,\"top_p\":1.0,\"top_k\":0,\"seed\":20260907,\"source_sha256\":\"{SOURCE_SHA256}\",\"speculative\":false,\"pp_timing\":false,\"cache_hash_in_timing\":false}}"
     );
     let gpu = Dsv4Gpu::load(
