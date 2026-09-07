@@ -2748,7 +2748,7 @@ pub(crate) fn dspark_boundary_split(
 /// greedy decode with 13 compactions on the request path; a 30k-prompt session holds 166 MB
 /// instead of 1.2 GB). `MEMRA_DFLASH_KV_RING=0` is the rollback seam: the pre-lane program
 /// exactly (base 0, `phys_rows == cap + block`, nothing compacts).
-pub(crate) fn dflash_kv_ring_on() -> bool {
+pub fn dflash_kv_ring_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_DFLASH_KV_RING").as_deref() != Ok("0"))
 }
@@ -2802,6 +2802,42 @@ pub(crate) fn ring_plan(
     }
 }
 
+/// Physical rows one DflashKv holds for a request context cap: two windows plus a block
+/// under the ring (so a compaction lands once per window of decode, never on consecutive
+/// rounds; never more than the door-off size for a short cap), the whole cap plus a block
+/// with the ring off. ONE definition, shared by the allocation (`DflashKv::new`) and the
+/// admission charge (`dflash_kv_resident_bytes`).
+pub fn dflash_kv_phys_rows(cfg: &DflashCfg, cap: usize, ring_on: bool) -> usize {
+    let window_rows = cfg.sliding_window.saturating_add(cfg.block_size);
+    if ring_on {
+        (2 * window_rows + cfg.block_size).min(cap + cfg.block_size)
+    } else {
+        cap + cfg.block_size
+    }
+}
+
+/// Bytes one DflashKv holds resident for a request context cap (K and V, f32, every draft
+/// layer): the per-session draft-plane charge admission makes for a dspark request
+/// (memra#302). With the ring on this is a constant for any prompt above two windows
+/// (170 MB at the q38 geometry); with it off it grows with the cap, which is what the
+/// pre-lane program allocated and never charged.
+pub fn dflash_kv_resident_bytes(cfg: &DflashCfg, cap: usize, ring_on: bool) -> usize {
+    dflash_kv_phys_rows(cfg, cap, ring_on)
+        * cfg.n_kv
+        * cfg.head_dim
+        * std::mem::size_of::<f32>()
+        * 2
+        * cfg.n_layer
+}
+
+impl DflashDraft {
+    /// The admission charge for one session of this drafter at `cap` under the live ring
+    /// door (see `dflash_kv_resident_bytes`).
+    pub fn resident_kv_bytes(&self, cap: usize) -> usize {
+        dflash_kv_resident_bytes(&self.cfg, cap, dflash_kv_ring_on())
+    }
+}
+
 impl DflashKv {
     pub fn new(
         e: &Engine,
@@ -2810,13 +2846,7 @@ impl DflashKv {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let rowsz = cfg.n_kv * cfg.head_dim;
         let window_rows = cfg.sliding_window.saturating_add(cfg.block_size);
-        // Ring: two windows plus a block, so a compaction lands once per window of decode,
-        // never on consecutive rounds. Never more than the door-off size for a short cap.
-        let phys_rows = if dflash_kv_ring_on() {
-            (2 * window_rows + cfg.block_size).min(cap + cfg.block_size)
-        } else {
-            cap + cfg.block_size
-        };
+        let phys_rows = dflash_kv_phys_rows(cfg, cap, dflash_kv_ring_on());
         let mut k = Vec::with_capacity(cfg.n_layer);
         let mut v = Vec::with_capacity(cfg.n_layer);
         for _ in 0..cfg.n_layer {
@@ -7412,6 +7442,49 @@ mod dflash_kv_ring_tests {
                 keep_from: 3000,
                 phys_rows: (P - 8) + 16 + W
             }
+        );
+    }
+
+    #[test]
+    fn resident_bytes_are_constant_under_the_ring_and_linear_without_it() {
+        // The q38 geometry: 8 kv-heads x 128 x f32 x K+V x 5 layers = 40,960 B per row.
+        let cfg = super::DflashCfg {
+            hidden: 5376,
+            n_head: 64,
+            n_kv: 8,
+            head_dim: 128,
+            n_ff: 10752,
+            n_layer: 5,
+            eps: 1e-6,
+            rope_theta: 1e6,
+            block_size: 16,
+            mask_token_id: 4,
+            target_layer_ids: vec![1, 12, 23, 35, 46, 57],
+            sliding_window: 2048,
+            layer_sliding: vec![true, true, true, true, false],
+            strategy_dspark: false,
+            is_causal: None,
+        };
+        let row = 8 * 128 * 4 * 2 * 5;
+        assert_eq!(row, 40_960);
+        // Ring: 2 x (2048 + 16) + 16 = 4,144 rows for any cap above it.
+        assert_eq!(
+            super::dflash_kv_resident_bytes(&cfg, 30_000, true),
+            4_144 * row
+        );
+        assert_eq!(
+            super::dflash_kv_resident_bytes(&cfg, 262_144, true),
+            4_144 * row
+        );
+        // A short cap stays below the ring size (cap + block).
+        assert_eq!(
+            super::dflash_kv_resident_bytes(&cfg, 1_000, true),
+            1_016 * row
+        );
+        // Door off: the whole cap plus a block, the pre-lane allocation.
+        assert_eq!(
+            super::dflash_kv_resident_bytes(&cfg, 30_000, false),
+            30_016 * row
         );
     }
 
