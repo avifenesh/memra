@@ -406,9 +406,17 @@ fn main() {
         let mut state = gpu
             .alloc_decode_state_for_transient(16, 1)
             .expect("component state");
-        gpu.prefill_with_cache_chunked(&prompt[..1], &mut state, 1)
-            .expect("real-token component");
-        println!("PASS real routed M1 split-K component");
+        for token in 0..8 {
+            memra_engine::set_moe_m1_splitk_component_token_for_gate(token);
+            if token == 0 {
+                gpu.prefill_with_cache_chunked(&prompt[..1], &mut state, 1)
+                    .expect("real-token component prime");
+            } else {
+                gpu.decode_step(prompt[token], &mut state)
+                    .expect("real-token component continuation");
+            }
+        }
+        println!("PASS real routed M1 split-K component tokens=8");
         return;
     }
     let arms: &[bool] = if paired { &[false, true] } else { &[splitk] };

@@ -297,7 +297,7 @@ pub fn clear_moe_f16g_m1_tc_for_gate() {
 /// Experimental M=1 numeric class. Set before loading or starting a request,
 /// and only change after draining all ranks. No environment or serving arm.
 static MOE_M1_SPLITK: AtomicI8 = AtomicI8::new(0);
-pub const MOE_M1_SPLITK_NUMERIC_CLASS: &str = "moe_m1_splitk_f32_fixed_order";
+pub const MOE_M1_SPLITK_NUMERIC_CLASS: &str = "moe_m1_adaptive_splitk_f32_fixed_order";
 pub fn set_moe_m1_splitk_for_gate(enabled: bool) -> bool {
     MOE_M1_SPLITK.swap(enabled as i8, Ordering::AcqRel) != 0
 }
@@ -311,6 +311,16 @@ pub static MOE_M1_SPLITK_DOWN_DISPATCHES: std::sync::atomic::AtomicU64 =
 static MOE_M1_SPLITK_COMPONENT: AtomicI8 = AtomicI8::new(0);
 pub fn set_moe_m1_splitk_component_for_gate(enabled: bool) {
     MOE_M1_SPLITK_COMPONENT.store(enabled as i8, Ordering::Release);
+}
+
+/// Arm first-layer component capture for the next real routed token. The gate
+/// calls this after the previous token has drained, never during a request run.
+pub fn set_moe_m1_splitk_component_token_for_gate(token: usize) {
+    assert!(token < i32::MAX as usize);
+    unsafe {
+        mmq_ffi::memra_moe_m1_splitk_component_token(token as i32);
+    }
+    dsv4_grouped::reset_splitk_component_token();
 }
 
 /// DSV4 matrix plain-only GU tensor-core m_e=1 work-elision candidate. This

@@ -1197,6 +1197,7 @@ unsafe extern "C" {
         partial: *mut f32,
         stream: *mut core::ffi::c_void,
     ) -> i32;
+    pub fn memra_moe_m1_splitk_component_token(token: i32);
     pub fn memra_moe_m1_splitk_component(
         table: *const u64,
         n_expert: i32,

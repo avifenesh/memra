@@ -1804,10 +1804,19 @@ moe_kq_sktail_gu_kernel(
     }
 }
 
-// Numeric class moe_m1_splitk_f32_fixed_order. Sixteen contiguous K slices.
-// Each slice uses the original ModelOpt half operands and ascending m16n8k16
-// chain. The second pass adds slices 0..15 with explicit f32 round-to-nearest,
-// then applies the original epilogue. No atomic operations or cross-CTA races.
+// Numeric class moe_m1_adaptive_splitk_f32_fixed_order. The device CSR live
+// count determines the split count. Integer K-block boundaries partition all K
+// exactly, including non-divisors such as 13 slices. MMA order within each slice
+// and ascending f32 partial reduction are fixed functions of the routed shape.
+__host__ __device__ __forceinline__ int moe_m1_slices(int slots, int out_f, int gu){
+    const int tiles = slots * (out_f / SK_BN);
+    if(tiles <= 0) return 1;
+    const int target = gu ? 1280 : 768;
+    if(tiles >= target) return 1;
+    const int slices = (target + tiles / 2) / tiles;
+    return slices < 1 ? 1 : (slices > 16 ? 16 : slices);
+}
+
 template<int Projections>
 static __global__ void __launch_bounds__(128)
 moe_m1_splitk_partial_kernel(
@@ -1819,7 +1828,6 @@ moe_m1_splitk_partial_kernel(
         int in_f, int out_f){
     constexpr int QT = QT_NVFP4_MODELOPT;
     constexpr bool M1 = true, PackedStore = true;
-    __shared__ int s_pre[SK_MAX_G + 1];
     __shared__ __align__(16) __half As[SKT_STAGES][SK_BM][SKT_STRIDE];
     __shared__ __align__(16) __half Bs[SK_BN][SKT_STRIDE];   // single buffer
     __shared__ uint32_t s_cb[KQ_CB_WORDS(QT)];
@@ -1827,25 +1835,31 @@ moe_m1_splitk_partial_kernel(
     const int ntx = (out_f + SK_BN - 1) / SK_BN;
     kq_stage_codebook<QT>(s_cb);
     kq_stage_half2_lut<PackedStore>(packed_h2);
-    sk_tile_prefix(s_pre, ex_off, n_active, ntx, SK_BM, 1, 2);
-    const int total_tiles = s_pre[n_active];
-    const int split = blockIdx.x % 16;
-    const int t = blockIdx.x / 16;
-    if(t >= total_tiles) return;
+    __syncthreads();
+    const int live = ex_off[n_active];
+    const int slices = moe_m1_slices(live, out_f, Projections == 2);
+    const int split = blockIdx.x % slices;
+    const int tile = blockIdx.x / slices;
+    const int slot = tile / ntx;
+    if(slot >= live) return;
 
     const int lane = threadIdx.x, warp = threadIdx.y;
     const int tid  = warp * 32 + lane;                        // 0..127
-    const int nkb = in_f / (16 * SKT_BK);
-    const int kbase = split * nkb * SKT_BK;
+    const int total_kb = in_f / SKT_BK;
+    const int begin_kb = split * total_kb / slices;
+    const int end_kb = (split + 1) * total_kb / slices;
+    const int nkb = end_kb - begin_kb;
+    const int kbase = begin_kb * SKT_BK;
     const int wm = (warp & 1) * 16, wn = (warp >> 1) * 32;
     const int brow = tid >> 1, bc0 = (tid & 1) * 32;          // 2 threads/row, 32 values each
 
     {
-        const int g  = sk_tile_group(s_pre, n_active, t);
+        // M=1 makes the CSR row offsets the tile map. Seven binary-search
+        // reads replace rebuilding a 128-expert prefix in every slice CTA.
+        const int g = sk_tile_group(ex_off, n_active, slot);
         const int lo = ex_off[g], m_e = ex_off[g+1] - lo;
-        const int local = t - s_pre[g];
-        const int m0 = (local / ntx) * SK_BM;
-        const int n0 = (local % ntx) * SK_BN;
+        const int m0 = 0;
+        const int n0 = (tile % ntx) * SK_BN;
 
         const __half* Ag = A + (size_t)lo * in_f + kbase;
         const int eid = ex_ids[g];
@@ -1941,11 +1955,12 @@ static __global__ void moe_m1_splitk_reduce_kernel(
     // With route readback disabled, slots is only a launch upper bound.
     // The device CSR endpoint owns the true count; never consume tail scratch.
     if(row >= ex_off[n_active]){ out[c] = 0.0f; return; }
+    const int slices = moe_m1_slices(ex_off[n_active], out_f, Projections == 2);
     float v[Projections] = {};
     #pragma unroll
     for(int p = 0; p < Projections; ++p){
         #pragma unroll
-        for(int split = 0; split < 16; ++split)
+        for(int split = 0; split < slices; ++split)
             v[p] = __fadd_rn(v[p], partial[((size_t(row) * Projections + p) * 16 + split) * out_f + col]);
     }
     if(Projections == 1){ out[c] = __fmul_rn(v[0], row_scale[row]); }
@@ -2511,12 +2526,12 @@ int memra_moe_kq_gemm_sk_m1_half2(
 // Scratch has slots * out_f * 16 * (gu ? 2 : 1) floats. The Rust caller
 // admits only unique top-k M=1 routes; slots is an upper bound when route
 // readback is disabled. Both kernels use the device CSR prefix as authority.
-int memra_moe_m1_splitk(
+static int moe_m1_splitk_launch(
         const unsigned long long* table, int n_expert, const int* ex_ids,
         const void* act_f16, float* out, const float* row_scale,
         const float* macro_g, const float* macro_u, const float* route_w,
         const int* ex_off, int n_active, int in_f, int out_f,
-        float limit, int slots, int gu, float* partial, void* stream){
+        float limit, int slots, int gu, float* partial, void* stream, cudaEvent_t middle){
     if(!table || !ex_ids || !act_f16 || !out || !row_scale || !ex_off || !partial
        || n_expert < 1 || n_active < 1 || n_active > SK_MAX_G
        || slots < 1 || slots > n_active || (gu != 0 && gu != 1)
@@ -2524,7 +2539,11 @@ int memra_moe_m1_splitk(
        || (in_f != 4096 && in_f != 2048) || (out_f != 4096 && out_f != 2048))
         return 40004;
     cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
-    const int grid = slots * (out_f / SK_BN) * 16;
+    // Host slots can be an upper bound, so launch the maximum over possible
+    // live counts. The device chooses the actual split without a host drain.
+    int grid = 1;
+    for(int live = 1; live <= slots; ++live)
+        grid = std::max(grid, live * (out_f / SK_BN) * moe_m1_slices(live, out_f, gu));
     if(gu){
         moe_m1_splitk_partial_kernel<2><<<grid, dim3(32,4), 0, st>>>(
             table, 0, n_expert, ex_ids, in_f/2, (const __half*)act_f16,
@@ -2536,6 +2555,7 @@ int memra_moe_m1_splitk(
     }
     cudaError_t e = cudaGetLastError();
     if(e) return 1000 + (int)e;
+    if(middle){ e = cudaEventRecord(middle,st); if(e) return 1000 + int(e); }
     if(gu) moe_m1_splitk_reduce_kernel<2><<<(slots*out_f+255)/256,256,0,st>>>(
         partial,out,row_scale,macro_g,macro_u,route_w,slots,out_f,limit,ex_off,n_active);
     else moe_m1_splitk_reduce_kernel<1><<<(slots*out_f+255)/256,256,0,st>>>(
@@ -2543,6 +2563,18 @@ int memra_moe_m1_splitk(
     e = cudaGetLastError();
     return e ? 1000 + (int)e : 0;
 }
+
+int memra_moe_m1_splitk(
+        const unsigned long long* table, int n_expert, const int* ex_ids,
+        const void* act_f16, float* out, const float* row_scale,
+        const float* macro_g, const float* macro_u, const float* route_w,
+        const int* ex_off, int n_active, int in_f, int out_f,
+        float limit, int slots, int gu, float* partial, void* stream){
+    return moe_m1_splitk_launch(table,n_expert,ex_ids,act_f16,out,row_scale,
+        macro_g,macro_u,route_w,ex_off,n_active,in_f,out_f,limit,slots,gu,partial,stream,nullptr);
+}
+static std::atomic<int> g_splitk_component_token{0};
+void memra_moe_m1_splitk_component_token(int token){ g_splitk_component_token.store(token); }
 
 // Diagnostic only: called once per projection and rank on actual routed inputs.
 // Output and scratch allocations have 64-word canaries at both ends. Event
@@ -2555,19 +2587,24 @@ int memra_moe_m1_splitk_component(
         const int* ex_off, int n_active, int in_f, int out_f,
         float limit, int slots, int gu, float* ignored_partial, void* stream){
     cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
+    const int token = g_splitk_component_token.load();
     int observed=0;
     cudaError_t observed_error = cudaMemcpyAsync(&observed,ex_off+n_active,sizeof(int),cudaMemcpyDeviceToHost,st);
     if(observed_error) return 1000 + int(observed_error);
     observed_error = cudaStreamSynchronize(st);
     if(observed_error) return 1000 + int(observed_error);
     if(observed < 0 || observed > slots) return 40005;
-    if(observed == 0) return 40010; // no vacuous component success
+    if(observed == 0){
+        int device=0; cudaGetDevice(&device);
+        printf("SPLITK_COMPONENT token=%d device=%d gu=%d slots=0 skipped=1\n",token,device,gu);
+        return 0;
+    }
     slots = observed;
     const size_t n = size_t(slots) * out_f, scratch_n = n * 16 * (gu ? 2 : 1);
     struct Buffers {
         float *a=nullptr, *b=nullptr, *p=nullptr;
-        cudaEvent_t begin=nullptr, end=nullptr;
-        ~Buffers(){ if(begin) cudaEventDestroy(begin); if(end) cudaEventDestroy(end);
+        cudaEvent_t begin=nullptr, end=nullptr, middle=nullptr;
+        ~Buffers(){ if(middle) cudaEventDestroy(middle); if(begin) cudaEventDestroy(begin); if(end) cudaEventDestroy(end);
             if(a) cudaFree(a); if(b) cudaFree(b); if(p) cudaFree(p); }
     } b;
     #define SK_CHECK(call) do { cudaError_t e = (call); if(e) return 1000 + int(e); } while(0)
@@ -2577,7 +2614,7 @@ int memra_moe_m1_splitk_component(
     SK_CHECK(cudaMemsetAsync(b.a,0xff,(n+128)*4,st));
     SK_CHECK(cudaMemsetAsync(b.b,0xff,(n+128)*4,st));
     SK_CHECK(cudaMemsetAsync(b.p,0xff,(scratch_n+128)*4,st));
-    SK_CHECK(cudaEventCreate(&b.begin)); SK_CHECK(cudaEventCreate(&b.end));
+    SK_CHECK(cudaEventCreate(&b.begin)); SK_CHECK(cudaEventCreate(&b.end)); SK_CHECK(cudaEventCreate(&b.middle));
     std::vector<int> offsets(n_active+1), ids(n_active);
     SK_CHECK(cudaMemcpyAsync(offsets.data(),ex_off,offsets.size()*4,cudaMemcpyDeviceToHost,st));
     SK_CHECK(cudaMemcpyAsync(ids.data(),ex_ids,ids.size()*4,cudaMemcpyDeviceToHost,st));
@@ -2594,7 +2631,7 @@ int memra_moe_m1_splitk_component(
     for(int g=0;g<n_active;++g){
         if(offsets[g+1]-offsets[g] < 0 || offsets[g+1]-offsets[g] > 1) return 40005;
         if(offsets[g+1]!=offsets[g]){ ++live;
-            printf("SPLITK_EXPERT device=%d gu=%d slot=%d expert=%d\n",device,gu,offsets[g],ids[g]); }
+            printf("SPLITK_EXPERT token=%d device=%d gu=%d slot=%d expert=%d\n",token,device,gu,offsets[g],ids[g]); }
     }
     if(live != slots || offsets[0]!=0 || offsets[n_active]!=slots) return 40005;
     auto launch = [&](int arm){
@@ -2615,7 +2652,7 @@ int memra_moe_m1_splitk_component(
             SK_CHECK(cudaEventRecord(b.end,st)); SK_CHECK(cudaEventSynchronize(b.end));
             float ms=0; SK_CHECK(cudaEventElapsedTime(&ms,b.begin,b.end));
             if(cycle>=0){ totals[arm]+=ms;
-                printf("SPLITK_TIMING device=%d gu=%d cycle=%d arm=%d us=%.6f\n",device,gu,cycle,arm,ms*1000); }
+                printf("SPLITK_TIMING token=%d device=%d gu=%d cycle=%d arm=%d us=%.6f\n",token,device,gu,cycle,arm,ms*1000); }
             auto& host = arm ? candidate : reference;
             SK_CHECK(cudaMemcpyAsync(host.data(),(arm?b.b:b.a)+64,n*4,cudaMemcpyDeviceToHost,st));
             SK_CHECK(cudaStreamSynchronize(st));
@@ -2647,8 +2684,17 @@ int memra_moe_m1_splitk_component(
         SK_CHECK(cudaStreamSynchronize(st));
         for(uint32_t v:guard) if(v!=0xffffffff) return 40008;
     }
-    printf("SPLITK_COMPONENT device=%d gu=%d slots=%d blocks=%d max_abs=%.9g max_rel=%.9g peak=%.9g oracle_us=%.6f candidate_us=%.6f speedup=%.6f numeric_ok=%d finite=1 deterministic=1 canaries=1 launches_per_arm=20 numeric_class=moe_m1_splitk_f32_fixed_order\n",
-        device,gu,slots,slots*(out_f/64)*16,max_abs,max_rel,peak,totals[0]*50,totals[1]*50,totals[0]/totals[1],numeric_ok);
+    SK_CHECK(cudaEventRecord(b.begin,st));
+    int phase_rc=moe_m1_splitk_launch(table,n_expert,ex_ids,act_f16,b.b+64,row_scale,
+        macro_g,macro_u,route_w,ex_off,n_active,in_f,out_f,limit,slots,gu,b.p+64,stream,b.middle);
+    if(phase_rc) return phase_rc;
+    SK_CHECK(cudaEventRecord(b.end,st)); SK_CHECK(cudaEventSynchronize(b.end));
+    float partial_ms=0, reduce_ms=0;
+    SK_CHECK(cudaEventElapsedTime(&partial_ms,b.begin,b.middle));
+    SK_CHECK(cudaEventElapsedTime(&reduce_ms,b.middle,b.end));
+    printf("SPLITK_PHASE token=%d device=%d gu=%d slots=%d partial_us=%.6f reduce_us=%.6f diagnostic_only=1\n",token,device,gu,slots,partial_ms*1000,reduce_ms*1000);
+    printf("SPLITK_COMPONENT token=%d device=%d gu=%d slots=%d slices=%d blocks=%d max_abs=%.9g max_rel=%.9g peak=%.9g oracle_us=%.6f candidate_us=%.6f speedup=%.6f numeric_ok=%d finite=1 deterministic=1 canaries=1 launches_per_arm=20 numeric_class=moe_m1_adaptive_splitk_f32_fixed_order\n",
+        token,device,gu,slots,moe_m1_slices(slots,out_f,gu),slots*(out_f/64)*moe_m1_slices(slots,out_f,gu),max_abs,max_rel,peak,totals[0]*50,totals[1]*50,totals[0]/totals[1],numeric_ok);
     fflush(stdout);
     #undef SK_CHECK
     return numeric_ok ? 0 : 40009;

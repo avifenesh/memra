@@ -47,13 +47,16 @@ fn gu_receipt_features(kind: GuLaunchKind) -> (bool, bool) {
     )
 }
 
+static SPLITK_COMPONENT_SEEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub(crate) fn reset_splitk_component_token() {
+    SPLITK_COMPONENT_SEEN.store(0, Ordering::Release);
+}
 fn splitk_component_claim(gpu: &Gpu, gu: bool) -> bool {
-    static SEEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     if crate::MOE_M1_SPLITK_COMPONENT.load(Ordering::Acquire) == 0 {
         return false;
     }
     let bit = 1u64 << (gpu.ctx.ordinal() * 2 + usize::from(gu));
-    SEEN.fetch_or(bit, Ordering::AcqRel) & bit == 0
+    SPLITK_COMPONENT_SEEN.fetch_or(bit, Ordering::AcqRel) & bit == 0
 }
 
 static MIRROR_VALIDATE: AtomicBool = AtomicBool::new(true);
