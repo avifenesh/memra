@@ -767,6 +767,7 @@ mod cpu_experts;
 pub mod cutlass_ffi;
 mod dsv4_c4;
 mod dsv4_ep;
+mod dsv4_ep_graph;
 pub mod dsv4_ffi;
 pub mod dsv4_gpu;
 mod dsv4_graph;
