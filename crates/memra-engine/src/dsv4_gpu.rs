@@ -17090,8 +17090,8 @@ pub enum Dsv4SamplerOrder {
 impl Dsv4SamplerOrder {
     pub fn resolve(raw: Option<&str>) -> Res<Self> {
         match raw {
-            None | Some("comparison") => Ok(Self::Comparison),
-            Some("radix") => Ok(Self::Radix),
+            Some("comparison") => Ok(Self::Comparison),
+            None | Some("radix") => Ok(Self::Radix),
             Some(raw) => Err(format!(
                 "MEMRA_DSV4_SAMPLE_SORT {raw:?}: expected comparison or radix"
             )),
@@ -17956,9 +17956,13 @@ mod sampled_path_tests {
     };
 
     #[test]
-    fn sampler_order_is_opt_in_and_names_are_strict() {
+    fn sampler_order_defaults_to_radix_and_names_are_strict() {
         assert_eq!(
             Dsv4SamplerOrder::resolve(None).unwrap(),
+            Dsv4SamplerOrder::Radix
+        );
+        assert_eq!(
+            Dsv4SamplerOrder::resolve(Some("comparison")).unwrap(),
             Dsv4SamplerOrder::Comparison
         );
         assert_eq!(
