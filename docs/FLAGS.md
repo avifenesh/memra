@@ -1,5 +1,11 @@
 # Environment flags — the audited catalog
 
+## DSV4 small-kernel diet
+
+| Flag | Default, arms, gate and rollback |
+| --- | --- |
+| `MEMRA_DSV4_SMALL_KERNEL_DIET` | **Default 0**, decide-by: **2026-09-21**. Parsed at model load; accepts only `0` or `1`. `0` retains the separate f32x HC finish (rowsq, Sinkhorn, collapse) and Q-LoRA norm/pack. `1` fuses each HC finish into one launch and Q norm/pack into one launch on all-layer TP/EP, t=1, HC4, hidden4096. Other topology or f64 chains refuse at load; unsupported HC shape refuses before its fused enqueue. Multirow work retains the old path. Both reductions retain the 128-thread tree; Sinkhorn gathers ascending row/column sums with the original iteration count. Expected bitwise classes: `dsv4_hc_f32_fixed_order`, `dsv4_norm_pack_f32_fixed_order`; no tolerance admission. Rollback: restart with `=0`. Gate: `dsv4_tp_ep_sampled_perf_gate --small-kernel-components` on live checkpoint tensors, then `--small-kernel-abba` (10 cycles, radix, sampled envelope, all state digests, actual HC/Q enqueue assertions). The gate's exclusive model setter changes arms between complete walks. Receipt pointer: private Darklanes `research/dsv4f-devpair-20260905/small-kernel-diet-20260907.md`, namespace `small-kernel-diet-29a73db-r1`: both components bit-equal on both ranks; ten sampled ABBA cycles give 35.404649 OFF to 36.850968 ON tok/s (+4.085112%), all 40 rows eligible and digest-identical. Targeted enqueues fall 344 to 129 per step per rank. Code source and binary hash are pinned in the tracked lane report. |
+
 > **A new `MEMRA_*` read needs a row here IN THE SAME COMMIT.** `tools/hooks/pre-push` runs
 > `tools/check-flags.sh` on every push (+0.55 s) and refuses one that adds an uncovered name. That
 > arm landed 2026-08-23 after main went red three times in one day on this exact rule — the census
