@@ -11,9 +11,13 @@ technical evidence, not a serving or public performance claim.
 - Five fresh-state pairs, alternating graph-to-eager and eager-to-graph.
 - All five pairs were eligible and non-looping. Generated tokens, final logits,
   cache digests and hidden digests were frozen-identical.
-- Eager decode mean: `37.77 tok/s` (`6,777,508,739 ns`).
-- Graph decode mean: `38.03 tok/s` (`6,732,397,396 ns`).
-- Delta: approximately `+0.67%`, flat for the owner decision.
+- Eager **forward-only decode-step** mean: `37.77 tok/s` (`6,777,508,739 ns`).
+- Graph **forward-only decode-step** mean: `38.03 tok/s` (`6,732,397,396 ns`).
+- Forward-only delta: approximately `+0.67%`, flat for the owner decision.
+- The raw candidate timer summed `decode_step` durations and did **not** include
+  the CPU sampler call. It is therefore not a full sampled-throughput timer.
+  Full end-to-end sampled A/B was not measured by this candidate, and no
+  24-to-37 tok/s cross-window delta is attributed to any cause.
 
 The graph captured only local route/GU/down/AR/shared-tail work. Attention,
 cache and indexer remained eager. This is not evidence for a future full-round
@@ -33,7 +37,12 @@ graph that also captures the attention and transport schedule.
 The older `24.3093 tok/s` value is the corrected serial receipt from source
 `a4cd89c72`, binary `9d49...`, raw log `2cf7...`. The worker candidate was
 `23.7555 tok/s` from source `eef64ffd3f...`, binary `81cd43a1...`, and is not
-the 24.3093 baseline. The current 37.77 tok/s result is a different later
-binary/configuration window. The cross-window change from roughly 24 to 37 is
-unattributed here: no source/configuration guess, clock claim or power claim is
-being made.
+the 24.3093 baseline. The current 37.77 tok/s figure is a different later
+binary/configuration window and is forward-only, not sampled end-to-end. The
+cross-window change from roughly 24 to 37 is unattributed here: no
+source/configuration guess, clock claim or power claim is being made.
+
+Measurement-bug verdict: the original raw log is preserved unchanged, but its
+`PERF_SUMMARY` labels must be read as forward-only. The graph island remains a
+NO-GO on that measured scope; a future end-to-end sampled claim requires a new
+timer that includes sampling.
