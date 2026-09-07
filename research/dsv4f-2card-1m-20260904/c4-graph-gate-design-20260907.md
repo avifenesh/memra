@@ -14,6 +14,16 @@ compressor/indexer state machine before gather, and layer 2's host `n_blocks`,
 emission phase, store row, and commit/rollback state are not graph-live. A
 component-safe gather does not make that layer safe.
 
+Latest source verification: base `C4HostStore::gather` performs only host-side
+shape/pointer checks and then launches the GPU
+`memra_dsv4_c4_gather` kernel. That kernel reads the device index list and the
+unified-addressing, pinned host rows with volatile GPU loads; it is not a CPU
+data-dependent row copy. Keeping it eager in Graph-B is therefore the current
+producer/high-water/shape implementation boundary, not a categorical ban on
+mapped-host GPU work. The recent-sidecar variant has the same GPU gather shape
+but an additional host `bind_runtime` prelude that must remain outside capture
+until separately pre-bound.
+
 ## Fail-closed component gate contract
 
 A future `graph-c4-gather-probe` may capture only the gather component after

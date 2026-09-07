@@ -6,6 +6,14 @@ Source checkpoint audited: DSV4 worktree `86efe899ac631be869f4d74b592377c738f4ec
 (the lane was `b261ee6e` when this audit began). The separate Memra root `main`
 used for provenance is `6464a1604da85c83707b7c033103668fda24b7bd`.
 
+The pinned DeepSeek-V4-Flash artifact/config has `sliding_window=128`, not
+512 (`crates/memra-gguf/src/model_packs/deepseek_v4/mod.rs` and
+`crates/memra-gguf/src/dsv4.rs`); the runtime DSV4 constant is
+`WIN=128` in `crates/memra-engine/src/dsv4_c4.rs`. C4's `HD=512` is the
+head-width row size. Consequently the maximum live gather shape is
+`window 128 + index top-k 512 = 640`; 640 is the preallocated capacity, not
+the normal window-only live slot count.
+
 ## Segment boundary
 
 Graph-B is one retained graph per trunk layer, on the layer's owning PP-stage
@@ -38,10 +46,15 @@ boundaries.
 
 ## What is eager and why
 
-- C4 gather remains before capture. `C4HostStore::gather` performs the host-store
-  lookup and writes `C4Gather.values/indices`; its output allocations must be
-  pre-sized for the fixed 8K shape and then overwritten in place each token.
-  A shape/pointer change invalidates Graph-B.
+- C4 gather remains before capture. The source audit verified that the base
+  `C4HostStore::gather` path does not scan rows on the CPU: after scalar shape
+  checks and pointer acquisition it launches `memra_dsv4_c4_gather`, whose GPU
+  kernel reads the device index list and mapped pinned-host rows. It is kept
+  eager here because the producer D2H, live-row/high-water state and shape
+  scalars still belong to the surrounding compressor transaction; this is an
+  implementation boundary, not a categorical CPU or mapped-host barrier.
+  `C4Gather.values/indices` must be pre-sized for the 8K shape and overwritten
+  in place each token. A shape/pointer change invalidates Graph-B.
 - `moe_verify_dev` remains eager. Matrix EP executes owner/peer copies, event
   record/wait, peer gate/up/down, return copy and owner merge in
   `dsv4_ep.rs:610-691`; it is a two-context boundary, not a node inside the
@@ -58,10 +71,11 @@ ratio/overlap class, dense/math/top-k arms, and active C4 mode. `slots` is a
 runtime shape bucket, not a universal 512:
 
 ```text
-ratio=0/window-only:                slots = win = 512
-fine/indexer layer:                 slots = win + min(ix.topk, n_blocks)
-coarse ratio=128, at ~8K:           slots = win + n_blocks
+ratio=0/window-only:                slots = win = 128
+fine/indexer layer:                 slots = 128 + min(ix.topk, n_blocks)
+coarse ratio=128, at ~8K:            slots = 128 + n_blocks
                                      n_blocks ~= 64..66 over a 256-token run
+                                     => approximately 192..194 live slots
 ```
 
 The exact formula is the `block_verify_dev` path at
@@ -122,8 +136,9 @@ same-context restrictions on memcpy node updates:
 The new graph gate should run the actual matrix+EP+C4 sampled plain program at
 fixed 8K and `t=1`, with route/mirror validation disabled only as already
 required by the matrix performance arm. `C4Gather::ensure` must be called once
-for the maximum fixed shape before the first capture: it reserves
-`nq * 640 * HD` value slots and `nq * idx_stride` index slots
+for the maximum fixed shape before the first capture: it reserves the bounded
+capacity `nq * 640 * HD` value slots (128 window + 512 top-k maximum) and
+`nq * idx_stride` index slots
 (`dsv4_c4.rs:350-375`). The gate must not let a first replay allocate or replace
 those buffers.
 
@@ -132,9 +147,10 @@ It must:
 1. Capture Graph-B for all 43 trunk layers, split by owning PP stage and
    actual shape bucket. The expected count is
    `sum(unique(layer, stage, h_in_ptr, actual_slots, arm-key))`, not blindly 43.
-   Ratio-0 layers normally contribute one 512-slot variant; fine layers normally
-   contribute one `512 + min(topk,n_blocks)` variant; coarse ratio-128 layers
-   may contribute three variants over the 8K→8K+256 position window.
+   Ratio-0 layers normally contribute one 128-slot variant; fine layers normally
+   contribute one `128 + min(topk,n_blocks)` variant; coarse ratio-128 layers
+   may contribute three variants around 192..194 slots over the 8K→8K+256
+   position window.
 2. Emit `GRAPH_CENSUS layer/stage/segment` with kernel and memcpy node names;
    the census must include sink attention, output projection, HC post, HC pre
    and FFN norm nodes, not merely expert kernels.
@@ -144,7 +160,8 @@ It must:
 4. Prove the observed variant count and per-bucket replay counts, zero stale
    fallback, zero eager Graph-B preparation after capture, and stable
    `h_in_ptr`/C4/workspace pointer identities. A slot change must select an
-   existing variant or recapture; it must never update a 512-slot graph in place.
+   existing variant or recapture; it must never update a 128-slot graph in place
+   for a different live-slot shape.
 5. Red-test C4 reallocation, EP stream capture status, PP boundary crossing and
    changed `slots/idx_stride`; each must refuse/re-capture, never replay stale
    pointers.

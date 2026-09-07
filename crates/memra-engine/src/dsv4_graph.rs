@@ -129,8 +129,20 @@ pub(crate) fn graph_b_wo_a_kernel_nodes(capture: &Dsv4LayerCapture) -> usize {
     capture
         .kernels
         .iter()
-        .filter(|name| name.contains("gemv_fp8_grouped_m1"))
+        .filter(|name| is_graph_b_grouped_wo_a_kernel(name))
         .count()
+}
+
+/// The Graph-B census stores the CUDA driver's raw symbol name.  The grouped
+/// wo_a path is the m=1, grouped=true instantiation of the regular FP8 batched
+/// GEMV template.  Do not match the Rust FFI wrapper name: the wrapper is not a
+/// graph kernel node, and the regular `<1, false>` wo_b GEMV must not count as
+/// replayed wo_a work.
+pub(crate) fn is_graph_b_grouped_wo_a_kernel(name: &str) -> bool {
+    if !name.contains("dsv4_gemv_fp8_m_kernel") {
+        return false;
+    }
+    name.contains("ILi1ELb1E") || name.contains("<1, true>") || name.contains("<1,true>")
 }
 
 pub struct Dsv4LayerCapture {
@@ -317,6 +329,25 @@ mod tests {
         invalid = key;
         invalid.tokens = 2;
         assert!(!invalid.graph_b_valid());
+    }
+
+    #[test]
+    fn graph_b_wo_a_census_matches_actual_grouped_template_only() {
+        assert!(is_graph_b_grouped_wo_a_kernel(
+            "_Z22dsv4_gemv_fp8_m_kernelILi1ELb1EEvPKh"
+        ));
+        assert!(is_graph_b_grouped_wo_a_kernel(
+            "dsv4_gemv_fp8_m_kernel<1, true>"
+        ));
+        assert!(!is_graph_b_grouped_wo_a_kernel(
+            "_Z22dsv4_gemv_fp8_m_kernelILi1ELb0EEvPKh"
+        ));
+        assert!(!is_graph_b_grouped_wo_a_kernel(
+            "_Z22dsv4_gemv_fp8_m_kernelILi2ELb1EEvPKh"
+        ));
+        assert!(!is_graph_b_grouped_wo_a_kernel(
+            "memra_dsv4_gemv_fp8_grouped_m1"
+        ));
     }
 
     #[test]
