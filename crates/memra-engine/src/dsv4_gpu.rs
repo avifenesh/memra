@@ -59,6 +59,8 @@ static DSV4_INDEX_TOPK_RADIX_DISPATCHES: AtomicU64 = AtomicU64::new(0);
 
 /// Numeric class of the gate-only replicated TP/EP expert partial join.
 pub const TP_EP_RANK_ORDER_NUMERIC_CLASS: &str = crate::dsv4_ep::TP_EP_RANK_ORDER_NUMERIC_CLASS;
+pub const TP_EP_INTERMEDIATE_NUMERIC_CLASS: &str =
+    crate::dsv4_modelopt_split::MODEL_OPT_SPLIT_NUMERIC_CLASS;
 
 #[inline]
 fn index_topk_radix_eligible(t: usize, nb: usize, kk: usize) -> bool {
@@ -1937,6 +1939,14 @@ impl Dsv4Gpu {
         self.topology
     }
 
+    pub fn tp_ep_numeric_class(&self) -> &'static str {
+        if self.topology.is_intermediate_tp() {
+            TP_EP_INTERMEDIATE_NUMERIC_CLASS
+        } else {
+            TP_EP_RANK_ORDER_NUMERIC_CLASS
+        }
+    }
+
     /// Gate-only topology admission.  Must be set before `load`; an armed
     /// request currently refuses before allocating the PP loader.
     pub fn set_tp_ep_topology_for_gate(enabled: bool) -> bool {
@@ -2035,6 +2045,16 @@ impl Dsv4Gpu {
                 .map_err(e("attention TP2 snapshot drain"))?;
         }
         Ok(dsv4_attention_tp::AttentionTpJoinSnapshot { partials, joined })
+    }
+
+    /// Gate-only selector for the intermediate expert TP candidate. This is
+    /// separate from whole-expert-ID TP/EP and has no serving/environment arm.
+    pub fn set_intermediate_tp_topology_for_gate(enabled: bool) -> bool {
+        dsv4_topology::set_intermediate_tp_for_gate(enabled)
+    }
+
+    pub fn intermediate_tp_topology_for_gate() -> bool {
+        dsv4_topology::intermediate_tp_for_gate()
     }
 
     /// Actual per-rank all-layer calls.  No PP call is folded into these
@@ -2837,7 +2857,21 @@ impl Dsv4Gpu {
         let mc = model.mc.clone();
         let n_trunk = mc.n_layer - mc.nextn_predict_layers;
         let rd = d.qk_rope_head_dim as usize;
-        let topology = if dsv4_topology::tp_ep_for_gate() {
+        let topology = if dsv4_topology::intermediate_tp_for_gate() {
+            if dsv4_topology::tp_ep_for_gate() {
+                return Err(
+                    "DSV4 intermediate TP and whole-expert TP/EP gates cannot be armed together"
+                        .into(),
+                );
+            }
+            Dsv4TopologyPlan::tp_ep_intermediate(
+                devices.len(),
+                n_trunk as usize,
+                mc.moe.as_ref().expect("moe").expert_count as usize,
+                mc.n_embd as usize,
+                mc.moe.as_ref().expect("moe").expert_ff_length as usize,
+            )?
+        } else if dsv4_topology::tp_ep_for_gate() {
             Dsv4TopologyPlan::tp_ep_all_layers(
                 devices.len(),
                 n_trunk as usize,
@@ -3379,7 +3413,7 @@ impl Dsv4Gpu {
         }
 
         let tp_expert_count = topology
-            .is_tp_ep()
+            .is_expert_id_tp()
             .then(|| mc.moe.as_ref().expect("moe").expert_count as usize / 2);
         let t0 = std::time::Instant::now();
         for il in 0..n_trunk {
@@ -3390,7 +3424,11 @@ impl Dsv4Gpu {
             };
             for stage in owners {
                 let partition = tp_expert_count.map(|count| (stage * count, count));
-                let l = me.load_layer_partitioned(stage, il, &format!("layers.{il}"), partition)?;
+                let mut l =
+                    me.load_layer_partitioned(stage, il, &format!("layers.{il}"), partition)?;
+                if topology.is_intermediate_tp() {
+                    me.pack_intermediate_layer_bank(stage, &mut l)?;
+                }
                 me.stages[stage].layers.push(l);
             }
             if il % 4 == 3 || il + 1 == n_trunk {
@@ -3532,7 +3570,9 @@ impl Dsv4Gpu {
         }
         eprintln!("[load] sink score: {:?}", me.sink_score);
         if ep_requested {
-            if topology.is_tp_ep() {
+            if topology.is_intermediate_tp() {
+                me.enable_tp_ep_intermediate_banks_for_gate()?;
+            } else if topology.is_tp_ep() {
                 me.enable_tp_ep_local_banks_for_gate()?;
             } else {
                 me.enable_ep_pair_for_gate()?;
@@ -3643,6 +3683,174 @@ impl Dsv4Gpu {
         Ok(())
     }
 
+    /// Pack one layer immediately after loading it, before the next layer can add another full
+    /// bank to VRAM. This keeps the intermediate-TP transition's temporary full source bounded
+    /// to one layer while retaining the complete manifest validation in `load_layer_partitioned`.
+    fn pack_intermediate_layer_bank(
+        &mut self,
+        stage_index: usize,
+        layer: &mut LayerDev,
+    ) -> Res<()> {
+        let moe = self.model.mc.moe.as_ref().expect("moe");
+        let experts = moe.expert_count as usize;
+        let topk = moe.expert_used_count as usize;
+        if topk != 6 {
+            return Err(format!(
+                "intermediate TP candidate requires DSV4 topk=6, got {topk}"
+            ));
+        }
+        let hidden = self.model.mc.n_embd as usize;
+        let inter = moe.expert_ff_length as usize;
+        if layer.expert_kind != ExpertKind::Nvfp4 {
+            return Err(format!(
+                "intermediate TP layer {} is not ModelOpt NVFP4",
+                layer.il
+            ));
+        }
+        let plan = crate::dsv4_modelopt_split::ModelOptSplitPlan::new(
+            stage_index,
+            experts,
+            hidden,
+            inter,
+        )?;
+        if layer.experts_w.len() != plan.full_bank_weight_bytes()
+            || layer.experts_sc.len() != plan.full_bank_scale_bytes()
+            || layer.experts_modelopt_table.is_none()
+        {
+            return Err(format!(
+                "intermediate TP layer {} was not loaded as a complete ModelOpt bank",
+                layer.il
+            ));
+        }
+        let old_bytes = layer.experts_w.len() as u64
+            + layer.experts_sc.len() as u64
+            + layer
+                .experts_modelopt_table
+                .as_ref()
+                .map_or(0, |table| (table.len() * 8) as u64);
+        let stream = self.stages[stage_index].gpu.stream();
+        let split = plan.pack_device(&stream, &layer.experts_w, &layer.experts_sc)?;
+        let new_bytes =
+            split.weights.len() as u64 + split.scales.len() as u64 + (split.table.len() * 8) as u64;
+        layer.experts_w = split.weights;
+        layer.experts_sc = split.scales;
+        layer.experts_modelopt_table = Some(split.table);
+        self.stages[stage_index].loaded_bytes = self.stages[stage_index]
+            .loaded_bytes
+            .checked_sub(old_bytes)
+            .ok_or("intermediate TP full-bank byte counter underflow")?
+            .checked_add(new_bytes)
+            .ok_or("intermediate TP split-bank byte counter overflow")?;
+        Ok(())
+    }
+
+    /// Finalize the per-layer packed half-GU/half-down banks. The full manifest was read and
+    /// validated by `load_layer`; conversion happened before the next layer was loaded so a
+    /// complete model's worth of temporary full banks never coexists in VRAM. Router ids remain
+    /// global and replicated, so every rank executes all selected experts.
+    fn enable_tp_ep_intermediate_banks_for_gate(&mut self) -> Res<()> {
+        if self.ep_enabled {
+            return Ok(());
+        }
+        if !self.topology.is_intermediate_tp()
+            || self.stages.len() != 2
+            || !self.dense_fp8
+            || self.prefill_grouped
+            || !self.matrix_moe
+            || !self.grouped_route_device
+            || self.grouped_fresh_storage_control
+            || self.expert_arm != ExpertArm::Native
+            || !matches!(self.decode_path, DecodePath::Device { host_math: false })
+        {
+            return Err(
+                "intermediate TP requires replicated matrix layers, native device math, and device routing with reused storage".into(),
+            );
+        }
+        let moe = self.model.mc.moe.as_ref().expect("moe");
+        let experts = moe.expert_count as usize;
+        let hidden = self.model.mc.n_embd as usize;
+        let inter = moe.expert_ff_length as usize;
+        if self
+            .stages
+            .iter()
+            .flat_map(|stage| &stage.layers)
+            .any(|layer| layer.expert_kind != ExpertKind::Nvfp4)
+        {
+            return Err("intermediate TP requires the pinned ModelOpt NVFP4 expert bank".into());
+        }
+        for rank in 0..2usize {
+            let stage = &mut self.stages[rank];
+            stage
+                .gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind intermediate TP bank"))?;
+            let stream = stage.gpu.stream();
+            let plan =
+                crate::dsv4_modelopt_split::ModelOptSplitPlan::new(rank, experts, hidden, inter)?;
+            for layer in &mut stage.layers {
+                if layer.experts_w.len() != plan.split_bank_weight_bytes()
+                    || layer.experts_sc.len() != plan.split_bank_scale_bytes()
+                    || layer.experts_modelopt_table.is_none()
+                {
+                    return Err(format!(
+                        "intermediate TP layer {} was not converted to a split ModelOpt bank",
+                        layer.il
+                    ));
+                }
+                if layer
+                    .experts_modelopt_table
+                    .as_ref()
+                    .is_some_and(|table| table.len() != experts * 6)
+                {
+                    return Err(format!(
+                        "intermediate TP layer {} has an invalid split pointer table",
+                        layer.il
+                    ));
+                }
+                layer.ep = Some(crate::dsv4_ep::EpLayer {
+                    peer_stage: 1 - rank,
+                    local_first: 0,
+                    count: experts,
+                    peer_first: 0,
+                    peer_w: stream
+                        .alloc_zeros::<u8>(0)
+                        .map_err(e("intermediate TP empty peer weights"))?,
+                    peer_sc: stream
+                        .alloc_zeros::<u8>(0)
+                        .map_err(e("intermediate TP empty peer scales"))?,
+                    peer_s2: stream
+                        .alloc_zeros::<f32>(0)
+                        .map_err(e("intermediate TP empty peer scales2"))?,
+                    peer_table: Some(
+                        stream
+                            .alloc_zeros::<u64>(0)
+                            .map_err(e("intermediate TP empty peer table"))?,
+                    ),
+                    local_only: true,
+                });
+            }
+        }
+        for stage in &self.stages {
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .map_err(e("intermediate TP bank finalize"))?;
+        }
+        *self
+            .tp_ep_ar
+            .lock()
+            .map_err(|_| "TP/EP one-shot reduction state mutex poisoned".to_string())? =
+            Some(TpEpArState::new(&self.stages[0].gpu, &self.stages[1].gpu)?);
+        self.ep_enabled = true;
+        eprintln!(
+            "[TP/EP load] intermediate banks resident on both ranks: all {experts} experts, GU rows/down K halves, numeric_class={}",
+            crate::dsv4_modelopt_split::MODEL_OPT_SPLIT_NUMERIC_CLASS
+        );
+        Ok(())
+    }
+
     /// Load-time residency transition and one-load gate seam. Existing decode
     /// states/graphs must be discarded before calling. The normal EP entry is
     /// MEMRA_DSV4_EP=pair, resolved once by the loader.
@@ -3743,6 +3951,9 @@ impl Dsv4Gpu {
     }
 
     pub fn enable_ep_pair_for_gate(&mut self) -> Res<()> {
+        if self.topology.is_intermediate_tp() {
+            return self.enable_tp_ep_intermediate_banks_for_gate();
+        }
         if self.topology.is_tp_ep() {
             return self.enable_tp_ep_local_banks_for_gate();
         }
@@ -12674,15 +12885,25 @@ impl Dsv4Gpu {
             };
             let w = VerifyWs {
                 grouped_work: if self.matrix_moe && self.ep_enabled {
-                    Some(crate::dsv4_grouped::GroupedWork::new_partition(
-                        &s,
-                        ne,
-                        stage_index * (ne / 2),
-                        ne / 2,
-                        tmax * topk,
-                        hidden,
-                        inter,
-                    )?)
+                    if self.topology.is_intermediate_tp() {
+                        Some(crate::dsv4_grouped::GroupedWork::new_split(
+                            &s,
+                            ne,
+                            tmax * topk,
+                            hidden,
+                            inter / 2,
+                        )?)
+                    } else {
+                        Some(crate::dsv4_grouped::GroupedWork::new_partition(
+                            &s,
+                            ne,
+                            stage_index * (ne / 2),
+                            ne / 2,
+                            tmax * topk,
+                            hidden,
+                            inter,
+                        )?)
+                    }
                 } else if self.prefill_grouped || self.matrix_moe {
                     Some(crate::dsv4_grouped::GroupedWork::new(
                         &s,
@@ -12702,8 +12923,11 @@ impl Dsv4Gpu {
                         topk,
                         hidden,
                         inter,
-                        self.matrix_moe
-                            .then_some((ne, (1 - stage_index) * (ne / 2), ne / 2)),
+                        (self.matrix_moe && !self.topology.is_intermediate_tp()).then_some((
+                            ne,
+                            (1 - stage_index) * (ne / 2),
+                            ne / 2,
+                        )),
                     )?)
                 } else {
                     None
@@ -14608,7 +14832,11 @@ impl Dsv4Gpu {
             )?;
         }
         let mut fresh = if self.grouped_fresh_storage_control {
-            let work = crate::dsv4_grouped::GroupedWork::new(&stream, ne, slots, hidden, inter)?;
+            let work = if self.topology.is_intermediate_tp() {
+                crate::dsv4_grouped::GroupedWork::new_split(&stream, ne, slots, hidden, inter / 2)?
+            } else {
+                crate::dsv4_grouped::GroupedWork::new(&stream, ne, slots, hidden, inter)?
+            };
             self.grouped_fresh_storage_calls
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             Some(work)
