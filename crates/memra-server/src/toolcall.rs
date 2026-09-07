@@ -715,6 +715,19 @@ impl ToolStreamParser {
     fn parse_glm5_block(&mut self, inner: &str) -> Option<ParsedToolCall> {
         let first_key = inner.find(GLM_ARG_KEY).unwrap_or(inner.len());
         let name = inner[..first_key].trim();
+        // Spark-X2.5 (the dense step35 sibling that shares this wire) emits the name as
+        // `<function=NAME` under its own greedy decode, template notwithstanding
+        // (receipt: darklanes research/agentic-tool-evals-20260907/spark-pack, the greedy
+        // tools smoke on the 5090 box, 2026-09-07). The wrapper carries no information:
+        // strip it, and a stray closing `>` with it, before the name is validated.
+        // Only a body that goes on to carry `<arg_key>` pairs is Spark's wire; a bare
+        // `<function=NAME>` is the qwen dialect's body and stays malformed (gate c).
+        let name = if first_key < inner.len() {
+            let n = name.strip_prefix("<function=").unwrap_or(name);
+            n.strip_suffix('>').unwrap_or(n).trim()
+        } else {
+            name
+        };
         if name.is_empty() || name.contains(['<', '>', '\n']) {
             return None;
         }
@@ -1151,6 +1164,30 @@ Paris\n</parameter>\n<parameter=days>\n3\n</parameter>\n<parameter=metric>\ntrue
     /// What the model emits on a glm5 tools prompt: reasoning (the prompt's `<think>` tail is
     /// open and unconditional), `</think>`, then one or more `<tool_call>NAME<arg_key>…` spans
     /// with the template's single `\n` separator and NOTHING between consecutive calls.
+    /// Spark-X2.5's greedy emission wraps the name as `\n<function=NAME`; the parser must
+    /// read it as the same call (and still refuse a name that carries any other markup).
+    #[test]
+    fn glm5_accepts_spark_function_prefixed_name() {
+        let mut p = ToolStreamParser::glm5(false, weather_schema());
+        let mut pieces = p.push(
+            "<tool_call>\n<function=get_weather<arg_key>city</arg_key><arg_value>Paris</arg_value>\
+<arg_key>metric</arg_key><arg_value>true</arg_value></tool_call>",
+        );
+        pieces.extend(p.finish());
+        let (content, calls) = reassemble(&pieces);
+        assert_eq!(content, "");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "get_weather");
+        assert_eq!(calls[0].arguments, r#"{"city":"Paris","metric":true}"#);
+        let mut p = ToolStreamParser::glm5(false, weather_schema());
+        let bad = "<tool_call><fn>get_weather<arg_key>city</arg_key><arg_value>Paris</arg_value></tool_call>";
+        let mut pieces = p.push(bad);
+        pieces.extend(p.finish());
+        let (content, calls) = reassemble(&pieces);
+        assert!(calls.is_empty());
+        assert_eq!(content, bad);
+    }
+
     const GLM_EMISSION: &str = "I'll check.\n<tool_call>get_weather<arg_key>city</arg_key>\
 <arg_value>Paris</arg_value><arg_key>days</arg_key><arg_value>3</arg_value>\
 <arg_key>metric</arg_key><arg_value>true</arg_value></tool_call>";
