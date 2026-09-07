@@ -496,14 +496,17 @@ fn main() {
         sampler_component();
         return;
     }
-    let abba = args.get(3).is_some_and(|a| a == "--sampler-abba");
+    let sampler_abba = args.get(3).is_some_and(|a| a == "--sampler-abba");
     assert!(
         args.len() == 3 || args.len() == 4,
         "usage: dsv4_tp_ep_sampled_perf_gate <model-dir> <real-source.txt> [--moe-m1-splitk|--moe-m1-splitk-abba|--sampler-abba]"
     );
     let splitk = args.get(3).is_some_and(|a| a == "--moe-m1-splitk");
     let splitk_abba = args.get(3).is_some_and(|a| a == "--moe-m1-splitk-abba");
-    assert!(args.len() == 3 || splitk || splitk_abba || abba, "unknown gate arm");
+    assert!(
+        args.len() == 3 || splitk || splitk_abba || sampler_abba,
+        "unknown gate arm"
+    );
     memra_engine::set_moe_m1_splitk_for_gate(splitk);
     let attention_mode = match std::env::var("MEMRA_DSV4_ATTENTION_TP_GATE").as_deref() {
         Err(std::env::VarError::NotPresent) | Ok("0") => false,
@@ -517,14 +520,14 @@ fn main() {
         Dsv4SamplerOrder::Comparison => "comparison",
         Dsv4SamplerOrder::Radix => "radix",
     };
-    let sampler_name = if abba {
+    let sampler_name = if sampler_abba {
         "host-radix/device"
     } else if device {
         "device"
     } else {
         host_sampler_name
     };
-    let repeats = if abba {
+    let repeats = if sampler_abba {
         40
     } else if attention_mode {
         ATTENTION_REPEATS
@@ -607,7 +610,7 @@ fn main() {
     gpu.set_dense_wo_a_grouped_for_gate(!attention_mode);
     gpu.set_index_topk_radix_for_gate(true);
 
-    if abba {
+    if sampler_abba {
         assert!(
             !profiled && attention_mode,
             "ABBA requires unprofiled attention TP2"
@@ -634,107 +637,107 @@ fn main() {
                 "existing_m1_f16_mma"
             }
         );
-    let receipts: Vec<_> = (0..repeats)
-        .map(|repeat| {
-            let arm = if abba {
-                matches!(repeat % 4, 1 | 2)
-            } else {
-                device
+        let receipts: Vec<_> = (0..repeats)
+            .map(|repeat| {
+                let arm = if sampler_abba {
+                    matches!(repeat % 4, 1 | 2)
+                } else {
+                    device
+                };
+                run_once(
+                    &gpu,
+                    &prompt,
+                    &tokenizer,
+                    repeat,
+                    if arm { "device" } else { host_sampler_name },
+                    arm,
+                )
+            })
+            .collect();
+        let first = &receipts[0];
+        for receipt in &receipts {
+            assert_eq!(
+                first.generated_sha256, receipt.generated_sha256,
+                "same-program sampled repeat stream"
+            );
+            assert_eq!(first.state_pos, receipt.state_pos);
+            assert_eq!(first.generated_tokens, receipt.generated_tokens);
+            assert_eq!(first.forward_calls, receipt.forward_calls);
+            assert_eq!(first.eos, receipt.eos);
+            assert_eq!(first.final_logits_sha256, receipt.final_logits_sha256);
+            assert_eq!(first.final_cache_digest, receipt.final_cache_digest);
+            assert_eq!(first.final_hidden_digest, receipt.final_hidden_digest);
+            assert_eq!(first.attention_join_sha256, receipt.attention_join_sha256);
+            assert_eq!(receipt.ar_refusals, [0, 0]);
+            println!(
+                "REPEAT repeat={} state_alloc_ns={} prime_wall_ns={} decode_wall_ns={} state_pos={} generated_tokens={} forward_calls={} eos={} looped={} eligible={} prime_counters={:?} decode_counters={:?}",
+                receipt.repeat,
+                receipt.state_alloc.as_nanos(),
+                receipt.prime_wall.as_nanos(),
+                receipt.decode_wall.as_nanos(),
+                receipt.state_pos,
+                receipt.generated_tokens,
+                receipt.forward_calls,
+                receipt.eos,
+                receipt.looped,
+                receipt.eligible,
+                receipt.counters_prime,
+                receipt.counters_decode,
+            );
+        }
+        if sampler_abba {
+            assert!(
+                receipts.iter().all(|r| r.eligible),
+                "all ABBA rows must be eligible"
+            );
+            let rate = |arm: bool| {
+                let rows: Vec<_> = receipts
+                    .iter()
+                    .filter(|r| matches!(r.repeat % 4, 1 | 2) == arm)
+                    .collect();
+                rows.iter().map(|r| r.generated_tokens).sum::<usize>() as f64 * 1e9
+                    / rows.iter().map(|r| r.decode_wall.as_nanos()).sum::<u128>() as f64
             };
-            run_once(
-                &gpu,
-                &prompt,
-                &tokenizer,
-                repeat,
-                if arm { "device" } else { host_sampler_name },
-                arm,
-            )
-        })
-        .collect();
-    let first = &receipts[0];
-    for receipt in &receipts {
-        assert_eq!(
-            first.generated_sha256, receipt.generated_sha256,
-            "same-program sampled repeat stream"
-        );
-        assert_eq!(first.state_pos, receipt.state_pos);
-        assert_eq!(first.generated_tokens, receipt.generated_tokens);
-        assert_eq!(first.forward_calls, receipt.forward_calls);
-        assert_eq!(first.eos, receipt.eos);
-        assert_eq!(first.final_logits_sha256, receipt.final_logits_sha256);
-        assert_eq!(first.final_cache_digest, receipt.final_cache_digest);
-        assert_eq!(first.final_hidden_digest, receipt.final_hidden_digest);
-        assert_eq!(first.attention_join_sha256, receipt.attention_join_sha256);
-        assert_eq!(receipt.ar_refusals, [0, 0]);
-        println!(
-            "REPEAT repeat={} state_alloc_ns={} prime_wall_ns={} decode_wall_ns={} state_pos={} generated_tokens={} forward_calls={} eos={} looped={} eligible={} prime_counters={:?} decode_counters={:?}",
-            receipt.repeat,
-            receipt.state_alloc.as_nanos(),
-            receipt.prime_wall.as_nanos(),
-            receipt.decode_wall.as_nanos(),
-            receipt.state_pos,
-            receipt.generated_tokens,
-            receipt.forward_calls,
-            receipt.eos,
-            receipt.looped,
-            receipt.eligible,
-            receipt.counters_prime,
-            receipt.counters_decode,
-        );
-    }
-    if abba {
-        assert!(
-            receipts.iter().all(|r| r.eligible),
-            "all ABBA rows must be eligible"
-        );
-        let rate = |arm: bool| {
-            let rows: Vec<_> = receipts
+            let host = rate(false);
+            let device = rate(true);
+            println!(
+                "ABBA cycles=10 rows_per_arm=20 host_tok_s={host:.6} device_tok_s={device:.6} delta_pct={:.6} tokens_logits_cache_hidden_identical=true timing_scope=sample_plus_forward_envelope",
+                (device / host - 1.0) * 100.0
+            );
+        }
+        if attention_mode && !profiled && !sampler_abba {
+            assert!(
+                receipts.iter().all(|receipt| receipt.eligible),
+                "all five sampled attention rows must be eligible; no reroll or forward-only substitute"
+            );
+            let total_tokens: usize = receipts
                 .iter()
-                .filter(|r| matches!(r.repeat % 4, 1 | 2) == arm)
-                .collect();
-            rows.iter().map(|r| r.generated_tokens).sum::<usize>() as f64 * 1e9
-                / rows.iter().map(|r| r.decode_wall.as_nanos()).sum::<u128>() as f64
-        };
-        let host = rate(false);
-        let device = rate(true);
-        println!(
-            "ABBA cycles=10 rows_per_arm=20 host_tok_s={host:.6} device_tok_s={device:.6} delta_pct={:.6} tokens_logits_cache_hidden_identical=true timing_scope=sample_plus_forward_envelope",
-            (device / host - 1.0) * 100.0
-        );
-    }
-    if attention_mode && !profiled && !abba {
-        assert!(
-            receipts.iter().all(|receipt| receipt.eligible),
-            "all five sampled attention rows must be eligible; no reroll or forward-only substitute"
-        );
-        let total_tokens: usize = receipts
-            .iter()
-            .map(|receipt| receipt.generated_tokens)
-            .sum();
-        let total_wall_ns: u128 = receipts
-            .iter()
-            .map(|receipt| receipt.decode_wall.as_nanos())
-            .sum();
-        let pooled_tok_s = total_tokens as f64 * 1e9 / total_wall_ns as f64;
-        println!(
-            "SUMMARY {{\"repeats\":{repeats},\"eligible_repeats\":{repeats},\"generated_tokens\":{total_tokens},\"decode_wall_ns\":{total_wall_ns},\"sampled_envelope_tok_s\":{pooled_tok_s:.6},\"timing_scope\":\"sample_plus_forward_envelope\",\"sampler_order\":\"{sampler_name}\",\"paired_control\":false,\"speculative\":false}}"
-        );
-    }
-    if attention_mode && profiled {
-        assert!(receipts.iter().all(|receipt| !receipt.eligible));
-        println!(
-            "PASS profile-only sampled attention TP2; repeats={repeats} eligible=0 timing_scope=none sampler={sampler_name}"
-        );
-    } else if attention_mode {
-        println!(
-            "PASS sampled attention TP2; repeats={repeats} eligible={repeats} timing_scope=sample_plus_forward_envelope sampler={sampler_name}"
-        );
-    } else {
-        println!(
-            "PASS sampled TP/EP internal repeat; eligible_first={} eligible_second={} loop exclusion remains per-row eligibility",
-            first.eligible, receipts[1].eligible
-        );
-    }
+                .map(|receipt| receipt.generated_tokens)
+                .sum();
+            let total_wall_ns: u128 = receipts
+                .iter()
+                .map(|receipt| receipt.decode_wall.as_nanos())
+                .sum();
+            let pooled_tok_s = total_tokens as f64 * 1e9 / total_wall_ns as f64;
+            println!(
+                "SUMMARY {{\"repeats\":{repeats},\"eligible_repeats\":{repeats},\"generated_tokens\":{total_tokens},\"decode_wall_ns\":{total_wall_ns},\"sampled_envelope_tok_s\":{pooled_tok_s:.6},\"timing_scope\":\"sample_plus_forward_envelope\",\"sampler_order\":\"{sampler_name}\",\"paired_control\":false,\"speculative\":false}}"
+            );
+        }
+        if attention_mode && profiled {
+            assert!(receipts.iter().all(|receipt| !receipt.eligible));
+            println!(
+                "PASS profile-only sampled attention TP2; repeats={repeats} eligible=0 timing_scope=none sampler={sampler_name}"
+            );
+        } else if attention_mode {
+            println!(
+                "PASS sampled attention TP2; repeats={repeats} eligible={repeats} timing_scope=sample_plus_forward_envelope sampler={sampler_name}"
+            );
+        } else {
+            println!(
+                "PASS sampled TP/EP internal repeat; eligible_first={} eligible_second={} loop exclusion remains per-row eligibility",
+                first.eligible, receipts[1].eligible
+            );
+        }
     }
     Dsv4Gpu::set_attention_tp_for_gate(false);
     Dsv4Gpu::set_tp_ep_topology_for_gate(false);
