@@ -265,17 +265,19 @@ pub static MLA_DSA_DECODE_DISPATCHES: std::sync::atomic::AtomicU64 =
 ///
 /// Rollback seam: unset the var (or set 0). Both arms are read per call, so a rollback is the
 /// next request, not a restart.
-/// `MEMRA_DSA_SCORE_TC=1|2` (lane/glm5-dsa-score-tc, 2026-09-07, default OFF, decide-by
-/// 2026-09-21): the prefill scorer on bf16 `mma.sync` tensor cores (`cu/mla_attn.cu`, "the
+/// `MEMRA_DSA_SCORE_TC=1|2|3` (lane/glm5-dsa-score-tc, 2026-09-07, default OFF, decide-by
+/// 2026-09-21): the prefill scorer on `mma.sync` tensor cores (`cu/mla_attn.cu`, "the
 /// TENSOR-CORE arm"). `1` = plain bf16 operands (one MMA per product, ~1e-3 relative);
-/// `2` = every operand split hi/lo bf16, three MMAs (f32-class, ~3e-6 relative). Prefill widths
-/// only (`t_q >= 8`); neither is bit-identical to the f32 scorer, admitted like
+/// `2` = every operand split hi/lo bf16, three MMAs (f32-class, ~3e-6 relative); `3` = fp16
+/// operands clamped to +-65504, one MMA (11-bit mantissa, ~2e-4 relative). Prefill widths
+/// only (`t_q >= 8`); none is bit-identical to the f32 scorer, admitted like
 /// `MEMRA_MLA_TC_PREFILL`: served-prompt ids against the f32 arm. 0 = off.
 pub fn dsa_score_tc() -> i32 {
     static LEVEL: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
     *LEVEL.get_or_init(|| match std::env::var("MEMRA_DSA_SCORE_TC").as_deref() {
         Ok("1") => 1,
         Ok("2") => 2,
+        Ok("3") => 3,
         _ => 0,
     })
 }
@@ -1974,7 +1976,9 @@ impl Engine {
         // kernel's own geometry bounds and fall through to the f32 dispatch below.
         let tc = dsa_score_tc();
         if tc > 0 && t_q >= 8 {
-            let mut scratch = self.alloc_uninit::<u16>(tc as usize * t_q * heads * d)?;
+            // One 16-bit plane for precisions 1 (bf16) and 3 (fp16), two (hi, lo) for 2.
+            let planes = if tc == 2 { 2 } else { 1 };
+            let mut scratch = self.alloc_uninit::<u16>(planes * t_q * heads * d)?;
             let rc = unsafe {
                 memra_mla_kpool_score_tc_f32(
                     q.device_ptr(&s).0 as *const f32,
@@ -2001,7 +2005,11 @@ impl Engine {
                     eprintln!(
                         "[mla-dsa-score-tc] engaged kpool_score t={t_q} heads={heads} \
                          pools={n_pools} precision={tc} class={} (MEMRA_DSA_SCORE_TC)",
-                        if tc == 2 { "bf16x2-mma" } else { "bf16-mma" }
+                        match tc {
+                            2 => "bf16x2-mma",
+                            3 => "f16-mma",
+                            _ => "bf16-mma",
+                        }
                     );
                 }
                 return ck("kpool_score_tc", rc);
