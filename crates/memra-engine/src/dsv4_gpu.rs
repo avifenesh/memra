@@ -722,6 +722,11 @@ pub struct Dsv4Gpu {
     ep_calls: std::sync::atomic::AtomicU64,
     tp_ep_rank_layer_calls: [std::sync::atomic::AtomicU64; 2],
     tp_ep_ar: std::sync::Mutex<Option<TpEpArState>>,
+    /// The one-shot AR signal sequence is model-global. Serialize the whole
+    /// TP/EP token transaction so concurrent requests cannot interleave layers
+    /// between the two rank launches; this is a correctness lock, not a timing
+    /// drain or a concurrency qualification.
+    tp_ep_walk_lock: std::sync::Mutex<()>,
     pub model: Dsv4Model,
     pub stages: Vec<Stage>,
     pub layer_stage: Vec<usize>, // trunk layer -> stage idx
@@ -2962,6 +2967,7 @@ impl Dsv4Gpu {
             ep_calls: std::sync::atomic::AtomicU64::new(0),
             tp_ep_rank_layer_calls: std::array::from_fn(|_| std::sync::atomic::AtomicU64::new(0)),
             tp_ep_ar: std::sync::Mutex::new(None),
+            tp_ep_walk_lock: std::sync::Mutex::new(()),
             model,
             stages,
             layer_stage: if topology.is_tp_ep() {
@@ -9097,6 +9103,10 @@ impl Dsv4Gpu {
         if taps.is_some() {
             return Err("TP/EP vertical slice does not admit DSpark taps yet".into());
         }
+        let _walk_guard = self
+            .tp_ep_walk_lock
+            .lock()
+            .map_err(|_| "TP/EP walk mutex poisoned".to_string())?;
         let mut rank1_caches = state
             .tp_ep_caches
             .take()
