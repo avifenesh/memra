@@ -16156,8 +16156,6 @@ impl Dsv4Gpu {
                 if cache.c4_host.is_some() {
                     return Err("TP/EP cache digest does not admit host-C4 residency".into());
                 }
-                mix(&mut digests[rank], cache.n_blocks as u64);
-                mix(&mut digests[rank], cache.i_blocks as u64);
                 let stage = &self.stages[rank];
                 stage
                     .gpu
@@ -16165,7 +16163,12 @@ impl Dsv4Gpu {
                     .bind_to_thread()
                     .map_err(e("TP/EP cache digest context"))?;
                 let stream = stage.gpu.stream();
-                let mut read = |plane: &CudaSlice<f32>| -> Res<()> {
+                let layer = stage
+                    .layers
+                    .iter()
+                    .find(|layer| layer.il == il as u32)
+                    .ok_or_else(|| format!("TP/EP cache digest missing rank {rank} layer {il}"))?;
+                let mut read = |plane: cudarc::driver::CudaView<'_, f32>| -> Res<()> {
                     let mut values = vec![0f32; plane.len()];
                     stream
                         .memcpy_dtoh(plane, &mut values)
@@ -16176,21 +16179,58 @@ impl Dsv4Gpu {
                     }
                     Ok(())
                 };
-                read(&cache.kvc)?;
+                // Only persistent data participates. In particular, exclude
+                // transient verifier rows and n_blocks/i_blocks metadata so a
+                // stale pair cannot pass merely because counters advanced.
+                let win = self.model.cfg().sliding_window as usize;
+                let hd = self.model.cfg().head_dim as usize;
+                read(cache.kvc.slice(..win * hd))?;
+                if let Some(cmp) = &layer.cmp {
+                    let end = win
+                        .checked_mul(hd)
+                        .and_then(|start| {
+                            cache
+                                .n_blocks
+                                .checked_mul(cmp.d)
+                                .and_then(|rows| start.checked_add(rows))
+                        })
+                        .ok_or("TP/EP cache digest compressed range overflow")?;
+                    if end > cache.kvc.len() {
+                        return Err(format!(
+                            "TP/EP cache digest compressed range {end} exceeds {}",
+                            cache.kvc.len()
+                        ));
+                    }
+                    read(cache.kvc.slice(win * hd..end))?;
+                }
                 if let Some(plane) = &cache.pend_kv {
-                    read(plane)?;
+                    read(plane.slice(..))?;
                 }
                 if let Some(plane) = &cache.pend_score {
-                    read(plane)?;
+                    read(plane.slice(..))?;
                 }
                 if let Some(plane) = &cache.ikvc {
-                    read(plane)?;
+                    let ix = layer
+                        .idx
+                        .as_ref()
+                        .ok_or("TP/EP index cache metadata missing")?;
+                    let end = cache
+                        .i_blocks
+                        .checked_mul(ix.cmp.d)
+                        .ok_or("TP/EP cache digest index range overflow")?;
+                    if end > plane.len() {
+                        return Err(format!(
+                            "TP/EP cache digest index range {end} exceeds {}",
+                            plane.len()
+                        ));
+                    }
+                    read(plane.slice(..end))?;
                 }
                 if let Some(plane) = &cache.ipend_kv {
-                    read(plane)?;
+                    read(plane.slice(..))?;
                 }
                 if let Some(plane) = &cache.ipend_score {
-                    read(plane)?;
+                    read(plane.slice(..))?;
                 }
             }
         }
