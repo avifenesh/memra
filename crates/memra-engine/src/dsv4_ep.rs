@@ -942,6 +942,13 @@ pub(crate) fn execute_matrix_local(
     if !bank.local_only || bank.peer_table.is_none() {
         return Err("TP/EP local expert execution requires a complete local matrix table".into());
     }
+    // A local-only partition scatters only the live slots it owns into the caller's
+    // contribution plane.  Unlike peer-dispatch EP, no later slot-merge overwrites the
+    // complementary half.  Clear the external plane first so a reused one-row workspace
+    // cannot feed a previous token/layer's non-owned partial into the rank-order reduce.
+    gpu.stream()
+        .memset_zeros(local.contribution)
+        .map_err(|e| format!("TP/EP local contribution clear: {e}"))?;
     let calls = u64::from(work.prepare(gpu, local, scale2, scale2_host, rows, topk, true)?);
     work.set_gu_fuse_for_plain(allow_gu_fuse);
     work.gate_up(gpu, table, local, limit)?;
@@ -1153,5 +1160,365 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    #[ignore = "requires one locked CUDA GPU; TP/EP local contribution reuse regression"]
+    fn cuda_tp_ep_local_only_clears_reused_contribution_and_rank_sums() {
+        use crate::dsv4_grouped::{GroupedWork, modelopt_table};
+        use cudarc::driver::{CudaSlice, CudaStream};
+        use std::sync::Arc;
+
+        assert!(crate::moe_f16g_mode() >= 2);
+        assert!(crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT));
+
+        const GLOBAL: usize = 8;
+        const COUNT: usize = GLOBAL / 2;
+        const HIDDEN: usize = 4096;
+        const INTER: usize = 2048;
+        const TOPK: usize = 6;
+        const ROWS: usize = 1;
+        const SLOTS: usize = ROWS * TOPK;
+        let wbytes = INTER * HIDDEN / 2;
+        let sbytes = INTER * HIDDEN / 16;
+
+        fn mix(mut x: u64) -> u64 {
+            x ^= x >> 30;
+            x = x.wrapping_mul(0xbf58476d1ce4e5b9);
+            x ^= x >> 27;
+            x = x.wrapping_mul(0x94d049bb133111eb);
+            x ^ (x >> 31)
+        }
+        fn make_bank_bytes(
+            first: usize,
+            count: usize,
+            wbytes: usize,
+            sbytes: usize,
+        ) -> (Vec<u8>, Vec<u8>) {
+            let mut weights = Vec::with_capacity(count * 3 * wbytes);
+            let mut scales = Vec::with_capacity(count * 3 * sbytes);
+            for local in 0..count {
+                let expert = first + local;
+                for projection in 0..3 {
+                    for i in 0..wbytes {
+                        weights.push(
+                            (mix(expert as u64 * 0x1000_0001
+                                + projection as u64 * 0x100_003
+                                + i as u64)
+                                % 0x7e) as u8
+                                + 1,
+                        );
+                    }
+                    for i in 0..sbytes {
+                        scales.push(
+                            (0x10
+                                + (mix(expert as u64 * 0x10_001
+                                    + projection as u64 * 0x100_003
+                                    + i as u64)
+                                    % 0x6f) as u8)
+                                & 0x7f,
+                        );
+                    }
+                }
+            }
+            (weights, scales)
+        }
+        fn view(scratch: &mut EpScratch) -> EpCompute<'_> {
+            EpCompute {
+                xq: &scratch.xq,
+                xs: &scratch.xs,
+                ids: &scratch.ids,
+                weights: &scratch.weights,
+                g1: &mut scratch.g1,
+                g3: &mut scratch.g3,
+                h: &mut scratch.h,
+                hq: &mut scratch.hq,
+                hs: &mut scratch.hs,
+                contribution: &mut scratch.contribution,
+            }
+        }
+        fn scratch(gpu: &Gpu) -> EpScratch {
+            EpScratch::new(gpu, gpu, ROWS, TOPK, HIDDEN, INTER, None).unwrap()
+        }
+        fn work(stream: &Arc<CudaStream>, first: usize, count: usize) -> GroupedWork {
+            GroupedWork::new_partition(stream, GLOBAL, first, count, SLOTS, HIDDEN, INTER).unwrap()
+        }
+        fn bank(
+            stream: &Arc<CudaStream>,
+            first: usize,
+            count: usize,
+            weights: &[u8],
+            scales: &[u8],
+            scale2: &[f32],
+        ) -> (EpLayer, CudaSlice<u64>, CudaSlice<u8>, CudaSlice<u8>) {
+            let w = stream.clone_htod(weights).unwrap();
+            let sc = stream.clone_htod(scales).unwrap();
+            let table = modelopt_table(stream, &w, &sc, count, HIDDEN, INTER).unwrap();
+            let peer_table = modelopt_table(stream, &w, &sc, count, HIDDEN, INTER).unwrap();
+            let bank = EpLayer {
+                peer_stage: 0,
+                local_first: first,
+                count,
+                peer_first: (GLOBAL - count) - first,
+                peer_w: stream.alloc_zeros::<u8>(0).unwrap(),
+                peer_sc: stream.alloc_zeros::<u8>(0).unwrap(),
+                peer_s2: stream.alloc_zeros::<f32>(0).unwrap(),
+                peer_table: Some(peer_table),
+                local_only: true,
+            };
+            // Keep scale2 in the caller; this argument documents that the bank uses the
+            // global expert scale plane even though its weight/table planes are local.
+            assert_eq!(scale2.len(), GLOBAL * 3);
+            (bank, table, w, sc)
+        }
+        fn load_inputs(
+            stream: &Arc<CudaStream>,
+            scratch: &mut EpScratch,
+            xq: &[u8],
+            xs: &[f32],
+            ids: &[i32],
+            weights: &[f32],
+            sentinel: u32,
+        ) {
+            stream.memcpy_htod(xq, &mut scratch.xq).unwrap();
+            stream.memcpy_htod(xs, &mut scratch.xs).unwrap();
+            stream.memcpy_htod(ids, &mut scratch.ids).unwrap();
+            stream.memcpy_htod(weights, &mut scratch.weights).unwrap();
+            let poisoned = vec![f32::from_bits(sentinel); SLOTS * HIDDEN];
+            stream
+                .memcpy_htod(&poisoned, &mut scratch.contribution)
+                .unwrap();
+        }
+        fn run_local(
+            gpu: &Gpu,
+            stream: &Arc<CudaStream>,
+            bank: &EpLayer,
+            table: &CudaSlice<u64>,
+            work: &mut GroupedWork,
+            scratch: &mut EpScratch,
+            xq: &[u8],
+            xs: &[f32],
+            ids: &[i32],
+            weights: &[f32],
+            scale2: &CudaSlice<f32>,
+            scale2_host: &[f32],
+            sentinel: u32,
+        ) -> Vec<f32> {
+            load_inputs(stream, scratch, xq, xs, ids, weights, sentinel);
+            execute_matrix_local(
+                gpu,
+                bank,
+                table,
+                scale2,
+                scale2_host,
+                &mut view(scratch),
+                work,
+                ROWS,
+                TOPK,
+                6.0,
+                false,
+            )
+            .unwrap();
+            stream.synchronize().unwrap();
+            stream
+                .clone_dtoh(&scratch.contribution.slice(..SLOTS * HIDDEN))
+                .unwrap()
+        }
+        fn assert_slots(values: &[f32], expected: &[f32], ids: &[i32], first: usize, count: usize) {
+            assert_eq!(values.len(), expected.len());
+            for slot in 0..SLOTS {
+                let owned = (first as i32..(first + count) as i32).contains(&ids[slot]);
+                for col in 0..HIDDEN {
+                    let got = values[slot * HIDDEN + col];
+                    let want = expected[slot * HIDDEN + col];
+                    if owned {
+                        assert_eq!(got.to_bits(), want.to_bits(), "owned slot={slot} col={col}");
+                    } else {
+                        assert_eq!(got.to_bits(), 0, "non-owned slot={slot} col={col}");
+                    }
+                }
+            }
+        }
+
+        let previous_route_validation = crate::dsv4_grouped::set_route_validation_for_gate(true);
+        let gpu = Gpu::new(0).unwrap();
+        unsafe { gpu.ctx.disable_event_tracking() };
+        let stream = gpu.stream();
+        let (weights_a, scales_a) = make_bank_bytes(0, COUNT, wbytes, sbytes);
+        let (weights_b, scales_b) = make_bank_bytes(COUNT, COUNT, wbytes, sbytes);
+        let (weights_full, scales_full) = make_bank_bytes(0, GLOBAL, wbytes, sbytes);
+        let scale2_host: Vec<f32> = (0..GLOBAL * 3)
+            .map(|i| 2f32.powi((i % 9) as i32 - 4))
+            .collect();
+        let scale2 = stream.clone_htod(&scale2_host).unwrap();
+        let xq: Vec<u8> = (0..HIDDEN)
+            .map(|i| (mix(i as u64 * 0x10001 + 17) % 0x7e) as u8 + 1)
+            .collect();
+        let xs: Vec<f32> = (0..HIDDEN / 128)
+            .map(|i| 2f32.powi((i % 7) as i32 - 3))
+            .collect();
+        let weights_route: Vec<f32> = [0.11, 0.17, 0.23, 0.31, 0.07, 0.19].to_vec();
+        let ids_a = [0, 1, 2, 3, 0, 1];
+        let ids_b = [4, 5, 6, 7, 4, 5];
+        let ids_mixed = [0, 4, 1, 5, 2, 6];
+
+        let (bank_a, table_a, _wa, _sa) =
+            bank(&stream, 0, COUNT, &weights_a, &scales_a, &scale2_host);
+        let (bank_b, table_b, _wb, _sb) =
+            bank(&stream, COUNT, COUNT, &weights_b, &scales_b, &scale2_host);
+        let (bank_full, table_full, _wf, _sf) = bank(
+            &stream,
+            0,
+            GLOBAL,
+            &weights_full,
+            &scales_full,
+            &scale2_host,
+        );
+
+        // Clean-vs-poison A/B for each ownership half. The second poison run reuses the
+        // same external EpCompute contribution allocation after switching ownership.
+        let mut work_a_clean = work(&stream, 0, COUNT);
+        let mut scratch_a_clean = scratch(&gpu);
+        let clean_a = run_local(
+            &gpu,
+            &stream,
+            &bank_a,
+            &table_a,
+            &mut work_a_clean,
+            &mut scratch_a_clean,
+            &xq,
+            &xs,
+            &ids_a,
+            &weights_route,
+            &scale2,
+            &scale2_host,
+            0,
+        );
+        let mut work_a_poison = work(&stream, 0, COUNT);
+        let mut scratch_reuse = scratch(&gpu);
+        let poison_a = run_local(
+            &gpu,
+            &stream,
+            &bank_a,
+            &table_a,
+            &mut work_a_poison,
+            &mut scratch_reuse,
+            &xq,
+            &xs,
+            &ids_a,
+            &weights_route,
+            &scale2,
+            &scale2_host,
+            0x7fc5_4321,
+        );
+        assert_slots(&poison_a, &clean_a, &ids_a, 0, COUNT);
+        assert_eq!(
+            poison_a.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+            clean_a.iter().map(|v| v.to_bits()).collect::<Vec<_>>()
+        );
+
+        let mut work_b_clean = work(&stream, COUNT, COUNT);
+        let mut scratch_b_clean = scratch(&gpu);
+        let clean_b = run_local(
+            &gpu,
+            &stream,
+            &bank_b,
+            &table_b,
+            &mut work_b_clean,
+            &mut scratch_b_clean,
+            &xq,
+            &xs,
+            &ids_b,
+            &weights_route,
+            &scale2,
+            &scale2_host,
+            0,
+        );
+        let mut work_b_poison = work(&stream, COUNT, COUNT);
+        let poison_b = run_local(
+            &gpu,
+            &stream,
+            &bank_b,
+            &table_b,
+            &mut work_b_poison,
+            &mut scratch_reuse,
+            &xq,
+            &xs,
+            &ids_b,
+            &weights_route,
+            &scale2,
+            &scale2_host,
+            0x7fc6_5432,
+        );
+        assert_slots(&poison_b, &clean_b, &ids_b, COUNT, COUNT);
+        assert_eq!(
+            poison_b.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+            clean_b.iter().map(|v| v.to_bits()).collect::<Vec<_>>()
+        );
+
+        // Mixed ownership rank-order output: the two local partitions must sum bitwise to
+        // the complete-bank grouped result. This is the canonical F32 rank-reduce class,
+        // not the sorted-expert CPU oracle's reassociated order.
+        let mut work_a_mixed = work(&stream, 0, COUNT);
+        let mut scratch_a_mixed = scratch(&gpu);
+        let mixed_a = run_local(
+            &gpu,
+            &stream,
+            &bank_a,
+            &table_a,
+            &mut work_a_mixed,
+            &mut scratch_a_mixed,
+            &xq,
+            &xs,
+            &ids_mixed,
+            &weights_route,
+            &scale2,
+            &scale2_host,
+            0x7fc7_6543,
+        );
+        let mut work_b_mixed = work(&stream, COUNT, COUNT);
+        let mut scratch_b_mixed = scratch(&gpu);
+        let mixed_b = run_local(
+            &gpu,
+            &stream,
+            &bank_b,
+            &table_b,
+            &mut work_b_mixed,
+            &mut scratch_b_mixed,
+            &xq,
+            &xs,
+            &ids_mixed,
+            &weights_route,
+            &scale2,
+            &scale2_host,
+            0x7fc8_7654,
+        );
+        let mut work_full = GroupedWork::new(&stream, GLOBAL, SLOTS, HIDDEN, INTER).unwrap();
+        let mut scratch_full = scratch(&gpu);
+        let full = run_local(
+            &gpu,
+            &stream,
+            &bank_full,
+            &table_full,
+            &mut work_full,
+            &mut scratch_full,
+            &xq,
+            &xs,
+            &ids_mixed,
+            &weights_route,
+            &scale2,
+            &scale2_host,
+            0,
+        );
+        let rank_sum: Vec<f32> = mixed_a.iter().zip(&mixed_b).map(|(a, b)| a + b).collect();
+        assert_eq!(
+            rank_sum.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+            full.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+            "rank-order local sum must equal complete-bank grouped output"
+        );
+        println!(
+            "PASS TP/EP local contribution clear+rank-order identity hidden={HIDDEN} inter={INTER} global={GLOBAL} rows={ROWS} topk={TOPK}"
+        );
+        crate::dsv4_grouped::set_route_validation_for_gate(previous_route_validation);
     }
 }
