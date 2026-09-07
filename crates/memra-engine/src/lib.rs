@@ -2583,6 +2583,23 @@ pub fn glm5_tp_split_grouped_prime_on() -> bool {
     std::env::var("MEMRA_GLM5_TP_SPLIT_GROUPED_PRIME").as_deref() == Ok("1")
 }
 
+/// `MEMRA_GLM5_TP_INDEXER_SPLIT=1` (lane/glm5-tp-indexer-split-20260907, default OFF, decide-by
+/// 2026-09-21): at prefill widths (`t >= 8`) each TP rank scores and selects HALF of the chunk's
+/// queries against the whole k-pool and the ranks exchange their `idx` rows, instead of both
+/// ranks scoring every query. Pure movement joins the halves, so the merged plane is
+/// byte-identical to the replicated one.
+pub fn glm5_tp_indexer_split_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_GLM5_TP_INDEXER_SPLIT").as_deref() == Ok("1"))
+}
+
+/// `MEMRA_GLM5_TP_INDEXER_SPLIT_CHECK=1`: diagnostic. Every split call ALSO runs the replicated
+/// selection on each rank and compares the merged plane byte for byte; a mismatch is an error.
+pub fn glm5_tp_indexer_split_check_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_GLM5_TP_INDEXER_SPLIT_CHECK").as_deref() == Ok("1"))
+}
+
 pub fn ep_grouped_prime_on() -> bool {
     ep_grouped_prime_armed().0
 }
