@@ -815,6 +815,22 @@ pub fn pre_t1_ws_norm(
     hidden: usize,
     norm: Option<(&CudaSlice<f32>, f32)>,
 ) -> Res<Option<(CudaSlice<i8>, CudaSlice<f32>)>> {
+    pre_t1_ws_norm_dst(e, topology, site, x, ws, hidden, norm, false)
+}
+
+/// `pre_t1_ws_norm` with the normalized output landing in `ws.z` (the FFN site's operand)
+/// instead of `ws.h` (the attention site's). Same launch, same bytes, a different destination.
+#[allow(clippy::too_many_arguments)] // allow: the site's operand set plus the destination
+pub fn pre_t1_ws_norm_dst(
+    e: &Engine,
+    topology: &HyperTopology,
+    site: &HyperSite,
+    x: &CudaSlice<f32>,
+    ws: &mut HyperDecodeWs,
+    hidden: usize,
+    norm: Option<(&CudaSlice<f32>, f32)>,
+    into_z: bool,
+) -> Res<Option<(CudaSlice<i8>, CudaSlice<f32>)>> {
     let fuse = norm.filter(|_| {
         crate::hc_pre_norm_fuse_on()
             && crate::hc_pre_v4_on()
@@ -827,7 +843,8 @@ pub fn pre_t1_ws_norm(
         // SAFETY-ADJACENT NOTE: the raw pointer outlives this borrow of `ws.h`, which is the same
         // contract the `dpm!` sites in this file already take. `ws.h` is a workspace buffer that
         // is neither reallocated nor resized for the duration of the call below.
-        Some(ws.h.device_ptr_mut(&st).0 as *mut f32)
+        let dst = if into_z { &mut ws.z } else { &mut ws.h };
+        Some(dst.device_ptr_mut(&st).0 as *mut f32)
     } else {
         None
     };

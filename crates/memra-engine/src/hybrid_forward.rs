@@ -3072,15 +3072,27 @@ impl HybridModel {
             .ok_or_else(|| format!("layer {il}: no symmetric glue for the peer"))?;
         // ---- attention-site glue, both ranks ----
         let _attn_q8 = self.ws_attn_pre(e, topology, layer, hyper, il, x, ws, n_embd, eps)?;
-        crate::hyper::pre_t1_ws(peer, topology, &glue.hyper.attn, x_peer, ws_peer, n_embd)?;
-        peer.rms_norm(
-            &ws_peer.y,
-            glue.attn_norm.float_data(),
-            &mut ws_peer.h,
+        // the peer's glue is the root's at full width, so the same norm fold applies
+        let want_q8 = crate::glm5_q8_fuse_attn_on() && matches!(&layer.mixer, Mixer::Kda(_));
+        let fused = crate::hyper::pre_t1_ws_norm(
+            peer,
+            topology,
+            &glue.hyper.attn,
+            x_peer,
+            ws_peer,
             n_embd,
-            1,
-            eps,
+            want_q8.then(|| (glue.attn_norm.float_data(), eps)),
         )?;
+        if fused.is_none() {
+            peer.rms_norm(
+                &ws_peer.y,
+                glue.attn_norm.float_data(),
+                &mut ws_peer.h,
+                n_embd,
+                1,
+                eps,
+            )?;
+        }
 
         Ok(())
     }
@@ -3114,9 +3126,22 @@ impl HybridModel {
         crate::hyper::post_t1_ws(peer, topology, &mixed[1], x_peer, ws_peer, n_embd)?;
         std::mem::swap(x_peer, &mut ws_peer.xb);
 
-        // ---- FFN-site glue, both ranks ----
-        crate::hyper::pre_t1_ws(e, topology, &hyper.mlp, x, ws, n_embd)?;
-        let zq8 = if crate::glm5_q8_fuse_on() {
+        // ---- FFN-site glue, both ranks (the q8 norm folded into the hc-pre launch when the
+        // fused arm takes it; otherwise the separate norm as before) ----
+        let q8 = crate::glm5_q8_fuse_on();
+        let fused_z = crate::hyper::pre_t1_ws_norm_dst(
+            e,
+            topology,
+            &hyper.mlp,
+            x,
+            ws,
+            n_embd,
+            q8.then(|| (layer.post_attn_norm.float_data(), eps)),
+            true,
+        )?;
+        let zq8 = if let Some(pair) = fused_z {
+            Some(pair)
+        } else if q8 {
             Some(e.rms_norm_zq8_f32(
                 &ws.y,
                 layer.post_attn_norm.float_data(),
@@ -3136,15 +3161,26 @@ impl HybridModel {
             )?;
             None
         };
-        crate::hyper::pre_t1_ws(peer, topology, &glue.hyper.mlp, x_peer, ws_peer, n_embd)?;
-        peer.rms_norm(
-            &ws_peer.y,
-            glue.post_attn_norm.float_data(),
-            &mut ws_peer.z,
+        let fused_zp = crate::hyper::pre_t1_ws_norm_dst(
+            peer,
+            topology,
+            &glue.hyper.mlp,
+            x_peer,
+            ws_peer,
             n_embd,
-            1,
-            eps,
+            q8.then(|| (glue.post_attn_norm.float_data(), eps)),
+            true,
         )?;
+        if fused_zp.is_none() {
+            peer.rms_norm(
+                &ws_peer.y,
+                glue.post_attn_norm.float_data(),
+                &mut ws_peer.z,
+                n_embd,
+                1,
+                eps,
+            )?;
+        }
 
         // ---- MoE: both inputs in, both outputs out ----
         let ffn_out = match &layer.ffn {
@@ -3477,8 +3513,10 @@ impl HybridModel {
     ) -> Result<Option<Q8Pair>, Box<dyn std::error::Error>> {
         // MEMRA_HC_PRE_NORM_FUSE: when the norm below is the q8 one AND the shape fits, it rides
         // INSIDE the hc-pre launch and its own launch disappears. `Some` means it already ran.
-        let want_q8 = crate::glm5_q8_fuse_attn_on()
-            && matches!(&layer.mixer, Mixer::Kda(la) if la.tp.is_none());
+        // On a glm5-TP head shard the pair goes unused (the shard's projections quantize their
+        // own input), but asking for it still folds the norm INTO the hc-pre launch, which is the
+        // launch the shard walk was paying separately (tptrace4: rms_norm 112/token per rank).
+        let want_q8 = crate::glm5_q8_fuse_attn_on() && matches!(&layer.mixer, Mixer::Kda(_));
         let fused_pair = crate::hyper::pre_t1_ws_norm(
             e,
             topology,
