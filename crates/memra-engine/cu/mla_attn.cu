@@ -1337,37 +1337,43 @@ extern "C" int memra_mla_kpool_score_f32(const float* q, const float* pool_keys,
 // with f32 accumulation and keeps the epilogue (`relu(dot * qk_scale) * (hw * head_scale)`,
 // summed over heads, causal -inf) in f32.
 //
-// NUMERICS, stated: this arm is NOT bit-identical to the reference scorer and cannot be. `q`
-// and the pool keys are rounded to bf16 (8-bit mantissa) and the MMA's contraction order is the
-// unit's own. It is the same class as `MEMRA_MLA_TC_PREFILL` (the bf16 MMA attention this model
-// already primes with), and it is admitted the same way: served-prompt ids against the f32 arm
-// with 0 argmax flips, not the byte-identity gate the f32 kernels carry. DeepSeek's reference
-// DSA indexer runs its scorer in FP8; bf16 is the finer of the two.
+// TWO PRECISIONS, one kernel template:
+//   * `precision 1` (bf16): q and the keys rounded to bf16, one MMA per product. Relative
+//     error ~1.4e-3 on the scores (harness, random data), top-512 membership 99.8-99.9%. On the
+//     pair it moved one greedy token at 36/64 after a 32k prompt (tpwalk18b), which is a flip.
+//   * `precision 2` (bf16x2): every operand split as `hi = bf16(x)`, `lo = bf16(x - hi)`, and
+//     the product taken as `hi*hi + hi*lo + lo*hi` (three MMAs; the dropped `lo*lo` is 2^-16
+//     relative). f32-class error at three times the tensor-core work, still several times
+//     the f32 FFMA kernel's speed.
+// Neither is bit-identical to the reference scorer (the MMA's contraction order is the
+// unit's own). Admitted like `MEMRA_MLA_TC_PREFILL`: served-prompt ids against the f32 arm.
 //
 // SHAPE. One CTA owns a tile of `MLA_SCORE_TC_BP` pools (its B operand: loaded ONCE from the
-// f32 key plane, converted, and held in REGISTERS as MMA fragments for the CTA's whole life)
-// and walks a range of queries in stages of `MLA_SCORE_TC_BT` queries x all heads (the A
-// operand: pre-converted bf16 rows, cp.async double-buffered through shared memory, one
-// ldmatrix per 16-row tile). 8 warps = 2 pool halves x 4 query pairs. The epilogue reduces the
-// 16 head rows of every m16 tile with three xor-shuffles and carries the per-query partial
-// across the head tiles in registers; each warp stores one contiguous 64-pool row segment.
-// Traffic per (layer, chunk) at 1M/4096: keys 134 MB x (t_q / 1024) query splits, q rows
-// 32 MB x (n_pools / 128) from L2, score written once. Causal early-out per stage, per CTA.
+// f32 key plane, split, and held in REGISTERS as MMA fragments for the CTA's whole life) and
+// walks a range of queries in stages of BT queries x all heads (the A operand: the split bf16
+// planes written by `memra_mla_q_split_bf16_kernel`, cp.async double-buffered through shared
+// memory, one ldmatrix per 16-row tile and plane). 8 warps = pool groups x query pairs. The
+// epilogue reduces the 16 head rows of every m16 tile with three xor-shuffles and carries the
+// per-query partial across the head tiles in registers; each warp stores one contiguous row
+// segment. Causal early-out per stage, per CTA.
 //
 // REFUSALS (40030-40039): `heads % 16`, `d != 128` (the register-resident B fragments are sized
-// for it), `t_q < 8`, no current device, the smem opt-in declined. The caller falls back to the
-// f32 dispatch on any of them.
+// for it), `t_q < 8`, no current device, the smem opt-in declined, unknown precision. The
+// caller falls back to the f32 dispatch on any of them.
 
 #define MLA_SCORE_TC_BP 128
-#define MLA_SCORE_TC_BT 8
 #define MLA_SCORE_TC_QSPLIT 1024
 #define MLA_SCORE_TC_THREADS 256
 #define MLA_SCORE_TC_D 128
 #define MLA_SCORE_TC_PAD 8 // bf16 elements of row padding: 272 B rows, ldmatrix conflict-free
+#define MLA_SCORE_TC_SMEM (200 * 1024)
 
 __device__ __forceinline__ unsigned mla_tc_pack2(float lo, float hi) {
     __nv_bfloat162 v = __floats2bfloat162_rn(lo, hi);
     return *reinterpret_cast<unsigned*>(&v);
+}
+__device__ __forceinline__ float mla_tc_bf16_residual(float x) {
+    return x - __bfloat162float(__float2bfloat16(x));
 }
 
 __device__ __forceinline__ void mla_tc_cp_async16(void* smem_dst, const void* gmem_src,
@@ -1382,11 +1388,10 @@ __device__ __forceinline__ void mla_tc_cp_wait() {
     asm volatile("cp.async.wait_group %0;\n" ::"n"(N));
 }
 
-__device__ __forceinline__ void mla_tc_ldmatrix_x4(unsigned& r0, unsigned& r1, unsigned& r2,
-                                                   unsigned& r3, const void* smem) {
+__device__ __forceinline__ void mla_tc_ldmatrix_x4(unsigned* r, const void* smem) {
     unsigned a = (unsigned)__cvta_generic_to_shared(smem);
     asm volatile("ldmatrix.sync.aligned.m8n8.x4.b16 {%0, %1, %2, %3}, [%4];\n"
-                 : "=r"(r0), "=r"(r1), "=r"(r2), "=r"(r3)
+                 : "=r"(r[0]), "=r"(r[1]), "=r"(r[2]), "=r"(r[3])
                  : "r"(a));
 }
 
@@ -1399,37 +1404,71 @@ __device__ __forceinline__ void mla_tc_mma_bf16(float* c, const unsigned* a, uns
         : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b0), "r"(b1));
 }
 
+// q [n] f32 -> hi [n] bf16 (+ lo [n] bf16 when `lo` is non-null): the A operand's planes.
+__global__ void memra_mla_q_split_bf16_kernel(const float* __restrict__ q,
+                                              unsigned short* __restrict__ hi,
+                                              unsigned short* __restrict__ lo, long n) {
+    long i = ((long)blockIdx.x * blockDim.x + threadIdx.x) * 4;
+    if (i >= n) return;
+    float4 v = *reinterpret_cast<const float4*>(q + i);
+    __nv_bfloat16 h0 = __float2bfloat16(v.x), h1 = __float2bfloat16(v.y),
+                  h2 = __float2bfloat16(v.z), h3 = __float2bfloat16(v.w);
+    ushort4 o;
+    o.x = __bfloat16_as_ushort(h0);
+    o.y = __bfloat16_as_ushort(h1);
+    o.z = __bfloat16_as_ushort(h2);
+    o.w = __bfloat16_as_ushort(h3);
+    *reinterpret_cast<ushort4*>(hi + i) = o;
+    if (lo) {
+        ushort4 r;
+        r.x = __bfloat16_as_ushort(__float2bfloat16(v.x - __bfloat162float(h0)));
+        r.y = __bfloat16_as_ushort(__float2bfloat16(v.y - __bfloat162float(h1)));
+        r.z = __bfloat16_as_ushort(__float2bfloat16(v.z - __bfloat162float(h2)));
+        r.w = __bfloat16_as_ushort(__float2bfloat16(v.w - __bfloat162float(h3)));
+        *reinterpret_cast<ushort4*>(lo + i) = r;
+    }
+}
+
+// SPLIT=false: NT=8 n-tiles (64 pools) per warp, 2 pool groups x 4 query pairs, BT=8.
+// SPLIT=true:  NT=4 n-tiles (32 pools) per warp, 4 pool groups x 2 query pairs, BT=4, and the
+//              smem stage holds two planes (hi, lo) of the query rows.
+template <bool SPLIT>
 __global__ void __launch_bounds__(MLA_SCORE_TC_THREADS, 1) memra_mla_kpool_score_tc_kernel(
-    const unsigned short* __restrict__ qb, const float* __restrict__ pool_keys,
-    const float* __restrict__ hw, float* __restrict__ score, int t_q, int heads, int n_pools,
-    int pool, int first_pos, float qk_scale, float head_scale) {
+    const unsigned short* __restrict__ q_hi, const unsigned short* __restrict__ q_lo,
+    const float* __restrict__ pool_keys, const float* __restrict__ hw, float* __restrict__ score,
+    int t_q, int heads, int n_pools, int pool, int first_pos, float qk_scale, float head_scale) {
     constexpr int D = MLA_SCORE_TC_D;
     constexpr int BP = MLA_SCORE_TC_BP;
-    constexpr int BT = MLA_SCORE_TC_BT;
+    constexpr int NT = SPLIT ? 4 : 8;      // n-tiles per warp
+    constexpr int PG = BP / (NT * 8);      // pool groups per CTA (2 or 4)
+    constexpr int RG = 8 / PG;             // query pairs per stage (4 or 2)
+    constexpr int BT = RG * 2;             // queries per stage
+    constexpr int PLANES = SPLIT ? 2 : 1;
     constexpr int KS = D / 16;             // k-steps
-    constexpr int NT = 8;                  // n-tiles per warp (64 pools)
     constexpr int RS = D + MLA_SCORE_TC_PAD; // smem row stride, bf16 elements
     constexpr int CHUNKS_PER_ROW = D * 2 / 16;
 
     const int tid = (int)threadIdx.x;
     const int lane = tid & 31;
     const int warp = tid >> 5;
-    const int pg = warp & 1;  // pool half: 64 pools
-    const int rg = warp >> 1; // query pair within the stage
+    const int pg = warp % PG;
+    const int rg = warp / PG;
     const int p0 = (int)blockIdx.x * BP;
-    const int pw = p0 + pg * 64; // this warp's first pool
+    const int pw = p0 + pg * (NT * 8); // this warp's first pool
     const int rows_per_stage = BT * heads;
-    const int q_lo = (int)blockIdx.y * MLA_SCORE_TC_QSPLIT;
-    int q_hi = q_lo + MLA_SCORE_TC_QSPLIT;
-    if (q_hi > t_q) q_hi = t_q;
-    if (q_lo >= q_hi) return;
+    const long plane_elems = (long)rows_per_stage * RS;
+    const long buf_elems = plane_elems * PLANES;
+    const int q_lo_i = (int)blockIdx.y * MLA_SCORE_TC_QSPLIT;
+    int q_hi_i = q_lo_i + MLA_SCORE_TC_QSPLIT;
+    if (q_hi_i > t_q) q_hi_i = t_q;
+    if (q_lo_i >= q_hi_i) return;
 
     extern __shared__ __align__(16) unsigned short tc_sh[];
-    unsigned short* buf[2] = {tc_sh, tc_sh + (size_t)rows_per_stage * RS};
 
-    // ---- B fragments: the warp's 64 pools x D, register-resident for the CTA's life.
+    // ---- B fragments: the warp's pools x D, register-resident for the CTA's life.
     // m16n8k16 .col B: lane holds n = lane/4, k = 2*(lane%4) + {0,1} (b0) and +8 (b1).
-    unsigned bfrag[NT][KS][2];
+    unsigned bh[NT][KS][2];
+    unsigned bl[SPLIT ? NT : 1][SPLIT ? KS : 1][2];
 #pragma unroll
     for (int nt = 0; nt < NT; ++nt) {
         const int p = pw + nt * 8 + (lane >> 2);
@@ -1441,44 +1480,52 @@ __global__ void __launch_bounds__(MLA_SCORE_TC_THREADS, 1) memra_mla_kpool_score
             float2 lo = ok ? *reinterpret_cast<const float2*>(krow + k0) : make_float2(0.f, 0.f);
             float2 hi =
                 ok ? *reinterpret_cast<const float2*>(krow + k0 + 8) : make_float2(0.f, 0.f);
-            bfrag[nt][ks][0] = mla_tc_pack2(lo.x, lo.y);
-            bfrag[nt][ks][1] = mla_tc_pack2(hi.x, hi.y);
+            bh[nt][ks][0] = mla_tc_pack2(lo.x, lo.y);
+            bh[nt][ks][1] = mla_tc_pack2(hi.x, hi.y);
+            if constexpr (SPLIT) {
+                bl[nt][ks][0] =
+                    mla_tc_pack2(mla_tc_bf16_residual(lo.x), mla_tc_bf16_residual(lo.y));
+                bl[nt][ks][1] =
+                    mla_tc_pack2(mla_tc_bf16_residual(hi.x), mla_tc_bf16_residual(hi.y));
+            }
         }
     }
 
     // ---- causal horizon per stage: pool p is selectable by query t once
     // p < (first_pos + t + 1) / pool. Stages whose most permissive query cannot see this tile
-    // are -inf without a load; that first visible stage is a closed form.
-    const int n_stages = (q_hi - q_lo + BT - 1) / BT;
-    // smallest t with (first_pos + t + 1) / pool > p0  <=>  first_pos + t + 1 >= (p0 + 1) * pool
+    // are -inf without a load; the first visible stage is a closed form.
+    const int n_stages = (q_hi_i - q_lo_i + BT - 1) / BT;
     long t_vis = (long)(p0 + 1) * pool - first_pos - 1;
     if (t_vis < 0) t_vis = 0;
-    int s_begin = (t_vis <= q_lo) ? 0 : (int)((t_vis - q_lo) / BT);
+    int s_begin = (t_vis <= q_lo_i) ? 0 : (int)((t_vis - q_lo_i) / BT);
     if (s_begin > n_stages) s_begin = n_stages;
-    // -inf fill for the invisible stages: rows [q_lo, q_lo + s_begin*BT) x this CTA's pools.
     {
-        int t_end = q_lo + s_begin * BT;
-        if (t_end > q_hi) t_end = q_hi;
+        int t_end = q_lo_i + s_begin * BT;
+        if (t_end > q_hi_i) t_end = q_hi_i;
         const int np = (n_pools - p0 < BP) ? (n_pools - p0) : BP;
-        for (int i = tid; i < (t_end - q_lo) * np; i += MLA_SCORE_TC_THREADS) {
-            const int t = q_lo + i / np, p = p0 + i % np;
+        for (int i = tid; i < (t_end - q_lo_i) * np; i += MLA_SCORE_TC_THREADS) {
+            const int t = q_lo_i + i / np, p = p0 + i % np;
             score[(long)t * n_pools + p] = -INFINITY;
         }
     }
     if (s_begin >= n_stages) return;
 
-    // ---- stage loader: BT queries x heads rows of bf16 [D], 16 B cp.async chunks, rows past
-    // t_q zero-filled (src-size 0).
+    // ---- stage loader: BT queries x heads rows of bf16 [D] per plane, 16 B cp.async chunks,
+    // rows past t_q zero-filled (src-size 0).
     auto issue_load = [&](int s, int b) {
-        const int t0 = q_lo + s * BT;
-        unsigned short* dst = buf[b];
+        const int t0 = q_lo_i + s * BT;
+        unsigned short* dst = tc_sh + (long)b * buf_elems;
         for (int c = tid; c < rows_per_stage * CHUNKS_PER_ROW; c += MLA_SCORE_TC_THREADS) {
             const int row = c / CHUNKS_PER_ROW, ch = c % CHUNKS_PER_ROW;
             const int t = t0 + row / heads;
             const bool ok = t < t_q;
-            const unsigned short* src =
-                ok ? (qb + ((long)t * heads + (row % heads)) * D + ch * 8) : qb;
-            mla_tc_cp_async16(dst + (size_t)row * RS + ch * 8, src, ok ? 16 : 0);
+            const long src_off = ((long)t * heads + (row % heads)) * D + ch * 8;
+            mla_tc_cp_async16(dst + (long)row * RS + ch * 8, ok ? (q_hi + src_off) : q_hi,
+                              ok ? 16 : 0);
+            if constexpr (SPLIT) {
+                mla_tc_cp_async16(dst + plane_elems + (long)row * RS + ch * 8,
+                                  ok ? (q_lo + src_off) : q_lo, ok ? 16 : 0);
+            }
         }
         mla_tc_cp_commit();
     };
@@ -1497,8 +1544,8 @@ __global__ void __launch_bounds__(MLA_SCORE_TC_THREADS, 1) memra_mla_kpool_score
         }
         __syncthreads();
 
-        const int t0 = q_lo + s * BT;
-        const unsigned short* sh = buf[b];
+        const int t0 = q_lo_i + s * BT;
+        const unsigned short* sh = tc_sh + (long)b * buf_elems;
 #pragma unroll 1
         for (int j = 0; j < 2; ++j) {
             const int tl = rg * 2 + j; // query within the stage
@@ -1515,17 +1562,26 @@ __global__ void __launch_bounds__(MLA_SCORE_TC_THREADS, 1) memra_mla_kpool_score
 #pragma unroll
                     for (int nt = 0; nt < NT; ++nt)
                         acc[nt][0] = acc[nt][1] = acc[nt][2] = acc[nt][3] = 0.f;
-                    const unsigned short* arow =
-                        sh + (size_t)(tl * heads + mt * 16) * RS; // 16 head rows of query t
+                    const long arow = (long)(tl * heads + mt * 16) * RS + (long)(lane & 15) * RS +
+                                      (lane >> 4) * 8;
 #pragma unroll
                     for (int ks = 0; ks < KS; ++ks) {
-                        unsigned a[4];
-                        mla_tc_ldmatrix_x4(a[0], a[1], a[2], a[3],
-                                           arow + (size_t)(lane & 15) * RS + ks * 16 +
-                                               (lane >> 4) * 8);
+                        unsigned ah[4];
+                        mla_tc_ldmatrix_x4(ah, sh + arow + ks * 16);
+                        if constexpr (SPLIT) {
+                            unsigned al[4];
+                            mla_tc_ldmatrix_x4(al, sh + plane_elems + arow + ks * 16);
 #pragma unroll
-                        for (int nt = 0; nt < NT; ++nt)
-                            mla_tc_mma_bf16(acc[nt], a, bfrag[nt][ks][0], bfrag[nt][ks][1]);
+                            for (int nt = 0; nt < NT; ++nt) {
+                                mla_tc_mma_bf16(acc[nt], ah, bl[nt][ks][0], bl[nt][ks][1]);
+                                mla_tc_mma_bf16(acc[nt], al, bh[nt][ks][0], bh[nt][ks][1]);
+                                mla_tc_mma_bf16(acc[nt], ah, bh[nt][ks][0], bh[nt][ks][1]);
+                            }
+                        } else {
+#pragma unroll
+                            for (int nt = 0; nt < NT; ++nt)
+                                mla_tc_mma_bf16(acc[nt], ah, bh[nt][ks][0], bh[nt][ks][1]);
+                        }
                     }
                     // epilogue: c[0],c[1] = row lane/4, cols 2*(lane%4)+{0,1}; c[2],c[3] = row +8
 #pragma unroll
@@ -1552,61 +1608,84 @@ __global__ void __launch_bounds__(MLA_SCORE_TC_THREADS, 1) memra_mla_kpool_score
                         part[nt][c] = v;
                     }
                 }
-                // store: lane l owns n-tile l/4, pools 2*(l%4)+{0,1}: one contiguous 256 B row
+                // store: lane l owns n-tile l/4, pools 2*(l%4)+{0,1}: one contiguous row segment
                 int vis = (first_pos + t + 1) / pool;
                 if (vis > n_pools) vis = n_pools;
                 const int nt_l = lane >> 2;
-                float v0 = 0.f, v1 = 0.f;
+                if (nt_l < NT) {
+                    float v0 = 0.f, v1 = 0.f;
 #pragma unroll
-                for (int nt = 0; nt < NT; ++nt)
-                    if (nt == nt_l) {
-                        v0 = part[nt][0];
-                        v1 = part[nt][1];
-                    }
-                const int p = pw + nt_l * 8 + 2 * (lane & 3);
-                float* out = score + (long)t * n_pools + p;
-                if (p < n_pools) out[0] = (p < vis) ? v0 : -INFINITY;
-                if (p + 1 < n_pools) out[1] = (p + 1 < vis) ? v1 : -INFINITY;
+                    for (int nt = 0; nt < NT; ++nt)
+                        if (nt == nt_l) {
+                            v0 = part[nt][0];
+                            v1 = part[nt][1];
+                        }
+                    const int p = pw + nt_l * 8 + 2 * (lane & 3);
+                    float* out = score + (long)t * n_pools + p;
+                    if (p < n_pools) out[0] = (p < vis) ? v0 : -INFINITY;
+                    if (p + 1 < n_pools) out[1] = (p + 1 < vis) ? v1 : -INFINITY;
+                }
             }
         }
-        __syncthreads(); // every warp is done with buf[b] before it is refilled
+        __syncthreads(); // every warp is done with this buffer before it is refilled
     }
 }
 
-extern "C" int memra_mla_kpool_score_tc_f32(const unsigned short* q_bf16, const float* pool_keys,
-                                            const float* hw, float* score, int t_q, int heads,
-                                            int d, int n_pools, int pool, int first_pos,
-                                            float qk_scale, float head_scale, void* stream_v) {
+/// `scratch` holds `precision` planes of `t_q * heads * d` bf16 (2 or 4 bytes per element).
+extern "C" int memra_mla_kpool_score_tc_f32(const float* q, unsigned short* scratch,
+                                            const float* pool_keys, const float* hw,
+                                            float* score, int t_q, int heads, int d,
+                                            int n_pools, int pool, int first_pos,
+                                            float qk_scale, float head_scale, int precision,
+                                            void* stream_v) {
     if (pool <= 0) return 40010;
     if (heads <= 0 || heads % 16 != 0 || heads > 1024) return 40031;
     if (d != MLA_SCORE_TC_D) return 40032;
-    if (t_q < MLA_SCORE_TC_BT) return 40033;
+    if (t_q < 8) return 40033;
+    if (precision != 1 && precision != 2) return 40037;
     if (n_pools <= 0) return 0;
-    const size_t smem = 2ull * (size_t)MLA_SCORE_TC_BT * (size_t)heads *
+    const bool split = precision == 2;
+    const int bt = split ? 4 : 8;
+    const size_t smem = 2ull * (split ? 2 : 1) * (size_t)bt * (size_t)heads *
                         (MLA_SCORE_TC_D + MLA_SCORE_TC_PAD) * sizeof(unsigned short);
-    if (smem > 200u * 1024u) return 40034;
+    if (smem > (size_t)MLA_SCORE_TC_SMEM) return 40034;
     cudaStream_t stream = (cudaStream_t)stream_v;
     // The opt-in is PER DEVICE (function attributes live in each device's context), and the
     // glm5 TP walk drives two ranks on two cards from one process. A process-wide once-flag
     // here let rank 1 launch 139 KB of dynamic smem against the 48 KB default and fail with
     // cudaErrorInvalidValue on its first MLA layer (tpwalk18, 2026-09-07). Keyed on the device.
-    static bool attr_set[64] = {false}; // benign race: idempotent per device
+    static bool attr_set[2][64] = {{false}}; // benign race: idempotent per device
     int dev = 0;
     if (cudaGetDevice(&dev) != cudaSuccess || dev < 0 || dev >= 64) return 40035;
-    if (!attr_set[dev]) {
-        if (cudaFuncSetAttribute(memra_mla_kpool_score_tc_kernel,
-                                 cudaFuncAttributeMaxDynamicSharedMemorySize,
-                                 200 * 1024) != cudaSuccess) {
+    if (!attr_set[split][dev]) {
+        cudaError_t e = split ? cudaFuncSetAttribute(memra_mla_kpool_score_tc_kernel<true>,
+                                                     cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                                     MLA_SCORE_TC_SMEM)
+                              : cudaFuncSetAttribute(memra_mla_kpool_score_tc_kernel<false>,
+                                                     cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                                     MLA_SCORE_TC_SMEM);
+        if (e != cudaSuccess) {
             (void)cudaGetLastError();
             return 40036;
         }
-        attr_set[dev] = true;
+        attr_set[split][dev] = true;
     }
+    const long n = (long)t_q * heads * d;
+    unsigned short* q_hi = scratch;
+    unsigned short* q_lo = split ? scratch + n : nullptr;
+    memra_mla_q_split_bf16_kernel<<<(unsigned)((n / 4 + 255) / 256), 256, 0, stream>>>(q, q_hi, q_lo,
+                                                                                        n);
     dim3 grid((unsigned)((n_pools + MLA_SCORE_TC_BP - 1) / MLA_SCORE_TC_BP),
               (unsigned)((t_q + MLA_SCORE_TC_QSPLIT - 1) / MLA_SCORE_TC_QSPLIT));
-    memra_mla_kpool_score_tc_kernel<<<grid, MLA_SCORE_TC_THREADS, smem, stream>>>(
-        q_bf16, pool_keys, hw, score, t_q, heads, n_pools, pool, first_pos, qk_scale,
-        head_scale);
+    if (split) {
+        memra_mla_kpool_score_tc_kernel<true><<<grid, MLA_SCORE_TC_THREADS, smem, stream>>>(
+            q_hi, q_lo, pool_keys, hw, score, t_q, heads, n_pools, pool, first_pos, qk_scale,
+            head_scale);
+    } else {
+        memra_mla_kpool_score_tc_kernel<false><<<grid, MLA_SCORE_TC_THREADS, smem, stream>>>(
+            q_hi, q_hi, pool_keys, hw, score, t_q, heads, n_pools, pool, first_pos, qk_scale,
+            head_scale);
+    }
     MLA_ERR();
     return 0;
 }
