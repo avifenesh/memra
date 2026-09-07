@@ -4789,19 +4789,11 @@ impl crate::hybrid::HybridModel {
         );
         // Penalized SAMPLED requests are IN scope (lane/dspark-penalized-sampled-20260821:
         // p-side penalties over the true per-state window, q the recorded proposal — the
-        // accept walk's penalty arm). Penalties at temp==0 stay a LOUD refusal: the greedy
-        // walk argmaxes RAW columns and would silently drop them — penalized greedy is
-        // served exactly on the plain path (worker admission owns that exclusion).
-        if let Some(sp) = sampling.as_ref()
-            && sp.temp <= 0.0
-            && sp.pen_on()
-        {
-            return Err(
-                "dspark spec at temp==0 is the greedy route and would silently drop \
-                     the request's penalties; penalized greedy is served on the plain path"
-                    .into(),
-            );
-        }
+        // accept walk's penalty arm). Penalties at temp==0 are IN scope too since
+        // lane/dspark-greedy-penalised (2026-09-07): `greedy_penalized()` configs verify by
+        // penalised argmax (`dspark_accept_greedy_penalized`) and draw their boundary token
+        // through `greedy_penalized_boundary_token`; worker admission arms the class under
+        // MEMRA_DSPARK_GREEDY_PENALTY and keeps it plain otherwise.
         let n_embd = self.cfg.n_embd as usize;
         let c = &draft.cfg;
         assert_eq!(n_embd, c.hidden, "draft hidden must match target n_embd");
