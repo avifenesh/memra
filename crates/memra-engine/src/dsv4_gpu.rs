@@ -1704,9 +1704,18 @@ impl Dsv4Gpu {
     pub fn set_grouped_route_device_for_gate(&mut self, enabled: bool) -> Res<bool> {
         let grouped = self.prefill_grouped;
         self.set_prefill_grouped_for_gate(grouped)?;
-        let previous = self.grouped_route_device;
-        self.grouped_route_device = enabled;
-        Ok(previous)
+        let valid = Self::matrix_ep_storage_valid(
+            self.matrix_moe,
+            self.ep_enabled,
+            enabled,
+            self.grouped_fresh_storage_control,
+        );
+        Self::set_matrix_gate_bool(
+            &mut self.grouped_route_device,
+            enabled,
+            valid,
+            "grouped device routing",
+        )
     }
 
     pub fn grouped_device_route_calls(&self) -> u64 {
@@ -1871,9 +1880,18 @@ impl Dsv4Gpu {
                 .synchronize()
                 .map_err(e("grouped storage control drain"))?;
         }
-        let previous = self.grouped_fresh_storage_control;
-        self.grouped_fresh_storage_control = enabled;
-        Ok(previous)
+        let valid = Self::matrix_ep_storage_valid(
+            self.matrix_moe,
+            self.ep_enabled,
+            self.grouped_route_device,
+            enabled,
+        );
+        Self::set_matrix_gate_bool(
+            &mut self.grouped_fresh_storage_control,
+            enabled,
+            valid,
+            "grouped fresh storage",
+        )
     }
 
     pub fn grouped_fresh_storage_calls(&self) -> u64 {
@@ -1881,11 +1899,43 @@ impl Dsv4Gpu {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    // Matrix+EP has one storage invariant: the device route prefix must remain
+    // authoritative and the reused persistent storage arm must remain selected.
+    // Keep this predicate pure so gate setters and CPU policy tests share the
+    // exact same rollback condition.
+    fn matrix_ep_storage_valid(
+        matrix_moe: bool,
+        ep_enabled: bool,
+        grouped_route_device: bool,
+        grouped_fresh_storage_control: bool,
+    ) -> bool {
+        !matrix_moe || !ep_enabled || (grouped_route_device && !grouped_fresh_storage_control)
+    }
+
+    fn set_matrix_gate_bool(
+        current: &mut bool,
+        requested: bool,
+        valid: bool,
+        name: &str,
+    ) -> Res<bool> {
+        let previous = *current;
+        *current = requested;
+        if !valid {
+            *current = previous;
+            return Err(format!("{name} would violate matrix+EP storage invariant"));
+        }
+        Ok(previous)
+    }
+
     fn validate_matrix_program(&self) -> Res<()> {
         if self.matrix_moe
             && (self.prefill_grouped
-                || (self.ep_enabled
-                    && (!self.grouped_route_device || self.grouped_fresh_storage_control))
+                || !Self::matrix_ep_storage_valid(
+                    self.matrix_moe,
+                    self.ep_enabled,
+                    self.grouped_route_device,
+                    self.grouped_fresh_storage_control,
+                )
                 || self.variant != ActQuantVariant::RefFp8Round
                 || !matches!(self.decode_path, DecodePath::Device { host_math: false })
                 || self.expert_arm != ExpertArm::Native
@@ -15614,6 +15664,48 @@ pub fn vt_slot_drafts(conf: &[f32], tau_logit: f32, floor: usize) -> usize {
 }
 
 #[cfg(test)]
+mod matrix_gate_transition_tests {
+    use super::Dsv4Gpu;
+
+    #[test]
+    fn matrix_ep_gate_setters_roll_back_invalid_requests() {
+        let mut route_device = true;
+        let route = Dsv4Gpu::set_matrix_gate_bool(
+            &mut route_device,
+            false,
+            Dsv4Gpu::matrix_ep_storage_valid(true, true, false, false),
+            "route",
+        );
+        assert!(route.is_err());
+        assert!(route_device, "invalid route request must roll back");
+
+        let mut fresh_storage = false;
+        let fresh = Dsv4Gpu::set_matrix_gate_bool(
+            &mut fresh_storage,
+            true,
+            Dsv4Gpu::matrix_ep_storage_valid(true, true, true, true),
+            "fresh",
+        );
+        assert!(fresh.is_err());
+        assert!(
+            !fresh_storage,
+            "invalid fresh-storage request must roll back"
+        );
+
+        let mut route_device = false;
+        let route = Dsv4Gpu::set_matrix_gate_bool(
+            &mut route_device,
+            true,
+            Dsv4Gpu::matrix_ep_storage_valid(true, true, true, false),
+            "route",
+        )
+        .unwrap();
+        assert!(!route);
+        assert!(route_device);
+    }
+}
+
+#[cfg(test)]
 mod capacity_planner_tests {
     use super::{dsv4_cache_cap_blocks, dsv4_split_for_tail_reserve, ring_commit_plan};
 
@@ -16451,8 +16543,8 @@ mod dense_wo_a_grouped_fp8_component_tests {
         rows: usize,
         kdim: usize,
     ) -> GroupedFixture {
-        assert!(rows > 0 && rows % 128 == 0);
-        assert!(kdim > 0 && kdim % 128 == 0);
+        assert!(rows > 0 && rows.is_multiple_of(128));
+        assert!(kdim > 0 && kdim.is_multiple_of(128));
         let sc_cols = kdim / 128;
         let scale_rows = rows / 128;
         let x_group_stride = kdim + 16;
@@ -16465,7 +16557,7 @@ mod dense_wo_a_grouped_fp8_component_tests {
                 let group = index / (scale_rows * sc_cols);
                 let row = (index / sc_cols) % scale_rows;
                 let col = index % sc_cols;
-                let sign = if (group + row + col) % 5 == 0 {
+                let sign = if (group + row + col).is_multiple_of(5) {
                     -1.0
                 } else {
                     1.0

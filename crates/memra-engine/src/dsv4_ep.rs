@@ -19,6 +19,8 @@ type Res<T> = Result<T, String>;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct EpRouteStats {
     pub calls: u64,
+    pub observed_calls: u64,
+    pub unobserved_calls: u64,
     pub local_slots: u64,
     pub peer_slots: u64,
     pub busier_slots: u64,
@@ -29,6 +31,8 @@ pub struct EpRouteStats {
 
 static ROUTE_STATS_ENABLED: OnceLock<bool> = OnceLock::new();
 static ROUTE_STATS_CALLS: AtomicU64 = AtomicU64::new(0);
+static ROUTE_STATS_OBSERVED_CALLS: AtomicU64 = AtomicU64::new(0);
+static ROUTE_STATS_UNOBSERVED_CALLS: AtomicU64 = AtomicU64::new(0);
 static ROUTE_STATS_LOCAL_SLOTS: AtomicU64 = AtomicU64::new(0);
 static ROUTE_STATS_PEER_SLOTS: AtomicU64 = AtomicU64::new(0);
 static ROUTE_STATS_BUSIER_SLOTS: AtomicU64 = AtomicU64::new(0);
@@ -52,20 +56,50 @@ fn route_stats_hist() -> (&'static [AtomicU64; 9], &'static [AtomicU64; 9]) {
     )
 }
 
-fn record_route_stats(local_slots: usize, peer_slots: usize, rows: usize, topk: usize) {
+fn route_stats_call_delta(
+    observed_split: Option<(usize, usize)>,
+    rows: usize,
+    topk: usize,
+) -> EpRouteStats {
+    let mut delta = EpRouteStats {
+        calls: 1,
+        ..EpRouteStats::default()
+    };
+    let Some((local_slots, peer_slots)) = observed_split else {
+        delta.unobserved_calls = 1;
+        return delta;
+    };
+    delta.observed_calls = 1;
+    delta.local_slots = local_slots as u64;
+    delta.peer_slots = peer_slots as u64;
+    let busier = local_slots.max(peer_slots);
+    delta.busier_slots = busier as u64;
+    if rows == 1 && topk < 9 {
+        delta.one_row_calls = 1;
+        delta.local_hist[local_slots.min(8)] = 1;
+        delta.busier_hist[busier.min(8)] = 1;
+    }
+    delta
+}
+
+fn record_route_stats(observed_split: Option<(usize, usize)>, rows: usize, topk: usize) {
     if !route_stats_enabled() {
         return;
     }
-    ROUTE_STATS_CALLS.fetch_add(1, Ordering::Relaxed);
-    ROUTE_STATS_LOCAL_SLOTS.fetch_add(local_slots as u64, Ordering::Relaxed);
-    ROUTE_STATS_PEER_SLOTS.fetch_add(peer_slots as u64, Ordering::Relaxed);
-    let busier = local_slots.max(peer_slots);
-    ROUTE_STATS_BUSIER_SLOTS.fetch_add(busier as u64, Ordering::Relaxed);
-    if rows == 1 && topk < 9 {
-        ROUTE_STATS_ONE_ROW_CALLS.fetch_add(1, Ordering::Relaxed);
-        let (local, busy) = route_stats_hist();
-        local[local_slots.min(8)].fetch_add(1, Ordering::Relaxed);
-        busy[busier.min(8)].fetch_add(1, Ordering::Relaxed);
+    let delta = route_stats_call_delta(observed_split, rows, topk);
+    ROUTE_STATS_CALLS.fetch_add(delta.calls, Ordering::Relaxed);
+    ROUTE_STATS_OBSERVED_CALLS.fetch_add(delta.observed_calls, Ordering::Relaxed);
+    ROUTE_STATS_UNOBSERVED_CALLS.fetch_add(delta.unobserved_calls, Ordering::Relaxed);
+    ROUTE_STATS_LOCAL_SLOTS.fetch_add(delta.local_slots, Ordering::Relaxed);
+    ROUTE_STATS_PEER_SLOTS.fetch_add(delta.peer_slots, Ordering::Relaxed);
+    ROUTE_STATS_BUSIER_SLOTS.fetch_add(delta.busier_slots, Ordering::Relaxed);
+    ROUTE_STATS_ONE_ROW_CALLS.fetch_add(delta.one_row_calls, Ordering::Relaxed);
+    let (local, busy) = route_stats_hist();
+    for (i, count) in delta.local_hist.into_iter().enumerate() {
+        local[i].fetch_add(count, Ordering::Relaxed);
+    }
+    for (i, count) in delta.busier_hist.into_iter().enumerate() {
+        busy[i].fetch_add(count, Ordering::Relaxed);
     }
 }
 
@@ -73,6 +107,8 @@ pub fn route_stats_snapshot() -> EpRouteStats {
     let (local, busy) = route_stats_hist();
     EpRouteStats {
         calls: ROUTE_STATS_CALLS.load(Ordering::Relaxed),
+        observed_calls: ROUTE_STATS_OBSERVED_CALLS.load(Ordering::Relaxed),
+        unobserved_calls: ROUTE_STATS_UNOBSERVED_CALLS.load(Ordering::Relaxed),
         local_slots: ROUTE_STATS_LOCAL_SLOTS.load(Ordering::Relaxed),
         peer_slots: ROUTE_STATS_PEER_SLOTS.load(Ordering::Relaxed),
         busier_slots: ROUTE_STATS_BUSIER_SLOTS.load(Ordering::Relaxed),
@@ -86,6 +122,10 @@ impl EpRouteStats {
     pub fn delta(self, before: Self) -> Self {
         Self {
             calls: self.calls.saturating_sub(before.calls),
+            observed_calls: self.observed_calls.saturating_sub(before.observed_calls),
+            unobserved_calls: self
+                .unobserved_calls
+                .saturating_sub(before.unobserved_calls),
             local_slots: self.local_slots.saturating_sub(before.local_slots),
             peer_slots: self.peer_slots.saturating_sub(before.peer_slots),
             busier_slots: self.busier_slots.saturating_sub(before.busier_slots),
@@ -649,8 +689,11 @@ pub(crate) fn execute_matrix(
         return Err("EP matrix partitions did not cover every selected slot".into());
     }
     record_route_stats(
-        local_work.routes.live_slots,
-        peer_work.routes.live_slots,
+        if local_work.routes.live_slots_observed && peer_work.routes.live_slots_observed {
+            Some((local_work.routes.live_slots, peer_work.routes.live_slots))
+        } else {
+            None
+        },
         rows,
         topk,
     );
@@ -698,6 +741,53 @@ pub(crate) fn execute_matrix(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn route_stats_call_classification_keeps_unknown_counts_out_of_slot_totals() {
+        let unknown = route_stats_call_delta(None, 1, 6);
+        assert_eq!(unknown.calls, 1);
+        assert_eq!(unknown.observed_calls, 0);
+        assert_eq!(unknown.unobserved_calls, 1);
+        assert_eq!(unknown.local_slots, 0);
+        assert_eq!(unknown.peer_slots, 0);
+        assert_eq!(unknown.busier_slots, 0);
+        assert_eq!(unknown.local_hist, [0; 9]);
+        assert_eq!(unknown.busier_hist, [0; 9]);
+
+        let observed_one_row = route_stats_call_delta(Some((3, 5)), 1, 6);
+        assert_eq!(observed_one_row.observed_calls, 1);
+        assert_eq!(observed_one_row.unobserved_calls, 0);
+        assert_eq!(observed_one_row.local_slots, 3);
+        assert_eq!(observed_one_row.peer_slots, 5);
+        assert_eq!(observed_one_row.busier_slots, 5);
+        assert_eq!(observed_one_row.one_row_calls, 1);
+        assert_eq!(observed_one_row.local_hist[3], 1);
+        assert_eq!(observed_one_row.busier_hist[5], 1);
+
+        let observed_multi_row = route_stats_call_delta(Some((12, 8)), 2, 6);
+        assert_eq!(observed_multi_row.observed_calls, 1);
+        assert_eq!(observed_multi_row.one_row_calls, 0);
+        assert_eq!(observed_multi_row.local_hist, [0; 9]);
+
+        let before = EpRouteStats {
+            calls: 4,
+            observed_calls: 2,
+            unobserved_calls: 2,
+            ..EpRouteStats::default()
+        };
+        let after = EpRouteStats {
+            calls: 7,
+            observed_calls: 3,
+            unobserved_calls: 4,
+            ..EpRouteStats::default()
+        };
+        let delta = after.delta(before);
+        assert_eq!(delta.calls, 3);
+        assert_eq!(delta.observed_calls, 1);
+        assert_eq!(delta.unobserved_calls, 2);
+        assert_eq!(delta.local_slots, 0);
+        assert_eq!(delta.busier_slots, 0);
+    }
 
     #[test]
     #[ignore = "requires an exclusively locked non-serving CUDA device"]

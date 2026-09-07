@@ -42,6 +42,7 @@ use memra_engine::dsv4_gpu::{
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::{Tokenizer, chat};
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
@@ -63,6 +64,32 @@ pub struct Dsv4Model {
     pub host_cache_bytes: usize,
     pub c4_host_bytes: usize,
     pub prefill_chunk: usize,
+}
+
+fn env_text(name: &str, raw: Option<OsString>) -> Result<Option<String>, String> {
+    match raw {
+        None => Ok(None),
+        Some(value) => value
+            .into_string()
+            .map(Some)
+            .map_err(|_| format!("{name} is not valid Unicode")),
+    }
+}
+
+fn configured_env_text(name: &str) -> Result<Option<String>, String> {
+    env_text(name, std::env::var_os(name))
+}
+
+fn resolve_env_mb(name: &str, raw: Option<OsString>) -> Result<usize, String> {
+    let Some(raw) = env_text(name, raw)? else {
+        return Ok(0);
+    };
+    let mb = raw
+        .trim()
+        .parse::<usize>()
+        .map_err(|_| format!("{name} {raw:?} is not a non-negative integer"))?;
+    mb.checked_mul(1024 * 1024)
+        .ok_or_else(|| format!("{name} byte count overflow"))
 }
 
 fn resolve_c4_host_bytes(raw: Option<&str>) -> Result<usize, String> {
@@ -345,27 +372,14 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(8192);
-    let host_cache_mb = match std::env::var("MEMRA_DSV4_KV_HOST_MB") {
-        Err(_) => 0usize,
-        Ok(raw) => raw
-            .trim()
-            .parse::<usize>()
-            .map_err(|_| format!("MEMRA_DSV4_KV_HOST_MB {raw:?} is not a non-negative integer"))?,
-    };
-    let host_cache_bytes = host_cache_mb
-        .checked_mul(1024 * 1024)
-        .ok_or_else(|| "MEMRA_DSV4_KV_HOST_MB byte count overflow".to_string())?;
-    let prefill_chunk = resolve_prefill_chunk(
-        std::env::var("MEMRA_DSV4_PREFILL_CHUNK").ok().as_deref(),
-        max_seq,
+    let host_cache_bytes = resolve_env_mb(
+        "MEMRA_DSV4_KV_HOST_MB",
+        std::env::var_os("MEMRA_DSV4_KV_HOST_MB"),
     )?;
-    let c4_host_raw = match std::env::var("MEMRA_DSV4_C4_HOST_MB") {
-        Ok(value) => Some(value),
-        Err(std::env::VarError::NotPresent) => None,
-        Err(std::env::VarError::NotUnicode(_)) => {
-            return Err("MEMRA_DSV4_C4_HOST_MB is not Unicode".into());
-        }
-    };
+    let host_cache_mb = host_cache_bytes / (1024 * 1024);
+    let prefill_chunk_raw = configured_env_text("MEMRA_DSV4_PREFILL_CHUNK")?;
+    let prefill_chunk = resolve_prefill_chunk(prefill_chunk_raw.as_deref(), max_seq)?;
+    let c4_host_raw = configured_env_text("MEMRA_DSV4_C4_HOST_MB")?;
     let c4_host_bytes = resolve_c4_host_bytes(c4_host_raw.as_deref())?;
     if c4_host_bytes > 0 && prefill_chunk == 0 {
         return Err("MEMRA_DSV4_C4_HOST_MB requires nonzero MEMRA_DSV4_PREFILL_CHUNK".into());
@@ -1247,7 +1261,8 @@ fn argmax(v: &[f32]) -> u32 {
 
 #[cfg(test)]
 mod c4_host_budget_tests {
-    use super::{admit_c4_host_bytes, resolve_c4_host_bytes};
+    use super::{admit_c4_host_bytes, env_text, resolve_c4_host_bytes, resolve_env_mb};
+    use std::ffi::OsString;
 
     #[test]
     fn budget_is_opt_in_and_strictly_parsed() {
@@ -1272,6 +1287,35 @@ mod c4_host_budget_tests {
         );
         assert!(admit_c4_host_bytes(usize::MAX, &[u64::MAX, 1]).is_err());
         assert_eq!(admit_c4_host_bytes(0, &[u64::MAX, 1]), Ok(0));
+    }
+
+    #[test]
+    fn boot_environment_helpers_distinguish_absent_malformed_and_non_unicode() {
+        assert_eq!(env_text("MEMRA_DSV4_KV_HOST_MB", None), Ok(None));
+        assert_eq!(
+            env_text("MEMRA_DSV4_KV_HOST_MB", Some(OsString::from(" 16 "))),
+            Ok(Some(" 16 ".to_string()))
+        );
+        assert_eq!(resolve_env_mb("MEMRA_DSV4_KV_HOST_MB", None), Ok(0));
+        assert_eq!(
+            resolve_env_mb("MEMRA_DSV4_KV_HOST_MB", Some(OsString::from("16"))),
+            Ok(16 * 1024 * 1024)
+        );
+        for raw in ["", "-1", "nan", "1.5"] {
+            let err =
+                resolve_env_mb("MEMRA_DSV4_KV_HOST_MB", Some(OsString::from(raw))).unwrap_err();
+            assert!(err.contains("MEMRA_DSV4_KV_HOST_MB"), "{err}");
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStringExt;
+            let err = env_text(
+                "MEMRA_DSV4_PREFILL_CHUNK",
+                Some(OsString::from_vec(vec![0xff, b'1'])),
+            )
+            .unwrap_err();
+            assert!(err.contains("MEMRA_DSV4_PREFILL_CHUNK"), "{err}");
+        }
     }
 }
 

@@ -1177,9 +1177,9 @@ unsafe extern "C" {
         row_bytes: i64,
         stream: *mut core::ffi::c_void,
     ) -> i32;
-    // Compile-only DSV4 m_e=1 tensor-core tail candidate. It is intentionally
-    // not wired into the grouped caller until a separate exactness/perf gate
-    // proves the valid-row chain against memra_moe_kq_gemm_sk.
+    // Gate-only DSV4 m_e=1 tensor-core tail. The grouped caller selects it only
+    // through the process-local m1 gate after the exactness/perf receipts; it
+    // is not a serving default.
     pub fn memra_moe_kq_gemm_sk_m1(
         table: *const u64,
         n_expert: i32,
@@ -1217,8 +1217,8 @@ unsafe extern "C" {
         stream: *mut core::ffi::c_void,
     ) -> i32;
     // Gate-only GU m_e=1 tensor-core work-elision twin. It retains the valid-row
-    // MMA chain and epilogue while skipping invalid-row A/MMA work; no serving
-    // caller selects it.
+    // MMA chain and epilogue while skipping invalid-row A/MMA work; only the
+    // explicit process-local gate selects it, never the serving default.
     pub fn memra_moe_kq_gemm_sk_gu_m1(
         table: *const u64,
         n_expert: i32,
@@ -1237,10 +1237,11 @@ unsafe extern "C" {
         row_bytes: i64,
         stream: *mut core::ffi::c_void,
     ) -> i32;
-    // ModelOpt packed-half2 kq_store twins. These are compile-only gate seams: the ordinary
-    // launchers keep their original 16-entry f32 shared LUT and static shared allocation. The
-    // packed launchers add only a 256-entry half2 LUT in dynamic shared memory and report a
-    // successful enqueue through their dispatch counters.
+    // ModelOpt packed-half2 kq_store twins. These are process-local gate seams:
+    // ordinary launchers keep their original 16-entry f32 shared LUT and static
+    // shared allocation. Packed launchers add only a 256-entry half2 LUT in
+    // dynamic shared memory and report successful enqueues through counters;
+    // the serving default remains on the ordinary launchers.
     pub fn memra_moe_kq_gemm_sk_gu_half2(
         table: *const u64,
         n_expert: i32,

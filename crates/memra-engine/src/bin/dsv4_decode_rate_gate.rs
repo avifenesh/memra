@@ -384,10 +384,12 @@ fn main() {
             let tokens = ready.measure(false, false, 0, false, 0, Dsv4Vt::Off, true);
             let stats = gpu.ep_route_stats().delta(before);
             println!(
-                "EP_ROUTE_STATS prompt={} output_tokens={} calls={} one_row_calls={} local_slots={} peer_slots={} busier_slots={} local_hist={:?} busier_hist={:?}",
+                "EP_ROUTE_STATS prompt={} output_tokens={} calls={} observed_calls={} unobserved_calls={} one_row_calls={} local_slots={} peer_slots={} busier_slots={} local_hist={:?} busier_hist={:?}",
                 count,
                 tokens.len(),
                 stats.calls,
+                stats.observed_calls,
+                stats.unobserved_calls,
                 stats.one_row_calls,
                 stats.local_slots,
                 stats.peer_slots,

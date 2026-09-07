@@ -609,6 +609,10 @@ pub(crate) struct GroupedRoutes {
     pub host_offsets: Option<Vec<i32>>,
     pub max_m: i32,
     pub live_slots: usize,
+    /// True only when a device/host route-count readback established the exact
+    /// local live prefix. Validation-off device routing keeps `live_slots` as
+    /// a launch upper bound, never as an observed count.
+    pub live_slots_observed: bool,
     pub bytes: u64,
     experts: usize,
     global_experts: usize,
@@ -761,6 +765,7 @@ impl GroupedRoutes {
             host_offsets: None,
             max_m: slots as i32,
             live_slots: 0,
+            live_slots_observed: false,
             bytes: ((3 * experts + 2 + 6 * slots) * 4) as u64,
             experts,
             global_experts,
@@ -782,6 +787,7 @@ impl GroupedRoutes {
         device: bool,
     ) -> Res<bool> {
         self.live_slots = 0;
+        self.live_slots_observed = false;
         let partition = self.first != 0 || self.experts != self.global_experts;
         if slots == 0
             || slots > self.capacity
@@ -853,8 +859,11 @@ impl GroupedRoutes {
                 // The device prefix remains authoritative for the visitor. The
                 // compacted slot arrays are cleared by the route count kernel;
                 // gather/scatter treat their -1 tail as inert. This gate removes
-                // only the host status/live-count readback and synchronize.
+                // only the host status/live-count readback and synchronize. The
+                // full slot count is a launch upper bound, not an observed local
+                // live count; callers must not use it for occupancy statistics.
                 self.live_slots = slots;
+                self.live_slots_observed = false;
                 return Ok(true);
             }
             // Initial admission retains a scalar fail-closed check. This is NOT
@@ -879,6 +888,7 @@ impl GroupedRoutes {
                 return Err("grouped route live count outside input slots".into());
             }
             self.live_slots = live[0] as usize;
+            self.live_slots_observed = true;
             return Ok(true);
         }
 
@@ -940,6 +950,7 @@ impl GroupedRoutes {
         }
         self.host_offsets = Some(offsets);
         self.live_slots = live;
+        self.live_slots_observed = true;
         Ok(false)
     }
 }
