@@ -542,6 +542,15 @@ pub const GLM5_TP_REFUSED_DOOR_FLAGS: [(&str, &str); 3] = [
 /// door's own table — error bytes unchanged. `armed` reports whether a flag is set to
 /// `"1"` (env in production; a plain set in the unit test — the module keeps its tests
 /// env-mutation-free).
+/// The armed predicate over an env VALUE: unset, empty and `0` are off; every other value
+/// (a `1`, a level like `2`, a mistyped word) is armed. Pure, so the tooth covers it.
+pub fn glm5_tp_door_env_armed(value: Option<String>) -> bool {
+    match value.as_deref().map(str::trim) {
+        None | Some("") | Some("0") => false,
+        Some(_) => true,
+    }
+}
+
 pub fn refuse_glm5_tp_door_composition(armed: impl Fn(&str) -> bool) -> Result<(), String> {
     crate::tp::refuse_door_composition("MEMRA_GLM5_TP", &GLM5_TP_REFUSED_DOOR_FLAGS, armed)
 }
@@ -576,7 +585,12 @@ pub fn prepare_glm5_tp_load(
                 .into(),
         );
     }
-    refuse_glm5_tp_door_composition(|flag| std::env::var(flag).as_deref() == Ok("1"))?;
+    // ARMED means set to anything but off. Until 2026-09-07 this read `== "1"`, and the
+    // 1M launcher's `MEMRA_HC_FUSED_PRE=2` (the door's level-2 arm) walked straight past
+    // the refusal: the hyper prime engaged the fused pre-chain on the sharded walk
+    // (`[hc-fused-pre] engaged ... arm=2` in the tpwalk25 serving smoke) and every request
+    // then failed downstream. A level is still an armed door.
+    refuse_glm5_tp_door_composition(|flag| glm5_tp_door_env_armed(std::env::var(flag).ok()))?;
 
     // One device group across the whole spec (one runtime group), root-first; the rank
     // count comes from the device list and must be in the qualified envelope.
@@ -2374,6 +2388,25 @@ mod tests {
         }
         // All doors cold = no refusal.
         refuse_glm5_tp_door_composition(|_| false).expect("cold doors must pass");
+        // The env predicate: a LEVEL is an armed door (the `=2` that walked past the `== "1"`
+        // read on 2026-09-07), off is unset, empty or 0.
+        for v in ["1", "2", " 2 ", "on", "arm"] {
+            assert!(
+                glm5_tp_door_env_armed(Some(v.to_string())),
+                "{v:?} must count as armed"
+            );
+        }
+        for v in [
+            None,
+            Some("".to_string()),
+            Some("0".to_string()),
+            Some(" 0".to_string()),
+        ] {
+            assert!(
+                !glm5_tp_door_env_armed(v.clone()),
+                "{v:?} must count as off"
+            );
+        }
         // The verify-batch flag is DELIBERATELY not in the matrix (the gated spec x TP
         // composition owns that pair — its admission REQUIRES the batched walk); arming
         // it alone must not trip this law.
