@@ -15179,10 +15179,30 @@ impl HybridModel {
             let logits = Self::moe_router_logits(e, m, z, t, cfg)?;
             let (sel_all, w_all) =
                 Self::moe_route_sigmoid_cfg(e, &logits, t, n_expert, n_used, m, sig)?;
+            // DOOR `MEMRA_GLM5_TP_SPLIT_PRIME_HOSTDIET` (lane/glm5-tp-prime-router-20260907,
+            // default OFF): the 256k profile on the pair put 16.2 of root's 74.8 s prime in ONE
+            // gap class, after the z fan-out push and before root's first MoE kernel: the host
+            // built the identical expert CSR once PER RANK, uploaded it, and launched the peer
+            // before root. With the door on the shared expert is launched BEFORE the routing
+            // table is built (its GEMMs cover the host time), the CSR is built once with a
+            // counting sort and uploaded to each rank, and root's pass is issued first (root is
+            // the critical path; the peer has slack). Byte-identical: the same kernels see the
+            // same operands in the same per-device order; only host work and launch order move.
+            let host_diet = crate::glm5_tp_split_prime_hostdiet_on();
+            let shexp_early = if host_diet {
+                Self::moe_shexp_compute(e, m, z, zq8, t, cfg, lim_shexp)?
+            } else {
+                None
+            };
             if let Some(mut out) = Self::moe_ffn_glm5_tp_split_grouped_prime(
-                e, m, xs, z, &sel_all, &w_all, t, cfg, il,
+                e, m, xs, z, &sel_all, &w_all, t, cfg, il, host_diet,
             )? {
-                Self::moe_shexp_add(e, m, z, zq8, t, cfg, lim_shexp, &mut out)?;
+                match shexp_early {
+                    Some((sh, g)) => {
+                        Self::moe_shexp_apply(e, &sh, g.as_ref(), n_embd, t, &mut out)?
+                    }
+                    None => Self::moe_shexp_add(e, m, z, zq8, t, cfg, lim_shexp, &mut out)?,
+                }
                 return Ok(out);
             }
         }
@@ -16049,6 +16069,7 @@ impl HybridModel {
         t: usize,
         cfg: &ModelConfig,
         il: u16,
+        host_diet: bool,
     ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
         use std::sync::atomic::Ordering;
         let moe = cfg
@@ -16097,49 +16118,49 @@ impl HybridModel {
         // macro folds -> PRE-clamped epilogue -> grouped down GEMM -> CSR->local permute ->
         // slot-ordered scatter into the rank partial [t, n_embd] (empty token windows write
         // 0.0 — the scatter fully overwrites, so partials add cleanly on root).
-        let rank_pass = |dev: &Engine,
-                         _rank: u8,
-                         ptr_row: &CudaSlice<u64>,
-                         z_dev: &CudaSlice<f32>|
-         -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
-            // Expert-major CSR restricted to this rank, local pair index l in ascending
-            // global-pair order (so per-token slot order == ascending l).
-            let mut buckets_l: Vec<Vec<i32>> = vec![Vec::new(); n_expert];
-            let mut local_tok = Vec::new(); // token of local pair l
-            let mut local_ex = Vec::new(); // expert of local pair l (macro folds)
-            let mut local_wd = Vec::new(); // v1's exact weight fold, at local positions
-            let mut local_count_per_tok = vec![0i32; t];
-            for p in 0..n_pairs {
-                let ex = sel_all[p] as usize;
+        // The expert CSR over ALL pairs (every rank holds every expert at half width, so the
+        // table is the same on every rank): local pair index l == global pair index p, in
+        // ascending order (per-token slot order == ascending l). The door builds it ONCE per
+        // call; the door-off arm keeps the per-rank build (same values, the bucket order is
+        // the counting sort's order: expert-major, l ascending).
+        struct SplitCsr {
+            ex_ids: Vec<i32>,
+            ex_off: Vec<i32>,
+            ex_pairs: Vec<i32>, // local l, CSR order
+            csr_tok: Vec<i32>,
+            local_wd: Vec<f32>, // v1's exact weight fold, at local positions
+            mg: Option<Vec<f32>>,
+            mu: Option<Vec<f32>>,
+            toff: Vec<i32>,
+            tids: Vec<i32>,
+            n_owned: usize,
+            n_active: usize,
+        }
+        let build_csr = || -> Result<Option<SplitCsr>, Box<dyn std::error::Error>> {
+            let n_owned = n_pairs;
+            if n_owned == 0 {
+                return Ok(None);
+            }
+            let mut count = vec![0i32; n_expert];
+            for &ex in &sel_all[..n_pairs] {
+                let ex = ex as usize;
                 if ex >= n_expert {
                     return Err(
                         format!("TP split grouped prime selection {ex} >= {n_expert}").into(),
                     );
                 }
-                let l = local_tok.len() as i32;
-                buckets_l[ex].push(l);
-                let tok = p / n_used;
-                local_tok.push(tok as i32);
-                local_ex.push(ex);
-                local_wd.push(w_all[p] * m.down_exps.macro_scale(ex));
-                local_count_per_tok[tok] += 1;
-            }
-            let n_owned = local_tok.len();
-            if n_owned == 0 {
-                return Ok(None);
+                count[ex] += 1;
             }
             let mut ex_ids: Vec<i32> = Vec::new();
             let mut ex_off: Vec<i32> = vec![0];
-            let mut ex_pairs: Vec<i32> = Vec::with_capacity(n_owned); // local l, CSR order
-            let mut csr_tok: Vec<i32> = Vec::with_capacity(n_owned);
-            for (e_id, b) in buckets_l.iter().enumerate() {
-                if !b.is_empty() {
-                    ex_ids.push(e_id as i32);
-                    for &l in b {
-                        ex_pairs.push(l);
-                        csr_tok.push(local_tok[l as usize]);
-                    }
-                    ex_off.push(ex_pairs.len() as i32);
+            let mut start = vec![0i32; n_expert]; // write cursor per expert in CSR order
+            let mut acc = 0i32;
+            for ex in 0..n_expert {
+                if count[ex] > 0 {
+                    ex_ids.push(ex as i32);
+                    start[ex] = acc;
+                    acc += count[ex];
+                    ex_off.push(acc);
                 }
             }
             let n_active = ex_ids.len();
@@ -16148,11 +16169,69 @@ impl HybridModel {
                     format!("TP split grouped prime n_active {n_active} outside 1..=512").into(),
                 );
             }
+            let mut ex_pairs = vec![0i32; n_owned];
+            let mut csr_tok = vec![0i32; n_owned];
+            let mut local_wd = Vec::with_capacity(n_owned);
+            let has_mg = m.gate_exps.macros.is_some();
+            let has_mu = m.up_exps.macros.is_some();
+            let mut mg = vec![0f32; if has_mg { n_owned } else { 0 }];
+            let mut mu = vec![0f32; if has_mu { n_owned } else { 0 }];
+            for p in 0..n_pairs {
+                let ex = sel_all[p] as usize;
+                let pos = start[ex] as usize;
+                start[ex] += 1;
+                ex_pairs[pos] = p as i32;
+                csr_tok[pos] = (p / n_used) as i32;
+                if has_mg {
+                    mg[pos] = m.gate_exps.macro_scale(ex);
+                }
+                if has_mu {
+                    mu[pos] = m.up_exps.macro_scale(ex);
+                }
+                local_wd.push(w_all[p] * m.down_exps.macro_scale(ex));
+            }
+            // per-token windows: every token owns exactly n_used consecutive local pairs
+            let toff: Vec<i32> = (0..=t).map(|i| (i * n_used) as i32).collect();
+            let tids: Vec<i32> = (0..n_owned as i32).collect();
+            Ok(Some(SplitCsr {
+                ex_ids,
+                ex_off,
+                ex_pairs,
+                csr_tok,
+                local_wd,
+                mg: has_mg.then_some(mg),
+                mu: has_mu.then_some(mu),
+                toff,
+                tids,
+                n_owned,
+                n_active,
+            }))
+        };
+        let shared_csr = if host_diet { build_csr()? } else { None };
 
-            let exi = dev.htod_i32(&ex_ids)?;
-            let exo = dev.htod_i32(&ex_off)?;
-            let exp_d = dev.htod_i32(&ex_pairs)?;
-            let csr_tok_d = dev.htod_i32(&csr_tok)?;
+        let rank_pass = |dev: &Engine,
+                         _rank: u8,
+                         ptr_row: &CudaSlice<u64>,
+                         z_dev: &CudaSlice<f32>|
+         -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+            let own;
+            let csr = match shared_csr.as_ref() {
+                Some(c) => c,
+                None => match build_csr()? {
+                    Some(c) => {
+                        own = c;
+                        &own
+                    }
+                    None => return Ok(None),
+                },
+            };
+            let n_owned = csr.n_owned;
+            let n_active = csr.n_active;
+            let ex_off = &csr.ex_off;
+            let exi = dev.htod_i32(&csr.ex_ids)?;
+            let exo = dev.htod_i32(ex_off)?;
+            let exp_d = dev.htod_i32(&csr.ex_pairs)?;
+            let csr_tok_d = dev.htod_i32(&csr.csr_tok)?;
 
             // GATE/UP grouped GEMMs over the rank slab, CSR order end to end.
             let (z16, zs) = dev.moe_f16g_act(z_dev, Some(&csr_tok_d), n_embd, n_owned)?;
@@ -16172,12 +16251,8 @@ impl HybridModel {
                 m.gate_exps.qtype,
                 m.gate_exps.row_bytes,
             )?;
-            if m.gate_exps.macros.is_some() {
-                let mg: Vec<f32> = ex_pairs
-                    .iter()
-                    .map(|&l| m.gate_exps.macro_scale(local_ex[l as usize]))
-                    .collect();
-                let mg_d = dev.htod(&mg)?;
+            if let Some(mg) = csr.mg.as_ref() {
+                let mg_d = dev.htod(mg)?;
                 dev.scale_rows(&mut g, &mg_d, half_ff, n_owned)?;
             }
             let mut u = dev.moe_f16_grouped(
@@ -16196,12 +16271,8 @@ impl HybridModel {
                 m.up_exps.qtype,
                 m.up_exps.row_bytes,
             )?;
-            if m.up_exps.macros.is_some() {
-                let mu: Vec<f32> = ex_pairs
-                    .iter()
-                    .map(|&l| m.up_exps.macro_scale(local_ex[l as usize]))
-                    .collect();
-                let mu_d = dev.htod(&mu)?;
+            if let Some(mu) = csr.mu.as_ref() {
+                let mu_d = dev.htod(mu)?;
                 dev.scale_rows(&mut u, &mu_d, half_ff, n_owned)?;
             }
 
@@ -16243,17 +16314,9 @@ impl HybridModel {
                 xs.down_row_bytes,
             )?;
             let y_local = dev.rows_permute(&d_csr, &exp_d, n_owned, n_embd)?;
-            let mut toff: Vec<i32> = Vec::with_capacity(t + 1);
-            let mut acc = 0i32;
-            toff.push(0);
-            for &c in &local_count_per_tok {
-                acc += c;
-                toff.push(acc);
-            }
-            let tids: Vec<i32> = (0..n_owned as i32).collect();
-            let pw = dev.htod(&local_wd)?;
-            let toff_d = dev.htod_i32(&toff)?;
-            let tids_d = dev.htod_i32(&tids)?;
+            let pw = dev.htod(&csr.local_wd)?;
+            let toff_d = dev.htod_i32(&csr.toff)?;
+            let tids_d = dev.htod_i32(&csr.tids)?;
             let mut partial = dev.uninit(t * n_embd)?; // scatter fully overwrites
             dev.moe_pairs_scatter(&y_local, &pw, &toff_d, &tids_d, &mut partial, t, n_embd)?;
             Ok(Some(partial))
@@ -16266,6 +16329,14 @@ impl HybridModel {
         let ranks = xs.ranks();
         let hop = xs.rt.hop(e);
         let mut peer_partials: Vec<Option<CudaSlice<f32>>> = (0..ranks).map(|_| None).collect();
+        // Host-diet order: root FIRST. Root's stream is the critical path (the peer idles
+        // waiting on root's attention between MoE layers); issuing root's pass before the
+        // peers' means root's GPU starts while the host still uploads and launches the peers.
+        let root_first = if host_diet {
+            Some(rank_pass(e, 0, &xs.ptr_rows[0], z)?)
+        } else {
+            None
+        };
         for r in 1..ranks {
             let rank_owns_pairs = true; // every rank holds every expert
             if !rank_owns_pairs {
@@ -16279,7 +16350,10 @@ impl HybridModel {
             e.bind_runtime_device(e.ctx().ordinal() as i32)?;
             peer_partials[r] = res?;
         }
-        let root_partial = rank_pass(e, 0, &xs.ptr_rows[0], z)?;
+        let root_partial = match root_first {
+            Some(p) => p,
+            None => rank_pass(e, 0, &xs.ptr_rows[0], z)?,
+        };
 
         // Root combine: root partial + bulk-returned peer partials (SWAP POINT 2, the named
         // transport shape). One partial add per contributing rank — the same reassociation
@@ -16306,9 +16380,10 @@ impl HybridModel {
             eprintln!(
                 "[glm5-tp-split-grouped-prime] execute layer={il} tokens={t} \
                  provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped \
-                 combine=rank-partial-add transport={} performance_claim=false \
+                 combine=rank-partial-add transport={} host_diet={} performance_claim=false \
                  (logged once per layer)",
                 hop.transport.name(),
+                host_diet,
             );
         }
         Ok(Some(out))
@@ -16344,6 +16419,38 @@ impl HybridModel {
         Ok(())
     }
 
+    /// [`Self::moe_shexp_add`] without the add: `Some((sh, gate))` when the layer has a shared
+    /// expert, `None` otherwise.
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::type_complexity)]
+    fn moe_shexp_compute(
+        e: &Engine,
+        m: &MoeWeights,
+        z: &CudaSlice<f32>,
+        zq8: Option<&(CudaSlice<i8>, CudaSlice<f32>)>,
+        t: usize,
+        cfg: &ModelConfig,
+        lim_shexp: Option<memra_gguf::config::SwigluClamp>,
+    ) -> Result<Option<(CudaSlice<f32>, Option<CudaSlice<f32>>)>, Box<dyn std::error::Error>> {
+        if let (Some(gate_shexp), Some(up_shexp), Some(down_shexp)) =
+            (&m.gate_shexp, &m.up_shexp, &m.down_shexp)
+        {
+            return Ok(Some(Self::moe_shexp_compute_with(
+                e,
+                gate_shexp,
+                up_shexp,
+                down_shexp,
+                m.gate_inp_shexp.as_ref(),
+                z,
+                zq8,
+                t,
+                cfg,
+                lim_shexp,
+            )?));
+        }
+        Ok(None)
+    }
+
     /// The shared expert over explicit tensors (the layer's own, or one rank's half of them in
     /// the symmetric TP walk), accumulated into `moe_out`.
     #[allow(clippy::too_many_arguments)] // allow: the three tensors are the operand set
@@ -16360,6 +16467,37 @@ impl HybridModel {
         lim_shexp: Option<memra_gguf::config::SwigluClamp>,
         moe_out: &mut CudaSlice<f32>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let (sh, g) = Self::moe_shexp_compute_with(
+            e,
+            gate_shexp,
+            up_shexp,
+            down_shexp,
+            gate_inp_shexp,
+            z,
+            zq8,
+            t,
+            cfg,
+            lim_shexp,
+        )?;
+        Self::moe_shexp_apply(e, &sh, g.as_ref(), cfg.n_embd as usize, t, moe_out)
+    }
+
+    /// The shared expert's `[t, n_embd]` contribution and its per-token gate (None = ungated),
+    /// NOT yet added: the launches of [`Self::moe_shexp_add_with`] minus its final add.
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::type_complexity)]
+    fn moe_shexp_compute_with(
+        e: &Engine,
+        gate_shexp: &crate::model::GpuTensor,
+        up_shexp: &crate::model::GpuTensor,
+        down_shexp: &crate::model::GpuTensor,
+        gate_inp_shexp: Option<&crate::model::GpuTensor>,
+        z: &CudaSlice<f32>,
+        zq8: Option<&(CudaSlice<i8>, CudaSlice<f32>)>,
+        t: usize,
+        cfg: &ModelConfig,
+        lim_shexp: Option<memra_gguf::config::SwigluClamp>,
+    ) -> Result<(CudaSlice<f32>, Option<CudaSlice<f32>>), Box<dyn std::error::Error>> {
         {
             let n_embd = cfg.n_embd as usize;
             let n_ff_sh = gate_shexp.out_features(); // 512
@@ -16455,13 +16593,31 @@ impl HybridModel {
             // 156). The resident ones buffer feeds the SAME `add_scaled_rows_f32` kernel the
             // same 1.0 values, so the arms are bit-identical.
             // moe_out[r, :] += sh[r, :] * g[r]   (per-token scalar gate; g=1 ungated)
-            match gate_inp_shexp {
+            let g = match gate_inp_shexp {
                 Some(gate_inp_shexp) => {
-                    let g = e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?;
-                    e.add_scaled_rows(&sh, &g, moe_out, n_embd, t)?;
+                    Some(e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?)
                 }
-                None => e.add_scaled_rows_ungated(&sh, moe_out, n_embd, t)?,
-            }
+                None => None,
+            };
+            Ok((sh, g))
+        }
+    }
+
+    /// The second half of [`Self::moe_shexp_add_with`]: the SAME `add_scaled_rows` /
+    /// `add_scaled_rows_ungated` launch over the pair `moe_shexp_compute_with` produced, so a
+    /// caller that computes the shared expert EARLY (to give the device work while the host
+    /// builds a routing table) and adds it LATE lands byte-identical bytes to the fused call.
+    fn moe_shexp_apply(
+        e: &Engine,
+        sh: &CudaSlice<f32>,
+        g: Option<&CudaSlice<f32>>,
+        n_embd: usize,
+        t: usize,
+        moe_out: &mut CudaSlice<f32>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        match g {
+            Some(g) => e.add_scaled_rows(sh, g, moe_out, n_embd, t)?,
+            None => e.add_scaled_rows_ungated(sh, moe_out, n_embd, t)?,
         }
         Ok(())
     }
