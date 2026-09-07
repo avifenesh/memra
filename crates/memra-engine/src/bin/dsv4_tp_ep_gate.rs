@@ -205,8 +205,6 @@ fn run_once(gpu: &Dsv4Gpu, tokens: &[u32], source_sha256: &str) -> Receipt {
         .expect("TP/EP AR refusal words");
     assert_eq!(
         ar_refusals,
-        attention_rank_calls,
-        attention_ar_calls,
         [0, 0],
         "one-shot AR must not refuse on either rank"
     );
@@ -221,6 +219,8 @@ fn run_once(gpu: &Dsv4Gpu, tokens: &[u32], source_sha256: &str) -> Receipt {
         ep_calls,
         ar_dispatches,
         ar_refusals,
+        attention_rank_calls,
+        attention_ar_calls,
     }
 }
 
