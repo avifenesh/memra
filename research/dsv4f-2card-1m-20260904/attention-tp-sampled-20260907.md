@@ -14,6 +14,8 @@ This is an attention-arm rate measurement, not a paired comparison. Prior forwar
 
 Run the existing `dsv4_tp_ep_sampled_perf_gate` with `MEMRA_DSV4_ATTENTION_TP_GATE=1`, retaining the ordinary plain matrix-EP gate settings. Source remains gate-only and default OFF. No local CI or GPU work is permitted; use the owned remote dev pair and exact shared GPU lock.
 
+Profile-only mode runs the same five attention TP2 rows and keeps every correctness and identity check. Add `MEMRA_DSV4_NVTX=1` to the ordinary attention gate environment and run `nsys profile --capture-range=nvtx --nvtx-capture=TP_EP_DECODE <gate-binary> <model-dir> <real-source.txt>` to capture the decode window from steps 32 to 64. Every row is ineligible, no pooled SUMMARY is printed, and the terminal line says `PASS profile-only sampled attention TP2` with `eligible=0 timing_scope=none`. Profiled timings are diagnostic only, never a rate. `MEMRA_DSV4_ROUND_PROFILE=1` is still refused.
+
 ## Result (2026-09-07, dev pair, source `2383e3b9163728bd4e1ccc7919a0a8d185a80703`)
 
 Built on the dev pair from a detached worktree of that exact source (the shared checkout carried a sibling lane's staged edit and was left alone). Binary SHA256 `c79c5c9f94e5f225627afc35327442a304f4282751a0815375c9cc5c57b550b9`, scoped release Clippy clean with warnings denied. One model load, GPU lock held, no foreign compute process; hardware and process census in the receipt.
