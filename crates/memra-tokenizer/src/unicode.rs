@@ -867,9 +867,219 @@ pub fn split_deepseek_v3(text: &str) -> Vec<String> {
     words
 }
 
+/// Port of the XHToken Spark-X2.5 pre-tokenizer (`tokenizer.ggml.pre` = `spark25`). The
+/// DeepSeek-V2 lineage of `split_deepseek_v3`: passes 1 and 2 are identical (`\p{N}{1,3}`,
+/// then the isolated CJK/kana runs); pass 3's six alternatives differ in the newline handling
+/// (` ?[\p{P}\p{S}]+` with NO trailing `[\r\n]*`, and a bare `[\r\n]` single-char alternative
+/// instead of `\s*[\r\n]+`); and a fourth HF `Digits { individual_digits: true }` step then
+/// splits every numeric codepoint into its own pre-token. Read off the checkpoint's own
+/// `tokenizer.json` (XHToken/Spark-X2.5-4B, 2026-09-07). Pinned against the HF `tokenizers`
+/// pre-tokenizer in `SPARK25_CASES` and against whole-id parity by `tok-parity`.
+pub fn split_spark25(text: &str) -> Vec<String> {
+    let cpts: Vec<u32> = text.chars().map(|c| c as u32).collect();
+    let cpt_bytes: Vec<usize> = text.chars().map(|c| c.len_utf8()).collect();
+    let n = cpts.len();
+    let coll: Vec<u8> = cpts.iter().map(|&c| collapse_cpt(c)).collect();
+
+    // ---- pass 1: \p{N}{1,3} ----
+    let mut offsets = vec![n];
+    offsets = split_pass(&offsets, |_s, end, pos| {
+        if !c_is_number(coll[pos]) {
+            return None;
+        }
+        let mut e = pos + 1;
+        while e < end && e - pos < 3 && c_is_number(coll[e]) {
+            e += 1;
+        }
+        Some(e)
+    });
+
+    // ---- pass 2: [CJK|kana]+ ----
+    offsets = split_pass(&offsets, |_s, end, pos| {
+        if !is_cjk_kana(cpts[pos]) {
+            return None;
+        }
+        let mut e = pos + 1;
+        while e < end && is_cjk_kana(cpts[e]) {
+            e += 1;
+        }
+        Some(e)
+    });
+
+    // ---- pass 3: six alternatives, leftmost-first ----
+    offsets = split_pass(&offsets, |_s, end, pos| {
+        let b = coll[pos];
+
+        // alt 1: [ASCII punct literal][A-Za-z]+
+        if c_is_ascii_punct_lit(b) && pos + 1 < end && coll[pos + 1].is_ascii_alphabetic() {
+            let mut e = pos + 2;
+            while e < end && coll[e].is_ascii_alphabetic() {
+                e += 1;
+            }
+            return Some(e);
+        }
+
+        // alt 2: [^\r\n\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+
+        {
+            let lead_ok =
+                b != b'\r' && b != b'\n' && !c_is_letter(b) && !c_is_punct(b) && !c_is_symbol(b);
+            let mut e = pos;
+            if lead_ok && pos + 1 < end && (c_is_letter(coll[pos + 1]) || c_is_mark(coll[pos + 1]))
+            {
+                e = pos + 1;
+            } else if !(c_is_letter(b) || c_is_mark(b)) {
+                e = usize::MAX;
+            }
+            if e != usize::MAX {
+                let run_start = e;
+                while e < end && (c_is_letter(coll[e]) || c_is_mark(coll[e])) {
+                    e += 1;
+                }
+                if e > run_start {
+                    return Some(e);
+                }
+            }
+        }
+
+        // alt 3: ' ?[\p{P}\p{S}]+' (no newline tail on this lineage)
+        {
+            let mut e = pos;
+            if b == b' ' {
+                e += 1;
+            }
+            let run_start = e;
+            while e < end && (c_is_punct(coll[e]) || c_is_symbol(coll[e])) {
+                e += 1;
+            }
+            if e > run_start {
+                return Some(e);
+            }
+        }
+
+        // alt 4: [\r\n] — exactly one newline character.
+        if b == b'\r' || b == b'\n' {
+            return Some(pos + 1);
+        }
+
+        // alt 5: \s+(?!\S), alt 6: \s+ — the run may contain \r\n (\s matches them); the
+        // lookahead backtracks one codepoint when the run is followed by a non-space.
+        if c_is_space(b) {
+            let mut e = pos;
+            while e < end && c_is_space(coll[e]) {
+                e += 1;
+            }
+            let run_end = e;
+            if run_end < end {
+                if run_end - pos > 1 {
+                    return Some(run_end - 1);
+                }
+                return Some(pos + 1);
+            }
+            return Some(run_end);
+        }
+
+        None
+    });
+
+    // ---- pass 4: HF `Digits { individual_digits: true }` — every numeric codepoint alone ----
+    offsets = split_pass(&offsets, |_s, _end, pos| {
+        if c_is_number(coll[pos]) {
+            Some(pos + 1)
+        } else {
+            None
+        }
+    });
+
+    let mut words = Vec::with_capacity(offsets.len());
+    let mut cpt_i = 0usize;
+    let mut byte_i = 0usize;
+    for &len in &offsets {
+        let nbytes: usize = cpt_bytes[cpt_i..cpt_i + len].iter().sum();
+        words.push(text[byte_i..byte_i + nbytes].to_string());
+        cpt_i += len;
+        byte_i += nbytes;
+    }
+    words
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// XHToken/Spark-X2.5-4B: generated 2026-09-07 with the HF `tokenizers` library over the
+    /// checkpoint's own tokenizer.json (`pre_tokenizer.pre_tokenize_str`, offsets mapped back
+    /// to the raw text). Newlines split single, whitespace runs swallow interior newlines,
+    /// every numeric codepoint stands alone (the Digits step), `<think>` splits on alt 1.
+    const SPARK25_CASES: &[(&str, &[&str])] = &[
+        ("Hello world", &["Hello", " world"]),
+        ("Hello, world!", &["Hello", ",", " world", "!"]),
+        (
+            "  leading and trailing  ",
+            &[" ", " leading", " and", " trailing", "  "],
+        ),
+        (
+            "a\nb\r\nc\n\n d",
+            &["a", "\n", "b", "\r", "\n", "c", "\n", "\n", " d"],
+        ),
+        ("tab\there", &["tab", "\there"]),
+        ("x  \n  y", &["x", "  \n ", " y"]),
+        (
+            "12345 abc 6.78",
+            &["1", "2", "3", "4", "5", " abc", " ", "6", ".", "7", "8"],
+        ),
+        (
+            "价格是123元，谢谢。",
+            &["价格是", "1", "2", "3", "元", "，", "谢谢", "。"],
+        ),
+        ("こんにちは世界 テスト", &["こんにちは世界", " ", "テスト"]),
+        (
+            "don't stop-it (now)~",
+            &["don", "'t", " stop", "-it", " (", "now", ")~"],
+        ),
+        (".gitignore .py_file", &[".gitignore", " .", "py", "_file"]),
+        ("  ", &["  "]),
+        ("\n", &["\n"]),
+        ("e-mail: a@b.co", &["e", "-mail", ":", " a", "@b", ".co"]),
+        ("１２３ ٣٤٥", &["１", "２", "３", " ", "٣", "٤", "٥"]),
+        ("café naïve résumé", &["café", " naïve", " résumé"]),
+        ("<think>hi</think>", &["<think", ">hi", "</", "think", ">"]),
+        (
+            "def f(x):\n    return x*2\n",
+            &[
+                "def", " f", "(x", "):", "\n", "   ", " return", " x", "*", "2", "\n",
+            ],
+        ),
+        ("A1B2", &["A", "1", "B", "2"]),
+        (
+            "1,000,000.00",
+            &["1", ",", "0", "0", "0", ",", "0", "0", "0", ".", "0", "0"],
+        ),
+        ("emoji 😀 test", &["emoji", " 😀", " test"]),
+        (" ~", &[" ~"]),
+        ("ab  cd", &["ab", " ", " cd"]),
+        ("\t\t\n", &["\t\t\n"]),
+        ("Ünïcödé Ωmega ∑x²", &["Ünïcödé", " Ωmega", " ∑", "x", "²"]),
+    ];
+
+    #[test]
+    fn spark25_split_matches_the_hf_pre_tokenizer() {
+        for (text, want) in SPARK25_CASES {
+            let got = split_spark25(text);
+            assert_eq!(&got, want, "text {text:?}");
+            assert_eq!(
+                got.concat(),
+                *text,
+                "words must concatenate back to the text"
+            );
+        }
+    }
+
+    /// RED ARM: the V3 splitter is not this splitter (newline tails, no digits step).
+    #[test]
+    fn spark25_is_not_the_deepseek_v3_split() {
+        let text = "x  \n  y 12\n";
+        assert_ne!(split_spark25(text), split_deepseek_v3(text));
+    }
 
     // generated by research/step37-p2-20260806/pretok-ref-deepseek-v3.py --rust
     const DS3_CASES: &[(&str, &[&str])] = &[

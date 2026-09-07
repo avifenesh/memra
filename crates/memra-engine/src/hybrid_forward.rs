@@ -6667,7 +6667,7 @@ impl HybridModel {
         // step35 rides its own mixer through the normal per-layer arm below.
         let use_seg = f16fuse
             && seg.is_some()
-            && !self.uses_sliding_gated_moe_program()
+            && !self.uses_step35_attention()
             && lo == 0
             && hi == n_layers
             && std::env::var("MEMRA_PRIME_SEG").as_deref() == Ok("1")
@@ -8053,7 +8053,7 @@ impl HybridModel {
         }
         // Step35 has a dedicated concat walk: the generic core below cannot express its
         // per-layer geometry/SWA/head gate, and under PP the dedicated path is stage-scoped.
-        if self.uses_sliding_gated_moe_program() {
+        if self.uses_step35_attention() {
             // The cross-request driver hands whole requests (no chunk loop of its own), so each
             // sequence's request-absolute end IS its base plus its prompt length — the value
             // `ts[s]` happened to equal for the fresh B>=1 batches this caller admits, which is
@@ -8601,7 +8601,7 @@ impl HybridModel {
         il: usize,
         seq_end: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        if self.uses_sliding_gated_moe_program() {
+        if self.uses_step35_attention() {
             return self.step35_attn_prime(e, fa, h, hx, pos_d, t, cache, il, seq_end);
         }
         // PROJ/CORE SPLIT (task #13, 2026-07-26): the q/k/v group projection is hoisted so
@@ -9448,7 +9448,7 @@ impl HybridModel {
         t: usize,
         il: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        if self.uses_sliding_gated_moe_program() {
+        if self.uses_step35_attention() {
             return self.step35_attn(e, fa, h, pos_d, t, il);
         }
         let cfg = &self.cfg;

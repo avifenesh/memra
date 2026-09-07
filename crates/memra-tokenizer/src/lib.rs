@@ -45,6 +45,17 @@ const DEEPSEEK_V3_SPLIT_REGEXES: [&str; 3] = [
     "[!\"#$%&'()*+,\\-./:;<=>?@\\[\\\\\\]^_`{|}~][A-Za-z]+|[^\r\n\\p{L}\\p{P}\\p{S}]?[\\p{L}\\p{M}]+| ?[\\p{P}\\p{S}]+[\r\n]*|\\s*[\r\n]+|\\s+(?!\\S)|\\s+",
 ];
 
+/// XHToken Spark-X2.5-4B's own `tokenizer.json` pre-tokenizer Sequence (2026-09-07): the
+/// same first two Splits as `DEEPSEEK_V3_SPLIT_REGEXES`, a third that differs in its newline
+/// alternatives (` ?[\p{P}\p{S}]+` with no `[\r\n]*` tail, and a bare `[\r\n]` in place of
+/// `\s*[\r\n]+`), followed by a `Digits {individual_digits: true}` step and ByteLevel.
+/// `unicode::split_spark25` is the pass-for-pass port including the digits step.
+const SPARK25_SPLIT_REGEXES: [&str; 3] = [
+    r"\p{N}{1,3}",
+    "[\u{4e00}-\u{9fa5}\u{3040}-\u{309f}\u{30a0}-\u{30ff}]+",
+    "[!\"#$%&'()*+,\\-./:;<=>?@\\[\\\\\\]^_`{|}~][A-Za-z]+|[^\r\n\\p{L}\\p{P}\\p{S}]?[\\p{L}\\p{M}]+| ?[\\p{P}\\p{S}]+|[\r\n]|\\s+(?!\\S)|\\s+",
+];
+
 /// llama.cpp `LLAMA_VOCAB_PRE_TYPE_CHATGLM4` (`tokenizer.ggml.pre` = `glm4`), read off
 /// zai-org/GLM-5.3-Flash @ 04c4e9e9's own `tokenizer.json` (sha256 19e77364…, the sha banked
 /// in that lane's `artifact.lock`). Differs from `QWEN2_PRETOKENIZE_REGEX` in EXACTLY ONE
@@ -58,7 +69,14 @@ const GLM4_PRETOKENIZE_REGEX: &str = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\
 
 /// Every `tokenizer.ggml.pre` id memra implements an EXACT split for. This is the allowlist a
 /// load is checked against and the list quoted in the load error, so the two can never drift.
-pub const SUPPORTED_PRETOKENIZERS: &[&str] = &["qwen35", "qwen2", "deepseek-v3", "gemma4", "glm4"];
+pub const SUPPORTED_PRETOKENIZERS: &[&str] = &[
+    "qwen35",
+    "qwen2",
+    "deepseek-v3",
+    "gemma4",
+    "glm4",
+    "spark25",
+];
 
 /// Escape hatch for deliberate experimentation with a family whose pre-tokenizer is not ported
 /// yet. Set to `1` to downgrade the hard load error to a loud per-load WARN.
@@ -135,6 +153,9 @@ pub enum PreSplit {
     Qwen35,
     /// `unicode::split_deepseek_v3` — DeepSeek-V3 and the Step-3.5/3.7-Flash family.
     DeepseekV3,
+    /// `unicode::split_spark25` — XHToken Spark-X2.5: the DeepSeek-V2-lineage three-Split
+    /// sequence (different newline alternatives from V3) plus an individual-digits step.
+    Spark25,
     /// `unicode::split_glm4` — the zai-org GLM-4.x / GLM-5.x line (llama.cpp
     /// `LLAMA_VOCAB_PRE_TYPE_CHATGLM4`). qwen2's pattern with `\p{N}{1,3}` digit grouping.
     Glm4,
@@ -166,6 +187,7 @@ impl PreSplit {
         match (pre, spm_style) {
             ("qwen35" | "qwen2", false) => Ok(PreSplit::Qwen35),
             ("deepseek-v3", false) => Ok(PreSplit::DeepseekV3),
+            ("spark25", false) => Ok(PreSplit::Spark25),
             ("glm4", false) => Ok(PreSplit::Glm4),
             ("gemma4", true) => Ok(PreSplit::Spm),
             _ => {
@@ -936,6 +958,9 @@ impl Tokenizer {
             // (llama.cpp LLAMA_VOCAB_PRE_TYPE_DEEPSEEK3_LLM). Materially different from qwen2:
             // \p{N}{1,3} digit grouping, an isolated CJK/kana pass, and \p{P}/\p{S}-only runs.
             PreSplit::DeepseekV3 => unicode::split_deepseek_v3(text),
+            // XHToken Spark-X2.5: DeepSeek-V2-lineage newline alternatives plus HF's
+            // individual-digits step (every numeric codepoint is its own pre-token).
+            PreSplit::Spark25 => unicode::split_spark25(text),
             // zai-org GLM-4.x / GLM-5.x (llama.cpp LLAMA_VOCAB_PRE_TYPE_CHATGLM4): qwen2's
             // pattern with `\p{N}{1,3}` digit grouping, and literal `\p{L}` letter runs that
             // do NOT fold combining marks the way the qwen35 machine does.
@@ -1340,6 +1365,13 @@ fn pre_from_split_regexes(regexes: &[String]) -> Option<&'static str> {
         {
             Some("deepseek-v3")
         }
+        [a, b, c]
+            if a == SPARK25_SPLIT_REGEXES[0]
+                && b == SPARK25_SPLIT_REGEXES[1]
+                && c == SPARK25_SPLIT_REGEXES[2] =>
+        {
+            Some("spark25")
+        }
         _ => None,
     }
 }
@@ -1382,6 +1414,10 @@ mod pretokenizer_tests {
             Ok(PreSplit::Glm4)
         );
         assert_eq!(
+            PreSplit::resolve_with("spark25", false, false),
+            Ok(PreSplit::Spark25)
+        );
+        assert_eq!(
             PreSplit::resolve_with("gemma4", true, false),
             Ok(PreSplit::Spm)
         );
@@ -1389,7 +1425,14 @@ mod pretokenizer_tests {
         // what the code accepts
         assert_eq!(
             SUPPORTED_PRETOKENIZERS,
-            &["qwen35", "qwen2", "deepseek-v3", "gemma4", "glm4"]
+            &[
+                "qwen35",
+                "qwen2",
+                "deepseek-v3",
+                "gemma4",
+                "glm4",
+                "spark25"
+            ]
         );
     }
 

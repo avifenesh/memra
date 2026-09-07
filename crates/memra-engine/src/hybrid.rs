@@ -4171,6 +4171,16 @@ impl HybridModel {
         self.decode_batch_program() == crate::plan_backend::DecodeBatchProgram::SlidingGatedMoe
     }
 
+    /// The step35-family ATTENTION program: per-layer geometry, sliding-window layers, and the
+    /// separate head-wise sigmoid gate applied before `wo`. Keyed on the plan's gate operation,
+    /// not on the MoE program: Spark-X2.5 (dense) compiles to the `Generic` decode program yet
+    /// needs every step35 attention mixer (prefill, prime, eager decode, batched decode), whose
+    /// FFN arms already dispatch `Ffn::Dense` through `ffn_act_lim`. Found 2026-09-07 when the
+    /// dense sibling served `ready ready ready`: the generic `full_attn` never applies the gate.
+    pub fn uses_step35_attention(&self) -> bool {
+        self.has_plan_operation(memra_gguf::model_plan::OperationKind::SeparateAttentionGate)
+    }
+
     pub fn has_plan_operation(&self, operation: memra_gguf::model_plan::OperationKind) -> bool {
         self.plan.trunk_operations().contains(&operation)
     }

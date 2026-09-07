@@ -9889,7 +9889,9 @@ impl HybridModel {
     }
 
     fn sliding_gated_moe_batch_program(&self) -> bool {
-        self.uses_sliding_gated_moe_program()
+        // The batched step35 walkers serve the whole attention class (MoE Step and dense
+        // Spark alike: their FFN arms dispatch Ffn::Dense through ffn_act_lim).
+        self.uses_step35_attention()
     }
 
     fn gemma_batch_program(&self) -> bool {
