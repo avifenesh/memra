@@ -12449,7 +12449,7 @@ impl Dsv4Gpu {
                 let layer = st
                     .layers
                     .iter()
-                    .find(|l| l.il == il)
+                    .find(|l| l.il == il as u32)
                     .unwrap_or_else(|| panic!("layer {il} not on TP rank 1"));
                 let cap_blocks = dsv4_cache_cap_blocks(capacity, layer.ratio);
                 let mk = |cmp: &CmpDev| -> Res<CmpCkptDev> {
