@@ -1828,7 +1828,9 @@ moe_m1_splitk_partial_kernel(
         int in_f, int out_f){
     constexpr int QT = QT_NVFP4_MODELOPT;
     constexpr bool M1 = true, PackedStore = true;
-    __shared__ __align__(16) __half As[SKT_STAGES][SK_BM][SKT_STRIDE];
+    __shared__ __align__(16) __half As[SKT_STAGES][16][SKT_STRIDE];
+    // Only warps 0/2 consume A rows 0..15 in M1; rows 16..31 were unused.
+    // Removing those stages lowers static shared storage without changing MMA.
     __shared__ __align__(16) __half Bs[SK_BN][SKT_STRIDE];   // single buffer
     __shared__ uint32_t s_cb[KQ_CB_WORDS(QT)];
     __shared__ uint32_t packed_h2[256];

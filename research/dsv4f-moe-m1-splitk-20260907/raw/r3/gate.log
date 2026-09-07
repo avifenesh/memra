@@ -1,0 +1,213 @@
+MOE_PROGRAM splitk=false component=true numeric_class=existing_m1_f16_mma
+PROTOCOL {"plain_only":true,"topology":"tp_ep_all_layers","numeric_class":"dsv4_attention_wo_b_input_split_f32_rank_reduce","attention_tp":true,"prime_tokens":1,"continuation_tokens":3,"source_sha256":"f6e175a6f2588953568746fec0cd43fcd046405f74b5c71ce071fe7f37238ded","dspark":false}
+[load] sampled candidate order: Radix
+[load] placement: split_at=22 trunk_layers=43 dspark_tail_reserve=0.00 GiB
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] topology: TpEpAllLayers | layers=43 per-rank-resident=all
+[load] indexer score: Scalar
+[load] prefill head: All
+[load] prefill DSpark prime: All
+[load] sampled DSpark proposal: Greedy
+[load] prefill MoE: reference
+[load] dspark exit-head dots arm: f32x (rung-4c fork; drafts only, never the emitted stream)
+[load] dspark selected-expert dispatch: per-expert reference
+[load] dense arm: fp8 (iteration-5; fp8 = FP8-blk linears as-stored on the device decode/verify paths, bit-identical twins)
+[load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 600.9ms
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> 2 rank copies done t=28s
+[load] layer 7 -> 2 rank copies done t=56s
+[load] layer 11 -> 2 rank copies done t=84s
+[load] layer 15 -> 2 rank copies done t=112s
+[load] layer 19 -> 2 rank copies done t=141s
+[load] layer 23 -> 2 rank copies done t=169s
+[load] layer 27 -> 2 rank copies done t=197s
+[load] layer 31 -> 2 rank copies done t=226s
+[load] layer 35 -> 2 rank copies done t=254s
+[load] layer 39 -> 2 rank copies done t=283s
+[load] layer 42 -> 2 rank copies done t=304s
+[load] matrix request program: one-row/batched native executor, experimental
+[load] sink score: Scalar
+[TP/EP load] local expert banks resident by ID: rank0=0..128, rank1=128..256; peer dispatch disabled
+[attention-TP2] packed rank-local Q_b/wo_a/wo_b: heads=32 groups=4 wo_b_k=4096 numeric_class=dsv4_attention_wo_b_input_split_f32_rank_reduce
+SPLITK_RESOURCES device=0 gu=1 sms=188 blocks_per_sm=3 registers=88 shared_bytes=26128 local_bytes=0 l2_bytes=134217728 regime=warm_matched_planes
+SPLITK_EXPERT device=0 gu=1 slot=0 expert=30
+SPLITK_EXPERT device=0 gu=1 slot=1 expert=55
+SPLITK_EXPERT device=0 gu=1 slot=2 expert=69
+SPLITK_EXPERT device=0 gu=1 slot=3 expert=95
+SPLITK_EXPERT device=0 gu=1 slot=4 expert=127
+SPLITK_TIMING device=0 gu=1 cycle=0 arm=0 us=102.048004
+SPLITK_TIMING device=0 gu=1 cycle=0 arm=1 us=83.328003
+SPLITK_TIMING device=0 gu=1 cycle=0 arm=1 us=83.232002
+SPLITK_TIMING device=0 gu=1 cycle=0 arm=0 us=102.240005
+SPLITK_TIMING device=0 gu=1 cycle=1 arm=0 us=99.711998
+SPLITK_TIMING device=0 gu=1 cycle=1 arm=1 us=85.375999
+SPLITK_TIMING device=0 gu=1 cycle=1 arm=1 us=83.391998
+SPLITK_TIMING device=0 gu=1 cycle=1 arm=0 us=101.888000
+SPLITK_TIMING device=0 gu=1 cycle=2 arm=0 us=101.760002
+SPLITK_TIMING device=0 gu=1 cycle=2 arm=1 us=83.520004
+SPLITK_TIMING device=0 gu=1 cycle=2 arm=1 us=83.136002
+SPLITK_TIMING device=0 gu=1 cycle=2 arm=0 us=101.311996
+SPLITK_TIMING device=0 gu=1 cycle=3 arm=0 us=101.599998
+SPLITK_TIMING device=0 gu=1 cycle=3 arm=1 us=83.679993
+SPLITK_TIMING device=0 gu=1 cycle=3 arm=1 us=84.576004
+SPLITK_TIMING device=0 gu=1 cycle=3 arm=0 us=101.599998
+SPLITK_TIMING device=0 gu=1 cycle=4 arm=0 us=101.375999
+SPLITK_TIMING device=0 gu=1 cycle=4 arm=1 us=83.584000
+SPLITK_TIMING device=0 gu=1 cycle=4 arm=1 us=82.783997
+SPLITK_TIMING device=0 gu=1 cycle=4 arm=0 us=101.535995
+SPLITK_TIMING device=0 gu=1 cycle=5 arm=0 us=101.888000
+SPLITK_TIMING device=0 gu=1 cycle=5 arm=1 us=83.424004
+SPLITK_TIMING device=0 gu=1 cycle=5 arm=1 us=83.839996
+SPLITK_TIMING device=0 gu=1 cycle=5 arm=0 us=101.856003
+SPLITK_TIMING device=0 gu=1 cycle=6 arm=0 us=101.727997
+SPLITK_TIMING device=0 gu=1 cycle=6 arm=1 us=84.000000
+SPLITK_TIMING device=0 gu=1 cycle=6 arm=1 us=83.968002
+SPLITK_TIMING device=0 gu=1 cycle=6 arm=0 us=101.407997
+SPLITK_TIMING device=0 gu=1 cycle=7 arm=0 us=101.311996
+SPLITK_TIMING device=0 gu=1 cycle=7 arm=1 us=83.328003
+SPLITK_TIMING device=0 gu=1 cycle=7 arm=1 us=82.911995
+SPLITK_TIMING device=0 gu=1 cycle=7 arm=0 us=101.919998
+SPLITK_TIMING device=0 gu=1 cycle=8 arm=0 us=101.375999
+SPLITK_TIMING device=0 gu=1 cycle=8 arm=1 us=83.007996
+SPLITK_TIMING device=0 gu=1 cycle=8 arm=1 us=82.624001
+SPLITK_TIMING device=0 gu=1 cycle=8 arm=0 us=101.472000
+SPLITK_TIMING device=0 gu=1 cycle=9 arm=0 us=101.664001
+SPLITK_TIMING device=0 gu=1 cycle=9 arm=1 us=83.264000
+SPLITK_TIMING device=0 gu=1 cycle=9 arm=1 us=82.783997
+SPLITK_TIMING device=0 gu=1 cycle=9 arm=0 us=102.335999
+SPLITK_COMPONENT device=0 gu=1 slots=5 blocks=2560 max_abs=3.7252903e-09 max_rel=2.18778979e-07 peak=1.17428327 oracle_us=101.601599 candidate_us=83.488000 speedup=1.216961 numeric_ok=1 finite=1 deterministic=1 canaries=1 launches_per_arm=20 numeric_class=moe_m1_splitk_f32_fixed_order
+[dsv4-prefill-f16g] GU_FUSE ENGAGED: rows=1 live_slots=6 hidden=4096 inter=2048 ModelOpt NVFP4 f16-MMA class
+SPLITK_RESOURCES device=0 gu=0 sms=188 blocks_per_sm=3 registers=82 shared_bytes=26128 local_bytes=0 l2_bytes=134217728 regime=warm_matched_planes
+SPLITK_EXPERT device=0 gu=0 slot=0 expert=30
+SPLITK_EXPERT device=0 gu=0 slot=1 expert=55
+SPLITK_EXPERT device=0 gu=0 slot=2 expert=69
+SPLITK_EXPERT device=0 gu=0 slot=3 expert=95
+SPLITK_EXPERT device=0 gu=0 slot=4 expert=127
+SPLITK_TIMING device=0 gu=0 cycle=0 arm=0 us=48.000000
+SPLITK_TIMING device=0 gu=0 cycle=0 arm=1 us=75.680000
+SPLITK_TIMING device=0 gu=0 cycle=0 arm=1 us=76.416000
+SPLITK_TIMING device=0 gu=0 cycle=0 arm=0 us=49.216000
+SPLITK_TIMING device=0 gu=0 cycle=1 arm=0 us=48.736000
+SPLITK_TIMING device=0 gu=0 cycle=1 arm=1 us=75.103996
+SPLITK_TIMING device=0 gu=0 cycle=1 arm=1 us=77.152000
+SPLITK_TIMING device=0 gu=0 cycle=1 arm=0 us=49.056000
+SPLITK_TIMING device=0 gu=0 cycle=2 arm=0 us=48.576000
+SPLITK_TIMING device=0 gu=0 cycle=2 arm=1 us=74.879997
+SPLITK_TIMING device=0 gu=0 cycle=2 arm=1 us=76.704002
+SPLITK_TIMING device=0 gu=0 cycle=2 arm=0 us=49.312000
+SPLITK_TIMING device=0 gu=0 cycle=3 arm=0 us=49.408001
+SPLITK_TIMING device=0 gu=0 cycle=3 arm=1 us=75.295998
+SPLITK_TIMING device=0 gu=0 cycle=3 arm=1 us=80.255997
+SPLITK_TIMING device=0 gu=0 cycle=3 arm=0 us=48.672001
+SPLITK_TIMING device=0 gu=0 cycle=4 arm=0 us=47.456001
+SPLITK_TIMING device=0 gu=0 cycle=4 arm=1 us=75.424004
+SPLITK_TIMING device=0 gu=0 cycle=4 arm=1 us=75.360001
+SPLITK_TIMING device=0 gu=0 cycle=4 arm=0 us=48.896000
+SPLITK_TIMING device=0 gu=0 cycle=5 arm=0 us=47.168003
+SPLITK_TIMING device=0 gu=0 cycle=5 arm=1 us=75.264000
+SPLITK_TIMING device=0 gu=0 cycle=5 arm=1 us=86.560005
+SPLITK_TIMING device=0 gu=0 cycle=5 arm=0 us=48.256001
+SPLITK_TIMING device=0 gu=0 cycle=6 arm=0 us=47.936001
+SPLITK_TIMING device=0 gu=0 cycle=6 arm=1 us=74.688004
+SPLITK_TIMING device=0 gu=0 cycle=6 arm=1 us=75.328003
+SPLITK_TIMING device=0 gu=0 cycle=6 arm=0 us=48.928001
+SPLITK_TIMING device=0 gu=0 cycle=7 arm=0 us=48.672001
+SPLITK_TIMING device=0 gu=0 cycle=7 arm=1 us=76.800003
+SPLITK_TIMING device=0 gu=0 cycle=7 arm=1 us=75.680000
+SPLITK_TIMING device=0 gu=0 cycle=7 arm=0 us=46.911999
+SPLITK_TIMING device=0 gu=0 cycle=8 arm=0 us=48.128002
+SPLITK_TIMING device=0 gu=0 cycle=8 arm=1 us=76.000000
+SPLITK_TIMING device=0 gu=0 cycle=8 arm=1 us=74.592003
+SPLITK_TIMING device=0 gu=0 cycle=8 arm=0 us=49.279999
+SPLITK_TIMING device=0 gu=0 cycle=9 arm=0 us=46.815998
+SPLITK_TIMING device=0 gu=0 cycle=9 arm=1 us=75.584000
+SPLITK_TIMING device=0 gu=0 cycle=9 arm=1 us=76.608002
+SPLITK_TIMING device=0 gu=0 cycle=9 arm=0 us=48.352001
+SPLITK_COMPONENT device=0 gu=0 slots=5 blocks=5120 max_abs=0.000244140625 max_rel=2.05234542e-07 peak=1508.00085 oracle_us=48.388800 candidate_us=76.468801 speedup=0.632791 numeric_ok=1 finite=1 deterministic=1 canaries=1 launches_per_arm=20 numeric_class=moe_m1_splitk_f32_fixed_order
+SPLITK_RESOURCES device=1 gu=1 sms=188 blocks_per_sm=3 registers=88 shared_bytes=26128 local_bytes=0 l2_bytes=134217728 regime=warm_matched_planes
+SPLITK_EXPERT device=1 gu=1 slot=0 expert=118
+SPLITK_TIMING device=1 gu=1 cycle=0 arm=0 us=101.184006
+SPLITK_TIMING device=1 gu=1 cycle=0 arm=1 us=26.016001
+SPLITK_TIMING device=1 gu=1 cycle=0 arm=1 us=25.344000
+SPLITK_TIMING device=1 gu=1 cycle=0 arm=0 us=102.080002
+SPLITK_TIMING device=1 gu=1 cycle=1 arm=0 us=101.823997
+SPLITK_TIMING device=1 gu=1 cycle=1 arm=1 us=26.303999
+SPLITK_TIMING device=1 gu=1 cycle=1 arm=1 us=25.792002
+SPLITK_TIMING device=1 gu=1 cycle=1 arm=0 us=101.056000
+SPLITK_TIMING device=1 gu=1 cycle=2 arm=0 us=101.599998
+SPLITK_TIMING device=1 gu=1 cycle=2 arm=1 us=25.567999
+SPLITK_TIMING device=1 gu=1 cycle=2 arm=1 us=25.632000
+SPLITK_TIMING device=1 gu=1 cycle=2 arm=0 us=99.455994
+SPLITK_TIMING device=1 gu=1 cycle=3 arm=0 us=101.375999
+SPLITK_TIMING device=1 gu=1 cycle=3 arm=1 us=25.248001
+SPLITK_TIMING device=1 gu=1 cycle=3 arm=1 us=26.303999
+SPLITK_TIMING device=1 gu=1 cycle=3 arm=0 us=101.056000
+SPLITK_TIMING device=1 gu=1 cycle=4 arm=0 us=99.776001
+SPLITK_TIMING device=1 gu=1 cycle=4 arm=1 us=25.504000
+SPLITK_TIMING device=1 gu=1 cycle=4 arm=1 us=25.407999
+SPLITK_TIMING device=1 gu=1 cycle=4 arm=0 us=100.032005
+SPLITK_TIMING device=1 gu=1 cycle=5 arm=0 us=99.615997
+SPLITK_TIMING device=1 gu=1 cycle=5 arm=1 us=26.400000
+SPLITK_TIMING device=1 gu=1 cycle=5 arm=1 us=25.216000
+SPLITK_TIMING device=1 gu=1 cycle=5 arm=0 us=101.216003
+SPLITK_TIMING device=1 gu=1 cycle=6 arm=0 us=99.615997
+SPLITK_TIMING device=1 gu=1 cycle=6 arm=1 us=25.695999
+SPLITK_TIMING device=1 gu=1 cycle=6 arm=1 us=25.632000
+SPLITK_TIMING device=1 gu=1 cycle=6 arm=0 us=101.279999
+SPLITK_TIMING device=1 gu=1 cycle=7 arm=0 us=100.608002
+SPLITK_TIMING device=1 gu=1 cycle=7 arm=1 us=25.375999
+SPLITK_TIMING device=1 gu=1 cycle=7 arm=1 us=25.599998
+SPLITK_TIMING device=1 gu=1 cycle=7 arm=0 us=101.695999
+SPLITK_TIMING device=1 gu=1 cycle=8 arm=0 us=99.264000
+SPLITK_TIMING device=1 gu=1 cycle=8 arm=1 us=26.143999
+SPLITK_TIMING device=1 gu=1 cycle=8 arm=1 us=25.216000
+SPLITK_TIMING device=1 gu=1 cycle=8 arm=0 us=99.807999
+SPLITK_TIMING device=1 gu=1 cycle=9 arm=0 us=101.535995
+SPLITK_TIMING device=1 gu=1 cycle=9 arm=1 us=25.248001
+SPLITK_TIMING device=1 gu=1 cycle=9 arm=1 us=25.888000
+SPLITK_TIMING device=1 gu=1 cycle=9 arm=0 us=102.880005
+SPLITK_COMPONENT device=1 gu=1 slots=1 blocks=512 max_abs=7.4505806e-09 max_rel=1.33925354e-07 peak=0.255745173 oracle_us=100.848000 candidate_us=25.676800 speedup=3.927592 numeric_ok=1 finite=1 deterministic=1 canaries=1 launches_per_arm=20 numeric_class=moe_m1_splitk_f32_fixed_order
+SPLITK_RESOURCES device=1 gu=0 sms=188 blocks_per_sm=3 registers=82 shared_bytes=26128 local_bytes=0 l2_bytes=134217728 regime=warm_matched_planes
+SPLITK_EXPERT device=1 gu=0 slot=0 expert=118
+SPLITK_TIMING device=1 gu=0 cycle=0 arm=0 us=37.119999
+SPLITK_TIMING device=1 gu=0 cycle=0 arm=1 us=24.191999
+SPLITK_TIMING device=1 gu=0 cycle=0 arm=1 us=24.064001
+SPLITK_TIMING device=1 gu=0 cycle=0 arm=0 us=38.975998
+SPLITK_TIMING device=1 gu=0 cycle=1 arm=0 us=37.664001
+SPLITK_TIMING device=1 gu=0 cycle=1 arm=1 us=23.712000
+SPLITK_TIMING device=1 gu=0 cycle=1 arm=1 us=24.256001
+SPLITK_TIMING device=1 gu=0 cycle=1 arm=0 us=38.591999
+SPLITK_TIMING device=1 gu=0 cycle=2 arm=0 us=38.591999
+SPLITK_TIMING device=1 gu=0 cycle=2 arm=1 us=24.256001
+SPLITK_TIMING device=1 gu=0 cycle=2 arm=1 us=25.440001
+SPLITK_TIMING device=1 gu=0 cycle=2 arm=0 us=38.400002
+SPLITK_TIMING device=1 gu=0 cycle=3 arm=0 us=38.240002
+SPLITK_TIMING device=1 gu=0 cycle=3 arm=1 us=24.095999
+SPLITK_TIMING device=1 gu=0 cycle=3 arm=1 us=28.351999
+SPLITK_TIMING device=1 gu=0 cycle=3 arm=0 us=38.368000
+SPLITK_TIMING device=1 gu=0 cycle=4 arm=0 us=38.112000
+SPLITK_TIMING device=1 gu=0 cycle=4 arm=1 us=26.400000
+SPLITK_TIMING device=1 gu=0 cycle=4 arm=1 us=23.903999
+SPLITK_TIMING device=1 gu=0 cycle=4 arm=0 us=38.079998
+SPLITK_TIMING device=1 gu=0 cycle=5 arm=0 us=37.856003
+SPLITK_TIMING device=1 gu=0 cycle=5 arm=1 us=23.776001
+SPLITK_TIMING device=1 gu=0 cycle=5 arm=1 us=25.567999
+SPLITK_TIMING device=1 gu=0 cycle=5 arm=0 us=38.463997
+SPLITK_TIMING device=1 gu=0 cycle=6 arm=0 us=38.048000
+SPLITK_TIMING device=1 gu=0 cycle=6 arm=1 us=24.288000
+SPLITK_TIMING device=1 gu=0 cycle=6 arm=1 us=24.288000
+SPLITK_TIMING device=1 gu=0 cycle=6 arm=0 us=36.416000
+SPLITK_TIMING device=1 gu=0 cycle=7 arm=0 us=36.543999
+SPLITK_TIMING device=1 gu=0 cycle=7 arm=1 us=23.455999
+SPLITK_TIMING device=1 gu=0 cycle=7 arm=1 us=23.935999
+SPLITK_TIMING device=1 gu=0 cycle=7 arm=0 us=38.336002
+SPLITK_TIMING device=1 gu=0 cycle=8 arm=0 us=38.463997
+SPLITK_TIMING device=1 gu=0 cycle=8 arm=1 us=24.128000
+SPLITK_TIMING device=1 gu=0 cycle=8 arm=1 us=23.647999
+SPLITK_TIMING device=1 gu=0 cycle=8 arm=0 us=38.528000
+SPLITK_TIMING device=1 gu=0 cycle=9 arm=0 us=38.720001
+SPLITK_TIMING device=1 gu=0 cycle=9 arm=1 us=24.128000
+SPLITK_TIMING device=1 gu=0 cycle=9 arm=1 us=25.119999
+SPLITK_TIMING device=1 gu=0 cycle=9 arm=0 us=38.431999
+SPLITK_COMPONENT device=1 gu=0 slots=1 blocks=1024 max_abs=6.10351562e-05 max_rel=1.16981433e-07 peak=772.369202 oracle_us=38.097600 candidate_us=24.550400 speedup=1.551812 numeric_ok=1 finite=1 deterministic=1 canaries=1 launches_per_arm=20 numeric_class=moe_m1_splitk_f32_fixed_order
+PASS real routed M1 split-K component

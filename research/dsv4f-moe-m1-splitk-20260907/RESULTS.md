@@ -52,7 +52,7 @@ not the denominator for its same-plane comparison.
 
 ## R3 fixed-16 result and adaptive revision
 
-The owner read the r3 receipt while this session's SSH route was unavailable:
+The r3 receipt was recovered from the private ops checkout after SSH stalled:
 
 | Local slots | GU oracle / candidate us | GU speedup | Down oracle / candidate us | Down speedup |
 | --- | --- | --- | --- | --- |
@@ -61,7 +61,14 @@ The owner read the r3 receipt while this session's SSH route was unavailable:
 
 The fixed-16 design is rejected. Full-model ABBA was not started on it.
 Heavy-rank time determines the EP step; the one-slot GU result cannot stand
-in for the five-slot rank. Raw r3 logs still need retrieval from the controller.
+in for the five-slot rank. Raw r3 logs are preserved under `raw/r3/`. The process monitor remains on the
+remote controller and still needs retrieval. R3 passed numeric, finite,
+deterministic and canary checks in all four cells. GU max abs/rel differences
+were 7.4505806e-9 / 2.18778979e-7 across ranks; down was 0.000244140625 /
+2.05234542e-7. The numeric gate passing did not make the timing acceptable.
+R3 used 26,128 shared bytes and 88/82 registers for GU/down, with three
+resident CTAs per SM and zero local bytes. Reported L2 was 134,217,728 bytes;
+these are warm-plane timings, not a measured DRAM-bandwidth result.
 
 The current revision uses `moe_m1_adaptive_splitk_f32_fixed_order`. It chooses
 `slices = clamp(round(target / (live * ceil(out_f/64))), 1, 16)` from the
@@ -95,3 +102,8 @@ state for every row, draining both ranks before changing the process setter.
 Correctness checks both arms, including the six refusal cells each. Sampled
 performance uses ABBA, five rows per arm, attention TP enabled, and the
 `sample_plus_forward_envelope` timing scope.
+
+The adaptive kernel also removes the unused second 16-row A stage: M1 only
+loads A rows 0..15, and only warps 0/2 issue MMA from those rows. The original
+M1 kernels remain unchanged. This lowers static shared use in the candidate;
+its measured resource receipt will decide the resulting occupancy.
