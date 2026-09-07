@@ -2599,8 +2599,14 @@ impl HostExps {
                     }
                     assert_eq!(buf.len(), total);
                     read_macros(&mut macros);
-                    let pinned = std::env::var("MEMRA_MOE_PINNED").is_ok()
-                        || std::env::var("MEMRA_MOE_CACHE").as_deref() != Ok("0");
+                    // MEMRA_MOE_HOST_PINNED=0 keeps the gathered bank PAGED: the pin is a
+                    // cudaHostAlloc of every layer's 4 GB (GLM-5.3-Flash), seconds per layer
+                    // on the load thread, and a bank the resident decision uploads once and
+                    // never stages from again does not need it. Default 1 = pinned, as before.
+                    let host_pinned = std::env::var("MEMRA_MOE_HOST_PINNED").as_deref() != Ok("0");
+                    let pinned = host_pinned
+                        && (std::env::var("MEMRA_MOE_PINNED").is_ok()
+                            || std::env::var("MEMRA_MOE_CACHE").as_deref() != Ok("0"));
                     if pinned {
                         let mut p = unsafe { e.ctx().alloc_pinned::<u8>(buf.len())? };
                         {
