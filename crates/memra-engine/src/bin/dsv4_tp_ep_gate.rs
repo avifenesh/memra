@@ -301,10 +301,28 @@ fn verify_refusal_boundary(gpu: &Dsv4Gpu, tokens: &[u32]) {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    assert_eq!(
-        args.len(),
-        3,
-        "usage: dsv4_tp_ep_gate <model-dir> <real-source.txt>"
+    assert!(
+        args.len() == 3 || args.len() == 4,
+        "usage: dsv4_tp_ep_gate <model-dir> <real-source.txt> [--moe-m1-splitk|--moe-m1-splitk-component|--moe-m1-splitk-pair]"
+    );
+    let splitk = args.get(3).is_some_and(|a| a == "--moe-m1-splitk");
+    let component = args
+        .get(3)
+        .is_some_and(|a| a == "--moe-m1-splitk-component");
+    let paired = args.get(3).is_some_and(|a| a == "--moe-m1-splitk-pair");
+    assert!(
+        args.len() == 3 || splitk || component || paired,
+        "unknown gate arm"
+    );
+    memra_engine::set_moe_m1_splitk_for_gate(splitk);
+    memra_engine::set_moe_m1_splitk_component_for_gate(component);
+    println!(
+        "MOE_PROGRAM splitk={splitk} component={component} numeric_class={}",
+        if splitk {
+            memra_engine::MOE_M1_SPLITK_NUMERIC_CLASS
+        } else {
+            "existing_m1_f16_mma"
+        }
     );
     let attention_mode = match std::env::var("MEMRA_DSV4_ATTENTION_TP_GATE").as_deref() {
         Err(std::env::VarError::NotPresent) | Ok("0") => false,
@@ -384,20 +402,50 @@ fn main() {
         [0, 0]
     );
 
-    let first = run_once(&gpu, &prompt, &source_sha256);
-    let second = run_once(&gpu, &prompt, &source_sha256);
-    assert_eq!(
-        first, second,
-        "repeated plain TP/EP tape must be deterministic"
-    );
-    println!("RECEIPT {first:?}");
-    verify_refusal_boundary(&gpu, &prompt);
-    println!(
-        "PASS plain-only all-layer TP/EP ranks={} layers={} numeric_class={} no_pp_fallback=true deterministic=true internal_consistency=true refusal_boundary=true oracle_equivalence=false",
-        gpu.topology().world,
-        gpu.topology().layers,
-        numeric_class
-    );
+    if component {
+        let mut state = gpu
+            .alloc_decode_state_for_transient(16, 1)
+            .expect("component state");
+        for token in 0..8 {
+            memra_engine::set_moe_m1_splitk_component_token_for_gate(token);
+            if token == 0 {
+                gpu.prefill_with_cache_chunked(&prompt[..1], &mut state, 1)
+                    .expect("real-token component prime");
+            } else {
+                gpu.decode_step(prompt[token], &mut state)
+                    .expect("real-token component continuation");
+            }
+        }
+        println!("PASS real routed M1 split-K component tokens=8");
+        return;
+    }
+    let arms: &[bool] = if paired { &[false, true] } else { &[splitk] };
+    for &armed in arms {
+        gpu.set_grouped_m1_splitk_for_gate(armed);
+        println!("CORRECTNESS_ARM splitk={armed} fresh_request_state=true");
+        println!(
+            "MOE_NUMERIC_CLASS {}",
+            if armed {
+                memra_engine::MOE_M1_SPLITK_NUMERIC_CLASS
+            } else {
+                "existing_m1_f16_mma"
+            }
+        );
+        let first = run_once(&gpu, &prompt, &source_sha256);
+        let second = run_once(&gpu, &prompt, &source_sha256);
+        assert_eq!(
+            first, second,
+            "repeated plain TP/EP tape must be deterministic"
+        );
+        println!("RECEIPT {first:?}");
+        verify_refusal_boundary(&gpu, &prompt);
+        println!(
+            "PASS plain-only all-layer TP/EP ranks={} layers={} numeric_class={} no_pp_fallback=true deterministic=true internal_consistency=true refusal_boundary=true oracle_equivalence=false",
+            gpu.topology().world,
+            gpu.topology().layers,
+            numeric_class
+        );
+    }
     Dsv4Gpu::set_attention_tp_for_gate(false);
     Dsv4Gpu::set_tp_ep_topology_for_gate(false);
 }

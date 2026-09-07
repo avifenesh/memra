@@ -32,6 +32,8 @@ struct Counters {
     attention_rank: [u64; 2],
     attention_ar: u64,
     gu_m1: u64,
+    splitk_gu: u64,
+    splitk_down: u64,
     gu_half2: u64,
     down_half2: u64,
     wo_a: u64,
@@ -45,6 +47,10 @@ fn counters(gpu: &Dsv4Gpu) -> Counters {
         ar: gpu.tp_ep_ar_dispatches(),
         attention_rank: gpu.attention_tp_rank_calls(),
         attention_ar: gpu.attention_tp_ar_calls(),
+        splitk_gu: memra_engine::MOE_M1_SPLITK_GU_DISPATCHES
+            .load(std::sync::atomic::Ordering::Relaxed),
+        splitk_down: memra_engine::MOE_M1_SPLITK_DOWN_DISPATCHES
+            .load(std::sync::atomic::Ordering::Relaxed),
         gu_m1: memra_engine::moe_f16g_gu_m1_tc_dispatches(),
         gu_half2: memra_engine::moe_f16g_gu_half2_dispatches(),
         down_half2: memra_engine::moe_f16g_down_m1_half2_dispatches(),
@@ -65,6 +71,8 @@ fn delta(after: Counters, before: Counters) -> Counters {
             after.attention_rank[rank] - before.attention_rank[rank]
         }),
         attention_ar: after.attention_ar - before.attention_ar,
+        splitk_gu: after.splitk_gu - before.splitk_gu,
+        splitk_down: after.splitk_down - before.splitk_down,
         gu_m1: after.gu_m1 - before.gu_m1,
         gu_half2: after.gu_half2 - before.gu_half2,
         down_half2: after.down_half2 - before.down_half2,
@@ -195,9 +203,21 @@ fn assert_engagement(gpu: &Dsv4Gpu, c: Counters, prime: usize, decode: usize) {
         "actual attention reductions"
     );
     let local_steps = 2 * (prime + decode) as u64 * layers;
-    assert_eq!(c.gu_m1, local_steps, "GU-M1 actual enqueues");
-    assert_eq!(c.gu_half2, local_steps, "GU-half2 actual enqueues");
-    assert_eq!(c.down_half2, local_steps, "down-half2 actual enqueues");
+    let splitk = memra_engine::moe_m1_splitk_on();
+    let oracle_steps = if splitk { 0 } else { local_steps };
+    let splitk_steps = if splitk { local_steps } else { 0 };
+    assert_eq!(c.gu_m1, oracle_steps, "GU-M1 actual enqueues");
+    assert_eq!(c.gu_half2, oracle_steps, "GU-half2 actual enqueues");
+    assert_eq!(c.down_half2, oracle_steps, "down-half2 actual enqueues");
+    assert_eq!(c.splitk_gu, splitk_steps, "split-K GU two-pass enqueues");
+    assert_eq!(
+        c.splitk_down, splitk_steps,
+        "split-K down two-pass enqueues"
+    );
+    println!(
+        "MOE_ENGAGEMENT splitk={splitk} gu={} down={}",
+        c.splitk_gu, c.splitk_down
+    );
     assert_eq!(
         c.wo_a,
         if attention_mode { 0 } else { local_steps },
@@ -437,11 +457,14 @@ fn run_once(
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    assert_eq!(
-        args.len(),
-        3,
-        "usage: dsv4_tp_ep_sampled_perf_gate <model-dir> <real-source.txt>"
+    assert!(
+        args.len() == 3 || args.len() == 4,
+        "usage: dsv4_tp_ep_sampled_perf_gate <model-dir> <real-source.txt> [--moe-m1-splitk|--moe-m1-splitk-abba]"
     );
+    let splitk = args.get(3).is_some_and(|a| a == "--moe-m1-splitk");
+    let abba = args.get(3).is_some_and(|a| a == "--moe-m1-splitk-abba");
+    assert!(args.len() == 3 || splitk || abba, "unknown gate arm");
+    memra_engine::set_moe_m1_splitk_for_gate(splitk);
     let attention_mode = match std::env::var("MEMRA_DSV4_ATTENTION_TP_GATE").as_deref() {
         Err(std::env::VarError::NotPresent) | Ok("0") => false,
         Ok("1") => true,
@@ -534,72 +557,89 @@ fn main() {
     gpu.set_dense_wo_a_grouped_for_gate(!attention_mode);
     gpu.set_index_topk_radix_for_gate(true);
 
-    let receipts: Vec<_> = (0..repeats)
-        .map(|repeat| run_once(&gpu, &prompt, &tokenizer, repeat, sampler_name))
-        .collect();
-    let first = &receipts[0];
-    for receipt in &receipts {
-        assert_eq!(
-            first.generated_sha256, receipt.generated_sha256,
-            "same-program sampled repeat stream"
-        );
-        assert_eq!(first.state_pos, receipt.state_pos);
-        assert_eq!(first.generated_tokens, receipt.generated_tokens);
-        assert_eq!(first.forward_calls, receipt.forward_calls);
-        assert_eq!(first.eos, receipt.eos);
-        assert_eq!(first.final_logits_sha256, receipt.final_logits_sha256);
-        assert_eq!(first.final_cache_digest, receipt.final_cache_digest);
-        assert_eq!(first.final_hidden_digest, receipt.final_hidden_digest);
-        assert_eq!(first.attention_join_sha256, receipt.attention_join_sha256);
-        assert_eq!(receipt.ar_refusals, [0, 0]);
-        println!(
-            "REPEAT repeat={} state_alloc_ns={} prime_wall_ns={} decode_wall_ns={} state_pos={} generated_tokens={} forward_calls={} eos={} looped={} eligible={} prime_counters={:?} decode_counters={:?}",
-            receipt.repeat,
-            receipt.state_alloc.as_nanos(),
-            receipt.prime_wall.as_nanos(),
-            receipt.decode_wall.as_nanos(),
-            receipt.state_pos,
-            receipt.generated_tokens,
-            receipt.forward_calls,
-            receipt.eos,
-            receipt.looped,
-            receipt.eligible,
-            receipt.counters_prime,
-            receipt.counters_decode,
-        );
-    }
-    if attention_mode && !profiled {
-        assert!(
-            receipts.iter().all(|receipt| receipt.eligible),
-            "all five sampled attention rows must be eligible; no reroll or forward-only substitute"
-        );
-        let total_tokens: usize = receipts
-            .iter()
-            .map(|receipt| receipt.generated_tokens)
-            .sum();
-        let total_wall_ns: u128 = receipts
-            .iter()
-            .map(|receipt| receipt.decode_wall.as_nanos())
-            .sum();
-        let pooled_tok_s = total_tokens as f64 * 1e9 / total_wall_ns as f64;
-        println!(
-            "SUMMARY {{\"repeats\":{repeats},\"eligible_repeats\":{repeats},\"generated_tokens\":{total_tokens},\"decode_wall_ns\":{total_wall_ns},\"sampled_envelope_tok_s\":{pooled_tok_s:.6},\"timing_scope\":\"sample_plus_forward_envelope\",\"sampler_order\":\"{sampler_name}\",\"paired_control\":false,\"speculative\":false}}"
-        );
-    }
-    if attention_mode && profiled {
-        assert!(receipts.iter().all(|receipt| !receipt.eligible));
-        println!(
-            "PASS profile-only sampled attention TP2; repeats={repeats} eligible=0 timing_scope=none sampler={sampler_name}"
-        );
-    } else if attention_mode {
-        println!(
-            "PASS sampled attention TP2; repeats={repeats} eligible={repeats} timing_scope=sample_plus_forward_envelope sampler={sampler_name}"
-        );
+    let arms: &[bool] = if abba {
+        &[false, true, true, false]
     } else {
+        &[splitk]
+    };
+    for (arm_index, &armed) in arms.iter().enumerate() {
+        gpu.set_grouped_m1_splitk_for_gate(armed);
+        println!("ABBA_ARM index={arm_index} splitk={armed} fresh_request_state=true");
         println!(
-            "PASS sampled TP/EP internal repeat; eligible_first={} eligible_second={} loop exclusion remains per-row eligibility",
-            first.eligible, receipts[1].eligible
+            "MOE_PROGRAM splitk={armed} component=false numeric_class={}",
+            if armed {
+                memra_engine::MOE_M1_SPLITK_NUMERIC_CLASS
+            } else {
+                "existing_m1_f16_mma"
+            }
         );
+        let receipts: Vec<_> = (0..repeats)
+            .map(|repeat| run_once(&gpu, &prompt, &tokenizer, repeat, sampler_name))
+            .collect();
+        let first = &receipts[0];
+        for receipt in &receipts {
+            assert_eq!(
+                first.generated_sha256, receipt.generated_sha256,
+                "same-program sampled repeat stream"
+            );
+            assert_eq!(first.state_pos, receipt.state_pos);
+            assert_eq!(first.generated_tokens, receipt.generated_tokens);
+            assert_eq!(first.forward_calls, receipt.forward_calls);
+            assert_eq!(first.eos, receipt.eos);
+            assert_eq!(first.final_logits_sha256, receipt.final_logits_sha256);
+            assert_eq!(first.final_cache_digest, receipt.final_cache_digest);
+            assert_eq!(first.final_hidden_digest, receipt.final_hidden_digest);
+            assert_eq!(first.attention_join_sha256, receipt.attention_join_sha256);
+            assert_eq!(receipt.ar_refusals, [0, 0]);
+            println!(
+                "REPEAT repeat={} state_alloc_ns={} prime_wall_ns={} decode_wall_ns={} state_pos={} generated_tokens={} forward_calls={} eos={} looped={} eligible={} prime_counters={:?} decode_counters={:?}",
+                receipt.repeat,
+                receipt.state_alloc.as_nanos(),
+                receipt.prime_wall.as_nanos(),
+                receipt.decode_wall.as_nanos(),
+                receipt.state_pos,
+                receipt.generated_tokens,
+                receipt.forward_calls,
+                receipt.eos,
+                receipt.looped,
+                receipt.eligible,
+                receipt.counters_prime,
+                receipt.counters_decode,
+            );
+        }
+        if attention_mode && !profiled {
+            assert!(
+                receipts.iter().all(|receipt| receipt.eligible),
+                "all five sampled attention rows must be eligible; no reroll or forward-only substitute"
+            );
+            let total_tokens: usize = receipts
+                .iter()
+                .map(|receipt| receipt.generated_tokens)
+                .sum();
+            let total_wall_ns: u128 = receipts
+                .iter()
+                .map(|receipt| receipt.decode_wall.as_nanos())
+                .sum();
+            let pooled_tok_s = total_tokens as f64 * 1e9 / total_wall_ns as f64;
+            println!(
+                "SUMMARY {{\"repeats\":{repeats},\"eligible_repeats\":{repeats},\"generated_tokens\":{total_tokens},\"decode_wall_ns\":{total_wall_ns},\"sampled_envelope_tok_s\":{pooled_tok_s:.6},\"timing_scope\":\"sample_plus_forward_envelope\",\"sampler_order\":\"{sampler_name}\",\"paired_control\":false,\"speculative\":false}}"
+            );
+        }
+        if attention_mode && profiled {
+            assert!(receipts.iter().all(|receipt| !receipt.eligible));
+            println!(
+                "PASS profile-only sampled attention TP2; repeats={repeats} eligible=0 timing_scope=none sampler={sampler_name}"
+            );
+        } else if attention_mode {
+            println!(
+                "PASS sampled attention TP2; repeats={repeats} eligible={repeats} timing_scope=sample_plus_forward_envelope sampler={sampler_name}"
+            );
+        } else {
+            println!(
+                "PASS sampled TP/EP internal repeat; eligible_first={} eligible_second={} loop exclusion remains per-row eligibility",
+                first.eligible, receipts[1].eligible
+            );
+        }
     }
     Dsv4Gpu::set_attention_tp_for_gate(false);
     Dsv4Gpu::set_tp_ep_topology_for_gate(false);
