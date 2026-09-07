@@ -36,4 +36,27 @@ including rejection of inactive long-context counters and moving baselines.
 
 Model gate executable SHA256:
 `dbeb85847a18ced7141a5bea1ca4de1abaac1ec44c92ab4fb7bd8ba35a7714af`.
-The full-model sampled ABBA verdict is pending. No runtime default is promoted.
+## Full-model sampled verdict
+
+KEEP the measured candidate, default OFF pending serving admission. The full
+28-row gate passed, with six timed rows per arm/context, sampled T=1/p=1/k=0,
+seed 20260906, 256 output tokens, and three ABBA cycles. Every token stream,
+final-logit hash and committed KV hash is identical; no looped rows entered
+the metrics. Both prior wins stay enabled in both arms.
+
+| Prompt tokens | Baseline plain tok/s | Selector plain tok/s | Same-window change |
+|---|---:|---:|---:|
+| 256 | 33.12572 | 33.14757 | +0.066%, inert selector control |
+| 8192 | 30.24389 | 30.95706 | +2.358%, actual selector win |
+
+The candidate records exactly 5,355 selector enqueues per 255-step 8K row;
+the baseline and both short-context arms record zero. Graph counters are
+zero in both arms. Fullmodel log SHA256
+`1afbf5b0f4540b0e90bab5807e39bbd4e86d3f7736c6191c112b6d28c97fc8e4`.
+Controller finished with status zero at 04:26:33Z. Both cards additionally
+passed integrated-kernel initcheck and synccheck with zero errors.
+
+Only the same-window +2.358% is attributed to this change. Cross-run movement
+from older 32.06/28.00 rows is not credited to the selector. These are native
+plain decode-gate rates, not HTTP serving qualification. The 120 tok/s
+objective remains unmet; no runtime default is promoted.
