@@ -33,6 +33,8 @@ use memra_gguf::dsv4_forward::{
     precompute_freqs_cis, window_topk_idxs,
 };
 
+use crate::dsv4_attention_split::{DeviceFp8Plane, Partition};
+use crate::dsv4_attention_tp::{self, AttentionTpGeometry};
 use crate::dsv4_c4::{C4Gather, C4HostStore};
 use crate::dsv4_ep::{EpCompute, EpLayer, EpScratch, TpEpArState};
 use crate::dsv4_ep_graph::{self, MatrixEpGraphSlot};
@@ -168,6 +170,27 @@ pub struct Fp8Dense {
     pub sc_cols: usize,         // ceil(cols/128)
     pub rows: usize,
     pub cols: usize,
+}
+
+struct AttentionTpLayer {
+    rank: usize,
+    wq_b: DeviceFp8Plane,
+    wo_a: DeviceFp8Plane,
+    wo_b: DeviceFp8Plane,
+}
+
+struct AttentionTpRefusalInjection {
+    layer: usize,
+    rank: usize,
+    code: i32,
+}
+
+fn packed_dense(plane: &DeviceFp8Plane, stream: &CudaStream) -> DW {
+    DW::Fp8 {
+        codes: plane.codes.device_ptr(stream).0 as *const c_void,
+        scales: plane.scales.device_ptr(stream).0 as *const f32,
+        sc_cols: plane.scale_cols as i32,
+    }
 }
 
 /// It5 ledger item 3 — residency of a dense bf16 slab. `Dev` = device-resident, today's
@@ -329,6 +352,7 @@ pub enum DecodePath {
 }
 
 pub struct LayerDev {
+    attention_tp: Option<AttentionTpLayer>,
     ep: Option<EpLayer>,
     pub il: u32,
     pub ratio: usize,
@@ -717,6 +741,10 @@ struct PrefillHeadCounters {
 
 pub struct Dsv4Gpu {
     pub topology: Dsv4TopologyPlan,
+    attention_tp: Option<AttentionTpGeometry>,
+    attention_tp_rank_calls: [AtomicU64; 2],
+    attention_tp_ar_calls: AtomicU64,
+    attention_tp_refusal_injection: std::sync::Mutex<Option<AttentionTpRefusalInjection>>,
     ep_enabled: bool,
     ep_serial_control: bool,
     ep_calls: std::sync::atomic::AtomicU64,
@@ -1907,6 +1935,96 @@ impl Dsv4Gpu {
         dsv4_topology::tp_ep_for_gate()
     }
 
+    pub fn set_attention_tp_for_gate(enabled: bool) -> bool {
+        dsv4_attention_tp::set_for_gate(enabled)
+    }
+
+    pub fn attention_tp_geometry(&self) -> Option<AttentionTpGeometry> {
+        self.attention_tp
+    }
+
+    pub fn attention_tp_rank_calls(&self) -> [u64; 2] {
+        std::array::from_fn(|rank| self.attention_tp_rank_calls[rank].load(Ordering::Relaxed))
+    }
+
+    pub fn attention_tp_ar_calls(&self) -> u64 {
+        self.attention_tp_ar_calls.load(Ordering::Relaxed)
+    }
+
+    /// One-shot negative gate: poison the shared refusal plane immediately after a real
+    /// attention join. This does not introduce a second status plane or recover failed state.
+    pub fn arm_attention_tp_join_refusal_for_gate(
+        &self,
+        layer: usize,
+        rank: usize,
+        code: i32,
+    ) -> Res<()> {
+        if self.attention_tp.is_none()
+            || layer >= self.topology.layers
+            || rank >= 2
+            || !matches!(code, 40043 | 40044)
+        {
+            return Err("invalid attention TP2 join refusal injection".into());
+        }
+        let _walk = self
+            .tp_ep_walk_lock
+            .lock()
+            .map_err(|_| "attention TP2 walk mutex poisoned")?;
+        let mut injection = self
+            .attention_tp_refusal_injection
+            .lock()
+            .map_err(|_| "attention TP2 refusal injection mutex poisoned")?;
+        if injection.is_some() {
+            return Err("attention TP2 refusal injection is already armed".into());
+        }
+        *injection = Some(AttentionTpRefusalInjection { layer, rank, code });
+        Ok(())
+    }
+
+    /// Diagnostic readback of the actual final-layer partials and the preserved GPU sum.
+    /// The caller compares the sum with canonical CPU f32 addition, not full-width wo_b.
+    pub fn attention_tp_last_join_for_gate(
+        &self,
+        state: &DecodeState,
+    ) -> Res<dsv4_attention_tp::AttentionTpJoinSnapshot> {
+        let plan = self
+            .attention_tp
+            .ok_or("attention TP2 snapshot requires its named program")?;
+        let work = state
+            .matrix_step
+            .as_ref()
+            .ok_or("attention TP2 snapshot workspace missing")?;
+        if work.failed || state.pos == 0 {
+            return Err("attention TP2 snapshot requires a successfully committed token".into());
+        }
+        let outputs = work
+            .verify
+            .tp_ep_attention_outputs
+            .as_ref()
+            .ok_or("attention TP2 snapshot output planes missing")?;
+        let mut partials = std::array::from_fn(|_| Vec::new());
+        let mut joined = std::array::from_fn(|_| Vec::new());
+        for rank in 0..2 {
+            let stage = &self.stages[rank];
+            stage
+                .gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("attention TP2 snapshot context"))?;
+            let stream = stage.gpu.stream();
+            partials[rank] = stream
+                .clone_dtoh(&work.verify.ws[rank].attn_out.slice(..plan.hidden))
+                .map_err(e("attention TP2 partial snapshot"))?;
+            joined[rank] = stream
+                .clone_dtoh(&outputs[rank].slice(..plan.hidden))
+                .map_err(e("attention TP2 joined snapshot"))?;
+            stream
+                .synchronize()
+                .map_err(e("attention TP2 snapshot drain"))?;
+        }
+        Ok(dsv4_attention_tp::AttentionTpJoinSnapshot { partials, joined })
+    }
+
     /// Actual per-rank all-layer calls.  No PP call is folded into these
     /// counters; the future TP/EP walk must increment them per rank/layer.
     pub fn tp_ep_rank_layer_calls(&self) -> [u64; 2] {
@@ -2574,6 +2692,7 @@ impl Dsv4Gpu {
             self.tensor_dense(stage, &format!("{p}.ffn.shared_experts.w3"), fp8_ok)?;
 
         Ok(LayerDev {
+            attention_tp: None,
             ep: None,
             il,
             ratio,
@@ -2722,6 +2841,23 @@ impl Dsv4Gpu {
                 mc.n_embd as usize,
                 mc.moe.as_ref().expect("moe").expert_ff_length as usize,
             )?
+        };
+        let attention_tp = if dsv4_attention_tp::enabled_for_gate() {
+            if !topology.is_tp_ep() {
+                return Err(
+                    "attention TP2 requires the explicit all-layer expert-ID EP topology".into(),
+                );
+            }
+            Some(AttentionTpGeometry::new(
+                mc.n_head as usize,
+                d.head_dim as usize,
+                d.q_lora_rank as usize,
+                d.o_groups as usize,
+                d.o_lora_rank as usize,
+                mc.n_embd as usize,
+            )?)
+        } else {
+            None
         };
         if topology.is_tp_ep() && std::env::var("MEMRA_DSV4_DRAFTER").as_deref() == Ok("dspark") {
             return Err(
@@ -2978,6 +3114,10 @@ impl Dsv4Gpu {
 
         let mut me = Dsv4Gpu {
             topology,
+            attention_tp,
+            attention_tp_rank_calls: std::array::from_fn(|_| AtomicU64::new(0)),
+            attention_tp_ar_calls: AtomicU64::new(0),
+            attention_tp_refusal_injection: std::sync::Mutex::new(None),
             ep_enabled: false,
             ep_serial_control: false,
             ep_calls: std::sync::atomic::AtomicU64::new(0),
@@ -3387,7 +3527,108 @@ impl Dsv4Gpu {
             }
         }
         me.validate_matrix_program()?;
+        if me.attention_tp.is_some() {
+            me.pack_attention_tp_layers()?;
+        }
         Ok(me)
+    }
+
+    /// Load-time only. Retain the full source planes for the explicit reference arm;
+    /// runtime attention reads only these packed rank-local planes when selected.
+    fn pack_attention_tp_layers(&mut self) -> Res<()> {
+        let plan = self.attention_tp.ok_or("attention TP2 geometry missing")?;
+        if !self.topology.is_tp_ep() || !self.ep_enabled || !self.dense_fp8 || !self.matrix_moe {
+            return Err(
+                "attention TP2 requires all-layer native matrix EP with FP8 dense planes".into(),
+            );
+        }
+        for (rank, stage) in self.stages.iter_mut().enumerate() {
+            stage
+                .gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("attention TP2 pack context"))?;
+            let stream = stage.gpu.stream();
+            for layer in &mut stage.layers {
+                if layer.sink.len() != plan.full_heads {
+                    return Err(format!(
+                        "attention TP2 layer {} sink/head geometry mismatch",
+                        layer.il
+                    ));
+                }
+                let pack = |source: Option<&Fp8Dense>,
+                            rows,
+                            cols,
+                            partition|
+                 -> Res<DeviceFp8Plane> {
+                    let source = source.ok_or("attention TP2 projection is not checkpoint FP8")?;
+                    if source.rows != rows || source.cols != cols || source.sc_cols != cols / 128 {
+                        return Err(format!(
+                            "attention TP2 projection shape {}x{} does not match {rows}x{cols}",
+                            source.rows, source.cols
+                        ));
+                    }
+                    DeviceFp8Plane::from_device(
+                        &stage.gpu,
+                        rank,
+                        rows,
+                        cols,
+                        partition,
+                        &source.codes,
+                        &source.scales,
+                    )
+                };
+                let q_rows = plan.local_heads * plan.head_dim;
+                let wq_b = pack(
+                    layer.wq_b_fp8.as_ref(),
+                    2 * q_rows,
+                    plan.q_lora,
+                    Partition::Rows {
+                        start: rank * q_rows,
+                        len: q_rows,
+                    },
+                )?;
+                let wo_a = pack(
+                    layer.wo_a_fp8.as_ref(),
+                    plan.full_output_width,
+                    plan.group_width,
+                    Partition::Rows {
+                        start: rank * plan.local_output_width,
+                        len: plan.local_output_width,
+                    },
+                )?;
+                let wo_b = pack(
+                    layer.wo_b_fp8.as_ref(),
+                    plan.hidden,
+                    plan.full_output_width,
+                    Partition::Columns {
+                        start: rank * plan.local_output_width,
+                        len: plan.local_output_width,
+                    },
+                )?;
+                stage.loaded_bytes += [&wq_b, &wo_a, &wo_b]
+                    .iter()
+                    .map(|plane| (plane.codes.len() + plane.scales.len() * 4) as u64)
+                    .sum::<u64>();
+                layer.attention_tp = Some(AttentionTpLayer {
+                    rank,
+                    wq_b,
+                    wo_a,
+                    wo_b,
+                });
+            }
+            stream
+                .synchronize()
+                .map_err(e("attention TP2 pack finalize"))?;
+        }
+        eprintln!(
+            "[attention-TP2] packed rank-local Q_b/wo_a/wo_b: heads={} groups={} wo_b_k={} numeric_class={}",
+            plan.local_heads,
+            plan.local_groups,
+            plan.local_output_width,
+            dsv4_attention_tp::ATTENTION_TP_NUMERIC_CLASS
+        );
+        Ok(())
     }
 
     /// Load-time residency transition and one-load gate seam. Existing decode
@@ -9218,21 +9459,28 @@ impl Dsv4Gpu {
                     } else {
                         &mut *rank1_cache
                     };
-                    self.block_verify_dev(
-                        st,
-                        layer,
-                        cache,
-                        lck,
-                        vws,
-                        false,
-                        state.pos,
-                        1,
-                        &[tok],
-                        false,
-                        true,
-                        None,
-                        true,
-                    )?;
+                    if self.attention_tp.is_some() {
+                        self.attention_verify_dev(
+                            st, layer, cache, lck, vws, false, state.pos, 1, false,
+                        )?;
+                        self.attention_tp_rank_calls[rank].fetch_add(1, Ordering::Relaxed);
+                    } else {
+                        self.block_verify_dev(
+                            st,
+                            layer,
+                            cache,
+                            lck,
+                            vws,
+                            false,
+                            state.pos,
+                            1,
+                            &[tok],
+                            false,
+                            true,
+                            None,
+                            true,
+                        )?;
+                    }
                     self.tp_ep_rank_layer_calls[rank]
                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
@@ -9246,6 +9494,77 @@ impl Dsv4Gpu {
                     .ok_or("TP/EP one-shot output buffers missing")?;
                 let owner_gpu = &self.stages[0].gpu;
                 let peer_gpu = &self.stages[1].gpu;
+                if self.attention_tp.is_some() {
+                    // The partials are independent producers. Neither rank enters HC/FFN
+                    // until its stream has received the complete rank-ordered attention sum.
+                    // Dedicated attention outputs remain separate from the later expert join.
+                    let attention_outputs = work
+                        .verify
+                        .tp_ep_attention_outputs
+                        .as_mut()
+                        .ok_or("attention TP2 output buffers missing")?;
+                    {
+                        let (owner_output, peer_output) = attention_outputs.split_at_mut(1);
+                        let mut ar = self
+                            .tp_ep_ar
+                            .lock()
+                            .map_err(|_| "attention TP2 AR mutex poisoned")?;
+                        ar.as_mut()
+                            .ok_or("attention TP2 AR state missing")?
+                            .all_reduce_into(
+                                owner_gpu,
+                                peer_gpu,
+                                &owner_ws.attn_out,
+                                &peer_ws.attn_out,
+                                &mut owner_output[0],
+                                &mut peer_output[0],
+                                hidden,
+                            )?;
+                        self.attention_tp_ar_calls.fetch_add(1, Ordering::Relaxed);
+                        let injection = {
+                            let mut armed = self
+                                .attention_tp_refusal_injection
+                                .lock()
+                                .map_err(|_| "attention TP2 refusal injection mutex poisoned")?;
+                            if armed
+                                .as_ref()
+                                .is_some_and(|injection| injection.layer == il)
+                            {
+                                armed.take()
+                            } else {
+                                None
+                            }
+                        };
+                        if let Some(injection) = injection {
+                            let mut words = [0, 0];
+                            words[injection.rank] = injection.code;
+                            ar.as_mut()
+                                .ok_or("attention TP2 AR state missing during injection")?
+                                .set_refusal_words_for_gate(owner_gpu, peer_gpu, words)?;
+                        }
+                    }
+                    for (rank, workspace) in [(0usize, &mut *owner_ws), (1usize, &mut *peer_ws)] {
+                        let st = &self.stages[rank];
+                        let layer = st
+                            .layers
+                            .iter()
+                            .find(|layer| layer.il == il as u32)
+                            .ok_or("attention TP2 post-join layer missing")?;
+                        self.post_attention_moe_verify_dev(
+                            st,
+                            layer,
+                            workspace,
+                            false,
+                            1,
+                            &[tok],
+                            false,
+                            true,
+                            None,
+                            true,
+                            Some(&attention_outputs[rank]),
+                        )?;
+                    }
+                }
                 {
                     let (owner_output, peer_output) = ar_outputs.split_at_mut(1);
                     let mut ar = self
@@ -11505,6 +11824,7 @@ pub struct VerifyState {
     layers: Vec<LayerCkptDev>,
     tp_ep_layers: Option<Vec<LayerCkptDev>>,
     tp_ep_ar_outputs: Option<[CudaSlice<f32>; 2]>,
+    tp_ep_attention_outputs: Option<[CudaSlice<f32>; 2]>,
     pub tmax: usize,
     /// Decode-cache capacity this verify layout was planned against. The transient
     /// rows live immediately after each layer's capacity-sized compressed store, so
@@ -12597,6 +12917,31 @@ impl Dsv4Gpu {
         } else {
             None
         };
+        let tp_ep_attention_outputs = if self.attention_tp.is_some() {
+            let mut outputs = Vec::with_capacity(2);
+            for stage in &self.stages {
+                stage
+                    .gpu
+                    .ctx
+                    .bind_to_thread()
+                    .map_err(e("attention TP2 output context"))?;
+                outputs.push(
+                    stage
+                        .gpu
+                        .stream()
+                        .alloc_zeros::<f32>(tmax * hidden)
+                        .map_err(e("attention TP2 output allocation"))?,
+                );
+                bytes[stage.dev] += (tmax * hidden * 4) as u64;
+            }
+            Some(
+                outputs
+                    .try_into()
+                    .map_err(|_| "attention TP2 output rank count")?,
+            )
+        } else {
+            None
+        };
         for st in &self.stages {
             st.gpu.stream().synchronize().map_err(e("vws sync"))?;
         }
@@ -12617,6 +12962,7 @@ impl Dsv4Gpu {
             layers,
             tp_ep_layers,
             tp_ep_ar_outputs,
+            tp_ep_attention_outputs,
             tmax,
             capacity,
             open: None,
@@ -13203,21 +13549,74 @@ impl Dsv4Gpu {
         matrix_ep_graph: Option<&mut MatrixEpGraphSlot>,
         defer_tp_ep_tail: bool,
     ) -> Res<()> {
+        if self.attention_tp.is_some() {
+            return Err("head-sharded attention requires the paired attention join, not a single-rank block walk".into());
+        }
+        self.attention_verify_dev(st, layer, cache, lck, vws, input_rx, pos0, t, host_math)?;
+        self.post_attention_moe_verify_dev(
+            st,
+            layer,
+            vws,
+            input_rx,
+            t,
+            toks,
+            host_math,
+            allow_gu_fuse,
+            matrix_ep_graph,
+            defer_tp_ep_tail,
+            None,
+        )
+    }
+
+    /// Attention producer only. Its HC coefficients/residual stay live in this rank's
+    /// workspace until the paired attention join and post-attention consumer complete.
+    #[allow(clippy::too_many_arguments)]
+    fn attention_verify_dev(
+        &self,
+        st: &Stage,
+        layer: &LayerDev,
+        cache: &mut LayerCache,
+        lck: &mut LayerCkptDev,
+        vws: &mut VerifyWs,
+        input_rx: bool,
+        pos0: usize,
+        t: usize,
+        host_math: bool,
+    ) -> Res<()> {
         let d = self.model.cfg();
         let mc = &self.model.mc;
         let hc = d.hc_mult as usize;
         let hidden = mc.n_embd as usize;
-        let heads = mc.n_head as usize;
+        let shard = match self.attention_tp {
+            Some(plan) => {
+                if t != 1 || host_math {
+                    return Err("attention TP2 currently admits only t=1 device math".into());
+                }
+                Some((
+                    plan,
+                    layer
+                        .attention_tp
+                        .as_ref()
+                        .ok_or("attention TP2 layer pack missing")?,
+                ))
+            }
+            None => None,
+        };
+        let heads = shard.map_or(mc.n_head as usize, |(plan, _)| plan.local_heads);
         let hd = d.head_dim as usize;
         let rd = d.qk_rope_head_dim as usize;
         let q_lora = d.q_lora_rank as usize;
         let win = d.sliding_window as usize;
-        let o_groups = d.o_groups as usize;
+        let o_groups = shard.map_or(d.o_groups as usize, |(plan, _)| plan.local_groups);
         let o_lora = d.o_lora_rank as usize;
         let eps = mc.rms_eps;
         let iters = d.hc_sinkhorn_iters;
         let hc_eps = d.hc_eps;
         let stream = st.gpu.stream();
+        let sink_offset = shard.map_or(Ok(0), |(plan, bank)| plan.head_start(bank.rank))?;
+        // The loader checks one sink per full head; the admitted rank offset plus
+        // local head count stays inside that retained full sink plane.
+        let sink = unsafe { (layer.sink.device_ptr(&stream).0 as *const f32).add(sink_offset) };
         let fc_dev: *const f32 = if layer.ratio != 0 {
             st.fc_yarn.device_ptr(&stream).0 as *const f32
         } else {
@@ -13310,7 +13709,10 @@ impl Dsv4Gpu {
         }
         Self::gemv_m_dev(
             st,
-            dwsel(self.dense_fp8, &stream, &layer.wq_b, &layer.wq_b_fp8),
+            shard.map_or_else(
+                || dwsel(self.dense_fp8, &stream, &layer.wq_b, &layer.wq_b_fp8),
+                |(_, bank)| packed_dense(&bank.wq_b, &stream),
+            ),
             vws.qr_b.device_ptr(&stream).0 as *const c_void,
             vws.q.device_ptr_mut(&stream).0 as *mut f32,
             t,
@@ -13867,7 +14269,7 @@ impl Dsv4Gpu {
                         dpf!(vws.q, &stream),
                         attention_kv,
                         attention_indices,
-                        dpf!(layer.sink, &stream),
+                        sink,
                         dpm!(vws.sink_scores, &stream),
                         dpm!(vws.sink_evals, &stream),
                         vws.sink_den.device_ptr_mut(&stream).0 as *mut f32,
@@ -13892,7 +14294,7 @@ impl Dsv4Gpu {
                         dpf!(vws.q, &stream),
                         attention_kv,
                         attention_indices,
-                        dpf!(layer.sink, &stream),
+                        sink,
                         dpm!(vws.sink_scores, &stream),
                         dpm!(vws.sink_evals, &stream),
                         vws.sink_den.device_ptr_mut(&stream).0 as *mut f64,
@@ -13936,7 +14338,10 @@ impl Dsv4Gpu {
                 ),
             )?;
         }
-        let wo_a_dw = dwsel(self.dense_fp8, &stream, &layer.wo_a, &layer.wo_a_fp8);
+        let wo_a_dw = shard.map_or_else(
+            || dwsel(self.dense_fp8, &stream, &layer.wo_a, &layer.wo_a_fp8),
+            |(_, bank)| packed_dense(&bank.wo_a, &stream),
+        );
         let grouped_wo_a = if t == 1 && !vws.is_prefill {
             Self::gemv_wo_a_grouped_fp8_m1_dev(
                 st,
@@ -13971,19 +14376,61 @@ impl Dsv4Gpu {
             st,
             vws.og.device_ptr(&stream).0 as *const f32,
             &mut vws.gemm_xb,
-            dwsel(self.dense_fp8, &stream, &layer.wo_b, &layer.wo_b_fp8),
+            shard.map_or_else(
+                || dwsel(self.dense_fp8, &stream, &layer.wo_b, &layer.wo_b_fp8),
+                |(_, bank)| packed_dense(&bank.wo_b, &stream),
+            ),
             t,
             hidden,
             o_groups * o_lora,
             vws.attn_out.device_ptr_mut(&stream).0 as *mut f32,
         )?;
 
+        Ok(())
+    }
+
+    /// Consume a full attention result before replacing attention HC coefficients with
+    /// the FFN coefficients. TP supplies the out-of-place rank-ordered attention sum.
+    #[allow(clippy::too_many_arguments)]
+    fn post_attention_moe_verify_dev(
+        &self,
+        st: &Stage,
+        layer: &LayerDev,
+        vws: &mut VerifyWs,
+        input_rx: bool,
+        t: usize,
+        toks: &[u32],
+        host_math: bool,
+        allow_gu_fuse: bool,
+        matrix_ep_graph: Option<&mut MatrixEpGraphSlot>,
+        defer_tp_ep_tail: bool,
+        joined_attention: Option<&CudaSlice<f32>>,
+    ) -> Res<()> {
+        if self.attention_tp.is_some() != joined_attention.is_some() {
+            return Err(
+                "attention output consumer does not match the selected rank-sum program".into(),
+            );
+        }
+        let d = self.model.cfg();
+        let hc = d.hc_mult as usize;
+        let hidden = self.model.mc.n_embd as usize;
+        let eps = self.model.mc.rms_eps;
+        let iters = d.hc_sinkhorn_iters;
+        let hc_eps = d.hc_eps;
+        let stream = st.gpu.stream();
+        let h_in_ptr = if input_rx {
+            vws.h_rx.device_ptr(&stream).0 as *const f32
+        } else {
+            vws.h_a.device_ptr(&stream).0 as *const f32
+        };
+        let attention_out = joined_attention.unwrap_or(&vws.attn_out);
+
         // hc_post (attention) -> vws.h_b
         unsafe {
             ck(
                 "hc_post attn batch",
                 k::memra_dsv4_hc_post(
-                    dpf!(vws.attn_out, &stream),
+                    dpf!(attention_out, &stream),
                     h_in_ptr,
                     dpf!(vws.post, &stream),
                     dpf!(vws.comb, &stream),
