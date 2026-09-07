@@ -1,6 +1,22 @@
 # DSV4F small-kernel diet
 
-Candidate only. Device gates and sampled ABBA are pending.
+Candidate passes the target component and sampled ABBA gates. Default remains
+OFF. This is a plain TP/EP measurement, with no serving-default promotion.
+
+At code source `29a73db7570154cf2d362a33868ce208df458315`, binary SHA256
+`363cecb3c501aff04d55ccf75ca6e2e0f0419b642c342b765a372726b17a7cd3`,
+both components passed 32 interleaved repeats on each of two RTX PRO 6000
+Blackwell ranks, with bit-equal outputs and intact canaries. Ten full-model
+OFF/ON/ON/OFF cycles then produced 40 eligible rows, 20 per arm:
+
+```text
+ABBA cycles=10 off_tok_s=35.404649 on_tok_s=36.850968 delta_pct=4.085112 digests_identical=true timing_scope=sample_plus_forward_envelope sampler=radix
+```
+
+Actual targeted enqueues fell from 344 to 129 per step per rank, five fewer
+per layer. All tokens, final logits, cache and hidden digests agree. Private
+receipt namespace: `small-kernel-diet-29a73db-r1`; report and raw-log routing
+are below. These results do not reach the parent 120 tok/s objective.
 
 The existing attention TP2 profile ranks the target families on device 0 as
 Sinkhorn 1.63 ms/step, RMSNorm 1.58, routing 0.48, and rowsq 0.32. These are
