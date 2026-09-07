@@ -108,7 +108,9 @@ std::vector<float> output_canary(std::size_t n) {
 }
 
 int blocks_for(std::size_t n) {
-    const auto blocks = (n + 511) / 512;
+    // Match tp_ar.rs::ar_blocks_for exactly: the qualified decode-sized payload uses one
+    // block; wider payloads grow only as needed, capped by the signal arrays' 72 blocks.
+    const auto blocks = n <= 8192 ? 1 : (n + 511) / 512;
     if (blocks == 0 || blocks > 72) {
         throw Failure("gate shape exceeds the current 72-block signal contract");
     }
@@ -193,6 +195,15 @@ void enable_peer_pair() {
     }
 }
 
+void drain_default_stream_initialization() {
+    // DeviceBytes zeroes its allocation on the legacy default stream. The positive streams are
+    // nonblocking, so an explicit per-device drain is required before their first H2D/launch.
+    for (int device = 0; device < 2; ++device) {
+        set_device(device);
+        cuda_check(cudaDeviceSynchronize(), "signal/error initialization drain");
+    }
+}
+
 void upload_full(int device, cudaStream_t stream, const DeviceFloats& dst,
                  const std::vector<float>& values) {
     set_device(device);
@@ -265,6 +276,7 @@ void run_positive_shape(std::size_t n) {
         signals[rank] = std::make_unique<DeviceBytes>(rank, static_cast<std::size_t>(signal_bytes));
         errors[rank] = std::make_unique<DeviceBytes>(rank, sizeof(int));
     }
+    drain_default_stream_initialization();
     const int blocks = blocks_for(n);
     std::uint64_t previous_hash = 0;
     int fresh_hashes = 0;
@@ -379,7 +391,10 @@ void run_missing_peer_refusal(std::size_t n) {
     upload_full(1, streams.stream[1], input1, host_b);
     upload_full(0, streams.stream[0], output0, out_init);
     set_device(0);
-    cuda_check(cudaMemset(error0.ptr, 0, sizeof(int)), "clear negative barrier error");
+    drain_default_stream_initialization();
+    cuda_check(cudaMemsetAsync(error0.ptr, 0, sizeof(int), streams.stream[0]),
+               "clear negative barrier error");
+    cuda_check(cudaStreamSynchronize(streams.stream[0]), "negative error reset synchronization");
 
     const auto start = std::chrono::steady_clock::now();
     set_device(0);
@@ -404,7 +419,9 @@ void run_missing_peer_refusal(std::size_t n) {
     }
     const auto got = download_full(0, streams.stream[0], output0);
     const auto input_after = download_full(0, streams.stream[0], input0);
+    const auto input1_after = download_full(1, streams.stream[1], input1);
     compare_exact(input_after, host_a, "missing-peer input", n, 0, 0);
+    compare_exact(input1_after, host_b, "missing-peer input", n, 0, 1);
     compare_exact(got, out_init, "missing-peer output/canary", n, 0, 0);
     std::printf("TP_AR_NEGATIVE_PASS shape=%zu missing_peer=true barrier_error=%d "
                 "elapsed_ms=%lld bounded=true output_untouched=true input_unchanged=true\n",
