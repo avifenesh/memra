@@ -1445,7 +1445,9 @@ impl HybridModel {
         // MEMRA_STEP35_BATCH=0 = the fail-closed rollback seam. The server caps chunks at
         // B=1; on PP-N the B=1 correctness default also refuses the eager numeric class, while
         // an unsplit deployment can still use its existing eager B=1 route.
-        if batch_program == crate::plan_backend::DecodeBatchProgram::SlidingGatedMoe {
+        if batch_program == crate::plan_backend::DecodeBatchProgram::SlidingGatedMoe
+            || self.uses_step35_attention()
+        {
             if !Self::step35_batch_on() {
                 return Err(
                     "step35 batched decode is disabled (MEMRA_STEP35_BATCH=0) — \
@@ -1596,8 +1598,7 @@ impl HybridModel {
             )
             .into());
         }
-        let step35_batched = crate::plan_backend::decode_batch_program(&self.plan)
-            == crate::plan_backend::DecodeBatchProgram::SlidingGatedMoe;
+        let step35_batched = self.uses_step35_attention();
         if step35_batched && !Self::step35_batch_on() {
             return Err(
                 "step35 batched decode is disabled; PP wavefront has no correct fallback trunk"
@@ -2104,8 +2105,7 @@ impl HybridModel {
             Vec::new()
         };
 
-        let step35_batched = crate::plan_backend::decode_batch_program(&self.plan)
-            == crate::plan_backend::DecodeBatchProgram::SlidingGatedMoe;
+        let step35_batched = self.uses_step35_attention();
         if step35_batched && !Self::step35_batch_on() {
             return Err(
                 "step35 batched decode is disabled (MEMRA_STEP35_BATCH=0) — \
@@ -2505,8 +2505,7 @@ impl HybridModel {
         // numeric class when live decode width changes. The refusal below guards the
         // rollback residue; under PP-N, disabling the only correct trunk makes Step35
         // requests fail closed instead of falling back to the eager class.
-        let step35_batched = crate::plan_backend::decode_batch_program(&self.plan)
-            == crate::plan_backend::DecodeBatchProgram::SlidingGatedMoe;
+        let step35_batched = self.uses_step35_attention();
         if step35_batched && !Self::step35_batch_on() {
             return Err(
                 "step35 batched decode is disabled (MEMRA_STEP35_BATCH=0) — \
@@ -3471,7 +3470,7 @@ impl HybridModel {
                     let g = e.matmul_pre(ffn_gate, &zq, &zd, &z, b_n)?;
                     let u = e.matmul_pre(ffn_up, &zq, &zd, &z, b_n)?;
                     let mut act = e.uninit(b_n * n_ff)?;
-                    e.silu_mul(&g, &u, &mut act, b_n * n_ff)?;
+                    Self::ffn_act_lim(e, &self.cfg, &g, &u, 1.0, 1.0, None, &mut act, b_n * n_ff)?;
                     // AWQ (memra#253): the f32 activation exists here, so the
                     // per-input-channel scale is applied BEFORE the q8 quantize — both the
                     // quantized operand and the f32 fallback then carry it.
