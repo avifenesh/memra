@@ -21,6 +21,7 @@ pub mod qwen35;
 pub mod qwen35_moe;
 pub mod qwen3_moe;
 pub mod qwen4_exp;
+pub mod spark25;
 pub mod step35;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,6 +132,7 @@ pub const PACKS: &[&ModelPack] = &[
     &deepseek_v4::PACK,
     &deepseek_v4::DSPARK_PACK,
     &qwen4_exp::PACK,
+    &spark25::PACK,
     &step35::PACK,
     &hy3::PACK,
     // Last: the plainest dense stack, so a family with its own pack is always matched first.

@@ -165,6 +165,10 @@ pub enum LayerTensor {
     Query,
     Key,
     Value,
+    /// Spark-X2.5: the checkpoint's ONE fused `q_k_v_proj` (rows q | k | v) that the loader
+    /// slices into Query/Key/Value (`TensorTransform::SplitQkvRows`). HF dialect only; the
+    /// GGUF dialect keeps the three separate planes.
+    QkvSource,
     AttentionOutput,
     QueryNorm,
     KeyNorm,
@@ -269,6 +273,10 @@ pub enum TensorTransform {
     StackExperts,
     SplitExpertGateUp,
     SplitMlaKv,
+    /// Spark-X2.5: the checkpoint's ONE `self_attn.q_k_v_proj.weight` (rows q | k | v) is
+    /// sliced into the plan's separate Query / Key / Value tensors at load
+    /// (`hf_mapping::TransformKind::SparkQkv{Query,Key,Value}`).
+    SplitQkvRows,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

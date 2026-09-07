@@ -219,6 +219,7 @@ pub fn hf_expert_name(il: u32, e: u32, proj: &str, arch: &Arch) -> String {
 }
 
 /// Resolved HF target for a requested ggml name.
+#[derive(Debug, Clone, PartialEq)]
 pub enum HfTarget {
     /// A plain rename — borrow the on-disk bytes zero-copy.
     Plain(String),
@@ -228,7 +229,7 @@ pub enum HfTarget {
 
 /// The value transforms the qwen35 HF->GGUF converter applies (llama.cpp conversion/qwen.py).
 /// All operate on the dequantized-to-f32 tensor and return the GGUF-equivalent owned bytes.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransformKind {
     /// `ssm_a` <- `A_log`: elementwise `-exp(x)`, then V-head reorder (qwen.py:296-297, 496-503).
     NegExpReorderHeads,
@@ -255,6 +256,23 @@ pub enum TransformKind {
     /// `attn_v_b.weight` <- the fused `kv_b_proj.weight` (`SplitMlaKv`, value half). Emits the 3D
     /// decompress operand `ne = [kv_rank, v, head]` — already the consumer's order, no transpose.
     MlaValueUpSplit,
+    /// Spark-X2.5 (`Step35Config::fused_qkv`): `attn_q.weight` <- rows `[0, n_head*hd)` of the
+    /// fused `self_attn.q_k_v_proj.weight` (HF `[q+k+v, hidden]`, row-major). A pure row slice:
+    /// no value changes, so the result is exact in any dtype the source dequantizes from.
+    SparkQkvQuery,
+    /// `attn_k.weight` <- rows `[n_head*hd, n_head*hd + n_head_kv*hd)` of the fused tensor.
+    SparkQkvKey,
+    /// `attn_v.weight` <- the last `n_head_kv*hd` rows of the fused tensor.
+    SparkQkvValue,
+}
+
+/// Row bands of Spark's fused `q_k_v_proj` in HF row order: `(q_rows, k_rows, v_rows)`.
+/// The vendor module reads `qkv[..., :q_dim]`, `[q_dim, q_dim+kv_dim)`, `[q_dim+kv_dim, ..)`
+/// with `q_dim = num_heads*head_dim`, `kv_dim = num_key_value_heads*head_dim`.
+pub fn spark_qkv_bands(cfg: &ModelConfig) -> (usize, usize, usize) {
+    let q = (cfg.n_head * cfg.head_dim_k) as usize;
+    let kv = (cfg.n_head_kv * cfg.head_dim_k) as usize;
+    (q, kv, kv)
 }
 
 /// Row split of the fused MLA `kv_b_proj` weight into the key-up / value-up planes the absorbed
@@ -323,6 +341,33 @@ impl TransformKind {
             }
             return (ne_in, f32_to_le(data));
         }
+        // Spark fused-qkv row slice: geometry is the plain dense head shape (`cfg.n_head`,
+        // `cfg.n_head_kv`, `cfg.head_dim_k`), not the SSM metadata `head_params` demands.
+        if let TransformKind::SparkQkvQuery
+        | TransformKind::SparkQkvKey
+        | TransformKind::SparkQkvValue = self
+        {
+            // ne_in = [in, out] (ggml reverses the HF row-major [out, in]); data is row-major
+            // [out][in].
+            let in_f = ne_in[0] as usize;
+            let out_f = ne_in[1] as usize;
+            let (q, k, v) = spark_qkv_bands(cfg);
+            assert_eq!(
+                out_f,
+                q + k + v,
+                "spark q_k_v_proj out-features {out_f} != q {q} + k {k} + v {v} — the checkpoint \
+                 geometry disagrees with the config"
+            );
+            assert_eq!(data.len(), out_f * in_f);
+            let (start, rows) = match self {
+                TransformKind::SparkQkvQuery => (0, q),
+                TransformKind::SparkQkvKey => (q, k),
+                TransformKind::SparkQkvValue => (q + k, v),
+                _ => unreachable!(),
+            };
+            let out = data[start * in_f..(start + rows) * in_f].to_vec();
+            return (vec![in_f as u64, rows as u64], f32_to_le(&out));
+        }
         // MLA kv_b split: glm5_next geometry, NOT the qwen hybrid head metadata `head_params`
         // demands (it `expect`s an ssm config this family does not have). Must precede that call.
         if let TransformKind::MlaKeyUpSplit | TransformKind::MlaValueUpSplit = self {
@@ -362,7 +407,10 @@ impl TransformKind {
             TransformKind::Identity
             | TransformKind::NormPlusOne
             | TransformKind::MlaKeyUpSplit
-            | TransformKind::MlaValueUpSplit => unreachable!(),
+            | TransformKind::MlaValueUpSplit
+            | TransformKind::SparkQkvQuery
+            | TransformKind::SparkQkvKey
+            | TransformKind::SparkQkvValue => unreachable!(),
             TransformKind::NegExpReorderHeads => {
                 for x in data.iter_mut() {
                     *x = -x.exp();
@@ -440,7 +488,11 @@ impl TransformKind {
         // panic on this family's config, so refuse before it is called.
         if matches!(
             self,
-            TransformKind::MlaKeyUpSplit | TransformKind::MlaValueUpSplit
+            TransformKind::MlaKeyUpSplit
+                | TransformKind::MlaValueUpSplit
+                | TransformKind::SparkQkvQuery
+                | TransformKind::SparkQkvKey
+                | TransformKind::SparkQkvValue
         ) {
             return None;
         }
@@ -525,7 +577,11 @@ impl TransformKind {
         // See `apply_nvfp4`: the MLA kv_b split has no packed arm, and `head_params` panics here.
         if matches!(
             self,
-            TransformKind::MlaKeyUpSplit | TransformKind::MlaValueUpSplit
+            TransformKind::MlaKeyUpSplit
+                | TransformKind::MlaValueUpSplit
+                | TransformKind::SparkQkvQuery
+                | TransformKind::SparkQkvKey
+                | TransformKind::SparkQkvValue
         ) {
             return None;
         }
@@ -863,6 +919,50 @@ pub fn resolve_ggml(ggml: &str, cfg: &ModelConfig) -> Option<HfTarget> {
         // gemma-4 ships no lm_head; the loader's tied-output path reads token_embd).
     }
 
+    // Spark-X2.5 (the dense step35 sibling) spells four things its own way, all census truth
+    // (290 tensors, XHToken/Spark-X2.5-4B, 2026-09-07): `model.embedding.weight` (not
+    // embed_tokens), ONE fused `self_attn.q_k_v_proj.weight`, `self_attn.out_proj.weight` (not
+    // o_proj), and the head-wise gate as `self_attn.g_proj.weight`. No lm_head (tied: the generic
+    // `output.weight` -> `lm_head.weight` rename below resolves to an ABSENT tensor, which is the
+    // loader's tied-output path), no q/k norms, and NO +1 norm fold (Spark2_5RMSNorm is plain).
+    if cfg.step35.as_ref().is_some_and(|s| s.is_spark()) {
+        if ggml == "token_embd.weight" {
+            return Some(HfTarget::Plain("model.embedding.weight".into()));
+        }
+        if let Some((il, suffix)) = ggml
+            .strip_prefix("blk.")
+            .and_then(|rest| rest.split_once('.'))
+        {
+            let fused = format!("model.layers.{il}.self_attn.q_k_v_proj.weight");
+            let target = match suffix {
+                "attn_q.weight" => Some(HfTarget::Transform {
+                    hf: fused,
+                    kind: TransformKind::SparkQkvQuery,
+                }),
+                "attn_k.weight" => Some(HfTarget::Transform {
+                    hf: fused,
+                    kind: TransformKind::SparkQkvKey,
+                }),
+                "attn_v.weight" => Some(HfTarget::Transform {
+                    hf: fused,
+                    kind: TransformKind::SparkQkvValue,
+                }),
+                "attn_output.weight" => Some(HfTarget::Plain(format!(
+                    "model.layers.{il}.self_attn.out_proj.weight"
+                ))),
+                "attn_gate.weight" => Some(HfTarget::Plain(format!(
+                    "model.layers.{il}.self_attn.g_proj.weight"
+                ))),
+                _ => None,
+            };
+            if target.is_some() {
+                return target;
+            }
+        }
+        // Everything else (norms, ffn_gate/up/down, output_norm, output) is the plain dense map.
+        return ggml_to_hf(ggml, &cfg.arch).map(HfTarget::Plain);
+    }
+
     // Step's appended NextN blocks stay under model.layers.{45,46,47}. Ordinary attention and
     // dense FFN tensors use the same layer names as the trunk; only the glue and owned draft head
     // need explicit ggml-name translations. Standard transformer norms take the Step +1 fold
@@ -901,7 +1001,7 @@ pub fn resolve_ggml(ggml: &str, cfg: &ModelConfig) -> Option<HfTarget> {
     // output norms. Fold the +1 at HF load so the engine's plain RMSNorm remains the one numeric
     // program used by eager, prime, verify, and PP stage walkers. This is independent of Qwen3.5's
     // identically-shaped convention and deliberately excludes Hy3's verbatim norm weights.
-    if cfg.arch.is_step35()
+    if cfg.step35.as_ref().is_some_and(|s| s.norm_plus_one)
         && is_plusone_norm(ggml)
         && let Some(hf) = ggml_to_hf(ggml, &cfg.arch)
     {
