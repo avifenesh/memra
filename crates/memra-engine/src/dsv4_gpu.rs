@@ -7701,6 +7701,9 @@ impl Dsv4Gpu {
     }
 
     pub fn device_sampler(&self) -> Res<crate::dsv4_sampler::Dsv4DeviceSampler> {
+        if !matches!(self.decode_path, DecodePath::Device { host_math: false }) {
+            return Err("device sampler requires native device decode".into());
+        }
         crate::dsv4_sampler::Dsv4DeviceSampler::new(
             self.stages.last().expect("head rank").gpu.stream(), self.model.st.raw("head.weight").ok_or("head weight missing")?.0.shape[0] as usize,
         )
@@ -7723,6 +7726,7 @@ impl Dsv4Gpu {
         window: &[u32], penalty: Option<&Dsv4PenaltyCfg>) -> Res<u32> {
         let stream = self.stages.last().expect("head rank").gpu.stream();
         let row = self.decode_logits_device(state)?;
+        sampler.validate_source(&stream, row.len())?;
         // The head workspace belongs to this model and its producer uses this stream.
         unsafe { sampler.sample_ptr(row.device_ptr(&stream).0 as *const f32, state.pos, cfg, window, penalty) }
     }

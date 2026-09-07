@@ -22,6 +22,7 @@ pub fn dsv4_sampler() -> Res<Dsv4Sampler> {
 /// Inputs are never modified. The result allocation has a trailing gate canary.
 pub struct Dsv4DeviceSampler {
     stream: Arc<CudaStream>,
+    n: usize,
     input: CudaSlice<f32>,
     values: CudaSlice<f32>,
     keys0: CudaSlice<u64>,
@@ -35,27 +36,43 @@ pub struct Dsv4DeviceSampler {
 impl Dsv4DeviceSampler {
     pub fn new(stream: Arc<CudaStream>, n: usize) -> Res<Self> {
         if n == 0 || n > (1 << 24) { return Err("device sampler vocab outside 1..=2^24".into()); }
-        let input = stream.alloc_zeros(n).map_err(|e| e.to_string())?;
-        let values = stream.alloc_zeros(n).map_err(|e| e.to_string())?;
-        let keys0 = stream.alloc_zeros(n).map_err(|e| e.to_string())?;
-        let keys1 = stream.alloc_zeros(n).map_err(|e| e.to_string())?;
-        let prefix = stream.alloc_zeros(n).map_err(|e| e.to_string())?;
-        let blocks = stream.alloc_zeros(n.div_ceil(256) + 1).map_err(|e| e.to_string())?;
-        let counts = stream.alloc_zeros(n).map_err(|e| e.to_string())?;
+        let input = stream.alloc_zeros(n + 1).map_err(|e| e.to_string())?;
+        let values = stream.alloc_zeros(n + 1).map_err(|e| e.to_string())?;
+        let keys0 = stream.alloc_zeros(n + 1).map_err(|e| e.to_string())?;
+        let keys1 = stream.alloc_zeros(n + 1).map_err(|e| e.to_string())?;
+        let prefix = stream.alloc_zeros(n + 1).map_err(|e| e.to_string())?;
+        let blocks = stream.alloc_zeros(n.div_ceil(256) + 2).map_err(|e| e.to_string())?;
+        let counts = stream.alloc_zeros(n + 1).map_err(|e| e.to_string())?;
         let result = stream.clone_htod(&[0u32, 0, 0x5a17cafe]).map_err(|e| e.to_string())?;
-        Ok(Self { stream, input, values, keys0, keys1, prefix, blocks, counts, result, calls: 0 })
+        Ok(Self { stream, n, input, values, keys0, keys1, prefix, blocks, counts, result, calls: 0 })
+    }
+    pub(crate) fn validate_source(&self, stream: &Arc<CudaStream>, n: usize) -> Res<()> {
+        if !Arc::ptr_eq(&self.stream, stream) || self.n != n {
+            return Err("device sampler stream or vocabulary mismatch".into());
+        }
+        Ok(())
     }
     pub fn engagements(&self) -> u64 { self.calls }
     pub fn check_canary_for_gate(&self) -> Res<()> {
         let words = self.stream.clone_dtoh(&self.result).map_err(|e| e.to_string())?;
         if words[2] != 0x5a17cafe { return Err("device sampler output canary".into()); }
+        macro_rules! zero_guard {
+            ($buffer:expr) => {{
+                let buffer = &$buffer;
+                let tail = self.stream.clone_dtoh(&buffer.slice(buffer.len() - 1..)).map_err(|e| e.to_string())?;
+                if tail[0] != 0 as _ { return Err("device sampler scratch canary".into()); }
+            }};
+        }
+        zero_guard!(self.input); zero_guard!(self.values); zero_guard!(self.keys0);
+        zero_guard!(self.keys1); zero_guard!(self.prefix); zero_guard!(self.blocks);
+        zero_guard!(self.counts);
         Ok(())
     }
     /// Prefill/restore adapter: the existing cache API owns a host logits row.
     pub fn sample_host_row(&mut self, row: &[f32], pos: usize, cfg: &Dsv4SampleCfg,
         window: &[u32], penalty: Option<&Dsv4PenaltyCfg>) -> Res<u32> {
-        if row.len() != self.input.len() { return Err("device sampler row length".into()); }
-        self.stream.memcpy_htod(row, &mut self.input).map_err(|e| e.to_string())?;
+        if row.len() != self.n { return Err("device sampler row length".into()); }
+        self.stream.memcpy_htod(row, &mut self.input.slice_mut(0..self.n)).map_err(|e| e.to_string())?;
         let input = self.input.device_ptr(&self.stream).0;
         // The allocation is retained on self and ordered on this exact stream.
         unsafe { self.sample_ptr(input as *const f32, pos, cfg, window, penalty) }
@@ -65,10 +82,10 @@ impl Dsv4DeviceSampler {
     /// whose producer and lifetime are ordered on this sampler's stream.
     pub unsafe fn sample_ptr(&mut self, input: *const f32, pos: usize, cfg: &Dsv4SampleCfg,
         window: &[u32], penalty: Option<&Dsv4PenaltyCfg>) -> Res<u32> {
-        if !(cfg.temperature > 0.0) || !(cfg.top_p > 0.0 && cfg.top_p <= 1.0) {
+        if cfg.temperature.is_nan() || cfg.temperature <= 0.0 || !(cfg.top_p > 0.0 && cfg.top_p <= 1.0) {
             return Err("dsv4 sampled path: need temperature > 0 and top_p in (0,1]".into());
         }
-        let n = self.input.len();
+        let n = self.n;
         let pc = penalty.filter(|pc| pc.armed());
         // Explicit request window, same integer counts and f32 penalty operation order.
         // No logits D2H. The zero-penalty common path does not upload a vocabulary slab.
@@ -77,7 +94,7 @@ impl Dsv4DeviceSampler {
             for &id in &window[window.len().saturating_sub(pc.last_n)..] {
                 if let Some(count) = counts.get_mut(id as usize) { *count += 1; }
             }
-            self.stream.memcpy_htod(&counts, &mut self.counts).map_err(|e| e.to_string())?;
+            self.stream.memcpy_htod(&counts, &mut self.counts.slice_mut(0..n)).map_err(|e| e.to_string())?;
         } else {
             self.stream.memset_zeros(&mut self.counts).map_err(|e| e.to_string())?;
         }
