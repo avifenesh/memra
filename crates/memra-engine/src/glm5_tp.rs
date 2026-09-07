@@ -2130,6 +2130,10 @@ pub struct Glm5TpSplitExps {
     pub down_stride: usize,
     /// Per-rank `down` row width in bytes after the column split.
     pub down_row_bytes: usize,
+    /// Per-rank grouped-prime pointer tables over the split slabs, `[gate | up | down] x
+    /// n_expert` device pointers (every rank holds every expert at half width); the TP split
+    /// grouped prime's operand, minted here so the prime allocates nothing per call.
+    pub ptr_rows: Vec<CudaSlice<u64>>,
 }
 
 impl Glm5TpSplitExps {
@@ -2222,6 +2226,26 @@ pub(crate) fn shard_moe_layer_split(
             rt.transport.name(),
         );
     }
+    let n_expert_all = m.gate_exps.n_expert;
+    let mut ptr_rows = Vec::with_capacity(ranks);
+    for (r, slab) in slabs.iter().enumerate() {
+        use cudarc::driver::DevicePtr;
+        let dev = rank_engine(e, rt, r);
+        let (pg, pu, pd) = {
+            let s = dev.stream();
+            let (pg, _g0) = slab.gate.device_ptr(&s);
+            let (pu, _g1) = slab.up.device_ptr(&s);
+            let (pd, _g2) = slab.down.device_ptr(&s);
+            (pg, pu, pd)
+        };
+        let mut host = vec![0u64; 3 * n_expert_all];
+        for ex in 0..n_expert_all {
+            host[ex] = pg + (ex * gate_stride) as u64;
+            host[n_expert_all + ex] = pu + (ex * up_stride) as u64;
+            host[2 * n_expert_all + ex] = pd + (ex * down_stride) as u64;
+        }
+        ptr_rows.push(dev.htod_u64(&host)?);
+    }
     Ok(Glm5TpSplitExps {
         rt: rt.clone(),
         slabs,
@@ -2230,6 +2254,7 @@ pub(crate) fn shard_moe_layer_split(
         up_stride,
         down_stride,
         down_row_bytes,
+        ptr_rows,
     })
 }
 

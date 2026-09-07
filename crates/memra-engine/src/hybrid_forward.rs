@@ -798,6 +798,8 @@ pub static GLM5_TP_SYM_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 pub static GLM5_TP_SHEXP_SPLIT_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
+pub static GLM5_TP_SPLIT_GROUPED_PRIME_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
 
 /// A symmetric site's branch outputs as they reach the post: already REDUCED on both ranks, or the
 /// two ranks' PARTIALS that the post-branch launch reduces itself (`post_t1_ws_ar`).
@@ -9689,39 +9691,18 @@ impl HybridModel {
         // to the flag being off.
         // A chain returning Ok(None) is a cuBLASLt shape DECLINE (announced once per shape);
         // the let-chain then simply does not match and the f32 kernels below serve the call.
-        // glm5 TP composition guard (lane/glm5-composition): the TC prefill chain's gate
-        // ran on the FULL-head geometry only; a head shard (any rank) declines it by name
-        // and falls through to the f32 kernels below — behavior identical to the flag
-        // being off for that layer, announced once. The composed door re-gates on the box
-        // (real-artifact kv_rank 512 shapes; the rig fixtures are kv_rank 16 and never
-        // reach this chain).
-        // The announce shares the chain's OWN conjuncts (gathered + !portable_mma_gated),
-        // so it can never blame TP for a decline the missing DSA gather or the MMA gate
-        // caused (#82 review).
-        if mla.tp_shard
-            && gathered.is_some()
-            && dr == 0
-            && r == 512
-            && t >= 16
-            && !crate::portable_mma_gated()
-            && mla_tc_prefill_enabled()
-        {
-            static TP_TC_DECLINE: std::sync::Once = std::sync::Once::new();
-            TP_TC_DECLINE.call_once(|| {
-                eprintln!(
-                    "[mla-tc-prefill] DECLINED on glm5-TP head shards: the door's gate ran \
-                     on full-head geometry; shards ride the f32 prefill kernels until the \
-                     TP composition gate lands (pin MEMRA_MLA_TC_PREFILL=0 to silence)"
-                );
-            });
-        }
+        // glm5 TP head shards ride this chain too (2026-09-07, lane/glm5-tp-split-grouped-prime):
+        // the chain is geometry-parametrized (nh/dn/dv/r from the layer's own geom, 32 heads
+        // on a shard) and its class is the served unsharded walk's. tptrace7 on the 2x B200
+        // pair: with shards on the f32 kernels, `memra_mla_attn_gathered_split_kernel` was 88 x
+        // 244 ms = 21.5 s of a 31.8 s 32k prime per rank while PP-2 primed the same prompt in
+        // 7.4 s. Receipt: the prime with the door on vs off on the shards, ids equal.
         if let Some((idx, slots)) = &gathered
             && dr == 0
             && r == 512
             && t >= 16
             && !rows_exact // verify-batch stays on the decode-exact classes (t <= 15 anyway)
             && !crate::portable_mma_gated()
-            && !mla.tp_shard
             && mla_tc_prefill_enabled()
             && let Some(attn) = self.mla_tc_prefill_chain(
                 e, wk_b, wv_b, q_nope, latent, idx, *slots, t, t_kv, nh, dn, dv, r, g.scale,
@@ -11346,7 +11327,7 @@ impl HybridModel {
             // Expert TENSOR-parallel walk (MEMRA_GLM5_TP_EXPERT_SPLIT): every rank runs every
             // routed slot at half the intermediate width, so routing luck cannot pace the layer
             // on one card. Exclusive with the whole-expert arm below by construction.
-            return Self::moe_ffn_glm5_tp_split(e, m, xs, z, zq8, t, cfg, il);
+            return Self::moe_ffn_glm5_tp_split(e, m, xs, z, zq8, t, cfg, il, prefill);
         }
         if let Some(ep) = &m.glm5_ep {
             // glm5 TP-2 EP walk (MEMRA_GLM5_TP): whole-expert halves, root router, slot-ordered
@@ -14706,9 +14687,31 @@ impl HybridModel {
         t: usize,
         cfg: &ModelConfig,
         il: u16,
+        prefill: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let n_embd = cfg.n_embd as usize;
         let lim_shexp = cfg.clamp_shexp_at(il as u32);
+        // Prefill chunks take the grouped prime when the door is on (host sigmoid routing, the
+        // plain grouped arm's admission); otherwise, and at decode, the slot walk below.
+        if prefill && t > MOE_DEV_MAX_T && crate::glm5_tp_split_grouped_prime_on() {
+            let moe = cfg
+                .moe
+                .as_ref()
+                .ok_or("glm5 TP split grouped prime requires MoE model metadata")?;
+            let sig = cfg
+                .sigmoid_router()
+                .ok_or("glm5 TP split grouped prime requires the sigmoid router")?;
+            let (n_expert, n_used) = (moe.expert_count as usize, moe.expert_used_count as usize);
+            let logits = Self::moe_router_logits(e, m, z, t, cfg)?;
+            let (sel_all, w_all) =
+                Self::moe_route_sigmoid_cfg(e, &logits, t, n_expert, n_used, m, sig)?;
+            if let Some(mut out) = Self::moe_ffn_glm5_tp_split_grouped_prime(
+                e, m, xs, z, &sel_all, &w_all, t, cfg, il,
+            )? {
+                Self::moe_shexp_add(e, m, z, zq8, t, cfg, lim_shexp, &mut out)?;
+                return Ok(out);
+            }
+        }
         let rt = &xs.rt;
         let ranks = xs.ranks();
         if ranks != 2 {
@@ -15553,6 +15556,289 @@ impl HybridModel {
     /// gate — the shared expert adds directly. (Extracted verbatim from the sequential body
     /// so the glm5 EP-2 walk adds the ROOT-owned shared expert through the identical
     /// program.)
+    #[allow(clippy::too_many_arguments)] // allow: the walk's operand set plus the routing
+    /// The TP-SPLIT GROUPED PRIME (`MEMRA_GLM5_TP_SPLIT_GROUPED_PRIME`, default OFF): the EP
+    /// grouped prime's per-rank program run by BOTH ranks over ALL routed pairs against the
+    /// split slabs (gate/up row halves, down column halves, pointer tables minted at arm time),
+    /// so each rank's scatter is a `[t, n_embd]` partial and the root adds the peer's, the same
+    /// partial-sum class the decode split carries. Measured need (2x B200 pair, 2026-09-07
+    /// tpprime2): the split walk primed at ~520 tok/s flat (3,766 tokens 7.08 s; 29,961 tokens
+    /// 57.7 s) against PP-2's 2,178 -> 4,069 tok/s, because it ran its per-token slot walk at
+    /// every t. Admission mirrors the plain grouped arm's and falls closed to that slot walk.
+    fn moe_ffn_glm5_tp_split_grouped_prime(
+        e: &Engine,
+        m: &MoeWeights,
+        xs: &crate::glm5_tp::Glm5TpSplitExps,
+        z: &CudaSlice<f32>,
+        sel_all: &[u32],
+        w_all: &[f32],
+        t: usize,
+        cfg: &ModelConfig,
+        il: u16,
+    ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        use std::sync::atomic::Ordering;
+        let moe = cfg
+            .moe
+            .as_ref()
+            .ok_or("glm5 TP split grouped prime requires MoE model metadata")?;
+        let n_embd = cfg.n_embd as usize;
+        let n_expert = moe.expert_count as usize;
+        let n_used = moe.expert_used_count as usize;
+        // the per-rank intermediate width: every rank holds every expert at half_ff
+        let half_ff = xs.half_ff;
+        // The plain grouped arm's admission, mirrored term for term (fall closed, never a
+        // new admission class). MEMRA_MOE_GATE is the sequential byte-identity oracle; this
+        // arm is a band class and must not shadow that comparison.
+        if crate::moe_f16g_mode() == 0 || std::env::var("MEMRA_MOE_GATE").is_ok() {
+            return Ok(None);
+        }
+        if !(f16g_proj_ok(m.gate_exps.qtype, n_embd)
+            && f16g_proj_ok(m.up_exps.qtype, n_embd)
+            && f16g_proj_ok(m.down_exps.qtype, half_ff))
+        {
+            return Ok(None);
+        }
+        if n_expert > 512 || n_used == 0 || n_used > 8 {
+            return Ok(None);
+        }
+        let lim_exp = cfg.clamp_exp_at(il as u32);
+        if matches!(lim_exp, Some(SwigluClamp::Post(_))) {
+            return Err(
+                "TP split grouped prime is qualified for the PRE-clamped SwiGLU form only; \
+                 a POST-clamp layer must ride the sequential arm"
+                    .into(),
+            );
+        }
+        let n_pairs = t * n_used;
+        if sel_all.len() < n_pairs || w_all.len() < n_pairs || z.len() < t * n_embd {
+            return Err("TP split grouped prime geometry".into());
+        }
+        let rt = &xs.rt;
+        let red_skip_peer = matches!(
+            crate::glm5_tp::gate_red(),
+            Ok(Some(crate::glm5_tp::GateRed::SkipPeerCombine))
+        );
+
+        // One rank's whole grouped program: CSR over OWNED pairs -> grouped gate/up GEMMs ->
+        // macro folds -> PRE-clamped epilogue -> grouped down GEMM -> CSR->local permute ->
+        // slot-ordered scatter into the rank partial [t, n_embd] (empty token windows write
+        // 0.0 — the scatter fully overwrites, so partials add cleanly on root).
+        let rank_pass = |dev: &Engine,
+                         _rank: u8,
+                         ptr_row: &CudaSlice<u64>,
+                         z_dev: &CudaSlice<f32>|
+         -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+            // Expert-major CSR restricted to this rank, local pair index l in ascending
+            // global-pair order (so per-token slot order == ascending l).
+            let mut buckets_l: Vec<Vec<i32>> = vec![Vec::new(); n_expert];
+            let mut local_tok = Vec::new(); // token of local pair l
+            let mut local_ex = Vec::new(); // expert of local pair l (macro folds)
+            let mut local_wd = Vec::new(); // v1's exact weight fold, at local positions
+            let mut local_count_per_tok = vec![0i32; t];
+            for p in 0..n_pairs {
+                let ex = sel_all[p] as usize;
+                if ex >= n_expert {
+                    return Err(
+                        format!("TP split grouped prime selection {ex} >= {n_expert}").into(),
+                    );
+                }
+                let l = local_tok.len() as i32;
+                buckets_l[ex].push(l);
+                let tok = p / n_used;
+                local_tok.push(tok as i32);
+                local_ex.push(ex);
+                local_wd.push(w_all[p] * m.down_exps.macro_scale(ex));
+                local_count_per_tok[tok] += 1;
+            }
+            let n_owned = local_tok.len();
+            if n_owned == 0 {
+                return Ok(None);
+            }
+            let mut ex_ids: Vec<i32> = Vec::new();
+            let mut ex_off: Vec<i32> = vec![0];
+            let mut ex_pairs: Vec<i32> = Vec::with_capacity(n_owned); // local l, CSR order
+            let mut csr_tok: Vec<i32> = Vec::with_capacity(n_owned);
+            for (e_id, b) in buckets_l.iter().enumerate() {
+                if !b.is_empty() {
+                    ex_ids.push(e_id as i32);
+                    for &l in b {
+                        ex_pairs.push(l);
+                        csr_tok.push(local_tok[l as usize]);
+                    }
+                    ex_off.push(ex_pairs.len() as i32);
+                }
+            }
+            let n_active = ex_ids.len();
+            if n_active == 0 || n_active > 512 {
+                return Err(
+                    format!("TP split grouped prime n_active {n_active} outside 1..=512").into(),
+                );
+            }
+
+            let exi = dev.htod_i32(&ex_ids)?;
+            let exo = dev.htod_i32(&ex_off)?;
+            let exp_d = dev.htod_i32(&ex_pairs)?;
+            let csr_tok_d = dev.htod_i32(&csr_tok)?;
+
+            // GATE/UP grouped GEMMs over the rank slab, CSR order end to end.
+            let (z16, zs) = dev.moe_f16g_act(z_dev, Some(&csr_tok_d), n_embd, n_owned)?;
+            let mut g = dev.moe_f16_grouped(
+                ptr_row,
+                0,
+                n_expert,
+                &exi,
+                &ex_off,
+                &exo,
+                &z16,
+                &zs,
+                n_embd,
+                half_ff,
+                n_active,
+                n_owned,
+                m.gate_exps.qtype,
+                m.gate_exps.row_bytes,
+            )?;
+            if m.gate_exps.macros.is_some() {
+                let mg: Vec<f32> = ex_pairs
+                    .iter()
+                    .map(|&l| m.gate_exps.macro_scale(local_ex[l as usize]))
+                    .collect();
+                let mg_d = dev.htod(&mg)?;
+                dev.scale_rows(&mut g, &mg_d, half_ff, n_owned)?;
+            }
+            let mut u = dev.moe_f16_grouped(
+                ptr_row,
+                1,
+                n_expert,
+                &exi,
+                &ex_off,
+                &exo,
+                &z16,
+                &zs,
+                n_embd,
+                half_ff,
+                n_active,
+                n_owned,
+                m.up_exps.qtype,
+                m.up_exps.row_bytes,
+            )?;
+            if m.up_exps.macros.is_some() {
+                let mu: Vec<f32> = ex_pairs
+                    .iter()
+                    .map(|&l| m.up_exps.macro_scale(local_ex[l as usize]))
+                    .collect();
+                let mu_d = dev.htod(&mu)?;
+                dev.scale_rows(&mut u, &mu_d, half_ff, n_owned)?;
+            }
+
+            // Epilogue: PRE-clamped SwiGLU (POST refused above), plain-silu pair otherwise.
+            let act = match lim_exp {
+                Some(SwigluClamp::Pre(limit)) => {
+                    let mut a = dev.uninit(n_owned * half_ff)?;
+                    dev.swiglu_preclamped_mul_scaled(
+                        &g,
+                        &u,
+                        1.0,
+                        1.0,
+                        limit,
+                        &mut a,
+                        n_owned * half_ff,
+                    )?;
+                    a
+                }
+                None => dev.moe_pairs_silu_mul(&g, &u, n_owned * half_ff)?,
+                Some(SwigluClamp::Post(_)) => unreachable!("refused before any launch"),
+            };
+
+            // DOWN grouped GEMM, permute CSR -> local pair order, slot-ordered scatter.
+            let (a16, a_s) = dev.moe_f16g_act(&act, None, half_ff, n_owned)?;
+            let d_csr = dev.moe_f16_grouped(
+                ptr_row,
+                2,
+                n_expert,
+                &exi,
+                &ex_off,
+                &exo,
+                &a16,
+                &a_s,
+                half_ff,
+                n_embd,
+                n_active,
+                n_owned,
+                m.down_exps.qtype,
+                xs.down_row_bytes,
+            )?;
+            let y_local = dev.rows_permute(&d_csr, &exp_d, n_owned, n_embd)?;
+            let mut toff: Vec<i32> = Vec::with_capacity(t + 1);
+            let mut acc = 0i32;
+            toff.push(0);
+            for &c in &local_count_per_tok {
+                acc += c;
+                toff.push(acc);
+            }
+            let tids: Vec<i32> = (0..n_owned as i32).collect();
+            let pw = dev.htod(&local_wd)?;
+            let toff_d = dev.htod_i32(&toff)?;
+            let tids_d = dev.htod_i32(&tids)?;
+            let mut partial = dev.uninit(t * n_embd)?; // scatter fully overwrites
+            dev.moe_pairs_scatter(&y_local, &pw, &toff_d, &tids_d, &mut partial, t, n_embd)?;
+            Ok(Some(partial))
+        };
+
+        // Peer passes first (their GEMMs overlap root's), each on its own runtime binding —
+        // the grouped-MoE FFI follows the RUNTIME device, not cudarc's pushed context
+        // (`bind_runtime_device`'s contract). Engagement counters count ROUTED peer pairs
+        // before any red skip, exactly like the sequential walk.
+        let ranks = xs.ranks();
+        let hop = xs.rt.hop(e);
+        let mut peer_partials: Vec<Option<CudaSlice<f32>>> = (0..ranks).map(|_| None).collect();
+        for r in 1..ranks {
+            let rank_owns_pairs = true; // every rank holds every expert
+            if !rank_owns_pairs {
+                continue;
+            }
+            let dev = crate::glm5_tp::rank_engine(e, rt, r);
+            // SWAP POINT 1 (bulk fan-out) — the named transport shape, to this rank only.
+            let z_r = crate::tp_transport::fanout_f32_to(&hop, r, z, t * n_embd)?;
+            dev.bind_runtime_device(dev.ctx().ordinal() as i32)?;
+            let res = rank_pass(dev, r as u8, &xs.ptr_rows[r], &z_r);
+            e.bind_runtime_device(e.ctx().ordinal() as i32)?;
+            peer_partials[r] = res?;
+        }
+        let root_partial = rank_pass(e, 0, &xs.ptr_rows[0], z)?;
+
+        // Root combine: root partial + bulk-returned peer partials (SWAP POINT 2, the named
+        // transport shape). One partial add per contributing rank — the same reassociation
+        // class the two-rank arm band-gated (root chain + per-rank chains instead of one
+        // 8-term chain), never claimed byte. The skip-peer-combine red drops every peer
+        // partial AFTER counting — the loud non-vacuity arm.
+        let mut out = match root_partial {
+            Some(p) => p,
+            None => e.zeros(t * n_embd)?,
+        };
+        for r in 1..ranks {
+            if let Some(pp) = &peer_partials[r]
+                && !red_skip_peer
+            {
+                let pp_root = crate::tp_transport::return_row_to_root(&hop, r, pp, t * n_embd)?;
+                let mut dst = out.slice_mut(0..t * n_embd);
+                e.axpy_into(&pp_root, 1.0, &mut dst, t * n_embd)?;
+            }
+        }
+        GLM5_TP_SPLIT_GROUPED_PRIME_DISPATCHES.fetch_add(1, Ordering::Relaxed);
+        static TPSGP_LOGGED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let layer_bit = 1u64 << (il as u64 % 64);
+        if TPSGP_LOGGED.fetch_or(layer_bit, Ordering::Relaxed) & layer_bit == 0 {
+            eprintln!(
+                "[glm5-tp-split-grouped-prime] execute layer={il} tokens={t} \
+                 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped \
+                 combine=rank-partial-add transport={} performance_claim=false \
+                 (logged once per layer)",
+                hop.transport.name(),
+            );
+        }
+        Ok(Some(out))
+    }
     #[allow(clippy::too_many_arguments)]
     fn moe_shexp_add(
         e: &Engine,
