@@ -750,7 +750,7 @@ impl GroupedRoutes {
         projection: i32,
         input: &HalfMirror,
         out_f: usize,
-        output: u64,
+        output: &mut CudaSlice<f32>,
     ) -> Res<()> {
         if table.len() != self.experts * 6
             || output.len() < self.live_slots * out_f
@@ -799,7 +799,7 @@ impl GroupedRoutes {
         s: &Arc<CudaStream>,
         table: &CudaSlice<u64>,
         input: &HalfMirror,
-        output: u64,
+        output: &mut CudaSlice<f32>,
         out_f: usize,
         half2: bool,
     ) -> Res<()> {
