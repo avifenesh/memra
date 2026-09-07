@@ -3230,6 +3230,7 @@ extern "C" __global__ void memra_mla_kpool_select_hist_kernel(const float* __res
     constexpr int SLICE = MLA_SEL_BINS / MLA_SEL_THREADS;
     unsigned k = (unsigned)ctrl[MLA_SEL_CTRL_K];
     unsigned mysum = 0;
+#pragma unroll 16
     for (int j = threadIdx.x * SLICE; j < (int)threadIdx.x * SLICE + SLICE; ++j) mysum += hist[j];
     s_slice[threadIdx.x] = mysum;
     __syncthreads();
@@ -3248,14 +3249,23 @@ extern "C" __global__ void memra_mla_kpool_select_hist_kernel(const float* __res
         s_before = run;
     }
     __syncthreads();
+    // The owner's slice comes into shared memory with ONE coalesced load per thread; the walk
+    // below then reads shared memory. Walking the slice in global memory was a chain of up to
+    // 256 dependent L2 loads on one thread (the branch on `run + c >= k` serializes them): 69
+    // us per pass on the 2x B200 pair at 250k pools (tptrace10, 2026-09-07), the pass's wall.
+    // Same counts, same ascending walk, same bin: bit-identical.
+    __shared__ unsigned s_bins[SLICE];
+    static_assert(SLICE == MLA_SEL_THREADS, "one bin of the owner's slice per thread");
+    s_bins[threadIdx.x] = hist[s_owner * SLICE + (int)threadIdx.x];
+    __syncthreads();
     if ((int)threadIdx.x == s_owner) {
         unsigned run = s_before;
         int bin = s_owner * SLICE;
-        for (int j = s_owner * SLICE; j < s_owner * SLICE + SLICE; ++j) {
-            unsigned c = hist[j];
+        for (int j = 0; j < SLICE; ++j) {
+            unsigned c = s_bins[j];
             if (c == 0u) continue;
             if (run + c >= k) {
-                bin = j;
+                bin = s_owner * SLICE + j;
                 break;
             }
             run += c;
@@ -3340,32 +3350,72 @@ extern "C" __global__ void memra_mla_kpool_select_tie_kernel(const float* __rest
     if (threadIdx.x == 0) cta[blockIdx.x] = s_cnt;
 
     if (!memra_sel_last_arrival(ctrl, n_ctas)) return;
-    if (threadIdx.x != 0) return;
-    ctrl[MLA_SEL_CTRL_DONE] = 0;
-    if (!live) return;
-    int r = ctrl[MLA_SEL_CTRL_K];
-    int run = 0, owner = 0;
-    for (int j = 0; j < n_ctas; ++j) {
-        int c = cta[j];
-        if (run + c >= r) {
-            owner = j;
-            break;
+    // The last CTA locates the tie pool as a BLOCK: the per-CTA counts come into shared memory
+    // with coalesced loads (thread 0 walked them from global memory one dependent load at a
+    // time: 59 us per launch at 978 CTAs on the 2x B200 pair, tptrace10 2026-09-07), and the
+    // owning CTA's range is walked by every thread over a contiguous sub-range with a block
+    // prefix over the per-thread match counts. Same ascending order, same `need`-th match.
+    __shared__ int s_cta[MLA_SEL_MAX_CTAS];
+    __shared__ int s_owner;
+    __shared__ int s_need;
+    __shared__ int s_tcnt[MLA_SEL_THREADS];
+    if (threadIdx.x == 0) ctrl[MLA_SEL_CTRL_DONE] = 0;
+    if (!live) return; // block-uniform
+    for (int j = threadIdx.x; j < n_ctas; j += MLA_SEL_THREADS) s_cta[j] = cta[j];
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        int r = ctrl[MLA_SEL_CTRL_K];
+        int run = 0, owner = 0;
+        for (int j = 0; j < n_ctas; ++j) {
+            int c = s_cta[j];
+            if (run + c >= r) {
+                owner = j;
+                break;
+            }
+            run += c;
         }
-        run += c;
+        s_owner = owner;
+        s_need = r - run; // 1-based rank inside the owning CTA's range
     }
-    int need = r - run; // 1-based rank inside the owning CTA's range
-    long olo = (long)owner * chunk;
+    __syncthreads();
+    long olo = (long)s_owner * chunk;
     long ohi = olo + chunk;
     if (olo > n_pools) olo = n_pools;
     if (ohi > n_pools) ohi = n_pools;
-    int seen = 0;
-    for (long p = olo; p < ohi; ++p) {
+    long span = ohi - olo;
+    long tchunk = (span + MLA_SEL_THREADS - 1) / MLA_SEL_THREADS;
+    long tlo = olo + (long)threadIdx.x * tchunk;
+    long thi = tlo + tchunk;
+    if (tlo > ohi) tlo = ohi;
+    if (thi > ohi) thi = ohi;
+    int mine = 0;
+    for (long p = tlo; p < thi; ++p) {
         float s = row[p];
         if (!isfinite(s)) continue;
-        if (memra_sel_hi(s, (int)p) != target) continue;
-        if (++seen == need) {
-            ctrl[MLA_SEL_CTRL_TP] = (int)p;
-            return;
+        if (memra_sel_hi(s, (int)p) == target) ++mine;
+    }
+    s_tcnt[threadIdx.x] = mine;
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        int run = 0; // exclusive prefix over the per-thread counts, in place
+        for (int j = 0; j < MLA_SEL_THREADS; ++j) {
+            int c = s_tcnt[j];
+            s_tcnt[j] = run;
+            run += c;
+        }
+    }
+    __syncthreads();
+    int before = s_tcnt[threadIdx.x];
+    if (mine > 0 && before < s_need && before + mine >= s_need) {
+        int seen = before;
+        for (long p = tlo; p < thi; ++p) {
+            float s = row[p];
+            if (!isfinite(s)) continue;
+            if (memra_sel_hi(s, (int)p) != target) continue;
+            if (++seen == s_need) {
+                ctrl[MLA_SEL_CTRL_TP] = (int)p;
+                break;
+            }
         }
     }
 }
