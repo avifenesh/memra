@@ -50,7 +50,11 @@ engagement before any rate measurement.
 The stacked gate lane rebases source candidate `61bda2afe4f9375e6cd23d9ea6052d1230cc01fc`
 on main `99c2c4e4d` (including #337). The candidate's stale finalization byte accounting referenced three
 undefined variables; accounting now happens only in the per-layer pack. Attention TP2's
-separate packed projections and join remain intact.
+separate packed projections and join remain intact. The candidate raw-pointer scratch
+helper dropped cudarc write guards before enqueue; the local scratch now enters the existing
+enqueue body through typed reborrows. The hidden-width helper now reports the replicated
+4096 axis. Admission also pins one shared expert and refuses disabling the matrix executor
+after loading half banks.
 
 Both existing gate binaries accept `MEMRA_DSV4_INTERMEDIATE_TP_GATE=1` before loading.
 Only these executables read the selector; serving cannot select the candidate through an

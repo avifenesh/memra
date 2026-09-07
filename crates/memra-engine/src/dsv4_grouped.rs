@@ -589,26 +589,6 @@ impl GroupedWork {
         self.gu_fuse = enabled && self.plain_single;
     }
 
-    fn output_ptrs(
-        &mut self,
-        out: &mut EpCompute<'_>,
-        stream: &Arc<CudaStream>,
-    ) -> (*mut f32, *mut u8, *mut f32) {
-        if let Some(split) = self.split_scratch.as_mut() {
-            (
-                split.h.device_ptr_mut(stream).0 as *mut f32,
-                split.hq.device_ptr_mut(stream).0 as *mut u8,
-                split.hs.device_ptr_mut(stream).0 as *mut f32,
-            )
-        } else {
-            (
-                out.h.device_ptr_mut(stream).0 as *mut f32,
-                out.hq.device_ptr_mut(stream).0 as *mut u8,
-                out.hs.device_ptr_mut(stream).0 as *mut f32,
-            )
-        }
-    }
-
     fn gather_intermediate(
         &mut self,
         stream: &Arc<CudaStream>,
@@ -631,6 +611,37 @@ impl GroupedWork {
         out: &mut EpCompute<'_>,
         limit: f32,
     ) -> Res<()> {
+        // Reborrow the rank-local scratch for the existing enqueue body. Returning raw
+        // pointers from a helper would drop cudarc's write guards before the launch.
+        let mut split = self.split_scratch.take();
+        let result = if let Some(split) = split.as_mut() {
+            let mut local = EpCompute {
+                xq: out.xq,
+                xs: out.xs,
+                ids: out.ids,
+                weights: out.weights,
+                g1: &mut *out.g1,
+                g3: &mut *out.g3,
+                h: &mut split.h,
+                hq: &mut split.hq,
+                hs: &mut split.hs,
+                contribution: &mut *out.contribution,
+            };
+            self.gate_up_inner(gpu, table, &mut local, limit)
+        } else {
+            self.gate_up_inner(gpu, table, out, limit)
+        };
+        self.split_scratch = split;
+        result
+    }
+
+    fn gate_up_inner(
+        &mut self,
+        gpu: &Gpu,
+        table: &CudaSlice<u64>,
+        out: &mut EpCompute<'_>,
+        limit: f32,
+    ) -> Res<()> {
         if self.phase != MatrixPhase::Prepared {
             return Err("matrix gate/up requires prepared input".into());
         }
@@ -638,7 +649,6 @@ impl GroupedWork {
         bind_matrix(gpu)?;
         let s = gpu.stream();
         let live = self.routes.live_slots;
-        let (h_ptr, hq_ptr, hs_ptr) = self.output_ptrs(out, &s);
         if !route_validation_enabled() {
             s.memset_zeros(&mut self.contribution)
                 .map_err(|e| format!("grouped contribution clear: {e}"))?;
@@ -651,13 +661,13 @@ impl GroupedWork {
                 crate::moe_f16g_gu_half2_on(),
             );
             if self.plain_single && splitk_component_claim(gpu, true) {
-                self.splitk(gpu, table, h_ptr as u64, limit, true, true)?;
+                self.splitk(gpu, table, out.h.device_ptr_mut(&s).0, limit, true, true)?;
             }
             if self.plain_single && crate::moe_m1_splitk_on() {
                 if !fuse_gu {
                     return Err("split-K requires plain fused GU".into());
                 }
-                self.splitk(gpu, table, h_ptr as u64, limit, true, false)?;
+                self.splitk(gpu, table, out.h.device_ptr_mut(&s).0, limit, true, false)?;
             } else if let Some(gu_kind) = gu_kind {
                 let rc = unsafe {
                     let launch = match gu_kind {
@@ -671,7 +681,7 @@ impl GroupedWork {
                         self.routes.experts as i32,
                         self.routes.ids.device_ptr(&s).0 as *const i32,
                         self.input.half.device_ptr(&s).0 as *const std::ffi::c_void,
-                        h_ptr,
+                        out.h.device_ptr_mut(&s).0 as *mut f32,
                         self.input.scale.device_ptr(&s).0 as *const f32,
                         self.routes.macro1.device_ptr(&s).0 as *const f32,
                         self.routes.macro3.device_ptr(&s).0 as *const f32,
@@ -736,7 +746,7 @@ impl GroupedWork {
                         dsv4_ffi::memra_dsv4_swiglu(
                             out.g1.device_ptr(&s).0 as *const f32,
                             out.g3.device_ptr(&s).0 as *const f32,
-                            h_ptr,
+                            out.h.device_ptr_mut(&s).0 as *mut f32,
                             live as i32,
                             self.intermediate.cols as i32,
                             limit,
@@ -750,9 +760,9 @@ impl GroupedWork {
                 dsv4_ffi::ck(
                     "matrix intermediate FP8",
                     dsv4_ffi::memra_dsv4_act_quant_fp8(
-                        h_ptr as *const f32,
-                        hq_ptr as *mut std::ffi::c_void,
-                        hs_ptr,
+                        out.h.device_ptr(&s).0 as *const f32,
+                        out.hq.device_ptr_mut(&s).0 as *mut std::ffi::c_void,
+                        out.hs.device_ptr_mut(&s).0 as *mut f32,
                         live as i32,
                         self.intermediate.cols as i32,
                         s.cu_stream().cast(),
