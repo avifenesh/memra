@@ -20,6 +20,92 @@ type Res<T> = Result<T, String>;
 
 pub const FP8_BLOCK: usize = 128;
 
+/// Existing-GEMV exact component shapes for the first rank-local attention slice.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExistingGemvPlane {
+    Qb,
+    WoA,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExistingGemvHalfPlan {
+    pub plane: ExistingGemvPlane,
+    pub rank: usize,
+    pub full_rows: usize,
+    pub full_cols: usize,
+    pub partition: Partition,
+}
+
+impl ExistingGemvHalfPlan {
+    pub const fn q_b(rank: usize) -> Self {
+        Self {
+            plane: ExistingGemvPlane::Qb,
+            rank,
+            full_rows: 32768,
+            full_cols: 1024,
+            partition: Partition::Rows {
+                start: rank * 16384,
+                len: 16384,
+            },
+        }
+    }
+
+    pub const fn wo_a(rank: usize) -> Self {
+        Self {
+            plane: ExistingGemvPlane::WoA,
+            rank,
+            full_rows: 8192,
+            full_cols: 4096,
+            partition: Partition::Rows {
+                start: rank * 4096,
+                len: 4096,
+            },
+        }
+    }
+}
+
+/// Separate numeric class for the eventual wo_b input-column partial reduction.
+pub const WO_B_PARTIAL_SUM_NUMERIC_CLASS: &str = "dsv4_attention_wo_b_input_split_f32_rank_reduce";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WoBPartialSumPlan {
+    pub rank: usize,
+    pub full_rows: usize,
+    pub full_cols: usize,
+    pub partition: Partition,
+}
+
+impl WoBPartialSumPlan {
+    pub const fn rank(rank: usize) -> Self {
+        Self {
+            rank,
+            full_rows: 4096,
+            full_cols: 8192,
+            partition: Partition::Columns {
+                start: rank * 4096,
+                len: 4096,
+            },
+        }
+    }
+}
+
+/// Deterministic rank-order FP32 oracle for the named wo_b class. It does not claim equality with
+/// the full-width 8192-column GEMV and introduces no tolerance.
+pub fn wo_b_rank_order_sum_f32(rank0: &[f32], rank1: &[f32], out: &mut [f32]) -> Res<()> {
+    if rank0.len() != 4096 || rank1.len() != 4096 || out.len() != 4096 {
+        return Err(format!(
+            "{WO_B_PARTIAL_SUM_NUMERIC_CLASS} requires 4096-element planes: rank0={} rank1={} out={}",
+            rank0.len(),
+            rank1.len(),
+            out.len()
+        ));
+    }
+    for ((dst, &a), &b) in out.iter_mut().zip(rank0).zip(rank1) {
+        *dst = a + b;
+    }
+    Ok(())
+}
+
 /// Logical location of a rank-local dense plane in the full checkpoint tensor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Partition {
@@ -493,7 +579,12 @@ fn validate_partition(rank: usize, rows: usize, cols: usize, partition: Partitio
 
 #[cfg(test)]
 mod tests {
-    use super::{DeviceFp8Plane, FP8_BLOCK, Gpu, PackedFp8Host, Partition, copy_2d_device};
+    use super::{
+        DeviceFp8Plane, ExistingGemvHalfPlan, FP8_BLOCK, Gpu, PackedFp8Host, Partition,
+        WO_B_PARTIAL_SUM_NUMERIC_CLASS, WoBPartialSumPlan, copy_2d_device, wo_b_rank_order_sum_f32,
+    };
+    use cudarc::driver::{DevicePtr, DevicePtrMut};
+    use std::ffi::c_void;
 
     fn mix(mut x: u64) -> u64 {
         x ^= x >> 30;
@@ -799,6 +890,382 @@ mod tests {
             PackedFp8Host::rows_from_full(0, 128, 128, 0, 128, &codes[..127], &scales).is_err()
         );
         assert!(PackedFp8Host::columns_from_full(0, 128, 128, 0, 128, &codes, &[1.0; 2]).is_err());
+    }
+
+    #[test]
+    fn existing_gemv_half_plans_are_exact_qb_woa_components() {
+        assert_eq!(
+            ExistingGemvHalfPlan::q_b(0).partition,
+            Partition::Rows {
+                start: 0,
+                len: 16384
+            }
+        );
+        assert_eq!(
+            ExistingGemvHalfPlan::q_b(1).partition,
+            Partition::Rows {
+                start: 16384,
+                len: 16384
+            }
+        );
+        assert_eq!(ExistingGemvHalfPlan::q_b(0).full_rows, 32768);
+        assert_eq!(ExistingGemvHalfPlan::q_b(0).full_cols, 1024);
+        assert_eq!(
+            ExistingGemvHalfPlan::wo_a(0).partition,
+            Partition::Rows {
+                start: 0,
+                len: 4096
+            }
+        );
+        assert_eq!(
+            ExistingGemvHalfPlan::wo_a(1).partition,
+            Partition::Rows {
+                start: 4096,
+                len: 4096
+            }
+        );
+        assert_eq!(ExistingGemvHalfPlan::wo_a(0).full_rows, 8192);
+        assert_eq!(ExistingGemvHalfPlan::wo_a(0).full_cols, 4096);
+    }
+
+    #[test]
+    fn wob_partial_sum_is_named_and_rank_ordered_without_tolerance() {
+        assert_eq!(
+            WO_B_PARTIAL_SUM_NUMERIC_CLASS,
+            "dsv4_attention_wo_b_input_split_f32_rank_reduce"
+        );
+        assert_eq!(
+            WoBPartialSumPlan::rank(0).partition,
+            Partition::Columns {
+                start: 0,
+                len: 4096
+            }
+        );
+        assert_eq!(
+            WoBPartialSumPlan::rank(1).partition,
+            Partition::Columns {
+                start: 4096,
+                len: 4096
+            }
+        );
+        let rank0: Vec<f32> = (0..4096).map(|i| i as f32 * 0.25 - 7.0).collect();
+        let rank1: Vec<f32> = (0..4096).map(|i| (i as f32 + 3.0) * -0.125).collect();
+        let mut out = vec![0.0f32; 4096];
+        wo_b_rank_order_sum_f32(&rank0, &rank1, &mut out).unwrap();
+        for i in 0..4096 {
+            assert_eq!(out[i].to_bits(), (rank0[i] + rank1[i]).to_bits());
+        }
+        assert!(wo_b_rank_order_sum_f32(&rank0[..1], &rank1, &mut out).is_err());
+    }
+
+    fn bf16_input(n: usize, seed: u64) -> Vec<u16> {
+        (0..n)
+            .map(|i| {
+                let value =
+                    ((mix(seed.wrapping_add(i as u64 * 0x10001)) % 4097) as f32 - 2048.0) / 257.0;
+                (value.to_bits() >> 16) as u16
+            })
+            .collect()
+    }
+
+    fn launch_existing_fp8_gemv(
+        gpu: &Gpu,
+        plane: &DeviceFp8Plane,
+        input: &[u16],
+        n: usize,
+        k: usize,
+        label: &str,
+    ) -> Vec<f32> {
+        assert_eq!(plane.rows, n, "{label}: row shape");
+        assert_eq!(plane.cols, k, "{label}: column shape");
+        let stream = gpu.stream();
+        let input_dev = stream.clone_htod(input).unwrap();
+        let canary = f32::from_bits(0x7fc5_4321);
+        let guard = 8usize;
+        let mut output = stream.clone_htod(&vec![canary; n + 2 * guard]).unwrap();
+        gpu.ctx.bind_to_thread().unwrap();
+        let rc_bind = unsafe { crate::mmq_ffi::memra_bind_device(gpu.ctx.ordinal() as i32) };
+        assert_eq!(rc_bind, 0, "{label}: runtime device bind");
+        {
+            let (w, _w_guard) = plane.codes.device_ptr(&stream);
+            let (sc, _sc_guard) = plane.scales.device_ptr(&stream);
+            let (x, _x_guard) = input_dev.device_ptr(&stream);
+            let (y, _y_guard) = output.device_ptr_mut(&stream);
+            let rc = unsafe {
+                crate::dsv4_ffi::memra_dsv4_gemv_fp8_m(
+                    w as *const c_void,
+                    sc as *const f32,
+                    plane.scale_cols as i32,
+                    x as *const c_void,
+                    (y as *mut f32).add(guard),
+                    1,
+                    n as i32,
+                    k as i32,
+                    0,
+                    0,
+                    stream.cu_stream().cast(),
+                )
+            };
+            crate::dsv4_ffi::ck(label, rc).unwrap();
+        }
+        stream.synchronize().unwrap();
+        let got = stream.clone_dtoh(&output).unwrap();
+        assert!(
+            got[..guard].iter().all(|v| v.to_bits() == canary.to_bits()),
+            "{label}: prefix"
+        );
+        assert!(
+            got[n + guard..]
+                .iter()
+                .all(|v| v.to_bits() == canary.to_bits()),
+            "{label}: suffix"
+        );
+        assert_eq!(
+            stream.clone_dtoh(&input_dev).unwrap(),
+            input,
+            "{label}: input mutated"
+        );
+        assert!(
+            got[guard..guard + n].iter().all(|v| v.is_finite()),
+            "{label}: non-finite output"
+        );
+        got[guard..guard + n].to_vec()
+    }
+
+    fn assert_plane_unchanged(gpu: &Gpu, plane: &DeviceFp8Plane, codes: &[u8], scales: &[f32]) {
+        let stream = gpu.stream();
+        stream.synchronize().unwrap();
+        assert_eq!(stream.clone_dtoh(&plane.codes).unwrap(), codes);
+        assert_eq!(
+            stream
+                .clone_dtoh(&plane.scales)
+                .unwrap()
+                .iter()
+                .copied()
+                .map(f32::to_bits)
+                .collect::<Vec<_>>(),
+            scales.iter().copied().map(f32::to_bits).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    #[ignore = "requires one locked CUDA GPU; existing FP8 GEMV attention component"]
+    fn cuda_attention_split_existing_fp8_gemv_component_gate() {
+        let gpu = Gpu::new(0).expect("gpu");
+        unsafe { gpu.ctx.disable_event_tracking() };
+
+        for (rows, cols, seed) in [(32768usize, 1024usize, 0x10u64), (8192, 4096, 0x20)] {
+            let full_codes = codes(rows * cols, seed);
+            let full_scales = scales(rows / FP8_BLOCK * (cols / FP8_BLOCK), seed + 1);
+            if rows == 8192 {
+                let full_pack = PackedFp8Host::rows_from_full(
+                    0,
+                    rows,
+                    cols,
+                    0,
+                    rows,
+                    &full_codes,
+                    &full_scales,
+                )
+                .unwrap();
+                let full_plane = DeviceFp8Plane::upload(&gpu, full_pack).unwrap();
+                let mut full_groups = Vec::with_capacity(8);
+                for group in 0..8usize {
+                    let input = bf16_input(cols, seed + group as u64 + 2);
+                    let group_plane = DeviceFp8Plane::from_device(
+                        &gpu,
+                        group / 4,
+                        rows,
+                        cols,
+                        Partition::Rows {
+                            start: group * 1024,
+                            len: 1024,
+                        },
+                        &full_plane.codes,
+                        &full_plane.scales,
+                    )
+                    .unwrap();
+                    full_groups.push(launch_existing_fp8_gemv(
+                        &gpu,
+                        &group_plane,
+                        &input,
+                        1024,
+                        cols,
+                        "wo_a full group",
+                    ));
+                }
+                for rank in 0..2usize {
+                    for local_group in 0..4usize {
+                        let group = rank * 4 + local_group;
+                        let input = bf16_input(cols, seed + group as u64 + 2);
+                        let group_plane = DeviceFp8Plane::from_device(
+                            &gpu,
+                            rank,
+                            rows,
+                            cols,
+                            Partition::Rows {
+                                start: group * 1024,
+                                len: 1024,
+                            },
+                            &full_plane.codes,
+                            &full_plane.scales,
+                        )
+                        .unwrap();
+                        let local = launch_existing_fp8_gemv(
+                            &gpu,
+                            &group_plane,
+                            &input,
+                            1024,
+                            cols,
+                            "wo_a rank group",
+                        );
+                        for (i, (got, want)) in local.iter().zip(&full_groups[group]).enumerate() {
+                            assert_eq!(
+                                got.to_bits(),
+                                want.to_bits(),
+                                "wo_a exact group rank={rank} group={group} i={i}"
+                            );
+                        }
+                    }
+                }
+                assert_plane_unchanged(&gpu, &full_plane, &full_codes, &full_scales);
+                continue;
+            }
+            let full_pack =
+                PackedFp8Host::rows_from_full(0, rows, cols, 0, rows, &full_codes, &full_scales)
+                    .unwrap();
+            let full_plane = DeviceFp8Plane::upload(&gpu, full_pack).unwrap();
+            let input = bf16_input(cols, seed + 2);
+            let full = launch_existing_fp8_gemv(
+                &gpu,
+                &full_plane,
+                &input,
+                rows,
+                cols,
+                if rows == 32768 {
+                    "Q_b full"
+                } else {
+                    "wo_a full"
+                },
+            );
+            for rank in 0..2usize {
+                let half = rows / 2;
+                let partition = Partition::Rows {
+                    start: rank * half,
+                    len: half,
+                };
+                let local = DeviceFp8Plane::from_device(
+                    &gpu,
+                    rank,
+                    rows,
+                    cols,
+                    partition,
+                    &full_plane.codes,
+                    &full_plane.scales,
+                )
+                .unwrap();
+                let local_output = launch_existing_fp8_gemv(
+                    &gpu,
+                    &local,
+                    &input,
+                    half,
+                    cols,
+                    if rows == 32768 {
+                        "Q_b half"
+                    } else {
+                        "wo_a half"
+                    },
+                );
+                for (i, got) in local_output.iter().enumerate() {
+                    assert_eq!(
+                        got.to_bits(),
+                        full[rank * half + i].to_bits(),
+                        "existing GEMV exact row half rank={rank} rows={rows} i={i}"
+                    );
+                }
+                assert_plane_unchanged(&gpu, &full_plane, &full_codes, &full_scales);
+            }
+        }
+
+        let (rows, cols) = (4096usize, 8192usize);
+        let full_codes = codes(rows * cols, 0x30);
+        let full_scales = scales(rows / FP8_BLOCK * (cols / FP8_BLOCK), 0x31);
+        let full_pack =
+            PackedFp8Host::columns_from_full(0, rows, cols, 0, cols, &full_codes, &full_scales)
+                .unwrap();
+        let full_plane = DeviceFp8Plane::upload(&gpu, full_pack).unwrap();
+        let input_full = bf16_input(cols, 0x32);
+        let full_width = launch_existing_fp8_gemv(
+            &gpu,
+            &full_plane,
+            &input_full,
+            rows,
+            cols,
+            "wo_b full diagnostic",
+        );
+        let mut rank_outputs = Vec::new();
+        for rank in 0..2usize {
+            let partition = Partition::Columns {
+                start: rank * (cols / 2),
+                len: cols / 2,
+            };
+            let device_half = DeviceFp8Plane::from_device(
+                &gpu,
+                rank,
+                rows,
+                cols,
+                partition,
+                &full_plane.codes,
+                &full_plane.scales,
+            )
+            .unwrap();
+            let host_half = PackedFp8Host::columns_from_full(
+                rank,
+                rows,
+                cols,
+                rank * (cols / 2),
+                cols / 2,
+                &full_codes,
+                &full_scales,
+            )
+            .unwrap();
+            let host_plane = DeviceFp8Plane::upload(&gpu, host_half).unwrap();
+            let input_half = &input_full[rank * (cols / 2)..(rank + 1) * (cols / 2)];
+            let device_output = launch_existing_fp8_gemv(
+                &gpu,
+                &device_half,
+                input_half,
+                rows,
+                cols / 2,
+                "wo_b device half",
+            );
+            let host_output = launch_existing_fp8_gemv(
+                &gpu,
+                &host_plane,
+                input_half,
+                rows,
+                cols / 2,
+                "wo_b host half",
+            );
+            for (i, (device, host)) in device_output.iter().zip(&host_output).enumerate() {
+                assert_eq!(
+                    device.to_bits(),
+                    host.to_bits(),
+                    "wo_b packed half rank={rank} i={i}"
+                );
+            }
+            assert_plane_unchanged(&gpu, &full_plane, &full_codes, &full_scales);
+            rank_outputs.push(device_output);
+        }
+        let mut rank_sum = vec![0.0f32; rows];
+        wo_b_rank_order_sum_f32(&rank_outputs[0], &rank_outputs[1], &mut rank_sum).unwrap();
+        let full_equal = rank_sum
+            .iter()
+            .zip(&full_width)
+            .all(|(a, b)| a.to_bits() == b.to_bits());
+        println!(
+            "PASS existing GEMV Q_b/wo_a exact row halves; wo_b host/device halves exact; class={WO_B_PARTIAL_SUM_NUMERIC_CLASS}; full_width_bit_equal_diagnostic={full_equal}; GPU join not exercised"
+        );
     }
 
     #[test]
