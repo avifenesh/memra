@@ -1954,6 +1954,20 @@ pub struct Glm5TpGlue {
     /// picks the same experts, and it costs zero crossings where a push of `sel`/`w` would cost
     /// two per layer. `None` on a dense-FFN layer.
     pub router: Option<Glm5TpPeerRouter>,
+    /// The dense FFN of a dense-FFN layer (the three leading layers of GLM-5.3-Flash),
+    /// replicated so the peer computes it REDUNDANTLY from its own copy of the FFN input
+    /// instead of receiving root's output over the event-published transport: the same
+    /// kernels on the same input give the same bytes, it costs zero crossings, and it is what
+    /// lets the layer sit inside a captured graph piece (a fan-out cannot). `None` on MoE.
+    pub dense: Option<Glm5TpPeerDense>,
+}
+
+/// The peer's copy of a dense FFN: gate, up, down and the AWQ pre-quant scale when present.
+pub struct Glm5TpPeerDense {
+    pub ffn_gate: GpuTensor,
+    pub ffn_up: GpuTensor,
+    pub ffn_down: GpuTensor,
+    pub ffn_down_pqs: Option<GpuTensor>,
 }
 
 /// The peer's router operands: the gate projection and the two per-expert planes the sigmoid
@@ -2008,10 +2022,31 @@ pub(crate) fn replicate_layer_glue(
     attn_norm: &GpuTensor,
     post_attn_norm: &GpuTensor,
     hyper: &crate::hyper::HyperLayer,
-    moe: Option<&crate::hybrid::MoeWeights>,
+    ffn: &crate::hybrid::Ffn,
 ) -> Result<Vec<Glm5TpGlue>, Box<dyn std::error::Error>> {
+    let moe = match ffn {
+        crate::hybrid::Ffn::Moe(m) => Some(m),
+        crate::hybrid::Ffn::Dense { .. } => None,
+    };
     let mut out = Vec::with_capacity(rt.peers.len());
     for peer in &rt.peers {
+        let dense = match ffn {
+            crate::hybrid::Ffn::Dense {
+                ffn_gate,
+                ffn_up,
+                ffn_down,
+                ffn_down_pqs,
+            } => Some(Glm5TpPeerDense {
+                ffn_gate: replicate_tensor(e, peer, ffn_gate)?,
+                ffn_up: replicate_tensor(e, peer, ffn_up)?,
+                ffn_down: replicate_tensor(e, peer, ffn_down)?,
+                ffn_down_pqs: match ffn_down_pqs {
+                    Some(t) => Some(replicate_tensor(e, peer, t)?),
+                    None => None,
+                },
+            }),
+            crate::hybrid::Ffn::Moe(_) => None,
+        };
         let router = match moe {
             Some(m) => Some(Glm5TpPeerRouter {
                 gate_inp: replicate_tensor(e, peer, &m.gate_inp)?,
@@ -2031,6 +2066,7 @@ pub(crate) fn replicate_layer_glue(
                 mlp: replicate_site(e, peer, &hyper.mlp)?,
             },
             router,
+            dense,
         });
     }
     Ok(out)

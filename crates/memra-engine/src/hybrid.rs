@@ -4764,17 +4764,13 @@ impl HybridModel {
                 if crate::glm5_tp::glm5_tp_symmetric_on()
                     && let Some(hyper) = layer.hyper.as_ref()
                 {
-                    let moe = match &layer.ffn {
-                        Ffn::Moe(m) => Some(m),
-                        _ => None,
-                    };
                     layer.tp_glue = crate::glm5_tp::replicate_layer_glue(
                         e,
                         &tp_plan.rt,
                         &layer.attn_norm,
                         &layer.post_attn_norm,
                         hyper,
-                        moe,
+                        &layer.ffn,
                     )?;
                 }
                 if let Ffn::Moe(m) = &mut layer.ffn {
