@@ -7,6 +7,25 @@
 use std::os::raw::c_void;
 
 unsafe extern "C" {
+    pub fn memra_dsv4_sample_device(
+        logits: *const f32,
+        values: *mut f32,
+        keys0: *mut u64,
+        keys1: *mut u64,
+        prefix: *mut f64,
+        blocks: *mut f64,
+        counts: *const i32,
+        result: *mut u32,
+        n: i32,
+        k: i32,
+        temperature: f64,
+        top_p: f64,
+        uniform: f64,
+        repeat: f32,
+        freq: f32,
+        present: f32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_sink_scores_tiled_init() -> i32;
     pub fn memra_dsv4_sink_attn_dec_mq_f32acc_tiled(
         q: *const f32,
