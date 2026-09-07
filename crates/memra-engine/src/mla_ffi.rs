@@ -265,6 +265,21 @@ pub static MLA_DSA_DECODE_DISPATCHES: std::sync::atomic::AtomicU64 =
 ///
 /// Rollback seam: unset the var (or set 0). Both arms are read per call, so a rollback is the
 /// next request, not a restart.
+/// `MEMRA_DSA_SCORE_TC=1|2` (lane/glm5-dsa-score-tc, 2026-09-07, default OFF, decide-by
+/// 2026-09-21): the prefill scorer on bf16 `mma.sync` tensor cores (`cu/mla_attn.cu`, "the
+/// TENSOR-CORE arm"). `1` = plain bf16 operands (one MMA per product, ~1e-3 relative);
+/// `2` = every operand split hi/lo bf16, three MMAs (f32-class, ~3e-6 relative). Prefill widths
+/// only (`t_q >= 8`); neither is bit-identical to the f32 scorer, admitted like
+/// `MEMRA_MLA_TC_PREFILL`: served-prompt ids against the f32 arm. 0 = off.
+pub fn dsa_score_tc() -> i32 {
+    static LEVEL: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
+    *LEVEL.get_or_init(|| match std::env::var("MEMRA_DSA_SCORE_TC").as_deref() {
+        Ok("1") => 1,
+        Ok("2") => 2,
+        _ => 0,
+    })
+}
+
 fn mla_dsa_decode_level() -> u32 {
     if !cfg!(memra_sm100_tcgen05) {
         return 0;
@@ -809,6 +824,23 @@ unsafe extern "C" {
         first_pos: i32,
         qk_scale: f32,
         head_scale: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_mla_kpool_score_tc_f32(
+        q: *const f32,
+        scratch: *mut u16,
+        pool_keys: *const f32,
+        hw: *const f32,
+        score: *mut f32,
+        t_q: i32,
+        heads: i32,
+        d: i32,
+        n_pools: i32,
+        pool: i32,
+        first_pos: i32,
+        qk_scale: f32,
+        head_scale: f32,
+        precision: i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_mla_kpool_score_ref_f32(
@@ -1938,6 +1970,43 @@ impl Engine {
         head_scale: f32,
     ) -> Res<()> {
         let s = self.stream();
+        // MEMRA_DSA_SCORE_TC door: the prefill scorer on tensor cores. Refusals (4003x) are the
+        // kernel's own geometry bounds and fall through to the f32 dispatch below.
+        let tc = dsa_score_tc();
+        if tc > 0 && t_q >= 8 {
+            let mut scratch = self.alloc_uninit::<u16>(tc as usize * t_q * heads * d)?;
+            let rc = unsafe {
+                memra_mla_kpool_score_tc_f32(
+                    q.device_ptr(&s).0 as *const f32,
+                    scratch.device_ptr_mut(&s).0 as *mut u16,
+                    pool_keys.device_ptr(&s).0 as *const f32,
+                    head_weights.device_ptr(&s).0 as *const f32,
+                    score.device_ptr_mut(&s).0 as *mut f32,
+                    t_q as i32,
+                    heads as i32,
+                    d as i32,
+                    n_pools as i32,
+                    pool as i32,
+                    first_pos as i32,
+                    qk_scale,
+                    head_scale,
+                    tc,
+                    s.cu_stream() as *mut c_void,
+                )
+            };
+            if !(40030..=40039).contains(&rc) {
+                static SAID: std::sync::atomic::AtomicBool =
+                    std::sync::atomic::AtomicBool::new(false);
+                if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                    eprintln!(
+                        "[mla-dsa-score-tc] engaged kpool_score t={t_q} heads={heads} \
+                         pools={n_pools} precision={tc} class={} (MEMRA_DSA_SCORE_TC)",
+                        if tc == 2 { "bf16x2-mma" } else { "bf16-mma" }
+                    );
+                }
+                return ck("kpool_score_tc", rc);
+            }
+        }
         // MEMRA_B200_DSA_DECODE door (level >= 1): the head-blocked decode scorer. Engages only
         // at decode widths and only from MLA_DSA_SCORE_MIN_POOLS up, where the block count can
         // fill the die; below that the shipped dispatch's own measured crossover already sends
