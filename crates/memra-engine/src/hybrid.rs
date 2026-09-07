@@ -4209,6 +4209,23 @@ impl HybridModel {
         src: &dyn TensorSource,
         load_mtp: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        // MEMRA_LOAD_TRACE=1: one line per phase and per layer with the wall it took, so a slow
+        // boot is attributed from its own log (the pair's boots ran 12 minutes with ptrace
+        // blocked in the container). `il` is 0 for the phases before the layer loop.
+        let load_trace = std::env::var("MEMRA_LOAD_TRACE").as_deref() == Ok("1");
+        let load_t0 = std::time::Instant::now();
+        let mut load_prev = load_t0;
+        let mut load_mark = |what: &str, il: u32| {
+            if load_trace {
+                let now = std::time::Instant::now();
+                eprintln!(
+                    "[load-trace] blk.{il} {what} +{:.2}s (t={:.1}s)",
+                    (now - load_prev).as_secs_f64(),
+                    (now - load_t0).as_secs_f64()
+                );
+                load_prev = now;
+            }
+        };
         let cfg = src.try_config().map_err(std::io::Error::other)?;
         let plan = match memra_gguf::model_packs::for_config(&cfg) {
             Some(pack) => pack.compile_plan(&cfg)?,
@@ -4513,7 +4530,9 @@ impl HybridModel {
             }
             None
         };
+        load_mark("before-embd", 0);
         let embd = EmbedHost::from_source(src, "token_embd.weight");
+        load_mark("embd", 0);
         // M2 increment 2 (weight sharding): output_norm + lm head upload through the LAST
         // stage's engine — the stage that runs them (outside the pp door / MEMRA_PP_SHARD=0
         // this is the primary engine, byte-identical to the M1 loader).
@@ -4525,6 +4544,7 @@ impl HybridModel {
         } else {
             load_t(e_head, src, "token_embd.weight")?
         };
+        load_mark("output-head", 0);
         let mut resident = ResidentPlan::pp(e, src, &cfg, n_trunk)?;
         resident.exclude_distributed_expert_layers(
             step_parallel
@@ -4579,22 +4599,7 @@ impl HybridModel {
             None => None,
         };
         let mut layers = Vec::with_capacity(n_trunk);
-        // MEMRA_LOAD_TRACE=1: one line per layer with the wall each phase took, so a slow boot
-        // is attributed from its own log (the pair's boots ran 12 minutes with ptrace blocked).
-        let load_trace = std::env::var("MEMRA_LOAD_TRACE").as_deref() == Ok("1");
-        let load_t0 = std::time::Instant::now();
-        let mut load_prev = load_t0;
-        let mut load_mark = |what: &str, il: u32| {
-            if load_trace {
-                let now = std::time::Instant::now();
-                eprintln!(
-                    "[load-trace] blk.{il} {what} +{:.2}s (t={:.1}s)",
-                    (now - load_prev).as_secs_f64(),
-                    (now - load_t0).as_secs_f64()
-                );
-                load_prev = now;
-            }
-        };
+        load_mark("pre-loop", 0);
         for il in 0..n_trunk as u32 {
             let p = |s: &str| format!("blk.{il}.{s}");
             let layer_plan = plan
