@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <atomic>
 
 #define QT_IQ4_XS 5
 #define QT_IQ3_S  6
@@ -35,6 +36,12 @@
 #define QT_NVFP4  7
 #define QT_NVFP4_V2 107  // slot-major v2 bank permutation of QT_NVFP4 (tp.rs nvfp4_matrix_v2_permute)
 #define QT_NVFP4_MODELOPT 108  // DSV4: consecutive packed codes + separate linear E4M3/16 plane
+
+// Host-side engagement receipts for the opt-in packed-store launchers below.  These count an
+// enqueue that passed cudaGetLastError, not a speculative gate decision.  The Rust public getters
+// expose them to the caller without changing the default kernels or their shared-memory footprint.
+static std::atomic<unsigned long long> g_moe_kq_gu_h2_dispatches{0};
+static std::atomic<unsigned long long> g_moe_kq_m1_h2_dispatches{0};
 
 __device__ __forceinline__ float g_half_to_float(uint16_t h){ return __half2float(*reinterpret_cast<const __half*>(&h)); }
 __constant__ signed char g_kvalues_iq4nl[16] = {-127,-104,-83,-65,-49,-35,-22,-10,1,13,25,38,53,69,89,113};
@@ -1187,6 +1194,48 @@ __device__ __forceinline__ void kq_store(const KqRaw& r, __half* __restrict__ ds
     }
 }
 
+// ModelOpt-only packed store twin.  The LUT index is the original packed code byte, so one
+// entry contains the two adjacent E2M1 values as exact half bits.  The finite E4M3 scale is
+// representable in half, and the doubled-integer codebook values are representable exactly; the
+// half2 product therefore has the same rounded half result as the scalar float product followed
+// by __float2half.  This path is deliberately dynamic-shared only in its opt-in launchers: the
+// existing 16-entry f32 shared-LUT kernels keep their original static allocation and instruction
+// path when PackedStore=false.
+template<bool PackedStore>
+__device__ __forceinline__ void kq_stage_half2_lut(uint32_t* __restrict__ s_h2){
+    if constexpr(PackedStore){
+        const int tid = threadIdx.y * 32 + threadIdx.x;
+        for(int i = tid; i < 256; i += blockDim.x * blockDim.y){
+            const int lo = i & 0xF;
+            const int hi = i >> 4;
+            const __half hlo = __float2half((float)g_kvalues_mxfp4[lo]);
+            const __half hhi = __float2half((float)g_kvalues_mxfp4[hi]);
+            s_h2[i] = (uint32_t)__half_as_ushort(hlo)
+                    | ((uint32_t)__half_as_ushort(hhi) << 16);
+        }
+        __syncthreads();
+    }
+}
+
+template<int QT, bool PackedStore>
+__device__ __forceinline__ void kq_store_variant(const KqRaw& r, __half* __restrict__ dst,
+                                                 const uint32_t* __restrict__ s_cb,
+                                                 const uint32_t* __restrict__ s_h2){
+    if constexpr(PackedStore){
+        static_assert(QT == QT_NVFP4_MODELOPT, "packed half2 store is ModelOpt-only");
+        const __half scale = __float2half(r.f1);
+        const __half2 scale2 = __halves2half2(scale, scale);
+        #pragma unroll
+        for(int pair = 0; pair < 8; pair++){
+            const int byte = (r.q[pair >> 2] >> (8 * (pair & 3))) & 0xff;
+            const __half2 codes = *reinterpret_cast<const __half2*>(&s_h2[byte]);
+            *reinterpret_cast<__half2*>(dst + pair * 2) = __hmul2(scale2, codes);
+        }
+    } else {
+        kq_store<QT>(r, dst, s_cb);
+    }
+}
+
 template<int QT>
 static __global__ void __launch_bounds__(128)
 moe_kq_sk32v_kernel(
@@ -1462,7 +1511,7 @@ moe_kq_sk128v_kernel(
 // the duplicate invalid-row MMA work from warps 1/3 or load their unused A
 // stage. It is deliberately a separate launcher seam, not the rejected scalar
 // m=1 visitor; the valid row's accumulation and epilogue remain unchanged.
-template<int QT, bool M1 = false>
+template<int QT, bool M1 = false, bool PackedStore = false>
 static __global__ void __launch_bounds__(128)
 moe_kq_sktail_kernel(
         const unsigned long long* __restrict__ table, int proj, int n_expert,
@@ -1475,8 +1524,10 @@ moe_kq_sktail_kernel(
     __shared__ __align__(16) __half As[SKT_STAGES][SK_BM][SKT_STRIDE];
     __shared__ __align__(16) __half Bs[SK_BN][SKT_STRIDE];   // single buffer
     __shared__ uint32_t s_cb[KQ_CB_WORDS(QT)];
+    extern __shared__ uint32_t packed_h2[];
     const int ntx = (out_f + SK_BN - 1) / SK_BN;
     kq_stage_codebook<QT>(s_cb);
+    kq_stage_half2_lut<PackedStore>(packed_h2);
     sk_tile_prefix(s_pre, ex_off, n_active, ntx, SK_BM, mlo, mhi);
     if (total_tiles < 0) total_tiles = s_pre[n_active];
 
@@ -1530,8 +1581,8 @@ moe_kq_sktail_kernel(
             // B tile for THIS kb from the pre-fetched registers (previous kb's trailing
             // __syncthreads fences the overwrite), then issue kb+1's raw fetches so those
             // global reads fly behind this kb's mma.
-            kq_store<QT>(braw0, &Bs[brow][bc0], s_cb);
-            kq_store<QT>(braw1, &Bs[brow][bc0 + 16], s_cb);
+            kq_store_variant<QT, PackedStore>(braw0, &Bs[brow][bc0], s_cb, packed_h2);
+            kq_store_variant<QT, PackedStore>(braw1, &Bs[brow][bc0 + 16], s_cb, packed_h2);
             if(kb + 1 < nkb){
                 braw0 = kq_fetch<QT>(wrow, scrow, (kb + 1) * SKT_BK + bc0, s_cb, in_f);
                 braw1 = kq_fetch<QT>(wrow, scrow, (kb + 1) * SKT_BK + bc0 + 16, s_cb, in_f);
@@ -1592,7 +1643,7 @@ __device__ __forceinline__ float kq_gu_sigmoid(float x){
     return 1.0f / (1.0f + expf(-x));
 }
 
-template<int QT, bool M1 = false>
+template<int QT, bool M1 = false, bool PackedStore = false>
 static __global__ void __launch_bounds__(128)
 moe_kq_sktail_gu_kernel(
         const unsigned long long* __restrict__ table, int n_expert,
@@ -1608,8 +1659,10 @@ moe_kq_sktail_gu_kernel(
     __shared__ __align__(16) __half As[SKT_STAGES][SK_BM][SKT_STRIDE];
     __shared__ __align__(16) __half Bs[SK_BN][SKT_STRIDE];
     __shared__ uint32_t s_cb[KQ_CB_WORDS(QT)];
+    extern __shared__ uint32_t packed_h2[];
     const int ntx = (out_f + SK_BN - 1) / SK_BN;
     kq_stage_codebook<QT>(s_cb);
+    kq_stage_half2_lut<PackedStore>(packed_h2);
     // m_e=1 only.  Empty and larger groups are left for the rollback visitor.
     sk_tile_prefix(s_pre, ex_off, n_active, ntx, SK_BM, 1, 2);
     if(total_tiles < 0) total_tiles = s_pre[n_active];
@@ -1667,8 +1720,8 @@ moe_kq_sktail_gu_kernel(
 
             // Gate B tile and its next fetch.  The A tile is shared by both
             // projections; this is the only new fusion relative to the tail.
-            kq_store<QT>(gb0, &Bs[brow][bc0], s_cb);
-            kq_store<QT>(gb1, &Bs[brow][bc0 + 16], s_cb);
+            kq_store_variant<QT, PackedStore>(gb0, &Bs[brow][bc0], s_cb, packed_h2);
+            kq_store_variant<QT, PackedStore>(gb1, &Bs[brow][bc0 + 16], s_cb, packed_h2);
             if(kb + 1 < nkb){
                 gb0 = kq_fetch<QT>(gwrow, gsrow, (kb + 1) * SKT_BK + bc0, s_cb, in_f);
                 gb1 = kq_fetch<QT>(gwrow, gsrow, (kb + 1) * SKT_BK + bc0 + 16, s_cb, in_f);
@@ -1693,8 +1746,8 @@ moe_kq_sktail_gu_kernel(
             __syncthreads();
 
             // Up uses the same B tile and A tile after gate has consumed it.
-            kq_store<QT>(ub0, &Bs[brow][bc0], s_cb);
-            kq_store<QT>(ub1, &Bs[brow][bc0 + 16], s_cb);
+            kq_store_variant<QT, PackedStore>(ub0, &Bs[brow][bc0], s_cb, packed_h2);
+            kq_store_variant<QT, PackedStore>(ub1, &Bs[brow][bc0 + 16], s_cb, packed_h2);
             if(kb + 1 < nkb){
                 ub0 = kq_fetch<QT>(uwrow, usrow, (kb + 1) * SKT_BK + bc0, s_cb, in_f);
                 ub1 = kq_fetch<QT>(uwrow, usrow, (kb + 1) * SKT_BK + bc0 + 16, s_cb, in_f);
@@ -2196,6 +2249,79 @@ int memra_moe_kq_gemm_sk_gu_m1(
         macro_g, macro_u, route_w, ex_off_dev, n_active, in_f, out_f, -1, limit);
     cudaError_t e = cudaGetLastError();
     return e ? 1000 + (int)e : 0;
+}
+
+// Packed ModelOpt store twin for the fused gate/up visitor.  The default GU launcher above keeps
+// the original 16-entry f32 shared LUT and zero dynamic shared bytes; this launcher opts into only
+// the 256-entry half2 table needed by kq_store_variant<PackedStore=true>.
+int memra_moe_kq_gemm_sk_gu_half2(
+        const unsigned long long* table, int n_expert, const int* ex_ids,
+        const void* act_f16, float* h, const float* row_scale,
+        const float* macro_g, const float* macro_u, const float* route_w,
+        const int* ex_off_dev, int n_active, int in_f, int out_f,
+        float limit, long row_bytes, void* stream){
+    if(!table || !ex_ids || !act_f16 || !h || !row_scale || !macro_g || !macro_u
+       || !route_w || !ex_off_dev || n_expert <= 0 || n_active <= 0
+       || n_active > SK_MAX_G || in_f <= 0 || out_f <= 0 || in_f % SKT_BK
+       || out_f % SK_BN || row_bytes != in_f / 2)
+        return 40004;
+    int dev = 0, sms = 1, occ = 1;
+    cudaGetDevice(&dev);
+    if(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, dev) != cudaSuccess
+       || sms < 1) sms = 1;
+    constexpr size_t H2_SMEM_BYTES = 256 * sizeof(uint32_t);
+    if(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+           &occ, moe_kq_sktail_gu_kernel<QT_NVFP4_MODELOPT, false, true>, 128,
+           H2_SMEM_BYTES) != cudaSuccess || occ < 1) occ = 1;
+    const int grid = sms * occ;
+    cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
+    moe_kq_sktail_gu_kernel<QT_NVFP4_MODELOPT, false, true>
+        <<<grid, dim3(32,4,1), H2_SMEM_BYTES, st>>>(
+            table, n_expert, ex_ids, row_bytes, (const __half*)act_f16, h, row_scale,
+            macro_g, macro_u, route_w, ex_off_dev, n_active, in_f, out_f, -1, limit);
+    cudaError_t e = cudaGetLastError();
+    if(!e) g_moe_kq_gu_h2_dispatches.fetch_add(1, std::memory_order_relaxed);
+    return e ? 1000 + (int)e : 0;
+}
+
+// Packed ModelOpt store twin for the tensor-core m_e=1 down-tail candidate.  It is intentionally
+// separate from memra_moe_kq_gemm_sk_m1 so the latter's static shared allocation and scalar
+// dequant path remain untouched while the gate can compare both complete chains.
+int memra_moe_kq_gemm_sk_m1_half2(
+        const unsigned long long* table, int n_expert, const int* ex_ids,
+        const void* act_f16, float* y, const float* row_scale,
+        const int* ex_off_dev, int n_active, int in_f, int out_f,
+        long row_bytes, void* stream){
+    if(!table || !ex_ids || !act_f16 || !y || !row_scale || !ex_off_dev
+       || n_expert <= 0 || n_active <= 0 || n_active > SK_MAX_G
+       || in_f <= 0 || out_f <= 0 || in_f % SKT_BK || out_f % SK_BN
+       || row_bytes != in_f / 2)
+        return 40004;
+    int dev = 0, sms = 1, occ = 1;
+    cudaGetDevice(&dev);
+    if(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, dev) != cudaSuccess
+       || sms < 1) sms = 1;
+    constexpr size_t H2_SMEM_BYTES = 256 * sizeof(uint32_t);
+    if(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+           &occ, moe_kq_sktail_kernel<QT_NVFP4_MODELOPT, true, true>, 128,
+           H2_SMEM_BYTES) != cudaSuccess || occ < 1) occ = 1;
+    const int grid = sms * occ;
+    cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
+    moe_kq_sktail_kernel<QT_NVFP4_MODELOPT, true, true>
+        <<<grid, dim3(32,4,1), H2_SMEM_BYTES, st>>>(
+            table, 1, n_expert, ex_ids, row_bytes, (const __half*)act_f16, y,
+            row_scale, ex_off_dev, n_active, in_f, out_f, 1, 2, -1);
+    cudaError_t e = cudaGetLastError();
+    if(!e) g_moe_kq_m1_h2_dispatches.fetch_add(1, std::memory_order_relaxed);
+    return e ? 1000 + (int)e : 0;
+}
+
+unsigned long long memra_moe_kq_gemm_sk_gu_half2_dispatches(){
+    return g_moe_kq_gu_h2_dispatches.load(std::memory_order_relaxed);
+}
+
+unsigned long long memra_moe_kq_gemm_sk_m1_half2_dispatches(){
+    return g_moe_kq_m1_h2_dispatches.load(std::memory_order_relaxed);
 }
 
 int memra_moe_f16g_gather_act(const float* x, const int* pair_tok_or_null, void* act_f16,

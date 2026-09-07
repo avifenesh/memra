@@ -331,11 +331,15 @@ full-bank launcher. Full-model and serving/performance gates are pending.
 recorded operations once, with event tracking disabled before allocation.
 Window-only layers, the head and the embedding prefix have separate probe
 APIs. Normal decode initializes all those probes disabled. Whole-layer EP
-capture remains refused. The newer stateless-prefix probe instead captures
-only HC pre plus Q/KV projections, normalization, RoPE and QAT, ending before
-the transient cache write. It keeps one graph per trunk layer and permits EP
-and C4 outside the fragment; capture/replay counters are checked by
-`dsv4_plain_perf_gate`. No graph serving default is enabled.
+capture remains refused. The stateless HC/Q/KV prefix performance candidate was
+removed after its 2026-09-07 exact 84-row comparison measured a regression
+(`research/dsv4f-2card-1m-20260904/plain-fronts-20260907.md`). Its replacement is a
+gate-only, rank-local grouped expert island: device routing, input mirror,
+GU/SwiGLU, intermediate FP8 quantization and down/scale/scatter. P2P events,
+copies and merge remain eager. Each workspace owns a map keyed by the real
+layer ID; the plain gate requires 86 retained entries, zero stale fallbacks,
+and replay/host-prepare counters, not just a graph-enabled setting. Target
+correctness and performance are pending. No graph serving default is enabled.
 
 Corrected DSV4 grouped-prefill experiment:
 
@@ -405,6 +409,7 @@ Full execution contract and candidate pins:
 | `moe_kq_sktail_gu_kernel<QT_NVFP4_MODELOPT>` | DSV4 matrix plain-decode `m_e=1` gate/up pair: one shared FP8-QAT-mirrored f16 A tile, two unchanged ModelOpt NVFP4 f32-MMA accumulators, then exact macro/clamp/SiLU/route-weight epilogue into the intermediate H row. Down, FP8 intermediate quantization, macro2 and original-slot scatter remain common. | `MEMRA_F16G_GU_FUSE=1`, default OFF; ModelOpt qtype 108, one-row transaction, deep tail only | `memra_moe_kq_gemm_sk_gu`; component gate must compare H/FP8 codes/full routed output bitwise against the shipped two-projection path. No target timing receipt yet. |
 | `moe_kq_sktail_kernel<QT_NVFP4_MODELOPT,true>` | DSV4 gate-only m_e=1 tensor-core down candidate: same B tile and valid-row m16n8k16 chain as the shipped deep tail, with invalid-row warps and duplicate A-stage loads elided. Existing FP8 mirror, macro2 and scatter remain the comparison path; this is not the removed scalar visitor. | `MEMRA_F16G_M1_TC=1` or gate setter, default OFF; one-row/deep-tail candidate only | `memra_moe_kq_gemm_sk_m1`; full-model identity/sanitizer/rate gates required before dispatch. |
 | `moe_kq_sktail_gu_kernel<QT_NVFP4_MODELOPT,true>` | Gate-only GU m_e=1 specialization: skips the duplicate A row tile and invalid-row MMA warps while retaining valid-row gate/up accumulation and the fused epilogue. Both EP workspaces use the shared dispatch. | `set_moe_f16g_gu_m1_tc_for_gate`, default OFF; no environment or serving flag | `memra_moe_kq_gemm_sk_gu_m1`; actual launch counter plus `cuda_gu_m1_matches_gu_reference` and plain ABBA gate. |
+| `moe_kq_sktail_gu_kernel<QT_NVFP4_MODELOPT,false,true>` and `moe_kq_sktail_kernel<QT_NVFP4_MODELOPT,true,true>` | Gate-only packed ModelOpt dequant stores: a 256-entry half2 LUT and paired multiply/store replace scalar nibble conversion, retaining MMA order. Only these launchers allocate the extra 1024 shared bytes. Exhaustive finite-scale/code-pair identity and signed-zero checks passed on both target GPUs; full-chain and model results are pending. | Process-local GU/down half2 setters, default OFF, no serving or environment flag | `memra_moe_kq_gemm_sk_gu_half2` / `memra_moe_kq_gemm_sk_m1_half2`; successful-enqueue counters are host counters and advance on capture, not CUDA graph replay. `cuda_half2_chain_identity` and `dsv4_plain_perf_gate half2` gate actual arithmetic and dispatch. |
 
 DSV4 prefill work-elision dispatch (no new CUDA arithmetic):
 

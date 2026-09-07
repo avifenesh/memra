@@ -320,6 +320,54 @@ pub fn moe_f16g_gu_m1_tc_dispatches() -> u64 {
     MOE_F16G_GU_M1_TC_DISPATCHES.load(Ordering::Relaxed)
 }
 
+/// DSV4 ModelOpt packed-half2 `kq_store` gate for the fused gate/up visitor.  This is a
+/// process-local, default-off test seam only; it has no environment arm and therefore cannot
+/// silently alter serving policy.  The grouped caller chooses the matching FFI launcher when
+/// this gate is enabled.
+static MOE_F16G_GU_HALF2_OVERRIDE: AtomicI8 = AtomicI8::new(0);
+
+pub fn moe_f16g_gu_half2_on() -> bool {
+    MOE_F16G_GU_HALF2_OVERRIDE.load(Ordering::Acquire) != 0
+}
+
+pub fn set_moe_f16g_gu_half2_for_gate(enabled: bool) -> bool {
+    let previous = moe_f16g_gu_half2_on();
+    MOE_F16G_GU_HALF2_OVERRIDE.store(enabled as i8, Ordering::Release);
+    previous
+}
+
+pub fn clear_moe_f16g_gu_half2_for_gate() {
+    MOE_F16G_GU_HALF2_OVERRIDE.store(0, Ordering::Release);
+}
+
+/// DSV4 ModelOpt packed-half2 `kq_store` gate for the tensor-core m_e=1 down tail.  Kept
+/// independent from GU so an identity/perf cell can isolate the two store schedules.
+static MOE_F16G_DOWN_M1_HALF2_OVERRIDE: AtomicI8 = AtomicI8::new(0);
+
+pub fn moe_f16g_down_m1_half2_on() -> bool {
+    MOE_F16G_DOWN_M1_HALF2_OVERRIDE.load(Ordering::Acquire) != 0
+}
+
+pub fn set_moe_f16g_down_m1_half2_for_gate(enabled: bool) -> bool {
+    let previous = moe_f16g_down_m1_half2_on();
+    MOE_F16G_DOWN_M1_HALF2_OVERRIDE.store(enabled as i8, Ordering::Release);
+    previous
+}
+
+pub fn clear_moe_f16g_down_m1_half2_for_gate() {
+    MOE_F16G_DOWN_M1_HALF2_OVERRIDE.store(0, Ordering::Release);
+}
+
+/// Snapshot of the CUDA-side successful enqueue receipt for the packed GU launcher.
+pub fn moe_f16g_gu_half2_dispatches() -> u64 {
+    unsafe { mmq_ffi::memra_moe_kq_gemm_sk_gu_half2_dispatches() }
+}
+
+/// Snapshot of the CUDA-side successful enqueue receipt for the packed m_e=1 down launcher.
+pub fn moe_f16g_down_m1_half2_dispatches() -> u64 {
+    unsafe { mmq_ffi::memra_moe_kq_gemm_sk_m1_half2_dispatches() }
+}
+
 /// Per-model door for the gemma-MoE (gelu) grouped path: round 49's Hopper default
 /// REGRESSED g26 board-2048 prefill -8.3% interleaved x5 on-box (def median 10380,
 /// wild 8.9k-11.7k spread; off 11317, ±0.13%) — the +6-15% probe verdict didn't

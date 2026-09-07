@@ -1708,6 +1708,98 @@ impl Dsv4Gpu {
         crate::dsv4_grouped::mirror_validation_enabled()
     }
 
+    /// Gate-only per-rank matrix expert-island graph control. Route and mirror
+    /// validation must already be OFF because their host readbacks/syncs are
+    /// outside the captured island; P2P copies/events and merge remain eager.
+    pub fn set_grouped_graph_for_gate(&self, enabled: bool) -> Res<bool> {
+        if enabled
+            && (crate::dsv4_grouped::route_validation_enabled()
+                || crate::dsv4_grouped::mirror_validation_enabled())
+        {
+            return Err(
+                "grouped expert graph requires route and mirror validation disabled".into(),
+            );
+        }
+        for stage in &self.stages {
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .map_err(e("drain grouped expert graph gate"))?;
+        }
+        Ok(crate::dsv4_graph::set_grouped_graph_gate(enabled))
+    }
+
+    /// (captures, replays, stale-key fallbacks) for rank-local grouped expert
+    /// graphs in this process. Gate harnesses use this to prove the replay
+    /// path actually bypassed the host prepare/gate/up/down functions.
+    pub fn grouped_graph_counts_for_gate(&self) -> (u64, u64, u64) {
+        crate::dsv4_graph::grouped_graph_counters()
+    }
+
+    pub fn grouped_graph_eager_prepare_count_for_gate(&self) -> u64 {
+        crate::dsv4_graph::grouped_graph_eager_prepare_count()
+    }
+
+    /// Retained rank-local graph counts grouped by verifier workspace, plus
+    /// the total. With EP this counts local + peer graph maps per workspace;
+    /// a 43-layer, two-rank capture must therefore report 86 retained graphs,
+    /// not one reusable slot recaptured on every layer.
+    pub fn grouped_graph_retained_for_gate(&self, state: &DecodeState) -> Res<(Vec<usize>, usize)> {
+        let step = state
+            .matrix_step
+            .as_ref()
+            .ok_or("grouped graph retention requires matrix decode state")?;
+        let mut per_workspace = Vec::with_capacity(step.verify.ws.len());
+        for workspace in &step.verify.ws {
+            let local = workspace
+                .grouped_work
+                .as_ref()
+                .map_or(0, crate::dsv4_grouped::GroupedWork::graph_count);
+            let peer = workspace
+                .ep
+                .as_ref()
+                .map_or(0, crate::dsv4_ep::EpScratch::grouped_graph_count);
+            per_workspace.push(local + peer);
+        }
+        let total = per_workspace.iter().sum();
+        Ok((per_workspace, total))
+    }
+
+    /// Captured graph node counts as `(workspace, layer, nodes, kernels)`.
+    /// The list is intentionally per rank-local graph entry so a gate can
+    /// prove all 86 EP entries are retained, not merely replayed through one
+    /// mutable slot.
+    pub fn grouped_graph_nodes_for_gate(
+        &self,
+        state: &DecodeState,
+    ) -> Res<Vec<(usize, usize, usize, usize)>> {
+        let step = state
+            .matrix_step
+            .as_ref()
+            .ok_or("grouped graph node census requires matrix decode state")?;
+        let mut out = Vec::new();
+        for (workspace, verify_ws) in step.verify.ws.iter().enumerate() {
+            if let Some(local) = &verify_ws.grouped_work {
+                out.extend(
+                    local
+                        .graph_node_counts()
+                        .into_iter()
+                        .map(|(layer, nodes, kernels)| (workspace, layer, nodes, kernels)),
+                );
+            }
+            out.extend(
+                verify_ws
+                    .ep
+                    .as_ref()
+                    .into_iter()
+                    .flat_map(|ep| ep.grouped_graph_node_counts())
+                    .map(|(layer, nodes, kernels)| (workspace, layer, nodes, kernels)),
+            );
+        }
+        Ok(out)
+    }
+
     /// Gate-only control for DSV4 matrix gate/up + SwiGLU fusion.  Drain every
     /// stage before changing the process-local override so no in-flight grouped
     /// call observes a policy transition.  This is deliberately not exposed as
@@ -10689,13 +10781,6 @@ pub struct VerifyState {
     capture_stage0_embed_probe_next_round: bool,
     replay_stage0_embed_next_round: bool,
     stage0_embed_capture: Option<Dsv4LayerCapture>,
-    /// Per-layer stateless prefix graphs. These intentionally coexist with
-    /// EP/C4 because the fragment ends before any cache/router side effect.
-    capture_stateless_prefix_next_round: bool,
-    replay_stateless_prefix_next_round: bool,
-    stateless_prefix_captures: Vec<Option<Dsv4LayerCapture>>,
-    stateless_prefix_capture_count: u64,
-    stateless_prefix_replay_count: u64,
     /// Diagnostic captures only, not persistent replay executables.
     pub layer_captures: Vec<Dsv4LayerCapture>,
     ws: Vec<VerifyWs>,
@@ -11022,68 +11107,6 @@ impl Dsv4Gpu {
         Ok(())
     }
 
-    /// Arm per-layer stateless attention-prefix graphs for a plain t=1 matrix
-    /// decode. The fragment ends after Q/KV norm, RoPE and QAT, before the
-    /// transient write, compressor/indexer, C4 gather, routing, PP boundary or
-    /// commit. EP and active C4 are therefore allowed here; their stateful
-    /// consumers remain eager.
-    pub fn arm_stateless_prefix_graph_probe(&self, verify: &mut VerifyState) -> Res<()> {
-        if !self.matrix_moe {
-            return Err("stateless prefix graph probe requires matrix decode".into());
-        }
-        if self.stages.iter().any(|st| st.gpu.ctx.is_event_tracking()) {
-            return Err(
-                "stateless prefix graph probe requires event tracking disabled before allocation"
-                    .into(),
-            );
-        }
-        if verify.open.is_some() || verify.ws.iter().any(|w| w.is_prefill) {
-            return Err("stateless prefix graph probe requires a closed decode verifier".into());
-        }
-        if verify.tmax != 1
-            || self.verify_topk != Dsv4VerifyTopk::Device
-            || !self.dense_fp8
-            || !matches!(self.decode_path, DecodePath::Device { host_math: false })
-            || self.expert_arm != ExpertArm::Native
-        {
-            return Err(
-                "stateless prefix graph probe requires t=1 native device top-k/FP8 decode".into(),
-            );
-        }
-        if verify.capture_probe_next_round
-            || verify.replay_layer_next_round
-            || verify.capture_head_probe_next_round
-            || verify.replay_head_next_round
-            || verify.capture_stage0_embed_probe_next_round
-            || verify.replay_stage0_embed_next_round
-        {
-            return Err("stateless prefix graph probe cannot nest another graph probe".into());
-        }
-        verify
-            .stateless_prefix_captures
-            .iter_mut()
-            .for_each(|capture| *capture = None);
-        verify.stateless_prefix_capture_count = 0;
-        verify.stateless_prefix_replay_count = 0;
-        verify.capture_stateless_prefix_next_round = true;
-        verify.replay_stateless_prefix_next_round = false;
-        Ok(())
-    }
-
-    /// Arm replay after the first plain round captured every trunk prefix.
-    pub fn replay_stateless_prefix_graph_probe(&self, verify: &mut VerifyState) -> Res<()> {
-        if verify
-            .stateless_prefix_captures
-            .iter()
-            .any(|capture| capture.is_none())
-        {
-            return Err("stateless prefix replay needs every trunk prefix captured".into());
-        }
-        verify.capture_stateless_prefix_next_round = false;
-        verify.replay_stateless_prefix_next_round = true;
-        Ok(())
-    }
-
     /// Matrix decode convenience wrapper for the gate binary.  The one-row
     /// matrix executor owns its `VerifyState` inside `DecodeState`, so a gate
     /// cannot safely reach the retained graph through the standalone verifier
@@ -11171,27 +11194,6 @@ impl Dsv4Gpu {
         self.replay_stage0_embed_graph_probe(&mut step.verify)
     }
 
-    /// Arm the per-layer stateless prefix graph probe on a matrix state.
-    pub fn arm_stateless_prefix_graph_probe_for_state(&self, state: &mut DecodeState) -> Res<()> {
-        let step = state
-            .matrix_step
-            .as_mut()
-            .ok_or("stateless prefix graph probe requires matrix decode state")?;
-        self.arm_stateless_prefix_graph_probe(&mut step.verify)
-    }
-
-    /// Arm replay of all retained stateless prefix graphs on a matrix state.
-    pub fn replay_stateless_prefix_graph_probe_for_state(
-        &self,
-        state: &mut DecodeState,
-    ) -> Res<()> {
-        let step = state
-            .matrix_step
-            .as_mut()
-            .ok_or("stateless prefix graph replay requires matrix decode state")?;
-        self.replay_stateless_prefix_graph_probe(&mut step.verify)
-    }
-
     /// Return the immutable census of the graph captured in a matrix decode
     /// state.  This intentionally omits the executable handle and is therefore
     /// safe for a diagnostic gate to serialize.
@@ -11253,39 +11255,6 @@ impl Dsv4Gpu {
             nodes: capture.nodes.clone(),
             kernels: capture.kernels.clone(),
         })
-    }
-
-    /// Return the per-layer stateless prefix graph census and capture/replay
-    /// counters for the gate's exactness/speed receipt.
-    pub fn stateless_prefix_graph_probe_census_for_state(
-        &self,
-        state: &DecodeState,
-    ) -> Res<(Vec<Dsv4GraphProbeCensus>, u64, u64)> {
-        let step = state
-            .matrix_step
-            .as_ref()
-            .ok_or("stateless prefix census requires matrix decode state")?;
-        let census = step
-            .verify
-            .stateless_prefix_captures
-            .iter()
-            .enumerate()
-            .map(|(layer, capture)| {
-                let capture = capture
-                    .as_ref()
-                    .ok_or_else(|| format!("missing stateless prefix capture for layer {layer}"))?;
-                Ok(Dsv4GraphProbeCensus {
-                    layer,
-                    nodes: capture.nodes.clone(),
-                    kernels: capture.kernels.clone(),
-                })
-            })
-            .collect::<Res<Vec<_>>>()?;
-        Ok((
-            census,
-            step.verify.stateless_prefix_capture_count,
-            step.verify.stateless_prefix_replay_count,
-        ))
     }
 
     /// Gate-only component probe for the fine indexer's redirect metadata.
@@ -11829,11 +11798,6 @@ impl Dsv4Gpu {
             capture_stage0_embed_probe_next_round: false,
             replay_stage0_embed_next_round: false,
             stage0_embed_capture: None,
-            capture_stateless_prefix_next_round: false,
-            replay_stateless_prefix_next_round: false,
-            stateless_prefix_captures: (0..n_trunk).map(|_| None).collect(),
-            stateless_prefix_capture_count: 0,
-            stateless_prefix_replay_count: 0,
             layer_captures: Vec::new(),
             ws,
             layers,
@@ -12354,13 +12318,6 @@ impl Dsv4Gpu {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum BlockPhase {
-    All,
-    Prefix,
-    Tail,
-}
-
 impl Dsv4Gpu {
     /// One trunk block, BATCHED T-position verify (§3.1). Positions pos0..pos0+t-1,
     /// tokens `toks`. Input h is vws.h_a (or vws.h_rx right after a stage boundary);
@@ -12381,7 +12338,6 @@ impl Dsv4Gpu {
         toks: &[u32],
         host_math: bool,
         allow_gu_fuse: bool,
-        phase: BlockPhase,
     ) -> Res<()> {
         let d = self.model.cfg();
         let mc = &self.model.mc;
@@ -12422,165 +12378,160 @@ impl Dsv4Gpu {
         } else {
             vws.h_a.device_ptr(&stream).0 as *const f32
         };
-        if phase != BlockPhase::Tail {
-            // ---- attention sub-block
-            self.hc_pre_batch_dev(
-                st,
-                h_in_ptr,
-                &layer.hc_attn_fn,
-                &layer.hc_attn_base,
-                &layer.hc_attn_scale,
-                &layer.hc_attn_base_dev,
-                &layer.hc_attn_scale_dev,
-                vws,
-                t,
-                hc,
-                hidden,
-                iters,
-                hc_eps,
-                host_math,
+        // ---- attention sub-block
+        self.hc_pre_batch_dev(
+            st,
+            h_in_ptr,
+            &layer.hc_attn_fn,
+            &layer.hc_attn_base,
+            &layer.hc_attn_scale,
+            &layer.hc_attn_base_dev,
+            &layer.hc_attn_scale_dev,
+            vws,
+            t,
+            hc,
+            hidden,
+            iters,
+            hc_eps,
+            host_math,
+        )?;
+        unsafe {
+            ck(
+                "rmsnorm attn batch",
+                self.rmsnorm_arm(
+                    dpf!(vws.y_hc, &stream),
+                    dpf!(layer.attn_norm, &stream),
+                    dpm!(vws.x, &stream),
+                    t as i32,
+                    hidden as i32,
+                    eps,
+                    sp(&stream),
+                ),
             )?;
-            unsafe {
-                ck(
-                    "rmsnorm attn batch",
-                    self.rmsnorm_arm(
-                        dpf!(vws.y_hc, &stream),
-                        dpf!(layer.attn_norm, &stream),
-                        dpm!(vws.x, &stream),
-                        t as i32,
-                        hidden as i32,
-                        eps,
-                        sp(&stream),
-                    ),
-                )?;
-            }
-
-            // q path (weights read once for all t rows)
-            Self::gemm_m_dev(
-                st,
-                vws.x.device_ptr(&stream).0 as *const f32,
-                &mut vws.gemm_xb,
-                dwsel(self.dense_fp8, &stream, &layer.wq_a, &layer.wq_a_fp8),
-                t,
-                q_lora,
-                hidden,
-                vws.qr.device_ptr_mut(&stream).0 as *mut f32,
-            )?;
-            unsafe {
-                ck(
-                    "rmsnorm q batch",
-                    self.rmsnorm_arm(
-                        dpf!(vws.qr, &stream),
-                        dpf!(layer.q_norm, &stream),
-                        dpm!(vws.qr, &stream),
-                        t as i32,
-                        q_lora as i32,
-                        eps,
-                        sp(&stream),
-                    ),
-                )?;
-                ck(
-                    "cvt qr batch",
-                    k::memra_dsv4_cvt_bf16(
-                        dpf!(vws.qr, &stream),
-                        vws.qr_b.device_ptr_mut(&stream).0 as *mut c_void,
-                        (t * q_lora) as i64,
-                        sp(&stream),
-                    ),
-                )?;
-            }
-            Self::gemv_m_dev(
-                st,
-                dwsel(self.dense_fp8, &stream, &layer.wq_b, &layer.wq_b_fp8),
-                vws.qr_b.device_ptr(&stream).0 as *const c_void,
-                vws.q.device_ptr_mut(&stream).0 as *mut f32,
-                t,
-                heads * hd,
-                q_lora,
-                0,
-                0,
-            )?;
-            unsafe {
-                ck(
-                    "headrms batch",
-                    self.headrms_arm(
-                        dpm!(vws.q, &stream),
-                        (t * heads) as i32,
-                        hd as i32,
-                        eps,
-                        sp(&stream),
-                    ),
-                )?;
-                ck(
-                    "rope q batch",
-                    k::memra_dsv4_rope(
-                        dpm!(vws.q, &stream),
-                        t as i32,
-                        heads as i32,
-                        hd as i32,
-                        rd as i32,
-                        fc_dev,
-                        vws.pos_dev.device_ptr(&stream).0 as *const i32,
-                        0,
-                        sp(&stream),
-                    ),
-                )?;
-            }
-
-            // shared K==V latent rows + window QAT, then the TRANSIENT ring write
-            Self::gemm_m_dev(
-                st,
-                vws.x.device_ptr(&stream).0 as *const f32,
-                &mut vws.gemm_xb,
-                dwsel(self.dense_fp8, &stream, &layer.wkv, &layer.wkv_fp8),
-                t,
-                hd,
-                hidden,
-                vws.kv.device_ptr_mut(&stream).0 as *mut f32,
-            )?;
-            unsafe {
-                ck(
-                    "rmsnorm kv batch",
-                    self.rmsnorm_arm(
-                        dpf!(vws.kv, &stream),
-                        dpf!(layer.kv_norm, &stream),
-                        dpm!(vws.kv, &stream),
-                        t as i32,
-                        hd as i32,
-                        eps,
-                        sp(&stream),
-                    ),
-                )?;
-                ck(
-                    "rope kv batch",
-                    k::memra_dsv4_rope(
-                        dpm!(vws.kv, &stream),
-                        t as i32,
-                        1,
-                        hd as i32,
-                        rd as i32,
-                        fc_dev,
-                        vws.pos_dev.device_ptr(&stream).0 as *const i32,
-                        0,
-                        sp(&stream),
-                    ),
-                )?;
-                ck(
-                    "act_quant kv batch",
-                    k::memra_dsv4_act_quant(
-                        dpm!(vws.kv, &stream),
-                        t as i32,
-                        hd as i64,
-                        (hd - rd) as i32,
-                        64,
-                        clamp_only,
-                        sp(&stream),
-                    ),
-                )?;
-            }
         }
-        if phase == BlockPhase::Prefix {
-            return Ok(());
+
+        // q path (weights read once for all t rows)
+        Self::gemm_m_dev(
+            st,
+            vws.x.device_ptr(&stream).0 as *const f32,
+            &mut vws.gemm_xb,
+            dwsel(self.dense_fp8, &stream, &layer.wq_a, &layer.wq_a_fp8),
+            t,
+            q_lora,
+            hidden,
+            vws.qr.device_ptr_mut(&stream).0 as *mut f32,
+        )?;
+        unsafe {
+            ck(
+                "rmsnorm q batch",
+                self.rmsnorm_arm(
+                    dpf!(vws.qr, &stream),
+                    dpf!(layer.q_norm, &stream),
+                    dpm!(vws.qr, &stream),
+                    t as i32,
+                    q_lora as i32,
+                    eps,
+                    sp(&stream),
+                ),
+            )?;
+            ck(
+                "cvt qr batch",
+                k::memra_dsv4_cvt_bf16(
+                    dpf!(vws.qr, &stream),
+                    vws.qr_b.device_ptr_mut(&stream).0 as *mut c_void,
+                    (t * q_lora) as i64,
+                    sp(&stream),
+                ),
+            )?;
+        }
+        Self::gemv_m_dev(
+            st,
+            dwsel(self.dense_fp8, &stream, &layer.wq_b, &layer.wq_b_fp8),
+            vws.qr_b.device_ptr(&stream).0 as *const c_void,
+            vws.q.device_ptr_mut(&stream).0 as *mut f32,
+            t,
+            heads * hd,
+            q_lora,
+            0,
+            0,
+        )?;
+        unsafe {
+            ck(
+                "headrms batch",
+                self.headrms_arm(
+                    dpm!(vws.q, &stream),
+                    (t * heads) as i32,
+                    hd as i32,
+                    eps,
+                    sp(&stream),
+                ),
+            )?;
+            ck(
+                "rope q batch",
+                k::memra_dsv4_rope(
+                    dpm!(vws.q, &stream),
+                    t as i32,
+                    heads as i32,
+                    hd as i32,
+                    rd as i32,
+                    fc_dev,
+                    vws.pos_dev.device_ptr(&stream).0 as *const i32,
+                    0,
+                    sp(&stream),
+                ),
+            )?;
+        }
+
+        // shared K==V latent rows + window QAT, then the TRANSIENT ring write
+        Self::gemm_m_dev(
+            st,
+            vws.x.device_ptr(&stream).0 as *const f32,
+            &mut vws.gemm_xb,
+            dwsel(self.dense_fp8, &stream, &layer.wkv, &layer.wkv_fp8),
+            t,
+            hd,
+            hidden,
+            vws.kv.device_ptr_mut(&stream).0 as *mut f32,
+        )?;
+        unsafe {
+            ck(
+                "rmsnorm kv batch",
+                self.rmsnorm_arm(
+                    dpf!(vws.kv, &stream),
+                    dpf!(layer.kv_norm, &stream),
+                    dpm!(vws.kv, &stream),
+                    t as i32,
+                    hd as i32,
+                    eps,
+                    sp(&stream),
+                ),
+            )?;
+            ck(
+                "rope kv batch",
+                k::memra_dsv4_rope(
+                    dpm!(vws.kv, &stream),
+                    t as i32,
+                    1,
+                    hd as i32,
+                    rd as i32,
+                    fc_dev,
+                    vws.pos_dev.device_ptr(&stream).0 as *const i32,
+                    0,
+                    sp(&stream),
+                ),
+            )?;
+            ck(
+                "act_quant kv batch",
+                k::memra_dsv4_act_quant(
+                    dpm!(vws.kv, &stream),
+                    t as i32,
+                    hd as i64,
+                    (hd - rd) as i32,
+                    64,
+                    clamp_only,
+                    sp(&stream),
+                ),
+            )?;
         }
         {
             let src = vws.kv.slice(0..t * hd);
@@ -13299,6 +13250,7 @@ impl Dsv4Gpu {
         } else {
             None
         };
+        let fresh_storage = fresh.is_some();
         let work = fresh
             .as_mut()
             .or(vws.grouped_work.as_mut())
@@ -13315,16 +13267,34 @@ impl Dsv4Gpu {
             hs: &mut vws.hs,
             contribution: &mut vws.contrib,
         };
-        let used_device = work.prepare(
-            &st.gpu,
-            &compute,
-            &layer.experts_s2_dev,
-            &layer.experts_s2,
-            t,
-            topk,
-            self.grouped_route_device,
-        )?;
+        work.set_plain_shape_for_graph(t);
         work.set_gu_fuse_for_plain(allow_gu_fuse);
+        let graph_used = !fresh_storage
+            && work.graph_run_or_capture(
+                &st.gpu,
+                table,
+                &mut compute,
+                &layer.experts_s2_dev,
+                &layer.experts_s2,
+                t,
+                topk,
+                limit,
+                self.grouped_route_device,
+                layer.il as usize,
+            )?;
+        let used_device = if graph_used {
+            true
+        } else {
+            work.prepare(
+                &st.gpu,
+                &compute,
+                &layer.experts_s2_dev,
+                &layer.experts_s2,
+                t,
+                topk,
+                self.grouped_route_device,
+            )?
+        };
         if work.routes.live_slots != slots {
             return Err("full-bank grouped routing lost a selected slot".into());
         }
@@ -13332,8 +13302,10 @@ impl Dsv4Gpu {
             self.grouped_device_route_calls
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
-        work.gate_up(&st.gpu, table, &mut compute, limit)?;
-        work.down(&st.gpu, table, &mut compute)?;
+        if !graph_used {
+            work.gate_up(&st.gpu, table, &mut compute, limit)?;
+            work.down(&st.gpu, table, &mut compute)?;
+        }
         static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
         if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
             let max_m = work.routes.max_m;
@@ -13502,6 +13474,7 @@ impl Dsv4Gpu {
                     limit,
                     allow_gu_fuse,
                     self.ep_serial_control,
+                    layer.il as usize,
                 )?;
                 self.grouped_device_route_calls
                     .fetch_add(calls, std::sync::atomic::Ordering::Relaxed);
@@ -14065,17 +14038,6 @@ impl Dsv4Gpu {
             }
         }
 
-        let capture_stateless = vstate.capture_stateless_prefix_next_round;
-        let replay_stateless = vstate.replay_stateless_prefix_next_round;
-        if (capture_stateless || replay_stateless)
-            && (t != 1 || taps.is_some() || vstate.ws.iter().any(|w| w.is_prefill))
-        {
-            return Err(
-                "stateless prefix graph probe requires plain t=1 with no taps/prefill".into(),
-            );
-        }
-        vstate.capture_stateless_prefix_next_round = false;
-        vstate.replay_stateless_prefix_next_round = false;
         let targets = self.dspark.as_ref().map(|ds| ds.targets.clone());
         let n_t = targets.as_ref().map(|x| x.len()).unwrap_or(0);
         let mut taps = taps;
@@ -14135,8 +14097,6 @@ impl Dsv4Gpu {
                 .is_none_or(|targets| targets.binary_search(&il).is_ok());
             let capture_this_layer = vstate.capture_probe_next_round && selected_for_graph;
             let replay_this_layer = vstate.replay_layer_next_round && selected_for_graph;
-            let capture_stateless_layer = capture_stateless;
-            let replay_stateless_layer = replay_stateless;
             if (capture_this_layer || replay_this_layer) && state.caches[il].c4_host.is_some() {
                 return Err(format!(
                     "one-layer graph probe layer {il} requires C4 host residency disabled"
@@ -14150,7 +14110,7 @@ impl Dsv4Gpu {
                 && vstate.tmax == 1
                 && !vstate.ws[stage].is_prefill
                 && taps.is_none();
-            let mut body = |phase| {
+            let mut body = || {
                 self.block_verify_dev(
                     st,
                     &st.layers[lidx],
@@ -14163,27 +14123,10 @@ impl Dsv4Gpu {
                     toks,
                     host_math,
                     allow_gu_fuse,
-                    phase,
                 )
             };
-            if capture_stateless_layer {
-                let captured = crate::dsv4_graph::capture_layer(st.gpu.stream(), il, || {
-                    body(BlockPhase::Prefix)
-                })?;
-                vstate.stateless_prefix_captures[il] = Some(captured);
-                vstate.stateless_prefix_capture_count += 1;
-                body(BlockPhase::Tail)?;
-            } else if replay_stateless_layer {
-                vstate.stateless_prefix_captures[il]
-                    .as_ref()
-                    .ok_or_else(|| format!("missing stateless prefix graph for layer {il}"))?
-                    .replay()?;
-                vstate.stateless_prefix_replay_count += 1;
-                body(BlockPhase::Tail)?;
-            } else if capture_this_layer {
-                let captured = crate::dsv4_graph::capture_layer(st.gpu.stream(), il, || {
-                    body(BlockPhase::All)
-                })?;
+            if capture_this_layer {
+                let captured = crate::dsv4_graph::capture_layer(st.gpu.stream(), il, || body())?;
                 vstate.layer_captures.push(captured);
             } else if replay_this_layer {
                 let capture = vstate
@@ -14193,7 +14136,7 @@ impl Dsv4Gpu {
                     .ok_or_else(|| format!("missing retained graph for layer {il}"))?;
                 capture.replay()?;
             } else {
-                body(BlockPhase::All)?;
+                body()?;
             }
             input_rx = false;
             // DSpark trunk tap for all T rows (capture only)

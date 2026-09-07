@@ -1242,6 +1242,44 @@ unsafe extern "C" {
         row_bytes: i64,
         stream: *mut core::ffi::c_void,
     ) -> i32;
+    // ModelOpt packed-half2 kq_store twins. These are compile-only gate seams: the ordinary
+    // launchers keep their original 16-entry f32 shared LUT and static shared allocation. The
+    // packed launchers add only a 256-entry half2 LUT in dynamic shared memory and report a
+    // successful enqueue through their dispatch counters.
+    pub fn memra_moe_kq_gemm_sk_gu_half2(
+        table: *const u64,
+        n_expert: i32,
+        ex_ids: *const i32,
+        act_f16: *const core::ffi::c_void,
+        h_f32: *mut f32,
+        row_scale: *const f32,
+        macro_g: *const f32,
+        macro_u: *const f32,
+        route_w: *const f32,
+        ex_off_dev: *const i32,
+        n_active: i32,
+        in_f: i32,
+        out_f: i32,
+        limit: f32,
+        row_bytes: i64,
+        stream: *mut core::ffi::c_void,
+    ) -> i32;
+    pub fn memra_moe_kq_gemm_sk_m1_half2(
+        table: *const u64,
+        n_expert: i32,
+        ex_ids: *const i32,
+        act_f16: *const core::ffi::c_void,
+        y_f32: *mut f32,
+        row_scale: *const f32,
+        ex_off_dev: *const i32,
+        n_active: i32,
+        in_f: i32,
+        out_f: i32,
+        row_bytes: i64,
+        stream: *mut core::ffi::c_void,
+    ) -> i32;
+    pub fn memra_moe_kq_gemm_sk_gu_half2_dispatches() -> u64;
+    pub fn memra_moe_kq_gemm_sk_m1_half2_dispatches() -> u64;
 }
 
 /// W4A8-MMQ DEFAULT-FLIP seam (2026-07-05): the vendored MMQ prefill suite is DEFAULT-ON — NVFP4

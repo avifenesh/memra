@@ -1302,6 +1302,8 @@ run the same gates directly.
 | `MEMRA_F16G_GU_FUSE` | **OFF** (research-only) | DSV4 matrix plain-decode gate/up + weighted SwiGLU fusion for one-row CSR transactions. Retains the ModelOpt NVFP4 f16-MMA chain and intermediate FP8 quantization/down/scatter. Unset or `=0` selects the two-projection rollback. The private 2026-09-07 best-ab receipt is token-exact at 256/8192 with m1 down and validation removal; serving admission is pending. The GU-M1 work-elision candidate has a separate process-local test override and actual dispatch counter. |
 | `MEMRA_F16G_M1_TC` | **OFF** (research-only) | DSV4 matrix plain-only m_e=1 tensor-core tail candidate. The gate-only setter used by `dsv4_decode_rate_gate m1-tc-compose-ab` holds GU fusion ON and toggles only the valid-row tensor-core work-elision arm; the shipped FP8 mirror, macro2, and scatter remain in both arms. This is not the removed scalar visitor. Default OFF pending full-model identity, sanitizer, engagement, and interleaved target-rate gates. |
 | `MEMRA_DSV4_GATE_REPEATS` | `3` (measurement binary only) | Repeat count for legacy `dsv4_decode_rate_gate` paired ABBA modes; `1` is a two-row-per-arm smoke and `3` yields six rows per arm. The independent `dsv4_plain_perf_gate` fixes three repeats in code and measures only plain decode with kernel/graph engagement plus output/logit/KV identity. This value does not select a serving program. |
+| `set_moe_f16g_gu_half2_for_gate` / `set_moe_f16g_down_m1_half2_for_gate` (process API only) | **OFF**, decide-by: 2026-09-21 | Measurement-only ModelOpt packed half2 stores in GU and M1-down. OFF preserves the scalar dequant loader; clearing the overrides is the rollback. No environment or serving switch. The plain `half2` cell holds graphs OFF and checks both actual enqueue counts, tokens, final logits and committed KV. Finite conversion identity passed; full-chain/model timing is pending. `tools/dsv4-modelopt-half2-gate.cu` is an identity instrument, not an engine speed receipt. |
+| `Dsv4Gpu::set_grouped_graph_for_gate` (process API only) | **OFF**, decide-by: 2026-09-21 | Rank-local expert graphs for plain matrix EP. ON requires device routes and validation OFF; OFF drains streams and prevents replay. State-owned per-layer maps retain both ranks, and an epoch plus geometry/pointer/arithmetic keys refuse stale replay. P2P copies/events/merge stay eager. `dsv4_plain_perf_gate expert-graph` holds half2 OFF, requires 86 retained entries and exact stream/logit/KV identity, and includes capture cost in wall time. Full-model gates pending; no serving default changes. The negative stateless attention-prefix candidate has been removed. |
 
 ### Serving (memra-server)
 
@@ -1404,6 +1406,14 @@ The remaining single-seq prefill residual (~27% vs vLLM's INT8 GEMM class) is an
 owner-gated accuracy decision (w8a8-class numerics change model outputs).
 
 ## Removed in the 2026-07-08 flag audit (concluded flags — JSONL rows are the record)
+
+DSV4 `arm_stateless_prefix_graph_probe_for_state` and its replay/census APIs
+were removed on 2026-09-07. All 43 prefix graphs engaged (731 kernels), and
+the 84-row sampled comparison was token/logit/KV exact, but the isolated
+prefix arm regressed 0.31% at 256 and 1.03% at 8192 prompt tokens. Excluding
+capture time did not reverse the sign. This is not a verdict on whole-round
+or rank-local expert graphs. Record:
+`research/dsv4f-2card-1m-20260904/plain-fronts-20260907.md`.
 
 `MEMRA_SPEC_DSPARK` (lived hours, 2026-07-30): DSpark-class marginal-rate verify window
 (arXiv 2607.05147) — S_{j+1}·T(j) > E[tok](j)·t_draft with profiled t_draft/t_verify EMAs.

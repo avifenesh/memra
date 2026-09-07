@@ -14,23 +14,26 @@ const REPEATS: usize = 3;
 #[derive(Clone, Copy, Debug)]
 enum Change {
     GuM1,
-    Prefix,
-    Combined,
+    Half2,
+    ExpertGraph,
 }
 
 impl Change {
     fn name(self) -> &'static str {
         match self {
             Self::GuM1 => "gu-m1",
-            Self::Prefix => "prefix",
-            Self::Combined => "combined",
+            Self::Half2 => "half2",
+            Self::ExpertGraph => "expert-graph",
         }
     }
     fn gu_m1(self, tuned: bool) -> bool {
-        tuned && matches!(self, Self::GuM1 | Self::Combined)
+        tuned && matches!(self, Self::GuM1)
     }
-    fn prefix(self, tuned: bool) -> bool {
-        tuned && matches!(self, Self::Prefix | Self::Combined)
+    fn expert_graph(self, tuned: bool) -> bool {
+        tuned && matches!(self, Self::ExpertGraph)
+    }
+    fn half2(self, tuned: bool) -> bool {
+        tuned && matches!(self, Self::Half2)
     }
 }
 
@@ -85,17 +88,21 @@ impl Ready<'_> {
     fn run(&self, change: Change, tuned: bool, warmup: bool, ordinal: usize) -> Identity {
         drain(self.gpu);
         let gu_m1 = change.gu_m1(tuned);
-        let prefix = change.prefix(tuned);
+        let expert_graph = change.expert_graph(tuned);
+        let half2 = change.half2(tuned);
+        self.gpu
+            .set_grouped_graph_for_gate(false)
+            .expect("restore outside expert graphs");
         memra_engine::set_moe_f16g_gu_m1_tc_for_gate(gu_m1);
+        memra_engine::set_moe_f16g_gu_half2_for_gate(half2);
+        memra_engine::set_moe_f16g_down_m1_half2_for_gate(half2);
         let mut state = self
             .gpu
             .restore_decode_state_host_c4(self.snapshot, self.prompt_len + OUTPUT + 96, 512)
             .expect("same host C4 snapshot restore");
-        if prefix {
-            self.gpu
-                .arm_stateless_prefix_graph_probe_for_state(&mut state)
-                .expect("arm attention projection graphs");
-        }
+        self.gpu
+            .set_grouped_graph_for_gate(expert_graph)
+            .expect("select expert graph arm");
         let mut row = self.logits.to_vec();
         let mut tokens = Vec::with_capacity(OUTPUT);
         let mut commits = Vec::with_capacity(OUTPUT);
@@ -109,6 +116,10 @@ impl Ready<'_> {
         drain(self.gpu);
         let calls_before = memra_engine::moe_f16g_gu_m1_tc_dispatches();
         let ep_before = self.gpu.ep_calls();
+        let graph_before = self.gpu.grouped_graph_counts_for_gate();
+        let prepare_before = self.gpu.grouped_graph_eager_prepare_count_for_gate();
+        let gu_half2_before = memra_engine::moe_f16g_gu_half2_dispatches();
+        let down_half2_before = memra_engine::moe_f16g_down_m1_half2_dispatches();
         let start_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -131,11 +142,6 @@ impl Ready<'_> {
             if i + 1 == OUTPUT {
                 break;
             }
-            if prefix && i > 0 {
-                self.gpu
-                    .replay_stateless_prefix_graph_probe_for_state(&mut state)
-                    .expect("replay every layer prefix");
-            }
             row = self
                 .gpu
                 .decode_step(token, &mut state)
@@ -157,23 +163,84 @@ impl Ready<'_> {
             if gu_m1 { ep_calls * 2 } else { 0 },
             "actual GU-M1 launches on both ranks"
         );
-        let (captured, replays, graph_nodes) = if prefix {
-            let (census, captures, replays) = self
-                .gpu
-                .stateless_prefix_graph_probe_census_for_state(&state)
-                .expect("prefix census");
-            assert_eq!(captures, trunk_layers, "capture every trunk layer");
-            assert_eq!(
-                replays,
-                steps.saturating_sub(1) * trunk_layers,
-                "replay every remaining step"
+        let graph_after = self.gpu.grouped_graph_counts_for_gate();
+        let captured = graph_after.0 - graph_before.0;
+        let replays = graph_after.1 - graph_before.1;
+        let fallbacks = graph_after.2 - graph_before.2;
+        assert_eq!(
+            captured,
+            if expert_graph { 2 * trunk_layers } else { 0 },
+            "retain both-rank graphs for every layer"
+        );
+        assert_eq!(
+            replays,
+            if expert_graph {
+                2 * trunk_layers * steps.saturating_sub(1)
+            } else {
+                0
+            },
+            "replay each rank each remaining step"
+        );
+        assert_eq!(
+            fallbacks, 0,
+            "no stale-key or failed graph fallback in scored row"
+        );
+        let eager_prepares = self.gpu.grouped_graph_eager_prepare_count_for_gate() - prepare_before;
+        assert_eq!(
+            eager_prepares,
+            if expert_graph { 0 } else { 2 * ep_calls },
+            "graph replay skips eager host preparation"
+        );
+        let gu_half2_calls = memra_engine::moe_f16g_gu_half2_dispatches() - gu_half2_before;
+        let down_half2_calls =
+            memra_engine::moe_f16g_down_m1_half2_dispatches() - down_half2_before;
+        assert_eq!(
+            gu_half2_calls,
+            if half2 { 2 * ep_calls } else { 0 },
+            "actual packed-half2 GU enqueues on both ranks"
+        );
+        assert_eq!(
+            down_half2_calls,
+            if half2 { 2 * ep_calls } else { 0 },
+            "actual packed-half2 down enqueues on both ranks"
+        );
+        let (graph_workspaces, graph_retained) = self
+            .gpu
+            .grouped_graph_retained_for_gate(&state)
+            .expect("retained graph census");
+        let graph_entries = self
+            .gpu
+            .grouped_graph_nodes_for_gate(&state)
+            .expect("graph node census");
+        assert_eq!(
+            graph_retained as u64,
+            if expert_graph { 2 * trunk_layers } else { 0 }
+        );
+        assert_eq!(graph_entries.len(), graph_retained);
+        assert_eq!(graph_workspaces.iter().sum::<usize>(), graph_retained);
+        let mut layer_counts = vec![0; trunk_layers as usize];
+        let mut graph_kernel_nodes = 0;
+        for &(workspace, layer, nodes, kernels) in &graph_entries {
+            assert!(workspace < graph_workspaces.len());
+            assert!(layer < layer_counts.len());
+            assert!(
+                nodes >= kernels && kernels >= 8,
+                "real route/mirror/GU/down island, not empty graph"
             );
-            let nodes: usize = census.iter().map(|entry| entry.kernels.len()).sum();
-            assert!(nodes > 500, "capture must cover a material kernel segment");
-            (captures, replays, nodes)
-        } else {
-            (0, 0, 0)
-        };
+            layer_counts[layer] += 1;
+            graph_kernel_nodes += kernels;
+        }
+        assert!(
+            layer_counts
+                .iter()
+                .all(|&n| n == if expert_graph { 2 } else { 0 }),
+            "two retained ranks per trunk layer"
+        );
+        let graph_entries: Vec<_> = graph_entries
+            .into_iter()
+            .map(|(workspace, layer, nodes, kernels)| [workspace, layer, nodes, kernels])
+            .collect();
+        let graph_entries = format!("{graph_entries:?}");
         // Full-state hashing and detokenization run outside the measurement.
         let mut cache_hash = Sha256::new();
         for (name, values) in self
@@ -200,7 +267,7 @@ impl Ready<'_> {
         let text_sha256 = format!("{:x}", Sha256::digest(text.as_bytes()));
         let state_pos = state.pos;
         println!(
-            "MEASURE {{\"mode\":\"{mode}\",\"arm\":\"plain\",\"prompt\":{prompt},\"tuned\":{tuned},\"warmup\":{warmup},\"ordinal\":{ordinal},\"eligible\":{eligible},\"looped\":{excluded_loop},\"eos\":{eos},\"output_tokens\":{output_tokens},\"decode_wall_ns\":{wall_ns},\"first_step_ns\":{first_step_ns},\"capture_included_in_wall\":{prefix},\"start_unix_ms\":{start_ms},\"ep_calls\":{ep_calls},\"gu_m1\":{gu_m1},\"gu_m1_calls\":{gu_m1_calls},\"prefix_graph\":{prefix},\"graph_captures\":{captured},\"graph_replays\":{replays},\"graph_kernel_nodes\":{graph_nodes},\"c4_recent_rows\":0,\"c4_host_copy_elide\":false,\"token_sha256\":\"{token_sha256}\",\"logits_sha256\":\"{logits_hash}\",\"cache_sha256\":\"{cache_hash}\",\"text_sha256\":\"{text_sha256}\",\"commit_ns\":{commits:?},\"tokens\":{tokens:?},\"state_pos\":{state_pos}}}"
+            "MEASURE {{\"mode\":\"{mode}\",\"arm\":\"plain\",\"prompt\":{prompt},\"tuned\":{tuned},\"warmup\":{warmup},\"ordinal\":{ordinal},\"eligible\":{eligible},\"looped\":{excluded_loop},\"eos\":{eos},\"output_tokens\":{output_tokens},\"decode_wall_ns\":{wall_ns},\"first_step_ns\":{first_step_ns},\"capture_included_in_wall\":{expert_graph},\"start_unix_ms\":{start_ms},\"ep_calls\":{ep_calls},\"gu_fuse\":true,\"down_m1_tc\":true,\"route_validate\":false,\"mirror_validate\":false,\"gu_m1\":{gu_m1},\"gu_m1_calls\":{gu_m1_calls},\"half2\":{half2},\"gu_half2_calls\":{gu_half2_calls},\"down_half2_calls\":{down_half2_calls},\"prefix_graph\":false,\"expert_graph\":{expert_graph},\"graph_captures\":{captured},\"graph_replays\":{replays},\"graph_kernel_nodes\":{graph_kernel_nodes},\"graph_fallbacks\":{fallbacks},\"graph_eager_prepares\":{eager_prepares},\"graph_retained\":{graph_retained},\"graph_workspaces\":{graph_workspaces:?},\"graph_entries\":{graph_entries},\"c4_recent_rows\":0,\"c4_host_copy_elide\":false,\"token_sha256\":\"{token_sha256}\",\"logits_sha256\":\"{logits_hash}\",\"cache_sha256\":\"{cache_hash}\",\"text_sha256\":\"{text_sha256}\",\"commit_ns\":{commits:?},\"tokens\":{tokens:?},\"state_pos\":{state_pos}}}"
         );
         Identity {
             tokens,
@@ -216,13 +283,13 @@ fn main() {
     assert_eq!(
         args.len(),
         4,
-        "usage: dsv4_plain_perf_gate <model-dir> <source.txt> gu-m1|prefix|combined|all"
+        "usage: dsv4_plain_perf_gate <model-dir> <source.txt> gu-m1|half2|expert-graph|all"
     );
     let modes = match args[3].as_str() {
         "gu-m1" => vec![Change::GuM1],
-        "prefix" => vec![Change::Prefix],
-        "combined" => vec![Change::Combined],
-        "all" => vec![Change::GuM1, Change::Prefix, Change::Combined],
+        "half2" => vec![Change::Half2],
+        "expert-graph" => vec![Change::ExpertGraph],
+        "all" => vec![Change::Half2, Change::ExpertGraph],
         _ => panic!("unknown plain gate mode"),
     };
     for (name, expected) in [
@@ -259,8 +326,9 @@ fn main() {
     );
     assert!(input.len() >= 8192);
     let rows_per_arm = 2 * REPEATS;
+    let mode_names: Vec<_> = modes.iter().map(|mode| mode.name()).collect();
     println!(
-        "PROTOCOL {{\"plain_only\":true,\"http\":false,\"new_tokens\":{OUTPUT},\"abba_repeats\":{REPEATS},\"rows_per_arm\":{rows_per_arm},\"prompts\":[256,8192],\"temperature\":1.0,\"top_p\":1.0,\"top_k\":0,\"seed\":20260906,\"capture_cost_included\":true,\"restore_cost_included\":false}}"
+        "PROTOCOL {{\"plain_only\":true,\"http\":false,\"new_tokens\":{OUTPUT},\"abba_repeats\":{REPEATS},\"rows_per_arm\":{rows_per_arm},\"prompts\":[256,8192],\"modes\":{mode_names:?},\"temperature\":1.0,\"top_p\":1.0,\"top_k\":0,\"seed\":20260906,\"capture_cost_included\":true,\"restore_cost_included\":false}}"
     );
     let gpu = Dsv4Gpu::load(
         dir,
@@ -324,6 +392,10 @@ fn main() {
             }
             drain(&gpu);
             memra_engine::clear_moe_f16g_gu_m1_tc_for_gate();
+            memra_engine::clear_moe_f16g_gu_half2_for_gate();
+            memra_engine::clear_moe_f16g_down_m1_half2_for_gate();
+            gpu.set_grouped_graph_for_gate(false)
+                .expect("finish expert graph gate");
             println!(
                 "PASS mode={} prompt={count} both_arms=engaged outputs=exact logits=exact cache=exact",
                 mode.name()

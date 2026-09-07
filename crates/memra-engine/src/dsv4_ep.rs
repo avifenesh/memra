@@ -160,6 +160,19 @@ pub(crate) struct EpCompute<'a> {
 }
 
 impl EpScratch {
+    pub(crate) fn grouped_graph_count(&self) -> usize {
+        self.grouped
+            .as_ref()
+            .map_or(0, crate::dsv4_grouped::GroupedWork::graph_count)
+    }
+
+    pub(crate) fn grouped_graph_node_counts(&self) -> Vec<(usize, usize, usize)> {
+        self.grouped.as_ref().map_or_else(
+            Vec::new,
+            crate::dsv4_grouped::GroupedWork::graph_node_counts,
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         owner: &Gpu,
@@ -578,6 +591,7 @@ pub(crate) fn execute_matrix(
     limit: f32,
     allow_gu_fuse: bool,
     serial_control: bool,
+    graph_layer: usize,
 ) -> Res<u64> {
     let peer_table = bank
         .peer_table
@@ -630,19 +644,73 @@ pub(crate) fn execute_matrix(
         hs: &mut remote.hs,
         contribution: &mut remote.contribution,
     };
-    let mut route_calls =
-        u64::from(local_work.prepare(owner, local, scale2, scale2_host, rows, topk, true)?);
-    route_calls += u64::from(peer_work.prepare(
+    local_work.set_plain_shape_for_graph(rows);
+    peer_work.set_plain_shape_for_graph(rows);
+    local_work.set_gu_fuse_for_plain(allow_gu_fuse);
+    peer_work.set_gu_fuse_for_plain(allow_gu_fuse);
+    let local_graph = local_work.graph_run_or_capture(
+        owner,
+        table,
+        local,
+        scale2,
+        scale2_host,
+        rows,
+        topk,
+        limit,
+        true,
+        graph_layer,
+    )?;
+    if serial_control && local_graph {
+        os.synchronize().map_err(|e| e.to_string())?;
+    }
+    let peer_graph = peer_work.graph_run_or_capture(
         peer,
-        &peer_compute,
+        peer_table,
+        &mut peer_compute,
         &bank.peer_s2,
         scale2_host,
         rows,
         topk,
+        limit,
         true,
-    )?);
-    local_work.set_gu_fuse_for_plain(allow_gu_fuse);
-    peer_work.set_gu_fuse_for_plain(allow_gu_fuse);
+        graph_layer,
+    )?;
+    let route_calls = if local_graph && peer_graph {
+        // Both rank-local graphs contain their route preparation, so preserve
+        // the old route-engagement accounting even though host prepare/gate/
+        // down methods were skipped on replay.
+        2
+    } else {
+        if local_graph {
+            local_work.clear_graph_for_gate();
+        }
+        if peer_graph {
+            peer_work.clear_graph_for_gate();
+        }
+        let route_calls =
+            u64::from(local_work.prepare(owner, local, scale2, scale2_host, rows, topk, true)?)
+                + u64::from(peer_work.prepare(
+                    peer,
+                    &peer_compute,
+                    &bank.peer_s2,
+                    scale2_host,
+                    rows,
+                    topk,
+                    true,
+                )?);
+        if serial_control {
+            local_work.gate_up(owner, table, local, limit)?;
+            local_work.down(owner, table, local)?;
+            os.synchronize().map_err(|e| e.to_string())?;
+            peer_work.gate_up(peer, peer_table, &mut peer_compute, limit)?;
+        } else {
+            local_work.gate_up(owner, table, local, limit)?;
+            peer_work.gate_up(peer, peer_table, &mut peer_compute, limit)?;
+            local_work.down(owner, table, local)?;
+        }
+        peer_work.down(peer, peer_table, &mut peer_compute)?;
+        route_calls
+    };
     if crate::dsv4_grouped::route_validation_enabled()
         && local_work.routes.live_slots + peer_work.routes.live_slots != slots
     {
@@ -654,16 +722,6 @@ pub(crate) fn execute_matrix(
         rows,
         topk,
     );
-    local_work.gate_up(owner, table, local, limit)?;
-    if serial_control {
-        local_work.down(owner, table, local)?;
-        os.synchronize().map_err(|e| e.to_string())?;
-        peer_work.gate_up(peer, peer_table, &mut peer_compute, limit)?;
-    } else {
-        peer_work.gate_up(peer, peer_table, &mut peer_compute, limit)?;
-        local_work.down(owner, table, local)?;
-    }
-    peer_work.down(peer, peer_table, &mut peer_compute)?;
     peer_copy(
         &ps,
         &os,

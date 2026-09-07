@@ -2,12 +2,19 @@
 //! Both arms retain ascending original slot order inside each expert group.
 use crate::dsv4_ep::EpCompute;
 use crate::dsv4_ffi;
+use crate::dsv4_graph::{
+    Dsv4GroupedGraph, Dsv4GroupedGraphKey, capture_layer, grouped_graph_capture_recorded,
+    grouped_graph_eager_prepare_recorded, grouped_graph_epoch, grouped_graph_fallback_recorded,
+    grouped_graph_gate,
+};
 use crate::mmq_ffi::{
-    memra_bind_device, memra_moe_kq_gemm_sk, memra_moe_kq_gemm_sk_gu, memra_moe_kq_gemm_sk_gu_m1,
-    memra_moe_kq_gemm_sk_m1,
+    memra_bind_device, memra_moe_kq_gemm_sk, memra_moe_kq_gemm_sk_gu,
+    memra_moe_kq_gemm_sk_gu_half2, memra_moe_kq_gemm_sk_gu_m1, memra_moe_kq_gemm_sk_m1,
+    memra_moe_kq_gemm_sk_m1_half2,
 };
 use cudarc::driver::{CudaSlice, CudaStream, DevicePtr, DevicePtrMut};
 use memra_runtime::Gpu;
+use std::collections::BTreeMap;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -169,6 +176,7 @@ pub(crate) struct GroupedWork {
     plain_single: bool,
     gu_fuse: bool,
     phase: MatrixPhase,
+    graphs: BTreeMap<usize, Dsv4GroupedGraph>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -303,6 +311,7 @@ impl GroupedWork {
             plain_single: false,
             gu_fuse: false,
             phase: MatrixPhase::Idle,
+            graphs: BTreeMap::new(),
         })
     }
 
@@ -318,6 +327,54 @@ impl GroupedWork {
         rows: usize,
         topk: usize,
         device_routes: bool,
+    ) -> Res<bool> {
+        grouped_graph_eager_prepare_recorded();
+        self.prepare_inner(
+            gpu,
+            source,
+            scale2,
+            scale2_host,
+            rows,
+            topk,
+            device_routes,
+            true,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn prepare_graph(
+        &mut self,
+        gpu: &Gpu,
+        source: &EpCompute<'_>,
+        scale2: &CudaSlice<f32>,
+        scale2_host: &[f32],
+        rows: usize,
+        topk: usize,
+        device_routes: bool,
+    ) -> Res<bool> {
+        self.prepare_inner(
+            gpu,
+            source,
+            scale2,
+            scale2_host,
+            rows,
+            topk,
+            device_routes,
+            false,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn prepare_inner(
+        &mut self,
+        gpu: &Gpu,
+        source: &EpCompute<'_>,
+        scale2: &CudaSlice<f32>,
+        scale2_host: &[f32],
+        rows: usize,
+        topk: usize,
+        device_routes: bool,
+        bind: bool,
     ) -> Res<bool> {
         if !matches!(self.phase, MatrixPhase::Idle | MatrixPhase::Failed) {
             return Err("matrix preparation would overwrite an unfinished chain".into());
@@ -341,7 +398,9 @@ impl GroupedWork {
         {
             return Err("matrix chain input/workspace shape mismatch".into());
         }
-        bind_matrix(gpu)?;
+        if bind {
+            bind_matrix(gpu)?;
+        }
         let s = gpu.stream();
         let used_device = self.routes.prepare(
             &s,
@@ -370,6 +429,10 @@ impl GroupedWork {
         self.gu_fuse = enabled && self.plain_single;
     }
 
+    pub(crate) fn set_plain_shape_for_graph(&mut self, rows: usize) {
+        self.plain_single = rows == 1;
+    }
+
     /// No host readback in this stage: both ranks can queue gate/up before down.
     pub fn gate_up(
         &mut self,
@@ -378,11 +441,34 @@ impl GroupedWork {
         out: &mut EpCompute<'_>,
         limit: f32,
     ) -> Res<()> {
+        self.gate_up_inner(gpu, table, out, limit, true)
+    }
+
+    pub(crate) fn gate_up_graph(
+        &mut self,
+        gpu: &Gpu,
+        table: &CudaSlice<u64>,
+        out: &mut EpCompute<'_>,
+        limit: f32,
+    ) -> Res<()> {
+        self.gate_up_inner(gpu, table, out, limit, false)
+    }
+
+    fn gate_up_inner(
+        &mut self,
+        gpu: &Gpu,
+        table: &CudaSlice<u64>,
+        out: &mut EpCompute<'_>,
+        limit: f32,
+        bind: bool,
+    ) -> Res<()> {
         if self.phase != MatrixPhase::Prepared {
             return Err("matrix gate/up requires prepared input".into());
         }
         self.phase = MatrixPhase::Failed;
-        bind_matrix(gpu)?;
+        if bind {
+            bind_matrix(gpu)?;
+        }
         let s = gpu.stream();
         let live = self.routes.live_slots;
         if !route_validation_enabled() {
@@ -391,10 +477,13 @@ impl GroupedWork {
         }
         if live > 0 {
             let fuse_gu = self.gu_fuse && crate::moe_f16g_gu_fuse_on() && crate::moe_f16g_tail_on();
-            let fuse_gu_m1 = fuse_gu && crate::moe_f16g_gu_m1_tc_on();
+            let fuse_gu_half2 = fuse_gu && crate::moe_f16g_gu_half2_on();
+            let fuse_gu_m1 = fuse_gu && !fuse_gu_half2 && crate::moe_f16g_gu_m1_tc_on();
             if fuse_gu {
                 let rc = unsafe {
-                    let launch = if fuse_gu_m1 {
+                    let launch = if fuse_gu_half2 {
+                        memra_moe_kq_gemm_sk_gu_half2
+                    } else if fuse_gu_m1 {
                         memra_moe_kq_gemm_sk_gu_m1
                     } else {
                         memra_moe_kq_gemm_sk_gu
@@ -421,7 +510,9 @@ impl GroupedWork {
                 if rc != 0 {
                     return Err(format!(
                         "{} rc={rc}",
-                        if fuse_gu_m1 {
+                        if fuse_gu_half2 {
+                            "memra_moe_kq_gemm_sk_gu_half2"
+                        } else if fuse_gu_m1 {
                             "memra_moe_kq_gemm_sk_gu_m1"
                         } else {
                             "memra_moe_kq_gemm_sk_gu"
@@ -495,22 +586,47 @@ impl GroupedWork {
     }
 
     pub fn down(&mut self, gpu: &Gpu, table: &CudaSlice<u64>, out: &mut EpCompute<'_>) -> Res<()> {
+        self.down_inner(gpu, table, out, true)
+    }
+
+    pub(crate) fn down_graph(
+        &mut self,
+        gpu: &Gpu,
+        table: &CudaSlice<u64>,
+        out: &mut EpCompute<'_>,
+    ) -> Res<()> {
+        self.down_inner(gpu, table, out, false)
+    }
+
+    fn down_inner(
+        &mut self,
+        gpu: &Gpu,
+        table: &CudaSlice<u64>,
+        out: &mut EpCompute<'_>,
+        bind: bool,
+    ) -> Res<()> {
         if self.phase != MatrixPhase::UpQueued {
             return Err("matrix down requires queued gate/up".into());
         }
         self.phase = MatrixPhase::Failed;
-        bind_matrix(gpu)?;
+        if bind {
+            bind_matrix(gpu)?;
+        }
         let s = gpu.stream();
         let live = self.routes.live_slots;
         if live > 0 {
             self.intermediate.gather(&s, out.hq, out.hs, None, live)?;
-            if self.plain_single && crate::moe_f16g_m1_tc_on() && crate::moe_f16g_tail_on() {
+            if self.plain_single
+                && crate::moe_f16g_tail_on()
+                && (crate::moe_f16g_m1_tc_on() || crate::moe_f16g_down_m1_half2_on())
+            {
                 self.routes.project_m1(
                     &s,
                     table,
                     &self.intermediate,
                     &mut self.contribution,
                     self.input.cols,
+                    crate::moe_f16g_down_m1_half2_on(),
                 )?;
             } else {
                 self.routes.project(
@@ -549,6 +665,173 @@ impl GroupedWork {
         self.phase = MatrixPhase::Idle;
         Ok(())
     }
+
+    #[allow(clippy::too_many_arguments)]
+    fn graph_key(
+        &self,
+        stream: &Arc<CudaStream>,
+        table: &CudaSlice<u64>,
+        scale2: &CudaSlice<f32>,
+        source: &EpCompute<'_>,
+        rows: usize,
+        topk: usize,
+        limit: f32,
+        device_routes: bool,
+    ) -> Dsv4GroupedGraphKey {
+        let ptr = |slice: &CudaSlice<u8>| slice.device_ptr(stream).0;
+        let p32 = |slice: &CudaSlice<f32>| slice.device_ptr(stream).0;
+        let pi = |slice: &CudaSlice<i32>| slice.device_ptr(stream).0;
+        let mut flags = 0u64;
+        flags |= u64::from(device_routes);
+        flags |= u64::from(route_validation_enabled()) << 1;
+        flags |= u64::from(mirror_validation_enabled()) << 2;
+        flags |= u64::from(self.gu_fuse) << 3;
+        flags |= u64::from(crate::moe_f16g_gu_m1_tc_on()) << 4;
+        flags |= u64::from(crate::moe_f16g_tail_on()) << 5;
+        flags |= u64::from(crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT)) << 6;
+        flags |= u64::from(crate::moe_f16g_gu_half2_on()) << 7;
+        flags |= u64::from(crate::moe_f16g_down_m1_half2_on()) << 8;
+        flags |= u64::from(crate::moe_f16g_m1_tc_on()) << 9;
+        flags |= (crate::moe_f16g_mode() as u64) << 10;
+        flags ^= (crate::moe_f16g_sk_params().1 as u32 as u64) << 16;
+        flags ^= (limit.to_bits() as u64) << 32;
+        Dsv4GroupedGraphKey {
+            epoch: grouped_graph_epoch(),
+            shape: [rows, topk, self.input.cols, self.intermediate.cols],
+            partition: [
+                self.routes.global_experts,
+                self.routes.first,
+                self.routes.experts,
+            ],
+            flags,
+            pointers: vec![
+                table.device_ptr(stream).0,
+                scale2.device_ptr(stream).0,
+                ptr(source.xq),
+                p32(source.xs),
+                pi(source.ids),
+                p32(source.weights),
+                p32(source.g1),
+                p32(source.g3),
+                p32(source.h),
+                ptr(source.hq),
+                p32(source.hs),
+                p32(source.contribution),
+                pi(&self.routes.ids),
+                pi(&self.routes.offsets),
+                pi(&self.routes.pairs),
+                pi(&self.routes.tokens),
+                pi(&self.routes.counts),
+                pi(&self.routes.status),
+                p32(&self.routes.weights),
+                p32(&self.routes.macro1),
+                p32(&self.routes.macro2),
+                p32(&self.routes.macro3),
+                ptr(&self.input.half),
+                p32(&self.input.scale),
+                pi(&self.input.status),
+                ptr(&self.intermediate.half),
+                p32(&self.intermediate.scale),
+                pi(&self.intermediate.status),
+                p32(&self.contribution),
+            ],
+        }
+    }
+
+    /// Run or retain one rank-local matrix expert island graph. The graph owns
+    /// route preparation, both mirrors, gate/up, and down; cross-rank copies,
+    /// events and merge stay in `execute_matrix`.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn graph_run_or_capture(
+        &mut self,
+        gpu: &Gpu,
+        table: &CudaSlice<u64>,
+        source: &mut EpCompute<'_>,
+        scale2: &CudaSlice<f32>,
+        scale2_host: &[f32],
+        rows: usize,
+        topk: usize,
+        limit: f32,
+        device_routes: bool,
+        graph_layer: usize,
+    ) -> Res<bool> {
+        if !grouped_graph_gate()
+            || !device_routes
+            || route_validation_enabled()
+            || mirror_validation_enabled()
+            || rows != 1
+            || !self.gu_fuse
+        {
+            return Ok(false);
+        }
+        if self.phase != MatrixPhase::Idle {
+            return Err("grouped graph capture/replay requires an idle work phase".into());
+        }
+        if rows == 0
+            || rows > 512
+            || !slots_for(rows, topk).is_some_and(|s| s <= self.routes.capacity)
+        {
+            return Err("grouped graph shape is outside preallocated workspace".into());
+        }
+        let stream = gpu.stream();
+        // Graph launch and every raw grouped kernel require the owning runtime
+        // device to be current on this host thread, including replay.
+        bind_matrix(gpu)?;
+        let key = self.graph_key(
+            &stream,
+            table,
+            scale2,
+            source,
+            rows,
+            topk,
+            limit,
+            device_routes,
+        );
+        if let Some(graph) = self.graphs.get(&graph_layer) {
+            if graph.key == key {
+                graph.replay(&key)?;
+                self.phase = MatrixPhase::Idle;
+                self.routes.live_slots = rows * topk;
+                return Ok(true);
+            }
+            grouped_graph_fallback_recorded();
+            self.graphs.remove(&graph_layer);
+        }
+        let captured = capture_layer(stream.clone(), graph_layer, || {
+            self.prepare_graph(gpu, source, scale2, scale2_host, rows, topk, device_routes)?;
+            self.gate_up_graph(gpu, table, source, limit)?;
+            self.down_graph(gpu, table, source)
+        })?;
+        grouped_graph_capture_recorded();
+        self.graphs.insert(
+            graph_layer,
+            Dsv4GroupedGraph {
+                capture: captured,
+                key,
+                stream,
+            },
+        );
+        Ok(true)
+    }
+
+    pub(crate) fn clear_graph_for_gate(&mut self) {
+        self.graphs.clear();
+    }
+
+    pub(crate) fn graph_count(&self) -> usize {
+        self.graphs.len()
+    }
+
+    pub(crate) fn graph_node_counts(&self) -> Vec<(usize, usize, usize)> {
+        self.graphs
+            .iter()
+            .map(|(layer, graph)| (*layer, graph.node_count(), graph.kernel_count()))
+            .collect()
+    }
+}
+
+fn slots_for(rows: usize, topk: usize) -> Option<usize> {
+    rows.checked_mul(topk)
 }
 
 pub(crate) struct GroupedRoutes {
@@ -648,6 +931,7 @@ impl GroupedRoutes {
         input: &HalfMirror,
         output: &mut CudaSlice<f32>,
         out_f: usize,
+        half2: bool,
     ) -> Res<()> {
         if table.len() != self.experts * 6
             || output.len() < self.live_slots * out_f
@@ -660,7 +944,12 @@ impl GroupedRoutes {
             );
         }
         let rc = unsafe {
-            memra_moe_kq_gemm_sk_m1(
+            let launch = if half2 {
+                memra_moe_kq_gemm_sk_m1_half2
+            } else {
+                memra_moe_kq_gemm_sk_m1
+            };
+            launch(
                 table.device_ptr(s).0 as *const u64,
                 self.experts as i32,
                 self.ids.device_ptr(s).0 as *const i32,
@@ -1602,5 +1891,356 @@ mod tests {
         for raw in ["1", "DEVICE", " device", ""] {
             assert!(resolve(Some(raw)).is_err());
         }
+    }
+}
+#[cfg(test)]
+mod half2_chain_identity_tests {
+    use super::{GroupedWork, modelopt_table};
+    use crate::dsv4_ep::{EpCompute, EpScratch};
+    use crate::dsv4_ffi as k;
+    use cudarc::driver::{CudaSlice, DevicePtr, DevicePtrMut};
+
+    struct GateRestore;
+
+    impl Drop for GateRestore {
+        fn drop(&mut self) {
+            crate::clear_moe_f16g_gu_fuse_for_gate();
+            crate::clear_moe_f16g_m1_tc_for_gate();
+            crate::clear_moe_f16g_gu_m1_tc_for_gate();
+            crate::clear_moe_f16g_gu_half2_for_gate();
+            crate::clear_moe_f16g_down_m1_half2_for_gate();
+        }
+    }
+
+    struct ChainResult {
+        h: Vec<f32>,
+        pairs: Vec<i32>,
+        contribution: Vec<f32>,
+    }
+
+    fn view(x: &mut EpScratch) -> EpCompute<'_> {
+        EpCompute {
+            xq: &x.xq,
+            xs: &x.xs,
+            ids: &x.ids,
+            weights: &x.weights,
+            g1: &mut x.g1,
+            g3: &mut x.g3,
+            h: &mut x.h,
+            hq: &mut x.hq,
+            hs: &mut x.hs,
+            contribution: &mut x.contribution,
+        }
+    }
+
+    fn bits(values: &[f32]) -> Vec<u32> {
+        values.iter().map(|value| value.to_bits()).collect()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn run_chain(
+        gpu: &memra_runtime::Gpu,
+        work: &mut GroupedWork,
+        scratch: &mut EpScratch,
+        table: &CudaSlice<u64>,
+        x: &CudaSlice<f32>,
+        scale2: &CudaSlice<f32>,
+        scale2_host: &[f32],
+        selected: &[i32],
+        route_weights: &[f32],
+        hidden: usize,
+        inter: usize,
+        topk: usize,
+    ) -> ChainResult {
+        let s = gpu.stream();
+        let slots = selected.len();
+        assert_eq!(slots, topk);
+        s.memcpy_htod(selected, &mut scratch.ids.slice_mut(..slots))
+            .unwrap();
+        s.memcpy_htod(route_weights, &mut scratch.weights.slice_mut(..slots))
+            .unwrap();
+        unsafe {
+            k::ck(
+                "half2 chain fixture FP8 input",
+                k::memra_dsv4_act_quant_fp8(
+                    x.device_ptr(&s).0 as *const f32,
+                    scratch.xq.device_ptr_mut(&s).0 as *mut std::ffi::c_void,
+                    scratch.xs.device_ptr_mut(&s).0 as *mut f32,
+                    1,
+                    hidden as i32,
+                    s.cu_stream().cast(),
+                ),
+            )
+            .unwrap();
+        }
+        work.prepare(gpu, &view(scratch), scale2, scale2_host, 1, topk, true)
+            .unwrap();
+        work.set_gu_fuse_for_plain(true);
+        work.gate_up(gpu, table, &mut view(scratch), 6.0).unwrap();
+        let live = work.routes.live_slots;
+        let h = s.clone_dtoh(&scratch.h.slice(..live * inter)).unwrap();
+        let pairs = s.clone_dtoh(&work.routes.pairs.slice(..live)).unwrap();
+        work.down(gpu, table, &mut view(scratch)).unwrap();
+        let contribution = s
+            .clone_dtoh(&scratch.contribution.slice(..slots * hidden))
+            .unwrap();
+        s.synchronize().unwrap();
+        ChainResult {
+            h,
+            pairs,
+            contribution,
+        }
+    }
+
+    fn map_h_bits(h: &[f32], pairs: &[i32], slots: usize, inter: usize) -> Vec<u32> {
+        assert_eq!(h.len(), pairs.len() * inter);
+        let mut mapped = vec![0u32; slots * inter];
+        let mut seen = vec![false; slots];
+        for (row, &pair) in pairs.iter().enumerate() {
+            let slot = usize::try_from(pair).expect("non-negative grouped pair");
+            assert!(slot < slots);
+            assert!(!seen[slot], "duplicate original slot");
+            seen[slot] = true;
+            mapped[slot * inter..(slot + 1) * inter]
+                .copy_from_slice(&bits(&h[row * inter..(row + 1) * inter]));
+        }
+        assert!(
+            seen.into_iter().all(|value| value),
+            "partition missed a slot"
+        );
+        mapped
+    }
+
+    fn merge_h_bits(
+        a: &[f32],
+        a_pairs: &[i32],
+        b: &[f32],
+        b_pairs: &[i32],
+        slots: usize,
+        inter: usize,
+    ) -> Vec<u32> {
+        assert_eq!(a.len(), a_pairs.len() * inter);
+        assert_eq!(b.len(), b_pairs.len() * inter);
+        let mut mapped = vec![0u32; slots * inter];
+        let mut seen = vec![false; slots];
+        for (values, pairs) in [(a, a_pairs), (b, b_pairs)] {
+            for (row, &pair) in pairs.iter().enumerate() {
+                let slot = usize::try_from(pair).expect("non-negative grouped pair");
+                assert!(slot < slots);
+                assert!(!seen[slot], "partition H overlap");
+                seen[slot] = true;
+                mapped[slot * inter..(slot + 1) * inter]
+                    .copy_from_slice(&bits(&values[row * inter..(row + 1) * inter]));
+            }
+        }
+        assert!(
+            seen.into_iter().all(|value| value),
+            "partition missed a slot"
+        );
+        mapped
+    }
+
+    #[test]
+    #[ignore = "requires CUDA; run under the rig lock; full ModelOpt GU/down half2 identity only"]
+    fn cuda_half2_chain_identity() {
+        let _restore = GateRestore;
+        assert!(crate::moe_f16g_mode() >= 2);
+        assert!(crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT));
+        assert!(crate::moe_f16g_tail_on());
+
+        let gpu = memra_runtime::Gpu::new(0).unwrap();
+        let s = gpu.stream();
+        let (ne, hidden, inter, topk) = (16, 4096, 2048, 6);
+        let slots = topk;
+        let wb = hidden * inter / 2;
+        let sb = hidden * inter / 16;
+        let weight_data: Vec<u8> = (0..ne * 3 * wb)
+            .map(|i| {
+                let expert = i / (3 * wb);
+                let projection = (i / wb) % 3;
+                ((i * 37 + 17 + expert * 13 + projection * 59) % 256) as u8
+            })
+            .collect();
+        let scale_data: Vec<u8> = (0..ne * 3 * sb)
+            .map(|i| {
+                let expert = i / (3 * sb);
+                let projection = (i / sb) % 3;
+                ((5 + (i + expert * 7 + projection * 3) % 4) << 3) as u8
+            })
+            .collect();
+        let weights = s.clone_htod(&weight_data).unwrap();
+        let scales = s.clone_htod(&scale_data).unwrap();
+        let full_table = modelopt_table(&s, &weights, &scales, ne, hidden, inter).unwrap();
+
+        let mut shard_w = Vec::new();
+        let mut shard_s = Vec::new();
+        let mut shard_tables = Vec::new();
+        for first in [0, ne / 2] {
+            let mut w = s.alloc_zeros::<u8>(ne / 2 * 3 * wb).unwrap();
+            let mut sc = s.alloc_zeros::<u8>(ne / 2 * 3 * sb).unwrap();
+            s.memcpy_dtod(
+                &weights.slice(first * 3 * wb..(first + ne / 2) * 3 * wb),
+                &mut w,
+            )
+            .unwrap();
+            s.memcpy_dtod(
+                &scales.slice(first * 3 * sb..(first + ne / 2) * 3 * sb),
+                &mut sc,
+            )
+            .unwrap();
+            shard_tables.push(modelopt_table(&s, &w, &sc, ne / 2, hidden, inter).unwrap());
+            shard_w.push(w);
+            shard_s.push(sc);
+        }
+        let scale2_host: Vec<f32> = (0..ne * 3)
+            .map(|i| 2.0_f32.powi((i % 7) as i32 - 4))
+            .collect();
+        let scale2 = s.clone_htod(&scale2_host).unwrap();
+        let input: Vec<f32> = (0..hidden)
+            .map(|i| ((i % 31) as f32 - 15.0) / 16.0)
+            .collect();
+        let x = s.clone_htod(&input).unwrap();
+        let selected = [0, 8, 1, 9, 2, 10];
+        let route_weights: Vec<f32> = (0..slots).map(|i| (i + 1) as f32 / 32.0).collect();
+        let mut full = EpScratch::new(&gpu, &gpu, 1, topk, hidden, inter, None).unwrap();
+        let mut full_candidate = EpScratch::new(&gpu, &gpu, 1, topk, hidden, inter, None).unwrap();
+        let mut part_a = EpScratch::new(&gpu, &gpu, 1, topk, hidden, inter, None).unwrap();
+        let mut part_b = EpScratch::new(&gpu, &gpu, 1, topk, hidden, inter, None).unwrap();
+        let mut full_work = GroupedWork::new(&s, ne, slots, hidden, inter).unwrap();
+        let mut candidate_work = GroupedWork::new(&s, ne, slots, hidden, inter).unwrap();
+        let mut a_work =
+            GroupedWork::new_partition(&s, ne, 0, ne / 2, slots, hidden, inter).unwrap();
+        let mut b_work =
+            GroupedWork::new_partition(&s, ne, ne / 2, ne / 2, slots, hidden, inter).unwrap();
+
+        // Baseline: GU fuse + regular m_e=1 down; both new packed-half2 doors off.
+        crate::set_moe_f16g_gu_fuse_for_gate(true);
+        crate::set_moe_f16g_m1_tc_for_gate(true);
+        crate::set_moe_f16g_gu_m1_tc_for_gate(false);
+        crate::set_moe_f16g_gu_half2_for_gate(false);
+        crate::set_moe_f16g_down_m1_half2_for_gate(false);
+        let baseline = run_chain(
+            &gpu,
+            &mut full_work,
+            &mut full,
+            &full_table,
+            &x,
+            &scale2,
+            &scale2_host,
+            &selected,
+            &route_weights,
+            hidden,
+            inter,
+            topk,
+        );
+
+        let gu_before = crate::moe_f16g_gu_half2_dispatches();
+        let down_before = crate::moe_f16g_down_m1_half2_dispatches();
+        crate::set_moe_f16g_gu_half2_for_gate(true);
+        crate::set_moe_f16g_down_m1_half2_for_gate(true);
+        let candidate = run_chain(
+            &gpu,
+            &mut candidate_work,
+            &mut full_candidate,
+            &full_table,
+            &x,
+            &scale2,
+            &scale2_host,
+            &selected,
+            &route_weights,
+            hidden,
+            inter,
+            topk,
+        );
+        let gu_after = crate::moe_f16g_gu_half2_dispatches();
+        let down_after = crate::moe_f16g_down_m1_half2_dispatches();
+        assert!(gu_after > gu_before, "GU half2 launcher did not engage");
+        assert!(
+            down_after > down_before,
+            "down m1 half2 launcher did not engage"
+        );
+        assert_eq!(
+            bits(&baseline.h),
+            bits(&candidate.h),
+            "full-bank GU H identity"
+        );
+        assert_eq!(
+            bits(&baseline.contribution),
+            bits(&candidate.contribution),
+            "full-bank contribution identity"
+        );
+
+        let a = run_chain(
+            &gpu,
+            &mut a_work,
+            &mut part_a,
+            &shard_tables[0],
+            &x,
+            &scale2,
+            &scale2_host,
+            &selected,
+            &route_weights,
+            hidden,
+            inter,
+            topk,
+        );
+        let b = run_chain(
+            &gpu,
+            &mut b_work,
+            &mut part_b,
+            &shard_tables[1],
+            &x,
+            &scale2,
+            &scale2_host,
+            &selected,
+            &route_weights,
+            hidden,
+            inter,
+            topk,
+        );
+        unsafe {
+            k::ck(
+                "half2 partition original-slot merge",
+                k::memra_dsv4_ep_merge_slots(
+                    part_a.contribution.device_ptr_mut(&s).0 as *mut f32,
+                    part_b.contribution.device_ptr(&s).0 as *const f32,
+                    part_a.ids.device_ptr(&s).0 as *const i32,
+                    slots as i32,
+                    hidden as i32,
+                    (ne / 2) as i32,
+                    (ne / 2) as i32,
+                    s.cu_stream().cast(),
+                ),
+            )
+            .unwrap();
+        }
+        let merged = s
+            .clone_dtoh(&part_a.contribution.slice(..slots * hidden))
+            .unwrap();
+        s.synchronize().unwrap();
+        assert_eq!(a.pairs.len() + b.pairs.len(), slots);
+        assert_eq!(
+            map_h_bits(&candidate.h, &candidate.pairs, slots, inter),
+            merge_h_bits(&a.h, &a.pairs, &b.h, &b.pairs, slots, inter),
+            "partitioned GU H identity"
+        );
+        assert!(
+            bits(&candidate.contribution) == bits(&merged),
+            "partitioned contribution identity: first mismatch {:?}",
+            candidate
+                .contribution
+                .iter()
+                .zip(&merged)
+                .enumerate()
+                .find(|(_, (expected, actual))| expected.to_bits() != actual.to_bits())
+        );
+        println!(
+            "PASS GU/down half2 complete-chain identity: h_bits={} contribution_bits={} gu_half2_dispatches={} down_m1_half2_dispatches={}",
+            candidate.h.len(),
+            candidate.contribution.len(),
+            gu_after - gu_before,
+            down_after - down_before
+        );
+        drop((shard_tables, shard_w, shard_s));
     }
 }
