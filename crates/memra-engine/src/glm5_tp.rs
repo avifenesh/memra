@@ -491,7 +491,7 @@ fn load_glm5_ep_map(
 /// a sharded model unless `MEMRA_GLM5_SPEC_TP=1` arms the GATED composition
 /// (lane/glm5-composition; the spec x TP pair HAS its composition gate, `glm5-tp-gate`
 /// arms S2/Q-S4), whose admission REQUIRES the batched walk by name.
-pub const GLM5_TP_REFUSED_DOOR_FLAGS: [(&str, &str); 4] = [
+pub const GLM5_TP_REFUSED_DOOR_FLAGS: [(&str, &str); 3] = [
     (
         "MEMRA_HC_FUSED_PRE",
         "the fused mHC pre-chain is gated on the unsharded walk only",
@@ -499,11 +499,6 @@ pub const GLM5_TP_REFUSED_DOOR_FLAGS: [(&str, &str); 4] = [
     (
         "MEMRA_HC_DECODE_WS",
         "the workspace decode walk carries no TP mixer branches",
-    ),
-    (
-        "MEMRA_KDA_FUSED_PROJ",
-        "the fused six-projection door (either operand arm) is gated on full-width \
-         projections, never head shards",
     ),
     (
         "MEMRA_MLA_DECODE_SPLIT",
