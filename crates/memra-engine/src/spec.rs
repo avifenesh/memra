@@ -1113,6 +1113,14 @@ impl SpecSampling {
                 || self.penalty_freq != 0.0
                 || self.penalty_present != 0.0)
     }
+
+    /// Greedy WITH penalties (lane/dspark-greedy-penalised, 2026-09-07): temperature 0 and a
+    /// non-identity penalty window. The sampled machinery (`temp > 0`) never sees this shape;
+    /// the dspark route verifies it by penalised argmax (`dspark_accept_greedy_penalized`),
+    /// which is what the plain host sampler computes for it, token by token.
+    pub fn greedy_penalized(&self) -> bool {
+        self.temp <= 0.0 && self.pen_on()
+    }
 }
 
 /// Which draft source a spec session is pinned to. The ENGINE-LEVEL half of
@@ -1846,6 +1854,40 @@ pub fn sample_boundary_token_dev(
 /// Host-row twin of [`sample_boundary_token_dev`] (the prime / feed / entry rows arrive as
 /// host `Vec<f32>`).
 #[allow(clippy::too_many_arguments)]
+/// The greedy-penalised boundary token: the request's penalty window applied to one logits
+/// row on device (the same `penalize_logits` pass the sampled boundary takes), then argmax.
+/// Byte-equal to the host sampler's `sample` for a greedy penalised request: both apply the
+/// Keskar pass elementwise in f32 and take the first maximum.
+pub fn greedy_penalized_boundary_token(
+    e: &Engine,
+    logits: &[f32],
+    sp: &SpecSampling,
+    pen_hist: &[u32],
+) -> Result<u32, Box<dyn std::error::Error>> {
+    debug_assert!(sp.greedy_penalized(), "greedy-penalised boundary only");
+    let n_vocab = logits.len();
+    let mut col = e.htod(logits)?;
+    if !pen_hist.is_empty() {
+        let w0 = pen_hist
+            .len()
+            .saturating_sub(sp.penalty_last_n.min(PEN_WINDOW_MAX));
+        let hist = &pen_hist[w0..];
+        let hd = e.htod_u32_v(hist)?;
+        e.penalize_logits(
+            &mut col,
+            &hd,
+            hist.len(),
+            sp.penalty_repeat,
+            sp.penalty_freq,
+            sp.penalty_present,
+            n_vocab,
+        )?;
+    }
+    let mut am_d = e.stream().alloc_zeros::<u32>(1)?;
+    e.argmax_token_device_col(&col, 0, n_vocab, &mut am_d, 0)?;
+    Ok(e.dtoh_u32(&am_d)?[0])
+}
+
 pub fn sample_boundary_token(
     e: &Engine,
     logits: &[f32],

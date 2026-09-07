@@ -949,6 +949,67 @@ pub(crate) enum DsparkDraftSample {
 /// evolving-history pass inside the sync-free device chain. `pen_win` is the caller's
 /// session window ALREADY trimmed to `min(penalty_last_n, PEN_WINDOW_MAX)` (empty when
 /// penalties are off — the unpenalized path is byte-untouched).
+/// The verify rows with the request's penalties applied incrementally: row j is penalised
+/// over `pen_win ++ cand[1..=j]` (window-capped), i.e. by every token committed before it
+/// INCLUDING the same round's drafts, which is exactly the history the plain sampler would
+/// hold at that position. One D2D copy, one launch; `tlogits` stays raw.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn penalized_verify_rows(
+    e: &Engine,
+    tlogits: &CudaSlice<f32>,
+    cand: &[u32],
+    vt: usize,
+    n_vocab: usize,
+    sp: &crate::spec::SpecSampling,
+    pen_win: &[u32],
+) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+    let nq = vt - 1;
+    let win = sp.penalty_last_n.min(crate::spec::PEN_WINDOW_MAX);
+    debug_assert!(pen_win.len() <= win, "pen_win must arrive pre-trimmed");
+    let mut hist: Vec<u32> = Vec::with_capacity(pen_win.len() + nq);
+    hist.extend_from_slice(pen_win);
+    hist.extend_from_slice(&cand[1..=nq]); // drafted tokens: row j reads the first j
+    let hd = e.htod_u32_v(&hist)?;
+    let mut buf = e.clone_dtod(tlogits)?;
+    e.penalize_logits_rows_inc(
+        &mut buf,
+        &hd,
+        pen_win.len(),
+        sp.penalty_repeat,
+        sp.penalty_freq,
+        sp.penalty_present,
+        n_vocab,
+        vt,
+        win,
+    )?;
+    Ok(buf)
+}
+
+/// GREEDY + PENALTIES accept (lane/dspark-greedy-penalised, 2026-09-07): the penalised
+/// verify rows, then the plain argmax-prefix walk over them. Row j's argmax is the token the
+/// plain host sampler would emit at that position given the same committed history, so the
+/// accepted prefix and the correction token are byte-equal to the plain path; the drafts
+/// only decide how many rows are kept. Returns `(m, next)` like the sampled accept.
+pub(crate) fn dspark_accept_greedy_penalized(
+    e: &Engine,
+    tlogits: &CudaSlice<f32>,
+    cand: &[u32],
+    vt: usize,
+    n_vocab: usize,
+    sp: &crate::spec::SpecSampling,
+    pen_win: &[u32],
+) -> Result<(usize, u32), Box<dyn std::error::Error>> {
+    debug_assert!(sp.greedy_penalized(), "greedy-penalised accept only");
+    let ptl = penalized_verify_rows(e, tlogits, cand, vt, n_vocab, sp, pen_win)?;
+    let mut am_d = e.stream().alloc_zeros::<u32>(vt)?;
+    for r in 0..vt {
+        e.argmax_token_device_col(&ptl, r, n_vocab, &mut am_d, r)?;
+    }
+    let vam = e.dtoh_u32(&am_d)?;
+    let m = dspark_accept_prefix(cand, &vam, vt);
+    Ok((m, vam[m]))
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn dspark_accept_sampled(
     e: &Engine,
@@ -966,27 +1027,10 @@ pub(crate) fn dspark_accept_sampled(
     let nq = vt - 1; // drafts under this round's verify window
     debug_assert!(nq >= 1 && cand.len() > nq, "sampled accept shape");
     // --- penalized verify columns (identity penalties: no copy, no launch, raw tlogits) ---
-    let pen_on = sp.pen_on();
-    let ptl: Option<CudaSlice<f32>> = if pen_on {
-        let win = sp.penalty_last_n.min(crate::spec::PEN_WINDOW_MAX);
-        debug_assert!(pen_win.len() <= win, "pen_win must arrive pre-trimmed");
-        let mut hist: Vec<u32> = Vec::with_capacity(pen_win.len() + nq);
-        hist.extend_from_slice(pen_win);
-        hist.extend_from_slice(&cand[1..=nq]); // drafted tokens: row j reads the first j
-        let hd = e.htod_u32_v(&hist)?;
-        let mut buf = e.clone_dtod(tlogits)?;
-        e.penalize_logits_rows_inc(
-            &mut buf,
-            &hd,
-            pen_win.len(),
-            sp.penalty_repeat,
-            sp.penalty_freq,
-            sp.penalty_present,
-            n_vocab,
-            vt,
-            win,
-        )?;
-        Some(buf)
+    let ptl: Option<CudaSlice<f32>> = if sp.pen_on() {
+        Some(penalized_verify_rows(
+            e, tlogits, cand, vt, n_vocab, sp, pen_win,
+        )?)
     } else {
         None
     };
@@ -3662,29 +3706,15 @@ impl crate::hybrid::HybridModel {
         // routes the round's proposal/accept through the rejection-sampling arms; None or
         // temp==0 keeps every greedy path byte-identical (the exactness instrument).
         let sp_on: Option<&crate::spec::SpecSampling> = sampling.filter(|s| s.temp > 0.0);
-        // PENALTIES AT T==0 ARE A LOUD REFUSAL (lane/dspark-penalized-sampled-20260821):
-        // the greedy walk argmaxes RAW verify columns, so a temp==0 config carrying
-        // non-identity penalties would silently serve the UNPENALIZED greedy stream —
-        // exactly the H-class silent-program-switch this route refuses everywhere else.
-        // Penalized greedy stays on the plain path (worker admission owns the exclusion).
-        if let Some(s) = sampling
-            && s.temp <= 0.0
-            && s.pen_on()
-        {
-            return Err(
-                "dspark spec at temp==0 is the greedy route and would silently drop \
-                     the request's penalties; penalized greedy is served on the plain path"
-                    .into(),
-            );
-        }
-        // Penalized-sampled state: the session window (pen_window_seed — one definition
-        // across both spec routes), extended with every committed token; each round's
-        // accept receives the trimmed tail (min(penalty_last_n, PEN_WINDOW_MAX)).
-        let pen_on = sp_on.is_some_and(|s| s.pen_on());
-        let mut pen_hist: Vec<u32> = if pen_on {
-            crate::spec::pen_window_seed(&[], prompt, sp_on.unwrap().penalty_last_n)
-        } else {
-            Vec::new()
+        // GREEDY + PENALTIES (lane/dspark-greedy-penalised, 2026-09-07): the bin arm of the
+        // served one. Before this lane a temp==0 config carrying non-identity penalties was a
+        // loud refusal here (the greedy walk argmaxed RAW verify columns); it now verifies by
+        // penalised argmax, the same program the plain host sampler runs token by token.
+        let sp_gp: Option<&crate::spec::SpecSampling> = sampling.filter(|s| s.greedy_penalized());
+        let pen_on = sp_on.is_some_and(|s| s.pen_on()) || sp_gp.is_some();
+        let mut pen_hist: Vec<u32> = match sampling.filter(|s| s.pen_on()) {
+            Some(sp) => crate::spec::pen_window_seed(&[], prompt, sp.penalty_last_n),
+            None => Vec::new(),
         };
         let (mut sctr, mut uctr) = (0u32, 0u32);
         let n_embd = self.cfg.n_embd as usize;
@@ -3976,7 +4006,10 @@ impl crate::hybrid::HybridModel {
             // readback into one sync. The replay arm (CKPT=0) verifies host tokens and
             // keeps the legacy order; the sampled and DFlash2 proposals already synced
             // at the walk (chain_dev is None there).
-            let deferred = chain_dev.is_some() && embd_gpu.is_some() && (ckpt_on || ckpt_gate);
+            let deferred = chain_dev.is_some()
+                && embd_gpu.is_some()
+                && (ckpt_on || ckpt_gate)
+                && sp_gp.is_none();
             // ---- H4 confidence window: size THIS round's verify from the head ----
             if vt_policy.is_confidence() {
                 let ch = draft.confidence.as_ref().expect("asserted at loop entry");
@@ -4066,7 +4099,7 @@ impl crate::hybrid::HybridModel {
                 ),
                 Box<dyn std::error::Error>,
             > {
-                if sp_on.is_some() {
+                if sp_on.is_some() || sp_gp.is_some() {
                     // SAMPLED: keep the raw verify logits — the accept walk gathers
                     // filtered p from them (argmaxes are the greedy arm's instrument,
                     // not this one's).
@@ -4168,6 +4201,14 @@ impl crate::hybrid::HybridModel {
                         &mut sctr,
                         &mut uctr,
                     )?
+                }
+                (None, Some(tl)) => {
+                    let sp =
+                        sp_gp.expect("logits verify without sampling is the greedy-penalised arm");
+                    let w0 = pen_hist
+                        .len()
+                        .saturating_sub(sp.penalty_last_n.min(crate::spec::PEN_WINDOW_MAX));
+                    dspark_accept_greedy_penalized(e, tl, &cand, vt, n_vocab, sp, &pen_hist[w0..])?
                 }
                 _ => {
                     let m = dspark_accept_prefix(&cand, &vam, vt);
@@ -4748,19 +4789,11 @@ impl crate::hybrid::HybridModel {
         );
         // Penalized SAMPLED requests are IN scope (lane/dspark-penalized-sampled-20260821:
         // p-side penalties over the true per-state window, q the recorded proposal — the
-        // accept walk's penalty arm). Penalties at temp==0 stay a LOUD refusal: the greedy
-        // walk argmaxes RAW columns and would silently drop them — penalized greedy is
-        // served exactly on the plain path (worker admission owns that exclusion).
-        if let Some(sp) = sampling.as_ref()
-            && sp.temp <= 0.0
-            && sp.pen_on()
-        {
-            return Err(
-                "dspark spec at temp==0 is the greedy route and would silently drop \
-                     the request's penalties; penalized greedy is served on the plain path"
-                    .into(),
-            );
-        }
+        // accept walk's penalty arm). Penalties at temp==0 are IN scope too since
+        // lane/dspark-greedy-penalised (2026-09-07): `greedy_penalized()` configs verify by
+        // penalised argmax (`dspark_accept_greedy_penalized`) and draw their boundary token
+        // through `greedy_penalized_boundary_token`; worker admission arms the class under
+        // MEMRA_DSPARK_GREEDY_PENALTY and keeps it plain otherwise.
         let n_embd = self.cfg.n_embd as usize;
         let c = &draft.cfg;
         assert_eq!(n_embd, c.hidden, "draft hidden must match target n_embd");
@@ -4852,7 +4885,7 @@ impl crate::hybrid::HybridModel {
         // draw through the session Philox stream (the frspec boundary composition) —
         // penalized over the prompt window when the request carries penalties.
         let mut sctr0 = 0u32;
-        let pen_hist: Vec<u32> = match sampling.as_ref().filter(|s| s.temp > 0.0 && s.pen_on()) {
+        let pen_hist: Vec<u32> = match sampling.as_ref().filter(|s| s.pen_on()) {
             Some(sp) => crate::spec::pen_window_seed(&[], prompt, sp.penalty_last_n),
             None => Vec::new(),
         };
@@ -4865,7 +4898,12 @@ impl crate::hybrid::HybridModel {
                 &mut sctr0,
                 "dspark-prime",
             )?,
-            None => crate::forward::argmax(&logits) as u32,
+            None => match sampling.as_ref().filter(|s| s.greedy_penalized()) {
+                Some(sp) => {
+                    crate::spec::greedy_penalized_boundary_token(e, &logits, sp, &pen_hist)?
+                }
+                None => crate::forward::argmax(&logits) as u32,
+            },
         };
         let mut dkv = DflashKv::new(e, &draft.cfg, max_ctx)?;
         {
@@ -5058,12 +5096,8 @@ impl crate::hybrid::HybridModel {
             !self.uses_gemma_program(),
             "gemma4 targets use the assistant-drafter route; dspark is the qwen-hybrid arm"
         );
-        if let Some(sp) = sampling.as_ref()
-            && sp.temp <= 0.0
-            && sp.pen_on()
-        {
-            return Err("penalized greedy is served on the plain path".into());
-        }
+        // Greedy-penalised configs are in scope (lane/dspark-greedy-penalised): the restored
+        // boundary token and every verify row take the penalised argmax.
         let c = &draft.cfg;
         let b = c.block_size;
         let is_dflash2 = draft.dflash2.is_some();
@@ -5095,7 +5129,7 @@ impl crate::hybrid::HybridModel {
             return Err("restored dspark session needs the entry's boundary logits".into());
         }
         let mut sctr0 = 0u32;
-        let pen_hist: Vec<u32> = match sampling.as_ref().filter(|s| s.temp > 0.0 && s.pen_on()) {
+        let pen_hist: Vec<u32> = match sampling.as_ref().filter(|s| s.pen_on()) {
             Some(sp) => crate::spec::pen_window_seed(&[], prompt, sp.penalty_last_n),
             None => Vec::new(),
         };
@@ -5108,7 +5142,12 @@ impl crate::hybrid::HybridModel {
                 &mut sctr0,
                 "dspark-restore",
             )?,
-            None => crate::forward::argmax(boundary_logits) as u32,
+            None => match sampling.as_ref().filter(|s| s.greedy_penalized()) {
+                Some(sp) => {
+                    crate::spec::greedy_penalized_boundary_token(e, boundary_logits, sp, &pen_hist)?
+                }
+                None => crate::forward::argmax(boundary_logits) as u32,
+            },
         };
         let nd = DsparkHarvest::for_draft(draft).n_drafts(b);
         let vt_cap: usize = std::env::var("MEMRA_DFLASH_VERIFY_T")
@@ -5240,7 +5279,7 @@ impl crate::hybrid::HybridModel {
                 out
             }
         };
-        let sp_pen = sess.sampling.filter(|s| s.temp > 0.0 && s.pen_on());
+        let sp_pen = sess.sampling.filter(|s| s.pen_on());
         if let Some(sp) = sp_pen.as_ref() {
             sess.pen_hist = crate::spec::pen_window_seed(&sess.pen_hist, suffix, sp.penalty_last_n);
         }
@@ -5253,7 +5292,12 @@ impl crate::hybrid::HybridModel {
                 &mut sess.sctr,
                 "dspark-resume",
             )?,
-            None => crate::forward::argmax(&logits) as u32,
+            None => match sess.sampling.filter(|s| s.greedy_penalized()) {
+                Some(sp) => {
+                    crate::spec::greedy_penalized_boundary_token(e, &logits, &sp, &sess.pen_hist)?
+                }
+                None => crate::forward::argmax(&logits) as u32,
+            },
         };
         {
             let taps = sess.cache.dflash_taps.take().unwrap();
@@ -5377,7 +5421,11 @@ impl crate::hybrid::HybridModel {
         // SAMPLED ADMISSION (T>0): session-fixed config; counters live on the session so
         // randomness never repeats across bursts. None/temp==0 = the greedy route.
         let sp_on: Option<crate::spec::SpecSampling> = sess.sampling.filter(|s| s.temp > 0.0);
-        let pen_on = sp_on.as_ref().is_some_and(|s| s.pen_on());
+        // GREEDY + PENALTIES (lane/dspark-greedy-penalised): greedy proposals, logits verify,
+        // penalised-argmax accept. `pen_on` keys the session window for both penalised arms.
+        let sp_gp: Option<crate::spec::SpecSampling> =
+            sess.sampling.filter(|s| s.greedy_penalized());
+        let pen_on = sp_on.as_ref().is_some_and(|s| s.pen_on()) || sp_gp.is_some();
         let mut out: Vec<u32> = Vec::with_capacity(burst_target + b);
         let mut drafted = 0usize;
         let mut accepted_n = 0usize;
@@ -5552,7 +5600,8 @@ impl crate::hybrid::HybridModel {
                     }
                 }
                 drop(exact_scope);
-                deferred = embd_gpu.is_some() && ckpt_on;
+                // The deferred (device-chain, argmax-only) verify has no logits to penalise.
+                deferred = embd_gpu.is_some() && ckpt_on && sp_gp.is_none();
                 chain_dev = Some(chain_d);
             }
             // ---- H4 confidence window: size THIS round's verify from the head ----
@@ -5651,7 +5700,7 @@ impl crate::hybrid::HybridModel {
                 ),
                 Box<dyn std::error::Error>,
             > {
-                if sp_on.is_some() {
+                if sp_on.is_some() || sp_gp.is_some() {
                     // SAMPLED: raw verify logits for the rejection walk (bin-arm twin).
                     if ckpt_on {
                         let (tl, vck) = self.dspark_verify_t_logits_ckpt(
@@ -5758,6 +5807,24 @@ impl crate::hybrid::HybridModel {
                         &sess.pen_hist[w0..],
                         &mut sess.sctr,
                         &mut sess.uctr,
+                    )?
+                }
+                (None, Some(tl)) => {
+                    let sp = sp_gp
+                        .as_ref()
+                        .expect("logits verify without sampling is the greedy-penalised arm");
+                    let w0 = sess
+                        .pen_hist
+                        .len()
+                        .saturating_sub(sp.penalty_last_n.min(crate::spec::PEN_WINDOW_MAX));
+                    dspark_accept_greedy_penalized(
+                        e,
+                        tl,
+                        &cand,
+                        vt,
+                        n_vocab,
+                        sp,
+                        &sess.pen_hist[w0..],
                     )?
                 }
                 _ => {
