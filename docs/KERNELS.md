@@ -336,7 +336,10 @@ counts successful submissions. The ignored
 `cuda_gemv_fp8_grouped_m1_matches_eight_slices_and_counts_one_enqueue` test
 compares the real 8x1024x4096 shape and padded two-group case bitwise and
 checks invalid-stride refusals. Full-model gate: `dsv4_plain_perf_gate wo-a`,
-holding half2 ON in both arms. No timing or serving qualification yet.
+holding half2 ON in both arms. Both-device memcheck and all 28 full-model
+token/logit/KV rows pass. Measured +1.897%/+1.491% at 256/8192; serving
+qualification remains separate. Record:
+`research/dsv4f-2card-1m-20260904/wo-a-20260907.md`.
 
 `dsv4_graph::capture_layer` retains an explicitly armed graph and executes the
 recorded operations once, with event tracking disabled before allocation.
