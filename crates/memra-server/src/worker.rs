@@ -2570,11 +2570,20 @@ struct AdmissionCostModel {
 }
 
 impl AdmissionCostModel {
-    fn new(model: &HybridModel) -> Self {
+    /// `dspark_owned`: an armed DFlash drafter owns this model's spec program (the embedded
+    /// MTP arm never engages, `spec_eligible` refuses it by name), so the MTP scratch term
+    /// `spec_session_kv_shape` adds per token is a charge for state that never exists on a
+    /// dspark box (1,856 B/token on q38, ~55 MB at a 30k cap). The spec coefficient is the
+    /// plain one there; the draft plane is charged per session at the request site
+    /// (`DflashDraft::resident_kv_bytes`, memra#302).
+    fn new(model: &HybridModel, dspark_owned: bool) -> Self {
         let (plain_bytes_per_token, plain_ring_bytes_per_token, plain_ring_rows) =
             model.plain_session_kv_shape();
-        let (spec_bytes_per_token, spec_ring_bytes_per_token, spec_ring_rows) =
-            model.spec_session_kv_shape();
+        let (spec_bytes_per_token, spec_ring_bytes_per_token, spec_ring_rows) = if dspark_owned {
+            model.plain_session_kv_shape()
+        } else {
+            model.spec_session_kv_shape()
+        };
         assert!(
             plain_ring_rows == 0 || spec_ring_rows == 0 || plain_ring_rows == spec_ring_rows,
             "plain and spec ring rows mismatch: plain={plain_ring_rows}, spec={spec_ring_rows}"
@@ -12807,9 +12816,27 @@ pub fn run(
     // and every estimate uses that request's own effective context cap.
     let mut admission_costs: HashMap<String, AdmissionCostModel> = loaded
         .iter()
-        .map(|(name, lm)| (name.clone(), AdmissionCostModel::new(&lm.model)))
+        .map(|(name, lm)| {
+            (
+                name.clone(),
+                AdmissionCostModel::new(&lm.model, dspark_drafts.contains_key(name)),
+            )
+        })
         .collect();
     for (name, cost) in &admission_costs {
+        if let Some(draft) = dspark_drafts.get(name) {
+            eprintln!(
+                "[admission] {name:?}: dspark owns the spec program: spec coefficient = plain \
+                 (no MTP scratch term); the draft plane is charged per session, {:.0}MB at a \
+                 30k cap (ring {})",
+                draft.resident_kv_bytes(30_000) as f64 / 1e6,
+                if memra_engine::dflash::dflash_kv_ring_on() {
+                    "on: constant above two windows"
+                } else {
+                    "off: grows with the cap"
+                },
+            );
+        }
         if cost.ring_rows > 0 {
             eprintln!(
                 "[admission] {name:?}: plain {} B/token ({} capped at {} rows), spec {} \
@@ -13524,15 +13551,19 @@ pub fn run(
             // estimate above charged at ZERO. Charge the model's measured high-water per
             // spec-capable admission — session-owned state belongs in the session COST, not
             // in the shared transient reserve. 0 until observed (the boot calibration probe
-            // normally supplies the first observation). NEVER charged on a dspark-armed
-            // model (lane/graph-launch-guard-sweep-20260831, fleet-peer refuted-read fix):
-            // arming dspark DISABLES the MTP spec arm for that model, so MTP draft-graph
-            // state never allocates there — charging a wrong-route calibration figure was
-            // cutting clean full-ctx sessions on the box's arithmetic.
-            let draft_state_bytes = if estimate_spec && !dspark_drafts.contains_key(&model_key) {
-                loaded[&model_key].model.draft_session_admission_bytes()
-            } else {
-                0
+            // normally supplies the first observation). The MTP figure is NEVER charged on a
+            // dspark-armed model (lane/graph-launch-guard-sweep-20260831, fleet-peer
+            // refuted-read fix): arming dspark DISABLES the MTP spec arm for that model, so
+            // MTP draft-graph state never allocates there — charging a wrong-route
+            // calibration figure was cutting clean full-ctx sessions on the box's
+            // arithmetic. A dspark model charges its OWN draft plane instead (memra#302):
+            // the DflashKv sized by the same geometry the allocation uses, a constant above
+            // two windows under the ring and the whole cap with it off. Before the ring it
+            // was never charged and the residual learner absorbed it.
+            let draft_state_bytes = match (estimate_spec, dspark_drafts.get(&model_key)) {
+                (false, _) => 0,
+                (true, Some(draft)) => draft.resident_kv_bytes(admission_cap),
+                (true, None) => loaded[&model_key].model.draft_session_admission_bytes(),
             };
             let cost_pre_draft = cost;
             let cost = cost.saturating_add(draft_state_bytes);
@@ -13541,8 +13572,13 @@ pub fn run(
                 // grep that line's existing arithmetic shape).
                 eprintln!(
                     "[admission] per-session draft-state charge: model={model_key:?} \
-                     +{:.0}MB (measured capture high-water)",
+                     +{:.0}MB ({})",
                     draft_state_bytes as f64 / 1e6,
+                    if dspark_drafts.contains_key(&model_key) {
+                        "DFlash draft plane at this cap"
+                    } else {
+                        "measured capture high-water"
+                    },
                 );
             }
             if log_estimate {
