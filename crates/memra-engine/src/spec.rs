@@ -6711,6 +6711,7 @@ impl HybridModel {
         let n_ff = ffn_gate.out_features();
         let (zq, zd) = e.quantize_q8_1(zn, t, n_embd)?;
         if Engine::tk_ffn_dual_on()
+            && !self.cfg.dense_act_gelu_erf()
             && let Some(((g, gs), (u, us))) =
                 e.matmul_decode_exact_dual_pre(ffn_gate, ffn_up, &zq, &zd, t)?
         {
@@ -6732,7 +6733,7 @@ impl HybridModel {
         let g = e.matmul_pre(ffn_gate, &zq, &zd, zn, t)?;
         let u = e.matmul_pre(ffn_up, &zq, &zd, zn, t)?;
         let mut act = e.uninit(t * n_ff)?;
-        e.silu_mul(&g, &u, &mut act, t * n_ff)?;
+        Self::ffn_act_lim(e, &self.cfg, &g, &u, 1.0, 1.0, None, &mut act, t * n_ff)?;
         let __pqs = e.pre_quant_scaled(&act, ffn_down_pqs, ffn_down.in_features(), t)?;
         let act = __pqs.unwrap_or(act);
         let (aq, ad) = e.quantize_q8_1(&act, t, n_ff)?;
@@ -7857,12 +7858,22 @@ impl HybridModel {
                                 1.0,
                             ),
                         };
-                        if e.uses_q8_1_fast(ffn_down) {
+                        if e.uses_q8_1_fast(ffn_down) && !self.cfg.dense_act_gelu_erf() {
                             let (aq, ad) = e.silu_mul_scaled_q8_1(&gate, &up, gs, us, t * n_ff)?;
                             e.matmul_decode_exact_pre(ffn_down, &aq, &ad, t)?
                         } else {
                             let mut act = vbuf(e, t * n_ff)?;
-                            e.silu_mul_scaled(&gate, &up, gs, us, &mut act, t * n_ff)?;
+                            Self::ffn_act_lim(
+                                e,
+                                &self.cfg,
+                                &gate,
+                                &up,
+                                gs,
+                                us,
+                                None,
+                                &mut act,
+                                t * n_ff,
+                            )?;
                             e.matmul_decode_exact(ffn_down, &act, t)?
                         }
                     } else {

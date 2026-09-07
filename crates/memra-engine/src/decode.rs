@@ -258,7 +258,7 @@ impl HybridModel {
         // plain SiLU; route through ffn_act (macro-scales folded via matmul_pre) until clamped
         // fused twins exist. step35's per-layer `lim` is the same problem, same escape hatch:
         // silu_mul_scaled / silu_mul_scaled_q8_1 have no clamped twin.
-        if self.cfg.m3.is_some() || lim.is_some() {
+        if self.cfg.m3.is_some() || lim.is_some() || self.cfg.dense_act_gelu_erf() {
             let (zq, zd) = e.quantize_q8_1(z, 1, n_embd)?;
             let gate = e.matmul_pre(ffn_gate, &zq, &zd, z, 1)?;
             let up = e.matmul_pre(ffn_up, &zq, &zd, z, 1)?;
@@ -580,6 +580,7 @@ impl HybridModel {
                 let lim = self.cfg.clamp_shexp_at(il as u32);
                 let fuse = std::env::var("MEMRA_NO_FUSE_NORMQ").is_err()
                     && self.cfg.m3.is_none()
+                    && !self.cfg.dense_act_gelu_erf()
                     && lim.is_none()
                     && e.uses_q8_1_fast(ffn_gate)
                     && e.uses_q8_1_fast(ffn_up)
