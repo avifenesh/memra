@@ -55,11 +55,36 @@ pub fn on() -> bool {
 pub static GLM5_TP_SYM_GRAPH_TOKENS: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
-struct RunGraphs {
-    lo: usize,
-    hi: usize,
-    /// `[phase][rank]`
-    graphs: [[CudaGraph; 2]; 2],
+/// One recordable step of the walk: a whole KDA layer, or a half of a split MLA layer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Seg {
+    Kda(usize),
+    MlaPre(usize),
+    MlaFfn(usize),
+}
+
+/// One piece of the token: a graph over a run of segments (`[phase][rank]`), the eager middle
+/// of a split MLA layer, or a whole layer the plan keeps eager (dense FFN, or MLA when the
+/// half-capture is off).
+enum Piece {
+    Graph {
+        segs: Vec<Seg>,
+        graphs: [[CudaGraph; 2]; 2],
+    },
+    MlaMid(usize),
+    Eager(usize),
+}
+
+/// The plan before capture: what each piece will be.
+#[derive(Debug, PartialEq, Eq)]
+enum Item {
+    Seg(Seg),
+    MlaMid(usize),
+    Eager(usize),
+}
+
+pub fn mla_pieces_on() -> bool {
+    std::env::var("MEMRA_GLM5_TP_SYM_GRAPH_MLA").as_deref() != Ok("0")
 }
 
 // SAFETY (the same reading as `glm5_decode_graph`'s pool): the raw CUgraph/CUgraphExec handles
@@ -76,29 +101,62 @@ pub(crate) struct SymGraphState {
     pos_peer_io: CudaSlice<i32>,
     ws_root: HyperDecodeWs,
     ws_peer: HyperDecodeWs,
-    runs: Vec<RunGraphs>,
+    /// Pre-`wo` attention output of a split MLA layer, per rank: the eager middle writes it,
+    /// the FFN piece bakes it.
+    mla_a_root: Option<CudaSlice<f32>>,
+    mla_a_peer: Option<CudaSlice<f32>>,
+    pieces: Vec<Piece>,
+    /// The first token of the state ran eager (segment workspaces allocated outside capture).
+    warm: bool,
     phase: usize,
     failed: bool,
 }
 
-/// Maximal contiguous runs of TP-sharded KDA layers inside `[lo, hi)`.
-fn plan_runs(m: &HybridModel, lo: usize, hi: usize) -> Vec<(usize, usize)> {
-    let mut out = Vec::new();
-    let mut a = None;
-    for il in lo..=hi {
-        let kda = il < hi
-            && matches!(&m.layers[il].mixer, Mixer::Kda(la) if la.tp.is_some())
-            && matches!(&m.layers[il].ffn, crate::hybrid::Ffn::Moe(_));
-        match (kda, a) {
-            (true, None) => a = Some(il),
-            (false, Some(s)) => {
-                out.push((s, il));
-                a = None;
+/// The plan over `[lo, hi)`: TP-sharded KDA+MoE layers are whole segments; TP-sharded MLA+MoE
+/// layers split into PRE / eager middle / FFN when the segment workspace seam is on; everything
+/// else (the dense layers, MLA without the seam) stays a whole eager layer.
+fn plan_items(m: &HybridModel, lo: usize, hi: usize) -> Vec<Item> {
+    let mla_split = mla_pieces_on() && Engine::mla_seg_ws_on();
+    let mut out = Vec::with_capacity(hi.saturating_sub(lo) * 3);
+    for il in lo..hi {
+        let moe = matches!(&m.layers[il].ffn, crate::hybrid::Ffn::Moe(_));
+        match &m.layers[il].mixer {
+            Mixer::Kda(la) if la.tp.is_some() && moe => out.push(Item::Seg(Seg::Kda(il))),
+            Mixer::Mla(mla) if mla.tp.is_some() && moe && mla_split => {
+                out.push(Item::Seg(Seg::MlaPre(il)));
+                out.push(Item::MlaMid(il));
+                out.push(Item::Seg(Seg::MlaFfn(il)));
             }
-            _ => {}
+            _ => out.push(Item::Eager(il)),
         }
     }
     out
+}
+
+/// Consecutive segments become one graph piece; the plan's other items stay their own pieces.
+fn group_runs(items: &[Item]) -> Vec<Vec<Seg>> {
+    let mut runs = Vec::new();
+    let mut cur: Vec<Seg> = Vec::new();
+    for it in items {
+        match it {
+            Item::Seg(sg) => cur.push(*sg),
+            _ => {
+                if !cur.is_empty() {
+                    runs.push(std::mem::take(&mut cur));
+                }
+            }
+        }
+    }
+    if !cur.is_empty() {
+        runs.push(cur);
+    }
+    runs
+}
+
+fn seg_layer(sg: Seg) -> usize {
+    match sg {
+        Seg::Kda(il) | Seg::MlaPre(il) | Seg::MlaFfn(il) => il,
+    }
 }
 
 /// Two simultaneous stream captures, one per rank, of one body that issues to both.
@@ -211,6 +269,11 @@ fn take_state(
             Ok(_) | Err(_) => {}
         }
     }
+    // the pre-`wo` handoff width of a TP-sharded MLA layer (all MLA layers share one geometry)
+    let mla_a = (lo..hi).find_map(|il| match &m.layers[il].mixer {
+        Mixer::Mla(mla) if mla.tp.is_some() => Some(mla.wo.in_features()),
+        _ => None,
+    });
     Ok(Box::new(SymGraphState {
         lo,
         hi,
@@ -225,7 +288,15 @@ fn take_state(
             let _m = peer.gpu.enter_main()?;
             HyperDecodeWs::new(peer, topology, n_embd)?
         },
-        runs: Vec::new(),
+        mla_a_root: mla_a.map(|n| e.zeros(n)).transpose()?,
+        mla_a_peer: mla_a
+            .map(|n| {
+                let _m = peer.gpu.enter_main()?;
+                peer.zeros(n)
+            })
+            .transpose()?,
+        pieces: Vec::new(),
+        warm: false,
         phase: 0,
         failed: false,
     }))
@@ -263,8 +334,8 @@ pub(crate) fn walk_graphed(
         });
         return Ok(false);
     }
-    let runs = plan_runs(m, lo, hi);
-    if runs.is_empty() {
+    let items = plan_items(m, lo, hi);
+    if !items.iter().any(|it| matches!(it, Item::Seg(_))) {
         return Ok(false);
     }
     // the one-shot's stage buffers, sized before anything is recorded
@@ -274,7 +345,7 @@ pub(crate) fn walk_graphed(
     // for the token and put it back on every path.
     let mut st = take_state(m, e, peer, topology, cache, lo, hi)?;
     let r = walk_token(
-        m, e, peer, rt, topology, x, x_peer, pos_d, pos_peer, lo, hi, cache, dev, &runs, &mut st,
+        m, e, peer, rt, topology, x, x_peer, pos_d, pos_peer, lo, hi, cache, dev, &items, &mut st,
     );
     cache.glm5_tp_sym_graph = Some(st);
     r
@@ -295,7 +366,7 @@ fn walk_token(
     hi: usize,
     cache: &mut Cache,
     dev: usize,
-    runs: &[(usize, usize)],
+    items: &[Item],
     st: &mut SymGraphState,
 ) -> Res<bool> {
     let width = topology.streams * m.cfg.n_embd as usize;
@@ -317,105 +388,18 @@ fn walk_token(
         let mut pd = st.pos_peer_io.slice_mut(0..1);
         peer.stream().memcpy_dtod(&ps, &mut pd)?;
     }
-    // the runs are built on first use, both phases back to back
-    if st.runs.is_empty() {
-        let n = runs.len();
-        for (ri, &(a, b)) in runs.iter().enumerate() {
-            let mut phases: Vec<[CudaGraph; 2]> = Vec::with_capacity(2);
-            for phase in 0..2 {
-                let ctx = CapCtx {
-                    dev,
-                    lo,
-                    hi,
-                    run: ri,
-                    runs: n,
-                    a,
-                    b,
-                    phase,
-                    recapture: false,
-                };
-                // split the borrow: the state's buffers are distinct fields
-                let SymGraphState {
-                    x_io,
-                    x_peer_io,
-                    pos_peer_io,
-                    ws_root,
-                    ws_peer,
-                    ..
-                } = &mut *st;
-                let cap = capture_pair(e, peer, &ctx, || {
-                    for il in a..b {
-                        m.sym_layer_step(
-                            e,
-                            peer,
-                            rt,
-                            topology,
-                            il,
-                            x_io,
-                            x_peer_io,
-                            ws_root,
-                            ws_peer,
-                            pos_d,
-                            pos_peer_io,
-                            cache,
-                        )?;
-                    }
-                    Ok(())
-                });
-                match cap {
-                    Ok(g) => phases.push(g),
-                    Err(err) => {
-                        eprintln!(
-                            "[glm5-tp-sym-graph] capture refused for run [{a}, {b}) phase {phase}: {err}; \
-                             this session's symmetric walk stays EAGER (byte-identical)"
-                        );
-                        st.failed = true;
-                        st.runs.clear();
-                        return Ok(false);
-                    }
-                }
-            }
-            let mut it = phases.into_iter();
-            let p0 = it.next().ok_or("phase 0 missing")?;
-            let p1 = it.next().ok_or("phase 1 missing")?;
-            st.runs.push(RunGraphs {
-                lo: a,
-                hi: b,
-                graphs: [p0, p1],
-            });
-        }
-        eprintln!(
-            "[glm5-tp-sym-graph] engaged: {} KDA run(s) recorded per rank in both ping-pong phases \
-             over layers [{lo}, {hi}); MLA layers stay eager",
-            st.runs.len()
-        );
-    }
-    // the token: runs replay, everything else eager, in layer order
-    let phase = st.phase;
-    let mut il = lo;
-    let mut ri = 0;
-    while il < hi {
-        if ri < st.runs.len() && st.runs[ri].lo == il {
-            let run = &st.runs[ri];
-            {
-                let _m = e.gpu.enter_main()?;
-                run.graphs[phase][0].launch()?;
-            }
-            {
-                let _m = peer.gpu.enter_main()?;
-                run.graphs[phase][1].launch()?;
-            }
-            il = run.hi;
-            ri += 1;
-        } else {
-            let SymGraphState {
-                x_io,
-                x_peer_io,
-                pos_peer_io,
-                ws_root,
-                ws_peer,
-                ..
-            } = &mut *st;
+    // the first token of the state runs EAGER through the stable buffers: the MLA segment
+    // workspaces and their q8 pairs are allocated on it, outside any capture region
+    if !st.warm {
+        let SymGraphState {
+            x_io,
+            x_peer_io,
+            pos_peer_io,
+            ws_root,
+            ws_peer,
+            ..
+        } = &mut *st;
+        for il in lo..hi {
             m.sym_layer_step(
                 e,
                 peer,
@@ -430,7 +414,219 @@ fn walk_token(
                 pos_peer_io,
                 cache,
             )?;
-            il += 1;
+        }
+        st.warm = true;
+        let src = st.x_io.slice(0..width);
+        let mut dst = x.slice_mut(0..width);
+        e.stream().memcpy_dtod(&src, &mut dst)?;
+        return Ok(true);
+    }
+    // the pieces are recorded on first use, both phases back to back
+    if st.pieces.is_empty() {
+        let runs = group_runs(items);
+        let n = runs.len();
+        let mut pieces: Vec<Piece> = Vec::with_capacity(items.len());
+        let mut ri = 0usize;
+        let mut i = 0usize;
+        while i < items.len() {
+            match &items[i] {
+                Item::MlaMid(il) => {
+                    pieces.push(Piece::MlaMid(*il));
+                    i += 1;
+                }
+                Item::Eager(il) => {
+                    pieces.push(Piece::Eager(*il));
+                    i += 1;
+                }
+                Item::Seg(_) => {
+                    let segs = runs[ri].clone();
+                    let a = seg_layer(segs[0]);
+                    let b = seg_layer(*segs.last().expect("a run has segments")) + 1;
+                    let mut phases: Vec<[CudaGraph; 2]> = Vec::with_capacity(2);
+                    for phase in 0..2 {
+                        let ctx = CapCtx {
+                            dev,
+                            lo,
+                            hi,
+                            run: ri,
+                            runs: n,
+                            a,
+                            b,
+                            phase,
+                            recapture: false,
+                        };
+                        let SymGraphState {
+                            x_io,
+                            x_peer_io,
+                            pos_peer_io,
+                            ws_root,
+                            ws_peer,
+                            mla_a_root,
+                            mla_a_peer,
+                            ..
+                        } = &mut *st;
+                        let cap = capture_pair(e, peer, &ctx, || {
+                            for sg in &segs {
+                                match *sg {
+                                    Seg::Kda(il) => m.sym_layer_step(
+                                        e,
+                                        peer,
+                                        rt,
+                                        topology,
+                                        il,
+                                        x_io,
+                                        x_peer_io,
+                                        ws_root,
+                                        ws_peer,
+                                        pos_d,
+                                        pos_peer_io,
+                                        cache,
+                                    )?,
+                                    Seg::MlaPre(il) => m.sym_mla_pre_piece(
+                                        e,
+                                        peer,
+                                        topology,
+                                        il,
+                                        x_io,
+                                        x_peer_io,
+                                        ws_root,
+                                        ws_peer,
+                                        pos_d,
+                                        pos_peer_io,
+                                    )?,
+                                    Seg::MlaFfn(il) => {
+                                        let (ar, ap) = match (&*mla_a_root, &*mla_a_peer) {
+                                            (Some(ar), Some(ap)) => (ar, ap),
+                                            _ => {
+                                                return Err(format!(
+                                                    "layer {il}: sym MLA FFN piece without handoff buffers"
+                                                )
+                                                .into());
+                                            }
+                                        };
+                                        m.sym_mla_ffn_piece(
+                                            e, peer, rt, topology, il, ar, ap, x_io, x_peer_io,
+                                            ws_root, ws_peer,
+                                        )?
+                                    }
+                                }
+                            }
+                            Ok(())
+                        });
+                        match cap {
+                            Ok(g) => phases.push(g),
+                            Err(err) => {
+                                eprintln!(
+                                    "[glm5-tp-sym-graph] capture refused for run [{a}, {b}) phase {phase}: {err}; \
+                                     this session's symmetric walk stays EAGER (byte-identical)"
+                                );
+                                st.failed = true;
+                                st.pieces.clear();
+                                return Ok(false);
+                            }
+                        }
+                    }
+                    let mut it = phases.into_iter();
+                    let p0 = it.next().ok_or("phase 0 missing")?;
+                    let p1 = it.next().ok_or("phase 1 missing")?;
+                    pieces.push(Piece::Graph {
+                        graphs: [p0, p1],
+                        segs,
+                    });
+                    i += runs[ri].len();
+                    ri += 1;
+                }
+            }
+        }
+        let n_graph = pieces
+            .iter()
+            .filter(|p| matches!(p, Piece::Graph { .. }))
+            .count();
+        let n_mid = pieces
+            .iter()
+            .filter(|p| matches!(p, Piece::MlaMid(_)))
+            .count();
+        let n_eager = pieces
+            .iter()
+            .filter(|p| matches!(p, Piece::Eager(_)))
+            .count();
+        let n_segs: usize = pieces
+            .iter()
+            .map(|p| match p {
+                Piece::Graph { segs, .. } => segs.len(),
+                _ => 0,
+            })
+            .sum();
+        st.pieces = pieces;
+        eprintln!(
+            "[glm5-tp-sym-graph] engaged: {n_graph} graph piece(s) over {n_segs} segment(s) recorded \
+             per rank in both ping-pong phases over layers [{lo}, {hi}); {n_mid} MLA middle(s) eager \
+             between pieces, {n_eager} whole layer(s) eager"
+        );
+    }
+    // the token: graph pieces replay, the middles and the whole eager layers run in order
+    let phase = st.phase;
+    let SymGraphState {
+        x_io,
+        x_peer_io,
+        pos_peer_io,
+        ws_root,
+        ws_peer,
+        mla_a_root,
+        mla_a_peer,
+        pieces,
+        ..
+    } = &mut *st;
+    for piece in pieces.iter() {
+        match piece {
+            Piece::Graph { graphs, .. } => {
+                {
+                    let _m = e.gpu.enter_main()?;
+                    graphs[phase][0].launch()?;
+                }
+                {
+                    let _m = peer.gpu.enter_main()?;
+                    graphs[phase][1].launch()?;
+                }
+            }
+            Piece::MlaMid(il) => {
+                let (ar, ap) = match (mla_a_root.as_mut(), mla_a_peer.as_mut()) {
+                    (Some(ar), Some(ap)) => (ar, ap),
+                    _ => {
+                        return Err(
+                            format!("layer {il}: sym MLA middle without handoff buffers").into(),
+                        );
+                    }
+                };
+                m.sym_mla_mid_eager(
+                    e,
+                    peer,
+                    *il,
+                    ws_root,
+                    ws_peer,
+                    pos_d,
+                    pos_peer_io,
+                    cache,
+                    ar,
+                    ap,
+                )?;
+            }
+            Piece::Eager(il) => {
+                m.sym_layer_step(
+                    e,
+                    peer,
+                    rt,
+                    topology,
+                    *il,
+                    x_io,
+                    x_peer_io,
+                    ws_root,
+                    ws_peer,
+                    pos_d,
+                    pos_peer_io,
+                    cache,
+                )?;
+            }
         }
     }
     st.phase ^= 1;
