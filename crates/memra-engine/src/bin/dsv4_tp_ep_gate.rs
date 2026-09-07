@@ -107,6 +107,7 @@ fn run_once(gpu: &Dsv4Gpu, tokens: &[u32], source_sha256: &str) -> Receipt {
     let attention_before = gpu.attention_tp_rank_calls();
     let attention_ar_before = gpu.attention_tp_ar_calls();
     let attention_mode = gpu.attention_tp_geometry().is_some();
+    let grouped_wo_a_before = gpu.dense_wo_a_grouped_dispatches();
     let steps = CONTINUATION_TOKENS + 1;
     let mut state = gpu
         .alloc_decode_state_for_transient(steps + 8, 1)
@@ -200,6 +201,13 @@ fn run_once(gpu: &Dsv4Gpu, tokens: &[u32], source_sha256: &str) -> Receipt {
     let expected_attention = u64::from(attention_mode) * steps * trunk_layers;
     assert_eq!(attention_rank_calls, [expected_attention; 2]);
     assert_eq!(attention_ar_calls, expected_attention);
+    if attention_mode {
+        assert_eq!(
+            gpu.dense_wo_a_grouped_dispatches(),
+            grouped_wo_a_before,
+            "attention TP2 uses the qualified per-group GEMV, not unqualified grouped-4"
+        );
+    }
     let ar_refusals = gpu
         .tp_ep_ar_refusal_words()
         .expect("TP/EP AR refusal words");

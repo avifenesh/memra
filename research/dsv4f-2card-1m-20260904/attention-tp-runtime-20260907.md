@@ -12,6 +12,8 @@ For the 64-head, 8-output-group configuration, each rank uses:
 
 Geometry is derived and validated from normalized configuration. Each rank receives its own sink-head offset. Shared latent KV, compressors and indexer remain replicated. Full FP8 source planes are retained beside the packed planes in this first slice; no VRAM-saving claim is made.
 
+The first slice uses the component-qualified per-group `wo_a` GEMV. A packed four-group `grouped_m1` launch is a different shape and remains disabled even if a caller arms the old full-attention grouped accelerator. Its distinct-input/canary component gate is still pending; generic projection packing does not qualify it.
+
 The paired step runs both `attention_verify_dev` producers, reduces their 4096-element output partials with the existing native out-of-place rank-order primitive, then enters `post_attention_moe_verify_dev` for attention HC post and FFN preparation. The existing expert join/shared tail follows. A head-sharded request cannot use the single-rank block wrapper or silently fall back to replicated attention.
 
 The numerical class is `dsv4_attention_wo_b_input_split_f32_rank_reduce`. The two actual GPU partials and both joined outputs are preserved separately from MoE buffers. The gate reads the final layer after each successful token and requires every joined f32 bit to equal canonical CPU `rank0 + rank1`; it does not compare that sum to the old full-width accumulation or invent a tolerance.

@@ -14342,7 +14342,10 @@ impl Dsv4Gpu {
             || dwsel(self.dense_fp8, &stream, &layer.wo_a, &layer.wo_a_fp8),
             |(_, bank)| packed_dense(&bank.wo_a, &stream),
         );
-        let grouped_wo_a = if t == 1 && !vws.is_prefill {
+        // The packed rank-half has only local groups. Its per-group GEMV is qualified
+        // by the component gate; the distinct grouped_m1 8-to-4 shape still needs a
+        // target receipt and must not inherit the full-attention accelerator flag.
+        let grouped_wo_a = if shard.is_none() && t == 1 && !vws.is_prefill {
             Self::gemv_wo_a_grouped_fp8_m1_dev(
                 st,
                 wo_a_dw,
