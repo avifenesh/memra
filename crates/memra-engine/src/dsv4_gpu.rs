@@ -2704,10 +2704,7 @@ impl Dsv4Gpu {
                 mc.moe.as_ref().expect("moe").expert_ff_length as usize,
             )?
         };
-        if topology.is_tp_ep()
-            && (mc.nextn_predict_layers > 0
-                || std::env::var("MEMRA_DSV4_DRAFTER").as_deref() == Ok("dspark"))
-        {
+        if topology.is_tp_ep() && std::env::var("MEMRA_DSV4_DRAFTER").as_deref() == Ok("dspark") {
             return Err(
                 "DSV4 TP/EP all-layer topology currently refuses MTP/DSpark state because the drafter is not replicated per rank"
                     .into(),
@@ -3248,7 +3245,7 @@ impl Dsv4Gpu {
         // name — measured on both artifacts: preview has e_proj.weight+.scale, 0731 has
         // no e_proj keys; the stem alone misses because `has` is raw-exact).
         let nextn = me.model.mc.nextn_predict_layers;
-        if nextn > 0 && me.model.has("mtp.0.e_proj.weight") {
+        if !topology.is_tp_ep() && nextn > 0 && me.model.has("mtp.0.e_proj.weight") {
             assert_eq!(
                 nextn, 1,
                 "multi-NextN chains not wired (single MTP layer expected)"
@@ -3272,7 +3269,7 @@ impl Dsv4Gpu {
                 hc_head_scale: me.model.tensor_f32(&format!("{p}.hc_head_scale")).1,
             };
             me.mtp = Some(mtp);
-        } else if nextn > 0 {
+        } else if !topology.is_tp_ep() && nextn > 0 {
             if std::env::var("MEMRA_DSV4_DRAFTER").as_deref() == Ok("dspark") {
                 // iteration 3: the DSpark drafter, whole module on the LAST stage
                 // (tap layers 40/41/42 + shared head locality — VRAM plan in the
