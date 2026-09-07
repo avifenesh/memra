@@ -500,7 +500,12 @@ impl ToolStreamParser {
                     self.buf.drain(..i + CLOSE.len());
                     self.state = State::Scan;
                     let parsed = if self.glm5 {
+                        // Spark-X2.5 also emits the qwen `<function=NAME>…</function>` body
+                        // on this wire under sampling (default-arm7-glmwire, 2026-09-07); a
+                        // complete qwen body is the same call. An incomplete one still
+                        // surfaces verbatim (gate c).
                         self.parse_glm5_block(&inner)
+                            .or_else(|| self.parse_block(&inner))
                     } else {
                         self.parse_block(&inner)
                     };
@@ -1186,6 +1191,23 @@ Paris\n</parameter>\n<parameter=days>\n3\n</parameter>\n<parameter=metric>\ntrue
         let (content, calls) = reassemble(&pieces);
         assert!(calls.is_empty());
         assert_eq!(content, bad);
+    }
+
+    /// A complete qwen-shaped body on the GLM wire (Spark-X2.5 under sampling) parses as the
+    /// same call; the bare `<function=NAME>` body of the malformed battery still does not.
+    #[test]
+    fn glm5_accepts_a_complete_qwen_body() {
+        let mut p = ToolStreamParser::glm5(false, weather_schema());
+        let mut pieces = p.push(
+            "<tool_call>\n<function=get_weather><parameter=city>Paris</parameter>\
+<parameter=metric>true</parameter></function>\n</tool_call>",
+        );
+        pieces.extend(p.finish());
+        let (content, calls) = reassemble(&pieces);
+        assert_eq!(content, "");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "get_weather");
+        assert_eq!(calls[0].arguments, r#"{"city":"Paris","metric":true}"#);
     }
 
     const GLM_EMISSION: &str = "I'll check.\n<tool_call>get_weather<arg_key>city</arg_key>\
