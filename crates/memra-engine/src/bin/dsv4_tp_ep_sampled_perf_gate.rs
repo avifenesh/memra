@@ -6,7 +6,7 @@
 //! decode are timed separately. No speculative path, PP arm, cache digest, or
 //! hidden-state hash is inside either timed interval.
 
-use memra_engine::dsv4_gpu::{Dsv4Gpu, Dsv4SampleCfg, dsv4_sample_row};
+use memra_engine::dsv4_gpu::{Dsv4Gpu, Dsv4Phase, Dsv4SampleCfg, dsv4_prof_on, dsv4_sample_row};
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -182,8 +182,14 @@ fn run_once(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, repeat: usize)
     };
     let mut generated = Vec::with_capacity(OUTPUT_TOKENS);
     let mut eos = false;
+    let profiled = dsv4_prof_on();
+    let mut decode_phase = None;
     let decode_start = Instant::now();
     for _ in 0..OUTPUT_TOKENS {
+        if profiled && generated.len() == 32 {
+            drain(gpu);
+            decode_phase = Dsv4Phase::new("TP_EP_DECODE\0", None);
+        }
         let token = dsv4_sample_row(&row, state.pos, &cfg).expect("sample");
         if token == tokenizer.eos_id() {
             eos = true;
@@ -193,8 +199,13 @@ fn run_once(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, repeat: usize)
         row = gpu
             .decode_step(token, &mut state)
             .expect("TP/EP sampled decode");
+        if profiled && generated.len() == 64 {
+            drain(gpu);
+            drop(decode_phase.take());
+        }
     }
     drain(gpu);
+    drop(decode_phase);
     let decode_wall = decode_start.elapsed();
     assert_eq!(
         state.pos,
@@ -207,12 +218,16 @@ fn run_once(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, repeat: usize)
         .tp_ep_ar_refusal_words()
         .expect("decode AR refusal words");
     assert_eq!(ar_refusals, [0, 0], "decode AR refusal");
+    assert!(
+        row.iter().all(|value| value.is_finite()),
+        "final logits finite"
+    );
 
     let generated_sha256 = sha256_tokens(&generated);
     let is_looped = looped(&generated);
     let decode_tok_s = generated.len() as f64 / decode_wall.as_secs_f64();
     let prime_tok_s = PROMPT_TOKENS as f64 / prime_wall.as_secs_f64();
-    let eligible = !eos && generated.len() == OUTPUT_TOKENS && !is_looped;
+    let eligible = !profiled && !eos && generated.len() == OUTPUT_TOKENS && !is_looped;
     let headline_decode_tok_s = if eligible {
         format!("{decode_tok_s:.6}")
     } else {
@@ -227,6 +242,15 @@ fn run_once(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, repeat: usize)
     let final_hidden_digest = gpu
         .tp_ep_hidden_digest_for_gate(&state)
         .expect("final hidden digest");
+    assert_eq!(
+        final_cache_digest[0], final_cache_digest[1],
+        "final cache rank symmetry"
+    );
+    assert_eq!(
+        final_hidden_digest[0], final_hidden_digest[1],
+        "final hidden rank symmetry"
+    );
+    println!("PROFILE repeat={repeat} enabled={profiled} window_start=32 window_end=64");
     println!(
         "MEASURE {{\"repeat\":{repeat},\"prompt_tokens\":{PROMPT_TOKENS},\"requested_output_tokens\":{OUTPUT_TOKENS},\"generated_tokens\":{},\"forward_calls\":{},\"eos\":{eos},\"state_alloc_ns\":{},\"prime_wall_ns\":{},\"decode_wall_ns\":{},\"prime_tok_s\":{prime_tok_s:.6},\"decode_tok_s\":{decode_tok_s:.6},\"headline_decode_tok_s\":{headline_decode_tok_s},\"eligible\":{eligible},\"looped\":{is_looped},\"state_pos\":{},\"generated_sha256\":\"{generated_sha256}\",\"final_logits_sha256\":\"{final_logits_sha256}\",\"final_cache_digest\":[{},{}],\"final_hidden_digest\":[{},{}],\"ar_refusals\":[{},{}],\"rank_layer_calls\":[{},{}],\"ep_calls\":{},\"ar_dispatches\":{},\"gu_m1_calls\":{},\"gu_half2_calls\":{},\"down_half2_calls\":{},\"wo_a_calls\":{},\"index_radix_calls\":{},\"speculative\":false,\"pp_timing\":false,\"cache_hash_in_timing\":false,\"hidden_hash_in_timing\":false}}",
         generated.len(),
@@ -250,11 +274,6 @@ fn run_once(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, repeat: usize)
         counters_decode.down_half2,
         counters_decode.wo_a,
         counters_decode.index_radix,
-    );
-    // Keep the finite check outside the timed interval.
-    assert!(
-        row.iter().all(|value| value.is_finite()),
-        "final logits finite"
     );
     RunReceipt {
         repeat,
@@ -283,6 +302,11 @@ fn main() {
         args.len(),
         3,
         "usage: dsv4_tp_ep_sampled_perf_gate <model-dir> <real-source.txt>"
+    );
+    assert_ne!(
+        std::env::var("MEMRA_DSV4_ROUND_PROFILE").as_deref(),
+        Ok("1"),
+        "use NVTX-only profiling; sync-bracketed timings are not admitted by this gate"
     );
     for (name, expected) in [
         ("MEMRA_DSV4_DECODE_PATH", "device"),
@@ -343,8 +367,8 @@ fn main() {
     gpu.set_dense_wo_a_grouped_for_gate(true);
     gpu.set_index_topk_radix_for_gate(true);
 
-    let first = run_once(&gpu, &prompt, 0);
-    let second = run_once(&gpu, &prompt, 1);
+    let first = run_once(&gpu, &prompt, &tokenizer, 0);
+    let second = run_once(&gpu, &prompt, &tokenizer, 1);
     assert_eq!(
         first.generated_sha256, second.generated_sha256,
         "same-TP sampled repeat stream"

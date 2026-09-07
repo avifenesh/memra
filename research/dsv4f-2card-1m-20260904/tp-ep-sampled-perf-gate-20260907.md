@@ -33,7 +33,14 @@ Insufficient, EOS-terminated, or looped output is reported with
 \`eligible=false\` and has no headline rate. No speculative, PP, cache-hash,
 or hidden-state-hash timing rows are emitted. The final logits/cache/hidden
 identities are collected only after timing for the two-repeat consistency
-check.
+check. Final cache and hidden data must also match between the two ranks.
+
+With the existing `MEMRA_DSV4_NVTX=1` diagnostic enabled, the gate emits a
+`TP_EP_DECODE` range over decode steps 32 through 63 in each repeat. The
+window is drained at its boundaries only in that instrumented mode. Such
+rows are explicitly ineligible for a headline rate. Sync-bracketed
+`MEMRA_DSV4_ROUND_PROFILE=1` is refused. An incomplete or early-EOS window
+is not a complete profile receipt.
 
 ## Limits
 
