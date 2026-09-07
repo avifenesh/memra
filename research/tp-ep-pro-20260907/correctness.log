@@ -1,0 +1,8 @@
+TP_AR_GENERATION shape=4096 generation=0 input_hash=2f5b9b517ff5b846 barrier=[0,0] outputs=bit-exact inputs=unchanged canaries=pass
+TP_AR_GENERATION shape=4096 generation=31 input_hash=8922fcc6d760149c barrier=[0,0] outputs=bit-exact inputs=unchanged canaries=pass
+TP_AR_ONE_SHOT_PASS shape=4096 blocks=1 generations=32 launches=64 fresh_hashes=32 barrier_errors=[0,0] rank_outputs=bit-exact inputs_unchanged=true canaries=true launcher=memra_tp_ar_1stage
+TP_AR_GENERATION shape=24576 generation=0 input_hash=0d0eedf1ee14219e barrier=[0,0] outputs=bit-exact inputs=unchanged canaries=pass
+TP_AR_GENERATION shape=24576 generation=31 input_hash=f80c8570e3581f37 barrier=[0,0] outputs=bit-exact inputs=unchanged canaries=pass
+TP_AR_ONE_SHOT_PASS shape=24576 blocks=48 generations=32 launches=64 fresh_hashes=32 barrier_errors=[0,0] rank_outputs=bit-exact inputs_unchanged=true canaries=true launcher=memra_tp_ar_1stage
+TP_AR_NEGATIVE_PASS shape=4096 missing_peer=true barrier_error=40043 elapsed_ms=2 bounded=true output_untouched=true input_unchanged=true
+TP_AR_GATE_PASS one-shot out-of-place transport qualified for correctness
