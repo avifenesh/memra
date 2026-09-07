@@ -13,6 +13,8 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 
 const CONTINUATION_TOKENS: usize = 3;
+const PINNED_SOURCE_SHA256: &str =
+    "f6e175a6f2588953568746fec0cd43fcd046405f74b5c71ce071fe7f37238ded";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Receipt {
@@ -169,6 +171,10 @@ fn main() {
     let dir = Path::new(&args[1]);
     let source = std::fs::read_to_string(&args[2]).expect("source");
     let source_sha256 = sha256_bytes(source.as_bytes());
+    assert_eq!(
+        source_sha256, PINNED_SOURCE_SHA256,
+        "pinned real-source tape"
+    );
     let tokenizer = Tokenizer::from_hf_dir(dir).expect("tokenizer");
     let prompt = tokenizer.encode(
         &format!("Review this inference engine source:\n\n{source}"),
