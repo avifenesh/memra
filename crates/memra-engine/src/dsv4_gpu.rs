@@ -15283,6 +15283,10 @@ impl Dsv4Gpu {
     /// (§3.1 invariant: every trunk cache class ends bit-identical to plain sequential
     /// decode of exactly the committed positions). Ring slots take their transient rows;
     /// the compressors replay; the append-only stores fall back to their high-water mark.
+    ///
+    /// The all-layer TP/EP walk has a second cache/checkpoint plane.  Its caller must invoke
+    /// [`Self::commit_verify_dev_plane`] once for each rank and advance `state.pos` only after
+    /// both planes commit.  This method remains the single-plane PP/spec caller.
     pub fn commit_verify_dev(
         &self,
         state: &mut DecodeState,
@@ -15302,21 +15306,68 @@ impl Dsv4Gpu {
             n_commit >= 1 && n_commit <= t,
             "commit {n_commit} outside round width {t}"
         );
+        self.commit_verify_dev_plane(
+            &mut state.caches,
+            &mut vstate.layers,
+            &mut vstate.ws,
+            None,
+            pos0,
+            t,
+            n_commit,
+        )?;
+        state.pos = pos0 + n_commit;
+        Ok(())
+    }
+
+    /// Commit one explicit cache/checkpoint/workspace plane without changing the shared
+    /// [`DecodeState::pos`].  `stage_override` is `None` for the ordinary PP ownership map;
+    /// TP/EP passes `Some(0)` or `Some(1)` so every layer uses that rank's stream and its own
+    /// persistent ring/checkpoint plane.  The caller must commit all planes before exposing the
+    /// new position.
+    pub(crate) fn commit_verify_dev_plane(
+        &self,
+        caches: &mut [LayerCache],
+        checkpoints: &mut [LayerCkptDev],
+        ws: &mut [VerifyWs],
+        stage_override: Option<usize>,
+        pos0: usize,
+        t: usize,
+        n_commit: usize,
+    ) -> Res<()> {
         let d = self.model.cfg();
         let mc = &self.model.mc;
         let hd = d.head_dim as usize;
         let win = d.sliding_window as usize;
         let n_trunk = (mc.n_layer - mc.nextn_predict_layers) as usize;
+        if caches.len() != n_trunk || checkpoints.len() != n_trunk || ws.len() != self.stages.len()
+        {
+            return Err(format!(
+                "TP/EP commit plane shape mismatch: caches={} checkpoints={} ws={} expected layers={} stages={}",
+                caches.len(),
+                checkpoints.len(),
+                ws.len(),
+                n_trunk,
+                self.stages.len()
+            ));
+        }
+        if n_commit == 0 || n_commit > t {
+            return Err(format!(
+                "commit plane width {n_commit} outside transaction width {t}"
+            ));
+        }
         let (ring_start, slot_rows) = ring_commit_plan(pos0, n_commit, win);
         let ring_keep = slot_rows.len();
         for il in 0..n_trunk {
-            let stage = self.layer_stage[il];
+            let stage = stage_override.unwrap_or(self.layer_stage[il]);
+            if stage >= self.stages.len() {
+                return Err(format!("commit plane stage {stage} outside runtime stages"));
+            }
             let st = &self.stages[stage];
             st.gpu.ctx.bind_to_thread().map_err(e("bind ctx commit"))?;
             let stream = st.gpu.stream();
-            let lck = &mut vstate.layers[il];
-            let vws = &mut vstate.ws[stage];
-            let cache = &mut state.caches[il];
+            let lck = &mut checkpoints[il];
+            let vws = &mut ws[stage];
+            let cache = &mut caches[il];
             let trans_base = if cache.c4_host.is_some() {
                 win
             } else {
@@ -15379,14 +15430,22 @@ impl Dsv4Gpu {
                 )?;
             }
         }
-        for st in &self.stages {
-            st.gpu
+        let sync_stages: Vec<usize> = match stage_override {
+            Some(stage) => vec![stage],
+            None => (0..self.stages.len()).collect(),
+        };
+        for stage in sync_stages {
+            self.stages[stage]
+                .gpu
                 .ctx
                 .bind_to_thread()
                 .map_err(e("bind ctx commit sync"))?;
-            st.gpu.stream().synchronize().map_err(e("commit sync"))?;
+            self.stages[stage]
+                .gpu
+                .stream()
+                .synchronize()
+                .map_err(e("commit sync"))?;
         }
-        state.pos = pos0 + n_commit;
         Ok(())
     }
 
