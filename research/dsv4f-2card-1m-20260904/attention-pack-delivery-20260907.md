@@ -14,6 +14,15 @@ The source was isolated from component commit `dddb0eed789eb00a867e8d23b0c7089fb
 
 CPU fixtures cover both logical ranks, real projection dimensions, reconstruction, wrong-rank data and changed FP32 scales. The ignored GPU fixture covers all three shapes and both logical ranks, source immutability, destination canaries, and foreign-stream refusal.
 
-Target execution was reported for the original component on two RTX PRO 6000 Blackwell devices with memcheck. Exact remote-source/binary/receipt correlation is still pending, and the new ownership guard has not yet been re-gated. Those reports are not a substitute for final-head target evidence.
+The final component, including the new ownership guard, passed on two RTX PRO 6000 Blackwell devices on 2026-09-07. The remote build used Rust 1.97.1, CUDA 13.1.115 and `sm_120a`. Four CPU component tests passed; the ignored GPU fixture passed once normally and once under memcheck on each physical device. Both memcheck runs reported zero errors. Each GPU execution includes both logical ranks, all three projection shapes and the foreign code/scale stream refusal cases. The GPU controller completed at 16:14:58 UTC; its process was gone, no GPU process remained and the shared lock was free before handoff.
 
-No local Cargo, CI, build, or GPU tests were run. Pushes use `MEMRA_SKIP_PERF_CI=1` under the owner's temporary local-rig prohibition, with normal hooks and hosted CI retained. This remains a draft until the target evidence is bound and reviewed. No serving default, fleet pin, or model support state changes.
+| Evidence binding | Value |
+| --- | --- |
+| Tested source commit | `f72dc0f884c0b4a46e2b4c2f08259be43419c7b2` |
+| Test binary SHA256 | `5447bf094aab9ba4d43855a7b1dc4fe4d5547a8ca5bf350ae1c672efd1072060` |
+| Packer module SHA256, local and remote | `4b4952a9bb43d63e5b54abbb730997aec935fe821e6d4c258efcd187a950ddab` |
+| Companion raw receipt namespace | `attention-pack-f72dc-20260907-r1` |
+
+Raw CPU/GPU/memcheck logs, build log, source/module/lockfile hashes and binary hash are retained in the companion operations receipt. The subsequent documentation update does not change the tested source module or copy arithmetic. This is component correctness evidence, not full-model attention TP qualification or a throughput measurement.
+
+No local Cargo, CI, build, or GPU tests were run. Pushes use `MEMRA_SKIP_PERF_CI=1` under the owner's temporary local-rig prohibition, with normal hooks and hosted CI retained. This remains a draft until the final checks and bound target evidence are reviewed. No serving default, fleet pin, or model support state changes.
