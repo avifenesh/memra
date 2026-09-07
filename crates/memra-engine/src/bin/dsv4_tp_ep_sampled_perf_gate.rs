@@ -448,12 +448,7 @@ fn main() {
         _ => panic!("MEMRA_DSV4_ATTENTION_TP_GATE requires 0 or 1"),
     };
     let sampler = dsv4_sampler_order().expect("explicit sampler configuration");
-    if attention_mode {
-        assert!(
-            !dsv4_prof_on(),
-            "attention TP performance refuses profiled timing"
-        );
-    }
+    let profiled = dsv4_prof_on();
     let sampler_name = match sampler {
         Dsv4SamplerOrder::Comparison => "comparison",
         Dsv4SamplerOrder::Radix => "radix",
@@ -573,7 +568,7 @@ fn main() {
             receipt.counters_decode,
         );
     }
-    if attention_mode {
+    if attention_mode && !profiled {
         assert!(
             receipts.iter().all(|receipt| receipt.eligible),
             "all five sampled attention rows must be eligible; no reroll or forward-only substitute"
@@ -591,7 +586,12 @@ fn main() {
             "SUMMARY {{\"repeats\":{repeats},\"eligible_repeats\":{repeats},\"generated_tokens\":{total_tokens},\"decode_wall_ns\":{total_wall_ns},\"sampled_envelope_tok_s\":{pooled_tok_s:.6},\"timing_scope\":\"sample_plus_forward_envelope\",\"sampler_order\":\"{sampler_name}\",\"paired_control\":false,\"speculative\":false}}"
         );
     }
-    if attention_mode {
+    if attention_mode && profiled {
+        assert!(receipts.iter().all(|receipt| !receipt.eligible));
+        println!(
+            "PASS profile-only sampled attention TP2; repeats={repeats} eligible=0 timing_scope=none sampler={sampler_name}"
+        );
+    } else if attention_mode {
         println!(
             "PASS sampled attention TP2; repeats={repeats} eligible={repeats} timing_scope=sample_plus_forward_envelope sampler={sampler_name}"
         );
