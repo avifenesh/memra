@@ -39,6 +39,7 @@ use crate::dsv4_ep_graph::{self, MatrixEpGraphSlot};
 use crate::dsv4_ffi as k;
 use crate::dsv4_ffi::ck;
 pub use crate::dsv4_graph::Dsv4LayerCapture;
+use crate::dsv4_topology::{self, Dsv4TopologyPlan};
 
 type Res<T> = Result<T, String>;
 
@@ -706,9 +707,11 @@ struct PrefillHeadCounters {
 }
 
 pub struct Dsv4Gpu {
+    pub topology: Dsv4TopologyPlan,
     ep_enabled: bool,
     ep_serial_control: bool,
     ep_calls: std::sync::atomic::AtomicU64,
+    tp_ep_rank_layer_calls: [std::sync::atomic::AtomicU64; 2],
     pub model: Dsv4Model,
     pub stages: Vec<Stage>,
     pub layer_stage: Vec<usize>, // trunk layer -> stage idx
@@ -1871,6 +1874,29 @@ impl Dsv4Gpu {
         self.matrix_moe
     }
 
+    pub fn topology(&self) -> Dsv4TopologyPlan {
+        self.topology
+    }
+
+    /// Gate-only topology admission.  Must be set before `load`; an armed
+    /// request currently refuses before allocating the PP loader.
+    pub fn set_tp_ep_topology_for_gate(enabled: bool) -> bool {
+        dsv4_topology::set_tp_ep_for_gate(enabled)
+    }
+
+    pub fn tp_ep_topology_for_gate() -> bool {
+        dsv4_topology::tp_ep_for_gate()
+    }
+
+    /// Actual per-rank all-layer calls.  No PP call is folded into these
+    /// counters; the future TP/EP walk must increment them per rank/layer.
+    pub fn tp_ep_rank_layer_calls(&self) -> [u64; 2] {
+        [
+            self.tp_ep_rank_layer_calls[0].load(std::sync::atomic::Ordering::Relaxed),
+            self.tp_ep_rank_layer_calls[1].load(std::sync::atomic::Ordering::Relaxed),
+        ]
+    }
+
     /// Exclusive storage-only control. Fresh zeroed buffers are the comparison
     /// arm for persistent-buffer correctness, never a serving environment flag.
     pub fn set_grouped_fresh_storage_for_gate(&mut self, enabled: bool) -> Res<bool> {
@@ -2584,6 +2610,26 @@ impl Dsv4Gpu {
         let mc = model.mc.clone();
         let n_trunk = mc.n_layer - mc.nextn_predict_layers;
         let rd = d.qk_rope_head_dim as usize;
+        let topology = if dsv4_topology::tp_ep_for_gate() {
+            let plan = Dsv4TopologyPlan::tp_ep_all_layers(
+                devices.len(),
+                n_trunk as usize,
+                mc.moe.as_ref().expect("moe").expert_count as usize,
+                mc.n_embd as usize,
+                mc.moe.as_ref().expect("moe").expert_ff_length as usize,
+            )?;
+            return Err(format!(
+                "DSV4 TP/EP all-layer topology requested ({plan:?}) but its replicated attention/cache walk is not wired in this binary; refusing instead of falling back to PP/EP"
+            ));
+        } else {
+            Dsv4TopologyPlan::pp_ep(
+                devices.len(),
+                n_trunk as usize,
+                mc.moe.as_ref().expect("moe").expert_count as usize,
+                mc.n_embd as usize,
+                mc.moe.as_ref().expect("moe").expert_ff_length as usize,
+            )?
+        };
 
         // split point: balance per-layer resident bytes (experts uniform; fine layers
         // carry the indexer). Computed from config, not hardcoded.
@@ -2826,9 +2872,11 @@ impl Dsv4Gpu {
         )?;
 
         let mut me = Dsv4Gpu {
+            topology,
             ep_enabled: false,
             ep_serial_control: false,
             ep_calls: std::sync::atomic::AtomicU64::new(0),
+            tp_ep_rank_layer_calls: std::array::from_fn(|_| std::sync::atomic::AtomicU64::new(0)),
             model,
             stages,
             layer_stage: (0..n_trunk).map(|il| usize::from(il >= split_at)).collect(),
