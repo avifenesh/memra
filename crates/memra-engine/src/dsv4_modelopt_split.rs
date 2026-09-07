@@ -699,7 +699,15 @@ mod tests {
         let stream = gpu.stream();
         fn source_pattern(bytes: usize, seed: usize) -> Vec<u8> {
             (0..bytes)
-                .map(|i| (i.wrapping_mul(37 + seed) ^ (i >> 3) ^ seed) as u8)
+                .map(|i| {
+                    // SplitMix64-style index mixing: no small byte period at the real plane,
+                    // expert, or rank-half offsets used below.
+                    let mut z =
+                        (i as u64).wrapping_add((seed as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+                    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+                    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+                    (z ^ (z >> 31)) as u8
+                })
                 .collect()
         }
 
@@ -831,6 +839,53 @@ mod tests {
             }
         }
 
+        fn assert_real_red_teeth() {
+            let plan0 = ModelOptSplitPlan::new(0, 2, 4096, 2048).unwrap();
+            let plan1 = ModelOptSplitPlan::new(1, 2, 4096, 2048).unwrap();
+            let source_w = source_pattern(plan0.full_bank_weight_bytes(), 0xC0FFEE);
+            let source_s = source_pattern(plan0.full_bank_scale_bytes(), 0xBAD5EED);
+            let plane_w = plan0.inter * plan0.hidden / 2;
+            let plane_s = plan0.inter * plan0.hidden / 16;
+            let gu_half_w = plan0.local_inter() * plan0.hidden / 2;
+            let gu_half_s = plan0.local_inter() * plan0.hidden / 16;
+            assert_ne!(
+                &source_w[..plane_w],
+                &source_w[plane_w..2 * plane_w],
+                "wrong projection red tooth is periodic"
+            );
+            assert_ne!(
+                &source_w[..plane_w],
+                &source_w[3 * plane_w..4 * plane_w],
+                "wrong expert red tooth is periodic"
+            );
+            assert_ne!(
+                &source_w[..gu_half_w],
+                &source_w[gu_half_w..2 * gu_half_w],
+                "opposite-rank GU half red tooth is periodic"
+            );
+            assert_ne!(
+                &source_s[..plane_s],
+                &source_s[plane_s..2 * plane_s],
+                "scale projection red tooth is periodic"
+            );
+            assert_ne!(
+                &source_s[..gu_half_s],
+                &source_s[gu_half_s..2 * gu_half_s],
+                "scale GU half red tooth is periodic"
+            );
+            let (expected0, expected_s0) = independent_expected(plan0, &source_w, &source_s);
+            let (expected1, expected_s1) = independent_expected(plan1, &source_w, &source_s);
+            assert_ne!(
+                expected0, expected1,
+                "rank GU/down mapping did not move bytes"
+            );
+            assert_ne!(
+                expected_s0, expected_s1,
+                "rank scale mapping did not move bytes"
+            );
+        }
+
+        assert_real_red_teeth();
         // Both logical ranks on the actual DSV4 geometry, plus a tiny one-expert tail/control.
         for rank in 0..2 {
             run_case(
