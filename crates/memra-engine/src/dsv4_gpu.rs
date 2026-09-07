@@ -2921,6 +2921,7 @@ impl Dsv4Gpu {
                 || topology.hidden != 4096
                 || topology.inter != 2048
                 || topology.experts != 256
+                || d.n_shared_experts != 1
                 || !ep_requested)
         {
             return Err(

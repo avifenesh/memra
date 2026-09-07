@@ -258,8 +258,9 @@ impl ModelOptSplitPlan {
         })
     }
 
+    /// The hidden axis stays replicated; only the expert intermediate axis is split.
     pub const fn local_hidden(self) -> usize {
-        self.hidden / MODEL_OPT_SPLIT_WORLD
+        self.hidden
     }
 
     pub const fn local_inter(self) -> usize {
@@ -598,7 +599,7 @@ mod tests {
     fn dsv4_shape_matches_modelopt_4096x2048_geometry() {
         let plan = ModelOptSplitPlan::new(0, 256, 4096, 2048).unwrap();
         assert_eq!(plan.world, 2);
-        assert_eq!(plan.local_hidden(), 2048);
+        assert_eq!(plan.local_hidden(), 4096);
         assert_eq!(plan.local_inter(), 1024);
         assert_eq!(plan.shape(Projection::Gate).axis, SplitAxis::OutputRows);
         assert_eq!(plan.shape(Projection::Down).axis, SplitAxis::InputColumns);

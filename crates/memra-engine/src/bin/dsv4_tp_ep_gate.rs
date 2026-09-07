@@ -112,6 +112,8 @@ fn verify_intermediate_joins(gpu: &Dsv4Gpu, hash: &mut Sha256, position: usize) 
             snapshot.selected[0], snapshot.selected[1],
             "replicated route decisions"
         );
+        let mut partial_hashes = Vec::new();
+        let mut joined_hashes = Vec::new();
         for rank in 0..2 {
             assert_eq!(snapshot.selected[rank].len(), 6);
             assert_eq!(snapshot.ids[rank], (0..256).collect::<Vec<i32>>());
@@ -139,6 +141,18 @@ fn verify_intermediate_joins(gpu: &Dsv4Gpu, hash: &mut Sha256, position: usize) 
             for id in &snapshot.selected[rank] {
                 hash.update(id.to_le_bytes());
             }
+            assert!(
+                snapshot.partials[rank]
+                    .chunks_exact(4096)
+                    .all(|slot| slot.iter().any(|x| *x != 0.0)),
+                "every selected half-expert must produce a nonzero partial"
+            );
+            let mut partial_hash = Sha256::new();
+            update_f32(&mut partial_hash, &snapshot.partials[rank]);
+            partial_hashes.push(format!("{:x}", partial_hash.finalize()));
+            let mut joined_hash = Sha256::new();
+            update_f32(&mut joined_hash, &snapshot.joined[rank]);
+            joined_hashes.push(format!("{:x}", joined_hash.finalize()));
             update_f32(hash, &snapshot.partials[rank]);
             update_f32(hash, &snapshot.joined[rank]);
         }
@@ -154,7 +168,7 @@ fn verify_intermediate_joins(gpu: &Dsv4Gpu, hash: &mut Sha256, position: usize) 
             }
         }
         println!(
-            "INTERMEDIATE_JOIN position={position} layer={layer} selected={:?} rank_slots=[6,6] columns=24576 canonical_f32_sum=true",
+            "INTERMEDIATE_JOIN position={position} layer={layer} selected={:?} rank_slots=[6,6] columns=24576 partial_hashes={partial_hashes:?} joined_hashes={joined_hashes:?} canonical_f32_sum=true",
             snapshot.selected[0]
         );
     }

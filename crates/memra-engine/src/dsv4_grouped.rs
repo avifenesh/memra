@@ -356,6 +356,7 @@ impl GroupedWork {
                 .map_err(|e| format!("grouped contribution allocation: {e}"))?,
             bytes,
             split_scratch: None,
+            splitk_scratch: None,
             plain_single: false,
             gu_fuse: false,
             phase: MatrixPhase::Idle,
